@@ -73,7 +73,6 @@ public:
         m_pieces.clear();
         m_models.clear();
         m_checkpointBinding = std::make_shared<const u8>(0);
-        m_checkpointGeneration = 0;
     }
     usize size() const { return m_pieces.size(); }
     const Mat4& transform(usize index) const { return m_pieces[index].transform; }
@@ -98,7 +97,6 @@ private:
     std::vector<Piece> m_pieces;
     std::vector<ModelBinding> m_models;
     std::shared_ptr<const u8> m_checkpointBinding = std::make_shared<const u8>(0);
-    u64 m_checkpointGeneration = 0;
 };
 
 } // namespace gdl::game

@@ -1,9 +1,7 @@
 #include "game/enemies/EnemyAnimator.h"
 
 #include <algorithm>
-#include <cmath>
 #include <tuple>
-#include <utility>
 
 #include "engine/core/Types.h"
 #include "engine/io/NativeStateDigest.h"
@@ -48,103 +46,6 @@ bool EnemyAnimator::equalLocal(const EnemyAnimator& other) const {
     // Exact values, including retained poses after unbind, under the same trees.
     // Only the hash substitutes semantic resources for these borrowed addresses.
     return nativeValues(*this) == nativeValues(other);
-}
-
-bool EnemyAnimator::Checkpoint::valid() const {
-    if (tree.size() > TreePose::Checkpoint::kMaxName || tree.find('\0') != std::string::npos ||
-        index(current) >= kEnemyActionCount || index(requested) >= kEnemyActionCount ||
-        !player.valid() || !player.playing || !std::isfinite(idleSeconds) || idleSeconds < 0 ||
-        idleSeconds > AnimationPlayer::kCheckpointSeconds || !std::isfinite(throwInterval) ||
-        throwInterval < 0 || throwInterval > kMaxThrowInterval || !std::isfinite(idleFraction) ||
-        idleFraction < 0 || idleFraction > 1 || !std::isfinite(frameBefore) || frameBefore < 0 ||
-        frameBefore > AnimationPlayer::kCheckpointFrames || generationBefore == 0 ||
-        generationBefore > player.generation ||
-        (dead && (current != Action::Dying || !player.finished)) ||
-        pose.has_value() != previous.has_value() ||
-        pose.has_value() != presentationBefore.has_value()) {
-        return false;
-    }
-    const auto validPose = [&](const std::optional<TreePose::Checkpoint>& value) {
-        return !value || (value->valid() && value->tree == tree);
-    };
-    return validPose(pose) && validPose(previous) && validPose(presentationBefore);
-}
-
-std::optional<EnemyAnimator::Checkpoint> EnemyAnimator::checkpoint() const {
-    if (m_tree == nullptr) {
-        return std::nullopt;
-    }
-    Checkpoint state;
-    state.tree = m_tree->name;
-    state.current = m_current;
-    state.requested = m_requested;
-    state.walksIn = m_walksIn;
-    state.struck = m_struck;
-    state.powerStruck = m_powerStruck;
-    state.threw = m_threw;
-    state.dead = m_dead;
-    state.idleSeconds = m_idleSeconds;
-    state.throwInterval = m_throwInterval;
-    state.idleFraction = m_idleFraction;
-    state.player = m_player.checkpoint();
-    state.pose = m_pose.checkpoint();
-    state.previous = m_previous.checkpoint();
-    state.presentationBefore = m_presentationBefore.checkpoint();
-    state.frameBefore = m_frameBefore;
-    state.generationBefore = m_generationBefore;
-    if ((!m_tree->nodes.empty() && (!state.pose || !state.previous || !state.presentationBefore)) ||
-        !state.valid()) {
-        return std::nullopt;
-    }
-    return state;
-}
-
-bool EnemyAnimator::restore(const Checkpoint& state) {
-    if (m_tree == nullptr || !state.valid() || state.tree != m_tree->name ||
-        state.pose.has_value() != !m_tree->nodes.empty()) {
-        return false;
-    }
-    const u32 sequence =
-        state.current == Action::Dying && !has(Action::Dying) && has(Action::HitReact2)
-            ? sequenceOf(Action::HitReact2)
-            : sequenceOf(state.current);
-    if (sequence != state.player.sequence || sequence >= m_tree->sequences.size()) {
-        return false;
-    }
-    AnimationPlayer player;
-    TreePose pose;
-    TreePose previous;
-    TreePose presentationBefore;
-    if (!player.restore(state.player, &m_tree->sequences[sequence])) {
-        return false;
-    }
-    if (state.pose) {
-        if (!pose.restore(*m_tree, *state.pose) || !previous.restore(*m_tree, *state.previous) ||
-            !presentationBefore.restore(*m_tree, *state.presentationBefore)) {
-            return false;
-        }
-    } else {
-        pose.rest(*m_tree);
-        previous.rest(*m_tree);
-        presentationBefore.rest(*m_tree);
-    }
-    m_current = state.current;
-    m_requested = state.requested;
-    m_walksIn = state.walksIn;
-    m_struck = state.struck;
-    m_powerStruck = state.powerStruck;
-    m_threw = state.threw;
-    m_dead = state.dead;
-    m_idleSeconds = state.idleSeconds;
-    m_throwInterval = state.throwInterval;
-    m_idleFraction = state.idleFraction;
-    m_player = player;
-    m_pose = std::move(pose);
-    m_previous = std::move(previous);
-    m_presentationBefore = std::move(presentationBefore);
-    m_frameBefore = state.frameBefore;
-    m_generationBefore = state.generationBefore;
-    return true;
 }
 
 bool EnemyAnimator::bind(const TreeInfo& tree, bool walksIn) {

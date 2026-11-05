@@ -2,7 +2,6 @@
 
 #include <cmath>
 #include <cstring>
-#include <limits>
 
 #include "engine/core/Types.h"
 #include "engine/io/NativeStateDigest.h"
@@ -83,13 +82,11 @@ bool Rotators::restoreLocal(const LocalSnapshot& saved) {
         return false;
     }
     m_sim = saved.m_state;
-    ++m_checkpointGeneration;
     return true;
 }
 
 void Rotators::clear() {
     m_checkpointBinding = std::make_shared<const u8>(0);
-    m_checkpointGeneration = 0;
     m_layout = nullptr;
     m_sim = {};
     m_localEpoch = 0;
@@ -135,7 +132,6 @@ void Rotators::bind(const WorldLayout& layout) {
 void Rotators::bindFigures(RenderDevice& device, const WorldLayout& layout,
                            const AssetScope& scope) {
     m_checkpointBinding = std::make_shared<const u8>(0);
-    m_checkpointGeneration = 0;
     for (Rotator& rotator : m_sim.rotators) {
         rotator.pad.reset();
         if (rotator.subtype != kTurnedByPad) {
@@ -235,12 +231,6 @@ bool Rotators::accepts(std::span<const Cursor> state) const {
 bool Rotators::restore(std::span<const Cursor> state) {
     if (!accepts(state)) {
         return false;
-    }
-    if (m_checkpointGeneration == std::numeric_limits<u64>::max()) {
-        m_checkpointBinding = std::make_shared<const u8>(0);
-        m_checkpointGeneration = 0;
-    } else {
-        ++m_checkpointGeneration;
     }
     ++m_localEpoch;
     for (usize index = 0; index < state.size(); ++index) {

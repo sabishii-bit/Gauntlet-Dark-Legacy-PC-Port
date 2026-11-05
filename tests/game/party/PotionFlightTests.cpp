@@ -1,5 +1,3 @@
-#include <limits>
-
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
@@ -40,7 +38,7 @@ TEST_CASE("potion provenance distinguishes use and throw without weapon identity
     CHECK_FALSE(wrong.valid());
 }
 
-TEST_CASE("private potion flight restores the native ballistic continuation and impact",
+TEST_CASE("replayed potion flight keeps the native ballistic continuation and impact",
           "[game][potion-flight]") {
     const s32 kind = GENERATE(1, 2, 3, 4);
     const s32 charge = GENERATE(0, 8, 30);
@@ -49,19 +47,19 @@ TEST_CASE("private potion flight restores the native ballistic continuation and 
         PotionEmission::throwPotion({1, {0, 2, 0}, {0, 0, 1}, kind, 24, 1.1f, flags}, charge);
     launch.potionRelease = MissilePotionRelease{37};
     PlayerMissiles native;
+    PlayerMissiles replay;
     REQUIRE(native.launch(launch));
+    REQUIRE(replay.launch(launch));
     constexpr f32 kStep = 1.0f / 60;
     for (s32 tick = 0; tick < 6; ++tick) {
         native.update(kStep, nullptr);
+        replay.update(kStep, nullptr);
     }
     REQUIRE(native.count() == 1);
-    const auto saved = PlayerMissiles::flightCheckpoint(native.missile(0));
     REQUIRE(native.visualHistory().size() == 1);
-    const auto particles = native.visualHistory().front().flight;
-    PlayerMissiles replay;
-    REQUIRE(replay.launch(launch));
-    REQUIRE(replay.restorePotionFlight(replay.missile(0).instance, saved));
-    REQUIRE(replay.restoreVisualFlight(replay.missile(0).instance, particles));
+    CHECK(PlayerMissiles::flightCheckpoint(replay.missile(0)) ==
+          PlayerMissiles::flightCheckpoint(native.missile(0)));
+    CHECK(replay.visualHistory().front().flight == native.visualHistory().front().flight);
     CHECK(replay.missile(0).potionRelease == launch.potionRelease);
     for (s32 tick = 6; tick < 190; ++tick) {
         CAPTURE(kind, charge, tick);
@@ -219,43 +217,5 @@ TEST_CASE("potion history does not misclassify foreign projectile modes",
     PlayerMissiles missiles;
     REQUIRE(missiles.launch(launch)); // provenance must never change native launch behavior
     CHECK(missiles.visualHistory().empty());
-}
-
-TEST_CASE("potion flight restoration rejects foreign modes and invalid states atomically",
-          "[game][potion-flight]") {
-    const auto bottle = PotionEmission::throwPotion({0, {1, 3, 5}, {0, 0, 1}, 3, 8, 1, 0}, 2);
-    PlayerMissiles replay;
-    REQUIRE(replay.launch(bottle));
-    const auto before = PlayerMissiles::flightCheckpoint(replay.missile(0));
-    CHECK_FALSE(replay.restoreFlight(replay.missile(0).instance, before));
-    auto invalid = before;
-    invalid.velocity.x = std::numeric_limits<f32>::quiet_NaN();
-    CHECK_FALSE(replay.restorePotionFlight(replay.missile(0).instance, invalid));
-    CHECK(PlayerMissiles::flightCheckpoint(replay.missile(0)) == before);
-    CHECK_FALSE(replay.restorePotionFlight(999, before));
-    for (const u32 flags : {damage::kReflect, damage::kSuperShot}) {
-        PlayerMissiles wrong;
-        auto launch = bottle;
-        launch.flags = flags;
-        REQUIRE(wrong.launch(launch));
-        CHECK_FALSE(wrong.restorePotionFlight(wrong.missile(0).instance, before));
-    }
-    for (const s32 kind : {0, 5}) {
-        PlayerMissiles wrong;
-        auto launch = bottle;
-        launch.potion = kind;
-        REQUIRE(wrong.launch(launch));
-        CHECK_FALSE(wrong.restorePotionFlight(wrong.missile(0).instance, before));
-    }
-    PlayerMissiles weapon;
-    auto launch = bottle;
-    launch.spec = &MissileSpec::of(0);
-    REQUIRE(weapon.launch(launch));
-    CHECK_FALSE(weapon.restorePotionFlight(weapon.missile(0).instance, before));
-    test::FakeRenderDevice device;
-    PlayerMissiles live;
-    live.bindVisuals(device);
-    REQUIRE(live.launch(bottle));
-    CHECK_FALSE(live.restorePotionFlight(live.missile(0).instance, before));
 }
 } // namespace

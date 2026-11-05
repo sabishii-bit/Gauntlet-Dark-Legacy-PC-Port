@@ -147,7 +147,7 @@ struct NativeHistory {
 
 void checkNativeParticipants(const Fixture& actual, const Fixture& expected) {
     for (usize i = 0; i < actual.players.size(); ++i) {
-        CHECK(actual.players[i].actor.checkpoint() == expected.players[i].actor.checkpoint());
+        CHECK(actual.players[i].actor == expected.players[i].actor);
         CHECK(actual.players[i].knockback.checkpoint() ==
               expected.players[i].knockback.checkpoint());
         CHECK(actual.players[i].reaction == expected.players[i].reaction);

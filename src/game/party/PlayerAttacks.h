@@ -181,7 +181,6 @@ public:
 private:
     friend struct PlayerAttacksTestPeer;
     std::shared_ptr<const u8> m_restoreOwner = std::make_shared<const u8>(0);
-    u64 m_restoreGeneration = 1;
     u64 m_localEpoch = 0;
     std::optional<s32> deathContactSlot(usize index, std::span<const PlayerRuntime> players,
                                         const Targets& targets) const;

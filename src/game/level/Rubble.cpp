@@ -69,7 +69,6 @@ bool Rubble::restoreLocal(const LocalSnapshot& saved) {
         return false;
     }
     m_pieces = saved.m_pieces;
-    ++m_checkpointGeneration;
     return true;
 }
 

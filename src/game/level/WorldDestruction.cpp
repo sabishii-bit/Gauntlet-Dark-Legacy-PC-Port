@@ -56,13 +56,11 @@ bool WorldDestruction::restoreLocal(const LocalSnapshot& saved) {
         return false;
     }
     m_sim = saved.m_state;
-    ++m_checkpointGeneration;
     return true;
 }
 
 void WorldDestruction::clear() {
     m_checkpointBinding = std::make_shared<const u8>(0);
-    m_checkpointGeneration = 0;
     m_objects.clear();
     m_sim.destroyed.clear();
     m_controlled.clear();

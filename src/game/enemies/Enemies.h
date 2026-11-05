@@ -561,82 +561,9 @@ public:
         f32 deathSeconds = 0;
         s32 deathSkinFrames = 0;
         std::string deathSkin;
-        bool valid() const;
         bool operator==(const BodyState&) const = default;
         friend void visitNativeState(NativeStateDigest& digest, const BodyState& value);
     };
-
-    struct Checkpoint {
-        static constexpr usize kMaxEvents = 65536;
-        static constexpr usize kMaxCombatants = 4096;
-        struct Body : BodyState {
-            std::optional<EnemyAnimator::Checkpoint> animator;
-            bool operator==(const Body&) const = default;
-        };
-        struct Stock {
-            s32 kind = -1;
-            TextureAnimator::Checkpoint textures;
-            bool operator==(const Stock&) const = default;
-        };
-        std::array<Body, kMost> enemies;
-        std::vector<Stock> stocks;
-        u64 nextInstance = 1;
-        Mt19937::Checkpoint random = Mt19937{}.checkpoint();
-        s32 most = kMost;
-        EnemyScales scales;
-        LookoutRoute lookouts;
-        std::vector<EnemyBlow> blows;
-        std::vector<EnemyLoss> losses;
-        std::vector<EnemyBurst> bursts;
-        std::vector<EnemyBirth> births;
-        std::vector<EnemyCue> cues;
-        std::vector<EnemyFeedback> feedback;
-        std::vector<DeathEvent> deathEvents;
-        std::vector<EnemyDeathShot> deathShots;
-        std::vector<s32> tagged;
-        std::vector<EnemyGeneratorEvent> generatorEvents;
-        std::vector<EnemyBody> combatants;
-        Vec2 contactGridOrigin{0};
-        f32 contactGridInverseWidth = 0;
-        s32 bomber = -1;
-        std::optional<ViewSet> view;
-        s32 inView = 0;
-        u32 frame = 0;
-        s32 pendingTicks = 0;
-        f32 pendingSeconds = 0;
-        f32 shrink = 1;
-        bool valid() const;
-        bool operator==(const Checkpoint& /*other*/) const;
-    };
-    std::optional<Checkpoint> checkpoint() const;
-    /** Prepared against this owner's loaded resources. No live state is changed
-     * until commit; callers can prepare several dependent pools atomically. */
-    class Prepared {
-    public:
-        Prepared(Prepared&&) noexcept;
-        Prepared& operator=(Prepared&&) noexcept;
-        ~Prepared();
-        Prepared(const Prepared&) = delete;
-        Prepared& operator=(const Prepared&) = delete;
-
-    private:
-        friend class Enemies;
-        struct Data;
-        explicit Prepared(std::unique_ptr<Data> data);
-        std::unique_ptr<Data> m_data;
-    };
-    std::optional<Prepared> prepareRestore(const Checkpoint& state) const;
-    bool canCommit(const Prepared& prepared) const;
-    /** Allocation-free commit. Prepare/preflight/commit must run on the same
-     * simulation thread without intervening gameplay or resource mutation.
-     * A successful commit consumes its token and invalidates sibling prepares. */
-    bool commitRestore(Prepared&& prepared);
-    /** Exact, atomic restore against the same opened world's loaded stock roster.
-     * Never loads assets, spawns actors or dispatches queued world events. Rewinds
-     * birth counters too: callers must quarantine replay and reconcile published
-     * lifetimes/events before using a restored pool as live authority. External
-     * collision, hazards, generators and missiles require their own matching state. */
-    bool restore(const Checkpoint& state);
 
 private:
     struct Stock {
@@ -725,7 +652,6 @@ private:
     RenderDevice* m_device = nullptr;
     s32 m_levelCap = kMost; ///< the cap the level opened with, never simulation state
     std::shared_ptr<const u8> m_restoreOwner = std::make_shared<const u8>(0);
-    u64 m_restoreGeneration = 0;
     std::filesystem::path m_root;
     ArchiveLoader m_archiveLoader;
     const WorldCollision* m_collision = nullptr;

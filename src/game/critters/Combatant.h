@@ -532,7 +532,6 @@ private:
     std::span<const EnemyBody> m_swarm;
     std::shared_ptr<const u8> m_localOwner = std::make_shared<const u8>(0);
     u64 m_localEpoch = 0;
-    u64 m_checkpointRevision = 0;
     /** Actor lifetime/restore fence, independent of ordinary slot reuse. */
     std::shared_ptr<const u8> m_checkpointBinding = std::make_shared<const u8>(0);
 };

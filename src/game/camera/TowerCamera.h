@@ -44,7 +44,7 @@ class TowerCamera {
 public:
     TowerCamera() = default;
     /** Native camera values remain copyable, but a copied or replaced camera
-     * never inherits another owner's prepared-restore identity. */
+     * never inherits another owner's binding identity. */
     TowerCamera(const TowerCamera& other);
     TowerCamera& operator=(const TowerCamera& other);
     TowerCamera(TowerCamera&& other) noexcept;
@@ -91,11 +91,8 @@ public:
      * The scene's history guard supplies the enclosing stage/owner boundary. */
     static bool appendLocalDigest(NativeStateDigest& digest, const State& state);
     static bool equalLocal(const State& left, const State& right) { return left == right; }
-    /** Trusted in-process state, copied without allocating a diagnostic identity. */
-    void restoreLocal(const State& state) noexcept {
-        m_state = state;
-        ++m_checkpointGeneration;
-    }
+    /** Trusted in-process state, copied without allocating a new binding. */
+    void restoreLocal(const State& state) noexcept { m_state = state; }
 
     /** Stands the camera up for `subjects` and lets it settle, like a level start. */
     void reset(std::span<const CameraSubject> subjects, std::span<const WorldLocator> markers,
@@ -134,7 +131,6 @@ private:
 
     State m_state;
     std::shared_ptr<const u8> m_checkpointBinding = std::make_shared<const u8>(0);
-    u64 m_checkpointGeneration = 0;
 };
 
 } // namespace gdl::game

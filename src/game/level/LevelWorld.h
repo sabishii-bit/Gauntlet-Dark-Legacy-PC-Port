@@ -370,7 +370,6 @@ public:
 private:
     bool appendDigest(NativeStateDigest& digest, const LocalSnapshot* saved) const;
     std::shared_ptr<const u8> m_checkpointBinding = std::make_shared<const u8>(0);
-    u64 m_checkpointGeneration = 0;
     std::optional<f32> presentedTextureFrameOffset(f32 alpha) const;
     void loadLevelData(const std::filesystem::path& unpackedRoot);
     void applyAmbientOffset(f32 offset);

@@ -70,7 +70,6 @@ bool Breakables::restoreLocal(const LocalSnapshot& saved) {
         return false;
     }
     m_sim = saved.m_state;
-    ++m_checkpointGeneration;
     return true;
 }
 

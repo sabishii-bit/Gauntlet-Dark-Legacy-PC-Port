@@ -69,7 +69,6 @@ bool Traps::restoreLocal(const LocalSnapshot& saved) {
         return false;
     }
     m_sim = saved.m_state;
-    ++m_checkpointGeneration;
     return true;
 }
 
@@ -133,7 +132,6 @@ bool Traps::bind(RenderDevice& device, const WorldLayout& layout, const AssetSco
 
 void Traps::clear() {
     m_checkpointBinding = std::make_shared<const u8>(0);
-    m_checkpointGeneration = 0;
     m_layout = nullptr;
     m_scope = {};
     m_collision = nullptr;

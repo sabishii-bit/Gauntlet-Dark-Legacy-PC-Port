@@ -150,7 +150,6 @@ bool PlayerAttacks::restoreLocal(const LocalSnapshot& saved) {
     }
     m_sim = saved.m_state;
     m_strikes.restoreLocal(saved.m_strikes);
-    ++m_restoreGeneration;
     return true;
 }
 
@@ -159,7 +158,6 @@ void PlayerAttacks::bind(const Resources& resources) {
     m_resources.emplace(resources);
 }
 void PlayerAttacks::clear() {
-    ++m_restoreGeneration;
     ++m_localEpoch;
     if (m_resources.has_value()) {
         for (const auto& particle : m_sim.particleEffects) {

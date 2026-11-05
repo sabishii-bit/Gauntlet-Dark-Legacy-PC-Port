@@ -114,52 +114,6 @@ public:
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
               const CameraFrame* camera = nullptr) const;
 
-    struct Checkpoint {
-        static constexpr usize kMaxStatues = 512;
-        struct Definition {
-            u64 instance = 0;
-            Placement placement;
-            bool operator==(const Definition&) const = default;
-        };
-        struct Body {
-            u64 instance = 0;
-            ItemFigure::Checkpoint figure;
-            bool woken = false;
-            bool rising = false;
-            s32 ticksLeft = 0;
-            bool operator==(const Body&) const = default;
-        };
-        std::vector<Definition> roster;
-        std::vector<Body> statues;
-        std::vector<Placement> risen;
-        Vec2 contactGridOrigin{0};
-        f32 contactGridInverseWidth = 0;
-        u64 nextInstance = 1;
-        bool valid() const;
-        bool operator==(const Checkpoint&) const = default;
-    };
-    std::optional<Checkpoint> checkpoint() const;
-    class Prepared {
-    public:
-        Prepared(Prepared&&) noexcept;
-        Prepared& operator=(Prepared&&) noexcept;
-        ~Prepared();
-        Prepared(const Prepared&) = delete;
-        Prepared& operator=(const Prepared&) = delete;
-
-    private:
-        friend class CritterStatues;
-        struct Data;
-        explicit Prepared(std::unique_ptr<Data> data);
-        std::unique_ptr<Data> m_data;
-    };
-    /** Resolves original IDs against retained preloaded prototypes, even after
-     * native compaction. Preparation has no callbacks, asset loads or GPU work. */
-    std::optional<Prepared> prepareRestore(const Checkpoint& state) const;
-    bool canCommit(const Prepared& state) const;
-    bool commitRestore(Prepared&& state);
-    bool restore(const Checkpoint& state);
-
 private:
     struct Statue {
         u64 instance = 0;
@@ -177,7 +131,6 @@ private:
     s32 contactCell(f32 coordinate, f32 origin) const;
     bool inContactGrid(const Vec3& statue, const Vec3& player, f32 radius) const;
     struct Prototype {
-        Checkpoint::Definition definition;
         ItemArchive* archive = nullptr;
         std::unique_ptr<ItemFigure> figure;
     };
@@ -211,7 +164,7 @@ public:
      * retained prototype art after a statue has risen and left the active list. */
     bool registerNativeResources(NativeStateResources& resources) const;
     /** Actual captured values, including queued births and each figure's own
-     * clocks/particles. Shared model draw caches and diagnostic prototypes are not state. */
+     * clocks/particles. Shared model draw caches and retained prototypes are not state. */
     bool appendNativeDigest(NativeStateDigest& digest) const;
     bool appendLocalDigest(NativeStateDigest& digest, const LocalSnapshot& saved) const;
 
@@ -221,6 +174,5 @@ private:
     Simulation m_sim;
     u64 m_localEpoch = 1;
     std::shared_ptr<const u8> m_lifetime = std::make_shared<const u8>(0);
-    u64 m_restoreGeneration = 0;
 };
 } // namespace gdl::game

@@ -3929,8 +3929,12 @@ TEST_CASE("a demon's missiles take its affinity in place of their native fire el
           "[enemies][affinity][missiles][assets]") {
     const s32 element = GENERATE(0, 2, 4);
     test::FakeRenderDevice device;
+    // The mechanics attune a frenzied birth to the element.
+    test::FakeMechanic rules;
+    rules.answers.traits = {.affinity = element};
     Enemies enemies;
     enemies.open(device, unpackedRoot(), nullptr, 1, {}, 7);
+    enemies.setRules({.births = &rules});
     REQUIRE(enemies.loadKind(2));
     EnemySpawn spawn;
     spawn.kind = 2;
@@ -3938,12 +3942,10 @@ TEST_CASE("a demon's missiles take its affinity in place of their native fire el
     spawn.algorithm = kStandCastWay;
     spawn.placed = true;
     spawn.throwInterval = 0.2f;
+    spawn.frenzied = true;
     const auto id = enemies.spawn(spawn, {});
     REQUIRE(id);
-    auto state = enemies.checkpoint();
-    REQUIRE(state);
-    state->enemies[static_cast<usize>(*id)].affinity = element;
-    REQUIRE(enemies.restore(*state));
+    REQUIRE(enemies.affinityOf(*id) == element);
     EnemyMissiles missiles;
     const std::array party{playerAt(Vec3{0, 0, 20})};
     for (s32 tick = 0; tick < 600 && missiles.count() == 0; ++tick) {
@@ -4121,9 +4123,7 @@ std::filesystem::path kindArchives() {
 bool walksIn(const Enemies& enemies, s32 id) {
     const EnemyAnimator* animator = enemies.animatorOf(id);
     REQUIRE(animator != nullptr);
-    const auto state = animator->checkpoint();
-    REQUIRE(state.has_value());
-    return state->walksIn;
+    return animator->entersWalking();
 }
 
 /** What placements of a kind show: whether the first tier walks in, the shadows drawn under

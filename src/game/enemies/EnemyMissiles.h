@@ -287,14 +287,6 @@ public:
     /** The velocity a lob leaves with to land `to` from `from` at `speed` along the ground. */
     static Vec3 lobVelocity(const Vec3& from, const Vec3& to, f32 speed);
 
-    /** Trusted, preloaded original stock models, independent of live shooter slots.
-     * IDs and pointers must be unique and nonzero. Clear this pool before releasing
-     * or rebinding a model; the manifest and prepared state never own game artwork. */
-    struct Resource {
-        u32 id = 0;
-        const TreeModel* model = nullptr;
-    };
-
     /** Who a blast has reached, and for how long it leaves them alone. */
     struct Held {
         s32 id = -1;
@@ -319,73 +311,6 @@ public:
     };
     /** The bursts under way, in the order they began. */
     std::span<const Burst> bursts() const { return m_sim.bursts; }
-
-    /** Pointer-free complete pool state, including undelivered outputs. These
-     * bounds limit a rollback capture, not native gameplay; overflow refuses the
-     * capture rather than deleting live missiles, contacts or pending events. */
-    struct Checkpoint {
-        static constexpr usize kMaxMissiles = 4096;
-        static constexpr usize kMaxBursts = 4096;
-        static constexpr usize kMaxEvents = 65536;
-        static constexpr usize kMaxContacts = 65536;
-        static constexpr usize kMaxStages = 65536;
-        static constexpr usize kMaxResources = 1024;
-        struct Flight {
-            u64 instance = 0;
-            u32 continuity = 1;
-            Vec3 position{0};
-            Vec3 velocity{0};
-            Vec3 turned{0};
-            EnemyMissileKind kind;
-            u32 resource = 0; ///< zero preserves a genuinely invisible native missile
-            s32 shooter = -1;
-            f32 secondsLeft = 0;
-            f32 lived = 0;
-            f32 heldLeft = 0;
-            f32 scale = 1;
-            bool reflected = false;
-            std::vector<std::pair<s32, f32>> pierced;
-            bool operator==(const Flight&) const = default;
-        };
-        std::vector<Flight> missiles;
-        std::vector<Burst> bursts;
-        std::vector<EnemyMissileHit> hits;
-        std::vector<RockHit> rockHits;
-        std::vector<PickupBlastReach> pickupBlasts;
-        u64 nextInstance = 1;
-        Mt19937::Checkpoint random = Mt19937{}.checkpoint();
-        f32 shrink = 1;
-        f32 ricochetIn = 0;
-        bool valid() const;
-        bool operator==(const Checkpoint&) const = default;
-    };
-
-    class Prepared {
-    public:
-        Prepared(Prepared&&) noexcept;
-        Prepared& operator=(Prepared&&) noexcept;
-        ~Prepared();
-        Prepared(const Prepared&) = delete;
-        Prepared& operator=(const Prepared&) = delete;
-
-    private:
-        friend class EnemyMissiles;
-        struct Data;
-        explicit Prepared(std::unique_ptr<Data> data);
-        std::unique_ptr<Data> m_data;
-    };
-
-    std::optional<Checkpoint> checkpoint(std::span<const Resource> resources = {}) const;
-    /** Resolve every borrowed resource and allocate all buffers before mutation.
-     * The caller must prepare, preflight and commit synchronously, without native
-     * gameplay or resource teardown between them. No gameplay callbacks run. */
-    std::optional<Prepared> prepareRestore(const Checkpoint& state,
-                                           std::span<const Resource> resources = {}) const;
-    bool canCommit(const Prepared& state) const noexcept;
-    /** Allocation-free, single-use commit to the exact pool that prepared it.
-     * Clear and a successful commit invalidate that pool's other preparations. */
-    bool commitRestore(Prepared&& state) noexcept;
-    bool restore(const Checkpoint& state, std::span<const Resource> resources = {});
 
 private:
     /** `kind` as the shrinkers leave it: its harm halved while the swarm is shrunk. */
@@ -432,7 +357,6 @@ private:
     Simulation m_sim;
     u64 m_localEpoch = 1;
     std::shared_ptr<const u8> m_restoreOwner = std::make_shared<const u8>(0);
-    u64 m_restoreGeneration = 1;
 };
 
 } // namespace gdl::game

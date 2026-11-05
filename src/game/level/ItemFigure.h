@@ -90,43 +90,6 @@ public:
 
     static constexpr f32 kFloorLift = 0.1f;
 
-    /** Value state only. The caller supplies the already-loaded matching figure;
-     * packets cannot create a tree, texture bank, model, or particle template. */
-    struct Checkpoint {
-        AnimationPlayer::Checkpoint animation;
-        TreePose::Checkpoint pose;
-        std::optional<TreePose::Checkpoint> presentationPose;
-        TextureAnimator::Checkpoint textures;
-        TreeParticles::Checkpoint particles;
-        u32 poseSequence = 0;
-        f32 poseFrame = 0;
-        u64 poseGeneration = 0;
-        u32 continuity = 1;
-        Mat4 previousTransform{1};
-        f32 previousFrame = 0;
-        u64 previousGeneration = 0;
-        bool presentationCaptured = false;
-        bool presentationAdvanced = false;
-        u32 textureSequence = 0;
-        s32 textureFrame = 0;
-        bool gateParticles = false;
-        Vec3 position{0};
-        f32 yaw = 0;
-        Mat4 transform{1};
-        Mat4 placement{1};
-        s32 index = -1;
-        bool loop = false;
-        bool holdPose = false;
-        bool valid() const;
-        bool operator==(const Checkpoint&) const = default;
-    };
-    std::optional<Checkpoint> checkpoint() const;
-    /** Stages a complete independent CPU instance using this trusted prototype.
-     * Its archive/mesh/texture owners must remain loaded and immutable until both
-     * figures are released; clear/reload/release is not permitted meanwhile. No GPU work. */
-    std::unique_ptr<ItemFigure> restored(const Checkpoint& state) const;
-    bool restore(const Checkpoint& state);
-
     /** Stands the figure `name` of `items` (which must outlive it) where `instance` is, on
      * the floor the collision finds; false when the archive has no such figure, in which
      * case the item still has its place and its obstacle. Explicit texture lenders

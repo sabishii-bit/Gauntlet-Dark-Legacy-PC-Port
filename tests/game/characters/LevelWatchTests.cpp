@@ -46,4 +46,26 @@ TEST_CASE("a level watch reports each player's changes of level, and which cross
     REQUIRE_FALSE(watch.markOf(0).has_value());
 }
 
+TEST_CASE("level watches rewind by copy with their pending level changes",
+          "[game][players][rollback]") {
+    LevelWatch native;
+    REQUIRE_FALSE(native.observe(3, 9));
+    REQUIRE_FALSE(native.observe(0, 14));
+    const LevelWatch saved = native;
+    LevelWatch replay = saved;
+    CHECK(replay == saved);
+    const auto gained = replay.observe(3, 10);
+    REQUIRE(gained);
+    CHECK(gained->from == 9);
+    CHECK(gained->to == 10);
+    CHECK(gained->milestone());
+    CHECK_FALSE(replay.observe(3, 10));
+    replay = saved;
+    CHECK(replay == saved);
+    native.forget(3);
+    replay = native;
+    CHECK_FALSE(replay.markOf(3));
+    CHECK_FALSE(replay.observe(3, 10));
+}
+
 } // namespace

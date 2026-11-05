@@ -801,7 +801,6 @@ bool CombatantProjectiles::restoreLocal(const LocalSnapshot& state) {
         return false;
     }
     m_sim = state.m_state;
-    ++m_checkpointRevision;
     return true;
 }
 bool CombatantProjectiles::equalLocal(const LocalSnapshot& a, const LocalSnapshot& b) const {

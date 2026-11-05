@@ -15,7 +15,6 @@
 #include "TestSupport.h"
 #include "game/characters/CharacterProfile.h"
 #include "game/characters/Progression.h"
-#include "game/enemies/OpponentResources.h"
 #include "game/enemies/PlacedEnemies.h"
 #include "game/scenes/PlayScene.h"
 
@@ -88,12 +87,10 @@ TEST_CASE("native watchdog observes boss generators without a restore-domain cer
     // leaves the gameplay generator present; no checkpoint state is injected.
     REQUIRE(generators.placeBoss(fixture->device, info, noArt, fixture->scene.enemies(), kGruntKind,
                                  Mat4{1}, nullptr));
-    REQUIRE_FALSE(generators.checkpoint());
     const auto born = fixture->digest();
     CHECK(born != before);
     REQUIRE(generators.strike(index, 1, 0));
     CHECK(fixture->digest() != born);
-    REQUIRE_FALSE(generators.checkpoint()); // Restore admission is unchanged.
 }
 
 TEST_CASE("native watchdog covers stored player cooldowns and inactive saved classes",
@@ -122,7 +119,6 @@ TEST_CASE("native watchdog rejects unknown missile resources instead of omitting
     const auto before = fixture->digest();
     missiles.launch(EnemyMissileKind::arrow(), {0, 10, 0}, {0, 10, 30}, 1, &firstArt, 0);
     REQUIRE(missiles.count() == 1);
-    REQUIRE_FALSE(missiles.checkpoint(OpponentResources::missiles(fixture->scene.enemies())));
     CHECK_FALSE(fixture->scene.nativeAgreementDigest());
     // A legitimate art-free native flight is still hashable. Unregistered
     // non-null resources cannot be silently collapsed into that state.

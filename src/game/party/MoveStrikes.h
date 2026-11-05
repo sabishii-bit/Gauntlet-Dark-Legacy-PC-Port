@@ -1,7 +1,6 @@
 #pragma once
 
 #include <memory>
-#include <optional>
 #include <vector>
 
 #include "engine/core/Types.h"
@@ -73,35 +72,6 @@ public:
     bool appendNativeDigest(NativeStateDigest& digest) const;
     bool appendLocalDigest(NativeStateDigest& digest, const LocalSnapshot& saved) const;
 
-    struct Checkpoint {
-        static constexpr usize kMaxStrikes = 4096;
-        std::vector<Strike> strikes;
-        u32 next = 1;
-        bool valid() const;
-        bool operator==(const Checkpoint&) const = default;
-    };
-    class Prepared {
-    public:
-        Prepared(Prepared&&) noexcept = default;
-        Prepared& operator=(Prepared&&) noexcept = default;
-        Prepared(const Prepared&) = delete;
-        Prepared& operator=(const Prepared&) = delete;
-        ~Prepared() = default;
-
-    private:
-        friend class MoveStrikes;
-        Prepared() = default;
-        const MoveStrikes* m_owner = nullptr;
-        std::weak_ptr<const u8> m_lifetime;
-        u64 m_generation = 0;
-        Checkpoint m_state;
-    };
-    std::optional<Checkpoint> checkpoint() const;
-    std::optional<Prepared> prepareRestore(const Checkpoint& state) const;
-    bool canCommit(const Prepared& state) const noexcept;
-    bool commitRestore(Prepared&& state) noexcept;
-    bool restore(const Checkpoint& state);
-
     /** What a character's own harm is multiplied by when a strike's amount is negative. */
     static f32 damageOf(const MoveStrike& strike, f32 ownDamage);
     /** Where a strike starts: its offset from `position`, turned to `facing`. */
@@ -128,7 +98,6 @@ public:
 private:
     Simulation m_sim;
     std::shared_ptr<const u8> m_restoreOwner = std::make_shared<const u8>(0);
-    u64 m_restoreGeneration = 1;
     u64 m_localEpoch = 0;
 };
 

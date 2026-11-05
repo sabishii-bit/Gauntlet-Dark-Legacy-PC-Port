@@ -88,7 +88,6 @@ bool DestructibleWalls::restoreLocal(const LocalSnapshot& saved) {
         static_cast<WallState&>(wall) = saved.m_walls[index];
         showWhite(wall, wall.white);
     }
-    ++m_checkpointGeneration;
     return true;
 }
 

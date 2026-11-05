@@ -216,41 +216,23 @@ TEST_CASE("the mines' gears spin for ever and a bridge pad turns its turntable i
     CHECK(table.turned == finalAngle);
 }
 
-TEST_CASE("archived sequence-free pad figures restore rest poses and reject nonzero cursors",
-          "[rotators][item-figure-checkpoint]") {
+TEST_CASE("archived sequence-free pad figures rewind by copy and step as the original",
+          "[rotators][item-figure-local-rewind]") {
     const PadFixture fixture("rotators-checkpoint-static-tree");
     auto figure = *fixture.rotators.rotator(1).pad;
     REQUIRE(figure.presentation().tree);
     REQUIRE(figure.presentation().tree->sequences.empty());
-    const auto state = figure.checkpoint();
-    REQUIRE(state);
     REQUIRE(figure.hasFigure());
     REQUIRE(figure.presentation().archive != nullptr);
-    REQUIRE_FALSE(state->animation.playing);
-    auto restored = figure.restored(*state);
-    REQUIRE(restored);
-    CHECK(restored->checkpoint() == state);
+    REQUIRE(figure.finished()); // nothing plays on a tree without sequences
+    auto restored = figure;
+    CHECK(restored == figure);
     const auto uploads = fixture.device.texturesCreated;
     figure.capturePresentation();
-    restored->capturePresentation();
+    restored.capturePresentation();
     figure.update(1.0f / 60);
-    restored->update(1.0f / 60);
-    CHECK(restored->checkpoint() == figure.checkpoint());
-    for (const s32 mutation : {0, 1, 2, 3, 4, 5, 6}) {
-        auto invalid = *state;
-        switch (mutation) {
-        case 0: invalid.animation.sequence = 1; break;
-        case 1: invalid.animation.frame = 1; break;
-        case 2: invalid.animation.time = 1; break;
-        case 3: invalid.poseSequence = 1; break;
-        case 4: invalid.poseFrame = 1; break;
-        case 5: invalid.textureSequence = 1; break;
-        case 6: invalid.textureFrame = 1; break;
-        default: break;
-        }
-        REQUIRE(invalid.valid());
-        CHECK_FALSE(figure.restored(invalid));
-    }
+    restored.update(1.0f / 60);
+    CHECK(restored == figure);
     CHECK(fixture.device.texturesCreated == uploads);
 }
 

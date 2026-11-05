@@ -136,7 +136,6 @@ bool SafeRocks::restoreLocal(const LocalSnapshot& saved) {
         static_cast<RockState&>(*m_rocks[index]) = saved.m_rocks[index];
     }
     m_textures.restoreClock(saved.m_textures);
-    ++m_checkpointGeneration;
     return true;
 }
 

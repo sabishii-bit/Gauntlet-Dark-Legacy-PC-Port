@@ -6,18 +6,6 @@ find_package(VulkanMemoryAllocator CONFIG REQUIRED)
 include(Catch)
 add_subdirectory(expansions/audio)
 
-# Detailed state comparisons retain legacy capture/catalog codecs only in tests.
-# No production target links these snapshots or their compression dependency.
-find_package(lz4 CONFIG REQUIRED)
-add_library(game_diagnostics STATIC
-    game/party/PlayerMissilesCheckpoint.cpp
-    game/effects/EffectTreesCheckpoint.cpp
-    game/enemies/OpponentResources.cpp
-    game/enemies/CombatResources.cpp)
-target_include_directories(game_diagnostics PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(game_diagnostics PUBLIC gdl::game PRIVATE lz4::lz4)
-gdl_apply_compiler_options(game_diagnostics)
-
 add_executable(tests
     expansions/n64/level/LegendsUnlocksTests.cpp
     expansions/n64/level/LegendsPortalAppearanceTests.cpp
@@ -94,7 +82,6 @@ add_executable(tests
     game/party/PartyLightingTests.cpp
     game/level/ExitPortalsLocalRewindTests.cpp
     game/level/LevelTransportersLocalRewindTests.cpp
-    game/enemies/CombatResourcesTests.cpp
     game/level/ChestsLocalRewindTests.cpp
     game/level/ChestsTests.cpp
     game/level/LockedGatesLocalRewindTests.cpp
@@ -120,23 +107,20 @@ add_executable(tests
     game/enemies/EnemyFeedbackEmissionTests.cpp
     game/party/PartyDamageTests.cpp
     game/party/PlayerArsenalLocalRewindTests.cpp
-    game/party/MoveStrikesCheckpointTests.cpp
+    game/party/MoveStrikesLocalRewindTests.cpp
     game/rollback/EffectIdentityTests.cpp
     game/level/WorldMotionTests.cpp
     game/party/TurboEmissionTests.cpp
     game/party/TurboEffectResourcesTests.cpp
     game/party/MeleeGeometryTests.cpp
     game/players/MeleeSelectionTests.cpp
-    game/players/PlayerActorCheckpointTests.cpp
-    game/enemies/EnemyAnimatorCheckpointTests.cpp
-    game/enemies/EnemiesCheckpointTests.cpp
-    game/enemies/GeneratorsCheckpointTests.cpp
-    game/enemies/EnemyMissilesCheckpointTests.cpp
+    game/enemies/EnemyAnimatorLocalRewindTests.cpp
+    game/enemies/EnemiesLocalRewindTests.cpp
+    game/enemies/GeneratorsLocalRewindTests.cpp
+    game/enemies/EnemyMissilesLocalRewindTests.cpp
     game/enemies/PlacedEnemiesTests.cpp
-    game/critters/CritterStatuesCheckpointTests.cpp
+    game/critters/CritterStatuesLocalRewindTests.cpp
     game/enemies/OpponentSimulationTests.cpp
-    game/enemies/OpponentResourcesTests.cpp
-    game/enemies/CombatProgressCheckpointTests.cpp
     game/netplay/MatchSessionTests.cpp
     game/netplay/ShopSyncTests.cpp
     game/online/OnlineCompletionTests.cpp
@@ -314,8 +298,8 @@ add_executable(tests
     game/tower/SumnerFigureTests.cpp
     game/tower/SumnerHintsTests.cpp
     game/party/PlayerMissilesTests.cpp
-    game/party/PlayerMissilesCheckpointTests.cpp
-    game/effects/EffectTreesPoolCheckpointTests.cpp
+    game/party/PlayerMissilesLocalRewindTests.cpp
+    game/effects/EffectTreesPoolLocalRewindTests.cpp
     game/effects/EffectTreesLocalRewindTests.cpp
     game/level/ItemFigureLocalRewindTests.cpp
     game/party/TargetAssistTests.cpp
@@ -549,7 +533,7 @@ add_executable(tests
     game/party/MoveStrikesTests.cpp
     game/hud/HelpMessagesTests.cpp
     game/level/LevelTriggersTests.cpp
-    game/level/LevelTriggersCheckpointTests.cpp
+    game/level/LevelTriggersLocalRewindTests.cpp
     game/level/HazardSurfacesTests.cpp
     game/level/RotatorsTests.cpp
     game/camera/TowerCameraTests.cpp
@@ -622,7 +606,7 @@ add_executable(tests
     game/widgets/BurnDialogueScrollTests.cpp
     engine/assets/StringTableTests.cpp)
 
-target_link_libraries(tests PRIVATE game_diagnostics gdl::engine gdl::formats gdl::game Catch2::Catch2WithMain SDL3::SDL3)
+target_link_libraries(tests PRIVATE gdl::engine gdl::formats gdl::game Catch2::Catch2WithMain SDL3::SDL3)
 # Each mod's tests sit in tests/mods/<folder> and join the suite with the mod itself.
 file(GLOB GDL_MOD_TESTS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/mods/*/*.cpp")
 target_sources(tests PRIVATE ${GDL_MOD_TESTS})
@@ -639,7 +623,7 @@ add_executable(gameplayregressions
     game/scenes/PlaySceneSwitchTests.cpp game/level/TriggerCuesTests.cpp
     engine/world/WorldAnimatorTests.cpp
     fixtures/NativeModelFixture.cpp fixtures/ReferenceObj.cpp fixtures/NativeSoundBank.cpp)
-target_link_libraries(gameplayregressions PRIVATE game_diagnostics gdl::game Catch2::Catch2WithMain)
+target_link_libraries(gameplayregressions PRIVATE gdl::game Catch2::Catch2WithMain)
 target_include_directories(gameplayregressions PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_definitions(gameplayregressions PRIVATE
     GDL_TEST_ASSET_DIR="${GDL_ASSET_DIR}" GDL_TEST_UNPACKED_DIR="${GDL_UNPACKED_DIR}"
@@ -698,7 +682,6 @@ if(GDL_ENABLE_NETPLAY)
         game/critters/CombatantProjectilesLocalRewindTests.cpp
         game/level/ExitPortalsLocalRewindTests.cpp
         game/level/LevelTransportersLocalRewindTests.cpp
-        game/enemies/CombatResourcesTests.cpp
         game/level/ChestsLocalRewindTests.cpp
         game/level/LockedGatesLocalRewindTests.cpp
         game/level/BreakablesLocalRewindTests.cpp
@@ -720,11 +703,11 @@ if(GDL_ENABLE_NETPLAY)
         engine/world/ParticleFieldTests.cpp
         game/level/WorldDestructionLocalRewindTests.cpp
         game/enemies/EnemyFeedbackEmissionTests.cpp
-        game/level/LevelTriggersCheckpointTests.cpp
+        game/level/LevelTriggersLocalRewindTests.cpp
         game/party/PartyDamageTests.cpp
         game/hud/HelpMessagesTests.cpp
         game/party/PlayerArsenalLocalRewindTests.cpp
-        game/party/MoveStrikesCheckpointTests.cpp
+        game/party/MoveStrikesLocalRewindTests.cpp
         game/rollback/EffectIdentityTests.cpp
         engine/world/ParticleCheckpointTests.cpp
         game/effects/EffectCheckpointTests.cpp
@@ -732,22 +715,19 @@ if(GDL_ENABLE_NETPLAY)
         game/party/TurboEmissionTests.cpp
         game/party/TurboEffectResourcesTests.cpp
         game/party/PlayerMissilesTests.cpp
-        game/party/PlayerMissilesCheckpointTests.cpp
-        game/effects/EffectTreesPoolCheckpointTests.cpp
+        game/party/PlayerMissilesLocalRewindTests.cpp
+        game/effects/EffectTreesPoolLocalRewindTests.cpp
         game/party/MeleeGeometryTests.cpp
         game/players/KnockbackTests.cpp
-        game/players/PlayerActorCheckpointTests.cpp
-        game/enemies/EnemyAnimatorCheckpointTests.cpp
-        game/enemies/EnemiesCheckpointTests.cpp
+        game/enemies/EnemyAnimatorLocalRewindTests.cpp
+        game/enemies/EnemiesLocalRewindTests.cpp
         engine/math/Mt19937Tests.cpp
         engine/world/AmbientDimmerTests.cpp
-        game/enemies/GeneratorsCheckpointTests.cpp
-        game/enemies/EnemyMissilesCheckpointTests.cpp
+        game/enemies/GeneratorsLocalRewindTests.cpp
+        game/enemies/EnemyMissilesLocalRewindTests.cpp
         game/enemies/PlacedEnemiesTests.cpp
-        game/critters/CritterStatuesCheckpointTests.cpp
+        game/critters/CritterStatuesLocalRewindTests.cpp
         game/enemies/OpponentSimulationTests.cpp
-        game/enemies/OpponentResourcesTests.cpp
-        game/enemies/CombatProgressCheckpointTests.cpp
         game/enemies/LevelOpponentsTests.cpp
         game/enemies/LevelOpponentsDeathTests.cpp
         game/enemies/EnemyMissilesTests.cpp
@@ -769,7 +749,7 @@ if(GDL_ENABLE_NETPLAY)
         game/party/FloorRidingTests.cpp
         game/party/PlayerAttacksTests.cpp game/enemies/EnemiesTests.cpp
         fixtures/NativeModelFixture.cpp fixtures/ReferenceObj.cpp fixtures/NativeSoundBank.cpp)
-    target_link_libraries(netplayplaytests PRIVATE game_diagnostics gdl::game Catch2::Catch2WithMain)
+    target_link_libraries(netplayplaytests PRIVATE gdl::game Catch2::Catch2WithMain)
     target_include_directories(netplayplaytests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     target_compile_definitions(netplayplaytests PRIVATE
         GDL_TEST_ASSET_DIR="${GDL_ASSET_DIR}"
@@ -781,7 +761,7 @@ if(GDL_ENABLE_NETPLAY)
     set_target_properties(netplayplaytests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/bin>")
     # Actual gameplay, independent-process determinism observations; no replicas.
     add_executable(nativeprobe game/rollback/NativeSimulationProbe.cpp game/rollback/NativeProbeLink.cpp)
-    target_link_libraries(nativeprobe PRIVATE game_diagnostics gdl::game gdl::mods gdl::engine_net)
+    target_link_libraries(nativeprobe PRIVATE gdl::game gdl::mods gdl::engine_net)
     target_include_directories(nativeprobe PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     target_compile_definitions(nativeprobe PRIVATE
         GDL_TEST_ASSET_DIR="${GDL_ASSET_DIR}" GDL_TEST_DATA_DIR="${GDL_DATA_DIR}")
@@ -842,11 +822,11 @@ if(GDL_ENABLE_NETPLAY)
         game/audio/SceneSoundEventsTests.cpp
         game/level/TriggerCuesTests.cpp
         game/party/PlayerAttacksLocalRewindTests.cpp
-        game/party/MoveStrikesCheckpointTests.cpp
+        game/party/MoveStrikesLocalRewindTests.cpp
         game/enemies/LevelOpponentsLocalRewindTests.cpp
-        game/enemies/EnemyMissilesCheckpointTests.cpp
+        game/enemies/EnemyMissilesLocalRewindTests.cpp
         game/enemies/PlacedEnemiesTests.cpp
-        game/critters/CritterStatuesCheckpointTests.cpp
+        game/critters/CritterStatuesLocalRewindTests.cpp
         game/hud/BossMeterTests.cpp
         game/level/ExitPortalsLocalRewindTests.cpp
         game/level/LevelTransportersLocalRewindTests.cpp
@@ -867,11 +847,11 @@ if(GDL_ENABLE_NETPLAY)
         engine/world/WorldLocalRewindTests.cpp
         game/level/PlacedItemsLocalRewindTests.cpp game/level/PlacedItemsTests.cpp
         game/level/SafeRocksLocalRewindTests.cpp game/level/RubbleLocalRewindTests.cpp
-        game/level/LevelTriggersCheckpointTests.cpp
+        game/level/LevelTriggersLocalRewindTests.cpp
         game/level/LevelWorldLocalRewindTests.cpp game/level/LevelFixturesLocalRewindTests.cpp
         game/level/FallingSceneryLocalRewindTests.cpp game/level/DestructibleWallsLocalRewindTests.cpp
         game/level/WorldDestructionLocalRewindTests.cpp game/level/SkorneArenaTests.cpp
-        game/enemies/GeneratorsTests.cpp game/enemies/GeneratorsCheckpointTests.cpp
+        game/enemies/GeneratorsTests.cpp game/enemies/GeneratorsLocalRewindTests.cpp
         game/critters/CombatantLocalRewindTests.cpp
         game/critters/CrittersLocalRewindTests.cpp
         game/bosses/BossLocalRewindTests.cpp
@@ -883,8 +863,8 @@ if(GDL_ENABLE_NETPLAY)
         game/level/BreakablesLocalRewindTests.cpp game/level/TrapsLocalRewindTests.cpp
         game/level/StaticSceneryLocalRewindTests.cpp
         game/level/RotatorsLocalRewindTests.cpp
-        game/effects/EffectTreesPoolCheckpointTests.cpp game/effects/EffectCheckpointTests.cpp
-        game/party/PlayerMissilesTests.cpp game/party/PlayerMissilesCheckpointTests.cpp
+        game/effects/EffectTreesPoolLocalRewindTests.cpp game/effects/EffectCheckpointTests.cpp
+        game/party/PlayerMissilesTests.cpp game/party/PlayerMissilesLocalRewindTests.cpp
         game/critters/CombatantProjectilesTests.cpp game/critters/CombatantProjectilesLocalRewindTests.cpp
         game/tower/TowerRelicsTests.cpp
         game/camera/TowerCameraTests.cpp game/camera/TowerCameraLocalRewindTests.cpp
@@ -899,9 +879,8 @@ if(GDL_ENABLE_NETPLAY)
         game/party/PlayerRuntimeLocalRewindTests.cpp
         game/party/PlayerCompanionLocalRewindTests.cpp game/party/PlayerFigureTests.cpp
         game/party/PartyMotionTests.cpp game/party/PartyFiguresTests.cpp
-        game/players/PlayerActorCheckpointTests.cpp
         game/rollback/NativeProbeTimingTests.cpp
-        game/enemies/EnemiesCheckpointTests.cpp engine/world/TextureAnimatorTests.cpp
+        game/enemies/EnemiesLocalRewindTests.cpp engine/world/TextureAnimatorTests.cpp
         game/scenes/NativePresentationReadinessTests.cpp
         engine/app/ApplicationTimingTests.cpp
         game/rollback/ConsoleActionTests.cpp game/rollback/SharedConsoleWordsTests.cpp
@@ -924,7 +903,7 @@ if(GDL_ENABLE_NETPLAY)
         game/bosses/BossSequenceTests.cpp fixtures/NativeSoundBank.cpp fixtures/NativeModelFixture.cpp
         fixtures/ReferenceObj.cpp game/party/PlayerAttacksTests.cpp game/party/PartyPickupsTests.cpp
         game/scenes/PlaySceneTests.cpp engine/math/Mt19937Tests.cpp)
-    target_link_libraries(simulationtests PRIVATE game_diagnostics gdl::game Catch2::Catch2WithMain)
+    target_link_libraries(simulationtests PRIVATE gdl::game Catch2::Catch2WithMain)
     target_include_directories(simulationtests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     target_compile_definitions(simulationtests PRIVATE
         GDL_TEST_ASSET_DIR="${GDL_ASSET_DIR}" GDL_TEST_DATA_DIR="${GDL_DATA_DIR}")

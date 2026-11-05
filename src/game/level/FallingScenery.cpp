@@ -103,7 +103,6 @@ bool FallingScenery::restoreLocal(const LocalSnapshot& saved) {
         static_cast<PieceState&>(m_pieces[index]) = saved.m_pieces[index];
     }
     m_clock = saved.m_clock;
-    ++m_checkpointGeneration;
     return true;
 }
 

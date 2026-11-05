@@ -70,6 +70,20 @@ bool holds(const PlacedEnemies& owner, const PlacedEnemies::LocalSnapshot& saved
     return owner.equalLocal(now, saved);
 }
 
+/** Whether the swarm's values now equal `saved`. */
+bool holds(const Enemies& enemies, const Enemies::LocalSnapshot& saved) {
+    const auto now = std::make_unique<Enemies::LocalSnapshot>();
+    REQUIRE(enemies.saveLocal(*now));
+    return enemies.equalLocal(*now, saved);
+}
+
+/** The swarm's values now. */
+std::unique_ptr<Enemies::LocalSnapshot> snapshotOf(const Enemies& enemies) {
+    auto result = std::make_unique<Enemies::LocalSnapshot>();
+    REQUIRE(enemies.saveLocal(*result));
+    return result;
+}
+
 TEST_CASE("placed enemy checkpoint retains complete metadata and ordered native activation",
           "[rollback][placed-enemies]") {
     auto varied = placement({0, 0, 10});
@@ -254,8 +268,7 @@ TEST_CASE("placed native births preserve pool replacement failure queues and RNG
     REQUIRE(enemies.spawn(existing.spawn, {}));
     ViewVolume view;
     enemies.setView(view);
-    const auto baseline = enemies.checkpoint();
-    REQUIRE(baseline);
+    const auto baseline = snapshotOf(enemies);
     const auto uploads = device.texturesCreated;
     auto first = placement({0, 0, 10});
     first.spawn.algorithm = kWanderWay;
@@ -274,37 +287,35 @@ TEST_CASE("placed native births preserve pool replacement failure queues and RNG
     originalPhase(native, observation, {}, [&](const auto& record) {
         expectedSlots.push_back(enemies.spawn(record.spawn, {}));
     });
-    const auto expected = enemies.checkpoint();
-    REQUIRE(expected);
+    const auto expected = snapshotOf(enemies);
     if (watched) {
         REQUIRE(expectedSlots.size() == 2);
         CHECK(expectedSlots[0].has_value());
         CHECK(expectedSlots[1].has_value());
-        CHECK(expected->nextInstance > baseline->nextInstance);
-        CHECK(expected->random != baseline->random);
-        CHECK(expected->generatorEvents.size() > baseline->generatorEvents.size());
+        // The births drew identities and random numbers and queued generator events.
+        CHECK_FALSE(enemies.equalLocal(*expected, *baseline));
     } else {
         REQUIRE(expectedSlots.size() == 3);
         CHECK(
             std::ranges::none_of(expectedSlots, [](const auto& slot) { return slot.has_value(); }));
-        CHECK(expected == baseline);
+        CHECK(enemies.equalLocal(*expected, *baseline));
     }
-    REQUIRE(enemies.restore(*baseline));
+    REQUIRE(enemies.restoreLocal(*baseline));
     std::vector<std::optional<s32>> actualSlots;
     owner.activate(
         [&](const auto& record) { actualSlots.push_back(enemies.spawn(record.spawn, {})); });
     CHECK(actualSlots == expectedSlots);
-    CHECK(enemies.checkpoint() == expected);
+    CHECK(holds(enemies, *expected));
     CHECK(pendingRecords(owner) == native);
     PlacedEnemies::LocalSnapshot placementsAfter;
     owner.saveLocal(placementsAfter);
     // Delayed correction restores both owners; placement restore itself never
     // spawns or consumes the native random engine.
-    REQUIRE(enemies.restore(*baseline));
+    REQUIRE(enemies.restoreLocal(*baseline));
     REQUIRE(owner.restoreLocal(placementsBefore));
-    CHECK(enemies.checkpoint() == baseline);
+    CHECK(holds(enemies, *baseline));
     owner.activate([&](const auto& record) { enemies.spawn(record.spawn, {}); });
-    CHECK(enemies.checkpoint() == expected);
+    CHECK(holds(enemies, *expected));
     CHECK(holds(owner, placementsAfter));
     CHECK(device.texturesCreated == uploads);
 }
@@ -334,8 +345,7 @@ TEST_CASE("real G1 retains and restores its complete native pending placement ro
     placements.saveLocal(initial);
     const auto roster = rosterOf(placements);
     const auto pending = pendingIndices(placements);
-    const auto enemyBefore = opponents.enemies().checkpoint();
-    REQUIRE(enemyBefore);
+    const auto enemyBefore = snapshotOf(opponents.enemies());
     REQUIRE_FALSE(pending.empty());
     ViewVolume overhead;
     overhead.forward = {0, -1, 0};
@@ -361,15 +371,14 @@ TEST_CASE("real G1 retains and restores its complete native pending placement ro
     opponents.watch(overhead, *spot);
     PlacedEnemies::LocalSnapshot expected;
     placements.saveLocal(expected);
-    const auto enemyAfter = opponents.enemies().checkpoint();
-    REQUIRE(enemyAfter);
+    const auto enemyAfter = snapshotOf(opponents.enemies());
     CHECK(placements.pending().size() < pending.size());
     CHECK(rosterOf(placements) == roster);
     REQUIRE(placements.restoreLocal(initial));
-    REQUIRE(opponents.enemies().restore(*enemyBefore));
+    REQUIRE(opponents.enemies().restoreLocal(*enemyBefore));
     opponents.watch(overhead, *spot);
     CHECK(holds(placements, expected));
-    CHECK(opponents.enemies().checkpoint() == enemyAfter);
+    CHECK(holds(opponents.enemies(), *enemyAfter));
     CHECK(device.texturesCreated == uploads);
 }
 
@@ -382,12 +391,11 @@ TEST_CASE("native placed activation resumes the same enemy simulation after a de
     enemies.open(device, root, nullptr, 2, {}, 514);
     REQUIRE(enemies.loadKind(kGruntKind));
     enemies.setContactGridBounds({-100, -10, -100}, {100, 20, 100});
-    const auto initial = enemies.checkpoint();
-    REQUIRE(initial);
+    const auto initial = snapshotOf(enemies);
     const std::vector roster{placement({-40, 0, 12}), placement({0, 0, 12}),
                              placement({40, 0, 12})};
     auto pending = roster;
-    std::vector<Enemies::Checkpoint> forward;
+    std::vector<Enemies::LocalSnapshot> forward(54);
     std::vector<std::vector<PlacedEnemies::Placement>> waiting;
     const auto uploads = device.texturesCreated;
     const auto observation = [](s32 tick) {
@@ -406,15 +414,14 @@ TEST_CASE("native placed activation resumes the same enemy simulation after a de
         originalPhase(pending, view, view.position,
                       [&](const auto& record) { enemies.spawn(record.spawn, {}); });
         advance(view);
-        const auto state = enemies.checkpoint();
-        REQUIRE(state);
-        forward.push_back(*state);
+        REQUIRE(enemies.saveLocal(forward[static_cast<usize>(tick)]));
         waiting.push_back(pending);
     }
     REQUIRE(pending.empty());
-    CHECK(forward.back().nextInstance == 4);
-    CHECK(forward.back().random != initial->random);
-    REQUIRE(enemies.restore(*initial));
+    // The third birth holds the third identity the pool gave.
+    CHECK(std::max(enemies.instanceOf(0), enemies.instanceOf(1)) == 3U);
+    CHECK_FALSE(enemies.equalLocal(forward.back(), *initial));
+    REQUIRE(enemies.restoreLocal(*initial));
     PlacedEnemies owner;
     owner.bind(roster);
     PlacedEnemies::LocalSnapshot delayed;
@@ -426,7 +433,7 @@ TEST_CASE("native placed activation resumes the same enemy simulation after a de
         owner.observe(view, view.position);
         owner.activate([&](const auto& record) { enemies.spawn(record.spawn, {}); });
         advance(view);
-        CHECK(enemies.checkpoint() == forward[static_cast<usize>(tick)]);
+        CHECK(holds(enemies, forward[static_cast<usize>(tick)]));
         CHECK(pendingRecords(owner) == waiting[static_cast<usize>(tick)]);
         if (tick == 17) {
             owner.saveLocal(delayed);
@@ -435,7 +442,7 @@ TEST_CASE("native placed activation resumes the same enemy simulation after a de
     }
     REQUIRE(delayedSaved);
     REQUIRE(owner.restoreLocal(delayed));
-    REQUIRE(enemies.restore(forward[17]));
+    REQUIRE(enemies.restoreLocal(forward[17]));
     for (s32 tick = 18; tick < 54; ++tick) {
         CAPTURE(tick);
         const auto view = observation(tick);
@@ -443,7 +450,7 @@ TEST_CASE("native placed activation resumes the same enemy simulation after a de
         owner.observe(view, view.position);
         owner.activate([&](const auto& record) { enemies.spawn(record.spawn, {}); });
         advance(view);
-        CHECK(enemies.checkpoint() == forward[static_cast<usize>(tick)]);
+        CHECK(holds(enemies, forward[static_cast<usize>(tick)]));
         CHECK(pendingRecords(owner) == waiting[static_cast<usize>(tick)]);
     }
     CHECK(device.texturesCreated == uploads);

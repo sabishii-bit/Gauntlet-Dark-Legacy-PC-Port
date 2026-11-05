@@ -6,30 +6,6 @@
 
 namespace gdl::game {
 
-bool LevelWatch::Checkpoint::valid() const {
-    if (marks.size() > 4) {
-        return false;
-    }
-    u32 seen = 0;
-    for (const auto& mark : marks) {
-        if (mark.player < 0 || mark.player >= 4 || mark.level < 1 || mark.level > 99 ||
-            (seen & (1U << mark.player)) != 0) {
-            return false;
-        }
-        seen |= 1U << mark.player;
-    }
-    return true;
-}
-
-bool LevelWatch::restore(const Checkpoint& state) {
-    if (!state.valid()) {
-        return false;
-    }
-    auto marks = state.marks;
-    m_marks.swap(marks);
-    return true;
-}
-
 std::optional<LevelChange> LevelWatch::observe(s32 player, s32 level) {
     const auto mark = std::ranges::find(m_marks, player, &Mark::player);
     if (mark == m_marks.end()) {

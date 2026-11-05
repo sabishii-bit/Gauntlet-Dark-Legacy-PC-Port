@@ -1,7 +1,6 @@
 #include "game/party/PowerupCompanion.h"
 
 #include <algorithm>
-#include <cmath>
 
 #include "engine/core/Types.h"
 #include "engine/io/NativeStateDigest.h"
@@ -224,7 +223,6 @@ bool PowerupCompanion::restoreLocal(const LocalSnapshot& state) {
         return false;
     }
     m_state = state.m_state;
-    ++m_bindingRevision; // invalidate legacy prepared restores from the abandoned branch
     return true;
 }
 
@@ -356,67 +354,11 @@ void PowerupCompanion::draw(RenderDevice& device, const Mat4& clip, const Mat4& 
 }
 
 void PowerupCompanion::clear() {
-    ++m_bindingRevision;
     m_state.kind = Kind::None;
     m_state.resource = nullptr;
     m_state.player.stop();
     m_state.textures = {};
     m_state.presentationAdvanced = false;
-}
-
-bool PowerupCompanion::Checkpoint::valid() const {
-    return kind >= Kind::None && kind <= Kind::Wings &&
-           tree.size() <= TreePose::Checkpoint::kMaxName && tree.find('\0') == std::string::npos &&
-           animation.valid() && textures.valid() && (!pose || pose->valid()) &&
-           std::isfinite(previousFrame) && previousFrame >= 0 &&
-           previousFrame <= AnimationPlayer::kCheckpointFrames &&
-           previousGeneration <= animation.generation && tree.empty() != animation.playing &&
-           (tree.empty() ||
-            (kind != Kind::None && tree == treeOf(kind) && pose && pose->tree == tree));
-}
-std::optional<PowerupCompanion::Checkpoint> PowerupCompanion::checkpoint() const {
-    Checkpoint state{m_state.kind,
-                     tree() ? tree()->name : std::string{},
-                     m_state.player.checkpoint(),
-                     m_state.textures,
-                     m_state.pose.checkpoint(),
-                     m_state.previousFrame,
-                     m_state.previousGeneration,
-                     m_state.presentationAdvanced};
-    if ((m_state.pose.posed() && !state.pose) || !state.valid()) {
-        return std::nullopt;
-    }
-    return state;
-}
-bool PowerupCompanion::restore(const Checkpoint& state) {
-    const auto* currentTree = tree();
-    if (!state.valid() || state.kind != m_state.kind ||
-        state.tree != (currentTree ? currentTree->name : std::string{}) ||
-        (state.pose && m_state.poseTree == nullptr)) {
-        return false;
-    }
-    const TreeSequenceInfo* sequence = nullptr;
-    if (state.animation.playing) {
-        if (!currentTree || state.animation.sequence >= currentTree->sequences.size()) {
-            return false;
-        }
-        sequence = &currentTree->sequences[state.animation.sequence];
-    }
-    auto next = m_state;
-    if (!next.player.restore(state.animation, sequence) ||
-        (state.pose && !next.pose.restore(*m_state.poseTree, *state.pose))) {
-        return false;
-    }
-    if (!state.pose) {
-        next.pose = {};
-        next.poseTree = nullptr;
-    }
-    next.textures = state.textures;
-    m_state = std::move(next);
-    m_state.previousFrame = state.previousFrame;
-    m_state.previousGeneration = state.previousGeneration;
-    m_state.presentationAdvanced = state.presentationAdvanced;
-    return true;
 }
 
 } // namespace gdl::game

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <memory>
-#include <string>
 #include <string_view>
 
 #include "engine/assets/ItemArchive.h"
@@ -44,24 +43,6 @@ public:
     /** Actual captured values and immutable binding, never a draw-sampled clock. */
     bool appendNativeDigest(NativeStateDigest& digest) const;
     bool appendLocalDigest(NativeStateDigest& digest, const LocalSnapshot& saved) const;
-    struct Checkpoint {
-        s32 tier = 0;
-        std::string tree;
-        Vec3 offset{0};
-        AnimationPlayer::Checkpoint animation;
-        TextureAnimator::Checkpoint textures;
-        std::optional<TreePose::Checkpoint> pose;
-        std::optional<TreePose::Checkpoint> previousPose;
-        u64 previousGeneration = 0;
-        f32 previousFrame = 0;
-        bool presentationAdvanced = false;
-        bool valid() const;
-        bool operator==(const Checkpoint&) const = default;
-    };
-    std::optional<Checkpoint> checkpoint() const;
-    /** Atomic CPU-only restore against this familiar's existing immutable bindings. */
-    bool restore(const Checkpoint& state);
-    u64 bindingRevision() const { return m_bindingRevision; }
     static s32 tierFor(s32 level) {
         if (level >= 80) {
             return 2;

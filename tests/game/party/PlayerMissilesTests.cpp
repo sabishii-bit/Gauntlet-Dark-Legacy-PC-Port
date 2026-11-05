@@ -60,10 +60,10 @@ TEST_CASE("native flight retains a value copy of its immutable release provenanc
     launch.release.reset();
     REQUIRE(pool.missile(0).release == expected);
     pool.update(kStep, nullptr);
-    const auto flight = PlayerMissiles::flightCheckpoint(pool.missile(0));
-    const u64 instance = pool.missile(0).instance;
+    PlayerMissiles::LocalSnapshot saved;
+    pool.saveLocal(saved);
     pool.update(kStep, nullptr);
-    REQUIRE(pool.restoreFlight(instance, flight));
+    REQUIRE(pool.restoreLocal(saved));
     CHECK(pool.missile(0).release == expected);
     REQUIRE(pool.launch(launch));
     CHECK_FALSE(pool.missile(1).release);
@@ -116,7 +116,7 @@ TEST_CASE("native projectile particle history preserves birth and the exact stop
     CHECK(pool.visualHistory().empty());
 }
 
-TEST_CASE("particle flight history rejects unsafe clocks and private corrections preserve birth",
+TEST_CASE("particle flight history rejects unsafe clocks and replayed flights preserve birth",
           "[game][missiles][particle-flight][elemental-prediction]") {
     const PlayerMissiles::ParticleFlight state;
     REQUIRE(state.valid());
@@ -142,18 +142,14 @@ TEST_CASE("particle flight history rejects unsafe clocks and private corrections
     launch.position = {0, 8, 0};
     REQUIRE(pool.launch(launch));
     pool.update(kStep, nullptr);
-    const auto history = pool.visualHistory().front().flight;
-    const auto checkpoint = PlayerMissiles::flightCheckpoint(pool.missile(0));
     PlayerMissiles replay;
     REQUIRE(replay.launch(launch));
-    const auto instance = replay.missile(0).instance;
-    REQUIRE(replay.restoreFlight(instance, checkpoint));
-    REQUIRE(replay.restoreVisualFlight(instance, history));
+    replay.update(kStep, nullptr);
+    CHECK(replay.visualHistory().front().flight == pool.visualHistory().front().flight);
     pool.update(kStep, nullptr);
     replay.update(kStep, nullptr);
     CHECK(replay.visualHistory().front().flight == pool.visualHistory().front().flight);
     CHECK(replay.visualHistory().front().placement == pool.visualHistory().front().placement);
-    CHECK_FALSE(replay.restoreVisualFlight(instance, invalid));
     replay.update(kStep * 2, nullptr);
     CHECK(replay.visualHistory().empty());
     CHECK(replay.count() == 1);
@@ -313,7 +309,7 @@ TEST_CASE("cursor volley height correction preserves muzzle yaw and every spread
     }
 }
 
-TEST_CASE("ordinary flight checkpoints rewind and replay every native class exactly",
+TEST_CASE("ordinary flights rewind and replay every native class exactly",
           "[game][missiles][weapon-replay]") {
     for (s32 character = 0; character <= 16; ++character) {
         for (const f32 scale : {1.0f, 2.0f}) {
@@ -335,39 +331,35 @@ TEST_CASE("ordinary flight checkpoints rewind and replay every native class exac
                 }
                 const auto checkpoint = PlayerMissiles::flightCheckpoint(live.missile(0));
                 REQUIRE(checkpoint.valid());
+                PlayerMissiles::LocalSnapshot saved;
+                live.saveLocal(saved);
                 std::vector<PlayerMissiles::FlightCheckpoint> expected;
                 for (s32 tick = 0; tick < 24; ++tick) {
                     live.update(seconds, nullptr);
                     expected.push_back(PlayerMissiles::flightCheckpoint(live.missile(0)));
                 }
-                PlayerMissiles replay;
-                REQUIRE(replay.launch(launch));
-                const u64 instance = replay.missile(0).instance;
                 for (s32 correction = 0; correction < 3; ++correction) {
-                    REQUIRE(replay.restoreFlight(instance, checkpoint));
-                    CHECK(PlayerMissiles::flightCheckpoint(replay.missile(0)) == checkpoint);
-                    CHECK_FALSE(replay.missile(0).presentationCaptured);
+                    REQUIRE(live.restoreLocal(saved));
+                    CHECK(PlayerMissiles::flightCheckpoint(live.missile(0)) == checkpoint);
                     for (const auto& step : expected) {
-                        replay.update(seconds, nullptr);
-                        REQUIRE(replay.count() == 1);
-                        CHECK(PlayerMissiles::flightCheckpoint(replay.missile(0)) == step);
+                        live.update(seconds, nullptr);
+                        REQUIRE(live.count() == 1);
+                        CHECK(PlayerMissiles::flightCheckpoint(live.missile(0)) == step);
                     }
-                    CHECK(replay.visuals().count() == 0);
-                    CHECK(replay.takeImpacts().empty());
+                    CHECK(live.visuals().count() == 0);
+                    CHECK(live.takeImpacts().empty());
                 }
             }
         }
     }
 }
 
-TEST_CASE("flight restore rejects malformed or stateful shots without changing the pool",
-          "[game][missiles][weapon-replay]") {
+TEST_CASE("flight checkpoints reject malformed motion values", "[game][missiles][weapon-replay]") {
     PlayerMissiles missiles;
     auto launch = PlayerMissiles::weaponLaunches({}).front();
     REQUIRE(missiles.launch(launch));
     missiles.update(kStep, nullptr);
     const auto baseline = PlayerMissiles::flightCheckpoint(missiles.missile(0));
-    const u64 instance = missiles.missile(0).instance;
     std::vector<PlayerMissiles::FlightCheckpoint> invalid;
     auto value = baseline;
     value.position.x = std::numeric_limits<f32>::quiet_NaN();
@@ -399,29 +391,8 @@ TEST_CASE("flight restore rejects malformed or stateful shots without changing t
     invalid.push_back(value);
     for (const auto& checkpoint : invalid) {
         CHECK_FALSE(checkpoint.valid());
-        CHECK_FALSE(missiles.restoreFlight(instance, checkpoint));
-        CHECK(PlayerMissiles::flightCheckpoint(missiles.missile(0)) == baseline);
     }
-    CHECK_FALSE(missiles.restoreFlight(instance + 1, baseline));
-    for (const auto mode : {MultiplayerMode::Stun, MultiplayerMode::Hurt}) {
-        launch.multiplayer = mode;
-        REQUIRE(missiles.launch(launch));
-        CHECK_FALSE(
-            missiles.restoreFlight(missiles.missile(missiles.count() - 1).instance, baseline));
-    }
-    launch.multiplayer = MultiplayerMode::Normal;
-    launch.flags = 4;
-    REQUIRE(missiles.launch(launch));
-    CHECK_FALSE(missiles.restoreFlight(missiles.missile(missiles.count() - 1).instance, baseline));
-    launch.flags = 0;
-    launch.potion = 1;
-    REQUIRE(missiles.launch(launch));
-    CHECK_FALSE(missiles.restoreFlight(missiles.missile(missiles.count() - 1).instance, baseline));
-    test::FakeRenderDevice device;
-    missiles.bindVisuals(device);
-    launch.potion = 0;
-    REQUIRE(missiles.launch(launch));
-    CHECK_FALSE(missiles.restoreFlight(missiles.missile(0).instance, baseline));
+    CHECK(baseline.valid());
 }
 
 TEST_CASE("replayed plain weapons retire at the native wall contact and expiration",
@@ -442,9 +413,10 @@ TEST_CASE("replayed plain weapons retire at the native wall contact and expirati
         PlayerMissiles replay;
         REQUIRE(live.launch(launch));
         live.update(kStep, &collision);
-        const auto checkpoint = PlayerMissiles::flightCheckpoint(live.missile(0));
         REQUIRE(replay.launch(launch));
-        REQUIRE(replay.restoreFlight(replay.missile(0).instance, checkpoint));
+        replay.update(kStep, &collision);
+        REQUIRE(PlayerMissiles::flightCheckpoint(replay.missile(0)) ==
+                PlayerMissiles::flightCheckpoint(live.missile(0)));
         for (s32 tick = 0; tick < 240 && live.count() > 0; ++tick) {
             const auto* world = withWall ? &collision : nullptr;
             live.update(kStep, world);

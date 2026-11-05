@@ -1,4 +1,3 @@
-#include <array>
 #include <optional>
 #include <vector>
 
@@ -94,24 +93,44 @@ TEST_CASE("arsenal rewind includes live native potion flights queues and child i
     fixture.arsenal.throwPotion(actor, 18, 49);
     auto& missiles = fixture.arsenal.missiles();
     REQUIRE(missiles.count() == 1);
-    const auto& launched = missiles.missile(0);
     // The bottle's artwork is not loaded here, so its flight is read through the pool's own
     // values rather than a digest that would have to name that artwork.
-    const std::array<PlayerMissiles::Resource, 1> resources{
-        {{7, launched.spec, launched.model, launched.streak.texture}}};
+    struct Flight {
+        u64 instance = 0;
+        PlayerMissiles::FlightCheckpoint motion;
+        s32 potion = 0;
+        f32 potency = 0;
+        f32 damage = 0;
+        u32 flags = 0;
+        std::optional<MissilePotionRelease> potionRelease;
+        bool operator==(const Flight&) const = default;
+    };
+    struct Flights {
+        std::vector<Flight> flights;
+        std::vector<PlayerMissiles::VisualHistory> history;
+        bool operator==(const Flights&) const = default;
+    };
     missiles.update(0.13f, nullptr, {});
     PlayerArsenal::LocalSnapshot saved;
     fixture.arsenal.saveLocal(saved);
     REQUIRE(missiles.count() == 1);
     const auto paid = actor.save().progress().inventory;
-    std::vector<std::optional<PlayerMissiles::Checkpoint>> expected;
+    std::vector<Flights> expected;
     const auto step = [&](s32 tick) {
         missiles.update(tick % 7 == 0 ? 0 : 1.0f / 30, nullptr, {});
-        return missiles.checkpoint(resources);
+        Flights result;
+        for (usize index = 0; index < missiles.count(); ++index) {
+            const auto& missile = missiles.missile(index);
+            result.flights.push_back({missile.instance, PlayerMissiles::flightCheckpoint(missile),
+                                      missile.potion, missile.potency, missile.damage,
+                                      missile.flags, missile.potionRelease});
+        }
+        const auto history = missiles.visualHistory();
+        result.history.assign(history.begin(), history.end());
+        return result;
     };
     for (s32 tick = 0; tick < 130; ++tick) {
         expected.push_back(step(tick));
-        REQUIRE(expected.back());
     }
     REQUIRE(fixture.arsenal.restoreLocal(saved));
     for (s32 tick = 0; tick < 130; ++tick) {

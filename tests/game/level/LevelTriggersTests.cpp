@@ -1957,9 +1957,7 @@ TEST_CASE("shipped triggers name one latch at most, and only two keyed targets a
                                                        objectName(trigger.target)));
                 }
             }
-            const auto bound = inventory.checkpoint();
-            REQUIRE(bound);
-            for (const auto& target : bound->targets) {
+            for (const auto& target : inventory.targets()) {
                 const bool fades = (target.kind & LevelTrigger::kFades) != 0;
                 if (target.animated && fades) {
                     fadingKeyedTargets.insert(

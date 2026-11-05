@@ -1,6 +1,5 @@
 #include <algorithm>
 #include <array>
-#include <limits>
 #include <string>
 #include <vector>
 
@@ -60,9 +59,7 @@ void samePose(const TreePose& actual, const TreePose& expected) {
 }
 
 void sameAnimator(const EnemyAnimator& actual, const EnemyAnimator& expected) {
-    REQUIRE(actual.checkpoint());
-    REQUIRE(expected.checkpoint());
-    CHECK(actual.checkpoint() == expected.checkpoint());
+    CHECK(actual.equalLocal(expected));
     samePose(actual.pose(), expected.pose());
     for (const f32 fraction : {0.0f, 0.375f, 1.0f}) {
         TreePose actualPose;
@@ -74,8 +71,11 @@ void sameAnimator(const EnemyAnimator& actual, const EnemyAnimator& expected) {
     }
 }
 
-TEST_CASE("enemy checkpoints retain pending actions release latches and exact native poses",
-          "[rollback][enemies][enemy-checkpoint]") {
+// The swarm rewinds a body by copying it whole (Enemies' local snapshot copies each
+// slot's animator), so these replays copy the animator and play on from the copy.
+
+TEST_CASE("enemy animator rewind retains pending actions release latches and exact native poses",
+          "[rollback][enemies][enemy-animator-local-rewind]") {
     const auto tree = animatedTree();
     std::array<bool, kEnemyActionCount> requested{};
     bool struck = false;
@@ -94,10 +94,7 @@ TEST_CASE("enemy checkpoints retain pending actions release latches and exact na
             const auto next = static_cast<Action>(action);
             native.request(next);
             requested[static_cast<usize>(native.requested())] = true;
-            const auto before = native.checkpoint();
-            REQUIRE(before);
-            REQUIRE(before->valid());
-            REQUIRE(replay.restore(*before));
+            replay = native;
             sameAnimator(replay, native);
             const f32 seconds = tick % 7 == 0 ? kStep * 0.25f : kStep;
             const bool contact = tick % 5 < 3;
@@ -108,9 +105,7 @@ TEST_CASE("enemy checkpoints retain pending actions release latches and exact na
             powerStruck = powerStruck || native.powerStruck();
             threw = threw || native.threw();
             dead = dead || native.dead();
-            const auto after = native.checkpoint();
-            REQUIRE(after);
-            REQUIRE(replay.restore(*after));
+            replay = native;
             sameAnimator(replay, native);
         }
     }
@@ -121,23 +116,20 @@ TEST_CASE("enemy checkpoints retain pending actions release latches and exact na
     CHECK(dead);
 }
 
-TEST_CASE("enemy checkpoints rewind repeated cuts and carry a throw's exact fractional wait",
-          "[rollback][enemies][enemy-checkpoint]") {
+TEST_CASE("enemy animator rewind replays repeated cuts and carries a throw's wait",
+          "[rollback][enemies][enemy-animator-local-rewind]") {
     auto tree = animatedTree();
     std::erase_if(tree.sequences, [](const auto& sequence) { return sequence.name == "DEATH"; });
     EnemyAnimator native;
     REQUIRE(native.bind(tree));
     native.setThrowInterval(1);
-    std::vector<EnemyAnimator::Checkpoint> history;
+    std::vector<EnemyAnimator> history;
     std::vector<Action> inputs;
-    bool carriedExactSecond = false;
     bool waited = false;
     bool sawDeathFallback = false;
     for (s32 tick = 0; tick < 250; ++tick) {
         CAPTURE(tick);
-        const auto baseline = native.checkpoint();
-        REQUIRE(baseline);
-        history.push_back(*baseline);
+        history.push_back(native);
         Action action = Action::Throw;
         if (tick >= 210) {
             action = Action::Dying;
@@ -147,32 +139,26 @@ TEST_CASE("enemy checkpoints rewind repeated cuts and carry a throw's exact frac
         inputs.push_back(action);
         native.request(action);
         native.update(1, kStep, true);
-        const auto state = native.checkpoint();
-        REQUIRE(state);
-        carriedExactSecond = carriedExactSecond || state->idleFraction == 1;
-        waited = waited || state->idleSeconds > 1;
+        waited = waited || native.idleSeconds() > 1;
         if (native.dying()) {
             sawDeathFallback = true;
-            CHECK(state->player.sequence == native.sequenceOf(Action::HitReact2));
+            CHECK(native.player().sequence() == native.sequenceOf(Action::HitReact2));
         }
-        EnemyAnimator replay;
-        REQUIRE(replay.bind(tree));
         const auto start = static_cast<usize>(std::max(tick - 9, 0));
-        REQUIRE(replay.restore(history[start]));
+        EnemyAnimator replay = history[start];
         for (usize at = start; at < inputs.size(); ++at) {
             replay.request(inputs[at]);
             replay.update(1, kStep, true);
         }
         sameAnimator(replay, native);
     }
-    CHECK(carriedExactSecond);
     CHECK(waited);
     CHECK(sawDeathFallback);
     CHECK(native.dead());
 }
 
-TEST_CASE("enemy checkpoint restores held presentation and an exact transition source pose",
-          "[rollback][enemies][enemy-checkpoint]") {
+TEST_CASE("enemy animator rewind restores held presentation",
+          "[rollback][enemies][enemy-animator-local-rewind]") {
     const auto tree = animatedTree();
     EnemyAnimator native;
     REQUIRE(native.bind(tree));
@@ -180,23 +166,7 @@ TEST_CASE("enemy checkpoint restores held presentation and an exact transition s
         native.request(Action::Walk);
         native.update(1, kStep);
     }
-    auto source = native.checkpoint();
-    REQUIRE(source);
-    REQUIRE(source->pose);
-    REQUIRE(source->previous);
-    REQUIRE(source->presentationBefore);
-    // Enemy actions currently cut with a zero transition. The checkpoint retains
-    // AnimationPlayer's complete blend state as well, rather than assuming that
-    // the previous stance can be reevaluated from the new sequence.
-    source->player.transitionLength = 0.2f;
-    source->player.transitionTime = 0.05f;
-    source->previous->poses[1].position = {0.3f, -0.7f, 0.6f};
-    source->pose->poses[2].rotation = {-0.2f, 0.9f, 0.1f};
-    source->presentationBefore->poses[0].scale = {0.5f, 0.7f, 1.2f};
-    REQUIRE(native.restore(*source));
-    EnemyAnimator replay;
-    REQUIRE(replay.bind(tree));
-    REQUIRE(replay.restore(*source));
+    EnemyAnimator replay = native;
     sameAnimator(replay, native);
     for (s32 tick = 0; tick < 30; ++tick) {
         native.request(Action::Walk);
@@ -206,7 +176,7 @@ TEST_CASE("enemy checkpoint restores held presentation and an exact transition s
         sameAnimator(replay, native);
     }
     native.holdPresentation();
-    REQUIRE(replay.restore(*native.checkpoint()));
+    replay = native;
     sameAnimator(replay, native);
     TreePose held;
     replay.evaluatePresentation(held, 0);
@@ -215,88 +185,8 @@ TEST_CASE("enemy checkpoint restores held presentation and an exact transition s
     samePose(held, complete);
 }
 
-TEST_CASE("enemy checkpoint refusal preserves the entire previously bound body",
-          "[rollback][enemies][enemy-checkpoint]") {
-    const auto tree = animatedTree();
-    EnemyAnimator native;
-    REQUIRE_FALSE(native.checkpoint());
-    REQUIRE(native.bind(tree));
-    native.request(Action::HitReact1);
-    native.update(1, kStep);
-    const auto source = native.checkpoint();
-    REQUIRE(source);
-    const auto reject = [&](const EnemyAnimator::Checkpoint& value) {
-        CHECK_FALSE(native.restore(value));
-        CHECK(native.checkpoint() == source);
-    };
-    auto invalid = *source;
-    invalid.current = static_cast<Action>(255);
-    reject(invalid);
-    invalid = *source;
-    invalid.requested = static_cast<Action>(255);
-    reject(invalid);
-    invalid = *source;
-    invalid.tree = "DIFFERENT";
-    reject(invalid);
-    invalid = *source;
-    invalid.player.sequence = native.sequenceOf(Action::Walk);
-    reject(invalid);
-    invalid = *source;
-    invalid.player.playing = false;
-    reject(invalid);
-    invalid = *source;
-    invalid.player.frame = AnimationPlayer::kCheckpointFrames;
-    reject(invalid);
-    invalid = *source;
-    invalid.idleSeconds = std::numeric_limits<f32>::quiet_NaN();
-    reject(invalid);
-    invalid = *source;
-    invalid.throwInterval = EnemyAnimator::Checkpoint::kMaxThrowInterval + 1;
-    reject(invalid);
-    invalid = *source;
-    invalid.idleFraction = 1.01f;
-    reject(invalid);
-    invalid = *source;
-    invalid.frameBefore = std::numeric_limits<f32>::infinity();
-    reject(invalid);
-    invalid = *source;
-    invalid.generationBefore = invalid.player.generation + 1;
-    reject(invalid);
-    invalid = *source;
-    invalid.dead = true;
-    reject(invalid);
-    invalid = *source;
-    invalid.pose.reset();
-    reject(invalid);
-    invalid.previous.reset();
-    invalid.presentationBefore.reset();
-    reject(invalid);
-    invalid = *source;
-    invalid.previous->nodes[1].rest.y += 1;
-    reject(invalid);
-    invalid = *source;
-    invalid.presentationBefore->poses[0].scale.x = std::numeric_limits<f32>::quiet_NaN();
-    reject(invalid);
-    invalid = *source;
-    for (auto& pose : invalid.pose->poses) {
-        pose.scale = Vec3{TreePose::Checkpoint::kMaxMagnitude};
-    }
-    reject(invalid); // finite individual channels, unsafe composed hierarchy
-    auto differentTree = tree;
-    differentTree.nodes[1].name = "REPLACED_NODE";
-    EnemyAnimator other;
-    REQUIRE(other.bind(differentTree));
-    const auto otherBefore = other.checkpoint();
-    REQUIRE(otherBefore);
-    CHECK_FALSE(other.restore(*source));
-    CHECK(other.checkpoint() == otherBefore);
-    native.unbind();
-    CHECK_FALSE(native.restore(*source));
-    CHECK_FALSE(native.checkpoint());
-}
-
-TEST_CASE("the invisible IT body checkpoints without inventing a skeleton",
-          "[rollback][enemies][enemy-checkpoint]") {
+TEST_CASE("the invisible IT body rewinds without inventing a skeleton",
+          "[rollback][enemies][enemy-animator-local-rewind]") {
     TreeInfo tree;
     tree.name = "IT";
     TreeSequenceInfo ready;
@@ -311,12 +201,8 @@ TEST_CASE("the invisible IT body checkpoints without inventing a skeleton",
     REQUIRE(replay.bind(tree));
     for (s32 tick = 0; tick < 40; ++tick) {
         native.request(tick < 20 ? Action::Walk : Action::Dying);
-        const auto state = native.checkpoint();
-        REQUIRE(state);
-        CHECK_FALSE(state->pose);
-        CHECK_FALSE(state->previous);
-        CHECK_FALSE(state->presentationBefore);
-        REQUIRE(replay.restore(*state));
+        CHECK(native.pose().poses().empty());
+        replay = native;
         native.update(1, kStep);
         replay.update(1, kStep);
         sameAnimator(replay, native);
@@ -324,8 +210,8 @@ TEST_CASE("the invisible IT body checkpoints without inventing a skeleton",
     CHECK(native.dead());
 }
 
-TEST_CASE("native swarm families resume all body state from delayed checkpoints",
-          "[rollback][enemies][enemy-checkpoint][assets]") {
+TEST_CASE("native swarm families resume all body state from delayed copies",
+          "[rollback][enemies][enemy-animator-local-rewind][assets]") {
     const auto monsters = test::assetOrSkip("MONSTERS");
     s32 families = 0;
     s32 bodies = 0;
@@ -348,14 +234,11 @@ TEST_CASE("native swarm families resume all body state from delayed checkpoints"
             EnemyAnimator native;
             REQUIRE(native.bind(tree, (kind % 2) != 0));
             native.setThrowInterval(0.25f);
-            std::vector<EnemyAnimator::Checkpoint> checkpoints;
+            std::vector<EnemyAnimator> history;
             std::vector<Action> inputs;
             for (s32 tick = 0; tick < 160; ++tick) {
                 CAPTURE(tick);
-                const auto checkpoint = native.checkpoint();
-                REQUIRE(checkpoint);
-                REQUIRE(checkpoint->valid());
-                checkpoints.push_back(*checkpoint);
+                history.push_back(native);
                 constexpr std::array kActions{Action::Walk,  Action::Attack,    Action::PowerAttack,
                                               Action::Throw, Action::RunAttack, Action::HitReact2,
                                               Action::Walk,  Action::Dying};
@@ -366,10 +249,8 @@ TEST_CASE("native swarm families resume all body state from delayed checkpoints"
                 if (tick % 8 != 0 && tick != 159) {
                     continue;
                 }
-                EnemyAnimator replay;
-                REQUIRE(replay.bind(tree));
                 const auto start = static_cast<usize>(std::max(tick - 5, 0));
-                REQUIRE(replay.restore(checkpoints[start]));
+                EnemyAnimator replay = history[start];
                 for (usize at = start; at < inputs.size(); ++at) {
                     replay.request(inputs[at]);
                     replay.update(2, kStep * 2, at % 3 != 0);

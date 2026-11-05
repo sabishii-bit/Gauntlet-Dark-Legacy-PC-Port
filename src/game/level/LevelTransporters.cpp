@@ -102,7 +102,6 @@ bool LevelTransporters::restoreLocal(const LocalSnapshot& saved) {
     m_presentationAdvanced = saved.m_presentationAdvanced;
     // Geometry and texture selections are derived again at each draw; floor contacts
     // retain their saved native phase until the next ordinary syncFloors call.
-    ++m_checkpointGeneration;
     return true;
 }
 
@@ -213,7 +212,6 @@ void LevelTransporters::Contact::sync(const WorldCollision& collision) {
 
 void LevelTransporters::clear() {
     m_checkpointBinding = std::make_shared<const u8>(0);
-    m_checkpointGeneration = 0;
     m_pads.clear();
     m_tree = nullptr;
     m_textures.clear();

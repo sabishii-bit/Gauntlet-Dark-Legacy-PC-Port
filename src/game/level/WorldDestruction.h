@@ -59,6 +59,5 @@ private:
     Simulation m_sim;
     std::vector<usize> m_controlled;
     std::shared_ptr<const u8> m_checkpointBinding = std::make_shared<const u8>(0);
-    u64 m_checkpointGeneration = 0;
 };
 } // namespace gdl::game

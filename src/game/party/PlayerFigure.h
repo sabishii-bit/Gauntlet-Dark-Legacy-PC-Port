@@ -83,55 +83,6 @@ public:
      * effects and local history may still borrow an earlier figure's archives. */
     bool registerNativeResources(NativeStateResources& resources) const;
 
-    /** Exact action/attachment and companion continuation, including familiar
-     * release latches and both companion presentation clocks. Costume texture
-     * clocks and weapon trails remain separate presentation owners. Pojo is
-     * refused because its animated head also places other native projectiles. */
-    struct GameplayCheckpoint {
-        static constexpr usize kMaxNodes = TreePose::Checkpoint::kMaxNodes;
-        std::string actions;
-        std::string costume;
-        std::vector<std::string> costumeObjects;
-        std::vector<std::string> handObjects;
-        std::vector<std::string> armObjects;
-        s32 familiarTier = 0;
-        PowerupCompanion::Kind companion = PowerupCompanion::Kind::None;
-        bool handHeld = false;
-        bool armHeld = false;
-        bool staysInHand = false;
-        PlayerAnimator::Checkpoint animation;
-        std::optional<PlayerAnimator::TransitionPose> transition;
-        std::vector<Mat4> transforms;
-        u64 animationRevision = 0;
-        bool familiarPending = false;
-        bool familiarReleased = false;
-        f32 phoenixSide = 0;
-        PlayerFamiliar::Checkpoint familiar;
-        PowerupCompanion::Checkpoint powerupCompanion;
-        f32 companionAlpha = 1;
-        bool valid() const;
-        bool operator==(const GameplayCheckpoint&) const = default;
-    };
-    class PreparedGameplay {
-    public:
-        PreparedGameplay(PreparedGameplay&&) noexcept;
-        PreparedGameplay& operator=(PreparedGameplay&&) noexcept;
-        ~PreparedGameplay();
-        PreparedGameplay(const PreparedGameplay&) = delete;
-        PreparedGameplay& operator=(const PreparedGameplay&) = delete;
-
-    private:
-        friend class PlayerFigure;
-        struct Data;
-        explicit PreparedGameplay(std::unique_ptr<Data> data);
-        std::unique_ptr<Data> m_data;
-    };
-    std::optional<GameplayCheckpoint> gameplayCheckpoint() const;
-    std::optional<PreparedGameplay> prepareGameplayRestore(const GameplayCheckpoint& state) const;
-    bool canCommitGameplay(const PreparedGameplay& prepared) const;
-    /** Allocation-free, no resource rebinding, gameplay events or GPU uploads. */
-    bool commitGameplayRestore(PreparedGameplay&& prepared);
-
     /** Null if the costume cannot be built; missing optional weapons/actions are tolerated. */
     static std::unique_ptr<PlayerFigure> load(RenderDevice& device,
                                               const std::filesystem::path& root,
@@ -297,7 +248,6 @@ private:
      * for a piece the action tree does not name, its rest offset hanging from the nearest
      * named ancestor so that it rides the limb it is attached to. */
     Mat4 nodeTransform(usize node, std::span<const Mat4> matrices) const;
-    bool gameplayBindingMatches(const GameplayCheckpoint& state) const;
     /** Binds `object` of `archive` as the lone node of `tree` into `model` when it changed. */
     static void bindObject(RenderDevice& device, ItemArchive& archive, std::string_view object,
                            TreeInfo& tree, TreeModel& model);
@@ -362,7 +312,6 @@ private:
     bool m_staysInHand = false;
     f32 m_phoenixSide = 0;
     const std::shared_ptr<const u8> m_localOwner = std::make_shared<const u8>(0);
-    std::shared_ptr<const u8> m_gameplayOwner = std::make_shared<const u8>(0);
 };
 
 } // namespace gdl::game

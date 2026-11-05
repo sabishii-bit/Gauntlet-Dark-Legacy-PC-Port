@@ -34,7 +34,6 @@ TowerCamera& TowerCamera::operator=(const TowerCamera& other) {
         auto binding = std::make_shared<const u8>(0);
         copyValues(other);
         m_checkpointBinding = std::move(binding);
-        m_checkpointGeneration = 0;
     }
     return *this;
 }
@@ -54,9 +53,8 @@ void TowerCamera::copyValues(const TowerCamera& other) noexcept {
 bool TowerCamera::appendNativeDigest(NativeStateDigest& digest) const {
     // No other runtime values are owned here: subjects, markers, range and fit
     // projection are inputs supplied by the scene on each simulation update.
-    const auto& [state, binding, generation] = *this;
+    const auto& [state, binding] = *this;
     (void)binding;
-    (void)generation;
     return appendLocalDigest(digest, state);
 }
 
@@ -87,7 +85,6 @@ void TowerCamera::reset(std::span<const CameraSubject> subjects,
                         std::span<const WorldLocator> markers, const CameraRange& range,
                         const CameraView& view) {
     m_checkpointBinding = std::make_shared<const u8>(0);
-    m_checkpointGeneration = 0;
     m_state.camera = WorldCamera{};
     m_state.camera.yaw = kPi;
     m_state.ringPositions.fill(Vec3{0.0f, 0.0f, 0.0f});

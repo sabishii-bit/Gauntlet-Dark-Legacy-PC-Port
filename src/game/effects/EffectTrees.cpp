@@ -113,10 +113,7 @@ EffectTrees::EffectTrees(EffectTrees&& other) noexcept {
 }
 EffectTrees& EffectTrees::operator=(EffectTrees&& other) noexcept {
     if (this != &other) {
-        // Owner tokens stay with their addresses. A move away and back must not
-        // resurrect an earlier preparation against replaced borrowed resources.
-        ++m_restoreGeneration;
-        ++other.m_restoreGeneration;
+        // Owner tokens stay with their addresses.
         m_effects = std::move(other.m_effects);
         m_motions = std::move(other.m_motions);
         m_motionCache = std::move(other.m_motionCache);
@@ -437,8 +434,8 @@ bool EffectTrees::start(RenderDevice& device, ItemArchive& archive, std::string_
 
 bool EffectTrees::bindVisuals(Effect& effect) {
     if (effect.morphPrototype) {
-        // prepareRestorePool already authenticated and copied this future tree's
-        // native birth state. A replayed morph must not load/bind artwork in the
+        // The prototype already holds this future tree's authenticated native
+        // birth state. A replayed morph must not load/bind artwork in the
         // middle of a speculative tick. Keep the native pose/clock branch below
         // update() identical; only its resource construction uses the catalog.
         const auto& prototype = *effect.morphPrototype;
@@ -572,7 +569,6 @@ bool EffectTrees::restoreLocal(const LocalSnapshot& state) {
     m_presentationAdvanced = state.m_presentationAdvanced;
     m_nextId = state.m_nextId;
     m_nextInstance = state.m_nextInstance;
-    ++m_restoreGeneration;
     return true;
 }
 
@@ -587,7 +583,7 @@ void EffectTrees::appendMotionDigest(NativeStateDigest& digest, const Motion& mo
 
 bool EffectTrees::appendNativeDigest(NativeStateDigest& digest) const {
     const auto& [effects, motions, motionCache, visualCache, lenders, advanced, nextId,
-                 nextInstance, restoreOwner, restoreGeneration, localEpoch] = *this;
+                 nextInstance, restoreOwner, localEpoch] = *this;
     digest.string("EffectTrees.1");
     digest.wide(effects.size());
     std::vector<const EffectState*> ancestors;
@@ -614,7 +610,6 @@ bool EffectTrees::appendNativeDigest(NativeStateDigest& digest) const {
     static_cast<void>(motionCache);
     static_cast<void>(visualCache);
     static_cast<void>(restoreOwner);
-    static_cast<void>(restoreGeneration);
     static_cast<void>(localEpoch);
     return digest.good();
 }
@@ -707,7 +702,6 @@ void EffectTrees::stop(u32 id) {
 }
 
 void EffectTrees::setTextureLenders(std::span<TextureSet* const> lenders) {
-    ++m_restoreGeneration;
     m_lenders.assign(lenders.begin(), lenders.end());
 }
 
@@ -1282,7 +1276,6 @@ void EffectTrees::draw(RenderDevice& device, const Mat4& clip, const WorldLighti
 }
 
 void EffectTrees::reset() {
-    ++m_restoreGeneration;
     m_effects.clear();
     m_motions.clear();
     m_lenders.clear();

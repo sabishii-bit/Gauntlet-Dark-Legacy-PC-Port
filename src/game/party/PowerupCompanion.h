@@ -1,7 +1,6 @@
 #pragma once
 
 #include <memory>
-#include <string>
 #include <string_view>
 #include <vector>
 
@@ -85,22 +84,6 @@ public:
     bool appendLocalDigest(NativeStateDigest& digest, const LocalSnapshot& saved) const;
     /** Archives are registered by their owners before retained companion banks. */
     bool registerNativeResources(NativeStateResources& registry) const;
-    struct Checkpoint {
-        Kind kind = Kind::None;
-        std::string tree;
-        AnimationPlayer::Checkpoint animation;
-        TextureAnimator::Checkpoint textures;
-        std::optional<TreePose::Checkpoint> pose;
-        f32 previousFrame = 0;
-        u64 previousGeneration = 0;
-        bool presentationAdvanced = false;
-        bool valid() const;
-        bool operator==(const Checkpoint&) const = default;
-    };
-    std::optional<Checkpoint> checkpoint() const;
-    /** Restores the existing kind only, never binds artwork or calls a renderer. */
-    bool restore(const Checkpoint& state);
-    u64 bindingRevision() const { return m_bindingRevision; }
     /** Pojo's sequences, by index (the POJO tree's READY, RUN, ATTACK, ATTPWR, HIT, DEATH). */
     static constexpr s32 kReady = 0;
     static constexpr s32 kRun = 1;
@@ -156,10 +139,9 @@ private:
     const TreeInfo* tree() const { return shown() ? m_state.resource->tree : nullptr; }
     Resource* findResource(ItemArchive& archive, const TreeInfo& tree) const;
     State m_state;
-    // Copies used by the legacy diagnostic transaction share only retained artwork,
-    // never animation state. Local rewind itself copies State, not this cache.
+    // Copies share only retained artwork, never animation state. Local rewind
+    // itself copies State, not this cache.
     std::shared_ptr<Resources> m_resources = std::make_shared<Resources>();
-    u64 m_bindingRevision = 0;
 };
 
 } // namespace gdl::game

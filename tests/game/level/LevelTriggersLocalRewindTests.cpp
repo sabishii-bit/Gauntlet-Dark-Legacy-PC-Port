@@ -1,16 +1,20 @@
 #include <array>
-#include <limits>
+#include <span>
 #include <string_view>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
+#include "engine/io/NativeStateDigest.h"
+
 #include "../../engine/world/SampleLevel.h"
 #include "FakeRenderDevice.h"
+#include "NativeStateSupport.h"
 #include "game/level/LevelCatalog.h"
 #include "game/level/LevelTriggers.h"
 #include "game/level/LevelWorld.h"
+#include "game/level/NativeStateResources.h"
 
 namespace {
 using namespace gdl;
@@ -56,19 +60,37 @@ struct Fixture {
         REQUIRE(triggers.figure(0));
         REQUIRE_FALSE(triggers.figure(2));
     }
-    LevelTriggers::Checkpoint state() const {
-        const auto value = triggers.checkpoint();
-        REQUIRE(value);
-        return *value;
-    }
     void step(f32 seconds, std::span<const TriggerVisitor> visitors) {
         animator.step(seconds, scene);
         triggers.update(seconds, visitors, animator, scene, &collision);
     }
+    /** The triggers' native digest, the figures' archive named alike in every fixture. */
+    NativeStateDigest::Digest digest() const {
+        NativeStateResources resources;
+        REQUIRE(resources.registerArchive(items, "stage/trigger-items"));
+        return test::liveDigest(triggers, resources);
+    }
+    /** Which output queues hold anything now; they are left as they were. */
+    struct Queued {
+        bool refusals = false;
+        bool lessons = false;
+        bool settled = false;
+        bool wakes = false;
+    };
+    Queued queued() {
+        LevelTriggers::LocalSnapshot now;
+        triggers.saveLocal(now);
+        const Queued result{.refusals = !triggers.takeRefusals().empty(),
+                            .lessons = !triggers.takeLessons().empty(),
+                            .settled = !triggers.takeSettled().empty(),
+                            .wakes = !triggers.takeWakes().empty()};
+        REQUIRE(triggers.restoreLocal(now));
+        return result;
+    }
 };
 
 TEST_CASE("complete trigger state resumes native contacts queues and figure clocks",
-          "[triggers-checkpoint]") {
+          "[triggers-local-rewind]") {
     Fixture fixture("complete-trigger-phase");
     const f32 seconds = GENERATE(1.0f / 60, 1.0f / 30);
     const auto uploads = fixture.device.texturesCreated;
@@ -77,6 +99,9 @@ TEST_CASE("complete trigger state resumes native contacts queues and figure cloc
     bool lessons = false;
     bool settled = false;
     bool held = false;
+    LevelTriggers::LocalSnapshot before;
+    LevelTriggers::LocalSnapshot expected;
+    LevelTriggers::LocalSnapshot current;
     for (s32 tick = 0; tick < 240; ++tick) {
         std::array<TriggerVisitor, 2> visitors{};
         visitors[0].party = 3;
@@ -90,27 +115,26 @@ TEST_CASE("complete trigger state resumes native contacts queues and figure cloc
         if (tick % 17 == 0) {
             fixture.triggers.shoot(2);
         }
-        const auto before = fixture.state();
+        fixture.triggers.saveLocal(before);
         const auto animator = fixture.animator;
         const auto geometry = fixture.scene.geometry();
         const auto collision = fixture.collision;
-        auto rewind = fixture.triggers.prepareRestore(before);
-        REQUIRE(rewind);
         fixture.step(seconds, visitors);
-        const auto expected = fixture.state();
-        refusals |= !expected.refusals.empty();
-        wakes |= !expected.wakes.empty();
-        lessons |= !expected.lessons.empty();
-        settled |= !expected.settled.empty();
-        held |= expected.triggers[3].heldContacts == 10;
+        fixture.triggers.saveLocal(expected);
+        const auto queued = fixture.queued();
+        refusals |= queued.refusals;
+        wakes |= queued.wakes;
+        lessons |= queued.lessons;
+        settled |= queued.settled;
+        held |= fixture.triggers.trigger(3).heldContacts == 10;
         const auto expectedAnimation = fixture.animator.checkpoint();
         std::vector<Mat4> transforms;
         for (usize object = 0; object < fixture.layout.objects().size(); ++object) {
             transforms.push_back(fixture.scene.worldTransform(object));
         }
-        REQUIRE(fixture.triggers.canCommit(*rewind));
-        REQUIRE(fixture.triggers.commitRestore(std::move(*rewind)));
-        CHECK(fixture.state() == before);
+        REQUIRE(fixture.triggers.restoreLocal(before));
+        fixture.triggers.saveLocal(current);
+        CHECK(fixture.triggers.equalLocal(current, before));
         // These are external owners, deliberately restored separately. A trigger
         // restore itself must not fire its commands or pose world geometry.
         CHECK(fixture.animator.checkpoint() == expectedAnimation);
@@ -118,7 +142,8 @@ TEST_CASE("complete trigger state resumes native contacts queues and figure cloc
         fixture.collision = collision;
         REQUIRE(fixture.scene.applyGeometry(geometry));
         fixture.step(seconds, visitors);
-        CHECK(fixture.state() == expected);
+        fixture.triggers.saveLocal(current);
+        CHECK(fixture.triggers.equalLocal(current, expected));
         CHECK(fixture.animator.checkpoint() == expectedAnimation);
         for (usize object = 0; object < transforms.size(); ++object) {
             CHECK(fixture.scene.worldTransform(object) == transforms[object]);
@@ -130,80 +155,28 @@ TEST_CASE("complete trigger state resumes native contacts queues and figure cloc
     CHECK(settled);
     CHECK(held);
     CHECK(fixture.device.texturesCreated == uploads);
-    const auto pending = fixture.state();
-    CHECK(fixture.triggers.takeRefusals() == pending.refusals);
-    CHECK(fixture.triggers.takeLessons() == pending.lessons);
-    CHECK(fixture.triggers.takeOpenings() == pending.openings);
-    CHECK(fixture.triggers.takeSettled() == pending.settled);
-    CHECK(fixture.triggers.takeCameraCues() == pending.cameraCues);
-    CHECK(fixture.triggers.takeWakes() == pending.wakes);
-    REQUIRE(fixture.triggers.restore(pending));
-    CHECK(fixture.state() == pending);
-}
-
-TEST_CASE("trigger plans bind trusted owner roster resources and sibling generation",
-          "[triggers-checkpoint]") {
-    Fixture host("trigger-restore-host");
-    Fixture guest("trigger-restore-guest");
-    const std::array visitors{TriggerVisitor{.position = {20, 0, 0}, .party = 2}};
-    host.step(1.0f / 60, visitors);
-    const auto state = host.state();
-    const auto uploads = guest.device.texturesCreated;
-    REQUIRE(guest.triggers.restore(state));
-    CHECK(guest.state() == state);
-    CHECK(guest.device.texturesCreated == uploads);
-    auto first = host.triggers.prepareRestore(state);
-    auto sibling = host.triggers.prepareRestore(state);
-    REQUIRE(first);
-    REQUIRE(sibling);
-    CHECK_FALSE(guest.triggers.commitRestore(std::move(*first)));
-    REQUIRE(host.triggers.canCommit(*first));
-    REQUIRE(host.triggers.commitRestore(std::move(*first)));
-    CHECK_FALSE(host.triggers.canCommit(*sibling));
-    first = host.triggers.prepareRestore(state);
-    REQUIRE(first);
-    REQUIRE(host.triggers.restoreMotion(host.triggers.motion()));
-    CHECK_FALSE(host.triggers.canCommit(*first));
-    first = host.triggers.prepareRestore(host.state());
-    REQUIRE(first);
-    host.triggers.bindFigures(host.device, host.layout, AssetScope(host.items));
-    CHECK_FALSE(host.triggers.canCommit(*first));
-    first = host.triggers.prepareRestore(host.state());
-    REQUIRE(first);
-    host.triggers.clear();
-    CHECK_FALSE(host.triggers.commitRestore(std::move(*first)));
-}
-
-TEST_CASE("complete trigger state refuses malformed and foreign records atomically",
-          "[triggers-checkpoint]") {
-    Fixture fixture("trigger-invalid-state");
-    const auto before = fixture.state();
-    auto invalid = before;
-    const s32 variant = GENERATE(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13);
-    switch (variant) {
-    case 0: invalid.triggers[0].spot.x = std::numeric_limits<f32>::quiet_NaN(); break;
-    case 1: invalid.triggers[0].heldContacts = 16; break;
-    case 2: invalid.triggers[0].next = 999; break;
-    case 3: invalid.targets[0].height = 1e9f; break;
-    case 4: invalid.targets[0].subtree.push_back(999); break;
-    case 5: invalid.figures[0]->animation.frame = std::numeric_limits<f32>::infinity(); break;
-    case 6: invalid.refusals.push_back({999, 0, false}); break;
-    case 7: invalid.wakes.resize(LevelTriggers::Checkpoint::kMaxEvents + 1); break;
-    case 8: invalid.frameRemainder = 1; break;
-    case 9: invalid.emptyToggleDelay = -1; break;
-    case 10: invalid.playerCount = 5; break;
-    case 11: invalid.triggers[0].radius += 1; break;         // bounded but wrong native roster
-    case 12: invalid.figures[2] = invalid.figures[0]; break; // marker cannot gain art
-    case 13: invalid.targets[0].openHeight += 1; break;
-    default: break;
-    }
-    CHECK_FALSE(fixture.triggers.prepareRestore(invalid));
-    CHECK_FALSE(fixture.triggers.restore(invalid));
-    CHECK(fixture.state() == before);
+    LevelTriggers::LocalSnapshot pending;
+    fixture.triggers.saveLocal(pending);
+    const auto pendingRefusals = fixture.triggers.takeRefusals();
+    const auto pendingLessons = fixture.triggers.takeLessons();
+    const auto pendingOpenings = fixture.triggers.takeOpenings();
+    const auto pendingSettled = fixture.triggers.takeSettled();
+    const auto pendingCameraCues = fixture.triggers.takeCameraCues();
+    const auto pendingWakes = fixture.triggers.takeWakes();
+    REQUIRE(fixture.triggers.restoreLocal(pending));
+    CHECK(fixture.triggers.takeRefusals() == pendingRefusals);
+    CHECK(fixture.triggers.takeLessons() == pendingLessons);
+    CHECK(fixture.triggers.takeOpenings() == pendingOpenings);
+    CHECK(fixture.triggers.takeSettled() == pendingSettled);
+    CHECK(fixture.triggers.takeCameraCues() == pendingCameraCues);
+    CHECK(fixture.triggers.takeWakes() == pendingWakes);
+    REQUIRE(fixture.triggers.restoreLocal(pending));
+    fixture.triggers.saveLocal(current);
+    CHECK(fixture.triggers.equalLocal(current, pending));
 }
 
 TEST_CASE("native campaign trigger owners retain their complete loaded roster and figures",
-          "[triggers-checkpoint][assets]") {
+          "[triggers-local-rewind][assets]") {
     const auto root =
         test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2").parent_path().parent_path().parent_path();
     test::FakeRenderDevice device;
@@ -221,20 +194,19 @@ TEST_CASE("native campaign trigger owners retain their complete loaded roster an
     LevelTriggers owner;
     owner.bind(world.layout(), animator, &collision);
     owner.bindFigures(device, world.layout(), world.itemScope());
-    const auto state = owner.checkpoint();
-    REQUIRE(state);
-    REQUIRE_FALSE(state->triggers.empty());
-    REQUIRE(state->figures.size() == state->triggers.size());
+    REQUIRE(owner.size() > 0);
+    LevelTriggers::LocalSnapshot state;
+    owner.saveLocal(state);
     const auto uploads = device.texturesCreated;
-    auto prepared = owner.prepareRestore(*state);
-    REQUIRE(prepared);
     owner.setPlayerCount(4);
     owner.setCameraHeld(true);
     for (usize index = 0; index < owner.size(); ++index) {
         owner.shoot(index);
     }
-    REQUIRE(owner.commitRestore(std::move(*prepared)));
-    CHECK(owner.checkpoint() == state);
+    REQUIRE(owner.restoreLocal(state));
+    LevelTriggers::LocalSnapshot current;
+    owner.saveLocal(current);
+    CHECK(owner.equalLocal(current, state));
     CHECK(device.texturesCreated == uploads);
 }
 
@@ -286,13 +258,10 @@ TEST_CASE(
     for (s32 window = 0; window < 96; ++window) {
         CAPTURE(window, tick);
         const s32 distance = 1 + window % 8;
-        const auto before = predicted.state();
         predicted.triggers.saveLocal(saved);
         predicted.animator.saveLocal(savedAnimator);
         predicted.scene.saveLocal(savedScene);
         predicted.collision.saveLocal(savedCollision);
-        auto diagnosticPlan = predicted.triggers.prepareRestore(before);
-        REQUIRE(diagnosticPlan);
         for (s32 step = 0; step < distance; ++step) {
             advance(predicted, tick + step);
             predicted.triggers.saveLocal(expectedNative[static_cast<usize>(step)]);
@@ -320,8 +289,8 @@ TEST_CASE(
         predicted.triggers.takeWakes();
         const auto wrongTransform = predicted.scene.worldTransform(1);
         REQUIRE(predicted.triggers.restoreLocal(saved));
-        CHECK_FALSE(predicted.triggers.canCommit(*diagnosticPlan));
-        CHECK(predicted.state() == before);
+        predicted.triggers.saveLocal(observed);
+        CHECK(predicted.triggers.equalLocal(observed, saved));
         CHECK(predicted.scene.worldTransform(1) == wrongTransform);
         REQUIRE(predicted.animator.restoreLocal(savedAnimator));
         REQUIRE(predicted.scene.restoreLocal(savedScene));
@@ -333,13 +302,13 @@ TEST_CASE(
             predicted.triggers.saveLocal(observed);
             CHECK(
                 predicted.triggers.equalLocal(observed, expectedNative[static_cast<usize>(step)]));
-            const auto expected = reference.state();
-            CHECK(predicted.state() == expected);
+            CHECK(predicted.digest() == reference.digest());
             CHECK(predicted.animator.checkpoint() == reference.animator.checkpoint());
-            sawRefusal |= !expected.refusals.empty();
-            sawWake |= !expected.wakes.empty();
-            sawLesson |= !expected.lessons.empty();
-            sawSettled |= !expected.settled.empty();
+            const auto queued = reference.queued();
+            sawRefusal |= queued.refusals;
+            sawWake |= queued.wakes;
+            sawLesson |= queued.lessons;
+            sawSettled |= queued.settled;
             for (usize object = 0; object < reference.layout.objects().size(); ++object) {
                 CHECK(predicted.scene.worldTransform(object) ==
                       reference.scene.worldTransform(object));
@@ -395,7 +364,7 @@ TEST_CASE("native trigger equality retains camera holds and undelivered refusals
     CHECK(fixture.triggers.takeRefusals() == refusals);
 }
 
-TEST_CASE("native trigger histories reject foreign owners rebinding and diagnostic replacement",
+TEST_CASE("native trigger histories reject foreign owners and rebinding",
           "[triggers-local-rewind]") {
     Fixture first("triggers-local-guards");
     Fixture other("triggers-local-foreign");
@@ -404,18 +373,18 @@ TEST_CASE("native trigger histories reject foreign owners rebinding and diagnost
     CHECK_FALSE(first.triggers.equalLocal(saved, saved));
     first.triggers.saveLocal(saved);
     CHECK(first.triggers.equalLocal(saved, saved));
-    const auto otherBefore = other.state();
+    LevelTriggers::LocalSnapshot otherBefore;
+    other.triggers.saveLocal(otherBefore);
     CHECK_FALSE(other.triggers.restoreLocal(saved));
     CHECK_FALSE(other.triggers.equalLocal(saved, saved));
-    CHECK(other.state() == otherBefore);
+    LevelTriggers::LocalSnapshot otherAfter;
+    other.triggers.saveLocal(otherAfter);
+    CHECK(other.triggers.equalLocal(otherAfter, otherBefore));
     REQUIRE(first.triggers.restoreLocal(saved));
     REQUIRE(first.triggers.restoreLocal(saved));
     REQUIRE(first.triggers.restoreMotion(first.triggers.motion()));
     CHECK_FALSE(first.triggers.canRestoreLocal(saved));
     CHECK_FALSE(first.triggers.equalLocal(saved, saved));
-    first.triggers.saveLocal(saved);
-    REQUIRE(first.triggers.restore(first.state()));
-    CHECK_FALSE(first.triggers.canRestoreLocal(saved));
     first.triggers.saveLocal(saved);
     first.triggers.bindFigures(first.device, first.layout, AssetScope(first.items));
     CHECK_FALSE(first.triggers.restoreLocal(saved));

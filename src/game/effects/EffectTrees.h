@@ -127,7 +127,7 @@ public:
         const Texture* texture = nullptr;
         std::optional<u32> textureSlot;
         /** Borrowed native binding identity only. Prepared starts never invoke
-         * the device; full-pool checkpoints retain the original resource tuple. */
+         * the device. */
         RenderDevice* device = nullptr;
     };
 
@@ -195,77 +195,6 @@ public:
     struct Effect : EffectState {
         mutable TreePose presentationPose;
     };
-
-    /** Immutable prebound topology, independent of any live pool entry. A bank-only
-     * resource can omit prototype. Prototypes include any code-attached trail
-     * descriptors/textures. Archives, textures and these bindings must outlive
-     * capture/prepare/commit and the restored pool; resource reload requires clear.
-     * The pool never creates meshes, uploads textures, or guesses particle seeds. */
-    struct PoolResource {
-        u32 id = 0;
-        ItemArchive* archive = nullptr;
-        std::span<TextureSet* const> lenders;
-        const TextureAnimator* textures = nullptr;
-        const Effect* prototype = nullptr;
-    };
-    struct PoolCheckpoint {
-        static constexpr usize kMaxEffects = 8192;
-        static constexpr usize kMaxBanks = 1024;
-        struct Entry {
-            u32 resource = 0;
-            u32 id = 0;
-            u64 instance = 0;
-            Checkpoint state;
-            std::optional<Provenance> provenance;
-            Mat4 previousTransform{1};
-            std::optional<Vec3> previousDirection;
-            bool previousTree = false;
-            u64 previousGeneration = 0;
-            f32 previousFrame = 0;
-            bool presentationCaptured = false;
-            /** Nonzero only when previousTree names a different catalog tree
-             * across this tick's native morph; zero retains same-tree policy. */
-            u32 previousResource = 0;
-            bool operator==(const Entry&) const = default;
-        };
-        struct Bank {
-            u32 resource = 0;
-            TextureAnimator::Checkpoint clock;
-            bool operator==(const Bank&) const = default;
-        };
-        std::vector<Entry> effects;
-        std::vector<Bank> banks;
-        bool presentationAdvanced = false;
-        u32 nextId = 1;
-        u64 nextInstance = 1;
-        bool valid() const;
-        bool operator==(const PoolCheckpoint&) const = default;
-    };
-    class PreparedRestore {
-    public:
-        PreparedRestore(PreparedRestore&&) noexcept;
-        PreparedRestore& operator=(PreparedRestore&&) noexcept;
-        ~PreparedRestore();
-        PreparedRestore(const PreparedRestore&) = delete;
-        PreparedRestore& operator=(const PreparedRestore&) = delete;
-
-    private:
-        friend class EffectTrees;
-        struct Data;
-        explicit PreparedRestore(std::unique_ptr<Data> data);
-        std::unique_ptr<Data> m_data;
-    };
-    /** Complete resource-free pool snapshot. Pending morphs require prebound
-     * future topology in the same archive/lender bank; no restore-time loading.
-     * Fallback lenders are trusted binding context, retained from this owner. */
-    std::optional<PoolCheckpoint>
-    checkpointPool(std::span<const PoolResource> resources = {}) const;
-    std::optional<PreparedRestore>
-    prepareRestorePool(const PoolCheckpoint& state,
-                       std::span<const PoolResource> resources = {}) const;
-    bool canCommit(const PreparedRestore& state) const noexcept;
-    bool commitRestore(PreparedRestore&& state) noexcept;
-    bool restorePool(const PoolCheckpoint& state, std::span<const PoolResource> resources = {});
 
     /** Starts `tree` of `archive` (which must outlive the effect) at `position`; false, with
      * a warning, when the archive lacks it. */
@@ -427,7 +356,6 @@ private:
     u32 m_nextId = 1;
     u64 m_nextInstance = 1; ///< independent of resettable local effect handles
     std::shared_ptr<const u8> m_restoreOwner = std::make_shared<const u8>(0);
-    u64 m_restoreGeneration = 1;
     u64 m_localEpoch = 1;
 };
 

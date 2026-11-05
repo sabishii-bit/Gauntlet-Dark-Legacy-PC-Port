@@ -160,7 +160,7 @@ TEST_CASE("Item figure appearance overrides do not leak across shared copies",
     ItemFigure figure;
     REQUIRE(figure.place(device, archive, "PIECE", {}, nullptr, lenders));
     const ItemFigure copy = figure;
-    const auto before = figure.checkpoint();
+    const ItemFigure before = figure;
     copy.draw(device, Mat4{1}, {});
     REQUIRE(device.draws.size() == 2);
     const Color litColor = device.draws.front().vertices.front().color;
@@ -173,12 +173,12 @@ TEST_CASE("Item figure appearance overrides do not leak across shared copies",
     REQUIRE(device.draws.front().vertices.size() == 3);
     CHECK(device.draws.front().vertices.front().color == Color::rgba(8, 8, 8));
     CHECK_FALSE(device.draws.front().state.cullBack);
-    CHECK(figure.checkpoint() == before);
+    CHECK(figure == before);
     device.draws.clear();
     copy.draw(device, Mat4{1}, {});
     REQUIRE(device.draws.size() == 2);
     CHECK(device.draws.front().vertices.front().color == litColor);
     CHECK(device.draws.front().state.cullBack);
-    CHECK(copy.checkpoint() == before);
+    CHECK(copy == before);
 }
 } // namespace

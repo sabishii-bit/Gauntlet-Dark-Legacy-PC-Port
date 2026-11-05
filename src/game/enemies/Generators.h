@@ -250,51 +250,6 @@ public:
     };
     const Slot& slot(usize index) const { return m_sim.generators[index]; }
 
-    struct Checkpoint {
-        static constexpr usize kMaxGenerators = 4096;
-        struct BodyClock {
-            s32 kind = -1;
-            TextureAnimator::Checkpoint textures;
-            bool operator==(const BodyClock&) const = default;
-        };
-        /** Initial bound placement records identify the exact trusted level roster. */
-        std::vector<Slot> roster;
-        std::vector<Slot> generators;
-        std::vector<BodyClock> bodies;
-        GeneratorScales scales;
-        s32 players = 1;
-        u32 specialBirth = 0;
-        std::optional<ViewSet> view;
-        bool attentionGate = false;
-        bool valid() const;
-        bool operator==(const Checkpoint& /*other*/) const;
-    };
-
-    /** Boss ItemFigure animation/particles are not yet resumable: their presence
-     * rejects a checkpoint instead of silently dropping native state. */
-    std::optional<Checkpoint> checkpoint() const;
-    class Prepared {
-    public:
-        Prepared(Prepared&&) noexcept;
-        Prepared& operator=(Prepared&&) noexcept;
-        ~Prepared();
-        Prepared(const Prepared&) = delete;
-        Prepared& operator=(const Prepared&) = delete;
-
-    private:
-        friend class Generators;
-        struct Data;
-        explicit Prepared(std::unique_ptr<Data> data);
-        std::unique_ptr<Data> m_data;
-    };
-    /** Allocates and validates using already-loaded bodies; never spawns or loads art. */
-    std::optional<Prepared> prepareRestore(const Checkpoint& state) const;
-    bool canCommit(const Prepared& prepared) const;
-    /** Allocation-free after canCommit; success consumes the staged correction and
-     * invalidates sibling preparations. Failed ownership checks leave it untouched. */
-    bool commitRestore(Prepared&& prepared);
-    bool restore(const Checkpoint& state);
-
 private:
     struct Bodies {
         s32 kind = -1;
@@ -407,9 +362,6 @@ private:
     static void appendSimulationDigest(
         NativeStateDigest& digest, const Simulation& state,
         std::optional<std::span<const TextureAnimator::Clock>> savedClocks = std::nullopt);
-    u64 m_restoreGeneration = 0;
-    // A Prepared may outlive its owner; address reuse must not revive it.
-    std::shared_ptr<const u8> m_lifetime = std::make_shared<const u8>(0);
 };
 
 } // namespace gdl::game

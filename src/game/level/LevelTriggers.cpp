@@ -4,8 +4,6 @@
 #include <array>
 #include <cmath>
 #include <cstring>
-#include <limits>
-#include <tuple>
 #include <unordered_set>
 #include <utility>
 
@@ -145,285 +143,7 @@ u32 flagsOf(const ItemInfo& info, const ItemInstance& instance) {
     return flags | (params & ~LevelTrigger::kKindMask);
 }
 
-bool bounded(f32 value, f32 minimum = -1e6f, f32 maximum = 1e6f) {
-    return std::isfinite(value) && value >= minimum && value <= maximum;
-}
-bool bounded(const Vec3& value) {
-    return bounded(value.x) && bounded(value.y) && bounded(value.z);
-}
-bool affine(const Mat4& value) {
-    for (s32 column = 0; column < 4; ++column) {
-        for (s32 row = 0; row < 4; ++row) {
-            if (!bounded(value[column][row])) {
-                return false;
-            }
-        }
-    }
-    return value[0].w == 0 && value[1].w == 0 && value[2].w == 0 && value[3].w == 1;
-}
-bool sameDefinition(const LevelTrigger& a, const LevelTrigger& b) {
-    return std::tie(a.instance, a.target, a.id, a.nextId, a.next, a.chained, a.flags, a.kind,
-                    a.radius, a.sound, a.shootable, a.height, a.movementLesson, a.minPlayers,
-                    a.floor, a.localPlacement) ==
-           std::tie(b.instance, b.target, b.id, b.nextId, b.next, b.chained, b.flags, b.kind,
-                    b.radius, b.sound, b.shootable, b.height, b.movementLesson, b.minPlayers,
-                    b.floor, b.localPlacement);
-}
-bool sameDefinition(const LevelTriggers::Checkpoint::Target& a,
-                    const LevelTriggers::Checkpoint::Target& b) {
-    return std::tie(a.subtype, a.object, a.kind, a.animated, a.origin, a.closedHeight, a.openHeight,
-                    a.subtree) == std::tie(b.subtype, b.object, b.kind, b.animated, b.origin,
-                                           b.closedHeight, b.openHeight, b.subtree);
-}
-
 } // namespace
-
-bool LevelTriggers::Checkpoint::valid() const {
-    if (triggers.size() > kMaxTriggers || targets.size() > kMaxTriggers ||
-        parents.size() > kMaxObjects || (!figures.empty() && figures.size() != triggers.size()) ||
-        refusals.size() > kMaxEvents || lessons.size() > kMaxEvents ||
-        openings.size() > kMaxEvents || settled.size() > kMaxEvents ||
-        cameraCues.size() > kMaxEvents || wakes.size() > kMaxEvents ||
-        !bounded(frameRemainder, 0, 1) || frameRemainder == 1 || !bounded(emptyToggleDelay, 0, 3) ||
-        playerCount < -1 || playerCount > kPlayerSlots) {
-        return false;
-    }
-    const auto object = [&](s32 value) {
-        return value >= 0 && static_cast<usize>(value) < parents.size();
-    };
-    const auto optionalObject = [&](s32 value) { return value == -1 || object(value); };
-    for (const s32 parent : parents) {
-        if (!optionalObject(parent)) {
-            return false;
-        }
-    }
-    std::unordered_set<s32> instances;
-    for (const auto& trigger : triggers) {
-        if (trigger.instance < 0 || trigger.instance > 65535 ||
-            !instances.insert(trigger.instance).second || !bounded(trigger.spot) ||
-            !optionalObject(trigger.target) || trigger.id < 0 || trigger.id > 255 ||
-            trigger.nextId < 0 || trigger.nextId > 255 || trigger.next < -1 ||
-            (trigger.next >= 0 && static_cast<usize>(trigger.next) >= triggers.size()) ||
-            !bounded(trigger.refusalCooldown, 0) || !bounded(trigger.toggleCooldown, 0) ||
-            !bounded(trigger.radius, 0) || !bounded(trigger.height, 0) || trigger.sound < -1 ||
-            trigger.sound > 127 || trigger.minPlayers < 0 || trigger.minPlayers > 255 ||
-            trigger.heldContacts > 15 || !optionalObject(trigger.floor) ||
-            !affine(trigger.localPlacement) || !affine(trigger.placement)) {
-            return false;
-        }
-    }
-    std::unordered_set<s32> objects;
-    usize nodes = 0;
-    for (const auto& target : targets) {
-        if (!object(target.object) || !objects.insert(target.object).second ||
-            target.subtree.size() > kMaxObjects || nodes > kMaxObjects - target.subtree.size() ||
-            !bounded(target.alpha, 0, 1) || !bounded(target.origin) || !bounded(target.height) ||
-            !bounded(target.closedHeight) || !bounded(target.openHeight) ||
-            target.height < std::min(target.closedHeight, target.openHeight) - kHeightTolerance ||
-            target.height > std::max(target.closedHeight, target.openHeight) + kHeightTolerance ||
-            !bounded(target.spot) || target.sound < -1 || target.sound > 127) {
-            return false;
-        }
-        nodes += target.subtree.size();
-        for (usize index = 0; index < target.subtree.size(); ++index) {
-            if (target.subtree[index] >= parents.size() ||
-                (index > 0 && target.subtree[index - 1] >= target.subtree[index])) {
-                return false;
-            }
-        }
-    }
-    for (const auto& figure : figures) {
-        if (figure && !figure->valid()) {
-            return false;
-        }
-    }
-    for (const auto& refusal : refusals) {
-        if (refusal.trigger < 0 || static_cast<usize>(refusal.trigger) >= triggers.size() ||
-            refusal.id != triggers[static_cast<usize>(refusal.trigger)].id) {
-            return false;
-        }
-    }
-    for (const auto& lesson : lessons) {
-        // Isolated native callers may omit the visitor's party identity (-1).
-        if (lesson.party < -1 || lesson.party >= kPlayerSlots) {
-            return false;
-        }
-    }
-    const auto opening = [&](const TriggerOpening& event) {
-        const auto target = std::ranges::find(targets, event.target, &Target::object);
-        return target != targets.end() && event.subtype == target->subtype && bounded(event.spot) &&
-               event.sound >= -1 && event.sound <= 127;
-    };
-    if (!std::ranges::all_of(openings, opening) || !std::ranges::all_of(settled, opening)) {
-        return false;
-    }
-    for (const auto& cue : cameraCues) {
-        if (cue.id < 0 || cue.id > 255 || !optionalObject(cue.target) ||
-            std::ranges::none_of(triggers, [&](const auto& trigger) {
-                return trigger.id == cue.id && trigger.target == cue.target;
-            })) {
-            return false;
-        }
-    }
-    return std::ranges::all_of(wakes, [](const Vec3& value) { return bounded(value); });
-}
-
-struct LevelTriggers::Prepared::Data {
-    const LevelTriggers* owner = nullptr;
-    std::shared_ptr<const u8> binding;
-    u64 generation = 0;
-    Checkpoint state;
-    std::vector<std::optional<ItemFigure>> figures;
-    struct Resource {
-        const ItemFigure* figure = nullptr;
-        const ItemArchive* archive = nullptr;
-        const TreeInfo* tree = nullptr;
-    };
-    std::vector<Resource> resources;
-};
-LevelTriggers::Prepared::Prepared(std::unique_ptr<Data> data) : m_data(std::move(data)) {}
-LevelTriggers::Prepared::Prepared(Prepared&&) noexcept = default;
-LevelTriggers::Prepared& LevelTriggers::Prepared::operator=(Prepared&&) noexcept = default;
-LevelTriggers::Prepared::~Prepared() = default;
-
-std::optional<LevelTriggers::Checkpoint> LevelTriggers::checkpoint() const {
-    Checkpoint result;
-    result.triggers = m_sim.triggers;
-    result.targets = m_sim.targets;
-    result.parents = m_parents;
-    result.figures.reserve(m_sim.figures.size());
-    for (const auto& figure : m_sim.figures) {
-        auto value = figure ? figure->checkpoint() : std::nullopt;
-        if (figure && !value) {
-            return std::nullopt;
-        }
-        result.figures.push_back(std::move(value));
-    }
-    result.refusals = m_sim.refusals;
-    result.lessons = m_sim.lessons;
-    result.openings = m_sim.openings;
-    result.settled = m_sim.settled;
-    result.cameraCues = m_sim.cameraCues;
-    result.wakes = m_sim.wakes;
-    result.frameRemainder = m_sim.frameRemainder;
-    result.emptyToggleDelay = m_sim.emptyToggleDelay;
-    result.playerCount = m_sim.playerCount;
-    result.cameraHeld = m_sim.cameraHeld;
-    return result.valid() ? std::optional{std::move(result)} : std::nullopt;
-}
-
-std::optional<LevelTriggers::Prepared>
-LevelTriggers::prepareRestore(const Checkpoint& state) const {
-    if (!m_checkpointBinding || m_checkpointGeneration == std::numeric_limits<u64>::max() ||
-        !state.valid() || state.triggers.size() != m_sim.triggers.size() ||
-        state.targets.size() != m_sim.targets.size() || state.parents != m_parents ||
-        state.figures.size() != m_sim.figures.size()) {
-        return std::nullopt;
-    }
-    for (usize index = 0; index < m_sim.triggers.size(); ++index) {
-        if (!sameDefinition(state.triggers[index], m_sim.triggers[index])) {
-            return std::nullopt;
-        }
-    }
-    for (usize index = 0; index < m_sim.targets.size(); ++index) {
-        if (!sameDefinition(state.targets[index], m_sim.targets[index])) {
-            return std::nullopt;
-        }
-    }
-    auto data = std::make_unique<Prepared::Data>();
-    data->owner = this;
-    data->binding = m_checkpointBinding;
-    data->generation = m_checkpointGeneration;
-    data->state = state;
-    data->figures.reserve(m_sim.figures.size());
-    data->resources.reserve(m_sim.figures.size());
-    for (usize index = 0; index < m_sim.figures.size(); ++index) {
-        const auto& source = m_sim.figures[index];
-        const auto& value = state.figures[index];
-        if (static_cast<bool>(source) != value.has_value()) {
-            return std::nullopt;
-        }
-        if (!source) {
-            data->figures.emplace_back(std::nullopt);
-            data->resources.push_back({});
-            continue;
-        }
-        const auto resources = source->presentation();
-        if (!resources.archive || !resources.archive->loaded() || !resources.tree) {
-            return std::nullopt;
-        }
-        const auto tree = resources.archive->trees.find(value->pose.tree);
-        if (!tree || &resources.archive->trees.tree(*tree) != resources.tree) {
-            return std::nullopt;
-        }
-        auto figure = source->restored(*value);
-        if (!figure) {
-            return std::nullopt;
-        }
-        data->resources.push_back({&*source, resources.archive, resources.tree});
-        data->figures.emplace_back(std::move(*figure));
-    }
-    return Prepared{std::move(data)};
-}
-
-bool LevelTriggers::canCommit(const Prepared& prepared) const {
-    if (!prepared.m_data || prepared.m_data->owner != this ||
-        prepared.m_data->binding != m_checkpointBinding ||
-        prepared.m_data->generation != m_checkpointGeneration ||
-        m_checkpointGeneration == std::numeric_limits<u64>::max() ||
-        prepared.m_data->resources.size() != m_sim.figures.size()) {
-        return false;
-    }
-    for (usize index = 0; index < m_sim.figures.size(); ++index) {
-        const auto& resource = prepared.m_data->resources[index];
-        if ((m_sim.figures[index] ? &*m_sim.figures[index] : nullptr) != resource.figure) {
-            return false;
-        }
-        if (resource.figure) {
-            const auto current = resource.figure->presentation();
-            if (current.archive != resource.archive || current.tree != resource.tree ||
-                !resource.archive->loaded()) {
-                return false;
-            }
-            const auto tree =
-                resource.archive->trees.find(prepared.m_data->state.figures[index]->pose.tree);
-            if (!tree || &resource.archive->trees.tree(*tree) != resource.tree) {
-                return false;
-            }
-        }
-    }
-    return true;
-}
-
-bool LevelTriggers::commitRestore(Prepared&& prepared) {
-    if (!canCommit(prepared)) {
-        return false;
-    }
-    auto data = std::move(prepared.m_data);
-    auto& state = data->state;
-    m_sim.triggers.swap(state.triggers);
-    m_sim.targets.swap(state.targets);
-    m_parents.swap(state.parents);
-    m_sim.figures.swap(data->figures);
-    m_sim.refusals.swap(state.refusals);
-    m_sim.lessons.swap(state.lessons);
-    m_sim.openings.swap(state.openings);
-    m_sim.settled.swap(state.settled);
-    m_sim.cameraCues.swap(state.cameraCues);
-    m_sim.wakes.swap(state.wakes);
-    m_sim.frameRemainder = state.frameRemainder;
-    m_sim.emptyToggleDelay = state.emptyToggleDelay;
-    m_sim.playerCount = state.playerCount;
-    m_sim.cameraHeld = state.cameraHeld;
-    ++m_checkpointGeneration;
-    ++m_localEpoch;
-    return true;
-}
-
-bool LevelTriggers::restore(const Checkpoint& state) {
-    auto prepared = prepareRestore(state);
-    return prepared && commitRestore(std::move(*prepared));
-}
 
 void LevelTriggers::saveLocal(LocalSnapshot& saved) const {
     saved.m_state = m_sim;
@@ -446,7 +166,6 @@ bool LevelTriggers::restoreLocal(const LocalSnapshot& saved) {
         return false;
     }
     m_sim = saved.m_state;
-    ++m_checkpointGeneration;
     return true;
 }
 
@@ -673,7 +392,6 @@ void LevelTriggers::bind(const WorldLayout& layout, WorldAnimator& animator,
 
 void LevelTriggers::clear() {
     m_checkpointBinding = std::make_shared<const u8>(0);
-    m_checkpointGeneration = 0;
     m_sim = {};
     m_parents.clear();
     m_localEpoch = 0;
@@ -698,7 +416,6 @@ void LevelTriggers::refreshEligibility(s32 players) {
 void LevelTriggers::bindFigures(RenderDevice& device, const WorldLayout& layout,
                                 const AssetScope& scope) {
     m_checkpointBinding = std::make_shared<const u8>(0);
-    m_checkpointGeneration = 0;
     m_sim.figures.clear();
     for (const auto& trigger : m_sim.triggers) {
         const auto& instance = layout.itemInstances()[static_cast<usize>(trigger.instance)];
@@ -1351,7 +1068,7 @@ bool LevelTriggers::acceptsMotion(const Motion& state) const {
 }
 
 bool LevelTriggers::restoreMotion(const Motion& state) {
-    if (m_checkpointGeneration == std::numeric_limits<u64>::max() || !acceptsMotion(state)) {
+    if (!acceptsMotion(state)) {
         return false;
     }
     for (usize index = 0; index < m_sim.targets.size(); ++index) {
@@ -1367,7 +1084,6 @@ bool LevelTriggers::restoreMotion(const Motion& state) {
         target.height = cursor.height;
     }
     m_sim.frameRemainder = state.frameRemainder;
-    ++m_checkpointGeneration;
     ++m_localEpoch;
     return true;
 }

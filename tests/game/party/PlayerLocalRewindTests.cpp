@@ -6,11 +6,13 @@
 #include <iostream>
 #include <memory>
 #include <optional>
+#include <random>
 #include <string>
 #include <type_traits>
 #include <utility>
 #include <vector>
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
@@ -18,6 +20,7 @@
 #include "engine/world/TreePose.h"
 
 #include "FakeRenderDevice.h"
+#include "NativeStateSupport.h"
 #include "TestSupport.h"
 #include "game/characters/ClassData.h"
 #include "game/characters/NameCheats.h"
@@ -45,20 +48,25 @@ constexpr usize kSeats = 4;
 struct CompanionObservation {
     PowerupCompanion::Kind kind{};
     AnimationPlayer::Checkpoint animation;
-    TextureAnimator::Clock textures;
-    std::optional<TreePose::Checkpoint> pose;
+    const TreeModel* model = nullptr;
+    f32 frame = 0;
+    f32 textureClock = 0;
     std::optional<Mat4> head;
     bool shown = false;
     bool operator==(const CompanionObservation&) const = default;
 };
 CompanionObservation observeCompanion(const PowerupCompanion& companion) {
-    const auto diagnostic = companion.checkpoint();
-    REQUIRE(diagnostic);
     const auto head = companion.attachment(Mat4{1}, "POJOBODY1_HE#1");
     if (companion.kind() == PowerupCompanion::Kind::Pojo && companion.shown()) {
         REQUIRE(head);
     }
-    return {companion.kind(), diagnostic->animation, diagnostic->textures, diagnostic->pose, head,
+    const auto visual = companion.visual(Mat4{1}, 1);
+    return {companion.kind(),
+            companion.animationCheckpoint(),
+            visual ? visual->model : nullptr,
+            visual ? visual->frame : 0.0f,
+            visual ? visual->textureClock : 0.0f,
+            head,
             companion.shown()};
 }
 
@@ -168,10 +176,9 @@ TEST_CASE("local familiar history refuses replaced artwork without changing its 
     test::FakeRenderDevice device;
     ItemArchive empty;
     CHECK_FALSE(first.bind(device, empty, 80, Vec3{1, 2, 3}));
-    const auto afterRebind = first.checkpoint();
-    REQUIRE(afterRebind);
+    const auto afterRebind = test::liveDigest(first);
     CHECK_FALSE(first.restoreLocal(saved));
-    CHECK(first.checkpoint() == afterRebind);
+    CHECK(test::liveDigest(first) == afterRebind);
     CHECK(device.texturesCreated == 0);
 }
 
@@ -1124,5 +1131,197 @@ TEST_CASE("measure native four-player value and action copy before scene integra
               << LocalStateHistory<PartyRewind::Saved>::kCapacity
               << " inline_bytes_per_slot=" << sizeof(PartyRewind::Saved)
               << " (excludes dynamic buffers; party, companions and camera, not a scene budget)\n";
+}
+
+// The actor and the melee streak rewind with the participant's simulation, which holds
+// them by value; health cues rewind with the party's PlayerHealth, copied the same way.
+
+CollisionTriangle face(const Vec3& a, const Vec3& b, const Vec3& c, const Vec3& normal,
+                       s32 object = -1) {
+    return {normal, {a, b, c}, object};
+}
+
+void slopedFloor(std::vector<CollisionTriangle>& triangles, f32 left, f32 right, f32 leftY,
+                 f32 rightY, s32 object = -1) {
+    const Vec3 normal = glm::normalize(Vec3{leftY - rightY, right - left, 0});
+    triangles.push_back(
+        face({left, leftY, -10}, {right, rightY, 10}, {right, rightY, -10}, normal, object));
+    triangles.push_back(
+        face({left, leftY, -10}, {left, leftY, 10}, {right, rightY, 10}, normal, object));
+}
+
+WorldCollision walledRoom() {
+    std::vector<CollisionTriangle> triangles;
+    slopedFloor(triangles, -20, 20, 0, 0, 0);
+    triangles.push_back(face({5, 0, -10}, {5, 8, -10}, {5, 8, 10}, {-1, 0, 0}, 1));
+    triangles.push_back(face({5, 0, -10}, {5, 8, 10}, {5, 0, 10}, {-1, 0, 0}, 1));
+    triangles.push_back(face({-10, 0, 6}, {10, 8, 6}, {-10, 8, 6}, {0, 0, -1}, 2));
+    triangles.push_back(face({-10, 0, 6}, {10, 0, 6}, {10, 8, 6}, {0, 0, -1}, 2));
+    WorldCollision result;
+    result.build(triangles);
+    return result;
+}
+
+void sameActor(const PlayerActor& replay, const PlayerActor& native) {
+    CHECK(replay == native);
+    CHECK(replay.speed() == native.speed());
+    CHECK(replay.facing() == native.facing());
+    CHECK(replay.followPoint() == native.followPoint());
+    CHECK(replay.attentionPoint() == native.attentionPoint());
+    CHECK(replay.transform() == native.transform());
+}
+
+TEST_CASE("actor rewind resumes both directions across native slopes seams and stair landings",
+          "[game][players][player-local-rewind][terrain-seams][rollback]") {
+    const bool stairs = GENERATE(false, true);
+    const f32 direction = GENERATE(-1.0f, 1.0f);
+    CAPTURE(stairs, direction);
+    std::vector<CollisionTriangle> triangles;
+    if (stairs) {
+        slopedFloor(triangles, -10, -2, 0, 0);
+        slopedFloor(triangles, -2, 0, 0.75f, 0.75f);
+        slopedFloor(triangles, 0, 2, 1.5f, 1.5f);
+        slopedFloor(triangles, 2, 10, 2.25f, 2.25f);
+    } else {
+        slopedFloor(triangles, -10, 0, -5, 0);
+        slopedFloor(triangles, 0.02f, 10, 0.01f, 5);
+    }
+    WorldCollision geometry;
+    geometry.build(triangles);
+    const f32 startX = -5 * direction;
+    const f32 startY = stairs ? (direction > 0 ? 0 : 2.25f) : startX * 0.5f;
+    PlayerActor native;
+    native.spawn(0, {}, nullptr, {startX, startY, 0}, 0.75f);
+    native.setPaceBonus(1.25f);
+    PlayerActor replay = native;
+    for (s32 tick = 0; tick < 96; ++tick) {
+        CAPTURE(tick);
+        const PlayerActor before = native;
+        if (tick % 7 == 0) {
+            // A rewind replaces every local field, not only feet/yaw. No velocity or
+            // fall clock is invented by restoring.
+            replay.place({80, 90, 100});
+            replay.setPaceBonus(-20);
+            replay = before;
+        }
+        native.clearWallContacts();
+        replay.clearWallContacts();
+        const MoveInput move{{direction, 0}, 1};
+        native.update(move, 0, kStep, &geometry, 1, (tick % 3) == 0);
+        replay.update(move, 0, kStep, &geometry, 1, (tick % 3) == 0);
+        CHECK(replay.fall(kStep, geometry) == native.fall(kStep, geometry));
+        sameActor(replay, native);
+        // PlayerMotion shortens a climbing step by the rise: a stair riser takes most of
+        // its frame, and a slope a tenth of the pace throughout.
+        REQUIRE((native.position().x - before.position().x) * direction > (stairs ? 0.0f : 0.08f));
+        if (!stairs) {
+            CHECK(native.position().y == Catch::Approx(native.position().x * 0.5f).margin(0.02f));
+        }
+    }
+    CHECK(native.position().x * direction > (stairs ? 4.4f : 3.9f));
+    CHECK(std::abs(native.position().y - startY) > 2);
+}
+
+TEST_CASE("actor rewind resumes midfall and changing floor availability without resetting progress",
+          "[game][players][player-local-rewind][falling][rollback]") {
+    const f32 rate = GENERATE(30.0f, 60.0f, 120.0f);
+    const f32 seconds = 1 / rate;
+    auto geometry = walledRoom();
+    PlayerActor native;
+    native.spawn(0, {}, nullptr, {0, 10, 0}, 1.25f);
+    for (s32 tick = 0; tick < 7; ++tick) {
+        REQUIRE(native.fall(seconds, geometry));
+    }
+    REQUIRE(native.position().y > 0);
+    REQUIRE(native.position().y < 10);
+    PlayerActor replay = native;
+    for (s32 tick = 0; tick < 150; ++tick) {
+        CAPTURE(rate, tick);
+        if (tick == 80) {
+            geometry.clear(); // a disappearing support changes only the next floor query
+        } else if (tick == 100) {
+            std::vector<CollisionTriangle> raised;
+            slopedFloor(raised, -20, 20, native.position().y + 1, native.position().y + 1);
+            geometry.build(raised);
+        }
+        if (tick % 11 == 0) {
+            replay.turnTo(17);
+            replay = native;
+        }
+        const f32 before = native.position().y;
+        const bool nativeFalling = native.fall(seconds, geometry);
+        CHECK(replay.fall(seconds, geometry) == nativeFalling);
+        sameActor(replay, native);
+        CHECK(native.position().y >= before - PlayerActor::kFallSpeed * seconds - 0.00001f);
+        if (tick == 79) {
+            CHECK(native.position().y == 0);
+        } else if (tick == 99) {
+            CHECK(native.position().y < 0);
+        } else if (tick == 100) {
+            CHECK_FALSE(nativeFalling);
+            CHECK(native.position().y == Catch::Approx(before + 1));
+        }
+    }
+}
+
+TEST_CASE("health cue rewind preserves the existing random sequence without emitting on restore",
+          "[rollback][player-local-rewind]") {
+    PlayerHealth health;
+    std::mt19937 reference{0x5A17u};
+    std::vector<std::string> cries;
+    PlayerHealth::Events events{
+        .block = [](f32, f32) { FAIL("unexpected guard"); },
+        .sound = [](std::string_view) {},
+        .cry = [&](std::string_view cue) { cries.emplace_back(cue); },
+        .named = [](std::string_view, f32) { FAIL("unexpected low-health line"); }};
+    const auto burn = [&] {
+        PlayerRuntime player;
+        CharacterSave save;
+        save.progress().health = 1000;
+        player.actor.spawn(0, save, nullptr, Vec3{0}, 0);
+        health.hurt(player, 1, HurtKind::Burn, false, false, 1, events);
+        REQUIRE(player.actor.save().health() == 999);
+    };
+    for (s32 index = 0; index < 257; ++index) {
+        burn();
+        CHECK(cries.back() == "PAIN" + std::to_string(1 + reference() % 4));
+    }
+    const PlayerHealth saved = health;
+    cries.clear();
+    for (s32 index = 0; index < 700; ++index) {
+        burn();
+        CHECK(cries.back() == "PAIN" + std::to_string(1 + reference() % 4));
+    }
+    const auto expected = cries;
+    cries.clear();
+    health = saved;
+    CHECK(cries.empty());
+    CHECK(health == saved);
+    for (s32 index = 0; index < 700; ++index) {
+        burn();
+    }
+    CHECK(cries == expected);
+}
+
+TEST_CASE("melee praise rewind restores its exact count and fractional quiet timer",
+          "[rollback][player-local-rewind]") {
+    PlayerRuntime native;
+    for (s32 hit = 0; hit < 15; ++hit) {
+        native.streak.record(true);
+    }
+    REQUIRE(native.streak.step(1.25f).empty());
+    const PlayerRuntime::Simulation saved = native.simulation();
+    PlayerRuntime replay;
+    replay.simulation() = saved;
+    CHECK(replay.streak == native.streak);
+    CHECK(native.streak.step(0.5f).empty());
+    CHECK(replay.streak.step(0.5f).empty());
+    // Past the original's two seconds of quiet.
+    CHECK(native.streak.step(0.26f) == MeleeStreak::kBraveryVoice);
+    CHECK(replay.streak.step(0.26f) == MeleeStreak::kBraveryVoice);
+    CHECK(replay.streak == native.streak);
+    CHECK(replay.streak.step(4).empty());
+    replay.simulation() = saved;
+    CHECK(replay.streak == saved.streak);
 }
 } // namespace

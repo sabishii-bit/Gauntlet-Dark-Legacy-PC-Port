@@ -362,7 +362,6 @@ TEST_CASE("moving statue rewind retains its parent through idle waking and queue
             }
         }
         REQUIRE(pool.statues.count() == 0);
-        REQUIRE(pool.statues.checkpoint()); // queued definitions still match the fixed roster
     };
     replay();
     CritterStatues::LocalSnapshot queued;

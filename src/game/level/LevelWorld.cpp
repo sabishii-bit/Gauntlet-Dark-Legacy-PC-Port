@@ -189,7 +189,6 @@ bool LevelWorld::restoreLocal(const LocalSnapshot& saved) {
     m_destruction.restoreLocal(saved.m_destruction);
     m_triggers.restoreLocal(saved.m_triggers);
     m_rotators.restoreLocal(saved.m_rotators);
-    ++m_checkpointGeneration;
     return true;
 }
 
@@ -565,7 +564,6 @@ void LevelWorld::loadLevelData(const std::filesystem::path& unpackedRoot) {
 
 void LevelWorld::clear() {
     m_checkpointBinding = std::make_shared<const u8>(0);
-    m_checkpointGeneration = 0;
     m_walls.clear();
     m_skorneArena.clear();
     m_fallingScenery.clear();

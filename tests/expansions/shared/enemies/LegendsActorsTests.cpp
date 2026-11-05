@@ -11,13 +11,13 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
-#include "fixtures/NativeModelFixture.h"
-#include "game/critters/Critters.h"
 #include "expansions/n64/critters/LegendsCritters.h"
-#include "game/enemies/EnemyKinds.h"
-#include "game/enemies/EnemyMissiles.h"
 #include "expansions/shared/enemies/LegendsActors.h"
 #include "expansions/shared/scenes/LegendsSceneAdapter.h"
+#include "fixtures/NativeModelFixture.h"
+#include "game/critters/Critters.h"
+#include "game/enemies/EnemyKinds.h"
+#include "game/enemies/EnemyMissiles.h"
 
 namespace {
 using namespace gdl;
@@ -281,7 +281,7 @@ TEST_CASE("Every native archer bomber and suicide placement binds and draws its 
         CHECK(live.tierOf(*id) == (descriptor.spawn.tier == 6 ? 1 : 2));
         CHECK(live.algorithmOf(*id) == descriptor.spawn.algorithm);
         REQUIRE(live.animatorOf(*id));
-        const auto pose = live.animatorOf(*id)->checkpoint();
+        const auto pose = live.animatorOf(*id)->pose().checkpoint();
         REQUIRE(pose);
         CHECK(pose->tree == expected);
         const auto* tree = live.appearanceTree(
@@ -414,18 +414,18 @@ TEST_CASE("Native It artwork follows only its live common enemy lifetime and res
     actors.draw(device, Mat4{1}, WorldLighting{});
     CHECK_FALSE(device.draws.empty());
     CHECK(live.targets().empty());
-    const auto held = actors.figure(0).checkpoint();
-    REQUIRE(held);
+    const ItemFigure held = actors.figure(0);
+    REQUIRE(held.hasFigure());
     for (s32 tick = 0; tick < 8; ++tick) {
         actors.update(1.0f / 60, players, true, spawn);
         live.update(1, 1.0f / 60, players, {}, nullptr, 1, true);
         actors.syncLive(live);
     }
-    const auto stopped = actors.figure(0).checkpoint();
-    REQUIRE(stopped);
-    CHECK(stopped->animation == held->animation);
-    CHECK(stopped->textures.frame == held->textures.frame);
-    CHECK(stopped->position == held->position);
+    const auto& stopped = actors.figure(0);
+    REQUIRE(stopped.hasFigure());
+    CHECK(stopped.presentation().meshFrame == held.presentation().meshFrame);
+    CHECK(stopped.textureAnimator().clock().frame == held.textureAnimator().clock().frame);
+    CHECK(stopped.position() == held.position());
     SECTION("tagging removes native art immediately and never respawns the placement") {
         std::vector<s32> tagged;
         bool moved = false;
@@ -433,7 +433,7 @@ TEST_CASE("Native It artwork follows only its live common enemy lifetime and res
             actors.update(1.0f / 60, players, false, spawn);
             live.update(1, 1.0f / 60, players);
             actors.syncLive(live);
-            moved |= actors.figure(0).position() != held->position;
+            moved |= actors.figure(0).position() != held.position();
             tagged = live.takeTagged();
         }
         CHECK(moved);

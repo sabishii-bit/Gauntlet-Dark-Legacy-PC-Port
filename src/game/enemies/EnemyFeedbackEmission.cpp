@@ -65,55 +65,6 @@ EnemyFeedbackEmission EnemyFeedbackEmission::resolve(const EnemyFeedback& feedba
     return result;
 }
 
-namespace {
-std::optional<EffectTrees::Prepared>
-prepareEffect(ItemArchive* archive, std::string_view tree,
-              std::span<const EffectTrees::PoolResource> resources,
-              std::span<TextureSet* const> lenders) {
-    if (archive == nullptr || tree.empty()) {
-        return std::nullopt;
-    }
-    const auto index = archive->trees.find(tree);
-    if (!index) {
-        return std::nullopt;
-    }
-    const auto* nativeTree = &archive->trees.tree(*index);
-    for (const auto& resource : resources) {
-        const auto* prototype = resource.prototype;
-        if (resource.id == 0 || resource.archive != archive || resource.textures == nullptr ||
-            prototype == nullptr || !std::ranges::equal(resource.lenders, lenders) ||
-            !std::ranges::equal(prototype->lenders, lenders) || prototype->archive != archive ||
-            prototype->tree != nativeTree || !prototype->emitParticles ||
-            prototype->missingObjectsAreEmpty || prototype->trails.size() != 0) {
-            continue;
-        }
-        EffectTrees::Prepared prepared{
-            archive,           nativeTree,      prototype->model.get(), &prototype->particles,
-            resource.textures, resource.lenders};
-        prepared.device = prototype->device;
-        return prepared;
-    }
-    return std::nullopt;
-}
-} // namespace
-
-std::optional<EffectTrees::Prepared>
-EnemyFeedbackEmission::prepare(std::span<const EffectTrees::PoolResource> resources,
-                               std::span<TextureSet* const> lenders) const {
-    return prepareEffect(archive, tree, resources, lenders);
-}
-
-std::optional<EffectTrees::Prepared>
-GeneratorFeedbackEmission::prepare(std::span<const EffectTrees::PoolResource> resources,
-                                   std::span<TextureSet* const> lenders,
-                                   const RenderDevice& device) const {
-    auto prepared = prepareEffect(archive, tree, resources, lenders);
-    if (!prepared || prepared->device != &device) {
-        return std::nullopt;
-    }
-    return prepared;
-}
-
 EnemyBirthEmission EnemyBirthEmission::resolve(const EnemyBirth& birth,
                                                std::span<ItemArchive* const> archives) {
     EnemyBirthEmission result;
@@ -135,12 +86,6 @@ EnemyBirthEmission EnemyBirthEmission::resolve(const EnemyBirth& birth,
         break;
     }
     return result;
-}
-
-std::optional<EffectTrees::Prepared>
-EnemyBirthEmission::prepare(std::span<const EffectTrees::PoolResource> resources,
-                            std::span<TextureSet* const> lenders) const {
-    return prepareEffect(archive, tree, resources, lenders);
 }
 
 } // namespace gdl::game

@@ -182,6 +182,5 @@ private:
     std::shared_ptr<const u8> m_checkpointBinding = std::make_shared<const u8>(0);
     std::shared_ptr<const u8> m_localOwner = std::make_shared<const u8>(0);
     u64 m_localEpoch = 1;
-    u64 m_checkpointRevision = 1;
 };
 } // namespace gdl::game

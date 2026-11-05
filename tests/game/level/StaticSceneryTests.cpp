@@ -325,13 +325,15 @@ TEST_CASE("riding scenery keeps hidden clocks running and meshless geometry soli
     bool invisibleSolid = false;
     for (s32 tick = 0; tick < 90; ++tick) {
         CAPTURE(tick, missing, seconds);
-        const auto animated = fixture.scenery.prop(1).figure.checkpoint();
+        const auto animated = fixture.scenery.prop(1).figure.presentation();
         const Vec3 position = fixture.scenery.prop(0).figure.position();
         fixture.step(tick, seconds);
         const auto& hidden = fixture.scenery.prop(1);
-        const auto advanced = hidden.figure.checkpoint();
-        hiddenClockAdvanced |=
-            !hidden.shown && animated && advanced && advanced->animation != animated->animation;
+        const auto advanced = hidden.figure.presentation();
+        hiddenClockAdvanced |= !hidden.shown && animated.tree != nullptr &&
+                               advanced.tree != nullptr &&
+                               (advanced.meshSequence != animated.meshSequence ||
+                                advanced.meshFrame != animated.meshFrame);
         supportMoved |= fixture.scenery.prop(0).figure.position() != position;
         const auto& meshless = fixture.scenery.prop(2);
         invisibleSolid |= meshless.shown && meshless.box.solid && !meshless.figure.hasFigure();

@@ -180,7 +180,6 @@ bool PlacedItems::restoreLocal(const LocalSnapshot& saved) {
     }
     // Geometry bindings are retained by the stage. Frame/texture selection is
     // derived again for each item when drawing; no resource bind occurs here.
-    ++m_checkpointGeneration;
     return true;
 }
 
@@ -373,7 +372,6 @@ void PlacedItems::syncFloors() {
 
 void PlacedItems::clear() {
     m_checkpointBinding = std::make_shared<const u8>(0);
-    m_checkpointGeneration = 0;
     m_layout = nullptr;
     m_infos.clear();
     m_sim.items.clear();

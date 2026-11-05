@@ -1,8 +1,10 @@
 #include <array>
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -21,6 +23,7 @@
 #include "game/enemies/LevelOpponents.h"
 #include "game/enemies/ScriptedOpponents.h"
 #include "game/hud/HelpMessages.h"
+#include "game/level/NativeStateResources.h"
 #include "game/party/AttackCheckpointFixture.h"
 
 namespace {
@@ -66,6 +69,25 @@ NativeStateDigest::Digest followupDigest(const LevelOpponents& opponents) {
     const auto result = digest.checkedFinish();
     REQUIRE(result);
     return *result;
+}
+
+constexpr std::string_view kSwarmPrefix = "stage/opponents-local-rewind/swarm";
+
+/** The native digest of one of the swarm's owners, its artwork named alike in every load;
+ * none when that owner has nothing to hash (a closed pool). */
+template <class Owner>
+std::optional<NativeStateDigest::Digest> swarmDigest(const LevelOpponents& opponents,
+                                                     const Owner& owner) {
+    NativeStateResources resources;
+    if (!opponents.enemies().registerNativeResources(resources, kSwarmPrefix) ||
+        !opponents.generators().registerNativeResources(resources)) {
+        return std::nullopt;
+    }
+    NativeStateDigest digest(resources.resources());
+    if (!owner.appendNativeDigest(digest)) {
+        return std::nullopt;
+    }
+    return digest.checkedFinish();
 }
 
 TEST_CASE("native hit streak and generator rewards replay in their original settlement order",
@@ -266,8 +288,9 @@ TEST_CASE("native opponent owner replays wrong branches through pools queues and
     s32 tick = 0;
     for (s32 window = 0; window < 24; ++window) {
         CAPTURE(window, tick);
-        const auto enemies = predicted->opponents.enemies().checkpoint();
-        const auto generators = predicted->opponents.generators().checkpoint();
+        const auto enemies = swarmDigest(predicted->opponents, predicted->opponents.enemies());
+        const auto generators =
+            swarmDigest(predicted->opponents, predicted->opponents.generators());
         REQUIRE(predicted->opponents.saveLocal(*saved));
         predicted->effects.saveLocal(effects);
         const s32 distance = 1 + window % 8;
@@ -291,8 +314,8 @@ TEST_CASE("native opponent owner replays wrong branches through pools queues and
         REQUIRE(predicted->opponents.restoreLocal(*saved));
         REQUIRE(predicted->effects.restoreLocal(effects));
         CHECK(callbacks == calls);
-        CHECK(predicted->opponents.enemies().checkpoint() == enemies);
-        CHECK(predicted->opponents.generators().checkpoint() == generators);
+        CHECK(swarmDigest(predicted->opponents, predicted->opponents.enemies()) == enemies);
+        CHECK(swarmDigest(predicted->opponents, predicted->opponents.generators()) == generators);
         REQUIRE(predicted->opponents.saveLocal(*actual));
         CHECK(predicted->opponents.equalLocal(*saved, *actual));
         for (s32 step = 0; step < distance; ++step, ++tick) {
@@ -301,12 +324,12 @@ TEST_CASE("native opponent owner replays wrong branches through pools queues and
             REQUIRE(predicted->opponents.saveLocal(*actual));
             CHECK(predicted->opponents.equalLocal(expected[static_cast<usize>(step)], *actual));
             CHECK(followupDigest(predicted->opponents) == followupDigest(reference->opponents));
-            CHECK(predicted->opponents.enemies().checkpoint() ==
-                  reference->opponents.enemies().checkpoint());
-            CHECK(predicted->opponents.generators().checkpoint() ==
-                  reference->opponents.generators().checkpoint());
-            CHECK(predicted->opponents.missiles().checkpoint() ==
-                  reference->opponents.missiles().checkpoint());
+            CHECK(swarmDigest(predicted->opponents, predicted->opponents.enemies()) ==
+                  swarmDigest(reference->opponents, reference->opponents.enemies()));
+            CHECK(swarmDigest(predicted->opponents, predicted->opponents.generators()) ==
+                  swarmDigest(reference->opponents, reference->opponents.generators()));
+            CHECK(swarmDigest(predicted->opponents, predicted->opponents.missiles()) ==
+                  swarmDigest(reference->opponents, reference->opponents.missiles()));
             CHECK(test::liveDigest(predicted->opponents.placements()) ==
                   test::liveDigest(reference->opponents.placements()));
         }
@@ -341,11 +364,11 @@ TEST_CASE("native opponent aggregate preflights every child before mutation",
     SECTION("owner closed") {
         fixture->opponents.close();
     }
-    const auto before = fixture->opponents.enemies().checkpoint();
+    const auto before = swarmDigest(fixture->opponents, fixture->opponents.enemies());
     CHECK_FALSE(fixture->opponents.canRestoreLocal(*saved));
     CHECK_FALSE(fixture->opponents.equalLocal(*saved, *saved));
     CHECK_FALSE(fixture->opponents.restoreLocal(*saved));
-    CHECK(fixture->opponents.enemies().checkpoint() == before);
+    CHECK(swarmDigest(fixture->opponents, fixture->opponents.enemies()) == before);
 }
 
 TEST_CASE("native opponent equality includes undispatched coordinator rewards",

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <array>
 #include <filesystem>
 
 #include <catch2/catch_test_macros.hpp>
@@ -32,20 +31,19 @@ inline std::filesystem::path projectileCheckpointArchive() {
     return root;
 }
 
-/** Immutable prototypes deliberately outlive both pools and all preparations. */
+/** A projectile archive whose artwork the prototypes bind before any pool counts uploads.
+ * They outlive every pool that borrows the archive. */
 struct ProjectileCheckpointFixture {
     FakeRenderDevice device;
     ItemArchive archive;
     TextureAnimator textures;
     game::EffectTrees prototypes;
-    std::array<game::EffectTrees::PoolResource, 1> resources;
     ProjectileCheckpointFixture() {
         REQUIRE(archive.load(projectileCheckpointArchive()));
         game::EffectTrees::Setting setting;
         setting.persistent = true;
         REQUIRE(prototypes.startSet(device, archive, "FLIGHT", {}, setting) != 0);
         textures.bind(archive.trees.textureAnimations(), archive.textures, device);
-        resources[0] = {1, &archive, {}, &textures, &prototypes.effect(0)};
     }
     game::MissileLaunch launch() {
         game::MissileLaunch result;

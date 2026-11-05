@@ -68,38 +68,6 @@ public:
     void restoreMotion(const Vec3& position, f32 yaw, f32 speed, f32 radius, f32 height,
                        f32 followHeight);
 
-    /** Resumable native body state. Ownership and CharacterSave remain bound to
-     * the receiving actor; neither inventory nor health belongs to this value. */
-    struct Checkpoint {
-        static constexpr usize kMaxContacts = 256;
-        static constexpr s32 kMaxObject = 65535;
-        static constexpr f32 kMaxCoordinate = 1'000'000;
-        struct Contact {
-            s32 object = -1;
-            Vec3 point{0};
-            bool operator==(const Contact&) const = default;
-        };
-        Vec3 position{0};
-        f32 yaw = 0;
-        f32 speed = kMinSpeed; ///< unmodified class pace, before paceBonus and clamping
-        f32 paceBonus = 0;
-        f32 radius = kDefaultWidth * 0.5f;
-        f32 height = kDefaultHeight;
-        f32 followHeight = kDefaultFollowHeight;
-        f32 attentionHeight = kDefaultFollowHeight;
-        bool moving = false;
-        f32 floorBase = 0;    ///< PlayerCollideFloor's floor_base: the floor stood on
-        s32 floorObject = -1; ///< its object, for the extra step and a lift's hold
-        u32 floorFlags = 0;   ///< that object's level flags
-        std::vector<Contact> contacts;
-        bool valid() const;
-        bool operator==(const Checkpoint&) const = default;
-    };
-    Checkpoint checkpoint() const;
-    /** Validates the complete value before changing any body state. The next
-     * native tick still owns clearWallContacts(); restore emits no events. */
-    bool restore(const Checkpoint& state);
-
     /** Walks by `input`, whose forward is the camera's `cameraYaw`, for `seconds`; with
      * `collision` the step is kept on a floor and pushed out of walls. `moveScale` is how
      * much of its pace the body's action leaves it: at none it turns to the stick and stays

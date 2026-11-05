@@ -51,12 +51,10 @@ TEST_CASE("Death events retain their birth through slot reuse and eight tick nat
         return enemies.takeDeathEvents();
     };
     std::array<std::vector<DeathEvent>, 8> expected;
-    std::array<Enemies::Checkpoint, 8> states;
+    const auto states = std::make_unique<std::array<Enemies::LocalSnapshot, 8>>();
     for (s32 tick = 0; tick < 8; ++tick) {
         expected[tick] = advance(tick, false);
-        const auto state = enemies.checkpoint();
-        REQUIRE(state);
-        states[tick] = *state;
+        REQUIRE(enemies.saveLocal((*states)[tick]));
         for (const auto& event : expected[tick]) {
             CHECK(event.enemy == 0);
             CHECK(event.instance == (tick < 3 ? birth : birth + 1));
@@ -79,7 +77,9 @@ TEST_CASE("Death events retain their birth through slot reuse and eight tick nat
         REQUIRE(enemies.restoreLocal(*saved));
         for (s32 tick = 0; tick < distance; ++tick) {
             CHECK(advance(tick, false) == expected[tick]);
-            CHECK(enemies.checkpoint() == states[tick]);
+            const auto now = std::make_unique<Enemies::LocalSnapshot>();
+            REQUIRE(enemies.saveLocal(*now));
+            CHECK(enemies.equalLocal(*now, (*states)[tick]));
         }
     }
 }

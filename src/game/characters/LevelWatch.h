@@ -44,16 +44,6 @@ public:
             visitor.template fields<2>(value);
         }
     };
-    struct Checkpoint {
-        std::vector<Mark> marks;
-        bool valid() const;
-        bool operator==(const Checkpoint&) const = default;
-    };
-    Checkpoint checkpoint() const { return {m_marks}; }
-    /** Ordered comparison for a prepared transaction; performs no allocation. */
-    bool matches(const Checkpoint& state) const noexcept { return m_marks == state.marks; }
-    /** Preserve party order without announcing, healing, or observing a level. */
-    bool restore(const Checkpoint& state);
     /** Notes `level` for `player`; the first sighting sets the mark and reports nothing. */
     std::optional<LevelChange> observe(s32 player, s32 level);
     /** Forgets a player, or everyone. */

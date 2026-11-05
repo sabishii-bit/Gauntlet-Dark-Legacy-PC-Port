@@ -312,7 +312,6 @@ bool Combatant::equalLocal(const LocalSnapshot& left, const LocalSnapshot& right
 // NOLINTNEXTLINE(misc-no-recursion): subsystem checkpoints recurse into their parts by design
 void Combatant::restoreLocalValues(const LocalSnapshot& snapshot) {
     m_sim = snapshot.m_state;
-    ++m_checkpointRevision;
     for (usize i = 0; i < m_sim.childCount; ++i) {
         m_children[i]->restoreLocalValues(snapshot.m_children[i]);
     }

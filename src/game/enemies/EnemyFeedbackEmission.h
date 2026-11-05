@@ -1,6 +1,5 @@
 #pragma once
 
-#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -25,9 +24,6 @@ struct GeneratorFeedbackEmission {
     static GeneratorFeedbackEmission resolve(const GeneratorEvent& event, ItemArchive* archive,
                                              const LevelInfo* level, s32 realm,
                                              std::string_view levelName);
-    std::optional<EffectTrees::Prepared>
-    prepare(std::span<const EffectTrees::PoolResource> resources,
-            std::span<TextureSet* const> lenders, const RenderDevice& device) const;
 };
 
 /** Native GENFX birth artwork. The roster is indexed by swarm kind; absent
@@ -39,9 +35,6 @@ struct EnemyBirthEmission {
 
     static EnemyBirthEmission resolve(const EnemyBirth& birth,
                                       std::span<ItemArchive* const> archives);
-    std::optional<EffectTrees::Prepared>
-    prepare(std::span<const EffectTrees::PoolResource> resources,
-            std::span<TextureSet* const> lenders) const;
 };
 
 /** Native swarm impact presentation, resolved before its actor/slot can be
@@ -56,14 +49,6 @@ struct EnemyFeedbackEmission {
 
     static EnemyFeedbackEmission resolve(const EnemyFeedback& feedback, ItemArchive* enemyArchive,
                                          ItemArchive& weapons, const LevelInfo* level);
-
-    /** Finds the same tree and ordered native lender context in a trusted
-     * preloaded catalog. Missing bindings refuse replay; they never substitute
-     * another archive, suppress an available effect, or load artwork mid-tick.
-     * An emission with archive == nullptr needs no visual preparation. */
-    std::optional<EffectTrees::Prepared>
-    prepare(std::span<const EffectTrees::PoolResource> resources,
-            std::span<TextureSet* const> lenders) const;
 };
 
 } // namespace gdl::game

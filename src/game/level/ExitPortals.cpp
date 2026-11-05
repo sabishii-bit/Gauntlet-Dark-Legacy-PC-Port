@@ -133,7 +133,6 @@ bool ExitPortals::restoreLocal(const LocalSnapshot& saved) {
                                   static_cast<s32>(portal.player.frame()));
         }
     }
-    ++m_checkpointGeneration;
     return true;
 }
 
@@ -269,7 +268,6 @@ bool ExitPortals::bind(RenderDevice& device, const WorldLayout& layout, const As
 
 void ExitPortals::clear() {
     m_checkpointBinding = std::make_shared<const u8>(0);
-    m_checkpointGeneration = 0;
     m_portals.clear();
     m_wait.waiting.clear();
     m_wait.visitors.clear();

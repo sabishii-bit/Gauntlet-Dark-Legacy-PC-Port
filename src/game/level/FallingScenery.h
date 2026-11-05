@@ -127,6 +127,5 @@ private:
     const ModelSet* m_models = nullptr;
     const TextureSet* m_textures = nullptr;
     std::shared_ptr<const u8> m_checkpointBinding = std::make_shared<const u8>(0);
-    u64 m_checkpointGeneration = 0;
 };
 } // namespace gdl::game

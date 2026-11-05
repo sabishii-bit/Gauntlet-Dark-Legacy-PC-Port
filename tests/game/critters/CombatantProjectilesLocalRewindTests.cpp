@@ -29,14 +29,14 @@ static_assert(!std::is_copy_constructible_v<CombatantProjectiles>);
 static_assert(!std::is_move_constructible_v<CombatantProjectiles>);
 
 /** Two projectile pools over one synthetic stock: `native` and its `replay`, each with its own
- * effects, compared by native digest and by their effect pools. */
+ * effects, compared by the native digests of the pools and of their effects. The prototypes
+ * bind the stock's artwork before any pool counts uploads. */
 struct Fixture {
     test::FakeRenderDevice device;
     CombatantAssets stock;
     TextureAnimator textures;
     EffectTrees prototypes, effects, replayEffects;
     CombatantProjectiles native, replay;
-    std::vector<EffectTrees::PoolResource> resources;
     NativeStateResources registry;
     std::vector<std::string> sounds;
 
@@ -72,10 +72,6 @@ struct Fixture {
         setting.persistent = true;
         for (const auto* tree : {"SHOT", "LOOP", "HIT"}) {
             REQUIRE(prototypes.startSet(device, stock.archive, tree, {}, setting) != 0);
-        }
-        for (usize i = 0; i < prototypes.count(); ++i) {
-            resources.push_back(
-                {static_cast<u32>(i + 1), &stock.archive, {}, &textures, &prototypes.effect(i)});
         }
         REQUIRE(registry.registerArchive(stock.archive, "combatant-projectiles/archive"));
         REQUIRE(registry.registerCritter(stock.data, "combatant-projectiles/critter", 0));
@@ -113,9 +109,9 @@ struct Fixture {
     NativeStateDigest::Digest digest(const CombatantProjectiles& pool) const {
         return test::liveDigest(pool, registry.resources());
     }
-    void equal() const {
+    void equal() {
         CHECK(digest(native) == digest(replay));
-        CHECK(effects.checkpointPool(resources) == replayEffects.checkpointPool(resources));
+        CHECK(test::liveDigest(effects, registry) == test::liveDigest(replayEffects, registry));
     }
 };
 
@@ -384,9 +380,7 @@ TEST_CASE("expired shared effects remain pending native projectile cleanup acros
     REQUIRE(f.replayEffects.count() == 1);
     f.effects.stop(f.effects.effect(0).id);
     f.replayEffects.stop(f.replayEffects.effect(0).id);
-    const auto shared = f.effects.checkpointPool(f.resources);
-    REQUIRE(shared);
-    REQUIRE(shared->effects.empty());
+    REQUIRE(f.effects.count() == 0);
     REQUIRE(f.native.count() == 1);
     const auto sounds = f.sounds;
     CombatantProjectiles::LocalSnapshot pending;

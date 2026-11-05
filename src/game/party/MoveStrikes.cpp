@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <unordered_set>
 
 #include "engine/core/Types.h"
 #include "engine/io/NativeStateDigest.h"
@@ -45,71 +44,7 @@ bool MoveStrikes::restoreLocal(const LocalSnapshot& saved) {
         return false;
     }
     m_sim = saved.m_state;
-    ++m_restoreGeneration;
     return true;
-}
-
-bool MoveStrikes::Checkpoint::valid() const {
-    if (strikes.size() > kMaxStrikes) {
-        return false;
-    }
-    const auto finite = [](f32 value) { return std::isfinite(value) && std::abs(value) <= 1e6f; };
-    const auto vector = [&](const Vec3& value) {
-        return finite(value.x) && finite(value.y) && finite(value.z);
-    };
-    std::unordered_set<u32> ids;
-    for (const auto& strike : strikes) {
-        if (strike.id == 0 || !ids.insert(strike.id).second || (next != 0 && strike.id >= next) ||
-            strike.owner < 0 || strike.owner >= 4 || (strike.flies && strike.expanding) ||
-            !vector(strike.position) || !vector(strike.facing) || strike.facing.y != 0 ||
-            std::abs(glm::length(strike.facing) - 1) > 1e-4f || !finite(strike.speed) ||
-            !finite(strike.radius) || strike.radius < 0 || !finite(strike.arc) || strike.arc < -1 ||
-            strike.arc > 1 || !finite(strike.damage) || !finite(strike.delayLeft) ||
-            !finite(strike.launchIn) || strike.launchIn < 0 || !finite(strike.secondsLeft) ||
-            !finite(strike.damageTime)) {
-            return false;
-        }
-    }
-    return true;
-}
-std::optional<MoveStrikes::Checkpoint> MoveStrikes::checkpoint() const {
-    if (m_sim.strikes.size() > Checkpoint::kMaxStrikes) {
-        return std::nullopt;
-    }
-    Checkpoint state{m_sim.strikes, m_sim.next};
-    return state.valid() ? std::optional{std::move(state)} : std::nullopt;
-}
-std::optional<MoveStrikes::Prepared> MoveStrikes::prepareRestore(const Checkpoint& state) const {
-    if (!state.valid() || m_restoreGeneration == 0) {
-        return std::nullopt;
-    }
-    Prepared result;
-    result.m_owner = this;
-    result.m_lifetime = m_restoreOwner;
-    result.m_generation = m_restoreGeneration;
-    result.m_state = state;
-    return result;
-}
-bool MoveStrikes::canCommit(const Prepared& state) const noexcept {
-    return state.m_owner == this && !state.m_lifetime.expired() &&
-           state.m_lifetime.lock() == m_restoreOwner && m_restoreGeneration != 0 &&
-           state.m_generation == m_restoreGeneration;
-}
-// The prepared state's parts are taken in place:
-// NOLINTNEXTLINE(cppcoreguidelines-rvalue-reference-param-not-moved)
-bool MoveStrikes::commitRestore(Prepared&& state) noexcept {
-    if (!canCommit(state)) {
-        return false;
-    }
-    m_sim.strikes.swap(state.m_state.strikes);
-    m_sim.next = state.m_state.next;
-    state.m_owner = nullptr;
-    ++m_restoreGeneration;
-    return true;
-}
-bool MoveStrikes::restore(const Checkpoint& state) {
-    auto prepared = prepareRestore(state);
-    return prepared && commitRestore(std::move(*prepared));
 }
 
 f32 MoveStrikes::damageOf(const MoveStrike& strike, f32 ownDamage) {
@@ -248,7 +183,6 @@ void MoveStrikes::stop(u32 id) {
 }
 
 void MoveStrikes::clear() {
-    ++m_restoreGeneration;
     ++m_localEpoch;
     m_sim.strikes.clear();
     m_sim.next = 1;

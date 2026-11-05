@@ -4,7 +4,6 @@
 #include <cmath>
 #include <limits>
 #include <ranges>
-#include <utility>
 
 #include "engine/core/Types.h"
 #include "engine/math/PortableMath.h"
@@ -12,76 +11,6 @@
 #include "game/characters/Progression.h"
 
 namespace gdl::game {
-
-bool PlayerActor::Checkpoint::valid() const {
-    const auto bounded = [](f32 value, f32 low, f32 high) {
-        return std::isfinite(value) && value >= low && value <= high;
-    };
-    const auto vector = [&](const Vec3& value) {
-        return bounded(value.x, -kMaxCoordinate, kMaxCoordinate) &&
-               bounded(value.y, -kMaxCoordinate, kMaxCoordinate) &&
-               bounded(value.z, -kMaxCoordinate, kMaxCoordinate);
-    };
-    if (!vector(position) || !bounded(yaw, -kMaxCoordinate, kMaxCoordinate) ||
-        !bounded(speed, kMinSpeed, kMaxSpeed) ||
-        !bounded(paceBonus, -kMaxCoordinate, kMaxCoordinate) || !bounded(radius, 0.01f, 50) ||
-        !bounded(height, 0.01f, 100) || !bounded(followHeight, 0, 100) ||
-        !bounded(attentionHeight, 0, 100) || !bounded(floorBase, -kMaxCoordinate, kMaxCoordinate) ||
-        floorObject < -1 || floorObject > kMaxObject || contacts.size() > kMaxContacts) {
-        return false;
-    }
-    for (usize index = 0; index < contacts.size(); ++index) {
-        const auto& contact = contacts[index];
-        if (contact.object < -1 || contact.object > kMaxObject || !vector(contact.point)) {
-            return false;
-        }
-        // WorldCollision keeps the first contact with each object for the tick.
-        for (usize previous = 0; previous < index; ++previous) {
-            if (contacts[previous].object == contact.object) {
-                return false;
-            }
-        }
-    }
-    return true;
-}
-
-PlayerActor::Checkpoint PlayerActor::checkpoint() const {
-    Checkpoint state{m_position, m_yaw,       m_speed,        m_paceBonus,
-                     m_radius,   m_height,    m_followHeight, m_attentionHeight,
-                     m_moving,   m_floorBase, m_floorObject,  m_floorFlags,
-                     {}};
-    state.contacts.reserve(m_wallContacts.size());
-    for (const auto& contact : m_wallContacts) {
-        state.contacts.push_back({contact.object, contact.point});
-    }
-    return state;
-}
-
-bool PlayerActor::restore(const Checkpoint& state) {
-    if (!state.valid()) {
-        return false;
-    }
-    std::vector<WallContact> contacts;
-    contacts.reserve(state.contacts.size());
-    for (const auto& contact : state.contacts) {
-        contacts.push_back({contact.object, contact.point});
-    }
-    m_position = state.position;
-    m_yaw = state.yaw;
-    m_speed = state.speed;
-    m_paceBonus = state.paceBonus;
-    m_radius = state.radius;
-    m_height = state.height;
-    m_followHeight = state.followHeight;
-    m_attentionHeight = state.attentionHeight;
-    m_moving = state.moving;
-    m_stepAim = m_position;
-    m_floorBase = state.floorBase;
-    m_floorObject = state.floorObject;
-    m_floorFlags = state.floorFlags;
-    m_wallContacts = std::move(contacts);
-    return true;
-}
 
 void PlayerActor::spawn(s32 player, const CharacterSave& save, const ClassStats* stats,
                         const Vec3& position, f32 yaw) {

@@ -20,17 +20,6 @@ class HeadGem {
 
 public:
     bool operator==(const HeadGem&) const = default;
-    enum class Shown : u8 { None, HandOfDeath, HealthVamp };
-    struct Checkpoint {
-        bool handOfDeath = false;
-        bool healthVamp = false;
-        Shown shown = Shown::None;
-        bool valid() const;
-        bool operator==(const Checkpoint&) const = default;
-    };
-    Checkpoint checkpoint() const;
-    /** Restore both independent appearance latches without playing a burst. */
-    bool restore(const Checkpoint& state);
     /** HEAD_HANDOFDEATH: the archive keeps fifteen letters of an object's name. */
     static constexpr std::string_view kHandOfDeath = "HEAD_HANDOFDEAT";
     static constexpr std::string_view kHealthVamp = "HEAD_HEALTHVAMP";

@@ -127,7 +127,7 @@ TEST_CASE("correcting an earlier Death cue never renumbers a different Death's a
     CHECK(commands == before);
 }
 
-TEST_CASE("Death audio retains its retired birth and refuses legacy events in recorded mode",
+TEST_CASE("Death audio retains its retired birth in recorded mode",
           "[death][native-combat-audio][scene-sound-events]") {
     DeathSoundFixture fixture(1);
     auto& enemies = fixture.opponents.enemies();
@@ -148,18 +148,6 @@ TEST_CASE("Death audio retains its retired birth and refuses legacy events in re
     const auto newer = fixture.consume(2);
     REQUIRE(newer.finite.events.size() == 1);
     CHECK(newer.finite.events[0].id.emitter == FrameEventEmitter{20, 0, next});
-
-    auto legacy = enemies.checkpoint();
-    REQUIRE(legacy);
-    legacy->deathEvents.push_back({.kind = DeathEvent::Kind::Killed, .enemy = 0});
-    REQUIRE(legacy->valid());
-    REQUIRE(enemies.restore(*legacy));
-    usize commands = 0;
-    const SoundPlayer::Capture observe(&fixture.output, [&](const auto&) { ++commands; });
-    CHECK_THROWS_AS(fixture.consume(3), SceneSoundEvents::Unsupported);
-    CHECK_FALSE(fixture.sounds.recording());
-    CHECK(commands == 0);
-    CHECK(fixture.sounds.lastUnsupported() == "Death event without its source lifetime");
 }
 
 TEST_CASE("native swarm impact and bomber audio use source lifetimes rather than scene order",
@@ -308,7 +296,7 @@ TEST_CASE("corrected native missile impacts cannot steal another flight's record
     CHECK(fixture.sounds.unsupportedCount() == 0);
 }
 
-TEST_CASE("retired missile audio rejects missing births instead of binding a recycled shooter",
+TEST_CASE("retired missile audio keeps its own birth instead of binding a recycled shooter",
           "[native-combat-audio][scene-sound-events]") {
     DeathSoundFixture fixture(1);
     fixture.players[0].actor.spawn(0, {}, nullptr, {10, 0, 10}, 0);
@@ -323,21 +311,9 @@ TEST_CASE("retired missile audio rejects missing births instead of binding a rec
     REQUIRE(pool.count() == 0);
     pool.launch(kind, {40, 3, 0}, {40, 3, 20}, 1, nullptr, 0);
     REQUIRE(pool.missile(0).instance != retired);
-    const auto pending = pool.checkpoint();
-    REQUIRE(pending);
-    REQUIRE(pending->hits.size() == 1);
     const auto frame = fixture.consume(1);
     REQUIRE(frame.finite.events.size() == 1);
     CHECK(frame.finite.events[0].id.emitter == FrameEventEmitter{22, 0, retired, 0});
-    auto legacy = *pending;
-    legacy.hits[0].instance = 0;
-    REQUIRE(pool.restore(legacy));
-    usize commands = 0;
-    const SoundPlayer::Capture observe(&fixture.output, [&](const auto&) { ++commands; });
-    CHECK_THROWS_AS(fixture.consume(2), SceneSoundEvents::Unsupported);
-    CHECK_FALSE(fixture.sounds.recording());
-    CHECK(fixture.sounds.lastUnsupported() == "enemy missile hit without its source lifetime");
-    CHECK(commands == 0);
 }
 
 TEST_CASE("Death placement strengths select statue color and initial wake flag independently",

@@ -242,8 +242,6 @@ public:
     static f32 attenuation(const Vec3& at, std::span<const Vec3> hearers);
 
 private:
-    // Identifies the lifetime of the borrowed level services, not gameplay state.
-    u64 m_bindingGeneration = 1;
     /** Plays `name` at `level` of 255 as heard from where the players stand. */
     SoundHandle playAt(std::string_view name, f32 level, const Vec3& at);
     void landEnemyMissiles(std::span<PlayerRuntime> players, OpponentHost& host);

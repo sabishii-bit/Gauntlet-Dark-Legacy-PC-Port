@@ -57,20 +57,6 @@ usize specIndex(s32 classIndex) {
     return static_cast<usize>(std::clamp(classIndex, 0, static_cast<s32>(kSpecs.size()) - 1));
 }
 
-void restoreMotion(PlayerMissiles::Missile& shot, const PlayerMissiles::FlightCheckpoint& state) {
-    shot.position = state.position;
-    shot.velocity = state.velocity;
-    shot.tumble = state.tumble;
-    shot.age = state.age;
-    shot.scale = state.scale;
-    shot.continuity = state.continuity;
-    shot.previousPosition = shot.position;
-    shot.previousVelocity = shot.velocity;
-    shot.previousTumble = shot.tumble;
-    shot.previousAge = shot.age;
-    shot.presentationCaptured = false;
-}
-
 } // namespace
 
 const MissileSpec& MissileSpec::of(s32 classIndex) {
@@ -211,47 +197,6 @@ const PlayerMissiles::VisualHistory* PlayerMissiles::visualHistory(u32 effect) c
 PlayerMissiles::FlightCheckpoint PlayerMissiles::flightCheckpoint(const Missile& missile) {
     return {missile.position, missile.velocity, missile.tumble,
             missile.age,      missile.scale,    missile.continuity};
-}
-
-bool PlayerMissiles::restoreFlight(u64 instance, const FlightCheckpoint& checkpoint) {
-    if (m_device != nullptr || !checkpoint.valid()) {
-        return false;
-    }
-    const auto shot = std::ranges::find(m_sim.missiles, instance, &Missile::instance);
-    if (shot == m_sim.missiles.end() || shot->potion != 0 || shot->potionRelease ||
-        shot->flags != 0 || shot->multiplayer != MultiplayerMode::Normal ||
-        !shot->pierced.empty() || !shot->playerContacts.empty()) {
-        return false;
-    }
-    restoreMotion(*shot, checkpoint);
-    return true;
-}
-
-bool PlayerMissiles::restorePotionFlight(u64 instance, const FlightCheckpoint& checkpoint) {
-    if (m_device != nullptr || !checkpoint.valid()) {
-        return false;
-    }
-    const auto shot = std::ranges::find(m_sim.missiles, instance, &Missile::instance);
-    if (shot == m_sim.missiles.end() || shot->potion < 1 || shot->potion > 4 ||
-        shot->spec != &MissileSpec::potion() || (shot->flags & ~damage::kHeal) != 0 ||
-        shot->release || shot->multiplayer != MultiplayerMode::Normal || !shot->pierced.empty() ||
-        !shot->playerContacts.empty()) {
-        return false;
-    }
-    restoreMotion(*shot, checkpoint);
-    return true;
-}
-
-bool PlayerMissiles::restoreVisualFlight(u64 instance, const ParticleFlight& history) {
-    if (m_device != nullptr || !history.valid() || history.retiring) {
-        return false;
-    }
-    const auto found = std::ranges::find(m_sim.visualHistory, instance, &VisualHistory::instance);
-    if (found == m_sim.visualHistory.end()) {
-        return false;
-    }
-    found->flight = history;
-    return true;
 }
 
 bool PlayerMissiles::launch(const MissileLaunch& launch) {
@@ -688,7 +633,6 @@ void PlayerMissiles::draw(RenderDevice& device, const Mat4& clip, const WorldLig
 }
 
 void PlayerMissiles::clear() {
-    ++m_restoreGeneration;
     ++m_localEpoch;
     m_sim.visualHistory.clear();
     m_sim.ricochetIn = 0;
@@ -746,7 +690,6 @@ bool PlayerMissiles::restoreLocal(const LocalSnapshot& state) {
     }
     m_sim = state.m_state;
     (void)m_visuals.restoreLocal(state.m_visuals);
-    ++m_restoreGeneration;
     return true;
 }
 

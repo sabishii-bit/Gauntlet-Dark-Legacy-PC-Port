@@ -241,9 +241,9 @@ TEST_CASE("Legends traversal refuses visual meshes as fabricated floor and keeps
         triangle.vertices = {Vec3{0}, Vec3{0, 0, span}, Vec3{span, 0, 0}};
         invalid.collision.assign(250, triangle);
     }
-    const auto before = traversal.actor().checkpoint();
+    const PlayerActor before = traversal.actor();
     CHECK_THROWS_AS(traversal.open(invalid, 0, CharacterSave{}), FormatError);
-    CHECK(traversal.actor().checkpoint() == before);
+    CHECK(traversal.actor() == before);
     CHECK(traversal.collision().loaded());
 }
 

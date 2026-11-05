@@ -1,8 +1,7 @@
-#include <algorithm>
 #include <array>
 #include <cmath>
 #include <memory>
-#include <optional>
+#include <string>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -34,7 +33,6 @@ struct Island {
     EnemyMissiles missiles{45};
     OpponentSimulation simulation{generators, enemies, missiles};
     std::array<EnemyView, 1> players;
-    std::vector<EnemyMissiles::Resource> resources;
 
     /** The pools' native values at one moment, and the placements' when they take part. */
     struct Saved {
@@ -45,7 +43,8 @@ struct Island {
         PlacedEnemies::LocalSnapshot placements;
     };
 
-    explicit Island(bool brood = false) {
+    /** With `brood`, a grunt generator whose births take `way` at `strength`. */
+    explicit Island(bool brood = false, s32 way = kChaseWay, s32 strength = 1) {
         const auto root =
             test::assetOrSkip("MONSTERS/GRU/ANIM.PS2").parent_path().parent_path().parent_path();
         const auto directory = test::scratchDirectory("opponent-simulation");
@@ -53,7 +52,9 @@ struct Island {
                       brood ? R"({"objects":[{"name":"FLOOR","position":[0,0,0]}],
             "itemInfos":[{"type":3,"name":"GRU","radius":2,"height":5,"hitPoints":10}],
             "itemInstances":[{"info":0,"minPlayers":1,"position":[60,0,60],
-                              "params":[1,0,7,0,5,0,20,0,0,0,0,0]}]})"
+                              "params":[)" +
+                                  std::to_string(strength) + ",0," + std::to_string(way) +
+                                  R"(,0,5,0,20,0,0,0,0,0]}]})"
                             : R"({"objects":[{"name":"FLOOR","position":[0,0,0]}]})");
         REQUIRE(layout.load(directory));
         collision.build(
@@ -62,14 +63,6 @@ struct Island {
         enemies.open(device, root, &collision, Enemies::kMost, {}, 1125);
         REQUIRE(enemies.loadKind(kGruntKind));
         REQUIRE(generators.bind(device, layout, enemies, &collision, {}, 1));
-        for (s32 slot = 0; slot < 3; ++slot) {
-            const auto* model = enemies.projectileModel(kGruntKind, slot);
-            if (model != nullptr && std::ranges::none_of(resources, [model](const auto& resource) {
-                    return resource.model == model;
-                })) {
-                resources.push_back({static_cast<u32>(resources.size()) + 1, model});
-            }
-        }
         players[0].player = 0;
         players[0].position = {0, 0, 0};
     }
@@ -156,10 +149,7 @@ TEST_CASE("opponent island preserves the native generator enemy and missile phas
     Island island(true);
     island.spawn({-5, 0, -18}, kThrowWay, kArcherStrength);
     const auto initial = island.save();
-    const auto swarmBefore = island.enemies.checkpoint();
-    const auto shotsBefore = island.missiles.checkpoint(island.resources);
-    REQUIRE(swarmBefore);
-    REQUIRE(shotsBefore);
+    const usize bodies = island.enemies.count();
     const auto uploads = island.device.texturesCreated;
     Obstacle box;
     box.centre = {5, 0, 6};
@@ -176,19 +166,19 @@ TEST_CASE("opponent island preserves the native generator enemy and missile phas
     frame.critters = critters;
     frame.bosses = bosses;
     std::vector<Island::Saved> expected;
+    bool bred = false;
+    bool shot = false;
     for (s32 tick = 0; tick < 150; ++tick) {
         frame.timeStopped = tick >= 40 && tick < 50;
         frame.stops =
             tick % 2 == 0 ? std::span<const MissileStop>{stops} : std::span<const MissileStop>{};
         island.native(frame);
         expected.push_back(island.save());
+        bred |= island.enemies.count() > bodies;
+        shot |= island.missiles.count() != 0;
     }
-    const auto swarmAfter = island.enemies.checkpoint();
-    const auto shotsAfter = island.missiles.checkpoint(island.resources);
-    REQUIRE(swarmAfter);
-    REQUIRE(shotsAfter);
-    REQUIRE(swarmAfter->nextInstance > swarmBefore->nextInstance);
-    REQUIRE(shotsAfter->nextInstance > shotsBefore->nextInstance);
+    REQUIRE(bred);
+    REQUIRE(shot);
     island.restore(initial);
     for (s32 tick = 0; tick < 150; ++tick) {
         CAPTURE(tick);
@@ -210,27 +200,27 @@ TEST_CASE("birth publication occurs after native AI and before missile movement"
     Island island;
     island.spawn({0, 0, 40});
     island.missiles.launch(EnemyMissileKind::arrow(), {80, 10, 80}, {80, 10, 100}, 1, nullptr, -1);
-    const auto swarm = island.enemies.checkpoint();
-    REQUIRE(swarm);
-    REQUIRE_FALSE(swarm->births.empty());
+    const auto spawned = std::make_unique<Enemies::LocalSnapshot>();
+    REQUIRE(island.enemies.saveLocal(*spawned));
+    const auto births = island.enemies.takeBirths();
+    REQUIRE_FALSE(births.empty());
+    REQUIRE(island.enemies.restoreLocal(*spawned));
     REQUIRE(island.missiles.count() != 0);
     EnemyMissiles::LocalSnapshot shots;
     island.missiles.saveLocal(shots);
     usize called = 0;
     island.simulation.advance(island.frame(), {}, [&] {
         ++called;
-        const auto afterAi = island.enemies.checkpoint();
-        REQUIRE(afterAi);
-        CHECK(afterAi->pendingTicks != swarm->pendingTicks);
+        const auto afterAi = std::make_unique<Enemies::LocalSnapshot>();
+        REQUIRE(island.enemies.saveLocal(*afterAi));
+        CHECK_FALSE(island.enemies.equalLocal(*afterAi, *spawned));
         EnemyMissiles::LocalSnapshot unmoved;
         island.missiles.saveLocal(unmoved);
         CHECK(island.missiles.equalLocal(shots, unmoved));
-        CHECK(island.enemies.takeBirths() == swarm->births);
+        CHECK(island.enemies.takeBirths() == births);
     });
     CHECK(called == 1);
-    const auto advanced = island.enemies.checkpoint();
-    REQUIRE(advanced);
-    CHECK(advanced->births.empty());
+    CHECK(island.enemies.takeBirths().empty());
     EnemyMissiles::LocalSnapshot moved;
     island.missiles.saveLocal(moved);
     CHECK_FALSE(island.missiles.equalLocal(shots, moved));
@@ -311,34 +301,24 @@ TEST_CASE("opponent phase advances native flights and chasing bodies",
 
 TEST_CASE("opponent phase preserves native shooting minds and pending throws",
           "[diagnostics][opponent-simulation][assets]") {
-    Island island(true);
+    std::unique_ptr<Island> island;
     SECTION("shooting native mind") {
         const auto way = GENERATE(kThrowWay, kBombWay, kSkirmishWay, kSkirmishBombWay,
                                   kStandCastWay, kRangeCastWay, kCastWay);
-        island.spawn({0, 0, 20}, way, kArcherStrength);
-    }
-    SECTION("previously requested throw survives a change to a chasing mind") {
-        const auto slot = island.spawn({0, 0, 20});
-        auto state = island.enemies.checkpoint();
-        REQUIRE(state);
-        auto& animator = state->enemies[static_cast<usize>(slot)].animator;
-        REQUIRE(animator);
-        animator->requested = EnemyAction::Throw;
-        REQUIRE(island.enemies.restore(*state));
+        island = std::make_unique<Island>(true);
+        island->spawn({0, 0, 20}, way, kArcherStrength);
     }
     SECTION("brood can create a shooting mind in the same update") {
-        auto state = island.generators.checkpoint();
-        REQUIRE(state);
-        REQUIRE(state->generators.size() == 1);
-        state->generators.front().algorithm = kThrowWay;
-        REQUIRE(island.generators.restore(*state));
+        island = std::make_unique<Island>(true, kThrowWay);
+        REQUIRE(island->generators.count() == 1);
     }
-    const auto before = island.save();
-    island.native(island.frame());
-    const auto expected = island.save();
-    island.restore(before);
-    island.simulation.advance(island.frame());
-    CHECK(island.holds(expected));
+    REQUIRE(island);
+    const auto before = island->save();
+    island->native(island->frame());
+    const auto expected = island->save();
+    island->restore(before);
+    island->simulation.advance(island->frame());
+    CHECK(island->holds(expected));
 }
 
 TEST_CASE("archer and bomber releases match native phase through the first impact",
@@ -347,26 +327,20 @@ TEST_CASE("archer and bomber releases match native phase through the first impac
     const bool bomb = GENERATE(false, true);
     const s32 ticks = GENERATE(1, 2);
     CAPTURE(bred, bomb, ticks);
-    Island island(bred);
     const s32 way = bomb ? kBombWay : kThrowWay;
     const s32 strength = bomb ? kBomberStrength : kArcherStrength;
+    Island island(bred, way, strength);
     if (bred) {
         // Humanoids emerge ahead of the hut. Put the target on that same side
         // so the native launch sweep does not terminate inside the generator.
         island.players[0].position = {60, 0, 85};
-        auto state = island.generators.checkpoint();
-        REQUIRE(state);
-        state->generators.front().algorithm = way;
-        state->generators.front().tier = strength;
-        REQUIRE(island.generators.restore(*state));
     } else {
         island.spawn({0, 0, -20}, way, strength);
     }
     auto frame = island.frame();
     frame.ticks = ticks;
     frame.seconds = static_cast<f32>(ticks) / 60;
-    const auto baseline = island.missiles.checkpoint(island.resources);
-    REQUIRE(baseline);
+    REQUIRE(island.missiles.count() == 0);
     const auto uploads = island.device.texturesCreated;
     bool released = false;
     bool reachedBoundary = false;
@@ -375,21 +349,17 @@ TEST_CASE("archer and bomber releases match native phase through the first impac
         const auto before = island.save();
         island.native(frame);
         const auto expected = island.save();
-        const auto shots = island.missiles.checkpoint(island.resources);
-        const auto swarm = island.enemies.checkpoint();
-        REQUIRE(shots);
-        REQUIRE(swarm);
         island.restore(before);
         island.simulation.advance(frame);
         CHECK(island.holds(expected));
-        if (!shots->hits.empty() || !swarm->blows.empty()) {
+        // Taken after the comparison; taking an empty queue changes nothing.
+        if (!island.missiles.takeHits().empty() || !island.enemies.takeBlows().empty()) {
             reachedBoundary = true;
             break;
         }
-        if (shots->nextInstance > baseline->nextInstance) {
+        if (island.missiles.count() != 0) {
             released = true;
-            REQUIRE_FALSE(shots->missiles.empty());
-            CHECK(shots->missiles.front().kind.slot ==
+            CHECK(island.missiles.missile(0).kind.slot ==
                   (bomb ? EnemyMissileKind::kBomb : EnemyMissileKind::kArrow));
         }
     }
@@ -436,12 +406,11 @@ TEST_CASE("ordinary placements run their native watch phase before generators an
     placements.observe(ViewVolume{}, {});
     OpponentSimulation combined{island.generators, island.enemies, island.missiles, &placements};
     const auto initial = island.save(&placements);
-    const auto swarmBefore = island.enemies.checkpoint();
-    REQUIRE(swarmBefore);
+    const usize bodies = island.enemies.count();
     const auto uploads = island.device.texturesCreated;
     std::vector<Island::Saved> expected;
     std::vector<usize> firstPending;
-    std::optional<Enemies::Checkpoint> firstSwarm;
+    usize firstBodies = 0;
     for (s32 tick = 0; tick < 12; ++tick) {
         // Independent native LevelOpponents::watch -> update order; no replay
         // helper participates in the expected activation or motion.
@@ -452,12 +421,11 @@ TEST_CASE("ordinary placements run their native watch phase before generators an
         expected.push_back(island.save(&placements));
         if (tick == 0) {
             firstPending.assign(placements.pending().begin(), placements.pending().end());
-            firstSwarm = island.enemies.checkpoint();
+            firstBodies = island.enemies.count();
         }
     }
     REQUIRE(firstPending == std::vector<usize>{2});
-    REQUIRE(firstSwarm);
-    REQUIRE(firstSwarm->nextInstance > swarmBefore->nextInstance);
+    REQUIRE(firstBodies > bodies);
     island.restore(initial, &placements);
     for (usize tick = 0; tick < expected.size(); ++tick) {
         CAPTURE(tick);

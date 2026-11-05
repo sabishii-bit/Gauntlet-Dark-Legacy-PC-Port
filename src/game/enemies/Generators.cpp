@@ -237,69 +237,9 @@ bool sameView(const std::optional<ViewSet>& a, const std::optional<ViewSet>& b) 
     return a == b;
 }
 
-constexpr f32 kCheckpointMagnitude = 1'000'000;
-bool bounded(f32 value, f32 minimum = -kCheckpointMagnitude, f32 maximum = kCheckpointMagnitude) {
-    return std::isfinite(value) && value >= minimum && value <= maximum;
-}
-
-bool bounded(const Vec3& value) {
-    return bounded(value.x) && bounded(value.y) && bounded(value.z);
-}
-
-bool bounded(const Mat4& value) {
-    for (s32 column = 0; column < 4; ++column) {
-        for (s32 row = 0; row < 4; ++row) {
-            if (!bounded(value[column][row])) {
-                return false;
-            }
-        }
-    }
-    return true;
-}
-
 bool generatorKind(s32 kind) {
     return kind == Generators::kHellBrood || kind == Generators::kTempleBrood ||
            (kind >= 0 && kind < kEnemyKindCount);
-}
-
-bool validSlot(const Generators::Slot& slot) {
-    const auto& box = slot.box;
-    return !slot.boss && slot.minPlayers >= -32768 && slot.minPlayers <= 32767 &&
-           slot.presence <= Generators::Slot::Presence::Suppressed && generatorKind(slot.kind) &&
-           slot.tier >= 0 && slot.tier <= 32767 && slot.algorithm >= -1 &&
-           slot.algorithm <= 32767 && slot.most >= -1'000'000 && slot.most <= 1'000'000 &&
-           slot.interval >= -1'000'000 && slot.interval <= 1'000'000 && bounded(slot.health, 0) &&
-           bounded(slot.threshold, 0) && bounded(slot.armor) && slot.state >= 0 &&
-           slot.state <= Generators::kStates && slot.countdown >= -100'000'000 &&
-           slot.countdown <= 100'000'000 && bounded(slot.ratio, 0, 1) && slot.bred >= 0 &&
-           slot.bred <= 100'000'000 && slot.living >= 0 && slot.living <= 100'000'000 &&
-           bounded(slot.position) && bounded(slot.collisionOffset) &&
-           bounded(slot.targetRadius, 0) && bounded(slot.targetHeight, 0) &&
-           bounded(slot.placement) && bounded(slot.yaw) && bounded(slot.direction) &&
-           bounded(slot.clearance, 0) && bounded(slot.patrolClearance, 0) &&
-           bounded(slot.viewRadius, 0) && bounded(box.centre) && bounded(box.yaw) &&
-           bounded(box.halfAcross, 0) && bounded(box.halfAlong, 0) && bounded(box.height, 0) &&
-           bounded(box.cylinderRadius, 0) &&
-           (!box.enemyItem || bounded(box.enemyItem->radius, 0)) && slot.support >= -1 &&
-           bounded(slot.supportLocal) && bounded(slot.boxOffset) && bounded(slot.boxYaw);
-}
-
-// Only the native mutable fields may depart from the initially bound item.
-// Support can be lost when its world object disappears, but never reassigned.
-bool sameDefinition(const Generators::Slot& a, const Generators::Slot& b) {
-    return a.kind == b.kind && a.minPlayers == b.minPlayers && a.interval == b.interval &&
-           a.threshold == b.threshold && a.armor == b.armor &&
-           a.collisionOffset == b.collisionOffset && a.targetRadius == b.targetRadius &&
-           a.targetHeight == b.targetHeight && a.clearance == b.clearance &&
-           a.patrolClearance == b.patrolClearance && a.viewRadius == b.viewRadius &&
-           a.alwaysActive == b.alwaysActive && a.box.halfAcross == b.box.halfAcross &&
-           a.box.halfAlong == b.box.halfAlong && a.box.height == b.box.height &&
-           a.box.cylinderRadius == b.box.cylinderRadius &&
-           a.box.enemyItem.has_value() == b.box.enemyItem.has_value() &&
-           (!a.box.enemyItem || (a.box.enemyItem->cylindrical == b.box.enemyItem->cylindrical &&
-                                 a.box.enemyItem->radius == b.box.enemyItem->radius)) &&
-           (a.support == b.support || a.support == -1) && a.supportLocal == b.supportLocal &&
-           a.boxOffset == b.boxOffset && a.boxYaw == b.boxYaw;
 }
 
 } // namespace
@@ -351,7 +291,6 @@ bool Generators::restoreLocal(const LocalSnapshot& saved) {
     for (usize i = 0; i < m_sim.bodies.size(); ++i) {
         m_sim.bodies[i]->textures.restoreClock(saved.m_clocks[i]);
     }
-    ++m_restoreGeneration;
     return true;
 }
 
@@ -365,162 +304,6 @@ bool Generators::Slot::operator==(const Slot& other) const {
                         s.boxYaw, s.boss);
     };
     return values(*this) == values(other) && sameObstacle(box, other.box);
-}
-
-bool Generators::Checkpoint::operator==(const Checkpoint& other) const {
-    return roster == other.roster && generators == other.generators && bodies == other.bodies &&
-           scales == other.scales && players == other.players &&
-           specialBirth == other.specialBirth && sameView(view, other.view) &&
-           attentionGate == other.attentionGate;
-}
-
-bool Generators::Checkpoint::valid() const {
-    if (roster.size() > kMaxGenerators || generators.size() != roster.size() ||
-        bodies.size() > static_cast<usize>(kEnemyKindCount) + 2 || players < 0 || players > 4 ||
-        !bounded(scales.health, 0, 10000) || !bounded(scales.rate, 0, 10000) ||
-        !bounded(scales.most, 0, 10000)) {
-        return false;
-    }
-    if (view && !view->bounded(kCheckpointMagnitude)) {
-        return false;
-    }
-    for (usize index = 0; index < bodies.size(); ++index) {
-        if (!generatorKind(bodies[index].kind) || !bodies[index].textures.valid()) {
-            return false;
-        }
-        for (usize previous = 0; previous < index; ++previous) {
-            if (bodies[index].kind == bodies[previous].kind) {
-                return false;
-            }
-        }
-    }
-    for (usize index = 0; index < generators.size(); ++index) {
-        const auto& slot = generators[index];
-        if (!validSlot(slot) || !validSlot(roster[index]) || !sameDefinition(slot, roster[index]) ||
-            std::ranges::none_of(bodies,
-                                 [&](const auto& body) { return body.kind == slot.kind; })) {
-            return false;
-        }
-    }
-    return true;
-}
-
-std::optional<Generators::Checkpoint> Generators::checkpoint() const {
-    if (!m_sim.bound || std::ranges::any_of(m_sim.generators, [](const auto& generator) {
-            return generator.boss || generator.bossFigure.has_value();
-        })) {
-        return std::nullopt;
-    }
-    Checkpoint result;
-    result.roster = m_roster;
-    result.generators.reserve(m_sim.generators.size());
-    for (const auto& generator : m_sim.generators) {
-        result.generators.push_back(generator);
-    }
-    result.bodies.reserve(m_sim.bodies.size());
-    for (const auto& body : m_sim.bodies) {
-        result.bodies.push_back({body->kind, body->textures.checkpoint()});
-    }
-    result.scales = m_sim.scales;
-    result.players = m_sim.players;
-    result.specialBirth = m_sim.specialBirth;
-    result.view = m_sim.view;
-    result.attentionGate = m_sim.attentionGate;
-    return result.valid() ? std::optional{std::move(result)} : std::nullopt;
-}
-
-struct Generators::Prepared::Data {
-    const Generators* owner = nullptr;
-    std::shared_ptr<const u8> lifetime;
-    u64 generation = 0;
-    const WorldCollision* collision = nullptr;
-    Checkpoint values;
-    std::vector<Generator> generators;
-    std::vector<TextureAnimator> textures;
-};
-
-Generators::Prepared::Prepared(std::unique_ptr<Data> data) : m_data(std::move(data)) {}
-Generators::Prepared::Prepared(Prepared&&) noexcept = default;
-Generators::Prepared& Generators::Prepared::operator=(Prepared&&) noexcept = default;
-Generators::Prepared::~Prepared() = default;
-
-std::optional<Generators::Prepared> Generators::prepareRestore(const Checkpoint& state) const {
-    if (!m_sim.bound || !state.valid() || state.roster != m_roster ||
-        state.generators.size() != m_sim.generators.size() ||
-        state.bodies.size() != m_sim.bodies.size() ||
-        std::ranges::any_of(m_sim.generators, [](const auto& generator) {
-            return generator.boss || generator.bossFigure.has_value();
-        })) {
-        return std::nullopt;
-    }
-    auto data = std::make_unique<Prepared::Data>();
-    data->owner = this;
-    data->lifetime = m_lifetime;
-    data->generation = m_restoreGeneration;
-    data->collision = m_sim.collision;
-    data->generators.resize(state.generators.size());
-    for (usize index = 0; index < state.generators.size(); ++index) {
-        const auto& slot = state.generators[index];
-        if (slot.support >= 0 &&
-            (m_sim.collision == nullptr || !m_sim.collision->objectTransform(slot.support))) {
-            return std::nullopt;
-        }
-        static_cast<Slot&>(data->generators[index]) = slot;
-        // This diagnostic path accepts only the same authored roster, never
-        // dynamic births. Retain its native identities instead of rebinding them.
-        data->generators[index].instance = m_sim.generators[index].instance;
-    }
-    data->textures.reserve(m_sim.bodies.size());
-    for (usize index = 0; index < m_sim.bodies.size(); ++index) {
-        if (state.bodies[index].kind != m_sim.bodies[index]->kind) {
-            return std::nullopt;
-        }
-        data->textures.push_back(m_sim.bodies[index]->textures);
-        if (!data->textures.back().restore(state.bodies[index].textures)) {
-            return std::nullopt;
-        }
-    }
-    data->values = state;
-    return Prepared{std::move(data)};
-}
-
-bool Generators::canCommit(const Prepared& prepared) const {
-    if (!prepared.m_data || prepared.m_data->owner != this ||
-        prepared.m_data->lifetime != m_lifetime || !m_sim.bound ||
-        prepared.m_data->generation != m_restoreGeneration ||
-        prepared.m_data->collision != m_sim.collision ||
-        prepared.m_data->generators.size() != m_sim.generators.size() ||
-        prepared.m_data->textures.size() != m_sim.bodies.size()) {
-        return false;
-    }
-    return std::ranges::none_of(prepared.m_data->generators, [&](const auto& slot) {
-        return slot.support >= 0 &&
-               (m_sim.collision == nullptr || !m_sim.collision->objectTransform(slot.support));
-    });
-}
-
-bool Generators::commitRestore(Prepared&& prepared) {
-    if (!canCommit(prepared)) {
-        return false;
-    }
-    auto data = std::move(prepared.m_data);
-    ++m_localEpoch;
-    m_sim.generators = std::move(data->generators);
-    for (usize index = 0; index < m_sim.bodies.size(); ++index) {
-        m_sim.bodies[index]->textures = std::move(data->textures[index]);
-    }
-    m_sim.scales = data->values.scales;
-    m_sim.players = data->values.players;
-    m_sim.specialBirth = data->values.specialBirth;
-    m_sim.view = data->values.view;
-    m_sim.attentionGate = data->values.attentionGate;
-    ++m_restoreGeneration;
-    return true;
-}
-
-bool Generators::restore(const Checkpoint& state) {
-    auto prepared = prepareRestore(state);
-    return prepared && commitRestore(std::move(*prepared));
 }
 
 s32 Generators::paramOf(const ItemInstance& instance, usize index) {
@@ -565,7 +348,6 @@ bool Generators::loadBodies(RenderDevice& device, Enemies& enemies, s32 kind,
         if (cached->kind == kind) {
             cached->textures.restoreClock({});
             m_sim.bodies.push_back(cached.get());
-            ++m_restoreGeneration;
             return true;
         }
     }
@@ -610,7 +392,6 @@ bool Generators::loadBodies(RenderDevice& device, Enemies& enemies, s32 kind,
     }
     m_sim.bodies.push_back(bodies.get());
     m_bodyCache.push_back(std::move(bodies));
-    ++m_restoreGeneration;
     return true;
 }
 
@@ -913,7 +694,6 @@ std::optional<s32> Generators::spawnImported(RenderDevice& device, Enemies& enem
         }
     }
     ++m_localEpoch; // earlier snapshots cannot predate an imported rule binding
-    ++m_restoreGeneration;
     return id;
 }
 
@@ -1040,14 +820,12 @@ bool Generators::placeBoss(RenderDevice& device, const ItemInfo& info, ItemArchi
     generator.instance = m_sim.nextInstance;
     m_sim.generators.push_back(std::move(generator));
     ++m_sim.nextInstance;
-    ++m_restoreGeneration;
     syncFloors();
     return true;
 }
 
 void Generators::clear() {
     ++m_localEpoch;
-    ++m_restoreGeneration;
     m_sim.bound = false;
     m_roster.clear();
     m_externalBodies.clear();

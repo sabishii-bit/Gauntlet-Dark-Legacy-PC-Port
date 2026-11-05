@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <array>
+#include <memory>
 #include <span>
 #include <tuple>
 #include <type_traits>
@@ -11,12 +12,14 @@
 #include "engine/io/NativeStateDigest.h"
 #include "engine/world/AmbientDimmer.h"
 
+#include "NativeStateSupport.h"
 #include "game/combat/PowerupFlags.h"
 #include "game/effects/BodyGlow.h"
 #include "game/effects/EffectTrees.h"
 #include "game/enemies/Enemies.h"
 #include "game/enemies/EnemyKinds.h"
 #include "game/hud/HelpMessages.h"
+#include "game/level/NativeStateResources.h"
 #include "game/party/AttackCheckpointFixture.h"
 #include "game/party/PlayerArsenal.h"
 #include "game/party/PlayerAttacks.h"
@@ -86,6 +89,25 @@ std::vector<u64> instancesOf(const EffectTrees& effects) {
         result.push_back(effects.effect(index).instance);
     }
     return result;
+}
+
+/** The swarm's native digest, its artwork named alike in every load. */
+NativeStateDigest::Digest swarmDigest(const Enemies& enemies) {
+    NativeStateResources resources;
+    REQUIRE(enemies.registerNativeResources(resources, "stage/attacks-local-rewind/swarm"));
+    return test::liveDigest(enemies, resources.resources());
+}
+
+/** The swarm's values now. */
+std::unique_ptr<Enemies::LocalSnapshot> snapshotOf(const Enemies& enemies) {
+    auto result = std::make_unique<Enemies::LocalSnapshot>();
+    REQUIRE(enemies.saveLocal(*result));
+    return result;
+}
+
+/** Whether the swarm holds exactly what `saved` does. */
+bool holds(const Enemies& enemies, const Enemies::LocalSnapshot& saved) {
+    return enemies.equalLocal(*snapshotOf(enemies), saved);
 }
 
 /** Whether `from` holds an instance that `among` lacks. */
@@ -168,7 +190,7 @@ TEST_CASE("native attack values rewind paid potions shields breath and speculati
         CHECK(replayed.attacks == expected.attacks);
         CHECK(replayed.effects == expected.effects);
         CHECK(replay.helps == uninterrupted.helps);
-        CHECK(replay.players[0].actor.checkpoint() == uninterrupted.players[0].actor.checkpoint());
+        CHECK(replay.players[0].actor == uninterrupted.players[0].actor);
         CHECK(replay.players[0].figure->animator().checkpoint() ==
               uninterrupted.players[0].figure->animator().checkpoint());
         const auto shown = instancesOf(uninterrupted.effects);
@@ -324,9 +346,9 @@ TEST_CASE("native attack rewind preserves turbo contact ledgers and enemy harm a
         const auto replayed = replay.digests();
         CHECK(replayed.attacks == expected.attacks);
         CHECK(replayed.effects == expected.effects);
-        CHECK(replay.opponents.enemies().checkpoint() ==
-              uninterrupted.opponents.enemies().checkpoint());
-        CHECK(replay.players[0].actor.checkpoint() == uninterrupted.players[0].actor.checkpoint());
+        CHECK(swarmDigest(replay.opponents.enemies()) ==
+              swarmDigest(uninterrupted.opponents.enemies()));
+        CHECK(replay.players[0].actor == uninterrupted.players[0].actor);
         CHECK(replay.players[0].turbo.held() == uninterrupted.players[0].turbo.held());
         CHECK(replay.helps == uninterrupted.helps);
         sawStrike |= uninterrupted.attacks.strikes().count() != 0;
@@ -375,15 +397,14 @@ TEST_CASE("attack rewind preserves native turbo repeated-contact cooldowns and t
     REQUIRE(enemies.healthOf(*enemy) < full);
     AttackHistory saved;
     saved.save(fixture);
-    const auto victims = enemies.checkpoint();
-    REQUIRE(victims);
+    const auto victims = snapshotOf(enemies);
     REQUIRE(fixture.attacks.strikeSources()[0].contacts[0].remaining > 0.25f);
     REQUIRE(fixture.attacks.strikes().count() != 0);
     CHECK(fixture.attacks.strikes().strike(0).owner == 3); // native input slot, not party index
     const f32 afterFirst = enemies.healthOf(*enemy);
     const f32 paid = player.turbo.held();
     saved.restore(fixture);
-    CHECK(enemies.checkpoint() == victims);
+    CHECK(holds(enemies, *victims));
     CHECK(player.turbo.held() == paid);
     std::vector<f32> health;
     std::vector<NativeStateDigest::Digest> expected;
@@ -398,7 +419,7 @@ TEST_CASE("attack rewind preserves native turbo repeated-contact cooldowns and t
     }
     CHECK((health.back() < afterFirst) == flying);
     saved.restore(fixture);
-    REQUIRE(enemies.restore(*victims));
+    REQUIRE(enemies.restoreLocal(*victims));
     for (s32 tick = 0; tick < 240; ++tick) {
         CAPTURE(tick, flying);
         fixture.attacks.updateStrikes(kSeconds, fixture.players, fixture.targets);
@@ -443,8 +464,7 @@ TEST_CASE("attack rewind resumes independent native potion shield target cooldow
     const f32 secondHit = enemies.healthOf(*second);
     AttackHistory saved;
     saved.save(fixture);
-    const auto victims = enemies.checkpoint();
-    REQUIRE(victims);
+    const auto victims = snapshotOf(enemies);
     REQUIRE(fixture.attacks.shieldCount() == 1);
     const auto marks = fixture.attacks.potionShields()[0].marks;
     REQUIRE(marks.size() == 2);
@@ -467,7 +487,7 @@ TEST_CASE("attack rewind resumes independent native potion shield target cooldow
     CHECK(health.back()[1] < secondHit);
     REQUIRE_FALSE(fixture.attacks.pendingGameplay());
     saved.restore(fixture);
-    REQUIRE(enemies.restore(*victims));
+    REQUIRE(enemies.restoreLocal(*victims));
     for (usize tick = 0; tick < expected.size(); ++tick) {
         CAPTURE(tick);
         step();

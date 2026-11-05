@@ -26,20 +26,6 @@ class DiagnosticBoundaryTests(unittest.TestCase):
                     violations.append(f"{source.relative_to(ROOT)} includes test-only {include}")
         self.assertEqual(violations, [])
 
-    def test_diagnostic_library_sources_are_not_in_the_game_source_list(self):
-        tests = (ROOT / "tests/CMakeLists.txt").read_text(encoding="utf-8")
-        match = re.search(r"add_library\(game_diagnostics STATIC\s+(.*?)\)", tests, re.DOTALL)
-        self.assertIsNotNone(match, "Missing test-only diagnostics library")
-        sources = match.group(1).split()
-        self.assertTrue(sources, "Diagnostics source list must not be empty")
-        game = (ROOT / "src/game/CMakeLists.txt").read_text(encoding="utf-8")
-        runtime_sources = set(re.findall(r"[\w/]+\.cpp", game))
-        for source in sources:
-            with self.subTest(source=source):
-                self.assertTrue((ROOT / "tests" / source).is_file())
-                self.assertFalse((ROOT / "src" / source).exists())
-                self.assertNotIn(source.removeprefix("game/"), runtime_sources)
-
 
 if __name__ == "__main__":
     unittest.main()

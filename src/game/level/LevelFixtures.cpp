@@ -242,7 +242,6 @@ bool LevelFixtures::restoreLocal(const LocalSnapshot& saved) {
     m_rubble.restoreLocal(saved.m_rubble);
     // The enclosing scene also rewinds the world, players and effect pool.
     // Never cancel/restart gas effects or report contacts to a host here.
-    ++m_checkpointGeneration;
     return true;
 }
 
@@ -264,7 +263,6 @@ void LevelFixtures::bind(const Resources& resources) {
 }
 void LevelFixtures::clear() {
     m_checkpointBinding = std::make_shared<const u8>(0);
-    m_checkpointGeneration = 0;
     if (m_resources) {
         for (const GasCloud& cloud : m_sim.clouds) {
             m_resources->effects.stop(cloud.effect);

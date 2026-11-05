@@ -206,8 +206,6 @@ private:
     /** Native ordinary fans share the first muzzle; later flight directions
      * never add separate launch-time wall queries. Caller has a bound owner. */
     Vec3 weaponMuzzle(const MissileLaunch& first, std::vector<WallContact>* contacts) const;
-    std::shared_ptr<const u8> m_restoreOwner = std::make_shared<const u8>(0);
-    u64 m_restoreGeneration = 1;
     void loadPotionModels();
     void presentPotion(const PotionEmission::Burst& burst, bool castSound);
     void healingCast(const PlayerActor& actor, f32 power);

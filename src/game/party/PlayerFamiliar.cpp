@@ -1,7 +1,6 @@
 #include "game/party/PlayerFamiliar.h"
 
 #include <algorithm>
-#include <cmath>
 #include <format>
 
 #include "engine/io/NativeStateDigest.h"
@@ -85,74 +84,6 @@ bool PlayerFamiliar::bindTree(RenderDevice& device, ItemArchive& archive, std::s
     m_textures.bind(archive.trees.textureAnimations(), archive.textures, device, lenders);
     m_state.player.start(tree.sequences[0], 0);
     update(0, false);
-    return true;
-}
-bool PlayerFamiliar::Checkpoint::valid() const {
-    if (tier < 0 || tier > 2 || tree.size() > TreePose::Checkpoint::kMaxName ||
-        tree.find('\0') != std::string::npos || !animation.valid() || !textures.valid() ||
-        (pose && !pose->valid()) || (previousPose && !previousPose->valid()) ||
-        !std::isfinite(previousFrame) || previousFrame < 0 ||
-        previousFrame > AnimationPlayer::kCheckpointFrames ||
-        previousGeneration > animation.generation || tree.empty() == animation.playing ||
-        (!tree.empty() && (!pose || pose->tree != tree)) ||
-        (previousPose && previousPose->tree != tree) || (tree.empty() && (pose || previousPose))) {
-        return false;
-    }
-    for (s32 axis = 0; axis < 3; ++axis) {
-        if (!std::isfinite(offset[axis]) ||
-            std::abs(offset[axis]) > TreePose::Checkpoint::kMaxMagnitude) {
-            return false;
-        }
-    }
-    return true;
-}
-std::optional<PlayerFamiliar::Checkpoint> PlayerFamiliar::checkpoint() const {
-    Checkpoint state{m_state.tier,
-                     m_tree ? m_tree->name : std::string{},
-                     m_state.offset,
-                     m_state.player.checkpoint(),
-                     m_state.textures,
-                     m_state.pose.checkpoint(),
-                     m_state.previousPose.checkpoint(),
-                     m_state.previousGeneration,
-                     m_state.previousFrame,
-                     m_state.presentationAdvanced};
-    if ((m_state.pose.posed() && !state.pose) ||
-        (m_state.previousPose.posed() && !state.previousPose) || !state.valid()) {
-        return std::nullopt;
-    }
-    return state;
-}
-bool PlayerFamiliar::restore(const Checkpoint& state) {
-    if (!state.valid() || state.tier != m_state.tier || state.offset != m_state.offset ||
-        state.tree != (m_tree ? m_tree->name : std::string{})) {
-        return false;
-    }
-    const TreeSequenceInfo* sequence = nullptr;
-    if (state.animation.playing) {
-        if (!m_tree || state.animation.sequence >= m_tree->sequences.size()) {
-            return false;
-        }
-        sequence = &m_tree->sequences[state.animation.sequence];
-    }
-    auto next = *this;
-    if (!next.m_state.player.restore(state.animation, sequence) ||
-        (state.pose && !next.m_state.pose.restore(*m_tree, *state.pose)) ||
-        (state.previousPose && !next.m_state.previousPose.restore(*m_tree, *state.previousPose))) {
-        return false;
-    }
-    if (!state.pose) {
-        next.m_state.pose = {};
-    }
-    if (!state.previousPose) {
-        next.m_state.previousPose = {};
-    }
-    next.m_drawPose = {};
-    next.m_state.previousFrame = state.previousFrame;
-    next.m_state.previousGeneration = state.previousGeneration;
-    next.m_state.presentationAdvanced = state.presentationAdvanced;
-    next.m_state.textures = state.textures;
-    *this = std::move(next);
     return true;
 }
 void PlayerFamiliar::update(f32 seconds, bool attack) {

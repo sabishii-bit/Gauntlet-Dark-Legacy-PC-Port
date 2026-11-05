@@ -124,7 +124,6 @@ bool PlayerArsenal::restoreLocal(const LocalSnapshot& saved) {
     }
     m_sim = saved.m_state;
     m_missiles.restoreLocal(saved.m_missiles);
-    ++m_restoreGeneration;
     return true;
 }
 void PlayerArsenal::bind(const Resources& resources, std::span<TextureSet* const> textureLenders) {
@@ -150,7 +149,6 @@ void PlayerArsenal::bind(const Resources& resources, std::span<TextureSet* const
 }
 void PlayerArsenal::clear() {
     m_localBinding = std::make_shared<const u8>(0);
-    ++m_restoreGeneration;
     if (m_resources) {
         for (const auto& cast : m_sim.casts) {
             m_resources->effects.stop(cast.effect);

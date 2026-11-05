@@ -200,9 +200,9 @@ TEST_CASE("two portal loads keep native phases floor carry texture clocks and wa
     REQUIRE(host.portals.portal(2).shut);
     if (artwork) {
         REQUIRE(host.portals.portal(0).player.playing());
-        const auto icon = host.portals.portal(1).icon.checkpoint();
-        REQUIRE(icon);
-        REQUIRE(icon->textures.frame > 0);
+        const auto& icon = host.portals.portal(1).icon;
+        REQUIRE(icon.hasFigure());
+        REQUIRE(icon.textureAnimator().clock().frame > 0);
     }
     const auto textures = guest.device.texturesCreated;
     const auto uploads = guest.device.textureUpdates;
@@ -247,7 +247,6 @@ TEST_CASE("secret portal digests keep the actual toucher and consumed icon witho
     CHECK(other.digest() == fixture.digest());
     CHECK(other.device.texturesCreated == textures);
     CHECK_FALSE(other.portals.update(1, 1.0f / 60, touching));
-    CHECK(other.portals.portal(1).icon.checkpoint() == fixture.portals.portal(1).icon.checkpoint());
 }
 
 TEST_CASE("native tower portals keep open and EXIT_OFF resources independently in two loads",

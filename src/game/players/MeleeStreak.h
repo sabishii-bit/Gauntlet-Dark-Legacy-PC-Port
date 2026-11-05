@@ -22,23 +22,13 @@ class MeleeStreak {
 
 public:
     bool operator==(const MeleeStreak&) const = default;
-    struct Checkpoint {
-        s32 count = 0;
-        f32 quiet = 0;
-        bool running = false;
-        bool valid() const;
-        bool operator==(const Checkpoint&) const = default;
-    };
-    Checkpoint checkpoint() const { return {m_count, m_quiet, m_running}; }
-    /** Does not advance the silence timer or emit praise. */
-    bool restore(const Checkpoint& state);
     static constexpr s32 kHurt = 1;     ///< a blow that hurts
     static constexpr s32 kTelling = 3;  ///< one that kills, or is not taken (damage_enemy's -1)
     static constexpr s32 kHeroic = 30;  ///< 0x1E
     static constexpr s32 kBravery = 45; ///< 0x2D
     static constexpr f32 kOriginalQuiet = 2.0f; ///< the quiet a run survives in the original
     static constexpr f32 kLongestQuiet = 3.0f;  ///< the longest any rules may let it survive
-    static constexpr f32 kWait = 3.0f;  ///< the most the praise waits for the narrator
+    static constexpr f32 kWait = 3.0f;          ///< the most the praise waits for the narrator
     static constexpr std::string_view kHeroicVoice = "S_HEROIC";
     static constexpr std::string_view kBraveryVoice = "S_BRAVERY";
 

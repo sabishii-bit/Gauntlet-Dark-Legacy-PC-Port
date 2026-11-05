@@ -1,8 +1,6 @@
 #pragma once
 
 #include <array>
-#include <optional>
-#include <string>
 #include <string_view>
 
 #include "engine/assets/AnimationSet.h"
@@ -61,39 +59,6 @@ class EnemyAnimator {
 public:
     using Action = EnemyAction;
 
-    /** Complete resumable body state. Assets and sequence lookup tables stay with
-     * the bound animator. The three poses retain action cuts and fractional drawing
-     * exactly; invisible, zero-node bodies have no pose records. */
-    struct Checkpoint {
-        // A throw banks whole seconds with a native subtraction loop. Limit the
-        // restored interval as well as the elapsed clocks to bound that work.
-        static constexpr f32 kMaxThrowInterval = 3600;
-        std::string tree;
-        Action current = Action::Ready;
-        Action requested = Action::Ready;
-        bool walksIn = false;
-        bool struck = false;
-        bool powerStruck = false;
-        bool threw = false;
-        bool dead = false;
-        f32 idleSeconds = 0;
-        f32 throwInterval = 0;
-        f32 idleFraction = 0;
-        AnimationPlayer::Checkpoint player;
-        std::optional<TreePose::Checkpoint> pose;
-        std::optional<TreePose::Checkpoint> previous;
-        std::optional<TreePose::Checkpoint> presentationBefore;
-        f32 frameBefore = 0;
-        u64 generationBefore = 0;
-        bool valid() const;
-        bool operator==(const Checkpoint&) const = default;
-    };
-    /** Unbound or unsupported resource/state layouts have no checkpoint. */
-    std::optional<Checkpoint> checkpoint() const;
-    /** Restores against the already-bound trusted tree, without requesting an
-     * action or emitting a new blow. Invalid state leaves the animator unchanged. */
-    bool restore(const Checkpoint& state);
-
     static constexpr std::array<std::string_view, kEnemyActionCount> kSequenceNames{
         "READY",   "START",    "TAUNT",       "WALK",        "RUN",         "FLY",
         "HOVER",   "LANDING",  "WALKTOREADY", "READYTOWALK", "WALKTOREADY", "READYTOWALK",
@@ -139,6 +104,8 @@ public:
     /** Whether the death has played out. */
     bool dead() const { return m_dead; }
     bool entering() const { return m_current == Action::Start; }
+    /** Whether the entrance gives way to walking rather than the stance. */
+    bool entersWalking() const { return m_walksIn; }
     bool moving() const {
         return m_current == Action::Walk || m_current == Action::Run || m_current == Action::Fly;
     }

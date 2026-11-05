@@ -21,7 +21,6 @@
 #include "engine/core/Strings.h"
 #include "engine/core/Types.h"
 #include "engine/io/File.h"
-#include "engine/io/NativeStateDigest.h"
 #include "engine/math/Math.h"
 #include "engine/render/RenderDevice.h"
 #include "engine/world/SampleLevel.h"
@@ -34,8 +33,6 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "fixtures/NativeModelFixture.h"
-#include "fixtures/NativeSoundBank.h"
-#include "game/audio/SceneSoundEvents.h"
 #include "game/bosses/LegendItems.h"
 #include "game/combat/ArmorFlags.h"
 #include "game/combat/Damage.h"
@@ -1650,15 +1647,20 @@ TEST_CASE("Mothership Death rides its crane while dormant and throughout its awa
     CAPTURE(placement.support, placement.instance.position.x, placement.instance.position.y,
             placement.instance.position.z);
     REQUIRE(world.collision().moving(placement.support));
-    const auto triggers = world.triggers().checkpoint();
-    REQUIRE(triggers);
-    const auto target = std::ranges::find_if(triggers->targets, [&](const auto& value) {
+    const auto& triggers = world.triggers();
+    const auto targets = triggers.targets();
+    const auto target = std::ranges::find_if(targets, [&](const auto& value) {
         return std::ranges::find(value.subtree, static_cast<usize>(placement.support)) !=
                value.subtree.end();
     });
-    REQUIRE(target != triggers->targets.end());
-    const auto call = std::ranges::find(triggers->triggers, target->object, &LevelTrigger::target);
-    REQUIRE(call != triggers->triggers.end());
+    REQUIRE(target != targets.end());
+    const LevelTrigger* call = nullptr;
+    for (usize slot = 0; slot < triggers.size() && call == nullptr; ++slot) {
+        if (triggers.trigger(slot).target == target->object) {
+            call = &triggers.trigger(slot);
+        }
+    }
+    REQUIRE(call != nullptr);
     CAPTURE(call->id, call->instance, target->object);
     world.startTriggers({});
     world.activateTrigger(call->id, false);
@@ -3676,97 +3678,6 @@ TEST_CASE("a running suicide cries audibly and scatters animated fragments when 
     audio.close();
     mixer.mix(samples);
     sound.update();
-}
-
-TEST_CASE("a recorded bomber cry shares where it began and each machine's listener pans it",
-          "[level-opponents][suicide][native-combat-audio][local-rewind]") {
-    const auto root = test::scratchDirectory("suicide-cry-listener");
-    writeMeleeEnemy(root, kGruntKind);
-    const std::array<test::NativeSoundSample, 1> samples{{{24000, std::vector<s16>(24000, 4096)}}};
-    test::writeNativeSoundBank(
-        root / "audio/COMMON",
-        R"({"sounds":[{"name":"S_SUICIDE_YELL","sequence":[{"sample":0}]}]})", samples);
-    test::FakeRenderDevice device;
-    LevelWorld world;
-    ItemArchive weapons;
-    EffectTrees effects;
-    LevelSoundscape audio;
-    audio.open(root, nullptr, nullptr);
-    std::array<PlayerRuntime, 1> players;
-    players[0].actor.spawn(0, {}, nullptr, Vec3{0, 0, 12}, 0);
-    LevelOpponents opponents;
-    opponents.open({device, world, weapons, effects, audio, root, 1}, players);
-    auto& enemies = opponents.enemies();
-    enemies.open(device, root, nullptr, 1, {}, 1);
-    REQUIRE(enemies.loadKind(kGruntKind));
-    const auto bomber = enemies.spawn(
-        EnemySpawn{.kind = kGruntKind, .tier = 1, .algorithm = kSuicideWay, .placed = true}, {});
-    REQUIRE(bomber);
-    auto setup = enemies.checkpoint();
-    REQUIRE(setup);
-    setup->cues.push_back(
-        {EnemyCue::Kind::Yell, kGruntKind, Vec3{0}, *bomber, enemies.observe(*bomber)->instance});
-    REQUIRE(enemies.restore(*setup));
-    SceneSoundEvents recorder;
-    recorder.open(1, nullptr);
-    audio.recordTo(&recorder);
-    test::OpponentScript events;
-    test::ScriptedOpponents host{events};
-    events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
-    events.settleBlasts = [] {};
-    events.advanceLegend = [](f32) {};
-    events.advanceVictory = [](s32, f32) {};
-    events.levels = [] {};
-    events.award = [](s32, s32, bool) {};
-    struct Heard {
-        SceneSoundEvents::Frame frame;
-        NativeStateDigest::Digest shared{};
-    };
-    const auto hear = [&](u64 tick, const AmbientEar& ear) {
-        recorder.beginTick(tick);
-        audio.prepareRecordedFrame(ear);
-        {
-            const auto scope = audio.soundScope({30, 0, 1}, 1);
-            opponents.update(0, 0.0f, players, {}, host, host, host);
-            opponents.gatherLoops();
-        }
-        Heard heard{recorder.endFrame()};
-        NativeStateDigest digest;
-        REQUIRE(opponents.appendNativeFollowupDigest(digest));
-        heard.shared = digest.finish();
-        return heard;
-    };
-    const AmbientEar west{{-15, 10, 30}, {1, 0, 0}};
-    const AmbientEar east{{15, 10, 30}, {1, 0, 0}};
-    auto before = std::make_unique<LevelOpponents::LocalSnapshot>();
-    REQUIRE(opponents.saveLocal(*before));
-    EffectTrees::LocalSnapshot effectsBefore;
-    effects.saveLocal(effectsBefore);
-    // One native tick heard through two machines' solo cameras, either side of the bomber.
-    const auto fromWest = hear(1, west);
-    REQUIRE(opponents.restoreLocal(*before));
-    REQUIRE(effects.restoreLocal(effectsBefore));
-    const auto fromEast = hear(1, east);
-    REQUIRE(fromWest.frame.loops.size() == 1);
-    REQUIRE(fromEast.frame.loops.size() == 1);
-    const auto& westCry = fromWest.frame.loops.front();
-    const auto& eastCry = fromEast.frame.loops.front();
-    CHECK(westCry.key == eastCry.key);
-    CHECK(westCry.payload.start == eastCry.payload.start);
-    CHECK(westCry.payload.volume == eastCry.payload.volume);
-    CHECK(westCry.payload.pan == Catch::Approx(0.4472136f));
-    CHECK(eastCry.payload.pan == Catch::Approx(-0.4472136f));
-    CHECK(fromWest.shared == fromEast.shared);
-    // Under way, the cry follows this machine's listener without starting over.
-    const auto later = hear(2, west);
-    REQUIRE(later.frame.loops.size() == 1);
-    CHECK(later.frame.loops.front().key == eastCry.key);
-    CHECK(later.frame.loops.front().payload.start == eastCry.payload.start);
-    CHECK(later.frame.loops.front().payload.pan == Catch::Approx(westCry.payload.pan));
-    audio.recordTo(nullptr);
-    recorder.close();
-    opponents.close();
-    audio.close();
 }
 
 TEST_CASE("in the town a suicide leaves a poison cloud that turns through its three trees and "

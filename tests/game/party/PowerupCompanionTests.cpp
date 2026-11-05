@@ -6,12 +6,15 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/core/Types.h"
+#include "engine/io/NativeStateDigest.h"
 
 #include "FakeRenderDevice.h"
+#include "NativeStateSupport.h"
 #include "RecordedDrawChecks.h"
 #include "TestSupport.h"
 #include "game/combat/ArmorFlags.h"
 #include "game/combat/PowerupFlags.h"
+#include "game/level/NativeStateResources.h"
 #include "game/party/PlayerFigure.h"
 #include "game/party/PowerupCompanion.h"
 
@@ -34,9 +37,13 @@ TEST_CASE("native companion rewind retains interpolation and held frame boundari
     constexpr std::array<f32, 3> kBlends{0, 0.5f, 1};
     constexpr f32 kSeconds = 1.0f / 60;
     struct Observation {
-        PowerupCompanion::Checkpoint state;
+        NativeStateDigest::Digest state;
         std::array<std::vector<test::RecordedDraw>, 3> draws;
     };
+    // Both archives under fixed keys, which the companion's banks refresh.
+    NativeStateResources registry;
+    REQUIRE(registry.registerArchive(powerups, "powerups"));
+    REQUIRE(registry.registerArchive(weapons, "weapons"));
     for (const Kind kind : {Kind::Pojo, Kind::FireShield, Kind::Phoenix, Kind::FireBreath,
                             Kind::AcidBreath, Kind::ElecBreath, Kind::Wings}) {
         CAPTURE(PowerupCompanion::treeOf(kind));
@@ -51,16 +58,14 @@ TEST_CASE("native companion rewind retains interpolation and held frame boundari
         companion.saveLocal(initial);
         const auto observe = [&] {
             Observation result;
-            const auto state = companion.checkpoint();
-            REQUIRE(state);
-            result.state = *state;
+            result.state = test::liveDigest(companion, registry);
             for (usize blend = 0; blend < kBlends.size(); ++blend) {
                 device.draws.clear();
                 companion.draw(device, Mat4{1}, Mat4{1}, {}, 0.8f, &camera, kBlends[blend]);
                 REQUIRE_FALSE(device.draws.empty());
                 result.draws[blend] = device.draws;
             }
-            CHECK(companion.checkpoint() == state);
+            CHECK(test::liveDigest(companion, registry) == result.state);
             return result;
         };
         const auto check = [&](const Observation& expected) {
@@ -92,7 +97,8 @@ TEST_CASE("native companion rewind retains interpolation and held frame boundari
                 PowerupCompanion::LocalSnapshot before;
                 companion.saveLocal(before);
                 const auto baseline = observe();
-                CHECK(baseline.state.presentationAdvanced == !held);
+                // Holding clears the update's presentation advance, and only holding does.
+                CHECK((baseline.state == test::savedDigest(companion, initial, registry)) == !held);
 
                 // Run the uninterrupted branch first, against this same resource owner.
                 std::vector<Observation> expected;

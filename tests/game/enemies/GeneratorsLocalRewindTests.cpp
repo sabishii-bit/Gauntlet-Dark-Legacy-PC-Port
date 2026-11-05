@@ -1,11 +1,10 @@
 #include <algorithm>
 #include <array>
 #include <filesystem>
-#include <limits>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
-#include <utility>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -15,7 +14,9 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "game/enemies/Enemies.h"
 #include "game/enemies/Generators.h"
+#include "game/level/ItemFigure.h"
 #include "game/party/ProjectileCheckpointFixture.h"
 
 namespace {
@@ -86,50 +87,68 @@ struct Pool {
     }
 };
 
+/** Both pools' local values at one moment. */
+struct Frame {
+    Generators::LocalSnapshot generators;
+    Enemies::LocalSnapshot enemies;
+};
+
+void save(const Generators& generators, const Enemies& enemies, Frame& frame) {
+    generators.saveLocal(frame.generators);
+    REQUIRE(enemies.saveLocal(frame.enemies));
+}
+
+void restore(Generators& generators, Enemies& enemies, const Frame& frame) {
+    REQUIRE(enemies.restoreLocal(frame.enemies));
+    REQUIRE(generators.restoreLocal(frame.generators));
+}
+
 TEST_CASE("generator and enemy pools rewind quotas timers presence textures and pending broods",
-          "[rollback][generators][generators-checkpoint][assets]") {
+          "[rollback][generators][generator-local-rewind][assets]") {
     Pool pool;
-    const auto initial = pool.generators.checkpoint();
-    const auto initialEnemies = pool.enemies.checkpoint();
-    REQUIRE(initial);
-    REQUIRE(initialEnemies);
-    CHECK(initial->generators[2].presence == Generators::Slot::Presence::Hidden);
+    // Seventy-three records of both pools are too much for the stack: on the heap.
+    const auto initial = std::make_unique<Frame>();
+    save(pool.generators, pool.enemies, *initial);
+    CHECK(pool.generators.slot(2).presence == Generators::Slot::Presence::Hidden);
+    REQUIRE_FALSE(pool.generators.bodyResources().empty());
+    const u32 firstFrame = pool.generators.bodyResources().front().textures->clock().frame;
     const auto uploads = pool.device.texturesCreated;
-    std::vector<Generators::Checkpoint> states;
-    std::vector<Enemies::Checkpoint> opponents;
+    std::vector<Frame> states(72);
     for (s32 tick = 0; tick < 72; ++tick) {
         pool.step(tick);
-        const auto current = pool.generators.checkpoint();
-        const auto enemyState = pool.enemies.checkpoint();
-        REQUIRE(current);
-        REQUIRE(enemyState);
-        states.push_back(*current);
-        opponents.push_back(*enemyState);
+        if (tick == 0) {
+            CHECK(pool.generators.slot(2).presence == Generators::Slot::Presence::Suppressed);
+        }
+        if (tick == 14) {
+            CHECK(pool.generators.slot(0).most == 6);
+        }
+        save(pool.generators, pool.enemies, states[static_cast<usize>(tick)]);
     }
-    CHECK(states.front().generators[2].presence == Generators::Slot::Presence::Suppressed);
-    CHECK(states.back().generators[0].state == 0);
-    CHECK(states[14].generators[0].most == 6);
-    CHECK(states.back().bodies.front().textures.frame > initial->bodies.front().textures.frame);
-    CHECK(states.back().generators[0].bred > 0);
-    CHECK(opponents.back().nextInstance > initialEnemies->nextInstance);
-    REQUIRE(pool.enemies.restore(*initialEnemies));
-    REQUIRE(pool.generators.restore(*initial));
-    CHECK(pool.generators.checkpoint() == initial);
+    CHECK(pool.generators.slot(0).state == 0);
+    CHECK(pool.generators.bodyResources().front().textures->clock().frame > firstFrame);
+    CHECK(pool.generators.slot(0).bred > 0);
+    restore(pool.generators, pool.enemies, *initial);
+    const auto current = std::make_unique<Frame>();
+    save(pool.generators, pool.enemies, *current);
+    CHECK(pool.generators.equalLocal(current->generators, initial->generators));
     for (s32 tick = 0; tick < 72; ++tick) {
         CAPTURE(tick);
         pool.step(tick);
-        CHECK(pool.generators.checkpoint() == states[static_cast<usize>(tick)]);
-        CHECK(pool.enemies.checkpoint() == opponents[static_cast<usize>(tick)]);
+        save(pool.generators, pool.enemies, *current);
+        const auto& expected = states[static_cast<usize>(tick)];
+        CHECK(pool.generators.equalLocal(current->generators, expected.generators));
+        CHECK(pool.enemies.equalLocal(current->enemies, expected.enemies));
     }
     // A delayed correction in the middle of time-stop must resume the same
     // partially elapsed quota/texture clocks, not only a pristine level start.
-    REQUIRE(pool.enemies.restore(opponents[20]));
-    REQUIRE(pool.generators.restore(states[20]));
+    restore(pool.generators, pool.enemies, states[20]);
     for (s32 tick = 21; tick < 72; ++tick) {
         CAPTURE(tick);
         pool.step(tick);
-        CHECK(pool.generators.checkpoint() == states[static_cast<usize>(tick)]);
-        CHECK(pool.enemies.checkpoint() == opponents[static_cast<usize>(tick)]);
+        save(pool.generators, pool.enemies, *current);
+        const auto& expected = states[static_cast<usize>(tick)];
+        CHECK(pool.generators.equalLocal(current->generators, expected.generators));
+        CHECK(pool.enemies.equalLocal(current->enemies, expected.enemies));
     }
     CHECK(pool.device.texturesCreated == uploads);
 }
@@ -137,10 +156,6 @@ TEST_CASE("generator and enemy pools rewind quotas timers presence textures and 
 TEST_CASE("native generator history rewinds broods quotas presence and linked enemy output",
           "[local-rewind][generator-local-rewind][native-equality][assets]") {
     Pool pool;
-    struct Frame {
-        Generators::LocalSnapshot generators;
-        Enemies::LocalSnapshot enemies;
-    };
     // Sixteen frames of the whole pool are too much for the stack: on the heap.
     const auto frames = std::make_unique<std::array<Frame, 16>>();
     auto& history = *frames;
@@ -169,17 +184,9 @@ TEST_CASE("native generator history rewinds broods quotas presence and linked en
         pool.generators.saveLocal(saved.generators);
         REQUIRE(pool.enemies.saveLocal(saved.enemies));
         const s32 distance = static_cast<s32>(window % 8 + 1);
-        std::vector<Generators::Checkpoint> generators;
-        std::vector<Enemies::Checkpoint> enemies;
         std::vector<Frame> nativeExpected(static_cast<usize>(distance));
         for (s32 i = 0; i < distance; ++i) {
             step(tick + i, false);
-            const auto g = pool.generators.checkpoint();
-            const auto e = pool.enemies.checkpoint();
-            REQUIRE(g);
-            REQUIRE(e);
-            generators.push_back(*g);
-            enemies.push_back(*e);
             pool.generators.saveLocal(nativeExpected[static_cast<usize>(i)].generators);
             REQUIRE(pool.enemies.saveLocal(nativeExpected[static_cast<usize>(i)].enemies));
         }
@@ -192,8 +199,6 @@ TEST_CASE("native generator history rewinds broods quotas presence and linked en
         REQUIRE(pool.enemies.restoreLocal(saved.enemies));
         for (s32 i = 0; i < distance; ++i) {
             step(tick + i, false);
-            CHECK(pool.generators.checkpoint() == generators[static_cast<usize>(i)]);
-            CHECK(pool.enemies.checkpoint() == enemies[static_cast<usize>(i)]);
             Frame corrected;
             pool.generators.saveLocal(corrected.generators);
             REQUIRE(pool.enemies.saveLocal(corrected.enemies));
@@ -218,16 +223,27 @@ TEST_CASE(
     info.radius = 2;
     info.height = 5;
     const bool settled = GENERATE(false, true);
-    const auto observe = [&] {
+    struct Observation {
         std::vector<Generators::Slot> slots;
-        std::vector<std::optional<ItemFigure::Checkpoint>> figures;
+        std::vector<std::optional<ItemFigure>> figures;
+        std::unique_ptr<Enemies::LocalSnapshot> enemies =
+            std::make_unique<Enemies::LocalSnapshot>();
+    };
+    const auto observe = [&] {
+        Observation result;
         for (usize i = 0; i < pool.generators.count(); ++i) {
-            slots.push_back(pool.generators.slot(i));
+            result.slots.push_back(pool.generators.slot(i));
         }
         for (const auto& item : pool.generators.presentation()) {
-            figures.push_back(item.bossFigure ? item.bossFigure->checkpoint() : std::nullopt);
+            result.figures.push_back(item.bossFigure != nullptr ? std::optional{*item.bossFigure}
+                                                                : std::nullopt);
         }
-        return std::tuple{slots, figures, pool.enemies.checkpoint()};
+        REQUIRE(pool.enemies.saveLocal(*result.enemies));
+        return result;
+    };
+    const auto same = [&](const Observation& a, const Observation& b) {
+        return a.slots == b.slots && a.figures == b.figures &&
+               pool.enemies.equalLocal(*a.enemies, *b.enemies);
     };
     const auto step = [&](s32 tick, bool wrong) {
         if (tick % 31 == 0 || (wrong && tick % 5 == 0)) {
@@ -252,7 +268,7 @@ TEST_CASE(
         pool.generators.saveLocal(generators);
         REQUIRE(pool.enemies.saveLocal(enemies));
         const s32 distance = window % 8 + 1;
-        std::vector<decltype(observe())> expected;
+        std::vector<Observation> expected;
         std::vector<Generators::LocalSnapshot> nativeExpected(static_cast<usize>(distance));
         for (s32 i = 0; i < distance; ++i) {
             step(tick + i, false);
@@ -268,7 +284,7 @@ TEST_CASE(
         REQUIRE(pool.enemies.restoreLocal(enemies));
         for (s32 i = 0; i < distance; ++i) {
             step(tick + i, false);
-            CHECK((observe() == expected[static_cast<usize>(i)]));
+            CHECK(same(observe(), expected[static_cast<usize>(i)]));
             Generators::LocalSnapshot corrected;
             pool.generators.saveLocal(corrected);
             CHECK(pool.generators.equalLocal(corrected, nativeExpected[static_cast<usize>(i)]));
@@ -314,12 +330,12 @@ TEST_CASE("generator source lifetimes survive authored restore and corrected dyn
     }
     CHECK(pool.generators.instanceOf(-1) == 0);
     CHECK(pool.generators.instanceOf(static_cast<s32>(authored.size())) == 0);
-    const auto diagnostic = pool.generators.checkpoint();
-    REQUIRE(diagnostic);
+    Generators::LocalSnapshot authoredState;
+    pool.generators.saveLocal(authoredState);
     const auto hit = pool.generators.strike(0, 1, 0);
     REQUIRE(hit);
     CHECK(hit->instance == authored[0]);
-    REQUIRE(pool.generators.restore(*diagnostic));
+    REQUIRE(pool.generators.restoreLocal(authoredState));
     for (usize index = 0; index < authored.size(); ++index) {
         CHECK(pool.generators.instanceOf(static_cast<s32>(index)) == authored[index]);
     }
@@ -422,31 +438,8 @@ TEST_CASE("cached generator births reactivate their enemy stock after a native r
     CHECK(pool.device.texturesCreated == uploads);
 }
 
-TEST_CASE("empty bound generator pools have resumable clocks but unbound pools do not",
-          "[rollback][generators][generators-checkpoint]") {
-    test::FakeRenderDevice device;
-    Enemies enemies;
-    Generators generators;
-    CHECK_FALSE(generators.checkpoint());
-    REQUIRE(generators.bind(device, WorldLayout{}, enemies, nullptr, {}, 1));
-    const auto empty = generators.checkpoint();
-    REQUIRE(empty);
-    CHECK(empty->valid());
-    CHECK(empty->generators.empty());
-    CHECK(empty->bodies.empty());
-    REQUIRE(generators.restore(*empty));
-    auto invalid = *empty;
-    invalid.generators.resize(Generators::Checkpoint::kMaxGenerators + 1);
-    CHECK_FALSE(invalid.valid());
-    CHECK_FALSE(generators.restore(invalid));
-    CHECK(generators.checkpoint() == empty);
-    generators.clear();
-    CHECK_FALSE(generators.checkpoint());
-    CHECK_FALSE(generators.restore(*empty));
-}
-
 TEST_CASE("generator restoration preserves pending detached quota until the native next phase",
-          "[rollback][generators][generators-checkpoint][assets]") {
+          "[rollback][generators][generator-local-rewind][assets]") {
     Pool pool;
     pool.generators.update(1, pool.enemies, pool.players);
     REQUIRE(pool.generators.livingOf(0) == 1);
@@ -454,160 +447,30 @@ TEST_CASE("generator restoration preserves pending detached quota until the nati
     hit.damage = 1000;
     hit.player = 0;
     REQUIRE(pool.enemies.hurt(0, hit));
-    const auto generators = pool.generators.checkpoint();
-    const auto enemies = pool.enemies.checkpoint();
-    REQUIRE(generators);
-    REQUIRE(enemies);
-    REQUIRE_FALSE(enemies->generatorEvents.empty());
+    const auto before = std::make_unique<Frame>();
+    save(pool.generators, pool.enemies, *before);
+    const auto events = pool.enemies.takeGeneratorEvents();
+    REQUIRE_FALSE(events.empty());
+    REQUIRE(pool.enemies.restoreLocal(before->enemies));
     const s32 wait = pool.generators.countdownOf(0);
     pool.generators.update(1, pool.enemies, pool.players);
     CHECK(pool.generators.livingOf(0) == 0);
     CHECK(pool.generators.countdownOf(0) == wait - 1);
-    const auto expected = pool.generators.checkpoint();
-    const auto expectedEnemies = pool.enemies.checkpoint();
-    REQUIRE(pool.enemies.restore(*enemies));
-    REQUIRE(pool.generators.restore(*generators));
+    const auto expected = std::make_unique<Frame>();
+    save(pool.generators, pool.enemies, *expected);
+    restore(pool.generators, pool.enemies, *before);
     CHECK(pool.generators.livingOf(0) == 1); // do not reconstruct this from living bodies
-    CHECK(pool.enemies.checkpoint()->generatorEvents == enemies->generatorEvents);
+    CHECK(pool.enemies.takeGeneratorEvents() == events);
+    REQUIRE(pool.enemies.restoreLocal(before->enemies));
     pool.generators.update(1, pool.enemies, pool.players);
-    CHECK(pool.generators.checkpoint() == expected);
-    CHECK(pool.enemies.checkpoint() == expectedEnemies);
-}
-
-TEST_CASE("generator prepared restoration is atomic owner bound and invalidated by rebinding",
-          "[rollback][generators][generators-checkpoint][assets]") {
-    Pool pool;
-    Pool other;
-    const auto baseline = pool.generators.checkpoint();
-    REQUIRE(baseline);
-    pool.step(0);
-    const auto current = pool.generators.checkpoint();
-    const auto otherCurrent = other.generators.checkpoint();
-    REQUIRE(current);
-    CHECK(current != baseline);
-    const auto uploads = pool.device.texturesCreated;
-    auto prepared = pool.generators.prepareRestore(*baseline);
-    auto sibling = pool.generators.prepareRestore(*baseline);
-    REQUIRE(prepared);
-    REQUIRE(sibling);
-    CHECK(pool.generators.checkpoint() == current);
-    CHECK(pool.generators.canCommit(*prepared));
-    CHECK_FALSE(other.generators.canCommit(*prepared));
-    CHECK_FALSE(other.generators.commitRestore(std::move(*prepared)));
-    CHECK(other.generators.checkpoint() == otherCurrent);
-    REQUIRE(pool.generators.commitRestore(std::move(*prepared)));
-    CHECK(pool.generators.checkpoint() == baseline);
-    CHECK_FALSE(pool.generators.canCommit(*prepared));
-    CHECK_FALSE(pool.generators.commitRestore(std::move(*prepared)));
-    CHECK_FALSE(pool.generators.canCommit(*sibling));
-    CHECK_FALSE(pool.generators.commitRestore(std::move(*sibling)));
-    CHECK(pool.device.texturesCreated == uploads);
-
-    auto stale = pool.generators.prepareRestore(*baseline);
-    REQUIRE(stale);
-    REQUIRE(pool.generators.bind(pool.device, pool.layout, pool.enemies, nullptr,
-                                 {1.5f, 1.25f, 1.5f}, 1));
-    CHECK_FALSE(pool.generators.canCommit(*stale));
-    CHECK_FALSE(pool.generators.commitRestore(std::move(*stale)));
-    CHECK(pool.generators.checkpoint() == baseline);
-}
-
-TEST_CASE("prepared generators cannot cross an owner lifetime even at the same address",
-          "[rollback][generators][generators-checkpoint]") {
-    test::FakeRenderDevice device;
-    Enemies enemies;
-    // Destroy/recreate inside the same optional uses precisely the same storage.
-    std::optional<Generators> owner;
-    owner.emplace();
-    REQUIRE(owner->bind(device, WorldLayout{}, enemies, nullptr, {}, 1));
-    const auto checkpoint = owner->checkpoint();
-    REQUIRE(checkpoint);
-    auto prepared = owner->prepareRestore(*checkpoint);
-    REQUIRE(prepared);
-    const auto* address = std::addressof(*owner);
-    owner.reset();
-    owner.emplace();
-    REQUIRE(std::addressof(*owner) == address);
-    REQUIRE(owner->bind(device, WorldLayout{}, enemies, nullptr, {}, 1));
-    CHECK_FALSE(owner->canCommit(*prepared));
-    CHECK_FALSE(owner->commitRestore(std::move(*prepared)));
-    CHECK(owner->checkpoint() == checkpoint);
-}
-
-TEST_CASE("generator checkpoints reject malformed values different rosters and boss figures",
-          "[rollback][generators][generators-checkpoint][assets]") {
-    Pool pool;
-    pool.step(0);
-    const auto before = pool.generators.checkpoint();
-    REQUIRE(before);
-    const auto uploads = pool.device.texturesCreated;
-    const auto reject = [&](const Generators::Checkpoint& state) {
-        CHECK_FALSE(pool.generators.prepareRestore(state));
-        CHECK_FALSE(pool.generators.restore(state));
-        CHECK(pool.generators.checkpoint() == before);
-        CHECK(pool.device.texturesCreated == uploads);
-    };
-    auto invalid = *before;
-    invalid.generators[0].position.x = std::numeric_limits<f32>::quiet_NaN();
-    reject(invalid);
-    invalid = *before;
-    invalid.generators[0].presence = static_cast<Generators::Slot::Presence>(255);
-    reject(invalid);
-    invalid = *before;
-    invalid.generators[0].ratio = 1.01f;
-    reject(invalid);
-    invalid = *before;
-    invalid.generators[0].living = -1;
-    reject(invalid);
-    invalid = *before;
-    invalid.generators[0].box.enemyItem->radius = -1;
-    reject(invalid);
-    invalid = *before;
-    invalid.generators[0].support = 999;
-    reject(invalid);
-    invalid = *before;
-    invalid.bodies[0].textures.remainder = std::numeric_limits<f32>::infinity();
-    reject(invalid);
-    invalid = *before;
-    invalid.bodies.push_back(invalid.bodies.front());
-    reject(invalid);
-    invalid = *before;
-    invalid.roster[0].position.x += 1; // same count/kinds, a different trusted placement
-    REQUIRE(invalid.valid());
-    reject(invalid);
-    invalid = *before;
-    invalid.generators[0].threshold += 1;
-    reject(invalid);
-    invalid = *before;
-    invalid.generators[0].boss = true;
-    reject(invalid);
-    invalid = *before;
-    invalid.scales.rate = std::numeric_limits<f32>::quiet_NaN();
-    reject(invalid);
-    invalid = *before;
-    invalid.players = 5;
-    reject(invalid);
-
-    auto prepared = pool.generators.prepareRestore(*before);
-    REQUIRE(prepared);
-    ItemInfo info;
-    info.type = ItemInfo::kGenerator;
-    info.name = "BOSSGEN";
-    info.hitPoints = 10;
-    ItemArchive empty;
-    REQUIRE(pool.generators.placeBoss(pool.device, info, empty, pool.enemies, kGruntKind, Mat4{1},
-                                      nullptr));
-    CHECK_FALSE(pool.generators.checkpoint());
-    CHECK_FALSE(pool.generators.prepareRestore(*before));
-    CHECK_FALSE(pool.generators.canCommit(*prepared));
-    CHECK_FALSE(pool.generators.commitRestore(std::move(*prepared)));
-    pool.generators.clear();
-    CHECK_FALSE(pool.generators.checkpoint());
-    CHECK_FALSE(pool.generators.restore(*before));
+    const auto current = std::make_unique<Frame>();
+    save(pool.generators, pool.enemies, *current);
+    CHECK(pool.generators.equalLocal(current->generators, expected->generators));
+    CHECK(pool.enemies.equalLocal(current->enemies, expected->enemies));
 }
 
 TEST_CASE("special generator shared species cursor rewinds even when a birth was refused",
-          "[rollback][generators][generators-checkpoint][assets]") {
+          "[rollback][generators][generator-local-rewind][assets]") {
     const s32 realm = GENERATE(5, 6);
     const auto root = nativeRoot();
     const std::string archive = realm == 5 ? "ITEMS/LEVELE" : "ITEMS/LEVELF";
@@ -631,42 +494,35 @@ TEST_CASE("special generator shared species cursor rewinds even when a birth was
     generators.update(1, enemies, players, blockers);
     REQUIRE(generators.bredOf(0) == 0);
     REQUIRE(generators.bredOf(1) == 0);
-    const auto initial = generators.checkpoint();
-    const auto initialEnemies = enemies.checkpoint();
-    REQUIRE(initial);
-    REQUIRE(initialEnemies);
-    CHECK(initial->specialBirth == 2);
-    std::vector<Generators::Checkpoint> states;
-    std::vector<Enemies::Checkpoint> opponents;
+    // Ninety-one records of both pools are too much for the stack: on the heap.
+    const auto initial = std::make_unique<Frame>();
+    save(generators, enemies, *initial);
+    std::vector<Frame> states(90);
+    const auto current = std::make_unique<Frame>();
     for (s32 pass = 0; pass < 2; ++pass) {
         if (pass == 1) {
-            REQUIRE(enemies.restore(*initialEnemies));
-            REQUIRE(generators.restore(*initial));
+            restore(generators, enemies, *initial);
         }
         for (s32 tick = 0; tick < 90; ++tick) {
             generators.update(1, enemies, players);
             enemies.update(1, kStep, players, generators.enemyObstacles());
-            const auto state = generators.checkpoint();
-            const auto enemyState = enemies.checkpoint();
-            REQUIRE(state);
-            REQUIRE(enemyState);
             if (pass == 0) {
-                states.push_back(*state);
-                opponents.push_back(*enemyState);
+                save(generators, enemies, states[static_cast<usize>(tick)]);
             } else {
                 CAPTURE(realm, tick);
-                CHECK(*state == states[static_cast<usize>(tick)]);
-                CHECK(*enemyState == opponents[static_cast<usize>(tick)]);
+                save(generators, enemies, *current);
+                const auto& expected = states[static_cast<usize>(tick)];
+                CHECK(generators.equalLocal(current->generators, expected.generators));
+                CHECK(enemies.equalLocal(current->enemies, expected.enemies));
             }
         }
     }
-    CHECK(states.back().specialBirth > initial->specialBirth);
     CHECK(generators.bredOf(0) > 0);
     CHECK(generators.bredOf(1) > 0);
 }
 
 TEST_CASE("generator support correction restores exact local placement without touching the world",
-          "[rollback][generators][generators-checkpoint][assets]") {
+          "[rollback][generators][generator-local-rewind][assets]") {
     auto layout = layoutOf("generator-checkpoint-support", R"({
       "objects":[{"name":"LIFT","position":[10,5,20],"flags":4102}],
       "itemInfos":[{"type":3,"name":"GRU","radius":2,"height":5,
@@ -687,31 +543,28 @@ TEST_CASE("generator support correction restores exact local placement without t
     enemies.open(device, nativeRoot(), &collision, 4, {}, 1);
     Generators generators;
     REQUIRE(generators.bind(device, layout, enemies, &collision, {}, 1));
-    const auto before = generators.checkpoint();
-    REQUIRE(before);
-    REQUIRE(before->generators[0].support == 0);
+    Generators::LocalSnapshot before;
+    generators.saveLocal(before);
+    REQUIRE(generators.slot(0).support == 0);
     const Mat4 moved =
         glm::rotate(glm::translate(Mat4{1}, Vec3{30, 10, 40}), 1.57079637f, Vec3{0, 1, 0});
     collision.setObjectTransform(0, moved);
     generators.syncFloors();
-    const auto after = generators.checkpoint();
-    REQUIRE(after);
-    CHECK(after != before);
-    REQUIRE(generators.restore(*before));
+    Generators::LocalSnapshot after;
+    generators.saveLocal(after);
+    CHECK_FALSE(generators.equalLocal(after, before));
+    REQUIRE(generators.restoreLocal(before));
     CHECK(collision.objectTransform(0) == moved);
-    CHECK(generators.checkpoint() == before); // restore does not re-run syncFloors
+    Generators::LocalSnapshot current;
+    generators.saveLocal(current);
+    CHECK(generators.equalLocal(current, before)); // restore does not re-run syncFloors
     generators.syncFloors();
-    CHECK(generators.checkpoint() == after);
+    generators.saveLocal(current);
+    CHECK(generators.equalLocal(current, after));
     collision.setObjectTransform(0, original);
-    REQUIRE(generators.restore(*before));
+    REQUIRE(generators.restoreLocal(before));
     generators.syncFloors();
-    CHECK(generators.checkpoint() == before);
-
-    auto staged = generators.prepareRestore(*before);
-    REQUIRE(staged);
-    collision.clear();
-    CHECK_FALSE(generators.canCommit(*staged));
-    CHECK_FALSE(generators.commitRestore(std::move(*staged)));
-    CHECK(generators.checkpoint() == before);
+    generators.saveLocal(current);
+    CHECK(generators.equalLocal(current, before));
 }
 } // namespace

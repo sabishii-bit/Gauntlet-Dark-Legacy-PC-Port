@@ -310,20 +310,20 @@ TEST_CASE("Native N64 authored actors activate through the common opponent owner
     CHECK(pending.pending(0));
 
     // Paused rendering and floor synchronization do not authorize gameplay.
-    const auto frozen = pending.figure(0).checkpoint();
-    REQUIRE(frozen);
+    const ItemFigure frozen = pending.figure(0);
+    REQUIRE(frozen.hasFigure());
     for (s32 frame = 0; frame < 5; ++frame) {
         opponents.syncFloors();
         device.draws.clear();
         pending.draw(device, Mat4{1}, WorldLighting{}, nullptr, TreeModel::Pass::All, 1);
         CHECK_FALSE(device.draws.empty());
-        const auto held = pending.figure(0).checkpoint();
-        REQUIRE(held);
-        CHECK(held->animation == frozen->animation);
-        CHECK(held->pose == frozen->pose);
-        CHECK(held->textures == frozen->textures);
-        CHECK(held->position == frozen->position);
-        CHECK(held->transform == frozen->transform);
+        const auto& held = pending.figure(0);
+        REQUIRE(held.hasFigure());
+        CHECK(held.presentation().meshFrame == frozen.presentation().meshFrame);
+        CHECK(held.presentation().poseFrame == frozen.presentation().poseFrame);
+        CHECK(held.textureAnimator().clock() == frozen.textureAnimator().clock());
+        CHECK(held.position() == frozen.position());
+        CHECK(held.transform() == frozen.transform());
     }
     players[0].actor.place(descriptor.spawn.position + Vec3{0, 0, 10});
     players[0].departed = true;

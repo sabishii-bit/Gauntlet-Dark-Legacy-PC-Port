@@ -259,10 +259,12 @@ TEST_CASE("native statue placement loader preserves the authored floor-binding f
     CHECK_FALSE(statues.placement(1).onFloor);
     CHECK(statues.positionOf(0).y == ItemFigure::kFloorLift);
     CHECK(statues.positionOf(1).y == 4);
-    const auto state = statues.checkpoint();
-    REQUIRE(state);
-    REQUIRE(statues.restore(*state));
-    CHECK(statues.checkpoint() == state);
+    CritterStatues::LocalSnapshot saved;
+    statues.saveLocal(saved);
+    REQUIRE(statues.restoreLocal(saved));
+    CritterStatues::LocalSnapshot restored;
+    statues.saveLocal(restored);
+    CHECK(statues.equalLocal(restored, saved));
 }
 
 TEST_CASE("Ancient Tree's placed archers and bombers keep their stump floor binding",

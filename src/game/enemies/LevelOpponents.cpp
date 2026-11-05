@@ -594,7 +594,6 @@ bool LevelOpponents::restoreLocal(const LocalSnapshot& saved) {
     m_combatantProjectiles.restoreLocal(saved.m_projectiles);
     m_sim = saved.m_values;
     refreshBorrowedRoster();
-    ++m_bindingGeneration; // any prepared diagnostic transaction is now stale
     return true;
 }
 
@@ -616,9 +615,6 @@ void LevelOpponents::close() {
     m_importedGenerators.clear();
     m_importedGeneratorSounds.clear();
     ++m_localEpoch;
-    if (m_bindingGeneration != 0) {
-        ++m_bindingGeneration; // zero permanently refuses preparations after exhaustion
-    }
     m_placements.clear();
     m_statues.clear();
     m_sim.borrowedRoster.clear();

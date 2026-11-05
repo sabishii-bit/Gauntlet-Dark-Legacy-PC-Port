@@ -222,55 +222,6 @@ public:
         bool holdsForRiders() const;
     };
 
-    /** Exact state of this owner, including contacts and undelivered events.
-     * Authored roster/figures must already be bound. Animator, world geometry
-     * and collision are separate owners: restore never fires or poses them. */
-    struct Checkpoint {
-        static constexpr usize kMaxTriggers = 2048;
-        static constexpr usize kMaxObjects = 65535;
-        static constexpr usize kMaxEvents = 8192;
-        using Target = LevelTriggers::Target;
-        std::vector<LevelTrigger> triggers;
-        std::vector<Target> targets;
-        std::vector<s32> parents;
-        /** Empty means figures have not been bound; otherwise one optional
-         * figure per trigger, retaining native marker-only holes. */
-        std::vector<std::optional<ItemFigure::Checkpoint>> figures;
-        std::vector<TriggerRefusal> refusals;
-        std::vector<TriggerLesson> lessons;
-        std::vector<TriggerOpening> openings;
-        std::vector<TriggerOpening> settled;
-        std::vector<TriggerCameraCue> cameraCues;
-        std::vector<Vec3> wakes;
-        f32 frameRemainder = 0;
-        f32 emptyToggleDelay = 0;
-        s32 playerCount = -1;
-        bool cameraHeld = false;
-        bool valid() const;
-        bool operator==(const Checkpoint&) const = default;
-    };
-    class Prepared {
-    public:
-        Prepared(Prepared&&) noexcept;
-        Prepared& operator=(Prepared&&) noexcept;
-        ~Prepared();
-        Prepared(const Prepared&) = delete;
-        Prepared& operator=(const Prepared&) = delete;
-
-    private:
-        friend class LevelTriggers;
-        struct Data;
-        explicit Prepared(std::unique_ptr<Data> data);
-        std::unique_ptr<Data> m_data;
-    };
-    std::optional<Checkpoint> checkpoint() const;
-    std::optional<Prepared> prepareRestore(const Checkpoint& state) const;
-    bool canCommit(const Prepared& prepared) const;
-    /** Allocation/callback-free after canCommit; invalidates sibling plans.
-     * Gameplay updates may run between prepare/commit for an enclosing undo;
-     * rebinding or another restore may not. Borrowed archives remain immutable. */
-    bool commitRestore(Prepared&& prepared);
-    bool restore(const Checkpoint& state);
     static constexpr std::array<s32, 9> kCrystalsToOpen{0, 15, 100, 125, 150, 175, 200, 225, 250};
     static constexpr f32 kFadeRate = 16.0f / 255.0f; ///< of full alpha, per game frame
     static constexpr f32 kRefusalCooldown = 2.5625f; ///< the original's, between two refusals
@@ -289,6 +240,8 @@ public:
     void clear();
     usize size() const { return m_sim.triggers.size(); }
     const LevelTrigger& trigger(usize index) const { return m_sim.triggers[index]; }
+    /** The targets the triggers drive, each once, in the order their first trigger named it. */
+    std::span<const Target> targets() const { return m_sim.targets; }
     const ItemFigure* figure(usize index) const {
         return index < m_sim.figures.size() && m_sim.figures[index] ? &*m_sim.figures[index]
                                                                     : nullptr;
@@ -441,7 +394,6 @@ private:
     std::vector<s32> m_parents; ///< immutable hierarchy of the bound layout
     u64 m_localEpoch = 0;
     std::shared_ptr<const u8> m_checkpointBinding = std::make_shared<const u8>(0);
-    u64 m_checkpointGeneration = 0;
 };
 
 void visitNativeState(NativeStateDigest& digest, const TriggerRefusal& value);

@@ -199,15 +199,15 @@ TEST_CASE("a revealed chest's preview plays the pickup's cycle instead of holdin
           "[chests][xray]") {
     KeyedChests pool("chest-preview-cycle");
     pool.reveal();
-    const auto placed = pool.chests.chest(0).preview.checkpoint();
-    REQUIRE(placed);
-    CHECK(placed->poseFrame == 0);
+    const auto placed = pool.chests.chest(0).preview.presentation();
+    REQUIRE(placed.tree != nullptr);
+    CHECK(placed.poseFrame == 0);
     for (s32 frame = 0; frame < 6; ++frame) {
         (void)pool.chests.update(1.0f / 60, {});
     }
-    const auto later = pool.chests.chest(0).preview.checkpoint();
-    REQUIRE(later);
-    CHECK(later->poseFrame > 0);
+    const auto later = pool.chests.chest(0).preview.presentation();
+    REQUIRE(later.tree != nullptr);
+    CHECK(later.poseFrame > 0);
     CHECK(pool.chests.chest(0).revealed);
 }
 
@@ -239,8 +239,9 @@ TEST_CASE("visited chests refuse open pay gold blow up and keep their opened pos
             collected |= event.kind == ChestEvent::Kind::Collected;
             exploded |= event.explodes;
         }
-        const auto figure = host.chests.chest(0).figure.checkpoint();
-        emptyOpenPose |= figure && figure->holdPose;
+        // An empty sequence plays while the pose stays on the one before it.
+        const auto figure = host.chests.chest(0).figure.presentation();
+        emptyOpenPose |= figure.tree != nullptr && figure.poseSequence != figure.meshSequence;
     }
     CHECK(refused);
     CHECK(unlocked);

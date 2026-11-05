@@ -121,7 +121,6 @@ private:
     const WorldCollision* m_collision = nullptr;
     s32 m_players = 1;
     std::shared_ptr<const u8> m_checkpointBinding = std::make_shared<const u8>(0);
-    u64 m_checkpointGeneration = 0;
 };
 
 } // namespace gdl::game
