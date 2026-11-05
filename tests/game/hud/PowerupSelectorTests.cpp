@@ -63,10 +63,6 @@ TEST_CASE("inventory labels shrink only once they would leave the player's box",
     CHECK(text.measure(longer, further) <= kBudget);
 }
 
-SelectorInput press(bool up, bool down, bool left, bool right) {
-    return SelectorInput{up, down, left, right};
-}
-
 TEST_CASE("the challenge selector keeps Stop Time carried but refuses to activate it",
           "[selector][stop-time][secret]") {
     Inventory inventory;
@@ -98,12 +94,12 @@ TEST_CASE("the selector opens on a carried powerup, goes round them, and switche
     Inventory inventory;
     PowerupSelector selector;
     // With nothing carried, up does nothing.
-    REQUIRE(selector.step(press(true, false, false, false), inventory, 2) == SelectorCue::None);
+    REQUIRE(selector.step(SelectorInput{.up = true}, inventory, 2) == SelectorCue::None);
     REQUIRE(selector.state() == State::Closed);
 
     inventory.powerups[1] = PowerupSlot{30.0f, 9, 0.0f, 0x4, true};
     inventory.powerups[4] = PowerupSlot{30.0f, 5, 0.0f, 0x80000, true};
-    REQUIRE(selector.step(press(true, false, false, false), inventory, 2) == SelectorCue::Opened);
+    REQUIRE(selector.step(SelectorInput{.up = true}, inventory, 2) == SelectorCue::Opened);
     REQUIRE(selector.state() == State::SlidingIn);
     REQUIRE(selector.selection() == 4); // the last carried comes up first
     REQUIRE_FALSE(selector.showing());
@@ -117,14 +113,14 @@ TEST_CASE("the selector opens on a carried powerup, goes round them, and switche
     REQUIRE(steps >= 15);
     REQUIRE(selector.labelY(320) == 320 - PowerupSelector::kLabelRise);
 
-    REQUIRE(selector.step(press(false, false, true, false), inventory, 2) == SelectorCue::Moved);
+    REQUIRE(selector.step(SelectorInput{.left = true}, inventory, 2) == SelectorCue::Moved);
     REQUIRE(selector.selection() == 1);
-    REQUIRE(selector.step(press(false, false, false, true), inventory, 2) == SelectorCue::Moved);
+    REQUIRE(selector.step(SelectorInput{.right = true}, inventory, 2) == SelectorCue::Moved);
     REQUIRE(selector.selection() == 4);
     // Up takes the named one off, and again puts it back on.
-    REQUIRE(selector.step(press(true, false, false, false), inventory, 2) == SelectorCue::Switched);
+    REQUIRE(selector.step(SelectorInput{.up = true}, inventory, 2) == SelectorCue::Switched);
     REQUIRE_FALSE(inventory.powerups[4].on);
-    selector.step(press(true, false, false, false), inventory, 2);
+    selector.step(SelectorInput{.up = true}, inventory, 2);
     REQUIRE(inventory.powerups[4].on);
 
     // The named one running out hands over to the one before; the last closes it.
@@ -139,11 +135,11 @@ TEST_CASE("the selector opens on a carried powerup, goes round them, and switche
     // Down closes it too.
     inventory.powerups[1].strength = 5.0f;
     selector.close();
-    selector.step(press(true, false, false, false), inventory, 2);
+    selector.step(SelectorInput{.up = true}, inventory, 2);
     while (!selector.showing()) {
         selector.step(SelectorInput{}, inventory, 2);
     }
-    REQUIRE(selector.step(press(false, true, false, false), inventory, 2) == SelectorCue::Closed);
+    REQUIRE(selector.step(SelectorInput{.down = true}, inventory, 2) == SelectorCue::Closed);
     while (selector.state() != State::Closed) {
         selector.step(SelectorInput{}, inventory, 2);
     }

@@ -11,17 +11,6 @@ namespace {
 using namespace gdl;
 using namespace gdl::game;
 
-MenuInput press(bool up = false, bool down = false, bool left = false, bool right = false,
-                bool select = false) {
-    MenuInput input;
-    input.up = up;
-    input.down = down;
-    input.left = left;
-    input.right = right;
-    input.select = select;
-    return input;
-}
-
 TEST_CASE("the letter cycle runs through letters, underscore, digits and the end mark",
           "[game][menu][name]") {
     REQUIRE(NameEntry::nextLetter('A') == 'B');
@@ -67,19 +56,18 @@ TEST_CASE("letters are picked, entered and removed", "[game][menu][name]") {
     entry.begin("");
     REQUIRE(entry.editing());
     REQUIRE(entry.pendingLetter() == NameEntry::kEndMark);
-    REQUIRE(entry.update(press(true), 1) == NameEntry::Event::LetterChanged);
+    REQUIRE(entry.update(MenuInput{.up = true}, 1) == NameEntry::Event::LetterChanged);
     REQUIRE(entry.pendingLetter() == 'A');
-    REQUIRE(entry.update(press(true), 1) == NameEntry::Event::LetterChanged);
+    REQUIRE(entry.update(MenuInput{.up = true}, 1) == NameEntry::Event::LetterChanged);
     REQUIRE(entry.pendingLetter() == 'B');
-    REQUIRE(entry.update(press(false, false, false, true), 1) == NameEntry::Event::LetterAdded);
+    REQUIRE(entry.update(MenuInput{.right = true}, 1) == NameEntry::Event::LetterAdded);
     REQUIRE(entry.name() == "B");
     REQUIRE(entry.pendingLetter() == NameEntry::kEndMark);
-    REQUIRE(entry.update(press(false, true), 1) == NameEntry::Event::LetterChanged);
+    REQUIRE(entry.update(MenuInput{.down = true}, 1) == NameEntry::Event::LetterChanged);
     REQUIRE(entry.pendingLetter() == '9');
-    REQUIRE(entry.update(press(false, false, false, false, true), 1) ==
-            NameEntry::Event::LetterAdded);
+    REQUIRE(entry.update(MenuInput{.select = true}, 1) == NameEntry::Event::LetterAdded);
     REQUIRE(entry.name() == "B9");
-    REQUIRE(entry.update(press(false, false, true), 1) == NameEntry::Event::LetterRemoved);
+    REQUIRE(entry.update(MenuInput{.left = true}, 1) == NameEntry::Event::LetterRemoved);
     REQUIRE(entry.name() == "B");
     REQUIRE(entry.pendingLetter() == '9');
     REQUIRE(entry.update(MenuInput{}, 1) == NameEntry::Event::None);
@@ -91,23 +79,23 @@ TEST_CASE("the end mark accepts the name and it flashes before finishing", "[gam
     entry.begin("JOE");
     REQUIRE(entry.name() == "JOE");
     // Right on the end mark only skips; Select accepts.
-    REQUIRE(entry.update(press(false, false, false, true), 1) == NameEntry::Event::None);
+    REQUIRE(entry.update(MenuInput{.right = true}, 1) == NameEntry::Event::None);
     REQUIRE(entry.editing());
-    REQUIRE(entry.update(press(false, false, false, false, true), 1) == NameEntry::Event::Accepted);
+    REQUIRE(entry.update(MenuInput{.select = true}, 1) == NameEntry::Event::Accepted);
     REQUIRE(entry.flashing());
     REQUIRE(entry.name() == "JOE");
     entry.update(MenuInput{}, NameEntry::kFlashTicks);
     REQUIRE(entry.flashing());
     entry.update(MenuInput{}, 1);
     REQUIRE(entry.finished());
-    REQUIRE(entry.update(press(true), 1) == NameEntry::Event::None);
+    REQUIRE(entry.update(MenuInput{.up = true}, 1) == NameEntry::Event::None);
 }
 
 TEST_CASE("an empty accepted name is replaced and a full one completes itself",
           "[game][menu][name]") {
     NameEntry entry;
     entry.begin("");
-    REQUIRE(entry.update(press(false, false, false, false, true), 1) == NameEntry::Event::Accepted);
+    REQUIRE(entry.update(MenuInput{.select = true}, 1) == NameEntry::Event::Accepted);
     REQUIRE_FALSE(entry.name().empty());
     REQUIRE(entry.name().size() <= NameEntry::kMaxLength);
 
@@ -115,7 +103,7 @@ TEST_CASE("an empty accepted name is replaced and a full one completes itself",
     full.begin("ABCDEF");
     REQUIRE(full.name() == "ABCDE");
     REQUIRE(full.pendingLetter() == 'F');
-    REQUIRE(full.update(press(false, false, false, true), 1) == NameEntry::Event::Accepted);
+    REQUIRE(full.update(MenuInput{.right = true}, 1) == NameEntry::Event::Accepted);
     REQUIRE(full.name() == "ABCDEF");
     REQUIRE(full.flashing());
 }
@@ -150,7 +138,7 @@ TEST_CASE("typed letters go straight into the name", "[game][menu][name]") {
     // Enter takes a typed name; a sixth letter completes it by itself.
     typed.typed = "y";
     REQUIRE(entry.update(typed, 1) == NameEntry::Event::LetterAdded);
-    REQUIRE(entry.update(press(false, false, false, false, true), 1) == NameEntry::Event::Accepted);
+    REQUIRE(entry.update(MenuInput{.select = true}, 1) == NameEntry::Event::Accepted);
     REQUIRE(entry.name() == "BOBY");
     REQUIRE(entry.flashing());
     NameEntry full;

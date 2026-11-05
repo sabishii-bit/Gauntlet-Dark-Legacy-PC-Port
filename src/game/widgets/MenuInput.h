@@ -16,9 +16,9 @@ namespace gdl::game {
 /** One frame of menu commands from the keyboard and/or pads: presses, which directions are
  * still held for auto-repeat, and what a text field with the keyboard received. */
 struct MenuInput {
-    const Input* devices = nullptr; ///< borrowed only for this update's binding capture
-    std::optional<Vec2> pointer;    ///< canvas coordinates after mapMenuPointer
-    f32 pointerScroll = 0;          ///< wheel motion, positive upward
+    const Input* devices = nullptr;             ///< borrowed only for this update's binding capture
+    std::optional<Vec2> pointer = std::nullopt; ///< canvas coordinates after mapMenuPointer
+    f32 pointerScroll = 0;                      ///< wheel motion, positive upward
     bool pointerNormalized = false;
     bool pointerPressed = false;
     bool pointerHeld = false;
@@ -34,7 +34,10 @@ struct MenuInput {
     bool downHeld = false;
     bool leftHeld = false;
     bool rightHeld = false;
-    std::string typed;          ///< printable characters typed into a text field this frame
+    // Defaulted, as `pointer` is, so that a designated initializer naming only the
+    // presses it sets raises no -Wmissing-field-initializers.
+    // NOLINTNEXTLINE(readability-redundant-member-init)
+    std::string typed{};        ///< printable characters typed into a text field this frame
     bool erase = false;         ///< Backspace, for a text field
     bool escape = false;        ///< the escape binding: leaves a text field, quits elsewhere
     bool buttonPressed = false; ///< any fresh key/pad button on the assigned devices, not sticks

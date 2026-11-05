@@ -25,15 +25,6 @@ namespace {
 using namespace gdl;
 using namespace gdl::game;
 
-MenuInput press(bool start, bool select = false, bool down = false, bool back = false) {
-    MenuInput input;
-    input.start = start;
-    input.select = select;
-    input.down = down;
-    input.back = back;
-    return input;
-}
-
 std::filesystem::path unpackedRoot() {
     return test::assetOrSkip("TITLE/textures.ngc").parent_path().parent_path();
 }
@@ -90,7 +81,7 @@ TEST_CASE("the title screen refuses to open without unpacked data", "[game][titl
     TitleScene scene;
     REQUIRE_FALSE(scene.open(device, context));
     REQUIRE_FALSE(scene.isOpen());
-    REQUIRE(scene.step(1, press(true)) == TitleOutcome::Running);
+    REQUIRE(scene.step(1, MenuInput{.start = true}) == TitleOutcome::Running);
 }
 
 TEST_CASE("the title menu renders and plays music directly from the retail tree",
@@ -110,12 +101,12 @@ TEST_CASE("the title menu renders and plays music directly from the retail tree"
     scene.step(60, MenuInput{});
     scene.render(device, makeScreenProjection(640.0f, 448.0f), 640.0f, 448.0f);
     REQUIRE(device.draws.size() >= 6);
-    REQUIRE(scene.step(1, press(true)) == TitleOutcome::Running);
+    REQUIRE(scene.step(1, MenuInput{.start = true}) == TitleOutcome::Running);
     REQUIRE(scene.menuOpen());
-    REQUIRE(scene.step(1, press(false, true)) == TitleOutcome::Running);
+    REQUIRE(scene.step(1, MenuInput{.select = true}) == TitleOutcome::Running);
     REQUIRE(scene.startMenuOpen());
     REQUIRE_FALSE(scene.loading());
-    REQUIRE(scene.step(1, press(false, true)) == TitleOutcome::Running);
+    REQUIRE(scene.step(1, MenuInput{.select = true}) == TitleOutcome::Running);
     REQUIRE(scene.loading());
     REQUIRE(scene.step(TitleScene::kLoadingTicks, MenuInput{}) == TitleOutcome::StartGame);
     scene.close();
@@ -153,23 +144,23 @@ TEST_CASE("Start opens Local and Netplay and Local leads into story mode",
     REQUIRE(scene.open(device, context));
     scene.step(100, MenuInput{});
     REQUIRE_FALSE(scene.menuOpen());
-    REQUIRE(scene.step(1, press(true)) == TitleOutcome::Running);
+    REQUIRE(scene.step(1, MenuInput{.start = true}) == TitleOutcome::Running);
     REQUIRE(scene.menuOpen());
     REQUIRE(scene.idleTicks() == TitleScene::kIdleTicks);
 
-    REQUIRE(scene.step(1, press(false, false, false, true)) == TitleOutcome::Running);
+    REQUIRE(scene.step(1, MenuInput{.back = true}) == TitleOutcome::Running);
     REQUIRE_FALSE(scene.menuOpen());
 
-    scene.step(1, press(true));
-    REQUIRE(scene.step(1, press(false, true)) == TitleOutcome::Running);
+    scene.step(1, MenuInput{.start = true});
+    REQUIRE(scene.step(1, MenuInput{.select = true}) == TitleOutcome::Running);
     REQUIRE(scene.startMenuOpen());
     REQUIRE_FALSE(scene.loading());
-    scene.step(1, press(false, false, false, true));
+    scene.step(1, MenuInput{.back = true});
     REQUIRE(scene.menuOpen());
     REQUIRE_FALSE(scene.startMenuOpen());
-    scene.step(1, press(false, true));
+    scene.step(1, MenuInput{.select = true});
     REQUIRE(scene.startMenuOpen());
-    REQUIRE(scene.step(1, press(false, true)) == TitleOutcome::Running);
+    REQUIRE(scene.step(1, MenuInput{.select = true}) == TitleOutcome::Running);
     REQUIRE(scene.loading());
     REQUIRE_FALSE(scene.menuOpen());
     TitleOutcome outcome = TitleOutcome::Running;
@@ -188,7 +179,7 @@ TEST_CASE("Quit to Desktop asks first and quits on Yes", "[game][title][assets]"
     const auto context = f.context(nullptr); // Resolve SKIP before entering an assertion.
     TitleScene scene;
     REQUIRE(scene.open(device, context));
-    scene.step(1, press(true));
+    scene.step(1, MenuInput{.start = true});
     REQUIRE(scene.menuOpen());
     // Three rows: the factory lifts the column so Quit to Desktop ends above the bottom.
     REQUIRE(scene.titleMenu().definition().items.size() == 3);
@@ -196,28 +187,28 @@ TEST_CASE("Quit to Desktop asks first and quits on Yes", "[game][title][assets]"
           scene.screen().height - MainMenuFactory::kBottomMargin);
     CHECK(scene.titleMenu().itemY(0) >= MainMenuFactory::kHighestTop);
     CHECK(scene.titleMenu().definition().items[2].text == "Quit");
-    scene.step(1, press(false, false, true));
-    scene.step(1, press(false, false, true)); // Start, Options, Quit
-    REQUIRE(scene.step(1, press(false, true)) == TitleOutcome::Running);
+    scene.step(1, MenuInput{.down = true});
+    scene.step(1, MenuInput{.down = true}); // Start, Options, Quit
+    REQUIRE(scene.step(1, MenuInput{.select = true}) == TitleOutcome::Running);
     REQUIRE(scene.quitConfirmOpen());
     REQUIRE_FALSE(scene.startMenuOpen());
     // The question fits its parchment, as does anything a menu is given to write.
     CHECK(scene.titleMenu().definition().title == "Are you sure?");
     CHECK(scene.titleMenu().definition().fitWidth == 320);
     // No, the default, brings the menu back with Quit to Desktop still under the arrow.
-    REQUIRE(scene.step(1, press(false, true)) == TitleOutcome::Running);
+    REQUIRE(scene.step(1, MenuInput{.select = true}) == TitleOutcome::Running);
     REQUIRE(scene.menuOpen());
     REQUIRE_FALSE(scene.quitConfirmOpen());
-    REQUIRE(scene.step(1, press(false, true)) == TitleOutcome::Running);
+    REQUIRE(scene.step(1, MenuInput{.select = true}) == TitleOutcome::Running);
     REQUIRE(scene.quitConfirmOpen());
     // Backing out does the same.
-    REQUIRE(scene.step(1, press(false, false, false, true)) == TitleOutcome::Running);
+    REQUIRE(scene.step(1, MenuInput{.back = true}) == TitleOutcome::Running);
     REQUIRE(scene.menuOpen());
     REQUIRE_FALSE(scene.quitConfirmOpen());
-    scene.step(1, press(false, true));
+    scene.step(1, MenuInput{.select = true});
     REQUIRE(scene.quitConfirmOpen());
-    scene.step(1, press(false, false, true));
-    REQUIRE(scene.step(1, press(false, true)) == TitleOutcome::Quit);
+    scene.step(1, MenuInput{.down = true});
+    REQUIRE(scene.step(1, MenuInput{.select = true}) == TitleOutcome::Quit);
     scene.close();
     REQUIRE_FALSE(scene.quitConfirmOpen());
 }
@@ -228,16 +219,16 @@ TEST_CASE("the options menu opens over the title menu and fades away", "[game][t
     const auto context = f.context(nullptr);
     TitleScene scene;
     REQUIRE(scene.open(device, context));
-    scene.step(1, press(true));
-    scene.step(1, press(false, false, true));
-    scene.step(1, press(false, true));
+    scene.step(1, MenuInput{.start = true});
+    scene.step(1, MenuInput{.down = true});
+    scene.step(1, MenuInput{.select = true});
     REQUIRE(scene.optionsOpen());
     REQUIRE(scene.menuOpen());
     CHECK(scene.settings().menu().definition().parchmentFont);
     CHECK_FALSE(scene.settings().menu().definition().prompts);
     CHECK(scene.settings().menu().definition().backLabel.empty());
     CHECK(scene.settings().menu().definition().selectLabel.empty());
-    scene.step(1, press(false, false, false, true));
+    scene.step(1, MenuInput{.back = true});
     REQUIRE(scene.optionsOpen());
     scene.step(OptionMenu::kFadeTicks, MenuInput{});
     REQUIRE_FALSE(scene.optionsOpen());
@@ -275,7 +266,7 @@ TEST_CASE("rendering draws the backdrop, glow and text", "[game][title][assets]"
     REQUIRE(test::maxCorner(device.draws[1]).x == 256.0f);
 
     device.draws.clear();
-    scene.step(1, press(true));
+    scene.step(1, MenuInput{.start = true});
     scene.render(device, projection, 640.0f, 448.0f);
     REQUIRE(device.draws.size() >= 6);
     scene.close();
@@ -309,14 +300,14 @@ TEST_CASE("the title screen plays its music and menu sounds", "[game][title][ass
     mixer.mix(actual);
     expectedMixer.mix(expected);
     CHECK(actual == expected);
-    scene.step(1, press(true));
+    scene.step(1, MenuInput{.start = true});
     REQUIRE(player.voiceCount() == 2);
-    scene.step(1, press(false, false, true));
+    scene.step(1, MenuInput{.down = true});
     REQUIRE(player.voiceCount() == 3);
-    scene.step(1, press(false, true));
+    scene.step(1, MenuInput{.select = true});
     REQUIRE(scene.optionsOpen());
     REQUIRE(player.voiceCount() == 4);
-    scene.step(1, press(false, false, false, true));
+    scene.step(1, MenuInput{.back = true});
     REQUIRE(scene.burning());
     REQUIRE(player.voiceCount() == 5);
     scene.close();
@@ -331,15 +322,15 @@ TEST_CASE("backing out of the options burns the scroll and blanks the controls",
     const auto context = f.context(nullptr);
     TitleScene scene;
     REQUIRE(scene.open(device, context));
-    scene.step(1, press(true));
-    scene.step(1, press(false, false, true));
-    scene.step(1, press(false, true));
+    scene.step(1, MenuInput{.start = true});
+    scene.step(1, MenuInput{.down = true});
+    scene.step(1, MenuInput{.select = true});
     REQUIRE(scene.optionsOpen());
     REQUIRE_FALSE(scene.burning());
     device.draws.clear();
     device.textureUpdates = 0;
 
-    scene.step(1, press(false, false, false, true));
+    scene.step(1, MenuInput{.back = true});
     REQUIRE(scene.burning());
     REQUIRE(scene.optionsOpen());
     const Mat4 projection = makeScreenProjection(640.0f, 448.0f);
@@ -348,15 +339,15 @@ TEST_CASE("backing out of the options burns the scroll and blanks the controls",
     REQUIRE_FALSE(device.draws.empty());
 
     // Input is ignored until the burn ends: Back would otherwise close the title menu.
-    scene.step(OptionMenu::kFadeTicks, press(false, false, false, true));
+    scene.step(OptionMenu::kFadeTicks, MenuInput{.back = true});
     REQUIRE_FALSE(scene.optionsOpen());
     REQUIRE(scene.burning());
     REQUIRE(scene.menuOpen());
     scene.step(BurnDialogueScroll::kFrameCount * BurnDialogueScroll::kTicksPerFrame,
-               press(false, false, false, true));
+               MenuInput{.back = true});
     REQUIRE_FALSE(scene.burning());
     REQUIRE(scene.menuOpen());
-    scene.step(1, press(false, false, false, true));
+    scene.step(1, MenuInput{.back = true});
     REQUIRE_FALSE(scene.menuOpen());
 }
 
@@ -387,10 +378,10 @@ TEST_CASE("title options persist edits without beginning a game",
     settings.hook = [&](const GameConfig& next) { next.saveFile(file); };
     TitleScene scene;
     REQUIRE(scene.open(device, context, &settings));
-    scene.step(1, press(true));
-    scene.step(1, press(false, false, true));
-    scene.step(1, press(false, true)); // root options
-    scene.step(1, press(false, true)); // audio
+    scene.step(1, MenuInput{.start = true});
+    scene.step(1, MenuInput{.down = true});
+    scene.step(1, MenuInput{.select = true}); // root options
+    scene.step(1, MenuInput{.select = true}); // audio
     REQUIRE(scene.settings().page() == SettingsMenu::Page::Audio);
     MenuInput left;
     left.left = true;
@@ -400,7 +391,7 @@ TEST_CASE("title options persist edits without beginning a game",
     REQUIRE(saved.loadFile(file));
     CHECK(AudioSlider::value(saved.audio.musicVolume) == 127);
     CHECK_FALSE(scene.loading());
-    scene.step(1, press(false, false, false, true));
+    scene.step(1, MenuInput{.back = true});
     CHECK(scene.settings().page() == SettingsMenu::Page::Root);
     CHECK_FALSE(scene.burning());
 }
@@ -412,11 +403,11 @@ TEST_CASE("the title offers netplay without beginning offline character selectio
     const auto context = fixture.context(nullptr);
     TitleScene scene;
     REQUIRE(scene.open(device, context));
-    scene.step(1, press(true));
-    scene.step(1, press(false, true));
+    scene.step(1, MenuInput{.start = true});
+    scene.step(1, MenuInput{.select = true});
     REQUIRE(scene.startMenuOpen());
-    scene.step(1, press(false, false, true));
-    CHECK(scene.step(1, press(false, true)) == TitleOutcome::Netplay);
+    scene.step(1, MenuInput{.down = true});
+    CHECK(scene.step(1, MenuInput{.select = true}) == TitleOutcome::Netplay);
     CHECK_FALSE(scene.loading());
 }
 

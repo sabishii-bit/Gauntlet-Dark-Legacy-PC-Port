@@ -39,19 +39,6 @@ BitmapFont fullFont() {
     return BitmapFont::fromGlyphs(10, 4, std::move(glyphs));
 }
 
-MenuInput press(bool select = false, bool back = false, bool start = false, bool up = false,
-                bool down = false, bool left = false, bool right = false) {
-    MenuInput input;
-    input.select = select;
-    input.back = back;
-    input.start = start;
-    input.up = up;
-    input.down = down;
-    input.left = left;
-    input.right = right;
-    return input;
-}
-
 struct Fixture {
     BitmapFont font = fullFont();
     test::FakeTexture sheet{64, 64};
@@ -101,11 +88,11 @@ struct Fixture {
 
     /** Takes the lane from the New/Load menu through a name to the class picker. */
     void createCharacter() {
-        step(press(true)); // New
+        step(MenuInput{.select = true}); // New
         REQUIRE(lane.state() == SelectLane::State::NameEntry);
-        step(press(false, false, false, true));                      // letter A
-        step(press(false, false, false, false, false, false, true)); // enter it
-        step(press(true));                                           // accept the end mark
+        step(MenuInput{.up = true});     // letter A
+        step(MenuInput{.right = true});  // enter it
+        step(MenuInput{.select = true}); // accept the end mark
         step(MenuInput{}, NameEntry::kFlashTicks + 1);
         REQUIRE(lane.state() == SelectLane::State::ClassPick);
     }
@@ -144,12 +131,12 @@ TEST_CASE("mouse menus and a typed name create and save a character without clic
     f.step(typed);
     CHECK(f.lane.nameEntry().name() == "AB");
     REQUIRE(f.lane.pointerTargets().empty());
-    f.step(press(true));
+    f.step(MenuInput{.select = true});
     f.step({}, NameEntry::kFlashTicks + 1);
     REQUIRE(f.lane.state() == SelectLane::State::ClassPick);
-    f.step(press(false, false, false, false, false, false, true));
+    f.step(MenuInput{.right = true});
     CHECK(f.lane.pickedClass() == 1);
-    f.step(press(false, false, false, true));
+    f.step(MenuInput{.up = true});
     CHECK(f.lane.pickedColor() == 1);
     clickControl(SelectLane::PointerAction::Select);
     REQUIRE(f.lane.lockedIn());
@@ -180,7 +167,7 @@ TEST_CASE("moving or clicking the mouse never replaces name entry with a charact
           "[select][mouse]") {
     Fixture f("select-mouse-grid");
     f.lane.activate();
-    f.step(press(true));
+    f.step(MenuInput{.select = true});
     MenuInput hover;
     hover.pointer = Vec2{static_cast<f32>(f.lane.x()) + 1, 150};
     f.step(hover);
@@ -212,7 +199,7 @@ TEST_CASE("name entry keeps the caption and letters without control help text", 
         f.services.smallPainter = &helpPainter;
         f.services.keyboardLane = keyboard ? f.lane.index() : -1;
         f.lane.activate();
-        f.step(press(true));
+        f.step(MenuInput{.select = true});
         REQUIRE(f.lane.state() == SelectLane::State::NameEntry);
         MenuInput typed;
         typed.typed = "ace";
@@ -236,7 +223,7 @@ TEST_CASE("name entry keeps the caption and letters without control help text", 
         }
         CHECK(caption);
         CHECK(letters);
-        f.step(press(true));
+        f.step(MenuInput{.select = true});
         f.step({}, NameEntry::kFlashTicks + 1);
         CHECK(f.lane.state() == SelectLane::State::ClassPick);
         CHECK(f.lane.save().name == "ACE");
@@ -277,7 +264,7 @@ TEST_CASE("name cheats enter through the ordinary character selection flow",
           "[game][select][cheats]") {
     Fixture f;
     f.lane.activate();
-    f.step(press(true));
+    f.step(MenuInput{.select = true});
     REQUIRE(f.lane.state() == SelectLane::State::NameEntry);
     MenuInput name;
     SECTION("powerup names apply only when the class is committed") {
@@ -286,7 +273,7 @@ TEST_CASE("name cheats enter through the ordinary character selection flow",
         f.step({}, NameEntry::kFlashTicks + 1);
         REQUIRE(f.lane.state() == SelectLane::State::ClassPick);
         CHECK(f.lane.save().progress().inventory.powerupCount() == 0);
-        f.step(press(true));
+        f.step(MenuInput{.select = true});
         REQUIRE(f.lane.lockedIn());
         CHECK(f.lane.save().name == "INVULN");
         CHECK((PowerupEffects::of(f.lane.save().progress().inventory).armor &
@@ -296,7 +283,7 @@ TEST_CASE("name cheats enter through the ordinary character selection flow",
         name.typed = "ICE600";
         f.step(name);
         f.step({}, NameEntry::kFlashTicks + 1);
-        f.step(press(true));
+        f.step(MenuInput{.select = true});
         REQUIRE(f.lane.lockedIn());
         CHECK(f.lane.save().character == 4);
         CHECK(f.lane.save().color == 2);
@@ -353,7 +340,7 @@ TEST_CASE("select lanes remove footer labels and their invisible mouse targets",
             return draw.texture == &helpSheet || draw.texture == &device.whiteTexture();
         }));
     }
-    CHECK(f.step(press(false, true)) == SelectLane::Result::Leave);
+    CHECK(f.step(MenuInput{.back = true}) == SelectLane::Result::Leave);
 }
 
 TEST_CASE("a class is mouse-selected on its portrait instead of the removed footer",
@@ -472,13 +459,13 @@ TEST_CASE("a lane joins on activation and leaves from the first menu", "[game][s
     f.lane.activate();
     REQUIRE(f.lane.state() == SelectLane::State::TopMenu);
     REQUIRE(f.lane.selecting());
-    REQUIRE(f.step(press(false, true)) == SelectLane::Result::Leave);
+    REQUIRE(f.step(MenuInput{.back = true}) == SelectLane::Result::Leave);
     REQUIRE_FALSE(f.lane.active());
 
     f.lane.activate();
     SelectLane::Frame others;
     others.othersActive = true;
-    REQUIRE(f.step(press(false, true), 1, others) == SelectLane::Result::Cleared);
+    REQUIRE(f.step(MenuInput{.back = true}, 1, others) == SelectLane::Result::Cleared);
     REQUIRE_FALSE(f.lane.active());
 }
 
@@ -512,26 +499,26 @@ TEST_CASE("a new character is named, given a class and locked in", "[game][selec
     f.createCharacter();
     REQUIRE(f.lane.save().name == "A");
     REQUIRE(f.lane.pickedClass() == 0);
-    f.step(press(false, false, false, false, false, false, true)); // next class
+    f.step(MenuInput{.right = true}); // next class
     REQUIRE(f.lane.pickedClass() == 1);
-    f.step(press(false, false, false, false, false, true)); // previous class
-    f.step(press(false, false, false, false, false, true));
+    f.step(MenuInput{.left = true}); // previous class
+    f.step(MenuInput{.left = true});
     REQUIRE(f.lane.pickedClass() == kClassCount - 2); // Sumner is skipped while locked
-    f.step(press(false, false, false, true));         // next colour
+    f.step(MenuInput{.up = true});                    // next colour
     REQUIRE(f.lane.pickedColor() == 1);
-    f.step(press(false, false, false, false, true));
-    f.step(press(false, false, false, false, true));
+    f.step(MenuInput{.down = true});
+    f.step(MenuInput{.down = true});
     REQUIRE(f.lane.pickedColor() == 3);
     REQUIRE(f.sounds.back() == SelectSound::ClassChange);
 
     // Hidden classes cannot be taken.
-    REQUIRE(f.step(press(true)) == SelectLane::Result::None);
+    REQUIRE(f.step(MenuInput{.select = true}) == SelectLane::Result::None);
     REQUIRE(f.lane.state() == SelectLane::State::ClassPick);
     REQUIRE(f.sounds.back() == SelectSound::Buzzer);
 
-    f.step(press(false, false, false, false, false, false, true)); // wraps to the warrior
+    f.step(MenuInput{.right = true}); // wraps to the warrior
     REQUIRE(f.lane.pickedClass() == 0);
-    f.step(press(true));
+    f.step(MenuInput{.select = true});
     REQUIRE(f.lane.state() == SelectLane::State::LockedIn);
     REQUIRE_FALSE(f.lane.selecting());
     REQUIRE(f.lane.save().character == 0);
@@ -544,16 +531,16 @@ TEST_CASE("a new character is named, given a class and locked in", "[game][selec
     f.step(MenuInput{}, 80);
     REQUIRE_FALSE(f.lane.animating());
 
-    f.step(press(false, false, true)); // Start opens the save menu
+    f.step(MenuInput{.start = true}); // Start opens the save menu
     REQUIRE(f.lane.state() == SelectLane::State::SaveMenu);
-    f.step(press(true)); // Done
+    f.step(MenuInput{.select = true}); // Done
     REQUIRE(f.lane.state() == SelectLane::State::LockedIn);
 }
 
 TEST_CASE("a typed name is taken straight from the keyboard", "[game][select]") {
     Fixture f;
     f.lane.activate();
-    f.step(press(true)); // New
+    f.step(MenuInput{.select = true}); // New
     REQUIRE(f.lane.typing());
     MenuInput erase;
     erase.erase = true;
@@ -565,7 +552,7 @@ TEST_CASE("a typed name is taken straight from the keyboard", "[game][select]") 
     REQUIRE(f.lane.state() == SelectLane::State::TopMenu);
     REQUIRE_FALSE(f.lane.typing());
 
-    f.step(press(true));
+    f.step(MenuInput{.select = true});
     MenuInput typed;
     typed.typed = "cj";
     f.step(typed);
@@ -576,7 +563,7 @@ TEST_CASE("a typed name is taken straight from the keyboard", "[game][select]") 
     REQUIRE(f.sounds.back() == SelectSound::CursorHorizontal);
     typed.typed = "j";
     f.step(typed);
-    f.step(press(true)); // Enter takes it
+    f.step(MenuInput{.select = true}); // Enter takes it
     f.step(MenuInput{}, NameEntry::kFlashTicks + 1);
     REQUIRE(f.lane.state() == SelectLane::State::ClassPick);
     REQUIRE(f.lane.save().name == "CJ");
@@ -586,9 +573,9 @@ TEST_CASE("backing out of the class picker returns to the first menu", "[game][s
     Fixture f;
     f.lane.activate();
     f.createCharacter();
-    f.step(press(false, true));
+    f.step(MenuInput{.back = true});
     REQUIRE(f.lane.state() == SelectLane::State::TopMenu);
-    f.step(press(false, true));
+    f.step(MenuInput{.back = true});
     REQUIRE_FALSE(f.lane.active());
 }
 
@@ -596,16 +583,16 @@ TEST_CASE("characters save to a slot and load back into the class picker", "[gam
     Fixture f("select-lane-save");
     f.lane.activate();
     f.createCharacter();
-    f.step(press(true)); // lock in the warrior
-    f.step(press(false, false, true));
+    f.step(MenuInput{.select = true}); // lock in the warrior
+    f.step(MenuInput{.start = true});
     REQUIRE(f.lane.state() == SelectLane::State::SaveMenu);
-    f.step(press(false, false, false, true)); // up from Done: Quit, Change (Load is off)
-    f.step(press(false, false, false, true));
-    f.step(press(false, false, false, true)); // Save
-    f.step(press(true));
+    f.step(MenuInput{.up = true}); // up from Done: Quit, Change (Load is off)
+    f.step(MenuInput{.up = true});
+    f.step(MenuInput{.up = true}); // Save
+    f.step(MenuInput{.select = true});
     REQUIRE(f.lane.state() == SelectLane::State::SavePick);
-    f.step(press(false, false, false, false, true)); // second slot
-    f.step(press(true));
+    f.step(MenuInput{.down = true}); // second slot
+    f.step(MenuInput{.select = true});
     REQUIRE(f.lane.state() == SelectLane::State::Saving);
     f.step(MenuInput{}, SelectLane::kOperationStepTicks * 3);
     REQUIRE(f.slots.slot(1).exists);
@@ -616,17 +603,17 @@ TEST_CASE("characters save to a slot and load back into the class picker", "[gam
     REQUIRE(f.lane.slotInUse() == 1U);
 
     // Saving again over the same slot asks first.
-    f.step(press(false, false, false, true));
-    f.step(press(false, false, false, true));
-    f.step(press(false, false, false, true));
-    f.step(press(false, false, false, true));
-    f.step(press(true));
+    f.step(MenuInput{.up = true});
+    f.step(MenuInput{.up = true});
+    f.step(MenuInput{.up = true});
+    f.step(MenuInput{.up = true});
+    f.step(MenuInput{.select = true});
     REQUIRE(f.lane.state() == SelectLane::State::SavePick);
-    f.step(press(true));
+    f.step(MenuInput{.select = true});
     REQUIRE(f.lane.state() == SelectLane::State::OverwriteConfirm);
-    f.step(press(true)); // No
+    f.step(MenuInput{.select = true}); // No
     REQUIRE(f.lane.state() == SelectLane::State::SavePick);
-    f.step(press(false, true));
+    f.step(MenuInput{.back = true});
     REQUIRE(f.lane.state() == SelectLane::State::SaveMenu);
 
     // A second lane loads it.
@@ -634,14 +621,14 @@ TEST_CASE("characters save to a slot and load back into the class picker", "[gam
     other.reset(2, &f.services);
     other.activate();
     REQUIRE(other.state() == SelectLane::State::TopMenu);
-    other.update(press(true), 1, {}); // Load is preselected once a save exists
+    other.update(MenuInput{.select = true}, 1, {}); // Load is preselected once a save exists
     REQUIRE(other.state() == SelectLane::State::LoadPick);
     SelectLane::Frame frame;
     frame.slotsInUse = {1};
-    other.update(press(false, false, false, false, true), 1, frame);
-    other.update(press(true), 1, frame); // in use by the first lane
+    other.update(MenuInput{.down = true}, 1, frame);
+    other.update(MenuInput{.select = true}, 1, frame); // in use by the first lane
     REQUIRE(other.state() == SelectLane::State::LoadPick);
-    other.update(press(true), 1, {});
+    other.update(MenuInput{.select = true}, 1, {});
     REQUIRE(other.state() == SelectLane::State::Loading);
     other.update(MenuInput{}, SelectLane::kOperationStepTicks * 3, {});
     REQUIRE(other.state() == SelectLane::State::Loading);
@@ -656,17 +643,17 @@ TEST_CASE("quitting an unsaved character asks first", "[game][select]") {
     Fixture f("select-lane-quit");
     f.lane.activate();
     f.createCharacter();
-    f.step(press(true));
-    f.step(press(false, false, true));
-    f.step(press(false, false, false, true)); // Quit
-    f.step(press(true));
+    f.step(MenuInput{.select = true});
+    f.step(MenuInput{.start = true});
+    f.step(MenuInput{.up = true}); // Quit
+    f.step(MenuInput{.select = true});
     REQUIRE(f.lane.state() == SelectLane::State::QuitConfirm);
-    f.step(press(true)); // No
+    f.step(MenuInput{.select = true}); // No
     REQUIRE(f.lane.state() == SelectLane::State::SaveMenu);
-    f.step(press(false, false, false, true));
-    f.step(press(true));
-    f.step(press(false, false, false, true)); // Yes
-    REQUIRE(f.step(press(true)) == SelectLane::Result::Leave);
+    f.step(MenuInput{.up = true});
+    f.step(MenuInput{.select = true});
+    f.step(MenuInput{.up = true}); // Yes
+    REQUIRE(f.step(MenuInput{.select = true}) == SelectLane::Result::Leave);
     REQUIRE_FALSE(f.lane.active());
 }
 
@@ -680,21 +667,21 @@ TEST_CASE("changing the selected class restores its wallet after browsing withou
     f.lane.resume(save, std::nullopt);
     f.lane.manage();
     const auto chooseChange = [&] {
-        f.step(press(false, false, false, true)); // Quit.
-        f.step(press(false, false, false, true)); // Change; no files to load.
-        f.step(press(true));
+        f.step(MenuInput{.up = true}); // Quit.
+        f.step(MenuInput{.up = true}); // Change; no files to load.
+        f.step(MenuInput{.select = true});
         REQUIRE(f.lane.state() == SelectLane::State::ClassPick);
     };
     chooseChange();
-    f.step(press(false, false, false, false, false, false, true));
+    f.step(MenuInput{.right = true});
     CHECK(f.lane.save().gold == 800); // Browsing does not commit the class.
-    f.step(press(true));
+    f.step(MenuInput{.select = true});
     REQUIRE(f.lane.state() == SelectLane::State::SaveMenu);
     CHECK(f.lane.save().character == 1);
     CHECK(f.lane.save().gold == 120);
     chooseChange();
-    f.step(press(false, false, false, false, false, true));
-    f.step(press(true));
+    f.step(MenuInput{.left = true});
+    f.step(MenuInput{.select = true});
     CHECK(f.lane.save().character == 0);
     CHECK(f.lane.save().gold == 800);
 }
@@ -723,16 +710,16 @@ TEST_CASE("loaded Sorceress draws her native stone relief after locking in",
     save.progress().health = 500;
     REQUIRE(f.slots.write(0, save));
     f.lane.activate();
-    f.step(press(true));
+    f.step(MenuInput{.select = true});
     REQUIRE(f.lane.state() == SelectLane::State::LoadPick);
-    f.step(press(true));
+    f.step(MenuInput{.select = true});
     f.step({}, SelectLane::kOperationStepTicks * 3);
     f.step({}, SelectLane::kNoticeTicks);
     REQUIRE(f.lane.state() == SelectLane::State::ClassPick);
     REQUIRE(f.lane.pickedClass() == 6);
-    f.step(press(true));
+    f.step(MenuInput{.select = true});
     REQUIRE(f.lane.state() == SelectLane::State::SaveMenu);
-    f.step(press(true)); // Done
+    f.step(MenuInput{.select = true}); // Done
     REQUIRE(f.lane.lockedIn());
     f.step({}, 128);
     Canvas canvas;
@@ -750,11 +737,11 @@ TEST_CASE("loading with nothing saved shows a notice and drawing emits the lane"
           "[game][select]") {
     Fixture f("select-lane-empty");
     f.lane.activate();
-    f.step(press(false, false, false, false, true)); // Load is disabled: the cursor stays
+    f.step(MenuInput{.down = true}); // Load is disabled: the cursor stays
     REQUIRE(f.lane.state() == SelectLane::State::TopMenu);
-    f.step(press(true));
+    f.step(MenuInput{.select = true});
     REQUIRE(f.lane.state() == SelectLane::State::NameEntry);
-    f.step(press(false, true));
+    f.step(MenuInput{.back = true});
     REQUIRE(f.lane.state() == SelectLane::State::TopMenu);
     test::FakeRenderDevice device;
     Canvas canvas;
@@ -768,10 +755,10 @@ TEST_CASE("loading with nothing saved shows a notice and drawing emits the lane"
 TEST_CASE("name entry letters stay inside the lane", "[game][select]") {
     Fixture f;
     f.lane.activate();
-    f.step(press(true)); // New
+    f.step(MenuInput{.select = true}); // New
     REQUIRE(f.lane.state() == SelectLane::State::NameEntry);
-    f.step(press(false, false, false, true));                      // letter A
-    f.step(press(false, false, false, false, false, false, true)); // enter it
+    f.step(MenuInput{.up = true});    // letter A
+    f.step(MenuInput{.right = true}); // enter it
     test::FakeRenderDevice device;
     Canvas canvas;
     canvas.begin(device, Mat4{1.0f});
@@ -803,13 +790,13 @@ TEST_CASE("the status box follows the lane's state", "[game][select]") {
     REQUIRE(f.lane.boxMode() == SelectLane::BoxMode::Plain);
     f.createCharacter();
     REQUIRE(f.lane.boxMode() == SelectLane::BoxMode::Character);
-    f.step(press(false, false, false, false, false, false, true));
+    f.step(MenuInput{.right = true});
     REQUIRE(f.lane.boxClass() == 1);
-    f.step(press(true));
+    f.step(MenuInput{.select = true});
     REQUIRE(f.lane.boxMode() == SelectLane::BoxMode::Status);
     REQUIRE(f.lane.boxClass() == 1);
     REQUIRE(f.lane.save().health() == kStartingHealth);
-    f.step(press(false, false, true));
+    f.step(MenuInput{.start = true});
     REQUIRE(f.lane.boxMode() == SelectLane::BoxMode::Status);
 }
 
@@ -823,11 +810,11 @@ TEST_CASE("a save refused at execution keeps the character and its previous slot
     f.lane.resume(original, 2);
     f.lane.manage();
     for (s32 i = 0; i < 4; ++i) {
-        f.step(press(false, false, false, true)); // Done -> Save.
+        f.step(MenuInput{.up = true}); // Done -> Save.
     }
-    f.step(press(true));
+    f.step(MenuInput{.select = true});
     REQUIRE(f.lane.state() == SelectLane::State::SavePick);
-    f.step(press(true));
+    f.step(MenuInput{.select = true});
     REQUIRE(f.lane.reservedSlot() == 0);
     SelectLane::Frame conflict;
     SECTION("another lane claimed the slot") {
@@ -853,14 +840,14 @@ TEST_CASE("save slot ownership keeps large slot ids distinct from low slots", "[
     f.lane.resume(original, std::nullopt);
     f.lane.manage();
     for (s32 i = 0; i < 3; ++i) {
-        f.step(press(false, false, false, true)); // Done -> Save, with no files to load.
+        f.step(MenuInput{.up = true}); // Done -> Save, with no files to load.
     }
-    f.step(press(true));
+    f.step(MenuInput{.select = true});
     REQUIRE(f.lane.state() == SelectLane::State::SavePick);
     SelectLane::Frame other;
     other.slotsInUse = {32};
     SECTION("an occupied high slot does not reserve slot zero") {
-        f.step(press(true), 1, other);
+        f.step(MenuInput{.select = true}, 1, other);
         REQUIRE(f.lane.state() == SelectLane::State::Saving);
         f.step({}, SelectLane::kOperationStepTicks * 3, other);
         CHECK(f.lane.slotInUse() == 0);
@@ -868,18 +855,18 @@ TEST_CASE("save slot ownership keeps large slot ids distinct from low slots", "[
     }
     SECTION("a high slot cannot be selected while another lane holds it") {
         for (s32 i = 0; i < 32; ++i) {
-            f.step(press(false, false, false, false, true), 1, other);
+            f.step(MenuInput{.down = true}, 1, other);
         }
-        f.step(press(true), 1, other);
+        f.step(MenuInput{.select = true}, 1, other);
         CHECK(f.lane.state() == SelectLane::State::SavePick);
         CHECK_FALSE(f.lane.reservedSlot());
         CHECK(f.sounds.back() == SelectSound::Buzzer);
     }
     SECTION("a high slot claimed during an operation stays protected") {
         for (s32 i = 0; i < 32; ++i) {
-            f.step(press(false, false, false, false, true));
+            f.step(MenuInput{.down = true});
         }
-        f.step(press(true));
+        f.step(MenuInput{.select = true});
         REQUIRE(f.lane.reservedSlot() == 32);
         f.step({}, SelectLane::kOperationStepTicks * 3, other);
         CHECK_FALSE(f.lane.slotInUse());
@@ -897,19 +884,19 @@ TEST_CASE("new characters in every lane use shared unlocks without loading their
         f.createCharacter();
         CHECK(f.lane.save().classUnlock == 0);
         for (s32 i = 0; i < kStartingClassCount; ++i) {
-            f.step(press(false, false, false, false, false, false, true));
+            f.step(MenuInput{.right = true});
         }
         REQUIRE(f.lane.pickedClass() == kStartingClassCount);
-        f.step(press(true));
+        f.step(MenuInput{.select = true});
         CHECK(f.lane.lockedIn());
         CHECK(f.lane.save().character == kStartingClassCount);
     }
     f.lane.reset(0, &f.services);
     f.lane.activate();
     f.createCharacter();
-    f.step(press(false, false, false, false, false, true)); // wrap left to Sumner
+    f.step(MenuInput{.left = true}); // wrap left to Sumner
     REQUIRE(f.lane.pickedClass() == kSumnerClass);
-    f.step(press(true));
+    f.step(MenuInput{.select = true});
     CHECK(f.lane.lockedIn());
 }
 
