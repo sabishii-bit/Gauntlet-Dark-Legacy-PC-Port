@@ -103,7 +103,7 @@ TEST_CASE("Pojo injuries use COMMON cries while ordinary characters keep their o
     REQUIRE(player.figure);
     REQUIRE(player.figure->voice().load(soundRoot / "AUDIO/WAR"));
     PlayerHealth health;
-    health.hurt(player, hit.damage, hit.kind, false, false, 1,
+    health.hurt(player, hit.damage, hit.kind, HurtSource::Undirected, {},
                 {.block = [](f32, f32) {},
                  .sound = [](std::string_view) {},
                  .cry = [&](std::string_view cue) { attacks.cry(0, cue, players); },

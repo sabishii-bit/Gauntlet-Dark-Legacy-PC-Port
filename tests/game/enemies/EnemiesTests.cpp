@@ -1814,9 +1814,9 @@ TEST_CASE("Treasury first-tier grunts damage a level 99 Knight at actual body se
             if (!blow.power) {
                 ordinaryDamage = blow.damage;
             }
-            health.hurt(players[0], blow.damage, HurtKind::Blow, true, false,
-                        world.level()->tuning.damage, events, {blow.flags, blow.direction}, false,
-                        stats);
+            health.hurt(players[0], blow.damage, HurtKind::Blow, HurtSource::Directed,
+                        {.damageScale = world.level()->tuning.damage}, events,
+                        {blow.flags, blow.direction}, stats);
             if (!blow.power) {
                 ordinaryHealthLoss += before - players[0].actor.save().health();
             }

@@ -48,10 +48,19 @@ public:
     /** The scene's pre-contact surface-hurt clock, independently of whether the
      * current surface is harmful. Shared with private ordinary combat steps. */
     static void advanceSurfaceGap(PlayerRuntime& runtime, f32 seconds);
-    void hurt(PlayerRuntime& runtime, f32 damage, HurtKind kind, bool directed, bool inTower,
-              f32 damageScale, const Events& events, const PlayerImpact& impact = {},
-              bool bossEncounter = false, const ClassStats* stats = nullptr);
-    static f32 guarded(const PlayerRuntime& runtime, f32 damage, bool directed);
+    /** The setting a hurt happens in: nobody is hurt in the tower, the level scales every blow,
+     * and a boss's arena softens the elements. */
+    struct Setting {
+        bool tower = false;
+        f32 damageScale = 1.0f;
+        bool bossEncounter = false;
+    };
+    void hurt(PlayerRuntime& runtime, f32 damage, HurtKind kind, HurtSource source,
+              const Setting& setting, const Events& events, const PlayerImpact& impact = {},
+              const ClassStats* stats = nullptr);
+    /** What of `damage` gets past the body's guard: a raised guard halves a directed hurt and
+     * takes an undirected one whole, a charge halves either, and a point or less gets past. */
+    static f32 guarded(const PlayerRuntime& runtime, f32 damage, HurtSource source);
     /** Fells the character outright, as the last point of health going does: a point is kept
      * that the status box does not show, the turbo meter empties, and the death is heard. */
     static void fall(PlayerRuntime& runtime, const Events& events);

@@ -47,7 +47,8 @@ struct Fixture {
         player.actor.save().progress().health = 1000;
     }
     void hit(f32 damage, HurtKind kind = HurtKind::Blow, bool tower = false, f32 scale = 1) {
-        health.hurt(player, damage, kind, false, tower, scale, events);
+        health.hurt(player, damage, kind, HurtSource::Undirected,
+                    {.tower = tower, .damageScale = scale}, events);
     }
 };
 
@@ -90,10 +91,12 @@ TEST_CASE("both combo participants reject damage and reactions until unlinked",
     ComboMove::link(grabber.player.combo, 0, partner.player.combo, 1, 0);
     const auto checkProtected = [](Fixture& f) {
         REQUIRE_FALSE(PlayerHealth::canBeDamaged(f.player));
-        f.health.hurt(f.player, 10000, HurtKind::Blow, true, false, 1, f.events,
+        f.health.hurt(f.player, 10000, HurtKind::Blow, HurtSource::Directed, {}, f.events,
                       {damage::kKnockDown, Vec3{1, 0, 0}});
-        f.health.hurt(f.player, 30, HurtKind::Pierce, true, false, 1, f.events, {damage::kSticky});
-        f.health.hurt(f.player, 0, HurtKind::QuietBlow, true, false, 1, f.events, {damage::kStun});
+        f.health.hurt(f.player, 30, HurtKind::Pierce, HurtSource::Directed, {}, f.events,
+                      {damage::kSticky});
+        f.health.hurt(f.player, 0, HurtKind::QuietBlow, HurtSource::Directed, {}, f.events,
+                      {damage::kStun});
         f.hit(30, HurtKind::Gas);
         CHECK(f.player.actor.save().health() == 1000);
         CHECK(f.player.life == PlayerLife::Standing);
@@ -125,7 +128,7 @@ TEST_CASE("both combo participants reject damage and reactions until unlinked",
 TEST_CASE("stun shots react without health loss and magic never harms a player",
           "[player-health][multiplayer-combat]") {
     Fixture f;
-    f.health.hurt(f.player, 0, HurtKind::QuietBlow, true, false, 1, f.events,
+    f.health.hurt(f.player, 0, HurtKind::QuietBlow, HurtSource::Directed, {}, f.events,
                   {damage::kStun | damage::kKnockDown, Vec3{0, 0, 1}});
     CHECK(f.player.actor.save().health() == 1000);
     CHECK(f.player.reaction == PlayerDeed::Reel);
@@ -133,13 +136,14 @@ TEST_CASE("stun shots react without health loss and magic never harms a player",
     CHECK(f.sounds.empty());
     CHECK(f.cries.empty());
     f.player.reaction = PlayerDeed::None;
-    f.health.hurt(f.player, 100, HurtKind::Blow, true, false, 1, f.events,
+    f.health.hurt(f.player, 100, HurtKind::Blow, HurtSource::Directed, {}, f.events,
                   {damage::kMagic | damage::kStun});
     CHECK(f.player.actor.save().health() == 1000);
     CHECK(f.player.reaction == PlayerDeed::None);
     f.player.actor.save().progress().inventory.addPowerup(powerup::kArmor, armor::kInvulnerable, 0,
                                                           1);
-    f.health.hurt(f.player, 0, HurtKind::QuietBlow, true, false, 1, f.events, {damage::kStun});
+    f.health.hurt(f.player, 0, HurtKind::QuietBlow, HurtSource::Directed, {}, f.events,
+                  {damage::kStun});
     CHECK(f.player.reaction == PlayerDeed::None);
 }
 
@@ -212,10 +216,10 @@ TEST_CASE("turbo animation blocks boss knockdown throughout the move but not aft
         f.player.turbo.reset();
         s32 frames = 0;
         while (figure.animator().damageProtected() && frames < 300) {
-            f.health.hurt(f.player, 0, HurtKind::QuietBlow, true, false, 1, f.events,
+            f.health.hurt(f.player, 0, HurtKind::QuietBlow, HurtSource::Directed, {}, f.events,
                           {damage::kStun});
-            f.health.hurt(f.player, 150, HurtKind::Blow, true, false, 1, f.events,
-                          {damage::kKnockDown, Vec3{1, 0, 0}}, true);
+            f.health.hurt(f.player, 150, HurtKind::Blow, HurtSource::Directed,
+                          {.bossEncounter = true}, f.events, {damage::kKnockDown, Vec3{1, 0, 0}});
             f.hit(5, HurtKind::Gas);
             CHECK(f.player.actor.save().health() == 1000);
             CHECK(f.player.reaction == PlayerDeed::None);
@@ -227,8 +231,8 @@ TEST_CASE("turbo animation blocks boss knockdown throughout the move but not aft
         REQUIRE_FALSE(figure.animator().damageProtected());
         CHECK(f.sounds.empty());
         CHECK(f.cries.empty());
-        f.health.hurt(f.player, 150, HurtKind::Blow, true, false, 1, f.events,
-                      {damage::kKnockDown, Vec3{1, 0, 0}}, true);
+        f.health.hurt(f.player, 150, HurtKind::Blow, HurtSource::Directed, {.bossEncounter = true},
+                      f.events, {damage::kKnockDown, Vec3{1, 0, 0}});
         CHECK(f.player.actor.save().health() == 850);
         CHECK(f.player.reaction != PlayerDeed::None);
         CHECK(f.player.knockback.pending());
@@ -242,17 +246,20 @@ TEST_CASE("player armor is subtracted before elemental affinity but not from gas
     stats.armorMin = 400; // two points of flat absorption
     stats.armorMax = 800;
     PlayerImpact impact{.flags = 1};
-    f.health.hurt(f.player, 20, HurtKind::Blow, false, false, 1, f.events, impact, false, &stats);
+    f.health.hurt(f.player, 20, HurtKind::Blow, HurtSource::Undirected, {}, f.events, impact,
+                  &stats);
     CHECK(f.player.actor.save().health() == 973); // (20 - 2) * 1.5
     auto& inventory = f.player.actor.save().progress().inventory;
     inventory.addPowerup(6, 1, 0, 60);
-    f.health.hurt(f.player, 20, HurtKind::Blow, false, false, 1, f.events, impact, false, &stats);
+    f.health.hurt(f.player, 20, HurtKind::Blow, HurtSource::Undirected, {}, f.events, impact,
+                  &stats);
     CHECK(f.player.actor.save().health() == 964); // (20 - 2) * 0.5
     inventory.addPowerup(6, 0x800, 0, 60);
     impact.flags = 4;
-    f.health.hurt(f.player, 20, HurtKind::Blow, false, false, 1, f.events, impact, false, &stats);
+    f.health.hurt(f.player, 20, HurtKind::Blow, HurtSource::Undirected, {}, f.events, impact,
+                  &stats);
     CHECK(f.player.actor.save().health() == 964); // acid immunity remains zero
-    f.health.hurt(f.player, 20, HurtKind::Gas, false, false, 1, f.events, {}, false, &stats);
+    f.health.hurt(f.player, 20, HurtKind::Gas, HurtSource::Undirected, {}, f.events, {}, &stats);
     CHECK(f.player.actor.save().health() == 944);
 }
 
@@ -267,11 +274,11 @@ TEST_CASE("Sumner damage uses his fixed armor without reducing gas or Death drai
     const auto liveHealth = [&] {
         return static_cast<f32>(f.player.actor.save().health()) + f.player.healthFraction;
     };
-    f.health.hurt(f.player, 10, HurtKind::Blow, false, false, 1, f.events, {}, false, &wizard);
+    f.health.hurt(f.player, 10, HurtKind::Blow, HurtSource::Undirected, {}, f.events, {}, &wizard);
     CHECK(liveHealth() == Approx(994.995f));
-    f.health.hurt(f.player, 10, HurtKind::Gas, false, false, 1, f.events, {}, false, &wizard);
+    f.health.hurt(f.player, 10, HurtKind::Gas, HurtSource::Undirected, {}, f.events, {}, &wizard);
     CHECK(liveHealth() == Approx(984.995f));
-    f.health.hurt(f.player, 10, HurtKind::DeathDrain, false, false, 1, f.events, {}, false,
+    f.health.hurt(f.player, 10, HurtKind::DeathDrain, HurtSource::Undirected, {}, f.events, {},
                   &wizard);
     CHECK(liveHealth() == Approx(974.995f));
 }
@@ -283,17 +290,20 @@ TEST_CASE("armor absorbs ground-hand damage without preventing its sticky reacti
     stats.armorMin = 400;
     stats.armorMax = 800;
     const PlayerImpact impact{.flags = damage::kSticky};
-    f.health.hurt(f.player, 1, HurtKind::Pierce, true, false, 1, f.events, impact, true, &stats);
+    f.health.hurt(f.player, 1, HurtKind::Pierce, HurtSource::Directed, {.bossEncounter = true},
+                  f.events, impact, &stats);
     CHECK(f.player.actor.save().health() == 1000);
     CHECK(f.player.reaction == PlayerDeed::Webbed);
     CHECK(f.sounds.empty());
     CHECK(f.cries.empty());
     f.player.reaction = PlayerDeed::FallBack;
-    f.health.hurt(f.player, 1, HurtKind::Pierce, true, false, 1, f.events, impact, true, &stats);
+    f.health.hurt(f.player, 1, HurtKind::Pierce, HurtSource::Directed, {.bossEncounter = true},
+                  f.events, impact, &stats);
     CHECK(f.player.reaction == PlayerDeed::FallBack);
     f.player.actor.save().progress().inventory.addPowerup(6, armor::kInvulnerable, 0, 60);
     f.player.reaction = PlayerDeed::None;
-    f.health.hurt(f.player, 1, HurtKind::Pierce, true, false, 1, f.events, impact, true, &stats);
+    f.health.hurt(f.player, 1, HurtKind::Pierce, HurtSource::Directed, {.bossEncounter = true},
+                  f.events, impact, &stats);
     CHECK(f.player.reaction == PlayerDeed::None);
 }
 
@@ -345,18 +355,18 @@ TEST_CASE("a raised guard halves a hurt that comes from somewhere and takes one 
     REQUIRE(f.player.figure != nullptr);
     REQUIRE(f.player.figure->animator().bound());
     // At the ready, a hurt is taken whole whichever way it came.
-    CHECK(PlayerHealth::guarded(f.player, 40, true) == 40.0f);
-    CHECK(PlayerHealth::guarded(f.player, 40, false) == 40.0f);
+    CHECK(PlayerHealth::guarded(f.player, 40, HurtSource::Directed) == 40.0f);
+    CHECK(PlayerHealth::guarded(f.player, 40, HurtSource::Undirected) == 40.0f);
     f.player.figure->animate(0, 2, 1.0f / 30, PlayerDeed::Defend);
     for (s32 i = 0; i < 60 && !f.player.figure->animator().defending(); ++i) {
         f.player.figure->animate(0, 2, 1.0f / 30);
     }
     REQUIRE(f.player.figure->animator().defending());
-    CHECK(PlayerHealth::guarded(f.player, 40, true) == 20.0f);
-    CHECK(PlayerHealth::guarded(f.player, 40, false) == 0.0f);
+    CHECK(PlayerHealth::guarded(f.player, 40, HurtSource::Directed) == 20.0f);
+    CHECK(PlayerHealth::guarded(f.player, 40, HurtSource::Undirected) == 0.0f);
     // A point or less gets past the guard.
-    CHECK(PlayerHealth::guarded(f.player, 1, true) == 1.0f);
-    CHECK(PlayerHealth::guarded(f.player, 1, false) == 1.0f);
+    CHECK(PlayerHealth::guarded(f.player, 1, HurtSource::Directed) == 1.0f);
+    CHECK(PlayerHealth::guarded(f.player, 1, HurtSource::Undirected) == 1.0f);
     // The hurt takes what the guard lets through and flashes what it held back.
     std::vector<f32> held;
     std::vector<f32> through;
@@ -364,9 +374,9 @@ TEST_CASE("a raised guard halves a hurt that comes from somewhere and takes one 
         held.push_back(blocked);
         through.push_back(taken);
     };
-    f.health.hurt(f.player, 40, HurtKind::Blow, true, false, 1, f.events);
+    f.health.hurt(f.player, 40, HurtKind::Blow, HurtSource::Directed, {}, f.events);
     CHECK(f.player.actor.save().health() == 980);
-    f.health.hurt(f.player, 40, HurtKind::Blow, false, false, 1, f.events);
+    f.health.hurt(f.player, 40, HurtKind::Blow, HurtSource::Undirected, {}, f.events);
     CHECK(f.player.actor.save().health() == 980);
     CHECK(held == std::vector<f32>{20.0f, 40.0f});
     CHECK(through == std::vector<f32>{20.0f, 0.0f});
@@ -380,8 +390,8 @@ TEST_CASE("a boss arena softens what the elements do to a player and leaves a pl
         if (shield != 0) {
             f.player.actor.save().progress().inventory.addPowerup(powerup::kArmor, shield, 0, 60);
         }
-        f.health.hurt(f.player, 20, HurtKind::Blow, true, false, 1, f.events,
-                      PlayerImpact{.flags = flags}, arena);
+        f.health.hurt(f.player, 20, HurtKind::Blow, HurtSource::Directed, {.bossEncounter = arena},
+                      f.events, PlayerImpact{.flags = flags});
         return 1000.0f - static_cast<f32>(f.player.actor.save().health()) - f.player.healthFraction;
     };
     for (u32 element = 1; element < damage::kElementCount; ++element) {
@@ -425,7 +435,7 @@ TEST_CASE("armor absorption does not consume fractional damage already owed",
     ClassStats stats;
     stats.armorMin = 400;
     stats.armorMax = 800;
-    f.health.hurt(f.player, 2, HurtKind::Blow, false, false, 1, f.events, {}, false, &stats);
+    f.health.hurt(f.player, 2, HurtKind::Blow, HurtSource::Undirected, {}, f.events, {}, &stats);
     f.hit(0.5f);
     CHECK(f.player.actor.save().health() == 999);
 }
@@ -456,7 +466,7 @@ TEST_CASE("a heavy blow taken unguarded teaches the guard to one who never block
           "[game][screens][player-health]") {
     Fixture f;
     const auto heavy = [&](f32 damage, u32 flags) {
-        f.health.hurt(f.player, damage, HurtKind::Blow, true, false, 1, f.events,
+        f.health.hurt(f.player, damage, HurtKind::Blow, HurtSource::Directed, {}, f.events,
                       PlayerImpact{.flags = flags});
     };
     heavy(15, damage::kKnockDown); // not over fifteen
@@ -490,7 +500,7 @@ TEST_CASE("a blow taken during the running shove flashes the guard's lines",
     };
     f.player.figure->animate(0, 2, 1.0f / 30, PlayerDeed::Shove);
     REQUIRE(f.player.figure->animator().shoving());
-    f.health.hurt(f.player, 40, HurtKind::Blow, true, false, 1, f.events,
+    f.health.hurt(f.player, 40, HurtKind::Blow, HurtSource::Directed, {}, f.events,
                   PlayerImpact{.flags = damage::kKnockDown});
     CHECK(flashes == 1);
     CHECK(f.player.actor.save().health() == 1000 - 20);
@@ -539,7 +549,7 @@ TEST_CASE("player low health announcements take precedence over cries, not the b
     for (s32 i = 0; i < 40; ++i) {
         other.actor.save().progress().health = 51;
         f.named.clear();
-        f.health.hurt(other, 1, HurtKind::Gas, false, false, 1, f.events);
+        f.health.hurt(other, 1, HurtKind::Gas, HurtSource::Undirected, {}, f.events);
         REQUIRE(f.named.size() == 1);
         last.push_back(f.named.front());
     }
@@ -655,23 +665,25 @@ TEST_CASE("surviving hits request reactions after health gates and damage scalin
           "[game][screens][player-health][player-impact]") {
     Fixture f;
     const PlayerImpact impact{damage::kKnockDown, {0, 0, -1}};
-    f.health.hurt(f.player, 10, HurtKind::Blow, true, true, 1, f.events, impact);
+    f.health.hurt(f.player, 10, HurtKind::Blow, HurtSource::Directed, {.tower = true}, f.events,
+                  impact);
     REQUIRE(f.player.reaction == PlayerDeed::None);
-    f.health.hurt(f.player, 10, HurtKind::Blow, true, false, 0.1f, f.events, impact);
+    f.health.hurt(f.player, 10, HurtKind::Blow, HurtSource::Directed, {.damageScale = 0.1f},
+                  f.events, impact);
     REQUIRE(f.player.reaction == PlayerDeed::None);
-    f.health.hurt(f.player, 10, HurtKind::Blow, true, false, 1, f.events, impact);
+    f.health.hurt(f.player, 10, HurtKind::Blow, HurtSource::Directed, {}, f.events, impact);
     REQUIRE(f.player.reaction == PlayerDeed::FallBack);
     f.hit(1);
     REQUIRE(f.player.reaction == PlayerDeed::FallBack);
     f.player.reaction = PlayerDeed::None;
     f.player.actor.save().progress().health = 151;
-    f.health.hurt(f.player, 10, HurtKind::Blow, true, false, 1, f.events, impact);
+    f.health.hurt(f.player, 10, HurtKind::Blow, HurtSource::Directed, {}, f.events, impact);
     REQUIRE(f.player.reaction == PlayerDeed::FallBack); // low-health cue cannot swallow it
     f.player.reaction = PlayerDeed::None;
-    f.health.hurt(f.player, 1000, HurtKind::Blow, true, false, 1, f.events, impact);
+    f.health.hurt(f.player, 1000, HurtKind::Blow, HurtSource::Directed, {}, f.events, impact);
     REQUIRE(f.player.life == PlayerLife::Dying);
     REQUIRE(f.player.reaction == PlayerDeed::None);
-    f.health.hurt(f.player, 10, HurtKind::Blow, true, false, 1, f.events, impact);
+    f.health.hurt(f.player, 10, HurtKind::Blow, HurtSource::Directed, {}, f.events, impact);
     REQUIRE(f.player.reaction == PlayerDeed::None);
 }
 TEST_CASE("inventory protection reaches damage healing and reaction handling",
@@ -703,7 +715,7 @@ TEST_CASE("inventory protection reaches damage healing and reaction handling",
     }
     SECTION("knockback armor strips the reaction without discarding damage") {
         inventory.addPowerup(6, 0x40000, 0, 15);
-        f.health.hurt(f.player, 30, HurtKind::Blow, true, false, 1, f.events,
+        f.health.hurt(f.player, 30, HurtKind::Blow, HurtSource::Directed, {}, f.events,
                       {damage::kKnockDown, {0, 0, 1}});
         CHECK(f.player.actor.save().health() == 970);
         CHECK(f.player.reaction == PlayerDeed::None);
@@ -716,7 +728,7 @@ TEST_CASE("an enemy arrow and bolt land with their own sounds, a blow with the p
          {std::pair{0x20000u, "S_PLYRDMG2"}, std::pair{0x40000u, "S_PLYRDMG3"},
           std::pair{0u, "S_PLYRDMG"}}) {
         Fixture f;
-        f.health.hurt(f.player, 10, HurtKind::Blow, true, false, 1, f.events,
+        f.health.hurt(f.player, 10, HurtKind::Blow, HurtSource::Directed, {}, f.events,
                       PlayerImpact{.flags = flags});
         CHECK(f.sounds == std::vector<std::string>{heard});
         CHECK(f.cries.empty());
@@ -727,36 +739,38 @@ TEST_CASE("a hit that knocks pushes its victim the way it came, as guarding and 
           "[player-health][knockback]") {
     Fixture f;
     const PlayerImpact knock{.flags = damage::kKnockDown, .direction = Vec3{0, 0, 1}};
-    f.health.hurt(f.player, 10, HurtKind::Blow, true, false, 1, f.events, knock);
+    f.health.hurt(f.player, 10, HurtKind::Blow, HurtSource::Directed, {}, f.events, knock);
     REQUIRE(f.player.knockback.pending());
     f.player.knockback.kick(0.0f, false);
     CHECK(f.player.knockback.velocity().z == Approx(Knockback::kFallKick));
     // Two points or less knock nobody anywhere; a hit with no knock pushes nothing.
     Fixture light;
-    light.health.hurt(light.player, 2, HurtKind::Blow, true, false, 1, light.events, knock);
+    light.health.hurt(light.player, 2, HurtKind::Blow, HurtSource::Directed, {}, light.events,
+                      knock);
     light.player.knockback.kick(0.0f, false);
     CHECK(light.player.knockback.velocity() == Vec3{0.0f});
     Fixture plain;
-    plain.health.hurt(plain.player, 10, HurtKind::Blow, true, false, 1, plain.events,
+    plain.health.hurt(plain.player, 10, HurtKind::Blow, HurtSource::Directed, {}, plain.events,
                       PlayerImpact{.flags = 0, .direction = Vec3{0, 0, 1}});
     plain.player.knockback.kick(0.0f, false);
     CHECK(plain.player.knockback.velocity() == Vec3{0.0f});
     // In the tower nothing hurts, so nothing pushes.
     Fixture tower;
-    tower.health.hurt(tower.player, 10, HurtKind::Blow, true, true, 1, tower.events, knock);
+    tower.health.hurt(tower.player, 10, HurtKind::Blow, HurtSource::Directed, {.tower = true},
+                      tower.events, knock);
     CHECK_FALSE(tower.player.knockback.pending());
 }
 TEST_CASE("gas leaves its victim retching a second, Death's touch a frame",
           "[game][screens][player-health][pickup]") {
     Fixture f;
-    f.health.hurt(f.player, 10, HurtKind::Gas, false, false, 1, f.events, {});
+    f.health.hurt(f.player, 10, HurtKind::Gas, HurtSource::Undirected, {}, f.events, {});
     CHECK(f.player.gagSeconds == Approx(1.0f));
     f.player.gagSeconds = 0.0f;
-    f.health.hurt(f.player, 10, HurtKind::Blow, false, false, 1, f.events,
+    f.health.hurt(f.player, 10, HurtKind::Blow, HurtSource::Undirected, {}, f.events,
                   PlayerImpact{.flags = 0x1000});
     CHECK(f.player.gagSeconds == Approx(1.0f / 15.0f));
     f.player.gagSeconds = 0.0f;
-    f.health.hurt(f.player, 10, HurtKind::Blow, false, false, 1, f.events, {});
+    f.health.hurt(f.player, 10, HurtKind::Blow, HurtSource::Undirected, {}, f.events, {});
     CHECK(f.player.gagSeconds == 0.0f);
 }
 
@@ -771,13 +785,16 @@ TEST_CASE("damage feedback uses the native hit flags after armor and low-damage 
                                Hit{0x100, 20}, Hit{0x40, 30}, Hit{0x10000, 30}, Hit{0x101F0, 30}};
     for (const auto& hit : kHits) {
         Fixture f;
-        f.health.hurt(f.player, 10, HurtKind::QuietBlow, true, false, 1, f.events, {hit.flags});
+        f.health.hurt(f.player, 10, HurtKind::QuietBlow, HurtSource::Directed, {}, f.events,
+                      {hit.flags});
         REQUIRE(f.vibrations == std::vector<s32>{hit.frames});
     }
     Fixture f;
-    f.health.hurt(f.player, 2, HurtKind::Blow, true, false, 1, f.events, {damage::kWhirlwind});
+    f.health.hurt(f.player, 2, HurtKind::Blow, HurtSource::Directed, {}, f.events,
+                  {damage::kWhirlwind});
     CHECK(f.vibrations == std::vector<s32>{10});
-    f.health.hurt(f.player, 10000, HurtKind::Blow, true, false, 1, f.events, {damage::kKnockDown});
+    f.health.hurt(f.player, 10000, HurtKind::Blow, HurtSource::Directed, {}, f.events,
+                  {damage::kKnockDown});
     CHECK(f.player.life == PlayerLife::Dying);
     CHECK(f.vibrations == std::vector<s32>{10, 20});
     f.hit(10);
@@ -790,8 +807,9 @@ TEST_CASE("harmless contacts healing tower damage and invulnerability do not vib
     f.hit(0);
     f.hit(-10);
     f.hit(10, HurtKind::Blow, true);
-    f.health.hurt(f.player, 0, HurtKind::Blow, true, false, 1, f.events, {damage::kStun});
-    f.health.hurt(f.player, 10, HurtKind::Blow, true, false, 1, f.events, {damage::kMagic});
+    f.health.hurt(f.player, 0, HurtKind::Blow, HurtSource::Directed, {}, f.events, {damage::kStun});
+    f.health.hurt(f.player, 10, HurtKind::Blow, HurtSource::Directed, {}, f.events,
+                  {damage::kMagic});
     CHECK(f.vibrations.empty());
     f.player.actor.save().progress().inventory.addPowerup(powerup::kArmor, armor::kInvulnerable, 0,
                                                           1);

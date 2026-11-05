@@ -42,13 +42,13 @@ void storeHealth(PlayerRuntime& runtime, f32 health) {
     runtime.healthFraction = health - static_cast<f32>(rounded);
 }
 } // namespace
-f32 PlayerHealth::guarded(const PlayerRuntime& runtime, f32 damage, bool directed) {
+f32 PlayerHealth::guarded(const PlayerRuntime& runtime, f32 damage, HurtSource source) {
     const PlayerFigure* figure = runtime.figure.get();
     if (figure == nullptr || damage <= 1.0f) {
         return damage;
     }
     if (figure->animator().defending()) {
-        return directed ? damage * 0.5f : 0.0f;
+        return source == HurtSource::Directed ? damage * 0.5f : 0.0f;
     }
     return figure->animator().shoving() ? damage * 0.5f : damage;
 }
@@ -100,15 +100,15 @@ void PlayerHealth::fall(PlayerRuntime& runtime, const Events& events) {
     }
 }
 
-void PlayerHealth::hurt(PlayerRuntime& runtime, f32 damage, HurtKind kind, bool directed,
-                        bool inTower, f32 damageScale, const Events& events,
-                        const PlayerImpact& impact, bool bossEncounter, const ClassStats* stats) {
-    if (!canBeDamaged(runtime) || inTower || damage < 0.0f ||
+void PlayerHealth::hurt(PlayerRuntime& runtime, f32 damage, HurtKind kind, HurtSource source,
+                        const Setting& setting, const Events& events, const PlayerImpact& impact,
+                        const ClassStats* stats) {
+    if (!canBeDamaged(runtime) || setting.tower || damage < 0.0f ||
         (impact.flags & damage::kMagic) != 0) {
         return;
     }
     if (damage > 1.0f && kind != HurtKind::DeathDrain) {
-        damage *= damageScale;
+        damage *= setting.damageScale;
     }
     const auto worn = PowerupEffects::of(runtime.actor.save().progress().inventory);
     PlayerImpact received = impact;
@@ -116,8 +116,9 @@ void PlayerHealth::hurt(PlayerRuntime& runtime, f32 damage, HurtKind kind, bool 
         received.flags |= damage::kGas;
     }
     const f32 armor = stats != nullptr ? armorDefense(*stats, runtime.actor.save()) : 0;
-    const Damage modified = Damage::modify(kind == HurtKind::DeathDrain ? -damage : damage,
-                                           received.flags, worn.armor, armor, bossEncounter);
+    const Damage modified =
+        Damage::modify(kind == HurtKind::DeathDrain ? -damage : damage, received.flags, worn.armor,
+                       armor, setting.bossEncounter);
     damage = modified.amount;
     received.flags = modified.flags;
     if ((received.flags & damage::kLow) != 0 && (worn.special & powerup::kLevitation) != 0) {
@@ -129,7 +130,7 @@ void PlayerHealth::hurt(PlayerRuntime& runtime, f32 damage, HurtKind kind, bool 
     }
     const f32 unguarded = damage;
     if (kind != HurtKind::DeathDrain) {
-        damage = guarded(runtime, damage, directed);
+        damage = guarded(runtime, damage, source);
     }
     // P_SHOVE sets hud_flags 0x400 as the guards set 0x200; damage_player flashes for either.
     if (runtime.figure != nullptr &&

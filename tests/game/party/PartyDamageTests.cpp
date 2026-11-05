@@ -166,9 +166,9 @@ struct Fixture {
                     continue;
                 }
                 const bool stood = player.life == PlayerLife::Standing;
-                health.hurt(player, blow.damage, cue ? HurtKind::QuietBlow : HurtKind::Blow, true,
-                            context.tower, context.damageScale, events(index, context),
-                            {blow.flags, blow.direction}, context.bossEncounter,
+                health.hurt(player, blow.damage, cue ? HurtKind::QuietBlow : HurtKind::Blow,
+                            HurtSource::Directed, context.setting, events(index, context),
+                            {blow.flags, blow.direction},
                             classes.stats(player.actor.save().character));
                 if (stood && player.life == PlayerLife::Dying && context.lastRealmLevel) {
                     player.entrySave.progress().levels.recordBossDeath(context.realm);
@@ -188,8 +188,8 @@ struct Fixture {
                 if (impact->sound) {
                     outputs.push_back({OutputKind::Sound, blow.player, *impact->sound});
                 }
-                PartyDamage::hurt(health, player, blow.damage, impact->kind, true, context,
-                                  events(index, context), impact->impact,
+                PartyDamage::hurt(health, player, blow.damage, impact->kind, HurtSource::Directed,
+                                  context, events(index, context), impact->impact,
                                   classes.stats(player.actor.save().character));
             }
         }
@@ -250,7 +250,7 @@ TEST_CASE("native enemy damage dispatch preserves party damage and following mot
     const auto before = fixture.state();
     const auto random = fixture.health;
     const auto uploads = fixture.device.texturesCreated;
-    const PartyDamage::Context context{.damageScale = 1.125f, .playSeconds = 75};
+    const PartyDamage::Context context{.setting = {.damageScale = 1.125f}, .playSeconds = 75};
     fixture.native(blows, context);
     const auto afterDamage = fixture.state();
     REQUIRE(std::ranges::any_of(afterDamage, [](const auto& member) {
@@ -310,7 +310,7 @@ TEST_CASE("native guard damage preserves block state fractions and global cue RN
     const std::array blows{EnemyBlow{.player = 1, .kind = 0, .damage = 19.75f},
                            EnemyBlow{.player = 3, .kind = 0, .damage = 19.25f},
                            EnemyBlow{.player = 1, .kind = 0, .damage = 11.125f}};
-    const PartyDamage::Context context{.damageScale = 1.125f};
+    const PartyDamage::Context context{.setting = {.damageScale = 1.125f}};
     const auto saved = fixture.save();
     const auto random = fixture.health;
     fixture.native(blows, context);
@@ -432,7 +432,7 @@ TEST_CASE("native impact cue optionality and locks are retained before damage di
     CHECK(emptyName->sound->empty());
     CHECK(emptyName->kind == HurtKind::QuietBlow);
     CHECK_FALSE(PartyDamage::enemy(blows[0], fixture.players[0], {}));
-    const PartyDamage::Context context{.tower = lock == 1, .cutscene = lock == 2};
+    const PartyDamage::Context context{.setting = {.tower = lock == 1}, .cutscene = lock == 2};
     const auto saved = fixture.save();
     const auto before = fixture.state();
     const auto random = fixture.health;
@@ -461,14 +461,14 @@ TEST_CASE("shared scene hurt preserves the strict lesson threshold and last leve
     auto& player = fixture.players[0];
     auto events = fixture.events(0, context);
     events.learnBlock = [&] { ++fixture.lessons; };
-    PartyDamage::hurt(fixture.health, player, 70, HurtKind::Blow, true, context, events,
-                      {damage::kKnockDown, {0, 0, 1}},
+    PartyDamage::hurt(fixture.health, player, 70, HurtKind::Blow, HurtSource::Directed, context,
+                      events, {damage::kKnockDown, {0, 0, 1}},
                       fixture.classes.stats(player.actor.save().character));
     CHECK(fixture.lessons == (elapsed > 60 ? 1 : 0));
     const auto expected = player.entrySave.progress().levels;
     auto recorded = expected;
     recorded.recordBossDeath(1);
-    PartyDamage::hurt(fixture.health, player, 20000, HurtKind::Blow, true, context,
+    PartyDamage::hurt(fixture.health, player, 20000, HurtKind::Blow, HurtSource::Directed, context,
                       fixture.events(0, context), {},
                       fixture.classes.stats(player.actor.save().character));
     REQUIRE(player.life == PlayerLife::Dying);

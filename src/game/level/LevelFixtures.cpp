@@ -1258,7 +1258,8 @@ void LevelFixtures::feel(Blast& ring, std::span<PlayerRuntime> players, FixtureH
                 players[i].figure != nullptr && players[i].figure->animator().guarding();
             if ((ring.flags & EnemyHit::kKnockDown) != 0 && felt.damage >= kRingKnockFrom &&
                 PlayerHealth::canBeDamaged(players[i]) &&
-                PlayerHealth::guarded(players[i], felt.damage, true) > kKnockdownFrom &&
+                PlayerHealth::guarded(players[i], felt.damage, HurtSource::Directed) >
+                    kKnockdownFrom &&
                 !PowerupEffects::of(actor.save().progress().inventory).preventsKnockback() &&
                 !guarding && !m_resources->world.isTower()) {
                 const Vec3 push = actor.position() - felt.position;
@@ -1273,7 +1274,7 @@ void LevelFixtures::feel(Blast& ring, std::span<PlayerRuntime> players, FixtureH
                     const Vec2 away = glm::normalize(out) * kBlastPush;
                     players[i].knockback.queue(
                         Vec3{away.x, 0.0f, away.y}, damage::kKnockDown,
-                        PlayerHealth::guarded(players[i], felt.damage, true));
+                        PlayerHealth::guarded(players[i], felt.damage, HurtSource::Directed));
                 }
             }
             host.hurtMember(i, felt.damage, poison ? HurtKind::Gas : HurtKind::Blow, true, {});

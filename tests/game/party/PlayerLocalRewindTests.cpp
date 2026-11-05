@@ -286,8 +286,8 @@ struct PartyRewind {
                 .cry = [this](std::string_view cue) { sounds.emplace_back(cue); },
                 .named = [this](std::string_view cue, f32) { sounds.emplace_back(cue); }};
             if (phase == 19 || phase == 94) {
-                health.hurt(player, 7.25f, HurtKind::Blow, true, false, 1, events,
-                            {damage::kKnockBack, Vec3{0, 0, 1}}, false, &stats);
+                health.hurt(player, 7.25f, HurtKind::Blow, HurtSource::Directed, {}, events,
+                            {damage::kKnockBack, Vec3{0, 0, 1}}, &stats);
             }
             if (phase % 11 == 0) {
                 ++player.actor.save().gold;
@@ -1284,7 +1284,7 @@ TEST_CASE("health cue rewind preserves the existing random sequence without emit
         CharacterSave save;
         save.progress().health = 1000;
         player.actor.spawn(0, save, nullptr, Vec3{0}, 0);
-        health.hurt(player, 1, HurtKind::Burn, false, false, 1, events);
+        health.hurt(player, 1, HurtKind::Burn, HurtSource::Undirected, {}, events);
         REQUIRE(player.actor.save().health() == 999);
     };
     for (s32 index = 0; index < 257; ++index) {

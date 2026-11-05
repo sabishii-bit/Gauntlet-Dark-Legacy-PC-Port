@@ -71,7 +71,7 @@ TEST_CASE("Castle Treasury coffin audio obeys the native party restriction and a
     REQUIRE((emitter->loudness > 0) == (joined >= 3));
     CHECK(sounds.isPlaying(emitter->handle) == (joined >= 3));
     const auto voice = emitter->handle;
-    scene.harm(0, 100000, HurtKind::Burn);
+    scene.hurtPlayer(0, 100000, HurtKind::Burn);
     REQUIRE(scene.runtime(0)->life == PlayerLife::Dying);
     scene.update(1.0 / 60, {});
     CHECK(emitter->loudness == 0);

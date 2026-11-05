@@ -826,7 +826,7 @@ TEST_CASE("weapon modes route player hits through health with shared contact imm
     f.attackEvents.hurt = [&](usize index, f32 damage, HurtKind kind, const PlayerImpact& impact) {
         REQUIRE(index == 1);
         ++hits;
-        health.hurt(party[index], damage, kind, true, false, 1, events, impact);
+        health.hurt(party[index], damage, kind, HurtSource::Directed, {}, events, impact);
     };
     static constexpr MissileSpec kSpec{"TEST", {}, 0.5f, 0, 0, true, {}};
     MissileLaunch launch;
@@ -1238,13 +1238,13 @@ TEST_CASE("gas damage queues pain without overlapping direct choking voices",
     PlayerHealth::Events events;
     events.cry = [&](std::string_view cue) { f.attacks.cry(0, cue, f.players); };
     for (s32 pulse = 0; pulse < 6; ++pulse) {
-        health.hurt(player, 10, HurtKind::Gas, true, false, 1, events);
+        health.hurt(player, 10, HurtKind::Gas, HurtSource::Directed, {}, events);
     }
     CHECK(player.actor.save().health() == 940);
     CHECK(sounds.voiceCount() == (audible ? 1 : 0));
     // The two-second bark occupies the bounded logical queue, even with no output.
     CHECK(f.audio.barkBacklog() == Approx(2));
-    health.hurt(player, 10, HurtKind::Pierce, true, false, 1, events);
+    health.hurt(player, 10, HurtKind::Pierce, HurtSource::Directed, {}, events);
     CHECK(sounds.voiceCount() == (audible ? 2 : 0)); // A spike groan is direct.
     CHECK(f.audio.barkBacklog() == Approx(2));
     sounds.stopAll();
@@ -4495,8 +4495,9 @@ TEST_CASE("temporary Pojo can exchange real golem blows then retreat and reappro
     opponents.hurt = [&](usize index, f32 damage, HurtKind kind, bool directed,
                          const PlayerImpact& impact) {
         ++hurt;
-        health.hurt(f.players[index], damage, kind, directed, false, 1, healthEvents, impact, false,
-                    f.classes.stats(kJester));
+        health.hurt(f.players[index], damage, kind,
+                    directed ? HurtSource::Directed : HurtSource::Undirected, {}, healthEvents,
+                    impact, f.classes.stats(kJester));
         stagger += f.players[index].reaction != PlayerDeed::None ? 1 : 0;
     };
     opponents.settleBlasts = [] {};

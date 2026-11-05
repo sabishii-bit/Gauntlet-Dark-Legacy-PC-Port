@@ -197,8 +197,9 @@ TEST_CASE("Nightmare turbines retain harmful contacts", "[turbine-hazards][asset
                                                               .named = [](std::string_view, f32) {},
                                                               .learnBlock = [] {},
                                                               .vibrate = {}};
-                            health.hurt(player, harm->harm.damage, HurtKind::Blow, true, false,
-                                        1.0f, events, PlayerImpact{harm->harm.impact, harm->away});
+                            health.hurt(player, harm->harm.damage, HurtKind::Blow,
+                                        HurtSource::Directed, {}, events,
+                                        PlayerImpact{harm->harm.impact, harm->away});
                             CHECK(player.actor.save().health() == 995);
                         }
                     }
@@ -292,8 +293,8 @@ TEST_CASE("native trolleys and minecarts knock players down without dragging the
             runtime.surfaceGap = 1;
             REQUIRE(touch->harm.impact == damage::kKnockDown);
             const s32 before = actor.save().health();
-            health.hurt(runtime, touch->harm.damage, HurtKind::Blow, true, false, 1, healthEvents,
-                        {touch->harm.impact, touch->away});
+            health.hurt(runtime, touch->harm.damage, HurtKind::Blow, HurtSource::Directed, {},
+                        healthEvents, {touch->harm.impact, touch->away});
             hits += actor.save().health() < before ? 1 : 0;
         }
         CHECK(overlapping > 0);

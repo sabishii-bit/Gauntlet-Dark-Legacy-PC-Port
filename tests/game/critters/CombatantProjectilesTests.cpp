@@ -1236,8 +1236,8 @@ TEST_CASE("Lich hand contacts drain fractional health below armor and stop after
         f.step(1.0f / static_cast<f32>(rate), players);
         for (const auto& hit : f.projectiles.takeHits()) {
             ++hits;
-            health.hurt(player, hit.damage, HurtKind::Blow, true, false, 1, events,
-                        {hit.flags, hit.direction}, true, stats);
+            health.hurt(player, hit.damage, HurtKind::Blow, HurtSource::Directed,
+                        {.bossEncounter = true}, events, {hit.flags, hit.direction}, stats);
         }
     }
     REQUIRE(hits >= 29);
@@ -1504,8 +1504,8 @@ void checkWebEscape(s32 fps, bool animated) {
         f.step(dt, views, &world);
         for (const auto& hit : f.projectiles.takeHits()) {
             ++hits;
-            health.hurt(player, hit.damage, HurtKind::Pierce, true, false, 1, healthEvents,
-                        {hit.flags, hit.direction});
+            health.hurt(player, hit.damage, HurtKind::Pierce, HurtSource::Directed, {},
+                        healthEvents, {hit.flags, hit.direction});
         }
         const s32 ticks = (frame + 1) * 60 / fps - frame * 60 / fps;
         PartyMotion::step(players, inputs, false, 0, ticks, dt, world, motionLevel);

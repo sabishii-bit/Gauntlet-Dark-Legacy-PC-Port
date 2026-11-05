@@ -58,7 +58,7 @@ public:
             });
     }
     void thrownImpact(usize i, f32 damage) override {
-        m_scene.hurt(i, damage, HurtKind::Blow, true);
+        m_scene.hurt(i, damage, HurtKind::Blow, HurtSource::Directed);
     }
     std::optional<Vec3> aim(usize i) const override {
         return m_scene.assistedAim(i, m_scene.m_players[i].actor.facing());

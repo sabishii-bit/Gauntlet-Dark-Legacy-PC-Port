@@ -58,8 +58,8 @@ struct Fixture {
         // Exercise rounded health, queued reactions and the party-wide cry RNG,
         // not an independently reimplemented damage formula.
         if (tick % 7 == 0) {
-            health.hurt(runtime, 7.25f, HurtKind::Blow, true, false, 1, healthEvents,
-                        {damage::kKnockBack, Vec3{0, 0, 1}}, false, &stats);
+            health.hurt(runtime, 7.25f, HurtKind::Blow, HurtSource::Directed, {}, healthEvents,
+                        {damage::kKnockBack, Vec3{0, 0, 1}}, &stats);
         }
         if (tick % 11 == 0) {
             auto& progress = runtime.actor.save().progress();

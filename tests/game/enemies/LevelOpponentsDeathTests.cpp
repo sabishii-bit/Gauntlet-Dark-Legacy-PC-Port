@@ -373,8 +373,8 @@ TEST_CASE("Death drains bypass armor without bypassing invulnerability or normal
     stats.armorMin = 999;
     stats.armorMax = 999;
     for (s32 i = 0; i < 2; ++i) {
-        health.hurt(player, 1, HurtKind::DeathDrain, true, false, 20, events,
-                    PlayerImpact{.flags = 0x1000}, false, &stats);
+        health.hurt(player, 1, HurtKind::DeathDrain, HurtSource::Directed, {.damageScale = 20},
+                    events, PlayerImpact{.flags = 0x1000}, &stats);
     }
     CHECK(player.life == (invulnerable ? PlayerLife::Standing : PlayerLife::Dying));
     CHECK(deaths == (invulnerable ? 0 : 1));
@@ -598,7 +598,9 @@ void verifyDeathTransfers(s32 tier, bool realAssets) {
                       const PlayerImpact& impact) {
         CHECK(player == 1);
         CHECK(kind == HurtKind::DeathDrain);
-        health.hurt(players[player], amount, kind, directed, false, 1, healthEvents, impact);
+        health.hurt(players[player], amount, kind,
+                    directed ? HurtSource::Directed : HurtSource::Undirected, {}, healthEvents,
+                    impact);
     };
     std::vector<s32> helps;
     events.help = [&](s32 help, usize player) {

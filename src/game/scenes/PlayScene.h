@@ -565,8 +565,6 @@ public:
     /** Lends the swarm `source`'s voices, its roster and the bank its `audio` record names,
      * for the kinds the developer console brings in from it; false without the bank. */
     bool borrowOpponentSounds(const LevelInfo& source, const LevelAudioInfo* audio);
-    /** Harms `player`'s character as a blow, a burn, a piercing or gas would, for tests. */
-    void harm(s32 player, f32 damage, HurtKind kind);
     /** What `player`'s status box shows. */
     StatusBoxView status(s32 player) const { return PartyHud::status(player, m_players); }
     /** The turbo meter of `player`'s character, or null when that player is not in. */
@@ -583,7 +581,7 @@ public:
     /** Whether `player`'s character has fallen (dying or gone to the tower). */
     bool fallen(s32 player) const;
     /** Hurts `player`'s character, as anything in the level does. */
-    void hurtPlayer(s32 player, f32 damage, HurtKind kind, bool directed = false);
+    void hurtPlayer(s32 player, f32 damage, HurtKind kind);
     /** A blast at `position`: hurts and breaks what is within `radius`. */
     void blast(const Vec3& position, f32 radius, f32 damage);
     const TransitionScreen& transition() const { return m_transition; }
@@ -810,7 +808,7 @@ private:
     void settleOpponentRewards();
     PlayerAttacks::Targets attackTargets();
     void answerTowerPrompts(const Inputs& inputs);
-    void hurt(usize index, f32 damage, HurtKind kind, bool directed = false,
+    void hurt(usize index, f32 damage, HurtKind kind, HurtSource source,
               const PlayerImpact& impact = {}, bool armorAbsorbed = false);
     /** What a blow to `runtime` (the player at `index`) sounds, shows and teaches. */
     PlayerHealth::Events healthEvents(usize index, PlayerRuntime& runtime);

@@ -3,7 +3,7 @@
 #include <utility>
 #include <vector>
 
-#include "game/combat/DamageTypes.h"
+#include "game/combat/HurtKind.h"
 #include "game/scenes/PlayScene.h"
 
 namespace gdl::game {
@@ -148,8 +148,7 @@ void PlayScene::applyImportedHazards(ImportedLevel& imported) {
                  hit.poison    ? HurtKind::Gas
                  : hit.pierces ? HurtKind::Pierce
                                : HurtKind::Blow,
-                 (hit.impact.flags & (damage::kKnockBack | damage::kKnockDown)) != 0, hit.impact,
-                 hit.armorAbsorbed);
+                 hurtSourceOf(hit.impact.flags), hit.impact, hit.armorAbsorbed);
         }
     }
 }

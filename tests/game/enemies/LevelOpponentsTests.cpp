@@ -518,7 +518,9 @@ TEST_CASE("Levitation avoids low enemy melee but not tall enemies or disabled pr
         CHECK(i == 0);
         CHECK(((hit.flags & damage::kLow) != 0) == (kind == kRatKind));
         CHECK(((hit.flags & damage::kKnockBack) != 0) == (kind == kGruntKind && contacts == 7));
-        health.hurt(players[i], amount, hurt, directed, false, 1, healthEvents, hit);
+        health.hurt(players[i], amount, hurt,
+                    directed ? HurtSource::Directed : HurtSource::Undirected, {}, healthEvents,
+                    hit);
         ++contacts;
     };
     for (s32 frame = 0; frame < 300 && contacts < 8; ++frame) {
@@ -601,7 +603,9 @@ TEST_CASE("Hand of Death and Health Vamp return melee without player pain or kil
         if (amount > 0) {
             ++damageEvents;
         }
-        health.hurt(players[i], amount, hurt, directed, false, 1, healthEvents, hit);
+        health.hurt(players[i], amount, hurt,
+                    directed ? HurtSource::Directed : HurtSource::Undirected, {}, healthEvents,
+                    hit);
     };
     for (s32 frame = 0;
          frame < 120 && damageEvents == 0 && opponents.enemies().healthOf(*enemy) == enemyHealth;
@@ -735,7 +739,9 @@ TEST_CASE("enemy melee plays a dedicated impact on each contact including warded
         CHECK(i == 0);
         CHECK(hurt == HurtKind::QuietBlow);
         ++contacts;
-        health.hurt(players[i], amount, hurt, directed, false, 1, healthEvents, hit);
+        health.hurt(players[i], amount, hurt,
+                    directed ? HurtSource::Directed : HurtSource::Undirected, {}, healthEvents,
+                    hit);
     };
     for (s32 frame = 0; frame < 300 && sound.voiceCount() < 2; ++frame) {
         opponents.update(2, 1.0f / 30, players, {}, host, host, host);

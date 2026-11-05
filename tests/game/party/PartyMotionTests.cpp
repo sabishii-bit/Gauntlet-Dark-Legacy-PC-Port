@@ -1195,7 +1195,9 @@ TEST_CASE("boss impacts reach retail player animations and lock input through re
     opponents.hurt = [&](usize index, f32 damage, HurtKind kind, bool directed,
                          const PlayerImpact& impact) {
         REQUIRE(index == 0); // input id 3 is not party index 3
-        health.hurt(f.players[index], damage, kind, directed, false, 1, healthEvents, impact);
+        health.hurt(f.players[index], damage, kind,
+                    directed ? HurtSource::Directed : HurtSource::Undirected, {}, healthEvents,
+                    impact);
     };
     CombatBlow blow;
     blow.player = 3;

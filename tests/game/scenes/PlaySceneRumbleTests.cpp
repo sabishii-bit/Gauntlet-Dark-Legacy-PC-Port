@@ -54,10 +54,10 @@ TEST_CASE("scene damage vibrates the actual input player and pause or close stop
         return pulse.feedback == ControlFeedback::Damage;
     }));
     haptics.pulses.clear();
-    scene.harm(1, 5, HurtKind::Blow);
+    scene.hurtPlayer(1, 5, HurtKind::Blow);
     REQUIRE(haptics.pulses.size() == 1);
     CHECK(haptics.pulses.back() == test::RecordingHaptics::Pulse{1, 10, ControlFeedback::Damage});
-    scene.harm(3, 5, HurtKind::Blow);
+    scene.hurtPlayer(3, 5, HurtKind::Blow);
     REQUIRE(haptics.pulses.size() == 2);
     CHECK(haptics.pulses.back() == test::RecordingHaptics::Pulse{3, 10, ControlFeedback::Damage});
     const s32 before = haptics.stops;

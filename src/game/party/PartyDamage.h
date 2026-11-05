@@ -13,9 +13,7 @@ namespace gdl::game {
 class PartyDamage {
 public:
     struct Context {
-        bool tower = false;
-        f32 damageScale = 1;
-        bool bossEncounter = false;
+        PlayerHealth::Setting setting;
         bool cutscene = false;
         bool lastRealmLevel = false;
         s32 realm = -1;
@@ -31,7 +29,7 @@ public:
     static std::optional<EnemyImpact> enemy(const EnemyBlow& blow, const PlayerRuntime& player,
                                             std::span<const LevelEnemy> roster, s32 bossType = -1);
     static void hurt(PlayerHealth& health, PlayerRuntime& player, f32 damage, HurtKind kind,
-                     bool directed, const Context& context, const PlayerHealth::Events& events,
+                     HurtSource source, const Context& context, const PlayerHealth::Events& events,
                      const PlayerImpact& impact = {}, const ClassStats* stats = nullptr);
     /** Mutates the native guard ledger, returning the accepted BLOCKFX duration.
      * Resource availability is the caller's concern; the native wrapper calls

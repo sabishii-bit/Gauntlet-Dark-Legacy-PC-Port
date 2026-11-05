@@ -32,7 +32,8 @@ public:
     explicit OpponentRouting(PlayScene& scene) : m_scene(scene) {}
     void hurtMember(usize member, f32 damage, HurtKind kind, bool directed,
                     const PlayerImpact& impact) override {
-        m_scene.hurt(member, damage, kind, directed, impact);
+        m_scene.hurt(member, damage, kind, directed ? HurtSource::Directed : HurtSource::Undirected,
+                     impact);
     }
     void settleBlasts() override { m_scene.settleBlasts(); }
     void blastScenery(const PickupBlastReach& reach, std::vector<s32>& reached) override {

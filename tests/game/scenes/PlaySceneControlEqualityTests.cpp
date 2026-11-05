@@ -171,7 +171,7 @@ TEST_CASE("root control equality includes fractional clocks priorities and voice
         burnt.actor.spawn(0, {}, nullptr, Vec3{0}, 0);
         burnt.actor.save().progress().health = 1000;
         const PlayerHealth::Events cries{.cry = [](std::string_view) {}};
-        second.hurt(burnt, 5, HurtKind::Burn, false, false, 1, cries);
+        second.hurt(burnt, 5, HurtKind::Burn, HurtSource::Undirected, {}, cries);
         CHECK_FALSE(first == second);
         CHECK(nativeHash(first) != nativeHash(second));
         first = second;

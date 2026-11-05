@@ -577,8 +577,9 @@ TEST_CASE("Courtyard tentacles damage a knight at the edge of their sweep only d
     f.events.hurt = [&](usize player, f32 damage, HurtKind kind, bool directed,
                         const PlayerImpact& impact) {
         ++contacts;
-        health.hurt(f.players[player], damage, kind, directed, false,
-                    f.world.level()->tuning.damage, events, impact, false, stats);
+        health.hurt(f.players[player], damage, kind,
+                    directed ? HurtSource::Directed : HurtSource::Undirected,
+                    {.damageScale = f.world.level()->tuning.damage}, events, impact, stats);
     };
     f.events.help = [](s32, usize) { return false; };
     for (usize i = 0; i < f.fixtures.traps().size(); ++i) {
@@ -1948,7 +1949,9 @@ TEST_CASE("Castle light traps zap on contact, not activation or cooldown frames"
         f.events.hurt = [&](usize victim, f32 damage, HurtKind kind, bool directed,
                             const PlayerImpact& impact) {
             CHECK(victim == 0);
-            health.hurt(player, damage, kind, directed, false, 1, healthEvents, impact);
+            health.hurt(player, damage, kind,
+                        directed ? HurtSource::Directed : HurtSource::Undirected, {}, healthEvents,
+                        impact);
             ++hits;
         };
         f.events.help = [](s32, usize) { return true; };
@@ -2033,7 +2036,9 @@ TEST_CASE("Courtyard tentacles sound their own strike where the victim stands",
         f.events.hurt = [&](usize victim, f32 damage, HurtKind kind, bool directed,
                             const PlayerImpact& impact) {
             CHECK(victim == 0);
-            health.hurt(player, damage, kind, directed, false, 1, healthEvents, impact);
+            health.hurt(player, damage, kind,
+                        directed ? HurtSource::Directed : HurtSource::Undirected, {}, healthEvents,
+                        impact);
             ++hits;
         };
         f.events.help = [](s32, usize) { return true; };
@@ -2126,7 +2131,9 @@ TEST_CASE("native trap properties reach player damage and reactions",
                     CHECK(glm::distance(impact.direction, -Vec3{trap.figure.transform()[2]}) <
                           0.0001f);
                 }
-                health.hurt(player, damage, kind, directed, false, 1, healthEvents, impact);
+                health.hurt(player, damage, kind,
+                            directed ? HurtSource::Directed : HurtSource::Undirected, {},
+                            healthEvents, impact);
                 ++hits;
             };
             f.events.help = [](s32, usize) { return true; };

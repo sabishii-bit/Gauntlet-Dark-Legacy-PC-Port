@@ -14,18 +14,10 @@
 
 namespace gdl::game {
 
-void PlayScene::hurtPlayer(s32 player, f32 damage, HurtKind kind, bool directed) {
+void PlayScene::hurtPlayer(s32 player, f32 damage, HurtKind kind) {
     for (usize i = 0; i < m_players.size(); ++i) {
         if (m_players[i].actor.player() == player) {
-            hurt(i, damage, kind, directed);
-        }
-    }
-}
-
-void PlayScene::harm(s32 player, f32 damage, HurtKind kind) {
-    for (usize i = 0; i < m_players.size(); ++i) {
-        if (m_players[i].actor.player() == player) {
-            hurt(i, damage, kind);
+            hurt(i, damage, kind, HurtSource::Undirected);
         }
     }
 }
@@ -36,7 +28,7 @@ void PlayScene::answerTowerPrompts(const Inputs& inputs) {
     PlayerHealth::answerTowerPrompts(m_players, inputs, !m_sim.fixedRoster);
 }
 
-void PlayScene::hurt(usize index, f32 damage, HurtKind kind, bool directed,
+void PlayScene::hurt(usize index, f32 damage, HurtKind kind, HurtSource source,
                      const PlayerImpact& impact, bool armorAbsorbed) {
     // damage_player excludes trigger-camera shots even though existing effects
     // and the player's action continue to advance beneath the input lock.
@@ -51,17 +43,17 @@ void PlayScene::hurt(usize index, f32 damage, HurtKind kind, bool directed,
     const auto audioScope = m_audio.soundScope({31, 0, 1, static_cast<u8>(runtime.actor.player())},
                                                static_cast<u32>(kind) + 1);
     const PartyDamage::Context context{
-        .tower = m_world->isTower(),
-        .damageScale = level != nullptr ? level->tuning.damage : 1.0f,
-        .bossEncounter =
-            (level != nullptr && level->bossType >= 0) ||
-            (m_world->imported() != nullptr && m_world->imported()->importedBoss() != nullptr),
+        .setting = {.tower = m_world->isTower(),
+                    .damageScale = level != nullptr ? level->tuning.damage : 1.0f,
+                    .bossEncounter = (level != nullptr && level->bossType >= 0) ||
+                                     (m_world->imported() != nullptr &&
+                                      m_world->imported()->importedBoss() != nullptr)},
         .cutscene = m_sim.switchCutscene.active(),
         .lastRealmLevel =
             m_services->levels != nullptr && m_services->levels->isLastLevel(m_world->ref()),
         .realm = m_world->ref().realmId,
         .playSeconds = m_sim.playSeconds};
-    PartyDamage::hurt(m_sim.health, runtime, damage, kind, directed, context,
+    PartyDamage::hurt(m_sim.health, runtime, damage, kind, source, context,
                       healthEvents(index, runtime), impact,
                       armorAbsorbed ? nullptr : m_classes.stats(runtime.actor.save().character));
 }
@@ -82,7 +74,8 @@ PlayerHealth::Events PlayScene::healthEvents(usize index, PlayerRuntime& runtime
 
 void PlayScene::FixtureRouting::hurtMember(usize member, f32 damage, HurtKind kind, bool directed,
                                            const PlayerImpact& impact) {
-    m_scene.hurt(member, damage, kind, directed, impact);
+    m_scene.hurt(member, damage, kind, directed ? HurtSource::Directed : HurtSource::Undirected,
+                 impact);
 }
 
 bool PlayScene::FixtureRouting::lesson(s32 id, usize member) {
@@ -124,7 +117,7 @@ void PlayScene::PickupRouting::showRelics() {
 
 void PlayScene::AttackRouting::hurtByAttack(usize member, f32 damage, HurtKind kind,
                                             const PlayerImpact& impact) {
-    m_scene.hurt(member, damage, kind, true, impact);
+    m_scene.hurt(member, damage, kind, HurtSource::Directed, impact);
 }
 
 void PlayScene::AttackRouting::meleeHit(s32 seat) {
@@ -190,7 +183,7 @@ void PlayScene::updateHazardSurfaces(f32 seconds) {
                 {44, static_cast<u64>(touch->object), 1, static_cast<u8>(actor.player())}, 1);
             m_audio.playNamed(kMineCartSound);
         }
-        hurt(i, touch->harm.damage, HurtKind::Blow, true,
+        hurt(i, touch->harm.damage, HurtKind::Blow, HurtSource::Directed,
              PlayerImpact{touch->harm.impact, touch->away});
     }
 }

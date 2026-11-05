@@ -332,7 +332,7 @@ TEST_CASE("Temple switch shots hold enemy AI and input while existing player act
     const auto health = scene.actor(0)->save().health();
     // damage_player refuses hits during the trigger camera, even from effects
     // that were already in flight before controls were disabled.
-    scene.harm(0, 10, HurtKind::Blow);
+    scene.hurtPlayer(0, 10, HurtKind::Blow);
     CHECK(scene.actor(0)->save().health() == health);
     const auto targets = scene.enemies().targets();
     REQUIRE_FALSE(targets.empty());
@@ -464,7 +464,7 @@ TEST_CASE("Temple switch shots hold enemy AI and input while existing player act
     }
     CHECK(scene.actor(0)->position() != held);
     CHECK(scene.missiles().count() == 0);
-    scene.harm(0, 10, HurtKind::Blow);
+    scene.hurtPlayer(0, 10, HurtKind::Blow);
     CHECK(scene.actor(0)->save().health() < health);
     scene.close();
     CHECK_FALSE(scene.switchCutscene().active());

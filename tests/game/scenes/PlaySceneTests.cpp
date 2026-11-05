@@ -4329,7 +4329,7 @@ TEST_CASE("native low-health narration advances identically with absent and stop
         REQUIRE(scene.actor(3));
         const s32 health = scene.actor(3)->save().health();
         REQUIRE(health > 150);
-        scene.harm(3, static_cast<f32>(health - 140), HurtKind::Burn);
+        scene.hurtPlayer(3, static_cast<f32>(health - 140), HurtKind::Burn);
         REQUIRE(scene.actor(3)->save().health() <= 150);
         REQUIRE(scene.actor(3)->save().health() > 50);
         REQUIRE(scene.soundscape().narrationTiming().size() == 2);
@@ -4408,7 +4408,7 @@ TEST_CASE("a character hurt cries out by the original's rules: at once for a bur
     // thirty of harm has been taken, counted before the health is rounded (pain_accum), so
     // what the level and the armour leave of each blow decides which one it is.
     const s32 whole = scene.actor(0)->save().health();
-    scene.harm(0, 5.0f, HurtKind::Blow);
+    scene.hurtPlayer(0, 5.0f, HurtKind::Blow);
     REQUIRE(live() == 1);
     finishSpeech();
     REQUIRE(live() == 0);
@@ -4417,7 +4417,7 @@ TEST_CASE("a character hurt cries out by the original's rules: at once for a bur
     s32 cries = 0;
     s32 blows = 1;
     while (cries == 0 && blows < 20) {
-        scene.harm(0, 5.0f, HurtKind::Blow);
+        scene.hurtPlayer(0, 5.0f, HurtKind::Blow);
         ++blows;
         cries = static_cast<s32>(live()); // the hit's own sound waits its half second
     }
@@ -4427,24 +4427,24 @@ TEST_CASE("a character hurt cries out by the original's rules: at once for a bur
     CHECK(lost <= 30 + 2 * perBlow);
     finishSpeech();
     // A heavy blow, or a burn, is cried over at once.
-    scene.harm(0, 61.0f, HurtKind::Blow);
+    scene.hurtPlayer(0, 61.0f, HurtKind::Blow);
     REQUIRE(live() == 1);
     finishSpeech();
     // (A burn the armour takes whole is not felt at all.)
-    scene.harm(0, 1.5f, HurtKind::Burn);
+    scene.hurtPlayer(0, 1.5f, HurtKind::Burn);
     REQUIRE(live() == 0);
-    scene.harm(0, 5.0f, HurtKind::Burn);
+    scene.hurtPlayer(0, 5.0f, HurtKind::Burn);
     REQUIRE(live() == 1);
     finishSpeech();
     // Down past a hundred and fifty the narrator names the character instead.
     const s32 health = scene.actor(0)->save().health();
     REQUIRE(health > 150);
-    scene.harm(0, static_cast<f32>(health - 140), HurtKind::Burn);
+    scene.hurtPlayer(0, static_cast<f32>(health - 140), HurtKind::Burn);
     REQUIRE(scene.actor(0)->save().health() <= 150); // less what the armour takes
     REQUIRE(scene.actor(0)->save().health() > 50);
     REQUIRE(live() >= 1); // the name, the line queued after it
     finishSpeech();
-    scene.harm(0, 100.0f, HurtKind::Burn);
+    scene.hurtPlayer(0, 100.0f, HurtKind::Burn);
     REQUIRE(scene.actor(0)->save().health() <= 50);
     REQUIRE(scene.actor(0)->save().health() > 0);
     REQUIRE(live() >= 1);
@@ -5794,10 +5794,10 @@ TEST_CASE(
     scene.setCheats(0, cheats);
     CHECK(scene.cheats(0).god);
     CHECK_FALSE(scene.cheats(1).god);
-    scene.harm(0, 100.0f, HurtKind::Blow);
+    scene.hurtPlayer(0, 100.0f, HurtKind::Blow);
     CHECK(scene.actor(0)->save().health() == health);
     scene.setCheats(0, {});
-    scene.harm(0, 100.0f, HurtKind::Blow);
+    scene.hurtPlayer(0, 100.0f, HurtKind::Blow);
     CHECK(scene.actor(0)->save().health() < health);
     // Unseen, the swarm's view of the character is of an invisible one.
     CHECK_FALSE(scene.opponents().views(scene.participants())[0].invisible);

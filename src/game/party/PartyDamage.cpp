@@ -25,8 +25,9 @@ std::optional<PartyDamage::EnemyImpact> PartyDamage::enemy(const EnemyBlow& blow
 }
 
 void PartyDamage::hurt(PlayerHealth& health, PlayerRuntime& player, f32 damage, HurtKind kind,
-                       bool directed, const Context& context, const PlayerHealth::Events& events,
-                       const PlayerImpact& impact, const ClassStats* stats) {
+                       HurtSource source, const Context& context,
+                       const PlayerHealth::Events& events, const PlayerImpact& impact,
+                       const ClassStats* stats) {
     if (context.cutscene) {
         return;
     }
@@ -37,8 +38,7 @@ void PartyDamage::hurt(PlayerHealth& health, PlayerRuntime& player, f32 damage, 
             events.learnBlock();
         }
     };
-    health.hurt(player, damage, kind, directed, context.tower, context.damageScale, dispatch,
-                impact, context.bossEncounter, stats);
+    health.hurt(player, damage, kind, source, context.setting, dispatch, impact, stats);
     if (stood && player.life == PlayerLife::Dying && context.lastRealmLevel) {
         player.entrySave.progress().levels.recordBossDeath(context.realm);
     }
