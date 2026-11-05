@@ -8,6 +8,8 @@
 #include "engine/core/Types.h"
 
 #include "game/audio/LevelSoundscape.h"
+#include "game/audio/SceneSoundEvents.h"
+#include "game/audio/SpeechTiming.h"
 #include "game/level/NativeStateResources.h"
 #include "game/party/PlayerRuntime.h"
 #include "game/tower/TowerPromotion.h"
@@ -76,17 +78,12 @@ public:
      * and replaying a discarded promotion from the cached birth values. */
     void upgradeFigure(const Scene& scene, usize partyIndex);
 
-    /** The rewind seam: the ceremonies' values in the scene's snapshot, the voices by their
-     * clocks and cues (their live handles stay). */
-    void saveLocal(TowerPromotion::LocalSnapshot& promotion, TowerRelics::LocalSnapshot& relics,
-                   SpeechTiming& relicSpeech, SpeechTiming& promotionSpeech,
-                   SoundCueToken& relicCue, SoundCueToken& promotionCue) const;
-    bool canRestoreLocal(const TowerPromotion::LocalSnapshot& promotion,
-                         const TowerRelics::LocalSnapshot& relics) const;
-    void restoreLocal(const TowerPromotion::LocalSnapshot& promotion,
-                      const TowerRelics::LocalSnapshot& relics, const SpeechTiming& relicSpeech,
-                      const SpeechTiming& promotionSpeech, const SoundCueToken& relicCue,
-                      const SoundCueToken& promotionCue);
+    /** The voices in the scene's snapshot, by their clocks and cues; their live handles stay.
+     * The promotion and the relics are owners of the scene's roster in their own right. */
+    void saveVoices(SpeechTiming& relicSpeech, SpeechTiming& promotionSpeech,
+                    SoundCueToken& relicCue, SoundCueToken& promotionCue) const;
+    void restoreVoices(const SpeechTiming& relicSpeech, const SpeechTiming& promotionSpeech,
+                       const SoundCueToken& relicCue, const SoundCueToken& promotionCue);
     /** The retired costumes' borrowed native pointers, for the agreement digest's table. */
     bool registerRetainedFigures(NativeStateResources& resources) const;
 

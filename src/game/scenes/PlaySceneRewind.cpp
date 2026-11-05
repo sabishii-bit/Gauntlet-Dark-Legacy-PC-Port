@@ -1,6 +1,8 @@
 #include <chrono>
 #include <optional>
-#include <utility>
+#include <string_view>
+
+#include "engine/io/LocalRoster.h"
 
 #include "game/scenes/PlayScene.h"
 
@@ -60,6 +62,44 @@ PlayScene::LocalSnapshot::LocalSnapshot() = default;
 PlayScene::LocalSnapshot::~LocalSnapshot() = default;
 PlayScene::LocalSnapshot::LocalSnapshot(LocalSnapshot&&) noexcept = default;
 PlayScene::LocalSnapshot& PlayScene::LocalSnapshot::operator=(LocalSnapshot&&) noexcept = default;
+
+const auto& PlayScene::sceneOwners() {
+    using Data = LocalSnapshot::Data;
+    // The world is borrowed, and the ceremonies hold two owners, so those three are reached
+    // through calls.
+    static constexpr auto kOwners = local::parts(
+        local::sample("world", local::child([](auto& scene) -> auto& { return *scene.m_world; },
+                                            &Data::world)),
+        local::sample("fixtures", local::child(&PlayScene::m_fixtures, &Data::fixtures)),
+        local::sample("console-objects", local::child(&PlayScene::m_spawned, &Data::spawned)),
+        local::sample("opponents", local::child(&PlayScene::m_opponents, &Data::opponents)),
+        local::sample("attacks", local::child(&PlayScene::m_attacks, &Data::attacks)),
+        local::sample("arsenal", local::child(&PlayScene::m_arsenal, &Data::arsenal)),
+        local::sample("effects", local::child(&PlayScene::m_effects, &Data::effects)),
+        local::sample("portals", local::child(&PlayScene::m_portals, &Data::portals)),
+        local::sample("transporters",
+                      local::child(&PlayScene::m_transporters, &Data::transporters)),
+        local::sample("departure", local::child(&PlayScene::m_departure, &Data::departure)),
+        local::sample("arrival", local::child(&PlayScene::m_arrival, &Data::arrival)),
+        local::sample("sumner", local::child(&PlayScene::m_sumner, &Data::sumner)),
+        local::sample("hud", local::child(&PlayScene::m_hud, &Data::hud)),
+        local::sample("messages", local::child(&PlayScene::m_messages, &Data::messages)),
+        local::sample("sumner-visit", local::child(&PlayScene::m_sumnerVisit, &Data::sumnerVisit)),
+        local::sample(
+            "promotion",
+            local::child([](auto& scene) -> auto& { return scene.m_ceremonies.promotion(); },
+                         &Data::promotion)),
+        local::sample("relics",
+                      local::child([](auto& scene) -> auto& { return scene.m_ceremonies.relics(); },
+                                   &Data::relics)),
+        local::sample("boss-sequence",
+                      local::child(&PlayScene::m_bossSequence, &Data::bossSequence)),
+        local::sample("audio", local::child(&PlayScene::m_audio, &Data::audio)),
+        local::sample("challenge-hud",
+                      local::child(&PlayScene::m_challengeHud, &Data::challengeHud)),
+        local::sample("mechanics", local::child(&PlayScene::m_mechanics, &Data::mechanics)));
+    return kOwners;
+}
 
 std::optional<NativeStateDigest::Digest> PlayScene::nativeLocalDigest(const LocalSnapshot& saved) {
     if (!canRestoreLocal(saved) || !registerNativeDigestResources()) {
@@ -142,37 +182,17 @@ bool PlayScene::appendSceneDigest(NativeStateDigest& digest, const LocalSnapshot
         })) {
         return false;
     }
-    const auto child = [&](std::string_view name, const auto& owner, auto member) {
+    // Each owner is measured on its own, and one that fails spoils the digest without stopping
+    // the owners after it.
+    const auto child = [&](std::string_view name, const auto& part) {
         const bool valid = measured(name, [&] {
-            return data ? owner.appendLocalDigest(digest, data->*member)
-                        : owner.appendNativeDigest(digest);
+            return local::append(*this, local::parts(part), digest, data, local::noValues());
         });
         if (!valid) {
             digest.invalidate();
         }
     };
-    using Data = LocalSnapshot::Data;
-    child("world", *m_world, &Data::world);
-    child("fixtures", m_fixtures, &Data::fixtures);
-    child("console-objects", m_spawned, &Data::spawned);
-    child("opponents", m_opponents, &Data::opponents);
-    child("attacks", m_attacks, &Data::attacks);
-    child("arsenal", m_arsenal, &Data::arsenal);
-    child("effects", m_effects, &Data::effects);
-    child("portals", m_portals, &Data::portals);
-    child("transporters", m_transporters, &Data::transporters);
-    child("departure", m_departure, &Data::departure);
-    child("arrival", m_arrival, &Data::arrival);
-    child("sumner", m_sumner, &Data::sumner);
-    child("hud", m_hud, &Data::hud);
-    child("messages", m_messages, &Data::messages);
-    child("sumner-visit", m_sumnerVisit, &Data::sumnerVisit);
-    child("promotion", m_ceremonies.promotion(), &Data::promotion);
-    child("relics", m_ceremonies.relics(), &Data::relics);
-    child("boss-sequence", m_bossSequence, &Data::bossSequence);
-    child("audio", m_audio, &Data::audio);
-    child("challenge-hud", m_challengeHud, &Data::challengeHud);
-    child("mechanics", m_mechanics, &Data::mechanics);
+    local::eachSample(sceneOwners(), child);
     measured("camera-speech", [&] {
         digest.values(data ? data->camera : m_camera.localState(),
                       data ? data->transition : m_transition.state(),
@@ -221,30 +241,13 @@ bool PlayScene::saveLocal(LocalSnapshot& saved) const {
         player.weaponGlow = live.weaponGlow;
         player.deathHeldEffect = live.deathHeldEffect;
     }
-    m_world->saveLocal(data.world);
-    m_fixtures.saveLocal(data.fixtures);
-    m_spawned.saveLocal(data.spawned);
-    if (!m_opponents.saveLocal(data.opponents)) {
+    // The opponents' save can fail, and a snapshot they could not fill is admitted by nobody.
+    if (!local::save(*this, sceneOwners(), data, local::noValues())) {
         data.owner = nullptr;
         return false;
     }
-    m_attacks.saveLocal(data.attacks);
-    m_arsenal.saveLocal(data.arsenal);
-    m_effects.saveLocal(data.effects);
-    m_portals.saveLocal(data.portals);
-    m_transporters.saveLocal(data.transporters);
-    m_departure.saveLocal(data.departure);
-    m_arrival.saveLocal(data.arrival);
-    m_sumner.saveLocal(data.sumner);
-    m_hud.saveLocal(data.hud);
-    m_messages.saveLocal(data.messages);
-    m_sumnerVisit.saveLocal(data.sumnerVisit);
-    m_ceremonies.saveLocal(data.promotion, data.relics, data.relicSpeech, data.promotionSpeech,
-                           data.relicCue, data.promotionCue);
-    m_bossSequence.saveLocal(data.bossSequence);
-    m_audio.saveLocal(data.audio);
-    m_challengeHud.saveLocal(data.challengeHud);
-    m_mechanics.saveLocal(data.mechanics);
+    m_ceremonies.saveVoices(data.relicSpeech, data.promotionSpeech, data.relicCue,
+                            data.promotionCue);
     data.camera = m_camera.localState();
     data.transition = m_transition.state();
     data.previousCamera = m_previousCamera;
@@ -272,20 +275,7 @@ bool PlayScene::canRestoreLocal(const LocalSnapshot& saved) const {
             return false;
         }
     }
-    return m_world->canRestoreLocal(data.world) && m_fixtures.canRestoreLocal(data.fixtures) &&
-           m_spawned.canRestoreLocal(data.spawned) && m_opponents.canRestoreLocal(data.opponents) &&
-           m_attacks.canRestoreLocal(data.attacks) && m_arsenal.canRestoreLocal(data.arsenal) &&
-           m_effects.canRestoreLocal(data.effects) && m_portals.canRestoreLocal(data.portals) &&
-           m_transporters.canRestoreLocal(data.transporters) &&
-           m_departure.canRestoreLocal(data.departure) && m_arrival.canRestoreLocal(data.arrival) &&
-           m_sumner.canRestoreLocal(data.sumner) && m_hud.canRestoreLocal(data.hud) &&
-           m_messages.canRestoreLocal(data.messages) &&
-           m_sumnerVisit.canRestoreLocal(data.sumnerVisit) &&
-           m_ceremonies.canRestoreLocal(data.promotion, data.relics) &&
-           m_bossSequence.canRestoreLocal(data.bossSequence) &&
-           m_audio.canRestoreLocal(data.audio) &&
-           m_challengeHud.canRestoreLocal(data.challengeHud) &&
-           m_mechanics.canRestoreLocal(data.mechanics);
+    return local::admits(*this, sceneOwners(), data, local::noValues());
 }
 
 bool PlayScene::matchesLocalControl(const LocalSnapshot& saved) const {
@@ -302,27 +292,9 @@ bool PlayScene::restoreLocal(const LocalSnapshot& saved) {
         return false;
     }
     const auto& data = *saved.m_data;
-    m_world->restoreLocal(data.world);
-    m_fixtures.restoreLocal(data.fixtures);
-    m_spawned.restoreLocal(data.spawned);
-    m_opponents.restoreLocal(data.opponents);
-    m_attacks.restoreLocal(data.attacks);
-    m_arsenal.restoreLocal(data.arsenal);
-    m_effects.restoreLocal(data.effects);
-    m_portals.restoreLocal(data.portals);
-    m_transporters.restoreLocal(data.transporters);
-    m_departure.restoreLocal(data.departure);
-    m_arrival.restoreLocal(data.arrival);
-    m_sumner.restoreLocal(data.sumner);
-    m_hud.restoreLocal(data.hud);
-    m_messages.restoreLocal(data.messages);
-    m_sumnerVisit.restoreLocal(data.sumnerVisit);
-    m_ceremonies.restoreLocal(data.promotion, data.relics, data.relicSpeech, data.promotionSpeech,
-                              data.relicCue, data.promotionCue);
-    m_bossSequence.restoreLocal(data.bossSequence);
-    m_audio.restoreLocal(data.audio);
-    m_challengeHud.restoreLocal(data.challengeHud);
-    m_mechanics.restoreLocal(data.mechanics);
+    local::restore(*this, sceneOwners(), data, local::noValues());
+    m_ceremonies.restoreVoices(data.relicSpeech, data.promotionSpeech, data.relicCue,
+                               data.promotionCue);
     m_sim = data.state;
     for (usize i = 0; i < m_players.size(); ++i) {
         const auto& player = data.players[i];

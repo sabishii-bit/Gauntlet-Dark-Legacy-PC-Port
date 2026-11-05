@@ -198,31 +198,18 @@ void TowerCeremonies::advancePromotion(const Scene& scene, s32 ticks) {
     }
 }
 
-void TowerCeremonies::saveLocal(TowerPromotion::LocalSnapshot& promotion,
-                                TowerRelics::LocalSnapshot& relics, SpeechTiming& relicSpeech,
-                                SpeechTiming& promotionSpeech, SoundCueToken& relicCue,
-                                SoundCueToken& promotionCue) const {
-    m_promotion.saveLocal(promotion);
-    m_relics.saveLocal(relics);
+void TowerCeremonies::saveVoices(SpeechTiming& relicSpeech, SpeechTiming& promotionSpeech,
+                                 SoundCueToken& relicCue, SoundCueToken& promotionCue) const {
     relicSpeech = m_relicVoice.timing;
     promotionSpeech = m_promotionVoice.timing;
     relicCue = m_relicVoice.cue;
     promotionCue = m_promotionVoice.cue;
 }
 
-bool TowerCeremonies::canRestoreLocal(const TowerPromotion::LocalSnapshot& promotion,
-                                      const TowerRelics::LocalSnapshot& relics) const {
-    return m_promotion.canRestoreLocal(promotion) && m_relics.canRestoreLocal(relics);
-}
-
-void TowerCeremonies::restoreLocal(const TowerPromotion::LocalSnapshot& promotion,
-                                   const TowerRelics::LocalSnapshot& relics,
-                                   const SpeechTiming& relicSpeech,
-                                   const SpeechTiming& promotionSpeech,
-                                   const SoundCueToken& relicCue,
-                                   const SoundCueToken& promotionCue) {
-    m_promotion.restoreLocal(promotion);
-    m_relics.restoreLocal(relics);
+void TowerCeremonies::restoreVoices(const SpeechTiming& relicSpeech,
+                                    const SpeechTiming& promotionSpeech,
+                                    const SoundCueToken& relicCue,
+                                    const SoundCueToken& promotionCue) {
     m_relicVoice.timing = relicSpeech;
     m_promotionVoice.timing = promotionSpeech;
     m_relicVoice.cue = relicCue;

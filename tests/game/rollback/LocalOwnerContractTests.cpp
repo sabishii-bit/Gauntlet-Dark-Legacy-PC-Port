@@ -24,6 +24,7 @@
 #include "engine/audio/SoundPlayer.h"
 #include "engine/core/Types.h"
 #include "engine/io/File.h"
+#include "engine/io/LocalRoster.h"
 #include "engine/io/NativeStateDigest.h"
 #include "engine/math/Math.h"
 #include "engine/render/Image.h"
@@ -714,6 +715,20 @@ struct LevelWorldRow {
     }
 };
 
+// Every row's owner is one a roster can hold.
+static_assert(LocalOwner<WorldSceneRow::Owner>);
+static_assert(LocalOwner<WorldAnimatorRow::Owner>);
+static_assert(LocalOwner<WorldCollisionRow::Owner>);
+static_assert(LocalOwner<WorldDestructionRow::Owner>);
+static_assert(LocalOwner<RotatorsRow::Owner>);
+static_assert(LocalOwner<SkorneArenaRow::Owner>);
+static_assert(LocalOwner<FallingSceneryRow::Owner>);
+static_assert(LocalOwner<DestructibleWallsRow::Owner>);
+static_assert(LocalOwner<PlacedItemsRow::Owner>);
+static_assert(LocalOwner<LevelTriggersRow::Owner>);
+static_assert(LocalOwner<SpawnedObjectsRow::Owner>);
+static_assert(LocalOwner<LevelWorldRow::Owner>);
+
 TEST_CASE("the world's snapshot owners keep their admission rules", "[local-owner-contract]") {
     test::checkLocalOwner<WorldSceneRow>();
     test::checkLocalOwner<WorldAnimatorRow>();
@@ -1153,6 +1168,15 @@ struct LevelFixturesRow {
     }
 };
 
+static_assert(LocalOwner<LevelFixturesRow::Owner>);
+static_assert(LocalOwner<ChestsRow::Owner>);
+static_assert(LocalOwner<BreakablesRow::Owner>);
+static_assert(LocalOwner<LockedGatesRow::Owner>);
+static_assert(LocalOwner<TrapsRow::Owner>);
+static_assert(LocalOwner<StaticSceneryRow::Owner>);
+static_assert(LocalOwner<SafeRocksRow::Owner>);
+static_assert(LocalOwner<RubbleRow::Owner>);
+
 TEST_CASE("the fixtures' snapshot owners keep their admission rules", "[local-owner-contract]") {
     test::checkLocalOwner<LevelFixturesRow>();
     test::checkLocalOwner<ChestsRow>();
@@ -1434,6 +1458,12 @@ struct BossVictoryPresentationRow {
     }
     NativeStateDigest::Resources resources(const Owner& owner) { return stage.resources(owner); }
 };
+
+static_assert(LocalOwner<ExitPortalsRow::Owner>);
+static_assert(LocalOwner<LevelTransportersRow::Owner>);
+static_assert(LocalOwner<LevelArrivalPresentationRow::Owner>);
+static_assert(LocalOwner<PortalDepartureRow::Owner>);
+static_assert(LocalOwner<BossVictoryPresentationRow::Owner>);
 
 TEST_CASE("the travel snapshot owners keep their admission rules", "[local-owner-contract]") {
     test::checkLocalOwner<ExitPortalsRow>();
@@ -1869,6 +1899,14 @@ struct BossMetersRow {
     static NativeStateDigest::Resources resources(const Owner&) { return {}; }
 };
 
+static_assert(LocalOwner<ScrollBoxRow::Owner>);
+static_assert(LocalOwner<BurnDialogueScrollRow::Owner>);
+static_assert(LocalOwner<PartyHudRow::Owner>);
+static_assert(LocalOwner<LevelMessagesRow::Owner>);
+static_assert(LocalOwner<ChallengeHudRow::Owner>);
+static_assert(LocalOwner<BossMeterRow::Owner>);
+static_assert(LocalOwner<BossMetersRow::Owner>);
+
 TEST_CASE("the widgets' and HUD's snapshot owners keep their admission rules",
           "[local-owner-contract]") {
     test::checkLocalOwner<ScrollBoxRow>();
@@ -2221,6 +2259,13 @@ struct TowerRelicsRow {
     }
 };
 
+static_assert(LocalOwner<SumnerFigureRow::Owner>);
+static_assert(LocalOwner<SumnerHintsRow::Owner>);
+static_assert(LocalOwner<SumnerVisitRow::Owner>);
+static_assert(LocalOwner<HintMenuRow::Owner>);
+static_assert(LocalOwner<TowerPromotionRow::Owner>);
+static_assert(LocalOwner<TowerRelicsRow::Owner>);
+
 TEST_CASE("the tower's snapshot owners keep their admission rules", "[local-owner-contract]") {
     test::checkLocalOwner<SumnerFigureRow>();
     test::checkLocalOwner<SumnerHintsRow>();
@@ -2382,6 +2427,9 @@ struct BossSequenceRow {
         return registered(registry, owner);
     }
 };
+
+static_assert(LocalOwner<LegendPresentationRow::Owner>);
+static_assert(LocalOwner<BossSequenceRow::Owner>);
 
 TEST_CASE("the boss presentations' snapshot owners keep their admission rules",
           "[local-owner-contract]") {
@@ -2587,6 +2635,11 @@ struct MechanicsFacadeRow {
     }
     static NativeStateDigest::Resources resources(const Owner&) { return {}; }
 };
+
+static_assert(LocalOwner<VoiceQueueRow::Owner>);
+static_assert(LocalOwner<LevelSoundscapeRow::Owner>);
+static_assert(LocalOwner<EffectTreesRow::Owner>);
+static_assert(LocalOwner<MechanicsFacadeRow::Owner>);
 
 TEST_CASE("the audio, effects and mechanics snapshot owners keep their admission rules",
           "[local-owner-contract]") {
@@ -2937,6 +2990,14 @@ struct PowerupCompanionRow {
         return registered(registry, owner);
     }
 };
+
+static_assert(LocalOwner<MoveStrikesRow::Owner>);
+static_assert(LocalOwner<PlayerArsenalRow::Owner>);
+static_assert(LocalOwner<PlayerAttacksRow::Owner>);
+static_assert(LocalOwner<PlayerMissilesRow::Owner>);
+static_assert(LocalOwner<PlayerFamiliarRow::Owner>);
+static_assert(LocalOwner<PlayerFigureRow::Owner>);
+static_assert(LocalOwner<PowerupCompanionRow::Owner>);
 
 TEST_CASE("the party's snapshot owners keep their admission rules", "[local-owner-contract]") {
     test::checkLocalOwner<MoveStrikesRow>();
@@ -3634,6 +3695,17 @@ struct LevelOpponentsRow {
     }
 };
 
+static_assert(LocalOwner<PlacedEnemiesRow::Owner>);
+static_assert(LocalOwner<CritterStatuesRow::Owner>);
+static_assert(LocalOwner<EnemyMissilesRow::Owner>);
+static_assert(LocalOwner<CombatantProjectilesRow::Owner>);
+static_assert(LocalOwner<EnemiesRow::Owner>);
+static_assert(LocalOwner<GeneratorsRow::Owner>);
+static_assert(LocalOwner<CombatantRow::Owner>);
+static_assert(LocalOwner<CrittersRow::Owner>);
+static_assert(LocalOwner<BossesRow::Owner>);
+static_assert(LocalOwner<LevelOpponentsRow::Owner>);
+
 TEST_CASE("the opponents' snapshot owners keep their admission rules", "[local-owner-contract]") {
     test::checkLocalOwner<PlacedEnemiesRow>();
     test::checkLocalOwner<CritterStatuesRow>();
@@ -3895,6 +3967,13 @@ struct PlaySceneRow {
         return owner.nativeLocalDigest(saved);
     }
 };
+
+static_assert(LocalOwner<SwarmStockRow::Owner>);
+static_assert(LocalOwner<GolemStockRow::Owner>);
+static_assert(LocalOwner<BossStockRow::Owner>);
+// The scene holds the roster rather than standing in it: it hashes itself through its
+// agreement digest.
+static_assert(!LocalOwner<PlaySceneRow::Owner>);
 
 TEST_CASE("the snapshot owners of the game's own stock keep their admission rules",
           "[local-owner-contract][assets]") {

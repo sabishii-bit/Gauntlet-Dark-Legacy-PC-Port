@@ -226,6 +226,7 @@ add_executable(tests
     engine/io/ByteWriterTests.cpp
     engine/io/FileTests.cpp
     engine/io/AssetLocatorTests.cpp
+    engine/io/LocalRosterTests.cpp
     engine/platform/InputTests.cpp
     engine/platform/GamepadsTests.cpp
     engine/platform/GlfwWindowTests.cpp

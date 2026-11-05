@@ -703,6 +703,9 @@ private:
     bool registerNativeDigestResources();
     bool appendSceneDigest(NativeStateDigest& digest, const LocalSnapshot* saved,
                            NativeDigestProfile* profile = nullptr) const;
+    /** The scene's snapshot owners in digest order, each under its profile name with its reach
+     * and its slot in the snapshot: saved, admitted, restored and hashed alike. */
+    static const auto& sceneOwners();
     NativeStateResources m_nativeDigestResources; ///< immutable bindings, outside local history
     /** The bodies' shadows, after all of the level's floors (some of which are translucent). */
     PartyFigures::Scene figureScene(f32 frameBlend = 1.0f);

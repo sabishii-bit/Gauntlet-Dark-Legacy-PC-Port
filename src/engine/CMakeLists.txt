@@ -41,6 +41,7 @@ add_library(engine STATIC
     io/ByteWriter.h
     io/File.h
     io/AssetLocator.h
+    io/LocalRoster.h
     platform/Window.h
     platform/DisplayTiming.h
     platform/DisplayTiming.cpp
