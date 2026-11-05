@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <filesystem>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -9,11 +10,13 @@
 #include <catch2/generators/catch_generators.hpp>
 
 #include "FakeRenderDevice.h"
+#include "NativeStateSupport.h"
 #include "TestSupport.h"
 #include "game/bosses/BossDefinition.h"
 #include "game/critters/Combatant.h"
 #include "game/critters/General.h"
 #include "game/critters/Golem.h"
+#include "game/critters/HeadedBodyFixture.h"
 #include "game/level/CombatantObstacle.h"
 #include "game/level/NativeStateResources.h"
 
@@ -35,14 +38,19 @@ struct Encounter {
     NativeStateResources resources;
     std::string resourceKey;
 
+    /** The fighter `name` of the installed game data, in the costume of realm G. */
     explicit Encounter(std::string_view name)
+        : Encounter(name, test::assetOrSkip("CRITTER/GOLEM.WAD").parent_path().parent_path(), 'G') {
+    }
+
+    /** The fighter `name` loaded from `root`, in the costume of `realm`. */
+    Encounter(std::string_view name, const std::filesystem::path& root, char realm)
         : resourceKey("combatant-digest/" + std::string(name)) {
-        const auto root = test::assetOrSkip("CRITTER/GOLEM.WAD").parent_path().parent_path();
         const auto family = name == "GENERAL" ? General::definition()
                             : name == "GOLEM" ? Golem::definition()
                                               : bossDefinition(name);
-        REQUIRE(stock.load(device, root, family, 'G'));
-        REQUIRE(actor.spawn(stock, 40, {}, 0, nullptr, {}, 'G'));
+        REQUIRE(stock.load(device, root, family, realm));
+        REQUIRE(actor.spawn(stock, 40, {}, 0, nullptr, {}, realm));
         REQUIRE(resources.registerCombatantAssets(stock, resourceKey));
         device.recordDraws = false;
     }
@@ -353,6 +361,26 @@ TEST_CASE("combatant native digest bytes stay pinned for an inactive configured 
     constexpr std::string_view kDigest =
         "7e3b1d4985508f79dd843d5eac8e6c45ac3bc937fcf6462e2489111102884a51";
     CHECK(test::hexBytes(checked(digest)) == kDigest);
+}
+
+TEST_CASE("combatant native digest bytes stay pinned after the encounter script on a headed body",
+          "[native-state-digest][combatant-native-digest][digest-golden]") {
+    auto encounter = std::make_unique<Encounter>("CHIMERA", test::headedBodyAssets(), 'A');
+    REQUIRE(encounter->actor.childCount() == 2);
+    for (s32 frame = 0; frame < 12; ++frame) {
+        encounter->step(frame);
+    }
+    Combatant::LocalSnapshot saved;
+    REQUIRE(encounter->actor.saveLocal(saved));
+    for (s32 frame = 12; frame < 30; ++frame) {
+        encounter->step(frame);
+    }
+    // SHA-256 of the fighter's native digest thirty frames in, its two heads with it, and of what
+    // it saved twelve frames in, which netplay peers must hash alike: a literal moves only when
+    // what is visited changes on purpose.
+    test::checkPinnedDigests("Combatant", encounter->digest(), encounter->digest(saved),
+                             "2362ff0ec9ecea9f9b55cd76ccfc176a5300981686f6caec2e93e73714ec488a",
+                             "6aa77d11fa2f11d4852f3fffb61bb782622c7c92ebfedbaac293a15126c4e780");
 }
 
 } // namespace

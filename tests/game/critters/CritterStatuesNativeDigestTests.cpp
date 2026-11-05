@@ -9,6 +9,7 @@
 #include "engine/io/NativeStateDigest.h"
 
 #include "FakeRenderDevice.h"
+#include "NativeStateSupport.h"
 #include "TestSupport.h"
 #include "fixtures/NativeModelFixture.h"
 #include "game/critters/CritterStatues.h"
@@ -395,5 +396,25 @@ TEST_CASE("statue native digest bytes stay pinned for a woken roster",
     constexpr std::string_view kDigest =
         "9ba2bd4d3cd3c264ed9d76b3ea4986e5af6c9352e27cf0e963183a591da4f84b";
     CHECK(test::hexBytes(pool.digest()) == kDigest);
+}
+
+TEST_CASE("statue native digest bytes stay pinned after the waking script and what it saved",
+          "[native-state-digest][critter-statues-native-digest][digest-golden]") {
+    Pool pool(statueDigestFixture());
+    for (s32 tick = 0; tick < 3; ++tick) {
+        pool.step(tick);
+    }
+    CritterStatues::LocalSnapshot saved;
+    pool.statues.saveLocal(saved);
+    for (s32 tick = 3; tick < 11; ++tick) {
+        pool.step(tick);
+    }
+    REQUIRE(pool.statues.count() == 2);
+    // SHA-256 of the statues' native digest eleven ticks in, one of the three gone from the
+    // roster, and of what they saved three ticks in, which netplay peers must hash alike: a
+    // literal moves only when what is visited changes on purpose.
+    test::checkPinnedDigests("CritterStatues", pool.digest(), pool.digest(saved),
+                             "9f76a8b31f38e39ce478df46f40aca40f03cc2fbe4f031f4937864667f87e42e",
+                             "0db3bbf87fa73892d9d4cac0e410810707722e6651621b39615595905cca43e6");
 }
 } // namespace

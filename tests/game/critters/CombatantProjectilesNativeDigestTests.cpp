@@ -10,6 +10,7 @@
 #include "engine/io/NativeStateDigest.h"
 
 #include "FakeRenderDevice.h"
+#include "NativeStateSupport.h"
 #include "TestSupport.h"
 #include "fixtures/NativeModelFixture.h"
 #include "game/critters/CombatantProjectiles.h"
@@ -262,5 +263,35 @@ TEST_CASE("combatant native digest bytes stay pinned for a launched flight",
     constexpr std::string_view kDigest =
         "045347dfd3ff2be7a691cd0ce1cfba342936f29bf5bf6717b19f2bf940ff75e1";
     CHECK(test::hexBytes(f.hash()) == kDigest);
+}
+
+TEST_CASE("combatant native digest bytes stay pinned after the volley script and what it saved",
+          "[native-digest][combatant-projectiles-native-digest][digest-golden]") {
+    Fixture f("combatant-projectile-native-golden");
+    const std::array players{EnemyView{0, {0, 0, 3}, 1, 6}};
+    f.launch();
+    f.step(0.06f, players);
+    // Another shot every third tick, a player standing in their path.
+    const auto advance = [&](s32 tick) {
+        if (tick % 3 == 0) {
+            f.launch();
+        }
+        f.step(1.0f / 60, players);
+    };
+    for (s32 tick = 0; tick < 4; ++tick) {
+        advance(tick);
+    }
+    CombatantProjectiles::LocalSnapshot saved;
+    f.pool.saveLocal(saved);
+    for (s32 tick = 4; tick < 12; ++tick) {
+        advance(tick);
+    }
+    // SHA-256 of the pool's native digest twelve ticks after its first step and of what it saved
+    // four ticks after it, which netplay peers must hash alike: a literal moves only when what is
+    // visited changes on purpose.
+    test::checkPinnedDigests("CombatantProjectiles", test::liveDigest(f.pool, f.resources()),
+                             test::savedDigest(f.pool, saved, f.resources()),
+                             "751a980e2862374836acb449ff91a9d8d2219613aec5c44a9964f633e5a2412b",
+                             "407f79e541e67db8e034ced7b54dfb2b424a3f95ac38620bd6dc1cf4e6a14631");
 }
 } // namespace

@@ -9,6 +9,7 @@
 #include "engine/io/NativeStateDigest.h"
 
 #include "FakeRenderDevice.h"
+#include "NativeStateSupport.h"
 #include "TestSupport.h"
 #include "fixtures/NativeModelFixture.h"
 #include "game/enemies/Generators.h"
@@ -428,5 +429,25 @@ TEST_CASE("generator native digest bytes stay pinned for a bound field and a bos
     constexpr std::string_view kDigest =
         "547218d5649920f32598dfda1f17a97c9046fda8559a6d6df374924ffa8ed82e";
     CHECK(test::hexBytes(pool.digest()) == kDigest);
+}
+
+TEST_CASE("generator native digest bytes stay pinned after the breeding script and what it saved",
+          "[native-state-digest][generator-native-digest][digest-golden]") {
+    Pool pool(generatorDigestFixture());
+    pool.boss();
+    for (s32 tick = 3; tick < 7; ++tick) {
+        pool.step(tick);
+    }
+    Generators::LocalSnapshot saved;
+    pool.generators.saveLocal(saved);
+    for (s32 tick = 7; tick < 15; ++tick) {
+        pool.step(tick);
+    }
+    // SHA-256 of the generators' native digest twelve steps in, the boss's among them, and of
+    // what they saved four steps in, which netplay peers must hash alike: a literal moves only
+    // when what is visited changes on purpose.
+    test::checkPinnedDigests("Generators", pool.digest(), pool.digest(saved),
+                             "f8b481b090e35c1dcaa5726ee2cb435aa50493b6e8d3b7de721336d802c8797b",
+                             "28953ba7b082845ea4478ba7d83a7087afd3fbef94d55f398f52203034e4c463");
 }
 } // namespace

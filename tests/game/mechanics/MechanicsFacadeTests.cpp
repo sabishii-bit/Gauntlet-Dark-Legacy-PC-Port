@@ -9,6 +9,7 @@
 #include "engine/math/Mt19937.h"
 
 #include "FakeMechanic.h"
+#include "NativeStateSupport.h"
 #include "game/config/GameConfig.h"
 #include "game/mechanics/MechanicCatalog.h"
 #include "game/mechanics/MechanicsFacade.h"
@@ -265,6 +266,31 @@ TEST_CASE("the mechanics' state rewinds and is agreed with the rest of the level
     const MechanicCatalog none;
     bare.open(&none, {});
     CHECK(digestOf(bare) != digestOf(facade));
+}
+
+TEST_CASE("the mechanics' digest bytes stay pinned after their steps and what they saved",
+          "[game][mechanics][rollback][digest-golden]") {
+    MechanicCatalog catalog;
+    REQUIRE(catalog.add(FakeMechanic::descriptor("alpha")));
+    REQUIRE(catalog.add(FakeMechanic::descriptor("beta", true, 3)));
+    MechanicsFacade facade;
+    facade.open(&catalog, {});
+    GameOptionsConfig options;
+    options.mechanics["alpha"] = true;
+    facade.configure(options);
+    facade.step({.seconds = 0.25f, .runs = {}});
+    facade.step({.seconds = 0.5f, .runs = {}});
+    MechanicsFacade::LocalSnapshot saved;
+    facade.saveLocal(saved);
+    options.mechanics["beta"] = true;
+    facade.configure(options);
+    facade.step({.seconds = 0.125f, .runs = {}});
+    // SHA-256 of the mechanics' native digest after three steps, both switched on, and of what
+    // they saved after two, the first alone on, which netplay peers must hash alike: a literal
+    // moves only when what is visited changes on purpose.
+    test::checkPinnedDigests("MechanicsFacade", digestOf(facade), digestOf(facade, &saved),
+                             "0727899895e350b40c37f5b7136574022eac4834bf7da320c20b96a413c9185f",
+                             "79408224be29049313c558602e0332fe774b5065ecc23c66f60d1cfa2f2296f8");
 }
 
 } // namespace

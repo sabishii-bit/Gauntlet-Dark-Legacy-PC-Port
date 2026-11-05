@@ -7,6 +7,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
+#include "NativeStateSupport.h"
 #include "TestSupport.h"
 #include "game/enemies/PlacedEnemies.h"
 
@@ -228,5 +229,40 @@ TEST_CASE("native placement digest bytes stay pinned for an observed roster",
     constexpr std::string_view kDigest =
         "7adf206e3cb7229555b3de627911065b8d66fcf0a2db03b8fd452406e0016442";
     CHECK(test::hexBytes(digestOf(owner)) == kDigest);
+}
+
+TEST_CASE("native placement digest bytes stay pinned after the watch script and what it saved",
+          "[placed-enemies-native-digest][digest-golden]") {
+    std::vector<PlacedEnemies::Placement> roster;
+    for (s32 index = 0; index < 10; ++index) {
+        auto placement = record();
+        placement.spawn.position = {static_cast<f32>(index) * 100, 0, 10};
+        roster.push_back(placement);
+    }
+    PlacedEnemies owner;
+    owner.bind(roster);
+    // Each tick the camera faces the next placement from ten short of it, and that one stands.
+    const auto tick = [&owner](s32 index) {
+        ViewVolume view;
+        view.position.x = static_cast<f32>(index) * 100;
+        owner.observe(view, view.position);
+        owner.activate([](const auto&) {});
+    };
+    for (s32 index = 0; index < 3; ++index) {
+        tick(index);
+    }
+    REQUIRE(owner.count() == 7);
+    PlacedEnemies::LocalSnapshot saved;
+    owner.saveLocal(saved);
+    for (s32 index = 3; index < 6; ++index) {
+        tick(index);
+    }
+    REQUIRE(owner.count() == 4);
+    // SHA-256 of the placements' native digest six ticks in and of what they saved three ticks
+    // in, which netplay peers must hash alike: a literal moves only when what is visited changes
+    // on purpose.
+    test::checkPinnedDigests("PlacedEnemies", digestOf(owner), digestOf(owner, saved),
+                             "5f3450dfbe52a60cdd5b9ee777a659df6f874b4c56737ccbf3b2953af606da1c",
+                             "799bb3600d03ed350ce05f9f5973d0a4d045aced9e70b9cbb6a79fb57ff0cf84");
 }
 } // namespace

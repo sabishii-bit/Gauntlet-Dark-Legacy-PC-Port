@@ -10,6 +10,7 @@
 #include "engine/io/NativeStateDigest.h"
 
 #include "FakeRenderDevice.h"
+#include "NativeStateSupport.h"
 #include "TestSupport.h"
 #include "fixtures/NativeModelFixture.h"
 #include "game/enemies/Enemies.h"
@@ -346,5 +347,24 @@ TEST_CASE("enemy native digest bytes stay pinned for a seeded placed roster",
     constexpr std::string_view kDigest =
         "87ecd5277c25aa14ad099d11be49e144b576a3a07c1ad7cd91a8c462d82c94fa";
     CHECK(test::hexBytes(pool.digest()) == kDigest);
+}
+
+TEST_CASE("enemy native digest bytes stay pinned after the chase script and what it saved",
+          "[native-state-digest][enemies-native-digest][digest-golden]") {
+    Pool pool(enemyDigestFixture());
+    for (s32 tick = 0; tick < 12; ++tick) {
+        pool.step(tick);
+    }
+    Enemies::LocalSnapshot saved;
+    REQUIRE(pool.enemies.saveLocal(saved));
+    for (s32 tick = 12; tick < 20; ++tick) {
+        pool.step(tick);
+    }
+    // SHA-256 of the swarm's native digest twenty ticks in and of what it saved twelve ticks in,
+    // which netplay peers must hash alike: a literal moves only when what is visited changes on
+    // purpose.
+    test::checkPinnedDigests("Enemies", pool.digest(), pool.digest(saved),
+                             "85f487e81fb92c246117fceb826b572155a4488a3b642aedf6f5198da7ca6dfc",
+                             "3fd78c74d1f37fd7be07c17a191de9bdc63bedca1ad924156987564f580f8fb9");
 }
 } // namespace

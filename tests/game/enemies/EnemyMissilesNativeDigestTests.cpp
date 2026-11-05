@@ -4,12 +4,14 @@
 #include <limits>
 #include <string_view>
 #include <typeindex>
+#include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
 #include "engine/io/NativeStateDigest.h"
 
+#include "NativeStateSupport.h"
 #include "TestSupport.h"
 #include "game/enemies/EnemyMissiles.h"
 #include "game/level/MissileStop.h"
@@ -236,5 +238,42 @@ TEST_CASE("enemy native digest bytes stay pinned for a flight and a lingering bl
     constexpr std::string_view kDigest =
         "fadb2332b74610f4904ff5759ac648e440735696e5c2ec259df2cf8d3d381e26";
     CHECK(test::hexBytes(nativeHash(pool, binding.resources())) == kDigest);
+}
+
+TEST_CASE("enemy native digest bytes stay pinned after a held shot and a gas blast and their save",
+          "[native-digest][enemy-missiles-native-digest][digest-golden]") {
+    EnemyMissiles pool{125};
+    auto held = EnemyMissileKind::deathShot();
+    held.held = 0.437f;
+    pool.launch(held, {0, 3, 0}, {0, 3, 60}, 1, nullptr, 5);
+    pool.blast({{12, 3, 0}, 7.5f, 10, EnemyBlast::kGas, {0.27f, 0.43f, 0.33f}, 2, true});
+    const std::array players{EnemyView{0, {0, 0, 0.5f}, 1, 6}, EnemyView{2, {12, 0, 0}, 1, 6},
+                             EnemyView{3, {13, 0, 0}, 1, 6}};
+    const std::array swarm{MissileTarget{9, {12, 0, 1}, 1, 6}};
+    constexpr s32 kScenery = 42;
+    const auto step = [&](f32 seconds) {
+        pool.update(seconds, nullptr, players, swarm, {},
+                    [kScenery](const PickupBlastReach&, std::vector<s32>& touched) {
+                        if (std::ranges::find(touched, kScenery) == touched.end()) {
+                            touched.push_back(kScenery);
+                        }
+                    });
+    };
+    step(0.173f);
+    for (s32 tick = 1; tick <= 4; ++tick) {
+        step(1.0f / 60);
+    }
+    EnemyMissiles::LocalSnapshot saved;
+    pool.saveLocal(saved);
+    for (s32 tick = 5; tick <= 12; ++tick) {
+        step(1.0f / 60);
+    }
+    // SHA-256 of the pool's native digest twelve ticks after its first step and of what it saved
+    // four ticks after it, nothing it reports ever taken, which netplay peers must hash alike: a
+    // literal moves only when what is visited changes on purpose.
+    test::checkPinnedDigests("EnemyMissiles", test::liveDigest(pool),
+                             test::savedDigest(pool, saved),
+                             "fb754d24c79746748daee68c82656dad73fa3798ad1669cc326c0d1845448f7e",
+                             "9baa6f24abba5fc0ff05a5aecbd72ee3a51726f34c5e71625bcd459a38eea35f");
 }
 } // namespace

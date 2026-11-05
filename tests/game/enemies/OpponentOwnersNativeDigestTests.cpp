@@ -1,14 +1,25 @@
 #include <array>
+#include <filesystem>
 #include <memory>
+#include <string>
 #include <string_view>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
+#include "engine/io/File.h"
+
 #include "FakeRenderDevice.h"
+#include "NativeStateSupport.h"
 #include "TestSupport.h"
+#include "fixtures/NativeModelFixture.h"
 #include "game/bosses/Bosses.h"
 #include "game/critters/Critters.h"
+#include "game/critters/Gargoyle.h"
+#include "game/critters/General.h"
+#include "game/critters/Golem.h"
+#include "game/critters/HeadedBodyFixture.h"
+#include "game/level/BossKinds.h"
 #include "game/level/HazardSurfaces.h"
 #include "game/level/NativeStateResources.h"
 
@@ -40,6 +51,45 @@ template <class Owner> struct NativeOwner {
         return *value.checkedFinish();
     }
 };
+
+/** A golem's, a general's and an eagle gargoyle's data and artwork of their own: each body
+ * stands, walks, strikes within five, is knocked down and dies. */
+std::filesystem::path familyStock() {
+    const auto root = test::scratchDirectory("opponent-owners-families");
+    std::filesystem::create_directories(root / "critter");
+    for (const auto& definition :
+         {Golem::definition(), General::definition(), Gargoyle::definition()}) {
+        auto archive = root / "MONSTERS" / definition.name;
+        if (definition.realmCostume) {
+            archive /= "LEVELG";
+        }
+        std::filesystem::create_directories(archive / "models");
+        std::filesystem::create_directories(archive / "textures");
+        writeTextFile(archive / "models/body.obj",
+                      "v 0 0 0\nv 1 0 0\nv 0 1 0\nvn 0 0 1\nusemtl tex0\nf 1//1 2//1 3//1\n");
+        writeTextFile(archive / "objects.json", R"({"objects":[
+          {"index":0,"name":"BODY","file":"models/body.obj","meshTriangles":1}]})");
+        writeFile(archive / "textures/skin.png", test::kTinyPng);
+        writeTextFile(archive / "textures.json", R"({"bitmaps":[
+          {"index":0,"name":"SKIN","file":"textures/skin.png","width":2,"height":2,"flags":0}]})");
+        test::convertModelFixture(archive);
+        writeTextFile(archive / "animations.json", R"({"trees":[{"name":"BODY",
+          "nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
+          "sequences":[{"name":"STEP","frames":3}]}]})");
+        writeTextFile(root / "critter" / (definition.name + ".json"),
+                      R"({"descriptors":[{"prefix":"BODY","name":")" + definition.name +
+                          R"(","type":)" + std::to_string(static_cast<s32>(definition.kind)) +
+                          R"(}],
+          "types":[{"moveCount":5,"maxHealth":100,"radius":1,"expValue":50}],
+          "moves":[{"name":"READY","anim":"STEP","type":32,"interrupt":60},
+                   {"name":"WALK","anim":"STEP","type":52,"priority":10,"speed":3},
+                   {"name":"ATTACK","anim":"STEP","type":128,"priority":20,
+                    "target":{"maxDistance":5}},
+                   {"name":"KD","anim":"STEP","type":66,"priority":100},
+                   {"name":"DEATH","anim":"STEP","type":17,"priority":999}]})");
+    }
+    return root;
+}
 
 TEST_CASE("native boss digest observes hidden waking and legend clocks",
           "[native-digest][opponent-owners-native-digest]") {
@@ -274,5 +324,83 @@ TEST_CASE("empty native opponent owner digest bytes stay pinned for distinct con
         "bdad86f77f05233df43526fb5faced0b8b471c858947c7e5f8c2b9cfa3f94f61";
     CHECK(test::hexBytes(*bossDigest.checkedFinish()) == kBoss);
     CHECK(test::hexBytes(*critterDigest.checkedFinish()) == kCritters);
+}
+
+TEST_CASE("native critter owner digest bytes stay pinned after three families' script and its save",
+          "[native-digest][opponent-owners-native-digest][digest-golden]") {
+    test::FakeRenderDevice device;
+    Critters critters;
+    critters.open(device, familyStock(), nullptr, {}, 'G');
+    critters.setLookouts({{{-20, 0, 0}, {-20, 0, 20}}, {1, 65535}});
+    REQUIRE(critters.spawnGeneral({-20, 0, 0}, 0, 20) == 0);
+    REQUIRE(critters.spawnGolem({0, 0, 0}, 0) == 1);
+    REQUIRE(critters.spawnGargoyle({20, 0, 0}, 0) == 2);
+    std::array<EnemyView, 2> party;
+    party[0].player = 3;
+    party[0].position = {0, 0, 4};
+    party[1].player = 1;
+    party[1].position = {20, 0, 6};
+    for (EnemyView& player : party) {
+        player.radius = 1;
+        player.height = 6;
+    }
+    constexpr f32 kStep = 1.0f / 60;
+    for (s32 frame = 0; frame < 10; ++frame) {
+        critters.update(1, kStep, party);
+    }
+    EnemyHit hit;
+    hit.player = 3;
+    hit.damage = 11;
+    hit.close = true;
+    critters.hurt(1, hit);
+    Critters::LocalSnapshot saved;
+    REQUIRE(critters.saveLocal(saved));
+    critters.freeze(0, 5);
+    critters.blind(2, 7);
+    for (s32 frame = 10; frame < 22; ++frame) {
+        critters.update(1, kStep, party);
+    }
+    NativeStateResources resources;
+    REQUIRE(critters.registerNativeResources(resources, "stage/opponent-owners/critters"));
+    // SHA-256 of the population's native digest 22 frames in and of what it saved ten frames in,
+    // after a blow on the golem and before the general was frozen and the gargoyle blinded, which
+    // netplay peers must hash alike: a literal moves only when what is visited changes on purpose.
+    test::checkPinnedDigests("Critters", test::liveDigest(critters, resources.resources()),
+                             test::savedDigest(critters, saved, resources.resources()),
+                             "893b93a932ba22fc8322145390954cae988e1d0a6c12472c4c6d922a932ba40f",
+                             "40b36c3d9f665855dc30b4db5cd08fad41534accf930c233d5458cc9a3b0f89d");
+}
+
+TEST_CASE("native boss owner digest bytes stay pinned after a headed boss wakes and its save",
+          "[native-digest][opponent-owners-native-digest][digest-golden]") {
+    test::FakeRenderDevice device;
+    Bosses boss;
+    boss.open(device, test::headedBodyAssets(), nullptr, {}, 'A');
+    REQUIRE(boss.spawn(boss_type::kChimera, {}, 0, 30));
+    std::array<EnemyView, 1> party;
+    party[0].player = 0;
+    party[0].position = {0, 0, 12};
+    party[0].height = 6;
+    party[0].radius = 1;
+    constexpr f32 kStep = 1.0f / 60;
+    for (s32 tick = 0; tick < 60; ++tick) {
+        boss.update(1, kStep, party);
+    }
+    REQUIRE_FALSE(boss.view().awake);
+    Bosses::LocalSnapshot saved;
+    REQUIRE(boss.saveLocal(saved));
+    for (s32 tick = 60; tick < 180; ++tick) {
+        boss.update(1, kStep, party);
+    }
+    REQUIRE(boss.view().awake);
+    NativeStateResources resources;
+    REQUIRE(boss.registerNativeResources(resources, "stage/opponent-owners/bosses"));
+    // SHA-256 of the boss owner's native digest three seconds in, awake, and of what it saved a
+    // second in, still waiting, which netplay peers must hash alike: a literal moves only when
+    // what is visited changes on purpose.
+    test::checkPinnedDigests("Bosses", test::liveDigest(boss, resources.resources()),
+                             test::savedDigest(boss, saved, resources.resources()),
+                             "896d737d7286f8c1b9a0e70f969043f066f7389eb49e9eb67f9a7bfe34fc3bba",
+                             "aaedc20e8986a28eb27f985acf4cb9a7a47c616d93467dfc23717cff07a2f01e");
 }
 } // namespace

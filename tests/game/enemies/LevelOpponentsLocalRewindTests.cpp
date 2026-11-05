@@ -14,16 +14,22 @@
 #include "engine/core/Types.h"
 #include "engine/io/File.h"
 #include "engine/io/NativeStateDigest.h"
+#include "engine/world/WorldCamera.h"
 
 #include "FakeRenderDevice.h"
 #include "NativeStateSupport.h"
 #include "TestSupport.h"
+#include "game/bosses/Bosses.h"
 #include "game/critters/CritterStatues.h"
 #include "game/critters/Critters.h"
+#include "game/critters/HeadedBodyFixture.h"
 #include "game/enemies/LevelOpponents.h"
+#include "game/enemies/PlacedEnemies.h"
 #include "game/enemies/ScriptedOpponents.h"
 #include "game/hud/HelpMessages.h"
+#include "game/level/BossKinds.h"
 #include "game/level/NativeStateResources.h"
+#include "game/level/StageRegistry.h"
 #include "game/party/AttackSceneFixture.h"
 
 namespace {
@@ -66,6 +72,16 @@ struct OpponentsFixture {
 NativeStateDigest::Digest followupDigest(const LevelOpponents& opponents) {
     NativeStateDigest digest;
     REQUIRE(opponents.appendNativeFollowupDigest(digest));
+    const auto result = digest.checkedFinish();
+    REQUIRE(result);
+    return *result;
+}
+
+/** The same values as `saved` holds them. */
+NativeStateDigest::Digest followupDigest(const LevelOpponents& opponents,
+                                         const LevelOpponents::LocalSnapshot& saved) {
+    NativeStateDigest digest;
+    REQUIRE(opponents.appendLocalFollowupDigest(digest, saved));
     const auto result = digest.checkedFinish();
     REQUIRE(result);
     return *result;
@@ -403,6 +419,114 @@ TEST_CASE("native opponent equality includes undispatched coordinator rewards",
     REQUIRE(fixture->opponents.saveLocal(*after));
     CHECK(fixture->opponents.equalLocal(*before, *after));
     CHECK(awards == dispatched); // value comparison and restore cannot dispatch rewards
+}
+
+/** What the fixture's opponents borrow, under the keys every load of them shares: what its level
+ * world lends, and the artwork of the swarm, its generators, the statues, the great ones and the
+ * bosses. */
+void registerOpponents(NativeStateResources& resources, OpponentsFixture& fixture) {
+    test::registerStage(resources, fixture.world, fixture.device);
+    const LevelOpponents& opponents = fixture.opponents;
+    REQUIRE(opponents.enemies().registerNativeResources(resources, kSwarmPrefix));
+    REQUIRE(opponents.generators().registerNativeResources(resources));
+    REQUIRE(opponents.statues().registerNativeResources(resources));
+    REQUIRE(opponents.critters().registerNativeResources(resources,
+                                                         "stage/opponents-local-rewind/critters"));
+    REQUIRE(opponents.bosses().registerNativeResources(resources,
+                                                       "stage/opponents-local-rewind/bosses"));
+}
+
+TEST_CASE("native opponent digest bytes stay pinned after the replay script and a woken boss",
+          "[level-opponents-local-rewind][digest-golden]") {
+    auto fixture = std::make_unique<OpponentsFixture>();
+    LevelOpponents& opponents = fixture->opponents;
+    // A boss of two heads on a body of its own, woken, beside the swarm and its generator.
+    Bosses& boss = opponents.bosses();
+    boss.open(fixture->device, test::headedBodyAssets(), nullptr, {}, 'A');
+    REQUIRE(boss.spawn(boss_type::kChimera, {0, 0, -30}, 0));
+    boss.wake();
+    // A grunt set where asked, as a placement is.
+    const auto grunt = [](const Vec3& position) {
+        EnemySpawn spawn;
+        spawn.kind = kGruntKind;
+        spawn.tier = 1;
+        spawn.position = position;
+        spawn.placed = true;
+        return spawn;
+    };
+    // The generator's grunt struck ten times and the generator once, as the replay script opens.
+    auto bred = grunt(Vec3{0});
+    bred.generator = 0;
+    const auto enemy = opponents.enemies().spawn(bred, {});
+    REQUIRE(enemy);
+    for (s32 hit = 0; hit < 10; ++hit) {
+        opponents.strikeEnemy(*enemy, 1, 0, {0, 0, 1}, 2, fixture->players);
+    }
+    opponents.strikeGenerator(0, 1, 2, fixture->players);
+    test::ScriptedOpponents host;
+    // Each tick the camera moves a unit across, twenty short of the generator and facing its way;
+    // a grunt is set down every eleventh tick, and the first grunt and the generator are struck
+    // every seventh.
+    const auto advance = [&](s32 tick) {
+        ViewVolume view;
+        view.position = {static_cast<f32>(tick), 0, -20};
+        opponents.watch(view, view.position);
+        if (tick % 11 == 0) {
+            (void)opponents.enemies().spawn(grunt({static_cast<f32>(tick), 0, 10}), {});
+        }
+        opponents.update(1, 1.0f / 60, {}, {}, host, host, host);
+        if (tick % 7 == 0) {
+            opponents.strikeGenerator(0, 1, 2, fixture->players);
+            opponents.strikeEnemy(0, 1, 0, {0, 0, 1}, 2, fixture->players);
+        }
+    };
+    for (s32 tick = 0; tick < 6; ++tick) {
+        advance(tick);
+    }
+    auto saved = std::make_unique<LevelOpponents::LocalSnapshot>();
+    auto enemies = std::make_unique<Enemies::LocalSnapshot>();
+    auto bosses = std::make_unique<Bosses::LocalSnapshot>();
+    Generators::LocalSnapshot generators;
+    PlacedEnemies::LocalSnapshot placements;
+    REQUIRE(opponents.saveLocal(*saved));
+    REQUIRE(opponents.enemies().saveLocal(*enemies));
+    REQUIRE(boss.saveLocal(*bosses));
+    opponents.generators().saveLocal(generators);
+    opponents.placements().saveLocal(placements);
+    for (s32 tick = 6; tick < 18; ++tick) {
+        advance(tick);
+    }
+    NativeStateResources registry;
+    registerOpponents(registry, *fixture);
+    const auto resources = registry.resources();
+    // SHA-256 of the opponents' native digest eighteen ticks in and of what they saved six ticks
+    // in, and likewise of their own values alone, which netplay peers must hash alike: a literal
+    // moves only when what is visited changes on purpose. The children the script moves follow
+    // them, so that a moved digest names the child that moved it.
+    test::checkPinnedDigests("LevelOpponents", test::liveDigest(opponents, resources),
+                             test::savedDigest(opponents, *saved, resources),
+                             "55dadf06a1bf300b2603e8d2aa4166018c92d05862998414cd0129434264512a",
+                             "b360c475069c3824747c4d8d99ff6b8a73717abc64da841b7f4f0e217d495adb");
+    test::checkPinnedDigests("LevelOpponents' follow-up", followupDigest(opponents),
+                             followupDigest(opponents, *saved),
+                             "e55575677166e6a689f04bbea949b80e7d04cb4f984721785eb2014449057fd5",
+                             "7644bf15fdabd846f2e36044f889ddeda89d5b8cec37e4a594f860893a591bba");
+    test::checkPinnedDigests("Generators", test::liveDigest(opponents.generators(), resources),
+                             test::savedDigest(opponents.generators(), generators, resources),
+                             "3c3a29b5be03119b2c02b2fdcc7dfc2b55e775299b150e3ed47958e87d7b9177",
+                             "7a4d103ae4a34a8b4b912050b9728b0d39aa0ec71614be24c277729f103333a6");
+    test::checkPinnedDigests("Enemies", test::liveDigest(opponents.enemies(), resources),
+                             test::savedDigest(opponents.enemies(), *enemies, resources),
+                             "116af08724c24114d046da49136ce486dd5af409a921d8121f4de6480ccbed4c",
+                             "01ab1d8cf4029499cda73239813ed2cfdbba9ba45258f5dbf677ba12b2977297");
+    test::checkPinnedDigests("PlacedEnemies", test::liveDigest(opponents.placements(), resources),
+                             test::savedDigest(opponents.placements(), placements, resources),
+                             "8056e05755aa6a463453a173150cc2ae7e2d855d0ee262daf0e7f541487b3f98",
+                             "4ee0c032b27473f68c2844240fa00bb5ba528619daf6c09e9ba4d37f2f16f685");
+    test::checkPinnedDigests("Bosses", test::liveDigest(boss, resources),
+                             test::savedDigest(boss, *bosses, resources),
+                             "fbd685ec20fee80c57c8fa7abcf55ffd7546f94b7eb8727eb224dc938cf8e849",
+                             "2804bd6e133e6c2e91ebd9b1288144a09d3fd1c86c6903571d050ba8ab21749c");
 }
 
 } // namespace
