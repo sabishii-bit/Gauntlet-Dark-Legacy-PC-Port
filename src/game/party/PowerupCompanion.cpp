@@ -342,7 +342,7 @@ void PowerupCompanion::draw(RenderDevice& device, const Mat4& clip, const Mat4& 
                         ? portable::lerp(m_state.previousFrame, player.presentationFrame(),
                                          std::clamp(blend, 0.0f, 1.0f))
                         : player.presentationFrame();
-            visualPose.evaluate(*currentTree, player.sequence(), frame, false, true);
+            visualPose.evaluate(*currentTree, player.sequence(), frame, TreePose::Sampling::Smooth);
             pose = &visualPose;
         }
         resource.model.setPresentationFrame(player.sequence(), frame);

@@ -176,7 +176,7 @@ void TowerPromotion::bind(RenderDevice& device, ItemArchive& items, const WorldL
         return;
     }
     m_sim.tree = &tree;
-    m_model.setAppearance(true, Color::white(), false, true);
+    m_model.setAppearance({.unlit = true, .depthWrite = false, .additive = true});
     m_textures.bind(items.trees.textureAnimations(), items.textures, device);
     m_sim.player.start(tree.sequences[0], 0);
     animate(0);
@@ -234,7 +234,8 @@ void TowerPromotion::draw(RenderDevice& device, const Mat4& clip, const WorldLig
                     ? portable::lerp(m_sim.previousFrame, m_sim.player.presentationFrame(),
                                      std::clamp(blend, 0.0f, 1.0f))
                     : m_sim.player.presentationFrame();
-            visualPose.evaluate(*m_sim.tree, m_sim.player.sequence(), visualFrame, false, true);
+            visualPose.evaluate(*m_sim.tree, m_sim.player.sequence(), visualFrame,
+                                TreePose::Sampling::Smooth);
             pose = &visualPose;
         }
         m_model.setPresentationFrame(m_sim.player.sequence(), visualFrame);

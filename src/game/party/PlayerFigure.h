@@ -225,7 +225,7 @@ public:
     /** A temporary full-bright skin; null restores the costume's normal appearance. */
     void setSkinTexture(const Texture* texture) {
         m_model.setMaskedTexture(texture);
-        m_model.setAppearance(texture != nullptr);
+        m_model.setAppearance({.unlit = texture != nullptr});
     }
 
 private:

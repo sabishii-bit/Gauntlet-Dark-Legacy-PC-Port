@@ -33,7 +33,15 @@ public:
      * deferred parts with an ordinary sort key, drawn before the scenery's own deferred
      * queue; BlendedBehind those the authored flags sort behind (a gem's halo, its crystal),
      * which the original's lowered key puts after every ordinary sorted object. */
-    enum class Pass : u8 { All, DepthWriting, Effects, Opaque, Blended, BlendedAhead, BlendedBehind };
+    enum class Pass : u8 {
+        All,
+        DepthWriting,
+        Effects,
+        Opaque,
+        Blended,
+        BlendedAhead,
+        BlendedBehind
+    };
     /** Whether a pass composites the figure's particles and bursts: once, with its blended
      * parts, never again with the parts sorted behind. */
     static constexpr bool compositesEffects(Pass pass) {
@@ -54,7 +62,7 @@ public:
         m_textureSampling.clear();
         m_highlight = nullptr;
         resetTextures();
-        setAppearance(false);
+        setAppearance({});
         m_whiteBlend = 0;
         m_cullBack = true;
     }
@@ -91,14 +99,16 @@ public:
         m_maskedTexture = texture;
         m_skinAlpha = alpha;
     }
-    /** Full ambient illumination and an optional RGB tint applied to every node. */
-    void setAppearance(bool unlit, Color tint = Color::white(), bool depthWrite = true,
-                       bool additive = false) {
-        m_unlit = unlit;
-        m_tint = tint;
-        m_depthWrite = depthWrite;
-        m_additive = additive;
-    }
+    /** How every node is shaded: full ambient light, an RGB tint, depth writes, additive
+     * colour. */
+    struct Appearance {
+        bool unlit = false;          ///< full ambient light, whatever the level's lighting
+        Color tint = Color::white(); ///< multiplies every vertex's red, green and blue
+        bool depthWrite = true;      ///< false: no part writes depth
+        bool additive = false;       ///< every part added onto the frame
+    };
+    /** Shades every node as `appearance` says until it is set again. */
+    void setAppearance(const Appearance& appearance) { m_appearance = appearance; }
     /** Keeps writing depth while faded by the draw's alpha, as the original's unseen body
      * does with Z update left on, so sorted scenery drawn after it stays behind it. A
      * dissolving skin still defers. */
@@ -221,12 +231,9 @@ private:
     std::vector<Node> m_nodes;
     const Texture* m_maskedTexture = nullptr;
     SkinAlpha m_skinAlpha = SkinAlpha::PreserveCoverage;
-    bool m_unlit = false;
-    bool m_additive = false;
-    bool m_depthWrite = true;
+    Appearance m_appearance;
     bool m_fadedDepthWrite = false;
     bool m_cullBack = true;
-    Color m_tint = Color::white();
     f32 m_whiteBlend = 0.0f;
     const SelectionHighlight* m_highlight = nullptr;
     std::vector<TextureFrame> m_frames;

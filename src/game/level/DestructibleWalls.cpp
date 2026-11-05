@@ -103,7 +103,7 @@ void DestructibleWalls::clear() {
 void DestructibleWalls::showWhite(Wall& wall, bool white) {
     wall.white = white;
     wall.model.setMaskedTexture(white ? m_white : nullptr);
-    wall.model.setAppearance(white);
+    wall.model.setAppearance({.unlit = white});
 }
 
 void DestructibleWalls::bind(RenderDevice& device, const WorldLayout& layout, ModelSet& models,

@@ -716,8 +716,10 @@ u32 EffectTrees::startPrepared(const Prepared& prepared, const Vec3& position,
         effect->position = position;
         initializeTree(*effect, setting);
         effect->model = std::make_shared<TreeModel>(*prepared.model);
-        effect->model->setAppearance(effect->unlit, effect->tint, effect->depthWrite,
-                                     effect->additive);
+        effect->model->setAppearance({.unlit = effect->unlit,
+                                      .tint = effect->tint,
+                                      .depthWrite = effect->depthWrite,
+                                      .additive = effect->additive});
         effect->model->setFrame(0, static_cast<s32>(effect->player.frame()));
         if (effect->emitParticles) {
             effect->particles = *prepared.particles;
@@ -1001,15 +1003,17 @@ void EffectTrees::draw(RenderDevice& device, const Mat4& clip, const WorldLighti
                         ? glm::mix(effect->previousFrame, effect->player.presentationFrame(), blend)
                         : effect->player.presentationFrame();
                 effect->presentationPose.evaluate(*effect->tree, effect->player.sequence(),
-                                                  visualFrame, false, true);
+                                                  visualFrame, TreePose::Sampling::Smooth);
                 pose = &effect->presentationPose;
             }
         }
         const Mat4 placed = direction.has_value() ? frame.along(placement, *direction) : placement;
         if (!effect->retiring && effect->tree != nullptr) {
             effect->model->resetTextures();
-            effect->model->setAppearance(effect->unlit, effect->tint, effect->depthWrite,
-                                         effect->additive);
+            effect->model->setAppearance({.unlit = effect->unlit,
+                                          .tint = effect->tint,
+                                          .depthWrite = effect->depthWrite,
+                                          .additive = effect->additive});
             effect->model->setPresentationFrame(effect->player.sequence(), visualFrame);
             for (const auto& motion : m_motions) {
                 if (motion->archive == effect->archive && motion->lenders == effect->lenders) {

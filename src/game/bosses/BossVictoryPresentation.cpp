@@ -137,7 +137,7 @@ void BossVictoryPresentation::bindWizard(RenderDevice& device, ItemArchive& item
     m_sim.tree = &figure;
     // DoGoodWizard creates this tree with 0x881880: additive (0x800000)
     // and no depth writes (0x80), including the animated lower-body meshes.
-    m_model.setAppearance(true, Color::white(), false, true);
+    m_model.setAppearance({.unlit = true, .depthWrite = false, .additive = true});
     m_textures.restoreClock({});
     if (!figure.sequences.empty()) {
         m_sim.player.start(figure.sequences[0], 0);
@@ -232,7 +232,8 @@ void BossVictoryPresentation::drawWizard(RenderDevice& device, const Mat4& clip,
                     ? portable::lerp(m_sim.previousFrame, m_sim.player.presentationFrame(),
                                      std::clamp(blend, 0.0f, 1.0f))
                     : m_sim.player.presentationFrame();
-        visualPose.evaluate(*m_sim.tree, m_sim.player.sequence(), frame, false, true);
+        visualPose.evaluate(*m_sim.tree, m_sim.player.sequence(), frame,
+                            TreePose::Sampling::Smooth);
         pose = &visualPose;
     }
     m_model.setPresentationFrame(m_sim.player.sequence(), frame);

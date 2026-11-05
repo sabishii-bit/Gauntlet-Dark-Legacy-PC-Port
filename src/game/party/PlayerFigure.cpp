@@ -741,7 +741,7 @@ void PlayerFigure::drawPose(RenderDevice& device, const Mat4& clip, const Mat4& 
     m_costumeTextures.apply(m_model, offset);
     m_costumeTextures.apply(m_weapon, offset);
     m_model.setMaskedTexture(hitFlash);
-    m_model.setAppearance(hitFlash != nullptr);
+    m_model.setAppearance({.unlit = hitFlash != nullptr});
     const auto arm = armEquipmentReady(armEquipment) ? armOf(armEquipment) : std::nullopt;
     const bool armHeld = arm && m_armNode >= 0 && static_cast<usize>(m_armNode) < transforms.size();
     if (m_armHidden >= 0) {
@@ -761,7 +761,7 @@ void PlayerFigure::drawPose(RenderDevice& device, const Mat4& clip, const Mat4& 
                       camera, 1, pass);
     }
     m_model.setMaskedTexture(nullptr);
-    m_model.setAppearance(false);
+    m_model.setAppearance({});
     if (m_armHidden >= 0) {
         m_model.setMeshAlpha(static_cast<usize>(m_armHidden), m_armHeld ? 0.0f : 1.0f);
     }

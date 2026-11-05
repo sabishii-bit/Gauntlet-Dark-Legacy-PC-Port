@@ -252,7 +252,8 @@ void LevelTransporters::draw(RenderDevice& device, const Mat4& clip, const World
                             ? portable::lerp(pad.previousFrame, pad.animation.presentationFrame(),
                                              std::clamp(blend, 0.0f, 1.0f))
                             : pad.animation.presentationFrame();
-                visualPose.evaluate(*m_tree, pad.animation.sequence(), frame, false, true);
+                visualPose.evaluate(*m_tree, pad.animation.sequence(), frame,
+                                    TreePose::Sampling::Smooth);
                 pose = &visualPose;
             }
             pad.model.setPresentationFrame(pad.animation.sequence(), frame);

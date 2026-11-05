@@ -98,22 +98,22 @@ TEST_CASE("visual sampling removes near-key snapping without blending authored a
           "[world][pose][presentation]") {
     const auto slide = track(0, 3, {0, 1}, {0, 10});
     CHECK(TreePose::sample(slide, 0.95f).position.x == 10.0f);
-    CHECK(TreePose::sample(slide, 0.95f, true).position.x == Approx(9.5f));
+    CHECK(TreePose::sample(slide, 0.95f, TreePose::Sampling::Smooth).position.x == Approx(9.5f));
     const auto cut = track(0, 1, {0, 1}, {0, kPi});
-    CHECK(TreePose::sample(cut, 0.95f, true).rotation.y == 0.0f);
-    CHECK(TreePose::sample(cut, 1.0f, true).rotation.y == Approx(kPi));
+    CHECK(TreePose::sample(cut, 0.95f, TreePose::Sampling::Smooth).rotation.y == 0.0f);
+    CHECK(TreePose::sample(cut, 1.0f, TreePose::Sampling::Smooth).rotation.y == Approx(kPi));
     auto tree = sampleTree();
     tree.sequences[0].tracks[0] = slide;
     TreePose native;
     TreePose visual;
     native.evaluate(tree, 0, 0.95f);
-    visual.evaluate(tree, 0, 0.95f, false, true);
+    visual.evaluate(tree, 0, 0.95f, TreePose::Sampling::Smooth);
     CHECK(native.matrices()[0][3].x == 11.0f);
     CHECK(visual.matrices()[0][3].x == Approx(10.5f));
     tree.sequences[0].tracks[0] = cut;
     native.evaluate(tree, 0, 0);
-    visual.evaluate(tree, 0, 1, false, true);
-    visual.blend(native, 0.5f, true);
+    visual.evaluate(tree, 0, 1, TreePose::Sampling::Smooth);
+    visual.blend(native, 0.5f, TreePose::Cuts::Preserve);
     CHECK(visual.poses()[0].rotation.y == Approx(kPi));
 }
 
@@ -279,7 +279,7 @@ TEST_CASE("a tree pose composes each node with its ancestors, mirrors and blends
     REQUIRE(pose.poses()[1].position == Vec3{0.0f, 0.0f, 0.0f});
     REQUIRE(near(Vec3{pose.matrices()[1][3]}, Vec3{2.0f, 2.0f, 0.0f}));
 
-    pose.evaluate(tree, 0, 4.0f, true);
+    pose.evaluate(tree, 0, 4.0f, TreePose::Sampling::Snapped, TreePose::Mirror::AcrossX);
     REQUIRE(pose.poses()[0].position.x == Approx(-2.0f));
     REQUIRE(pose.poses()[0].scale.x == -1.0f);
 

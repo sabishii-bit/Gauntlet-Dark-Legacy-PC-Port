@@ -239,9 +239,9 @@ TEST_CASE("prelit tree meshes retain vertex colour while ordinary meshes use sce
               (flash ? Color::white() : WorldLighting{}.shade({0, 0, 1})));
     };
     checkColors(false);
-    figure.setAppearance(true);
+    figure.setAppearance({.unlit = true});
     checkColors(true);
-    figure.setAppearance(false);
+    figure.setAppearance({});
     checkColors(false);
     // Darkened, the baked colour is taken down as drawn; the lit part has the darkening in
     // the light it is given, so the lanterns' light stays over it.
@@ -771,7 +771,7 @@ TEST_CASE(
     WorldLighting dark;
     dark.ambient = dark.lightColor = Vec3{0.0f};
     const Color blue = Color::rgba(0, 0, 255);
-    figure.setAppearance(true, blue, false);
+    figure.setAppearance({.unlit = true, .tint = blue, .depthWrite = false});
     figure.setWhiteBlend(0.4f);
     figure.draw(device, Mat4{1.0f}, Mat4{1.0f}, dark);
     REQUIRE(device.draws[0].vertices[0].color == blue);

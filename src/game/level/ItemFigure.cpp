@@ -594,8 +594,8 @@ void ItemFigure::draw(RenderDevice& device, const Mat4& clip, const WorldLightin
                     m_sim.previousGeneration == m_sim.player.generation()
                         ? glm::mix(m_sim.previousFrame, m_sim.player.presentationFrame(), blend)
                         : m_sim.player.presentationFrame();
-                m_presentationPose.evaluate(*m_sim.tree, m_sim.player.sequence(), frame, false,
-                                            true);
+                m_presentationPose.evaluate(*m_sim.tree, m_sim.player.sequence(), frame,
+                                            TreePose::Sampling::Smooth);
                 pose = &m_presentationPose;
                 visualFrame = frame;
             }
@@ -605,8 +605,8 @@ void ItemFigure::draw(RenderDevice& device, const Mat4& clip, const WorldLightin
         auto& model = m_sim.resources->model;
         // ItemFigure copies share their immutable render bindings. Reapply defaults
         // as well as overrides so a locked/tinted copy cannot affect its siblings.
-        model.setAppearance(appearance != nullptr && appearance->unlit,
-                            appearance != nullptr ? appearance->tint : Color::white());
+        model.setAppearance({.unlit = appearance != nullptr && appearance->unlit,
+                             .tint = appearance != nullptr ? appearance->tint : Color::white()});
         model.setWhiteBlend(appearance != nullptr ? appearance->whiteBlend : 0.0f);
         model.setDoubleSided(appearance != nullptr && appearance->doubleSided);
         if (appearance != nullptr) {

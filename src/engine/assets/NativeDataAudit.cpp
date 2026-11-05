@@ -85,7 +85,7 @@ void auditAnimation(NativeDataAuditResult& result) {
                 continue;
             }
             for (const f32 frame : frames) {
-                pose.evaluate(tree, s, frame, false, true);
+                pose.evaluate(tree, s, frame, TreePose::Sampling::Smooth);
                 ++result.counts["pose_samples"];
                 if (!std::ranges::all_of(pose.matrices(), finite)) {
                     result.issues.push_back({record, std::format("non-finite pose at {}", frame)});

@@ -38,6 +38,16 @@ public:
     static constexpr f32 kHoldAngle = kHalfPi; ///< angle steps this large are not interpolated
     static constexpr f32 kKeyWindow = 0.125f;  ///< nearer a key than this shows the key itself
 
+    /** How a track is read between its keys: Snapped, as gameplay reads it, shows the next
+     * key itself within kKeyWindow of it; Smooth, for presentation only, interpolates right up
+     * to the key. Both keep authored large-angle cuts. */
+    enum class Sampling : u8 { Snapped, Smooth };
+    /** Whether a pose is flipped across the model's x axis. */
+    enum class Mirror : u8 { None, AcrossX };
+    /** What a blend does with an angle step of kHoldAngle or more: Blend turns across it by
+     * the shortest arc; Preserve, for presentation interpolation, keeps the authored cut. */
+    enum class Cuts : u8 { Blend, Preserve };
+
     /** Exact local transforms with a value-only hierarchy identity. Rest offsets
      * belong to that identity: equal node counts alone do not make poses compatible. */
     struct Checkpoint {
@@ -61,17 +71,16 @@ public:
      * changed topology and overflowing composed transforms leave this pose intact. */
     bool restore(const TreeInfo& tree, const Checkpoint& state);
 
-    /** Poses the tree at `frame` of `sequence`; nodes without keys stay at rest. Mirroring
-     * flips the pose across the model's x axis. Visual-only smooth sampling skips the
-     * near-key snap window; authored large-angle cuts are retained. */
-    void evaluate(const TreeInfo& tree, u32 sequence, f32 frame, bool mirror = false,
-                  bool smooth = false);
+    /** Poses the tree at `frame` of `sequence`, reading each track as `sampling` says and
+     * flipping the pose when `mirror` asks; nodes without keys stay at rest. */
+    void evaluate(const TreeInfo& tree, u32 sequence, f32 frame,
+                  Sampling sampling = Sampling::Snapped, Mirror mirror = Mirror::None);
     /** Poses the tree at rest. */
     void rest(const TreeInfo& tree);
     /** Blends this pose `t` of the way from `from` (0) to itself (1), angles by the shortest
-     * arc, then rebuilds the matrices. Both poses must be of the same tree. Presentation
-     * interpolation can preserve large-angle cuts instead of smoothing across them. */
-    void blend(const TreePose& from, f32 t, bool preserveCuts = false);
+     * arc unless `cuts` keeps a large-angle cut, then rebuilds the matrices. Both poses must
+     * be of the same tree. */
+    void blend(const TreePose& from, f32 t, Cuts cuts = Cuts::Blend);
     /** Copies local animation within a branch, preserving this pose's other branches. */
     void overlaySubtree(const TreePose& from, usize root);
     /** The pitch, yaw and roll the original reads off node `node`'s local rotation
@@ -93,7 +102,8 @@ public:
     std::vector<Mat4> drawMatrices(const Mat4& model, const CameraFrame& camera) const;
 
     /** The pose a track gives at `frame`, past its last key holding that key. */
-    static NodePose sample(const TrackInfo& track, f32 frame, bool smooth = false);
+    static NodePose sample(const TrackInfo& track, f32 frame,
+                           Sampling sampling = Sampling::Snapped);
     /** The frames a repeating sequence shows as one cycle: `count` of them from `first`.
      * Opening frames that only hold the pose of the next are left out, as is a last frame
      * that repeats the first (a whole turn on, for a rotation), so a spin comes round

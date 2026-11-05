@@ -1228,13 +1228,14 @@ void PlayerAnimator::evaluatePresentation(TreePose& out, f32 alpha) const {
         out = TreePose{};
         return;
     }
-    out.evaluate(*m_tree, m_player.sequence(), m_player.presentationFrame(), false, true);
+    out.evaluate(*m_tree, m_player.sequence(), m_player.presentationFrame(),
+                 TreePose::Sampling::Smooth);
     if (m_player.transitioning()) {
         out.blend(m_previous, m_player.transition());
     }
     if (alpha < 1.0f && m_presentationPrevious.posed() &&
         m_presentationGeneration == m_player.generation()) {
-        out.blend(m_presentationPrevious, std::clamp(alpha, 0.0f, 1.0f), true);
+        out.blend(m_presentationPrevious, std::clamp(alpha, 0.0f, 1.0f), TreePose::Cuts::Preserve);
     }
 }
 

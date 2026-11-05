@@ -215,7 +215,10 @@ TEST_CASE("all authored tower pieces retain settled meshes at their own world an
         REQUIRE(found);
         device.draws.clear();
         auto model = *effect.model;
-        model.setAppearance(effect.unlit, effect.tint, effect.depthWrite, effect.additive);
+        model.setAppearance({.unlit = effect.unlit,
+                             .tint = effect.tint,
+                             .depthWrite = effect.depthWrite,
+                             .additive = effect.additive});
         model.setFrame(effect.player.sequence(), static_cast<s32>(effect.player.frame()));
         if (const auto* bank = display.figures().textureAnimator(effect.archive, effect.lenders)) {
             bank->apply(model, *effect.tree, effect.player.sequence(), effect.player.frame());

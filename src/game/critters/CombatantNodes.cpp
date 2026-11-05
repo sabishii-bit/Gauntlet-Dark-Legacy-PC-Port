@@ -174,7 +174,8 @@ void Combatant::drawBrokenModels(const Actor& actor, RenderDevice& device, const
             flashing |= node == replacement.node && actor.hitNodes[i].flashTicks > 0;
         }
         replacement.resource->resetTextures();
-        replacement.resource->setAppearance(flashing && flash != nullptr, actor.tint);
+        replacement.resource->setAppearance(
+            {.unlit = flashing && flash != nullptr, .tint = actor.tint});
         const Texture* mask = flashing ? flash : nullptr;
         replacement.resource->setMaskedTexture(frozen != nullptr ? frozen : mask);
         replacement.resource->draw(device, clip, placement * pose.matrices()[replacement.node],
@@ -192,7 +193,7 @@ void Combatant::drawBrokenModels(const Actor& actor, RenderDevice& device, const
             TreeModel& replacement = model->second;
             replacement.resetTextures();
             const bool flashing = actor.flashTicks > 0 || actor.hitNodes[i].flashTicks > 0;
-            replacement.setAppearance(flashing && flash != nullptr, actor.tint);
+            replacement.setAppearance({.unlit = flashing && flash != nullptr, .tint = actor.tint});
             const Texture* mask = flashing ? flash : nullptr;
             replacement.setMaskedTexture(frozen != nullptr ? frozen : mask);
             replacement.draw(device, clip, placement * pose.matrices()[*node], lighting, {},

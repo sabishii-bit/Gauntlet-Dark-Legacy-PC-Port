@@ -170,7 +170,7 @@ void SumnerFigure::draw(RenderDevice& device, const Mat4& clip, const WorldLight
                     ? portable::lerp(m_sim.previousFrame, m_sim.player.presentationFrame(),
                                      std::clamp(blend, 0.0f, 1.0f))
                     : m_sim.player.presentationFrame();
-        visualPose.evaluate(*m_tree, m_sim.player.sequence(), frame, false, true);
+        visualPose.evaluate(*m_tree, m_sim.player.sequence(), frame, TreePose::Sampling::Smooth);
         pose = &visualPose;
     }
     m_model.setPresentationFrame(m_sim.player.sequence(), frame);

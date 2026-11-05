@@ -103,7 +103,7 @@ void PlayerFamiliar::update(f32 seconds, bool attack) {
     }
     const auto frame = static_cast<s32>(m_state.player.frame());
     m_state.pose.evaluate(*m_tree, m_state.player.sequence(), m_state.player.presentationFrame(),
-                          false, true);
+                          TreePose::Sampling::Smooth);
     m_model.setFrame(m_state.player.sequence(), frame);
     m_textures.restoreClock(m_state.textures);
     m_textures.advance(seconds);
@@ -137,7 +137,7 @@ void PlayerFamiliar::draw(RenderDevice& device, const Mat4& clip, const Mat4& bo
         if (blend >= 0 && blend < 1.0f && m_state.previousPose.posed() &&
             m_state.previousGeneration == m_state.player.generation()) {
             const f32 amount = std::clamp(blend, 0.0f, 1.0f);
-            m_drawPose.blend(m_state.previousPose, amount, true);
+            m_drawPose.blend(m_state.previousPose, amount, TreePose::Cuts::Preserve);
             frame = portable::lerp(m_state.previousFrame, frame, amount);
         }
         m_model.setPresentationFrame(m_state.player.sequence(), frame);

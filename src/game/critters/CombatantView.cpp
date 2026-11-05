@@ -28,7 +28,7 @@ TreePose Combatant::smoothPose(const Actor& actor) {
     }
     TreePose pose;
     pose.evaluate(*actor.stock->tree, actor.player.sequence(), actor.player.presentationFrame(),
-                  false, true);
+                  TreePose::Sampling::Smooth);
     TreePose sampled;
     sampled.evaluate(*actor.stock->tree, actor.player.sequence(), actor.player.frame());
     // Look nodes, held broken parts and linked-parent poses are gameplay-owned
@@ -82,7 +82,7 @@ TreePose Combatant::presentationPose(const Actor& actor, f32 alpha) {
         return actor.pose;
     }
     TreePose pose = actor.smoothValid ? actor.smooth : smoothPose(actor);
-    pose.blend(actor.presentation.pose, presentationBlend(actor, alpha), true);
+    pose.blend(actor.presentation.pose, presentationBlend(actor, alpha), TreePose::Cuts::Preserve);
     return pose;
 }
 
@@ -308,7 +308,7 @@ void Combatant::draw(RenderDevice& device, const Mat4& clip, const WorldLighting
     critter.stock->textures.apply(critter.stock->body, *critter.stock->tree,
                                   critter.player.sequence(), visualFrame,
                                   critter.stock->textures.presentationOffset(presentationAlpha));
-    critter.stock->body.setAppearance(false, critter.tint);
+    critter.stock->body.setAppearance({.tint = critter.tint});
     if (critter.skin != nullptr) {
         const auto& skin = *critter.skin;
         const s32 count = static_cast<s32>(skin.life * 30.0f);
@@ -319,12 +319,12 @@ void Combatant::draw(RenderDevice& device, const Mat4& clip, const WorldLighting
             static_cast<usize>(frame % count) < found->second.size()) {
             critter.stock->body.setMaskedTexture(found->second[static_cast<usize>(frame % count)],
                                                  TreeModel::SkinAlpha::Dissolve);
-            critter.stock->body.setAppearance(true, critter.tint);
+            critter.stock->body.setAppearance({.unlit = true, .tint = critter.tint});
         }
     }
     if (critter.flashTicks > 0 && hitFlash != nullptr) {
         critter.stock->body.setMaskedTexture(hitFlash);
-        critter.stock->body.setAppearance(true, Color::white());
+        critter.stock->body.setAppearance({.unlit = true});
     }
     // Retail flashes the normal skin on bit 3 in the final 180 frozen ticks.
     if (frozenTexture != nullptr && critter.frozenTicks > 0 &&
@@ -371,7 +371,8 @@ void Combatant::draw(RenderDevice& device, const Mat4& clip, const WorldLighting
                     ? portable::lerp(instance.previousFrame, instance.player.presentationFrame(),
                                      presentationBlend(critter, presentationAlpha))
                     : instance.player.presentationFrame();
-            visualPose.evaluate(*auxiliary.tree, instance.player.sequence(), frame, false, true);
+            visualPose.evaluate(*auxiliary.tree, instance.player.sequence(), frame,
+                                TreePose::Sampling::Smooth);
             attachmentPose = &visualPose;
         }
         critter.stock->textures.apply(

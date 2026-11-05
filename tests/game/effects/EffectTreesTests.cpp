@@ -611,7 +611,10 @@ TEST_CASE("retail potion fades keep the startup visible and remove each mesh at 
             device.draws.clear();
             const auto& effect = effects.effect(0);
             auto model = *effect.model;
-            model.setAppearance(effect.unlit, effect.tint, effect.depthWrite, effect.additive);
+            model.setAppearance({.unlit = effect.unlit,
+                                 .tint = effect.tint,
+                                 .depthWrite = effect.depthWrite,
+                                 .additive = effect.additive});
             // Fire's sparks have their own texture/transform tracks and may
             // outlive its rings. Isolate meshes governed by these fade nodes.
             for (usize i = 0; i < tree.nodes.size(); ++i) {

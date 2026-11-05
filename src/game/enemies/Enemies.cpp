@@ -2345,14 +2345,14 @@ void Enemies::drawPose(RenderDevice& device, const Mat4& clip, const Mat4& place
     auto& body = *found.model;
     found.textures->apply(body, *found.tree, statue ? 0 : sequence, statue ? 0 : frame,
                           textureFrame - static_cast<f32>(found.textures->frame()));
-    body.setAppearance(hitFlash != nullptr || (dying && appearance.kind != kDeathKind));
+    body.setAppearance({.unlit = hitFlash != nullptr || (dying && appearance.kind != kDeathKind)});
     body.setMaskedTexture(deathSkin != nullptr ? deathSkin : hitFlash,
                           deathSkin != nullptr ? TreeModel::SkinAlpha::Dissolve
                                                : TreeModel::SkinAlpha::PreserveCoverage);
     body.setPresentationFrame(statue ? 0 : sequence, statue ? 0 : frame);
     body.draw(device, clip, placement, lighting, statue ? std::span<const Mat4>{} : pose.matrices(),
               camera, alpha, pass);
-    body.setAppearance(false);
+    body.setAppearance({});
     body.setMaskedTexture(nullptr);
 }
 
@@ -2655,8 +2655,8 @@ void Enemies::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& 
                               statue ? 0 : visualFrame,
                               found.textures->presentationOffset(presentationAlpha));
         const bool flashing = enemy.flashSeconds > 0;
-        body.setAppearance((enemy.killed && enemy.kind != kDeathKind) || flashing,
-                           flashing || enemy.kind == kDeathKind ? Color::white() : tint);
+        body.setAppearance({.unlit = (enemy.killed && enemy.kind != kDeathKind) || flashing,
+                            .tint = flashing || enemy.kind == kDeathKind ? Color::white() : tint});
         if (flashing) {
             body.setMaskedTexture(hitFlash);
         }

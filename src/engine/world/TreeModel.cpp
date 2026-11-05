@@ -1,12 +1,12 @@
 #include "engine/world/TreeModel.h"
 
 #include <algorithm>
-#include <limits>
-#include <optional>
 #include <array>
 #include <cmath>
 #include <exception>
 #include <format>
+#include <limits>
+#include <optional>
 #include <stdexcept>
 #include <string_view>
 
@@ -124,7 +124,7 @@ std::optional<SilhouetteCut> silhouetteCut(const Mesh& mesh, usize maskPart,
         lo = glm::min(lo, Vec2{at.x, at.z});
         hi = glm::max(hi, Vec2{at.x, at.z});
     }
-    constexpr f32 kFlat = 0.05f; // a mask lies level
+    constexpr f32 kFlat = 0.05f;  // a mask lies level
     constexpr f32 kUnder = 0.25f; // and what it cuts lies this close beneath or above it
     if (highest - lowest > kFlat) {
         return std::nullopt;
@@ -471,8 +471,8 @@ void TreeModel::drawParts(RenderDevice& device, const Mat4& clip, const Mat4& mo
         // Retail -4 alternate skins preserve the authored Z-write flag. This
         // renderer splits solid/effects passes: defer dissolves like opacity
         // fades so their partial alpha cannot mask solids drawn later.
-        const bool depthWrite =
-            node.depthWrite && m_depthWrite && (!fading || m_fadedDepthWrite) && !dissolving;
+        const bool depthWrite = node.depthWrite && m_appearance.depthWrite &&
+                                (!fading || m_fadedDepthWrite) && !dissolving;
         if ((pass == Pass::DepthWriting && !depthWrite) || (pass == Pass::Effects && depthWrite)) {
             continue;
         }
@@ -489,14 +489,14 @@ void TreeModel::drawParts(RenderDevice& device, const Mat4& clip, const Mat4& mo
         // The authored rule decides what waits: a sortable node that is faded, glowing,
         // flagged behind or wears an alpha-textured mesh. A glow or a fading or dissolving
         // figure waits as well, so it composites over what it stands among.
-        const bool additive = node.additive || m_additive;
+        const bool additive = node.additive || m_appearance.additive;
         const bool deferredNode =
             node.sorted && (opacity < 1.0f || node.deferAlways || shape.mesh->alphaTextured());
         // The original draws its items in placement order; this renderer draws the pickups
         // before the fixtures they may stand against, so a pickup's alpha-textured mesh
         // (the authored object bit) composites after them as a whole.
-        const bool blendedPass = pass == Pass::Blended || pass == Pass::BlendedAhead ||
-                                 pass == Pass::BlendedBehind;
+        const bool blendedPass =
+            pass == Pass::Blended || pass == Pass::BlendedAhead || pass == Pass::BlendedBehind;
         const bool pickupPass = pass == Pass::Opaque || blendedPass;
         const bool blended = deferredNode || additive || fading || dissolving ||
                              (pickupPass && shape.mesh->alphaTextured());
@@ -527,8 +527,8 @@ void TreeModel::drawParts(RenderDevice& device, const Mat4& clip, const Mat4& mo
                 Color baked = v.color;
                 if (node.nextMesh != nullptr) {
                     const MeshVertex& next =
-                        node.nextMesh->vertices[node.nextMap != nullptr ? (*node.nextMap)[index]
-                                                                        : index];
+                        node.nextMesh
+                            ->vertices[node.nextMap != nullptr ? (*node.nextMap)[index] : index];
                     position = glm::mix(position, next.position, node.meshBlend);
                     const Vec3 blendedNormal = glm::mix(vertexNormal, next.normal, node.meshBlend);
                     if (glm::dot(blendedNormal, blendedNormal) > 0.000001f) {
@@ -538,20 +538,20 @@ void TreeModel::drawParts(RenderDevice& device, const Mat4& clip, const Mat4& mo
                     baked = mixColor(baked, next.color, node.meshBlend);
                 }
                 const Vec3 normal = glm::normalize(normalMatrix * vertexNormal);
-                const Vec2 uv = node.chrome
-                                    ? Vec2{0.5f * (1.0f - normal.x), 0.5f * (1.0f - normal.y)}
-                                    : meshUv;
+                const Vec2 uv =
+                    node.chrome ? Vec2{0.5f * (1.0f - normal.x), 0.5f * (1.0f - normal.y)} : meshUv;
                 const Vec4 placed = placement * Vec4{position, 1.0f};
                 // Glows add their whole texture; the original never lights them.
                 // Baked RGB belongs to the geometry stream, including level meshes
                 // rendered as destructible items rather than by WorldScene.
                 Color color = shape.mesh->prelit ? baked : lighting.shade(Vec3{placed}, normal);
-                if (additive || m_unlit || nodeFlash) {
+                if (additive || m_appearance.unlit || nodeFlash) {
                     color = Color::white();
                 }
-                color.r = static_cast<u8>(static_cast<u32>(color.r) * m_tint.r / 255);
-                color.g = static_cast<u8>(static_cast<u32>(color.g) * m_tint.g / 255);
-                color.b = static_cast<u8>(static_cast<u32>(color.b) * m_tint.b / 255);
+                const Color& tint = m_appearance.tint;
+                color.r = static_cast<u8>(static_cast<u32>(color.r) * tint.r / 255);
+                color.g = static_cast<u8>(static_cast<u32>(color.g) * tint.g / 255);
+                color.b = static_cast<u8>(static_cast<u32>(color.b) * tint.b / 255);
                 if (fading) {
                     color.a = static_cast<u8>(static_cast<f32>(color.a) * opacity);
                 }

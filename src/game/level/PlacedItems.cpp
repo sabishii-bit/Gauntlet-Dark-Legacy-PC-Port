@@ -1164,8 +1164,8 @@ void PlacedItems::draw(RenderDevice& device, const Mat4& clip, const WorldLighti
                             ? glm::mix(item.previousFrame, item.player.presentationFrame(), blend)
                             : item.player.presentationFrame();
                     auto& presented = m_presentedPoses[index];
-                    presented.evaluate(*item.figure, item.player.sequence(), visualFrame, false,
-                                       true);
+                    presented.evaluate(*item.figure, item.player.sequence(), visualFrame,
+                                       TreePose::Sampling::Smooth);
                     pose = &presented;
                 }
             }

@@ -135,7 +135,8 @@ void EnemyAnimator::holdPresentation() {
     m_generationBefore = m_player.generation();
     m_frameBefore = m_player.presentationFrame();
     if (bound()) {
-        m_presentationBefore.evaluate(*m_tree, m_player.sequence(), m_frameBefore, false, true);
+        m_presentationBefore.evaluate(*m_tree, m_player.sequence(), m_frameBefore,
+                                      TreePose::Sampling::Smooth);
         if (m_player.transitioning()) {
             m_presentationBefore.blend(m_previous, m_player.transition());
         }
@@ -154,12 +155,13 @@ void EnemyAnimator::evaluatePresentation(TreePose& pose, f32 blend) const {
         pose = {};
         return;
     }
-    pose.evaluate(*m_tree, m_player.sequence(), m_player.presentationFrame(), false, true);
+    pose.evaluate(*m_tree, m_player.sequence(), m_player.presentationFrame(),
+                  TreePose::Sampling::Smooth);
     if (m_player.transitioning()) {
         pose.blend(m_previous, m_player.transition());
     }
     if (m_generationBefore == m_player.generation()) {
-        pose.blend(m_presentationBefore, std::clamp(blend, 0.0f, 1.0f), true);
+        pose.blend(m_presentationBefore, std::clamp(blend, 0.0f, 1.0f), TreePose::Cuts::Preserve);
     }
 }
 
@@ -176,7 +178,7 @@ EnemyAnimator::Presentation EnemyAnimator::presentation() const {
 TreePose EnemyAnimator::Presentation::pose(f32 blend) const {
     auto result = current;
     if (continuous) {
-        result.blend(previous, std::clamp(blend, 0.0f, 1.0f), true);
+        result.blend(previous, std::clamp(blend, 0.0f, 1.0f), TreePose::Cuts::Preserve);
     }
     return result;
 }

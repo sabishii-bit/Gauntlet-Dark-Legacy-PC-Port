@@ -215,7 +215,8 @@ void LevelArrivalPresentation::drawEffects(RenderDevice& device, const Mat4& cli
                         ? portable::lerp(spawn.previousFrame, spawn.player.presentationFrame(),
                                          std::clamp(blend, 0.0f, 1.0f))
                         : spawn.player.presentationFrame();
-            visualPose.evaluate(*spawn.tree, spawn.player.sequence(), frame, false, true);
+            visualPose.evaluate(*spawn.tree, spawn.player.sequence(), frame,
+                                TreePose::Sampling::Smooth);
             pose = &visualPose;
         }
         spawn.model.setPresentationFrame(spawn.player.sequence(), frame);
