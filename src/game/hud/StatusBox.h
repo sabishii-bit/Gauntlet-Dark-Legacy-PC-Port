@@ -117,25 +117,27 @@ public:
     /** The small capitals the boxes' levels are written in, which the help messages share. */
     const TextPainter& smallCaps() const { return m_smallCaps; }
 
-    /** Draws player `slot`'s box; `bar` adds the strip above it that the game shows in play. */
-    void draw(Canvas& canvas, s32 slot, const StatusBoxView& view, bool bar);
-    /** Draws a pickup's strip at `y` over slot `slot`, the STATIC `card` hanging under it. */
-    void drawCard(Canvas& canvas, s32 slot, std::string_view card, s32 y);
+    /** Whether a box carries the strip above it that the game shows in play. */
+    enum class Strip : u8 { None, Play };
+    /** Draws seat `seat`'s box, with the play strip above it when `strip` is Play. */
+    void draw(Canvas& canvas, s32 seat, const StatusBoxView& view, Strip strip);
+    /** Draws a pickup's strip at `y` over seat `seat`, the STATIC `card` hanging under it. */
+    void drawCard(Canvas& canvas, s32 seat, std::string_view card, s32 y);
     /** The turbo meter over a box: the bar behind, the front colour grown from its middle,
      * the glint, the glow of a full one and the gleam of a change. */
-    void drawTurbo(Canvas& canvas, s32 slot, const TurboMeterLook& look);
+    void drawTurbo(Canvas& canvas, s32 seat, const TurboMeterLook& look);
     /** The runestones held (`SM_RUNE_<colour>_0<n>`) and, when `keys`, the bosses' keys
-     * (`SM_KEY_<colour>`) along the top of slot `slot`'s box. */
-    void drawRelics(Canvas& canvas, s32 slot, u16 runes, std::optional<u16> keys);
+     * (`SM_KEY_<colour>`) along the top of seat `seat`'s box. */
+    void drawRelics(Canvas& canvas, s32 seat, u16 runes, std::optional<u16> keys);
     /** One pickup count to draw: the STATIC `icon`, then "count/total". */
     struct CountEntry {
         std::string_view icon;
         s32 count = 0;
         s32 total = 0;
     };
-    /** Draws `entries` over slot `slot`, each centered, the first with its icon's top at `y` and
+    /** Draws `entries` over seat `seat`, each centered, the first with its icon's top at `y` and
      * the rest stacked above it. */
-    void drawCounts(Canvas& canvas, s32 slot, std::span<const CountEntry> entries, s32 y);
+    void drawCounts(Canvas& canvas, s32 seat, std::span<const CountEntry> entries, s32 y);
     void setCountTextures(TextureSet* textures) { m_countTextures = textures; }
     /** Resolves only the caller's fixed artwork roster before rendering begins. */
     void preloadPickups(std::span<const std::string_view> cards,

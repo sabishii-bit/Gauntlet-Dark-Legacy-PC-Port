@@ -510,7 +510,7 @@ void LegendsPreview::render(RenderDevice& device, const Mat4& frameProjection, f
         status.keys = inventory.keys;
         status.potions = static_cast<s32>(inventory.potions.size());
         status.potionKind = inventory.nextPotion();
-        m_status->draw(canvas, 0, status, true);
+        m_status->draw(canvas, 0, status, StatusBoxPainter::Strip::Play);
         canvas.end();
     }
 }

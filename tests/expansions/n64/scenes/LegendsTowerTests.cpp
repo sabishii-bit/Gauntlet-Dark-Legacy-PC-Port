@@ -105,7 +105,7 @@ void renderTower(const LegendsPreview& preview, test::FakeRenderDevice& device,
     view.potionKind = inventory.nextPotion();
     Canvas canvas;
     canvas.begin(hudDevice, hudTransform);
-    status.draw(canvas, 0, view, true);
+    status.draw(canvas, 0, view, StatusBoxPainter::Strip::Play);
     canvas.end();
     std::vector<ImmediateVertex> expected;
     for (const auto& draw : hudDevice.draws) {

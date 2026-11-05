@@ -347,7 +347,7 @@ void AfterLevelScene::drawLane(const ShopLane& lane) {
     status.potions = static_cast<s32>(save.progress().inventory.potions.size());
     status.potionKind = save.progress().inventory.nextPotion();
     status.inTower = lane.member.fallen;
-    m_boxes.draw(m_canvas, lane.member.player, status, false);
+    m_boxes.draw(m_canvas, lane.member.player, status, StatusBoxPainter::Strip::None);
 }
 void AfterLevelScene::render(RenderDevice& device, const Mat4& projection, f32 width, f32 height) {
     if (!m_open) {
@@ -373,7 +373,7 @@ void AfterLevelScene::render(RenderDevice& device, const Mat4& projection, f32 w
         drawFrame("S2_BORDER", player * 128, 256);
         StatusBoxView empty;
         empty.color = player;
-        m_boxes.draw(m_canvas, player, empty, false);
+        m_boxes.draw(m_canvas, player, empty, StatusBoxPainter::Strip::None);
     }
     for (const auto& lane : m_session.lanes()) {
         // The colored cap belongs to the background, under the Stats lettering.

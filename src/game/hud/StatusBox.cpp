@@ -109,19 +109,19 @@ std::string_view StatusBoxPainter::potionIcon(s32 kind) {
                : kPotionIcons[0];
 }
 
-void StatusBoxPainter::draw(Canvas& canvas, s32 slot, const StatusBoxView& view, bool bar) {
+void StatusBoxPainter::draw(Canvas& canvas, s32 seat, const StatusBoxView& view, Strip strip) {
     if (!loaded()) {
         return;
     }
-    const s32 left = slot * kWidth;
+    const s32 left = seat * kWidth;
     const Rect box{static_cast<f32>(left), static_cast<f32>(kY), static_cast<f32>(kWidth),
                    static_cast<f32>(kHeight)};
-    const s32 color = view.active ? view.color : slot;
-    if (bar) {
+    const s32 color = view.active ? view.color : seat;
+    if (strip == Strip::Play) {
         // init_frame_blits replaces S3 with the horned rune strip for a selected
         // character. It stays untinted; the class panel below carries player_rgb.
-        if (const Texture* strip = staticTexture(view.active ? "BK_RUNE_STONE_02" : kStrip)) {
-            canvas.draw(*strip,
+        if (const Texture* art = staticTexture(view.active ? "BK_RUNE_STONE_02" : kStrip)) {
+            canvas.draw(*art,
                         Rect{static_cast<f32>(left), static_cast<f32>(kBarY),
                              static_cast<f32>(kWidth), static_cast<f32>(kBarHeight)},
                         Color::white());
@@ -143,7 +143,7 @@ void StatusBoxPainter::draw(Canvas& canvas, s32 slot, const StatusBoxView& view,
         return;
     }
     if (view.turbo.has_value() && !view.inTower) {
-        drawTurbo(canvas, slot, *view.turbo);
+        drawTurbo(canvas, seat, *view.turbo);
     }
     const Color tint = playerColor(color);
     if (view.towerPrompt) {
@@ -171,7 +171,7 @@ void StatusBoxPainter::draw(Canvas& canvas, s32 slot, const StatusBoxView& view,
         return;
     }
     if (view.mode == StatusBoxView::Mode::Status) {
-        drawRelics(canvas, slot, view.runes,
+        drawRelics(canvas, seat, view.runes,
                    view.keysShown ? std::optional<u16>{view.bossKeys} : std::nullopt);
     }
     const auto icon = [&](std::string_view name, s32 x) {
@@ -282,8 +282,8 @@ void StatusBoxPainter::drawUsage(Canvas& canvas, s32 left, const PowerupSlot& po
     }
 }
 
-void StatusBoxPainter::drawRelics(Canvas& canvas, s32 slot, u16 runes, std::optional<u16> keys) {
-    const s32 left = slot * kWidth;
+void StatusBoxPainter::drawRelics(Canvas& canvas, s32 seat, u16 runes, std::optional<u16> keys) {
+    const s32 left = seat * kWidth;
     const auto place = [&](std::string_view name, s32 x, s32 y) {
         if (const Texture* texture = staticTexture(name)) {
             canvas.draw(*texture, Rect{static_cast<f32>(left + x), static_cast<f32>(y),
@@ -320,8 +320,8 @@ void StatusBoxPainter::drawRelics(Canvas& canvas, s32 slot, u16 runes, std::opti
     }
 }
 
-void StatusBoxPainter::drawTurbo(Canvas& canvas, s32 slot, const TurboMeterLook& look) {
-    const auto left = static_cast<f32>(slot * kWidth);
+void StatusBoxPainter::drawTurbo(Canvas& canvas, s32 seat, const TurboMeterLook& look) {
+    const auto left = static_cast<f32>(seat * kWidth);
     const auto top = static_cast<f32>(kTurboY);
     if (const Texture* bar = staticTexture("TRBO_FULL_NEW")) {
         const auto width = static_cast<f32>(bar->width());
@@ -382,11 +382,11 @@ std::string_view StatusBoxPainter::text(std::string_view id) const {
     return m_strings != nullptr ? m_strings->get(id) : id;
 }
 
-void StatusBoxPainter::drawCard(Canvas& canvas, s32 slot, std::string_view card, s32 y) {
+void StatusBoxPainter::drawCard(Canvas& canvas, s32 seat, std::string_view card, s32 y) {
     if (!loaded()) {
         return;
     }
-    const auto left = static_cast<f32>(slot * kWidth);
+    const auto left = static_cast<f32>(seat * kWidth);
     if (const Texture* strip = staticTexture(kStrip)) {
         canvas.draw(*strip, Rect{left, static_cast<f32>(y), static_cast<f32>(kWidth),
                                  static_cast<f32>(kBarHeight)});
@@ -397,7 +397,7 @@ void StatusBoxPainter::drawCard(Canvas& canvas, s32 slot, std::string_view card,
     }
 }
 
-void StatusBoxPainter::drawCounts(Canvas& canvas, s32 slot, std::span<const CountEntry> entries,
+void StatusBoxPainter::drawCounts(Canvas& canvas, s32 seat, std::span<const CountEntry> entries,
                                   s32 y) {
     if (!loaded()) {
         return;
@@ -409,7 +409,7 @@ void StatusBoxPainter::drawCounts(Canvas& canvas, s32 slot, std::span<const Coun
         const std::string text = std::format("{}/{}", entry.count, entry.total);
         const s32 textWidth = m_smallCaps.ready() ? m_smallCaps.measure(text, kCountScale) : 0;
         const s32 width = kCountIconSize + kCountIconGap + textWidth;
-        const s32 x = (slot * kWidth) + ((kWidth - width) / 2);
+        const s32 x = (seat * kWidth) + ((kWidth - width) / 2);
         const s32 top = y - (line++ * (kCountIconSize + kCountRowGap));
         if (const Texture* mark = countTexture(entry.icon)) {
             const Rect where{

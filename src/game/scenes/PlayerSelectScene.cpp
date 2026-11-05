@@ -280,7 +280,7 @@ void PlayerSelectScene::drawStatusBox(const SelectLane& lane) {
     view.level = experienceLevel(lane.save().experience());
     view.gold = lane.save().gold;
     view.health = lane.save().health();
-    m_boxes.draw(m_canvas, lane.index(), view, false);
+    m_boxes.draw(m_canvas, lane.index(), view, StatusBoxPainter::Strip::None);
 }
 
 const Texture* PlayerSelectScene::selectTexture(std::string_view name) {

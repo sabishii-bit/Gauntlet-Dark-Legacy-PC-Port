@@ -238,7 +238,7 @@ void LevelLoadingScreen::draw(Canvas& canvas, RenderDevice& device) {
     // Keep the complete status panels, including their upper strips and meter artwork,
     // above both the map and the crossfading preview.
     for (usize i = 0; i < m_status.size(); ++i) {
-        m_boxes.draw(canvas, static_cast<s32>(i), m_status[i], true);
+        m_boxes.draw(canvas, static_cast<s32>(i), m_status[i], StatusBoxPainter::Strip::Play);
     }
 }
 

@@ -115,7 +115,7 @@ void PartyHud::drawStatus(Canvas& canvas, std::span<const PlayerRuntime> players
         StatusBoxView view = status(player, players, &selector(player));
         view.keysShown = relicsShown();
         view.quitOffered = quitOffered;
-        m_boxes.draw(canvas, player, view, true);
+        m_boxes.draw(canvas, player, view, StatusBoxPainter::Strip::Play);
     }
     std::array<std::optional<s32>, PickupHud::kSlots> labelTops{};
     for (s32 player = 0; player < kPlayerCount; ++player) {

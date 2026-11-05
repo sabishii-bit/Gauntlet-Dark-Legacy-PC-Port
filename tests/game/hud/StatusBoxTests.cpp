@@ -42,7 +42,7 @@ TEST_CASE("status boxes draw a player's panel and a dimmed empty slot", "[game][
     view.health = 480;
     Canvas canvas;
     canvas.begin(device, Mat4{1.0f});
-    painter.draw(canvas, 0, view, true);
+    painter.draw(canvas, 0, view, StatusBoxPainter::Strip::Play);
     canvas.end();
     const usize full = device.draws.size();
     REQUIRE(full >= 4); // the bar, the panel, the frame, the icons and the text
@@ -68,7 +68,7 @@ TEST_CASE("status boxes draw a player's panel and a dimmed empty slot", "[game][
     view.potionKind = 4;
     device.draws.clear();
     canvas.begin(device, Mat4{1.0f});
-    painter.draw(canvas, 0, view, true);
+    painter.draw(canvas, 0, view, StatusBoxPainter::Strip::Play);
     canvas.end();
     REQUIRE(device.draws.size() > full);
     bool keyIcon = false;
@@ -90,7 +90,7 @@ TEST_CASE("status boxes draw a player's panel and a dimmed empty slot", "[game][
     fallen.towerPrompt = true;
     device.draws.clear();
     canvas.begin(device, Mat4{1.0f});
-    painter.draw(canvas, 1, fallen, true);
+    painter.draw(canvas, 1, fallen, StatusBoxPainter::Strip::Play);
     canvas.end();
     for (const test::RecordedDraw& draw : device.draws) {
         const Vec2 corner = test::minCorner(draw);
@@ -108,7 +108,7 @@ TEST_CASE("status boxes draw a player's panel and a dimmed empty slot", "[game][
     fallen.quitOffered = false; // an online match's prompt offers no Quit Game
     device.draws.clear();
     canvas.begin(device, Mat4{1.0f});
-    painter.draw(canvas, 1, fallen, true);
+    painter.draw(canvas, 1, fallen, StatusBoxPainter::Strip::Play);
     canvas.end();
     CHECK(vertices() < offered);
     CHECK(vertices() > 0);
@@ -130,7 +130,7 @@ TEST_CASE("status boxes draw a player's panel and a dimmed empty slot", "[game][
 
     device.draws.clear();
     canvas.begin(device, Mat4{1.0f});
-    painter.draw(canvas, 1, StatusBoxView{}, false);
+    painter.draw(canvas, 1, StatusBoxView{}, StatusBoxPainter::Strip::None);
     canvas.end();
     REQUIRE_FALSE(device.draws.empty());
     REQUIRE(device.draws.size() < full);
@@ -239,7 +239,7 @@ TEST_CASE("powerup usage fits the unused bottom of all four full status cards in
         view.powerup.reset();
         device.draws.clear();
         canvas.begin(device, Mat4{1});
-        painter.draw(canvas, player, view, true);
+        painter.draw(canvas, player, view, StatusBoxPainter::Strip::Play);
         canvas.end();
         const auto baseline = device.draws;
         const Texture* score = nullptr;
@@ -252,7 +252,7 @@ TEST_CASE("powerup usage fits the unused bottom of all four full status cards in
         view.powerup = PowerupSlot{9999.96f, powerup::kArmor, 0, armor::kInvulnerable, true};
         device.draws.clear();
         canvas.begin(device, Mat4{1});
-        painter.draw(canvas, player, view, true);
+        painter.draw(canvas, player, view, StatusBoxPainter::Strip::Play);
         canvas.end();
         REQUIRE(device.draws.size() > baseline.size());
         for (usize i = 0; i < baseline.size(); ++i) {
