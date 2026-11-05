@@ -103,18 +103,18 @@ void TowerCeremonies::advanceRelics(const Scene& scene, ExitPortals& portals, s3
     revealRoutes(scene.world, portals);
 }
 
-bool TowerCeremonies::ownsFigure(std::span<const PlayerRuntime> players, usize player,
+bool TowerCeremonies::ownsFigure(std::span<const PlayerRuntime> players, usize partyIndex,
                                  const PlayerFigure* figure) const {
-    return player < players.size() &&
-           (figure == nullptr || players[player].figure.get() == figure ||
+    return partyIndex < players.size() &&
+           (figure == nullptr || players[partyIndex].figure.get() == figure ||
             std::ranges::any_of(m_retainedFigures, [figure](const auto& retained) {
                 return retained.get() == figure;
             }));
 }
 
-void TowerCeremonies::activateFigure(std::span<PlayerRuntime> players, usize player,
+void TowerCeremonies::activateFigure(std::span<PlayerRuntime> players, usize partyIndex,
                                      PlayerFigure* figure) {
-    auto& active = players[player].figure;
+    auto& active = players[partyIndex].figure;
     if (active.get() == figure) {
         return;
     }
@@ -130,18 +130,18 @@ void TowerCeremonies::activateFigure(std::span<PlayerRuntime> players, usize pla
     }
 }
 
-void TowerCeremonies::upgradeFigure(const Scene& scene, usize player) {
-    auto& runtime = scene.players[player];
+void TowerCeremonies::upgradeFigure(const Scene& scene, usize partyIndex) {
+    auto& runtime = scene.players[partyIndex];
     const auto& save = runtime.actor.save();
     const s32 level = save.progress().appearanceLevel();
     const auto cached = std::ranges::find_if(m_bindings, [&](const auto& binding) {
-        return binding.player == player && binding.character == save.character &&
+        return binding.partyIndex == partyIndex && binding.character == save.character &&
                binding.color == save.color && binding.level == level;
     });
     if (cached != m_bindings.end()) {
         // A discarded promotion keeps its resources alive: replay restores the
         // new costume's birth values rather than loading a second copy of it.
-        activateFigure(scene.players, player, cached->figure);
+        activateFigure(scene.players, partyIndex, cached->figure);
         runtime.figure->restoreLocal(cached->initial);
     } else {
         auto figure = PlayerFigure::load(scene.device, scene.unpackedRoot, save, Entrance::Skip);
@@ -149,7 +149,7 @@ void TowerCeremonies::upgradeFigure(const Scene& scene, usize player) {
             return;
         }
         PromotionFigure binding;
-        binding.player = player;
+        binding.partyIndex = partyIndex;
         binding.character = save.character;
         binding.color = save.color;
         binding.level = level;
@@ -168,7 +168,7 @@ void TowerCeremonies::advancePromotion(const Scene& scene, s32 ticks) {
     if (entry == nullptr) {
         return;
     }
-    auto& runtime = scene.players[entry->player];
+    auto& runtime = scene.players[entry->partyIndex];
     auto& save = runtime.actor.save();
     const auto cue = m_promotion.update(ticks, m_promotionVoice.timing.playing());
     if (cue.voice) {
@@ -183,7 +183,7 @@ void TowerCeremonies::advancePromotion(const Scene& scene, s32 ticks) {
     }
     if (cue.award) {
         save.progress().promotedLevel = entry->level;
-        upgradeFigure(scene, entry->player);
+        upgradeFigure(scene, entry->partyIndex);
         EffectTrees::Setting setting;
         setting.seconds = 3;
         scene.effects.startSet(scene.device, scene.weapons,

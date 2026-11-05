@@ -65,14 +65,16 @@ public:
     /** The window routes' portals and glows, faded by what the ceremonies have revealed. */
     void revealRoutes(LevelWorld& world, ExitPortals& portals);
 
-    /** Whether `figure` is `player`'s own: its current costume, none, or one retired here. */
-    bool ownsFigure(std::span<const PlayerRuntime> players, usize player,
+    /** Whether `figure` belongs to the member at `partyIndex`: its current costume, none, or
+     * one retired here. */
+    bool ownsFigure(std::span<const PlayerRuntime> players, usize partyIndex,
                     const PlayerFigure* figure) const;
-    /** Stands `player` in `figure`, retiring the costume it wore; null only retires. */
-    void activateFigure(std::span<PlayerRuntime> players, usize player, PlayerFigure* figure);
-    /** Dresses `player` in the costume its new level earns, loading it once and replaying a
-     * discarded promotion from the cached birth values. */
-    void upgradeFigure(const Scene& scene, usize player);
+    /** Stands the member at `partyIndex` in `figure`, retiring the costume it wore; null only
+     * retires. */
+    void activateFigure(std::span<PlayerRuntime> players, usize partyIndex, PlayerFigure* figure);
+    /** Dresses the member at `partyIndex` in the costume its new level earns, loading it once
+     * and replaying a discarded promotion from the cached birth values. */
+    void upgradeFigure(const Scene& scene, usize partyIndex);
 
     /** The rewind seam: the ceremonies' values in the scene's snapshot, the voices by their
      * clocks and cues (their live handles stay). */
@@ -91,7 +93,7 @@ public:
 private:
     /** A costume a promotion loaded, cached so a replay restores rather than reloads it. */
     struct PromotionFigure {
-        usize player = 0;
+        usize partyIndex = 0;
         s32 character = 0;
         s32 color = 0;
         s32 level = 0;

@@ -100,9 +100,9 @@ TEST_CASE("a closed play scene has no per-player state", "[game][screens]") {
         REQUIRE(scene.turboMeter(player) == nullptr);
         REQUIRE_FALSE(scene.fallen(player));
         REQUIRE_FALSE(scene.weaponHeld(player));
-        REQUIRE_FALSE(scene.figureDirectory(player).has_value());
+        REQUIRE_FALSE(scene.seatFigureDirectory(player).has_value());
     }
-    REQUIRE_FALSE(scene.figureDirectory(usize{0}).has_value());
+    REQUIRE_FALSE(scene.memberFigureDirectory(usize{0}).has_value());
     REQUIRE(scene.party().empty());
     scene.close();
     scene.close();
@@ -868,8 +868,8 @@ TEST_CASE("sparse party ids keep their state together across harm and scene reop
     REQUIRE(scene.actor(1)->save().name == "ONE");
     REQUIRE(scene.turboMeter(3)->held() == Approx(80.0f));
     REQUIRE(scene.turboMeter(1)->held() == Approx(20.0f));
-    REQUIRE(scene.figureDirectory(usize{0}) == scene.figureDirectory(s32{3}));
-    REQUIRE(scene.figureDirectory(usize{1}) == scene.figureDirectory(s32{1}));
+    REQUIRE(scene.memberFigureDirectory(usize{0}) == scene.seatFigureDirectory(s32{3}));
+    REQUIRE(scene.memberFigureDirectory(usize{1}) == scene.seatFigureDirectory(s32{1}));
 
     const auto positionBeforeSave = scene.actor(3)->position();
     const auto characterBeforeSave = scene.actor(3)->save().toJson();
@@ -1229,8 +1229,8 @@ TEST_CASE("a scenario's options place the party and skip the welcome",
     REQUIRE(actor->position().z == Approx(-62.0f));
     REQUIRE(actor->yaw() == Approx(1.0f));
     // A first-level character wears the first costume tier and holds the first weapon.
-    REQUIRE(scene.figureDirectory(0).has_value());
-    REQUIRE(scene.figureDirectory(0)->filename() == "YEL00");
+    REQUIRE(scene.seatFigureDirectory(0).has_value());
+    REQUIRE(scene.seatFigureDirectory(0)->filename() == "YEL00");
     REQUIRE(scene.weaponHeld(0));
     // Far from Sumner his beam stays dark.
     REQUIRE(sumnerBeamAlpha(world) == 0.0f);
@@ -3034,7 +3034,7 @@ TEST_CASE("a level gained is announced with its number and a hundred health, and
     REQUIRE(experienceLevel(scene.actor(0)->save().experience()) == 9);
     // Enough for the tenth: health and narration are immediate; the costume waits.
     const s32 health = scene.actor(0)->save().health();
-    const auto before = scene.figureDirectory(0);
+    const auto before = scene.seatFigureDirectory(0);
     // (The fields pay experience at their own scale, so the gain may be more than one.)
     scene.awardExperience(0, levelExperience(10) - levelExperience(9) + 1, false);
     scene.update(1.0 / 60.0, still);
@@ -3044,7 +3044,7 @@ TEST_CASE("a level gained is announced with its number and a hundred health, and
     REQUIRE(scene.help().showing());
     REQUIRE(scene.help().lines().front() == std::format("LEVEL {}", gained));
     if (before.has_value()) {
-        const auto after = scene.figureDirectory(0);
+        const auto after = scene.seatFigureDirectory(0);
         REQUIRE(after.has_value());
         REQUIRE(after == before);
         REQUIRE(scene.actor(0)->save().progress().promotionPending());
@@ -3053,14 +3053,14 @@ TEST_CASE("a level gained is announced with its number and a hundred health, and
     for (s32 i = 0; i < 700; ++i) {
         scene.update(1.0 / 60.0, still);
     }
-    const auto tiered = scene.figureDirectory(0);
+    const auto tiered = scene.seatFigureDirectory(0);
     scene.awardExperience(0, levelExperience(gained + 1) - levelExperience(gained) + 1, false);
     scene.update(1.0 / 60.0, still);
     const s32 next = experienceLevel(scene.actor(0)->save().experience());
     REQUIRE(next > gained);
     REQUIRE(scene.help().lines().front() == std::format("LEVEL {}", next));
     if (next / 10 == gained / 10) {
-        REQUIRE(scene.figureDirectory(0) == tiered);
+        REQUIRE(scene.seatFigureDirectory(0) == tiered);
     }
     scene.close();
 }
@@ -3107,11 +3107,11 @@ TEST_CASE("tower returns award permanent familiars with locked controls and pers
     }
     REQUIRE_FALSE(awaitingEntrance(scene));
     const Vec3 start = scene.actor(3)->position();
-    const auto costume = scene.figureDirectory(s32{3});
+    const auto costume = scene.seatFigureDirectory(s32{3});
     for (s32 frame = 0; frame < 359; ++frame) {
         scene.update(1.0 / 60.0, moving);
     }
-    REQUIRE(scene.figureDirectory(s32{3}) == costume);
+    REQUIRE(scene.seatFigureDirectory(s32{3}) == costume);
     REQUIRE(scene.familiarTier(3) == 0);
     PlayScene::LocalSnapshot beforePromotion;
     REQUIRE(scene.saveLocal(beforePromotion));

@@ -15,7 +15,7 @@ class SaveMenu {
 public:
     enum class Mode : u8 { Save, Load };
     enum class State : u8 { Slots, Confirm, Notice, Done };
-    void open(SaveSlots& slots, std::span<const PartyMember> party, s32 player, Mode mode,
+    void open(SaveSlots& slots, std::span<const PartyMember> party, s32 seat, Mode mode,
               const StringTable* strings);
     MenuDefinition definition() const;
     void choose(s32 code);
@@ -32,7 +32,7 @@ private:
     SaveSlots* m_slots = nullptr;
     const StringTable* m_strings = nullptr;
     std::vector<PartyMember> m_party;
-    usize m_player = 0;
+    usize m_partyIndex = 0;
     usize m_page = 0;
     usize m_target = 0;
     Mode m_mode = Mode::Save;

@@ -32,7 +32,7 @@ public:
         template <class Visitor> friend void visitNativeState(Visitor& digest, const Entry& value) {
             digest.template fields<4>(value);
         }
-        usize player = 0;
+        usize partyIndex = 0;
         s32 level = 0;
         std::string caption;
         std::string voice;

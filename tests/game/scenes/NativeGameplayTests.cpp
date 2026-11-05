@@ -76,8 +76,8 @@ TEST_CASE("native tower gameplay loads player tuning and responds to movement an
     REQUIRE(scene.animator(0) != nullptr);
     REQUIRE(scene.animator(0)->bound());
     REQUIRE(scene.weaponHeld(0));
-    REQUIRE(scene.figureDirectory(0));
-    CHECK(scene.figureDirectory(0)->filename() == "YEL00");
+    REQUIRE(scene.seatFigureDirectory(0));
+    CHECK(scene.seatFigureDirectory(0)->filename() == "YEL00");
     CHECK(scene.actor(0)->height() == stats->height);
     CHECK(scene.actor(0)->radius() == stats->width * 0.5f);
     const auto expectedStats = displayStats(*stats, 1, party.front().save.progress());

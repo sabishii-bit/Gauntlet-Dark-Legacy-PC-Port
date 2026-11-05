@@ -11,7 +11,7 @@
 namespace gdl::game {
 /** A special's ending heard: whose, and the sound. */
 struct PowerupEnding {
-    usize player = 0; ///< the record's place in the party
+    usize partyIndex = 0;
     std::string_view sound;
 };
 

@@ -578,7 +578,7 @@ TEST_CASE("the lowest standing player's heart beats faster and louder as health 
     party[1].actor.save().progress().health = 150;
     auto beat = PlayerHealth::heartbeat(party, 2, false);
     REQUIRE(beat);
-    CHECK(beat->player == 1);
+    CHECK(beat->partyIndex == 1);
     CHECK(beat->volume == Approx(1.0f));
     // Two seconds between beats at a hundred and over; then one, then half of one.
     s32 ticks = 2;
@@ -600,7 +600,7 @@ TEST_CASE("the lowest standing player's heart beats faster and louder as health 
     party[0].actor.save().progress().health = 60;
     beat = PlayerHealth::heartbeat(party, 2, false);
     REQUIRE(beat);
-    CHECK(beat->player == 0);
+    CHECK(beat->partyIndex == 0);
     CHECK(beat->volume == Approx(152.0f / 127.0f));
     // Silent in the tower and while invulnerable, though the beat keeps its time.
     party[0].heartbeatTicks = 0;

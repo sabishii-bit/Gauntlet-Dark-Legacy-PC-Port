@@ -74,7 +74,7 @@ public:
     static constexpr std::string_view kHeartbeatSound = "S_WARN";
     /** A heartbeat to play: whose, and how loud (1 is the sound's own level). */
     struct Heartbeat {
-        usize player = 0;
+        usize partyIndex = 0;
         f32 volume = 1.0f;
     };
     /** do_weakening's warning for `ticks` more: the standing player with the least health, at

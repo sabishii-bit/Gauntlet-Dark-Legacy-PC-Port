@@ -46,7 +46,7 @@ TEST_CASE("tower promotions wait for their lead-in, award beats and completed sp
     texts(strings);
     promotion.begin(party, strings);
     REQUIRE(promotion.active());
-    REQUIRE(promotion.current()->player == 0); // party index, not controller id
+    REQUIRE(promotion.current()->partyIndex == 0);
     REQUIRE(promotion.current()->voice == "S_EXP30WAR");
     REQUIRE(promotion.current()->caption == "Yellow Warrior is now\na level 30 Hero!\n");
     REQUIRE_FALSE(promotion.update(119, false).voice);
@@ -57,9 +57,9 @@ TEST_CASE("tower promotions wait for their lead-in, award beats and completed sp
     REQUIRE_FALSE(promotion.update(29, true).gem);
     REQUIRE(promotion.update(1, true).gem);
     promotion.update(1000, true);
-    REQUIRE(promotion.current()->player == 0); // voice still playing
+    REQUIRE(promotion.current()->partyIndex == 0); // voice still playing
     promotion.update(1, false);
-    REQUIRE(promotion.current()->player == 1);
+    REQUIRE(promotion.current()->partyIndex == 1);
     REQUIRE(promotion.current()->voice == "S_EXP80WAR");
     REQUIRE(promotion.update(0, false).voice); // no second lead-in
     const auto cues = promotion.update(360, false);
@@ -84,7 +84,7 @@ TEST_CASE("ordinary levels and awarded or fallen characters do not queue promoti
     MessageTable strings;
     texts(strings);
     promotion.begin(party, strings);
-    REQUIRE(promotion.current()->player == 3);
+    REQUIRE(promotion.current()->partyIndex == 3);
     REQUIRE(promotion.current()->voice == "S_EXP99ALL");
     REQUIRE(promotion.current()->caption == "Yellow Warrior is now\na level 99 Legend!\n");
     party[3].actor.save().progress().promotedLevel = 99;
@@ -298,7 +298,7 @@ TEST_CASE("native tower promotion rewind preserves awards captions and wizard mo
             CHECK(actual.shown() == expected.shown());
             CHECK(actual.active() == expected.active());
             if (actual.active()) {
-                CHECK(actual.current()->player == expected.current()->player);
+                CHECK(actual.current()->partyIndex == expected.current()->partyIndex);
                 CHECK(actual.current()->caption == expected.current()->caption);
             }
             CHECK(actual.animation().frame() == expected.animation().frame());

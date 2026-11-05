@@ -460,9 +460,9 @@ public:
     /** The wizard's visit once the boss has fallen. */
     const BossVictory& victory() const { return m_bossSequence.victory().state(); }
     /** The archive folder a character's figure was loaded from, for tests. */
-    std::optional<std::filesystem::path> figureDirectory(usize index) const {
-        return index < m_players.size() && m_players[index].figure != nullptr
-                   ? std::optional<std::filesystem::path>(m_players[index].figure->directory())
+    std::optional<std::filesystem::path> memberFigureDirectory(usize partyIndex) const {
+        return partyIndex < m_players.size() && m_players[partyIndex].figure != nullptr
+                   ? std::optional<std::filesystem::path>(m_players[partyIndex].figure->directory())
                    : std::nullopt;
     }
     const HelpMessages& help() const { return m_hud.help(); }
@@ -636,7 +636,7 @@ public:
     const LevelArrivalPresentation& arrival() const { return m_arrival; }
     usize spawnEffectCount() const { return m_arrival.effectCount(); }
     /** The folder a character's figure came from, when it loaded. */
-    std::optional<std::filesystem::path> figureDirectory(s32 player) const;
+    std::optional<std::filesystem::path> seatFigureDirectory(s32 seat) const;
     /** Whether a character's figure carries its weapon. */
     bool weaponHeld(s32 player) const;
     /** The folder holding a character's figure at their level: the costume tier of ten

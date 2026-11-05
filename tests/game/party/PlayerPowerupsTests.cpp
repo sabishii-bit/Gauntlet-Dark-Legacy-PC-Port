@@ -166,18 +166,18 @@ TEST_CASE("a special wearing off, or switched off, is heard once against the fla
     second.powerups[0].on = false;
     const auto endings = PlayerPowerups::update(players, 1.0f, PlayerPowerups::Clock::Level);
     REQUIRE(endings.size() == 3);
-    CHECK(endings[0].player == 0);
+    CHECK(endings[0].partyIndex == 0);
     CHECK(endings[0].sound == "S_LEVITATEDOWN");
-    CHECK(endings[1].player == 1);
+    CHECK(endings[1].partyIndex == 1);
     CHECK(endings[1].sound == "S_UNPOJO");
-    CHECK(endings[2].player == 1);
+    CHECK(endings[2].partyIndex == 1);
     CHECK(endings[2].sound == "S_UNGROW");
     CHECK(PlayerPowerups::update(players, 1.0f, PlayerPowerups::Clock::Level).empty());
     // An ogre never goes back to a plain size, so its growth ends unheard.
     ogre.powerups[0].on = false;
     const auto unheard = PlayerPowerups::update(players, 1.0f, PlayerPowerups::Clock::Level);
     REQUIRE(unheard.size() == 1);
-    CHECK(unheard[0].player == 2);
+    CHECK(unheard[0].partyIndex == 2);
     CHECK(unheard[0].sound == "S_UNPOJO");
     // The fallen keep their flags for when they stand again.
     second.powerups[0].on = true;

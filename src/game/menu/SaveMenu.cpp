@@ -15,7 +15,7 @@ constexpr s32 kNext = -3;
 std::string SaveMenu::text(std::string_view id) const {
     return std::string(m_strings != nullptr ? m_strings->get(id) : id);
 }
-void SaveMenu::open(SaveSlots& slots, std::span<const PartyMember> party, s32 player, Mode mode,
+void SaveMenu::open(SaveSlots& slots, std::span<const PartyMember> party, s32 seat, Mode mode,
                     const StringTable* strings) {
     m_slots = &slots;
     m_strings = strings;
@@ -24,22 +24,22 @@ void SaveMenu::open(SaveSlots& slots, std::span<const PartyMember> party, s32 pl
     m_state = State::Done;
     m_success = false;
     m_page = 0;
-    m_player = m_party.size();
+    m_partyIndex = m_party.size();
     slots.refresh();
     for (usize i = 0; i < m_party.size(); ++i) {
-        if (m_party[i].player == player) {
-            m_player = i;
+        if (m_party[i].player == seat) {
+            m_partyIndex = i;
             m_state = State::Slots;
             break;
         }
     }
 }
 bool SaveMenu::available(usize slot) const {
-    if (m_slots == nullptr || slot >= m_slots->count() || m_player >= m_party.size()) {
+    if (m_slots == nullptr || slot >= m_slots->count() || m_partyIndex >= m_party.size()) {
         return false;
     }
     for (usize i = 0; i < m_party.size(); ++i) {
-        if (i != m_player && m_party[i].slot == slot) {
+        if (i != m_partyIndex && m_party[i].slot == slot) {
             return false;
         }
     }
@@ -114,7 +114,7 @@ void SaveMenu::choose(s32 code) {
         }
         // A load is confirmed only over a character that has never been kept (select.c
         // 697: sel_step by the save's `saved`); overwriting a file always is.
-        const bool confirm = m_mode == Mode::Load ? !m_party[m_player].slot.has_value()
+        const bool confirm = m_mode == Mode::Load ? !m_party[m_partyIndex].slot.has_value()
                                                   : m_slots->slot(m_target).occupied;
         if (confirm) {
             m_state = State::Confirm;
@@ -129,7 +129,7 @@ void SaveMenu::perform() {
         m_state = State::Notice;
         return;
     }
-    auto& member = m_party[m_player];
+    auto& member = m_party[m_partyIndex];
     if (m_mode == Mode::Save) {
         m_success = m_slots->write(m_target, member.save);
     } else {

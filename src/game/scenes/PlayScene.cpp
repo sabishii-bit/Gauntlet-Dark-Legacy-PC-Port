@@ -443,9 +443,9 @@ std::optional<Vec3> PlayScene::assistedAim(usize index, const Vec3& direction) {
                          m_players[index].cursorAiming);
 }
 
-std::optional<std::filesystem::path> PlayScene::figureDirectory(s32 player) const {
+std::optional<std::filesystem::path> PlayScene::seatFigureDirectory(s32 seat) const {
     for (const PlayerRuntime& runtime : m_players) {
-        if (runtime.actor.player() == player && runtime.figure != nullptr) {
+        if (runtime.actor.player() == seat && runtime.figure != nullptr) {
             return runtime.figure->directory();
         }
     }
@@ -1537,7 +1537,7 @@ void PlayScene::advancePowerupsAndWorld(s32 ticks, f32 seconds, bool held) {
                         : ending.sound == "S_LEVITATEDOWN" ? 3
                                                            : 0;
         const auto audioScope = m_audio.soundScope(
-            {45, 0, 1, static_cast<u8>(m_players[ending.player].actor.player())}, cue);
+            {45, 0, 1, static_cast<u8>(m_players[ending.partyIndex].actor.player())}, cue);
         m_audio.playNamed(ending.sound);
     }
     praiseStreaks(seconds);
