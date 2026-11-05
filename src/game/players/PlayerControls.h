@@ -6,6 +6,7 @@
 #include "engine/math/Math.h"
 #include "engine/platform/Input.h"
 
+#include "game/config/ControlProfiles.h"
 #include "game/config/GameConfig.h"
 
 namespace gdl::game {
@@ -74,7 +75,7 @@ private:
 /** Whether the player holds their attack: a bound key (when `keyboard`) or pad button. */
 bool readAttackInput(const Input& input, const PlayBindings& bindings, bool keyboard, s32 pad);
 
-inline constexpr s32 kAllPads = -1;
-inline constexpr s32 kNoPad = -2;
+inline constexpr s32 kAllPads = ControlDevice::kAllPads;
+inline constexpr s32 kNoPad = ControlDevice::kNoPad;
 
 } // namespace gdl::game

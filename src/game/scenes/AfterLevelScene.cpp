@@ -19,6 +19,7 @@
 #include "game/widgets/MenuFont.h"
 #include "game/widgets/OptionMenu.h"
 #include "game/widgets/PointerTargets.h"
+#include "game/widgets/SceneInput.h"
 
 namespace gdl::game {
 namespace {
@@ -39,24 +40,13 @@ MenuInput shopInput(MenuInput input, const GameConfig& config, s32 player) {
     if (input.devices == nullptr) {
         return input;
     }
-    const auto source = playerInputSource(*input.devices, config, player);
+    const SceneInput devices{*input.devices, config};
     const auto& bindings = menuBindings(config, player);
-    const auto pressed = [&](const auto& keys, const auto& buttons) {
-        return (source.keyboard && std::ranges::any_of(keys,
-                                                       [&](Key key) {
-                                                           return key != Key::MouseLeft &&
-                                                                  key != Key::MouseRight &&
-                                                                  input.devices->wasKeyPressed(key);
-                                                       })) ||
-               std::ranges::any_of(buttons, [&](PadButton button) {
-                   return input.devices->wasPadButtonPressed(source.pad, button);
-               });
-    };
     // Retail has separate Buy, Sell and Exit buttons. Keep Start as an alias, but
     // shared Select/Start presses (Enter) remain purchases even when scrolling drops them.
     const bool start = input.start && !input.select;
-    input.back = pressed(bindings.shopSell, bindings.padShopSell);
-    input.start = start || pressed(bindings.shopExit, bindings.padShopExit);
+    input.back = devices.pressed(player, bindings.shopSell, bindings.padShopSell);
+    input.start = start || devices.pressed(player, bindings.shopExit, bindings.padShopExit);
     return input;
 }
 } // namespace

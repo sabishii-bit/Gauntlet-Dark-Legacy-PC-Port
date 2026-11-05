@@ -7,6 +7,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <variant>
 #include <vector>
 
@@ -69,6 +70,8 @@
 #include "game/players/TurboMeter.h"
 #include "game/rollback/ConsoleAction.h"
 #include "game/rollback/FrameEventLedger.h"
+#include "game/rollback/InputCommand.h"
+#include "game/rollback/SessionInputs.h"
 #include "game/scenes/ClassUnlocks.h"
 #include "game/scenes/Haptics.h"
 #include "game/scenes/ScenePicking.h"
@@ -230,6 +233,10 @@ public:
     static constexpr s32 kCrystalTicks = TowerWelcome::kCrystalTicks;
     static constexpr f32 kGreetingSeconds = SumnerVisit::kGreetingSeconds;
     using Inputs = std::array<PlayInput, kPlayerCount>;
+    static_assert(static_cast<usize>(kPlayerCount) == kInputSlots &&
+                      static_cast<usize>(kPlayerCount) == InputCommand::kSeats,
+                  "offline, seat n reads input slot n");
+    static_assert(std::is_same_v<Inputs, SessionInputs::Frame>);
 
     using Intro = TowerWelcome::Intro;
 

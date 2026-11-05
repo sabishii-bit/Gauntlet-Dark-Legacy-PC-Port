@@ -432,6 +432,7 @@ add_executable(tests
     game/menu/MainMenuFactoryTests.cpp
     game/widgets/OptionMenuTests.cpp
     game/widgets/PointerTargetsTests.cpp
+    game/widgets/SceneInputTests.cpp
     game/scenes/TitleSceneTests.cpp
     game/scenes/IdleScreenTests.cpp
     game/scenes/AttractSceneTests.cpp

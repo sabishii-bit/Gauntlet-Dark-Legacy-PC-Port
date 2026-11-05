@@ -10,9 +10,9 @@
 #include "engine/platform/Paths.h"
 
 #include "game/characters/Progression.h"
-#include "game/config/ControlProfiles.h"
 #include "game/players/PickupVoices.h"
 #include "game/widgets/MenuFont.h"
+#include "game/widgets/SceneInput.h"
 
 namespace gdl::game {
 
@@ -402,27 +402,30 @@ bool PlayerSelectScene::musicPlaying() const {
            m_gameServices->sounds->isPlaying(m_music);
 }
 
-PlayerSelectScene::Inputs PlayerSelectScene::readInputs(const Input& input) const {
+s32 PlayerSelectScene::typist() const {
     s32 textOwner = -1;
     for (s32 index = 0; index < kLaneCount; ++index) {
         if (lane(index).typing() && (textOwner < 0 || index == m_services.keyboardLane)) {
             textOwner = index;
         }
     }
+    return textOwner;
+}
+
+PlayerSelectScene::Inputs PlayerSelectScene::readInputs(const Input& input) const {
+    if (m_gameServices->config != nullptr) {
+        return SceneInput{input, *m_gameServices->config}.typing(typist());
+    }
+    const s32 textOwner = typist();
     Inputs inputs;
     for (s32 index = 0; index < kLaneCount; ++index) {
-        auto source = m_gameServices->config != nullptr
-                          ? playerInputSource(input, *m_gameServices->config, index)
-                          : MenuInputSource::forPlayer(index);
+        auto source = MenuInputSource::forPlayer(index);
         if (textOwner >= 0) {
             // Text entry temporarily borrows the keyboard; gameplay assignments stay intact.
             source.keyboard = index == textOwner;
             source.text = index == textOwner;
         }
-        const auto bindings = m_gameServices->config != nullptr
-                                  ? menuBindings(*m_gameServices->config, index)
-                                  : MenuBindings{};
-        inputs[static_cast<usize>(index)] = readMenuInput(input, bindings, source);
+        inputs[static_cast<usize>(index)] = readMenuInput(input, MenuBindings{}, source);
     }
     return inputs;
 }

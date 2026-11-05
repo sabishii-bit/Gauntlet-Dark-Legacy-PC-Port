@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <optional>
 #include <string>
 
@@ -7,6 +8,7 @@
 #include "engine/math/Math.h"
 #include "engine/platform/Input.h"
 
+#include "game/config/ControlProfiles.h"
 #include "game/config/GameConfig.h"
 
 namespace gdl::game {
@@ -43,10 +45,12 @@ struct MenuInput {
     }
 };
 
+using MenuInputs = std::array<MenuInput, kInputSlots>; ///< indexed by input slot
+
 /** Which devices one read merges: the keyboard and one pad, or every pad. */
 struct MenuInputSource {
-    static constexpr s32 kAllPads = -1;
-    static constexpr s32 kNoPad = -2;
+    static constexpr s32 kAllPads = ControlDevice::kAllPads;
+    static constexpr s32 kNoPad = ControlDevice::kNoPad;
     static constexpr s32 kKeyboardPlayer = 0;
 
     bool keyboard = true;

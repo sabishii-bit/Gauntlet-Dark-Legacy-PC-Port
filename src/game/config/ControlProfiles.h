@@ -1,5 +1,8 @@
 #pragma once
+#include <array>
+#include <optional>
 #include <span>
+#include <vector>
 
 #include <nlohmann/json_fwd.hpp>
 
@@ -21,11 +24,17 @@ struct ControlAction {
 std::span<const ControlAction> controlActions();
 void readControlProfiles(const nlohmann::json& json, GameConfig& config);
 nlohmann::json writeControlProfiles(const GameConfig& config);
+/** This machine's input slots: one per entry of the settings' controls. */
+inline constexpr usize kInputSlots = 4;
+static_assert(kInputSlots == std::tuple_size_v<decltype(GameConfig::controls)>);
+/** The devices one input slot plays on: the keyboard or not, and one pad. */
 struct ControlDevice {
+    static constexpr s32 kAllPads = -1; ///< every pad, for a read that merges them
+    static constexpr s32 kNoPad = -2;   ///< no pad
     bool keyboard = false;
-    s32 pad = -2;
+    s32 pad = kNoPad;
 };
-std::array<ControlDevice, 4> controlDevices(const GameConfig& config, const Input& input);
+std::array<ControlDevice, kInputSlots> controlDevices(const GameConfig& config, const Input& input);
 enum class ControlFeedback : u8 { Damage, MeleeHit, GeneratorDestroyed, ThunderHammer };
 struct ControlVibration {
     s32 pad = -1;

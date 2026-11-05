@@ -156,8 +156,9 @@ s32 controllerOccurrence(const Input& input, s32 pad) {
     }
     return occurrence;
 }
-std::array<ControlDevice, 4> controlDevices(const GameConfig& config, const Input& input) {
-    std::array<ControlDevice, 4> result{};
+std::array<ControlDevice, kInputSlots> controlDevices(const GameConfig& config,
+                                                      const Input& input) {
+    std::array<ControlDevice, kInputSlots> result{};
     std::array<bool, Input::kMaxPads> used{};
     bool keyboardUsed = false;
     for (usize i = 0; i < result.size(); ++i) {

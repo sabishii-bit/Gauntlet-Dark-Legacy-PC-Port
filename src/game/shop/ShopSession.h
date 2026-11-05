@@ -76,7 +76,8 @@ struct ShopLane {
  * vector positions. Fallen members keep their rollback saves but cannot shop. */
 class ShopSession {
 public:
-    using Inputs = std::array<MenuInput, 4>;
+    static constexpr usize kSeats = 4; ///< one per party seat
+    using Inputs = std::array<MenuInput, kSeats>;
     /** A supplied seed owns this visit's reproducible potion stream (including
      * seed zero). Otherwise entropy is requested lazily on its first native
      * potion attempt. update's supplied colours always bypass this stream. */

@@ -394,6 +394,8 @@ add_library(game STATIC
     widgets/OptionMenu.cpp
     widgets/PointerTargets.h
     widgets/PointerTargets.cpp
+    widgets/SceneInput.h
+    widgets/SceneInput.cpp
     tower/HintMenu.h
     tower/HintMenu.cpp
     widgets/BurnDialogueScroll.h

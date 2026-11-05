@@ -23,6 +23,7 @@
 #include "game/characters/CharacterSave.h"
 #include "game/characters/ClassData.h"
 #include "game/characters/Party.h"
+#include "game/config/ControlProfiles.h"
 #include "game/context/GameServices.h"
 #include "game/hud/StatusBox.h"
 #include "game/level/LevelWorld.h"
@@ -42,7 +43,8 @@ class PlayerSelectScene {
 public:
     static constexpr s32 kLaneCount = 4;
     static constexpr s32 kIdleFrames = 8;
-    using Inputs = std::array<MenuInput, kLaneCount>;
+    static_assert(static_cast<usize>(kLaneCount) == kInputSlots, "lane n reads input slot n");
+    using Inputs = MenuInputs;
 
     PlayerSelectScene() = default;
     ~PlayerSelectScene();
@@ -100,6 +102,9 @@ public:
     }
 
 private:
+    /** The lane whose name field has the keyboard: the keyboard player's while it types,
+     * else the first lane typing; -1 while none is. */
+    s32 typist() const;
     bool loadResources(RenderDevice& device, const std::filesystem::path& unpackedRoot);
     void loadSounds(const std::filesystem::path& unpackedRoot);
     void loadTower(RenderDevice& device, LevelWorld* tower);
