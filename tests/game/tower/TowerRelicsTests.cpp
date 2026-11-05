@@ -7,12 +7,18 @@
 
 #include "engine/core/Types.h"
 #include "engine/io/File.h"
+#include "engine/world/SampleLevel.h"
 
 #include "FakeRenderDevice.h"
+#include "NativeStateSupport.h"
 #include "RecordedDrawChecks.h"
 #include "TestSupport.h"
 #include "game/app/Scenario.h"
 #include "game/characters/CharacterSave.h"
+#include "game/level/LevelCatalog.h"
+#include "game/level/LevelWorld.h"
+#include "game/level/NativeStateResources.h"
+#include "game/level/StageRegistry.h"
 #include "game/tower/TowerRelics.h"
 
 namespace {
@@ -581,5 +587,44 @@ TEST_CASE("native tower relic rewind crosses speech placement and wizard resets"
     actual.saveLocal(saved);
     actual.bind(device, world, {});
     CHECK_FALSE(actual.restoreLocal(saved));
+}
+
+TEST_CASE("tower relic digest bytes stay pinned after the ceremony script and what it saved",
+          "[game][tower-relics][digest-golden]") {
+    const auto root = test::sampleLevel("tower-relics-digest-golden");
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    REQUIRE(world.load(device, root, LevelRef{"TEST", 0, "TEST", "", "", "", "", 0}));
+    std::array<Relics, 1> party;
+    party[0].addRune(0);
+    party[0].addShard(1);
+    MessageTable strings;
+    messages(strings);
+    TowerRelics relics;
+    relics.begin(party, strings);
+    relics.bind(device, world, {});
+    const auto step = [&relics] {
+        relics.capturePresentation();
+        (void)relics.update(10, 1.0f / 30, false);
+        relics.animate(1.0f / 30);
+    };
+    for (s32 tick = 0; tick < 4; ++tick) {
+        step();
+    }
+    TowerRelics::LocalSnapshot saved;
+    relics.saveLocal(saved);
+    for (s32 tick = 4; tick < 12; ++tick) {
+        step();
+    }
+    NativeStateResources resources;
+    test::registerStage(resources, world, device);
+    REQUIRE(relics.registerNativeResources(resources));
+    // SHA-256 of the ceremony's native digest twelve updates in and of what it saved four
+    // updates in, which netplay peers must hash alike: a literal moves only when what is visited
+    // changes on purpose.
+    test::checkPinnedDigests("TowerRelics", test::liveDigest(relics, resources.resources()),
+                             test::savedDigest(relics, saved, resources.resources()),
+                             "7b134812a517fcaab09c4816ffc15a5af551f403a3cc0f029464dd9c06f5197e",
+                             "2602812209950d12d7898d6e21f4731e05e1f7741178782672aaa685fcee4bcb");
 }
 } // namespace

@@ -12,7 +12,9 @@
 #include "engine/io/NativeStateDigest.h"
 
 #include "FakeRenderDevice.h"
+#include "NativeStateSupport.h"
 #include "TestSupport.h"
+#include "fixtures/NativeModelFixture.h"
 #include "game/combat/DamageTypes.h"
 #include "game/combat/PowerupFlags.h"
 #include "game/hud/LevelMessages.h"
@@ -381,5 +383,130 @@ TEST_CASE("native HUD scroll and message digest bytes stay pinned for distinct s
     CHECK(test::hexBytes(liveDigest(hud, none)) == kHud);
     CHECK(test::hexBytes(liveDigest(scroll.box, scroll.resources)) == kScroll);
     CHECK(test::hexBytes(liveDigest(messages, resources)) == kMessages);
+}
+
+TEST_CASE("native HUD digest bytes stay pinned after their scripts and what they saved",
+          "[scene-hud-native-digest][native-state-digest][digest-golden]") {
+    ScrollFixture scroll;
+    scroll.box.step(1, 1);
+    ScrollBox::LocalSnapshot scrollSaved;
+    scroll.box.saveLocal(scrollSaved);
+    for (s32 tick = 1; tick < 4; ++tick) {
+        scroll.box.step(1, 1);
+    }
+
+    BurnDialogueScroll burn;
+    REQUIRE(burn.start(scroll.device, {1, 2, 3, 4}, scroll.source, {&scroll.mask}, {&scroll.ring}));
+    burn.step(7);
+    BurnDialogueScroll::LocalSnapshot burnSaved;
+    burn.saveLocal(burnSaved);
+    burn.step(7);
+    burn.step(7);
+
+    const auto directory = test::scratchDirectory("scene-hud-digest-golden");
+    writeTextFile(directory / "messages.json",
+                  R"({"messages":[{"name":"LEVELUP","lines":["LEVEL %d"]}]})");
+    MessageTable text;
+    REQUIRE(text.load(directory / "messages.json"));
+    PartyHud hud;
+    hud.help().setTexts(&text);
+    REQUIRE(hud.help().post(HelpMessages::kLevelUp, 1, {}, 3));
+    hud.pickups().addCard(2, "CRYSTAL");
+    const auto age = [&hud](s32 ticks) {
+        hud.help().update(ticks);
+        hud.pickups().step(ticks, static_cast<f32>(ticks) / 60);
+    };
+    age(2);
+    PartyHud::LocalSnapshot hudSaved;
+    hud.saveLocal(hudSaved);
+    hud.pickups().showCount(0, "SM_CRYSTAL_ORA", 3, 15);
+    hud.showRelics();
+    age(5);
+
+    const auto root = messageRoot();
+    test::FakeRenderDevice device;
+    TextureSet textures;
+    LevelMessages messages;
+    messages.load(device, textures, root, nullptr);
+    REQUIRE(messages.nativeReady());
+    NativeStateResources resources;
+    REQUIRE(resources.registerTextures(textures, "STATIC"));
+    REQUIRE(messages.open(device, "WELCOME", nullptr, 1));
+    (void)messages.step(1, 0);
+    LevelMessages::LocalSnapshot messagesSaved;
+    ScrollBox::LocalSnapshot messageScrollSaved;
+    messages.saveLocal(messagesSaved);
+    messages.scroll().saveLocal(messageScrollSaved);
+    for (s32 tick = 1; tick < 4; ++tick) {
+        (void)messages.step(1, 1);
+    }
+    const NativeStateResources none;
+    // SHA-256 of each owner's native digest where its script ends and of what it saved partway,
+    // which netplay peers must hash alike: a literal moves only when what is visited changes on
+    // purpose. The level messages' scroll follows them, so that moved messages name the child
+    // that moved them.
+    test::checkPinnedDigests("ScrollBox", liveDigest(scroll.box, scroll.resources),
+                             savedDigest(scroll.box, scrollSaved, scroll.resources),
+                             "036f0d1bf389f83e7d41d180095e11263eabb18d534a950ce3d592ba5bb59fd2",
+                             "687153d0e2444a7df290a8e2e0b347e33632a5f43190f3fad484ef03f7d05251");
+    test::checkPinnedDigests("BurnDialogueScroll", liveDigest(burn, scroll.resources),
+                             savedDigest(burn, burnSaved, scroll.resources),
+                             "c1cadff4205caab94bdba92ed106fdd5200251f7038157cf351ce690356a4851",
+                             "38fc9bc5719a3d59b33b2d1dea968d715164e15cac327ab65909ec28383c5fa2");
+    test::checkPinnedDigests("PartyHud", liveDigest(hud, none), savedDigest(hud, hudSaved, none),
+                             "a272ef763f656d4afe4fbd7917fa79b35148d38cd9a9f408164d073037637c90",
+                             "97c85ce996f0dcb6589737c22cf732b9ca066133648a6cbcfc427d0b67da7f45");
+    test::checkPinnedDigests("LevelMessages", liveDigest(messages, resources),
+                             savedDigest(messages, messagesSaved, resources),
+                             "0b99586f6480b9dffaf0ed47a73e45dd29cdf0483fea165ddf30d4774fa6e02c",
+                             "b8364bcedee410b365a64a157e83fcf3da342565863d0b76d9be3127d361a35c");
+    test::checkPinnedDigests("LevelMessages' ScrollBox", liveDigest(messages.scroll(), resources),
+                             savedDigest(messages.scroll(), messageScrollSaved, resources),
+                             "3571d70c1d5e38e1ee8d45e8fd279671ef074b1044892bb2410f82b7939972cb",
+                             "cdee645c60df93d5ecf8a7be480b47b41ebc26524f6fbab6e0a726f30765306c");
+}
+
+/** Writes the secret challenge's hourglass art into a fresh directory: its frame, its sand and
+ * the two frames of falling grains the sand's animation steps through. */
+std::filesystem::path hourglassArchive(std::string_view name) {
+    const auto dir = test::scratchDirectory(name);
+    writeTextFile(dir / "tri.obj", "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n");
+    writeTextFile(dir / "objects.json", R"({"objects":[{"name":"TRI","file":"tri.obj"}]})");
+    writeFile(dir / "white.png", test::kTinyPng);
+    writeTextFile(dir / "textures.json", R"({"bitmaps":[
+      {"name":"TIMER","file":"white.png","width":2,"height":2},
+      {"name":"TIMER_SAND","file":"white.png","width":2,"height":2},
+      {"name":"SAND0","file":"white.png","width":2,"height":2},
+      {"name":"SAND1","file":"white.png","width":2,"height":2}]})");
+    writeTextFile(dir / "animations.json", R"({"textureAnimations":[{"name":"SAND_ANIM",
+      "texture":1,"source":2,"frames":2,"rate":1}],"trees":[]})");
+    test::convertModelFixture(dir);
+    return dir;
+}
+
+TEST_CASE("native hourglass digest bytes stay pinned on synthetic sand after its script",
+          "[scene-hud-native-digest][native-state-digest][digest-golden]") {
+    test::FakeRenderDevice device;
+    ItemArchive archive;
+    REQUIRE(archive.load(hourglassArchive("scene-hud-digest-hourglass")));
+    ChallengeHud hud;
+    REQUIRE(hud.bind(device, archive));
+    NativeStateResources resources;
+    REQUIRE(resources.registerArchive(archive, "POWERUPS"));
+    for (s32 tick = 0; tick < 3; ++tick) {
+        hud.step(1.0f / 40);
+    }
+    ChallengeHud::LocalSnapshot saved;
+    hud.saveLocal(saved);
+    for (s32 tick = 3; tick < 9; ++tick) {
+        hud.step(1.0f / 40);
+    }
+    // SHA-256 of the hourglass's native digest nine steps in and of what it saved three steps
+    // in, which netplay peers must hash alike: a literal moves only when what is visited changes
+    // on purpose.
+    test::checkPinnedDigests("ChallengeHud", liveDigest(hud, resources),
+                             savedDigest(hud, saved, resources),
+                             "59b17e139449019b86c14894c046f9a0a46eb89421453b1f77f8a71ca44dfd76",
+                             "471eadc2502e447c85b9b47ee77f8bf57c00234f726736c7fd43ae7889e6d4f0");
 }
 } // namespace

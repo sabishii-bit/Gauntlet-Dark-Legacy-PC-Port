@@ -6,6 +6,7 @@
 #include "engine/audio/AudioMixer.h"
 #include "engine/io/NativeStateDigest.h"
 
+#include "NativeStateSupport.h"
 #include "TestSupport.h"
 #include "game/audio/LevelSoundscape.h"
 
@@ -146,6 +147,83 @@ TEST_CASE("native soundscape digest bytes stay pinned for distinct requests and 
     constexpr std::string_view kDigest =
         "fee4abbadaa02641290b70248d85675e94d2b45c8126ec0510a6511a0818d98b";
     CHECK(test::hexBytes(nativeHash(soundscape)) == kDigest);
+    soundscape.close();
+}
+
+TEST_CASE("native voice and soundscape digest bytes stay pinned after their scripts and saves",
+          "[native-digest][audio-native-digest][digest-golden]") {
+    SoundClip clip;
+    clip.sampleRate = 48000;
+    clip.channels = 1;
+    clip.samples.assign(48000, 0.125f);
+    SoundSequence sequence;
+    sequence.bank = "TEST";
+    sequence.steps.push_back({&clip, false, false});
+    SceneSoundEvents events;
+    events.open(42, nullptr);
+    VoiceQueue voices;
+    voices.bind(nullptr);
+    voices.recordTo(&events);
+    const auto queue = [&](u64 tick, u32 cue) {
+        events.beginTick(tick);
+        {
+            const auto scope = events.scoped({7, 3, 1, 0}, cue);
+            voices.queue(sequence, 1);
+        }
+        (void)events.endTick();
+    };
+    // A line queued and the queue updated twice, then a second line queued and the queue held.
+    queue(1, 2);
+    voices.update(1.0f / 60);
+    voices.update(1.0f / 60);
+    VoiceQueue::LocalSnapshot voicesSaved;
+    voices.saveLocal(voicesSaved);
+    queue(2, 3);
+    voices.hold(true);
+    for (s32 tick = 0; tick < 3; ++tick) {
+        voices.update(1.0f / 60);
+    }
+
+    const auto root = test::scratchDirectory("audio-native-digest-golden");
+    const LevelAudioInfo info{.bank = {}, .stream = {}, .areas = 3};
+    LevelSoundscape soundscape;
+    soundscape.open(root, nullptr, &info);
+    // Three players, the music asked to fade to area 2 and ducked every tick, then the narration
+    // held and the boss awake.
+    const auto step = [&soundscape](s32 tick) {
+        if (tick == 1) {
+            soundscape.setPlayerCount(3);
+        }
+        if (tick == 2) {
+            soundscape.selectMusicArea(2, MusicSwitch::Faded);
+        }
+        if (tick == 6) {
+            soundscape.holdNarration(true);
+        }
+        if (tick == 7) {
+            soundscape.bossAwake(true);
+        }
+        soundscape.duckMusic(0.125f, 0.5f);
+        soundscape.updateMusic(1.0f / 30);
+    };
+    for (s32 tick = 0; tick < 4; ++tick) {
+        step(tick);
+    }
+    LevelSoundscape::LocalSnapshot soundscapeSaved;
+    soundscape.saveLocal(soundscapeSaved);
+    for (s32 tick = 4; tick < 9; ++tick) {
+        step(tick);
+    }
+    // SHA-256 of each owner's native digest where its script ends and of what it saved partway,
+    // which netplay peers must hash alike: a literal moves only when what is visited changes on
+    // purpose.
+    test::checkPinnedDigests("VoiceQueue", nativeHash(voices), savedHash(voices, voicesSaved),
+                             "2a7bc5f9086d3d05825647c80f7bef6264091b6cd233e3489a0f6bc305bc7e56",
+                             "205e932b8939f58321206aaa8eb72570d6fdf2d66dc4597f3a38bfdc0bb5475b");
+    test::checkPinnedDigests("LevelSoundscape", nativeHash(soundscape),
+                             savedHash(soundscape, soundscapeSaved),
+                             "41b042f5dae74310e41111be6daaeb77ebc9f4e9af3592846df40de98b35c953",
+                             "4dcddb43662313c616ec5deab223d20434a6cc8011930d3b66a050ce1be6dc2f");
     soundscape.close();
 }
 } // namespace

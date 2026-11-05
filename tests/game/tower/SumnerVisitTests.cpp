@@ -8,6 +8,7 @@
 #include "engine/io/NativeStateDigest.h"
 
 #include "FakeRenderDevice.h"
+#include "NativeStateSupport.h"
 #include "RecordedDrawChecks.h"
 #include "TestSupport.h"
 #include "game/tower/SumnerVisit.h"
@@ -295,6 +296,51 @@ TEST_CASE("Sumner's scroll keeps each machine's field of view out of the shared 
     }
     CHECK_FALSE(narrow.visit.menu().reading());
     CHECK(narrow.visit.active() == wide.visit.active());
+}
+
+TEST_CASE("Sumner visit digest bytes stay pinned after the visit script and what it saved",
+          "[game][screens][sumner-visit][digest-golden]") {
+    Fixture f("sumner-visit-digest-golden");
+    // The first player stands at the visit spot, pressing select at 12 and 17 and back at 15,
+    // 20 and 22.
+    const auto tick = [&f](s32 t) {
+        const s32 phase = t % 80;
+        const auto visitor = phase < 50 ? std::optional<s32>{(t / 80) % 4} : std::nullopt;
+        f.approach(0.25f, visitor);
+        MenuInput input;
+        input.select = phase == 12 || phase == 17;
+        input.back = phase == 15 || phase == 20 || phase == 22;
+        f.step(input, 1);
+    };
+    for (s32 t = 0; t < 10; ++t) {
+        tick(t);
+    }
+    const SumnerVisit& visit = f.visit;
+    SumnerVisit::LocalSnapshot saved;
+    HintMenu::LocalSnapshot menu;
+    SumnerHints::LocalSnapshot hints;
+    visit.saveLocal(saved);
+    visit.menu().saveLocal(menu);
+    visit.texts().saveLocal(hints);
+    for (s32 t = 10; t < 24; ++t) {
+        tick(t);
+    }
+    // SHA-256 of the visit's native digest 24 ticks in and of what it saved ten ticks in, before
+    // the first select, which netplay peers must hash alike: a literal moves only when what is
+    // visited changes on purpose. Its menu and hints follow it, so that a moved visit names the
+    // child that moved it.
+    test::checkPinnedDigests("SumnerVisit", test::liveDigest(visit),
+                             test::savedDigest(visit, saved),
+                             "36d70c6f554a7e1c30fe9c7906b2828a755a7a33ed363141c878bd72c113040d",
+                             "5a9842ffd4187aa99cdc3edb274678c1ae36b7d15963c899935020d81abd716d");
+    test::checkPinnedDigests("HintMenu", test::liveDigest(visit.menu()),
+                             test::savedDigest(visit.menu(), menu),
+                             "84a6e5858ef1e31ce9ed9135160767ed47cc0bbfa0f2a1ea6e4d00e50d0e099d",
+                             "b13d952410061fab70309b68d6bed6bd3e333eb41ab7e8d00d852d6cb74b1c83");
+    test::checkPinnedDigests("SumnerHints", test::liveDigest(visit.texts()),
+                             test::savedDigest(visit.texts(), hints),
+                             "0a81e5c2f49176de4f2c642c1046a36515c28129264a05c685630b8973263170",
+                             "1b0b6721a07d5951f65ce040221c7b8580ee9e1d9bff8a93b6cfdf45b483a395");
 }
 
 } // namespace

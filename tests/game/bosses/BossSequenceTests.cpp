@@ -13,12 +13,15 @@
 #include "engine/io/File.h"
 
 #include "FakeRenderDevice.h"
+#include "NativeStateSupport.h"
 #include "RecordedDrawChecks.h"
 #include "TestSupport.h"
 #include "fixtures/NativeModelFixture.h"
 #include "fixtures/NativeSoundBank.h"
 #include "game/bosses/BossSequence.h"
 #include "game/effects/EffectObservation.h"
+#include "game/level/NativeStateResources.h"
+#include "game/level/StageRegistry.h"
 
 namespace {
 using namespace gdl;
@@ -519,6 +522,49 @@ TEST_CASE("native boss sequence rewind restores death birth speech and confirmed
     expected.sequence.clear();
     actual.audio.close();
     expected.audio.close();
+}
+
+TEST_CASE("boss sequence digest bytes stay pinned through its legend after the victory script",
+          "[game][screens][boss-sequence][digest-golden]") {
+    // Bound, the sequence holds its legend presentation, so its digest takes the legend's branch.
+    Fixture f;
+    f.loadLevel();
+    const auto step = [&f](s32 frame) {
+        if (frame == 2) {
+            f.sequence.fallen({2, 3, 4}, f.bosses, f.players);
+        }
+        f.sequence.capturePresentation();
+        f.sequence.advanceAudio(1.0f / 30);
+        f.sequence.advanceVictory(2, 1.0f / 30, f.players, f.strings);
+        f.effects.update(1.0f / 30);
+    };
+    for (s32 frame = 0; frame < 4; ++frame) {
+        step(frame);
+    }
+    const BossSequence& sequence = f.sequence;
+    BossSequence::LocalSnapshot saved;
+    BossVictoryPresentation::LocalSnapshot victory;
+    sequence.saveLocal(saved);
+    sequence.victory().saveLocal(victory);
+    for (s32 frame = 4; frame < 12; ++frame) {
+        step(frame);
+    }
+    NativeStateResources resources;
+    test::registerStage(resources, f.world, f.device);
+    const auto view = resources.resources();
+    // SHA-256 of the sequence's native digest twelve frames in and of what it saved four frames
+    // in, two after the boss fell, which netplay peers must hash alike: a literal moves only when
+    // what is visited changes on purpose. Its victory follows it, so that a moved sequence names
+    // the child that moved it.
+    test::checkPinnedDigests("BossSequence", test::liveDigest(sequence, view),
+                             test::savedDigest(sequence, saved, view),
+                             "597a67d637298661982771bca634135efb862cf9951d16f1a4545be12a7574aa",
+                             "24babc80425244a38b0ff4ffa1bcc57e5179e75190379445ea5ca4189601a1c0");
+    test::checkPinnedDigests("BossVictoryPresentation", test::liveDigest(sequence.victory(), view),
+                             test::savedDigest(sequence.victory(), victory, view),
+                             "0f9d36da8271f5c706ac827e63c5565246cbe4532c13b45ee2098be3fb671512",
+                             "e556fc620c55d2a30daca6e810977309a9af7b6ccd85e4597ada86678c4d5024");
+    f.sequence.clear();
 }
 
 TEST_CASE("native boss coin rewind restores RNG and item flights after discarded sprays",

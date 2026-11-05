@@ -469,4 +469,110 @@ TEST_CASE("travel native digest bytes stay pinned after the travel script and wh
                              "decfa43dc3622535eaf7d3d17671bc0638374bef5aa4d4a8734fe9c13612abf8",
                              "e5ccce677d278d44567752da1e3419c5acea7906be528d47a8ce726c29c091a1");
 }
+
+TEST_CASE("arrival and victory digest bytes stay pinned after the travel script and their saves",
+          "[native-state-digest][scene-travel-native-digest][digest-golden]") {
+    Travel fixture("travel-presentation-golden");
+    BossVictoryPresentation victory;
+    victory.begin(41, 'G', 1, 0, false);
+    victory.bindWizard(fixture.device, fixture.items, Vec3{0}, std::array{Vec3{2, 0, 2}});
+    fixture.refresh();
+    const MessageTable strings;
+    const auto step = [&](s32 tick) {
+        fixture.step(tick, false);
+        victory.capturePresentation();
+        victory.update(1, kStep, false, strings);
+    };
+    for (s32 tick = 0; tick < 4; ++tick) {
+        step(tick);
+    }
+    Travel::Saved saved;
+    fixture.save(saved);
+    BossVictoryPresentation::LocalSnapshot victorySaved;
+    victory.saveLocal(victorySaved);
+    for (s32 tick = 4; tick < 12; ++tick) {
+        step(tick);
+    }
+    // SHA-256 of each owner's native digest twelve ticks in and of what it saved four ticks in,
+    // which netplay peers must hash alike: a literal moves only when what is visited changes on
+    // purpose.
+    test::checkPinnedDigests("LevelArrivalPresentation", native(fixture.arrival, fixture.resources),
+                             captured(fixture.arrival, saved.arrival, fixture.resources),
+                             "6adaa8a9cfd183965b60ff5dcca883719d342ff133fc2f5a787da710774e3f06",
+                             "48ce4f0c371589edacdff1ab7bcd383fc09341ab760b82b8ea1b8630c23a88e0");
+    test::checkPinnedDigests("BossVictoryPresentation", native(victory, fixture.resources),
+                             captured(victory, victorySaved, fixture.resources),
+                             "dc21f63f69ea4d64c6d218b2964a106f19735ec50f5beeccec1db827212fe1a4",
+                             "5e05ccee2b6c0ef725aa8a27ef6fe49809aacdf4d8fdc3a627562d451f582428");
+}
+
+TEST_CASE("promotion and hint digest bytes stay pinned after their scripts and what they saved",
+          "[native-state-digest][scene-travel-native-digest][digest-golden]") {
+    const NativeStateResources resources;
+    std::array<PlayerRuntime, 1> party;
+    CharacterSave save;
+    save.progress().experience = levelExperience(30);
+    save.progress().promotedLevel = 29;
+    party[0].actor.spawn(0, save, nullptr, Vec3{0}, 0);
+    const MessageTable strings;
+    TowerPromotion promotion;
+    promotion.begin(party, strings);
+    REQUIRE(promotion.active());
+    for (s32 tick = 0; tick < 3; ++tick) {
+        promotion.update(1, false);
+    }
+    TowerPromotion::LocalSnapshot promotionSaved;
+    promotion.saveLocal(promotionSaved);
+    for (s32 tick = 3; tick < 8; ++tick) {
+        promotion.update(1, false);
+    }
+
+    SumnerHints hints;
+    const auto hintFile = test::scratchDirectory("native-hint-golden") / "hints.json";
+    writeTextFile(hintFile,
+                  R"({"messages":[{"name":"G1","lines":["Guardian"]}],
+                       "lists":[{"name":"BOSS_HINTS","messages":[0]}]})");
+    REQUIRE(hints.load(hintFile));
+    HintKnowledge knowledge;
+    knowledge.worldsOpen = 1U << 7U;
+    hints.next(HintTopic::Guardians, knowledge, "GENERAL");
+    SumnerHints::LocalSnapshot hintsSaved;
+    hints.saveLocal(hintsSaved);
+    hints.next(HintTopic::Guardians, knowledge, "GENERAL"); // the hidden search widens
+
+    std::vector<BitmapGlyph> glyphs;
+    for (s32 code = 33; code < 127; ++code) {
+        glyphs.push_back({code, 8, 0, 0});
+    }
+    const auto font = BitmapFont::fromGlyphs(10, 4, std::move(glyphs));
+    const test::FakeTexture sheet{64, 64};
+    TextPainter painter;
+    painter.setFont(&font, &sheet);
+    HintMenu menu;
+    const HintMenuLabels labels{"HELP", {{"GENERAL", 39}, {"GUARDIANS", 40}}, "SELECT", "PLAYER"};
+    REQUIRE(menu.open(painter, {}, labels));
+    test::FakeRenderDevice device;
+    menu.update(device, {}, 1);
+    HintMenu::LocalSnapshot menuSaved;
+    menu.saveLocal(menuSaved);
+    for (s32 tick = 1; tick < 4; ++tick) {
+        menu.update(device, {}, 1);
+    }
+    // SHA-256 of each owner's native digest where its script ends and of what it saved partway
+    // (the promotion three of eight ticks in, the hints before their second search, the menu one
+    // of four ticks in), which netplay peers must hash alike: a literal moves only when what is
+    // visited changes on purpose.
+    test::checkPinnedDigests("TowerPromotion", native(promotion, resources),
+                             captured(promotion, promotionSaved, resources),
+                             "46149bf785093593ed13da4830af0db7d065a7801a0420b8df9639f2ead6b357",
+                             "7283c274a50682e3716cd86245b85b3003520cd4c46e147bc490142fb99b6d1d");
+    test::checkPinnedDigests("SumnerHints", native(hints, resources),
+                             captured(hints, hintsSaved, resources),
+                             "7ee46d12f50a3f3ffe8466d32448c5ea6ed4ff436d2e2f343884dec9f1ab712c",
+                             "d75dc3408a49f0940d20926001a09b1961fd5d91f4461a85f0debc87dd203ea2");
+    test::checkPinnedDigests("HintMenu", native(menu, resources),
+                             captured(menu, menuSaved, resources),
+                             "b4be11972c05566e62e7bff42916fff844da73942e6e0f5f2287628b411e8c85",
+                             "f7a86eabd54019e312d542a5f9deed31383a1894ae30de49f9a9587935fc765f");
+}
 } // namespace

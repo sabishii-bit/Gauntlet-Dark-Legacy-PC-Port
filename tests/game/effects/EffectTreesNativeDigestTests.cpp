@@ -8,6 +8,7 @@
 #include "engine/io/NativeStateDigest.h"
 
 #include "FakeRenderDevice.h"
+#include "NativeStateSupport.h"
 #include "TestSupport.h"
 #include "fixtures/NativeModelFixture.h"
 #include "game/effects/EffectTrees.h"
@@ -412,5 +413,25 @@ TEST_CASE("effect native digest bytes stay pinned for a tagged morphing effect",
     constexpr std::string_view kDigest =
         "87eed365b0c7db18729cf5e90016a36004c680d988fa77ab1ac70cffa9291c65";
     CHECK(test::hexBytes(f.hash()) == kDigest);
+}
+
+TEST_CASE("effect native digest bytes stay pinned after the effect script and what it saved",
+          "[native-digest][effect-native-digest][digest-golden]") {
+    Fixture f("effect-digest-golden");
+    f.start(true);
+    for (u32 tick = 1; tick <= 6; ++tick) {
+        f.step(tick);
+    }
+    EffectTrees::LocalSnapshot saved;
+    f.effects.saveLocal(saved);
+    for (u32 tick = 7; tick <= 12; ++tick) {
+        f.step(tick);
+    }
+    // SHA-256 of the pool's native digest twelve ticks in and of what it saved six ticks in,
+    // which netplay peers must hash alike: a literal moves only when what is visited changes on
+    // purpose.
+    test::checkPinnedDigests("EffectTrees", f.hash(), f.savedHash(saved),
+                             "cb1eb63242fb2857295e184ec8a4bb916692269b1ef644472d2224c34e8188ee",
+                             "c96600b45aae85abe234ee91c53d4281f1041a5751b2eee505bbcfd57af1806a");
 }
 } // namespace

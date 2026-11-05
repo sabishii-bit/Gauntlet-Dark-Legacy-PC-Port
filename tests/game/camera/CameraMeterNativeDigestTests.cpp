@@ -7,6 +7,7 @@
 #include "engine/assets/ItemArchive.h"
 
 #include "FakeRenderDevice.h"
+#include "NativeStateSupport.h"
 #include "TestSupport.h"
 #include "game/camera/TowerCamera.h"
 #include "game/hud/BossMeter.h"
@@ -315,6 +316,48 @@ TEST_CASE("native camera and meter digest bytes stay pinned for distinct bound v
     CHECK(test::hexBytes(liveHash(camera)) == kCamera);
     CHECK(test::hexBytes(liveHash(meter)) == kMeter);
     CHECK(test::hexBytes(liveHash(meters)) == kMeters);
+}
+
+TEST_CASE("native meter digest bytes stay pinned after the draining script and what it saved",
+          "[native-state-digest][camera-meter-native-digest][digest-golden]") {
+    BossMeter meter;
+    REQUIRE(meter.bind(meterDefinition(), nullptr));
+    std::array<HealthMeterReading, 3> readings;
+    for (usize i = 0; i < readings.size(); ++i) {
+        readings[i].definition = meterDefinition();
+        readings[i].definition.backed = i == 0;
+        readings[i].health = readings[i].maxHealth = 1200 + static_cast<f32>(i) * 300;
+    }
+    BossMeters meters;
+    meters.bind(readings, nullptr);
+    // One boss drains 60 a tick; each part of another drains 40 a tick more than the one before.
+    const auto step = [&](s32 tick) {
+        meter.update(1, 1000.0f - static_cast<f32>(tick * 60), 1000, true, false);
+        auto frame = readings;
+        for (usize i = 0; i < frame.size(); ++i) {
+            frame[i].health -= static_cast<f32>(tick) * static_cast<f32>(40 * (i + 1));
+        }
+        meters.update(1, frame, true, false);
+    };
+    for (s32 tick = 0; tick < 4; ++tick) {
+        step(tick);
+    }
+    BossMeter::LocalSnapshot meterSaved;
+    BossMeters::LocalSnapshot metersSaved;
+    meter.saveLocal(meterSaved);
+    meters.saveLocal(metersSaved);
+    for (s32 tick = 4; tick < 10; ++tick) {
+        step(tick);
+    }
+    // SHA-256 of each meter's native digest ten ticks in and of what it saved four ticks in,
+    // which netplay peers must hash alike: a literal moves only when what is visited changes on
+    // purpose.
+    test::checkPinnedDigests("BossMeter", liveHash(meter), savedHash(meter, meterSaved),
+                             "7c6d76727588b7ffa9fded689712bb54f9db3167b0938cac2b0f7a039222b077",
+                             "f736a2229476400ef8dc408b21033f3fb76d1c5ecbf58095f93c5a7885786eaa");
+    test::checkPinnedDigests("BossMeters", liveHash(meters), savedHash(meters, metersSaved),
+                             "4dbe4b1d23176b718a031d7d75566921f67e1dfee4c2a4b4ab9d8efb7ea12254",
+                             "9ee4901506884574e80192018561aba9d43c3131584b7d45f7389290f3285653");
 }
 
 } // namespace

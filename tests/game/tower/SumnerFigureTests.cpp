@@ -1,5 +1,6 @@
 #include <array>
 #include <filesystem>
+#include <string>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -11,8 +12,10 @@
 #include "engine/world/WorldLighting.h"
 
 #include "FakeRenderDevice.h"
+#include "NativeStateSupport.h"
 #include "TestSupport.h"
 #include "fixtures/NativeModelFixture.h"
+#include "game/level/NativeStateResources.h"
 #include "game/tower/SumnerFigure.h"
 
 namespace {
@@ -270,6 +273,70 @@ TEST_CASE("Sumner is absent without his item set", "[game][world]") {
     sumner.update(kStep);
     sumner.draw(device, Mat4{1.0f}, WorldLighting{});
     REQUIRE(device.draws.empty());
+}
+
+TEST_CASE("Sumner's digest bytes stay pinned after his cut-in script and what he saved",
+          "[game][world][digest-golden]") {
+    const auto dir = test::scratchDirectory("sumner-digest-golden");
+    writeTextFile(dir / "body.obj",
+                  "v 0 0 0\nv 1 0 0\nv 0 1 0\nvn 0 0 1\nusemtl tex0\nf 1//1 2//1 3//1\n");
+    writeTextFile(dir / "objects.json", R"({"objects":[
+      {"index":0,"name":"BODY","file":"body.obj","meshTriangles":1}]})");
+    writeFile(dir / "skin.png", test::kTinyPng);
+    writeTextFile(dir / "textures.json", R"({"bitmaps":[
+      {"index":0,"name":"SKIN","file":"skin.png","width":2,"height":2}]})");
+    std::string sequences;
+    for (usize i = 0; i < SumnerFigure::kSequences.size(); ++i) {
+        if (i > 0) {
+            sequences += ',';
+        }
+        sequences += R"({"name":")" + std::string(SumnerFigure::kSequences[i]) +
+                     R"(","frames":4,"frameRate":30,"repeats":)" + (i < 3 ? "true" : "false") +
+                     R"(,"tracks":[{"node":0,"flags":32,"frames":[0,3],"values":[)" +
+                     std::to_string(i * 10) + ',' + std::to_string(i * 10 + 3) + "]}]}";
+    }
+    writeTextFile(dir / "animations.json", R"({"trees":[{"name":"GWIZ","nodes":[
+      {"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],"sequences":[)" +
+                                               sequences + "]}]}");
+    test::convertModelFixture(dir);
+    writeTextFile(dir / "world.json", R"({"objects":[{"name":"GROUND","position":[0,0,0]}],
+      "locators":[{"type":"event","delay":0,"position":[3,2,1],"rotation":[0,0.5,0]}]})");
+    WorldLayout layout;
+    ItemArchive items;
+    test::FakeRenderDevice device;
+    REQUIRE(layout.load(dir));
+    REQUIRE(items.load(dir));
+    SumnerFigure sumner;
+    REQUIRE(sumner.load(device, items, layout));
+    NativeStateResources resources;
+    REQUIRE(resources.registerArchive(items, "sumner"));
+    // A cut-in every 23 ticks, a pending one every 17, and every eleventh tick not updated.
+    const auto step = [&sumner](u32 tick) {
+        sumner.capturePresentation();
+        if (tick % 23 == 0) {
+            sumner.play(static_cast<s32>((tick / 23) % 7));
+        }
+        if (tick % 11 != 0) {
+            sumner.update(1.0f / 60);
+        }
+        if (tick % 17 == 0) {
+            sumner.play(3);
+        }
+    };
+    for (u32 tick = 0; tick < 10; ++tick) {
+        step(tick);
+    }
+    SumnerFigure::LocalSnapshot saved;
+    sumner.saveLocal(saved);
+    for (u32 tick = 10; tick < 30; ++tick) {
+        step(tick);
+    }
+    // SHA-256 of Sumner's native digest thirty ticks in and of what he saved ten ticks in, which
+    // netplay peers must hash alike: a literal moves only when what is visited changes on purpose.
+    test::checkPinnedDigests("SumnerFigure", test::liveDigest(sumner, resources.resources()),
+                             test::savedDigest(sumner, saved, resources.resources()),
+                             "95e6a314885f019d85ab5799de1babfefd76601a9c692d2bf73e9f5973f822a0",
+                             "e98ac854555300ed25e848f51cb4c197bca6983589839371516f63eb258838c3");
 }
 
 } // namespace

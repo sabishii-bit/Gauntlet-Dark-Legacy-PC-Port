@@ -14,12 +14,14 @@
 #include "engine/world/WorldCamera.h"
 
 #include "FakeRenderDevice.h"
+#include "NativeStateSupport.h"
 #include "RecordedDrawChecks.h"
 #include "TestSupport.h"
 #include "fixtures/NativeModelFixture.h"
 #include "game/bosses/Bosses.h"
 #include "game/bosses/LegendPresentation.h"
 #include "game/effects/EffectObservation.h"
+#include "game/level/NativeStateResources.h"
 
 namespace {
 
@@ -828,5 +830,52 @@ TEST_CASE("native legend rewind restores carries throws impacts and attached eff
     CHECK(actual.device.textureUpdates == 0);
     actual.presentation.clear();
     CHECK_FALSE(actual.presentation.restoreLocal(saved));
+}
+
+TEST_CASE("legend digest bytes stay pinned after the dragon's axe flies and what it saved",
+          "[game][screens][legend][digest-golden]") {
+    LegendFixture f;
+    f.load("legend-digest-golden");
+    REQUIRE(f.weapons.load(legendArchive("legend-digest-golden-weapons")));
+    // Carried and brandished at frame 0, thrown at frame 3 and let go at frame 4.
+    const auto advance = [&f](s32 frame) {
+        constexpr s32 kDragon = 34;
+        f.effects.capturePresentation();
+        f.bearer.released = frame >= 4;
+        f.bearer.casting = frame >= 3;
+        f.bearer.holdPoint = Vec3{static_cast<f32>(frame) * 0.02f, 8, 0};
+        f.target.position = Vec3{4, 2, 1};
+        f.target.root = glm::translate(Mat4{1}, f.target.position);
+        if (frame == 0) {
+            f.presentation.carry(2, 2, kDragon, f.bearer);
+            f.show(LegendCue::Brandished, kDragon);
+        }
+        if (frame == 3) {
+            f.show(LegendCue::Thrown, kDragon);
+        }
+        (void)f.presentation.update(1.0f / 30, f.bearer, f.target);
+        f.effects.update(1.0f / 30);
+    };
+    for (s32 frame = 0; frame < 6; ++frame) {
+        advance(frame);
+    }
+    LegendPresentation::LocalSnapshot saved;
+    f.presentation.saveLocal(saved);
+    for (s32 frame = 6; frame < 12; ++frame) {
+        advance(frame);
+    }
+    NativeStateResources resources;
+    REQUIRE(resources.registerArchive(f.items, "legend/items"));
+    REQUIRE(resources.registerArchive(f.weapons, "legend/weapons"));
+    REQUIRE(resources.registerTextures(f.shared, "legend/shared"));
+    // SHA-256 of the legend's native digest twelve frames in and of what it saved six frames in,
+    // two after it was let go, which netplay peers must hash alike: a literal moves only when
+    // what is visited changes on purpose.
+    test::checkPinnedDigests("LegendPresentation",
+                             test::liveDigest(f.presentation, resources.resources()),
+                             test::savedDigest(f.presentation, saved, resources.resources()),
+                             "e5c85b0d160cbcb1355e0ab12c20a87bb9214017b41392a27c2245a8fc63d0a0",
+                             "2cec0d93dad53c2ffe10e0c5eb9bd089218d02301a11192d1daa51896d064035");
+    f.presentation.clear();
 }
 } // namespace
