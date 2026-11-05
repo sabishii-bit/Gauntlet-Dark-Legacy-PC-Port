@@ -152,11 +152,11 @@ struct Client {
         // and its one-shot seal before the local room-start notification.
         if (session.party() == nullptr) {
             for (const auto& member : snapshot.members) {
-                if (session.host() && member.peer == kHost) {
+                if (session.host() && member.endpointId == kHost) {
                     continue;
                 }
                 const auto link = std::ranges::find_if(wire.peers, [&](const auto& row) {
-                    return row.second == (session.host() ? member.peer : kHost);
+                    return row.second == (session.host() ? member.endpointId : kHost);
                 });
                 REQUIRE(link != wire.peers.end());
                 for (const u8 seat : member.seats) {
@@ -169,7 +169,7 @@ struct Client {
             }
             if (session.host()) {
                 for (const auto& [connection, peer] : wire.peers) {
-                    if (std::ranges::find(snapshot.members, peer, &RoomMember::peer) !=
+                    if (std::ranges::find(snapshot.members, peer, &RoomMember::endpointId) !=
                         snapshot.members.end()) {
                         wire.message(connection, partyPacket(2));
                     }
@@ -196,7 +196,7 @@ struct Client {
             auto acknowledgment = seal->bytes;
             acknowledgment[5] = 2;
             for (const auto& [connection, peer] : wire.peers) {
-                if (std::ranges::find(snapshot.members, peer, &RoomMember::peer) !=
+                if (std::ranges::find(snapshot.members, peer, &RoomMember::endpointId) !=
                     snapshot.members.end()) {
                     wire.message(connection, acknowledgment);
                 }
@@ -205,7 +205,7 @@ struct Client {
         } else {
             // Produce the authenticated offer/seal/commit through the real host
             // bootstrap, not a parallel room-scope hash implementation.
-            const auto host = std::ranges::find(snapshot.members, kHost, &RoomMember::peer);
+            const auto host = std::ranges::find(snapshot.members, kHost, &RoomMember::endpointId);
             REQUIRE(host != snapshot.members.end());
             Client authority(true, static_cast<u8>(host->seats.size()));
             auto lobby = snapshot;
@@ -213,8 +213,8 @@ struct Client {
             authority.publish(lobby);
             Connection connection = 1;
             for (const auto& member : snapshot.members) {
-                if (member.peer != kHost) {
-                    authority.wire.connect(member.peer, connection++);
+                if (member.endpointId != kHost) {
+                    authority.wire.connect(member.endpointId, connection++);
                 }
             }
             authority.session.update(0);
@@ -676,7 +676,7 @@ TEST_CASE("lobby departure closes old links without inheriting their seat author
         CHECK_FALSE(host.session.start());
     }
     SECTION("room update arrives first") {}
-    snapshot.members[1].peer = kOther;
+    snapshot.members[1].endpointId = kOther;
     ++snapshot.revision;
     host.publish(snapshot);
     CHECK(std::ranges::find(host.wire.closed, 1) != host.wire.closed.end());
@@ -749,7 +749,7 @@ TEST_CASE("online admission rejects malformed or changed identities atomically",
         invalid.members[1].seats = {4};
     }
     SECTION("duplicate identity") {
-        invalid.members[1].peer = kHost;
+        invalid.members[1].endpointId = kHost;
     }
     SECTION("changed local seats") {
         invalid.members[0].seats = {2};
@@ -758,7 +758,7 @@ TEST_CASE("online admission rejects malformed or changed identities atomically",
         invalid.members[0].seats = {0, 2};
     }
     SECTION("changed host") {
-        invalid.host = kGuest;
+        invalid.hostEndpointId = kGuest;
     }
     SECTION("changed room") {
         invalid.code = "BCDEFGHJ";
@@ -767,10 +767,10 @@ TEST_CASE("online admission rejects malformed or changed identities atomically",
         invalid.revision = 0;
     }
     SECTION("invalid peer") {
-        invalid.members[1].peer = "bad";
+        invalid.members[1].endpointId = "bad";
     }
     SECTION("member changed without revision") {
-        invalid.members[1].peer = kOther;
+        invalid.members[1].endpointId = kOther;
     }
     SECTION("no members") {
         invalid.members.clear();

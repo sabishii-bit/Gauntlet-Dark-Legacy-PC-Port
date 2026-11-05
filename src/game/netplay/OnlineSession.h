@@ -123,7 +123,7 @@ private:
         u64 revision;
         bool value;
     };
-    bool admit(RoomSnapshot room, const std::string& peer);
+    bool admit(RoomSnapshot room, const std::string& endpointId);
     /** Accepts a started room that only lost members, handling each as its lost link
      * would be: the host drops it, a guest forgets its direct link. False for any other
      * change to a started room, which stays a conflict. */
@@ -146,7 +146,7 @@ private:
     Failure m_failure = Failure::None;
     std::string m_failureDetail;
     std::optional<RoomSnapshot> m_room;
-    std::string m_peer;
+    std::string m_endpointId;
     std::vector<u8> m_seats;
     std::map<std::string, Connection> m_links;
     std::optional<Connection> m_connecting;

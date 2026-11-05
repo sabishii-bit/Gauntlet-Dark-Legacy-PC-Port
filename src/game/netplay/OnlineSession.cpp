@@ -35,8 +35,8 @@ bool roster(RoomSnapshot& room) {
     std::set<std::string> peers;
     std::array<bool, 4> used{};
     for (auto& member : room.members) {
-        if (!identity(member.peer) || !peers.insert(member.peer).second || member.seats.empty() ||
-            member.seats.size() > 4) {
+        if (!identity(member.endpointId) || !peers.insert(member.endpointId).second ||
+            member.seats.empty() || member.seats.size() > 4) {
             return false;
         }
         for (const auto seat : member.seats) {
@@ -49,15 +49,16 @@ bool roster(RoomSnapshot& room) {
     }
     // A stable order independent of JSON member ordering and opaque peer IDs.
     std::ranges::sort(room.members, {}, [](const auto& member) { return member.seats.front(); });
-    return peers.contains(room.host) && std::ranges::count(used, true) <= room.settings.maxPlayers;
+    return peers.contains(room.hostEndpointId) &&
+           std::ranges::count(used, true) <= room.settings.maxPlayers;
 }
 const RoomMember* member(const RoomSnapshot& room, const std::string& peer) {
-    const auto found = std::ranges::find(room.members, peer, &RoomMember::peer);
+    const auto found = std::ranges::find(room.members, peer, &RoomMember::endpointId);
     return found == room.members.end() ? nullptr : &*found;
 }
 bool sameRoster(const RoomSnapshot& a, const RoomSnapshot& b) {
     return std::ranges::equal(a.members, b.members, [](const auto& x, const auto& y) {
-        return x.peer == y.peer && x.seats == y.seats;
+        return x.endpointId == y.endpointId && x.seats == y.seats;
     });
 }
 constexpr u32 kNativeMagic = fourcc("GDNB");
@@ -94,7 +95,7 @@ std::string roomDigest(const RoomSnapshot& room) {
     ByteWriter out(bytes);
     string(out, "gdl-native-room-v2");
     string(out, room.code);
-    string(out, room.host);
+    string(out, room.hostEndpointId);
     out.writeU64(room.revision);
     out.writeU8(room.settings.maxPlayers);
     out.writeU8(room.settings.difficulty);
@@ -103,7 +104,7 @@ std::string roomDigest(const RoomSnapshot& room) {
     out.writeU8(room.settings.mechanics);
     out.writeU8(static_cast<u8>(room.members.size()));
     for (const auto& row : room.members) {
-        string(out, row.peer);
+        string(out, row.endpointId);
         out.writeU8(static_cast<u8>(row.seats.size()));
         out.writeBytes(row.seats);
     }
@@ -246,7 +247,7 @@ OnlineSession::~OnlineSession() {
 bool OnlineSession::configureNative(const NativeIdentity& local,
                                     std::optional<NativeRules> hostRules) {
     if ((m_phase != Phase::Joining && m_phase != Phase::Lobby) || m_native || m_ready ||
-        (m_room && member(*m_room, m_peer)->ready) || !local.valid() ||
+        (m_room && member(*m_room, m_endpointId)->ready) || !local.valid() ||
         m_host != hostRules.has_value() || (hostRules && !hostRules->valid())) {
         return false;
     }
@@ -293,7 +294,7 @@ bool OnlineSession::nativeMessage(Connection connection, std::span<const u8> byt
     }
     const auto link = std::ranges::find_if(
         m_links, [&](const auto& value) { return value.second == connection; });
-    if (link == m_links.end() || (!m_host && link->first != m_room->host) ||
+    if (link == m_links.end() || (!m_host && link->first != m_room->hostEndpointId) ||
         (m_host && message->kind != NativeKind::Acknowledge) ||
         (!m_host && message->kind == NativeKind::Acknowledge)) {
         return false;
@@ -377,7 +378,7 @@ bool OnlineSession::advanceNativeBootstrap() {
         const auto bytes =
             nativeBytes(kind, m_native->scope, *m_native->contract, m_native->localSetup);
         for (const auto& [peer, connection] : m_links) {
-            if (broadcast || peer == m_room->host) {
+            if (broadcast || peer == m_room->hostEndpointId) {
                 m_native->outgoing.push_back({connection, bytes});
             }
         }
@@ -449,7 +450,7 @@ bool OnlineSession::departed(const RoomSnapshot& next) {
         return false;
     }
     const bool unchanged = std::ranges::all_of(next.members, [&](const RoomMember& row) {
-        const auto* before = member(*m_room, row.peer);
+        const auto* before = member(*m_room, row.endpointId);
         return before != nullptr && before->seats == row.seats;
     });
     if (!unchanged) {
@@ -457,13 +458,13 @@ bool OnlineSession::departed(const RoomSnapshot& next) {
     }
     // Every member gone is handled as its lost link would be.
     return std::ranges::all_of(m_room->members, [&](const RoomMember& row) {
-        if (member(next, row.peer) != nullptr) {
+        if (member(next, row.endpointId) != nullptr) {
             return true;
         }
-        if (row.peer == m_peer || row.peer == m_room->host) {
+        if (row.endpointId == m_endpointId || row.endpointId == m_room->hostEndpointId) {
             return false;
         }
-        const auto link = m_links.find(row.peer);
+        const auto link = m_links.find(row.endpointId);
         if (link == m_links.end()) {
             return true; // its link closed first and was handled then
         }
@@ -482,8 +483,8 @@ std::vector<std::string> OnlineSession::allowed() const {
     std::vector<std::string> result;
     if (m_room) {
         for (const auto& row : m_room->members) {
-            if (row.peer != m_peer) {
-                result.push_back(row.peer);
+            if (row.endpointId != m_endpointId) {
+                result.push_back(row.endpointId);
             }
         }
     }
@@ -493,8 +494,9 @@ std::vector<std::string> OnlineSession::required() const {
     std::vector<std::string> result;
     if (m_room) {
         for (const auto& row : m_room->members) {
-            if (row.peer != m_peer && (m_host || row.peer == m_room->host)) {
-                result.push_back(row.peer);
+            if (row.endpointId != m_endpointId &&
+                (m_host || row.endpointId == m_room->hostEndpointId)) {
+                result.push_back(row.endpointId);
             }
         }
     }
@@ -504,8 +506,8 @@ usize OnlineSession::directLinks() const {
     if (m_host || !m_room) {
         return 0;
     }
-    return static_cast<usize>(
-        std::ranges::count_if(m_links, [&](const auto& row) { return row.first != m_room->host; }));
+    return static_cast<usize>(std::ranges::count_if(
+        m_links, [&](const auto& row) { return row.first != m_room->hostEndpointId; }));
 }
 std::optional<PacketTransport::Statistics> OnlineSession::linkStatistics() const {
     std::optional<PacketTransport::Statistics> worst;
@@ -602,20 +604,20 @@ void OnlineSession::leave() {
     m_wait = 0;
 }
 
-bool OnlineSession::admit(RoomSnapshot room, const std::string& peer) {
-    if (!roster(room) || !identity(peer) || (room.host == peer) != m_host) {
+bool OnlineSession::admit(RoomSnapshot room, const std::string& endpointId) {
+    if (!roster(room) || !identity(endpointId) || (room.hostEndpointId == endpointId) != m_host) {
         fail(Failure::Admission);
         return false;
     }
-    const auto* local = member(room, peer);
+    const auto* local = member(room, endpointId);
     if (!local || local->seats.size() != m_localPlayers) {
         fail(Failure::Admission);
         return false;
     }
     if (m_room) {
-        if (room.code != m_room->code || room.host != m_room->host || peer != m_peer ||
-            room.revision < m_room->revision || local->seats != m_seats ||
-            (m_room->started && !room.started)) {
+        if (room.code != m_room->code || room.hostEndpointId != m_room->hostEndpointId ||
+            endpointId != m_endpointId || room.revision < m_room->revision ||
+            local->seats != m_seats || (m_room->started && !room.started)) {
             fail(Failure::Admission);
             return false;
         }
@@ -636,9 +638,9 @@ bool OnlineSession::admit(RoomSnapshot room, const std::string& peer) {
             m_phase = Phase::Lobby;
         }
     } else {
-        m_peer = peer;
+        m_endpointId = endpointId;
         m_seats = local->seats;
-        if (!m_transport.configurePeer(peer, m_host)) {
+        if (!m_transport.configurePeer(endpointId, m_host)) {
             fail(Failure::Transport);
             return false;
         }
@@ -666,8 +668,8 @@ bool OnlineSession::admit(RoomSnapshot room, const std::string& peer) {
         fail(Failure::Transport);
         return false;
     }
-    if (!m_host && !m_connecting && !m_links.contains(m_room->host)) {
-        m_connecting = m_transport.connectPeer(m_room->host);
+    if (!m_host && !m_connecting && !m_links.contains(m_room->hostEndpointId)) {
+        m_connecting = m_transport.connectPeer(m_room->hostEndpointId);
         if (!m_connecting) {
             fail(Failure::Transport);
             return false;
@@ -680,12 +682,13 @@ bool OnlineSession::admit(RoomSnapshot room, const std::string& peer) {
             return std::ranges::find(peers, row.first) == peers.end();
         });
         for (const auto& row : m_room->members) {
-            if (row.peer == m_peer || row.peer == m_room->host || row.peer < m_peer ||
-                m_links.contains(row.peer) || m_dialing.contains(row.peer)) {
+            if (row.endpointId == m_endpointId || row.endpointId == m_room->hostEndpointId ||
+                row.endpointId < m_endpointId || m_links.contains(row.endpointId) ||
+                m_dialing.contains(row.endpointId)) {
                 continue;
             }
-            if (const auto id = m_transport.connectPeer(row.peer)) {
-                m_dialing.emplace(row.peer, *id);
+            if (const auto id = m_transport.connectPeer(row.endpointId)) {
+                m_dialing.emplace(row.endpointId, *id);
             }
         }
     }
@@ -706,7 +709,8 @@ void OnlineSession::event(const PacketTransport::Event& event) {
         }
         const bool dialed =
             peer && m_dialing.contains(*peer) && m_dialing.at(*peer) == event.connection;
-        const bool accepted = peer && !m_host && m_room && *peer != m_room->host && *peer < m_peer;
+        const bool accepted =
+            peer && !m_host && m_room && *peer != m_room->hostEndpointId && *peer < m_endpointId;
         if (event.connection == 0 || !peer || std::ranges::find(peers, *peer) == peers.end() ||
             m_links.contains(*peer) ||
             std::ranges::any_of(m_links,
@@ -722,14 +726,15 @@ void OnlineSession::event(const PacketTransport::Event& event) {
         if (!m_host && m_connecting == event.connection) {
             m_connecting.reset();
         }
-        if (!m_host && m_room && *peer != m_room->host) {
+        if (!m_host && m_room && *peer != m_room->hostEndpointId) {
             log::info("Online direct link with another guest is up");
         }
         return;
     }
     const auto link = std::ranges::find_if(
         m_links, [&](const auto& row) { return row.second == event.connection; });
-    const bool direct = link != m_links.end() && !m_host && m_room && link->first != m_room->host;
+    const bool direct =
+        link != m_links.end() && !m_host && m_room && link->first != m_room->hostEndpointId;
     if (event.type == Type::Disconnected) {
         if (const auto dial = std::ranges::find_if(
                 m_dialing, [&](const auto& row) { return row.second == event.connection; });
@@ -855,14 +860,15 @@ void OnlineSession::openMatch() {
     u8 next = 2;
     u8 local = 0;
     for (const auto& row : m_room->members) {
-        const u8 peer = row.peer == m_room->host ? 1 : next++;
+        const u8 peer = row.endpointId == m_room->hostEndpointId ? 1 : next++;
         for (const auto seat : row.seats) {
             owners[seat] = peer;
         }
-        if (row.peer == m_peer) {
+        if (row.endpointId == m_endpointId) {
             local = peer;
-        } else if (const auto link = m_links.find(row.peer); link != m_links.end()) {
-            (m_host || row.peer == m_room->host ? links : direct).push_back({peer, link->second});
+        } else if (const auto link = m_links.find(row.endpointId); link != m_links.end()) {
+            (m_host || row.endpointId == m_room->hostEndpointId ? links : direct)
+                .push_back({peer, link->second});
         }
     }
     if (!m_party.opened()) {
@@ -921,7 +927,7 @@ void OnlineSession::update(f64 seconds) {
         fail(Failure::Service);
         return;
     }
-    if (update.room && !admit(std::move(*update.room), update.peer)) {
+    if (update.room && !admit(std::move(*update.room), update.endpointId)) {
         return;
     }
     for (const auto& item : m_transport.poll()) {
@@ -985,7 +991,7 @@ bool OnlineSession::select(std::span<const CharacterProfile> selections) {
     if ((m_phase != Phase::Joining && m_phase != Phase::Lobby) ||
         selections.size() != m_localPlayers ||
         !std::ranges::all_of(selections, &CharacterProfile::valid) || m_ready ||
-        (m_room && member(*m_room, m_peer)->ready)) {
+        (m_room && member(*m_room, m_endpointId)->ready)) {
         return false;
     }
     m_selections.assign(selections.begin(), selections.end());
@@ -999,7 +1005,7 @@ bool OnlineSession::ready(bool value) {
     if (m_ready) {
         return m_ready->value == value;
     }
-    if (member(*m_room, m_peer)->ready == value) {
+    if (member(*m_room, m_endpointId)->ready == value) {
         return true;
     }
     if (!m_service.ready(m_room->revision, value)) {

@@ -41,21 +41,21 @@ private:
         explicit Transport(HostedRoom& room) : m_room(room) {}
         bool configurePeer(std::string identity, bool host) override;
         bool authorizePeers(std::span<const std::string> peers) override;
-        std::optional<Connection> connectPeer(const std::string& peer) override;
+        std::optional<Connection> connectPeer(const std::string& endpointId) override;
         std::optional<std::string> peer(Connection connection) const override;
         SendResult send(Connection connection, std::span<const u8> bytes,
                         Delivery delivery) override;
         std::vector<Event> poll() override;
         std::optional<Statistics> statistics(Connection connection) const override;
         void close(Connection connection) override;
-        bool allowed(const std::string& peer) const { return m_allowed.contains(peer); }
+        bool allowed(const std::string& endpointId) const { return m_allowed.contains(endpointId); }
 
     private:
         HostedRoom& m_room;
         std::set<std::string> m_allowed;
     };
     struct Link {
-        std::string peer;
+        std::string endpointId;
         std::deque<std::vector<u8>> pending;
         bool announced = false;
         bool rejected = false;
@@ -74,7 +74,7 @@ private:
     u8 m_players;
     std::string m_build;
     std::string m_content;
-    std::string m_peer;
+    std::string m_endpointId;
     RoomSnapshot m_room;
     std::map<Connection, Link> m_links;
     std::map<std::string, std::string> m_cards; ///< where each member can be dialled

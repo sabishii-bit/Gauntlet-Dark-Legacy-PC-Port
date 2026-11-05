@@ -20,14 +20,14 @@ struct RoomSettings {
     bool operator==(const RoomSettings&) const = default;
 };
 struct RoomMember {
-    std::string peer;
+    std::string endpointId;
     std::vector<u8> seats;
     bool ready = false;
     bool operator==(const RoomMember&) const = default;
 };
 struct RoomSnapshot {
     std::string code;
-    std::string host;
+    std::string hostEndpointId;
     u64 revision = 0;
     bool started = false;
     std::vector<RoomMember> members;
@@ -40,7 +40,7 @@ class RoomService {
 public:
     struct Update {
         std::optional<RoomSnapshot> room;
-        std::string peer;
+        std::string endpointId;
         std::string error;
         bool closed = false;
     };

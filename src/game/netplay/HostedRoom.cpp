@@ -56,12 +56,12 @@ HostedRoom::HostedRoom(PacketTransport& wire, bool host, u8 players, std::string
         return;
     }
     if (host) {
-        m_peer = peerId(1);
-        RoomMember member{m_peer, {}, false};
+        m_endpointId = peerId(1);
+        RoomMember member{m_endpointId, {}, false};
         for (u8 seat = 0; seat < players; ++seat) {
             member.seats.push_back(seat);
         }
-        m_room = {"HOSTROOM", m_peer, 1, false, {std::move(member)}};
+        m_room = {"HOSTROOM", m_endpointId, 1, false, {std::move(member)}};
         m_dirty = true;
     }
 }
@@ -91,12 +91,12 @@ void HostedRoom::changed(bool membership) {
     }
     m_dirty = true;
     for (const auto& [id, link] : m_links) {
-        if (link.peer.empty() || link.rejected) {
+        if (link.endpointId.empty() || link.rejected) {
             continue;
         }
         auto bytes = packet(Kind::Roster);
         ByteWriter out(bytes);
-        string(out, link.peer);
+        string(out, link.endpointId);
         out.writeU64(m_room.revision);
         out.writeU8(m_room.started ? 1 : 0);
         out.writeU8(m_room.settings.maxPlayers);
@@ -106,7 +106,7 @@ void HostedRoom::changed(bool membership) {
         out.writeU8(m_room.settings.mechanics);
         out.writeU8(static_cast<u8>(m_room.members.size()));
         for (const auto& member : m_room.members) {
-            string(out, member.peer);
+            string(out, member.endpointId);
             out.writeU8(member.ready ? 1 : 0);
             out.writeU8(static_cast<u8>(member.seats.size()));
             out.writeBytes(member.seats);
@@ -116,13 +116,14 @@ void HostedRoom::changed(bool membership) {
         }
         // Every other member's card follows, so guests can dial each other directly.
         for (const auto& member : m_room.members) {
-            const auto where = member.peer == m_peer ? m_wire.address() : m_cards[member.peer];
-            if (member.peer == link.peer || where.empty()) {
+            const auto where =
+                member.endpointId == m_endpointId ? m_wire.address() : m_cards[member.endpointId];
+            if (member.endpointId == link.endpointId || where.empty()) {
                 continue;
             }
             auto bytes = packet(Kind::Card);
             ByteWriter cardOut(bytes);
-            string(cardOut, member.peer);
+            string(cardOut, member.endpointId);
             card(cardOut, where);
             if (!queue(id, std::move(bytes))) {
                 fail(Failure::Connection);
@@ -136,8 +137,8 @@ void HostedRoom::announce(Connection id) {
         return;
     }
     auto& link = found->second;
-    if (link.announced || link.rejected || link.peer.empty() || !m_transport.allowed(link.peer) ||
-        (link.direct && !link.hello)) {
+    if (link.announced || link.rejected || link.endpointId.empty() ||
+        !m_transport.allowed(link.endpointId) || (link.direct && !link.hello)) {
         return;
     }
     link.announced = true;
@@ -148,7 +149,7 @@ void HostedRoom::disconnect(Connection id) {
     if (found == m_links.end()) {
         return;
     }
-    const auto peer = found->second.peer;
+    const auto peer = found->second.endpointId;
     // A direct link reports its end even before it was announced: the dial failed.
     if (found->second.announced || found->second.direct) {
         m_events.push_back({PacketTransport::EventType::Disconnected, id, {}, {}});
@@ -162,7 +163,7 @@ void HostedRoom::disconnect(Connection id) {
     } else if (!peer.empty()) {
         // A started room keeps its roster; the match decides what a lost guest means.
         if (!m_room.started) {
-            std::erase_if(m_room.members, [&](const auto& row) { return row.peer == peer; });
+            std::erase_if(m_room.members, [&](const auto& row) { return row.endpointId == peer; });
             changed(true);
         }
     }
@@ -189,7 +190,7 @@ void HostedRoom::message(Connection id, std::span<const u8> bytes) {
             disconnect(id);
             return;
         }
-        if (kind == Kind::Join && m_host && link.peer.empty()) {
+        if (kind == Kind::Join && m_host && link.endpointId.empty()) {
             const auto players = reader.readU8();
             const auto build = string(reader);
             const auto content = string(reader);
@@ -222,11 +223,11 @@ void HostedRoom::message(Connection id, std::span<const u8> bytes) {
                 link.rejected = true;
                 return;
             }
-            link.peer = peerId(id + 1);
+            link.endpointId = peerId(id + 1);
             if (!where.empty()) {
-                m_cards[link.peer] = where;
+                m_cards[link.endpointId] = where;
             }
-            RoomMember member{link.peer, {}, false};
+            RoomMember member{link.endpointId, {}, false};
             for (u8 seat = 0; seat < 4 && member.seats.size() < players; ++seat) {
                 if (!occupied[seat]) {
                     member.seats.push_back(seat);
@@ -248,7 +249,7 @@ void HostedRoom::message(Connection id, std::span<const u8> bytes) {
             room.started = started != 0;
             for (u8 i = 0; i < count; ++i) {
                 RoomMember member;
-                member.peer = string(reader);
+                member.endpointId = string(reader);
                 const auto ready = reader.readU8();
                 const auto seats = reader.readU8();
                 if (ready > 1 || seats == 0 || seats > 4) {
@@ -260,14 +261,14 @@ void HostedRoom::message(Connection id, std::span<const u8> bytes) {
                 member.seats.assign(values.begin(), values.end());
                 room.members.push_back(std::move(member));
             }
-            if (!reader.atEnd() || (!m_peer.empty() && peer != m_peer)) {
+            if (!reader.atEnd() || (!m_endpointId.empty() && peer != m_endpointId)) {
                 disconnect(id);
                 return;
             }
-            m_peer = peer;
-            link.peer = room.host;
+            m_endpointId = peer;
+            link.endpointId = room.hostEndpointId;
             std::erase_if(m_cards, [&](const auto& row) {
-                return std::ranges::find(room.members, row.first, &RoomMember::peer) ==
+                return std::ranges::find(room.members, row.first, &RoomMember::endpointId) ==
                        room.members.end();
             });
             m_room = std::move(room); // OnlineSession validates identities, seats and revision.
@@ -282,21 +283,22 @@ void HostedRoom::message(Connection id, std::span<const u8> bytes) {
             if (!where.empty()) {
                 m_cards[peer] = where;
             }
-        } else if (kind == Kind::Hello && !m_host && link.direct && link.peer.empty()) {
+        } else if (kind == Kind::Hello && !m_host && link.direct && link.endpointId.empty()) {
             // The guest that dialled names itself; it must be a member we are not linked to.
             const auto peer = string(reader);
-            const bool member =
-                std::ranges::find(m_room.members, peer, &RoomMember::peer) != m_room.members.end();
+            const bool member = std::ranges::find(m_room.members, peer, &RoomMember::endpointId) !=
+                                m_room.members.end();
             const bool linked = std::ranges::any_of(
-                m_links, [&](const auto& row) { return row.second.peer == peer; });
-            if (!reader.atEnd() || !member || linked || peer == m_peer || peer == m_room.host) {
+                m_links, [&](const auto& row) { return row.second.endpointId == peer; });
+            if (!reader.atEnd() || !member || linked || peer == m_endpointId ||
+                peer == m_room.hostEndpointId) {
                 disconnect(id);
                 return;
             }
-            link.peer = peer;
+            link.endpointId = peer;
             link.hello = true;
             announce(id);
-        } else if (kind == Kind::Ready && m_host && !link.peer.empty()) {
+        } else if (kind == Kind::Ready && m_host && !link.endpointId.empty()) {
             const auto revision = reader.readU64();
             const auto value = reader.readU8();
             if (!reader.atEnd() || value > 1) {
@@ -304,11 +306,12 @@ void HostedRoom::message(Connection id, std::span<const u8> bytes) {
                 return;
             }
             if (revision == m_room.revision && !m_room.started) {
-                const auto member = std::ranges::find(m_room.members, link.peer, &RoomMember::peer);
+                const auto member =
+                    std::ranges::find(m_room.members, link.endpointId, &RoomMember::endpointId);
                 member->ready = value != 0;
                 changed(false);
             }
-        } else if (kind == Kind::Reject && !m_host && m_peer.empty()) {
+        } else if (kind == Kind::Reject && !m_host && m_endpointId.empty()) {
             const auto reason = reader.readU8();
             if (!reader.atEnd() || reason < static_cast<u8>(Failure::Version) ||
                 reason > static_cast<u8>(Failure::Started)) {
@@ -335,7 +338,7 @@ RoomService::Update HostedRoom::poll() {
                     }
                     auto bytes = packet(Kind::Hello);
                     ByteWriter out(bytes);
-                    string(out, m_peer);
+                    string(out, m_endpointId);
                     queue(event.connection, std::move(bytes));
                     link.hello = true;
                     announce(event.connection);
@@ -369,7 +372,7 @@ RoomService::Update HostedRoom::poll() {
         }
         std::vector<Connection> closed;
         for (auto& [id, link] : m_links) {
-            if ((link.peer.empty() || link.rejected || (link.direct && !link.hello)) &&
+            if ((link.endpointId.empty() || link.rejected || (link.direct && !link.hello)) &&
                 std::chrono::steady_clock::now() - link.arrived > std::chrono::seconds(5)) {
                 closed.push_back(id);
                 continue;
@@ -404,7 +407,7 @@ RoomService::Update HostedRoom::poll() {
         }
     } else if (std::exchange(m_dirty, false)) {
         update.room = m_room;
-        update.peer = m_peer;
+        update.endpointId = m_endpointId;
     }
     return update;
 }
@@ -461,7 +464,7 @@ void HostedRoom::leave() {
     }
 }
 bool HostedRoom::Transport::configurePeer(std::string identity, bool host) {
-    return identity == m_room.m_peer && host == m_room.m_host;
+    return identity == m_room.m_endpointId && host == m_room.m_host;
 }
 bool HostedRoom::Transport::authorizePeers(std::span<const std::string> peers) {
     m_allowed = {peers.begin(), peers.end()};
@@ -478,13 +481,13 @@ bool HostedRoom::Transport::authorizePeers(std::span<const std::string> peers) {
     return true;
 }
 std::optional<PacketTransport::Connection>
-HostedRoom::Transport::connectPeer(const std::string& peer) {
-    if (m_room.m_host || !m_allowed.contains(peer)) {
+HostedRoom::Transport::connectPeer(const std::string& endpointId) {
+    if (m_room.m_host || !m_allowed.contains(endpointId)) {
         return std::nullopt;
     }
-    if (peer == m_room.m_room.host) {
+    if (endpointId == m_room.m_room.hostEndpointId) {
         for (auto& [id, link] : m_room.m_links) {
-            if (link.peer == peer && !link.announced) {
+            if (link.endpointId == endpointId && !link.announced) {
                 link.announced = true;
                 m_room.m_events.push_back({EventType::Connected, id, {}, {}});
                 return id;
@@ -494,10 +497,10 @@ HostedRoom::Transport::connectPeer(const std::string& peer) {
     }
     // Another guest: dial its card. The hello goes out once the wire connects.
     if (std::ranges::any_of(m_room.m_links,
-                            [&](const auto& row) { return row.second.peer == peer; })) {
+                            [&](const auto& row) { return row.second.endpointId == endpointId; })) {
         return std::nullopt;
     }
-    const auto where = m_room.m_cards.find(peer);
+    const auto where = m_room.m_cards.find(endpointId);
     if (where == m_room.m_cards.end() || where->second.empty()) {
         return std::nullopt;
     }
@@ -506,19 +509,19 @@ HostedRoom::Transport::connectPeer(const std::string& peer) {
         return std::nullopt;
     }
     auto& link = m_room.m_links[*id];
-    link.peer = peer;
+    link.endpointId = endpointId;
     link.direct = true;
     return id;
 }
 std::optional<std::string> HostedRoom::Transport::peer(Connection connection) const {
     const auto found = m_room.m_links.find(connection);
-    return found == m_room.m_links.end() ? std::nullopt : std::optional{found->second.peer};
+    return found == m_room.m_links.end() ? std::nullopt : std::optional{found->second.endpointId};
 }
 PacketTransport::SendResult
 HostedRoom::Transport::send(Connection connection, std::span<const u8> bytes, Delivery delivery) {
     const auto found = m_room.m_links.find(connection);
     if (found == m_room.m_links.end() || !found->second.announced ||
-        !m_allowed.contains(found->second.peer)) {
+        !m_allowed.contains(found->second.endpointId)) {
         return SendResult::Disconnected;
     }
     if (bytes.empty() || bytes.size() > kMaxPacketBytes) {

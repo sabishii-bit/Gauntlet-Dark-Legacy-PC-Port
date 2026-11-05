@@ -27,14 +27,14 @@ struct OnlinePair {
                 return false;
             }
             for (auto& member : room.members) {
-                if (member.peer == peer) {
+                if (member.endpointId == peer) {
                     member.ready = value;
                 }
             }
             return true;
         }
         bool start(u64 revision) override {
-            if (peer != room.host || revision != room.revision || room.started ||
+            if (peer != room.hostEndpointId || revision != room.revision || room.started ||
                 !room.members[0].ready || !room.members[1].ready) {
                 return false;
             }
