@@ -55,6 +55,7 @@ add_executable(tests
     game/hud/SceneHudNativeDigestTests.cpp
     game/scenes/PlaySceneNativeStateDigestTests.cpp
     game/rollback/LocalStateHistoryTests.cpp
+    game/rollback/LocalOwnerContractTests.cpp
     game/netplay/RollbackExchangeTests.cpp
     game/audio/NativeSoundIdentityTests.cpp
     game/rollback/RollbackInputsTests.cpp
@@ -872,6 +873,7 @@ if(GDL_ENABLE_NETPLAY)
         game/camera/TowerCameraTests.cpp game/camera/TowerCameraLocalRewindTests.cpp
         game/party/PowerupCompanionTests.cpp game/party/PlayerFamiliarTests.cpp
         game/rollback/LocalStateHistoryTests.cpp
+        game/rollback/LocalOwnerContractTests.cpp
         game/netplay/RollbackExchangeTests.cpp
         game/audio/NativeSoundIdentityTests.cpp game/scenes/PlaySceneSoundIdentityTests.cpp
         game/rollback/RollbackInputsTests.cpp

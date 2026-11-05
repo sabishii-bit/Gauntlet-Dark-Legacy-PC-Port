@@ -13,6 +13,7 @@
 #include "TestSupport.h"
 #include "game/level/LevelWorld.h"
 #include "game/level/NativeStateResources.h"
+#include "game/rollback/LocalOwnerContract.h"
 
 namespace {
 using namespace gdl;
@@ -321,38 +322,17 @@ TEST_CASE("native collision digest covers all masks and captured moving transfor
     }
 }
 
-template <class Owner> void checkNativeOwnerGuards() {
-    Owner owner;
-    Owner foreign;
-    owner.clear();
-    foreign.clear();
-    typename Owner::LocalSnapshot saved;
-    owner.saveLocal(saved);
-    NativeStateDigest live;
-    NativeStateDigest past;
-    REQUIRE(owner.appendNativeDigest(live));
-    REQUIRE(owner.appendLocalDigest(past, saved));
-    CHECK(live.checkedFinish() == past.checkedFinish());
-    NativeStateDigest wrong;
-    CHECK_FALSE(foreign.appendLocalDigest(wrong, saved));
-    CHECK_FALSE(wrong.checkedFinish());
-    owner.clear();
-    NativeStateDigest stale;
-    CHECK_FALSE(owner.appendLocalDigest(stale, saved));
-    CHECK_FALSE(stale.checkedFinish());
-}
-
 TEST_CASE("each native world leaf rejects foreign and expired local history",
           "[native-digest][level-world-native-digest]") {
-    checkNativeOwnerGuards<WorldScene>();
-    checkNativeOwnerGuards<WorldAnimator>();
-    checkNativeOwnerGuards<WorldCollision>();
-    checkNativeOwnerGuards<PlacedItems>();
-    checkNativeOwnerGuards<SkorneArena>();
-    checkNativeOwnerGuards<FallingScenery>();
-    checkNativeOwnerGuards<DestructibleWalls>();
-    checkNativeOwnerGuards<WorldDestruction>();
-    checkNativeOwnerGuards<Rotators>();
+    test::checkNativeOwnerGuards<WorldScene>();
+    test::checkNativeOwnerGuards<WorldAnimator>();
+    test::checkNativeOwnerGuards<WorldCollision>();
+    test::checkNativeOwnerGuards<PlacedItems>();
+    test::checkNativeOwnerGuards<SkorneArena>();
+    test::checkNativeOwnerGuards<FallingScenery>();
+    test::checkNativeOwnerGuards<DestructibleWalls>();
+    test::checkNativeOwnerGuards<WorldDestruction>();
+    test::checkNativeOwnerGuards<Rotators>();
 }
 
 TEST_CASE("falling-piece digest retains previous motion not only its current public pose",
