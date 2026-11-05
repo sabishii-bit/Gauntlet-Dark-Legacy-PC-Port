@@ -1,5 +1,6 @@
 #include <array>
 #include <cstring>
+#include <limits>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
@@ -26,6 +27,27 @@ TEST_CASE("Rect edges derive from origin and size", "[math]") {
     STATIC_REQUIRE(kRect.right() == 40.0f);
     STATIC_REQUIRE(kRect.bottom() == 60.0f);
     REQUIRE(kRect == Rect{10.0f, 20.0f, 30.0f, 40.0f});
+}
+
+TEST_CASE("Rect holds its left and top edges but not its right and bottom", "[math]") {
+    constexpr Rect kRect{10.0f, 20.0f, 30.0f, 40.0f};
+    CHECK(kRect.contains(Vec2{25.0f, 40.0f}));
+    CHECK(kRect.contains(Vec2{10.0f, 20.0f}));
+    CHECK(kRect.contains(Vec2{10.0f, 59.5f}));
+    CHECK(kRect.contains(Vec2{39.5f, 20.0f}));
+    CHECK_FALSE(kRect.contains(Vec2{40.0f, 40.0f}));
+    CHECK_FALSE(kRect.contains(Vec2{25.0f, 60.0f}));
+    CHECK_FALSE(kRect.contains(Vec2{40.0f, 60.0f}));
+    CHECK_FALSE(kRect.contains(Vec2{9.5f, 40.0f}));
+    CHECK_FALSE(kRect.contains(Vec2{25.0f, 19.5f}));
+
+    constexpr f32 kNan = std::numeric_limits<f32>::quiet_NaN();
+    CHECK_FALSE(kRect.contains(Vec2{kNan, 40.0f}));
+    CHECK_FALSE(kRect.contains(Vec2{25.0f, kNan}));
+    CHECK_FALSE(Rect{kNan, 20.0f, 30.0f, 40.0f}.contains(Vec2{25.0f, 40.0f}));
+
+    constexpr Rect kEmpty{10.0f, 20.0f, 0.0f, 40.0f};
+    CHECK_FALSE(kEmpty.contains(Vec2{10.0f, 20.0f}));
 }
 
 TEST_CASE("Color is stored as R, G, B, A bytes", "[math][color]") {

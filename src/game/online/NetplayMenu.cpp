@@ -157,10 +157,7 @@ NetplayMenu::Event NetplayMenu::update(const MenuInput& raw) {
     }
     if (input.pointer && (input.pointer != m_pointer || input.pointerPressed)) {
         for (usize i = 0; i < m_rows.size(); ++i) {
-            const auto area = rowArea(i);
-            if (m_rows[i].enabled && input.pointer->x >= area.x &&
-                input.pointer->x < area.right() && input.pointer->y >= area.y &&
-                input.pointer->y < area.bottom()) {
+            if (m_rows[i].enabled && rowArea(i).contains(*input.pointer)) {
                 m_selection = i;
                 if (input.pointerPressed) {
                     return {m_rows[i].action, 1, m_rows[i].rule};

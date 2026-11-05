@@ -26,11 +26,6 @@ constexpr s32 kDisabledAlpha = 128;
 constexpr f32 kArrowSize = 5;
 constexpr f32 kArrowGap = 6;
 
-bool contains(const Rect& area, const Vec2& point) {
-    return point.x >= area.x && point.x < area.x + area.width && point.y >= area.y &&
-           point.y < area.y + area.height;
-}
-
 u8 clampByte(s32 value) {
     return static_cast<u8>(std::clamp(value, 0, kFullAlpha));
 }
@@ -333,7 +328,7 @@ std::optional<usize> OptionMenu::pointerChoice(const MenuInput& input) const {
         return std::nullopt;
     }
     for (usize i = 0; i < m_itemAreas.size(); ++i) {
-        if (m_definition.items[i].enabled && contains(m_itemAreas[i], *input.pointer)) {
+        if (m_definition.items[i].enabled && m_itemAreas[i].contains(*input.pointer)) {
             return i;
         }
     }
@@ -371,7 +366,7 @@ MenuEvent OptionMenu::update(const MenuInput& input, s32 ticks, std::optional<us
     // The bar at the column's right hand: pressed on its marks it steps a row, pressed on
     // its track the thumb follows the pointer for as long as it is held.
     if (!input.pointerNormalized && input.pointer && windowRows() < columnCount()) {
-        if (input.pointerPressed && contains(scrollBarArea(), *input.pointer)) {
+        if (input.pointerPressed && scrollBarArea().contains(*input.pointer)) {
             const ScrollBar bar = scrollBar();
             if (input.pointer->y < bar.trackTop) {
                 scrollWindow(m_scroll - 1);
@@ -407,7 +402,7 @@ MenuEvent OptionMenu::update(const MenuInput& input, s32 ticks, std::optional<us
             m_hoverPart = 0;
             for (usize i = 0; i < m_itemAreas.size(); ++i) {
                 const auto& item = m_definition.items[i];
-                if (!item.enabled || !contains(m_itemAreas[i], *input.pointer)) {
+                if (!item.enabled || !m_itemAreas[i].contains(*input.pointer)) {
                     continue;
                 }
                 focus(i);
@@ -486,7 +481,8 @@ OptionMenu::ScrollBar OptionMenu::scrollBar() const {
     bar.trackHeight = std::max(0.0f, bar.bottom - kScrollMarkSize - kScrollMarkGap - bar.trackTop);
     const s32 column = std::max(1, columnCount());
     const f32 share = static_cast<f32>(windowRows()) / static_cast<f32>(column);
-    bar.thumbHeight = std::min(bar.trackHeight, std::max(kScrollMarkSize * 2, bar.trackHeight * share));
+    bar.thumbHeight =
+        std::min(bar.trackHeight, std::max(kScrollMarkSize * 2, bar.trackHeight * share));
     const f32 travel = std::max(0.0f, bar.trackHeight - bar.thumbHeight);
     bar.thumbTop = bar.trackTop + travel * static_cast<f32>(m_scroll) /
                                       static_cast<f32>(std::max(1, column - windowRows()));
@@ -611,8 +607,7 @@ void OptionMenu::glideIcon(s32 ticks) {
     // the window's nearer edge: the icon stays among the rows in view.
     if (static_cast<s32>(selected) < columnCount() && !shown(selected) && windowRows() > 0) {
         const s32 first = itemY(static_cast<usize>(m_scroll)) + m_lineHeight / 2;
-        const s32 last =
-            itemY(static_cast<usize>(m_scroll + windowRows() - 1)) + m_lineHeight / 2;
+        const s32 last = itemY(static_cast<usize>(m_scroll + windowRows() - 1)) + m_lineHeight / 2;
         target = std::clamp(target, std::min(first, last), std::max(first, last));
     }
     if (m_iconTimer == 0) {
@@ -778,7 +773,8 @@ void OptionMenu::draw(Canvas& canvas, const TextPainter& painter,
         const Color ink = m_definition.colors.off.withAlpha(fade);
         const ScrollBar bar = scrollBar();
         if (m_scroll > 0) {
-            canvas.fillTriangle({bar.x, bar.top}, {bar.x - kScrollMarkSize, bar.top + kScrollMarkSize},
+            canvas.fillTriangle({bar.x, bar.top},
+                                {bar.x - kScrollMarkSize, bar.top + kScrollMarkSize},
                                 {bar.x + kScrollMarkSize, bar.top + kScrollMarkSize}, ink);
         }
         if (m_scroll + windowRows() < columnCount()) {
@@ -787,12 +783,12 @@ void OptionMenu::draw(Canvas& canvas, const TextPainter& painter,
                                 {bar.x - kScrollMarkSize, bar.bottom - kScrollMarkSize}, ink);
         }
         if (bar.trackHeight > 0) {
-            canvas.fill(Rect{bar.x - kScrollBarWidth / 2, bar.trackTop, kScrollBarWidth,
-                             bar.trackHeight},
-                        ink.withAlpha(static_cast<u8>(fade / 3)));
-            canvas.fill(Rect{bar.x - kScrollBarWidth / 2, bar.thumbTop, kScrollBarWidth,
-                             bar.thumbHeight},
-                        ink);
+            canvas.fill(
+                Rect{bar.x - kScrollBarWidth / 2, bar.trackTop, kScrollBarWidth, bar.trackHeight},
+                ink.withAlpha(static_cast<u8>(fade / 3)));
+            canvas.fill(
+                Rect{bar.x - kScrollBarWidth / 2, bar.thumbTop, kScrollBarWidth, bar.thumbHeight},
+                ink);
         }
     }
 

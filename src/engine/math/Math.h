@@ -40,6 +40,10 @@ struct Rect {
 
     constexpr f32 right() const { return x + width; }
     constexpr f32 bottom() const { return y + height; }
+    /** Whether `point` is inside: the left and top edges are, the right and bottom are not. */
+    constexpr bool contains(Vec2 point) const {
+        return point.x >= x && point.x < right() && point.y >= y && point.y < bottom();
+    }
 
     bool operator==(const Rect&) const = default;
 };

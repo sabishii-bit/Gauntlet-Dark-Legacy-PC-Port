@@ -76,11 +76,6 @@ constexpr std::string_view kSumnerPortrait = "S12_SUM";
 constexpr std::string_view kQuestMarkTexture = "SELSCRN_QUESTMARK";
 constexpr std::string_view kStatGlowTexture = "ATT_GLOW";
 
-bool contains(const Rect& area, const Vec2& point) {
-    return point.x >= area.x && point.x < area.x + area.width && point.y >= area.y &&
-           point.y < area.y + area.height;
-}
-
 /** Opacity from the original's blit alpha, where 0 is opaque and 256 invisible. */
 u8 opacityFromBlitAlpha(s32 alpha) {
     return static_cast<u8>(kFullOpacity - std::clamp(alpha, 0, kFullOpacity));
@@ -790,7 +785,7 @@ MenuInput SelectLane::pointerInput(const MenuInput& rawInput) {
     m_pointer = input.pointer;
     if (m_pointerMode) {
         for (const auto& target : pointerTargets()) {
-            if (!contains(target.area, *input.pointer)) {
+            if (!target.area.contains(*input.pointer)) {
                 continue;
             }
             m_hoverArea = target.area;
