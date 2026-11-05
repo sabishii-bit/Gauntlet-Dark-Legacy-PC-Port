@@ -1,23 +1,33 @@
 #include <array>
 #include <filesystem>
+#include <format>
+#include <initializer_list>
 #include <memory>
+#include <string>
 #include <string_view>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/assets/AnimationSet.h"
+#include "engine/io/File.h"
 #include "engine/io/NativeStateDigest.h"
 
 #include "FakeRenderDevice.h"
+#include "NativeStateSupport.h"
 #include "TestSupport.h"
+#include "fixtures/NativeModelFixture.h"
+#include "game/characters/CharacterSave.h"
 #include "game/characters/Progression.h"
 #include "game/combat/PowerupFlags.h"
 #include "game/effects/BodyGlow.h"
 #include "game/effects/WeaponGlow.h"
 #include "game/level/NativeStateResources.h"
 #include "game/party/MikeyFigure.h"
+#include "game/party/PlayerFamiliar.h"
 #include "game/party/PlayerFigure.h"
+#include "game/party/PowerupCompanion.h"
 #include "game/players/PlayerAnimator.h"
+#include "game/players/PlayerDeeds.h"
 
 namespace {
 using namespace gdl;
@@ -394,5 +404,179 @@ TEST_CASE("native animator digest bytes stay pinned for a released item",
     constexpr std::string_view kDigest =
         "3b0c267f81e724a5e09a4a831511b6598eef479b5d7b0c4cfd41fe97f1a134dc";
     CHECK(test::hexBytes(nativeValue(animator, resources)) == kDigest);
+}
+
+/** Sequences of eight frames at thirty a second, one for each name, over which the first node
+ * of their tree rises two units; the stance repeats. */
+std::string risingSequences(std::initializer_list<std::string_view> names) {
+    std::string list;
+    for (const std::string_view name : names) {
+        if (!list.empty()) {
+            list += ',';
+        }
+        list += std::format(R"({{"name":"{}","frames":8,"frameRate":30,"repeats":{},
+            "tracks":[{{"node":0,"flags":32,"frames":[0,7],"values":[0,2]}}]}})",
+                            name, name == "READY");
+    }
+    return list;
+}
+
+/** Writes into `dir` an archive of one triangle, the object `BODY` wearing the bitmap `SKIN`,
+ * holding the tree `tree`, of one node over that object, which plays `sequences`. */
+void writeBodyArchive(const std::filesystem::path& dir, std::string_view tree,
+                      std::initializer_list<std::string_view> sequences) {
+    std::filesystem::create_directories(dir);
+    writeTextFile(dir / "body.obj",
+                  "v 0 0 0\nv 1 0 0\nv 0 1 0\nvn 0 0 1\nusemtl tex0\nf 1//1 2//1 3//1\n");
+    writeTextFile(dir / "objects.json", R"({"objects":[
+        {"index":0,"name":"BODY","file":"body.obj","meshTriangles":1}]})");
+    writeFile(dir / "skin.png", test::kTinyPng);
+    writeTextFile(dir / "textures.json", R"({"bitmaps":[
+        {"index":0,"name":"SKIN","file":"skin.png","width":2,"height":2}]})");
+    writeTextFile(dir / "animations.json", std::format(R"({{"trees":[{{"name":"{}","nodes":[
+        {{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}}],"sequences":[{}]}}]}})",
+                                                       tree, risingSequences(sequences)));
+    test::convertModelFixture(dir);
+}
+
+/** The yellow warrior's costume, the actions it plays, its colour's effects archive with the
+ * familiar earned at thirty, its class data, and Pojo among the powerups: synthetic. */
+std::filesystem::path figureArchives() {
+    const auto root = test::scratchDirectory("player-figure-digest-golden");
+    writeBodyArchive(root / "PLAYERS/WAR/YEL", "WAR_YEL", {});
+    std::filesystem::create_directories(root / "PLAYERS/WAR/ANIM");
+    writeTextFile(root / "PLAYERS/WAR/ANIM/animations.json",
+                  std::format(R"({{"trees":[{{"name":"WAR","nodes":[
+        {{"name":"BODY","parent":-1,"position":[0,0,0]}}],"sequences":[{}]}}]}})",
+                              risingSequences({"READY", "WALK1", "WALK2", "THROW1S", "THROW2S",
+                                               "THROW1", "THROW2", "THROW1R", "THROW2R"})));
+    writeBodyArchive(root / "PLAYERS/WAR/SFXYEL", "FAMILIAR1", {"READY", "ATTACK"});
+    writeBodyArchive(root / "POWERUPS", "POJO",
+                     {"READY", "RUN", "ATTACK", "ATTPWR", "HIT", "DEATH"});
+    std::filesystem::create_directories(root / "pdata");
+    writeTextFile(root / "pdata/WAR.json", R"({"height":6,"width":2,
+        "fight":[200,600],"speed":[200,600],"armor":[200,600],"magic":[200,600],
+        "familiarOffset":[1,5,-1]})");
+    return root;
+}
+
+TEST_CASE("companion native digest bytes stay pinned after Pojo's script and its save",
+          "[native-state-digest][player-figure-native-digest][digest-golden]") {
+    const auto root = figureArchives();
+    test::FakeRenderDevice device;
+    ItemArchive powerups;
+    REQUIRE(powerups.load(root / "POWERUPS"));
+    PowerupCompanion companion;
+    companion.choose(device, PowerupCompanion::Kind::Pojo, powerups, nullptr);
+    REQUIRE(companion.shown());
+    // Pojo runs with the body, swings as it strikes at frame 3, and recoils from frame 8.
+    const auto step = [&companion](s32 frame) {
+        companion.capturePresentation();
+        const auto action =
+            frame >= 8 ? PlayerAnimator::Action::HitReact : PlayerAnimator::Action::Run1;
+        companion.update(1.0f / 30, action, frame == 3, false);
+    };
+    for (s32 frame = 0; frame < 6; ++frame) {
+        step(frame);
+    }
+    PowerupCompanion::LocalSnapshot saved;
+    companion.saveLocal(saved);
+    for (s32 frame = 6; frame < 12; ++frame) {
+        step(frame);
+    }
+    NativeStateResources resources;
+    REQUIRE(resources.registerArchive(powerups, "powerups"));
+    // SHA-256 of the companion's native digest twelve frames in and of what it saved six frames
+    // in, which netplay peers must hash alike: a literal moves only when what is visited changes
+    // on purpose.
+    test::checkPinnedDigests("PowerupCompanion", test::liveDigest(companion, resources),
+                             test::savedDigest(companion, saved, resources),
+                             "2919c85ee8633113e82165f715e8df2ad5a349e668b3fcf54eebc97ae2b9b315",
+                             "7aa37797e5f7e101eaebfc23b1f02a57fe8a6752d3949d067d14b3098828b24b");
+}
+
+TEST_CASE("familiar native digest bytes stay pinned after its attack and its save",
+          "[native-state-digest][player-figure-native-digest][digest-golden]") {
+    const auto root = figureArchives();
+    test::FakeRenderDevice device;
+    ItemArchive effects;
+    REQUIRE(effects.load(root / "PLAYERS/WAR/SFXYEL"));
+    PlayerFamiliar familiar;
+    REQUIRE(familiar.bind(device, effects, 30, Vec3{1, 5, -1}));
+    // It idles, and attacks as its bearer's throw leaves at frame 4.
+    const auto step = [&familiar](s32 frame) {
+        familiar.capturePresentation();
+        familiar.update(1.0f / 30, frame == 4);
+    };
+    for (s32 frame = 0; frame < 6; ++frame) {
+        step(frame);
+    }
+    PlayerFamiliar::LocalSnapshot saved;
+    familiar.saveLocal(saved);
+    for (s32 frame = 6; frame < 12; ++frame) {
+        step(frame);
+    }
+    NativeStateResources resources;
+    REQUIRE(resources.registerArchive(effects, "players/war/sfxyel"));
+    // SHA-256 of the familiar's native digest twelve frames in and of what it saved six frames
+    // in, mid-attack, which netplay peers must hash alike: a literal moves only when what is
+    // visited changes on purpose.
+    test::checkPinnedDigests("PlayerFamiliar", test::liveDigest(familiar, resources.resources()),
+                             test::savedDigest(familiar, saved, resources.resources()),
+                             "c8c6e89e6ae6cb3606b89f9acd53de9b8dec1f81632cde1b0f09e18eaa22850c",
+                             "a60b2c88def61fa7f7c7f3305a6668f6d381b336ee21daab812191a9c6490d96");
+}
+
+TEST_CASE("player figure native digest bytes stay pinned after a walk and a throw and its save",
+          "[native-state-digest][player-figure-native-digest][digest-golden]") {
+    const auto root = figureArchives();
+    test::FakeRenderDevice device;
+    ItemArchive powerups;
+    REQUIRE(powerups.load(root / "POWERUPS"));
+    CharacterSave save;
+    save.progress().experience = levelExperience(30);
+    auto& inventory = save.progress().inventory;
+    inventory.addPowerup(powerup::kSpecial, powerup::kPojo, 0, 60);
+    const auto figure = PlayerFigure::load(device, root, save, Entrance::Skip);
+    REQUIRE(figure);
+    REQUIRE(figure->familiarTier() == 1);
+    figure->setCompanionPowerups(device, powerups, inventory);
+    REQUIRE(figure->pojoActive());
+    // The warrior walks for three frames, then throws from the walk while the attack is held
+    // from frame 3 to frame 13; its familiar and Pojo answer the release.
+    bool familiarShot = false;
+    const auto step = [&](s32 frame) {
+        figure->capturePresentation();
+        const bool attacking = frame >= 3 && frame <= 13;
+        figure->animate(frame < 3 ? 0.6f : 0.0f, 2, 1.0f / 30,
+                        attacking ? PlayerDeed::Attack : PlayerDeed::None);
+        familiarShot |= figure->familiarReleased();
+    };
+    for (s32 frame = 0; frame < 9; ++frame) {
+        step(frame);
+    }
+    PlayerFigure::LocalSnapshot saved;
+    PowerupCompanion::LocalSnapshot companion;
+    figure->saveLocal(saved);
+    figure->companion().saveLocal(companion);
+    for (s32 frame = 9; frame < 18; ++frame) {
+        step(frame);
+    }
+    CHECK(familiarShot);
+    NativeStateResources resources;
+    REQUIRE(resources.registerBuiltinTexture(device.whiteTexture(), "opaque-white"));
+    REQUIRE(resources.registerArchive(powerups, "powerups"));
+    // SHA-256 of the figure's native digest eighteen frames in and of what it saved nine frames
+    // in, its familiar and Pojo within it and Pojo beside it, which netplay peers must hash
+    // alike: a literal moves only when what is visited changes on purpose.
+    test::checkPinnedDigests("PlayerFigure", test::liveDigest(*figure, resources),
+                             test::savedDigest(*figure, saved, resources),
+                             "e63c0a2d1137eddd35a0e61a2462a4952b180a678725d7b54e7775cda3d4ebd2",
+                             "1f2a7e0bdcb0b8f251f47a8638494ea33825bb65a843dff77ac3b82f48c84f57");
+    test::checkPinnedDigests("PlayerFigure's PowerupCompanion",
+                             test::liveDigest(figure->companion(), resources),
+                             test::savedDigest(figure->companion(), companion, resources),
+                             "75ac45df1949812e014a0bef0a47d6ae392ed2173433dfaecba141a9dfb6e11c",
+                             "508b8a194da2a87985881b60943c2aee58f2542b35a96f174aae226c5f7e1179");
 }
 } // namespace

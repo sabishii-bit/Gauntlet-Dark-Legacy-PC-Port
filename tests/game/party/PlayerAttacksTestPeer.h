@@ -1,5 +1,7 @@
 #pragma once
 
+#include <algorithm>
+#include <array>
 #include <optional>
 #include <span>
 #include <vector>
@@ -86,6 +88,17 @@ struct PlayerAttacksTestPeer {
     static void potions(PlayerAttacks& attacks, std::span<PlayerRuntime> players,
                         const PlayerAttacks::Targets& targets) {
         attacks.updatePotions(1.0f / 60, players, targets);
+    }
+    /** How many of each value the attacks keep from one tick to the next, in the order they
+     * are hashed: item areas, potion waves, move attachments, particle effects, strike effects,
+     * strike sources, shields, and the seats whose hold on Death is heard. */
+    static std::array<usize, 8> keptValues(const PlayerAttacks& attacks) {
+        const auto& sim = attacks.m_sim;
+        const auto heard = std::ranges::count_if(
+            sim.deathSounds, [](const auto& emitter) { return emitter.has_value(); });
+        return {sim.items.size(),           sim.potions.size(),       sim.moveAttachments.size(),
+                sim.particleEffects.size(), sim.strikeEffects.size(), sim.strikeSources.size(),
+                sim.shields.size(),         static_cast<usize>(heard)};
     }
     static void shield(PlayerAttacks& attacks) { ring(attacks, EnemyHit::kMagic, 10, 30); }
     /** A potion's ring about the first player, for a second. */
