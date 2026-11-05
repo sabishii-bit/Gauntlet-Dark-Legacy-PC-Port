@@ -8,6 +8,7 @@
 
 #include "../../engine/world/SampleLevel.h"
 #include "FakeRenderDevice.h"
+#include "NativeStateSupport.h"
 #include "TestSupport.h"
 #include "game/level/LevelTriggers.h"
 
@@ -288,5 +289,25 @@ TEST_CASE("native trigger digest bytes stay pinned for distinct held and shot va
     constexpr std::string_view kDigest =
         "c3d01f20fdda3ad2bcfa5f843671b87eba2cb51e9b683ca2d35d1f742ec16ff9";
     CHECK(test::hexBytes(digestOf(fixture.triggers)) == kDigest);
+}
+
+TEST_CASE("native trigger digest bytes stay pinned after the trigger script and what it saved",
+          "[native-state-digest][triggers-native-digest][digest-golden]") {
+    Fixture fixture("trigger-native-digest-golden");
+    for (s32 tick = 0; tick < 40; ++tick) {
+        fixture.advance(tick);
+    }
+    LevelTriggers::LocalSnapshot saved;
+    fixture.triggers.saveLocal(saved);
+    for (s32 tick = 40; tick < 80; ++tick) {
+        fixture.advance(tick);
+    }
+    // SHA-256 of the triggers' native digest eighty ticks in and of what they saved forty ticks
+    // in, which netplay peers must hash alike: a literal moves only when what is visited changes
+    // on purpose.
+    test::checkPinnedDigests("LevelTriggers", test::liveDigest(fixture.triggers),
+                             test::savedDigest(fixture.triggers, saved),
+                             "48a61d2879f2ab4f6ecbde7af405cd28fa20b90072fede6c3b3acde796bc6db5",
+                             "e914f7f87d8e08d62d631aa1c0abec29e14f0ce57c09f9cfeb396df01f4d8adf");
 }
 } // namespace

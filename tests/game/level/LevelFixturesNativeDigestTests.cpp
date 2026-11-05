@@ -14,6 +14,7 @@
 #include "engine/io/NativeStateDigest.h"
 
 #include "FakeRenderDevice.h"
+#include "NativeStateSupport.h"
 #include "TestSupport.h"
 #include "fixtures/NativeModelFixture.h"
 #include "game/level/LevelFixtures.h"
@@ -518,5 +519,132 @@ TEST_CASE("fixture native digest bytes stay pinned for a bound coordinator",
     constexpr std::string_view kDigest =
         "5c9ac85316d653984c35575018b61c85719ee92067f0abd41dbfd2349302829c";
     CHECK(test::hexBytes(liveHash(f.fixtures, f.resources)) == kDigest);
+}
+
+TEST_CASE("fixture native digest bytes stay pinned after the fixtures' script and what they saved",
+          "[native-state-digest][fixtures-native-digest][digest-golden]") {
+    Fixtures f{"fixture-native-golden"};
+    for (u32 tick = 0; tick < 8; ++tick) {
+        f.step(tick);
+    }
+    Chests::LocalSnapshot chests;
+    Breakables::LocalSnapshot barrels;
+    LockedGates::LocalSnapshot gates;
+    Traps::LocalSnapshot traps;
+    StaticScenery::LocalSnapshot scenery;
+    SafeRocks::LocalSnapshot rocks;
+    Rubble::LocalSnapshot rubble;
+    f.chests.saveLocal(chests);
+    f.barrels.saveLocal(barrels);
+    f.gates.saveLocal(gates);
+    f.traps.saveLocal(traps);
+    f.scenery.saveLocal(scenery);
+    f.rocks.saveLocal(rocks);
+    f.rubble.saveLocal(rubble);
+    for (u32 tick = 8; tick < 20; ++tick) {
+        f.step(tick);
+    }
+    // SHA-256 of each fixture's native digest twenty ticks in and of what it saved eight ticks
+    // in, which netplay peers must hash alike: a literal moves only when what is visited changes
+    // on purpose.
+    test::checkPinnedDigests("Chests", liveHash(f.chests, f.resources),
+                             savedHash(f.chests, chests, f.resources),
+                             "0f1172307b1850c522103a48c9c3b771556fbd415b612499b365eebbf2188845",
+                             "8154ad3babbc54d4b59227aab6d6ad05b63e8f65b989b13d3c3e75a1abfeaa36");
+    test::checkPinnedDigests("Breakables", liveHash(f.barrels, f.resources),
+                             savedHash(f.barrels, barrels, f.resources),
+                             "bbfca70cd5241373d49c8a96a6647e1502020f9b15c41a1831669d8e20446223",
+                             "db0979a1fc877cddbba6f6733bea0b08e73d2db137f08a20ef72a1e0eda6360f");
+    test::checkPinnedDigests("LockedGates", liveHash(f.gates, f.resources),
+                             savedHash(f.gates, gates, f.resources),
+                             "d46ea6bdc910b9858ea20babb0874c9dada6dab4a3765aad7731dd4d056cd8b4",
+                             "075cf292fb924bcf9b105fed838e0e7eee5f2e36609bb302dfb286707dd42114");
+    test::checkPinnedDigests("Traps", liveHash(f.traps, f.resources),
+                             savedHash(f.traps, traps, f.resources),
+                             "0ba88a1b02389baac1f5a1b6dcddcd8a2e4ae876b1901dc2abcc465a436737c7",
+                             "7f8ce9178bad9d3e7c2c3346b8059773d202cd538033be00bb14d05392ac9f18");
+    test::checkPinnedDigests("StaticScenery", liveHash(f.scenery, f.resources),
+                             savedHash(f.scenery, scenery, f.resources),
+                             "43e9f636515e3630bb8dd2af65b16d3f28a7c6b1075656681736884d056f0aa4",
+                             "56c52e3867389fdf658b00eae32a3284a8a76434f4f6cedc572f29e43195f5da");
+    test::checkPinnedDigests("SafeRocks", liveHash(f.rocks, f.resources),
+                             savedHash(f.rocks, rocks, f.resources),
+                             "8cc2221a6c84beb3ac5ce77b1fc1b0aa5aa3711a31b21754fc970b6d1972e8d1",
+                             "7ed3bdc23a18825a5ebf8978a3c720453c9d9d097acc8817a87b72c39700d3a9");
+    test::checkPinnedDigests("Rubble", liveHash(f.rubble, f.resources),
+                             savedHash(f.rubble, rubble, f.resources),
+                             "e8806dd05a41d4817c857c4edab8c4e6a447a16135785e1127b006d0c8e02736",
+                             "4252fd9784cba56fddf781030e33c856e4c3a0d2141d83e59c154ef78daf02ee");
+}
+
+TEST_CASE("fixture coordinator and child digest bytes stay pinned after a script and its save",
+          "[native-state-digest][fixtures-native-digest][digest-golden]") {
+    const Fixtures files{"fixture-native-golden-coordinator"};
+    Coordinator f{files.directory};
+    const auto update = [&f](u32 ticks) {
+        for (u32 tick = 0; tick < ticks; ++tick) {
+            f.fixtures.capturePresentation();
+            f.fixtures.update(1, kStep, {}, f.quiet);
+        }
+    };
+    f.fixtures.setPlayerCount(3);
+    update(4);
+    f.fixtures.strikeBarrel(1, 1000, -1, {}, f.quiet);
+    update(2);
+    const LevelFixtures& fixtures = f.fixtures;
+    LevelFixtures::LocalSnapshot saved;
+    Chests::LocalSnapshot chests;
+    LockedGates::LocalSnapshot gates;
+    Traps::LocalSnapshot traps;
+    Breakables::LocalSnapshot barrels;
+    SafeRocks::LocalSnapshot rocks;
+    StaticScenery::LocalSnapshot scenery;
+    fixtures.saveLocal(saved);
+    fixtures.chests().saveLocal(chests);
+    fixtures.gates().saveLocal(gates);
+    fixtures.traps().saveLocal(traps);
+    fixtures.barrels().saveLocal(barrels);
+    fixtures.safeRocks().saveLocal(rocks);
+    fixtures.scenery().saveLocal(scenery);
+    REQUIRE(f.fixtures.setChestLocked(0, false));
+    REQUIRE(f.fixtures.unlockGate(0));
+    f.fixtures.strikeBarrel(0, 4, -1, {}, f.quiet);
+    f.fixtures.strikeSafeRock(0, 3);
+    f.fixtures.blast({100, 0, 0}, 12, 30, {}, f.quiet);
+    update(6);
+    // SHA-256 of the coordinator's native digest after the script and of what it saved before
+    // the chest was unlocked, the gate opened, the first barrel and the rock struck and the blast
+    // set off, then of each child beside it, so that a moved coordinator names its child: a
+    // literal moves only when what is visited changes on purpose. The rubble is left out: this
+    // level's archive has none of the rubble models, so it stays empty, and the fixtures' own
+    // pins above hold its bytes.
+    test::checkPinnedDigests("LevelFixtures", liveHash(fixtures, f.resources),
+                             savedHash(fixtures, saved, f.resources),
+                             "0c334abfddf5570a184be7b4f5a786e25b3018518f3b7fa9a59ffdcb4fe420ef",
+                             "abf940e130f7b49b4b6a83514700c1343821de98371288b30e92cd8e3ad9dd78");
+    test::checkPinnedDigests("Chests", liveHash(fixtures.chests(), f.resources),
+                             savedHash(fixtures.chests(), chests, f.resources),
+                             "7acf81db02a35a922705af157f1e235debf05f28966b32b4fc8f3731340fefdd",
+                             "c19e3dc0252e0a012338a03f07856d985024795d9e4c3ce3a17a52bb3b1e9ef9");
+    test::checkPinnedDigests("LockedGates", liveHash(fixtures.gates(), f.resources),
+                             savedHash(fixtures.gates(), gates, f.resources),
+                             "c172ce007f2c3926801ee018c558c878cf1bdbde27f83d0b253f72854388c931",
+                             "1e1596602be6669d4cdd0a43ce3897290697bcef2b36703077aa58326508d8cd");
+    test::checkPinnedDigests("Traps", liveHash(fixtures.traps(), f.resources),
+                             savedHash(fixtures.traps(), traps, f.resources),
+                             "691b9e01e777a878a51648110009892140120301875fbbec2f85f63fafbcf1b7",
+                             "5e2c631b70b7939b191801881dfa6bcfa3934820692c9709f719fa2e9d92818f");
+    test::checkPinnedDigests("Breakables", liveHash(fixtures.barrels(), f.resources),
+                             savedHash(fixtures.barrels(), barrels, f.resources),
+                             "466fac1641504067308b6b27399f712208d682a41ae5d84832fc86c6118fc1f6",
+                             "f86a6a076d0b2ee4601d1fcca36d3d50e5ad9877b6dacb372a8063ade6a75641");
+    test::checkPinnedDigests("SafeRocks", liveHash(fixtures.safeRocks(), f.resources),
+                             savedHash(fixtures.safeRocks(), rocks, f.resources),
+                             "a847aa4b3f32765cd439769cd871b935afd4f54f93124df913b913baa6deb6bf",
+                             "6e544e07490e95de66d13385dca422316b52dec9bfa89ccf52d55f04c7e13f57");
+    test::checkPinnedDigests("StaticScenery", liveHash(fixtures.scenery(), f.resources),
+                             savedHash(fixtures.scenery(), scenery, f.resources),
+                             "44b78868be6618e7a99f5bf34d1d27ee332c209b8d9754ea1a961d0cc3a3dd22",
+                             "76b76ab2cfd353795a5d6d30161a08d9b6d0ec96a7524488a2922bc44aa9ce46");
 }
 } // namespace

@@ -209,4 +209,26 @@ TEST_CASE("native destruction equality includes undelivered explosions with iden
     CHECK(fixture.destruction.equalLocal(queued, restored));
     CHECK(fixture.destruction.takeExplosions() == explosions);
 }
+
+TEST_CASE("native destruction digest bytes stay pinned after the cart's script and what it saved",
+          "[world-destruction-local-rewind][digest-golden]") {
+    // The ledger keeps a cart's blast only until the next update, and the cart comes back as its
+    // next pass begins, so the script ends on the tick the cart wraps.
+    constexpr f32 kSeconds = 1.0f / 30;
+    Fixture fixture;
+    fixture.step(kSeconds);
+    fixture.step(kSeconds);
+    WorldDestruction::LocalSnapshot saved;
+    fixture.destruction.saveLocal(saved);
+    fixture.step(kSeconds);
+    REQUIRE(fixture.destruction.hasExplosions());
+    REQUIRE(fixture.destruction.destroyed(0));
+    // SHA-256 of the ledger's native digest three ticks in, the cart blown up, and of what it
+    // saved two ticks in, which netplay peers must hash alike: a literal moves only when what is
+    // visited changes on purpose.
+    test::checkPinnedDigests("WorldDestruction", test::liveDigest(fixture.destruction),
+                             test::savedDigest(fixture.destruction, saved),
+                             "9513c334e116baa654b53f34c7d499bc447b9eac209e770279cd352ac2e9390e",
+                             "16cd7b62c79fb580d02c20a110fa94b3c2af02e5701592000ad6218cb9680ddd");
+}
 } // namespace

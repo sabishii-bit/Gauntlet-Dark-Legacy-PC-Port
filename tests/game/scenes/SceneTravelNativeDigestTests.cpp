@@ -10,6 +10,7 @@
 #include "engine/world/SampleLevel.h"
 
 #include "FakeRenderDevice.h"
+#include "NativeStateSupport.h"
 #include "TestSupport.h"
 #include "game/bosses/BossSequence.h"
 #include "game/level/ExitPortals.h"
@@ -438,5 +439,34 @@ TEST_CASE("travel native digest bytes stay pinned for bound portals pads arrival
     CHECK(test::hexBytes(digests[1]) == kPads);
     CHECK(test::hexBytes(digests[2]) == kArrival);
     CHECK(test::hexBytes(digests[3]) == kDeparture);
+}
+
+TEST_CASE("travel native digest bytes stay pinned after the travel script and what it saved",
+          "[native-state-digest][scene-travel-native-digest][digest-golden]") {
+    Travel fixture("travel-digest-golden");
+    // The departure begins at tick 100, so it is under way on both sides of the save.
+    for (s32 tick = 0; tick < 102; ++tick) {
+        fixture.step(tick, false);
+    }
+    Travel::Saved saved;
+    fixture.save(saved);
+    for (s32 tick = 102; tick < 110; ++tick) {
+        fixture.step(tick, false);
+    }
+    // SHA-256 of each owner's native digest 110 ticks in and of what it saved 102 ticks in,
+    // which netplay peers must hash alike: a literal moves only when what is visited changes on
+    // purpose.
+    test::checkPinnedDigests("ExitPortals", native(fixture.exits, fixture.resources),
+                             captured(fixture.exits, saved.exits, fixture.resources),
+                             "efffba21c402bc5d1853d967f8ddacc43030f69325910f6335564697c350778e",
+                             "acb34213065a6dda325b06118ebb31f8773bc196b5d6dfa29f50c1108456e3cf");
+    test::checkPinnedDigests("LevelTransporters", native(fixture.pads, fixture.resources),
+                             captured(fixture.pads, saved.pads, fixture.resources),
+                             "47d69b1c5fa30a9cf103e355f2c6731960655d48dfc676f893c9ad1b71e6aca3",
+                             "ce526898296771353ed200ce6e4f67b4192c6359cfc734b4caa0383ec5c97347");
+    test::checkPinnedDigests("PortalDeparture", native(fixture.departure, fixture.resources),
+                             captured(fixture.departure, saved.departure, fixture.resources),
+                             "decfa43dc3622535eaf7d3d17671bc0638374bef5aa4d4a8734fe9c13612abf8",
+                             "e5ccce677d278d44567752da1e3419c5acea7906be528d47a8ce726c29c091a1");
 }
 } // namespace

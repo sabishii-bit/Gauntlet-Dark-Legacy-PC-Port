@@ -2,6 +2,7 @@
 #include <filesystem>
 #include <limits>
 #include <string>
+#include <string_view>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -10,8 +11,10 @@
 #include "engine/core/Types.h"
 #include "engine/io/NativeStateDigest.h"
 #include "engine/math/Math.h"
+#include "engine/world/SampleLevel.h"
 
 #include "FakeRenderDevice.h"
+#include "NativeStateSupport.h"
 #include "TestSupport.h"
 #include "game/level/LevelCatalog.h"
 #include "game/level/SpawnedObjects.h"
@@ -212,6 +215,30 @@ TEST_CASE("console object births rewind without duplicating or rebinding their m
     REQUIRE(objects.restoreLocal(empty));
     CHECK(objects.count() == 0);
     CHECK(objects.bindingCount() == 2);
+}
+
+TEST_CASE("spawned object digest bytes stay pinned after console births and what was saved",
+          "[level][spawned-objects][dev-console][digest-golden]") {
+    const auto root = test::sampleLevel("spawned-objects-golden");
+    const LevelRef level{"TEST", 0, "TEST", "", "", "", "", 0};
+    test::FakeRenderDevice device;
+    SpawnedObjects objects;
+    const auto stand = [&](std::string_view name, const Vec3& position) {
+        REQUIRE(objects.spawn(device, root, level, name, glm::translate(Mat4{1}, position)));
+    };
+    stand("WALL", {1, 0, 0});
+    stand("WALL", {2, 0, 0});
+    SpawnedObjects::LocalSnapshot saved;
+    objects.saveLocal(saved);
+    stand("WALL", {3, 0, 0});
+    stand("WINDOW", {0, 0, 4});
+    // SHA-256 of the roster's native digest after four births and of what it saved after two,
+    // which netplay peers must hash alike: a literal moves only when what is visited changes on
+    // purpose.
+    test::checkPinnedDigests("SpawnedObjects", test::liveDigest(objects),
+                             test::savedDigest(objects, saved),
+                             "0ae7deab4a4d221a2efca7d67f479af1676172d345eef385b8df7bd4d9515275",
+                             "7fa78a42a116672aa23c9dda6112556813f8197d008d896eff60a7444f5e775f");
 }
 
 } // namespace

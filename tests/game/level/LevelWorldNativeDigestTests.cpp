@@ -10,6 +10,7 @@
 #include "engine/world/SampleLevel.h"
 
 #include "FakeRenderDevice.h"
+#include "NativeStateSupport.h"
 #include "TestSupport.h"
 #include "game/level/LevelWorld.h"
 #include "game/level/NativeStateResources.h"
@@ -116,6 +117,12 @@ struct Fixture {
         REQUIRE(world.appendLocalDigest(digest, saved));
         REQUIRE(digest.checkedFinish());
         return *digest.checkedFinish();
+    }
+
+    /** The level's resources, refreshed as hash() refreshes them, for one of its owners. */
+    NativeStateDigest::Resources refreshed() {
+        REQUIRE(world.registerNativeResources(resources));
+        return resources.resources();
     }
 
     void step(s32 tick) {
@@ -370,5 +377,79 @@ TEST_CASE("native world digest bytes stay pinned for a bound level and queued cu
     constexpr std::string_view kDigest =
         "31bbb8e91b498088c31f9714cda3ac2ca959b0b006f2fc7d68a3048f94ab5fed";
     CHECK(test::hexBytes(fixture.hash()) == kDigest);
+}
+
+TEST_CASE("native world and child digest bytes stay pinned after the script and what it saved",
+          "[native-digest][level-world-native-digest][digest-golden]") {
+    Fixture fixture("native-world-golden");
+    fixture.step(1);
+    fixture.step(2);
+    const LevelWorld& world = fixture.world;
+    LevelWorld::LocalSnapshot saved;
+    WorldScene::LocalSnapshot scene;
+    WorldAnimator::LocalSnapshot animator;
+    WorldCollision::LocalSnapshot collision;
+    PlacedItems::LocalSnapshot items;
+    SkorneArena::LocalSnapshot arena;
+    FallingScenery::LocalSnapshot falling;
+    DestructibleWalls::LocalSnapshot walls;
+    LevelTriggers::LocalSnapshot triggers;
+    Rotators::LocalSnapshot rotators;
+    world.saveLocal(saved);
+    world.scene().saveLocal(scene);
+    world.worldAnimator().saveLocal(animator);
+    world.collision().saveLocal(collision);
+    world.placedItems().saveLocal(items);
+    world.skorneArena().saveLocal(arena);
+    world.fallingScenery().saveLocal(falling);
+    world.walls().saveLocal(walls);
+    world.triggers().saveLocal(triggers);
+    world.rotators().saveLocal(rotators);
+    for (s32 tick = 3; tick <= 7; ++tick) {
+        fixture.step(tick);
+    }
+    // SHA-256 of each owner's native digest seven ticks in and of what it saved two ticks in,
+    // which netplay peers must hash alike: a literal moves only when what is visited changes on
+    // purpose. The world's children follow it, so that a moved world names the child that moved.
+    test::checkPinnedDigests("LevelWorld", fixture.hash(), fixture.hash(saved),
+                             "274c1b797f77e90645c0d645cbb09fc5be4e923ba6d22b0e64c5dd87721cf3d3",
+                             "b20e036cc07678c8b8e55d0335076810a26b06867e832d2756965b644dd26b50");
+    const auto resources = fixture.refreshed();
+    test::checkPinnedDigests("WorldScene", test::liveDigest(world.scene(), resources),
+                             test::savedDigest(world.scene(), scene, resources),
+                             "d35f6d83518347997a8bd8158162061c6da1dda1c2fb782f76d237fd3056153f",
+                             "5f13c2c8e64fc8e9f16199c2c9159fd8f9e0568807e68027c7bcb33ea091f52b");
+    test::checkPinnedDigests("WorldAnimator", test::liveDigest(world.worldAnimator(), resources),
+                             test::savedDigest(world.worldAnimator(), animator, resources),
+                             "e2bf498d79074ad0ccb576f75b8faca56de4ad2a28654054338636f147c31306",
+                             "9658ac35a748711c349c034caa46b73fc9ee428b1ed7a2dc1123407c3a9cadb9");
+    test::checkPinnedDigests("WorldCollision", test::liveDigest(world.collision(), resources),
+                             test::savedDigest(world.collision(), collision, resources),
+                             "633e762371ae63dbd4e2ad4193ae0b3cd4dc48b97dbc9a93a330465a56f836ce",
+                             "e18ebff6f21e555e8ec2f88884b3208c5801c97b8e5670671f31327ce7900956");
+    test::checkPinnedDigests("PlacedItems", test::liveDigest(world.placedItems(), resources),
+                             test::savedDigest(world.placedItems(), items, resources),
+                             "6a093a8504480677804b3e98b4c5b7df25265f5500ddd2978a57681839287042",
+                             "18de69562f7d491bf9d24ab7cc55ce0a7176f4d0adc29b05e8f4a9fc2e16ff13");
+    test::checkPinnedDigests("SkorneArena", test::liveDigest(world.skorneArena(), resources),
+                             test::savedDigest(world.skorneArena(), arena, resources),
+                             "a61b028b814bd841500e04b91e466f386c3741eb963ca839c40f4699cbce81b6",
+                             "b6d88061727bf5cfac1fe0a520b74a90ce4d65bad7cdafe29b59c0854840277e");
+    test::checkPinnedDigests("FallingScenery", test::liveDigest(world.fallingScenery(), resources),
+                             test::savedDigest(world.fallingScenery(), falling, resources),
+                             "3dd4065256f71f194f60d6054bd42caba4ed37ecd0258fbd1e4c3de190354b6e",
+                             "4b05e2b3ab4c54d4bf2df250612d848144bc8c61fd551cd7d8b54db771c4a233");
+    test::checkPinnedDigests("DestructibleWalls", test::liveDigest(world.walls(), resources),
+                             test::savedDigest(world.walls(), walls, resources),
+                             "387caf19c6590f4bd95ebbe8bdd24672dae1faa2b81c4977a4924b886a9a39b1",
+                             "dbdcf92e6baa0db545e387ef07fdf86fa1d8cc7c42ad71c223b20fa777ff5050");
+    test::checkPinnedDigests("LevelTriggers", test::liveDigest(world.triggers(), resources),
+                             test::savedDigest(world.triggers(), triggers, resources),
+                             "c9f79710c307d7360819941ada8b9047d48352a9481dedeeb7d8d49f5f37aae0",
+                             "23319f498000ea4e36440783f04f89b45bc7b42238fc2f2c40bc7b42014506fa");
+    test::checkPinnedDigests("Rotators", test::liveDigest(world.rotators(), resources),
+                             test::savedDigest(world.rotators(), rotators, resources),
+                             "962d17489342291f1bf510040168249893fffa723ba24274e75ad9adf5db686d",
+                             "19505fa591c19bb6b96a4856edb07e1528ea463296ee18cdc5f5a6b8da772efb");
 }
 } // namespace

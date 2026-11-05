@@ -1,3 +1,5 @@
+#include <string>
+
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/core/Types.h"
@@ -6,6 +8,7 @@
 #include "engine/render/Image.h"
 
 #include "NativeStateSupport.h"
+#include "TestSupport.h"
 #include "game/level/NativeStateResources.h"
 
 namespace {
@@ -79,6 +82,15 @@ TEST_CASE("native state helpers register an owner's resources before hashing it"
     CHECK(test::liveDigest(painter, resources.resources()) == live);
     CHECK(test::savedDigest(painter, {.value = 7}, resources) == live);
     CHECK(test::savedDigest(painter, {.value = 8}, resources) != live);
+}
+
+TEST_CASE("pinned digests hold an owner's live and saved digests to their hex", "[test-support]") {
+    const Counter counter{.value = 7};
+    const std::string live = test::hexBytes(wordDigest(7));
+    const std::string saved = test::hexBytes(wordDigest(8));
+    CHECK(live.size() == 64);
+    test::checkPinnedDigests("counter", test::liveDigest(counter),
+                             test::savedDigest(counter, {.value = 8}), live, saved);
 }
 
 } // namespace
