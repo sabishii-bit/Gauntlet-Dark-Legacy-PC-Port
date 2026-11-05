@@ -349,8 +349,8 @@ bool ExitPortals::Contact::touches(const PortalVisitor& visitor, f32 extra) cons
     return away.x * away.x + away.z * away.z <= reach * reach && std::abs(away.y) <= kReach;
 }
 
-bool ExitPortals::readyToLeave(s32 party) const {
-    const auto visitor = std::ranges::find(m_wait.visitors, party, &VisitorWait::party);
+bool ExitPortals::readyToLeave(s32 partyIndex) const {
+    const auto visitor = std::ranges::find(m_wait.visitors, partyIndex, &VisitorWait::partyIndex);
     return visitor != m_wait.visitors.end() && visitor->ticks >= kIdleTicks;
 }
 
@@ -359,26 +359,26 @@ void ExitPortals::updateReadiness(s32 ticks, std::span<const PortalVisitor> part
     // state4 player releases direction. DoExit then credits every on-exit peer,
     // even one still holding a direction. Resolve this before changing credit.
     const bool sharedWait = std::ranges::any_of(party, [&](const PortalVisitor& visitor) {
-        return visitor.still && readyToLeave(visitor.party);
+        return visitor.still && readyToLeave(visitor.partyIndex);
     });
     std::vector<VisitorWait> visitors;
     visitors.reserve(party.size());
     for (const PortalVisitor& visitor : party) {
-        if (visitor.party < 0 || !std::ranges::any_of(m_portals, [&](const Portal& portal) {
+        if (visitor.partyIndex < 0 || !std::ranges::any_of(m_portals, [&](const Portal& portal) {
                 return !portal.secret && !portal.shut && !portal.consumed &&
                        standsOn(portal, visitor, extra);
             })) {
             continue;
         }
         const auto previous =
-            std::ranges::find(m_wait.visitors, visitor.party, &VisitorWait::party);
+            std::ranges::find(m_wait.visitors, visitor.partyIndex, &VisitorWait::partyIndex);
         s32 idle = previous != m_wait.visitors.end() ? previous->ticks : 0;
         // DoExit 0x80087538-0x80087594 adds gFrameTicks and compares six.
         // Moving preserves partial credit; leaving every exit clears it.
         if (visitor.still || sharedWait) {
             idle += std::clamp(ticks, 0, kIdleTicks - idle);
         }
-        visitors.push_back({visitor.party, idle});
+        visitors.push_back({visitor.partyIndex, idle});
     }
     m_wait.visitors = std::move(visitors);
 }
@@ -393,7 +393,7 @@ std::optional<usize> ExitPortals::update(s32 ticks, f32 seconds,
     // all_players_go_to_same_level 0x80078108 rejects any active state1 player,
     // so a lit portal alone is not enough: every visitor must be ready (state4).
     const bool partyReady = std::ranges::all_of(
-        party, [&](const PortalVisitor& visitor) { return readyToLeave(visitor.party); });
+        party, [&](const PortalVisitor& visitor) { return readyToLeave(visitor.partyIndex); });
     for (usize index = 0; index < m_portals.size(); ++index) {
         Portal& portal = m_portals[index];
         if (portal.consumed || portal.shut) {
@@ -428,9 +428,9 @@ std::optional<usize> ExitPortals::update(s32 ticks, f32 seconds,
         } else if (on > 0) {
             // Those standing on it, waiting, are told everyone must come (pmotion.c 3932).
             for (const PortalVisitor& visitor : party) {
-                if (party.size() > 1 && readyToLeave(visitor.party) &&
+                if (party.size() > 1 && readyToLeave(visitor.partyIndex) &&
                     standsOn(portal, visitor, extra)) {
-                    m_wait.waiting.push_back(visitor.party);
+                    m_wait.waiting.push_back(visitor.partyIndex);
                 }
             }
             // Some of the party: up to the waiting sequence, and back round from past it.

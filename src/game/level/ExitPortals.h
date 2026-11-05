@@ -31,8 +31,8 @@ namespace gdl::game {
 struct PortalVisitor {
     Vec3 position{0.0f, 0.0f, 0.0f};
     f32 radius = 0.75f;
-    s32 party = -1;     ///< stable party identity, required for ordinary departure
-    bool still = false; ///< directional input released, not an animation or collision lock
+    s32 partyIndex = -1; ///< stable party identity, required for ordinary departure
+    bool still = false;  ///< directional input released, not an animation or collision lock
 };
 
 /**
@@ -136,7 +136,7 @@ public:
 
 private:
     struct VisitorWait {
-        s32 party = -1;
+        s32 partyIndex = -1;
         s32 ticks = 0;
     };
     struct Waiting {
@@ -164,7 +164,7 @@ private:
     static void appendPortal(NativeStateDigest& digest, const PortalState& state);
     static void appendWaiting(NativeStateDigest& digest, const Waiting& state);
     void advance(Portal& portal, s32 action);
-    bool readyToLeave(s32 party) const;
+    bool readyToLeave(s32 partyIndex) const;
     void updateReadiness(s32 ticks, std::span<const PortalVisitor> party, f32 extra);
     static void shut(RenderDevice& device, Portal& portal, const AssetScope& scope);
     static bool standsOn(const Portal& portal, const PortalVisitor& visitor, f32 extra);
