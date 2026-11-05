@@ -26,13 +26,6 @@ class PlayerHealth {
 
 public:
     bool operator==(const PlayerHealth&) const = default;
-
-    /** Cue selection belongs to the replay transaction too. Restoring this
-     * stream never repeats audio; participant health/reaction state is separate.
-     * Raw MT draws preserve the existing native sequence. */
-    using Checkpoint = Mt19937::Checkpoint;
-    Checkpoint checkpoint() const { return m_painRandom.checkpoint(); }
-    bool restore(const Checkpoint& state) { return m_painRandom.restore(state); }
     static constexpr s32 kHitFlashTicks = 4;
     struct Events {
         std::function<void(f32, f32)> block;

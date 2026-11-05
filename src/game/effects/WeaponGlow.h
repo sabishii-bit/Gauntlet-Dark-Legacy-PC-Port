@@ -24,23 +24,6 @@ class WeaponGlow {
     friend void visitNativeState(NativeStateDigest& digest, const WeaponGlow& value);
 
 public:
-    struct Checkpoint {
-        u32 element = 0;
-        u32 effect = 0;
-        bool valid() const { return element <= 4; }
-        bool operator==(const Checkpoint&) const = default;
-    };
-    Checkpoint checkpoint() const { return {m_element, m_effect}; }
-    /** Handle-only owner. A nonzero effect requires the caller's EffectTrees
-     * transaction to restore and validate that same id before gameplay resumes. */
-    bool restore(const Checkpoint& state) {
-        if (!state.valid()) {
-            return false;
-        }
-        m_element = state.element;
-        m_effect = state.effect;
-        return true;
-    }
     static constexpr usize kTiers = 10; ///< one offset and scale a decade of levels
 
     /** The element an outfit puts in the hand: the weapon flags' own, unless the right

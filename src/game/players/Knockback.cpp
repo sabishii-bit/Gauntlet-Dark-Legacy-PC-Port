@@ -8,45 +8,6 @@
 
 namespace gdl::game {
 
-Knockback::Checkpoint Knockback::checkpoint() const {
-    return {m_force,        m_flags, m_damage, m_velocity, m_fastSeconds,
-            m_frameSeconds, m_shove, m_shoved, m_pushed};
-}
-
-bool Knockback::valid(const Checkpoint& state) {
-    const auto bounded = [](f32 value, f32 low, f32 high) {
-        return std::isfinite(value) && value >= low && value <= high;
-    };
-    const auto vectorValid = [&](const Vec3& value) {
-        return bounded(value.x, -kCheckpointMagnitude, kCheckpointMagnitude) &&
-               bounded(value.y, -kCheckpointMagnitude, kCheckpointMagnitude) &&
-               bounded(value.z, -kCheckpointMagnitude, kCheckpointMagnitude);
-    };
-    // step() must have a strictly positive remainder in its native decay frame.
-    // The fast interval is independent: a kick can begin partway through that frame.
-    return vectorValid(state.force) && vectorValid(state.velocity) && vectorValid(state.shove) &&
-           state.shove.y == 0 && bounded(state.damage, 0, kCheckpointMagnitude) &&
-           bounded(state.fastSeconds, 0, 1.0f / kFrameRate) &&
-           bounded(state.frameSeconds, 0, 1.0f / kFrameRate) &&
-           state.frameSeconds < 1.0f / kFrameRate;
-}
-
-bool Knockback::restore(const Checkpoint& state) {
-    if (!valid(state)) {
-        return false;
-    }
-    m_force = state.force;
-    m_flags = state.flags;
-    m_damage = state.damage;
-    m_velocity = state.velocity;
-    m_fastSeconds = state.fastSeconds;
-    m_frameSeconds = state.frameSeconds;
-    m_shove = state.shove;
-    m_shoved = state.shoved;
-    m_pushed = state.pushed;
-    return true;
-}
-
 void Knockback::queue(const Vec3& push, u32 flags, f32 damage) {
     m_force += push;
     m_flags |= flags;

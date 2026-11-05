@@ -18,6 +18,7 @@
 #include "fixtures/NativeModelFixture.h"
 #include "fixtures/NativeSoundBank.h"
 #include "game/bosses/BossSequence.h"
+#include "game/effects/EffectObservation.h"
 
 namespace {
 using namespace gdl;
@@ -452,8 +453,8 @@ TEST_CASE("native boss sequence rewind restores death birth speech and confirmed
               expected.sequence.victorySubject().position);
         REQUIRE(actual.effects.count() == expected.effects.count());
         for (usize i = 0; i < expected.effects.count(); ++i) {
-            CHECK(actual.effects.checkpoint(actual.effects.effect(i).id) ==
-                  expected.effects.checkpoint(expected.effects.effect(i).id));
+            CHECK(test::observeEffect(actual.effects, actual.effects.effect(i).id) ==
+                  test::observeEffect(expected.effects, expected.effects.effect(i).id));
         }
         actual.device.draws.clear();
         expected.device.draws.clear();

@@ -288,7 +288,7 @@ TEST_CASE("effect native digest distinguishes bank ordering clocks and retired i
     CHECK(f.hash() != forward);
     f.start();
     const auto active = f.hash();
-    REQUIRE(f.effects.restoreTextureClock(f.archive, ba, {2, 0.25f, 0.5f}));
+    f.effects.update(0.25f);
     CHECK(f.hash() != active);
     const auto clock = f.hash();
     f.effects.capturePresentation();

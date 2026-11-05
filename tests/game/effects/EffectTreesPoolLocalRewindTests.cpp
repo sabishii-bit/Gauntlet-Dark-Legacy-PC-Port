@@ -7,6 +7,7 @@
 #include "engine/io/NativeStateDigest.h"
 
 #include "NativeStateSupport.h"
+#include "game/effects/EffectObservation.h"
 #include "game/level/NativeStateResources.h"
 #include "game/party/ProjectileCheckpointFixture.h"
 
@@ -61,7 +62,7 @@ TEST_CASE("full effect pool rewinds native identities tails shared clocks and dr
         pool->finish(first);
     }
     REQUIRE(native.count() == 2);
-    const auto retiring = native.checkpoint(first);
+    const auto retiring = test::observeEffect(native, first);
     REQUIRE(retiring);
     REQUIRE(retiring->retiring);
     REQUIRE(retiring->particles.field.entries.size() == 1);
@@ -120,7 +121,7 @@ TEST_CASE("effect pool rewind preserves sparse identities and complete native pa
     }
     for (usize index = 0; index < ids.size(); index += 7) {
         native.stop(ids[index]);
-        CHECK_FALSE(native.checkpoint(ids[index]));
+        CHECK_FALSE(test::observeEffect(native, ids[index]));
     }
     native.capturePresentation();
     native.update(0.117f);

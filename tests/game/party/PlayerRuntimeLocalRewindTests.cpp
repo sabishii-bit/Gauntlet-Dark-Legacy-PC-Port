@@ -126,7 +126,7 @@ TEST_CASE("runtime rewind restores native damage movement rewards and random cue
         fixture.tick(tick);
     }
     const auto start = fixture.save();
-    const auto health = fixture.health.checkpoint();
+    const auto health = fixture.health;
     std::vector<Fixture::Observed> expected;
     fixture.cues.clear();
     fixture.actions.clear();
@@ -141,7 +141,7 @@ TEST_CASE("runtime rewind restores native damage movement rewards and random cue
     REQUIRE(expected.back().player.actor.save().gold > start.player.actor.save().gold);
     REQUIRE(expected.back().player.actor.save().health() < start.player.actor.save().health());
     fixture.restore(start);
-    REQUIRE(fixture.health.restore(health));
+    fixture.health = health;
     CHECK(fixture.cues == cues); // Restoring is not another damage/cue dispatch.
     fixture.cues.clear();
     fixture.actions.clear();
@@ -402,7 +402,7 @@ TEST_CASE("runtime native PartyMotion figure and damage rewind are one exact gam
         fixture.tick(tick);
     }
     const auto baseline = fixture.save();
-    const auto health = fixture.health.checkpoint();
+    const auto health = fixture.health;
     const auto uploads = device.texturesCreated;
     std::vector<Fixture::Observed> expected;
     fixture.cues.clear();
@@ -414,7 +414,7 @@ TEST_CASE("runtime native PartyMotion figure and damage rewind are one exact gam
     const auto cues = fixture.cues;
     const auto actions = fixture.actions;
     fixture.restore(baseline);
-    REQUIRE(fixture.health.restore(health));
+    fixture.health = health;
     fixture.cues.clear();
     fixture.actions.clear();
     for (s32 tick = 25; tick < 120; ++tick) {

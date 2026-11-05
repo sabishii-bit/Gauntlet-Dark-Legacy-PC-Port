@@ -20,6 +20,7 @@
 #include "fixtures/NativeModelFixture.h"
 #include "formats/AnimationTree.h"
 #include "game/bosses/LegendItems.h"
+#include "game/effects/EffectObservation.h"
 #include "game/effects/EffectTrees.h"
 #include "game/enemies/EnemyKinds.h"
 
@@ -77,7 +78,7 @@ std::filesystem::path presentationFixture() {
     return root;
 }
 
-TEST_CASE("effect provenance is caller-owned and survives visual restore morph and retirement",
+TEST_CASE("effect provenance is caller-owned and survives rewind morph and retirement",
           "[effects][effect-identity]") {
     ItemArchive archive;
     REQUIRE(archive.load(presentationFixture()));
@@ -89,22 +90,25 @@ TEST_CASE("effect provenance is caller-owned and survives visual restore morph a
     setting.morphIn = 0.1f;
     const auto id = effects.startSet(device, archive, "MOVING", {}, setting);
     REQUIRE(id != 0);
-    const auto before = effects.checkpoint(id);
+    const auto before = test::observeEffect(effects, id);
     REQUIRE(before);
     const EffectTrees::Provenance origin{2, 7, 3, 5};
     CHECK(effects.tag(id, origin));
     CHECK(effects.tag(id, origin));
     CHECK(effects.effect(0).provenance == origin);
-    CHECK(effects.checkpoint(id) == before); // visual state excludes ownership
+    CHECK(test::observeEffect(effects, id) == before); // visual state excludes ownership
     CHECK_FALSE(effects.tag(id, {2, 8, 3, 5}));
     CHECK_FALSE(effects.tag(id, {-1, 7, 3, 5}));
     CHECK_FALSE(effects.tag(id, {4, 7, 3, 5}));
     CHECK_FALSE(effects.tag(id, {2, 0, 3, 5}));
     CHECK_FALSE(effects.tag(id + 1, origin));
+    EffectTrees::LocalSnapshot tagged;
+    effects.saveLocal(tagged);
     effects.update(1.0f / 60);
     CHECK(effects.effect(0).continuity == before->continuity);
-    REQUIRE(effects.restore(id, *before));
+    REQUIRE(effects.restoreLocal(tagged));
     CHECK(effects.effect(0).provenance == origin);
+    CHECK(test::observeEffect(effects, id) == before);
     const auto instance = effects.effect(0).instance;
     effects.update(0.2f);
     REQUIRE(effects.count() == 1);

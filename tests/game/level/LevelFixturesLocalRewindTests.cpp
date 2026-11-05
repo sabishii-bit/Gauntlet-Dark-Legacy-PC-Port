@@ -19,6 +19,7 @@
 #include "NativeStateSupport.h"
 #include "TestSupport.h"
 #include "game/combat/DamageTypes.h"
+#include "game/effects/EffectObservation.h"
 #include "game/level/FixtureHost.h"
 #include "game/level/LevelCatalog.h"
 #include "game/level/LevelFixtures.h"
@@ -148,8 +149,7 @@ struct NativeHistory {
 void checkNativeParticipants(const Fixture& actual, const Fixture& expected) {
     for (usize i = 0; i < actual.players.size(); ++i) {
         CHECK(actual.players[i].actor == expected.players[i].actor);
-        CHECK(actual.players[i].knockback.checkpoint() ==
-              expected.players[i].knockback.checkpoint());
+        CHECK(actual.players[i].knockback == expected.players[i].knockback);
         CHECK(actual.players[i].reaction == expected.players[i].reaction);
         CHECK(actual.players[i].fixtureSpot == expected.players[i].fixtureSpot);
         CHECK(actual.players[i].cloudGap == expected.players[i].cloudGap);
@@ -400,9 +400,10 @@ TEST_CASE("native G2 fixture and world rewind retains compound children and spec
         REQUIRE(replay.effects.count() == uninterrupted.effects.count());
         for (usize i = 0; i < replay.effects.count(); ++i) {
             const auto expectedEffect =
-                uninterrupted.effects.checkpoint(uninterrupted.effects.effect(i).id);
+                test::observeEffect(uninterrupted.effects, uninterrupted.effects.effect(i).id);
             REQUIRE(expectedEffect);
-            CHECK(replay.effects.checkpoint(replay.effects.effect(i).id) == expectedEffect);
+            CHECK(test::observeEffect(replay.effects, replay.effects.effect(i).id) ==
+                  expectedEffect);
         }
         sawEffect |= uninterrupted.effects.count() > 0;
         sawRubble |= uninterrupted.fixtures.rubble().size() > 0;

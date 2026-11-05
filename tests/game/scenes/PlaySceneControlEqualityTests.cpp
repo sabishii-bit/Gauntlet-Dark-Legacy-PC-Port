@@ -2,6 +2,7 @@
 #include <concepts>
 #include <memory>
 #include <numbers>
+#include <string_view>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -164,10 +165,13 @@ TEST_CASE("root control equality includes fractional clocks priorities and voice
     SECTION("pain RNG includes its exact cursor and all native words") {
         PlayerHealth first;
         PlayerHealth second;
-        Mt19937 random{0x5A17u};
         REQUIRE(first == second);
-        random();
-        REQUIRE(second.restore(random.checkpoint()));
+        // A burn cries out a pain line drawn from the party-wide stream.
+        PlayerRuntime burnt;
+        burnt.actor.spawn(0, {}, nullptr, Vec3{0}, 0);
+        burnt.actor.save().progress().health = 1000;
+        const PlayerHealth::Events cries{.cry = [](std::string_view) {}};
+        second.hurt(burnt, 5, HurtKind::Burn, false, false, 1, cries);
         CHECK_FALSE(first == second);
         CHECK(nativeHash(first) != nativeHash(second));
         first = second;

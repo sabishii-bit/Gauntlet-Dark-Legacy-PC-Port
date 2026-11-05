@@ -1,6 +1,4 @@
-#include <array>
 #include <cmath>
-#include <limits>
 #include <numbers>
 #include <type_traits>
 #include <utility>
@@ -20,7 +18,7 @@ using Catch::Approx;
 constexpr f32 kFrame = 1.0f / 30.0f;
 constexpr f32 kPace = 10.0f;
 
-static_assert(std::is_trivially_copyable_v<Knockback::Checkpoint>);
+static_assert(std::is_trivially_copyable_v<Knockback>);
 
 TEST_CASE("knockback's flag masks keep the original's DMG_ bits",
           "[game][players][knockback][flag-masks]") {
@@ -225,7 +223,7 @@ TEST_CASE("fall kick keeps its free travel for the entire first native frame",
     CHECK(knock.step(kFrame / 2, kPace).z == Approx(1.5f * kPace * kFrame / 2));
 }
 
-TEST_CASE("knockback checkpoints retain pending hits and both generations of party shove",
+TEST_CASE("knockback copies retain pending hits and both generations of party shove",
           "[game][players][knockback][rollback]") {
     Knockback original;
     original.queue({1, 2, -3}, Knockback::kKnockDown, 5);
@@ -236,109 +234,26 @@ TEST_CASE("knockback checkpoints retain pending hits and both generations of par
     original.shove({-0.125f, -7, 0.75f}, kFrame / 2);
     original.queue({-2, 5, 1}, Knockback::kKnockBack, 4);
     original.queue({1, -2, 0}, 0x2000, 3);
-    const auto state = original.checkpoint();
-    REQUIRE(Knockback::valid(state));
-    CHECK(state.force == Vec3{-1, 3, 1});
-    CHECK(state.flags == (Knockback::kKnockBack | 0x2000U));
-    CHECK(state.damage == 7);
-    CHECK(state.velocity == Vec3{32, 0, -96});
-    CHECK(state.fastSeconds == Approx(kFrame * 0.75f));
-    CHECK(state.frameSeconds == kFrame / 4);
-    CHECK(state.shove == Vec3{-0.25f, 0, 1.5f});
-    CHECK(state.shoved);
-    CHECK(state.pushed);
+    CHECK(original.pending());
+    CHECK(original.velocity() == Vec3{32, 0, -96});
+    CHECK(original.pushed());
 
-    Knockback restored;
-    restored.addVelocity({99, 98, 97});
-    REQUIRE(restored.restore(state));
-    CHECK(restored.checkpoint() == state);
-    // Continuing a frame's shove must add to it, not replace it after restore.
+    // The player's simulation holds its knockback by value: a copy is its rewind.
+    Knockback restored = original;
+    // Continuing a frame's shove must add to it, not replace it after a rewind.
     original.shove({0.1f, 0, -0.2f}, kFrame / 2);
     restored.shove({0.1f, 0, -0.2f}, kFrame / 2);
     CHECK(restored.step(kFrame / 2, kPace) == original.step(kFrame / 2, kPace));
     CHECK(restored.kick(-1, true) == original.kick(-1, true));
-    CHECK(restored.checkpoint() == original.checkpoint());
+    CHECK(restored == original);
     original.endFrame();
     restored.endFrame();
-    CHECK(restored.checkpoint() == original.checkpoint());
+    CHECK(restored == original);
     restored.clear();
-    CHECK(restored.checkpoint() == Knockback::Checkpoint{});
+    CHECK(restored == Knockback{});
 }
 
-TEST_CASE("knockback restore rejects invalid fields atomically and accepts native clock edges",
-          "[game][players][knockback][rollback]") {
-    using State = Knockback::Checkpoint;
-    Knockback original;
-    original.queue({2, 3, -4}, Knockback::kWhirlwind, 9);
-    original.shove({1, 0, -1}, kFrame);
-    original.endFrame();
-    const auto before = original.checkpoint();
-    const auto rejected = [&](const State& state) {
-        CHECK_FALSE(Knockback::valid(state));
-        CHECK_FALSE(original.restore(state));
-        CHECK(original.checkpoint() == before);
-    };
-    constexpr std::array kVectors{&State::force, &State::velocity, &State::shove};
-    for (const auto field : kVectors) {
-        for (s32 axis = 0; axis < 3; ++axis) {
-            for (const f32 value :
-                 {std::numeric_limits<f32>::quiet_NaN(), std::numeric_limits<f32>::infinity(),
-                  -std::numeric_limits<f32>::infinity(), std::numeric_limits<f32>::max(),
-                  std::nextafter(Knockback::kCheckpointMagnitude,
-                                 std::numeric_limits<f32>::infinity()),
-                  -std::nextafter(Knockback::kCheckpointMagnitude,
-                                  std::numeric_limits<f32>::infinity())}) {
-                auto state = before;
-                (state.*field)[axis] = value;
-                rejected(state);
-            }
-        }
-    }
-    constexpr std::array kScalars{&State::damage, &State::fastSeconds, &State::frameSeconds};
-    for (const auto field : kScalars) {
-        for (const f32 value :
-             {-1.0f, std::numeric_limits<f32>::quiet_NaN(), std::numeric_limits<f32>::infinity(),
-              -std::numeric_limits<f32>::infinity(), std::numeric_limits<f32>::max()}) {
-            auto state = before;
-            state.*field = value;
-            rejected(state);
-        }
-    }
-    auto invalid = before;
-    invalid.frameSeconds = kFrame;
-    rejected(invalid);
-    invalid = before;
-    invalid.fastSeconds = std::nextafter(kFrame, 1.0f);
-    rejected(invalid);
-    invalid = before;
-    invalid.shove.y = std::numeric_limits<f32>::denorm_min();
-    rejected(invalid);
-
-    State boundary;
-    boundary.force = Vec3{Knockback::kCheckpointMagnitude};
-    boundary.velocity = Vec3{-Knockback::kCheckpointMagnitude};
-    boundary.shove = {Knockback::kCheckpointMagnitude, 0, -Knockback::kCheckpointMagnitude};
-    boundary.damage = Knockback::kCheckpointMagnitude;
-    boundary.flags = 0xFFFFFFFFU; // native queue accepts all damage flags, not just kick bits
-    boundary.fastSeconds = kFrame;
-    boundary.frameSeconds = std::nextafter(kFrame, 0.0f);
-    for (const bool shoved : {false, true}) {
-        for (const bool pushed : {false, true}) {
-            boundary.shoved = shoved;
-            boundary.pushed = pushed;
-            REQUIRE(Knockback::valid(boundary));
-            REQUIRE(original.restore(boundary));
-            CHECK(original.checkpoint() == boundary);
-        }
-    }
-    // The final representable subframe still progresses through the boundary.
-    original.step(kFrame, kPace);
-    CHECK(Knockback::valid(original.checkpoint()));
-    REQUIRE(original.restore(State{}));
-    CHECK(original.checkpoint() == State{});
-}
-
-TEST_CASE("knockback checkpoint replay preserves kicks and decay at every split-frame boundary",
+TEST_CASE("knockback replay preserves kicks and decay at every split-frame boundary",
           "[game][players][knockback][rollback][cadence]") {
     for (const s32 frequency : {30, 60, 120, 144}) {
         CAPTURE(frequency);
@@ -365,15 +280,11 @@ TEST_CASE("knockback checkpoint replay preserves kicks and decay at every split-
         Knockback original;
         for (s32 tick = 0; tick < 96; ++tick) {
             CAPTURE(tick);
-            const auto state = original.checkpoint();
-            REQUIRE(Knockback::valid(state));
-            Knockback replayed;
-            REQUIRE(replayed.restore(state));
+            Knockback replayed = original;
             auto expected = original;
             for (s32 future = 0; future < 12; ++future) {
                 CHECK(advance(replayed, tick + future) == advance(expected, tick + future));
-                REQUIRE(replayed.checkpoint() == expected.checkpoint());
-                REQUIRE(Knockback::valid(replayed.checkpoint()));
+                REQUIRE(replayed == expected);
             }
             advance(original, tick);
         }

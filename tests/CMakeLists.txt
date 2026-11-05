@@ -464,7 +464,6 @@ add_executable(tests
     game/tower/LevelExitSpeechTests.cpp
     game/effects/DynamicLightsTests.cpp
     game/effects/EffectTreesTests.cpp
-    game/effects/EffectCheckpointTests.cpp
     game/critters/CombatantProjectilesTests.cpp
     game/critters/CombatantProjectilesLocalRewindTests.cpp
     game/players/PlayerControlsTests.cpp
@@ -710,7 +709,7 @@ if(GDL_ENABLE_NETPLAY)
         game/party/MoveStrikesLocalRewindTests.cpp
         game/rollback/EffectIdentityTests.cpp
         engine/world/ParticleCheckpointTests.cpp
-        game/effects/EffectCheckpointTests.cpp
+        game/effects/EffectTreesLocalRewindTests.cpp
         game/level/WorldMotionTests.cpp
         game/party/TurboEmissionTests.cpp
         game/party/TurboEffectResourcesTests.cpp
@@ -863,7 +862,7 @@ if(GDL_ENABLE_NETPLAY)
         game/level/BreakablesLocalRewindTests.cpp game/level/TrapsLocalRewindTests.cpp
         game/level/StaticSceneryLocalRewindTests.cpp
         game/level/RotatorsLocalRewindTests.cpp
-        game/effects/EffectTreesPoolLocalRewindTests.cpp game/effects/EffectCheckpointTests.cpp
+        game/effects/EffectTreesPoolLocalRewindTests.cpp
         game/party/PlayerMissilesTests.cpp game/party/PlayerMissilesLocalRewindTests.cpp
         game/critters/CombatantProjectilesTests.cpp game/critters/CombatantProjectilesLocalRewindTests.cpp
         game/tower/TowerRelicsTests.cpp

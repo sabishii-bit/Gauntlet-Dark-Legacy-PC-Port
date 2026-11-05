@@ -1,5 +1,3 @@
-#include <limits>
-
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
@@ -129,7 +127,7 @@ TEST_CASE("the meter reads yellow on black, then red on yellow, then red and glo
     REQUIRE(meter.look().glow == 0);
 }
 
-TEST_CASE("turbo meter checkpoints preserve charge, display lag and every flash phase",
+TEST_CASE("turbo meter copies preserve charge, display lag and every flash phase",
           "[game][players][turbo][rollback][turbo-checkpoint]") {
     TurboMeter meter;
     for (s32 tick = 0; tick < 900; ++tick) {
@@ -139,11 +137,8 @@ TEST_CASE("turbo meter checkpoints preserve charge, display lag and every flash 
         if (tick == 200 || tick == 550) {
             meter.spend(100);
         }
-        const auto state = meter.checkpoint();
-        REQUIRE(TurboMeter::valid(state));
-        TurboMeter replayed;
-        REQUIRE(replayed.restore(state));
-        REQUIRE(replayed.checkpoint() == state);
+        // The player's simulation holds its meter by value: a copy is its rewind.
+        TurboMeter replayed = meter;
         CHECK(replayed.look().fill == meter.look().fill);
         CHECK(replayed.look().front == meter.look().front);
         CHECK(replayed.look().back == meter.look().back);
@@ -152,44 +147,8 @@ TEST_CASE("turbo meter checkpoints preserve charge, display lag and every flash 
         CHECK(replayed.fill(1.0f / 60) == meter.fill(1.0f / 60));
         replayed.step(1);
         meter.step(1);
-        CHECK(replayed.checkpoint() == meter.checkpoint());
+        CHECK(replayed == meter);
     }
-    TurboMeter::Checkpoint idle;
-    idle.flashTicks = 1000000; // Native idle counts after a gleam finishes.
-    REQUIRE(meter.restore(idle));
-    CHECK(meter.checkpoint() == idle);
-}
-
-TEST_CASE("turbo meter malformed checkpoints leave live state unchanged",
-          "[game][players][turbo][rollback][turbo-checkpoint]") {
-    TurboMeter meter;
-    meter.add(70);
-    meter.step(50);
-    const auto original = meter.checkpoint();
-    for (const f32 value : {-1.0f, 100.01f, std::numeric_limits<f32>::quiet_NaN(),
-                            std::numeric_limits<f32>::infinity()}) {
-        for (const bool held : {false, true}) {
-            auto invalid = original;
-            (held ? invalid.held : invalid.shown) = value;
-            CHECK_FALSE(TurboMeter::valid(invalid));
-            CHECK_FALSE(meter.restore(invalid));
-            CHECK(meter.checkpoint() == original);
-        }
-    }
-    for (const auto invalid :
-         {TurboMeter::Checkpoint{0, 0, static_cast<TurboMeter::Flash>(255), 0},
-          TurboMeter::Checkpoint{0, 0, TurboMeter::Flash::None, -1},
-          TurboMeter::Checkpoint{0, 0, TurboMeter::Flash::None, std::numeric_limits<s32>::max()},
-          TurboMeter::Checkpoint{100, 100, TurboMeter::Flash::Gleam, 0},
-          TurboMeter::Checkpoint{0, 0, TurboMeter::Flash::Gleam, 40},
-          TurboMeter::Checkpoint{0, 0, TurboMeter::Flash::Glow, 0},
-          TurboMeter::Checkpoint{100, 100, TurboMeter::Flash::Glow, 121}}) {
-        CHECK_FALSE(meter.restore(invalid));
-        CHECK(meter.checkpoint() == original);
-    }
-    REQUIRE(meter.restore({100, 100, TurboMeter::Flash::Glow, TurboMeter::kGlowTicks}));
-    meter.step(1);
-    CHECK(meter.checkpoint().flashTicks == 0);
 }
 
 } // namespace

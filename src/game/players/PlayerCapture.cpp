@@ -7,47 +7,6 @@
 #include "engine/math/PortableMath.h"
 
 namespace gdl::game {
-bool PlayerCapture::Checkpoint::valid() const {
-    const auto finite = [](f32 value) {
-        return std::isfinite(value) && std::abs(value) <= 1'000'000;
-    };
-    if (!finite(velocity.x) || !finite(velocity.y) || !finite(velocity.z) ||
-        !finite(supportHeight) || !finite(supportXZ.x) || !finite(supportXZ.y) || !finite(damage) ||
-        damage < 0 || owner < -1 || owner > 65535 || (body && flying) ||
-        (body ? owner < 0 : owner != -1) || (restoreSupport && !body && !flying)) {
-        return false;
-    }
-    if (body) {
-        for (s32 column = 0; column < 4; ++column) {
-            for (s32 row = 0; row < 4; ++row) {
-                if (!finite((*body)[column][row])) {
-                    return false;
-                }
-            }
-        }
-        return (*body)[0].w == 0 && (*body)[1].w == 0 && (*body)[2].w == 0 && (*body)[3].w == 1;
-    }
-    return true;
-}
-PlayerCapture::Checkpoint PlayerCapture::checkpoint() const {
-    return {m_body,  m_velocity, m_supportHeight, m_damage,        m_flying,
-            m_owner, m_boss,     m_supportXZ,     m_restoreSupport};
-}
-bool PlayerCapture::restore(const Checkpoint& state) {
-    if (!state.valid()) {
-        return false;
-    }
-    m_body = state.body;
-    m_velocity = state.velocity;
-    m_supportHeight = state.supportHeight;
-    m_damage = state.damage;
-    m_flying = state.flying;
-    m_owner = state.owner;
-    m_boss = state.boss;
-    m_supportXZ = state.supportXZ;
-    m_restoreSupport = state.restoreSupport;
-    return true;
-}
 void PlayerCapture::attach(s32 owner, bool boss, const Mat4& contact, PlayerActor& actor,
                            bool restoreSupport) {
     if (!held()) {

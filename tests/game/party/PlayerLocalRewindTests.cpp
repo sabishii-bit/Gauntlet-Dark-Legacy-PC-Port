@@ -26,6 +26,7 @@
 #include "game/characters/NameCheats.h"
 #include "game/combat/DamageTypes.h"
 #include "game/combat/PowerupFlags.h"
+#include "game/effects/EffectTrees.h"
 #include "game/party/ActionObservation.h"
 #include "game/party/PartyMotion.h"
 #include "game/party/PlayerFigure.h"
@@ -321,7 +322,9 @@ TEST_CASE("local player values rewind without touching figure ownership or mixer
     player.deathHeldCry = 21;
     player.deathHeldSuck = 22;
     player.deathHeldEffect = 23;
-    REQUIRE(player.weaponGlow.restore({1, 24}));
+    EffectTrees effects;
+    player.weaponGlow.update(party.device, effects, nullptr, 1, Mat4{1}, Vec3{0}, Vec3{0});
+    REQUIRE(player.weaponGlow.element() == 1);
     player.previous = {Vec3{8, 7, 6}, 1, true, 42};
     player.glow.raise(1.5f);
     const auto* figure = player.figure.get();
@@ -343,7 +346,7 @@ TEST_CASE("local player values rewind without touching figure ownership or mixer
     CHECK(player.deathHeldCry == 21);
     CHECK(player.deathHeldSuck == 22);
     CHECK(player.deathHeldEffect == 23);
-    CHECK(player.weaponGlow.effect() == 24);
+    CHECK(player.weaponGlow.element() == 1);
     CHECK(player.previous.position == Vec3{8, 7, 6});
     CHECK(player.previous.animationRevision == 42);
     CHECK(player.glow.level() == 1.5f);
@@ -369,7 +372,7 @@ TEST_CASE("local four-player movement and health rewind every tick with correcte
         for (usize seat = 0; seat < kSeats; ++seat) {
             CHECK(observeValues(actual.players[seat]) == observeValues(reference.players[seat]));
         }
-        CHECK(actual.health.checkpoint() == reference.health.checkpoint());
+        CHECK(actual.health == reference.health);
         CHECK(actual.actions == reference.actions);
         CHECK(actual.sounds == reference.sounds);
     }
@@ -517,7 +520,7 @@ TEST_CASE("native corrected party inputs match a run that never made the discard
         }
         CHECK(actual.actions == reference.actions);
         CHECK(actual.sounds == reference.sounds);
-        CHECK(actual.health.checkpoint() == reference.health.checkpoint());
+        CHECK(actual.health == reference.health);
     }
 }
 
@@ -815,18 +818,20 @@ TEST_CASE("player knockback rewind replays pending kick and shove through partia
         const f32 seconds = 1.0f / static_cast<f32>(frequency);
         for (const f32 phase : {0.0f, kFrame / 8, kFrame / 2, std::nextafter(kFrame, 0.0f)}) {
             CAPTURE(frequency, phase);
-            Knockback::Checkpoint state;
-            state.force = {1.25f, -2.5f, 3.75f};
-            state.flags = Knockback::kKnockDown | Knockback::kKnockBack;
-            state.damage = 7.5f;
-            state.velocity = {32, -0.5f, 9};
-            state.fastSeconds = kFrame / 2;
-            state.frameSeconds = phase;
-            state.shove = {-0.5f, 0, 1.25f};
-            state.shoved = true;
-            state.pushed = true;
+            // A fall's kick and a shove shown, part of a native frame run, then shoved again
+            // and struck before motion consumes the blow.
             Knockback original;
-            REQUIRE(original.restore(state));
+            original.shove({-0.5f, 0, 1.25f}, kFrame);
+            original.endFrame();
+            original.queue({0, 0, 1}, Knockback::kKnockDown, 20);
+            REQUIRE(original.kick(0, false));
+            original.addVelocity({0, -0.5f, 9});
+            original.step(phase, 10);
+            original.shove({-0.5f, 0, 1.25f}, kFrame);
+            original.queue({1.25f, -2.5f, 3.75f}, Knockback::kKnockDown | Knockback::kKnockBack,
+                           7.5f);
+            REQUIRE(original.pending());
+            REQUIRE(original.pushed());
             for (s32 tick = 0; tick < 80; ++tick) {
                 // The player's simulation holds its knockback by value: a copy is its rewind.
                 const Knockback saved = original;
@@ -849,7 +854,7 @@ TEST_CASE("player knockback rewind replays pending kick and shove through partia
                         knock->queue({-1, 4, 2}, Knockback::kBlownAway, 12);
                     }
                 }
-                CHECK(replayed.checkpoint() == original.checkpoint());
+                CHECK(replayed == original);
             }
         }
     }

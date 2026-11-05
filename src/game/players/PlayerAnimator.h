@@ -260,9 +260,6 @@ public:
         bool operator==(const TransitionPose&) const = default;
     };
     std::optional<TransitionPose> transitionPose() const;
-    /** Exact attachment-pose restore. A transitioning clock requires a matching
-     * pose pair; outside a transition the payload must be absent. */
-    bool restore(const Checkpoint& state, const std::optional<TransitionPose>& transition);
     /** Requires a bound trusted class tree. Failure does not mutate the animator. */
     bool restore(const Checkpoint& state);
     static constexpr usize kActionCount = static_cast<usize>(Action::ComboJes) + 1;

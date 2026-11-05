@@ -1,10 +1,20 @@
 #include <array>
 #include <chrono>
+#include <filesystem>
 #include <iostream>
 #include <numeric>
+#include <optional>
+#include <vector>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
+#include "engine/io/File.h"
+
+#include "FakeRenderDevice.h"
+#include "TestSupport.h"
+#include "fixtures/NativeModelFixture.h"
+#include "game/effects/EffectObservation.h"
 #include "game/party/ProjectileCheckpointFixture.h"
 
 namespace {
@@ -34,7 +44,8 @@ std::filesystem::path localEffectArchive() {
 void compare(EffectTrees& actual, EffectTrees& expected, ItemArchive& archive,
              test::FakeRenderDevice& device) {
     REQUIRE(actual.count() == expected.count());
-    CHECK(actual.textureCheckpoint(archive, {}) == expected.textureCheckpoint(archive, {}));
+    CHECK(test::observeTextureClock(actual, archive) ==
+          test::observeTextureClock(expected, archive));
     CHECK(actual.presentationAdvanced() == expected.presentationAdvanced());
     for (usize i = 0; i < expected.count(); ++i) {
         const auto& a = actual.effect(i);
@@ -43,7 +54,7 @@ void compare(EffectTrees& actual, EffectTrees& expected, ItemArchive& archive,
         CHECK(a.id == b.id);
         CHECK(a.instance == b.instance);
         CHECK(a.provenance == b.provenance);
-        CHECK(actual.checkpoint(a.id) == expected.checkpoint(b.id));
+        CHECK(test::observeEffect(actual, a.id) == test::observeEffect(expected, b.id));
         CHECK(a.transform() == b.transform());
         CHECK(a.opacity() == b.opacity());
     }
@@ -151,12 +162,12 @@ TEST_CASE("native effect rewind retains artwork but not a bank's speculative fir
     const auto textures = device.texturesCreated;
     REQUIRE(effects.restoreLocal(cold));
     CHECK(effects.count() == 0);
-    CHECK_FALSE(effects.textureCheckpoint(archive, {}));
+    CHECK_FALSE(test::observeTextureClock(effects, archive));
     setting.settled = false;
     REQUIRE(effects.startSet(device, archive, "FLIGHT", {1, 2, 3}, setting) == 1);
     CHECK(effects.effect(0).model == model);
     CHECK(effects.effect(0).instance == 1);
-    CHECK(effects.textureCheckpoint(archive, {}) == TextureAnimator::Clock{});
+    CHECK(test::observeTextureClock(effects, archive) == TextureAnimator::Clock{});
     EffectTrees reference;
     REQUIRE(reference.startSet(device, archive, "FLIGHT", {1, 2, 3}, setting) == 1);
     compare(effects, reference, archive, device);
@@ -165,6 +176,188 @@ TEST_CASE("native effect rewind retains artwork but not a bank's speculative fir
     compare(effects, reference, archive, device);
     CHECK(device.texturesCreated == textures);
     CHECK(device.textureUpdates == 0);
+}
+
+/** A moving tree with an authored emitter, and a still one. */
+std::filesystem::path flightArchive() {
+    const auto root = test::scratchDirectory("effect-flight-rewind");
+    writeTextFile(root / "tri.obj", "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n");
+    writeTextFile(root / "objects.json", R"({"objects":[{"name":"TRI","file":"tri.obj"}]})");
+    writeFile(root / "white.png", test::kTinyPng);
+    writeTextFile(root / "textures.json", R"({"bitmaps":[
+      {"name":"WHITE","file":"white.png","width":2,"height":2}]})");
+    writeTextFile(root / "animations.json", R"({
+      "particles":[{"enables":16928,"texture":"WHITE","particleLife":[1,0],
+                    "rate":[30,30,30,30],"flags":128,"flagMask":128}],
+      "trees":[{"name":"MOVING","nodes":[
+        {"name":"ROOT","object":"TRI","parent":-1,"position":[0,0,0]},
+        {"name":"EMITTER","parent":0,"position":[0,1,0],"particle":0}],
+        "sequences":[{"name":"ACTIVE","frames":9,"frameRate":30,
+          "tracks":[{"node":0,"flags":32,"frames":[0,8],"values":[0,2]}]}]},
+        {"name":"STILL","nodes":[
+          {"name":"ROOT","object":"TRI","parent":-1,"position":[0,0,0]}]}]})");
+    test::convertModelFixture(root);
+    return root;
+}
+
+ParticleDescriptor trailDescriptor() {
+    ParticleDescriptor descriptor;
+    descriptor.emitFrames = ParticleDescriptor::kEndless;
+    descriptor.rate = {0.71f, 0.71f, 0.71f, 0.71f};
+    descriptor.rateRandom = 0.4f;
+    descriptor.volume = {1, 2, 3};
+    descriptor.angle = 0.7f;
+    descriptor.speed = 0.3f;
+    descriptor.particleLife = 18;
+    descriptor.particleFade = 12;
+    descriptor.alpha = {255, 180, 180, 0};
+    descriptor.width = {0.5f, 0.25f, 0.25f, 0};
+    descriptor.texture = "WHITE";
+    return descriptor;
+}
+
+/** What `effects` draws now, facing a camera, at the end of the frame. */
+auto drawsOf(const EffectTrees& effects, test::FakeRenderDevice& device) {
+    CameraFrame camera;
+    camera.right = {1, 0, 0};
+    camera.up = {0, 1, 0};
+    device.draws.clear();
+    effects.draw(device, Mat4{1}, {}, &camera, 1);
+    auto draws = device.draws;
+    device.draws.clear();
+    return draws;
+}
+
+void sameDraws(const decltype(test::FakeRenderDevice::draws)& actual,
+               const decltype(test::FakeRenderDevice::draws)& expected) {
+    REQUIRE(actual.size() == expected.size());
+    for (usize i = 0; i < expected.size(); ++i) {
+        CHECK(actual[i].vertices == expected[i].vertices);
+        CHECK(actual[i].texture == expected[i].texture);
+        CHECK(actual[i].state == expected[i].state);
+    }
+}
+
+TEST_CASE("effect rewind replays native poses particles and detached flight without rebinding",
+          "[local-rewind][effect-local-rewind]") {
+    const bool attached = GENERATE(false, true);
+    const bool repeat = GENERATE(false, true);
+    ItemArchive archive;
+    REQUIRE(archive.load(flightArchive()));
+    test::FakeRenderDevice device;
+    EffectTrees effects;
+    EffectTrees::Setting setting;
+    setting.seconds = 4;
+    setting.loop = repeat;
+    setting.scale = 1.2f;
+    setting.stretch = {0.7f, 1.1f, 1.3f};
+    setting.fadeSeconds = 0.3f;
+    setting.yaw = 0.7f;
+    setting.velocity = {0.1f, 0.2f, 0.3f};
+    setting.alpha = 0.7f;
+    setting.playbackRate = 1.3f;
+    setting.additive = true;
+    setting.depthWrite = false;
+    setting.unlit = true;
+    setting.shrinks = true;
+    setting.morphIn = 0.2f;
+    setting.holdForMorph = true;
+    setting.tint = Color::rgba(90, 130, 180, 210);
+    setting.light = EffectTrees::Light{{0.1f, 0.2f, 0.7f}, 3, true};
+    const u32 id = effects.startSet(device, archive, "MOVING", {1, 2, 3}, setting);
+    REQUIRE(id != 0);
+    effects.attachTrail(id, trailDescriptor(), device.whiteTexture());
+    effects.update(0.117f);
+    REQUIRE(effects.effect(0).particles.field().particleCount() > 0);
+    EffectTrees::LocalSnapshot saved;
+    effects.saveLocal(saved);
+    const u32 uploads = device.texturesCreated;
+    const auto instance = effects.effect(0).instance;
+    const auto step = [&](s32 tick) {
+        effects.capturePresentation();
+        if (attached) {
+            const Mat4 at =
+                glm::translate(glm::rotate(Mat4{1}, 0.13f * static_cast<f32>(tick), Vec3{0, 1, 0}),
+                               Vec3{0.01f * static_cast<f32>(tick), 2, 3});
+            effects.placeAt(id, at, Vec3{1, 2, 3});
+        }
+        if (tick == 20) {
+            effects.redirect(id, {5, 6, 7}, {-0.1f, 0.3f, 0.7f});
+        }
+        effects.update(tick % 4 == 0 ? 0.0f : 0.0167f);
+    };
+    constexpr s32 kTicks = 80;
+    std::vector<test::EffectObservation> observed;
+    std::vector<std::optional<TextureAnimator::Checkpoint>> clocks;
+    std::vector<decltype(test::FakeRenderDevice::draws)> draws;
+    for (s32 tick = 0; tick < kTicks; ++tick) {
+        step(tick);
+        REQUIRE(effects.playing(id));
+        const auto seen = test::observeEffect(effects, id);
+        REQUIRE(seen);
+        observed.push_back(*seen);
+        clocks.push_back(test::observeTextureClock(effects, archive));
+        draws.push_back(drawsOf(effects, device));
+    }
+    // A prediction sent the effect elsewhere; the rewind returns it to where the run began.
+    effects.redirect(id, {-9, 8, 7}, {1, 1, 1});
+    effects.update(0.5f);
+    REQUIRE(effects.restoreLocal(saved));
+    CHECK(effects.effect(0).instance == instance);
+    for (s32 tick = 0; tick < kTicks; ++tick) {
+        CAPTURE(attached, repeat, tick);
+        step(tick);
+        REQUIRE(effects.playing(id));
+        const auto index = static_cast<usize>(tick);
+        CHECK(test::observeEffect(effects, id) == observed[index]);
+        CHECK(test::observeTextureClock(effects, archive) == clocks[index]);
+        sameDraws(drawsOf(effects, device), draws[index]);
+    }
+    CHECK(device.texturesCreated == uploads);
+}
+
+TEST_CASE("retired and standalone particle effects resume exact native tails after a rewind",
+          "[local-rewind][effect-local-rewind]") {
+    const bool standalone = GENERATE(false, true);
+    ItemArchive archive;
+    REQUIRE(archive.load(flightArchive()));
+    test::FakeRenderDevice device;
+    EffectTrees effects;
+    u32 id = 0;
+    if (standalone) {
+        id = effects.startParticles(device, archive, trailDescriptor(), 0, Mat4{1});
+    } else {
+        EffectTrees::Setting setting;
+        setting.persistent = true;
+        id = effects.startSet(device, archive, "MOVING", {}, setting);
+    }
+    REQUIRE(id != 0);
+    effects.update(0.117f);
+    effects.finish(id);
+    const auto retired = test::observeEffect(effects, id);
+    REQUIRE(retired);
+    REQUIRE(retired->retiring);
+    EffectTrees::LocalSnapshot saved;
+    effects.saveLocal(saved);
+    constexpr s32 kTicks = 90;
+    std::vector<std::optional<test::EffectObservation>> observed;
+    std::vector<decltype(test::FakeRenderDevice::draws)> draws;
+    for (s32 tick = 0; tick < kTicks; ++tick) {
+        effects.update(1.0f / 60);
+        observed.push_back(test::observeEffect(effects, id));
+        draws.push_back(drawsOf(effects, device));
+    }
+    CHECK_FALSE(effects.playing(id));
+    REQUIRE(effects.restoreLocal(saved));
+    CHECK(test::observeEffect(effects, id) == retired);
+    for (s32 tick = 0; tick < kTicks; ++tick) {
+        CAPTURE(standalone, tick);
+        effects.update(1.0f / 60);
+        const auto index = static_cast<usize>(tick);
+        CHECK(test::observeEffect(effects, id) == observed[index]);
+        sameDraws(drawsOf(effects, device), draws[index]);
+    }
+    CHECK_FALSE(effects.playing(id));
 }
 
 TEST_CASE("native effect snapshots reject foreign closed moved and destroyed owners",
@@ -263,7 +456,7 @@ TEST_CASE("native effect reset retains reusable banks and rewind while clear ret
     REQUIRE(effects.startSet(device, archive, "FLIGHT", {9, 8, 7}, setting) == 1);
     CHECK(effects.effect(0).instance > instance);
     CHECK(effects.effect(0).model == model);
-    CHECK(effects.textureCheckpoint(archive, {}) == TextureAnimator::Clock{});
+    CHECK(test::observeTextureClock(effects, archive) == TextureAnimator::Clock{});
     effects.update(0.5f);
     REQUIRE(effects.restoreLocal(before));
     compare(effects, expected, archive, device);

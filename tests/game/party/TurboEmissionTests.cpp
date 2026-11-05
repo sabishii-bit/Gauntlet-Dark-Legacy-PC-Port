@@ -499,7 +499,7 @@ TEST_CASE("authored turbo emissions match actual native dispatcher ordering and 
         CHECK(fixture.device.texturesCreated == texturesBefore);
         CHECK(player.actor.save().progress().inventory.powerups == inventoryBefore);
         fixture.attacks.updateTurbo(0, 2, 1.0f / 30, fixture.players, [](s32, usize) {});
-        CHECK(player.move.checkpoint() == timeline.checkpoint());
+        CHECK(player.move == timeline);
 
         REQUIRE(fixture.arsenal.missiles().count() == shotsBefore + volleys.size());
         for (usize index = 0; index < volleys.size(); ++index) {

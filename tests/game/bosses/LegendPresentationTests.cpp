@@ -19,6 +19,7 @@
 #include "fixtures/NativeModelFixture.h"
 #include "game/bosses/Bosses.h"
 #include "game/bosses/LegendPresentation.h"
+#include "game/effects/EffectObservation.h"
 
 namespace {
 
@@ -781,7 +782,8 @@ TEST_CASE("native legend rewind restores carries throws impacts and attached eff
             CHECK(a.id == b.id);
             CHECK(a.instance == b.instance);
             CHECK(a.name == b.name);
-            CHECK(actual.effects.checkpoint(a.id) == expected.effects.checkpoint(b.id));
+            CHECK(test::observeEffect(actual.effects, a.id) ==
+                  test::observeEffect(expected.effects, b.id));
             CHECK(a.transform() == b.transform());
         }
         actual.device.draws.clear();

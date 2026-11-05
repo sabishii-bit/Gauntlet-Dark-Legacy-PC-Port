@@ -5,6 +5,7 @@
 #include <map>
 #include <memory>
 #include <numbers>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -21,6 +22,7 @@
 #include "engine/core/Strings.h"
 #include "engine/core/Types.h"
 #include "engine/io/File.h"
+#include "engine/io/NativeStateDigest.h"
 #include "engine/math/Math.h"
 #include "engine/render/RenderDevice.h"
 #include "engine/world/SampleLevel.h"
@@ -33,6 +35,8 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "fixtures/NativeModelFixture.h"
+#include "fixtures/NativeSoundBank.h"
+#include "game/audio/SceneSoundEvents.h"
 #include "game/bosses/LegendItems.h"
 #include "game/combat/ArmorFlags.h"
 #include "game/combat/Damage.h"
@@ -41,6 +45,7 @@
 #include "game/combat/PowerupFlags.h"
 #include "game/critters/CombatantKind.h"
 #include "game/critters/CritterStatues.h"
+#include "game/enemies/BomberTestSupport.h"
 #include "game/enemies/EnemyKinds.h"
 #include "game/enemies/EnemyMind.h"
 #include "game/enemies/LevelOpponents.h"
@@ -3678,6 +3683,102 @@ TEST_CASE("a running suicide cries audibly and scatters animated fragments when 
     audio.close();
     mixer.mix(samples);
     sound.update();
+}
+
+TEST_CASE("a recorded bomber cry shares where it began and each machine's listener pans it",
+          "[level-opponents][suicide][native-combat-audio][local-rewind]") {
+    const auto root = test::bomberArchive();
+    const std::array<test::NativeSoundSample, 1> samples{{{24000, std::vector<s16>(24000, 4096)}}};
+    test::writeNativeSoundBank(
+        root / "audio/COMMON",
+        R"({"sounds":[{"name":"S_SUICIDE_YELL","sequence":[{"sample":0}]}]})", samples);
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    ItemArchive weapons;
+    EffectTrees effects;
+    LevelSoundscape audio;
+    audio.open(root, nullptr, nullptr);
+    std::array<PlayerRuntime, 1> players;
+    players[0].actor.spawn(0, {}, nullptr, Vec3{0, 0, 12}, 0);
+    LevelOpponents opponents;
+    opponents.open({device, world, weapons, effects, audio, root, 1}, players);
+    auto& enemies = opponents.enemies();
+    enemies.open(device, root, nullptr, 1, {}, 1);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    const auto bomber = enemies.spawn(
+        EnemySpawn{.kind = kGruntKind, .tier = 1, .algorithm = kSuicideWay, .placed = true}, {});
+    REQUIRE(bomber);
+    SceneSoundEvents recorder;
+    recorder.open(1, nullptr);
+    audio.recordTo(&recorder);
+    test::OpponentScript events;
+    test::ScriptedOpponents host{events};
+    events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
+    events.settleBlasts = [] {};
+    events.advanceLegend = [](f32) {};
+    events.advanceVictory = [](s32, f32) {};
+    events.levels = [] {};
+    events.award = [](s32, s32, bool) {};
+    struct Heard {
+        SceneSoundEvents::Frame frame;
+        NativeStateDigest::Digest shared{};
+    };
+    const auto hear = [&](u64 tick, const AmbientEar& ear) {
+        recorder.beginTick(tick);
+        audio.prepareRecordedFrame(ear);
+        {
+            const auto scope = audio.soundScope({30, 0, 1}, 1);
+            opponents.update(2, 1.0f / 30, players, {}, host, host, host);
+            opponents.gatherLoops();
+        }
+        Heard heard{recorder.endFrame()};
+        NativeStateDigest digest;
+        REQUIRE(opponents.appendNativeFollowupDigest(digest));
+        heard.shared = digest.finish();
+        return heard;
+    };
+    const AmbientEar west{{-15, 10, 30}, {1, 0, 0}};
+    const AmbientEar east{{15, 10, 30}, {1, 0, 0}};
+    auto before = std::make_unique<LevelOpponents::LocalSnapshot>();
+    EffectTrees::LocalSnapshot effectsBefore;
+    // The bomber sees the player, burns its fuse and cries out where it stood as its run
+    // begins; the tick of that cry is heard through each machine's camera in turn.
+    u64 tick = 0;
+    std::optional<Heard> fromWest;
+    while (!fromWest && tick < 120) {
+        ++tick;
+        REQUIRE(opponents.saveLocal(*before));
+        effects.saveLocal(effectsBefore);
+        auto heard = hear(tick, west);
+        if (!heard.frame.loops.empty()) {
+            fromWest = std::move(heard);
+        }
+    }
+    REQUIRE(fromWest);
+    // One native tick heard through two machines' solo cameras, either side of the bomber.
+    REQUIRE(opponents.restoreLocal(*before));
+    REQUIRE(effects.restoreLocal(effectsBefore));
+    const auto fromEast = hear(tick, east);
+    REQUIRE(fromWest->frame.loops.size() == 1);
+    REQUIRE(fromEast.frame.loops.size() == 1);
+    const auto& westCry = fromWest->frame.loops.front();
+    const auto& eastCry = fromEast.frame.loops.front();
+    CHECK(westCry.key == eastCry.key);
+    CHECK(westCry.payload.start == eastCry.payload.start);
+    CHECK(westCry.payload.volume == eastCry.payload.volume);
+    CHECK(westCry.payload.pan == Catch::Approx(0.4472136f));
+    CHECK(eastCry.payload.pan == Catch::Approx(-0.4472136f));
+    CHECK(fromWest->shared == fromEast.shared);
+    // Under way, the cry follows this machine's listener without starting over.
+    const auto later = hear(tick + 1, west);
+    REQUIRE(later.frame.loops.size() == 1);
+    CHECK(later.frame.loops.front().key == eastCry.key);
+    CHECK(later.frame.loops.front().payload.start == eastCry.payload.start);
+    CHECK(later.frame.loops.front().payload.pan == Catch::Approx(westCry.payload.pan));
+    audio.recordTo(nullptr);
+    recorder.close();
+    opponents.close();
+    audio.close();
 }
 
 TEST_CASE("in the town a suicide leaves a poison cloud that turns through its three trees and "

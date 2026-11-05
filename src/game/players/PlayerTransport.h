@@ -17,16 +17,6 @@ class PlayerTransport {
 
 public:
     bool operator==(const PlayerTransport&) const = default;
-    struct Checkpoint {
-        Vec3 destination{0};
-        s32 timer = 0;
-        bool needsStepOff = false;
-        bool valid() const;
-        bool operator==(const Checkpoint&) const = default;
-    };
-    Checkpoint checkpoint() const { return {m_destination, m_timer, m_needsStepOff}; }
-    /** Does not emit a midpoint relocation or rearm the pad. */
-    bool restore(const Checkpoint& state);
     bool begin(const Vec3& destination);
     /** Sixtieths elapsed; emits the relocation exactly once, at the invisible midpoint. */
     std::optional<Vec3> update(s32 ticks);

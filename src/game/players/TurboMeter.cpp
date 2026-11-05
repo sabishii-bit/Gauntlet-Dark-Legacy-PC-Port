@@ -1,46 +1,10 @@
 #include "game/players/TurboMeter.h"
 
 #include <algorithm>
-#include <cmath>
-#include <limits>
 
 #include "engine/core/Types.h"
 
 namespace gdl::game {
-
-TurboMeter::Checkpoint TurboMeter::checkpoint() const {
-    return {m_held, m_shown, m_flash, m_flashTicks};
-}
-
-bool TurboMeter::valid(const Checkpoint& state) {
-    if (!std::isfinite(state.held) || state.held < 0 || state.held > kFull ||
-        !std::isfinite(state.shown) || state.shown < 0 || state.shown > kFull ||
-        state.flashTicks < 0) {
-        return false;
-    }
-    switch (state.flash) {
-    case Flash::None:
-        // The idle phase keeps counting even after a gleam ends. Leave room
-        // for another native update without changing that existing clock.
-        return state.flashTicks <= std::numeric_limits<s32>::max() - kGlowTicks;
-    case Flash::Gleam:
-        return state.flashTicks < 2 * kGleamFrames * kGleamTicksPerFrame &&
-               zoneOf(state.shown) != Zone::Full;
-    case Flash::Glow: return state.flashTicks <= kGlowTicks && zoneOf(state.shown) == Zone::Full;
-    }
-    return false;
-}
-
-bool TurboMeter::restore(const Checkpoint& state) {
-    if (!valid(state)) {
-        return false;
-    }
-    m_held = state.held;
-    m_shown = state.shown;
-    m_flash = state.flash;
-    m_flashTicks = state.flashTicks;
-    return true;
-}
 
 void TurboMeter::reset() {
     m_held = 0.0f;

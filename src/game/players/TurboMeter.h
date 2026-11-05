@@ -48,19 +48,6 @@ public:
     enum class Zone : u8 { Low = 1, High = 2, Full = 3 };
     enum class Flash : u8 { None, Gleam, Glow };
 
-    struct Checkpoint {
-        f32 held = 0;
-        f32 shown = 0;
-        Flash flash = Flash::None;
-        s32 flashTicks = 0;
-        bool operator==(const Checkpoint&) const = default;
-    };
-
-    Checkpoint checkpoint() const;
-    static bool valid(const Checkpoint& state);
-    /** Restores the native display phase without advancing or spending the meter. */
-    bool restore(const Checkpoint& state);
-
     void reset();
     /** Climbs by itself for `seconds`; true the moment it comes full. */
     bool fill(f32 seconds);

@@ -1,8 +1,10 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <memory>
 #include <numbers>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <tuple>
@@ -27,7 +29,9 @@
 #include "game/combat/Damage.h"
 #include "game/combat/DamageTypes.h"
 #include "game/combat/PowerupFlags.h"
+#include "game/enemies/BomberTestSupport.h"
 #include "game/enemies/DeathTestSupport.h"
+#include "game/enemies/EnemyMind.h"
 #include "game/enemies/ScriptedOpponents.h"
 #include "game/hud/HelpMessages.h"
 #include "game/level/Chests.h"
@@ -3989,6 +3993,130 @@ TEST_CASE("recorded anti-Death audio follows corrected native holds without mixe
     REQUIRE(stop);
     CHECK(stop.actions.size() == 2);
     audio.dispatch(stop);
+    CHECK(audio.unsupportedCount() == 0);
+    f.audio.recordTo(nullptr);
+    audio.close();
+    f.opponents.close();
+    f.attacks.clear();
+    f.audio.close();
+}
+
+TEST_CASE("native opponent sound lifetimes survive pause and corrected cancellation",
+          "[opponents][death][native-combat-audio][local-rewind]") {
+    const bool draining = GENERATE(false, true);
+    const auto root = draining ? test::deathArchive() : test::bomberArchive();
+    const std::array<test::NativeSoundSample, 1> samples{{{24000, std::vector<s16>(24000, 4096)}}};
+    test::writeNativeSoundBank(root / "audio/COMMON", R"({"sounds":[
+        {"name":"S_SUICIDE_YELL","sequence":[{"sample":0}]},
+        {"name":"S_DEATHSUCK","sequence":[{"sample":0}]}
+    ]})",
+                               samples);
+    AudioMixer mixer(24000);
+    SoundPlayer sounds(mixer);
+    Fixture f;
+    f.audio.open(root, &sounds, nullptr);
+    f.opponents.open({f.device, f.world, f.weapons, f.effects, f.audio, root, 1}, f.players);
+    auto& enemies = f.opponents.enemies();
+    enemies.open(f.device, root, nullptr, 2, {.health = 20}, 1);
+    const s32 kind = draining ? kDeathKind : kGruntKind;
+    REQUIRE(enemies.loadKind(kind));
+    // Death beside the player, or two bombers each with the player in sight and out of reach.
+    const auto enemy = enemies.spawn({.kind = kind,
+                                      .tier = 1,
+                                      .algorithm = draining ? -1 : kSuicideWay,
+                                      .position = {0, 0, draining ? 2.0f : 10.0f},
+                                      .placed = true},
+                                     {});
+    REQUIRE(enemy);
+    std::optional<s32> other;
+    if (!draining) {
+        other = enemies.spawn({.kind = kind,
+                               .tier = 1,
+                               .algorithm = kSuicideWay,
+                               .position = {0, 0, 20},
+                               .placed = true},
+                              {});
+        REQUIRE(other);
+    }
+    SceneSoundEvents audio;
+    audio.open(81, &sounds);
+    f.audio.recordTo(&audio);
+    usize commands = 0;
+    const SoundPlayer::Capture capture(&sounds, [&](const auto&) { ++commands; });
+    test::OpponentScript events;
+    test::ScriptedOpponents opponentHost{events};
+    events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
+    events.settleBlasts = [] {};
+    events.advanceLegend = [](f32) {};
+    events.advanceVictory = [](s32, f32) {};
+    events.levels = [] {};
+    events.award = [](s32, s32, bool) {};
+    const auto step = [&](u64 tick, s32 ticks, f32 seconds) {
+        audio.beginTick(tick);
+        {
+            auto scope = f.audio.soundScope({91, 0, 1}, 1);
+            f.opponents.update(ticks, seconds, f.players, {}, opponentHost, opponentHost,
+                               opponentHost);
+            f.opponents.gatherLoops();
+        }
+        return audio.endFrame();
+    };
+    // The Death closes on the player and drains it, or both bombers burn their fuses and cry
+    // out as their runs begin: the first native tick that is heard.
+    u64 tick = 0;
+    SceneSoundEvents::Frame first;
+    while (first.loops.empty() && tick < 300) {
+        ++tick;
+        first = step(tick, 2, 1.0f / 30);
+        const auto delivered = audio.reconcileFrames(tick, std::span{&first, 1});
+        REQUIRE(delivered);
+        audio.dispatch(delivered);
+        audio.servicePlayback();
+        if (first.loops.empty()) {
+            REQUIRE(audio.confirm(tick)); // every seat has played the silent tick
+        }
+    }
+    REQUIRE(first.loops.size() == (draining ? 1 : 2));
+    CHECK(first.loops.front().payload.playback == SceneSoundPlayback::PlayOnceUntilCancelled);
+    CHECK(first.loops.front().payload.start.event.tick == tick);
+    if (!draining) {
+        CHECK(first.loops.front().key.emitter.generation == enemies.observe(*enemy)->instance);
+        CHECK(first.loops[1].key.emitter.generation == enemies.observe(*other)->instance);
+        CHECK(first.loops[0].key.instance == 1);
+        CHECK(first.loops[1].key.instance == 1); // unrelated emitters never renumber each other
+    }
+    const auto played = commands;
+    REQUIRE(played > 0);
+    auto saved = std::make_unique<LevelOpponents::LocalSnapshot>();
+    REQUIRE(f.opponents.saveLocal(*saved));
+    EffectTrees::LocalSnapshot effects;
+    f.effects.saveLocal(effects);
+    const auto expected = step(tick + 1, 0, 0);
+    CHECK(expected.loops == first.loops); // no restart token merely because a frame elapsed
+    REQUIRE(f.opponents.restoreLocal(*saved));
+    REQUIRE(f.effects.restoreLocal(effects));
+    if (draining) {
+        enemies.finishDeath(*enemy, -1);
+    } else {
+        enemies.hurt(*enemy, EnemyHit{.damage = 100000, .player = -1});
+    }
+    const auto wrong = step(tick + 1, 0, 0);
+    CHECK(wrong.loops.empty());
+    REQUIRE(f.opponents.restoreLocal(*saved));
+    REQUIRE(f.effects.restoreLocal(effects));
+    f.opponents.stopDeathSound(); // pause must not clear the native contact/start latch
+    const auto corrected = step(tick + 1, 0, 0);
+    CHECK(corrected == expected);
+    CHECK(commands == played);
+    const auto delta = audio.reconcileFrames(tick + 1, std::span{&corrected, 1});
+    REQUIRE(delta);
+    CHECK(delta.actions.empty());
+    audio.dispatch(delta);
+    CHECK(commands == played);
+    // Missing hardware completion does not retain a finite bomber cue forever;
+    // Death's single contact lifetime instead survives until contact is released.
+    const auto later = step(tick + 2, 0, 2);
+    CHECK(later.loops.size() == (draining ? 1 : 0));
     CHECK(audio.unsupportedCount() == 0);
     f.audio.recordTo(nullptr);
     audio.close();

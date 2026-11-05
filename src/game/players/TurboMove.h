@@ -23,22 +23,6 @@ public:
     bool operator==(const TurboMove&) const = default;
     static constexpr usize kMaxCheckpointRows = 128;
     static constexpr s32 kMaxCheckpointVolleys = 65536;
-    struct Checkpoint {
-        std::vector<s32> pending;
-        std::vector<s32> all;
-        f32 owed = 0;
-        bool named = false;
-        bool weaponHidden = false;
-        std::vector<s32> volleysShot;
-        bool operator==(const Checkpoint&) const = default;
-    };
-
-    Checkpoint checkpoint() const;
-    static bool valid(const Checkpoint& state);
-    /** Validates row references against local class data; no events or payment occur. */
-    bool restore(const Checkpoint& state, const ClassStats* stats);
-    /** Additionally requires the retained rows and debt to belong to this native action. */
-    bool restore(const Checkpoint& state, const ClassStats* stats, PlayerAnimator::Action action);
 
     struct Volley {
         Vec3 direction{0};

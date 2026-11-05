@@ -1,26 +1,8 @@
 #include "game/players/PlayerTransport.h"
 
 #include <algorithm>
-#include <cmath>
 
 namespace gdl::game {
-
-bool PlayerTransport::Checkpoint::valid() const {
-    const auto finite = [](f32 value) {
-        return std::isfinite(value) && std::abs(value) <= 1'000'000;
-    };
-    return finite(destination.x) && finite(destination.y) && finite(destination.z) && timer >= 0 &&
-           timer <= 60 && (timer == 0 || needsStepOff);
-}
-bool PlayerTransport::restore(const Checkpoint& state) {
-    if (!state.valid()) {
-        return false;
-    }
-    m_destination = state.destination;
-    m_timer = state.timer;
-    m_needsStepOff = state.needsStepOff;
-    return true;
-}
 
 bool PlayerTransport::begin(const Vec3& destination) {
     if (!armed()) {

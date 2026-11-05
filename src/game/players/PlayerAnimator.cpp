@@ -1059,28 +1059,6 @@ std::optional<PlayerAnimator::TransitionPose> PlayerAnimator::transitionPose() c
     return state.valid() ? std::optional{std::move(state)} : std::nullopt;
 }
 
-bool PlayerAnimator::restore(const Checkpoint& state,
-                             const std::optional<TransitionPose>& transition) {
-    const bool blending = state.animation.transitionTime < state.animation.transitionLength;
-    if (m_tree == nullptr || blending != transition.has_value() ||
-        (transition && !transition->valid())) {
-        return false;
-    }
-    PlayerAnimator candidate = *this;
-    if (!candidate.restore(state)) {
-        return false;
-    }
-    if (transition) {
-        if (!candidate.m_pose.restore(*m_tree, transition->current) ||
-            !candidate.m_previous.restore(*m_tree, transition->previous)) {
-            return false;
-        }
-        candidate.m_presentationPrevious = candidate.m_pose;
-    }
-    *this = std::move(candidate);
-    return true;
-}
-
 bool PlayerAnimator::isBlockableAttack(Action action) {
     // PlayerAttacking(level 1): categories 2, 5, 10, and 11 or higher.
     // Recoveries retain their attack category; quick, step and low swings do not qualify.

@@ -101,15 +101,9 @@ TEST_CASE("an imported capture restores its support footprint before the release
     PlayerCapture capture;
     capture.attach(1, true, glm::translate(Mat4{1}, Vec3{100, 25, 100}), actor, restoreSupport);
     capture.attach(1, true, glm::translate(Mat4{1}, Vec3{120, -15, 120}), actor, restoreSupport);
-    const auto held = capture.checkpoint();
-    REQUIRE(held.valid());
-    CHECK(held.supportXZ == Vec2{2, 3});
-    CHECK(held.restoreSupport == restoreSupport);
+    REQUIRE(capture.held());
     capture.release(Vec3{0}, interrupted ? 0 : 50);
-    const auto released = capture.checkpoint();
-    PlayerCapture replay;
-    REQUIRE(replay.restore(released));
-    CHECK(replay == capture);
+    REQUIRE(capture.flying());
     std::optional<f32> damage;
     for (int tick = 0; tick < 120 && !damage; ++tick)
         damage = capture.update(1.0f / 60, actor, collision);
@@ -125,6 +119,6 @@ TEST_CASE("an imported capture restores its support footprint before the release
         CHECK(actor.position().z == 120);
     }
     capture.clear();
-    CHECK_FALSE(capture.checkpoint().restoreSupport);
+    CHECK(capture == PlayerCapture{});
 }
 } // namespace

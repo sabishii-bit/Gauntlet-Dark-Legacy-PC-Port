@@ -16,6 +16,7 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "fixtures/NativeModelFixture.h"
+#include "game/effects/EffectObservation.h"
 #include "game/effects/EffectTrees.h"
 #include "game/enemies/LevelOpponents.h"
 #include "game/enemies/ScriptedOpponents.h"
@@ -53,7 +54,7 @@ std::filesystem::path lootWorld(std::string_view tag, bool general) {
 /** One effect as two separately loaded pools can compare it: its handle and its values. */
 struct EffectView {
     u32 id = 0;
-    std::optional<EffectTrees::Checkpoint> state;
+    std::optional<test::EffectObservation> state;
     bool operator==(const EffectView&) const = default;
 };
 
@@ -140,7 +141,7 @@ struct Fixture {
         std::vector<EffectView> result;
         for (usize index = 0; index < effects.count(); ++index) {
             const u32 id = effects.effect(index).id;
-            result.push_back({id, effects.checkpoint(id)});
+            result.push_back({id, test::observeEffect(effects, id)});
         }
         return result;
     }

@@ -51,27 +51,6 @@ public:
     static constexpr f32 kStill = 0.01f;     ///< a slide slower than this is over
     static constexpr f32 kShoveLimit = 0.5f; ///< of the character's pace, a shove's most
 
-    /** Pointer-free state at an arbitrary simulation boundary, including hits
-     * queued after movement and the unfinished native decay frame. */
-    struct Checkpoint {
-        Vec3 force{0};
-        u32 flags = 0;
-        f32 damage = 0;
-        Vec3 velocity{0};
-        f32 fastSeconds = 0;
-        f32 frameSeconds = 0;
-        Vec3 shove{0};
-        bool shoved = false;
-        bool pushed = false;
-        bool operator==(const Checkpoint&) const = default;
-    };
-    /** Transport/restore bound only; live accumulated impulses are never clamped. */
-    static constexpr f32 kCheckpointMagnitude = 1'000'000;
-    Checkpoint checkpoint() const;
-    static bool valid(const Checkpoint& state);
-    /** Rejects invalid clocks or values without changing the current state. */
-    bool restore(const Checkpoint& state);
-
     /** A hit's push (the way it travels, as long as its maker gave it) and its flags. */
     void queue(const Vec3& push, u32 flags, f32 damage);
     /** Turns what the last frame's hits pushed into a kick, the heaviest flag's; the heading

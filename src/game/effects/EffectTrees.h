@@ -79,28 +79,6 @@ public:
         bool operator==(const Setting&) const = default;
     };
 
-    /** Resumable visual state without render resources or actor pointers. Setting::seconds
-     * is the remaining lifetime and Setting::loop is the current repeat policy. Stable
-     * gameplay emission/caster identities are owned by the caller, not this local pool. */
-    struct Checkpoint {
-        std::string name;
-        bool tree = false;
-        u32 continuity = 1;
-        Setting setting;
-        Vec3 position{0};
-        bool timed = false;
-        bool retiring = false;
-        f32 lived = 0;
-        AnimationPlayer::Checkpoint animation;
-        ParticleField::Checkpoint trails;
-        TreeParticles::Checkpoint particles;
-        std::optional<Mat4> attachment;
-        std::optional<Vec3> flightDirection;
-        std::optional<u32> particleTextureSlot;
-        bool valid() const;
-        bool operator==(const Checkpoint&) const = default;
-    };
-
     /** Optional caller-owned native emission identity. The pool never invents
      * caster/action coordinates or replaces them while restoring visual state. */
     struct Provenance {
@@ -267,17 +245,6 @@ public:
 
     usize count() const { return m_effects.size(); }
     const Effect& effect(usize index) const { return *m_effects[index]; }
-    std::optional<Checkpoint> checkpoint(u32 id) const;
-    /** Restores an existing effect against its trusted bound tree/emitters. Does not
-     * create resources, replace its local identity, or accept morph/topology changes.
-     * Rebuilds the pose and cuts render interpolation. Invalid state changes nothing. */
-    bool restore(u32 id, const Checkpoint& state);
-    /** Bank clocks are shared, never restored as a side effect of one effect. The archive
-     * and complete ordered lender span identify an already-bound bank, without loading. */
-    std::optional<TextureAnimator::Checkpoint>
-    textureCheckpoint(const ItemArchive& archive, std::span<TextureSet* const> lenders) const;
-    bool restoreTextureClock(const ItemArchive& archive, std::span<TextureSet* const> lenders,
-                             const TextureAnimator::Checkpoint& state);
     f32 textureFrame(const Effect& effect) const;
     /** Read-only native bank; copy it before retaining a render-only picture. */
     const TextureAnimator* textureAnimator(const ItemArchive* archive,
@@ -290,7 +257,6 @@ public:
                                     std::span<TextureSet* const> textureLenders = {}) const;
 
 private:
-    static Checkpoint captureEffect(const EffectState& effect);
     static void initializeTree(Effect& value, const Setting& setting);
     static void initializeParticles(Effect& effect, const ParticleDescriptor& descriptor,
                                     const Texture& texture, u32 textureSlot, const Mat4& attachment,

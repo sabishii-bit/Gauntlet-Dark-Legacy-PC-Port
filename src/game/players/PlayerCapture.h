@@ -18,22 +18,6 @@ class PlayerCapture {
 
 public:
     bool operator==(const PlayerCapture&) const = default;
-    struct Checkpoint {
-        std::optional<Mat4> body;
-        Vec3 velocity{0};
-        f32 supportHeight = 0;
-        f32 damage = 0;
-        bool flying = false;
-        s32 owner = -1;
-        bool boss = false;
-        Vec2 supportXZ{0};
-        bool restoreSupport = false;
-        bool valid() const;
-        bool operator==(const Checkpoint&) const = default;
-    };
-    Checkpoint checkpoint() const;
-    /** Restores a deferred throw without attaching, moving, or damaging its actor. */
-    bool restore(const Checkpoint& state);
     void attach(s32 owner, bool boss, const Mat4& contact, PlayerActor& actor,
                 bool restoreSupport = false);
     void release(const Vec3& velocity, f32 damage);

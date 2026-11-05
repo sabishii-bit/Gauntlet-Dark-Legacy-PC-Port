@@ -20,19 +20,6 @@ class ExitWait {
 
 public:
     bool operator==(const ExitWait&) const = default;
-    struct Checkpoint {
-        s32 ticks = 0;
-        bool valid() const { return ticks >= 0 && ticks <= 1'000'000; }
-        bool operator==(const Checkpoint&) const = default;
-    };
-    Checkpoint checkpoint() const { return {m_ticks}; }
-    bool restore(const Checkpoint& state) {
-        if (!state.valid()) {
-            return false;
-        }
-        m_ticks = state.ticks;
-        return true;
-    }
     static constexpr s32 kFirstTicks = 600;
     static constexpr s32 kAgainTicks = 540; ///< taken off each time it speaks
     static constexpr f32 kWait = 5.0f;      ///< the most the line waits for the narrator

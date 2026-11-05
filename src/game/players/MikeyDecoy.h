@@ -23,22 +23,6 @@ public:
     static constexpr s32 kSparkleEnd = 60;
     static constexpr s32 kSparklePeriod = 10;
 
-    struct Checkpoint {
-        Vec3 position{0};
-        f64 frames = 0;
-        s32 state = 0;
-        s32 sparkles = 0;
-        u32 generation = 0;
-        bool valid() const;
-        bool operator==(const Checkpoint&) const = default;
-    };
-    Checkpoint checkpoint() const {
-        return {m_position, m_frames, m_state, m_sparkles, m_generation};
-    }
-    /** Restores native decoy decisions and queued sparkle count, not MikeyFigure's
-     * separately owned animation/random stream. Never spends inventory or emits. */
-    bool restore(const Checkpoint& value);
-
     /** Consume activation requests at the gameplay rate. Item time runs only while requested. */
     void update(f32 seconds, Inventory& inventory, const Vec3& position, f32 timerRate = 1);
     void clear();

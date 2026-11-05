@@ -16,6 +16,7 @@
 #include "game/bosses/BossSequence.h"
 #include "game/bosses/LegendPresentation.h"
 #include "game/critters/Combatant.h"
+#include "game/effects/EffectObservation.h"
 #include "game/enemies/ScriptedOpponents.h"
 
 namespace {
@@ -311,7 +312,7 @@ TEST_CASE("The native javelin follows its eye for its authored attachment lifeti
     EffectTrees::LocalSnapshot effectSaved;
     presentation.saveLocal(saved);
     effects.saveLocal(effectSaved);
-    const auto original = effects.checkpoint(attached);
+    const auto original = test::observeEffect(effects, attached);
     const auto soundCount = sounds.size();
     const auto camera = CameraFrame::of(WorldCamera{});
     effects.draw(device, Mat4{1}, {}, &camera);
@@ -330,7 +331,7 @@ TEST_CASE("The native javelin follows its eye for its authored attachment lifeti
 
     REQUIRE(effects.restoreLocal(effectSaved));
     REQUIRE(presentation.restoreLocal(saved));
-    CHECK(effects.checkpoint(attached) == original);
+    CHECK(test::observeEffect(effects, attached) == original);
     CHECK(sounds.size() == soundCount);
     CHECK_FALSE(presentation.update(0, bearer, target).landed);
     REQUIRE(find());
