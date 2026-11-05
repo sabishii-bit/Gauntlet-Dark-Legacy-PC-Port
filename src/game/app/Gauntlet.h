@@ -64,6 +64,7 @@
 #include "game/scenes/SmokeTestScene.h"
 #include "game/scenes/TitleScene.h"
 #include "game/tower/LevelExitSpeech.h"
+#include "game/widgets/SceneInput.h"
 
 namespace gdl::game {
 
@@ -143,15 +144,16 @@ private:
     bool startMovie(std::string_view name);
     bool startTitleScreen();
     void startNextAttractScreen();
-    void updateMovie(f64 deltaSeconds);
-    void updateAttract(f64 deltaSeconds);
+    // Each screen's update reads its devices through the one SceneInput onUpdate makes.
+    void updateMovie(f64 deltaSeconds, const SceneInput& sceneInput);
+    void updateAttract(f64 deltaSeconds, const SceneInput& sceneInput);
     bool updateIdle(f64 deltaSeconds);
-    void updateTitle(f64 deltaSeconds);
+    void updateTitle(f64 deltaSeconds, const SceneInput& sceneInput);
     void updateSelect(f64 deltaSeconds);
-    void updateNetplay(f64 deltaSeconds);
+    void updateNetplay(f64 deltaSeconds, const SceneInput& sceneInput);
     void connectNetplay();
     void leaveNetplay();
-    void updateTower(f64 deltaSeconds);
+    void updateTower(f64 deltaSeconds, const SceneInput& sceneInput);
     PlayScene::Inputs readPlayInputs(f64 deltaSeconds);
     /** The level debug overlay's lines for the level in play. */
     std::vector<std::string> levelDebugLines() const;
@@ -221,13 +223,13 @@ private:
      * the loading picture. Nothing is won, saved or recorded. */
     void travelByConsole();
     void resetPlayInput();
-    void updatePause(f64 deltaSeconds);
+    void updatePause(f64 deltaSeconds, const SceneInput& sceneInput);
     bool saveSettings(const GameConfig& config);
     bool applySettings(const GameConfig& config, bool persist);
-    void updateAfterLevel(f64 deltaSeconds);
+    void updateAfterLevel(f64 deltaSeconds, const SceneInput& sceneInput);
     bool openImportedShop(ShopVisit visit);
     void finishJourney();
-    void updateJourney(f64 deltaSeconds);
+    void updateJourney(f64 deltaSeconds, const SceneInput& sceneInput);
     bool updateCompletion(f64 deltaSeconds);
     void autoSave(std::span<PartyMember> party);
     bool saveLocalParty(std::span<PartyMember> party);
@@ -240,7 +242,7 @@ private:
                            bool manage = false);
     /** `player` joins the party in the tower by way of the select screen. */
     bool joinTower(const PlayerSelectScene::Inputs& joining);
-    s32 playerPressingStart() const;
+    static s32 playerPressingStart(const SceneInput& sceneInput);
     /** The view every screen is opened with, its levels read on the first ask. */
     const GameServices& services();
     /** What a play scene answers its rumble, won classes and Stop Time total through. */

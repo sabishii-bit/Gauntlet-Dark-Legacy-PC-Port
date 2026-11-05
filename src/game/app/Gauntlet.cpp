@@ -1,6 +1,7 @@
 #include "game/app/Gauntlet.h"
 
 #include <algorithm>
+#include <array>
 #include <filesystem>
 #include <format>
 #include <span>
@@ -30,6 +31,7 @@
 #include "game/rollback/ConsoleAction.h"
 #include "game/scenes/ConsoleTravel.h"
 #include "game/widgets/MenuInput.h"
+#include "game/widgets/SceneInput.h"
 
 namespace gdl::game {
 
@@ -39,6 +41,12 @@ constexpr std::string_view kMovieDirectory = "VQMOVIES";
 constexpr std::string_view kTextDirectory = "text";
 constexpr std::string_view kModDirectory = "mods";             ///< data/mods/<mechanic id>/text
 constexpr std::string_view kWindowIcon = "carddemo/icon0.png"; ///< unpacked memory-card icon
+/** The title screen takes a Start from every input slot to the select screen. */
+constexpr auto kEverySlot = [] {
+    std::array<bool, kInputSlots> admitted{};
+    admitted.fill(true);
+    return admitted;
+}();
 
 } // namespace
 
@@ -324,14 +332,16 @@ void Gauntlet::onUpdate(f64 deltaSeconds) {
     m_promptDevices.update(input(), m_config);
     // The pointer steps aside while a pad plays and comes back with the mouse or keyboard.
     window().hideCursor(m_promptDevices.cursorHidden());
+    // Read when asked, so a settings change made during this update is seen.
+    const SceneInput sceneInput{input(), m_config};
     if (m_netplay) {
-        updateNetplay(deltaSeconds);
+        updateNetplay(deltaSeconds, sceneInput);
         m_sounds->update();
         return;
     }
     if (m_online) {
         const bool consoleOpen = updateOnlineConsole(deltaSeconds);
-        const auto menu = consoleOpen ? MenuInput{} : readSharedMenuInput(input(), m_config);
+        const auto menu = consoleOpen ? MenuInput{} : sceneInput.shared();
         if (menu.escape) {
             requestQuit();
             return;
@@ -360,28 +370,28 @@ void Gauntlet::onUpdate(f64 deltaSeconds) {
         return;
     }
     // Gameplay and editable menus own Escape; only passive screens treat it as quit.
-    if (readMenuInput(input(), m_config.menu).escape && !m_play->scene.isOpen() &&
-        !m_pause.isOpen() && !m_journey.has_value() &&
-        !(m_title.isOpen() && m_title.optionsOpen()) && !(m_select.isOpen() && m_select.typing())) {
+    if (sceneInput.quitPressed() && !m_play->scene.isOpen() && !m_pause.isOpen() &&
+        !m_journey.has_value() && !(m_title.isOpen() && m_title.optionsOpen()) &&
+        !(m_select.isOpen() && m_select.typing())) {
         requestQuit();
     }
 
     if (m_pause.isOpen()) {
-        updatePause(deltaSeconds);
+        updatePause(deltaSeconds, sceneInput);
     } else if (m_afterLevel.isOpen()) {
-        updateAfterLevel(deltaSeconds);
+        updateAfterLevel(deltaSeconds, sceneInput);
     } else if (m_select.isOpen()) {
         updateSelect(deltaSeconds);
     } else if (m_journey.has_value()) {
-        updateJourney(deltaSeconds);
+        updateJourney(deltaSeconds, sceneInput);
     } else if (m_demo.isOpen()) {
-        updateAttract(deltaSeconds);
+        updateAttract(deltaSeconds, sceneInput);
     } else if (m_movieActive) {
-        updateMovie(deltaSeconds);
+        updateMovie(deltaSeconds, sceneInput);
     } else if (m_title.isOpen()) {
-        updateTitle(deltaSeconds);
+        updateTitle(deltaSeconds, sceneInput);
     } else if (m_play->scene.isOpen()) {
-        updateTower(deltaSeconds);
+        updateTower(deltaSeconds, sceneInput);
     }
     // The music ducks under the pause menu and comes back once it is left.
     m_musicDuck.update(deltaSeconds, m_pause.isOpen() && !m_pause.musicAudible());
@@ -427,8 +437,8 @@ bool Gauntlet::updateIdle(f64 deltaSeconds) {
     return wasOpen || m_idleWatch.consumingInput();
 }
 
-void Gauntlet::updateAttract(f64 deltaSeconds) {
-    const auto outcome = m_demo.update(deltaSeconds, readSharedMenuInput(input(), m_config));
+void Gauntlet::updateAttract(f64 deltaSeconds, const SceneInput& sceneInput) {
+    const auto outcome = m_demo.update(deltaSeconds, sceneInput.shared());
     if (outcome == AttractOutcome::Running) {
         return;
     }
@@ -438,8 +448,8 @@ void Gauntlet::updateAttract(f64 deltaSeconds) {
     }
 }
 
-void Gauntlet::updateMovie(f64 deltaSeconds) {
-    const MenuInput menu = readMovieMenuInput(input(), m_config);
+void Gauntlet::updateMovie(f64 deltaSeconds, const SceneInput& sceneInput) {
+    const MenuInput menu = sceneInput.movie();
     const bool toTitle = m_options.playMovie.empty() && m_attract.canSkipToTitle() && menu.start;
     const bool playing = !menu.start && !menu.select && m_movie.update(deltaSeconds);
     if (playing) {
@@ -454,9 +464,8 @@ void Gauntlet::updateMovie(f64 deltaSeconds) {
     }
 }
 
-void Gauntlet::updateTitle(f64 deltaSeconds) {
-    const TitleOutcome outcome =
-        m_title.update(deltaSeconds, readSharedMenuInput(input(), m_config));
+void Gauntlet::updateTitle(f64 deltaSeconds, const SceneInput& sceneInput) {
+    const TitleOutcome outcome = m_title.update(deltaSeconds, sceneInput.shared());
     if (outcome == TitleOutcome::Running) {
         return;
     }
@@ -474,14 +483,10 @@ void Gauntlet::updateTitle(f64 deltaSeconds) {
         m_netplay->menu.show(renderDevice(), m_netplay->view);
         return;
     }
-    if (outcome == TitleOutcome::StartGame && startPlayerSelect(playerPressingStart())) {
+    if (outcome == TitleOutcome::StartGame && startPlayerSelect(playerPressingStart(sceneInput))) {
         m_title.releaseMusic();
         m_title.close();
-        PlayerSelectScene::Inputs joining{};
-        for (s32 player = 0; player < PlayerSelectScene::kLaneCount; ++player) {
-            joining[static_cast<usize>(player)] = readPlayerMenuInput(input(), m_config, player);
-        }
-        m_select.join(joining);
+        m_select.join(sceneInput.joining(kEverySlot));
         return;
     }
     m_title.close();
@@ -489,9 +494,9 @@ void Gauntlet::updateTitle(f64 deltaSeconds) {
 }
 
 /** The player whose Start or Select is down this frame; the first when none is. */
-s32 Gauntlet::playerPressingStart() const {
+s32 Gauntlet::playerPressingStart(const SceneInput& sceneInput) {
     for (s32 player = 0; player < PlayerSelectScene::kLaneCount; ++player) {
-        const MenuInput menu = readPlayerMenuInput(input(), m_config, player);
+        const MenuInput menu = sceneInput.slot(player);
         if (menu.start || menu.select || menu.escape) {
             return player;
         }
@@ -634,7 +639,7 @@ void Gauntlet::resetPlayInput() {
     m_sessionInputs.beginEpoch();
 }
 
-void Gauntlet::updateTower(f64 deltaSeconds) {
+void Gauntlet::updateTower(f64 deltaSeconds, const SceneInput& sceneInput) {
     // The developer console holds every control while it is down: nothing typed at it
     // joins, pauses or moves anyone, and the party stands until it goes back up. The keys
     // of the frame that sends it up are still its: the Escape that closes it opens no menu.
@@ -676,26 +681,21 @@ void Gauntlet::updateTower(f64 deltaSeconds) {
     // Start on a controller the party does not hold, in the tower, brings everyone to the
     // select screen with that player, and the tower back with the party grown
     // (check_active_players, init_player_select(1)).
-    PlayerSelectScene::Inputs joining{};
-    bool anyJoining = false;
+    std::array<bool, kInputSlots> admitted{};
     for (s32 player = 0; player < PlayScene::kPlayerCount && !consoleOpen; ++player) {
-        if (!m_play->scene.canJoin(player)) {
-            continue;
-        }
-        const auto menu = readPlayerMenuInput(input(), m_config, player);
-        joining[static_cast<usize>(player)].start = menu.start;
-        anyJoining |= menu.start;
+        admitted[static_cast<usize>(player)] = m_play->scene.canJoin(player);
     }
-    if (anyJoining && joinTower(joining)) {
+    const MenuInputs joining = sceneInput.joining(admitted);
+    if (std::ranges::any_of(joining, &MenuInput::start) && joinTower(joining)) {
         return;
     }
     for (s32 player = 0; player < PlayScene::kPlayerCount && !consoleOpen; ++player) {
         if (!m_play->scene.canPause(player)) {
             continue;
         }
-        const auto menu = readPlayerMenuInput(input(), m_config, player);
+        const auto menu = sceneInput.slot(player);
         if (!m_play->scene.leaving() &&
-            ((menu.start && !menu.select) || menu.escape || input().wasKeyPressed(Key::Escape)) &&
+            ((menu.start && !menu.select) || menu.escape || sceneInput.recoveryPressed()) &&
             m_pause.open(renderDevice(), services(), m_play->scene.party(), player, &m_liveSettings,
                          &m_play->world)) {
             m_play->scene.pauseGameplaySounds();
@@ -949,10 +949,9 @@ bool Gauntlet::applySettings(const GameConfig& config, bool persist) {
     }
 }
 
-void Gauntlet::updatePause(f64 deltaSeconds) {
+void Gauntlet::updatePause(f64 deltaSeconds, const SceneInput& sceneInput) {
     const s32 pausePlayer = m_pause.player();
-    const auto outcome =
-        m_pause.update(deltaSeconds, readPauseMenuInput(input(), m_config, m_pause.player()));
+    const auto outcome = m_pause.update(deltaSeconds, sceneInput.pause(m_pause.player()));
     if (outcome == PauseOutcome::Running) {
         return;
     }
@@ -1079,10 +1078,11 @@ bool Gauntlet::openImportedShop(ShopVisit visit) {
     return true;
 }
 
-void Gauntlet::updateAfterLevel(f64 deltaSeconds) {
+void Gauntlet::updateAfterLevel(f64 deltaSeconds, const SceneInput& sceneInput) {
+    static_assert(ShopSession::kSeats == kInputSlots, "offline, seat n reads input slot n");
     ShopSession::Inputs inputs;
-    for (s32 player = 0; player < 4; ++player) {
-        inputs[static_cast<usize>(player)] = readPlayerMenuInput(input(), m_config, player);
+    for (s32 player = 0; player < static_cast<s32>(kInputSlots); ++player) {
+        inputs[static_cast<usize>(player)] = sceneInput.slot(player);
     }
     if (m_afterLevel.update(deltaSeconds, inputs)) {
         GDL_VERIFY(m_journey.has_value(), "Shop requires a pending journey");
@@ -1175,7 +1175,7 @@ bool Gauntlet::updateCompletion(f64 deltaSeconds) {
     return false;
 }
 
-void Gauntlet::updateJourney(f64 deltaSeconds) {
+void Gauntlet::updateJourney(f64 deltaSeconds, const SceneInput& sceneInput) {
     GDL_VERIFY(m_journey.has_value(), "Updating a journey requires a pending journey");
     Journey& journey = *m_journey;
     if (!journey.shown) {
@@ -1195,7 +1195,7 @@ void Gauntlet::updateJourney(f64 deltaSeconds) {
     if (journey.movieStarted) {
         bool skip = false;
         for (const auto& member : journey.party) {
-            const auto menu = readMovieMenuInput(input(), m_config, member.player);
+            const auto menu = sceneInput.movie(member.player);
             skip = skip || menu.start;
         }
         if (!skip && m_movie.update(deltaSeconds)) {

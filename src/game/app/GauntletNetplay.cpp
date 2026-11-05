@@ -3,6 +3,7 @@
 
 #include "game/app/Gauntlet.h"
 #include "game/netplay/AssetDigest.h"
+#include "game/widgets/SceneInput.h"
 
 namespace gdl::game {
 void Gauntlet::connectNetplay() {
@@ -47,7 +48,7 @@ void Gauntlet::leaveNetplay() {
         startTitleScreen();
     }
 }
-void Gauntlet::updateNetplay(f64 deltaSeconds) {
+void Gauntlet::updateNetplay(f64 deltaSeconds, const SceneInput& sceneInput) {
     using Page = NetplayMenu::Page;
     using Action = NetplayMenu::Action;
     auto& ui = *m_netplay;
@@ -62,15 +63,15 @@ void Gauntlet::updateNetplay(f64 deltaSeconds) {
         }
     }
     auto menu = ui.overlay && (ui.view.page == Page::Pause || ui.view.page == Page::Leave)
-                    ? readPauseMenuInput(input(), m_config, ui.pauseOwner)
-                    : readSharedMenuInput(input(), m_config);
+                    ? sceneInput.pause(ui.pauseOwner)
+                    : sceneInput.shared();
     if (consoleOpen) {
         menu = {};
     }
     if (m_online) {
         if (!consoleOpen && !ui.overlay &&
-            (menu.start || menu.escape || input().wasKeyPressed(Key::Escape))) {
-            ui.pauseOwner = input().wasKeyPressed(Key::Escape) ? -1 : playerPressingStart();
+            (menu.start || menu.escape || sceneInput.recoveryPressed())) {
+            ui.pauseOwner = sceneInput.recoveryPressed() ? -1 : playerPressingStart(sceneInput);
             if (m_online->pause(ui.pauseOwner)) {
                 ui.overlay = true;
                 ui.view.page = Page::Pause;
@@ -167,7 +168,7 @@ void Gauntlet::updateNetplay(f64 deltaSeconds) {
         break;
     case Action::SelectCharacters:
         ui.notice.clear();
-        if (startPlayerSelect(playerPressingStart())) {
+        if (startPlayerSelect(playerPressingStart(sceneInput))) {
             m_title.releaseMusic();
             m_title.close();
             resetPlayInput();
