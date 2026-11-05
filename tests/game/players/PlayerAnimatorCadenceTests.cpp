@@ -77,7 +77,7 @@ TEST_CASE("native quick and strafing shots retain wall-time cadence with speed i
                     const f32 seconds = 1.0f / static_cast<f32>(hz);
                     const s32 ticks = std::max(1, 60 / hz);
                     PlayerAnimator animator;
-                    REQUIRE(animator.bind(actions.tree(*found), false));
+                    REQUIRE(animator.bind(actions.tree(*found), Entrance::Skip));
                     animator.setAttackSpeed((power & 1) != 0, (power & 2) != 0);
                     const auto motion = mode == 0 ? PlayerMotion::Stand : PlayerMotion::Run;
                     if (mode == 2) {
@@ -125,7 +125,7 @@ TEST_CASE("player actions retain native fractional frames without changing fast 
         PlayerAnimator animator;
         for (s32 binding = 0; binding < 2; ++binding) {
             CAPTURE(binding);
-            REQUIRE(animator.bind(tree, false));
+            REQUIRE(animator.bind(tree, Entrance::Skip));
             animator.update(PlayerMotion::Stand, 1, kStep);
             CHECK(animator.player().frame() == Approx(sample.frame));
             CHECK(animator.pose().matrices()[0][3].x == Approx(sample.frame));
@@ -146,7 +146,7 @@ TEST_CASE(
     REQUIRE(found);
     const auto& tree = actions.tree(*found);
     PlayerAnimator animator;
-    REQUIRE(animator.bind(tree, false));
+    REQUIRE(animator.bind(tree, Entrance::Skip));
     animator.update(PlayerMotion::Stand, 1, kStep, PlayerDeed::Attack);
     REQUIRE(animator.action() == Action::Throw);
     const auto& windup = tree.sequences[animator.player().sequence()];
@@ -191,7 +191,7 @@ TEST_CASE("powered player animation snapping uses its effective frame duration",
         for (const bool rapid : {false, true}) {
             CAPTURE(sample.rate, rapid);
             PlayerAnimator animator;
-            REQUIRE(animator.bind(tree, false));
+            REQUIRE(animator.bind(tree, Entrance::Skip));
             animator.setAttackSpeed(rapid, !rapid);
             animator.update(PlayerMotion::Stand, 1, kStep, PlayerDeed::Attack);
             REQUIRE(animator.action() == Action::Throw);
@@ -201,7 +201,7 @@ TEST_CASE("powered player animation snapping uses its effective frame duration",
             CHECK_FALSE(animator.released());
 
             // A new class/body must not inherit a faster sequence's snap mode.
-            REQUIRE(animator.bind(tree, false));
+            REQUIRE(animator.bind(tree, Entrance::Skip));
             animator.update(PlayerMotion::Stand, 1, kStep);
             const f32 normal = sample.rate == 30 ? 0.5f : 1.0f / 3.0f;
             CHECK(animator.player().frame() == Approx(normal));
@@ -220,8 +220,8 @@ TEST_CASE("player animation item changes latch at the next sequence start",
             CAPTURE(initiallyPowered, rapid);
             PlayerAnimator changed;
             PlayerAnimator unchanged;
-            REQUIRE(changed.bind(tree, false));
-            REQUIRE(unchanged.bind(tree, false));
+            REQUIRE(changed.bind(tree, Entrance::Skip));
+            REQUIRE(unchanged.bind(tree, Entrance::Skip));
             changed.setAttackSpeed(rapid && initiallyPowered, !rapid && initiallyPowered);
             unchanged.setAttackSpeed(rapid && initiallyPowered, !rapid && initiallyPowered);
             changed.update(PlayerMotion::Stand, 1, kStep, PlayerDeed::Attack);
@@ -253,8 +253,8 @@ TEST_CASE("rapid fire uses the requested attack when a throw proceeds after butt
     const auto tree = actionTree();
     PlayerAnimator held;
     PlayerAnimator released;
-    REQUIRE(held.bind(tree, false));
-    REQUIRE(released.bind(tree, false));
+    REQUIRE(held.bind(tree, Entrance::Skip));
+    REQUIRE(released.bind(tree, Entrance::Skip));
     held.setAttackSpeed(true, false);
     released.setAttackSpeed(true, false);
     held.update(PlayerMotion::Stand, 1, kStep, PlayerDeed::Attack);
@@ -317,7 +317,7 @@ TEST_CASE("player item animation scale follows native requested action categorie
             for (const bool speed : {false, true}) {
                 CAPTURE(request.action, rapid, speed);
                 PlayerAnimator animator;
-                REQUIRE(animator.bind(tree, request.enter));
+                REQUIRE(animator.bind(tree, request.enter ? Entrance::Play : Entrance::Skip));
                 animator.setAttackSpeed(rapid, speed);
                 animator.setStrafe(request.strafe);
                 const auto motion =
@@ -336,7 +336,7 @@ TEST_CASE("selected combo continuations remain unscaled after their button is re
           "[game][players][animation][player-animation-speed]") {
     const auto tree = actionTree();
     PlayerAnimator animator;
-    REQUIRE(animator.bind(tree, false));
+    REQUIRE(animator.bind(tree, Entrance::Skip));
     animator.setAttackSpeed(true, true);
     animator.update(PlayerMotion::Stand, 1, kStep, PlayerDeed::Combo);
     REQUIRE(animator.action() == Action::ComboAct1);
@@ -384,7 +384,7 @@ TEST_CASE("a fresh guard cancels ordinary attacks but not turbo item combo or ma
     for (const auto& request : requests) {
         CAPTURE(request.deed, request.action, request.cancellable);
         PlayerAnimator animator;
-        REQUIRE(animator.bind(tree, false));
+        REQUIRE(animator.bind(tree, Entrance::Skip));
         animator.update(PlayerMotion::Stand, 1, kStep, request.deed);
         REQUIRE(animator.action() == request.action);
         const auto generation = animator.player().generation();
@@ -406,7 +406,7 @@ TEST_CASE("a released guard latches native armor duration only for its blocking 
         for (const bool speed : {false, true}) {
             CAPTURE(armor, speed);
             PlayerAnimator animator;
-            REQUIRE(animator.bind(tree, false));
+            REQUIRE(animator.bind(tree, Entrance::Skip));
             animator.setGuardArmor(armor);
             animator.setAttackSpeed(false, speed);
             animator.update(PlayerMotion::Stand, 1, kStep, PlayerDeed::Defend);
@@ -454,7 +454,7 @@ TEST_CASE("locked strong and item attacks preserve held requests for continuatio
         for (const bool held : {false, true}) {
             CAPTURE(attack.first, held);
             PlayerAnimator animator;
-            REQUIRE(animator.bind(tree, false));
+            REQUIRE(animator.bind(tree, Entrance::Skip));
             // Native input-to-action selection retains the held request even
             // when the current animation owns the body. Speed is deliberately
             // present only for the type-11 requests, which must exclude it.
@@ -481,7 +481,7 @@ TEST_CASE("stance transitions start with native tick credit without accelerating
     for (const bool speed : {false, true}) {
         CAPTURE(speed);
         PlayerAnimator animator;
-        REQUIRE(animator.bind(tree, false));
+        REQUIRE(animator.bind(tree, Entrance::Skip));
         animator.setAttackSpeed(false, speed);
         animator.update(PlayerMotion::Walk, 1, kStep);
         REQUIRE(animator.action() == Action::Walk1);
@@ -529,7 +529,7 @@ TEST_CASE("player actions only blend back to stance where the native action tabl
     for (const auto& request : requests) {
         CAPTURE(request.deed);
         PlayerAnimator animator;
-        REQUIRE(animator.bind(tree, false));
+        REQUIRE(animator.bind(tree, Entrance::Skip));
         animator.update(PlayerMotion::Stand, 1, kStep, request.deed);
         REQUIRE(animator.action() != Action::Ready);
         for (s32 tick = 0; tick < 240 && animator.action() != Action::Ready; ++tick) {
@@ -547,7 +547,7 @@ TEST_CASE("running changes to walking at a completed native half stride, not imm
     for (const bool secondHalf : {false, true}) {
         CAPTURE(secondHalf);
         PlayerAnimator animator;
-        REQUIRE(animator.bind(tree, false));
+        REQUIRE(animator.bind(tree, Entrance::Skip));
         animator.update(PlayerMotion::Run, 1, kStep);
         if (secondHalf) {
             for (s32 tick = 0; tick < 60 && animator.action() != Action::Run2; ++tick) {
@@ -577,7 +577,7 @@ TEST_CASE("Archer alone omits the Ready blend after its second quick recovery",
     for (const s32 character : {0, 3}) {
         CAPTURE(character);
         PlayerAnimator animator;
-        REQUIRE(animator.bind(tree, false));
+        REQUIRE(animator.bind(tree, Entrance::Skip));
         animator.setCharacter(character);
         animator.update(PlayerMotion::Stand, 1, kStep, PlayerDeed::Melee);
         for (s32 tick = 0; tick < 60 && animator.action() == Action::Quick1; ++tick) {
@@ -616,7 +616,7 @@ TEST_CASE("native spike reactions play HITREACT rather than the unused SPIKEHIT 
             REQUIRE(hit != unused);
         }
         PlayerAnimator animator;
-        REQUIRE(animator.bind(tree, false));
+        REQUIRE(animator.bind(tree, Entrance::Skip));
         animator.update(PlayerMotion::Stand, 1, kStep, PlayerDeed::Spike);
         REQUIRE(animator.action() == Action::SpikeHit);
         CHECK(animator.player().sequence() == *hit);
@@ -646,7 +646,7 @@ TreeInfo longActionTree() {
 
 PlayerAnimator boundTo(const TreeInfo& tree) {
     PlayerAnimator animator;
-    REQUIRE(animator.bind(tree, false));
+    REQUIRE(animator.bind(tree, Entrance::Skip));
     return animator;
 }
 

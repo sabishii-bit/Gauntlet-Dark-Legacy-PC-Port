@@ -13,6 +13,7 @@
 #include "fixtures/NativeModelFixture.h"
 #include "game/party/PlayerFigure.h"
 #include "game/party/TurboEffectResources.h"
+#include "game/players/PlayerAnimator.h"
 
 namespace {
 using namespace gdl;
@@ -222,7 +223,7 @@ TEST_CASE("native class turbo resource census identifies every supported and wit
     CharacterSave save;
     save.character = character;
     save.color = color;
-    auto figure = PlayerFigure::load(device, root, save, false);
+    auto figure = PlayerFigure::load(device, root, save, Entrance::Skip);
     REQUIRE(figure);
     auto* effects = figure->effects();
     REQUIRE(effects);
@@ -307,7 +308,7 @@ TEST_CASE("external exact class poses preserve native turbo root and named costu
     test::FakeRenderDevice device;
     CharacterSave save;
     save.character = character;
-    auto figure = PlayerFigure::load(device, root, save, false);
+    auto figure = PlayerFigure::load(device, root, save, Entrance::Skip);
     REQUIRE(figure);
     REQUIRE(figure->actionTree());
     std::vector<std::string> suffixes{"HEAD", "L_HAND", "R_HAND", "MISSING"};

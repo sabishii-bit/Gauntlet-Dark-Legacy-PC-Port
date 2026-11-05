@@ -24,6 +24,7 @@
 #include "game/party/PlayerHealth.h"
 #include "game/party/PlayerRuntime.h"
 #include "game/party/ScriptedMotion.h"
+#include "game/players/PlayerAnimator.h"
 
 namespace {
 using namespace gdl;
@@ -285,7 +286,7 @@ TEST_CASE("runtime figure rewind retains exact native attachments and familiar r
     Fixture fixture;
     fixture.player().actor.save().progress().experience = levelExperience(35);
     fixture.player().figure =
-        PlayerFigure::load(device, root, fixture.player().actor.save(), false);
+        PlayerFigure::load(device, root, fixture.player().actor.save(), Entrance::Skip);
     REQUIRE(fixture.player().figure);
     auto& figure = *fixture.player().figure;
     REQUIRE(figure.familiarTier() > 0);
@@ -328,7 +329,7 @@ TEST_CASE("runtime figure rewind supports a bound Phoenix and refuses a replaced
     REQUIRE(powerups.load(root / "POWERUPS"));
     Fixture fixture;
     auto& runtime = fixture.player();
-    runtime.figure = PlayerFigure::load(device, root, runtime.actor.save(), false);
+    runtime.figure = PlayerFigure::load(device, root, runtime.actor.save(), Entrance::Skip);
     REQUIRE(runtime.figure);
     auto& inventory = runtime.actor.save().progress().inventory;
     inventory.addPowerup(powerup::kSpecial, powerup::kPhoenix, 0, 30);
@@ -357,7 +358,7 @@ TEST_CASE("runtime figure rewind supports a bound Phoenix and refuses a replaced
     CHECK(fixture.observe() == expected.first);
     CHECK(digest() == expected.second);
 
-    runtime.figure = PlayerFigure::load(device, root, runtime.actor.save(), false);
+    runtime.figure = PlayerFigure::load(device, root, runtime.actor.save(), Entrance::Skip);
     REQUIRE(runtime.figure);
     CHECK_FALSE(runtime.figure->restoreLocal(*baseline.figure)); // nothing of the old figure's
 }
@@ -396,7 +397,7 @@ TEST_CASE("runtime native PartyMotion figure and damage rewind are one exact gam
     test::FakeRenderDevice device;
     Fixture fixture;
     fixture.player().figure =
-        PlayerFigure::load(device, root, fixture.player().actor.save(), false);
+        PlayerFigure::load(device, root, fixture.player().actor.save(), Entrance::Skip);
     REQUIRE(fixture.player().figure);
     for (s32 tick = 0; tick < 25; ++tick) {
         fixture.tick(tick);

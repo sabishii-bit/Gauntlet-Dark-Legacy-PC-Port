@@ -61,7 +61,7 @@ struct Figure {
         save.character = 3;
         save.color = 1;
         save.progress().experience = levelExperience(80);
-        figure = PlayerFigure::load(device, root, save, false);
+        figure = PlayerFigure::load(device, root, save, Entrance::Skip);
         REQUIRE(figure);
         REQUIRE(figure->familiarTier() == 2);
         companion(powerup::kPhoenix);
@@ -385,7 +385,7 @@ TEST_CASE("native animator digest bytes stay pinned for a released item",
     NativeStateResources resources;
     REQUIRE(resources.registerBuiltinTree(tree, "pinned-breath"));
     PlayerAnimator animator;
-    REQUIRE(animator.bind(tree, false));
+    REQUIRE(animator.bind(tree, Entrance::Skip));
     animator.update(PlayerMotion::Stand, 1, kStep, PlayerDeed::Breathe);
     REQUIRE(animator.action() == PlayerAnimator::Action::Breathe);
     REQUIRE(animator.itemReleased() == PlayerDeed::Breathe);

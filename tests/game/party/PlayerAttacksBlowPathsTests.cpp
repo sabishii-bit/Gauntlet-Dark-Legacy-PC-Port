@@ -53,6 +53,7 @@
 #include "game/party/PlayerMissiles.h"
 #include "game/party/PlayerRuntime.h"
 #include "game/players/PlayerActor.h"
+#include "game/players/PlayerAnimator.h"
 
 namespace {
 using namespace gdl;
@@ -97,7 +98,8 @@ struct BlowScene : test::PlayerAttacksFixture {
     std::filesystem::path root = turboAssets();
     BlowScene() {
         REQUIRE(classes.load(root / "pdata"));
-        players[0].figure = PlayerFigure::load(device, root, players[0].actor.save(), false);
+        players[0].figure =
+            PlayerFigure::load(device, root, players[0].actor.save(), Entrance::Skip);
         REQUIRE(players[0].figure);
     }
     void open() {

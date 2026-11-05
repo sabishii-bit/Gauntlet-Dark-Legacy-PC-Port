@@ -13,6 +13,7 @@
 #include "expansions/shared/characters/LegendsVisit.h"
 #include "game/config/ControlProfiles.h"
 #include "game/party/PartyMotion.h"
+#include "game/players/PlayerAnimator.h"
 
 namespace gdl::game {
 
@@ -229,7 +230,7 @@ void LegendsPreview::openPlayable(RenderDevice& device, const formats::LegendsMa
         nativeCamera.emplace();
         nativeCamera->reset(*adapter->cameraConfig(), traversal->actor().position());
     }
-    auto figure = PlayerFigure::load(device, characterRoot, member.save, false);
+    auto figure = PlayerFigure::load(device, characterRoot, member.save, Entrance::Skip);
     if (!figure) {
         throw FormatError("Legends traversal: selected character artwork could not be loaded");
     }

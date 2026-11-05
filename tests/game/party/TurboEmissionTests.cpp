@@ -16,6 +16,7 @@
 #include "game/effects/WeaponGlow.h"
 #include "game/party/PlayerAttacks.h"
 #include "game/party/TurboEmission.h"
+#include "game/players/PlayerAnimator.h"
 #include "game/players/PowerupEffects.h"
 
 namespace {
@@ -353,7 +354,7 @@ struct NativeFixture {
         save.progress().experience = levelExperience(25);
         auto& player = players[0];
         player.actor.spawn(2, save, classes.stats(character), {3, 1, 5}, 0.37f);
-        player.figure = PlayerFigure::load(device, root, save, false);
+        player.figure = PlayerFigure::load(device, root, save, Entrance::Skip);
         REQUIRE(player.figure);
         REQUIRE(player.figure->effects());
         player.turbo.add(100);

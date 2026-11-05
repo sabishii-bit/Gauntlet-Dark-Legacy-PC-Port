@@ -22,6 +22,7 @@
 #include "game/party/PlayerFigure.h"
 #include "game/party/PlayerHealth.h"
 #include "game/party/ScriptedAttacks.h"
+#include "game/players/PlayerAnimator.h"
 #include "game/players/PowerupEffects.h"
 #include "game/scenes/PlayScene.h"
 
@@ -99,7 +100,7 @@ TEST_CASE("Pojo injuries use COMMON cries while ordinary characters keep their o
         save.progress().inventory.powerups[0].on = form == 1;
     }
     player.actor.spawn(0, save, nullptr, {}, 0);
-    player.figure = PlayerFigure::load(device, root, save, false);
+    player.figure = PlayerFigure::load(device, root, save, Entrance::Skip);
     REQUIRE(player.figure);
     REQUIRE(player.figure->voice().load(soundRoot / "AUDIO/WAR"));
     PlayerHealth health;
@@ -221,7 +222,7 @@ TEST_CASE("Pojo restarts its displayed attack on every ranged release across cha
     save.character = GENERATE(0, 1, 2, 3, 4, 5, 6, 7);
     CAPTURE(save.character);
     REQUIRE(applyNameCheats(save));
-    auto figure = PlayerFigure::load(device, root, save, false);
+    auto figure = PlayerFigure::load(device, root, save, Entrance::Skip);
     REQUIRE(figure);
     figure->setCompanionPowerups(device, powerups, save.progress().inventory, nullptr);
     s32 releases = 0;
@@ -363,7 +364,7 @@ TEST_CASE("Pojo replaces the costume and equipped hand and head models in both p
     CharacterSave save;
     save.character = GENERATE(0, 2, 5, 7);
     CAPTURE(save.character);
-    auto figure = PlayerFigure::load(device, root, save, false);
+    auto figure = PlayerFigure::load(device, root, save, Entrance::Skip);
     REQUIRE(figure);
     const auto camera = CameraFrame::at({0, 15, 20});
     figure->draw(device, Mat4{1}, Mat4{1}, {}, 1, false, &camera);
@@ -428,7 +429,7 @@ TEST_CASE("Pojo throws animated PHOENIX_FBALL from the retail mouth offset for e
         save.character = character;
         save.color = character % kColorCount;
         actor.spawn(0, save, classes.stats(character), {10, 0, 20}, 0.7f);
-        auto figure = PlayerFigure::load(device, root, save, false);
+        auto figure = PlayerFigure::load(device, root, save, Entrance::Skip);
         REQUIRE(figure);
         auto& inventory = actor.save().progress().inventory;
         inventory.addPowerup(powerup::kSpecial, powerup::kPojo, 0, 60);
@@ -515,7 +516,7 @@ TEST_CASE("Pojo breath uses its animated head and charges only the selected atta
         player.actor.save().progress().inventory.addPowerup(powerup::kSpecial, powerup::kAcidBreath,
                                                             3, 60);
     }
-    player.figure = PlayerFigure::load(device, root, save, false);
+    player.figure = PlayerFigure::load(device, root, save, Entrance::Skip);
     REQUIRE(player.figure);
     player.figure->setCompanionPowerups(device, powerups, save.progress().inventory, &weapons);
     for (s32 tick = 0; tick < 120; ++tick) {

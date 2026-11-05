@@ -21,6 +21,7 @@
 #include "game/party/PartyRecords.h"
 #include "game/party/PlayerFigure.h"
 #include "game/party/PlayerHealth.h"
+#include "game/players/PlayerAnimator.h"
 #include "game/players/PlayerDeeds.h"
 namespace {
 using namespace gdl;
@@ -160,7 +161,7 @@ TEST_CASE("surface hazards wait for hit recovery without granting general invuln
           PlayerDeed::FallForward, PlayerDeed::Webbed, PlayerDeed::Whirled}) {
         CAPTURE(static_cast<s32>(deed));
         Fixture f;
-        f.player.figure = PlayerFigure::load(device, root, f.player.actor.save(), false);
+        f.player.figure = PlayerFigure::load(device, root, f.player.actor.save(), Entrance::Skip);
         REQUIRE(f.player.figure);
         CHECK(PlayerHealth::canTakeSurfaceDamage(f.player));
         // A second hazard in the same tick must also respect a queued reaction.
@@ -207,7 +208,7 @@ TEST_CASE("turbo animation blocks boss knockdown throughout the move but not aft
     test::FakeRenderDevice device;
     for (const auto deed : {PlayerDeed::TurboFull, PlayerDeed::TurboStrong}) {
         Fixture f;
-        f.player.figure = PlayerFigure::load(device, root, f.player.actor.save(), false);
+        f.player.figure = PlayerFigure::load(device, root, f.player.actor.save(), Entrance::Skip);
         REQUIRE(f.player.figure);
         auto& figure = *f.player.figure;
         figure.animate(0, 2, 1.0f / 30, deed);
@@ -351,7 +352,7 @@ TEST_CASE("a raised guard halves a hurt that comes from somewhere and takes one 
     test::FakeRenderDevice device;
     const auto root = guardAssets();
     Fixture f;
-    f.player.figure = PlayerFigure::load(device, root, f.player.actor.save(), false);
+    f.player.figure = PlayerFigure::load(device, root, f.player.actor.save(), Entrance::Skip);
     REQUIRE(f.player.figure != nullptr);
     REQUIRE(f.player.figure->animator().bound());
     // At the ready, a hurt is taken whole whichever way it came.
@@ -490,7 +491,7 @@ TEST_CASE("a blow taken during the running shove flashes the guard's lines",
                           .parent_path();
     test::FakeRenderDevice device;
     Fixture f;
-    f.player.figure = PlayerFigure::load(device, root, f.player.actor.save(), false);
+    f.player.figure = PlayerFigure::load(device, root, f.player.actor.save(), Entrance::Skip);
     REQUIRE(f.player.figure);
     s32 flashes = 0;
     f.events.block = [&](f32 blocked, f32 taken) {

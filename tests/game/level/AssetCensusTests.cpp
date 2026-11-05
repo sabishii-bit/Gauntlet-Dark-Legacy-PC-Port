@@ -22,6 +22,7 @@
 #include "game/level/LevelItemArchives.h"
 #include "game/level/Traps.h"
 #include "game/party/PlayerFigure.h"
+#include "game/players/PlayerAnimator.h"
 
 namespace {
 
@@ -50,7 +51,7 @@ TEST_CASE("every playable class in every colour, and every hidden costume, build
     test::FakeRenderDevice device;
     const auto check = [&](const CharacterSave& save, std::string_view what) {
         CAPTURE(what, save.character, save.color, save.name);
-        auto figure = PlayerFigure::load(device, root, save, false);
+        auto figure = PlayerFigure::load(device, root, save, Entrance::Skip);
         REQUIRE(figure != nullptr);
         CHECK(figure->animator().bound());
         figure->animate(1.0f, 2, 1.0f / 30);

@@ -83,10 +83,12 @@ public:
      * effects and local history may still borrow an earlier figure's archives. */
     bool registerNativeResources(NativeStateResources& resources) const;
 
-    /** Null if the costume cannot be built; missing optional weapons/actions are tolerated. */
+    /** Null if the costume cannot be built; missing optional weapons/actions are tolerated.
+     * `entrance` says whether the body plays its entrance before anything else. */
     static std::unique_ptr<PlayerFigure> load(RenderDevice& device,
                                               const std::filesystem::path& root,
-                                              const CharacterSave& save, bool enter = true);
+                                              const CharacterSave& save,
+                                              Entrance entrance = Entrance::Play);
     /** A class's folder `sub` ("ANIM", "SFXRED"): its own archive's, else that of the class
      * it shadows (the unlockables without their own, Sumner the wizard's). */
     static std::filesystem::path classFolder(const std::filesystem::path& root, s32 character,
@@ -238,7 +240,8 @@ private:
     void loadWeapon(const CharacterSave& save, RenderDevice& device);
     void loadMissile(const std::filesystem::path& root, const CharacterSave& save,
                      RenderDevice& device);
-    void loadActions(const std::filesystem::path& root, const CharacterSave& save, bool enter);
+    void loadActions(const std::filesystem::path& root, const CharacterSave& save,
+                     Entrance entrance);
     /** Binds an owned archive's model, loading shared texture pixels only when used. */
     bool bindModel(TreeModel& model, const TreeInfo& tree, ItemArchive& archive,
                    RenderDevice& device);

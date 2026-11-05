@@ -239,7 +239,7 @@ TEST_CASE("native costume tiers bind their own models and shared class animation
         const auto directory = PlayerFigure::costumeDirectory(root, save);
         CHECK(directory.filename() == std::format("YEL{}0", level / 10));
         REQUIRE(AssetLocator(directory).find("objects.ngc"));
-        auto figure = PlayerFigure::load(device, root, save, false);
+        auto figure = PlayerFigure::load(device, root, save, Entrance::Skip);
         REQUIRE(figure);
         REQUIRE(figure->heldWeaponBound());
         REQUIRE(figure->animator().bound());
@@ -263,7 +263,7 @@ TEST_CASE("native Sumner wears the wizard's SUM costume and plays as a wizard",
     CHECK(directory.filename() == "SUM");
     CHECK(directory.parent_path().filename() == "WIZ");
     REQUIRE(AssetLocator(directory).find("objects.ngc"));
-    auto figure = PlayerFigure::load(device, root, save, false);
+    auto figure = PlayerFigure::load(device, root, save, Entrance::Skip);
     REQUIRE(figure);
     REQUIRE(figure->heldWeaponBound());
     REQUIRE(figure->animator().bound());

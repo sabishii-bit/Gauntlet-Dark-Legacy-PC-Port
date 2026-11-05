@@ -23,6 +23,7 @@
 #include "game/effects/WeaponGlow.h"
 #include "game/level/ItemFigure.h"
 #include "game/party/PlayerArsenal.h"
+#include "game/players/PlayerAnimator.h"
 #include "game/players/PowerupEffects.h"
 namespace {
 using namespace gdl;
@@ -159,7 +160,7 @@ TEST_CASE("explicit prepared provenance is canonical and never inferred from a t
     const auto root = test::assetOrSkip("WEAPONS/ANIM.PS2").parent_path().parent_path();
     REQUIRE(fixture.weapons.load(root / "WEAPONS"));
     fixture.actor.save().character = 1;
-    auto figure = PlayerFigure::load(fixture.device, root, fixture.actor.save(), false);
+    auto figure = PlayerFigure::load(fixture.device, root, fixture.actor.save(), Entrance::Skip);
     REQUIRE(figure);
     figure->animate(0, 1, 1.0f / 60, PlayerDeed::TurboStrong);
     REQUIRE(figure->animator().action() == PlayerAnimator::Action::TurboStrong);
@@ -274,7 +275,7 @@ TEST_CASE("prepared ordinary and single-volley releases match live native missil
     save.character = character;
     save.progress().experience = levelExperience(35);
     fixture.actor.spawn(2, save, fixture.classes.stats(character), {10, 3, 20}, 0.4f);
-    auto figure = PlayerFigure::load(fixture.device, root, save, false);
+    auto figure = PlayerFigure::load(fixture.device, root, save, Entrance::Skip);
     REQUIRE(figure);
     for (const u32 flags : {0U, damage::kFiveWayShot | damage::kRapidFire}) {
         if (flags != 0) {
@@ -374,7 +375,7 @@ TEST_CASE("plain weapon clock queries use the native visual bank without startin
     Fixture f;
     REQUIRE(f.weapons.load(root / "WEAPONS"));
     f.actor.save().character = character;
-    auto figure = PlayerFigure::load(f.device, root, f.actor.save(), false);
+    auto figure = PlayerFigure::load(f.device, root, f.actor.save(), Entrance::Skip);
     REQUIRE(figure);
     CHECK_FALSE(f.arsenal.weaponTextureFrame(*figure));
     f.arsenal.missiles().update(0.75f, nullptr);
@@ -399,7 +400,7 @@ TEST_CASE("plain weapon birth retains release provenance after the player is int
     Fixture f;
     REQUIRE(f.weapons.load(root / "WEAPONS"));
     f.actor.save().character = 1;
-    auto figure = PlayerFigure::load(f.device, root, f.actor.save(), false);
+    auto figure = PlayerFigure::load(f.device, root, f.actor.save(), Entrance::Skip);
     REQUIRE(figure);
     // An idle/scripted launch has no action release to acknowledge.
     f.arsenal.launchWeapon(f.actor, figure.get(), f.actor.facing(), 1, false);
@@ -494,7 +495,7 @@ TEST_CASE("native weapon sound capture reports the played cue once per released 
     f.audio.open(root, &sounds, nullptr);
     f.arsenal.bind({f.device, f.classes, f.weapons, f.collision, f.effects, f.audio, &sounds, {}});
     f.actor.save().character = 1;
-    auto figure = PlayerFigure::load(f.device, root, f.actor.save(), false);
+    auto figure = PlayerFigure::load(f.device, root, f.actor.save(), Entrance::Skip);
     REQUIRE(figure);
     if (flags != 0) {
         f.actor.save().progress().inventory.addPowerup(powerup::kWeapon, flags, 0, 30);
@@ -587,7 +588,7 @@ TEST_CASE("native weapon sound capture excludes scripted unsupported and blocked
     Fixture f;
     REQUIRE(f.weapons.load(root / "WEAPONS"));
     f.actor.save().character = 1;
-    auto figure = PlayerFigure::load(f.device, root, f.actor.save(), false);
+    auto figure = PlayerFigure::load(f.device, root, f.actor.save(), Entrance::Skip);
     REQUIRE(figure);
     bool scripted = false;
     bool output = true;
@@ -843,7 +844,7 @@ TEST_CASE("amulet throws retain their player streak alongside all four authored 
         REQUIRE(f.classes.load(root / "pdata"));
         f.actor.save().character = character;
         f.actor.save().color = 3; // Green costume; deliberately not the fire/lightning/light tint.
-        auto figure = PlayerFigure::load(f.device, root, f.actor.save(), false);
+        auto figure = PlayerFigure::load(f.device, root, f.actor.save(), Entrance::Skip);
         REQUIRE(figure);
         f.arsenal.bind(
             {f.device, f.classes, f.weapons, f.collision, f.effects, f.audio, nullptr, {}});
@@ -1051,7 +1052,7 @@ TEST_CASE("both cursor-aimed familiars correct height without steering toward an
     REQUIRE(fixture.classes.load(root / "pdata"));
     REQUIRE(fixture.weapons.load(root / "WEAPONS"));
     fixture.actor.save().progress().experience = levelExperience(80);
-    auto figure = PlayerFigure::load(fixture.device, root, fixture.actor.save(), false);
+    auto figure = PlayerFigure::load(fixture.device, root, fixture.actor.save(), Entrance::Skip);
     REQUIRE(figure);
     REQUIRE(figure->familiarTier() > 0);
     fixture.actor.save().progress().inventory.addPowerup(powerup::kSpecial, powerup::kPhoenix, 0,
@@ -1086,7 +1087,7 @@ TEST_CASE("a ranged volley fires the player's weapon and both earned and Phoenix
         f.actor.save().character = character;
         f.actor.turnTo(0.7f);
         f.actor.save().progress().experience = levelExperience(level);
-        auto figure = PlayerFigure::load(f.device, root, f.actor.save(), false);
+        auto figure = PlayerFigure::load(f.device, root, f.actor.save(), Entrance::Skip);
         REQUIRE(figure);
         REQUIRE(figure->familiarTier() == (level < 80 ? 1 : 2));
         REQUIRE(figure->familiarMissile().bound());
@@ -1150,7 +1151,7 @@ TEST_CASE("equipped gauntlets route the shooter's textures into complete project
     Fixture f;
     f.arsenal.clear();
     REQUIRE(f.weapons.load(root / "WEAPONS"));
-    auto figure = PlayerFigure::load(f.device, root, f.actor.save(), false);
+    auto figure = PlayerFigure::load(f.device, root, f.actor.save(), Entrance::Skip);
     REQUIRE(figure);
     f.arsenal.bind({f.device, f.classes, f.weapons, f.collision, f.effects, f.audio, nullptr, {}});
     f.actor.save().progress().inventory.addPowerup(powerup::kSpecial, powerup::kLeftGauntlet, 0,

@@ -17,6 +17,7 @@
 #include "game/level/NativeStateResources.h"
 #include "game/party/PlayerFigure.h"
 #include "game/party/PlayerRuntime.h"
+#include "game/players/PlayerAnimator.h"
 
 namespace {
 using namespace gdl;
@@ -89,7 +90,7 @@ struct Fixture {
         }
         player.actor.spawn(3, save, stats, {7, 0, 13}, 0.4f);
         player.entrySave = save;
-        player.figure = PlayerFigure::load(device, root, save, false);
+        player.figure = PlayerFigure::load(device, root, save, Entrance::Skip);
         REQUIRE(player.figure);
         player.figure->setCompanionPowerups(device, powerups, save.progress().inventory, &weapons);
         REQUIRE(player.figure->familiarTier() == PlayerFamiliar::tierFor(level));

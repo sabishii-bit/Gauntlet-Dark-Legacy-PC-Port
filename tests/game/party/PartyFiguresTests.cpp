@@ -14,6 +14,7 @@
 #include "game/combat/PowerupFlags.h"
 #include "game/effects/DynamicLights.h"
 #include "game/party/PartyFigures.h"
+#include "game/players/PlayerAnimator.h"
 #include "game/players/PowerupEffects.h"
 
 namespace {
@@ -99,7 +100,7 @@ TEST_CASE("an invisible player is drawn among the translucent bodies, after the 
     std::array<PlayerRuntime, 1> players;
     auto& runtime = players[0];
     runtime.actor.spawn(0, CharacterSave{}, nullptr, Vec3{0.0f}, 0.0f);
-    runtime.figure = PlayerFigure::load(device, root, runtime.actor.save(), false);
+    runtime.figure = PlayerFigure::load(device, root, runtime.actor.save(), Entrance::Skip);
     REQUIRE(runtime.figure);
     const PartyFigures::Scene scene{.world = world, .weapons = weapons, .departure = departure};
     const PartyFigures figures;
@@ -240,7 +241,7 @@ TEST_CASE("portal departure sinks and hides survivors without changing a dying t
     auto& runtime = players[0];
     const CharacterSave save;
     runtime.actor.spawn(3, save, nullptr, Vec3{20, 8, -5}, 0);
-    runtime.figure = PlayerFigure::load(device, root, save, false);
+    runtime.figure = PlayerFigure::load(device, root, save, Entrance::Skip);
     REQUIRE(runtime.figure);
     runtime.life = PlayerLife::Dying;
     figures.draw(device, players, scene, Mat4{1}, CameraFrame{});

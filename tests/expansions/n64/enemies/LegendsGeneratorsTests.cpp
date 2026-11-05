@@ -28,6 +28,7 @@
 #include "game/level/ScriptedFixtures.h"
 #include "game/party/PlayerAttacks.h"
 #include "game/party/ScriptedAttacks.h"
+#include "game/players/PlayerAnimator.h"
 
 namespace {
 using namespace gdl;
@@ -775,7 +776,7 @@ TEST_CASE("Desecrated Temple authored portal receives weapons through its actual
             feet.y = floor->y;
             players[0].actor.spawn(0, save, classes.stats(0), feet, 0);
             players[0].actor.faceToward(center);
-            players[0].figure = PlayerFigure::load(device, root, save, false);
+            players[0].figure = PlayerFigure::load(device, root, save, Entrance::Skip);
             REQUIRE(players[0].figure);
             arsenal.bind(
                 {device, classes, weapons, world.collision(), effects, audio, nullptr, {}});
@@ -893,7 +894,7 @@ TEST_CASE("Every authored N64 generator damage chain accepts real level-one and 
             save.character = character;
             save.progress().experience = levelExperience(level);
             players[0].actor.spawn(0, save, classes.stats(character), {0, 0, -4}, 0);
-            players[0].figure = PlayerFigure::load(device, root, save, false);
+            players[0].figure = PlayerFigure::load(device, root, save, Entrance::Skip);
             REQUIRE(players[0].figure);
             const auto damage = attacks.meleeDamageOf(0, players);
             REQUIRE(damage > 1);

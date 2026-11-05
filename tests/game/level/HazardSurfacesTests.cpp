@@ -22,6 +22,7 @@
 #include "game/party/PlayerHealth.h"
 #include "game/party/ScriptedMotion.h"
 #include "game/players/PlayerActor.h"
+#include "game/players/PlayerAnimator.h"
 #include "game/players/PlayerImpact.h"
 
 namespace {
@@ -238,7 +239,7 @@ TEST_CASE("native trolleys and minecarts knock players down without dragging the
         auto& actor = runtime.actor;
         actor.spawn(0, {}, nullptr, crossing.position, 0);
         actor.save().progress().health = 1000;
-        runtime.figure = PlayerFigure::load(device, root, actor.save(), false);
+        runtime.figure = PlayerFigure::load(device, root, actor.save(), Entrance::Skip);
         REQUIRE(runtime.figure);
         LevelOpponents opponents;
         opponents.open({device, world, weapons, effects, audio, root, 1, true}, players);

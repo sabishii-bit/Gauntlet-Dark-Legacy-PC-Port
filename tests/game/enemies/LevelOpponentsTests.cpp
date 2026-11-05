@@ -128,7 +128,7 @@ TEST_CASE("opponent snapshots take block-provoking attacks from each player's ac
     std::array<PlayerRuntime, 2> players;
     players[0].actor.spawn(3, {}, nullptr, {}, 0);
     players[1].actor.spawn(1, {}, nullptr, {}, 0);
-    players[1].figure = PlayerFigure::load(device, root, players[1].actor.save(), false);
+    players[1].figure = PlayerFigure::load(device, root, players[1].actor.save(), Entrance::Skip);
     REQUIRE(players[1].figure);
     auto views = LevelOpponents::enemyViews(players);
     REQUIRE(views.size() == 2);
@@ -1065,7 +1065,7 @@ TEST_CASE("area blasts and Thunder Hammer give gargoyles distance-independent ho
         arsenal.bind({device, classes, weapons, world.collision(), effects, audio, nullptr, {}});
         attacks.bind({device, classes, world, weapons, effects, audio, nullptr, arsenal, dimmer});
         auto& player = players[0];
-        player.figure = PlayerFigure::load(device, root, player.actor.save(), false);
+        player.figure = PlayerFigure::load(device, root, player.actor.save(), Entrance::Skip);
         REQUIRE(player.figure);
         player.actor.save().progress().inventory.addPowerup(powerup::kWeapon, damage::kHammer, 2,
                                                             -1);

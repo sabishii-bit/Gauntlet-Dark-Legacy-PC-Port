@@ -233,7 +233,7 @@ struct PartyRewind {
             if (native) {
                 const auto root =
                     test::assetOrSkip("WEAPONS/objects.ngc").parent_path().parent_path();
-                player.figure = PlayerFigure::load(device, root, save, false);
+                player.figure = PlayerFigure::load(device, root, save, Entrance::Skip);
                 REQUIRE(player.figure);
                 REQUIRE(player.figure->animator().bound());
             }
@@ -769,7 +769,7 @@ TEST_CASE("native action rewind replays releases and guards exactly at subframe 
         return kDeeds[static_cast<usize>(tick / kDeedTicks) % kDeeds.size()];
     };
     PlayerAnimator original;
-    REQUIRE(original.bind(tree, false));
+    REQUIRE(original.bind(tree, Entrance::Skip));
     original.setCharacter(0);
     original.setGuardArmor(2.5f);
     original.setAttackSpeed(true, false);
@@ -926,7 +926,7 @@ TEST_CASE("player pose rewind survives interrupted blends and native early updat
           "[rollback][player-local-rewind]") {
     const auto tree = poseTree();
     PlayerAnimator player;
-    REQUIRE(player.bind(tree, false));
+    REQUIRE(player.bind(tree, Entrance::Skip));
     player.setCharacter(0);
     constexpr std::array kInterrupts{PlayerDeed::None,         PlayerDeed::Attack,
                                      PlayerDeed::StrongAttack, PlayerDeed::Defend,
@@ -993,7 +993,7 @@ TEST_CASE("native class and Sumner costume poses survive rewind and replay",
         save.name = "SUM224";
         REQUIRE(applyNameCheats(save));
     }
-    auto figure = PlayerFigure::load(device, root, save, false);
+    auto figure = PlayerFigure::load(device, root, save, Entrance::Skip);
     REQUIRE(figure);
     REQUIRE(figure->actionTree());
     constexpr s32 kLeads = 5;

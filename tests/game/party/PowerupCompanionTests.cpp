@@ -17,6 +17,7 @@
 #include "game/level/NativeStateResources.h"
 #include "game/party/PlayerFigure.h"
 #include "game/party/PowerupCompanion.h"
+#include "game/players/PlayerAnimator.h"
 
 namespace {
 using namespace gdl;
@@ -190,7 +191,7 @@ TEST_CASE(
     save.color = 3;
     auto& inventory = save.progress().inventory;
     inventory.addPowerup(powerup::kSpecial, powerup::kLevitation, 0, 60);
-    const auto figure = PlayerFigure::load(device, root, save, false);
+    const auto figure = PlayerFigure::load(device, root, save, Entrance::Skip);
     REQUIRE(figure);
     figure->setCompanionPowerups(device, powerups, inventory, &weapons);
     REQUIRE(figure->companion().shown());

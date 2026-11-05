@@ -27,6 +27,7 @@
 #include "game/combat/PowerupFlags.h"
 #include "game/level/ImportedLevel.h"
 #include "game/party/TargetAssist.h"
+#include "game/players/PlayerAnimator.h"
 #include "game/players/PowerupEffects.h"
 #include "game/scenes/PlayScene.h"
 #include "game/shop/ShopPurchase.h"
@@ -1658,7 +1659,7 @@ TEST_CASE("A native pew obstructing the release muzzle receives its physical wea
         }
     }
     REQUIRE(found);
-    auto figure = PlayerFigure::load(fixture.device, fixture.root, save, false);
+    auto figure = PlayerFigure::load(fixture.device, fixture.root, save, Entrance::Skip);
     REQUIRE(figure);
     for (usize hit = 0; hit < 8; ++hit) {
         arsenal.launchWeapon(actor, figure.get(), actor.facing(), 1, false);

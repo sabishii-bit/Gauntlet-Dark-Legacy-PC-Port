@@ -12,6 +12,7 @@
 #include "game/level/LevelWorld.h"
 #include "game/level/TowerAccess.h"
 #include "game/players/PickupVoices.h"
+#include "game/players/PlayerAnimator.h"
 #include "game/tower/TowerCompletion.h"
 
 namespace gdl::game {
@@ -143,7 +144,7 @@ void TowerCeremonies::upgradeFigure(const Scene& scene, usize player) {
         activateFigure(scene.players, player, cached->figure);
         runtime.figure->restoreLocal(cached->initial);
     } else {
-        auto figure = PlayerFigure::load(scene.device, scene.unpackedRoot, save, false);
+        auto figure = PlayerFigure::load(scene.device, scene.unpackedRoot, save, Entrance::Skip);
         if (figure == nullptr) {
             return;
         }

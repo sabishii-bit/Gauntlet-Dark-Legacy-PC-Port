@@ -31,6 +31,7 @@
 #include "game/party/ScriptedMotion.h"
 #include "game/players/ComboMove.h"
 #include "game/players/CursorAim.h"
+#include "game/players/PlayerAnimator.h"
 #include "game/rollback/SessionInputs.h"
 
 namespace {
@@ -330,7 +331,7 @@ TEST_CASE("turbo steering uses the action turn allowance for both cursor and sti
             Fixture f;
             f.players[1].life = PlayerLife::InTower;
             auto& player = f.players[0];
-            player.figure = PlayerFigure::load(device, root, player.actor.save(), false);
+            player.figure = PlayerFigure::load(device, root, player.actor.save(), Entrance::Skip);
             REQUIRE(player.figure);
             f.events.advanceTurbo = [](usize, s32, f32) {};
             f.events.perform = [](usize, PartyMotion::Action) {};
@@ -369,7 +370,7 @@ TEST_CASE("a fresh turbo or potion press reaches a player already winding up a r
             Fixture f;
             f.players[1].life = PlayerLife::InTower;
             auto& player = f.players[0];
-            player.figure = PlayerFigure::load(device, root, player.actor.save(), false);
+            player.figure = PlayerFigure::load(device, root, player.actor.save(), Entrance::Skip);
             REQUIRE(player.figure);
             player.turbo.add(TurboMeter::kFull);
             player.actor.save().progress().inventory.addPotions(1, 1);
@@ -411,7 +412,7 @@ TEST_CASE("a moving spin passes directly into its class finisher without a plant
     Fixture f;
     f.players[1].life = PlayerLife::InTower;
     auto& player = f.players[0];
-    player.figure = PlayerFigure::load(device, root, player.actor.save(), false);
+    player.figure = PlayerFigure::load(device, root, player.actor.save(), Entrance::Skip);
     REQUIRE(player.figure);
     f.events.advanceTurbo = [](usize, s32, f32) {};
     f.events.perform = [](usize, PartyMotion::Action) {};
@@ -474,7 +475,8 @@ TEST_CASE("full turbo turns at a fixed native angular speed without wrapping or 
                 f.players[1].life = PlayerLife::InTower;
                 auto& player = f.players[0];
                 player.actor.turnTo(turn.from);
-                player.figure = PlayerFigure::load(device, root, player.actor.save(), false);
+                player.figure =
+                    PlayerFigure::load(device, root, player.actor.save(), Entrance::Skip);
                 REQUIRE(player.figure);
                 f.events.advanceTurbo = [](usize, s32, f32) {};
                 f.events.perform = [](usize, PartyMotion::Action) {};
@@ -516,7 +518,7 @@ TEST_CASE("mouse turbo steering respects Spell Storm's native frame eleven rotat
     auto save = player.actor.save();
     save.character = 6;
     player.actor.spawn(3, save, nullptr, Vec3{0}, 0);
-    player.figure = PlayerFigure::load(device, root, save, false);
+    player.figure = PlayerFigure::load(device, root, save, Entrance::Skip);
     REQUIRE(player.figure);
     f.events.advanceTurbo = [](usize, s32, f32) {};
     f.events.perform = [](usize, PartyMotion::Action) {};
@@ -554,7 +556,7 @@ TEST_CASE("cursor-relative forward input runs at full-stick pace without changin
     Fixture f;
     f.players[1].life = PlayerLife::InTower;
     auto& player = f.players[0];
-    player.figure = PlayerFigure::load(device, root, player.actor.save(), false);
+    player.figure = PlayerFigure::load(device, root, player.actor.save(), Entrance::Skip);
     REQUIRE(player.figure);
     f.events.advanceTurbo = [](usize, s32, f32) {};
     f.events.perform = [](usize, PartyMotion::Action) {};
@@ -722,7 +724,7 @@ TEST_CASE("held strong ranged input stays stationary from its first frame",
     Fixture f;
     f.players[1].life = PlayerLife::InTower;
     auto& player = f.players[0];
-    player.figure = PlayerFigure::load(device, root, player.actor.save(), false);
+    player.figure = PlayerFigure::load(device, root, player.actor.save(), Entrance::Skip);
     REQUIRE(player.figure);
     f.events.advanceTurbo = [](usize, s32, f32) {};
     f.events.perform = [](usize, PartyMotion::Action) {};
@@ -771,7 +773,7 @@ TEST_CASE("automatic melee uses unpressed walking contacts and the sparse player
     Fixture f;
     auto& player = f.players[0];
     f.players[1].life = PlayerLife::InTower;
-    player.figure = PlayerFigure::load(device, root, player.actor.save(), false);
+    player.figure = PlayerFigure::load(device, root, player.actor.save(), Entrance::Skip);
     REQUIRE(player.figure);
     auto& input = f.inputs[3];
     input.move = {{0, 1}, 1};
@@ -1022,7 +1024,7 @@ TEST_CASE("a knocked down player can open and toggle inventory without attacking
     Fixture f;
     auto& player = f.players[0];
     f.players[1].life = PlayerLife::InTower;
-    player.figure = PlayerFigure::load(device, root, player.actor.save(), false);
+    player.figure = PlayerFigure::load(device, root, player.actor.save(), Entrance::Skip);
     REQUIRE(player.figure);
     auto& inventory = player.actor.save().progress().inventory;
     inventory.powerups[0] = {60, powerup::kArmor, 0, DeathRules::kProtection, true};
@@ -1134,7 +1136,7 @@ TEST_CASE("holding turbo produces only one guard and its press takes priority ov
     f.events.advanceTurbo = [](usize, s32, f32) {};
     auto& player = f.players[0];
     f.players[1].life = PlayerLife::InTower;
-    player.figure = PlayerFigure::load(device, root, player.actor.save(), false);
+    player.figure = PlayerFigure::load(device, root, player.actor.save(), Entrance::Skip);
     REQUIRE(player.figure != nullptr);
     REQUIRE(player.figure->animator().bound());
     auto& input = f.inputs[3];
@@ -1354,7 +1356,8 @@ TEST_CASE("held close attack input advances slowly and dispatches melee contacts
                           .parent_path();
     Fixture f;
     test::FakeRenderDevice device;
-    f.players[0].figure = PlayerFigure::load(device, root, f.players[0].actor.save(), false);
+    f.players[0].figure =
+        PlayerFigure::load(device, root, f.players[0].actor.save(), Entrance::Skip);
     REQUIRE(f.players[0].figure);
     s32 contacts = 0;
     s32 missiles = 0;
@@ -1602,7 +1605,8 @@ TEST_CASE("a levitating body walks without a footfall", "[game][screens][party-m
         CAPTURE(levitating);
         Fixture f;
         test::FakeRenderDevice device;
-        f.players[0].figure = PlayerFigure::load(device, root, f.players[0].actor.save(), false);
+        f.players[0].figure =
+            PlayerFigure::load(device, root, f.players[0].actor.save(), Entrance::Skip);
         REQUIRE(f.players[0].figure);
         auto& inventory = f.players[0].actor.save().progress().inventory;
         inventory.addPowerup(powerup::kSpecial, powerup::kLevitation, 0, 60);
@@ -1635,7 +1639,7 @@ TEST_CASE("the combo button with half the meter lifts a warrior's partner ahead,
     Fixture f;
     test::FakeRenderDevice device;
     for (PlayerRuntime& player : f.players) {
-        player.figure = PlayerFigure::load(device, root, player.actor.save(), false);
+        player.figure = PlayerFigure::load(device, root, player.actor.save(), Entrance::Skip);
         REQUIRE(player.figure);
     }
     f.players[1].actor.place(Vec3{0, 0, 3}); // three ahead of player 3's warrior, facing +z
@@ -1740,7 +1744,8 @@ TEST_CASE("a figure's step asks its melee sense, then its turbo, then its releas
                           .parent_path();
     test::FakeRenderDevice device;
     Fixture f;
-    f.players[0].figure = PlayerFigure::load(device, root, f.players[0].actor.save(), false);
+    f.players[0].figure =
+        PlayerFigure::load(device, root, f.players[0].actor.save(), Entrance::Skip);
     REQUIRE(f.players[0].figure);
     std::vector<std::string> log;
     f.events = orderLog(log);
@@ -1897,7 +1902,8 @@ u32 stepReadsOf(PlayerDeed deed, const std::filesystem::path& root) {
     }
     test::FakeRenderDevice device;
     Fixture f;
-    f.players[0].figure = PlayerFigure::load(device, root, f.players[0].actor.save(), false);
+    f.players[0].figure =
+        PlayerFigure::load(device, root, f.players[0].actor.save(), Entrance::Skip);
     REQUIRE(f.players[0].figure);
     s32 asked = 0;
     s32 sensed = 0;
@@ -1982,7 +1988,7 @@ TEST_CASE("each deed keeps the pace, turn, gesture, aim and melee sense party mo
     const auto root = test::turboAssets();
     const auto tree = everyActionTree();
     PlayerAnimator ready;
-    REQUIRE(ready.bind(tree, false));
+    REQUIRE(ready.bind(tree, Entrance::Skip));
     auto swinging = ready;
     swinging.update(PlayerMotion::Stand, 1, kFrame, PlayerDeed::Melee);
     REQUIRE(swinging.action() == PlayerAnimator::Action::Quick1);
@@ -2012,7 +2018,7 @@ TEST_CASE("the Robotron scheme walks the camera's way facing its walk and faces 
     Fixture f;
     f.players[1].life = PlayerLife::InTower;
     auto& player = f.players[0];
-    player.figure = PlayerFigure::load(device, root, player.actor.save(), false);
+    player.figure = PlayerFigure::load(device, root, player.actor.save(), Entrance::Skip);
     REQUIRE(player.figure);
     f.events.advanceTurbo = [](usize, s32, f32) {};
     f.events.perform = [](usize, PartyMotion::Action) {};

@@ -152,8 +152,8 @@ TEST_CASE("concealed potion wind-up matches native charged release until real re
     }
     PlayerAnimator native;
     PlayerAnimator transported;
-    REQUIRE(native.bind(tree, false));
-    REQUIRE(transported.bind(tree, false));
+    REQUIRE(native.bind(tree, Entrance::Skip));
+    REQUIRE(transported.bind(tree, Entrance::Skip));
     InputTimeline timeline;
     REQUIRE(timeline.assign(2, 2));
     u32 nativeReleases = 0;

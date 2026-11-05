@@ -110,7 +110,7 @@ std::filesystem::path PlayerFigure::costumeDirectory(const std::filesystem::path
 
 std::unique_ptr<PlayerFigure> PlayerFigure::load(RenderDevice& device,
                                                  const std::filesystem::path& root,
-                                                 const CharacterSave& save, bool enter) {
+                                                 const CharacterSave& save, Entrance entrance) {
     const std::string_view cls = classCode(archiveClassOf(save.character));
     const std::string_view costume = colorCode(save.color);
     const std::filesystem::path directory = costumeDirectory(root, save);
@@ -161,7 +161,7 @@ std::unique_ptr<PlayerFigure> PlayerFigure::load(RenderDevice& device,
     // InitPlayer's SHADOWL1 node (flags 0x880: no depth write).
     figure->m_shadow.bind(device, figure->m_costumeArchive, kShadowObject);
     figure->loadMissile(root, save, device);
-    figure->loadActions(root, save, enter);
+    figure->loadActions(root, save, entrance);
     if (PlayerFamiliar::tierFor(save.progress().appearanceLevel()) > 0) {
         ClassDataSet classes;
         classes.load(root / "pdata");
@@ -370,12 +370,12 @@ std::string_view PlayerFigure::actionsClassOf(const std::filesystem::path& root,
 }
 
 void PlayerFigure::loadActions(const std::filesystem::path& root, const CharacterSave& save,
-                               bool enter) {
+                               Entrance entrance) {
     const std::string_view cls = actionsClassOf(root, save.character);
     const std::filesystem::path directory = classFolder(root, save.character, kClassAnimations);
     m_actionResourceKey = playerResourceKey(directory);
     const auto tree = m_actions.load(directory) ? m_actions.find(cls) : std::nullopt;
-    if (!tree.has_value() || !m_action.animator.bind(m_actions.tree(*tree), enter)) {
+    if (!tree.has_value() || !m_action.animator.bind(m_actions.tree(*tree), entrance)) {
         log::warn("Tower: no sequences for the {} under {}; the figure stands still", cls,
                   paths::utf8(directory));
         return;

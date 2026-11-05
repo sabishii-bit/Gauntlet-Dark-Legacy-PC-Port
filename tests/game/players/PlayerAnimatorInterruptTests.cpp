@@ -73,7 +73,7 @@ TEST_CASE("turbo and special attacks interrupt ordinary attack phases immediatel
                   PlayerDeed::Hammer, PlayerDeed::Breathe, PlayerDeed::Combo}) {
                 CAPTURE(hz, source.phase, request);
                 PlayerAnimator animator;
-                REQUIRE(animator.bind(tree, false));
+                REQUIRE(animator.bind(tree, Entrance::Skip));
                 reach(animator, source, hz);
                 CHECK(animator.canBegin(request));
                 animator.update(PlayerMotion::Stand, 60 / hz, 1.0f / static_cast<f32>(hz), request);
@@ -100,7 +100,7 @@ TEST_CASE("potion requests replace ordinary attacks and emit their magic only on
                  {PlayerDeed::UsePotion, PlayerDeed::ThrowPotion, PlayerDeed::ShieldPotion}) {
                 CAPTURE(hz, source.phase, request);
                 PlayerAnimator animator;
-                REQUIRE(animator.bind(tree, false));
+                REQUIRE(animator.bind(tree, Entrance::Skip));
                 reach(animator, source, hz);
                 const f32 seconds = 1.0f / static_cast<f32>(hz);
                 animator.update(PlayerMotion::Stand, 60 / hz, seconds, request);
@@ -140,7 +140,8 @@ TEST_CASE("priority attacks do not bypass special moves reactions or entrance lo
         for (const auto request : {PlayerDeed::TurboFull, PlayerDeed::UsePotion}) {
             CAPTURE(source, request);
             PlayerAnimator animator;
-            REQUIRE(animator.bind(tree, source == PlayerDeed::None));
+            REQUIRE(
+                animator.bind(tree, source == PlayerDeed::None ? Entrance::Play : Entrance::Skip));
             animator.update(PlayerMotion::Stand, 1, 1.0f / 60.0f, source);
             const auto phase = animator.action();
             const auto generation = animator.player().generation();
@@ -168,7 +169,7 @@ TEST_CASE("all eight native class trees accept magic or turbo during a throw win
             for (const auto request : {PlayerDeed::UsePotion, PlayerDeed::TurboFull}) {
                 CAPTURE(code, source, request);
                 PlayerAnimator animator;
-                REQUIRE(animator.bind(tree, false));
+                REQUIRE(animator.bind(tree, Entrance::Skip));
                 animator.setCharacter(character);
                 animator.update(PlayerMotion::Stand, 1, 1.0f / 60.0f, source);
                 REQUIRE(animator.action() ==

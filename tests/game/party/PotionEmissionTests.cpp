@@ -270,7 +270,7 @@ TEST_CASE("native potion cancellation spends nothing until the release event and
     fixture.actor.save().progress().inventory.potions = {0};
     const auto tree = potionTree();
     PlayerAnimator animator;
-    REQUIRE(animator.bind(tree, false));
+    REQUIRE(animator.bind(tree, Entrance::Skip));
     u32 emissions = 0;
     for (s32 tick = 0; tick < 100; ++tick) {
         CAPTURE(tick, thrown, cancelBefore);

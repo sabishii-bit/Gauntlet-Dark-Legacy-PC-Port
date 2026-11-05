@@ -18,6 +18,7 @@
 #include "game/level/ScriptedFixtures.h"
 #include "game/party/PlayerAttacks.h"
 #include "game/party/ScriptedAttacks.h"
+#include "game/players/PlayerAnimator.h"
 
 namespace gdl::test {
 inline std::filesystem::path attackSceneAssets() {
@@ -119,7 +120,8 @@ struct AttackSceneFixture {
                       artwork ? &weapons : nullptr});
         attacks.bind({device, classes, world, weapons, effects, audio, nullptr, arsenal, dimmer});
         players[0].actor.spawn(3, {}, classes.stats(0), {}, 0);
-        players[0].figure = game::PlayerFigure::load(device, root, players[0].actor.save(), false);
+        players[0].figure =
+            game::PlayerFigure::load(device, root, players[0].actor.save(), game::Entrance::Skip);
         REQUIRE(players[0].figure);
         fixtureEvents.help = [this](s32 id, usize actor) {
             CHECK(actor == 0);

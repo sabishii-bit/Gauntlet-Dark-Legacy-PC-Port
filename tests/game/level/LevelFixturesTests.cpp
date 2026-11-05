@@ -42,6 +42,7 @@
 #include "game/level/Traps.h"
 #include "game/party/PlayerHealth.h"
 #include "game/players/ItemPickup.h"
+#include "game/players/PlayerAnimator.h"
 namespace {
 using namespace gdl;
 using namespace gdl::game;
@@ -2182,7 +2183,8 @@ TEST_CASE("a barrel's blast neither floors nor pushes a player mid-turbo, and do
     REQUIRE(level);
     REQUIRE(f.world.load(f.device, root, *level));
     REQUIRE_FALSE(f.world.isTower());
-    f.players[0].figure = PlayerFigure::load(f.device, root, f.players[0].actor.save(), false);
+    f.players[0].figure =
+        PlayerFigure::load(f.device, root, f.players[0].actor.save(), Entrance::Skip);
     REQUIRE(f.players[0].figure);
     auto& figure = *f.players[0].figure;
     figure.animate(0, 2, 1.0f / 30, PlayerDeed::TurboFull);

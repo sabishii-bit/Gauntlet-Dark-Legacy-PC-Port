@@ -47,6 +47,7 @@
 #include "game/party/ScriptedMotion.h"
 #include "game/players/ComboMove.h"
 #include "game/players/MagicPerks.h"
+#include "game/players/PlayerAnimator.h"
 #include "game/players/PowerupEffects.h"
 namespace {
 using namespace gdl;
@@ -86,7 +87,8 @@ TEST_CASE("native turbo volleys retain distinct duplicate-row and catch-up relea
     const auto* stats = fixture.classes.stats(0);
     REQUIRE(stats);
     player.actor.spawn(0, {}, stats, {10, 2, 20}, 0.7f);
-    player.figure = PlayerFigure::load(fixture.device, nativeRoot, player.actor.save(), false);
+    player.figure =
+        PlayerFigure::load(fixture.device, nativeRoot, player.actor.save(), Entrance::Skip);
     REQUIRE(player.figure);
     if (flags != 0) {
         player.actor.save().progress().inventory.addPowerup(powerup::kWeapon, flags, 0, 30);
@@ -208,7 +210,7 @@ TEST_CASE("native full-turbo effect tags distinguish duplicate rows and missing 
     Fixture fixture;
     REQUIRE(fixture.classes.load(root / "pdata"));
     auto& player = fixture.players[0];
-    player.figure = PlayerFigure::load(fixture.device, root, player.actor.save(), false);
+    player.figure = PlayerFigure::load(fixture.device, root, player.actor.save(), Entrance::Skip);
     REQUIRE(player.figure);
     const auto inventory = player.actor.save().progress().inventory;
     const auto health = player.actor.save().health();
@@ -932,7 +934,7 @@ TEST_CASE("class turbo areas harm other players only in hurt mode with shared ef
         std::array<PlayerRuntime, 2> party;
         party[0].actor.spawn(3, {}, nullptr, Vec3{0}, 0);
         party[1].actor.spawn(1, {}, nullptr, Vec3{0, 0, 3}, 0);
-        party[0].figure = PlayerFigure::load(f.device, root, party[0].actor.save(), false);
+        party[0].figure = PlayerFigure::load(f.device, root, party[0].actor.save(), Entrance::Skip);
         REQUIRE(party[0].figure);
         party[0].turbo.add(100);
         s32 hits = 0;
@@ -976,7 +978,7 @@ TEST_CASE("turbo point hits show their impact and reflective armor turns their v
         std::array<PlayerRuntime, 2> party;
         party[0].actor.spawn(3, {}, nullptr, Vec3{0}, 0);
         party[1].actor.spawn(1, {}, nullptr, Vec3{0, 0, 10}, 0);
-        party[0].figure = PlayerFigure::load(f.device, root, party[0].actor.save(), false);
+        party[0].figure = PlayerFigure::load(f.device, root, party[0].actor.save(), Entrance::Skip);
         REQUIRE(party[0].figure);
         party[0].turbo.add(100);
         if (reflective) {
@@ -1058,7 +1060,7 @@ TEST_CASE("player turbo areas respect distant item cover but cross it within ten
         std::array<PlayerRuntime, 2> party;
         party[0].actor.spawn(3, {}, nullptr, Vec3{55, 0, near ? -5 : 0}, 0);
         party[1].actor.spawn(1, {}, nullptr, Vec3{55, 0, near ? -12 : -20}, 0);
-        party[0].figure = PlayerFigure::load(f.device, root, party[0].actor.save(), false);
+        party[0].figure = PlayerFigure::load(f.device, root, party[0].actor.save(), Entrance::Skip);
         REQUIRE(party[0].figure);
         party[0].turbo.add(100);
         s32 hits = 0;
@@ -1131,7 +1133,7 @@ TEST_CASE("an elemental weapon glows in the hand while it is worn",
     Fixture f;
     REQUIRE(f.classes.load(root / "pdata"));
     auto& player = f.players[0];
-    player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
+    player.figure = PlayerFigure::load(f.device, root, player.actor.save(), Entrance::Skip);
     REQUIRE(player.figure);
     auto& inventory = player.actor.save().progress().inventory;
     f.attacks.updateProjectiles(1.0f / 30, f.players, f.targets);
@@ -1181,7 +1183,7 @@ TEST_CASE("an elemental weapon's throw carries its effect, the wizard's the effe
         REQUIRE(f.classes.load(root / "pdata"));
         auto& player = f.players[0];
         player.actor.save().character = character;
-        player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
+        player.figure = PlayerFigure::load(f.device, root, player.actor.save(), Entrance::Skip);
         REQUIRE(player.figure);
         f.arsenal.launchWeapon(player.actor, player.figure.get(), Vec3{0, 0, 1}, 1, false);
         REQUIRE(f.arsenal.missiles().count() == 1);
@@ -1228,7 +1230,7 @@ TEST_CASE("gas damage queues pain without overlapping direct choking voices",
                     audible ? &sounds : nullptr, f.arsenal, f.dimmer, &f.shake});
     auto& player = f.players[0];
     player.actor.save().progress().health = 1000;
-    player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
+    player.figure = PlayerFigure::load(f.device, root, player.actor.save(), Entrance::Skip);
     REQUIRE(player.figure);
     if (pojo) {
         player.actor.save().progress().inventory.addPowerup(powerup::kSpecial, powerup::kPojo, 0,
@@ -1277,7 +1279,7 @@ TEST_CASE("weapon throw audio follows the worn amulet or special shot",
         REQUIRE(f.classes.load(root / "pdata"));
         f.audio.open(root, &sounds, nullptr);
         auto& player = f.players[0];
-        player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
+        player.figure = PlayerFigure::load(f.device, root, player.actor.save(), Entrance::Skip);
         REQUIRE(player.figure);
         const u32 flag = i == 4 ? damage::kSuperShot : static_cast<u32>(i + 1);
         player.actor.save().progress().inventory.addPowerup(powerup::kWeapon, flag, 3, 1);
@@ -1303,7 +1305,7 @@ TEST_CASE("stationary turbo contacts use native horizontal swarm reach across fl
     REQUIRE(f.classes.load(root / "pdata"));
     f.opponents.open({f.device, f.world, f.weapons, f.effects, f.audio, root, 1}, f.players);
     auto& player = f.players[0];
-    player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
+    player.figure = PlayerFigure::load(f.device, root, player.actor.save(), Entrance::Skip);
     REQUIRE(player.figure);
     EnemyScales scales;
     scales.health = 100;
@@ -1353,7 +1355,7 @@ TEST_CASE("authored player effects shake the camera without requiring an effect 
     Fixture f;
     REQUIRE(f.classes.load(root / "pdata"));
     auto& player = f.players[0];
-    player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
+    player.figure = PlayerFigure::load(f.device, root, player.actor.save(), Entrance::Skip);
     REQUIRE(player.figure);
     player.turbo.add(100);
     for (s32 frame = 0; frame < 4; ++frame) {
@@ -1380,7 +1382,7 @@ TEST_CASE("player particle records start on their strike frame and follow their 
     Fixture f;
     REQUIRE(f.classes.load(root / "pdata"));
     auto& player = f.players[0];
-    player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
+    player.figure = PlayerFigure::load(f.device, root, player.actor.save(), Entrance::Skip);
     REQUIRE(player.figure);
     player.turbo.add(100);
     for (s32 frame = 0; frame < 2; ++frame) {
@@ -1437,7 +1439,7 @@ TEST_CASE("native wizard particle chains emit visible particles from both hands"
         REQUIRE(f.weapons.load(root / "WEAPONS"));
         auto& player = f.players[0];
         player.actor.save().character = character;
-        player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
+        player.figure = PlayerFigure::load(f.device, root, player.actor.save(), Entrance::Skip);
         REQUIRE(player.figure);
         player.turbo.add(100);
         bool particles = false;
@@ -1565,7 +1567,7 @@ TEST_CASE("flying turbo strikes reach short enemies without dealing damage every
         REQUIRE(f.classes.load(root / "pdata"));
         f.opponents.open({f.device, f.world, f.weapons, f.effects, f.audio, root, 1}, f.players);
         auto& player = f.players[0];
-        player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
+        player.figure = PlayerFigure::load(f.device, root, player.actor.save(), Entrance::Skip);
         REQUIRE(player.figure);
         EnemyScales scales;
         scales.health = 100;
@@ -1619,7 +1621,7 @@ TEST_CASE("native spins retain the shared invisible carrier and reach all nearby
         f.opponents.open({f.device, f.world, f.weapons, f.effects, f.audio, root, 1}, f.players);
         auto& player = f.players[0];
         player.actor.save().character = character;
-        player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
+        player.figure = PlayerFigure::load(f.device, root, player.actor.save(), Entrance::Skip);
         REQUIRE(player.figure);
         const auto* stats = f.classes.stats(character);
         REQUIRE(stats);
@@ -1713,7 +1715,7 @@ TEST_CASE("every native class can damage enemies with both turbo attacks",
                              f.players);
             auto& player = f.players[0];
             player.actor.save().character = character;
-            player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
+            player.figure = PlayerFigure::load(f.device, root, player.actor.save(), Entrance::Skip);
             REQUIRE(player.figure);
             REQUIRE(player.figure->animator().canBegin(deed));
             auto& enemies = f.opponents.enemies();
@@ -1764,7 +1766,7 @@ TEST_CASE("strike carriers use primary SFXX duration without replacing flying ma
     Fixture f;
     REQUIRE(f.classes.load(root / "pdata"));
     auto& player = f.players[0];
-    player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
+    player.figure = PlayerFigure::load(f.device, root, player.actor.save(), Entrance::Skip);
     REQUIRE(player.figure);
     player.turbo.add(50);
     for (s32 frame = 0; frame < 4; ++frame) {
@@ -1789,7 +1791,7 @@ TEST_CASE("Warrior and Minotaur combo damage lasts for the four-second native SF
     REQUIRE(f.classes.load(root / "pdata"));
     auto& player = f.players[0];
     player.actor.save().character = character;
-    player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
+    player.figure = PlayerFigure::load(f.device, root, player.actor.save(), Entrance::Skip);
     REQUIRE(player.figure);
     const auto* stats = f.classes.stats(character);
     REQUIRE(stats);
@@ -1865,7 +1867,7 @@ TEST_CASE("area effects follow the posed root unless their SFXX requests a detac
         Fixture f;
         REQUIRE(f.classes.load(root / "pdata"));
         auto& player = f.players[0];
-        player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
+        player.figure = PlayerFigure::load(f.device, root, player.actor.save(), Entrance::Skip);
         REQUIRE(player.figure);
         player.turbo.add(100);
         for (s32 frame = 0; frame < 4; ++frame) {
@@ -1899,7 +1901,7 @@ TEST_CASE("Sonic Boom's chained ring turns with its caster and retains its autho
     REQUIRE(f.classes.load(root / "pdata"));
     auto& player = f.players[0];
     player.actor.save().character = 7;
-    player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
+    player.figure = PlayerFigure::load(f.device, root, player.actor.save(), Entrance::Skip);
     REQUIRE(player.figure);
     player.turbo.add(50);
     for (s32 frame = 0; frame < 4; ++frame) {
@@ -1933,7 +1935,7 @@ TEST_CASE("Sorceress power attacks draw the SFXX row's colour rather than costum
     auto& player = f.players[0];
     player.actor.save().character = 6;
     player.actor.save().color = costume;
-    player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
+    player.figure = PlayerFigure::load(f.device, root, player.actor.save(), Entrance::Skip);
     REQUIRE(player.figure);
     const auto* stats = f.classes.stats(6);
     REQUIRE(stats);
@@ -2004,7 +2006,7 @@ TEST_CASE("Acid Raid places its rain at a struck enemy's attention point",
     auto& player = f.players[0];
     player.actor.save().character = 6;
     player.actor.save().color = GENERATE(0, 1, 2, 3);
-    player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
+    player.figure = PlayerFigure::load(f.device, root, player.actor.save(), Entrance::Skip);
     REQUIRE(player.figure);
     auto& enemies = f.opponents.enemies();
     enemies.open(f.device, root, nullptr, 4, {}, 1);
@@ -2044,7 +2046,7 @@ TEST_CASE("Spell Storm launches three knights after birth and plays its three de
         REQUIRE(f.classes.load(root / "pdata"));
         auto& player = f.players[0];
         player.actor.save().character = 6;
-        player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
+        player.figure = PlayerFigure::load(f.device, root, player.actor.save(), Entrance::Skip);
         REQUIRE(player.figure);
         const auto* stats = f.classes.stats(6);
         REQUIRE(stats);
@@ -2128,7 +2130,7 @@ TEST_CASE("Sonic Boom reaches distant enemies during the clap rather than the wi
         f.opponents.open({f.device, f.world, f.weapons, f.effects, f.audio, root, 1}, f.players);
         auto& player = f.players[0];
         player.actor.save().character = 7;
-        player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
+        player.figure = PlayerFigure::load(f.device, root, player.actor.save(), Entrance::Skip);
         REQUIRE(player.figure);
         const auto* stats = f.classes.stats(7);
         REQUIRE(stats);
@@ -2193,7 +2195,7 @@ TEST_CASE("Jester turbo damage reaches bosses great creatures and generators",
     f.opponents.open({f.device, f.world, f.weapons, f.effects, f.audio, root, 1}, f.players);
     auto& player = f.players[0];
     player.actor.save().character = 7;
-    player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
+    player.figure = PlayerFigure::load(f.device, root, player.actor.save(), Entrance::Skip);
     REQUIRE(player.figure);
     auto& bosses = f.opponents.bosses();
     auto& critters = f.opponents.critters();
@@ -2272,7 +2274,7 @@ TEST_CASE("retail item attacks play authored effects and spend one charge on the
         REQUIRE(f.world.load(f.device, root, *level));
         REQUIRE(f.weapons.load(root / "WEAPONS"));
         auto& player = f.players[0];
-        player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
+        player.figure = PlayerFigure::load(f.device, root, player.actor.save(), Entrance::Skip);
         REQUIRE(player.figure);
         const bool hammer = mask == damage::kHammer;
         const s32 kind = hammer ? powerup::kWeapon : powerup::kSpecial;
@@ -2324,7 +2326,7 @@ TEST_CASE("stationary item attacks use native horizontal swarm reach and retain 
     REQUIRE(f.weapons.load(root / "WEAPONS"));
     f.opponents.open({f.device, f.world, f.weapons, f.effects, f.audio, root, 1}, f.players);
     auto& player = f.players[0];
-    player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
+    player.figure = PlayerFigure::load(f.device, root, player.actor.save(), Entrance::Skip);
     REQUIRE(player.figure);
     auto& inventory = player.actor.save().progress().inventory;
     inventory.addPowerup(hammer ? powerup::kWeapon : powerup::kSpecial,
@@ -2639,7 +2641,7 @@ TEST_CASE("native Temple secret-wall aim uses its authored centre for every base
         save.character = character;
         player.actor.spawn(3, save, f.classes.stats(character), {55, 0, -3},
                            std::numbers::pi_v<f32>);
-        player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
+        player.figure = PlayerFigure::load(f.device, root, player.actor.save(), Entrance::Skip);
         REQUIRE(player.figure);
         const auto target = f.attacks.aim(player.actor, {0, 0, -1}, f.targets);
         REQUIRE(target);
@@ -2724,7 +2726,8 @@ TEST_CASE("a blow on a secret wall tells of multiple hits; a swing passes the sa
     REQUIRE(temple);
     REQUIRE(f.world.load(f.device, root, *temple));
     f.fixtures.bind({f.device, f.world, f.weapons, f.effects, f.audio});
-    f.players[0].figure = PlayerFigure::load(f.device, root, f.players[0].actor.save(), false);
+    f.players[0].figure =
+        PlayerFigure::load(f.device, root, f.players[0].actor.save(), Entrance::Skip);
     REQUIRE(f.players[0].figure);
     std::vector<s32> helps;
     f.fixtureEvents.help = [&](s32 id, usize player) {
@@ -3086,7 +3089,7 @@ TEST_CASE("only a hit carrying DMG_HEAL feeds the healing: the shield does, a tu
         return true;
     };
     auto& player = f.players[0];
-    player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
+    player.figure = PlayerFigure::load(f.device, root, player.actor.save(), Entrance::Skip);
     REQUIRE(player.figure);
     auto& save = player.actor.save();
     save.progress().experience = levelExperience(80);
@@ -3217,7 +3220,7 @@ TEST_CASE("a normal melee blow wakes a placed statue instead of dispatching it a
     const auto& placement = statues.placement(*selected);
     auto& player = f.players[0];
     player.actor.place(statues.positionOf(*selected) - Vec3{0, 0, placement.radius + 0.5f});
-    player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
+    player.figure = PlayerFigure::load(f.device, root, player.actor.save(), Entrance::Skip);
     REQUIRE(player.figure);
     f.targets.players = f.players;
     REQUIRE(f.attacks.meleeSense(player.actor, false, f.targets).range == MeleeRange::Swing);
@@ -3318,7 +3321,7 @@ TEST_CASE("player guard flashes carry the player's color and follow the body unt
     auto& player = f.players[0];
     player.actor.save().color = color;
     player.actor.place({12, 3, 20});
-    player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
+    player.figure = PlayerFigure::load(f.device, root, player.actor.save(), Entrance::Skip);
     REQUIRE(player.figure);
     REQUIRE(f.weapons.load(root / "WEAPONS"));
     f.attacks.showBlock(0, 10, 50, f.players);
@@ -3375,7 +3378,7 @@ TEST_CASE("native melee and ranged attacks use independent Strength and Magic at
     save.progress().magicAdd = boost == 2 ? 200.0f : 0.0f;
     party[0].actor.spawn(0, save, stats, Vec3{0}, 0);
     party[1].actor.spawn(1, {}, nullptr, Vec3{0, 0, 2.5f}, 0);
-    party[0].figure = PlayerFigure::load(f.device, root, save, false);
+    party[0].figure = PlayerFigure::load(f.device, root, save, Entrance::Skip);
     REQUIRE(party[0].figure);
     const StatBlock block = displayStats(*stats, 1, save.progress());
     REQUIRE(block.strength() != block.magic());
@@ -3423,7 +3426,7 @@ TEST_CASE("native power-swing and turbo effect multipliers use melee damage even
     save.character = character;
     save.progress().fightAdd = boost == 1 ? 200.0f : 0.0f;
     save.progress().magicAdd = boost == 2 ? 200.0f : 0.0f;
-    player.figure = PlayerFigure::load(f.device, root, save, false);
+    player.figure = PlayerFigure::load(f.device, root, save, Entrance::Skip);
     REQUIRE(player.figure);
     player.turbo.add(100);
     const StatBlock block = displayStats(*stats, 1, save.progress());
@@ -3502,7 +3505,7 @@ TEST_CASE("ordinary melee and finishers preserve the weapon element while guard 
     if (element != 0) {
         inventory.addPowerup(powerup::kWeapon, element, 0, 60);
     }
-    party[0].figure = PlayerFigure::load(f.device, root, party[0].actor.save(), false);
+    party[0].figure = PlayerFigure::load(f.device, root, party[0].actor.save(), Entrance::Skip);
     REQUIRE(party[0].figure);
     const auto& animator = party[0].figure->animator();
     f.targets.multiplayer = MultiplayerMode::Hurt;
@@ -3610,7 +3613,8 @@ TEST_CASE("close attacks resolve to melee while distant attacks still throw",
         test::assetOrSkip("MONSTERS/GRU/ANIM.PS2").parent_path().parent_path().parent_path();
     test::assetOrSkip("PLAYERS/WAR/ANIM/ANIM.PS2");
     Fixture f;
-    f.players[0].figure = PlayerFigure::load(f.device, root, f.players[0].actor.save(), false);
+    f.players[0].figure =
+        PlayerFigure::load(f.device, root, f.players[0].actor.save(), Entrance::Skip);
     REQUIRE(f.players[0].figure);
     auto& enemies = f.opponents.enemies();
     enemies.open(f.device, root, nullptr, 4, {}, 7);
@@ -3806,7 +3810,7 @@ TEST_CASE("a halo wearer can catch and drain a retreating Death during resolved 
     actor.place(start - Vec3{0, 0, 3});
     SECTION("movement without an animation model") {}
     SECTION("native player grab and release animations") {
-        f.players[0].figure = PlayerFigure::load(f.device, root, actor.save(), false);
+        f.players[0].figure = PlayerFigure::load(f.device, root, actor.save(), Entrance::Skip);
         REQUIRE(f.players[0].figure);
     }
     std::array<PlayInput, 4> inputs;
@@ -4142,7 +4146,8 @@ TEST_CASE("fire and lightning shields harm the creature their bearer stands agai
         REQUIRE(f.world.load(f.device, root, *level));
         REQUIRE(f.weapons.load(root / "WEAPONS"));
         f.opponents.open({f.device, f.world, f.weapons, f.effects, f.audio, root, 1}, f.players);
-        f.players[0].figure = PlayerFigure::load(f.device, root, f.players[0].actor.save(), false);
+        f.players[0].figure =
+            PlayerFigure::load(f.device, root, f.players[0].actor.save(), Entrance::Skip);
         REQUIRE(f.players[0].figure);
         auto& enemies = f.opponents.enemies();
         EnemyScales scales;
@@ -4207,7 +4212,7 @@ TEST_CASE("fire shield uses the retail one-unit contact band rather than its fla
     REQUIRE(f.classes.load(root / "PDATA"));
     auto& player = f.players[0];
     player.actor.spawn(0, {}, f.classes.stats(0), {}, 0);
-    player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
+    player.figure = PlayerFigure::load(f.device, root, player.actor.save(), Entrance::Skip);
     REQUIRE(player.figure);
     player.actor.save().progress().inventory.addPowerup(powerup::kArmor, armor::kFireArmor, 0, 60);
     f.opponents.open({f.device, f.world, f.weapons, f.effects, f.audio, root, 1}, f.players);
@@ -4379,7 +4384,7 @@ TEST_CASE("Pojo keeps attacking while approaching a golem with held mouse attack
     save.character = character;
     save.progress().inventory.permanentPojo = true;
     player.actor.spawn(3, save, f.classes.stats(character), {0, 0, -20}, 0);
-    player.figure = PlayerFigure::load(f.device, root, save, false);
+    player.figure = PlayerFigure::load(f.device, root, save, Entrance::Skip);
     REQUIRE(player.figure);
     player.figure->setCompanionPowerups(f.device, powerups, save.progress().inventory, &f.weapons);
     REQUIRE(player.figure->pojoActive());
@@ -4470,7 +4475,7 @@ TEST_CASE("temporary Pojo can exchange real golem blows then retreat and reappro
     save.progress().inventory.addPowerup(powerup::kSpecial, powerup::kPojo, 0, 60);
     auto& player = f.players[0];
     player.actor.spawn(0, save, f.classes.stats(kJester), {0, 0, -20}, 0);
-    player.figure = PlayerFigure::load(f.device, root, save, false);
+    player.figure = PlayerFigure::load(f.device, root, save, Entrance::Skip);
     REQUIRE(player.figure);
     player.figure->setCompanionPowerups(f.device, powerups, save.progress().inventory, &f.weapons);
     REQUIRE(player.figure->pojoActive());
@@ -4907,7 +4912,7 @@ TEST_CASE("a forward melee contact cannot be stolen by a nearer barrel behind th
     const s32 barrelHealth = cask.health;
     auto& player = f.players[0];
     player.actor.place(cask.figure.position() + Vec3{0, 0, cask.radius + 0.5f});
-    player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
+    player.figure = PlayerFigure::load(f.device, root, player.actor.save(), Entrance::Skip);
     REQUIRE(player.figure);
     auto& enemies = f.opponents.enemies();
     enemies.open(f.device, root, nullptr, 4, {}, 1);
@@ -4950,7 +4955,7 @@ TEST_CASE("melee misses and Death's unmoved response do not report successful hi
                           .parent_path();
     Fixture f;
     auto& player = f.players[0];
-    player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
+    player.figure = PlayerFigure::load(f.device, root, player.actor.save(), Entrance::Skip);
     REQUIRE(player.figure);
     f.opponents.open({f.device, f.world, f.weapons, f.effects, f.audio, root, 1}, f.players);
     auto& enemies = f.opponents.enemies();
@@ -4987,7 +4992,7 @@ TEST_CASE("golem gargoyle general and boss melee contacts report the attacker",
     CAPTURE(kind);
     Fixture f;
     auto& player = f.players[0];
-    player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
+    player.figure = PlayerFigure::load(f.device, root, player.actor.save(), Entrance::Skip);
     REQUIRE(player.figure);
     f.opponents.open({f.device, f.world, f.weapons, f.effects, f.audio, root, 1}, f.players);
     auto& critters = f.opponents.critters();
@@ -5030,7 +5035,7 @@ TEST_CASE("native gargoyles recoil from strong throws and melee along the attack
     const auto* form = GENERATE("GAR_EAGL", "GAR_LION", "GAR_SERP");
     Fixture f;
     auto& player = f.players[0];
-    player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
+    player.figure = PlayerFigure::load(f.device, root, player.actor.save(), Entrance::Skip);
     REQUIRE(player.figure);
     f.opponents.open({f.device, f.world, f.weapons, f.effects, f.audio, root, 1}, f.players);
     auto& critters = f.opponents.critters();
@@ -5180,7 +5185,7 @@ TEST_CASE("a completed low melee contact reaches the full native player width",
     REQUIRE(stats);
     auto& player = f.players[0];
     player.actor.spawn(0, {}, stats, {}, 0);
-    player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
+    player.figure = PlayerFigure::load(f.device, root, player.actor.save(), Entrance::Skip);
     REQUIRE(player.figure);
     player.figure->setMelee({MeleeRange::Swing, true, 0});
     player.figure->animate(0, 2, 1.0f / 30, PlayerDeed::MeleeLow);
@@ -5285,7 +5290,8 @@ TEST_CASE("a melee contact routes damage sound and impact once through level opp
     spawn.position = {0, 0, 2.5f};
     const auto id = enemies.spawn(spawn, {});
     REQUIRE(id);
-    f.players[0].figure = PlayerFigure::load(f.device, root, f.players[0].actor.save(), false);
+    f.players[0].figure =
+        PlayerFigure::load(f.device, root, f.players[0].actor.save(), Entrance::Skip);
     REQUIRE(f.players[0].figure);
     const f32 health = enemies.healthOf(*id);
     auto& figure = *f.players[0].figure;
@@ -5937,7 +5943,7 @@ TEST_CASE("a weapon leaving the hand four units up still breaks a lying bottle",
     save.character = 3;
     const Vec3 origin{10000, 0, 10000};
     player.actor.spawn(0, save, f.classes.stats(3), origin, 0);
-    player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
+    player.figure = PlayerFigure::load(f.device, root, player.actor.save(), Entrance::Skip);
     REQUIRE(player.figure);
     const usize bottle = f.world.placedItems().size();
     REQUIRE(f.world.placeItem(f.device, "POT_BLU", origin + player.actor.facing() * 6.0f));
@@ -6042,7 +6048,8 @@ TEST_CASE("a turbo strike tells the rules of the body it fells",
     const auto enemy = enemies.spawn(spawn, {});
     REQUIRE(enemy);
     const f32 whole = enemies.healthOf(*enemy);
-    f.players[0].figure = PlayerFigure::load(f.device, root, f.players[0].actor.save(), false);
+    f.players[0].figure =
+        PlayerFigure::load(f.device, root, f.players[0].actor.save(), Entrance::Skip);
     REQUIRE(f.players[0].figure);
     f.players[0].turbo.add(100);
     for (s32 frame = 0; frame < 30 && enemies.healthOf(*enemy) == whole; ++frame) {

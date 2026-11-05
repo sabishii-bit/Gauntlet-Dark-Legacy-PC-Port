@@ -14,6 +14,7 @@
 #include "game/party/PlayerAttacks.h"
 #include "game/party/PlayerAttacksTestPeer.h"
 #include "game/party/ScriptedAttacks.h"
+#include "game/players/PlayerAnimator.h"
 
 namespace {
 using namespace gdl;
@@ -139,7 +140,7 @@ TEST_CASE("Imported melee and projectile hits cannot fall through to player or s
         REQUIRE(stats);
         f.players[0].actor.spawn(3, {}, stats, Vec3{0}, 0);
         f.players[0].figure =
-            PlayerFigure::load(f.device, f.root, f.players[0].actor.save(), false);
+            PlayerFigure::load(f.device, f.root, f.players[0].actor.save(), Entrance::Skip);
         REQUIRE(f.players[0].figure);
         f.attacks.melee(0, f.players, f.targets);
         REQUIRE(f.imported->hits.size() == 1);

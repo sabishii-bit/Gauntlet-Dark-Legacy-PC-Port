@@ -1157,7 +1157,7 @@ f32 PlayerAnimator::turnScale() const {
     return row.turn;
 }
 
-bool PlayerAnimator::bind(const TreeInfo& tree, bool enter) {
+bool PlayerAnimator::bind(const TreeInfo& tree, Entrance entrance) {
     unbind();
     for (usize a = 0; a < kActionCount; ++a) {
         const auto sequence = tree.findSequence(kSequenceNames[a]);
@@ -1167,7 +1167,7 @@ bool PlayerAnimator::bind(const TreeInfo& tree, bool enter) {
         return false;
     }
     m_tree = &tree;
-    m_entered = !enter;
+    m_entered = entrance == Entrance::Skip;
     const u32 stance = sequenceOf(Action::Ready);
     // DoPlayerAction enables AnimationInfo.flags bit 2 for every player action.
     m_player.setSmooth(true);

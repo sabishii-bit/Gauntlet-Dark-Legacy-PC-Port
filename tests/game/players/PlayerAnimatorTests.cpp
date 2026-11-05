@@ -95,7 +95,7 @@ TEST_CASE("player rollback reproduces ranged releases and guard boundaries from 
             const auto ticks = static_cast<s32>(60.0f / rate);
             const f32 seconds = 1 / rate;
             PlayerAnimator original;
-            REQUIRE(original.bind(tree, false));
+            REQUIRE(original.bind(tree, Entrance::Skip));
             original.setCharacter(0);
             original.setGuardArmor(2.5f);
             original.setAttackSpeed(true, false);
@@ -111,7 +111,7 @@ TEST_CASE("player rollback reproduces ranged releases and guard boundaries from 
                 const auto saved = original.checkpoint();
                 REQUIRE(saved.valid());
                 PlayerAnimator replayed;
-                REQUIRE(replayed.bind(tree, false));
+                REQUIRE(replayed.bind(tree, Entrance::Skip));
                 REQUIRE(replayed.restore(saved));
                 REQUIRE(replayed.checkpoint() == saved);
                 auto expected = original;
@@ -155,7 +155,7 @@ TEST_CASE("player rollback retains potion latches, melee chains, reactions and d
     for (const auto deed : kDeeds) {
         CAPTURE(deed);
         PlayerAnimator original;
-        REQUIRE(original.bind(tree, false));
+        REQUIRE(original.bind(tree, Entrance::Skip));
         original.setCharacter(2);
         original.setMelee({MeleeRange::Swing, false, 1.5f});
         for (s32 tick = 0; tick < 90; ++tick) {
@@ -163,7 +163,7 @@ TEST_CASE("player rollback retains potion latches, melee chains, reactions and d
             const auto saved = original.checkpoint();
             REQUIRE(saved.valid());
             PlayerAnimator replayed;
-            REQUIRE(replayed.bind(tree, false));
+            REQUIRE(replayed.bind(tree, Entrance::Skip));
             REQUIRE(replayed.restore(saved));
             REQUIRE(replayed.checkpoint() == saved);
             auto expected = original;
@@ -183,7 +183,7 @@ TEST_CASE("player checkpoint validation is atomic and requires a trusted bound s
           "[player-animation][rollback]") {
     const auto tree = classTree();
     PlayerAnimator original;
-    REQUIRE(original.bind(tree, false));
+    REQUIRE(original.bind(tree, Entrance::Skip));
     original.update(PlayerMotion::Run, 1, 1.0f / 60.0f, PlayerDeed::Attack);
     const auto saved = original.checkpoint();
     PlayerAnimator unbound;
@@ -213,7 +213,7 @@ TEST_CASE("player visual poses interpolate subframes without moving gameplay joi
     track.frames = {0, 59};
     track.values = {0, 59};
     PlayerAnimator animator;
-    REQUIRE(animator.bind(tree, false));
+    REQUIRE(animator.bind(tree, Entrance::Skip));
     animator.update(PlayerMotion::Stand, 1, 1.0f / 60.0f);
     REQUIRE(animator.player().frame() == 0.5f);
     REQUIRE(playingIndex(animator) == Approx(0.5f));
@@ -271,8 +271,8 @@ TEST_CASE("extra presentation samples never change projectile release or potion 
         CAPTURE(deed);
         PlayerAnimator native;
         PlayerAnimator rendered;
-        REQUIRE(native.bind(tree, false));
-        REQUIRE(rendered.bind(tree, false));
+        REQUIRE(native.bind(tree, Entrance::Skip));
+        REQUIRE(rendered.bind(tree, Entrance::Skip));
         TreePose visual;
         s32 events = 0;
         for (s32 tick = 0; tick < 180; ++tick) {
@@ -326,7 +326,7 @@ TEST_CASE("attack invulnerability follows turbo and combo animations through rec
     for (const auto& entry : cases) {
         CAPTURE(entry.action);
         PlayerAnimator animator;
-        REQUIRE(animator.bind(tree, false));
+        REQUIRE(animator.bind(tree, Entrance::Skip));
         animator.setCombo(0, false);
         CHECK_FALSE(animator.damageProtected());
         animator.update(PlayerMotion::Stand, kTicks, kStep, entry.deed);
@@ -354,7 +354,7 @@ TEST_CASE("super shots repeat their firing cycle and interruptions never release
         tree.sequences.push_back(sequence);
     }
     PlayerAnimator animator;
-    REQUIRE(animator.bind(tree, false));
+    REQUIRE(animator.bind(tree, Entrance::Skip));
     animator.update(PlayerMotion::Stand, 2, kStep, PlayerDeed::SuperShot);
     CHECK(animator.action() == Action::SpecialShot);
     CHECK_FALSE(animator.turboBegan());
@@ -388,8 +388,8 @@ TEST_CASE("rapid fire speeds throwing but not arrival or idle", "[game][items][p
     const auto tree = classTree();
     PlayerAnimator normal;
     PlayerAnimator rapid;
-    REQUIRE(normal.bind(tree, false));
-    REQUIRE(rapid.bind(tree, false));
+    REQUIRE(normal.bind(tree, Entrance::Skip));
+    REQUIRE(rapid.bind(tree, Entrance::Skip));
     rapid.setAttackSpeed(true, false);
     s32 normalShots = 0;
     s32 rapidShots = 0;
@@ -432,7 +432,7 @@ TEST_CASE("spike hits interrupt an attack with their own animation then release 
           "[game][players][animation][player-impact]") {
     const TreeInfo tree = classTree();
     PlayerAnimator animator;
-    REQUIRE(animator.bind(tree, false));
+    REQUIRE(animator.bind(tree, Entrance::Skip));
     animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Attack);
     REQUIRE(animator.action() == Action::Throw);
     animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::Spike);
@@ -451,7 +451,7 @@ TEST_CASE("sticky contacts use WEBREACT without restarting the reaction every fr
           "[game][players][animation][player-impact][wraith]") {
     const TreeInfo tree = classTree();
     PlayerAnimator animator;
-    REQUIRE(animator.bind(tree, false));
+    REQUIRE(animator.bind(tree, Entrance::Skip));
     animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Attack);
     animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::Webbed);
     REQUIRE(animator.action() == Action::WebReact);
@@ -471,7 +471,7 @@ TEST_CASE("a held attack winds up, lets go and recovers, over and over",
           "[game][players][animation]") {
     const TreeInfo tree = classTree();
     PlayerAnimator animator;
-    REQUIRE(animator.bind(tree, false));
+    REQUIRE(animator.bind(tree, Entrance::Skip));
     REQUIRE_FALSE(animator.throwing());
     REQUIRE(animator.moveScale() == 1.0f);
     // The attack cuts into the stance at once.
@@ -549,7 +549,7 @@ TEST_CASE("native class trees retain quick throw cadence independently of update
         for (usize rate = 0; rate < periods.size(); ++rate) {
             const s32 hz = rate == 0 ? 30 : 60;
             PlayerAnimator animator;
-            REQUIRE(animator.bind(actions.tree(*found), false));
+            REQUIRE(animator.bind(actions.tree(*found), Entrance::Skip));
             s32 previous = -1;
             s32 shots = 0;
             for (s32 frame = 0; frame < hz * 10 && shots < 10; ++frame) {
@@ -587,7 +587,7 @@ TEST_CASE("a potion is raised, then released once, however long its button is he
           "[game][players][animation]") {
     const TreeInfo tree = classTree();
     PlayerAnimator animator;
-    REQUIRE(animator.bind(tree, false));
+    REQUIRE(animator.bind(tree, Entrance::Skip));
     animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::UsePotion);
     REQUIRE(animator.action() == Action::UsePotion);
     REQUIRE(animator.conjuring());
@@ -622,7 +622,7 @@ TEST_CASE("potion throw strength counts held wind-up ticks and stops at release"
           "[game][players][animation][potion-throw]") {
     const TreeInfo tree = classTree();
     PlayerAnimator animator;
-    REQUIRE(animator.bind(tree, false));
+    REQUIRE(animator.bind(tree, Entrance::Skip));
     animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::ThrowPotion);
     REQUIRE(animator.potionThrowTicks() == 0);
     for (s32 frame = 0; frame < 4; ++frame) {
@@ -656,7 +656,7 @@ TEST_CASE("an attack from the first half of a walk or run takes the moving wind-
           "[game][players][animation]") {
     const TreeInfo tree = classTree();
     PlayerAnimator animator;
-    REQUIRE(animator.bind(tree, false));
+    REQUIRE(animator.bind(tree, Entrance::Skip));
     animator.update(PlayerMotion::Run, kTicks, kStep);
     REQUIRE(animator.action() == Action::Run1);
     animator.update(PlayerMotion::Run, kTicks, kStep, true);
@@ -672,7 +672,7 @@ TEST_CASE("an attack from the first half of a walk or run takes the moving wind-
     std::erase_if(bare.sequences,
                   [](const TreeSequenceInfo& s) { return s.name.starts_with("THROW"); });
     PlayerAnimator plain;
-    REQUIRE(plain.bind(bare, false));
+    REQUIRE(plain.bind(bare, Entrance::Skip));
     plain.update(PlayerMotion::Stand, kTicks, kStep, true);
     REQUIRE(plain.action() == Action::Ready);
 }
@@ -743,7 +743,7 @@ TEST_CASE("standing still long enough brings the fidgets and moving ends them",
           "[game][players][animation]") {
     const TreeInfo tree = classTree();
     PlayerAnimator animator;
-    REQUIRE(animator.bind(tree, false));
+    REQUIRE(animator.bind(tree, Entrance::Skip));
     animator.update(PlayerMotion::Stand, kTicks, kStep);
     REQUIRE(animator.action() == Action::Ready);
     // A minute of standing (1800 ticks), then the fidget waits for the stance loop to end.
@@ -789,7 +789,7 @@ TEST_CASE("a character that dies falls once and stays down, whatever is asked of
           "[game][players][animation]") {
     const TreeInfo tree = classTree();
     PlayerAnimator animator;
-    REQUIRE(animator.bind(tree, false));
+    REQUIRE(animator.bind(tree, Entrance::Skip));
     // Even out of a throw about to leave the hand, which then never flies.
     REQUIRE(stepsUntilAttack(animator, Action::ThrowRelease, 200) < 200);
     animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Die);
@@ -809,7 +809,7 @@ TEST_CASE("a character that dies falls once and stays down, whatever is asked of
     animator.update(PlayerMotion::Run, kTicks, kStep);
     REQUIRE(animator.action() == Action::Death);
     // Bound again, it stands.
-    REQUIRE(animator.bind(tree, false));
+    REQUIRE(animator.bind(tree, Entrance::Skip));
     REQUIRE_FALSE(animator.dead());
     REQUIRE(animator.action() == Action::Ready);
 }
@@ -818,7 +818,7 @@ TEST_CASE("struck, a character flinches or reels where it stands and then carrie
           "[game][players][animation]") {
     const TreeInfo tree = classTree();
     PlayerAnimator animator;
-    REQUIRE(animator.bind(tree, false));
+    REQUIRE(animator.bind(tree, Entrance::Skip));
     REQUIRE(stepsUntil(animator, PlayerMotion::Run, Action::Run1, 10) < 10);
     animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::Flinch);
     REQUIRE(animator.action() == Action::HitReact);
@@ -859,7 +859,7 @@ TEST_CASE("a turbo move cuts in, plays through unheeding, and is known as it beg
     add("ATTPWRC", 12);
     add("SHOVE", 8);
     PlayerAnimator animator;
-    REQUIRE(animator.bind(tree, false));
+    REQUIRE(animator.bind(tree, Entrance::Skip));
     REQUIRE_FALSE(animator.canBegin(PlayerDeed::Attack));
     REQUIRE(animator.canBegin(PlayerDeed::TurboFull));
     REQUIRE(stepsUntil(animator, PlayerMotion::Run, Action::Run1, 10) < 10);
@@ -884,7 +884,7 @@ TEST_CASE("a turbo move cuts in, plays through unheeding, and is known as it beg
     // A class without the sequence does not do the move.
     const TreeInfo plain = classTree();
     PlayerAnimator other;
-    REQUIRE(other.bind(plain, false));
+    REQUIRE(other.bind(plain, Entrance::Skip));
     REQUIRE_FALSE(other.canBegin(PlayerDeed::TurboFull));
     other.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::TurboFull);
     REQUIRE(other.action() != Action::TurboFull);
@@ -905,7 +905,7 @@ TEST_CASE("full turbos turn a quarter while Spell Storm locks its facing after f
         for (const auto deed : {PlayerDeed::TurboStrong, PlayerDeed::TurboFull}) {
             CAPTURE(character, deed);
             PlayerAnimator animator;
-            REQUIRE(animator.bind(tree, false));
+            REQUIRE(animator.bind(tree, Entrance::Skip));
             animator.setCharacter(character);
             animator.update(PlayerMotion::Stand, kTicks, kStep, deed);
             REQUIRE(animator.action() == PlayerAnimator::turboActionOf(deed));
@@ -940,7 +940,7 @@ TEST_CASE("a guard press completes its raise block and recovery after the button
         tree.sequences.push_back(sequence);
     }
     PlayerAnimator animator;
-    REQUIRE(animator.bind(tree, false));
+    REQUIRE(animator.bind(tree, Entrance::Skip));
     animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Defend);
     REQUIRE(animator.action() == Action::DefendRaise);
     REQUIRE_FALSE(animator.defending());
@@ -974,7 +974,7 @@ TEST_CASE("a guard completes once and remains interruptible by a turbo or charge
     add("ATTPWRB", 12);
     add("SHOVE", 8);
     PlayerAnimator animator;
-    REQUIRE(animator.bind(tree, false));
+    REQUIRE(animator.bind(tree, Entrance::Skip));
     animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::Defend);
     REQUIRE(animator.action() == Action::DefendRaise);
     REQUIRE(animator.guarding());
@@ -1008,7 +1008,7 @@ TEST_CASE("a guard completes once and remains interruptible by a turbo or charge
     // A class without the sequences does not guard.
     const TreeInfo plain = classTree();
     PlayerAnimator other;
-    REQUIRE(other.bind(plain, false));
+    REQUIRE(other.bind(plain, Entrance::Skip));
     other.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Defend);
     REQUIRE_FALSE(other.guarding());
 }
@@ -1027,7 +1027,7 @@ TEST_CASE("ordinary attacks wait for guard recovery but potions can interrupt th
                             PlayerDeed::ThrowPotion, PlayerDeed::ShieldPotion}) {
         CAPTURE(deed);
         PlayerAnimator animator;
-        REQUIRE(animator.bind(tree, false));
+        REQUIRE(animator.bind(tree, Entrance::Skip));
         animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Defend);
         animator.update(PlayerMotion::Stand, kTicks, kStep, deed);
         if (deed == PlayerDeed::Attack || deed == PlayerDeed::StrongAttack) {
@@ -1057,7 +1057,7 @@ TEST_CASE("a fresh defend press restarts any guard phase without treating a hold
     for (const auto phase : {Action::DefendRaise, Action::Defend, Action::DefendLower}) {
         CAPTURE(phase);
         PlayerAnimator animator;
-        REQUIRE(animator.bind(tree, false));
+        REQUIRE(animator.bind(tree, Entrance::Skip));
         animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Defend);
         REQUIRE(stepsUntil(animator, PlayerMotion::Stand, phase, 30) < 30);
         animator.update(PlayerMotion::Stand, kTicks, kStep);
@@ -1080,7 +1080,7 @@ TEST_CASE("strong ranged attacks remain stationary through release and recovery"
         tree.sequences.push_back(sequence);
     }
     PlayerAnimator animator;
-    REQUIRE(animator.bind(tree, false));
+    REQUIRE(animator.bind(tree, Entrance::Skip));
     animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::StrongAttack);
     REQUIRE(animator.strongThrowing());
     // Unlike retail's quarter pace, the stationary heavy-throw policy also
@@ -1104,7 +1104,7 @@ TEST_CASE("strafe input can take over an ordinary throw without releasing fire",
     for (s32 phase = 0; phase < 15; ++phase) {
         CAPTURE(phase);
         PlayerAnimator animator;
-        REQUIRE(animator.bind(tree, false));
+        REQUIRE(animator.bind(tree, Entrance::Skip));
         for (s32 frame = 0; frame <= phase; ++frame) {
             animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Attack);
         }
@@ -1129,7 +1129,7 @@ TEST_CASE("ending a shooting strafe releases its pending shot before a quick sta
         tree.sequences.push_back(sequence);
     }
     PlayerAnimator animator;
-    REQUIRE(animator.bind(tree, false));
+    REQUIRE(animator.bind(tree, Entrance::Skip));
     animator.setStrafe(StrafeWay::Left);
     animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::Attack);
     REQUIRE(animator.strafing());
@@ -1172,7 +1172,7 @@ TEST_CASE("the sorceress kiss does not release an additional ordinary heavy proj
     for (const s32 character : {0, 6, 14}) {
         CAPTURE(character);
         PlayerAnimator animator;
-        REQUIRE(animator.bind(tree, false));
+        REQUIRE(animator.bind(tree, Entrance::Skip));
         animator.setCharacter(character);
         animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::StrongAttack);
         s32 shots = 0;
@@ -1197,7 +1197,7 @@ TEST_CASE("the strong throw lets the weapon go as its wind-up ends, then recover
     add("ATTPWRATHROW", 10);
     add("ATTPWRATHROWR", 8);
     PlayerAnimator animator;
-    REQUIRE(animator.bind(tree, false));
+    REQUIRE(animator.bind(tree, Entrance::Skip));
     REQUIRE(animator.canBegin(PlayerDeed::StrongAttack));
     animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::StrongAttack);
     REQUIRE(animator.action() == Action::StrongThrow);
@@ -1221,7 +1221,7 @@ TEST_CASE("the strong throw lets the weapon go as its wind-up ends, then recover
     // A class without the sequence has no strong throw.
     const TreeInfo plain = classTree();
     PlayerAnimator other;
-    REQUIRE(other.bind(plain, false));
+    REQUIRE(other.bind(plain, Entrance::Skip));
     REQUIRE_FALSE(other.canBegin(PlayerDeed::StrongAttack));
 }
 
@@ -1245,7 +1245,7 @@ TEST_CASE("strafing steps in two halves the way it goes, shoots as it goes, and 
     add("FALLFRNT", 8);
     add("GETUP2", 8);
     PlayerAnimator animator;
-    REQUIRE(animator.bind(tree, false));
+    REQUIRE(animator.bind(tree, Entrance::Skip));
     animator.setStrafe(StrafeWay::Left);
     animator.update(PlayerMotion::Walk, kTicks, kStep);
     REQUIRE(animator.action() == Action::StrafeLeft1);
@@ -1301,7 +1301,7 @@ TEST_CASE("a single attack press interrupts either half of every walking strafe"
          {StrafeWay::Forward, StrafeWay::Back, StrafeWay::Left, StrafeWay::Right}) {
         for (s32 phase = 0; phase < 30; ++phase) {
             PlayerAnimator animator;
-            REQUIRE(animator.bind(tree, false));
+            REQUIRE(animator.bind(tree, Entrance::Skip));
             animator.setStrafe(way);
             for (s32 tick = 0; tick <= phase; ++tick) {
                 animator.update(PlayerMotion::Walk, kTicks, kStep);
@@ -1331,7 +1331,7 @@ TEST_CASE("retail class animations accept lateral strafe attack taps throughout 
         for (const StrafeWay way : {StrafeWay::Left, StrafeWay::Right}) {
             for (s32 phase = 0; phase < 60; ++phase) {
                 PlayerAnimator animator;
-                REQUIRE(animator.bind(actions.tree(*found), false));
+                REQUIRE(animator.bind(actions.tree(*found), Entrance::Skip));
                 animator.setStrafe(way);
                 for (s32 tick = 0; tick <= phase; ++tick) {
                     animator.update(PlayerMotion::Run, kTicks, kStep);
@@ -1359,7 +1359,7 @@ TEST_CASE("a whirlwind flings the body up once and it gets up after (action.c 12
         tree.sequences.push_back(sequence);
     }
     PlayerAnimator animator;
-    REQUIRE(animator.bind(tree, false));
+    REQUIRE(animator.bind(tree, Entrance::Skip));
     animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::Whirled);
     REQUIRE(animator.action() == Action::Whirled);
     REQUIRE(animator.floored());
@@ -1375,7 +1375,7 @@ TEST_CASE("a shield potion is raised with the gesture of a potion used, and told
           "[game][players][animation]") {
     const TreeInfo tree = classTree();
     PlayerAnimator animator;
-    REQUIRE(animator.bind(tree, false));
+    REQUIRE(animator.bind(tree, Entrance::Skip));
     bool shielded = false;
     bool used = false;
     for (s32 i = 0; i < 200; ++i) {
@@ -1421,7 +1421,7 @@ TEST_CASE("a legend item is let go of with a potion's, the strong throw's or the
     }};
     for (const Gesture& gesture : gestures) {
         PlayerAnimator animator;
-        REQUIRE(animator.bind(tree, false));
+        REQUIRE(animator.bind(tree, Entrance::Skip));
         REQUIRE(animator.canBegin(gesture.deed));
         animator.update(PlayerMotion::Run, kTicks, kStep, gesture.deed);
         REQUIRE(animator.action() == gesture.windUp);
@@ -1450,7 +1450,7 @@ TEST_CASE("a legend item is let go of with a potion's, the strong throw's or the
     // something waits.
     const TreeInfo plain = classTree();
     PlayerAnimator other;
-    REQUIRE(other.bind(plain, false));
+    REQUIRE(other.bind(plain, Entrance::Skip));
     REQUIRE_FALSE(other.canBegin(PlayerDeed::ShootLegend));
     REQUIRE(other.canBegin(PlayerDeed::HurlLegend));
     other.update(PlayerMotion::Stand, kTicks, kStep, true);
@@ -1468,7 +1468,7 @@ TEST_CASE("captured players loop GRABBED and hold their fall until released by p
         tree.sequences.push_back(sequence);
     }
     PlayerAnimator animator;
-    REQUIRE(animator.bind(tree, false));
+    REQUIRE(animator.bind(tree, Entrance::Skip));
     animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Attack);
     animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Grabbed);
     REQUIRE(animator.action() == Action::Grabbed);
@@ -1513,7 +1513,7 @@ TEST_CASE("automatic contact swings do not fabricate button presses or combo cou
         for (const s32 rate : {30, 60}) {
             CAPTURE(deed, rate);
             PlayerAnimator animator;
-            REQUIRE(animator.bind(tree, false));
+            REQUIRE(animator.bind(tree, Entrance::Skip));
             REQUIRE(animator.canAutoMelee());
             const s32 ticks = 60 / rate;
             const f32 seconds = 1.0f / static_cast<f32>(rate);
@@ -1553,7 +1553,7 @@ TEST_CASE("automatic melee cannot cut standing strafe arrival or ongoing actions
           "[player-animation][melee][auto-melee]") {
     const TreeInfo tree = meleeTree();
     PlayerAnimator animator;
-    REQUIRE(animator.bind(tree, false));
+    REQUIRE(animator.bind(tree, Entrance::Skip));
     SECTION("no movement") {
         animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::AutoMelee);
         CHECK(animator.action() == Action::Ready);
@@ -1564,7 +1564,7 @@ TEST_CASE("automatic melee cannot cut standing strafe arrival or ongoing actions
         CHECK_FALSE(animator.meleeing());
     }
     SECTION("arrival") {
-        REQUIRE(animator.bind(tree, true));
+        REQUIRE(animator.bind(tree, Entrance::Play));
         animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::AutoMelee);
         CHECK(animator.entering());
     }
@@ -1597,7 +1597,7 @@ TEST_CASE("item animation events separate breath entry from hammer and gauntlet 
     for (const auto deed :
          {PlayerDeed::Hammer, PlayerDeed::Breathe, PlayerDeed::FireLeft, PlayerDeed::FireRight}) {
         PlayerAnimator animator;
-        REQUIRE(animator.bind(tree, false));
+        REQUIRE(animator.bind(tree, Entrance::Skip));
         animator.update(PlayerMotion::Stand, kTicks, kStep, deed);
         REQUIRE(animator.itemAttacking());
         CHECK_FALSE(animator.turboBegan());
@@ -1623,7 +1623,7 @@ TEST_CASE("held close attacks chain quick swings without ever throwing a weapon"
           "[game][players][animation][melee]") {
     const TreeInfo tree = meleeTree();
     PlayerAnimator animator;
-    REQUIRE(animator.bind(tree, false));
+    REQUIRE(animator.bind(tree, Entrance::Skip));
     animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::Melee);
     REQUIRE(animator.action() == Action::Quick1);
     REQUIRE(animator.moveScale() == PlayerAnimator::kQuickMeleePace);
@@ -1653,7 +1653,7 @@ TEST_CASE("slow and low melee contacts occur once per completed swing and cancel
     for (const PlayerDeed deed :
          {PlayerDeed::MeleeSlow, PlayerDeed::MeleeLow, PlayerDeed::MeleeSlowLow}) {
         PlayerAnimator animator;
-        REQUIRE(animator.bind(tree, false));
+        REQUIRE(animator.bind(tree, Entrance::Skip));
         animator.update(PlayerMotion::Stand, kTicks, kStep, deed);
         REQUIRE(animator.meleeing());
         s32 contacts = 0;
@@ -1677,7 +1677,7 @@ TEST_CASE("slow and low melee contacts occur once per completed swing and cancel
     }
     for (const PlayerDeed interrupt : {PlayerDeed::Flinch, PlayerDeed::Die, PlayerDeed::Reel}) {
         PlayerAnimator animator;
-        REQUIRE(animator.bind(tree, false));
+        REQUIRE(animator.bind(tree, Entrance::Skip));
         animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Melee);
         animator.update(PlayerMotion::Stand, 30, 0.5f, interrupt);
         CHECK_FALSE(animator.meleeStruck());
@@ -1697,7 +1697,7 @@ TEST_CASE("automatic melee follows a slow recovery at its natural boundary witho
           "[player-animation][melee][auto-melee]") {
     const TreeInfo tree = meleeTree();
     PlayerAnimator animator;
-    REQUIRE(animator.bind(tree, false));
+    REQUIRE(animator.bind(tree, Entrance::Skip));
     animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::MeleeSlow);
     REQUIRE(animator.action() == Action::SlowStart);
     REQUIRE(playOut(animator, Action::SlowStart, PlayerDeed::None) == Action::SlowSwing);
@@ -1717,7 +1717,7 @@ TEST_CASE("an attack edge survives throw recovery until the following close swin
           "[player-animation][melee][auto-melee]") {
     const TreeInfo tree = meleeTree();
     PlayerAnimator animator;
-    REQUIRE(animator.bind(tree, false));
+    REQUIRE(animator.bind(tree, Entrance::Skip));
     animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Attack);
     REQUIRE(playOut(animator, Action::Throw, PlayerDeed::Attack) == Action::ThrowRelease);
     // A strong press is buffered while the ranged release still owns the action.
@@ -1734,7 +1734,7 @@ TEST_CASE("a strong press within a chain of swings makes the chain's power swing
     const TreeInfo tree = meleeTree();
     // First swing, then a strong press: the close power swing, three times the harm.
     PlayerAnimator animator;
-    REQUIRE(animator.bind(tree, false));
+    REQUIRE(animator.bind(tree, Entrance::Skip));
     animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Melee);
     REQUIRE(animator.action() == Action::Quick1);
     CHECK(animator.meleeChain() == 1);
@@ -1757,7 +1757,7 @@ TEST_CASE("a strong press within a chain of swings makes the chain's power swing
     for (const auto& [taps, expected] :
          {std::pair{2, Action::PowerMed}, std::pair{3, Action::Spin}}) {
         PlayerAnimator tapped;
-        REQUIRE(tapped.bind(tree, false));
+        REQUIRE(tapped.bind(tree, Entrance::Skip));
         tapped.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Melee);
         for (s32 tap = 1; tap < taps; ++tap) {
             const Action swing = tapped.action();
@@ -1774,7 +1774,7 @@ TEST_CASE("a strong press within a chain of swings makes the chain's power swing
     // Held without pressing again, the chain starts over and a strong press is not buffered:
     // it only carries the swings on.
     PlayerAnimator held;
-    REQUIRE(held.bind(tree, false));
+    REQUIRE(held.bind(tree, Entrance::Skip));
     held.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Melee);
     REQUIRE(playOut(held, Action::Quick1, PlayerDeed::Melee) == Action::Quick2);
     CHECK(held.meleeChain() == 0);
@@ -1784,7 +1784,7 @@ TEST_CASE("a strong press within a chain of swings makes the chain's power swing
 
     // A buffered strong press after a kick makes the low power swing.
     PlayerAnimator kick;
-    REQUIRE(kick.bind(tree, false));
+    REQUIRE(kick.bind(tree, Entrance::Skip));
     kick.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::MeleeLow);
     REQUIRE(kick.action() == Action::LowKick);
     kick.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::MeleeSlow);
@@ -1799,7 +1799,7 @@ TEST_CASE("automatic melee can count held close swings without changing manual p
             for (const s32 swings : {1, 2, 3}) {
                 CAPTURE(enabled, tapped, swings);
                 PlayerAnimator animator;
-                REQUIRE(animator.bind(tree, false));
+                REQUIRE(animator.bind(tree, Entrance::Skip));
                 const auto step = [&](PlayerDeed deed) {
                     animator.update(PlayerMotion::Stand, kTicks, kStep, deed, enabled);
                 };
@@ -1845,7 +1845,7 @@ TEST_CASE("a strong press during kick recovery retains the low finisher window",
             CAPTURE(rate, finish);
             const f32 seconds = 1.0f / static_cast<f32>(rate);
             PlayerAnimator animator;
-            REQUIRE(animator.bind(tree, false));
+            REQUIRE(animator.bind(tree, Entrance::Skip));
             animator.setMelee({MeleeRange::Swing, true, 0});
             animator.update(PlayerMotion::Stand, 1, seconds, PlayerDeed::MeleeLow);
             REQUIRE(animator.action() == Action::LowKick);
@@ -1883,7 +1883,7 @@ TEST_CASE("swings turn to where their target lies", "[game][players][animation][
           Case{0.5f, Action::Quick1, Action::Quick2}}) {
         CAPTURE(c.yaw);
         PlayerAnimator animator;
-        REQUIRE(animator.bind(tree, false));
+        REQUIRE(animator.bind(tree, Entrance::Skip));
         animator.setMelee(MeleeSense{MeleeRange::Swing, false, c.yaw});
         animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Melee);
         CHECK(animator.action() == c.first);
@@ -1907,13 +1907,13 @@ TEST_CASE("swings turn to where their target lies", "[game][players][animation][
 TEST_CASE("a step carries a swing to what is a pace away", "[game][players][animation][melee]") {
     const TreeInfo tree = meleeTree();
     PlayerAnimator animator;
-    REQUIRE(animator.bind(tree, false));
+    REQUIRE(animator.bind(tree, Entrance::Skip));
     animator.setMelee(MeleeSense{MeleeRange::Step, false, 0.0f});
     // Standing still, a thing a pace away is not stepped to.
     animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Melee);
     CHECK(animator.action() == Action::Quick1);
     PlayerAnimator stepping;
-    REQUIRE(stepping.bind(tree, false));
+    REQUIRE(stepping.bind(tree, Entrance::Skip));
     stepping.setMelee(MeleeSense{MeleeRange::Step, false, 0.0f});
     stepping.update(PlayerMotion::Walk, kTicks, kStep, PlayerDeed::Melee);
     REQUIRE(stepping.action() == Action::Step1);
@@ -1930,7 +1930,7 @@ TEST_CASE("a step carries a swing to what is a pace away", "[game][players][anim
 
     // Cut in from the second half of a walk, the step is the walking strike.
     PlayerAnimator walker;
-    REQUIRE(walker.bind(tree, false));
+    REQUIRE(walker.bind(tree, Entrance::Skip));
     walker.update(PlayerMotion::Walk, kTicks, kStep);
     for (s32 frame = 0; frame < 30 && walker.action() != Action::Walk2; ++frame) {
         walker.update(PlayerMotion::Walk, kTicks, kStep);
@@ -1957,7 +1957,7 @@ TEST_CASE("power swings pace the classes as they did, and the low one borrows th
          {Case{0, 0.5f, 1.0f}, Case{2, 0.25f, 1.0f}, Case{5, 0.0f, 0.0f}, Case{6, 0.0f, 0.0f}}) {
         CAPTURE(c.character);
         PlayerAnimator animator;
-        REQUIRE(animator.bind(tree, false));
+        REQUIRE(animator.bind(tree, Entrance::Skip));
         animator.setCharacter(c.character);
         animator.setMelee(MeleeSense{MeleeRange::Swing, true, 0.0f});
         animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Melee);
@@ -1967,7 +1967,7 @@ TEST_CASE("power swings pace the classes as they did, and the low one borrows th
         CHECK(animator.moveScale() == Approx(0.25f));
         CHECK(animator.turnScale() == Approx(1.0f));
         PlayerAnimator close;
-        REQUIRE(close.bind(tree, false));
+        REQUIRE(close.bind(tree, Entrance::Skip));
         close.setCharacter(c.character);
         close.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Melee);
         close.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::MeleeSlow);
@@ -1989,7 +1989,7 @@ TEST_CASE("a turbo move cuts a close attack off", "[game][players][animation][me
     turbo.name = "ATTPWRATHROW";
     withTurbo.sequences.push_back(turbo);
     PlayerAnimator animator;
-    REQUIRE(animator.bind(withTurbo, false));
+    REQUIRE(animator.bind(withTurbo, Entrance::Skip));
     animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Melee);
     REQUIRE(animator.meleeing());
     CHECK(animator.canBegin(PlayerDeed::TurboStrong));
@@ -2003,7 +2003,7 @@ TEST_CASE("a pickup's gesture plays through at full pace; a gag loops while it l
           "[game][players][animation][pickup]") {
     const TreeInfo tree = meleeTree();
     PlayerAnimator animator;
-    REQUIRE(animator.bind(tree, false));
+    REQUIRE(animator.bind(tree, Entrance::Skip));
     animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Pick);
     REQUIRE(animator.action() == Action::Pick);
     CHECK(animator.moveScale() == Approx(1.0f));
@@ -2015,7 +2015,7 @@ TEST_CASE("a pickup's gesture plays through at full pace; a gag loops while it l
 
     // Retching loops while asked for and, let go of, ends its cycle.
     PlayerAnimator gag;
-    REQUIRE(gag.bind(tree, false));
+    REQUIRE(gag.bind(tree, Entrance::Skip));
     gag.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Gag);
     REQUIRE(gag.action() == Action::Gag);
     for (s32 frame = 0; frame < 20; ++frame) {
@@ -2025,7 +2025,7 @@ TEST_CASE("a pickup's gesture plays through at full pace; a gag loops while it l
     CHECK(playOut(gag, Action::Gag, PlayerDeed::None) == Action::Ready);
     // A walk cuts in only past its first frames.
     PlayerAnimator walker;
-    REQUIRE(walker.bind(tree, false));
+    REQUIRE(walker.bind(tree, Entrance::Skip));
     walker.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Gag);
     walker.update(PlayerMotion::Walk, kTicks, kStep);
     CHECK(walker.action() == Action::Gag);
@@ -2035,7 +2035,7 @@ TEST_CASE("a shield on the arm has its own stance and a gait at a run's pace",
           "[game][players][animation][shield]") {
     const TreeInfo tree = meleeTree();
     PlayerAnimator animator;
-    REQUIRE(animator.bind(tree, false));
+    REQUIRE(animator.bind(tree, Entrance::Skip));
     animator.setShielded(true);
     animator.update(PlayerMotion::Stand, kTicks, kStep);
     CHECK(animator.action() == Action::ShieldReady);
@@ -2058,7 +2058,7 @@ TEST_CASE("a halo reaches out to Death, holds him in a loop and lets go",
           "[game][players][animation][death]") {
     const TreeInfo tree = meleeTree();
     PlayerAnimator animator;
-    REQUIRE(animator.bind(tree, false));
+    REQUIRE(animator.bind(tree, Entrance::Skip));
     animator.update(PlayerMotion::Walk, kTicks, kStep, PlayerDeed::DeathGrab);
     REQUIRE(animator.action() == Action::DeathGrabStart); // at once, from anything
     CHECK(animator.grabbingDeath());
@@ -2081,7 +2081,7 @@ TEST_CASE("a body pushed along shows it instead of standing or walking",
     sequence.frames = 8;
     tree.sequences.push_back(sequence);
     PlayerAnimator animator;
-    REQUIRE(animator.bind(tree, false));
+    REQUIRE(animator.bind(tree, Entrance::Skip));
     animator.setPushed(true);
     REQUIRE(stepsUntil(animator, PlayerMotion::Walk, Action::Pushed, 60) < 60);
     for (s32 i = 0; i < 30; ++i) { // looped while it lasts
@@ -2126,7 +2126,7 @@ TEST_CASE("the combo move cuts in, plays its acts through unheeding, and the dwa
           "[game][players][animation][combo]") {
     const TreeInfo warrior = comboTree(false);
     PlayerAnimator animator;
-    REQUIRE(animator.bind(warrior, false));
+    REQUIRE(animator.bind(warrior, Entrance::Skip));
     REQUIRE(animator.canBegin(PlayerDeed::Combo));
     REQUIRE(stepsUntil(animator, PlayerMotion::Run, Action::Run1, 10) < 10);
     animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::Combo);
@@ -2147,7 +2147,7 @@ TEST_CASE("the combo move cuts in, plays its acts through unheeding, and the dwa
     // asked for and then cuts to the third at once.
     const TreeInfo dwarf = comboTree(true);
     PlayerAnimator rider;
-    REQUIRE(rider.bind(dwarf, false));
+    REQUIRE(rider.bind(dwarf, Entrance::Skip));
     rider.setCombo(-1, true);
     rider.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Combo);
     REQUIRE(rider.action() == Action::ComboAct1);
@@ -2164,7 +2164,7 @@ TEST_CASE("the combo move cuts in, plays its acts through unheeding, and the dwa
     // A class without COMBOACT1 has no combo.
     const TreeInfo plain = classTree();
     PlayerAnimator none;
-    REQUIRE(none.bind(plain, false));
+    REQUIRE(none.bind(plain, Entrance::Skip));
     REQUIRE_FALSE(none.canBegin(PlayerDeed::Combo));
 }
 
@@ -2173,7 +2173,7 @@ TEST_CASE("a partner held plays the grabber's class sequence once, thrown loops 
           "[game][players][animation][combo]") {
     const TreeInfo tree = comboTree(false);
     PlayerAnimator animator;
-    REQUIRE(animator.bind(tree, false));
+    REQUIRE(animator.bind(tree, Entrance::Skip));
     REQUIRE(stepsUntil(animator, PlayerMotion::Run, Action::Run1, 10) < 10);
     animator.setCombo(0, false); // in a warrior's hands
     animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::ComboHeld);
@@ -2246,7 +2246,7 @@ TEST_CASE("the real class trees carry the combo sequences the original's table n
         REQUIRE(found.has_value());
         const TreeInfo& tree = actions.tree(*found);
         PlayerAnimator animator;
-        REQUIRE(animator.bind(tree, false));
+        REQUIRE(animator.bind(tree, Entrance::Skip));
         REQUIRE(animator.canBegin(PlayerDeed::Combo));
         REQUIRE(animator.sequenceOf(Action::ComboAct1) != animator.sequenceOf(Action::Ready));
         // Only the dwarf has the second and third acts.
@@ -2270,7 +2270,7 @@ TEST_CASE("the real class trees carry the combo sequences the original's table n
     const auto warrior = actions.find("WAR");
     REQUIRE(warrior.has_value());
     PlayerAnimator animator;
-    REQUIRE(animator.bind(actions.tree(*warrior), false));
+    REQUIRE(animator.bind(actions.tree(*warrior), Entrance::Skip));
     animator.setCombo(0, false);
     animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::ComboHeld);
     REQUIRE(animator.action() == Action::ComboWar1);

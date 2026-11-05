@@ -21,6 +21,7 @@
 #include "game/combat/PowerupFlags.h"
 #include "game/party/PlayerArsenal.h"
 #include "game/party/PlayerFigure.h"
+#include "game/players/PlayerAnimator.h"
 #include "game/players/PowerupEffects.h"
 
 namespace {
@@ -38,7 +39,7 @@ TEST_CASE("green knight drawing interpolates without changing gameplay hand or a
     save.character = 5;
     save.color = 3;
     save.progress().experience = levelExperience(99);
-    auto figure = PlayerFigure::load(device, root, save, false);
+    auto figure = PlayerFigure::load(device, root, save, Entrance::Skip);
     REQUIRE(figure);
     REQUIRE(figure->familiarTier() == 2);
     bool different = false;
@@ -77,7 +78,7 @@ TEST_CASE("equipped hand powerups replace the class weapon and restore it when s
     CharacterSave save;
     save.character = GENERATE(0, 5, 7); // axe, sword, and jester's thrown weapon
     CAPTURE(save.character);
-    auto figure = PlayerFigure::load(device, root, save, false);
+    auto figure = PlayerFigure::load(device, root, save, Entrance::Skip);
     REQUIRE(figure);
     REQUIRE(figure->heldWeaponBound());
     const Mat4 body = glm::translate(Mat4{1}, Vec3{5, 2, 9});
@@ -192,7 +193,7 @@ TEST_CASE("the warrior's slow swing leaves ghosts of the axe that fade after it"
                           .parent_path();
     test::FakeRenderDevice device;
     const CharacterSave save;
-    auto figure = PlayerFigure::load(device, root, save, false);
+    auto figure = PlayerFigure::load(device, root, save, Entrance::Skip);
     REQUIRE(figure);
     REQUIRE(figure->heldWeaponBound());
     figure->setMelee(MeleeSense{});
@@ -225,7 +226,7 @@ TEST_CASE("X-Ray glasses draw at the posed head only while equipped",
     REQUIRE(powerups.load(root / "POWERUPS"));
     CharacterSave save;
     save.character = 7;
-    auto figure = PlayerFigure::load(device, root, save, false);
+    auto figure = PlayerFigure::load(device, root, save, Entrance::Skip);
     REQUIRE(figure);
     const Mat4 body = glm::translate(Mat4{1}, Vec3{5, 2, 9});
     PowerupEffects worn;
@@ -259,7 +260,7 @@ TEST_CASE("a shield is borne on the second hand, and the jester's hand goes mean
     REQUIRE(weapons.load(root / "WEAPONS"));
     CharacterSave save;
     save.character = 7;
-    auto figure = PlayerFigure::load(device, root, save, false);
+    auto figure = PlayerFigure::load(device, root, save, Entrance::Skip);
     REQUIRE(figure);
     const Mat4 body = glm::translate(Mat4{1}, Vec3{5, 2, 9});
     REQUIRE(figure->armAttachment(body).has_value());
@@ -297,7 +298,7 @@ TEST_CASE("the sign of who is it hangs on the body's root from the realm's items
     REQUIRE(items.load(root / "ITEMS/LEVELG"));
     CharacterSave save;
     save.character = 7;
-    auto figure = PlayerFigure::load(device, root, save, false);
+    auto figure = PlayerFigure::load(device, root, save, Entrance::Skip);
     REQUIRE(figure);
     const Mat4 body = glm::translate(Mat4{1}, Vec3{5, 2, 9});
     figure->drawMarker(device, items, "IT_SIGN", Mat4{1}, body, {}, 1);
@@ -324,7 +325,7 @@ TEST_CASE("Every headwear powerup names an object of the powerups archive",
     REQUIRE(powerups.load(root / "POWERUPS"));
     CharacterSave save;
     save.character = 7;
-    auto figure = PlayerFigure::load(device, root, save, false);
+    auto figure = PlayerFigure::load(device, root, save, Entrance::Skip);
     REQUIRE(figure);
     const Mat4 body = glm::translate(Mat4{1}, Vec3{5, 2, 9});
     struct Worn {
@@ -357,7 +358,7 @@ TEST_CASE("Jester throws face the camera and his permanent familiar fires once p
     save.character = 7;
     save.color = 3;
     save.progress().experience = levelExperience(60);
-    auto figure = PlayerFigure::load(device, root, save, false);
+    auto figure = PlayerFigure::load(device, root, save, Entrance::Skip);
     REQUIRE(figure != nullptr);
     REQUIRE(figure->missile().bound());
     REQUIRE(figure->familiarTier() == 1);
@@ -442,7 +443,7 @@ TEST_CASE(
     for (const s32 level : {1, 60}) {
         CharacterSave save;
         save.progress().experience = levelExperience(level);
-        auto figure = PlayerFigure::load(device, root, save, false);
+        auto figure = PlayerFigure::load(device, root, save, Entrance::Skip);
         REQUIRE(figure);
         auto& inventory = save.progress().inventory;
         inventory.addPowerup(powerup::kSpecial, powerup::kPhoenix, 0, 30);
@@ -485,8 +486,8 @@ TEST_CASE("Phoenix does not suppress the earned familiar's attack animation",
     CharacterSave save;
     save.character = *classIndexOf(GENERATE(std::string_view{"WAR"}, std::string_view{"ARC"}));
     save.progress().experience = levelExperience(GENERATE(30, 80));
-    auto ordinary = PlayerFigure::load(device, root, save, false);
-    auto withPhoenix = PlayerFigure::load(device, root, save, false);
+    auto ordinary = PlayerFigure::load(device, root, save, Entrance::Skip);
+    auto withPhoenix = PlayerFigure::load(device, root, save, Entrance::Skip);
     REQUIRE(ordinary);
     REQUIRE(withPhoenix);
     REQUIRE(ordinary->familiarTier() > 0);
@@ -572,7 +573,7 @@ TEST_CASE("the effect parent uses the costume root's mapped pose rather than cla
     const auto root = costumeFixture("figure-effect-root", true);
     CharacterSave save;
     save.color = 1;
-    auto figure = PlayerFigure::load(device, root, save, false);
+    auto figure = PlayerFigure::load(device, root, save, Entrance::Skip);
     REQUIRE(figure);
     const Mat4 body = glm::translate(Mat4{1}, Vec3{10, 20, 30});
     CHECK(Vec3{figure->rootAttachment(body)[3]} == Vec3{17, 28, 39});
@@ -588,7 +589,7 @@ TEST_CASE("a costume piece the action tree does not name rides its nearest named
     const auto loose = costumeFixture("figure-loose-ornament", true);
     CharacterSave save;
     save.color = 1;
-    auto figure = PlayerFigure::load(device, loose, save, false);
+    auto figure = PlayerFigure::load(device, loose, save, Entrance::Skip);
     REQUIRE(figure);
     figure->animate(0, 1, 1.0f / 60.0f);
     REQUIRE(figure->attachment(body, "ORNAMENT").has_value());
@@ -596,7 +597,7 @@ TEST_CASE("a costume piece the action tree does not name rides its nearest named
     // Hung under the hand, it keeps its offset from the hand's posed place (the blue
     // knight's tiered plates and plume hang this way under UPPERTOR and HEAD).
     const auto hung = costumeFixture("figure-hung-ornament", true, 0);
-    figure = PlayerFigure::load(device, hung, save, false);
+    figure = PlayerFigure::load(device, hung, save, Entrance::Skip);
     REQUIRE(figure);
     figure->animate(0, 1, 1.0f / 60.0f);
     REQUIRE(figure->attachment(body, "ORNAMENT").has_value());
@@ -620,7 +621,7 @@ TEST_CASE("costume and held weapon texture scrolling interpolates without cleari
     test::FakeRenderDevice device;
     CharacterSave save;
     save.color = 1;
-    auto figure = PlayerFigure::load(device, root, save, false);
+    auto figure = PlayerFigure::load(device, root, save, Entrance::Skip);
     REQUIRE(figure);
     figure->setSkinTexture(&device.whiteTexture());
     figure->animate(0, 1, 1.0f / 60);
@@ -669,7 +670,7 @@ TEST_CASE("native wizard hand glow cycles borrow POWERUPS frames and blend betwe
     test::FakeRenderDevice device;
     CharacterSave save;
     save.character = 2;
-    auto figure = PlayerFigure::load(device, root, save, false);
+    auto figure = PlayerFigure::load(device, root, save, Entrance::Skip);
     REQUIRE(figure);
     figure->animate(0, 1, 1.0f / 60);
     figure->draw(device, Mat4{1}, Mat4{1}, {}, 1, false, nullptr, 0.5f);
@@ -695,7 +696,7 @@ TEST_CASE("native jester-family held bombs borrow their five visible class-effec
     save.character = GENERATE(7, 15);
     save.color = GENERATE(0, 1, 2, 3);
     CAPTURE(save.character, save.color);
-    auto figure = PlayerFigure::load(device, root, save, false);
+    auto figure = PlayerFigure::load(device, root, save, Entrance::Skip);
     REQUIRE(figure);
     REQUIRE(figure->heldWeaponBound());
     auto* effects = figure->effects();
@@ -732,7 +733,7 @@ TEST_CASE("native wizard hand glow follows the camera without rotating his body"
     test::FakeRenderDevice device;
     CharacterSave save;
     save.character = 2;
-    auto figure = PlayerFigure::load(device, root, save, false);
+    auto figure = PlayerFigure::load(device, root, save, Entrance::Skip);
     REQUIRE(figure);
     figure->animate(0, 1, 1.0f / 60);
     const CameraFrame first;
@@ -791,14 +792,14 @@ TEST_CASE("a figure owns shared native texture pixels for its complete draw life
     test::FakeRenderDevice device;
     CharacterSave save;
     save.color = 1;
-    REQUIRE_FALSE(PlayerFigure::load(device, root, save, false));
+    REQUIRE_FALSE(PlayerFigure::load(device, root, save, Entrance::Skip));
     const auto shared = root / "POWERUPS";
     std::filesystem::create_directories(shared);
     writeFile(shared / "skin.png", test::kTinyPng);
     writeTextFile(shared / "textures.json", R"({"bitmaps":[
         {"name":"SKIN","file":"skin.png","width":2,"height":2}]})");
     test::convertModelFixture(shared);
-    auto figure = PlayerFigure::load(device, root, save, false);
+    auto figure = PlayerFigure::load(device, root, save, Entrance::Skip);
     REQUIRE(figure);
     REQUIRE(figure->heldWeaponBound());
     for (s32 frame = 0; frame < 3; ++frame) {
@@ -829,7 +830,7 @@ TEST_CASE("native player costumes bind and draw every colour of the sixteen cost
             CharacterSave save;
             save.character = character;
             save.color = color;
-            auto figure = PlayerFigure::load(device, root, save, false);
+            auto figure = PlayerFigure::load(device, root, save, Entrance::Skip);
             REQUIRE(figure);
             figure->draw(device, Mat4{1}, Mat4{1}, {}, 1, false);
             CHECK_FALSE(device.draws.empty());
@@ -903,7 +904,7 @@ TEST_CASE("native name-code costumes bind and animate with their ordinary class"
         }
         const auto appearanceLevel = save.progress().appearanceLevel();
         test::FakeRenderDevice device;
-        const auto figure = PlayerFigure::load(device, root, save, false);
+        const auto figure = PlayerFigure::load(device, root, save, Entrance::Skip);
         REQUIRE(figure);
         CHECK(figure->directory().filename() == costume.directory);
         CHECK(figure->animator().bound());
@@ -932,7 +933,7 @@ TEST_CASE("missing class throw trees fall back to the costume's first throw tree
     test::FakeRenderDevice device;
     CharacterSave save;
     save.color = 1;
-    const auto figure = PlayerFigure::load(device, root, save, false);
+    const auto figure = PlayerFigure::load(device, root, save, Entrance::Skip);
     REQUIRE(figure);
     REQUIRE(figure->missile().bound());
     CHECK(figure->missileTree() == "AXE_THROW1");
@@ -969,7 +970,7 @@ TEST_CASE("hand replacement priority and restoration render without retail asset
     test::FakeRenderDevice device;
     CharacterSave save;
     save.color = 1;
-    const auto figure = PlayerFigure::load(device, root, save, false);
+    const auto figure = PlayerFigure::load(device, root, save, Entrance::Skip);
     REQUIRE(figure);
     const auto checkWeapon = [&](f32 x, bool hideNormal = false) {
         device.draws.clear();
@@ -1055,7 +1056,7 @@ TEST_CASE("Sumner wears the wizard's SUM costume and takes the wizard's actions 
     REQUIRE(PlayerFigure::actionsClassOf(root, kSumnerClass) == "WIZ");
     REQUIRE(PlayerFigure::classFolder(root, kSumnerClass, "SFXBLU") == root / "PLAYERS/WIZ/SFXBLU");
     test::FakeRenderDevice device;
-    const auto figure = PlayerFigure::load(device, root, save, false);
+    const auto figure = PlayerFigure::load(device, root, save, Entrance::Skip);
     REQUIRE(figure != nullptr);
     REQUIRE(figure->directory() == root / "PLAYERS/WIZ/SUM");
     REQUIRE(figure->animator().bound());
@@ -1098,7 +1099,7 @@ TEST_CASE("Sumner throws with the wizard's native voice bank", "[figure][sumner]
     test::FakeRenderDevice device;
     CharacterSave save;
     save.selectClass(kSumnerClass);
-    const auto figure = PlayerFigure::load(device, root, save, false);
+    const auto figure = PlayerFigure::load(device, root, save, Entrance::Skip);
     REQUIRE(figure != nullptr);
     REQUIRE(figure->throwSound().has_value());
     CHECK(figure->voice().entry(*figure->throwSound()).name == "S_WIZTHROW");

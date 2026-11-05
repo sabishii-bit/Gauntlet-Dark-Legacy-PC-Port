@@ -16,6 +16,7 @@
 #include "game/party/PlayerFigure.h"
 #include "game/party/PlayerRuntime.h"
 #include "game/party/ScriptedMotion.h"
+#include "game/players/PlayerAnimator.h"
 
 namespace {
 using namespace gdl;
@@ -67,7 +68,7 @@ struct Fixture {
             REQUIRE(stats);
             player.actor.spawn(kSlots[i], save, stats, {i == 0 ? -12.0f : 12.0f, 0, 0}, 0);
             player.entrySave = save;
-            player.figure = PlayerFigure::load(device, root, save, false);
+            player.figure = PlayerFigure::load(device, root, save, Entrance::Skip);
             REQUIRE(player.figure);
             player.turbo.add(100);
         }

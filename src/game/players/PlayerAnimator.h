@@ -39,6 +39,10 @@ enum class MeleeBlow : u8 {
 /** Which way a strafing character steps, against the way it faces. */
 enum class StrafeWay : u8 { None, Forward, Back, Left, Right };
 
+/** Whether a body just bound plays its entrance (`START`) before anything else, or stands at
+ * its stance at once. */
+enum class Entrance : u8 { Play, Skip };
+
 /**
  * The actions a character's body plays, sequenced the way the original game does: the
  * entrance once as the level begins, the stance loop, a fidget after a minute standing still
@@ -298,9 +302,9 @@ public:
     static constexpr f32 kRunMagnitude = 0.75f;    ///< stick beyond this runs
     static constexpr f32 kStanceBlend = 2.0f / 30.0f; ///< seconds a body eases back into its stance
 
-    /** Takes the class tree's sequences; false when it has no stance. With `enter` the
-     * entrance sequence plays before anything else. */
-    bool bind(const TreeInfo& tree, bool enter = true);
+    /** Takes the class tree's sequences; false when it has no stance. With `Entrance::Play`
+     * the entrance sequence plays before anything else. */
+    bool bind(const TreeInfo& tree, Entrance entrance = Entrance::Play);
     void unbind();
     bool bound() const { return m_tree != nullptr; }
     /** Prediction can restore only ordinary locomotion, never an attack/event cursor. */
