@@ -12,7 +12,7 @@
 #include "game/party/PlayerMissiles.h"
 
 namespace gdl::test {
-inline std::filesystem::path projectileCheckpointArchive() {
+inline std::filesystem::path projectileArchive() {
     const auto root = scratchDirectory("projectile-pool-checkpoint");
     writeTextFile(root / "tri.obj", "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n");
     writeTextFile(root / "objects.json", R"({"objects":[{"name":"TRI","file":"tri.obj"}]})");
@@ -33,13 +33,13 @@ inline std::filesystem::path projectileCheckpointArchive() {
 
 /** A projectile archive whose artwork the prototypes bind before any pool counts uploads.
  * They outlive every pool that borrows the archive. */
-struct ProjectileCheckpointFixture {
+struct ProjectileFixture {
     FakeRenderDevice device;
     ItemArchive archive;
     TextureAnimator textures;
     game::EffectTrees prototypes;
-    ProjectileCheckpointFixture() {
-        REQUIRE(archive.load(projectileCheckpointArchive()));
+    ProjectileFixture() {
+        REQUIRE(archive.load(projectileArchive()));
         game::EffectTrees::Setting setting;
         setting.persistent = true;
         REQUIRE(prototypes.startSet(device, archive, "FLIGHT", {}, setting) != 0);

@@ -10,7 +10,7 @@
 #include "TestSupport.h"
 #include "fixtures/NativeSoundBank.h"
 #include "game/combat/PowerupFlags.h"
-#include "game/party/AttackCheckpointFixture.h"
+#include "game/party/AttackSceneFixture.h"
 #include "game/scenes/PlayScene.h"
 
 namespace {
@@ -20,7 +20,7 @@ constexpr u64 kEpoch = 71;
 constexpr f64 kStep = 1.0 / 60;
 
 struct GeneratorSounds {
-    std::filesystem::path root = test::attackCheckpointAssets();
+    std::filesystem::path root = test::attackSceneAssets();
     test::FakeRenderDevice device;
     WorldLayout layout;
     LevelWorld world;

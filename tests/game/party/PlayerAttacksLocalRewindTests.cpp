@@ -20,7 +20,7 @@
 #include "game/enemies/EnemyKinds.h"
 #include "game/hud/HelpMessages.h"
 #include "game/level/NativeStateResources.h"
-#include "game/party/AttackCheckpointFixture.h"
+#include "game/party/AttackSceneFixture.h"
 #include "game/party/PlayerArsenal.h"
 #include "game/party/PlayerAttacks.h"
 #include "game/party/PlayerFigure.h"
@@ -30,7 +30,7 @@
 namespace {
 using namespace gdl;
 using namespace gdl::game;
-using Digests = test::AttackCheckpointFixture::Digests;
+using Digests = test::AttackSceneFixture::Digests;
 static_assert(!std::is_copy_constructible_v<PlayerAttacks>);
 static_assert(!std::is_move_assignable_v<PlayerAttacks>);
 
@@ -43,7 +43,7 @@ struct NativeAttackHistory {
     BodyGlow glow;
     AmbientDimmer dimmer;
 
-    void save(const test::AttackCheckpointFixture& source) {
+    void save(const test::AttackSceneFixture& source) {
         source.attacks.saveLocal(attacks);
         source.arsenal.saveLocal(arsenal);
         source.effects.saveLocal(effects);
@@ -52,7 +52,7 @@ struct NativeAttackHistory {
         glow = source.players[0].glow;
         dimmer = source.dimmer;
     }
-    void restore(test::AttackCheckpointFixture& target) const {
+    void restore(test::AttackSceneFixture& target) const {
         REQUIRE(target.attacks.canRestoreLocal(attacks));
         REQUIRE(target.arsenal.canRestoreLocal(arsenal));
         REQUIRE(target.effects.canRestoreLocal(effects));
@@ -72,11 +72,11 @@ struct AttackHistory {
     PlayerAttacks::LocalSnapshot attacks;
     EffectTrees::LocalSnapshot effects;
 
-    void save(const test::AttackCheckpointFixture& source) {
+    void save(const test::AttackSceneFixture& source) {
         source.attacks.saveLocal(attacks);
         source.effects.saveLocal(effects);
     }
-    void restore(test::AttackCheckpointFixture& target) const {
+    void restore(test::AttackSceneFixture& target) const {
         REQUIRE(target.attacks.restoreLocal(attacks));
         REQUIRE(target.effects.restoreLocal(effects));
     }
@@ -119,15 +119,15 @@ bool anyMissing(std::span<const u64> from, std::span<const u64> among) {
 TEST_CASE("native attack values rewind paid potions shields breath and speculative effect births",
           "[rollback][local-rewind][player-attacks-local-rewind]") {
     const s32 kind = GENERATE(0, 1, 2, 3);
-    test::AttackCheckpointFixture uninterrupted;
-    test::AttackCheckpointFixture replay;
+    test::AttackSceneFixture uninterrupted;
+    test::AttackSceneFixture replay;
     NativeAttackHistory history;
     constexpr f32 kSeconds = 1.0f / 30;
     for (auto* fixture : {&uninterrupted, &replay}) {
         fixture->players[0].actor.save().progress().inventory.addPowerup(
             powerup::kSpecial, powerup::kFireBreath, 100, 30, true);
     }
-    const auto step = [&](test::AttackCheckpointFixture& fixture, s32 tick) {
+    const auto step = [&](test::AttackSceneFixture& fixture, s32 tick) {
         auto& player = fixture.players[0];
         player.actor.place({static_cast<f32>(tick % 80) * 0.01f, 0, 0});
         player.figure->animate(
@@ -216,7 +216,7 @@ TEST_CASE("attack rewind resumes native potion shield and item windows without r
     const s32 kind = GENERATE(0, 1, 2, 3);
     const f32 seconds = GENERATE(1.0f / 30, 1.0f / 60);
     CAPTURE(kind, seconds);
-    test::AttackCheckpointFixture fixture;
+    test::AttackSceneFixture fixture;
     auto& player = fixture.players[0];
     auto& inventory = player.actor.save().progress().inventory;
     inventory.addPotions(2, 3);
@@ -287,8 +287,8 @@ TEST_CASE("attack rewind resumes native potion shield and item windows without r
 TEST_CASE("native attack rewind preserves turbo contact ledgers and enemy harm after wrong futures",
           "[rollback][local-rewind][player-attacks-local-rewind]") {
     const bool flying = GENERATE(false, true);
-    test::AttackCheckpointFixture uninterrupted;
-    test::AttackCheckpointFixture replay;
+    test::AttackSceneFixture uninterrupted;
+    test::AttackSceneFixture replay;
     for (auto* fixture : {&uninterrupted, &replay}) {
         fixture->opponents.open({fixture->device, fixture->world, fixture->weapons,
                                  fixture->effects, fixture->audio, fixture->root, 1},
@@ -304,7 +304,7 @@ TEST_CASE("native attack rewind preserves turbo contact ledgers and enemy harm a
     NativeAttackHistory history;
     Enemies::LocalSnapshot enemies;
     constexpr f32 kSeconds = 1.0f / 60;
-    const auto step = [&](test::AttackCheckpointFixture& fixture, s32 tick) {
+    const auto step = [&](test::AttackSceneFixture& fixture, s32 tick) {
         auto& player = fixture.players[0];
         player.figure->animate(0, 1, kSeconds,
                                tick == 0
@@ -365,7 +365,7 @@ TEST_CASE("native attack rewind preserves turbo contact ledgers and enemy harm a
 TEST_CASE("attack rewind preserves native turbo repeated-contact cooldowns and their damage",
           "[player-attacks-local-rewind]") {
     const bool flying = GENERATE(false, true);
-    test::AttackCheckpointFixture fixture;
+    test::AttackSceneFixture fixture;
     auto& enemies = fixture.opponents.enemies();
     EnemyScales scales;
     scales.health = 100;
@@ -434,7 +434,7 @@ TEST_CASE("attack rewind resumes independent native potion shield target cooldow
           "[player-attacks-local-rewind]") {
     const f32 seconds = GENERATE(1.0f / 30, 1.0f / 60);
     CAPTURE(seconds);
-    test::AttackCheckpointFixture fixture;
+    test::AttackSceneFixture fixture;
     fixture.opponents.open({fixture.device, fixture.world, fixture.weapons, fixture.effects,
                             fixture.audio, fixture.root, 1},
                            fixture.players);

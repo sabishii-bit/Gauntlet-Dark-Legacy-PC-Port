@@ -6,18 +6,18 @@
 
 #include "game/characters/Progression.h"
 #include "game/effects/EffectTrees.h"
-#include "game/party/AttackCheckpointFixture.h"
+#include "game/party/AttackSceneFixture.h"
 #include "game/party/PlayerArsenal.h"
 #include "game/party/PlayerMissiles.h"
 
 namespace {
 using namespace gdl;
 using namespace gdl::game;
-using Digests = test::AttackCheckpointFixture::Digests;
+using Digests = test::AttackSceneFixture::Digests;
 
 TEST_CASE("arsenal rewind restores the shared unspecified-potion stream without spending again",
           "[player-arsenal-local-rewind]") {
-    test::AttackCheckpointFixture fixture(false);
+    test::AttackSceneFixture fixture(false);
     CHECK(fixture.arsenal.resolvePotionKind(0) == 1);
     CHECK(fixture.arsenal.resolvePotionKind(4) == 4);
     PlayerArsenal::LocalSnapshot saved;
@@ -44,7 +44,7 @@ TEST_CASE("arsenal rewind restores the shared unspecified-potion stream without 
 
 TEST_CASE("arsenal rewind resumes cast attachments with the shared effects they follow",
           "[player-arsenal-local-rewind]") {
-    test::AttackCheckpointFixture fixture;
+    test::AttackSceneFixture fixture;
     auto& actor = fixture.players[0].actor;
     actor.save().progress().experience = levelExperience(80);
     actor.save().progress().inventory.addPotions(2, 1);
@@ -87,7 +87,7 @@ TEST_CASE("arsenal rewind resumes cast attachments with the shared effects they 
 TEST_CASE("arsenal rewind includes live native potion flights queues and child invalidation",
           "[player-arsenal-local-rewind]") {
     const s32 kind = GENERATE(1, 2, 3, 4);
-    test::AttackCheckpointFixture fixture(false);
+    test::AttackSceneFixture fixture(false);
     auto& actor = fixture.players[0].actor;
     actor.save().progress().inventory.addPotions(kind, 1);
     fixture.arsenal.throwPotion(actor, 18, 49);

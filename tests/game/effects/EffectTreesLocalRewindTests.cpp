@@ -15,14 +15,14 @@
 #include "TestSupport.h"
 #include "fixtures/NativeModelFixture.h"
 #include "game/effects/EffectObservation.h"
-#include "game/party/ProjectileCheckpointFixture.h"
+#include "game/party/ProjectileFixture.h"
 
 namespace {
 using namespace gdl;
 using namespace gdl::game;
 
 std::filesystem::path localEffectArchive() {
-    const auto root = test::projectileCheckpointArchive();
+    const auto root = test::projectileArchive();
     writeTextFile(root / "animations.json", R"({
       "particles":[{"enables":16928,"texture":"WHITE","particleLife":[0.2,0.1],
         "rate":[30,30,30,30],"flags":128,"flagMask":128}],

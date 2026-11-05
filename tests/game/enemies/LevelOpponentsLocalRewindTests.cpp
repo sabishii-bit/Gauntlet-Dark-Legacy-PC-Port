@@ -24,7 +24,7 @@
 #include "game/enemies/ScriptedOpponents.h"
 #include "game/hud/HelpMessages.h"
 #include "game/level/NativeStateResources.h"
-#include "game/party/AttackCheckpointFixture.h"
+#include "game/party/AttackSceneFixture.h"
 
 namespace {
 using namespace gdl;
@@ -32,7 +32,7 @@ using namespace gdl::game;
 
 /** A level's opponents with one grunt generator, and one player standing away from it. */
 struct OpponentsFixture {
-    std::filesystem::path root = test::attackCheckpointAssets();
+    std::filesystem::path root = test::attackSceneAssets();
     test::FakeRenderDevice device;
     LevelWorld world;
     WorldLayout layout;

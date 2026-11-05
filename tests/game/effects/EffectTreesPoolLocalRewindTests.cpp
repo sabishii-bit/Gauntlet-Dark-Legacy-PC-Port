@@ -9,7 +9,7 @@
 #include "NativeStateSupport.h"
 #include "game/effects/EffectObservation.h"
 #include "game/level/NativeStateResources.h"
-#include "game/party/ProjectileCheckpointFixture.h"
+#include "game/party/ProjectileFixture.h"
 
 namespace {
 using namespace gdl;
@@ -42,7 +42,7 @@ void compareDraws(EffectTrees& native, EffectTrees& replay, test::FakeRenderDevi
 TEST_CASE("full effect pool rewinds native identities tails shared clocks and draw interpolation",
           "[effect-local-rewind]") {
     const f32 seconds = GENERATE(1.0f / 30, 1.0f / 60);
-    test::ProjectileCheckpointFixture fixture;
+    test::ProjectileFixture fixture;
     EffectTrees native;
     EffectTrees replay;
     EffectTrees::Setting setting;
@@ -105,7 +105,7 @@ TEST_CASE("full effect pool rewinds native identities tails shared clocks and dr
 TEST_CASE("effect pool rewind preserves sparse identities and complete native particles",
           "[effect-local-rewind]") {
     const f32 seconds = GENERATE(1.0f / 30, 1.0f / 60);
-    test::ProjectileCheckpointFixture fixture;
+    test::ProjectileFixture fixture;
     EffectTrees native;
     std::array<u32, 48> ids{};
     for (usize index = 0; index < ids.size(); ++index) {
@@ -157,7 +157,7 @@ TEST_CASE("effect pool rewind preserves sparse identities and complete native pa
 
 TEST_CASE("standalone emitter pool resumes exact RNG and attached trail topology",
           "[effect-local-rewind]") {
-    test::ProjectileCheckpointFixture fixture;
+    test::ProjectileFixture fixture;
     ParticleDescriptor descriptor;
     descriptor.texture = "WHITE";
     descriptor.emitFrames = ParticleDescriptor::kEndless;
@@ -203,7 +203,7 @@ struct MorphFixture {
     EffectTrees prototypes;
 
     MorphFixture() {
-        const auto directory = test::projectileCheckpointArchive();
+        const auto directory = test::projectileArchive();
         writeTextFile(directory / "animations.json", R"({
           "particles":[{"enables":16928,"texture":"WHITE","particleLife":[1,0.2],
             "rate":[30,30,30,30],"flags":128,"flagMask":128}],

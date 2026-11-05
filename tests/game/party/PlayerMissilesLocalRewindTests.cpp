@@ -10,7 +10,7 @@
 #include "NativeStateSupport.h"
 #include "game/level/NativeStateResources.h"
 #include "game/party/PotionEmission.h"
-#include "game/party/ProjectileCheckpointFixture.h"
+#include "game/party/ProjectileFixture.h"
 
 namespace {
 using namespace gdl;
@@ -22,7 +22,7 @@ static_assert(!std::is_move_assignable_v<PlayerMissiles>);
 /** A bound pool's native digest, its projectile art and the streak's white texture named
  * alike for every pool. */
 NativeStateDigest::Digest digestOf(const PlayerMissiles& pool,
-                                   const test::ProjectileCheckpointFixture& fixture) {
+                                   const test::ProjectileFixture& fixture) {
     NativeStateResources resources;
     REQUIRE(resources.registerArchive(fixture.archive, "stage/projectiles"));
     REQUIRE(resources.registerBuiltinTexture(fixture.device.whiteTexture(), "opaque-white"));
@@ -108,7 +108,7 @@ TEST_CASE("player missile rewind resumes piercing contacts reflection and queued
 
 TEST_CASE("native missile history rewinds complete flight contacts effects and undelivered impacts",
           "[local-rewind][missile-local-rewind]") {
-    test::ProjectileCheckpointFixture fixture;
+    test::ProjectileFixture fixture;
     PlayerMissiles native;
     PlayerMissiles replay;
     native.bindVisuals(fixture.device);
@@ -219,7 +219,7 @@ TEST_CASE(
 
 TEST_CASE("bound player missile pool restores body rider particles and exact render samples",
           "[missile-local-rewind][effect-local-rewind]") {
-    test::ProjectileCheckpointFixture fixture;
+    test::ProjectileFixture fixture;
     auto launch = fixture.launch();
     launch.riderArchive = &fixture.archive;
     launch.riderTree = "FLIGHT";

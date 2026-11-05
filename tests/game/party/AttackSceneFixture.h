@@ -20,7 +20,7 @@
 #include "game/party/ScriptedAttacks.h"
 
 namespace gdl::test {
-inline std::filesystem::path attackCheckpointAssets() {
+inline std::filesystem::path attackSceneAssets() {
     const auto root = scratchDirectory("attack-owner-checkpoint");
     for (const auto* name : {"PLAYERS/WAR/YEL", "MONSTERS/GRU", "WEAPONS"}) {
         const auto dir = root / name;
@@ -72,8 +72,10 @@ inline std::filesystem::path attackCheckpointAssets() {
     return root;
 }
 
-struct AttackCheckpointFixture {
-    std::filesystem::path root = attackCheckpointAssets();
+/** One player's attack owners bound to a synthetic scene: the world, weapons, effects,
+ * opponents and fixtures they borrow, with scripted hosts for what the attacks report. */
+struct AttackSceneFixture {
+    std::filesystem::path root = attackSceneAssets();
     FakeRenderDevice device;
     game::ClassDataSet classes;
     game::LevelWorld world;
@@ -94,7 +96,7 @@ struct AttackCheckpointFixture {
     ScriptedAttacks attackHost;
     game::PlayerAttacks::Targets targets{opponents, fixtures, fixtureHost, attackHost};
 
-    explicit AttackCheckpointFixture(bool artwork = true) {
+    explicit AttackSceneFixture(bool artwork = true) {
         REQUIRE(classes.load(root / "pdata"));
         if (artwork) {
             REQUIRE(weapons.load(root / "WEAPONS"));
@@ -125,9 +127,9 @@ struct AttackCheckpointFixture {
             return true;
         };
     }
-    AttackCheckpointFixture(const AttackCheckpointFixture&) = delete;
-    AttackCheckpointFixture& operator=(const AttackCheckpointFixture&) = delete;
-    ~AttackCheckpointFixture() {
+    AttackSceneFixture(const AttackSceneFixture&) = delete;
+    AttackSceneFixture& operator=(const AttackSceneFixture&) = delete;
+    ~AttackSceneFixture() {
         attacks.clear();
         arsenal.clear();
         opponents.close();

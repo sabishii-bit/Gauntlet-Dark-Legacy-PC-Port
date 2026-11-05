@@ -3,7 +3,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "game/effects/DynamicLights.h"
-#include "game/party/AttackCheckpointFixture.h"
+#include "game/party/AttackSceneFixture.h"
 #include "game/party/PartyFigures.h"
 #include "game/party/PartyLighting.h"
 
@@ -23,7 +23,7 @@ void sameLights(std::span<const PointLight> actual, std::span<const PointLight> 
 
 TEST_CASE("party lighting rebuild preserves native effect order truncation and moving lanterns",
           "[rollback][party-lighting]") {
-    auto fixture = std::make_unique<test::AttackCheckpointFixture>();
+    auto fixture = std::make_unique<test::AttackSceneFixture>();
     auto& native = *fixture;
     LevelInfo level;
     level.flags = DynamicLights::kDarkLevel;

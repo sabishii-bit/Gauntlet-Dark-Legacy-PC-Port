@@ -17,7 +17,7 @@
 #include "game/enemies/Enemies.h"
 #include "game/enemies/Generators.h"
 #include "game/level/ItemFigure.h"
-#include "game/party/ProjectileCheckpointFixture.h"
+#include "game/party/ProjectileFixture.h"
 
 namespace {
 using namespace gdl;
@@ -215,7 +215,7 @@ TEST_CASE(
     "native generator history includes boss births animated landings and cancelled destruction",
     "[local-rewind][generator-local-rewind][native-equality][assets]") {
     Pool pool;
-    test::ProjectileCheckpointFixture art;
+    test::ProjectileFixture art;
     ItemInfo info;
     info.type = ItemInfo::kGenerator;
     info.name = "BOSSGEN";
@@ -340,7 +340,7 @@ TEST_CASE("generator source lifetimes survive authored restore and corrected dyn
         CHECK(pool.generators.instanceOf(static_cast<s32>(index)) == authored[index]);
     }
 
-    test::ProjectileCheckpointFixture art;
+    test::ProjectileFixture art;
     ItemInfo info;
     info.type = ItemInfo::kGenerator;
     info.name = "BOSSGEN";
