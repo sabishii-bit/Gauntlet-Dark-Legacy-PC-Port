@@ -14,6 +14,7 @@
 #include "engine/assets/WorldLayout.h"
 #include "engine/core/Types.h"
 #include "engine/io/File.h"
+#include "engine/world/WorldAnimator.h"
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
@@ -69,7 +70,7 @@ TEST_CASE("G3 exit lift and G4 lowered platform carry their chests throughout tr
         }
         const Vec3 before{(*world.collision().objectTransform(object))[3]};
         for (usize i = 0; i < world.triggers().size(); ++i) {
-            world.activateTrigger(world.triggers().trigger(i).id, false);
+            world.activateTrigger(world.triggers().trigger(i).id, WorldAnimator::Finish::Animated);
         }
         for (s32 frame = 0; frame < 600; ++frame) {
             world.update(1.0f / 60);
@@ -246,7 +247,7 @@ TEST_CASE("Maze traps and fixtures ride their authored floors from the initial a
     }
     REQUIRE_FALSE(pickups.empty());
     for (usize i = 0; i < world.triggers().size(); ++i) {
-        world.activateTrigger(world.triggers().trigger(i).id, false);
+        world.activateTrigger(world.triggers().trigger(i).id, WorldAnimator::Finish::Animated);
     }
     usize moved = 0;
     for (s32 frame = 0; frame < 180; ++frame) {
@@ -370,7 +371,7 @@ TEST_CASE("Temple chests ride their native switch-driven platforms",
         before.push_back(chests.chest(i).figure.position());
     }
     for (usize i = 0; i < world.triggers().size(); ++i) {
-        world.activateTrigger(world.triggers().trigger(i).id, false);
+        world.activateTrigger(world.triggers().trigger(i).id, WorldAnimator::Finish::Animated);
     }
     usize descending = 0;
     for (s32 frame = 0; frame < 600; ++frame) {
@@ -1440,7 +1441,7 @@ TEST_CASE("Courtyard tentacles retain authored height and hit the rotated offset
     REQUIRE(world.load(device, root, *level));
     // The crossing starts ten units below its authored position. Raise it as
     // the approach trigger does before putting a walker in the tentacle lane.
-    world.activateTrigger(2, true);
+    world.activateTrigger(2, WorldAnimator::Finish::AtOnce);
     Traps traps;
     REQUIRE(traps.bind(device, world.layout(), world.itemScope(), &world.collision(), 1, 1, 1));
     std::vector<usize> ids;
@@ -1510,7 +1511,7 @@ TEST_CASE("Courtyard tentacles' rendered strikes overlap their native shore cont
     test::FakeRenderDevice device;
     LevelWorld world;
     REQUIRE(world.load(device, root, *catalog.byName("A1")));
-    world.activateTrigger(2, true);
+    world.activateTrigger(2, WorldAnimator::Finish::AtOnce);
     Traps traps;
     REQUIRE(traps.bind(device, world.layout(), world.itemScope(), &world.collision(), 1, 1, 1));
     traps.setPlayerCount(2);

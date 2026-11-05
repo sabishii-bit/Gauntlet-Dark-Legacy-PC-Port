@@ -246,7 +246,7 @@ void WorldAnimator::hold(s32 object) {
     track.presentationCut = true;
 }
 
-void WorldAnimator::fire(s32 object, bool open, bool atOnce) {
+void WorldAnimator::fire(s32 object, bool open, Finish finish) {
     const auto index = trackOf(object);
     if (!index.has_value()) {
         return;
@@ -257,7 +257,7 @@ void WorldAnimator::fire(s32 object, bool open, bool atOnce) {
     track.once = true;
     track.reverse = !open;
     track.finished = false;
-    if (atOnce) {
+    if (finish == Finish::AtOnce) {
         track.frame = open ? last : 0.0f;
         track.finished = true;
         track.presentationCut = true;
@@ -331,7 +331,8 @@ void WorldAnimator::step(f32 seconds, WorldScene& scene, bool pauseLoops) {
             } else if (!restarted && std::floor(track.frame) <= 1) {
                 m_cycleEvents.push_back({track.object, false});
             }
-        } else if (const f32 cycle = cycleOf(track, track.seam); track.frame + kFrameSlack >= cycle) {
+        } else if (const f32 cycle = cycleOf(track, track.seam);
+                   track.frame + kFrameSlack >= cycle) {
             // A looping world track's final key closes the cycle (a continuous turn's seam
             // after it); retain time past that point rather than lengthening every loop by a
             // caller-dependent amount.

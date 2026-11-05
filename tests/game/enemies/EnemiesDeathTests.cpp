@@ -7,6 +7,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
+#include "engine/world/WorldAnimator.h"
 #include "engine/world/WorldCollision.h"
 
 #include "FakeRenderDevice.h"
@@ -181,7 +182,7 @@ TEST_CASE("Enemies traverse the Temple's altar stairs without oscillating betwee
     LevelWorld world;
     REQUIRE(world.load(device, root, *level));
     for (usize i = 0; i < world.triggers().size(); ++i) {
-        world.activateTrigger(world.triggers().trigger(i).id, true);
+        world.activateTrigger(world.triggers().trigger(i).id, WorldAnimator::Finish::AtOnce);
     }
     Enemies enemies;
     enemies.open(device, root, &world.collision(), 1, {}, 1);

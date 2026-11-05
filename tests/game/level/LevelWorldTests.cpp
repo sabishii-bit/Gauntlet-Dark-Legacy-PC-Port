@@ -17,6 +17,7 @@
 #include "engine/io/File.h"
 #include "engine/render/HeatDistortion.h"
 #include "engine/world/SampleLevel.h"
+#include "engine/world/WorldAnimator.h"
 #include "engine/world/WorldCamera.h"
 
 #include "FakeRenderDevice.h"
@@ -512,7 +513,7 @@ TEST_CASE("level pickups follow triggered floors from their initial poses",
         // The public trigger route must carry pickups even for instantaneous openings,
         // without requiring a later animation tick or a visible party.
         for (usize i = 0; i < world.triggers().size(); ++i) {
-            world.activateTrigger(world.triggers().trigger(i).id, true);
+            world.activateTrigger(world.triggers().trigger(i).id, WorldAnimator::Finish::AtOnce);
         }
         for (const auto& [index, before] : riders) {
             const auto& item = world.placedItems().item(index);

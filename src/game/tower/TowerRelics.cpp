@@ -7,6 +7,7 @@
 
 #include "engine/core/Log.h"
 #include "engine/io/NativeStateDigest.h"
+#include "engine/world/WorldAnimator.h"
 
 #include "game/widgets/ScrollBox.h"
 
@@ -209,7 +210,7 @@ void TowerRelics::bind(RenderDevice& device, LevelWorld& world, const Vec3& part
     m_world = &world;
     if (m_sim.runes == kRunes &&
         (m_sim.pendingCeremonies & TowerCompletion::bit(TowerCompletion::Kind::Garm)) == 0) {
-        world.activateTrigger(255, true);
+        world.activateTrigger(255, WorldAnimator::Finish::AtOnce);
     }
     for (s32 i = 0; i < Relics::kRuneCount; ++i) {
         if ((m_sim.runes & Entry{Kind::Rune, i}.bit()) != 0) {
@@ -331,7 +332,7 @@ TowerRelics::Cue TowerRelics::update(s32 ticks, f32 seconds, bool voicePlaying) 
         if (!m_sim.revealStarted) {
             m_sim.revealStarted = true;
             if (m_world != nullptr && current()->followup() == TowerCompletion::Kind::Garm) {
-                m_world->activateTrigger(255, false);
+                m_world->activateTrigger(255, WorldAnimator::Finish::Animated);
             }
         }
         m_sim.ticks += std::max(ticks, 0);

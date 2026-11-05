@@ -18,6 +18,7 @@
 #include "engine/audio/SoundPlayer.h"
 #include "engine/core/Types.h"
 #include "engine/io/File.h"
+#include "engine/world/WorldAnimator.h"
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
@@ -550,7 +551,7 @@ TEST_CASE("Courtyard tentacles damage a knight at the edge of their sweep only d
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
     REQUIRE(f.world.load(f.device, root, *catalog.byName("A1")));
-    f.world.activateTrigger(2, true);
+    f.world.activateTrigger(2, WorldAnimator::Finish::AtOnce);
     f.fixtures.bind({f.device, f.world, f.weapons, f.effects, f.audio, 1});
     f.fixtures.setPlayerCount(1);
     ClassDataSet classes;
@@ -1378,7 +1379,7 @@ TEST_CASE("Temple platform chest contents can be collected after descending",
         initial.push_back(f.fixtures.chests().chest(i).figure.position());
     }
     for (usize i = 0; i < f.world.triggers().size(); ++i) {
-        f.world.activateTrigger(f.world.triggers().trigger(i).id, false);
+        f.world.activateTrigger(f.world.triggers().trigger(i).id, WorldAnimator::Finish::Animated);
     }
     for (s32 frame = 0; frame < 600; ++frame) {
         f.world.update(1.0f / 60);

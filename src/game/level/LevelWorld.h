@@ -143,7 +143,7 @@ public:
     void updateTriggers(f32 seconds, std::span<const TriggerVisitor> visitors,
                         bool cameraHeld = false, std::span<const s32> occupiedFloors = {});
     const LevelTriggers& triggers() const { return m_triggers; }
-    void activateTrigger(s32 id, bool atOnce);
+    void activateTrigger(s32 id, WorldAnimator::Finish finish);
     void shootTrigger(usize index) { m_triggers.shoot(index); }
     bool pressTrigger(usize index) { return m_triggers.press(index); }
     const Rotators& rotators() const { return m_rotators; }

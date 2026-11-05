@@ -673,7 +673,7 @@ TEST_CASE("special activation opens a chain and cannot be undone by an empty pad
                         {"info":0,"position":[0,0,0],"params":[1,0,0,0,0,4,7,0,0,0,156,255]})",
                     R"({"name":"WALL","position":[0,10,0],"flags":4096},
                         {"name":"WALL","position":[0,10,0],"flags":4096})");
-    f.triggers.activate(255, false, f.animator, f.scene, nullptr);
+    f.triggers.activate(255, WorldAnimator::Finish::Animated, f.animator, f.scene, nullptr);
     REQUIRE(f.triggers.opened(0));
     REQUIRE(f.triggers.opened(1));
     REQUIRE_FALSE(f.triggers.settled(0));
@@ -861,7 +861,7 @@ TEST_CASE("a whole-party lift releases its floor boundary at the endpoint",
     f.triggers.update(2.0f, {}, f.animator, f.scene, &collision);
     f.triggers.update(0.1f, party, f.animator, f.scene, &collision);
     REQUIRE(collision.floorExitBlocked(0));
-    f.triggers.activate(0, true, f.animator, f.scene, &collision);
+    f.triggers.activate(0, WorldAnimator::Finish::AtOnce, f.animator, f.scene, &collision);
     CHECK_FALSE(collision.floorExitBlocked(0));
 }
 
@@ -1580,7 +1580,7 @@ TEST_CASE("Ice Camp retains its pillar rotation and its final switch raises the 
     world.setPlayerCount(1);
     world.startTriggers({});
     // The earlier switch behind the ice wall has already raised the approach bridge.
-    world.activateTrigger(1, true);
+    world.activateTrigger(1, WorldAnimator::Finish::AtOnce);
     usize liftSwitch = world.triggers().size();
     for (usize i = 0; i < world.triggers().size(); ++i) {
         if (world.triggers().trigger(i).instance == 491) {

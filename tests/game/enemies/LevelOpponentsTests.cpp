@@ -27,6 +27,7 @@
 #include "engine/render/RenderDevice.h"
 #include "engine/world/SampleLevel.h"
 #include "engine/world/TreeModel.h"
+#include "engine/world/WorldAnimator.h"
 #include "engine/world/WorldCamera.h"
 #include "engine/world/WorldCollision.h"
 #include "engine/world/WorldLighting.h"
@@ -1674,7 +1675,7 @@ TEST_CASE("Mothership Death rides its crane while dormant and throughout its awa
     REQUIRE(call != nullptr);
     CAPTURE(call->id, call->instance, target->object);
     world.startTriggers({});
-    world.activateTrigger(call->id, false);
+    world.activateTrigger(call->id, WorldAnimator::Finish::Animated);
     constexpr f32 kStep = 1.0f / 30.0f;
     for (s32 tick = 0; tick < 30; ++tick) {
         world.update(kStep);

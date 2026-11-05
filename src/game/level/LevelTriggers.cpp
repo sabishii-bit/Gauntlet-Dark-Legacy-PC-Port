@@ -467,9 +467,13 @@ bool LevelTriggers::settled(s32 object) const {
     return target == nullptr || target->settled;
 }
 
-TriggerOpening LevelTriggers::openingOf(const Target& target, bool atOnce) {
-    return TriggerOpening{target.object, target.spot,  (target.kind & LevelTrigger::kFades) != 0,
-                          atOnce,        target.sound, target.subtype,
+TriggerOpening LevelTriggers::openingOf(const Target& target, WorldAnimator::Finish finish) {
+    return TriggerOpening{target.object,
+                          target.spot,
+                          (target.kind & LevelTrigger::kFades) != 0,
+                          finish == WorldAnimator::Finish::AtOnce,
+                          target.sound,
+                          target.subtype,
                           !target.open};
 }
 
@@ -546,8 +550,10 @@ bool LevelTriggers::crystalsMet(const TriggerVisitor& visitor, s32 realm) {
     return visitor.sumner || crystals < 0 || crystals >= crystalsNeeded(realm);
 }
 
-bool LevelTriggers::openTarget(Target& target, bool open, bool atOnce, WorldAnimator& animator,
-                               WorldScene& scene, WorldCollision* collision) {
+bool LevelTriggers::openTarget(Target& target, bool open, WorldAnimator::Finish finish,
+                               WorldAnimator& animator, WorldScene& scene,
+                               WorldCollision* collision) {
+    const bool atOnce = finish == WorldAnimator::Finish::AtOnce;
     if ((!open && target.forced) || (target.open == open && (!atOnce || target.settled))) {
         return false;
     }
@@ -561,7 +567,7 @@ bool LevelTriggers::openTarget(Target& target, bool open, bool atOnce, WorldAnim
         if (!target.forced && (target.kind & LevelTrigger::kOscillates) != 0 && !atOnce) {
             animator.cycle(target.object, open);
         } else {
-            animator.fire(target.object, open, atOnce);
+            animator.fire(target.object, open, finish);
         }
         return true;
     }
@@ -577,17 +583,18 @@ bool LevelTriggers::openTarget(Target& target, bool open, bool atOnce, WorldAnim
     return true;
 }
 
-void LevelTriggers::fire(usize index, bool active, bool atOnce, WorldAnimator& animator,
-                         WorldScene& scene, WorldCollision* collision) {
+void LevelTriggers::fire(usize index, bool active, WorldAnimator::Finish finish,
+                         WorldAnimator& animator, WorldScene& scene, WorldCollision* collision) {
     usize followed = 0;
     for (auto at = static_cast<s32>(index); at >= 0 && followed++ < m_sim.triggers.size();
          at = m_sim.triggers[static_cast<usize>(at)].next) {
-        fireNode(static_cast<usize>(at), active, atOnce, animator, scene, collision);
+        fireNode(static_cast<usize>(at), active, finish, animator, scene, collision);
     }
 }
 
-void LevelTriggers::fireNode(usize index, bool active, bool atOnce, WorldAnimator& animator,
-                             WorldScene& scene, WorldCollision* collision) {
+void LevelTriggers::fireNode(usize index, bool active, WorldAnimator::Finish finish,
+                             WorldAnimator& animator, WorldScene& scene,
+                             WorldCollision* collision) {
     LevelTrigger& trigger = m_sim.triggers[index];
     if (trigger.forced || !trigger.enabled) {
         return;
@@ -632,15 +639,15 @@ void LevelTriggers::fireNode(usize index, bool active, bool atOnce, WorldAnimato
             trigger.fired = contact;
             break;
         }
-        if (openTarget(*target, open, atOnce, animator, scene, collision)) {
+        if (openTarget(*target, open, finish, animator, scene, collision)) {
             target->spot = trigger.spot;
             target->sound = trigger.sound;
-            m_sim.openings.push_back(openingOf(*target, atOnce));
+            m_sim.openings.push_back(openingOf(*target, finish));
         }
     } else if (contact || (trigger.flags & LevelTrigger::kToggles) != 0) {
         trigger.fired = contact;
     }
-    if (trigger.fired && !wasFired && contact && !atOnce) {
+    if (trigger.fired && !wasFired && contact && finish == WorldAnimator::Finish::Animated) {
         m_sim.cameraCues.push_back(
             {trigger.id, trigger.target, (trigger.flags & LevelTrigger::kShakesCamera) != 0});
         if ((trigger.flags & LevelTrigger::kWakesStatue) != 0) {
@@ -649,7 +656,7 @@ void LevelTriggers::fireNode(usize index, bool active, bool atOnce, WorldAnimato
     }
     if (trigger.fired != wasFired && index < m_sim.figures.size() && m_sim.figures[index]) {
         auto& figure = *m_sim.figures[index];
-        const s32 onSequence = atOnce ? 2 : 1;
+        const s32 onSequence = finish == WorldAnimator::Finish::AtOnce ? 2 : 1;
         figure.play(trigger.fired ? onSequence : 3, ItemFigure::Playback::Once);
     }
 }
@@ -717,7 +724,7 @@ void LevelTriggers::openMet(std::span<const TriggerVisitor> visitors, WorldAnima
         const LevelTrigger& trigger = m_sim.triggers[i];
         if (trigger.enabled && (trigger.flags & LevelTrigger::kRequirement) != 0 &&
             qualifies(trigger, visitors)) {
-            fire(i, true, true, animator, scene, collision);
+            fire(i, true, WorldAnimator::Finish::AtOnce, animator, scene, collision);
         }
     }
     placeTargets(scene, collision);
@@ -742,16 +749,17 @@ void LevelTriggers::openAtOnce(std::span<const s32> ids, WorldAnimator& animator
             continue;
         }
         Target* target = targetOf(trigger.target);
-        if (target != nullptr && openTarget(*target, true, true, animator, scene, collision)) {
+        if (target != nullptr &&
+            openTarget(*target, true, WorldAnimator::Finish::AtOnce, animator, scene, collision)) {
             target->spot = trigger.spot;
             target->sound = trigger.sound;
-            m_sim.openings.push_back(openingOf(*target, true));
+            m_sim.openings.push_back(openingOf(*target, WorldAnimator::Finish::AtOnce));
         }
     }
 }
 
-void LevelTriggers::activate(s32 id, bool atOnce, WorldAnimator& animator, WorldScene& scene,
-                             WorldCollision* collision) {
+void LevelTriggers::activate(s32 id, WorldAnimator::Finish finish, WorldAnimator& animator,
+                             WorldScene& scene, WorldCollision* collision) {
     for (usize i = 0; i < m_sim.triggers.size(); ++i) {
         if (m_sim.triggers[i].id != id) {
             continue;
@@ -763,10 +771,10 @@ void LevelTriggers::activate(s32 id, bool atOnce, WorldAnimator& animator, World
             trigger.fired = true;
             if (Target* target = targetOf(trigger.target)) {
                 target->forced = true;
-                if (openTarget(*target, true, atOnce, animator, scene, collision)) {
+                if (openTarget(*target, true, finish, animator, scene, collision)) {
                     target->spot = trigger.spot;
                     target->sound = trigger.sound;
-                    m_sim.openings.push_back(openingOf(*target, atOnce));
+                    m_sim.openings.push_back(openingOf(*target, finish));
                 }
             }
             at = trigger.next;
@@ -903,14 +911,15 @@ void LevelTriggers::update(f32 seconds, std::span<const TriggerVisitor> visitors
             mask = 0;
         }
         trigger.heldContacts = mask;
-        fireNode(i, mask != 0, false, animator, scene, collision);
+        fireNode(i, mask != 0, WorldAnimator::Finish::Animated, animator, scene, collision);
     }
     // An unoccupied pad must not cancel another pad's contact, or reset a target
     // registered as a latch by its first switch.
     for (Target& target : m_sim.targets) {
         if (!target.forced && (target.kind & LevelTrigger::kLatches) == 0 && !target.pressed &&
-            openTarget(target, false, false, animator, scene, collision)) {
-            m_sim.openings.push_back(openingOf(target, false));
+            openTarget(target, false, WorldAnimator::Finish::Animated, animator, scene,
+                       collision)) {
+            m_sim.openings.push_back(openingOf(target, WorldAnimator::Finish::Animated));
         }
     }
     stepMotion(seconds, scene, collision, true);
@@ -952,7 +961,7 @@ void LevelTriggers::stepMotion(f32 seconds, WorldScene& scene, WorldCollision* c
                     target.settled = true;
                     // Equal endpoints still finish the opening sound's lifetime.
                     if (report) {
-                        m_sim.settled.push_back(openingOf(target, false));
+                        m_sim.settled.push_back(openingOf(target, WorldAnimator::Finish::Animated));
                     }
                     if (!target.forced && target.open &&
                         (target.kind & LevelTrigger::kOscillates) != 0 &&
@@ -979,7 +988,7 @@ void LevelTriggers::stepMotion(f32 seconds, WorldScene& scene, WorldCollision* c
         if (!target.settled && target.alpha == goal) {
             target.settled = true;
             if (report) {
-                m_sim.settled.push_back(openingOf(target, false));
+                m_sim.settled.push_back(openingOf(target, WorldAnimator::Finish::Animated));
             }
         }
     }
@@ -996,7 +1005,7 @@ void LevelTriggers::finishMotion(const WorldAnimator& animator, WorldCollision* 
             track.has_value() && animator.finished(*track)) {
             target.settled = true;
             if (report) {
-                m_sim.settled.push_back(openingOf(target, false));
+                m_sim.settled.push_back(openingOf(target, WorldAnimator::Finish::Animated));
             }
         }
         if (collision != nullptr && (target.kind & LevelTrigger::kStaysSolid) == 0) {

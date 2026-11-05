@@ -38,9 +38,11 @@ public:
     std::optional<usize> trackOf(s32 object) const;
     /** Holds an object at its first frame until fired, as a trigger's target waits. */
     void hold(s32 object);
+    /** Whether a fired object plays its animation through or stands at once where it ends. */
+    enum class Finish : u8 { Animated, AtOnce };
     /** Plays an object's animation once from where it stands: forwards to open, backwards
-     * to close; `atOnce` jumps straight to the end. */
-    void fire(s32 object, bool open, bool atOnce = false);
+     * to close; `Finish::AtOnce` jumps straight to the end. */
+    void fire(s32 object, bool open, Finish finish = Finish::Animated);
     /** Loop while requested, then finish the current forward cycle on release. */
     void cycle(s32 object, bool active);
     bool held(usize index) const { return m_tracks[index].held; }

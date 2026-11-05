@@ -273,8 +273,8 @@ TEST_CASE(
 
         // A speculative branch can consume output and permanently activate a linked
         // switch. Neither may escape when corrected input replaces that branch.
-        predicted.triggers.activate(8, true, predicted.animator, predicted.scene,
-                                    &predicted.collision);
+        predicted.triggers.activate(8, WorldAnimator::Finish::AtOnce, predicted.animator,
+                                    predicted.scene, &predicted.collision);
         predicted.triggers.setPlayerCount(0);
         predicted.triggers.setCameraHeld(true);
         for (s32 step = 0; step < distance; ++step) {

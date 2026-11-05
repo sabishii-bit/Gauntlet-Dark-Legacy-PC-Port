@@ -112,8 +112,8 @@ TEST_CASE(
         CHECK(snapshot.finish() == before);
         predicted.triggers.setPlayerCount(0);
         predicted.triggers.setCameraHeld(true);
-        predicted.triggers.activate(8, true, predicted.animator, predicted.scene,
-                                    &predicted.collision);
+        predicted.triggers.activate(8, WorldAnimator::Finish::AtOnce, predicted.animator,
+                                    predicted.scene, &predicted.collision);
         predicted.triggers.takeOpenings();
         for (s32 step = 0; step < distance; ++step) {
             predicted.triggers.shoot(2);

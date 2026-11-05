@@ -282,7 +282,7 @@ public:
     void openAtOnce(std::span<const s32> ids, WorldAnimator& animator, WorldScene& scene,
                     WorldCollision* collision);
     /** Permanently activates an id and its chain, animated or already at the endpoint. */
-    void activate(s32 id, bool atOnce, WorldAnimator& animator, WorldScene& scene,
+    void activate(s32 id, WorldAnimator::Finish finish, WorldAnimator& animator, WorldScene& scene,
                   WorldCollision* collision);
     /** Fires the triggers visitors stand in and carries the fades on by `seconds`.
      * Other occupied floors retain revealed momentary bridges, but never press switches. */
@@ -333,7 +333,7 @@ public:
 private:
     Target* targetOf(s32 object);
     const Target* targetOf(s32 object) const;
-    static TriggerOpening openingOf(const Target& target, bool atOnce);
+    static TriggerOpening openingOf(const Target& target, WorldAnimator::Finish finish);
     static bool fadesAway(const Target& target);
     static void applyAlpha(const Target& target, WorldScene& scene, WorldCollision* collision);
     static bool qualifies(const LevelTrigger& trigger, std::span<const TriggerVisitor> visitors);
@@ -342,13 +342,13 @@ private:
     bool onTarget(const LevelTrigger& trigger, const TriggerVisitor& visitor) const;
     void refreshEligibility(s32 players);
     void collectContacts(usize index, u32 mask, std::span<u32> contacts) const;
-    void fire(usize index, bool active, bool atOnce, WorldAnimator& animator, WorldScene& scene,
-              WorldCollision* collision);
-    void fireNode(usize index, bool active, bool atOnce, WorldAnimator& animator, WorldScene& scene,
-                  WorldCollision* collision);
+    void fire(usize index, bool active, WorldAnimator::Finish finish, WorldAnimator& animator,
+              WorldScene& scene, WorldCollision* collision);
+    void fireNode(usize index, bool active, WorldAnimator::Finish finish, WorldAnimator& animator,
+                  WorldScene& scene, WorldCollision* collision);
     /** True when the target's commanded state changes. */
-    static bool openTarget(Target& target, bool open, bool atOnce, WorldAnimator& animator,
-                           WorldScene& scene, WorldCollision* collision);
+    static bool openTarget(Target& target, bool open, WorldAnimator::Finish finish,
+                           WorldAnimator& animator, WorldScene& scene, WorldCollision* collision);
     void stepMotion(f32 seconds, WorldScene& scene, WorldCollision* collision, bool report);
     void finishMotion(const WorldAnimator& animator, WorldCollision* collision, bool report);
 

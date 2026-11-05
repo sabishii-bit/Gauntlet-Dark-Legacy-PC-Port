@@ -13,6 +13,7 @@
 #include "engine/io/NativeStateDigest.h"
 #include "engine/render/RenderDevice.h"
 #include "engine/world/SampleLevel.h"
+#include "engine/world/WorldAnimator.h"
 
 #include "FakeRenderDevice.h"
 #include "NativeStateSupport.h"
@@ -143,7 +144,7 @@ TEST_CASE("native whole world history restores coupled platforms items destructi
         for (u32 i = 0; i < distance; ++i) {
             replay.world.capturePresentation();
             replay.world.setPlayerCount(4);
-            replay.world.activateTrigger(1, true);
+            replay.world.activateTrigger(1, WorldAnimator::Finish::AtOnce);
             replay.world.strikeWall(0, 9999);
             replay.world.explodeObject(3, Vec3{40, 0, 0});
             replay.world.fallingScenery().touch({30, 0, 0}, 10);

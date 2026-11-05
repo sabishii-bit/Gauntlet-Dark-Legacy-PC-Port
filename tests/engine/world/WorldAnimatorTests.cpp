@@ -167,7 +167,7 @@ TEST_CASE("world animation jumps and loop resets cut the presentation without ex
         return f.device.draws[2].vertices[0].position;
     };
     f.scene.capturePresentation();
-    f.animator.fire(8, true, true);
+    f.animator.fire(8, true, WorldAnimator::Finish::AtOnce);
     f.animator.apply(f.scene);
     const Vec3 endpoint = f.bladeAt();
     CHECK(at(0.0f) == endpoint);
@@ -265,7 +265,7 @@ void checkLoopPresentation(Fixture& fixture, bool continuous) {
     }
     // Explicit trigger teleports still cut even on a track eligible for loop blending.
     fixture.scene.capturePresentation();
-    fixture.animator.fire(animation.object, true, true);
+    fixture.animator.fire(animation.object, true, WorldAnimator::Finish::AtOnce);
     fixture.animator.apply(fixture.scene);
     CHECK(draw(0) == draw(1));
     fixture.scene.capturePresentation();
@@ -457,12 +457,12 @@ TEST_CASE("world animation checkpoints replay exact poses and cycle boundaries",
             if (mode == 1) {
                 host.animator.fire(8, true);
             } else if (mode == 2) {
-                host.animator.fire(8, true, true);
+                host.animator.fire(8, true, WorldAnimator::Finish::AtOnce);
                 host.animator.fire(8, false);
             } else if (mode == 3) {
                 host.animator.hold(8);
             } else if (mode == 4) {
-                host.animator.fire(8, true, true);
+                host.animator.fire(8, true, WorldAnimator::Finish::AtOnce);
             }
             const f32 seconds = 1.0f / static_cast<f32>(rate);
             host.animator.step(seconds, host.scene);

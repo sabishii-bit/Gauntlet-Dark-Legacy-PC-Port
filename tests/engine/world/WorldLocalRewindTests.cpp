@@ -207,7 +207,8 @@ TEST_CASE("native world history restores collision animation masks and rendered 
     Frame observed;
     const auto step = [](Fixture& pool, u32 tick, bool wrong) {
         if (tick % 11 == 0 || wrong) {
-            pool.animator.fire(8, !wrong, wrong);
+            pool.animator.fire(
+                8, !wrong, wrong ? WorldAnimator::Finish::AtOnce : WorldAnimator::Finish::Animated);
         }
         if (tick % 7 == 0) {
             pool.animator.cycle(8, !wrong);

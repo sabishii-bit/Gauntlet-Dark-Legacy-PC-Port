@@ -466,7 +466,8 @@ void LevelWorld::startTriggers(std::span<const TriggerVisitor> visitors,
                    visitor.gargoylePieces[2] >= Relics::kGargoyleNeeded[2];
         })) {
         for (const s32 id : TowerAccess::kLiftTriggers) {
-            m_triggers.activate(id, true, m_worldAnimator, m_scene, &m_collision);
+            m_triggers.activate(id, WorldAnimator::Finish::AtOnce, m_worldAnimator, m_scene,
+                                &m_collision);
         }
     }
     m_worldAnimator.apply(m_scene);
@@ -475,12 +476,12 @@ void LevelWorld::startTriggers(std::span<const TriggerVisitor> visitors,
     m_placedItems.snapPresentation();
 }
 
-void LevelWorld::activateTrigger(s32 id, bool atOnce) {
-    m_triggers.activate(id, atOnce, m_worldAnimator, m_scene, &m_collision);
+void LevelWorld::activateTrigger(s32 id, WorldAnimator::Finish finish) {
+    m_triggers.activate(id, finish, m_worldAnimator, m_scene, &m_collision);
     m_worldAnimator.apply(m_scene);
     syncCollision();
     m_sim.particles.syncNodes(m_scene);
-    if (atOnce) {
+    if (finish == WorldAnimator::Finish::AtOnce) {
         m_placedItems.snapPresentation();
     }
 }

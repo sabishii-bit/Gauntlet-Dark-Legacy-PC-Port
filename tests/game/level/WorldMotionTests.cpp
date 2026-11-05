@@ -295,7 +295,8 @@ TEST_CASE("passive motion does not activate unobserved pads or emit native trigg
     CHECK(passive.animations[0].held);
     // Rotators keep their native independent clock under Stop Time.
     CHECK(passive.rotators[0].turned != 0);
-    host.triggers.activate(2, false, host.animator, host.scene, &host.collision);
+    host.triggers.activate(2, WorldAnimator::Finish::Animated, host.animator, host.scene,
+                           &host.collision);
     host.triggers.takeOpenings();
     for (s32 tick = 0; tick < 120; ++tick) {
         REQUIRE(host.triggers.advanceMotion(1.0f / 60, host.animator, host.scene, &host.collision));
