@@ -219,6 +219,7 @@ add_executable(tests
     engine/core/LogTests.cpp
     engine/core/AssertTests.cpp
     engine/core/ExpectedTests.cpp
+    engine/core/LocalBindingTests.cpp
     engine/core/ClockTests.cpp
     engine/math/MathTests.cpp
     engine/math/PortableMathTests.cpp
@@ -227,6 +228,7 @@ add_executable(tests
     engine/io/FileTests.cpp
     engine/io/AssetLocatorTests.cpp
     engine/io/LocalRosterTests.cpp
+    engine/io/LocalStateTests.cpp
     engine/platform/InputTests.cpp
     engine/platform/GamepadsTests.cpp
     engine/platform/GlfwWindowTests.cpp

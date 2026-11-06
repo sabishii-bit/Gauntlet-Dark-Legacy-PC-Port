@@ -31,6 +31,7 @@ add_library(engine STATIC
     core/SpecialMembers.h
     core/Error.h
     core/Expected.h
+    core/LocalBinding.h
     core/Log.h
     core/Assert.h
     core/Clock.h
@@ -42,6 +43,7 @@ add_library(engine STATIC
     io/File.h
     io/AssetLocator.h
     io/LocalRoster.h
+    io/LocalState.h
     platform/Window.h
     platform/DisplayTiming.h
     platform/DisplayTiming.cpp
