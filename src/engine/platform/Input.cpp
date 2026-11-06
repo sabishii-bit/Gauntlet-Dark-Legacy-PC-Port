@@ -37,7 +37,8 @@ constexpr std::array<std::string_view, static_cast<usize>(Key::Count)> kKeyNames
     "F1",       "F2",        "F3",         "F4",         "F5",          "F6",        "F7",
     "F8",       "F9",        "F10",        "F11",        "F12",         "Grave",     "PageUp",
     "PageDown", "MouseLeft", "MouseRight", "MouseMiddle", "Mouse4",     "Mouse5",    "ScrollUp",
-    "ScrollDown"};
+    "ScrollDown", "F13",     "F14",        "F15",        "F16",         "F17",       "F18",
+    "F19",        "F20",     "F21",        "F22",        "F23",         "F24"};
 
 constexpr std::array<std::string_view, static_cast<usize>(PadButton::Count)> kPadButtonNames{
     "A",

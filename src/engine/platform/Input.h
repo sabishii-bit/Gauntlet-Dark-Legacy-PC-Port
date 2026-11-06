@@ -92,6 +92,18 @@ enum class Key : u8 {
     /** A wheel notch, a press that lasts the poll it was seen in: bindable like a button. */
     ScrollUp,
     ScrollDown,
+    F13,
+    F14,
+    F15,
+    F16,
+    F17,
+    F18,
+    F19,
+    F20,
+    F21,
+    F22,
+    F23,
+    F24,
     Count
 };
 
