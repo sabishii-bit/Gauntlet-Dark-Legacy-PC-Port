@@ -24,8 +24,9 @@ void appendConfiguration(NativeStateDigest& digest, const WorldCollision* collis
     digest.resource(collision);
     digest.values(scales, realm, open);
     digest.flag(profile.has_value());
-    if (profile)
+    if (profile) {
         digest.fields<12>(*profile);
+    }
 }
 } // namespace
 
@@ -156,8 +157,9 @@ void Bosses::open(RenderDevice& device, const std::filesystem::path& unpackedRoo
     m_collision = collision;
     m_scales = scales;
     m_realm = static_cast<char>(std::toupper(static_cast<unsigned char>(realm)));
-    if (legendProfile)
+    if (legendProfile) {
         m_legendProfile = *legendProfile;
+    }
 }
 
 void Bosses::close() {
@@ -234,8 +236,9 @@ void Bosses::stageLegend(s32 ticks) {
                 // world_update (0x8005674c) clears the initial 18000-tick
                 // blindness 29 seconds after the roar, not five minutes later.
                 m_fighter.blind(0);
-                if (!m_legendProfile || !m_legendProfile->eyeReplacement.empty())
+                if (!m_legendProfile || !m_legendProfile->eyeReplacement.empty()) {
                     m_fighter.replaceNodeModel(*m_device, "EYEBALL", {});
+                }
             }
         }
         m_sim.legendEvents.push_back(LegendEvent{cue, m_sim.rite.player(), legendRealm()});
@@ -446,8 +449,9 @@ void Bosses::update(s32 ticks, f32 seconds, std::span<const EnemyView> players) 
         }
         if (!m_sim.awake) {
             if (ticks > 0 && decodedEntrance) {
-                for (auto* assets : m_sim.assets)
+                for (auto* assets : m_sim.assets) {
                     assets->textures.advance(seconds);
+                }
                 m_fighter.advanceEntrance(seconds);
             }
             return;
@@ -499,15 +503,18 @@ std::vector<CombatCue> Bosses::takeCues() {
 }
 
 std::optional<Mat4> Bosses::legendTargetTransform() const {
-    if (!m_sim.id)
+    if (!m_sim.id) {
         return {};
+    }
     if (m_legendProfile) {
-        if (!m_legendProfile->targetNode)
+        if (!m_legendProfile->targetNode) {
             return {};
+        }
         for (const auto* stock : m_sim.assets) {
             if (&stock->data == m_fighter.data() && stock->tree &&
-                *m_legendProfile->targetNode < stock->tree->nodes.size())
+                *m_legendProfile->targetNode < stock->tree->nodes.size()) {
                 return nodeTransform(stock->tree->nodes[*m_legendProfile->targetNode].name);
+            }
         }
         return {};
     }
