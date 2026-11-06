@@ -64,7 +64,7 @@ TEST_CASE("with nothing in play each fixture command answers in its own words", 
     // A character's code is the profile's form; without it the commands say how they are used.
     CHECK(fixture.say("lock character MIN") == fixture.say("lock"));
     CHECK(fixture.say("unlock CHARACTER MIN") == fixture.say("unlock"));
-    CHECK(fixture.words("activate", Words{"s"}) == Words{});
+    CHECK(fixture.words("activate", Words{"s"}).empty());
     CHECK(fixture.words("lock", Words{"c"}) == Words{"character"});
     CHECK(fixture.words("unlock", Words{"c"}) == Words{"character"});
     CHECK(fixture.words("lock", Words{"character", "M"}) ==
@@ -72,8 +72,8 @@ TEST_CASE("with nothing in play each fixture command answers in its own words", 
     CHECK(fixture.words("lock", Words{"CHARACTER", "M"}) ==
           Words{"MIN", "FAL", "JAC", "TIG", "OGR", "UNI", "MED", "HYE", "SUM"});
     // character in any other case is not completed.
-    CHECK(fixture.words("lock", Words{"Character", "M"}) == Words{});
-    CHECK(fixture.words("lock", Words{"character", "M", "x"}) == Words{});
+    CHECK(fixture.words("lock", Words{"Character", "M"}).empty());
+    CHECK(fixture.words("lock", Words{"character", "M", "x"}).empty());
     for (const std::string_view name : {"activate", "unlock", "lock"}) {
         const ConsoleCommand* command = fixture.console.commands().find(name);
         REQUIRE(command != nullptr);
@@ -132,7 +132,7 @@ TEST_CASE("every fixture command answers in a level in its own words", "[dev-con
                 "CHESTEXP",  "chest#27", "CHESTEXP"});
     CHECK(fixture.words("lock", Words{"character", "M"}) ==
           Words{"MIN", "FAL", "JAC", "TIG", "OGR", "UNI", "MED", "HYE", "SUM"});
-    CHECK(fixture.words("lock", Words{"Character", "M"}) == Words{});
+    CHECK(fixture.words("lock", Words{"Character", "M"}).empty());
     // With chests shown, c completes to character first.
     CHECK(test::suggestionAfter(fixture.console, "lock c") == "haracter");
     CHECK(test::suggestionAfter(fixture.console, "unlock ch") == "aracter");

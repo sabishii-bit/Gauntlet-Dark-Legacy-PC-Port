@@ -236,8 +236,9 @@ TEST_CASE("Imported maps retain ordinary gameplay while supplying native camera 
         CHECK_FALSE(scene.recoverImportedDeparture());
         imported->travel = true;
         PlayOutcome outcome = PlayOutcome::Running;
-        for (s32 tick = 0; tick < 600 && outcome == PlayOutcome::Running; ++tick)
+        for (s32 tick = 0; tick < 600 && outcome == PlayOutcome::Running; ++tick) {
             outcome = scene.update(1.0 / 30, {});
+        }
         REQUIRE(outcome == PlayOutcome::Travel);
         REQUIRE(scene.leaving());
         REQUIRE(scene.transition().covering());
@@ -246,21 +247,24 @@ TEST_CASE("Imported maps retain ordinary gameplay while supplying native camera 
         CHECK_FALSE(imported->travel);
         CHECK(scene.actor(0)->save().gold == before.gold);
         CHECK(scene.actor(0)->save().progress().legends == before.progress().legends);
-        for (s32 tick = 0; tick < 60; ++tick)
+        for (s32 tick = 0; tick < 60; ++tick) {
             REQUIRE(scene.update(1.0 / 30, {}) == PlayOutcome::Running);
+        }
         CHECK_FALSE(scene.transition().showing());
         CHECK(scene.canPause(0));
         const auto position = scene.actor(0)->position();
         PlayScene::Inputs move;
         move[0].move = {{0, 1}, 1};
-        for (s32 tick = 0; tick < 10; ++tick)
+        for (s32 tick = 0; tick < 10; ++tick) {
             REQUIRE(scene.update(1.0 / 30, move) == PlayOutcome::Running);
+        }
         CHECK(glm::distance(scene.actor(0)->position(), position) > .1f);
         imported->travel = true;
         outcome = scene.update(1.0 / 30, {});
         REQUIRE(outcome == PlayOutcome::Running);
-        for (s32 tick = 0; tick < 600 && outcome == PlayOutcome::Running; ++tick)
+        for (s32 tick = 0; tick < 600 && outcome == PlayOutcome::Running; ++tick) {
             outcome = scene.update(1.0 / 30, {});
+        }
         CHECK(outcome == PlayOutcome::Travel);
     }
     SECTION("movement and imported body contacts use the native camera yaw") {

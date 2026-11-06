@@ -213,8 +213,10 @@ TEST_CASE("an imported level's scenery is described as the level tells it", "[de
     collision.build(
         {{{0, 1, 0}, {Vec3{-100, 0, -100}, Vec3{-100, 0, 100}, Vec3{100, 0, -100}}, 0, 4}});
     auto layout = WorldLayout::fromDecoded({}, {}, {-100, 0, -100}, {100, 40, 100});
-    REQUIRE(level.world.loadImported(level.device, level.root, ref, std::move(layout),
-                                     std::move(collision), std::make_shared<OnePieceScenery>()));
+    const bool loaded =
+        level.world.loadImported(level.device, level.root, ref, std::move(layout),
+                                 std::move(collision), std::make_shared<OnePieceScenery>());
+    REQUIRE(loaded);
     // The imported level's own word is taken, never a mesh of the world's models.
     for (LevelWorld* meshes : {static_cast<LevelWorld*>(nullptr), &level.world}) {
         const auto describe = [&](s32 id) {
