@@ -103,6 +103,7 @@ TEST_CASE("native critter resource identity includes decoded impact policies",
         case 2: sound.impactElementalFraction = 0.8f; break;
         case 3: sound.impactElement = 2; break;
         case 4: sound.scale = 0.72f; break;
+        default: FAIL("unexpected sound field");
         }
         const auto altered = CritterData::fromDecoded("TEST", changed, 0, rules);
         NativeStateResources registry;

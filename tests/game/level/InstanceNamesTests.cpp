@@ -31,7 +31,7 @@ TEST_CASE("an item instance's record is the layout's by its index, or none",
     REQUIRE(instances.size() == 13);
     const ItemInfo* pad = instanceRecord(layout, instances[1]);
     REQUIRE(pad != nullptr);
-    CHECK(pad == &layout.itemInfos()[0]);
+    CHECK(pad == layout.itemInfos().data());
     CHECK(pad->name == "BRIDGEPAD");
     const ItemInfo* rat = instanceRecord(layout, instances[8]);
     REQUIRE(rat != nullptr);

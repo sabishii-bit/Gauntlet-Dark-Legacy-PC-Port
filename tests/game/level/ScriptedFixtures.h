@@ -65,8 +65,8 @@ public:
 
 private:
     static const FixtureScript& quiet() {
-        static const FixtureScript script;
-        return script;
+        static const FixtureScript kScript;
+        return kScript;
     }
     const FixtureScript& m_script;
 };

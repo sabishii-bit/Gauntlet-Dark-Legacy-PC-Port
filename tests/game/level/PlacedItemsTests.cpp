@@ -51,14 +51,14 @@ TEST_CASE("runtime potion drops retain native definitions without authored picku
     PlacedItems items;
     const std::array archives{&powerups};
     items.bind(device, layout, nullptr, archives);
-    constexpr std::array<std::string_view, 4> names{"POT_RED", "POT_BLU", "POT_YEL", "POT_GRE"};
-    for (usize element = 0; element < names.size(); ++element) {
-        CAPTURE(names[element]);
+    constexpr std::array<std::string_view, 4> kNames{"POT_RED", "POT_BLU", "POT_YEL", "POT_GRE"};
+    for (usize element = 0; element < kNames.size(); ++element) {
+        CAPTURE(kNames[element]);
         const usize index = items.size();
         const Vec3 position{10000.0f + static_cast<f32>(element) * 10, 0, 10000};
-        REQUIRE(items.throwItem(device, names[element], position, Vec3{0}, nullptr, .1f));
+        REQUIRE(items.throwItem(device, kNames[element], position, Vec3{0}, nullptr, .1f));
         const auto& item = items.item(index);
-        CHECK(item.name == names[element]);
+        CHECK(item.name == kNames[element]);
         CHECK(item.subtype == static_cast<s32>(ItemKind::Potion));
         CHECK(item.flags == element + 1);
         CHECK(item.value == 1);
@@ -69,7 +69,7 @@ TEST_CASE("runtime potion drops retain native definitions without authored picku
         CHECK(item.model->bound());
         if (!layout.itemInfos().empty()) {
             const auto original =
-                std::ranges::find(layout.itemInfos(), names[element], &ItemInfo::name);
+                std::ranges::find(layout.itemInfos(), kNames[element], &ItemInfo::name);
             REQUIRE(original != layout.itemInfos().end());
             CHECK(item.info == original - layout.itemInfos().begin());
             CHECK(item.flags == original->properties);
