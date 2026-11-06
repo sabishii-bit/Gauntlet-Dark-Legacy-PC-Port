@@ -127,7 +127,7 @@ constexpr u8 kShotBoundary = 0x8;  ///< what follows it waits for a nominal shot
 
 /** Per class: whether the close and middle power moves root it, and at which rate it moves. */
 struct PowerMoves {
-    s32 character;
+    s32 character = -1;
     bool rootedClose = false;
     bool rootedMed = false;
     f32 rate = kPowerPace;
@@ -168,8 +168,8 @@ const PowerMoves& powerMovesOf(s32 character) {
 } // namespace
 
 struct PlayerAnimator::ActionInfo {
-    Action action;
-    ActionFamily family;
+    Action action = Action::Ready;
+    ActionFamily family = ActionFamily::Stance;
     AttackType attackType = AttackType::None;
     f32 pace = 1.0f; ///< of the body's pace it leaves, by its motion rule (moveScale)
     f32 turn = 1.0f; ///< of the turn toward the stick it leaves, by its motion rule (turnScale)
@@ -892,24 +892,16 @@ const PlayerAnimator::ActionInfo& PlayerAnimator::info(Action action) {
         }(),
         "each action's row sits at its own index");
     static_assert(kActions.back().action == Action::ComboJes, "the last row is the last action");
-    static_assert(
-        [] {
-            for (const ActionInfo& row : kActions) {
-                if (row.foot == Foot::None) {
-                    if (row.otherHalf != Action::Ready) {
-                        return false;
-                    }
-                    continue;
-                }
-                const ActionInfo& other = kActions[index(row.otherHalf)];
-                if (other.otherHalf != row.action || other.foot == Foot::None ||
-                    other.foot == row.foot) {
-                    return false;
-                }
-            }
-            return true;
-        }(),
-        "each half cycle's other half pairs back to it on the other foot");
+    static_assert(std::ranges::all_of(kActions,
+                                      [](const ActionInfo& row) {
+                                          if (row.foot == Foot::None) {
+                                              return row.otherHalf == Action::Ready;
+                                          }
+                                          const ActionInfo& other = kActions[index(row.otherHalf)];
+                                          return other.otherHalf == row.action &&
+                                                 other.foot != Foot::None && other.foot != row.foot;
+                                      }),
+                  "each half cycle's other half pairs back to it on the other foot");
     static_assert(
         std::ranges::none_of(kSequenceNames, [](std::string_view name) { return name.empty(); }),
         "every action names its sequence");
