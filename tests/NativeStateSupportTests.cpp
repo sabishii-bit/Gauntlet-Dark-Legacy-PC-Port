@@ -27,7 +27,7 @@ struct Counter {
         digest.word(value);
         return digest.good();
     }
-    bool appendLocalDigest(NativeStateDigest& digest, const LocalSnapshot& saved) const {
+    static bool appendLocalDigest(NativeStateDigest& digest, const LocalSnapshot& saved) {
         digest.word(saved.value);
         return digest.good();
     }
