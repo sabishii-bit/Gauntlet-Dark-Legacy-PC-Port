@@ -1494,6 +1494,8 @@ TEST_CASE("each action leaves the body its pace and turn by class, stick and fra
     for (usize i = 0; i < PlayerAnimator::kActionCount; ++i) {
         const auto& row = kScales[i];
         REQUIRE(row.action == static_cast<Action>(i));
+        // MSVC's checked array iterator is not a pointer; keep the portable iterator type.
+        // NOLINTNEXTLINE(readability-qualified-auto)
         const auto found = std::ranges::find(kClassScales, row.action, &ClassScales::action);
         for (s32 character = -1; character < kStartingClassCount; ++character) {
             for (const bool moved : {false, true}) {

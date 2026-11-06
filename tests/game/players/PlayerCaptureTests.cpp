@@ -105,8 +105,9 @@ TEST_CASE("an imported capture restores its support footprint before the release
     capture.release(Vec3{0}, interrupted ? 0 : 50);
     REQUIRE(capture.flying());
     std::optional<f32> damage;
-    for (int tick = 0; tick < 120 && !damage; ++tick)
+    for (int tick = 0; tick < 120 && !damage; ++tick) {
         damage = capture.update(1.0f / 60, actor, collision);
+    }
     if (restoreSupport) {
         REQUIRE(damage);
         CHECK(*damage == (interrupted ? 0 : 50));
