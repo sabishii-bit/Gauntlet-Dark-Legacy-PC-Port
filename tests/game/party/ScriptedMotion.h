@@ -48,8 +48,8 @@ public:
 
 private:
     static const ComboScript& quiet() {
-        static const ComboScript script;
-        return script;
+        static const ComboScript kScript;
+        return kScript;
     }
     const ComboScript& m_script;
 };
@@ -170,8 +170,8 @@ public:
 
 private:
     static const MotionScript& quiet() {
-        static const MotionScript script;
-        return script;
+        static const MotionScript kScript;
+        return kScript;
     }
     const MotionScript& m_script;
 };

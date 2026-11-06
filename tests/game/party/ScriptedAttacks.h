@@ -39,8 +39,8 @@ public:
 
 private:
     static const AttackScript& quiet() {
-        static const AttackScript script;
-        return script;
+        static const AttackScript kScript;
+        return kScript;
     }
     const AttackScript& m_script;
 };

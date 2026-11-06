@@ -1809,8 +1809,8 @@ TEST_CASE("a movement level with nothing scripted answers as a level with nothin
 TEST_CASE("a scripted movement level asks its script as the script stands at each question",
           "[game][party-motion][motion-level]") {
     test::MotionScript script;
-    test::ScriptedMotion scripted{script};
-    PartyMotion::Level& level = scripted;
+    const test::ScriptedMotion scripted{script};
+    const PartyMotion::Level& level = scripted;
     const Vec3 facing{1, 0, 0};
     CHECK(level.attackDeed(1, false, true, facing) == PlayerDeed::Attack); // nothing scripted yet
     script.attackDeed = [&](usize index, bool strong, bool moved, const Vec3& toward) {

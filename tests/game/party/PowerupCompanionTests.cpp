@@ -38,7 +38,7 @@ TEST_CASE("native companion rewind retains interpolation and held frame boundari
     constexpr std::array<f32, 3> kBlends{0, 0.5f, 1};
     constexpr f32 kSeconds = 1.0f / 60;
     struct Observation {
-        NativeStateDigest::Digest state;
+        NativeStateDigest::Digest state{};
         std::array<std::vector<test::RecordedDraw>, 3> draws;
     };
     // Both archives under fixed keys, which the companion's banks refresh.

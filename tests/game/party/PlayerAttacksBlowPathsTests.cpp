@@ -218,7 +218,7 @@ TEST_CASE("a swing never asks whether a generator takes it, and of the rest only
     case BlowPath::Swing: expected = {{}, true, true}; break;
     case BlowPath::Shot: expected = {{BlowSource::Shot}, takes, takes}; break;
     case BlowPath::Area: expected = {{BlowSource::Turbo}, takes, takes}; break;
-    case BlowPath::PotionWave: expected = {{BlowSource::Potion}, takes, false}; break;
+    case BlowPath::PotionWave:
     case BlowPath::ShieldRing: expected = {{BlowSource::Potion}, takes, false}; break;
     case BlowPath::Combo: expected = {{BlowSource::Charge}, takes, false}; break;
     case BlowPath::Charge: expected = {{}, false, false}; break; // it never meets a generator
@@ -667,6 +667,7 @@ TEST_CASE("each party roster offers the families its blows land on, in its own o
     const auto offered = PlayerAttacksTestPeer::targets(f.attacks, f.targets);
     CHECK(familiesOf(offered) == shot);
     std::vector<s32> nodes;
+    nodes.reserve(offered.size());
     for (const MissileTarget& body : offered) {
         nodes.push_back(body.node);
     }
@@ -830,9 +831,10 @@ void loadImportedWorld(BlowScene& f, std::shared_ptr<ImportedFixtures> level) {
     LevelRef ref;
     ref.realmId = -1;
     ref.name = "imported-fixtures";
-    REQUIRE(f.world.loadImported(f.device, f.root, ref,
-                                 WorldLayout::fromDecoded({}, {}, {-100, 0, -100}, {100, 30, 100}),
-                                 std::move(collision), std::move(level)));
+    const bool loaded = f.world.loadImported(
+        f.device, f.root, ref, WorldLayout::fromDecoded({}, {}, {-100, 0, -100}, {100, 30, 100}),
+        std::move(collision), std::move(level));
+    REQUIRE(loaded);
     f.fixtures.bind({f.device, f.world, f.weapons, f.effects, f.audio});
 }
 

@@ -58,14 +58,16 @@ TEST_CASE("arsenal rewind resumes cast attachments with the shared effects they 
     const auto paid = actor.save().progress().inventory;
     const auto health = actor.save().health();
     const auto uploads = fixture.device.texturesCreated;
+    constexpr s32 kTicks = 100;
     std::vector<Digests> expected;
+    expected.reserve(kTicks);
     const auto step = [&](s32 tick) {
         actor.place({static_cast<f32>(tick), 1, 3});
         fixture.arsenal.followCaster(actor);
         fixture.effects.update(1.0f / 30);
         return fixture.digests();
     };
-    for (s32 tick = 0; tick < 100; ++tick) {
+    for (s32 tick = 0; tick < kTicks; ++tick) {
         expected.push_back(step(tick));
     }
     REQUIRE(fixture.arsenal.casts().empty());
@@ -75,7 +77,7 @@ TEST_CASE("arsenal rewind resumes cast attachments with the shared effects they 
     REQUIRE(fixture.effects.restoreLocal(visual));
     CHECK(actor.save().progress().inventory == paid);
     CHECK(actor.save().health() == health);
-    for (s32 tick = 0; tick < 100; ++tick) {
+    for (s32 tick = 0; tick < kTicks; ++tick) {
         CAPTURE(tick);
         const auto now = step(tick);
         CHECK(now.arsenal == expected[static_cast<usize>(tick)].arsenal);
@@ -115,7 +117,9 @@ TEST_CASE("arsenal rewind includes live native potion flights queues and child i
     fixture.arsenal.saveLocal(saved);
     REQUIRE(missiles.count() == 1);
     const auto paid = actor.save().progress().inventory;
+    constexpr s32 kTicks = 130;
     std::vector<Flights> expected;
+    expected.reserve(kTicks);
     const auto step = [&](s32 tick) {
         missiles.update(tick % 7 == 0 ? 0 : 1.0f / 30, nullptr, {});
         Flights result;
@@ -129,11 +133,11 @@ TEST_CASE("arsenal rewind includes live native potion flights queues and child i
         result.history.assign(history.begin(), history.end());
         return result;
     };
-    for (s32 tick = 0; tick < 130; ++tick) {
+    for (s32 tick = 0; tick < kTicks; ++tick) {
         expected.push_back(step(tick));
     }
     REQUIRE(fixture.arsenal.restoreLocal(saved));
-    for (s32 tick = 0; tick < 130; ++tick) {
+    for (s32 tick = 0; tick < kTicks; ++tick) {
         CHECK(step(tick) == expected[static_cast<usize>(tick)]);
     }
     CHECK(actor.save().progress().inventory == paid);
