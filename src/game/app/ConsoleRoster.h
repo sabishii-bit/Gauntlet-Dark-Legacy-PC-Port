@@ -24,6 +24,9 @@ struct SharedVerbAccess {
 };
 
 /** What every owner of the console's words reads and changes of the game. */
+// `shared` is references alone, which every initialization must bind: the check counts the
+// default constructor they delete as one that would leave them unset.
+// NOLINTNEXTLINE(cppcoreguidelines-pro-type-member-init)
 struct ConsoleRosterAccess {
     OnlineConsoleAccess online;
     ViewConsoleAccess view;
