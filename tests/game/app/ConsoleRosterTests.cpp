@@ -240,7 +240,7 @@ std::string helpOf(std::initializer_list<std::string_view> names) {
 
 TEST_CASE("the roster registers every command at its reach, in help's order",
           "[dev-console][online-console]") {
-    Roster fixture;
+    const Roster fixture;
     const auto commands = fixture.console.commands().commands();
     REQUIRE(commands.size() == test::kRegisteredCommands.size());
     for (usize i = 0; i < commands.size(); ++i) {
@@ -342,7 +342,7 @@ TEST_CASE("lock, unlock, goto, list and party_count complete their words",
     REQUIRE(go != nullptr);
     CHECK(commands.completions(*go, Words{"t"}) == Words{"tower", "back", "castle1", "tower2"});
     CHECK(commands.completions(*go, Words{"x", "p"}) == Words{"preview"});
-    CHECK(commands.completions(*go, Words{"x", "p", "q"}) == Words{});
+    CHECK(commands.completions(*go, Words{"x", "p", "q"}).empty());
     CHECK(test::suggestionAfter(fixture.console, "goto b") == "ack");
     CHECK(test::suggestionAfter(fixture.console, "list c") == "ritters");
     CHECK(test::suggestionAfter(fixture.console, "list ch") == "aracters");
