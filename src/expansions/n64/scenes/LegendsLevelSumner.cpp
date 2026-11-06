@@ -10,12 +10,14 @@ namespace gdl::game {
 
 void LegendsLevel::updateExitReminder(std::span<const CharacterSave* const> party) {
     m_exitReminder.reset();
-    if (platform() != LegendsPlatform::N64)
+    if (platform() != LegendsPlatform::N64) {
         return;
+    }
     std::vector<LegendsProgress> progress;
     for (const auto* save : party) {
-        if (save && save->character >= 0 && save->character < kClassCount)
+        if (save && save->character >= 0 && save->character < kClassCount) {
             progress.push_back(save->progress().legendsProgress(LegendsPlatform::N64));
+        }
     }
     m_exitReminder =
         legendsN64DepartureCue(paths::utf8(m_directory.filename()), adapter().pickups(), progress);
@@ -32,8 +34,9 @@ void LegendsLevel::touchScenery(s32 player, const Vec3& from, const Vec3& to, f3
 
 void LegendsLevel::announceProgress(std::span<const PartyMember> before,
                                     std::span<const PartyMember> after) {
-    if (!m_sumner)
+    if (!m_sumner) {
         return;
+    }
     const auto progress = [](std::span<const PartyMember> party) {
         std::vector<LegendsProgress> result;
         for (const auto& member : party) {
@@ -48,8 +51,9 @@ void LegendsLevel::announceProgress(std::span<const PartyMember> before,
     const auto current = progress(after);
     for (const auto identity : m_sumner->milestoneTextIds(old, current)) {
         const auto key = legendsN64SumnerTextKey(identity);
-        if (!key.empty())
+        if (!key.empty()) {
             m_milestonePages.push_back(key);
+        }
     }
     m_historyMilestone = m_sumner->milestone(current);
 }

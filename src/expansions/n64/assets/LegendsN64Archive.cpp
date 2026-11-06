@@ -196,28 +196,35 @@ void appendShared(DecodedArchive& own, DecodedArchive shared, usize bank) {
         own.models.push_back(std::move(model));
     }
     for (auto& animation : shared.animation.textureAnimations) {
-        if (animation.texture >= 0)
+        if (animation.texture >= 0) {
             animation.texture += static_cast<s32>(textureBase);
-        if (animation.source >= 0)
+        }
+        if (animation.source >= 0) {
             animation.source += static_cast<s32>(textureBase);
+        }
         own.animation.textureAnimations.push_back(std::move(animation));
     }
     std::set<std::string> names;
-    for (const auto& tree : own.animation.trees)
+    for (const auto& tree : own.animation.trees) {
         names.insert(normalizeAssetName(tree.name));
+    }
     for (auto& tree : shared.animation.trees) {
-        if (!names.insert(normalizeAssetName(tree.name)).second)
+        if (!names.insert(normalizeAssetName(tree.name)).second) {
             continue;
+        }
         for (auto& node : tree.nodes) {
             node.object = modelName(node.object);
-            for (auto& run : node.objectFrames)
+            for (auto& run : node.objectFrames) {
                 run.object = modelName(run.object);
-            if (node.textureAnimation >= 0)
+            }
+            if (node.textureAnimation >= 0) {
                 node.textureAnimation += animationBase;
+            }
         }
         for (auto& sequence : tree.sequences) {
-            if (sequence.textureAnimationStart >= 0)
+            if (sequence.textureAnimationStart >= 0) {
                 sequence.textureAnimationStart += animationBase;
+            }
         }
         own.animation.trees.push_back(std::move(tree));
     }
@@ -244,23 +251,26 @@ void exposeSharedDefaultSequences(formats::AnimationFile& animation) {
 std::unique_ptr<ItemArchive>
 loadLegendsN64Archive(const std::filesystem::path& directory, std::vector<std::string>& warnings,
                       std::span<const u8> program, const std::filesystem::path& animationDirectory,
-                      bool combinedGroups,
-                      std::span<const std::filesystem::path> sharedDirectories,
+                      bool combinedGroups, std::span<const std::filesystem::path> sharedDirectories,
                       const std::function<void(formats::AnimationFile&)>& translate) {
     auto decoded = decodeArchive(directory, warnings, program, animationDirectory, combinedGroups);
-    if (!decoded)
+    if (!decoded) {
         return {};
-    if (combinedGroups)
+    }
+    if (combinedGroups) {
         formats::combineLegendsN64SequenceGroups(decoded->animation);
+    }
     usize bank = 0;
     for (const auto& sharedDirectory : sharedDirectories) {
         // Shared effects keep independent sequence hierarchies, so their keyed
         // texture players need no combatant-style per-sequence model baking.
         auto shared = decodeArchive(sharedDirectory, warnings, program, {}, false);
-        if (!shared)
+        if (!shared) {
             throw FileError("N64 shared archive is missing");
-        if (combinedGroups)
+        }
+        if (combinedGroups) {
             exposeSharedDefaultSequences(shared->animation);
+        }
         appendShared(*decoded, std::move(*shared), bank++);
     }
     auto result = std::make_unique<ItemArchive>();
@@ -278,8 +288,9 @@ loadLegendsN64Archive(const std::filesystem::path& directory, std::vector<std::s
         meshes.push_back(std::move(object.mesh));
     }
     result->models = ModelSet::fromDecoded(std::move(entries), std::move(meshes));
-    if (translate)
+    if (translate) {
         translate(decoded->animation);
+    }
     result->trees = AnimationSet::fromDecoded(std::move(decoded->animation));
     return result;
 }

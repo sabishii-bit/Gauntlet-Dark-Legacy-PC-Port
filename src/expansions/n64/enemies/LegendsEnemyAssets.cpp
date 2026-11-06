@@ -43,6 +43,8 @@ constexpr std::array kBanks{Bank{enemy_type::kScorpion, "scoh", "SCO"},
                             Bank{enemy_type::kIt, "it", "IT"}};
 
 const Bank* bankFor(s32 kind) {
+    // MSVC's checked array iterator is not a pointer; keep the portable iterator type.
+    // NOLINTNEXTLINE(readability-qualified-auto)
     const auto found = std::ranges::find(kBanks, kind, &Bank::kind);
     return found == kBanks.end() ? nullptr : &*found;
 }
@@ -52,13 +54,15 @@ std::string action(std::span<const u8> program, usize index) {
     // FOURCC is at +8; the common dispatcher preserves the same 33 actions.
     constexpr usize kActions = 0xe00709a4U - 0xe0000400U;
     const usize at = kActions + index * 12 + 8;
-    if (at > program.size() || program.size() - at < 4)
+    if (at > program.size() || program.size() - at < 4) {
         throw FormatError("N64 enemy action table is unavailable");
+    }
     std::string result;
     for (usize i = 0; i < 4; ++i) {
         const u8 c = program[at + i];
-        if (c != 0)
+        if (c != 0) {
             result.push_back(static_cast<char>(c));
+        }
     }
     return result;
 }
@@ -67,8 +71,9 @@ std::string action(std::span<const u8> program, usize index) {
 void translateLegendsEnemyAnimations(formats::AnimationFile& animation, s32 kind,
                                      std::span<const u8> program) {
     const auto* bank = bankFor(kind);
-    if (!bank)
+    if (!bank) {
         throw FormatError("Unsupported N64 enemy species");
+    }
     if (kind == enemy_type::kIce) {
         // ICE2 STRT's packed vertex keys flatten its body to a ~0.27-unit
         // sheet for the whole emergence (native e0031f88 -> e0029d34 does
@@ -81,34 +86,42 @@ void translateLegendsEnemyAnimations(formats::AnimationFile& animation, s32 kind
         const auto start =
             std::ranges::find(animation.trees, "ICE2:STRT", &formats::TreeDefinition::name);
         if (ready != animation.trees.end() && start != animation.trees.end()) {
-            if (ready->nodes.size() != start->nodes.size())
+            if (ready->nodes.size() != start->nodes.size()) {
                 throw FormatError("N64 Ice emergence has incompatible native bodies");
+            }
             for (usize i = 0; i < start->nodes.size(); ++i) {
                 auto& target = start->nodes[i];
                 const auto& source = ready->nodes[i];
-                if (target.objectFrames.empty())
+                if (target.objectFrames.empty()) {
                     continue;
+                }
                 if (target.name != source.name || target.parent != source.parent ||
-                    source.objectFrames.empty() || source.objectFrames.front().object.empty())
+                    source.objectFrames.empty() || source.objectFrames.front().object.empty()) {
                     throw FormatError("N64 Ice emergence is missing its native body pose");
+                }
                 target.object = source.objectFrames.front().object;
                 target.objectFrames.clear();
             }
         }
     }
     std::array<std::string, 6> groups;
-    for (usize i = 0; i < 3; ++i)
+    for (usize i = 0; i < 3; ++i) {
         groups[i] = std::format("{}{}", bank->prefix, i + 1);
+    }
     constexpr std::array kVariants{"C", "B", "S"};
-    for (usize i = 0; i < kVariants.size(); ++i)
+    for (usize i = 0; i < kVariants.size(); ++i) {
         groups[i + 3] = std::string(bank->prefix) + kVariants[i];
-    if (kind == kItKind || kind == kDeathKind)
+    }
+    if (kind == kItKind || kind == kDeathKind) {
         groups[0] = bank->prefix;
+    }
     std::array<std::string, kEnemyActionCount> nativeActions;
-    for (usize i = 0; i < nativeActions.size(); ++i)
+    for (usize i = 0; i < nativeActions.size(); ++i) {
         nativeActions[i] = action(program, i);
-    if (nativeActions.front() != "REDY" || nativeActions.back() != "DETH")
+    }
+    if (nativeActions.front() != "REDY" || nativeActions.back() != "DETH") {
         throw FormatError("Unexpected N64 enemy action table");
+    }
     // Native group membership does not imply a single BODY. e005ec28 switches
     // suicide bodies to a separate EXP debris hierarchy, and IT:SIGN is a
     // separate tag, not the roaming creature. Only e0070130's actual actions
@@ -130,13 +143,16 @@ void translateLegendsEnemyAnimations(formats::AnimationFile& animation, s32 kind
                 tree.name = "DEATH_ARC";
                 // e005d734 calls e002fbfc with the local attachment offset
                 // at e005fcd0, whether the drain is attached to Death or reversed.
-                for (auto& node : tree.nodes)
-                    if (node.parent < 0)
+                for (auto& node : tree.nodes) {
+                    if (node.parent < 0) {
                         node.position += Vec3{.5f, .2f, 1.0f};
+                    }
+                }
             }
             if (group == groups.back() && tree.sequences.size() == 1 &&
-                tree.sequences.front().name == "EXP")
+                tree.sequences.front().name == "EXP") {
                 tree.name = "SUICIDEEXP";
+            }
             separate.push_back(std::move(tree));
         } else {
             actions.push_back(std::move(tree));
@@ -148,16 +164,19 @@ void translateLegendsEnemyAnimations(formats::AnimationFile& animation, s32 kind
     formats::combineLegendsN64SequenceGroups(animation, selected);
     const auto common = enemyKind(kind).prefix;
     for (auto& tree : animation.trees) {
+        // MSVC's checked array iterator is not a pointer; keep the portable iterator type.
+        // NOLINTNEXTLINE(readability-qualified-auto)
         const auto found = std::ranges::find(groups, tree.name);
         if (found == groups.end()) {
             // e005d838/e005d874 select these exact shared native ammo groups.
-            if (tree.name == "GRUNTAMMO:AROW")
+            if (tree.name == "GRUNTAMMO:AROW") {
                 tree.name = std::string(common) + "_ARROW";
-            else if (tree.name == "GRUNTAMMO:BOMB")
+            } else if (tree.name == "GRUNTAMMO:BOMB") {
                 tree.name = std::string(common) + "_BOMB";
+            }
             continue;
         }
-        const usize index = static_cast<usize>(found - groups.begin());
+        const auto index = static_cast<usize>(found - groups.begin());
         constexpr std::array kCommonVariants{"A", "B", "S"};
         tree.name = index < 3 ? std::format("{}{}", common, index + 1)
                               : std::string(common) + kCommonVariants[index - 3];
@@ -170,25 +189,29 @@ void translateLegendsEnemyAnimations(formats::AnimationFile& animation, s32 kind
             }
         }
     }
-    for (auto& tree : separate)
+    for (auto& tree : separate) {
         animation.trees.push_back(std::move(tree));
+    }
 }
 
 std::unique_ptr<ItemArchive> loadLegendsEnemyAssets(const std::filesystem::path& nativeRoot,
                                                     s32 kind, std::span<const u8> program,
                                                     std::vector<std::string>& warnings) {
     const auto* bank = bankFor(kind);
-    if (!bank)
+    if (!bank) {
         return {};
+    }
     const auto directory = nativeRoot / bank->directory;
     std::vector<std::filesystem::path> adjuncts;
-    if (kind == kDeathKind)
+    if (kind == kDeathKind) {
         adjuncts.push_back(nativeRoot / "itemanim/generic");
+    }
     // e006a640 loads the medium species' ex and l3 banks when present.
     // These are explicit siblings, never a search for unrelated replacement art.
-    for (const auto child : {"l3", "ex"}) {
-        if (AssetLocator(directory / child).find("seq.wad"))
+    for (const auto* const child : {"l3", "ex"}) {
+        if (AssetLocator(directory / child).find("seq.wad")) {
             adjuncts.push_back(directory / child);
+        }
     }
     return loadLegendsN64Archive(directory, warnings, program, {}, false, adjuncts,
                                  [&](formats::AnimationFile& animation) {

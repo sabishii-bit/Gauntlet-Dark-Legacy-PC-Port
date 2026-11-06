@@ -64,6 +64,7 @@ public:
     std::string_view summaryForm() const override { return "<legends map> [preview]"; }
     std::vector<std::pair<std::string, std::string>> usageRows() const override {
         std::vector<std::pair<std::string, std::string>> rows;
+        rows.reserve(GotoRequest::kLegendsUsageRows.size());
         for (const auto& [form, what] : GotoRequest::kLegendsUsageRows) {
             rows.emplace_back(form, what);
         }

@@ -66,8 +66,9 @@ private:
 std::optional<Calibration> calibrate(StreamSource& source, Source kind) {
     const auto policy = profile(kind);
     const auto desc = source.desc();
-    if (!policy || !valid(desc))
+    if (!policy || !valid(desc)) {
         return {};
+    }
     Calibration result{.kind = kind};
     const usize limit = static_cast<usize>(desc.sampleRate) * policy->seconds;
     const usize window = std::max<usize>(1, desc.sampleRate / 100) * desc.channels;
@@ -90,15 +91,18 @@ std::optional<Calibration> calibrate(StreamSource& source, Source kind) {
             const usize request = std::min<usize>(4096, limit - result.frames);
             const bool produced = source.read(block, request);
             if (block.size() > request * desc.channels || block.size() % desc.channels != 0 ||
-                (produced && block.empty()))
+                (produced && block.empty())) {
                 return {};
+            }
             for (const f32 value : block) {
-                if (!std::isfinite(value))
+                if (!std::isfinite(value)) {
                     return {};
+                }
                 result.peak = std::max(result.peak, std::abs(value));
                 energy += static_cast<f64>(value) * value;
-                if (++samples == window)
+                if (++samples == window) {
                     finishWindow();
+                }
             }
             result.frames += block.size() / desc.channels;
             if (!produced) {
@@ -112,8 +116,9 @@ std::optional<Calibration> calibrate(StreamSource& source, Source kind) {
         return {};
     }
     f64 loudest = 0;
-    for (usize i = 0; i < energies.size(); ++i)
+    for (usize i = 0; i < energies.size(); ++i) {
         loudest = std::max(loudest, energies[i] / static_cast<f64>(sizes[i]));
+    }
     // Ignore silence and long reverb tails, not individual zero crossings.
     // A relative -40 dB energy gate also preserves naturally quiet sources;
     // the absolute -60 dBFS floor prevents normalizing numerical noise.
@@ -127,7 +132,8 @@ std::optional<Calibration> calibrate(StreamSource& source, Source kind) {
         }
     }
     if (activeSamples != 0 && result.peak > 0) {
-        result.activeRms = static_cast<f32>(std::sqrt(activeEnergy / activeSamples));
+        result.activeRms =
+            static_cast<f32>(std::sqrt(activeEnergy / static_cast<f64>(activeSamples)));
         result.gain = std::min({policy->targetRms / result.activeRms,
                                 policy->peakHeadroom / result.peak, policy->maximumGain});
     }
@@ -146,11 +152,13 @@ std::shared_ptr<StreamSource> prepare(std::shared_ptr<StreamSource> source, Sour
     if (!valid(source->desc())) {
         return {};
     }
-    if (!calibration)
+    if (!calibration) {
         calibration = calibrate(*source, kind);
+    }
     if (!calibration || calibration->kind != kind || !std::isfinite(calibration->gain) ||
-        calibration->gain <= 0 || calibration->gain > policy->maximumGain)
+        calibration->gain <= 0 || calibration->gain > policy->maximumGain) {
         return {};
+    }
     return std::make_shared<MixedSource>(std::move(source), *calibration);
 }
 

@@ -30,7 +30,8 @@ std::optional<f32> triangleHit(const Vec3& origin, const Vec3& direction, const 
     const Vec3 q = glm::cross(s, ab);
     const f32 v = glm::dot(direction, q) / determinant;
     const f32 distance = glm::dot(ac, q) / determinant;
-    if (!(u >= 0 && v >= 0 && u + v <= 1 && distance >= 0) || !std::isfinite(distance)) {
+    const bool hits = u >= 0 && v >= 0 && u + v <= 1 && distance >= 0;
+    if (!hits || !std::isfinite(distance)) {
         return {};
     }
     return distance;
@@ -48,17 +49,18 @@ public:
 
     bool beginFrame() override { return false; }
     void endFrame() override {}
-    void setClearColor(const Vec4&) override {}
+    void setClearColor(const Vec4& /*rgba*/) override {}
     Extent2D framebufferExtent() const override { return {}; }
-    void setPresentation(bool, u32) override {}
+    void setPresentation(bool /*vsync*/, u32 /*sampleCount*/) override {}
     u32 presentationSampleCount() const override { return 1; }
-    void setTextureFiltering(u32) override {}
-    void setSmoothSprites(bool) override {}
-    void setAuthoredSilhouettes(bool) override {}
-    std::unique_ptr<Texture> createTexture(const TextureDesc&, std::span<const u8>) override {
+    void setTextureFiltering(u32 /*filtering*/) override {}
+    void setSmoothSprites(bool /*enabled*/) override {}
+    void setAuthoredSilhouettes(bool /*enabled*/) override {}
+    std::unique_ptr<Texture> createTexture(const TextureDesc& /*desc*/,
+                                           std::span<const u8> /*rgba8Pixels*/) override {
         throw std::logic_error("Fixture inspection cannot create GPU resources");
     }
-    void updateTexture(Texture&, std::span<const u8>) override {
+    void updateTexture(Texture& /*texture*/, std::span<const u8> /*rgba8Pixels*/) override {
         throw std::logic_error("Fixture inspection cannot update GPU resources");
     }
     const Texture& whiteTexture() const override { return *m_white; }
@@ -66,15 +68,15 @@ public:
               const DrawState& state) override {
         // Decoders impose smaller limits; retain a local allocation bound for
         // inspection even if another optional provider supplies a malformed mesh.
-        if (batch.vertexCount() <= 3 * 1024 * 1024) {
+        if (batch.vertexCount() <= usize{3} * 1024 * 1024) {
             m_draw(batch, texture, transform, state);
         }
     }
     void waitIdle() override {}
-    bool applyDepthOfField(const DepthOfField&) override { return false; }
+    bool applyDepthOfField(const DepthOfField& /*settings*/) override { return false; }
     bool applyBloom() override { return false; }
-    void addHeatSource(const HeatSource&) override {}
-    bool applyAmbientOcclusion(const AmbientOcclusion&) override { return false; }
+    void addHeatSource(const HeatSource& /*source*/) override {}
+    bool applyAmbientOcclusion(const AmbientOcclusion& /*settings*/) override { return false; }
 
 private:
     class White final : public Texture {
@@ -94,7 +96,7 @@ bool LegendsSceneAdapter::fixtureVisible(usize index) const {
 
 void LegendsSceneAdapter::drawFixture(usize index, RenderDevice& device, const Mat4& clip,
                                       const CameraFrame& camera, TreeModel::Pass pass,
-                                      f32 alpha) const {
+                                      f32 presentationAlpha) const {
     if (!fixtureVisible(index)) {
         return;
     }
@@ -112,10 +114,10 @@ void LegendsSceneAdapter::drawFixture(usize index, RenderDevice& device, const M
     // skodeath's display list clears G_CULL_BACK for every fire panel.
     // The circle must remain visible from inside as well as outside.
     appearance.doubleSided = m_towerRunePortal == index;
-    const f32 opacity =
-        m_towerShardPortal == index ? m_towerPortals[0].charge(alpha) : m_fixtureOpacity[index];
-    m_fixtures[index].draw(device, clip, WorldLighting{}, opacity, 1, &camera, pass, alpha,
-                           &appearance);
+    const f32 opacity = m_towerShardPortal == index ? m_towerPortals[0].charge(presentationAlpha)
+                                                    : m_fixtureOpacity[index];
+    m_fixtures[index].draw(device, clip, WorldLighting{}, opacity, 1, &camera, pass,
+                           presentationAlpha, &appearance);
 }
 
 usize LegendsSceneAdapter::fixtureIdentity(usize index) const {
@@ -214,7 +216,7 @@ std::optional<ImportedWorldObject> LegendsSceneAdapter::fixtureObject(s32 id) co
     if (id < kFixtureObjectBase) {
         return {};
     }
-    const usize index = static_cast<usize>(id - kFixtureObjectBase);
+    const auto index = static_cast<usize>(id - kFixtureObjectBase);
     if (index >= m_fixtures.size() || fixtureIdentity(index) != index) {
         return {};
     }
@@ -280,7 +282,7 @@ void LegendsSceneAdapter::highlightFixture(RenderDevice& device, const Mat4& cli
     if (!selected || !selected->visible || !std::isfinite(alpha)) {
         return;
     }
-    const usize index = static_cast<usize>(id - kFixtureObjectBase);
+    const auto index = static_cast<usize>(id - kFixtureObjectBase);
     FixtureInspection inspection{
         [&](const ImmediateBatch& batch, const Texture& texture, const Mat4& transform,
             const DrawState& state) {

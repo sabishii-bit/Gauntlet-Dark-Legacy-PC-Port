@@ -12,19 +12,23 @@ namespace gdl::game {
 
 std::unique_ptr<CombatantAssets>
 LegendsLevel::loadBossAssets(RenderDevice& device, const std::filesystem::path& commonRoot) const {
-    if (!m_boss || platform() != LegendsPlatform::N64)
+    if (!m_boss || platform() != LegendsPlatform::N64) {
         return {};
+    }
     const auto root = m_directory.parent_path().parent_path();
     const auto program = AssetLocator(root).find("_program/game.bin");
-    if (!program)
+    if (!program) {
         throw FileError("Native boss requires the N64 program tables");
+    }
     std::vector<std::string> warnings;
     auto assets = loadLegendsBossAssets(device, root, commonRoot, m_boss->combat.kind,
                                         readFile(*program), {}, warnings);
-    for (const auto& warning : warnings)
+    for (const auto& warning : warnings) {
         log::warn("{}", warning);
-    if (!assets)
+    }
+    if (!assets) {
         throw FormatError("Native boss family is not supported");
+    }
     return assets;
 }
 

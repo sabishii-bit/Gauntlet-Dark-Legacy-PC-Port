@@ -165,12 +165,15 @@ Image decodePixels(const LegendsN64Texture& texture, std::span<const u8> data, u
     // SLIME METER_BG1/2 are200 CI4 texels but13 words (104 bytes) per row,
     // not100. TXHD allocates3328 bytes, and TXLD loads exactly that extent.
     // Ignoring the pitch shifts every subsequent row of the meter artwork.
-    if (size == 3)
+    if (size == 3) {
         rowBytes *= 2;
-    if (rowBytes == 0)
+    }
+    if (rowBytes == 0) {
         rowBytes = packedRow; // Compact loader or no explicit render-tile stride.
-    if (rowBytes < packedRow)
+    }
+    if (rowBytes < packedRow) {
         throw FormatError("N64 texture row pitch is smaller than its image");
+    }
     const usize byteCount = (usize{texture.height} - 1) * rowBytes + packedRow;
     if (byteCount > storageSize) {
         throw FormatError("N64 texture pixels exceed their allocated storage");
@@ -341,8 +344,9 @@ void resolveLegendsN64ColorRamps(std::vector<LegendsN64Model>& models,
     // the converted material permanently stuck on its often-transparent frame.
     std::vector<TextureAnimation> sharedCycles;
     for (const auto& motion : animation.textureAnimations) {
-        if (motion.flag == -1 && motion.texture >= 0 && motion.source >= 0 && motion.frames > 0)
+        if (motion.flag == -1 && motion.texture >= 0 && motion.source >= 0 && motion.frames > 0) {
             sharedCycles.push_back(motion);
+        }
     }
     const auto available = [&](u32 first, u32 count) {
         require(first < nativeTextures && count > 0 && count <= nativeTextures - first,
@@ -424,8 +428,9 @@ void resolveLegendsN64ColorRamps(std::vector<LegendsN64Model>& models,
             }
             for (const auto& motion : sharedCycles) {
                 if (static_cast<u32>(motion.texture) == texture &&
-                    !available(static_cast<u32>(motion.source), static_cast<u32>(motion.frames)))
+                    !available(static_cast<u32>(motion.source), static_cast<u32>(motion.frames))) {
                     supported[index] = false;
+                }
             }
         }
         if (!model.mesh.prelit) {
@@ -543,8 +548,9 @@ void resolveLegendsN64ColorRamps(std::vector<LegendsN64Model>& models,
                 for (usize i = 0; i < sharedCycles.size(); ++i) {
                     auto motion = sharedCycles[i];
                     if (static_cast<u32>(motion.texture) != nativeSlot ||
-                        !convertedCycles.emplace(i, part.texture).second)
+                        !convertedCycles.emplace(i, part.texture).second) {
                         continue;
+                    }
                     motion.texture = static_cast<s32>(part.texture);
                     motion.source = static_cast<s32>(convert(
                         static_cast<u32>(motion.source), static_cast<u32>(motion.frames), ramp));
@@ -564,10 +570,11 @@ void resolveLegendsN64ColorRamps(std::vector<LegendsN64Model>& models,
                     require(remainingBytes >= kCharge, "geometry variant byte budget exceeded");
                     remainingBytes -= kCharge;
                     auto vertex = model.mesh.vertices[index];
-                    if (!ramp.shadeRgb)
+                    if (!ramp.shadeRgb) {
                         vertex.color = Color::white();
-                    else
+                    } else {
                         vertex.color.a = 255; // Cycle1 modulates only RGB, never SHADE alpha.
+                    }
                     model.mesh.vertices.push_back(vertex);
                     if (!model.vertexSources.empty()) {
                         require(index < model.vertexSources.size(),

@@ -79,9 +79,12 @@ std::string sequence(std::span<const u8> record) {
 } // namespace
 
 std::vector<std::string> legendsN64GeneratorArchives(std::string_view directory) {
+    // MSVC's checked array iterator is not a pointer; keep the portable iterator type.
+    // NOLINTNEXTLINE(readability-qualified-auto)
     const auto roster = std::ranges::find(kRosters, toLowerAscii(directory), &Roster::level);
-    if (roster == kRosters.end())
+    if (roster == kRosters.end()) {
         return {};
+    }
     // e006a640 loads these medium/small species archives; their GENERATOR
     // groups supply the models used by e0067818. Town/Castle/Battle's item
     // archives do not contain those groups at all. Keep the verified loading

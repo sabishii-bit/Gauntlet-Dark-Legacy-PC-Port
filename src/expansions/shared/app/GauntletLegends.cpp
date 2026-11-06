@@ -317,8 +317,9 @@ void Gauntlet::consoleLegendsOpen(DevConsole& console, LegendsPlatform platform,
             start.kind = LocatorKind::Start;
             start.position = entrance.start();
             start.rotation.y = entrance.actor().yaw() - kPi;
-            if (n64 && !m_legendsAdvice)
+            if (n64 && !m_legendsAdvice) {
                 m_legendsAdvice = std::make_shared<LegendsAdviceState>();
+            }
             auto native = std::make_shared<LegendsLevel>(renderDevice(), map, std::move(adapter),
                                                          files.root(), m_options.unpackedDirectory,
                                                          n64 ? m_legendsAdvice : nullptr);

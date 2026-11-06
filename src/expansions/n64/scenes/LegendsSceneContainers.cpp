@@ -88,8 +88,9 @@ void LegendsSceneAdapter::selectFloorOutcome(usize index) {
     binding.selected = selected;
     binding.activeFigure.reset();
     for (const auto& old : binding.outcomes) {
-        if (old.death)
+        if (old.death) {
             m_deaths[*old.death].active = false;
+        }
     }
     auto& pickup = m_pickups[binding.pickup];
     pickup.active = false;
@@ -99,8 +100,9 @@ void LegendsSceneAdapter::selectFloorOutcome(usize index) {
         return;
     }
     binding.activeFigure = outcome->figure;
-    if (outcome->death)
+    if (outcome->death) {
         m_deaths[*outcome->death].active = true;
+    }
     if (outcome->figure) {
         auto& figure = m_fixtures[*outcome->figure];
         const auto* animation = figure.sequenceInfo(0);
@@ -259,8 +261,9 @@ void LegendsSceneAdapter::bindN64Container(RenderDevice& device,
             place(device, formats::legendsN64TreeName("POWERUP", choice.sequence), placement);
             if (m_fixtures.size() != figure) {
                 outcome.death = bindN64Death(choice, figure, {});
-                if (outcome.death)
+                if (outcome.death) {
                     m_deaths[*outcome.death].active = false;
+                }
                 m_hiddenFixtures[figure] = true;
             } else {
                 warn("Native contained Death artwork is unavailable");

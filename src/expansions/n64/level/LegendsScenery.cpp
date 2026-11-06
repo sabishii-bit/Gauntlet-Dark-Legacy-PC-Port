@@ -94,16 +94,19 @@ bool LegendsScenery::strike(s32 target, f32 damage, u32 flags) {
 }
 
 void LegendsScenery::update(f32 seconds) {
-    if (!std::isfinite(seconds) || seconds <= 0)
+    if (!std::isfinite(seconds) || seconds <= 0) {
         return;
-    for (auto& flash : m_flash)
+    }
+    for (auto& flash : m_flash) {
         flash = std::max(0.0f, flash - seconds);
+    }
 }
 
 f32 LegendsScenery::whiteBlend(usize object) const {
     for (usize i = 0; i < m_definitions.size(); ++i) {
-        if (m_definitions[i].object == object)
+        if (m_definitions[i].object == object) {
             return m_flash[i] > 0 ? 1.0f : 0.0f;
+        }
     }
     return 0;
 }

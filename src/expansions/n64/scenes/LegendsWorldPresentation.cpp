@@ -49,7 +49,7 @@ Mat4 LegendsWorldPresentation::drawAdjustment(const WorldCamera& camera) const {
     // This is a camera-directed presentation offset, not a world-Y nudge or a
     // disabled Z test. Nearer solid geometry must continue to occlude decals.
     Vec3 offset;
-    for (usize axis = 0; axis < 3; ++axis) {
+    for (s32 axis = 0; axis < 3; ++axis) {
         offset[axis] = std::trunc(backward[axis] * 4096.0f) * (3.0f / 8192.0f);
     }
     return glm::translate(Mat4{1}, offset);

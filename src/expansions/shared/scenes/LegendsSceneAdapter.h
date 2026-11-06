@@ -184,7 +184,7 @@ private:
     bool fixtureVisible(usize index) const;
     usize fixtureIdentity(usize index) const;
     void drawFixture(usize index, RenderDevice& device, const Mat4& clip, const CameraFrame& camera,
-                     TreeModel::Pass pass, f32 alpha) const;
+                     TreeModel::Pass pass, f32 presentationAlpha) const;
     void bindN64Trap(RenderDevice& device, formats::LegendsN64Trap definition, usize idleFigure,
                      f32 damageScale, s32 floorOwner = -1);
     void loadDreamcast(RenderDevice& device, const std::filesystem::path& directory);

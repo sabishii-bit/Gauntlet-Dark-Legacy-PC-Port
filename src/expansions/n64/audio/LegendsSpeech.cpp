@@ -40,8 +40,10 @@ std::string component(std::span<const u8> program, u32 address) {
         if (value == 0 && !result.empty()) {
             return result;
         }
-        if (!((value >= 'a' && value <= 'z') || (value >= 'A' && value <= 'Z') ||
-              (value >= '0' && value <= '9') || value == '_')) {
+        const bool nameCharacter = (value >= 'a' && value <= 'z') ||
+                                   (value >= 'A' && value <= 'Z') ||
+                                   (value >= '0' && value <= '9') || value == '_';
+        if (!nameCharacter) {
             break;
         }
         result.push_back(static_cast<char>(value));
@@ -187,10 +189,12 @@ bool LegendsSpeech::openN64(const std::filesystem::path& root) {
         m_default = defaultEntry;
         m_groups = std::move(groups);
         // e007c730 uses these independent tables for -1 color and -2 class.
-        for (usize i = 0; i < m_colors.size(); ++i)
+        for (usize i = 0; i < m_colors.size(); ++i) {
             m_colors[i] = readU16BE(program, offset(program, 0xe007c850U + u32(i) * 2, 2));
-        for (usize i = 0; i < m_classes.size(); ++i)
+        }
+        for (usize i = 0; i < m_classes.size(); ++i) {
             m_classes[i] = readU16BE(program, offset(program, 0xe007c858U + u32(i) * 2, 2));
+        }
         m_levelCues = std::move(levelCues);
         m_obeliskCues = obeliskCues;
         return true;
@@ -216,14 +220,16 @@ std::optional<LegendsSpeechCue> LegendsSpeech::resolve(u32 token,
         // e004eefc/e004dc64: four originals, then their secret counterparts
         // at native slots5..8. Slot4 is invalid; native Sumner slot9 says Wizard,
         // so it is not an equivalent spoken identity for the GDL Sumner class.
-        if (subject->pojo || subject->color < 0 || subject->color >= 4)
+        if (subject->pojo || subject->color < 0 || subject->color >= 4) {
             return std::nullopt;
-        if (subject->character >= 0 && subject->character < 4)
+        }
+        if (subject->character >= 0 && subject->character < 4) {
             nativeClass = subject->character;
-        else if (subject->character >= 8 && subject->character < 12)
+        } else if (subject->character >= 8 && subject->character < 12) {
             nativeClass = subject->character - 3;
-        else
+        } else {
             return std::nullopt;
+        }
     }
     if (!opened() || token == 0xffff || token == 0xffffffff) {
         return std::nullopt;
@@ -259,10 +265,11 @@ std::optional<LegendsSpeechCue> LegendsSpeech::resolve(u32 token,
         for (u16 clip : m_groups[group]) {
             // Resolve the whole phrase before admission. Never turn an absent
             // player or unsupported rank into clip1023/1022/1021.
-            if (clip == 0xffffU && subject)
+            if (clip == 0xffffU && subject) {
                 clip = m_colors[static_cast<usize>(subject->color)];
-            else if (clip == 0xfffeU && subject)
+            } else if (clip == 0xfffeU && subject) {
                 clip = m_classes[static_cast<usize>(nativeClass)];
+            }
             if (clip == 0 || clip >= 0xfffdU) {
                 return std::nullopt;
             }

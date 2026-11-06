@@ -13,12 +13,15 @@ LegendsEnemySounds LegendsEnemySounds::decode(std::span<const u8> program,
     LegendsEnemySounds result;
     result.m_families.fill(-1);
     constexpr usize kTable = 0xe005fbb0U - 0xe0000400U;
-    constexpr usize kBytes = 7 * 15 * 2;
-    if (program.size() < kTable + kBytes || enemies.size() < 12)
+    constexpr usize kBytes = usize{7} * 15 * 2;
+    if (program.size() < kTable + kBytes || enemies.size() < 12) {
         throw FormatError("N64 enemy sound tables are truncated");
-    for (usize family = 0; family < result.m_cues.size(); ++family)
-        for (usize cue = 0; cue < result.m_cues[family].size(); ++cue)
+    }
+    for (usize family = 0; family < result.m_cues.size(); ++family) {
+        for (usize cue = 0; cue < result.m_cues[family].size(); ++cue) {
             result.m_cues[family][cue] = readU16BE(program, kTable + (family * 15 + cue) * 2);
+        }
+    }
     // e005f7a4 matches each FOURCC, copying the following 48 bytes to the
     // species table. e005c270 indexes its voice family at byte 39. Each row
     // contains six melee slots, six hurt slots, and three death slots.
@@ -41,22 +44,30 @@ LegendsEnemySounds LegendsEnemySounds::decode(std::span<const u8> program,
                                                             {0x00004954, 31}}};
     const usize first = readU32BE(enemies, 0);
     const usize stride = readU32BE(enemies, 4);
-    if (first < 8 || first > enemies.size() || stride < 52 || stride > 256)
+    if (first < 8 || first > enemies.size() || stride < 52 || stride > 256) {
         throw FormatError("Invalid N64 enemy record layout");
+    }
     for (usize i = 0, at = first; i < 256; ++i, at += stride) {
-        if (at > enemies.size() || enemies.size() - at < 4)
+        if (at > enemies.size() || enemies.size() - at < 4) {
             throw FormatError("Unterminated N64 enemy records");
+        }
         const u32 key = readU32BE(enemies, at);
-        if (key == 0)
+        if (key == 0) {
             return result;
-        if (stride > enemies.size() - at)
+        }
+        if (stride > enemies.size() - at) {
             throw FormatError("Truncated N64 enemy record");
+        }
+        // MSVC's checked array iterator is not a pointer; keep the portable iterator type.
+        // NOLINTNEXTLINE(readability-qualified-auto)
         const auto found = std::ranges::find(kKinds, key, &std::pair<u32, usize>::first);
-        if (found == kKinds.end())
+        if (found == kKinds.end()) {
             continue;
+        }
         const u8 family = enemies[at + 4 + 39];
-        if (family >= result.m_cues.size() || result.m_families[found->second] != -1)
+        if (family >= result.m_cues.size() || result.m_families[found->second] != -1) {
             throw FormatError("Invalid or duplicate N64 enemy sound family");
+        }
         result.m_families[found->second] = static_cast<s8>(family);
     }
     throw FormatError("Excessive N64 enemy records");
@@ -64,11 +75,13 @@ LegendsEnemySounds LegendsEnemySounds::decode(std::span<const u8> program,
 
 std::optional<u32> LegendsEnemySounds::feedback(const EnemyFeedback& event, f32 health) const {
     if (event.kind < 0 || static_cast<usize>(event.kind) >= m_families.size() || event.tier < 1 ||
-        !std::isfinite(health))
+        !std::isfinite(health)) {
         return {};
+    }
     const s8 family = m_families[static_cast<usize>(event.kind)];
-    if (family < 0)
+    if (family < 0) {
         return {};
+    }
     usize index = 0;
     if (event.killed) {
         index = 6 + static_cast<usize>(std::min(event.tier - 1, 2));
@@ -77,18 +90,20 @@ std::optional<u32> LegendsEnemySounds::feedback(const EnemyFeedback& event, f32 
     } else if (event.tier >= 3) {
         index = health > 10 ? 5 : health > 5 ? 4 : 3;
     }
-    const auto cue = m_cues[static_cast<usize>(family)][6 + index];
+    const auto cue = m_cues[static_cast<u8>(family)][6 + index];
     return cue == 0xffffU ? std::nullopt : std::optional<u32>{cue};
 }
 
 std::optional<u32> LegendsEnemySounds::melee(s32 kind, s32 tier) const {
-    if (kind < 0 || static_cast<usize>(kind) >= m_families.size() || tier < 1 || tier > 6)
+    if (kind < 0 || static_cast<usize>(kind) >= m_families.size() || tier < 1 || tier > 6) {
         return {};
+    }
     const s8 family = m_families[static_cast<usize>(kind)];
-    if (family < 0)
+    if (family < 0) {
         return {};
+    }
     // e005cf6c/e005d134: family * 30 + (tier - 1) * 2, after player damage.
-    const auto cue = m_cues[static_cast<usize>(family)][static_cast<usize>(tier - 1)];
+    const auto cue = m_cues[static_cast<u8>(family)][static_cast<usize>(tier - 1)];
     return cue == 0xffffU ? std::nullopt : std::optional<u32>{cue};
 }
 } // namespace gdl::game

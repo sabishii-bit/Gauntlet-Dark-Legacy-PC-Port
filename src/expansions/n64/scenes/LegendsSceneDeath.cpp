@@ -18,8 +18,7 @@ LegendsSceneAdapter::bindN64Death(const formats::LegendsN64Fixture& fixture, usi
     }
     const auto placement = formats::legendsN64FixturePlacement(fixture, collision);
     state->placeAt(placement.position);
-    m_deaths.push_back(
-        {std::move(*state), figure, m_fixtures[figure].transform(), placement.floorObject});
+    m_deaths.push_back({*state, figure, m_fixtures[figure].transform(), placement.floorObject});
     return m_deaths.size() - 1;
 }
 
@@ -64,14 +63,18 @@ std::vector<Obstacle> LegendsSceneAdapter::deathObstacles() const {
 
 bool LegendsSceneAdapter::strikeDeath(s32 localId, f32 power) {
     const s32 index = localId - LegendsDeath::kTargetBase;
-    if (index < 0 || static_cast<usize>(index) >= m_deaths.size())
+    if (index < 0 || static_cast<usize>(index) >= m_deaths.size()) {
         return false;
+    }
     auto& death = m_deaths[static_cast<usize>(index)];
-    if (!death.active || m_hiddenFixtures[death.figure] || !death.state.strike(power))
+    if (!death.active || m_hiddenFixtures[death.figure] || !death.state.strike(power)) {
         return false;
-    for (const auto& selector : m_floorSelectors)
-        if (selector.activeFigure == death.figure)
+    }
+    for (const auto& selector : m_floorSelectors) {
+        if (selector.activeFigure == death.figure) {
             m_lootSelectors.freeze(selector.slot);
+        }
+    }
     return true;
 }
 
@@ -79,9 +82,11 @@ void LegendsSceneAdapter::touchDeaths(Vec3 feet, f32 radius, f32 height) {
     for (auto& death : m_deaths) {
         if (death.active && !m_hiddenFixtures[death.figure] &&
             death.state.touch(feet, radius, height)) {
-            for (const auto& selector : m_floorSelectors)
-                if (selector.activeFigure == death.figure)
+            for (const auto& selector : m_floorSelectors) {
+                if (selector.activeFigure == death.figure) {
                     m_lootSelectors.freeze(selector.slot);
+                }
+            }
         }
     }
 }

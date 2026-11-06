@@ -313,7 +313,7 @@ struct Backend final : amuse::IBackendVoiceAllocator {
                 }
             }
         }
-        for (f32& sample : result) {
+        for (const f32 sample : result) {
             if (!std::isfinite(sample)) {
                 throw FormatError("N64 music produced non-finite audio");
             }

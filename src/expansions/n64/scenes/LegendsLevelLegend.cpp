@@ -11,8 +11,9 @@
 namespace gdl::game {
 
 std::optional<u32> legendsLegendSound(s32 index, LegendSound phase) {
-    if (index < 0 || index >= 4)
+    if (index < 0 || index >= 4) {
         return {};
+    }
     // Boss.bin e088a638/b324/c150/cd48: all four reveal with0x9e.
     // The first three throw with0x39; Yeti's fireballs launch with0x122.
     // Sword impact calls the boss damage path rather than an extra macro.
@@ -33,10 +34,12 @@ std::optional<u32> legendsLegendSound(s32 index, LegendSound phase) {
 }
 
 bool LegendsLevel::playBossLegendSound(LegendSound phase) {
-    if (platform() != LegendsPlatform::N64 || !m_boss || !m_bossLegend)
+    if (platform() != LegendsPlatform::N64 || !m_boss || !m_bossLegend) {
         return false;
-    if (const auto token = legendsLegendSound(m_boss->consumedLegend, phase))
+    }
+    if (const auto token = legendsLegendSound(m_boss->consumedLegend, phase)) {
         m_opponentSounds.push_back(*token);
+    }
     // Native spinning whooshes were discrete cinematic rotations, not an
     // endlessly looping GDL flight sample. Unmapped phases remain silent.
     return true;
@@ -51,16 +54,16 @@ LegendsLegendBinding loadLegendsLegend(const std::filesystem::path& nativeRoot, 
     // e0889ca0 loads these exact libraries and named meshes for the four rites.
     // Their POWERUP trees contain the same authored weapon geometry. Retain its
     // native hierarchy/texture animation while the GDL hand/throw drives it.
-    static constexpr std::array paths{"items/s/li", "items/s/lf", "items/s/ls", "items/s/lj"};
-    static constexpr std::array trees{"POWERUP:QICE", "POWERUP:QFLM", "POWERUP:QSCM",
-                                      "POWERUP:QJAV"};
+    static constexpr std::array kPaths{"items/s/li", "items/s/lf", "items/s/ls", "items/s/lj"};
+    static constexpr std::array kTrees{"POWERUP:QICE", "POWERUP:QFLM", "POWERUP:QSCM",
+                                       "POWERUP:QJAV"};
     const std::array fireBanks{nativeRoot / "weapons", nativeRoot / "bosseffect/skodeath"};
     const std::span<const std::filesystem::path> lenders =
         index == 1 ? fireBanks : std::span<const std::filesystem::path>{};
     LegendsLegendBinding result;
-    result.archive = loadLegendsN64Archive(nativeRoot / paths[static_cast<usize>(index)], warnings,
+    result.archive = loadLegendsN64Archive(nativeRoot / kPaths[static_cast<usize>(index)], warnings,
                                            program, {}, false, lenders);
-    result.profile.held = trees[static_cast<usize>(index)];
+    result.profile.held = kTrees[static_cast<usize>(index)];
     result.profile.projectile = result.profile.held;
     result.profile.flight = LegendShow::Flight::Flies;
     if (index == 2 || index == 3) {
@@ -72,8 +75,9 @@ LegendsLegendBinding loadLegendsLegend(const std::filesystem::path& nativeRoot, 
             readFile(nativeRoot / (index == 2 ? "chimera/seq.wad" : "slime/seq.wad")));
         result.profile.targetNode =
             formats::findLegendsN64Bone(names, index == 2 ? "BODY1_LION" : "BODY1_EYEBALL");
-        if (!result.profile.targetNode)
+        if (!result.profile.targetNode) {
             throw FormatError("Native legendary weapon target is unavailable");
+        }
         // Neither N64 archive has GDL's STUMPLQ/PBOSSQEYEBALL models. Keep
         // the native eye and cue identity, without inventing donor artwork.
         // Native STUMPL itself is an authored but absent effect group; its

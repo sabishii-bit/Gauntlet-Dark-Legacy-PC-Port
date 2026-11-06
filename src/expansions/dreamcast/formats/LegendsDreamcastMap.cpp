@@ -161,8 +161,9 @@ Mesh geometry(std::span<const u8> bytes, usize model, usize bitmapCount, usize b
         if (mesh.parts.empty() || mesh.parts.back().texture != texture ||
             (partLightmaps && partLightmaps->back() != lightmap)) {
             mesh.parts.push_back(MeshPart{texture, 0, {}});
-            if (partLightmaps)
+            if (partLightmaps) {
                 partLightmaps->push_back(lightmap);
+            }
         }
         auto& indices = mesh.parts.back().indices;
         indices.insert(indices.end(), {a, b, c});

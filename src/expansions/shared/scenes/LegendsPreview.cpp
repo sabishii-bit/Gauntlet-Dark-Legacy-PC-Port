@@ -56,11 +56,11 @@ void LegendsPreview::open(RenderDevice& device, const formats::LegendsMap& map,
     // Sharing a texture does not make two native objects one animation target.
     std::map<u32, std::unique_ptr<Texture>> lightmaps;
     for (const auto& lightmap : map.lightmaps) {
-        TextureDesc description{.width = lightmap.image.width,
-                                .height = lightmap.image.height,
-                                .wrap = TextureWrap::ClampToEdge,
-                                .wrapV = TextureWrap::ClampToEdge,
-                                .generateMipmaps = true};
+        const TextureDesc description{.width = lightmap.image.width,
+                                      .height = lightmap.image.height,
+                                      .wrap = TextureWrap::ClampToEdge,
+                                      .wrapV = TextureWrap::ClampToEdge,
+                                      .generateMipmaps = true};
         lightmaps.emplace(lightmap.record,
                           device.createTexture(description, lightmap.image.pixels));
     }
@@ -69,11 +69,14 @@ void LegendsPreview::open(RenderDevice& device, const formats::LegendsMap& map,
     Vec3 high{std::numeric_limits<f32>::lowest()};
     for (usize objectIndex = 0; objectIndex < map.objects.size(); ++objectIndex) {
         const auto& object = map.objects[objectIndex];
-        if (!object.partCullBack.empty() && object.partCullBack.size() != object.mesh.parts.size())
+        if (!object.partCullBack.empty() &&
+            object.partCullBack.size() != object.mesh.parts.size()) {
             throw FormatError("Legends preview: invalid part culling roster");
+        }
         if (!object.partLightmaps.empty() &&
-            object.partLightmaps.size() != object.mesh.parts.size())
+            object.partLightmaps.size() != object.mesh.parts.size()) {
             throw FormatError("Legends preview: invalid part lightmap roster");
+        }
         for (usize partIndex = 0; partIndex < object.mesh.parts.size(); ++partIndex) {
             const auto& part = object.mesh.parts[partIndex];
             if (part.indices.size() % 3 != 0) {
@@ -158,8 +161,9 @@ void LegendsPreview::open(RenderDevice& device, const formats::LegendsMap& map,
             built.dreamcastFacing = CameraFrame::facingOf(object.nativeDrawFlags);
             // 8c0f29a0 sets the lightmap-pass bypass for additive drawables.
             // GameCube's no-lightmap bit is not this Dreamcast condition.
-            if (built.additive)
+            if (built.additive) {
                 built.lightmap = 0;
+            }
         } else {
             built.presentation = LegendsWorldPresentation::n64(
                 object.nativeDrawFlags, object.hasNativeDrawState ? object.flags : 0);
@@ -383,8 +387,9 @@ void LegendsPreview::drawWorld(RenderDevice& device, const Mat4& transform, cons
         state.cullBack = batch.cullBack;
         state.blend = soft || batch.presentation.forceAlpha || opacity < 1 ? BlendMode::Alpha
                                                                            : BlendMode::Opaque;
-        if (batch.additive)
+        if (batch.additive) {
             state.blend = BlendMode::Additive;
+        }
         if (const auto found = m_lightmaps.find(batch.lightmap); found != m_lightmaps.end()) {
             state.lightmap = found->second.get();
             state.lightmapRgb = true;

@@ -22,22 +22,24 @@ const Calibrations& nativeCalibrations(N64LegendsEffects& bank) {
     // Function-local initialization serializes concurrent map loaders and
     // retries after a failed initialization. Scan during loading: a cold cue
     // took up to 27 ms, which must not become a hitch on its first combat hit.
-    static const Calibrations measured = [&bank] {
+    static const Calibrations kMeasured = [&bank] {
         Calibrations result;
         result.reserve(bank.cueIds().size());
         for (const u16 id : bank.cueIds()) {
             auto source = bank.create(id);
-            if (!source)
+            if (!source) {
                 throw FormatError("cannot prepare native N64 effect calibration");
+            }
             const auto calibration =
                 legends_audio_mix::calibrate(*source, legends_audio_mix::Source::Effect);
-            if (!calibration)
+            if (!calibration) {
                 throw FormatError("cannot measure native N64 effect calibration");
+            }
             result.emplace(id, *calibration);
         }
         return result;
     }();
-    return measured;
+    return kMeasured;
 }
 } // namespace
 
@@ -117,8 +119,9 @@ SoundHandle LegendsSounds::play(SoundPlayer& output, u32 token, f32 volume, bool
         return kNoSound;
     }
     const auto calibration = m_calibrations.find(cue->effect);
-    if (calibration == m_calibrations.end())
+    if (calibration == m_calibrations.end()) {
         return kNoSound;
+    }
     auto source = m_effects.create(cue->effect, cue->pitch, cue->volume, cue->pan);
     if (!source) {
         return kNoSound;

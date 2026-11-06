@@ -302,13 +302,15 @@ Mesh decodeGeometry(std::span<const u8> bytes, const NativeModel& model, const S
             ramp = LegendsN64ColorRamp{0, *primitive, *environment, shadeRamp};
         }
         const bool cullBack = (geometryMode & 0x400U) != 0;
-        if (partCullBack != nullptr)
+        if (partCullBack != nullptr) {
             require((geometryMode & 0x200U) == 0, "unsupported front-face culling");
+        }
         if (result.parts.empty() || result.parts.back().texture != material ||
             previousRamp != ramp || (partCullBack != nullptr && partCullBack->back() != cullBack)) {
             result.parts.push_back(MeshPart{material, 0, {}});
-            if (partCullBack != nullptr)
+            if (partCullBack != nullptr) {
                 partCullBack->push_back(cullBack);
+            }
             previousRamp = ramp;
             if (ramp && colorRamps != nullptr) {
                 ramp->part = static_cast<u32>(result.parts.size() - 1);
@@ -334,8 +336,9 @@ Mesh decodeGeometry(std::span<const u8> bytes, const NativeModel& model, const S
                     destination = static_cast<u32>(result.vertices.size());
                     result.vertices.push_back(result.vertices[source]);
                     vertexColors.push_back(vertexColors[source]);
-                    if (vertexSources != nullptr)
+                    if (vertexSources != nullptr) {
                         vertexSources->push_back((*vertexSources)[source]);
+                    }
                 }
                 result.vertices[destination].color =
                     textureOnly ? Color::white() : vertexColors[source];
@@ -435,12 +438,15 @@ Mesh decodeGeometry(std::span<const u8> bytes, const NativeModel& model, const S
             break;
         }
         case 0xdf:
-            if (depthSeen && allTextureOnly)
+            if (depthSeen && allTextureOnly) {
                 result.prelit = true; // This combiner does not read lit SHADE either.
-            if (depthFlags != nullptr)
+            }
+            if (depthFlags != nullptr) {
                 *depthFlags = mixedDepth || !allTextureOnly ? std::nullopt : firstDepth;
-            if (mixedDepthFlags != nullptr)
+            }
+            if (mixedDepthFlags != nullptr) {
                 *mixedDepthFlags = allTextureOnly && mixedDepth;
+            }
             return result;
         case 0xfa:
             primitive = Color::rgba(second >> 24U, (second >> 16U) & 255U, (second >> 8U) & 255U,
@@ -658,7 +664,7 @@ LegendsMap LegendsMap::parseN64(std::span<const u8> worlds, std::span<const u8> 
             admitted[object] = true;
             require((result.objects[object].flags & 0x4000U) != 0,
                     "destructible roster references ordinary scenery");
-            const usize at = placements.offset + object * 44;
+            const usize at = placements.offset + usize{object} * 44;
             LegendsMapDestructible definition;
             definition.object = object;
             for (usize axis = 0; axis < 3; ++axis) {

@@ -60,8 +60,9 @@ void combineLegendsN64SequenceGroups(AnimationFile& animation,
                 incoming.type != TreeNodeType::Object) {
                 throw FormatError("N64 sequence group: static model changes in " + group);
             }
-            if (incoming.type == TreeNodeType::Object)
+            if (incoming.type == TreeNodeType::Object) {
                 node.type = TreeNodeType::Object;
+            }
             node.objectFrames.push_back(
                 incoming.objectFrames.empty()
                     ? TreeNode::ObjectFrames{incoming.object, 0,
@@ -71,8 +72,9 @@ void combineLegendsN64SequenceGroups(AnimationFile& animation,
         }
         const auto& name = tree.sequences.front().name;
         for (const auto& sequence : destination.sequences) {
-            if (sequence.name == name)
+            if (sequence.name == name) {
                 throw FormatError("N64 sequence group: duplicate sequence");
+            }
         }
         destination.sequences.push_back(std::move(tree.sequences.front()));
     }

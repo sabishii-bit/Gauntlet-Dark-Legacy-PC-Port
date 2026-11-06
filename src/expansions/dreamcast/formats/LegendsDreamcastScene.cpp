@@ -113,8 +113,9 @@ LegendsDreamcastScene LegendsDreamcastScene::parse(std::span<const u8> worlds) {
     // transmitter list and adds pi to their authored yaw. Types 3/4 are
     // attract cameras, not alternate follow markers.
     for (const auto& locator : decoded.locators) {
-        if (locator.kind != LocatorKind::CameraStart && locator.kind != LocatorKind::CameraGame)
+        if (locator.kind != LocatorKind::CameraStart && locator.kind != LocatorKind::CameraGame) {
             continue;
+        }
         require(finite(locator.position) && finite(locator.rotation), "nonfinite camera marker");
         result.cameraMarkers.push_back({LocatorKind::CameraGame, locator.delay, locator.next,
                                         locator.position, locator.rotation});

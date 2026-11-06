@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <bit>
+#include <cstddef>
 #include <utility>
 
 #include "engine/core/Error.h"
@@ -44,11 +45,13 @@ std::vector<LegendsSoundEntry> decodeLegendsSoundTable(std::span<const u8> progr
             }
             const usize begin = nameAddress - kProgramBase;
             const usize end = std::min(begin + 64, program.size());
-            const auto zero = std::find(program.begin() + begin, program.begin() + end, 0);
-            if (zero == program.begin() + end) {
+            const auto first = program.begin() + static_cast<std::ptrdiff_t>(begin);
+            const auto last = program.begin() + static_cast<std::ptrdiff_t>(end);
+            const auto zero = std::find(first, last, 0);
+            if (zero == last) {
                 throw FormatError("unterminated native N64 sound name");
             }
-            entry.name.assign(program.begin() + begin, zero);
+            entry.name.assign(first, zero);
             entry.name = toLowerAscii(entry.name);
         }
         entries.push_back(std::move(entry));

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstddef>
 #include <set>
 #include <string_view>
 #include <utility>
@@ -35,14 +36,16 @@ constexpr std::array kBanks{
 
 void alignSkorneRoar(formats::AnimationFile& animation) {
     const auto found = animation.find("BOSSROARFX");
-    if (!found)
+    if (!found) {
         throw FormatError("N64 Skorne: missing roar effect");
+    }
     auto& tree = animation.trees[*found];
     constexpr s16 kPreRoll = 20;
     constexpr s16 kNativeFrames = 38;
     if (tree.sequences.size() != 1 || tree.sequences.front().frameCount != kNativeFrames ||
-        tree.sequences.front().frameRate != 30)
+        tree.sequences.front().frameRate != 30) {
         throw FormatError("N64 Skorne: unexpected roar effect clock");
+    }
     // Deliberate GDL compatibility adjustment, not N64 playback parity. Both
     // games cue ROAR at move frame20. N64 BOSSROARFX then waits another20
     // frames (e0032478); the GC counterpart instead contains only the final
@@ -52,26 +55,33 @@ void alignSkorneRoar(formats::AnimationFile& animation) {
     auto& sequence = tree.sequences.front();
     sequence.frameCount = kNativeFrames - kPreRoll;
     for (auto& track : sequence.tracks) {
-        if (track.frames.size() == 1 && track.frames.front() == 0)
+        if (track.frames.size() == 1 && track.frames.front() == 0) {
             continue;
+        }
         if (track.frames.size() != kNativeFrames ||
-            track.values.size() != usize{kNativeFrames} * track.channelCount())
+            track.values.size() != usize{kNativeFrames} * track.channelCount()) {
             throw FormatError("N64 Skorne: unexpected roar transform samples");
-        for (usize i = 0; i < track.frames.size(); ++i)
-            if (track.frames[i] != i)
+        }
+        for (usize i = 0; i < track.frames.size(); ++i) {
+            if (track.frames[i] != i) {
                 throw FormatError("N64 Skorne: sparse roar transform samples");
+            }
+        }
         track.frames.erase(track.frames.begin(), track.frames.begin() + kPreRoll);
         track.values.erase(track.values.begin(),
-                           track.values.begin() + kPreRoll * track.channelCount());
-        for (auto& frame : track.frames)
+                           track.values.begin() + std::ptrdiff_t{kPreRoll} * track.channelCount());
+        for (auto& frame : track.frames) {
             frame -= kPreRoll;
+        }
     }
     for (auto& node : tree.nodes) {
         for (auto& run : node.objectFrames) {
-            if (run.frames <= 1)
+            if (run.frames <= 1) {
                 continue;
-            if (run.start != 0 || run.frames != kNativeFrames)
+            }
+            if (run.start != 0 || run.frames != kNativeFrames) {
                 throw FormatError("N64 Skorne: unexpected roar model samples");
+            }
             // A negative run origin selects native sample20 at effect frame0;
             // no model/texture pixels or shared archive slots are rewritten.
             run.start = -kPreRoll;
@@ -86,15 +96,19 @@ std::unique_ptr<CombatantAssets> loadLegendsBossAssets(RenderDevice& device,
                                                        std::span<TextureSet* const> textureLenders,
                                                        std::vector<std::string>& warnings) {
     const Bank* bank = nullptr;
-    for (const auto& candidate : kBanks)
-        if (candidate.kind == kind)
+    for (const auto& candidate : kBanks) {
+        if (candidate.kind == kind) {
             bank = &candidate;
-    if (bank == nullptr)
+        }
+    }
+    if (bank == nullptr) {
         return {};
+    }
     const AssetLocator files{nativeRoot / bank->data};
     const auto path = files.find("moves.wad");
-    if (!path)
+    if (!path) {
         throw FileError("N64 Legends boss moves.wad is missing: " + std::string(bank->data));
+    }
     auto decoded = formats::decodeLegendsN64Critter(readFile(*path));
     if (kind == boss_type::kSkorne1) {
         const auto first =
@@ -103,8 +117,9 @@ std::unique_ptr<CombatantAssets> loadLegendsBossAssets(RenderDevice& device,
             std::ranges::find(decoded.moves, "START2", &formats::CritterMoveRecord::name);
         if (first == decoded.moves.end() || second == decoded.moves.end() ||
             first->anim != "STRT" || second->anim != "STR2" || first->link != -1 ||
-            first->type != 0x10 || second->type != 0xf0 || second->link != -1)
+            first->type != 0x10 || second->type != 0xf0 || second->link != -1) {
             throw FormatError("N64 Skorne: unexpected entrance move table");
+        }
         // Intentional GDL compatibility, not a recovered N64 link. GDL SKORNE1
         // chains its 51-frame START to the 83-frame START2 at30fps. N64 retains
         // those same clips but leaves STR2 outside autonomous move selection.
@@ -120,8 +135,9 @@ std::unique_ptr<CombatantAssets> loadLegendsBossAssets(RenderDevice& device,
                 std::ranges::find(decoded.moves, name, &formats::CritterMoveRecord::name);
             if (pound == decoded.moves.end() || pound->type != 0x82 || pound->frameStart != 4 ||
                 pound->frameEnd != -1 || pound->damage0 < 0 ||
-                pound->anim != (name == std::string_view{"POUNDL"} ? "AT6" : "AT7"))
+                pound->anim != (name == std::string_view{"POUNDL"} ? "AT6" : "AT7")) {
                 throw FormatError("N64 Skorne: unexpected ground-punch move table");
+            }
             // GDL compatibility repair: GC STOMP emits its detached ground wave
             // at frame9, not the N64 table's frame4 wind-up. The native clips
             // first put the wrists on the arena at L10/R9; frame4 creates the
@@ -139,13 +155,17 @@ std::unique_ptr<CombatantAssets> loadLegendsBossAssets(RenderDevice& device,
         // Keep their ranged attacks and cadence, but leave close attacks to
         // their standalone target gates instead of swinging across the arena.
         for (auto& pattern : decoded.patterns) {
+            // MSVC's checked array iterator is not a pointer; keep the portable iterator type.
+            // NOLINTNEXTLINE(readability-qualified-auto)
             auto write = pattern.moves.begin();
             for (const s16 index : pattern.moves) {
-                if (index < 0)
+                if (index < 0) {
                     break;
+                }
                 const auto& move = decoded.moves.at(static_cast<usize>(index));
-                if (move.name != "CLAWL" && move.name != "GRAB")
+                if (move.name != "CLAWL" && move.name != "GRAB") {
                     *write++ = index;
+                }
             }
             std::fill(write, pattern.moves.end(), s16{-1});
         }
@@ -157,25 +177,29 @@ std::unique_ptr<CombatantAssets> loadLegendsBossAssets(RenderDevice& device,
             const auto index = static_cast<s32>(&effect - decoded.sounds.data());
             const formats::CritterDamageRecord* source = nullptr;
             for (const auto& damage : decoded.damages) {
-                if (damage.sfxIndex != index)
+                if (damage.sfxIndex != index) {
                     continue;
-                if (damage.type != 3 || (source && damage.offset != source->offset))
+                }
+                if (damage.type != 3 || (source && damage.offset != source->offset)) {
                     throw FormatError("N64 Chimera: ambiguous compound breath placement");
+                }
                 source = &damage;
             }
             if (!source || effect.flags != effect_flags::kRootParent ||
                 std::ranges::any_of(decoded.moves, [index](const auto& move) {
                     return move.sfx == index || move.sfx2 == index;
-                }))
+                })) {
                 throw FormatError("N64 Chimera: unexpected compound breath cue");
+            }
             // Boss.bin e08824e8 -> e0881e34 -> e0881b84 adds the ring's
             // DAMG offset to SFXX for native bit0x800. Only bit1 replaces it.
             // Common GDL startArea instead replaces DAMG for both root modes.
             // Fold this compound cue's authored -10Y/+10Y cancellation into
             // the adapter, retaining its parent, complete three-head artwork,
             // animation clock and damage data. Single-head cues are unchanged.
-            for (usize axis = 0; axis < effect.offset.size(); ++axis)
+            for (usize axis = 0; axis < effect.offset.size(); ++axis) {
                 effect.offset[axis] += source->offset[axis];
+            }
         }
         if (kind == boss_type::kPlagueBoss && (effect.flags & effect_flags::kBodyParent) != 0) {
             // e0881474 creates an identity animation container at actor+0x7c,
@@ -200,13 +224,14 @@ std::unique_ptr<CombatantAssets> loadLegendsBossAssets(RenderDevice& device,
             // rows 50/51 spell this boss SKORN9, and row 55 calls its roar PROAR.
             // Repair only these evidenced spellings, preserving their native
             // samples and cue frames. Other absent names remain silent below.
-            constexpr std::array aliases{std::pair{"S_SKORN2ATTCK9", "S_SKORN9ATTCK9"},
-                                         std::pair{"S_SKORN2ATTCK10", "S_SKORN9ATTCK10"},
-                                         std::pair{"S_SKORN2ROAR", "S_SKORN2PROAR"}};
-            for (const auto& [authored, routed] : aliases) {
+            constexpr std::array kAliases{std::pair{"S_SKORN2ATTCK9", "S_SKORN9ATTCK9"},
+                                          std::pair{"S_SKORN2ATTCK10", "S_SKORN9ATTCK10"},
+                                          std::pair{"S_SKORN2ROAR", "S_SKORN2PROAR"}};
+            for (const auto& [authored, routed] : kAliases) {
                 if (effect.levelFormat == authored && !legendsSoundToken(sounds, authored) &&
-                    legendsSoundToken(sounds, routed))
+                    legendsSoundToken(sounds, routed)) {
                     effect.levelFormat = routed;
+                }
             }
         }
         // game.bin e0074d28/e0074b4c pass their 3.6-unit electric/acid
@@ -270,36 +295,44 @@ std::unique_ptr<CombatantAssets> loadLegendsBossAssets(RenderDevice& device,
                                       alignSkorneRoar(animation);
                                   }
                               });
-    if (!archive)
+    if (!archive) {
         throw FileError("N64 Legends boss objects.wad is missing: " + std::string(bank->art));
+    }
     const auto family = bossDefinition(bossNameOf(kind));
     const auto sequencePath = AssetLocator(nativeRoot / bank->art).find("seq.wad");
-    if (!sequencePath)
+    if (!sequencePath) {
         throw FileError("N64 Legends boss seq.wad is missing: " + std::string(bank->art));
+    }
     const auto boneNames = formats::decodeLegendsN64BoneNames(readFile(*sequencePath));
     const auto& primary = decoded.types.front();
     const auto& descriptor = decoded.descriptors[static_cast<usize>(primary.descriptorIndex)];
     const auto bodyIndex = archive->trees.find(descriptor.prefix + primary.suffix);
-    if (!bodyIndex)
+    if (!bodyIndex) {
         throw FormatError("N64 Legends boss: missing primary body");
+    }
     const auto& body = archive->trees.tree(*bodyIndex);
     const auto bindNode = [&](std::string& name) {
-        if (name.empty())
+        if (name.empty()) {
             return;
+        }
         const auto index = formats::findLegendsN64Bone(boneNames, name);
-        if (!index || *index >= body.nodes.size())
+        if (!index || *index >= body.nodes.size()) {
             throw FormatError("N64 Legends boss: missing native BNAM node " + name);
+        }
         // Combat uses the sequence's BNAM table, not the OBHD suffix used by
         // drawable attachment lookup. Preserve its explicit node identity when
         // translating into common TreeInfo names (notably RESETBODY1_L_WR).
         name = body.nodes[*index].name;
-        if (body.findNode(name, kCombatantNodeNameLength) != index)
+        if (body.findNode(name, kCombatantNodeNameLength) != index) {
             throw FormatError("N64 Legends boss: ambiguous translated node " + name);
+        }
     };
-    for (auto& move : decoded.moves)
+    for (auto& move : decoded.moves) {
         bindNode(move.colnode);
-    for (auto& node : decoded.nodes)
+    }
+    for (auto& node : decoded.nodes) {
         bindNode(node.nodeName);
+    }
     for (auto& type : decoded.types) {
         bindNode(type.rootNode);
         bindNode(type.lookNode0);
@@ -353,8 +386,9 @@ std::unique_ptr<CombatantAssets> loadLegendsBossAssets(RenderDevice& device,
         }
     };
     validateMoves(result->data);
-    for (const auto& child : result->children)
+    for (const auto& child : result->children) {
         validateMoves(child);
+    }
     std::set<std::string> missingEffects;
     for (const auto& cue : result->data.sounds()) {
         if (cue.shows() && !result->archive.trees.find(cue.tree) &&

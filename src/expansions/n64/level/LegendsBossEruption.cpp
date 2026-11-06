@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <utility>
 
 #include "engine/core/Error.h"
 #include "engine/math/Mt19937.h"
@@ -47,7 +46,7 @@ LegendsBossEruption::LegendsBossEruption(std::span<const formats::LegendsMapObje
             rotation *= turn;
             pose.rotation = glm::normalize(glm::quat_cast(rotation));
         }
-        m_fragments.push_back(std::move(fragment));
+        m_fragments.push_back(fragment);
     }
 }
 

@@ -53,7 +53,8 @@ class Wad {
 public:
     explicit Wad(std::span<const u8> bytes) : m_bytes(bytes) {
         range(bytes, 0, 8);
-        const usize directory = readU32BE(bytes, 0), count = readU32BE(bytes, 4);
+        const usize directory = readU32BE(bytes, 0);
+        const usize count = readU32BE(bytes, 4);
         require(count <= 64 && directory >= 8, "invalid directory");
         range(bytes, directory, count * 12);
         m_end = directory;
@@ -72,22 +73,25 @@ public:
         require(it != m_sections.end(), "missing section");
         const auto [at, count] = it->second;
         require(count <= 4096, "record budget exceeded");
-        if (count == 0)
+        if (count == 0) {
             return {};
+        }
         usize end = m_end;
         for (const auto& [tag, section] : m_sections) {
             require(tag == name || section.count == 0 || section.offset != at,
                     "aliased nonempty sections");
-            if (section.offset > at && section.offset < end)
+            if (section.offset > at && section.offset < end) {
                 end = section.offset;
+            }
         }
         require(at >= 8 && at <= end && count <= (end - at) / stride,
                 "section overlap or truncation");
         range(m_bytes, at, count * stride);
         std::vector<T> result;
         result.reserve(count);
-        for (usize i = 0; i < count; ++i)
+        for (usize i = 0; i < count; ++i) {
             result.push_back(read(at + i * stride));
+        }
         return result;
     }
     Section section(std::string_view name) const {
@@ -103,23 +107,23 @@ private:
 };
 } // namespace
 
-std::vector<LegendsN64BoneName> decodeLegendsN64BoneNames(std::span<const u8> bytes) {
-    const Wad wad(bytes);
+std::vector<LegendsN64BoneName> decodeLegendsN64BoneNames(std::span<const u8> sequences) {
+    const Wad wad(sequences);
     const auto data = wad.section("BDAT");
-    range(bytes, data.offset, data.count);
+    range(sequences, data.offset, data.count);
     return wad.records<LegendsN64BoneName>("BNAM", 8, [&](usize at) {
-        const usize name = readU32BE(bytes, at);
+        const usize name = readU32BE(sequences, at);
         require(name >= data.offset && name < data.offset + data.count, "bone name outside BDAT");
         usize length = 0;
         while (length < 64 && name + length < data.offset + data.count &&
-               bytes[name + length] != 0) {
+               sequences[name + length] != 0) {
             ++length;
         }
         require(length != 0 && length < 64 && name + length < data.offset + data.count,
                 "invalid bone name");
-        const u32 node = readU32BE(bytes, at + 4);
+        const u32 node = readU32BE(sequences, at + 4);
         require(node < 4096, "bone index exceeds hierarchy budget");
-        return LegendsN64BoneName{text(bytes, name, length), node};
+        return LegendsN64BoneName{text(sequences, name, length), node};
     });
 }
 
@@ -151,8 +155,9 @@ CritterFile decodeLegendsN64Critter(std::span<const u8> bytes) {
         CritterMoveRecord move;
         move.type = std::bit_cast<s32>(readU32BE(bytes, at));
         // Native target-area snapshot is MOVE0x87; the shared GDL runtime uses0x88.
-        if (move.type == 0x87)
+        if (move.type == 0x87) {
             move.type = 0x88;
+        }
         move.flags = readU16BE(bytes, at + 4);
         move.priority = small(bytes, at + 6);
         move.name = text(bytes, at + 8, 16);
@@ -182,8 +187,9 @@ CritterFile decodeLegendsN64Critter(std::span<const u8> bytes) {
     out.patterns = wad.records<CritterPatternRecord>("PTRN", 0x40, [&](usize at) {
         CritterPatternRecord pattern;
         pattern.flags = readU16BE(bytes, at);
-        for (usize i = 0; i < 8; ++i)
+        for (usize i = 0; i < 8; ++i) {
             pattern.moves[i] = small(bytes, at + 0x14 + i * 2);
+        }
         pattern.cooldown = real(bytes, at + 0x24);
         pattern.target = target(bytes, at + 0x28);
         return pattern;
@@ -324,13 +330,17 @@ CritterFile decodeLegendsN64Critter(std::span<const u8> bytes) {
                     type.wallRadius >= 0,
                 "invalid body dimensions or health");
         for (s32 i = 0; i < type.moveCount; ++i) {
-            const auto& move = out.moves[static_cast<usize>(type.moveIndex + i)];
+            const auto& move =
+                out.moves[static_cast<usize>(type.moveIndex) + static_cast<usize>(i)];
             reference(move.link, static_cast<usize>(type.moveCount));
         }
         for (s32 i = 0; i < type.patternCount; ++i) {
-            for (const auto move : out.patterns[static_cast<usize>(type.patternIndex + i)].moves) {
-                if (move < 0)
+            const auto& pattern =
+                out.patterns[static_cast<usize>(type.patternIndex) + static_cast<usize>(i)];
+            for (const auto move : pattern.moves) {
+                if (move < 0) {
                     break;
+                }
                 reference(move, static_cast<usize>(type.moveCount));
             }
         }
@@ -341,8 +351,9 @@ CritterFile decodeLegendsN64Critter(std::span<const u8> bytes) {
         reference(move.sfx, out.sounds.size());
         reference(move.sfx2, out.sounds.size());
     }
-    for (const auto& attachment : out.attachments)
+    for (const auto& attachment : out.attachments) {
         reference(attachment.typeIndex, out.types.size());
+    }
     for (const auto& damage : out.damages) {
         reference(damage.sfxIndex, out.sounds.size());
         reference(damage.sfx, out.sounds.size());

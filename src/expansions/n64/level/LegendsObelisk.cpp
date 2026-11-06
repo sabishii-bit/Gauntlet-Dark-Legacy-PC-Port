@@ -50,6 +50,8 @@ u32 LegendsObeliskMotion::random15() {
 }
 
 bool LegendsObeliskMotion::emit(const Vec3& position) {
+    // MSVC's checked array iterator is not a pointer; keep the portable iterator type.
+    // NOLINTNEXTLINE(readability-qualified-auto)
     auto free = std::ranges::find(m_particles, false, &Particle::alive);
     if (free == m_particles.end()) {
         return false;

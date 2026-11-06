@@ -11,8 +11,9 @@ std::optional<LegendsDeath> LegendsDeath::decode(const formats::LegendsN64Fixtur
     if (fixture.kind != formats::LegendsN64FixtureKind::Powerup ||
         (fixture.resolvedTemplateKey >> 8U) != 0x21 || fixture.sequence != "DETH" ||
         fixture.minimumPlayers > players || players < 1 || players > 4 ||
-        !std::isfinite(glm::dot(fixture.position, fixture.position)))
+        !std::isfinite(glm::dot(fixture.position, fixture.position))) {
         return {};
+    }
     LegendsDeath result;
     result.m_nativeIndex = fixture.nativeIndex;
     result.m_position = fixture.position;
@@ -22,11 +23,13 @@ std::optional<LegendsDeath> LegendsDeath::decode(const formats::LegendsN64Fixtur
 bool LegendsDeath::touch(const Vec3& feet, f32 radius, f32 height) {
     if (m_released || !std::isfinite(glm::dot(feet, feet)) || !std::isfinite(radius) ||
         !std::isfinite(height) || radius < 0 || height < 0 || feet.y > m_position.y + m_height ||
-        feet.y + height < m_position.y)
+        feet.y + height < m_position.y) {
         return false;
+    }
     const Vec2 delta{feet.x - m_position.x, feet.z - m_position.z};
-    if (glm::dot(delta, delta) > (m_radius + radius) * (m_radius + radius))
+    if (glm::dot(delta, delta) > (m_radius + radius) * (m_radius + radius)) {
         return false;
+    }
     // e0065618 returns6; e0048158/e00486f8 defer e0065560 until contact
     // resolution finishes. There is no pickup grant or extra proximity timer.
     m_pending = true;
@@ -34,8 +37,9 @@ bool LegendsDeath::touch(const Vec3& feet, f32 radius, f32 height) {
 }
 
 bool LegendsDeath::strike(f32 power) {
-    if (m_released || !std::isfinite(power) || power <= 0)
+    if (m_released || !std::isfinite(power) || power <= 0) {
         return false;
+    }
     // Imported GDL gameplay also wakes statues when struck, as CritterStatues
     // does. Keep that compatibility behavior distinct from the native touch.
     m_pending = true;

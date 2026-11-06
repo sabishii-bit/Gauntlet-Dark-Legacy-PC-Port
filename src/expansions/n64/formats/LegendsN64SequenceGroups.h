@@ -9,5 +9,5 @@ namespace gdl::formats {
  * Native combatants address sequences within the same BODY, unlike item figures.
  * Rejects structurally different sequence hierarchies instead of borrowing poses. */
 void combineLegendsN64SequenceGroups(AnimationFile& animation,
-                                     std::span<const std::string_view> groups = {});
+                                     std::span<const std::string_view> selected = {});
 } // namespace gdl::formats

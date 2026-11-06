@@ -31,24 +31,29 @@ bool finite(const Vec3& value) {
 
 std::optional<u32> legendsN64MissedRelicCue(std::span<const LegendsPickup> pickups,
                                             std::span<const LegendsProgress> party) {
-    if (!validParty(party))
+    if (!validParty(party)) {
         return {};
+    }
     std::optional<u32> rune;
     for (const auto& pickup : pickups) {
-        if (pickup.collected || !pickup.award || pickup.award->index < 0)
+        if (pickup.collected || !pickup.award || pickup.award->index < 0) {
             continue;
+        }
         const auto award = *pickup.award;
         const bool owned = std::ranges::any_of(
             party, [&](const auto& progress) { return progress.has(award.kind, award.index); });
-        if (owned)
+        if (owned) {
             continue;
+        }
         // e00694e4/e0064e60 set pending bits only for unowned native
         // obelisks/runes; e0068000/e0065618 clear them on collection.
         // e00649dc gives the obelisk priority and uses 0x4058 + rune ID.
-        if (award.kind == LegendsRelic::Obelisk && award.index < 7)
+        if (award.kind == LegendsRelic::Obelisk && award.index < 7) {
             return 0x4057;
-        if (award.kind == LegendsRelic::Runestone && award.index < 13)
+        }
+        if (award.kind == LegendsRelic::Runestone && award.index < 13) {
             rune = 0x4059U + static_cast<u32>(award.index);
+        }
     }
     return rune;
 }
@@ -56,23 +61,25 @@ std::optional<u32> legendsN64MissedRelicCue(std::span<const LegendsPickup> picku
 std::optional<u32> legendsN64DepartureCue(std::string_view map,
                                           std::span<const LegendsPickup> pickups,
                                           std::span<const LegendsProgress> party) {
-    if (!validParty(party))
+    if (!validParty(party)) {
         return {};
+    }
     // e0062ca0 installs bit8 for these exact realm/stage pairs; e00649dc
     // prioritizes it over pending obelisk/rune reminders. Unlike those reminders,
     // the native overrides are not suppressed by previously owned collectibles.
     // These are bank tokens, not invented transcripts or Sumner ceremony voices.
-    constexpr std::array<std::pair<std::string_view, u32>, 7> overrides{{{"mount6", 0x4067},
-                                                                         {"castle5", 0x4068},
-                                                                         {"town5", 0x4069},
-                                                                         {"ice5", 0x406a},
-                                                                         {"boss2", 0x406b},
-                                                                         {"boss1", 0x406c},
-                                                                         {"hell1", 0x406d}}};
+    constexpr std::array<std::pair<std::string_view, u32>, 7> kOverrides{{{"mount6", 0x4067},
+                                                                          {"castle5", 0x4068},
+                                                                          {"town5", 0x4069},
+                                                                          {"ice5", 0x406a},
+                                                                          {"boss2", 0x406b},
+                                                                          {"boss1", 0x406c},
+                                                                          {"hell1", 0x406d}}};
     const auto identity = toLowerAscii(map);
-    for (const auto& [stage, token] : overrides) {
-        if (identity == stage)
+    for (const auto& [stage, token] : kOverrides) {
+        if (identity == stage) {
             return token;
+        }
     }
     return legendsN64MissedRelicCue(pickups, party);
 }
@@ -187,18 +194,24 @@ u32 LegendsSumner::milestone(std::span<const LegendsProgress> party) const {
     // The state/page identities are game e0042614's Tower advice switch.
     // Ownership survives a save reload; the original transient history global
     // does not, so restore the most advanced applicable chapter from that state.
-    if ((runes & 0x1fffU) == 0x1fffU)
+    if ((runes & 0x1fffU) == 0x1fffU) {
         return 5;
-    if ((obelisks & 0x80U) != 0)
+    }
+    if ((obelisks & 0x80U) != 0) {
         return 12;
-    if ((shards & 0xfU) == 0xfU)
+    }
+    if ((shards & 0xfU) == 0xfU) {
         return 13;
-    if ((obelisks & 0x18U) == 0x18U)
+    }
+    if ((obelisks & 0x18U) == 0x18U) {
         return 6;
-    if ((obelisks & 0x60U) == 0x60U)
+    }
+    if ((obelisks & 0x60U) == 0x60U) {
         return 7;
-    if ((obelisks & 7U) == 7U)
+    }
+    if ((obelisks & 7U) == 7U) {
         return 0;
+    }
     return std::ranges::any_of(
                party, [&](const auto& progress) { return progress.hasCompleted(m_firstMountain); })
                ? 2U
@@ -223,7 +236,8 @@ std::vector<u32> LegendsSumner::milestoneTextIds(std::span<const LegendsProgress
     const auto now = combine(after);
     std::vector<u32> result;
     const u64 addedRunes = (now.runestones & ~old.runestones) & 0x1fffU;
-    usize count = static_cast<usize>(std::popcount(old.runestones & 0x1fffU));
+    auto count = static_cast<usize>(std::popcount(old.runestones & 0x1fffU));
+    result.reserve(static_cast<usize>(std::popcount(addedRunes)));
     for (s32 i = 0; i < std::popcount(addedRunes); ++i) {
         result.push_back(m_runeCaptions[count++]);
     }
@@ -274,14 +288,14 @@ std::optional<u32> LegendsSumner::adviceTextId(u32 action,
     return std::nullopt;
 }
 
-std::optional<u8> LegendsSumner::historyPage(u32 state,
+std::optional<u8> LegendsSumner::historyPage(u32 lastMilestone,
                                              std::span<const LegendsProgress> party) const {
     if (!ready() || !validParty(party)) {
         return std::nullopt;
     }
     // e086a280 restores the saved milestone; e0042614 then selects its
     // authored adv_t1 document through e0071bc8. This does not replay a ceremony.
-    switch (state) {
+    switch (lastMilestone) {
     case 0: return 12;
     case 2: return 10;
     case 3:

@@ -53,10 +53,14 @@ constexpr std::array kRoutes{
 std::optional<u32> tokenFor(std::span<const std::string_view> lines) {
     // The common help path sometimes prefixes "has". Native groups already
     // contain their own grammar. No other multi-line request may be split.
-    if (lines.size() == 2 && lines.front() == "S_HAS")
+    if (lines.size() == 2 && lines.front() == "S_HAS") {
         lines = lines.subspan(1);
-    if (lines.size() != 1)
+    }
+    if (lines.size() != 1) {
         return {};
+    }
+    // MSVC's checked array iterator is not a pointer; keep the portable iterator type.
+    // NOLINTNEXTLINE(readability-qualified-auto)
     const auto found = std::ranges::find(kRoutes, lines.front(), &Route::name);
     return found == kRoutes.end() ? std::nullopt : std::optional{found->token};
 }
@@ -89,13 +93,15 @@ private:
 
 SoundClip decode(StreamSource& source) {
     const auto format = source.desc();
-    if (format.sampleRate == 0 || format.sampleRate > 48000 || format.channels != 1)
+    if (format.sampleRate == 0 || format.sampleRate > 48000 || format.channels != 1) {
         throw FormatError("unsupported native announcement PCM");
+    }
     SoundClip result{format.sampleRate, format.channels, {}};
     const usize limit = static_cast<usize>(format.sampleRate) * 30;
     while (source.read(result.samples, 4096)) {
-        if (result.frames() > limit)
+        if (result.frames() > limit) {
             throw FormatError("native announcement exceeds thirty seconds");
+        }
     }
     return result;
 }
@@ -110,12 +116,14 @@ struct LegendsAnnouncements::Cache {
 
 bool LegendsAnnouncements::load(const std::filesystem::path& root, const LegendsSpeech& speech) {
     m_cache.reset();
-    if (!speech.opened())
+    if (!speech.opened()) {
         return false;
+    }
     try {
         FileStream file(root / "audio/mort.mdir");
-        if (file.size() < 4 || file.size() > 64 * 1024 * 1024)
+        if (file.size() < 4 || file.size() > u64{64} * 1024 * 1024) {
             throw FormatError("unsupported native announcement bank size");
+        }
         const auto bytes = file.readExact(static_cast<usize>(file.size()));
         Sha256 hash;
         hash.update(bytes);
@@ -131,25 +139,29 @@ bool LegendsAnnouncements::load(const std::filesystem::path& root, const Legends
             return true;
         }
         MortBank bank;
-        if (!bank.open(bytes))
+        if (!bank.open(bytes)) {
             return false;
+        }
         auto cache = std::make_shared<Cache>();
         usize totalSamples = 0;
         const auto add = [&](u32 token, std::optional<AnnouncementSubject> subject) {
             const auto cue = subject ? speech.resolve(token, *subject) : speech.resolve(token);
-            if (!cue)
+            if (!cue) {
                 return;
+            }
             if (!cache->gains.contains(cue->clips)) {
                 SoundClip phrase;
                 for (const u16 id : cue->clips) {
                     if (!cache->clips.contains(id)) {
                         auto source = bank.createRestored(id);
-                        if (!source)
+                        if (!source) {
                             return;
+                        }
                         auto clip = decode(*source);
                         totalSamples += clip.samples.size();
-                        if (totalSamples > 16 * 1024 * 1024)
+                        if (totalSamples > usize{16} * 1024 * 1024) {
                             throw FormatError("native announcement cache exceeds PCM budget");
+                        }
                         cache->clips.emplace(id, std::move(clip));
                     }
                     const auto& part = cache->clips.at(id);
@@ -157,10 +169,13 @@ bool LegendsAnnouncements::load(const std::filesystem::path& root, const Legends
                     // native sentence in place of the complete GDL fallback.
                     if (!std::ranges::all_of(part.samples,
                                              [](f32 sample) { return std::isfinite(sample); }) ||
-                        !std::ranges::any_of(part.samples, [](f32 sample) { return sample != 0; }))
+                        !std::ranges::any_of(part.samples,
+                                             [](f32 sample) { return sample != 0; })) {
                         return;
-                    if (phrase.sampleRate != 0 && phrase.sampleRate != part.sampleRate)
+                    }
+                    if (phrase.sampleRate != 0 && phrase.sampleRate != part.sampleRate) {
                         throw FormatError("mixed-rate native announcement");
+                    }
                     phrase.sampleRate = part.sampleRate;
                     phrase.channels = part.channels;
                     phrase.samples.insert(phrase.samples.end(), part.samples.begin(),
@@ -171,8 +186,9 @@ bool LegendsAnnouncements::load(const std::filesystem::path& root, const Legends
                 PcmSource source(std::move(phrase));
                 const auto calibration =
                     legends_audio_mix::calibrate(source, legends_audio_mix::Source::Speech);
-                if (!calibration || !calibration->complete)
+                if (!calibration || !calibration->complete) {
                     return;
+                }
                 cache->pcmGain = std::max(cache->pcmGain, calibration->gain);
                 cache->gains.emplace(cue->clips, calibration->gain);
             }
@@ -181,9 +197,11 @@ bool LegendsAnnouncements::load(const std::filesystem::path& root, const Legends
         };
         for (const auto& route : kRoutes) {
             add(route.token, {});
-            for (const s32 character : {0, 1, 2, 3, 8, 9, 10, 11})
-                for (s32 color = 0; color < 4; ++color)
+            for (const s32 character : {0, 1, 2, 3, 8, 9, 10, 11}) {
+                for (s32 color = 0; color < 4; ++color) {
                     add(route.token, AnnouncementSubject{character, color});
+                }
+            }
         }
         // SoundPlayer clamps its stream volume at unity. Put the greatest
         // required gain in shared float PCM and use only attenuation per phrase.
@@ -191,8 +209,9 @@ bool LegendsAnnouncements::load(const std::filesystem::path& root, const Legends
         // float headroom reaches the existing final mixer limiter unchanged.
         for (auto& [id, clip] : cache->clips) {
             (void)id;
-            for (f32& sample : clip.samples)
+            for (f32& sample : clip.samples) {
                 sample *= cache->pcmGain;
+            }
         }
         m_cache = std::move(cache);
         previousIdentity = identity;
@@ -207,18 +226,22 @@ bool LegendsAnnouncements::load(const std::filesystem::path& root, const Legends
 std::optional<SoundSequence>
 LegendsAnnouncements::resolve(std::span<const std::string_view> lines,
                               std::optional<AnnouncementSubject> subject) const {
-    if (!m_cache || (subject && subject->pojo))
+    if (!m_cache || (subject && subject->pojo)) {
         return {};
+    }
     const auto token = tokenFor(lines);
-    if (!token)
+    if (!token) {
         return {};
+    }
     const Key key{*token, subject ? subject->character : -1, subject ? subject->color : -1};
     const auto route = m_cache->routes.find(key);
-    if (route == m_cache->routes.end())
+    if (route == m_cache->routes.end()) {
         return {};
+    }
     SoundSequence result;
-    for (const u16 id : route->second)
+    for (const u16 id : route->second) {
         result.steps.push_back({&m_cache->clips.at(id)});
+    }
     result.volume = m_cache->gains.at(route->second) / m_cache->pcmGain;
     result.bank = "N64/SUMNER";
     result.call = *token | (static_cast<u32>(key.character + 1) << 16U) |

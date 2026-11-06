@@ -114,7 +114,8 @@ void LegendsSceneAdapter::bindN64ObeliskEffects(RenderDevice& device,
         }
     }
     if (!m_obeliskSparkle) {
-        m_warnings.push_back("Native obelisk particle texture static/PTL_SPARKLE1 is unavailable");
+        m_warnings.emplace_back(
+            "Native obelisk particle texture static/PTL_SPARKLE1 is unavailable");
     }
 }
 

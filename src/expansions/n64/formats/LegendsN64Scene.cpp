@@ -1267,8 +1267,9 @@ LegendsN64Sequences decodeLegendsN64Sequences(std::span<const u8> bytes,
                         for (const usize part : parts) {
                             // A generated hidden tail has no geometry to texture.
                             // Keep its visibility when combining property7/16.
-                            if (hiddenTail && frame > 0)
+                            if (hiddenTail && frame > 0) {
                                 continue;
+                            }
                             require(part < variant.mesh.parts.size(),
                                     "baked texture part is absent from morph");
                             variant.mesh.parts[part].texture = static_cast<u32>(slotAt(clockFrame));
@@ -1350,8 +1351,9 @@ LegendsN64Sequences decodeLegendsN64Sequences(std::span<const u8> bytes,
                 bool mixed = false;
                 std::optional<u32> depth;
                 const auto observe = [&](const LegendsN64Model& model) {
-                    if (model.mesh.parts.empty())
+                    if (model.mesh.parts.empty()) {
                         return;
+                    }
                     mixed |= model.mixedDepthFlags;
                     if (!seen) {
                         depth = model.depthFlags;
@@ -1361,26 +1363,31 @@ LegendsN64Sequences decodeLegendsN64Sequences(std::span<const u8> bytes,
                     }
                 };
                 const auto run = [&](std::string_view name, usize count) {
-                    if (name.empty() || count == 0)
+                    if (name.empty() || count == 0) {
                         return;
+                    }
                     const auto visitModels = [&](std::span<const LegendsN64Model> values) {
                         const auto first =
                             std::find_if(values.begin(), values.end(),
                                          [&](const auto& model) { return model.name == name; });
-                        if (first == values.end())
+                        if (first == values.end()) {
                             return false;
+                        }
                         require(count <= static_cast<usize>(values.end() - first),
                                 "depth-state object run outside archive");
-                        for (usize i = 0; i < count; ++i)
+                        for (usize i = 0; i < count; ++i) {
                             observe(first[static_cast<std::ptrdiff_t>(i)]);
+                        }
                         return true;
                     };
-                    if (!visitModels(models))
+                    if (!visitModels(models)) {
                         visitModels(result.modelVariants);
+                    }
                 };
                 run(node.object, 1);
-                for (const auto& frames : node.objectFrames)
+                for (const auto& frames : node.objectFrames) {
                     run(frames.object, static_cast<usize>(std::max<s16>(frames.frames, 0)));
+                }
                 if (mixed) {
                     ++mixedDepthNodes;
                 } else if (depth) {

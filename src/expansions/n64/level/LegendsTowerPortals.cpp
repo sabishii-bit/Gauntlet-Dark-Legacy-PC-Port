@@ -11,17 +11,17 @@ SceneFog legendsCathedralFog(f32 seconds) {
     // Tower has no WFOG: e003a44c uses the native default start996, far300,
     // black fog. e0028bc8 projects near.3/far300 after the quarter-scaled view,
     // hence near1.2/far1200 in the port's unscaled eye-depth coordinates.
-    constexpr f32 nearPlane = 1.2f;
-    constexpr f32 farPlane = 1200;
+    constexpr f32 kNearPlane = 1.2f;
+    constexpr f32 kFarPlane = 1200;
     const f32 start =
         time < 2 ? static_cast<f32>(static_cast<s32>((1 - time * time / 4) * (996 - 850) + 850))
                  : 0;
     const f32 end = static_cast<f32>(static_cast<s32>(start + 6 + time / 3 * 100));
     SceneFog result;
     result.color = Vec3{std::clamp(time * 5, 0.0f, 1.0f)};
-    result.bias = (1000 * farPlane / (farPlane - nearPlane) - start) / (end - start);
+    result.bias = (1000 * kFarPlane / (kFarPlane - kNearPlane) - start) / (end - start);
     result.reciprocalScale =
-        -1000 * farPlane * nearPlane / ((farPlane - nearPlane) * (end - start));
+        -1000 * kFarPlane * kNearPlane / ((kFarPlane - kNearPlane) * (end - start));
     return result;
 }
 

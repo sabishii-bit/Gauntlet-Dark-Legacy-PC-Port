@@ -19,7 +19,7 @@ namespace gdl {
 namespace {
 
 constexpr usize kSamplesPerBlock = 160;
-constexpr usize kMaximumDirectoryBytes = 64 * 1024 * 1024;
+constexpr usize kMaximumDirectoryBytes = usize{64} * 1024 * 1024;
 
 struct Clip {
     usize offset = 0;
@@ -351,7 +351,7 @@ bool MortBank::open(std::span<const u8> bytes) {
                 throw FormatError("unsupported or malformed MORT clip header");
             }
             totalBlocks += blocks;
-            if (totalBlocks > 1024 * 1024) {
+            if (totalBlocks > usize{1024} * 1024) {
                 throw FormatError("MORT directory exceeds decoding budget");
             }
             // Preflight every frame before a mixer thread can receive a source.

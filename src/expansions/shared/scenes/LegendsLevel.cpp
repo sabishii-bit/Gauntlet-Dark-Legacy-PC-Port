@@ -46,8 +46,9 @@ LegendsLevel::LegendsLevel(RenderDevice& device, const formats::LegendsMap& map,
         }
         if (const auto program = AssetLocator{nativeRoot}.find("_program/game.bin")) {
             const auto bytes = readFile(*program);
-            if (const auto enemies = AssetLocator{nativeRoot}.find("enemy.rom"))
+            if (const auto enemies = AssetLocator{nativeRoot}.find("enemy.rom")) {
                 m_enemySounds = LegendsEnemySounds::decode(bytes, readFile(*enemies));
+            }
             if (m_world.adapter()->isTower()) {
                 if (const auto overlay = AssetLocator{nativeRoot}.find("_program/Tower.bin")) {
                     m_sumner = LegendsSumner::decode(bytes, readFile(*overlay));
@@ -240,8 +241,9 @@ std::optional<WorldCamera> LegendsLevel::camera(f32 alpha) const {
 }
 
 std::optional<Vec3> LegendsLevel::cameraAttention() const {
-    if (m_dreamcastCamera)
+    if (m_dreamcastCamera) {
         return m_dreamcastCamera->attention();
+    }
     return m_camera ? std::optional<Vec3>{m_camera->attention()} : std::nullopt;
 }
 
@@ -337,7 +339,7 @@ void LegendsLevel::updateParty(std::span<PlayerActor*> players, f32 seconds,
     if (m_world.adapter()->takeDeathAdvice() && !readScroll && !m_dialogueOpen &&
         platform() == LegendsPlatform::N64 && m_speech.deathAdvice()) {
         const auto recipient = std::ranges::find_if(players, [&](const PlayerActor* actor) {
-            return actor && actor->player() >= 0 && actor->player() < 4 &&
+            return actor != nullptr && actor->player() >= 0 && actor->player() < 4 &&
                    experienceLevel(actor->save().experience()) <=
                        m_speech.deathAdvice()->maximumLevel;
         });

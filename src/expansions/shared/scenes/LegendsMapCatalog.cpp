@@ -146,15 +146,17 @@ legendsTowerPath(LegendsPlatform platform, const std::filesystem::path& currentD
         return {};
     }
     auto current = currentDirectory.lexically_normal();
-    if (current.filename().empty())
+    if (current.filename().empty()) {
         current = current.parent_path();
+    }
     try {
         // N64's native stage table names tower2. Dreamcast worlddata/tower.wad
         // has the single LEVL code T1/name Tower, loaded as levels/levelt1.
         const AssetLocator siblings{current.parent_path()};
-        const auto tower = siblings.find(platform == LegendsPlatform::N64 ? "tower2" : "levelt1");
-        if (!tower)
+        auto tower = siblings.find(platform == LegendsPlatform::N64 ? "tower2" : "levelt1");
+        if (!tower) {
             return {};
+        }
         const AssetLocator files{*tower};
         const bool n64 = platform == LegendsPlatform::N64;
         if (nonemptyFile(files, n64 ? "worlds.wad" : "worlds.rom") &&
@@ -163,6 +165,7 @@ legendsTowerPath(LegendsPlatform platform, const std::filesystem::path& currentD
         }
     } catch (const std::filesystem::filesystem_error&) {
         // A missing/unreadable native Tower never redirects to another install.
+        return {};
     }
     return {};
 }

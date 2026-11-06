@@ -59,7 +59,7 @@ LegendsN64CameraData decodeLegendsN64Camera(std::span<const u8> settings,
         range(program, at, 12);
         Vec3 focus;
         for (s32 axis = 0; axis < 3; ++axis) {
-            focus[axis] = std::bit_cast<f32>(readU32BE(program, at + axis * 4));
+            focus[axis] = std::bit_cast<f32>(readU32BE(program, at + static_cast<usize>(axis) * 4));
             require(std::isfinite(focus[axis]) && std::abs(focus[axis]) <= 100000,
                     "invalid boss camera focus");
         }
