@@ -666,7 +666,7 @@ struct SpawnedObjectsRow {
         return true;
     }
     static bool rebind() { return false; }
-    static NativeStateDigest::Resources resources(const Owner&) { return {}; }
+    static NativeStateDigest::Resources resources(const Owner& /*owner*/) { return {}; }
 };
 
 /** The world level loaded whole, its animations playing. */
@@ -1848,7 +1848,7 @@ struct BossMeterRow {
         bind();
         return true;
     }
-    static NativeStateDigest::Resources resources(const Owner&) { return {}; }
+    static NativeStateDigest::Resources resources(const Owner& /*owner*/) { return {}; }
 };
 
 /** A three-part boss's meters, each part draining at its own pace. */
@@ -1896,7 +1896,7 @@ struct BossMetersRow {
         meters.bind(readings, nullptr);
         return true;
     }
-    static NativeStateDigest::Resources resources(const Owner&) { return {}; }
+    static NativeStateDigest::Resources resources(const Owner& /*owner*/) { return {}; }
 };
 
 static_assert(LocalOwner<ScrollBoxRow::Owner>);
@@ -2054,7 +2054,7 @@ struct SumnerHintsRow {
         load();
         return true;
     }
-    static NativeStateDigest::Resources resources(const Owner&) { return {}; }
+    static NativeStateDigest::Resources resources(const Owner& /*owner*/) { return {}; }
 };
 
 /** The general hints Sumner's visit scroll reads, written once. */
@@ -2110,7 +2110,7 @@ struct SumnerVisitRow {
         load();
         return true;
     }
-    static NativeStateDigest::Resources resources(const Owner&) { return {}; }
+    static NativeStateDigest::Resources resources(const Owner& /*owner*/) { return {}; }
 };
 
 /** Sumner's hint scroll with two topics, unrolling. */
@@ -2158,7 +2158,7 @@ struct HintMenuRow {
         open();
         return true;
     }
-    static NativeStateDigest::Resources resources(const Owner&) { return {}; }
+    static NativeStateDigest::Resources resources(const Owner& /*owner*/) { return {}; }
 };
 
 /** A promotion owed to a character who reached the thirtieth level, its lead-in counting
@@ -2203,7 +2203,7 @@ struct TowerPromotionRow {
         begin();
         return true;
     }
-    static NativeStateDigest::Resources resources(const Owner&) { return {}; }
+    static NativeStateDigest::Resources resources(const Owner& /*owner*/) { return {}; }
 };
 
 /** A new runestone's ceremony over the world level, under way. */
@@ -2387,7 +2387,7 @@ struct BossSequenceRow {
     TextureSet textures;
     EffectTrees effects;
     LevelSoundscape audio;
-    const Bosses bosses{};
+    const Bosses bosses;
     std::array<PlayerRuntime, 1> players;
     const MessageTable strings;
     BossSequence sequence;
@@ -2472,7 +2472,7 @@ struct VoiceQueueRow {
         queue.bind(nullptr);
         return true;
     }
-    static NativeStateDigest::Resources resources(const Owner&) { return {}; }
+    static NativeStateDigest::Resources resources(const Owner& /*owner*/) { return {}; }
 };
 
 /** A level's sound folder with nothing in it, made once. */
@@ -2521,7 +2521,7 @@ struct LevelSoundscapeRow {
         open();
         return true;
     }
-    static NativeStateDigest::Resources resources(const Owner&) { return {}; }
+    static NativeStateDigest::Resources resources(const Owner& /*owner*/) { return {}; }
 };
 
 /** The flights' trees, written once. */
@@ -2633,7 +2633,7 @@ struct MechanicsFacadeRow {
         open();
         return true;
     }
-    static NativeStateDigest::Resources resources(const Owner&) { return {}; }
+    static NativeStateDigest::Resources resources(const Owner& /*owner*/) { return {}; }
 };
 
 static_assert(LocalOwner<VoiceQueueRow::Owner>);
@@ -2688,7 +2688,7 @@ struct MoveStrikesRow {
         return true;
     }
     static bool rebind() { return false; }
-    static NativeStateDigest::Resources resources(const Owner&) { return {}; }
+    static NativeStateDigest::Resources resources(const Owner& /*owner*/) { return {}; }
 };
 
 /** What the attack scene's owners borrow, named in a digest. */
@@ -3052,7 +3052,7 @@ struct PlacedEnemiesRow {
         bind();
         return true;
     }
-    static NativeStateDigest::Resources resources(const Owner&) { return {}; }
+    static NativeStateDigest::Resources resources(const Owner& /*owner*/) { return {}; }
 };
 
 /** The golem statue's tree, written once. */
@@ -3175,7 +3175,7 @@ struct EnemyMissilesRow {
         return true;
     }
     static bool rebind() { return false; }
-    static NativeStateDigest::Resources resources(const Owner&) { return {}; }
+    static NativeStateDigest::Resources resources(const Owner& /*owner*/) { return {}; }
 };
 
 /** A great one's shot's tree and its critter data, written once. */
@@ -3262,7 +3262,7 @@ struct CombatantProjectilesRow {
         }
         return false;
     }
-    NativeStateDigest::Resources resources(const Owner&) { return {this, name}; }
+    NativeStateDigest::Resources resources(const Owner& /*owner*/) { return {this, name}; }
 };
 
 /** A grunt's archive, its generators' bodies and a level standing two generators, written
@@ -3957,7 +3957,7 @@ struct PlaySceneRow {
         open();
         return true;
     }
-    static NativeStateDigest::Resources resources(const Owner&) { return {}; }
+    static NativeStateDigest::Resources resources(const Owner& /*owner*/) { return {}; }
     /** The scene hashes itself over the resources it registers. */
     static std::optional<NativeStateDigest::Digest> liveDigest(PlayScene& owner) {
         return owner.nativeAgreementDigest();

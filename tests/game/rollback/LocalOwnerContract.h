@@ -197,7 +197,7 @@ template <LocalOwnerLive Live> LocalOwnerRules observeLocalOwner() {
     using local_owner::Saved;
     LocalOwnerRules rules;
     {
-        Saved<Live> saved;
+        const Saved<Live> saved;
         auto other = std::make_unique<Live>();
         rules.foreign = ask(*other, other->owner(), saved.snapshot);
     }
