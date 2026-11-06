@@ -229,8 +229,9 @@ TEST_CASE("Native world culling follows triangle-time geometry mode without merg
     REQUIRE(object.mesh.parts.size() == 3);
     CHECK(object.partCullBack == std::vector<bool>{true, false, true});
     CHECK(object.mesh.triangleCount() == 3);
-    for (const auto& part : object.mesh.parts)
+    for (const auto& part : object.mesh.parts) {
         CHECK(part.indices == std::vector<u32>{0, 1, 2});
+    }
     // Unimplemented front-cull semantics must never silently become back-cull.
     put32(fixture.model, at + 44, 0x200);
     CHECK_THROWS_AS(LegendsMap::parseN64(fixture.world, fixture.model), FormatError);

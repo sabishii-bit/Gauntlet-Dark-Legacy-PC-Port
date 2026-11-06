@@ -27,10 +27,12 @@ void put32(std::vector<u8>& bytes, usize at, u32 value) {
 }
 std::vector<u8> program() {
     std::vector<u8> result(kSoundTable + 210);
-    for (usize family = 0; family < 7; ++family)
-        for (usize cue = 0; cue < 15; ++cue)
+    for (usize family = 0; family < 7; ++family) {
+        for (usize cue = 0; cue < 15; ++cue) {
             put16(result, kSoundTable + (family * 15 + cue) * 2,
                   static_cast<u16>(family * 100 + cue));
+        }
+    }
     return result;
 }
 std::vector<u8> records() {
@@ -65,19 +67,20 @@ TEST_CASE("N64 enemy cries use native family and post-hit health thresholds",
     hit.kind = 1;
     CHECK_FALSE(sounds.feedback(hit, std::numeric_limits<f32>::quiet_NaN()));
     auto muted = program();
-    put16(muted, kSoundTable + (3 * 15 + 14) * 2, 0xffff);
+    put16(muted, kSoundTable + usize{3 * 15 + 14} * 2, 0xffff);
     CHECK_FALSE(LegendsEnemySounds::decode(muted, records()).feedback(hit, -1));
 }
 TEST_CASE("N64 enemy melee slots preserve authored silence and exact tier selection",
           "[legends][native-enemy-sounds]") {
     auto exe = program();
-    put16(exe, kSoundTable + (3 * 15 + 4) * 2, 0xffff);
+    put16(exe, kSoundTable + usize{3 * 15 + 4} * 2, 0xffff);
     const auto sounds = LegendsEnemySounds::decode(exe, records());
     for (s32 tier = 1; tier <= 6; ++tier) {
-        if (tier == 5)
+        if (tier == 5) {
             CHECK_FALSE(sounds.melee(1, tier));
-        else
+        } else {
             CHECK(sounds.melee(1, tier) == static_cast<u32>(299 + tier));
+        }
     }
     CHECK_FALSE(sounds.melee(-1, 1));
     CHECK_FALSE(sounds.melee(34, 1));
@@ -110,11 +113,12 @@ TEST_CASE("N64 enemy sound tables reject truncated malformed or duplicate record
 TEST_CASE("Installed enemy voices retain original seven-family numeric identities",
           "[legends][native-enemy-sounds][assets]") {
     const auto root = test::dataDirectory().parent_path() / "assets/n64/extracted";
-    if (!std::filesystem::is_regular_file(root / "enemy.rom"))
+    if (!std::filesystem::is_regular_file(root / "enemy.rom")) {
         SKIP("N64 native enemy table is not installed");
+    }
     const auto sounds = LegendsEnemySounds::decode(readFile(root / "_program/game.bin"),
                                                    readFile(root / "enemy.rom"));
-    for (s32 kind : {0, 1, 2, 3, 4, 5, 12, 13, 14, 15, 16, 17, 18, 19, 29, 30, 31}) {
+    for (const s32 kind : {0, 1, 2, 3, 4, 5, 12, 13, 14, 15, 16, 17, 18, 19, 29, 30, 31}) {
         for (s32 tier = 1; tier <= 3; ++tier) {
             CAPTURE(kind, tier);
             EnemyFeedback hit{.kind = kind, .tier = tier};
@@ -140,12 +144,14 @@ TEST_CASE("Installed enemy voices retain original seven-family numeric identitie
 
 TEST_CASE("Native enemy cries and Death loops reach the shared mixer without donor audio",
           "[legends][native-enemy-sounds][native-enemy-playback][audio][assets]") {
-    if constexpr (!GDL_LEGENDS_AUDIO)
+    if constexpr (!GDL_LEGENDS_AUDIO) {
         SKIP("Native MusyX audio is disabled");
+    }
     const auto root = test::dataDirectory().parent_path() / "assets/n64/extracted";
     const auto directory = root / "levels/boss1";
-    if (!std::filesystem::is_regular_file(directory / "worlds.wad"))
+    if (!std::filesystem::is_regular_file(directory / "worlds.wad")) {
         SKIP("Native N64 extraction is not installed");
+    }
     const auto characters = test::assetOrSkip("PLAYERS").parent_path();
     auto map = formats::LegendsMap::parseN64(readFile(directory / "worlds.wad"),
                                              readFile(directory / "objects.wad"),
@@ -188,7 +194,8 @@ TEST_CASE("Native enemy cries and Death loops reach the shared mixer without don
     }
     REQUIRE(expected != 0);
     REQUIRE(sounds.play(reference, expected) != kNoSound);
-    std::array<f32, 1600> actual{}, original{};
+    std::array<f32, 1600> actual{};
+    std::array<f32, 1600> original{};
     f64 energy = 0;
     for (usize tick = 0; tick < 60; ++tick) {
         CAPTURE(tick, expected);
@@ -200,8 +207,9 @@ TEST_CASE("Native enemy cries and Death loops reach the shared mixer without don
         mixer.mix(actual);
         referenceMixer.mix(original);
         REQUIRE(actual == original);
-        for (const auto sample : actual)
+        for (const auto sample : actual) {
             energy += static_cast<f64>(sample) * sample;
+        }
     }
     CHECK(energy > .001);
     if (draining) {

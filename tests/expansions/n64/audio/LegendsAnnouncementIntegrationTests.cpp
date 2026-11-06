@@ -12,6 +12,7 @@
 #include "engine/assets/StringTable.h"
 #include "engine/audio/AudioMixer.h"
 #include "engine/audio/SoundPlayer.h"
+#include "engine/core/SpecialMembers.h"
 #include "engine/io/AssetLocator.h"
 #include "engine/io/File.h"
 
@@ -82,8 +83,9 @@ struct AnnouncementScene {
         ref.realmId = -1;
         ref.realm = "Legends";
         ref.name = "n64:ice1";
-        REQUIRE(world.loadImported(device, common, ref, std::move(layout), traversal.collision(),
-                                   level));
+        const bool loaded = world.loadImported(device, common, ref, std::move(layout),
+                                               traversal.collision(), level);
+        REQUIRE(loaded);
         context.config = &config;
         context.strings = &strings;
         context.assets = &assets;
@@ -121,10 +123,12 @@ struct AnnouncementScene {
                });
     }
 
+    GDL_NON_COPYABLE_NON_MOVABLE(AnnouncementScene);
     ~AnnouncementScene() {
         scene.close();
-        if (level)
+        if (level) {
             level->stopSounds();
+        }
     }
 };
 } // namespace
@@ -148,8 +152,9 @@ TEST_CASE("Native PlayScene health warnings replace complete supported phrases o
     const auto expectedLine = narrator.sequence(*badly);
     std::vector<SoundPlayer::Event> events;
     const SoundPlayer::Capture capture(&fixture.output, [&](const auto& event) {
-        if (event.kind == SoundPlayer::Event::Kind::Play)
+        if (event.kind == SoundPlayer::Event::Kind::Play) {
             events.push_back(event);
+        }
     });
     const s32 health = scene.actor(3)->save().health();
     // DeathDrain goes through real PlayerHealth and its threshold callback,
@@ -175,8 +180,9 @@ TEST_CASE("Native PlayScene health warnings replace complete supported phrases o
                                    [](const auto& event) { return event.bank == "N64/SUMNER"; }));
         CHECK(scene.soundscape().narrationTiming().size() == 2);
     }
-    for (const auto& event : events)
+    for (const auto& event : events) {
         CHECK(event.category == SoundCategory::Effects);
+    }
     // A second hit within the same band cannot replay the health announcement.
     scene.hurtPlayer(3, 1, HurtKind::DeathDrain);
     CHECK(scene.actor(3)->save().health() == 139);

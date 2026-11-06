@@ -57,31 +57,31 @@ const std::array kExpected{
 
 TEST_CASE("Native boss camera reads attention separately from the reward origin",
           "[legends][bosses][camera]") {
-    constexpr usize type = 8;
-    constexpr usize directory = type + 0xf8;
-    std::vector<u8> bytes(directory + 12);
+    constexpr usize kType = 8;
+    constexpr usize kDirectory = kType + 0xf8;
+    std::vector<u8> bytes(kDirectory + 12);
     const auto word = [&](usize at, u32 value) {
         for (usize i = 0; i < 4; ++i) {
             bytes[at + i] = static_cast<u8>(value >> (24U - static_cast<u32>(i) * 8U));
         }
     };
-    word(0, directory);
+    word(0, kDirectory);
     word(4, 1);
-    word(directory, 0x54595045);
-    word(directory + 4, type);
-    word(directory + 8, 1);
-    word(type + 0x8c, std::bit_cast<u32>(12.0f));
-    word(type + 0x94, std::bit_cast<u32>(-3.0f));
-    word(type + 0x98, std::bit_cast<u32>(27.0f));
-    word(type + 0x9c, std::bit_cast<u32>(99.0f));
+    word(kDirectory, 0x54595045);
+    word(kDirectory + 4, kType);
+    word(kDirectory + 8, 1);
+    word(kType + 0x8c, std::bit_cast<u32>(12.0f));
+    word(kType + 0x94, std::bit_cast<u32>(-3.0f));
+    word(kType + 0x98, std::bit_cast<u32>(27.0f));
+    word(kType + 0x9c, std::bit_cast<u32>(99.0f));
     const auto camera = legendsN64BossCamera(bytes);
     CHECK(camera.floorOffset == -3);
     CHECK(camera.attentionHeight == 27);
     CHECK(camera.radius == 12);
-    word(type + 0x98, std::bit_cast<u32>(std::numeric_limits<f32>::quiet_NaN()));
+    word(kType + 0x98, std::bit_cast<u32>(std::numeric_limits<f32>::quiet_NaN()));
     CHECK_THROWS_AS(legendsN64BossCamera(bytes), FormatError);
-    word(type + 0x98, 0);
-    word(directory + 8, 2); // Count may not read into the WAD directory.
+    word(kType + 0x98, 0);
+    word(kDirectory + 8, 2); // Count may not read into the WAD directory.
     CHECK_THROWS_AS(legendsN64BossCamera(bytes), FormatError);
     CHECK_THROWS_AS(legendsN64BossCamera({}), FormatError);
 }

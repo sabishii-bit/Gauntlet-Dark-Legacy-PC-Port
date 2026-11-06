@@ -103,8 +103,9 @@ TEST_CASE("Dreamcast tower binds coloured lightmaps additive torches Sumner and 
           "[legends][dreamcast-presentation][assets]") {
     const auto directory =
         test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native/levels/levelt1";
-    if (!std::filesystem::exists(directory))
+    if (!std::filesystem::exists(directory)) {
         SKIP("Dreamcast extraction is not installed");
+    }
     auto map = nativeMap(directory, LegendsPlatform::Dreamcast);
     test::FakeRenderDevice device;
     auto scene = LegendsSceneAdapter::load(device, LegendsPlatform::Dreamcast, directory, map);
@@ -143,9 +144,11 @@ TEST_CASE("Dreamcast tower binds coloured lightmaps additive torches Sumner and 
         scene->highlightFixture(device, Mat4{1}, CameraFrame::of(inspectionView), -1, *wizard,
                                 SelectionHighlight{inspectionView.position});
         std::vector<Vec3> vertices;
-        for (const auto& draw : device.draws)
-            for (const auto& vertex : draw.vertices)
-                vertices.push_back(Vec3{draw.transform * Vec4{vertex.position, 1}});
+        for (const auto& draw : device.draws) {
+            for (const auto& vertex : draw.vertices) {
+                vertices.emplace_back(draw.transform * Vec4{vertex.position, 1});
+            }
+        }
         return vertices;
     };
     const auto wizardBefore = inspectWizard();
@@ -168,8 +171,9 @@ TEST_CASE("Dreamcast tower binds coloured lightmaps additive torches Sumner and 
     auto moved = subjects;
     moved[0].feet.x += 10;
     moved[0].follow.x += 10;
-    for (int i = 0; i < 90; ++i)
+    for (int i = 0; i < 90; ++i) {
         level.followCamera(moved, 1.0f / 30);
+    }
     CHECK(glm::distance(initial.position, level.camera()->position) > 1);
     level.draw(device, Mat4{1}, *view, TreeModel::Pass::All, -1);
     CHECK(std::ranges::any_of(device.draws, [](const auto& d) {

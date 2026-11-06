@@ -121,7 +121,7 @@ TEST_CASE("Native Tower completion exits retain the party while their special tr
     std::array<PlayerActor, 2> actors;
     actors[0].spawn(0, party[0].save, nullptr, centre, .5f);
     actors[1].spawn(2, party[1].save, nullptr, centre + Vec3{10, 0, 0}, -.3f);
-    std::array<PlayerActor*, 2> visitors{&actors[0], &actors[1]};
+    std::array<PlayerActor*, 2> visitors{actors.data(), &actors[1]};
     for (s32 tick = 0; tick < 180; ++tick) {
         fixture.level->capturePresentation();
         fixture.level->update(1.0f / 60, false);
@@ -173,13 +173,16 @@ TEST_CASE("Native Tower completion exits retain the party while their special tr
         fixture.level->updateParty(visitors, 1.0f / 60, false);
         REQUIRE_FALSE(fixture.level->destination());
     }
-    for (auto& actor : actors)
+    for (auto& actor : actors) {
         actor.place(centre + Vec3{10, 0, 0});
+    }
     fixture.level->updateParty(visitors, 1.0f / 60, false);
-    for (auto& actor : actors)
+    for (auto& actor : actors) {
         actor.place(centre);
-    for (s32 tick = 0; tick < 300 && !fixture.level->destination(); ++tick)
+    }
+    for (s32 tick = 0; tick < 300 && !fixture.level->destination(); ++tick) {
         fixture.level->updateParty(visitors, 1.0f / 60, false);
+    }
     REQUIRE(fixture.level->destination());
     CHECK(fixture.level->departure()->yaw == 0);
     CHECK(fixture.level->departure()->scale == 1);
@@ -279,7 +282,7 @@ TEST_CASE("Native level pickups clear departure reminders and remain owned after
     std::array<PlayerActor, 2> actors;
     actors[0].spawn(0, party[0].save, nullptr, obelisk->position, 0);
     actors[1].spawn(1, party[1].save, nullptr, obelisk->position, 0);
-    std::array<PlayerActor*, 2> players{&actors[0], &actors[1]};
+    std::array<PlayerActor*, 2> players{actors.data(), &actors[1]};
     fixture.level->updateParty(players, 1.0f / 60, false);
     REQUIRE(fixture.level->exitReminder() == 0x4059U + rune->award->index);
     // A normal pickup update, not a direct progress mutation, clears the rune.
@@ -319,9 +322,10 @@ TEST_CASE("A failed native destination retains rewards without retrying until ex
         std::ranges::find(portals, std::string_view{"tower2"}, &formats::LegendsN64Portal::map);
     REQUIRE(exit != portals.end());
     std::array<PlayerActor, 2> actors;
-    std::array<PlayerActor*, 2> players{&actors[0], &actors[1]};
-    for (usize i = 0; i < actors.size(); ++i)
+    std::array<PlayerActor*, 2> players{actors.data(), &actors[1]};
+    for (usize i = 0; i < actors.size(); ++i) {
         actors[i].spawn(static_cast<s32>(i), party[i].save, nullptr, exit->position, 0);
+    }
     for (usize tick = 0; tick < 600; ++tick) {
         fixture.level->update(1.0f / 60, false);
         fixture.level->updateParty(players, 1.0f / 60, false);
@@ -332,13 +336,15 @@ TEST_CASE("A failed native destination retains rewards without retrying until ex
     for (auto& actor : actors) {
         const LegendsPortalVisitor visitor{static_cast<u8>(actor.player()), outside, true,
                                            actor.radius(), actor.height()};
-        for (const auto& portal : portals)
+        for (const auto& portal : portals) {
             REQUIRE_FALSE(touchesLegendsPortal(portal, visitor));
+        }
         actor.place(outside);
     }
     fixture.level->updateParty(players, 1.0f / 60, false);
-    for (auto& actor : actors)
+    for (auto& actor : actors) {
         actor.place(exit->position);
+    }
     fixture.level->updateParty(players, 1.0f / 60, false);
     REQUIRE_FALSE(fixture.level->destination());
     for (usize tick = 0; tick < 600 && !fixture.level->destination(); ++tick) {
@@ -355,9 +361,10 @@ TEST_CASE("Native boss victory persists its completion and Battlefield obelisk i
     auto party = progressionParty();
     fixture.level->initializeParty(party);
     std::array<PlayerActor, 2> actors;
-    for (usize i = 0; i < actors.size(); ++i)
+    for (usize i = 0; i < actors.size(); ++i) {
         actors[i].spawn(static_cast<s32>(i), party[i].save, nullptr, {0, 0, 0}, 0);
-    std::array<PlayerActor*, 2> players{&actors[0], &actors[1]};
+    }
+    std::array<PlayerActor*, 2> players{actors.data(), &actors[1]};
     fixture.level->bossDefeated({0, 0, 0}, players);
     for (usize i = 0; i < actors.size(); ++i) {
         const auto loaded = CharacterSave::fromJson(actors[i].save().toJson());
@@ -370,8 +377,9 @@ TEST_CASE("Native boss victory persists its completion and Battlefield obelisk i
     }
     CHECK_FALSE(
         party[2].save.progress().legendsProgress(LegendsPlatform::N64).hasCompleted("boss2"));
-    for (usize tick = 0; tick < 2400 && !fixture.level->destination(); ++tick)
+    for (usize tick = 0; tick < 2400 && !fixture.level->destination(); ++tick) {
         fixture.level->update(1.0f / 60, false);
+    }
     REQUIRE(fixture.level->destination());
     REQUIRE(fixture.level->cancelDeparture());
     for (usize tick = 0; tick < 2400; ++tick) {
@@ -390,8 +398,9 @@ TEST_CASE("Native departure narration survives scene teardown without repeating 
     ProgressFixture previous{map};
     ProgressFixture next{"tower2"};
     LegendsSpeech reference;
-    if (!reference.openN64(previous.level->directory().parent_path().parent_path()))
+    if (!reference.openN64(previous.level->directory().parent_path().parent_path())) {
         SKIP("Native N64 narration extraction is not installed");
+    }
     const u32 expectedToken = map == "boss2" ? 0x406bU : 0x4057U;
     const auto phrase = reference.resolve(expectedToken);
     REQUIRE(phrase);
@@ -401,20 +410,22 @@ TEST_CASE("Native departure narration survives scene teardown without repeating 
     if (map == "boss2") {
         previous.level->initializeParty(party);
         std::array<PlayerActor, 2> actors;
-        for (usize i = 0; i < actors.size(); ++i)
+        for (usize i = 0; i < actors.size(); ++i) {
             actors[i].spawn(static_cast<s32>(i), party[i].save, nullptr, {}, 0);
-        std::array<PlayerActor*, 2> players{&actors[0], &actors[1]};
+        }
+        std::array<PlayerActor*, 2> players{actors.data(), &actors[1]};
         previous.level->bossDefeated({}, players);
-        for (usize tick = 0; tick < 2400 && !previous.level->destination(); ++tick)
+        for (usize tick = 0; tick < 2400 && !previous.level->destination(); ++tick) {
             previous.level->update(1.0f / 60, false);
+        }
         REQUIRE(previous.level->destination());
         CHECK(*previous.level->destination() == "tower2");
     } else {
         previous.admit(party, "tower2");
     }
     REQUIRE(previous.level->exitReminder() == expectedToken);
-    constexpr Vec3 distantListener{100000, 100000, 100000};
-    previous.level->playSounds(output, distantListener);
+    constexpr Vec3 kDistantListener{100000, 100000, 100000};
+    previous.level->playSounds(output, kDistantListener);
     std::array<f32, 1600> samples{};
     for (usize tick = 0; tick < 240 && !previous.level->departure()->finished; ++tick) {
         previous.level->update(1.0f / 60, false);
@@ -429,19 +440,20 @@ TEST_CASE("Native departure narration survives scene teardown without repeating 
     f64 continuedEnergy = 0;
     for (usize tick = 0; tick < 900; ++tick) {
         next.level->update(1.0f / 60, false);
-        next.level->playSounds(output, distantListener);
+        next.level->playSounds(output, kDistantListener);
         mixer.mix(samples);
         output.update();
         if (tick > 30) {
-            for (f32 sample : samples)
+            for (const f32 sample : samples) {
                 continuedEnergy += static_cast<f64>(sample) * sample;
+            }
         }
     }
     // Native groups4057/406b are 6.54/12.10 seconds. Speech must survive the
     // authored departure, and end naturally once every clip was read.
     CHECK(continuedEnergy > .001);
     CHECK(output.voiceCount() == 0);
-    next.level->playSounds(output, distantListener);
+    next.level->playSounds(output, kDistantListener);
     output.update();
     CHECK(output.voiceCount() == 0);
     next.level->stopSounds();

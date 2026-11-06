@@ -143,8 +143,9 @@ TEST_CASE("Native Skorne melee uses its animated wrist and authored harmful fram
 TEST_CASE("Native Skorne wing gust reaches standing players throughout its authored area",
           "[legends][native-skorn-contact][assets]") {
     const auto nativeRoot = test::dataDirectory().parent_path() / "assets/n64/extracted";
-    if (!std::filesystem::is_regular_file(nativeRoot / "sko1/moves.wad"))
+    if (!std::filesystem::is_regular_file(nativeRoot / "sko1/moves.wad")) {
         SKIP("native N64 boss extraction is not installed");
+    }
     const auto root = test::assetOrSkip("CRITTER").parent_path();
     const auto program = readFile(nativeRoot / "_program/game.bin");
     test::FakeRenderDevice device;

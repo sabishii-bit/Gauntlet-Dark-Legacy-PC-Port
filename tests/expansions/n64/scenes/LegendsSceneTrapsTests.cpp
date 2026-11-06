@@ -40,8 +40,9 @@ std::vector<Vec3> nearby(LegendsSceneAdapter& scene, test::FakeRenderDevice& dev
 TEST_CASE("Native Ice steam has visible animated frames from every camera direction",
           "[legends][native-traps][ice-steam-art][assets]") {
     const auto root = test::dataDirectory().parent_path() / "assets/n64/extracted";
-    if (!std::filesystem::is_regular_file(root / "items/ice/objects.wad"))
+    if (!std::filesystem::is_regular_file(root / "items/ice/objects.wad")) {
         SKIP("N64 Ice fixture extraction is not installed");
+    }
     std::vector<std::string> warnings;
     auto archive =
         loadLegendsN64Archive(root / "items/ice", warnings, readFile(root / "_program/game.bin"));
@@ -56,13 +57,14 @@ TEST_CASE("Native Ice steam has visible animated frames from every camera direct
     for (s32 frame = 0; frame < 30; ++frame) {
         for (const f32 yaw : {0.0f, kPi * .5f, kPi, kPi * 1.5f}) {
             CAPTURE(frame, yaw);
-            WorldCamera camera{{-35 * std::sin(yaw), 25, -35 * std::cos(yaw)}, .6f, yaw, 0};
+            const WorldCamera camera{{-35 * std::sin(yaw), 25, -35 * std::cos(yaw)}, .6f, yaw, 0};
             const auto view = CameraFrame::of(camera);
             device.draws.clear();
             figure.draw(device, Mat4{1}, WorldLighting{}, 1, 1, &view);
             bool plume = false;
             for (const auto& draw : device.draws) {
-                Vec3 lo{1e6f}, hi{-1e6f};
+                Vec3 lo{1e6f};
+                Vec3 hi{-1e6f};
                 u8 alpha = 0;
                 for (const auto& v : draw.vertices) {
                     const Vec3 p{draw.transform * Vec4{v.position, 1}};
@@ -70,8 +72,9 @@ TEST_CASE("Native Ice steam has visible animated frames from every camera direct
                     hi = glm::max(hi, p);
                     alpha = std::max(alpha, v.color.a);
                 }
-                if (hi.y - lo.y < 4)
+                if (hi.y - lo.y < 4) {
                     continue; // The ground vent is a separate, always-visible flat quad.
+                }
                 plume = true;
                 CHECK(alpha > 0);
                 CHECK(draw.state.depthTest);
@@ -79,14 +82,16 @@ TEST_CASE("Native Ice steam has visible animated frames from every camera direct
                 CHECK(draw.state.blend == BlendMode::Alpha);
                 u8 peak = 0;
                 const auto& tex = dynamic_cast<const test::FakeTexture&>(*draw.texture);
-                for (usize p = 3; p < tex.pixels.size(); p += 4)
+                for (usize p = 3; p < tex.pixels.size(); p += 4) {
                     peak = std::max(peak, tex.pixels[p]);
+                }
                 if (frame > 0) {
                     CHECK(peak > 0);
                     visibleFrames.insert(draw.texture);
                 }
                 // The plume must face the camera rather than become edge-on.
-                f32 acrossMin = 1e6f, acrossMax = -1e6f;
+                f32 acrossMin = 1e6f;
+                f32 acrossMax = -1e6f;
                 for (const auto& v : draw.vertices) {
                     const f32 across =
                         glm::dot(Vec3{draw.transform * Vec4{v.position, 1}}, camera.right());
@@ -105,9 +110,10 @@ TEST_CASE("Native Ice steam has visible animated frames from every camera direct
 TEST_CASE("Native Ice vents activate their steam artwork and damaging pulse",
           "[legends][native-traps][ice-vents][assets]") {
     const auto root = test::dataDirectory().parent_path() / "assets/n64/extracted";
-    if (!std::filesystem::is_regular_file(root / "levels/ice1/worlds.wad"))
+    if (!std::filesystem::is_regular_file(root / "levels/ice1/worlds.wad")) {
         SKIP("N64 Legends extraction is not installed");
-    for (const auto level : {"ice1", "ice2", "ice3", "ice4"}) {
+    }
+    for (const auto* const level : {"ice1", "ice2", "ice3", "ice4"}) {
         DYNAMIC_SECTION(level) {
             const auto directory = root / "levels" / level;
             auto map = formats::LegendsMap::parseN64(readFile(directory / "worlds.wad"),
@@ -136,8 +142,9 @@ TEST_CASE("Native Ice vents activate their steam artwork and damaging pulse",
                     if (std::ranges::any_of(draw.vertices, [&](const auto& vertex) {
                             return glm::distance(Vec3{draw.transform * Vec4{vertex.position, 1}},
                                                  visitors.front().position) < 6;
-                        }))
+                        })) {
                         textures.insert(draw.texture);
+                    }
                 }
             };
             rememberTextures();

@@ -29,16 +29,18 @@ std::filesystem::path nativeRoot() {
 }
 void requireNative() {
     if (!std::filesystem::is_regular_file(nativeRoot() / "audio/mort.mdir") ||
-        !std::filesystem::is_regular_file(nativeRoot() / "_program/game.bin"))
+        !std::filesystem::is_regular_file(nativeRoot() / "_program/game.bin")) {
         SKIP("Native N64 dialogue assets are not installed");
+    }
 }
 void writeBank(const std::filesystem::path& root, std::string_view bank,
                std::initializer_list<std::string_view> names) {
     std::string records;
     usize index = 0;
     for (const auto name : names) {
-        if (index != 0)
+        if (index != 0) {
             records += ',';
+        }
         records += std::format(
             R"({{"index":{},"name":"{}","id":0,"duration":-1,"volume":127,"duck":0,"priority":0,"sequence":[{{"sample":0,"loopStart":false,"loopBack":false}}]}})",
             index++, name);
@@ -54,7 +56,7 @@ bool silent(std::span<const f32> samples) {
 
 TEST_CASE("Native announcement adapters are optional and invalidate borrowed sound mappings",
           "[legends][audio][native-announcements]") {
-    LegendsSpeech speech;
+    const LegendsSpeech speech;
     LegendsAnnouncements announcements;
     const std::array lines{std::string_view{"S_BADLY"}};
     CHECK_FALSE(announcements.load(test::scratchDirectory("no-native-announcements"), speech));
@@ -84,8 +86,9 @@ TEST_CASE("Native announcement adapters are optional and invalidate borrowed sou
         [&](auto names, auto subject) { return announcements.resolve(names, subject); });
     std::vector<SoundPlayer::Event> events;
     const SoundPlayer::Capture capture(&output, [&](const auto& event) {
-        if (event.kind == SoundPlayer::Event::Kind::Play)
+        if (event.kind == SoundPlayer::Event::Kind::Play) {
             events.push_back(event);
+        }
     });
     REQUIRE(sounds.announce(character, "NAME", false, lines, 0, AnnouncementSubject{0, 2}));
     REQUIRE(events.size() == 2);
@@ -104,20 +107,20 @@ TEST_CASE("Native narrator context preserves the original color and class tables
     LegendsSpeech speech;
     REQUIRE(speech.openN64(nativeRoot()));
     // e007c730 substitutes the two signed placeholders from e007c850/e007c858.
-    constexpr std::array<u16, 4> colors{163, 166, 156, 164};
-    constexpr std::array classes{std::pair{0, 157},  std::pair{1, 158}, std::pair{2, 167},
-                                 std::pair{3, 165},  std::pair{8, 159}, std::pair{9, 161},
-                                 std::pair{10, 160}, std::pair{11, 162}};
-    for (const auto [character, clip] : classes) {
+    constexpr std::array<u16, 4> kColors{163, 166, 156, 164};
+    constexpr std::array kClasses{std::pair{0, 157},  std::pair{1, 158}, std::pair{2, 167},
+                                  std::pair{3, 165},  std::pair{8, 159}, std::pair{9, 161},
+                                  std::pair{10, 160}, std::pair{11, 162}};
+    for (const auto [character, clip] : kClasses) {
         for (s32 color = 0; color < 4; ++color) {
             CAPTURE(character, color);
             const auto cue = speech.resolve(0x4056, AnnouncementSubject{character, color});
             REQUIRE(cue);
-            CHECK(cue->clips == std::vector<u16>{colors[color], static_cast<u16>(clip), 187});
+            CHECK(cue->clips == std::vector<u16>{kColors[color], static_cast<u16>(clip), 187});
         }
     }
     CHECK_FALSE(speech.resolve(0x4056));
-    for (s32 character : {-1, 4, 5, 6, 7, 12, 13, 14, 15, 16, 17}) {
+    for (const s32 character : {-1, 4, 5, 6, 7, 12, 13, 14, 15, 16, 17}) {
         CAPTURE(character);
         CHECK_FALSE(speech.resolve(0x4056, AnnouncementSubject{character, 2}));
         CHECK_FALSE(speech.resolve(0x4010, AnnouncementSubject{character, 2}));
@@ -151,8 +154,9 @@ TEST_CASE("Native complete announcements share restored words and retain complet
             REQUIRE(sequence->steps.size() == 3);
             CHECK(sequence->volume > 0);
             CHECK(sequence->volume <= 1);
-            for (const auto& step : sequence->steps)
+            for (const auto& step : sequence->steps) {
                 clips.insert(step.clip);
+            }
         }
     }
     CHECK(clips.size() == 13); // Four colors, eight classes, one shared phrase tail.
@@ -183,9 +187,10 @@ TEST_CASE("Native announcements reach the shared mixer with one phrase gain and 
     MortBank bank;
     REQUIRE(bank.open(nativeRoot() / "audio/mort.mdir"));
     const std::array<u16, 3> words{156, 157, 187}; // Red Warrior + native low-health line.
-    for (f32 slider : {128.f / 255.f, 1.f}) {
+    for (const f32 slider : {128.f / 255.f, 1.f}) {
         CAPTURE(slider);
-        AudioMixer mixer(48000), referenceMixer(48000);
+        AudioMixer mixer(48000);
+        AudioMixer referenceMixer(48000);
         SoundPlayer player(mixer);
         player.setCategoryVolume(SoundCategory::Effects, slider);
         LevelSoundscape sounds;
@@ -215,15 +220,18 @@ TEST_CASE("Native announcements reach the shared mixer with one phrase gain and 
         while (source->read(pcm, 4096)) {
         }
         REQUIRE_FALSE(pcm.empty());
-        for (auto& sample : pcm)
+        for (auto& sample : pcm) {
             sample *= calibration->gain;
+        }
         auto reference = referenceMixer.createStream(source->desc());
         reference->setVolume(slider);
         reference->push(pcm);
         reference->finish();
-        std::array<f32, 1600> actual{}, expected{};
+        std::array<f32, 1600> actual{};
+        std::array<f32, 1600> expected{};
         f64 square = 0;
-        f32 peak = 0, maxError = 0;
+        f32 peak = 0;
+        f32 maxError = 0;
         const usize ticks = static_cast<usize>(std::ceil(sounds.narrationBacklog() * 60)) + 4;
         for (usize tick = 0; tick < ticks; ++tick) {
             if (tick == 12) {
@@ -257,7 +265,7 @@ TEST_CASE("Native announcements reach the shared mixer with one phrase gain and 
         CHECK(maxError < 0.000002f);
         CHECK(peak > .1f);
         CHECK(peak <= 1.f);
-        const f64 rms = std::sqrt(square / (ticks * actual.size()));
+        const f64 rms = std::sqrt(square / static_cast<f64>(ticks * actual.size()));
         INFO("Native phrase slider=" << slider << " RMS=" << rms << " peak=" << peak);
         WARN("Native phrase slider=" << slider << " RMS=" << rms << " peak=" << peak);
         CHECK(rms > .035);
@@ -296,8 +304,9 @@ TEST_CASE("Unsupported native narrator subjects fall back as complete Dark Legac
     LevelSoundscape sounds;
     std::vector<SoundPlayer::Event> events;
     const SoundPlayer::Capture capture(&player, [&](const auto& event) {
-        if (event.kind == SoundPlayer::Event::Kind::Play)
+        if (event.kind == SoundPlayer::Event::Kind::Play) {
             events.push_back(event);
+        }
     });
     const auto open = [&] {
         sounds.close();
@@ -306,7 +315,7 @@ TEST_CASE("Unsupported native narrator subjects fall back as complete Dark Legac
         sounds.bindAnnouncements(
             [&](auto names, auto subject) { return announcements.resolve(names, subject); });
     };
-    for (s32 id : {4, 5, 6, 7, 12, 13, 14, 15, 16}) {
+    for (const s32 id : {4, 5, 6, 7, 12, 13, 14, 15, 16}) {
         CAPTURE(id);
         open();
         REQUIRE(sounds.announce(character, "NAME", false, std::array{std::string_view{"S_BADLY"}},
@@ -345,7 +354,7 @@ TEST_CASE("Native announcement routes agree with authored powerup and advice tab
         u16 key;
         u32 token;
     };
-    constexpr std::array powers{
+    constexpr std::array kPowers{
         Powerup{"S_XSPEED", 0x200, 0x4007},       Powerup{"S_REFLECTVOX", 0x202, 0x4008},
         Powerup{"S_SUPERVOX", 0x203, 0x400a},     Powerup{"S_3WAYSHOTVOX", 0x204, 0x400c},
         Powerup{"S_INVISVOX", 0x205, 0x400b},     Powerup{"S_INVULVOX", 0x206, 0x400e},
@@ -360,7 +369,7 @@ TEST_CASE("Native announcement routes agree with authored powerup and advice tab
         Powerup{"S_RAPIDFIREVOX", 0x21a, 0x401f}, Powerup{"S_LEVVOX", 0x21c, 0x4020},
         Powerup{"S_ICEAXEVOX", 0x2901, 0x4021},   Powerup{"S_SCIMITARVOX", 0x2903, 0x4024},
         Powerup{"S_JAVELINVOX", 0x2904, 0x4022},  Powerup{"S_SAVIORVOX", 0x2905, 0x4066}};
-    for (const auto& power : powers) {
+    for (const auto& power : kPowers) {
         CAPTURE(power.name);
         bool found = false;
         for (usize row = 0; row < readU32BE(powerups, 0); ++row) {
@@ -384,7 +393,7 @@ TEST_CASE("Native announcement routes agree with authored powerup and advice tab
         u32 text;
         u32 token;
     };
-    constexpr std::array advice{
+    constexpr std::array kAdvice{
         Advice{"S_AVOID", 0, 12, 0x1090},         Advice{"S_SAVEKEYS", 1, 13, 0x1008},
         Advice{"S_KEYFULL", 2, 8, 0x4025},        Advice{"S_MAGICFULL", 3, 11, 0x4026},
         Advice{"S_USEMAGIC2", 4, 14, 0x4027},     Advice{"S_THROWMAGIC", 5, 15, 0x1084},
@@ -396,7 +405,7 @@ TEST_CASE("Native announcement routes agree with authored powerup and advice tab
         Advice{"S_POISONEDFOOD", 17, 26, 0x108d}, Advice{"S_MULTIPLEHITS", 19, 28, 0x1089},
         Advice{"S_TRAPSMAKE", 23, 32, 0x1099},    Advice{"S_USEKEY", 36, 36, 0x1088},
         Advice{"S_USEKEY2", 37, 37, 0x1009}};
-    for (const auto& hint : advice) {
+    for (const auto& hint : kAdvice) {
         CAPTURE(hint.name);
         const usize at = 0xe00722d0U - 0xe0000400U + hint.row * 24;
         CHECK(readU32BE(program, at + 8) == hint.text);
@@ -416,21 +425,23 @@ TEST_CASE("A silent required native word cannot replace a complete fallback sent
     REQUIRE(count == 279);
     std::vector<u8> changed(4 + count * 4);
     const auto put32 = [&](usize at, u32 value) {
-        for (usize byte = 0; byte < 4; ++byte)
+        for (usize byte = 0; byte < 4; ++byte) {
             changed[at + byte] = static_cast<u8>(value >> ((3 - byte) * 8));
+        }
     };
     put32(0, static_cast<u32>(count));
     // Valid one-block, 8 kHz MORT silence. Only Warrior's word is replaced.
-    constexpr std::array<u8, 16> silence{'M', 'O', 'R', 'T', 0, 1, 0x1f, 0x40,
-                                         0,   0,   0,   4,   0, 0, 0,    1};
+    constexpr std::array<u8, 16> kSilence{'M', 'O', 'R', 'T', 0, 1, 0x1f, 0x40,
+                                          0,   0,   0,   4,   0, 0, 0,    1};
     for (usize id = 0; id < count; ++id) {
         put32(4 + id * 4, static_cast<u32>(changed.size()));
         if (id == 157) {
-            changed.insert(changed.end(), silence.begin(), silence.end());
+            changed.insert(changed.end(), kSilence.begin(), kSilence.end());
         } else {
             const usize begin = readU32BE(original, 4 + id * 4);
             const usize end = id + 1 == count ? original.size() : readU32BE(original, 8 + id * 4);
-            changed.insert(changed.end(), original.begin() + begin, original.begin() + end);
+            changed.insert(changed.end(), original.begin() + static_cast<std::ptrdiff_t>(begin),
+                           original.begin() + static_cast<std::ptrdiff_t>(end));
         }
     }
     const auto root = test::scratchDirectory("native-announcement-silent-word");

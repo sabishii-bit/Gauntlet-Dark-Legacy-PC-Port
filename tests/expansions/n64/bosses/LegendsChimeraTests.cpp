@@ -31,8 +31,9 @@ using Catch::Approx;
 
 std::filesystem::path nativeRoot() {
     const auto root = test::dataDirectory().parent_path() / "assets/n64/extracted";
-    if (!std::filesystem::is_regular_file(root / "chimera/objects.wad"))
+    if (!std::filesystem::is_regular_file(root / "chimera/objects.wad")) {
         SKIP("N64 Chimera assets are not installed");
+    }
     return root;
 }
 
@@ -51,9 +52,10 @@ struct ChimeraScene {
         const auto models = readFile(directory / "objects.wad");
         auto map = formats::LegendsMap::parseN64(readFile(directory / "worlds.wad"), models,
                                                  readFile(directory / "ipr.rom"));
-        for (auto& texture : formats::decodeLegendsN64Textures(models))
+        for (auto& texture : formats::decodeLegendsN64Textures(models)) {
             map.textures.push_back({std::move(texture.image), texture.clampU, texture.clampV,
                                     texture.hasTransparency});
+        }
         auto adapter = LegendsSceneAdapter::load(device, LegendsPlatform::N64, directory, map);
         REQUIRE(adapter);
         PartyMember member;
@@ -71,8 +73,9 @@ struct ChimeraScene {
         LevelRef ref;
         ref.realmId = -1;
         ref.name = "castle5";
-        REQUIRE(world.loadImported(device, root, ref, std::move(layout), traversal.collision(),
-                                   imported));
+        const bool loaded = world.loadImported(device, root, ref, std::move(layout),
+                                               traversal.collision(), imported);
+        REQUIRE(loaded);
         REQUIRE(strings.load(test::dataDirectory() / "text", config.text.language));
         context.config = &config;
         context.strings = &strings;
@@ -91,6 +94,7 @@ struct ChimeraScene {
      * (a head from just before its sound, the body holding its SYNC move meanwhile), aimed at
      * the first player and turned to `yaw` when one is given. */
     void forceAttack(s32 id, std::string_view name, std::optional<f32> yaw = {}) {
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast): mutable test fixture
         auto& fighter = const_cast<Combatant&>(scene.bosses().fighter());
         const auto& stock = *scene.bosses().resources().front();
         REQUIRE(fighter.childCount() == 3);
@@ -138,7 +142,8 @@ TEST_CASE("Native Chimera loops its dormant idle without attacking and wakes at 
     REQUIRE(stock->tree->sequences[*sequence].repeats);
     Bosses bosses;
     bosses.open(device, common, nullptr, {}, 'C');
-    REQUIRE(bosses.preload(35, std::move(stock)));
+    const auto* const preloaded = bosses.preload(35, std::move(stock));
+    REQUIRE(preloaded);
     REQUIRE(bosses.spawn(35, Vec3{0}, 0));
     const auto before = bosses.nodeTransform("BODY1_EHEAD");
     REQUIRE(before);
@@ -171,7 +176,7 @@ TEST_CASE("Native Chimera attacks a grounded distant player through actual PlayS
     auto& bosses = test.scene.bosses();
     REQUIRE(bosses.present());
     REQUIRE(bosses.view().kind == 35);
-    const auto position = bosses.position();
+    const auto* const position = bosses.position();
     REQUIRE(position);
     std::optional<Vec3> standing;
     // Use authored floor support, not a victim placed at an attack's already
@@ -192,8 +197,9 @@ TEST_CASE("Native Chimera attacks a grounded distant player through actual PlayS
     std::set<std::string> moves;
     const auto before = bosses.nodeTransform("BODY1_EHEAD");
     for (int tick = 0; tick < 2400 && !attacked; ++tick) {
-        if (!test.scene.spawning() && !test.scene.animator(0)->entering())
+        if (!test.scene.spawning() && !test.scene.animator(0)->entering()) {
             REQUIRE(test.scene.relocate(*standing));
+        }
         test.step();
         moves.emplace(bosses.moveName());
         moved |= bosses.nodeTransform("BODY1_EHEAD") != before;
@@ -202,9 +208,11 @@ TEST_CASE("Native Chimera attacks a grounded distant player through actual PlayS
             return type >= 0x80 && type <= 0x8f;
         };
         attacked |= observe(bosses.fighter());
-        for (s32 id = 1; id <= 3; ++id)
-            if (const auto* head = bosses.fighter().child(id))
+        for (s32 id = 1; id <= 3; ++id) {
+            if (const auto* head = bosses.fighter().child(id)) {
                 attacked |= observe(*head);
+            }
+        }
     }
     CAPTURE(moves);
     CHECK(bosses.view().awake);
@@ -273,6 +281,7 @@ TEST_CASE("Native Chimera breath cues follow all three animated mouth bones with
             Combatant actor;
             const Vec3 origin{19, 7, -31};
             REQUIRE(actor.spawn(*stock, 0, origin, yaw, nullptr, {}, 'C'));
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast): mutable test fixture
             auto* branch = const_cast<Combatant*>(actor.child(head.id));
             REQUIRE(branch);
             const auto moveIndex = branch->data()->moveNamed(head.move);
@@ -288,6 +297,7 @@ TEST_CASE("Native Chimera breath cues follow all three animated mouth bones with
             REQUIRE(actor.childCount() == 3);
             REQUIRE(branch->setMove(
                 *moveIndex, {.frame = static_cast<f32>(head.cueFrame - 1), .soundsGiven = 2}));
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast): mutable test fixture
             branch = const_cast<Combatant*>(actor.child(head.id));
             REQUIRE(branch);
             branch->update(1, 1.0f / 30, {});
@@ -302,9 +312,11 @@ TEST_CASE("Native Chimera breath cues follow all three animated mouth bones with
             CHECK(cue.nodeOffset == Vec3{0});
             const auto mouth = actor.nodeTransform(head.node);
             REQUIRE(mouth);
-            for (Mat4::length_type column = 0; column < 4; ++column)
-                for (Vec4::length_type row = 0; row < 4; ++row)
+            for (Mat4::length_type column = 0; column < 4; ++column) {
+                for (Vec4::length_type row = 0; row < 4; ++row) {
                     CHECK((*cue.placement)[column][row] == Approx((*mouth)[column][row]));
+                }
+            }
             const auto emission = CritterCueEmission::resolve(cue, &stock->archive, stock->archive);
             EffectTrees effects;
             const auto id = effects.startSet(device, *emission.archive, emission.tree,
@@ -323,9 +335,11 @@ TEST_CASE("Native Chimera breath cues follow all three animated mouth bones with
                 const auto currentMouth = actor.nodeTransform(head.node);
                 REQUIRE(currentMouth);
                 const auto placed = effect.transform();
-                for (Mat4::length_type column = 0; column < 4; ++column)
-                    for (Vec4::length_type row = 0; row < 4; ++row)
+                for (Mat4::length_type column = 0; column < 4; ++column) {
+                    for (Vec4::length_type row = 0; row < 4; ++row) {
                         CHECK(placed[column][row] == Approx((*currentMouth)[column][row]));
+                    }
+                }
                 const usize drawable = effect.pose.size() == 1 ? 0 : 1;
                 REQUIRE(drawable < effect.pose.size());
                 const Vec3 emitted{placed * effect.pose.matrices()[drawable] *
@@ -342,11 +356,13 @@ TEST_CASE("Native Chimera breath cues follow all three animated mouth bones with
                 effects.draw(device, Mat4{1}, {}, &camera);
                 CHECK_FALSE(device.draws.empty());
                 bool submittedNativeMouth = false;
-                for (const auto& draw : device.draws)
-                    for (const auto& vertex : draw.vertices)
+                for (const auto& draw : device.draws) {
+                    for (const auto& vertex : draw.vertices) {
                         submittedNativeMouth |=
                             glm::distance(Vec3{draw.transform * Vec4{vertex.position, 1}}, source) <
                             .001f;
+                    }
+                }
                 CHECK(submittedNativeMouth);
             }
         }
@@ -359,8 +375,9 @@ TEST_CASE("Native Chimera scene breath remains at the rendered mouth between sim
     for (int tick = 0; tick < 1200; ++tick) {
         test.step();
         if (!test.scene.spawning() && test.imported->opponentsReady() &&
-            !test.scene.animator(0)->entering())
+            !test.scene.animator(0)->entering()) {
             break;
+        }
     }
     REQUIRE_FALSE(test.scene.spawning());
     REQUIRE(test.imported->opponentsReady());
@@ -400,11 +417,13 @@ TEST_CASE("Native Chimera scene breath remains at the rendered mouth between sim
             const EffectTrees::Effect* effect = nullptr;
             for (usize i = 0; i < test.scene.effects().count(); ++i) {
                 const auto& candidate = test.scene.effects().effect(i);
-                if (candidate.tree && candidate.tree->name == head.effect)
+                if (candidate.tree && candidate.tree->name == head.effect) {
                     effect = &candidate;
+                }
             }
-            if (!effect)
+            if (!effect) {
                 continue;
+            }
             rendered = true;
             REQUIRE(head.meshNode < stock.tree->nodes.size());
             const auto model = stock.archive.models.find(stock.tree->nodes[head.meshNode].object);
@@ -432,23 +451,26 @@ TEST_CASE("Native Chimera scene breath remains at the rendered mouth between sim
                 effect->model->draw(test.device, Mat4{1}, effect->transform(), {},
                                     effect->pose.matrices(), nullptr, effect->opacity());
                 std::set<const Texture*> effectTextures;
-                for (const auto& draw : test.device.draws)
+                for (const auto& draw : test.device.draws) {
                     effectTextures.insert(draw.texture);
+                }
                 REQUIRE_FALSE(effectTextures.empty());
                 bool headSubmitted = false;
                 f32 nearestThroat = std::numeric_limits<f32>::max();
                 for (const auto& draw : submitted) {
                     for (const auto& vertex : draw.vertices) {
                         headSubmitted |= glm::distance(vertex.position, expectedHead) < .001f;
-                        if (effectTextures.contains(draw.texture))
+                        if (effectTextures.contains(draw.texture)) {
                             nearestThroat =
                                 std::min(nearestThroat, glm::distance(vertex.position, expected));
+                        }
                     }
                 }
                 REQUIRE(headSubmitted); // The oracle is the actual shown head, not tick state.
                 greatestSeparation = std::max(greatestSeparation, nearestThroat);
-                if (effect->presentationCaptured)
+                if (effect->presentationCaptured) {
                     persistentSeparation = std::max(persistentSeparation, nearestThroat);
+                }
             }
         }
         CHECK(rendered);
@@ -464,7 +486,7 @@ TEST_CASE("Native Chimera combined breath retains the cancelling damage and effe
     // discards the damage offset. The complete SUPERFIREFX hierarchy is
     // parented to the actor container's parent, not any individual head.
     const auto raw = formats::decodeLegendsN64Critter(readFile(nativeRoot() / "chi/moves.wad"));
-    REQUIRE(raw.damages.size() > 0);
+    REQUIRE_FALSE(raw.damages.empty());
     REQUIRE(raw.sounds.size() > 6);
     REQUIRE(raw.damages[0].sfxIndex == 6);
     REQUIRE(raw.damages[0].offset == std::array<f32, 3>{0, -10, 0});
@@ -483,8 +505,9 @@ TEST_CASE("Native Chimera combined breath retains the cancelling damage and effe
         for (int tick = 0; tick < 1200; ++tick) {
             test.step();
             if (!test.scene.spawning() && test.imported->opponentsReady() &&
-                !test.scene.animator(0)->entering())
+                !test.scene.animator(0)->entering()) {
                 break;
+            }
         }
         REQUIRE_FALSE(test.scene.spawning());
         REQUIRE(test.imported->opponentsReady());
@@ -504,8 +527,9 @@ TEST_CASE("Native Chimera combined breath retains the cancelling damage and effe
                     effect = &candidate;
                 }
             }
-            if (!effect)
+            if (!effect) {
                 continue;
+            }
             ++renderedFrames;
             REQUIRE(effect->tree->nodes.size() == 8);
             REQUIRE(effect->model);
@@ -534,11 +558,13 @@ TEST_CASE("Native Chimera combined breath retains the cancelling damage and effe
                     for (const auto& vertex : expected.vertices) {
                         f32 nearest = std::numeric_limits<f32>::max();
                         for (const auto& actual : submitted) {
-                            if (actual.texture != expected.texture)
+                            if (actual.texture != expected.texture) {
                                 continue;
-                            for (const auto& point : actual.vertices)
+                            }
+                            for (const auto& point : actual.vertices) {
                                 nearest = std::min(nearest,
                                                    glm::distance(point.position, vertex.position));
+                            }
                         }
                         greatestSeparation = std::max(greatestSeparation, nearest);
                     }

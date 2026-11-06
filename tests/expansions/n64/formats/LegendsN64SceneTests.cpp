@@ -742,7 +742,7 @@ TEST_CASE("Native Mountain fire heads retain discrete art and vertical projected
     const auto models = decodeLegendsN64Models(readFile(archive / "objects.wad"));
     const auto decoded = decodeLegendsN64Sequences(readFile(archive / "seq.wad"), models,
                                                    readFile(root / "_program/game.bin"));
-    for (const auto name : {"TFHA", "TFHR", "TFVA", "TFVR"}) {
+    for (const std::string_view name : {"TFHA", "TFHR", "TFVA", "TFVR"}) {
         CAPTURE(name);
         const auto tree = std::ranges::find(
             decoded.animation.trees, legendsN64TreeName("TRAP", name), &TreeDefinition::name);
@@ -1130,7 +1130,7 @@ TEST_CASE("Native boss grouped texture runs remain bounded and retain morph geom
             }
             CHECK(baked.modelVariants.size() <= 65536);
             CHECK(geometryBytes <= kLegendsN64VariantByteLimit);
-            CHECK(vertices <= 1024 * 1024);
+            CHECK(vertices <= usize{1024} * 1024);
             // The ordinary fixture reader intentionally refuses Yeti's conflicting
             // per-sequence texture assignments. Compare against the original morph
             // meshes retained before baking instead of using that unsupported mode
@@ -1153,8 +1153,9 @@ TEST_CASE("Native boss grouped texture runs remain bounded and retain morph geom
                                                         &LegendsN64Model::name);
                     REQUIRE(next != baked.modelVariants.end());
                     usize sourceFrames = 0;
-                    while (original + sourceFrames != baked.modelVariants.end() &&
-                           (original + sourceFrames)->name ==
+                    while (original + static_cast<std::ptrdiff_t>(sourceFrames) !=
+                               baked.modelVariants.end() &&
+                           (original + static_cast<std::ptrdiff_t>(sourceFrames))->name ==
                                sourceName + std::to_string(sourceFrames)) {
                         ++sourceFrames;
                     }
@@ -1216,7 +1217,7 @@ TEST_CASE("Native boss texture baking reports bounded archive geometry",
             }
             CAPTURE(bank);
             CHECK(baked.modelVariants.size() <= 65536);
-            CHECK(vertices <= 1024 * 1024);
+            CHECK(vertices <= usize{1024} * 1024);
             CHECK(bytes <= kLegendsN64VariantByteLimit);
         }
     }
@@ -1308,8 +1309,9 @@ TEST_CASE("Native Chimera and Plague effects retain static and duplicate texture
                 const auto& tree = find(legendsN64TreeName(name, {}));
                 usize staticTextures = 0;
                 for (const auto& node : tree.nodes) {
-                    if (node.textureAnimation < 0)
+                    if (node.textureAnimation < 0) {
                         continue;
+                    }
                     const auto& texture = decoded.animation.textureAnimations.at(
                         static_cast<usize>(node.textureAnimation));
                     CHECK(texture.source == 128);

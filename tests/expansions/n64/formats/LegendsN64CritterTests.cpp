@@ -25,14 +25,16 @@ using namespace gdl::formats;
 
 std::filesystem::path nativeRoot() {
     const auto root = test::dataDirectory().parent_path() / "assets/n64/extracted";
-    if (!std::filesystem::is_regular_file(root / "dragon/moves.wad"))
+    if (!std::filesystem::is_regular_file(root / "dragon/moves.wad")) {
         SKIP("N64 boss data not installed");
+    }
     return root;
 }
 
 void put32(std::vector<u8>& b, usize at, u32 value) {
-    for (usize i = 0; i < 4; ++i)
+    for (usize i = 0; i < 4; ++i) {
         b.at(at + i) = static_cast<u8>(value >> (24U - static_cast<u32>(i) * 8U));
+    }
 }
 
 TEST_CASE("Native boss record decoder rejects incomplete and nonfinite data",
@@ -129,8 +131,9 @@ TEST_CASE("All six native boss move tables preserve their own body and combat da
             CHECK(source.types[i].pressureReferenceDamage == (i == 0 ? row.pressure : 1000));
             const auto data = game::CritterData::fromDecoded(row.bank, source, i);
             CHECK(data.kind() == game::CombatantKind::Boss);
-            if (i == 0)
+            if (i == 0) {
                 CHECK(data.tree() == row.tree);
+            }
             for (const auto& move : data.moves()) {
                 CHECK_FALSE(move.anim.empty());
                 CHECK(move.hold == (move.type == 17 ? 2.0f : move.type == 0x86 ? 1.5f : 0.0f));
@@ -162,8 +165,9 @@ TEST_CASE("All six native boss move tables preserve their own body and combat da
         const usize directory = readU32BE(bytes, 0);
         for (usize i = 0; i < readU32BE(bytes, 4); ++i) {
             const usize at = directory + i * 12;
-            const std::string_view tag(reinterpret_cast<const char*>(bytes.data() + at), 4);
-            if (tag == "TYPE") {
+            constexpr std::string_view kType = "TYPE";
+            if (std::equal(kType.begin(), kType.end(),
+                           bytes.begin() + static_cast<std::ptrdiff_t>(at))) {
                 put32(malformed, readU32BE(bytes, at + 4) + 0xac,
                       std::bit_cast<u32>(std::numeric_limits<f32>::infinity()));
             }
@@ -172,8 +176,9 @@ TEST_CASE("All six native boss move tables preserve their own body and combat da
         malformed = bytes;
         for (usize i = 0; i < readU32BE(bytes, 4); ++i) {
             const usize at = directory + i * 12;
-            const std::string_view tag(reinterpret_cast<const char*>(bytes.data() + at), 4);
-            if (tag == "TYPE") {
+            constexpr std::string_view kType = "TYPE";
+            if (std::equal(kType.begin(), kType.end(),
+                           bytes.begin() + static_cast<std::ptrdiff_t>(at))) {
                 put32(malformed, readU32BE(bytes, at + 4) + 0xb8,
                       std::bit_cast<u32>(std::numeric_limits<f32>::quiet_NaN()));
             }

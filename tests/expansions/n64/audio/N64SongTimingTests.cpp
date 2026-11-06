@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <memory>
 #include <vector>
 
@@ -15,25 +16,30 @@
 
 namespace {
 struct SilentMix final : amuse::IBackendSubmix {
-    void setSendLevel(amuse::IBackendSubmix*, float, bool) override {}
+    void setSendLevel(amuse::IBackendSubmix* /*submix*/, float /*level*/, bool /*slew*/) override {}
     double getSampleRate() const override { return 32000; }
     amuse::SubmixFormat getSampleFormat() const override { return amuse::SubmixFormat::Float; }
 };
 // These arrangements contain only program changes. No samples or ROM are needed
 // to test the actual sequencer's region/loop timing rather than PCM loudness.
 struct TimingBackend final : amuse::IBackendVoiceAllocator {
-    std::unique_ptr<amuse::IBackendVoice> allocateVoice(amuse::Voice&, double, bool) override {
+    std::unique_ptr<amuse::IBackendVoice> allocateVoice(amuse::Voice& /*clientVox*/,
+                                                        double /*sampleRate*/,
+                                                        bool /*dynamicPitch*/) override {
         FAIL("Timing fixture must not allocate a voice");
         return {};
     }
-    std::unique_ptr<amuse::IBackendSubmix> allocateSubmix(amuse::Submix&, bool, int) override {
+    std::unique_ptr<amuse::IBackendSubmix>
+    allocateSubmix(amuse::Submix& /*clientSmx*/, bool /*mainOut*/, int /*busId*/) override {
         return std::make_unique<SilentMix>();
     }
     std::vector<std::pair<std::string, std::string>> enumerateMIDIDevices() override { return {}; }
-    std::unique_ptr<amuse::IMIDIReader> allocateMIDIReader(amuse::Engine&) override { return {}; }
+    std::unique_ptr<amuse::IMIDIReader> allocateMIDIReader(amuse::Engine& /*engine*/) override {
+        return {};
+    }
     amuse::AudioChannelSet getAvailableSet() override { return amuse::AudioChannelSet::Stereo; }
-    void setVolume(float) override {}
-    void setCallbackInterface(amuse::Engine*) override {}
+    void setVolume(float /*vol*/) override {}
+    void setCallbackInterface(amuse::Engine* /*engine*/) override {}
 };
 
 std::array<unsigned char, 512> arrangement(bool tempoChanges) {
@@ -43,11 +49,11 @@ std::array<unsigned char, 512> arrangement(bool tempoChanges) {
             bytes[at + i] = static_cast<unsigned char>(value >> (24 - i * 8));
         }
     };
-    word(0, 0x60); // 64 track offsets
+    word(0, 0x60);  // 64 track offsets
     word(4, 0x160); // region offsets
     word(8, 0x164); // 64 channel IDs
-    word(16, 60); // 384 ticks/second
-    word(20, 384); // loop clock differs from the reused region, like cathy2a.song
+    word(16, 60);   // 384 ticks/second
+    word(20, 384);  // loop clock differs from the reused region, like cathy2a.song
     word(0x60, 0x1a4);
     word(0x160, 0x1c0);
     bytes[0x1a8] = bytes[0x1a9] = 0xff;
@@ -56,9 +62,9 @@ std::array<unsigned char, 512> arrangement(bool tempoChanges) {
     bytes[0x1b9] = 0xfe;
     word(0x1c0, 8);
     // Delta 0: program1. Delta384: program2. Delta384: end of pattern.
-    constexpr std::array<unsigned char, 12> events{
-        0, 0, 0x81, 0, 1, 0x80, 0x82, 0, 1, 0x80, 0xff, 0xff};
-    std::copy(events.begin(), events.end(), bytes.begin() + 0x1cc);
+    constexpr std::array<unsigned char, 12> kEvents{0,    0, 0x81, 0,    1,    0x80,
+                                                    0x82, 0, 1,    0x80, 0xff, 0xff};
+    std::copy(kEvents.begin(), kEvents.end(), bytes.begin() + 0x1cc);
     if (tempoChanges) {
         word(12, 0x1e0);
         word(0x1e0, 0);
@@ -73,8 +79,9 @@ std::array<unsigned char, 512> arrangement(bool tempoChanges) {
 std::array<unsigned char, 768> legacyArrangement(bool tempoChanges) {
     std::array<unsigned char, 768> bytes{};
     const auto word = [&](size_t at, uint32_t value) {
-        for (size_t i = 0; i < 4; ++i)
+        for (size_t i = 0; i < 4; ++i) {
             bytes[at + i] = static_cast<unsigned char>(value >> (24 - i * 8));
+        }
     };
     word(0, 0x60);
     word(4, 0x160);
@@ -126,7 +133,7 @@ TEST_CASE("N64 music restarts pattern clocks while preserving the arrangement lo
     const bool legacy = GENERATE(false, true);
     TimingBackend backend;
     amuse::Engine engine(backend);
-    amuse::AudioGroup group;
+    const amuse::AudioGroup group{};
     amuse::SongGroupIndex songs;
     songs.m_normPages.emplace(1, amuse::SongGroupIndex::PageEntry{});
     songs.m_normPages.emplace(2, amuse::SongGroupIndex::PageEntry{});
@@ -134,7 +141,9 @@ TEST_CASE("N64 music restarts pattern clocks while preserving the arrangement lo
     bool tempoChanges = false;
     double dt = .005;
     SECTION("constant tempo") {}
-    SECTION("loop resumes after earlier tempo changes") { tempoChanges = true; }
+    SECTION("loop resumes after earlier tempo changes") {
+        tempoChanges = true;
+    }
     SECTION("sub-tick updates do not apply future tempo changes") {
         tempoChanges = true;
         dt = .0005;
@@ -149,7 +158,7 @@ TEST_CASE("N64 music restarts pattern clocks while preserving the arrangement lo
     REQUIRE(song.initialize(bytes, true));
     int frame = 0;
     const auto at = [&](double seconds, int program) {
-        const int end = static_cast<int>(seconds / dt + .5);
+        const int end = static_cast<int>(std::lround(seconds / dt));
         while (frame < end) {
             REQUIRE_FALSE(song.advance(seq, dt));
             ++frame;

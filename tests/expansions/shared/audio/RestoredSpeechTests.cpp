@@ -93,15 +93,15 @@ std::vector<f32> tone(usize frames, AudioStreamDesc format) {
 
 TEST_CASE("restored speech matches both native-rate passes independently of read chunking",
           "[expansions][audio][restored-speech]") {
-    constexpr AudioStreamDesc format{8000, 2};
-    auto damaged = tone(5000, format);
-    damaged[2000 * 2] = 0.95f;
-    const auto expected = reference(damaged, format);
+    constexpr AudioStreamDesc kFormat{8000, 2};
+    auto damaged = tone(5000, kFormat);
+    damaged[usize{2000} * 2] = 0.95f;
+    const auto expected = reference(damaged, kFormat);
     const usize inputChunk = GENERATE(usize{1}, usize{73}, usize{1024});
     const usize outputChunk = GENERATE(usize{1}, usize{317}, usize{32768});
-    RestoredSpeech source({clip(damaged, format, inputChunk)});
-    CHECK(source.desc().sampleRate == format.sampleRate);
-    CHECK(source.desc().channels == format.channels);
+    RestoredSpeech source({clip(damaged, kFormat, inputChunk)});
+    CHECK(source.desc().sampleRate == kFormat.sampleRate);
+    CHECK(source.desc().channels == kFormat.channels);
     CHECK(render(source, outputChunk) == expected);
     source.rewind();
     CHECK(render(source, 419) == expected);
@@ -123,16 +123,16 @@ TEST_CASE("restored speech does not mistake filter lookahead or tiny tails for e
 
 TEST_CASE("restored speech finishes and resets restoration separately for every clip",
           "[expansions][audio][restored-speech]") {
-    constexpr AudioStreamDesc format{8000, 1};
-    auto first = tone(1300, format);
+    constexpr AudioStreamDesc kFormat{8000, 1};
+    auto first = tone(1300, kFormat);
     first[400] = 0.98f;
-    auto second = tone(1177, format);
+    auto second = tone(1177, kFormat);
     second[400] = -0.98f;
     const std::vector<f32> last{0.7f};
-    auto expected = reference(first, format);
-    const auto secondRestored = reference(second, format);
+    auto expected = reference(first, kFormat);
+    const auto secondRestored = reference(second, kFormat);
     expected.insert(expected.end(), secondRestored.begin(), secondRestored.end());
-    const auto lastRestored = reference(last, format);
+    const auto lastRestored = reference(last, kFormat);
     expected.insert(expected.end(), lastRestored.begin(), lastRestored.end());
     RestoredSpeech source({clip({}), clip(first), clip({}), clip(second), clip(last), clip({})});
     CHECK(render(source, 79) == expected);
@@ -144,7 +144,7 @@ TEST_CASE("restored speech finishes and resets restoration separately for every 
     // Reusing a clip object must restart it, not expose the previous cursor.
     auto repeated = clip(first);
     RestoredSpeech twice({repeated, repeated});
-    auto doubled = reference(first, format);
+    auto doubled = reference(first, kFormat);
     const auto one = doubled;
     doubled.insert(doubled.end(), one.begin(), one.end());
     CHECK(render(twice, 32768) == doubled);
@@ -170,16 +170,16 @@ TEST_CASE("restored speech bypasses unsupported low restoration rates and bounds
 TEST_CASE(
     "restored speech leaves silence exact and repairs clicks without touching the clean channel",
     "[expansions][audio][restored-speech]") {
-    constexpr AudioStreamDesc format{24000, 2};
+    constexpr AudioStreamDesc kFormat{24000, 2};
     const std::vector<f32> silence(3000, 0);
-    RestoredSpeech silent({clip(silence, format)});
+    RestoredSpeech silent({clip(silence, kFormat)});
     CHECK(render(silent, 317) == silence);
-    const auto clean = tone(12000, format);
+    const auto clean = tone(12000, kFormat);
     auto damaged = clean;
-    for (usize frame : {usize{2000}, usize{6000}, usize{8999}}) {
+    for (const usize frame : {usize{2000}, usize{6000}, usize{8999}}) {
         damaged[frame * 2] = 0.95f;
     }
-    RestoredSpeech source({clip(damaged, format)});
+    RestoredSpeech source({clip(damaged, kFormat)});
     const auto restored = render(source, 317);
     REQUIRE(restored.size() == damaged.size());
     f64 before = 0;

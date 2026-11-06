@@ -64,26 +64,28 @@ test::OpponentScript noPlayerDamage() {
 TEST_CASE("Native bosses preserve the exact shipped silent-cue omissions",
           "[legends][bosses][native-boss-audio][assets]") {
     const auto root = test::dataDirectory().parent_path() / "assets/n64/extracted";
-    if (!std::filesystem::is_regular_file(root / "_program/game.bin"))
+    if (!std::filesystem::is_regular_file(root / "_program/game.bin")) {
         SKIP("Native N64 extraction is not installed");
+    }
     const auto table = decodeLegendsSoundTable(readFile(root / "_program/game.bin"));
     struct Bank {
         std::string_view name;
         usize routed;
         usize silent;
     };
-    constexpr std::array banks{Bank{"dragon", 12, 2}, Bank{"yeti", 12, 3}, Bank{"chi", 16, 13},
-                               Bank{"slime", 13, 5},  Bank{"sko1", 16, 3}, Bank{"sko2", 9, 7}};
+    constexpr std::array kBanks{Bank{"dragon", 12, 2}, Bank{"yeti", 12, 3}, Bank{"chi", 16, 13},
+                                Bank{"slime", 13, 5},  Bank{"sko1", 16, 3}, Bank{"sko2", 9, 7}};
     std::set<std::string> absent;
-    for (const auto& bank : banks) {
+    for (const auto& bank : kBanks) {
         CAPTURE(bank.name);
         const auto decoded =
             formats::decodeLegendsN64Critter(readFile(root / bank.name / "moves.wad"));
         usize routed = 0;
         usize silent = 0;
         for (const auto& sound : decoded.sounds) {
-            if (sound.levelFormat.empty())
+            if (sound.levelFormat.empty()) {
                 continue;
+            }
             if (legendsSoundToken(table, sound.levelFormat)) {
                 ++routed;
             } else {
@@ -214,13 +216,14 @@ TEST_CASE("All native Legends boss arenas open through the common opponent owner
                             u32 row;
                             u16 effect;
                         };
-                        constexpr std::array aliases{
+                        constexpr std::array kAliases{
                             Alias{"S_SKORN2ATTCK9", "S_SKORN9ATTCK9", 50, 134},
                             Alias{"S_SKORN2ATTCK10", "S_SKORN9ATTCK10", 51, 125},
                             Alias{"S_SKORN2ROAR", "S_SKORN2PROAR", 55, 132}};
-                        for (const auto& alias : aliases) {
-                            if (authored.levelFormat != alias.authored)
+                        for (const auto& alias : kAliases) {
+                            if (authored.levelFormat != alias.authored) {
                                 continue;
+                            }
                             repaired = alias.replacement;
                             // These explicit adapter repairs select named-only
                             // native rows, not GameCube cues or numeric aliases.

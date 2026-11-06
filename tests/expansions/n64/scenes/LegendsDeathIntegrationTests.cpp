@@ -128,7 +128,7 @@ TEST_CASE("Boss1 Death statue remains solid until the common pool accepts its li
 TEST_CASE("Native Death advice is once per party rather than per map or saved character",
           "[legends][native-death-advice]") {
     auto session = std::make_shared<LegendsAdviceState>();
-    auto nextMap = session;
+    const auto& nextMap = session;
     CHECK_FALSE(session->admitDeath(11, 10));
     CHECK_FALSE(session->deathShown);
     CHECK_FALSE(session->admitDeath(0, 10));
@@ -207,8 +207,9 @@ TEST_CASE("Actual native Death release queues the eligible player's modal advice
             native->update(1.f / 60, false);
             native->playSounds(output, {1000, 0, 1000});
             mixer.mix(samples);
-            for (const f32 value : samples)
+            for (const f32 value : samples) {
                 energy += std::abs(value);
+            }
             output.update();
         }
         CHECK(energy > 1);
@@ -235,8 +236,9 @@ TEST_CASE("Death advice enters the normal PlayScene scroll and holds party contr
           "[legends][native-death-advice][imported-play][assets]") {
     const auto root = test::dataDirectory().parent_path() / "assets/n64/extracted";
     const auto directory = root / "levels/boss1";
-    if (!std::filesystem::is_regular_file(directory / "worlds.wad"))
+    if (!std::filesystem::is_regular_file(directory / "worlds.wad")) {
         SKIP("N64 Legends extraction unavailable");
+    }
     const auto characters = test::assetOrSkip("PDATA/WAR.WAD").parent_path().parent_path();
     test::FakeRenderDevice device;
     AudioMixer mixer(48000);
@@ -269,7 +271,7 @@ TEST_CASE("Death advice enters the normal PlayScene scroll and holds party contr
     config.camera.compass = false;
     StringTable strings;
     REQUIRE(strings.load(test::dataDirectory() / "text", config.text.language));
-    AssetLocator assets{characters};
+    const AssetLocator assets{characters};
     GameServices context;
     context.config = &config;
     context.strings = &strings;
@@ -296,8 +298,9 @@ TEST_CASE("Death advice enters the normal PlayScene scroll and holds party contr
     REQUIRE_FALSE(statues.empty());
     REQUIRE(level->strike(statues.front().id, 1, 0, 2));
     // Normal updateEnemies, not a test-only spawn callback, admits the live Death.
-    for (usize tick = 0; tick < 5 && !scene.scroll().active(); ++tick)
+    for (usize tick = 0; tick < 5 && !scene.scroll().active(); ++tick) {
         REQUIRE(scene.update(1.0 / 60, {}) == PlayOutcome::Running);
+    }
     REQUIRE(scene.scroll().active());
     CHECK(scene.scroll().lines() == std::vector<std::string>{"Use potions to Kill Death"});
     CHECK(level->adapter().deathTargets().size() + 1 == statues.size());

@@ -24,16 +24,16 @@ TEST_CASE("Imported boss cues reach native effects exactly once and retain scene
         SKIP("Native N64 boss extraction is not installed");
     }
     const auto characters = test::assetOrSkip("PLAYERS").parent_path();
-    constexpr std::array cases{
+    constexpr std::array kCases{
         std::pair{"mount6", "S_DRGDEATH"},   std::pair{"ice5", "S_YETIDEATH"},
         std::pair{"town5", "S_PLGDETH"},     std::pair{"castle5", "S_CHIMDEATH1"},
         std::pair{"boss2", "S_SKORN1DEATH"}, std::pair{"hell2", "S_SKORN2DEATH"}};
-    for (const auto& [mapName, cueName] : cases) {
+    for (const auto& [mapName, cueName] : kCases) {
         CAPTURE(mapName, cueName);
         const auto directory = root / "levels" / mapName;
         auto map = formats::LegendsMap::parseN64(readFile(directory / "worlds.wad"),
-                                                       readFile(directory / "objects.wad"),
-                                                       readFile(directory / "ipr.rom"));
+                                                 readFile(directory / "objects.wad"),
+                                                 readFile(directory / "ipr.rom"));
         test::FakeRenderDevice device;
         auto adapter = LegendsSceneAdapter::load(device, LegendsPlatform::N64, directory, map);
         LegendsLevel level(device, map, std::move(adapter), directory, characters);

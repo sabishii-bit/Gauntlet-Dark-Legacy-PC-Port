@@ -57,7 +57,7 @@ TEST_CASE("Native scenery retains validated world faces for shared surface targe
         .flags = 0x820,
         .owner = 7,
         .wall = true}};
-    LegendsScenery scenery{definitions, 1, faces};
+    const LegendsScenery scenery{definitions, 1, faces};
     const auto target = scenery.targets().front();
     CHECK(target.valid());
     REQUIRE(target.surface.size() == 1);

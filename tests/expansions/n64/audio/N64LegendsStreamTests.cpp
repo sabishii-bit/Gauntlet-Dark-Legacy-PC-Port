@@ -35,10 +35,12 @@ std::vector<f32> render(StreamSource& stream, usize frames, usize piece) {
 TEST_CASE("Native cathedral music is measured against actual GDL level mixer routing",
           "[legends][audio][native-music-mix-survey][assets]") {
     using namespace gdl::game;
-    if constexpr (!GDL_LEGENDS_AUDIO)
+    if constexpr (!GDL_LEGENDS_AUDIO) {
         SKIP("Native MusyX audio is disabled");
-    if (!std::filesystem::is_regular_file(nativeAudio() / "cathy2a.song"))
+    }
+    if (!std::filesystem::is_regular_file(nativeAudio() / "cathy2a.song")) {
         SKIP("Native N64 music is not installed");
+    }
     const auto manifest = test::assetOrSkip("WDATA/TEMPLE.WAD");
     WorldData world;
     REQUIRE(world.load(manifest));
@@ -69,8 +71,9 @@ TEST_CASE("Native cathedral music is measured against actual GDL level mixer rou
                 auto native = std::make_shared<N64LegendsStream>();
                 REQUIRE(native->open(nativeAudio(), song));
                 std::shared_ptr<StreamSource> source = native;
-                if (normalized)
+                if (normalized) {
                     source = legends_audio_mix::prepare(source, legends_audio_mix::Source::Music);
+                }
                 REQUIRE(output.playStream(source, true) != kNoSound);
                 const auto levels = measure(output, mixer);
                 WARN("N64 song=" << song << " normalized=" << normalized << " slider=" << slider
@@ -283,7 +286,7 @@ TEST_CASE("N64 soundtrack uses the shared linear calibration without suppressing
         const auto calibration =
             legends_audio_mix::calibrate(*source, legends_audio_mix::Source::Music);
         REQUIRE(calibration);
-        CHECK(calibration->frames == 32000 * 30);
+        CHECK(calibration->frames == usize{32000} * 30);
         CHECK_FALSE(calibration->complete);
         const auto mixed = legends_audio_mix::prepare(source, legends_audio_mix::Source::Music);
         REQUIRE(mixed);

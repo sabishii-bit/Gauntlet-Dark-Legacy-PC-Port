@@ -86,14 +86,14 @@ TEST_CASE("Native stage victory departure phrases override only their authored s
     LegendsPickup rune;
     rune.award = LegendsAward{LegendsRelic::Runestone, 0};
     const std::array pickups{rune};
-    constexpr std::array<std::pair<std::string_view, u32>, 7> stages{{{"mount6", 0x4067},
-                                                                      {"castle5", 0x4068},
-                                                                      {"town5", 0x4069},
-                                                                      {"ice5", 0x406a},
-                                                                      {"boss2", 0x406b},
-                                                                      {"boss1", 0x406c},
-                                                                      {"hell1", 0x406d}}};
-    for (const auto& [stage, token] : stages) {
+    constexpr std::array<std::pair<std::string_view, u32>, 7> kStages{{{"mount6", 0x4067},
+                                                                       {"castle5", 0x4068},
+                                                                       {"town5", 0x4069},
+                                                                       {"ice5", 0x406a},
+                                                                       {"boss2", 0x406b},
+                                                                       {"boss1", 0x406c},
+                                                                       {"hell1", 0x406d}}};
+    for (const auto& [stage, token] : kStages) {
         CAPTURE(stage);
         CHECK(legendsN64DepartureCue(stage, pickups, party) == token);
         CHECK(legendsN64DepartureCue(stage, {}, party) == token);
@@ -118,28 +118,28 @@ TEST_CASE("N64 Sumner keeps the authored menu and exact missing relic order",
     REQUIRE(sumner.ready());
     CHECK(sumner.titleId() == 441);
     REQUIRE(sumner.choices().size() == 6);
-    constexpr std::array<u32, 6> texts{426, 430, 442, 443, 444, 445};
-    constexpr std::array<u32, 6> actions{0x11, 0x15, 0x2e, 0xd, 0x2f, 2};
-    for (usize i = 0; i < texts.size(); ++i) {
-        CHECK(sumner.choices()[i].textId == texts[i]);
-        CHECK(sumner.choices()[i].action == actions[i]);
+    constexpr std::array<u32, 6> kTexts{426, 430, 442, 443, 444, 445};
+    constexpr std::array<u32, 6> kActions{0x11, 0x15, 0x2e, 0xd, 0x2f, 2};
+    for (usize i = 0; i < kTexts.size(); ++i) {
+        CHECK(sumner.choices()[i].textId == kTexts[i]);
+        CHECK(sumner.choices()[i].action == kActions[i]);
     }
     std::array<LegendsProgress, 4> party{};
-    constexpr std::array<s32, 7> obelisks{1, 2, 3, 6, 7, 4, 5};
-    constexpr std::array<u32, 7> worldReplies{492, 493, 494, 497, 498, 495, 496};
-    for (usize i = 0; i < obelisks.size(); ++i) {
+    constexpr std::array<s32, 7> kObelisks{1, 2, 3, 6, 7, 4, 5};
+    constexpr std::array<u32, 7> kWorldReplies{492, 493, 494, 497, 498, 495, 496};
+    for (usize i = 0; i < kObelisks.size(); ++i) {
         CAPTURE(i);
-        CHECK(sumner.adviceTextId(0xd, party) == worldReplies[i]);
-        REQUIRE(party[i % party.size()].add(LegendsRelic::Obelisk, obelisks[i] - 1));
+        CHECK(sumner.adviceTextId(0xd, party) == kWorldReplies[i]);
+        REQUIRE(party[i % party.size()].add(LegendsRelic::Obelisk, kObelisks[i] - 1));
     }
     CHECK(sumner.adviceTextId(0xd, party) == 520);
-    constexpr std::array<s32, 13> runes{4, 5, 6, 1, 2, 3, 10, 11, 12, 7, 8, 9, 13};
-    constexpr std::array<u32, 13> runeReplies{500, 501, 502, 506, 507, 508, 503,
-                                              504, 505, 509, 510, 511, 512};
-    for (usize i = 0; i < runes.size(); ++i) {
+    constexpr std::array<s32, 13> kRunes{4, 5, 6, 1, 2, 3, 10, 11, 12, 7, 8, 9, 13};
+    constexpr std::array<u32, 13> kRuneReplies{500, 501, 502, 506, 507, 508, 503,
+                                               504, 505, 509, 510, 511, 512};
+    for (usize i = 0; i < kRunes.size(); ++i) {
         CAPTURE(i);
-        CHECK(sumner.adviceTextId(0x2e, party) == runeReplies[i]);
-        REQUIRE(party[i % party.size()].add(LegendsRelic::Runestone, runes[i] - 1));
+        CHECK(sumner.adviceTextId(0x2e, party) == kRuneReplies[i]);
+        REQUIRE(party[i % party.size()].add(LegendsRelic::Runestone, kRunes[i] - 1));
     }
     CHECK(sumner.adviceTextId(0x2e, party) == 519);
     CHECK_FALSE(sumner.adviceTextId(0x11, party));
@@ -185,7 +185,7 @@ TEST_CASE("N64 History retains the displayed milestone rather than guessing from
     }
     const auto sumner = native();
     std::array<LegendsProgress, 1> party{};
-    constexpr std::array<std::pair<u32, u8>, 11> pages{{
+    constexpr std::array<std::pair<u32, u8>, 11> kPages{{
         {0, 12},
         {2, 10},
         {3, 10},
@@ -198,7 +198,7 @@ TEST_CASE("N64 History retains the displayed milestone rather than guessing from
         {14, 1},
         {15, 2},
     }};
-    for (const auto& [state, page] : pages) {
+    for (const auto& [state, page] : kPages) {
         CAPTURE(state);
         CHECK(sumner.historyPage(state, party) == page);
     }
@@ -214,8 +214,9 @@ TEST_CASE("N64 History retains the displayed milestone rather than guessing from
 
 TEST_CASE("Native Sumner restores advice chapters and captions from campaign progress",
           "[legends][sumner][native-progress-flow][assets]") {
-    if (!installed())
+    if (!installed()) {
         SKIP("Native N64 programs are not installed");
+    }
     const auto sumner = native();
     std::array<LegendsProgress, 2> party{};
     CHECK(sumner.milestone(party) == 14);

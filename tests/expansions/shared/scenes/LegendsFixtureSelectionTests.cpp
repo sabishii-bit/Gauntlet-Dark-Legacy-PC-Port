@@ -72,7 +72,7 @@ struct FixtureScene {
         for (usize draw = 1; draw < highlights.size(); draw += 2) {
             const auto& vertices = highlights[draw].vertices;
             for (usize i = 0; i + 2 < vertices.size(); i += 3) {
-                std::array<Vec3, 3> points;
+                std::array<Vec3, 3> points{};
                 for (usize corner = 0; corner < 3; ++corner) {
                     points[corner] =
                         vertices[i + corner].position / (1 - SelectionHighlight::kLift);

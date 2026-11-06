@@ -45,15 +45,17 @@ struct ChimeraTargetingScene {
     ChimeraTargetingScene() {
         const auto directory =
             test::dataDirectory().parent_path() / "assets/n64/extracted/levels/castle5";
-        if (!std::filesystem::is_regular_file(directory / "worlds.wad"))
+        if (!std::filesystem::is_regular_file(directory / "worlds.wad")) {
             SKIP("Native N64 Chimera arena is not installed");
+        }
         const auto root = test::assetOrSkip("PLAYERS").parent_path();
         const auto objects = readFile(directory / "objects.wad");
         auto map = formats::LegendsMap::parseN64(readFile(directory / "worlds.wad"), objects,
                                                  readFile(directory / "ipr.rom"));
-        for (auto& texture : formats::decodeLegendsN64Textures(objects))
+        for (auto& texture : formats::decodeLegendsN64Textures(objects)) {
             map.textures.push_back({std::move(texture.image), texture.clampU, texture.clampV,
                                     texture.hasTransparency});
+        }
         REQUIRE(map.destructibles.size() == 3);
         REQUIRE(map.objects[map.destructibles[0].object].name == "SHOOTW_1");
         REQUIRE(map.objects[map.destructibles[1].object].name == "SHOOTW_3");
@@ -75,8 +77,9 @@ struct ChimeraTargetingScene {
         LevelRef ref;
         ref.realmId = -1;
         ref.name = "castle5";
-        REQUIRE(world.loadImported(device, root, ref, std::move(layout), traversal.collision(),
-                                   native));
+        const bool loaded =
+            world.loadImported(device, root, ref, std::move(layout), traversal.collision(), native);
+        REQUIRE(loaded);
         REQUIRE(strings.load(test::dataDirectory() / "text", config.text.language));
         context.config = &config;
         context.strings = &strings;
@@ -115,36 +118,44 @@ struct ChimeraTargetingScene {
     }
 
     PlayerAttacks::Targets targets() {
-        return {const_cast<LevelOpponents&>(scene.opponents()),
-                const_cast<LevelFixtures&>(scene.fixtures()),
-                fixtureHost,
-                attackHost,
-                MultiplayerMode::Normal,
-                scene.participants()};
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast): mutable test fixture
+        auto& opponents = const_cast<LevelOpponents&>(scene.opponents());
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast): mutable test fixture
+        auto& fixtures = const_cast<LevelFixtures&>(scene.fixtures());
+        return {.opponents = opponents,
+                .fixtures = fixtures,
+                .fixtureHost = fixtureHost,
+                .attackHost = attackHost,
+                .multiplayer = MultiplayerMode::Normal,
+                .players = scene.participants()};
     }
 
     std::vector<MissileTarget> pillars() const {
         std::vector<MissileTarget> result;
-        for (const auto& target : native->targets())
-            if (target.id >= kImportedSceneryBase)
+        for (const auto& target : native->targets()) {
+            if (target.id >= kImportedSceneryBase) {
                 result.push_back({kImportedTargetBase + target.id, target.base, target.radius,
                                   target.height, target.surface});
+            }
+        }
         return result;
     }
 
     void ready() {
         for (s32 tick = 0; tick < 1200 && (scene.spawning() || scene.animator(0)->entering() ||
                                            !native->opponentsReady());
-             ++tick)
+             ++tick) {
             step();
+        }
         REQUIRE_FALSE(scene.spawning());
         REQUIRE_FALSE(scene.animator(0)->entering());
         REQUIRE(native->opponentsReady());
         const auto standing = floor(10, 0);
         REQUIRE(standing);
         REQUIRE(scene.relocate(*standing));
-        for (s32 tick = 0; tick < 600 && !scene.bosses().view().awake; ++tick)
+        for (s32 tick = 0; tick < 600 && !scene.bosses().view().awake; ++tick) {
             step();
+        }
         REQUIRE(scene.bosses().view().awake);
     }
 
@@ -170,19 +181,21 @@ struct ChimeraTargetingScene {
         REQUIRE(obstacles.size() == 3);
         auto all = obstacles;
         auto heads = scene.bosses().targets();
-        for (auto& head : heads)
+        for (auto& head : heads) {
             head.id += 8000; // Distinct from imported scenery; only query grouping matters.
+        }
         all.insert(all.end(), heads.begin(), heads.end());
         s32 grounded = 0;
         s32 eligible = 0;
         // Find a real supported player position with a visible boss candidate
         // and a nearer pillar in the same controller cone. No posed boss nodes,
         // synthetic floor, or deleted pillar geometry enters this reproduction.
-        for (f32 z : {20.0f, 15.0f, 10.0f, 5.0f, 0.0f}) {
-            for (f32 x : {10.0f, -10.0f, 15.0f, -15.0f, 20.0f, -20.0f, 0.0f}) {
+        for (const f32 z : {20.0f, 15.0f, 10.0f, 5.0f, 0.0f}) {
+            for (const f32 x : {10.0f, -10.0f, 15.0f, -15.0f, 20.0f, -20.0f, 0.0f}) {
                 const auto feet = floor(x, z);
-                if (!feet)
+                if (!feet) {
                     continue;
+                }
                 ++grounded;
                 REQUIRE(scene.relocate(*feet));
                 const auto& actor = *scene.actor(0);
@@ -194,14 +207,16 @@ struct ChimeraTargetingScene {
                 };
                 const auto boss = select(heads);
                 const auto old = select(all);
-                if (!boss || !old)
+                if (!boss || !old) {
                     continue;
+                }
                 ++eligible;
                 if (glm::distance(*boss, *old) > 5 &&
                     std::ranges::any_of(obstacles, [&](const auto& pillar) {
                         return glm::distance(pillar.pointNear(actor.followPoint()), *old) < .001f;
-                    }))
+                    })) {
                     return {actor.position(), direction, *old, *boss};
+                }
             }
         }
         CAPTURE(grounded, eligible);
@@ -226,6 +241,7 @@ TEST_CASE("Native Chimera ranged acquisition does not dive at nearer breakable p
     CHECK(glm::distance(*selected, original.ordinary) > 5);
 
     const f32 health = test.headHealth();
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast): mutable test fixture
     const_cast<PlayerActor&>(actor).turnTo(std::atan2(original.direction.x, original.direction.z));
     PlayScene::Inputs held;
     held[0].attack = true; // Controller path: no cursor height-only override.
@@ -244,8 +260,9 @@ TEST_CASE("Native Chimera ranged acquisition does not dive at nearer breakable p
     CHECK(fired);
     CHECK(upward);
     CHECK(test.headHealth() < health);
-    for (const usize pillar : {1U, 2U, 4U})
+    for (const usize pillar : {1U, 2U, 4U}) {
         CHECK(test.native->adapter().worldObjectVisible(pillar));
+    }
 }
 
 TEST_CASE("Native boss preference retains ordinary fallback and fixed cursor bearing",
@@ -253,6 +270,7 @@ TEST_CASE("Native boss preference retains ordinary fallback and fixed cursor bea
     ChimeraTargetingScene test;
     test.ready();
     const auto original = test.reproduce();
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast): mutable test fixture
     auto& actor = const_cast<PlayerActor&>(*test.scene.actor(0));
     actor.turnTo(std::atan2(original.direction.x, original.direction.z));
     SECTION("a wall blocks the preferred boss but not the nearer pillar") {
@@ -267,6 +285,7 @@ TEST_CASE("Native boss preference retains ordinary fallback and fixed cursor bea
                               {Vec3{-100, -100, -35}, Vec3{100, 150, -35}, Vec3{-100, 150, -35}},
                               -1,
                               2}};
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast): mutable test fixture
         const_cast<WorldCollision&>(test.world.collision()).append(wall);
         CHECK_FALSE(TargetAssist::select(actor.followPoint(), original.direction,
                                          test.scene.bosses().targets(), TargetAssist::kBossRange,
@@ -290,17 +309,19 @@ TEST_CASE("Native boss preference retains ordinary fallback and fixed cursor bea
         // The arena's back edge is not a clear sightline to every pillar. Find
         // a supported side approach with a visible pillar and every boss NODE
         // outside the cone, independently of the imported priority policy.
-        for (f32 z : {-15.f, -10.f, -5.f, 0.f, 5.f, 10.f, 15.f}) {
-            for (f32 x : {10.f, -10.f, 15.f, -15.f, 20.f, -20.f, 0.f}) {
+        for (const f32 z : {-15.f, -10.f, -5.f, 0.f, 5.f, 10.f, 15.f}) {
+            for (const f32 x : {10.f, -10.f, 15.f, -15.f, 20.f, -20.f, 0.f}) {
                 const auto feet = test.floor(x, z);
-                if (!feet)
+                if (!feet) {
                     continue;
+                }
                 REQUIRE(test.scene.relocate(*feet));
                 for (const auto& pillar : pillars) {
                     const Vec3 toward = pillar.pointNear(actor.followPoint()) - actor.followPoint();
                     const Vec3 flat{toward.x, 0, toward.z};
-                    if (glm::length(flat) < .001f)
+                    if (glm::length(flat) < .001f) {
                         continue;
+                    }
                     direction = glm::normalize(flat);
                     const bool inCone = std::ranges::any_of(heads, [&](const auto& head) {
                         const Vec3 point = head.acquisition ? head.acquisition->point
@@ -311,18 +332,22 @@ TEST_CASE("Native boss preference retains ordinary fallback and fixed cursor bea
                                glm::dot(glm::normalize(bearing), direction) >=
                                    TargetAssist::kFacingDot;
                     });
-                    if (!inCone)
+                    if (!inCone) {
                         ordinary =
                             TargetAssist::select(actor.followPoint(), direction, pillars,
                                                  TargetAssist::kBossRange, &test.world.collision());
-                    if (ordinary)
+                    }
+                    if (ordinary) {
                         break;
+                    }
                 }
-                if (ordinary)
+                if (ordinary) {
                     break;
+                }
             }
-            if (ordinary)
+            if (ordinary) {
                 break;
+            }
         }
         REQUIRE(ordinary);
         actor.turnTo(std::atan2(direction.x, direction.z));
@@ -364,6 +389,7 @@ TEST_CASE("Native Chimera pillars remain manually breakable by actual scene mele
     REQUIRE(feet);
     REQUIRE(test.scene.relocate(*feet));
     REQUIRE(test.native->adapter().worldObjectVisible(2)); // SHOOTW_3, the centre pillar.
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast): mutable test fixture
     auto& actor = const_cast<PlayerActor&>(*test.scene.actor(0));
     actor.turnTo(std::atan2(0.f, -1.f));
     const auto pillars = test.pillars();

@@ -61,7 +61,7 @@ void checkSelectionPose(LegendsPreview& preview, test::FakeRenderDevice& device,
                         const WorldCamera& camera, f32 alpha, s32 id,
                         const test::RecordedDraw& rendered) {
     REQUIRE(rendered.vertices.size() == 3);
-    std::array<Vec3, 3> triangle;
+    std::array<Vec3, 3> triangle{};
     for (usize i = 0; i < triangle.size(); ++i) {
         triangle[i] = Vec3{rendered.transform * Vec4{rendered.vertices[i].position, 1}};
     }
@@ -164,8 +164,9 @@ TEST_CASE("Town fences draw only the authored side facing the viewer without mov
                 const auto q = draw.vertices[i + 1].position;
                 const auto r = draw.vertices[i + 2].position;
                 const f32 signedFacing = glm::dot(glm::cross(q - p, r - p), eye - p);
-                if (!draw.state.cullBack || signedFacing > 0)
+                if (!draw.state.cullBack || signedFacing > 0) {
                     visible[side].push_back(i);
+                }
             }
             REQUIRE(visible[side].size() == 2);
         }
@@ -174,8 +175,9 @@ TEST_CASE("Town fences draw only the authored side facing the viewer without mov
         CHECK(draw.vertices[0].color != draw.vertices[6].color);
         // Each side's first triangle is the same plane with opposite winding:
         // both still exist, but cannot compete for depth from either viewpoint.
-        for (usize i = 6; i < 9; ++i)
+        for (usize i = 6; i < 9; ++i) {
             CHECK(std::abs(glm::dot(draw.vertices[i].position - a, normal)) < 0.00001f);
+        }
     }
 }
 
@@ -525,7 +527,7 @@ TEST_CASE("N64 soft scenery preserves authored depth writes after opaque actors"
     test::FakeRenderDevice device;
     LegendsPreview preview;
     preview.open(device, map);
-    WorldCamera view;
+    const WorldCamera view;
     preview.drawWorld(device, Mat4{1}, view, TreeModel::Pass::Opaque, -1);
     CHECK(device.draws.empty());
     preview.drawWorld(device, Mat4{1}, view, TreeModel::Pass::Blended, -1);
@@ -647,7 +649,9 @@ TEST_CASE("Native Mountain Valley water and mist retain depth-tested translucent
     for (const auto& draw : device.draws) {
         CHECK(draw.state.depthTest);
         CHECK(draw.state.depthWrite);
-        translucent += draw.state.blend == BlendMode::Alpha;
+        if (draw.state.blend == BlendMode::Alpha) {
+            ++translucent;
+        }
     }
     CHECK(translucent > 0);
 }
@@ -882,9 +886,11 @@ TEST_CASE("native Legends maps reach the renderer without conversion or GameCube
             // survey defaults. Count the visible authored geometry, while the
             // focused material tests verify each depth and blend mode.
             usize visibleTriangles = 0;
-            for (const auto& object : map.objects)
-                if ((object.nativeDrawFlags & 2U) == 0)
+            for (const auto& object : map.objects) {
+                if ((object.nativeDrawFlags & 2U) == 0) {
                     visibleTriangles += object.mesh.triangleCount();
+                }
+            }
             CHECK(submitted == visibleTriangles);
             ++count;
         }

@@ -26,8 +26,9 @@ using namespace gdl::game;
 TEST_CASE("Native Plague gas uses its animation container without the extra TOP lift",
           "[legends][native-plague][native-plague-gas][assets]") {
     const auto root = test::dataDirectory().parent_path() / "assets/n64/extracted";
-    if (!std::filesystem::exists(root / "slime/objects.wad"))
+    if (!std::filesystem::exists(root / "slime/objects.wad")) {
         SKIP("N64 assets missing");
+    }
     test::FakeRenderDevice device;
     std::vector<std::string> warnings;
     auto stock = loadLegendsBossAssets(device, root, test::assetOrSkip("CRITTER").parent_path(), 38,
@@ -69,8 +70,9 @@ TEST_CASE("Native Plague gas uses its animation container without the extra TOP 
         for (usize i = 0; i < readU32BE(native, 4); ++i) {
             const usize at = directory + i * 12;
             if (std::equal(name.begin(), name.end(),
-                           native.begin() + static_cast<std::ptrdiff_t>(at)))
+                           native.begin() + static_cast<std::ptrdiff_t>(at))) {
                 return readU32BE(native, at + 4);
+            }
         }
         FAIL("Missing native section " << name);
         return 0;
@@ -85,7 +87,7 @@ TEST_CASE("Native Plague gas uses its animation container without the extra TOP 
     CHECK(stock->tree->nodes.front().position == Vec3{0, 151.0f / 64.0f, 0});
     // ATCK09FX's first drawable is BODY173, with a position track starting
     // at exactly these signed 1/64-unit coordinates. Preserve its native art.
-    const usize gasBody = body + 173 * 8;
+    const usize gasBody = body + usize{173} * 8;
     REQUIRE(readU16BE(native, gasBody) == 0x203e);
     REQUIRE(readU16BE(native, gasBody + 8) == 1041);
     REQUIRE(readU16BE(native, gasBody + 10) == 1131);
@@ -114,9 +116,11 @@ TEST_CASE("Native Plague gas uses its animation container without the extra TOP 
         const Mat4 container =
             portable::rotate(glm::translate(Mat4{1}, origin + Vec3{0, -1, 0}), yaw, Vec3{0, 1, 0});
         const Mat4 expected = glm::translate(container, Vec3{0, -3, 0});
-        for (Mat4::length_type column = 0; column < 4; ++column)
-            for (Vec4::length_type row = 0; row < 4; ++row)
+        for (Mat4::length_type column = 0; column < 4; ++column) {
+            for (Vec4::length_type row = 0; row < 4; ++row) {
                 CHECK((*cue.placement)[column][row] == Catch::Approx(expected[column][row]));
+            }
+        }
         const auto top = actor.nodeTransform("TOP");
         REQUIRE(top);
         CHECK(Vec3{*top * Vec4{0, -3, 0, 1}}.y - cue.position.y == Catch::Approx(151.0f / 64));
@@ -149,8 +153,9 @@ TEST_CASE("Native Plague gas uses its animation container without the extra TOP 
 TEST_CASE("Native Plague tentacle honors single-frame visibility in once attacks",
           "[legends][native-plague][assets]") {
     const auto root = test::dataDirectory().parent_path() / "assets/n64/extracted";
-    if (!std::filesystem::exists(root / "slime/objects.wad"))
+    if (!std::filesystem::exists(root / "slime/objects.wad")) {
         SKIP("N64 assets missing");
+    }
     test::FakeRenderDevice device;
     std::vector<std::string> warnings;
     auto stock = loadLegendsBossAssets(device, root, test::assetOrSkip("CRITTER").parent_path(), 38,
@@ -161,8 +166,9 @@ TEST_CASE("Native Plague tentacle honors single-frame visibility in once attacks
     REQUIRE(node.name == "OANIM#2");
     // Isolate the reported mesh, but still bind/sample/draw through the actual
     // common TreeModel rather than inspecting only decoder metadata.
-    for (usize i = 0; i < stock->tree->nodes.size(); ++i)
+    for (usize i = 0; i < stock->tree->nodes.size(); ++i) {
         stock->body.setMeshAlpha(i, i == 25 ? 1.0f : 0.0f);
+    }
     const auto draw = [&](u32 sequence, s32 frame) {
         TreePose pose;
         pose.evaluate(*stock->tree, sequence, static_cast<f32>(frame));
@@ -170,7 +176,7 @@ TEST_CASE("Native Plague tentacle honors single-frame visibility in once attacks
         device.draws.clear();
         stock->body.draw(device, Mat4{1}, Mat4{1}, {}, pose.matrices());
     };
-    for (const auto name : {"ATK3", "ATK9", "AT10"}) {
+    for (const auto* const name : {"ATK3", "ATK9", "AT10"}) {
         CAPTURE(name);
         const auto sequence = stock->tree->findSequence(name);
         REQUIRE(sequence);
@@ -195,8 +201,9 @@ TEST_CASE("Native Plague tentacle honors single-frame visibility in once attacks
 TEST_CASE("Native Plague meter uses its own artwork and drains without losing the frame",
           "[legends][native-plague][assets]") {
     const auto root = test::dataDirectory().parent_path() / "assets/n64/extracted";
-    if (!std::filesystem::exists(root / "slime/objects.wad"))
+    if (!std::filesystem::exists(root / "slime/objects.wad")) {
         SKIP("N64 assets missing");
+    }
     test::FakeRenderDevice device;
     std::vector<std::string> warnings;
     auto stock = loadLegendsBossAssets(device, root, test::assetOrSkip("CRITTER").parent_path(), 38,
@@ -223,8 +230,9 @@ TEST_CASE("Native Plague meter uses its own artwork and drains without losing th
         for (usize row = 0; row < count; ++row) {
             const usize at = table + row * 12;
             if (std::equal(tag.begin(), tag.end(),
-                           native.begin() + static_cast<std::ptrdiff_t>(at)))
+                           native.begin() + static_cast<std::ptrdiff_t>(at))) {
                 return readU32BE(native, at + 4);
+            }
         }
         FAIL("Missing native section " << tag);
         return 0;
@@ -250,15 +258,16 @@ TEST_CASE("Native Plague meter uses its own artwork and drains without losing th
             const auto expand = [](u32 value) {
                 return static_cast<u8>((value << 3U) | (value >> 2U));
             };
-            for (u32 y = 0; y < 32; ++y)
+            for (u32 y = 0; y < 32; ++y) {
                 for (u32 x = 0; x < 200; ++x) {
-                    const u8 packed = native[texels + y * 104 + x / 2];
-                    const u8 slot = (packed >> ((x & 1U) ? 0 : 4)) & 15U;
+                    const u8 packed = native[texels + usize{y} * 104 + x / 2];
+                    const u8 slot = (packed >> ((x & 1U) != 0 ? 0 : 4)) & 15U;
                     const u16 value = readU16BE(native, palette + usize{slot} * 2);
                     CHECK(pixels->pixel(x, y) ==
                           Color::rgba(expand((value >> 11) & 31), expand((value >> 6) & 31),
                                       expand((value >> 1) & 31), (value & 1) ? 255 : 0));
                 }
+            }
         }
     }
     const f32 right = test::maxCorner(device.draws[3]).x;

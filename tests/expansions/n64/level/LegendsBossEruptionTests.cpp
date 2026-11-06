@@ -129,7 +129,7 @@ TEST_CASE("Imported eruption never recruits an intact floor or unbounded foreign
     objects[0].name = "FLOOR__FL#0";
     objects[1].flags = 0;
     objects[2].name = "ROCKFLY_R12#1";
-    LegendsBossEruption eruption{objects};
+    const LegendsBossEruption eruption{objects};
     CHECK(eruption.size() == 1);
     CHECK_FALSE(eruption.visible(0));
     CHECK_FALSE(eruption.visible(1));

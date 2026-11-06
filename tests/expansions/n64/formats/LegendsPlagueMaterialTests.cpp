@@ -112,8 +112,9 @@ TEST_CASE("N64 once-only vertex visibility survives a simultaneous keyed texture
                 CHECK(shape.parts[0].texture == 2U + static_cast<u32>(frame));
             }
         }
-        if (hiddenTail)
+        if (hiddenTail) {
             CHECK_FALSE(run.interpolate);
+        }
     }
 }
 
@@ -282,8 +283,12 @@ TEST_CASE("Native Plague breath and splash use green ramps while shaded effects 
                 ++shaded;
                 CHECK(resolved.mesh.prelit == old.mesh.prelit);
             }
-            breathParts += isBreath;
-            splashParts += isSplash;
+            if (isBreath) {
+                ++breathParts;
+            }
+            if (isSplash) {
+                ++splashParts;
+            }
         }
     }
     CHECK(shaded > 0);

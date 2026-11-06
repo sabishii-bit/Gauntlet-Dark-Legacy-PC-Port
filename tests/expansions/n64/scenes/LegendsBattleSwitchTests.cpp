@@ -78,6 +78,7 @@ struct BattleBridge {
         REQUIRE(floor != map.collision.end());
         floorPoint = (floor->vertices[0] + floor->vertices[1] + floor->vertices[2]) / 3.0f;
         std::vector<CollisionTriangle> triangles;
+        triangles.reserve(map.collision.size());
         for (const auto& face : map.collision) {
             triangles.push_back({face.normal, face.vertices, face.owner,
                                  (face.floor ? 4U : 0U) | (face.wall ? 2U : 0U)});

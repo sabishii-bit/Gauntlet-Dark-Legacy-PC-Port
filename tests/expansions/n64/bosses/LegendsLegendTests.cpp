@@ -35,15 +35,15 @@ TEST_CASE("All four native legendary weapons render in the hand and fly using th
           "[legends][native-legends][assets]") {
     const auto root = nativeRoot();
     const auto program = readFile(root / "_program/game.bin");
-    constexpr std::array kinds{34, 39, 35, 38};
-    constexpr std::array held{"POWERUP:QICE", "POWERUP:QFLM", "POWERUP:QSCM", "POWERUP:QJAV"};
+    constexpr std::array kKinds{34, 39, 35, 38};
+    constexpr std::array kHeld{"POWERUP:QICE", "POWERUP:QFLM", "POWERUP:QSCM", "POWERUP:QJAV"};
     for (s32 i = 0; i < 4; ++i) {
         CAPTURE(i);
         std::vector<std::string> warnings;
         auto binding = loadLegendsLegend(root, i, program, warnings);
         REQUIRE(binding.archive);
         REQUIRE(binding.archive->loaded());
-        CHECK(binding.profile.held == held[static_cast<usize>(i)]);
+        CHECK(binding.profile.held == kHeld[static_cast<usize>(i)]);
         REQUIRE(binding.archive->trees.find(binding.profile.held));
         REQUIRE(binding.archive->trees.find(binding.profile.projectile));
         test::FakeRenderDevice device;
@@ -71,25 +71,27 @@ TEST_CASE("All four native legendary weapons render in the hand and fly using th
         bearer.holdPoint = {1, 3, 0};
         bearer.canGesture = true;
         const LegendPresentation::Target target{Vec3{0, 0, 12}, 6};
-        presentation.carry(0, legendRealmOf(kinds[static_cast<usize>(i)]),
-                           kinds[static_cast<usize>(i)], bearer);
+        presentation.carry(0, legendRealmOf(kKinds[static_cast<usize>(i)]),
+                           kKinds[static_cast<usize>(i)], bearer);
         REQUIRE(effects.count() == 1);
         CHECK(effects.effect(0).name == binding.profile.held);
         CHECK(presentation.occupiedHand() == 0);
         const auto camera = CameraFrame::of(WorldCamera{});
         effects.draw(device, Mat4{1}, {}, &camera);
         REQUIRE_FALSE(device.draws.empty());
-        presentation.show(LegendCue::Brandished, 0, legendRealmOf(kinds[static_cast<usize>(i)]),
-                          kinds[static_cast<usize>(i)], bearer);
-        presentation.show(LegendCue::Thrown, 0, legendRealmOf(kinds[static_cast<usize>(i)]),
-                          kinds[static_cast<usize>(i)], bearer);
+        presentation.show(LegendCue::Brandished, 0, legendRealmOf(kKinds[static_cast<usize>(i)]),
+                          kKinds[static_cast<usize>(i)], bearer);
+        presentation.show(LegendCue::Thrown, 0, legendRealmOf(kKinds[static_cast<usize>(i)]),
+                          kKinds[static_cast<usize>(i)], bearer);
         bearer.released = true;
         CHECK_FALSE(presentation.update(0, bearer, target).landed);
         REQUIRE(effects.count() >= 1);
         const auto* flying = [&]() -> const EffectTrees::Effect* {
-            for (usize j = 0; j < effects.count(); ++j)
-                if (effects.effect(j).name == binding.profile.projectile)
+            for (usize j = 0; j < effects.count(); ++j) {
+                if (effects.effect(j).name == binding.profile.projectile) {
                     return &effects.effect(j);
+                }
+            }
             return nullptr;
         }();
         REQUIRE(flying);
@@ -187,8 +189,9 @@ TEST_CASE("Native relics target the bound lion and eye without borrowing absent 
         player.radius = 1;
         player.height = 6;
         const std::array party{player};
-        for (s32 frame = 0; frame < 1200 && !bosses.legend().thrown(); ++frame)
+        for (s32 frame = 0; frame < 1200 && !bosses.legend().thrown(); ++frame) {
             bosses.update(1, 1.f / 60, party);
+        }
         REQUIRE(bosses.legend().thrown());
         CHECK(bosses.legendTargetTransform() == bosses.nodeTransform(targetName));
         const auto health = bosses.view().health;
@@ -208,6 +211,7 @@ TEST_CASE("Native relics target the bound lion and eye without borrowing absent 
         if (index == 2) {
             // Exercise the actual child death, not an injected cue: e0881b84
             // hides the branch before attempting to open the missing STUMPL.
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast): mutable test fixture
             auto& actor = const_cast<Combatant&>(bosses.fighter());
             auto cues = bosses.takeCues();
             REQUIRE(actor.childCount() == 3);
@@ -235,8 +239,9 @@ TEST_CASE("Native relics target the bound lion and eye without borrowing absent 
                 device.draws.clear();
                 bosses.draw(device, Mat4{1}, {});
                 usize vertices = 0;
-                for (const auto& draw : device.draws)
+                for (const auto& draw : device.draws) {
                     vertices += draw.vertices.size();
+                }
                 return vertices;
             };
             const auto hiddenVertices = drawnVertices();
@@ -295,14 +300,17 @@ TEST_CASE("The native javelin follows its eye for its authored attachment lifeti
     u32 attached = 0;
     for (usize i = 0; i < effects.count(); ++i) {
         const auto& effect = effects.effect(i);
-        if (effect.name == binding.profile.projectile && effect.attachment == target.attachment)
+        if (effect.name == binding.profile.projectile && effect.attachment == target.attachment) {
             attached = effect.id;
+        }
     }
     REQUIRE(attached != 0);
     const auto find = [&]() -> const EffectTrees::Effect* {
-        for (usize i = 0; i < effects.count(); ++i)
-            if (effects.effect(i).id == attached)
+        for (usize i = 0; i < effects.count(); ++i) {
+            if (effects.effect(i).id == attached) {
                 return &effects.effect(i);
+            }
+        }
         return nullptr;
     };
     REQUIRE(find());
@@ -355,10 +363,10 @@ TEST_CASE("The native javelin follows its eye for its authored attachment lifeti
 TEST_CASE("Native legendary rites consume only their bearer and native campaign identity",
           "[legends][native-legends][assets]") {
     const auto root = nativeRoot();
-    constexpr std::array maps{"mount6", "ice5", "castle5", "town5"};
+    constexpr std::array kMaps{"mount6", "ice5", "castle5", "town5"};
     for (s32 index = 0; index < 4; ++index) {
         CAPTURE(index);
-        const auto directory = root / "levels" / maps[static_cast<usize>(index)];
+        const auto directory = root / "levels" / kMaps[static_cast<usize>(index)];
         auto map = formats::LegendsMap::parseN64(readFile(directory / "worlds.wad"),
                                                  readFile(directory / "objects.wad"),
                                                  readFile(directory / "ipr.rom"));

@@ -12,6 +12,7 @@
 
 #include "engine/assets/StringTable.h"
 #include "engine/assets/TextureSet.h"
+#include "engine/core/SpecialMembers.h"
 #include "engine/io/AssetLocator.h"
 #include "engine/io/File.h"
 
@@ -98,8 +99,9 @@ struct SumnerScene {
         ref.realmId = -1;
         ref.realm = "Legends";
         ref.name = "n64:tower2";
-        REQUIRE(world.loadImported(device, characters, ref, std::move(layout),
-                                   traversal.collision(), level));
+        const bool loaded = world.loadImported(device, characters, ref, std::move(layout),
+                                               traversal.collision(), level);
+        REQUIRE(loaded);
         config.camera.compass = false;
         REQUIRE(strings.load(test::dataDirectory() / "text", config.text.language));
         context.config = &config;
@@ -134,6 +136,7 @@ struct SumnerScene {
         REQUIRE(scene.actorCount() == 2);
     }
 
+    GDL_NON_COPYABLE_NON_MOVABLE(SumnerScene);
     ~SumnerScene() { scene.close(); }
 
     void step(const PlayScene::Inputs& inputs = {}) {
@@ -172,7 +175,7 @@ struct SumnerScene {
     std::string readPages() {
         REQUIRE(scene.scroll().active());
         std::string prose;
-        usize previousPage = static_cast<usize>(-1);
+        auto previousPage = static_cast<usize>(-1);
         for (u32 tick = 0; tick < 1800 && scene.scroll().active(); ++tick) {
             if (!scene.scroll().burning() && scene.scroll().page() != previousPage) {
                 previousPage = scene.scroll().page();
@@ -288,8 +291,9 @@ TEST_CASE("Native Tower return presents new milestones once and restores the mat
         expected += ' ';
     }
     CHECK(fixture.readPages() == words(expected));
-    for (u32 i = 0; i < 90; ++i)
+    for (u32 i = 0; i < 90; ++i) {
         fixture.step();
+    }
     CHECK_FALSE(fixture.scene.scroll().active());
     fixture.level->announceProgress(returned, returned);
     fixture.step();

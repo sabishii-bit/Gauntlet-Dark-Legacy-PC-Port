@@ -432,11 +432,13 @@ TEST_CASE("N64 property16 delta keys reset and accumulate the native signed16 ve
                               0x43,
                               0x14,
                               0x83};
-        if (attributes)
+        if (attributes) {
             track.insert(track.end(), {0x82, 0x1f});
+        }
         track.insert(track.end(), {0x0c, 0x41});
-        if (attributes)
+        if (attributes) {
             track.insert(track.end(), {0, 0});
+        }
         const std::array<u8, 4> binding{0, 1, 0, 0};
         const std::array<u32, 3> sources{0, 0, 0};
         auto original = triangle();

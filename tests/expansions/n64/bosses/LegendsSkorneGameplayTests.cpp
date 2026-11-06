@@ -50,15 +50,17 @@ struct SkorneScene {
                          std::string_view mapName = "boss2") {
         const auto native = test::dataDirectory().parent_path() / "assets/n64/extracted";
         const auto directory = native / "levels" / mapName;
-        if (!std::filesystem::is_regular_file(directory / "worlds.wad"))
+        if (!std::filesystem::is_regular_file(directory / "worlds.wad")) {
             SKIP("Native N64 Skorne assets are not installed");
+        }
         const auto objects = readFile(directory / "objects.wad");
         auto map = formats::LegendsMap::parseN64(readFile(directory / "worlds.wad"), objects,
                                                  readFile(directory / "ipr.rom"));
         std::set<std::array<f32, 3>> permanentVertices;
         for (const auto& object : map.objects) {
-            if ((object.flags & 0x200U) != 0 && object.name.starts_with("ROCKFLY"))
+            if ((object.flags & 0x200U) != 0 && object.name.starts_with("ROCKFLY")) {
                 continue;
+            }
             for (const auto& vertex : object.mesh.vertices) {
                 const Vec3 point{object.transform * Vec4{vertex.position, 1}};
                 permanentVertices.insert({point.x, point.y, point.z});
@@ -82,9 +84,10 @@ struct SkorneScene {
                 capVertices.push_back(*marker);
             }
         }
-        for (auto& texture : formats::decodeLegendsN64Textures(objects))
+        for (auto& texture : formats::decodeLegendsN64Textures(objects)) {
             map.textures.push_back({std::move(texture.image), texture.clampU, texture.clampV,
                                     texture.hasTransparency});
+        }
         auto adapter = LegendsSceneAdapter::load(device, LegendsPlatform::N64, directory, map);
         REQUIRE(adapter);
         PartyMember member;
@@ -104,8 +107,9 @@ struct SkorneScene {
         ref.realmId = -1;
         ref.realm = "Legends";
         ref.name = mapName;
-        REQUIRE(world.loadImported(device, root, ref, std::move(layout), traversal.collision(),
-                                   imported));
+        const bool loaded = world.loadImported(device, root, ref, std::move(layout),
+                                               traversal.collision(), imported);
+        REQUIRE(loaded);
         REQUIRE(strings.load(test::dataDirectory() / "text", config.text.language));
         config.camera.compass = false;
         config.combat.autoMelee = false;
@@ -117,13 +121,15 @@ struct SkorneScene {
         options.yaw = traversal.actor().yaw();
         options.welcome = false;
         REQUIRE(scene.open(device, context, world, party, options));
-        if (!settleEntrance)
+        if (!settleEntrance) {
             return;
+        }
         scene.setCheats(0, {.god = true});
         for (int tick = 0; tick < 1200; ++tick) {
             step();
-            if (!scene.spawning() && imported->opponentsReady() && !scene.animator(0)->entering())
+            if (!scene.spawning() && imported->opponentsReady() && !scene.animator(0)->entering()) {
                 break;
+            }
         }
         REQUIRE_FALSE(scene.spawning());
         REQUIRE(imported->opponentsReady());
@@ -157,22 +163,27 @@ struct SkorneScene {
                 const f32 horizontal = glm::length(Vec2{static_cast<f32>(x), static_cast<f32>(z)});
                 // Stay inside the native reach, without relying on the player's
                 // contact-radius expansion or an unsupported footprint at an edge.
-                if (horizontal > reach - actor.radius())
+                if (horizontal > reach - actor.radius()) {
                     continue;
-                Vec3 feet{centre.x + x, 100, centre.z + z};
+                }
+                Vec3 feet{centre.x + static_cast<f32>(x), 100, centre.z + static_cast<f32>(z)};
                 const auto support = collision.floorAt(feet, 0, 200);
-                if (!support)
+                if (!support) {
                     continue;
+                }
                 feet.y = support->y;
-                if (admit && !admit(feet))
+                if (admit && !admit(feet)) {
                     continue;
+                }
                 const f32 vertical = std::abs(feet.y + actor.height() * .5f - centre.y);
-                if (vertical > halfHeight + actor.height() * .5f - .5f)
+                if (vertical > halfHeight + actor.height() * .5f - .5f) {
                     continue;
+                }
                 const Vec3 body = feet + actor.followPoint() - actor.position() +
                                   Vec3{0, PlayerActor::kWallSphereLift, 0};
-                if (glm::distance(collision.resolveSphere(body, actor.reach()), body) > .01f)
+                if (glm::distance(collision.resolveSphere(body, actor.reach()), body) > .01f) {
                     continue;
+                }
                 bool supported = true;
                 for (const auto offset :
                      {Vec3{actor.radius(), 0, 0}, Vec3{-actor.radius(), 0, 0},
@@ -223,9 +234,11 @@ struct SkorneScene {
         device.draws.clear();
         scene.bosses().fighter().draw(device, Mat4{1}, {}, nullptr, nullptr, nullptr, alpha);
         std::vector<Vec3> vertices;
-        for (const auto& draw : device.draws)
-            for (const auto& vertex : draw.vertices)
+        for (const auto& draw : device.draws) {
+            for (const auto& vertex : draw.vertices) {
                 vertices.push_back(vertex.position);
+            }
+        }
         return vertices;
     }
 
@@ -235,11 +248,13 @@ struct SkorneScene {
         imported->draw(device, Mat4{1}, scene.viewCamera(), TreeModel::Pass::Blended, -1);
         usize count = 0;
         for (const auto point : capVertices) {
-            count += std::ranges::any_of(device.draws, [&](const auto& draw) {
-                return std::ranges::any_of(draw.vertices, [&](const auto& vertex) {
-                    return glm::distance(vertex.position, point) < .00001f;
-                });
-            });
+            if (std::ranges::any_of(device.draws, [&](const auto& draw) {
+                    return std::ranges::any_of(draw.vertices, [&](const auto& vertex) {
+                        return glm::distance(vertex.position, point) < .00001f;
+                    });
+                })) {
+                ++count;
+            }
         }
         return count;
     }
@@ -261,13 +276,16 @@ struct SkorneScene {
             const auto* texture = dynamic_cast<const test::FakeTexture*>(expected.texture);
             REQUIRE(texture);
             bool visibleTexel = false;
-            for (usize alpha = 3; alpha < texture->pixels.size(); alpha += 4)
+            for (usize alpha = 3; alpha < texture->pixels.size(); alpha += 4) {
                 visibleTexel |= texture->pixels[alpha] > 2;
-            if (!visibleTexel)
+            }
+            if (!visibleTexel) {
                 continue;
+            }
             for (const auto& actual : submitted) {
-                if (actual.texture != expected.texture || actual.vertices.empty())
+                if (actual.texture != expected.texture || actual.vertices.empty()) {
                     continue;
+                }
                 CHECK(actual.state.blend == expected.state.blend);
                 CHECK(actual.state.depthTest == expected.state.depthTest);
                 CHECK(actual.state.depthWrite == expected.state.depthWrite);
@@ -280,8 +298,9 @@ struct SkorneScene {
                         vertex.color.a > 2 &&
                         (vertex.color.r > 0 || vertex.color.g > 0 || vertex.color.b > 0);
                 }
-                if (visibleVertex)
+                if (visibleVertex) {
                     return true;
+                }
             }
         }
         return false;
@@ -289,6 +308,7 @@ struct SkorneScene {
 
     /** Sets the boss playing its move `name` from `frame`, aimed at the first player. */
     void forceMove(std::string_view name, f32 frame = 0) {
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast): mutable test fixture
         auto& fighter = const_cast<Combatant&>(scene.bosses().fighter());
         const auto index = stock().data.moveNamed(name);
         REQUIRE(index);
@@ -352,8 +372,9 @@ TEST_CASE("Normal Skorne scene entry holds its cap then plays both entrance part
                 CHECK(test.imported->adapter().worldObjectVisible(object));
                 CHECK(test.imported->adapter().worldObjectTransform(object) == Mat4{1});
             }
-            if (tick % 30 == 0)
+            if (tick % 30 == 0) {
                 CHECK(test.bossGeometry() == initialGeometry);
+            }
             continue;
         }
         if (startTick < 0) {
@@ -376,13 +397,15 @@ TEST_CASE("Normal Skorne scene entry holds its cap then plays both entrance part
             CHECK((state.soundsGiven & 2U) == 0);
             if (tick % 15 == 0) {
                 changedGeometry |= test.bossGeometry() != initialGeometry;
-                for (const f32 alpha : {0.0f, 0.25f, 0.75f, 1.0f})
+                for (const f32 alpha : {0.0f, 0.25f, 0.75f, 1.0f}) {
                     test.bossGeometry(alpha);
+                }
                 CHECK(test.bossState().player == state.player);
             }
         } else if (type == MoveDefinition::kStart && state.player.sequence == *secondSequence) {
-            if (secondTick < 0)
+            if (secondTick < 0) {
                 secondTick = tick;
+            }
             CHECK(readyTick == -1);
             CHECK(state.player.frame >= lastSecondFrame);
             lastSecondFrame = state.player.frame;
@@ -395,8 +418,9 @@ TEST_CASE("Normal Skorne scene entry holds its cap then plays both entrance part
             secondSound = sounding;
             CHECK((state.soundsGiven & 2U) == 0);
         } else if (type == MoveDefinition::kReady) {
-            if (readyTick < 0)
+            if (readyTick < 0) {
                 readyTick = tick;
+            }
             CHECK(state.player.sequence == *readySequence);
             lastReadyFrame = state.player.frame;
         } else {
@@ -422,8 +446,9 @@ TEST_CASE("Normal Skorne scene entry holds its cap then plays both entrance part
     CHECK((readyTick - secondTick) / 60.0f == Approx(83.0f / 30).margin(0.04f));
     CHECK(lastReadyFrame == 59);
     CHECK((attackTick - readyTick) / 60.0f >= 59.0f / 30);
-    for (const usize object : test.capObjects)
+    for (const usize object : test.capObjects) {
         CHECK_FALSE(test.imported->adapter().worldObjectVisible(object));
+    }
     CHECK(test.submittedCapObjects() == 0);
 }
 
@@ -459,7 +484,7 @@ TEST_CASE("Skorne native projectiles hit a grounded player through the real scen
                 for (usize i = 0; i < test.scene.effects().count(); ++i) {
                     const auto& effect = test.scene.effects().effect(i);
                     if (effect.name == flight->tree && !flightVisibleBeforeHit &&
-                        minimumHealth > health - 20) {
+                        minimumHealth > static_cast<f32>(health - 20)) {
                         flightId = effect.id;
                         flightVisibleBeforeHit = test.visiblySubmits(effect);
                     } else if (effect.name == impact->tree && !impactVisible) {
@@ -529,8 +554,9 @@ TEST_CASE("Skorne ground punches knock down a real player standing on the arena"
                    player.reaction == PlayerDeed::FallForward || test.scene.animator(0)->floored();
         for (usize i = 0; i < test.scene.effects().count() && !visible; ++i) {
             const auto& effect = test.scene.effects().effect(i);
-            if (effect.name == cue->tree)
+            if (effect.name == cue->tree) {
                 visible = test.visiblySubmits(effect);
+            }
         }
         const auto baseCamera = test.imported->camera();
         REQUIRE(baseCamera);
@@ -551,8 +577,9 @@ TEST_CASE("Skorne ground punches knock down a real player standing on the arena"
     CHECK(knocked);
     CHECK(visible);
     CHECK(shook);
-    if constexpr (GDL_LEGENDS_AUDIO)
+    if constexpr (GDL_LEGENDS_AUDIO) {
         CHECK(sounded);
+    }
 }
 
 TEST_CASE("Skorne naturally selects a damaging ground punch after the complete entrance",
@@ -560,8 +587,10 @@ TEST_CASE("Skorne naturally selects a damaging ground punch after the complete e
     const std::string name = "POUNDR";
     SkorneScene test(1, false);
     auto& bosses = test.scene.bosses();
-    for (int tick = 0; tick < 1800 && bosses.fighter().moveType() != MoveDefinition::kReady; ++tick)
+    for (int tick = 0; tick < 1800 && bosses.fighter().moveType() != MoveDefinition::kReady;
+         ++tick) {
         test.step();
+    }
     REQUIRE(bosses.fighter().moveType() == MoveDefinition::kReady);
     REQUIRE(bosses.view().awake);
     const auto state = test.bossState();
@@ -616,8 +645,9 @@ TEST_CASE("Skorne naturally selects a damaging ground punch after the complete e
         const bool entered = bosses.moveName() != previous;
         if (entered) {
             previous = bosses.moveName();
-            if (!history.empty())
+            if (!history.empty()) {
                 history += ',';
+            }
             history += previous;
         }
         if ((bosses.moveName() == "POUNDL" || bosses.moveName() == "POUNDR") && entered) {
@@ -687,8 +717,9 @@ TEST_CASE("Skorne releases a captured player back onto the native arena",
         REQUIRE(hand);
         centre = Vec3{(*hand)[3]} + damage->offset * test.scene.bosses().fighter().scale();
         feet = test.groundedNear(centre, damage->maxDistance, damage->maxDistance);
-        if (feet)
+        if (feet) {
             break;
+        }
     }
     CAPTURE(centre.x, centre.y, centre.z);
     REQUIRE(feet);
@@ -751,8 +782,9 @@ TEST_CASE("Skorne roar visuals accompany the stretch through the real scene",
     const auto findRoar = [&]() -> const EffectTrees::Effect* {
         for (usize i = 0; i < test.scene.effects().count(); ++i) {
             const auto& effect = test.scene.effects().effect(i);
-            if (effect.name == "BOSSROARFX")
+            if (effect.name == "BOSSROARFX") {
                 return &effect;
+            }
         }
         return nullptr;
     };
@@ -765,8 +797,9 @@ TEST_CASE("Skorne roar visuals accompany the stretch through the real scene",
     for (s32 tick = 1; tick <= 60; ++tick) {
         test.step();
         const auto* effect = findRoar();
-        if (effect == nullptr)
+        if (effect == nullptr) {
             continue;
+        }
         if (bornAt < 0) {
             bornAt = tick;
             instance = effect->id;
@@ -788,12 +821,15 @@ TEST_CASE("Skorne roar visuals accompany the stretch through the real scene",
             const auto* texture = dynamic_cast<const test::FakeTexture*>(draw.texture);
             REQUIRE(texture);
             bool opaqueTexel = false;
-            for (usize alpha = 3; alpha < texture->pixels.size(); alpha += 4)
+            for (usize alpha = 3; alpha < texture->pixels.size(); alpha += 4) {
                 opaqueTexel |= texture->pixels[alpha] > 2;
-            if (!opaqueTexel || draw.vertices.empty())
+            }
+            if (!opaqueTexel || draw.vertices.empty()) {
                 continue;
-            if (visibleAt < 0)
+            }
+            if (visibleAt < 0) {
                 visibleAt = tick;
+            }
             submittedVisible |= std::ranges::any_of(sceneDraws, [&](const auto& actual) {
                 return actual.texture == draw.texture && !actual.vertices.empty();
             });
@@ -821,15 +857,17 @@ TEST_CASE("Skorne roar visuals accompany the stretch through the real scene",
     shown.model->draw(test.device, Mat4{1}, Mat4{1}, {}, matrices, nullptr, shown.opacity());
     REQUIRE_FALSE(test.device.draws.empty());
     std::set<const Texture*> nativeTextures;
-    for (const auto& draw : test.device.draws)
+    for (const auto& draw : test.device.draws) {
         nativeTextures.insert(draw.texture);
+    }
     test.device.draws.clear();
     test.scene.render(test.device, Mat4{1}, 640, 448);
     CHECK(std::ranges::any_of(test.device.draws, [&](const auto& draw) {
         return nativeTextures.contains(draw.texture) && !draw.vertices.empty();
     }));
-    for (s32 tick = 0; tick < 30; ++tick)
+    for (s32 tick = 0; tick < 30; ++tick) {
         test.step();
+    }
     CHECK(findRoar() == nullptr); // The single visible phase does not loop or restart.
 }
 TEST_CASE("Hell2 enters through its native initial pose and completes START before turning",
@@ -886,8 +924,9 @@ TEST_CASE("Hell2 enters through its native initial pose and completes START befo
             CHECK(state.yaw == first.yaw); // Native START turn-rate is zero.
             CHECK(state.player.frame >= startLastFrame);
             startLastFrame = state.player.frame;
-            if (tick % 15 == 0)
+            if (tick % 15 == 0) {
                 moved |= test.bossGeometry() != initialGeometry;
+            }
         } else if (bosses.fighter().moveType() == MoveDefinition::kReady) {
             readyTick = tick;
             CHECK(state.player.sequence == *ready);
@@ -909,11 +948,13 @@ TEST_CASE("Hell2 ranged chains leave claw and grab to their close-range admissio
     SkorneScene test(1, false, "hell2");
     test.scene.setCheats(0, {.god = true});
     auto& bosses = test.scene.bosses();
-    for (s32 tick = 0; tick < 1200 && bosses.fighter().moveType() != MoveDefinition::kReady; ++tick)
+    for (s32 tick = 0; tick < 1200 && bosses.fighter().moveType() != MoveDefinition::kReady;
+         ++tick) {
         test.step();
+    }
     REQUIRE(bosses.fighter().moveType() == MoveDefinition::kReady);
     const auto& stock = test.stock();
-    for (const auto name : {"CLAWL", "GRAB"}) {
+    for (const auto* const name : {"CLAWL", "GRAB"}) {
         const auto index = stock.data.moveNamed(name);
         REQUIRE(index);
         const auto& move = stock.data.moves()[*index];
@@ -921,9 +962,10 @@ TEST_CASE("Hell2 ranged chains leave claw and grab to their close-range admissio
         CHECK(move.target.allows(20, move.target.yaw, 0));
         CHECK_FALSE(move.target.allows(40, move.target.yaw, 0));
         CHECK((move.flags & MoveDefinition::kLinkedOnly) == 0);
-        for (const auto& pattern : stock.data.patterns())
+        for (const auto& pattern : stock.data.patterns()) {
             CHECK(std::ranges::find(pattern.moves, static_cast<s32>(*index)) ==
                   pattern.moves.end());
+        }
     }
     const auto state = test.bossState();
     const auto feet =
@@ -945,10 +987,12 @@ TEST_CASE("Hell2 ranged chains leave claw and grab to their close-range admissio
         REQUIRE(distance > 25);
         REQUIRE(bosses.moveName() != "CLAWL");
         REQUIRE(bosses.moveName() != "GRAB");
-        if (current.pattern >= 0)
+        if (current.pattern >= 0) {
             patterns.insert(current.pattern);
-        if (bosses.fighter().moveType() >= MoveDefinition::kAttackFrom)
+        }
+        if (bosses.fighter().moveType() >= MoveDefinition::kAttackFrom) {
             attacks.emplace(bosses.moveName());
+        }
     }
     CHECK(patterns.contains(1));
     CHECK(patterns.contains(2));
@@ -957,9 +1001,10 @@ TEST_CASE("Hell2 ranged chains leave claw and grab to their close-range admissio
 }
 TEST_CASE("Hell2 corrected native attack names produce audible scene cues at their authored frames",
           "[legends][native-hell2][native-skorn-gameplay][audio][assets]") {
-    if constexpr (!GDL_LEGENDS_AUDIO)
+    if constexpr (!GDL_LEGENDS_AUDIO) {
         SKIP("Native MusyX audio is disabled");
-    const auto name = GENERATE("SPIKES", "WING_ATTACK", "ROAR");
+    }
+    const auto* const name = GENERATE("SPIKES", "WING_ATTACK", "ROAR");
     SkorneScene test(1, true, "hell2");
     test.scene.setCheats(0, {.god = true});
     const auto& stock = test.stock();
@@ -1007,8 +1052,9 @@ TEST_CASE("Hell2 corrected native attack names produce audible scene cues at the
         for (const f32 value : samples) {
             CHECK(std::isfinite(value));
             energy += static_cast<f64>(value) * value;
-            if (std::abs(value) > .00001f && firstAudible < 0)
+            if (std::abs(value) > .00001f && firstAudible < 0) {
                 firstAudible = tick;
+            }
         }
     }
     CAPTURE(name, move.soundFrame, firstAudible, energy);

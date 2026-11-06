@@ -47,8 +47,9 @@ TEST_CASE("Native Skorne eye beams damage grounded players and retain knockdown"
             f32 floorBottom = std::numeric_limits<f32>::max();
             f32 floorTop = std::numeric_limits<f32>::lowest();
             for (const auto& face : map.collision) {
-                if (!face.floor || face.normal.y < WorldCollision::kFloorNormalY)
+                if (!face.floor || face.normal.y < WorldCollision::kFloorNormalY) {
                     continue;
+                }
                 for (const auto& vertex : face.vertices) {
                     floorBottom = std::min(floorBottom, vertex.y);
                     floorTop = std::max(floorTop, vertex.y);
@@ -101,8 +102,9 @@ TEST_CASE("Native Skorne eye beams damage grounded players and retain knockdown"
                     feet.y = floorTop + 1;
                     const auto floor =
                         traversal.collision().floorAt(feet, 0, floorTop - floorBottom + 2);
-                    if (!floor)
+                    if (!floor) {
                         continue;
+                    }
                     feet.y = floor->y;
                     ++groundedProbes;
                     for (s32 frame = move->frameStart - 1; frame <= move->frameEnd + 1; ++frame) {

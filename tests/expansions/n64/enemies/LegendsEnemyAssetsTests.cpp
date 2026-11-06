@@ -19,10 +19,11 @@ using namespace gdl::game;
 TEST_CASE("All native swarm banks animate and draw through the common enemy pool",
           "[legends][native-enemy-assets][assets]") {
     const auto root = test::dataDirectory().parent_path() / "assets/n64/extracted";
-    if (!std::filesystem::is_regular_file(root / "_program/game.bin"))
+    if (!std::filesystem::is_regular_file(root / "_program/game.bin")) {
         SKIP("N64 native enemy banks are not installed");
+    }
     const auto program = readFile(root / "_program/game.bin");
-    for (s32 kind : {0, 1, 2, 3, 4, 5, 12, 13, 14, 15, 16, 17, 18, 19, 30, 31}) {
+    for (const s32 kind : {0, 1, 2, 3, 4, 5, 12, 13, 14, 15, 16, 17, 18, 19, 30, 31}) {
         DYNAMIC_SECTION("native species " << kind) {
             test::FakeRenderDevice device;
             Enemies enemies;
@@ -47,9 +48,9 @@ TEST_CASE("All native swarm banks animate and draw through the common enemy pool
                 CHECK(enemies.animatorOf(*id)->bound());
                 REQUIRE(enemies.appearanceTree({kind, tier, 0, false}));
             }
-            for (const auto suffix : {"A", "B", "S"}) {
+            for (const auto* const suffix : {"A", "B", "S"}) {
                 if (const auto tree = trees.find(prefix + suffix)) {
-                    const s32 strength = suffix[0] == 'A' ? 4 : suffix[0] == 'B' ? 5 : 6;
+                    const s32 strength = *suffix == 'A' ? 4 : *suffix == 'B' ? 5 : 6;
                     REQUIRE(trees.tree(*tree).findSequence("READY"));
                     const auto id =
                         enemies.spawn({.kind = kind,
@@ -67,8 +68,9 @@ TEST_CASE("All native swarm banks animate and draw through the common enemy pool
             enemies.draw(device, Mat4{1}, WorldLighting{});
             REQUIRE_FALSE(device.draws.empty());
             usize vertices = 0;
-            for (const auto& draw : device.draws)
+            for (const auto& draw : device.draws) {
                 vertices += draw.vertices.size();
+            }
             if (kind == kItKind) {
                 // IT is authored as one textured billboard quad per creature,
                 // not a polygonal character mesh: all three bodies must draw.
@@ -112,8 +114,9 @@ TEST_CASE("A native enemy source never silently falls back to a GameCube body",
 TEST_CASE("Native enemy groups retain debris and tags outside the action BODY",
           "[legends][native-enemy-assets][assets]") {
     const auto root = test::dataDirectory().parent_path() / "assets/n64/extracted";
-    if (!std::filesystem::is_regular_file(root / "_program/game.bin"))
+    if (!std::filesystem::is_regular_file(root / "_program/game.bin")) {
         SKIP("N64 native enemy banks are not installed");
+    }
     const auto program = readFile(root / "_program/game.bin");
     const auto tree = [](std::string name, std::string action, usize nodes) {
         formats::TreeDefinition result;
@@ -149,12 +152,13 @@ TEST_CASE("Native enemy groups retain debris and tags outside the action BODY",
 TEST_CASE("All native Ice tiers render a body above ground during emergence",
           "[legends][native-enemy-assets][ice-emergence][assets]") {
     const auto root = test::dataDirectory().parent_path() / "assets/n64/extracted";
-    if (!std::filesystem::is_regular_file(root / "ice/seq.wad"))
+    if (!std::filesystem::is_regular_file(root / "ice/seq.wad")) {
         SKIP("N64 Ice enemy bank is not installed");
+    }
     std::vector<std::string> warnings;
     auto archive = loadLegendsEnemyAssets(root, 16, readFile(root / "_program/game.bin"), warnings);
     REQUIRE(archive);
-    for (const auto name : {"ICE1", "ICE2", "ICE3"}) {
+    for (const auto* const name : {"ICE1", "ICE2", "ICE3"}) {
         CAPTURE(name);
         const auto index = archive->trees.find(name);
         REQUIRE(index);
@@ -172,12 +176,14 @@ TEST_CASE("All native Ice tiers render a body above ground during emergence",
             model.setFrame(*sequence, frame);
             device.draws.clear();
             model.draw(device, Mat4{1}, Mat4{1}, WorldLighting{}, pose.matrices());
-            f32 low = 1000, high = -1000;
+            f32 low = 1000;
+            f32 high = -1000;
             usize bodyVertices = 0;
             bool visibleTexture = false;
             for (const auto& draw : device.draws) {
-                if (draw.vertices.size() <= 6)
+                if (draw.vertices.size() <= 6) {
                     continue; // A headlamp quad alone is not a visible miner.
+                }
                 for (const auto& vertex : draw.vertices) {
                     const Vec3 point{draw.transform * Vec4{vertex.position, 1}};
                     low = std::min(low, point.y);
@@ -186,8 +192,9 @@ TEST_CASE("All native Ice tiers render a body above ground during emergence",
                 }
                 const auto* texture = dynamic_cast<const test::FakeTexture*>(draw.texture);
                 REQUIRE(texture);
-                for (usize i = 3; i < texture->pixels.size(); i += 4)
+                for (usize i = 3; i < texture->pixels.size(); i += 4) {
                     visibleTexture |= texture->pixels[i] > 0;
+                }
             }
             CHECK(bodyVertices > 100);
             CHECK(high > 3);
@@ -200,8 +207,9 @@ TEST_CASE("All native Ice tiers render a body above ground during emergence",
 TEST_CASE("Native Death loads the shared drain arc and animates it until contact ends",
           "[legends][native-enemy-assets][native-death-arc][assets]") {
     const auto root = test::dataDirectory().parent_path() / "assets/n64/extracted";
-    if (!std::filesystem::is_regular_file(root / "_program/game.bin"))
+    if (!std::filesystem::is_regular_file(root / "_program/game.bin")) {
         SKIP("N64 native enemy banks are not installed");
+    }
     std::vector<std::string> warnings;
     auto archive =
         loadLegendsEnemyAssets(root, kDeathKind, readFile(root / "_program/game.bin"), warnings);

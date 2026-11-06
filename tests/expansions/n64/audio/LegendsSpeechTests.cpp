@@ -78,8 +78,9 @@ TEST_CASE("N64 speech is optional and rejects unaudited routing metadata",
 
 TEST_CASE("Native Death advice resolves its authored low-level caption and concrete phrase",
           "[legends][native-death-advice][native-speech][assets]") {
-    if (!installed())
+    if (!installed()) {
         SKIP("Native N64 speech extraction is not installed");
+    }
     LegendsSpeech speech;
     REQUIRE(speech.openN64(nativeRoot()));
     const auto advice = speech.deathAdvice();
@@ -111,7 +112,7 @@ TEST_CASE("Native N64 entry narration follows every authored level table route",
     }
     LegendsSpeech speech;
     REQUIRE(speech.openN64(nativeRoot()));
-    constexpr std::array routes{
+    constexpr std::array kRoutes{
         std::pair{"castle1", 100}, std::pair{"castle6", 101}, std::pair{"castle3", 102},
         std::pair{"castle4", 103}, std::pair{"castle5", 104}, std::pair{"mount1", 105},
         std::pair{"mount2", 106},  std::pair{"mount3", 107},  std::pair{"mount4", 108},
@@ -125,7 +126,7 @@ TEST_CASE("Native N64 entry narration follows every authored level table route",
         std::pair{"hell1", 112},   std::pair{"hell2", 113},   std::pair{"boss1", 62},
         std::pair{"boss2", 111},
     };
-    for (const auto& [name, clip] : routes) {
+    for (const auto& [name, clip] : kRoutes) {
         CAPTURE(name);
         const auto token = speech.entryCue(name);
         REQUIRE(token);
@@ -209,7 +210,7 @@ TEST_CASE("N64 narration plays restored finite PCM with shared effects pause and
         mixer.mix(samples);
         referenceMixer.mix(expected);
         REQUIRE(samples == expected);
-        for (f32 sample : samples) {
+        for (const f32 sample : samples) {
             energy += static_cast<f64>(sample) * sample;
         }
     }
@@ -235,7 +236,7 @@ TEST_CASE("N64 narration plays restored finite PCM with shared effects pause and
         referenceMixer.mix(expected);
         REQUIRE(samples == expected);
         speech.update(output, 1.0f / 60);
-        for (f32 sample : samples) {
+        for (const f32 sample : samples) {
             REQUIRE(std::isfinite(sample));
             energy += static_cast<f64>(sample) * sample;
         }
@@ -332,8 +333,8 @@ TEST_CASE("N64 speech gain preserves peak shape before the effects slider and fi
     }
     MortBank bank;
     REQUIRE(bank.open(nativeRoot() / "audio/mort.mdir"));
-    constexpr std::array<u16, 1> clips{252};
-    auto source = bank.createRestored(clips);
+    constexpr std::array<u16, 1> kClips{252};
+    auto source = bank.createRestored(kClips);
     REQUIRE(source);
     const auto calibration =
         legends_audio_mix::calibrate(*source, legends_audio_mix::Source::Speech);
@@ -352,8 +353,8 @@ TEST_CASE("N64 speech gain preserves peak shape before the effects slider and fi
         AudioMixer referenceMixer(48000);
         SoundPlayer output(mixer);
         output.setCategoryVolume(SoundCategory::Effects, volume);
-        REQUIRE(speech.enqueue(output, 0x1000U | clips.front()));
-        const auto reference = referenceSpeech(referenceMixer, bank, clips, volume);
+        REQUIRE(speech.enqueue(output, 0x1000U | kClips.front()));
+        const auto reference = referenceSpeech(referenceMixer, bank, kClips, volume);
         std::array<f32, 1600> samples{};
         std::array<f32, 1600> expected{};
         f64 energy = 0;
@@ -432,10 +433,10 @@ TEST_CASE("All native obelisk phrases receive one measured speech gain before us
                 mixer.mix(actual);
                 referenceMixer.mix(expected);
                 REQUIRE(actual == expected);
-                for (usize i = 0; i < actual.size(); ++i) {
-                    REQUIRE(std::isfinite(actual[i]));
-                    REQUIRE(std::abs(actual[i]) <= AudioMixer::kCeiling);
-                    energy += static_cast<f64>(actual[i]) * actual[i];
+                for (const f32 sample : actual) {
+                    REQUIRE(std::isfinite(sample));
+                    REQUIRE(std::abs(sample) <= AudioMixer::kCeiling);
+                    energy += static_cast<f64>(sample) * sample;
                 }
                 speech.update(output, 1.0f / 60);
                 ++chunks;
@@ -456,11 +457,12 @@ TEST_CASE("All native obelisk phrases receive one measured speech gain before us
 
 TEST_CASE("Town entry narration has measured presence through the real mixer",
           "[legends][audio][native-speech][speech-mix][assets]") {
-    if (!installed())
+    if (!installed()) {
         SKIP("Native N64 speech extraction is not installed");
+    }
     MortBank bank;
     REQUIRE(bank.open(nativeRoot() / "audio/mort.mdir"));
-    for (const auto name : {"town1", "town2", "mount1"}) {
+    for (const auto* const name : {"town1", "town2", "mount1"}) {
         CAPTURE(name);
         LegendsSpeech speech;
         REQUIRE(speech.openN64(nativeRoot()));
@@ -481,10 +483,10 @@ TEST_CASE("Town entry narration has measured presence through the real mixer",
         AudioMixer mixer(48000);
         AudioMixer previousMixer(48000);
         SoundPlayer output(mixer);
-        constexpr f32 volume = 128.0f / 255;
-        output.setCategoryVolume(SoundCategory::Effects, volume);
+        constexpr f32 kVolume = 128.0f / 255;
+        output.setCategoryVolume(SoundCategory::Effects, kVolume);
         REQUIRE(speech.enqueue(output, *token));
-        const auto previous = referenceSpeech(previousMixer, bank, cue->clips, volume, oldGain);
+        const auto previous = referenceSpeech(previousMixer, bank, cue->clips, kVolume, oldGain);
         std::array<f32, 1600> actual{};
         std::array<f32, 1600> old{};
         f64 energy = 0;

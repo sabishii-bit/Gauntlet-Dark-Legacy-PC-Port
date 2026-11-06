@@ -59,14 +59,16 @@ public:
     bool loop = false;
     AudioStreamDesc desc() const override { return format; }
     bool read(std::vector<f32>& output, usize frames) override {
-        if (pcm.empty())
+        if (pcm.empty()) {
             return false;
+        }
         const usize count = std::min(frames, maximumRead);
         usize produced = 0;
         while (produced < count) {
             if (m_cursor == pcm.size()) {
-                if (!loop)
+                if (!loop) {
                     break;
+                }
                 m_cursor = 0;
             }
             output.push_back(pcm[m_cursor++]);
@@ -91,8 +93,9 @@ TEST_CASE("Native loudness calibration freezes one bounded chunk-independent gai
         auto source = std::make_shared<CalibrationSource>();
         source->maximumRead = chunk;
         source->pcm.resize(800, 0);
-        for (usize i = 0; i < 400; ++i)
+        for (usize i = 0; i < 400; ++i) {
             source->pcm[i] = i % 2 == 0 ? .02f : -.02f;
+        }
         const auto measured = calibrate(*source, Source::Effect);
         REQUIRE(measured);
         CHECK(measured->complete);
@@ -109,8 +112,9 @@ TEST_CASE("Native loudness calibration freezes one bounded chunk-independent gai
         while (output->read(pcm, 119)) {
         }
         REQUIRE(pcm.size() == source->pcm.size());
-        for (usize i = 0; i < pcm.size(); ++i)
+        for (usize i = 0; i < pcm.size(); ++i) {
             CHECK(pcm[i] == source->pcm[i] * measured->gain);
+        }
         output->rewind();
         std::vector<f32> replay;
         while (output->read(replay, 31)) {
@@ -124,7 +128,7 @@ TEST_CASE("Native loudness calibration freezes one bounded chunk-independent gai
         const auto measured = calibrate(source, Source::Effect);
         REQUIRE(measured);
         CHECK_FALSE(measured->complete);
-        CHECK(measured->frames == 8 * 8000);
+        CHECK(measured->frames == usize{8} * 8000);
         std::vector<f32> beginning;
         CHECK(source.read(beginning, 4));
         CHECK(beginning == source.pcm);
@@ -164,10 +168,12 @@ TEST_CASE("Native loudness calibration freezes one bounded chunk-independent gai
 
 TEST_CASE("Every native macro can be calibrated safely without changing its raw decoder",
           "[legends][audio][native-mix-corpus][assets]") {
-    if constexpr (!GDL_LEGENDS_AUDIO)
+    if constexpr (!GDL_LEGENDS_AUDIO) {
         SKIP("Native MusyX audio is disabled");
-    if (!std::filesystem::is_regular_file(nativeRoot() / "_program/game.bin"))
+    }
+    if (!std::filesystem::is_regular_file(nativeRoot() / "_program/game.bin")) {
         SKIP("Native N64 extraction is not installed");
+    }
     N64LegendsEffects bank;
     REQUIRE(bank.open(nativeRoot() / "audio"));
     const auto started = std::chrono::steady_clock::now();
@@ -194,11 +200,13 @@ TEST_CASE("Every native macro can be calibrated safely without changing its raw 
         auto normalized =
             legends_audio_mix::prepare(source, legends_audio_mix::Source::Effect, measured);
         REQUIRE(normalized);
-        std::vector<f32> firstRaw, firstMixed;
+        std::vector<f32> firstRaw;
+        std::vector<f32> firstMixed;
         CHECK(raw->read(firstRaw, 320) == normalized->read(firstMixed, 320));
         REQUIRE(firstRaw.size() == firstMixed.size());
-        for (usize i = 0; i < firstRaw.size(); ++i)
+        for (usize i = 0; i < firstRaw.size(); ++i) {
             CHECK(firstMixed[i] == firstRaw[i] * measured->gain);
+        }
     }
     const f64 total =
         std::chrono::duration<f64>(std::chrono::steady_clock::now() - started).count();
@@ -210,10 +218,12 @@ TEST_CASE("Every native macro can be calibrated safely without changing its raw 
 
 TEST_CASE("Native effect calibration is prewarmed safely for concurrent level loaders",
           "[legends][audio][native-mix-cache][assets]") {
-    if constexpr (!GDL_LEGENDS_AUDIO)
+    if constexpr (!GDL_LEGENDS_AUDIO) {
         SKIP("Native MusyX audio is disabled");
-    if (!std::filesystem::is_regular_file(nativeRoot() / "_program/game.bin"))
+    }
+    if (!std::filesystem::is_regular_file(nativeRoot() / "_program/game.bin")) {
         SKIP("Native N64 extraction is not installed");
+    }
     const auto open = [] {
         auto sounds = std::make_unique<LegendsSounds>();
         return sounds->openN64(nativeRoot()) ? std::move(sounds) : nullptr;
@@ -227,15 +237,18 @@ TEST_CASE("Native effect calibration is prewarmed safely for concurrent level lo
     REQUIRE(second);
     const f64 loadSeconds =
         std::chrono::duration<f64>(std::chrono::steady_clock::now() - started).count();
-    AudioMixer firstMixer(48000), secondMixer(48000);
-    SoundPlayer firstOutput(firstMixer), secondOutput(secondMixer);
+    AudioMixer firstMixer(48000);
+    AudioMixer secondMixer(48000);
+    SoundPlayer firstOutput(firstMixer);
+    SoundPlayer secondOutput(secondMixer);
     const auto beforePlayback = std::chrono::steady_clock::now();
     const auto firstHandle = first->play(firstOutput, 116);
     const f64 playbackSeconds =
         std::chrono::duration<f64>(std::chrono::steady_clock::now() - beforePlayback).count();
     REQUIRE(firstHandle != kNoSound);
     REQUIRE(second->play(secondOutput, 116) != kNoSound);
-    std::array<f32, 1600> a{}, b{};
+    std::array<f32, 1600> a{};
+    std::array<f32, 1600> b{};
     bool audible = false;
     for (usize frame = 0; frame < 120; ++frame) {
         firstOutput.update();
@@ -260,10 +273,12 @@ TEST_CASE("Native effect calibration is prewarmed safely for concurrent level lo
 TEST_CASE("Native music and boss effects expose comparable mix measurements",
           "[legends][audio][native-mix-survey][assets]") {
     const auto root = nativeRoot();
-    if constexpr (!GDL_LEGENDS_AUDIO)
+    if constexpr (!GDL_LEGENDS_AUDIO) {
         SKIP("Native MusyX audio is disabled");
-    if (!std::filesystem::is_regular_file(root / "_program/game.bin"))
+    }
+    if (!std::filesystem::is_regular_file(root / "_program/game.bin")) {
         SKIP("Native N64 audio extraction is not installed");
+    }
     const auto measure = [](StreamSource& source, usize seconds) {
         const usize samples = source.desc().sampleRate * seconds * source.desc().channels;
         std::vector<f32> pcm;
@@ -271,8 +286,9 @@ TEST_CASE("Native music and boss effects expose comparable mix measurements",
             const usize request =
                 std::min<usize>(4096, (samples - pcm.size()) / source.desc().channels);
             const usize before = pcm.size();
-            if (!source.read(pcm, request))
+            if (!source.read(pcm, request)) {
                 break;
+            }
             REQUIRE(pcm.size() > before);
         }
         REQUIRE_FALSE(pcm.empty());
@@ -280,19 +296,19 @@ TEST_CASE("Native music and boss effects expose comparable mix measurements",
         f32 peak = 0;
         usize active = 0;
         bool finite = true;
-        for (f32 value : pcm) {
+        for (const f32 value : pcm) {
             finite = finite && std::isfinite(value);
             energy += static_cast<f64>(value) * value;
             peak = std::max(peak, std::abs(value));
             active += std::abs(value) > .00001f ? 1 : 0;
         }
         const f64 rms = std::sqrt(energy / static_cast<f64>(pcm.size()));
-        const f64 activeRms = active ? std::sqrt(energy / static_cast<f64>(active)) : 0;
+        const f64 activeRms = active == 0 ? 0 : std::sqrt(energy / static_cast<f64>(active));
         INFO("RMS=" << rms << " activeRMS=" << activeRms << " peak=" << peak);
         CHECK(finite);
         CHECK(rms > .000001);
     };
-    for (u16 song : std::array<u16, 4>{0, 17, 21, 28}) {
+    for (const u16 song : std::array<u16, 4>{0, 17, 21, 28}) {
         INFO("neutral music song=" << song);
         N64LegendsStream source;
         REQUIRE(source.open(root / "audio", song));
@@ -304,8 +320,9 @@ TEST_CASE("Native music and boss effects expose comparable mix measurements",
     REQUIRE(bank.open(root / "audio"));
     const auto rows = decodeLegendsSoundTable(readFile(root / "_program/game.bin"));
     for (const auto& row : rows) {
-        if (!row.name.starts_with("s_skorn"))
+        if (!row.name.starts_with("s_skorn")) {
             continue;
+        }
         INFO("effect=" << row.name);
         const auto token = routes.namedToken(row.name);
         REQUIRE(token);
@@ -319,12 +336,14 @@ TEST_CASE("Native music and boss effects expose comparable mix measurements",
 
 TEST_CASE("Native enemy playback exposes final mixer levels at gameplay distances",
           "[legends][audio][native-enemy-mix-survey][assets]") {
-    if constexpr (!GDL_LEGENDS_AUDIO)
+    if constexpr (!GDL_LEGENDS_AUDIO) {
         SKIP("Native MusyX audio is disabled");
+    }
     const auto root = nativeRoot();
     const auto directory = root / "levels/boss1";
-    if (!std::filesystem::is_regular_file(directory / "worlds.wad"))
+    if (!std::filesystem::is_regular_file(directory / "worlds.wad")) {
         SKIP("Native N64 extraction is not installed");
+    }
     const auto characters = test::assetOrSkip("PLAYERS").parent_path();
     auto map = formats::LegendsMap::parseN64(readFile(directory / "worlds.wad"),
                                              readFile(directory / "objects.wad"),
@@ -376,8 +395,9 @@ TEST_CASE("Native enemy playback exposes final mixer levels at gameplay distance
             const EnemyFeedback event{.kind = kind, .tier = 3, .killed = killed};
             const auto token = enemies.feedback(event, killed ? 0.f : 8.f);
             REQUIRE(token);
-            if (!measuredTokens.insert(*token).second)
+            if (!measuredTokens.insert(*token).second) {
                 continue;
+            }
             const auto cue = routes.resolve(*token);
             REQUIRE(cue);
             for (const f32 slider : {128.f / 255.f, 1.f}) {
@@ -399,10 +419,11 @@ TEST_CASE("Native enemy playback exposes final mixer levels at gameplay distance
                                            << " slider=" << slider << " distance=" << distance
                                            << " rms=" << result[0] << " activeRms=" << result[1]
                                            << " peak=" << result[2]);
-                    if (near)
+                    if (near) {
                         CHECK(result == *near); // Native combat cues are global.
-                    else
+                    } else {
                         near = result;
+                    }
                     level.stopSounds();
                 }
             }
@@ -414,9 +435,10 @@ TEST_CASE("Native enemy playback exposes final mixer levels at gameplay distance
     REQUIRE(gc.load(test::assetOrSkip("AUDIO") / "mount"));
     for (usize i = 0; i < gc.size(); ++i) {
         const auto& entry = gc.entry(static_cast<u32>(i));
-        if (!(entry.name.starts_with("S_TROL") && (entry.name.find("HIT") != std::string::npos ||
-                                                   entry.name.find("DIE") != std::string::npos)))
+        if (!entry.name.starts_with("S_TROL") || (entry.name.find("HIT") == std::string::npos &&
+                                                  entry.name.find("DIE") == std::string::npos)) {
             continue;
+        }
         for (const f32 slider : {128.f / 255.f, 1.f}) {
             AudioMixer mixer(48000);
             SoundPlayer output(mixer);
@@ -445,14 +467,16 @@ TEST_CASE("Native cue-name lookup preserves first full case-insensitive match wi
 TEST_CASE("Native cue metadata remains available without the optional synthesis backend",
           "[legends][audio][native-boss-audio][assets]") {
     const auto path = nativeRoot() / "_program/game.bin";
-    if (!std::filesystem::is_regular_file(path))
+    if (!std::filesystem::is_regular_file(path)) {
         SKIP("Native N64 program is not installed");
+    }
     auto program = readFile(path);
     const auto rows = decodeLegendsSoundTable(program);
     REQUIRE(rows.size() == 124);
     LegendsSounds sounds;
-    if constexpr (GDL_LEGENDS_AUDIO)
+    if constexpr (GDL_LEGENDS_AUDIO) {
         REQUIRE(sounds.openN64(nativeRoot()));
+    }
     struct Duplicate {
         std::string_view name;
         usize first;
@@ -461,11 +485,11 @@ TEST_CASE("Native cue metadata remains available without the optional synthesis 
     };
     // The US table repeats these six complete routes. e007a408 scans from row0,
     // so both strings resolve to the first row, not their current row identity.
-    constexpr std::array duplicates{
+    constexpr std::array kDuplicates{
         Duplicate{"s_genkill", 20, 78, 60}, Duplicate{"s_drgdeath", 21, 73, 47},
         Duplicate{"s_drgpain", 22, 74, 50}, Duplicate{"s_drgbreez", 24, 72, 46},
         Duplicate{"s_drgwing", 25, 77, 57}, Duplicate{"s_drgtalon", 27, 76, 52}};
-    for (const auto& duplicate : duplicates) {
+    for (const auto& duplicate : kDuplicates) {
         for (const usize index : {duplicate.first, duplicate.repeated}) {
             CAPTURE(index, duplicate.name);
             const auto& row = rows[index];
@@ -481,14 +505,16 @@ TEST_CASE("Native cue metadata remains available without the optional synthesis 
     std::set<std::string> names;
     for (usize index = 0; index < rows.size(); ++index) {
         const auto& name = rows[index].name;
-        if (name.empty())
+        if (name.empty()) {
             continue;
+        }
         CAPTURE(index, name);
         const auto token = legendsSoundToken(rows, name);
         usize expectedFirst = index;
-        for (const auto& duplicate : duplicates) {
-            if (index == duplicate.repeated)
+        for (const auto& duplicate : kDuplicates) {
+            if (index == duplicate.repeated) {
                 expectedFirst = duplicate.first;
+            }
         }
         REQUIRE(token == (0x10000U | static_cast<u32>(expectedFirst)));
         if constexpr (GDL_LEGENDS_AUDIO) {
@@ -536,9 +562,9 @@ TEST_CASE("Native mix compensation preserves source headroom cursor and append s
 TEST_CASE("All native PCM categories share one non-cumulative playback boundary",
           "[legends][audio][native-mix][fixture-calibration]") {
     using Source = legends_audio_mix::Source;
-    constexpr std::array cases{std::pair{Source::Music, .30f}, std::pair{Source::Effect, .32f},
-                               std::pair{Source::Speech, .36f}};
-    for (const auto& [kind, target] : cases) {
+    constexpr std::array kCases{std::pair{Source::Music, .30f}, std::pair{Source::Effect, .32f},
+                                std::pair{Source::Speech, .36f}};
+    for (const auto& [kind, target] : kCases) {
         CAPTURE(kind);
         MixSource reference;
         const auto calibration = legends_audio_mix::calibrate(reference, kind);
@@ -579,10 +605,11 @@ TEST_CASE("All native PCM categories share one non-cumulative playback boundary"
                 CHECK(std::ranges::all_of(actual, [](f32 sample) {
                     return std::isfinite(sample) && std::abs(sample) <= AudioMixer::kCeiling;
                 }));
-                if (volume == 0)
+                if (volume == 0) {
                     CHECK(std::ranges::all_of(actual, [](f32 sample) { return sample == 0; }));
-                else
+                } else {
                     CHECK(std::ranges::any_of(actual, [](f32 sample) { return sample != 0; }));
+                }
             }
         }
     }
@@ -698,7 +725,7 @@ TEST_CASE("Native boss cue names resolve the original sound table without counte
         REQUIRE(address >= 0xe0000400);
         const usize nameOffset = address - 0xe0000400;
         REQUIRE(nameOffset < bytes.size());
-        const auto begin = bytes.begin() + nameOffset;
+        const auto begin = bytes.begin() + static_cast<std::ptrdiff_t>(nameOffset);
         const auto end = std::find(begin, bytes.end(), 0);
         REQUIRE(end != bytes.end());
         const std::string name(begin, end);
@@ -798,7 +825,8 @@ TEST_CASE("Native fixtures ambience and boss cues share compensation before the 
     std::vector<u32> tokens{
         0x36U, 0x1feU, 0x1ffU, 0xbaU, 0xbbU,
         0x78U, 22U,    29U,    60U,   0x10008U}; // Authored sub-unity volume must remain intact.
-    for (const auto name : {"S_SKORN1TAUNT", "S_SKORN1PROAR", "S_SKORN1DEATH", "S_SKORN2DEATH"}) {
+    for (const auto* const name :
+         {"S_SKORN1TAUNT", "S_SKORN1PROAR", "S_SKORN1DEATH", "S_SKORN2DEATH"}) {
         const auto token = sounds.namedToken(name);
         REQUIRE(token);
         tokens.push_back(*token);

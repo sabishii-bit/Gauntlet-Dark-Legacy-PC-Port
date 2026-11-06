@@ -44,9 +44,9 @@ public:
     }
 
     void frame(u32 seed) {
-        constexpr std::array<u32, 8> widths{6, 6, 5, 5, 4, 4, 3, 3};
-        for (usize i = 0; i < widths.size(); ++i) {
-            bits(widths[i], (seed + static_cast<u32>(i) * 3U) & ((1U << widths[i]) - 1U));
+        constexpr std::array<u32, 8> kWidths{6, 6, 5, 5, 4, 4, 3, 3};
+        for (usize i = 0; i < kWidths.size(); ++i) {
+            bits(kWidths[i], (seed + static_cast<u32>(i) * 3U) & ((1U << kWidths[i]) - 1U));
         }
         for (u32 sub = 0; sub < 4; ++sub) {
             bits(7, (seed * 7 + sub * 19) & 127U);
@@ -174,7 +174,7 @@ TEST_CASE("MORT decoding preserves authored silence and exact block duration",
     CHECK_FALSE(source->read(untouched, 0));
     CHECK(untouched == std::vector<f32>{.5f});
     const auto pcm = render(*source, 37);
-    REQUIRE(pcm.size() == 17 * 160);
+    REQUIRE(pcm.size() == usize{17} * 160);
     CHECK(std::ranges::all_of(pcm, [](f32 sample) { return sample == 0; }));
     CHECK_FALSE(source->read(untouched, 100));
     source->rewind();
@@ -190,7 +190,7 @@ TEST_CASE("MORT voices have independent predictors and survive bank reloads",
     REQUIRE(first);
     REQUIRE(second);
     const auto expected = render(*first, 159);
-    REQUIRE(expected.size() == 64 * 160);
+    REQUIRE(expected.size() == usize{64} * 160);
     // Independent native-MIPS oracle over this entirely synthetic vector. It
     // exercises every amplitude (including 63's masked negative shift), all gain
     // and grid codes, invalid pitch-lag fallback, clipping and wrapped history.
@@ -335,8 +335,8 @@ TEST_CASE("MORT restored phrases retain each clip's boundaries and authored dura
     CHECK(std::ranges::equal(render(*phrase, 159), expected));
     phrase->rewind();
     CHECK(std::ranges::equal(render(*phrase, 32768), expected));
-    CHECK(expected.size() == (64 + 2 + 64) * 160);
-    CHECK(std::ranges::all_of(std::span(expected).subspan(64 * 160, 2 * 160),
+    CHECK(expected.size() == usize{64 + 2 + 64} * 160);
+    CHECK(std::ranges::all_of(std::span(expected).subspan(usize{64} * 160, usize{2} * 160),
                               [](f32 value) { return value == 0; }));
 }
 
@@ -368,12 +368,12 @@ TEST_CASE("MORT preflight refuses malformed directories and truncated frame data
         }
     }
     SECTION("count and offsets cannot alias the directory or exceed the file") {
-        for (u32 value : std::array<u32, 4>{0, 1025, 0x7fffffff, 0xffffffff}) {
+        for (const u32 value : std::array<u32, 4>{0, 1025, 0x7fffffff, 0xffffffff}) {
             auto bad = good;
             put32(bad, 0, value);
             CHECK_FALSE(bank.open(bad));
         }
-        for (u32 value : std::array<u32, 4>{0, 4, 9, 0xffffffff}) {
+        for (const u32 value : std::array<u32, 4>{0, 4, 9, 0xffffffff}) {
             auto bad = good;
             put32(bad, 4, value);
             CHECK_FALSE(bank.open(bad));
@@ -383,7 +383,7 @@ TEST_CASE("MORT preflight refuses malformed directories and truncated frame data
         auto bad = good;
         bad[8] = 'X';
         CHECK_FALSE(bank.open(bad));
-        for (u16 value : std::array<u16, 4>{0, 1, 999, 65535}) {
+        for (const u16 value : std::array<u16, 4>{0, 1, 999, 65535}) {
             bad = good;
             put16(bad, 8 + 6, value);
             CHECK_FALSE(bank.open(bad));
@@ -427,7 +427,7 @@ TEST_CASE("MORT file opening is opt-in and rejects unavailable data", "[legends]
     CHECK_FALSE(bank.open(dir / "missing.mdir"));
     writeFile(dir / "synthetic.mdir", directory(voicedClip()));
     REQUIRE(bank.open(dir / "synthetic.mdir"));
-    CHECK(render(*bank.create(0)).size() == 64 * 160);
+    CHECK(render(*bank.create(0)).size() == usize{64} * 160);
 }
 
 TEST_CASE("MORT speech uses the engine effects mixer with resampling pause mute and stop",
@@ -557,7 +557,8 @@ TEST_CASE("All 279 native MORT clips match the original MIPS decoder PCM",
     REQUIRE(bank.size() == 279);
     std::vector<u8> corpus;
     usize samples = 0;
-    for (u16 id = 0; id < bank.size(); ++id) {
+    for (usize index = 0; index < bank.size(); ++index) {
+        const auto id = static_cast<u16>(index);
         INFO("clip=" << id);
         auto source = bank.create(id);
         REQUIRE(source);

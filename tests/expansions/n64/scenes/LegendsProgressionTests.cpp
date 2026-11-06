@@ -253,14 +253,16 @@ TEST_CASE("The native cathedral beam leaves installed window shards visible",
     usize backplates = 0;
     for (auto draw = device.draws.begin(); draw != device.draws.end(); ++draw) {
         const auto* texture = dynamic_cast<const test::FakeTexture*>(draw->texture);
-        if (!texture)
+        if (!texture) {
             continue;
+        }
         if (texture->pixels == broken->image.pixels) {
             ++backplates;
             CHECK(draw < beamDraw);
         }
-        if (std::ranges::find(shardImages, texture->pixels) == shardImages.end())
+        if (std::ranges::find(shardImages, texture->pixels) == shardImages.end()) {
             continue;
+        }
         ++shards;
         // Native glass is drawn after the beam. It still depth-tests against
         // solids, but the foreground beam cannot reject these fragments.
@@ -408,11 +410,12 @@ TEST_CASE("Native obelisk grants are shared and a spent obelisk remains a visibl
         bool foundDraw = false;
         for (const auto& draw : device.draws) {
             const auto* texture = dynamic_cast<const test::FakeTexture*>(draw.texture);
-            if (texture && std::ranges::find(spentImages, texture->pixels) != spentImages.end()) {
+            if (texture != nullptr &&
+                std::ranges::find(spentImages, texture->pixels) != spentImages.end()) {
                 foundDraw = true;
                 CHECK(draw.state.whiteBlend == expected);
             }
-            if (texture &&
+            if (texture != nullptr &&
                 std::ranges::find(sparkleImages, texture->pixels) != sparkleImages.end()) {
                 CHECK(draw.state.depthTest);
                 CHECK_FALSE(draw.state.depthWrite);
@@ -735,8 +738,10 @@ TEST_CASE("Tower completion portal artwork follows native contact rather than in
         const auto vertices = relicVertices(device, images);
         REQUIRE_FALSE(vertices.empty());
         std::vector<Vec3> result;
-        for (const auto& vertex : vertices)
+        result.reserve(vertices.size());
+        for (const auto& vertex : vertices) {
             result.push_back(vertex.position);
+        }
         return result;
     };
     const auto opening = firePositions();
@@ -749,8 +754,9 @@ TEST_CASE("Tower completion portal artwork follows native contact rather than in
         for (const auto& draw : device.draws) {
             if (const auto* texture = dynamic_cast<const test::FakeTexture*>(draw.texture)) {
                 const auto found = std::ranges::find(images, texture->pixels);
-                if (found != images.end())
+                if (found != images.end()) {
                     submittedFrames[static_cast<usize>(found - images.begin())] = true;
+                }
             }
         }
     }
