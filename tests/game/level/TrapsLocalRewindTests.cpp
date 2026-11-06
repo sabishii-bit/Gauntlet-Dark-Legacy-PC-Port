@@ -201,6 +201,13 @@ TEST_CASE(
     Traps::LocalSnapshot authored;
     a.saveLocal(authored);
     CHECK(digestOf(b) == digestOf(a));
+    // An archive creates a slot's texture once, on first use. A roster disarmed first
+    // binds every disarmed figure, so the count covers the disarms and rewinds after it.
+    Traps earlier;
+    earlier.bind(device, world.layout(), world.itemScope(), &world.collision(), 42, 1, 1);
+    for (usize i = 0; i < earlier.size(); ++i) {
+        earlier.disarm(i, device, world.layout(), world.itemScope(), &world.collision());
+    }
     const auto textures = device.texturesCreated;
     for (usize i = 0; i < a.size(); ++i) {
         CHECK(b.trap(i).name == a.trap(i).name);
