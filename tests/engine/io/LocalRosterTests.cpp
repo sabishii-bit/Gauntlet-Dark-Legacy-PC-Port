@@ -327,7 +327,7 @@ TEST_CASE("a save that fails stops the roster's save at that part", "[local-rost
 
 TEST_CASE("a roster stops asking at the first part that refuses", "[local-roster]") {
     Asked asked;
-    Parent parent{&asked};
+    const Parent parent{&asked};
     constexpr auto kParts = local::parts(local::child(&Parent::first, &Slots::first),
                                          local::child(&Parent::second, &Slots::second),
                                          local::child(&Parent::third, &Slots::third));
