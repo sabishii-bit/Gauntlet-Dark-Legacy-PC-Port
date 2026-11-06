@@ -26,7 +26,7 @@ inline constexpr s32 kGarm = 44;    ///< Garm himself; enemy_type::kGarm2 is his
 
 inline constexpr s32 kFirstBossType = boss_type::kDragon;
 inline constexpr s32 kLastBossType = boss_type::kGarm;
-inline constexpr usize kBossTypeCount = static_cast<usize>(kLastBossType - kFirstBossType + 1);
+inline constexpr usize kBossTypeCount = static_cast<usize>(kLastBossType - kFirstBossType) + 1;
 
 /** Whether `code` names one of the bosses. */
 [[nodiscard]] constexpr bool isBossType(s32 code) {
