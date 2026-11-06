@@ -182,7 +182,7 @@ struct MissileSlot {
 };
 /** A kind's row: its code, then its arrow, lob and own-shot slots. */
 struct MissileRow {
-    s32 kind;
+    s32 kind = -1;
     std::array<MissileSlot, kMissileSlots> slots;
 };
 
