@@ -15,7 +15,7 @@
 
 namespace gdl::game {
 
-bool Breakables::appendSimulationDigest(NativeStateDigest& digest, const Simulation& state) const {
+bool Breakables::digestLocalValues(NativeStateDigest& digest, const LocalValues& state) const {
     digest.string("Breakables.native.1");
     // These immutable binding inputs remain fixed until clear/bind invalidates
     // history. Mutable collision values are visited by the enclosing world owner.
@@ -29,18 +29,6 @@ bool Breakables::appendSimulationDigest(NativeStateDigest& digest, const Simulat
     return digest.good();
 }
 
-bool Breakables::appendNativeDigest(NativeStateDigest& digest) const {
-    return appendSimulationDigest(digest, m_sim);
-}
-
-bool Breakables::appendLocalDigest(NativeStateDigest& digest, const LocalSnapshot& saved) const {
-    if (!canRestoreLocal(saved)) {
-        digest.invalidate();
-        return false;
-    }
-    return appendSimulationDigest(digest, saved.m_state);
-}
-
 bool Breakables::registerNativeResources(NativeStateResources& resources) const {
     for (const auto& barrel : m_sim.barrels) {
         if (!barrel.figure.registerNativeResources(resources)) {
@@ -48,29 +36,6 @@ bool Breakables::registerNativeResources(NativeStateResources& resources) const 
         }
     }
     return resources.good();
-}
-
-void Breakables::saveLocal(LocalSnapshot& saved) const {
-    saved.m_state = m_sim;
-    saved.m_binding = m_checkpointBinding;
-    saved.m_owner = this;
-}
-
-bool Breakables::canRestoreLocal(const LocalSnapshot& saved) const {
-    return saved.m_owner == this && m_checkpointBinding &&
-           saved.m_binding.lock() == m_checkpointBinding;
-}
-
-bool Breakables::equalLocal(const LocalSnapshot& left, const LocalSnapshot& right) const {
-    return canRestoreLocal(left) && canRestoreLocal(right) && left.m_state == right.m_state;
-}
-
-bool Breakables::restoreLocal(const LocalSnapshot& saved) {
-    if (!canRestoreLocal(saved)) {
-        return false;
-    }
-    m_sim = saved.m_state;
-    return true;
 }
 
 namespace {
@@ -147,7 +112,7 @@ bool Breakables::bind(RenderDevice& device, const WorldLayout& layout, const Ass
 }
 
 void Breakables::clear() {
-    m_checkpointBinding = std::make_shared<const u8>(0);
+    m_localBinding.rebind();
     m_layout = nullptr;
     m_collision = nullptr;
     m_sim.barrels.clear();

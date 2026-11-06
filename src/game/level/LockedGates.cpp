@@ -12,7 +12,7 @@
 
 namespace gdl::game {
 
-bool LockedGates::appendSimulationDigest(NativeStateDigest& digest, const Simulation& state) const {
+bool LockedGates::digestLocalValues(NativeStateDigest& digest, const LocalValues& state) const {
     digest.string("LockedGates.native.1");
     // These immutable binding inputs remain fixed until clear/bind invalidates
     // history. Mutable collision values are visited by the enclosing world owner.
@@ -22,18 +22,6 @@ bool LockedGates::appendSimulationDigest(NativeStateDigest& digest, const Simula
     return digest.good();
 }
 
-bool LockedGates::appendNativeDigest(NativeStateDigest& digest) const {
-    return appendSimulationDigest(digest, m_sim);
-}
-
-bool LockedGates::appendLocalDigest(NativeStateDigest& digest, const LocalSnapshot& saved) const {
-    if (!canRestoreLocal(saved)) {
-        digest.invalidate();
-        return false;
-    }
-    return appendSimulationDigest(digest, saved.m_state);
-}
-
 bool LockedGates::registerNativeResources(NativeStateResources& resources) const {
     for (const auto& gate : m_sim.gates) {
         if (!gate.figure.registerNativeResources(resources)) {
@@ -41,29 +29,6 @@ bool LockedGates::registerNativeResources(NativeStateResources& resources) const
         }
     }
     return resources.good();
-}
-
-void LockedGates::saveLocal(LocalSnapshot& saved) const {
-    saved.m_state = m_sim;
-    saved.m_binding = m_checkpointBinding;
-    saved.m_owner = this;
-}
-
-bool LockedGates::canRestoreLocal(const LocalSnapshot& saved) const {
-    return saved.m_owner == this && m_checkpointBinding &&
-           saved.m_binding.lock() == m_checkpointBinding;
-}
-
-bool LockedGates::equalLocal(const LocalSnapshot& left, const LocalSnapshot& right) const {
-    return canRestoreLocal(left) && canRestoreLocal(right) && left.m_state == right.m_state;
-}
-
-bool LockedGates::restoreLocal(const LocalSnapshot& saved) {
-    if (!canRestoreLocal(saved)) {
-        return false;
-    }
-    m_sim = saved.m_state;
-    return true;
 }
 
 std::string_view LockedGates::openingSound(s32 realm, s32 subtype) {
@@ -139,7 +104,7 @@ bool LockedGates::bind(RenderDevice& device, const WorldLayout& layout, const As
 }
 
 void LockedGates::clear() {
-    m_checkpointBinding = std::make_shared<const u8>(0);
+    m_localBinding.rebind();
     m_collision = nullptr;
     m_layout = nullptr;
     m_sim.gates.clear();

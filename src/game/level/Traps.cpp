@@ -14,7 +14,7 @@
 
 namespace gdl::game {
 
-bool Traps::appendSimulationDigest(NativeStateDigest& digest, const Simulation& state) const {
+bool Traps::digestLocalValues(NativeStateDigest& digest, const LocalValues& state) const {
     digest.string("Traps.native.1");
     // These immutable binding inputs remain fixed until clear/bind invalidates
     // history. Mutable collision values are visited by the enclosing world owner.
@@ -28,18 +28,6 @@ bool Traps::appendSimulationDigest(NativeStateDigest& digest, const Simulation& 
     return digest.good();
 }
 
-bool Traps::appendNativeDigest(NativeStateDigest& digest) const {
-    return appendSimulationDigest(digest, m_sim);
-}
-
-bool Traps::appendLocalDigest(NativeStateDigest& digest, const LocalSnapshot& saved) const {
-    if (!canRestoreLocal(saved)) {
-        digest.invalidate();
-        return false;
-    }
-    return appendSimulationDigest(digest, saved.m_state);
-}
-
 bool Traps::registerNativeResources(NativeStateResources& resources) const {
     for (const auto& trap : m_sim.traps) {
         if (!trap.figure.registerNativeResources(resources)) {
@@ -47,29 +35,6 @@ bool Traps::registerNativeResources(NativeStateResources& resources) const {
         }
     }
     return resources.good();
-}
-
-void Traps::saveLocal(LocalSnapshot& saved) const {
-    saved.m_state = m_sim;
-    saved.m_binding = m_checkpointBinding;
-    saved.m_owner = this;
-}
-
-bool Traps::canRestoreLocal(const LocalSnapshot& saved) const {
-    return saved.m_owner == this && m_checkpointBinding &&
-           saved.m_binding.lock() == m_checkpointBinding;
-}
-
-bool Traps::equalLocal(const LocalSnapshot& left, const LocalSnapshot& right) const {
-    return canRestoreLocal(left) && canRestoreLocal(right) && left.m_state == right.m_state;
-}
-
-bool Traps::restoreLocal(const LocalSnapshot& saved) {
-    if (!canRestoreLocal(saved)) {
-        return false;
-    }
-    m_sim = saved.m_state;
-    return true;
 }
 
 bool Traps::bind(RenderDevice& device, const WorldLayout& layout, const AssetScope& scope,
@@ -131,7 +96,7 @@ bool Traps::bind(RenderDevice& device, const WorldLayout& layout, const AssetSco
 }
 
 void Traps::clear() {
-    m_checkpointBinding = std::make_shared<const u8>(0);
+    m_localBinding.rebind();
     m_layout = nullptr;
     m_scope = {};
     m_collision = nullptr;

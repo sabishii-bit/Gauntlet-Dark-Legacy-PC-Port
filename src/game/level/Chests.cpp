@@ -28,7 +28,7 @@ s16 paramS16(const ItemInstance& instance, usize at) {
 
 } // namespace
 
-bool Chests::appendSimulationDigest(NativeStateDigest& digest, const Simulation& state) const {
+bool Chests::digestLocalValues(NativeStateDigest& digest, const LocalValues& state) const {
     digest.string("Chests.native.1");
     // These immutable binding inputs remain fixed until clear/bind invalidates
     // history. Mutable collision values are visited by the enclosing world owner.
@@ -42,18 +42,6 @@ bool Chests::appendSimulationDigest(NativeStateDigest& digest, const Simulation&
     return digest.good();
 }
 
-bool Chests::appendNativeDigest(NativeStateDigest& digest) const {
-    return appendSimulationDigest(digest, m_sim);
-}
-
-bool Chests::appendLocalDigest(NativeStateDigest& digest, const LocalSnapshot& saved) const {
-    if (!canRestoreLocal(saved)) {
-        digest.invalidate();
-        return false;
-    }
-    return appendSimulationDigest(digest, saved.m_state);
-}
-
 bool Chests::registerNativeResources(NativeStateResources& resources) const {
     for (const auto& chest : m_sim.chests) {
         if (!chest.figure.registerNativeResources(resources) ||
@@ -62,29 +50,6 @@ bool Chests::registerNativeResources(NativeStateResources& resources) const {
         }
     }
     return resources.good();
-}
-
-void Chests::saveLocal(LocalSnapshot& saved) const {
-    saved.m_state = m_sim;
-    saved.m_binding = m_checkpointBinding;
-    saved.m_owner = this;
-}
-
-bool Chests::canRestoreLocal(const LocalSnapshot& saved) const {
-    return saved.m_owner == this && m_checkpointBinding &&
-           saved.m_binding.lock() == m_checkpointBinding;
-}
-
-bool Chests::equalLocal(const LocalSnapshot& left, const LocalSnapshot& right) const {
-    return canRestoreLocal(left) && canRestoreLocal(right) && left.m_state == right.m_state;
-}
-
-bool Chests::restoreLocal(const LocalSnapshot& saved) {
-    if (!canRestoreLocal(saved)) {
-        return false;
-    }
-    m_sim = saved.m_state;
-    return true;
 }
 
 s32 Chests::contentsRecord(std::span<const ItemInfo> infos, s32 record, s32 count) {
@@ -201,7 +166,7 @@ void Chests::syncFloors() {
 }
 
 void Chests::clear() {
-    m_checkpointBinding = std::make_shared<const u8>(0);
+    m_localBinding.rebind();
     m_sim.chests.clear();
     m_infos.clear();
     m_sim.seed = 0;

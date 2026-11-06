@@ -1,14 +1,16 @@
 #pragma once
 
-#include <memory>
 #include <span>
 #include <string_view>
 #include <vector>
 
 #include "engine/assets/AssetScope.h"
-#include "engine/assets/ItemArchive.h"
 #include "engine/assets/WorldLayout.h"
+#include "engine/core/LocalBinding.h"
 #include "engine/core/Types.h"
+#include "engine/io/LocalRoster.h"
+#include "engine/io/LocalState.h"
+#include "engine/io/NativeStateDigest.h"
 #include "engine/render/RenderDevice.h"
 #include "engine/world/WorldCollision.h"
 #include "engine/world/WorldLighting.h"
@@ -34,7 +36,7 @@ struct GateEvent {
  * bars nobody from that moment (PlayerCollideItem's door blocks only an unspent one), while
  * a shot still stops on it until it has swung open (fn_8005F0F4's contact).
  */
-class LockedGates {
+class LockedGates : public LocalState<LockedGates> {
 public:
     LockedGates() = default;
     LockedGates(const LockedGates&) = delete;
@@ -90,6 +92,7 @@ public:
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
               f32 presentationAlpha = -1.0f) const;
     void capturePresentation();
+    bool registerNativeResources(NativeStateResources& resources) const;
 
 private:
     struct Simulation {
@@ -97,27 +100,21 @@ private:
         bool operator==(const Simulation&) const = default;
     } m_sim;
 
-public:
-    /** In-memory history for this owner and its current bound stage. */
-    class LocalSnapshot {
-        friend class LockedGates;
-        Simulation m_state;
-        std::weak_ptr<const u8> m_binding;
-        const LockedGates* m_owner = nullptr;
-    };
-    void saveLocal(LocalSnapshot& saved) const;
-    bool canRestoreLocal(const LocalSnapshot& saved) const;
-    bool equalLocal(const LocalSnapshot& left, const LocalSnapshot& right) const;
-    bool restoreLocal(const LocalSnapshot& saved);
-    bool appendNativeDigest(NativeStateDigest& digest) const;
-    bool appendLocalDigest(NativeStateDigest& digest, const LocalSnapshot& saved) const;
-    bool registerNativeResources(NativeStateResources& resources) const;
-
-private:
-    bool appendSimulationDigest(NativeStateDigest& digest, const Simulation& state) const;
+    friend class LocalState<LockedGates>;
+    static constexpr LocalTraits kLocalTraits{.refusalInvalidates = true,
+                                              .gatesOnBound = false,
+                                              .gatesOnValues = false,
+                                              .notifiesRestore = false};
+    using LocalValues = Simulation;
+    struct LocalChildren {};
+    static constexpr auto localParts() { return local::parts(local::own()); }
+    const LocalValues& localValues() const { return m_sim; }
+    LocalValues& localValues() { return m_sim; }
+    /** Writes the schema, what the gates were bound to and `state`. */
+    bool digestLocalValues(NativeStateDigest& digest, const LocalValues& state) const;
     const WorldCollision* m_collision = nullptr;
     const WorldLayout* m_layout = nullptr; ///< borrowed immutable authored roster
-    std::shared_ptr<const u8> m_checkpointBinding = std::make_shared<const u8>(0);
+    LocalBinding m_localBinding;
 };
 
 } // namespace gdl::game

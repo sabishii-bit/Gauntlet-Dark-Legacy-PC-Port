@@ -1,6 +1,5 @@
 #pragma once
 
-#include <memory>
 #include <random>
 #include <span>
 #include <string>
@@ -8,9 +7,12 @@
 #include <vector>
 
 #include "engine/assets/AssetScope.h"
-#include "engine/assets/ItemArchive.h"
 #include "engine/assets/WorldLayout.h"
+#include "engine/core/LocalBinding.h"
 #include "engine/core/Types.h"
+#include "engine/io/LocalRoster.h"
+#include "engine/io/LocalState.h"
+#include "engine/io/NativeStateDigest.h"
 #include "engine/render/RenderDevice.h"
 #include "engine/world/TreeModel.h"
 #include "engine/world/WorldCollision.h"
@@ -49,7 +51,7 @@ struct TrapHit {
  * has run out twice over, as the original leaves them. The level scales the times and the
  * damage.
  */
-class Traps {
+class Traps : public LocalState<Traps> {
 public:
     Traps() = default;
     Traps(const Traps&) = delete;
@@ -123,6 +125,7 @@ public:
               const CameraFrame* camera = nullptr, TreeModel::Pass pass = TreeModel::Pass::All,
               f32 presentationAlpha = -1.0f) const;
     void capturePresentation();
+    bool registerNativeResources(NativeStateResources& resources) const;
 
 private:
     s32 restTicks(const Trap& trap);
@@ -137,29 +140,22 @@ private:
         bool operator==(const Simulation&) const = default;
     } m_sim;
 
-public:
-    /** In-memory history for this owner and its current bound stage. */
-    class LocalSnapshot {
-        friend class Traps;
-        Simulation m_state;
-        std::weak_ptr<const u8> m_binding;
-        const Traps* m_owner = nullptr;
-    };
-    void saveLocal(LocalSnapshot& saved) const;
-    bool canRestoreLocal(const LocalSnapshot& saved) const;
-    bool restoreLocal(const LocalSnapshot& saved);
-    /** Complete native value equality, only within this owner's current binding. */
-    bool equalLocal(const LocalSnapshot& left, const LocalSnapshot& right) const;
-    bool appendNativeDigest(NativeStateDigest& digest) const;
-    bool appendLocalDigest(NativeStateDigest& digest, const LocalSnapshot& saved) const;
-    bool registerNativeResources(NativeStateResources& resources) const;
-
-private:
-    bool appendSimulationDigest(NativeStateDigest& digest, const Simulation& state) const;
+    friend class LocalState<Traps>;
+    static constexpr LocalTraits kLocalTraits{.refusalInvalidates = true,
+                                              .gatesOnBound = false,
+                                              .gatesOnValues = false,
+                                              .notifiesRestore = false};
+    using LocalValues = Simulation;
+    struct LocalChildren {};
+    static constexpr auto localParts() { return local::parts(local::own()); }
+    const LocalValues& localValues() const { return m_sim; }
+    LocalValues& localValues() { return m_sim; }
+    /** Writes the schema, what the traps were bound to and `state`. */
+    bool digestLocalValues(NativeStateDigest& digest, const LocalValues& state) const;
     const WorldCollision* m_collision = nullptr;
     const WorldLayout* m_layout = nullptr;
     AssetScope m_scope;
-    std::shared_ptr<const u8> m_checkpointBinding = std::make_shared<const u8>(0);
+    LocalBinding m_localBinding;
 };
 
 } // namespace gdl::game

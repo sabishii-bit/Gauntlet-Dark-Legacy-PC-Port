@@ -1,13 +1,15 @@
 #pragma once
 
-#include <memory>
 #include <optional>
 #include <vector>
 
 #include "engine/assets/AssetScope.h"
-#include "engine/assets/ItemArchive.h"
 #include "engine/assets/WorldLayout.h"
+#include "engine/core/LocalBinding.h"
 #include "engine/core/Types.h"
+#include "engine/io/LocalRoster.h"
+#include "engine/io/LocalState.h"
+#include "engine/io/NativeStateDigest.h"
 #include "engine/render/RenderDevice.h"
 #include "engine/world/WorldCollision.h"
 #include "engine/world/WorldLighting.h"
@@ -38,7 +40,7 @@ struct BreakableStrike {
  * breaking sequence, no longer in anyone's way, and leaves its staves lying (one that blew
  * up or gassed leaves nothing).
  */
-class Breakables {
+class Breakables : public LocalState<Breakables> {
 public:
     Breakables() = default;
     Breakables(const Breakables&) = delete;
@@ -130,37 +132,30 @@ public:
     };
     /** Read-only view of those values. */
     const Simulation& simulation() const { return m_sim; }
-
-private:
-    static f32 opacity(const Barrel& barrel);
-
-    Simulation m_sim;
-
-public:
-    /** In-memory history for this owner and its current bound stage. */
-    class LocalSnapshot {
-        friend class Breakables;
-        Simulation m_state;
-        std::weak_ptr<const u8> m_binding;
-        const Breakables* m_owner = nullptr;
-    };
-    void saveLocal(LocalSnapshot& saved) const;
-    bool canRestoreLocal(const LocalSnapshot& saved) const;
-    bool restoreLocal(const LocalSnapshot& saved);
-    /** Complete native value equality, only within this owner's current binding. */
-    bool equalLocal(const LocalSnapshot& left, const LocalSnapshot& right) const;
-    bool appendNativeDigest(NativeStateDigest& digest) const;
-    bool appendLocalDigest(NativeStateDigest& digest, const LocalSnapshot& saved) const;
     bool registerNativeResources(NativeStateResources& resources) const;
 
 private:
-    bool appendSimulationDigest(NativeStateDigest& digest, const Simulation& state) const;
+    friend class LocalState<Breakables>;
+    static constexpr LocalTraits kLocalTraits{.refusalInvalidates = true,
+                                              .gatesOnBound = false,
+                                              .gatesOnValues = false,
+                                              .notifiesRestore = false};
+    using LocalValues = Simulation;
+    struct LocalChildren {};
+    static constexpr auto localParts() { return local::parts(local::own()); }
+    const LocalValues& localValues() const { return m_sim; }
+    LocalValues& localValues() { return m_sim; }
+    /** Writes the schema, what the barrels were bound to and `state`. */
+    bool digestLocalValues(NativeStateDigest& digest, const LocalValues& state) const;
+    static f32 opacity(const Barrel& barrel);
+
+    Simulation m_sim;
     // Bound definitions are immutable; only each barrel's chosen contents and
     // the choice RNG belong in native rewind history.
     std::vector<ItemInfo> m_infos;
     const WorldCollision* m_collision = nullptr;
     const WorldLayout* m_layout = nullptr;
-    std::shared_ptr<const u8> m_checkpointBinding = std::make_shared<const u8>(0);
+    LocalBinding m_localBinding;
 };
 
 } // namespace gdl::game

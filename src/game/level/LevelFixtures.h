@@ -5,7 +5,11 @@
 #include <utility>
 #include <vector>
 
+#include "engine/core/LocalBinding.h"
 #include "engine/core/Types.h"
+#include "engine/io/LocalRoster.h"
+#include "engine/io/LocalState.h"
+#include "engine/io/NativeStateDigest.h"
 
 #include "game/audio/LevelSoundscape.h"
 #include "game/combat/DamageTypes.h"
@@ -29,7 +33,7 @@ namespace gdl::game {
  * Reports go to the caller's FixtureHost at once, so health, help and opponent damage keep
  * their order. No player span or host is retained. Clear before world/archive/device
  * teardown. */
-class LevelFixtures {
+class LevelFixtures : public LocalState<LevelFixtures> {
 public:
     static constexpr f32 kBlastRadius = 12.0f;
     static constexpr f32 kExplosionSeconds = 1.0f; ///< EXPLOSION's thirty frames
@@ -155,6 +159,7 @@ public:
     };
     /** The blasts under way, in the order they were set off, with what each has reached. */
     std::span<const Blast> blasts() const { return m_sim.blasts; }
+    bool registerNativeResources(NativeStateResources& resources) const;
 
 private:
     /** Answers a chest event: a key spent and the opening heard, its enemy let out before
@@ -217,35 +222,41 @@ private:
     SafeRocks m_safeRocks;
     StaticScenery m_scenery;
     Rubble m_rubble;
-    std::shared_ptr<const u8> m_checkpointBinding = std::make_shared<const u8>(0);
+    LocalBinding m_localBinding;
 
-public:
-    class LocalSnapshot {
-        friend class LevelFixtures;
-        Simulation m_state;
-        Chests::LocalSnapshot m_chests;
-        LockedGates::LocalSnapshot m_gates;
-        Traps::LocalSnapshot m_traps;
-        Breakables::LocalSnapshot m_barrels;
-        SafeRocks::LocalSnapshot m_safeRocks;
-        StaticScenery::LocalSnapshot m_scenery;
-        Rubble::LocalSnapshot m_rubble;
-        const LevelFixtures* m_owner = nullptr;
-        std::weak_ptr<const u8> m_binding;
+    friend class LocalState<LevelFixtures>;
+    static constexpr LocalTraits kLocalTraits{.refusalInvalidates = true,
+                                              .gatesOnBound = false,
+                                              .gatesOnValues = false,
+                                              .notifiesRestore = false};
+    using LocalValues = Simulation;
+    /** A snapshot's slot for each fixture kind. */
+    struct LocalChildren {
+        Chests::LocalSnapshot chests;
+        LockedGates::LocalSnapshot gates;
+        Traps::LocalSnapshot traps;
+        Breakables::LocalSnapshot barrels;
+        SafeRocks::LocalSnapshot safeRocks;
+        StaticScenery::LocalSnapshot scenery;
+        Rubble::LocalSnapshot rubble;
     };
-    void saveLocal(LocalSnapshot& saved) const;
-    bool canRestoreLocal(const LocalSnapshot& saved) const;
-    /** Complete native values under this owner and its current stage binding.
-     * World, player, effect and audio owners are compared by the enclosing scene. */
-    bool equalLocal(const LocalSnapshot& left, const LocalSnapshot& right) const;
-    bool restoreLocal(const LocalSnapshot& saved);
-    /** Actual coordinator and child history values. World/effects/audio remain
-     * separate owners and must also be visited by the enclosing scene. */
-    bool appendNativeDigest(NativeStateDigest& digest) const;
-    bool appendLocalDigest(NativeStateDigest& digest, const LocalSnapshot& saved) const;
-    bool registerNativeResources(NativeStateResources& resources) const;
-
-private:
-    bool appendSimulationDigest(NativeStateDigest& digest, const Simulation& state) const;
+    /** Its own values, then each fixture kind's, in digest order. The world, effects and audio
+     * it borrows and the players it is handed are other owners, which the scene saves,
+     * compares and hashes; so a restore takes back values only, never stopping a cloud's
+     * effect or reporting a contact. */
+    static constexpr auto localParts() {
+        return local::parts(local::own(),
+                            local::child(&LevelFixtures::m_chests, &LocalChildren::chests),
+                            local::child(&LevelFixtures::m_gates, &LocalChildren::gates),
+                            local::child(&LevelFixtures::m_traps, &LocalChildren::traps),
+                            local::child(&LevelFixtures::m_barrels, &LocalChildren::barrels),
+                            local::child(&LevelFixtures::m_safeRocks, &LocalChildren::safeRocks),
+                            local::child(&LevelFixtures::m_scenery, &LocalChildren::scenery),
+                            local::child(&LevelFixtures::m_rubble, &LocalChildren::rubble));
+    }
+    const LocalValues& localValues() const { return m_sim; }
+    LocalValues& localValues() { return m_sim; }
+    /** Writes the schema, what the fixtures were bound to and `state`. */
+    bool digestLocalValues(NativeStateDigest& digest, const LocalValues& state) const;
 };
 } // namespace gdl::game

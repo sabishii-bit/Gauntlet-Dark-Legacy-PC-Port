@@ -1,9 +1,12 @@
 #pragma once
 
-#include <memory>
 #include <vector>
 
+#include "engine/core/LocalBinding.h"
 #include "engine/core/Types.h"
+#include "engine/io/LocalRoster.h"
+#include "engine/io/LocalState.h"
+#include "engine/io/NativeStateDigest.h"
 
 #include "game/level/ItemFigure.h"
 #include "game/level/ItemSupport.h"
@@ -11,7 +14,7 @@
 namespace gdl::game {
 /** Ordinary type-10/subtype-0 item scenery, including the level's exit sign.
  * These are solid placed items, not exit triggers or breakable scenery. */
-class StaticScenery {
+class StaticScenery : public LocalState<StaticScenery> {
 public:
     StaticScenery() = default;
     StaticScenery(const StaticScenery&) = delete;
@@ -43,6 +46,7 @@ public:
               const CameraFrame* camera, TreeModel::Pass pass, f32 presentationAlpha) const;
     usize size() const { return m_sim.props.size(); }
     const Prop& prop(usize index) const { return m_sim.props[index]; }
+    bool registerNativeResources(NativeStateResources& resources) const;
 
 private:
     struct Simulation {
@@ -50,26 +54,20 @@ private:
         bool operator==(const Simulation&) const = default;
     } m_sim;
 
-public:
-    /** In-memory history for this owner and its current bound stage. */
-    class LocalSnapshot {
-        friend class StaticScenery;
-        Simulation m_state;
-        std::weak_ptr<const u8> m_binding;
-        const StaticScenery* m_owner = nullptr;
-    };
-    void saveLocal(LocalSnapshot& saved) const;
-    bool canRestoreLocal(const LocalSnapshot& saved) const;
-    bool equalLocal(const LocalSnapshot& left, const LocalSnapshot& right) const;
-    bool restoreLocal(const LocalSnapshot& saved);
-    bool appendNativeDigest(NativeStateDigest& digest) const;
-    bool appendLocalDigest(NativeStateDigest& digest, const LocalSnapshot& saved) const;
-    bool registerNativeResources(NativeStateResources& resources) const;
-
-private:
-    bool appendSimulationDigest(NativeStateDigest& digest, const Simulation& state) const;
+    friend class LocalState<StaticScenery>;
+    static constexpr LocalTraits kLocalTraits{.refusalInvalidates = true,
+                                              .gatesOnBound = false,
+                                              .gatesOnValues = false,
+                                              .notifiesRestore = false};
+    using LocalValues = Simulation;
+    struct LocalChildren {};
+    static constexpr auto localParts() { return local::parts(local::own()); }
+    const LocalValues& localValues() const { return m_sim; }
+    LocalValues& localValues() { return m_sim; }
+    /** Writes the schema, what the scenery was bound to and `state`. */
+    bool digestLocalValues(NativeStateDigest& digest, const LocalValues& state) const;
     const WorldCollision* m_collision = nullptr;
     const WorldLayout* m_layout = nullptr;
-    std::shared_ptr<const u8> m_checkpointBinding = std::make_shared<const u8>(0);
+    LocalBinding m_localBinding;
 };
 } // namespace gdl::game

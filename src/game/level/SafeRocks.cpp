@@ -114,13 +114,11 @@ void SafeRocks::saveLocal(LocalSnapshot& saved) const {
         saved.m_rocks[index] = static_cast<const RockState&>(*m_rocks[index]);
     }
     saved.m_textures = m_textures.clock();
-    saved.m_binding = m_checkpointBinding;
-    saved.m_owner = this;
+    m_localBinding.stamp(saved.m_stamp);
 }
 
 bool SafeRocks::canRestoreLocal(const LocalSnapshot& saved) const {
-    return saved.m_owner == this && m_checkpointBinding &&
-           saved.m_binding.lock() == m_checkpointBinding && saved.m_rocks.size() == m_rocks.size();
+    return m_localBinding.admits(saved.m_stamp) && saved.m_rocks.size() == m_rocks.size();
 }
 
 bool SafeRocks::equalLocal(const LocalSnapshot& left, const LocalSnapshot& right) const {
@@ -205,7 +203,7 @@ bool SafeRocks::bind(RenderDevice& device, const WorldLayout& layout, ItemArchiv
 
 void SafeRocks::bindAnimations(RenderDevice& device, ItemArchive& items,
                                std::span<TextureSet* const> lenders) {
-    m_checkpointBinding = std::make_shared<const u8>(0);
+    m_localBinding.rebind();
     m_animationItems = &items;
     std::vector<TextureAnimationInfo> animations;
     for (const auto& animation : items.trees.textureAnimations()) {
@@ -221,7 +219,7 @@ void SafeRocks::bindAnimations(RenderDevice& device, ItemArchive& items,
 }
 
 void SafeRocks::clear() {
-    m_checkpointBinding = std::make_shared<const u8>(0);
+    m_localBinding.rebind();
     m_layout = nullptr;
     m_items = nullptr;
     m_animationItems = nullptr;

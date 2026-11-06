@@ -7,15 +7,15 @@
 #include <vector>
 
 #include "engine/assets/ItemArchive.h"
+#include "engine/core/LocalBinding.h"
 #include "engine/core/Types.h"
+#include "engine/io/LocalRoster.h"
+#include "engine/io/LocalState.h"
+#include "engine/io/NativeStateDigest.h"
 #include "engine/math/Math.h"
 #include "engine/render/RenderDevice.h"
 #include "engine/world/TreeModel.h"
 #include "engine/world/WorldLighting.h"
-
-namespace gdl {
-class NativeStateDigest;
-}
 
 namespace gdl::game {
 
@@ -26,7 +26,7 @@ class NativeStateResources;
  * thing stood, as it stood. Borrows the archives' meshes and textures; clear before they are
  * released.
  */
-class Rubble {
+class Rubble : public LocalState<Rubble> {
 private:
     struct Piece {
         std::shared_ptr<const TreeModel> model;
@@ -50,19 +50,6 @@ public:
     static constexpr std::string_view kBlownBarrel = "BAREXP0"; ///< an exploding barrel's
     static constexpr std::string_view kGasBarrel = "BARPOI0";   ///< a poison barrel's
 
-    /** In-process debris values; the bound archives and device must outlive this history. */
-    class LocalSnapshot {
-        friend class Rubble;
-        std::vector<Piece> m_pieces;
-        std::weak_ptr<const u8> m_binding;
-        const Rubble* m_owner = nullptr;
-    };
-    void saveLocal(LocalSnapshot& saved) const;
-    bool canRestoreLocal(const LocalSnapshot& saved) const;
-    bool equalLocal(const LocalSnapshot& left, const LocalSnapshot& right) const;
-    bool restoreLocal(const LocalSnapshot& saved);
-    bool appendNativeDigest(NativeStateDigest& digest) const;
-    bool appendLocalDigest(NativeStateDigest& digest, const LocalSnapshot& saved) const;
     bool registerNativeResources(NativeStateResources& resources) const;
 
     /** Leaves `object`, the first of `archives` to hold it, placed by `transform`; false when
@@ -72,7 +59,7 @@ public:
     void clear() {
         m_pieces.clear();
         m_models.clear();
-        m_checkpointBinding = std::make_shared<const u8>(0);
+        m_localBinding.rebind();
     }
     usize size() const { return m_pieces.size(); }
     const Mat4& transform(usize index) const { return m_pieces[index].transform; }
@@ -87,7 +74,20 @@ public:
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const;
 
 private:
-    static bool appendPiecesDigest(NativeStateDigest& digest, std::span<const Piece> pieces);
+    friend class LocalState<Rubble>;
+    static constexpr LocalTraits kLocalTraits{.refusalInvalidates = true,
+                                              .gatesOnBound = false,
+                                              .gatesOnValues = false,
+                                              .notifiesRestore = false};
+    /** The pieces lying, as a snapshot keeps them: the archives and device they were bound
+     * through must outlive the history. */
+    using LocalValues = std::vector<Piece>;
+    struct LocalChildren {};
+    static constexpr auto localParts() { return local::parts(local::own()); }
+    const LocalValues& localValues() const { return m_pieces; }
+    LocalValues& localValues() { return m_pieces; }
+    /** Writes the schema and `pieces`. */
+    static bool digestLocalValues(NativeStateDigest& digest, std::span<const Piece> pieces);
     struct ModelBinding {
         const RenderDevice* device = nullptr;
         const ItemArchive* archive = nullptr;
@@ -96,7 +96,7 @@ private:
     };
     std::vector<Piece> m_pieces;
     std::vector<ModelBinding> m_models;
-    std::shared_ptr<const u8> m_checkpointBinding = std::make_shared<const u8>(0);
+    LocalBinding m_localBinding;
 };
 
 } // namespace gdl::game

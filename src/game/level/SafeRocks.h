@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "engine/assets/WorldLayout.h"
+#include "engine/core/LocalBinding.h"
 #include "engine/core/Types.h"
 #include "engine/world/TextureAnimator.h"
 
@@ -50,8 +51,7 @@ public:
         friend class SafeRocks;
         std::vector<RockState> m_rocks;
         TextureAnimator::Clock m_textures;
-        std::weak_ptr<const u8> m_binding;
-        const SafeRocks* m_owner = nullptr;
+        LocalBinding::Stamp m_stamp;
     };
     void saveLocal(LocalSnapshot& saved) const;
     bool canRestoreLocal(const LocalSnapshot& saved) const;
@@ -109,7 +109,7 @@ private:
     const WorldLayout* m_layout = nullptr;
     const ItemArchive* m_items = nullptr;
     const ItemArchive* m_animationItems = nullptr;
-    std::shared_ptr<const u8> m_checkpointBinding = std::make_shared<const u8>(0);
+    LocalBinding m_localBinding;
 };
 
 } // namespace gdl::game

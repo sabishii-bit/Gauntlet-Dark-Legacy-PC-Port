@@ -7,8 +7,7 @@
 
 namespace gdl::game {
 
-bool StaticScenery::appendSimulationDigest(NativeStateDigest& digest,
-                                           const Simulation& state) const {
+bool StaticScenery::digestLocalValues(NativeStateDigest& digest, const LocalValues& state) const {
     digest.string("StaticScenery.native.1");
     // These immutable binding inputs remain fixed until clear/bind invalidates
     // history. Mutable collision values are visited by the enclosing world owner.
@@ -16,18 +15,6 @@ bool StaticScenery::appendSimulationDigest(NativeStateDigest& digest,
     digest.resource(m_collision);
     digest.fields<1>(state);
     return digest.good();
-}
-
-bool StaticScenery::appendNativeDigest(NativeStateDigest& digest) const {
-    return appendSimulationDigest(digest, m_sim);
-}
-
-bool StaticScenery::appendLocalDigest(NativeStateDigest& digest, const LocalSnapshot& saved) const {
-    if (!canRestoreLocal(saved)) {
-        digest.invalidate();
-        return false;
-    }
-    return appendSimulationDigest(digest, saved.m_state);
 }
 
 bool StaticScenery::registerNativeResources(NativeStateResources& resources) const {
@@ -39,28 +26,6 @@ bool StaticScenery::registerNativeResources(NativeStateResources& resources) con
     return resources.good();
 }
 
-void StaticScenery::saveLocal(LocalSnapshot& saved) const {
-    saved.m_state = m_sim;
-    saved.m_binding = m_checkpointBinding;
-    saved.m_owner = this;
-}
-
-bool StaticScenery::canRestoreLocal(const LocalSnapshot& saved) const {
-    return saved.m_owner == this && m_checkpointBinding &&
-           saved.m_binding.lock() == m_checkpointBinding;
-}
-
-bool StaticScenery::equalLocal(const LocalSnapshot& left, const LocalSnapshot& right) const {
-    return canRestoreLocal(left) && canRestoreLocal(right) && left.m_state == right.m_state;
-}
-
-bool StaticScenery::restoreLocal(const LocalSnapshot& saved) {
-    if (!canRestoreLocal(saved)) {
-        return false;
-    }
-    m_sim = saved.m_state;
-    return true;
-}
 void StaticScenery::bind(RenderDevice& device, const WorldLayout& layout, const AssetScope& scope,
                          const WorldCollision* collision) {
     clear();
@@ -108,7 +73,7 @@ void StaticScenery::bind(RenderDevice& device, const WorldLayout& layout, const 
 }
 
 void StaticScenery::clear() {
-    m_checkpointBinding = std::make_shared<const u8>(0);
+    m_localBinding.rebind();
     m_layout = nullptr;
     m_sim.props.clear();
     m_collision = nullptr;

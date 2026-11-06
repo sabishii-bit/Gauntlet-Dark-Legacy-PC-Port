@@ -1,7 +1,6 @@
 #pragma once
 
 #include <limits>
-#include <memory>
 #include <optional>
 #include <span>
 #include <string_view>
@@ -10,7 +9,11 @@
 #include "engine/assets/AssetScope.h"
 #include "engine/assets/ItemArchive.h"
 #include "engine/assets/WorldLayout.h"
+#include "engine/core/LocalBinding.h"
 #include "engine/core/Types.h"
+#include "engine/io/LocalRoster.h"
+#include "engine/io/LocalState.h"
+#include "engine/io/NativeStateDigest.h"
 #include "engine/render/RenderDevice.h"
 #include "engine/world/WorldCollision.h"
 #include "engine/world/WorldLighting.h"
@@ -54,7 +57,7 @@ struct ChestEvent {
  * opening with its pickup riding NULL1; its lid up, it makes that pickup collectible, lets a
  * visitor take its gold when it is a chest of gold, or blasts when it is trapped.
  */
-class Chests {
+class Chests : public LocalState<Chests> {
 public:
     Chests() = default;
     Chests(const Chests&) = delete;
@@ -181,36 +184,30 @@ public:
     };
     /** Read-only view of those values. */
     const Simulation& simulation() const { return m_sim; }
-
-private:
-    static void rock(Chest& chest, f32 seconds);
-
-    Simulation m_sim;
-
-public:
-    class LocalSnapshot {
-        friend class Chests;
-        Simulation m_state;
-        std::weak_ptr<const u8> m_binding;
-        const Chests* m_owner = nullptr;
-    };
-    void saveLocal(LocalSnapshot& saved) const;
-    bool canRestoreLocal(const LocalSnapshot& saved) const;
-    bool restoreLocal(const LocalSnapshot& saved);
-    /** Complete native value equality, only within this owner's current binding. */
-    bool equalLocal(const LocalSnapshot& left, const LocalSnapshot& right) const;
-    bool appendNativeDigest(NativeStateDigest& digest) const;
-    bool appendLocalDigest(NativeStateDigest& digest, const LocalSnapshot& saved) const;
     bool registerNativeResources(NativeStateResources& resources) const;
 
 private:
-    bool appendSimulationDigest(NativeStateDigest& digest, const Simulation& state) const;
+    friend class LocalState<Chests>;
+    static constexpr LocalTraits kLocalTraits{.refusalInvalidates = true,
+                                              .gatesOnBound = false,
+                                              .gatesOnValues = false,
+                                              .notifiesRestore = false};
+    using LocalValues = Simulation;
+    struct LocalChildren {};
+    static constexpr auto localParts() { return local::parts(local::own()); }
+    const LocalValues& localValues() const { return m_sim; }
+    LocalValues& localValues() { return m_sim; }
+    /** Writes the schema, what the chests were bound to and `state`. */
+    bool digestLocalValues(NativeStateDigest& digest, const LocalValues& state) const;
+    static void rock(Chest& chest, f32 seconds);
+
+    Simulation m_sim;
     // Authored definitions do not change during play. Keep the bind-time copy
     // outside rewind history; per-instance choices and their RNG stay in m_sim.
     std::vector<ItemInfo> m_infos;
     const WorldCollision* m_collision = nullptr;
     const WorldLayout* m_layout = nullptr; ///< borrowed immutable authored roster
-    std::shared_ptr<const u8> m_checkpointBinding = std::make_shared<const u8>(0);
+    LocalBinding m_localBinding;
 };
 
 } // namespace gdl::game
