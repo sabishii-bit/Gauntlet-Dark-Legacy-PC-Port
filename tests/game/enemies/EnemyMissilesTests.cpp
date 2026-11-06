@@ -1457,6 +1457,8 @@ TEST_CASE("every kind and slot keeps its missile and launch point from the origi
         for (s32 slot = -1; slot <= 3; ++slot) {
             CAPTURE(kind, slot);
             const auto missile = enemyMissileOf(kind, slot);
+            // MSVC's checked array iterator is not a pointer; keep the portable iterator type.
+            // NOLINTNEXTLINE(readability-qualified-auto)
             const auto thrown = std::ranges::find_if(
                 kThrown, [&](const Thrown& row) { return row.kind == kind && row.slot == slot; });
             REQUIRE(missile.has_value() == (thrown != kThrown.end()));
@@ -1472,8 +1474,12 @@ TEST_CASE("every kind and slot keeps its missile and launch point from the origi
                 CHECK(missile->held == thrown->held);
                 CHECK(missile->throughWorld == thrown->throughWorld);
             }
+            // MSVC's checked array iterator is not a pointer; keep the portable iterator type.
+            // NOLINTNEXTLINE(readability-qualified-auto)
             const auto own = std::ranges::find_if(
                 kLaunches, [&](const Launch& row) { return row.kind == kind && row.slot == slot; });
+            // MSVC's checked array iterator is not a pointer; keep the portable iterator type.
+            // NOLINTNEXTLINE(readability-qualified-auto)
             const auto plain = std::ranges::find(kSlotLaunches, slot, &SlotLaunch::slot);
             REQUIRE(plain != kSlotLaunches.end());
             const EnemyLaunchPoint point = enemyLaunchPointOf(kind, slot);

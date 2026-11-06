@@ -138,8 +138,8 @@ public:
 
 private:
     static const OpponentScript& quiet() {
-        static const OpponentScript script;
-        return script;
+        static const OpponentScript kScript;
+        return kScript;
     }
     const OpponentScript& m_script;
 };

@@ -662,9 +662,10 @@ TEST_CASE("an imported level that sounds an enemy's melee itself makes the hurt 
     LevelRef ref;
     ref.realmId = -1;
     ref.name = "n64:imported-melee";
-    REQUIRE(world.loadImported(device, {}, ref,
-                               WorldLayout::fromDecoded({}, {}, {-100, 0, -100}, {100, 20, 100}),
-                               std::move(collision), imported));
+    const bool loaded = world.loadImported(
+        device, {}, ref, WorldLayout::fromDecoded({}, {}, {-100, 0, -100}, {100, 20, 100}),
+        std::move(collision), imported);
+    REQUIRE(loaded);
     ItemArchive weapons;
     EffectTrees effects;
     LevelSoundscape audio;

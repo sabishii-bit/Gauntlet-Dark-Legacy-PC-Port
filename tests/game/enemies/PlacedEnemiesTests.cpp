@@ -56,11 +56,11 @@ std::vector<PlacedEnemies::Placement> pendingRecords(const PlacedEnemies& owner)
 
 /** The roster indices still waiting, in native order. */
 std::vector<usize> pendingIndices(const PlacedEnemies& owner) {
-    return std::vector<usize>(owner.pending().begin(), owner.pending().end());
+    return {owner.pending().begin(), owner.pending().end()};
 }
 
 std::vector<PlacedEnemies::Placement> rosterOf(const PlacedEnemies& owner) {
-    return std::vector<PlacedEnemies::Placement>(owner.roster().begin(), owner.roster().end());
+    return {owner.roster().begin(), owner.roster().end()};
 }
 
 /** Whether the owner's values now equal `saved`. */

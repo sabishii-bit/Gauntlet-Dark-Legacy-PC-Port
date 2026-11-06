@@ -157,6 +157,7 @@ struct Fixture {
     }
     std::vector<std::optional<usize>> cargo() const {
         std::vector<std::optional<usize>> result;
+        result.reserve(static_cast<usize>(Critters::kMost));
         for (s32 slot = 0; slot < Critters::kMost; ++slot) {
             result.push_back(opponents.carriedBy(slot));
         }
