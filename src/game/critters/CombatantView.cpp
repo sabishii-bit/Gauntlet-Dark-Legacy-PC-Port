@@ -90,8 +90,9 @@ TreePose Combatant::composedPresentationPose(f32 alpha) const {
     TreePose pose = presentationPose(m_sim.actor, alpha);
     for (const auto& part : children()) {
         const Actor& branch = part->m_sim.actor;
-        if (branch.branch)
+        if (branch.branch) {
             pose.overlaySubtree(presentationPose(branch, alpha), *branch.branch);
+        }
     }
     return pose;
 }
@@ -168,14 +169,17 @@ std::optional<Mat4> Combatant::nodeTransform(std::string_view node) const {
 }
 
 std::optional<Mat4> Combatant::presentedNodeTransform(std::string_view node, f32 alpha) const {
-    if (!present() || m_sim.actor.stock == nullptr)
+    if (!present() || m_sim.actor.stock == nullptr) {
         return {};
+    }
     const Mat4 model = presentationModel(m_sim.actor, alpha);
-    if (node.empty())
+    if (node.empty()) {
         return model;
+    }
     const auto index = m_sim.actor.stock->tree->findNode(node, kCombatantNodeNameLength);
-    if (!index)
+    if (!index) {
         return {};
+    }
     const auto pose = composedPresentationPose(alpha);
     return *index < pose.size() ? std::optional{model * pose.matrices()[*index]} : std::nullopt;
 }
@@ -331,7 +335,7 @@ void Combatant::draw(RenderDevice& device, const Mat4& clip, const WorldLighting
         (critter.frozenTicks >= kThawBlinkTicks || (critter.frozenTicks & kThawBlinkBit) == 0)) {
         critter.stock->body.setMaskedTexture(frozenTexture);
     }
-    TreePose pose = composedPresentationPose(presentationAlpha);
+    const TreePose pose = composedPresentationPose(presentationAlpha);
     drawNodeState(critter, hitFlash);
     for (const auto& part : children()) {
         const Actor& branch = part->m_sim.actor;
