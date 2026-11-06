@@ -406,8 +406,9 @@ TEST_CASE("presented effect parents preserve authored scale and lifetime shrink"
     const Mat4 native = effect.transform();
     const Mat4 shown = effect.transform(&parent);
     CHECK(Vec3{shown[3]} == Vec3{42, 53, 64});
-    for (Mat4::length_type axis = 0; axis < 3; ++axis)
+    for (Mat4::length_type axis = 0; axis < 3; ++axis) {
         CHECK(shown[axis] == native[axis]);
+    }
     CHECK(glm::length(Vec3{shown[0]}) == Catch::Approx(1.002f));
     CHECK(effect.position == Vec3{12, 23, 34});
     effect.attachment.reset();
