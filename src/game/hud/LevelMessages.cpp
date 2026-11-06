@@ -206,7 +206,7 @@ LevelMessages::Cues LevelMessages::step(s32 ticks, u32 accepted) {
     const bool wasBurning = m_scroll.burning();
     m_scroll.step(ticks, accepted);
     const bool stopVoice = (m_scroll.burning() && !wasBurning) || !m_scroll.active();
-    return {stopVoice, !m_presentation && stopVoice && !wasBurning};
+    return {stopVoice, m_presentation == nullptr && stopVoice && !wasBurning};
 }
 
 void LevelMessages::saveLocal(LocalSnapshot& saved) const {
