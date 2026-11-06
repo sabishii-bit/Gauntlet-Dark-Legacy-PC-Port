@@ -48,6 +48,7 @@ std::string rumble(s32 device, s32 frames, ControlFeedback cue) {
 /** Every rumble a machine's devices were asked for, in turn. */
 std::vector<std::string> rumbles(const test::RecordingHaptics& haptics) {
     std::vector<std::string> asked;
+    asked.reserve(haptics.pulses.size());
     for (const auto& pulse : haptics.pulses) {
         asked.push_back(rumble(pulse.player, pulse.frames, pulse.feedback));
     }
