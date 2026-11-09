@@ -4,15 +4,21 @@
 #include <numbers>
 #include <set>
 #include <string>
+#include <string_view>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+
+#include "engine/core/Types.h"
+#include "engine/math/Math.h"
+#include "engine/world/WorldCollision.h"
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "game/bosses/Bosses.h"
 #include "game/critters/CombatantFixture.h"
 #include "game/critters/HeadedBodyFixture.h"
+#include "game/level/BossKinds.h"
 
 namespace {
 using namespace gdl;
@@ -51,6 +57,139 @@ struct HeadedFixture {
     }
     void step() { fight.update(2, 1.0f / 30.0f, players); }
 };
+
+/** One floor object flagged to move under the arena's middle, set to a height as it goes. */
+struct MovingFloor {
+    WorldCollision collision;
+    MovingFloor() {
+        CollisionTriangle triangle;
+        triangle.vertices = {Vec3{-100, 0, -100}, Vec3{100, 0, -100}, Vec3{0, 0, 100}};
+        triangle.object = 0;
+        collision.build({triangle});
+        collision.setMovingObjects(std::array<s32, 1>{0});
+        at(0);
+    }
+    void at(f32 height) {
+        collision.setObjectTransform(0, glm::translate(Mat4{1}, Vec3{0, height, 0}));
+    }
+};
+
+/** The body and every head stand at `height`. */
+void standsAt(const Combatant& body, f32 height) {
+    CHECK(body.position().y == Approx(height));
+    for (s32 part = 1; part <= static_cast<s32>(body.childCount()); ++part) {
+        const Combatant* head = body.child(body.id() + part);
+        REQUIRE(head != nullptr);
+        CHECK(head->position().y == Approx(height));
+    }
+}
+
+TEST_CASE("a boss rides a moving floor asleep and fighting, its heads with it, and keeps its "
+          "height on still ground",
+          "[game][chimera][boss-platform]") {
+    // CritterBossAI (0x80039AD8) probes its floor every frame in every state, asleep too.
+    MovingFloor floor;
+    test::FakeRenderDevice renderer;
+    Bosses bosses;
+    bosses.open(renderer, test::headedBodyAssets(), &floor.collision, {}, 'A');
+    REQUIRE(bosses.spawn(boss_type::kChimera, Vec3{0}, 0, 20));
+    const Combatant& body = bosses.fighter();
+    REQUIRE(body.childCount() == 2);
+    constexpr f32 kStep = 1.0f / 30.0f;
+    std::array<EnemyView, 1> party{};
+    party[0].player = 0;
+    party[0].position = Vec3{0, 0, 100}; // beyond its threshold, so it sleeps
+    party[0].height = 6;
+    party[0].radius = 1;
+    for (s32 frame = 0; frame < 30; ++frame) {
+        bosses.update(2, kStep, party);
+        standsAt(body, 0);
+    }
+    REQUIRE_FALSE(bosses.view().awake);
+    // Asleep it goes down with the floor, on an update without a tick as well, and comes up
+    // again with a floor that rises within the probe's reach.
+    for (s32 frame = 1; frame <= 30; ++frame) {
+        const f32 height = -0.5f * static_cast<f32>(frame);
+        floor.at(height);
+        bosses.update(2, kStep, party);
+        standsAt(body, height);
+    }
+    floor.at(-20);
+    bosses.update(0, 0, party);
+    standsAt(body, -20);
+    floor.at(-17);
+    bosses.update(2, kStep, party);
+    standsAt(body, -17);
+    REQUIRE_FALSE(bosses.view().awake);
+    // Awake and fighting, it rides on.
+    bosses.wake();
+    party[0].position = Vec3{0, -17, 40};
+    for (s32 frame = 1; frame <= 60; ++frame) {
+        const f32 height = -17.0f - 0.25f * static_cast<f32>(frame);
+        floor.at(height);
+        bosses.update(2, kStep, party);
+        bosses.takeCues();
+        standsAt(body, height);
+    }
+    REQUIRE(bosses.view().awake);
+    REQUIRE(bosses.view().alive);
+}
+
+TEST_CASE("a frozen boss, and the boss as drawn between two updates, follow the floor under it",
+          "[game][chimera][combatant][boss-platform]") {
+    MovingFloor floor;
+    test::FakeRenderDevice renderer;
+    test::CombatantFixture fight;
+    fight.open(renderer, test::headedBodyAssets(), &floor.collision, {}, 'A');
+    REQUIRE(fight.spawn("CHIMERA", Vec3{0}, 0));
+    Combatant& body = fight.actor;
+    constexpr f32 kStep = 1.0f / 30.0f;
+    std::array<EnemyView, 1> players{};
+    players[0].player = 0;
+    players[0].position = Vec3{0, 0, 40};
+    players[0].height = 6;
+    players[0].radius = 1;
+    // Settle into a move that runs on through an update, so that what is drawn between the
+    // last two updates blends from the first to the second instead of cutting to it.
+    bool settled = false;
+    for (s32 frame = 0; frame < 120 && !settled; ++frame) {
+        const u64 generation = body.animation().generation();
+        fight.update(2, kStep, players);
+        body.takeCues();
+        settled = frame >= 10 && body.animation().generation() == generation;
+    }
+    REQUIRE(settled);
+    standsAt(body, 0);
+    const auto drawnHeight = [&](std::string_view node, f32 alpha) {
+        const auto placed = body.presentedNodeTransform(node, alpha);
+        REQUIRE(placed.has_value());
+        return (*placed)[3].y;
+    };
+    constexpr std::array kAlphas{0.0f, 0.5f, 1.0f};
+    std::array<f32, kAlphas.size()> tip{};
+    for (usize i = 0; i < kAlphas.size(); ++i) {
+        CHECK(drawnHeight("", kAlphas[i]) == Approx(0));
+        tip[i] = drawnHeight("HEAD_L_TIP", kAlphas[i]);
+    }
+    // A floor that moves between updates takes the body, its heads and the body as drawn at
+    // every point between the last two updates with it.
+    floor.at(-5);
+    body.syncFloor();
+    standsAt(body, -5);
+    for (usize i = 0; i < kAlphas.size(); ++i) {
+        CHECK(drawnHeight("", kAlphas[i]) == Approx(-5));
+        CHECK(drawnHeight("HEAD_L_TIP", kAlphas[i]) == Approx(tip[i] - 5));
+    }
+    // Frozen it stands as it is, but on the floor under it.
+    body.freeze(600);
+    for (s32 frame = 1; frame <= 30; ++frame) {
+        const f32 height = -5.0f - 0.5f * static_cast<f32>(frame);
+        floor.at(height);
+        fight.update(2, kStep, players);
+        REQUIRE(body.frozen());
+        standsAt(body, height);
+    }
+}
 
 TEST_CASE("the body's pattern drives the heads' own pattern step, whose move starts over each "
           "time it ends while the body's step lasts",
