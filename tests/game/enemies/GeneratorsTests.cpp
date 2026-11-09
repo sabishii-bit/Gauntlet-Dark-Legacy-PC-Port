@@ -2,6 +2,7 @@
 #include <array>
 #include <filesystem>
 #include <limits>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -27,6 +28,7 @@
 #include "game/enemies/ScriptedOpponents.h"
 #include "game/level/Breakables.h"
 #include "game/level/Chests.h"
+#include "game/level/ImportedGenerators.h"
 #include "game/level/LevelCatalog.h"
 #include "game/level/LevelWorld.h"
 
@@ -2251,6 +2253,220 @@ TEST_CASE("the mechanics' tuning breeds sooner, keeps a larger brood out and, ne
     generators.update(kTicks, enemies, farParty);
     CHECK(generators.bredOf(0) == 4);
     generators.setRules(nullptr);
+}
+
+/** An imported strength-three grunt generator of ten hit points a state, at the origin. */
+ImportedGenerator importedGrunts() {
+    ImportedGenerator imported;
+    imported.kind = kGruntKind;
+    imported.tier = 3;
+    imported.body.type = ItemInfo::kGenerator;
+    imported.body.name = "GRU";
+    imported.body.radius = 2;
+    imported.body.height = 5;
+    imported.body.collisionType = 1;
+    imported.body.hitPoints = 10;
+    return imported;
+}
+
+/** A range-based policy: broods of 6, 4 and 2 from the first state to the third and waits
+ * of 30 to 90 ticks, each over a difficulty held within a half to two; the brood takes half
+ * again besides, ten at most. */
+ImportedGenerator::Breeding rangedBreeding() {
+    ImportedGenerator::Breeding policy;
+    policy.broodByState = {6, 4, 2};
+    policy.difficulty = 1.25f;
+    policy.broodDifficulty = {0.5f, 2.0f};
+    policy.broodBonus = 0.5f;
+    policy.maximumBrood = 10;
+    policy.waitTicks = {30, 90};
+    policy.waitDifficulty = {0.5f, 2.0f};
+    policy.activeDistance = 50;
+    return policy;
+}
+
+/** Imported generators stand in a pool bound to no level, as an imported level stands them. */
+struct ImportedPool {
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    Generators generators;
+    explicit ImportedPool(const std::string& name) {
+        const auto root = test::scratchDirectory(name);
+        writeGeneratorArchive(root);
+        enemies.open(device, root, nullptr, Enemies::kMost, {}, 1);
+        REQUIRE(generators.bind(device, {}, enemies, nullptr, {}, 1));
+    }
+    std::optional<s32> stand(const ImportedGenerator& imported, f32 gain = 1) {
+        return generators.spawnImported(device, enemies, imported, gain);
+    }
+};
+
+TEST_CASE("an imported generator's breeding policy is refused outside its native bounds",
+          "[game][generators][generator-breeding]") {
+    ImportedPool pool("generator-breeding-bounds");
+    auto imported = importedGrunts();
+    imported.breeding = rangedBreeding();
+    REQUIRE(pool.stand(imported));
+    using Policy = ImportedGenerator::Breeding;
+    const auto refused = [&](auto change) {
+        auto bad = imported;
+        change(*bad.breeding);
+        return !pool.stand(bad).has_value();
+    };
+    constexpr f32 kNan = std::numeric_limits<f32>::quiet_NaN();
+    CHECK(refused([](Policy& policy) { policy.difficulty = 0; }));
+    CHECK(refused([](Policy& policy) { policy.difficulty = kNan; }));
+    CHECK(refused([](Policy& policy) { policy.broodDifficulty = {0, 2}; }));
+    CHECK(refused([](Policy& policy) { policy.broodDifficulty = {2, 1}; }));
+    CHECK(refused([](Policy& policy) { policy.broodDifficulty = {1, 101}; }));
+    CHECK(refused([](Policy& policy) { policy.waitDifficulty = {kNan, 2}; }));
+    CHECK(refused([](Policy& policy) { policy.waitDifficulty = {0, 2}; }));
+    CHECK(refused([](Policy& policy) { policy.waitDifficulty = {2, 1}; }));
+    CHECK(refused([](Policy& policy) { policy.waitDifficulty = {1, 101}; }));
+    CHECK(refused([](Policy& policy) { policy.broodBonus = -0.5f; }));
+    CHECK(refused([](Policy& policy) { policy.broodBonus = 101; }));
+    CHECK(refused([](Policy& policy) { policy.broodBonus = kNan; }));
+    CHECK(refused([](Policy& policy) { policy.maximumBrood = 0; }));
+    CHECK(refused([](Policy& policy) { policy.maximumBrood = 128; }));
+    CHECK(refused([](Policy& policy) { policy.broodByState = {0, 4, 2}; }));
+    CHECK(refused([](Policy& policy) { policy.broodByState = {6, 4, 128}; }));
+    CHECK(refused([](Policy& policy) { policy.waitTicks = {0, 90}; }));
+    CHECK(refused([](Policy& policy) { policy.waitTicks = {30, 29}; }));
+    CHECK(refused([](Policy& policy) { policy.waitTicks = {30, 36001}; }));
+    CHECK(refused([](Policy& policy) { policy.activeDistance = 0; }));
+    CHECK(refused([](Policy& policy) { policy.activeDistance = kNan; }));
+    CHECK(refused([](Policy& policy) { policy.activeDistance = Generators::kActiveDistance + 1; }));
+    // The game's difficulty gain multiplies the policy's own difficulty.
+    CHECK_FALSE(pool.stand(imported, 0));
+    // Every bound itself is admitted.
+    CHECK_FALSE(refused([](Policy& policy) {
+        policy.broodDifficulty = {100, 100};
+        policy.waitDifficulty = {0.001f, 100};
+        policy.broodBonus = 100;
+        policy.maximumBrood = 127;
+        policy.broodByState = {127, 127, 127};
+        policy.waitTicks = {36000, 36000};
+        policy.activeDistance = Generators::kActiveDistance;
+    }));
+}
+
+TEST_CASE("an imported breeding policy keeps each state's brood and its first wait by the "
+          "bounded difficulty",
+          "[game][generators][generator-breeding]") {
+    struct Expected {
+        f32 gain;
+        std::array<s32, 3> brood; ///< by state, the first to the third
+        s32 wait;                 ///< the first, in ticks
+    };
+    // The brood is 6, 4 or 2 times the difficulty held within a half to two, plus a half,
+    // rounded and kept within one to ten; the wait is 30 ticks over that difficulty.
+    const auto expected = GENERATE(Expected{0.1f, {6, 4, 2}, 60}, Expected{1, {10, 7, 4}, 24},
+                                   Expected{10, {10, 10, 5}, 15});
+    CAPTURE(expected.gain);
+    ImportedPool pool("generator-breeding-brood");
+    auto imported = importedGrunts();
+    imported.breeding = rangedBreeding();
+    const auto id = pool.stand(imported, expected.gain);
+    REQUIRE(id);
+    auto& generators = pool.generators;
+    const std::array party{EnemyView{.player = 0, .position = {0, 0, 45}}};
+    generators.update(kTicks, pool.enemies, party);
+    REQUIRE(generators.bredOf(*id) == 1);
+    CHECK(generators.countdownOf(*id) == expected.wait);
+    // A crumble takes the policy's brood for the state it falls to, not twice the last.
+    for (s32 state = 3; state >= 1; --state) {
+        REQUIRE(generators.stateOf(*id) == state);
+        CHECK(generators.mostOf(*id) == expected.brood[static_cast<usize>(state - 1)]);
+        REQUIRE(generators.strike(*id, 10, 0));
+    }
+    CHECK_FALSE(generators.standing(*id));
+    CHECK(generators.mostOf(*id) == expected.brood[0]);
+}
+
+TEST_CASE("an imported breeding clock runs only with the party in its reach and outside Stop "
+          "Time, breeds as it runs out and stretches across its range",
+          "[game][generators][generator-breeding]") {
+    ImportedPool pool("generator-breeding-clock");
+    auto imported = importedGrunts();
+    imported.breeding = rangedBreeding();
+    const auto id = pool.stand(imported);
+    REQUIRE(id);
+    auto& generators = pool.generators;
+    auto& enemies = pool.enemies;
+    std::array party{EnemyView{.player = 0, .position = {0, 0, 45}}};
+    generators.update(kTicks, enemies, party);
+    REQUIRE(generators.bredOf(*id) == 1);
+    REQUIRE(generators.mostOf(*id) == 4);
+    REQUIRE(generators.countdownOf(*id) == 24);
+    // Beyond its fifty the clock stands still, as it does through Stop Time.
+    party[0].position = {0, 0, 60};
+    for (s32 update = 0; update < 5; ++update) {
+        generators.update(kTicks, enemies, party);
+    }
+    CHECK(generators.countdownOf(*id) == 24);
+    party[0].position = {0, 0, 45};
+    for (s32 update = 0; update < 5; ++update) {
+        generators.update(kTicks, enemies, party, {}, true);
+    }
+    CHECK(generators.countdownOf(*id) == 24);
+    CHECK(generators.bredOf(*id) == 1);
+    // It breeds on the update its clock reaches nought.
+    for (s32 update = 0; update < 11; ++update) {
+        generators.update(kTicks, enemies, party);
+    }
+    REQUIRE(generators.countdownOf(*id) == kTicks);
+    REQUIRE(generators.bredOf(*id) == 1);
+    generators.update(kTicks, enemies, party);
+    CHECK(generators.bredOf(*id) == 2);
+    // Each birth moves the next wait an eighth (one over twice the brood of four) of the way
+    // from 24 ticks to 72, and the mechanics' breeding pace divides it.
+    CHECK(generators.countdownOf(*id) == 30);
+    test::FakeMechanic rules;
+    rules.answers.tuning = {.breedingPace = 2};
+    generators.setRules(&rules);
+    generators.update(generators.countdownOf(*id), enemies, party);
+    CHECK(generators.bredOf(*id) == 3);
+    CHECK(generators.countdownOf(*id) == 18);
+    generators.setRules(nullptr);
+}
+
+TEST_CASE("an imported generator without a breeding policy keeps the GDL brood and clock",
+          "[game][generators][generator-breeding]") {
+    ImportedPool pool("generator-breeding-none");
+    const auto id = pool.stand(importedGrunts());
+    REQUIRE(id);
+    auto& generators = pool.generators;
+    auto& enemies = pool.enemies;
+    REQUIRE(generators.mostOf(*id) == Generators::kDefaultMost[2]);
+    REQUIRE(generators.intervalOf(*id) == Generators::kDefaultInterval[2]);
+    std::array party{EnemyView{.player = 0, .position = {0, 0, 45}}};
+    generators.update(kTicks, enemies, party);
+    REQUIRE(generators.bredOf(*id) == 1);
+    const auto wait = [&](f32 ratio) {
+        return static_cast<s32>(Generators::kCountdownScale *
+                                static_cast<f32>(Generators::kDefaultInterval[2]) * (1.0f + ratio));
+    };
+    REQUIRE(generators.countdownOf(*id) == wait(0));
+    // A thousand reaches it and Stop Time does not hold the clock, only the birth.
+    party[0].position = {0, 0, 60};
+    generators.update(kTicks, enemies, party);
+    CHECK(generators.countdownOf(*id) == wait(0) - kTicks);
+    party[0].position = {0, 0, 45};
+    generators.update(kTicks, enemies, party, {}, true);
+    CHECK(generators.countdownOf(*id) == wait(0) - 2 * kTicks);
+    // Run out, it breeds on the update after.
+    generators.update(generators.countdownOf(*id), enemies, party);
+    REQUIRE(generators.countdownOf(*id) == 0);
+    CHECK(generators.bredOf(*id) == 1);
+    generators.update(kTicks, enemies, party);
+    CHECK(generators.bredOf(*id) == 2);
+    CHECK(generators.countdownOf(*id) ==
+          wait(1.0f / (2.0f * static_cast<f32>(Generators::kDefaultMost[2]))));
+    // A crumble doubles the brood.
+    REQUIRE(generators.strike(*id, 10, 0));
+    CHECK(generators.mostOf(*id) == 2 * Generators::kDefaultMost[2]);
+    REQUIRE(generators.strike(*id, 10, 0));
+    CHECK(generators.mostOf(*id) == 4 * Generators::kDefaultMost[2]);
 }
 
 } // namespace

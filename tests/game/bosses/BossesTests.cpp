@@ -683,4 +683,57 @@ TEST_CASE("only the plague fiend's preload prepares the javelin's eye, a profile
     CHECK(prepared(38, &keepsOwn).empty());
 }
 
+TEST_CASE("a boss arms only once its activation signal comes, stays armed after it goes, and "
+          "by default wakes two seconds after placement",
+          "[game][bosses][boss-activation]") {
+    test::FakeRenderDevice device;
+    const auto root = eyedBossAssets("LICH");
+    Bosses bosses;
+    bosses.open(device, root, nullptr, {}, 'G');
+    REQUIRE(bosses.spawn(41, Vec3{0}, 0, 20));
+    // Half-second steps add up to the two-second arming time exactly.
+    constexpr f32 kHalfSecond = 0.5f;
+    const std::vector<EnemyView> near{playerAt(Vec3{0, 0, 10})};
+    const auto updates = [&](s32 count, bool activationReady) {
+        for (s32 update = 0; update < count; ++update) {
+            REQUIRE_FALSE(bosses.view().awake);
+            bosses.update(kTicks, kHalfSecond, near, activationReady);
+        }
+    };
+    SECTION("the default signal keeps the GameCube's two seconds") {
+        for (s32 update = 0; update < 3; ++update) {
+            bosses.update(kTicks, kHalfSecond, near);
+            REQUIRE_FALSE(bosses.view().awake);
+        }
+        bosses.update(kTicks, kHalfSecond, near);
+        CHECK(bosses.view().awake);
+    }
+    SECTION("without the signal it never wakes, however near the party stands") {
+        for (s32 update = 0; update < 120; ++update) {
+            bosses.arm(kHalfSecond, false);
+            bosses.update(kTicks, kHalfSecond, near, false);
+        }
+        CHECK_FALSE(bosses.view().awake);
+        updates(4, true); // the signal arriving at last starts the full two seconds
+        CHECK(bosses.view().awake);
+    }
+    SECTION("an update's signal keeps it armed through updates without one") {
+        updates(1, true);
+        updates(2, false);
+        REQUIRE_FALSE(bosses.view().awake);
+        bosses.update(kTicks, kHalfSecond, near, false);
+        CHECK(bosses.view().awake);
+    }
+    SECTION("the held entrance arms it by the same rule") {
+        bosses.arm(kHalfSecond, false);
+        bosses.arm(kHalfSecond, true);
+        bosses.arm(kHalfSecond, false);
+        bosses.arm(kHalfSecond, false);
+        bosses.update(kTicks, 0, near, false); // a second and a half armed
+        REQUIRE_FALSE(bosses.view().awake);
+        bosses.update(kTicks, kHalfSecond, near, false);
+        CHECK(bosses.view().awake);
+    }
+}
+
 } // namespace
