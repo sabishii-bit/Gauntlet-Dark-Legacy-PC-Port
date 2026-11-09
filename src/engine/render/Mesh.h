@@ -23,6 +23,7 @@ struct MeshPart {
     u32 texture = 0;          ///< index into the archive's texture set
     u32 lightmap = 0;         ///< index of the lightmap texture, 0 for none
     std::vector<u32> indices; ///< three per triangle, into Mesh::vertices
+    bool rgbLightmap = false; ///< opt-in baked RGB lighting, rather than alpha intensity
 };
 
 /** Static triangle geometry with one vertex array and per-texture index ranges. */

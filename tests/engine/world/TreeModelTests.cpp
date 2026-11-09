@@ -115,6 +115,79 @@ TEST_CASE("static model textures use free clocks without sequence overrides",
     CHECK(model.textureOffset(1) == Vec2(0));
 }
 
+TEST_CASE("interactive models retain opt-in RGB lightmaps without relighting or replacing masks",
+          "[world][model][rgb-lightmap]") {
+    Mesh mesh;
+    mesh.vertices = {{.position = {0, 0, 0}, .uv = {0, 0}, .lightmapUv = {2, 1}},
+                     {.position = {1, 0, 0}, .uv = {1, 0}, .lightmapUv = {4, 1}},
+                     {.position = {0, 0, 1}, .uv = {0, 1}, .lightmapUv = {2, 2}}};
+    mesh.parts.push_back({.texture = 0, .lightmap = 1, .indices = {0, 1, 2}, .rgbLightmap = true});
+    auto textures = TextureSet::fromDecoded(
+        {{.name = "BASE", .width = 2, .height = 2},
+         {.name = "BAKED", .width = 8, .height = 4, .clampU = true, .clampV = true}},
+        {Image::filled(2, 2, Color::white()), Image::filled(8, 4, {200, 60, 20, 255})});
+    auto models = ModelSet::fromDecoded({{.name = "FLOOR"}}, {mesh});
+    TreeInfo tree;
+    tree.nodes.push_back({.name = "FLOOR", .object = "FLOOR"});
+    test::FakeRenderDevice device;
+    TreeModel figure;
+    REQUIRE(figure.bind(tree, models, textures, device));
+    WorldLighting lighting;
+    lighting.ambient = Vec3{0};
+    lighting.lightColor = Vec3{0};
+    lighting.darken = .25f;
+    figure.draw(device, Mat4{1}, Mat4{1}, lighting);
+    REQUIRE(device.draws.size() == 1);
+    const auto& draw = device.draws.front();
+    CHECK(draw.state.lightmap == &textures.texture(device, 1));
+    CHECK(draw.state.lightmapRgb);
+    CHECK_FALSE(draw.state.lightmapCutout);
+    CHECK(draw.state.darken == .25f);
+    CHECK(draw.vertices.front().color == Color::white());
+    CHECK(draw.vertices.front().uv2 == Vec2(.25f, .25f));
+    for (const bool unlit : {false, true}) {
+        figure.setMaskedTexture(unlit ? nullptr : &device.whiteTexture());
+        figure.setAppearance({.unlit = unlit});
+        device.draws.clear();
+        figure.draw(device, Mat4{1}, Mat4{1}, lighting);
+        REQUIRE(device.draws.size() == 1);
+        CHECK(device.draws.front().state.lightmap == nullptr);
+        CHECK_FALSE(device.draws.front().state.lightmapRgb);
+    }
+    mesh.parts.front().rgbLightmap = false;
+    auto ordinary = ModelSet::fromDecoded({{.name = "FLOOR"}}, {mesh});
+    REQUIRE(figure.bind(tree, ordinary, textures, device));
+    device.draws.clear();
+    figure.draw(device, Mat4{1}, Mat4{1}, lighting);
+    REQUIRE(device.draws.size() == 1);
+    CHECK(device.draws.front().state.lightmap == nullptr);
+    CHECK(device.draws.front().vertices.front().color.r == 0);
+    CHECK_FALSE(TreeModel::compatibleMorph(models.mesh(0), ordinary.mesh(0)));
+    mesh.parts.front().rgbLightmap = true;
+    mesh.parts.front().lightmap = 9;
+    auto invalid = ModelSet::fromDecoded({{.name = "FLOOR"}}, {mesh});
+    CHECK_FALSE(figure.bind(tree, invalid, textures, device));
+}
+
+TEST_CASE("RGB lightmap seams remain distinct when object animation reorders vertices",
+          "[world][model][rgb-lightmap]") {
+    Mesh from;
+    from.vertices = {{.position = {0, 0, 0}, .uv = {0, 0}, .lightmapUv = {0, 0}},
+                     {.position = {0, 0, 0}, .uv = {0, 0}, .lightmapUv = {8, 8}},
+                     {.position = {1, 0, 0}, .uv = {1, 0}, .lightmapUv = {8, 0}},
+                     {.position = {0, 0, 1}, .uv = {0, 1}, .lightmapUv = {0, 8}}};
+    from.parts.push_back(
+        {.texture = 0, .lightmap = 1, .indices = {0, 2, 3, 1, 2, 3}, .rgbLightmap = true});
+    auto to = from;
+    std::swap(to.vertices[0], to.vertices[1]);
+    to.parts[0].indices = {1, 2, 3, 0, 2, 3};
+    const auto correspondence = TreeModel::morphMap(from, to);
+    REQUIRE(correspondence);
+    CHECK(*correspondence == std::vector<u32>{1, 0, 2, 3});
+    to.vertices[1].lightmapUv = {4, 4};
+    CHECK_FALSE(TreeModel::morphMap(from, to));
+}
+
 TEST_CASE("world occlusion is a per-draw policy and preserves authored halo blending",
           "[world][model][enemy-projectile-depth]") {
     const auto dir = sampleFigure("tree-model-world-occlusion");

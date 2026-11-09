@@ -25,7 +25,14 @@ constexpr std::array<std::string_view, 2> kMarkerNodes{"DUMMY", "NULL1"};
 } // namespace
 
 bool TreeModel::compatibleMorph(const Mesh& from, const Mesh& to) {
-    return from.parts.size() == to.parts.size() && from.prelit == to.prelit;
+    if (from.parts.size() != to.parts.size() || from.prelit != to.prelit)
+        return false;
+    for (usize i = 0; i < from.parts.size(); ++i) {
+        if (from.parts[i].rgbLightmap != to.parts[i].rgbLightmap ||
+            (from.parts[i].rgbLightmap && from.parts[i].lightmap != to.parts[i].lightmap))
+            return false;
+    }
+    return true;
 }
 
 std::optional<std::vector<u32>> TreeModel::morphMap(const Mesh& from, const Mesh& to) {
@@ -52,6 +59,7 @@ std::optional<std::vector<u32>> TreeModel::morphMap(const Mesh& from, const Mesh
         high = glm::max(high, v.position);
     }
     const f32 farthest = 0.5f * glm::distance(low, high);
+    const bool lightmapped = std::ranges::any_of(from.parts, &MeshPart::rgbLightmap);
     std::vector<u32> map(from.vertices.size(), 0);
     for (usize i = 0; i < from.vertices.size(); ++i) {
         const MeshVertex& v = from.vertices[i];
@@ -59,7 +67,8 @@ std::optional<std::vector<u32>> TreeModel::morphMap(const Mesh& from, const Mesh
         bool found = false;
         for (usize j = 0; j < to.vertices.size(); ++j) {
             const MeshVertex& w = to.vertices[j];
-            if (w.uv != v.uv || w.color != v.color) {
+            if (w.uv != v.uv || w.color != v.color ||
+                (lightmapped && w.lightmapUv != v.lightmapUv)) {
                 continue;
             }
             const f32 distance = glm::distance(v.position, w.position);
@@ -80,6 +89,7 @@ TreeModel::Shape TreeModel::makeShape(const Mesh& mesh, TextureSet& textures, Re
                                       std::span<TextureSet* const> lenders) {
     Shape shape;
     shape.mesh = &mesh;
+    const bool lightmapped = std::ranges::any_of(mesh.parts, &MeshPart::rgbLightmap);
     for (const MeshPart& part : mesh.parts) {
         if (part.texture >= textures.size()) {
             throw std::runtime_error("mesh refers to a texture outside the set");
@@ -94,6 +104,14 @@ TreeModel::Shape TreeModel::makeShape(const Mesh& mesh, TextureSet& textures, Re
         shape.textures.push_back(&source->texture(device, index));
         shape.translucent.push_back(entry.translucent() || source->entry(index).translucent());
         shape.slots.push_back(part.texture);
+        const Texture* lightmap = nullptr;
+        if (part.rgbLightmap) {
+            if (part.lightmap == 0 || part.lightmap >= textures.size())
+                throw std::runtime_error("mesh refers to a lightmap outside the set");
+            lightmap = &textures.texture(device, part.lightmap);
+        }
+        if (lightmapped)
+            shape.lightmaps.push_back(lightmap);
     }
     cutBySilhouettes(shape, textures, device, lenders);
     return shape;
@@ -517,6 +535,10 @@ void TreeModel::drawParts(RenderDevice& device, const Mat4& clip, const Mat4& mo
             // A silhouette cut shares the second stage with a skin mask; the mask wins.
             const Texture* cutout =
                 mask == nullptr && p < shape.cutouts.size() ? shape.cutouts[p] : nullptr;
+            const Texture* lightmap = mask == nullptr && cutout == nullptr && !additive &&
+                                              !m_appearance.unlit && p < shape.lightmaps.size()
+                                          ? shape.lightmaps[p]
+                                          : nullptr;
             m_batch.clear();
             m_batch.begin(PrimitiveTopology::TriangleList);
             for (const u32 index : part.indices) {
@@ -524,6 +546,7 @@ void TreeModel::drawParts(RenderDevice& device, const Mat4& clip, const Mat4& mo
                 Vec3 position = v.position;
                 Vec3 vertexNormal = v.normal;
                 Vec2 meshUv = v.uv;
+                Vec2 lightmapUv = v.lightmapUv;
                 Color baked = v.color;
                 if (node.nextMesh != nullptr) {
                     const MeshVertex& next =
@@ -535,6 +558,7 @@ void TreeModel::drawParts(RenderDevice& device, const Mat4& clip, const Mat4& mo
                         vertexNormal = blendedNormal;
                     }
                     meshUv = glm::mix(meshUv, next.uv, node.meshBlend);
+                    lightmapUv = glm::mix(lightmapUv, next.lightmapUv, node.meshBlend);
                     baked = mixColor(baked, next.color, node.meshBlend);
                 }
                 const Vec3 normal = glm::normalize(normalMatrix * vertexNormal);
@@ -545,7 +569,7 @@ void TreeModel::drawParts(RenderDevice& device, const Mat4& clip, const Mat4& mo
                 // Baked RGB belongs to the geometry stream, including level meshes
                 // rendered as destructible items rather than by WorldScene.
                 Color color = shape.mesh->prelit ? baked : lighting.shade(Vec3{placed}, normal);
-                if (additive || m_appearance.unlit || nodeFlash) {
+                if (additive || m_appearance.unlit || nodeFlash || lightmap != nullptr) {
                     color = Color::white();
                 }
                 const Color& tint = m_appearance.tint;
@@ -557,6 +581,9 @@ void TreeModel::drawParts(RenderDevice& device, const Mat4& clip, const Mat4& mo
                 }
                 if (cutout != nullptr) {
                     m_batch.vertex(Vec3{placed}, color, uv, shape.cutoutUv[index]);
+                } else if (lightmap != nullptr) {
+                    m_batch.vertex(Vec3{placed}, color, uv,
+                                   lightmapUv / Vec2{lightmap->width(), lightmap->height()});
                 } else {
                     m_batch.vertex(Vec3{placed}, color, uv);
                 }
@@ -580,7 +607,8 @@ void TreeModel::drawParts(RenderDevice& device, const Mat4& clip, const Mat4& mo
             state.blend = additive ? BlendMode::Additive : BlendMode::Alpha;
             // A baked colour is darkened as drawn; a lit part has it in the light it was
             // given, with the lanterns' light over it.
-            state.darken = additive || !shape.mesh->prelit ? 0.0f : lighting.darken;
+            state.darken =
+                additive || (!shape.mesh->prelit && lightmap == nullptr) ? 0.0f : lighting.darken;
             if (mask != nullptr && !blended) {
                 state.blend = BlendMode::Opaque;
             }
@@ -588,6 +616,9 @@ void TreeModel::drawParts(RenderDevice& device, const Mat4& clip, const Mat4& mo
             if (cutout != nullptr) {
                 state.lightmap = cutout;
                 state.lightmapCutout = true;
+            } else if (lightmap != nullptr) {
+                state.lightmap = lightmap;
+                state.lightmapRgb = true;
             }
             // This explicit pass belongs to world pickups, not actor/world cutouts or UI.
             state.smoothSprite = blendedPass && node.facing != 0 && blended;

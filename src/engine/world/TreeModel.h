@@ -162,9 +162,10 @@ private:
     /** A mesh and how its parts draw. */
     struct Shape {
         const Mesh* mesh = nullptr;
-        std::vector<const Texture*> textures; ///< one per mesh part
-        std::vector<bool> translucent;        ///< one per mesh part
-        std::vector<u32> slots;               ///< the set's texture index, one per part
+        std::vector<const Texture*> textures;  ///< one per mesh part
+        std::vector<const Texture*> lightmaps; ///< explicitly authored RGB maps, else null
+        std::vector<bool> translucent;         ///< one per mesh part
+        std::vector<u32> slots;                ///< the set's texture index, one per part
         /** An authored silhouette (an indexed mask whose palette shows nothing, see
          * TextureSet::silhouette) cuts the flat part it lies over instead of drawing: the
          * cut per part, the parts that are masks, and every vertex's place in the mask. */

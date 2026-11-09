@@ -233,6 +233,54 @@ TEST_CASE("moving floor locks inherit from parents without owning the inherited 
     CHECK_FALSE(collision.floorExitBlocked(1)); // rebuilding discards the previous hierarchy
 }
 
+TEST_CASE("native floor collision sides distinguish players from bosses and rewind exactly",
+          "[world][collision][collision-sides][local-rewind]") {
+    WorldCollision collision;
+    collision.build(room());
+    collision.setMovingObjects(std::array<s32, 1>{0});
+    collision.setObjectTransform(0, glm::translate(Mat4{1}, Vec3{0, -2, 0}));
+    const Vec3 probe{0, 0, 0};
+    REQUIRE(collision.floorAt(probe, 4, 10));
+    collision.setCollisionSide(0, 1);
+    CHECK_FALSE(collision.solid(0));
+    CHECK(collision.solid(0, 2));
+    CHECK_FALSE(collision.floorAt(probe, 4, 10));
+    const auto bossFloor = collision.floorAt(probe, 4, 10, 0, 2);
+    REQUIRE(bossFloor);
+    CHECK(bossFloor->object == 0);
+    CHECK(bossFloor->y == -2);
+    CHECK_FALSE(collision.floorUnder(probe, 10, 1));
+    WorldCollision::LocalSnapshot moving;
+    collision.saveLocal(moving);
+    NativeStateDigest before;
+    REQUIRE(collision.appendLocalDigest(before, moving));
+    collision.setCollisionSide(0, 2);
+    CHECK(collision.floorAt(probe, 4, 10));
+    CHECK_FALSE(collision.floorAt(probe, 4, 10, 0, 2));
+    WorldCollision::LocalSnapshot other;
+    collision.saveLocal(other);
+    CHECK_FALSE(collision.equalLocal(moving, other));
+    NativeStateDigest changed;
+    REQUIRE(collision.appendNativeDigest(changed));
+    CHECK(before.finish() != changed.finish());
+    REQUIRE(collision.restoreLocal(moving));
+    NativeStateDigest restored;
+    REQUIRE(collision.appendNativeDigest(restored));
+    CHECK(before.finish() == restored.finish());
+    CHECK_FALSE(collision.floorAt(probe, 4, 10));
+    CHECK(collision.floorAt(probe, 4, 10, 0, 2));
+    collision.setSolid(0, false);
+    CHECK_FALSE(collision.floorAt(probe, 4, 10, 0, 2));
+    CHECK_FALSE(collision.floorAt(probe, 4, 10, 0, 0));
+    collision.setSolid(0, true);
+    collision.setCollisionSide(0, 0);
+    CHECK(collision.floorAt(probe, 4, 10));
+    CHECK(collision.floorAt(probe, 4, 10, 0, 2));
+    collision.setCollisionSide(0, 1);
+    collision.build(room());
+    CHECK(collision.floorAt(probe, 4, 10)); // a new map must not inherit old side masks
+}
+
 TEST_CASE("collision placement reuse does not discard signed zero transform changes",
           "[world][collision][local-rewind][collision-placement-reuse]") {
     WorldCollision collision;
@@ -293,7 +341,7 @@ TEST_CASE("the floor under a point is found within the probe range", "[world][co
     REQUIRE(ledged.restingFloorAt({5.2f, 0.2f, -4}, 4, 10, 1.0f));
     CHECK(ledged.restingFloorAt({5.2f, 0.2f, -4}, 4, 10, 1.0f)->object == 0); // edges alike
     CHECK(ledged.restingFloorAt({6.1f, 0.2f, -4}, 4, 10, 1.0f)->object == 1); // under the ledge
-    CHECK_FALSE(ledged.restingFloorAt({10.5f, 0.2f, -4}, 4, 10, 1.0f));      // beyond reach
+    CHECK_FALSE(ledged.restingFloorAt({10.5f, 0.2f, -4}, 4, 10, 1.0f));       // beyond reach
     REQUIRE(edge);
     CHECK(edge->point.x == Approx(10));
     CHECK(edge->point.y == Approx(edge->y));
@@ -981,10 +1029,10 @@ TEST_CASE("a sphere is pushed out of a wall it is in front of and never through 
         triangle({5, 0, -10}, {5, 8, 10}, {5, 0, 10}, {-1, 0, 0}),
     });
     CHECK(collision.resolveSphere({4, 3.5f, 0}, 1.5f).x == Approx(3.5f));
-    CHECK(collision.resolveSphere({2, 3.5f, 0}, 1.5f).x == Approx(2.0f));   // clear of it
-    CHECK(collision.resolveSphere({6, 3.5f, 0}, 1.5f).x == Approx(6.0f));   // behind it
-    CHECK(collision.resolveSphere({5, 3.5f, 0}, 1.5f).x == Approx(5.0f));   // on it
-    CHECK(collision.resolveSphere({4, 10, 0}, 1.5f).x == Approx(4.0f));     // over its top
+    CHECK(collision.resolveSphere({2, 3.5f, 0}, 1.5f).x == Approx(2.0f));      // clear of it
+    CHECK(collision.resolveSphere({6, 3.5f, 0}, 1.5f).x == Approx(6.0f));      // behind it
+    CHECK(collision.resolveSphere({5, 3.5f, 0}, 1.5f).x == Approx(5.0f));      // on it
+    CHECK(collision.resolveSphere({4, 10, 0}, 1.5f).x == Approx(4.0f));        // over its top
     CHECK(collision.resolveSphere({4, 3.5f, -11.2f}, 1.5f).x == Approx(4.0f)); // past its end
     CHECK(collision.resolveSphere({4, 3.5f, -10.5f}, 1.5f).x == Approx(3.5f)); // its corner
 }

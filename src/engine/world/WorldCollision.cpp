@@ -1,4 +1,3 @@
-#include "engine/platform/Paths.h"
 #include "engine/world/WorldCollision.h"
 
 #include <algorithm>
@@ -16,6 +15,7 @@
 #include "engine/io/AssetLocator.h"
 #include "engine/io/File.h"
 #include "engine/io/NativeStateDigest.h"
+#include "engine/platform/Paths.h"
 
 #include "formats/WorldFile.h"
 
@@ -369,7 +369,7 @@ const CanonicalDigestSink::Digest& WorldCollision::geometryDigest() const {
 }
 
 bool WorldCollision::appendDigest(NativeStateDigest& digest, const LocalSnapshot* saved) const {
-    digest.string("WorldCollision/2");
+    digest.string("WorldCollision/3");
     digest.bytes(geometryDigest());
     for (usize i = 0; i < m_moving.size(); ++i) {
         const auto& [object, local, placed, boundsMin, boundsMax, world] = m_moving[i];
@@ -383,7 +383,8 @@ bool WorldCollision::appendDigest(NativeStateDigest& digest, const LocalSnapshot
         (void)boundsMax;
     }
     digest.values(saved ? saved->m_hidden : m_hidden, saved ? saved->m_contactOnly : m_contactOnly,
-                  saved ? saved->m_blockedFloorExits : m_blockedFloorExits);
+                  saved ? saved->m_blockedFloorExits : m_blockedFloorExits,
+                  saved ? saved->m_collisionSides : m_collisionSides);
     return digest.good();
 }
 
@@ -394,8 +395,8 @@ bool WorldCollision::appendNativeDigest(NativeStateDigest& digest) const {
 bool WorldCollision::appendLocalDigest(NativeStateDigest& digest,
                                        const LocalSnapshot& saved) const {
     // Guard the native snapshot roster too; owner/epoch are admission, not peer state.
-    [[maybe_unused]] const auto& [transforms, hidden, contactOnly, blockedFloorExits, owner,
-                                  binding] = saved;
+    [[maybe_unused]] const auto& [transforms, hidden, contactOnly, blockedFloorExits,
+                                  collisionSides, owner, binding] = saved;
     if (!canRestoreLocal(saved)) {
         digest.invalidate();
         return false;
@@ -411,6 +412,7 @@ void WorldCollision::saveLocal(LocalSnapshot& saved) const {
     saved.m_hidden = m_hidden;
     saved.m_contactOnly = m_contactOnly;
     saved.m_blockedFloorExits = m_blockedFloorExits;
+    saved.m_collisionSides = m_collisionSides;
     saved.m_owner = this;
     saved.m_binding = m_localBinding;
 }
@@ -424,7 +426,8 @@ bool WorldCollision::equalLocal(const LocalSnapshot& left, const LocalSnapshot& 
     return canRestoreLocal(left) && canRestoreLocal(right) &&
            left.m_transforms == right.m_transforms && left.m_hidden == right.m_hidden &&
            left.m_contactOnly == right.m_contactOnly &&
-           left.m_blockedFloorExits == right.m_blockedFloorExits;
+           left.m_blockedFloorExits == right.m_blockedFloorExits &&
+           left.m_collisionSides == right.m_collisionSides;
 }
 
 bool WorldCollision::restoreLocal(const LocalSnapshot& saved) {
@@ -439,6 +442,7 @@ bool WorldCollision::restoreLocal(const LocalSnapshot& saved) {
     m_hidden = saved.m_hidden;
     m_contactOnly = saved.m_contactOnly;
     m_blockedFloorExits = saved.m_blockedFloorExits;
+    m_collisionSides = saved.m_collisionSides;
     return true;
 }
 
@@ -564,8 +568,28 @@ bool WorldCollision::ownFloorExitBlocked(s32 object) const {
            std::ranges::find(m_blockedFloorExits, object) != m_blockedFloorExits.end();
 }
 
-bool WorldCollision::solid(s32 object) const {
-    return std::ranges::find(m_hidden, object) == m_hidden.end();
+void WorldCollision::setCollisionSide(s32 object, u8 side) {
+    if (object < 0)
+        return;
+    const auto found =
+        std::ranges::lower_bound(m_collisionSides, object, {}, &std::pair<s32, u8>::first);
+    if (found != m_collisionSides.end() && found->first == object) {
+        if (side == 0)
+            m_collisionSides.erase(found);
+        else
+            found->second = side;
+    } else if (side != 0) {
+        m_collisionSides.insert(found, {object, side});
+    }
+}
+
+bool WorldCollision::solid(s32 object, u8 sideMask) const {
+    if (std::ranges::find(m_hidden, object) != m_hidden.end())
+        return false;
+    const auto found =
+        std::ranges::lower_bound(m_collisionSides, object, {}, &std::pair<s32, u8>::first);
+    return found == m_collisionSides.end() || found->first != object ||
+           (found->second & sideMask) == 0;
 }
 
 bool WorldCollision::moving(s32 object) const {
@@ -602,16 +626,16 @@ usize WorldCollision::triangleCount() const {
 }
 
 template <typename Visit>
-void WorldCollision::eachTriangle(f32 minX, f32 minZ, f32 maxX, f32 maxZ,
-                                  const Visit& visit) const {
+void WorldCollision::eachTriangle(f32 minX, f32 minZ, f32 maxX, f32 maxZ, const Visit& visit,
+                                  u8 sideMask) const {
     for (const u32 index : candidates(minX, minZ, maxX, maxZ)) {
         const CollisionTriangle& triangle = m_triangles[index];
-        if (solid(triangle.object)) {
+        if (solid(triangle.object, sideMask)) {
             visit(triangle);
         }
     }
     for (const MovingObject& mover : m_moving) {
-        if (!mover.overlaps(minX, minZ, maxX, maxZ) || !solid(mover.object)) {
+        if (!mover.overlaps(minX, minZ, maxX, maxZ) || !solid(mover.object, sideMask)) {
             continue;
         }
         for (const CollisionTriangle& triangle : mover.placed) {
@@ -631,6 +655,7 @@ void WorldCollision::clear() {
     m_hidden.clear();
     m_contactOnly.clear();
     m_blockedFloorExits.clear();
+    m_collisionSides.clear();
     m_cells.clear();
     m_columns = 0;
     m_rows = 0;
@@ -700,8 +725,9 @@ std::vector<u32> WorldCollision::candidates(f32 minX, f32 minZ, f32 maxX, f32 ma
 }
 
 std::optional<FloorHit> WorldCollision::floorAt(const Vec3& position, f32 above, f32 below,
-                                                f32 edgeReach) const {
-    return surfaceAt(position, above, below, false, std::max(0.0f, edgeReach));
+                                                f32 edgeReach, u8 sideMask) const {
+    return surfaceAt(position, above, below, false, std::max(0.0f, edgeReach), nullptr, false,
+                     sideMask);
 }
 
 std::optional<FloorHit> WorldCollision::restingFloorAt(const Vec3& position, f32 above, f32 below,
@@ -790,64 +816,67 @@ std::optional<FloorHit> WorldCollision::projectileFloorAt(const Vec3& position, 
 
 std::optional<FloorHit> WorldCollision::surfaceAt(const Vec3& position, f32 above, f32 below,
                                                   bool liquid, f32 edgeReach, const Vec2* direction,
-                                                  bool nearestToHeight) const {
+                                                  bool nearestToHeight, u8 sideMask) const {
     std::optional<FloorHit> best;
     const f32 highest = position.y + above;
     const f32 lowest = position.y - below;
-    eachTriangle(position.x - edgeReach, position.z - edgeReach, position.x + edgeReach,
-                 position.z + edgeReach, [&](const CollisionTriangle& triangle) {
-                     if ((triangle.objectFlags & kFloorQueryFlags) == 0 ||
-                         ((triangle.objectFlags & kLiquidSurface) != 0) != liquid ||
-                         triangle.normal.y < kFloorNormalY) {
-                         return;
-                     }
-                     Vec2 point{position.x, position.z};
-                     if (!insideXZ(triangle, point.x, point.y)) {
-                         if (edgeReach <= 0.0f) {
-                             return;
-                         }
-                         f32 nearest = edgeReach * edgeReach;
-                         bool found = false;
-                         for (usize i = 0; i < triangle.vertices.size(); ++i) {
-                             const Vec3& a = triangle.vertices[i];
-                             const Vec3& b = triangle.vertices[(i + 1) % triangle.vertices.size()];
-                             const Vec2 edge =
-                                 closestOnSegment({a.x, a.z}, {b.x, b.z}, {position.x, position.z});
-                             const Vec2 delta = edge - Vec2{position.x, position.z};
-                             const f32 distance = glm::dot(delta, delta);
-                             if (distance <= nearest) {
-                                 nearest = distance;
-                                 point = edge;
-                                 found = true;
-                             }
-                         }
-                         if (!found) {
-                             return;
-                         }
-                     }
-                     const Vec3& v = triangle.vertices[0];
-                     if (direction != nullptr &&
-                         glm::dot(point - Vec2{position.x, position.z}, *direction) < 0) {
-                         return;
-                     }
-                     const f32 y = v.y - (triangle.normal.x * (point.x - v.x) +
-                                          triangle.normal.z * (point.y - v.z)) /
-                                             triangle.normal.y;
-                     if (y > highest || y < lowest) {
-                         return;
-                     }
-                     const bool better =
-                         !best.has_value() || (nearestToHeight ? std::abs(y - position.y) <
-                                                                     std::abs(best->y - position.y)
-                                                               : y > best->y);
-                     if (better) {
-                         best = FloorHit{y,
-                                         triangle.normal,
-                                         triangle.object,
-                                         triangle.objectFlags,
-                                         {point.x, y, point.y}};
-                     }
-                 });
+    eachTriangle(
+        position.x - edgeReach, position.z - edgeReach, position.x + edgeReach,
+        position.z + edgeReach,
+        [&](const CollisionTriangle& triangle) {
+            if ((triangle.objectFlags & kFloorQueryFlags) == 0 ||
+                ((triangle.objectFlags & kLiquidSurface) != 0) != liquid ||
+                triangle.normal.y < kFloorNormalY) {
+                return;
+            }
+            Vec2 point{position.x, position.z};
+            if (!insideXZ(triangle, point.x, point.y)) {
+                if (edgeReach <= 0.0f) {
+                    return;
+                }
+                f32 nearest = edgeReach * edgeReach;
+                bool found = false;
+                for (usize i = 0; i < triangle.vertices.size(); ++i) {
+                    const Vec3& a = triangle.vertices[i];
+                    const Vec3& b = triangle.vertices[(i + 1) % triangle.vertices.size()];
+                    const Vec2 edge =
+                        closestOnSegment({a.x, a.z}, {b.x, b.z}, {position.x, position.z});
+                    const Vec2 delta = edge - Vec2{position.x, position.z};
+                    const f32 distance = glm::dot(delta, delta);
+                    if (distance <= nearest) {
+                        nearest = distance;
+                        point = edge;
+                        found = true;
+                    }
+                }
+                if (!found) {
+                    return;
+                }
+            }
+            const Vec3& v = triangle.vertices[0];
+            if (direction != nullptr &&
+                glm::dot(point - Vec2{position.x, position.z}, *direction) < 0) {
+                return;
+            }
+            const f32 y =
+                v.y - (triangle.normal.x * (point.x - v.x) + triangle.normal.z * (point.y - v.z)) /
+                          triangle.normal.y;
+            if (y > highest || y < lowest) {
+                return;
+            }
+            const bool better =
+                !best.has_value() ||
+                (nearestToHeight ? std::abs(y - position.y) < std::abs(best->y - position.y)
+                                 : y > best->y);
+            if (better) {
+                best = FloorHit{y,
+                                triangle.normal,
+                                triangle.object,
+                                triangle.objectFlags,
+                                {point.x, y, point.y}};
+            }
+        },
+        sideMask);
     return best;
 }
 
