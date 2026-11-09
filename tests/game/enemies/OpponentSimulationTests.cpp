@@ -1,5 +1,4 @@
 #include <array>
-#include <cmath>
 #include <memory>
 #include <string>
 #include <vector>
@@ -301,6 +300,8 @@ TEST_CASE("opponent phase advances native flights and chasing bodies",
 
 TEST_CASE("opponent phase preserves native shooting minds and pending throws",
           "[diagnostics][opponent-simulation][assets]") {
+    // Skip before the sections: once both have skipped, Catch2 runs the case again in neither.
+    test::assetOrSkip("MONSTERS/GRU/ANIM.PS2");
     std::unique_ptr<Island> island;
     SECTION("shooting native mind") {
         const auto way = GENERATE(kThrowWay, kBombWay, kSkirmishWay, kSkirmishBombWay,
