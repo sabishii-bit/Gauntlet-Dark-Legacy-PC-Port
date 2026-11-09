@@ -12,7 +12,6 @@
 #include "game/widgets/OptionMenu.h"
 
 namespace gdl::game {
-struct MenuTextures;
 
 /** Prepared dialogue geometry, independent of its game's artwork. */
 struct DialoguePage {

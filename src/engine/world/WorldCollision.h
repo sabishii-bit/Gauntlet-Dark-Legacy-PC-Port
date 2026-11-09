@@ -93,7 +93,7 @@ public:
     /** Whether an object's triangles block anything; all do until told otherwise. */
     void setSolid(s32 object, bool solid);
     /** Native WorldObj.side excludes matching query categories, independently
-     * of removal/visibility. Existing queries use player category1; bosses use2. */
+     * of removal/visibility. Existing queries use player category 1; bosses use 2. */
     void setCollisionSide(s32 object, u8 side);
     bool solid(s32 object, u8 sideMask = 1) const;
     /** Retain wall contacts for hazards, but do not stop or push a moving body. */
