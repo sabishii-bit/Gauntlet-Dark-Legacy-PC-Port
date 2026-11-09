@@ -1,13 +1,23 @@
 #pragma once
 
 #include <array>
+#include <chrono>
 #include <filesystem>
 #include <span>
 #include <string>
 #include <string_view>
+#include <system_error>
+#include <vector>
+
+#ifdef _WIN32
+#include <process.h>
+#else
+#include <unistd.h>
+#endif
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/core/SpecialMembers.h"
 #include "engine/core/Types.h"
 #include "engine/io/AssetLocator.h"
 
@@ -25,9 +35,78 @@
 
 namespace gdl::test {
 
-/** A fresh, empty directory under the system temp folder. */
+/** How long an entry of the scratch folder may go unwritten before a test process sweeps it. */
+inline constexpr std::chrono::hours kStaleScratchAge{24};
+
+/** The folder under the system temp folder that holds every test process's scratch root. */
+inline std::filesystem::path scratchParent() {
+    return std::filesystem::temp_directory_path() / "gdl-tests";
+}
+
+/** This process's id, which names its scratch root. */
+inline s64 processId() {
+#ifdef _WIN32
+    return _getpid();
+#else
+    return getpid();
+#endif
+}
+
+/** Removes the entries of `folder` last written more than kStaleScratchAge before `now`, other
+ * than `keep`: the roots of runs that never exited and older fixed-name folders. A root is
+ * written as it is made and no test process lives a day, so a running process's root stays. */
+inline void sweepStaleScratch(const std::filesystem::path& folder,
+                              std::filesystem::file_time_type now,
+                              const std::filesystem::path& keep = {}) {
+    std::vector<std::filesystem::path> stale;
+    std::error_code error;
+    for (auto entry = std::filesystem::directory_iterator(folder, error);
+         !error && entry != std::filesystem::directory_iterator(); entry.increment(error)) {
+        std::error_code unread;
+        const auto written = entry->last_write_time(unread);
+        if (!unread && entry->path() != keep && now - written > kStaleScratchAge) {
+            stale.push_back(entry->path());
+        }
+    }
+    for (const std::filesystem::path& path : stale) {
+        std::error_code ignored; // another process may be removing it too
+        std::filesystem::remove_all(path, ignored);
+    }
+}
+
+/** This process's own folder under scratchParent(), `p<pid>`, so test processes running at once
+ * never share fixtures. Made empty when first asked for, sweeping stale entries beside it, and
+ * removed when the process exits. */
+class ScratchRoot {
+public:
+    ScratchRoot() : m_path(scratchParent() / ("p" + std::to_string(processId()))) {
+        std::error_code ignored; // a root left by an earlier process given the same id
+        std::filesystem::remove_all(m_path, ignored);
+        std::filesystem::create_directories(m_path);
+        sweepStaleScratch(m_path.parent_path(), std::filesystem::file_time_type::clock::now(),
+                          m_path);
+    }
+    ~ScratchRoot() {
+        std::error_code ignored; // a file still open at exit leaves the rest for a later sweep
+        std::filesystem::remove_all(m_path, ignored);
+    }
+    GDL_NON_COPYABLE_NON_MOVABLE(ScratchRoot);
+
+    const std::filesystem::path& path() const { return m_path; }
+
+private:
+    std::filesystem::path m_path;
+};
+
+/** This process's scratch root, made on first use and removed at exit. */
+inline const std::filesystem::path& scratchRoot() {
+    static const ScratchRoot kRoot;
+    return kRoot.path();
+}
+
+/** A fresh, empty directory under this process's scratch root. */
 inline std::filesystem::path scratchDirectory(std::string_view name) {
-    const std::filesystem::path dir = std::filesystem::temp_directory_path() / "gdl-tests" / name;
+    const std::filesystem::path dir = scratchRoot() / name;
     std::filesystem::remove_all(dir);
     std::filesystem::create_directories(dir);
     return dir;

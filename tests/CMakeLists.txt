@@ -204,6 +204,7 @@ add_executable(tests
     game/shop/InventoryPanelTests.cpp
     game/hud/LinkIndicatorTests.cpp
     TestSupport.h
+    TestSupportTests.cpp
     SyntheticBytes.h
     SyntheticBytesTests.cpp
     NativeStateSupport.h
