@@ -10,7 +10,7 @@
 #include <vector>
 
 #include "engine/core/Assert.h"
-#include "engine/core/Strings.h"
+#include "engine/core/Log.h"
 #include "engine/io/File.h"
 #include "engine/platform/Paths.h"
 
@@ -584,8 +584,9 @@ void Gauntlet::finishLegendsTravel() {
         // Native bosses have already completed their own ceremony. Do not
         // dispatch the GameCube final-boss movie or completion-only shop route.
         m_play->scene.suspendForImportedLevel(true);
-        if (m_legendsSounds)
+        if (m_legendsSounds) {
             m_legendsSounds->setCategoryPaused(SoundCategory::Music, true);
+        }
         m_loadingPicture.load(renderDevice(), m_options.unpackedDirectory);
         m_loadingPicture.cover();
         m_journey = std::move(journey);
@@ -604,6 +605,53 @@ void Gauntlet::finishLegendsTravel() {
                         "Leave and re-enter the portal to retry, or use Quit Level for its Tower.");
         resetPlayInput();
     }
+}
+
+void Gauntlet::closeCompletedLegendsJourney() {
+    renderDevice().waitIdle();
+    m_play->scene.close();
+    m_play->world.clear();
+    m_legendsOrigin.reset();
+    m_legendsEntryParty.clear();
+    m_legendsTowerParty.clear();
+    if (m_legendsSounds) {
+        m_legendsSounds->stopAll();
+        m_legendsSounds.reset();
+    }
+}
+
+bool Gauntlet::saveLegendsCompletion() {
+    if (!m_journey || !m_journey->importedDestination) {
+        return false;
+    }
+    auto party = legendsCompletionParty(m_journey->party, m_afterLevel, m_select);
+    autoSave(party);
+    return true;
+}
+
+void Gauntlet::finishImportedJourney(Journey journey) {
+    const auto& destination = *journey.importedDestination;
+    const auto* previous = m_play.get();
+    const auto generation = m_play->scene.loadGeneration();
+    consoleLegendsOpen(m_console, destination.platform, destination.directory, true, true,
+                       journey.party, true);
+    if (m_play.get() != previous || m_play->scene.loadGeneration() != generation) {
+        return;
+    }
+    // Keep the purchased inventory and save-slot choices if loading failed.
+    // Done retries the same destination; Save/Load/Quit remain available.
+    // Neither the tally nor completion grants run for a second time.
+    const std::string failure =
+        std::format("Native destination {} unavailable; retaining the completed party to retry",
+                    paths::utf8(destination.directory));
+    log::warn("{}", failure);
+    m_console.print(failure);
+    m_journey = std::move(journey);
+    m_loadingPicture.cover();
+    if (!m_select.openAfterLevel(renderDevice(), services(), m_journey->party, &m_play->world)) {
+        log::warn("Native travel recovery menu unavailable; retaining the pending party.");
+    }
+    resetPlayInput();
 }
 
 } // namespace gdl::game

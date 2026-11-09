@@ -207,6 +207,14 @@ private:
     bool closeLegendsLevel(bool keepProgress = true);
     bool quitLegendsLevel();
     void finishLegendsTravel();
+    /** Closes the parked native scene once the selector leaves a completed Legends journey.
+     * The shop or the selector saved its party; the parked actors still hold pre-shop values,
+     * which a later shutdown must not take for an abandoned live level. */
+    void closeCompletedLegendsJourney();
+    /** At shutdown during a completed Legends journey, saves the party of the menu that is
+     * open, purchases and save slots included, instead of the parked scene's; false, saving
+     * nothing, without such a journey. */
+    bool saveLegendsCompletion();
     /** Picks what stands under `cursor` in the view for the console, or lets the selection
      * go without one; the console's $SELECTED follows. */
     void consoleSelect(std::optional<Vec2> cursor);
@@ -372,6 +380,10 @@ private:
     };
     std::optional<Journey> m_journey;
     void returnFromChallenge(std::span<const PartyMember> party);
+    /** Opens a completed Legends journey's native destination. When it does not open, the
+     * journey is kept, with its purchases and save slots, and the after-level menu opens
+     * again for its Done to retry; neither the tally nor the completion runs twice. */
+    void finishImportedJourney(Journey journey);
     SaveSlots m_saves; ///< where the party in play is kept
     TransitionScreen m_loadingPicture;
     LevelLoadingScreen m_levelLoading;
