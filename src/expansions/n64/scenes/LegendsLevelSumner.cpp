@@ -62,10 +62,7 @@ void LegendsLevel::announceProgress(std::span<const PartyMember> before,
     m_historyMilestone = m_sumner->milestone(current);
 }
 
-bool LegendsLevel::updateSumner(std::span<PlayerActor*> players, f32 seconds, bool blocked) {
-    if (m_dreamcastSumner) {
-        return updateDreamcastSumner(players, seconds, blocked);
-    }
+bool LegendsLevel::updateN64Sumner(std::span<PlayerActor*> players, f32 seconds, bool blocked) {
     if (!m_sumner) {
         return false;
     }
@@ -109,14 +106,7 @@ bool LegendsLevel::updateSumner(std::span<PlayerActor*> players, f32 seconds, bo
     return false;
 }
 
-std::optional<ImportedDialogue> LegendsLevel::takeDialogue() {
-    return std::exchange(m_dialogue, {});
-}
-
-std::vector<std::string> LegendsLevel::answerDialogue(s32 topic) {
-    if (m_dreamcastSumner && m_dialogueOpen) {
-        return LegendsDreamcastTower::advice(topic, adapter().partyProgress());
-    }
+std::vector<std::string> LegendsLevel::answerN64Dialogue(s32 topic) {
     if (!m_sumner || !m_dialogueOpen || topic < 0 ||
         std::ranges::find(m_sumner->choices(), static_cast<u32>(topic),
                           &LegendsSumnerChoice::action) == m_sumner->choices().end()) {
@@ -140,15 +130,6 @@ std::vector<std::string> LegendsLevel::answerDialogue(s32 topic) {
         }
     }
     return {};
-}
-
-void LegendsLevel::dismissDialogue() {
-    m_dialogue.reset();
-    m_dialogueOpen = false;
-}
-
-bool LegendsLevel::takeShopRequest() {
-    return std::exchange(m_shopRequested, false);
 }
 
 } // namespace gdl::game

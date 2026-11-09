@@ -171,7 +171,24 @@ private:
     void n64BossDefeated(const Vec3& position, std::span<PlayerActor*> players);
     void dreamcastBossDefeated(const Vec3& position, std::span<PlayerActor*> players);
     bool updateSumner(std::span<PlayerActor*> players, f32 seconds, bool blocked);
+    bool updateN64Sumner(std::span<PlayerActor*> players, f32 seconds, bool blocked);
     bool updateDreamcastSumner(std::span<PlayerActor*> players, f32 seconds, bool blocked);
+    std::vector<std::string> answerN64Dialogue(s32 topic);
+    std::unique_ptr<ItemArchive> loadN64EnemyAssets(s32 kind) const;
+    std::unique_ptr<ItemArchive> loadDreamcastEnemyAssets(s32 kind) const;
+    bool playN64OpponentSound(std::string_view name);
+    bool playDreamcastOpponentSound(std::string_view name);
+    bool playN64EnemyFeedback(const EnemyFeedback& feedback, f32 health);
+    bool playDreamcastEnemyFeedback(const EnemyFeedback& feedback);
+    bool playN64EnemyCue(const EnemyCue& cue);
+    bool playDreamcastEnemyCue(const EnemyCue& cue);
+    bool playN64EnemyMelee(s32 kind, s32 tier);
+    bool playDreamcastEnemyMelee(s32 kind, s32 tier);
+    bool playN64GeneratorFeedback(const GeneratorEvent& event);
+    bool playDreamcastGeneratorFeedback(const GeneratorEvent& event);
+    void continueN64SpeechFrom(LegendsLevel& previous);
+    /** Takes over a Dreamcast phrase still playing from the previous level, if any. */
+    bool continueDreamcastSpeechFrom(LegendsLevel& previous);
     void updateExitReminder(std::span<const CharacterSave* const> party);
     LegendsPreview m_world;
     std::unique_ptr<DialoguePresentation> m_messageStyle;

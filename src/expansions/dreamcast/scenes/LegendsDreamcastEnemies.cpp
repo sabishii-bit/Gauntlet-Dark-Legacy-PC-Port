@@ -3,8 +3,11 @@
 #include <algorithm>
 
 #include "engine/assets/ObjectFlags.h"
+#include "engine/core/Log.h"
 
+#include "expansions/shared/scenes/LegendsLevel.h"
 #include "expansions/shared/scenes/LegendsSceneAdapter.h"
+#include "game/enemies/Generators.h"
 
 namespace gdl::game {
 
@@ -112,6 +115,45 @@ void LegendsSceneAdapter::bindDreamcastGenerator(
     }
     m_generators.push_back(std::move(definition->gameplay));
     m_generatorPresentation.push_back(binding);
+}
+
+std::unique_ptr<ItemArchive> LegendsLevel::loadDreamcastEnemyAssets(s32 kind) const {
+    const auto root = m_directory.parent_path().parent_path();
+    std::vector<std::string> warnings;
+    auto archive = loadLegendsDreamcastEnemyAssets(root, kind, warnings, m_dreamcastEnemyRoster);
+    for (const auto& warning : warnings) {
+        log::warn("Dreamcast enemy {}: {}", kind, warning);
+    }
+    return archive;
+}
+
+bool LegendsLevel::playDreamcastEnemyFeedback(const EnemyFeedback& feedback) {
+    // AudioSetupEnemyStreams 8c0df380 and the hurt/death dispatchers
+    // 8c0dfa80/8c0df9e0 use the same stem/tier/hit-count naming contract as
+    // GDL. Supply DC's selected ENMY roster, never GDL's empty donor roster.
+    return playOpponentSound(feedback.sound(m_dreamcastEnemyRoster), feedback.position);
+}
+
+bool LegendsLevel::playDreamcastEnemyCue(const EnemyCue& cue) {
+    // 8c0dfb80/8c0dfbc0 emit arrow/bolt; 8c0dfcc0 emits pursuit yell.
+    m_opponentSounds.push_back(cue.kind == EnemyCue::Kind::Arrow  ? 0x29U
+                               : cue.kind == EnemyCue::Kind::Bolt ? 0x2bU
+                                                                  : 0x30U);
+    return true;
+}
+
+bool LegendsLevel::playDreamcastEnemyMelee(s32 kind, s32 tier) {
+    if (const auto sound = EnemyFeedback::meleeSound(kind, tier, m_dreamcastEnemyRoster)) {
+        return playOpponentSound(*sound, Vec3{0});
+    }
+    return false; // Ordinary weapon strikes retain the player's hurt cue.
+}
+
+bool LegendsLevel::playDreamcastGeneratorFeedback(const GeneratorEvent& event) {
+    if (const auto token = dreamcastGeneratorSound(m_dreamcastRealm, event.destroyed)) {
+        m_opponentSounds.push_back(*token);
+    }
+    return true;
 }
 
 } // namespace gdl::game
