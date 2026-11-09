@@ -5,7 +5,7 @@
 
 #include "engine/render/SceneFog.h"
 
-#include "expansions/n64/level/LegendsPortals.h"
+#include "expansions/shared/level/LegendsPortalVisitor.h"
 namespace gdl::game {
 
 enum class LegendsTowerPortalKind { Shards, Runestones };

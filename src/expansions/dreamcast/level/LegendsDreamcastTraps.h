@@ -6,9 +6,12 @@
 #include <string>
 
 #include "engine/core/Types.h"
+#include "engine/math/Math.h"
 
-#include "expansions/n64/level/LegendsTraps.h"
+#include "expansions/shared/level/LegendsFixtureEvents.h"
+#include "expansions/shared/level/LegendsPortalVisitor.h"
 #include "formats/WorldFile.h"
+#include "game/level/ItemFigure.h"
 
 namespace gdl::game {
 

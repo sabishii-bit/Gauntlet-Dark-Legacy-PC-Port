@@ -3,8 +3,8 @@
 #include <optional>
 #include <vector>
 
-#include "expansions/n64/level/LegendsFixtureEvents.h"
-#include "expansions/n64/level/LegendsPortals.h"
+#include "expansions/shared/level/LegendsFixtureEvents.h"
+#include "expansions/shared/level/LegendsPortalVisitor.h"
 
 namespace gdl::game {
 

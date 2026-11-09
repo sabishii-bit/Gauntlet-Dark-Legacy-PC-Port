@@ -1,5 +1,4 @@
 #include <algorithm>
-#include <bit>
 #include <filesystem>
 #include <limits>
 #include <set>
@@ -14,6 +13,7 @@
 #include "TestSupport.h"
 #include "expansions/n64/formats/LegendsN64Texture.h"
 #include "expansions/n64/level/LegendsContainers.h"
+#include "expansions/n64/level/LegendsN64ContainerTables.h"
 #include "expansions/shared/level/LegendsItems.h"
 #include "expansions/shared/scenes/LegendsSceneAdapter.h"
 
@@ -21,66 +21,10 @@ namespace {
 using namespace gdl;
 using namespace gdl::game;
 using namespace gdl::formats;
-
-void put16(std::vector<u8>& bytes, usize at, u16 value) {
-    bytes[at] = static_cast<u8>(value >> 8U);
-    bytes[at + 1] = static_cast<u8>(value);
-}
-void put32(std::vector<u8>& bytes, usize at, u32 value) {
-    put16(bytes, at, static_cast<u16>(value >> 16U));
-    put16(bytes, at + 2, static_cast<u16>(value));
-}
-void putFloat(std::vector<u8>& bytes, usize at, f32 value) {
-    put32(bytes, at, std::bit_cast<u32>(value));
-}
-struct NativeTables {
-    LegendsN64Fixture fixture;
-    std::vector<u8> containers = std::vector<u8>(48);
-    std::vector<u8> powerups = std::vector<u8>(32);
-    NativeTables() {
-        fixture.kind = LegendsN64FixtureKind::Container;
-        fixture.templateKey = 0x1901;
-        fixture.nativeIndex = 7;
-        fixture.position = {5, 2, 9};
-        fixture.facingRadians = .7f;
-        fixture.containedPowerup = 0x0301;
-        put32(containers, 0, 1);
-        put16(containers, 4, fixture.templateKey);
-        put16(containers, 6, 6);
-        put32(containers, 8, 0x24000000);
-        put32(containers, 12, 0x43425243); // CBRC
-        put32(containers, 16, 0x43425241); // CBRA
-        put32(containers, 20, 0x43425244); // CBRD
-        put32(containers, 28, 1);
-        putFloat(containers, 32, 1);
-        putFloat(containers, 36, 3);
-        put32(containers, 44, 22);
-        put32(powerups, 0, 1);
-        put16(powerups, 4, 0x0301);
-        put16(powerups, 6, 150);
-        put32(powerups, 8, 6);
-        put32(powerups, 12, 0x54525331); // TRS1
-    }
-    void chest() {
-        fixture.templateKey = 0x1702;
-        put16(containers, 4, fixture.templateKey);
-        put16(containers, 6, 0);
-        put32(containers, 8, 0x02000000);
-        put32(containers, 12, 0x43434743); // CCGC
-        put32(containers, 16, 0x43434741); // CCGA
-        put32(containers, 20, 0);
-        put32(containers, 28, 3);
-        putFloat(containers, 32, 1.2f);
-        putFloat(containers, 36, 1);
-        putFloat(containers, 40, 1.2f);
-        put32(containers, 44, 29);
-    }
-    LegendsContainerDefinition decode() const {
-        const auto result = decodeLegendsN64Container(fixture, containers, powerups);
-        REQUIRE(result);
-        return *result;
-    }
-};
+using NativeTables = test::N64ContainerTables;
+using test::put16;
+using test::put32;
+using test::putFloat;
 } // namespace
 
 TEST_CASE("Native Legends containers decode their own collision and contained grant",
@@ -97,9 +41,10 @@ TEST_CASE("Native Legends containers decode their own collision and contained gr
     CHECK(native.closedObstacle.cylinderRadius == 1);
     CHECK(native.closedObstacle.height == 3);
     CHECK(native.yaw == -.7f);
-    REQUIRE(native.contents);
-    REQUIRE(legendsN64Pickup(*native.contents));
-    CHECK(legendsN64Pickup(*native.contents)->offer.amount == 150);
+    const auto contents = tables.decodeN64().contents;
+    REQUIRE(contents);
+    REQUIRE(legendsN64Pickup(*contents));
+    CHECK(legendsN64Pickup(*contents)->offer.amount == 150);
     tables.chest();
     const auto chest = tables.decode();
     CHECK(chest.kind == LegendsContainerDefinition::Kind::Chest);
@@ -110,57 +55,6 @@ TEST_CASE("Native Legends containers decode their own collision and contained gr
     CHECK_FALSE(chest.closedObstacle.touchedBy({7, 2, 9}, .75f, 0));
     CHECK(chest.closedObstacle.height == 1);
     CHECK(chest.goldOpening == "CCGG");
-}
-
-TEST_CASE("Native barrels require one sufficient hit and release once at animation completion",
-          "[legends][containers]") {
-    LegendsContainer barrel{NativeTables{}.decode()};
-    REQUIRE(barrel.targetable());
-    REQUIRE(barrel.obstacle().solid);
-    for (usize i = 0; i < 20; ++i) {
-        CHECK_FALSE(barrel.strike(5.99f));
-    }
-    CHECK_FALSE(barrel.strike(std::numeric_limits<f32>::infinity()));
-    CHECK_FALSE(barrel.strike(std::numeric_limits<f32>::quiet_NaN()));
-    REQUIRE(barrel.strike(6));
-    CHECK_FALSE(barrel.targetable());
-    CHECK_FALSE(barrel.obstacle().solid);
-    CHECK_FALSE(barrel.strike(9999));
-    CHECK(barrel.state() == LegendsContainer::State::Opening);
-    REQUIRE(barrel.finishOpening());
-    CHECK_FALSE(barrel.finishOpening());
-    CHECK(barrel.state() == LegendsContainer::State::Open);
-    barrel.collected();
-    CHECK(barrel.state() == LegendsContainer::State::Empty);
-    CHECK_FALSE(barrel.obstacle().solid);
-}
-
-TEST_CASE("Native chests spend exactly one key on contact and ignore attacks",
-          "[legends][containers]") {
-    NativeTables tables;
-    tables.chest();
-    LegendsContainer chest{tables.decode()};
-    s32 keys = 2;
-    CHECK_FALSE(chest.strike(9999));
-    CHECK_FALSE(chest.touch({50, 2, 9}, .75f, 4, keys));
-    CHECK_FALSE(chest.touch({5, 8, 9}, .75f, 4, keys));
-    CHECK(keys == 2);
-    SECTION("a taller player can reach a chest above their feet") {
-        REQUIRE(chest.touch({5, -1, 9}, .75f, 4, keys));
-        CHECK(keys == 1);
-        return;
-    }
-    keys = 0;
-    CHECK_FALSE(chest.touch({5, 2, 9}, .75f, 4, keys));
-    keys = 2;
-    REQUIRE(chest.touch({5, 2, 9}, .75f, 4, keys));
-    CHECK(keys == 1);
-    CHECK(chest.obstacle().solid);
-    CHECK(chest.obstacle().blocksSegment({5, 3, 5}, {5, 3, 13}, .5f));
-    CHECK_FALSE(chest.touch({5, 2, 9}, .75f, 4, keys));
-    CHECK(keys == 1);
-    REQUIRE(chest.finishOpening());
-    CHECK_FALSE(chest.obstacle().solid);
 }
 
 TEST_CASE("Native container decoder refuses malformed metadata and identifies absent loot",
@@ -181,17 +75,17 @@ TEST_CASE("Native container decoder refuses malformed metadata and identifies ab
     SECTION("empty") {
         tables.fixture.containedPowerup = 0x2400;
         put16(tables.powerups, 4, 0x2400);
-        const auto empty = tables.decode();
+        const auto empty = tables.decodeN64();
         CHECK_FALSE(empty.contents);
-        CHECK(empty.diagnostic.empty());
+        CHECK(empty.definition.diagnostic.empty());
     }
     SECTION("timed selector") {
         tables.fixture.containedPowerup = 0x2201;
         put16(tables.powerups, 4, 0x2201);
-        const auto selector = tables.decode();
+        const auto selector = tables.decodeN64();
         CHECK_FALSE(selector.contents);
-        CHECK(selector.selector == 0x2201);
-        CHECK(selector.diagnostic.empty());
+        CHECK(selector.definition.selector == 0x2201);
+        CHECK(selector.definition.diagnostic.empty());
     }
 }
 
@@ -223,13 +117,14 @@ TEST_CASE("All native N64 container placements decode without replacing authored
             if (fixture.kind != LegendsN64FixtureKind::Container) {
                 continue;
             }
-            const auto definition = decodeLegendsN64Container(fixture, containers, powerups);
-            REQUIRE(definition);
-            CHECK(definition->nativeIndex == fixture.nativeIndex);
-            CHECK(definition->position == fixture.position);
-            CHECK(definition->closedObstacle.solid);
+            const auto decoded = decodeLegendsN64Container(fixture, containers, powerups);
+            REQUIRE(decoded);
+            const auto& definition = decoded->definition;
+            CHECK(definition.nativeIndex == fixture.nativeIndex);
+            CHECK(definition.position == fixture.position);
+            CHECK(definition.closedObstacle.solid);
             types.insert(fixture.templateKey);
-            if (definition->contents && legendsN64Pickup(*definition->contents)) {
+            if (decoded->contents && legendsN64Pickup(*decoded->contents)) {
                 ++knownContents;
             }
             ++count;
@@ -454,8 +349,9 @@ TEST_CASE("Native explosive barrels decode from PTrap rather than ordinary conta
     putFloat(templates, 40, 1);
     putFloat(templates, 44, 3);
     SECTION("red barrel") {
-        const auto decoded = decodeLegendsN64Explosive(fixture, templates);
-        REQUIRE(decoded);
+        const auto explosive = decodeLegendsN64Explosive(fixture, templates);
+        REQUIRE(explosive);
+        const auto* decoded = &explosive->definition;
         CHECK(decoded->hazard == LegendsContainerDefinition::Hazard::Fire);
         CHECK(decoded->group == "TRAP");
         CHECK(decoded->openingSound == 147);
@@ -470,8 +366,9 @@ TEST_CASE("Native explosive barrels decode from PTrap rather than ordinary conta
     }
     SECTION("scaled placement changes body not the authored blast radius") {
         fixture.scale = 2;
-        const auto decoded = decodeLegendsN64Explosive(fixture, templates);
-        REQUIRE(decoded);
+        const auto explosive = decodeLegendsN64Explosive(fixture, templates);
+        REQUIRE(explosive);
+        const auto* decoded = &explosive->definition;
         CHECK(decoded->closedObstacle.cylinderRadius == 2);
         CHECK(decoded->closedObstacle.height == 6);
         CHECK(decoded->blastRadius == 5);
@@ -513,24 +410,25 @@ TEST_CASE("All native explosive barrel placements retain their trap identity and
         }
         for (const auto& fixture :
              decodeLegendsN64Fixtures(readFile(entry.path() / "ipr.rom"), templates)) {
-            const auto definition = decodeLegendsN64Explosive(fixture, traps);
-            if (!definition) {
+            const auto decoded = decodeLegendsN64Explosive(fixture, traps);
+            if (!decoded) {
                 continue;
             }
+            const auto& definition = decoded->definition;
             CAPTURE(entry.path(), fixture.nativeIndex, fixture.templateKey);
-            CHECK(definition->nativeIndex == fixture.nativeIndex);
-            CHECK(definition->position == fixture.position);
-            CHECK_FALSE(definition->contents);
-            CHECK_FALSE(definition->selector);
-            CHECK(definition->damageThreshold == 1);
+            CHECK(definition.nativeIndex == fixture.nativeIndex);
+            CHECK(definition.position == fixture.position);
+            CHECK_FALSE(decoded->contents);
+            CHECK_FALSE(definition.selector);
+            CHECK(definition.damageThreshold == 1);
             if (fixture.templateKey == 0x1301) {
                 ++fire;
-                CHECK(definition->blastDamage == 40);
-                CHECK(definition->openingSound == 147);
+                CHECK(definition.blastDamage == 40);
+                CHECK(definition.openingSound == 147);
             } else {
                 ++poison;
-                CHECK(definition->blastDamage == 30);
-                CHECK(definition->openingSound == 22);
+                CHECK(definition.blastDamage == 30);
+                CHECK(definition.openingSound == 22);
             }
         }
     }

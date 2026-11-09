@@ -1,9 +1,7 @@
 #include "expansions/n64/level/LegendsContainers.h"
 
-#include <algorithm>
 #include <bit>
 #include <cmath>
-#include <stdexcept>
 #include <utility>
 
 #include "engine/core/Error.h"
@@ -54,7 +52,7 @@ bool finite(const Vec3& value) {
 
 } // namespace
 
-std::optional<LegendsContainerDefinition>
+std::optional<LegendsN64Container>
 decodeLegendsN64Container(const formats::LegendsN64Fixture& fixture, std::span<const u8> containers,
                           std::span<const u8> powerups) {
     if (fixture.kind != formats::LegendsN64FixtureKind::Container) {
@@ -70,7 +68,8 @@ decodeLegendsN64Container(const formats::LegendsN64Fixture& fixture, std::span<c
     }
     require(finite(fixture.position) && std::isfinite(fixture.facingRadians),
             "non-finite placement");
-    LegendsContainerDefinition result;
+    LegendsN64Container decoded;
+    auto& result = decoded.definition;
     result.kind =
         barrel ? LegendsContainerDefinition::Kind::Barrel : LegendsContainerDefinition::Kind::Chest;
     result.nativeIndex = fixture.nativeIndex;
@@ -105,11 +104,11 @@ decodeLegendsN64Container(const formats::LegendsN64Fixture& fixture, std::span<c
     const usize contentAt = templateAt(powerups, 28, fixture.containedPowerup);
     const u8 contentKind = static_cast<u8>(fixture.containedPowerup >> 8U);
     if (contentKind == 0x24) { // e006d570: the authored empty-content sentinel.
-        return result;
+        return decoded;
     }
     if (contentKind == 0x22) {
         result.selector = fixture.containedPowerup;
-        return result;
+        return decoded;
     }
     formats::LegendsN64Fixture contents;
     contents.kind = formats::LegendsN64FixtureKind::Powerup;
@@ -126,16 +125,16 @@ decodeLegendsN64Container(const formats::LegendsN64Fixture& fixture, std::span<c
     contents.group = "POWERUP";
     contents.sequence = sequence(powerups, contentAt + 8);
     contents.deathSequence = sequence(powerups, contentAt + 16);
-    result.contents = std::move(contents);
+    decoded.contents = std::move(contents);
     // e006cab8 substitutes the final FOURCC byte only if that tree exists.
     if (contentKind == 3 && !result.opening.empty()) {
         result.goldOpening = result.opening;
         result.goldOpening.back() = 'G';
     }
-    return result;
+    return decoded;
 }
 
-std::optional<LegendsContainerDefinition>
+std::optional<LegendsN64Container>
 decodeLegendsN64Explosive(const formats::LegendsN64Fixture& fixture, std::span<const u8> traps) {
     // e00691bc handles kind 0x13/0x14 as one-hit explosive traps. The unused
     // 0x1302 UNKN template has no attack/debris art and is not guessed here.
@@ -149,7 +148,8 @@ decodeLegendsN64Explosive(const formats::LegendsN64Fixture& fixture, std::span<c
     require(finite(fixture.position) && std::isfinite(fixture.facingRadians) &&
                 std::isfinite(fixture.scale) && fixture.scale > 0 && fixture.scale <= 64,
             "invalid explosive placement");
-    LegendsContainerDefinition result;
+    LegendsN64Container decoded;
+    auto& result = decoded.definition;
     result.nativeIndex = fixture.nativeIndex;
     result.position = fixture.position;
     result.yaw = -fixture.facingRadians;
@@ -179,92 +179,7 @@ decodeLegendsN64Explosive(const formats::LegendsN64Fixture& fixture, std::span<c
     body.cylinderRadius = size.x * fixture.scale;
     body.halfAcross = body.cylinderRadius;
     body.halfAlong = body.cylinderRadius;
-    return result;
-}
-
-LegendsContainer::LegendsContainer(LegendsContainerDefinition definition)
-    : m_definition(std::move(definition)),
-      m_health(std::isfinite(m_definition.damageThreshold)
-                   ? static_cast<s32>(std::clamp(m_definition.damageThreshold, 0.0f, 32767.0f))
-                   : 0) {}
-
-bool LegendsContainer::targetable() const {
-    return m_definition.interactive && m_state == State::Closed &&
-           m_definition.kind == LegendsContainerDefinition::Kind::Barrel;
-}
-
-bool LegendsContainer::strike(f32 power) {
-    // e006cef4 compares each blow against PCon+2, with no stored hit-point sum.
-    if (!targetable() || !std::isfinite(power) || power <= 0) {
-        return false;
-    }
-    if (m_definition.damageMode == LegendsContainerDefinition::DamageMode::Accumulated) {
-        // Dreamcast HitItem8c0afaa0 stores remaining HP after armor, unlike
-        // N64 PCon's per-blow threshold. Use the engine's bounded rounding.
-        f32 felt = power - static_cast<f32>(m_definition.armor);
-        if (felt <= 0)
-            felt = 1;
-        m_health = std::max(m_health - static_cast<s32>(std::lround(std::min(felt, 32767.0f))), 0);
-        if (m_health > 0)
-            return true;
-    } else if (power < m_definition.damageThreshold) {
-        return false;
-    }
-    m_state = State::Opening;
-    return true;
-}
-
-bool LegendsContainer::touch(const Vec3& feet, f32 radius, f32 height, s32& keys) {
-    if (!m_definition.interactive || m_state != State::Closed ||
-        m_definition.kind != LegendsContainerDefinition::Kind::Chest || keys <= 0 ||
-        !finite(feet) || !std::isfinite(radius) || radius < 0 || !std::isfinite(height) ||
-        height < 0 || feet.y > m_definition.position.y + m_definition.closedObstacle.height ||
-        feet.y + height < m_definition.position.y ||
-        !m_definition.closedObstacle.touchedBy(
-            {feet.x, m_definition.closedObstacle.centre.y, feet.z}, radius, .05f)) {
-        return false;
-    }
-    // e006d3d4 spends exactly one key on first contact, never on repeated ticks.
-    --keys;
-    m_state = State::Opening;
-    return true;
-}
-
-bool LegendsContainer::finishOpening() {
-    if (m_state != State::Opening) {
-        return false;
-    }
-    m_state = State::Open;
-    return true;
-}
-
-void LegendsContainer::collected() {
-    if (m_state == State::Open) {
-        m_state = State::Empty;
-    }
-}
-
-void LegendsContainer::placeAt(const Vec3& feet) {
-    if (!finite(feet)) {
-        throw std::invalid_argument("Native container requires a finite placement");
-    }
-    const Vec3 delta = feet - m_definition.position;
-    m_definition.position = feet;
-    m_definition.closedObstacle.centre += delta;
-    if (m_definition.contents) {
-        m_definition.contents->position += delta;
-    }
-}
-
-Obstacle LegendsContainer::obstacle() const {
-    auto result = m_definition.closedObstacle;
-    // e006cab8 retains and reindexes a chest's body while its opening tree
-    // runs; e006d3d4 does not admit its contents before completion (0x1000).
-    // Broken barrels, unlike opening chests, stop blocking immediately.
-    result.solid =
-        m_state == State::Closed ||
-        (m_state == State::Opening && m_definition.kind == LegendsContainerDefinition::Kind::Chest);
-    return result;
+    return decoded;
 }
 
 } // namespace gdl::game

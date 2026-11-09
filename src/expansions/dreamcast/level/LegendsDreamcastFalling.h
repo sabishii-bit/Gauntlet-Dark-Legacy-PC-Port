@@ -3,7 +3,7 @@
 #include <span>
 #include <vector>
 
-#include "expansions/n64/level/LegendsPortals.h"
+#include "expansions/shared/level/LegendsPortalVisitor.h"
 #include "formats/WorldFile.h"
 #include "game/level/FallingPiece.h"
 #include "game/level/ItemFigure.h"

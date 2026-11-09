@@ -28,7 +28,7 @@ void LegendsSceneAdapter::bindDreamcastContainer(RenderDevice& device,
     warn(diagnostic);
     if (!definition)
         return;
-    if (m_containers.size() >= static_cast<usize>(LegendsDeath::kTargetBase))
+    if (m_containers.size() >= kMostContainers)
         throw FormatError("Too many native container combat targets");
     const auto sequence = [&](usize figure, std::string_view name) -> s32 {
         const auto* tree = m_fixtures[figure].tree();
@@ -45,7 +45,7 @@ void LegendsSceneAdapter::bindDreamcastContainer(RenderDevice& device,
     }
     if (idle >= 0)
         m_fixtures[idleFigure].play(idle, ItemFigure::Playback::Loop);
-    // Type10's first parameter is its trap subtype, not a loot definition.
+    // Type 10's first parameter is its trap subtype, not a loot definition.
     const s16 contents = info.type == 2 ? std::bit_cast<s16>(readU16LE(instance.params, 0)) : -1;
     ContainerPresentation binding{LegendsContainer{*definition}};
     binding.closedFigure = binding.openingFigure = binding.brokenFigure = idleFigure;
@@ -55,7 +55,7 @@ void LegendsSceneAdapter::bindDreamcastContainer(RenderDevice& device,
 
     if (definition->hazard != LegendsContainerDefinition::Hazard::None) {
         const bool poison = definition->hazard == LegendsContainerDefinition::Hazard::Poison;
-        // Weapon type20/21 select these 40-byte records at 8c125f00.
+        // Weapon type 20/21 select these 40-byte records at 8c125f00.
         const std::string effect = poison ? "POISONEXP" : "EXPLOSION";
         ItemInstance blast;
         blast.position = definition->position + definition->blastOffset;

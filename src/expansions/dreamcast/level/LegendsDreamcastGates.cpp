@@ -22,9 +22,9 @@ legendsDreamcastGate(const formats::ItemInfoRecord& info,
             *diagnostic = reason;
         return std::nullopt;
     };
-    // SetItem8c0a8340 creates type7 with the ordinary item animation state
-    // machine. The shipped key doors are active0x46: CLOSE -> ACTIV -> OPEN.
-    // D2's column doors instead use triangle lists and script activation0x06.
+    // SetItem 8c0a8340 creates type 7 with the ordinary item animation state
+    // machine. The shipped key doors are active 0x46: CLOSE -> ACTIV -> OPEN.
+    // D2's column doors instead use triangle lists and script activation 0x06.
     if (info.collisionType != 3 || info.activeType != 0x46)
         return reject("Dreamcast gate needs unsupported triangle or scripted activation");
     if (info.subtype < 0 || info.subtype > 3 || instance.flags != 0 || info.objectFlags != 0 ||
@@ -45,14 +45,14 @@ legendsDreamcastGate(const formats::ItemInfoRecord& info,
     result.position = instance.position;
     // Native box collision uses the exported half extents without N64's
     // full-width halving/1:32 quantization. Dreamcast's native item matrix
-    // preserves the authored yaw sign (InitItems8c0a9b20 -> 8c0ece60).
+    // preserves the authored yaw sign (InitItems 8c0a9b20 -> 8c0ece60).
     result.primary.solid = true;
     result.primary.yaw = instance.rotation.y;
     result.primary.halfAcross = info.xSize;
     result.primary.halfAlong = info.zSize;
     result.primary.height = info.height;
     result.primary.enemyItem = Obstacle::ItemQuery{false, info.radius};
-    // ItemTouch8c0af0e0 case7 + key debit8c0b00e0. Unlike N64's extra
+    // ItemTouch 8c0af0e0 case 7 + key debit 8c0b00e0. Unlike N64's extra
     // three-unit foot check, Dreamcast relies on ordinary volume contact.
     result.rejectRetreat = true;
     // 8c0e0c40 uses a Dreamcast realm/subtype sound table. Do not pass its

@@ -4,6 +4,8 @@
 #include <cmath>
 #include <stdexcept>
 
+#include "expansions/n64/level/LegendsPortals.h"
+
 namespace gdl::game {
 
 bool touchesLegendsSwitch(const formats::LegendsN64Switch& definition,

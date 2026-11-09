@@ -13,8 +13,8 @@
 
 #include "expansions/dreamcast/formats/LegendsDreamcastScene.h"
 #include "expansions/dreamcast/formats/LegendsSceneMotion.h"
-#include "expansions/n64/level/LegendsFixtureEvents.h"
-#include "expansions/n64/level/LegendsPortals.h"
+#include "expansions/shared/level/LegendsFixtureEvents.h"
+#include "expansions/shared/level/LegendsPortalVisitor.h"
 
 namespace gdl::game {
 

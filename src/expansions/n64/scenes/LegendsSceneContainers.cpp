@@ -143,15 +143,15 @@ void LegendsSceneAdapter::prepareSelectorPickup(usize pickup) {
     }
 }
 
-void LegendsSceneAdapter::bindN64Container(RenderDevice& device,
-                                           LegendsContainerDefinition definition,
+void LegendsSceneAdapter::bindN64Container(RenderDevice& device, LegendsN64Container native,
                                            usize idleFigure) {
     if (idleFigure >= m_fixtures.size()) {
         return;
     }
-    if (m_containers.size() >= static_cast<usize>(LegendsDeath::kTargetBase)) {
+    if (m_containers.size() >= kMostContainers) {
         throw FormatError("Too many native container combat targets");
     }
+    auto& definition = native.definition;
     const auto warn = [&](const std::string& warning) {
         if (!warning.empty() && std::ranges::find(m_warnings, warning) == m_warnings.end()) {
             m_warnings.push_back(warning);
@@ -173,8 +173,8 @@ void LegendsSceneAdapter::bindN64Container(RenderDevice& device,
     // initial figure was placed. Reuse that exact position for body and loot.
     definition.position = m_fixtures[idleFigure].position();
     definition.closedObstacle.centre = definition.position;
-    if (definition.contents) {
-        definition.contents->position = definition.position;
+    if (native.contents) {
+        native.contents->position = definition.position;
     }
     ContainerPresentation binding{LegendsContainer{definition},
                                   idleFigure,
@@ -193,8 +193,8 @@ void LegendsSceneAdapter::bindN64Container(RenderDevice& device,
         } else {
             choices = m_lootSelectors.outcomes(*binding.selector);
         }
-    } else if (definition.contents) {
-        choices.push_back(*definition.contents);
+    } else if (native.contents) {
+        choices.push_back(*native.contents);
     }
     ItemInstance instance;
     instance.position = definition.position;

@@ -5,7 +5,7 @@
 #include <vector>
 
 #include "expansions/n64/formats/LegendsN64Switches.h"
-#include "expansions/n64/level/LegendsPortals.h"
+#include "expansions/shared/level/LegendsPortalVisitor.h"
 
 namespace gdl::game {
 

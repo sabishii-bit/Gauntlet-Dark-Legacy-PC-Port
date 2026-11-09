@@ -1,6 +1,9 @@
 #pragma once
 
+#include "engine/core/Types.h"
 #include "engine/math/Math.h"
+
+#include "game/players/PlayerImpact.h"
 
 namespace gdl::game {
 
@@ -21,6 +24,18 @@ struct LegendsFixtureEvent {
     f32 growFraction = .1f;
     f32 shrinkFraction = .2f;
     bool noFalloff = false;
+};
+
+/** A native trap's blow on one player. The level applies it through the
+ * ordinary player combat pipeline, with its platform's armor rule. */
+struct LegendsTrapHit {
+    u32 nativeIndex = 0;
+    u8 player = 0;
+    f32 damage = 0;
+    bool pierces = false;
+    Vec3 position{0};
+    PlayerImpact impact;
+    u32 sound = 0;
 };
 
 // Native e007a25c (plates, gates and traps) and e007a4a0 (retained moving

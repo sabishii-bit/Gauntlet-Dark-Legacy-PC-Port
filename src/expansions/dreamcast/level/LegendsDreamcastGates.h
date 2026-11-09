@@ -3,7 +3,7 @@
 #include <optional>
 #include <string>
 
-#include "expansions/n64/level/LegendsGates.h"
+#include "expansions/shared/level/LegendsGates.h"
 #include "formats/WorldFile.h"
 
 namespace gdl::game {

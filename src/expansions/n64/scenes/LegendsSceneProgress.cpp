@@ -6,6 +6,7 @@
 #include "engine/io/File.h"
 #include "engine/render/ImmediateBatch.h"
 
+#include "expansions/n64/level/LegendsGates.h"
 #include "expansions/shared/scenes/LegendsSceneAdapter.h"
 
 namespace gdl::game {
@@ -26,7 +27,7 @@ void LegendsSceneAdapter::bindN64Gate(RenderDevice& device, formats::LegendsN64G
     }
     m_hiddenFixtures[idleFigure] = (definition.placementFlags & 8U) != 0;
     m_hiddenFixtures[opening] = true;
-    m_gates.push_back({LegendsGate{std::move(definition)}, idleFigure, opening});
+    m_gates.push_back({LegendsGate{legendsN64Gate(definition)}, idleFigure, opening});
 }
 
 void LegendsSceneAdapter::touchGates(PlayerActor& actor) {

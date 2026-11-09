@@ -3,24 +3,14 @@
 #include <optional>
 
 #include "expansions/n64/formats/LegendsN64Traps.h"
-#include "expansions/n64/level/LegendsPortals.h"
+#include "expansions/shared/level/LegendsFixtureEvents.h"
+#include "expansions/shared/level/LegendsPortalVisitor.h"
 #include "game/level/ItemFigure.h"
-#include "game/players/PlayerImpact.h"
 
 namespace gdl::game {
 
 /** N64 e004ba94 uses proportional armor, not GDL's flat subtraction. */
 f32 legendsTrapDamage(f32 damage, f32 armorAttribute);
-
-struct LegendsTrapHit {
-    u32 nativeIndex = 0;
-    u8 player = 0;
-    f32 damage = 0;
-    bool pierces = false;
-    Vec3 position{0};
-    PlayerImpact impact;
-    u32 sound = 0;
-};
 
 /** Native trap timing/presentation with no second character or damage system.
  * The caller feeds actual animation completion and applies returned hits through

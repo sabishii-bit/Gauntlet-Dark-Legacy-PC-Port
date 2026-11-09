@@ -65,7 +65,7 @@ legendsDreamcastContainer(const formats::ItemInfoRecord& info,
     result.closedObstacle.centre = instance.position;
     result.closedObstacle.yaw = result.yaw;
     result.closedObstacle.height = info.height;
-    // Native collision type3 compares against xSize/zSize directly: these
+    // Native collision type 3 compares against xSize/zSize directly: these
     // are half extents, unlike the older N64 PCon full-width fields.
     result.closedObstacle.halfAcross = barrel ? info.radius : info.xSize;
     result.closedObstacle.halfAlong = barrel ? info.radius : info.zSize;
@@ -75,8 +75,8 @@ legendsDreamcastContainer(const formats::ItemInfoRecord& info,
         const bool poison = info.subtype == 45;
         result.hazard = poison ? LegendsContainerDefinition::Hazard::Poison
                                : LegendsContainerDefinition::Hazard::Fire;
-        // HitItem8c0afaa0 passes30damage and kind20/21 to8c0d6d80;
-        // that constructor uses6/8unit radii and lowers poison's centre3units.
+        // HitItem 8c0afaa0 passes 30 damage and kind 20/21 to 8c0d6d80;
+        // that constructor uses 6/8 unit radii and lowers poison's centre 3 units.
         result.blastRadius = poison ? 8.0f : 6.0f;
         result.blastDamage = 30;
         result.blastOffset.y = poison ? -1.0f : 2.0f;
@@ -144,7 +144,7 @@ std::optional<s16> LegendsDreamcastLoot::select(s16 root, u32 instanceIndex) {
 void LegendsDreamcastLoot::advance(f32 seconds) {
     if (!std::isfinite(seconds) || seconds <= 0)
         return;
-    // Native item loop8c0ab5ec increments the same cursor once per 30 Hz
+    // Native item loop 8c0ab5ec increments the same cursor once per 30 Hz
     // update. The elapsed fraction remains independent of render cadence.
     m_fraction += static_cast<f64>(seconds) * 30;
     const f64 ticks = std::floor(m_fraction + 1.0e-6);

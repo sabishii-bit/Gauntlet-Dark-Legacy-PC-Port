@@ -2,14 +2,17 @@
 
 #include <optional>
 #include <span>
+#include <string>
 #include <vector>
 
-#include "expansions/n64/level/LegendsContainers.h"
+#include "engine/core/Types.h"
+
+#include "expansions/shared/level/LegendsContainers.h"
 #include "formats/WorldFile.h"
 
 namespace gdl::game {
 
-/** Type2 loot containers and type10 empty/fire/gas barrels. Scripted/hidden
+/** Type 2 loot containers and type 10 empty/fire/gas barrels. Scripted/hidden
  * placements are not silently converted into plain breakable barrels. */
 std::optional<LegendsContainerDefinition>
 legendsDreamcastContainer(const formats::ItemInfoRecord& info,

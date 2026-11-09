@@ -28,12 +28,11 @@
 #include "expansions/n64/enemies/LegendsDeath.h"
 #include "expansions/n64/enemies/LegendsGenerators.h"
 #include "expansions/n64/formats/LegendsN64Camera.h"
+#include "expansions/n64/formats/LegendsN64Gates.h"
 #include "expansions/n64/formats/LegendsN64Progress.h"
 #include "expansions/n64/formats/LegendsN64Texture.h"
 #include "expansions/n64/level/LegendsBossEruption.h"
 #include "expansions/n64/level/LegendsContainers.h"
-#include "expansions/n64/level/LegendsFixtureEvents.h"
-#include "expansions/n64/level/LegendsGates.h"
 #include "expansions/n64/level/LegendsLootSelectors.h"
 #include "expansions/n64/level/LegendsObelisk.h"
 #include "expansions/n64/level/LegendsPortals.h"
@@ -46,7 +45,11 @@
 #include "expansions/n64/level/LegendsUnlocks.h"
 #include "expansions/n64/level/LegendsWorldMotion.h"
 #include "expansions/shared/formats/LegendsMap.h"
+#include "expansions/shared/level/LegendsContainers.h"
+#include "expansions/shared/level/LegendsFixtureEvents.h"
+#include "expansions/shared/level/LegendsGates.h"
 #include "expansions/shared/level/LegendsItems.h"
+#include "expansions/shared/level/LegendsPortalVisitor.h"
 #include "expansions/shared/scenes/LegendsMapCatalog.h"
 #include "game/combat/CombatArenaTarget.h"
 #include "game/level/ImportedWorldObject.h"
@@ -248,8 +251,8 @@ private:
     void loadDreamcast(RenderDevice& device, const std::filesystem::path& directory);
     bool bindDreamcastArenaRock(RenderDevice& device, const formats::ItemInfoRecord& info,
                                 const formats::ItemInstanceRecord& instance, u32 nativeIndex);
-    void restoreDreamcastChimeraCover(RenderDevice& device,
-                                      const std::filesystem::path& directory, ItemArchive* art);
+    void restoreDreamcastChimeraCover(RenderDevice& device, const std::filesystem::path& directory,
+                                      ItemArchive* art);
     bool bindDreamcastEntranceRock(const formats::ItemInfoRecord& info,
                                    const formats::ItemInstanceRecord& instance, u32 index,
                                    usize figure);
@@ -309,8 +312,7 @@ private:
                           std::span<const u8> templates, std::string_view directory,
                           std::span<const formats::LegendsMapCollisionTriangle> collision,
                           usize idleFigure);
-    void bindN64Container(RenderDevice& device, LegendsContainerDefinition definition,
-                          usize idleFigure);
+    void bindN64Container(RenderDevice& device, LegendsN64Container native, usize idleFigure);
     void bindDreamcastContainer(RenderDevice& device, const formats::ItemInfoRecord& info,
                                 const formats::ItemInstanceRecord& instance, u32 nativeIndex,
                                 usize idleFigure, s32 realmType);
@@ -524,6 +526,8 @@ private:
         std::optional<s16> dreamcastContents;
     };
     std::vector<ContainerPresentation> m_containers;
+    /** Containers take the local target IDs below the first Death statue's. */
+    static constexpr usize kMostContainers = static_cast<usize>(LegendsDeath::kTargetBase);
     LegendsLootSelectors m_lootSelectors;
     LegendsDreamcastLoot m_dreamcastLoot;
     s32 m_dreamcastRealm = -1;

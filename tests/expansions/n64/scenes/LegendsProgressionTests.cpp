@@ -17,6 +17,7 @@
 #include "expansions/n64/formats/LegendsN64Scene.h"
 #include "expansions/n64/formats/LegendsN64Texture.h"
 #include "expansions/n64/formats/LegendsN64Tower.h"
+#include "expansions/n64/level/LegendsGates.h"
 #include "expansions/n64/level/LegendsObelisk.h"
 #include "expansions/shared/scenes/LegendsPreview.h"
 #include "expansions/shared/scenes/LegendsSceneAdapter.h"
@@ -477,7 +478,7 @@ TEST_CASE("A native level gate opens through the adapter by spending exactly one
     fixture.position = gate.position;
     fixture.groundProjected = gate.groundProjected;
     gate.position = formats::legendsN64FixturePosition(fixture, map.collision);
-    const LegendsGate reference{gate};
+    const LegendsGate reference{legendsN64Gate(gate)};
     const auto primary = reference.primaryObstacle();
     test::FakeRenderDevice device;
     auto scene = LegendsSceneAdapter::load(device, LegendsPlatform::N64, directory, map);

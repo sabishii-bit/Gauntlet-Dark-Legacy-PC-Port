@@ -3,18 +3,9 @@
 #include <span>
 
 #include "expansions/n64/formats/LegendsN64Portal.h"
+#include "expansions/shared/level/LegendsPortalVisitor.h"
 
 namespace gdl::game {
-
-struct LegendsPortalVisitor {
-    u8 player = 0;
-    Vec3 position{0}; ///< feet position, not the camera follow point
-    bool alive = true;
-    f32 radius = .75f;
-    f32 height = 3;
-    s32 floorObject = -1;    ///< selected native collision owner, for pressure-bridge support
-    bool levitating = false; ///< Dreamcast trap contact excludes Levitation before sound/cooldown
-};
 
 /** Cylinder/cylinder contact, with the same feet/height convention as native
  * player bodies. Invalid visitors are never admitted to an exit. */

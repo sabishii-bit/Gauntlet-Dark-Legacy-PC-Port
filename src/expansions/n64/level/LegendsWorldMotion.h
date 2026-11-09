@@ -7,9 +7,10 @@
 
 #include "engine/world/WorldCollision.h"
 
-#include "expansions/n64/level/LegendsFixtureEvents.h"
 #include "expansions/n64/level/LegendsSwitches.h"
 #include "expansions/shared/formats/LegendsMap.h"
+#include "expansions/shared/level/LegendsFixtureEvents.h"
+#include "expansions/shared/level/LegendsPortalVisitor.h"
 
 namespace gdl::game {
 
