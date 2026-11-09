@@ -1,17 +1,7 @@
 #include "expansions/shared/scenes/LegendsSceneAdapter.h"
 
 namespace gdl::game {
-bool LegendsSceneAdapter::strikeScenery(s32 localId, f32 power, u32 flags) {
-    if (m_platform == LegendsPlatform::Dreamcast) {
-        if (!m_dreamcastScenery.strike(localId, power, flags))
-            return false;
-        // AudioShootWall8c0e1220: level-specific hit, global27 on destruction.
-        const auto token = m_dreamcastScenery.health(localId) > 0 ? m_dreamcastWallHitSound
-                                                                  : std::optional<u32>{0x27};
-        if (token)
-            m_soundEvents.push_back({*token, m_dreamcastScenery.position(localId)});
-        return true;
-    }
+bool LegendsSceneAdapter::strikeN64Scenery(s32 localId, f32 power, u32 flags) {
     if (!m_scenery.strike(localId, power, flags)) {
         return false;
     }
@@ -23,18 +13,12 @@ bool LegendsSceneAdapter::strikeScenery(s32 localId, f32 power, u32 flags) {
     return true;
 }
 
-bool LegendsSceneAdapter::strikeWorldObject(s32 object, f32 power, u32 flags) {
-    if (object < 0) {
-        return false;
-    }
-    if (m_platform == LegendsPlatform::Dreamcast) {
-        const auto target = m_dreamcastScenery.targetForObject(object);
-        return target && strikeScenery(*target, power, flags);
-    }
+bool LegendsSceneAdapter::strikeN64WorldObject(s32 object, f32 power, u32 flags) {
     const auto definitions = m_scenery.definitions();
     for (usize i = 0; i < definitions.size(); ++i) {
         if (definitions[i].object == static_cast<u32>(object)) {
-            return strikeScenery(LegendsScenery::kTargetBase + static_cast<s32>(i), power, flags);
+            return strikeN64Scenery(LegendsScenery::kTargetBase + static_cast<s32>(i), power,
+                                    flags);
         }
     }
     return false;

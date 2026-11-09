@@ -248,6 +248,8 @@ private:
                      TreeModel::Pass pass, f32 presentationAlpha) const;
     void bindN64Trap(RenderDevice& device, formats::LegendsN64Trap definition, usize idleFigure,
                      f32 damageScale, s32 floorOwner = -1);
+    void updateN64Traps(f32 seconds, bool timeStopped);
+    void touchN64Traps(std::span<const LegendsPortalVisitor> visitors);
     void loadDreamcast(RenderDevice& device, const std::filesystem::path& directory);
     bool bindDreamcastArenaRock(RenderDevice& device, const formats::ItemInfoRecord& info,
                                 const formats::ItemInstanceRecord& instance, u32 nativeIndex);
@@ -272,6 +274,7 @@ private:
     void touchDreamcastTraps(std::span<const LegendsPortalVisitor> visitors);
     void bindDreamcastSwitch(RenderDevice& device, u32 nativeIndex);
     void updateDreamcastSwitches();
+    void touchDreamcastSwitches(std::span<const LegendsPortalVisitor> visitors);
     void bindDreamcastRider(const formats::ItemInfoRecord& info,
                             const formats::ItemInstanceRecord& instance, usize firstFigure,
                             usize firstPickup, usize firstContainer, usize firstGate);
@@ -308,6 +311,7 @@ private:
     void bindWorldMotion(const formats::LegendsMap& map,
                          std::span<const formats::LegendsN64Switch> definitions);
     void updateSwitches();
+    void touchN64Switches(std::span<const LegendsPortalVisitor> visitors);
     void bindN64Generator(RenderDevice& device, const formats::LegendsN64Fixture& fixture,
                           std::span<const u8> templates, std::string_view directory,
                           std::span<const formats::LegendsMapCollisionTriangle> collision,
@@ -434,6 +438,10 @@ private:
         Mat4 applied{1};
     };
     std::vector<DreamcastRider> m_dreamcastRiders;
+    bool strikeN64Scenery(s32 localId, f32 power, u32 flags);
+    bool strikeN64WorldObject(s32 object, f32 power, u32 flags);
+    bool strikeDreamcastScenery(s32 localId, f32 power, u32 flags);
+    bool strikeDreamcastWorldObject(s32 object, f32 power, u32 flags);
     LegendsScenery m_scenery;
     LegendsDreamcastScenery m_dreamcastScenery;
     LegendsDreamcastBossEntrance m_dreamcastBossEntrance;

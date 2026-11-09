@@ -46,13 +46,7 @@ void LegendsSceneAdapter::bindWorldMotion(const formats::LegendsMap& map,
     updateSwitches();
 }
 
-void LegendsSceneAdapter::touchSwitches(std::span<const LegendsPortalVisitor> visitors) {
-    if (m_dreamcastMovement) {
-        m_dreamcastMovement->touch(visitors);
-        touchDreamcastFalling(visitors);
-        updateDreamcastSwitches();
-        return;
-    }
+void LegendsSceneAdapter::touchN64Switches(std::span<const LegendsPortalVisitor> visitors) {
     m_worldMovement.touch(visitors);
     updateSwitches();
 }

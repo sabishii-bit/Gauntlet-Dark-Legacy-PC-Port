@@ -67,4 +67,10 @@ void LegendsSceneAdapter::updateDreamcastSwitches() {
     }
 }
 
+void LegendsSceneAdapter::touchDreamcastSwitches(std::span<const LegendsPortalVisitor> visitors) {
+    m_dreamcastMovement->touch(visitors);
+    touchDreamcastFalling(visitors);
+    updateDreamcastSwitches();
+}
+
 } // namespace gdl::game

@@ -1,5 +1,3 @@
-#include <algorithm>
-#include <cmath>
 #include <utility>
 
 #include "expansions/shared/scenes/LegendsSceneAdapter.h"
@@ -77,11 +75,7 @@ void LegendsSceneAdapter::setTrapView(const ViewVolume& view) {
     m_trapView = view;
 }
 
-void LegendsSceneAdapter::updateTraps(f32 seconds, bool timeStopped) {
-    if (!std::isfinite(seconds) || seconds < 0 || seconds > 10) {
-        return;
-    }
-    updateDreamcastTraps(seconds, timeStopped);
+void LegendsSceneAdapter::updateN64Traps(f32 seconds, bool timeStopped) {
     for (auto& binding : m_traps) {
         auto& state = binding.state;
         const Vec3 position =
@@ -136,8 +130,7 @@ void LegendsSceneAdapter::updateTraps(f32 seconds, bool timeStopped) {
     }
 }
 
-void LegendsSceneAdapter::touchTraps(std::span<const LegendsPortalVisitor> visitors) {
-    touchDreamcastTraps(visitors);
+void LegendsSceneAdapter::touchN64Traps(std::span<const LegendsPortalVisitor> visitors) {
     for (auto& binding : m_traps) {
         for (const auto& visitor : visitors) {
             if (auto hit = binding.state.touch(visitor)) {
@@ -147,7 +140,4 @@ void LegendsSceneAdapter::touchTraps(std::span<const LegendsPortalVisitor> visit
     }
 }
 
-std::vector<LegendsTrapHit> LegendsSceneAdapter::takeTrapHits() {
-    return std::exchange(m_trapHits, {});
-}
 } // namespace gdl::game
