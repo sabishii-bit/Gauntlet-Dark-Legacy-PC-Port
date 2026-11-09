@@ -92,10 +92,14 @@ public:
     void setObjectTransform(s32 object, const Mat4& world);
     /** Whether an object's triangles block anything; all do until told otherwise. */
     void setSolid(s32 object, bool solid);
+    /** The query categories an object's side can exclude: ordinary queries probe as the
+     * players do, a boss's floor probe as a boss (CritterBossAI's FloorCollide category). */
+    static constexpr u8 kPlayerSide = 1;
+    static constexpr u8 kBossSide = 2;
     /** Native WorldObj.side excludes matching query categories, independently
-     * of removal/visibility. Existing queries use player category 1; bosses use 2. */
+     * of removal/visibility. Queries probe as kPlayerSide unless they name another. */
     void setCollisionSide(s32 object, u8 side);
-    bool solid(s32 object, u8 sideMask = 1) const;
+    bool solid(s32 object, u8 sideMask = kPlayerSide) const;
     /** Retain wall contacts for hazards, but do not stop or push a moving body. */
     void setContactOnly(s32 object, bool contactOnly);
     bool contactOnly(s32 object) const;
@@ -119,7 +123,7 @@ public:
     /** Highest floor in the vertical range. A nonzero edge reach also accepts the closest
      * point on a face within that horizontal distance, for a body's small contact margin. */
     std::optional<FloorHit> floorAt(const Vec3& position, f32 above, f32 below,
-                                    f32 edgeReach = 0.0f, u8 sideMask = 1) const;
+                                    f32 edgeReach = 0.0f, u8 sideMask = kPlayerSide) const;
     /** The floor an item was set on (FloorPos): of the faces under the point and the edges
      * within reach, the one nearest the point's height. A ledge's edge a hand's breadth away
      * does not lift an item off the floor under it, and a landing's edge keeps a switch
@@ -220,7 +224,8 @@ private:
     const CanonicalDigestSink::Digest& geometryDigest() const;
     std::optional<FloorHit> surfaceAt(const Vec3& position, f32 above, f32 below, bool liquid,
                                       f32 edgeReach = 0.0f, const Vec2* direction = nullptr,
-                                      bool nearestToHeight = false, u8 sideMask = 1) const;
+                                      bool nearestToHeight = false,
+                                      u8 sideMask = kPlayerSide) const;
     /** An object whose triangles move with it. */
     struct MovingObject {
         s32 object = -1;
@@ -245,7 +250,7 @@ private:
     /** Every triangle that may lie in the rectangle, still and moving, that blocks. */
     template <typename Visit>
     void eachTriangle(f32 minX, f32 minZ, f32 maxX, f32 maxZ, const Visit& visit,
-                      u8 sideMask = 1) const;
+                      u8 sideMask = kPlayerSide) const;
 
     std::shared_ptr<const u8> m_localBinding = std::make_shared<const u8>(0);
     std::vector<CollisionTriangle> m_triangles;

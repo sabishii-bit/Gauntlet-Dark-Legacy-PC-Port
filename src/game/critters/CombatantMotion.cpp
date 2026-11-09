@@ -25,6 +25,9 @@ constexpr f32 kSupportReach = 0.1f;
 constexpr u32 kReturnFacing = 0x20;
 constexpr u32 kNodeMovement = 0x100;
 constexpr f32 kTrampleHeight = 2.0f; ///< the tallest half-height of a swarm body trampled
+/** How far a boss's floor probe reaches up and down (CritterBossAI's FloorCollide). */
+constexpr f32 kBossFloorAbove = 4.0f;
+constexpr f32 kBossFloorBelow = 1000.0f;
 
 Vec3 travelWorld(const WorldCollision& collision, const Vec3& from, const Vec3& wanted,
                  f32 radius) {
@@ -85,7 +88,8 @@ void Combatant::syncFloor() {
         // Bosses retain support even during INIT: DC ProcessCritter8c08b730
         // and GC CritterBossAI probe outside the active-move branch. In A5,
         // waiting for START before probing strands Chimera above its elevator.
-        if (const auto floor = m_sim.collision->floorAt(actor.position, 4.0f, 1000.0f, 0, 2)) {
+        if (const auto floor = m_sim.collision->floorAt(
+                actor.position, kBossFloorAbove, kBossFloorBelow, 0, WorldCollision::kBossSide)) {
             const f32 shift = floor->y - actor.position.y;
             actor.position.y = floor->y;
             actor.presentation.position.y += shift;
@@ -96,8 +100,9 @@ void Combatant::syncFloor() {
         }
         return;
     }
-    if (!actor.floor)
+    if (!actor.floor) {
         return;
+    }
     const auto placement = m_sim.collision->objectTransform(actor.floor->object);
     if (!placement || !m_sim.collision->solid(actor.floor->object)) {
         actor.floor.reset();
@@ -153,7 +158,8 @@ bool Combatant::translate(Actor& critter, f32 seconds, const MoveDefinition* mov
     // independently of locomotion. In A5 this is the descending elevator.
     // position is floor-space here; rootTransform adds the TYPE floorOffset.
     if (bounded && m_sim.collision != nullptr) {
-        if (const auto floor = m_sim.collision->floorAt(critter.position, 4.0f, 1000.0f, 0, 2)) {
+        if (const auto floor = m_sim.collision->floorAt(
+                critter.position, kBossFloorAbove, kBossFloorBelow, 0, WorldCollision::kBossSide)) {
             critter.position.y = floor->y;
         }
     }

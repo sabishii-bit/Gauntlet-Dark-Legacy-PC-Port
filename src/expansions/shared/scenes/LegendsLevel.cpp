@@ -217,7 +217,7 @@ bool LegendsLevel::bossActivationReady(const Vec3& position) const {
     const auto* motion = adapter().dreamcastWorldMotion();
     if (!motion || !m_collision)
         return false;
-    const auto floor = m_collision->floorAt(position, 4, 1000, 0, 2);
+    const auto floor = m_collision->floorAt(position, 4, 1000, 0, WorldCollision::kBossSide);
     return floor && motion->activatesBoss(floor->object);
 }
 

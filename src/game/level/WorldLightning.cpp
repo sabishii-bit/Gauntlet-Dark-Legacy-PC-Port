@@ -13,6 +13,12 @@
 namespace gdl::game {
 
 namespace {
+// world_update (0x8005674C): a sheet shows for kFlashSeconds (0x80346C58), then stays hidden
+// for kMinimumWaitSeconds (0x80346C60) plus Random(kWaitRangeSeconds) (0x80346C68).
+constexpr f32 kFlashSeconds = 0.2f;
+constexpr f32 kMinimumWaitSeconds = 5.0f;
+constexpr f32 kWaitRangeSeconds = 10.0f;
+
 void applyFlash(WorldScene& scene, const WorldLightning::Flash& flash) {
     scene.setObjectVisible(flash.object, flash.visible);
     for (const usize child : flash.children) {
@@ -66,11 +72,12 @@ void WorldLightning::clear() {
 }
 
 f32 WorldLightning::waitSeconds() {
-    // Retail: five seconds plus Random(10). A dedicated portable stream keeps
-    // this presentation script independent of enemy spawning and draw cadence.
+    // A dedicated portable stream keeps this presentation script independent
+    // of enemy spawning and draw cadence.
     constexpr u32 kRange = 0x1000000;
-    return 5.0f + static_cast<f32>(*random_distribution::boundedIndex(m_random, kRange)) *
-                      (10.0f / static_cast<f32>(kRange));
+    return kMinimumWaitSeconds +
+           static_cast<f32>(*random_distribution::boundedIndex(m_random, kRange)) *
+               (kWaitRangeSeconds / static_cast<f32>(kRange));
 }
 
 void WorldLightning::apply(WorldScene& scene) const {
@@ -91,7 +98,7 @@ void WorldLightning::update(f32 seconds, WorldScene& scene) {
             flash.visible = !flash.visible;
             // The native deadline is relative to the update that switches
             // visibility, so a late update still shows the full flash.
-            flash.remaining = flash.visible ? 0.2f : waitSeconds();
+            flash.remaining = flash.visible ? kFlashSeconds : waitSeconds();
             applyFlash(scene, flash);
         }
     }

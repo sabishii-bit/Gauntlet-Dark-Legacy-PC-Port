@@ -68,6 +68,8 @@ public:
     static constexpr u32 kByParts = 0x2;  ///< aimed at and walked into part by part
     static constexpr u32 kSquareBounds = 0x20;
     static constexpr u32 kInitialStepBasis = 0x40;
+    /** Asleep, it arms its wake only once its floor's trigger moves it (CritterBossAI). */
+    static constexpr u32 kSupportActivated = 0x80;
     static constexpr u32 kSolidParts = 0x100; ///< its solid parts stop a body
     static constexpr u32 kUnrestrictedTurn = 0x400;
     u32 typeFlags() const { return m_typeFlags; }
