@@ -132,12 +132,16 @@ TEST_CASE("N64 music restarts pattern clocks while preserving the arrangement lo
           "[legends][audio][song-timing]") {
     const bool legacy = GENERATE(false, true);
     TimingBackend backend;
+    amuse::AudioGroup group;
+    const auto songs = amuse::MakeObj<amuse::SongGroupIndex>();
+    songs->m_normPages.emplace(1, amuse::SongGroupIndex::PageEntry{});
+    songs->m_normPages.emplace(2, amuse::SongGroupIndex::PageEntry{});
+    group.getProj().songGroups().emplace(amuse::GroupId(0), songs);
     amuse::Engine engine(backend);
-    const amuse::AudioGroup group{};
-    amuse::SongGroupIndex songs;
-    songs.m_normPages.emplace(1, amuse::SongGroupIndex::PageEntry{});
-    songs.m_normPages.emplace(2, amuse::SongGroupIndex::PageEntry{});
-    amuse::Sequencer seq(engine, group, amuse::GroupId(0), &songs, amuse::SongId(0), {});
+    // amuse entities must be ended by their engine (debug builds assert it), so the engine
+    // makes this sequencer; it plays no arrangement itself, the song below drives it.
+    const auto seq = engine.seqPlay(&group, amuse::GroupId(0), amuse::SongId(0), nullptr, true, {});
+    REQUIRE(seq);
     bool tempoChanges = false;
     double dt = .005;
     SECTION("constant tempo") {}
@@ -160,11 +164,11 @@ TEST_CASE("N64 music restarts pattern clocks while preserving the arrangement lo
     const auto at = [&](double seconds, int program) {
         const int end = static_cast<int>(std::lround(seconds / dt));
         while (frame < end) {
-            REQUIRE_FALSE(song.advance(seq, dt));
+            REQUIRE_FALSE(song.advance(*seq, dt));
             ++frame;
         }
         CAPTURE(seconds, tempoChanges, dt);
-        REQUIRE(seq.getChanProgram(0) == program);
+        REQUIRE(seq->getChanProgram(0) == program);
     };
     at(.5, 1);
     at(1.5, 2);
