@@ -40,9 +40,8 @@ void LegendsSceneAdapter::touchGates(PlayerActor& actor) {
                     {gate.state.definition().sound, gate.state.definition().position});
             }
             m_hiddenFixtures[gate.idleFigure] = true;
-            m_hiddenFixtures[gate.openingFigure] =
-                (gate.state.definition().placementFlags & 8U) != 0;
-            m_fixtures[gate.openingFigure].play(0, ItemFigure::Playback::Once);
+            m_hiddenFixtures[gate.openingFigure] = gate.state.definition().hidden;
+            m_fixtures[gate.openingFigure].play(gate.openingSequence, ItemFigure::Playback::Once);
             m_fixtures[gate.openingFigure].capturePresentation();
         }
     }
@@ -56,14 +55,17 @@ void LegendsSceneAdapter::updateGates() {
                     {gate.state.definition().sound, gate.state.definition().position});
             }
             m_hiddenFixtures[gate.idleFigure] = true;
-            m_hiddenFixtures[gate.openingFigure] =
-                (gate.state.definition().placementFlags & 8U) != 0;
-            m_fixtures[gate.openingFigure].play(0, ItemFigure::Playback::Once);
+            m_hiddenFixtures[gate.openingFigure] = gate.state.definition().hidden;
+            m_fixtures[gate.openingFigure].play(gate.openingSequence, ItemFigure::Playback::Once);
             m_fixtures[gate.openingFigure].capturePresentation();
         }
         if (gate.state.state() == LegendsGate::State::Opening &&
             m_fixtures[gate.openingFigure].finished()) {
             gate.state.finishOpening();
+            if (gate.openSequence >= 0) {
+                m_fixtures[gate.openingFigure].play(gate.openSequence, ItemFigure::Playback::Loop);
+                m_fixtures[gate.openingFigure].capturePresentation();
+            }
         }
     }
 }
@@ -225,6 +227,11 @@ void LegendsSceneAdapter::synchronizeProgress(std::span<const CharacterSave* con
                 combined.recordCompleted(stage.map);
             }
         }
+        for (const auto& stage : m_dreamcastPortalPolicy.stages()) {
+            if (progress.hasCompleted(stage.map)) {
+                combined.recordCompleted(stage.map);
+            }
+        }
     }
     // Native e00694e4 initializes an obelisk as spent if any active character
     // owns its bit. Later contacts award the whole party in one transaction.
@@ -237,6 +244,19 @@ void LegendsSceneAdapter::synchronizeProgress(std::span<const CharacterSave* con
         }
     }
     m_partyProgress = std::move(combined);
+    if (m_dreamcastTower) {
+        m_dreamcastTower->synchronize(m_partyProgress);
+        for (usize i = 0; i < m_dreamcastPortals.size(); ++i) {
+            auto& portal = m_dreamcastPortalPresentation[i];
+            const bool enabled =
+                m_dreamcastPortalPolicy.allows(m_dreamcastPortals[i].map, m_partyProgress);
+            if (portal.enabled != enabled) {
+                portal.enabled = enabled;
+                portal.motion.reset();
+            }
+            selectDreamcastPortal(i);
+        }
+    }
     if (m_platform == LegendsPlatform::N64 && m_gatedPortals) {
         for (usize i = 0; i < m_portals.size(); ++i) {
             auto& portal = m_portalPresentation[i];
@@ -249,15 +269,20 @@ void LegendsSceneAdapter::synchronizeProgress(std::span<const CharacterSave* con
         }
     }
     updateObelisks();
+    updateDreamcastObelisks();
     updateTowerProgress(!m_progressInitialized);
     m_progressInitialized = true;
 }
 
 void LegendsSceneAdapter::updateTowerProgress(bool initial) {
-    const auto progress = LegendsTowerProgress::of(m_partyProgress);
+    const auto& displayed =
+        m_towerCeremony && (m_towerCeremony->pending() || m_towerCeremony->active())
+            ? m_towerCeremony->displayedProgress()
+            : m_partyProgress;
+    const auto progress = LegendsTowerProgress::of(displayed);
     for (auto& door : m_towerDoors) {
         const u8 required = door.definition.requiredObelisks;
-        if (required == 0 || (m_partyProgress.obelisks & required) != required ||
+        if (required == 0 || (displayed.obelisks & required) != required ||
             door.motion.state() != LegendsTowerDoorMotion::State::Closed) {
             continue;
         }
@@ -278,18 +303,119 @@ void LegendsSceneAdapter::updateTowerProgress(bool initial) {
     }
     for (usize i = 0; i < m_towerRunestones.size(); ++i) {
         if (m_towerRunestones[i]) {
-            m_hiddenFixtures[*m_towerRunestones[i]] = (progress.runestones & (1U << i)) == 0;
+            const auto* entry = m_towerCeremony ? m_towerCeremony->current() : nullptr;
+            const bool flying = m_towerCeremony && m_towerCeremony->active() && entry &&
+                                entry->kind == LegendsTowerCeremony::Kind::Rune &&
+                                entry->index == i && m_towerCeremony->runeInFlight();
+            m_hiddenFixtures[*m_towerRunestones[i]] =
+                !flying && (progress.runestones & (1U << i)) == 0;
         }
     }
     for (usize i = 0; i < m_towerShards.size(); ++i) {
         if (m_towerShards[i]) {
             m_hiddenFixtures[*m_towerShards[i]] = (progress.shards & (1U << i)) == 0;
             m_fixtureOpacity[*m_towerShards[i]] = progress.shardOpacity();
+            if (m_towerCeremony && m_towerCeremony->active()) {
+                const auto* entry = m_towerCeremony->current();
+                if (entry && entry->kind == LegendsTowerCeremony::Kind::Shard) {
+                    m_fixtureOpacity[*m_towerShards[i]] =
+                        entry->index == i ? m_towerCeremony->shardOpacity()
+                                          : (47.0f + 208 * m_towerCeremony->windowReveal()) / 255;
+                }
+            }
         }
     }
     updateTowerPortals();
     if (m_cathedralBeam) {
         m_hiddenWorldObjects[*m_cathedralBeam] = !progress.cathedralBeam;
+    }
+}
+
+void LegendsSceneAdapter::queueTowerCeremonies(const LegendsProgress& before,
+                                               const LegendsProgress& after) {
+    if (!m_tower || !m_towerCeremony) {
+        return;
+    }
+    m_towerCeremony->begin(before, after);
+    if (!m_towerCeremony->pending()) {
+        return;
+    }
+    // initializeParty already installed the owned state. Rewind only its visual
+    // representation, never the party's saved awards or completion records.
+    const auto installed = LegendsTowerProgress::of(before);
+    for (usize i = 0; i < m_towerDoors.size(); ++i) {
+        auto& door = m_towerDoors[i];
+        const bool open = installed.doors[i];
+        door.motion = LegendsTowerDoorMotion{open};
+        m_hiddenFixtures[door.openingFigure] = open && door.openFigure != door.openingFigure;
+        m_hiddenFixtures[door.openFigure] = !open;
+        m_heldFixtures[door.openingFigure] = !open;
+        if (!open) {
+            m_fixtures[door.openingFigure].play(0, ItemFigure::Playback::Once);
+        }
+    }
+    updateTowerProgress(false);
+}
+
+void LegendsSceneAdapter::startTowerCeremonies(const WorldCamera& camera, const Vec3& attention) {
+    if (m_tower && m_towerCeremony) {
+        m_towerCeremony->start(camera, attention);
+        updateTowerCeremony(0);
+    }
+}
+
+void LegendsSceneAdapter::updateTowerCeremony(f32 seconds) {
+    if (!m_tower || !m_towerCeremony || !m_towerCeremony->active()) {
+        return;
+    }
+    auto& tower = *m_tower;
+    auto& ceremony = *m_towerCeremony;
+    ceremony.update(seconds);
+    for (const auto sound : ceremony.takeSounds()) {
+        m_soundEvents.push_back({sound, ceremony.sumnerPosition()});
+    }
+    const auto variant =
+        std::ranges::find(tower.sumner, ceremony.gesture(), &TowerPresentation::Variant::sequence);
+    if (variant != tower.sumner.end()) {
+        if (m_towerGesture != ceremony.gesture()) {
+            m_hiddenFixtures[tower.activeSumner] = true;
+            m_heldFixtures[tower.activeSumner] = false;
+            tower.activeSumner = variant->figure;
+            m_hiddenFixtures[tower.activeSumner] = false;
+            m_fixtures[tower.activeSumner].play(0, ItemFigure::Playback::Once);
+            m_towerGesture = ceremony.gesture();
+        }
+        m_heldFixtures[tower.activeSumner] = ceremony.active();
+        m_fixtures[tower.activeSumner].poseFrame(ceremony.gestureFrame());
+    }
+    updateTowerProgress(false);
+    const auto* entry = ceremony.current();
+    for (usize i = 0; i < m_towerRunestones.size(); ++i) {
+        if (const auto figure = m_towerRunestones[i]) {
+            const bool flying = entry && entry->kind == LegendsTowerCeremony::Kind::Rune &&
+                                entry->index == i && ceremony.runeInFlight();
+            m_fixtures[*figure].placeAt(flying ? ceremony.runePlacement()
+                                               : m_towerRunePlacements[i]);
+            if (flying) {
+                m_hiddenFixtures[*figure] = false;
+            }
+            m_fixtureOpacity[*figure] = flying ? ceremony.runeOpacity() : 1;
+        }
+    }
+    if (entry && entry->kind == LegendsTowerCeremony::Kind::Shard) {
+        if (const auto figure = m_towerShards[entry->index]) {
+            m_fixtureOpacity[*figure] = ceremony.shardOpacity();
+        }
+    }
+    if (m_towerStaff) {
+        m_hiddenFixtures[*m_towerStaff] = !ceremony.staffVisible();
+        if (const auto attachment =
+                m_fixtures[tower.activeSumner].nodeTransform(m_towerStaffParent)) {
+            m_fixtures[*m_towerStaff].placeAt(*attachment);
+        }
+    }
+    if (!ceremony.active()) {
+        m_towerGesture.clear();
     }
 }
 

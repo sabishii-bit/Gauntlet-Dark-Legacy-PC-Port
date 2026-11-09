@@ -81,6 +81,7 @@ void LegendsSceneAdapter::updateTraps(f32 seconds, bool timeStopped) {
     if (!std::isfinite(seconds) || seconds < 0 || seconds > 10) {
         return;
     }
+    updateDreamcastTraps(seconds, timeStopped);
     for (auto& binding : m_traps) {
         auto& state = binding.state;
         const Vec3 position =
@@ -136,6 +137,7 @@ void LegendsSceneAdapter::updateTraps(f32 seconds, bool timeStopped) {
 }
 
 void LegendsSceneAdapter::touchTraps(std::span<const LegendsPortalVisitor> visitors) {
+    touchDreamcastTraps(visitors);
     for (auto& binding : m_traps) {
         for (const auto& visitor : visitors) {
             if (auto hit = binding.state.touch(visitor)) {

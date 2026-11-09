@@ -172,8 +172,13 @@ void Generators::appendImportedHealth(NativeStateDigest& digest) const {
         for (const auto& health : m_importedHealth) {
             digest.values(health.instance, health.remaining);
             if (health.broodTier != 0) {
-                digest.string("Generators.importedBrood.1");
-                digest.values(health.broodKinds, health.broodTier);
+                digest.string("Generators.importedBrood.2");
+                digest.values(health.broodKinds, health.broodAlgorithms, health.broodTier);
+            }
+            if (health.breeding) {
+                digest.string("Generators.importedBreeding.1");
+                digest.values(health.breeding->broodByState, health.breeding->waitTicks,
+                              health.breeding->activeDistance);
             }
         }
     }
@@ -614,7 +619,8 @@ std::optional<s32> Generators::spawn(RenderDevice& device, Enemies& enemies, s32
 }
 
 std::optional<s32> Generators::spawnImported(RenderDevice& device, Enemies& enemies,
-                                             const ImportedGenerator& imported) {
+                                             const ImportedGenerator& imported,
+                                             f32 difficultyGain) {
     const auto finite = [](const Vec3& value) {
         return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
     };
@@ -627,18 +633,57 @@ std::optional<s32> Generators::spawnImported(RenderDevice& device, Enemies& enem
         !std::isfinite(body.xSize) || body.xSize < 0 || body.xSize > 32 ||
         !std::isfinite(body.zSize) || body.zSize < 0 || body.zSize > 32 ||
         !finite(body.collisionOffset) || body.hitPoints <= 0 || body.hitPoints > 100000 ||
-        body.armor < 0 || (body.collisionType != 1 && body.collisionType != 3)) {
+        body.armor < 0 || imported.algorithm < -1 || imported.algorithm > 32 ||
+        imported.maximumBrood < 0 || imported.maximumBrood > 127 || imported.spawnInterval < 0 ||
+        imported.spawnInterval > 127 || (body.collisionType != 1 && body.collisionType != 3)) {
         return std::nullopt;
     }
     const bool authoredHealth =
         std::ranges::any_of(imported.stageHealth, [](s32 health) { return health != 0; });
     ImportedHealth health;
+    if (imported.breeding) {
+        const auto& policy = *imported.breeding;
+        const auto range = [](const Vec2& bounds) {
+            return std::isfinite(bounds.x) && std::isfinite(bounds.y) && bounds.x > 0 &&
+                   bounds.y >= bounds.x && bounds.y <= 100;
+        };
+        const f32 difficulty = policy.difficulty * difficultyGain;
+        if (!std::isfinite(difficulty) || difficulty <= 0 || !range(policy.broodDifficulty) ||
+            !range(policy.waitDifficulty) || !std::isfinite(policy.broodBonus) ||
+            policy.broodBonus < 0 || policy.broodBonus > 100 || policy.maximumBrood < 1 ||
+            policy.maximumBrood > 127 ||
+            std::ranges::any_of(policy.broodByState,
+                                [](s32 count) { return count < 1 || count > 127; }) ||
+            policy.waitTicks[0] < 1 || policy.waitTicks[1] < policy.waitTicks[0] ||
+            policy.waitTicks[1] > 36000 || !std::isfinite(policy.activeDistance) ||
+            policy.activeDistance <= 0 || policy.activeDistance > kActiveDistance)
+            return std::nullopt;
+        ImportedHealth::Breeding resolved;
+        const f32 population =
+            std::clamp(difficulty, policy.broodDifficulty.x, policy.broodDifficulty.y) +
+            policy.broodBonus;
+        for (usize state = 0; state < resolved.broodByState.size(); ++state)
+            resolved.broodByState[state] = std::clamp(
+                static_cast<s32>(static_cast<f32>(policy.broodByState[state]) * population + .5f),
+                1, policy.maximumBrood);
+        const f32 pace = std::clamp(difficulty, policy.waitDifficulty.x, policy.waitDifficulty.y);
+        for (usize end = 0; end < resolved.waitTicks.size(); ++end)
+            resolved.waitTicks[end] =
+                std::max(1, static_cast<s32>(static_cast<f32>(policy.waitTicks[end]) / pace));
+        resolved.activeDistance = policy.activeDistance;
+        health.breeding = resolved;
+    }
     const bool mixed = imported.broodTier != 0;
     if ((mixed &&
-         (imported.broodTier < 1 || imported.broodTier > 3 ||
+         (imported.broodTier < 1 || imported.broodTier > 3 || imported.broodKinds.size() < 3 ||
+          imported.broodKinds.size() > 4 ||
           std::ranges::any_of(imported.broodKinds,
-                              [](s32 kind) { return kind < 0 || kind >= kSwarmKindCount; }))) ||
-        (!mixed && imported.broodKinds != std::array<s32, 3>{-1, -1, -1})) {
+                              [](s32 kind) { return kind < 0 || kind >= kSwarmKindCount; }) ||
+          (!imported.broodAlgorithms.empty() &&
+           (imported.broodAlgorithms.size() != imported.broodKinds.size() ||
+            std::ranges::any_of(imported.broodAlgorithms,
+                                [](s32 way) { return way < 0 || way > 32; }))))) ||
+        (!mixed && (!imported.broodKinds.empty() || !imported.broodAlgorithms.empty()))) {
         return std::nullopt;
     }
     if (mixed) {
@@ -648,6 +693,7 @@ std::optional<s32> Generators::spawnImported(RenderDevice& device, Enemies& enem
             }
         }
         health.broodKinds = imported.broodKinds;
+        health.broodAlgorithms = imported.broodAlgorithms;
         health.broodTier = imported.broodTier;
     }
     if (authoredHealth) {
@@ -671,13 +717,17 @@ std::optional<s32> Generators::spawnImported(RenderDevice& device, Enemies& enem
     placement.position = imported.position;
     placement.rotation = Vec3{0, imported.yaw, 0};
     placement.minPlayers = imported.minimumPlayers;
+    placement.algorithm = imported.algorithm;
+    placement.most = imported.maximumBrood;
+    placement.interval = imported.spawnInterval;
+    placement.alwaysActive = imported.alwaysActive;
     if (!stand(device, enemies, placement, nullptr, m_realmItems, m_lenders)) {
         return std::nullopt;
     }
     syncFloors();
     const s32 id = static_cast<s32>(m_sim.generators.size()) - 1;
     m_externalBodies.push_back(instanceOf(id));
-    if (authoredHealth || mixed) {
+    if (authoredHealth || mixed || health.breeding) {
         health.instance = instanceOf(id);
         auto& generator = m_sim.generators.back();
         if (authoredHealth) {
@@ -688,6 +738,8 @@ std::optional<s32> Generators::spawnImported(RenderDevice& device, Enemies& enem
                 health.remaining[state] = generator.threshold * static_cast<f32>(state + 1);
             }
         }
+        if (health.breeding)
+            generator.most = health.breeding->broodByState[static_cast<usize>(generator.state - 1)];
         m_importedHealth.push_back(health);
         if (mixed && !m_sim.importedRandom) {
             m_sim.importedRandom.emplace(0x4c454745U);
@@ -945,6 +997,11 @@ void Generators::update(s32 ticks, Enemies& enemies, std::span<const EnemyView> 
             continue;
         }
         const bool patrol = generator.algorithm == kPatrolWay;
+        const auto imported =
+            std::ranges::find(m_importedHealth, generator.instance, &ImportedHealth::instance);
+        const auto* breeding = imported != m_importedHealth.end() && imported->breeding
+                                   ? &*imported->breeding
+                                   : nullptr;
         if (!patrol && !visible && !generator.alwaysActive) {
             continue;
         }
@@ -960,9 +1017,16 @@ void Generators::update(s32 ticks, Enemies& enemies, std::span<const EnemyView> 
                    : generator.most <= 0 || (!frenzied && generator.living >= quota)) {
             continue;
         }
+        if (breeding &&
+            (timeStopped || nearestPlayer(generator.position) > breeding->activeDistance)) {
+            continue;
+        }
         if (!patrol && generator.countdown > 0) {
             generator.countdown -= ticks;
-            continue;
+            // Range-based native clocks admit a birth on the tick reaching
+            // zero; the ordinary GDL clock retains its following-tick gate.
+            if (!breeding || generator.countdown > 0)
+                continue;
         }
         if (timeStopped) {
             continue;
@@ -988,17 +1052,16 @@ void Generators::update(s32 ticks, Enemies& enemies, std::span<const EnemyView> 
             spawn.algorithm = generator.kind == kTempleBrood ? 7 : kHellAlgorithms[at];
             spawn.allBirthDirections = true;
         }
-        const auto imported =
-            std::ranges::find(m_importedHealth, generator.instance, &ImportedHealth::instance);
         if (imported != m_importedHealth.end() && imported->broodTier != 0) {
-            // Imported native mixed broods select one of three authored species.
+            // Imported native mixed broods select an authored species.
             // Their RNG belongs to this simulation snapshot and never advances
             // the ordinary GDL brood cycle or any global/presentation clock.
             const u32 roll = (*m_sim.importedRandom)() >> 17U;
-            const usize choice = (roll * 3U) >> 15U;
+            const usize choice = (roll * static_cast<u32>(imported->broodKinds.size())) >> 15U;
             spawn.kind = imported->broodKinds[choice];
             spawn.tier = imported->broodTier;
-            spawn.algorithm = enemyKind(spawn.kind).algorithm;
+            spawn.algorithm = imported->broodAlgorithms.empty() ? enemyKind(spawn.kind).algorithm
+                                                                : imported->broodAlgorithms[choice];
             spawn.allBirthDirections = true;
         }
         spawn.position = generator.position;
@@ -1033,8 +1096,13 @@ void Generators::update(s32 ticks, Enemies& enemies, std::span<const EnemyView> 
         // The next takes longer, the countdown stretched by a share that grows a birth at a
         // time and wraps, and cut by the mechanics' breeding pace.
         generator.countdown =
-            static_cast<s32>(kCountdownScale * static_cast<f32>(generator.interval) *
-                             (1.0f + generator.ratio) / tuning.breedingPace);
+            breeding
+                ? static_cast<s32>((static_cast<f32>(breeding->waitTicks[0]) +
+                                    generator.ratio * static_cast<f32>(breeding->waitTicks[1] -
+                                                                       breeding->waitTicks[0])) /
+                                   tuning.breedingPace)
+                : static_cast<s32>(kCountdownScale * static_cast<f32>(generator.interval) *
+                                   (1.0f + generator.ratio) / tuning.breedingPace);
         generator.ratio += 1.0f / (2.0f * static_cast<f32>(generator.most));
         if (generator.ratio > 1.0f) {
             generator.ratio = 0.0f;
@@ -1087,7 +1155,12 @@ std::optional<GeneratorEvent> Generators::strike(s32 id, f32 power, [[maybe_unus
     if (state != generator.tier) {
         generator.tier = state;
         if (state > 0) {
-            generator.most *= 2;
+            const auto imported =
+                std::ranges::find(m_importedHealth, generator.instance, &ImportedHealth::instance);
+            if (imported != m_importedHealth.end() && imported->breeding)
+                generator.most = imported->breeding->broodByState[static_cast<usize>(state - 1)];
+            else
+                generator.most *= 2;
         }
         if (std::ranges::find(kCasterAlgorithms, generator.algorithm) != kCasterAlgorithms.end()) {
             generator.algorithm = 0;

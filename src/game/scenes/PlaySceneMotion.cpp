@@ -208,7 +208,9 @@ Vec3 PlayScene::limitStep(usize index, const Vec3& before, const Vec3& after) co
     // Use the unshaken gameplay camera, never the promotion/victory cut.
     auto camera = bossCameraOn() ? m_sim.bossCamera.camera() : m_camera.camera();
     auto attention = bossCameraOn() ? m_sim.bossCamera.attention() : m_camera.attention();
+    auto projection = cameraView();
     if (const auto* imported = m_world->imported()) {
+        projection.horizontalFov = imported->horizontalFov(projection.horizontalFov);
         if (const auto native = imported->camera()) {
             camera = *native;
             // Imported cameras have their own filtered focus. In particular,
@@ -217,7 +219,7 @@ Vec3 PlayScene::limitStep(usize index, const Vec3& before, const Vec3& after) co
         }
     }
     const auto& actor = m_players[index].actor;
-    return CameraMovementLimit::constrain(before, after, attention, camera, cameraView(),
+    return CameraMovementLimit::constrain(before, after, attention, camera, projection,
                                           actor.followPoint() - actor.position());
 }
 

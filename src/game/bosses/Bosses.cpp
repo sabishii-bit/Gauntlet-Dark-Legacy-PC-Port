@@ -412,18 +412,25 @@ bool Bosses::spawn(s32 kind, const Vec3& position, f32 yaw, f32 wakeDistance) {
     return true;
 }
 
-void Bosses::update(s32 ticks, f32 seconds, std::span<const EnemyView> players) {
+void Bosses::update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
+                    bool activationReady) {
     for (const auto& assets : m_sim.assets) {
         assets->textures.advance(0);
     }
     if (!m_sim.id.has_value()) {
         return;
     }
+    m_fighter.syncFloor();
     m_fighter.captureEncounterPlayers(players);
     // Wait through the bound family's activation deadline, then until the whole
     // party is within its threshold. Ordinary GDL retains its two-second delay.
     if (!m_sim.awake) {
-        m_sim.wakeClock += seconds;
+        // DC ProcessCritter8c08b774 arms TYPE0x80 only after its supporting
+        // object's triggerstate0x10. Once armed it keeps the deadline even if
+        // the platform stops. No new irreversible/presentation event is needed.
+        const bool armed = activationReady || m_sim.wakeClock > 0;
+        if (armed)
+            m_sim.wakeClock += seconds;
         const auto stock = std::ranges::find_if(
             m_sim.assets, [&](const auto* assets) { return &assets->data == m_fighter.data(); });
         const bool decodedEntrance = stock != m_sim.assets.end() && (*stock)->initialMoveBeforeWake;
@@ -443,7 +450,7 @@ void Bosses::update(s32 ticks, f32 seconds, std::span<const EnemyView> players) 
             }
         }
         const f32 delay = stock != m_sim.assets.end() ? (*stock)->wakeDelay : kWakeArmSeconds;
-        if (m_sim.wakeClock >= delay &&
+        if (armed && m_sim.wakeClock >= delay &&
             (m_sim.wakeDistance <= 0.0f || (anyone && farthest <= m_sim.wakeDistance))) {
             wake();
         }

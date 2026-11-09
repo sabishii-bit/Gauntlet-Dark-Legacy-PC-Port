@@ -246,14 +246,17 @@ void PlayerSelectScene::loadSounds(const std::filesystem::path& unpackedRoot) {
     m_narratorSounds.load(unpackedRoot / "audio/VOICE1");
 }
 
-/** The tower hub stands behind the lanes, seen from its entrance camera. */
-/** Looks into the shared tower from its entrance camera, loading it the first time. */
+/** Looks into the shared tower without replacing a parked imported departure. */
 void PlayerSelectScene::loadTower(RenderDevice& device, LevelWorld* tower) {
     m_camera.reset();
-    m_tower = tower;
-    if (m_tower == nullptr) {
+    m_tower = nullptr;
+    // Native completion keeps this world alive until Done admits its destination.
+    // Reloading it as a menu backdrop clears that departure; borrowing it would
+    // also advance its gameplay in step(). Use the neutral backdrop instead.
+    if (tower == nullptr || tower->imported() != nullptr) {
         return;
     }
+    m_tower = tower;
     // The select screen looks into the tower, whatever level was last played.
     if ((!m_tower->built() || !m_tower->isTower()) &&
         !m_tower->load(device, m_gameServices->unpackedRoot)) {
@@ -494,13 +497,18 @@ SelectOutcome PlayerSelectScene::step(s32 ticks, const Inputs& inputs) {
         }
     }
 
-    bool anyActive = false;
+    bool anyPlayable = false;
     bool busy = false;
     for (const SelectLane& lane : m_lanes) {
-        anyActive = anyActive || lane.active();
+        const auto entry = std::ranges::find(m_entryParty, lane.index(), &PartyMember::player);
+        const bool fallen =
+            lane.retainsEntryCharacter() && entry != m_entryParty.end() && entry->fallen;
+        // Fallen checkpoints stay available for saving, but cannot drive this
+        // menu. They alone must not keep a departed party in a retry loop.
+        anyPlayable = anyPlayable || (lane.active() && !fallen);
         busy = busy || lane.selecting() || lane.animating();
     }
-    if (leave || !anyActive) {
+    if (leave || !anyPlayable) {
         return SelectOutcome::Cancelled;
     }
     // BGMusicStart drains the narration queue before switching to the level's bank.

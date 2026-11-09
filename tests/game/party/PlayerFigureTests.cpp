@@ -31,6 +31,33 @@ using namespace gdl::game;
 static_assert(!std::is_move_constructible_v<PlayerFigure>);
 static_assert(!std::is_copy_constructible_v<PlayerFigure>);
 
+TEST_CASE("native player dissolve skins opt in without changing ordinary chrome coverage",
+          "[game][figure][death-dissolve][assets]") {
+    const auto root = test::assetOrSkip("WEAPONS/objects.ngc").parent_path().parent_path();
+    test::FakeRenderDevice device;
+    auto figure = PlayerFigure::load(device, root, CharacterSave{}, Entrance::Skip);
+    REQUIRE(figure);
+    test::FakeTexture skin{1, 1};
+    skin.pixels = {255, 255, 255, 0};
+    figure->setSkinTexture(&skin, TreeModel::SkinAlpha::Dissolve);
+    figure->draw(device, Mat4{1}, Mat4{1}, {}, 1, true);
+    usize dissolved = 0;
+    for (const auto& draw : device.draws) {
+        if (draw.state.maskedTexture != &skin)
+            continue;
+        ++dissolved;
+        CHECK(draw.state.blend == BlendMode::Alpha);
+        CHECK_FALSE(draw.state.depthWrite);
+    }
+    REQUIRE(dissolved > 0);
+    device.draws.clear();
+    figure->setSkinTexture(&skin);
+    figure->draw(device, Mat4{1}, Mat4{1}, {}, 1, true);
+    CHECK(std::ranges::any_of(device.draws, [&](const auto& draw) {
+        return draw.state.maskedTexture == &skin && draw.state.depthWrite;
+    }));
+}
+
 TEST_CASE("green knight drawing interpolates without changing gameplay hand or attack state",
           "[game][figure][cadence][assets]") {
     const auto root = test::assetOrSkip("WEAPONS/objects.ngc").parent_path().parent_path();
@@ -431,6 +458,62 @@ TEST_CASE("player figure scale prioritizes ogre and growth over mastery", "[game
     save.character = 12;
     REQUIRE(PlayerFigure::bodyScale(save, growth) == 1.6f);
     REQUIRE(PlayerFigure::bodyScale(save, {}) == 1.6f);
+}
+
+TEST_CASE("level-one figure sizing removes progression growth without changing the character",
+          "[game][figure][legends-player-size]") {
+    const PlayerFigure imported{PlayerFigure::LevelSize::LevelOne};
+    const PlayerFigure ordinary;
+    const Mat4 base = glm::translate(Mat4{1}, Vec3{3, 4, 5});
+    for (s32 character = 0; character < 16; ++character) {
+        CharacterSave save;
+        save.character = character;
+        const f32 initial = PlayerFigure::bodyScale(save, {});
+        for (const s32 level : {1, 10, 30, 50, 90, 99}) {
+            CAPTURE(character, level);
+            save.progress().experience = levelExperience(level);
+            const auto before = save;
+            CHECK(imported.bodySize(save, {}) == initial);
+            const auto body = imported.placement(base, save, {});
+            CHECK(glm::length(Vec3{body[0]}) == Catch::Approx(initial));
+            CHECK(Vec3{body[3]} == Vec3(3, 4, 5));
+            CHECK(ordinary.bodySize(save, {}) == PlayerFigure::bodyScale(save, {}));
+            PowerupEffects growth;
+            growth.special = powerup::kGrowth;
+            CHECK(imported.bodySize(save, growth) == PlayerFigure::bodyScale(save, growth));
+            PowerupEffects wings;
+            wings.special = powerup::kLevitation;
+            CHECK(imported.placement(base, save, wings)[3].y ==
+                  Catch::Approx(4 + wings.lift() * initial));
+            CHECK(save == before);
+        }
+    }
+}
+
+TEST_CASE("Legends sizing keeps promoted costumes and aligns held and familiar attachments",
+          "[game][figure][legends-player-size][assets]") {
+    const auto root = test::assetOrSkip("WEAPONS/objects.ngc").parent_path().parent_path();
+    test::FakeRenderDevice device;
+    CharacterSave save;
+    save.progress().experience = levelExperience(99);
+    const auto before = save;
+    auto ordinary = PlayerFigure::load(device, root, save, Entrance::Skip);
+    auto imported =
+        PlayerFigure::load(device, root, save, Entrance::Skip, PlayerFigure::LevelSize::LevelOne);
+    REQUIRE(ordinary);
+    REQUIRE(imported);
+    CHECK(imported->directory() == ordinary->directory());
+    CHECK(imported->familiarTier() == ordinary->familiarTier());
+    CHECK(imported->missileTree() == ordinary->missileTree());
+    const Mat4 base = glm::translate(Mat4{1}, Vec3{3, 4, 5});
+    const auto normalHand = ordinary->handPosition(ordinary->placement(base, save, {}));
+    const auto smallHand = imported->handPosition(imported->placement(base, save, {}));
+    REQUIRE(normalHand);
+    REQUIRE(smallHand);
+    CHECK(glm::distance((*normalHand - Vec3{base[3]}) / 1.2f, *smallHand - Vec3{base[3]}) < .0001f);
+    CHECK(imported->bodySize(save, {}) == 1);
+    CHECK(ordinary->bodySize(save, {}) == 1.2f);
+    CHECK(save == before);
 }
 
 TEST_CASE(

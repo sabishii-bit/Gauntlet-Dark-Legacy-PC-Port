@@ -14,6 +14,7 @@
 #include "TestSupport.h"
 #include "game/level/LevelWorld.h"
 #include "game/level/NativeStateResources.h"
+#include "game/level/StageRegistry.h"
 #include "game/rollback/LocalOwnerContract.h"
 
 namespace {
@@ -375,7 +376,7 @@ TEST_CASE("native world digest bytes stay pinned for a bound level and queued cu
     // SHA-256 of the native digest of the world above, which netplay peers must hash alike: a
     // literal moves only when what is visited changes on purpose.
     constexpr std::string_view kDigest =
-        "31bbb8e91b498088c31f9714cda3ac2ca959b0b006f2fc7d68a3048f94ab5fed";
+        "f873e8af4c59d14cf5ae15e18b0c572bdb5fd190e61576e5810ae131861f4eca";
     CHECK(test::hexBytes(fixture.hash()) == kDigest);
 }
 
@@ -412,8 +413,8 @@ TEST_CASE("native world and child digest bytes stay pinned after the script and 
     // which netplay peers must hash alike: a literal moves only when what is visited changes on
     // purpose. The world's children follow it, so that a moved world names the child that moved.
     test::checkPinnedDigests("LevelWorld", fixture.hash(), fixture.hash(saved),
-                             "274c1b797f77e90645c0d645cbb09fc5be4e923ba6d22b0e64c5dd87721cf3d3",
-                             "b20e036cc07678c8b8e55d0335076810a26b06867e832d2756965b644dd26b50");
+                             "28b213df49d153dc49d827665022ab4283b76b5f203d802f85ee922f8c91ec8f",
+                             "c7f66969c9dd5ff652660634c4576cda35ef25ae8b6a98674879d0c71260ba12");
     const auto resources = fixture.refreshed();
     test::checkPinnedDigests("WorldScene", test::liveDigest(world.scene(), resources),
                              test::savedDigest(world.scene(), scene, resources),
@@ -425,8 +426,8 @@ TEST_CASE("native world and child digest bytes stay pinned after the script and 
                              "9658ac35a748711c349c034caa46b73fc9ee428b1ed7a2dc1123407c3a9cadb9");
     test::checkPinnedDigests("WorldCollision", test::liveDigest(world.collision(), resources),
                              test::savedDigest(world.collision(), collision, resources),
-                             "633e762371ae63dbd4e2ad4193ae0b3cd4dc48b97dbc9a93a330465a56f836ce",
-                             "e18ebff6f21e555e8ec2f88884b3208c5801c97b8e5670671f31327ce7900956");
+                             "f76500c65b51fe2caa70fd7273d04a892555ddf68c1427b7875056467a7a4625",
+                             "5e52871a7aaef184d1868270a6be72d1db23175206b47d1716fc685a7a128160");
     test::checkPinnedDigests("PlacedItems", test::liveDigest(world.placedItems(), resources),
                              test::savedDigest(world.placedItems(), items, resources),
                              "6a093a8504480677804b3e98b4c5b7df25265f5500ddd2978a57681839287042",
@@ -452,4 +453,120 @@ TEST_CASE("native world and child digest bytes stay pinned after the script and 
                              "962d17489342291f1bf510040168249893fffa723ba24274e75ad9adf5db686d",
                              "19505fa591c19bb6b96a4856edb07e1528ea463296ee18cdc5f5a6b8da772efb");
 }
+
+TEST_CASE("lightning rewind retains the next random wait independently of render cadence",
+          "[world-lightning][native-digest][level-world-native-digest][local-rewind]") {
+    struct LightningFixture {
+        test::FakeRenderDevice device;
+        LevelWorld world;
+        NativeStateResources resources;
+
+        explicit LightningFixture(std::string_view tag) {
+            const auto root = test::sampleLevel(tag);
+            writeTextFile(root / "objects.json", R"({"objects":[
+              {"index":0,"name":"F2XPNC_LNING1","file":"models/000_WALL.obj"},
+              {"index":1,"name":"F2XPNC_LNING2","file":"models/000_WALL.obj"},
+              {"index":2,"name":"F2XPNC_LNING3","file":"models/000_WALL.obj"},
+              {"index":3,"name":"F2XPNC_LNING4","file":"models/000_WALL.obj"},
+              {"index":4,"name":"WALL","file":"models/000_WALL.obj"},
+              {"index":5,"name":"BRANCH","file":"models/000_WALL.obj"},
+              {"index":6,"name":"BOLT","file":"models/000_WALL.obj"}]})");
+            writeTextFile(root / "world.json", R"({"objects":[
+              {"name":"F2XPNC_LNING1","position":[-4,0,0],"next":1,"child":5},
+              {"name":"F2XPNC_LNING2","position":[-2,0,0],"next":2},
+              {"name":"F2XPNC_LNING3","position":[0,0,0],"next":3},
+              {"name":"F2XPNC_LNING4","position":[2,0,0],"next":4},
+              {"name":"WALL","position":[4,0,0],"next":-1},
+              {"name":"BRANCH","position":[0,2,0],"child":6,"next":-1},
+              {"name":"BOLT","position":[0,2,0],"next":-1}],
+              "bounds":{"min":[-10,-10,-10],"max":[10,10,10]}})");
+            writeTextFile(root / "animations.json", R"({})");
+            writeTextFile(root / "collision.json", R"({"objects":[]})");
+            test::convertModelFixture(root);
+            REQUIRE(world.load(device, root, LevelRef{"TEST", 0, "F2", "", "", "", "", 0}));
+            test::registerStage(resources, world, device);
+        }
+        void step(bool stopped = false) {
+            world.capturePresentation();
+            world.update(1.f / 60, stopped);
+        }
+        NativeStateDigest::Digest hash() { return test::liveDigest(world, resources); }
+        NativeStateDigest::Digest hash(const LevelWorld::LocalSnapshot& saved) {
+            return test::savedDigest(world, saved, resources);
+        }
+        void draw() {
+            for (const f32 alpha : {0.f, .3f, 1.f}) {
+                world.draw(device, Mat4{1}, {}, alpha);
+                usize vertices = 0;
+                for (const auto& draw : device.draws)
+                    vertices += draw.vertices.size();
+                usize expected = 3; // The unrelated, always-visible wall.
+                for (const usize object : {0U, 1U, 2U, 3U, 5U, 6U})
+                    expected += world.scene().objectVisible(object) ? 3U : 0U;
+                CHECK(vertices == expected);
+                device.draws.clear();
+            }
+        }
+    };
+    LightningFixture reference{"lightning-native-reference"};
+    LightningFixture replay{"lightning-native-replay"};
+    CHECK(reference.hash() == replay.hash());
+    for (const usize object : {0U, 1U, 2U, 3U, 5U, 6U})
+        CHECK_FALSE(replay.world.scene().objectVisible(object));
+    replay.draw();
+
+    LevelWorld::LocalSnapshot before;
+    NativeStateDigest::Digest beforeDigest{};
+    bool flashed = false;
+    for (s32 tick = 0; tick < 901 && !flashed; ++tick) {
+        replay.world.saveLocal(before);
+        beforeDigest = replay.hash();
+        reference.step();
+        replay.step();
+        flashed = replay.world.scene().objectVisible(0);
+    }
+    REQUIRE(flashed);
+    CHECK(replay.world.scene().objectVisible(5));
+    CHECK(replay.world.scene().objectVisible(6));
+    replay.draw();
+    CHECK(reference.hash() == replay.hash());
+    CHECK(replay.hash(before) == beforeDigest);
+    const auto onDigest = replay.hash();
+    const auto uploads = replay.device.texturesCreated;
+    // Run past another random draw on the wrong branch, then rewind before
+    // the original edge. Restoring visibility alone must not pass this test.
+    for (s32 tick = 0; tick < 1000; ++tick)
+        replay.step(true);
+    REQUIRE(replay.world.restoreLocal(before));
+    CHECK(replay.hash() == beforeDigest);
+    CHECK_FALSE(replay.world.scene().objectVisible(0));
+    replay.draw();
+    CHECK(replay.hash() == beforeDigest);
+    replay.step();
+    CHECK(replay.hash() == onDigest);
+    bool hidden = false;
+    bool flashedAgain = false;
+    for (s32 tick = 0; tick < 1000; ++tick) {
+        reference.step();
+        replay.step();
+        hidden |= !replay.world.scene().objectVisible(0);
+        flashedAgain |= hidden && replay.world.scene().objectVisible(0);
+        if (tick % 71 == 0) {
+            const auto beforeDraw = replay.hash();
+            replay.draw();
+            CHECK(replay.hash() == beforeDraw);
+        }
+        CHECK(replay.hash() == reference.hash());
+        for (const usize object : {0U, 1U, 2U, 3U, 5U, 6U})
+            CHECK(replay.world.scene().objectVisible(object) ==
+                  reference.world.scene().objectVisible(object));
+        CHECK(replay.world.scene().objectVisible(5) == replay.world.scene().objectVisible(0));
+        CHECK(replay.world.scene().objectVisible(6) == replay.world.scene().objectVisible(0));
+        CHECK(replay.world.scene().objectVisible(4));
+    }
+    CHECK(hidden);
+    CHECK(flashedAgain);
+    CHECK(replay.device.texturesCreated == uploads);
+}
+
 } // namespace

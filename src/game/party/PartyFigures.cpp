@@ -170,10 +170,13 @@ void PartyFigures::draw(RenderDevice& device, std::span<const PlayerRuntime> pla
         if ((alpha < 1.0f) != (which == Bodies::Translucent)) {
             continue;
         }
-        const Mat4 body = PlayerFigure::bodyPlacement(
+        const Mat4 body = figure.placement(
             departurePlacement(runtime, scene.departure, scene.frameBlend, world.imported()),
             runtime.actor.save(), worn);
-        figure.setSkinTexture(skinOf(runtime, worn, scene.departure, world.imported()));
+        const auto native =
+            world.imported() ? world.imported()->departure(scene.frameBlend) : std::nullopt;
+        figure.setSkinTexture(skinOf(runtime, worn, scene.departure, world.imported()),
+                              native ? native->skinAlpha : TreeModel::SkinAlpha::PreserveCoverage);
         figure.setWeaponPowerups(device, world.powerups(), scene.weapons, worn);
         // On the second hand: the left gauntlet, else a shield (PlayerProcessPowerups).
         if ((worn.special & powerup::kLeftGauntlet) != 0) {
@@ -205,7 +208,7 @@ void PartyFigures::drawEffects(RenderDevice& device, std::span<const PlayerRunti
             continue;
         }
         const auto worn = PowerupEffects::of(runtime.actor.save().progress().inventory);
-        const Mat4 body = PlayerFigure::bodyPlacement(
+        const Mat4 body = runtime.figure->placement(
             departurePlacement(runtime, scene.departure, scene.frameBlend, scene.world.imported()),
             runtime.actor.save(), worn);
         runtime.figure->drawCompanions(

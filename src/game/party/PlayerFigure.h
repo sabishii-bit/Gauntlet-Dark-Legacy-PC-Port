@@ -44,13 +44,25 @@ class PlayerFigure {
 
 public:
     static constexpr std::string_view kShadowObject = "SHADOWL1";
-    PlayerFigure() = default;
+    enum class LevelSize { Progression, LevelOne };
+    explicit PlayerFigure(LevelSize size = LevelSize::Progression) : m_levelSize(size) {}
     /** Character size shared by body rendering and posed-hand attachments. */
-    static f32 bodyScale(const CharacterSave& save, const PowerupEffects& effects);
+    static f32 bodyScale(const CharacterSave& save, const PowerupEffects& effects,
+                         LevelSize size = LevelSize::Progression);
     /** Where the body is drawn and its parts hang: `base` (the actor's transform, or the
      * capture's) at `bodyScale`, lifted by what the powerups hold it up by. */
     static Mat4 bodyPlacement(const Mat4& base, const CharacterSave& save,
-                              const PowerupEffects& effects);
+                              const PowerupEffects& effects,
+                              LevelSize size = LevelSize::Progression);
+    f32 bodySize(const CharacterSave& save, const PowerupEffects& effects) const {
+        return bodyScale(save, effects, m_levelSize);
+    }
+    /** All render and attack attachments share the immutable map's sizing rule.
+     * Level-one sizing retains costume upgrades, class size and powerup growth. */
+    Mat4 placement(const Mat4& base, const CharacterSave& save,
+                   const PowerupEffects& effects) const {
+        return bodyPlacement(base, save, effects, m_levelSize);
+    }
     // Bound models and animation poses refer into these archives: their owner stays put.
     PlayerFigure(const PlayerFigure&) = delete;
     PlayerFigure& operator=(const PlayerFigure&) = delete;
@@ -85,10 +97,9 @@ public:
 
     /** Null if the costume cannot be built; missing optional weapons/actions are tolerated.
      * `entrance` says whether the body plays its entrance before anything else. */
-    static std::unique_ptr<PlayerFigure> load(RenderDevice& device,
-                                              const std::filesystem::path& root,
-                                              const CharacterSave& save,
-                                              Entrance entrance = Entrance::Play);
+    static std::unique_ptr<PlayerFigure>
+    load(RenderDevice& device, const std::filesystem::path& root, const CharacterSave& save,
+         Entrance entrance = Entrance::Play, LevelSize size = LevelSize::Progression);
     /** A class's folder `sub` ("ANIM", "SFXRED"): its own archive's, else that of the class
      * it shadows (the unlockables without their own, Sumner the wizard's). */
     static std::filesystem::path classFolder(const std::filesystem::path& root, s32 character,
@@ -225,8 +236,9 @@ public:
         }
     }
     /** A temporary full-bright skin; null restores the costume's normal appearance. */
-    void setSkinTexture(const Texture* texture) {
-        m_model.setMaskedTexture(texture);
+    void setSkinTexture(const Texture* texture,
+                        TreeModel::SkinAlpha alpha = TreeModel::SkinAlpha::PreserveCoverage) {
+        m_model.setMaskedTexture(texture, alpha);
         m_model.setAppearance({.unlit = texture != nullptr});
     }
 
@@ -269,6 +281,7 @@ private:
     ActionState m_action;
     const TreeInfo* m_costume = nullptr;
     std::filesystem::path m_directory;
+    const LevelSize m_levelSize;
     TreeInfo m_weaponTree;
     mutable TreeModel m_weapon;
     TreeInfo m_handItemTree;

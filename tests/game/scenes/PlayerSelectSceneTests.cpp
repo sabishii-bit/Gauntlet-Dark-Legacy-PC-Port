@@ -802,6 +802,62 @@ TEST_CASE("post-shop prompts surviving lanes and retains fallen character checkp
     CHECK(checkpoint->toJson() == fallen.toJson());
 }
 
+TEST_CASE("post-shop cancels when only fallen checkpoints remain without discarding them",
+          "[game][select][post-shop][fallen-only][assets][multiplayer]") {
+    test::FakeRenderDevice device;
+    const Fixture f("select-after-shop-fallen-only");
+    CharacterSave survivor;
+    survivor.name = "LEAVE";
+    survivor.gold = 4321;
+    CharacterSave fallen;
+    fallen.name = "FALLEN";
+    fallen.gold = 123;
+    SaveSlots slots;
+    REQUIRE(slots.open(f.config.saveDirectory(), f.config.save.slots));
+    REQUIRE(slots.write(1, survivor));
+    REQUIRE(slots.write(2, fallen));
+    const std::array party{PartyMember{0, survivor, 1},
+                           PartyMember{3, fallen, 2, true, 0, {14, 27}}};
+    const auto context = f.context();
+    PlayerSelectScene scene;
+    REQUIRE(scene.openAfterLevel(device, context, party));
+    REQUIRE(scene.lane(0).state() == SelectLane::State::SaveMenu);
+    REQUIRE(scene.lane(3).lockedIn());
+    PlayerSelectScene::Inputs up{};
+    up[0].up = true; // Done -> Quit.
+    REQUIRE(scene.step(1, up) == SelectOutcome::Running);
+
+    SECTION("the last survivor quits") {
+        CHECK(scene.step(1, player(0, true)) == SelectOutcome::Cancelled);
+        for (s32 tick = 0; tick <= PlayerSelectScene::kIdleFrames; ++tick)
+            CHECK(scene.step(1, nobody()) == SelectOutcome::Cancelled);
+    }
+    SECTION("another player is still choosing a replacement") {
+        auto inputs = player(0, true);
+        inputs[2].start = true;
+        CHECK(scene.step(1, inputs) == SelectOutcome::Running);
+        REQUIRE(scene.lane(2).active());
+        REQUIRE_FALSE(scene.lane(2).hasCharacter());
+        for (s32 tick = 0; tick <= PlayerSelectScene::kIdleFrames; ++tick)
+            CHECK(scene.step(1, nobody()) == SelectOutcome::Running);
+    }
+
+    REQUIRE_FALSE(scene.lane(0).active());
+    const auto remaining = scene.party();
+    REQUIRE(remaining.size() == 1);
+    CHECK(remaining[0].player == 3);
+    CHECK(remaining[0].fallen);
+    CHECK(remaining[0].slot == 2);
+    CHECK(remaining[0].helpHeard == std::vector<s32>{14, 27});
+    CHECK(remaining[0].save.toJson() == fallen.toJson());
+    const auto savedFallen = slots.load(2);
+    REQUIRE(savedFallen);
+    CHECK(savedFallen->toJson() == fallen.toJson());
+    const auto savedSurvivor = slots.load(1);
+    REQUIRE(savedSurvivor);
+    CHECK(savedSurvivor->toJson() == survivor.toJson());
+}
+
 TEST_CASE("post-shop lanes cannot race for another lane's pending save slot",
           "[game][select][post-shop][assets]") {
     test::FakeRenderDevice device;

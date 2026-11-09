@@ -78,9 +78,26 @@ void Combatant::rememberFloor() {
 
 void Combatant::syncFloor() {
     Actor& actor = m_sim.actor;
-    if (!present() || m_sim.collision == nullptr || !actor.floor) {
+    if (!present() || m_sim.collision == nullptr) {
         return;
     }
+    if (actor.stock->definition.boundsToHome) {
+        // Bosses retain support even during INIT: DC ProcessCritter8c08b730
+        // and GC CritterBossAI probe outside the active-move branch. In A5,
+        // waiting for START before probing strands Chimera above its elevator.
+        if (const auto floor = m_sim.collision->floorAt(actor.position, 4.0f, 1000.0f, 0, 2)) {
+            const f32 shift = floor->y - actor.position.y;
+            actor.position.y = floor->y;
+            actor.presentation.position.y += shift;
+            for (auto& part : children()) {
+                part->m_sim.actor.position.y = floor->y;
+                part->m_sim.actor.presentation.position.y += shift;
+            }
+        }
+        return;
+    }
+    if (!actor.floor)
+        return;
     const auto placement = m_sim.collision->objectTransform(actor.floor->object);
     if (!placement || !m_sim.collision->solid(actor.floor->object)) {
         actor.floor.reset();
@@ -136,7 +153,7 @@ bool Combatant::translate(Actor& critter, f32 seconds, const MoveDefinition* mov
     // independently of locomotion. In A5 this is the descending elevator.
     // position is floor-space here; rootTransform adds the TYPE floorOffset.
     if (bounded && m_sim.collision != nullptr) {
-        if (const auto floor = m_sim.collision->floorAt(critter.position, 4.0f, 1000.0f)) {
+        if (const auto floor = m_sim.collision->floorAt(critter.position, 4.0f, 1000.0f, 0, 2)) {
             critter.position.y = floor->y;
         }
     }

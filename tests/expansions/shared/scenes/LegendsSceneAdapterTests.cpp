@@ -4,6 +4,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/assets/StringTable.h"
 #include "engine/io/File.h"
 
 #include "FakeRenderDevice.h"
@@ -114,7 +115,7 @@ TEST_CASE("Dreamcast tower binds coloured lightmaps additive torches Sumner and 
     CHECK(scene->dreamcastCameraConfig()->radiusMax == 26);
     CHECK_FALSE(scene->dreamcastCameraConfig()->authoredBounds);
     REQUIRE(scene->dreamcastCameraMarkers().size() == 7);
-    CHECK(std::abs(scene->dreamcastCameraMarkers().front().rotation.y - 2 * kPi) < 0.00001f);
+    CHECK(std::abs(scene->dreamcastCameraMarkers().front().rotation.y - kPi) < 0.00001f);
     REQUIRE(map.lightmaps.size() > 200);
     bool coloured = false;
     for (const auto& light : map.lightmaps) {
@@ -141,8 +142,10 @@ TEST_CASE("Dreamcast tower binds coloured lightmaps additive torches Sumner and 
     const WorldCamera inspectionView;
     const auto inspectWizard = [&] {
         device.draws.clear();
+        // Keep the highlight's eye-lift centred on the model so it commutes
+        // with the yaw comparison below; it is not part of the native pose.
         scene->highlightFixture(device, Mat4{1}, CameraFrame::of(inspectionView), -1, *wizard,
-                                SelectionHighlight{inspectionView.position});
+                                SelectionHighlight{LegendsDreamcastSumner::kPosition});
         std::vector<Vec3> vertices;
         for (const auto& draw : device.draws) {
             for (const auto& vertex : draw.vertices) {
@@ -155,18 +158,39 @@ TEST_CASE("Dreamcast tower binds coloured lightmaps additive torches Sumner and 
     REQUIRE_FALSE(wizardBefore.empty());
     scene->update(0.25f);
     CHECK(inspectWizard() != wizardBefore);
+    scene->faceDreamcastSumner(0);
+    const auto facingForward = inspectWizard();
+    scene->faceDreamcastSumner(kPi / 2);
+    const auto facingRight = inspectWizard();
+    REQUIRE(facingRight.size() == facingForward.size());
+    for (usize vertex = 0; vertex < facingForward.size(); ++vertex) {
+        const Vec3 local = facingForward[vertex] - LegendsDreamcastSumner::kPosition;
+        const Vec3 expected = LegendsDreamcastSumner::kPosition + Vec3{local.z, local.y, -local.x};
+        CAPTURE(vertex);
+        REQUIRE(glm::distance(expected, facingRight[vertex]) < .001f);
+    }
+    scene->faceDreamcastSumner(kPi);
     device.draws.clear();
 
+    const Vec3 towerHub = scene->dreamcastCameraMarkers().front().position;
     LegendsLevel level{device, map, std::move(scene), directory, test::dataDirectory()};
     const Vec3 start = map.starts.front().position;
     const std::array subjects{CameraSubject{start, start + Vec3{0, 3, 0}, 3}};
+    LegendsDreamcastTowerCamera expectedCamera;
+    expectedCamera.reset(subjects, towerHub);
     level.resetCamera(subjects);
     const auto view = level.camera();
     REQUIRE(view);
     REQUIRE(level.cameraAttention());
-    CHECK(glm::distance(*level.cameraAttention(), subjects[0].follow) < 0.01f);
-    CHECK(view->position.y > start.y);
-    CHECK(view->position.z < start.z);
+    CHECK(*level.cameraAttention() == expectedCamera.attention());
+    CHECK(*view == expectedCamera.camera());
+    CHECK(level.horizontalFov(kPi / 3) == LegendsDreamcastTowerCamera::kHorizontalFov);
+    CHECK(level.horizontalFov(kPi / 2) == kPi / 2);
+    const std::array scaledSubjects{CameraSubject{start, start + Vec3{0, 12, 0}, 12}};
+    level.resetCamera(scaledSubjects);
+    CHECK(level.camera() == view);
+    CHECK(*level.cameraAttention() == expectedCamera.attention());
+    level.resetCamera(subjects);
     const auto initial = *view;
     auto moved = subjects;
     moved[0].feet.x += 10;
@@ -175,6 +199,16 @@ TEST_CASE("Dreamcast tower binds coloured lightmaps additive torches Sumner and 
         level.followCamera(moved, 1.0f / 30);
     }
     CHECK(glm::distance(initial.position, level.camera()->position) > 1);
+    // The adapter must preserve the camera's own 30 Hz pose pair rather
+    // than overwrite it on the intervening 60 Hz gameplay updates.
+    level.resetCamera(subjects);
+    expectedCamera.reset(subjects, towerHub);
+    for (s32 tick = 0; tick < 6; ++tick) {
+        level.followCamera(moved, 1.0f / 60);
+        expectedCamera.update(moved, 1.0f / 60);
+        CHECK(*level.camera() == expectedCamera.camera());
+        CHECK(*level.camera(.5f) == expectedCamera.sample(1.0f / 120));
+    }
     level.draw(device, Mat4{1}, *view, TreeModel::Pass::All, -1);
     CHECK(std::ranges::any_of(device.draws, [](const auto& d) {
         return d.state.lightmapRgb && d.state.lightmap != nullptr &&
@@ -183,6 +217,189 @@ TEST_CASE("Dreamcast tower binds coloured lightmaps additive torches Sumner and 
     CHECK(std::ranges::any_of(device.draws, [](const auto& d) {
         return d.state.blend == BlendMode::Additive && !d.state.depthWrite && d.state.depthTest;
     }));
+}
+
+TEST_CASE("Dreamcast stained glass uses only the current party's Dreamcast boss shards",
+          "[legends][scene-adapter][dreamcast-windows][assets]") {
+    const auto directory =
+        test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native/levels/levelt1";
+    if (!std::filesystem::is_directory(directory)) {
+        SKIP("Dreamcast tower extraction is not installed");
+    }
+    auto map = nativeMap(directory, LegendsPlatform::Dreamcast);
+    test::FakeRenderDevice device;
+    auto scene = LegendsSceneAdapter::load(device, LegendsPlatform::Dreamcast, directory, map, 2);
+    const auto index = [&](std::string_view name) {
+        const auto found = std::ranges::find(map.objects, name, &formats::LegendsMapObject::name);
+        REQUIRE(found != map.objects.end());
+        return static_cast<usize>(found - map.objects.begin());
+    };
+    const std::array names{"T1NS_POLYSUR#0", "T1NS_POLYSUR#1", "T1NS_POLYSUR#2", "T1NS_POLYSUR#3",
+                           "T1NS_POLYSUR#4"};
+    constexpr std::array<u64, 5> masks{2, 4, 4, 8, 16};
+    const auto checkWindow = [&](u64 expected) {
+        CHECK(scene->worldObjectVisible(index("T1NS_STAINEDGLA")));
+        CHECK(scene->worldObjectVisible(index("T1GROUP89")));
+        for (usize i = 0; i < names.size(); ++i) {
+            CAPTURE(names[i], expected);
+            CHECK(scene->worldObjectVisible(index(names[i])) == ((expected & masks[i]) != 0));
+        }
+    };
+    checkWindow(0);
+    CharacterSave first, second;
+    first.progress().relics.shards = Relics::kAllShards;
+    first.progress().legendsProgress(LegendsPlatform::N64).shards = 0x7e;
+    second.progress().relics.shards = Relics::kAllShards;
+    second.progress().legendsProgress(LegendsPlatform::N64).shards = 0x7e;
+    const std::array<const CharacterSave*, 2> party{&first, &second};
+    scene->synchronizeProgress(party);
+    checkWindow(0);
+    first.progress().legendsProgress(LegendsPlatform::Dreamcast).shards = 4;
+    second.progress().legendsProgress(LegendsPlatform::Dreamcast).shards = 2;
+    scene->synchronizeProgress(party);
+    checkWindow(6);
+    scene->synchronizeProgress(std::array<const CharacterSave*, 1>{&second});
+    checkWindow(2);
+    second.progress().legendsProgress(LegendsPlatform::Dreamcast).shards = 0x1e;
+    scene->synchronizeProgress(party);
+    checkWindow(0x1e);
+    scene->synchronizeProgress({});
+    checkWindow(0);
+    CHECK(first.progress().relics.shards == Relics::kAllShards);
+    CHECK(second.progress().relics.shards == Relics::kAllShards);
+    CHECK(first.progress().legendsProgress(LegendsPlatform::N64).shards == 0x7e);
+    CHECK(second.progress().legendsProgress(LegendsPlatform::N64).shards == 0x7e);
+}
+
+TEST_CASE("Dreamcast tower hosts Sumner interaction and restores its own party progress",
+          "[legends][dreamcast-tower][assets]") {
+    const auto directory =
+        test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native/levels/levelt1";
+    if (!std::filesystem::exists(directory)) {
+        SKIP("Dreamcast extraction is not installed");
+    }
+    auto map = nativeMap(directory, LegendsPlatform::Dreamcast);
+    test::FakeRenderDevice device;
+    auto scene = LegendsSceneAdapter::load(device, LegendsPlatform::Dreamcast, directory, map);
+    REQUIRE(scene->isTower());
+    const auto index = [&](std::string_view name) {
+        const auto found = std::ranges::find(map.objects, name, &formats::LegendsMapObject::name);
+        REQUIRE(found != map.objects.end());
+        return static_cast<usize>(found - map.objects.begin());
+    };
+    const auto castleGate = index("T1XSNS_DRFIE#0");
+    const auto castleBarrier = index("T1TRAPW02");
+    const auto desertGate = index("T1XSNS_DRFIE#2");
+    const auto rune = index("T1RUNEB1");
+    const auto shard = index("T1SHARD02");
+    CharacterSave save;
+    save.name = "TEST";
+    auto& n64 = save.progress().legendsProgress(LegendsPlatform::N64);
+    n64.obelisks = n64.runestones = n64.shards = 0xffff;
+    scene->synchronizeProgress(std::array<const CharacterSave*, 1>{&save});
+    CHECK(scene->worldObjectVisible(castleGate));
+    CHECK_FALSE(scene->worldObjectVisible(rune));
+    CHECK_FALSE(scene->worldObjectVisible(shard));
+    auto& progress = save.progress().legendsProgress(LegendsPlatform::Dreamcast);
+    progress.obelisks = 0x38;
+    progress.runestones = 8;
+    progress.shards = 4;
+    scene->synchronizeProgress(std::array<const CharacterSave*, 1>{&save});
+    CHECK_FALSE(scene->worldObjectVisible(castleGate));
+    CHECK_FALSE(scene->worldObjectVisible(castleBarrier));
+    CHECK(scene->worldObjectVisible(desertGate));
+    CHECK(scene->worldObjectVisible(rune));
+    CHECK(scene->worldObjectVisible(shard));
+    WorldCollision collision;
+    std::vector<CollisionTriangle> triangles;
+    for (const auto& source : map.collision) {
+        if (source.floor || source.wall) {
+            triangles.push_back({source.normal, source.vertices, source.owner,
+                                 (source.floor ? 4U : 0U) | (source.wall ? 2U : 0U)});
+        }
+    }
+    collision.build(std::move(triangles));
+    scene->bindCollision(collision);
+    CHECK_FALSE(collision.solid(static_cast<s32>(castleGate)));
+    CHECK_FALSE(collision.solid(static_cast<s32>(castleBarrier)));
+    CHECK(collision.solid(static_cast<s32>(desertGate)));
+
+    LegendsLevel level{device, map, std::move(scene), directory, test::dataDirectory()};
+    level.bindCollision(collision);
+    PlayerActor player;
+    player.spawn(2, save, nullptr, Vec3{0, 0, 9.75f}, 0);
+    std::array<PlayerActor*, 1> party{&player};
+    level.updateParty(party, 1.0f / 30, false);
+    CHECK_FALSE(level.takeDialogue());
+    level.interactionButtons(1U << 1); // A different seat's button does not admit this visitor.
+    level.updateParty(party, 1.0f / 30, false);
+    CHECK_FALSE(level.takeDialogue());
+    level.interactionButtons(1U << 2);
+    level.updateParty(party, 1.0f / 30, false);
+    const auto dialogue = level.takeDialogue();
+    REQUIRE(dialogue);
+    CHECK(dialogue->player == 2);
+    REQUIRE(dialogue->topics.size() == 5);
+    StringTable text;
+    REQUIRE(text.load(test::dataDirectory() / "text", "en"));
+    CHECK(dialogue->title.empty());
+    for (const auto& topic : dialogue->topics) {
+        CHECK(text.has(topic.label));
+        const auto pages = level.answerDialogue(topic.code);
+        if (topic.code == 4) {
+            CHECK(text.get(topic.label) == "exit");
+            CHECK(pages.empty());
+            continue;
+        }
+        REQUIRE_FALSE(pages.empty());
+        for (const auto& page : pages) {
+            CHECK(text.has(page));
+            CHECK_FALSE(text.get(page).empty());
+        }
+    }
+    CHECK(level.answerDialogue(0).front() == "legends.dreamcast.sumner.history.5");
+    level.dismissDialogue();
+    CHECK(level.answerDialogue(0).empty());
+    for (int tick = 0; tick < 60; ++tick) {
+        level.updateParty(party, 1.0f / 30, false);
+        CHECK_FALSE(level.takeDialogue());
+    }
+    player.place({0, 0, 0});
+    level.updateParty(party, 1.0f / 30, false);
+    player.place({0, 0, 9.75f});
+    level.updateParty(party, 1.0f / 30, false);
+    CHECK_FALSE(level.takeDialogue());
+    level.interactionButtons(1U << 2);
+    level.updateParty(party, 1.0f / 30, false);
+    REQUIRE(level.takeDialogue());
+
+    // Native tower framing is independent of the collision ray used by GDL.
+    // Check the complete imported floor corpus, including rendered samples.
+    const Vec3 towerHub = level.adapter().dreamcastCameraMarkers().front().position;
+    LegendsDreamcastTowerCamera expectedCamera;
+    std::vector<Vec3> cameraFeet;
+    for (const auto& start : map.starts) {
+        cameraFeet.push_back(start.position);
+    }
+    // Walk the tower's actual floor triangles rather than only its entrance.
+    // These samples cover all realm alcoves and their surrounding walls.
+    for (const auto& surface : map.collision) {
+        if (surface.floor && surface.normal.y >= WorldCollision::kFloorNormalY) {
+            cameraFeet.push_back((surface.vertices[0] + surface.vertices[1] + surface.vertices[2]) /
+                                 3.0f);
+        }
+    }
+    REQUIRE(cameraFeet.size() > 20);
+    for (const Vec3 feet : cameraFeet) {
+        const std::array subjects{CameraSubject{feet, feet + Vec3{0, 3, 0}, 3}};
+        level.resetCamera(subjects);
+        expectedCamera.reset(subjects, towerHub);
+        CHECK(*level.cameraAttention() == expectedCamera.attention());
+        CHECK(*level.camera() == expectedCamera.camera());
+        for (const f32 alpha : {0.0f, .5f, 1.0f}) {
+            CHECK(*level.camera(alpha) == expectedCamera.sample(alpha / 60));
+        }
+    }
 }
 
 TEST_CASE("Native Legends fixture presentation binds across the installed map catalog",
@@ -328,8 +545,12 @@ TEST_CASE("Native Legends pickup collection removes its figure once and returns 
         for (const auto& warning : scene->warnings()) {
             UNSCOPED_INFO(warning);
         }
+        // Containers prebind all possible loot outcomes, but these are not
+        // collectible until their opening animation finishes. This test is
+        // about removing an available pickup, not opening its container.
         const auto found = std::ranges::find_if(pickups, [](const auto& pickup) {
-            return pickup.offer.kind == static_cast<s32>(ItemKind::Gold);
+            return pickup.active && !pickup.collected &&
+                   pickup.offer.kind == static_cast<s32>(ItemKind::Gold);
         });
         REQUIRE(found != pickups.end());
         const usize selected = static_cast<usize>(found - pickups.begin());
@@ -339,6 +560,11 @@ TEST_CASE("Native Legends pickup collection removes its figure once and returns 
         PlayerActor actor;
         actor.spawn(0, save, nullptr, pickup.position, 0);
         actor.place(pickup.position - (actor.followPoint() - actor.position()));
+        INFO("Selected native gold " << pickup.nativeIndex << ' ' << pickup.name
+                                     << " active=" << pickup.active << " at " << pickup.position.x
+                                     << ',' << pickup.position.y << ',' << pickup.position.z);
+        REQUIRE(
+            touchesLegendsPickup(pickup, actor.followPoint(), actor.reach(), actor.height() * .5f));
         const auto frame = CameraFrame::of(WorldCamera{});
         scene->draw(device, Mat4{1}, frame, TreeModel::Pass::Opaque);
         scene->draw(device, Mat4{1}, frame, TreeModel::Pass::Blended);

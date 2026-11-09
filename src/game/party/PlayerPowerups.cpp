@@ -82,7 +82,9 @@ std::vector<PowerupEnding> PlayerPowerups::update(std::span<PlayerRuntime> playe
             }
         }
         const PowerupEffects worn = PowerupEffects::of(inventory);
-        const bool plainSize = PlayerFigure::bodyScale(player.actor.save(), worn) == 1.0f;
+        const bool plainSize =
+            (player.figure ? player.figure->bodySize(player.actor.save(), worn)
+                           : PlayerFigure::bodyScale(player.actor.save(), worn)) == 1.0f;
         for (const std::string_view sound :
              PowerupEndings::soundsOf(player.wornSpecial, worn.special, plainSize)) {
             endings.push_back({i, sound});

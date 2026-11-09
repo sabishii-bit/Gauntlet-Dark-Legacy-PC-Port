@@ -115,8 +115,16 @@ bool SumnerVisit::loadTexts(const std::filesystem::path& file, const StringTable
 }
 
 bool SumnerVisit::openTopics(s32 player, const TextPainter& text, const MenuScreen& screen,
-                              HintMenuLabels labels) {
-    if (!m_menu.open(text, screen, std::move(labels))) {
+                             HintMenuLabels labels, const MenuTextures* artwork,
+                             std::optional<MenuDefinition> nativeStyle,
+                             const DialoguePresentation* presentation) {
+    if (artwork) {
+        HintMenuArt art;
+        art.textures = *artwork;
+        art.presentation = presentation;
+        m_menu.setArt(std::move(art));
+    }
+    if (!m_menu.open(text, screen, std::move(labels), std::move(nativeStyle))) {
         return false;
     }
     m_sim.owner = player;

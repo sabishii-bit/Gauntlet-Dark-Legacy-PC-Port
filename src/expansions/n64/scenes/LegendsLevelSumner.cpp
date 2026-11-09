@@ -49,16 +49,23 @@ void LegendsLevel::announceProgress(std::span<const PartyMember> before,
     };
     const auto old = progress(before);
     const auto current = progress(after);
-    for (const auto identity : m_sumner->milestoneTextIds(old, current)) {
-        const auto key = legendsN64SumnerTextKey(identity);
-        if (!key.empty()) {
-            m_milestonePages.push_back(key);
+    const auto combined = [](std::span<const LegendsProgress> party) {
+        LegendsProgress result;
+        for (const auto& value : party) {
+            result.runestones |= value.runestones;
+            result.shards |= value.shards;
+            result.obelisks |= value.obelisks;
         }
-    }
+        return result;
+    };
+    m_world.adapter()->queueTowerCeremonies(combined(old), combined(current));
     m_historyMilestone = m_sumner->milestone(current);
 }
 
 bool LegendsLevel::updateSumner(std::span<PlayerActor*> players, f32 seconds, bool blocked) {
+    if (m_dreamcastSumner) {
+        return updateDreamcastSumner(players, seconds, blocked);
+    }
     if (!m_sumner) {
         return false;
     }
@@ -74,12 +81,16 @@ bool LegendsLevel::updateSumner(std::span<PlayerActor*> players, f32 seconds, bo
     }
     m_podiumContacts.fill(false);
     m_historyMilestone = m_sumner->milestone(m_hintProgress);
-    if (!blocked && !m_dialogueOpen && opponentsReady() && !visitors.empty() &&
-        !m_milestonePages.empty()) {
-        // Already-installed pieces need no invented flight animation. The
-        // native ceremony's exact captions share the normal modal scroll path.
-        m_pickups.push_back(
-            {visitors.front().seat, {}, {}, {}, std::exchange(m_milestonePages, {}), true});
+    const auto* ceremony = adapter().towerCeremony();
+    if (ceremony && (ceremony->active() || ceremony->pending())) {
+        if (!ceremony->active() && !blocked && !m_dialogueOpen && !visitors.empty() &&
+            (!m_camera || !m_camera->introActive())) {
+            const auto view = camera();
+            const auto focus = cameraAttention();
+            if (view && focus) {
+                m_world.adapter()->startTowerCeremonies(*view, *focus);
+            }
+        }
         return true;
     }
     const auto owner = m_sumner->update(seconds, visitors, blocked || m_dialogueOpen);
@@ -103,6 +114,9 @@ std::optional<ImportedDialogue> LegendsLevel::takeDialogue() {
 }
 
 std::vector<std::string> LegendsLevel::answerDialogue(s32 topic) {
+    if (m_dreamcastSumner && m_dialogueOpen) {
+        return LegendsDreamcastTower::advice(topic, adapter().partyProgress());
+    }
     if (!m_sumner || !m_dialogueOpen || topic < 0 ||
         std::ranges::find(m_sumner->choices(), static_cast<u32>(topic),
                           &LegendsSumnerChoice::action) == m_sumner->choices().end()) {

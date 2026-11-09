@@ -1,9 +1,11 @@
+#include <algorithm>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/assets/BitmapFont.h"
 #include "engine/core/Types.h"
+#include "engine/io/NativeStateDigest.h"
 #include "engine/render/Image.h"
 #include "engine/ui/Canvas.h"
 #include "engine/ui/TextPainter.h"
@@ -106,6 +108,63 @@ TEST_CASE("the hint scroll lists its topics, answers one with a page and returns
     f.menu.read(f.painter, "A HINT", {"ONE\nTWO"}, 1.0f, true, 0);
     const s32 lineHeight = f.painter.lineHeight(HintMenu::kPageScale);
     REQUIRE(f.menu.page().bodyTop() == 192 - lineHeight);
+}
+
+TEST_CASE("a hint menu draws with the font borrowed when its native topics opened",
+          "[game][menu][hints][imported-menu]") {
+    Fixture f;
+    REQUIRE(f.menu.open(f.painter, MenuScreen{}, labels()));
+    f.menu.update(f.device, {}, 120);
+    Canvas canvas;
+    canvas.begin(f.device, Mat4{1});
+    f.menu.draw(canvas, TextPainter{});
+    canvas.end();
+    CHECK(std::ranges::any_of(f.device.draws,
+                              [&](const auto& draw) { return draw.texture == &f.sheet; }));
+}
+
+TEST_CASE("closing a hint menu releases its borrowed painter before the level is destroyed",
+          "[game][menu][hints][imported-menu]") {
+    HintMenu menu;
+    HintMenu::LocalSnapshot closed;
+    NativeStateDigest before;
+    {
+        const auto font = wideFont();
+        test::FakeTexture sheet{64, 64};
+        TextPainter painter;
+        painter.setFont(&font, &sheet);
+        REQUIRE(menu.open(painter, MenuScreen{}, labels()));
+        menu.read(painter, "HELP", {"GENERAL"}, 1, true, 0);
+        menu.close();
+        CHECK_FALSE(menu.active());
+        CHECK_FALSE(menu.topics().isOpen());
+        CHECK_FALSE(menu.page().isOpen());
+        REQUIRE(menu.appendNativeDigest(before));
+        REQUIRE(before.checkedFinish());
+        // Releasing the former owner's font must not change a closed menu's
+        // state. Check while it is alive so a stale borrow fails without UB.
+        painter.setFont(nullptr, nullptr);
+        NativeStateDigest released;
+        REQUIRE(menu.appendNativeDigest(released));
+        REQUIRE(released.checkedFinish() == before.checkedFinish());
+        menu.saveLocal(closed);
+    }
+
+    NativeStateDigest after;
+    REQUIRE(menu.appendNativeDigest(after));
+    REQUIRE(after.checkedFinish());
+    CHECK(after.checkedFinish() == before.checkedFinish());
+    NativeStateDigest saved;
+    REQUIRE(menu.appendLocalDigest(saved, closed));
+    REQUIRE(saved.checkedFinish());
+    CHECK(saved.checkedFinish() == before.checkedFinish());
+
+    test::FakeRenderDevice device;
+    Canvas canvas;
+    canvas.begin(device, Mat4{1});
+    menu.draw(canvas, TextPainter{});
+    canvas.end();
+    CHECK(device.draws.empty());
 }
 
 TEST_CASE("backing out of the topics burns the scroll away", "[game][menu][hints]") {

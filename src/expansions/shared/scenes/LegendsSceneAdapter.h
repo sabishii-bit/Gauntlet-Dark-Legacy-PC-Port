@@ -13,6 +13,16 @@
 #include "engine/assets/ItemArchive.h"
 #include "engine/world/TextureAnimator.h"
 
+#include "expansions/dreamcast/bosses/LegendsDreamcastBossEntrance.h"
+#include "expansions/dreamcast/enemies/LegendsDreamcastEnemies.h"
+#include "expansions/dreamcast/level/LegendsDreamcastContainers.h"
+#include "expansions/dreamcast/level/LegendsDreamcastFalling.h"
+#include "expansions/dreamcast/level/LegendsDreamcastObelisks.h"
+#include "expansions/dreamcast/level/LegendsDreamcastPortals.h"
+#include "expansions/dreamcast/level/LegendsDreamcastScenery.h"
+#include "expansions/dreamcast/level/LegendsDreamcastTower.h"
+#include "expansions/dreamcast/level/LegendsDreamcastTraps.h"
+#include "expansions/dreamcast/level/LegendsDreamcastWorldMotion.h"
 #include "expansions/n64/bosses/LegendsBosses.h"
 #include "expansions/n64/critters/LegendsCritters.h"
 #include "expansions/n64/enemies/LegendsDeath.h"
@@ -28,6 +38,7 @@
 #include "expansions/n64/level/LegendsObelisk.h"
 #include "expansions/n64/level/LegendsPortals.h"
 #include "expansions/n64/level/LegendsScenery.h"
+#include "expansions/n64/level/LegendsTowerCeremony.h"
 #include "expansions/n64/level/LegendsTowerMotion.h"
 #include "expansions/n64/level/LegendsTowerPortals.h"
 #include "expansions/n64/level/LegendsTowerProgress.h"
@@ -71,7 +82,22 @@ public:
     usize textureAnimationCount() const { return m_worldMotion.size() + m_nativeScrolls.size(); }
     const std::vector<std::string>& warnings() const { return m_warnings; }
     LegendsPlatform platform() const { return m_platform; }
-    bool isTower() const { return m_gatedPortals; }
+    s32 playerCount() const { return m_playerCount; }
+    bool isTower() const { return m_gatedPortals || m_dreamcastTower.has_value(); }
+    void faceDreamcastSumner(f32 yaw);
+    void cueDreamcastBossArena(Vec3 boss);
+    const LegendsProgress& partyProgress() const { return m_partyProgress; }
+    const LegendsTowerCeremony* towerCeremony() const {
+        return m_towerCeremony ? &*m_towerCeremony : nullptr;
+    }
+    void queueTowerCeremonies(const LegendsProgress& before, const LegendsProgress& after);
+    void startTowerCeremonies(const WorldCamera& camera, const Vec3& attention);
+    std::string_view dreamcastTitle() const { return m_dreamcastTitle; }
+    std::span<const LegendsDreamcastPortal> dreamcastPortals() const { return m_dreamcastPortals; }
+    bool dreamcastPortalUnlocked(usize index) const {
+        return index < m_dreamcastPortalPresentation.size() &&
+               m_dreamcastPortalPresentation[index].enabled;
+    }
     const std::optional<formats::LegendsN64CameraData>& cameraConfig() const { return m_camera; }
     const std::optional<LevelCameraInfo>& dreamcastCameraConfig() const {
         return m_dreamcastCamera;
@@ -83,9 +109,12 @@ public:
     std::span<const ImportedGenerator> generators() const { return m_generators; }
     std::span<const ImportedActor> actors() const { return m_actors; }
     ItemArchive* actorArchive(s32 kind) const;
+    /** Borrow a script's tree from this level's authored library scope only. */
+    ItemArchive* scriptArchive(std::string_view tree) const;
     void spawnBossRewards(Vec3 death, Vec3 start);
     void updateBossRewards(f32 seconds, const WorldCollision& collision);
     std::vector<CombatArenaTarget> arenaTargets() const;
+    std::vector<ImportedTarget> arenaDamageTargets() const;
     std::vector<Mat4> arenaAnchors() const;
     std::vector<Obstacle> arenaObstacles() const;
     std::vector<MissileStop> arenaMissileStops() const;
@@ -117,31 +146,60 @@ public:
     void touchDeaths(Vec3 feet, f32 radius, f32 height);
     void releaseDeaths(const std::function<bool(const EnemySpawn&)>& release);
     bool takeDeathAdvice();
-    std::vector<ImportedTarget> sceneryTargets() const { return m_scenery.targets(); }
+    std::vector<ImportedTarget> sceneryTargets() const {
+        return m_platform == LegendsPlatform::Dreamcast ? m_dreamcastScenery.targets()
+                                                        : m_scenery.targets();
+    }
     bool strikeScenery(s32 localId, f32 power, u32 flags);
     bool strikeWorldObject(s32 object, f32 power, u32 flags);
     bool worldObjectVisible(usize object) const;
     f32 worldObjectWhiteBlend(usize object) const { return m_scenery.whiteBlend(object); }
     f32 worldObjectAlpha(usize object, f32 alpha = -1) const {
-        return m_worldMovement.opacity(object, alpha);
+        return m_dreamcastMovement ? m_dreamcastMovement->opacity(object, alpha)
+                                   : m_worldMovement.opacity(object, alpha);
     }
-    void supportSwitches(std::span<const s32> owners) { m_worldMovement.support(owners); }
+    void supportSwitches(std::span<const s32> owners) {
+        if (m_dreamcastMovement)
+            m_dreamcastMovement->support(owners);
+        else
+            m_worldMovement.support(owners);
+    }
     Vec3 worldObjectOffset(usize object, f32 alpha = -1) const {
-        return m_worldMovement.offset(object, alpha) + m_bossEruption.offset(object, alpha);
+        return (m_dreamcastMovement ? m_dreamcastMovement->offset(object, alpha)
+                                    : m_worldMovement.offset(object, alpha)) +
+               m_bossEruption.offset(object, alpha);
     }
     Mat4 worldObjectTransform(usize object, f32 alpha = -1) const {
-        return glm::translate(Mat4{1}, m_worldMovement.offset(object, alpha)) *
+        return (m_dreamcastMovement
+                    ? m_dreamcastMovement->transform(object, alpha)
+                    : glm::translate(Mat4{1}, m_worldMovement.offset(object, alpha))) *
                m_bossEruption.transform(object, alpha);
     }
     void bindCollision(WorldCollision& collision) const {
+        if (m_dreamcastMovement)
+            m_dreamcastMovement->bindCollision(collision);
         m_worldMovement.bindCollision(collision);
         m_scenery.syncCollision(collision);
+        m_dreamcastScenery.bindCollision(collision);
+        if (m_dreamcastTower) {
+            m_dreamcastTower->syncCollision(collision);
+        }
     }
     void syncCollision(WorldCollision& collision) const {
+        if (m_dreamcastMovement)
+            m_dreamcastMovement->syncCollision(collision);
         m_worldMovement.syncCollision(collision);
         m_scenery.syncCollision(collision);
+        m_dreamcastScenery.syncCollision(collision);
+        if (m_dreamcastTower) {
+            m_dreamcastTower->syncCollision(collision);
+        }
     }
+    std::span<const u32> surfaceHazardFlags() const { return m_surfaceHazardFlags; }
     void touchSwitches(std::span<const LegendsPortalVisitor> visitors);
+    const LegendsDreamcastWorldMotion* dreamcastWorldMotion() const {
+        return m_dreamcastMovement ? &*m_dreamcastMovement : nullptr;
+    }
     void updateTraps(f32 seconds, bool timeStopped);
     void touchTraps(std::span<const LegendsPortalVisitor> visitors);
     void setTrapView(const ViewVolume& view);
@@ -149,7 +207,7 @@ public:
     std::vector<LegendsFixtureEvent> takeFixtureEvents();
     std::vector<LegendsSoundEvent> takeSounds();
     std::vector<u32> takeObeliskSpeech();
-    std::vector<LegendsSoundLoop> soundLoops() const { return m_worldMovement.soundLoops(); }
+    std::vector<LegendsSoundLoop> soundLoops() const;
     /** Supply the active party before first presentation and after shared awards. */
     void synchronizeProgress(std::span<const CharacterSave* const> party);
     using PickupObserver = std::function<void(const LegendsPickup&, const ItemTaking&)>;
@@ -188,6 +246,33 @@ private:
     void bindN64Trap(RenderDevice& device, formats::LegendsN64Trap definition, usize idleFigure,
                      f32 damageScale, s32 floorOwner = -1);
     void loadDreamcast(RenderDevice& device, const std::filesystem::path& directory);
+    bool bindDreamcastArenaRock(RenderDevice& device, const formats::ItemInfoRecord& info,
+                                const formats::ItemInstanceRecord& instance, u32 nativeIndex);
+    void restoreDreamcastChimeraCover(RenderDevice& device,
+                                      const std::filesystem::path& directory, ItemArchive* art);
+    bool bindDreamcastEntranceRock(const formats::ItemInfoRecord& info,
+                                   const formats::ItemInstanceRecord& instance, u32 index,
+                                   usize figure);
+    void updateDreamcastBossArena(f32 seconds);
+    bool bindDreamcastFalling(const formats::ItemInfoRecord& info,
+                              const formats::ItemInstanceRecord& instance, u32 index, usize figure);
+    void updateDreamcastFalling(f32 seconds);
+    void touchDreamcastFalling(std::span<const LegendsPortalVisitor> visitors);
+    void bindDreamcastPortal(RenderDevice& device, const formats::ItemInfoRecord& info,
+                             const formats::ItemInstanceRecord& instance, u32 index, usize figure,
+                             bool tower);
+    void selectDreamcastPortal(usize index);
+    void bindDreamcastTrap(const formats::ItemInfoRecord& info,
+                           const formats::ItemInstanceRecord& instance, u32 nativeIndex,
+                           usize figure);
+    void updateDreamcastTraps(f32 seconds, bool timeStopped);
+    void touchDreamcastTraps(std::span<const LegendsPortalVisitor> visitors);
+    void bindDreamcastSwitch(RenderDevice& device, u32 nativeIndex);
+    void updateDreamcastSwitches();
+    void bindDreamcastRider(const formats::ItemInfoRecord& info,
+                            const formats::ItemInstanceRecord& instance, usize firstFigure,
+                            usize firstPickup, usize firstContainer, usize firstGate);
+    void updateDreamcastRiders();
     void loadN64(RenderDevice& device, const std::filesystem::path& directory,
                  std::span<const formats::LegendsMapCollisionTriangle> collision);
     void loadN64Tower(RenderDevice& device, const std::filesystem::path& root,
@@ -200,6 +285,7 @@ private:
     void updateArena(f32 seconds);
     void selectArenaRock(usize index, bool burst = false);
     void updateTowerProgress(bool initial);
+    void updateTowerCeremony(f32 seconds);
     void bindN64Gate(RenderDevice& device, formats::LegendsN64Gate definition, usize idleFigure);
     void touchGates(PlayerActor& actor);
     void updateGates();
@@ -225,6 +311,17 @@ private:
                           usize idleFigure);
     void bindN64Container(RenderDevice& device, LegendsContainerDefinition definition,
                           usize idleFigure);
+    void bindDreamcastContainer(RenderDevice& device, const formats::ItemInfoRecord& info,
+                                const formats::ItemInstanceRecord& instance, u32 nativeIndex,
+                                usize idleFigure, s32 realmType);
+    void selectDreamcastContainer(usize index);
+    void bindDreamcastGenerator(RenderDevice& device, const formats::ItemInfoRecord& info,
+                                const formats::ItemInstanceRecord& instance, u32 nativeIndex,
+                                const formats::LegendsDreamcastFixtureScope& scope,
+                                const std::filesystem::path& nativeRoot);
+    bool bindDreamcastGate(const formats::ItemInfoRecord& info,
+                           const formats::ItemInstanceRecord& instance, u32 nativeIndex,
+                           usize figure);
     void bindN64Selectors(std::span<const u8> powerups, std::span<const u8> randoms,
                           std::span<const formats::LegendsN64Fixture> fixtures);
     void bindN64FloorSelector(RenderDevice& device, const formats::LegendsN64Fixture& fixture,
@@ -241,10 +338,15 @@ private:
     void bindWorld(RenderDevice& device, const formats::LegendsMap& map,
                    std::span<const TextureAnimationInfo> animations);
     void place(RenderDevice& device, std::string_view name, const ItemInstance& instance,
-               f32 scale = 1, u32 objectFlags = 0);
+               f32 scale = 1, u32 objectFlags = 0, ItemArchive* owner = nullptr);
     // Figures and animation bindings must be destroyed before their borrowed archives.
     std::vector<std::unique_ptr<ItemArchive>> m_archives;
+    // Generator artwork belongs to its monster bank in normal Dreamcast play.
+    // Keep those banks outside the ordinary fixture lookup order.
+    std::array<std::unique_ptr<ItemArchive>, 20> m_dreamcastGeneratorArchives;
+    std::array<bool, 20> m_dreamcastGeneratorArchivesLoaded{};
     TextureSet m_worldTextures;
+    std::vector<u32> m_surfaceHazardFlags;
     std::vector<TextureView> m_worldViews;
     struct WorldBinding {
         TextureSet* bank = nullptr;
@@ -284,6 +386,8 @@ private:
         LegendsGate state;
         usize idleFigure = 0;
         usize openingFigure = 0;
+        s32 openingSequence = 0;
+        s32 openSequence = -1;
     };
     std::vector<GatePresentation> m_gates;
     struct ObeliskPresentation {
@@ -316,7 +420,35 @@ private:
     };
     std::vector<NativeRider> m_nativeRiders;
     LegendsWorldMotion m_worldMovement;
+    std::optional<LegendsDreamcastWorldMotion> m_dreamcastMovement;
+    struct DreamcastSwitchPresentation {
+        usize index = 0, figure = 0;
+        std::array<s32, 4> sequences{-1, -1, -1, -1};
+        bool active = false;
+    };
+    std::vector<DreamcastSwitchPresentation> m_dreamcastSwitches;
+    struct DreamcastRider {
+        NativeRider contents;
+        Mat4 applied{1};
+    };
+    std::vector<DreamcastRider> m_dreamcastRiders;
     LegendsScenery m_scenery;
+    LegendsDreamcastScenery m_dreamcastScenery;
+    LegendsDreamcastBossEntrance m_dreamcastBossEntrance;
+    std::vector<usize> m_dreamcastBossEntranceFigures;
+    LegendsDreamcastFalling m_dreamcastFalling;
+    std::optional<u32> m_dreamcastCollapseSound;
+    std::optional<u32> m_dreamcastWallHitSound;
+    bool bindDreamcastObelisk(const formats::ItemInfoRecord& info,
+                              const formats::ItemInstanceRecord& instance, u32 index, usize figure);
+    void updateDreamcastObelisks();
+    struct DreamcastObeliskPresentation {
+        usize pickup = 0, figure = 0;
+        std::array<s32, 3> sequences{};
+        Obstacle body;
+        bool activated = false;
+    };
+    std::vector<DreamcastObeliskPresentation> m_dreamcastObelisks;
     struct SwitchPresentation {
         u32 nativeIndex = 0;
         usize idleFigure = 0;
@@ -350,10 +482,14 @@ private:
     bool m_bossRewardsReleased = false;
     struct ArenaRockPresentation {
         ImportedBoss::ArenaRock definition;
+        Vec2 boxHalfExtents{0}; ///< Zero retains the ordinary native cylindrical cover.
+        std::vector<CollisionTriangle> surface;
         std::array<std::optional<usize>, 4> figures;
         std::optional<usize> burstFigure, activeFigure;
         s32 health = 0;
+        s32 armor = 0;
         s32 tier = 3;
+        s32 initialTier = 3;
         bool dormant = false;
         f32 activationDelay = 0;
     };
@@ -372,15 +508,25 @@ private:
             usize openingFigure = 0;
             std::optional<usize> pickup;
             std::optional<usize> death;
+            usize brokenFigure = 0;
+            s32 openingSequence = 0;
+            s32 brokenSequence = 0;
         };
         std::optional<usize> selector;
         std::vector<Outcome> outcomes;
         std::optional<usize> blastFigure;
         f32 blastSeconds = 0;
         std::optional<usize> death;
+        // Dreamcast stores these states as sequences in one tree; N64 binds
+        // separate trees with their animation in sequence zero.
+        s32 openingSequence = 0;
+        s32 brokenSequence = 0;
+        std::optional<s16> dreamcastContents;
     };
     std::vector<ContainerPresentation> m_containers;
     LegendsLootSelectors m_lootSelectors;
+    LegendsDreamcastLoot m_dreamcastLoot;
+    s32 m_dreamcastRealm = -1;
     struct FloorSelectorPresentation {
         usize slot = 0;
         usize pickup = 0;
@@ -408,6 +554,25 @@ private:
     bool m_gatedPortals = false;
     std::vector<formats::LegendsN64Portal> m_portals;
     std::vector<PortalPresentation> m_portalPresentation;
+    struct DreamcastPortalPresentation {
+        usize figure = 0;
+        std::optional<usize> lockedFigure;
+        std::array<s32, 5> sequences{};
+        LegendsDreamcastPortalMotion motion;
+        u32 generation = 0;
+        bool enabled = false;
+    };
+    LegendsDreamcastPortalPolicy m_dreamcastPortalPolicy;
+    std::vector<LegendsDreamcastPortal> m_dreamcastPortals;
+    std::vector<DreamcastPortalPresentation> m_dreamcastPortalPresentation;
+    struct DreamcastTrapPresentation {
+        LegendsDreamcastTrap state;
+        usize figure = 0;
+        std::array<s32, 4> sequences{};
+        u32 generation = 0;
+    };
+    std::vector<DreamcastTrapPresentation> m_dreamcastTraps;
+    std::array<f32, 4> m_dreamcastTrapCooldowns{};
     bool m_portalDeparture = false;
     bool m_waitForPortalExit = false;
     std::array<LegendsTowerPortalMotion, 2> m_towerPortals{
@@ -426,6 +591,11 @@ private:
         std::minstd_rand random{1};
     };
     std::optional<TowerPresentation> m_tower;
+    std::optional<LegendsTowerCeremony> m_towerCeremony;
+    std::optional<usize> m_towerStaff;
+    std::string m_towerStaffParent;
+    std::string m_towerGesture;
+    std::array<Mat4, 13> m_towerRunePlacements{};
     struct TowerDoorPresentation {
         formats::LegendsN64TowerDoor definition;
         usize openingFigure = 0;
@@ -446,6 +616,9 @@ private:
     s32 m_playerCount = 1;
     std::optional<formats::LegendsN64CameraData> m_camera;
     std::optional<LevelCameraInfo> m_dreamcastCamera;
+    std::string m_dreamcastTitle;
+    std::optional<LegendsDreamcastTower> m_dreamcastTower;
+    std::optional<usize> m_dreamcastSumnerFigure;
     std::vector<WorldLocator> m_dreamcastCameraMarkers;
     std::vector<LegendsPickup> m_pickups;
     std::vector<usize> m_pickupFigures;

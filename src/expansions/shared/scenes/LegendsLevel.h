@@ -1,5 +1,13 @@
 #pragma once
 
+#include "expansions/dreamcast/audio/LegendsDreamcastAmbient.h"
+#include "expansions/dreamcast/audio/LegendsDreamcastSounds.h"
+#include "expansions/dreamcast/audio/LegendsDreamcastSpeech.h"
+#include "expansions/dreamcast/bosses/LegendsDreamcastBossAssets.h"
+#include "expansions/dreamcast/bosses/LegendsDreamcastBossVisit.h"
+#include "expansions/dreamcast/bosses/LegendsDreamcastBosses.h"
+#include "expansions/dreamcast/camera/LegendsDreamcastArenaCamera.h"
+#include "expansions/dreamcast/camera/LegendsDreamcastCamera.h"
 #include "expansions/n64/audio/LegendsAmbient.h"
 #include "expansions/n64/audio/LegendsAnnouncements.h"
 #include "expansions/n64/audio/LegendsSounds.h"
@@ -9,10 +17,10 @@
 #include "expansions/n64/level/LegendsAdvice.h"
 #include "expansions/n64/level/LegendsBlast.h"
 #include "expansions/n64/level/LegendsSumner.h"
-#include "expansions/n64/menu/LegendsDialogue.h"
 #include "expansions/shared/scenes/LegendsPreview.h"
 #include "game/bosses/LegendProfile.h"
 #include "game/level/ImportedLevel.h"
+#include "game/widgets/DialoguePresentation.h"
 
 namespace gdl::game {
 
@@ -24,12 +32,21 @@ public:
                  const std::filesystem::path& directory, const std::filesystem::path& characterRoot,
                  std::shared_ptr<LegendsAdviceState> advice = {});
     void capturePresentation() override;
+    void servicePreservedSpeech(f32 seconds) override;
+    void bindStrings(const StringTable* strings) override { m_dreamcastVisit.bindStrings(strings); }
+    const LegendsDreamcastBossCeremony& dreamcastBossCeremony() const {
+        return m_dreamcastVisit.state();
+    }
     const DialoguePresentation* messagePresentation() const override {
         return m_messageStyle.get();
     }
+    void drawEntranceTitle(Canvas& canvas, f32 width) const override;
     void update(f32 seconds, bool timeStopped) override;
     void bindCollision(WorldCollision& collision) const override;
     void syncCollision(WorldCollision& collision) const override;
+    std::span<const u32> surfaceHazardFlags() const override {
+        return adapter().surfaceHazardFlags();
+    }
     std::optional<ImportedWorldObject> object(s32 id) const override { return m_world.object(id); }
     std::optional<ImportedObjectHit> pickObject(const Vec3& origin, const Vec3& direction,
                                                 const WorldCamera& view, f32 alpha) const override {
@@ -43,13 +60,18 @@ public:
               f32 alpha) const override;
     void resetCamera(std::span<const CameraSubject> subjects) override;
     void trackBoss(std::optional<Vec3> floorAnchor) override;
+    void trackBoss(const BossCameraSubject& subject) override;
     void followCamera(std::span<const CameraSubject> subjects, f32 seconds) override;
     std::optional<WorldCamera> camera(f32 alpha = -1) const override;
     std::optional<Vec3> cameraAttention() const override;
+    f32 horizontalFov(f32 preferred) const override;
+    bool playerLevelGrowth() const override { return false; }
     bool opponentsReady() const override;
+    bool protectsParty() const override { return m_dreamcastBoss && m_bossDefeated; }
     Vec3 resolveMovement(const Vec3& from, const Vec3& to, f32 radius, f32 height) const override;
     void touchScenery(s32 player, const Vec3& from, const Vec3& to, f32 radius,
                       f32 height) override;
+    void interactionButtons(u32 pressedSeats) override { m_interactionButtons = pressedSeats; }
     std::optional<ImportedDialogue> takeDialogue() override;
     std::vector<std::string> answerDialogue(s32 topic) override;
     void dismissDialogue() override;
@@ -77,7 +99,11 @@ public:
     ItemArchive* importedActorArchive(s32 kind) const override {
         return m_world.adapter()->actorArchive(kind);
     }
-    const ImportedBoss* importedBoss() const override { return m_boss ? &m_boss->combat : nullptr; }
+    const ImportedBoss* importedBoss() const override {
+        if (m_dreamcastBoss)
+            return &m_dreamcastBoss->combat;
+        return m_boss ? &m_boss->combat : nullptr;
+    }
     bool hasBossLegend(const CharacterSave& save) const override;
     bool consumeBossLegend(CharacterSave& save) override;
     bool playBossLegendSound(LegendSound phase) override;
@@ -85,11 +111,15 @@ public:
     const LegendProfile* bossLegendProfile() const override {
         return m_bossLegend ? &m_bossLegendProfile : nullptr;
     }
-    bool hasEnemyAssets() const override { return platform() == LegendsPlatform::N64; }
+    bool hasEnemyAssets() const override {
+        return platform() == LegendsPlatform::N64 || platform() == LegendsPlatform::Dreamcast;
+    }
     std::unique_ptr<ItemArchive> loadEnemyAssets(s32 kind) const override;
     std::unique_ptr<CombatantAssets>
     loadBossAssets(RenderDevice& device, const std::filesystem::path& commonRoot) const override;
     void bossIntro(const Vec3& position) override;
+    bool bossActivationReady(const Vec3& position) const override;
+    void bossArenaCue(const Vec3& position) override;
     void bossDefeated(const Vec3& position, std::span<PlayerActor*> players) override;
     std::vector<Mat4> arenaAnchors() const override { return adapter().arenaAnchors(); }
     std::vector<CombatArenaTarget> arenaTargets() const override {
@@ -123,6 +153,7 @@ public:
         return m_announcements.resolve(lines, subject);
     }
     void playSounds(SoundPlayer& output, const Vec3& listener) override;
+    std::optional<MusicDuck> ambientMusicDuck() const override { return m_ambientMusicDuck; }
     void pauseSounds() override;
     void stopSounds() override;
     const std::optional<std::string>& destination() const { return m_destination; }
@@ -135,23 +166,33 @@ public:
     const LegendsSceneAdapter& adapter() const { return *m_world.adapter(); }
 
 private:
+    std::unique_ptr<CombatantAssets>
+    loadN64BossAssets(RenderDevice& device, const std::filesystem::path& commonRoot) const;
+    void n64BossDefeated(const Vec3& position, std::span<PlayerActor*> players);
+    void dreamcastBossDefeated(const Vec3& position, std::span<PlayerActor*> players);
     bool updateSumner(std::span<PlayerActor*> players, f32 seconds, bool blocked);
+    bool updateDreamcastSumner(std::span<PlayerActor*> players, f32 seconds, bool blocked);
     void updateExitReminder(std::span<const CharacterSave* const> party);
     LegendsPreview m_world;
-    std::unique_ptr<LegendsDialogue> m_messageStyle;
+    std::unique_ptr<DialoguePresentation> m_messageStyle;
+    f64 m_entranceSeconds = 0;
     std::filesystem::path m_directory;
     std::optional<LegendsCamera> m_camera;
-    std::optional<TowerCamera> m_dreamcastCamera;
+    std::optional<LegendsDreamcastLevelCamera> m_dreamcastCamera;
+    std::optional<LegendsDreamcastTowerCamera> m_dreamcastTowerCamera;
+    std::optional<LegendsDreamcastArenaCamera> m_dreamcastArenaCamera;
+    std::optional<BossCameraInfo> m_dreamcastArenaConfig;
+    BossCameraSubject m_dreamcastBossSubject;
     CameraRange m_dreamcastRange;
-    WorldCamera m_previousDreamcastCamera;
     std::optional<LegendsSumner> m_sumner;
+    std::optional<LegendsDreamcastSumner> m_dreamcastSumner;
     std::array<bool, 4> m_podiumContacts{};
     std::vector<LegendsProgress> m_hintProgress;
     std::optional<ImportedDialogue> m_dialogue;
     bool m_dialogueOpen = false;
+    u32 m_interactionButtons = 0;
     bool m_shopRequested = false;
     u32 m_historyMilestone = 14;
-    std::vector<std::string> m_milestonePages;
     f32 m_cameraTickSeconds = 1.0f / 60.0f;
     std::optional<std::string> m_destination;
     bool m_departureFailed = false;
@@ -161,12 +202,28 @@ private:
     ClassDataSet m_classes;
     std::vector<ImportedPickup> m_pickups;
     LegendsSounds m_sounds;
+    LegendsDreamcastSounds m_dreamcastSounds;
+    SoundHandle playNativeSound(SoundPlayer& output, u32 token, f32 volume = 1, bool loop = false);
     std::optional<LegendsEnemySounds> m_enemySounds;
+    std::vector<LevelEnemy> m_dreamcastEnemyRoster;
+    s32 m_dreamcastRealm = -1;
     LegendsSpeech m_speech;
+    LegendsDreamcastSpeech m_dreamcastSpeech;
+    std::vector<u32> m_dreamcastRuneAnnouncements;
     LegendsAnnouncements m_announcements;
     std::shared_ptr<LegendsAdviceState> m_advice;
     bool m_deathAdviceSpeechPending = false;
     LegendsAmbient m_ambient;
+    LegendsDreamcastAmbient m_dreamcastAmbient;
+    struct AmbientSource {
+        u32 nativeIndex = 0;
+        usize owner = 0;
+        Vec3 position{0};
+    };
+    std::vector<AmbientSource> m_dreamcastAmbientSources;
+    SoundHandle m_dreamcastAmbientHandle = kNoSound;
+    std::optional<u32> m_dreamcastAmbientIndex;
+    std::optional<MusicDuck> m_ambientMusicDuck;
     bool m_entrySpeechPending = true;
     std::optional<u32> m_exitReminder;
     bool m_exitSpeechPlayed = false;
@@ -190,6 +247,9 @@ private:
     std::vector<LegendsPortalVisitor> m_visitors;
     f32 m_trapDamageScale = 1;
     std::optional<LegendsBossEncounter> m_boss;
+    std::optional<LegendsDreamcastBossEncounter> m_dreamcastBoss;
+    std::optional<LegendsDreamcastBossCamera> m_dreamcastBossCamera;
+    LegendsDreamcastBossVisit m_dreamcastVisit;
     std::unique_ptr<ItemArchive> m_bossLegend;
     LegendProfile m_bossLegendProfile;
     std::optional<LegendsBossCamera> m_bossCamera;

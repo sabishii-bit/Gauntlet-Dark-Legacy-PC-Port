@@ -44,9 +44,12 @@ void startNearGold(formats::LegendsMap& map, std::span<const LegendsPickup> pick
     // Only relocate the test entrance, never the item or native floor/wall data.
     // The real traversal opener still rejects obstructed candidates. Gold can sit
     // against a wall, so include nearby points inside the ordinary pickup reach.
+    // Containers prebind their possible loot while inactive; those positions
+    // are not collectible entrances until the opening animation has finished.
     map.starts.clear();
     for (const auto& pickup : pickups) {
-        if (pickup.offer.kind != static_cast<s32>(ItemKind::Gold)) {
+        if (!pickup.active || pickup.collected ||
+            pickup.offer.kind != static_cast<s32>(ItemKind::Gold)) {
             continue;
         }
         map.starts.push_back({.position = pickup.position});
@@ -60,6 +63,24 @@ void startNearGold(formats::LegendsMap& map, std::span<const LegendsPickup> pick
         }
     }
     REQUIRE_FALSE(map.starts.empty());
+}
+
+TEST_CASE("Playable pickup test entrances exclude contained and collected gold",
+          "[legends][playable][items]") {
+    formats::LegendsMap map;
+    std::array<LegendsPickup, 4> pickups;
+    for (usize index = 0; index < pickups.size(); ++index) {
+        pickups[index].offer.kind = static_cast<s32>(ItemKind::Gold);
+        pickups[index].position = {static_cast<f32>(index) * 10, 2, 0};
+    }
+    pickups[0].active = false; // Closed-chest outcome precedes the loose gold.
+    pickups[1].collected = true;
+    pickups[3].offer.kind = static_cast<s32>(ItemKind::Food);
+    startNearGold(map, pickups, 1);
+    REQUIRE(map.starts.size() == 17);
+    CHECK(map.starts.front().position == pickups[2].position);
+    for (const auto& marker : map.starts)
+        CHECK(glm::distance(marker.position, pickups[2].position) <= 1);
 }
 
 TEST_CASE("Native Legends playable visits collect on fixed ticks and return durable isolated saves",
@@ -127,10 +148,27 @@ TEST_CASE("Native Legends playable visits collect on fixed ticks and return dura
                touchesLegendsPickup(pickup, actor.followPoint(), actor.reach(),
                                     actor.height() * .5f);
     });
+    INFO("Actor feet " << actor.position().x << ',' << actor.position().y << ','
+                       << actor.position().z << " centre " << actor.followPoint().x << ','
+                       << actor.followPoint().y << ',' << actor.followPoint().z);
+    for (const auto& pickup : pickups) {
+        if (pickup.offer.kind != static_cast<s32>(ItemKind::Gold))
+            continue;
+        const Vec3 difference = pickup.position - actor.position();
+        if (glm::length(Vec2{difference.x, difference.z}) < actor.reach() + pickup.radius + 1)
+            UNSCOPED_INFO("Nearby gold "
+                          << pickup.nativeIndex << ' ' << pickup.name << " active=" << pickup.active
+                          << " collected=" << pickup.collected << " at " << pickup.position.x << ','
+                          << pickup.position.y << ',' << pickup.position.z);
+    }
     REQUIRE(selected != pickups.end());
     const usize selectedIndex = static_cast<usize>(selected - pickups.begin());
     const s32 selectedGold = selected->offer.amount;
+    INFO("Selected gold " << selected->nativeIndex << ' ' << selected->name
+                          << " active=" << selected->active << " at " << selected->position.x << ','
+                          << selected->position.y << ',' << selected->position.z);
     REQUIRE(selectedGold > 0);
+    REQUIRE(selected->active);
     REQUIRE_FALSE(selected->collected);
     const auto parkedPosition = actor.position();
 

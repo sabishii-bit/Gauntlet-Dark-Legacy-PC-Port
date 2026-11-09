@@ -164,6 +164,26 @@ TEST_CASE("N64 transform tracks decode all native key encodings and rotation ord
     }
 }
 
+TEST_CASE("Constant N64 rotations retain their authored order without a delta table",
+          "[legends][n64][scene]") {
+    for (const u8 order : std::array<u8, 2>{0, 0x20}) {
+        TransformSequence fixture(0x40);
+        fixture.bytes[38] = order;
+        put16(fixture.bytes, 34, 4096);
+        put16(fixture.bytes, 36, 2048);
+        const auto decoded = decodeLegendsN64Sequences(fixture.bytes, fixture.models);
+        REQUIRE(decoded.warnings.empty());
+        const auto& track = decoded.animation.trees.at(0).sequences.at(0).tracks.at(0);
+        CHECK(((track.flags & NodeTrack::kYawPitchRoll) != 0) == (order != 0));
+        REQUIRE(track.values.size() == 9);
+        for (usize frame = 0; frame < 3; ++frame) {
+            CHECK(track.values[3 * frame] == Catch::Approx(kHalfPi));
+            CHECK(track.values[3 * frame + 1] == Catch::Approx(-kHalfPi / 2));
+            CHECK(track.values[3 * frame + 2] == Catch::Approx(-kHalfPi / 4));
+        }
+    }
+}
+
 TEST_CASE("Indexed N64 BODY nodes expose native model suffix attachment names",
           "[legends][n64][scene][native-traps]") {
     NativeSequence fixture;

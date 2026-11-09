@@ -234,13 +234,15 @@ TEST_CASE("Dreamcast runes obelisks and quest items use separate native campaign
         CHECK(pickup->xSize == Catch::Approx(2.09f));
         CHECK(pickup->zSize == Catch::Approx(2.09f));
         CHECK(pickup->height == 8.0f);
-        CHECK(pickup->yaw == -0.75f);
+        CHECK(pickup->yaw == 0.75f);
     }
     fixture.info.xSize = 3;
     fixture.info.zSize = 0.5f;
     const auto longBox = legendsDreamcastPickup(fixture.info, fixture.instance, 92);
     REQUIRE(longBox);
-    const Vec3 longAxis{2 * std::cos(0.75f), 0, 2 * std::sin(0.75f)};
+    // 8c0ece60 stores local X as (cos(yaw), 0, -sin(yaw)). The
+    // collision query inverse-projects onto those native rendered axes.
+    const Vec3 longAxis{2 * std::cos(0.75f), 0, -2 * std::sin(0.75f)};
     const Vec3 shortAxis{-longAxis.z, 0, longAxis.x};
     CHECK(touchesLegendsPickup(*longBox, longBox->position + longAxis, 0.1f, 1));
     CHECK_FALSE(touchesLegendsPickup(*longBox, longBox->position + shortAxis, 0.1f, 1));

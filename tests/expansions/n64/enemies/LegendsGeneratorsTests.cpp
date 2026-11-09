@@ -245,13 +245,13 @@ TEST_CASE("N64 special portals separate authored damage-state IDs from their mix
     CHECK(temple->gameplay.kind == 2);
     CHECK(temple->gameplay.tier == 2);
     CHECK(temple->gameplay.broodTier == 3);
-    CHECK(temple->gameplay.broodKinds == std::array<s32, 3>{2, 5, 13});
+    CHECK(temple->gameplay.broodKinds == std::vector<s32>{2, 5, 13});
     CHECK(temple->gameplay.stageHealth == std::array<s32, 3>{21, 21, 0});
     CHECK(temple->sequences ==
           std::array<std::string, 4>{"GENERATOR:GSP0", "GENERATOR:GSP2", "GENERATOR:GSP1", ""});
     const auto hell = legendsN64Generator(fixture, bytes, "hell1", {});
     REQUIRE(hell);
-    CHECK(hell->gameplay.broodKinds == std::array<s32, 3>{2, 19, 13});
+    CHECK(hell->gameplay.broodKinds == std::vector<s32>{2, 19, 13});
     CHECK(hell->gameplay.stageHealth == std::array<s32, 3>{25, 25, 0});
     fixture.generatorTier = 2;
     const auto damaged = legendsN64Generator(fixture, bytes, "boss1", {});
@@ -640,7 +640,7 @@ TEST_CASE("Desecrated Temple generators install all native portals and breed thr
     for (const auto& definition : adapter->generators()) {
         CHECK(definition.tier == 2);
         CHECK(definition.stageHealth == std::array<s32, 3>{21, 21, 0});
-        CHECK(definition.broodKinds == std::array<s32, 3>{2, 5, 13});
+        CHECK(definition.broodKinds == std::vector<s32>{2, 5, 13});
     }
     LegendsTraversal traversal;
     traversal.open(map, 0, CharacterSave{});

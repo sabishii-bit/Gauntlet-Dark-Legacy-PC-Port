@@ -71,14 +71,27 @@ f32 BossCamera::limit(f32 value, f32 target, f32 least, f32 most, f32 accelerati
 /** Where the camera looks: the boss, offset by the record's near or far offset by how far
  * back the camera stands; the party's middle while the boss sleeps. */
 Vec3 BossCamera::lookPoint(const BossCameraSubject& boss, std::span<const CameraSubject> party,
-                           const BossCameraInfo& record) const {
+                           const BossCameraInfo& record, const ApproachPolicy* approach) const {
     if (boss.focus != BossCameraSubject::Focus::Combat) {
         return boss.position + boss.attentionOffset +
                (boss.focus == BossCameraSubject::Focus::Wizard ? record.wizardAttention
                                                                : record.keyAttention);
     }
     if (!boss.awake) {
-        return middleOf(party);
+        Vec3 middle = middleOf(party);
+        if (approach != nullptr && approach->boundsMidpoint && !party.empty()) {
+            Vec3 low = party.front().follow;
+            Vec3 high = low;
+            for (const auto& player : party) {
+                low = glm::min(low, player.follow);
+                high = glm::max(high, player.follow);
+            }
+            middle = (low + high) * 0.5f;
+        }
+        return approach != nullptr && approach->attentionBounds
+                   ? glm::clamp(middle, approach->attentionBounds->first,
+                                approach->attentionBounds->second)
+                   : middle;
     }
     const f32 range = record.maxDistance - record.minDistance;
     const f32 t =
@@ -178,9 +191,12 @@ f32 BossCamera::viewMargin(const BossCameraSubject& boss, std::span<const Camera
  * stands: out fast when something is cut off, out a little when it is close to the edge,
  * in when there is room to spare, and, once going one way, on until it is well in that
  * band. The distance then moves toward it under its speeds. */
-f32 BossCamera::wantedDistance(f32 nearest, f32 farthest) {
+f32 BossCamera::wantedDistance(f32 nearest, f32 farthest, const ApproachPolicy* approach) {
     f32 wanted = m_distance;
     u32 band = 0;
+    const f32 loose = approach != nullptr ? approach->inwardLooseMargin : kLooseMargin;
+    const f32 held = approach != nullptr ? approach->inwardHeldMargin : kWantedMargin;
+    const f32 gain = approach != nullptr ? approach->inwardGain : 1.0f;
     if (m_margin < 0.0f) {
         band = kBackingOff;
         wanted += kOutStep;
@@ -193,12 +209,12 @@ f32 BossCamera::wantedDistance(f32 nearest, f32 farthest) {
         band = kBackingOff;
         wanted += 2.0f * (kWantedMargin - m_margin);
         // NOLINTNEXTLINE(bugprone-branch-clone): one branch per retail camera band
-    } else if (m_margin > kLooseMargin) {
+    } else if (m_margin > loose) {
         band = kComingIn;
-        wanted -= m_margin - kWantedMargin;
-    } else if (m_margin > kWantedMargin && (m_band & kComingIn) != 0) {
+        wanted -= gain * (m_margin - kWantedMargin);
+    } else if (m_margin > held && (m_band & kComingIn) != 0) {
         band = kComingIn;
-        wanted -= m_margin - kWantedMargin;
+        wanted -= gain * (m_margin - held);
     }
     m_band = band;
     return std::clamp(wanted, nearest, farthest * kFarthest);
@@ -274,7 +290,9 @@ const WorldLocator* BossCamera::approachMarker(std::span<const WorldLocator> mar
 
 void BossCamera::reset(const BossCameraSubject& boss, std::span<const CameraSubject> party,
                        const BossCameraInfo& record, const CameraView& view,
-                       std::span<const WorldLocator> markers) {
+                       std::span<const WorldLocator> markers, const ApproachPolicy* approach) {
+    if (boss.awake || boss.focus != BossCameraSubject::Focus::Combat)
+        approach = nullptr;
     m_lookLength = 0.0f;
     m_lookVelocity = 0.0f;
     m_lookDirection = Vec3{0.0f};
@@ -292,19 +310,21 @@ void BossCamera::reset(const BossCameraSubject& boss, std::span<const CameraSubj
                        : boss.facing;
     m_camera.pitch = record.minPitch;
     if (!boss.awake) {
-        if (const auto* marker = approachMarker(markers, middleOf(party)); marker != nullptr) {
+        const Vec3 near =
+            approach != nullptr ? lookPoint(boss, party, record, approach) : middleOf(party);
+        if (const auto* marker = approachMarker(markers, near); marker != nullptr) {
             m_camera.yaw = marker->rotation.y;
             m_camera.pitch = marker->rotation.x;
         }
     }
-    m_attention = lookPoint(boss, party, record);
+    m_attention = lookPoint(boss, party, record, approach);
     m_lookBase = m_attention;
     place();
     // Then it settles: backed off until everyone is in view.
     for (s32 i = 0; i < 400; ++i) {
         const f32 before = m_distance;
         const f32 pitchBefore = m_camera.pitch;
-        update(boss, party, record, view, 1.0f / kFrameRate, markers);
+        update(boss, party, record, view, 1.0f / kFrameRate, markers, approach);
         if (i > 0 && std::abs(m_distance - before) < 0.01f &&
             std::abs(m_camera.pitch - pitchBefore) < 1.0e-6f) {
             break;
@@ -314,15 +334,19 @@ void BossCamera::reset(const BossCameraSubject& boss, std::span<const CameraSubj
 
 void BossCamera::update(const BossCameraSubject& boss, std::span<const CameraSubject> party,
                         const BossCameraInfo& record, const CameraView& view, f32 seconds,
-                        std::span<const WorldLocator> markers) {
+                        std::span<const WorldLocator> markers, const ApproachPolicy* approach) {
     if (seconds <= 0.0f) {
         return;
     }
-    const Vec3 target = lookPoint(boss, party, record);
-    const WorldLocator* marker = !boss.awake ? approachMarker(markers, middleOf(party)) : nullptr;
-    // A look point further off than it could go in a step (the boss waking, the wizard
-    // arriving) is panned to from where the camera stands: it turns and backs off to
-    // keep the new point, without moving, until the look point has arrived.
+    if (boss.awake || boss.focus != BossCameraSubject::Focus::Combat)
+        approach = nullptr;
+    const Vec3 target = lookPoint(boss, party, record, approach);
+    const WorldLocator* marker =
+        !boss.awake ? approachMarker(markers, approach != nullptr ? target : middleOf(party))
+                    : nullptr;
+    // A distant new look point (the boss waking, the wizard arriving) turns the camera
+    // toward its eased attention while retaining at least the current distance. The eye
+    // stays put when attention moves away, but backs out when attention comes closer.
     if (glm::distance(target, m_attention) > kLookSpeed * seconds) {
         followLook(target, seconds);
         const Vec3 fromCamera = m_attention - m_camera.position;
@@ -332,6 +356,9 @@ void BossCamera::update(const BossCameraSubject& boss, std::span<const CameraSub
             m_camera.pitch = portable::atan2(-fromCamera.y, flatLength(fromCamera));
             m_distance = std::max(m_distance, length);
         }
+        // Both GC BossCameraUpdate (8001c478) and DC 8c082e6a..8c082edc rebuild
+        // eye = attention - forward * distance after the transition calculation.
+        place();
         m_margin = viewMargin(boss, party, view);
         return;
     }
@@ -344,10 +371,12 @@ void BossCamera::update(const BossCameraSubject& boss, std::span<const CameraSub
     const f32 nearest = boss.awake ? record.minDistance : record.minPlayerDistance;
     // BossCameraUpdate doubles the greatest distance while the good wizard stands, so the
     // party may spread about the arena for the coins without going out of view.
-    const f32 farthest = (boss.awake ? record.maxDistance : record.maxPlayerDistance) *
-                         (boss.focus == BossCameraSubject::Focus::Wizard ? kWizardReach : 1.0f);
+    const f32 approachScale = approach != nullptr ? approach->maxDistanceScale : 1.0f;
+    const f32 farthest =
+        (boss.awake ? record.maxDistance : record.maxPlayerDistance * approachScale) *
+        (boss.focus == BossCameraSubject::Focus::Wizard ? kWizardReach : 1.0f);
     m_margin = viewMargin(boss, party, view);
-    const f32 wanted = wantedDistance(nearest, farthest);
+    const f32 wanted = wantedDistance(nearest, farthest, approach);
     const f32 settled = m_distance;
     m_distance = limit(m_distance, wanted, -kInSpeed, kOutSpeed, kDistanceAcceleration, kStopScale,
                        m_distanceVelocity, false, seconds);

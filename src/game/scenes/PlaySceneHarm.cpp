@@ -32,7 +32,8 @@ void PlayScene::hurt(usize index, f32 damage, HurtKind kind, HurtSource source,
                      const PlayerImpact& impact, bool armorAbsorbed) {
     // damage_player excludes trigger-camera shots even though existing effects
     // and the player's action continue to advance beneath the input lock.
-    if (index >= m_players.size() || m_sim.switchCutscene.active()) {
+    if (index >= m_players.size() || m_sim.switchCutscene.active() ||
+        (m_world->imported() && m_world->imported()->protectsParty())) {
         return;
     }
     if (cheats(m_players[index].actor.player()).god) {

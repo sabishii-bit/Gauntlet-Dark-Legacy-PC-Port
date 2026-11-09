@@ -4,6 +4,7 @@
 #include <cmath>
 #include <filesystem>
 #include <format>
+#include <limits>
 #include <optional>
 #include <span>
 #include <stdexcept>
@@ -1339,6 +1340,31 @@ TEST_CASE("a rune sting ducks music temporarily without losing area selection",
     f.soundscape.selectMusicArea(1, MusicSwitch::Faded);
     f.frames(100);
     CHECK(f.soundscape.musicArea() == 1);
+}
+
+TEST_CASE("imported ambient music duck changes playback without overriding native event duck",
+          "[game][world][soundscape][music-areas][ambient-duck]") {
+    AreaFixture f("soundscape-imported-ambient-duck");
+    f.soundscape.duckAmbientMusic(10, .2f);
+    f.frames(30);
+    CHECK(f.soundscape.musicLevel() == 51);
+    f.soundscape.duckAmbientMusic(std::numeric_limits<f32>::quiet_NaN(), 1);
+    f.soundscape.duckAmbientMusic(1, std::numeric_limits<f32>::infinity());
+    f.frames(1);
+    CHECK(f.soundscape.musicLevel() == 51);
+    f.soundscape.duckMusic(2, .5f);
+    f.frames(30);
+    CHECK(f.soundscape.musicLevel() == 127);
+    // Refreshing local proximity cannot replace the active rune/event request.
+    f.soundscape.duckAmbientMusic(10, .2f);
+    f.frames(15);
+    CHECK(f.soundscape.musicLevel() == 127);
+    f.frames(30);
+    CHECK(f.soundscape.musicLevel() == 51);
+    f.soundscape.duckAmbientMusic(0, 1);
+    f.frames(30);
+    CHECK(f.soundscape.musicLevel() == LevelSoundscape::kFullLevel);
+    CHECK(f.soundscape.musicArea() == 0);
 }
 
 TEST_CASE("flagged proximity sounds duck music while near and release after leaving",

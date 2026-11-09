@@ -19,6 +19,7 @@
 #include "engine/platform/Paths.h"
 #include "engine/render/RenderTypes.h"
 
+#include "expansions/shared/app/LegendsCompletion.h"
 #include "expansions/shared/characters/LegendsVisit.h"
 #include "expansions/shared/scenes/LegendsLevel.h"
 #include "formats/TplFile.h"
@@ -427,6 +428,10 @@ void Gauntlet::onUpdate(f64 deltaSeconds) {
     // The level flybys are silent (sndFxPaused holds every voice through the attract modes).
     m_sounds->setCategoryScale(SoundCategory::Music, m_demo.isOpen() ? 0.0f : m_musicDuck.level());
     m_sounds->setCategoryScale(SoundCategory::Effects, m_demo.isOpen() ? 0.0f : 1.0f);
+    if (m_journey && m_journey->importedDestination) {
+        if (auto* source = m_play->world.imported())
+            source->servicePreservedSpeech(static_cast<f32>(deltaSeconds));
+    }
     m_sounds->update();
     if (m_legendsSounds) {
         m_legendsSounds->setMasterVolume(m_config.audio.masterVolume);
@@ -574,6 +579,21 @@ void Gauntlet::updateSelect(f64 deltaSeconds) {
             }
             finishJourney();
             return;
+        }
+        if (m_journey->importedDestination) {
+            // The completed party was saved by the shop or by this selector.
+            // Its parked actors still contain pre-shop values: never let a
+            // later shutdown mistake them for an abandoned live level.
+            renderDevice().waitIdle();
+            m_play->scene.close();
+            m_play->world.clear();
+            m_legendsOrigin.reset();
+            m_legendsEntryParty.clear();
+            m_legendsTowerParty.clear();
+            if (m_legendsSounds) {
+                m_legendsSounds->stopAll();
+                m_legendsSounds.reset();
+            }
         }
         m_journey.reset();
         m_loadingPicture.release();
@@ -1212,6 +1232,12 @@ void Gauntlet::updateJourney(f64 deltaSeconds, const SceneInput& sceneInput) {
     if (updateCompletion(deltaSeconds)) {
         return;
     }
+    if (journey.importedDestination) {
+        // The native destination supplies its own entry camera and title.
+        // Never ask the GameCube level catalog to interpret its map identity.
+        finishJourney();
+        return;
+    }
     if (!journey.presentationStarted) {
         journey.presentationStarted = true;
         m_levelLoading.open(renderDevice(), services(), journey.destination, journey.party,
@@ -1248,10 +1274,30 @@ void Gauntlet::updateJourney(f64 deltaSeconds, const SceneInput& sceneInput) {
 
 void Gauntlet::finishJourney() {
     GDL_VERIFY(m_journey.has_value(), "Finishing a journey requires a pending journey");
-    const Journey journey = std::move(*m_journey);
+    Journey journey = std::move(*m_journey);
     m_journey.reset();
     m_loadingPicture.release();
     m_levelLoading.close();
+    if (journey.importedDestination) {
+        const auto& destination = *journey.importedDestination;
+        const auto* previous = m_play.get();
+        const auto generation = m_play->scene.loadGeneration();
+        consoleLegendsOpen(m_console, destination.platform, destination.directory, true, true,
+                           journey.party, true);
+        if (m_play.get() != previous || m_play->scene.loadGeneration() != generation)
+            return;
+        // Keep the purchased inventory and save-slot choices if loading failed.
+        // Done retries the same destination; Save/Load/Quit remain available.
+        // Neither the tally nor completion grants run for a second time.
+        m_console.print("Native destination unavailable. Your completed party and shop purchases "
+                        "were kept; save or choose Done to retry.");
+        m_journey = std::move(journey);
+        m_loadingPicture.cover();
+        if (!m_select.openAfterLevel(renderDevice(), services(), m_journey->party, &m_play->world))
+            log::warn("Native travel recovery menu unavailable; retaining the pending party.");
+        resetPlayInput();
+        return;
+    }
     if (journey.returningFromChallenge && m_parent) {
         returnFromChallenge(journey.party);
         return;
@@ -1509,7 +1555,11 @@ void Gauntlet::onShutdown() {
     m_netplay.reset();
     window().stopRumble();
     m_online.reset();
-    if (m_play && m_play->scene.isOpen()) {
+    const bool completingNative = m_journey && m_journey->importedDestination;
+    if (completingNative) {
+        auto party = legendsCompletionParty(m_journey->party, m_afterLevel, m_select);
+        autoSave(party);
+    } else if (m_play && m_play->scene.isOpen()) {
         if (const auto* native = dynamic_cast<const LegendsLevel*>(m_play->world.imported());
             native && native->platform() == LegendsPlatform::N64) {
             // Closing the window during the GameOver caption precedes its
@@ -1530,7 +1580,8 @@ void Gauntlet::onShutdown() {
             autoSave(party);
         }
     }
-    commitLegendsProgress();
+    if (!completingNative)
+        commitLegendsProgress();
     m_legendsPreview.close();
     if (m_legendsSounds) {
         m_legendsSounds->stopAll();

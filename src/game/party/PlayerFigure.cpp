@@ -64,21 +64,24 @@ std::string playerResourceKey(const std::filesystem::path& directory) {
 }
 } // namespace
 
-f32 PlayerFigure::bodyScale(const CharacterSave& save, const PowerupEffects& effects) {
+f32 PlayerFigure::bodyScale(const CharacterSave& save, const PowerupEffects& effects,
+                            LevelSize size) {
     if (save.character == kOgreClass) {
         return kOgreScale;
     }
     if (effects.grown()) {
         return PowerupEffects::kGrowthScale;
     }
-    return save.progress().appearanceLevel() >= kMaxLevel ? kMasterScale : 1.0f;
+    return size == LevelSize::Progression && save.progress().appearanceLevel() >= kMaxLevel
+               ? kMasterScale
+               : 1.0f;
 }
 
 Mat4 PlayerFigure::bodyPlacement(const Mat4& base, const CharacterSave& save,
-                                 const PowerupEffects& effects) {
+                                 const PowerupEffects& effects, LevelSize levelSize) {
     // The lift is in the costume root's own space, under the scaled node
     // (player_motion_phase_exit).
-    const f32 size = bodyScale(save, effects);
+    const f32 size = bodyScale(save, effects, levelSize);
     return glm::translate(Mat4{1.0f}, Vec3{0.0f, effects.lift() * size, 0.0f}) *
            glm::scale(base, Vec3{size, size, size});
 }
@@ -110,11 +113,12 @@ std::filesystem::path PlayerFigure::costumeDirectory(const std::filesystem::path
 
 std::unique_ptr<PlayerFigure> PlayerFigure::load(RenderDevice& device,
                                                  const std::filesystem::path& root,
-                                                 const CharacterSave& save, Entrance entrance) {
+                                                 const CharacterSave& save, Entrance entrance,
+                                                 LevelSize size) {
     const std::string_view cls = classCode(archiveClassOf(save.character));
     const std::string_view costume = colorCode(save.color);
     const std::filesystem::path directory = costumeDirectory(root, save);
-    auto figure = std::make_unique<PlayerFigure>();
+    auto figure = std::make_unique<PlayerFigure>(size);
     // Costume HANDGLOW slots are external: JAC/YEL slot 26 names POWERUPS slot 445,
     // not pixels at the costume's local offset or a class SFX texture.
     figure->m_sharedTextureDirectory = root / "POWERUPS";
@@ -996,6 +1000,12 @@ bool PlayerFigure::appendState(NativeStateDigest& digest, const ActionState& act
     // peers may own separate allocations of the same authored class/costume.
     digest.values(m_handNode, m_armNode, m_armHidden, m_backNode, m_classNodeOfNode, m_staysInHand,
                   m_phoenixSide);
+    // Keep the ordinary GameCube binding schema unchanged. An imported world's
+    // immutable sizing override also changes future attachment evaluation.
+    if (m_levelSize != LevelSize::Progression) {
+        digest.string("PlayerFigure.level-size");
+        digest.value(m_levelSize);
+    }
     m_costumeTextures.appendBindingDigest(digest);
     digest.fields<5>(actions);
     digest.fields<3>(textures);

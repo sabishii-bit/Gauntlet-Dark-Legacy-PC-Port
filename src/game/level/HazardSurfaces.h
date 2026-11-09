@@ -48,6 +48,9 @@ public:
     static std::optional<Harm> enemyHarmOf(u32 flags);
 
     void bind(const WorldLayout& layout);
+    /** Already translated common hazard flags, indexed by collision owner, with
+     * native parent inheritance resolved by the importing adapter. */
+    void bindFlags(std::span<const u32> inheritedFlags);
     void clear() { m_flags.clear(); }
     /** An object's flags with its parents'. */
     u32 flagsOf(s32 object) const;

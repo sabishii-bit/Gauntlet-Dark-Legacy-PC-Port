@@ -109,17 +109,20 @@ LegendsDreamcastScene LegendsDreamcastScene::parse(std::span<const u8> worlds) {
     LegendsDreamcastScene result;
     result.itemInfos = std::move(decoded.itemInfos);
     result.itemInstances = std::move(decoded.itemInstances);
-    // SetLocators (8c0a78a0) admits both types 1 and 2 to the gameplay
-    // transmitter list and adds pi to their authored yaw. Types 3/4 are
-    // attract cameras, not alternate follow markers.
+    // SetLocators (8c0a78a0) admits types 1/2 and adds pi to their yaw,
+    // but that is an eye-orbit angle, not WorldCamera's look direction.
+    // 8c0774a0 adds radius * (cos(p)*sin(y), sin(p), cos(p)*cos(y))
+    // to the attention (8c0ed040/8c0ec560). Our camera subtracts its
+    // forward vector instead, so the two half-turns cancel. Keep the
+    // authored yaw here; copying the native orbit yaw reverses the view.
+    // Types 3/4 are attract cameras, not alternate follow markers.
     for (const auto& locator : decoded.locators) {
         if (locator.kind != LocatorKind::CameraStart && locator.kind != LocatorKind::CameraGame) {
             continue;
         }
         require(finite(locator.position) && finite(locator.rotation), "nonfinite camera marker");
-        result.cameraMarkers.push_back({LocatorKind::CameraGame, locator.delay, locator.next,
-                                        locator.position, locator.rotation});
-        result.cameraMarkers.back().rotation.y += kPi;
+        result.cameraMarkers.push_back(
+            {locator.kind, locator.delay, locator.next, locator.position, locator.rotation});
     }
     return result;
 }
@@ -190,10 +193,13 @@ dreamcastLegendsFixtureScope(std::span<const u8> worlddata, std::string_view lev
                 "worlddata records exceed section");
         return section;
     };
-    const auto realm = records(0x57524c44, 56);    // WRLD
-    const auto levels = records(0x4c45564c, 144);  // LEVL
-    const auto enemies = records(0x454e4d59, 24);  // ENMY
-    const auto cameras = records(0x43414d53, 108); // CAMS
+    const auto realm = records(0x57524c44, 56);       // WRLD
+    const auto levels = records(0x4c45564c, 144);     // LEVL
+    const auto enemies = records(0x454e4d59, 24);     // ENMY
+    const auto cameras = records(0x43414d53, 108);    // CAMS
+    const auto bossCameras = records(0x4243414d, 84); // BCAM
+    const auto audio = records(0x41554453, 60);       // AUDS
+    const auto sounds = records(0x534e4453, 24);      // SNDS
     require(realm.count == 1, "worlddata requires one realm record");
     for (usize i = 0; i < levels.count; ++i) {
         const usize at = levels.offset + i * 144;
@@ -201,7 +207,90 @@ dreamcastLegendsFixtureScope(std::span<const u8> worlddata, std::string_view lev
             continue;
         }
         LegendsDreamcastFixtureScope result;
+        result.title = text(worlddata, at + 20, 32);
         result.realmType = readS32LE(worlddata, realm.offset);
+        result.generatorDifficulty = std::bit_cast<f32>(readU32LE(worlddata, at + 132));
+        require(std::isfinite(result.generatorDifficulty) && result.generatorDifficulty > 0,
+                "invalid generator difficulty baseline");
+        // ResolveWorldDataPointers 8c0a17be..17dc binds LEVL's signed +0x7c
+        // index to a distinct 84-byte BCAM record. BossCameraUpdate 8c082d20
+        // takes precedence over the older CAMS transmitter camera.
+        const s16 bossCameraIndex = std::bit_cast<s16>(readU16LE(worlddata, at + 124));
+        if (bossCameras.count != 0 && bossCameraIndex >= 0) {
+            require(static_cast<usize>(bossCameraIndex) < bossCameras.count,
+                    "boss camera index out of bounds");
+            const usize bossAt = bossCameras.offset + static_cast<usize>(bossCameraIndex) * 84;
+            const auto scalar = [&](usize field) {
+                const f32 value = std::bit_cast<f32>(readU32LE(worlddata, bossAt + field));
+                require(std::isfinite(value), "nonfinite boss camera setting");
+                return value;
+            };
+            const auto vector = [&](usize field) {
+                return Vec3{scalar(field), scalar(field + 4), scalar(field + 8)};
+            };
+            BossCameraInfo camera;
+            camera.flags = readU32LE(worlddata, bossAt);
+            camera.maxYaw = scalar(4);
+            camera.cosMaxYaw = scalar(8);
+            camera.minDistance = scalar(12);
+            camera.minPlayerDistance = scalar(16);
+            camera.maxDistance = scalar(20);
+            camera.maxPlayerDistance = scalar(24);
+            camera.minPitch = scalar(28);
+            camera.maxPitch = scalar(32);
+            camera.minAttention = vector(36);
+            camera.maxAttention = vector(48);
+            camera.keyAttention = vector(60);
+            camera.wizardAttention = vector(72);
+            // BossCameraStart 8c0815a0 normalizes these two authored sentinels.
+            if (camera.maxPlayerDistance == 0)
+                camera.maxPlayerDistance = camera.maxDistance;
+            if (camera.maxAttention.y >= 999998.0f)
+                camera.maxAttention = camera.minAttention;
+            require(camera.minDistance > 0 && camera.maxDistance >= camera.minDistance &&
+                        camera.minPlayerDistance > 0 &&
+                        camera.maxPlayerDistance >= camera.minPlayerDistance && camera.maxYaw >= 0,
+                    "invalid boss camera range");
+            result.bossCamera = camera;
+        }
+        const s16 audioIndex = std::bit_cast<s16>(readU16LE(worlddata, at + 74));
+        if (audio.count != 0 && audioIndex >= 0) {
+            require(static_cast<usize>(audioIndex) < audio.count, "audio index out of bounds");
+            const usize audioAt = audio.offset + static_cast<usize>(audioIndex) * 60;
+            const s16 entry = std::bit_cast<s16>(readU16LE(worlddata, audioAt + 16));
+            if (entry >= 0) {
+                require(static_cast<usize>(entry) < sounds.count,
+                        "entry sound index out of bounds");
+                result.entrySound =
+                    text(worlddata, sounds.offset + static_cast<usize>(entry) * 24, 16);
+            }
+            // BindWorldData 8c0a1700 resolves S_%sNAME from the first enabled
+            // level sharing this AUDS record. Secret/tower realms stay silent;
+            // H4/H5 reuse H1/H2 names. AUDS.namesnd itself is -1 on disc.
+            if (result.realmType != 12 && result.realmType != 13) {
+                for (usize candidate = 0; candidate < levels.count; ++candidate) {
+                    const usize row = levels.offset + candidate * 144;
+                    if (readS32LE(worlddata, row + 4) == 0 ||
+                        std::bit_cast<s16>(readU16LE(worlddata, row + 74)) != audioIndex)
+                        continue;
+                    std::string code = text(worlddata, row + 8, 4);
+                    if (code == "H4")
+                        code = "H1";
+                    if (code == "H5")
+                        code = "H2";
+                    result.stageNameSound = "S_" + code + "NAME";
+                    break;
+                }
+            }
+            // AudioShootWall8c0e1220 -> AudioLevelSound8c0dc640 selects
+            // AUDS+0x12 through the realm's sound-name table.
+            const s16 hit = std::bit_cast<s16>(readU16LE(worlddata, audioAt + 18));
+            if (hit >= 0) {
+                require(static_cast<usize>(hit) < sounds.count, "wall sound index out of bounds");
+                result.wallHitSound =
+                    text(worlddata, sounds.offset + static_cast<usize>(hit) * 24, 16);
+            }
+        }
         const s16 cameraIndex = std::bit_cast<s16>(readU16LE(worlddata, at + 72));
         if (cameras.count != 0 && cameraIndex >= 0) {
             require(static_cast<usize>(cameraIndex) < cameras.count, "camera index out of bounds");
@@ -248,6 +337,8 @@ dreamcastLegendsFixtureScope(std::span<const u8> worlddata, std::string_view lev
             const usize enemy = enemies.offset + static_cast<usize>(row) * 24;
             const s32 kind = readS32LE(worlddata, enemy);
             const s32 category = readS32LE(worlddata, enemy + 4);
+            result.enemySounds.push_back(
+                {kind, category, text(worlddata, enemy + 8, 8), text(worlddata, enemy + 16, 8)});
             if (category > 0 && static_cast<usize>(category) < result.enemyClasses.size()) {
                 result.enemyClasses[static_cast<usize>(category)] = kind;
             }

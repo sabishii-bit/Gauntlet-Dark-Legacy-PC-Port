@@ -271,6 +271,11 @@ add_executable(tests
     engine/audio/SoundPlayerTests.cpp
     engine/audio/AdsStreamTests.cpp
     expansions/dreamcast/audio/DreamcastStreamTests.cpp
+    expansions/dreamcast/audio/DreamcastSoundBankTests.cpp
+    expansions/dreamcast/audio/LegendsDreamcastOpponentSoundsTests.cpp
+    expansions/dreamcast/audio/LegendsDreamcastSpeechTests.cpp
+    expansions/dreamcast/audio/LegendsDreamcastAmbientTests.cpp
+    expansions/dreamcast/enemies/LegendsDreamcastEnemiesTests.cpp
     expansions/n64/audio/LegendsOpponentSoundsTests.cpp
     engine/audio/MusicDeclickerTests.cpp
     engine/audio/StreamPlaylistTests.cpp
@@ -381,6 +386,7 @@ add_executable(tests
     expansions/n64/level/LegendsPortalsTests.cpp
     expansions/n64/formats/LegendsN64MorphTests.cpp
     expansions/n64/level/LegendsTowerMotionTests.cpp
+    expansions/n64/level/LegendsTowerCeremonyTests.cpp
     expansions/n64/level/LegendsSumnerTests.cpp
     expansions/n64/scenes/LegendsSumnerTextTests.cpp
     expansions/n64/scenes/LegendsSumnerIntegrationTests.cpp
@@ -416,6 +422,30 @@ add_executable(tests
     expansions/n64/level/LegendsLootSelectorsTests.cpp
     expansions/n64/level/LegendsWorldMotionTests.cpp
     expansions/dreamcast/level/LegendsDreamcastItemsTests.cpp
+    expansions/dreamcast/level/LegendsDreamcastContainersTests.cpp
+    expansions/dreamcast/level/LegendsDreamcastGatesTests.cpp
+    expansions/dreamcast/level/LegendsDreamcastCameraTests.cpp
+    expansions/dreamcast/level/LegendsDreamcastPortalsTests.cpp
+    expansions/dreamcast/level/LegendsDreamcastPlacementTests.cpp
+    expansions/dreamcast/level/LegendsDreamcastFallingTests.cpp
+    expansions/dreamcast/level/LegendsDreamcastTowerTests.cpp
+    expansions/dreamcast/level/LegendsDreamcastBossCeremonyTests.cpp
+    expansions/dreamcast/level/LegendsDreamcastBossVisitTests.cpp
+    expansions/dreamcast/formats/LegendsDreamcastCritterTests.cpp
+    expansions/dreamcast/bosses/LegendsDreamcastBossAssetsTests.cpp
+    expansions/dreamcast/bosses/LegendsDreamcastBossEntranceTests.cpp
+    expansions/dreamcast/scenes/LegendsDreamcastBossCompletionTests.cpp
+    expansions/dreamcast/level/LegendsDreamcastTrapsTests.cpp
+    expansions/dreamcast/level/LegendsDreamcastSpikeDamageTests.cpp
+    expansions/dreamcast/level/LegendsDreamcastHazardsTests.cpp
+    expansions/dreamcast/level/LegendsDreamcastWorldMotionTests.cpp
+    expansions/dreamcast/level/LegendsDreamcastSceneryTests.cpp
+    expansions/dreamcast/level/LegendsDreamcastA4TraversalTests.cpp
+    expansions/dreamcast/level/LegendsDreamcastObelisksTests.cpp
+    expansions/dreamcast/scenes/LegendsDreamcastObelisksTests.cpp
+    expansions/dreamcast/menu/LegendsDreamcastDialogueTests.cpp
+    expansions/dreamcast/menu/LegendsDreamcastPauseTests.cpp
+    expansions/dreamcast/scenes/LegendsDreamcastTravelTests.cpp
     formats/GcTextureTests.cpp
     formats/FontFileTests.cpp
     formats/TextRomTests.cpp
@@ -945,6 +975,7 @@ target_link_libraries(tests PRIVATE gdl::expansion_formats gdl::expansion_audio)
 target_sources(tests PRIVATE
     expansions/ExpansionIsolationTests.cpp
     expansions/shared/app/LegendsConsoleWordsTests.cpp
+    expansions/shared/app/LegendsCompletionTests.cpp
     expansions/shared/audio/RestoredSpeechTests.cpp
     expansions/n64/audio/LegendsAnnouncementsTests.cpp
     expansions/n64/audio/LegendsAnnouncementIntegrationTests.cpp

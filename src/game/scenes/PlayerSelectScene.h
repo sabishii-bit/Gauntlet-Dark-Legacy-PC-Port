@@ -53,9 +53,9 @@ public:
 
     /** Loads the unpacked select assets; `startingPlayer` joins at once, and the characters
      * of `party` (a game in progress) stand locked in their lanes. False when absent. The
-     * lanes stand in `tower`, loaded as the tower when it holds another level; without it
-     * there is nothing behind them. The screen keeps reading `services`, which must outlive
-     * it. */
+     * lanes stand in `tower`, loaded as the tower when it holds another ordinary level.
+     * Imported worlds remain untouched and use the same neutral backdrop as a null tower.
+     * The screen keeps reading `services`, which must outlive it. */
     bool open(RenderDevice& device, const GameServices& services, s32 startingPlayer,
               std::span<const PartyMember> party = {}, bool manage = false,
               SoundHandle continuingMusic = kNoSound, LevelWorld* tower = nullptr);

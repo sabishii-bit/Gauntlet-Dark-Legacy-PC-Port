@@ -1,4 +1,5 @@
 #include <array>
+#include <limits>
 #include <string_view>
 #include <typeindex>
 #include <utility>
@@ -222,6 +223,37 @@ TEST_CASE("native fixture values rewind animation attachments particles and chan
         }
         frame += distance;
     }
+    CHECK(device.textureUpdates == 0);
+}
+
+TEST_CASE("script-owned fixture poses rewind without asset uploads or particle emissions",
+          "[item-figure-local-rewind][scripted-pose]") {
+    ItemArchive archive;
+    REQUIRE(archive.load(figureArchive()));
+    test::FakeRenderDevice device;
+    ItemFigure figure;
+    REQUIRE(figure.place(device, archive, "CHEST", {}, nullptr));
+    figure.play(1, ItemFigure::Playback::Once);
+    const auto uploads = device.texturesCreated;
+    const auto textures = figure.textureAnimator().clock();
+    figure.capturePresentation();
+    figure.poseFrame(6);
+    CHECK(figure.presentation().poseFrame == 6);
+    const auto pose = figure.nodeTransform("NULL1");
+    REQUIRE(pose);
+    const ItemFigure saved = figure;
+    const auto digest = registeredDigest(figure, archive, device);
+    figure.capturePresentation();
+    figure.poseFrame(2);
+    CHECK(figure.presentation().poseFrame == 2);
+    CHECK(figure.nodeTransform("NULL1") != pose);
+    CHECK(registeredDigest(figure, archive, device) != digest);
+    CHECK(figure.textureAnimator().clock() == textures);
+    figure.poseFrame(std::numeric_limits<f32>::quiet_NaN());
+    CHECK(figure.presentation().poseFrame == 2);
+    figure = saved;
+    compare(figure, saved, archive, device);
+    CHECK(device.texturesCreated == uploads);
     CHECK(device.textureUpdates == 0);
 }
 

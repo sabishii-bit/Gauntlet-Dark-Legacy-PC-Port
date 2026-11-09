@@ -13,11 +13,13 @@
 #include "engine/core/Types.h"
 #include "engine/math/Math.h"
 #include "engine/render/RenderDevice.h"
+#include "engine/ui/Canvas.h"
 #include "engine/world/TreeModel.h"
 #include "engine/world/WorldCamera.h"
 
 #include "game/audio/AnnouncementSubject.h"
 #include "game/audio/LegendSound.h"
+#include "game/camera/BossCamera.h"
 #include "game/camera/TowerCamera.h"
 #include "game/combat/CombatArenaTarget.h"
 #include "game/critters/CombatEvents.h"
@@ -31,6 +33,10 @@
 #include "game/level/ItemFigure.h"
 #include "game/level/MissileStop.h"
 #include "game/players/ItemPickup.h"
+
+namespace gdl {
+class StringTable;
+}
 
 namespace gdl::game {
 class PlayerActor;
@@ -64,6 +70,7 @@ struct ImportedDeparture {
     bool keepVisible = false; ///< stationary special exits retain the party until covered
     bool transportSound = true;
     std::optional<SceneFog> fog;
+    TreeModel::SkinAlpha skinAlpha = TreeModel::SkinAlpha::PreserveCoverage;
 
     bool covered(bool transitionCovered) const {
         return finished &&
@@ -89,8 +96,15 @@ struct ImportedDialogue {
 class ImportedLevel {
 public:
     virtual ~ImportedLevel() = default;
+    /** Advance only a retained departure phrase while results/shop owns the
+     * screen. Never resumes the old map's gameplay or ambient loops. */
+    virtual void servicePreservedSpeech(f32 /*seconds*/) {}
     virtual void capturePresentation() = 0;
+    /** Borrow the application's localized text for native scripted presentations. */
+    virtual void bindStrings(const StringTable* /*strings*/) {}
     virtual const DialoguePresentation* messagePresentation() const { return nullptr; }
+    /** Optional native entry title; resources and its clock belong to the adapter. */
+    virtual void drawEntranceTitle(Canvas& /*canvas*/, f32 /*width*/) const {}
     virtual std::vector<PointLight> pointLights() const { return {}; }
     virtual void update(f32 seconds, bool timeStopped) = 0;
     virtual void draw(RenderDevice& device, const Mat4& clip, const WorldCamera& camera,
@@ -99,6 +113,10 @@ public:
      * before the common player/enemy floor-riding phase. */
     virtual void bindCollision(WorldCollision& /*collision*/) const {}
     virtual void syncCollision(WorldCollision& /*collision*/) const {}
+    /** Common HazardSurfaces flags, indexed by native collision owner. The
+     * adapter resolves its own flag encoding and hierarchy before exposing them.
+     * Empty retains the ordinary layout's hazard metadata. */
+    virtual std::span<const u32> surfaceHazardFlags() const { return {}; }
 
     virtual std::optional<ImportedWorldObject> object(s32 /*id*/) const { return {}; }
     virtual std::optional<ImportedObjectHit> pickObject(const Vec3& /*origin*/,
@@ -115,12 +133,25 @@ public:
     /** Live boss floor anchor after awakening; null removes a defeated boss.
      * The native adapter owns its camera focus offset and fitting radius. */
     virtual void trackBoss(std::optional<Vec3> /*floorAnchor*/) {}
+    /** Native arena cameras may also need live facing, size and activation state.
+     * Floor-anchor-only adapters retain their existing post-awakening behavior. */
+    virtual void trackBoss(const BossCameraSubject& subject) {
+        if (subject.awake)
+            trackBoss(std::optional<Vec3>{subject.position});
+    }
     virtual void followCamera(std::span<const CameraSubject> /*subjects*/, f32 /*seconds*/) {}
     virtual std::optional<WorldCamera> camera(f32 /*alpha*/ = -1.0f) const { return std::nullopt; }
     virtual std::optional<Vec3> cameraAttention() const { return std::nullopt; }
+    /** A native camera can require a wider lens without changing saved video settings. */
+    virtual f32 horizontalFov(f32 preferred) const { return preferred; }
+    /** Imported worlds may keep the character's initial physical artwork size
+     * without changing its stats, costume tier or growth powerups. */
+    virtual bool playerLevelGrowth() const { return true; }
     /** Native opening cameras may hold both placed enemies and generator births.
      * Ordinary imported maps without a scripted opening are ready immediately. */
     virtual bool opponentsReady() const { return true; }
+    /** Some native victory scripts protect the party without locking movement. */
+    virtual bool protectsParty() const { return false; }
     virtual Vec3 resolveMovement(const Vec3& /*from*/, const Vec3& to, f32 /*radius*/,
                                  f32 /*height*/) const {
         return to;
@@ -128,6 +159,9 @@ public:
     /** The attempted step matters when a resident's solid volume stops it. */
     virtual void touchScenery(s32 /*player*/, const Vec3& /*from*/, const Vec3& /*to*/,
                               f32 /*radius*/, f32 /*height*/) {}
+    /** Fresh interaction presses for this tick, indexed by input seat. Proximity
+     * and modal admission remain the native resident's responsibility. */
+    virtual void interactionButtons(u32 /*pressedSeats*/) {}
     virtual std::optional<ImportedDialogue> takeDialogue() { return {}; }
     virtual std::vector<std::string> answerDialogue(s32 /*topic*/) { return {}; }
     virtual void dismissDialogue() {}
@@ -164,6 +198,9 @@ public:
     virtual bool hasEnemyAssets() const { return false; }
     virtual std::unique_ptr<ItemArchive> loadEnemyAssets(s32 /*kind*/) const { return {}; }
     virtual const ImportedBoss* importedBoss() const { return nullptr; }
+    /** Native support-trigger admission, before the boss's ordinary wake delay.
+     * Existing importers and the base campaign remain immediately admitted. */
+    virtual bool bossActivationReady(const Vec3& /*position*/) const { return true; }
     /** Campaign-local legendary weapons never consult or consume GDL relics. */
     virtual bool hasBossLegend(const CharacterSave& /*save*/) const { return false; }
     virtual bool consumeBossLegend(CharacterSave& /*save*/) { return false; }
@@ -179,6 +216,8 @@ public:
     }
     /** First actual boss wake/intro, after ordinary arrival/admission holds. */
     virtual void bossIntro(const Vec3& /*position*/) {}
+    /** Authored boss SFXX arena impulse, distinct from its initial wake. */
+    virtual void bossArenaCue(const Vec3& /*position*/) {}
     /** Native death completion, after animation/hold; never a lethal-hit grant. */
     virtual void bossDefeated(const Vec3& /*position*/, std::span<PlayerActor*> /*players*/) {}
     virtual std::vector<Mat4> arenaAnchors() const { return {}; }
@@ -216,6 +255,11 @@ public:
         return {};
     }
     virtual void playSounds(SoundPlayer& /*player*/, const Vec3& /*listener*/) {}
+    struct MusicDuck {
+        f32 seconds = 0;
+        f32 scale = 1;
+    };
+    virtual std::optional<MusicDuck> ambientMusicDuck() const { return {}; }
     virtual void pauseSounds() {}
     virtual void stopSounds() {}
     virtual bool travelRequested() const { return false; }

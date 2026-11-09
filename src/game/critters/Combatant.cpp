@@ -433,6 +433,7 @@ void Combatant::advanceEntrance(f32 seconds) {
         moveType() != MoveDefinition::kInit || !actor.player.playing() || seconds <= 0) {
         return;
     }
+    syncFloor();
     // N64 Boss.bin e08842e8 still calls e0882b38 while state0 waits for the
     // party. e0882f9c keeps INIT selected: a looping REDY (Chimera) animates,
     // while a one-frame INIT (Skorne) remains unchanged. Do not run combat AI

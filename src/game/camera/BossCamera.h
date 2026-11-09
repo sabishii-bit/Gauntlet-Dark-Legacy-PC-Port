@@ -3,6 +3,7 @@
 #include <numbers>
 #include <optional>
 #include <span>
+#include <utility>
 
 #include "engine/assets/WorldData.h"
 #include "engine/core/Types.h"
@@ -78,13 +79,27 @@ public:
     static constexpr f32 kLookTurnAcceleration = 20.0f;
     static constexpr f32 kLookTurnReset = 0.965f; ///< cosine under which the direction restarts
 
+    /** Optional presentation policy for a platform's pre-combat camera. Values
+     * are supplied per call, never retained in rewind state. The default is the
+     * Dark Legacy approach; combat framing is unaffected by this policy. */
+    struct ApproachPolicy {
+        f32 maxDistanceScale = 1.0f;
+        f32 inwardLooseMargin = kLooseMargin;
+        f32 inwardHeldMargin = kWantedMargin;
+        f32 inwardGain = 1.0f;
+        bool boundsMidpoint = false;
+        std::optional<std::pair<Vec3, Vec3>> attentionBounds;
+    };
+
     /** Stands the camera up at once, as the level starts. */
     void reset(const BossCameraSubject& boss, std::span<const CameraSubject> party,
                const BossCameraInfo& record, const CameraView& view,
-               std::span<const WorldLocator> markers = {});
+               std::span<const WorldLocator> markers = {},
+               const ApproachPolicy* approach = nullptr);
     void update(const BossCameraSubject& boss, std::span<const CameraSubject> party,
                 const BossCameraInfo& record, const CameraView& view, f32 seconds,
-                std::span<const WorldLocator> markers = {});
+                std::span<const WorldLocator> markers = {},
+                const ApproachPolicy* approach = nullptr);
 
     const WorldCamera& camera() const { return m_camera; }
     f32 yaw() const { return m_camera.yaw; }
@@ -104,10 +119,10 @@ public:
 
 private:
     Vec3 lookPoint(const BossCameraSubject& boss, std::span<const CameraSubject> party,
-                   const BossCameraInfo& record) const;
+                   const BossCameraInfo& record, const ApproachPolicy* approach) const;
     f32 wantedYaw(const BossCameraSubject& boss, std::span<const CameraSubject> party,
                   const BossCameraInfo& record) const;
-    f32 wantedDistance(f32 nearest, f32 farthest);
+    f32 wantedDistance(f32 nearest, f32 farthest, const ApproachPolicy* approach);
     f32 viewMargin(const BossCameraSubject& boss, std::span<const CameraSubject> party,
                    const CameraView& view) const;
     void followLook(const Vec3& target, f32 seconds);

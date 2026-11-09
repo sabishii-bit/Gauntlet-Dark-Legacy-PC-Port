@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <array>
 #include <memory>
 #include <utility>
@@ -13,6 +14,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "game/camera/CameraMovementLimit.h"
 #include "game/config/GameConfig.h"
 #include "game/level/LevelWorld.h"
 #include "game/scenes/PlayScene.h"
@@ -31,6 +33,7 @@ public:
     s32 grants = 0;
     bool block = false;
     bool travel = false;
+    bool protectedParty = false;
     std::optional<ImportedDeparture> customDeparture;
     bool activate = true;
     usize visitors = 0;
@@ -38,6 +41,7 @@ public:
     s32 supportUpdates = 0;
     WorldCamera native;
     Vec3 attention{0};
+    f32 minimumFov = 0;
     std::vector<CameraSubject> subjects;
     std::vector<ImportedPickup> pickups;
     std::vector<ImportedHazardHit> hazards;
@@ -78,6 +82,7 @@ public:
         return result;
     }
     std::optional<Vec3> cameraAttention() const override { return attention; }
+    f32 horizontalFov(f32 preferred) const override { return std::max(preferred, minimumFov); }
     Vec3 resolveMovement(const Vec3& from, const Vec3& to, f32 /*radius*/,
                          f32 /*height*/) const override {
         return block && to.x > from.x ? Vec3{from.x, to.y, to.z} : to;
@@ -104,6 +109,7 @@ public:
     void pauseSounds() override { ++soundPauses; }
     void stopSounds() override { ++soundStops; }
     bool travelRequested() const override { return travel; }
+    bool protectsParty() const override { return protectedParty; }
     std::optional<ImportedDeparture> departure(f32 /*alpha*/ = -1) const override {
         return travel ? customDeparture : std::nullopt;
     }
@@ -333,6 +339,50 @@ TEST_CASE("Imported maps retain ordinary gameplay while supplying native camera 
         }
         CHECK(scene.actor(0)->position().x < before.x - .5f);
     }
+    SECTION("shared movement uses the imported lens without reading local video settings") {
+        const std::array pair{PartyMember{0, CharacterSave{}}, PartyMember{1, CharacterSave{}}};
+        imported->native.position = {0, 5, -20};
+        imported->native.yaw = 0;
+        imported->native.pitch = .2f;
+        imported->attention = {0, 0, 0};
+        imported->minimumFov = 80 * kPi / 180;
+        const auto restart = [&] {
+            REQUIRE(scene.open(device, context, world, pair, options));
+            for (s32 tick = 0; tick < 180; ++tick) {
+                REQUIRE(scene.update(1.0 / 30, {}) == PlayOutcome::Running);
+            }
+            REQUIRE(scene.relocate({-13, 0, 0}));
+        };
+        restart();
+        const Vec3 before = scene.actor(0)->position();
+        const Vec3 offset = scene.actor(0)->followPoint() - before;
+        const Vec3 attempted = before + Vec3{-1, 0, 0};
+        CameraView projection;
+        CHECK(CameraMovementLimit::constrain(before, attempted, imported->attention,
+                                             imported->native, projection, offset) != attempted);
+        projection.horizontalFov = imported->minimumFov;
+        CHECK(CameraMovementLimit::constrain(before, attempted, imported->attention,
+                                             imported->native, projection, offset) == attempted);
+        PlayScene::Inputs inputs{};
+        inputs[0].move = {{-1, 0}, 1};
+        const auto walk = [&] {
+            for (s32 tick = 0; tick < 5; ++tick) {
+                REQUIRE(scene.update(1.0 / 30, inputs) == PlayOutcome::Running);
+            }
+            return scene.actor(0)->position();
+        };
+        const Vec3 moved = walk();
+        CHECK(moved.x < before.x - .5f);
+        CHECK(moved.z == Catch::Approx(before.z).margin(.001f));
+        config.camera.horizontalFovDegrees = 110;
+        // Relocating alone retains the walking action, whose first-step pace
+        // differs from starting at rest. Reopen to replay identical motion state.
+        restart();
+        REQUIRE(scene.actor(0)->position() == before);
+        const Vec3 wide = walk();
+        CHECK(wide.x == Catch::Approx(moved.x).margin(.001f));
+        CHECK(wide.z == Catch::Approx(moved.z).margin(.001f));
+    }
     SECTION("native travel waits for the shared departure and covering transition") {
         const s32 before = imported->partyUpdates;
         imported->travel = true;
@@ -482,6 +532,23 @@ TEST_CASE("Imported maps retain ordinary gameplay while supplying native camera 
         REQUIRE(scene.scroll().lines().size() == 1);
         CHECK(scene.scroll().lines().front() == (localized ? strings.get(key) : key));
         CHECK(imported->pickups.empty());
+    }
+    SECTION("native victory protection does not lock controls or persist after the script") {
+        imported->protectedParty = true;
+        const auto health = scene.liveSave(0)->health();
+        const Vec3 before = scene.actor(0)->position();
+        PlayScene::Inputs inputs{};
+        inputs[0].move = {{0, 1}, 1};
+        for (s32 tick = 0; tick < 10; ++tick) {
+            imported->hazards.push_back({0, 30, true, false, {}});
+            REQUIRE(scene.update(1.0 / 30, inputs) == PlayOutcome::Running);
+        }
+        CHECK(scene.liveSave(0)->health() == health);
+        CHECK(glm::length(scene.actor(0)->position() - before) > .5f);
+        imported->protectedParty = false;
+        imported->hazards.push_back({0, 30, true, false, {}});
+        REQUIRE(scene.update(1.0 / 30, {}) == PlayOutcome::Running);
+        CHECK(scene.liveSave(0)->health() < health);
     }
     SECTION("native hazard contacts use player seats and the common health dispatcher") {
         const std::array thirdSeat{PartyMember{2, CharacterSave{}}};

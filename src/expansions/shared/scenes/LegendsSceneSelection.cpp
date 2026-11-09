@@ -91,7 +91,7 @@ private:
 
 bool LegendsSceneAdapter::fixtureVisible(usize index) const {
     return index < m_fixtures.size() && !m_hiddenFixtures[index] && m_fixtureOpacity[index] > 0 &&
-           m_fixtures[index].hasFigure();
+           m_dreamcastScenery.visible(index) && m_fixtures[index].hasFigure();
 }
 
 void LegendsSceneAdapter::drawFixture(usize index, RenderDevice& device, const Mat4& clip,
@@ -101,7 +101,15 @@ void LegendsSceneAdapter::drawFixture(usize index, RenderDevice& device, const M
         return;
     }
     ItemFigure::Appearance appearance;
-    appearance.whiteBlend = obeliskWhiteBlend(index);
+    appearance.whiteBlend =
+        std::max(obeliskWhiteBlend(index), m_dreamcastScenery.whiteBlend(index));
+    if (m_towerCeremony && m_towerCeremony->active()) {
+        const auto* entry = m_towerCeremony->current();
+        if (entry && entry->kind == LegendsTowerCeremony::Kind::Shard &&
+            m_towerShards[entry->index] == index) {
+            appearance.whiteBlend = m_towerCeremony->shardWhiteBlend();
+        }
+    }
     const auto locked = std::ranges::find_if(m_portalPresentation, [&](const auto& portal) {
         return !portal.enabled && portal.active == index;
     });
@@ -143,6 +151,9 @@ usize LegendsSceneAdapter::fixtureIdentity(usize index) const {
             join(binding.closedFigure, binding.brokenFigure);
             for (const auto& outcome : binding.outcomes) {
                 join(binding.closedFigure, outcome.openingFigure);
+                if (binding.dreamcastContents) {
+                    join(binding.closedFigure, outcome.brokenFigure);
+                }
             }
         }
         for (const auto& binding : m_gates) {
@@ -184,6 +195,11 @@ usize LegendsSceneAdapter::fixtureIdentity(usize index) const {
         for (const auto& binding : m_portalPresentation) {
             for (const auto variant : binding.figures) {
                 join(binding.figures.front(), variant);
+            }
+        }
+        for (const auto& binding : m_dreamcastPortalPresentation) {
+            if (binding.lockedFigure) {
+                join(binding.figure, *binding.lockedFigure);
             }
         }
         for (const auto& binding : m_floorSelectors) {

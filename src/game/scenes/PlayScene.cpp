@@ -90,7 +90,8 @@ bool PlayScene::open(RenderDevice& device, const GameServices& services, LevelWo
                  world.ref().name.empty() ? 'L' : world.ref().name.front(),
                  world.level() != nullptr && world.level()->bossType >= 0);
     m_messages.load(device, m_staticTextures, m_services->unpackedRoot, m_services->strings);
-    if (const auto* imported = world.imported()) {
+    if (auto* imported = world.imported()) {
+        imported->bindStrings(services.strings);
         m_messages.setPresentation(imported->messagePresentation());
         m_audio.bindAnnouncements([imported](auto lines, auto subject) {
             return imported->gameplayAnnouncement(lines, subject);
@@ -211,7 +212,11 @@ bool PlayScene::open(RenderDevice& device, const GameServices& services, LevelWo
     std::vector<CameraSubject> subjects;
     subjects.reserve(m_players.size());
     for (PlayerRuntime& runtime : m_players) {
-        runtime.figure = PlayerFigure::load(device, m_services->unpackedRoot, runtime.actor.save());
+        const auto size = world.imported() && !world.imported()->playerLevelGrowth()
+                              ? PlayerFigure::LevelSize::LevelOne
+                              : PlayerFigure::LevelSize::Progression;
+        runtime.figure = PlayerFigure::load(device, m_services->unpackedRoot, runtime.actor.save(),
+                                            Entrance::Play, size);
         if (runtime.figure != nullptr) {
             runtime.figure->setCompanionPowerups(
                 device, world.powerups(), runtime.actor.save().progress().inventory, &m_weapons);
@@ -777,11 +782,12 @@ void PlayScene::updateEnemies(s32 ticks, f32 seconds) {
 /** What the enemies count as on screen is what the view shows, and the placed ones it comes
  * to see stand. */
 void PlayScene::watchOpponents(bool standPlaced) {
-    const CameraView view = cameraView();
+    CameraView view = cameraView();
     const WorldCamera camera = simulationCamera();
     Vec3 attention = bossCameraOn() ? m_sim.bossCamera.attention() : m_camera.attention();
     if (const auto* imported = m_world->imported()) {
         attention = imported->cameraAttention().value_or(attention);
+        view.horizontalFov = imported->horizontalFov(view.horizontalFov);
     }
     if (m_sim.switchCutscene.showing()) {
         // TriggerCamUpdate uses the shot's eye as gCameras[0].attn for placement range.
@@ -975,6 +981,8 @@ PlayScene::LocalStep PlayScene::step(f64 deltaSeconds, const Inputs& inputs,
         const Vec3 listener =
             m_players.empty() ? simulationCamera().position : m_players.front().actor.position();
         m_world->imported()->playSounds(*m_services->sounds, listener);
+        if (const auto duck = m_world->imported()->ambientMusicDuck())
+            m_audio.duckAmbientMusic(duck->seconds, duck->scale);
     }
     for (const auto& event : recorded.journal.events) {
         const auto kind = event.policy == OutputLedger::Policy::Confirmed
@@ -1425,7 +1433,7 @@ void PlayScene::advanceEntrance(s32 ticks, f32 seconds, const Inputs& inputs) {
     }
     m_bossSequence.advanceLegend(0, m_opponents.bosses(), m_players);
     m_world->update(seconds, PlayerPowerups::timeStopped(m_players));
-    m_opponents.bosses().arm(seconds);
+    m_opponents.armBoss(seconds);
     // An imported level's authored opening pan runs while the same party
     // materialises. It must not wait behind GDL's entrance presentation.
     if (auto* imported = m_world->imported()) {
@@ -1490,7 +1498,7 @@ PlayOutcome PlayScene::advancePlay(s32 ticks, f32 seconds, const Inputs& inputs)
     std::vector<CameraSubject> subjects = advancePartyMotion(ticks, seconds, inputs, held);
     advanceCombat(ticks, seconds, held);
     if (!held) {
-        advanceImportedLevel(seconds, subjects);
+        advanceImportedLevel(seconds, subjects, inputs);
     }
     advanceTriggers(seconds);
     if (m_sim.switchCutscene.active()) {
@@ -1744,13 +1752,10 @@ void PlayScene::advanceCameras(f32 seconds, const std::vector<CameraSubject>& su
     if (auto* imported = m_world->imported()) {
         const auto& boss = m_opponents.bosses();
         const auto view = boss.view();
-        if (view.awake) {
-            if (view.alive && boss.position()) {
-                imported->trackBoss(*boss.position());
-            } else {
-                imported->trackBoss(std::nullopt);
-            }
-        }
+        if (view.alive && boss.position())
+            imported->trackBoss(bossSubject());
+        else if (view.awake)
+            imported->trackBoss(std::nullopt);
         imported->followCamera(followed.empty() ? subjects : followed, seconds);
     }
 }
@@ -1937,8 +1942,10 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
             }
         }
     }
-    const Mat4 clip = camera.clipTransform(config.horizontalFovRadians(), frameWidth, frameHeight,
-                                           frameProjection);
+    const f32 horizontalFov =
+        m_world->imported() ? m_world->imported()->horizontalFov(config.horizontalFovRadians())
+                            : config.horizontalFovRadians();
+    const Mat4 clip = camera.clipTransform(horizontalFov, frameWidth, frameHeight, frameProjection);
     m_presentedClip = clip;
     m_presentedView = camera;
     m_presentedWorldAlpha = effectBlend;
@@ -2080,8 +2087,8 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
         device.applyDepthOfField(blur);
     }
     if (config.camera.compass && !optionsOpen && !m_sim.gameOver.active() && !m_hudHidden) {
-        m_compass.draw(device, clip, camera, config.horizontalFovRadians(),
-                       frameWidth / frameHeight, m_world->lighting());
+        m_compass.draw(device, clip, camera, horizontalFov, frameWidth / frameHeight,
+                       m_world->lighting());
     }
     const auto width = static_cast<f32>(config.display.virtualWidth);
     const auto height = static_cast<f32>(config.display.virtualHeight);
@@ -2139,7 +2146,9 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
                                              height);
         drawMechanicsHud();
     }
-    if (const LevelInfo* level = m_world->level(); level != nullptr) {
+    if (const auto* imported = m_world->imported()) {
+        imported->drawEntranceTitle(m_canvas, width);
+    } else if (const LevelInfo* level = m_world->level(); level != nullptr) {
         m_arrival.drawTitle(m_canvas, m_messages.text(), level->title, width);
     }
     if (cut) {

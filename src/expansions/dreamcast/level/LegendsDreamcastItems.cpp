@@ -118,7 +118,7 @@ std::optional<LegendsPickup> legendsDreamcastPickup(const formats::ItemInfoRecor
         result.radius *= 1.1f;
         result.xSize = info.xSize * 1.1f;
         result.zSize = info.zSize * 1.1f;
-        result.yaw = -instance.rotation.y; // itemPlacement negates authored Y turns.
+        result.yaw = instance.rotation.y; // Dreamcast's native item matrix preserves Y turns.
     } else if (info.collisionType != 1) {
         return reject("Unsupported Dreamcast pickup collision shape");
     }

@@ -61,7 +61,7 @@ bool LevelWorld::appendDigest(NativeStateDigest& digest, const LocalSnapshot* sa
         digest.invalidate();
         return false;
     }
-    digest.string("LevelWorld/1");
+    digest.string("LevelWorld/2");
     digest.value(m_ref);
     digest.resource(&m_layout);
     digest.resource(&m_collision);
@@ -220,6 +220,12 @@ bool LevelWorld::load(RenderDevice& device, const std::filesystem::path& unpacke
     m_destruction.bind(m_layout);
     controlledObjects.assign(m_destruction.controlledObjects().begin(),
                              m_destruction.controlledObjects().end());
+    m_sim.lightning.bind(m_layout, m_ref.name);
+    for (const auto& flash : m_sim.lightning.flashes()) {
+        controlledObjects.push_back(flash.object);
+        controlledObjects.insert(controlledObjects.end(), flash.children.begin(),
+                                 flash.children.end());
+    }
     // Fading trigger targets are not always flagged as animated. Keep their
     // complete subtree individually drawable rather than baking it into a batch.
     for (const auto& instance : m_layout.itemInstances()) {
@@ -301,6 +307,7 @@ bool LevelWorld::load(RenderDevice& device, const std::filesystem::path& unpacke
         clear();
         return false;
     }
+    m_sim.lightning.apply(m_scene);
     applyAmbientOffset(dark() ? -1.0f : 0.0f); // the Trenches start dark, not on a first strike
     m_worldAnimator.bind(m_layout);
     if (const BossStage* stage = bossStageOf(m_level != nullptr ? m_level->bossType : -1);
@@ -399,6 +406,9 @@ bool LevelWorld::loadImported(RenderDevice& device, const std::filesystem::path&
     m_worldAnimator.bind(m_layout);
     m_triggers.bind(m_layout, m_worldAnimator, &m_collision);
     m_hazards.bind(m_layout);
+    if (const auto flags = imported->surfaceHazardFlags(); !flags.empty()) {
+        m_hazards.bindFlags(flags);
+    }
     m_rotators.bind(m_layout);
     if (!m_powerups.load(unpackedRoot / kPowerups)) {
         log::warn("Imported level: common POWERUPS archive is absent");
@@ -504,6 +514,7 @@ void LevelWorld::update(f32 seconds, bool timeStopped) {
         m_imported->update(seconds, timeStopped);
     }
     m_worldAnimator.step(seconds, m_scene, timeStopped);
+    m_sim.lightning.update(seconds, m_scene);
     m_destruction.update(m_worldAnimator.cycleEvents(), m_scene, m_collision);
     m_skorneArena.update(seconds);
     m_fallingScenery.update(seconds);
@@ -574,6 +585,7 @@ void LevelWorld::clear() {
     m_textureAnimator.clear();
     m_sim.particles.clear();
     m_sim.particlesAdvanced = false;
+    m_sim.lightning.clear();
     m_triggers.clear();
     m_hazards.clear();
     m_rotators.clear();
@@ -646,6 +658,14 @@ void LevelWorld::applyAmbientOffset(f32 offset) {
     m_sim.litNow.darken = 1.0f - kept; // the secret walls' and fixtures' baked colour as well
     m_scene.setDarken(1.0f - kept);
     m_scene.setLighting(m_sim.litNow);
+}
+
+void LevelWorld::bossArenaCue(const Vec3& boss) {
+    if (m_imported) {
+        m_imported->bossArenaCue(boss);
+    } else {
+        m_skorneArena.cue(boss);
+    }
 }
 
 const WorldLocator* LevelWorld::startPoint(u32 index) const {

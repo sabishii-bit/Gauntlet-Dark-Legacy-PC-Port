@@ -17,6 +17,7 @@
 #include "game/context/GameServices.h"
 #include "game/level/LevelWorld.h"
 #include "game/menu/PauseMenu.h"
+#include "game/widgets/BurnDialogueScroll.h"
 
 namespace {
 using namespace gdl;
@@ -94,6 +95,15 @@ TEST_CASE("pause dismissal never uploads texture pixels after the background is 
     GameServices context;
     context.config = &config;
     context.unpackedRoot = test::assetOrSkip("STATIC/textures.ngc").parent_path().parent_path();
+    TextureSet reference;
+    REQUIRE(reference.load(context.unpackedRoot / "STATIC"));
+    const auto scroll = reference.find("SCROLL_A");
+    const auto mask = reference.find("GREENCIRCTRANSM");
+    REQUIRE(scroll);
+    REQUIRE(mask);
+    REQUIRE(*mask + 1 < reference.size());
+    const auto firstSheet =
+        BurnDialogueScroll::composite(reference.image(*scroll), reference.image(*mask + 1));
     const std::array party{PartyMember{}};
     PauseMenu menu;
     REQUIRE(menu.open(device, context, party, 0));
@@ -101,8 +111,11 @@ TEST_CASE("pause dismissal never uploads texture pixels after the background is 
     back.back = true;
     REQUIRE(menu.update(0, back) == PauseOutcome::Running);
     REQUIRE(device.beginFrame());
+    const auto created = device.texturesCreated;
     menu.prepare(device);
-    REQUIRE(device.textureUpdates == 1);
+    // The first sheet is uploaded at texture creation; subsequent sheets update it.
+    REQUIRE(device.texturesCreated == created + 1);
+    REQUIRE(device.textureUpdates == 0);
     const auto uploads = device.textureUpdates;
     Canvas background;
     background.begin(device, Mat4{1});
@@ -111,6 +124,11 @@ TEST_CASE("pause dismissal never uploads texture pixels after the background is 
     REQUIRE_FALSE(device.draws.empty());
     menu.render(device, Mat4{1}, 640, 448);
     CHECK(device.textureUpdates == uploads);
+    CHECK(device.texturesCreated == created + 1);
+    CHECK(std::ranges::any_of(device.draws, [&](const auto& draw) {
+        const auto* texture = dynamic_cast<const test::FakeTexture*>(draw.texture);
+        return texture != nullptr && texture->pixels == firstSheet.pixels;
+    }));
     device.endFrame();
 }
 
@@ -146,14 +164,17 @@ TEST_CASE("resuming waits for the native acid scroll and blocks all menu input d
     ignored.back = true;
     ignored.start = true;
     const auto projection = makeLetterboxProjection(640, 448, 1920, 1080);
+    const auto created = device.texturesCreated;
     for (u32 tick = 0; tick < 42; ++tick) {
         CAPTURE(tick);
         device.draws.clear();
         REQUIRE(device.beginFrame());
         menu.prepare(device);
+        CHECK(device.texturesCreated == created + 1);
         const auto uploads = device.textureUpdates;
         menu.render(device, projection, 640, 448);
         CHECK(device.textureUpdates == uploads);
+        CHECK(device.texturesCreated == created + 1);
         device.endFrame();
         const auto& expected = reference.image(*ring + 1 + tick / 2);
         const auto found = std::ranges::find_if(device.draws, [&](const auto& draw) {
@@ -167,7 +188,8 @@ TEST_CASE("resuming waits for the native acid scroll and blocks all menu input d
         const auto outcome = menu.update(1.0 / 60, ignored);
         CHECK(outcome == (tick == 41 ? PauseOutcome::Resume : PauseOutcome::Running));
     }
-    CHECK(device.textureUpdates == 21);
+    // Twenty-one frames: one initial texture creation, then twenty replacements.
+    CHECK(device.textureUpdates == 20);
     menu.close();
     REQUIRE(menu.open(device, context, party, 0));
     CHECK_FALSE(menu.menu().backdropReleased());

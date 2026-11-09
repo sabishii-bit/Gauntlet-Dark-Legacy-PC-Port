@@ -39,13 +39,16 @@ void LegendsLevel::affectArea(const ImportedAreaDamage& apply) {
             for (const auto& visitor : m_visitors) {
                 if (const auto damage = blast.touch(visitor)) {
                     const Vec3 direction = visitor.position - event.position;
+                    // Dreamcast StartExplosion 8c0d6e00 passes DMG_POISONGAS
+                    // (0x800), not DMG_LOW. Adding the latter made Levitation
+                    // discard a cloud that still overlaps the player's body.
+                    // Keep the independently decoded N64 contact policy intact.
+                    const u32 impactFlags =
+                        poison && platform() == LegendsPlatform::Dreamcast
+                            ? damage::kGas
+                            : damage::kLow | (poison ? 0U : damage::kFire | damage::kKnockDown);
                     m_hazardHits.push_back(
-                        {visitor.player,
-                         *damage,
-                         false,
-                         poison,
-                         {damage::kLow | (poison ? 0U : damage::kFire | damage::kKnockDown),
-                          direction}});
+                        {visitor.player, *damage, false, poison, {impactFlags, direction}});
                 }
             }
             if (apply) {
@@ -80,15 +83,28 @@ void LegendsLevel::affectArea(const ImportedAreaDamage& apply) {
 std::vector<ImportedHazardHit> LegendsLevel::takeHazardHits() {
     for (const auto& hit : m_world.adapter()->takeTrapHits()) {
         if (hit.player < m_trapArmor.size()) {
-            m_hazardHits.push_back({hit.player,
-                                    legendsTrapDamage(hit.damage, m_trapArmor[hit.player]),
-                                    hit.pierces, false, hit.impact, true});
+            const bool nativeArmor = platform() == LegendsPlatform::N64;
+            m_hazardHits.push_back(
+                {hit.player,
+                 nativeArmor ? legendsTrapDamage(hit.damage, m_trapArmor[hit.player]) : hit.damage,
+                 hit.pierces, false, hit.impact, nativeArmor});
         }
     }
     return std::exchange(m_hazardHits, {});
 }
 
 bool LegendsLevel::playOpponentSound(std::string_view name, const Vec3& /*position*/) {
+    if (platform() == LegendsPlatform::Dreamcast) {
+        if (const auto token = m_dreamcastSounds.namedToken(name))
+            m_opponentSounds.push_back(*token);
+        else if (!name.empty() && m_dreamcastSounds.opened() &&
+                 std::ranges::find(m_missingOpponentSounds, name) ==
+                     m_missingOpponentSounds.end()) {
+            m_missingOpponentSounds.emplace_back(name);
+            log::warn("Native Dreamcast opponent cue has no authored routing: {}", name);
+        }
+        return true;
+    }
     if (platform() != LegendsPlatform::N64) {
         return false;
     }
@@ -125,13 +141,24 @@ void LegendsLevel::playSounds(SoundPlayer& output, const Vec3& listener) {
         stopSounds();
     }
     m_soundOutput = &output;
+    m_dreamcastVisit.playSounds(output, m_dreamcastSounds);
     // e005d734 admits token 1 once on contact; its native macro owns the loop.
     // Re-entering or resuming admits a fresh voice, leaving contact cancels it.
     if (m_deathDrainContact && m_deathDrainSound == kNoSound) {
         m_deathDrainSound = m_sounds.play(output, 1);
     }
     m_speech.update(output, 0);
-    if (m_entrySpeechPending && m_cameraReady &&
+    if (platform() == LegendsPlatform::Dreamcast) {
+        if (m_entrySpeechPending && m_cameraReady &&
+            (!m_entrySpeechAwaitQueue || !m_dreamcastSpeech.playing(output))) {
+            m_entrySpeechAwaitQueue = false;
+            m_entrySpeechPending = false;
+            m_dreamcastSpeech.enqueue(output, m_dreamcastSpeech.entryCue());
+        }
+        for (const u32 count : std::exchange(m_dreamcastRuneAnnouncements, {}))
+            m_dreamcastSpeech.enqueue(output, LegendsDreamcastSpeech::runestoneCue(count));
+    }
+    if (platform() == LegendsPlatform::N64 && m_entrySpeechPending && m_cameraReady &&
         (!m_entrySpeechAwaitQueue || (!m_speech.playing(output) && m_speech.pendingCount() == 0))) {
         m_entrySpeechAwaitQueue = false;
         m_entrySpeechPending = false;
@@ -154,6 +181,40 @@ void LegendsLevel::playSounds(SoundPlayer& output, const Vec3& listener) {
             // The native stage override, when present, has priority over the
             // ordinary pending rune/obelisk reminder (e0062ca0/e00649dc).
             m_speech.enqueue(output, *m_exitReminder);
+        }
+    }
+    m_ambientMusicDuck.reset();
+    if (platform() == LegendsPlatform::Dreamcast) {
+        const auto sourcePosition = [&](u32 index) -> std::optional<Vec3> {
+            const auto binding =
+                std::ranges::find(m_dreamcastAmbientSources, index, &AmbientSource::nativeIndex);
+            const auto* movement = m_world.adapter()->dreamcastWorldMotion();
+            if (binding == m_dreamcastAmbientSources.end() || !movement)
+                return {};
+            return Vec3{movement->transform(binding->owner) * Vec4{binding->position, 1}};
+        };
+        const auto desired =
+            m_destination
+                ? std::optional<LegendsDreamcastAmbient::Request>{}
+                : m_dreamcastAmbient.request(cameraAttention().value_or(listener), sourcePosition);
+        if (!desired || m_dreamcastAmbientIndex != desired->nativeIndex) {
+            output.stop(m_dreamcastAmbientHandle);
+            m_dreamcastAmbientHandle = kNoSound;
+            m_dreamcastAmbientIndex.reset();
+        }
+        if (desired) {
+            // AudioSecretProc retries finite cues after EOF while in range;
+            // decoded sequences retain their own loop points and envelopes.
+            if (!output.isPlaying(m_dreamcastAmbientHandle)) {
+                m_dreamcastAmbientHandle =
+                    m_dreamcastSounds.play(output, desired->token, desired->volume);
+                m_dreamcastAmbientIndex = desired->nativeIndex;
+            } else {
+                output.setVolume(m_dreamcastAmbientHandle, desired->volume);
+            }
+            if (desired->musicScale)
+                m_ambientMusicDuck =
+                    MusicDuck{LegendsDreamcastAmbient::kMusicDuckHold, *desired->musicScale};
         }
     }
     // The N64 listener is the camera target, not its elevated eye. Each IPR
@@ -208,7 +269,7 @@ void LegendsLevel::playSounds(SoundPlayer& output, const Vec3& listener) {
         }
         auto active = std::ranges::find(m_motionSounds, desired.id, &MotionSound::id);
         if (active == m_motionSounds.end()) {
-            const auto handle = m_sounds.play(output, desired.token, volume, true);
+            const auto handle = playNativeSound(output, desired.token, volume, true);
             if (handle != kNoSound) {
                 m_motionSounds.push_back({desired.id, handle});
             }
@@ -218,7 +279,7 @@ void LegendsLevel::playSounds(SoundPlayer& output, const Vec3& listener) {
     }
     std::erase_if(m_soundHandles, [&](SoundHandle handle) { return !output.isPlaying(handle); });
     for (const u32 token : std::exchange(m_opponentSounds, {})) {
-        const auto handle = m_sounds.play(output, token);
+        const auto handle = playNativeSound(output, token);
         if (handle != kNoSound) {
             m_soundHandles.push_back(handle);
         }
@@ -228,7 +289,7 @@ void LegendsLevel::playSounds(SoundPlayer& output, const Vec3& listener) {
         // N64 mix calibration before the user's Effects slider.
         const f32 volume = audible(cue.position, cue.route);
         if (volume > 0) {
-            const auto handle = m_sounds.play(output, cue.token, volume, false);
+            const auto handle = playNativeSound(output, cue.token, volume, false);
             if (handle != kNoSound) {
                 m_soundHandles.push_back(handle);
             }
@@ -236,7 +297,21 @@ void LegendsLevel::playSounds(SoundPlayer& output, const Vec3& listener) {
     }
 }
 
+SoundHandle LegendsLevel::playNativeSound(SoundPlayer& output, u32 token, f32 volume, bool loop) {
+    return platform() == LegendsPlatform::Dreamcast
+               ? m_dreamcastSounds.play(output, token, volume, loop)
+               : m_sounds.play(output, token, volume, loop);
+}
+
 void LegendsLevel::continueSpeechFrom(LegendsLevel& previous) {
+    if (this != &previous && platform() == LegendsPlatform::Dreamcast &&
+        previous.platform() == LegendsPlatform::Dreamcast && previous.m_soundOutput &&
+        (!m_soundOutput || m_soundOutput == previous.m_soundOutput) &&
+        m_dreamcastSpeech.continueFrom(*previous.m_soundOutput, previous.m_dreamcastSpeech)) {
+        m_soundOutput = previous.m_soundOutput;
+        m_entrySpeechAwaitQueue = true;
+        return;
+    }
     if (this == &previous || platform() != LegendsPlatform::N64 ||
         previous.platform() != LegendsPlatform::N64 || !m_speech.opened() ||
         !previous.m_speech.opened() || !previous.m_destination || !previous.m_exitSpeechPlayed ||
@@ -255,6 +330,13 @@ void LegendsLevel::continueSpeechFrom(LegendsLevel& previous) {
     m_entrySpeechAwaitQueue = true;
 }
 
+void LegendsLevel::servicePreservedSpeech(f32 seconds) {
+    if (m_soundOutput)
+        m_speech.update(*m_soundOutput, seconds);
+    // Dreamcast finite phrases are already queued in the long-lived SoundPlayer.
+    // Do not run level clocks or restart fixture loops behind results/shop menus.
+}
+
 void LegendsLevel::pauseSounds() {
     if (m_soundOutput) {
         m_soundOutput->stop(m_deathDrainSound);
@@ -268,9 +350,12 @@ void LegendsLevel::pauseSounds() {
 }
 
 void LegendsLevel::stopSounds() {
+    m_dreamcastVisit.stopSounds();
     pauseSounds();
     if (m_soundOutput) {
         m_speech.stop(*m_soundOutput);
+        m_dreamcastSpeech.stop(*m_soundOutput);
+        m_soundOutput->stop(m_dreamcastAmbientHandle);
         for (const auto& sound : m_ambientSounds) {
             m_soundOutput->stop(sound.handle);
         }
@@ -281,6 +366,9 @@ void LegendsLevel::stopSounds() {
     m_soundHandles.clear();
     m_opponentSounds.clear();
     m_ambientSounds.clear();
+    m_dreamcastAmbientHandle = kNoSound;
+    m_dreamcastAmbientIndex.reset();
+    m_ambientMusicDuck.reset();
     m_soundOutput = nullptr;
     m_deathDrainContact = false;
 }

@@ -5,6 +5,7 @@
 
 #include "game/combat/HurtKind.h"
 #include "game/scenes/PlayScene.h"
+#include "game/widgets/DialoguePresentation.h"
 
 namespace gdl::game {
 
@@ -33,7 +34,9 @@ void PlayScene::openImportedDialogue() {
     }
     const auto& strings = *m_services->strings;
     HintMenuLabels labels;
-    labels.title = strings.get(request->title);
+    if (!request->title.empty()) {
+        labels.title = strings.get(request->title);
+    }
     labels.player = strings.get("menu.player");
     if (const auto slot = labels.player.find("{}"); slot != std::string::npos) {
         labels.player.replace(slot, 2, std::to_string(request->player + 1));
@@ -46,7 +49,12 @@ void PlayScene::openImportedDialogue() {
     screen.width = static_cast<s32>(config.display.virtualWidth);
     screen.height = static_cast<s32>(config.display.virtualHeight);
     screen.horizontalFov = config.horizontalFovRadians();
-    if (!m_sumnerVisit.openTopics(request->player, m_messages.text(), screen, std::move(labels))) {
+    const auto* style = imported->messagePresentation();
+    const auto* art = style ? style->menuTextures() : nullptr;
+    const auto& text = art ? style->text() : m_messages.text();
+    const auto definition = art ? style->nativeTopics(labels.title, labels.topics) : std::nullopt;
+    if (!m_sumnerVisit.openTopics(request->player, text, screen, std::move(labels), art, definition,
+                                  art ? style : nullptr)) {
         imported->dismissDialogue();
     }
 }
@@ -90,7 +98,8 @@ void PlayScene::updateImportedDialogue(const Inputs& inputs, s32 ticks) {
     }
 }
 
-void PlayScene::advanceImportedLevel(f32 seconds, std::vector<CameraSubject>& subjects) {
+void PlayScene::advanceImportedLevel(f32 seconds, std::vector<CameraSubject>& subjects,
+                                     const Inputs& inputs) {
     auto* imported = m_world->imported();
     if (imported == nullptr) {
         return;
@@ -104,11 +113,20 @@ void PlayScene::advanceImportedLevel(f32 seconds, std::vector<CameraSubject>& su
     }
     imported->supportOpponents(opponentFloors);
     std::vector<PlayerActor*> standing;
+    u32 interactionButtons = 0;
     for (auto& player : m_players) {
         if (!player.departed && player.life == PlayerLife::Standing && !player.ghost) {
             standing.push_back(&player.actor);
+            const auto seat = player.actor.player();
+            if (seat >= 0 && static_cast<usize>(seat) < inputs.size()) {
+                const auto& input = inputs[static_cast<usize>(seat)];
+                if (input.menu.select || input.attackPressed) {
+                    interactionButtons |= 1U << seat;
+                }
+            }
         }
     }
+    imported->interactionButtons(interactionButtons);
     imported->updateParty(standing, seconds,
                           m_services->config == nullptr ||
                               m_services->config->combat.autoActivateItems);

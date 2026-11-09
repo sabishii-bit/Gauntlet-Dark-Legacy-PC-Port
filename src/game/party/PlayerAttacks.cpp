@@ -706,8 +706,8 @@ void PlayerAttacks::updateMoveAttachments(std::span<PlayerRuntime> players) {
         const auto& player = players[attachment.actor];
         const auto& save = player.actor.save();
         const Mat4 body =
-            PlayerFigure::bodyPlacement(player.capture.body().value_or(player.actor.transform()),
-                                        save, PowerupEffects::of(save.progress().inventory));
+            player.figure->placement(player.capture.body().value_or(player.actor.transform()), save,
+                                     PowerupEffects::of(save.progress().inventory));
         const Mat4 parent = attachment.bodyParent ? body : player.figure->rootAttachment(body);
         const Mat4 placement = parent * attachment.local;
         effects.placeAt(attachment.effect, placement);
@@ -781,8 +781,8 @@ void PlayerAttacks::updateParticles(std::span<PlayerRuntime> players) {
         const auto& player = players[particle.actor];
         const auto& save = player.actor.save();
         Mat4 placement =
-            PlayerFigure::bodyPlacement(player.capture.body().value_or(player.actor.transform()),
-                                        save, PowerupEffects::of(save.progress().inventory));
+            player.figure->placement(player.capture.body().value_or(player.actor.transform()), save,
+                                     PowerupEffects::of(save.progress().inventory));
         if (particle.parent != 0) {
             bool found = false;
             for (usize i = 0; i < effects.count(); ++i) {
@@ -2421,7 +2421,7 @@ void PlayerAttacks::glowWeapons(std::span<PlayerRuntime> players, s32 occupiedHa
         const PowerupEffects worn = PowerupEffects::of(save.progress().inventory);
         std::optional<Mat4> hand;
         if (runtime.figure != nullptr && runtime.life != PlayerLife::InTower) {
-            const Mat4 body = PlayerFigure::bodyPlacement(
+            const Mat4 body = runtime.figure->placement(
                 runtime.capture.body().value_or(runtime.actor.transform()), save, worn);
             hand = runtime.figure->handAttachment(body);
         }

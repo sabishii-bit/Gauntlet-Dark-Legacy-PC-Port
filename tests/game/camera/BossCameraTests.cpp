@@ -42,6 +42,134 @@ CameraSubject standing(const Vec3& feet) {
     return CameraSubject{feet, feet + Vec3{0.0f, 3.0f, 0.0f}};
 }
 
+TEST_CASE("boss approach policy defaults preserve Dark Legacy camera state",
+          "[game][world][camera][boss-approach-policy]") {
+    const auto record = cryptRecord();
+    std::vector<CameraSubject> party{standing({-15, 0, 30}), standing({15, 0, 35})};
+    BossCameraSubject boss;
+    const BossCamera::ApproachPolicy defaults;
+    BossCamera baseline;
+    BossCamera explicitDefaults;
+    baseline.reset(boss, party, record, {});
+    explicitDefaults.reset(boss, party, record, {}, {}, &defaults);
+    CHECK(explicitDefaults == baseline);
+    for (s32 tick = 0; tick < 240; ++tick) {
+        boss.awake = tick >= 120;
+        party[0] = standing({-15.0f + static_cast<f32>(tick) * 0.05f, 0, 30});
+        baseline.update(boss, party, record, {}, 1.0f / 60);
+        explicitDefaults.update(boss, party, record, {}, 1.0f / 60, {}, &defaults);
+        CHECK(explicitDefaults == baseline);
+    }
+}
+
+TEST_CASE("platform approach distance and attention limits do not alter combat framing",
+          "[game][world][camera][boss-approach-policy]") {
+    auto record = cryptRecord();
+    record.minPitch = record.maxPitch = 0.0f;
+    const std::vector<CameraSubject> party{standing({-80, 0, 30}), standing({80, 0, 30})};
+    BossCameraSubject boss;
+    BossCamera::ApproachPolicy approach;
+    // Dreamcast BossCamPlayerCalc 8c081f20 uses 1.5 times the authored player
+    // maximum and the 2.5/2.25 inward bands, with twice their distance gain.
+    approach.maxDistanceScale = 1.5f;
+    approach.inwardLooseMargin = 2.5f;
+    approach.inwardHeldMargin = 2.25f;
+    approach.inwardGain = 2.0f;
+    BossCamera ordinary;
+    BossCamera adapted;
+    ordinary.reset(boss, party, record, {});
+    adapted.reset(boss, party, record, {}, {}, &approach);
+    CHECK(ordinary.distance() == Approx(record.maxPlayerDistance * 2));
+    CHECK(adapted.distance() == Approx(record.maxPlayerDistance * 3));
+    boss.awake = true;
+    ordinary.reset(boss, party, record, {});
+    adapted.reset(boss, party, record, {}, {}, &approach);
+    CHECK(adapted == ordinary);
+    for (s32 tick = 0; tick < 120; ++tick) {
+        ordinary.update(boss, party, record, {}, 1.0f / 60);
+        adapted.update(boss, party, record, {}, 1.0f / 60, {}, &approach);
+        CHECK(adapted == ordinary);
+    }
+}
+
+TEST_CASE("bounded boss approach attention retains the physical party for screen fitting",
+          "[game][world][camera][boss-approach-policy]") {
+    const auto record = cryptRecord();
+    const std::vector<CameraSubject> party{standing({50, 0, 30})};
+    BossCameraSubject boss;
+    BossCamera::ApproachPolicy approach;
+    approach.attentionBounds = std::pair{Vec3{-5, 0, 20}, Vec3{5, 10, 40}};
+    std::vector<WorldLocator> markers(2);
+    markers[0].position = Vec3{5, 3, 30};
+    markers[0].rotation = Vec3{0, 0, 0};
+    markers[1].position = party.front().follow;
+    markers[1].rotation = Vec3{0, kPi, 0};
+    BossCamera camera;
+    camera.reset(boss, party, record, {}, markers, &approach);
+    CHECK(camera.attention() == Vec3{5, 3, 30});
+    CHECK(camera.yaw() == Approx(0)); // the marker nearest the bounded attention
+    const Vec3 delta = party.front().follow - camera.camera().position;
+    const f32 tangent = std::tan(CameraView{}.horizontalFov * 0.5f);
+    const f32 physicalMargin = (glm::dot(delta, camera.camera().forward()) * tangent -
+                                std::abs(glm::dot(delta, camera.camera().right()))) /
+                                   std::sqrt(1 + tangent * tangent) -
+                               party.front().viewRadius;
+    CHECK(camera.margin() <= physicalMargin + 0.001f);
+    CHECK(party.front().feet == Vec3{50, 0, 30});
+}
+
+TEST_CASE("approach inward hysteresis keeps moving inward inside its held band",
+          "[game][world][camera][boss-approach-policy]") {
+    auto record = cryptRecord();
+    record.minPitch = record.maxPitch = 0;
+    BossCameraSubject boss;
+    BossCamera::ApproachPolicy approach;
+    approach.maxDistanceScale = 1.5f;
+    approach.inwardLooseMargin = 2.5f;
+    approach.inwardHeldMargin = 2.25f;
+    approach.inwardGain = 2;
+    std::vector<CameraSubject> party{standing({-80, 0, 30}), standing({80, 0, 30})};
+    BossCamera camera;
+    camera.reset(boss, party, record, {}, {}, &approach);
+    const auto fitMargin = [&](f32 margin) {
+        const f32 tangent = std::tan(CameraView{}.horizontalFov * 0.5f);
+        const f32 depth =
+            glm::dot(Vec3{0, 3, 30} - camera.camera().position, camera.camera().forward());
+        const f32 extent = depth * tangent - margin * std::sqrt(1 + tangent * tangent);
+        party = {standing({-extent, 0, 30}), standing({extent, 0, 30})};
+    };
+    fitMargin(3.0f); // enter the inward band
+    camera.update(boss, party, record, {}, 1.0f / 60, {}, &approach);
+    REQUIRE(camera.margin() == Approx(3).margin(0.001f));
+    const f32 before = camera.distance();
+    fitMargin(2.375f); // below loose2.5, still above held2.25
+    camera.update(boss, party, record, {}, 1.0f / 60, {}, &approach);
+    CHECK(camera.margin() == Approx(2.375f).margin(0.001f));
+    CHECK(camera.distance() < before);
+}
+
+TEST_CASE("boss approach can follow the native bounding midpoint of three or four players",
+          "[game][world][camera][boss-approach-policy]") {
+    const s32 count = GENERATE(3, 4);
+    const auto record = cryptRecord();
+    BossCameraSubject boss;
+    std::vector<CameraSubject> party{standing({0, 0, 20}), standing({2, 0, 22}),
+                                     standing({30, 6, 50})};
+    if (count == 4)
+        party.push_back(standing({1, 0, 21}));
+    BossCamera::ApproachPolicy approach;
+    approach.boundsMidpoint = true;
+    BossCamera camera;
+    camera.reset(boss, party, record, {}, {}, &approach);
+    CHECK(camera.attention() == Vec3{15, 6, 35});
+    BossCamera ordinary;
+    ordinary.reset(boss, party, record, {});
+    CHECK(ordinary.attention() != camera.attention());
+    approach.attentionBounds = std::pair{Vec3{0, 0, 0}, Vec3{10, 5, 30}};
+    camera.reset(boss, party, record, {}, {}, &approach);
+    CHECK(camera.attention() == Vec3{10, 5, 30});
+}
+
 TEST_CASE("a sleeping boss does not pull the approach camera away from the stairs",
           "[game][world][camera][chimera]") {
     const auto record = cryptRecord();
@@ -252,7 +380,7 @@ TEST_CASE("the boss camera keeps within the boss's facing when the record limits
     REQUIRE(off == Approx(kPi / 4.0f).margin(0.02f));
 }
 
-TEST_CASE("waking holds the camera where it stands while its look pans to the boss, and the "
+TEST_CASE("waking holds the camera while its look pans farther away to the boss, and the "
           "pitch then follows under its speeds instead of snapping to the fight angle",
           "[game][world][camera][boss-pitch]") {
     const f32 seconds = GENERATE(1.0f / 30.0f, 1.0f / 60.0f);
@@ -275,7 +403,7 @@ TEST_CASE("waking holds the camera where it stands while its look pans to the bo
     // The look point is further off than it may go in a step: the camera stays put and
     // turns to keep it as it pans (BossCamBossCalc's transition), so nothing jumps.
     camera.update(boss, party, record, {}, seconds);
-    CHECK(camera.camera().position == stood);
+    CHECK(glm::distance(camera.camera().position, stood) < 0.0001f);
     CHECK(std::abs(camera.pitch() - asleepPitch) < 0.01f);
     CHECK(glm::distance(camera.attention(), party[0].follow) <= BossCamera::kLookSpeed * seconds);
     s32 panned = 0;
@@ -285,7 +413,7 @@ TEST_CASE("waking holds the camera where it stands while its look pans to the bo
         const Vec3 looked = camera.attention();
         camera.update(boss, party, record, {}, seconds);
         REQUIRE(std::isfinite(camera.pitch()));
-        if (camera.camera().position == at) {
+        if (glm::distance(camera.camera().position, at) < 0.0001f) {
             // Still panning: the look point moves, the camera does not.
             panned += glm::distance(camera.attention(), looked) > 1.0e-3f ? 1 : 0;
             continue;
@@ -297,6 +425,45 @@ TEST_CASE("waking holds the camera where it stands while its look pans to the bo
     CHECK(panned < 120);
     CHECK(camera.attention().z == Approx(-2.0f).margin(0.1f));
     CHECK(camera.pitch() != asleepPitch);
+}
+
+TEST_CASE("boss attention transitions preserve the retained eye distance when attention approaches",
+          "[game][world][camera][boss-pitch][boss-transition-distance]") {
+    const f32 direction = GENERATE(-1.0f, 1.0f);
+    const f32 seconds = GENERATE(1.0f / 30.0f, 1.0f / 60.0f);
+    CAPTURE(direction, seconds);
+    auto record = cryptRecord();
+    record.flags = BossCameraInfo::kLiveAnchor;
+    record.minAttention = record.maxAttention = Vec3{0};
+    BossCameraSubject boss;
+    boss.awake = true;
+    const std::vector<CameraSubject> party{standing({0, 0, 30})};
+    BossCamera camera;
+    camera.reset(boss, party, record, {});
+    const Vec3 oldEye = camera.camera().position;
+    const Vec3 oldAttention = camera.attention();
+    const f32 retainedDistance = camera.distance();
+    boss.position += camera.camera().forward() * (20.0f * direction);
+    REQUIRE(glm::distance(boss.position, oldAttention) > BossCamera::kLookSpeed * seconds);
+    camera.update(boss, party, record, {}, seconds);
+    const f32 fromOldEye = glm::distance(camera.attention(), oldEye);
+    REQUIRE(glm::distance(camera.attention(), oldAttention) > 0.001f);
+    CHECK(camera.distance() == Approx(std::max(retainedDistance, fromOldEye)).margin(0.0001f));
+    CHECK(glm::distance(camera.attention(), camera.camera().position) ==
+          Approx(camera.distance()).margin(0.0001f));
+    CHECK(glm::distance(camera.camera().position,
+                        camera.attention() - camera.camera().forward() * camera.distance()) <
+          0.0001f);
+    if (direction < 0) {
+        // GC BossCamBossCalc and DC 8c082c36 retain the longer old distance;
+        // their top-level update places the eye farther back, not at the old eye.
+        REQUIRE(fromOldEye < retainedDistance - 0.001f);
+        CHECK(glm::distance(camera.camera().position, oldEye) ==
+              Approx(retainedDistance - fromOldEye).margin(0.0001f));
+    } else {
+        REQUIRE(fromOldEye > retainedDistance + 0.001f);
+        CHECK(glm::distance(camera.camera().position, oldEye) < 0.0001f);
+    }
 }
 
 TEST_CASE("the boss camera backs off and comes in no faster than its speeds and rests once "

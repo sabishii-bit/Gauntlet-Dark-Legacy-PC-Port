@@ -234,7 +234,8 @@ void LegendsPreview::openPlayable(RenderDevice& device, const formats::LegendsMa
         nativeCamera.emplace();
         nativeCamera->reset(*adapter->cameraConfig(), traversal->actor().position());
     }
-    auto figure = PlayerFigure::load(device, characterRoot, member.save, Entrance::Skip);
+    auto figure = PlayerFigure::load(device, characterRoot, member.save, Entrance::Skip,
+                                     PlayerFigure::LevelSize::LevelOne);
     if (!figure) {
         throw FormatError("Legends traversal: selected character artwork could not be loaded");
     }
@@ -487,7 +488,7 @@ void LegendsPreview::render(RenderDevice& device, const Mat4& frameProjection, f
         const Vec3 position = glm::mix(m_previousPosition, actor.position(), blend);
         const f32 yaw = m_previousYaw + std::remainder(actor.yaw() - m_previousYaw, kTwoPi) * blend;
         const Mat4 base = glm::rotate(glm::translate(Mat4{1}, position), yaw, Vec3{0, 1, 0});
-        const Mat4 body = PlayerFigure::bodyPlacement(base, actor.save(), PowerupEffects{});
+        const Mat4 body = m_figure->placement(base, actor.save(), PowerupEffects{});
         const WorldLighting lighting;
         if (const auto floor = m_traversal->collision().floorAt(position, 1.0f, 10.0f)) {
             m_figure->drawShadow(device, transform, view.position,

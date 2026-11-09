@@ -11,13 +11,13 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/assets/StringTable.h"
-#include "engine/assets/TextureSet.h"
 #include "engine/core/SpecialMembers.h"
 #include "engine/io/AssetLocator.h"
 #include "engine/io/File.h"
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "expansions/n64/formats/LegendsN64Font.h"
 #include "expansions/n64/formats/LegendsN64Texture.h"
 #include "expansions/n64/formats/LegendsN64Tower.h"
 #include "expansions/n64/scenes/LegendsSumnerText.h"
@@ -193,25 +193,50 @@ struct SumnerScene {
     }
 
     void checkMenuArt() {
-        TextureSet images;
-        REQUIRE(images.load(characters / "STATIC"));
-        const auto backdrop = images.find("SCROLL_A");
-        const auto ink = images.find("FONT32_PARCH");
-        REQUIRE(backdrop);
-        REQUIRE(ink);
+        const auto images = formats::decodeLegendsN64Textures(readFile(root / "hud/objects.wad"));
+        const auto backdrop =
+            std::ranges::find(images, std::string{"TEXTSCROLL"}, &formats::LegendsN64Texture::name);
+        REQUIRE(backdrop != images.end());
+        const auto body = formats::LegendsN64Font::parse(readFile(root / "Font/glfm3.fnt"));
+        const auto heading = formats::LegendsN64Font::parse(readFile(root / "Font/bigfont.fnt"));
         device.draws.clear();
         REQUIRE(device.beginFrame());
         scene.render(device, Mat4{1}, 640, 448);
         device.endFrame();
-        const auto drawn = [&](const Image& image) {
-            return std::ranges::any_of(device.draws, [&](const auto& draw) {
+        const auto drawn = [&](const Image& image) -> const test::RecordedDraw* {
+            const auto found = std::ranges::find_if(device.draws, [&](const auto& draw) {
                 const auto* texture = dynamic_cast<const test::FakeTexture*>(draw.texture);
                 return texture && !draw.vertices.empty() && texture->width() == image.width &&
                        texture->height() == image.height && texture->pixels == image.pixels;
             });
+            return found == device.draws.end() ? nullptr : &*found;
         };
-        CHECK(drawn(images.image(*backdrop)));
-        CHECK(drawn(images.image(*ink)));
+        const auto* scrollDraw = drawn(backdrop->image);
+        const auto* bodyDraw = drawn(body.atlas);
+        const auto* headingDraw = drawn(heading.atlas);
+        REQUIRE(scrollDraw);
+        REQUIRE(bodyDraw);
+        REQUIRE(headingDraw);
+        CHECK(scrollDraw->vertices.size() == 6);
+        CHECK(bodyDraw->vertices.front().color == Color::rgba(0, 132, 0));
+
+        // The native header uses font8, not OptionMenu's font5 body painter.
+        // Verify the actual visible "Sumner" glyphs, their UVs, size and colour,
+        // rather than accepting an empty generic title field as sufficient.
+        test::FakeRenderDevice expected;
+        test::FakeTexture sheet{heading.atlas.width, heading.atlas.height};
+        TextPainter text;
+        text.setFont(&heading.font, &sheet);
+        Canvas canvas;
+        canvas.begin(expected, Mat4{1});
+        constexpr f32 kNativeScale = 512.0f / 416.0f;
+        const auto area = scene.hints().topics().backdropArea();
+        text.draw(canvas, -256, static_cast<s32>(area.y + 10 * kNativeScale),
+                  strings.get(legendsN64SumnerTextKey(441)),
+                  {.scale = 1.5f * kNativeScale, .color = Color::rgba(0, 0, 132)});
+        canvas.end();
+        REQUIRE(expected.draws.size() == 1);
+        CHECK(headingDraw->vertices == expected.draws.front().vertices);
     }
 };
 } // namespace
@@ -224,10 +249,13 @@ TEST_CASE("Native Tower podium contact routes the complete Sumner menu to its vi
     CHECK(glm::distance(start, fixture.scene.actor(1)->position()) > 1.0f);
     const auto& menu = fixture.scene.hints().topics();
     const std::array<s32, 6> actions{0x11, 0x15, 0x2e, 0xd, 0x2f, 2};
+    const std::array<u32, 6> labels{426, 430, 442, 443, 444, 445};
     REQUIRE(menu.definition().items.size() == actions.size());
-    CHECK(menu.definition().title == fixture.strings.get(legendsN64SumnerTextKey(441)));
+    CHECK(menu.definition().title.empty()); // The distinct native title font is checked below.
     for (usize i = 0; i < actions.size(); ++i) {
         CHECK(menu.definition().items[i].code == actions[i]);
+        CHECK(menu.definition().items[i].text ==
+              fixture.strings.get(legendsN64SumnerTextKey(labels[i])));
     }
     fixture.checkMenuArt();
 
@@ -284,20 +312,47 @@ TEST_CASE("Native Tower return presents new milestones once and restores the mat
     const auto returned = fixture.scene.party();
     fixture.level->announceProgress(before, returned);
     fixture.step();
-    REQUIRE(fixture.scene.scroll().active());
-    std::string expected;
-    for (const u32 id : {541U, 523U, 524U, 531U, 532U}) {
-        expected += fixture.strings.get(legendsN64SumnerTextKey(id));
-        expected += ' ';
+    const auto* ceremony = fixture.level->adapter().towerCeremony();
+    REQUIRE(ceremony);
+    REQUIRE(ceremony->active());
+    CHECK_FALSE(fixture.scene.scroll().active());
+    CHECK_FALSE(fixture.level->opponentsReady());
+    CHECK(ceremony->displayedProgress().runestones == 0);
+    CHECK(ceremony->displayedProgress().shards == 0);
+    std::vector<std::string> gestures;
+    std::vector<u32> captions;
+    const Vec3 stationary = fixture.scene.actor(1)->position();
+    for (u32 i = 0; i < 6000 && ceremony->active(); ++i) {
+        const std::string gesture{ceremony->gesture()};
+        if (std::ranges::find(gestures, gesture) == gestures.end()) {
+            gestures.push_back(gesture);
+        }
+        if (const auto text = ceremony->caption();
+            text && std::ranges::find(captions, *text) == captions.end()) {
+            captions.push_back(*text);
+        }
+        PlayScene::Inputs attemptedMovement{};
+        attemptedMovement[1].move = {{1, 0}, 1};
+        attemptedMovement[1].attackPressed = true;
+        fixture.step(attemptedMovement);
+        if (ceremony->active()) {
+            CHECK(fixture.scene.actor(1)->position() == stationary);
+        }
     }
-    CHECK(fixture.readPages() == words(expected));
-    for (u32 i = 0; i < 90; ++i) {
-        fixture.step();
+    CHECK_FALSE(ceremony->active());
+    CHECK(fixture.level->opponentsReady());
+    CHECK(ceremony->displayedProgress().runestones == 1);
+    CHECK(ceremony->displayedProgress().shards == 1);
+    CHECK(ceremony->displayedProgress().obelisks == 7);
+    CHECK(captions == std::vector<u32>{541, 523, 524, 531, 532});
+    for (const auto gesture : {"MKRU", "STRT", "ODOR", "SHD1", "SHDR"}) {
+        CHECK(std::ranges::find(gestures, gesture) != gestures.end());
     }
     CHECK_FALSE(fixture.scene.scroll().active());
     fixture.level->announceProgress(returned, returned);
     fixture.step();
     CHECK_FALSE(fixture.scene.scroll().active());
+    CHECK_FALSE(ceremony->pending());
     fixture.approach();
     fixture.choose(5);
     CHECK(fixture.readPages() == words(fixture.strings.get(legendsN64SumnerHistoryKey(12))));

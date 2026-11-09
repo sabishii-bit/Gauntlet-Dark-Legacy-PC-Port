@@ -1,5 +1,6 @@
 #pragma once
 #include <array>
+#include <filesystem>
 #include <future>
 #include <memory>
 #include <optional>
@@ -197,7 +198,8 @@ private:
     void consoleLegendsOpen(DevConsole& console, LegendsPlatform platform,
                             const std::filesystem::path& directory, bool playable,
                             bool completedTravel = false,
-                            std::optional<std::vector<PartyMember>> visitingParty = std::nullopt);
+                            std::optional<std::vector<PartyMember>> visitingParty = std::nullopt,
+                            bool completionRecorded = false);
     /** Leaves a Legends map or its preview for the level left for it. */
     void consoleLegendsClose(DevConsole& console);
     void updateLegendsPreview(f64 deltaSeconds);
@@ -362,6 +364,11 @@ private:
         bool secret = false;
         bool returningFromChallenge = false;
         bool resumeImported = false; ///< an in-place menu, not map travel or level completion
+        struct ImportedDestination {
+            LegendsPlatform platform;
+            std::filesystem::path directory;
+        };
+        std::optional<ImportedDestination> importedDestination;
     };
     std::optional<Journey> m_journey;
     void returnFromChallenge(std::span<const PartyMember> party);

@@ -40,6 +40,7 @@
 #include "game/level/SkorneArena.h"
 #include "game/level/TowerAccess.h"
 #include "game/level/WorldDestruction.h"
+#include "game/level/WorldLightning.h"
 #include "game/level/WorldMotion.h"
 
 namespace gdl::game {
@@ -62,10 +63,11 @@ class LevelWorld {
         WorldLighting lighting;
         WorldLighting litNow;
         f32 ambientOffset = 0;
+        WorldLightning lightning;
         bool operator==(const Simulation&) const = default;
         template <class Digest>
         friend void visitNativeState(Digest& digest, const Simulation& value) {
-            digest.template fields<9>(value);
+            digest.template fields<10>(value);
         }
     };
 
@@ -209,7 +211,7 @@ public:
     /** Hides/shows a separately controlled stage mesh without changing its collision.
      * False when absent or baked into static geometry. */
     bool setObjectVisible(std::string_view name, bool visible);
-    void bossArenaCue(const Vec3& boss) { m_skorneArena.cue(boss); }
+    void bossArenaCue(const Vec3& boss);
     const SkorneArena& skorneArena() const { return m_skorneArena; }
     /** The rocks and leaves that give way to a touch or a shot. */
     FallingScenery& fallingScenery() { return m_fallingScenery; }

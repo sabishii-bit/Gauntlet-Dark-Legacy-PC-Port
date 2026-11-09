@@ -150,6 +150,31 @@ TEST_CASE("native soundscape digest bytes stay pinned for distinct requests and 
     soundscape.close();
 }
 
+TEST_CASE("camera-dependent ambient duck stays outside native soundscape state",
+          "[native-digest][audio-native-digest][ambient-duck]") {
+    const auto root = test::scratchDirectory("audio-native-ambient-duck");
+    const LevelAudioInfo info{.bank = {}, .stream = {}, .areas = 3};
+    LevelSoundscape soundscape;
+    soundscape.open(root, nullptr, &info);
+    LevelSoundscape::LocalSnapshot saved;
+    soundscape.saveLocal(saved);
+    const auto original = nativeHash(soundscape);
+    soundscape.duckAmbientMusic(.5f, .2f);
+    CHECK(nativeHash(soundscape) == original);
+    CHECK(savedHash(soundscape, saved) == original);
+    soundscape.servicePresentation(.25f);
+    CHECK(nativeHash(soundscape) == original);
+    soundscape.duckMusic(1, .5f);
+    CHECK(nativeHash(soundscape) != original);
+    const auto nativeEvent = nativeHash(soundscape);
+    soundscape.duckAmbientMusic(.5f, .9f);
+    CHECK(nativeHash(soundscape) == nativeEvent);
+    CHECK(savedHash(soundscape, saved) == original);
+    REQUIRE(soundscape.restoreLocal(saved));
+    CHECK(nativeHash(soundscape) == original);
+    soundscape.close();
+}
+
 TEST_CASE("native voice and soundscape digest bytes stay pinned after their scripts and saves",
           "[native-digest][audio-native-digest][digest-golden]") {
     SoundClip clip;

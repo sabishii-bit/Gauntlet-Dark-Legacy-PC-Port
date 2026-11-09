@@ -469,6 +469,26 @@ void ItemFigure::play(s32 index, Playback playback) {
     refreshTextures();
 }
 
+void ItemFigure::poseFrame(f32 frame) {
+    if (!std::isfinite(frame) || !m_sim.tree || !m_sim.player.playing()) {
+        return;
+    }
+    const auto* sequence = sequenceInfo(m_sim.index);
+    if (!sequence || sequence->frames <= 0) {
+        return;
+    }
+    auto clock = m_sim.player.checkpoint();
+    clock.frame = std::clamp(frame, 0.0f, static_cast<f32>(sequence->frames - 1));
+    clock.time = static_cast<f64>(clock.frame) * clock.secondsPerFrame;
+    clock.finished = clock.frame >= static_cast<f32>(sequence->frames - 1);
+    clock.held = clock.finished;
+    clock.transitionLength = clock.transitionTime = 0;
+    if (m_sim.player.restore(clock, sequence)) {
+        update(0);
+        m_sim.presentationAdvanced = true;
+    }
+}
+
 void ItemFigure::capturePresentation() {
     m_sim.previousTransform = m_sim.transform;
     m_sim.previousFrame = m_sim.player.presentationFrame();

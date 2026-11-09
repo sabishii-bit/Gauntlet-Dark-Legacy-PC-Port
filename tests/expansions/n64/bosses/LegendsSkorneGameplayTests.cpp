@@ -886,6 +886,23 @@ TEST_CASE("Hell2 enters through its native initial pose and completes START befo
     REQUIRE(start);
     REQUIRE(ready);
     REQUIRE(stock.tree->sequences[*initial].frames == 1);
+    // INIT is the first pose of STRT, encoded with constant rotation tracks.
+    // Compare composed joints, not just the sequence name: a lost order flag
+    // leaves the correct clip selected but folds the arms behind his back.
+    TreePose initialPose;
+    TreePose startPose;
+    initialPose.evaluate(*stock.tree, *initial, 0);
+    startPose.evaluate(*stock.tree, *start, 0);
+    REQUIRE(initialPose.size() == startPose.size());
+    for (usize node = 0; node < initialPose.size(); ++node) {
+        CAPTURE(node);
+        for (s32 column = 0; column < 4; ++column) {
+            for (s32 row = 0; row < 4; ++row) {
+                CHECK(initialPose.matrices()[node][column][row] ==
+                      Catch::Approx(startPose.matrices()[node][column][row]).margin(.001f));
+            }
+        }
+    }
     const auto first = test.bossState();
     REQUIRE(first.player.sequence == *initial);
     REQUIRE_FALSE(test.bossGeometry().empty());

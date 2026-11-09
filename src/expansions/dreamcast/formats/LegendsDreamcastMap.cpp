@@ -60,7 +60,7 @@ Mesh geometry(std::span<const u8> bytes, usize model, usize bitmapCount, usize b
     // DC 1ST_READ.BIN FUN_8c0f0e60 uses a 104-byte header and 140-byte models.
     // Each model has four 32-byte LODs. Use authored LOD 0, not a synthetic GC mesh.
     const usize lod = kModelHeader + model * kModelStride + 12;
-    const u32 flags = readU32LE(bytes, lod + 4);
+    u32 flags = readU32LE(bytes, lod + 4);
     require((flags & ~0x417U) == 0, "unsupported model command format");
     const bool packed = (flags & 0x14U) == 4U;
     const bool authoredNormals = (flags & 0x16U) == 2U;
@@ -72,6 +72,16 @@ Mesh geometry(std::span<const u8> bytes, usize model, usize bitmapCount, usize b
             "geometry budget exceeded");
     range(bytes, vertices, vertexCount, packed ? 6 : 24);
     range(bytes, triangles, triangleCount, 8);
+    // MBOX_LoadModel finishes with 8c0eff20: serialized alpha bits are stale.
+    // Rebuild the flag from the referenced bitmap formats before choosing the
+    // lightmap path. RGB565 floors otherwise incorrectly lose their lighting.
+    flags &= ~1U;
+    for (usize i = 0; i < triangleCount; ++i) {
+        const usize texture = readU16LE(bytes, triangles + i * 8 + 6) & 0x3fffU;
+        require(texture < bitmapCount, "triangle bitmap index out of range");
+        if ((bytes[bitmapRecords + texture * 80 + 16] & 7U) != 1U)
+            flags |= 1U;
+    }
     const usize normals = authoredNormals ? readU32LE(bytes, lod + 28) : 0;
     if (authoredNormals) {
         range(bytes, normals, vertexCount, 12);
@@ -80,6 +90,10 @@ Mesh geometry(std::span<const u8> bytes, usize model, usize bitmapCount, usize b
     remainingTriangles -= triangleCount;
 
     Mesh mesh;
+    // DrawObject (8c0f29a0) tests LOD+4 bit 0 for alpha-textured geometry.
+    // Keep that reconstructed material property through the adapter; the other
+    // bits describe DC vertex storage and are not shared mesh flags.
+    mesh.flags = flags & mesh_flags::kAlphaTextured;
     mesh.vertices.reserve(vertexCount);
     std::vector<Vec2> normalizedUv;
     normalizedUv.reserve(vertexCount);
@@ -151,8 +165,8 @@ Mesh geometry(std::span<const u8> bytes, usize model, usize bitmapCount, usize b
             odd = false;
         }
         // FUN_8c0f4920 masks the bitmap to 14 bits. Bit 15 continues a
-        // triangle strip; it submits [2,1,0] then the next record's index 0.
-        // Its clipped-triangle path swaps winding on each successive triangle.
+        // triangle strip; 8c0f4b1a submits [2,1,0], then the next record's
+        // index 0. Its clipped path alternates successive triangle winding.
         const u32 a = readU16LE(bytes, at);
         const u32 b = readU16LE(bytes, at + (odd ? 2 : 4));
         const u32 c = readU16LE(bytes, at + (odd ? 4 : 2));
@@ -166,7 +180,12 @@ Mesh geometry(std::span<const u8> bytes, usize model, usize bitmapCount, usize b
             }
         }
         auto& indices = mesh.parts.back().indices;
-        indices.insert(indices.end(), {a, b, c});
+        // Native PVR strip winding is opposite to the shared renderer's
+        // left-handed, on-screen counter-clockwise convention. Flip only the
+        // raster indices; native positions and outward lighting normals stay
+        // unchanged. Copying PVR order made one-sided fixture tops disappear
+        // (notably EXIT_PORTALCENT), masked by two-sided preview geometry.
+        indices.insert(indices.end(), {a, c, b});
         const Vec3 normal = glm::cross(mesh.vertices[b].position - mesh.vertices[a].position,
                                        mesh.vertices[c].position - mesh.vertices[a].position);
         if (!authoredNormals) {
@@ -348,8 +367,8 @@ std::vector<LegendsMapObject> decodeDreamcastModelLibrary(std::span<const u8> mo
     usize remainingTriangles = kMaxTriangles;
     for (usize i = 0; i < count; ++i) {
         result[i].flags = readU32LE(models, kModelHeader + i * kModelStride + 16);
-        result[i].mesh =
-            geometry(models, i, bitmapCount, bitmapRecords, remainingVertices, remainingTriangles);
+        result[i].mesh = geometry(models, i, bitmapCount, bitmapRecords, remainingVertices,
+                                  remainingTriangles, &result[i].partLightmaps);
     }
     return result;
 }
@@ -437,6 +456,7 @@ LegendsMap LegendsMap::parseDreamcast(std::span<const u8> worlds, std::span<cons
             require(std::isfinite(placement.position.x) && std::isfinite(placement.position.y) &&
                         std::isfinite(placement.position.z),
                     "invalid hierarchy position");
+            result.objects[current].parent = placement.parent;
             result.objects[current].transform[3] = Vec4(placement.position, 1.0f);
             resolved[current] = true;
         }

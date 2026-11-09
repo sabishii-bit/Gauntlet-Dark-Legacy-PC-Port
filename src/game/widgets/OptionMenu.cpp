@@ -710,7 +710,7 @@ void OptionMenu::draw(Canvas& canvas, const TextPainter& painter,
             const bool alternate = item.markedPart == 2;
             const auto& activeText = alternate ? item.alternate : item.text;
             const s32 activeX = alternate ? secondX : x;
-            if (static_cast<s32>(i) == m_selection) {
+            if (static_cast<s32>(i) == m_selection && m_definition.colors.hi.a != 0) {
                 TextStyle glow;
                 glow.scale = m_definition.scale;
                 glow.color = m_definition.colors.hi.withAlpha(glowAlpha);
@@ -728,12 +728,14 @@ void OptionMenu::draw(Canvas& canvas, const TextPainter& painter,
         const bool selected = static_cast<s32>(i) == m_selection;
         const auto drawPart = [&](s32 x, const std::string& part) {
             if (selected) {
-                TextStyle glow;
-                glow.scale = m_definition.scale;
-                glow.color = m_definition.colors.hi.withAlpha(glowAlpha);
-                glow.texture = textures.glow != nullptr ? textures.glow : textures.font;
-                glow.expand = kGlowExpand;
-                painter.draw(canvas, x, y, part, glow);
+                if (m_definition.colors.hi.a != 0) {
+                    TextStyle glow;
+                    glow.scale = m_definition.scale;
+                    glow.color = m_definition.colors.hi.withAlpha(glowAlpha);
+                    glow.texture = textures.glow != nullptr ? textures.glow : textures.font;
+                    glow.expand = kGlowExpand;
+                    painter.draw(canvas, x, y, part, glow);
+                }
                 drawLabel(canvas, painter, x, y, part, m_definition.scale,
                           m_definition.colors.on.withAlpha(fade), itemSheet(textures, true));
             } else {

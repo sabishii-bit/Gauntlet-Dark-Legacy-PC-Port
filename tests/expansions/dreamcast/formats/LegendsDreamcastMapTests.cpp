@@ -10,11 +10,17 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/core/Error.h"
+#include "engine/io/ByteReader.h"
 #include "engine/io/File.h"
 
+#include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "expansions/dreamcast/assets/LegendsDreamcastArchive.h"
 #include "expansions/dreamcast/formats/LegendsDreamcastScene.h"
+#include "expansions/dreamcast/formats/LegendsDreamcastTexture.h"
 #include "expansions/shared/formats/LegendsMap.h"
+#include "expansions/shared/scenes/LegendsPreview.h"
+#include "game/level/ItemFigure.h"
 
 namespace {
 using namespace gdl;
@@ -73,6 +79,7 @@ struct Fixture {
         put32(model, 100, 1);
         put16(model, 244 + 4, 64);
         put16(model, 244 + 6, 32);
+        model[244 + 16] = 1; // RGB565; the native loader rebuilds alpha from this field.
         put32(model, kLod + 4, 16);
         put32(model, kLod + 8, 4);
         put32(model, kLod + 12, kVertices);
@@ -98,13 +105,15 @@ struct Fixture {
 };
 } // namespace
 
-TEST_CASE("Dreamcast Legends geometry uses native hierarchy and strip winding",
+TEST_CASE("Dreamcast Legends geometry adapts native strip winding to the shared renderer",
           "[formats][legends]") {
     const Fixture fixture;
     const LegendsMap map = LegendsMap::parseDreamcast(fixture.world, fixture.model);
     REQUIRE(map.objects.size() == 2);
+    CHECK(map.objects[0].parent == -1);
     CHECK(map.objects[0].mesh.vertices.empty());
     const auto& object = map.objects[1];
+    CHECK(object.parent == 0);
     CHECK(object.name == "QUAD");
     CHECK(object.flags == 2);
     CHECK(object.mesh.flags == 0);
@@ -113,8 +122,18 @@ TEST_CASE("Dreamcast Legends geometry uses native hierarchy and strip winding",
     CHECK(object.mesh.vertices[3].position == Vec3(1, 0, 1));
     REQUIRE(object.mesh.parts.size() == 1);
     CHECK(object.mesh.parts[0].texture == 0);
-    CHECK(object.mesh.parts[0].indices == std::vector<u32>{1, 0, 2, 3, 1, 2});
+    CHECK(object.mesh.parts[0].indices == std::vector<u32>{1, 2, 0, 3, 2, 1});
     CHECK(glm::dot(object.mesh.vertices[0].normal, object.mesh.vertices[3].normal) > 0.99f);
+    // Lighting normals remain outward; the renderer's left-handed winding is
+    // opposite the right-handed cross product, as in native GameCube meshes.
+    for (usize i = 0; i < object.mesh.parts[0].indices.size(); i += 3) {
+        const auto& indices = object.mesh.parts[0].indices;
+        const auto& a = object.mesh.vertices[indices[i]];
+        const auto& b = object.mesh.vertices[indices[i + 1]];
+        const auto& c = object.mesh.vertices[indices[i + 2]];
+        CHECK(glm::dot(glm::cross(b.position - a.position, c.position - a.position),
+                       a.normal + b.normal + c.normal) < 0);
+    }
     CHECK_FALSE(map.warnings.empty());
 }
 
@@ -134,6 +153,275 @@ TEST_CASE("Dreamcast world keeps sprite flags and per-strip lightmap coordinates
     CHECK(object.mesh.vertices[0].lightmapUv == Vec2{0.5f, 0.25f});
     put32(fixture.model, Fixture::kLod + 28, 471);
     CHECK_THROWS_AS(LegendsMap::parseDreamcast(fixture.world, fixture.model), FormatError);
+}
+
+TEST_CASE("Dreamcast alpha-textured meshes retain material flags without copying storage flags",
+          "[formats][legends][dreamcast-presentation]") {
+    Fixture fixture;
+    // The synthetic vertices are unpacked; bit 0 changes presentation only.
+    put32(fixture.model, Fixture::kLod + 4, 1);
+    fixture.model[244 + 16] = 0; // ARGB1555.
+    const auto map = LegendsMap::parseDreamcast(fixture.world, fixture.model);
+    REQUIRE(map.objects.size() == 2);
+    CHECK(map.objects[1].mesh.alphaTextured());
+    CHECK(map.objects[1].mesh.flags == mesh_flags::kAlphaTextured);
+    const auto library = decodeDreamcastModelLibrary(fixture.model);
+    REQUIRE(library.size() == 1);
+    CHECK(library[0].mesh.alphaTextured());
+    put32(fixture.model, Fixture::kLod + 4, 16);
+    fixture.model[244 + 16] = 1;
+    CHECK(decodeDreamcastModelLibrary(fixture.model)[0].mesh.flags == 0);
+}
+
+TEST_CASE("Dreamcast RGB565 clears stale alpha before admitting its lightmap",
+          "[formats][legends][dreamcast-presentation][dreamcast-material-alpha]") {
+    Fixture fixture;
+    // Native MBOX_LoadModel -> 8c0eff20 clears LOD bit0, then rebuilds it
+    // from each referenced bitmap's low three format bits. F1's floor is
+    // serialized with bit0 set despite an opaque RGB565 source texture.
+    put32(fixture.model, Fixture::kLod + 4, 17);
+    fixture.model[244 + 16] = 0x19; // Higher storage bits do not change RGB565.
+    put16(fixture.model, Fixture::kVertices + 16, 512);
+    put16(fixture.model, Fixture::kVertices + 18, 256);
+    const auto map = LegendsMap::parseDreamcast(fixture.world, fixture.model);
+    REQUIRE(map.objects.size() == 2);
+    CHECK_FALSE(map.objects[1].mesh.alphaTextured());
+    CHECK(map.objects[1].mesh.flags == 0);
+    CHECK(map.objects[1].partLightmaps == std::vector<u32>{460});
+    CHECK(map.objects[1].mesh.vertices[0].lightmapUv == Vec2{.5f, .25f});
+    const auto library = decodeDreamcastModelLibrary(fixture.model);
+    REQUIRE(library.size() == 1);
+    CHECK_FALSE(library[0].mesh.alphaTextured());
+    CHECK(library[0].partLightmaps == std::vector<u32>{460});
+    CHECK(library[0].mesh.vertices[0].lightmapUv == Vec2{.5f, .25f});
+    // The stale flag must not hide a malformed required lightmap descriptor.
+    put32(fixture.model, Fixture::kLod + 28, 471);
+    CHECK_THROWS_AS(LegendsMap::parseDreamcast(fixture.world, fixture.model), FormatError);
+    CHECK_THROWS_AS(decodeDreamcastModelLibrary(fixture.model), FormatError);
+}
+
+TEST_CASE("Dreamcast ARGB restores omitted alpha and bypasses the opaque lightmap pass",
+          "[formats][legends][dreamcast-presentation][dreamcast-material-alpha]") {
+    for (const u8 format : {u8{0}, u8{2}}) {
+        CAPTURE(format); // ARGB1555 and ARGB4444.
+        Fixture fixture;
+        put32(fixture.model, Fixture::kLod + 4, 16);
+        fixture.model[244 + 16] = format;
+        // DrawObject skips the second pass once the loader reconstructs alpha.
+        // An unused descriptor must not be dereferenced as opaque geometry.
+        put32(fixture.model, Fixture::kLod + 28, 0xffffffffU);
+        const auto map = LegendsMap::parseDreamcast(fixture.world, fixture.model);
+        REQUIRE(map.objects.size() == 2);
+        CHECK(map.objects[1].mesh.alphaTextured());
+        CHECK(map.objects[1].mesh.flags == mesh_flags::kAlphaTextured);
+        CHECK(map.objects[1].partLightmaps == std::vector<u32>{0});
+        const auto library = decodeDreamcastModelLibrary(fixture.model);
+        REQUIRE(library.size() == 1);
+        CHECK(library[0].mesh.alphaTextured());
+        CHECK(library[0].partLightmaps == std::vector<u32>{0});
+    }
+}
+
+TEST_CASE("Dreamcast Underworld floors and sinking figures retain their native RGB lighting",
+          "[formats][legends][dreamcast-presentation][dreamcast-floor-lighting][assets]") {
+    const auto directory =
+        test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native/levels/levelf1";
+    if (!std::filesystem::is_regular_file(directory / "worlds.rom"))
+        SKIP("Optional Dreamcast assets are not installed");
+    const auto models = readFile(directory / "objects.rom");
+    const auto pixels = readFile(directory / "textures.rom");
+    auto map = LegendsMap::parseDreamcast(readFile(directory / "worlds.rom"), models);
+    REQUIRE(map.objects.size() > 357);
+    auto floor = map.objects[357];
+    REQUIRE(floor.name == "F1XSBOX09");
+    REQUIRE_FALSE(floor.mesh.alphaTextured());
+    REQUIRE(floor.partLightmaps.size() == 1);
+    REQUIRE(floor.partLightmaps[0] != 0);
+    const auto lightmap = decodeDreamcastLightmap(models, pixels, floor.partLightmaps[0]);
+    REQUIRE_FALSE(lightmap.pixels.empty());
+    map.objects = {floor};
+    map.textures = decodeLegendsDreamcastTextures(models, pixels);
+    map.lightmaps = {{floor.partLightmaps[0], lightmap}};
+    test::FakeRenderDevice device;
+    game::LegendsPreview preview;
+    preview.open(device, map);
+    preview.drawWorld(device, Mat4{1}, preview.camera(), TreeModel::Pass::All, 1);
+    REQUIRE(device.draws.size() == 1);
+    const auto& draw = device.draws.front();
+    REQUIRE(draw.state.lightmap != nullptr);
+    CHECK(draw.state.lightmapRgb);
+    CHECK_FALSE(draw.state.lightmapCutout);
+    CHECK(dynamic_cast<const test::FakeTexture*>(draw.state.lightmap)->pixels == lightmap.pixels);
+    REQUIRE(draw.vertices.size() == floor.mesh.parts[0].indices.size());
+    for (usize i = 0; i < draw.vertices.size(); ++i)
+        CHECK(draw.vertices[i].uv2 ==
+              floor.mesh.vertices[floor.mesh.parts[0].indices[i]].lightmapUv);
+
+    auto archive = game::loadLegendsDreamcastArchive(directory);
+    REQUIRE(archive);
+    usize sinkingModels = 0;
+    for (u32 i = 0; i < archive->models.size(); ++i) {
+        if (!archive->models.entry(i).name.starts_with("F1ROCKSINK"))
+            continue;
+        CAPTURE(archive->models.entry(i).name);
+        ++sinkingModels;
+        const auto& mesh = archive->models.mesh(i);
+        TreeInfo tree;
+        tree.nodes.push_back({.name = "FLOOR", .object = archive->models.entry(i).name});
+        TreeModel figure;
+        REQUIRE(figure.bind(tree, archive->models, archive->textures, device));
+        device.draws.clear();
+        figure.draw(device, Mat4{1}, Mat4{1});
+        REQUIRE(device.draws.size() == mesh.parts.size());
+        usize bakedParts = 0;
+        for (usize p = 0; p < mesh.parts.size(); ++p) {
+            if (!mesh.parts[p].rgbLightmap)
+                continue;
+            ++bakedParts;
+            const auto& rendered = device.draws[p];
+            const auto& part = mesh.parts[p];
+            CHECK(rendered.state.lightmap == &archive->textures.texture(device, part.lightmap));
+            CHECK(rendered.state.lightmapRgb);
+            REQUIRE(rendered.state.lightmap != nullptr);
+            const Vec2 dimensions{rendered.state.lightmap->width(),
+                                  rendered.state.lightmap->height()};
+            for (usize v = 0; v < rendered.vertices.size(); ++v)
+                CHECK(rendered.vertices[v].uv2 ==
+                      mesh.vertices[part.indices[v]].lightmapUv / dimensions);
+        }
+        CHECK(bakedParts > 0);
+    }
+    CHECK(sinkingModels > 0);
+}
+
+TEST_CASE("Dreamcast arena lightning submits depth-tested additive draws after solids",
+          "[formats][legends][dreamcast-lightning][assets]") {
+    const auto levels =
+        test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native/levels";
+    if (!std::filesystem::is_regular_file(levels / "levela5/worlds.rom"))
+        SKIP("Optional Dreamcast assets are not installed");
+    for (const auto level : {"levela5", "levelf2"}) {
+        CAPTURE(level);
+        const auto directory = levels / level;
+        const auto models = readFile(directory / "objects.rom");
+        auto map = LegendsMap::parseDreamcast(readFile(directory / "worlds.rom"), models);
+        std::erase_if(map.objects, [](const auto& object) {
+            return !object.name.starts_with("A5XPXLNC_LNING") &&
+                   !object.name.starts_with("F2XPNC_LNING");
+        });
+        REQUIRE(map.objects.size() == 4);
+        map.textures = decodeLegendsDreamcastTextures(models, readFile(directory / "textures.rom"));
+        test::FakeRenderDevice device;
+        game::LegendsPreview preview;
+        preview.open(device, map);
+        preview.drawWorld(device, Mat4{1}, preview.camera(), TreeModel::Pass::Opaque, 1);
+        CHECK(device.draws.empty());
+        preview.drawWorld(device, Mat4{1}, preview.camera(), TreeModel::Pass::Blended, 1);
+        REQUIRE_FALSE(device.draws.empty());
+        for (const auto& draw : device.draws) {
+            CHECK(draw.state.depthTest);
+            CHECK_FALSE(draw.state.depthWrite);
+            CHECK(draw.state.blend == BlendMode::Additive);
+        }
+    }
+}
+
+TEST_CASE("Dreamcast native flame pit retains both alpha layers in the blended pass",
+          "[formats][legends][dreamcast-presentation][assets]") {
+    const auto directory =
+        test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native/items/levelb";
+    if (!std::filesystem::exists(directory / "objects.rom"))
+        SKIP("Optional Dreamcast assets are not installed");
+    const auto archive = game::loadLegendsDreamcastArchive(directory);
+    REQUIRE(archive);
+    const auto model = archive->models.find("FLAMEVL1");
+    REQUIRE(model);
+    const auto& mesh = archive->models.mesh(*model);
+    REQUIRE(mesh.parts.size() == 2);
+    CHECK(mesh.alphaTextured());
+    CHECK(archive->models.entry(*model).flags == mesh.flags);
+    CHECK(archive->textures.entry(mesh.parts[0].texture).name == "FLAMHOLEB");
+    CHECK(archive->textures.entry(mesh.parts[1].texture).name == "FLAMHOLE");
+    for (const auto& vertex : mesh.vertices) {
+        CHECK(vertex.position.y == 3.f / 256);
+        CHECK(vertex.uv.x >= 0);
+        CHECK(vertex.uv.x <= 1);
+        CHECK(vertex.uv.y >= 0);
+        CHECK(vertex.uv.y <= 1);
+    }
+
+    test::FakeRenderDevice device;
+    game::ItemFigure figure;
+    REQUIRE(figure.placeStaticFallback(device, *archive, "FLAMEVL1", {}, nullptr,
+                                       object_flags::kSorted));
+    figure.draw(device, Mat4{1}, WorldLighting{}, 1, 1, nullptr, TreeModel::Pass::Opaque);
+    CHECK(device.draws.empty());
+    figure.draw(device, Mat4{1}, WorldLighting{}, 1, 1, nullptr, TreeModel::Pass::Blended);
+    REQUIRE(device.draws.size() == 2);
+    for (const auto& draw : device.draws) {
+        CHECK(draw.state.blend == BlendMode::Alpha);
+        CHECK_FALSE(draw.state.alphaToCoverage);
+        CHECK(draw.state.depthTest);
+        CHECK(draw.vertices.size() == 6);
+    }
+}
+
+TEST_CASE("Dreamcast generic generator bank decodes its own LOD-zero artwork",
+          "[formats][legends][dreamcast-presentation][assets]") {
+    const auto directory =
+        test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native/generators";
+    if (!std::filesystem::exists(directory / "objects.rom"))
+        SKIP("Optional Dreamcast assets are not installed");
+    const auto bytes = readFile(directory / "objects.rom");
+    const auto archive = game::loadLegendsDreamcastArchive(directory);
+    REQUIRE(archive);
+    test::FakeRenderDevice device;
+    struct Expected {
+        std::string_view name;
+        usize triangles;
+        u32 textureSize;
+    };
+    // These are damage variants within the reduced-detail GENERATORS bank,
+    // not distance LODs. LoadWorld8c0a3600 loads this bank for gen_active<2;
+    // ordinary active generators use their selected monster bank instead.
+    // This tests that bank's decoding, not normal gameplay asset selection.
+    constexpr std::array expected{Expected{"GEN_TRO0L1", 34, 16}, Expected{"GEN_TRO1L1", 28, 16},
+                                  Expected{"GEN_TRO2L1", 28, 16}, Expected{"GEN_TRO3L1", 22, 32}};
+    for (const auto& entry : expected) {
+        INFO(entry.name);
+        const auto model = archive->models.find(entry.name);
+        REQUIRE(model);
+        const auto& mesh = archive->models.mesh(*model);
+        CHECK(mesh.triangleCount() == entry.triangles);
+        REQUIRE_FALSE(mesh.parts.empty());
+        // MBOX_LoadModel rebuilds alpha from bitmap formats, not the stale
+        // serialized LOD flag. Even a fully covered ARGB1555 image takes it.
+        const usize bitmaps = 104 + static_cast<usize>(readU32LE(bytes, 96)) * 140;
+        bool alphaFormat = false;
+        for (const auto& part : mesh.parts) {
+            alphaFormat |= (bytes.at(bitmaps + part.texture * 80 + 16) & 7U) != 1U;
+            const auto& image = archive->textures.image(part.texture);
+            CHECK(image.width == entry.textureSize);
+            CHECK(image.height == entry.textureSize);
+            archive->textures.releaseTextures();
+            const auto& uploaded = archive->textures.texture(device, part.texture);
+            CHECK(device.lastTextureDesc.filter == TextureFilter::Linear);
+            CHECK(uploaded.width() == entry.textureSize);
+            CHECK(uploaded.height() == entry.textureSize);
+        }
+        CHECK(alphaFormat);
+        CHECK(mesh.alphaTextured() == alphaFormat);
+        const usize lod = 104 + static_cast<usize>(*model) * 140 + 12;
+        REQUIRE(lod + 4 * 32 <= bytes.size());
+        // Native DrawObject's caller (8c0f2356..8c0f2386) uses the count
+        // at model+8 and squared-distance thresholds at each 32-byte LOD.
+        // These huts have exactly one selectable LOD, not four quality tiers.
+        CHECK(readU32LE(bytes, lod - 4) == 1);
+        for (usize level = 1; level < 4; ++level)
+            CHECK(std::equal(bytes.begin() + static_cast<std::ptrdiff_t>(lod),
+                             bytes.begin() + static_cast<std::ptrdiff_t>(lod + 32),
+                             bytes.begin() + static_cast<std::ptrdiff_t>(lod + level * 32)));
+    }
 }
 
 TEST_CASE("Dreamcast Legends geometry rejects malformed extents and topology",
@@ -320,11 +608,41 @@ TEST_CASE("Dreamcast Legends shared vertices retain UVs across differently sized
     REQUIRE(mesh.parts.size() == 2);
     REQUIRE(mesh.vertices.size() == 6);
     CHECK(mesh.vertices[1].uv == Vec2(32.0f, 8.0f));
-    // The second triangle has native reversed winding [3,2,1].
-    const auto duplicate = mesh.parts[1].indices[2];
+    // Native PVR order [3,2,1] becomes shared-renderer order [3,1,2].
+    const auto duplicate = mesh.parts[1].indices[1];
     CHECK(duplicate >= 4);
     CHECK(mesh.vertices[duplicate].position == mesh.vertices[1].position);
     CHECK(mesh.vertices[duplicate].uv == Vec2(16.0f, 4.0f));
+}
+
+TEST_CASE("Dreamcast tower portal centers face upward with back-face culling enabled",
+          "[formats][legends][assets][dreamcast-portal-winding]") {
+    const auto file = test::dataDirectory().parent_path() /
+                      "assets/dreamcast/extracted/native/items/levelT/objects.rom";
+    if (!std::filesystem::is_regular_file(file)) {
+        SKIP("Dreamcast tower fixture models are not installed");
+    }
+    const auto models = decodeDreamcastModelLibrary(readFile(file));
+    const auto found =
+        std::ranges::find(models, std::string{"EXIT_PORTALCENT"}, &LegendsMapObject::name);
+    REQUIRE(found != models.end());
+    CHECK(found->mesh.triangleCount() == 12);
+    for (const auto& part : found->mesh.parts) {
+        for (usize i = 0; i < part.indices.size(); i += 3) {
+            const auto& a = found->mesh.vertices[part.indices[i]];
+            const auto& b = found->mesh.vertices[part.indices[i + 1]];
+            const auto& c = found->mesh.vertices[part.indices[i + 2]];
+            CHECK(a.position.y > 0);
+            CHECK(a.position.y == b.position.y);
+            CHECK(a.position.y == c.position.y);
+            CHECK(a.normal.y > .99f);
+            CHECK(b.normal.y > .99f);
+            CHECK(c.normal.y > .99f);
+            // Seen from above, this is the same front-face order as the
+            // GameCube meshes under WorldCamera's LH view and flipped screen Y.
+            CHECK(glm::cross(b.position - a.position, c.position - a.position).y < 0);
+        }
+    }
 }
 
 TEST_CASE("Dreamcast Legends native map corpus is readable without conversion",

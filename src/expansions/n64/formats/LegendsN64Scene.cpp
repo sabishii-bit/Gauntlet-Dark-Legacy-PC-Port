@@ -241,7 +241,7 @@ private:
 std::optional<TransformKeys> transformKeys(std::span<const u8> bytes, usize payload, usize end,
                                            u8 property, u16 sequenceFrames,
                                            std::span<const u8> program) {
-    require(payload <= end && end - payload >= 6, "truncated transform initial value");
+    require(payload <= end && end - payload >= 7, "truncated transform initial value");
     const bool rotation = (property & 31U) == 9;
     const f32 unit = rotation ? std::numbers::pi_v<f32> / 16384.0f : 1.0f / 64.0f;
     TransformKeys result;
@@ -249,14 +249,18 @@ std::optional<TransformKeys> transformKeys(std::span<const u8> bytes, usize payl
                signed16(bytes, payload + 4)};
     value *= unit;
     result.values.push_back(value);
+    // Constant tracks still carry their authored channel/order byte. The native
+    // sampler returns before updating its global flags, so the rotation caller
+    // can inherit another track's order. Preserve this track's own order instead:
+    // Skorne's INIT and STRT start at identical angles but mix constant/keyed
+    // encodings. Dropping bit0x20 folds his resting arm behind his back.
+    result.flags = bytes[payload + 6];
     const u8 mode = property & 0xc0U;
     if (mode == 0x40) {
         return result;
     }
-    require(end - payload >= 7, "truncated transform header");
     usize frameCount = sequenceFrames;
     usize cursor = payload + 7;
-    result.flags = bytes[payload + 6];
     if ((result.flags & 0x80U) != 0) {
         require(end - payload >= 9, "truncated local transform clock");
         frameCount = readU16BE(bytes, payload + 6) & 0x7fffU;

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -7,7 +9,10 @@
 #include "engine/core/Types.h"
 #include "engine/ui/TextPainter.h"
 
+#include "game/widgets/OptionMenu.h"
+
 namespace gdl::game {
+struct MenuTextures;
 
 /** Prepared dialogue geometry, independent of its game's artwork. */
 struct DialoguePage {
@@ -27,6 +32,18 @@ class DialoguePresentation {
 public:
     virtual ~DialoguePresentation() = default;
     virtual const TextPainter& text() const = 0;
+    /** Optional matching art for resident-topic menus; pause/settings keep their usual skin. */
+    virtual const MenuTextures* menuTextures() const { return nullptr; }
+    virtual const TextPainter& menuText() const { return text(); }
+    virtual std::optional<MenuDefinition> nativeTopics(std::string_view /*title*/,
+                                                       std::span<const MenuItem> /*topics*/) const {
+        return {};
+    }
+    /** Optional native backdrop/title draw. True replaces the ordinary single-image backdrop. */
+    virtual bool drawTopicsBackdrop(Canvas& /*canvas*/, const OptionMenu& /*menu*/,
+                                    std::string_view /*title*/) const {
+        return false;
+    }
     virtual f32 scale() const = 0;
     virtual s32 textWidth() const = 0;
     virtual usize linesPerPage() const = 0;

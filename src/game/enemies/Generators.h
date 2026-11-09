@@ -102,7 +102,7 @@ public:
     /** Installs an imported native placement into the normal GDL brood and damage
      * paths. Its level owns the artwork; only this pool slot's default art is hidden. */
     std::optional<s32> spawnImported(RenderDevice& device, Enemies& enemies,
-                                     const ImportedGenerator& imported);
+                                     const ImportedGenerator& imported, f32 difficultyGain = 1);
     bool externallyPresented(s32 id) const;
     /** A boss effect leaves a tier-one generator. Its optional BOSSGEN art is borrowed. */
     bool placeBoss(RenderDevice& device, const ItemInfo& info, ItemArchive& items, Enemies& enemies,
@@ -317,8 +317,15 @@ private:
     struct ImportedHealth {
         u64 instance = 0;
         std::array<f32, kStates> remaining{}; ///< cumulative health below each damage state
-        std::array<s32, 3> broodKinds{-1, -1, -1};
+        std::vector<s32> broodKinds;
+        std::vector<s32> broodAlgorithms;
         s32 broodTier = 0;
+        struct Breeding {
+            std::array<s32, kStates> broodByState{};
+            std::array<s32, 2> waitTicks{};
+            f32 activeDistance = 50;
+        };
+        std::optional<Breeding> breeding;
     };
     std::vector<ImportedHealth> m_importedHealth; ///< immutable imported-level durability
     std::vector<ItemInfo> m_records;     ///< the level's generator records, for the console

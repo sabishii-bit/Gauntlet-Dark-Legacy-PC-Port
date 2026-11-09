@@ -136,6 +136,31 @@ TEST_CASE("a menu lays its column out around the screen centre", "[game][menu]")
     REQUIRE(f.menu.backdropArea() == Rect{256.0f - 80.0f, 192.0f - 82.0f, 160.0f, 164.0f});
 }
 
+TEST_CASE("native menu skins can disable selection glow without hiding the selected label",
+          "[game][menu][imported-menu]") {
+    Fixture f;
+    auto definition = threeItems();
+    SECTION("ordinary row") {}
+    SECTION("alternate row") {
+        definition.items[0].alternate = "BB";
+    }
+    definition.colors.hi = Color::rgba(0, 0, 0, 0);
+    f.menu.open(definition, f.painter, {});
+    f.menu.update({}, 120);
+    test::FakeRenderDevice device;
+    test::FakeTexture glow{64, 64};
+    MenuTextures textures;
+    textures.glow = &glow;
+    Canvas canvas;
+    canvas.begin(device, Mat4{1});
+    f.menu.draw(canvas, f.painter, textures);
+    canvas.end();
+    CHECK(std::ranges::none_of(device.draws,
+                               [&](const auto& draw) { return draw.texture == &glow; }));
+    CHECK(std::ranges::any_of(device.draws,
+                              [&](const auto& draw) { return draw.texture == &f.sheet; }));
+}
+
 TEST_CASE("two-column choices draw arrows and gray disabled values without a cursor",
           "[game][menu][graphics]") {
     Fixture f;
@@ -916,7 +941,6 @@ TEST_CASE("a two-choice row highlights only its active part and renders one chec
     verify(1);
 }
 
-
 TEST_CASE("rows and a title wider than the width a menu is given shrink to fit inside it",
           "[game][menu][fit]") {
     Fixture f;
@@ -949,7 +973,6 @@ TEST_CASE("rows and a title wider than the width a menu is given shrink to fit i
     f.menu.open(free, f.painter, MenuScreen{});
     CHECK(f.menu.definition().scale == 1.0f);
 }
-
 
 TEST_CASE("the bar at the column's right hand is clicked and dragged through the column",
           "[game][menu][scroll-menu][mouse]") {
@@ -1020,7 +1043,6 @@ TEST_CASE("the bar at the column's right hand is clicked and dragged through the
     f.menu.update(rest, 1);
     CHECK(f.menu.selection() == 5);
 }
-
 
 TEST_CASE("a dialog's rows stand evenly on its parchment, under its title, with a gap between",
           "[game][menu][fit]") {

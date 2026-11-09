@@ -22,6 +22,7 @@
 #include "expansions/n64/formats/LegendsN64Texture.h"
 #include "expansions/n64/level/LegendsUnlocks.h"
 #include "expansions/n64/scenes/LegendsN64Music.h"
+#include "expansions/shared/app/LegendsCompletion.h"
 #include "expansions/shared/app/LegendsConsoleWords.h"
 #include "expansions/shared/characters/LegendsVisit.h"
 #include "expansions/shared/formats/LegendsMap.h"
@@ -219,7 +220,8 @@ void Gauntlet::consoleLegendsClose(DevConsole& console) {
 void Gauntlet::consoleLegendsOpen(DevConsole& console, LegendsPlatform platform,
                                   const std::filesystem::path& directory, bool playable,
                                   bool completedTravel,
-                                  std::optional<std::vector<PartyMember>> visitingParty) {
+                                  std::optional<std::vector<PartyMember>> visitingParty,
+                                  bool completionRecorded) {
     const auto* imported = m_play->world.imported();
     const auto nativeDeparture = imported ? imported->departure() : std::nullopt;
     const bool internalTravel =
@@ -273,7 +275,9 @@ void Gauntlet::consoleLegendsOpen(DevConsole& console, LegendsPlatform platform,
         }
         auto adapter = LegendsSceneAdapter::load(
             renderDevice(), platform, files.root(), map,
-            playable ? static_cast<s32>(m_play->scene.party().size()) : 1);
+            playable ? static_cast<s32>(visitingParty ? visitingParty->size()
+                                                      : m_play->scene.party().size())
+                     : 1);
         console.print(std::format("Native presentation: {} fixtures, {} world texture animations.",
                                   adapter->fixtureCount(), adapter->textureAnimationCount()));
         console.print(std::format("{} placed pickups have verified gameplay mappings.",
@@ -289,7 +293,7 @@ void Gauntlet::consoleLegendsOpen(DevConsole& console, LegendsPlatform platform,
         }
         if (playable) {
             auto party = visitingParty ? std::move(*visitingParty) : m_play->scene.party();
-            if (internalTravel) {
+            if (internalTravel && !completionRecorded) {
                 if (const auto* previous = dynamic_cast<const LegendsLevel*>(imported)) {
                     previous->completeTravel(party);
                 }
@@ -566,6 +570,26 @@ void Gauntlet::finishLegendsTravel() {
     }
     if (!native || !native->destination()) {
         closeLegendsLevel();
+        return;
+    }
+    if (auto completed = completedLegendsTravel(m_play->scene)) {
+        Journey journey;
+        journey.party = std::move(completed->party);
+        journey.importedDestination =
+            Journey::ImportedDestination{completed->platform, std::move(completed->destination)};
+        journey.completion = Journey::Completion{LevelCompletion{-1, false},
+                                                 std::move(completed->results),
+                                                 {1000, 100, 1000},
+                                                 paths::utf8(completed->source.filename())};
+        // Native bosses have already completed their own ceremony. Do not
+        // dispatch the GameCube final-boss movie or completion-only shop route.
+        m_play->scene.suspendForImportedLevel(true);
+        if (m_legendsSounds)
+            m_legendsSounds->setCategoryPaused(SoundCategory::Music, true);
+        m_loadingPicture.load(renderDevice(), m_options.unpackedDirectory);
+        m_loadingPicture.cover();
+        m_journey = std::move(journey);
+        resetPlayInput();
         return;
     }
     // Resolve beside the currently loaded extraction, never through an unrelated

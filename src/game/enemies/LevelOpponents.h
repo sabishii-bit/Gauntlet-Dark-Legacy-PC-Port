@@ -150,6 +150,8 @@ public:
      * of the fixtures stands where the great ones walk. */
     /** Follows moving scenery without advancing AI, attacks or animation. */
     void syncFloors();
+    /** Advance only the boss's activation deadline during the party entrance. */
+    void armBoss(f32 seconds);
     void update(s32 ticks, f32 seconds, std::span<PlayerRuntime> players,
                 std::span<const Obstacle> fixtures, OpponentHost& host,
                 BossEncounterHost& encounter, const CombatCover& cover,
@@ -242,6 +244,7 @@ public:
     static f32 attenuation(const Vec3& at, std::span<const Vec3> hearers);
 
 private:
+    bool bossActivationReady() const;
     /** Plays `name` at `level` of 255 as heard from where the players stand. */
     SoundHandle playAt(std::string_view name, f32 level, const Vec3& at);
     void landEnemyMissiles(std::span<PlayerRuntime> players, OpponentHost& host);

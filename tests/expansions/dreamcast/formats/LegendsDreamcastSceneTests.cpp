@@ -13,6 +13,7 @@
 #include "engine/io/File.h"
 
 #include "TestSupport.h"
+#include "expansions/dreamcast/audio/LegendsDreamcastSounds.h"
 #include "expansions/dreamcast/formats/LegendsDreamcastScene.h"
 #include "expansions/dreamcast/formats/LegendsSceneMotion.h"
 
@@ -88,6 +89,7 @@ std::vector<u8> realmFixture() {
         put32(bytes, 68 + i * 24, static_cast<u32>(1 + i));
     }
     putName(bytes, 144, "G1");
+    putFloat(bytes, 136 + 132, 1);
     for (usize i = 0; i < 6; ++i) {
         put16(bytes, 136 + 60 + i * 2, i < 3 ? static_cast<u16>(i) : 0xffff);
     }
@@ -103,6 +105,31 @@ std::vector<u8> realmFixture() {
     return bytes;
 }
 
+std::vector<u8> realmAudioFixture() {
+    auto bytes = realmFixture();
+    // Add two AUDS rows and three SNDS rows before the existing directory.
+    // Use nonzero references so a first-row/incorrect-stride shortcut fails.
+    bytes.insert(bytes.begin() + 280, 2 * 60 + 3 * 24, 0);
+    bytes.resize(bytes.size() + 24);
+    put32(bytes, 0, 472);
+    put32(bytes, 4, 5);
+    put32(bytes, 508, 0x41554453);
+    put32(bytes, 512, 280);
+    put32(bytes, 516, 2);
+    put32(bytes, 520, 0x534e4453);
+    put32(bytes, 524, 400);
+    put32(bytes, 528, 3);
+    put16(bytes, 136 + 74, 1);
+    put16(bytes, 280 + 16, 0xffff); // This fixture isolates wall audio, not entry narration.
+    put16(bytes, 340 + 16, 0xffff);
+    put16(bytes, 280 + 18, 0);
+    put16(bytes, 340 + 18, 2);
+    putName(bytes, 400, "WRONG_WALL");
+    putName(bytes, 424, "ALSO_WRONG");
+    putName(bytes, 448, "SELECTED_WALL");
+    return bytes;
+}
+
 std::filesystem::path nativeOrSkip() {
     const auto path = test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native";
     if (!std::filesystem::is_directory(path)) {
@@ -111,6 +138,77 @@ std::filesystem::path nativeOrSkip() {
     return path;
 }
 } // namespace
+
+TEST_CASE("Dreamcast generator difficulty is read from the selected native level",
+          "[legends][dreamcast-generator-cadence][formats]") {
+    auto bytes = realmFixture();
+    putFloat(bytes, 136 + 132, 1.5f);
+    const auto scope = dreamcastLegendsFixtureScope(bytes, "levelg1");
+    REQUIRE(scope);
+    CHECK(scope->generatorDifficulty == 1.5f);
+    for (const f32 invalid : {0.f, -1.f, std::numeric_limits<f32>::infinity(),
+                              std::numeric_limits<f32>::quiet_NaN()}) {
+        putFloat(bytes, 136 + 132, invalid);
+        CHECK_THROWS_AS(dreamcastLegendsFixtureScope(bytes, "levelg1"), FormatError);
+    }
+}
+
+TEST_CASE("Dreamcast BCAM references are independent of ordinary camera settings",
+          "[legends][dreamcast-camera][formats]") {
+    auto bytes = realmFixture();
+    bytes.insert(bytes.begin() + 280, 168, 0);
+    bytes.resize(bytes.size() + 12);
+    put32(bytes, 0, 448);
+    put32(bytes, 4, 4);
+    put32(bytes, 484, 0x4243414d);
+    put32(bytes, 488, 280);
+    put32(bytes, 492, 2);
+    put16(bytes, 136 + 124, 1);
+    constexpr usize row = 364;
+    put32(bytes, row, BossCameraInfo::kLiveAnchor);
+    putFloat(bytes, row + 4, .2f);
+    putFloat(bytes, row + 8, .7f);
+    putFloat(bytes, row + 12, 64);
+    putFloat(bytes, row + 16, 30);
+    putFloat(bytes, row + 20, 90);
+    putFloat(bytes, row + 24, 30);
+    putFloat(bytes, row + 28, .35f);
+    putFloat(bytes, row + 32, .23f);
+    putFloat(bytes, row + 40, -7);
+    putFloat(bytes, row + 52, -12);
+    const auto scope = dreamcastLegendsFixtureScope(bytes, "levelg1");
+    REQUIRE(scope);
+    REQUIRE(scope->bossCamera);
+    CHECK_FALSE(scope->camera);
+    CHECK(scope->bossCamera->minDistance == 64);
+    CHECK(scope->bossCamera->maxDistance == 90);
+    CHECK(scope->bossCamera->minAttention == Vec3{0, -7, 0});
+    CHECK(scope->bossCamera->maxAttention == Vec3{0, -12, 0});
+
+    SECTION("negative native index leaves the ordinary view alone") {
+        put16(bytes, 136 + 124, 0xffff);
+        CHECK_FALSE(dreamcastLegendsFixtureScope(bytes, "levelg1")->bossCamera);
+    }
+    SECTION("missing optional records do not require expansion camera data") {
+        CHECK_FALSE(dreamcastLegendsFixtureScope(realmFixture(), "levelg1")->bossCamera);
+    }
+    SECTION("wrong index cannot read the following section") {
+        put16(bytes, 136 + 124, 2);
+        CHECK_THROWS_AS(dreamcastLegendsFixtureScope(bytes, "levelg1"), FormatError);
+    }
+    SECTION("nonfinite camera state is rejected") {
+        putFloat(bytes, row + 48, std::numeric_limits<f32>::infinity());
+        CHECK_THROWS_AS(dreamcastLegendsFixtureScope(bytes, "levelg1"), FormatError);
+    }
+    SECTION("native initialization resolves the far-attention and player-range sentinels") {
+        putFloat(bytes, row + 24, 0);
+        putFloat(bytes, row + 52, 999999);
+        const auto camera = dreamcastLegendsFixtureScope(bytes, "levelg1")->bossCamera;
+        REQUIRE(camera);
+        CHECK(camera->maxPlayerDistance == 90);
+        CHECK(camera->maxAttention == camera->minAttention);
+    }
+}
 
 TEST_CASE("Dreamcast scenes preserve native fixture definitions and placements",
           "[formats][legends][scene]") {
@@ -200,11 +298,11 @@ TEST_CASE("Dreamcast gameplay cameras admit start and game locators but not attr
     REQUIRE(scene.cameraMarkers.size() == 2);
     for (usize i = 0; i < 2; ++i) {
         const auto& marker = scene.cameraMarkers[i];
-        CHECK(marker.kind == LocatorKind::CameraGame);
+        CHECK(marker.kind == (i == 0 ? LocatorKind::CameraStart : LocatorKind::CameraGame));
         CHECK(marker.delay == 7);
         CHECK(marker.position.x == static_cast<f32>(i));
         CHECK(marker.rotation.x == 0.5f);
-        CHECK(marker.rotation.y == 1 + kPi);
+        CHECK(marker.rotation.y == 1);
     }
     putFloat(fixture.world, 340 + 20, std::numeric_limits<f32>::infinity());
     CHECK_THROWS_AS(LegendsDreamcastScene::parse(fixture.world), FormatError);
@@ -254,6 +352,97 @@ TEST_CASE("Dreamcast scene reader retains unknown fixture types without inventin
     const auto scene = LegendsDreamcastScene::parse(fixture.world);
     CHECK(scene.itemInfos[0].type == 0x1234);
     CHECK(scene.itemInstances.size() == 1);
+}
+
+TEST_CASE("Dreamcast wall impact sound follows the selected native audio and sound rows",
+          "[formats][legends][scene][dreamcast-sounds]") {
+    auto bytes = realmAudioFixture();
+    const auto scope = dreamcastLegendsFixtureScope(bytes, "g1");
+    REQUIRE(scope);
+    CHECK(scope->wallHitSound == "SELECTED_WALL");
+    put16(bytes, 136 + 74, 0);
+    CHECK(dreamcastLegendsFixtureScope(bytes, "g1")->wallHitSound == "WRONG_WALL");
+    put16(bytes, 280 + 18, 1);
+    CHECK(dreamcastLegendsFixtureScope(bytes, "g1")->wallHitSound == "ALSO_WRONG");
+}
+
+TEST_CASE("Dreamcast entry metadata resolves its selected prefix and rejects invalid references",
+          "[formats][legends][scene][dreamcast-speech]") {
+    auto bytes = realmAudioFixture();
+    put32(bytes, 136 + 4, 3); // Enabled native stage.
+    put16(bytes, 340 + 16, 1);
+    const auto scope = dreamcastLegendsFixtureScope(bytes, "g1");
+    REQUIRE(scope);
+    CHECK(scope->entrySound == "ALSO_WRONG"); // The selected SNDS1, not first/last row.
+    CHECK(scope->stageNameSound == "S_G1NAME");
+    put16(bytes, 340 + 16, 3);
+    CHECK_THROWS_AS(dreamcastLegendsFixtureScope(bytes, "g1"), FormatError);
+}
+
+TEST_CASE("Dreamcast missing or disabled optional wall sounds do not invent a cue",
+          "[formats][legends][scene][dreamcast-sounds]") {
+    auto bytes = realmAudioFixture();
+    SECTION("no audio sections") {
+        bytes = realmFixture();
+    }
+    SECTION("missing AUDS") {
+        put32(bytes, 508, 0x12345678);
+    }
+    SECTION("empty AUDS") {
+        put32(bytes, 516, 0);
+    }
+    SECTION("level audio disabled") {
+        put16(bytes, 136 + 74, 0xffff);
+    }
+    SECTION("wall cue disabled") {
+        put16(bytes, 340 + 18, 0xffff);
+    }
+    SECTION("disabled cue does not require SNDS") {
+        put16(bytes, 340 + 18, 0xffff);
+        put32(bytes, 520, 0x12345678);
+    }
+    const auto scope = dreamcastLegendsFixtureScope(bytes, "g1");
+    REQUIRE(scope);
+    CHECK(scope->wallHitSound.empty());
+}
+
+TEST_CASE("Dreamcast wall sound metadata rejects invalid references and extents",
+          "[formats][legends][scene][dreamcast-sounds]") {
+    auto bytes = realmAudioFixture();
+    SECTION("level audio index") {
+        put16(bytes, 136 + 74, 2);
+    }
+    SECTION("wall sound index") {
+        put16(bytes, 340 + 18, 3);
+    }
+    SECTION("referenced SNDS absent") {
+        put32(bytes, 520, 0x12345678);
+    }
+    SECTION("referenced SNDS empty") {
+        put32(bytes, 528, 0);
+    }
+    SECTION("truncated audio rows") {
+        put32(bytes, 516, 3);
+    }
+    SECTION("truncated sound rows") {
+        put32(bytes, 528, 4);
+    }
+    CHECK_THROWS_AS(dreamcastLegendsFixtureScope(bytes, "g1"), FormatError);
+}
+
+TEST_CASE("Dreamcast B1 wall cue resolves in the native audio directory",
+          "[formats][legends][scene][dreamcast-sounds][assets]") {
+    const auto root = nativeOrSkip();
+    if (!std::filesystem::is_regular_file(root.parent_path() / "disc/AUDIO/AUD_DATA.ROM"))
+        SKIP("Optional Dreamcast audio is not installed");
+    const auto scope = dreamcastLegendsFixtureScope(readFile(root / "worlddata/mount.wad"), "b1");
+    REQUIRE(scope);
+    // B1 selects AUDS0, whose +18 value is SNDS2. The native fixed-width
+    // key is intentionally not expanded to a guessed full-length spelling.
+    CHECK(scope->wallHitSound == "S_WEAPONHITSTON");
+    game::LegendsDreamcastSounds sounds;
+    REQUIRE(sounds.open(root));
+    CHECK(sounds.namedToken(scope->wallHitSound));
 }
 
 TEST_CASE("Dreamcast fixture libraries and generator species follow selected native roster",

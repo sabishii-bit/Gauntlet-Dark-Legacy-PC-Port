@@ -1,6 +1,7 @@
 # Optional native-content adapters stay outside the GameCube engine/readers.
 # Namespace compatibility is retained; the directory and targets own the boundary.
 add_library(expansion_formats STATIC
+    dreamcast/formats/LegendsDreamcastCritter.cpp
     dreamcast/formats/LegendsDreamcastMap.cpp
     dreamcast/formats/LegendsDreamcastScene.cpp
     dreamcast/formats/LegendsDreamcastScene.h
@@ -54,6 +55,9 @@ add_library(expansion_audio STATIC
     n64/audio/LegendsSoundTable.cpp
     dreamcast/audio/DreamcastStream.cpp
     dreamcast/audio/DreamcastStream.h
+    dreamcast/audio/DreamcastSoundBank.cpp
+    dreamcast/audio/LegendsDreamcastSounds.cpp
+    dreamcast/audio/LegendsDreamcastSpeech.cpp
     n64/audio/N64LegendsEffects.h
     n64/audio/N64LegendsStream.h)
 add_library(gdl::expansion_audio ALIAS expansion_audio)
@@ -77,7 +81,44 @@ set_target_properties(expansion_audio PROPERTIES FOLDER "expansions")
 # game <-> expansion static-library dependency.
 function(gdl_add_expansion_game_sources target)
     target_sources(${target} PRIVATE
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/dreamcast/bosses/LegendsDreamcastBosses.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/dreamcast/bosses/LegendsDreamcastBossAssets.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/dreamcast/bosses/LegendsDreamcastBossVisit.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/dreamcast/bosses/LegendsDreamcastBossEntrance.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/dreamcast/scenes/LegendsDreamcastArena.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/dreamcast/scenes/LegendsDreamcastBossCompletion.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/shared/scenes/LegendsLevelBoss.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/dreamcast/level/LegendsDreamcastBossCeremony.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/dreamcast/assets/LegendsDreamcastArchive.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/dreamcast/enemies/LegendsDreamcastEnemies.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/dreamcast/scenes/LegendsDreamcastEnemies.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/dreamcast/camera/LegendsDreamcastCamera.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/dreamcast/camera/LegendsDreamcastArenaCamera.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/dreamcast/level/LegendsDreamcastContainers.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/dreamcast/level/LegendsDreamcastFalling.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/dreamcast/scenes/LegendsDreamcastFalling.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/dreamcast/audio/LegendsDreamcastAmbient.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/dreamcast/level/LegendsDreamcastGates.cpp"
         "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/dreamcast/level/LegendsDreamcastItems.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/dreamcast/level/LegendsDreamcastPortals.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/dreamcast/level/LegendsDreamcastPlacement.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/dreamcast/level/LegendsDreamcastTower.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/dreamcast/level/LegendsDreamcastTraps.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/dreamcast/level/LegendsDreamcastHazards.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/dreamcast/level/LegendsDreamcastHazards.h"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/dreamcast/level/LegendsDreamcastWorldMotion.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/dreamcast/level/LegendsDreamcastScenery.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/dreamcast/level/LegendsDreamcastObelisks.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/dreamcast/scenes/LegendsDreamcastObelisks.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/dreamcast/scenes/LegendsDreamcastSwitches.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/dreamcast/scenes/LegendsDreamcastRiders.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/dreamcast/scenes/LegendsDreamcastTraps.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/level/LegendsTowerCeremony.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/dreamcast/menu/LegendsDreamcastDialogue.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/dreamcast/menu/LegendsDreamcastEntrance.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/dreamcast/scenes/LegendsDreamcastSumner.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/dreamcast/scenes/LegendsDreamcastContainers.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/dreamcast/scenes/LegendsDreamcastGates.cpp"
         "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/dreamcast/scenes/LegendsInitialPose.cpp"
         "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/dreamcast/scenes/LegendsInitialPose.h"
         "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/dreamcast/scenes/LegendsMusic.cpp"
@@ -173,6 +214,8 @@ function(gdl_add_expansion_game_sources target)
         "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/scenes/LegendsWorldPresentation.cpp"
         "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/scenes/LegendsWorldPresentation.h"
         "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/shared/app/GauntletLegends.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/shared/app/LegendsCompletion.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/shared/app/LegendsCompletion.h"
         "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/shared/app/LegendsConsoleWords.cpp"
         "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/shared/app/LegendsConsoleWords.h"
         "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/shared/characters/LegendsProgress.cpp"

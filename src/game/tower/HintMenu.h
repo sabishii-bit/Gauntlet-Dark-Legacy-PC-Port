@@ -15,6 +15,7 @@
 #include "game/widgets/OptionMenu.h"
 
 namespace gdl::game {
+class DialoguePresentation;
 
 /** What the hint scroll draws and burns with. */
 struct HintMenuArt {
@@ -22,6 +23,7 @@ struct HintMenuArt {
     const Image* scroll = nullptr; ///< the backdrop's image, for burning it away
     std::vector<const Image*> burnMasks;
     std::vector<const Texture*> burnRing;
+    const DialoguePresentation* presentation = nullptr; ///< borrowed, draw-only native topic art
 };
 
 /** The scroll's words. */
@@ -85,7 +87,8 @@ public:
     }
 
     /** Unrolls the list of topics; false without a font to draw with or a topic to ask. */
-    bool open(const TextPainter& painter, const MenuScreen& screen, HintMenuLabels labels);
+    bool open(const TextPainter& painter, const MenuScreen& screen, HintMenuLabels labels,
+              std::optional<MenuDefinition> nativeStyle = std::nullopt);
     /** Shows the answer to the topic just asked. */
     void read(const TextPainter& painter, std::string title, std::vector<std::string> passages,
               f32 scale, bool centred, s32 gap);

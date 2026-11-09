@@ -346,6 +346,8 @@ std::vector<LegendsContainerTarget> LegendsSceneAdapter::containerTargets() cons
 
 std::vector<Obstacle> LegendsSceneAdapter::containerObstacles() const {
     std::vector<Obstacle> result;
+    for (const auto& obelisk : m_dreamcastObelisks)
+        result.push_back(obelisk.body);
     for (const auto& obelisk : m_obelisks) {
         const auto& pickup = m_pickups[obelisk.pickup];
         Obstacle body;
@@ -381,6 +383,8 @@ bool LegendsSceneAdapter::strikeContainer(s32 localId, f32 power, u32 flags, s32
         !m_containers[static_cast<usize>(localId)].state.strike(power)) {
         return false;
     }
+    if (m_containers[static_cast<usize>(localId)].state.state() != LegendsContainer::State::Opening)
+        return true; // A stored-HP barrel accepted a blow but is not broken yet.
     openContainer(static_cast<usize>(localId));
     const auto& binding = m_containers[static_cast<usize>(localId)];
     const auto& definition = binding.state.definition();
@@ -390,7 +394,7 @@ bool LegendsSceneAdapter::strikeContainer(s32 localId, f32 power, u32 flags, s32
         event.kind =
             poison ? LegendsFixtureEvent::Kind::Poison : LegendsFixtureEvent::Kind::Explosion;
         event.nativeIndex = definition.nativeIndex;
-        event.position = definition.position + Vec3{0, 2, 0};
+        event.position = definition.position + definition.blastOffset;
         event.radius = definition.blastRadius;
         event.damage = definition.blastDamage;
         event.flags = poison ? 0x260000U : 0x160001U;
@@ -405,12 +409,14 @@ bool LegendsSceneAdapter::strikeContainer(s32 localId, f32 power, u32 flags, s32
 }
 
 void LegendsSceneAdapter::openContainer(usize index) {
+    selectDreamcastContainer(index);
     auto& container = m_containers[index];
     const auto& definition = container.state.definition();
     if (definition.openingSound != 0) {
         m_soundEvents.push_back({definition.openingSound, definition.position});
     }
-    if (definition.hazard == LegendsContainerDefinition::Hazard::Poison) {
+    if (m_platform == LegendsPlatform::N64 &&
+        definition.hazard == LegendsContainerDefinition::Hazard::Poison) {
         // e0074eec adds the gas cue independently of the broken-wood cue.
         m_soundEvents.push_back({60, definition.position + Vec3{0, 2, 0}});
     }
@@ -432,7 +438,7 @@ void LegendsSceneAdapter::openContainer(usize index) {
     }
     m_hiddenFixtures[container.closedFigure] = true;
     m_hiddenFixtures[container.openingFigure] = false;
-    m_fixtures[container.openingFigure].play(0, ItemFigure::Playback::Once);
+    m_fixtures[container.openingFigure].play(container.openingSequence, ItemFigure::Playback::Once);
     m_fixtures[container.openingFigure].capturePresentation();
     if (definition.hazard != LegendsContainerDefinition::Hazard::None) {
         // e00691bc spawns debris alongside the active tree, not after it.
@@ -450,7 +456,7 @@ void LegendsSceneAdapter::openContainer(usize index) {
                 });
             }
             auto& figure = m_fixtures[*container.blastFigure];
-            figure.placeAt(itemPlacement(definition.position + Vec3{0, 2, 0}, Vec3{0}));
+            figure.placeAt(itemPlacement(definition.position + definition.blastOffset, Vec3{0}));
             figure.play(0, ItemFigure::Playback::Once);
             figure.capturePresentation();
             m_hiddenFixtures[*container.blastFigure] = false;
@@ -497,7 +503,7 @@ void LegendsSceneAdapter::updateContainers() {
                 definition.kind == LegendsContainerDefinition::Kind::Chest) {
                 // e006cab8 raises and scales chest contents with the native
                 // opening frame, easing to one over at most 25 frames.
-                const auto* sequence = figure.sequenceInfo(0);
+                const auto* sequence = figure.sequenceInfo(container.openingSequence);
                 const f32 frames = sequence ? static_cast<f32>(sequence->frames) : 1;
                 const f32 frame = figure.progress() * frames - 1;
                 const f32 t = std::clamp(frame / std::clamp(frames - 1, 1.0f, 25.0f), 0.0f, 1.0f);
@@ -507,10 +513,12 @@ void LegendsSceneAdapter::updateContainers() {
                     glm::scale(itemPlacement(position, Vec3{0}), Vec3{scale}));
             }
             if (figure.finished() && container.state.finishOpening()) {
-                if (container.brokenFigure != container.openingFigure) {
+                if (container.brokenFigure != container.openingFigure ||
+                    container.brokenSequence != container.openingSequence) {
                     m_hiddenFixtures[container.openingFigure] = true;
                     m_hiddenFixtures[container.brokenFigure] = false;
-                    m_fixtures[container.brokenFigure].play(0, ItemFigure::Playback::Once);
+                    m_fixtures[container.brokenFigure].play(container.brokenSequence,
+                                                            ItemFigure::Playback::Once);
                     m_fixtures[container.brokenFigure].capturePresentation();
                 }
                 if (container.pickup) {

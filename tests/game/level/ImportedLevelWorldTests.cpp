@@ -9,6 +9,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "game/level/HazardSurfaces.h"
 #include "game/level/LevelWorld.h"
 
 namespace {
@@ -21,15 +22,38 @@ public:
     std::vector<std::pair<f32, bool>> updates;
     mutable std::vector<TreeModel::Pass> passes;
     mutable std::vector<f32> alphas;
+    std::vector<u32> hazardFlags;
+    std::vector<std::optional<Vec3>> bossAnchors;
 
     void capturePresentation() override { ++captures; }
     void update(f32 seconds, bool stopped) override { updates.emplace_back(seconds, stopped); }
+    void trackBoss(std::optional<Vec3> anchor) override { bossAnchors.push_back(anchor); }
+    std::span<const u32> surfaceHazardFlags() const override { return hazardFlags; }
     void draw(RenderDevice& /*device*/, const Mat4& /*clip*/, const WorldCamera& /*camera*/,
               TreeModel::Pass pass, f32 alpha) const override {
         passes.push_back(pass);
         alphas.push_back(alpha);
     }
 };
+
+TEST_CASE("Imported floor-only boss tracking still waits for awakening",
+          "[legends][imported-level][boss-camera]") {
+    ImportedPresentation presentation;
+    ImportedLevel& level = presentation;
+    BossCameraSubject boss;
+    boss.position = {3, -20, 5};
+    level.trackBoss(boss);
+    CHECK(presentation.bossAnchors.empty());
+
+    boss.awake = true;
+    boss.position.y = 0;
+    level.trackBoss(boss);
+    REQUIRE(presentation.bossAnchors.size() == 1);
+    CHECK(presentation.bossAnchors.back() == std::optional<Vec3>{boss.position});
+    level.trackBoss(std::nullopt);
+    REQUIRE(presentation.bossAnchors.size() == 2);
+    CHECK_FALSE(presentation.bossAnchors.back());
+}
 
 WorldCollision importedCollision() {
     WorldCollision collision;
@@ -140,6 +164,30 @@ TEST_CASE("Rejected imported loads do not replace a working imported world",
     CHECK(world.imported() == imported.get());
     CHECK(world.built());
     CHECK(world.collision().triangleCount() == 1);
+}
+
+TEST_CASE("Imported harmful surfaces use collision owners without invented world meshes",
+          "[legends][imported-level][hazards]") {
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    auto imported = std::make_shared<ImportedPresentation>();
+    imported->hazardFlags.resize(72);
+    imported->hazardFlags[71] = HazardSurfaces::kBurning;
+    REQUIRE(world.loadImported(device, {}, importedRef(), importedLayout(), importedCollision(),
+                               imported));
+    CHECK(world.layout().objects().empty());
+    CHECK(world.hazards().harmful() == 1);
+    const auto contact = world.hazards().touching(world.collision(), {0, 0, 0}, 1, 5);
+    REQUIRE(contact);
+    CHECK(contact->object == 71);
+    CHECK(contact->harm.damage == 5);
+    REQUIRE(HazardSurfaces::enemyHarmOf(world.hazards().flagsOf(71)));
+    CHECK_FALSE(world.hazards().harmOfObject(70));
+    // Reopening an importer without hazard metadata must clear the old roster.
+    REQUIRE(world.loadImported(device, {}, importedRef(), importedLayout(), importedCollision(),
+                               std::make_shared<ImportedPresentation>()));
+    CHECK(world.hazards().harmful() == 0);
+    CHECK_FALSE(world.hazards().touching(world.collision(), {0, 0, 0}, 1, 5));
 }
 
 TEST_CASE("Imported levels keep common character powerup assets available",

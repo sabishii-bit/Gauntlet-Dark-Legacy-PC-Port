@@ -69,6 +69,10 @@ void HazardSurfaces::bind(const WorldLayout& layout) {
     }
 }
 
+void HazardSurfaces::bindFlags(std::span<const u32> inheritedFlags) {
+    m_flags.assign(inheritedFlags.begin(), inheritedFlags.end());
+}
+
 u32 HazardSurfaces::flagsOf(s32 object) const {
     return object >= 0 && static_cast<usize>(object) < m_flags.size()
                ? m_flags[static_cast<usize>(object)]

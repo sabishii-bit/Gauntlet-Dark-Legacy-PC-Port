@@ -548,7 +548,7 @@ std::optional<std::vector<MissileLaunch>> PlayerArsenal::prepareFamiliar(const P
     // Companion shots do not hit players or detonate collectible potions.
     launch.owner = actor.player();
     launch.breaksPotions = false;
-    const Mat4 placement = PlayerFigure::bodyPlacement(actor.transform(), actor.save(), worn);
+    const Mat4 placement = figure.placement(actor.transform(), actor.save(), worn);
     launch.position = Vec3{placement * Vec4{stats->familiarShotOffset, 1}};
     launch.direction = actor.facing();
     launch.speed = 35;

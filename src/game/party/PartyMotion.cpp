@@ -571,8 +571,8 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
             players[i].figure->animate(move.magnitude, ticks, seconds, deed,
                                        level.chainsHeldMelee());
             players[i].figure->updateTrail(
-                PlayerFigure::bodyPlacement(players[i].capture.body().value_or(actor.transform()),
-                                            actor.save(), powerups),
+                players[i].figure->placement(players[i].capture.body().value_or(actor.transform()),
+                                             actor.save(), powerups),
                 ticks);
             level.advanceTurbo(i, ticks, seconds);
             // A grabber's move goes on: its partner taken up, let fly or set down.

@@ -747,7 +747,7 @@ void LevelOpponents::open(const Resources& resources, std::span<const PlayerRunt
                       generatorTextures);
     if (const auto* imported = world.imported()) {
         for (const auto& generator : imported->importedGenerators()) {
-            const auto id = m_generators.spawnImported(device, m_enemies, generator);
+            const auto id = m_generators.spawnImported(device, m_enemies, generator, gain);
             m_importedGenerators.emplace_back(generator.nativeIndex, id.value_or(-1));
             if (!id) {
                 log::warn("Imported generator {}: failed to stand kind {}", generator.nativeIndex,
@@ -1296,6 +1296,18 @@ void LevelOpponents::syncFloors() {
     m_generators.syncFloors();
 }
 
+bool LevelOpponents::bossActivationReady() const {
+    const auto* imported = m_resources ? m_resources->world.imported() : nullptr;
+    const auto* data = m_bosses.fighter().data();
+    const auto* position = m_bosses.position();
+    return !imported || !data || !position || (data->typeFlags() & 0x80U) == 0 ||
+           imported->bossActivationReady(*position);
+}
+
+void LevelOpponents::armBoss(f32 seconds) {
+    m_bosses.arm(seconds, bossActivationReady());
+}
+
 void LevelOpponents::beginOrdinaryFrame(f32 seconds, std::span<PlayerRuntime> players) {
     for (auto& yell : m_sim.yells) {
         yell.timing.advance(seconds);
@@ -1433,7 +1445,7 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
     m_bosses.setArenaAnchors(encounter.arenaAnchors());
     m_bosses.setArenaTargets(encounter.arenaTargets());
     const bool bossWasAwake = m_bosses.view().awake;
-    m_bosses.update(ticks, seconds, views);
+    m_bosses.update(ticks, seconds, views, bossActivationReady());
     if (!bossWasAwake && m_bosses.view().awake && m_bosses.position() != nullptr) {
         cues().awoke(*m_bosses.position());
     }

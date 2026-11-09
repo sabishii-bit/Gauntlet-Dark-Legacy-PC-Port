@@ -172,9 +172,9 @@ BossSequence::bearer(s32 player, s32 kind, std::span<const PlayerRuntime> player
         bearer.casting = figure != nullptr && figure->animator().castingLegend();
         bearer.released = figure != nullptr && figure->animator().legendReleased();
         if (figure != nullptr) {
-            const Mat4 body = PlayerFigure::bodyPlacement(
-                runtime.capture.body().value_or(actor.transform()), actor.save(),
-                PowerupEffects::of(actor.save().progress().inventory));
+            const Mat4 body =
+                figure->placement(runtime.capture.body().value_or(actor.transform()), actor.save(),
+                                  PowerupEffects::of(actor.save().progress().inventory));
             bearer.holdTransform =
                 LegendShow::heldInHand(kind)
                     ? figure->handAttachment(body)

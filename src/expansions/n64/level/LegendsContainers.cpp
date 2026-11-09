@@ -1,5 +1,6 @@
 #include "expansions/n64/level/LegendsContainers.h"
 
+#include <algorithm>
 #include <bit>
 #include <cmath>
 #include <stdexcept>
@@ -182,17 +183,31 @@ decodeLegendsN64Explosive(const formats::LegendsN64Fixture& fixture, std::span<c
 }
 
 LegendsContainer::LegendsContainer(LegendsContainerDefinition definition)
-    : m_definition(std::move(definition)) {}
+    : m_definition(std::move(definition)),
+      m_health(std::isfinite(m_definition.damageThreshold)
+                   ? static_cast<s32>(std::clamp(m_definition.damageThreshold, 0.0f, 32767.0f))
+                   : 0) {}
 
 bool LegendsContainer::targetable() const {
-    return m_state == State::Closed &&
+    return m_definition.interactive && m_state == State::Closed &&
            m_definition.kind == LegendsContainerDefinition::Kind::Barrel;
 }
 
 bool LegendsContainer::strike(f32 power) {
     // e006cef4 compares each blow against PCon+2, with no stored hit-point sum.
-    if (!targetable() || !std::isfinite(power) || power <= 0 ||
-        power < m_definition.damageThreshold) {
+    if (!targetable() || !std::isfinite(power) || power <= 0) {
+        return false;
+    }
+    if (m_definition.damageMode == LegendsContainerDefinition::DamageMode::Accumulated) {
+        // Dreamcast HitItem8c0afaa0 stores remaining HP after armor, unlike
+        // N64 PCon's per-blow threshold. Use the engine's bounded rounding.
+        f32 felt = power - static_cast<f32>(m_definition.armor);
+        if (felt <= 0)
+            felt = 1;
+        m_health = std::max(m_health - static_cast<s32>(std::lround(std::min(felt, 32767.0f))), 0);
+        if (m_health > 0)
+            return true;
+    } else if (power < m_definition.damageThreshold) {
         return false;
     }
     m_state = State::Opening;
@@ -200,10 +215,10 @@ bool LegendsContainer::strike(f32 power) {
 }
 
 bool LegendsContainer::touch(const Vec3& feet, f32 radius, f32 height, s32& keys) {
-    if (m_state != State::Closed || m_definition.kind != LegendsContainerDefinition::Kind::Chest ||
-        keys <= 0 || !finite(feet) || !std::isfinite(radius) || radius < 0 ||
-        !std::isfinite(height) || height < 0 ||
-        feet.y > m_definition.position.y + m_definition.closedObstacle.height ||
+    if (!m_definition.interactive || m_state != State::Closed ||
+        m_definition.kind != LegendsContainerDefinition::Kind::Chest || keys <= 0 ||
+        !finite(feet) || !std::isfinite(radius) || radius < 0 || !std::isfinite(height) ||
+        height < 0 || feet.y > m_definition.position.y + m_definition.closedObstacle.height ||
         feet.y + height < m_definition.position.y ||
         !m_definition.closedObstacle.touchedBy(
             {feet.x, m_definition.closedObstacle.centre.y, feet.z}, radius, .05f)) {

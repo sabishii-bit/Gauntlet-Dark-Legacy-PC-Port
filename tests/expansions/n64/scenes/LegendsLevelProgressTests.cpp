@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <filesystem>
 #include <memory>
 #include <string_view>
@@ -13,6 +14,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "expansions/n64/formats/LegendsN64Ambient.h"
 #include "expansions/n64/formats/LegendsN64Texture.h"
 #include "expansions/shared/scenes/LegendsLevel.h"
 
@@ -457,4 +459,87 @@ TEST_CASE("Native departure narration survives scene teardown without repeating 
     output.update();
     CHECK(output.voiceCount() == 0);
     next.level->stopSounds();
+}
+
+TEST_CASE("N64 queued exit warnings finish while the completed level is parked at results",
+          "[legends][native-speech][native-progress-flow][assets]") {
+    ProgressFixture scene{"mount1"};
+    AudioMixer mixer{48000};
+    SoundPlayer output{mixer};
+    auto party = progressionParty();
+    const auto nativeRoot = scene.level->directory().parent_path().parent_path();
+    LegendsSpeech reference;
+    if (!reference.openN64(nativeRoot)) {
+        SKIP("Native N64 narration extraction is not installed");
+    }
+    const auto entryToken = reference.entryCue("mount1");
+    REQUIRE(entryToken);
+    const auto entryCue = reference.resolve(*entryToken);
+    const auto exitCue = reference.resolve(0x4057);
+    REQUIRE(entryCue);
+    REQUIRE(exitCue);
+    REQUIRE_FALSE(exitCue->clearQueue);
+    REQUIRE(exitCue->lifetimeSeconds > 0);
+    MortBank bank;
+    REQUIRE(bank.open(nativeRoot / "audio/mort.mdir"));
+    auto entrySource = bank.create(entryCue->clips);
+    REQUIRE(entrySource);
+    std::vector<f32> entryPcm;
+    while (entrySource->read(entryPcm, 4096)) {
+    }
+    const f64 entrySeconds = static_cast<f64>(entryPcm.size()) / entrySource->desc().channels /
+                             entrySource->desc().sampleRate;
+    REQUIRE(entrySeconds > exitCue->lifetimeSeconds);
+    // Start the native entry phrase before admitting the exit. The warning must
+    // wait for it, exercising queue advancement rather than just an active voice.
+    constexpr Vec3 kDistantListener{100000};
+    const std::array<CameraSubject, 1> subjects{{{kDistantListener, kDistantListener, 1}}};
+    scene.level->resetCamera(subjects);
+    // Native ambience follows camera attention, not playSounds' fallback listener.
+    // Keep it out of this narration-only assertion without muting the speech.
+    const auto attention = scene.level->cameraAttention();
+    REQUIRE(attention);
+    for (const auto& emitter :
+         formats::decodeLegendsN64Ambient(readFile(scene.level->directory() / "ipr.rom"))) {
+        REQUIRE(glm::distance(*attention, emitter.position) > emitter.radius);
+    }
+    scene.level->playSounds(output, kDistantListener);
+    REQUIRE(output.voiceCount() == 1);
+    // The native warning expires after one second waiting. Consume the entry
+    // until only half that lifetime remains; an unconsumed full entry correctly
+    // expires the warning and would not test servicing a viable parked queue.
+    const auto advanceTicks =
+        static_cast<usize>(std::floor((entrySeconds - exitCue->lifetimeSeconds * .5) * 60));
+    std::array<f32, 1600> samples{};
+    for (usize tick = 0; tick < advanceTicks; ++tick) {
+        output.update();
+        mixer.mix(samples);
+    }
+    const f64 remainingEntrySeconds = entrySeconds - static_cast<f64>(advanceTicks) / 60;
+    REQUIRE(remainingEntrySeconds > 0);
+    REQUIRE(remainingEntrySeconds < exitCue->lifetimeSeconds);
+    REQUIRE(output.voiceCount() == 1);
+    scene.admit(party, "tower2");
+    REQUIRE(scene.level->exitReminder() == 0x4057);
+    scene.level->playSounds(output, kDistantListener);
+    scene.level->pauseSounds();
+    const auto clock = scene.level->departure();
+    REQUIRE(clock);
+    const auto entryEndTick = static_cast<usize>(std::ceil(remainingEntrySeconds * 60)) + 2;
+    f64 lateEnergy = 0;
+    for (usize tick = 0; tick < 1200; ++tick) {
+        scene.level->servicePreservedSpeech(1.0f / 60);
+        output.update();
+        mixer.mix(samples);
+        if (tick > entryEndTick)
+            for (const auto sample : samples)
+                lateEnergy += static_cast<f64>(sample) * sample;
+    }
+    CHECK(lateEnergy > .001);
+    CHECK(output.voiceCount() == 0);
+    // Results may pump only the speech queue, never advance the departed world.
+    CHECK(scene.level->departure()->finished == clock->finished);
+    scene.level->servicePreservedSpeech(1.0f / 60);
+    CHECK(output.voiceCount() == 0);
+    scene.level->stopSounds();
 }

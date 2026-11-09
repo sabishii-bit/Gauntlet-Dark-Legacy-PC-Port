@@ -205,7 +205,7 @@ legendsN64Generator(const formats::LegendsN64Fixture& fixture, std::span<const u
     out.yaw = fixture.facingRadians;
     out.minimumPlayers = fixture.minimumPlayers;
     if (mixed) {
-        out.broodKinds = mixedKinds;
+        out.broodKinds.assign(mixedKinds.begin(), mixedKinds.end());
         out.broodTier = 3;
     }
     auto& body = out.body;

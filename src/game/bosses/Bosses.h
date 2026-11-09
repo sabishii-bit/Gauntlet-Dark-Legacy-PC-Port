@@ -87,10 +87,12 @@ public:
     /** Actual animated attachment targeted by this encounter's legendary item. */
     std::optional<Mat4> legendTargetTransform() const;
 
-    void update(s32 ticks, f32 seconds, std::span<const EnemyView> players);
-    /** Its waking clock runs from its placement, through an entrance that holds it still. */
-    void arm(f32 seconds) {
-        if (!m_sim.awake) {
+    void update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
+                bool activationReady = true);
+    /** Runs through the held entrance too, but an imported support-triggered
+     * encounter must first receive its activation signal. Arming is sticky. */
+    void arm(f32 seconds, bool activationReady = true) {
+        if (!m_sim.awake && (activationReady || m_sim.wakeClock > 0)) {
             m_sim.wakeClock += seconds;
         }
     }
@@ -189,7 +191,7 @@ private:
         std::string name;
         bool awake = false;
         f32 wakeDistance = 0.0f;
-        f32 wakeClock = 0.0f; ///< seconds since it was placed; it may not wake in the first two
+        f32 wakeClock = 0.0f; ///< elapsed since placement or imported support-trigger arming
         LegendRite rite;
         bool roarAsked = false;
         bool legendStruck = false;

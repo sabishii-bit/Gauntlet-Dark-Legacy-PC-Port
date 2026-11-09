@@ -128,7 +128,7 @@ void PartyCombo::animate(std::span<PlayerRuntime> players, usize index, s32 tick
         runtime.figure->setCombo(runtime.combo.grabberClass, runtime.combo.rideAsked);
         runtime.figure->animate(0, ticks, seconds, deedOf(runtime));
         runtime.figure->updateTrail(
-            PlayerFigure::bodyPlacement(
+            runtime.figure->placement(
                 runtime.actor.transform(), runtime.actor.save(),
                 PowerupEffects::of(runtime.actor.save().progress().inventory)),
             ticks);
@@ -294,9 +294,11 @@ void PartyCombo::ride(std::span<PlayerRuntime> players, usize charger, const Mov
 }
 
 Mat4 PartyCombo::seatOf(const PlayerRuntime& carrier) {
+    const auto worn = PowerupEffects::of(carrier.actor.save().progress().inventory);
     const Mat4 body =
-        PlayerFigure::bodyPlacement(carrier.actor.transform(), carrier.actor.save(),
-                                    PowerupEffects::of(carrier.actor.save().progress().inventory));
+        carrier.figure
+            ? carrier.figure->placement(carrier.actor.transform(), carrier.actor.save(), worn)
+            : PlayerFigure::bodyPlacement(carrier.actor.transform(), carrier.actor.save(), worn);
     if (carrier.figure != nullptr) {
         if (const auto seat = carrier.figure->attachment(body, kSeatNode)) {
             return *seat;

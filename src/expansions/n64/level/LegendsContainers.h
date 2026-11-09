@@ -43,6 +43,11 @@ struct LegendsContainerDefinition {
     f32 blastRadius = 0;
     f32 blastDamage = 0;
     f32 scale = 1;
+    bool interactive = true; ///< false retains a deferred native container's solid body
+    enum class DamageMode { Threshold, Accumulated };
+    DamageMode damageMode = DamageMode::Threshold;
+    s32 armor = 0;
+    Vec3 blastOffset{0, 2, 0};
 };
 
 /** Native PCon/Ppower records, not fabricated GameCube item definitions.
@@ -78,6 +83,7 @@ public:
 private:
     LegendsContainerDefinition m_definition;
     State m_state = State::Closed;
+    s32 m_health = 0;
 };
 
 } // namespace gdl::game

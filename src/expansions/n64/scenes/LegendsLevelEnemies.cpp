@@ -5,6 +5,7 @@
 #include "engine/io/File.h"
 #include "engine/platform/Paths.h"
 
+#include "expansions/dreamcast/enemies/LegendsDreamcastEnemies.h"
 #include "expansions/n64/enemies/LegendsEnemyAssets.h"
 #include "expansions/shared/scenes/LegendsLevel.h"
 #include "game/enemies/Generators.h"
@@ -15,6 +16,14 @@ std::unique_ptr<ItemArchive> LegendsLevel::loadEnemyAssets(s32 kind) const {
         return {};
     }
     const auto root = m_directory.parent_path().parent_path();
+    if (platform() == LegendsPlatform::Dreamcast) {
+        std::vector<std::string> warnings;
+        auto archive =
+            loadLegendsDreamcastEnemyAssets(root, kind, warnings, m_dreamcastEnemyRoster);
+        for (const auto& warning : warnings)
+            log::warn("Dreamcast enemy {}: {}", kind, warning);
+        return archive;
+    }
     const auto program = AssetLocator(root).find("_program/game.bin");
     if (!program) {
         throw FileError("Native enemies require the N64 program tables");
@@ -31,7 +40,13 @@ std::unique_ptr<ItemArchive> LegendsLevel::loadEnemyAssets(s32 kind) const {
 }
 
 bool LegendsLevel::playEnemyFeedback(const EnemyFeedback& feedback, f32 health) {
-    if (!hasEnemyAssets()) {
+    if (platform() == LegendsPlatform::Dreamcast) {
+        // AudioSetupEnemyStreams 8c0df380 and the hurt/death dispatchers
+        // 8c0dfa80/8c0df9e0 use the same stem/tier/hit-count naming contract as
+        // GDL. Supply DC's selected ENMY roster, never GDL's empty donor roster.
+        return playOpponentSound(feedback.sound(m_dreamcastEnemyRoster), feedback.position);
+    }
+    if (platform() != LegendsPlatform::N64) {
         return false;
     }
     if (m_enemySounds) {
@@ -43,7 +58,14 @@ bool LegendsLevel::playEnemyFeedback(const EnemyFeedback& feedback, f32 health) 
 }
 
 bool LegendsLevel::playEnemyCue(const EnemyCue& cue) {
-    if (!hasEnemyAssets()) {
+    if (platform() == LegendsPlatform::Dreamcast) {
+        // 8c0dfb80/8c0dfbc0 emit arrow/bolt; 8c0dfcc0 emits pursuit yell.
+        m_opponentSounds.push_back(cue.kind == EnemyCue::Kind::Arrow  ? 0x29U
+                                   : cue.kind == EnemyCue::Kind::Bolt ? 0x2bU
+                                                                      : 0x30U);
+        return true;
+    }
+    if (platform() != LegendsPlatform::N64) {
         return false;
     }
     // e005cabc plays 0x14 only for an arrow; bombs have no launch cue.
@@ -57,7 +79,12 @@ bool LegendsLevel::playEnemyCue(const EnemyCue& cue) {
 }
 
 bool LegendsLevel::playEnemyMelee(s32 kind, s32 tier) {
-    if (!hasEnemyAssets()) {
+    if (platform() == LegendsPlatform::Dreamcast) {
+        if (const auto sound = EnemyFeedback::meleeSound(kind, tier, m_dreamcastEnemyRoster))
+            return playOpponentSound(*sound, Vec3{0});
+        return false; // Ordinary weapon strikes retain the player's hurt cue.
+    }
+    if (platform() != LegendsPlatform::N64) {
         return false;
     }
     if (m_enemySounds) {
@@ -80,7 +107,7 @@ std::optional<bool> LegendsLevel::suicideUsesGas() const {
 }
 
 bool LegendsLevel::playDeathCue(const DeathEvent& cue) {
-    if (!hasEnemyAssets()) {
+    if (platform() != LegendsPlatform::N64) {
         return false;
     }
     // e005c270 plays this Death cue when magic expels him; e005d734 also
@@ -93,7 +120,7 @@ bool LegendsLevel::playDeathCue(const DeathEvent& cue) {
 }
 
 bool LegendsLevel::setDeathContact(bool active) {
-    if (!hasEnemyAssets()) {
+    if (platform() != LegendsPlatform::N64) {
         return false;
     }
     m_deathDrainContact = active;
@@ -105,7 +132,12 @@ bool LegendsLevel::setDeathContact(bool active) {
 }
 
 bool LegendsLevel::playGeneratorFeedback(const GeneratorEvent& event) {
-    if (!hasEnemyAssets()) {
+    if (platform() == LegendsPlatform::Dreamcast) {
+        if (const auto token = dreamcastGeneratorSound(m_dreamcastRealm, event.destroyed))
+            m_opponentSounds.push_back(*token);
+        return true;
+    }
+    if (platform() != LegendsPlatform::N64) {
         return false;
     }
     // e0066ee8 uses these non-spatial cues for both regular and mixed broods.

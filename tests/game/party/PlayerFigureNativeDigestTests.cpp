@@ -64,14 +64,15 @@ struct Figure {
     std::unique_ptr<PlayerFigure> figure;
     NativeStateResources resources;
 
-    explicit Figure(const std::filesystem::path& root) {
+    explicit Figure(const std::filesystem::path& root,
+                    PlayerFigure::LevelSize size = PlayerFigure::LevelSize::Progression) {
         REQUIRE(powerups.load(root / "POWERUPS"));
         REQUIRE(weapons.load(root / "WEAPONS"));
         CharacterSave save;
         save.character = 3;
         save.color = 1;
         save.progress().experience = levelExperience(80);
-        figure = PlayerFigure::load(device, root, save, Entrance::Skip);
+        figure = PlayerFigure::load(device, root, save, Entrance::Skip, size);
         REQUIRE(figure);
         REQUIRE(figure->familiarTier() == 2);
         companion(powerup::kPhoenix);
@@ -102,6 +103,21 @@ struct Figure {
         return savedValue(*figure, saved, resources);
     }
 };
+
+TEST_CASE("player figure digest distinguishes the immutable imported sizing policy",
+          "[native-state-digest][player-figure-native-digest][legends-player-size][assets]") {
+    const auto root = test::assetOrSkip("WEAPONS/objects.ngc").parent_path().parent_path();
+    Figure ordinary(root);
+    Figure imported(root, PlayerFigure::LevelSize::LevelOne);
+    Figure samePolicy(root, PlayerFigure::LevelSize::LevelOne);
+    CHECK(imported.digest() == samePolicy.digest());
+    CHECK(imported.digest() != ordinary.digest());
+    PlayerFigure::LocalSnapshot saved;
+    imported.figure->saveLocal(saved);
+    CHECK(imported.digest(saved) == imported.digest());
+    REQUIRE(imported.figure->restoreLocal(saved));
+    CHECK(imported.digest() == samePolicy.digest());
+}
 
 TEST_CASE("player native digest includes latent animator and glow controls",
           "[native-state-digest][player-figure-native-digest]") {

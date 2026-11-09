@@ -122,6 +122,9 @@ public:
     enum class Playback : u8 { Once, Loop };
     /** Starts the figure's sequence number `index`, played as `playback` says. */
     void play(s32 index, Playback playback);
+    /** Poses the current sequence on a script-owned clock, retaining the prior
+     * presentation sample. No asset rebinding, emission or elapsed-time step. */
+    void poseFrame(f32 frame);
     void update(f32 seconds);
     /** Captures visual state before a fixed update, including ticks that hold animation. */
     void capturePresentation();

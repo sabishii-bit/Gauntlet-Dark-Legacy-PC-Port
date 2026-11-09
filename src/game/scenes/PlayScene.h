@@ -685,7 +685,8 @@ private:
     std::vector<CameraSubject> advancePartyMotion(s32 ticks, f32 seconds, const Inputs& inputs,
                                                   bool held);
     void advanceCombat(s32 ticks, f32 seconds, bool held);
-    void advanceImportedLevel(f32 seconds, std::vector<CameraSubject>& subjects);
+    void advanceImportedLevel(f32 seconds, std::vector<CameraSubject>& subjects,
+                              const Inputs& inputs);
     void applyImportedHazards(ImportedLevel& imported);
     void presentImportedPickups(ImportedLevel& imported);
     void advanceTriggers(f32 seconds);

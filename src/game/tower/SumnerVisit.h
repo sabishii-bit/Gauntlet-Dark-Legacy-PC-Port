@@ -54,7 +54,9 @@ public:
     bool loadTexts(const std::filesystem::path& file, const StringTable* strings = nullptr);
     /** Reuses resident-menu artwork without borrowing the base campaign's hint rules. */
     bool openTopics(s32 player, const TextPainter& text, const MenuScreen& screen,
-                    HintMenuLabels labels);
+                    HintMenuLabels labels, const MenuTextures* artwork = nullptr,
+                    std::optional<MenuDefinition> nativeStyle = std::nullopt,
+                    const DialoguePresentation* presentation = nullptr);
     void closeTopics();
     /** `player` has left play: a scroll it holds goes at once, unanswered and unburnt. */
     void release(s32 player);

@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <utility>
 
 #include <catch2/catch_test_macros.hpp>
@@ -12,6 +13,7 @@
 #include "RecordedDrawChecks.h"
 #include "TestSupport.h"
 #include "game/tower/SumnerVisit.h"
+#include "game/widgets/DialoguePresentation.h"
 
 namespace {
 
@@ -175,6 +177,100 @@ TEST_CASE("missing Sumner resources cannot open a scroll", "[game][screens][sumn
     REQUIRE(f.approach(0.0f));
     REQUIRE_FALSE(f.visit.visit(3.0f, 0, true, f.text, &f.config, nullptr));
     REQUIRE_FALSE(f.visit.active());
+}
+
+TEST_CASE("imported Sumner topics keep six choices and release borrowed native art on clear",
+          "[game][screens][sumner-visit][imported-dialogue]") {
+    Fixture f("sumner-imported-topics");
+    class NativePresentation final : public DialoguePresentation {
+    public:
+        explicit NativePresentation(const TextPainter& text) : m_text(text) {}
+        const TextPainter& text() const override { return m_text; }
+        f32 scale() const override { return 1; }
+        s32 textWidth() const override { return 256; }
+        usize linesPerPage() const override { return 8; }
+        DialoguePage layout(std::string_view, f32, std::string_view) const override { return {}; }
+        void draw(Canvas&, const DialoguePage&, f32, std::string_view, u8) const override {}
+        bool drawTopicsBackdrop(Canvas&, const OptionMenu&, std::string_view) const override {
+            ++draws;
+            return false;
+        }
+        mutable usize draws = 0;
+
+    private:
+        const TextPainter& m_text;
+    } native(f.text);
+    HintMenuLabels labels;
+    labels.title = "Sumner";
+    labels.topics = {{"Continue", 0x11},  {"Shop", 0x15},       {"Rune Hint", 0x2e},
+                     {"World Hint", 0xd}, {"Enemy Hint", 0x2f}, {"History", 2}};
+    MenuDefinition definition;
+    definition.showCursor = false;
+    definition.backdrop = "native-scroll";
+    definition.backdropX = 100;
+    definition.backdropY = 70;
+    definition.backdropWidth = 300;
+    definition.backdropHeight = 230;
+    for (s32 i = 0; i < 6; ++i) {
+        definition.itemPositions.emplace_back(-256, 100 + i * 24);
+    }
+    test::FakeTexture scroll{32, 32};
+    MenuTextures artwork;
+    artwork.backdrop = &scroll;
+    REQUIRE(f.visit.openTopics(2, f.text, {}, labels, &artwork, definition, &native));
+    CHECK(f.visit.owner() == 2);
+    CHECK(f.visit.menu().topics().definition().title.empty());
+    const auto draw = [&] {
+        f.device.draws.clear();
+        Canvas canvas;
+        canvas.begin(f.device, Mat4{1});
+        f.visit.draw(canvas, f.text);
+        canvas.end();
+    };
+    const auto before = test::liveDigest(f.visit);
+    draw();
+    CHECK(native.draws == 1);
+    REQUIRE_FALSE(f.device.draws.empty());
+    CHECK(f.device.draws.front().texture == &scroll);
+    CHECK(test::liveDigest(f.visit) == before); // The borrowed draw callback is not tick state.
+    for (usize i = 0; i < labels.topics.size(); ++i) {
+        CAPTURE(i);
+        MenuInput select;
+        select.select = true;
+        CHECK(f.visit.updateNative(f.device, 1, select, 1, 0, 0).kind ==
+              HintMenuEvent::Kind::None); // Another seat cannot control this visit.
+        const auto event = f.visit.update(f.device, select, 1);
+        CHECK(event.kind == HintMenuEvent::Kind::Asked);
+        CHECK(event.topic == labels.topics[i].code);
+        if (i + 1 < labels.topics.size()) {
+            MenuInput down;
+            down.down = true;
+            CHECK(f.visit.update(f.device, down, 1).kind == HintMenuEvent::Kind::Moved);
+        }
+    }
+    for (usize i = 0; i < labels.topics.size(); ++i) {
+        const Rect area = f.visit.menu().topics().itemArea(i);
+        MenuInput click;
+        click.pointer = Vec2{area.x + area.width / 2, area.y + area.height / 2};
+        click.pointerPressed = true;
+        const auto event = f.visit.update(f.device, click, 1);
+        CHECK(event.kind == HintMenuEvent::Kind::Asked);
+        CHECK(event.topic == labels.topics[i].code);
+    }
+    SumnerVisit::LocalSnapshot borrowed;
+    f.visit.saveLocal(borrowed);
+    f.visit.clear();
+    CHECK_FALSE(f.visit.restoreLocal(borrowed));
+    CHECK_FALSE(f.visit.active());
+    f.open(0);
+    CHECK(f.visit.menu().topics().definition().title == f.strings.get("hints.title"));
+    CHECK(f.visit.menu().topics().definition().items.size() == 4);
+    CHECK(f.visit.menu().topics().definition().backdrop == "SCROLL_A");
+    f.visit.update(f.device, {}, 30);
+    draw();
+    CHECK(native.draws == 1); // No callback into the prior level's native presentation.
+    CHECK(std::ranges::none_of(f.device.draws,
+                               [&](const auto& item) { return item.texture == &scroll; }));
 }
 
 TEST_CASE("native Sumner visit rewind restores greeting ownership hint progression and cues",

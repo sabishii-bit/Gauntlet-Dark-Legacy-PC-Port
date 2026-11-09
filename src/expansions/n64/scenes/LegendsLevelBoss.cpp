@@ -11,7 +11,8 @@
 namespace gdl::game {
 
 std::unique_ptr<CombatantAssets>
-LegendsLevel::loadBossAssets(RenderDevice& device, const std::filesystem::path& commonRoot) const {
+LegendsLevel::loadN64BossAssets(RenderDevice& device,
+                                const std::filesystem::path& commonRoot) const {
     if (!m_boss || platform() != LegendsPlatform::N64) {
         return {};
     }
@@ -43,7 +44,7 @@ void LegendsLevel::bossIntro(const Vec3& position) {
     }
 }
 
-void LegendsLevel::bossDefeated(const Vec3& position, std::span<PlayerActor*> players) {
+void LegendsLevel::n64BossDefeated(const Vec3& position, std::span<PlayerActor*> players) {
     if (!m_boss || m_bossDefeated || players.empty()) {
         return;
     }

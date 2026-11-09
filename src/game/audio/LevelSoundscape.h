@@ -133,6 +133,9 @@ public:
      * sMusicFadeCur): a runestone found halves it for the sting's length less a second
      * (sounds_evt.c 1948). An area's fade takes precedence. */
     void duckMusic(f32 seconds, f32 scale);
+    /** Presentation-only proximity duck. Camera-dependent ambience must not
+     * mutate the rewind/digest state or replace a native event's music duck. */
+    void duckAmbientMusic(f32 seconds, f32 scale);
     static constexpr f32 kRuneMusicScale = 0.5f;
     static constexpr f32 kRuneMusicLead = 1.0f; ///< seconds before the sting ends that it lifts
     /** The original's per-frame music service (AudioMusicVolUpdate, thirty a second of game
@@ -343,8 +346,6 @@ private:
     /** Reconcile a corrected native request at a service boundary, never during restore. */
     void applyMusicRequest();
     void serviceMusic(f32 seconds);
-    void duckAmbientMusic(f32 seconds, f32 scale);
-
     SoundPlayer* m_output = nullptr;
     SceneSoundEvents* m_events = nullptr;
     AmbientEar m_ear;

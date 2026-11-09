@@ -144,7 +144,11 @@ void TowerCeremonies::upgradeFigure(const Scene& scene, usize partyIndex) {
         activateFigure(scene.players, partyIndex, cached->figure);
         runtime.figure->restoreLocal(cached->initial);
     } else {
-        auto figure = PlayerFigure::load(scene.device, scene.unpackedRoot, save, Entrance::Skip);
+        const auto size = scene.world.imported() && !scene.world.imported()->playerLevelGrowth()
+                              ? PlayerFigure::LevelSize::LevelOne
+                              : PlayerFigure::LevelSize::Progression;
+        auto figure =
+            PlayerFigure::load(scene.device, scene.unpackedRoot, save, Entrance::Skip, size);
         if (figure == nullptr) {
             return;
         }

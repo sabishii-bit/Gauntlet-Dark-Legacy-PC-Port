@@ -5,15 +5,18 @@
 #include "engine/core/Types.h"
 #include "engine/io/NativeStateDigest.h"
 
+#include "game/widgets/DialoguePresentation.h"
+
 namespace gdl::game {
 
 void HintMenu::appendState(NativeStateDigest& digest, const Simulation& state) const {
     const auto& [labels, screen, painter, topics, page, revision] = state;
     digest.string("HintMenu.native.1");
-    const auto& [textures, scroll, masks, ring] = m_art;
+    const auto& [textures, scroll, masks, ring, presentation] = m_art;
     // The font/arrow sheets are draw-only; burn source availability determines
     // whether backing out starts a native timed phase, even before it is lit.
     static_cast<void>(textures);
+    static_cast<void>(presentation);
     digest.resource(scroll);
     digest.wide(masks.size());
     for (const auto* mask : masks) {
@@ -83,7 +86,8 @@ MenuDefinition HintMenu::topicsDefinition(bool fadeBackdrop) const {
     return menu;
 }
 
-bool HintMenu::open(const TextPainter& painter, const MenuScreen& screen, HintMenuLabels labels) {
+bool HintMenu::open(const TextPainter& painter, const MenuScreen& screen, HintMenuLabels labels,
+                    std::optional<MenuDefinition> nativeStyle) {
     close();
     if (!painter.ready() || labels.topics.empty()) {
         return false;
@@ -91,7 +95,12 @@ bool HintMenu::open(const TextPainter& painter, const MenuScreen& screen, HintMe
     m_sim.labels = std::move(labels);
     m_sim.screen = screen;
     m_sim.painter = &painter;
-    m_sim.topics.open(topicsDefinition(true), painter, screen);
+    auto definition = nativeStyle ? std::move(*nativeStyle) : topicsDefinition(true);
+    if (!nativeStyle) {
+        definition.title = m_sim.labels.title;
+    }
+    definition.items = m_sim.labels.topics;
+    m_sim.topics.open(definition, painter, screen);
     ++m_sim.revision;
     return true;
 }
@@ -113,6 +122,7 @@ void HintMenu::read(const TextPainter& painter, std::string title,
 void HintMenu::close() {
     m_sim.topics = OptionMenu{};
     m_sim.page = OptionMenu{};
+    m_sim.painter = nullptr;
     m_fire.reset();
     ++m_sim.revision;
 }
@@ -182,11 +192,17 @@ void HintMenu::prepare(RenderDevice& device) {
 }
 
 void HintMenu::draw(Canvas& canvas, const TextPainter& painter) const {
+    const auto& text = m_sim.painter ? *m_sim.painter : painter;
     m_fire.draw(canvas);
     if (m_sim.page.isOpen()) {
-        m_sim.page.draw(canvas, painter, m_art.textures);
+        m_sim.page.draw(canvas, text, m_art.textures);
     } else {
-        m_sim.topics.draw(canvas, painter, m_art.textures);
+        auto art = m_art.textures;
+        if (m_art.presentation && m_sim.topics.isOpen() && !m_sim.topics.backdropReleased() &&
+            m_art.presentation->drawTopicsBackdrop(canvas, m_sim.topics, m_sim.labels.title)) {
+            art.backdrop = nullptr;
+        }
+        m_sim.topics.draw(canvas, text, art);
     }
 }
 

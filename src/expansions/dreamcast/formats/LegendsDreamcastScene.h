@@ -29,11 +29,18 @@ struct LegendsDreamcastScene {
 std::vector<LegendsMapObject> decodeDreamcastModelLibrary(std::span<const u8> models);
 
 struct LegendsDreamcastFixtureScope {
+    std::string title;          ///< LEVL's authored display name, independent of its archive code.
+    std::string wallHitSound;   ///< Selected AUDS hit cue resolved through this realm's SNDS.
+    std::string entrySound;     ///< Selected AUDS entry prefix, resolved through SNDS.
+    std::string stageNameSound; ///< Native S_<LEVL code>NAME binding for this audio record.
     std::vector<std::string>
         archives; ///< Native-root-relative library directories, in lookup order.
     std::array<s32, 6> enemyClasses{-1, -1, -1, -1, -1, -1};
+    std::vector<LevelEnemy> enemySounds; ///< Selected ENMY sound/form stems, not the entire realm.
     s32 realmType = -1;
+    f32 generatorDifficulty = 1; ///< LEVL+0x84, native breeding difficulty baseline.
     std::optional<LevelCameraInfo> camera;
+    std::optional<BossCameraInfo> bossCamera;
 };
 
 /** Selects the native realm metadata file, not an arbitrary artwork search. */

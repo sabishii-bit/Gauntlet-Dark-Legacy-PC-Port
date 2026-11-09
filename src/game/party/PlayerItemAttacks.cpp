@@ -15,7 +15,9 @@ namespace {
 Mat4 attachmentOf(const PlayerRuntime& player, bool head) {
     const auto worn = PowerupEffects::of(player.actor.save().progress().inventory);
     const Mat4 body =
-        PlayerFigure::bodyPlacement(player.actor.transform(), player.actor.save(), worn);
+        player.figure
+            ? player.figure->placement(player.actor.transform(), player.actor.save(), worn)
+            : PlayerFigure::bodyPlacement(player.actor.transform(), player.actor.save(), worn);
     if (head && player.figure != nullptr) {
         if (player.figure->pojoActive()) {
             // PlayerMotion's AtreeFindMbidxNode name at GUNE5D 80114274.

@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <array>
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -176,6 +177,43 @@ TEST_CASE("Dreamcast Legends VQ codebook and mip variants preserve 2x2 ordering"
     CHECK(texture.image.pixel(0, 1) == Color::rgba(0, 255, 0, 255));
     CHECK(texture.image.pixel(1, 0) == Color::rgba(0, 0, 255, 255));
     CHECK(texture.image.pixel(1, 1) == Color::rgba(255, 255, 255, 255));
+}
+
+TEST_CASE("Dreamcast generator textures decode their full detail native VQ mip",
+          "[formats][legends][texture][dreamcast-presentation][assets]") {
+    const auto directory =
+        test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native/generators";
+    if (!std::filesystem::is_regular_file(directory / "objects.rom"))
+        SKIP("Optional Dreamcast assets are not installed");
+    const auto textures = decodeLegendsDreamcastTextures(readFile(directory / "objects.rom"),
+                                                         readFile(directory / "textures.rom"));
+    struct Reference {
+        std::string_view name;
+        u32 size;
+        u64 hash;
+    };
+    // Independent PVR VRAM reconstruction: kmLoadTexture 8c0321f4 copies
+    // table 8c057724's compact codebook to 0 and the index chain to 0x800.
+    // Table 8c057798 gives the complete chain length. Decode its last N*N/4
+    // indices in Morton order (Y then X), then hash row-major RGBA with FNV1a.
+    // This catches accidentally reading a lower mip with unchanged dimensions.
+    constexpr std::array expected{
+        Reference{"GEN_TRO1_BRKN3_2", 16, 0x2307e6df7865c2edULL},
+        Reference{"GEN_TRO1_CAVE_2", 16, 0x7180f813ba0e6e2bULL},
+        Reference{"GEN_TRO1_FRONT_2", 16, 0x1aa826420dcde5b3ULL},
+        Reference{"GEN_TRO1_TOP_2", 16, 0xcbceb84cb20b1ee6ULL},
+        Reference{"GEN_TRO3_FILE_10", 32, 0x1d5692bd00a0d44fULL}};
+    for (const auto& reference : expected) {
+        INFO(reference.name);
+        const auto found = std::ranges::find(textures, reference.name, &LegendsMapTexture::name);
+        REQUIRE(found != textures.end());
+        CHECK(found->image.width == reference.size);
+        CHECK(found->image.height == reference.size);
+        u64 hash = 0xcbf29ce484222325ULL;
+        for (const u8 byte : found->image.pixels)
+            hash = (hash ^ byte) * 0x100000001b3ULL;
+        CHECK(hash == reference.hash);
+    }
 }
 
 TEST_CASE("Dreamcast Legends borrowed textures keep their slots without inventing pixels",
