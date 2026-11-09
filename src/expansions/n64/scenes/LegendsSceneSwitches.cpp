@@ -1,5 +1,3 @@
-#include <algorithm>
-
 #include "expansions/shared/scenes/LegendsSceneAdapter.h"
 
 namespace gdl::game {

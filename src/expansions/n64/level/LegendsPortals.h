@@ -1,7 +1,5 @@
 #pragma once
 
-#include <span>
-
 #include "expansions/n64/formats/LegendsN64Portal.h"
 #include "expansions/shared/level/LegendsPortalVisitor.h"
 

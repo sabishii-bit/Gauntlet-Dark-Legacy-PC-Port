@@ -5,7 +5,6 @@
 
 #include "expansions/n64/level/LegendsTraps.h"
 #include "expansions/shared/scenes/LegendsLevel.h"
-#include "game/combat/Damage.h"
 #include "game/combat/DamageTypes.h"
 #include "game/combat/MissileTarget.h"
 

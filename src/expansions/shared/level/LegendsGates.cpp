@@ -2,7 +2,6 @@
 
 #include <cmath>
 #include <stdexcept>
-#include <utility>
 
 namespace gdl::game {
 namespace {
@@ -11,7 +10,7 @@ bool finite(const Vec3& point) {
 }
 } // namespace
 
-LegendsGate::LegendsGate(LegendsGateDefinition definition) : m_definition(std::move(definition)) {
+LegendsGate::LegendsGate(LegendsGateDefinition definition) : m_definition(definition) {
     if (!finite(m_definition.position)) {
         throw std::invalid_argument("Native gate requires a finite placement");
     }

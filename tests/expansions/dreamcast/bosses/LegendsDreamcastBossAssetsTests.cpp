@@ -15,7 +15,6 @@
 #include "expansions/dreamcast/bosses/LegendsDreamcastBossAssets.h"
 #include "expansions/dreamcast/bosses/LegendsDreamcastBosses.h"
 #include "expansions/dreamcast/formats/LegendsDreamcastScene.h"
-#include "game/bosses/Bosses.h"
 #include "game/critters/Combatant.h"
 #include "game/critters/CombatantAssets.h"
 
