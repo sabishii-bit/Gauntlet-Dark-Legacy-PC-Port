@@ -102,6 +102,35 @@ class RuleTests(unittest.TestCase):
              "src/game/scenes/PlayScene.cpp -> mods/rage",
              "src/engine/app/Application.cpp -> mods/rage"})
 
+    def test_neither_platform_expansion_includes_the_other(self):
+        self.assertEqual(self.found({
+            "src/expansions/n64/scenes/Level.cpp": ('#include "expansions/shared/scenes/Level.h"\n'
+                                                    '#include "expansions/n64/level/Gates.h"\n'
+                                                    '#include "expansions/dreamcast/level/Gates.h"\n'),
+            "src/expansions/dreamcast/level/Gates.h": ('#include "expansions/shared/level/Gates.h"\n'
+                                                       '#include "expansions/n64/level/Gates.h"\n'
+                                                       '#include "game/level/ItemFigure.h"\n'),
+            "src/expansions/shared/scenes/Level.h": ('#include "expansions/n64/level/Gates.h"\n'
+                                                     '#include "expansions/dreamcast/level/Gates.h"\n'),
+        }), {"src/expansions/n64/scenes/Level.cpp -> expansions/dreamcast",
+             "src/expansions/dreamcast/level/Gates.h -> expansions/n64"})
+
+    def test_platform_tests_keep_the_same_boundary(self):
+        self.assertEqual(self.found({
+            "tests/expansions/n64/level/GatesTests.cpp": (
+                '#include "expansions/n64/level/Gates.h"\n'
+                '#include "expansions/dreamcast/level/Gates.h"\n'
+                '#include "game/app/Gauntlet.h"\n'),
+            "tests/expansions/dreamcast/level/GatesTests.cpp": (
+                '#include "expansions/shared/level/Gates.h"\n'
+                '#include "FakeRenderDevice.h"\n'),
+            "tests/expansions/shared/level/GatesTests.cpp": (
+                '#include "expansions/n64/level/Gates.h"\n'
+                '#include "expansions/dreamcast/level/Gates.h"\n'),
+            "tests/expansions/IsolationTests.cpp": '#include "expansions/n64/audio/Bank.h"\n',
+            "tests/game/app/RosterTests.cpp": '#include "expansions/dreamcast/level/Gates.h"\n',
+        }), {"tests/expansions/n64/level/GatesTests.cpp -> expansions/dreamcast"})
+
     def test_expansions_top_level_files_and_unknown_modules_are_not_judged(self):
         self.assertEqual(self.found({
             "src/expansions/n64/level/Map.cpp": '#include "game/app/Gauntlet.h"\n',

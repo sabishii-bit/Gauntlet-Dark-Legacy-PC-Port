@@ -9,7 +9,9 @@ module but only game modules at or below its own. Neither the engine nor the nat
 readers ever include the game, and the base game never names an optional expansion (the
 expansions build on the game, not the reverse). The readers reach only the engine's value
 layers. A mod under src/mods builds on the engine and the game alone: nothing else includes
-it, and it includes no other mod and no expansion.
+it, and it includes no other mod and no expansion. The N64 and Dreamcast expansions build
+on src/expansions/shared, the game and the engine, never on each other, and their tests
+under tests/expansions keep the same boundary.
 
 Breaks that predate this check are listed in layering_baseline.txt beside it, one
 `<file> -> <module>` per line. A break not listed fails the check; a listed one that is
@@ -42,6 +44,8 @@ GAME_ORDER = ("config", "widgets", "combat", "mechanics", "characters", "players
               "online", "app")
 # What the native format readers may include: the engine's value types, never its devices.
 FORMATS_REACH = ("core", "math", "io", "render", "codec", "assets")
+# The platform expansions; what both use lives in src/expansions/shared.
+PLATFORMS = ("n64", "dreamcast")
 SOURCE_SUFFIXES = (".h", ".cpp")
 INCLUDE = re.compile(r'^\s*#\s*include\s+"(engine|formats|game|expansions|mods)/([A-Za-z0-9_]+)')
 
@@ -52,8 +56,16 @@ def module_of(relative: pathlib.PurePosixPath) -> tuple[str, str]:
     return parts[0], parts[1] if len(parts) > 2 else ""
 
 
+def crosses_platforms(top: str, module: str, target_top: str, target: str) -> bool:
+    """Whether a file of one platform expansion includes the other platform's code."""
+    return (top == "expansions" and target_top == "expansions" and module in PLATFORMS
+            and target in PLATFORMS and target != module)
+
+
 def breaks_of(top: str, module: str, target_top: str, target: str) -> bool:
     """Whether an include from `top`/`module` of `target_top`/`target` climbs the layering."""
+    if top == "expansions" and target_top == "expansions":
+        return crosses_platforms(top, module, target_top, target)
     if target_top == "mods":
         return top != "mods" or target != module  # a mod's own folder alone
     if top == "mods":
@@ -76,18 +88,21 @@ def breaks_of(top: str, module: str, target_top: str, target: str) -> bool:
 
 
 def scan(root: pathlib.Path) -> set[str]:
-    """Every `<file> -> <top>/<module>` include under src/ that climbs the layering."""
+    """Every `<file> -> <top>/<module>` include that climbs the layering: anywhere under src/,
+    and under tests/expansions/, whose tests may include anything but the other platform."""
     found = set()
-    source = root / "src"
-    for path in sorted(source.rglob("*")):
-        if not path.is_file() or path.suffix not in SOURCE_SUFFIXES:
-            continue
-        relative = pathlib.PurePosixPath(path.relative_to(source).as_posix())
-        top, module = module_of(relative)
-        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
-            match = INCLUDE.match(line)
-            if match and breaks_of(top, module, match.group(1), match.group(2)):
-                found.add(f"src/{relative} -> {match.group(1)}/{match.group(2)}")
+    for folder, judge in (("src", breaks_of), ("tests", crosses_platforms)):
+        base = root / folder
+        searched = base if folder == "src" else base / "expansions"
+        for path in sorted(searched.rglob("*")):
+            if not path.is_file() or path.suffix not in SOURCE_SUFFIXES:
+                continue
+            relative = pathlib.PurePosixPath(path.relative_to(base).as_posix())
+            top, module = module_of(relative)
+            for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+                match = INCLUDE.match(line)
+                if match and judge(top, module, match.group(1), match.group(2)):
+                    found.add(f"{folder}/{relative} -> {match.group(1)}/{match.group(2)}")
     return found
 
 
