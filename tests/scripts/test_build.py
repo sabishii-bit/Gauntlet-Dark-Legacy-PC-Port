@@ -59,6 +59,22 @@ class BuildLaunchTests(unittest.TestCase):
         self.assertEqual(calls, [mock.call(["cmake", "--build", "--preset", "debug"]),
                                 mock.call(["ctest", "--preset", "debug", "-LE", "gpu"])])
 
+    def test_jobs_run_that_many_tests_at_once(self):
+        self.configured("debug-config")
+        result, calls = self.launch(["--test", "--jobs", "14"])
+        self.assertEqual(result, 0)
+        self.assertEqual(calls, [mock.call(["cmake", "--build", "--preset", "debug"]),
+                                mock.call(["ctest", "--preset", "debug", "-LE", "gpu", "-j", "14"])])
+
+    def test_jobs_must_be_a_positive_count(self):
+        for value in ("0", "-2", "many"):
+            with self.subTest(value=value), mock.patch.object(build.devenv, "run") as run, \
+                    mock.patch.object(sys, "argv", ["build.py", "--test", "--jobs", value]), \
+                    mock.patch.object(sys, "stderr"):
+                with self.assertRaises(SystemExit):
+                    build.main()
+                run.assert_not_called()
+
     def test_native_previews_preserve_arguments_and_exit_code(self):
         binary = self.configured()
         for flag in ("--demo", "--screensaver", "--title"):

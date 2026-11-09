@@ -3,6 +3,7 @@
 
     python scripts/build.py                          # the platform's Debug Ninja preset
     python scripts/build.py --test                   # build, then run the unit tests
+    python scripts/build.py --test --jobs 14         # ... fourteen test processes at once
     python scripts/build.py --unpack                 # build, then unpack the console assets
     python scripts/build.py --run -- --title         # build the release preset, then launch the game
     python scripts/build.py --run -- --demo          # preview the idle level flyby
@@ -43,12 +44,23 @@ def cache_path(binary_dir: pathlib.Path, variable: str, default: pathlib.Path) -
     return pathlib.Path(match.group(1)) if match and match.group(1) else default
 
 
+def job_count(text: str) -> int:
+    """A --jobs value: how many test processes run at once, at least one."""
+    count = int(text)
+    if count < 1:
+        raise argparse.ArgumentTypeError(f"needs at least one job, not {count}")
+    return count
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("preset", nargs="?", default=None,
                         help="build preset (default: the platform's Debug Ninja preset, or its "
                              "release preset with --run)")
     parser.add_argument("--test", action="store_true", help="run the unit tests (ctest -LE gpu)")
+    parser.add_argument("--jobs", type=job_count, metavar="N",
+                        help="with --test: run N tests at once (ctest -j N); "
+                             "without it they run one at a time")
     parser.add_argument("--unpack", action="store_true",
                         help="run gdlunpack from the asset directory into the unpacked directory")
     parser.add_argument("--levels", action="store_true",
@@ -77,7 +89,8 @@ def main() -> int:
     devenv.run(["cmake", "--build", "--preset", args.preset])
 
     if args.test:
-        devenv.run(["ctest", "--preset", args.preset, "-LE", "gpu"])
+        jobs = ["-j", str(args.jobs)] if args.jobs else []
+        devenv.run(["ctest", "--preset", args.preset, "-LE", "gpu", *jobs])
 
     if args.unpack:
         assets = cache_path(binary_dir, "GDL_ASSET_DIR", ROOT / "assets" / "GUNE5D" / "Gauntlet")
