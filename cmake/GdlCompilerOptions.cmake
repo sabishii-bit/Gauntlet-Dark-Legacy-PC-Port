@@ -11,7 +11,9 @@ function(gdl_apply_compiler_options target)
             /Zc:preprocessor
             /utf-8
             /EHsc
-            /MP)
+            /MP
+            # Large test units' Debug objects outgrow COFF's default 65,279 sections.
+            /bigobj)
         target_compile_definitions(${target} PRIVATE
             NOMINMAX
             WIN32_LEAN_AND_MEAN
