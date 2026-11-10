@@ -4066,7 +4066,8 @@ TEST_CASE("the Plague javelin is carried before rising and flies at retail speed
     context.config = &config;
     context.levels = &levels;
     context.unpackedRoot = root;
-    const Scenario scenario = Scenario::load("tests/scenarios/level-k5-plague-javelin.json");
+    const Scenario scenario = Scenario::load(test::dataDirectory().parent_path() /
+                                             "tests/scenarios/level-k5-plague-javelin.json");
     PlayScene scene;
     REQUIRE(scene.open(device, context, world, scenario.partyMembers(), scenario.tower));
     const auto findEffect = [&](std::string_view name) -> const EffectTrees::Effect* {
