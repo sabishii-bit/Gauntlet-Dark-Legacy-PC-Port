@@ -829,8 +829,9 @@ TEST_CASE("post-shop cancels when only fallen checkpoints remain without discard
 
     SECTION("the last survivor quits") {
         CHECK(scene.step(1, player(0, true)) == SelectOutcome::Cancelled);
-        for (s32 tick = 0; tick <= PlayerSelectScene::kIdleFrames; ++tick)
+        for (s32 tick = 0; tick <= PlayerSelectScene::kIdleFrames; ++tick) {
             CHECK(scene.step(1, nobody()) == SelectOutcome::Cancelled);
+        }
     }
     SECTION("another player is still choosing a replacement") {
         auto inputs = player(0, true);
@@ -838,8 +839,9 @@ TEST_CASE("post-shop cancels when only fallen checkpoints remain without discard
         CHECK(scene.step(1, inputs) == SelectOutcome::Running);
         REQUIRE(scene.lane(2).active());
         REQUIRE_FALSE(scene.lane(2).hasCharacter());
-        for (s32 tick = 0; tick <= PlayerSelectScene::kIdleFrames; ++tick)
+        for (s32 tick = 0; tick <= PlayerSelectScene::kIdleFrames; ++tick) {
             CHECK(scene.step(1, nobody()) == SelectOutcome::Running);
+        }
     }
 
     REQUIRE_FALSE(scene.lane(0).active());
