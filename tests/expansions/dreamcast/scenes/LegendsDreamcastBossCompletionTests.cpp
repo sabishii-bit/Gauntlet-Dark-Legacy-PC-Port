@@ -8,6 +8,7 @@
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers.hpp>
 
 #include "engine/audio/AudioMixer.h"
 #include "engine/core/Error.h"
@@ -189,6 +190,31 @@ TEST_CASE("Dreamcast boss admission uses native level identity and its authored 
         metadata = syntheticWorldData();
         test::setF32LE(world, 104, std::numeric_limits<f32>::quiet_NaN());
         CHECK_THROWS_AS(legendsDreamcastBoss(metadata, world, "levelb6"), FormatError);
+    }
+    SECTION("an arena's realm or kind must be its campaign's own") {
+        constexpr auto kIdentity = "Dreamcast boss: arena identity disagrees with native campaign";
+        test::setU32LE(metadata, 8, 3); // B6 belongs to the mountain, realm 2
+        CHECK_THROWS_WITH(legendsDreamcastBoss(metadata, world, "levelb6"), kIdentity);
+        metadata = syntheticWorldData();
+        test::setU32LE(metadata, 8 + 56 + 52, 27); // the Chimera's native kind
+        CHECK_THROWS_WITH(legendsDreamcastBoss(metadata, world, "levelb6"), kIdentity);
+    }
+    SECTION("an arena has one boss locator") {
+        constexpr usize kLocator = 28;
+        world.resize(96 + 2 * kLocator);
+        test::setU32LE(world, 88, 2);
+        test::setU16LE(world, 96 + kLocator, static_cast<u16>(LocatorKind::Boss));
+        CHECK_THROWS_WITH(legendsDreamcastBoss(metadata, world, "levelb6"),
+                          "Dreamcast boss: multiple boss locators");
+    }
+    SECTION("the combat adapter stands a boss upright") {
+        constexpr auto kTilted =
+            "Dreamcast boss: tilted boss locator is not supported by the combat adapter";
+        test::setF32LE(world, 112, .05f); // pitch
+        CHECK_THROWS_WITH(legendsDreamcastBoss(metadata, world, "levelb6"), kTilted);
+        world = syntheticWorld();
+        test::setF32LE(world, 120, -.05f); // roll
+        CHECK_THROWS_WITH(legendsDreamcastBoss(metadata, world, "levelb6"), kTilted);
     }
 }
 
