@@ -51,8 +51,9 @@ struct CompletionFixture {
                  ? (n64 ? (tower ? "tower2" : "mount1") : (tower ? "levelt1" : "levelb1"))
                  : mapName);
         const auto worldFile = directory / (n64 ? "worlds.wad" : "worlds.rom");
-        if (!std::filesystem::is_regular_file(worldFile))
+        if (!std::filesystem::is_regular_file(worldFile)) {
             SKIP("Optional native Legends extraction is not installed");
+        }
         const auto objects = readFile(directory / (n64 ? "objects.wad" : "objects.rom"));
         auto map = n64 ? formats::LegendsMap::parseN64(readFile(worldFile), objects,
                                                        readFile(directory / "ipr.rom"))
@@ -110,10 +111,12 @@ struct CompletionFixture {
         const auto entering = [&] {
             const auto* runtime = scene.runtime(0);
             return scene.spawning() || !native->opponentsReady() ||
-                   (runtime && runtime->figure && runtime->figure->animator().entering());
+                   (runtime != nullptr && runtime->figure &&
+                    runtime->figure->animator().entering());
         };
-        for (s32 tick = 0; tick < 900 && entering(); ++tick)
+        for (s32 tick = 0; tick < 900 && entering(); ++tick) {
             REQUIRE(scene.update(1.0 / 60, {}) == PlayOutcome::Running);
+        }
         REQUIRE_FALSE(entering());
         REQUIRE(scene.canPause(0));
     }
@@ -131,7 +134,7 @@ struct CompletionFixture {
     }
 
     void defeatBoss() {
-        const auto boss = native->importedBoss();
+        const auto* const boss = native->importedBoss();
         REQUIRE(boss);
         PlayerActor victor;
         victor.spawn(0, *scene.liveSave(0), nullptr, scene.actor(0)->position(), 0);
@@ -139,8 +142,9 @@ struct CompletionFixture {
         native->bossDefeated(boss->position, players);
         *scene.liveSave(0) = victor.save();
         PlayOutcome outcome = PlayOutcome::Running;
-        for (s32 tick = 0; tick < 60 * 180 && outcome == PlayOutcome::Running; ++tick)
+        for (s32 tick = 0; tick < 60 * 180 && outcome == PlayOutcome::Running; ++tick) {
             outcome = scene.update(1.0 / 60, {});
+        }
         REQUIRE(outcome == PlayOutcome::Travel);
         REQUIRE(native->destination());
         REQUIRE(*native->destination() == "levelt1");
@@ -149,7 +153,7 @@ struct CompletionFixture {
 
 TEST_CASE("Dreamcast Skorne chains retain approach results through the boss's final shop",
           "[legends][legends-completion][dreamcast-linked-results][assets]") {
-    for (const auto approach : {"levele1", "levelf1"}) {
+    for (const auto* const approach : {"levele1", "levelf1"}) {
         DYNAMIC_SECTION(approach) {
             CompletionFixture first{LegendsPlatform::Dreamcast, false, approach};
             first.scene.liveSave(0)->gold += 300;
@@ -207,7 +211,7 @@ TEST_CASE("Dreamcast Skorne chains retain approach results through the boss's fi
 
 TEST_CASE("Dreamcast Battlefield halves travel directly and combine their final results",
           "[legends][legends-completion][dreamcast-linked-results][assets]") {
-    for (const auto approach : {"levelh1", "levelh2", "levelh3"}) {
+    for (const auto* const approach : {"levelh1", "levelh2", "levelh3"}) {
         DYNAMIC_SECTION(approach) {
             CompletionFixture first{LegendsPlatform::Dreamcast, false, approach};
             first.scene.liveSave(0)->gold += 300;
@@ -480,8 +484,9 @@ TEST_CASE("Native completion Done and recovery menus preserve the admitted depar
                 PlayerSelectScene::Inputs done{};
                 done[0].select = true; // Done is the native post-level default.
                 auto outcome = characters.step(1, done);
-                for (s32 tick = 0; tick < 300 && outcome == SelectOutcome::Running; ++tick)
+                for (s32 tick = 0; tick < 300 && outcome == SelectOutcome::Running; ++tick) {
                     outcome = characters.step(1, {});
+                }
                 REQUIRE(outcome == SelectOutcome::Done);
                 party = characters.party();
                 REQUIRE(party.size() == 1);
@@ -511,7 +516,7 @@ TEST_CASE("Native tower departures do not open completion menus",
 
 TEST_CASE("An unopened scene cannot manufacture a native completion",
           "[legends][legends-completion]") {
-    PlayScene scene;
+    const PlayScene scene{};
     CHECK_FALSE(completedLegendsTravel(scene));
 }
 } // namespace
