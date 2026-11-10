@@ -26,8 +26,9 @@ TextureSet textureSet(std::vector<formats::LegendsMapTexture> textures) {
         entry.clampU = texture.clampU;
         entry.clampV = texture.clampV;
         entry.flags = texture.hasTransparency ? TextureSetEntry::kHasAlpha : 0;
-        if (texture.external)
+        if (texture.external) {
             entry.flags |= TextureSetEntry::kExternal;
+        }
         entry.noPicture = texture.image.pixels.empty() && !texture.external;
         entries.push_back(std::move(entry));
         images.push_back(std::move(texture.image));
@@ -40,16 +41,18 @@ void normalizeTextureCoordinates(Mesh& mesh, const TextureSet& textures) {
     std::vector<MeshVertex> vertices;
     std::map<std::tuple<u32, u32, u32>, u32> remap;
     for (auto& part : mesh.parts) {
-        if (part.texture >= textures.size())
+        if (part.texture >= textures.size()) {
             throw FormatError("Legends fixture texture index is out of range");
+        }
         const auto& entry = textures.entry(part.texture);
         const Vec2 dimensions{std::max(1u, entry.width), std::max(1u, entry.height)};
         for (auto& index : part.indices) {
             const auto [found, inserted] = remap.try_emplace(
                 std::tuple{index, part.texture, part.lightmap}, static_cast<u32>(vertices.size()));
             if (inserted) {
-                if (index >= mesh.vertices.size())
+                if (index >= mesh.vertices.size()) {
                     throw FormatError("Legends fixture mesh index is out of range");
+                }
                 auto vertex = mesh.vertices[index];
                 vertex.uv /= dimensions;
                 if (part.rgbLightmap) {
@@ -68,8 +71,9 @@ void normalizeTextureCoordinates(Mesh& mesh, const TextureSet& textures) {
 std::unique_ptr<ItemArchive> loadLegendsDreamcastArchive(const std::filesystem::path& directory) {
     const AssetLocator files{directory};
     const auto models = files.find("objects.rom");
-    if (!models)
+    if (!models) {
         return {};
+    }
     const auto bytes = readFile(*models);
     auto objects = formats::decodeDreamcastModelLibrary(bytes);
     auto result = std::make_unique<ItemArchive>();
@@ -84,8 +88,9 @@ std::unique_ptr<ItemArchive> loadLegendsDreamcastArchive(const std::filesystem::
     for (auto& object : objects) {
         for (usize p = 0; p < object.partLightmaps.size(); ++p) {
             const u32 record = object.partLightmaps[p];
-            if (record == 0)
+            if (record == 0) {
                 continue;
+            }
             const auto [slot, inserted] =
                 lightmapSlots.try_emplace(record, static_cast<u32>(decodedTextures.size()));
             if (inserted) {
@@ -93,8 +98,9 @@ std::unique_ptr<ItemArchive> loadLegendsDreamcastArchive(const std::filesystem::
                 lightmap.name = "__LIGHTMAP_" + std::to_string(record);
                 lightmap.image = formats::decodeDreamcastLightmap(bytes, pixels, record);
                 lightmapBytes += lightmap.image.pixels.size();
-                if (lightmapBytes > usize{128} * 1024 * 1024)
+                if (lightmapBytes > usize{128} * 1024 * 1024) {
                     throw FormatError("Dreamcast fixture lightmap budget exceeded");
+                }
                 lightmap.clampU = true;
                 lightmap.clampV = true;
                 decodedTextures.push_back(std::move(lightmap));
@@ -112,9 +118,10 @@ std::unique_ptr<ItemArchive> loadLegendsDreamcastArchive(const std::filesystem::
         meshes.push_back(std::move(object.mesh));
     }
     result->models = ModelSet::fromDecoded(std::move(entries), std::move(meshes));
-    if (const auto animation = files.find("anim.rom"))
+    if (const auto animation = files.find("anim.rom")) {
         result->trees =
             AnimationSet::fromDecoded(formats::parseDreamcastAnimation(readFile(*animation)));
+    }
     return result;
 }
 } // namespace gdl::game
