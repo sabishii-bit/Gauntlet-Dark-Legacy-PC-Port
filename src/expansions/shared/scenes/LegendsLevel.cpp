@@ -52,9 +52,10 @@ LegendsLevel::LegendsLevel(RenderDevice& device, const formats::LegendsMap& map,
             for (const auto& emitter : m_dreamcastAmbient.emitters()) {
                 // SetItem binds a sound marker to an animated node within ten
                 // units, after the world's initial pose has been installed.
-                if (const auto parent = movement->ambientParent(emitter.position))
+                if (const auto parent = movement->ambientParent(emitter.position)) {
                     m_dreamcastAmbientSources.push_back(
                         {emitter.nativeIndex, parent->first, parent->second});
+                }
             }
         }
         const auto dataName =
@@ -67,8 +68,9 @@ LegendsLevel::LegendsLevel(RenderDevice& device, const formats::LegendsMap& map,
                 if (m_dreamcastBoss) {
                     const auto moves = AssetLocator{nativeRoot / "critters"}.find(
                         m_dreamcastBoss->archive + ".wad");
-                    if (moves)
+                    if (moves) {
                         m_dreamcastBossCamera = legendsDreamcastBossCamera(readFile(*moves));
+                    }
                     m_dreamcastVisit.load(device, m_world.adapter()->scriptArchive("WIZARD"));
                     m_dreamcastVisit.loadSkins(device, nativeRoot);
                 }
@@ -169,13 +171,15 @@ void LegendsLevel::update(f32 seconds, bool timeStopped) {
     if (m_dreamcastBoss && m_bossDefeated && !m_departureFailed) {
         const auto event = m_dreamcastVisit.update(seconds);
         if (event.appeared && m_dreamcastBoss->nativeKind < 32) {
-            if (m_dreamcastArenaCamera)
+            if (m_dreamcastArenaCamera) {
                 m_dreamcastArenaCamera->focusOn(m_dreamcastVisit.attention());
-            else if (m_dreamcastCamera)
+            } else if (m_dreamcastCamera) {
                 m_dreamcastCamera->focusOn(m_dreamcastVisit.attention());
+            }
         }
-        if (event.finished)
+        if (event.finished) {
             m_destination = "levelt1";
+        }
     }
     if (m_bossDefeated && m_boss && !m_destination && !m_departureFailed &&
         std::isfinite(seconds) && seconds > 0) {
@@ -214,11 +218,13 @@ void LegendsLevel::bindCollision(WorldCollision& collision) const {
 }
 
 bool LegendsLevel::bossActivationReady(const Vec3& position) const {
-    if (platform() != LegendsPlatform::Dreamcast)
+    if (platform() != LegendsPlatform::Dreamcast) {
         return true;
+    }
     const auto* motion = adapter().dreamcastWorldMotion();
-    if (!motion || !m_collision)
+    if (!motion || !m_collision) {
         return false;
+    }
     const auto floor = m_collision->floorAt(position, 4, 1000, 0, WorldCollision::kBossSide);
     return floor && motion->activatesBoss(floor->object);
 }
@@ -301,16 +307,17 @@ void LegendsLevel::drawEntranceTitle(Canvas& canvas, f32 width) const {
                                        static_cast<s32>(m_entranceSeconds * 60));
         m_dreamcastVisit.drawCaption(canvas, m_messageStyle->menuText(), width);
     }
-    if (platform() == LegendsPlatform::N64 && m_messageStyle && m_strings) {
+    if (platform() == LegendsPlatform::N64 && m_strings) {
+        // Only the N64 dialogue style draws the ceremony's captions.
+        const auto* dialogue = dynamic_cast<const LegendsDialogue*>(m_messageStyle.get());
         const auto* ceremony = adapter().towerCeremony();
-        if (ceremony && ceremony->active()) {
+        if (dialogue && ceremony && ceremony->active()) {
             // The captions are Sumner's lines of the string table, like his menu and replies.
             if (const auto caption = ceremony->caption()) {
                 if (const auto key = legendsN64CeremonyCaptionKey(*caption);
                     !key.empty() && m_strings->has(key)) {
-                    static_cast<const LegendsDialogue&>(*m_messageStyle)
-                        .drawCeremonyCaption(canvas, m_strings->get(key),
-                                             ceremony->captionOpacity(), width);
+                    dialogue->drawCeremonyCaption(canvas, m_strings->get(key),
+                                                  ceremony->captionOpacity(), width);
                 }
             }
         }
@@ -363,12 +370,14 @@ void LegendsLevel::followCamera(std::span<const CameraSubject> subjects, f32 sec
         m_dreamcastTowerCamera->update(subjects, seconds);
     }
     if (m_dreamcastCamera && !subjects.empty()) {
-        if (std::isfinite(seconds) && seconds >= 0)
+        if (std::isfinite(seconds) && seconds >= 0) {
             m_cameraTickSeconds = seconds;
+        }
         m_dreamcastCamera->update(subjects, seconds);
     }
-    if (m_dreamcastArenaCamera && !subjects.empty())
+    if (m_dreamcastArenaCamera && !subjects.empty()) {
         m_dreamcastArenaCamera->update(subjects, seconds);
+    }
     if (m_camera && !subjects.empty()) {
         m_cameraTickSeconds = seconds;
         m_camera->update(subjects, seconds);
@@ -382,8 +391,9 @@ void LegendsLevel::trackBoss(std::optional<Vec3> floorAnchor) {
             subject.position = *floorAnchor;
             subject.attentionOffset =
                 Vec3{0, m_dreamcastBossCamera ? m_dreamcastBossCamera->floorOffset : 0, 0};
-            if (m_dreamcastBossCamera)
+            if (m_dreamcastBossCamera) {
                 subject.radius = m_dreamcastBossCamera->radius;
+            }
             subject.awake = true;
             trackBoss(subject);
         } else {
@@ -400,8 +410,9 @@ void LegendsLevel::trackBoss(std::optional<Vec3> floorAnchor) {
 
 void LegendsLevel::trackBoss(const BossCameraSubject& subject) {
     if (platform() != LegendsPlatform::Dreamcast) {
-        if (subject.awake)
+        if (subject.awake) {
             trackBoss(subject.position);
+        }
         return;
     }
     m_dreamcastBossSubject = subject;
@@ -411,8 +422,9 @@ void LegendsLevel::trackBoss(const BossCameraSubject& subject) {
         // actor+0x40, the sphere used by BossCameraUpdate8c082d20.
         m_dreamcastBossSubject.attentionOffset.y += m_dreamcastBossCamera->attentionHeight;
     }
-    if (m_dreamcastArenaCamera)
+    if (m_dreamcastArenaCamera) {
         m_dreamcastArenaCamera->trackBoss(m_dreamcastBossSubject);
+    }
 }
 
 std::optional<WorldCamera> LegendsLevel::camera(f32 alpha) const {
@@ -457,8 +469,9 @@ std::optional<Vec3> LegendsLevel::cameraAttention() const {
     if (m_dreamcastTowerCamera) {
         return m_dreamcastTowerCamera->attention();
     }
-    if (m_dreamcastArenaCamera && (!m_dreamcastCamera || !m_dreamcastCamera->introActive()))
+    if (m_dreamcastArenaCamera && (!m_dreamcastCamera || !m_dreamcastCamera->introActive())) {
         return m_dreamcastArenaCamera->attention();
+    }
     if (m_dreamcastCamera) {
         return m_dreamcastCamera->attention();
     }
@@ -475,7 +488,7 @@ bool LegendsLevel::opponentsReady() const {
     // The native opening camera holds enemy admission, not just player input.
     // Rendering/sampling cannot release it: only the fixed camera update can.
     const auto* ceremony = adapter().towerCeremony();
-    return !(ceremony && (ceremony->pending() || ceremony->active())) &&
+    return (ceremony == nullptr || (!ceremony->pending() && !ceremony->active())) &&
            (platform() != LegendsPlatform::Dreamcast || adapter().isTower() ||
             !adapter().dreamcastCameraConfig() ||
             (m_dreamcastCamera && !m_dreamcastCamera->introActive())) &&
@@ -535,9 +548,11 @@ void LegendsLevel::updateParty(std::span<PlayerActor*> players, f32 seconds,
     }
     if (m_dreamcastBoss && m_bossDefeated) {
         std::vector<Vec3> positions;
-        for (const auto* actor : players)
-            if (actor)
+        for (const auto* actor : players) {
+            if (actor) {
                 positions.push_back(actor->position());
+            }
+        }
         m_dreamcastVisit.updatePlayers(positions);
     }
     std::vector<LegendsPortalVisitor> visitors;
@@ -585,19 +600,21 @@ void LegendsLevel::updateParty(std::span<PlayerActor*> players, f32 seconds,
                         // do_got_it 8c0aef72 unions the admitted party's native
                         // rune bits after the award, then counts only bits0..12.
                         u64 runes = 0;
-                        for (const auto* recipient : recipients)
+                        for (const auto* recipient : recipients) {
                             if (recipient && recipient->character >= 0 &&
-                                recipient->character < kClassCount)
+                                recipient->character < kClassCount) {
                                 runes |= recipient->progress()
                                              .legendsProgress(LegendsPlatform::Dreamcast)
                                              .runestones;
+                            }
+                        }
                         m_dreamcastRuneAnnouncements.push_back(
                             static_cast<u32>(std::popcount(runes & 0x1fffU)));
                         m_opponentSounds.push_back(0x24); // Native S_PICKUPRUNE.
                         presentation.sound = {};
                     }
                     m_pickups.push_back({actor->player(), pickup.award ? ItemOffer{} : pickup.offer,
-                                         pickup.name, std::move(presentation), pickup.scrollPages});
+                                         pickup.name, presentation, pickup.scrollPages});
                 },
                 recipients);
         }

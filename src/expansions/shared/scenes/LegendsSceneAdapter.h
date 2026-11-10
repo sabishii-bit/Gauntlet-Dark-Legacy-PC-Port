@@ -162,10 +162,11 @@ public:
                                    : m_worldMovement.opacity(object, alpha);
     }
     void supportSwitches(std::span<const s32> owners) {
-        if (m_dreamcastMovement)
+        if (m_dreamcastMovement) {
             m_dreamcastMovement->support(owners);
-        else
+        } else {
             m_worldMovement.support(owners);
+        }
     }
     Vec3 worldObjectOffset(usize object, f32 alpha = -1) const {
         return (m_dreamcastMovement ? m_dreamcastMovement->offset(object, alpha)
@@ -179,8 +180,9 @@ public:
                m_bossEruption.transform(object, alpha);
     }
     void bindCollision(WorldCollision& collision) const {
-        if (m_dreamcastMovement)
+        if (m_dreamcastMovement) {
             m_dreamcastMovement->bindCollision(collision);
+        }
         m_worldMovement.bindCollision(collision);
         m_scenery.syncCollision(collision);
         m_dreamcastScenery.bindCollision(collision);
@@ -189,8 +191,9 @@ public:
         }
     }
     void syncCollision(WorldCollision& collision) const {
-        if (m_dreamcastMovement)
+        if (m_dreamcastMovement) {
             m_dreamcastMovement->syncCollision(collision);
+        }
         m_worldMovement.syncCollision(collision);
         m_scenery.syncCollision(collision);
         m_dreamcastScenery.syncCollision(collision);

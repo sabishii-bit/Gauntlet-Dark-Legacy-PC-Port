@@ -116,8 +116,9 @@ void LegendsLevel::playSounds(SoundPlayer& output, const Vec3& listener) {
             m_entrySpeechPending = false;
             m_dreamcastSpeech.enqueue(output, m_dreamcastSpeech.entryCue());
         }
-        for (const u32 count : std::exchange(m_dreamcastRuneAnnouncements, {}))
+        for (const u32 count : std::exchange(m_dreamcastRuneAnnouncements, {})) {
             m_dreamcastSpeech.enqueue(output, LegendsDreamcastSpeech::runestoneCue(count));
+        }
     }
     if (platform() == LegendsPlatform::N64 && m_entrySpeechPending && m_cameraReady &&
         (!m_entrySpeechAwaitQueue || (!m_speech.playing(output) && m_speech.pendingCount() == 0))) {
@@ -150,8 +151,9 @@ void LegendsLevel::playSounds(SoundPlayer& output, const Vec3& listener) {
             const auto binding =
                 std::ranges::find(m_dreamcastAmbientSources, index, &AmbientSource::nativeIndex);
             const auto* movement = m_world.adapter()->dreamcastWorldMotion();
-            if (binding == m_dreamcastAmbientSources.end() || !movement)
+            if (binding == m_dreamcastAmbientSources.end() || movement == nullptr) {
                 return {};
+            }
             return Vec3{movement->transform(binding->owner) * Vec4{binding->position, 1}};
         };
         const auto desired =
@@ -173,9 +175,10 @@ void LegendsLevel::playSounds(SoundPlayer& output, const Vec3& listener) {
             } else {
                 output.setVolume(m_dreamcastAmbientHandle, desired->volume);
             }
-            if (desired->musicScale)
+            if (desired->musicScale) {
                 m_ambientMusicDuck =
                     MusicDuck{LegendsDreamcastAmbient::kMusicDuckHold, *desired->musicScale};
+            }
         }
     }
     // The N64 listener is the camera target, not its elevated eye. Each IPR
@@ -271,8 +274,9 @@ void LegendsLevel::continueSpeechFrom(LegendsLevel& previous) {
 }
 
 void LegendsLevel::servicePreservedSpeech(f32 seconds) {
-    if (m_soundOutput)
+    if (m_soundOutput) {
         m_speech.update(*m_soundOutput, seconds);
+    }
     // Dreamcast finite phrases are already queued in the long-lived SoundPlayer.
     // Do not run level clocks or restart fixture loops behind results/shop menus.
 }

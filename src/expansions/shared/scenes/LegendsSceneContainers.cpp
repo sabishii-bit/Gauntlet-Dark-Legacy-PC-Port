@@ -25,8 +25,10 @@ std::vector<LegendsContainerTarget> LegendsSceneAdapter::containerTargets() cons
 
 std::vector<Obstacle> LegendsSceneAdapter::containerObstacles() const {
     std::vector<Obstacle> result;
-    for (const auto& obelisk : m_dreamcastObelisks)
+    result.reserve(m_dreamcastObelisks.size() + m_obelisks.size());
+    for (const auto& obelisk : m_dreamcastObelisks) {
         result.push_back(obelisk.body);
+    }
     for (const auto& obelisk : m_obelisks) {
         const auto& pickup = m_pickups[obelisk.pickup];
         Obstacle body;
@@ -62,8 +64,10 @@ bool LegendsSceneAdapter::strikeContainer(s32 localId, f32 power, u32 flags, s32
         !m_containers[static_cast<usize>(localId)].state.strike(power)) {
         return false;
     }
-    if (m_containers[static_cast<usize>(localId)].state.state() != LegendsContainer::State::Opening)
+    if (m_containers[static_cast<usize>(localId)].state.state() !=
+        LegendsContainer::State::Opening) {
         return true; // A stored-HP barrel accepted a blow but is not broken yet.
+    }
     openContainer(static_cast<usize>(localId));
     const auto& binding = m_containers[static_cast<usize>(localId)];
     const auto& definition = binding.state.definition();

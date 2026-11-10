@@ -98,8 +98,9 @@ LegendsSceneAdapter::load(RenderDevice& device, LegendsPlatform platform,
         formats::LegendsMap authored;
         authored.collision = map.collision;
         authored.objects.resize(map.objects.size());
-        for (usize i = 0; i < map.objects.size(); ++i)
+        for (usize i = 0; i < map.objects.size(); ++i) {
             authored.objects[i].transform = map.objects[i].transform;
+        }
         applyDreamcastInitialPose(map, motion);
         const auto nativeScene =
             formats::LegendsDreamcastScene::parse(requiredFile(files, "worlds.rom"));
@@ -186,11 +187,13 @@ void LegendsSceneAdapter::place(RenderDevice& device, std::string_view name,
     }
     AssetScope scope;
     std::vector<TextureSet*> lenders;
-    if (owner)
+    if (owner) {
         scope.add(*owner);
+    }
     for (auto& archive : m_archives) {
-        if (!owner)
+        if (!owner) {
             scope.add(*archive);
+        }
         lenders.push_back(&archive->textures);
     }
     ItemFigure figure;
@@ -213,8 +216,9 @@ void LegendsSceneAdapter::place(RenderDevice& device, std::string_view name,
 
 ItemArchive* LegendsSceneAdapter::scriptArchive(std::string_view tree) const {
     for (const auto& archive : m_archives) {
-        if (archive->trees.find(tree))
+        if (archive->trees.find(tree)) {
             return archive.get();
+        }
     }
     return nullptr;
 }
@@ -238,9 +242,10 @@ void LegendsSceneAdapter::loadDreamcast(RenderDevice& device,
         m_warnings.emplace_back("No native level metadata supplies this map's fixture libraries.");
         return;
     }
-    if (scope->camera)
+    if (scope->camera) {
         m_dreamcastCamera =
             resolveDreamcastCameraBounds(*scope->camera, worldFile.minBounds, worldFile.maxBounds);
+    }
     m_dreamcastTitle = scope->title;
     m_dreamcastCameraMarkers = scene.cameraMarkers;
     m_dreamcastLoot = LegendsDreamcastLoot{scene.itemInfos};
@@ -249,13 +254,15 @@ void LegendsSceneAdapter::loadDreamcast(RenderDevice& device,
         scope->realmType, legendsDreamcastBoss(readFile(*metadataPath), nativeWorld,
                                                paths::utf8(directory.filename()))
                               .has_value());
-    if (collapseSound != 0)
+    if (collapseSound != 0) {
         m_dreamcastCollapseSound = collapseSound;
+    }
     if (m_dreamcastMovement) {
         LegendsDreamcastSounds sounds;
         if (sounds.open(root)) {
-            if (!scope->wallHitSound.empty())
+            if (!scope->wallHitSound.empty()) {
                 m_dreamcastWallHitSound = sounds.namedToken(scope->wallHitSound);
+            }
             const std::string code = toLowerAscii(paths::utf8(directory.filename()));
             const usize letterAt = code.starts_with("level") ? 5 : 0;
             if (code.size() > letterAt) {
@@ -267,8 +274,8 @@ void LegendsSceneAdapter::loadDreamcast(RenderDevice& device,
     }
     // Only the shipped campaign rosters supply destinations. Backups/test
     // directories and arbitrary filesystem names cannot become exit targets.
-    for (const auto name : {"mount", "castle", "town", "desert", "forest", "temple", "hell",
-                            "battle", "ice", "dream", "sky", "secret", "tower"}) {
+    for (const auto* const name : {"mount", "castle", "town", "desert", "forest", "temple", "hell",
+                                   "battle", "ice", "dream", "sky", "secret", "tower"}) {
         if (const auto path = nativeFiles.find(std::string{"worlddata/"} + name + ".wad")) {
             m_dreamcastPortalPolicy.addWorld(readFile(*path));
         }
@@ -279,8 +286,9 @@ void LegendsSceneAdapter::loadDreamcast(RenderDevice& device,
     for (const auto& relative : scope->archives) {
         try {
             if (auto archive = loadLegendsDreamcastArchive(root / relative)) {
-                if (toLowerAscii(relative) == "items/levela5")
+                if (toLowerAscii(relative) == "items/levela5") {
                     chimeraCoverArchive = archive.get();
+                }
                 m_archives.push_back(std::move(archive));
             }
         } catch (const FormatError& error) {
@@ -301,11 +309,13 @@ void LegendsSceneAdapter::loadDreamcast(RenderDevice& device,
         if (info.type == 4) {
             std::string diagnostic;
             if (auto actor = legendsDreamcastActor(info, instance, static_cast<u32>(index), *scope,
-                                                   &diagnostic))
+                                                   &diagnostic)) {
                 m_actors.push_back(*actor);
+            }
             if (!diagnostic.empty() &&
-                std::ranges::find(m_warnings, diagnostic) == m_warnings.end())
+                std::ranges::find(m_warnings, diagnostic) == m_warnings.end()) {
                 m_warnings.push_back(std::move(diagnostic));
+            }
             continue;
         }
         // Trigger pads may have authored artwork; camera and sound markers do not.
@@ -316,10 +326,12 @@ void LegendsSceneAdapter::loadDreamcast(RenderDevice& device,
         }
         // AddItemSub grounds ordinary fixtures against the world pose already
         // initialized by ProcessItemWobjs, then binds the moving parent offset.
-        if (m_dreamcastMovement)
+        if (m_dreamcastMovement) {
             instance.position = m_dreamcastMovement->itemPosition(info, instance.position);
-        if (bindDreamcastArenaRock(device, info, instance, static_cast<u32>(index)))
+        }
+        if (bindDreamcastArenaRock(device, info, instance, static_cast<u32>(index))) {
             continue;
+        }
         ItemInstance placement;
         placement.position = instance.position;
         placement.rotation = instance.rotation;
@@ -345,18 +357,21 @@ void LegendsSceneAdapter::loadDreamcast(RenderDevice& device,
             }
             continue;
         }
-        const usize firstPickup = m_pickups.size(), firstContainer = m_containers.size(),
-                    firstGate = m_gates.size();
+        const usize firstPickup = m_pickups.size();
+        const usize firstContainer = m_containers.size();
+        const usize firstGate = m_gates.size();
         const auto bindRider = [&] {
             bindDreamcastRider(info, instance, before, firstPickup, firstContainer, firstGate);
         };
         place(device, formats::dreamcastLegendsFixtureName(info, presentation, *scope), placement,
               1, (info.objectFlags & kPresentationFlags) | object_flags::kSorted);
         if (m_fixtures.size() != before) {
-            if (bindDreamcastEntranceRock(info, instance, static_cast<u32>(index), before))
+            if (bindDreamcastEntranceRock(info, instance, static_cast<u32>(index), before)) {
                 continue;
-            if (bindDreamcastFalling(info, instance, static_cast<u32>(index), before))
+            }
+            if (bindDreamcastFalling(info, instance, static_cast<u32>(index), before)) {
                 continue;
+            }
             if (info.type == 10 && info.subtype == 42) {
                 m_dreamcastScenery.add(info, instance, before,
                                        kFixtureObjectBase + static_cast<s32>(before),
@@ -435,9 +450,10 @@ std::vector<LegendsSoundLoop> LegendsSceneAdapter::soundLoops() const {
         for (usize i = 0; i < m_dreamcastPortals.size(); ++i) {
             const auto& state = m_dreamcastPortalPresentation[i];
             if (state.enabled &&
-                state.motion.phase() == LegendsDreamcastPortalMotion::Phase::Active)
+                state.motion.phase() == LegendsDreamcastPortalMotion::Phase::Active) {
                 loops.push_back({0x40000000U + m_dreamcastPortals[i].nativeIndex, 10,
                                  m_dreamcastPortals[i].position});
+            }
         }
     }
     return loops;
@@ -456,15 +472,16 @@ void LegendsSceneAdapter::bindDreamcastPortal(RenderDevice& device,
     binding.figure = figure;
     binding.enabled = !tower;
     std::array<s32, 5> durations{};
-    constexpr std::array<std::string_view, 5> names{"IDLE", "READY", "ACTIVE1", "ACTIVE2",
-                                                    "ACTIVE3"};
+    constexpr std::array<std::string_view, 5> kNames{"IDLE", "READY", "ACTIVE1", "ACTIVE2",
+                                                     "ACTIVE3"};
     const auto* tree = m_fixtures[figure].tree();
-    for (usize i = 0; i < names.size(); ++i) {
-        const auto sequence = tree ? tree->findSequence(names[i]) : std::nullopt;
+    for (usize i = 0; i < kNames.size(); ++i) {
+        const auto sequence = tree ? tree->findSequence(kNames[i]) : std::nullopt;
         binding.sequences[i] = sequence ? static_cast<s32>(*sequence) : -1;
-        if (const auto* sequenceInfo = m_fixtures[figure].sequenceInfo(binding.sequences[i]))
+        if (const auto* sequenceInfo = m_fixtures[figure].sequenceInfo(binding.sequences[i])) {
             durations[i] = LegendsDreamcastPortalMotion::sequenceTicks(sequenceInfo->frames,
                                                                        sequenceInfo->frameRate);
+        }
     }
     binding.motion = LegendsDreamcastPortalMotion{durations};
     if (tower) {
@@ -473,28 +490,31 @@ void LegendsSceneAdapter::bindDreamcastPortal(RenderDevice& device,
         placement.rotation = instance.rotation;
         const usize locked = m_fixtures.size();
         place(device, "EXIT_OFF", placement, 1, object_flags::kSorted);
-        if (m_fixtures.size() != locked)
+        if (m_fixtures.size() != locked) {
             binding.lockedFigure = locked;
+        }
     }
     m_dreamcastPortals.push_back(std::move(*portal));
-    m_dreamcastPortalPresentation.push_back(std::move(binding));
+    m_dreamcastPortalPresentation.push_back(binding);
     selectDreamcastPortal(m_dreamcastPortals.size() - 1);
 }
 
 void LegendsSceneAdapter::selectDreamcastPortal(usize index) {
     auto& portal = m_dreamcastPortalPresentation[index];
     m_hiddenFixtures[portal.figure] = !portal.enabled;
-    if (portal.lockedFigure)
+    if (portal.lockedFigure) {
         m_hiddenFixtures[*portal.lockedFigure] = portal.enabled;
-    if (portal.generation == portal.motion.generation())
+    }
+    if (portal.generation == portal.motion.generation()) {
         return;
+    }
     portal.generation = portal.motion.generation();
     const auto phase = portal.motion.phase();
     auto& figure = m_fixtures[portal.figure];
     const s32 sequence = portal.sequences[static_cast<usize>(phase)];
     const auto* info = figure.sequenceInfo(sequence);
-    figure.play(sequence, info && info->repeats != 0 ? ItemFigure::Playback::Loop
-                                                     : ItemFigure::Playback::Once);
+    figure.play(sequence, info != nullptr && info->repeats ? ItemFigure::Playback::Loop
+                                                           : ItemFigure::Playback::Once);
     figure.capturePresentation();
 }
 
@@ -962,7 +982,7 @@ LegendsSceneAdapter::tickPortals(std::span<const LegendsPortalVisitor> players, 
     }
     for (usize i = 0; i < m_dreamcastPortals.size(); ++i) {
         u8 occupied = 0;
-        const usize count = static_cast<usize>(std::popcount(living));
+        const auto count = static_cast<usize>(std::popcount(living));
         for (const auto& player : players) {
             if (player.alive && touchesDreamcastPortal(m_dreamcastPortals[i], player.position,
                                                        player.radius, count)) {
@@ -1289,8 +1309,9 @@ void LegendsSceneAdapter::bindWorld(RenderDevice& device, const formats::Legends
     // These banks are scoped to generators, not fallback world/fixture art.
     // Their resident textures still need the same coverage and animation metadata.
     for (auto& archive : m_dreamcastGeneratorArchives) {
-        if (!archive)
+        if (!archive) {
             continue;
+        }
         ArchiveMotion motion;
         motion.bank = &archive->textures;
         motion.animation.bind(archive->trees.textureAnimations(), archive->textures, device,
@@ -1325,8 +1346,9 @@ void LegendsSceneAdapter::update(f32 seconds) {
     m_scenery.update(seconds);
     m_dreamcastScenery.update(seconds);
     m_worldMovement.update(seconds);
-    if (m_dreamcastMovement)
+    if (m_dreamcastMovement) {
         m_dreamcastMovement->advance(seconds);
+    }
     updateDreamcastRiders();
     updateDreamcastSwitches();
     updateRiders();
@@ -1359,8 +1381,9 @@ void LegendsSceneAdapter::update(f32 seconds) {
 }
 
 void LegendsSceneAdapter::capturePresentation() {
-    if (m_dreamcastMovement)
+    if (m_dreamcastMovement) {
         m_dreamcastMovement->capturePresentation();
+    }
     m_worldMovement.capturePresentation();
     m_bossEruption.capturePresentation();
     for (auto& portal : m_towerPortals) {

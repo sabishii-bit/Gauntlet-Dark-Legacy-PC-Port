@@ -117,8 +117,9 @@ std::vector<ImportedTarget> LegendsSceneAdapter::arenaDamageTargets() const {
     std::vector<ImportedTarget> result;
     for (usize i = 0; i < m_arenaRocks.size(); ++i) {
         const auto& rock = m_arenaRocks[i];
-        if (rock.dormant || rock.health <= 0)
+        if (rock.dormant || rock.health <= 0) {
             continue;
+        }
         const auto& definition = rock.definition;
         result.push_back({kImportedArenaBase + static_cast<s32>(i), definition.position,
                           definition.radius, definition.height, true, true, rock.surface});

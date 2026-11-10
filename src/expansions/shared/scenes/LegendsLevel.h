@@ -103,8 +103,9 @@ public:
         return m_world.adapter()->actorArchive(kind);
     }
     const ImportedBoss* importedBoss() const override {
-        if (m_dreamcastBoss)
+        if (m_dreamcastBoss) {
             return &m_dreamcastBoss->combat;
+        }
         return m_boss ? &m_boss->combat : nullptr;
     }
     bool hasBossLegend(const CharacterSave& save) const override;
