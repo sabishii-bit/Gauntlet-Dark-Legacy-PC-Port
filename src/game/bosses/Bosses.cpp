@@ -429,8 +429,9 @@ void Bosses::update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
         // object's triggerstate0x10. Once armed it keeps the deadline even if
         // the platform stops. No new irreversible/presentation event is needed.
         const bool armed = activationReady || m_sim.wakeClock > 0;
-        if (armed)
+        if (armed) {
             m_sim.wakeClock += seconds;
+        }
         const auto stock = std::ranges::find_if(
             m_sim.assets, [&](const auto* assets) { return &assets->data == m_fighter.data(); });
         const bool decodedEntrance = stock != m_sim.assets.end() && (*stock)->initialMoveBeforeWake;
