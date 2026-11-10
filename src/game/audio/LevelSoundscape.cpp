@@ -482,8 +482,9 @@ void LevelSoundscape::duckMusic(f32 seconds, f32 scale) {
 
 void LevelSoundscape::duckAmbientMusic(f32 seconds, f32 scale) {
     requirePresentation("ducking ambient music during native capture");
-    if (!std::isfinite(seconds) || !std::isfinite(scale))
+    if (!std::isfinite(seconds) || !std::isfinite(scale)) {
         return;
+    }
     m_musicPlayback.ambientDuck = std::max(seconds, 0.0f);
     m_musicPlayback.ambientDuckScale = std::clamp(scale, 0.2f, 1.0f);
 }
