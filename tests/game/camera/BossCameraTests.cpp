@@ -96,7 +96,7 @@ TEST_CASE("bounded boss approach attention retains the physical party for screen
           "[game][world][camera][boss-approach-policy]") {
     const auto record = cryptRecord();
     const std::vector<CameraSubject> party{standing({50, 0, 30})};
-    BossCameraSubject boss;
+    const BossCameraSubject boss;
     BossCamera::ApproachPolicy approach;
     approach.attentionBounds = std::pair{Vec3{-5, 0, 20}, Vec3{5, 10, 40}};
     std::vector<WorldLocator> markers(2);
@@ -122,7 +122,7 @@ TEST_CASE("approach inward hysteresis keeps moving inward inside its held band",
           "[game][world][camera][boss-approach-policy]") {
     auto record = cryptRecord();
     record.minPitch = record.maxPitch = 0;
-    BossCameraSubject boss;
+    const BossCameraSubject boss;
     BossCamera::ApproachPolicy approach;
     approach.maxDistanceScale = 1.5f;
     approach.inwardLooseMargin = 2.5f;
@@ -152,11 +152,12 @@ TEST_CASE("boss approach can follow the native bounding midpoint of three or fou
           "[game][world][camera][boss-approach-policy]") {
     const s32 count = GENERATE(3, 4);
     const auto record = cryptRecord();
-    BossCameraSubject boss;
+    const BossCameraSubject boss;
     std::vector<CameraSubject> party{standing({0, 0, 20}), standing({2, 0, 22}),
                                      standing({30, 6, 50})};
-    if (count == 4)
+    if (count == 4) {
         party.push_back(standing({1, 0, 21}));
+    }
     BossCamera::ApproachPolicy approach;
     approach.boundsMidpoint = true;
     BossCamera camera;
