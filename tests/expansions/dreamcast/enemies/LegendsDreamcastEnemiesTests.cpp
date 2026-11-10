@@ -411,15 +411,15 @@ TEST_CASE("Dreamcast generator libraries respect the selected native enemy roste
                              "using fallback artwork");
     };
     rejected();
-    scope.enemySounds = {{.kind = enemy_type::kKnight, .subtype = 2}};
+    scope.enemySounds = {{.kind = enemy_type::kKnight, .subtype = 2, .stream = {}}};
     rejected();
     // LoadMonster 8c090000 chooses TROaux for category 4 and a numbered bank
     // above 10. Neither selects the base TRO bank containing generator art.
-    scope.enemySounds = {{.kind = enemy_type::kTroll, .subtype = 4}};
+    scope.enemySounds = {{.kind = enemy_type::kTroll, .subtype = 4, .stream = {}}};
     rejected();
     scope.enemySounds[0].subtype = 11;
     rejected();
-    scope.enemySounds.push_back({.kind = enemy_type::kTroll, .subtype = 2});
+    scope.enemySounds.push_back({.kind = enemy_type::kTroll, .subtype = 2, .stream = {}});
     warnings.clear();
     CHECK_FALSE(loadLegendsDreamcastGeneratorAssets(root, enemy_type::kTroll, scope, warnings));
     REQUIRE(warnings.size() == 1);
@@ -449,7 +449,8 @@ TEST_CASE("Dreamcast generator species libraries retain every shipped model's re
         formats::LegendsDreamcastFixtureScope scope;
         // The medium/large/small classes all select a base bank. Keep the
         // auxiliary row first to exercise native mixed-roster selection.
-        scope.enemySounds = {{.kind = kind, .subtype = 4}, {.kind = kind, .subtype = 2}};
+        scope.enemySounds = {{.kind = kind, .subtype = 4, .stream = {}},
+                             {.kind = kind, .subtype = 2, .stream = {}}};
         std::vector<std::string> warnings;
         auto archive = loadLegendsDreamcastGeneratorAssets(root, kind, scope, warnings);
         REQUIRE(archive);
@@ -750,7 +751,7 @@ TEST_CASE("Dreamcast Temple and Hell generators bind their native mixed broods",
             device.draws.clear();
             enemies.draw(device, Mat4{1}, WorldLighting{});
             CHECK_FALSE(device.draws.empty());
-            enemies.hurt(child, EnemyHit{.damage = 10000});
+            enemies.hurt(child, EnemyHit{.damage = 10000, .where = std::nullopt});
             enemies.update(240, 4, views);
         }
         CHECK(seen == std::set<s32>(kinds.begin(), kinds.end()));
@@ -804,7 +805,7 @@ TEST_CASE("Imported three-species brood retains its original seeded selection",
         REQUIRE(child >= 0);
         CHECK(enemies.kindOf(child) == definition.broodKinds[choice]);
         CHECK(enemies.tierOf(child) == 3);
-        enemies.hurt(child, EnemyHit{.damage = 10000});
+        enemies.hurt(child, EnemyHit{.damage = 10000, .where = std::nullopt});
         enemies.update(240, 4, views);
     }
     CHECK(warnings.empty());
@@ -887,7 +888,7 @@ TEST_CASE("Dreamcast F1 breeds four enemies with the native thirty to ninety tic
             }
             REQUIRE(child >= 0);
             CHECK(enemies.tierOf(child) == 3);
-            enemies.hurt(child, EnemyHit{.damage = 10000});
+            enemies.hurt(child, EnemyHit{.damage = 10000, .where = std::nullopt});
             enemies.update(240, 4, views);
         }
     }

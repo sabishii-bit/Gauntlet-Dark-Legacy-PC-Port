@@ -12,7 +12,7 @@ struct DreamcastBankSample {
     bool loop = false;
 };
 
-/** Dreamcast's AUDIO/*.BNK: a count followed by 44-byte sample descriptors.
+/** A Dreamcast AUDIO folder .BNK bank: a count followed by 44-byte sample descriptors.
  * This is not GameCube's DCS/VBK sequence format or N64's MusyX bank. */
 std::vector<DreamcastBankSample> decodeDreamcastSoundBank(std::span<const u8> bytes);
 

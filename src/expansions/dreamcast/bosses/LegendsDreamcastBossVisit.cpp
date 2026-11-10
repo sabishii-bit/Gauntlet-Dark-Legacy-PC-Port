@@ -38,8 +38,10 @@ void LegendsDreamcastBossVisit::load(RenderDevice& device, ItemArchive* wizard) 
     if (wizard->trees.find("BOSSKEY") && wizard->trees.find("BOSSKEY2")) {
         // BossEnd (8c0713bc) starts BOSSKEY, then morphs into BOSSKEY2 for
         // thirty seconds. Warm both resources before the frame's first draw.
+        EffectTrees::Setting warm;
+        warm.depthWrite = false;
         for (const auto* const name : {"BOSSKEY", "BOSSKEY2"}) {
-            m_rewards.startSet(device, *wizard, name, Vec3{0}, {.depthWrite = false});
+            m_rewards.startSet(device, *wizard, name, Vec3{0}, warm);
         }
         m_rewards.reset();
         m_rewardArchive = wizard;
@@ -121,9 +123,12 @@ bool LegendsDreamcastBossVisit::begin(s32 boss, s32 realm, u64 runes, u64 shards
                 ? 1.0f
                 : static_cast<f32>(std::max(tree.sequences.front().frames, 1)) *
                       static_cast<f32>(std::max(tree.sequences.front().frameRate, 1)) / 900;
-        m_rewards.startSet(
-            *m_device, *m_rewardArchive, "BOSSKEY", *rewardPosition,
-            {.seconds = seconds + 30, .then = "BOSSKEY2", .morphIn = seconds, .depthWrite = false});
+        m_rewards.startSet(*m_device, *m_rewardArchive, "BOSSKEY", *rewardPosition,
+                           {.seconds = seconds + 30,
+                            .then = "BOSSKEY2",
+                            .morphIn = seconds,
+                            .depthWrite = false,
+                            .light = std::nullopt});
     }
     if (m_runeTree && boss == 32) {
         m_runePlayer.start(m_runeTree->sequences.front(), 0);

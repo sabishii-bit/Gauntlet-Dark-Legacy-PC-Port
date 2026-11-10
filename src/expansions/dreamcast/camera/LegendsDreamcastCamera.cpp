@@ -419,13 +419,13 @@ void LegendsDreamcastLevelCamera::step(std::span<const CameraSubject> subjects) 
     // 8c078de0 moves eye/look-at independently once the 91-tick title hold
     // expires. Both must arrive before handing the view to the follow camera.
     const auto converge = [](Vec3& current, Vec3 goal) {
-        const Vec3 delta = goal - current;
-        const f32 distance = glm::length(delta);
-        if (distance < .3f) {
+        const Vec3 toGoal = goal - current;
+        const f32 gap = glm::length(toGoal);
+        if (gap < .3f) {
             current = goal;
             return true;
         }
-        current += delta * std::min(1.0f, 2.0f / std::min(distance, 20.0f));
+        current += toGoal * std::min(1.0f, 2.0f / std::min(gap, 20.0f));
         return false;
     };
     const bool eyeDone = converge(m_camera.position, m_followCamera.position);

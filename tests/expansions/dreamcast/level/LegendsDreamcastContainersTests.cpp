@@ -440,7 +440,9 @@ TEST_CASE("Dreamcast poison barrels damage grounded and levitating players throu
     const PlayerHealth::Events feedback{.block = [](f32, f32) {},
                                         .sound = [](std::string_view) {},
                                         .cry = [](std::string_view) {},
-                                        .named = [](std::string_view, f32) {}};
+                                        .named = [](std::string_view, f32) {},
+                                        .learnBlock = {},
+                                        .vibrate = {}};
     usize contacts = 0;
     const auto contact = [&] {
         level.affectArea({});

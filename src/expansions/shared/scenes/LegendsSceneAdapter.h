@@ -513,12 +513,14 @@ private:
     bool m_hasBossEntrance = false;
     LegendsBossEruption m_bossEruption;
     std::vector<GeneratorPresentation> m_generatorPresentation;
+    // Every member past `state` has a default, so that a binding that names only the
+    // container's state raises no -Wmissing-field-initializers.
     struct ContainerPresentation {
         LegendsContainer state;
         usize closedFigure = 0;
         usize openingFigure = 0;
         usize brokenFigure = 0;
-        std::optional<usize> pickup;
+        std::optional<usize> pickup = std::nullopt;
         struct Outcome {
             u16 key = 0;
             usize openingFigure = 0;
@@ -528,16 +530,17 @@ private:
             s32 openingSequence = 0;
             s32 brokenSequence = 0;
         };
-        std::optional<usize> selector;
-        std::vector<Outcome> outcomes;
-        std::optional<usize> blastFigure;
+        std::optional<usize> selector = std::nullopt;
+        // NOLINTNEXTLINE(readability-redundant-member-init) -- default for partial aggregates
+        std::vector<Outcome> outcomes{};
+        std::optional<usize> blastFigure = std::nullopt;
         f32 blastSeconds = 0;
-        std::optional<usize> death;
+        std::optional<usize> death = std::nullopt;
         // Dreamcast stores these states as sequences in one tree; N64 binds
         // separate trees with their animation in sequence zero.
         s32 openingSequence = 0;
         s32 brokenSequence = 0;
-        std::optional<s16> dreamcastContents;
+        std::optional<s16> dreamcastContents = std::nullopt;
     };
     std::vector<ContainerPresentation> m_containers;
     /** Containers take the local target IDs below the first Death statue's. */

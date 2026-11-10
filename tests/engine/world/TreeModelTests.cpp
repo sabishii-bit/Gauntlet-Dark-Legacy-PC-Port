@@ -123,12 +123,12 @@ TEST_CASE("interactive models retain opt-in RGB lightmaps without relighting or 
                      {.position = {0, 0, 1}, .uv = {0, 1}, .lightmapUv = {2, 2}}};
     mesh.parts.push_back({.texture = 0, .lightmap = 1, .indices = {0, 1, 2}, .rgbLightmap = true});
     auto textures = TextureSet::fromDecoded(
-        {{.name = "BASE", .width = 2, .height = 2},
-         {.name = "BAKED", .width = 8, .height = 4, .clampU = true, .clampV = true}},
+        {{.name = "BASE", .width = 2, .height = 2, .file = {}},
+         {.name = "BAKED", .width = 8, .height = 4, .clampU = true, .clampV = true, .file = {}}},
         {Image::filled(2, 2, Color::white()), Image::filled(8, 4, {200, 60, 20, 255})});
     auto models = ModelSet::fromDecoded({{.name = "FLOOR"}}, {mesh});
     TreeInfo tree;
-    tree.nodes.push_back({.name = "FLOOR", .object = "FLOOR"});
+    tree.nodes.push_back({.name = "FLOOR", .object = "FLOOR", .objectFrames = {}});
     test::FakeRenderDevice device;
     TreeModel figure;
     REQUIRE(figure.bind(tree, models, textures, device));

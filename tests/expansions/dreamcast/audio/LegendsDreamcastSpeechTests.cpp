@@ -114,7 +114,10 @@ TEST_CASE("Dreamcast narration has no fallback when optional banks are absent",
     AudioMixer mixer{48000};
     SoundPlayer output{mixer};
     LegendsDreamcastSpeech speech;
-    speech.setEntry({.entrySound = "S_ENTERING1B", .stageNameSound = "S_B1NAME"});
+    formats::LegendsDreamcastFixtureScope entry;
+    entry.entrySound = "S_ENTERING1B";
+    entry.stageNameSound = "S_B1NAME";
+    speech.setEntry(entry);
     CHECK(speech.entryCue().empty());
     CHECK_FALSE(speech.enqueue(output, LegendsDreamcastSpeech::runestoneCue(1)));
     CHECK_FALSE(speech.playing(output));

@@ -243,8 +243,13 @@ TEST_CASE("Dreamcast Dragon arena safe rocks block and change native health tier
 
 TEST_CASE("Dreamcast shoot walls share transformed attack and collision surfaces",
           "[legends][dreamcast-scenery]") {
-    const formats::ItemInfoRecord info{
-        .type = 10, .subtype = 42, .collisionType = 4, .armor = 1, .hitPoints = 25};
+    const formats::ItemInfoRecord info{.type = 10,
+                                       .subtype = 42,
+                                       .collisionType = 4,
+                                       .name = {},
+                                       .armor = 1,
+                                       .hitPoints = 25,
+                                       .choices = {}};
     formats::ItemInstanceRecord item;
     item.position = {10, 5, 20};
     item.rotation.y = kHalfPi;

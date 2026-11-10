@@ -23,14 +23,16 @@ formats::ItemInfoRecord rubbleInfo() {
             .collisionFlags = 1,
             .radius = 2,
             .height = 4,
-            .activeType = 16};
+            .name = {},
+            .activeType = 16,
+            .choices = {}};
 }
 
 TEST_CASE("Dreamcast falling rubble waits for contact and collapses once for the whole party",
           "[legends][dreamcast-falling]") {
     LegendsDreamcastFalling state;
     state.clear(-20);
-    const formats::ItemInstanceRecord item{.position = {10, 8, 20}};
+    const formats::ItemInstanceRecord item{.name = {}, .position = {10, 8, 20}};
     REQUIRE(state.add(rubbleInfo(), item, 12, 7));
     REQUIRE(state.pieces().size() == 1);
     CHECK(state.visible(7));
@@ -81,7 +83,7 @@ TEST_CASE("Dreamcast contact-collapse adapter is scoped and independent of rende
           "[legends][dreamcast-falling]") {
     LegendsDreamcastFalling fast;
     LegendsDreamcastFalling slow;
-    const formats::ItemInstanceRecord item{.position = {0, 10, 0}};
+    const formats::ItemInstanceRecord item{.name = {}, .position = {0, 10, 0}};
     fast.clear(-50);
     slow.clear(-50);
     REQUIRE(fast.add(rubbleInfo(), item, 0, 3));
@@ -165,7 +167,7 @@ TEST_CASE("Dreamcast sinking rock uses its native slow tumble without becoming a
     fall.clear(-20);
     auto info = rubbleInfo();
     info.subtype = 53;
-    const formats::ItemInstanceRecord item{.position = {10, 8, 20}};
+    const formats::ItemInstanceRecord item{.name = {}, .position = {10, 8, 20}};
     REQUIRE(sink.add(info, item, 20, 7));
     REQUIRE(fall.add(rubbleInfo(), item, 20, 7));
     const std::array visitor{LegendsPortalVisitor{.position = item.position}};

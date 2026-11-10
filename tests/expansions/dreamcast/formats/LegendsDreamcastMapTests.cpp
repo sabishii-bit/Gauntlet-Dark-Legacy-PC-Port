@@ -270,7 +270,8 @@ TEST_CASE("Dreamcast Underworld floors and sinking figures retain their native R
         ++sinkingModels;
         const auto& mesh = archive->models.mesh(i);
         TreeInfo tree;
-        tree.nodes.push_back({.name = "FLOOR", .object = archive->models.entry(i).name});
+        tree.nodes.push_back(
+            {.name = "FLOOR", .object = archive->models.entry(i).name, .objectFrames = {}});
         TreeModel figure;
         REQUIRE(figure.bind(tree, archive->models, archive->textures, device));
         device.draws.clear();

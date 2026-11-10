@@ -186,7 +186,7 @@ TEST_CASE("Dreamcast trigger controls keyed child collision and continuous rider
     native.worldAnimations.push_back(key);
     formats::LegendsDreamcastScene scene;
     scene.itemInfos.push_back(
-        {.type = 5, .subtype = 24, .radius = 1, .height = 3, .name = "BRIDGEPAD"});
+        {.type = 5, .subtype = 24, .radius = 1, .height = 3, .name = "BRIDGEPAD", .choices = {}});
     formats::ItemInstanceRecord switchItem;
     switchItem.info = 0;
     switchItem.position = {10, 0, 0};
@@ -241,7 +241,7 @@ TEST_CASE("Dreamcast chained switches preserve whole-party requirements and invi
     native.parents = {-1, -1};
     formats::LegendsDreamcastScene scene;
     scene.itemInfos.push_back(
-        {.type = 5, .subtype = 24, .radius = 1, .height = 3, .name = "BRIDGEPAD"});
+        {.type = 5, .subtype = 24, .radius = 1, .height = 3, .name = "BRIDGEPAD", .choices = {}});
     formats::ItemInstanceRecord first;
     first.info = 0;
     first.params[7] = 1;
@@ -278,7 +278,7 @@ TEST_CASE("Dreamcast registered height targets honor native speed and closed ini
     native.parents = {-1};
     formats::LegendsDreamcastScene scene;
     scene.itemInfos.push_back(
-        {.type = 5, .subtype = 24, .radius = 1, .height = 3, .name = "BRIDGEPAD"});
+        {.type = 5, .subtype = 24, .radius = 1, .height = 3, .name = "BRIDGEPAD", .choices = {}});
     formats::ItemInstanceRecord pad;
     pad.info = 0;
     write16(pad.params, 2, 2);
@@ -312,7 +312,7 @@ TEST_CASE("Dreamcast keyed riders recover from an exactly collapsed intermediate
     native.worldAnimations.push_back(key);
     formats::LegendsDreamcastScene scene;
     scene.itemInfos.push_back(
-        {.type = 5, .subtype = 24, .radius = 1, .height = 3, .name = "BRIDGEPAD"});
+        {.type = 5, .subtype = 24, .radius = 1, .height = 3, .name = "BRIDGEPAD", .choices = {}});
     formats::ItemInstanceRecord pad;
     pad.info = 0;
     write16(pad.params, 2, 2);
@@ -344,7 +344,8 @@ TEST_CASE("Dreamcast item grounding uses initialized target floors and preserves
     native.objects[0].flags = 0x1004;
     native.parents = {-1};
     formats::LegendsDreamcastScene scene;
-    scene.itemInfos.push_back({.type = 5, .subtype = 24, .radius = 1, .height = 3});
+    scene.itemInfos.push_back(
+        {.type = 5, .subtype = 24, .radius = 1, .height = 3, .name = {}, .choices = {}});
     formats::ItemInstanceRecord pad;
     pad.info = 0;
     pad.position = {0, 2, 0};
@@ -353,8 +354,9 @@ TEST_CASE("Dreamcast item grounding uses initialized target floors and preserves
     write16(pad.params, 10, 100);
     scene.itemInstances.push_back(pad);
     LegendsDreamcastWorldMotion motion{map, map, native, scene, 1};
-    const formats::ItemInfoRecord grounded{.type = 2};
-    const formats::ItemInfoRecord airborne{.type = 2, .collisionFlags = 1};
+    const formats::ItemInfoRecord grounded{.type = 2, .name = {}, .choices = {}};
+    const formats::ItemInfoRecord airborne{
+        .type = 2, .collisionFlags = 1, .name = {}, .choices = {}};
     CHECK(motion.itemPosition(grounded, {0, 1, 0}).y == 2.1f);
     CHECK(motion.itemPosition(grounded, {0, 3, 0}).y == 2.1f);
     CHECK(motion.itemPosition(airborne, {0, 1, 0}).y == 1);

@@ -121,6 +121,8 @@ TEST_CASE("Dreamcast native spikes deliver piercing damage to independent party 
                 .sound = [](std::string_view) {},
                 .cry = [&](std::string_view cue) { cries[seat].emplace_back(cue); },
                 .named = [](std::string_view, f32) {},
+                .learnBlock = {},
+                .vibrate = {},
             };
             health.hurt(players[seat], hit.damage, HurtKind::Pierce, hurtSourceOf(hit.impact.flags),
                         {}, feedback, hit.impact);

@@ -213,7 +213,9 @@ TEST_CASE("Dreamcast melee contact follows native nodes and damaging frame windo
                 for (const s32 frame : {move.frameStart - 1, move.frameStart, last, last + 1}) {
                     CAPTURE(frame);
                     REQUIRE(actor.restoreLocal(initial));
-                    REQUIRE(actor.setMove(index, {.frame = static_cast<f32>(frame), .target = 0}));
+                    REQUIRE(actor.setMove(
+                        index,
+                        {.frame = static_cast<f32>(frame), .target = 0, .yaw = std::nullopt}));
                     const auto node = actor.nodeTransform(move.colnode);
                     REQUIRE(node);
                     const Vec3 centre{*node * Vec4{damage->offset, 1}};
