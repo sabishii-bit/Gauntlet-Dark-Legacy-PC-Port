@@ -1300,7 +1300,7 @@ bool LevelOpponents::bossActivationReady() const {
     const auto* imported = m_resources ? m_resources->world.imported() : nullptr;
     const auto* data = m_bosses.fighter().data();
     const auto* position = m_bosses.position();
-    return !imported || !data || !position ||
+    return imported == nullptr || data == nullptr || position == nullptr ||
            (data->typeFlags() & CritterData::kSupportActivated) == 0 ||
            imported->bossActivationReady(*position);
 }

@@ -656,20 +656,25 @@ std::optional<s32> Generators::spawnImported(RenderDevice& device, Enemies& enem
                                 [](s32 count) { return count < 1 || count > 127; }) ||
             policy.waitTicks[0] < 1 || policy.waitTicks[1] < policy.waitTicks[0] ||
             policy.waitTicks[1] > 36000 || !std::isfinite(policy.activeDistance) ||
-            policy.activeDistance <= 0 || policy.activeDistance > kActiveDistance)
+            policy.activeDistance <= 0 || policy.activeDistance > kActiveDistance) {
             return std::nullopt;
+        }
         ImportedHealth::Breeding resolved;
         const f32 population =
             std::clamp(difficulty, policy.broodDifficulty.x, policy.broodDifficulty.y) +
             policy.broodBonus;
-        for (usize state = 0; state < resolved.broodByState.size(); ++state)
-            resolved.broodByState[state] = std::clamp(
-                static_cast<s32>(static_cast<f32>(policy.broodByState[state]) * population + .5f),
-                1, policy.maximumBrood);
+        // Rounded to the nearest brood, halves up: the scaled brood is always positive.
+        for (usize state = 0; state < resolved.broodByState.size(); ++state) {
+            resolved.broodByState[state] =
+                std::clamp(static_cast<s32>(std::lround(
+                               static_cast<f32>(policy.broodByState[state]) * population)),
+                           1, policy.maximumBrood);
+        }
         const f32 pace = std::clamp(difficulty, policy.waitDifficulty.x, policy.waitDifficulty.y);
-        for (usize end = 0; end < resolved.waitTicks.size(); ++end)
+        for (usize end = 0; end < resolved.waitTicks.size(); ++end) {
             resolved.waitTicks[end] =
                 std::max(1, static_cast<s32>(static_cast<f32>(policy.waitTicks[end]) / pace));
+        }
         resolved.activeDistance = policy.activeDistance;
         health.breeding = resolved;
     }
@@ -738,8 +743,9 @@ std::optional<s32> Generators::spawnImported(RenderDevice& device, Enemies& enem
                 health.remaining[state] = generator.threshold * static_cast<f32>(state + 1);
             }
         }
-        if (health.breeding)
+        if (health.breeding) {
             generator.most = health.breeding->broodByState[static_cast<usize>(generator.state - 1)];
+        }
         m_importedHealth.push_back(health);
         if (mixed && !m_sim.importedRandom) {
             m_sim.importedRandom.emplace(0x4c454745U);
@@ -1025,8 +1031,9 @@ void Generators::update(s32 ticks, Enemies& enemies, std::span<const EnemyView> 
             generator.countdown -= ticks;
             // Range-based native clocks admit a birth on the tick reaching
             // zero; the ordinary GDL clock retains its following-tick gate.
-            if (!breeding || generator.countdown > 0)
+            if (!breeding || generator.countdown > 0) {
                 continue;
+            }
         }
         if (timeStopped) {
             continue;
@@ -1157,10 +1164,11 @@ std::optional<GeneratorEvent> Generators::strike(s32 id, f32 power, [[maybe_unus
         if (state > 0) {
             const auto imported =
                 std::ranges::find(m_importedHealth, generator.instance, &ImportedHealth::instance);
-            if (imported != m_importedHealth.end() && imported->breeding)
+            if (imported != m_importedHealth.end() && imported->breeding) {
                 generator.most = imported->breeding->broodByState[static_cast<usize>(state - 1)];
-            else
+            } else {
                 generator.most *= 2;
+            }
         }
         if (std::ranges::find(kCasterAlgorithms, generator.algorithm) != kCasterAlgorithms.end()) {
             generator.algorithm = 0;
