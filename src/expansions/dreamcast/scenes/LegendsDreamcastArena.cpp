@@ -18,19 +18,19 @@ bool LegendsSceneAdapter::bindDreamcastArenaRock(RenderDevice& device,
                                                  const formats::ItemInfoRecord& info,
                                                  const formats::ItemInstanceRecord& instance,
                                                  u32 /*nativeIndex*/) {
-    std::string diagnostic;
-    const auto rock = legendsDreamcastArenaRock(info, instance, m_arenaRocks.size(), &diagnostic);
-    if (!rock) {
-        if (diagnostic.empty()) {
-            return false;
+    auto admission = legendsDreamcastArenaRock(info, instance, m_arenaRocks.size());
+    if (!admission.diagnostic.empty()) {
+        // Each kind of safe rock the arena does not stand is reported once.
+        admission.diagnostic += ": " + info.name;
+        if (std::ranges::find(m_warnings, admission.diagnostic) == m_warnings.end()) {
+            m_warnings.push_back(std::move(admission.diagnostic));
         }
-        // A safe rock the arena cannot stand is reported once, never left as scenery.
-        diagnostic += ": " + info.name;
-        if (std::ranges::find(m_warnings, diagnostic) == m_warnings.end()) {
-            m_warnings.push_back(std::move(diagnostic));
-        }
-        return true;
     }
+    if (!admission.rock) {
+        // One past the roster stays scenery; one the arena cannot stand is never left as it.
+        return !admission.ordinary;
+    }
+    const auto& rock = admission.rock;
     ArenaRockPresentation binding;
     binding.definition = rock->body;
     // SetItem8c0a8f80 multiplies native base HP by the placed segment count.

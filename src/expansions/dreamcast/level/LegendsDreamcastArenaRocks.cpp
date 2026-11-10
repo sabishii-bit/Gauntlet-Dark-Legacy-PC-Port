@@ -3,29 +3,31 @@
 #include <bit>
 #include <cmath>
 #include <format>
-#include <utility>
 
 #include "engine/io/ByteReader.h"
 
 namespace gdl::game {
 
-std::optional<LegendsDreamcastArenaRock>
+LegendsDreamcastArenaAdmission
 legendsDreamcastArenaRock(const formats::ItemInfoRecord& info,
-                          const formats::ItemInstanceRecord& instance, usize standing,
-                          std::string* diagnostic) {
-    if (diagnostic) {
-        diagnostic->clear();
-    }
+                          const formats::ItemInstanceRecord& instance, usize standing) {
+    LegendsDreamcastArenaAdmission admission;
     // A positive subtype in the placement's first parameter replaces the definition's.
     const s16 placed = std::bit_cast<s16>(readU16LE(instance.params, 0));
     if (info.type != 10 || (placed > 0 ? placed : info.subtype) != 41) {
-        return std::nullopt;
+        admission.ordinary = true;
+        return admission;
     }
-    const auto reject = [&](std::string reason) -> std::optional<LegendsDreamcastArenaRock> {
-        if (diagnostic) {
-            *diagnostic = std::move(reason);
-        }
-        return std::nullopt;
+    if (standing >= kMostDreamcastArenaRocks) {
+        // Outside the boss's roster a safe rock is an ordinary item, whatever it holds.
+        admission.diagnostic = std::format("Dreamcast arena has more safe rocks than the boss's {}",
+                                           kMostDreamcastArenaRocks);
+        admission.ordinary = true;
+        return admission;
+    }
+    const auto reject = [&](const char* reason) {
+        admission.diagnostic = reason;
+        return admission;
     };
     // SAFEROCK<n>0 is the rubble; each standing segment has its own model up to 3.
     constexpr s16 kMostSegments = 3;
@@ -42,16 +44,13 @@ legendsDreamcastArenaRock(const formats::ItemInfoRecord& info,
         !std::isfinite(info.height) || info.height <= 0 || info.collisionOffset != Vec3{0}) {
         return reject("Dreamcast arena rock has an unsupported collision body");
     }
-    if (standing >= kMostDreamcastArenaRocks) {
-        return reject(std::format("Dreamcast arena has more safe rocks than the boss's {}",
-                                  kMostDreamcastArenaRocks));
-    }
     LegendsDreamcastArenaRock rock;
     rock.body = {instance.position, instance.rotation.y, info.radius, info.height, info.hitPoints};
     rock.tier = tier;
     rock.armor = info.armor;
     rock.dormant = (instance.flags & 2U) != 0;
-    return rock;
+    admission.rock = rock;
+    return admission;
 }
 
 } // namespace gdl::game
