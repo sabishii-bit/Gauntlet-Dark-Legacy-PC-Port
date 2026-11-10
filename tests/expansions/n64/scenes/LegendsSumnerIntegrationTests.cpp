@@ -14,6 +14,7 @@
 #include "engine/core/SpecialMembers.h"
 #include "engine/io/AssetLocator.h"
 #include "engine/io/File.h"
+#include "engine/ui/Canvas.h"
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
@@ -321,6 +322,7 @@ TEST_CASE("Native Tower return presents new milestones once and restores the mat
     CHECK(ceremony->displayedProgress().shards == 0);
     std::vector<std::string> gestures;
     std::vector<u32> captions;
+    bool captionDrawn = false;
     const Vec3 stationary = fixture.scene.actor(1)->position();
     for (u32 i = 0; i < 6000 && ceremony->active(); ++i) {
         const std::string gesture{ceremony->gesture()};
@@ -330,6 +332,28 @@ TEST_CASE("Native Tower return presents new milestones once and restores the mat
         if (const auto text = ceremony->caption();
             text && std::ranges::find(captions, *text) == captions.end()) {
             captions.push_back(*text);
+        }
+        if (!captionDrawn && ceremony->caption() == 541U && ceremony->captionOpacity() >= 1) {
+            // The level draws the scene's string table line, not the disc's bank.
+            captionDrawn = true;
+            const auto* style = fixture.level->messagePresentation();
+            REQUIRE(style);
+            Canvas canvas;
+            fixture.device.draws.clear();
+            canvas.begin(fixture.device, Mat4{1});
+            fixture.level->drawEntranceTitle(canvas, 512);
+            canvas.end();
+            REQUIRE(fixture.device.draws.size() == 1);
+            const auto drawn = fixture.device.draws.front().vertices;
+            fixture.device.draws.clear();
+            canvas.begin(fixture.device, Mat4{1});
+            style->text().draw(canvas, -256, static_cast<s32>(30 * style->scale()),
+                               fixture.strings.get(legendsN64CeremonyCaptionKey(541)),
+                               {.scale = style->scale(), .color = Color::white()});
+            canvas.end();
+            REQUIRE(fixture.device.draws.size() == 1);
+            CHECK(fixture.device.draws.front().vertices == drawn);
+            fixture.device.draws.clear();
         }
         PlayScene::Inputs attemptedMovement{};
         attemptedMovement[1].move = {{1, 0}, 1};
@@ -345,7 +369,8 @@ TEST_CASE("Native Tower return presents new milestones once and restores the mat
     CHECK(ceremony->displayedProgress().shards == 1);
     CHECK(ceremony->displayedProgress().obelisks == 7);
     CHECK(captions == std::vector<u32>{541, 523, 524, 531, 532});
-    for (const auto gesture : {"MKRU", "STRT", "ODOR", "SHD1", "SHDR"}) {
+    CHECK(captionDrawn);
+    for (const auto* const gesture : {"MKRU", "STRT", "ODOR", "SHD1", "SHDR"}) {
         CHECK(std::ranges::find(gestures, gesture) != gestures.end());
     }
     CHECK_FALSE(fixture.scene.scroll().active());

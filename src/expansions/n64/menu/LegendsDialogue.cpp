@@ -8,7 +8,6 @@
 #include "engine/io/File.h"
 
 #include "expansions/n64/formats/LegendsN64Font.h"
-#include "expansions/n64/formats/LegendsN64Text.h"
 #include "expansions/n64/formats/LegendsN64Texture.h"
 #include "game/widgets/ScrollBox.h"
 
@@ -21,7 +20,6 @@ bool LegendsDialogue::load(RenderDevice& device, const std::filesystem::path& na
     m_titleFontSheet.reset();
     m_scroll.reset();
     m_menuTextures = {};
-    m_ceremonyText.clear();
     const AssetLocator files{nativeRoot};
     const auto font = files.find("Font/glfm3.fnt");
     const auto titleFont = files.find("Font/bigfont.fnt");
@@ -54,18 +52,6 @@ bool LegendsDialogue::load(RenderDevice& device, const std::filesystem::path& na
         m_text.setFont(&m_font, m_fontSheet.get());
         m_titleText.setFont(&m_titleFont, m_titleFontSheet.get());
         m_menuTextures.backdrop = m_scroll.get();
-        if (const auto library = files.find("strlib.wad")) {
-            const auto reference = formats::legendsN64StringReference(readFile(*library), 521);
-            if (reference) {
-                if (const auto bank = files.find("english/" + reference->bank + ".wad")) {
-                    const auto strings = formats::decodeLegendsN64Text(readFile(*bank));
-                    if (reference->index + 39 <= strings.size()) {
-                        m_ceremonyText.assign(strings.begin() + reference->index,
-                                              strings.begin() + reference->index + 39);
-                    }
-                }
-            }
-        }
         return true;
     } catch (const std::exception& error) {
         log::warn("N64 dialogue: {}", error.what());
@@ -73,15 +59,14 @@ bool LegendsDialogue::load(RenderDevice& device, const std::filesystem::path& na
     }
 }
 
-void LegendsDialogue::drawCeremonyCaption(Canvas& canvas, u32 textId, f32 opacity,
+void LegendsDialogue::drawCeremonyCaption(Canvas& canvas, std::string_view text, f32 opacity,
                                           f32 width) const {
-    if (textId < 521 || textId - 521 >= m_ceremonyText.size() || opacity <= 0 || !m_text.ready()) {
+    if (text.empty() || opacity <= 0 || !m_text.ready()) {
         return;
     }
     // Tower e0860620 selects font5, scale1, y30. e086098c centres each
     // caption at native x208 and fades over .3 seconds at both ends.
-    m_text.draw(canvas, -static_cast<s32>(width / 2), static_cast<s32>(30 * kScale),
-                m_ceremonyText[textId - 521],
+    m_text.draw(canvas, -static_cast<s32>(width / 2), static_cast<s32>(30 * kScale), text,
                 {.scale = kScale,
                  .color = Color::white().withAlpha(
                      static_cast<u8>(std::clamp(opacity, 0.0f, 1.0f) * 255))});

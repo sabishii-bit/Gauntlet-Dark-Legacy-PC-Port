@@ -50,6 +50,26 @@ TEST_CASE("N64 Sumner localization keys retain native identities without optiona
     CHECK(text.get(legendsN64SumnerTextKey(445)) == "History");
 }
 
+TEST_CASE("N64 ceremony caption keys cover only the Tower's ceremony lines",
+          "[legends][sumner][text][tower-ceremony]") {
+    CHECK(kLegendsN64FirstCeremonyCaption == 521);
+    CHECK(kLegendsN64CeremonyCaptionCount == 39);
+    StringTable text;
+    REQUIRE(text.load(test::dataDirectory() / "text", "en"));
+    for (u32 identity = kLegendsN64FirstCeremonyCaption;
+         identity < kLegendsN64FirstCeremonyCaption + kLegendsN64CeremonyCaptionCount; ++identity) {
+        CAPTURE(identity);
+        const auto key = legendsN64CeremonyCaptionKey(identity);
+        CHECK(key == legendsN64SumnerTextKey(identity));
+        CHECK(text.has(key));
+    }
+    for (const u32 identity :
+         {0U, 441U, 500U, 520U, 560U, 99999U, std::numeric_limits<u32>::max()}) {
+        CAPTURE(identity);
+        CHECK(legendsN64CeremonyCaptionKey(identity).empty());
+    }
+}
+
 TEST_CASE("Every N64 Sumner English line matches its native string bank exactly",
           "[legends][sumner][text][assets]") {
     const auto root = test::dataDirectory().parent_path() / "assets/n64/extracted";

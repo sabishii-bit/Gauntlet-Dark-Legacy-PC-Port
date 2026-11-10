@@ -2,8 +2,7 @@
 
 #include <filesystem>
 #include <memory>
-#include <string>
-#include <vector>
+#include <string_view>
 
 #include "engine/core/SpecialMembers.h"
 
@@ -24,8 +23,9 @@ public:
                                                std::span<const MenuItem> topics) const override;
     bool drawTopicsBackdrop(Canvas& canvas, const OptionMenu& menu,
                             std::string_view title) const override;
-    /** e086098c's automatic Tower captions, distinct from modal scrolls. */
-    void drawCeremonyCaption(Canvas& canvas, u32 textId, f32 opacity, f32 width) const;
+    /** e086098c's automatic Tower captions, distinct from modal scrolls; the
+     * caller looks the line up in the string table. */
+    void drawCeremonyCaption(Canvas& canvas, std::string_view text, f32 opacity, f32 width) const;
     f32 scale() const override { return kScale; }
     s32 textWidth() const override { return static_cast<s32>(240 * kScale); }
     usize linesPerPage() const override { return 12; }
@@ -43,7 +43,6 @@ private:
     TextPainter m_text;
     TextPainter m_titleText;
     MenuTextures m_menuTextures;
-    std::vector<std::string> m_ceremonyText;
 };
 
 } // namespace gdl::game

@@ -12,6 +12,9 @@ namespace gdl::game {
  * collection. No GDL relics, Dreamcast records or completed-map guesses enter
  * these predicates. Door order is Town, Castle, Ice, Battlefield. */
 struct LegendsTowerProgress {
+    /** The obelisks each door wants, native obelisk N at bit N-1 (e0054fdc). */
+    static constexpr std::array<u8, 4> kDoorObelisks{0x60, 0x07, 0x18, 0x80};
+
     u16 runestones = 0;
     u8 shards = 0;
     std::array<bool, 4> doors{};

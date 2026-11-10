@@ -33,7 +33,10 @@ public:
                  std::shared_ptr<LegendsAdviceState> advice = {});
     void capturePresentation() override;
     void servicePreservedSpeech(f32 seconds) override;
-    void bindStrings(const StringTable* strings) override { m_dreamcastVisit.bindStrings(strings); }
+    void bindStrings(const StringTable* strings) override {
+        m_strings = strings;
+        m_dreamcastVisit.bindStrings(strings);
+    }
     const LegendsDreamcastBossCeremony& dreamcastBossCeremony() const {
         return m_dreamcastVisit.state();
     }
@@ -192,6 +195,7 @@ private:
     void updateExitReminder(std::span<const CharacterSave* const> party);
     LegendsPreview m_world;
     std::unique_ptr<DialoguePresentation> m_messageStyle;
+    const StringTable* m_strings = nullptr; ///< borrowed from the hosting scene's services
     f64 m_entranceSeconds = 0;
     std::filesystem::path m_directory;
     std::optional<LegendsCamera> m_camera;

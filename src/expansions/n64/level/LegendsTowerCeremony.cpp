@@ -8,12 +8,15 @@
 
 #include "engine/io/ByteReader.h"
 
+#include "expansions/n64/level/LegendsTowerProgress.h"
+
 namespace gdl::game {
 namespace {
 constexpr f32 kTick = 1.0f / 30;
-constexpr std::array<u8, 4> kDoorRequirements{0x60, 7, 0x18, 0x80};
+/// Caption slots the overlay's tables name whose lines are empty continuations.
+constexpr std::array<u32, 3> kEmptyCaptions{521, 522, 526};
 bool captionHasText(u32 id) {
-    return id != 0 && id != 521 && id != 522 && id != 526;
+    return id != 0 && std::ranges::find(kEmptyCaptions, id) == kEmptyCaptions.end();
 }
 std::vector<u32> captions(std::span<const u16> ids) {
     std::vector<u32> result;
@@ -81,7 +84,7 @@ void LegendsTowerCeremony::begin(const LegendsProgress& before, const LegendsPro
         }
     }
     for (const usize i : {1U, 3U, 2U, 0U}) {
-        const auto required = kDoorRequirements[i];
+        const auto required = LegendsTowerProgress::kDoorObelisks[i];
         if ((after.obelisks & required) == required && (before.obelisks & required) != required) {
             m_entries.push_back({Kind::Door, i, captions(m_doorCaptions[i])});
         }
@@ -279,7 +282,7 @@ void LegendsTowerCeremony::tick() {
         m_phase = 6;
         m_sounds.push_back(0x6e);
     } else if (m_phase == 6 && (m_frame > 19 || gestureDone)) {
-        m_displayed.obelisks |= kDoorRequirements[entry->index];
+        m_displayed.obelisks |= LegendsTowerProgress::kDoorObelisks[entry->index];
         m_phase = 7;
         m_ticks = 0;
     } else if (m_phase == 7 && m_ticks > 40) {

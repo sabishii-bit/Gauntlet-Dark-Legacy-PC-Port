@@ -12,12 +12,10 @@ LegendsTowerProgress LegendsTowerProgress::of(const LegendsProgress& progress) {
     result.runestonePortal = result.runestones == 0x1fff;
     // game e004e514 -> e006bb1c(realm,0) -> e006b8a4 reads the 24-byte
     // realm table at e006c360. Stage0 has no earlier-stage completion gate.
-    // e0054fdc stores positive native obelisk identity N at bit N-1. Bit7
-    // is absent from the seven placed obelisks: collecting those seven
+    // Bit7 is absent from the seven placed obelisks: collecting those seven
     // must NOT inadvertently open Battlefield.
-    constexpr std::array<u8, 4> kRequired{0x60, 0x07, 0x18, 0x80};
-    for (usize i = 0; i < kRequired.size(); ++i) {
-        result.doors[i] = (progress.obelisks & kRequired[i]) == kRequired[i];
+    for (usize i = 0; i < kDoorObelisks.size(); ++i) {
+        result.doors[i] = (progress.obelisks & kDoorObelisks[i]) == kDoorObelisks[i];
     }
     return result;
 }

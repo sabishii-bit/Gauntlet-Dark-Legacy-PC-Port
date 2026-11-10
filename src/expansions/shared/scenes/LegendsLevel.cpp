@@ -6,6 +6,7 @@
 #include <stdexcept>
 #include <utility>
 
+#include "engine/assets/StringTable.h"
 #include "engine/io/AssetLocator.h"
 #include "engine/io/File.h"
 #include "engine/platform/Paths.h"
@@ -16,6 +17,7 @@
 #include "expansions/n64/bosses/LegendsLegend.h"
 #include "expansions/n64/formats/LegendsN64Texture.h"
 #include "expansions/n64/menu/LegendsDialogue.h"
+#include "expansions/n64/scenes/LegendsSumnerText.h"
 #include "game/players/PowerupEffects.h"
 
 namespace gdl::game {
@@ -299,12 +301,17 @@ void LegendsLevel::drawEntranceTitle(Canvas& canvas, f32 width) const {
                                        static_cast<s32>(m_entranceSeconds * 60));
         m_dreamcastVisit.drawCaption(canvas, m_messageStyle->menuText(), width);
     }
-    if (platform() == LegendsPlatform::N64 && m_messageStyle) {
+    if (platform() == LegendsPlatform::N64 && m_messageStyle && m_strings) {
         const auto* ceremony = adapter().towerCeremony();
         if (ceremony && ceremony->active()) {
+            // The captions are Sumner's lines of the string table, like his menu and replies.
             if (const auto caption = ceremony->caption()) {
-                static_cast<const LegendsDialogue&>(*m_messageStyle)
-                    .drawCeremonyCaption(canvas, *caption, ceremony->captionOpacity(), width);
+                if (const auto key = legendsN64CeremonyCaptionKey(*caption);
+                    !key.empty() && m_strings->has(key)) {
+                    static_cast<const LegendsDialogue&>(*m_messageStyle)
+                        .drawCeremonyCaption(canvas, m_strings->get(key),
+                                             ceremony->captionOpacity(), width);
+                }
             }
         }
     }

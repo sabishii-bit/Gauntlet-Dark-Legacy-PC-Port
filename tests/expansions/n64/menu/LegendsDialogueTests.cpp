@@ -1,5 +1,9 @@
 #include <algorithm>
 #include <array>
+#include <cstddef>
+#include <filesystem>
+#include <string_view>
+#include <vector>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -11,6 +15,7 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "expansions/n64/formats/LegendsN64Font.h"
+#include "expansions/n64/formats/LegendsN64Text.h"
 #include "expansions/n64/level/LegendsSumner.h"
 #include "expansions/n64/menu/LegendsDialogue.h"
 #include "expansions/n64/scenes/LegendsSumnerText.h"
@@ -36,6 +41,63 @@ std::vector<u8> smallFont() {
     bytes[48] = 0x0f;
     bytes[49] = 0x78;
     return bytes;
+}
+
+void put16(std::vector<u8>& bytes, usize at, u16 value) {
+    bytes.at(at) = static_cast<u8>(value >> 8U);
+    bytes.at(at + 1) = static_cast<u8>(value);
+}
+
+void put32(std::vector<u8>& bytes, usize at, u32 value) {
+    put16(bytes, at, static_cast<u16>(value >> 16U));
+    put16(bytes, at + 2, static_cast<u16>(value));
+}
+
+/** A hud/objects.wad holding only the dialogue's 64x32 TEXTSCROLL, white I4 texels. */
+std::vector<u8> scrollArchive() {
+    constexpr usize kHeader = 8;
+    constexpr usize kName = 32;
+    constexpr usize kLoader = 48;
+    constexpr usize kPixels = 56;
+    constexpr usize kPixelBytes = usize{64} * 32 / 2;
+    constexpr usize kDirectory = kPixels + kPixelBytes;
+    constexpr usize kEntry = 12;
+    std::vector<u8> bytes(kDirectory + 4 * kEntry, 0);
+    put32(bytes, 0, static_cast<u32>(kDirectory));
+    put32(bytes, 4, 4);
+    put32(bytes, kHeader + 4, static_cast<u32>(kLoader));
+    put16(bytes, kHeader + 12, 64);
+    put16(bytes, kHeader + 14, 32);
+    put16(bytes, kHeader + 16, static_cast<u16>(kPixelBytes / 8)); // eight-byte units
+    bytes[kHeader + 18] = 4;                                       // intensity, four bits a texel
+    constexpr std::string_view kTextureName = "TEXTSCROLL";
+    std::ranges::copy(kTextureName, bytes.begin() + static_cast<std::ptrdiff_t>(kName));
+    put32(bytes, kLoader, 0xDF000000); // the load display list ends at once
+    std::fill(bytes.begin() + static_cast<std::ptrdiff_t>(kPixels),
+              bytes.begin() + static_cast<std::ptrdiff_t>(kDirectory), u8{0xff});
+    const std::array<std::string_view, 4> tags{"TXHD", "NAME", "TXLD", "TEXR"};
+    const std::array<usize, 4> offsets{kHeader, kName, kLoader, kPixels};
+    const std::array<usize, 4> counts{1, kLoader - kName, kPixels - kLoader, kPixelBytes};
+    for (usize i = 0; i < tags.size(); ++i) {
+        const usize at = kDirectory + i * kEntry;
+        std::ranges::copy(tags[i], bytes.begin() + static_cast<std::ptrdiff_t>(at));
+        put32(bytes, at + 4, static_cast<u32>(offsets[i]));
+        put32(bytes, at + 8, static_cast<u32>(counts[i]));
+    }
+    return bytes;
+}
+
+/** A native root with the synthetic font and scroll, and the topic title font when asked. */
+std::filesystem::path syntheticRoot(std::string_view name, bool titleFont) {
+    const auto root = test::scratchDirectory(name);
+    std::filesystem::create_directories(root / "Font");
+    std::filesystem::create_directories(root / "hud");
+    writeFile(root / "Font/glfm3.fnt", smallFont());
+    if (titleFont) {
+        writeFile(root / "Font/bigfont.fnt", smallFont());
+    }
+    writeFile(root / "hud/objects.wad", scrollArchive());
+    return root;
 }
 } // namespace
 
@@ -65,48 +127,80 @@ TEST_CASE("N64 modal fonts decode packed glyphs and coverage without GC font ass
     }
 }
 
-TEST_CASE("N64 Tower ceremony captions use native text and fade without a scroll backdrop",
+TEST_CASE("N64 Tower ceremony captions draw the text they are given and fade",
+          "[legends][dialogue][tower-ceremony]") {
+    test::FakeRenderDevice device;
+    LegendsDialogue style;
+    REQUIRE(style.load(device, syntheticRoot("n64-ceremony-captions", true)));
+    Canvas canvas;
+    canvas.begin(device, Mat4{1});
+    style.drawCeremonyCaption(canvas, "AA", 1, 512);
+    canvas.end();
+    REQUIRE(device.draws.size() == 1);
+    const auto caption = device.draws.front();
+    REQUIRE_FALSE(caption.vertices.empty());
+    CHECK(caption.vertices.front().color == Color::white());
+    device.draws.clear();
+    // Tower e0860620's font5 at scale one and y30, centred on the view.
+    constexpr f32 kScale = 512.0f / 416;
+    canvas.begin(device, Mat4{1});
+    style.text().draw(canvas, -256, static_cast<s32>(30 * kScale), "AA",
+                      {.scale = kScale, .color = Color::white()});
+    canvas.end();
+    REQUIRE(device.draws.size() == 1);
+    CHECK(device.draws.front().vertices == caption.vertices);
+    device.draws.clear();
+    canvas.begin(device, Mat4{1});
+    style.drawCeremonyCaption(canvas, "AA", .5f, 512);
+    canvas.end();
+    REQUIRE(device.draws.size() == 1);
+    CHECK(device.draws.front().vertices.front().color.a == 127);
+    device.draws.clear();
+    canvas.begin(device, Mat4{1});
+    style.drawCeremonyCaption(canvas, "AA", 0, 512);
+    style.drawCeremonyCaption(canvas, "", 1, 512);
+    canvas.end();
+    CHECK(device.draws.empty());
+}
+
+TEST_CASE("N64 Tower ceremony captions draw the string table's line as the native bank's",
           "[legends][assets][native-dialogue][tower-ceremony]") {
     const auto root = test::dataDirectory().parent_path() / "assets/n64/extracted";
-    if (!std::filesystem::is_regular_file(root / "Font/glfm3.fnt")) {
-        SKIP("Native N64 fonts are not installed");
+    if (!std::filesystem::is_regular_file(root / "Font/glfm3.fnt") ||
+        !std::filesystem::is_regular_file(root / "strlib.wad")) {
+        SKIP("Native N64 fonts and strings are not installed");
     }
     test::FakeRenderDevice device;
     LegendsDialogue style;
     REQUIRE(style.load(device, root));
     StringTable strings;
     REQUIRE(strings.load(test::dataDirectory() / "text", "en"));
+    const auto key = legendsN64CeremonyCaptionKey(541);
+    REQUIRE(strings.has(key));
+    const auto reference = formats::legendsN64StringReference(readFile(root / "strlib.wad"), 541);
+    REQUIRE(reference);
+    const auto bank =
+        formats::decodeLegendsN64Text(readFile(root / "english" / (reference->bank + ".wad")));
+    REQUIRE(reference->index < bank.size());
     Canvas canvas;
     canvas.begin(device, Mat4{1});
-    style.drawCeremonyCaption(canvas, 541, 1, 512);
+    style.drawCeremonyCaption(canvas, strings.get(key), 1, 512);
     canvas.end();
     REQUIRE(device.draws.size() == 1);
-    const auto native = device.draws.front();
-    CHECK(native.texture->width() == 128);
-    CHECK(native.texture->height() == 64);
-    REQUIRE_FALSE(native.vertices.empty());
-    CHECK(native.vertices.front().color == Color::white());
+    const auto caption = device.draws.front();
+    CHECK(caption.texture->width() == 128);
+    CHECK(caption.texture->height() == 64);
+    REQUIRE_FALSE(caption.vertices.empty());
+    CHECK(caption.vertices.front().color == Color::white());
     device.draws.clear();
+    // The disc's own line, drawn as e086098c draws it, is what the table's must match.
+    constexpr f32 kScale = 512.0f / 416;
     canvas.begin(device, Mat4{1});
-    constexpr f32 scale = 512.0f / 416;
-    style.text().draw(canvas, -256, static_cast<s32>(30 * scale),
-                      strings.get(legendsN64SumnerTextKey(541)),
-                      {.scale = scale, .color = Color::white()});
+    style.text().draw(canvas, -256, static_cast<s32>(30 * kScale), bank[reference->index],
+                      {.scale = kScale, .color = Color::white()});
     canvas.end();
     REQUIRE(device.draws.size() == 1);
-    CHECK(device.draws.front().vertices == native.vertices);
-    device.draws.clear();
-    canvas.begin(device, Mat4{1});
-    style.drawCeremonyCaption(canvas, 541, .5f, 512);
-    canvas.end();
-    REQUIRE(device.draws.size() == 1);
-    CHECK(device.draws.front().vertices.front().color.a == 127);
-    device.draws.clear();
-    canvas.begin(device, Mat4{1});
-    style.drawCeremonyCaption(canvas, 541, 0, 512);
-    style.drawCeremonyCaption(canvas, 99999, 1, 512);
-    canvas.end();
-    CHECK(device.draws.empty());
+    CHECK(device.draws.front().vertices == caption.vertices);
 }
 
 TEST_CASE("N64 native popup uses its font and three-piece modal through shared paging",
