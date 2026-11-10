@@ -114,7 +114,8 @@ struct Family {
 };
 
 struct TransformKeys {
-    u8 flags = 0;
+    u8 flags = 0;              ///< a keyed track's channel byte: its delta axes and scale rule
+    bool yawPitchRoll = false; ///< rotation order bit 0x20, from a constant track's byte too
     std::vector<u16> frames{0};
     std::vector<Vec3> values;
 };
@@ -241,7 +242,7 @@ private:
 std::optional<TransformKeys> transformKeys(std::span<const u8> bytes, usize payload, usize end,
                                            u8 property, u16 sequenceFrames,
                                            std::span<const u8> program) {
-    require(payload <= end && end - payload >= 7, "truncated transform initial value");
+    require(payload <= end && end - payload >= 6, "truncated transform initial value");
     const bool rotation = (property & 31U) == 9;
     const f32 unit = rotation ? std::numbers::pi_v<f32> / 16384.0f : 1.0f / 64.0f;
     TransformKeys result;
@@ -249,24 +250,28 @@ std::optional<TransformKeys> transformKeys(std::span<const u8> bytes, usize payl
                signed16(bytes, payload + 4)};
     value *= unit;
     result.values.push_back(value);
-    // Constant tracks still carry their authored channel/order byte. The native
-    // sampler returns before updating its global flags, so the rotation caller
-    // can inherit another track's order. Preserve this track's own order instead:
-    // Skorne's INIT and STRT start at identical angles but mix constant/keyed
-    // encodings. Dropping bit0x20 folds his resting arm behind his back.
-    result.flags = bytes[payload + 6];
     const u8 mode = property & 0xc0U;
     if (mode == 0x40) {
+        // e0030838 reads a constant track's three shorts and returns, so retail takes its
+        // rotation order (e00315d4, bit 0x20) and scale rule (e0031c44, low nibble 3) from
+        // the last keyed track it sampled. Departing from that, the track's own byte 6,
+        // where present, sets its rotation order and nothing else: Skorne's INIT and STRT
+        // start at identical angles but mix constant and keyed encodings, and without bit
+        // 0x20 his resting arm folds behind his back.
+        result.yawPitchRoll = end - payload >= 7 && (bytes[payload + 6] & 0x20U) != 0;
         return result;
     }
+    require(end - payload >= 7, "truncated transform header");
     usize frameCount = sequenceFrames;
     usize cursor = payload + 7;
+    result.flags = bytes[payload + 6];
     if ((result.flags & 0x80U) != 0) {
         require(end - payload >= 9, "truncated local transform clock");
         frameCount = readU16BE(bytes, payload + 6) & 0x7fffU;
         result.flags = bytes[payload + 8];
         cursor += 2;
     }
+    result.yawPitchRoll = (result.flags & 0x20U) != 0;
     require(frameCount > 0 && frameCount <= 4096, "invalid transform frame count");
     if (program.empty()) {
         return std::nullopt;
@@ -1313,7 +1318,7 @@ LegendsN64Sequences decodeLegendsN64Sequences(std::span<const u8> bytes,
                         converted.flags |= static_cast<u16>(7U << (channel * 4));
                     }
                 }
-                if (properties[0] && (properties[0]->flags & 0x20U) != 0) {
+                if (properties[0] && properties[0]->yawPitchRoll) {
                     converted.flags |= NodeTrack::kYawPitchRoll;
                 }
                 const usize valueCount = static_cast<usize>(frameCount) * converted.channelCount();

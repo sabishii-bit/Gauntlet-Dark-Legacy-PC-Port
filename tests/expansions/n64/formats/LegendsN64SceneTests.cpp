@@ -184,6 +184,51 @@ TEST_CASE("Constant N64 rotations retain their authored order without a delta ta
     }
 }
 
+TEST_CASE("Constant N64 tracks read six bytes and keep their order byte off the scale rule",
+          "[legends][n64][scene]") {
+    SECTION("three shorts ending the sequence extent decode without an order byte") {
+        for (const u8 type : std::array<u8, 3>{9, 11, 13}) {
+            CAPTURE(type);
+            TransformSequence fixture(0x40);
+            fixture.bytes[24] = static_cast<u8>(0x40U | type);
+            fixture.bytes[38] = 0x20;      // outside the extent, so never the rotation order
+            put32(fixture.bytes, 268, 22); // SEQS ends right after the shorts at 32
+            const auto decoded = decodeLegendsN64Sequences(fixture.bytes, fixture.models);
+            REQUIRE(decoded.warnings.empty());
+            const auto& track = decoded.animation.trees.at(0).sequences.at(0).tracks.at(0);
+            CHECK((track.flags & NodeTrack::kYawPitchRoll) == 0);
+            CHECK(track.values.size() == 9);
+        }
+    }
+    SECTION("a constant scale keeps its three axes whatever its byte says") {
+        TransformSequence fixture(0x40);
+        fixture.bytes[24] = 0x40 | 13;
+        put16(fixture.bytes, 32, 64);
+        put16(fixture.bytes, 34, 128);
+        put16(fixture.bytes, 36, 192);
+        fixture.bytes[38] = 0x33; // the uniform nibble 3 and the order bit
+        const auto decoded = decodeLegendsN64Sequences(fixture.bytes, fixture.models);
+        REQUIRE(decoded.warnings.empty());
+        CHECK(decoded.animation.trees.at(0).sequences.at(0).tracks.at(0).values ==
+              std::vector<f32>{1, 2, 3, 1, 2, 3, 1, 2, 3});
+    }
+    SECTION("a keyed scale with nibble 3 still goes uniform") {
+        TransformSequence fixture(0);
+        fixture.bytes[24] = 13;
+        put16(fixture.bytes, 32, 64);
+        put16(fixture.bytes, 34, 128);
+        put16(fixture.bytes, 36, 192);
+        fixture.bytes[38] = 0x13; // uniform scale animated by X
+        fixture.bytes[39] = 1;
+        fixture.bytes[40] = 1;
+        const auto decoded =
+            decodeLegendsN64Sequences(fixture.bytes, fixture.models, fixture.program);
+        REQUIRE(decoded.warnings.empty());
+        CHECK(decoded.animation.trees.at(0).sequences.at(0).tracks.at(0).values ==
+              std::vector<f32>{1, 1, 1, 1.5f, 1.5f, 1.5f, 2, 2, 2});
+    }
+}
+
 TEST_CASE("Indexed N64 BODY nodes expose native model suffix attachment names",
           "[legends][n64][scene][native-traps]") {
     NativeSequence fixture;
