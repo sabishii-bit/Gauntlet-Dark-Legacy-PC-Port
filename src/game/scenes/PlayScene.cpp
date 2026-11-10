@@ -981,8 +981,9 @@ PlayScene::LocalStep PlayScene::step(f64 deltaSeconds, const Inputs& inputs,
         const Vec3 listener =
             m_players.empty() ? simulationCamera().position : m_players.front().actor.position();
         m_world->imported()->playSounds(*m_services->sounds, listener);
-        if (const auto duck = m_world->imported()->ambientMusicDuck())
+        if (const auto duck = m_world->imported()->ambientMusicDuck()) {
             m_audio.duckAmbientMusic(duck->seconds, duck->scale);
+        }
     }
     for (const auto& event : recorded.journal.events) {
         const auto kind = event.policy == OutputLedger::Policy::Confirmed
@@ -1752,10 +1753,11 @@ void PlayScene::advanceCameras(f32 seconds, const std::vector<CameraSubject>& su
     if (auto* imported = m_world->imported()) {
         const auto& boss = m_opponents.bosses();
         const auto view = boss.view();
-        if (view.alive && boss.position())
+        if (view.alive && boss.position()) {
             imported->trackBoss(bossSubject());
-        else if (view.awake)
+        } else if (view.awake) {
             imported->trackBoss(std::nullopt);
+        }
         imported->followCamera(followed.empty() ? subjects : followed, seconds);
     }
 }
