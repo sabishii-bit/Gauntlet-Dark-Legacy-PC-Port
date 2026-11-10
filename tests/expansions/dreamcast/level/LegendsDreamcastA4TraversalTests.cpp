@@ -35,7 +35,7 @@ TEST_CASE("Dreamcast A4 broken pillar retains its native wall and adjacent key-d
     CHECK(pillar.x == Approx(-51.28f));
     CHECK(pillar.z == Approx(-.73f));
 
-    // Dreamcast shoot walls are native type10/sub42 item records, unlike
+    // Dreamcast shoot walls are native type 10/sub 42 item records, unlike
     // N64's separate SWAL roster. This decorative broken pillar is neither
     // one of those four records nor an animated/switch-controlled object.
     usize authoredWalls = 0;

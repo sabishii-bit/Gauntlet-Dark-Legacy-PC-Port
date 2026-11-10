@@ -23,7 +23,7 @@ struct Bank {
     s32 kind;
     std::string_view name;
 };
-// LoadWorld8c0a3580 selects these original CRITTERS files and MONSTERS banks.
+// LoadWorld 8c0a3580 selects these original CRITTERS files and MONSTERS banks.
 // PBOSS/YETI move metadata exists on disc, but no corresponding shipped arenas/art.
 constexpr std::array kBanks{
     Bank{boss_type::kDragon, "dragon"},   Bank{boss_type::kChimera, "chimera"},
@@ -133,7 +133,7 @@ loadLegendsDreamcastBossAssets(RenderDevice& device, const std::filesystem::path
                                " is absent from its bank; no other platform is substituted");
         }
     }
-    // ProcessCritter8c08ac42 sets a two-second wake deadline; INIT remains the
+    // ProcessCritter 8c08ac42 sets a two-second wake deadline; INIT remains the
     // initial pose until native selection requests START, then READY.
     result->wakeDelay = 2;
     result->initialMoveBeforeWake = true;

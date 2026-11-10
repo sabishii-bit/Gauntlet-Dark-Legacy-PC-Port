@@ -74,7 +74,7 @@ bool LegendsDreamcastTower::gateOpen(usize gate) const {
     if (gate < kGateObelisks.size()) {
         return (m_progress.obelisks & kGateObelisks[gate]) == kGateObelisks[gate];
     }
-    // The fourth pair opens after the first Skorne victory (native boss bit5).
+    // The fourth pair opens after the first Skorne victory (native boss bit 5).
     return gate == 3 && (m_progress.shards & 0x20) != 0;
 }
 
@@ -152,7 +152,7 @@ std::optional<s32> LegendsDreamcastSumner::update(std::span<const DreamcastSumne
             !std::isfinite(visitor.position.y) || !std::isfinite(visitor.position.z)) {
             continue;
         }
-        // 8c07eb74..8c07ec60 measures XZ proximity to (0,9.75), radius5,
+        // 8c07eb74..8c07ec60 measures XZ proximity to (0,9.75), radius 5,
         // in front of the scripted wizard rather than inside his model.
         const Vec2 away{visitor.position.x, visitor.position.z - 9.75f};
         const f32 squared = glm::dot(away, away);
@@ -173,7 +173,7 @@ std::optional<s32> LegendsDreamcastSumner::update(std::span<const DreamcastSumne
     }
     const f32 target =
         nearest ? std::atan2(nearest->position.x, nearest->position.z - kPosition.z) : kPi;
-    // 8c066640 case4 turns by at most ten degrees per native 30Hz update.
+    // 8c066640 case 4 turns by at most ten degrees per native 30Hz update.
     const f32 delta = std::remainder(target - m_yaw, 2 * kPi);
     const f32 step = (10.0f * kPi / 180.0f) * 30 * seconds;
     m_yaw = std::remainder(m_yaw + std::clamp(delta, -step, step), 2 * kPi);

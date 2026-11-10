@@ -151,7 +151,7 @@ Mesh geometry(std::span<const u8> bytes, usize model, usize bitmapCount, usize b
         const usize at = triangles + i * 8;
         const u16 material = readU16LE(bytes, at + 6);
         const u32 texture = material & 0x3fffU;
-        // 8c0f1860 consumes one 12-byte descriptor whenever bit14 starts a
+        // 8c0f1860 consumes one 12-byte descriptor whenever bit 14 starts a
         // new lightmap region. 8c0f4920 retains it across subsequent strips.
         if (partLightmaps && (flags & 17U) == 16 && (material & 0x4000U) != 0) {
             range(bytes, lightmapCursor, 12);

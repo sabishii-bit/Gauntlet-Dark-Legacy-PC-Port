@@ -7,8 +7,8 @@
 namespace gdl::game {
 
 std::vector<u32> dreamcastSurfaceHazardFlags(const formats::LegendsMap& map) {
-    // WorldObjGetAllFlags8c0e8b60 ORs the owner and every parent. Player
-    // FloorFX8c0c4f00 and EnemyWorldDamage8c099860 share these masks and the
+    // WorldObjGetAllFlags 8c0e8b60 ORs the owner and every parent. Player
+    // FloorFX 8c0c4f00 and EnemyWorldDamage 8c099860 share these masks and the
     // common HazardSurfaces damage/impact table. Preserve unknown harm kinds:
     // the player defaults to 5 damage, while enemies ignore those kinds.
     constexpr u32 kContactFlags = 0x0A0F0000;

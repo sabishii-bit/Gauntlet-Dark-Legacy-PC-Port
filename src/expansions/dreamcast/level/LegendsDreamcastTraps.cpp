@@ -75,7 +75,7 @@ LegendsDreamcastTrap::decode(const formats::ItemInfoRecord& info,
 }
 
 s32 LegendsDreamcastTrap::rest() {
-    // SetItem8c0a8340 trap branch passes activeOff*2 to the signed random-time
+    // SetItem 8c0a8340 trap branch passes activeOff*2 to the signed random-time
     // helper. Negative values select [half, one-and-a-half) of their magnitude.
     const s32 time = m_off * 2;
     return time < 0 ? static_cast<s32>(m_random() % static_cast<u32>(-time)) - time / 2 : time;
@@ -132,7 +132,7 @@ std::optional<LegendsTrapHit> LegendsDreamcastTrap::touch(const LegendsPortalVis
             return {};
         }
     }
-    // ItemTouch8c0af0e0 applies value and an fxhittime based on remaining
+    // ItemTouch 8c0af0e0 applies value and an fxhittime based on remaining
     // animation ticks. Keep player slots independent and never hurt during ONA.
     m_cooldowns[visitor.player] = static_cast<f32>(m_wait + 1) / 30;
     return LegendsTrapHit{m_nativeIndex,

@@ -252,7 +252,7 @@ CritterFile decodeLegendsDreamcastCritter(std::span<const u8> bytes) {
         damage.sfx = small(bytes, at + 0x3e);
         damage.morph = small(bytes, at + 0x40);
         damage.morphEnd = small(bytes, at + 0x42);
-        // 8c08875e passes this lifetime (or15 when nonpositive) to morph setup.
+        // 8c08875e passes this lifetime (or 15 when nonpositive) to morph setup.
         damage.morphLife = real(bytes, at + 0x44);
         return damage;
     });
@@ -307,9 +307,9 @@ CritterFile decodeLegendsDreamcastCritter(std::span<const u8> bytes) {
         type.roamRadius = real(bytes, at + 0xa0);
         type.floorOffset = real(bytes, at + 0xa4);
         // CritterGeo publishes the target centre as root+(0, TYPE.AC, 0)
-        // (8c087994..7a8), consumed by CalcTarget8c08c928. B4..BC is not
+        // (8c087994..7a8), consumed by CalcTarget 8c08c928. B4..BC is not
         // GameCube's XYZ origin: treating it as one displaces melee by 25+
-        // units on Dragon/Chimera. Rotate8c08a3ce reads its limit from B0.
+        // units on Dragon/Chimera. Rotate 8c08a3ce reads its limit from B0.
         (void)real(bytes, at + 0xa8); // separate camera attention height
         type.originOffset = {0, real(bytes, at + 0xac), 0};
         type.turnLimit = real(bytes, at + 0xb0);

@@ -87,12 +87,12 @@ bool LegendsDreamcastScenery::strike(s32 target, f32 damage, u32 flags) {
     if (wall.health <= 0) {
         return false;
     }
-    // HitItem8c0afaa0 subtracts armor, clamps damage to at least1, then
+    // HitItem 8c0afaa0 subtracts armor, clamps damage to at least 1, then
     // truncates to native integer HP. Case42 calls DeleteItem on the final hit.
     const f32 amount =
         std::clamp(damage - static_cast<f32>(wall.armor), 1.0f, static_cast<f32>(wall.health));
     wall.health -= static_cast<s32>(amount);
-    // ProcessItem8c0acf00 resets the override on the following native tick.
+    // ProcessItem 8c0acf00 resets the override on the following native tick.
     wall.flash = wall.health > 0 ? 1.0f / 30 : 0;
     return true;
 }

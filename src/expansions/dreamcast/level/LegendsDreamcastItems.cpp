@@ -112,7 +112,7 @@ std::optional<LegendsPickup> legendsDreamcastPickup(const formats::ItemInfoRecor
             return reject("Unsupported Dreamcast obelisk collision shape");
         }
         // SetItem (8c0a8340) expands the obelisk's horizontal bounds by 1.1.
-        // Collision type3 projects onto the item matrix's axes and compares
+        // Collision type 3 projects onto the item matrix's axes and compares
         // directly against xSize/zSize: these are half extents, not full widths.
         result.collision = LegendsPickupCollision::Box;
         result.radius *= 1.1f;
@@ -148,7 +148,7 @@ std::optional<LegendsPickup> legendsDreamcastPickup(const formats::ItemInfoRecor
             return reject("Unsupported Dreamcast potion properties");
         }
         // All 105 placed native potions have a fixed element, 1..4. The generic
-        // definition with property0 has no placements; its unresolved dynamic
+        // definition with property 0 has no placements; its unresolved dynamic
         // colour cannot enter GDL's network profiles, which require 1..4.
         result.offer.kind = static_cast<s32>(ItemKind::Potion);
         result.offer.flags = std::array<u32, 4>{1, 2, 3, 4}[info.properties - 1];
@@ -193,7 +193,7 @@ std::optional<LegendsPickup> legendsDreamcastPickup(const formats::ItemInfoRecor
         break;
     }
     case 13: {
-        // Native table8c14b614: the realm identity selects the quest item bit.
+        // Native table 8c14b614: the realm identity selects the quest item bit.
         // All authored quest item definitions have value=0; that is not its ID.
         constexpr std::array<s32, 9> kLegendByRealm{0, 2, 1, 4, 3, 5, 6, 0, 0};
         if (realmType < 0 || static_cast<usize>(realmType) >= kLegendByRealm.size() ||
@@ -205,7 +205,7 @@ std::optional<LegendsPickup> legendsDreamcastPickup(const formats::ItemInfoRecor
         break;
     }
     default:
-        // BOSSKEY/subtype11 is in the definition library but has no placed
+        // BOSSKEY/subtype 11 is in the definition library but has no placed
         // instances and no case in the native pickup dispatcher. Boss rewards
         // need their own encounter flow; inventing a touch-to-shard award is wrong.
         return reject("Unsupported Dreamcast pickup subtype");

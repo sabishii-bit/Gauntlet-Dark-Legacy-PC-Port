@@ -46,7 +46,7 @@ bool LegendsDreamcastSpeech::enqueue(SoundPlayer& output, std::span<const u32> t
     if (!sequence) {
         return false;
     }
-    // Native announcer gain224/255, track127, priority2. These ordinary entry
+    // Native announcer gain 224/255, track 127, priority 2. These ordinary entry
     // and rune phrases share one FIFO; each finite phrase owns all its clips.
     const auto handle = output.playAfter(m_handles.empty() ? kNoSound : m_handles.back(), *sequence,
                                          224.0f / 255.0f, SoundCategory::Effects);

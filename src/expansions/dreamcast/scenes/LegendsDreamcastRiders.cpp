@@ -20,8 +20,8 @@ void LegendsSceneAdapter::bindDreamcastRider(const formats::ItemInfoRecord& info
     contents.owner = floor->object;
     // The shared loader has already run native FloorPos and added its .1 lift.
     // AddItemSub then reparents to this owner while preserving that world
-    // placement. In B1, RUNEB1 rides elevator floor231, not the independently
-    // animated decorative pedestal tracks243..245.
+    // placement. In B1, RUNEB1 rides elevator floor 231, not the independently
+    // animated decorative pedestal tracks 243..245.
     for (usize i = firstFigure; i < m_fixtures.size(); ++i) {
         contents.figures.push_back({i, m_fixtures[i].transform()});
     }
@@ -48,7 +48,7 @@ void LegendsSceneAdapter::updateDreamcastRiders() {
         }
         for (const auto& binding : rider.contents.figures) {
             auto& figure = m_fixtures[binding.index];
-            // AddItemSub8c0a99e0 reparents the root, and UpdateObjWorldMat
+            // AddItemSub 8c0a99e0 reparents the root, and UpdateObjWorldMat
             // supplies its local matrix. Compose from that fixed binding,
             // never invert last tick's possibly collapsed platform scale.
             // Chest contents apply their opening-local pose afterward.

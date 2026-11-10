@@ -21,8 +21,8 @@ s16 parameter(const formats::ItemInstanceRecord& instance, usize at) {
     return std::bit_cast<s16>(readU16LE(instance.params, at));
 }
 u32 switchFlags(s32 subtype, u16 authored) {
-    // SetItem8c0a8340, native type5 case. The upper byte remains authored;
-    // subtype24 is intentionally the default, unlike subtype23's fixed latch.
+    // SetItem 8c0a8340, native type 5 case. The upper byte remains authored;
+    // subtype 24 is intentionally the default, unlike subtype 23's fixed latch.
     u32 kind = authored | 8U;
     switch (subtype) {
     case 20: kind = 0x10; break;
@@ -76,7 +76,7 @@ LegendsDreamcastWorldMotion::LegendsDreamcastWorldMotion(
         track.running = definition.frameCount > 1 && (flags & 0x300000U) != 0x300000U;
         m_tracks.push_back(std::move(track));
     }
-    // InitWorld8c0a2b18..2c4c hides four named A5/F2 lightning nodes and
+    // InitWorld 8c0a2b18..2c4c hides four named A5/F2 lightning nodes and
     // starts independent 5..15-second clocks. These are scripted flashes,
     // not texture or object animation tracks. Keep presentation randomness
     // separate from combat and generator streams.
@@ -140,7 +140,7 @@ LegendsDreamcastWorldMotion::LegendsDreamcastWorldMotion(
                 if (track.definition.objectIndex == pad.target) {
                     created.animated = track.definition.frameCount > 1;
                     // ProcessItemWobjs starts a registered, closed keyed
-                    // target in reverse until its authored cursor reaches0.
+                    // target in reverse until its authored cursor reaches 0.
                     track.reverse = true;
                     track.once = true;
                     track.running = created.animated && track.frame > 0;
@@ -186,7 +186,7 @@ LegendsDreamcastWorldMotion::LegendsDreamcastWorldMotion(
         }
     }
     compose();
-    // InitItems8c0a9b20 runs ProcessItemWobjs before its AddItemSub pass.
+    // InitItems 8c0a9b20 runs ProcessItemWobjs before its AddItemSub pass.
     // Both FloorPos and UnparentMatrix therefore see the initialized target
     // pose, not the authored rest matrix or the renderer's baked first key.
     std::vector<CollisionTriangle> floors;
@@ -322,7 +322,7 @@ void LegendsDreamcastWorldMotion::advance(f32 seconds) {
     if (!std::isfinite(seconds) || seconds <= 0 || seconds > 10) {
         return;
     }
-    // UpdateWorld8c0a2fc0..3052 unhides for .2 seconds, then waits another
+    // UpdateWorld 8c0a2fc0..3052 unhides for .2 seconds, then waits another
     // 5+frand(10). This world effect continues under the Stop Time item.
     for (auto& flash : m_lightning) {
         flash.remaining -= seconds;
@@ -344,8 +344,8 @@ void LegendsDreamcastWorldMotion::advance(f32 seconds) {
             sounding.try_emplace((*target.sounds)[0], (*target.sounds)[1], target.object);
         }
     }
-    // DoWorldAnimSub8c0e9700 advances native keys at30Hz, independently of
-    // the item/action timer's60Hz clock. Retain the authored starting cursor.
+    // DoWorldAnimSub 8c0e9700 advances native keys at 30Hz, independently of
+    // the item/action timer's 60Hz clock. Retain the authored starting cursor.
     for (auto& track : m_tracks) {
         if (!track.running) {
             continue;
@@ -376,7 +376,7 @@ void LegendsDreamcastWorldMotion::advance(f32 seconds) {
             target.moving = target.alpha != wanted;
         } else {
             const f32 wanted = target.open ? target.opened : target.closed;
-            // ProcessItemWobjs8c0ab44e clamps the remaining distance by
+            // ProcessItemWobjs 8c0ab44e clamps the remaining distance by
             // four units per second, with a .001-unit completion deadband.
             const f32 distance = wanted - target.height;
             target.moving = std::abs(distance) > .001f;
@@ -561,9 +561,9 @@ bool LegendsDreamcastWorldMotion::activatesBoss(s32 support) const {
     }
     const s32 parent = m_parents[static_cast<usize>(support)];
     return std::ranges::any_of(m_targets, [&](const auto& target) {
-        // ProcessItemWobjs8c0ab4e0 sets0x10 while moving; its final low-mode
-        // gate clears transient state for unlatched low0 controls. A5 subtype26
-        // supplies low2 (authored0x400 becomes0x402), so its flag is retained.
+        // ProcessItemWobjs 8c0ab4e0 sets 0x10 while moving; its final low-mode
+        // gate clears transient state for unlatched low 0 controls. A5 subtype 26
+        // supplies low 2 (authored 0x400 becomes 0x402), so its flag is retained.
         return (target.object == support || target.object == parent) && target.moving &&
                (target.flags & 7U) != 0;
     });
@@ -575,7 +575,7 @@ std::optional<FloorHit> LegendsDreamcastWorldMotion::supportAt(Vec3 position) co
 }
 Vec3 LegendsDreamcastWorldMotion::itemPosition(const formats::ItemInfoRecord& info,
                                                Vec3 authored) const {
-    // AddItemSub8c0a99e0 skips only collision flag1. FloorPos8c0eacc0
+    // AddItemSub 8c0a99e0 skips only collision flag 1. FloorPos 8c0eacc0
     // preserves the supplied Y when no floor is found; the caller still
     // adds its .1-unit lift. Do not preserve an arbitrary authored air gap.
     if ((info.collisionFlags & 1) == 0) {
@@ -615,8 +615,8 @@ void LegendsDreamcastWorldMotion::syncCollision(WorldCollision& collision) const
             }
         }
         // ProcessItemWobjs writes WorldObj.side=1 during movement, not a
-        // global collision disable. ProcessCritter's floor category2 still
-        // follows A5's descending platform while player category1 skips it.
+        // global collision disable. ProcessCritter's floor category 2 still
+        // follows A5's descending platform while player category 1 skips it.
         collision.setCollisionSide(owner, side);
         collision.setSolid(owner, solid);
     }
@@ -624,7 +624,7 @@ void LegendsDreamcastWorldMotion::syncCollision(WorldCollision& collision) const
 
 void LegendsDreamcastWorldMotion::bindSounds(const SoundResolver& resolve) {
     for (auto& target : m_targets) {
-        // ProcessItemWobjs8c0ab040 routes bridge subtypes separately and
+        // ProcessItemWobjs 8c0ab040 routes bridge subtypes separately and
         // reserves slots>=10 for one-shot sounds. Only verified elevator
         // start/stop pairs enter the movement-loop lane.
         if (target.soundSlot >= 0 && target.soundSlot < 10 && target.subtype != 20 &&

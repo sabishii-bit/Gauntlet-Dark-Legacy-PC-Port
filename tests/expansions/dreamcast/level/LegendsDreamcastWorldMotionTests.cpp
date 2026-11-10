@@ -431,7 +431,7 @@ TEST_CASE("Dreamcast B1 displays native pads and carries RUNEB1 throughout its p
             ++plates;
         }
     }
-    CHECK(plates == 2); // four authored flag2 volumes remain invisible, but active
+    CHECK(plates == 2); // four authored flag 2 volumes remain invisible, but active
     const auto rune = std::ranges::find(scene->pickups(), 144U, &LegendsPickup::nativeIndex);
     REQUIRE(rune != scene->pickups().end());
     const auto native = formats::LegendsDreamcastScene::parse(bytes);
@@ -442,8 +442,8 @@ TEST_CASE("Dreamcast B1 displays native pads and carries RUNEB1 throughout its p
     REQUIRE(motion->moves(support->object));
     const Vec3 before = rune->position;
     std::vector<LegendsPortalVisitor> visitors;
-    // Visible pad138 targets the actual supporting lift230/FLOOR#27(231).
-    // Hidden pads141..143 separately animate the nested decorative pedestal.
+    // Visible pad 138 targets the actual supporting lift 230/FLOOR#27(231).
+    // Hidden pads 141..143 separately animate the nested decorative pedestal.
     visitors.push_back({.position = motion->switchPosition(0)});
     for (usize i = 3; i < 6; ++i) {
         visitors.push_back({.position = motion->switchPosition(i)});
@@ -574,7 +574,7 @@ TEST_CASE("Dreamcast F1 bridge render and collision start at the first key and r
     REQUIRE(key != tracks.worldAnimations.end());
     CHECK(key->startFrame == 0);
     CHECK(key->frameCount == 80);
-    // The nearby F1ROCKFALL#06 is a separate native type10/subtype40 item.
+    // The nearby F1ROCKFALL#06 is a separate native type 10/subtype 40 item.
     // It must not replace the switch-driven floor's authored first pose.
     REQUIRE(records.itemInstances.at(12).name == "F1ROCKFALL#06");
     const auto& rubble = records.itemInfos.at(records.itemInstances[12].info);

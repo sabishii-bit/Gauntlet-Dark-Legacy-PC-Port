@@ -216,7 +216,7 @@ s32 LegendsDreamcastPortalMotion::sequenceTicks(s32 frames, s32 frameRate) {
         return 0;
     }
     // InitAnim 8c069170 scales by rate/30; do_items 8c0ab9f0 rounds
-    // frames*scale + .5 before doubling. ACTIVE1/3 are 15 frames at rate15:
+    // frames*scale + .5 before doubling. ACTIVE1/3 are 15 frames at rate 15:
     // their pose takes .25 seconds, but their native timer holds for 16/60.
     const s64 rate = frameRate > 0 ? frameRate : 30;
     return static_cast<s32>(std::min<s64>(3600, ((frames * rate + 15) / 30) * 2));

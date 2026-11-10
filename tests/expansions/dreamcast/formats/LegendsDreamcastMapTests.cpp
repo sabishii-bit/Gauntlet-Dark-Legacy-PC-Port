@@ -176,9 +176,9 @@ TEST_CASE("Dreamcast alpha-textured meshes retain material flags without copying
 TEST_CASE("Dreamcast RGB565 clears stale alpha before admitting its lightmap",
           "[formats][legends][dreamcast-presentation][dreamcast-material-alpha]") {
     Fixture fixture;
-    // Native MBOX_LoadModel -> 8c0eff20 clears LOD bit0, then rebuilds it
+    // Native MBOX_LoadModel -> 8c0eff20 clears LOD bit 0, then rebuilds it
     // from each referenced bitmap's low three format bits. F1's floor is
-    // serialized with bit0 set despite an opaque RGB565 source texture.
+    // serialized with bit 0 set despite an opaque RGB565 source texture.
     put32(fixture.model, Fixture::kLod + 4, 17);
     fixture.model[244 + 16] = 0x19; // Higher storage bits do not change RGB565.
     put16(fixture.model, Fixture::kVertices + 16, 512);
@@ -390,7 +390,7 @@ TEST_CASE("Dreamcast generic generator bank decodes its own LOD-zero artwork",
         u32 textureSize;
     };
     // These are damage variants within the reduced-detail GENERATORS bank,
-    // not distance LODs. LoadWorld8c0a3600 loads this bank for gen_active<2;
+    // not distance LODs. LoadWorld 8c0a3600 loads this bank for gen_active<2;
     // ordinary active generators use their selected monster bank instead.
     // This tests that bank's decoding, not normal gameplay asset selection.
     constexpr std::array kExpected{Expected{"GEN_TRO0L1", 34, 16}, Expected{"GEN_TRO1L1", 28, 16},

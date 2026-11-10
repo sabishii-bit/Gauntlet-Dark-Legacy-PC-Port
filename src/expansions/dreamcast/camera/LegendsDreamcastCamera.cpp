@@ -327,7 +327,7 @@ void LegendsDreamcastLevelCamera::focusOn(Vec3 attention) {
     if (!validPoint(attention) || m_ceremonyAttention == attention) {
         return;
     }
-    // CameraAddSubject8c076020 ->8c075ec0 copies the new attention and
+    // CameraAddSubject 8c076020 -> 8c075ec0 copies the new attention and
     // clears velocity, retaining the eye at camera+4c. Skorne does not call
     // this path: its runestone presentation retains the arena camera.
     m_ceremonyAttention = attention;

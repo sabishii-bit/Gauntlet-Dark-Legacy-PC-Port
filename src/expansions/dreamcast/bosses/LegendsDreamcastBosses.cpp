@@ -124,7 +124,7 @@ std::optional<LegendsDreamcastBossEncounter> legendsDreamcastBoss(std::span<cons
         require(nativeRealm == binding->realm && nativeKind == binding->nativeKind,
                 "arena identity disagrees with native campaign");
 
-        // SetLocators 8c0a78a0 case6 uses the authored Boss marker. 8c071120
+        // SetLocators 8c0a78a0 case 6 uses the authored Boss marker. 8c071120
         // passes that transform to CritterNew(4,0), not TYPE.defaultPos (which
         // frequently contains a 999-height roaming sentinel). Every shipped
         // boss marker is yaw-only; CreateYPRMatrix 8c0ed040 stores forward

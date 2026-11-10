@@ -94,7 +94,7 @@ TEST_CASE("Dreamcast generators preserve native template HP and placed strategie
     CHECK(generator->gameplay.body.hitPoints == 10);
     CHECK(generator->gameplay.stageHealth == std::array<s32, 3>{});
     CHECK(generator->gameplay.algorithm == 7);
-    // SetItem overwrites byte4 and does not read byte6 for generators;
+    // SetItem overwrites byte 4 and does not read byte 6 for generators;
     // these are not Dark Legacy's authored quota/interval overrides.
     CHECK(generator->gameplay.maximumBrood == 0);
     CHECK(generator->gameplay.spawnInterval == 0);
@@ -257,7 +257,7 @@ TEST_CASE(
         REQUIRE(generator.tier <= 3);
         ++tiers[static_cast<usize>(generator.tier - 1)];
     }
-    // SetItem8c0a8340 takes the initial visual state from placement+0x30.
+    // SetItem 8c0a8340 takes the initial visual state from placement+0x30.
     // The thirteen small huts are authored TRO1, not prematurely damaged TRO3.
     CHECK(tiers == std::array<usize, 3>{13, 9, 4});
     const auto full = std::ranges::find(scene->generators(), 69U, &ImportedGenerator::nativeIndex);
@@ -300,7 +300,7 @@ TEST_CASE(
     // generic inspection-mode bank. Its tier-two model has a distinct ROOT
     // spelling/topology that must not lose to generic GEN_TRO2L1.
     verifyArtwork(3, "GEN_TRO3L1", 22, 128);
-    // HitItem8c0afaa0 changes state only at templateHP and 2*templateHP.
+    // HitItem 8c0afaa0 changes state only at templateHP and 2*templateHP.
     REQUIRE(generators.strike(*pool, static_cast<f32>(full->body.armor) + 9, 0));
     CHECK(generators.healthOf(*pool) == 21);
     verifyArtwork(3, "GEN_TRO3L1", 22, 128);
@@ -413,8 +413,8 @@ TEST_CASE("Dreamcast generator libraries respect the selected native enemy roste
     rejected();
     scope.enemySounds = {{.kind = enemy_type::kKnight, .subtype = 2}};
     rejected();
-    // LoadMonster8c090000 chooses TROaux for category4 and a numbered bank
-    // above10. Neither selects the base TRO bank containing generator art.
+    // LoadMonster 8c090000 chooses TROaux for category 4 and a numbered bank
+    // above 10. Neither selects the base TRO bank containing generator art.
     scope.enemySounds = {{.kind = enemy_type::kTroll, .subtype = 4}};
     rejected();
     scope.enemySounds[0].subtype = 11;

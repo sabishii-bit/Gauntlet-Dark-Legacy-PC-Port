@@ -33,8 +33,8 @@ bool LegendsSceneAdapter::bindDreamcastArenaRock(RenderDevice& device,
     const auto& rock = admission.rock;
     ArenaRockPresentation binding;
     binding.definition = rock->body;
-    // SetItem8c0a8f80 multiplies native base HP by the placed segment count.
-    // AddItemWobj8c0a9d80 changes the static model, not the item's position/body.
+    // SetItem 8c0a8f80 multiplies native base HP by the placed segment count.
+    // AddItemWobj 8c0a9d80 changes the static model, not the item's position/body.
     binding.tier = rock->tier;
     binding.health = rock->tier * rock->body.tierHealth;
     binding.armor = rock->armor;
@@ -59,7 +59,7 @@ bool LegendsSceneAdapter::bindDreamcastArenaRock(RenderDevice& device,
         binding.figures[state] = figure;
         m_hiddenFixtures[figure] = true;
     }
-    // AddItemWobj8c0a9d80 emits FX23 on the final tier change. InitFX8c0d33d0
+    // AddItemWobj 8c0a9d80 emits FX23 on the final tier change. InitFX 8c0d33d0
     // binds that one-shot to this stage's native SAFEREXP tree.
     if (const auto burst = scope.findTree("SAFEREXP")) {
         const usize figure = m_fixtures.size();
@@ -82,7 +82,7 @@ void LegendsSceneAdapter::restoreDreamcastChimeraCover(RenderDevice& device,
         return;
     }
     // Compatibility restoration, not a recovered Dreamcast spawn script:
-    // GC A5 items12..14 and N64 castle5 SHOOTW_1/2/3 retain these three blocks.
+    // GC A5 items 12..14 and N64 castle 5 SHOOTW_1/2/3 retain these three blocks.
     // DC omits their placements/info but retains the same SAFEROCK1L1 mesh.
     // Use only that level's loaded DC artwork; never borrow another platform.
     if (art == nullptr || !art->models.find("SAFEROCK1L1")) {

@@ -51,7 +51,7 @@ std::vector<DreamcastBankSample> decodeDreamcastSoundBank(std::span<const u8> by
         constexpr std::array<s32, 8> kFactors{230, 230, 230, 230, 307, 409, 512, 614};
         for (const u8 byte : bytes.subspan(offset, length)) {
             if (bits == 8) {
-                // amUtilGetAicaSampleType8c102990 maps8 to signed PCM8;
+                // amUtilGetAicaSampleType 8c102990 maps 8 to signed PCM8;
                 // 4 selects AICA long-stream ADPCM, not a PCM quantizer.
                 sample.clip.samples.push_back(static_cast<f32>(std::bit_cast<s8>(byte)) / 128);
                 continue;

@@ -49,7 +49,7 @@ void LegendsSceneAdapter::bindDreamcastGenerator(
     }
     std::array<ItemArchive*, 4> owners{};
     // LoadWorld admits the reduced GENERATORS bank only for gen_active<2;
-    // do_items8c0abc48..8c0abca0 spawns enemies only for that same option>2.
+    // do_items 8c0abc48..8c0abca0 spawns enemies only for that same option>2.
     // Ordinary play therefore owns its generator art in the monster bank.
     // Search every suffix inside that owner before consulting fallback banks:
     // a generic GEN_TRO2L1 must not beat the native GEN_TRO2L1ROOT.
@@ -59,7 +59,7 @@ void LegendsSceneAdapter::bindDreamcastGenerator(
             continue;
         }
         // InitItemInfo binds item trees from the item banks, not the monster
-        // animation bank. Generators take FindItemObject8c0a8040's static
+        // animation bank. Generators take FindItemObject 8c0a8040's static
         // name/L1/L1ROOT result, even when the spelling ends in ROOT.
         if (const auto model = speciesScope.findObject(name)) {
             owners[state] = model->archive;

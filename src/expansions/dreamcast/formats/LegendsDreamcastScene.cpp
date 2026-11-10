@@ -287,7 +287,7 @@ dreamcastLegendsFixtureScope(std::span<const u8> worlddata, std::string_view lev
                     break;
                 }
             }
-            // AudioShootWall8c0e1220 -> AudioLevelSound8c0dc640 selects
+            // AudioShootWall 8c0e1220 -> AudioLevelSound 8c0dc640 selects
             // AUDS+0x12 through the realm's sound-name table.
             const s16 hit = std::bit_cast<s16>(readU16LE(worlddata, audioAt + 18));
             if (hit >= 0) {

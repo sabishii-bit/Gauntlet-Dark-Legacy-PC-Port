@@ -86,7 +86,7 @@ void LegendsDreamcastArenaCamera::step(std::span<const CameraSubject> party, boo
     boss.attentionOffset = Vec3{0};
     boss.height = 0;
     if ((record.flags & BossCameraInfo::kTracksParty) != 0 && boss.awake) {
-        // GetBossAvgPos8c081320, r7=1 at8c082420: the midpoint of player
+        // GetBossAvgPos 8c081320, r7=1 at 8c082420: the midpoint of player
         // and boss attention bounds, not an arithmetic average of the party.
         Vec3 low = boss.position;
         Vec3 high = low;

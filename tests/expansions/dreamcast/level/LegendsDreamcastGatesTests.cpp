@@ -37,7 +37,7 @@ TEST_CASE("Dreamcast Temple entrance doors emit their authored movement sound",
     const auto pad = std::ranges::find(motion->switches(), 94U,
                                        &LegendsDreamcastWorldMotion::Switch::nativeIndex);
     REQUIRE(pad != motion->switches().end());
-    REQUIRE(pad->target == 73); // E1ANIM100; chained pad95 controls E1ANIM101
+    REQUIRE(pad->target == 73); // E1ANIM100; chained pad 95 controls E1ANIM101
     const usize index = static_cast<usize>(pad - motion->switches().begin());
     const Vec3 position = motion->switchPosition(index);
     LegendsDreamcastSounds sounds;

@@ -18,7 +18,7 @@
 
 namespace gdl::game {
 
-/** Dreamcast world-node animation and native type5 contacts. Identity is the
+/** Dreamcast world-node animation and native type 5 contacts. Identity is the
  * authored world table, not an inferred N64 fixture or a presentation mesh. */
 class LegendsDreamcastWorldMotion {
 public:
@@ -56,7 +56,7 @@ public:
     std::optional<FloorHit> supportAt(Vec3 position) const;
     bool carriesItems(s32 object) const;
     bool moves(s32 object) const;
-    /** Current native triggerstate0x10 on the support or its immediate parent. */
+    /** Current native triggerstate 0x10 on the support or its immediate parent. */
     bool activatesBoss(s32 support) const;
     std::optional<std::pair<usize, Vec3>> ambientParent(Vec3 position, f32 radius = 10) const;
     std::span<const Switch> switches() const { return m_switches; }

@@ -63,7 +63,7 @@ std::vector<u8> syntheticWorldData() {
 
 std::vector<u8> syntheticWorld() {
     // WorldFile's native header uses offsets even for empty tables. The only
-    // record this fixture contains is the actual type6 boss locator.
+    // record this fixture contains is the actual type 6 boss locator.
     std::vector<u8> bytes(96 + 28);
     test::setU32LE(bytes, 88, 1);
     test::setU32LE(bytes, 92, 96);
@@ -619,7 +619,7 @@ TEST_CASE("Dreamcast E2 entrance cues move the native floor through the real opp
     std::vector<std::pair<s32, Vec3>> floors;
     for (s32 index = 21; index <= 44; ++index) {
         if (index == 36 || index == 37) {
-            continue; // Separate subtype40 pieces, not SafeRockSetup's subtype51 roster.
+            continue; // Separate subtype 40 pieces, not SafeRockSetup's subtype 51 roster.
         }
         const s32 id = LegendsSceneAdapter::kFixtureObjectBase + index;
         const auto object = fixture.level->adapter().fixtureObject(id);
