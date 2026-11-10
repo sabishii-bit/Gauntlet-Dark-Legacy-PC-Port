@@ -32,6 +32,7 @@ struct LegendsDeathAdvice {
  * The scene owns the SoundPlayer lifetime and calls stop before unloading.
  * Effects-category pause freezes the audible cursor; update(paused=true)
  * additionally freezes pending admission and expiry without changing other audio. */
+// NOLINTNEXTLINE(bugprone-exception-escape): the map's move is not noexcept on every library
 class LegendsSpeech {
 public:
     bool openN64(const std::filesystem::path& nativeRoot);
