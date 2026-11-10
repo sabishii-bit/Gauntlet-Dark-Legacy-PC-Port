@@ -107,9 +107,9 @@ struct Figure {
 TEST_CASE("player figure digest distinguishes the immutable imported sizing policy",
           "[native-state-digest][player-figure-native-digest][legends-player-size][assets]") {
     const auto root = test::assetOrSkip("WEAPONS/objects.ngc").parent_path().parent_path();
-    Figure ordinary(root);
+    const Figure ordinary(root);
     Figure imported(root, PlayerFigure::LevelSize::LevelOne);
-    Figure samePolicy(root, PlayerFigure::LevelSize::LevelOne);
+    const Figure samePolicy(root, PlayerFigure::LevelSize::LevelOne);
     CHECK(imported.digest() == samePolicy.digest());
     CHECK(imported.digest() != ordinary.digest());
     PlayerFigure::LocalSnapshot saved;

@@ -43,8 +43,9 @@ TEST_CASE("native player dissolve skins opt in without changing ordinary chrome 
     figure->draw(device, Mat4{1}, Mat4{1}, {}, 1, true);
     usize dissolved = 0;
     for (const auto& draw : device.draws) {
-        if (draw.state.maskedTexture != &skin)
+        if (draw.state.maskedTexture != &skin) {
             continue;
+        }
         ++dissolved;
         CHECK(draw.state.blend == BlendMode::Alpha);
         CHECK_FALSE(draw.state.depthWrite);
