@@ -8,13 +8,16 @@ std::optional<LegendsDreamcastObelisk>
 legendsDreamcastObelisk(const formats::ItemInfoRecord& info,
                         const formats::ItemInstanceRecord& instance, u32 nativeIndex,
                         std::string* diagnostic) {
-    if (diagnostic)
+    if (diagnostic) {
         diagnostic->clear();
-    if (info.type != 1 || info.subtype != 12)
+    }
+    if (info.type != 1 || info.subtype != 12) {
         return {};
+    }
     auto pickup = legendsDreamcastPickup(info, instance, nativeIndex, -1, diagnostic);
-    if (!pickup)
+    if (!pickup) {
         return {};
+    }
     LegendsDreamcastObelisk result;
     result.pickup = std::move(*pickup);
     // SetItem (8c0a8340) grows the definition's horizontal bounds by 1.1. Both

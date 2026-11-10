@@ -18,19 +18,23 @@ std::optional<LegendsDreamcastTrap>
 LegendsDreamcastTrap::decode(const formats::ItemInfoRecord& info,
                              const formats::ItemInstanceRecord& instance, u32 nativeIndex,
                              std::array<s32, 4> sequenceTicks, std::string* diagnostic) {
-    if (diagnostic)
+    if (diagnostic) {
         diagnostic->clear();
-    if (info.type != 8)
+    }
+    if (info.type != 8) {
         return {};
+    }
     const auto reject = [&](std::string_view message) -> std::optional<LegendsDreamcastTrap> {
-        if (diagnostic)
+        if (diagnostic) {
             *diagnostic = message;
+        }
         return {};
     };
     const bool spikes = info.subtype == 0 && info.name == "SPIKES";
     const bool flame = info.subtype == 1 && (info.name == "FLAMEH" || info.name == "FLAMEV");
-    if (!spikes && !flame)
+    if (!spikes && !flame) {
         return reject("Dreamcast trap needs an unsupported native action/contact adapter");
+    }
     if ((info.collisionType != 1 && info.collisionType != 3) || info.activeType != 5 ||
         info.value <= 0 || info.value > 10000 || info.activeOn != 0 || instance.flags != 0 ||
         !instance.name.empty() || info.properties != (spikes ? damage::kSpike : damage::kFire) ||
@@ -40,8 +44,9 @@ LegendsDreamcastTrap::decode(const formats::ItemInfoRecord& info,
         !std::isfinite(info.zSize) || info.zSize < 0 ||
         (info.collisionType == 3 && (info.xSize <= 0 || info.zSize <= 0)) ||
         std::ranges::any_of(sequenceTicks, [](s32 value) { return value < 0 || value > 36000; }) ||
-        sequenceTicks[2] == 0)
+        sequenceTicks[2] == 0) {
         return reject("Dreamcast trap has unsupported timing or contact parameters");
+    }
     LegendsDreamcastTrap result;
     result.m_nativeIndex = nativeIndex;
     result.m_position = instance.position;
@@ -77,10 +82,12 @@ s32 LegendsDreamcastTrap::rest() {
 }
 
 void LegendsDreamcastTrap::advance(f32 seconds, bool timeStopped) {
-    if (!std::isfinite(seconds) || seconds < 0 || seconds > 10)
+    if (!std::isfinite(seconds) || seconds < 0 || seconds > 10) {
         return;
-    for (auto& cooldown : m_cooldowns)
+    }
+    for (auto& cooldown : m_cooldowns) {
         cooldown = std::max(0.f, cooldown - seconds);
+    }
     m_stopped = timeStopped;
     m_ticks += static_cast<f64>(seconds) * 60;
     while (m_ticks + .000001 >= 1) {
@@ -105,21 +112,25 @@ std::optional<LegendsTrapHit> LegendsDreamcastTrap::touch(const LegendsPortalVis
     if (!dangerous() || !visitor.alive || visitor.levitating || visitor.player >= 4 ||
         m_cooldowns[visitor.player] > 0 || !finite(visitor.position) ||
         !std::isfinite(visitor.height) || !std::isfinite(visitor.radius) || visitor.height <= 0 ||
-        visitor.radius < 0)
+        visitor.radius < 0) {
         return {};
+    }
     const Vec3 centre = visitor.position + Vec3{0, visitor.height * .5f, 0};
-    if (std::abs(centre.y - m_contact.centre.y) > m_contact.height + visitor.height * .5f)
+    if (std::abs(centre.y - m_contact.centre.y) > m_contact.height + visitor.height * .5f) {
         return {};
+    }
     Obstacle contact = m_contact;
     const Vec3 horizontal{centre.x, contact.centre.y, centre.z};
     if (contact.cylinderRadius > 0) {
-        if (!contact.touchedBy(horizontal, visitor.radius))
+        if (!contact.touchedBy(horizontal, visitor.radius)) {
             return {};
+        }
     } else {
         contact.halfAcross += visitor.radius;
         contact.halfAlong += visitor.radius;
-        if (!contact.touchedBy(horizontal, 0))
+        if (!contact.touchedBy(horizontal, 0)) {
             return {};
+        }
     }
     // ItemTouch8c0af0e0 applies value and an fxhittime based on remaining
     // animation ticks. Keep player slots independent and never hurt during ONA.

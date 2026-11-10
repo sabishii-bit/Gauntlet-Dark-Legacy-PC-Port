@@ -34,18 +34,19 @@ s32 stageOrder(s32 world, s32 stage) {
     // 8c065500 deliberately reorders these entries; ASCII suffix order is
     // not progression order (notably Dungeon/Chimera and Battlefield).
     if (world == 1) {
-        if (stage == 0)
+        if (stage == 0) {
             stage = 1;
-        else if (stage == 5)
+        } else if (stage == 5) {
             stage = 4;
-        else if (stage == 4)
+        } else if (stage == 4) {
             stage = 5;
+        }
     } else if (world == 7 && stage == 3) {
         stage = 6;
     } else if (world == 8) {
-        constexpr std::array<s32, 5> order{0, 2, 4, 1, 3};
-        if (stage < static_cast<s32>(order.size())) {
-            stage = order[static_cast<usize>(stage)];
+        constexpr std::array<s32, 5> kOrder{0, 2, 4, 1, 3};
+        if (stage < static_cast<s32>(kOrder.size())) {
+            stage = kOrder[static_cast<usize>(stage)];
         }
     }
     return (realm << 8) | (stage + 1);
@@ -59,11 +60,13 @@ bool finite(Vec3 point) {
 
 void LegendsDreamcastPortalPolicy::addWorld(std::span<const u8> bytes) {
     const auto require = [](bool valid) {
-        if (!valid)
+        if (!valid) {
             throw FormatError("Dreamcast portal roster has invalid worlddata records");
+        }
     };
     require(bytes.size() >= 8);
-    const usize directory = readU32LE(bytes, 0), count = readU32LE(bytes, 4);
+    const usize directory = readU32LE(bytes, 0);
+    const usize count = readU32LE(bytes, 4);
     require(directory >= 8 && directory <= bytes.size() && count <= 4096 &&
             count <= (bytes.size() - directory) / 12);
     struct Section {
@@ -83,19 +86,22 @@ void LegendsDreamcastPortalPolicy::addWorld(std::span<const u8> bytes) {
         const auto section = found->second;
         usize end = directory;
         for (const auto& [unused, other] : sections) {
-            if (other.offset > section.offset)
+            if (other.offset > section.offset) {
                 end = std::min(end, other.offset);
+            }
         }
         require(section.count <= (end - section.offset) / stride);
         return section;
     };
-    const auto worlds = records(0x57524c44, 56), levels = records(0x4c45564c, 144);
+    const auto worlds = records(0x57524c44, 56);
+    const auto levels = records(0x4c45564c, 144);
     require(worlds.count == 1 && levels.count <= 256);
     const s32 world = readS32LE(bytes, worlds.offset);
     std::vector<LegendsDreamcastStage> additions;
     for (usize i = 0; i < levels.count; ++i) {
         const usize at = levels.offset + i * 144 + 8;
-        const u8 letter = bytes[at], number = bytes[at + 1];
+        const u8 letter = bytes[at];
+        const u8 number = bytes[at + 1];
         require(letter >= 'A' && letter <= 'Z' && number >= '1' && number <= '9' &&
                 bytes[at + 2] == 0);
         std::string name = "level";
@@ -116,8 +122,9 @@ void LegendsDreamcastPortalPolicy::addWorld(std::span<const u8> bytes) {
 
 const LegendsDreamcastStage* LegendsDreamcastPortalPolicy::find(std::string_view map) const {
     const auto name = LegendsProgress::mapIdentity(map);
-    if (!name)
+    if (!name) {
         return nullptr;
+    }
     const auto found = std::ranges::find(m_stages, *name, &LegendsDreamcastStage::map);
     return found == m_stages.end() ? nullptr : &*found;
 }
@@ -125,25 +132,34 @@ const LegendsDreamcastStage* LegendsDreamcastPortalPolicy::find(std::string_view
 bool LegendsDreamcastPortalPolicy::allows(std::string_view map,
                                           const LegendsProgress& progress) const {
     const auto* destination = find(map);
-    if (!destination || destination->order < 0)
+    if (!destination || destination->order < 0) {
         return false;
-    u32 realms = 1;
-    constexpr std::array<u64, 3> obelisks{0x38, 7, 0x1c0};
-    for (usize i = 0; i < obelisks.size(); ++i) {
-        if ((progress.obelisks & obelisks[i]) == obelisks[i])
-            realms |= 1U << (i + 1);
     }
-    if ((progress.shards & 0x20) != 0)
+    // stageOrder orders only the stages of the tower's realms, so an ordered
+    // destination always has one; the test keeps the realm's bit defined.
+    const s32 realm = realmOf(destination->world);
+    if (realm < 0) {
+        return false;
+    }
+    u32 realms = 1;
+    constexpr std::array<u64, 3> kObelisks{0x38, 7, 0x1c0};
+    for (usize i = 0; i < kObelisks.size(); ++i) {
+        if ((progress.obelisks & kObelisks[i]) == kObelisks[i]) {
+            realms |= 1U << (i + 1);
+        }
+    }
+    if ((progress.shards & 0x20) != 0) {
         realms |= 1U << 5;
+    }
     s32 completed = 0;
     for (const auto& stage : m_stages) {
-        if (progress.hasCompleted(stage.map))
+        if (progress.hasCompleted(stage.map)) {
             completed = std::max(completed, stage.order);
+        }
     }
     // Tower admission 8c0655c0: the first stage of an open realm or any
     // stage up to the party's highest completion plus one. Special realms
     // are unlocked by their own collective relic masks.
-    const s32 realm = realmOf(destination->world);
     return ((realms & (1U << realm)) != 0 &&
             (destination->order <= completed + 1 || (destination->order & 255) == 1)) ||
            (destination->world == 5 && (progress.shards & 0x1e) == 0x1e) ||
@@ -157,16 +173,20 @@ dreamcastLegendsPortal(const formats::ItemInfoRecord& info,
     if (info.type != 9 || info.subtype != 0 || instance.params[0] != 0 || instance.params[1] != 0 ||
         instance.params[2] != 0 || instance.params[3] != 0 || !finite(instance.position) ||
         !std::isfinite(info.radius) || info.radius <= 0 || instance.minPlayers < 0 ||
-        instance.minPlayers > 4 || (instance.flags & 2U) != 0)
+        instance.minPlayers > 4 || (instance.flags & 2U) != 0) {
         return {};
-    const u8 letter = instance.params[4], number = instance.params[5];
-    if (letter < 'A' || letter > 'Z' || number < '1' || number > '9')
+    }
+    const u8 letter = instance.params[4];
+    const u8 number = instance.params[5];
+    if (letter < 'A' || letter > 'Z' || number < '1' || number > '9') {
         return {};
+    }
     std::string map = "level";
     map += static_cast<char>(letter + ('a' - 'A'));
     map += static_cast<char>(number);
-    if (!policy.find(map))
+    if (!policy.find(map)) {
         return {};
+    }
     return LegendsDreamcastPortal{index, std::move(map), instance.position, info.radius,
                                   instance.minPlayers};
 }
@@ -204,8 +224,9 @@ s32 LegendsDreamcastPortalMotion::sequenceTicks(s32 frames, s32 frameRate) {
 
 LegendsDreamcastPortalMotion::LegendsDreamcastPortalMotion(std::array<s32, 5> sequenceTicks)
     : m_sequenceTicks(sequenceTicks) {
-    for (auto& ticks : m_sequenceTicks)
+    for (auto& ticks : m_sequenceTicks) {
         ticks = std::clamp(ticks, 0, 3600);
+    }
 }
 
 void LegendsDreamcastPortalMotion::enter(Phase phase) {
@@ -241,8 +262,9 @@ bool LegendsDreamcastPortalMotion::tick(u8 occupants, u8 living) {
         }
         // 8c0acd48..5c reloads this hold only while a partial party is on
         // ACTIVE2. Otherwise use the actual authored animation duration.
-        if (m_phase == Phase::Active)
+        if (m_phase == Phase::Active) {
             m_ticks = 45;
+        }
     } else if (m_phase != Phase::Idle && (ready || m_phase == Phase::Active)) {
         enter(m_phase == Phase::Closing ? Phase::Idle
                                         : static_cast<Phase>(static_cast<u8>(m_phase) + 1));
@@ -253,19 +275,22 @@ bool LegendsDreamcastPortalMotion::tick(u8 occupants, u8 living) {
 
 bool LegendsDreamcastPortalMotion::advance(f32 seconds, u8 occupants, u8 living, bool enabled) {
     if (!std::isfinite(seconds) || seconds < 0 || seconds > 1 || (living & 0xf0U) != 0 ||
-        (occupants & ~living) != 0)
+        (occupants & ~living) != 0) {
         return false;
+    }
     if (!enabled || living == 0) {
         reset();
         return false;
     }
-    if (m_departed)
+    if (m_departed) {
         return false;
+    }
     m_remainder += static_cast<f64>(seconds) * 60;
     while (m_remainder >= 1) {
         m_remainder -= 1;
-        if (tick(occupants, living))
+        if (tick(occupants, living)) {
             return true;
+        }
     }
     return false;
 }

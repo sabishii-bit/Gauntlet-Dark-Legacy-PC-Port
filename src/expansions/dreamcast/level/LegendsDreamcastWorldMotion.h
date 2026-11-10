@@ -75,7 +75,8 @@ private:
     };
     struct Target {
         s32 object = -1;
-        s32 subtype = 0, soundSlot = -1;
+        s32 subtype = 0;
+        s8 soundSlot = -1; ///< the authored slot byte, signed: a negative slot sounds nothing
         std::optional<std::array<u32, 2>> sounds;
         u32 flags = 0;
         f32 closed = 0, opened = 0, height = 0;

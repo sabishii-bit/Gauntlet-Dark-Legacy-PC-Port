@@ -33,8 +33,9 @@ bool LegendsDreamcastFalling::add(const formats::ItemInfoRecord& info,
         !std::isfinite(info.radius) || info.radius <= 0 || !std::isfinite(info.height) ||
         info.height <= 0 || std::ranges::any_of(m_pieces, [&](const Piece& piece) {
             return piece.nativeIndex == nativeIndex || piece.figure == figure;
-        }))
+        })) {
         return false;
+    }
     Piece piece;
     piece.figure = figure;
     piece.nativeIndex = nativeIndex;
@@ -57,20 +58,24 @@ bool LegendsDreamcastFalling::add(const formats::ItemInfoRecord& info,
 std::vector<Vec3> LegendsDreamcastFalling::touch(std::span<const LegendsPortalVisitor> visitors) {
     std::vector<Vec3> activated;
     for (auto& piece : m_pieces) {
-        if (piece.active || !piece.body.visible)
+        if (piece.active || !piece.body.visible) {
             continue;
+        }
         for (const auto& visitor : visitors) {
             if (!visitor.alive || visitor.player >= 4 || !finite(visitor.position) ||
                 !std::isfinite(visitor.radius) || visitor.radius < 0 ||
-                !std::isfinite(visitor.height) || visitor.height <= 0)
+                !std::isfinite(visitor.height) || visitor.height <= 0) {
                 continue;
+            }
             const Vec3 centre = visitor.position + Vec3{0, visitor.height * .5f, 0};
             if (std::abs(centre.y - piece.contact.centre.y) >
-                piece.contact.height + visitor.height * .5f)
+                piece.contact.height + visitor.height * .5f) {
                 continue;
+            }
             if (!piece.contact.touchedBy({centre.x, piece.contact.centre.y, centre.z},
-                                         visitor.radius, 0))
+                                         visitor.radius, 0)) {
                 continue;
+            }
             // ItemTouch 8c0af0e0, case 10/subtypes 40/53: one collapse cue and
             // active bit 1. It neither damages nor pushes the touching player.
             piece.active = true;
@@ -82,18 +87,21 @@ std::vector<Vec3> LegendsDreamcastFalling::touch(std::span<const LegendsPortalVi
 }
 
 void LegendsDreamcastFalling::update(f32 seconds) {
-    if (!std::isfinite(seconds) || seconds <= 0 || seconds > 10)
+    if (!std::isfinite(seconds) || seconds <= 0 || seconds > 10) {
         return;
+    }
     const s32 frames = FallingPiece::framesDue(m_remainder, seconds);
     for (auto& piece : m_pieces) {
-        if (!piece.active)
+        if (!piece.active) {
             continue;
+        }
         // DoItems 8c0ad154..2ac uses the same {-4,-3,-2,-1,1,2,3,4}
         // table (8c123a1c) and gravity 2 as FallingPiece. Subtype 53 selects
         // one-degree spin at 8c0ad1be, rather than the falling rock's twenty.
         // The native Stop Time pass only changes trap actions, not rubble.
-        for (s32 frame = 0; frame < frames && piece.body.visible; ++frame)
+        for (s32 frame = 0; frame < frames && piece.body.visible; ++frame) {
             piece.body.advance(FallingProfile::of(piece.subtype), m_bottom);
+        }
     }
 }
 

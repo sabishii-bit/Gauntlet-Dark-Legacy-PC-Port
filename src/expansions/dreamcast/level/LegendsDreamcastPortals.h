@@ -23,7 +23,7 @@ struct LegendsDreamcastStage {
  * codes and progress order are independent of N64 map names and GDL realms. */
 class LegendsDreamcastPortalPolicy {
 public:
-    void addWorld(std::span<const u8> worlddata);
+    void addWorld(std::span<const u8> bytes);
     std::span<const LegendsDreamcastStage> stages() const { return m_stages; }
     const LegendsDreamcastStage* find(std::string_view map) const;
     bool allows(std::string_view map, const LegendsProgress& progress) const;

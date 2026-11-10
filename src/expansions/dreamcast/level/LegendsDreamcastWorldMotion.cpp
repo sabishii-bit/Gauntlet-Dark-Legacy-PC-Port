@@ -51,16 +51,18 @@ LegendsDreamcastWorldMotion::LegendsDreamcastWorldMotion(
     : m_objects(motion.objects), m_parents(motion.parents) {
     const usize count = m_objects.size();
     if (count != authored.objects.size() || count != initial.objects.size() ||
-        count != m_parents.size())
+        count != m_parents.size()) {
         throw FormatError("Dreamcast world motion has mismatched object identities");
+    }
     m_world.resize(count);
     m_previous.resize(count);
     m_moving.resize(count);
     for (usize i = 0; i < count; ++i) {
         const auto& first = initial.objects[i].transform;
         const auto& rest = authored.objects[i].transform;
-        if (!finite(first) || !finite(rest) || glm::determinant(rest) == 0)
+        if (!finite(first) || !finite(rest) || glm::determinant(rest) == 0) {
             throw FormatError("Dreamcast world motion has an invalid authored placement");
+        }
         // A permanently collapsed decoration has no inverse. Such an object
         // cannot serve as a moving floor; retain its baked empty presentation.
         m_initialInverse.push_back(glm::determinant(first) != 0 ? glm::inverse(first) : Mat4{0});
@@ -80,7 +82,7 @@ LegendsDreamcastWorldMotion::LegendsDreamcastWorldMotion(
     // separate from combat and generator streams.
     for (usize i = 0; i < count; ++i) {
         const auto& name = m_objects[i].name;
-        for (const auto prefix : {"A5XPXLNC_LNING", "F2XPNC_LNING"}) {
+        for (const auto* const prefix : {"A5XPXLNC_LNING", "F2XPNC_LNING"}) {
             if (name.size() == std::string_view{prefix}.size() + 1 && name.starts_with(prefix) &&
                 name.back() >= '1' && name.back() <= '4') {
                 m_lightning.push_back({i,
@@ -93,11 +95,13 @@ LegendsDreamcastWorldMotion::LegendsDreamcastWorldMotion(
     }
     for (usize index = 0; index < scene.itemInstances.size(); ++index) {
         const auto& instance = scene.itemInstances[index];
-        if (instance.info < 0 || !shownToParty(instance.minPlayers, players))
+        if (instance.info < 0 || !shownToParty(instance.minPlayers, players)) {
             continue;
+        }
         const auto& info = scene.itemInfos.at(static_cast<usize>(instance.info));
-        if (info.type != 5)
+        if (info.type != 5) {
             continue;
+        }
         Switch pad;
         pad.nativeIndex = static_cast<u32>(index);
         pad.target = parameter(instance, 0);
@@ -112,13 +116,15 @@ LegendsDreamcastWorldMotion::LegendsDreamcastWorldMotion(
         pad.hidden = (instance.flags & 2U) != 0;
         pad.position = instance.position;
         pad.rotation = instance.rotation;
-        pad.radius = instance.params[4] == 255 ? .01f : .5f * instance.params[4];
-        if (pad.radius == 0)
+        pad.radius = instance.params[4] == 255 ? .01f : .5f * static_cast<f32>(instance.params[4]);
+        if (pad.radius == 0) {
             pad.radius = info.radius;
+        }
         pad.height = info.height;
         m_switches.push_back(pad);
-        if (pad.target < 0)
+        if (pad.target < 0) {
             continue;
+        }
         auto* target = targetOf(pad.target);
         if (!target) {
             Target created;
@@ -126,8 +132,8 @@ LegendsDreamcastWorldMotion::LegendsDreamcastWorldMotion(
             created.subtype = info.subtype;
             created.soundSlot = std::bit_cast<s8>(instance.params[5]);
             created.flags = pad.flags;
-            created.closed = .1f * parameter(instance, 8);
-            created.opened = .1f * parameter(instance, 10);
+            created.closed = .1f * static_cast<f32>(parameter(instance, 8));
+            created.opened = .1f * static_cast<f32>(parameter(instance, 10));
             created.height = created.closed;
             created.alpha = created.previousAlpha = (pad.flags & 0x10U) != 0 ? 0.f : 1.f;
             for (auto& track : m_tracks) {
@@ -143,12 +149,15 @@ LegendsDreamcastWorldMotion::LegendsDreamcastWorldMotion(
             }
             m_targets.push_back(created);
         } else {
-            if (target->soundSlot == 0)
+            if (target->soundSlot == 0) {
                 target->soundSlot = std::bit_cast<s8>(instance.params[5]);
-            if (target->closed == 0)
-                target->height = target->closed = .1f * parameter(instance, 8);
-            if (target->opened == 0)
-                target->opened = .1f * parameter(instance, 10);
+            }
+            if (target->closed == 0) {
+                target->height = target->closed = .1f * static_cast<f32>(parameter(instance, 8));
+            }
+            if (target->opened == 0) {
+                target->opened = .1f * static_cast<f32>(parameter(instance, 10));
+            }
         }
     }
     for (auto& pad : m_switches) {
@@ -172,8 +181,9 @@ LegendsDreamcastWorldMotion::LegendsDreamcastWorldMotion(
                                 }) ||
             std::ranges::any_of(
                 m_targets, [&](const auto& target) { return descendant(index, target.object); });
-        if (m_moving[i] && (m_objects[i].flags & 0x01001000U) != 0)
+        if (m_moving[i] && (m_objects[i].flags & 0x01001000U) != 0) {
             m_collisionOwners.push_back(index);
+        }
     }
     compose();
     // InitItems8c0a9b20 runs ProcessItemWobjs before its AddItemSub pass.
@@ -181,34 +191,40 @@ LegendsDreamcastWorldMotion::LegendsDreamcastWorldMotion(
     // pose, not the authored rest matrix or the renderer's baked first key.
     std::vector<CollisionTriangle> floors;
     for (const auto& triangle : authored.collision) {
-        if (!triangle.floor)
+        if (!triangle.floor) {
             continue;
+        }
         CollisionTriangle floor{triangle.normal, triangle.vertices, triangle.owner, 4};
         const auto owner = static_cast<usize>(triangle.owner);
         if (triangle.owner >= 0 && owner < count && (m_objects[owner].flags & 0x01001000U) != 0) {
             const Mat4 change = m_world[owner] * glm::inverse(authored.objects[owner].transform);
-            if (glm::determinant(change) == 0)
+            if (glm::determinant(change) == 0) {
                 continue;
-            for (auto& vertex : floor.vertices)
+            }
+            for (auto& vertex : floor.vertices) {
                 vertex = Vec3{change * Vec4{vertex, 1}};
+            }
             floor.normal =
                 glm::normalize(glm::transpose(glm::inverse(Mat3{change})) * floor.normal);
-            if (floor.normal.y < WorldCollision::kFloorNormalY)
+            if (floor.normal.y < WorldCollision::kFloorNormalY) {
                 continue;
+            }
         }
         floors.push_back(floor);
     }
     m_bindingFloors.build(std::move(floors), m_parents);
-    for (const auto& placement : m_world)
+    for (const auto& placement : m_world) {
         m_bindingInverse.push_back(glm::determinant(placement) != 0 ? glm::inverse(placement)
                                                                     : Mat4{0});
+    }
     for (auto& pad : m_switches) {
         const auto& instance = scene.itemInstances[pad.nativeIndex];
         const auto& info = scene.itemInfos[static_cast<usize>(instance.info)];
         if ((info.collisionFlags & 1) == 0) {
             if (const auto floor = supportAt(instance.position);
-                floor && carriesItems(floor->object))
+                floor && carriesItems(floor->object)) {
                 pad.floor = floor->object;
+            }
             pad.position = itemPosition(info, instance.position);
         }
     }
@@ -219,8 +235,9 @@ bool LegendsDreamcastWorldMotion::descendant(s32 object, s32 ancestor) const {
     for (usize depth = 0;
          object >= 0 && static_cast<usize>(object) < m_parents.size() && depth < m_parents.size();
          ++depth) {
-        if (object == ancestor)
+        if (object == ancestor) {
             return true;
+        }
         object = m_parents[static_cast<usize>(object)];
     }
     return false;
@@ -231,8 +248,9 @@ LegendsDreamcastWorldMotion::Target* LegendsDreamcastWorldMotion::targetOf(s32 o
 }
 void LegendsDreamcastWorldMotion::capturePresentation() {
     m_previous = m_world;
-    for (auto& target : m_targets)
+    for (auto& target : m_targets) {
         target.previousAlpha = target.alpha;
+    }
 }
 void LegendsDreamcastWorldMotion::compose() {
     std::vector<NodePose> poses(m_objects.size());
@@ -242,8 +260,9 @@ void LegendsDreamcastWorldMotion::compose() {
                 0x300000U &&
             !std::ranges::any_of(m_targets, [&](const auto& target) {
                 return target.object == definition.objectIndex;
-            }))
+            })) {
             continue;
+        }
         const TrackInfo keys{definition.track.node, definition.track.flags, definition.track.frames,
                              definition.track.values};
         auto& pose = poses[static_cast<usize>(definition.objectIndex)];
@@ -252,21 +271,26 @@ void LegendsDreamcastWorldMotion::compose() {
             pose.rotation = sampled.rotation;
             pose.rotationOrder = sampled.rotationOrder;
         }
-        if ((keys.flags & 0x70U) != 0)
+        if ((keys.flags & 0x70U) != 0) {
             pose.position = sampled.position;
-        if ((keys.flags & 0x700U) != 0)
+        }
+        if ((keys.flags & 0x700U) != 0) {
             pose.scale = sampled.scale;
+        }
     }
     for (const auto& target : m_targets) {
-        if (!target.animated && (target.flags & 0x10U) == 0)
+        if (!target.animated && (target.flags & 0x10U) == 0) {
             poses[static_cast<usize>(target.object)].position.y = target.height;
+        }
     }
     std::vector<u8> ready(m_objects.size());
     const std::function<void(usize)> build = [&](usize index) {
-        if (ready[index] == 2)
+        if (ready[index] == 2) {
             return;
-        if (ready[index] == 1)
+        }
+        if (ready[index] == 1) {
             throw FormatError("Dreamcast animated world has cyclic parents");
+        }
         ready[index] = 1;
         m_world[index] = TreePose::localMatrix(poses[index], m_objects[index].position);
         const s32 parent = m_parents[index];
@@ -276,12 +300,14 @@ void LegendsDreamcastWorldMotion::compose() {
         }
         ready[index] = 2;
     };
-    for (usize i = 0; i < m_objects.size(); ++i)
+    for (usize i = 0; i < m_objects.size(); ++i) {
         build(i);
+    }
 }
 void LegendsDreamcastWorldMotion::fire(Target& target, bool open) {
-    if (target.open == open)
+    if (target.open == open) {
         return;
+    }
     target.open = open;
     target.moving = true;
     for (auto& track : m_tracks) {
@@ -293,8 +319,9 @@ void LegendsDreamcastWorldMotion::fire(Target& target, bool open) {
     }
 }
 void LegendsDreamcastWorldMotion::advance(f32 seconds) {
-    if (!std::isfinite(seconds) || seconds <= 0 || seconds > 10)
+    if (!std::isfinite(seconds) || seconds <= 0 || seconds > 10) {
         return;
+    }
     // UpdateWorld8c0a2fc0..3052 unhides for .2 seconds, then waits another
     // 5+frand(10). This world effect continues under the Stop Time item.
     for (auto& flash : m_lightning) {
@@ -308,18 +335,21 @@ void LegendsDreamcastWorldMotion::advance(f32 seconds) {
                                                (10.f / 0x1000000);
         }
     }
-    for (auto& pad : m_switches)
+    for (auto& pad : m_switches) {
         pad.cooldown = std::max(0.f, pad.cooldown - seconds);
+    }
     std::map<u32, std::pair<u32, s32>> sounding;
     for (const auto& target : m_targets) {
-        if (target.moving && target.sounds)
+        if (target.moving && target.sounds) {
             sounding.try_emplace((*target.sounds)[0], (*target.sounds)[1], target.object);
+        }
     }
     // DoWorldAnimSub8c0e9700 advances native keys at30Hz, independently of
     // the item/action timer's60Hz clock. Retain the authored starting cursor.
     for (auto& track : m_tracks) {
-        if (!track.running)
+        if (!track.running) {
             continue;
+        }
         const f32 last = static_cast<f32>(track.definition.frameCount - 1);
         track.frame += seconds * (track.reverse ? -30.f : 30.f);
         if (track.frame >= last || track.frame <= 0) {
@@ -328,8 +358,9 @@ void LegendsDreamcastWorldMotion::advance(f32 seconds) {
                 track.running = false;
             } else if (last > 0) {
                 track.frame = std::fmod(track.frame, last);
-                if (track.frame < 0)
+                if (track.frame < 0) {
                     track.frame += last;
+                }
             }
         }
     }
@@ -362,9 +393,10 @@ void LegendsDreamcastWorldMotion::advance(f32 seconds) {
     for (const auto& [token, stopped] : sounding) {
         if (std::ranges::none_of(m_targets, [&](const auto& target) {
                 return target.moving && target.sounds && (*target.sounds)[0] == token;
-            }))
+            })) {
             m_soundEvents.push_back(
                 {stopped.first, Vec3{m_world[static_cast<usize>(stopped.second)][3]}});
+        }
     }
 }
 void LegendsDreamcastWorldMotion::support(std::span<const s32> owners) {
@@ -374,22 +406,25 @@ void LegendsDreamcastWorldMotion::touch(std::span<const LegendsPortalVisitor> vi
     u8 living = 0;
     std::vector<u8> contacts(m_switches.size());
     for (const auto& visitor : visitors) {
-        if (visitor.alive && visitor.player < 4)
+        if (visitor.alive && visitor.player < 4) {
             living |= static_cast<u8>(1U << visitor.player);
+        }
     }
     for (usize i = 0; i < m_switches.size(); ++i) {
         const auto& pad = m_switches[i];
         const Vec3 spot = switchPosition(i);
         for (const auto& visitor : visitors) {
             if (!visitor.alive || visitor.player >= 4 ||
-                ((pad.flags & 0x100U) != 0 && !descendant(visitor.floorObject, pad.target)))
+                ((pad.flags & 0x100U) != 0 && !descendant(visitor.floorObject, pad.target))) {
                 continue;
+            }
             const Vec3 away = visitor.position - spot;
             const f32 radius = visitor.radius + pad.radius;
             const f32 rise = away.y + visitor.height * .5f - 1.f;
             if (away.x * away.x + away.z * away.z > radius * radius ||
-                std::abs(rise) > pad.height + visitor.height * .5f)
+                std::abs(rise) > pad.height + visitor.height * .5f) {
                 continue;
+            }
             s32 next = static_cast<s32>(i);
             for (usize depth = 0; next >= 0 && depth < m_switches.size(); ++depth) {
                 contacts[static_cast<usize>(next)] |= static_cast<u8>(1U << visitor.player);
@@ -397,8 +432,9 @@ void LegendsDreamcastWorldMotion::touch(std::span<const LegendsPortalVisitor> vi
             }
         }
     }
-    for (auto& target : m_targets)
+    for (auto& target : m_targets) {
         target.pressed = false;
+    }
     for (usize i = 0; i < m_switches.size(); ++i) {
         auto& pad = m_switches[i];
         // Each chained node retains its own whole-party admission. Requirement
@@ -413,12 +449,14 @@ void LegendsDreamcastWorldMotion::touch(std::span<const LegendsPortalVisitor> vi
         target->pressed |= contact;
         bool open = target->open;
         if ((pad.flags & 1U) != 0) {
-            if (contact && !target->moving)
+            if (contact && !target->moving) {
                 open = false;
+            }
             pad.active = !open;
         } else if ((pad.flags & 2U) != 0) {
-            if (contact && !target->moving)
+            if (contact && !target->moving) {
                 open = true;
+            }
             pad.active = open;
         } else if ((pad.flags & 4U) != 0) {
             if (contact && !target->moving && pad.cooldown == 0) {
@@ -433,8 +471,9 @@ void LegendsDreamcastWorldMotion::touch(std::span<const LegendsPortalVisitor> vi
         fire(*target, open);
     }
     for (auto& target : m_targets) {
-        if ((target.flags & 7U) != 0 || target.pressed)
+        if ((target.flags & 7U) != 0 || target.pressed) {
             continue;
+        }
         const bool supported =
             std::ranges::any_of(visitors,
                                 [&](const auto& visitor) {
@@ -443,37 +482,43 @@ void LegendsDreamcastWorldMotion::touch(std::span<const LegendsPortalVisitor> vi
                                 }) ||
             std::ranges::any_of(m_support,
                                 [&](s32 owner) { return descendant(owner, target.object); });
-        if (!supported)
+        if (!supported) {
             fire(target, false);
+        }
     }
 }
 Mat4 LegendsDreamcastWorldMotion::transform(usize object, f32 alpha) const {
-    if (object >= m_world.size() || m_initialInverse[object] == Mat4{0})
+    if (object >= m_world.size() || m_initialInverse[object] == Mat4{0}) {
         return Mat4{1};
+    }
     Mat4 placed = m_world[object];
     if (alpha >= 0) {
         const f32 t = std::clamp(alpha, 0.f, 1.f);
-        for (Mat4::length_type i = 0; i < 4; ++i)
+        for (Mat4::length_type i = 0; i < 4; ++i) {
             placed[i] = glm::mix(m_previous[object][i], placed[i], t);
+        }
     }
     return placed * m_initialInverse[object];
 }
 Mat4 LegendsDreamcastWorldMotion::riderTransform(s32 owner) const {
     if (owner < 0 || static_cast<usize>(owner) >= m_world.size() ||
-        m_bindingInverse[static_cast<usize>(owner)] == Mat4{0})
+        m_bindingInverse[static_cast<usize>(owner)] == Mat4{0}) {
         return Mat4{1};
+    }
     return m_world[static_cast<usize>(owner)] * m_bindingInverse[static_cast<usize>(owner)];
 }
 
 std::optional<std::pair<usize, Vec3>> LegendsDreamcastWorldMotion::ambientParent(Vec3 position,
                                                                                  f32 radius) const {
     std::optional<std::pair<usize, Vec3>> result;
-    if (!std::isfinite(radius) || radius <= 0)
+    if (!std::isfinite(radius) || radius <= 0) {
         return result;
+    }
     for (const auto& track : m_tracks) {
         const auto object = track.definition.objectIndex;
-        if (object < 0 || static_cast<usize>(object) >= m_world.size())
+        if (object < 0 || static_cast<usize>(object) >= m_world.size()) {
             continue;
+        }
         const Vec3 origin{m_world[static_cast<usize>(object)][3]};
         const f32 distance = glm::distance(position, origin);
         if (std::isfinite(distance) && distance < radius) {
@@ -484,22 +529,25 @@ std::optional<std::pair<usize, Vec3>> LegendsDreamcastWorldMotion::ambientParent
     return result;
 }
 Vec3 LegendsDreamcastWorldMotion::offset(usize object, f32 alpha) const {
-    if (object >= m_world.size() || m_initialInverse[object] == Mat4{0})
+    if (object >= m_world.size() || m_initialInverse[object] == Mat4{0}) {
         return Vec3{0};
+    }
     const Mat4 initial = glm::inverse(m_initialInverse[object]);
     return Vec3{transform(object, alpha) * initial[3] - initial[3]};
 }
 f32 LegendsDreamcastWorldMotion::opacity(usize object, f32 alpha) const {
     for (const auto& flash : m_lightning) {
-        if (flash.object == object && !flash.visible)
+        if (flash.object == object && !flash.visible) {
             return 0;
+        }
     }
     f32 result = 1;
     for (const auto& target : m_targets) {
-        if (descendant(static_cast<s32>(object), target.object))
+        if (descendant(static_cast<s32>(object), target.object)) {
             result *= alpha >= 0 ? std::lerp(target.previousAlpha, target.alpha,
                                              std::clamp(alpha, 0.f, 1.f))
                                  : target.alpha;
+        }
     }
     return result;
 }
@@ -508,8 +556,9 @@ bool LegendsDreamcastWorldMotion::moves(s32 object) const {
            m_moving[static_cast<usize>(object)];
 }
 bool LegendsDreamcastWorldMotion::activatesBoss(s32 support) const {
-    if (support < 0 || static_cast<usize>(support) >= m_parents.size())
+    if (support < 0 || static_cast<usize>(support) >= m_parents.size()) {
         return false;
+    }
     const s32 parent = m_parents[static_cast<usize>(support)];
     return std::ranges::any_of(m_targets, [&](const auto& target) {
         // ProcessItemWobjs8c0ab4e0 sets0x10 while moving; its final low-mode
@@ -530,8 +579,9 @@ Vec3 LegendsDreamcastWorldMotion::itemPosition(const formats::ItemInfoRecord& in
     // preserves the supplied Y when no floor is found; the caller still
     // adds its .1-unit lift. Do not preserve an arbitrary authored air gap.
     if ((info.collisionFlags & 1) == 0) {
-        if (const auto floor = supportAt(authored))
+        if (const auto floor = supportAt(authored)) {
             authored.y = floor->y;
+        }
         authored.y += ItemFigure::kFloorLift;
     }
     return authored;
@@ -550,17 +600,19 @@ void LegendsDreamcastWorldMotion::bindCollision(WorldCollision& collision) const
     syncCollision(collision);
 }
 void LegendsDreamcastWorldMotion::syncCollision(WorldCollision& collision) const {
-    for (s32 owner : m_collisionOwners) {
+    for (const s32 owner : m_collisionOwners) {
         collision.setObjectTransform(owner, transform(static_cast<usize>(owner)));
         bool solid = true;
         u8 side = 0;
         for (const auto& target : m_targets) {
-            if (!descendant(owner, target.object))
+            if (!descendant(owner, target.object)) {
                 continue;
-            if ((target.flags & 0x10U) != 0)
+            }
+            if ((target.flags & 0x10U) != 0) {
                 solid &= target.alpha == 1;
-            else if ((target.flags & 8U) == 0)
+            } else if ((target.flags & 8U) == 0) {
                 side |= target.moving ? 1 : 0;
+            }
         }
         // ProcessItemWobjs writes WorldObj.side=1 during movement, not a
         // global collision disable. ProcessCritter's floor category2 still
@@ -576,8 +628,9 @@ void LegendsDreamcastWorldMotion::bindSounds(const SoundResolver& resolve) {
         // reserves slots>=10 for one-shot sounds. Only verified elevator
         // start/stop pairs enter the movement-loop lane.
         if (target.soundSlot >= 0 && target.soundSlot < 10 && target.subtype != 20 &&
-            target.subtype != 22)
+            target.subtype != 22) {
             target.sounds = resolve(target.soundSlot);
+        }
     }
 }
 
@@ -588,9 +641,10 @@ std::vector<LegendsSoundLoop> LegendsDreamcastWorldMotion::soundLoops() const {
         // several pads move different objects using the same movement sound.
         if (target.moving && target.sounds && std::ranges::none_of(result, [&](const auto& loop) {
                 return loop.token == (*target.sounds)[0];
-            }))
+            })) {
             result.push_back({0x20000000U + (*target.sounds)[0], (*target.sounds)[0],
                               Vec3{m_world[static_cast<usize>(target.object)][3]}});
+        }
     }
     return result;
 }

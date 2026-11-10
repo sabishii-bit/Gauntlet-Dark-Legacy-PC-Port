@@ -23,6 +23,16 @@ constexpr std::array<u64, 4> kShardMasks{4, 2, 8, 16};
 constexpr std::array<u64, 9> kObeliskOrder{8, 16, 32, 1, 2, 4, 64, 128, 256};
 constexpr std::array<u64, 13> kRuneOrder{8, 16, 32, 1, 2, 4, 64, 128, 256, 512, 1024, 2048, 4096};
 
+/** Where a native object name stands in one of the binding tables, if it does. */
+std::optional<usize> entryOf(std::span<const std::string_view> names, std::string_view name) {
+    for (usize entry = 0; entry < names.size(); ++entry) {
+        if (names[entry] == name) {
+            return entry;
+        }
+    }
+    return std::nullopt;
+}
+
 std::string firstMissing(std::string_view kind, u64 owned, std::span<const u64> order) {
     const auto missing =
         std::ranges::find_if(order, [owned](u64 mask) { return (owned & mask) == 0; });
@@ -40,19 +50,16 @@ LegendsDreamcastTower::LegendsDreamcastTower(const formats::LegendsMap& map) {
                 break;
             }
             const auto& node = map.objects[static_cast<usize>(parent)];
-            if (const auto gate = std::ranges::find(kGates, node.name); gate != kGates.end()) {
-                m_bindings.push_back(
-                    {object, Kind::Gate, static_cast<usize>(gate - kGates.begin()) / 2});
+            if (const auto gate = entryOf(kGates, node.name)) {
+                m_bindings.push_back({object, Kind::Gate, *gate / 2});
                 break;
             }
-            if (const auto rune = std::ranges::find(kRunes, node.name); rune != kRunes.end()) {
-                m_bindings.push_back(
-                    {object, Kind::Rune, static_cast<usize>(rune - kRunes.begin())});
+            if (const auto rune = entryOf(kRunes, node.name)) {
+                m_bindings.push_back({object, Kind::Rune, *rune});
                 break;
             }
-            if (const auto shard = std::ranges::find(kShards, node.name); shard != kShards.end()) {
-                m_bindings.push_back(
-                    {object, Kind::Shard, static_cast<usize>(shard - kShards.begin())});
+            if (const auto shard = entryOf(kShards, node.name)) {
+                m_bindings.push_back({object, Kind::Shard, *shard});
                 break;
             }
             parent = node.parent;
@@ -102,7 +109,8 @@ std::vector<std::string> LegendsDreamcastTower::advice(s32 topic, const LegendsP
     default: return {};
     }
     // 8c065e60 history selection. Later milestones supersede earlier chapters.
-    usize first = 0, count = 5;
+    usize first = 0;
+    usize count = 5;
     for (usize i = 0; i < kGateObelisks.size(); ++i) {
         if ((progress.obelisks & kGateObelisks[i]) != kGateObelisks[i]) {
             break;

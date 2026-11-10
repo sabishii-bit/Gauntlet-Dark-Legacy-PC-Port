@@ -24,8 +24,9 @@ void LegendsDreamcastScenery::add(const formats::ItemInfoRecord& info,
         item.triangleIndex < 0 || item.triangleCount <= 0 ||
         static_cast<usize>(item.triangleIndex) > faces.size() ||
         static_cast<usize>(item.triangleCount) > faces.size() - item.triangleIndex ||
-        m_walls.size() >= 1024 || targetForObject(object))
+        m_walls.size() >= 1024 || targetForObject(object)) {
         throw FormatError("Invalid Dreamcast destructible item");
+    }
     Wall wall;
     wall.figure = figure;
     wall.object = object;
@@ -38,14 +39,16 @@ void LegendsDreamcastScenery::add(const formats::ItemInfoRecord& info,
         CollisionTriangle placed;
         placed.object = object;
         placed.normal = Vec3{transform * Vec4{face.normal, 0}};
-        if (!finite(placed.normal) || glm::length(placed.normal) < .0001f)
+        if (!finite(placed.normal) || glm::length(placed.normal) < .0001f) {
             throw FormatError("Invalid Dreamcast destructible normal");
+        }
         placed.normal = glm::normalize(placed.normal);
         for (usize i = 0; i < 3; ++i) {
             placed.vertices[i] = Vec3{transform * Vec4{face.vertices[i], 1}};
             if (!finite(placed.vertices[i]) ||
-                glm::any(glm::greaterThan(glm::abs(placed.vertices[i]), Vec3{100000})))
+                glm::any(glm::greaterThan(glm::abs(placed.vertices[i]), Vec3{100000}))) {
                 throw FormatError("Invalid Dreamcast destructible vertex");
+            }
             wall.minimum = glm::min(wall.minimum, placed.vertices[i]);
             wall.maximum = glm::max(wall.maximum, placed.vertices[i]);
         }
@@ -58,8 +61,9 @@ std::vector<ImportedTarget> LegendsDreamcastScenery::targets() const {
     std::vector<ImportedTarget> result;
     for (usize i = 0; i < m_walls.size(); ++i) {
         const auto& wall = m_walls[i];
-        if (wall.health <= 0)
+        if (wall.health <= 0) {
             continue;
+        }
         const Vec3 middle = (wall.minimum + wall.maximum) * .5f;
         result.push_back({kImportedSceneryBase + static_cast<s32>(i),
                           {middle.x, wall.minimum.y, middle.z},
@@ -76,11 +80,13 @@ std::vector<ImportedTarget> LegendsDreamcastScenery::targets() const {
 bool LegendsDreamcastScenery::strike(s32 target, f32 damage, u32 flags) {
     if (target < kImportedSceneryBase ||
         static_cast<usize>(target - kImportedSceneryBase) >= m_walls.size() ||
-        !std::isfinite(damage) || damage <= 0 || (flags & (damage::kMagic | damage::kGas)) != 0)
+        !std::isfinite(damage) || damage <= 0 || (flags & (damage::kMagic | damage::kGas)) != 0) {
         return false;
+    }
     auto& wall = m_walls[static_cast<usize>(target - kImportedSceneryBase)];
-    if (wall.health <= 0)
+    if (wall.health <= 0) {
         return false;
+    }
     // HitItem8c0afaa0 subtracts armor, clamps damage to at least1, then
     // truncates to native integer HP. Case42 calls DeleteItem on the final hit.
     const f32 amount =
@@ -92,56 +98,68 @@ bool LegendsDreamcastScenery::strike(s32 target, f32 damage, u32 flags) {
 }
 
 std::optional<s32> LegendsDreamcastScenery::targetForObject(s32 object) const {
-    for (usize i = 0; i < m_walls.size(); ++i)
-        if (m_walls[i].object == object)
+    for (usize i = 0; i < m_walls.size(); ++i) {
+        if (m_walls[i].object == object) {
             return kImportedSceneryBase + static_cast<s32>(i);
+        }
+    }
     return std::nullopt;
 }
 
 void LegendsDreamcastScenery::update(f32 seconds) {
-    if (!std::isfinite(seconds) || seconds <= 0)
+    if (!std::isfinite(seconds) || seconds <= 0) {
         return;
-    for (auto& wall : m_walls)
+    }
+    for (auto& wall : m_walls) {
         wall.flash = std::max(0.0f, wall.flash - seconds);
+    }
 }
 
 bool LegendsDreamcastScenery::visible(usize figure) const {
-    for (const auto& wall : m_walls)
-        if (wall.figure == figure)
+    for (const auto& wall : m_walls) {
+        if (wall.figure == figure) {
             return wall.health > 0;
+        }
+    }
     return true;
 }
 
 f32 LegendsDreamcastScenery::whiteBlend(usize figure) const {
-    for (const auto& wall : m_walls)
-        if (wall.figure == figure)
+    for (const auto& wall : m_walls) {
+        if (wall.figure == figure) {
             return wall.flash > 0 ? 1.0f : 0.0f;
+        }
+    }
     return 0;
 }
 
 s32 LegendsDreamcastScenery::health(s32 target) const {
     if (target < kImportedSceneryBase ||
-        static_cast<usize>(target - kImportedSceneryBase) >= m_walls.size())
+        static_cast<usize>(target - kImportedSceneryBase) >= m_walls.size()) {
         return 0;
+    }
     return m_walls[static_cast<usize>(target - kImportedSceneryBase)].health;
 }
 
 Vec3 LegendsDreamcastScenery::position(s32 target) const {
     if (target < kImportedSceneryBase ||
-        static_cast<usize>(target - kImportedSceneryBase) >= m_walls.size())
+        static_cast<usize>(target - kImportedSceneryBase) >= m_walls.size()) {
         return {};
+    }
     const auto& wall = m_walls[static_cast<usize>(target - kImportedSceneryBase)];
     return (wall.minimum + wall.maximum) * .5f;
 }
 
 void LegendsDreamcastScenery::bindCollision(WorldCollision& collision) const {
-    for (const auto& wall : m_walls)
+    for (const auto& wall : m_walls) {
         collision.append(wall.surface);
+    }
     syncCollision(collision);
 }
 
 void LegendsDreamcastScenery::syncCollision(WorldCollision& collision) const {
-    for (const auto& wall : m_walls)
+    for (const auto& wall : m_walls) {
         collision.setSolid(wall.object, wall.health > 0);
+    }
 }
 } // namespace gdl::game

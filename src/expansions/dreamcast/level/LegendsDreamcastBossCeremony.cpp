@@ -44,7 +44,7 @@ bool LegendsDreamcastBossCeremony::begin(s32 boss, s32 realm, u64 partyRunes, u6
     clear();
     m_boss = boss;
     m_allRunes = boss == 32 && (partyRunes & 0xfffU) == 0xfffU;
-    const usize index = static_cast<usize>(boss - 26);
+    const auto index = static_cast<usize>(boss - 26);
     constexpr std::array<std::string_view, 8> kDefeat{"dragon", "chimera", "djinn",   "drider",
                                                       "plague", "yeti",    "skorne1", "skorne2"};
     m_groups[0] = {keys(kDefeat[index], boss == 32 ? 2 : (boss == 33 ? 6 : 1)), voice(index, 0),
