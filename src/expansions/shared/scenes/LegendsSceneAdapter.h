@@ -251,6 +251,8 @@ private:
     void updateN64Traps(f32 seconds, bool timeStopped);
     void touchN64Traps(std::span<const LegendsPortalVisitor> visitors);
     void loadDreamcast(RenderDevice& device, const std::filesystem::path& directory);
+    /** True for a safe rock, stood as cover or reported as one the arena cannot stand;
+     * either way the caller places nothing more for it. */
     bool bindDreamcastArenaRock(RenderDevice& device, const formats::ItemInfoRecord& info,
                                 const formats::ItemInstanceRecord& instance, u32 nativeIndex);
     void restoreDreamcastChimeraCover(RenderDevice& device, const std::filesystem::path& directory,

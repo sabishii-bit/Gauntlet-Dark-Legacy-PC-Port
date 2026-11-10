@@ -444,6 +444,7 @@ add_executable(tests
     expansions/dreamcast/level/LegendsDreamcastHazardsTests.cpp
     expansions/dreamcast/level/LegendsDreamcastWorldMotionTests.cpp
     expansions/dreamcast/level/LegendsDreamcastSceneryTests.cpp
+    expansions/dreamcast/level/LegendsDreamcastArenaRocksTests.cpp
     expansions/dreamcast/level/LegendsDreamcastA4TraversalTests.cpp
     expansions/dreamcast/level/LegendsDreamcastObelisksTests.cpp
     expansions/dreamcast/scenes/LegendsDreamcastObelisksTests.cpp

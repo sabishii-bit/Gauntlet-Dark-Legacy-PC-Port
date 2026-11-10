@@ -1,13 +1,14 @@
-#include <bit>
-#include <cmath>
+#include <algorithm>
 #include <format>
+#include <string>
+#include <utility>
 
 #include "engine/assets/AssetScope.h"
 #include "engine/assets/ObjectFlags.h"
 #include "engine/core/Strings.h"
-#include "engine/io/ByteReader.h"
 #include "engine/platform/Paths.h"
 
+#include "expansions/dreamcast/level/LegendsDreamcastArenaRocks.h"
 #include "expansions/dreamcast/level/LegendsDreamcastPlacement.h"
 #include "expansions/shared/scenes/LegendsSceneAdapter.h"
 
@@ -17,24 +18,27 @@ bool LegendsSceneAdapter::bindDreamcastArenaRock(RenderDevice& device,
                                                  const formats::ItemInfoRecord& info,
                                                  const formats::ItemInstanceRecord& instance,
                                                  u32 /*nativeIndex*/) {
-    const s16 override = std::bit_cast<s16>(readU16LE(instance.params, 0));
-    if (info.type != 10 || (override > 0 ? override : info.subtype) != 41)
-        return false;
-    const s16 tier = std::bit_cast<s16>(readU16LE(instance.params, 2));
-    if (tier < 0 || tier > 3 || info.hitPoints <= 0 || info.hitPoints > 10000 ||
-        info.collisionType != 1 || !std::isfinite(info.radius) || info.radius <= 0 ||
-        !std::isfinite(info.height) || info.height <= 0 || info.collisionOffset != Vec3{0} ||
-        m_arenaRocks.size() >= 16)
-        return false;
+    std::string diagnostic;
+    const auto rock = legendsDreamcastArenaRock(info, instance, m_arenaRocks.size(), &diagnostic);
+    if (!rock) {
+        if (diagnostic.empty()) {
+            return false;
+        }
+        // A safe rock the arena cannot stand is reported once, never left as scenery.
+        diagnostic += ": " + info.name;
+        if (std::ranges::find(m_warnings, diagnostic) == m_warnings.end()) {
+            m_warnings.push_back(std::move(diagnostic));
+        }
+        return true;
+    }
     ArenaRockPresentation binding;
-    binding.definition = {instance.position, instance.rotation.y, info.radius, info.height,
-                          info.hitPoints};
+    binding.definition = rock->body;
     // SetItem8c0a8f80 multiplies native base HP by the placed segment count.
     // AddItemWobj8c0a9d80 changes the static model, not the item's position/body.
-    binding.tier = tier;
-    binding.health = tier * info.hitPoints;
-    binding.armor = info.armor;
-    binding.dormant = (instance.flags & 2U) != 0;
+    binding.tier = rock->tier;
+    binding.health = rock->tier * rock->body.tierHealth;
+    binding.armor = rock->armor;
+    binding.dormant = rock->dormant;
     AssetScope scope;
     for (auto& archive : m_archives)
         scope.add(*archive);

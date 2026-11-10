@@ -85,6 +85,7 @@ function(gdl_add_expansion_game_sources target)
         "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/dreamcast/bosses/LegendsDreamcastBossAssets.cpp"
         "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/dreamcast/bosses/LegendsDreamcastBossVisit.cpp"
         "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/dreamcast/bosses/LegendsDreamcastBossEntrance.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/dreamcast/level/LegendsDreamcastArenaRocks.cpp"
         "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/dreamcast/scenes/LegendsDreamcastArena.cpp"
         "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/dreamcast/scenes/LegendsDreamcastBossCompletion.cpp"
         "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/shared/scenes/LegendsLevelBoss.cpp"
