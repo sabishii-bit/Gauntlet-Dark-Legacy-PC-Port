@@ -531,9 +531,11 @@ TEST_CASE("N64 queued exit warnings finish while the completed level is parked a
         scene.level->servicePreservedSpeech(1.0f / 60);
         output.update();
         mixer.mix(samples);
-        if (tick > entryEndTick)
-            for (const auto sample : samples)
+        if (tick > entryEndTick) {
+            for (const auto sample : samples) {
                 lateEnergy += static_cast<f64>(sample) * sample;
+            }
+        }
     }
     CHECK(lateEnergy > .001);
     CHECK(output.voiceCount() == 0);
