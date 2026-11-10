@@ -280,6 +280,7 @@ TEST_CASE("Dreamcast organist resumes the same native PCM cursor after an effect
     AudioMixer referenceMixer{48000};
     SoundPlayer output{mixer};
     SoundPlayer reference{referenceMixer};
+    // NOLINTNEXTLINE(misc-const-correctness): the level changes behind MSVC's unique_ptr
     TempleAmbientFixture fixture;
     LegendsDreamcastSounds sounds;
     REQUIRE(sounds.open(fixture.root));
