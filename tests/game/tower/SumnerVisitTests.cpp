@@ -189,9 +189,14 @@ TEST_CASE("imported Sumner topics keep six choices and release borrowed native a
         f32 scale() const override { return 1; }
         s32 textWidth() const override { return 256; }
         usize linesPerPage() const override { return 8; }
-        DialoguePage layout(std::string_view, f32, std::string_view) const override { return {}; }
-        void draw(Canvas&, const DialoguePage&, f32, std::string_view, u8) const override {}
-        bool drawTopicsBackdrop(Canvas&, const OptionMenu&, std::string_view) const override {
+        DialoguePage layout(std::string_view /*page*/, f32 /*scale*/,
+                            std::string_view /*prompt*/) const override {
+            return {};
+        }
+        void draw(Canvas& /*canvas*/, const DialoguePage& /*page*/, f32 /*scale*/,
+                  std::string_view /*prompt*/, u8 /*promptAlpha*/) const override {}
+        bool drawTopicsBackdrop(Canvas& /*canvas*/, const OptionMenu& /*menu*/,
+                                std::string_view /*title*/) const override {
             ++draws;
             return false;
         }
