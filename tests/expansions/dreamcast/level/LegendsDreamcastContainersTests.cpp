@@ -2,6 +2,8 @@
 #include <array>
 #include <bit>
 #include <limits>
+#include <optional>
+#include <string_view>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -461,5 +463,100 @@ TEST_CASE("Dreamcast poison barrels damage grounded and levitating players throu
     level.affectArea({});
     const auto expiredHits = level.takeHazardHits();
     CHECK(std::ranges::none_of(expiredHits, [](const auto& hit) { return hit.poison; }));
+}
+
+TEST_CASE("Dreamcast barrel blasts stay where they went off while the barrel rides on",
+          "[legends][dreamcast-containers][dreamcast-motion][assets]") {
+    const auto directory =
+        test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native/levels/leveld3";
+    if (!std::filesystem::is_regular_file(directory / "worlds.rom")) {
+        SKIP("Dreamcast extraction is not installed");
+    }
+    struct Barrel {
+        u32 nativeIndex;
+        u32 pad; ///< the native switch whose target carries the barrel's support
+        std::string_view blast;
+        Vec3 offset;
+    };
+    // D3's explosive #394 and poison #390 stand on supports that pads 196 and 242 set moving.
+    const std::array barrels{Barrel{394, 196, "EXPLOSION", {0, 2, 0}},
+                             Barrel{390, 242, "POISONEXP", {0, -1, 0}}};
+    const auto bytes = readFile(directory / "worlds.rom");
+    const auto objects = readFile(directory / "objects.rom");
+    const auto native = LegendsDreamcastScene::parse(bytes);
+    for (const auto& barrel : barrels) {
+        CAPTURE(barrel.nativeIndex);
+        auto map = LegendsMap::parseDreamcast(bytes, objects);
+        test::FakeRenderDevice device;
+        auto scene = LegendsSceneAdapter::load(device, LegendsPlatform::Dreamcast, directory, map);
+        const auto* motion = scene->dreamcastWorldMotion();
+        REQUIRE(motion);
+        const auto targets = scene->containerTargets();
+        const auto target =
+            std::ranges::find(targets, barrel.nativeIndex, &LegendsContainerTarget::nativeIndex);
+        REQUIRE(target != targets.end());
+        REQUIRE(target->nativeTrap);
+        const auto support = motion->supportAt(target->base);
+        REQUIRE(support);
+        REQUIRE(motion->carriesItems(support->object));
+        const auto switches = motion->switches();
+        const auto pad = std::ranges::find(switches, barrel.pad,
+                                           &LegendsDreamcastWorldMotion::Switch::nativeIndex);
+        REQUIRE(pad != switches.end());
+        const auto padIndex = static_cast<usize>(pad - switches.begin());
+        const auto& name =
+            native.itemInfos[static_cast<usize>(native.itemInstances[barrel.nativeIndex].info)]
+                .name;
+        // The barrel's own figure, which is its debris too, and its hidden blast.
+        std::optional<s32> body;
+        std::optional<s32> blast;
+        for (usize index = 0; index < scene->fixtureCount(); ++index) {
+            const s32 id = LegendsSceneAdapter::kFixtureObjectBase + static_cast<s32>(index);
+            const auto figure = scene->fixtureObject(id);
+            if (figure && figure->name == barrel.blast &&
+                glm::distance(figure->position, target->base + barrel.offset) < .001f) {
+                blast = id;
+            }
+            if (figure && figure->name == name &&
+                glm::distance(figure->position, target->base) < .001f) {
+                body = id;
+            }
+        }
+        REQUIRE(body);
+        REQUIRE(blast);
+        CHECK_FALSE(scene->fixtureObject(*blast)->visible);
+        const auto press = [&] {
+            const LegendsPortalVisitor visitor{.position = motion->switchPosition(padIndex),
+                                               .floorObject = pad->floor};
+            scene->touchSwitches(std::array{visitor});
+            scene->capturePresentation();
+            scene->update(1.0f / 30);
+        };
+        Mat4 carried = motion->riderTransform(support->object);
+        for (s32 tick = 0; tick < 300 && motion->riderTransform(support->object) == carried;
+             ++tick) {
+            press();
+        }
+        carried = motion->riderTransform(support->object);
+        REQUIRE(carried != Mat4{1});
+        // Set off on the moving support, the blast is born where the barrel stands.
+        REQUIRE(scene->strikeContainer(target->id, 100, 0, 0));
+        const auto born = scene->fixtureObject(*blast);
+        REQUIRE(born);
+        CHECK(born->visible);
+        CHECK(glm::distance(born->position, Vec3{carried * Vec4{target->base, 1}} + barrel.offset) <
+              .001f);
+        for (s32 tick = 0; tick < 30; ++tick) {
+            press();
+            CAPTURE(tick);
+            CHECK(glm::distance(scene->fixtureObject(*blast)->position, born->position) < .0001f);
+        }
+        // The support went on moving through the blast and carried the barrel's debris with it.
+        const Mat4 now = motion->riderTransform(support->object);
+        REQUIRE(glm::distance(Vec3{now * Vec4{target->base, 1}},
+                              Vec3{carried * Vec4{target->base, 1}}) > .01f);
+        CHECK(glm::distance(scene->fixtureObject(*body)->position,
+                            Vec3{now * Vec4{target->base, 1}}) < .001f);
+    }
 }
 } // namespace

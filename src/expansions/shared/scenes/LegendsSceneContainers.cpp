@@ -128,11 +128,17 @@ void LegendsSceneAdapter::openContainer(usize index) {
         }
         if (container.blastFigure) {
             // The attack is born at this position. It is no longer a child of
-            // the destroyed barrel's supporting platform.
+            // the destroyed barrel's supporting platform on either console: DC
+            // 8c0d6240 roots it under the effects tree 0x8c2b8750, while the
+            // BAREXP0/BARPOI0 debris stays under the barrel's parent.
+            const auto blast = [&](const NativeRider::Figure& bound) {
+                return bound.index == *container.blastFigure;
+            };
             for (auto& rider : m_nativeRiders) {
-                std::erase_if(rider.figures, [&](const auto& bound) {
-                    return bound.index == *container.blastFigure;
-                });
+                std::erase_if(rider.figures, blast);
+            }
+            for (auto& rider : m_dreamcastRiders) {
+                std::erase_if(rider.contents.figures, blast);
             }
             auto& figure = m_fixtures[*container.blastFigure];
             figure.placeAt(itemPlacement(definition.position + definition.blastOffset, Vec3{0}));
