@@ -498,11 +498,13 @@ TEST_CASE("lightning rewind retains the next random wait independently of render
             for (const f32 alpha : {0.f, .3f, 1.f}) {
                 world.draw(device, Mat4{1}, {}, alpha);
                 usize vertices = 0;
-                for (const auto& draw : device.draws)
+                for (const auto& draw : device.draws) {
                     vertices += draw.vertices.size();
+                }
                 usize expected = 3; // The unrelated, always-visible wall.
-                for (const usize object : {0U, 1U, 2U, 3U, 5U, 6U})
+                for (const usize object : {0U, 1U, 2U, 3U, 5U, 6U}) {
                     expected += world.scene().objectVisible(object) ? 3U : 0U;
+                }
                 CHECK(vertices == expected);
                 device.draws.clear();
             }
@@ -511,8 +513,9 @@ TEST_CASE("lightning rewind retains the next random wait independently of render
     LightningFixture reference{"lightning-native-reference"};
     LightningFixture replay{"lightning-native-replay"};
     CHECK(reference.hash() == replay.hash());
-    for (const usize object : {0U, 1U, 2U, 3U, 5U, 6U})
+    for (const usize object : {0U, 1U, 2U, 3U, 5U, 6U}) {
         CHECK_FALSE(replay.world.scene().objectVisible(object));
+    }
     replay.draw();
 
     LevelWorld::LocalSnapshot before;
@@ -535,8 +538,9 @@ TEST_CASE("lightning rewind retains the next random wait independently of render
     const auto uploads = replay.device.texturesCreated;
     // Run past another random draw on the wrong branch, then rewind before
     // the original edge. Restoring visibility alone must not pass this test.
-    for (s32 tick = 0; tick < 1000; ++tick)
+    for (s32 tick = 0; tick < 1000; ++tick) {
         replay.step(true);
+    }
     REQUIRE(replay.world.restoreLocal(before));
     CHECK(replay.hash() == beforeDigest);
     CHECK_FALSE(replay.world.scene().objectVisible(0));
@@ -557,9 +561,10 @@ TEST_CASE("lightning rewind retains the next random wait independently of render
             CHECK(replay.hash() == beforeDraw);
         }
         CHECK(replay.hash() == reference.hash());
-        for (const usize object : {0U, 1U, 2U, 3U, 5U, 6U})
+        for (const usize object : {0U, 1U, 2U, 3U, 5U, 6U}) {
             CHECK(replay.world.scene().objectVisible(object) ==
                   reference.world.scene().objectVisible(object));
+        }
         CHECK(replay.world.scene().objectVisible(5) == replay.world.scene().objectVisible(0));
         CHECK(replay.world.scene().objectVisible(6) == replay.world.scene().objectVisible(0));
         CHECK(replay.world.scene().objectVisible(4));

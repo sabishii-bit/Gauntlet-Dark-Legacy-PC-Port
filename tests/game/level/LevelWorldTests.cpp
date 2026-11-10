@@ -1383,9 +1383,9 @@ TEST_CASE("lightning binds only its native stage names and safely resets missing
     WorldLightning lightning;
     lightning.bind(layout, "F2");
     REQUIRE(lightning.flashes().size() == 4);
-    constexpr std::array<usize, 4> selected{2, 5, 0, 4};
-    for (usize i = 0; i < selected.size(); ++i) {
-        CHECK(lightning.flashes()[i].object == selected[i]);
+    constexpr std::array<usize, 4> kSelected{2, 5, 0, 4};
+    for (usize i = 0; i < kSelected.size(); ++i) {
+        CHECK(lightning.flashes()[i].object == kSelected[i]);
         CHECK(lightning.flashes()[i].remaining >= 5);
         CHECK(lightning.flashes()[i].remaining < 15);
         CHECK_FALSE(lightning.flashes()[i].visible);
@@ -1407,8 +1407,9 @@ TEST_CASE("lightning binds only its native stage names and safely resets missing
         CHECK(flash.remaining == Approx(.2f));
     }
     lightning.update(.21f, noMeshes);
-    for (const auto& flash : lightning.flashes())
+    for (const auto& flash : lightning.flashes()) {
         CHECK_FALSE(flash.visible);
+    }
     CHECK_FALSE(lightning == initial);
     lightning.bind(layout, "F2");
     CHECK(lightning == initial);
@@ -1466,25 +1467,27 @@ TEST_CASE("retail A5 and F2 lightning flashes independently while Stop Time hold
                 CHECK_FALSE(world.scene().objectVisible(lightning[i]));
             }
             usize ordinary = 0;
-            while (std::ranges::find(lightning, ordinary) != lightning.end())
+            while (std::ranges::find(lightning, ordinary) != lightning.end()) {
                 ++ordinary;
+            }
             REQUIRE(ordinary < world.layout().objects().size());
             const bool ordinaryVisible = world.scene().objectVisible(ordinary);
             // Drawing repeatedly does not consume time or a new random wait.
             for (const f32 alpha : {0.f, .25f, .75f, 1.f}) {
                 world.draw(device, Mat4{1}, {}, alpha);
                 device.draws.clear();
-                for (const auto object : lightning)
+                for (const auto object : lightning) {
                     CHECK_FALSE(world.scene().objectVisible(object));
+                }
             }
             std::array<bool, 4> previous{};
             std::array<s32, 4> lastEdge{};
             std::array<s32, 4> flashes{};
             bool independent = false;
-            constexpr f32 step = 1.f / 60;
+            constexpr f32 kStep = 1.f / 60;
             for (s32 tick = 1; tick <= 31 * 60; ++tick) {
                 world.capturePresentation();
-                world.update(step, true);
+                world.update(kStep, true);
                 s32 visibleCount = 0;
                 for (usize i = 0; i < lightning.size(); ++i) {
                     const bool visible = world.scene().objectVisible(lightning[i]);
@@ -1509,8 +1512,9 @@ TEST_CASE("retail A5 and F2 lightning flashes independently while Stop Time hold
                 CHECK(world.scene().objectVisible(ordinary) == ordinaryVisible);
             }
             CHECK(independent);
-            for (const auto count : flashes)
+            for (const auto count : flashes) {
                 CHECK(count >= 2);
+            }
         }
     }
 }
