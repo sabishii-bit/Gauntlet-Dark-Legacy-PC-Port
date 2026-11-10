@@ -21,6 +21,7 @@ struct ModelSetEntry {
 };
 
 /** Named meshes decoded on first use from a native archive. */
+// NOLINTNEXTLINE(bugprone-exception-escape): the map's move is not noexcept on every library
 class ModelSet {
 public:
     /** Loads objects.ngc from the supplied directory. */

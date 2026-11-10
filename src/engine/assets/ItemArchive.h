@@ -9,6 +9,7 @@
 namespace gdl {
 
 /** One unpacked item archive: the models, textures and animation trees it holds together. */
+// NOLINTNEXTLINE(bugprone-exception-escape): the sets' map moves are not noexcept on every library
 struct ItemArchive {
     ModelSet models;
     TextureSet textures;

@@ -43,6 +43,7 @@ struct TextureSetEntry {
  * One texture archive: its named images, decoded and uploaded on
  * first use. Names match ignoring case; an animation's frames follow its first entry.
  */
+// NOLINTNEXTLINE(bugprone-exception-escape): the map's move is not noexcept on every library
 class TextureSet {
 public:
     /** Prefers objects.ngc/textures.ngc; accepts textures.json for inspection exports. */

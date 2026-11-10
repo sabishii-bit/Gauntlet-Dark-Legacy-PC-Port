@@ -158,6 +158,7 @@ struct TreeInfo {
 };
 
 /** The animation trees of one archive. */
+// NOLINTNEXTLINE(bugprone-exception-escape): the map's move is not noexcept on every library
 class AnimationSet {
 public:
     /** Prefers anim.ps2; accepts animations.json for legacy inspection exports. */
