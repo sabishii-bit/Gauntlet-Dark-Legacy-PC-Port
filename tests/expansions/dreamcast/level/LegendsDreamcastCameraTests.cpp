@@ -32,6 +32,17 @@ void near(Vec3 actual, Vec3 expected, f32 tolerance = .001f) {
     CHECK(glm::distance(actual, expected) < tolerance);
 }
 
+bool finite(const Mat4& matrix) {
+    for (Mat4::length_type column = 0; column < 4; ++column) {
+        for (Mat4::length_type row = 0; row < 4; ++row) {
+            if (!std::isfinite(matrix[column][row])) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
 TEST_CASE("Dreamcast camera initialization derives only unauthored limits from world bounds",
           "[legends][dreamcast-camera]") {
     LevelCameraInfo source;
@@ -470,9 +481,10 @@ TEST_CASE("Dreamcast BCAM fits the native arena before and after boss registrati
                 CHECK(std::isfinite(at30.camera().pitch));
                 const auto completed = at30.camera();
                 for (const f32 fraction : {.0f, .25f, .75f, 1.0f}) {
-                    const auto rendered = at30.sample(fraction / 30);
-                    (void)rendered.projection(80 * kPi / 180, 16.0f / 9);
-                    (void)rendered.projection(60 * kPi / 180, 4.0f / 3);
+                    // A frame between steps is drawn from the sample's own view.
+                    const Mat4 view = at30.sample(fraction / 30).view();
+                    CHECK(finite(WorldCamera::projection(80 * kPi / 180, 16.0f / 9) * view));
+                    CHECK(finite(WorldCamera::projection(60 * kPi / 180, 4.0f / 3) * view));
                 }
                 CHECK(at30.camera() == completed);
             }
