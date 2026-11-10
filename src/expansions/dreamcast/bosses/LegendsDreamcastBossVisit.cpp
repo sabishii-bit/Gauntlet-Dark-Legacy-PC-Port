@@ -20,14 +20,17 @@ bool finite(const Vec3& position) {
 } // namespace
 
 void LegendsDreamcastBossVisit::load(RenderDevice& device, ItemArchive* wizard) {
-    if (!wizard)
+    if (!wizard) {
         return;
+    }
     const auto found = wizard->trees.find("WIZARD");
-    if (!found)
+    if (!found) {
         return;
+    }
     const auto& tree = wizard->trees.tree(*found);
-    if (tree.sequences.empty() || !m_model.bind(tree, wizard->models, wizard->textures, device))
+    if (tree.sequences.empty() || !m_model.bind(tree, wizard->models, wizard->textures, device)) {
         return;
+    }
     m_tree = &tree;
     // Native DoGoodWizard creates WIZARD with drawable flags 0x881880.
     m_model.setAppearance({.unlit = true, .depthWrite = false, .additive = true});
@@ -35,8 +38,9 @@ void LegendsDreamcastBossVisit::load(RenderDevice& device, ItemArchive* wizard) 
     if (wizard->trees.find("BOSSKEY") && wizard->trees.find("BOSSKEY2")) {
         // BossEnd (8c0713bc) starts BOSSKEY, then morphs into BOSSKEY2 for
         // thirty seconds. Warm both resources before the frame's first draw.
-        for (const auto name : {"BOSSKEY", "BOSSKEY2"})
+        for (const auto* const name : {"BOSSKEY", "BOSSKEY2"}) {
             m_rewards.startSet(device, *wizard, name, Vec3{0}, {.depthWrite = false});
+        }
         m_rewards.reset();
         m_rewardArchive = wizard;
         m_device = &device;
@@ -57,20 +61,23 @@ bool LegendsDreamcastBossVisit::loadSkins(RenderDevice& device,
     const AssetLocator files{nativeRoot};
     const auto objects = files.find("weapons/objects.rom");
     const auto pixels = files.find("weapons/textures.rom");
-    if (!objects || !pixels)
+    if (!objects || !pixels) {
         return false;
+    }
     try {
         const auto decoded =
             formats::decodeLegendsDreamcastTextures(readFile(*objects), readFile(*pixels));
         const auto first =
             std::ranges::find(decoded, "DEATHLIGHT", &formats::LegendsMapTexture::name);
-        if (first == decoded.end() || decoded.end() - first < 10)
+        if (first == decoded.end() || decoded.end() - first < 10) {
             return false;
+        }
         std::array<std::unique_ptr<Texture>, 10> skins;
         for (usize frame = 0; frame < skins.size(); ++frame) {
             const auto& texture = first[static_cast<std::ptrdiff_t>(frame)];
-            if (texture.image.pixels.empty())
+            if (texture.image.pixels.empty()) {
                 return false;
+            }
             skins[frame] = device.createTexture(
                 {texture.width, texture.height, TextureFilter::Linear, TextureWrap::Repeat},
                 texture.image.pixels);
@@ -84,8 +91,9 @@ bool LegendsDreamcastBossVisit::loadSkins(RenderDevice& device,
 }
 
 const Texture* LegendsDreamcastBossVisit::skin() const {
-    if (m_skinFrame < 0)
+    if (m_skinFrame < 0) {
         return nullptr;
+    }
     return m_skins[static_cast<usize>(std::min(m_skinFrame, 9.0f))].get();
 }
 
@@ -94,16 +102,18 @@ bool LegendsDreamcastBossVisit::begin(s32 boss, s32 realm, u64 runes, u64 shards
                                       std::optional<Vec3> rewardPosition) {
     if (m_state.stage() != LegendsDreamcastBossCeremony::Stage::None || players.empty() ||
         !finite(anchor) || (rewardPosition && !finite(*rewardPosition)) ||
-        !std::ranges::all_of(players, finite) || !m_state.begin(boss, realm, runes, shards))
+        !std::ranges::all_of(players, finite) || !m_state.begin(boss, realm, runes, shards)) {
         return false;
+    }
     m_position = LegendsDreamcastBossCeremony::wizardPosition(boss, anchor, players);
     m_anchor = anchor;
     m_players.assign(players.begin(), players.end());
     // FaceGoodWizard starts at realm modulo four, then advances to an active player.
     m_facingPlayer = static_cast<usize>(std::max(realm, 0)) % m_players.size();
     facePlayer(0, true);
-    if (m_tree)
+    if (m_tree) {
         m_player.start(m_tree->sequences.front(), 0);
+    }
     if (boss <= 31 && rewardPosition && m_rewardArchive && m_device) {
         const auto& tree = m_rewardArchive->trees.tree(*m_rewardArchive->trees.find("BOSSKEY"));
         const f32 seconds =
@@ -118,17 +128,19 @@ bool LegendsDreamcastBossVisit::begin(s32 boss, s32 realm, u64 runes, u64 shards
     if (m_runeTree && boss == 32) {
         m_runePlayer.start(m_runeTree->sequences.front(), 0);
         // HideRunestones (8c06f6c0) addresses meshes, not node descendants.
-        constexpr std::string_view realms = "CMDF";
+        constexpr std::string_view kRealms = "CMDF";
         for (usize node = 0; node < m_runeTree->nodes.size(); ++node) {
             const auto& object = m_runeTree->nodes[node].object;
             bool hidden = object == "RUNESTONESCENTE" && !m_state.allRunes();
             for (usize bit = 0; bit < 12; ++bit) {
                 if ((runes & (u64{1} << bit)) == 0 &&
-                    object == std::format("RUNESTONES{}{}", realms[bit / 3], bit % 3 + 1))
+                    object == std::format("RUNESTONES{}{}", kRealms[bit / 3], bit % 3 + 1)) {
                     hidden = true;
+                }
             }
-            if (hidden)
+            if (hidden) {
                 m_hiddenRunes.push_back(node);
+            }
         }
     }
     capturePresentation();
@@ -136,18 +148,21 @@ bool LegendsDreamcastBossVisit::begin(s32 boss, s32 realm, u64 runes, u64 shards
 }
 
 void LegendsDreamcastBossVisit::updatePlayers(std::span<const Vec3> players) {
-    if (!std::ranges::all_of(players, finite))
+    if (!std::ranges::all_of(players, finite)) {
         return;
+    }
     m_players.assign(players.begin(), players.end());
     m_facingPlayer = m_players.empty() ? 0 : m_facingPlayer % m_players.size();
 }
 
 void LegendsDreamcastBossVisit::facePlayer(f32 seconds, bool snap) {
-    if (m_players.empty())
+    if (m_players.empty()) {
         return;
+    }
     const Vec3 direction = m_players[m_facingPlayer] - m_position;
-    if (direction.x == 0 && direction.z == 0)
+    if (direction.x == 0 && direction.z == 0) {
         return;
+    }
     const f32 wanted = portable::atan2(direction.x, direction.z);
     // FaceGoodWizard (8c06f580) clamps the unwrapped difference to pi/2 per second.
     const f32 maximum = glm::half_pi<f32>() * seconds;
@@ -167,8 +182,9 @@ void LegendsDreamcastBossVisit::capturePresentation() {
 
 std::vector<std::string> LegendsDreamcastBossVisit::pages(usize group) const {
     std::vector<std::string> result;
-    if (!m_strings || group >= m_state.groups().size())
+    if (!m_strings || group >= m_state.groups().size()) {
         return result;
+    }
     for (const auto& key : m_state.groups()[group].keys) {
         // Never render localization identifiers as dialogue if optional text is missing.
         result.emplace_back(m_strings->has(key) ? m_strings->get(key) : std::string_view{});
@@ -178,40 +194,49 @@ std::vector<std::string> LegendsDreamcastBossVisit::pages(usize group) const {
 
 LegendsDreamcastBossCeremony::Events LegendsDreamcastBossVisit::update(f32 seconds) {
     LegendsDreamcastBossCeremony::Events result;
-    if (!std::isfinite(seconds) || seconds <= 0 || seconds > 1)
+    if (!std::isfinite(seconds) || seconds <= 0 || seconds > 1) {
         return result;
-    if (m_skinFrame >= 0)
+    }
+    if (m_skinFrame >= 0) {
         m_skinFrame = std::min(9.0f, m_skinFrame + seconds * 15);
-    if (!m_state.running())
+    }
+    if (!m_state.running()) {
         return result;
+    }
     m_rewards.update(seconds);
     m_tickFraction += static_cast<f64>(seconds) * 60;
     while (m_tickFraction >= 1) {
         m_tickFraction -= 1;
-        const bool speaking = m_output && (!m_voices.empty() || m_output->isPlaying(m_voice));
+        const bool speaking =
+            m_output != nullptr && (!m_voices.empty() || m_output->isPlaying(m_voice));
         const auto event = m_state.step(1, pages(m_state.groupIndex()), speaking);
-        if (event.voice)
+        if (event.voice) {
             m_voices.push_back(*event.voice);
-        if (event.turnToNextPlayer && !m_players.empty())
+        }
+        if (event.turnToNextPlayer && !m_players.empty()) {
             m_facingPlayer = (m_facingPlayer + 1) % m_players.size();
+        }
         if (event.appeared) {
             m_position =
                 LegendsDreamcastBossCeremony::wizardPosition(m_state.boss(), m_anchor, m_players);
             facePlayer(0, true);
         }
-        if (event.depart && m_runePlayer.playing() && m_state.allRunes())
+        if (event.depart && m_runePlayer.playing() && m_state.allRunes()) {
             m_runePlayer.start(m_runeTree->sequences[1], 1);
+        }
         // SetSkinFX at 8c070878: DEATHLIGHT, ten frames, rate .5 per
         // 30 Hz player update. This is a body texture, not a particle tree.
-        if (event.sparkle)
+        if (event.sparkle) {
             m_skinFrame = 0;
+        }
         result.appeared |= event.appeared;
         result.depart |= event.depart;
         result.sparkle |= event.sparkle;
         result.finished |= event.finished;
     }
-    if (m_state.wizardAlpha() > 0)
+    if (m_state.wizardAlpha() > 0) {
         facePlayer(seconds);
+    }
     if (m_tree && m_state.wizardAlpha() > 0) {
         m_player.advance(seconds, true);
         m_textures.advance(seconds);
@@ -220,15 +245,17 @@ LegendsDreamcastBossCeremony::Events LegendsDreamcastBossVisit::update(f32 secon
         // Native phase 9 force-starts ACTIVE; phase 10 requests ON without
         // interrupting that one-shot sequence (AnimateTree mode 0).
         m_runePlayer.advance(seconds, m_runePlayer.sequence() != 1);
-        if (m_runePlayer.sequence() == 1 && m_runePlayer.finished())
+        if (m_runePlayer.sequence() == 1 && m_runePlayer.finished()) {
             m_runePlayer.start(m_runeTree->sequences[2], 2);
+        }
     }
     return result;
 }
 
 void LegendsDreamcastBossVisit::playSounds(SoundPlayer& output, LegendsDreamcastSounds& bank) {
-    if (m_output && m_output != &output)
+    if (m_output && m_output != &output) {
         stopSounds();
+    }
     m_output = &output;
     while (!m_voices.empty() && !output.isPlaying(m_voice)) {
         m_voice = bank.play(output, m_voices.front());
@@ -237,8 +264,9 @@ void LegendsDreamcastBossVisit::playSounds(SoundPlayer& output, LegendsDreamcast
 }
 
 void LegendsDreamcastBossVisit::stopSounds() {
-    if (m_output)
+    if (m_output) {
         m_output->stop(m_voice);
+    }
     m_voice = kNoSound;
     m_output = nullptr;
     m_voices.clear();
@@ -248,10 +276,12 @@ void LegendsDreamcastBossVisit::draw(RenderDevice& device, const Mat4& clip,
                                      const WorldCamera& camera, TreeModel::Pass pass,
                                      f32 alpha) const {
     const CameraFrame axes = CameraFrame::of(camera);
-    if (TreeModel::compositesEffects(pass))
+    if (TreeModel::compositesEffects(pass)) {
         m_rewards.draw(device, clip, {}, &axes, alpha);
-    if (!m_tree || m_state.wizardAlpha() <= 0)
+    }
+    if (!m_tree || m_state.wizardAlpha() <= 0) {
         return;
+    }
     const f32 blend = alpha < 0 || !std::isfinite(alpha) ? 1 : std::clamp(alpha, 0.0f, 1.0f);
     const f32 frame = m_previousGeneration == m_player.generation()
                           ? std::lerp(m_previousFrame, m_player.presentationFrame(), blend)
@@ -275,8 +305,9 @@ void LegendsDreamcastBossVisit::draw(RenderDevice& device, const Mat4& clip,
         m_runeModel.setPresentationFrame(sequence, runeFrame);
         m_textures.apply(m_runeModel, *m_runeTree, sequence, runeFrame,
                          m_textures.presentationOffset(blend));
-        for (const usize node : m_hiddenRunes)
+        for (const usize node : m_hiddenRunes) {
             m_runeModel.setMeshAlpha(node, 0);
+        }
         m_runeModel.draw(device, clip,
                          glm::translate(Mat4{1}, LegendsDreamcastBossCeremony::kRunestonePosition),
                          {}, runes.matrices(), &axes,
@@ -287,11 +318,13 @@ void LegendsDreamcastBossVisit::draw(RenderDevice& device, const Mat4& clip,
 void LegendsDreamcastBossVisit::drawCaption(Canvas& canvas, const TextPainter& font,
                                             f32 width) const {
     const auto caption = m_state.caption();
-    if (!caption || !font.ready())
+    if (!caption || !font.ready()) {
         return;
+    }
     const auto text = pages(caption->group);
-    if (caption->page >= text.size())
+    if (caption->page >= text.size()) {
         return;
+    }
     const auto& page = text[caption->page];
     const TextStyle style{.scale = LegendsDreamcastBossCeremony::kCaptionScale};
     s32 y = static_cast<s32>(LegendsDreamcastBossCeremony::kCaptionY);

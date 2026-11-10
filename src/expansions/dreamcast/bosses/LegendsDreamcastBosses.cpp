@@ -38,12 +38,23 @@ constexpr std::array kBosses{
 };
 
 void require(bool valid, const char* message) {
-    if (!valid)
+    if (!valid) {
         throw FormatError(std::string{"Dreamcast boss: "} + message);
+    }
 }
 
 bool finite(const Vec3& point) {
     return std::isfinite(point.x) && std::isfinite(point.y) && std::isfinite(point.z);
+}
+
+/** The shipped arena a lower-case level code names, or null for any other stage. */
+const BossBinding* bindingOf(std::string_view level) {
+    for (const auto& binding : kBosses) {
+        if (binding.level == level) {
+            return &binding;
+        }
+    }
+    return nullptr;
 }
 
 } // namespace
@@ -52,11 +63,13 @@ std::optional<LegendsDreamcastBossEncounter> legendsDreamcastBoss(std::span<cons
                                                                   std::span<const u8> worlds,
                                                                   std::string_view levelName) {
     std::string level = toLowerAscii(levelName);
-    if (level.starts_with("level"))
+    if (level.starts_with("level")) {
         level.erase(0, 5);
-    const auto binding = std::ranges::find(kBosses, level, &BossBinding::level);
-    if (binding == kBosses.end())
+    }
+    const auto* binding = bindingOf(level);
+    if (binding == nullptr) {
         return std::nullopt;
+    }
     require(worlddata.size() >= 8, "truncated worlddata header");
     const usize directory = readU32LE(worlddata, 0);
     const usize count = readU32LE(worlddata, 4);
@@ -81,9 +94,11 @@ std::optional<LegendsDreamcastBossEncounter> legendsDreamcastBoss(std::span<cons
         require(found != sections.end(), "missing worlddata records");
         const Section section = found->second;
         usize end = directory;
-        for (const auto& [unused, next] : sections)
-            if (next.offset > section.offset)
+        for (const auto& [unused, next] : sections) {
+            if (next.offset > section.offset) {
                 end = std::min(end, next.offset);
+            }
+        }
         require(section.count <= (end - section.offset) / stride,
                 "worlddata records exceed section");
         return section;
@@ -95,13 +110,17 @@ std::optional<LegendsDreamcastBossEncounter> legendsDreamcastBoss(std::span<cons
     for (usize row = 0; row < levels.count; ++row) {
         const usize at = levels.offset + row * 144;
         std::string code;
-        for (usize character = 0; character < 4 && worlddata[at + 8 + character] != 0; ++character)
+        for (usize character = 0; character < 4 && worlddata[at + 8 + character] != 0;
+             ++character) {
             code += static_cast<char>(worlddata[at + 8 + character]);
-        if (toLowerAscii(code) != level)
+        }
+        if (toLowerAscii(code) != level) {
             continue;
+        }
         const s32 nativeKind = readS32LE(worlddata, at + 52);
-        if (nativeKind < 0)
+        if (nativeKind < 0) {
             return std::nullopt;
+        }
         require(nativeRealm == binding->realm && nativeKind == binding->nativeKind,
                 "arena identity disagrees with native campaign");
 
@@ -113,8 +132,9 @@ std::optional<LegendsDreamcastBossEncounter> legendsDreamcastBoss(std::span<cons
         const auto world = formats::WorldFile::parse(worlds);
         const auto marker = std::ranges::find(world.locators, LocatorKind::Boss,
                                               &formats::WorldLocatorRecord::kind);
-        if (marker == world.locators.end())
+        if (marker == world.locators.end()) {
             return std::nullopt;
+        }
         require(std::ranges::count(world.locators, LocatorKind::Boss,
                                    &formats::WorldLocatorRecord::kind) == 1,
                 "multiple boss locators");
