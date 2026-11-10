@@ -226,8 +226,9 @@ TEST_CASE("Dreamcast Underworld floors and sinking figures retain their native R
           "[formats][legends][dreamcast-presentation][dreamcast-floor-lighting][assets]") {
     const auto directory =
         test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native/levels/levelf1";
-    if (!std::filesystem::is_regular_file(directory / "worlds.rom"))
+    if (!std::filesystem::is_regular_file(directory / "worlds.rom")) {
         SKIP("Optional Dreamcast assets are not installed");
+    }
     const auto models = readFile(directory / "objects.rom");
     const auto pixels = readFile(directory / "textures.rom");
     auto map = LegendsMap::parseDreamcast(readFile(directory / "worlds.rom"), models);
@@ -253,16 +254,18 @@ TEST_CASE("Dreamcast Underworld floors and sinking figures retain their native R
     CHECK_FALSE(draw.state.lightmapCutout);
     CHECK(dynamic_cast<const test::FakeTexture*>(draw.state.lightmap)->pixels == lightmap.pixels);
     REQUIRE(draw.vertices.size() == floor.mesh.parts[0].indices.size());
-    for (usize i = 0; i < draw.vertices.size(); ++i)
+    for (usize i = 0; i < draw.vertices.size(); ++i) {
         CHECK(draw.vertices[i].uv2 ==
               floor.mesh.vertices[floor.mesh.parts[0].indices[i]].lightmapUv);
+    }
 
     auto archive = game::loadLegendsDreamcastArchive(directory);
     REQUIRE(archive);
     usize sinkingModels = 0;
     for (u32 i = 0; i < archive->models.size(); ++i) {
-        if (!archive->models.entry(i).name.starts_with("F1ROCKSINK"))
+        if (!archive->models.entry(i).name.starts_with("F1ROCKSINK")) {
             continue;
+        }
         CAPTURE(archive->models.entry(i).name);
         ++sinkingModels;
         const auto& mesh = archive->models.mesh(i);
@@ -275,8 +278,9 @@ TEST_CASE("Dreamcast Underworld floors and sinking figures retain their native R
         REQUIRE(device.draws.size() == mesh.parts.size());
         usize bakedParts = 0;
         for (usize p = 0; p < mesh.parts.size(); ++p) {
-            if (!mesh.parts[p].rgbLightmap)
+            if (!mesh.parts[p].rgbLightmap) {
                 continue;
+            }
             ++bakedParts;
             const auto& rendered = device.draws[p];
             const auto& part = mesh.parts[p];
@@ -285,9 +289,10 @@ TEST_CASE("Dreamcast Underworld floors and sinking figures retain their native R
             REQUIRE(rendered.state.lightmap != nullptr);
             const Vec2 dimensions{rendered.state.lightmap->width(),
                                   rendered.state.lightmap->height()};
-            for (usize v = 0; v < rendered.vertices.size(); ++v)
+            for (usize v = 0; v < rendered.vertices.size(); ++v) {
                 CHECK(rendered.vertices[v].uv2 ==
                       mesh.vertices[part.indices[v]].lightmapUv / dimensions);
+            }
         }
         CHECK(bakedParts > 0);
     }
@@ -298,9 +303,10 @@ TEST_CASE("Dreamcast arena lightning submits depth-tested additive draws after s
           "[formats][legends][dreamcast-lightning][assets]") {
     const auto levels =
         test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native/levels";
-    if (!std::filesystem::is_regular_file(levels / "levela5/worlds.rom"))
+    if (!std::filesystem::is_regular_file(levels / "levela5/worlds.rom")) {
         SKIP("Optional Dreamcast assets are not installed");
-    for (const auto level : {"levela5", "levelf2"}) {
+    }
+    for (const auto* const level : {"levela5", "levelf2"}) {
         CAPTURE(level);
         const auto directory = levels / level;
         const auto models = readFile(directory / "objects.rom");
@@ -330,8 +336,9 @@ TEST_CASE("Dreamcast native flame pit retains both alpha layers in the blended p
           "[formats][legends][dreamcast-presentation][assets]") {
     const auto directory =
         test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native/items/levelb";
-    if (!std::filesystem::exists(directory / "objects.rom"))
+    if (!std::filesystem::exists(directory / "objects.rom")) {
         SKIP("Optional Dreamcast assets are not installed");
+    }
     const auto archive = game::loadLegendsDreamcastArchive(directory);
     REQUIRE(archive);
     const auto model = archive->models.find("FLAMEVL1");
@@ -370,8 +377,9 @@ TEST_CASE("Dreamcast generic generator bank decodes its own LOD-zero artwork",
           "[formats][legends][dreamcast-presentation][assets]") {
     const auto directory =
         test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native/generators";
-    if (!std::filesystem::exists(directory / "objects.rom"))
+    if (!std::filesystem::exists(directory / "objects.rom")) {
         SKIP("Optional Dreamcast assets are not installed");
+    }
     const auto bytes = readFile(directory / "objects.rom");
     const auto archive = game::loadLegendsDreamcastArchive(directory);
     REQUIRE(archive);
@@ -385,9 +393,9 @@ TEST_CASE("Dreamcast generic generator bank decodes its own LOD-zero artwork",
     // not distance LODs. LoadWorld8c0a3600 loads this bank for gen_active<2;
     // ordinary active generators use their selected monster bank instead.
     // This tests that bank's decoding, not normal gameplay asset selection.
-    constexpr std::array expected{Expected{"GEN_TRO0L1", 34, 16}, Expected{"GEN_TRO1L1", 28, 16},
-                                  Expected{"GEN_TRO2L1", 28, 16}, Expected{"GEN_TRO3L1", 22, 32}};
-    for (const auto& entry : expected) {
+    constexpr std::array kExpected{Expected{"GEN_TRO0L1", 34, 16}, Expected{"GEN_TRO1L1", 28, 16},
+                                   Expected{"GEN_TRO2L1", 28, 16}, Expected{"GEN_TRO3L1", 22, 32}};
+    for (const auto& entry : kExpected) {
         INFO(entry.name);
         const auto model = archive->models.find(entry.name);
         REQUIRE(model);
@@ -399,7 +407,8 @@ TEST_CASE("Dreamcast generic generator bank decodes its own LOD-zero artwork",
         const usize bitmaps = 104 + static_cast<usize>(readU32LE(bytes, 96)) * 140;
         bool alphaFormat = false;
         for (const auto& part : mesh.parts) {
-            alphaFormat |= (bytes.at(bitmaps + part.texture * 80 + 16) & 7U) != 1U;
+            alphaFormat |=
+                (bytes.at(bitmaps + static_cast<usize>(part.texture) * 80 + 16) & 7U) != 1U;
             const auto& image = archive->textures.image(part.texture);
             CHECK(image.width == entry.textureSize);
             CHECK(image.height == entry.textureSize);
@@ -411,16 +420,19 @@ TEST_CASE("Dreamcast generic generator bank decodes its own LOD-zero artwork",
         }
         CHECK(alphaFormat);
         CHECK(mesh.alphaTextured() == alphaFormat);
+        constexpr usize kLodSize = 32;
+        constexpr usize kLodSlots = 4;
         const usize lod = 104 + static_cast<usize>(*model) * 140 + 12;
-        REQUIRE(lod + 4 * 32 <= bytes.size());
+        REQUIRE(lod + kLodSlots * kLodSize <= bytes.size());
         // Native DrawObject's caller (8c0f2356..8c0f2386) uses the count
         // at model+8 and squared-distance thresholds at each 32-byte LOD.
         // These huts have exactly one selectable LOD, not four quality tiers.
         CHECK(readU32LE(bytes, lod - 4) == 1);
-        for (usize level = 1; level < 4; ++level)
+        for (usize level = 1; level < kLodSlots; ++level) {
             CHECK(std::equal(bytes.begin() + static_cast<std::ptrdiff_t>(lod),
-                             bytes.begin() + static_cast<std::ptrdiff_t>(lod + 32),
-                             bytes.begin() + static_cast<std::ptrdiff_t>(lod + level * 32)));
+                             bytes.begin() + static_cast<std::ptrdiff_t>(lod + kLodSize),
+                             bytes.begin() + static_cast<std::ptrdiff_t>(lod + level * kLodSize)));
+        }
     }
 }
 

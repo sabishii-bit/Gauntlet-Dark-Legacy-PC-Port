@@ -3,7 +3,6 @@
 #include <bit>
 #include <filesystem>
 #include <limits>
-#include <numbers>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -15,6 +14,7 @@
 #include "engine/core/Error.h"
 #include "engine/io/ByteReader.h"
 #include "engine/io/File.h"
+#include "engine/math/Math.h"
 
 #include "TestSupport.h"
 #include "expansions/dreamcast/formats/LegendsDreamcastCritter.h"
@@ -126,9 +126,11 @@ private:
         }
     }
     static usize at(std::string_view tag) {
-        const auto found = std::ranges::find(kSyntheticSections, tag, &SyntheticSection::tag);
-        REQUIRE(found != kSyntheticSections.end());
-        return static_cast<usize>(found - kSyntheticSections.begin());
+        const auto section =
+            static_cast<usize>(std::ranges::find(kSyntheticSections, tag, &SyntheticSection::tag) -
+                               kSyntheticSections.begin());
+        REQUIRE(section < kSyntheticSections.size());
+        return section;
     }
 
     std::vector<usize> m_offsets;
@@ -137,19 +139,22 @@ private:
 
 std::filesystem::path nativeRoot() {
     const auto root = test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native";
-    if (!std::filesystem::is_regular_file(root / "critters/dragon.wad"))
+    if (!std::filesystem::is_regular_file(root / "critters/dragon.wad")) {
         SKIP("Dreamcast boss data not installed");
+    }
     return root;
 }
 void put32(std::vector<u8>& bytes, usize at, u32 value) {
-    for (usize i = 0; i < 4; ++i)
+    for (usize i = 0; i < 4; ++i) {
         bytes.at(at + i) = static_cast<u8>(value >> (static_cast<u32>(i) * 8U));
+    }
 }
 usize section(std::span<const u8> bytes, u32 tag) {
     const usize directory = readU32LE(bytes, 0);
     for (usize i = 0; i < readU32LE(bytes, 4); ++i) {
-        if (readU32LE(bytes, directory + i * 12) == tag)
+        if (readU32LE(bytes, directory + i * 12) == tag) {
             return readU32LE(bytes, directory + i * 12 + 4);
+        }
     }
     FAIL("missing native section");
     return 0;
@@ -421,10 +426,12 @@ TEST_CASE("Dreamcast six shipped bosses preserve their own combat records",
         for (usize i = 0; i < source.types.size(); ++i) {
             const auto data = game::CritterData::fromDecoded(row.bank, source, i);
             CHECK(data.kind() == game::CombatantKind::Boss);
-            if (i == 0)
+            if (i == 0) {
                 CHECK(data.tree() == row.tree);
-            for (const auto& move : data.moves())
+            }
+            for (const auto& move : data.moves()) {
                 CHECK_FALSE(move.anim.empty());
+            }
         }
         auto malformed = bytes;
         put32(malformed, section(bytes, 0x54595045) + 0xcc,
@@ -463,8 +470,9 @@ TEST_CASE("Dreamcast Skorne keeps authored entrance links and morph lifetimes",
     CHECK(source.nodes[2].flags == 0); // -300 at+12 is sort bias, not collision flags.
     CHECK(source.nodes[2].damageScale == 1);
     CHECK(source.nodes[2].healthScale == 1);
-    for (const auto& damage : source.damages)
+    for (const auto& damage : source.damages) {
         CHECK(damage.morphLife == 15);
+    }
     CHECK_FALSE(source.sounds.front().levelFormat.empty());
 }
 
@@ -476,13 +484,12 @@ TEST_CASE("Dreamcast target centres and turn limits follow native TYPE consumers
         f32 centreY;
         f32 turn;
     };
-    constexpr f32 pi = std::numbers::pi_v<f32>;
     const std::array rows{Expected{"dragon", -14, 0},
-                          Expected{"chimera", 8, pi / 4},
-                          Expected{"djinn", 8, 2 * pi},
-                          Expected{"drider", 9, pi},
-                          Expected{"skorne1", 28, 40 * pi / 180},
-                          Expected{"skorne2", 28, 40 * pi / 180}};
+                          Expected{"chimera", 8, kPi / 4},
+                          Expected{"djinn", 8, 2 * kPi},
+                          Expected{"drider", 9, kPi},
+                          Expected{"skorne1", 28, 40 * kPi / 180},
+                          Expected{"skorne2", 28, 40 * kPi / 180}};
     for (const auto& row : rows) {
         CAPTURE(row.bank);
         const auto bytes = readFile(root / "critters" / (std::string(row.bank) + ".wad"));

@@ -146,8 +146,8 @@ TEST_CASE("Dreamcast generator difficulty is read from the selected native level
     const auto scope = dreamcastLegendsFixtureScope(bytes, "levelg1");
     REQUIRE(scope);
     CHECK(scope->generatorDifficulty == 1.5f);
-    for (const f32 invalid : {0.f, -1.f, std::numeric_limits<f32>::infinity(),
-                              std::numeric_limits<f32>::quiet_NaN()}) {
+    for (const f32 invalid :
+         {0.f, -1.f, std::numeric_limits<f32>::infinity(), std::numeric_limits<f32>::quiet_NaN()}) {
         putFloat(bytes, 136 + 132, invalid);
         CHECK_THROWS_AS(dreamcastLegendsFixtureScope(bytes, "levelg1"), FormatError);
     }
@@ -164,18 +164,18 @@ TEST_CASE("Dreamcast BCAM references are independent of ordinary camera settings
     put32(bytes, 488, 280);
     put32(bytes, 492, 2);
     put16(bytes, 136 + 124, 1);
-    constexpr usize row = 364;
-    put32(bytes, row, BossCameraInfo::kLiveAnchor);
-    putFloat(bytes, row + 4, .2f);
-    putFloat(bytes, row + 8, .7f);
-    putFloat(bytes, row + 12, 64);
-    putFloat(bytes, row + 16, 30);
-    putFloat(bytes, row + 20, 90);
-    putFloat(bytes, row + 24, 30);
-    putFloat(bytes, row + 28, .35f);
-    putFloat(bytes, row + 32, .23f);
-    putFloat(bytes, row + 40, -7);
-    putFloat(bytes, row + 52, -12);
+    constexpr usize kRow = 364;
+    put32(bytes, kRow, BossCameraInfo::kLiveAnchor);
+    putFloat(bytes, kRow + 4, .2f);
+    putFloat(bytes, kRow + 8, .7f);
+    putFloat(bytes, kRow + 12, 64);
+    putFloat(bytes, kRow + 16, 30);
+    putFloat(bytes, kRow + 20, 90);
+    putFloat(bytes, kRow + 24, 30);
+    putFloat(bytes, kRow + 28, .35f);
+    putFloat(bytes, kRow + 32, .23f);
+    putFloat(bytes, kRow + 40, -7);
+    putFloat(bytes, kRow + 52, -12);
     const auto scope = dreamcastLegendsFixtureScope(bytes, "levelg1");
     REQUIRE(scope);
     REQUIRE(scope->bossCamera);
@@ -197,12 +197,12 @@ TEST_CASE("Dreamcast BCAM references are independent of ordinary camera settings
         CHECK_THROWS_AS(dreamcastLegendsFixtureScope(bytes, "levelg1"), FormatError);
     }
     SECTION("nonfinite camera state is rejected") {
-        putFloat(bytes, row + 48, std::numeric_limits<f32>::infinity());
+        putFloat(bytes, kRow + 48, std::numeric_limits<f32>::infinity());
         CHECK_THROWS_AS(dreamcastLegendsFixtureScope(bytes, "levelg1"), FormatError);
     }
     SECTION("native initialization resolves the far-attention and player-range sentinels") {
-        putFloat(bytes, row + 24, 0);
-        putFloat(bytes, row + 52, 999999);
+        putFloat(bytes, kRow + 24, 0);
+        putFloat(bytes, kRow + 52, 999999);
         const auto camera = dreamcastLegendsFixtureScope(bytes, "levelg1")->bossCamera;
         REQUIRE(camera);
         CHECK(camera->maxPlayerDistance == 90);
@@ -433,8 +433,9 @@ TEST_CASE("Dreamcast wall sound metadata rejects invalid references and extents"
 TEST_CASE("Dreamcast B1 wall cue resolves in the native audio directory",
           "[formats][legends][scene][dreamcast-sounds][assets]") {
     const auto root = nativeOrSkip();
-    if (!std::filesystem::is_regular_file(root.parent_path() / "disc/AUDIO/AUD_DATA.ROM"))
+    if (!std::filesystem::is_regular_file(root.parent_path() / "disc/AUDIO/AUD_DATA.ROM")) {
         SKIP("Optional Dreamcast audio is not installed");
+    }
     const auto scope = dreamcastLegendsFixtureScope(readFile(root / "worlddata/mount.wad"), "b1");
     REQUIRE(scope);
     // B1 selects AUDS0, whose +18 value is SNDS2. The native fixed-width
