@@ -61,12 +61,12 @@ private:
     void tick();
     void next();
     void finishEntry();
-    void play(std::string_view sequence, bool reverse = false, f32 speed = 1);
+    void play(std::string_view name, bool reverse = false, f32 speed = 1);
     bool advanceGesture();
     void shot(const Vec3& focus, f32 distance, f32 pitch);
     void updateCamera();
     void makeRuneFlight(usize index);
-    void queueCaptions(std::span<const u32> captions);
+    void queueCaptions(std::span<const u32> ids);
     formats::LegendsN64Tower m_native;
     std::array<u16, 13> m_runeCaptions{};
     std::array<std::array<u16, 2>, 4> m_shardCaptions{};

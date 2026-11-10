@@ -141,7 +141,7 @@ void LegendsTowerCeremony::play(std::string_view name, bool reverse, f32 speed) 
     m_frameEnd = found == m_sequences.end() ? 0 : static_cast<f32>(std::max(0, found->frames - 1));
     const f32 period = found == m_sequences.end() ? kTick : found->secondsPerFrame;
     m_frame = reverse ? m_frameEnd : 0;
-    m_frameStep = (reverse ? -1 : 1) * speed * kTick / std::max(period, .0001f);
+    m_frameStep = (reverse ? -1.0f : 1.0f) * speed * kTick / std::max(period, .0001f);
 }
 
 bool LegendsTowerCeremony::advanceGesture() {
