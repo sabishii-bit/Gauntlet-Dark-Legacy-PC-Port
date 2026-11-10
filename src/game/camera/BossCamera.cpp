@@ -291,8 +291,9 @@ const WorldLocator* BossCamera::approachMarker(std::span<const WorldLocator> mar
 void BossCamera::reset(const BossCameraSubject& boss, std::span<const CameraSubject> party,
                        const BossCameraInfo& record, const CameraView& view,
                        std::span<const WorldLocator> markers, const ApproachPolicy* approach) {
-    if (boss.awake || boss.focus != BossCameraSubject::Focus::Combat)
+    if (boss.awake || boss.focus != BossCameraSubject::Focus::Combat) {
         approach = nullptr;
+    }
     m_lookLength = 0.0f;
     m_lookVelocity = 0.0f;
     m_lookDirection = Vec3{0.0f};
@@ -338,8 +339,9 @@ void BossCamera::update(const BossCameraSubject& boss, std::span<const CameraSub
     if (seconds <= 0.0f) {
         return;
     }
-    if (boss.awake || boss.focus != BossCameraSubject::Focus::Combat)
+    if (boss.awake || boss.focus != BossCameraSubject::Focus::Combat) {
         approach = nullptr;
+    }
     const Vec3 target = lookPoint(boss, party, record, approach);
     const WorldLocator* marker =
         !boss.awake ? approachMarker(markers, approach != nullptr ? target : middleOf(party))
