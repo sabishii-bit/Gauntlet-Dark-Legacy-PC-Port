@@ -108,6 +108,7 @@ std::array<PartyMember, 3> progressionParty() {
 TEST_CASE("Native Tower completion exits retain the party while their special transition runs",
           "[legends][level-progress][tower-special-portals][assets]") {
     const bool cathedral = GENERATE(false, true);
+    // NOLINTNEXTLINE(misc-const-correctness): the level changes behind MSVC's unique_ptr
     ProgressFixture fixture{"tower2"};
     std::array<PartyMember, 2> party;
     party[0].player = 0;
@@ -264,6 +265,7 @@ TEST_CASE("Native level pickups clear departure reminders and remain owned after
           "[legends][level-progress][native-progress-flow][assets]") {
     // Dagger Peak's authored IPR contains both rune4 and obelisk2. Mountain
     // Valley contains only an obelisk, so cannot exercise the priority handoff.
+    // NOLINTNEXTLINE(misc-const-correctness): the level changes behind MSVC's unique_ptr
     ProgressFixture fixture{"mount2"};
     auto party = progressionParty();
     party[0].save.progress().relics.runes = 0xffff;
@@ -298,6 +300,7 @@ TEST_CASE("Native level pickups clear departure reminders and remain owned after
                   .legendsProgress(LegendsPlatform::N64)
                   .has(LegendsRelic::Runestone, rune->award->index));
     }
+    // NOLINTNEXTLINE(misc-const-correctness): the level changes behind MSVC's unique_ptr
     ProgressFixture loaded{"mount2"};
     loaded.level->initializeParty(party);
     CHECK_FALSE(loaded.level->exitReminder());
@@ -359,6 +362,7 @@ TEST_CASE("A failed native destination retains rewards without retrying until ex
 
 TEST_CASE("Native boss victory persists its completion and Battlefield obelisk independently",
           "[legends][level-progress][native-progress-flow][assets]") {
+    // NOLINTNEXTLINE(misc-const-correctness): the level changes behind MSVC's unique_ptr
     ProgressFixture fixture{"boss2"};
     auto party = progressionParty();
     fixture.level->initializeParty(party);
@@ -398,6 +402,7 @@ TEST_CASE("Native departure narration survives scene teardown without repeating 
     AudioMixer mixer(48000);
     SoundPlayer output(mixer);
     ProgressFixture previous{map};
+    // NOLINTNEXTLINE(misc-const-correctness): the level changes behind MSVC's unique_ptr
     ProgressFixture next{"tower2"};
     LegendsSpeech reference;
     if (!reference.openN64(previous.level->directory().parent_path().parent_path())) {
