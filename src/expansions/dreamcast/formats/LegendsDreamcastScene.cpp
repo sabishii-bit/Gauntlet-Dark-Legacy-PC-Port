@@ -243,10 +243,12 @@ dreamcastLegendsFixtureScope(std::span<const u8> worlddata, std::string_view lev
             camera.keyAttention = vector(60);
             camera.wizardAttention = vector(72);
             // BossCameraStart 8c0815a0 normalizes these two authored sentinels.
-            if (camera.maxPlayerDistance == 0)
+            if (camera.maxPlayerDistance == 0) {
                 camera.maxPlayerDistance = camera.maxDistance;
-            if (camera.maxAttention.y >= 999998.0f)
+            }
+            if (camera.maxAttention.y >= 999998.0f) {
                 camera.maxAttention = camera.minAttention;
+            }
             require(camera.minDistance > 0 && camera.maxDistance >= camera.minDistance &&
                         camera.minPlayerDistance > 0 &&
                         camera.maxPlayerDistance >= camera.minPlayerDistance && camera.maxYaw >= 0,
@@ -271,13 +273,16 @@ dreamcastLegendsFixtureScope(std::span<const u8> worlddata, std::string_view lev
                 for (usize candidate = 0; candidate < levels.count; ++candidate) {
                     const usize row = levels.offset + candidate * 144;
                     if (readS32LE(worlddata, row + 4) == 0 ||
-                        std::bit_cast<s16>(readU16LE(worlddata, row + 74)) != audioIndex)
+                        std::bit_cast<s16>(readU16LE(worlddata, row + 74)) != audioIndex) {
                         continue;
+                    }
                     std::string code = text(worlddata, row + 8, 4);
-                    if (code == "H4")
+                    if (code == "H4") {
                         code = "H1";
-                    if (code == "H5")
+                    }
+                    if (code == "H5") {
                         code = "H2";
+                    }
                     result.stageNameSound = "S_" + code + "NAME";
                     break;
                 }

@@ -12,8 +12,9 @@
 namespace gdl::formats {
 namespace {
 void require(bool condition, std::string_view message) {
-    if (!condition)
+    if (!condition) {
         throw FormatError("Dreamcast critter: " + std::string(message));
+    }
 }
 void range(std::span<const u8> bytes, usize at, usize size) {
     require(at <= bytes.size() && size <= bytes.size() - at, "truncated record");
@@ -46,11 +47,14 @@ struct Section {
     usize offset;
     usize count;
 };
+/** Where the directory starts, read once the eight-byte header is known to be there. */
+usize directoryOffset(std::span<const u8> bytes) {
+    range(bytes, 0, 8);
+    return readU32LE(bytes, 0);
+}
 class Wad {
 public:
-    explicit Wad(std::span<const u8> bytes) : m_bytes(bytes) {
-        range(bytes, 0, 8);
-        m_end = readU32LE(bytes, 0);
+    explicit Wad(std::span<const u8> bytes) : m_bytes(bytes), m_end(directoryOffset(bytes)) {
         const usize count = readU32LE(bytes, 4);
         require(m_end >= 8 && count <= 64, "invalid directory");
         range(bytes, m_end, count * 12);
@@ -58,8 +62,9 @@ public:
             const usize at = m_end + i * 12;
             const u32 code = readU32LE(bytes, at);
             std::string tag;
-            for (u32 shift : {24U, 16U, 8U, 0U})
+            for (const u32 shift : {24U, 16U, 8U, 0U}) {
                 tag.push_back(static_cast<char>((code >> shift) & 255U));
+            }
             require(
                 m_sections.emplace(tag, Section{readU32LE(bytes, at + 4), readU32LE(bytes, at + 8)})
                     .second,
@@ -72,22 +77,25 @@ public:
         require(found != m_sections.end(), "missing section");
         const auto [at, count] = found->second;
         require(count <= 4096, "record budget exceeded");
-        if (count == 0)
+        if (count == 0) {
             return {};
+        }
         usize end = m_end;
         for (const auto& [tag, section] : m_sections) {
             require(tag == name || section.count == 0 || section.offset != at,
                     "aliased nonempty sections");
-            if (section.offset > at && section.offset < end)
+            if (section.offset > at && section.offset < end) {
                 end = section.offset;
+            }
         }
         require(at >= 8 && at <= end && count <= (end - at) / stride,
                 "overlapping or truncated section");
         range(m_bytes, at, count * stride);
         std::vector<T> result;
         result.reserve(count);
-        for (usize i = 0; i < count; ++i)
+        for (usize i = 0; i < count; ++i) {
             result.push_back(read(at + i * stride));
+        }
         return result;
     }
 
@@ -123,14 +131,18 @@ void validate(const CritterFile& file) {
         require(type.moveCount > 0 && type.maxHealth > 0 && type.radius >= 0 &&
                     type.wallRadius >= 0,
                 "invalid body dimensions or health");
-        for (s32 i = 0; i < type.moveCount; ++i)
-            reference(file.moves[static_cast<usize>(type.moveIndex + i)].link,
-                      static_cast<usize>(type.moveCount));
-        for (s32 i = 0; i < type.patternCount; ++i) {
-            for (const s16 move : file.patterns[static_cast<usize>(type.patternIndex + i)].moves) {
-                if (move < 0)
+        // The slices above hold both ranges inside their tables, so their
+        // first indices are not negative wherever a loop reads them.
+        const auto moveCount = static_cast<usize>(type.moveCount);
+        for (usize i = 0; i < moveCount; ++i) {
+            reference(file.moves[static_cast<usize>(type.moveIndex) + i].link, moveCount);
+        }
+        for (usize i = 0; i < static_cast<usize>(type.patternCount); ++i) {
+            for (const s16 move : file.patterns[static_cast<usize>(type.patternIndex) + i].moves) {
+                if (move < 0) {
                     break;
-                reference(move, static_cast<usize>(type.moveCount));
+                }
+                reference(move, moveCount);
             }
         }
     }
@@ -140,8 +152,9 @@ void validate(const CritterFile& file) {
         reference(move.sfx, file.sounds.size());
         reference(move.sfx2, file.sounds.size());
     }
-    for (const auto& node : file.nodes)
+    for (const auto& node : file.nodes) {
         reference(node.sfxIndex, file.damages.size());
+    }
     for (const auto& damage : file.damages) {
         reference(damage.sfxIndex, file.sounds.size());
         reference(damage.sfx, file.sounds.size());
@@ -160,8 +173,9 @@ void validate(const CritterFile& file) {
     for (usize i = 0; i < file.types.size(); ++i) {
         std::set<s32> visited;
         for (s32 child = static_cast<s32>(i); child >= 0;
-             child = file.types[static_cast<usize>(child)].childIndex)
+             child = file.types[static_cast<usize>(child)].childIndex) {
             require(visited.insert(child).second, "cyclic child chain");
+        }
     }
 }
 } // namespace
@@ -180,8 +194,9 @@ CritterFile decodeLegendsDreamcastCritter(std::span<const u8> bytes) {
         move.type = std::bit_cast<s32>(readU32LE(bytes, at));
         // 8c0895e0 dispatches 85 as a continuous contact window (CHARGE),
         // and 87 snapshots the target through 8c0bbe00. GDL inserted SPRAY.
-        if (move.type >= 0x85 && move.type <= 0x87)
+        if (move.type >= 0x85 && move.type <= 0x87) {
             ++move.type;
+        }
         move.flags = readU16LE(bytes, at + 4);
         move.priority = small(bytes, at + 6);
         move.name = text(bytes, at + 8, 16);
@@ -209,8 +224,9 @@ CritterFile decodeLegendsDreamcastCritter(std::span<const u8> bytes) {
     out.patterns = wad.records<CritterPatternRecord>("PTRN", 0x44, [&](usize at) {
         CritterPatternRecord pattern;
         pattern.flags = readU16LE(bytes, at);
-        for (usize i = 0; i < pattern.moves.size(); ++i)
+        for (usize i = 0; i < pattern.moves.size(); ++i) {
             pattern.moves[i] = small(bytes, at + 0x14 + i * 2);
+        }
         pattern.cooldown = real(bytes, at + 0x24);
         pattern.target = target(bytes, at + 0x28);
         return pattern;

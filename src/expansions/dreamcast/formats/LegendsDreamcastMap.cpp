@@ -79,8 +79,9 @@ Mesh geometry(std::span<const u8> bytes, usize model, usize bitmapCount, usize b
     for (usize i = 0; i < triangleCount; ++i) {
         const usize texture = readU16LE(bytes, triangles + i * 8 + 6) & 0x3fffU;
         require(texture < bitmapCount, "triangle bitmap index out of range");
-        if ((bytes[bitmapRecords + texture * 80 + 16] & 7U) != 1U)
+        if ((bytes[bitmapRecords + texture * 80 + 16] & 7U) != 1U) {
             flags |= 1U;
+        }
     }
     const usize normals = authoredNormals ? readU32LE(bytes, lod + 28) : 0;
     if (authoredNormals) {
