@@ -88,28 +88,32 @@ LegendsDialogue::nativeTopics(std::string_view title, std::span<const MenuItem> 
     // title gap, five-pixel row gaps and TEXTSCROLL margins of 30 by 10.
     // Centre in the top three quarters, adapting the native gameplay viewport
     // to the port's 512x384 menu canvas rather than using the physical window.
-    const s32 titleHeight = static_cast<s32>(m_titleFont.height() * 1.5f) + 15;
+    const s32 titleHeight = static_cast<s32>(static_cast<f32>(m_titleFont.height()) * 1.5f) + 15;
     const s32 rowHeight = m_font.height() + 5;
     const s32 contentHeight = titleHeight + static_cast<s32>(topics.size()) * rowHeight - 5;
     s32 width = m_titleText.measure(title, 1.5f);
     for (const auto& topic : topics) {
         width = std::max(width, m_text.measure(topic.text, 1));
     }
-    const f32 top = 384 * .75f / 2 - static_cast<f32>(contentHeight / 2) * kScale;
+    // The halves are whole native pixels, taken before the menu scale applies.
+    const s32 halfContentHeight = contentHeight / 2;
+    const s32 halfWidth = width / 2;
+    const f32 top = 384 * .75f / 2 - static_cast<f32>(halfContentHeight) * kScale;
     MenuDefinition result;
     result.items.assign(topics.begin(), topics.end());
     result.scale = kScale;
     result.showCursor = false;
     result.colors = {Color::black(), Color::rgba(0, 132, 0), Color::rgba(0, 0, 0, 0)};
     result.backdrop = "TEXTSCROLL";
-    result.backdropX = static_cast<s32>(256 - (width / 2 + 30) * kScale);
+    result.backdropX = static_cast<s32>(256 - static_cast<f32>(halfWidth + 30) * kScale);
     result.backdropY = static_cast<s32>(top - 10 * kScale);
-    result.backdropWidth = static_cast<s32>((width / 2 + 30) * 2 * kScale);
-    result.backdropHeight = static_cast<s32>((contentHeight + 20) * kScale);
+    result.backdropWidth = static_cast<s32>(static_cast<f32>((halfWidth + 30) * 2) * kScale);
+    result.backdropHeight = static_cast<s32>(static_cast<f32>(contentHeight + 20) * kScale);
     result.itemPositions.reserve(topics.size());
     for (usize i = 0; i < topics.size(); ++i) {
-        result.itemPositions.push_back(
-            {-256, top + static_cast<f32>(titleHeight + static_cast<s32>(i) * rowHeight) * kScale});
+        result.itemPositions.emplace_back(
+            -256.0f,
+            top + static_cast<f32>(titleHeight + static_cast<s32>(i) * rowHeight) * kScale);
     }
     return result;
 }
