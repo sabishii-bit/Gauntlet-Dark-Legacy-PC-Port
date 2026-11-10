@@ -108,6 +108,7 @@ TEST_CASE("player figure digest distinguishes the immutable imported sizing poli
           "[native-state-digest][player-figure-native-digest][legends-player-size][assets]") {
     const auto root = test::assetOrSkip("WEAPONS/objects.ngc").parent_path().parent_path();
     const Figure ordinary(root);
+    // NOLINTNEXTLINE(misc-const-correctness): the figure changes behind MSVC's unique_ptr
     Figure imported(root, PlayerFigure::LevelSize::LevelOne);
     const Figure samePolicy(root, PlayerFigure::LevelSize::LevelOne);
     CHECK(imported.digest() == samePolicy.digest());
