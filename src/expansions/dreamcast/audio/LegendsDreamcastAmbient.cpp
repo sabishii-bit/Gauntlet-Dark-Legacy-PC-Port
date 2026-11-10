@@ -29,28 +29,36 @@ f32 radiusOf(const std::array<u8, 12>& params) {
 bool LegendsDreamcastAmbient::reset(const formats::LegendsDreamcastScene& scene, s32 partyCount,
                                     const TokenResolver& resolve) {
     m_emitters.clear();
-    if (!resolve || partyCount < 1 || partyCount > 4)
+    if (!resolve || partyCount < 1 || partyCount > 4) {
         return false;
+    }
     for (usize index = 0; index < scene.itemInstances.size(); ++index) {
         const auto& instance = scene.itemInstances[index];
         if (instance.info < 0 || static_cast<usize>(instance.info) >= scene.itemInfos.size() ||
             scene.itemInfos[static_cast<usize>(instance.info)].type != 13 ||
-            !shownToParty(instance.minPlayers, partyCount))
+            !shownToParty(instance.minPlayers, partyCount)) {
             continue;
+        }
         // SetItem 8c0a8f20..8c0a9040 resolves a name only for mode zero.
         // Positive modes are music-zone selectors, not audible sound tokens.
-        if (shortAt(instance.params, 4) != 0 || instance.name.empty() || !finite(instance.position))
+        if (shortAt(instance.params, 4) != 0 || instance.name.empty() ||
+            !finite(instance.position)) {
             continue;
+        }
         const f32 radius = radiusOf(instance.params);
-        if (!std::isfinite(radius) || radius < 0)
+        if (!std::isfinite(radius) || radius < 0) {
             continue;
+        }
         std::string name = instance.name;
-        for (char& c : name)
-            if (c >= 'a' && c <= 'z')
+        for (char& c : name) {
+            if (c >= 'a' && c <= 'z') {
                 c = static_cast<char>(c - 'a' + 'A');
+            }
+        }
         const auto token = resolve(name);
-        if (!token)
+        if (!token) {
             continue;
+        }
         m_emitters.push_back({static_cast<u32>(index), *token, instance.position, radius,
                               shortAt(instance.params, 8)});
     }
@@ -59,25 +67,29 @@ bool LegendsDreamcastAmbient::reset(const formats::LegendsDreamcastScene& scene,
 
 std::optional<LegendsDreamcastAmbient::Request>
 LegendsDreamcastAmbient::request(const Vec3& attention, const PositionResolver& positions) const {
-    if (!finite(attention))
+    if (!finite(attention)) {
         return {};
+    }
     std::optional<Request> result;
     f32 nearest = std::numeric_limits<f32>::infinity();
     for (const auto& emitter : m_emitters) {
         const Vec3 position = positions ? positions(emitter.nativeIndex).value_or(emitter.position)
                                         : emitter.position;
-        if (!finite(position))
+        if (!finite(position)) {
             continue;
+        }
         const f32 distance = glm::distance(attention, position);
         const f32 loudness = AmbientSounds::loudness(distance, emitter.radius);
-        if (!std::isfinite(distance) || loudness <= 0 || distance >= nearest)
+        if (!std::isfinite(distance) || loudness <= 0 || distance >= nearest) {
             continue;
+        }
         // do_items 8c0ace62..8c0acede keeps only the closest audible item.
         // AudioSecretProc 8c0dd380 truncates its 224-step gain, restarts a
         // finished native sample while selected, and stops the previous source.
         const f32 volume = static_cast<f32>(static_cast<s32>(224.f * loudness)) / 255.f;
-        if (volume <= 0)
+        if (volume <= 0) {
             continue;
+        }
         Request selected{
             emitter.nativeIndex, emitter.token, position, loudness, volume, emitter.flags, {}};
         if ((emitter.flags & 1U) != 0) {

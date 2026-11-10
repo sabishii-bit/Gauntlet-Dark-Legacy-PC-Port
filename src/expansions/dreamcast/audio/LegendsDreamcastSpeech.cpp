@@ -19,33 +19,40 @@ void LegendsDreamcastSpeech::setEntry(const formats::LegendsDreamcastFixtureScop
     const auto name = m_sounds.namedToken(scope.stageNameSound);
     // AudioEnterNextStage 8c0de0a0 requires both resolved cues; no fabricated
     // fallback, truncated sentence, or GameCube bank when optional audio is absent.
-    if (prefix && name)
+    if (prefix && name) {
         m_entry = {*prefix, *name};
+    }
 }
 
 std::vector<u32> LegendsDreamcastSpeech::runestoneCue(u32 count) {
-    if (count == 0)
+    if (count == 0) {
         return {0x10079};
-    if (count == 1)
+    }
+    if (count == 1) {
         return {0x10068};
-    if (count > 12)
+    }
+    if (count > 12) {
         return {0x10077};
+    }
     return {0x1006aU + count, 0x10069};
 }
 
 bool LegendsDreamcastSpeech::enqueue(SoundPlayer& output, std::span<const u32> tokens) {
     std::erase_if(m_handles, [&](SoundHandle handle) { return !output.isPlaying(handle); });
-    if (m_handles.size() >= 32)
+    if (m_handles.size() >= 32) {
         return false;
+    }
     const auto sequence = m_sounds.phrase(tokens);
-    if (!sequence)
+    if (!sequence) {
         return false;
+    }
     // Native announcer gain224/255, track127, priority2. These ordinary entry
     // and rune phrases share one FIFO; each finite phrase owns all its clips.
     const auto handle = output.playAfter(m_handles.empty() ? kNoSound : m_handles.back(), *sequence,
                                          224.0f / 255.0f, SoundCategory::Effects);
-    if (handle == kNoSound)
+    if (handle == kNoSound) {
         return false;
+    }
     m_handles.push_back(handle);
     return true;
 }
@@ -56,14 +63,16 @@ bool LegendsDreamcastSpeech::playing(const SoundPlayer& output) const {
 }
 
 void LegendsDreamcastSpeech::stop(SoundPlayer& output) {
-    for (const auto handle : m_handles)
+    for (const auto handle : m_handles) {
         output.stop(handle);
+    }
     m_handles.clear();
 }
 
 bool LegendsDreamcastSpeech::continueFrom(SoundPlayer& output, LegendsDreamcastSpeech& previous) {
-    if (this == &previous || m_root != previous.m_root || !previous.playing(output))
+    if (this == &previous || m_root != previous.m_root || !previous.playing(output)) {
         return false;
+    }
     stop(output);
     m_sounds = std::move(previous.m_sounds);
     m_handles = std::exchange(previous.m_handles, {});

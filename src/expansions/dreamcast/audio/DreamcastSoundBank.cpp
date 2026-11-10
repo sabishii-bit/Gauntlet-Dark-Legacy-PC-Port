@@ -10,8 +10,9 @@
 namespace gdl {
 namespace {
 void require(bool value) {
-    if (!value)
+    if (!value) {
         throw FormatError("Invalid Dreamcast sound bank");
+    }
 }
 } // namespace
 
@@ -33,8 +34,9 @@ std::vector<DreamcastBankSample> decodeDreamcastSoundBank(std::span<const u8> by
         require(readU32LE(bytes, at) == 1 && rate >= 8000 && rate <= 192000 && loop <= 1 &&
                 (bits == 4 || bits == 8) && offset >= previousEnd && offset <= bytes.size() &&
                 length > 0 && length <= bytes.size() - offset);
-        for (usize field = 24; field < 44; field += 4)
+        for (usize field = 24; field < 44; field += 4) {
             require(readU32LE(bytes, at + field) == 0);
+        }
         previousEnd = offset + length;
         const usize frames = length * (bits == 4 ? 2 : 1);
         totalFrames += frames;
@@ -44,7 +46,8 @@ std::vector<DreamcastBankSample> decodeDreamcastSoundBank(std::span<const u8> by
         sample.clip.channels = 1;
         sample.loop = loop != 0;
         sample.clip.samples.reserve(frames);
-        s32 history = 0, step = 127;
+        s32 history = 0;
+        s32 step = 127;
         constexpr std::array<s32, 8> kFactors{230, 230, 230, 230, 307, 409, 512, 614};
         for (const u8 byte : bytes.subspan(offset, length)) {
             if (bits == 8) {
@@ -58,7 +61,8 @@ std::vector<DreamcastBankSample> decodeDreamcastSoundBank(std::span<const u8> by
             for (const u32 shift : {0U, 4U}) {
                 const u8 nibble = (byte >> shift) & 15U;
                 const s32 delta = step * (static_cast<s32>(nibble & 7U) * 2 + 1) / 8;
-                history = std::clamp(history + ((nibble & 8U) ? -delta : delta), -32768, 32767);
+                history =
+                    std::clamp(history + ((nibble & 8U) != 0U ? -delta : delta), -32768, 32767);
                 step = std::clamp(step * kFactors[nibble & 7U] / 256, 127, 24576);
                 sample.clip.samples.push_back(static_cast<f32>(history) / 32768);
             }

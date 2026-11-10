@@ -18,8 +18,9 @@ bool LegendsDreamcastSounds::open(const std::filesystem::path& nativeRoot) {
     m_directory = nativeRoot.parent_path() / "disc/AUDIO";
     try {
         const auto file = AssetLocator{m_directory}.find("aud_data.rom");
-        if (!file)
+        if (!file) {
             return false;
+        }
         m_directoryTable = formats::AudioRom::parse(readFile(*file));
         return !m_directoryTable.banks.empty();
     } catch (const std::exception& error) {
@@ -37,34 +38,40 @@ std::optional<u32> LegendsDreamcastSounds::namedToken(std::string_view name) con
 
 std::optional<std::array<u32, 2>> LegendsDreamcastSounds::motionTokens(char realmLetter, s32 slot,
                                                                        bool boss) const {
-    constexpr std::array<std::string_view, 6> families{"MET", "ROPE",  "CHAIN",
-                                                       "ICE", "STONE", "ROCK"};
-    if (slot < 0 || slot >= static_cast<s32>(families.size()) || realmLetter < 'A' ||
-        realmLetter > 'Z')
+    constexpr std::array<std::string_view, 6> kFamilies{"MET", "ROPE",  "CHAIN",
+                                                        "ICE", "STONE", "ROCK"};
+    if (slot < 0 || slot >= static_cast<s32>(kFamilies.size()) || realmLetter < 'A' ||
+        realmLetter > 'Z') {
         return {};
+    }
     std::optional<std::array<u32, 2>> fallback;
-    for (usize i = 0; i < families.size(); ++i) {
+    for (usize i = 0; i < kFamilies.size(); ++i) {
         const auto start = namedToken(
             i == 5 ? "S_ROCKROTATE"
-                   : std::format("S_ELV{}{}{}", families[i], realmLetter, boss ? "B" : ""));
+                   : std::format("S_ELV{}{}{}", kFamilies[i], realmLetter, boss ? "B" : ""));
         const auto stop = namedToken(
             i == 5 ? "S_ROCKSTOP"
-                   : std::format("S_ELV{}STP{}{}", families[i], realmLetter, boss ? "B" : ""));
-        if (!start || !stop)
+                   : std::format("S_ELV{}STP{}{}", kFamilies[i], realmLetter, boss ? "B" : ""));
+        if (!start || !stop) {
             continue;
+        }
         const std::array pair{*start, *stop};
-        if (static_cast<s32>(i) == slot)
+        if (static_cast<s32>(i) == slot) {
             return pair;
-        if (!fallback)
+        }
+        if (!fallback) {
             fallback = pair;
+        }
     }
     return fallback;
 }
 
 const DreamcastBankSample* LegendsDreamcastSounds::sample(u32 token) {
-    const u32 bank = token >> 16U, index = token & 0xffffU;
-    if (bank >= m_directoryTable.banks.size() || index >= m_directoryTable.banks[bank].soundCount)
+    const u32 bank = token >> 16U;
+    const u32 index = token & 0xffffU;
+    if (bank >= m_directoryTable.banks.size() || index >= m_directoryTable.banks[bank].soundCount) {
         return nullptr;
+    }
     auto found = m_banks.find(bank);
     if (found == m_banks.end()) {
         // A failed optional bank is remembered, so one missing file does not
@@ -75,31 +82,38 @@ const DreamcastBankSample* LegendsDreamcastSounds::sample(u32 token) {
             if (row.file.empty() || !std::ranges::all_of(row.file, [](unsigned char c) {
                     return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
                            (c >= '0' && c <= '9') || c == '_';
-                }))
+                })) {
                 throw FormatError("Invalid Dreamcast sound bank name");
+            }
             const auto path = AssetLocator{m_directory}.find(row.file + ".bnk");
-            if (!path)
+            if (!path) {
                 return nullptr;
+            }
             auto samples = decodeDreamcastSoundBank(readFile(*path));
-            if (samples.size() != row.soundCount)
+            if (samples.size() != row.soundCount) {
                 throw FormatError("Dreamcast sound bank count disagrees with AUD_DATA");
+            }
             found->second = std::move(samples);
         } catch (const std::exception& error) {
             log::warn("Dreamcast sound bank {}: {}", bank, error.what());
         }
     }
-    if (index >= found->second.size())
+    if (index >= found->second.size()) {
         return nullptr;
+    }
     return &found->second[index];
 }
 
 SoundHandle LegendsDreamcastSounds::play(SoundPlayer& output, u32 token, f32 volume, bool loop) {
-    if (!std::isfinite(volume) || volume <= 0)
+    if (!std::isfinite(volume) || volume <= 0) {
         return kNoSound;
+    }
     const auto* decoded = sample(token);
-    if (!decoded)
+    if (!decoded) {
         return kNoSound;
-    const u32 bank = token >> 16U, index = token & 0xffffU;
+    }
+    const u32 bank = token >> 16U;
+    const u32 index = token & 0xffffU;
     SoundSequence sequence;
     sequence.bank = "dreamcast/" + m_directoryTable.banks[bank].file;
     sequence.call = index;
@@ -108,13 +122,15 @@ SoundHandle LegendsDreamcastSounds::play(SoundPlayer& output, u32 token, f32 vol
 }
 
 std::optional<SoundSequence> LegendsDreamcastSounds::phrase(std::span<const u32> tokens) {
-    if (tokens.empty() || tokens.size() > 16)
+    if (tokens.empty() || tokens.size() > 16) {
         return {};
+    }
     SoundSequence sequence;
     for (const u32 token : tokens) {
         const auto* decoded = sample(token);
-        if (!decoded || decoded->loop)
+        if (!decoded || decoded->loop) {
             return {};
+        }
         sequence.steps.push_back({&decoded->clip, true, false});
     }
     sequence.bank = "dreamcast/" + m_directoryTable.banks[tokens.front() >> 16U].file;
@@ -123,8 +139,9 @@ std::optional<SoundSequence> LegendsDreamcastSounds::phrase(std::span<const u32>
 }
 
 u32 dreamcastContainerSound(s32 realm, s32 subtype) {
-    if (subtype >= 46 && subtype <= 48)
+    if (subtype >= 46 && subtype <= 48) {
         return 38; // AudioChest 8c0e0c80, S_CHEST.
+    }
     constexpr std::array<std::array<u32, 3>, 9> kSounds{{{},
                                                          {0x230007, 0x230009, 0x230008},
                                                          {0x210024, 0x210026, 0x210025},
@@ -168,17 +185,19 @@ std::optional<u32> dreamcastGeneratorSound(s32 realm, bool destroyed) {
         {0x220016, 0x220017},
         {0x260016, 0x260017},
     }};
-    if (realm < 1 || realm > static_cast<s32>(kSounds.size()))
+    if (realm < 1 || realm > static_cast<s32>(kSounds.size())) {
         return {};
+    }
     return kSounds[static_cast<usize>(realm - 1)][destroyed ? 1 : 0];
 }
 
 u32 dreamcastCollapseSound(s32 realm, bool boss) {
     // Native realm table 8c1279e4. Its -1 entries mean no sound.
-    constexpr std::array<u32, 9> kSounds{
-        0, 0x23003b, 0x210001, 0x240029, 0x250001, 0x2c0000, 0x2d001e, 0x22002a, 0};
-    if (realm < 0 || static_cast<usize>(realm) >= kSounds.size())
+    constexpr std::array<u32, 9> kSounds{0,        0x23003b, 0x210001, 0x240029, 0x250001,
+                                         0x2c0000, 0x2d001e, 0x22002a, 0};
+    if (realm < 0 || static_cast<usize>(realm) >= kSounds.size()) {
         return 0;
+    }
     return realm == 6 && boss ? 0x2e0000 : kSounds[static_cast<usize>(realm)];
 }
 
