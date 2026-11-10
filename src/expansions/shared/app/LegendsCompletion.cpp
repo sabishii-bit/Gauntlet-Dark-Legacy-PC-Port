@@ -16,24 +16,29 @@ std::optional<LegendsCompletedTravel> completedLegendsTravel(const PlayScene& sc
     const auto* level =
         scene.world() ? dynamic_cast<const LegendsLevel*>(scene.world()->imported()) : nullptr;
     if (!scene.isOpen() || !scene.leaving() || !level || level->adapter().isTower() ||
-        !level->destination())
+        !level->destination()) {
         return std::nullopt;
+    }
     if (level->platform() == LegendsPlatform::Dreamcast &&
-        dreamcastContinuesRun(paths::utf8(level->directory().filename()), *level->destination()))
+        dreamcastContinuesRun(paths::utf8(level->directory().filename()), *level->destination())) {
         return std::nullopt;
+    }
     const auto departure = level->departure();
     if (departure ? !departure->covered(scene.transition().covering())
-                  : !scene.transition().covering() || !scene.departure().finished())
+                  : !scene.transition().covering() || !scene.departure().finished()) {
         return std::nullopt;
+    }
     auto party = scene.party();
-    if (std::ranges::none_of(party, [](const PartyMember& member) { return !member.fallen; }))
+    if (std::ranges::none_of(party, [](const PartyMember& member) { return !member.fallen; })) {
         return std::nullopt;
+    }
     auto results = scene.levelResults();
     level->completeTravel(party);
     // The captured tally owns the whole accumulated run, including prior
     // segments. The next map must start a new baseline after shopping.
-    for (auto& member : party)
+    for (auto& member : party) {
         member.resultsCheckpoint.reset();
+    }
     return LegendsCompletedTravel{level->platform(), level->directory(),
                                   level->directory().parent_path() / *level->destination(),
                                   std::move(party), std::move(results)};
@@ -42,10 +47,12 @@ std::optional<LegendsCompletedTravel> completedLegendsTravel(const PlayScene& sc
 std::vector<PartyMember> legendsCompletionParty(std::span<const PartyMember> completed,
                                                 const AfterLevelScene& shop,
                                                 const PlayerSelectScene& characters) {
-    if (characters.isOpen())
+    if (characters.isOpen()) {
         return characters.party();
-    if (shop.isOpen())
+    }
+    if (shop.isOpen()) {
         return shop.session().party();
+    }
     return {completed.begin(), completed.end()};
 }
 } // namespace gdl::game
