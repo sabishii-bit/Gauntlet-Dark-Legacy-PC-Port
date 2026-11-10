@@ -280,7 +280,7 @@ add_executable(tests
     engine/audio/AdsStreamTests.cpp
     expansions/dreamcast/audio/DreamcastStreamTests.cpp
     expansions/dreamcast/audio/DreamcastSoundBankTests.cpp
-    expansions/dreamcast/audio/LegendsDreamcastOpponentSoundsTests.cpp
+    expansions/dreamcast/audio/LegendsDreamcastSoundsTests.cpp
     expansions/dreamcast/audio/LegendsDreamcastSpeechTests.cpp
     expansions/dreamcast/audio/LegendsDreamcastAmbientTests.cpp
     expansions/dreamcast/enemies/LegendsDreamcastEnemiesTests.cpp
@@ -361,6 +361,7 @@ add_executable(tests
     expansions/n64/formats/LegendsMapTests.cpp
     expansions/dreamcast/formats/LegendsDreamcastMapTests.cpp
     expansions/dreamcast/formats/LegendsDreamcastTextureTests.cpp
+    expansions/dreamcast/assets/LegendsDreamcastArchiveTests.cpp
     expansions/n64/formats/LegendsN64TextureTests.cpp
     expansions/shared/scenes/LegendsPreviewTests.cpp
     expansions/shared/scenes/LegendsPlayableTests.cpp
@@ -435,16 +436,19 @@ add_executable(tests
     expansions/dreamcast/level/LegendsDreamcastItemsTests.cpp
     expansions/dreamcast/level/LegendsDreamcastContainersTests.cpp
     expansions/dreamcast/level/LegendsDreamcastGatesTests.cpp
-    expansions/dreamcast/level/LegendsDreamcastCameraTests.cpp
+    expansions/dreamcast/camera/LegendsDreamcastCameraTests.cpp
+    expansions/dreamcast/camera/LegendsDreamcastArenaCameraTests.cpp
+    expansions/dreamcast/camera/LegendsDreamcastCameraBoundsTests.cpp
     expansions/dreamcast/level/LegendsDreamcastPortalsTests.cpp
     expansions/dreamcast/level/LegendsDreamcastPlacementTests.cpp
     expansions/dreamcast/level/LegendsDreamcastFallingTests.cpp
     expansions/dreamcast/level/LegendsDreamcastTowerTests.cpp
     expansions/dreamcast/level/LegendsDreamcastBossCeremonyTests.cpp
-    expansions/dreamcast/level/LegendsDreamcastBossVisitTests.cpp
     expansions/dreamcast/formats/LegendsDreamcastCritterTests.cpp
     expansions/dreamcast/bosses/LegendsDreamcastBossAssetsTests.cpp
     expansions/dreamcast/bosses/LegendsDreamcastBossEntranceTests.cpp
+    expansions/dreamcast/bosses/LegendsDreamcastBossesTests.cpp
+    expansions/dreamcast/bosses/LegendsDreamcastBossVisitTests.cpp
     expansions/dreamcast/scenes/LegendsDreamcastBossCompletionTests.cpp
     expansions/dreamcast/level/LegendsDreamcastTrapsTests.cpp
     expansions/dreamcast/level/LegendsDreamcastSpikeDamageTests.cpp
@@ -455,7 +459,19 @@ add_executable(tests
     expansions/dreamcast/level/LegendsDreamcastA4TraversalTests.cpp
     expansions/dreamcast/level/LegendsDreamcastObelisksTests.cpp
     expansions/dreamcast/scenes/LegendsDreamcastObelisksTests.cpp
+    expansions/dreamcast/scenes/LegendsDreamcastArenaTests.cpp
+    expansions/dreamcast/scenes/LegendsDreamcastContainersTests.cpp
+    expansions/dreamcast/scenes/LegendsDreamcastEffectsTests.cpp
+    expansions/dreamcast/scenes/LegendsDreamcastEnemiesTests.cpp
+    expansions/dreamcast/scenes/LegendsDreamcastFallingTests.cpp
+    expansions/dreamcast/scenes/LegendsDreamcastGatesTests.cpp
+    expansions/dreamcast/scenes/LegendsDreamcastRidersTests.cpp
+    expansions/dreamcast/scenes/LegendsDreamcastSceneryTests.cpp
+    expansions/dreamcast/scenes/LegendsDreamcastSumnerTests.cpp
+    expansions/dreamcast/scenes/LegendsDreamcastSwitchesTests.cpp
+    expansions/dreamcast/scenes/LegendsDreamcastTrapsTests.cpp
     expansions/dreamcast/menu/LegendsDreamcastDialogueTests.cpp
+    expansions/dreamcast/menu/LegendsDreamcastEntranceTests.cpp
     expansions/dreamcast/menu/LegendsDreamcastPauseTests.cpp
     expansions/dreamcast/scenes/LegendsDreamcastTravelTests.cpp
     formats/GcTextureTests.cpp

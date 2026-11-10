@@ -1,23 +1,12 @@
-#include <algorithm>
-#include <cmath>
-#include <filesystem>
 #include <limits>
-#include <memory>
 #include <string>
-#include <string_view>
 #include <utility>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 
-#include "engine/io/ByteReader.h"
-#include "engine/io/File.h"
-
-#include "FakeRenderDevice.h"
 #include "TestSupport.h"
-#include "expansions/dreamcast/formats/LegendsDreamcastScene.h"
 #include "expansions/dreamcast/level/LegendsDreamcastArenaRocks.h"
-#include "expansions/shared/scenes/LegendsSceneAdapter.h"
 
 namespace {
 using namespace gdl;
@@ -154,134 +143,4 @@ TEST_CASE("Dreamcast safe rocks past the boss's roster are reported and stay ord
     CHECK(unsupported.diagnostic == kRoster);
 }
 
-/** A scratch copy of the extracted Dreamcast B6 arena, with the metadata and archives it reads,
- * whose worlds.rom a case edits before loading it. */
-struct ArenaCopy {
-    std::filesystem::path native =
-        test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native";
-    std::filesystem::path source = native / "levels/levelb6";
-    std::filesystem::path root;
-    std::vector<u8> worlds;
-    formats::LegendsDreamcastScene scene;
-
-    explicit ArenaCopy(std::string_view name) {
-        if (!std::filesystem::is_regular_file(source / "worlds.rom")) {
-            SKIP("Optional Dreamcast extraction is not installed");
-        }
-        root = test::scratchDirectory(name);
-        copy("levels/levelb6");
-        const auto metadata = formats::dreamcastLegendsWorldDataFile("levelb6");
-        copy(metadata);
-        const auto scope =
-            formats::dreamcastLegendsFixtureScope(readFile(native / metadata), "levelb6");
-        REQUIRE(scope);
-        for (const auto& archive : scope->archives) {
-            copy(archive);
-        }
-        worlds = readFile(source / "worlds.rom");
-        scene = formats::LegendsDreamcastScene::parse(worlds);
-    }
-
-    /** B6's safe rock definition, which its placements 27 to 32 share. */
-    usize rockDefinition() const {
-        const auto definition = static_cast<usize>(scene.itemInstances.at(27).info);
-        REQUIRE(scene.itemInfos.at(definition).subtype == 41);
-        REQUIRE(std::ranges::count(scene.itemInstances, scene.itemInstances.at(27).info,
-                                   &formats::ItemInstanceRecord::info) == 6);
-        return definition;
-    }
-
-    /** Writes the edited worlds.rom into the copy and loads it as a one-player arena. */
-    std::unique_ptr<LegendsSceneAdapter> load(test::FakeRenderDevice& device) const {
-        writeFile(root / "levels/levelb6/worlds.rom", worlds);
-        auto map = formats::LegendsMap::parseDreamcast(worlds, readFile(source / "objects.rom"));
-        return LegendsSceneAdapter::load(device, LegendsPlatform::Dreamcast,
-                                         root / "levels/levelb6", map);
-    }
-
-private:
-    void copy(const std::string& relative) const {
-        if (!std::filesystem::exists(native / relative) ||
-            std::filesystem::exists(root / relative)) {
-            return;
-        }
-        std::filesystem::create_directories((root / relative).parent_path());
-        std::filesystem::copy(native / relative, root / relative,
-                              std::filesystem::copy_options::recursive);
-    }
-};
-
-TEST_CASE("Dreamcast safe rocks the arena cannot stand are reported once and never placed",
-          "[legends][dreamcast-scenery][dreamcast-arena-cover][assets]") {
-    ArenaCopy arena("dreamcast-unstandable-rocks");
-    // B6's six rocks share a definition, here without durability.
-    const usize definition = arena.rockDefinition();
-    constexpr usize kHitPoints = 68; // within the 80-byte native item definition
-    test::setU16LE(
-        arena.worlds,
-        readU32LE(arena.worlds, 76) + definition * formats::ItemInfoRecord::kSize + kHitPoints, 0);
-    test::FakeRenderDevice device;
-    const auto adapter = arena.load(device);
-    REQUIRE(adapter);
-    CHECK(adapter->arenaTargets().empty());
-    CHECK(adapter->arenaObstacles().empty());
-    CHECK(std::ranges::count(adapter->warnings(),
-                             "Dreamcast arena rock has unsupported durability: SAFEROCK") == 1);
-    for (usize index = 0; index < adapter->fixtureCount(); ++index) {
-        const auto figure = adapter->fixtureObject(LegendsSceneAdapter::kFixtureObjectBase +
-                                                   static_cast<s32>(index));
-        CAPTURE(index);
-        CHECK_FALSE((figure && figure->name.starts_with("SAFEROCK")));
-    }
-}
-
-TEST_CASE("a Dreamcast safe rock past the boss's roster stands as an ordinary fixture",
-          "[legends][dreamcast-scenery][dreamcast-arena-cover][assets]") {
-    ArenaCopy arena("dreamcast-roster-rocks");
-    // Eleven of B6's twelve flame vents become its safe rock ahead of its own six, so its own
-    // last rock, placement 32, is the seventeenth in item order.
-    const usize definition = arena.rockDefinition();
-    const auto& rock = arena.scene.itemInstances.at(27);
-    constexpr usize kParams = 48; // within the 60-byte native placement
-    const usize placements = readU32LE(arena.worlds, 84);
-    usize converted = 0;
-    for (usize index = 0; index < arena.scene.itemInstances.size() && converted < 11; ++index) {
-        const auto& vent = arena.scene.itemInstances[index];
-        if (arena.scene.itemInfos.at(static_cast<usize>(vent.info)).name != "FLAMEV") {
-            continue;
-        }
-        REQUIRE(index < 27);
-        const usize at = placements + index * formats::ItemInstanceRecord::kSize;
-        test::setU16LE(arena.worlds, at, static_cast<u16>(definition));
-        for (usize param = 0; param < rock.params.size(); ++param) {
-            arena.worlds[at + kParams + param] = rock.params[param];
-        }
-        ++converted;
-    }
-    REQUIRE(converted == 11);
-    test::FakeRenderDevice device;
-    const auto adapter = arena.load(device);
-    REQUIRE(adapter);
-    const auto targets = adapter->arenaTargets();
-    CHECK(targets.size() == kMostDreamcastArenaRocks);
-    CHECK(std::ranges::count(adapter->warnings(),
-                             "Dreamcast arena has more safe rocks than the boss's 16: SAFEROCK") ==
-          1);
-    const Vec3 last = arena.scene.itemInstances.at(32).position;
-    const auto atLast = [&](const Vec3& position) {
-        return std::abs(position.x - last.x) < .01f && std::abs(position.z - last.z) < .01f;
-    };
-    for (const auto& target : targets) {
-        CHECK_FALSE(atLast(Vec3{target.placement[3]}));
-    }
-    usize scenery = 0;
-    for (usize index = 0; index < adapter->fixtureCount(); ++index) {
-        const auto figure = adapter->fixtureObject(LegendsSceneAdapter::kFixtureObjectBase +
-                                                   static_cast<s32>(index));
-        if (figure && figure->visible && figure->name == "SAFEROCK3" && atLast(figure->position)) {
-            ++scenery;
-        }
-    }
-    CHECK(scenery == 1);
-}
 } // namespace

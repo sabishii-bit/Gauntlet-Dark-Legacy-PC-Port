@@ -315,16 +315,3 @@ TEST_CASE("Dreamcast organist resumes the same native PCM cursor after an effect
     fixture.level->stopSounds();
     reference.stopAll();
 }
-
-TEST_CASE("Dreamcast collapsing scenery retains its native realm sound table",
-          "[dreamcast-ambient][dreamcast-collapse]") {
-    constexpr std::array<u32, 9> kExpected{0,        0x23003b, 0x210001, 0x240029, 0x250001,
-                                           0x2c0000, 0x2d001e, 0x22002a, 0};
-    for (usize realm = 0; realm < kExpected.size(); ++realm) {
-        CHECK(dreamcastCollapseSound(static_cast<s32>(realm)) == kExpected[realm]);
-        CHECK(dreamcastCollapseSound(static_cast<s32>(realm), true) ==
-              (realm == 6 ? 0x2e0000 : kExpected[realm]));
-    }
-    CHECK(dreamcastCollapseSound(-1) == 0);
-    CHECK(dreamcastCollapseSound(9) == 0);
-}

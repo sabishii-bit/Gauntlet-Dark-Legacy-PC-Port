@@ -4,13 +4,11 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include "engine/audio/AudioMixer.h"
 #include "engine/core/Error.h"
 #include "engine/io/File.h"
 
 #include "TestSupport.h"
 #include "expansions/dreamcast/audio/DreamcastSoundBank.h"
-#include "expansions/dreamcast/audio/LegendsDreamcastSounds.h"
 
 namespace {
 using namespace gdl;
@@ -158,77 +156,4 @@ TEST_CASE("Dreamcast AICA decoding matches independent FFmpeg PCM references",
         }
         CHECK(hash == reference.hash);
     }
-}
-
-TEST_CASE("Dreamcast native bank routing plays transporter and realm gate effects",
-          "[dreamcast-sounds][assets]") {
-    const auto root = test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native";
-    if (!std::filesystem::is_regular_file(root.parent_path() / "disc/AUDIO/AUD_DATA.ROM")) {
-        SKIP("Dreamcast extraction is not installed");
-    }
-    game::LegendsDreamcastSounds sounds;
-    REQUIRE(sounds.open(root));
-    CHECK(sounds.namedToken("S_EXITFLAME") == 10);
-    CHECK(sounds.namedToken("S_GATEB1") == game::dreamcastGateSound(2, 0));
-    CHECK(sounds.namedToken("S_TROLL2HIT1CLOSE") == 0x21000f);
-    CHECK(sounds.namedToken("S_TROLL2HIT2CLOSE") == 0x210010);
-    CHECK(sounds.namedToken("S_TROLL2DIECLOSE") == 0x210011);
-    const std::array<u32, 2> stone{0x210033, 0x210034};
-    for (s32 slot = 0; slot < 5; ++slot) {
-        CHECK(sounds.motionTokens('B', slot) == stone);
-    }
-    CHECK(sounds.motionTokens('B', 5) == std::array<u32, 2>{0x210002, 0x210003});
-    CHECK(sounds.motionTokens('G', 0) == std::array<u32, 2>{0x22001f, 0x220020});
-    CHECK(sounds.motionTokens('G', 1) == std::array<u32, 2>{0x220021, 0x220022});
-    CHECK(sounds.motionTokens('G', 2) == std::array<u32, 2>{0x220025, 0x220026});
-    CHECK(sounds.motionTokens('G', 3) == std::array<u32, 2>{0x220027, 0x220028});
-    CHECK(sounds.motionTokens('G', 4) == std::array<u32, 2>{0x220023, 0x220024});
-    CHECK_FALSE(sounds.motionTokens('B', -1));
-    CHECK_FALSE(sounds.motionTokens('B', 6));
-    CHECK_FALSE(sounds.motionTokens('\0', 0));
-    CHECK(game::dreamcastGateSound(-1, 0) == 0);
-    CHECK(game::dreamcastGateSound(2, 4) == 0);
-    AudioMixer mixer{48000};
-    SoundPlayer player{mixer};
-    const auto flame = sounds.play(player, 10);
-    REQUIRE(flame != kNoSound);
-    CHECK(player.isPlaying(flame));
-    const auto gate = sounds.play(player, game::dreamcastGateSound(2, 0));
-    CHECK(gate != kNoSound);
-    CHECK_FALSE(sounds.play(player, 0xffffffff));
-    player.stop(flame);
-    CHECK_FALSE(player.isPlaying(flame));
-    player.stopAll();
-}
-
-TEST_CASE("Dreamcast generator cues follow the native realm table", "[dreamcast-sounds]") {
-    constexpr std::array<std::array<u32, 2>, 8> kExpected{{
-        {0x230031, 0x230032},
-        {0x21002f, 0x210030},
-        {0x24003d, 0x24003e},
-        {0x250037, 0x250038},
-        {0x2b0018, 0x2b0019},
-        {0x2d001b, 0x2d001c},
-        {0x220016, 0x220017},
-        {0x260016, 0x260017},
-    }};
-    for (usize realm = 0; realm < kExpected.size(); ++realm) {
-        CAPTURE(realm);
-        CHECK(game::dreamcastGeneratorSound(static_cast<s32>(realm + 1), false) ==
-              kExpected[realm][0]);
-        CHECK(game::dreamcastGeneratorSound(static_cast<s32>(realm + 1), true) ==
-              kExpected[realm][1]);
-    }
-    for (const s32 realm : {-1, 0, 9, 100}) {
-        CHECK_FALSE(game::dreamcastGeneratorSound(realm, false));
-    }
-}
-
-TEST_CASE("Missing Dreamcast audio leaves optional playback unavailable", "[dreamcast-sounds]") {
-    game::LegendsDreamcastSounds sounds;
-    CHECK_FALSE(sounds.open(test::scratchDirectory("no-dreamcast-audio") / "native"));
-    CHECK_FALSE(sounds.namedToken("S_EXITFLAME"));
-    AudioMixer mixer{48000};
-    SoundPlayer player{mixer};
-    CHECK(sounds.play(player, 10) == kNoSound);
 }

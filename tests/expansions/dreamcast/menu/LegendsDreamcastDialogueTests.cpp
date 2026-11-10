@@ -3,11 +3,8 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
-#include "engine/io/File.h"
-
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
-#include "expansions/dreamcast/formats/LegendsDreamcastScene.h"
 #include "expansions/dreamcast/menu/LegendsDreamcastDialogue.h"
 #include "expansions/dreamcast/menu/LegendsDreamcastEntrance.h"
 #include "game/hud/LevelMessages.h"
@@ -24,17 +21,6 @@ std::filesystem::path nativeRoot() {
     return root;
 }
 } // namespace
-
-TEST_CASE("Dreamcast entry title retains native timing", "[dreamcast-dialogue]") {
-    CHECK(LegendsDreamcastEntrance::scale(-1) == 0);
-    CHECK(LegendsDreamcastEntrance::scale(0) == Catch::Approx(.025f));
-    CHECK(LegendsDreamcastEntrance::scale(1) == Catch::Approx(.05f));
-    CHECK(LegendsDreamcastEntrance::scale(40) == Catch::Approx(1.025f));
-    CHECK(LegendsDreamcastEntrance::scale(79) == 2);
-    CHECK(LegendsDreamcastEntrance::scale(90) == 2);
-    CHECK(LegendsDreamcastEntrance::scale(91) == 0);
-    CHECK(LegendsDreamcastEntrance::scale(100000) == 0);
-}
 
 TEST_CASE("Absent Dreamcast menu assets do not bind GameCube artwork", "[dreamcast-dialogue]") {
     test::FakeRenderDevice device;
@@ -150,16 +136,4 @@ TEST_CASE("Dreamcast scroll pages and menus use their own native font atlases",
     CHECK_FALSE(style.text().ready());
     CHECK_FALSE(style.menuText().ready());
     CHECK(style.menuTextures()->backdrop == nullptr);
-}
-
-TEST_CASE("Dreamcast entrance display names come from LEVL instead of archive names",
-          "[dreamcast-dialogue][assets]") {
-    const auto root = nativeRoot();
-    const auto file = root / formats::dreamcastLegendsWorldDataFile("levelt1");
-    if (!std::filesystem::is_regular_file(file)) {
-        SKIP("Native Dreamcast world metadata is not installed");
-    }
-    const auto scope = formats::dreamcastLegendsFixtureScope(readFile(file), "levelt1");
-    REQUIRE(scope);
-    CHECK(scope->title == "Tower");
 }
