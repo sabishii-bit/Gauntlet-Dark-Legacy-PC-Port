@@ -35,14 +35,16 @@ TEST_CASE("Chimera keeps its support during dormant and active entrances on ever
                 REQUIRE(stock->load(device, common, bossDefinition("CHIMERA"), 'A'));
             } else if (platform == "N64") {
                 const auto root = installed / "n64/extracted";
-                if (!std::filesystem::is_regular_file(root / "_program/game.bin"))
+                if (!std::filesystem::is_regular_file(root / "_program/game.bin")) {
                     SKIP("N64 data not installed");
+                }
                 stock = loadLegendsBossAssets(device, root, common, 35,
                                               readFile(root / "_program/game.bin"), {}, warnings);
             } else {
                 const auto root = installed / "dreamcast/extracted/native";
-                if (!std::filesystem::is_regular_file(root / "critters/chimera.wad"))
+                if (!std::filesystem::is_regular_file(root / "critters/chimera.wad")) {
                     SKIP("Dreamcast data not installed");
+                }
                 stock = loadLegendsDreamcastBossAssets(device, root, common, 35, {}, warnings);
             }
             REQUIRE(stock);
@@ -55,13 +57,15 @@ TEST_CASE("Chimera keeps its support during dormant and active entrances on ever
             collision.setObjectTransform(15, Mat4{1});
             Bosses bosses;
             bosses.open(device, common, &collision, {}, 'A');
-            REQUIRE(bosses.preload(35, std::move(stock)));
+            const auto* preloaded = bosses.preload(35, std::move(stock));
+            REQUIRE(preloaded);
             REQUIRE(bosses.spawn(35, {0, 0, 0}, 0));
             const std::array players{EnemyView{.player = 0, .position = {0, 0, 500}}};
             for (const bool awake : {false, true}) {
                 CAPTURE(awake);
-                if (awake)
+                if (awake) {
                     bosses.wake();
+                }
                 for (s32 tick = 1; tick <= 60; ++tick) {
                     const f32 height = -(static_cast<f32>(tick) + (awake ? 60.0f : 0)) * .2f;
                     collision.setObjectTransform(15, glm::translate(Mat4{1}, Vec3{0, height, 0}));

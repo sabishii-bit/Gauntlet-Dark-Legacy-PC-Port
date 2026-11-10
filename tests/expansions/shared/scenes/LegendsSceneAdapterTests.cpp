@@ -236,17 +236,18 @@ TEST_CASE("Dreamcast stained glass uses only the current party's Dreamcast boss 
     };
     const std::array names{"T1NS_POLYSUR#0", "T1NS_POLYSUR#1", "T1NS_POLYSUR#2", "T1NS_POLYSUR#3",
                            "T1NS_POLYSUR#4"};
-    constexpr std::array<u64, 5> masks{2, 4, 4, 8, 16};
+    constexpr std::array<u64, 5> kMasks{2, 4, 4, 8, 16};
     const auto checkWindow = [&](u64 expected) {
         CHECK(scene->worldObjectVisible(index("T1NS_STAINEDGLA")));
         CHECK(scene->worldObjectVisible(index("T1GROUP89")));
         for (usize i = 0; i < names.size(); ++i) {
             CAPTURE(names[i], expected);
-            CHECK(scene->worldObjectVisible(index(names[i])) == ((expected & masks[i]) != 0));
+            CHECK(scene->worldObjectVisible(index(names[i])) == ((expected & kMasks[i]) != 0));
         }
     };
     checkWindow(0);
-    CharacterSave first, second;
+    CharacterSave first;
+    CharacterSave second;
     first.progress().relics.shards = Relics::kAllShards;
     first.progress().legendsProgress(LegendsPlatform::N64).shards = 0x7e;
     second.progress().relics.shards = Relics::kAllShards;
@@ -378,6 +379,7 @@ TEST_CASE("Dreamcast tower hosts Sumner interaction and restores its own party p
     const Vec3 towerHub = level.adapter().dreamcastCameraMarkers().front().position;
     LegendsDreamcastTowerCamera expectedCamera;
     std::vector<Vec3> cameraFeet;
+    cameraFeet.reserve(map.starts.size() + map.collision.size());
     for (const auto& start : map.starts) {
         cameraFeet.push_back(start.position);
     }

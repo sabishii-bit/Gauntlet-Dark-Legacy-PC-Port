@@ -79,8 +79,9 @@ TEST_CASE("Playable pickup test entrances exclude contained and collected gold",
     startNearGold(map, pickups, 1);
     REQUIRE(map.starts.size() == 17);
     CHECK(map.starts.front().position == pickups[2].position);
-    for (const auto& marker : map.starts)
+    for (const auto& marker : map.starts) {
         CHECK(glm::distance(marker.position, pickups[2].position) <= 1);
+    }
 }
 
 TEST_CASE("Native Legends playable visits collect on fixed ticks and return durable isolated saves",
@@ -152,14 +153,16 @@ TEST_CASE("Native Legends playable visits collect on fixed ticks and return dura
                        << actor.position().z << " centre " << actor.followPoint().x << ','
                        << actor.followPoint().y << ',' << actor.followPoint().z);
     for (const auto& pickup : pickups) {
-        if (pickup.offer.kind != static_cast<s32>(ItemKind::Gold))
+        if (pickup.offer.kind != static_cast<s32>(ItemKind::Gold)) {
             continue;
+        }
         const Vec3 difference = pickup.position - actor.position();
-        if (glm::length(Vec2{difference.x, difference.z}) < actor.reach() + pickup.radius + 1)
+        if (glm::length(Vec2{difference.x, difference.z}) < actor.reach() + pickup.radius + 1) {
             UNSCOPED_INFO("Nearby gold "
                           << pickup.nativeIndex << ' ' << pickup.name << " active=" << pickup.active
                           << " collected=" << pickup.collected << " at " << pickup.position.x << ','
                           << pickup.position.y << ',' << pickup.position.z);
+        }
     }
     REQUIRE(selected != pickups.end());
     const usize selectedIndex = static_cast<usize>(selected - pickups.begin());
