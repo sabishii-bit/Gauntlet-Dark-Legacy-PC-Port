@@ -15,9 +15,11 @@
 #include <io.h>
 #include <sys/stat.h>
 #ifndef S_ISREG
+// NOLINTNEXTLINE(readability-identifier-naming): the POSIX name the Amuse sources call
 #define S_ISREG(mode) (((mode) & _S_IFMT) == _S_IFREG)
 #endif
 #ifndef S_ISDIR
+// NOLINTNEXTLINE(readability-identifier-naming): the POSIX name the Amuse sources call
 #define S_ISDIR(mode) (((mode) & _S_IFMT) == _S_IFDIR)
 #endif
 #endif
