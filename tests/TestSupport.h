@@ -43,7 +43,7 @@ inline std::filesystem::path scratchParent() {
     return std::filesystem::temp_directory_path() / "gdl-tests";
 }
 
-/** This process's id, which names its scratch root. */
+/** This process's id, which with its start names its scratch root. */
 inline s64 processId() {
 #ifdef _WIN32
     return _getpid();
@@ -52,9 +52,23 @@ inline s64 processId() {
 #endif
 }
 
+/** The system clock in microseconds, read once as a process makes its scratch root: ids are
+ * reused, so a process given the id of one that left its root behind still names its own apart. */
+inline s64 clockCount() {
+    return std::chrono::duration_cast<std::chrono::microseconds>(
+               std::chrono::system_clock::now().time_since_epoch())
+        .count();
+}
+
+/** The name of the scratch root that process `pid` made at clock count `start`. */
+inline std::string scratchRootName(s64 pid, s64 start) {
+    return "p" + std::to_string(pid) + "-" + std::to_string(start);
+}
+
 /** Removes the entries of `folder` last written more than kStaleScratchAge before `now`, other
  * than `keep`: the roots of runs that never exited and older fixed-name folders. A root is
- * written as it is made and no test process lives a day, so a running process's root stays. */
+ * written as it is made and no test process lives a day, so a running process's root stays; no
+ * later process takes a root's name, so an entry found stale stays stale until it is removed. */
 inline void sweepStaleScratch(const std::filesystem::path& folder,
                               std::filesystem::file_time_type now,
                               const std::filesystem::path& keep = {}) {
@@ -74,14 +88,12 @@ inline void sweepStaleScratch(const std::filesystem::path& folder,
     }
 }
 
-/** This process's own folder under scratchParent(), `p<pid>`, so test processes running at once
- * never share fixtures. Made empty when first asked for, sweeping stale entries beside it, and
- * removed when the process exits. */
+/** This process's own folder under scratchParent(), `p<pid>-<start>`, so test processes running
+ * at once never share fixtures and none takes the name of a root another left behind. Made when
+ * first asked for, sweeping stale entries beside it, and removed when the process exits. */
 class ScratchRoot {
 public:
-    ScratchRoot() : m_path(scratchParent() / ("p" + std::to_string(processId()))) {
-        std::error_code ignored; // a root left by an earlier process given the same id
-        std::filesystem::remove_all(m_path, ignored);
+    ScratchRoot() : m_path(scratchParent() / scratchRootName(processId(), clockCount())) {
         std::filesystem::create_directories(m_path);
         sweepStaleScratch(m_path.parent_path(), std::filesystem::file_time_type::clock::now(),
                           m_path);
