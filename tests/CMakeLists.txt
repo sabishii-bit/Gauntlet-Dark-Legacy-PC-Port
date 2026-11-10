@@ -529,6 +529,7 @@ add_executable(tests
     game/players/KnockbackTests.cpp
     game/players/PlayerImpactTests.cpp
     game/level/LevelWorldTests.cpp
+    game/level/WorldLightningTests.cpp
     game/level/BossKindsTests.cpp
     game/level/LevelCatalogTests.cpp
     game/level/LevelItemArchivesTests.cpp
