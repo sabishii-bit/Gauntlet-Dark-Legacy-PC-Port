@@ -35,17 +35,17 @@ TEST_CASE("Dreamcast boss speech selects native party rune and shard branches",
             REQUIRE(visit.begin(26, realm, bits << (3 * (realm - 1)), 0));
             const auto count = static_cast<usize>(std::popcount(bits));
             CHECK(visit.groups()[1].keys[0] ==
-                  "legends.dc.victory.runes" + std::to_string(count) + ".0");
+                  "legends.dreamcast.victory.runes" + std::to_string(count) + ".0");
             CHECK(visit.groups()[1].voice == 0x27000bU + count);
             CHECK(visit.groups()[2].voice == 0x27000fU);
         }
     }
     Ceremony incomplete;
     REQUIRE(incomplete.begin(27, 1, 0, 0xffffU & ~4U));
-    CHECK(incomplete.groups()[2].keys[0] == "legends.dc.victory.remaining_shards.0");
+    CHECK(incomplete.groups()[2].keys[0] == "legends.dreamcast.victory.remaining_shards.0");
     Ceremony complete;
     REQUIRE(complete.begin(27, 1, 0, 0x1e));
-    CHECK(complete.groups()[2].keys[0] == "legends.dc.victory.all_shards.0");
+    CHECK(complete.groups()[2].keys[0] == "legends.dreamcast.victory.all_shards.0");
     CHECK(complete.groups()[2].voice == 0x28001eU);
 }
 

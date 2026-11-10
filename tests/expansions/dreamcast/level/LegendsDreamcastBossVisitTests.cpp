@@ -146,7 +146,7 @@ TEST_CASE("Dreamcast typed captions retain the complete native line's centre",
         }
     }
     REQUIRE(visit.state().caption());
-    const auto lines = ScrollBox::splitLines(strings.get("legends.dc.victory.dragon.0"));
+    const auto lines = ScrollBox::splitLines(strings.get("legends.dreamcast.victory.dragon.0"));
     REQUIRE_FALSE(lines.empty());
     const f32 scale = LegendsDreamcastBossCeremony::kCaptionScale;
     const s32 left = 256 - text.measure(lines.front(), scale) / 2;

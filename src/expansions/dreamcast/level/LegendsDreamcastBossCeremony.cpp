@@ -31,7 +31,7 @@ std::vector<std::string> keys(std::string_view group, usize pages) {
     std::vector<std::string> result;
     result.reserve(pages);
     for (usize page = 0; page < pages; ++page) {
-        result.push_back(std::format("legends.dc.victory.{}.{}", group, page));
+        result.push_back(std::format("legends.dreamcast.victory.{}.{}", group, page));
     }
     return result;
 }
