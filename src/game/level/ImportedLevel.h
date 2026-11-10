@@ -136,8 +136,9 @@ public:
     /** Native arena cameras may also need live facing, size and activation state.
      * Floor-anchor-only adapters retain their existing post-awakening behavior. */
     virtual void trackBoss(const BossCameraSubject& subject) {
-        if (subject.awake)
+        if (subject.awake) {
             trackBoss(std::optional<Vec3>{subject.position});
+        }
     }
     virtual void followCamera(std::span<const CameraSubject> /*subjects*/, f32 /*seconds*/) {}
     virtual std::optional<WorldCamera> camera(f32 /*alpha*/ = -1.0f) const { return std::nullopt; }
