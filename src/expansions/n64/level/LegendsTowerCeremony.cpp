@@ -27,6 +27,26 @@ std::vector<u32> captions(std::span<const u16> ids) {
     }
     return result;
 }
+
+/// The count at which e0863440 case 6 settles the pane and moves on.
+constexpr s32 kShardSettleCount = 25;
+struct ShardBytes {
+    u8 transparency = 0;
+    u8 white = 0;
+};
+/** The two bytes e0863440 case 6 stores into the shard's drawable for a count: +1, the
+ * transparency (count - 4) * 208 / 20 through sb, so counts 1 to 3 wrap (Tower
+ * e08638a0..e08638d0), and +5, the white blend ~((count - 4)^2 * 255 / 400). game e001ea34
+ * draws 255 less the transparency, so counts 1 to 3 flash 30, 19 and 9 before the opaque
+ * pop at 4. */
+ShardBytes shardBytes(s32 count) {
+    if (count >= kShardSettleCount) {
+        return {LegendsTowerProgress::kShardTransparency, 0};
+    }
+    const s32 offset = count - 4;
+    return {static_cast<u8>(offset * LegendsTowerProgress::kShardTransparency / 20),
+            static_cast<u8>(255 - offset * offset * 255 / 400)};
+}
 } // namespace
 
 LegendsTowerCeremony LegendsTowerCeremony::decode(std::span<const u8> overlay) {
@@ -231,11 +251,13 @@ void LegendsTowerCeremony::tick() {
             m_displayed.shards |= u64{1} << entry->index;
             m_phase = 3;
             m_ticks = 0;
-        } else if (m_phase == 3 && m_ticks >= 21) {
+        } else if (m_phase == 3 && m_ticks >= 22) {
+            // Case 5 waits out counts 0 to 20 and plays 0x68 on its 22nd update.
             m_sounds.push_back(0x68);
             m_phase = 4;
             m_ticks = 0;
-        } else if (m_phase == 4 && m_ticks >= 25) {
+        } else if (m_phase == 4 && m_ticks > kShardSettleCount) {
+            // Case 6 settles the pane at count 25; case 7 plays SHDR on the next update.
             play("SHDR");
             m_ticks = 0;
             m_phase = (m_displayed.shards & 15U) == 15U ? 6 : 5;
@@ -394,20 +416,20 @@ f32 LegendsTowerCeremony::runeOpacity() const {
     return std::clamp(static_cast<f32>(m_flightFrame) * kTick / .8f, 0.0f, 1.0f);
 }
 f32 LegendsTowerCeremony::shardOpacity() const {
-    if (m_phase == 3) {
+    // Phase 3 and the update case 5 hands over to case 6 still show case 4's clear 0xff.
+    if (m_phase == 3 || (m_phase == 4 && m_ticks == 0)) {
         return 0;
     }
     if (m_phase == 4) {
-        const auto native = static_cast<u8>((m_ticks - 4) * 208 / 20);
-        return static_cast<f32>(255 - native) / 255;
+        return static_cast<f32>(255 - shardBytes(m_ticks).transparency) / 255;
     }
-    return (47.0f + 208 * m_windowReveal) / 255;
+    return (255.0f - LegendsTowerProgress::kShardTransparency * (1 - m_windowReveal)) / 255;
 }
 f32 LegendsTowerCeremony::shardWhiteBlend() const {
-    return m_phase == 3 ? 1
-           : m_phase == 4
-               ? 1 - std::clamp(static_cast<f32>((m_ticks - 4) * (m_ticks - 4)) / 400, 0.0f, 1.0f)
-               : 0;
+    if (m_phase == 3 || (m_phase == 4 && m_ticks == 0)) {
+        return 1;
+    }
+    return m_phase == 4 ? static_cast<f32>(shardBytes(m_ticks).white) / 255 : 0;
 }
 std::optional<u32> LegendsTowerCeremony::caption() const {
     return m_captions.empty() ? std::nullopt : std::optional{m_captions.front()};

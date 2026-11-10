@@ -22,7 +22,7 @@ LegendsTowerProgress LegendsTowerProgress::of(const LegendsProgress& progress) {
 
 f32 LegendsTowerProgress::shardOpacity() const {
     // e001ea34 maps drawable+1's transparency to 255-transparency.
-    return cathedralBeam ? 1.0f : 47.0f / 255.0f;
+    return cathedralBeam ? 1.0f : (255.0f - kShardTransparency) / 255.0f;
 }
 
 } // namespace gdl::game

@@ -14,6 +14,8 @@ namespace gdl::game {
 struct LegendsTowerProgress {
     /** The obelisks each door wants, native obelisk N at bit N-1 (e0054fdc). */
     static constexpr std::array<u8, 4> kDoorObelisks{0x60, 0x07, 0x18, 0x80};
+    /** An installed shard's native drawable transparency before the window is whole. */
+    static constexpr u8 kShardTransparency = 208;
 
     u16 runestones = 0;
     u8 shards = 0;

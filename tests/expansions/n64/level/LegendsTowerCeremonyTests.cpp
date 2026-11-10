@@ -162,11 +162,66 @@ TEST_CASE("N64 shard gesture cannot install the piece before its animation compl
     ticks(value, 1);
     CHECK(value.displayedProgress().shards == 1);
     CHECK(value.shardOpacity() == 0);
-    ticks(value, 21 + 25);
+    ticks(value, 22 + 26);
     CHECK(value.gesture() == "SHDR");
     CHECK(value.shardOpacity() == Catch::Approx(47.0f / 255));
     ticks(value, 120);
     CHECK_FALSE(value.active());
+}
+
+TEST_CASE("N64 shard pane fades in through the native wrapped transparency bytes",
+          "[legends][tower-ceremony]") {
+    // Without its overlay a ceremony keeps the script's clocks; only the captions and the
+    // camera's focus come from Tower.bin.
+    LegendsTowerCeremony value;
+    value.bindSequences(
+        {{"REDY", 50, 1.0f / 30}, {"SHD1", 45, 1.0f / 30}, {"SHDR", 30, 1.0f / 30}});
+    LegendsProgress now;
+    now.shards = 1;
+    value.begin({}, now);
+    value.start({}, {});
+    ticks(value, 92 + 44); // SHD1 starts on the 92nd update and ends 44 frames on
+    REQUIRE(value.displayedProgress().shards == 1);
+    CHECK(value.takeSounds().empty());
+    // e0863440 case 5 shows case 4's clear white bytes for 22 updates, playing 0x68 on
+    // the last, which still shows them.
+    for (s32 tick = 1; tick <= 22; ++tick) {
+        CAPTURE(tick);
+        ticks(value, 1);
+        CHECK(value.takeSounds() == (tick == 22 ? std::vector<u32>{0x68} : std::vector<u32>{}));
+        CHECK(value.shardOpacity() == 0);
+        CHECK(value.shardWhiteBlend() == 1);
+    }
+    // Case 6's counts: opacity is 255 less a transparency that wraps for counts 1 to 3.
+    constexpr std::array<std::array<s32, 3>, 8> kCounts{{{1, 30, 250},
+                                                         {2, 19, 253},
+                                                         {3, 9, 255},
+                                                         {4, 255, 255},
+                                                         {5, 245, 255},
+                                                         {10, 193, 233},
+                                                         {24, 47, 0},
+                                                         {25, 47, 0}}};
+    usize row = 0;
+    for (s32 count = 1; count <= 25; ++count) {
+        CAPTURE(count);
+        ticks(value, 1);
+        CHECK(value.gesture() == "SHD1");
+        if (count == 4) {
+            CHECK(value.shardOpacity() == 1);
+        }
+        if (row < kCounts.size() && kCounts[row][0] == count) {
+            CHECK(value.shardOpacity() == Catch::Approx(static_cast<f32>(kCounts[row][1]) / 255));
+            CHECK(value.shardWhiteBlend() ==
+                  Catch::Approx(static_cast<f32>(kCounts[row][2]) / 255));
+            ++row;
+        }
+    }
+    CHECK(row == kCounts.size());
+    // Case 7 plays SHDR on the update after the pane settles, and the pane holds.
+    ticks(value, 1);
+    CHECK(value.gesture() == "SHDR");
+    CHECK(value.shardOpacity() == Catch::Approx(47.0f / 255));
+    CHECK(value.shardWhiteBlend() == 0);
 }
 
 TEST_CASE("N64 last shard queues the completed window's caption pair after its own",
