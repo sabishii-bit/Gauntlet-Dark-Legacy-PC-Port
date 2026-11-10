@@ -273,8 +273,9 @@ TEST_CASE("Dreamcast entry uses its authored eye and native hold before panning"
     camera.update(party, 1.0f / 30);
     CHECK(camera.camera() != start);
     CHECK(camera.introActive());
-    for (s32 tick = 0; tick < 180 && camera.introActive(); ++tick)
+    for (s32 tick = 0; tick < 180 && camera.introActive(); ++tick) {
         camera.update(party, 1.0f / 30);
+    }
     CHECK_FALSE(camera.introActive());
     near(camera.attention(), {0, 0, 0});
     CHECK(glm::distance(camera.camera().position, camera.attention()) == Catch::Approx(20));
@@ -312,18 +313,24 @@ TEST_CASE("Dreamcast native entrance and follow are independent of render cadenc
         WorldLocator{LocatorKind::CameraGame, 0, 0, {0, 0, 0}, {.6f, kPi, 0}},
         WorldLocator{LocatorKind::CameraStart, 0, 0, {0, 30, 100}, {.2f, kPi, 0}}};
     const std::array party{subject({0, 0, 0})};
-    LegendsDreamcastLevelCamera at30, at60, at120;
-    for (auto* camera : {&at30, &at60, &at120})
+    LegendsDreamcastLevelCamera at30;
+    LegendsDreamcastLevelCamera at60;
+    LegendsDreamcastLevelCamera at120;
+    for (auto* camera : {&at30, &at60, &at120}) {
         camera->reset(party, markers, {20, 26, .4f});
+    }
     for (s32 tick = 0; tick < 240; ++tick) {
         const auto before = at30.camera();
         const auto beforeAttention = at30.attention();
-        const auto subjects = std::array{subject({tick < 150 ? 0.0f : (tick - 150) * .1f, 0, 0})};
+        const auto subjects =
+            std::array{subject({tick < 150 ? 0.0f : static_cast<f32>(tick - 150) * .1f, 0, 0})};
         at30.update(subjects, 1.0f / 30);
-        for (s32 half = 0; half < 2; ++half)
+        for (s32 half = 0; half < 2; ++half) {
             at60.update(subjects, 1.0f / 60);
-        for (s32 quarter = 0; quarter < 4; ++quarter)
+        }
+        for (s32 quarter = 0; quarter < 4; ++quarter) {
             at120.update(subjects, 1.0f / 120);
+        }
         CHECK(at30.camera() == at60.camera());
         CHECK(at30.camera() == at120.camera());
         CHECK(at30.introActive() == at120.introActive());
@@ -348,8 +355,9 @@ TEST_CASE("Dreamcast single-player follow easing does not mistake movement for s
 TEST_CASE("Dreamcast BCAM fits the native arena before and after boss registration",
           "[legends][dreamcast-camera][assets]") {
     const auto root = test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native";
-    if (!std::filesystem::is_regular_file(root / "levels/levele2/worlds.rom"))
+    if (!std::filesystem::is_regular_file(root / "levels/levele2/worlds.rom")) {
         SKIP("Dreamcast boss camera assets are not installed");
+    }
     for (const auto& [level, realm, bossName] : std::array{
              std::array{"levelb6", "mount", "dragon"}, std::array{"levela5", "castle", "chimera"},
              std::array{"levelc5", "desert", "djinn"}, std::array{"leveld5", "forest", "drider"},
@@ -404,9 +412,11 @@ TEST_CASE("Dreamcast BCAM fits the native arena before and after boss registrati
             boss.radius = types.types.front().radius;
             boss.attentionOffset = Vec3{0, profile.floorOffset + profile.attentionHeight, 0};
             boss.baseAttention = boss.position + Vec3{0, profile.floorOffset, 0};
-            LegendsDreamcastArenaCamera at30, at60;
-            for (auto* camera : {&at30, &at60})
+            LegendsDreamcastArenaCamera at30;
+            LegendsDreamcastArenaCamera at60;
+            for (auto* camera : {&at30, &at60}) {
                 camera->reset(boss, party, *metadata->bossCamera, range, scene.cameraMarkers);
+            }
             const auto checkPlayer = [&] {
                 const Vec4 clip = WorldCamera::projection(kPi / 3, 640.0f / 416) *
                                   at30.camera().view() * Vec4{player, 1};
@@ -484,7 +494,7 @@ TEST_CASE("Dreamcast BCAM fits the native arena before and after boss registrati
 TEST_CASE(
     "Dreamcast boss presentation preserves native fitting and safely frames focus transitions",
     "[legends][dreamcast-camera][dreamcast-camera-safety]") {
-    constexpr CameraView view{kPi / 3, 640.0f / 416};
+    constexpr CameraView kView{kPi / 3, 640.0f / 416};
     const CameraRange range{20, 30, .35f, Vec3{-200}, Vec3{200}};
     const std::array party{CameraSubject{{.25f, -10, 23.25f}, {.25f, -7.5f, 23.25f}, 2.5f}};
     const std::array markers{
@@ -512,13 +522,13 @@ TEST_CASE(
     approach.boundsMidpoint = true;
     approach.attentionBounds = std::pair{range.boundsMin, range.boundsMax};
     BossCamera native;
-    native.reset(boss, party, record, view, markers, &approach);
+    native.reset(boss, party, record, kView, markers, &approach);
     LegendsDreamcastArenaCamera presented;
     presented.reset(boss, party, record, range, markers);
     REQUIRE(presented.camera() == native.camera());
     const auto sideMargin = [&](const WorldCamera& camera, Vec3 point) {
-        const Mat4 rows = glm::transpose(WorldCamera::projection(view.horizontalFov, view.aspect) *
-                                         camera.view());
+        const Mat4 rows = glm::transpose(
+            WorldCamera::projection(kView.horizontalFov, kView.aspect) * camera.view());
         f32 margin = std::numeric_limits<f32>::max();
         for (s32 axis = 0; axis < 2; ++axis) {
             for (const f32 sign : {-1.0f, 1.0f}) {
@@ -534,7 +544,7 @@ TEST_CASE(
     boss.awake = true;
     presented.trackBoss(boss);
     for (s32 tick = 0; tick < 180; ++tick) {
-        native.update(boss, party, record, view, 1.0f / 30, markers, &approach);
+        native.update(boss, party, record, kView, 1.0f / 30, markers, &approach);
         presented.update(party, 1.0f / 30);
         const auto camera = presented.camera();
         CHECK(camera.pitch == native.camera().pitch);

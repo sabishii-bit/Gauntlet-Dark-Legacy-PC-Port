@@ -20,11 +20,13 @@ using namespace gdl;
 using namespace gdl::game;
 
 std::vector<u8> roster(s32 world, std::span<const std::string_view> codes) {
-    const usize levels = 64, directory = levels + codes.size() * 144;
+    const usize levels = 64;
+    const usize directory = levels + codes.size() * 144;
     std::vector<u8> bytes(directory + 24);
     const auto word = [&](usize at, u32 value) {
-        for (u32 byte = 0; byte < 4; ++byte)
+        for (u32 byte = 0; byte < 4; ++byte) {
             bytes[at + byte] = static_cast<u8>(value >> (byte * 8));
+        }
     };
     word(0, static_cast<u32>(directory));
     word(4, 2);
@@ -50,8 +52,10 @@ TEST_CASE("Dreamcast linked stages defer their tally and shop until run completi
     CHECK(dreamcastContinuesRun("levelh1", "levelh4"));
     CHECK(dreamcastContinuesRun("LEVELH2", "LevelH5"));
     CHECK(dreamcastContinuesRun("levelh3", "levelh6"));
-    for (const auto source : {"levele1", "levelf1", "levele2", "levelf2", "levelb1", "levelt1"})
+    for (const auto* const source :
+         {"levele1", "levelf1", "levele2", "levelf2", "levelb1", "levelt1"}) {
         CHECK_FALSE(dreamcastContinuesRun(source, "levelt1"));
+    }
     CHECK_FALSE(dreamcastContinuesRun("levele1", "levelf2"));
     CHECK_FALSE(dreamcastContinuesRun("levelf1", "levele2"));
     CHECK_FALSE(dreamcastContinuesRun("levelt1", "levele2"));
@@ -181,10 +185,12 @@ TEST_CASE("Dreamcast transport completes ACTIVE2 and ACTIVE3 before admitting de
     for (s32 tick = 0; tick < 89; ++tick) {
         INFO("sixtieth " << tick + 1);
         CHECK_FALSE(motion.advance(1.0f / 60, 1, 1, true));
-        if (tick == 72)
+        if (tick == 72) {
             CHECK(motion.phase() == Phase::Active);
-        if (tick >= 73)
+        }
+        if (tick >= 73) {
             CHECK(motion.phase() == Phase::Closing);
+        }
     }
     CHECK(motion.advance(1.0f / 60, 1, 1, true));
     CHECK_FALSE(motion.advance(1, 1, 1, true));
@@ -198,21 +204,26 @@ TEST_CASE("Dreamcast transport timing survives partial parties and render cadenc
     LegendsDreamcastPortalMotion at120{{0, 0, 16, 56, 16}};
     for (s32 tick = 0; tick < 120; ++tick) {
         CHECK_FALSE(at30.advance(1.0f / 30, 1, 3, true));
-        for (s32 half = 0; half < 2; ++half)
+        for (s32 half = 0; half < 2; ++half) {
             CHECK_FALSE(at60.advance(1.0f / 60, 1, 3, true));
-        for (s32 quarter = 0; quarter < 4; ++quarter)
+        }
+        for (s32 quarter = 0; quarter < 4; ++quarter) {
             CHECK_FALSE(at120.advance(1.0f / 120, 1, 3, true));
+        }
         CHECK(at30.phase() == at60.phase());
         CHECK(at30.phase() == at120.phase());
     }
     REQUIRE(at30.phase() == Phase::Active);
     for (s32 tick = 0; tick < 31; ++tick) {
         const bool departed30 = at30.advance(1.0f / 30, 3, 3, true);
-        bool departed60 = false, departed120 = false;
-        for (s32 half = 0; half < 2; ++half)
+        bool departed60 = false;
+        bool departed120 = false;
+        for (s32 half = 0; half < 2; ++half) {
             departed60 |= at60.advance(1.0f / 60, 3, 3, true);
-        for (s32 quarter = 0; quarter < 4; ++quarter)
+        }
+        for (s32 quarter = 0; quarter < 4; ++quarter) {
             departed120 |= at120.advance(1.0f / 120, 3, 3, true);
+        }
         CHECK(departed30 == departed60);
         CHECK(departed30 == departed120);
         CHECK(departed30 == (tick == 30));
@@ -221,14 +232,17 @@ TEST_CASE("Dreamcast transport timing survives partial parties and render cadenc
     // A player leaving during the final sequence must not retain departure
     // credit while the remaining player waits or on the next empty update.
     at60.reset();
-    for (s32 tick = 0; tick < 120 && at60.phase() != Phase::Closing; ++tick)
+    for (s32 tick = 0; tick < 120 && at60.phase() != Phase::Closing; ++tick) {
         CHECK_FALSE(at60.advance(1.0f / 60, 3, 3, true));
+    }
     REQUIRE(at60.phase() == Phase::Closing);
-    for (s32 tick = 0; tick < 120; ++tick)
+    for (s32 tick = 0; tick < 120; ++tick) {
         CHECK_FALSE(at60.advance(1.0f / 60, 1, 3, true));
+    }
     CHECK(at60.phase() == Phase::Active);
-    for (s32 tick = 0; tick < 120; ++tick)
+    for (s32 tick = 0; tick < 120; ++tick) {
         CHECK_FALSE(at60.advance(1.0f / 60, 0, 3, true));
+    }
     CHECK(at60.phase() == Phase::Idle);
 }
 
@@ -236,8 +250,9 @@ TEST_CASE("Native Dreamcast tower portals travel with independent party progress
           "[legends][dreamcast-portals][assets]") {
     const auto directory =
         test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native/levels/levelt1";
-    if (!std::filesystem::is_directory(directory))
+    if (!std::filesystem::is_directory(directory)) {
         SKIP("Dreamcast extraction is not installed");
+    }
     const auto animations = formats::AnimationFile::parse(
         readFile(directory.parent_path().parent_path() / "items/levelT/anim.rom"));
     const auto portalTree = animations.find("EXIT_PORTAL");
@@ -262,7 +277,8 @@ TEST_CASE("Native Dreamcast tower portals travel with independent party progress
     CHECK(native.itemInstances[24].params[4] == 'E');
     CHECK(native.itemInstances[24].params[5] == '1');
     REQUIRE((native.itemInstances[24].flags & 2U) != 0);
-    CharacterSave first, second;
+    CharacterSave first;
+    CharacterSave second;
     first.character = 0;
     second.character = 1;
     const std::array<const CharacterSave*, 2> party{&first, &second};
@@ -273,7 +289,9 @@ TEST_CASE("Native Dreamcast tower portals travel with independent party progress
         REQUIRE(at != portals.end());
         return static_cast<usize>(at - portals.begin());
     };
-    const usize mountain = index("levelb1"), next = index("levelb2"), temple = index("levele1");
+    const usize mountain = index("levelb1");
+    const usize next = index("levelb2");
+    const usize temple = index("levele1");
     CHECK(scene->dreamcastPortalUnlocked(mountain));
     CHECK_FALSE(scene->dreamcastPortalUnlocked(next));
     CHECK(scene->dreamcastPortals()[temple].nativeIndex == 24);
@@ -323,9 +341,11 @@ TEST_CASE("Native Dreamcast tower portals travel with independent party progress
         scene->highlightFixture(device, Mat4{1}, CameraFrame::of(WorldCamera{}), -1, figureId,
                                 SelectionHighlight{contact});
         std::vector<Vec3> vertices;
-        for (const auto& draw : device.draws)
-            for (const auto& vertex : draw.vertices)
+        for (const auto& draw : device.draws) {
+            for (const auto& vertex : draw.vertices) {
                 vertices.emplace_back(draw.transform * Vec4{vertex.position, 1});
+            }
+        }
         return vertices;
     };
     const auto held = portalVertices();
@@ -336,8 +356,9 @@ TEST_CASE("Native Dreamcast tower portals travel with independent party progress
     }
     const auto later = portalVertices();
     REQUIRE(later.size() == held.size());
-    for (usize i = 0; i < later.size(); ++i)
+    for (usize i = 0; i < later.size(); ++i) {
         CHECK(glm::distance(later[i], held[i]) < .0001f);
+    }
     visitors[1].position = contact;
     std::optional<std::string> destination;
     for (s32 tick = 0; tick < 120 && !destination; ++tick) {
@@ -353,11 +374,13 @@ TEST_CASE("Native Dreamcast tower portals travel with independent party progress
     for (s32 tick = 0; tick < 120; ++tick) {
         CHECK_FALSE(scene->tickPortals(visitors, 1.0f / 30));
     }
-    for (auto& visitor : visitors)
+    for (auto& visitor : visitors) {
         visitor.position += Vec3{50, 0, 0};
+    }
     CHECK_FALSE(scene->tickPortals(visitors, 1.0f / 30));
-    for (auto& visitor : visitors)
+    for (auto& visitor : visitors) {
         visitor.position = contact;
+    }
     destination.reset();
     for (s32 tick = 0; tick < 120 && !destination; ++tick) {
         destination = scene->tickPortals(visitors, 1.0f / 30);

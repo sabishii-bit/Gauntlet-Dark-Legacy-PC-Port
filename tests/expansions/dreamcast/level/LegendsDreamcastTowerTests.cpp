@@ -83,9 +83,10 @@ TEST_CASE("Dreamcast advisor text retains the native script paragraphs",
 TEST_CASE("Dreamcast tower restores only its authored gates and collected decorations",
           "[legends][dreamcast-tower]") {
     formats::LegendsMap map;
-    for (const auto name : {"T1XSNS_DRFIE#0", "T1TRAPW02", "T1XSNS_DRFIE#2", "T1TRAPW04",
-                            "T1XSNS_DRFIE#3", "T1TRAPW05", "T1XSNS_DRFIE#1", "T1TRAPW03",
-                            "T1RUNEA1", "T1RUNEB1", "T1SHARD01", "T1SHARD02", "WALL", "CHILD"}) {
+    for (const auto* const name :
+         {"T1XSNS_DRFIE#0", "T1TRAPW02", "T1XSNS_DRFIE#2", "T1TRAPW04", "T1XSNS_DRFIE#3",
+          "T1TRAPW05", "T1XSNS_DRFIE#1", "T1TRAPW03", "T1RUNEA1", "T1RUNEB1", "T1SHARD01",
+          "T1SHARD02", "WALL", "CHILD"}) {
         formats::LegendsMapObject object;
         object.name = name;
         map.objects.push_back(object);
@@ -239,7 +240,8 @@ TEST_CASE("Dreamcast stained glass keeps its broken remainder and repairs each n
         REQUIRE(mesh.parent == static_cast<s32>(index(piece.parent)));
         REQUIRE_FALSE(mesh.mesh.parts.empty());
     }
-    const usize broken = index("T1NS_STAINEDGLA"), frame = index("T1GROUP89");
+    const usize broken = index("T1NS_STAINEDGLA");
+    const usize frame = index("T1GROUP89");
     REQUIRE(map.objects[broken].parent == static_cast<s32>(frame));
     LegendsDreamcastTower tower{map};
     for (u64 owned = 0; owned < 128; ++owned) {

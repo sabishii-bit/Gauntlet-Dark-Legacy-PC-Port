@@ -84,12 +84,14 @@ TEST_CASE("Dreamcast barrels use native bodies and stored health without changin
     auto nativeN64 = *definition;
     nativeN64.damageMode = LegendsContainerDefinition::DamageMode::Threshold;
     LegendsContainer oldMode{nativeN64};
-    for (s32 hit = 0; hit < 10; ++hit)
+    for (s32 hit = 0; hit < 10; ++hit) {
         CHECK_FALSE(oldMode.strike(4));
+    }
     REQUIRE(oldMode.strike(5));
     LegendsContainer minimumDamage{*definition};
-    for (s32 hit = 0; hit < 5; ++hit)
+    for (s32 hit = 0; hit < 5; ++hit) {
         REQUIRE(minimumDamage.strike(.5f));
+    }
     CHECK(minimumDamage.state() == LegendsContainer::State::Opening);
 }
 
@@ -145,7 +147,8 @@ TEST_CASE("Dreamcast contents resolve nested choices at opening using a shared n
     CHECK(loot.select(1, 5) == 1);
     CHECK_FALSE(loot.select(-1, 5));
     CHECK(loot.seed() == prior);
-    LegendsDreamcastLoot at30{rows, 255}, at60{rows, 255};
+    LegendsDreamcastLoot at30{rows, 255};
+    LegendsDreamcastLoot at60{rows, 255};
     for (s32 tick = 0; tick < 90; ++tick) {
         at30.advance(1.0f / 30);
         at60.advance(1.0f / 60);
@@ -167,23 +170,29 @@ TEST_CASE("Every extracted Dreamcast ordinary container retains a native body an
           "[legends][dreamcast-containers][assets]") {
     const auto root =
         test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native/levels";
-    if (!std::filesystem::is_directory(root))
+    if (!std::filesystem::is_directory(root)) {
         SKIP("Dreamcast extraction is not installed");
-    usize barrels = 0, chests = 0, deathContents = 0;
+    }
+    usize barrels = 0;
+    usize chests = 0;
+    usize deathContents = 0;
     for (const auto& entry : std::filesystem::directory_iterator(root)) {
         const auto path = entry.path() / "worlds.rom";
-        if (!std::filesystem::is_regular_file(path))
+        if (!std::filesystem::is_regular_file(path)) {
             continue;
+        }
         const auto bytes = readFile(path);
-        if (bytes.size() < 96)
+        if (bytes.size() < 96) {
             continue;
+        }
         const auto native = LegendsDreamcastScene::parse(bytes);
-        LegendsDreamcastLoot loot{native.itemInfos};
+        const LegendsDreamcastLoot loot{native.itemInfos};
         for (usize index = 0; index < native.itemInstances.size(); ++index) {
             const auto& placement = native.itemInstances[index];
             const auto& info = native.itemInfos[static_cast<usize>(placement.info)];
-            if (info.type != 2)
+            if (info.type != 2) {
                 continue;
+            }
             CAPTURE(path, index, info.subtype, info.name);
             std::string diagnostic;
             const auto definition =
@@ -191,13 +200,15 @@ TEST_CASE("Every extracted Dreamcast ordinary container retains a native body an
             CAPTURE(diagnostic);
             REQUIRE(definition);
             CHECK(definition->position == placement.position);
-            if (definition->kind == LegendsContainerDefinition::Kind::Barrel)
+            if (definition->kind == LegendsContainerDefinition::Kind::Barrel) {
                 ++barrels;
-            else
+            } else {
                 ++chests;
+            }
             for (const auto outcome :
-                 loot.outcomes(std::bit_cast<s16>(readU16LE(placement.params, 0))))
+                 loot.outcomes(std::bit_cast<s16>(readU16LE(placement.params, 0)))) {
                 deathContents += loot.definition(outcome).type == 4 ? 1 : 0;
+            }
         }
     }
     CHECK(barrels == 610);
@@ -209,8 +220,9 @@ TEST_CASE("Dreamcast native barrel and gold chest sequences release one bound in
           "[legends][dreamcast-containers][assets]") {
     const auto directory =
         test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native/levels/levelb1";
-    if (!std::filesystem::is_regular_file(directory / "worlds.rom"))
+    if (!std::filesystem::is_regular_file(directory / "worlds.rom")) {
         SKIP("Dreamcast extraction is not installed");
+    }
     const auto bytes = readFile(directory / "worlds.rom");
     const auto native = LegendsDreamcastScene::parse(bytes);
     const auto animations = AnimationSet::fromDecoded(parseDreamcastAnimation(
@@ -221,21 +233,26 @@ TEST_CASE("Dreamcast native barrel and gold chest sequences release one bound in
     test::FakeRenderDevice device;
     auto scene = LegendsSceneAdapter::load(device, LegendsPlatform::Dreamcast, directory, map);
     const auto textures = device.texturesCreated;
-    bool barrel = false, chest = false;
+    bool barrel = false;
+    bool chest = false;
     for (const auto& target : scene->containerTargets()) {
         const auto& instance = native.itemInstances[target.nativeIndex];
         const auto& info = native.itemInfos[static_cast<usize>(instance.info)];
-        if (info.type != 2)
+        if (info.type != 2) {
             continue;
+        }
         const bool isBarrel = info.subtype == 43;
-        if ((isBarrel && barrel) || (!isBarrel && chest))
+        if ((isBarrel && barrel) || (!isBarrel && chest)) {
             continue;
+        }
         const s16 contents = std::bit_cast<s16>(readU16LE(instance.params, 0));
-        if (contents < 0)
+        if (contents < 0) {
             continue;
+        }
         const auto& leaf = native.itemInfos[static_cast<usize>(contents)];
-        if (leaf.type != 1 || leaf.subtype != 1)
+        if (leaf.type != 1 || leaf.subtype != 1) {
             continue;
+        }
         const auto offered = std::ranges::find_if(scene->pickups(), [&](const auto& pickup) {
             return pickup.nativeIndex == target.nativeIndex && !pickup.active &&
                    pickup.offer.kind == static_cast<s32>(ItemKind::Gold);
@@ -300,8 +317,9 @@ TEST_CASE(
     "[legends][dreamcast-containers][assets]") {
     const auto directory =
         test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native/levels/levelb1";
-    if (!std::filesystem::is_regular_file(directory / "worlds.rom"))
+    if (!std::filesystem::is_regular_file(directory / "worlds.rom")) {
         SKIP("Dreamcast extraction is not installed");
+    }
     const auto bytes = readFile(directory / "worlds.rom");
     const auto native = LegendsDreamcastScene::parse(bytes);
     const auto objects = readFile(directory / "objects.rom");
@@ -314,8 +332,9 @@ TEST_CASE(
     for (const auto& target : soloTargets) {
         const auto& item = native.itemInstances[target.nativeIndex];
         const auto& info = native.itemInfos[static_cast<usize>(item.info)];
-        if (info.type == 10 && info.subtype >= 43 && info.subtype <= 45)
+        if (info.type == 10 && info.subtype >= 43 && info.subtype <= 45) {
             ++soloCounts[static_cast<usize>(info.subtype - 43)];
+        }
     }
     CHECK(soloCounts == std::array<usize, 3>{3, 0, 1});
     scene = LegendsSceneAdapter::load(device, LegendsPlatform::Dreamcast, directory, map, 4);
@@ -325,8 +344,9 @@ TEST_CASE(
     for (const auto& target : initialTargets) {
         const auto& instance = native.itemInstances[target.nativeIndex];
         const auto& info = native.itemInfos[static_cast<usize>(instance.info)];
-        if (info.type != 10 || info.subtype < 43 || info.subtype > 45)
+        if (info.type != 10 || info.subtype < 43 || info.subtype > 45) {
             continue;
+        }
         CAPTURE(target.nativeIndex, info.name);
         REQUIRE(target.breakable);
         REQUIRE(std::ranges::any_of(scene->containerObstacles(),
@@ -358,8 +378,9 @@ TEST_CASE(
     }
     CHECK(counts == std::array<usize, 3>{5, 2, 1});
     CHECK(scene->pickups().size() == initialPickups);
-    for (s32 tick = 0; tick < 300; ++tick)
+    for (s32 tick = 0; tick < 300; ++tick) {
         scene->update(1.0f / 30);
+    }
     CHECK(scene->takeFixtureEvents().empty());
 }
 
@@ -367,8 +388,9 @@ TEST_CASE("Dreamcast poison barrels damage grounded and levitating players throu
           "[legends][dreamcast-containers][dreamcast-poison][assets]") {
     const auto directory =
         test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native/levels/levelb1";
-    if (!std::filesystem::is_regular_file(directory / "worlds.rom"))
+    if (!std::filesystem::is_regular_file(directory / "worlds.rom")) {
         SKIP("Dreamcast extraction is not installed");
+    }
     const auto world = readFile(directory / "worlds.rom");
     const auto native = LegendsDreamcastScene::parse(world);
     const auto objects = readFile(directory / "objects.rom");
@@ -423,8 +445,9 @@ TEST_CASE("Dreamcast poison barrels damage grounded and levitating players throu
     const auto contact = [&] {
         level.affectArea({});
         for (const auto& hit : level.takeHazardHits()) {
-            if (!hit.poison)
+            if (!hit.poison) {
                 continue;
+            }
             REQUIRE(hit.player == 2);
             CHECK(hit.damage == 30);
             CHECK(hit.impact.flags == damage::kGas);
@@ -442,13 +465,15 @@ TEST_CASE("Dreamcast poison barrels damage grounded and levitating players throu
     }
     REQUIRE(contacts == 1);
     CHECK(player.actor.save().health() == expectedHealth);
-    if (!protectedByArmor && expectedHealth < 1000)
+    if (!protectedByArmor && expectedHealth < 1000) {
         CHECK(player.gagSeconds > 0);
+    }
     // DC ProcessEffects 8c0d4400/49aa gates further hits until the
     // remaining effect duration plus 0.066667s. It does NOT have GDL's
     // recurring 0.5s gas branch. Removing immunity cannot manufacture a retry.
-    for (auto& item : inventory.powerups)
+    for (auto& item : inventory.powerups) {
         item.on = false;
+    }
     for (s32 tick = 0; tick < 240; ++tick) {
         level.update(1.0f / 60, false);
         level.updateParty(party, 1.0f / 60, false);

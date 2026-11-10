@@ -27,14 +27,16 @@ TEST_CASE("Dreamcast native spikes deliver piercing damage to independent party 
           "[legends][dreamcast-traps][dreamcast-spike-damage][assets]") {
     const auto directory =
         test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native/levels/levela1";
-    if (!std::filesystem::is_regular_file(directory / "worlds.rom"))
+    if (!std::filesystem::is_regular_file(directory / "worlds.rom")) {
         SKIP("Optional Dreamcast extraction is not installed");
+    }
     const auto common = test::assetOrSkip("PDATA/WAR.WAD").parent_path().parent_path();
     const auto bytes = readFile(directory / "worlds.rom");
     const auto native = formats::LegendsDreamcastScene::parse(bytes);
     const auto placed = std::ranges::find_if(native.itemInstances, [&](const auto& item) {
-        if (item.info < 0 || item.minPlayers > 1)
+        if (item.info < 0 || item.minPlayers > 1) {
             return false;
+        }
         const auto& info = native.itemInfos.at(static_cast<usize>(item.info));
         return info.type == 8 && info.subtype == 0;
     });
@@ -165,8 +167,9 @@ TEST_CASE("Dreamcast native spikes deliver piercing damage to independent party 
             REQUIRE(hit.player < 4);
             ++resumed[static_cast<usize>(hit.player)];
         }
-        if (std::ranges::any_of(resumed, [](usize count) { return count != 0; }))
+        if (std::ranges::any_of(resumed, [](usize count) { return count != 0; })) {
             break;
+        }
     }
     CHECK(resumed == expectedContacts);
 }

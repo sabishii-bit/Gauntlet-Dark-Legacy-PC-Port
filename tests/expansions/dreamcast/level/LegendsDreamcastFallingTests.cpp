@@ -49,8 +49,9 @@ TEST_CASE("Dreamcast falling rubble waits for contact and collapses once for the
     CHECK(touch({.position = {std::numeric_limits<f32>::quiet_NaN(), 8, 20}}).empty());
 
     std::array<LegendsPortalVisitor, 4> players;
-    for (u8 seat = 0; seat < players.size(); ++seat)
-        players[seat] = {.player = seat, .position = item.position};
+    for (usize seat = 0; seat < players.size(); ++seat) {
+        players[seat] = {.player = static_cast<u8>(seat), .position = item.position};
+    }
     const auto activated = state.touch(players);
     REQUIRE(activated.size() == 1);
     CHECK(activated.front() == item.position);
@@ -78,7 +79,8 @@ TEST_CASE("Dreamcast falling rubble waits for contact and collapses once for the
 
 TEST_CASE("Dreamcast contact-collapse adapter is scoped and independent of render cadence",
           "[legends][dreamcast-falling]") {
-    LegendsDreamcastFalling fast, slow;
+    LegendsDreamcastFalling fast;
+    LegendsDreamcastFalling slow;
     const formats::ItemInstanceRecord item{.position = {0, 10, 0}};
     fast.clear(-50);
     slow.clear(-50);
@@ -102,10 +104,12 @@ TEST_CASE("Dreamcast contact-collapse adapter is scoped and independent of rende
     const std::array visitor{LegendsPortalVisitor{.position = item.position, .levitating = true}};
     REQUIRE(fast.touch(visitor).size() == 1);
     REQUIRE(slow.touch(visitor).size() == 1);
-    for (s32 i = 0; i < 120; ++i)
+    for (s32 i = 0; i < 120; ++i) {
         fast.update(1.f / 120);
-    for (s32 i = 0; i < 30; ++i)
+    }
+    for (s32 i = 0; i < 30; ++i) {
         slow.update(1.f / 30);
+    }
     CHECK(fast.pieces()[0].body == slow.pieces()[0].body);
     CHECK(std::abs(fast.pieces()[0].body.position.y - (10 - 31)) < .0001f);
 }
@@ -114,22 +118,23 @@ TEST_CASE("Dreamcast F1 reported rockfall actually moves and retires after nativ
           "[legends][dreamcast-falling][dreamcast-f1][assets]") {
     const auto directory =
         test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native/levels/levelf1";
-    if (!std::filesystem::is_regular_file(directory / "worlds.rom"))
+    if (!std::filesystem::is_regular_file(directory / "worlds.rom")) {
         SKIP("Optional Dreamcast extraction is not installed");
+    }
     const auto bytes = readFile(directory / "worlds.rom");
     const auto scene = formats::LegendsDreamcastScene::parse(bytes);
     auto map = formats::LegendsMap::parseDreamcast(bytes, readFile(directory / "objects.rom"));
     test::FakeRenderDevice device;
     auto adapter = LegendsSceneAdapter::load(device, LegendsPlatform::Dreamcast, directory, map);
     REQUIRE(adapter);
-    constexpr s32 objectId = 16777228;
-    const auto before = adapter->fixtureObject(objectId);
+    constexpr s32 kObjectId = 16777228;
+    const auto before = adapter->fixtureObject(kObjectId);
     REQUIRE(before);
     REQUIRE(before->name == "F1ROCKFALL#06");
     REQUIRE(before->visible);
     CHECK(before->position == scene.itemInstances.at(12).position);
     adapter->update(1);
-    CHECK(adapter->fixtureObject(objectId)->position == before->position);
+    CHECK(adapter->fixtureObject(kObjectId)->position == before->position);
     adapter->takeSounds();
     const std::array visitor{LegendsPortalVisitor{.position = before->position}};
     adapter->touchSwitches(visitor);
@@ -140,21 +145,22 @@ TEST_CASE("Dreamcast F1 reported rockfall actually moves and retires after nativ
                                [](const auto& sound) { return sound.token == 0x2d001e; }));
     adapter->capturePresentation();
     adapter->update(1.f / 30);
-    const auto falling = adapter->fixtureObject(objectId);
+    const auto falling = adapter->fixtureObject(kObjectId);
     REQUIRE(falling);
     CHECK(falling->visible);
     CHECK(std::abs(falling->position.y - (before->position.y - 2.f / 30)) < .0001f);
     CHECK(falling->position.x == before->position.x);
     CHECK(falling->position.z == before->position.z);
     adapter->update(10);
-    const auto removed = adapter->fixtureObject(objectId);
+    const auto removed = adapter->fixtureObject(kObjectId);
     REQUIRE(removed);
     CHECK_FALSE(removed->visible);
 }
 
 TEST_CASE("Dreamcast sinking rock uses its native slow tumble without becoming a solid floor",
           "[legends][dreamcast-falling]") {
-    LegendsDreamcastFalling sink, fall;
+    LegendsDreamcastFalling sink;
+    LegendsDreamcastFalling fall;
     sink.clear(-20);
     fall.clear(-20);
     auto info = rubbleInfo();
@@ -180,8 +186,9 @@ TEST_CASE("Dreamcast F1ROCKSINK_NEW2 sinks on contact and disappears below the n
           "[legends][dreamcast-falling][dreamcast-f1][assets]") {
     const auto directory =
         test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native/levels/levelf1";
-    if (!std::filesystem::is_regular_file(directory / "worlds.rom"))
+    if (!std::filesystem::is_regular_file(directory / "worlds.rom")) {
         SKIP("Optional Dreamcast extraction is not installed");
+    }
     const auto bytes = readFile(directory / "worlds.rom");
     const auto scene = formats::LegendsDreamcastScene::parse(bytes);
     const auto& item = scene.itemInstances.at(20);
@@ -192,21 +199,22 @@ TEST_CASE("Dreamcast F1ROCKSINK_NEW2 sinks on contact and disappears below the n
     auto map = formats::LegendsMap::parseDreamcast(bytes, readFile(directory / "objects.rom"));
     test::FakeRenderDevice device;
     auto adapter = LegendsSceneAdapter::load(device, LegendsPlatform::Dreamcast, directory, map);
-    constexpr s32 id = 16777236;
-    REQUIRE(adapter->fixtureObject(id));
-    REQUIRE(adapter->fixtureObject(id)->name == item.name);
-    CHECK(adapter->fixtureObject(id)->position == item.position);
+    constexpr s32 kId = 16777236;
+    REQUIRE(adapter->fixtureObject(kId));
+    REQUIRE(adapter->fixtureObject(kId)->name == item.name);
+    CHECK(adapter->fixtureObject(kId)->position == item.position);
     adapter->update(1);
-    CHECK(adapter->fixtureObject(id)->position == item.position);
+    CHECK(adapter->fixtureObject(kId)->position == item.position);
     adapter->takeSounds();
     adapter->touchSwitches(std::array{LegendsPortalVisitor{.position = item.position}});
     const auto sounds = adapter->takeSounds();
     CHECK(std::ranges::any_of(sounds, [](const auto& sound) { return sound.token == 0x2d001e; }));
     adapter->capturePresentation();
     adapter->update(1.f / 30);
-    CHECK(adapter->fixtureObject(id)->visible);
-    CHECK(std::abs(adapter->fixtureObject(id)->position.y - (item.position.y - 2.f / 30)) < .0001f);
+    CHECK(adapter->fixtureObject(kId)->visible);
+    CHECK(std::abs(adapter->fixtureObject(kId)->position.y - (item.position.y - 2.f / 30)) <
+          .0001f);
     adapter->update(10);
-    CHECK_FALSE(adapter->fixtureObject(id)->visible);
+    CHECK_FALSE(adapter->fixtureObject(kId)->visible);
 }
 } // namespace

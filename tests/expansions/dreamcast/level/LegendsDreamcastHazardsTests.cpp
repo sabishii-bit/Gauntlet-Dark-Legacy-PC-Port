@@ -69,8 +69,9 @@ TEST_CASE("Dreamcast harmful surface ancestry rejects malformed or excessive gra
     CHECK_NOTHROW(dreamcastSurfaceHazardFlags(map));
     // A deep but valid chain is bounded and iterative, not a call-stack walk.
     map.objects.resize(16384);
-    for (usize i = 0; i < map.objects.size(); ++i)
+    for (usize i = 0; i < map.objects.size(); ++i) {
         map.objects[i].parent = i + 1 == map.objects.size() ? -1 : static_cast<s32>(i + 1);
+    }
     map.objects.back().flags = 0x00020000;
     const auto flags = dreamcastSurfaceHazardFlags(map);
     CHECK(flags.front() == 0x00020000);
@@ -83,14 +84,16 @@ TEST_CASE("Dreamcast shipped harmful surface census is retained without name-spe
           "[legends][dreamcast-hazards][assets]") {
     const auto directory =
         test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native/levels";
-    if (!std::filesystem::is_directory(directory))
+    if (!std::filesystem::is_directory(directory)) {
         SKIP("Optional Dreamcast extraction is not installed");
+    }
     std::array<usize, 16> kinds{};
     usize levels = 0;
     for (const auto& entry : std::filesystem::directory_iterator(directory)) {
         const auto path = entry.path() / "worlds.rom";
-        if (!std::filesystem::is_regular_file(path))
+        if (!std::filesystem::is_regular_file(path)) {
             continue;
+        }
         const auto bytes = readFile(path);
         // The extracted disc includes a zero-byte levels/test placeholder,
         // not another playable world revision. All 41 actual worlds are v2.
@@ -107,8 +110,9 @@ TEST_CASE("Dreamcast shipped harmful surface census is retained without name-spe
         }
         const auto flags = dreamcastSurfaceHazardFlags(map);
         for (usize i = 0; i < flags.size(); ++i) {
-            if (motion.objects[i].collisionTriangleCount <= 0 || (flags[i] & 0xF0000) == 0)
+            if (motion.objects[i].collisionTriangleCount <= 0 || (flags[i] & 0xF0000) == 0) {
                 continue;
+            }
             ++kinds[(flags[i] >> 16) & 15];
             CHECK((flags[i] & 0x0A000000) == 0);
             CHECK(HazardSurfaces::harmOf(flags[i]).has_value());
@@ -125,8 +129,9 @@ std::optional<Vec3> standingContact(const formats::LegendsMap& map, const LevelW
                                     s32 owner) {
     const Mat4 transform = world.collision().objectTransform(owner).value_or(Mat4{1});
     for (const auto& face : map.collision) {
-        if (face.owner != owner)
+        if (face.owner != owner) {
             continue;
+        }
         const Vec3 normal = glm::normalize(Vec3{transform * Vec4{face.normal, 0}});
         // The mill's long triangles have centroids far above the walkway,
         // even while their outer edges cross it. Sample the whole native face,
@@ -143,8 +148,9 @@ std::optional<Vec3> standingContact(const formats::LegendsMap& map, const LevelW
                 for (const f32 offset : {.2f, .6f, -.2f}) {
                     Vec3 feet = point + normal * offset;
                     const auto floor = world.collision().floorAt(feet, 1, 6);
-                    if (!floor)
+                    if (!floor) {
                         continue;
+                    }
                     feet.y = floor->y;
                     const auto playerTouch =
                         world.hazards().touching(world.collision(), feet, .75f, 5);
@@ -152,8 +158,9 @@ std::optional<Vec3> standingContact(const formats::LegendsMap& map, const LevelW
                                                                      enemyKind(kGruntKind).radius,
                                                                      enemyKind(kGruntKind).height);
                     if (playerTouch && enemyTouch && playerTouch->object == owner &&
-                        enemyTouch->object == owner)
+                        enemyTouch->object == owner) {
                         return feet;
+                    }
                 }
             }
         }
@@ -166,8 +173,9 @@ TEST_CASE("Dreamcast moving boulders and mill blades reach common player and ene
     const auto levels =
         test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native/levels";
     if (!std::filesystem::is_regular_file(levels / "levelb3/worlds.rom") ||
-        !std::filesystem::is_regular_file(levels / "levelg1/worlds.rom"))
+        !std::filesystem::is_regular_file(levels / "levelg1/worlds.rom")) {
         SKIP("Optional Dreamcast extraction is not installed");
+    }
     const auto common =
         test::assetOrSkip("MONSTERS/GRU/ANIM.PS2").parent_path().parent_path().parent_path();
     struct Case {
@@ -216,8 +224,9 @@ TEST_CASE("Dreamcast moving boulders and mill blades reach common player and ene
             }
             moved |= *world.collision().objectTransform(sample.owner) != start;
             const auto at = standingContact(map, world, sample.owner);
-            if (!at)
+            if (!at) {
                 continue;
+            }
             CAPTURE(sampleFrame, at->x, at->y, at->z);
             const auto touch = world.hazards().touching(world.collision(), *at, .75f, 5);
             REQUIRE(touch);
@@ -266,8 +275,9 @@ TEST_CASE("Dreamcast moving boulders and mill blades reach common player and ene
             CHECK(enemies.takeLosses().empty());
             enemies.close();
             ++contacts;
-            if (contacts >= 2 && moved)
+            if (contacts >= 2 && moved) {
                 break;
+            }
         }
         CHECK(moved);
         CHECK(contacts >= 2);

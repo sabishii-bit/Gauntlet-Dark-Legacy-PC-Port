@@ -57,14 +57,16 @@ formats::ItemInfoRecord spikes() {
 
 std::filesystem::path nativeRoot() {
     const auto root = test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native";
-    if (!std::filesystem::is_regular_file(root / "levels/levela1/worlds.rom"))
+    if (!std::filesystem::is_regular_file(root / "levels/levela1/worlds.rom")) {
         SKIP("Optional Dreamcast extraction is not installed");
+    }
     return root;
 }
 
 void reachAction(LegendsDreamcastTrap& trap, s32 action) {
-    for (s32 tick = 0; tick < 240 && trap.action() != action; ++tick)
+    for (s32 tick = 0; tick < 240 && trap.action() != action; ++tick) {
         trap.advance(1.f / 60, false);
+    }
     REQUIRE(trap.action() == action);
 }
 
@@ -122,16 +124,18 @@ TEST_CASE("Dreamcast Stop Time leaves the trap countdown running without an extr
     auto trap = LegendsDreamcastTrap::decode(spikes(), {}, 23, {0, 0, 58, 0});
     REQUIRE(trap);
     reachAction(*trap, 2);
-    for (s32 tick = 0; tick < 10; ++tick)
+    for (s32 tick = 0; tick < 10; ++tick) {
         trap->advance(1.f / 60, true);
+    }
     CHECK(trap->action() == 0);
     CHECK(trap->ticksLeft() == 48);
     CHECK_FALSE(trap->dangerous());
     trap->advance(1.f / 60, false);
     CHECK(trap->action() == 0);
     CHECK(trap->ticksLeft() == 47);
-    for (s32 tick = 0; tick < 60; ++tick)
+    for (s32 tick = 0; tick < 60; ++tick) {
         trap->advance(1.f / 60, true);
+    }
     CHECK(trap->action() == 0);
     CHECK(trap->ticksLeft() == 0);
     trap->advance(1.f / 60, false);
@@ -150,8 +154,9 @@ TEST_CASE("Dreamcast spikes accept empty rest and transition sequences but requi
     trap->advance(1.f / 60, false);
     CHECK(trap->action() == 2);
     CHECK(trap->dangerous());
-    for (s32 tick = 0; tick < 58; ++tick)
+    for (s32 tick = 0; tick < 58; ++tick) {
         trap->advance(1.f / 60, false);
+    }
     CHECK(trap->action() == 3);
     CHECK_FALSE(trap->dangerous());
     trap->advance(1.f / 60, false);
@@ -217,13 +222,13 @@ TEST_CASE("Dreamcast contact sounds preserve the subtype and silent native realm
     REQUIRE(spike);
     REQUIRE(fire);
     // AudioTrap 8c0df0a0 indexes subtype then realm in the table at 8c127698.
-    constexpr std::array<u32, 9> spikeSounds{0, 0x23000f, 0, 0x240033, 0x25002d, 0, 0, 0, 0};
-    constexpr std::array<u32, 9> flameSounds{0, 0,        0x210027, 0x240034, 0x250000,
-                                             0, 0x2d001f, 0x22001c, 0x26001c};
+    constexpr std::array<u32, 9> kSpikeSounds{0, 0x23000f, 0, 0x240033, 0x25002d, 0, 0, 0, 0};
+    constexpr std::array<u32, 9> kFlameSounds{0, 0,        0x210027, 0x240034, 0x250000,
+                                              0, 0x2d001f, 0x22001c, 0x26001c};
     for (s32 realm = 0; realm < 9; ++realm) {
         INFO(realm);
-        CHECK(spike->contactSound(realm) == spikeSounds[static_cast<usize>(realm)]);
-        CHECK(fire->contactSound(realm) == flameSounds[static_cast<usize>(realm)]);
+        CHECK(spike->contactSound(realm) == kSpikeSounds[static_cast<usize>(realm)]);
+        CHECK(fire->contactSound(realm) == kFlameSounds[static_cast<usize>(realm)]);
     }
     for (const s32 realm : {-1, 9, std::numeric_limits<s32>::max()}) {
         CHECK(spike->contactSound(realm) == 0);
@@ -240,12 +245,14 @@ TEST_CASE("Dreamcast flame cycles hurt only during native ON and respect Stop Ti
     LegendsPortalVisitor visitor;
     visitor.position = {0, 0, 2};
     CHECK_FALSE(trap->touch(visitor));
-    for (s32 i = 0; i < 121 && trap->action() == 0; ++i)
+    for (s32 i = 0; i < 121 && trap->action() == 0; ++i) {
         trap->advance(1.f / 60, false);
+    }
     REQUIRE(trap->action() == 1);
     CHECK_FALSE(trap->touch(visitor));
-    for (s32 i = 0; i < 4; ++i)
+    for (s32 i = 0; i < 4; ++i) {
         trap->advance(1.f / 60, false);
+    }
     REQUIRE(trap->dangerous());
     auto hit = trap->touch(visitor);
     REQUIRE(hit);
@@ -271,8 +278,9 @@ TEST_CASE("Dreamcast B1 binds every authored flame to an animated damaging fixtu
           "[legends][dreamcast-traps][assets]") {
     const auto root = test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native";
     const auto directory = root / "levels/levelb1";
-    if (!std::filesystem::exists(directory / "worlds.rom"))
+    if (!std::filesystem::exists(directory / "worlds.rom")) {
         SKIP("Optional Dreamcast extraction is not installed");
+    }
     const auto bytes = readFile(directory / "worlds.rom");
     const auto native = formats::LegendsDreamcastScene::parse(bytes);
     usize flameCount = 0;
@@ -281,8 +289,9 @@ TEST_CASE("Dreamcast B1 binds every authored flame to an animated damaging fixtu
     for (usize i = 0; i < native.itemInstances.size(); ++i) {
         const auto& item = native.itemInstances[i];
         const auto& info = native.itemInfos[static_cast<usize>(item.info)];
-        if (info.type != 8)
+        if (info.type != 8) {
             continue;
+        }
         std::string warning;
         INFO(i << ": " << info.name);
         REQUIRE(
@@ -308,8 +317,9 @@ TEST_CASE("Dreamcast B1 binds every authored flame to an animated damaging fixtu
             const auto hits = scene->takeTrapHits();
             const auto sounds = scene->takeSounds();
             CHECK(sounds.size() == hits.size());
-            for (const auto& sound : sounds)
+            for (const auto& sound : sounds) {
                 CHECK(sound.token == 0x210027);
+            }
             for (const auto& value : hits) {
                 hitTraps.insert(value.nativeIndex);
                 CHECK(value.damage == 20);
@@ -317,8 +327,9 @@ TEST_CASE("Dreamcast B1 binds every authored flame to an animated damaging fixtu
         }
         CHECK(hitTraps.contains(nativeIndices[index]));
     }
-    for (const auto& warning : scene->warnings())
+    for (const auto& warning : scene->warnings()) {
         INFO(warning);
+    }
     CHECK(hitTraps.size() == flameCount);
     scene->updateTraps(1.f / 60, true);
     scene->touchTraps(visitors);
@@ -329,50 +340,53 @@ TEST_CASE("Dreamcast B1 binds every authored flame to an animated damaging fixtu
 TEST_CASE("Dreamcast every native spike template binds its realm-specific animation",
           "[legends][dreamcast-traps][dreamcast-spikes][assets]") {
     const auto root = nativeRoot();
-    constexpr std::array realms{'a', 'c', 'd', 'g', 'h'};
-    constexpr std::array<std::array<s32, 4>, 5> frames{
+    constexpr std::array kRealms{'a', 'c', 'd', 'g', 'h'};
+    constexpr std::array<std::array<s32, 4>, 5> kFrames{
         {{0, 0, 29, 0}, {0, 0, 29, 0}, {0, 5, 23, 32}, {0, 0, 28, 0}, {0, 0, 29, 0}}};
-    constexpr std::array<std::string_view, 4> sequenceNames{"OFF", "ONA", "ON", "ONB"};
-    std::array<std::array<s32, 4>, realms.size()> durations{};
+    constexpr std::array<std::string_view, 4> kSequenceNames{"OFF", "ONA", "ON", "ONB"};
+    std::array<std::array<s32, 4>, kRealms.size()> durations{};
     test::FakeRenderDevice device;
-    for (usize realm = 0; realm < realms.size(); ++realm) {
-        INFO(realms[realm]);
+    for (usize realm = 0; realm < kRealms.size(); ++realm) {
+        INFO(kRealms[realm]);
         auto archive =
-            loadLegendsDreamcastArchive(root / (std::string{"items/level"} + realms[realm]));
+            loadLegendsDreamcastArchive(root / (std::string{"items/level"} + kRealms[realm]));
         REQUIRE(archive);
         const auto index = archive->trees.find("SPIKES");
         REQUIRE(index);
         const auto& tree = archive->trees.tree(*index);
         ItemFigure figure;
         REQUIRE(figure.place(device, *archive, "SPIKES", {}, nullptr));
-        for (usize state = 0; state < sequenceNames.size(); ++state) {
-            const auto sequence = tree.findSequence(sequenceNames[state]);
+        for (usize state = 0; state < kSequenceNames.size(); ++state) {
+            const auto sequence = tree.findSequence(kSequenceNames[state]);
             REQUIRE(sequence);
-            CHECK(tree.sequences[*sequence].frames == frames[realm][state]);
-            if (frames[realm][state] != 0)
+            CHECK(tree.sequences[*sequence].frames == kFrames[realm][state]);
+            if (kFrames[realm][state] != 0) {
                 CHECK(tree.sequences[*sequence].frameRate == (realm == 2 && state == 2 ? 10 : 30));
+            }
             durations[realm][state] = figure.ticksOf(static_cast<s32>(*sequence));
         }
     }
-    constexpr std::array<std::string_view, 20> levels{"a1", "a3", "a4", "a6", "c1", "c2", "c3",
-                                                      "c4", "d1", "d2", "d3", "d4", "g1", "g4",
-                                                      "h1", "h2", "h3", "h4", "h5", "h6"};
-    constexpr std::array<usize, levels.size()> expected{17, 15, 8, 7, 16, 19, 32, 20, 5,  3,
-                                                        3,  7,  5, 6, 23, 18, 16, 15, 17, 26};
+    constexpr std::array<std::string_view, 20> kLevels{"a1", "a3", "a4", "a6", "c1", "c2", "c3",
+                                                       "c4", "d1", "d2", "d3", "d4", "g1", "g4",
+                                                       "h1", "h2", "h3", "h4", "h5", "h6"};
+    constexpr std::array<usize, kLevels.size()> kExpected{17, 15, 8, 7, 16, 19, 32, 20, 5,  3,
+                                                          3,  7,  5, 6, 23, 18, 16, 15, 17, 26};
     usize total = 0;
-    for (usize level = 0; level < levels.size(); ++level) {
-        INFO(levels[level]);
+    for (usize level = 0; level < kLevels.size(); ++level) {
+        INFO(kLevels[level]);
         const auto native = formats::LegendsDreamcastScene::parse(
-            readFile(root / ("levels/level" + std::string{levels[level]}) / "worlds.rom"));
-        const auto realm = std::ranges::find(realms, levels[level].front());
-        REQUIRE(realm != realms.end());
-        const auto& ticks = durations[static_cast<usize>(realm - realms.begin())];
+            readFile(root / ("levels/level" + std::string{kLevels[level]}) / "worlds.rom"));
+        const auto realm = static_cast<usize>(std::ranges::find(kRealms, kLevels[level].front()) -
+                                              kRealms.begin());
+        REQUIRE(realm < kRealms.size());
+        const auto& ticks = durations[realm];
         usize count = 0;
         for (usize index = 0; index < native.itemInstances.size(); ++index) {
             const auto& item = native.itemInstances[index];
             const auto& info = native.itemInfos[static_cast<usize>(item.info)];
-            if (info.type != 8 || info.subtype != 0)
+            if (info.type != 8 || info.subtype != 0) {
                 continue;
+            }
             INFO(index);
             CHECK(info.name == "SPIKES");
             CHECK(info.properties == 0x2000);
@@ -390,7 +404,7 @@ TEST_CASE("Dreamcast every native spike template binds its realm-specific animat
             CHECK(warning.empty());
             ++count;
         }
-        CHECK(count == expected[level]);
+        CHECK(count == kExpected[level]);
         total += count;
     }
     CHECK(total == 278);
@@ -409,8 +423,9 @@ TEST_CASE("Dreamcast Castle binds all spikes to visible cycles and physical cont
     std::vector<u32> indices;
     for (usize index = 0; index < native.itemInstances.size(); ++index) {
         const auto& info = native.itemInfos[static_cast<usize>(native.itemInstances[index].info)];
-        if (info.type == 8 && info.subtype == 0)
+        if (info.type == 8 && info.subtype == 0) {
             indices.push_back(static_cast<u32>(index));
+        }
     }
     REQUIRE(indices.size() == 17);
     s32 selected = -1;
@@ -431,9 +446,11 @@ TEST_CASE("Dreamcast Castle binds all spikes to visible cycles and physical cont
         scene->highlightFixture(device, Mat4{1}, CameraFrame{}, 1, selected,
                                 SelectionHighlight{Vec3{0, 100, 0}});
         std::vector<Vec3> vertices;
-        for (const auto& draw : device.draws)
-            for (const auto& vertex : draw.vertices)
-                vertices.push_back(Vec3{draw.transform * Vec4{vertex.position, 1}});
+        for (const auto& draw : device.draws) {
+            for (const auto& vertex : draw.vertices) {
+                vertices.emplace_back(draw.transform * Vec4{vertex.position, 1});
+            }
+        }
         return vertices;
     };
     const auto resting = geometry();
@@ -452,8 +469,9 @@ TEST_CASE("Dreamcast Castle binds all spikes to visible cycles and physical cont
             const auto contacts = scene->takeTrapHits();
             const auto sounds = scene->takeSounds();
             CHECK(sounds.size() == contacts.size());
-            for (const auto& sound : sounds)
+            for (const auto& sound : sounds) {
                 CHECK(sound.token == 0x23000f);
+            }
             for (const auto& contact : contacts) {
                 CHECK(contact.nativeIndex == index);
                 CHECK(contact.damage == 20);
@@ -484,8 +502,9 @@ TEST_CASE("Dreamcast Castle binds all spikes to visible cycles and physical cont
             CHECK(stopped != striking);
         }
     }
-    for (const auto& warning : scene->warnings())
+    for (const auto& warning : scene->warnings()) {
         CHECK(warning.find("SPIKES") == std::string::npos);
+    }
 }
 
 TEST_CASE("Dreamcast overlapping spike contacts share each player's native hit cooldown",
@@ -508,19 +527,22 @@ TEST_CASE("Dreamcast overlapping spike contacts share each player's native hit c
     for (s32 tick = 0; tick < 240 && !struck; ++tick) {
         scene->updateTraps(1.f / 60, false);
         auto levitating = visitors;
-        for (auto& visitor : levitating)
+        for (auto& visitor : levitating) {
             visitor.levitating = true;
+        }
         scene->touchTraps(levitating);
         CHECK(scene->takeTrapHits().empty());
         CHECK(scene->takeSounds().empty());
         // The rejected levitating contacts must not consume the hit gate.
         scene->touchTraps(visitors);
         const auto hits = scene->takeTrapHits();
-        if (hits.empty())
+        if (hits.empty()) {
             continue;
+        }
         REQUIRE(hits.size() == 4);
-        for (u8 player = 0; player < 4; ++player)
+        for (u8 player = 0; player < 4; ++player) {
             CHECK(std::ranges::count(hits, player, &LegendsTrapHit::player) == 1);
+        }
         scene->takeSounds();
         // Other traps enter ON during this window, but cannot bypass fxhittime.
         for (s32 held = 0; held < 30; ++held) {
@@ -538,8 +560,9 @@ TEST_CASE("Dreamcast empty flame windup and recovery remain valid native states"
           "[legends][dreamcast-traps]") {
     auto trap = LegendsDreamcastTrap::decode(flame(), {}, 17, {80, 0, 48, 0});
     REQUIRE(trap);
-    for (s32 i = 0; i < 121 && trap->action() == 0; ++i)
+    for (s32 i = 0; i < 121 && trap->action() == 0; ++i) {
         trap->advance(1.f / 60, false);
+    }
     REQUIRE(trap->action() == 1);
     CHECK_FALSE(trap->dangerous());
     trap->advance(1.f / 60, false);
@@ -563,8 +586,9 @@ TEST_CASE("Dreamcast flame offsets and boxes follow native positive authored yaw
     item.rotation.y = glm::radians(90.f);
     auto trap = LegendsDreamcastTrap::decode(info, item, 5, {1, 4, 30, 4});
     REQUIRE(trap);
-    for (s32 i = 0; i < 150 && !trap->dangerous(); ++i)
+    for (s32 i = 0; i < 150 && !trap->dangerous(); ++i) {
         trap->advance(1.f / 60, false);
+    }
     REQUIRE(trap->dangerous());
     LegendsPortalVisitor visitor;
     visitor.position = {6, 0, 20}; // the old inverse-yaw contact centre

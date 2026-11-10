@@ -33,7 +33,7 @@ TEST_CASE("Dreamcast boss speech selects native party rune and shard branches",
         for (u64 bits = 0; bits < 8; ++bits) {
             Ceremony visit;
             REQUIRE(visit.begin(26, realm, bits << (3 * (realm - 1)), 0));
-            const usize count = static_cast<usize>(std::popcount(bits));
+            const auto count = static_cast<usize>(std::popcount(bits));
             CHECK(visit.groups()[1].keys[0] ==
                   "legends.dc.victory.runes" + std::to_string(count) + ".0");
             CHECK(visit.groups()[1].voice == 0x27000bU + count);
@@ -252,7 +252,8 @@ TEST_CASE("Dreamcast victory captions and voices match the native executable tab
                                              ? (boss == 32 ? (full ? 2 : 1) : (full ? 4 : 1))
                                              : (full ? 6 : 5);
                 CHECK(*groups[group].voice ==
-                      word(0x8c127dcc + static_cast<u32>((boss - 26) * 28 + voiceGroup * 4)));
+                      word(0x8c127dcc +
+                           static_cast<u32>(static_cast<usize>(boss - 26) * 28 + voiceGroup * 4)));
             }
         }
     }

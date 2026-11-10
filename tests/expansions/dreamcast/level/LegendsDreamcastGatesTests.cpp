@@ -10,9 +10,9 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "expansions/dreamcast/audio/LegendsDreamcastSounds.h"
 #include "expansions/dreamcast/formats/LegendsDreamcastScene.h"
 #include "expansions/dreamcast/formats/LegendsDreamcastTexture.h"
-#include "expansions/dreamcast/audio/LegendsDreamcastSounds.h"
 #include "expansions/dreamcast/level/LegendsDreamcastGates.h"
 #include "expansions/shared/scenes/LegendsSceneAdapter.h"
 
@@ -24,8 +24,9 @@ TEST_CASE("Dreamcast Temple entrance doors emit their authored movement sound",
           "[legends][dreamcast-gates][dreamcast-temple-door][assets]") {
     const auto root = test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native";
     const auto directory = root / "levels/levele1";
-    if (!std::filesystem::exists(directory / "worlds.rom"))
+    if (!std::filesystem::exists(directory / "worlds.rom")) {
         SKIP("Optional Dreamcast extraction is not installed");
+    }
     const auto bytes = readFile(directory / "worlds.rom");
     auto map = formats::LegendsMap::parseDreamcast(bytes, readFile(directory / "objects.rom"));
     test::FakeRenderDevice device;
@@ -34,7 +35,7 @@ TEST_CASE("Dreamcast Temple entrance doors emit their authored movement sound",
     const auto* motion = scene->dreamcastWorldMotion();
     REQUIRE(motion);
     const auto pad = std::ranges::find(motion->switches(), 94U,
-                                      &LegendsDreamcastWorldMotion::Switch::nativeIndex);
+                                       &LegendsDreamcastWorldMotion::Switch::nativeIndex);
     REQUIRE(pad != motion->switches().end());
     REQUIRE(pad->target == 73); // E1ANIM100; chained pad95 controls E1ANIM101
     const usize index = static_cast<usize>(pad - motion->switches().begin());
@@ -57,11 +58,12 @@ TEST_CASE("Dreamcast Temple entrance doors emit their authored movement sound",
     // Nested door groups have local coordinates close to zero but stand at
     // z92. The cue must follow the world position, where the player can hear it.
     CHECK(glm::distance(sound->position, position) < 15.f);
-    for (s32 frame = 0; frame < 600; ++frame)
+    for (s32 frame = 0; frame < 600; ++frame) {
         scene->update(1.f / 60);
+    }
     const auto stopped = scene->takeSounds();
-    CHECK(std::ranges::any_of(stopped,
-                              [&](const auto& event) { return event.token == (*pair)[1]; }));
+    CHECK(
+        std::ranges::any_of(stopped, [&](const auto& event) { return event.token == (*pair)[1]; }));
 }
 
 formats::ItemInfoRecord keyDoor() {
@@ -165,21 +167,26 @@ TEST_CASE("Every shipped ordinary Dreamcast key door passes its native adapter",
           "[legends][dreamcast-gates][assets]") {
     const auto levels =
         test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native/levels";
-    if (!std::filesystem::is_directory(levels))
+    if (!std::filesystem::is_directory(levels)) {
         SKIP("Dreamcast extraction is not installed");
-    usize ordinary = 0, scripted = 0;
+    }
+    usize ordinary = 0;
+    usize scripted = 0;
     for (const auto& directory : std::filesystem::directory_iterator(levels)) {
         const auto path = directory.path() / "worlds.rom";
-        if (!std::filesystem::is_regular_file(path) || std::filesystem::file_size(path) == 0)
+        if (!std::filesystem::is_regular_file(path) || std::filesystem::file_size(path) == 0) {
             continue;
+        }
         const auto scene = formats::LegendsDreamcastScene::parse(readFile(path));
         for (usize index = 0; index < scene.itemInstances.size(); ++index) {
             const auto& instance = scene.itemInstances[index];
-            if (instance.info < 0)
+            if (instance.info < 0) {
                 continue;
+            }
             const auto& info = scene.itemInfos[static_cast<usize>(instance.info)];
-            if (info.type != 7)
+            if (info.type != 7) {
                 continue;
+            }
             INFO(path.string() << " placement " << index << " " << info.name);
             std::string diagnostic;
             const auto gate =
@@ -205,8 +212,9 @@ TEST_CASE("Dreamcast native gates spend one key and animate without losing conso
           "[legends][dreamcast-gates][assets]") {
     const auto directory =
         test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native/levels/levelb1";
-    if (!std::filesystem::is_directory(directory))
+    if (!std::filesystem::is_directory(directory)) {
         SKIP("Dreamcast extraction is not installed");
+    }
     const auto worldBytes = readFile(directory / "worlds.rom");
     const auto models = readFile(directory / "objects.rom");
     auto map = formats::LegendsMap::parseDreamcast(worldBytes, models);
@@ -219,8 +227,9 @@ TEST_CASE("Dreamcast native gates spend one key and animate without losing conso
     REQUIRE(placed != native.itemInstances.end());
     test::FakeRenderDevice device;
     auto scene = LegendsSceneAdapter::load(device, LegendsPlatform::Dreamcast, directory, map);
-    for (const auto& warning : scene->warnings())
+    for (const auto& warning : scene->warnings()) {
         INFO(warning);
+    }
     s32 identity = -1;
     for (usize index = 0; index < scene->fixtureCount(); ++index) {
         const s32 id = LegendsSceneAdapter::kFixtureObjectBase + static_cast<s32>(index);
@@ -251,9 +260,11 @@ TEST_CASE("Dreamcast native gates spend one key and animate without losing conso
         device.draws.clear();
         scene->highlightFixture(device, Mat4{1}, camera, -1, identity, highlight);
         std::vector<Vec3> result;
-        for (const auto& draw : device.draws)
-            for (const auto& vertex : draw.vertices)
-                result.push_back(Vec3{draw.transform * Vec4{vertex.position, 1}});
+        for (const auto& draw : device.draws) {
+            for (const auto& vertex : draw.vertices) {
+                result.emplace_back(draw.transform * Vec4{vertex.position, 1});
+            }
+        }
         return result;
     };
     const auto closed = vertices();

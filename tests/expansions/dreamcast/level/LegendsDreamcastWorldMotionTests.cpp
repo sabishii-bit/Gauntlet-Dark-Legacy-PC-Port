@@ -31,9 +31,10 @@ TEST_CASE("Dreamcast scripted lightning flashes briefly without changing native 
           "[legends][dreamcast-motion][dreamcast-lightning][assets]") {
     const auto levels =
         test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native/levels";
-    if (!std::filesystem::is_regular_file(levels / "levela5/worlds.rom"))
+    if (!std::filesystem::is_regular_file(levels / "levela5/worlds.rom")) {
         SKIP("Optional Dreamcast extraction is not installed");
-    for (const auto level : {"levela5", "levelf2"}) {
+    }
+    for (const auto* const level : {"levela5", "levelf2"}) {
         CAPTURE(level);
         const auto directory = levels / level;
         const auto bytes = readFile(directory / "worlds.rom");
@@ -62,7 +63,9 @@ TEST_CASE("Dreamcast scripted lightning flashes briefly without changing native 
             }
         }
         REQUIRE(lightning.size() == 4);
-        std::array<int, 4> first{}, duration{}, flashes{};
+        std::array<int, 4> first{};
+        std::array<int, 4> duration{};
+        std::array<int, 4> flashes{};
         std::array<bool, 4> previous{};
         for (int tick = 1; tick <= 1800; ++tick) {
             motion.advance(1.f / 60);
@@ -74,8 +77,9 @@ TEST_CASE("Dreamcast scripted lightning flashes briefly without changing native 
                 if (visible) {
                     if (!previous[i]) {
                         ++flashes[i];
-                        if (first[i] == 0)
+                        if (first[i] == 0) {
                             first[i] = tick;
+                        }
                     }
                     ++duration[i];
                 } else if (previous[i]) {
@@ -93,8 +97,9 @@ TEST_CASE("Dreamcast scripted lightning flashes briefly without changing native 
             CHECK(first[i] <= 900);
             CHECK(flashes[i] >= 2);
             const auto placement = motion.transform(lightning[i]);
-            for (usize column = 0; column < 4; ++column)
+            for (usize column = 0; column < 4; ++column) {
                 CHECK(glm::distance(placement[column], Mat4{1}[column]) < .0001f);
+            }
         }
     }
 }
@@ -318,9 +323,11 @@ TEST_CASE("Dreamcast keyed riders recover from an exactly collapsed intermediate
     CHECK(glm::determinant(motion.riderTransform(0)) == 0);
     motion.advance(1);
     const auto restored = motion.riderTransform(0);
-    for (Mat4::length_type column = 0; column < 4; ++column)
-        for (Mat4::length_type row = 0; row < 4; ++row)
+    for (Mat4::length_type column = 0; column < 4; ++column) {
+        for (Mat4::length_type row = 0; row < 4; ++row) {
             CHECK(std::isfinite(restored[column][row]));
+        }
+    }
     CHECK(restored == Mat4{1});
 }
 
@@ -364,24 +371,29 @@ TEST_CASE("Dreamcast item grounding uses initialized target floors and preserves
 TEST_CASE("Shipped Dreamcast world tracks have invertible initial animation bases",
           "[legends][dreamcast-motion][assets]") {
     const auto root = test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native";
-    if (!std::filesystem::is_directory(root / "levels"))
+    if (!std::filesystem::is_directory(root / "levels")) {
         SKIP("Optional Dreamcast extraction is not installed");
-    usize levels = 0, tracks = 0;
+    }
+    usize levels = 0;
+    usize tracks = 0;
     for (const auto& directory : std::filesystem::directory_iterator(root / "levels")) {
         const auto level = directory.path().filename().string();
         const auto metadata = formats::dreamcastLegendsWorldDataFile(level);
         if (metadata.empty() || !std::filesystem::is_regular_file(root / metadata) ||
-            !formats::dreamcastLegendsFixtureScope(readFile(root / metadata), level))
+            !formats::dreamcastLegendsFixtureScope(readFile(root / metadata), level)) {
             continue;
+        }
         const auto path = directory.path() / "worlds.rom";
-        if (!std::filesystem::is_regular_file(path))
+        if (!std::filesystem::is_regular_file(path)) {
             continue;
+        }
         const auto motion = formats::LegendsSceneMotion::parseDreamcast(readFile(path));
         ++levels;
         for (const auto& animation : motion.worldAnimations) {
             if ((motion.objects[static_cast<usize>(animation.objectIndex)].flags & 0x300000U) ==
-                0x300000U)
+                0x300000U) {
                 continue;
+            }
             ++tracks;
             const TrackInfo keys{animation.track.node, animation.track.flags,
                                  animation.track.frames, animation.track.values};
@@ -400,8 +412,9 @@ TEST_CASE("Dreamcast B1 displays native pads and carries RUNEB1 throughout its p
           "[legends][dreamcast-motion][assets]") {
     const auto directory =
         test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native/levels/levelb1";
-    if (!std::filesystem::exists(directory / "worlds.rom"))
+    if (!std::filesystem::exists(directory / "worlds.rom")) {
         SKIP("Optional Dreamcast extraction is not installed");
+    }
     const auto bytes = readFile(directory / "worlds.rom");
     auto map = formats::LegendsMap::parseDreamcast(bytes, readFile(directory / "objects.rom"));
     test::FakeRenderDevice device;
@@ -414,8 +427,9 @@ TEST_CASE("Dreamcast B1 displays native pads and carries RUNEB1 throughout its p
     for (usize i = 0; i < scene->fixtureCount(); ++i) {
         const auto figure =
             scene->fixtureObject(LegendsSceneAdapter::kFixtureObjectBase + static_cast<s32>(i));
-        if (figure && figure->name == "BRIDGEPAD" && figure->visible)
+        if (figure && figure->name == "BRIDGEPAD" && figure->visible) {
             ++plates;
+        }
     }
     CHECK(plates == 2); // four authored flag2 volumes remain invisible, but active
     const auto rune = std::ranges::find(scene->pickups(), 144U, &LegendsPickup::nativeIndex);
@@ -431,12 +445,14 @@ TEST_CASE("Dreamcast B1 displays native pads and carries RUNEB1 throughout its p
     // Visible pad138 targets the actual supporting lift230/FLOOR#27(231).
     // Hidden pads141..143 separately animate the nested decorative pedestal.
     visitors.push_back({.position = motion->switchPosition(0)});
-    for (usize i = 3; i < 6; ++i)
+    for (usize i = 3; i < 6; ++i) {
         visitors.push_back({.position = motion->switchPosition(i)});
+    }
     scene->touchSwitches(visitors);
     REQUIRE(motion->switches()[0].active);
-    for (usize i = 3; i < 6; ++i)
+    for (usize i = 3; i < 6; ++i) {
         REQUIRE(motion->switches()[i].active);
+    }
     scene->capturePresentation();
     scene->update(.5f);
     const Vec3 middle = rune->position;
@@ -448,8 +464,9 @@ TEST_CASE("Dreamcast B1 displays native pads and carries RUNEB1 throughout its p
     scene->update(2);
     const Vec3 after = rune->position;
     CHECK(glm::length(after - middle) > .1f);
-    for (s32 tick = 0; tick < 60; ++tick)
+    for (s32 tick = 0; tick < 60; ++tick) {
         scene->update(1.f / 60);
+    }
     CHECK(glm::length(rune->position - after) < .002f);
 }
 
@@ -457,8 +474,9 @@ TEST_CASE("Dreamcast B1 grounded containers and RUNEB1 stay on floors through Le
           "[legends][dreamcast-motion][dreamcast-placement][assets]") {
     const auto directory =
         test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native/levels/levelb1";
-    if (!std::filesystem::exists(directory / "worlds.rom"))
+    if (!std::filesystem::exists(directory / "worlds.rom")) {
         SKIP("Optional Dreamcast extraction is not installed");
+    }
     const auto common = test::assetOrSkip("WEAPONS/ANIM.PS2").parent_path().parent_path();
     const auto bytes = readFile(directory / "worlds.rom");
     const auto records = formats::LegendsDreamcastScene::parse(bytes);
@@ -509,8 +527,9 @@ TEST_CASE("Dreamcast B1 grounded containers and RUNEB1 stay on floors through Le
     for (usize index = 0; index < scene.fixtureCount(); ++index) {
         const auto id = LegendsSceneAdapter::kFixtureObjectBase + static_cast<s32>(index);
         const auto figure = native->object(id);
-        if (figure && figure->name == "RUNEB1")
+        if (figure && figure->name == "RUNEB1") {
             runeFigure = id;
+        }
     }
     REQUIRE(runeFigure);
     PlayerActor actor;
@@ -530,8 +549,9 @@ TEST_CASE("Dreamcast B1 grounded containers and RUNEB1 stay on floors through Le
         const auto figure = native->object(*runeFigure);
         REQUIRE(figure);
         CHECK(glm::distance(figure->position, rune->position) < .002f);
-        if (tick == 30)
+        if (tick == 30) {
             CHECK(rune->position.y > before.y + .1f);
+        }
     }
     CHECK(rune->position.y > before.y + 1.f);
 }
@@ -540,8 +560,9 @@ TEST_CASE("Dreamcast F1 bridge render and collision start at the first key and r
           "[legends][dreamcast-motion][dreamcast-f1][assets]") {
     const auto directory =
         test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native/levels/levelf1";
-    if (!std::filesystem::is_regular_file(directory / "worlds.rom"))
+    if (!std::filesystem::is_regular_file(directory / "worlds.rom")) {
         SKIP("Optional Dreamcast extraction is not installed");
+    }
     const auto bytes = readFile(directory / "worlds.rom");
     const auto records = formats::LegendsDreamcastScene::parse(bytes);
     const auto tracks = formats::LegendsSceneMotion::parseDreamcast(bytes);
@@ -578,8 +599,9 @@ TEST_CASE("Dreamcast F1 bridge render and collision start at the first key and r
 
     std::vector<CollisionTriangle> floorTriangles;
     for (const auto& source : map.collision) {
-        if (source.owner == 426 && source.floor)
+        if (source.owner == 426 && source.floor) {
             floorTriangles.push_back({source.normal, source.vertices, source.owner, 4});
+        }
     }
     REQUIRE(floorTriangles.size() == 5);
     const auto initialTriangles = floorTriangles;
@@ -592,8 +614,9 @@ TEST_CASE("Dreamcast F1 bridge render and collision start at the first key and r
     const Color marker = Color::rgba(1, 2, 3, 255);
     for (usize i = 0; i < map.objects.size(); ++i) {
         if (i == 426) {
-            for (auto& vertex : map.objects[i].mesh.vertices)
+            for (auto& vertex : map.objects[i].mesh.vertices) {
                 vertex.color = marker;
+            }
         } else {
             map.objects[i].mesh = {};
             map.objects[i].partLightmaps.clear();
@@ -606,10 +629,13 @@ TEST_CASE("Dreamcast F1 bridge render and collision start at the first key and r
         device.draws.clear();
         preview.drawWorld(device, Mat4{1}, WorldCamera{}, TreeModel::Pass::All, -1);
         std::vector<Vec3> vertices;
-        for (const auto& draw : device.draws)
-            for (const auto& vertex : draw.vertices)
-                if (vertex.color == marker)
-                    vertices.push_back(Vec3{draw.transform * Vec4{vertex.position, 1}});
+        for (const auto& draw : device.draws) {
+            for (const auto& vertex : draw.vertices) {
+                if (vertex.color == marker) {
+                    vertices.emplace_back(draw.transform * Vec4{vertex.position, 1});
+                }
+            }
+        }
         REQUIRE(vertices.size() == 15);
         return vertices;
     };

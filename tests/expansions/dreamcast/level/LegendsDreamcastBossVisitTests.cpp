@@ -39,14 +39,17 @@ TEST_CASE("Missing optional Dreamcast apparition art audio and translations cann
     visit.load(device, nullptr);
     const std::array<Vec3, 1> players{Vec3{0}};
     REQUIRE(visit.begin(26, 2, 0, 0, Vec3{0}, players));
-    unsigned appeared = 0, departed = 0, sparkled = 0, finished = 0;
+    unsigned appeared = 0;
+    unsigned departed = 0;
+    unsigned sparkled = 0;
+    unsigned finished = 0;
     for (unsigned tick = 0; tick < 30 * 90 && !visit.state().finished(); ++tick) {
         visit.capturePresentation();
         const auto event = visit.update(1.0f / 30);
-        appeared += event.appeared;
-        departed += event.depart;
-        sparkled += event.sparkle;
-        finished += event.finished;
+        appeared += event.appeared ? 1U : 0U;
+        departed += event.depart ? 1U : 0U;
+        sparkled += event.sparkle ? 1U : 0U;
+        finished += event.finished ? 1U : 0U;
         visit.draw(device, Mat4{1}, WorldCamera{}, TreeModel::Pass::All, .5f);
     }
     CHECK(visit.state().finished());
@@ -61,8 +64,9 @@ TEST_CASE("Missing optional Dreamcast apparition art audio and translations cann
 TEST_CASE("Dreamcast boss apparition uses the realm wizard and does not advance while drawing",
           "[dreamcast-boss-visit][assets]") {
     const auto root = test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native";
-    if (!std::filesystem::is_regular_file(root / "items/levelb6/anim.rom"))
+    if (!std::filesystem::is_regular_file(root / "items/levelb6/anim.rom")) {
         SKIP("Dreamcast extraction is not installed");
+    }
     test::FakeRenderDevice device;
     auto archive = loadLegendsDreamcastArchive(root / "items/levelb6");
     REQUIRE(archive);
@@ -96,8 +100,9 @@ TEST_CASE("Dreamcast apparition follows live players with native angular slew",
     // Players may collect their reward while Sumner's five-second wait runs.
     players[0] = {10, 0, 10};
     visit.updatePlayers(players);
-    for (usize step = 0; step < 215; ++step)
+    for (usize step = 0; step < 215; ++step) {
         visit.update(1.0f / 30);
+    }
     REQUIRE(visit.state().wizardAlpha() > 0);
     CHECK(visit.position() == Vec3{5, 3, 5});
     const f32 previous = visit.facing();
@@ -123,8 +128,9 @@ TEST_CASE("Dreamcast typed captions retain the complete native line's centre",
     StringTable strings;
     REQUIRE(strings.load(test::dataDirectory() / "text", "en"));
     std::vector<BitmapGlyph> glyphs;
-    for (s32 code = 33; code < 127; ++code)
+    for (s32 code = 33; code < 127; ++code) {
         glyphs.push_back({.code = code, .width = 12});
+    }
     const auto font = BitmapFont::fromGlyphs(20, 6, std::move(glyphs));
     const test::FakeTexture sheet{32, 32};
     TextPainter text;
@@ -135,8 +141,9 @@ TEST_CASE("Dreamcast typed captions retain the complete native line's centre",
     REQUIRE(visit.begin(26, 2, 0, 0, Vec3{0}, party));
     for (usize frame = 0; frame < 400; ++frame) {
         visit.update(1.0f / 30);
-        if (const auto caption = visit.state().caption(); caption && caption->shown >= 8)
+        if (const auto caption = visit.state().caption(); caption && caption->shown >= 8) {
             break;
+        }
     }
     REQUIRE(visit.state().caption());
     const auto lines = ScrollBox::splitLines(strings.get("legends.dc.victory.dragon.0"));
@@ -151,8 +158,9 @@ TEST_CASE("Dreamcast typed captions retain the complete native line's centre",
     REQUIRE_FALSE(device.draws.empty());
     const auto first = device.draws.front().vertices.front().position;
     CHECK(first.x == Catch::Approx(static_cast<f32>(left) + .5f * scale));
-    for (usize frame = 0; frame < 8; ++frame)
+    for (usize frame = 0; frame < 8; ++frame) {
         visit.update(1.0f / 30);
+    }
     device.draws.clear();
     canvas.begin(device, Mat4{1});
     visit.drawCaption(canvas, text, 512);
@@ -164,8 +172,9 @@ TEST_CASE("Dreamcast typed captions retain the complete native line's centre",
 TEST_CASE("Dreamcast first Skorne displays only the collected native runes",
           "[dreamcast-boss-visit][assets]") {
     const auto root = test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native";
-    if (!std::filesystem::is_regular_file(root / "items/levele2/anim.rom"))
+    if (!std::filesystem::is_regular_file(root / "items/levele2/anim.rom")) {
         SKIP("Dreamcast extraction is not installed");
+    }
     auto archive = loadLegendsDreamcastArchive(root / "items/levele2");
     REQUIRE(archive);
     const auto tree = archive->trees.find("RUNESTONES");
@@ -192,8 +201,9 @@ TEST_CASE("Dreamcast first Skorne displays only the collected native runes",
         const auto uploads = device.texturesCreated;
         visit.draw(device, Mat4{1}, WorldCamera{}, TreeModel::Pass::DepthWriting, 1);
         calls[sample] = device.draws.size();
-        for (const auto& draw : device.draws)
+        for (const auto& draw : device.draws) {
             CHECK(draw.state.depthWrite);
+        }
         visit.draw(device, Mat4{1}, WorldCamera{}, TreeModel::Pass::DepthWriting, 1);
         CHECK(device.draws.size() == 2 * calls[sample]);
         CHECK(device.texturesCreated == uploads);
@@ -205,8 +215,9 @@ TEST_CASE("Dreamcast first Skorne displays only the collected native runes",
 TEST_CASE("Dreamcast victory preloads its native departure skin and begins it at twenty ticks",
           "[dreamcast-boss-visit][assets]") {
     const auto root = test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native";
-    if (!std::filesystem::is_regular_file(root / "weapons/objects.rom"))
+    if (!std::filesystem::is_regular_file(root / "weapons/objects.rom")) {
         SKIP("Dreamcast extraction is not installed");
+    }
     test::FakeRenderDevice device;
     LegendsDreamcastBossVisit visit;
     REQUIRE(visit.loadSkins(device, root));
@@ -223,7 +234,7 @@ TEST_CASE("Dreamcast victory preloads its native departure skin and begins it at
     }
     const auto* first = visit.skin();
     REQUIRE(first);
-    const auto& image = static_cast<const test::FakeTexture&>(*first);
+    const auto& image = dynamic_cast<const test::FakeTexture&>(*first);
     CHECK_FALSE(image.pixels.empty());
     visit.update(1.0f / 30);
     CHECK(visit.skin() == first); // Native rate .5: two updates per texture.
@@ -231,8 +242,9 @@ TEST_CASE("Dreamcast victory preloads its native departure skin and begins it at
     REQUIRE(visit.skin());
     CHECK(visit.skin() != first);
     CHECK(device.texturesCreated == 10);
-    for (usize frame = 0; frame < 30; ++frame)
+    for (usize frame = 0; frame < 30; ++frame) {
         visit.update(1.0f / 30);
+    }
     CHECK(visit.state().finished());
     CHECK(visit.state().wizardAlpha() == 1);
     CHECK(visit.skin() != nullptr); // Retained during the scene's final fade.
@@ -241,8 +253,9 @@ TEST_CASE("Dreamcast victory preloads its native departure skin and begins it at
 TEST_CASE("Dreamcast boss shard appears before the apparition without late GPU uploads",
           "[dreamcast-boss-visit][assets]") {
     const auto root = test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native";
-    if (!std::filesystem::is_regular_file(root / "items/levelb6/anim.rom"))
+    if (!std::filesystem::is_regular_file(root / "items/levelb6/anim.rom")) {
         SKIP("Dreamcast extraction is not installed");
+    }
     test::FakeRenderDevice device;
     auto archive = loadLegendsDreamcastArchive(root / "items/levelb6");
     REQUIRE(archive);

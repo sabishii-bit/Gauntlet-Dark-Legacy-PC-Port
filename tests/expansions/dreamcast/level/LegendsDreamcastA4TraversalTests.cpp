@@ -21,8 +21,9 @@ TEST_CASE("Dreamcast A4 broken pillar retains its native wall and adjacent key-d
           "[legends][dreamcast][dreamcast-a4-traversal][assets]") {
     const auto directory =
         test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native/levels/levela4";
-    if (!std::filesystem::is_regular_file(directory / "worlds.rom"))
+    if (!std::filesystem::is_regular_file(directory / "worlds.rom")) {
         SKIP("Optional Dreamcast extraction is not installed");
+    }
     const auto bytes = readFile(directory / "worlds.rom");
     const auto native = formats::LegendsDreamcastScene::parse(bytes);
     auto map = formats::LegendsMap::parseDreamcast(bytes, readFile(directory / "objects.rom"));
@@ -39,11 +40,13 @@ TEST_CASE("Dreamcast A4 broken pillar retains its native wall and adjacent key-d
     // one of those four records nor an animated/switch-controlled object.
     usize authoredWalls = 0;
     for (const auto& item : native.itemInstances) {
-        if (item.info < 0)
+        if (item.info < 0) {
             continue;
+        }
         const auto& info = native.itemInfos.at(static_cast<usize>(item.info));
-        if (info.type != 10 || info.subtype != 42)
+        if (info.type != 10 || info.subtype != 42) {
             continue;
+        }
         ++authoredWalls;
         CHECK(item.name.starts_with("A4SHOOTWALL#"));
         CHECK(glm::distance(Vec2{item.position.x, item.position.z}, Vec2{pillar.x, pillar.z}) >
@@ -54,8 +57,9 @@ TEST_CASE("Dreamcast A4 broken pillar retains its native wall and adjacent key-d
     test::FakeRenderDevice device;
     auto scene = LegendsSceneAdapter::load(device, LegendsPlatform::Dreamcast, directory, map);
     REQUIRE(scene);
-    for (const auto& warning : scene->warnings())
+    for (const auto& warning : scene->warnings()) {
         INFO(warning);
+    }
     REQUIRE_FALSE(scene->strikeWorldObject(365, 10000, 0));
     CHECK(scene->worldObjectVisible(365));
 

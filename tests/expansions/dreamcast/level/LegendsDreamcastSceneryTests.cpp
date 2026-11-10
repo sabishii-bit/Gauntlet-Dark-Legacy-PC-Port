@@ -27,22 +27,26 @@ using namespace gdl::game;
 usize placedMeshVertices(test::FakeRenderDevice& device, const LegendsSceneAdapter& adapter,
                          const Mesh& mesh, const Mat4& placement) {
     std::vector<Vec3> expected;
-    for (const auto& part : mesh.parts)
-        for (const auto index : part.indices)
-            expected.push_back(Vec3{placement * Vec4{mesh.vertices[index].position, 1}});
+    for (const auto& part : mesh.parts) {
+        for (const auto index : part.indices) {
+            expected.emplace_back(placement * Vec4{mesh.vertices[index].position, 1});
+        }
+    }
     device.draws.clear();
     adapter.draw(device, Mat4{1}, CameraFrame{}, TreeModel::Pass::All);
     usize actual = 0;
     // TreeModel submits world-space vertices with the clip matrix, so draw.transform
     // alone does not identify the item. Check its actual placed geometry instead.
-    for (const auto& draw : device.draws)
+    for (const auto& draw : device.draws) {
         for (const auto& vertex : draw.vertices) {
             const Vec3 point{draw.transform * Vec4{vertex.position, 1}};
             if (std::ranges::any_of(expected, [&](const auto& value) {
                     return glm::distance(point, value) < .0001f;
-                }))
+                })) {
                 ++actual;
+            }
         }
+    }
     return actual;
 }
 
@@ -50,8 +54,9 @@ TEST_CASE("Dreamcast Chimera compatibility cover uses native art and three indep
           "[legends][dreamcast-scenery][dreamcast-arena-cover][dreamcast-chimera-cover][assets]") {
     const auto directory =
         test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native/levels/levela5";
-    if (!std::filesystem::is_regular_file(directory / "worlds.rom"))
+    if (!std::filesystem::is_regular_file(directory / "worlds.rom")) {
         SKIP("Optional Dreamcast extraction is not installed");
+    }
     const auto bytes = readFile(directory / "worlds.rom");
     const auto records = formats::LegendsDreamcastScene::parse(bytes);
     // This is an intentional compatibility repair: the DC level omitted the
@@ -64,8 +69,9 @@ TEST_CASE("Dreamcast Chimera compatibility cover uses native art and three indep
     REQUIRE(model);
     const auto& mesh = art->models.mesh(*model);
     usize nativeVertices = 0;
-    for (const auto& part : mesh.parts)
+    for (const auto& part : mesh.parts) {
         nativeVertices += part.indices.size();
+    }
     REQUIRE(nativeVertices == 30);
     const auto objectBytes = readFile(directory / "objects.rom");
     auto map = formats::LegendsMap::parseDreamcast(bytes, objectBytes);
@@ -76,8 +82,8 @@ TEST_CASE("Dreamcast Chimera compatibility cover uses native art and three indep
     REQUIRE(adapter);
     const auto root = test::assetOrSkip("PLAYERS").parent_path();
     LegendsLevel level{device, map, std::move(adapter), directory, root};
-    constexpr std::array<Vec3, 3> positions{Vec3{-30.125f, .25f, -16.5f},
-                                            Vec3{29.4609375f, .25f, -16.5f}, Vec3{0, 0, -6.5f}};
+    constexpr std::array<Vec3, 3> kPositions{Vec3{-30.125f, .25f, -16.5f},
+                                             Vec3{29.4609375f, .25f, -16.5f}, Vec3{0, 0, -6.5f}};
     const auto targets = level.adapter().arenaDamageTargets();
     const auto bodies = level.adapter().arenaObstacles();
     const auto anchors = level.arenaAnchors();
@@ -86,23 +92,23 @@ TEST_CASE("Dreamcast Chimera compatibility cover uses native art and three indep
     REQUIRE(anchors.size() == 3);
     REQUIRE(level.targets().size() == 3);
     REQUIRE(level.arenaMissileStops().size() == 3);
-    for (usize index = 0; index < positions.size(); ++index) {
+    for (usize index = 0; index < kPositions.size(); ++index) {
         CAPTURE(index);
         const auto& body = bodies[index];
         const auto& target = targets[index];
         CHECK(target.id == kImportedArenaBase + static_cast<s32>(index));
-        CHECK(target.base == positions[index]);
+        CHECK(target.base == kPositions[index]);
         CHECK(target.radius == 6.4f);
         CHECK(target.height == 5);
         REQUIRE(target.surface.size() == 12);
-        CHECK(body.centre == positions[index]);
+        CHECK(body.centre == kPositions[index]);
         CHECK(body.cylinderRadius == 0);
         CHECK(body.halfAcross == 4.5f);
         CHECK(body.halfAlong == 4.5f);
         CHECK(body.height == 5);
         REQUIRE(body.enemyItem);
         CHECK_FALSE(body.enemyItem->cylindrical);
-        const Vec3 centre = positions[index] + Vec3{0, 2, 0};
+        const Vec3 centre = kPositions[index] + Vec3{0, 2, 0};
         CHECK(body.pushOut(centre, .5f) != centre);
         CHECK(body.blocksSegment(centre + Vec3{4.4f, 0, 8}, centre + Vec3{4.4f, 0, -8}, .01f));
         CHECK_FALSE(body.blocksSegment(centre + Vec3{6, 0, 8}, centre + Vec3{6, 0, -8}, .01f));
@@ -149,8 +155,9 @@ TEST_CASE("Dreamcast Dragon arena safe rocks block and change native health tier
           "[legends][dreamcast-scenery][dreamcast-arena-cover][assets]") {
     const auto directory =
         test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native/levels/levelb6";
-    if (!std::filesystem::is_regular_file(directory / "worlds.rom"))
+    if (!std::filesystem::is_regular_file(directory / "worlds.rom")) {
         SKIP("Optional Dreamcast extraction is not installed");
+    }
     const auto bytes = readFile(directory / "worlds.rom");
     const auto scene = formats::LegendsDreamcastScene::parse(bytes);
     auto map = formats::LegendsMap::parseDreamcast(bytes, readFile(directory / "objects.rom"));
@@ -192,8 +199,9 @@ TEST_CASE("Dreamcast Dragon arena safe rocks block and change native health tier
         const auto model = art->models.find("SAFEROCK" + std::to_string(tier) + "L1");
         REQUIRE(model);
         usize expected = 0;
-        for (const auto& part : art->models.mesh(*model).parts)
+        for (const auto& part : art->models.mesh(*model).parts) {
             expected += part.indices.size();
+        }
         const auto placement =
             legendsDreamcastItemPlacement(bodies[0].centre, scene.itemInstances.at(27).rotation);
         const usize actual =
@@ -235,7 +243,7 @@ TEST_CASE("Dreamcast Dragon arena safe rocks block and change native health tier
 
 TEST_CASE("Dreamcast shoot walls share transformed attack and collision surfaces",
           "[legends][dreamcast-scenery]") {
-    formats::ItemInfoRecord info{
+    const formats::ItemInfoRecord info{
         .type = 10, .subtype = 42, .collisionType = 4, .armor = 1, .hitPoints = 25};
     formats::ItemInstanceRecord item;
     item.position = {10, 5, 20};
@@ -244,9 +252,9 @@ TEST_CASE("Dreamcast shoot walls share transformed attack and collision surfaces
     item.triangleCount = 1;
     const std::array faces{
         formats::WorldCollisionTriangle{{0, 0, 1}, {Vec3{-2, 0, 0}, Vec3{2, 0, 0}, Vec3{0, 4, 0}}}};
-    constexpr s32 object = 0x01000007;
+    constexpr s32 kObject = 0x01000007;
     LegendsDreamcastScenery scenery;
-    scenery.add(info, item, 7, object, faces);
+    scenery.add(info, item, 7, kObject, faces);
     const auto targets = scenery.targets();
     REQUIRE(targets.size() == 1);
     const auto& target = targets[0];
@@ -257,11 +265,12 @@ TEST_CASE("Dreamcast shoot walls share transformed attack and collision surfaces
     CHECK(missile.touches(item.position + Vec3{0, 1, 0}, .1f));
     CHECK_FALSE(missile.touches(item.position + Vec3{5, 1, 0}, .1f));
     const Mat4 transform = legendsDreamcastItemPlacement(item.position, item.rotation);
-    for (usize i = 0; i < 3; ++i)
+    for (usize i = 0; i < 3; ++i) {
         CHECK(glm::distance(target.surface[0].vertices[i],
                             Vec3{transform * Vec4{faces[0].vertices[i], 1}}) < .00001f);
-    CHECK(target.surface[0].object == object);
-    CHECK(scenery.targetForObject(object) == target.id);
+    }
+    CHECK(target.surface[0].object == kObject);
+    CHECK(scenery.targetForObject(kObject) == target.id);
     CHECK_FALSE(scenery.targetForObject(7));
     WorldCollision collision;
     scenery.bindCollision(collision);
@@ -278,7 +287,7 @@ TEST_CASE("Dreamcast shoot walls share transformed attack and collision surfaces
     CHECK(scenery.whiteBlend(7) == 0);
     CHECK(scenery.strike(target.id, 100, 0));
     scenery.syncCollision(collision);
-    CHECK_FALSE(collision.solid(object));
+    CHECK_FALSE(collision.solid(kObject));
     CHECK(collision.resolveWalls(point, .5f, point.y, point.y + 2) == point);
     CHECK_FALSE(scenery.visible(7));
     CHECK(scenery.visible(8));
@@ -286,35 +295,40 @@ TEST_CASE("Dreamcast shoot walls share transformed attack and collision surfaces
     CHECK_FALSE(scenery.strike(target.id, 1, 0));
 
     item.triangleIndex = 1;
-    CHECK_THROWS_AS(scenery.add(info, item, 8, object + 1, faces), FormatError);
+    CHECK_THROWS_AS(scenery.add(info, item, 8, kObject + 1, faces), FormatError);
     item.triangleIndex = 0;
     auto badFaces = faces;
     badFaces[0].vertices[0].x = std::numeric_limits<f32>::quiet_NaN();
-    CHECK_THROWS_AS(scenery.add(info, item, 8, object + 1, badFaces), FormatError);
-    CHECK_THROWS_AS(scenery.add(info, item, 8, object, faces), FormatError);
+    CHECK_THROWS_AS(scenery.add(info, item, 8, kObject + 1, badFaces), FormatError);
+    CHECK_THROWS_AS(scenery.add(info, item, 8, kObject, faces), FormatError);
 }
 
 TEST_CASE("Every extracted Dreamcast shoot wall imports its native triangle body and HP",
           "[legends][dreamcast-scenery][assets]") {
     const auto root =
         test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native/levels";
-    if (!std::filesystem::is_directory(root))
+    if (!std::filesystem::is_directory(root)) {
         SKIP("Dreamcast extraction is not installed");
-    usize walls = 0, markers = 0;
+    }
+    usize walls = 0;
+    usize markers = 0;
     for (const auto& entry : std::filesystem::directory_iterator(root)) {
         const auto path = entry.path() / "worlds.rom";
-        if (!std::filesystem::is_regular_file(path))
+        if (!std::filesystem::is_regular_file(path)) {
             continue;
+        }
         const auto bytes = readFile(path);
-        if (bytes.size() < 96)
+        if (bytes.size() < 96) {
             continue;
+        }
         const auto world = formats::WorldFile::parse(bytes);
         LegendsDreamcastScenery scenery;
         for (usize index = 0; index < world.itemInstances.size(); ++index) {
             const auto& item = world.itemInstances[index];
             const auto& info = world.itemInfos.at(static_cast<usize>(item.info));
-            if (info.type != 10 || info.subtype != 42)
+            if (info.type != 10 || info.subtype != 42) {
                 continue;
+            }
             CAPTURE(path, index, item.name);
             if (item.triangleCount == 0) {
                 // H3's trigger-only placement has neither mesh nor collision;
@@ -341,8 +355,9 @@ TEST_CASE("Valley of Fire shoot wall breaks through imported projectile world-hi
           "[legends][dreamcast-scenery][assets]") {
     const auto directory =
         test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native/levels/levelb1";
-    if (!std::filesystem::is_directory(directory))
+    if (!std::filesystem::is_directory(directory)) {
         SKIP("Dreamcast extraction is not installed");
+    }
     const auto world = readFile(directory / "worlds.rom");
     const auto objects = readFile(directory / "objects.rom");
     auto map = formats::LegendsMap::parseDreamcast(world, objects);
