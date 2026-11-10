@@ -31,8 +31,9 @@ using namespace gdl::game;
 
 std::filesystem::path nativeRoot() {
     const auto root = test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native";
-    if (!std::filesystem::exists(root / "levels/levelb1/worlds.rom"))
+    if (!std::filesystem::exists(root / "levels/levelb1/worlds.rom")) {
         SKIP("Optional Dreamcast assets are not installed");
+    }
     return root;
 }
 
@@ -134,7 +135,8 @@ TEST_CASE("Dreamcast B1 admits all native troll generators and ranged variants",
     const auto scope =
         formats::dreamcastLegendsFixtureScope(readFile(root / "worlddata/mount.wad"), "levelb1");
     REQUIRE(scope);
-    usize generators = 0, actors = 0;
+    usize generators = 0;
+    usize actors = 0;
     std::array<usize, 6> variants{};
     for (usize i = 0; i < native.itemInstances.size(); ++i) {
         const auto& item = native.itemInstances[i];
@@ -184,9 +186,10 @@ TEST_CASE("Dreamcast native enemy archive renders brood and all ranged bodies",
     REQUIRE(enemies.loadKind(enemy_type::kTroll));
     const auto* archive = enemies.archiveOf(enemy_type::kTroll);
     REQUIRE(archive);
-    for (const auto tree :
-         {"TRO1", "TRO2", "TRO3", "TROA", "TROB", "TROS", "TRO_ARROW", "TRO_BOMB"})
+    for (const auto* const tree :
+         {"TRO1", "TRO2", "TRO3", "TROA", "TROB", "TROS", "TRO_ARROW", "TRO_BOMB"}) {
         CHECK(archive->trees.find(tree));
+    }
     const std::array players{EnemyView{.player = 0, .position = {0, 0, 10}}};
     for (s32 tier = 1; tier <= 6; ++tier) {
         EnemySpawn spawn;
@@ -320,8 +323,8 @@ TEST_CASE(
     test::FakeRenderDevice device;
     auto scene = LegendsSceneAdapter::load(device, LegendsPlatform::Dreamcast, directory, map, 1);
     REQUIRE(scene);
-    constexpr s32 reported = 16777265;
-    const auto object = scene->fixtureObject(reported);
+    constexpr s32 kReported = 16777265;
+    const auto object = scene->fixtureObject(kReported);
     REQUIRE(object);
     REQUIRE(object->name == "GEN_TRO1L1");
     const auto generator = std::ranges::find_if(scene->generators(), [&](const auto& candidate) {
@@ -335,7 +338,7 @@ TEST_CASE(
     CHECK(object->visible);
     auto species = loadLegendsDreamcastArchive(root / "monsters/tro");
     REQUIRE(species);
-    checkGeneratorArtwork(device, *scene, reported, *species, "GEN_TRO1L1", 28, 32);
+    checkGeneratorArtwork(device, *scene, kReported, *species, "GEN_TRO1L1", 28, 32);
 }
 
 TEST_CASE("Dreamcast generator artwork falls back when its optional species bank is absent",
@@ -344,7 +347,7 @@ TEST_CASE("Dreamcast generator artwork falls back when its optional species bank
     const auto root = test::scratchDirectory("dreamcast-generator-missing-species");
     // Copy only this map's native fixtures and generic fallback (under 2 MB),
     // deliberately excluding every monster, item, sound and GameCube archive.
-    for (const auto name :
+    for (const auto* const name :
          {"levels/levelb1/worlds.rom", "levels/levelb1/objects.rom", "levels/levelb1/textures.rom",
           "worlddata/mount.wad", "generators/objects.rom", "generators/textures.rom"}) {
         const auto path = root / name;
@@ -379,17 +382,17 @@ TEST_CASE("Dreamcast generator artwork falls back when its optional species bank
     REQUIRE(selected >= 0);
     auto fallback = loadLegendsDreamcastArchive(root / "generators");
     REQUIRE(fallback);
-    constexpr std::array models{"GEN_TRO0L1", "GEN_TRO1L1", "GEN_TRO2L1", "GEN_TRO3L1"};
-    constexpr std::array<usize, 4> triangles{34, 28, 28, 22};
-    constexpr std::array<u32, 4> sizes{16, 16, 16, 32};
+    constexpr std::array kModels{"GEN_TRO0L1", "GEN_TRO1L1", "GEN_TRO2L1", "GEN_TRO3L1"};
+    constexpr std::array<usize, 4> kTriangles{34, 28, 28, 22};
+    constexpr std::array<u32, 4> kSizes{16, 16, 16, 32};
     for (s32 state = 3; state >= 0; --state) {
         CAPTURE(state);
         const auto index = static_cast<usize>(state);
         const std::array states{
             ImportedGeneratorState{full->nativeIndex, 0, state, full->position, state > 0}};
         scene->updateGenerators(states);
-        checkGeneratorArtwork(device, *scene, selected, *fallback, models[index], triangles[index],
-                              sizes[index]);
+        checkGeneratorArtwork(device, *scene, selected, *fallback, kModels[index],
+                              kTriangles[index], kSizes[index]);
     }
 }
 
@@ -430,15 +433,15 @@ TEST_CASE("Dreamcast generator species libraries retain every shipped model's re
     REQUIRE(generic);
     // Native monster objects.rom definitions contain GEN_* in these sixteen
     // banks. ICE/WRM/WOL/PLA do not contribute GEN_* definitions to this corpus.
-    constexpr std::array kinds{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 18, 19};
-    constexpr std::array banks{"sco", "tro", "dem", "rat", "gru", "kni", "sna", "sor",
-                               "mum", "spi", "liz", "tre", "mag", "zom", "dog", "ske"};
-    constexpr std::array<usize, 16> expectedModels{2, 4, 3, 2, 4, 4, 3, 4, 4, 2, 4, 4, 2, 4, 3, 4};
+    constexpr std::array kKinds{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 18, 19};
+    constexpr std::array kBanks{"sco", "tro", "dem", "rat", "gru", "kni", "sna", "sor",
+                                "mum", "spi", "liz", "tre", "mag", "zom", "dog", "ske"};
+    constexpr std::array<usize, 16> kExpectedModels{2, 4, 3, 2, 4, 4, 3, 4, 4, 2, 4, 4, 2, 4, 3, 4};
     usize comparedModels = 0;
-    for (usize index = 0; index < kinds.size(); ++index) {
-        const s32 kind = kinds[index];
-        CAPTURE(kind, banks[index]);
-        const auto directory = root / "monsters" / banks[index];
+    for (usize index = 0; index < kKinds.size(); ++index) {
+        const s32 kind = kKinds[index];
+        CAPTURE(kind, kBanks[index]);
+        const auto directory = root / "monsters" / kBanks[index];
         const auto modelBytes = readFile(directory / "objects.rom");
         const auto nativeModels = formats::decodeDreamcastModelLibrary(modelBytes);
         const auto nativeTextures = formats::decodeLegendsDreamcastTextures(
@@ -452,10 +455,13 @@ TEST_CASE("Dreamcast generator species libraries retain every shipped model's re
         REQUIRE(archive);
         CHECK(warnings.empty());
         const std::string prefix = "GEN_" + std::string{enemyKind(kind).prefix};
-        usize models = 0, residentParts = 0, differentFromGeneric = 0;
+        usize models = 0;
+        usize residentParts = 0;
+        usize differentFromGeneric = 0;
         for (const auto& native : nativeModels) {
-            if (!native.name.starts_with(prefix))
+            if (!native.name.starts_with(prefix)) {
                 continue;
+            }
             CAPTURE(native.name);
             const auto loaded = archive->models.find(native.name);
             REQUIRE(loaded);
@@ -485,14 +491,15 @@ TEST_CASE("Dreamcast generator species libraries retain every shipped model's re
                 CHECK(archive->textures.image(slot).height == texture.image.height);
                 if (!texture.image.pixels.empty()) {
                     ++residentParts;
-                    if (const auto low = generic->textures.find(texture.name))
+                    if (const auto low = generic->textures.find(texture.name)) {
                         different |= generic->textures.image(*low).pixels != texture.image.pixels;
+                    }
                 }
             }
             differentFromGeneric += different ? 1 : 0;
             ++models;
         }
-        CHECK(models == expectedModels[index]);
+        CHECK(models == kExpectedModels[index]);
         CHECK(residentParts > 0);
         CHECK(differentFromGeneric > 0);
         comparedModels += models;
@@ -560,7 +567,8 @@ TEST_CASE("Dreamcast B4 demon generators borrow lava without replacing resident 
     scene->highlightFixture(device, Mat4{1}, CameraFrame{}, 1, selected,
                             SelectionHighlight{Vec3{0, 100, 0}});
     REQUIRE_FALSE(device.draws.empty());
-    bool sawLava = false, sawResident = false;
+    bool sawLava = false;
+    bool sawResident = false;
     usize vertices = 0;
     for (const auto& draw : device.draws) {
         vertices += draw.vertices.size();
@@ -663,8 +671,9 @@ TEST_CASE("Dreamcast Temple and Hell generators bind their native mixed broods",
         for (usize index = 0; index < decoded.itemInstances.size(); ++index) {
             const auto& item = decoded.itemInstances[index];
             const auto& info = decoded.itemInfos[static_cast<usize>(item.info)];
-            if (info.type != 3)
+            if (info.type != 3) {
                 continue;
+            }
             const auto generator =
                 legendsDreamcastGenerator(info, item, static_cast<u32>(index), *scope);
             REQUIRE(generator);
@@ -725,16 +734,18 @@ TEST_CASE("Dreamcast Temple and Hell generators bind their native mixed broods",
             const usize choice = ((expected() >> 17U) * 4U) >> 15U;
             generators.update(2, enemies, views);
             s32 child = -1;
-            for (s32 id = 0; id < Enemies::kMost; ++id)
+            for (s32 id = 0; id < Enemies::kMost; ++id) {
                 if (enemies.alive(id) && !enemies.dying(id)) {
                     REQUIRE(child < 0);
                     child = id;
                 }
+            }
             REQUIRE(child >= 0);
             CHECK(enemies.kindOf(child) == kinds[choice]);
             CHECK(enemies.tierOf(child) == tier);
-            if (ways[choice] != 0)
+            if (ways[choice] != 0) {
                 CHECK(enemies.algorithmOf(child) == ways[choice]);
+            }
             seen.insert(enemies.kindOf(child));
             device.draws.clear();
             enemies.draw(device, Mat4{1}, WorldLighting{});
@@ -784,11 +795,12 @@ TEST_CASE("Imported three-species brood retains its original seeded selection",
         const usize choice = ((expected() >> 17U) * 3U) >> 15U;
         generators.update(2, enemies, views);
         s32 child = -1;
-        for (s32 id = 0; id < Enemies::kMost; ++id)
+        for (s32 id = 0; id < Enemies::kMost; ++id) {
             if (enemies.alive(id) && !enemies.dying(id)) {
                 REQUIRE(child < 0);
                 child = id;
             }
+        }
         REQUIRE(child >= 0);
         CHECK(enemies.kindOf(child) == definition.broodKinds[choice]);
         CHECK(enemies.tierOf(child) == 3);
@@ -849,8 +861,8 @@ TEST_CASE("Dreamcast F1 breeds four enemies with the native thirty to ninety tic
         CHECK(generators.countdownOf(0) == held);
     }
     SECTION("native waits expire on their final tick, wrap, and respect admission holds") {
-        constexpr std::array expected{30, 37, 45, 52, 60, 67, 75, 82, 90, 30};
-        for (usize birth = 0; birth < expected.size(); ++birth) {
+        constexpr std::array kExpected{30, 37, 45, 52, 60, 67, 75, 82, 90, 30};
+        for (usize birth = 0; birth < kExpected.size(); ++birth) {
             CAPTURE(birth);
             if (birth != 0) {
                 const s32 remaining = generators.countdownOf(0);
@@ -865,13 +877,14 @@ TEST_CASE("Dreamcast F1 breeds four enemies with the native thirty to ninety tic
             }
             generators.update(1, enemies, views);
             REQUIRE(generators.bredOf(0) == static_cast<s32>(birth + 1));
-            CHECK(generators.countdownOf(0) == expected[birth]);
+            CHECK(generators.countdownOf(0) == kExpected[birth]);
             s32 child = -1;
-            for (s32 id = 0; id < Enemies::kMost; ++id)
+            for (s32 id = 0; id < Enemies::kMost; ++id) {
                 if (enemies.alive(id) && !enemies.dying(id)) {
                     REQUIRE(child < 0);
                     child = id;
                 }
+            }
             REQUIRE(child >= 0);
             CHECK(enemies.tierOf(child) == 3);
             enemies.hurt(child, EnemyHit{.damage = 10000});
@@ -980,8 +993,9 @@ TEST_CASE("Dreamcast generator quota follows damage state and retained game diff
             auto candidate =
                 legendsDreamcastGenerator(decoded.itemInfos[static_cast<usize>(item.info)], item,
                                           static_cast<u32>(index), *scope);
-            if (candidate && (code != "levelb1" || candidate->gameplay.tier == 3))
+            if (candidate && (code != "levelb1" || candidate->gameplay.tier == 3)) {
                 native = std::move(candidate);
+            }
         }
         REQUIRE(native);
         for (const s32 party : {1, 4}) {
@@ -1002,23 +1016,25 @@ TEST_CASE("Dreamcast generator quota follows damage state and retained game diff
                 definition.minimumPlayers = 1;
                 REQUIRE(generators.spawnImported(device, enemies, definition, gain));
                 std::vector<EnemyView> views;
-                for (s32 seat = 0; seat < party; ++seat)
+                views.reserve(static_cast<usize>(party));
+                for (s32 seat = 0; seat < party; ++seat) {
                     views.push_back(EnemyView{.player = seat, .position = {0, 0, 45}});
+                }
                 generators.update(1, enemies, views);
                 REQUIRE(generators.bredOf(0) == 1);
                 const f32 difficulty = scope->generatorDifficulty * gain;
                 CHECK(generators.countdownOf(0) ==
                       static_cast<s32>(30 / std::clamp(difficulty, .5f, 2.f)));
                 const f32 bonus = code == "levele1" ? .5f : code == "levelf1" ? 1.f : 0.f;
-                constexpr std::array nativeBase{6, 4, 2};
+                constexpr std::array kNativeBase{6, 4, 2};
                 for (s32 state = definition.tier; state > 0; --state) {
                     REQUIRE(generators.stateOf(0) == state);
-                    const s32 quota =
-                        std::clamp(static_cast<s32>(
-                                       static_cast<f32>(nativeBase[static_cast<usize>(state - 1)]) *
-                                           (std::clamp(difficulty, .25f, 3.f) + bonus) +
-                                       .5f),
-                                   1, 10);
+                    // The nearest whole brood, a half rounding up: no product here is negative.
+                    const s32 quota = std::clamp(
+                        static_cast<s32>(std::lround(
+                            static_cast<f32>(kNativeBase[static_cast<usize>(state - 1)]) *
+                            (std::clamp(difficulty, .25f, 3.f) + bonus))),
+                        1, 10);
                     CHECK(generators.mostOf(0) == quota);
                     REQUIRE(generators.strike(
                         0, static_cast<f32>(definition.body.hitPoints + definition.body.armor), 0));
@@ -1075,11 +1091,12 @@ TEST_CASE("Dreamcast E1 and F1 spawn selected-tier enemies through LevelOpponent
         s32 child = -1;
         for (s32 tick = 0; tick < 600 && child < 0; ++tick) {
             opponents.update(2, 1.f / 30, players, {}, host, host, host);
-            for (s32 id = 0; id < Enemies::kMost; ++id)
+            for (s32 id = 0; id < Enemies::kMost; ++id) {
                 if (opponents.enemies().alive(id) && opponents.enemies().generatorOf(id) >= 0) {
                     child = id;
                     break;
                 }
+            }
         }
         REQUIRE(child >= 0);
         const s32 kind = opponents.enemies().kindOf(child);
