@@ -32,8 +32,9 @@ formats::ItemInstanceRecord emitter(std::string name, Vec3 position = Vec3{0}, f
     result.name = std::move(name);
     result.position = position;
     const auto bits = std::bit_cast<u32>(radius);
-    for (usize i = 0; i < 4; ++i)
+    for (usize i = 0; i < 4; ++i) {
         result.params[i] = static_cast<u8>(bits >> (i * 8));
+    }
     result.params[8] = static_cast<u8>(flags);
     result.params[9] = static_cast<u8>(flags >> 8);
     return result;
@@ -48,10 +49,12 @@ formats::LegendsDreamcastScene markers() {
 }
 
 std::optional<u32> token(std::string_view name) {
-    if (name == "S_ORGANIST")
+    if (name == "S_ORGANIST") {
         return 0x2b001b;
-    if (name == "S_THNDERSTRM")
+    }
+    if (name == "S_THNDERSTRM") {
         return 0x2b0020;
+    }
     return {};
 }
 
@@ -64,8 +67,9 @@ struct TempleAmbientFixture {
         : root(test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native") {
         const auto directory = root / "levels/levele1";
         if (!std::filesystem::is_regular_file(directory / "worlds.rom") ||
-            !std::filesystem::is_regular_file(root.parent_path() / "disc/AUDIO/AUD_DATA.ROM"))
+            !std::filesystem::is_regular_file(root.parent_path() / "disc/AUDIO/AUD_DATA.ROM")) {
             SKIP("Dreamcast extraction is not installed");
+        }
         const auto objects = readFile(directory / "objects.rom");
         auto map = formats::LegendsMap::parseDreamcast(readFile(directory / "worlds.rom"), objects);
         map.textures =
@@ -85,8 +89,9 @@ f64 mixTicks(AudioMixer& mixer, SoundPlayer& output, usize ticks) {
         output.update();
         mixer.mix(buffer);
         REQUIRE(std::ranges::all_of(buffer, [](f32 sample) { return std::isfinite(sample); }));
-        for (const f32 sample : buffer)
+        for (const f32 sample : buffer) {
             energy += static_cast<f64>(sample) * sample;
+        }
     }
     output.update();
     return energy;
@@ -188,8 +193,9 @@ TEST_CASE("Native Temple organist and storm markers resolve and produce audible 
     const auto root = test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native";
     const auto world = root / "levels/levele1/worlds.rom";
     if (!std::filesystem::is_regular_file(world) ||
-        !std::filesystem::is_regular_file(root.parent_path() / "disc/AUDIO/AUD_DATA.ROM"))
+        !std::filesystem::is_regular_file(root.parent_path() / "disc/AUDIO/AUD_DATA.ROM")) {
         SKIP("Dreamcast extraction is not installed");
+    }
     LegendsDreamcastSounds sounds;
     REQUIRE(sounds.open(root));
     const auto scene = formats::LegendsDreamcastScene::parse(readFile(world));
@@ -247,8 +253,9 @@ TEST_CASE("Dreamcast level starts one native proximity voice and stops it outsid
     REQUIRE(duck);
     CHECK(duck->seconds == .5f);
     CHECK(duck->scale == Catch::Approx(.2f));
-    for (usize tick = 0; tick < 12; ++tick)
+    for (usize tick = 0; tick < 12; ++tick) {
         fixture.level->playSounds(output, position);
+    }
     CHECK(output.voiceCount() == 1);
     CHECK(mixTicks(mixer, output, 12) > .001);
     fixture.level->playSounds(output, position + Vec3{0, 1000, 0});
@@ -269,8 +276,10 @@ TEST_CASE("Dreamcast level starts one native proximity voice and stops it outsid
 
 TEST_CASE("Dreamcast organist resumes the same native PCM cursor after an effects pause",
           "[dreamcast-ambient][dreamcast-ambient-playback][assets]") {
-    AudioMixer mixer{48000}, referenceMixer{48000};
-    SoundPlayer output{mixer}, reference{referenceMixer};
+    AudioMixer mixer{48000};
+    AudioMixer referenceMixer{48000};
+    SoundPlayer output{mixer};
+    SoundPlayer reference{referenceMixer};
     TempleAmbientFixture fixture;
     LegendsDreamcastSounds sounds;
     REQUIRE(sounds.open(fixture.root));
@@ -278,7 +287,8 @@ TEST_CASE("Dreamcast organist resumes the same native PCM cursor after an effect
     const Vec3 organist{33, -.0625f, -120.25f};
     fixture.level->playSounds(output, organist);
     REQUIRE(output.voiceCount() == 1);
-    std::array<f32, 1600> actual{}, expected{};
+    std::array<f32, 1600> actual{};
+    std::array<f32, 1600> expected{};
     const auto compare = [&] {
         output.update();
         reference.update();
@@ -286,8 +296,9 @@ TEST_CASE("Dreamcast organist resumes the same native PCM cursor after an effect
         referenceMixer.mix(expected);
         REQUIRE(actual == expected);
     };
-    for (usize tick = 0; tick < 12; ++tick)
+    for (usize tick = 0; tick < 12; ++tick) {
         compare();
+    }
     output.setCategoryPaused(SoundCategory::Effects, true);
     fixture.level->pauseSounds();
     for (usize tick = 0; tick < 90; ++tick) {
@@ -298,20 +309,21 @@ TEST_CASE("Dreamcast organist resumes the same native PCM cursor after an effect
     }
     output.setCategoryPaused(SoundCategory::Effects, false);
     fixture.level->playSounds(output, organist);
-    for (usize tick = 0; tick < 60; ++tick)
+    for (usize tick = 0; tick < 60; ++tick) {
         compare();
+    }
     fixture.level->stopSounds();
     reference.stopAll();
 }
 
 TEST_CASE("Dreamcast collapsing scenery retains its native realm sound table",
           "[dreamcast-ambient][dreamcast-collapse]") {
-    constexpr std::array<u32, 9> expected{0,        0x23003b, 0x210001, 0x240029, 0x250001,
-                                          0x2c0000, 0x2d001e, 0x22002a, 0};
-    for (usize realm = 0; realm < expected.size(); ++realm) {
-        CHECK(dreamcastCollapseSound(static_cast<s32>(realm)) == expected[realm]);
+    constexpr std::array<u32, 9> kExpected{0,        0x23003b, 0x210001, 0x240029, 0x250001,
+                                           0x2c0000, 0x2d001e, 0x22002a, 0};
+    for (usize realm = 0; realm < kExpected.size(); ++realm) {
+        CHECK(dreamcastCollapseSound(static_cast<s32>(realm)) == kExpected[realm]);
         CHECK(dreamcastCollapseSound(static_cast<s32>(realm), true) ==
-              (realm == 6 ? 0x2e0000 : expected[realm]));
+              (realm == 6 ? 0x2e0000 : kExpected[realm]));
     }
     CHECK(dreamcastCollapseSound(-1) == 0);
     CHECK(dreamcastCollapseSound(9) == 0);

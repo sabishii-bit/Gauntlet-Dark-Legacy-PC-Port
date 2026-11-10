@@ -22,8 +22,9 @@ TEST_CASE("Dreamcast opponent events reach their native mixer without GameCube o
     const auto root = test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native";
     const auto directory = root / "levels/levelb1";
     if (!std::filesystem::is_regular_file(directory / "worlds.rom") ||
-        !std::filesystem::is_regular_file(root.parent_path() / "disc/AUDIO/AUD_DATA.ROM"))
+        !std::filesystem::is_regular_file(root.parent_path() / "disc/AUDIO/AUD_DATA.ROM")) {
         SKIP("Dreamcast extraction is not installed");
+    }
     test::FakeRenderDevice device;
     const auto objects = readFile(directory / "objects.rom");
     auto map = formats::LegendsMap::parseDreamcast(readFile(directory / "worlds.rom"), objects);
@@ -31,8 +32,10 @@ TEST_CASE("Dreamcast opponent events reach their native mixer without GameCube o
         formats::decodeLegendsDreamcastTextures(objects, readFile(directory / "textures.rom"));
     auto adapter = LegendsSceneAdapter::load(device, LegendsPlatform::Dreamcast, directory, map);
     LegendsLevel level(device, map, std::move(adapter), directory, test::dataDirectory());
-    AudioMixer mixer{48000}, referenceMixer{48000};
-    SoundPlayer output{mixer}, reference{referenceMixer};
+    AudioMixer mixer{48000};
+    AudioMixer referenceMixer{48000};
+    SoundPlayer output{mixer};
+    SoundPlayer reference{referenceMixer};
     LegendsDreamcastSounds sounds;
     REQUIRE(sounds.open(root));
     u32 expected = 0;
@@ -77,7 +80,8 @@ TEST_CASE("Dreamcast opponent events reach their native mixer without GameCube o
         expected = 0x210030;
     }
     REQUIRE(sounds.play(reference, expected) != kNoSound);
-    std::array<f32, 1600> actual{}, original{};
+    std::array<f32, 1600> actual{};
+    std::array<f32, 1600> original{};
     f64 energy = 0;
     for (usize tick = 0; tick < 60; ++tick) {
         CAPTURE(tick, expected);
@@ -87,8 +91,9 @@ TEST_CASE("Dreamcast opponent events reach their native mixer without GameCube o
         mixer.mix(actual);
         referenceMixer.mix(original);
         REQUIRE(actual == original);
-        for (const auto sample : actual)
+        for (const auto sample : actual) {
             energy += static_cast<f64>(sample) * sample;
+        }
     }
     CHECK(energy > .001);
     level.stopSounds();

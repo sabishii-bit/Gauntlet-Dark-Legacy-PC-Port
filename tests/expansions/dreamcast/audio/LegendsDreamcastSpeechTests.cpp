@@ -21,8 +21,9 @@ using namespace gdl::game;
 std::filesystem::path nativeRoot() {
     const auto root = test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native";
     if (!std::filesystem::is_regular_file(root / "worlddata/mount.wad") ||
-        !std::filesystem::is_regular_file(root.parent_path() / "disc/AUDIO/AUD_DATA.ROM"))
+        !std::filesystem::is_regular_file(root.parent_path() / "disc/AUDIO/AUD_DATA.ROM")) {
         SKIP("Optional Dreamcast extraction is not installed");
+    }
     return root;
 }
 
@@ -30,9 +31,10 @@ TEST_CASE("Dreamcast rune narration retains native count and plural phrase order
           "[dreamcast-speech]") {
     CHECK(LegendsDreamcastSpeech::runestoneCue(0) == std::vector<u32>{0x10079});
     CHECK(LegendsDreamcastSpeech::runestoneCue(1) == std::vector<u32>{0x10068});
-    for (u32 count = 2; count <= 12; ++count)
+    for (u32 count = 2; count <= 12; ++count) {
         CHECK(LegendsDreamcastSpeech::runestoneCue(count) ==
               std::vector<u32>{0x1006aU + count, 0x10069});
+    }
     CHECK(LegendsDreamcastSpeech::runestoneCue(13) == std::vector<u32>{0x10077});
 }
 
@@ -61,7 +63,8 @@ TEST_CASE("Dreamcast narration drains behind parked menus and survives owner tra
     const auto root = nativeRoot();
     AudioMixer mixer{48000};
     SoundPlayer output{mixer};
-    LegendsDreamcastSpeech speech, next;
+    LegendsDreamcastSpeech speech;
+    LegendsDreamcastSpeech next;
     REQUIRE(speech.open(root));
     REQUIRE(next.open(root));
     const auto stage =
@@ -73,7 +76,8 @@ TEST_CASE("Dreamcast narration drains behind parked menus and survives owner tra
     REQUIRE(tower);
     next.setEntry(*tower);
     std::vector<SoundPlayer::Event> events;
-    SoundPlayer::Capture observe{&output, [&](const auto& event) { events.push_back(event); }};
+    const SoundPlayer::Capture observe{&output,
+                                       [&](const auto& event) { events.push_back(event); }};
     REQUIRE(speech.enqueue(output, speech.entryCue()));
     REQUIRE(speech.enqueue(output, LegendsDreamcastSpeech::runestoneCue(2)));
     REQUIRE(events.size() == 2);
@@ -92,9 +96,11 @@ TEST_CASE("Dreamcast narration drains behind parked menus and survives owner tra
     for (usize tick = 0; tick < 900; ++tick) {
         output.update();
         mixer.mix(samples);
-        if (tick > 240)
-            for (const auto sample : samples)
+        if (tick > 240) {
+            for (const auto sample : samples) {
                 lateEnergy += static_cast<f64>(sample) * sample;
+            }
+        }
     }
     CHECK(lateEnergy > .001);
     CHECK_FALSE(next.playing(output));
@@ -125,20 +131,25 @@ TEST_CASE("Dreamcast runtime admits one native rune count for the combined party
         formats::decodeLegendsDreamcastTextures(objects, readFile(directory / "textures.rom"));
     test::FakeRenderDevice device;
     auto adapter = LegendsSceneAdapter::load(device, LegendsPlatform::Dreamcast, directory, map, 2);
-    const auto pickups = adapter->pickups();
-    const auto rune = std::ranges::find_if(pickups, [](const auto& pickup) {
-        return pickup.award && pickup.award->kind == LegendsRelic::Runestone;
-    });
-    REQUIRE(rune != pickups.end());
-    const auto pickup = *rune;
-    CharacterSave first, second;
+    // A copy, not a reference: the level the adapter moves into adds to and edits its pickups.
+    const auto pickup = [&]() -> LegendsPickup {
+        const auto pickups = adapter->pickups();
+        const auto rune = std::ranges::find_if(pickups, [](const auto& candidate) {
+            return candidate.award && candidate.award->kind == LegendsRelic::Runestone;
+        });
+        REQUIRE(rune != pickups.end());
+        return *rune;
+    }();
+    CharacterSave first;
+    CharacterSave second;
     first.character = 0;
     second.character = 1;
     const s32 oldRune = pickup.award->index == 0 ? 1 : 0;
     second.progress()
         .legendsProgress(LegendsPlatform::Dreamcast)
         .add(LegendsRelic::Runestone, oldRune);
-    PlayerActor a, b;
+    PlayerActor a;
+    PlayerActor b;
     a.spawn(0, first, nullptr, pickup.position, 0);
     b.spawn(1, second, nullptr, pickup.position + Vec3{100, 0, 100}, 0);
     std::array<PlayerActor*, 2> actors{&a, &b};
@@ -146,7 +157,8 @@ TEST_CASE("Dreamcast runtime admits one native rune count for the combined party
     AudioMixer mixer{48000};
     SoundPlayer output{mixer};
     std::vector<SoundPlayer::Event> events;
-    SoundPlayer::Capture observe{&output, [&](const auto& event) { events.push_back(event); }};
+    const SoundPlayer::Capture observe{&output,
+                                       [&](const auto& event) { events.push_back(event); }};
     level.updateParty(actors, 1.0f / 60, false);
     const auto receipts = level.takePickups();
     const auto receipt = std::ranges::find(receipts, pickup.name, &ImportedPickup::name);
@@ -176,12 +188,15 @@ TEST_CASE("Dreamcast obelisk contact plays the complete native cue without dista
         formats::decodeLegendsDreamcastTextures(objects, readFile(directory / "textures.rom"));
     test::FakeRenderDevice device;
     auto adapter = LegendsSceneAdapter::load(device, LegendsPlatform::Dreamcast, directory, map);
-    const auto pickups = adapter->pickups();
-    const auto found = std::ranges::find_if(pickups, [](const auto& pickup) {
-        return pickup.award && pickup.award->kind == LegendsRelic::Obelisk;
-    });
-    REQUIRE(found != pickups.end());
-    const auto pickup = *found;
+    // A copy, not a reference: the level the adapter moves into adds to and edits its pickups.
+    const auto pickup = [&]() -> LegendsPickup {
+        const auto pickups = adapter->pickups();
+        const auto found = std::ranges::find_if(pickups, [](const auto& candidate) {
+            return candidate.award && candidate.award->kind == LegendsRelic::Obelisk;
+        });
+        REQUIRE(found != pickups.end());
+        return *found;
+    }();
     const auto bodies = adapter->containerObstacles();
     const auto body = std::ranges::find(bodies, pickup.position, &Obstacle::centre);
     REQUIRE(body != bodies.end());
@@ -195,8 +210,10 @@ TEST_CASE("Dreamcast obelisk contact plays the complete native cue without dista
     actor.spawn(0, save, nullptr, blockedPosition, 0);
     std::array<PlayerActor*, 1> party{&actor};
     LegendsLevel level{device, map, std::move(adapter), directory, test::dataDirectory()};
-    AudioMixer mixer{48000}, referenceMixer{48000};
-    SoundPlayer output{mixer}, reference{referenceMixer};
+    AudioMixer mixer{48000};
+    AudioMixer referenceMixer{48000};
+    SoundPlayer output{mixer};
+    SoundPlayer reference{referenceMixer};
     LegendsDreamcastSounds sounds;
     REQUIRE(sounds.open(root));
     REQUIRE(sounds.namedToken("S_OBELISKPKUP") == 0x5f);
@@ -206,7 +223,8 @@ TEST_CASE("Dreamcast obelisk contact plays the complete native cue without dista
               .progress()
               .legendsProgress(LegendsPlatform::Dreamcast)
               .has(LegendsRelic::Obelisk, pickup.award->index));
-    std::array<f32, 1600> actual{}, expected{};
+    std::array<f32, 1600> actual{};
+    std::array<f32, 1600> expected{};
     f64 energy = 0;
     for (usize tick = 0; tick < 300; ++tick) {
         level.playSounds(output, Vec3{100000});
@@ -215,8 +233,9 @@ TEST_CASE("Dreamcast obelisk contact plays the complete native cue without dista
         mixer.mix(actual);
         referenceMixer.mix(expected);
         REQUIRE(actual == expected);
-        for (const auto value : actual)
+        for (const auto value : actual) {
             energy += static_cast<f64>(value) * value;
+        }
     }
     CHECK(energy > .001);
     CHECK(output.voiceCount() == 0);
