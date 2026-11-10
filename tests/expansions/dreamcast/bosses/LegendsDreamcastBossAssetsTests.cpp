@@ -36,8 +36,9 @@ TEST_CASE("Dreamcast boss loading never falls back to another platform",
 TEST_CASE("Dreamcast boss camera reads native attention rather than reward or drift fields",
           "[dreamcast][dc-boss-assets][assets]") {
     const auto root = test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native";
-    if (!std::filesystem::is_regular_file(root / "critters/dragon.wad"))
+    if (!std::filesystem::is_regular_file(root / "critters/dragon.wad")) {
         SKIP("Dreamcast boss data not installed");
+    }
     struct Expected {
         const char* bank;
         f32 attention;
@@ -57,8 +58,9 @@ TEST_CASE("Dreamcast boss camera reads native attention rather than reward or dr
 TEST_CASE("Dreamcast six native bosses bind all authored attacks and collision nodes",
           "[dreamcast][dc-boss-assets][assets]") {
     const auto root = test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native";
-    if (!std::filesystem::is_regular_file(root / "critters/dragon.wad"))
+    if (!std::filesystem::is_regular_file(root / "critters/dragon.wad")) {
         SKIP("Dreamcast boss data not installed");
+    }
     test::FakeRenderDevice device;
     // Deliberately supply no GameCube or N64 bank. Body, moves and effects must
     // remain bindable solely from this expansion's immutable asset directory.
@@ -79,8 +81,9 @@ TEST_CASE("Dreamcast six native bosses bind all authored attacks and collision n
                     CAPTURE(move.name, move.anim, move.colnode);
                     const auto index = stock->tree->findSequence(move.anim);
                     REQUIRE(index);
-                    if (!move.colnode.empty())
+                    if (!move.colnode.empty()) {
                         CHECK(stock->tree->findNode(move.colnode, kCombatantNodeNameLength));
+                    }
                     TreePose pose;
                     const auto& sequence = stock->tree->sequences[*index];
                     for (const f32 fraction : {0.0f, 0.5f, 1.0f}) {
@@ -88,16 +91,19 @@ TEST_CASE("Dreamcast six native bosses bind all authored attacks and collision n
                                       static_cast<f32>(std::max(sequence.frames - 1, 0)) *
                                           fraction);
                         for (const auto& matrix : pose.matrices()) {
-                            for (int col = 0; col < 4; ++col)
-                                for (int row = 0; row < 4; ++row)
+                            for (int col = 0; col < 4; ++col) {
+                                for (int row = 0; row < 4; ++row) {
                                     REQUIRE(std::isfinite(matrix[col][row]));
+                                }
+                            }
                         }
                     }
                 }
             };
             validate(stock->data);
-            for (const auto& child : stock->children)
+            for (const auto& child : stock->children) {
                 validate(child);
+            }
             CHECK(stock->children.size() == (kind == 35 ? 3 : 0));
             if (kind == 42 || kind == 43) {
                 const auto roar = stock->archive.trees.find("BOSSROARFX");
@@ -111,8 +117,9 @@ TEST_CASE("Dreamcast six native bosses bind all authored attacks and collision n
 TEST_CASE("Dreamcast Dragon and Chimera select attacks relative to their bodies",
           "[dreamcast][dc-boss-ai][assets]") {
     const auto root = test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native";
-    if (!std::filesystem::is_regular_file(root / "critters/dragon.wad"))
+    if (!std::filesystem::is_regular_file(root / "critters/dragon.wad")) {
         SKIP("Dreamcast boss data not installed");
+    }
     test::FakeRenderDevice device;
     for (const s32 kind : {34, 35}) {
         DYNAMIC_SECTION("kind " << kind) {
@@ -123,8 +130,10 @@ TEST_CASE("Dreamcast Dragon and Chimera select attacks relative to their bodies"
             REQUIRE(actor.spawn(*stock, 0, {0, 0, 0}, 0, nullptr, {}, 'A'));
             // Run the actual native START before testing an independently chosen
             // attack. setMove() intentionally holds a move, so is not an AI test.
-            for (s32 frame = 0; frame < 600 && actor.moveType() == MoveDefinition::kStart; ++frame)
+            for (s32 frame = 0; frame < 600 && actor.moveType() == MoveDefinition::kStart;
+                 ++frame) {
                 actor.update(1, 1.0f / 60, {});
+            }
             REQUIRE(actor.moveType() != MoveDefinition::kStart);
             Combatant::LocalSnapshot initial;
             REQUIRE(actor.saveLocal(initial));
@@ -141,29 +150,34 @@ TEST_CASE("Dreamcast Dragon and Chimera select attacks relative to their bodies"
                 for (s32 frame = 0; frame < 600; ++frame) {
                     actor.update(1, 1.0f / 60, players);
                     const auto inspect = [&](const Combatant& part) {
-                        if (part.moveType() < MoveDefinition::kAttackFrom)
+                        if (part.moveType() < MoveDefinition::kAttackFrom) {
                             return;
+                        }
                         attacks.emplace(part.moveName());
                         const auto index = part.data()->moveNamed(part.moveName());
                         REQUIRE(index);
                         const auto& move = part.data()->moves()[*index];
-                        if (move.target.maxDistance > 0 && move.target.maxDistance <= 26)
+                        if (move.target.maxDistance > 0 && move.target.maxDistance <= 26) {
                             closeAttack = true;
+                        }
                     };
                     inspect(actor);
-                    for (s32 child = 1; child <= static_cast<s32>(actor.childCount()); ++child)
-                        if (const auto* part = actor.child(child))
+                    for (s32 child = 1; child <= static_cast<s32>(actor.childCount()); ++child) {
+                        if (const auto* part = actor.child(child)) {
                             inspect(*part);
+                        }
+                    }
                     actor.takeCues();
                     actor.takeBlows();
                     actor.takeShots();
                 }
                 INFO("selected native attacks: " << attacks.size());
                 CHECK_FALSE(attacks.empty());
-                if (distance == 10)
+                if (distance == 10) {
                     CHECK(closeAttack);
-                else
+                } else {
                     CHECK_FALSE(closeAttack);
+                }
             }
         }
     }
@@ -172,8 +186,9 @@ TEST_CASE("Dreamcast Dragon and Chimera select attacks relative to their bodies"
 TEST_CASE("Dreamcast melee contact follows native nodes and damaging frame windows",
           "[dreamcast][dc-boss-ai][dc-boss-melee][assets]") {
     const auto root = test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native";
-    if (!std::filesystem::is_regular_file(root / "critters/dragon.wad"))
+    if (!std::filesystem::is_regular_file(root / "critters/dragon.wad")) {
         SKIP("Dreamcast boss data not installed");
+    }
     test::FakeRenderDevice device;
     for (const s32 kind : {34, 36, 37, 42, 43}) {
         DYNAMIC_SECTION("kind " << kind) {
@@ -189,8 +204,9 @@ TEST_CASE("Dreamcast melee contact follows native nodes and damaging frame windo
                 const auto& move = stock->data.moves()[index];
                 const auto* damage = stock->data.damage(move.damage0);
                 if (!damage || damage->type != AttackDefinition::kBlow || damage->damage <= 0 ||
-                    move.frameStart <= 0 || move.colnode.empty())
+                    move.frameStart <= 0 || move.colnode.empty()) {
                     continue;
+                }
                 ++checked;
                 CAPTURE(move.name, move.colnode);
                 const s32 last = std::max(move.frameStart, move.frameEnd);
@@ -227,8 +243,9 @@ TEST_CASE("Dreamcast melee contact follows native nodes and damaging frame windo
                     }
                 }
             }
-            if (kind == 34)
+            if (kind == 34) {
                 CHECK(checked == 2);
+            }
         }
     }
 }
@@ -237,8 +254,9 @@ TEST_CASE(
     "Dreamcast Djinn Drider and Skorne autonomously keep attacking nearby and distant players",
     "[dreamcast][dc-boss-ai][dc-boss-autonomous][assets]") {
     const auto root = test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native";
-    if (!std::filesystem::is_regular_file(root / "critters/djinn.wad"))
+    if (!std::filesystem::is_regular_file(root / "critters/djinn.wad")) {
         SKIP("Dreamcast boss data not installed");
+    }
     struct Case {
         std::string_view level;
         f32 nearDistance;
@@ -246,10 +264,10 @@ TEST_CASE(
     };
     // Stay within the authored melee/projectile bands. These are target probes,
     // not claims that every native move must be selected or share one cooldown.
-    constexpr std::array cases{Case{"levelc5", 15, 55}, Case{"leveld5", 15, 45},
-                               Case{"levele2", 26, 55}, Case{"levelf2", 18, 55}};
+    constexpr std::array kCases{Case{"levelc5", 15, 55}, Case{"leveld5", 15, 45},
+                                Case{"levele2", 26, 55}, Case{"levelf2", 18, 55}};
     test::FakeRenderDevice device;
-    for (const auto& testCase : cases) {
+    for (const auto& testCase : kCases) {
         DYNAMIC_SECTION(testCase.level) {
             const auto encounter = legendsDreamcastBoss(
                 readFile(root / formats::dreamcastLegendsWorldDataFile(testCase.level)),
@@ -262,8 +280,9 @@ TEST_CASE(
             Combatant actor;
             REQUIRE(actor.spawn(*stock, 0, encounter->combat.position, encounter->combat.yaw,
                                 nullptr, {}, 'A'));
-            for (s32 tick = 0; tick < 900 && actor.moveType() == MoveDefinition::kStart; ++tick)
+            for (s32 tick = 0; tick < 900 && actor.moveType() == MoveDefinition::kStart; ++tick) {
                 actor.update(1, 1.f / 60, {});
+            }
             REQUIRE(actor.moveType() != MoveDefinition::kStart);
             Combatant::LocalSnapshot afterEntrance;
             REQUIRE(actor.saveLocal(afterEntrance));
@@ -288,8 +307,9 @@ TEST_CASE(
                     REQUIRE(std::isfinite(actor.position().y));
                     REQUIRE(std::isfinite(actor.position().z));
                     if (frame != actor.animation().frame() ||
-                        generation != actor.animation().generation())
+                        generation != actor.animation().generation()) {
                         ++animatedTicks;
+                    }
                     if (actor.moveType() >= MoveDefinition::kAttackFrom) {
                         attacks.emplace(actor.moveName());
                         attackGenerations.insert(actor.animation().generation());
