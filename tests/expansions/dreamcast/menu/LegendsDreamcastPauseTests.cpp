@@ -44,8 +44,9 @@ void loadPauseWorld(LevelWorld& world, RenderDevice& device, const std::filesyst
     reference.name = "dreamcast:levelb1";
     reference.title = "Valley";
     auto layout = WorldLayout::fromDecoded({}, {}, {-20, 0, -20}, {20, 30, 20});
-    REQUIRE(world.loadImported(device, root, reference, std::move(layout), std::move(collision),
-                               std::move(imported)));
+    const bool loaded = world.loadImported(device, root, reference, std::move(layout),
+                                           std::move(collision), std::move(imported));
+    REQUIRE(loaded);
 }
 
 bool drawnImage(const test::FakeRenderDevice& device, const Image& expected) {
@@ -131,7 +132,7 @@ TEST_CASE("Dreamcast imported pause retains the standard GDL menus and functiona
     // or their complete base-game track, fill, thumb and endcaps.
     TextureSet sliders;
     REQUIRE(sliders.load(root / "STATIC"));
-    for (const auto name : AudioSlider::kTextures) {
+    for (const auto* const name : AudioSlider::kTextures) {
         CAPTURE(name);
         const auto index = sliders.find(name);
         REQUIRE(index);
@@ -157,7 +158,7 @@ TEST_CASE("Absent Dreamcast menu assets retain the working base pause menu",
     CHECK_FALSE(imported->style.menuText().ready());
     LevelWorld world;
     loadPauseWorld(world, device, root, imported);
-    GameConfig config;
+    const GameConfig config;
     GameServices services;
     services.config = &config;
     services.unpackedRoot = root;
