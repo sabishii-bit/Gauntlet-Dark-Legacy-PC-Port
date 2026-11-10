@@ -17,19 +17,23 @@ void LegendsSceneAdapter::bindDreamcastContainer(RenderDevice& device,
                                                  const formats::ItemInfoRecord& info,
                                                  const formats::ItemInstanceRecord& instance,
                                                  u32 nativeIndex, usize idleFigure, s32 realmType) {
-    if (idleFigure >= m_fixtures.size())
+    if (idleFigure >= m_fixtures.size()) {
         return;
+    }
     const auto warn = [&](const std::string& text) {
-        if (!text.empty() && std::ranges::find(m_warnings, text) == m_warnings.end())
+        if (!text.empty() && std::ranges::find(m_warnings, text) == m_warnings.end()) {
             m_warnings.push_back(text);
+        }
     };
     std::string diagnostic;
     auto definition = legendsDreamcastContainer(info, instance, nativeIndex, &diagnostic);
     warn(diagnostic);
-    if (!definition)
+    if (!definition) {
         return;
-    if (m_containers.size() >= kMostContainers)
+    }
+    if (m_containers.size() >= kMostContainers) {
         throw FormatError("Too many native container combat targets");
+    }
     const auto sequence = [&](usize figure, std::string_view name) -> s32 {
         const auto* tree = m_fixtures[figure].tree();
         const auto found = tree ? tree->findSequence(name) : std::nullopt;
@@ -43,10 +47,12 @@ void LegendsSceneAdapter::bindDreamcastContainer(RenderDevice& device,
         definition->interactive = false;
         warn("Dreamcast container is missing native state sequences: " + definition->closed);
     }
-    if (idle >= 0)
+    if (idle >= 0) {
         m_fixtures[idleFigure].play(idle, ItemFigure::Playback::Loop);
+    }
     // Type 10's first parameter is its trap subtype, not a loot definition.
-    const s16 contents = info.type == 2 ? std::bit_cast<s16>(readU16LE(instance.params, 0)) : -1;
+    const s16 contents =
+        info.type == 2 ? std::bit_cast<s16>(readU16LE(instance.params, 0)) : s16{-1};
     ContainerPresentation binding{LegendsContainer{*definition}};
     binding.closedFigure = binding.openingFigure = binding.brokenFigure = idleFigure;
     binding.openingSequence = opening;
@@ -111,8 +117,9 @@ void LegendsSceneAdapter::bindDreamcastContainer(RenderDevice& device,
             place(device, definition->goldOpening, goldPlacement);
             if (m_fixtures.size() == gold || sequence(gold, "ACTIVE") < 0 ||
                 sequence(gold, "OPEN") < 0) {
-                if (m_fixtures.size() != gold)
+                if (m_fixtures.size() != gold) {
                     m_hiddenFixtures[gold] = true;
+                }
                 definition->interactive = false;
                 warn("Dreamcast gold chest variant is unavailable: " + definition->goldOpening);
                 continue;
@@ -159,16 +166,19 @@ void LegendsSceneAdapter::bindDreamcastContainer(RenderDevice& device,
 
 void LegendsSceneAdapter::selectDreamcastContainer(usize index) {
     auto& binding = m_containers[index];
-    if (!binding.dreamcastContents)
+    if (!binding.dreamcastContents) {
         return;
+    }
     const auto selected =
         m_dreamcastLoot.select(*binding.dreamcastContents, binding.state.definition().nativeIndex);
-    if (!selected)
+    if (!selected) {
         return;
+    }
     const auto outcome = std::ranges::find(binding.outcomes, static_cast<u16>(*selected),
                                            &ContainerPresentation::Outcome::key);
-    if (outcome == binding.outcomes.end())
+    if (outcome == binding.outcomes.end()) {
         throw FormatError("Dreamcast container selected unbound contents");
+    }
     binding.openingFigure = outcome->openingFigure;
     binding.brokenFigure = outcome->brokenFigure;
     binding.openingSequence = outcome->openingSequence;

@@ -12,9 +12,11 @@ bool LegendsSceneAdapter::bindDreamcastFalling(const formats::ItemInfoRecord& in
 
 void LegendsSceneAdapter::touchDreamcastFalling(std::span<const LegendsPortalVisitor> visitors) {
     const auto newlyActive = m_dreamcastFalling.touch(visitors);
-    if (m_dreamcastCollapseSound)
-        for (const Vec3 position : newlyActive)
+    if (m_dreamcastCollapseSound) {
+        for (const Vec3 position : newlyActive) {
             m_soundEvents.push_back({*m_dreamcastCollapseSound, position});
+        }
+    }
 }
 
 void LegendsSceneAdapter::updateDreamcastFalling(f32 seconds) {
@@ -22,8 +24,9 @@ void LegendsSceneAdapter::updateDreamcastFalling(f32 seconds) {
     for (const auto& piece : m_dreamcastFalling.pieces()) {
         // Keep the existing hidden-state admission for optional/player-count
         // fixtures. Native removal is one-way until the level is reopened.
-        if (!piece.body.visible)
+        if (!piece.body.visible) {
             m_hiddenFixtures[piece.figure] = true;
+        }
         m_fixtures[piece.figure].placeAt(
             legendsDreamcastItemPlacement(piece.body.position, piece.body.rotation));
     }

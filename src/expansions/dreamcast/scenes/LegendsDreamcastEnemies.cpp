@@ -17,16 +17,18 @@ void LegendsSceneAdapter::bindDreamcastGenerator(
     const formats::LegendsDreamcastFixtureScope& nativeScope,
     const std::filesystem::path& nativeRoot) {
     const auto warn = [&](const std::string& text) {
-        if (!text.empty() && std::ranges::find(m_warnings, text) == m_warnings.end())
+        if (!text.empty() && std::ranges::find(m_warnings, text) == m_warnings.end()) {
             m_warnings.push_back(text);
+        }
     };
     std::string diagnostic;
     auto definition =
         legendsDreamcastGenerator(info, instance, nativeIndex, nativeScope, &diagnostic);
     warn(diagnostic);
-    if (!definition)
+    if (!definition) {
         return;
-    const usize kind = static_cast<usize>(definition->gameplay.kind);
+    }
+    const auto kind = static_cast<usize>(definition->gameplay.kind);
     const bool mixed = definition->gameplay.broodTier != 0;
     if (!mixed && !m_dreamcastGeneratorArchivesLoaded[kind]) {
         m_dreamcastGeneratorArchivesLoaded[kind] = true;
@@ -38,11 +40,13 @@ void LegendsSceneAdapter::bindDreamcastGenerator(
     // owner-scoped lookup so generic low-detail models never shadow them.
     ItemArchive* speciesArchive = mixed ? nullptr : m_dreamcastGeneratorArchives[kind].get();
     AssetScope speciesScope;
-    if (speciesArchive)
+    if (speciesArchive) {
         speciesScope.add(*speciesArchive);
+    }
     AssetScope fallback;
-    for (auto& archive : m_archives)
+    for (auto& archive : m_archives) {
         fallback.add(*archive);
+    }
     std::array<ItemArchive*, 4> owners{};
     // LoadWorld admits the reduced GENERATORS bank only for gen_active<2;
     // do_items8c0abc48..8c0abca0 spawns enemies only for that same option>2.
@@ -51,8 +55,9 @@ void LegendsSceneAdapter::bindDreamcastGenerator(
     // a generic GEN_TRO2L1 must not beat the native GEN_TRO2L1ROOT.
     for (usize state = 0; state < definition->models.size(); ++state) {
         auto& name = definition->models[state];
-        if (name.empty())
+        if (name.empty()) {
             continue;
+        }
         // InitItemInfo binds item trees from the item banks, not the monster
         // animation bank. Generators take FindItemObject8c0a8040's static
         // name/L1/L1ROOT result, even when the spelling ends in ROOT.
@@ -66,9 +71,10 @@ void LegendsSceneAdapter::bindDreamcastGenerator(
             name.clear();
             continue;
         }
-        if (speciesArchive)
+        if (speciesArchive) {
             warn("Dreamcast generator artwork is missing from its monster library: " + name +
                  "; using fallback artwork");
+        }
         if (const auto model = fallback.findObject(name)) {
             owners[state] = model->archive;
             name = model->name;
@@ -85,7 +91,7 @@ void LegendsSceneAdapter::bindDreamcastGenerator(
     placement.rotation = instance.rotation;
     constexpr u32 kPresentationFlags = 0x0f8008c0U;
     const u32 flags = (info.objectFlags & kPresentationFlags) | object_flags::kSorted;
-    const usize tier = static_cast<usize>(definition->gameplay.tier);
+    const auto tier = static_cast<usize>(definition->gameplay.tier);
     const usize idleFigure = m_fixtures.size();
     place(device, definition->models[tier], placement, 1, flags, owners[tier]);
     if (idleFigure == m_fixtures.size()) {
@@ -98,8 +104,9 @@ void LegendsSceneAdapter::bindDreamcastGenerator(
     binding.yaw = definition->gameplay.yaw;
     for (usize state = 0; state < definition->models.size(); ++state) {
         const auto& name = definition->models[state];
-        if (name.empty())
+        if (name.empty()) {
             continue;
+        }
         if (state == static_cast<usize>(definition->gameplay.tier)) {
             binding.figures[state] = idleFigure;
             continue;

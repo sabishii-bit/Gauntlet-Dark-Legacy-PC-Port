@@ -14,12 +14,14 @@ bool LegendsSceneAdapter::bindDreamcastGate(const formats::ItemInfoRecord& info,
     std::string diagnostic;
     auto definition = legendsDreamcastGate(info, instance, nativeIndex, &diagnostic);
     if (!definition) {
-        if (!diagnostic.empty() && std::ranges::find(m_warnings, diagnostic) == m_warnings.end())
+        if (!diagnostic.empty() && std::ranges::find(m_warnings, diagnostic) == m_warnings.end()) {
             m_warnings.push_back(std::move(diagnostic));
+        }
         return false;
     }
-    if (figure >= m_fixtures.size())
+    if (figure >= m_fixtures.size()) {
         return false;
+    }
     const auto* tree = m_fixtures[figure].tree();
     const auto closed = tree ? tree->findSequence("CLOSE") : std::nullopt;
     const auto opening = tree ? tree->findSequence("ACTIV") : std::nullopt;
@@ -35,8 +37,8 @@ bool LegendsSceneAdapter::bindDreamcastGate(const formats::ItemInfoRecord& info,
     m_fixtures[figure].capturePresentation();
     // Dreamcast retains one animated tree throughout; N64 retains its separate
     // closed/opening TRAP figures. Both share one key transaction and obstacles.
-    m_gates.push_back({LegendsGate{std::move(*definition)}, figure, figure,
-                       static_cast<s32>(*opening), static_cast<s32>(*opened)});
+    m_gates.push_back({LegendsGate{*definition}, figure, figure, static_cast<s32>(*opening),
+                       static_cast<s32>(*opened)});
     return true;
 }
 

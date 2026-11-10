@@ -40,19 +40,22 @@ bool LegendsSceneAdapter::bindDreamcastArenaRock(RenderDevice& device,
     binding.armor = rock->armor;
     binding.dormant = rock->dormant;
     AssetScope scope;
-    for (auto& archive : m_archives)
+    for (auto& archive : m_archives) {
         scope.add(*archive);
+    }
     ItemInstance placement;
     placement.position = instance.position;
     placement.rotation = instance.rotation;
     for (usize state = 0; state < binding.figures.size(); ++state) {
         const auto model = scope.findObject(std::format("{}{}", info.name, state));
-        if (!model)
+        if (!model) {
             continue; // Native AddItemWobj hides a genuinely absent damage model.
+        }
         const usize figure = m_fixtures.size();
         place(device, model->name, placement, 1, object_flags::kSorted, model->archive);
-        if (figure == m_fixtures.size())
+        if (figure == m_fixtures.size()) {
             continue;
+        }
         binding.figures[state] = figure;
         m_hiddenFixtures[figure] = true;
     }
@@ -75,44 +78,47 @@ void LegendsSceneAdapter::restoreDreamcastChimeraCover(RenderDevice& device,
                                                        const std::filesystem::path& directory,
                                                        ItemArchive* art) {
     if (m_platform != LegendsPlatform::Dreamcast ||
-        toLowerAscii(paths::utf8(directory.filename())) != "levela5" || !m_arenaRocks.empty())
+        toLowerAscii(paths::utf8(directory.filename())) != "levela5" || !m_arenaRocks.empty()) {
         return;
+    }
     // Compatibility restoration, not a recovered Dreamcast spawn script:
     // GC A5 items12..14 and N64 castle5 SHOOTW_1/2/3 retain these three blocks.
     // DC omits their placements/info but retains the same SAFEROCK1L1 mesh.
     // Use only that level's loaded DC artwork; never borrow another platform.
-    if (art == nullptr || !art->models.find("SAFEROCK1L1"))
+    if (art == nullptr || !art->models.find("SAFEROCK1L1")) {
         return;
-    constexpr std::array<Vec3, 3> positions{Vec3{-30.125f, .25f, -16.5f},
-                                            Vec3{29.4609375f, .25f, -16.5f}, Vec3{0, 0, -6.5f}};
+    }
+    constexpr std::array<Vec3, 3> kPositions{Vec3{-30.125f, .25f, -16.5f},
+                                             Vec3{29.4609375f, .25f, -16.5f}, Vec3{0, 0, -6.5f}};
     // Convert the GC authored yaw to the DC matrix convention. These square
     // bodies are symmetric, but the texture orientation still follows the art.
-    constexpr std::array<f32, 3> yaws{kHalfPi, -kHalfPi, 0};
-    constexpr std::array<Vec3, 8> corners{
+    constexpr std::array<f32, 3> kYaws{kHalfPi, -kHalfPi, 0};
+    constexpr std::array<Vec3, 8> kCorners{
         Vec3{-4.5f, 0, -4.5f}, Vec3{4.5f, 0, -4.5f}, Vec3{4.5f, 0, 4.5f}, Vec3{-4.5f, 0, 4.5f},
         Vec3{-4.5f, 5, -4.5f}, Vec3{4.5f, 5, -4.5f}, Vec3{4.5f, 5, 4.5f}, Vec3{-4.5f, 5, 4.5f}};
-    constexpr std::array<std::array<usize, 3>, 12> faces{{{0, 1, 2},
-                                                          {0, 2, 3},
-                                                          {4, 6, 5},
-                                                          {4, 7, 6},
-                                                          {0, 5, 1},
-                                                          {0, 4, 5},
-                                                          {1, 6, 2},
-                                                          {1, 5, 6},
-                                                          {2, 7, 3},
-                                                          {2, 6, 7},
-                                                          {3, 4, 0},
-                                                          {3, 7, 4}}};
-    for (usize index = 0; index < positions.size(); ++index) {
+    constexpr std::array<std::array<usize, 3>, 12> kFaces{{{0, 1, 2},
+                                                           {0, 2, 3},
+                                                           {4, 6, 5},
+                                                           {4, 7, 6},
+                                                           {0, 5, 1},
+                                                           {0, 4, 5},
+                                                           {1, 6, 2},
+                                                           {1, 5, 6},
+                                                           {2, 7, 3},
+                                                           {2, 6, 7},
+                                                           {3, 4, 0},
+                                                           {3, 7, 4}}};
+    for (usize index = 0; index < kPositions.size(); ++index) {
         ItemInstance placement;
-        placement.position = positions[index];
-        placement.rotation.y = yaws[index];
+        placement.position = kPositions[index];
+        placement.rotation.y = kYaws[index];
         const usize figure = m_fixtures.size();
         place(device, "SAFEROCK1L1", placement, 1, object_flags::kSorted, art);
-        if (figure == m_fixtures.size())
+        if (figure == m_fixtures.size()) {
             continue; // No invisible blocking volume when optional native art is absent.
+        }
         ArenaRockPresentation binding;
-        binding.definition = {positions[index], yaws[index], 6.4f, 5, 100};
+        binding.definition = {kPositions[index], kYaws[index], 6.4f, 5, 100};
         binding.boxHalfExtents = {4.5f, 4.5f};
         binding.health = 100;
         binding.armor = 10;
@@ -120,10 +126,11 @@ void LegendsSceneAdapter::restoreDreamcastChimeraCover(RenderDevice& device,
         binding.figures[1] = figure;
         const Mat4 transform =
             legendsDreamcastItemPlacement(placement.position, placement.rotation);
-        for (const auto& face : faces) {
+        for (const auto& face : kFaces) {
             CollisionTriangle triangle;
-            for (usize vertex = 0; vertex < 3; ++vertex)
-                triangle.vertices[vertex] = Vec3{transform * Vec4{corners[face[vertex]], 1}};
+            for (usize vertex = 0; vertex < 3; ++vertex) {
+                triangle.vertices[vertex] = Vec3{transform * Vec4{kCorners[face[vertex]], 1}};
+            }
             triangle.normal =
                 glm::normalize(glm::cross(triangle.vertices[1] - triangle.vertices[0],
                                           triangle.vertices[2] - triangle.vertices[0]));
@@ -137,8 +144,9 @@ void LegendsSceneAdapter::restoreDreamcastChimeraCover(RenderDevice& device,
 bool LegendsSceneAdapter::bindDreamcastEntranceRock(const formats::ItemInfoRecord& info,
                                                     const formats::ItemInstanceRecord& instance,
                                                     u32 index, usize figure) {
-    if (figure >= m_fixtures.size() || !LegendsDreamcastBossEntrance::accepts(info, instance))
+    if (figure >= m_fixtures.size() || !LegendsDreamcastBossEntrance::accepts(info, instance)) {
         return false;
+    }
     // The caller supplies the same AddItemSub placement as the visible figure.
     m_dreamcastBossEntrance.add(index, instance.position, instance.rotation);
     m_dreamcastBossEntranceFigures.push_back(figure);

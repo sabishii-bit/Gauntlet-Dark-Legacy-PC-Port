@@ -13,8 +13,9 @@ bool LegendsSceneAdapter::bindDreamcastObelisk(const formats::ItemInfoRecord& in
     std::string diagnostic;
     auto definition = legendsDreamcastObelisk(info, instance, nativeIndex, &diagnostic);
     const auto warn = [&](std::string message) {
-        if (!message.empty() && std::ranges::find(m_warnings, message) == m_warnings.end())
+        if (!message.empty() && std::ranges::find(m_warnings, message) == m_warnings.end()) {
             m_warnings.push_back(std::move(message));
+        }
     };
     if (!definition || figure >= m_fixtures.size()) {
         warn(std::move(diagnostic));
@@ -49,10 +50,12 @@ void LegendsSceneAdapter::updateDreamcastObelisks() {
         auto& figure = m_fixtures[binding.figure];
         binding.body.centre = pickup.position;
         if (!m_progressInitialized && pickup.award &&
-            m_partyProgress.has(pickup.award->kind, pickup.award->index))
+            m_partyProgress.has(pickup.award->kind, pickup.award->index)) {
             pickup.collected = true;
-        if (!pickup.collected)
+        }
+        if (!pickup.collected) {
             continue;
+        }
         if (!binding.activated) {
             binding.activated = true;
             if (!m_progressInitialized) {
