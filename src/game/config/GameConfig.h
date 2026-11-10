@@ -94,6 +94,7 @@ struct CombatConfig {
     bool autoAim = true;
 };
 
+// NOLINTNEXTLINE(bugprone-exception-escape): the map's move is not noexcept on every library
 struct GameOptionsConfig {
     bool expandedShop = false;
     bool autoSave = false;
@@ -210,6 +211,7 @@ struct PlayerControlConfig {
  * Everything the game reads instead of hard-coding: the shipped defaults in `data/config.json`
  * with the player's settings merged over them.
  */
+// NOLINTNEXTLINE(bugprone-exception-escape): the options' map move is not noexcept on every library
 struct GameConfig {
     DisplayConfig display;
     TimingConfig timing;
