@@ -120,7 +120,7 @@ TEST_CASE("contradictory transport path policies fail before opening a socket", 
 
 TEST_CASE(
     "provider adapter carries native admission loading inputs and departure without global pause",
-    "[netplay][iroh]") {
+    "[netplay][iroh][serial]") {
     auto wire = open();
     auto remote = open(wire->invitation());
     HostedRoom a(*wire, true, 2, "adapter-test", std::string(64, 'a'));
@@ -201,7 +201,8 @@ TEST_CASE(
     CHECK(host.match().phase() == MatchSession::Phase::Running);
 }
 
-TEST_CASE("provider room rejects incompatible content without losing the host", "[netplay][iroh]") {
+TEST_CASE("provider room rejects incompatible content without losing the host",
+          "[netplay][iroh][serial]") {
     auto wire = open();
     auto remote = open(wire->invitation());
     HostedRoom a(*wire, true, 1, "adapter-test", std::string(64, 'a'));
@@ -218,7 +219,7 @@ TEST_CASE("provider room rejects incompatible content without losing the host", 
 }
 
 TEST_CASE("three independent provider peers admit a late third player and start together",
-          "[netplay][iroh][three-peers]") {
+          "[netplay][iroh][three-peers][serial]") {
     auto wire = open();
     auto remote = open(wire->invitation());
     HostedRoom a(*wire, true, 1, "adapter-test", std::string(64, 'a'));

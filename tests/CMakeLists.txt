@@ -1033,6 +1033,12 @@ add_dependencies(tests gauntlet_shaders expansion_audio_tests)
 # data is not installed.
 set(GDL_TEST_DISCOVERY_FILTER "~[gpu]" CACHE STRING
     "Catch2 discovery filter (public release runners exclude private asset tests)")
-catch_discover_tests(tests TEST_SPEC "${GDL_TEST_DISCOVERY_FILTER}" TEST_PREFIX "unit.")
+# Cases tagged [serial] hold real network peers or audio playback to wall-clock deadlines
+# that a machine loaded by `ctest -j` can make them miss, so ctest runs each one alone.
+# Each list adds its tag to the filter's own term, whose patterns Catch2 joins with AND:
+# the discovery script passes on only the first of several TEST_SPEC arguments.
+catch_discover_tests(tests TEST_SPEC "${GDL_TEST_DISCOVERY_FILTER}~[serial]" TEST_PREFIX "unit.")
+catch_discover_tests(tests TEST_SPEC "${GDL_TEST_DISCOVERY_FILTER}[serial]" TEST_PREFIX "unit."
+    PROPERTIES RUN_SERIAL TRUE)
 add_test(NAME gpu.integration COMMAND tests "[gpu]")
 set_tests_properties(gpu.integration PROPERTIES LABELS gpu)

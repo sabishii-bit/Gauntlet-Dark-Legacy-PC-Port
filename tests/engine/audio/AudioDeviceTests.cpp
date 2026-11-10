@@ -11,7 +11,7 @@ namespace {
 
 using namespace gdl;
 
-TEST_CASE("the audio device opens or degrades to silence", "[audio][device]") {
+TEST_CASE("the audio device opens or degrades to silence", "[audio][device][serial]") {
     AudioDevice device;
     REQUIRE(device.mixer().outputRate() == AudioDevice::kSampleRate);
 

@@ -135,7 +135,7 @@ TEST_CASE("a stall is announced after a second with the seconds left to its dead
 }
 
 TEST_CASE("menu-created iroh rooms select characters ready and enter the shared tower",
-          "[netplay][online-lobby][assets]") {
+          "[netplay][online-lobby][assets][serial]") {
     REQUIRE(NativeOnlineIdentity::prepareProcessNumeric());
     const bool threaded = GENERATE(false, true);
     auto hostBackend = std::make_unique<test::FakeRenderDevice>();
@@ -187,7 +187,7 @@ TEST_CASE("online lobby starts and resumes on host and guest Vulkan renderers",
 }
 
 TEST_CASE("three real iroh menu peers run four split-seat players and play on when one departs",
-          "[netplay][online-lobby][online-lobby-multipeer][assets]") {
+          "[netplay][online-lobby][online-lobby-multipeer][assets][serial]") {
     REQUIRE(NativeOnlineIdentity::prepareProcessNumeric());
     const auto root = test::assetOrSkip("WEAPONS/ANIM.PS2").parent_path().parent_path();
     LevelCatalog levels;
@@ -354,7 +354,7 @@ TEST_CASE("three real iroh menu peers run four split-seat players and play on wh
 }
 
 TEST_CASE("development iroh launcher retains explicit native setup and automatic start",
-          "[netplay][online-native-launch][assets]") {
+          "[netplay][online-native-launch][assets][serial]") {
     REQUIRE(NativeOnlineIdentity::prepareProcessNumeric());
     const auto root = test::assetOrSkip("WEAPONS/ANIM.PS2").parent_path().parent_path();
     const auto directory = test::scratchDirectory("online-native-launch");

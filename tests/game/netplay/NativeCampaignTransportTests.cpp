@@ -185,7 +185,7 @@ void sameParty(std::span<const PartyMember> first, std::span<const PartyMember> 
 } // namespace
 
 TEST_CASE("real iroh campaign exits through tally and shop into the agreed tower",
-          "[netplay][iroh][native-campaign-transport][assets]") {
+          "[netplay][iroh][native-campaign-transport][assets][serial]") {
     REQUIRE(NativeOnlineIdentity::prepareProcessNumeric());
     const auto assets = test::assetOrSkip("WEAPONS/ANIM.PS2").parent_path().parent_path();
     LevelCatalog levels;
