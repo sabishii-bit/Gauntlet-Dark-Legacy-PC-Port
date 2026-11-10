@@ -198,7 +198,7 @@ void LegendsSceneAdapter::updateTowerProgress(bool initial) {
     for (usize i = 0; i < m_towerRunestones.size(); ++i) {
         if (m_towerRunestones[i]) {
             const auto* entry = m_towerCeremony ? m_towerCeremony->current() : nullptr;
-            const bool flying = m_towerCeremony && m_towerCeremony->active() && entry &&
+            const bool flying = m_towerCeremony && m_towerCeremony->active() && entry != nullptr &&
                                 entry->kind == LegendsTowerCeremony::Kind::Rune &&
                                 entry->index == i && m_towerCeremony->runeInFlight();
             m_hiddenFixtures[*m_towerRunestones[i]] =
@@ -286,7 +286,8 @@ void LegendsSceneAdapter::updateTowerCeremony(f32 seconds) {
     const auto* entry = ceremony.current();
     for (usize i = 0; i < m_towerRunestones.size(); ++i) {
         if (const auto figure = m_towerRunestones[i]) {
-            const bool flying = entry && entry->kind == LegendsTowerCeremony::Kind::Rune &&
+            const bool flying = entry != nullptr &&
+                                entry->kind == LegendsTowerCeremony::Kind::Rune &&
                                 entry->index == i && ceremony.runeInFlight();
             m_fixtures[*figure].placeAt(flying ? ceremony.runePlacement()
                                                : m_towerRunePlacements[i]);
