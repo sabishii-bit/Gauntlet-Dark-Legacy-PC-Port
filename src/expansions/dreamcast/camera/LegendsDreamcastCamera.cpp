@@ -168,12 +168,14 @@ Vec3 LegendsDreamcastTowerCamera::constrainMovement(Vec3 from, Vec3 to) const {
 }
 
 bool LegendsDreamcastLevelCamera::partyMiddle(std::span<const CameraSubject> subjects, Vec3& point,
-                                              usize& count) const {
-    Vec3 low{0}, high{0};
+                                              usize& count) {
+    Vec3 low{0};
+    Vec3 high{0};
     count = 0;
     for (const auto& subject : subjects) {
-        if (!validPoint(subject.feet) || count == 4)
+        if (!validPoint(subject.feet) || count == 4) {
             continue;
+        }
         low = count == 0 ? subject.feet : glm::min(low, subject.feet);
         high = count == 0 ? subject.feet : glm::max(high, subject.feet);
         ++count;
@@ -188,9 +190,10 @@ bool LegendsDreamcastLevelCamera::partyMiddle(std::span<const CameraSubject> sub
 Vec3 LegendsDreamcastLevelCamera::bounded(Vec3 point) const {
     for (usize axis = 0; axis < 3; ++axis) {
         const auto component = static_cast<glm::length_t>(axis);
-        if (m_range.boundsMax[component] > m_range.boundsMin[component])
+        if (m_range.boundsMax[component] > m_range.boundsMin[component]) {
             point[component] = std::clamp(point[component], m_range.boundsMin[component],
                                           m_range.boundsMax[component]);
+        }
     }
     return point;
 }
@@ -203,8 +206,9 @@ void LegendsDreamcastLevelCamera::chooseMarker(Vec3 point) {
     // 8c07b180 compares the current transmitter with its nearest alternative.
     // Height is penalized twice, so a bridge's lower path cannot steal its eye.
     for (usize i = 0; i < m_markers.size(); ++i) {
-        if (static_cast<s32>(i) == m_startMarker)
+        if (static_cast<s32>(i) == m_startMarker) {
             continue;
+        }
         const Vec3 delta = point - m_markers[i].position;
         const f32 distance = glm::length(delta) + std::abs(delta.y);
         if (static_cast<s32>(i) == m_marker) {
@@ -221,14 +225,16 @@ void LegendsDreamcastLevelCamera::chooseMarker(Vec3 point) {
             next = distance;
         }
     }
-    if (nearest < 0)
+    if (nearest < 0) {
         return;
+    }
     if (second < 0) {
         m_marker = nearest;
         return;
     }
-    if (next < best)
+    if (next < best) {
         std::swap(nearest, second);
+    }
     const Vec3 a = m_markers[static_cast<usize>(nearest)].position;
     const Vec3 line = m_markers[static_cast<usize>(second)].position - a;
     const f32 lengthSquared = glm::dot(line, line);
@@ -236,10 +242,11 @@ void LegendsDreamcastLevelCamera::chooseMarker(Vec3 point) {
                           ? std::clamp(glm::dot(point - a, line) / lengthSquared, 0.0f, 1.0f)
                           : 0;
     const f32 threshold = m_marker < 0 ? .5f : 1.0f / 3.0f;
-    if (ratio <= threshold)
+    if (ratio <= threshold) {
         m_marker = nearest;
-    else if (ratio >= 1.0f - threshold)
+    } else if (ratio >= 1.0f - threshold) {
         m_marker = second;
+    }
 }
 
 void LegendsDreamcastLevelCamera::reset(std::span<const CameraSubject> subjects,
@@ -247,22 +254,27 @@ void LegendsDreamcastLevelCamera::reset(std::span<const CameraSubject> subjects,
                                         const CameraRange& range, bool opening) {
     *this = {};
     m_range = range;
-    if (!std::isfinite(m_range.radiusMin) || m_range.radiusMin <= 0)
+    if (!std::isfinite(m_range.radiusMin) || m_range.radiusMin <= 0) {
         m_range.radiusMin = 20;
-    if (!std::isfinite(m_range.radiusMax) || m_range.radiusMax < m_range.radiusMin)
+    }
+    if (!std::isfinite(m_range.radiusMax) || m_range.radiusMax < m_range.radiusMin) {
         m_range.radiusMax = m_range.radiusMin;
-    if (!std::isfinite(m_range.minPitch))
+    }
+    if (!std::isfinite(m_range.minPitch)) {
         m_range.minPitch = .7f;
+    }
     if (!validPoint(m_range.boundsMin) || !validPoint(m_range.boundsMax)) {
         m_range.boundsMin = Vec3{0};
         m_range.boundsMax = Vec3{0};
     }
     for (const auto& marker : markers) {
         if ((marker.kind != LocatorKind::CameraGame && marker.kind != LocatorKind::CameraStart) ||
-            !validPoint(marker.position) || !validPoint(marker.rotation))
+            !validPoint(marker.position) || !validPoint(marker.rotation)) {
             continue;
-        if (marker.kind == LocatorKind::CameraStart && m_startMarker < 0)
+        }
+        if (marker.kind == LocatorKind::CameraStart && m_startMarker < 0) {
             m_startMarker = static_cast<s32>(m_markers.size());
+        }
         m_markers.push_back(marker);
     }
     Vec3 middle{0};
@@ -275,8 +287,9 @@ void LegendsDreamcastLevelCamera::reset(std::span<const CameraSubject> subjects,
         m_followCamera.yaw = m_markers[static_cast<usize>(m_marker)].rotation.y;
         m_followCamera.pitch = m_markers[static_cast<usize>(m_marker)].rotation.x;
     }
-    if (count > 1)
+    if (count > 1) {
         m_followCamera.pitch = std::max(m_followCamera.pitch, m_range.minPitch);
+    }
     // The native single-player path returns radiusMin (8c076eee). Until the
     // projected multi-player roster is adapted, retain the authored maximum
     // as a conservative party fit rather than coupling it to local video FOV.
@@ -300,8 +313,9 @@ void LegendsDreamcastLevelCamera::reset(std::span<const CameraSubject> subjects,
 }
 
 void LegendsDreamcastLevelCamera::update(std::span<const CameraSubject> subjects, f32 seconds) {
-    if (!std::isfinite(seconds) || seconds <= 0)
+    if (!std::isfinite(seconds) || seconds <= 0) {
         return;
+    }
     m_accumulator += std::min(seconds, .5f);
     while (m_accumulator + .000001f >= kStep) {
         m_accumulator = std::max(m_accumulator - kStep, 0.0f);
@@ -310,8 +324,9 @@ void LegendsDreamcastLevelCamera::update(std::span<const CameraSubject> subjects
 }
 
 void LegendsDreamcastLevelCamera::focusOn(Vec3 attention) {
-    if (!validPoint(attention) || m_ceremonyAttention == attention)
+    if (!validPoint(attention) || m_ceremonyAttention == attention) {
         return;
+    }
     // CameraAddSubject8c076020 ->8c075ec0 copies the new attention and
     // clears velocity, retaining the eye at camera+4c. Skorne does not call
     // this path: its runestone presentation retains the arena camera.
@@ -334,18 +349,21 @@ void LegendsDreamcastLevelCamera::aim() {
     const f32 horizontal = std::hypot(direction.x, direction.z);
     if (glm::length(direction) > .001f) {
         m_camera.pitch = std::atan2(-direction.y, horizontal);
-        if (horizontal > .001f)
+        if (horizontal > .001f) {
             m_camera.yaw = std::atan2(direction.x, direction.z);
+        }
     }
 }
 
 void LegendsDreamcastLevelCamera::step(std::span<const CameraSubject> subjects) {
-    if (m_ceremonyAttention)
+    if (m_ceremonyAttention) {
         return;
+    }
     Vec3 middle{0};
     usize count = 0;
-    if (!partyMiddle(subjects, middle, count))
+    if (!partyMiddle(subjects, middle, count)) {
         return;
+    }
     m_previousCamera = m_camera;
     m_previousAttention = m_attention;
     chooseMarker(middle);
@@ -372,18 +390,20 @@ void LegendsDreamcastLevelCamera::step(std::span<const CameraSubject> subjects) 
     m_historyIndex = (m_historyIndex + 1) % m_history.size();
     m_historyCount = std::min(m_historyCount + 1, m_history.size());
     Vec3 target{0};
-    for (usize i = 0; i < m_historyCount; ++i)
+    for (usize i = 0; i < m_historyCount; ++i) {
         target += m_history[i];
+    }
     target /= static_cast<f32>(m_historyCount);
     // 8c076eea sets single-player screen occupancy to .55, below the .6
     // threshold in 8c07d200: 1.4 units/step, with a 16-unit arrival region.
     // This is not player speed. Boss arenas use the separate BCAM path.
-    constexpr f32 speed = 1.4f, arrival = 16.0f;
-    m_followSpeed += std::clamp(speed - m_followSpeed, -.6f, .6f);
+    constexpr f32 kSpeed = 1.4f;
+    constexpr f32 kArrival = 16.0f;
+    m_followSpeed += std::clamp(kSpeed - m_followSpeed, -.6f, .6f);
     const Vec3 delta = target - m_followAttention;
     const f32 distance = glm::length(delta);
     m_followAttention +=
-        distance <= m_followSpeed ? delta : delta * (m_followSpeed / std::min(distance, arrival));
+        distance <= m_followSpeed ? delta : delta * (m_followSpeed / std::min(distance, kArrival));
     m_followCamera.position = m_followAttention - m_followCamera.forward() * m_distance;
     if (!m_introActive) {
         m_camera = m_followCamera;
@@ -392,8 +412,9 @@ void LegendsDreamcastLevelCamera::step(std::span<const CameraSubject> subjects) 
     }
     if (m_introHold > 1) {
         m_introHold = std::max(m_introHold - 2, 1);
-        if (m_introHold > 1)
+        if (m_introHold > 1) {
             return;
+        }
     }
     // 8c078de0 moves eye/look-at independently once the 91-tick title hold
     // expires. Both must arrive before handing the view to the follow camera.

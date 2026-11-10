@@ -8,8 +8,7 @@
 
 #include "game/camera/TowerCamera.h"
 
-namespace gdl {
-namespace game {
+namespace gdl::game {
 
 /** Dreamcast's playable tower camera, separate from its ordinary level
  * transmitter camera. The first transmitter is the hub of a radial view, not
@@ -65,7 +64,7 @@ public:
     s32 marker() const { return m_marker; }
 
 private:
-    bool partyMiddle(std::span<const CameraSubject> subjects, Vec3& point, usize& count) const;
+    static bool partyMiddle(std::span<const CameraSubject> subjects, Vec3& point, usize& count);
     Vec3 bounded(Vec3 point) const;
     void chooseMarker(Vec3 point);
     void step(std::span<const CameraSubject> subjects);
@@ -93,5 +92,4 @@ private:
     std::optional<Vec3> m_ceremonyAttention;
 };
 
-} // namespace game
-} // namespace gdl
+} // namespace gdl::game

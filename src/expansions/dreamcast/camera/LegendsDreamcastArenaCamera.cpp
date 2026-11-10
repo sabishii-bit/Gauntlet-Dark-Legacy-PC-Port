@@ -39,8 +39,9 @@ WorldCamera keepPartyVisible(WorldCamera camera, std::span<const CameraSubject> 
     // Retreat only the presented eye by the analytic amount needed to keep
     // the party inside the canonical frustum. The core state, angles, focus,
     // movement limits and authored constants remain untouched.
-    if (retreat > 0)
+    if (retreat > 0) {
         camera.position -= forward * (retreat + .001f);
+    }
     return camera;
 }
 } // namespace
@@ -55,8 +56,9 @@ void LegendsDreamcastArenaCamera::reset(const BossCameraSubject& boss,
     m_range = range;
     for (const auto& marker : markers) {
         if (marker.kind == LocatorKind::CameraGame && finite(marker.position) &&
-            finite(marker.rotation))
+            finite(marker.rotation)) {
             m_markers.push_back(marker);
+        }
     }
     step(party, true);
     m_previousCamera = m_camera;
@@ -65,14 +67,16 @@ void LegendsDreamcastArenaCamera::reset(const BossCameraSubject& boss,
 
 void LegendsDreamcastArenaCamera::trackBoss(const BossCameraSubject& boss) {
     if (!finite(boss.position) || !finite(boss.attentionOffset) || !std::isfinite(boss.facing) ||
-        !std::isfinite(boss.radius) || boss.radius < 0)
+        !std::isfinite(boss.radius) || boss.radius < 0) {
         return;
+    }
     m_boss = boss;
 }
 
 void LegendsDreamcastArenaCamera::step(std::span<const CameraSubject> party, bool reset) {
-    if (party.empty())
+    if (party.empty()) {
         return;
+    }
     BossCameraInfo record = m_record;
     BossCameraSubject boss = m_boss;
     // Native 8c081540 fits the TYPE-radius sphere at actor+0x40. Supplying
@@ -84,7 +88,8 @@ void LegendsDreamcastArenaCamera::step(std::span<const CameraSubject> party, boo
     if ((record.flags & BossCameraInfo::kTracksParty) != 0 && boss.awake) {
         // GetBossAvgPos8c081320, r7=1 at8c082420: the midpoint of player
         // and boss attention bounds, not an arithmetic average of the party.
-        Vec3 low = boss.position, high = low;
+        Vec3 low = boss.position;
+        Vec3 high = low;
         for (const auto& player : party) {
             low = glm::min(low, player.follow);
             high = glm::max(high, player.follow);
@@ -101,17 +106,19 @@ void LegendsDreamcastArenaCamera::step(std::span<const CameraSubject> party, boo
     approach.attentionBounds = std::pair{m_range.boundsMin, m_range.boundsMax};
     m_previousCamera = m_camera;
     m_previousAttention = m_attention;
-    if (reset)
+    if (reset) {
         m_core.reset(boss, party, record, kView, m_markers, &approach);
-    else
+    } else {
         m_core.update(boss, party, record, kView, kStep, m_markers, &approach);
+    }
     m_camera = keepPartyVisible(m_core.camera(), party);
     m_attention = m_core.attention();
 }
 
 void LegendsDreamcastArenaCamera::update(std::span<const CameraSubject> party, f32 seconds) {
-    if (m_frozen || !std::isfinite(seconds) || seconds <= 0)
+    if (m_frozen || !std::isfinite(seconds) || seconds <= 0) {
         return;
+    }
     m_accumulator += std::min(seconds, .5f);
     while (m_accumulator + .000001f >= kStep) {
         m_accumulator = std::max(m_accumulator - kStep, 0.0f);
@@ -120,8 +127,9 @@ void LegendsDreamcastArenaCamera::update(std::span<const CameraSubject> party, f
 }
 
 void LegendsDreamcastArenaCamera::focusOn(Vec3 attention) {
-    if (!finite(attention))
+    if (!finite(attention)) {
         return;
+    }
     m_frozen = true;
     m_attention = attention;
     const Vec3 direction = attention - m_camera.position;
