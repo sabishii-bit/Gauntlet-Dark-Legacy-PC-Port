@@ -569,23 +569,26 @@ bool WorldCollision::ownFloorExitBlocked(s32 object) const {
 }
 
 void WorldCollision::setCollisionSide(s32 object, u8 side) {
-    if (object < 0)
+    if (object < 0) {
         return;
+    }
     const auto found =
         std::ranges::lower_bound(m_collisionSides, object, {}, &std::pair<s32, u8>::first);
     if (found != m_collisionSides.end() && found->first == object) {
-        if (side == 0)
+        if (side == 0) {
             m_collisionSides.erase(found);
-        else
+        } else {
             found->second = side;
+        }
     } else if (side != 0) {
         m_collisionSides.insert(found, {object, side});
     }
 }
 
 bool WorldCollision::solid(s32 object, u8 sideMask) const {
-    if (std::ranges::find(m_hidden, object) != m_hidden.end())
+    if (std::ranges::find(m_hidden, object) != m_hidden.end()) {
         return false;
+    }
     const auto found =
         std::ranges::lower_bound(m_collisionSides, object, {}, &std::pair<s32, u8>::first);
     return found == m_collisionSides.end() || found->first != object ||

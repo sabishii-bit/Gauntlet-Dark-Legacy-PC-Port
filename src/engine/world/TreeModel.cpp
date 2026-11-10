@@ -25,12 +25,14 @@ constexpr std::array<std::string_view, 2> kMarkerNodes{"DUMMY", "NULL1"};
 } // namespace
 
 bool TreeModel::compatibleMorph(const Mesh& from, const Mesh& to) {
-    if (from.parts.size() != to.parts.size() || from.prelit != to.prelit)
+    if (from.parts.size() != to.parts.size() || from.prelit != to.prelit) {
         return false;
+    }
     for (usize i = 0; i < from.parts.size(); ++i) {
         if (from.parts[i].rgbLightmap != to.parts[i].rgbLightmap ||
-            (from.parts[i].rgbLightmap && from.parts[i].lightmap != to.parts[i].lightmap))
+            (from.parts[i].rgbLightmap && from.parts[i].lightmap != to.parts[i].lightmap)) {
             return false;
+        }
     }
     return true;
 }
@@ -106,12 +108,14 @@ TreeModel::Shape TreeModel::makeShape(const Mesh& mesh, TextureSet& textures, Re
         shape.slots.push_back(part.texture);
         const Texture* lightmap = nullptr;
         if (part.rgbLightmap) {
-            if (part.lightmap == 0 || part.lightmap >= textures.size())
+            if (part.lightmap == 0 || part.lightmap >= textures.size()) {
                 throw std::runtime_error("mesh refers to a lightmap outside the set");
+            }
             lightmap = &textures.texture(device, part.lightmap);
         }
-        if (lightmapped)
+        if (lightmapped) {
             shape.lightmaps.push_back(lightmap);
+        }
     }
     cutBySilhouettes(shape, textures, device, lenders);
     return shape;
