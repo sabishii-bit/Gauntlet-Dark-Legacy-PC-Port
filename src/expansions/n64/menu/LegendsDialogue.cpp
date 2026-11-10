@@ -22,14 +22,12 @@ bool LegendsDialogue::load(RenderDevice& device, const std::filesystem::path& na
     m_menuTextures = {};
     const AssetLocator files{nativeRoot};
     const auto font = files.find("Font/glfm3.fnt");
-    const auto titleFont = files.find("Font/bigfont.fnt");
     const auto objects = files.find("hud/objects.wad");
-    if (!font || !titleFont || !objects) {
+    if (!font || !objects) {
         return false;
     }
     try {
         auto decoded = formats::LegendsN64Font::parse(readFile(*font));
-        auto decodedTitle = formats::LegendsN64Font::parse(readFile(*titleFont));
         auto textures = formats::decodeLegendsN64Textures(readFile(*objects));
         const auto scroll = std::ranges::find(textures, std::string{"TEXTSCROLL"},
                                               &formats::LegendsN64Texture::name);
@@ -38,25 +36,34 @@ bool LegendsDialogue::load(RenderDevice& device, const std::filesystem::path& na
             return false;
         }
         m_font = std::move(decoded.font);
-        m_titleFont = std::move(decodedTitle.font);
         m_fontSheet = device.createTexture({decoded.atlas.width, decoded.atlas.height,
                                             TextureFilter::Linear, TextureWrap::ClampToEdge},
                                            decoded.atlas.pixels);
-        m_titleFontSheet =
-            device.createTexture({decodedTitle.atlas.width, decodedTitle.atlas.height,
-                                  TextureFilter::Linear, TextureWrap::ClampToEdge},
-                                 decodedTitle.atlas.pixels);
         m_scroll = device.createTexture(
             {scroll->width, scroll->height, TextureFilter::Linear, TextureWrap::ClampToEdge},
             scroll->image.pixels);
         m_text.setFont(&m_font, m_fontSheet.get());
-        m_titleText.setFont(&m_titleFont, m_titleFontSheet.get());
         m_menuTextures.backdrop = m_scroll.get();
-        return true;
     } catch (const std::exception& error) {
         log::warn("N64 dialogue: {}", error.what());
         return false;
     }
+    // e0041894's font8 title serves the topic menu alone: without it nativeTopics
+    // leaves the topics to the shared menu, and the popups keep this font and scroll.
+    if (const auto titleFont = files.find("Font/bigfont.fnt")) {
+        try {
+            auto decoded = formats::LegendsN64Font::parse(readFile(*titleFont));
+            m_titleFont = std::move(decoded.font);
+            m_titleFontSheet =
+                device.createTexture({decoded.atlas.width, decoded.atlas.height,
+                                      TextureFilter::Linear, TextureWrap::ClampToEdge},
+                                     decoded.atlas.pixels);
+            m_titleText.setFont(&m_titleFont, m_titleFontSheet.get());
+        } catch (const std::exception& error) {
+            log::warn("N64 dialogue title font: {}", error.what());
+        }
+    }
+    return true;
 }
 
 void LegendsDialogue::drawCeremonyCaption(Canvas& canvas, std::string_view text, f32 opacity,

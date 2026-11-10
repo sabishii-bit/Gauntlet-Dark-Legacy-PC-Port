@@ -203,6 +203,47 @@ TEST_CASE("N64 Tower ceremony captions draw the string table's line as the nativ
     CHECK(device.draws.front().vertices == caption.vertices);
 }
 
+TEST_CASE("N64 popups keep their font and scroll without a usable topic title font",
+          "[legends][dialogue]") {
+    const auto root = syntheticRoot("n64-dialogue-title-font", false);
+    const std::array topics{MenuItem{.text = "A", .code = 1}};
+    const auto present = [&](bool titled) {
+        test::FakeRenderDevice device;
+        LegendsDialogue style;
+        REQUIRE(style.load(device, root));
+        REQUIRE(style.text().ready());
+        REQUIRE(style.menuTextures());
+        CHECK(style.menuTextures()->backdrop != nullptr);
+        // Without font8 the topics fall back to the shared menu...
+        CHECK(style.nativeTopics("A", topics).has_value() == titled);
+        // ...while popups keep the native font and three-piece scroll.
+        LevelMessages messages;
+        messages.setPresentation(&style);
+        const std::array<std::string, 1> prose{"AAA"};
+        REQUIRE(messages.openImported(device, prose, nullptr));
+        Canvas canvas;
+        canvas.begin(device, Mat4{1});
+        messages.draw(canvas);
+        canvas.end();
+        REQUIRE(device.draws.size() == 2);
+        CHECK(device.draws.front().texture->width() == 64);
+        CHECK(device.draws.front().vertices.size() == 18);
+        REQUIRE_FALSE(device.draws.back().vertices.empty());
+        CHECK(device.draws.back().vertices.front().color == Color::black());
+    };
+    SECTION("missing") {
+        present(false);
+    }
+    SECTION("malformed") {
+        writeFile(root / "Font/bigfont.fnt", std::vector<u8>(3));
+        present(false);
+    }
+    SECTION("present") {
+        writeFile(root / "Font/bigfont.fnt", smallFont());
+        present(true);
+    }
+}
+
 TEST_CASE("N64 native popup uses its font and three-piece modal through shared paging",
           "[legends][assets][dialogue][native-dialogue]") {
     const auto root = test::dataDirectory().parent_path() / "assets/n64/extracted";
