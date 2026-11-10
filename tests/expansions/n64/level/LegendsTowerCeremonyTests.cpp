@@ -1,6 +1,6 @@
 #include <array>
-#include <cmath>
 #include <limits>
+#include <vector>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -56,11 +56,11 @@ TEST_CASE("N64 active podium state dispatches the six-choice Sumner menu with it
     CHECK(((word(0xe0045584) & 0x03ffffffU) << 2) == (0xe0041894U & 0x0fffffffU));
     CHECK(word(0xe0046000) == 441); // "Sumner", drawn with font8 by e0041894.
     const auto options = word(0xe0046050);
-    constexpr std::array<u32, 6> ids{426, 430, 442, 443, 444, 445};
-    constexpr std::array<u32, 6> actions{0x11, 0x15, 0x2e, 0xd, 0x2f, 2};
-    for (usize i = 0; i < ids.size(); ++i) {
-        CHECK(word(options + static_cast<u32>(i) * 32) == ids[i]);
-        CHECK(word(options + static_cast<u32>(i) * 32 + 4) == actions[i]);
+    constexpr std::array<u32, 6> kIds{426, 430, 442, 443, 444, 445};
+    constexpr std::array<u32, 6> kActions{0x11, 0x15, 0x2e, 0xd, 0x2f, 2};
+    for (usize i = 0; i < kIds.size(); ++i) {
+        CHECK(word(options + static_cast<u32>(i) * 32) == kIds[i]);
+        CHECK(word(options + static_cast<u32>(i) * 32 + 4) == kActions[i]);
     }
     CHECK(word(options + 6 * 32) == 0xffffffffU);
 }
@@ -83,14 +83,22 @@ TEST_CASE("N64 ceremonies distinguish installed progress and follow native dispa
         CHECK(value.entries()[i].index == i + 1);
         CHECK(value.entries()[i].captions == std::vector<u32>{542U + static_cast<u32>(i)});
     }
-    constexpr std::array<usize, 4> order{1, 3, 2, 0};
+    constexpr std::array<usize, 4> kOrder{1, 3, 2, 0};
+    // The Ice door's second line is the empty 526, which the queue skips.
+    const std::array<std::vector<u32>, 4> doorCaptions{
+        std::vector<u32>{523, 524}, std::vector<u32>{529, 530}, std::vector<u32>{525},
+        std::vector<u32>{527, 528}};
     for (usize i = 0; i < 4; ++i) {
         CHECK(value.entries()[12 + i].kind == LegendsTowerCeremony::Kind::Door);
-        CHECK(value.entries()[12 + i].index == order[i]);
+        CHECK(value.entries()[12 + i].index == kOrder[i]);
+        CHECK(value.entries()[12 + i].captions == doorCaptions[i]);
     }
     CHECK(value.entries()[16].index == 3);
+    CHECK(value.entries()[16].captions == std::vector<u32>{535, 536});
     CHECK(value.entries()[17].index == 2);
+    CHECK(value.entries()[17].captions == std::vector<u32>{537, 538});
     CHECK(value.entries()[18].index == 1);
+    CHECK(value.entries()[18].captions == std::vector<u32>{533, 534});
     CHECK(value.displayedProgress().runestones == old.runestones);
     CHECK(value.displayedProgress().shards == old.shards);
     CHECK(now.runestones == 0x1fff); // Presentation does not own/save the award.
@@ -159,6 +167,27 @@ TEST_CASE("N64 shard gesture cannot install the piece before its animation compl
     CHECK(value.shardOpacity() == Catch::Approx(47.0f / 255));
     ticks(value, 120);
     CHECK_FALSE(value.active());
+}
+
+TEST_CASE("N64 last shard queues the completed window's caption pair after its own",
+          "[legends][tower-ceremony][assets]") {
+    auto value = ceremony();
+    LegendsProgress old;
+    old.shards = 7;
+    LegendsProgress now = old;
+    now.shards = 15;
+    value.begin(old, now);
+    value.start({}, {});
+    std::vector<u32> shown;
+    for (s32 i = 0; i < 2000 && value.active(); ++i) {
+        if (const auto caption = value.caption();
+            caption && (shown.empty() || shown.back() != *caption)) {
+            shown.push_back(*caption);
+        }
+        value.update(1.0f / 30);
+    }
+    CHECK_FALSE(value.active());
+    CHECK(shown == std::vector<u32>{535, 536, 539, 540});
 }
 
 TEST_CASE("N64 gate animation holds the staff spell before releasing the actual door",

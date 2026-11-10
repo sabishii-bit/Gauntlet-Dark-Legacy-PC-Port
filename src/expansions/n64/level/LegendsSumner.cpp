@@ -1,7 +1,6 @@
 #include "expansions/n64/level/LegendsSumner.h"
 
 #include <algorithm>
-#include <bit>
 #include <cmath>
 #include <utility>
 
@@ -160,19 +159,6 @@ LegendsSumner LegendsSumner::decode(std::span<const u8> program, std::span<const
         throw FormatError("N64 Sumner: missing first Mountain stage");
     }
     result.m_firstMountain = first->map;
-    // Tower e086239c reads one rune caption by installed count. e0863440
-    // reads shard pairs in identity order; e0865c98 reads realm-opening pairs.
-    for (usize i = 0; i < result.m_runeCaptions.size(); ++i) {
-        result.m_runeCaptions[i] = readU16BE(tower, 0x9700 + i * 2);
-    }
-    constexpr std::array<usize, 4> kDoorRows{3, 1, 2, 4};
-    for (usize i = 0; i < 4; ++i) {
-        for (usize line = 0; line < 2; ++line) {
-            result.m_shardCaptions[i][line] = readU16BE(tower, 0x96ec + i * 4 + line * 2);
-            result.m_gateCaptions[i][line] = readU16BE(tower, 0x96d8 + kDoorRows[i] * 4 + line * 2);
-        }
-    }
-    result.m_windowCaptions = {readU16BE(tower, 0x96fc), readU16BE(tower, 0x96fe)};
     return result;
 }
 
@@ -216,50 +202,6 @@ u32 LegendsSumner::milestone(std::span<const LegendsProgress> party) const {
                party, [&](const auto& progress) { return progress.hasCompleted(m_firstMountain); })
                ? 2U
                : 14U;
-}
-
-std::vector<u32> LegendsSumner::milestoneTextIds(std::span<const LegendsProgress> before,
-                                                 std::span<const LegendsProgress> after) const {
-    if (!ready() || !validParty(before) || !validParty(after)) {
-        return {};
-    }
-    const auto combine = [](std::span<const LegendsProgress> party) {
-        LegendsProgress result;
-        for (const auto& progress : party) {
-            result.runestones |= progress.runestones;
-            result.shards |= progress.shards;
-            result.obelisks |= progress.obelisks;
-        }
-        return result;
-    };
-    const auto old = combine(before);
-    const auto now = combine(after);
-    std::vector<u32> result;
-    const u64 addedRunes = (now.runestones & ~old.runestones) & 0x1fffU;
-    auto count = static_cast<usize>(std::popcount(old.runestones & 0x1fffU));
-    result.reserve(static_cast<usize>(std::popcount(addedRunes)));
-    for (s32 i = 0; i < std::popcount(addedRunes); ++i) {
-        result.push_back(m_runeCaptions[count++]);
-    }
-    constexpr std::array<u8, 4> kRequired{0x60, 7, 0x18, 0x80};
-    for (usize i = 0; i < kRequired.size(); ++i) {
-        const auto required = kRequired[i];
-        if ((old.obelisks & required) != required && (now.obelisks & required) == required) {
-            result.insert(result.end(), m_gateCaptions[i].begin(), m_gateCaptions[i].end());
-        }
-    }
-    for (usize i = 0; i < m_shardCaptions.size(); ++i) {
-        const u64 bit = u64{1} << i;
-        if ((now.shards & ~old.shards & bit) != 0) {
-            result.insert(result.end(), m_shardCaptions[i].begin(), m_shardCaptions[i].end());
-        }
-    }
-    if ((old.shards & 0xfU) != 0xfU && (now.shards & 0xfU) == 0xfU) {
-        result.insert(result.end(), m_windowCaptions.begin(), m_windowCaptions.end());
-    }
-    // Native text IDs521/522/526 are empty continuation slots, not blank pages.
-    std::erase_if(result, [](u32 id) { return id == 0 || id == 521 || id == 522 || id == 526; });
-    return result;
 }
 
 std::optional<u32> LegendsSumner::adviceTextId(u32 action,

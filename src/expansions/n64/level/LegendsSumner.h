@@ -55,9 +55,6 @@ public:
     std::optional<u8> historyPage(u32 lastMilestone, std::span<const LegendsProgress> party) const;
     /** Resume the latest native advice chapter from independent campaign state. */
     u32 milestone(std::span<const LegendsProgress> party) const;
-    /** Authored ceremony captions for newly returned pieces/gates only. */
-    std::vector<u32> milestoneTextIds(std::span<const LegendsProgress> before,
-                                      std::span<const LegendsProgress> after) const;
 
     /** Feed the movement request before the podium refuses it. Reuses the same
      * collision response, so nearby Sumner-body contacts do not open the menu. */
@@ -80,10 +77,6 @@ private:
     std::array<std::vector<Rule>, 3> m_rules;
     formats::LegendsN64TowerVolume m_podium;
     std::string m_firstMountain;
-    std::array<u16, 13> m_runeCaptions{};
-    std::array<std::array<u16, 2>, 4> m_shardCaptions{};
-    std::array<std::array<u16, 2>, 4> m_gateCaptions{};
-    std::array<u16, 2> m_windowCaptions{};
     f64 m_sincePrompt = 0;
 };
 

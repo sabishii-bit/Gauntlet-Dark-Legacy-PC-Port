@@ -212,7 +212,7 @@ TEST_CASE("N64 History retains the displayed milestone rather than guessing from
     CHECK_FALSE(sumner.historyPage(0xffffffffU, party));
 }
 
-TEST_CASE("Native Sumner restores advice chapters and captions from campaign progress",
+TEST_CASE("Native Sumner restores advice chapters from campaign progress",
           "[legends][sumner][native-progress-flow][assets]") {
     if (!installed()) {
         SKIP("Native N64 programs are not installed");
@@ -222,39 +222,20 @@ TEST_CASE("Native Sumner restores advice chapters and captions from campaign pro
     CHECK(sumner.milestone(party) == 14);
     REQUIRE(party[0].recordCompleted("mount1"));
     CHECK(sumner.milestone(party) == 2);
-    auto previous = party;
     party[0].obelisks = 3;
     party[1].obelisks = 4;
     CHECK(sumner.milestone(party) == 0);
-    CHECK(sumner.milestoneTextIds(previous, party) == std::vector<u32>{523, 524});
-    previous = party;
     party[0].obelisks |= 0x60;
     CHECK(sumner.milestone(party) == 7);
-    CHECK(sumner.milestoneTextIds(previous, party) == std::vector<u32>{527, 528});
-    previous = party;
     party[1].obelisks |= 0x18;
     CHECK(sumner.milestone(party) == 6);
-    CHECK(sumner.milestoneTextIds(previous, party) == std::vector<u32>{525});
-    previous = party;
     party[0].shards = 1;
-    CHECK(sumner.milestoneTextIds(previous, party) == std::vector<u32>{531, 532});
-    previous = party;
     party[1].shards = 14;
     CHECK(sumner.milestone(party) == 13);
-    CHECK(sumner.milestoneTextIds(previous, party) ==
-          std::vector<u32>{533, 534, 537, 538, 535, 536, 539, 540});
-    previous = party;
     party[0].obelisks |= 0x80;
     CHECK(sumner.milestone(party) == 12);
-    CHECK(sumner.milestoneTextIds(previous, party) == std::vector<u32>{529, 530});
-    previous = party;
     party[0].runestones = 0x1fff;
     CHECK(sumner.milestone(party) == 5);
-    const auto captions = sumner.milestoneTextIds(previous, party);
-    REQUIRE(captions.size() == 13);
-    CHECK(captions.front() == 541);
-    CHECK(captions.back() == 553);
-    CHECK(sumner.milestoneTextIds(party, party).empty());
     REQUIRE(party[1].recordCompleted("hell2"));
     CHECK(sumner.milestone(party) == 10);
 }
