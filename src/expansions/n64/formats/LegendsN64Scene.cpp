@@ -99,17 +99,17 @@ private:
 };
 
 struct Family {
-    LegendsN64FixtureKind kind;
-    const char* group;
-    usize pointer;
-    usize count;
-    usize stride;
-    usize templateStride;
-    usize key;
-    usize minimumPlayers;
-    usize model;
-    usize active;
-    usize death;
+    LegendsN64FixtureKind kind = LegendsN64FixtureKind::Powerup;
+    const char* group = nullptr;
+    usize pointer = 0;
+    usize count = 0;
+    usize stride = 0;
+    usize templateStride = 0;
+    usize key = 0;
+    usize minimumPlayers = 0;
+    usize model = 0;
+    usize active = 0;
+    usize death = 0;
     std::span<const u8> templates;
 };
 
