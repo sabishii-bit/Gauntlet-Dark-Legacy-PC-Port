@@ -194,6 +194,7 @@ TEST_CASE("Dreamcast departure holds its camera while the common transport sinks
 
 TEST_CASE("Dreamcast Valley of Fire views its authored transmitters from the native side",
           "[legends][dreamcast-travel][dreamcast-camera][assets]") {
+    // NOLINTNEXTLINE(misc-const-correctness): the level changes behind MSVC's unique_ptr
     DreamcastTravelFixture fixture{"levelb1"};
     const auto directory =
         test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native/levels/levelb1";
@@ -245,6 +246,7 @@ TEST_CASE("Dreamcast Valley of Fire views its authored transmitters from the nat
 
 TEST_CASE("Dreamcast B1 entrance gates admission and its bridge rails cannot collapse the eye",
           "[legends][dreamcast-travel][dreamcast-camera][assets]") {
+    // NOLINTNEXTLINE(misc-const-correctness): the level changes behind MSVC's unique_ptr
     DreamcastTravelFixture fixture{"levelb1"};
     const auto directory =
         test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native/levels/levelb1";
@@ -319,6 +321,7 @@ TEST_CASE("Dreamcast B1 entrance gates admission and its bridge rails cannot col
 
 TEST_CASE("Dreamcast Tower ramp retains native framing instead of retracting into the player",
           "[legends][dreamcast-travel][dreamcast-camera][assets]") {
+    // NOLINTNEXTLINE(misc-const-correctness): the level changes behind MSVC's unique_ptr
     DreamcastTravelFixture fixture{"levelt1"};
     const auto directory =
         test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native/levels/levelt1";
@@ -368,6 +371,7 @@ TEST_CASE("Only the Dreamcast tower adapter applies its native camera movement e
           "[legends][dreamcast-travel][dreamcast-camera][assets]") {
     for (const auto* const name : {"levelt1", "levelb1"}) {
         DYNAMIC_SECTION(name) {
+            // NOLINTNEXTLINE(misc-const-correctness): the level changes behind MSVC's unique_ptr
             DreamcastTravelFixture fixture{name};
             fixture.level->resetCamera(std::array{CameraSubject{{0, 0, 0}, {0, 3, 0}, 3}});
             const auto camera = fixture.level->camera();
