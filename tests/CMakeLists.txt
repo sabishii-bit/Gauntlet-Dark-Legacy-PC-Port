@@ -4,6 +4,12 @@ find_package(VulkanHeaders CONFIG REQUIRED)
 find_package(volk CONFIG REQUIRED)
 find_package(VulkanMemoryAllocator CONFIG REQUIRED)
 include(Catch)
+# gdl_add_debug_reports(<target>): a Catch2 program reports Windows Debug runtime failures on
+# stderr and fails instead of opening a dialog. The source is the program's own: a library's
+# object that nothing references never reaches the link.
+function(gdl_add_debug_reports target)
+    target_sources(${target} PRIVATE "${PROJECT_SOURCE_DIR}/tests/HeadlessDebugReports.cpp")
+endfunction()
 add_subdirectory(expansions/audio)
 
 add_executable(tests
@@ -205,6 +211,7 @@ add_executable(tests
     game/hud/LinkIndicatorTests.cpp
     TestSupport.h
     TestSupportTests.cpp
+    HeadlessDebugReportsTests.cpp
     SyntheticBytes.h
     SyntheticBytesTests.cpp
     NativeStateSupport.h
@@ -648,6 +655,7 @@ add_executable(tests
     engine/assets/StringTableTests.cpp)
 
 target_link_libraries(tests PRIVATE gdl::engine gdl::formats gdl::game Catch2::Catch2WithMain SDL3::SDL3)
+gdl_add_debug_reports(tests)
 # Each mod's tests sit in tests/mods/<folder> and join the suite with the mod itself.
 file(GLOB GDL_MOD_TESTS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/mods/*/*.cpp")
 target_sources(tests PRIVATE ${GDL_MOD_TESTS})
@@ -665,6 +673,7 @@ add_executable(gameplayregressions
     engine/world/WorldAnimatorTests.cpp
     fixtures/NativeModelFixture.cpp fixtures/ReferenceObj.cpp fixtures/NativeSoundBank.cpp)
 target_link_libraries(gameplayregressions PRIVATE gdl::game Catch2::Catch2WithMain)
+gdl_add_debug_reports(gameplayregressions)
 target_include_directories(gameplayregressions PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_definitions(gameplayregressions PRIVATE
     GDL_TEST_ASSET_DIR="${GDL_ASSET_DIR}" GDL_TEST_UNPACKED_DIR="${GDL_UNPACKED_DIR}"
@@ -685,6 +694,7 @@ add_executable(playerformtests game/party/PojoTests.cpp game/party/PojoVoiceTest
     game/party/PowerupCompanionTests.cpp fixtures/NativeModelFixture.cpp
     fixtures/ReferenceObj.cpp fixtures/NativeSoundBank.cpp)
 target_link_libraries(playerformtests PRIVATE gdl::game Catch2::Catch2WithMain)
+gdl_add_debug_reports(playerformtests)
 target_include_directories(playerformtests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_definitions(playerformtests PRIVATE
     GDL_TEST_ASSET_DIR="${GDL_ASSET_DIR}" GDL_TEST_DATA_DIR="${GDL_DATA_DIR}")
@@ -700,6 +710,7 @@ if(GDL_ENABLE_NETPLAY)
         game/netplay/HostedRoomTests.cpp game/netplay/OnlineSessionTests.cpp
         game/app/CommandLineTests.cpp)
     target_link_libraries(netplaytests PRIVATE gdl::game gdl::engine_net Catch2::Catch2WithMain)
+    gdl_add_debug_reports(netplaytests)
     target_include_directories(netplaytests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     gdl_apply_compiler_options(netplaytests)
     set_target_properties(netplaytests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/bin>")
@@ -791,6 +802,7 @@ if(GDL_ENABLE_NETPLAY)
         game/party/PlayerAttacksTests.cpp game/enemies/EnemiesTests.cpp
         fixtures/NativeModelFixture.cpp fixtures/ReferenceObj.cpp fixtures/NativeSoundBank.cpp)
     target_link_libraries(netplayplaytests PRIVATE gdl::game Catch2::Catch2WithMain)
+    gdl_add_debug_reports(netplayplaytests)
     target_include_directories(netplayplaytests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     target_compile_definitions(netplayplaytests PRIVATE
         GDL_TEST_ASSET_DIR="${GDL_ASSET_DIR}"
@@ -946,6 +958,7 @@ if(GDL_ENABLE_NETPLAY)
         fixtures/ReferenceObj.cpp game/party/PlayerAttacksTests.cpp game/party/PartyPickupsTests.cpp
         game/scenes/PlaySceneTests.cpp engine/math/Mt19937Tests.cpp)
     target_link_libraries(simulationtests PRIVATE gdl::game Catch2::Catch2WithMain)
+    gdl_add_debug_reports(simulationtests)
     target_include_directories(simulationtests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     target_compile_definitions(simulationtests PRIVATE
         GDL_TEST_ASSET_DIR="${GDL_ASSET_DIR}" GDL_TEST_DATA_DIR="${GDL_DATA_DIR}")
@@ -1000,6 +1013,7 @@ if(GDL_LEGENDS_AUDIO)
     add_executable(legends_song_timing_tests expansions/n64/audio/N64SongTimingTests.cpp)
     target_link_libraries(legends_song_timing_tests PRIVATE
         Catch2::Catch2WithMain gdl::legends_audio_native)
+    gdl_add_debug_reports(legends_song_timing_tests)
     gdl_apply_compiler_options(legends_song_timing_tests)
     set_target_properties(legends_song_timing_tests PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/bin>" FOLDER "tests")

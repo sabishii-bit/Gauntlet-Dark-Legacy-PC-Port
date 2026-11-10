@@ -8,6 +8,7 @@ if(NOT GDL_LEGENDS_AUDIO)
 endif()
 target_link_libraries(expansion_audio_tests PRIVATE
     gdl::expansion_audio Catch2::Catch2WithMain)
+gdl_add_debug_reports(expansion_audio_tests)
 target_include_directories(expansion_audio_tests PRIVATE "${PROJECT_SOURCE_DIR}/tests")
 target_compile_definitions(expansion_audio_tests PRIVATE
     GDL_TEST_ASSET_DIR="${GDL_ASSET_DIR}"
