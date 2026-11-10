@@ -20,8 +20,9 @@ using namespace gdl::game;
 
 std::filesystem::path nativeRoot() {
     const auto root = test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native";
-    if (!std::filesystem::is_regular_file(root / "levels/levelb1/worlds.rom"))
+    if (!std::filesystem::is_regular_file(root / "levels/levelb1/worlds.rom")) {
         SKIP("Native Dreamcast Mountain Valley is not installed");
+    }
     return root;
 }
 
@@ -61,8 +62,9 @@ TEST_CASE("Dreamcast obelisk uses its authored sprite and colour transition",
     const auto spriteArea = [](const std::vector<test::RecordedDraw>& draws) {
         f64 area = 0;
         for (const auto& draw : draws) {
-            if (draw.state.blend != BlendMode::Additive)
+            if (draw.state.blend != BlendMode::Additive) {
                 continue;
+            }
             for (usize vertex = 0; vertex + 2 < draw.vertices.size(); vertex += 3) {
                 const auto& a = draw.vertices[vertex].position;
                 const auto& b = draw.vertices[vertex + 1].position;
@@ -128,12 +130,14 @@ TEST_CASE("Dreamcast Mountain Valley obelisk grants once and remains solid when 
         formats::decodeLegendsDreamcastTextures(models, readFile(directory / "textures.rom"));
     test::FakeRenderDevice device;
     auto scene = LegendsSceneAdapter::load(device, LegendsPlatform::Dreamcast, directory, map, 2);
-    CharacterSave save, partner;
+    CharacterSave save;
+    CharacterSave partner;
     save.character = 0;
     partner.character = 1;
     const std::array<const CharacterSave*, 2> progress{&save, &partner};
     scene->synchronizeProgress(progress);
-    const auto find = [&]() -> const LegendsPickup& {
+    // A copy, not a reference: the scene is reloaded below and frees the pickups it held.
+    const auto find = [&]() -> LegendsPickup {
         const auto pickups = scene->pickups();
         const auto at = std::ranges::find_if(pickups, [](const auto& pickup) {
             return pickup.award && pickup.award->kind == LegendsRelic::Obelisk;
@@ -171,10 +175,11 @@ TEST_CASE("Dreamcast Mountain Valley obelisk grants once and remains solid when 
         const std::array<CharacterSave*, 1> recipients{&partner};
         REQUIRE_FALSE(scene->collect(actor, 1, false, {}, recipients).empty());
         CHECK(find().collected);
-        for (const auto* member : std::array{&actor.save(), &partner})
+        for (const auto* member : std::array{&actor.save(), &partner}) {
             CHECK(member->progress()
                       .legendsProgress(LegendsPlatform::Dreamcast)
                       .has(LegendsRelic::Obelisk, pickup.award->index));
+        }
         const auto sounds = scene->takeSounds();
         CHECK(std::ranges::count(sounds, kDreamcastObeliskSound, &LegendsSoundEvent::token) == 1);
         CHECK(

@@ -36,13 +36,16 @@ constexpr f32 kStep = 1.0f / 60;
 
 std::filesystem::path nativeRootOrSkip() {
     const auto root = test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native";
-    if (!std::filesystem::is_regular_file(root / "levels/levelb6/worlds.rom"))
+    if (!std::filesystem::is_regular_file(root / "levels/levelb6/worlds.rom")) {
         SKIP("Native Dreamcast boss arenas are not installed");
+    }
     return root;
 }
 
 std::vector<u8> syntheticWorldData() {
-    constexpr usize kRealm = 8, kLevel = kRealm + 56, kDirectory = kLevel + 144;
+    constexpr usize kRealm = 8;
+    constexpr usize kLevel = kRealm + 56;
+    constexpr usize kDirectory = kLevel + 144;
     std::vector<u8> bytes(kDirectory + 24);
     test::setU32LE(bytes, 0, kDirectory);
     test::setU32LE(bytes, 4, 2);
@@ -108,8 +111,9 @@ std::array<PartyMember, 3> bossParty() {
         member.save.gold = 1000;
         // Match a loaded save: serialization resolves the -1 legacy promotion
         // sentinel and banks the live wallet into the selected class.
-        for (auto& progress : member.save.classes)
+        for (auto& progress : member.save.classes) {
             progress.promotedLevel = 1;
+        }
         member.save.progress().gold = member.save.gold;
         member.save.progress().health = 9000;
         member.save.progress().relics.runes = 0x123;
@@ -134,8 +138,9 @@ struct BossPlayers {
 
     BossPlayers(std::span<const PartyMember> party, const Vec3& position) {
         for (const auto& member : party) {
-            if (member.fallen)
+            if (member.fallen) {
                 continue;
+            }
             auto& actor = actors[static_cast<usize>(member.player)];
             actor.spawn(member.player, member.save, nullptr,
                         position + Vec3{static_cast<f32>(member.player), 0, 8}, 0);
@@ -144,9 +149,11 @@ struct BossPlayers {
     }
 
     void store(std::span<PartyMember> party) const {
-        for (auto& member : party)
-            if (!member.fallen)
+        for (auto& member : party) {
+            if (!member.fallen) {
                 member.save = actors[static_cast<usize>(member.player)].save();
+            }
+        }
     }
 };
 
@@ -270,7 +277,7 @@ TEST_CASE("Every shipped Dreamcast boss arena binds its own native boss placemen
         CHECK(std::abs(boss->combat.yaw - arena.yaw) < .00001f);
         // The encounter binds Dreamcast art and routes into the common combat
         // runtime. No N64 extraction or donor boss art is needed for admission.
-        BossFixture fixture{arena.map};
+        const BossFixture fixture{arena.map};
         REQUIRE(fixture.level->importedBoss());
         CHECK(fixture.level->importedBoss()->kind == arena.kind);
         CHECK(fixture.level->importedBoss()->position == boss->combat.position);
@@ -296,23 +303,26 @@ TEST_CASE("Every shipped Dreamcast boss arena binds its own native boss placemen
         CHECK_FALSE(fixture.level->destination());
         // BossEnd 8c071300 calls AddShard(player,currentRealm) before Sumner
         // appears. It is not a pickup and Dragon's native realm is 2, not 1.
-        for (usize index = 0; index < players.standing.size(); ++index)
+        for (usize index = 0; index < players.standing.size(); ++index) {
             CHECK(players.standing[index]->save() == expected[index]);
+        }
         const s32 wait = fixture.level->dreamcastBossCeremony().ticksLeft();
-        for (s32 repeat = 0; repeat < 64; ++repeat)
+        for (s32 repeat = 0; repeat < 64; ++repeat) {
             fixture.level->bossDefeated(boss->combat.position, players.standing);
+        }
         CHECK(fixture.level->dreamcastBossCeremony().ticksLeft() == wait);
-        for (usize index = 0; index < players.standing.size(); ++index)
+        for (usize index = 0; index < players.standing.size(); ++index) {
             CHECK(players.standing[index]->save() == expected[index]);
+        }
     }
 }
 
 TEST_CASE("Dreamcast victory cannot be started by invalid or unowned callbacks",
           "[legends][dreamcast-boss-completion][assets]") {
-    BossFixture fixture{"levelb6"};
+    const BossFixture fixture{"levelb6"};
     auto party = bossParty();
     fixture.level->initializeParty(party);
-    const auto boss = fixture.level->importedBoss();
+    const auto* const boss = fixture.level->importedBoss();
     REQUIRE(boss);
     BossPlayers players{party, boss->position};
     const auto first = players.standing.front()->save();
@@ -342,7 +352,7 @@ TEST_CASE("Dreamcast boss victory completes its ceremony before returning to its
     auto party = bossParty();
     const auto original = party;
     fixture.level->initializeParty(party);
-    const auto boss = fixture.level->importedBoss();
+    const auto* const boss = fixture.level->importedBoss();
     REQUIRE(boss);
     BossPlayers players{party, boss->position};
     StringTable strings;
@@ -353,8 +363,9 @@ TEST_CASE("Dreamcast boss victory completes its ceremony before returning to its
         fixture.level->completeTravel(party);
         CHECK_FALSE(fixture.level->dreamcastBossCeremony().running());
         CHECK_FALSE(fixture.level->destination());
-        for (usize index = 0; index < party.size(); ++index)
+        for (usize index = 0; index < party.size(); ++index) {
             CHECK(party[index].save == original[index].save);
+        }
     }
     SECTION("admitted victory and reload preserve only this campaign's reward") {
         fixture.level->bossDefeated(boss->position, players.standing);
@@ -365,10 +376,12 @@ TEST_CASE("Dreamcast boss victory completes its ceremony before returning to its
         // A caller cannot manufacture an early transition while the native
         // five-second waiting stage and subsequent dialogue are still active.
         fixture.level->completeTravel(party);
-        for (usize index = 0; index < party.size(); ++index)
+        for (usize index = 0; index < party.size(); ++index) {
             CHECK(party[index].save == awarded[index].save);
-        for (s32 tick = 0; tick < 299; ++tick)
+        }
+        for (s32 tick = 0; tick < 299; ++tick) {
             fixture.step(players.standing);
+        }
         CHECK(fixture.level->dreamcastBossCeremony().stage() ==
               LegendsDreamcastBossCeremony::Stage::Waiting);
         CHECK_FALSE(fixture.level->destination());
@@ -417,7 +430,7 @@ TEST_CASE("Dreamcast boss victory completes its ceremony before returning to its
             party[index].save = CharacterSave::fromJson(party[index].save.toJson());
             CHECK(party[index].save == completed[index].save);
         }
-        BossFixture tower{"levelt1"};
+        const BossFixture tower{"levelt1"};
         tower.level->initializeParty(party);
         CHECK_FALSE(tower.level->importedBoss());
         CHECK_FALSE(tower.level->dreamcastBossCeremony().running());
@@ -425,18 +438,21 @@ TEST_CASE("Dreamcast boss victory completes its ceremony before returning to its
     }
     SECTION("failed destination load keeps the reward and cannot trigger a reload loop") {
         fixture.level->bossDefeated(boss->position, players.standing);
-        for (s32 tick = 0; tick < 60 * 180 && !fixture.level->destination(); ++tick)
+        for (s32 tick = 0; tick < 60 * 180 && !fixture.level->destination(); ++tick) {
             fixture.step(players.standing);
+        }
         REQUIRE(fixture.level->destination());
         players.store(party);
         const auto awarded = party;
         REQUIRE(fixture.level->cancelDeparture());
-        for (s32 tick = 0; tick < 600; ++tick)
+        for (s32 tick = 0; tick < 600; ++tick) {
             fixture.step(players.standing);
+        }
         CHECK_FALSE(fixture.level->destination());
         fixture.level->completeTravel(party);
-        for (usize index = 0; index < party.size(); ++index)
+        for (usize index = 0; index < party.size(); ++index) {
             CHECK(party[index].save == awarded[index].save);
+        }
     }
 }
 
@@ -444,7 +460,7 @@ TEST_CASE("Dreamcast Dragon enters victory through the actual opponent death cal
           "[legends][dreamcast-boss-completion][dreamcast-boss-integration][assets]") {
     BossFixture fixture{"levelb6"};
     const auto common = test::assetOrSkip("CRITTER").parent_path();
-    const auto boss = fixture.level->importedBoss();
+    const auto* const boss = fixture.level->importedBoss();
     REQUIRE(boss);
     CharacterSave save;
     save.name = "DRAGON";
@@ -527,8 +543,9 @@ TEST_CASE("Dreamcast Dragon enters victory through the actual opponent death cal
     hit.damage = 100000;
     bool dyingBeforeReward = false;
     for (s32 frame = 0; frame < 1800 && victories == 0; ++frame) {
-        if (opponents.bosses().view().alive)
+        if (opponents.bosses().view().alive) {
             opponents.bosses().hurt(hit);
+        }
         if (!opponents.bosses().view().alive && opponents.bosses().present()) {
             dyingBeforeReward = true;
             CHECK_FALSE(fixture.level->dreamcastBossCeremony().running());
@@ -547,8 +564,9 @@ TEST_CASE("Dreamcast Dragon enters victory through the actual opponent death cal
               .legendsProgress(LegendsPlatform::Dreamcast)
               .has(LegendsRelic::Shard, 2));
     CHECK(players[0].actor.save().progress().legendsProgress(LegendsPlatform::N64).shards == 0x40);
-    for (s32 frame = 0; frame < 60 * 60 && !fixture.level->destination(); ++frame)
+    for (s32 frame = 0; frame < 60 * 60 && !fixture.level->destination(); ++frame) {
         tick();
+    }
     REQUIRE(fixture.level->destination());
     CHECK(*fixture.level->destination() == "levelt1");
     CHECK(victories == 1);
@@ -567,7 +585,7 @@ TEST_CASE("Dreamcast E2 entrance cues move the native floor through the real opp
           "[legends][dc-boss-entrance][dreamcast-boss-integration][assets]") {
     BossFixture fixture{"levele2"};
     const auto common = test::assetOrSkip("CRITTER").parent_path();
-    const auto boss = fixture.level->importedBoss();
+    const auto* const boss = fixture.level->importedBoss();
     REQUIRE(boss);
     CharacterSave save;
     save.name = "FLOOR";
@@ -600,8 +618,9 @@ TEST_CASE("Dreamcast E2 entrance cues move the native floor through the real opp
 
     std::vector<std::pair<s32, Vec3>> floors;
     for (s32 index = 21; index <= 44; ++index) {
-        if (index == 36 || index == 37)
+        if (index == 36 || index == 37) {
             continue; // Separate subtype40 pieces, not SafeRockSetup's subtype51 roster.
+        }
         const s32 id = LegendsSceneAdapter::kFixtureObjectBase + index;
         const auto object = fixture.level->adapter().fixtureObject(id);
         REQUIRE(object);
@@ -636,8 +655,9 @@ TEST_CASE("Dreamcast E2 entrance cues move the native floor through the real opp
         for (const auto& [id, start] : floors) {
             const auto object = fixture.level->adapter().fixtureObject(id);
             REQUIRE(object);
-            if (!opponents.bosses().view().awake)
+            if (!opponents.bosses().view().awake) {
                 CHECK(object->position == start);
+            }
             moved += static_cast<usize>(object->position.y > start.y + .01f);
         }
         changed = moved == floors.size();
@@ -673,8 +693,8 @@ TEST_CASE("Dreamcast Skorne arenas keep the live player in view through entrance
             WorldLayout::fromDecoded({}, {{.kind = LocatorKind::Start, .position = start.position}},
                                      fixture.map.minBounds, fixture.map.maxBounds),
             traversal.collision(), fixture.level));
-        AssetLocator assets{common};
-        GameConfig config;
+        const AssetLocator assets{common};
+        const GameConfig config;
         StringTable strings;
         REQUIRE(strings.load(test::dataDirectory() / "text", config.text.language));
         GameServices services;
@@ -709,8 +729,9 @@ TEST_CASE("Dreamcast Skorne arenas keep the live player in view through entrance
                 CAPTURE(tick, awakeFrames, play.bosses().fighter().moveName());
                 checkPlayer();
             }
-            if (play.bosses().view().awake)
+            if (play.bosses().view().awake) {
                 ++awakeFrames;
+            }
         }
         REQUIRE(entered);
         REQUIRE(awakeFrames == 360);
@@ -721,14 +742,17 @@ TEST_CASE("Dreamcast Skorne arenas keep the live player in view through entrance
 TEST_CASE("Dreamcast victory speech reaches the mixer once and survives an offline pause",
           "[legends][dreamcast-boss-completion][dreamcast-sounds][assets]") {
     const auto native = nativeRootOrSkip();
-    if (!std::filesystem::is_regular_file(native.parent_path() / "disc/AUDIO/AUD_DATA.ROM"))
+    if (!std::filesystem::is_regular_file(native.parent_path() / "disc/AUDIO/AUD_DATA.ROM")) {
         SKIP("Dreamcast speech banks are not installed");
-    AudioMixer mixer{48000}, referenceMixer{48000};
-    SoundPlayer output{mixer}, reference{referenceMixer};
+    }
+    AudioMixer mixer{48000};
+    AudioMixer referenceMixer{48000};
+    SoundPlayer output{mixer};
+    SoundPlayer reference{referenceMixer};
     LegendsDreamcastSounds bank;
     REQUIRE(bank.open(native));
     std::vector<SoundPlayer::Event> referenceEvents;
-    SoundPlayer::Capture referenceCapture{
+    const SoundPlayer::Capture referenceCapture{
         &reference, [&](const SoundPlayer::Event& event) { referenceEvents.push_back(event); }};
     REQUIRE(bank.play(reference, 0x27000a) != kNoSound);
     REQUIRE(referenceEvents.size() == 1);
@@ -746,8 +770,8 @@ TEST_CASE("Dreamcast victory speech reaches the mixer once and survives an offli
     REQUIRE(strings.load(test::dataDirectory() / "text", "en"));
     fixture.level->bindStrings(&strings);
     std::vector<SoundPlayer::Event> events;
-    SoundPlayer::Capture capture{&output,
-                                 [&](const SoundPlayer::Event& event) { events.push_back(event); }};
+    const SoundPlayer::Capture capture{
+        &output, [&](const SoundPlayer::Event& event) { events.push_back(event); }};
     const auto isDefeatVoice = [&](const SoundPlayer::Event& event) {
         return event.kind == SoundPlayer::Event::Kind::Play && event.bank == target.bank &&
                event.call == target.call;
@@ -795,8 +819,9 @@ TEST_CASE("Dreamcast victory speech reaches the mixer once and survives an offli
     for (s32 tick = 0; tick < 60 * 180 && !fixture.level->destination(); ++tick) {
         fixture.step(players.standing);
         serviceAudio();
-        for (const f32 sample : samples)
+        for (const f32 sample : samples) {
             energy += static_cast<f64>(sample) * sample;
+        }
     }
     CHECK(energy > .001);
     CHECK(defeatVoices() == 1);
@@ -805,11 +830,12 @@ TEST_CASE("Dreamcast victory speech reaches the mixer once and survives an offli
     CHECK_FALSE(output.isPlaying(voice));
     // All three authored speech groups use this boss's Dreamcast bank; none
     // may silently fall back to a similarly named Dark Legacy/N64 sample.
-    for (const u32 call : {0x0aU, 0x0bU, 0x0fU})
+    for (const u32 call : {0x0aU, 0x0bU, 0x0fU}) {
         CHECK(std::ranges::count_if(events, [&](const SoundPlayer::Event& value) {
                   return value.kind == SoundPlayer::Event::Kind::Play &&
                          value.bank == target.bank && value.call == call;
               }) == 1);
+    }
     fixture.level->stopSounds();
     reference.stopAll();
 }
@@ -824,8 +850,8 @@ TEST_CASE("Absent Dreamcast speech and wizard resources cannot strand boss compl
     const std::array players{Vec3{3, 0, 10}};
     REQUIRE(visit.begin(26, 2, 0, 4, Vec3{0}, players));
     std::vector<SoundPlayer::Event> events;
-    SoundPlayer::Capture capture{&output,
-                                 [&](const SoundPlayer::Event& event) { events.push_back(event); }};
+    const SoundPlayer::Capture capture{
+        &output, [&](const SoundPlayer::Event& event) { events.push_back(event); }};
     std::array<f32, 1600> samples{};
     for (s32 tick = 0; tick < 60 * 60 && !visit.state().finished(); ++tick) {
         visit.update(kStep);
@@ -844,7 +870,7 @@ TEST_CASE("Dreamcast Chimera follows the actual A5 elevator before awakening",
           "[legends][dc-boss-ai][dc-boss-elevator][dreamcast-boss-integration][assets]") {
     BossFixture fixture{"levela5"};
     const auto common = test::assetOrSkip("CRITTER").parent_path();
-    const auto encounter = fixture.level->importedBoss();
+    const auto* const encounter = fixture.level->importedBoss();
     REQUIRE(encounter);
     const auto* motion = fixture.level->adapter().dreamcastWorldMotion();
     REQUIRE(motion);
@@ -951,8 +977,8 @@ TEST_CASE("Dreamcast Chimera entrance cannot pre-arm the platform activation dea
         WorldLayout::fromDecoded({}, {{.kind = LocatorKind::Start, .position = start.position}},
                                  fixture.map.minBounds, fixture.map.maxBounds),
         traversal.collision(), fixture.level));
-    AssetLocator assets{common};
-    GameConfig config;
+    const AssetLocator assets{common};
+    const GameConfig config;
     StringTable strings;
     REQUIRE(strings.load(test::dataDirectory() / "text", config.text.language));
     GameServices services;

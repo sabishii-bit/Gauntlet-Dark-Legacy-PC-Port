@@ -63,8 +63,9 @@ struct DreamcastTravelFixture {
         // must not accidentally opt into N64's spin-and-shrink presentation.
         REQUIRE_FALSE(level->departure());
         for (auto& member : party) {
-            if (!member.fallen)
+            if (!member.fallen) {
                 member.save = actors[static_cast<usize>(member.player)].save();
+            }
         }
     }
 };
@@ -90,8 +91,9 @@ TEST_CASE("Dreamcast common departure records the completed stage without a nati
     auto party = travelParty();
     const auto entry = party;
     fixture.level->completeTravel(party);
-    for (usize i = 0; i < party.size(); ++i)
+    for (usize i = 0; i < party.size(); ++i) {
         CHECK(party[i].save == entry[i].save);
+    }
     fixture.admit(party, "levelt1");
     const auto admitted = party;
 
@@ -120,14 +122,16 @@ TEST_CASE("Dreamcast common departure records the completed stage without a nati
         }
         const auto completed = party;
         fixture.level->completeTravel(party);
-        for (usize i = 0; i < party.size(); ++i)
+        for (usize i = 0; i < party.size(); ++i) {
             CHECK(party[i].save == completed[i].save);
+        }
     }
     SECTION("canceled load cannot record completion") {
         REQUIRE(fixture.level->cancelDeparture());
         fixture.level->completeTravel(party);
-        for (usize i = 0; i < party.size(); ++i)
+        for (usize i = 0; i < party.size(); ++i) {
             CHECK(party[i].save == admitted[i].save);
+        }
     }
 }
 
@@ -138,13 +142,14 @@ TEST_CASE("Dreamcast Tower departure never grants level completion",
     fixture.admit(party, "levelb1");
     const auto admitted = party;
     fixture.level->completeTravel(party);
-    for (usize i = 0; i < party.size(); ++i)
+    for (usize i = 0; i < party.size(); ++i) {
         CHECK(party[i].save == admitted[i].save);
+    }
 }
 
 TEST_CASE("Dreamcast departure holds its camera while the common transport sinks the party",
           "[legends][dreamcast-travel][dreamcast-camera][assets]") {
-    for (const auto name : {"levelt1", "levelb1"}) {
+    for (const auto* const name : {"levelt1", "levelb1"}) {
         DYNAMIC_SECTION(name) {
             DreamcastTravelFixture fixture{name};
             const bool tower = std::string_view{name} == "levelt1";
@@ -158,8 +163,9 @@ TEST_CASE("Dreamcast departure holds its camera while the common transport sinks
             subjects[0].follow.x += 4;
             // Leave a genuine previous/current pair at admission; varying
             // render alpha must not keep moving through that pair afterward.
-            for (s32 tick = 0; tick < 3; ++tick)
+            for (s32 tick = 0; tick < 3; ++tick) {
                 fixture.level->followCamera(subjects, 1.0f / 60);
+            }
             auto party = travelParty();
             fixture.admit(party, destination);
             const auto admitted = fixture.level->camera();
@@ -170,14 +176,16 @@ TEST_CASE("Dreamcast departure holds its camera while the common transport sinks
                 subjects[0].feet.y -= .1f;
                 subjects[0].follow.y -= .1f;
                 fixture.level->followCamera(subjects, 1.0f / 60);
-                for (const f32 alpha : {0.0f, .25f, .75f, 1.0f})
+                for (const f32 alpha : {0.0f, .25f, .75f, 1.0f}) {
                     CHECK(fixture.level->camera(alpha) == admitted);
+                }
                 CHECK(fixture.level->cameraAttention() == attention);
             }
             REQUIRE(fixture.level->cancelDeparture());
             subjects[0] = {exit->position + Vec3{8, 0, 0}, exit->position + Vec3{8, 3, 0}, 3};
-            for (s32 tick = 0; tick < 90; ++tick)
+            for (s32 tick = 0; tick < 90; ++tick) {
                 fixture.level->followCamera(subjects, 1.0f / 30);
+            }
             CHECK(fixture.level->camera() != admitted);
             CHECK(fixture.level->cameraAttention() != attention);
         }
@@ -193,13 +201,15 @@ TEST_CASE("Dreamcast Valley of Fire views its authored transmitters from the nat
     const auto markers = fixture.level->adapter().dreamcastCameraMarkers();
     usize markerIndex = 0;
     for (const auto& raw : native.locators) {
-        if (raw.kind != LocatorKind::CameraStart && raw.kind != LocatorKind::CameraGame)
+        if (raw.kind != LocatorKind::CameraStart && raw.kind != LocatorKind::CameraGame) {
             continue;
+        }
         REQUIRE(markerIndex < markers.size());
         const auto& marker = markers[markerIndex++];
         CHECK(marker.kind == raw.kind);
-        if (marker.kind == LocatorKind::CameraStart)
+        if (marker.kind == LocatorKind::CameraStart) {
             continue; // Entry is an eye, not a gameplay attention transmitter.
+        }
         const CameraRange range{20, 20, 0, Vec3{0}, Vec3{0}};
         const std::array party{CameraSubject{marker.position, marker.position + Vec3{0, 3, 0}, 3}};
         LegendsDreamcastLevelCamera camera;
@@ -219,9 +229,10 @@ TEST_CASE("Dreamcast Valley of Fire views its authored transmitters from the nat
     // Exercise the real scene integration after the native entrance completes.
     // Near the first transmitter, B1 looks towards -Z from the +Z side.
     fixture.level->resetCamera(std::array{CameraSubject{{-2, 50, 52}, {-2, 53, 52}, 3}});
-    for (s32 tick = 0; tick < 240 && !fixture.level->opponentsReady(); ++tick)
+    for (s32 tick = 0; tick < 240 && !fixture.level->opponentsReady(); ++tick) {
         fixture.level->followCamera(std::array{CameraSubject{{-2, 50, 52}, {-2, 53, 52}, 3}},
-                                     1.0f / 30);
+                                    1.0f / 30);
+    }
     REQUIRE(fixture.level->opponentsReady());
     const auto view = fixture.level->camera();
     const auto focus = fixture.level->cameraAttention();
@@ -238,13 +249,13 @@ TEST_CASE("Dreamcast B1 entrance gates admission and its bridge rails cannot col
     const auto directory =
         test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native/levels/levelb1";
     const auto map = formats::LegendsMap::parseDreamcast(readFile(directory / "worlds.rom"),
-                                                        readFile(directory / "objects.rom"));
+                                                         readFile(directory / "objects.rom"));
     REQUIRE_FALSE(map.starts.empty());
     const auto markers = fixture.level->adapter().dreamcastCameraMarkers();
     const auto entry = std::ranges::find(markers, LocatorKind::CameraStart, &WorldLocator::kind);
     REQUIRE(entry != markers.end());
     auto party = std::array{CameraSubject{map.starts.front().position,
-                                         map.starts.front().position + Vec3{0, 12, 0}, 12}};
+                                          map.starts.front().position + Vec3{0, 12, 0}, 12}};
     CHECK_FALSE(fixture.level->opponentsReady());
     fixture.level->resetCamera(party);
     REQUIRE(fixture.level->camera());
@@ -254,29 +265,33 @@ TEST_CASE("Dreamcast B1 entrance gates admission and its bridge rails cannot col
         fixture.level->followCamera(party, 1.0f / 60);
         CHECK(fixture.level->camera()->position == entry->position);
         CHECK_FALSE(fixture.level->opponentsReady());
-        for (const f32 alpha : {0.0f, .5f, 1.0f})
+        for (const f32 alpha : {0.0f, .5f, 1.0f}) {
             (void)fixture.level->camera(alpha);
+        }
     }
-    for (s32 tick = 0; tick < 480 && !fixture.level->opponentsReady(); ++tick)
+    for (s32 tick = 0; tick < 480 && !fixture.level->opponentsReady(); ++tick) {
         fixture.level->followCamera(party, 1.0f / 60);
+    }
     REQUIRE(fixture.level->opponentsReady());
 
     std::vector<CollisionTriangle> triangles;
     for (const auto& face : map.collision) {
-        if (face.floor || face.wall)
+        if (face.floor || face.wall) {
             triangles.push_back({face.normal, face.vertices, face.owner,
-                                  (face.floor ? 4U : 0U) | (face.wall ? 2U : 0U)});
+                                 (face.floor ? 4U : 0U) | (face.wall ? 2U : 0U)});
+        }
     }
     WorldCollision collision;
     collision.build(std::move(triangles));
     fixture.level->bindCollision(collision);
-    const auto left = std::ranges::find(map.objects, "B1POST7_ROOT", &formats::LegendsMapObject::name);
-    const auto right = std::ranges::find(map.objects, "B1POST8_ROOT", &formats::LegendsMapObject::name);
+    const auto left =
+        std::ranges::find(map.objects, "B1POST7_ROOT", &formats::LegendsMapObject::name);
+    const auto right =
+        std::ranges::find(map.objects, "B1POST8_ROOT", &formats::LegendsMapObject::name);
     REQUIRE(left != map.objects.end());
     REQUIRE(right != map.objects.end());
-    REQUIRE(std::ranges::any_of(map.objects, [](const auto& object) {
-        return object.name.starts_with("B1ROPE");
-    }));
+    REQUIRE(std::ranges::any_of(
+        map.objects, [](const auto& object) { return object.name.starts_with("B1ROPE"); }));
     // Walk the first bridge's actual authored posts, not a synthetic map. The
     // native transmitter always retains its twenty-unit orbit. Ground-level
     // attention rays through a rope/post must not drag the eye into the rail.
@@ -284,12 +299,13 @@ TEST_CASE("Dreamcast B1 entrance gates admission and its bridge rails cannot col
     Vec3 to = Vec3{left->transform[3]};
     from.y -= 2;
     to.y -= 2;
-    for (s32 direction : {1, -1}) {
+    for (const s32 direction : {1, -1}) {
         for (s32 frame = 0; frame <= 120; ++frame) {
             const f32 t = static_cast<f32>(direction > 0 ? frame : 120 - frame) / 120;
             Vec3 feet = glm::mix(from, to, t);
-            if (const auto floor = collision.floorAt(feet, 5, 5))
+            if (const auto floor = collision.floorAt(feet, 5, 5)) {
                 feet.y = floor->y;
+            }
             party[0] = {feet, feet + Vec3{0, 12, 0}, 12};
             fixture.level->followCamera(party, 1.0f / 30);
             const auto camera = fixture.level->camera();
@@ -307,20 +323,20 @@ TEST_CASE("Dreamcast Tower ramp retains native framing instead of retracting int
     const auto directory =
         test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native/levels/levelt1";
     const auto map = formats::LegendsMap::parseDreamcast(readFile(directory / "worlds.rom"),
-                                                        readFile(directory / "objects.rom"));
+                                                         readFile(directory / "objects.rom"));
     REQUIRE(map.objects.size() > 627);
     REQUIRE(map.objects[627].name == "T1RAMP_STAI#00");
     std::vector<CollisionTriangle> triangles;
     for (const auto& face : map.collision) {
-        if (face.floor || face.wall)
+        if (face.floor || face.wall) {
             triangles.push_back({face.normal, face.vertices, face.owner,
-                                  (face.floor ? 4U : 0U) | (face.wall ? 2U : 0U)});
+                                 (face.floor ? 4U : 0U) | (face.wall ? 2U : 0U)});
+        }
     }
     WorldCollision collision;
     collision.build(std::move(triangles));
     fixture.level->bindCollision(collision);
-    auto party = std::array{CameraSubject{{61.51f, -5.99f, -2.95f},
-                                         {61.51f, 6.01f, -2.95f}, 12}};
+    auto party = std::array{CameraSubject{{61.51f, -5.99f, -2.95f}, {61.51f, 6.01f, -2.95f}, 12}};
     const Vec3 hub = fixture.level->adapter().dreamcastCameraMarkers().front().position;
     LegendsDreamcastTowerCamera native;
     native.reset(party, hub);
@@ -334,7 +350,7 @@ TEST_CASE("Dreamcast Tower ramp retains native framing instead of retracting int
     // this clear 24.74-unit view to 8.18 units, producing the reported zoom.
     const Vec3 lowerProbe = -native.camera().up() * .5f;
     REQUIRE(collision.pickSurface(native.attention() + lowerProbe,
-                                    native.camera().position + lowerProbe));
+                                  native.camera().position + lowerProbe));
     CHECK(glm::distance(native.camera().position, native.attention()) > 24.7f);
     for (s32 tick = 0; tick < 90; ++tick) {
         party[0].feet.x += .025f;
@@ -342,14 +358,15 @@ TEST_CASE("Dreamcast Tower ramp retains native framing instead of retracting int
         native.update(party, 1.0f / 60);
         fixture.level->followCamera(party, 1.0f / 60);
         CHECK(*fixture.level->camera() == native.camera());
-        for (const f32 alpha : {0.0f, .25f, .75f, 1.0f})
+        for (const f32 alpha : {0.0f, .25f, .75f, 1.0f}) {
             CHECK(*fixture.level->camera(alpha) == native.sample(alpha / 60));
+        }
     }
 }
 
 TEST_CASE("Only the Dreamcast tower adapter applies its native camera movement exclusion",
           "[legends][dreamcast-travel][dreamcast-camera][assets]") {
-    for (const auto name : {"levelt1", "levelb1"}) {
+    for (const auto* const name : {"levelt1", "levelb1"}) {
         DYNAMIC_SECTION(name) {
             DreamcastTravelFixture fixture{name};
             fixture.level->resetCamera(std::array{CameraSubject{{0, 0, 0}, {0, 3, 0}, 3}});
