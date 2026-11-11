@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <filesystem>
 #include <functional>
@@ -160,8 +161,10 @@ public:
     bool worldObjectVisible(usize object) const;
     f32 worldObjectWhiteBlend(usize object) const { return m_scenery.whiteBlend(object); }
     f32 worldObjectAlpha(usize object, f32 alpha = -1) const {
-        return m_dreamcastMovement ? m_dreamcastMovement->opacity(object, alpha)
-                                   : m_worldMovement.opacity(object, alpha);
+        const f32 motion = m_dreamcastMovement ? m_dreamcastMovement->opacity(object, alpha)
+                                               : m_worldMovement.opacity(object, alpha);
+        return object < m_worldObjectOpacity.size() ? std::min(motion, m_worldObjectOpacity[object])
+                                                    : motion;
     }
     void supportSwitches(std::span<const s32> owners) {
         if (m_dreamcastMovement) {
@@ -635,6 +638,9 @@ private:
     std::vector<formats::LegendsN64TowerVolume> m_towerResidentVolumes;
     std::vector<std::string> m_initiallyHiddenWorldObjects;
     std::vector<bool> m_hiddenWorldObjects;
+    /** Each world object's opacity as the platform's scripts present it, which
+     * worldObjectAlpha takes when under its switch motion's; 1 unless they set it. */
+    std::vector<f32> m_worldObjectOpacity;
     LegendsPlatform m_platform = LegendsPlatform::N64;
     s32 m_playerCount = 1;
     std::optional<formats::LegendsN64CameraData> m_camera;

@@ -880,7 +880,7 @@ f32 LegendsTowerCeremony::shardWhiteBlend() const {
     return m_paneBytes ? static_cast<f32>(m_paneBytes->white) / kByteScale : 0;
 }
 
-f32 LegendsTowerCeremony::cathedralBeamOpacity() const {
+f32 LegendsTowerCeremony::cathedralBeamAlpha() const {
     return m_beamShown ? static_cast<f32>(kTransparent - m_beamTransparency) / kByteScale : 0;
 }
 

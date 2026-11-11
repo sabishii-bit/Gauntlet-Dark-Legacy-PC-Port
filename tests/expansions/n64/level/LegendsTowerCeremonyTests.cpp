@@ -651,7 +651,8 @@ TEST_CASE("N64 last shard reveals the window on case 9's counts", "[legends][tow
     after.shards = 15;
     value.begin(before, after);
     value.start({}, {}, {});
-    CHECK(value.cathedralBeamOpacity() == 0);
+    CHECK_FALSE(value.cathedralBeamShown());
+    CHECK(value.cathedralBeamAlpha() == 0);
     for (s32 tick = 1; tick <= 394; ++tick) {
         CAPTURE(tick);
         value.update(kTick);
@@ -660,11 +661,12 @@ TEST_CASE("N64 last shard reveals the window on case 9's counts", "[legends][tow
         const s32 count = std::clamp(tick - 214, 0, 40);
         const s32 transparency = (40 - count) * 255 / 40;
         CHECK(value.windowReveal() == Catch::Approx(static_cast<f32>(count) / 40));
-        CHECK(value.cathedralBeamOpacity() ==
+        CHECK(value.cathedralBeamShown() == (tick >= 161));
+        CHECK(value.cathedralBeamAlpha() ==
               Catch::Approx(static_cast<f32>(255 - transparency) / 255));
         CHECK(value.active() == (tick < 394));
     }
-    CHECK(value.cathedralBeamOpacity() == 1);
+    CHECK(value.cathedralBeamAlpha() == 1);
     // e0862fc4 leaves a completed window's beam shown through later ceremonies.
     const LegendsProgress window = after;
     LegendsProgress rune = window;
@@ -673,7 +675,8 @@ TEST_CASE("N64 last shard reveals the window on case 9's counts", "[legends][tow
     value.start({}, {}, {});
     for (s32 tick = 1; tick <= 232; ++tick) {
         CAPTURE(tick);
-        CHECK(value.cathedralBeamOpacity() == 1);
+        CHECK(value.cathedralBeamShown());
+        CHECK(value.cathedralBeamAlpha() == 1);
         value.update(kTick);
     }
     CHECK_FALSE(value.active());
@@ -721,7 +724,8 @@ TEST_CASE("N64 window made by two new shards still turns to its reveal",
         const s32 count = std::clamp(tick - 214, 0, 40);
         const s32 transparency = (40 - count) * 255 / 40;
         CHECK(value.windowReveal() == Catch::Approx(static_cast<f32>(count) / 40));
-        CHECK(value.cathedralBeamOpacity() ==
+        CHECK(value.cathedralBeamShown() == (tick >= 161));
+        CHECK(value.cathedralBeamAlpha() ==
               Catch::Approx(static_cast<f32>(255 - transparency) / 255));
         // Pane 2 stays hidden, but the window's completion shows from the turn to it.
         CHECK(value.displayedProgress().shards == (tick >= 113 ? 0b1011U : 0b0011U));

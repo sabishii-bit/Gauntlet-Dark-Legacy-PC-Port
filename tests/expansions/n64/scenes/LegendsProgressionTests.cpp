@@ -4,6 +4,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
@@ -293,7 +294,7 @@ TEST_CASE("The native cathedral beam leaves installed window shards visible",
     CHECK(backplates == 1);
 }
 
-TEST_CASE("The N64 cathedral beam waits for the window ceremony's fade and stays for later ones",
+TEST_CASE("The N64 cathedral beam fades in at its prim alpha squared and stays for later ones",
           "[legends][progression-scene][tower][native-tower-window][assets]") {
     const auto root = nativeRoot();
     const auto directory = root / "levels/tower2";
@@ -301,8 +302,26 @@ TEST_CASE("The N64 cathedral beam waits for the window ceremony's fade and stays
     const auto beam = std::ranges::find(map.objects, "CATH_BEAM", &formats::LegendsMapObject::name);
     REQUIRE(beam != map.objects.end());
     const auto beamIndex = static_cast<usize>(beam - map.objects.begin());
+    REQUIRE_FALSE(beam->mesh.vertices.empty());
+    const Vec3 beamVertex{beam->transform * Vec4{beam->mesh.vertices.front().position, 1}};
     test::FakeRenderDevice device;
-    auto scene = LegendsSceneAdapter::load(device, LegendsPlatform::N64, directory, map);
+    auto loaded = LegendsSceneAdapter::load(device, LegendsPlatform::N64, directory, map);
+    LegendsPreview preview;
+    preview.open(device, map, std::move(loaded));
+    auto& scene = *preview.adapter();
+    const auto drawBeam = [&] {
+        device.draws.clear();
+        WorldCamera camera;
+        camera.position = {0, 15, -20};
+        for (const auto pass : {TreeModel::Pass::Opaque, TreeModel::Pass::Blended}) {
+            preview.drawWorld(device, Mat4{1}, camera, pass, -1);
+        }
+        return std::ranges::find_if(device.draws, [&](const auto& draw) {
+            return std::ranges::any_of(draw.vertices, [&](const auto& vertex) {
+                return Vec3{draw.transform * Vec4{vertex.position, 1}} == beamVertex;
+            });
+        });
+    };
     CharacterSave save;
     const std::array<const CharacterSave*, 1> party{&save};
     auto& progress = save.progress().legendsProgress(LegendsPlatform::N64);
@@ -312,39 +331,67 @@ TEST_CASE("The N64 cathedral beam waits for the window ceremony's fade and stays
     after.shards = 15;
     // The party owns the fourth shard before the ceremony presents it.
     progress = after;
-    scene->synchronizeProgress(party);
-    REQUIRE(scene->worldObjectVisible(beamIndex));
-    scene->queueTowerCeremonies(before, after);
-    CHECK_FALSE(scene->worldObjectVisible(beamIndex));
-    scene->startTowerCeremonies({}, {}, {});
-    const auto* ceremony = scene->towerCeremony();
+    scene.synchronizeProgress(party);
+    REQUIRE(scene.worldObjectVisible(beamIndex));
+    scene.queueTowerCeremonies(before, after);
+    CHECK_FALSE(scene.worldObjectVisible(beamIndex));
+    scene.startTowerCeremonies({}, {}, {});
+    const auto* ceremony = scene.towerCeremony();
     REQUIRE(ceremony);
     REQUIRE(ceremony->active());
-    // Tower e0863440 unhides the beam fully transparent at case 7 (tick 161) and fades it
-    // in over case 9 from tick 214; the adapter, which can only hide it, shows it from
-    // count 20 of 40.
+    // Tower e0863440 unhides the beam fully transparent at case 7 (tick 161), and case 9's
+    // count c from tick 214 leaves the prim alpha 255 - (40 - c) * 255 / 40: 7 at count 1,
+    // 128 at 20, 249 at 39, the whole from 40. e001ea34 blends the beam twice at it.
+    constexpr std::array<std::pair<s32, s32>, 4> kPrimAlphas{
+        {{215, 7}, {234, 128}, {253, 249}, {254, 255}}};
     for (s32 tick = 1; tick <= 394; ++tick) {
         CAPTURE(tick);
-        scene->update(1.0f / 30);
-        CHECK(scene->worldObjectVisible(beamIndex) == (tick >= 234));
+        scene.update(1.0f / 30);
+        const s32 count = std::clamp(tick - 214, 0, 40);
+        const s32 transparency = (40 - count) * 255 / 40;
+        const f32 alpha = static_cast<f32>(255 - transparency) / 255;
+        CHECK(scene.worldObjectVisible(beamIndex) == (tick >= 161));
+        CHECK(scene.worldObjectAlpha(beamIndex) == Catch::Approx(alpha * alpha));
+        for (const auto& [at, prim] : kPrimAlphas) {
+            if (tick == at) {
+                const f32 expected = static_cast<f32>(prim) / 255;
+                CHECK(scene.worldObjectAlpha(beamIndex) == Catch::Approx(expected * expected));
+            }
+        }
+        if (tick == 214 || tick == 234 || tick == 254) {
+            const auto drawn = drawBeam();
+            if (tick == 214) {
+                // Unhidden but clear, it draws nothing.
+                CHECK(drawn == device.draws.end());
+            } else {
+                // Its batch's 255 scaled by the squared alpha, blended.
+                REQUIRE(drawn != device.draws.end());
+                CHECK(drawn->state.blend == BlendMode::Alpha);
+                for (const auto& vertex : drawn->vertices) {
+                    CHECK(vertex.color.a == Catch::Approx(255 * alpha * alpha).margin(1));
+                }
+            }
+        }
         CHECK(ceremony->active() == (tick < 394));
     }
-    scene->update(1.0f / 30);
-    CHECK(scene->worldObjectVisible(beamIndex));
+    scene.update(1.0f / 30);
+    CHECK(scene.worldObjectVisible(beamIndex));
+    CHECK(scene.worldObjectAlpha(beamIndex) == 1);
     // A later visit's runestone ceremony keeps the completed window's beam.
     const LegendsProgress window = after;
     LegendsProgress rune = window;
     rune.runestones = 1;
     progress = rune;
-    scene->synchronizeProgress(party);
-    scene->queueTowerCeremonies(window, rune);
-    CHECK(scene->worldObjectVisible(beamIndex));
-    scene->startTowerCeremonies({}, {}, {});
+    scene.synchronizeProgress(party);
+    scene.queueTowerCeremonies(window, rune);
+    CHECK(scene.worldObjectVisible(beamIndex));
+    scene.startTowerCeremonies({}, {}, {});
     REQUIRE(ceremony->active());
     for (s32 tick = 1; tick <= 232; ++tick) {
         CAPTURE(tick);
-        scene->update(1.0f / 30);
-        CHECK(scene->worldObjectVisible(beamIndex));
+        scene.update(1.0f / 30);
+        CHECK(scene.worldObjectVisible(beamIndex));
+        CHECK(scene.worldObjectAlpha(beamIndex) == 1);
     }
     CHECK_FALSE(ceremony->active());
 }

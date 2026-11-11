@@ -223,14 +223,17 @@ void LegendsSceneAdapter::updateTowerProgress(bool initial) {
     }
     updateTowerPortals();
     if (m_cathedralBeam) {
-        // During a ceremony CATH_BEAM follows e0863440's transparency byte: unhidden fully
-        // transparent at the window's case 7 and faded in over case 9. A world object can
-        // only be hidden here, so the beam shows once that byte falls past its midpoint.
-        constexpr f32 kShownOpacity = .5f;
-        const bool shown = m_towerCeremony && m_towerCeremony->active()
-                               ? m_towerCeremony->cathedralBeamOpacity() >= kShownOpacity
-                               : completion.cathedralBeam;
-        m_hiddenWorldObjects[*m_cathedralBeam] = !shown;
+        // During a ceremony CATH_BEAM follows e0863440's drawable bytes: the window's case 7
+        // clears its hidden flag with the transparency byte at 255, which case 9 fades to 0.
+        // e001ea34 draws it in 2-cycle mode (e001f08c) and, for this 0x400000 drawable with a
+        // nonzero byte, blends it with memory in both cycles at the texel's alpha times the
+        // prim alpha (e001f14c..e001f1e0), so the fade shows the prim alpha squared; at 0 it
+        // blends once, at the texel's alpha. The texel's alpha, squared there too, is not here.
+        const bool scripted = m_towerCeremony && m_towerCeremony->active();
+        const f32 alpha = scripted ? m_towerCeremony->cathedralBeamAlpha() : 1;
+        m_hiddenWorldObjects[*m_cathedralBeam] =
+            scripted ? !m_towerCeremony->cathedralBeamShown() : !completion.cathedralBeam;
+        m_worldObjectOpacity[*m_cathedralBeam] = alpha * alpha;
     }
 }
 

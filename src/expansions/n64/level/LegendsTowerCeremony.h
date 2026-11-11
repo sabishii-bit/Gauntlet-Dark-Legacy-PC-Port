@@ -81,8 +81,12 @@ public:
     f32 shardOpacity() const;
     f32 shardWhiteBlend() const;
     f32 windowReveal() const { return m_windowReveal; }
-    /** CATH_BEAM's opacity from its native transparency byte, 0 while it is hidden. */
-    f32 cathedralBeamOpacity() const;
+    /** CATH_BEAM's hidden flag is clear: from the setup when the seen shards make the window
+     * (e0862fc4), else from the window's case 7. */
+    bool cathedralBeamShown() const { return m_beamShown; }
+    /** The prim alpha e001ea34 gives CATH_BEAM: 255 less its native transparency byte, over
+     * 255, and 0 while it is hidden. */
+    f32 cathedralBeamAlpha() const;
     /** The caption on screen; a queued one shows from the next caption update. */
     std::optional<u32> caption() const;
     f32 captionOpacity() const;

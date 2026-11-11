@@ -1263,6 +1263,7 @@ void LegendsSceneAdapter::bindWorld(RenderDevice& device, const formats::Legends
         m_hiddenWorldObjects.push_back(
             dormantDebris || std::ranges::find(m_initiallyHiddenWorldObjects, object.name) !=
                                  m_initiallyHiddenWorldObjects.end());
+        m_worldObjectOpacity.push_back(1);
     }
     m_worldTextures = textureSet(map.textures);
     std::vector<TextureSet*> lenders;
