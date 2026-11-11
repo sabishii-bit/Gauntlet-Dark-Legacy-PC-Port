@@ -79,14 +79,19 @@ struct MovingFloor {
     }
 };
 
-/** The body and every head stand at `height`. */
-void standsAt(const Combatant& body, f32 height) {
-    CHECK(body.position().y == Approx(height));
+/** Every head of `body` stands at `height`. */
+void headsStandAt(const Combatant& body, f32 height) {
     for (s32 part = 1; part <= static_cast<s32>(body.childCount()); ++part) {
         const Combatant* head = body.child(body.id() + part);
         REQUIRE(head != nullptr);
         CHECK(head->position().y == Approx(height));
     }
+}
+
+/** The body and every head stand at `height`. */
+void standsAt(const Combatant& body, f32 height) {
+    CHECK(body.position().y == Approx(height));
+    headsStandAt(body, height);
 }
 
 /** How high `node` of `fighter` is drawn at `alpha` between its last two updates. */
@@ -296,7 +301,8 @@ TEST_CASE("a boss that dies on a moving floor is defeated where the update befor
     REQUIRE(bosses.fighter().dying());
     // The floor goes half a unit down every update while it dies. Bosses::update takes the
     // defeat where the boss stood as the update that removes it began, since the original
-    // removes it before its floor probe, so it falls on the floor of the update before.
+    // removes it before its floor probe, so it falls on the floor of the update before. That
+    // update probes nothing, so the heads it leaves behind stay on that floor too.
     const UpdateStep step = updateAt(fps);
     std::optional<Vec3> defeat;
     for (s32 update = 1; update <= 4 * fps && !defeat; ++update) {
@@ -310,6 +316,8 @@ TEST_CASE("a boss that dies on a moving floor is defeated where the update befor
         if (defeat) {
             CHECK(defeat->y == Approx(height + 0.5f));
             CHECK_FALSE(bosses.present());
+            REQUIRE(bosses.fighter().childCount() > 0);
+            headsStandAt(bosses.fighter(), height + 0.5f);
         } else {
             standsAt(bosses.fighter(), height);
         }

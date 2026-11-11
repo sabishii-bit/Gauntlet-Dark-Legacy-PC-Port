@@ -434,6 +434,9 @@ private:
     bool startMove(Actor& critter, usize index, bool recordUse = true);
     void updateActor(s32 ticks, f32 seconds, std::span<const EnemyView> players,
                      std::span<const Combatant> peers, bool timeStopped);
+    /** Whether this update ends its death's hold, which removes it before its floor probe
+     * (CritterBossAI's CritterDelInst at 0x8003a0c4). */
+    static bool deathHoldRunsOut(const Actor& critter, const MoveDefinition* move);
     void rememberFloor();
     /** What it deals of `amount`: half while shrunk, unless it is a boss. */
     f32 dealt(f32 amount) const;
