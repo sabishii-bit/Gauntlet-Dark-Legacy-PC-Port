@@ -170,12 +170,13 @@ void LegendsSceneAdapter::drawObeliskEffects(RenderDevice& device, const Mat4& c
 
 void LegendsSceneAdapter::updateTowerProgress(bool initial) {
     // The visit's ceremonies decide which pieces stand and when a completion shows; pieces
-    // the party gains later show at once.
-    const auto displayed =
-        m_towerCeremony ? m_towerCeremony->displayed(m_partyProgress) : m_partyProgress;
+    // the party gains later show at once. Only the pieces are copied, not the party's records.
+    const auto displayed = m_towerCeremony ? m_towerCeremony->displayed(m_partyProgress)
+                                           : LegendsTowerCeremony::pieces(m_partyProgress);
     const auto progress = LegendsTowerProgress::of(displayed);
-    const auto completion = LegendsTowerProgress::of(
-        m_towerCeremony ? m_towerCeremony->completed(m_partyProgress) : m_partyProgress);
+    const auto completion =
+        m_towerCeremony ? LegendsTowerProgress::of(m_towerCeremony->completed(m_partyProgress))
+                        : progress;
     for (auto& door : m_towerDoors) {
         const u8 required = door.definition.requiredObelisks;
         if (required == 0 || (displayed.obelisks & required) != required ||

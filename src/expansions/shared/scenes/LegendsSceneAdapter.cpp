@@ -886,8 +886,9 @@ std::optional<LegendsTowerPortalKind> LegendsSceneAdapter::towerDeparture() cons
 
 void LegendsSceneAdapter::updateTowerPortals() {
     // A completion a Tower ceremony brings shows from its reveal.
-    const auto progress = LegendsTowerProgress::of(
-        m_towerCeremony ? m_towerCeremony->completed(m_partyProgress) : m_partyProgress);
+    const auto progress =
+        m_towerCeremony ? LegendsTowerProgress::of(m_towerCeremony->completed(m_partyProgress))
+                        : LegendsTowerProgress::of(m_partyProgress);
     if (m_towerShardPortal) {
         // e08641c4 reveals the cathedral's exit with its contact charge,
         // not simply because the four installed shards enable CATH_BEAM.

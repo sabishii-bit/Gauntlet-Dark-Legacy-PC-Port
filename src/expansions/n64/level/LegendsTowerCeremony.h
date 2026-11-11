@@ -60,16 +60,19 @@ public:
     void update(f32 seconds);
     std::span<const Entry> entries() const { return m_entries; }
     const Entry* current() const;
+    /** The Tower pieces of `party`: its runestones, shards and obelisks, without the rest of its
+     * progress. */
+    static LegendsProgress pieces(const LegendsProgress& party);
     /** The party's pieces as this visit draws them: a selected piece shows once its script
      * places it, and the other new stones and panes stay undrawn until the next visit
      * (e0861630 draws the seen stones, e0862fc4 hides the new panes). e0864e7c builds the
      * doors it did not select already open. */
     LegendsProgress displayed(const LegendsProgress& party) const;
-    /** The party's progress as the completed window and the rune portal show it: a
+    /** The party's pieces as the completed window and the rune portal show them: a
      * completion this visit brings waits for its reveal, the window's turn (e086ae04) or
      * the thirteenth stone's settling (e086aec0). */
     LegendsProgress completed(const LegendsProgress& party) const;
-    /** displayed() for the party begin() was given. */
+    /** displayed() for begin()'s party with the pieces it had seen before. */
     LegendsProgress displayedProgress() const { return displayed(m_owned); }
     std::string_view gesture() const { return m_gesture.name; }
     /** The frame Sumner shows: a reversed sequence counts back from its end. */
@@ -205,7 +208,7 @@ private:
     Vec3 m_shardPoint{0}; ///< e0869670
     std::vector<Sequence> m_sequences;
     std::vector<Entry> m_entries;
-    LegendsProgress m_owned;      ///< begin()'s party with the pieces seen before it
+    LegendsProgress m_owned;      ///< begin()'s pieces with those seen before it
     LegendsProgress m_withheld;   ///< pieces this visit does not draw (yet)
     LegendsProgress m_unrevealed; ///< pieces whose completion waits for its reveal
     usize m_next = 0;

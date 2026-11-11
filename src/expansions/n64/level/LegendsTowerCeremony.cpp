@@ -124,12 +124,13 @@ constexpr f32 kCaptionFade = .3f;
 constexpr u8 kWhite = 255;
 constexpr f32 kByteScale = 255;
 
-/** The party's progress less some of its Tower pieces. */
-LegendsProgress without(LegendsProgress party, const LegendsProgress& pieces) {
-    party.runestones &= ~pieces.runestones;
-    party.shards &= ~pieces.shards;
-    party.obelisks &= ~pieces.obelisks;
-    return party;
+/** The party's Tower pieces less `withheld`. */
+LegendsProgress without(const LegendsProgress& party, const LegendsProgress& withheld) {
+    auto result = LegendsTowerCeremony::pieces(party);
+    result.runestones &= ~withheld.runestones;
+    result.shards &= ~withheld.shards;
+    result.obelisks &= ~withheld.obelisks;
+    return result;
 }
 } // namespace
 
@@ -172,7 +173,7 @@ void LegendsTowerCeremony::begin(const LegendsProgress& before, const LegendsPro
     m_started = false;
     m_entries.clear();
     m_next = 0;
-    m_owned = after;
+    m_owned = pieces(after);
     m_withheld = {};
     m_unrevealed = {};
     m_captions.clear();
@@ -220,6 +221,14 @@ void LegendsTowerCeremony::begin(const LegendsProgress& before, const LegendsPro
         m_withheld.shards = shards;
         m_unrevealed.shards = whole ? shards : 0;
     }
+}
+
+LegendsProgress LegendsTowerCeremony::pieces(const LegendsProgress& party) {
+    LegendsProgress result;
+    result.runestones = party.runestones;
+    result.shards = party.shards;
+    result.obelisks = party.obelisks;
+    return result;
 }
 
 LegendsProgress LegendsTowerCeremony::displayed(const LegendsProgress& party) const {

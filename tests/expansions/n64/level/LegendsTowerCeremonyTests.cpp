@@ -352,6 +352,37 @@ TEST_CASE("N64 Tower return places only the lowest new runestone and leaves the 
     CHECK(value.displayed(later).runestones == 0b100011);
 }
 
+TEST_CASE("N64 Tower ceremony views carry the party's Tower pieces and none of its records",
+          "[legends][tower-ceremony]") {
+    // The adapter takes these views on every update, so they copy only what the Tower draws.
+    LegendsProgress before;
+    before.runestones = 1;
+    LegendsProgress after = before;
+    after.runestones = 0b11;
+    after.shards = 0b10;
+    after.obelisks = 7;
+    after.legendItems = 5;
+    REQUIRE(after.recordCompleted("mount6"));
+    auto value = nativeCeremony();
+    value.begin(before, after);
+    REQUIRE(value.pending());
+    const auto pieces = LegendsTowerCeremony::pieces(after);
+    CHECK(pieces.runestones == after.runestones);
+    CHECK(pieces.shards == after.shards);
+    CHECK(pieces.obelisks == after.obelisks);
+    // The new stone, pane and Castle door wait for their scripts; no completion waits.
+    const auto displayed = value.displayed(after);
+    CHECK(displayed.runestones == 1);
+    CHECK(displayed.shards == 0);
+    CHECK(displayed.obelisks == 0);
+    CHECK(value.displayedProgress() == displayed);
+    CHECK(value.completed(after) == pieces);
+    for (const auto& view : {pieces, displayed, value.completed(after)}) {
+        CHECK(view.legendItems == 0);
+        CHECK(view.completedMaps.empty());
+    }
+}
+
 TEST_CASE("N64 thirteen stones made by two new ones open the rune portal as the first settles",
           "[legends][tower-ceremony]") {
     auto value = nativeCeremony();
