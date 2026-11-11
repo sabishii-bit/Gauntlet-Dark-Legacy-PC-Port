@@ -272,7 +272,12 @@ std::optional<ImportedDeparture> LegendsLevel::departure(f32 alpha) const {
         // requested stationary presentation, without altering ordinary exits.
         return result;
     }
-    return ImportedDeparture{sample.yaw, sample.scale, m_departureSkin.get(), sample.finished};
+    ImportedDeparture result;
+    result.yaw = sample.yaw;
+    result.scale = sample.scale;
+    result.skin = m_departureSkin.get();
+    result.finished = sample.finished;
+    return result;
 }
 
 std::vector<PointLight> LegendsLevel::pointLights() const {
@@ -677,8 +682,14 @@ std::vector<ImportedTarget> LegendsLevel::targets() const {
     const auto deaths = adapter().deathTargets();
     result.insert(result.end(), deaths.begin(), deaths.end());
     for (const auto& target : m_world.adapter()->containerTargets()) {
-        result.push_back({target.id, target.base, target.radius, target.height, target.breakable,
-                          !target.breakable});
+        // A container has no authored breakable faces of its own.
+        result.push_back({target.id,
+                          target.base,
+                          target.radius,
+                          target.height,
+                          target.breakable,
+                          !target.breakable,
+                          {}});
     }
     const auto arena = adapter().arenaDamageTargets();
     result.insert(result.end(), arena.begin(), arena.end());

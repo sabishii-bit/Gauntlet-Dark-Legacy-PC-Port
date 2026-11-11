@@ -186,7 +186,7 @@ TEST_CASE("D1 bridge occupancy follows living enemy support and replays its deat
     PlayScene::LocalSnapshot beforeDeath;
     REQUIRE(scene.saveLocal(beforeDeath));
     const auto release = [&] {
-        enemies.hurt(*enemy, EnemyHit{.damage = 100000, .player = 0});
+        enemies.hurt(*enemy, EnemyHit{.damage = 100000, .player = 0, .where = std::nullopt});
         REQUIRE_FALSE(enemies.alive(*enemy));
         // A dying body still rests on the bridge; it must no longer retain it.
         const auto corpseFloor = world.collision().floorAt(enemies.positionOf(*enemy), 0.1f, 0.1f);

@@ -4,7 +4,6 @@
 #include <array>
 #include <cmath>
 #include <format>
-#include <numbers>
 #include <stdexcept>
 #include <utility>
 
@@ -19,7 +18,6 @@
 #include "game/characters/ClassData.h"
 #include "game/characters/NameCheats.h"
 #include "game/characters/Progression.h"
-#include "game/combat/DamageTypes.h"
 #include "game/combat/PowerupFlags.h"
 #include "game/hud/CinematicBars.h"
 #include "game/hud/StatusBox.h"
@@ -27,7 +25,6 @@
 #include "game/party/PartyRecords.h"
 #include "game/party/PlayerPowerups.h"
 #include "game/party/TargetAssist.h"
-#include "game/players/EnemyShrink.h"
 #include "game/players/PowerupEffects.h"
 
 namespace gdl::game {
@@ -47,7 +44,6 @@ constexpr f32 kLevelUpEffectSeconds = 3.0f; ///< the fanfare's ring about the ch
 constexpr std::string_view kMenuMoveSound = "S_OPTMENUMOVVRT";
 constexpr std::string_view kMenuSelectSound = "S_OPTMENUSEL";
 constexpr std::string_view kMenuExitSound = "S_OPTMENUEXIT";
-constexpr f32 kPi = std::numbers::pi_v<f32>;
 constexpr s32 kMinTicks = 1; ///< a frame advances the clock by at least one tick
 constexpr s32 kMaxTicks = 4; ///< and, however late, by at most four
 

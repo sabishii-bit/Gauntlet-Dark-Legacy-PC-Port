@@ -1,7 +1,6 @@
 #include "game/bosses/BossVictoryPresentation.h"
 
 #include <algorithm>
-#include <cmath>
 #include <string>
 #include <string_view>
 
