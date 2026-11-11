@@ -39,6 +39,9 @@ struct LegendStaging {
     std::string_view lionStump; ///< the tree shown for its STUMPL; empty: none; profile: lionStump
     std::optional<Color> strikeTint; ///< the tint the strike leaves on it
     std::string_view frozenSkin;     ///< the item archive's texture it wears once the item lands
+    /** Units a second every member's step is held to along each ground axis while the rite's
+     * opening restrains the party and the encounter has begun; none: the step's own limit. */
+    std::optional<f32> partyPace;
 
     bool operator==(const LegendStaging&) const = default;
 };

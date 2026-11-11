@@ -86,6 +86,8 @@ struct MotionScript {
     std::function<bool(usize)> flying;
     /** Whether a member brings a boss's legend item into its fight, yet to throw it. */
     std::function<bool(usize)> bearsLegend;
+    /** What the level holds a member to for the step. */
+    std::function<game::PartyMotion::Restraint(usize)> restraint;
     /** Automatic-melee mode counts held close swings toward heavy finishers. */
     bool chainHeldMelee = false;
 };
@@ -93,7 +95,8 @@ struct MotionScript {
 /** A movement level answering from a script it borrows, as the script stands at each
  * question, the way a level with nothing in it would where the script is unset: reports do
  * nothing, the attack buttons ask a plain or strong attack, nothing is aimed at, sensed, held
- * or struck, nobody flies or bears a legend item, and every step stands as it was taken. */
+ * or struck, nobody flies, bears a legend item or is restrained, and every step stands as it
+ * was taken. */
 class ScriptedMotion final : public game::PartyMotion::Level {
 public:
     /** Answers from a script with nothing set. */
@@ -160,6 +163,9 @@ public:
     bool flying(usize index) const override { return m_script.flying && m_script.flying(index); }
     bool bearsLegend(usize index) const override {
         return m_script.bearsLegend && m_script.bearsLegend(index);
+    }
+    game::PartyMotion::Restraint restraint(usize index) const override {
+        return m_script.restraint ? m_script.restraint(index) : game::PartyMotion::Restraint{};
     }
     bool comboImpact(usize body, usize thrower, f32 blow) override {
         return m_script.comboImpact && m_script.comboImpact(body, thrower, blow);

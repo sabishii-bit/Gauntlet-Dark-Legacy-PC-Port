@@ -99,6 +99,14 @@ public:
     }
     /** Whether the boss holds its stance for the bearer. */
     bool holdsBoss() const { return m_stage == Stage::Carried || m_stage == Stage::Woken; }
+    /** Whether the party stands turned to the boss: from its rising until its roar is due
+     * (the original's rite state 2), or for the axe and the lamp until they land. */
+    bool holdsParty() const {
+        return (m_stage == Stage::Woken || m_stage == Stage::Struck) && !m_roarDue;
+    }
+    /** Whether the rite's opening restrains the party: from the level's start, the item
+     * carried, until the boss has roared (the original's rite states 1 to 4). */
+    bool restrainsParty() const { return running() && !m_roared; }
     /** Whether the boss should roar now. */
     bool wantsRoar() const { return m_roarDue && !m_roared; }
     bool thrown() const { return m_thrown; }

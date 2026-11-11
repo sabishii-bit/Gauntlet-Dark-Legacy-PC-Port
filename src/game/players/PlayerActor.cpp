@@ -80,26 +80,30 @@ void PlayerActor::faceToward(const Vec3& point) {
 }
 
 void PlayerActor::update(const MoveInput& input, f32 cameraYaw, f32 seconds,
-                         const WorldCollision* collision, f32 moveScale, bool keepFacing) {
+                         const WorldCollision* collision, f32 moveScale, bool keepFacing,
+                         const Vec3& slide, f32 axisLimit) {
     m_moving = input.any() && seconds > 0.0f;
     m_stepAim = m_position;
-    if (!m_moving) {
+    Vec3 walk{0.0f};
+    if (m_moving) {
+        const f32 heading = headingOf(input, cameraYaw);
+        const f32 distance = speed() * input.magnitude * seconds * moveScale;
+        if (!keepFacing) {
+            m_yaw = heading;
+        }
+        if (distance > 0.0f) {
+            walk = Vec3{portable::sin(heading), 0.0f, portable::cos(heading)} * distance;
+        } else {
+            m_moving = false;
+        }
+    }
+    const Vec3 dpos{std::clamp(walk.x + slide.x, -axisLimit, axisLimit), 0.0f,
+                    std::clamp(walk.z + slide.z, -axisLimit, axisLimit)};
+    if (dpos.x == 0.0f && dpos.z == 0.0f) {
         return;
     }
-    const f32 heading = headingOf(input, cameraYaw);
-    const f32 pace = speed();
-    const f32 distance =
-        std::min(pace * input.magnitude * seconds, kMoveLimit * pace * seconds) * moveScale;
-    if (!keepFacing) {
-        m_yaw = heading;
-    }
-    if (distance <= 0.0f) {
-        m_moving = false;
-        return;
-    }
-    const Vec3 direction{portable::sin(heading), 0.0f, portable::cos(heading)};
-    m_stepAim = m_position + direction * distance;
-    travel(direction * distance, collision);
+    m_stepAim = m_position + dpos;
+    travel(dpos, collision);
 }
 
 void PlayerActor::slide(const Vec3& offset, const WorldCollision* collision) {

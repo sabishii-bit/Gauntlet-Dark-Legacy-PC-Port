@@ -15,6 +15,10 @@ namespace {
 
 using Flight = LegendShow::Flight;
 
+/** The Chimera's crawl through its rite's opening (PlayerMotion 0x80081b00-0x80081b30: the
+ * float at 0x80347B98, for boss type 0x23 while gBossActive is set). */
+constexpr f32 kChimeraRitePace = 2.0f;
+
 /** One row a boss, in code order.
  * The spider's egg impact leaves its L1 mesh at full size in the final pose, and the lich has
  * a separate generator tree whose ACTIVE sequence repeats; neither archive exposes these
@@ -41,7 +45,8 @@ constexpr std::array<BossTraits, kBossTypeCount> kTraits{{
                 .flight = Flight::Flies,
                 .trailTexture = "CHIMKEY_PART",
                 .targetNode = "CHIMLIONHEA",
-                .lionStump = "STUMPLQ"},
+                .lionStump = "STUMPLQ",
+                .partyPace = kChimeraRitePace},
      .defeat = {.speech = "CHIMERA_SPEECH", .dropsKey = true}},
     {.kind = boss_type::kDjinn,
      .legend = {.strike = LegendStrike::AtRiteEnd,

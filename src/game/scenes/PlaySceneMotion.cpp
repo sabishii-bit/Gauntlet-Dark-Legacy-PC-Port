@@ -7,6 +7,9 @@
 #include "engine/core/Types.h"
 #include "engine/math/Math.h"
 
+#include "game/bosses/BossTraits.h"
+#include "game/bosses/Bosses.h"
+#include "game/bosses/LegendItems.h"
 #include "game/camera/CameraMovementLimit.h"
 #include "game/combat/HurtKind.h"
 #include "game/hud/HelpMessages.h"
@@ -114,6 +117,33 @@ public:
     }
     bool bearsLegend(usize i) const override {
         return m_scene.m_opponents.bosses().legend().carriedBy(m_scene.m_players[i].actor.player());
+    }
+    /** A legend rite's opening (PlayerMotion): risen, the boss holds the party turned to it
+     * (state 2, 0x800816c4); until its roar nobody's potion goes off, nor the bearer's while
+     * it still carries the item (quest_state, 0x80085264-0x80085280); a staging's pace holds
+     * every step once the encounter has begun (gBossActive, 0x80081b00-0x80081b30). An imported
+     * level's rite holds nobody so: the N64's player motion (game.bin e00496d4) reads none of
+     * its state, and its own rite instead freezes the party idle through a cinematic (state 5
+     * from the spawn, 0xe004b07c, until Boss.bin's e088a240 ends each script), which the common
+     * rite run there does not stage. */
+    PartyMotion::Restraint restraint(usize i) const override {
+        if (m_scene.m_world->imported() != nullptr) {
+            return {};
+        }
+        const Bosses& bosses = m_scene.m_opponents.bosses();
+        const LegendRite& rite = bosses.legend();
+        PartyMotion::Restraint held;
+        if (const Vec3* boss = bosses.position(); boss != nullptr && rite.holdsParty()) {
+            held.faceToward = *boss;
+        }
+        if (rite.restrainsParty()) {
+            held.potionsBarred = true;
+            if (const BossView view = bosses.view(); view.engaged) {
+                held.axisPace = legendStagingOf(view.kind).partyPace;
+            }
+        }
+        held.potionsBarred = held.potionsBarred || bearsLegend(i);
+        return held;
     }
 
 private:

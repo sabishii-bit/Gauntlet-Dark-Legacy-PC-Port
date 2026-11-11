@@ -154,6 +154,82 @@ TEST_CASE("only the bearer carries the item into the fight, from the rite's star
     CHECK_FALSE(rite.carriedBy(2));
 }
 
+TEST_CASE("the rite holds the party turned to the boss from its rising until its roar is due, "
+          "and restrains it from the level's start until the boss has roared",
+          "[game][enemies][legend][rite-hold]") {
+    struct Wait {
+        s32 kind;
+        s32 ticks; ///< from the rising to the roar falling due
+    };
+    // The Chimera's second (also the lich's and the temple's), the yeti's three.
+    for (const Wait wait :
+         {Wait{35, LegendRite::kShortRoarWait}, Wait{39, LegendRite::kLongRoarWait},
+          Wait{37, LegendRite::kLongRoarWait}}) {
+        CAPTURE(wait.kind);
+        LegendRite rite;
+        CHECK_FALSE(rite.holdsParty());
+        CHECK_FALSE(rite.restrainsParty());
+        // Carried in (state 1): restrained, not yet held, however long the boss takes.
+        rite.begin(0, *legendWeaknessOf(wait.kind));
+        for (s32 i = 0; i < 100; ++i) {
+            rite.update(2, false, false);
+            REQUIRE(rite.restrainsParty());
+            REQUIRE_FALSE(rite.holdsParty());
+        }
+        // Risen (state 2): held, through the brandishing and the throw.
+        rite.update(2, true, false);
+        s32 ticks = 2;
+        while (rite.holdsParty() && ticks < 600) {
+            REQUIRE(rite.restrainsParty());
+            rite.update(2, true, false);
+            ticks += 2;
+        }
+        CHECK(ticks == wait.ticks);
+        CHECK(rite.thrown());
+        // The roar due (state 3): no longer held, still restrained until it is heard.
+        CHECK(rite.wantsRoar());
+        CHECK(rite.restrainsParty());
+        rite.update(2, true, false);
+        CHECK(rite.restrainsParty());
+        rite.update(2, true, true);
+        CHECK_FALSE(rite.restrainsParty());
+        CHECK_FALSE(rite.holdsParty());
+    }
+    SECTION("the axe ends the dragon's hold as it lands, before its wait is out") {
+        LegendRite rite;
+        rite.begin(0, *legendWeaknessOf(34));
+        rite.update(2, true, false);
+        rite.update(LegendRite::kBrandishTicks, true, false);
+        REQUIRE(rite.thrown());
+        REQUIRE(rite.holdsParty());
+        REQUIRE(rite.finishOnImpact());
+        CHECK_FALSE(rite.holdsParty());
+        CHECK_FALSE(rite.restrainsParty());
+    }
+    SECTION("the lamp landing after the genie's roar ends nothing more") {
+        LegendRite rite;
+        rite.begin(0, *legendWeaknessOf(36));
+        rite.update(2, true, false);
+        rite.update(LegendRite::kLongRoarWait, true, false);
+        CHECK_FALSE(rite.holdsParty());
+        CHECK(rite.restrainsParty());
+        rite.update(2, true, true);
+        CHECK_FALSE(rite.restrainsParty());
+        REQUIRE(rite.finishOnImpact());
+        CHECK_FALSE(rite.holdsParty());
+        CHECK_FALSE(rite.restrainsParty());
+    }
+    SECTION("cleared, the rite holds and restrains nobody") {
+        LegendRite rite;
+        rite.begin(0, *legendWeaknessOf(41));
+        rite.update(2, true, false);
+        REQUIRE(rite.holdsParty());
+        rite.clear();
+        CHECK_FALSE(rite.holdsParty());
+        CHECK_FALSE(rite.restrainsParty());
+    }
+}
+
 TEST_CASE("the dragon's item presentation ends on impact without waiting for it to thaw or roar",
           "[game][enemies][legend]") {
     LegendRite rite;

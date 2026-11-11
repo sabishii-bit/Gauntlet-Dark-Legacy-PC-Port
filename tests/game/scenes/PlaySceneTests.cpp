@@ -3622,6 +3622,123 @@ TEST_CASE("the Chimera sleeps with the party in its range until the arena lift s
     }
 }
 
+TEST_CASE("bringing the scimitar to the Chimera holds every step to two a second along each "
+          "axis from the lift's arming until its roar, and the party stands turned to it for "
+          "the second after it rises",
+          "[game][screens][chimera-approach][legend][rite-hold][assets]") {
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELA5/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/CHIMERA/ANIM.PS2");
+    const auto scenario = Scenario::load(test::dataDirectory().parent_path() /
+                                         "tests/scenarios/level-a5-chimera.json");
+    const s32 rate = GENERATE(30, 60);
+    CAPTURE(rate);
+    const GameConfig config;
+    test::FakeRenderDevice device;
+    LevelCatalog levels;
+    REQUIRE(levels.load(root));
+    const auto arena = levels.byName(scenario.level);
+    REQUIRE(arena.has_value());
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *arena));
+    GameServices context;
+    context.config = &config;
+    context.levels = &levels;
+    context.unpackedRoot = root;
+    // The bearer, and a companion who carries nothing.
+    std::vector<PartyMember> party = scenario.partyMembers();
+    REQUIRE(party.size() == 1);
+    PartyMember companion = party[0];
+    companion.player = 1;
+    party[0].save.progress().relics.addLegend(1); // the scimitar, the castle's
+    party.push_back(companion);
+    PlayScene scene;
+    REQUIRE(scene.open(device, context, world, party, scenario.tower));
+    for (s32 frame = 0; frame < rate * 30 && awaitingEntrance(scene); ++frame) {
+        scene.update(1.0 / rate, {});
+    }
+    REQUIRE_FALSE(awaitingEntrance(scene));
+    const LegendRite& rite = scene.bosses().legend();
+    REQUIRE(rite.stage() == LegendRite::Stage::Carried);
+    REQUIRE(rite.player() == 0);
+    const f32 crawl = 2.0f / static_cast<f32>(rate); // 0x80347B98 a second
+    constexpr f32 kEpsilon = 1.0e-4f;
+    constexpr f32 kStairs = 18;
+    // Up the stairs the rite runs but the encounter has not begun: the party walks at its pace.
+    PlayScene::Inputs input{};
+    f32 freest = 0;
+    for (s32 frame = 0; frame < rate * 20 && scene.actor(0)->position().z > kStairs; ++frame) {
+        input[0].move = {{0, 1}, 1};
+        input[1].move = {{0, 1}, 1};
+        const Vec3 from = scene.actor(0)->position();
+        scene.update(1.0 / rate, input);
+        REQUIRE_FALSE(scene.bosses().view().engaged);
+        freest = std::max(freest, std::abs(scene.actor(0)->position().z - from.z));
+    }
+    CHECK(freest > crawl + 1.0e-3f);
+    // On into the arena. Each update's party moves before the boss, so what holds a step is
+    // what the rite was as the update began.
+    bool crawled = false;
+    bool released = false;
+    s32 heldUpdates = 0;
+    f32 fastestCrawl = 0;
+    std::optional<f32> facingAtRelease;
+    std::optional<f32> bossBearingAtRelease;
+    bool wasHeld = false;
+    for (s32 update = 0; update < rate * 40 && !released; ++update) {
+        const bool engaged = scene.bosses().view().engaged;
+        const bool restrained = engaged && rite.restrainsParty();
+        const bool held = rite.holdsParty();
+        CAPTURE(update, engaged, restrained, held);
+        if (wasHeld && !held) {
+            // The hold just ended: the companion was pushed aside all through it.
+            facingAtRelease = scene.actor(1)->yaw();
+            const Vec3 away = *scene.bosses().position() - scene.actor(1)->position();
+            bossBearingAtRelease = std::atan2(away.x, away.z);
+        }
+        wasHeld = held;
+        // Held, the companion's stick pushes it aside; otherwise both walk on.
+        input[0].move = {{0, 1}, 1};
+        input[1].move = held ? MoveInput{{1, 0}, 1} : MoveInput{{0, 1}, 1};
+        const std::array from{scene.actor(0)->position(), scene.actor(1)->position()};
+        scene.update(1.0 / rate, input);
+        for (s32 player = 0; player < 2; ++player) {
+            CAPTURE(player);
+            const Vec3 moved = scene.actor(player)->position() - from[static_cast<usize>(player)];
+            if (held) {
+                CHECK(std::abs(moved.x) <= kEpsilon);
+                CHECK(std::abs(moved.z) <= kEpsilon);
+            } else if (restrained) {
+                CHECK(std::abs(moved.x) <= crawl + kEpsilon);
+                CHECK(std::abs(moved.z) <= crawl + kEpsilon);
+                if (player == 0) {
+                    fastestCrawl = std::max({fastestCrawl, std::abs(moved.x), std::abs(moved.z)});
+                }
+            }
+        }
+        crawled = crawled || restrained;
+        heldUpdates += held ? 1 : 0;
+        released = crawled && !rite.restrainsParty();
+    }
+    REQUIRE(crawled);
+    REQUIRE(released);
+    CHECK(fastestCrawl > crawl * 0.75f); // it crawled, rather than stood
+    // Held from the update after its rising until its roar fell due, a second on.
+    CHECK(heldUpdates == rate - 1);
+    REQUIRE(facingAtRelease.has_value());
+    CHECK(std::abs(std::remainder(*facingAtRelease - *bossBearingAtRelease, 2.0f * kPi)) < 0.1f);
+    // Roared, the party walks at its pace again, back the way it came.
+    f32 freed = 0;
+    for (s32 frame = 0; frame < rate; ++frame) {
+        input[0].move = {{0, -1}, 1};
+        input[1].move = {};
+        const Vec3 from = scene.actor(0)->position();
+        scene.update(1.0 / rate, input);
+        freed = std::max(freed, std::abs(scene.actor(0)->position().z - from.z));
+    }
+    CHECK(freed > crawl + 1.0e-3f);
+}
+
 TEST_CASE("the Peak's placed enemies stand during the entrance while nothing breeds or "
           "fights, and elsewhere they wait for it to end",
           "[game][screens][entrance][early-enemies][assets]") {
@@ -4573,6 +4690,102 @@ TEST_CASE("in the mountain's lair the ice axe is held in the hand, thrown with t
         scene.update(1.0 / 60.0, still);
     }
     REQUIRE(scene.victory().running());
+    scene.close();
+}
+
+TEST_CASE("in the mountain's lair the party stands turned to the dragon from its rising until "
+          "the ice axe lands, and no potion goes off until then",
+          "[game][screens][legend][rite-hold][potion][assets]") {
+    const std::filesystem::path root = unpackedRoot();
+    test::assetOrSkip("LEVELS/LEVELB6/WORLDS.PS2");
+    test::assetOrSkip("ITEMS/LEVELB6/ANIM.PS2");
+    test::assetOrSkip("MONSTERS/DRAGON/ANIM.PS2");
+    test::assetOrSkip("CRITTER/DRAGON.WAD");
+    const GameConfig config;
+    test::FakeRenderDevice device;
+    LevelCatalog levels;
+    REQUIRE(levels.load(root));
+    const auto lair = levels.byName("B6");
+    REQUIRE(lair.has_value());
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *lair));
+    GameServices context;
+    context.config = &config;
+    context.levels = &levels;
+    context.unpackedRoot = root;
+    CharacterSave save;
+    save.name = "AB";
+    save.progress().relics.addLegend(2); // the ice axe, the mountain's
+    save.progress().inventory.addPotions(1, 3);
+    const std::vector<PartyMember> party{PartyMember{0, save}};
+    PlayOptions options;
+    options.welcome = false;
+    // Open floor 12.6 from the dragon's mark at (-3, 30, -18), between the safe rocks, near
+    // enough for the axe to land inside the three seconds; facing away from the dragon.
+    options.position = Vec3{1.0f, 30.0f, -6.0f};
+    options.yaw = 0.0f;
+    PlayScene scene;
+    REQUIRE(scene.open(device, context, world, party, options));
+    const PlayScene::Inputs still{};
+    for (s32 i = 0; i < 400 && awaitingEntrance(scene); ++i) {
+        scene.update(1.0 / 60.0, still);
+    }
+    const LegendRite& rite = scene.bosses().legend();
+    REQUIRE(rite.stage() == LegendRite::Stage::Carried);
+    const auto potions = [&scene] {
+        return scene.actor(0)->save().progress().inventory.potions.size();
+    };
+    // A potion used while the item is carried in plays its gesture and goes nowhere.
+    PlayScene::Inputs potion{};
+    potion[0].usePotion = true;
+    scene.update(1.0 / 60.0, potion);
+    bool gestured = false;
+    for (s32 i = 0; i < 120 && rite.stage() == LegendRite::Stage::Carried; ++i) {
+        scene.update(1.0 / 60.0, still);
+        gestured = gestured || scene.animator(0)->conjuring();
+    }
+    CHECK(gestured);
+    CHECK(potions() == 3);
+    for (s32 i = 0; i < 3000 && rite.stage() == LegendRite::Stage::Carried; ++i) {
+        scene.update(1.0 / 60.0, still);
+    }
+    REQUIRE(rite.stage() == LegendRite::Stage::Woken);
+    // Risen, it holds the party, the stick pushing it aside in vain, until the axe lands
+    // (ProcessEffects' impact puts the rite in state 4), well before its three seconds are up.
+    PlayScene::Inputs aside{};
+    aside[0].move = {{1, 0}, 1};
+    s32 heldTicks = 0;
+    std::optional<s32> landed;
+    while (rite.holdsParty() && heldTicks < LegendRite::kLongRoarWait) {
+        CAPTURE(heldTicks);
+        const Vec3 from = scene.actor(0)->position();
+        scene.update(1.0 / 60.0, aside);
+        ++heldTicks;
+        CHECK(std::abs(scene.actor(0)->position().x - from.x) <= 1.0e-4f);
+        CHECK(std::abs(scene.actor(0)->position().z - from.z) <= 1.0e-4f);
+        if (!landed && scene.bosses().frozen()) {
+            landed = heldTicks;
+        }
+    }
+    CAPTURE(heldTicks);
+    REQUIRE(landed.has_value());
+    CHECK(heldTicks == *landed); // the hold ends with the landing's update
+    CHECK(heldTicks < LegendRite::kLongRoarWait - 1);
+    CHECK_FALSE(rite.restrainsParty());
+    const Vec3 away = *scene.bosses().position() - scene.actor(0)->position();
+    CHECK(std::abs(std::remainder(scene.actor(0)->yaw() - std::atan2(away.x, away.z), 2.0f * kPi)) <
+          0.1f);
+    // Free again, the stick moves it and a potion goes off.
+    const Vec3 before = scene.actor(0)->position();
+    for (s32 i = 0; i < 10; ++i) {
+        scene.update(1.0 / 60.0, aside);
+    }
+    CHECK(glm::distance(scene.actor(0)->position(), before) > 0.1f);
+    scene.update(1.0 / 60.0, potion);
+    for (s32 i = 0; i < 120 && potions() == 3; ++i) {
+        scene.update(1.0 / 60.0, still);
+    }
+    CHECK(potions() == 2);
     scene.close();
 }
 

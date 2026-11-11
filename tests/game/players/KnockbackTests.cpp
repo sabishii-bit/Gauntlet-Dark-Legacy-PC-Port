@@ -101,29 +101,39 @@ TEST_CASE("a frame's pushes add up, never lift, and turn the body along or again
     CHECK(up.velocity() == Vec3{0.0f});
 }
 
-TEST_CASE("a slide decays by a third a frame, held to the character's pace, and a fall's first "
-          "frame travels freely",
+TEST_CASE("a slide decays by a third a frame, and the step it goes with is held to one and a "
+          "half times the pace, or forty a second the frame after a fall's kick",
           "[game][players][knockback]") {
     Knockback knock;
+    CHECK(knock.limit(kFrame, kPace) == Approx(1.5f * kPace / 30.0f));
     knock.queue(Vec3{0.0f, 0.0f, 1.0f}, Knockback::kKnockBack, 10.0f);
     knock.kick(0.0f, false);
-    // Sixteen a second would go 0.533 in a frame; the pace holds it to 1.5 x 10 / 30.
+    // Sixteen a second goes 0.533 in a frame; the step it goes with is held to 1.5 x 10 / 30.
+    CHECK(knock.limit(kFrame, kPace) == Approx(0.5f));
     const Vec3 first = knock.step(kFrame, kPace);
-    CHECK(first.z == Approx(0.5f));
+    CHECK(first.z == Approx(16.0f / 30.0f));
     CHECK(first.y == 0.0f);
     CHECK(knock.velocity().z == Approx(16.0f * Knockback::kDecay));
     const Vec3 second = knock.step(kFrame, kPace);
     CHECK(second.z == Approx(16.0f * Knockback::kDecay / 30.0f));
-    // A knock down's kick goes its whole way the first frame, up to forty a second.
+    // A knock down's kick frees the next frame's limit to forty a second (0x18160 in the
+    // frame's flags), then the pace holds it again.
     Knockback floored;
     floored.queue(Vec3{0.0f, 0.0f, 1.0f}, Knockback::kKnockDown, 10.0f);
     floored.kick(0.0f, false);
+    CHECK(floored.limit(kFrame, kPace) == Approx(40.0f / 30.0f));
     CHECK(floored.step(kFrame, kPace).z == Approx(32.0f / 30.0f));
-    CHECK(floored.step(kFrame, kPace).z == Approx(0.5f)); // then the pace again
+    CHECK(floored.limit(kFrame, kPace) == Approx(0.5f));
     Knockback blown;
     blown.queue(Vec3{0.0f, 0.0f, 1.0f}, Knockback::kBlownAway, 10.0f);
     blown.kick(0.0f, false);
-    CHECK(blown.step(kFrame, kPace).z == Approx(40.0f / 30.0f));
+    CHECK(blown.limit(kFrame, kPace) == Approx(40.0f / 30.0f));
+    CHECK(blown.step(kFrame, kPace).z == Approx(100.0f / 30.0f));
+    // A kick never lifts, but a contact's rise goes with the slide for the step to hold.
+    Knockback lifted;
+    lifted.addVelocity({0.0f, 6.0f, 0.0f});
+    CHECK(lifted.step(kFrame, kPace).y == Approx(6.0f / 30.0f));
+    CHECK(lifted.limit(0.0f, kPace) == 0.0f);
     // The slide dies away, and the same over two half frames as one whole one.
     s32 frames = 0;
     while (knock.sliding() && frames < 100) {
@@ -147,6 +157,29 @@ TEST_CASE("a slide decays by a third a frame, held to the character's pace, and 
     CHECK(whole.velocity() == Vec3{0.0f});
     CHECK(whole.step(kFrame, kPace) == Vec3{0.0f});
 }
+
+TEST_CASE("a slide fast enough and over a third of a turn from a walk stops it",
+          "[game][players][knockback][move-limit]") {
+    constexpr f32 kThird = 2.0f * std::numbers::pi_v<f32> / 3.0f;
+    // Straight back against a walk along +z.
+    CHECK(Knockback::opposes(Vec3{0, 0, -16}, 0.0f));
+    // Just past a third of a turn either way, and just short of it.
+    CHECK(Knockback::opposes(Vec3{std::sin(kThird + 0.01f), 0, std::cos(kThird + 0.01f)} * 16.0f,
+                             0.0f));
+    CHECK(Knockback::opposes(Vec3{-std::sin(kThird + 0.01f), 0, std::cos(kThird + 0.01f)} * 16.0f,
+                             0.0f));
+    CHECK_FALSE(Knockback::opposes(
+        Vec3{std::sin(kThird - 0.01f), 0, std::cos(kThird - 0.01f)} * 16.0f, 0.0f));
+    // Across the walk, or with it, the walk goes on; so does it against a slide too slow to
+    // carry the body a twentieth of a unit a frame.
+    CHECK_FALSE(Knockback::opposes(Vec3{16, 0, 0}, 0.0f));
+    CHECK_FALSE(Knockback::opposes(Vec3{0, 0, 16}, 0.0f));
+    CHECK_FALSE(Knockback::opposes(Vec3{0, 0, -1.4f}, 0.0f));
+    CHECK(Knockback::opposes(Vec3{0, 0, -1.6f}, 0.0f));
+    // The heading wraps: a walk along -z is opposed by a slide along +z.
+    CHECK(Knockback::opposes(Vec3{0, 0, 16}, std::numbers::pi_v<f32>));
+}
+
 TEST_CASE("a shove carries the body at most half its pace and fades by a third a frame",
           "[game][players][knockback]") {
     Knockback knock;
@@ -210,17 +243,25 @@ TEST_CASE("knockback travel retains native frames across split update cadences",
     }
 }
 
-TEST_CASE("fall kick keeps its free travel for the entire first native frame",
+TEST_CASE("fall kick keeps its free limit for the entire first native frame",
           "[game][players][knockback][cadence]") {
     Knockback knock;
     knock.queue(Vec3{0, 0, 1}, Knockback::kKnockDown, 10);
     knock.kick(0, false);
+    CHECK(knock.limit(kFrame / 2, kPace) == Approx(40 * kFrame / 2));
     const f32 first = knock.step(kFrame / 2, kPace).z;
     CHECK_FALSE(knock.kick(0, false).has_value());
+    CHECK(knock.limit(kFrame / 2, kPace) == Approx(40 * kFrame / 2));
     const f32 second = knock.step(kFrame / 2, kPace).z;
     CHECK(first == Approx(32 * kFrame / 2));
     CHECK(second == Approx(first));
-    CHECK(knock.step(kFrame / 2, kPace).z == Approx(1.5f * kPace * kFrame / 2));
+    CHECK(knock.limit(kFrame / 2, kPace) == Approx(1.5f * kPace * kFrame / 2));
+    // A step straddling the free frame's end is held to each part's limit.
+    Knockback straddled;
+    straddled.queue(Vec3{0, 0, 1}, Knockback::kKnockDown, 10);
+    straddled.kick(0, false);
+    straddled.step(kFrame / 2, kPace);
+    CHECK(straddled.limit(kFrame, kPace) == Approx(40 * kFrame / 2 + 1.5f * kPace * kFrame / 2));
 }
 
 TEST_CASE("knockback copies retain pending hits and both generations of party shove",

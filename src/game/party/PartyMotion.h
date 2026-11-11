@@ -36,6 +36,19 @@ public:
         Tagged,    ///< it is now it, touched by the one who was
         ComboStart ///< it has taken hold of its combo partner (StartComboFX's sphere and burst)
     };
+    /** What the level holds a member to for a step, as a boss fight's opening holds the party:
+     * standing turned toward a point, stepping no further than a pace a second along each
+     * ground axis, letting no potion go off. A member held to none is free. */
+    struct Restraint {
+        /** It walks nowhere, the stick still choosing its gait, and turns to face this. */
+        std::optional<Vec3> faceToward;
+        /** Units a second its step is held to along each ground axis, in place of the step's
+         * own limit. */
+        std::optional<f32> axisPace;
+        /** A potion's release does nothing and takes no potion. */
+        bool potionsBarred = false;
+        bool operator==(const Restraint&) const = default;
+    };
     /** What the party's movement asks of the level, each at its phase of the step and before
      * the camera snapshot; every answer is used at once. Must not resize or replace the
      * party. */
@@ -78,6 +91,9 @@ public:
         /** Whether member `index` brings a boss's legend item into that boss's fight and has
          * yet to throw it: such a bearer takes hold of no combo partner. */
         virtual bool bearsLegend(usize index) const = 0;
+        /** What member `index` is held to this step; asked once, before its controls are read,
+         * for a member on its feet. */
+        virtual Restraint restraint(usize index) const = 0;
     };
     static constexpr f32 kLostDepth = 4.5f;   ///< under the world's lowest point a body is lost
     static constexpr f32 kTurnFrames = 30.0f; ///< the rate a partial turn is taken at, a second

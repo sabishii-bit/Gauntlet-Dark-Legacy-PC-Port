@@ -8,6 +8,7 @@
 #include <string>
 #include <string_view>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
@@ -73,7 +74,8 @@ struct Fixture {
         .startPoint = {},
         .comboImpact = {},
         .flying = {},
-        .bearsLegend = {}};
+        .bearsLegend = {},
+        .restraint = {}};
     test::ScriptedMotion level{events};
 
     Fixture() {
@@ -170,6 +172,11 @@ test::MotionScript orderLog(std::vector<std::string>& log) {
                 [note](usize i) {
                     note("bearsLegend", i);
                     return false;
+                },
+            .restraint =
+                [note](usize i) {
+                    note("restraint", i);
+                    return PartyMotion::Restraint{};
                 }};
 }
 
@@ -1416,6 +1423,222 @@ TEST_CASE("a knock turns its victim at once and slides it from the next frame",
     CHECK(f.players[1].actor.position().x == Approx(10.0f));
 }
 
+/** How far member 0 of `f` goes in one step. */
+Vec3 steppedBy(Fixture& f) {
+    const Vec3 from = f.players[0].actor.position();
+    f.step();
+    return f.players[0].actor.position() - from;
+}
+
+TEST_CASE("a step's knock, shove and walk go together, held along each axis to one and a half "
+          "times the pace, or forty a second the frame after a heavy kick",
+          "[game][screens][party-motion][knockback][move-limit]") {
+    const auto knockedBy = [](Fixture& f, const Vec3& push, u32 flags) {
+        f.players[0].knockback.queue(push, flags, 10.0f);
+        f.step(); // the kick, which only turns the body
+        f.inputs[3].move = MoveInput{Vec2{0, 1}, 1};
+    };
+    SECTION("a knock along the walk takes the walk into its limit") {
+        Fixture f;
+        const f32 limit = Knockback::kPaceLimit * f.players[0].actor.speed() / 30.0f;
+        knockedBy(f, Vec3{0, 0, 1}, Knockback::kKnockBack); // sixteen a second, and five walked
+        const Vec3 moved = steppedBy(f);
+        CHECK(moved.z == Approx(limit));
+        CHECK(moved.x == Approx(0.0f).margin(1.0e-6f));
+        // A shove goes into the same limit.
+        f.players[0].knockback.shove(Vec3{0, 0, 1}, 1.0f / 30.0f);
+        CHECK(steppedBy(f).z == Approx(limit));
+    }
+    SECTION("a knock across the walk is held apart from it, an axis at a time") {
+        Fixture f;
+        const f32 pace = f.players[0].actor.speed();
+        knockedBy(f, Vec3{1, 0, 0}, Knockback::kKnockBack);
+        const Vec3 moved = steppedBy(f);
+        CHECK(moved.x == Approx(Knockback::kPaceLimit * pace / 30.0f));
+        CHECK(moved.z == Approx(pace / 30.0f));
+    }
+    SECTION("a knock back against the walk stops the walk while it carries the body") {
+        Fixture f;
+        const f32 limit = Knockback::kPaceLimit * f.players[0].actor.speed() / 30.0f;
+        knockedBy(f, Vec3{0, 0, -1}, Knockback::kKnockBack);
+        CHECK(steppedBy(f).z == Approx(-limit)); // sixteen back, nothing of the walk forward
+        CHECK(f.players[0].actor.yaw() == Approx(0.0f)); // turned to the stick all the same
+        // Once the slide has died to under a twentieth of a unit a frame, the walk goes again.
+        for (s32 frame = 0;
+             frame < 30 && Knockback::opposes(f.players[0].knockback.velocity(), 0.0f); ++frame) {
+            f.step();
+        }
+        REQUIRE_FALSE(Knockback::opposes(f.players[0].knockback.velocity(), 0.0f));
+        CHECK(steppedBy(f).z > 0.0f);
+    }
+    SECTION("the frame after a heavy kick goes up to forty a second, walk and all") {
+        Fixture f;
+        const f32 limit = Knockback::kPaceLimit * f.players[0].actor.speed() / 30.0f;
+        knockedBy(f, Vec3{0, 0, 1}, Knockback::kBlownAway); // a hundred a second, and five walked
+        CHECK(steppedBy(f).z == Approx(Knockback::kFastLimit / 30.0f));
+        CHECK(steppedBy(f).z == Approx(limit));
+    }
+    SECTION("a rise lifts the body no higher than the limit, and the floor takes it back") {
+        Fixture f;
+        const f32 limit = Knockback::kPaceLimit * f.players[0].actor.speed() / 30.0f;
+        f.players[0].knockback.addVelocity(Vec3{0, 30, 0});
+        f.step();
+        CHECK(f.players[0].actor.position().y == Approx(limit));
+        for (s32 frame = 0; frame < 30; ++frame) {
+            f.step();
+            CHECK(f.players[0].actor.position().y <= limit + 1.0e-5f);
+        }
+        CHECK(f.players[0].actor.position().y == Approx(0.0f).margin(1.0e-5f));
+        // Nothing presses it down.
+        f.players[0].knockback.addVelocity(Vec3{0, -30, 0});
+        f.step();
+        CHECK(f.players[0].actor.position().y == 0.0f);
+    }
+}
+
+TEST_CASE("a held member walks nowhere, turns to its point at the native rate, still slides, "
+          "and walks again when let go",
+          "[game][screens][party-motion][legend][rite-hold]") {
+    Fixture f;
+    f.events.restraint = [](usize i) {
+        return i == 0 ? PartyMotion::Restraint{.faceToward = Vec3{0, 0, -10}}
+                      : PartyMotion::Restraint{};
+    };
+    f.players[0].actor.turnTo(std::numbers::pi_v<f32> / 2); // facing +x, the point behind it
+    f.inputs[3].move = MoveInput{Vec2{1, 0}, 1};            // pushing on along +x
+    // Nine hundred degrees a second at the stance's full turn: a sixth of a turn a frame.
+    constexpr f32 kFrameTurn = 5.0f * std::numbers::pi_v<f32> / 30.0f;
+    f.step();
+    CHECK(f.players[0].actor.position() == Vec3{0});
+    CHECK(f.players[0].actor.yaw() == Approx(std::numbers::pi_v<f32> / 2 + kFrameTurn));
+    for (s32 frame = 0; frame < 6; ++frame) {
+        f.step();
+    }
+    CHECK(f.players[0].actor.position() == Vec3{0});
+    CHECK(std::abs(std::remainder(f.players[0].actor.yaw() - std::numbers::pi_v<f32>,
+                                  2.0f * std::numbers::pi_v<f32>)) == Approx(0.0f).margin(1.0e-5f));
+    // The other member, held to nothing, walks the same stick's way.
+    f.inputs[1].move = MoveInput{Vec2{1, 0}, 1};
+    const f32 otherX = f.players[1].actor.position().x;
+    f.step();
+    CHECK(f.players[1].actor.position().x > otherX);
+    // A knock still slides it.
+    f.players[0].knockback.queue(Vec3{1, 0, 0}, Knockback::kKnockBack, 10.0f);
+    f.step();
+    f.step();
+    CHECK(f.players[0].actor.position().x > 0.1f);
+    CHECK(f.players[0].actor.position().z == Approx(0.0f).margin(1.0e-5f));
+    // Let go, it walks the stick's way again.
+    f.events.restraint = {};
+    f.players[0].knockback.clear();
+    const Vec3 from = f.players[0].actor.position();
+    f.step();
+    CHECK(f.players[0].actor.position().x - from.x == Approx(f.players[0].actor.speed() / 30.0f));
+}
+
+TEST_CASE("a restraint's pace holds every step along each axis, a heavy kick's free frame too",
+          "[game][screens][party-motion][legend][move-limit]") {
+    Fixture f;
+    static constexpr f32 kCrawl = 2.0f; // static: the restraint's optional binds it
+    f.events.restraint = [](usize) { return PartyMotion::Restraint{.axisPace = kCrawl}; };
+    f.inputs[3].move = MoveInput{Vec2{0, 1}, 1};
+    CHECK(steppedBy(f).z == Approx(kCrawl / 30.0f));
+    // Diagonally each axis is held, not the whole.
+    f.inputs[3].move = MoveInput{glm::normalize(Vec2{1, 1}), 1};
+    const Vec3 diagonal = steppedBy(f);
+    CHECK(diagonal.x == Approx(kCrawl / 30.0f));
+    CHECK(diagonal.z == Approx(kCrawl / 30.0f));
+    // A blow that would send it forty a second is held to the crawl as well.
+    f.inputs[3].move = {};
+    f.players[0].knockback.queue(Vec3{0, 0, 1}, Knockback::kBlownAway, 10.0f);
+    f.step();
+    CHECK(steppedBy(f).z == Approx(kCrawl / 30.0f));
+    // At sixty a second the crawl is the same a second.
+    Fixture fine;
+    fine.events.restraint = f.events.restraint;
+    fine.events.select = [](usize, const SelectorInput&, s32) {}; // a tick at a time
+    fine.inputs[3].move = MoveInput{Vec2{0, 1}, 1};
+    for (s32 tick = 0; tick < 60; ++tick) {
+        PartyMotion::step(fine.players, fine.inputs, false, 0, 1, 1.0f / 60.0f, fine.collision,
+                          fine.level);
+    }
+    CHECK(fine.players[0].actor.position().z == Approx(kCrawl));
+}
+
+TEST_CASE("a barred potion's gesture plays out, but nothing goes off at its release",
+          "[game][screens][party-motion][legend][potion][assets]") {
+    const auto root = test::assetOrSkip("PLAYERS/WAR/ANIM/ANIM.PS2")
+                          .parent_path()
+                          .parent_path()
+                          .parent_path()
+                          .parent_path();
+    test::FakeRenderDevice device;
+    const auto released = [&](bool barred, bool PlayInput::*button) {
+        Fixture f;
+        f.players[0].figure =
+            PlayerFigure::load(device, root, f.players[0].actor.save(), Entrance::Skip);
+        REQUIRE(f.players[0].figure);
+        f.players[0].floor.object = 0;
+        f.players[0].actor.save().progress().inventory.addPotions(1, 1);
+        std::vector<PartyMotion::Action> actions;
+        f.events.advanceTurbo = [](usize, s32, f32) {};
+        f.events.perform = [&actions](usize i, PartyMotion::Action action) {
+            if (i == 0) {
+                actions.push_back(action);
+            }
+        };
+        f.events.restraint = [barred](usize) {
+            return PartyMotion::Restraint{.potionsBarred = barred};
+        };
+        f.inputs[3].*button = true;
+        bool gestured = false;
+        for (s32 frame = 0; frame < 90; ++frame) {
+            f.step();
+            gestured = gestured || f.players[0].figure->animator().conjuring();
+            f.inputs[3].*button = false;
+        }
+        CHECK(gestured);
+        return actions;
+    };
+    for (const auto [button, cast] :
+         {std::pair{&PlayInput::usePotion, PartyMotion::Action::UsePotion},
+          std::pair{&PlayInput::throwPotion, PartyMotion::Action::ThrowPotion},
+          std::pair{&PlayInput::shieldPotion, PartyMotion::Action::ShieldPotion}}) {
+        CAPTURE(static_cast<s32>(cast));
+        CHECK(std::ranges::count(released(false, button), cast) == 1);
+        CHECK(std::ranges::count(released(true, button), cast) == 0);
+    }
+}
+
+TEST_CASE("a combo's pinball and charger keep their own pace through a restraint",
+          "[game][screens][party-motion][legend][combo][move-limit]") {
+    const PartyMotion::Restraint held{.faceToward = Vec3{0, 0, -50}, .axisPace = 2.0f};
+    SECTION("the warrior's pinball flies on at thirty a second (anim 0x89 has no clamp)") {
+        Fixture f;
+        f.events.restraint = [&held](usize) { return held; };
+        PartyCombo::begin(f.players, 0, 1);
+        f.players[1].combo.role = ComboRole::Thrown;
+        f.players[1].actor.turnTo(0.0f);
+        const f32 z = f.players[1].actor.position().z;
+        f.step();
+        CHECK(f.players[1].actor.position().z == Approx(z + ComboMove::kFlightSpeed / 30.0f));
+    }
+    SECTION("the dwarf's charger runs at its ride's pace (motion 0x1d has no clamp)") {
+        Fixture f;
+        f.events.restraint = [&held](usize) { return held; };
+        PartyCombo::begin(f.players, 0, 1);
+        f.players[0].combo.grabberClass = ComboMove::kDwarf;
+        f.players[1].combo.grabberClass = ComboMove::kDwarf;
+        f.players[1].combo.role = ComboRole::Thrown;
+        f.players[1].actor.turnTo(0.0f);
+        f.inputs[3].move = MoveInput{Vec2{0, 1}, 1}; // the dwarf's stick steers
+        const f32 z = f.players[1].actor.position().z;
+        const f32 pace = f.players[1].actor.speed();
+        f.step();
+        CHECK(f.players[1].actor.position().z == Approx(z + pace * ComboMove::kRidePace / 30.0f));
+    }
+}
+
 TEST_CASE("a body lost under the world stands again beside another, or at the start",
           "[game][screens][party-motion][falling]") {
     Fixture f;
@@ -1848,19 +2071,29 @@ TEST_CASE("a step asks the level in phase order", "[game][screens][party-motion]
     f.inputs[3].attack = true;
     f.inputs[3].usePotion = true;
     f.step();
-    CHECK(log == std::vector<std::string>{
-                     "deathContact0", "perform0:NoPotion", "attackDeed0", "select0", "flying0",
-                     "resolveMovement0", "limitMovement0", "grabDeath0", "deathContact1", "select1",
-                     "flying1", "resolveMovement1", "limitMovement1", "grabDeath1"});
+    CHECK(log == std::vector<std::string>{"deathContact0", "restraint0", "perform0:NoPotion",
+                                          "attackDeed0", "select0", "flying0", "resolveMovement0",
+                                          "limitMovement0", "grabDeath0", "deathContact1",
+                                          "restraint1", "select1", "flying1", "resolveMovement1",
+                                          "limitMovement1", "grabDeath1"});
     // Standing still with attack held, the attack is aimed as well.
     log.clear();
     f.inputs[3] = {};
     f.inputs[3].attack = true;
     f.step();
-    CHECK(log == std::vector<std::string>{"deathContact0", "attackDeed0", "select0", "flying0",
+    CHECK(log == std::vector<std::string>{"deathContact0", "restraint0", "attackDeed0", "select0",
+                                          "flying0", "resolveMovement0", "limitMovement0",
+                                          "grabDeath0", "aim0", "deathContact1", "restraint1",
+                                          "select1", "flying1", "resolveMovement1",
+                                          "limitMovement1", "grabDeath1"});
+    // A member off its feet is asked for no restraint.
+    log.clear();
+    f.inputs[3] = {};
+    f.players[1].life = PlayerLife::InTower;
+    f.step();
+    CHECK(log == std::vector<std::string>{"deathContact0", "restraint0", "select0", "flying0",
                                           "resolveMovement0", "limitMovement0", "grabDeath0",
-                                          "aim0", "deathContact1", "select1", "flying1",
-                                          "resolveMovement1", "limitMovement1", "grabDeath1"});
+                                          "flying1", "grabDeath1"});
 }
 
 TEST_CASE("a figure's step asks its melee sense, then its turbo, then its releases",
@@ -1880,11 +2113,11 @@ TEST_CASE("a figure's step asks its melee sense, then its turbo, then its releas
     f.inputs[3].attack = true;
     f.inputs[3].attackPressed = true;
     f.step();
-    CHECK(log == std::vector<std::string>{"deathContact0", "attackDeed0", "select0", "flying0",
-                                          "resolveMovement0", "limitMovement0", "grabDeath0",
-                                          "aim0", "meleeSense0", "advanceTurbo0", "deathContact1",
-                                          "select1", "flying1", "resolveMovement1",
-                                          "limitMovement1", "grabDeath1"});
+    CHECK(log == std::vector<std::string>{"deathContact0", "restraint0", "attackDeed0", "select0",
+                                          "flying0", "resolveMovement0", "limitMovement0",
+                                          "grabDeath0", "aim0", "meleeSense0", "advanceTurbo0",
+                                          "deathContact1", "restraint1", "select1", "flying1",
+                                          "resolveMovement1", "limitMovement1", "grabDeath1"});
     // Held on, the throw lets its weapon go.
     f.inputs[3].attackPressed = false;
     std::vector<std::string> released;
@@ -1896,11 +2129,12 @@ TEST_CASE("a figure's step asks its melee sense, then its turbo, then its releas
             released = log;
         }
     }
-    CHECK(released == std::vector<std::string>{
-                          "deathContact0", "attackDeed0", "select0", "flying0", "resolveMovement0",
-                          "limitMovement0", "grabDeath0", "aim0", "meleeSense0", "advanceTurbo0",
-                          "perform0:ThrowWeapon", "deathContact1", "select1", "flying1",
-                          "resolveMovement1", "limitMovement1", "grabDeath1"});
+    CHECK(released ==
+          std::vector<std::string>{"deathContact0", "restraint0", "attackDeed0", "select0",
+                                   "flying0", "resolveMovement0", "limitMovement0", "grabDeath0",
+                                   "aim0", "meleeSense0", "advanceTurbo0", "perform0:ThrowWeapon",
+                                   "deathContact1", "restraint1", "select1", "flying1",
+                                   "resolveMovement1", "limitMovement1", "grabDeath1"});
 }
 
 static_assert(std::is_abstract_v<PartyMotion::Level>);
@@ -1932,6 +2166,7 @@ TEST_CASE("a movement level with nothing scripted answers as a level with nothin
     CHECK_FALSE(level.startPoint());
     CHECK_FALSE(level.flying(0));
     CHECK_FALSE(level.bearsLegend(0));
+    CHECK(level.restraint(0) == PartyMotion::Restraint{});
     CHECK_FALSE(level.comboImpact(0, 1, ComboMove::kWarriorBlow));
 }
 
@@ -1955,6 +2190,9 @@ TEST_CASE("a scripted movement level asks its script as the script stands at eac
     script.limitMovement = [](usize, const Vec3& before, const Vec3&) { return before; };
     script.flying = [](usize index) { return index == 1; };
     script.bearsLegend = [](usize index) { return index == 0; };
+    script.restraint = [](usize index) {
+        return PartyMotion::Restraint{.axisPace = 2.0f, .potionsBarred = index == 1};
+    };
     script.chainHeldMelee = true;
     CHECK(level.attackDeed(1, false, true, facing) == PlayerDeed::MeleeSlow);
     CHECK(level.meleeSense(1, true, facing) == MeleeSense{.range = MeleeRange::Step, .low = true});
@@ -1963,6 +2201,8 @@ TEST_CASE("a scripted movement level asks its script as the script stands at eac
     CHECK_FALSE(level.flying(0));
     CHECK(level.bearsLegend(0));
     CHECK_FALSE(level.bearsLegend(1));
+    CHECK(level.restraint(1) == PartyMotion::Restraint{.axisPace = 2.0f, .potionsBarred = true});
+    CHECK_FALSE(level.restraint(0).potionsBarred);
     CHECK(level.chainsHeldMelee());
 }
 

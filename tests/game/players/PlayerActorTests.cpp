@@ -294,6 +294,46 @@ TEST_CASE("a knock slides the body along the ground, never through a wall or off
     CHECK(actor.yaw() == 1.0f);
 }
 
+TEST_CASE("a step's walk and slide go together, held to the step's limit along each axis",
+          "[game][players][actor][knockback][move-limit]") {
+    PlayerActor actor;
+    const CharacterSave save;
+    actor.spawn(0, save, nullptr, Vec3{0.0f, 0.0f, 0.0f}, 0.0f);
+    const WorldCollision collision = room();
+    constexpr f32 kSeconds = 1.0f / 30.0f;
+    const f32 walked = actor.speed() * kSeconds;
+    // The walk and a slide the same way, more than the limit together, go no further than it.
+    actor.update(push(0.0f, 1.0f), 0.0f, kSeconds, &collision, 1.0f, false, Vec3{0.0f, 0.0f, 0.4f},
+                 0.25f);
+    CHECK(actor.position().z == Approx(0.25f));
+    CHECK(actor.stepAim().z == Approx(0.25f));
+    CHECK(actor.yaw() == 0.0f);
+    // A slide across the walk is held apart from it, an axis at a time, not by its length.
+    actor.place(Vec3{0.0f});
+    actor.update(push(0.0f, 1.0f), 0.0f, kSeconds, &collision, 1.0f, false, Vec3{0.4f, 0.0f, 0.0f},
+                 0.25f);
+    CHECK(actor.position().x == Approx(0.25f));
+    CHECK(actor.position().z == Approx(walked));
+    // The slide alone still goes, out of walls, and nothing lifts it.
+    actor.place(Vec3{0.0f});
+    actor.update(MoveInput{}, 0.0f, kSeconds, &collision, 1.0f, false, Vec3{20.0f, 3.0f, 0.0f});
+    CHECK(actor.position().x == Approx(5.0f - actor.reach()).margin(0.01f));
+    CHECK(actor.position().y == 0.0f);
+    CHECK_FALSE(actor.moving());
+    // A held action's walk goes nowhere, the slide still carries it, and it turns to the stick.
+    actor.place(Vec3{0.0f});
+    actor.update(push(1.0f, 0.0f), 0.0f, kSeconds, &collision, 0.0f, false, Vec3{0.0f, 0.0f, 0.1f});
+    CHECK(actor.position().x == Approx(0.0f));
+    CHECK(actor.position().z == Approx(0.1f));
+    CHECK(actor.yaw() == Approx(kPi / 2));
+    // Lifted off its floor, it sinks back at the native pace.
+    actor.lift(1.0f);
+    CHECK(actor.position().y == Approx(1.0f));
+    CHECK(actor.stepAim().y == Approx(1.0f));
+    actor.fall(kSeconds, collision);
+    CHECK(actor.position().y == Approx(1.0f - PlayerActor::kFallSpeed * kSeconds));
+}
+
 TEST_CASE("a body sinks to a floor gone lower at sixteen a second, and rides one that rose",
           "[game][players][actor][falling]") {
     PlayerActor actor;

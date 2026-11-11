@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <span>
 #include <vector>
 
@@ -33,7 +34,8 @@ public:
     static constexpr f32 kMinSpeed = 5.0f;  ///< units per second with no speed at all
     static constexpr f32 kMaxSpeed = 12.5f; ///< units per second at a speed stat of 1000
     static constexpr f32 kStatScale = 0.001f;
-    static constexpr f32 kMoveLimit = 1.5f;    ///< at most this many speeds of travel per second
+    /** A step's limit along each axis when nothing holds it. */
+    static constexpr f32 kUnlimited = std::numeric_limits<f32>::infinity();
     static constexpr f32 kStepUp = 3.0f;       ///< the native new-floor height limit
     static constexpr f32 kDrop = 3.0f;         ///< the deepest drop walked down
     static constexpr f32 kFallSpeed = 16.0f;   ///< how fast a body sinks to a floor gone lower
@@ -71,9 +73,11 @@ public:
     /** Walks by `input`, whose forward is the camera's `cameraYaw`, for `seconds`; with
      * `collision` the step is kept on a floor and pushed out of walls. `moveScale` is how
      * much of its pace the body's action leaves it: at none it turns to the stick and stays
-     * where it is. */
+     * where it is. `slide` goes with the walk, and the two together are held along each ground
+     * axis to `axisLimit` (PlayerMotion's dpos and moveLimit, 0x80081c00-0x80081c84). */
     void update(const MoveInput& input, f32 cameraYaw, f32 seconds, const WorldCollision* collision,
-                f32 moveScale = 1.0f, bool keepFacing = false);
+                f32 moveScale = 1.0f, bool keepFacing = false, const Vec3& slide = Vec3{0.0f},
+                f32 axisLimit = kUnlimited);
     /** The way `input` would send the character, as a heading about the upright. */
     static f32 headingOf(const MoveInput& input, f32 cameraYaw);
 
@@ -96,6 +100,12 @@ public:
     /** Carried along the ground by `offset` as a knock slides it: out of walls, and never
      * over an edge it could not walk off. */
     void slide(const Vec3& offset, const WorldCollision* collision);
+    /** Raised off its floor by `height`, as a step's rise lifts it (PlayerMotion's dpos.y over
+     * the floor's pull); fall() lowers it again at the native pace. */
+    void lift(f32 height) {
+        m_position.y += height;
+        m_stepAim.y += height;
+    }
     /** Follows its floor down when that has gone lower than it, sinking at most sixteen a
      * second and never faster (PlayerMotion's floor_base); a floor that rose lifts it at
      * once. True while it is above its floor. */

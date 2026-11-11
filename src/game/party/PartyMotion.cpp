@@ -15,6 +15,7 @@
 #include "game/party/PartyCombo.h"
 #include "game/players/ComboMove.h"
 #include "game/players/CursorAim.h"
+#include "game/players/Knockback.h"
 #include "game/players/PlayerDeeds.h"
 #include "game/players/PowerupEffects.h"
 namespace gdl::game {
@@ -23,6 +24,8 @@ constexpr f32 kChargeStick = 0.25f;
 /** A shoved body moving less than this a second shows no push (0.01 a 30 Hz frame,
  * pmotion.c 2042). */
 constexpr f32 kPushedStep = 0.3f;
+/** A point nearer than this along the ground gives a held body no way to turn. */
+constexpr f32 kFacingFrom = 1.0e-5f;
 /** Whether the deed is a quick swing, pressed or not, at something not low: such a swing
  * starts without turning, at a quick swing's pace at most. */
 bool quickSwing(PlayerDeed deed) {
@@ -303,6 +306,7 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
         if (mayGrabDeath) {
             deathHeld = level.deathContact(i);
         }
+        const Restraint restraint = down ? Restraint{} : level.restraint(i);
         MoveInput move =
             !held && !down && !immobilized && !entering && !deathHeld && player < inputs.size()
                 ? inputs[player].move
@@ -472,10 +476,18 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
         }
         const Vec3 before = actor.position();
         const Vec3 attackFrom = actor.followPoint();
-        // A knock slides the body on, then what hit it last frame kicks it, turning it to
-        // face along the push or against it (PlayerMotion, PlayerKnockback).
+        // A knock slides the body on with the walk and the shove, then what hit it last frame
+        // kicks it, turning it to face along the push or against it (PlayerMotion,
+        // PlayerKnockback). The step is held to its limit along each axis, which a restraint's
+        // pace replaces (0x80081ac8-0x80081b5c, 0x80081c40-0x80081c84).
+        f32 limit = restraint.axisPace ? *restraint.axisPace * seconds : PlayerActor::kUnlimited;
+        const Vec3 knocked = players[i].knockback.velocity();
+        Vec3 slide{0.0f};
         if (!down && !flying) {
-            actor.slide(players[i].knockback.step(seconds, actor.speed()), &collision);
+            if (!restraint.axisPace) {
+                limit = players[i].knockback.limit(seconds, actor.speed());
+            }
+            slide = players[i].knockback.step(seconds, actor.speed());
             if (const auto heading = players[i].knockback.kick(
                     actor.yaw(), (powerups.special & powerup::kPojo) != 0)) {
                 actor.turnTo(*heading);
@@ -483,8 +495,25 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
         }
         const auto plannedMove = attackMove(actor, animator, move, deed, cameraYaw, seconds,
                                             !held && !down && !immobilized, steeringTurbo);
-        actor.update(charging ? chargeInput(actor, move, cameraYaw) : plannedMove, cameraYaw,
-                     seconds, &collision, pace, strafes);
+        // Held, the body walks nowhere and turns to the point at the native rate (heading
+        // atan2 to the boss and speed 0, 0x800816c4-0x80081720; the turn, 0x80085450).
+        const MoveInput walk = restraint.faceToward ? MoveInput{}
+                               : charging           ? chargeInput(actor, move, cameraYaw)
+                                                    : plannedMove;
+        // A knock carrying it back against its walk lets the walk go nowhere; it still turns.
+        const bool opposed = !down && !flying && walk.any() &&
+                             Knockback::opposes(knocked, PlayerActor::headingOf(walk, cameraYaw));
+        actor.update(walk, cameraYaw, seconds, &collision, opposed ? 0.0f : pace, strafes,
+                     Vec3{slide.x, 0.0f, slide.z}, limit);
+        if (restraint.faceToward) {
+            const Vec3 toward = *restraint.faceToward - before;
+            if (portable::hypot(toward.x, toward.z) > kFacingFrom) {
+                actor.turnTo(turboHeading(actor.yaw(), portable::atan2(toward.x, toward.z), seconds,
+                                          animator != nullptr ? animator->turnScale() : 1.0f));
+            }
+        }
+        // The step's rise lifts it no higher than its limit, and nothing presses it down.
+        const f32 rise = std::clamp(slide.y, 0.0f, std::max(limit, 0.0f));
         if (!down) {
             players[i].attackStep = PlayerRuntime::AttackStep{attackFrom, actor.followPoint()};
         }
@@ -518,6 +547,10 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
         // beside another, or at the start.
         if (players[i].life != PlayerLife::InTower && !flying) {
             actor.fall(seconds, collision);
+        }
+        // The rise goes on top of the floor's pull, as dpos.y gathers both (0x80082220).
+        if (rise > 0.0f) {
+            actor.lift(rise);
         }
         if (!down && !flying && collision.loaded() &&
             actor.position().y <= collision.lowest() - kLostDepth) {
@@ -612,13 +645,17 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
                 level.perform(i, Action::ItemAttack);
             }
             players[i].blockLeft = std::max(players[i].blockLeft - seconds, 0.0f);
-            if (players[i].figure->animator().potionShielded()) {
-                level.perform(i, Action::ShieldPotion);
-            }
-            if (players[i].figure->animator().potionUsed()) {
-                level.perform(i, Action::UsePotion);
-            } else if (players[i].figure->animator().potionThrown()) {
-                level.perform(i, Action::ThrowPotion);
+            // A barred potion's gesture plays out, but nothing goes off at its release and no
+            // potion is taken (start_magic skipped, 0x80085258-0x80085280).
+            if (!restraint.potionsBarred) {
+                if (players[i].figure->animator().potionShielded()) {
+                    level.perform(i, Action::ShieldPotion);
+                }
+                if (players[i].figure->animator().potionUsed()) {
+                    level.perform(i, Action::UsePotion);
+                } else if (players[i].figure->animator().potionThrown()) {
+                    level.perform(i, Action::ThrowPotion);
+                }
             }
             // A levitating body's feet make no sound (pmotion.c 2931).
             if (const PlayerAnimator::Foot foot = players[i].figure->animator().footfall();

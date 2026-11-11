@@ -37,6 +37,22 @@ TEST_CASE("a code outside the bosses has no traits and the default legend stagin
     }
 }
 
+TEST_CASE("only the Chimera's rite holds the party to a crawl, two a second along each axis",
+          "[game][bosses][boss-traits][legend]") {
+    for (s32 code = kFirstBossType; code <= kLastBossType; ++code) {
+        CAPTURE(code);
+        if (code == boss_type::kChimera) {
+            CHECK(legendStagingOf(code).partyPace == 2.0f); // PlayerMotion's 0x80347B98
+        } else {
+            CHECK_FALSE(legendStagingOf(code).partyPace.has_value());
+        }
+    }
+    for (const s32 code : kNoBoss) {
+        CAPTURE(code);
+        CHECK_FALSE(legendStagingOf(code).partyPace.has_value());
+    }
+}
+
 TEST_CASE("each boss's defeat says its own lines and sends its own wizard",
           "[game][bosses][boss-traits]") {
     struct Row {

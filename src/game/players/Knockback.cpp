@@ -51,6 +51,21 @@ std::optional<f32> Knockback::kick(f32 facing, bool pojo) {
     return heading;
 }
 
+bool Knockback::opposes(const Vec3& velocity, f32 heading) {
+    if (glm::length(velocity) / kFrameRate < kOpposeTravel) {
+        return false;
+    }
+    const f32 off = std::remainder(portable::atan2(velocity.x, velocity.z) - heading,
+                                   2.0f * std::numbers::pi_v<f32>);
+    return std::abs(off) > kOpposeTurn;
+}
+
+f32 Knockback::limit(f32 seconds, f32 pace) const {
+    const f32 total = std::max(seconds, 0.0f);
+    const f32 fast = std::min(total, m_fastSeconds);
+    return kFastLimit * fast + kPaceLimit * pace * (total - fast);
+}
+
 Vec3 Knockback::step(f32 seconds, f32 pace) {
     if (seconds <= 0.0f) {
         return Vec3{0.0f};
@@ -61,9 +76,7 @@ Vec3 Knockback::step(f32 seconds, f32 pace) {
     while (seconds > 0) {
         const f32 frameLeft = 1.0f / kFrameRate - m_frameSeconds;
         const f32 dt = std::min({seconds, frameLeft, m_fastSeconds > 0 ? m_fastSeconds : seconds});
-        const f32 limit = (m_fastSeconds > 0 ? kFastLimit : kPaceLimit * pace) * dt;
-        travel += Vec3{std::clamp(m_velocity.x * dt, -limit, limit), 0,
-                       std::clamp(m_velocity.z * dt, -limit, limit)};
+        travel += m_velocity * dt;
         if (const f32 shove = glm::length(m_shove); shove > 0) {
             travel += m_shove / shove * std::min(shove, kShoveLimit * pace) * dt;
         }

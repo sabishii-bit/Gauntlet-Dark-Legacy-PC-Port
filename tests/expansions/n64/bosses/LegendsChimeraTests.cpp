@@ -46,7 +46,9 @@ struct ChimeraScene {
     PlayScene scene;
     std::shared_ptr<LegendsLevel> imported;
 
-    ChimeraScene() {
+    /** The arena with one player carrying the campaign's `legendItems` and `potions` red
+     * potions. */
+    explicit ChimeraScene(u64 legendItems = 0, s32 potions = 0) {
         const auto root = test::assetOrSkip("PLAYERS").parent_path();
         const auto directory = nativeRoot() / "levels/castle5";
         const auto models = readFile(directory / "objects.wad");
@@ -65,6 +67,8 @@ struct ChimeraScene {
         member.player = 0;
         member.save.name = "TEST";
         member.save.progress().health = 2000;
+        member.save.progress().legendsProgress(LegendsPlatform::N64).legendItems = legendItems;
+        member.save.progress().inventory.addPotions(1, potions);
         const std::array party{member};
         LegendsTraversal traversal;
         traversal.open(map, 0, member.save);
@@ -630,4 +634,56 @@ TEST_CASE("Native Chimera combined breath retains the cancelling damage and effe
         CAPTURE(greatestSeparation);
         CHECK(greatestSeparation < .02f);
     }
+}
+
+TEST_CASE("Native Chimera's legend rite holds, slows and disarms nobody in its own arena",
+          "[legends][native-chimera][legend][rite-hold][assets]") {
+    // Boss.bin's rites run beside game.bin's ordinary player motion, which reads none of them.
+    constexpr u64 kAllLegends = 0x1f;
+    ChimeraScene test{kAllLegends, 2};
+    auto& bosses = test.scene.bosses();
+    const LegendRite& rite = bosses.legend();
+    REQUIRE(rite.stage() == LegendRite::Stage::Carried);
+    REQUIRE(rite.restrainsParty());
+    for (s32 tick = 0; tick < 600 && (test.scene.spawning() || test.scene.animator(0)->entering());
+         ++tick) {
+        test.step();
+    }
+    const auto potions = [&test] {
+        return test.scene.actor(0)->save().progress().inventory.potions.size();
+    };
+    // A potion used through the rite's opening goes off.
+    PlayScene::Inputs input{};
+    input[0].usePotion = true;
+    REQUIRE(test.scene.update(1.0 / 60, input) == PlayOutcome::Running);
+    input[0].usePotion = false;
+    for (s32 tick = 0; tick < 120 && potions() == 2; ++tick) {
+        test.step();
+    }
+    REQUIRE(rite.restrainsParty());
+    CHECK(potions() == 1);
+    for (s32 tick = 0; tick < 120 && test.scene.animator(0)->conjuring(); ++tick) {
+        test.step(); // the gesture's recovery holds the feet
+    }
+    REQUIRE_FALSE(test.scene.animator(0)->conjuring());
+    // Engaged, the party still walks at its own pace, faster than the base game's crawl allows.
+    constexpr f32 kCrawlStep = 2.0f / 60.0f;
+    bosses.wake();
+    REQUIRE(bosses.view().engaged);
+    const auto walked = [&] {
+        input[0].move = {{0, 1}, 1};
+        const Vec3 from = test.scene.actor(0)->position();
+        REQUIRE(test.scene.update(1.0 / 60, input) == PlayOutcome::Running);
+        input[0].move = {};
+        const Vec3 moved = test.scene.actor(0)->position() - from;
+        return std::max(std::abs(moved.x), std::abs(moved.z));
+    };
+    REQUIRE(rite.restrainsParty());
+    CHECK(walked() > kCrawlStep + 1.0e-3f);
+    // Risen, nothing holds it either.
+    for (s32 tick = 0; tick < 1200 && !rite.holdsParty(); ++tick) {
+        test.step();
+    }
+    REQUIRE(rite.holdsParty());
+    CHECK(walked() > kCrawlStep + 1.0e-3f);
 }
