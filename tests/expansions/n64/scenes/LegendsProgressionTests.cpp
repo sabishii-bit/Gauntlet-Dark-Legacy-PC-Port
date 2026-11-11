@@ -279,6 +279,62 @@ TEST_CASE("The native cathedral beam leaves installed window shards visible",
     CHECK(backplates == 1);
 }
 
+TEST_CASE("The N64 cathedral beam waits for the window ceremony's fade and stays for later ones",
+          "[legends][progression-scene][tower][native-tower-window][assets]") {
+    const auto root = nativeRoot();
+    const auto directory = root / "levels/tower2";
+    auto map = nativeMap(directory);
+    const auto beam = std::ranges::find(map.objects, "CATH_BEAM", &formats::LegendsMapObject::name);
+    REQUIRE(beam != map.objects.end());
+    const auto beamIndex = static_cast<usize>(beam - map.objects.begin());
+    test::FakeRenderDevice device;
+    auto scene = LegendsSceneAdapter::load(device, LegendsPlatform::N64, directory, map);
+    CharacterSave save;
+    const std::array<const CharacterSave*, 1> party{&save};
+    auto& progress = save.progress().legendsProgress(LegendsPlatform::N64);
+    LegendsProgress before;
+    before.shards = 7;
+    LegendsProgress after = before;
+    after.shards = 15;
+    // The party owns the fourth shard before the ceremony presents it.
+    progress = after;
+    scene->synchronizeProgress(party);
+    REQUIRE(scene->worldObjectVisible(beamIndex));
+    scene->queueTowerCeremonies(before, after);
+    CHECK_FALSE(scene->worldObjectVisible(beamIndex));
+    scene->startTowerCeremonies({}, {});
+    const auto* ceremony = scene->towerCeremony();
+    REQUIRE(ceremony);
+    REQUIRE(ceremony->active());
+    // Tower e0863440 unhides the beam fully transparent at case 7 (tick 161) and fades it
+    // in over case 9 from tick 214; the adapter, which can only hide it, shows it from
+    // count 20 of 40.
+    for (s32 tick = 1; tick <= 394; ++tick) {
+        CAPTURE(tick);
+        scene->update(1.0f / 30);
+        CHECK(scene->worldObjectVisible(beamIndex) == (tick >= 234));
+        CHECK(ceremony->active() == (tick < 394));
+    }
+    scene->update(1.0f / 30);
+    CHECK(scene->worldObjectVisible(beamIndex));
+    // A later visit's runestone ceremony keeps the completed window's beam.
+    const LegendsProgress window = after;
+    LegendsProgress rune = window;
+    rune.runestones = 1;
+    progress = rune;
+    scene->synchronizeProgress(party);
+    scene->queueTowerCeremonies(window, rune);
+    CHECK(scene->worldObjectVisible(beamIndex));
+    scene->startTowerCeremonies({}, {});
+    REQUIRE(ceremony->active());
+    for (s32 tick = 1; tick <= 232; ++tick) {
+        CAPTURE(tick);
+        scene->update(1.0f / 30);
+        CHECK(scene->worldObjectVisible(beamIndex));
+    }
+    CHECK_FALSE(ceremony->active());
+}
+
 TEST_CASE("Native obelisk grants are shared and a spent obelisk remains a visible solid body",
           "[legends][progression-scene][obelisks][assets]") {
     const auto root = nativeRoot();

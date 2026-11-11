@@ -221,7 +221,14 @@ void LegendsSceneAdapter::updateTowerProgress(bool initial) {
     }
     updateTowerPortals();
     if (m_cathedralBeam) {
-        m_hiddenWorldObjects[*m_cathedralBeam] = !progress.cathedralBeam;
+        // During a ceremony CATH_BEAM follows e0863440's transparency byte: unhidden fully
+        // transparent at the window's case 7 and faded in over case 9. A world object can
+        // only be hidden here, so the beam shows once that byte falls past its midpoint.
+        constexpr f32 kShownOpacity = .5f;
+        const bool shown = m_towerCeremony && m_towerCeremony->active()
+                               ? m_towerCeremony->cathedralBeamOpacity() >= kShownOpacity
+                               : progress.cathedralBeam;
+        m_hiddenWorldObjects[*m_cathedralBeam] = !shown;
     }
 }
 

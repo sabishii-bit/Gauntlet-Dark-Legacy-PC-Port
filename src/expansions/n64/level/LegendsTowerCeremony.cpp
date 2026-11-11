@@ -28,25 +28,77 @@ std::vector<u32> captions(std::span<const u16> ids) {
     return result;
 }
 
+// Sumner's WIZMOVES gestures.
+constexpr std::string_view kReady = "REDY";
+constexpr std::string_view kRuneSpell = "MKRU";
+constexpr std::string_view kDoorSpell = "STRT";
+constexpr std::string_view kDoorRelease = "ODOR";
+constexpr std::string_view kShardSpell = "SHD1";
+constexpr std::string_view kShardRestore = "SHDR";
+/// The shortest frame period a bound sequence may claim.
+constexpr f32 kMinimumPeriod = .0001f;
+
+// Shots: e007d53c's distance and pitch about e007d584's focus.
+constexpr f32 kShotDistance = 30;
+constexpr f32 kSumnerShotPitch = kPi / 6;
+constexpr f32 kSumnerFocusHeight = 3;
+constexpr f32 kRuneShotPitch = 25 * kPi / 180;
+constexpr f32 kDoorShotPitch = 25 * kPi / 180;
+constexpr f32 kShardShotPitch = 10 * kPi / 180;
+constexpr f32 kWindowShotDistance = 38;
+constexpr f32 kWindowShotPitch = kPi / 6;
+/// The window shot looks 2 under the overlay's shard point, 7 under the shard shot's focus.
+constexpr f32 kWindowFocusDrop = 7;
+// Camera moves (e007cfd0): e08694e4 accelerates shots over .7 s, case 0x28 the return over .5 s.
+constexpr f32 kShotAcceleration = .7f;
+constexpr f32 kReturnAcceleration = .5f;
+constexpr f32 kCruiseSeconds = 1;
+constexpr f32 kBrakingSeconds = .3f;
+
+// e086239c's time line, in updates from its setup.
+constexpr s32 kRuneShotTime = 20;
+constexpr s32 kRuneSpellTime = 50;
+/// e086239c halves MKRU's speed (+0x14) as it starts it.
+constexpr f32 kRuneSpellSpeed = .5f;
+constexpr f32 kRuneReleaseFrame = 14;
+constexpr s32 kRuneSettleUpdates = 30;
+constexpr u32 kRuneSpellSound = 0x68;
+constexpr u32 kRuneLandingSound = 0x8a;
+/// The flight fades in over .8 s; e00137d0 scales the stone 1.8 times.
+constexpr f32 kRuneFadeSeconds = .8f;
+constexpr f32 kRuneFlightScale = 1.8f;
+constexpr u64 kAllRunestones = 0x1fff;
+
+// e0865c98's counts and frames.
+constexpr s32 kOpeningCount = 41;
+constexpr s32 kDoorSpellCount = 6;
+constexpr f32 kDoorChimeFrame = 30;
+constexpr u32 kDoorChimeSound = 0xb9;
+constexpr f32 kDoorHoldFrame = 15;
+constexpr s32 kDoorHoldUpdates = 50;
+constexpr f32 kDoorShimmerFrame = 16;
+constexpr u32 kDoorShimmerSound = 0x6e;
+constexpr f32 kDoorReleaseFrame = 19;
+constexpr s32 kClosingCount = 41;
+
+// e0863440's counts.
+constexpr s32 kShardSpellCount = 51;
+constexpr s32 kShardRestCount = 20;
+constexpr u32 kShardChimeSound = 0x68;
 /// The count at which e0863440 case 6 settles the pane and moves on.
 constexpr s32 kShardSettleCount = 25;
-struct ShardBytes {
-    u8 transparency = 0;
-    u8 white = 0;
-};
-/** The two bytes e0863440 case 6 stores into the shard's drawable for a count: +1, the
- * transparency (count - 4) * 208 / 20 through sb, so counts 1 to 3 wrap (Tower
- * e08638a0..e08638d0), and +5, the white blend ~((count - 4)^2 * 255 / 400). game e001ea34
- * draws 255 less the transparency, so counts 1 to 3 flash 30, 19 and 9 before the opaque
- * pop at 4. */
-ShardBytes shardBytes(s32 count) {
-    if (count >= kShardSettleCount) {
-        return {LegendsTowerProgress::kShardTransparency, 0};
-    }
-    const s32 offset = count - 4;
-    return {static_cast<u8>(offset * LegendsTowerProgress::kShardTransparency / 20),
-            static_cast<u8>(255 - offset * offset * 255 / 400)};
-}
+/// Case 6's pane is opaque at count 4 and fades its white over the 20 counts after.
+constexpr s32 kPaneOpaqueCount = 4;
+constexpr s32 kPaneFadeCount = 20;
+constexpr s32 kWindowWaitCount = 51;
+constexpr s32 kWindowFadeCount = 40;
+constexpr s32 kPortalFadeCount = 80;
+constexpr u64 kWholeWindow = 15;
+
+// e086098c's caption fades and the drawables' bytes.
+constexpr f32 kCaptionFade = .3f;
+constexpr u8 kWhite = 255;
+constexpr f32 kByteScale = 255;
 } // namespace
 
 LegendsTowerCeremony LegendsTowerCeremony::decode(std::span<const u8> overlay) {
@@ -87,14 +139,18 @@ void LegendsTowerCeremony::begin(const LegendsProgress& before, const LegendsPro
     m_owned = after;
     m_captions.clear();
     m_sounds.clear();
-    m_windowReveal = (before.shards & 15U) == 15U ? 1 : 0;
+    // e0862fc4 shows CATH_BEAM and the whole panes only when the seen shards make the window.
+    const bool window = (before.shards & kWholeWindow) == kWholeWindow;
+    m_windowReveal = window ? 1.0f : 0.0f;
+    m_beamShown = window;
+    m_beamTransparency = 0;
     if (!before.valid() || !after.valid()) {
         return;
     }
     m_displayed.runestones &= before.runestones;
     m_displayed.shards &= before.shards;
     m_displayed.obelisks &= before.obelisks;
-    auto count = static_cast<usize>(std::popcount(before.runestones & 0x1fffU));
+    auto count = static_cast<usize>(std::popcount(before.runestones & kAllRunestones));
     // e0862220 chooses the lowest pending rune. e08653bc's final assignment
     // gives Castle, Battlefield, Ice, Town priority. e0863364 takes the highest
     // pending shard. Keep this order when several players bring pieces home.
@@ -102,6 +158,11 @@ void LegendsTowerCeremony::begin(const LegendsProgress& before, const LegendsPro
         if ((after.runestones & ~before.runestones & (u64{1} << i)) != 0) {
             m_entries.push_back({Kind::Rune, i, {m_runeCaptions[count++]}});
         }
+    }
+    // e0862220 sets e086af00 when the stones make all thirteen: the last of them returns early.
+    if (!m_entries.empty() &&
+        ((before.runestones | after.runestones) & kAllRunestones) == kAllRunestones) {
+        m_entries.back().completesRunes = true;
     }
     for (const usize i : {1U, 3U, 2U, 0U}) {
         const auto required = LegendsTowerProgress::kDoorObelisks[i];
@@ -129,190 +190,482 @@ void LegendsTowerCeremony::start(const WorldCamera& camera, const Vec3& attentio
     }
     m_started = true;
     m_remainder = 0;
-    m_camera = m_previousCamera = m_returnCamera = camera;
-    m_cameraFocus = m_returnFocus = attention;
-    shot(m_native.sumner.position + Vec3{0, 3, 0}, 30, kPi / 6);
-    next();
+    m_dispatch = Dispatch::Select;
+    m_returnCamera = camera;
+    m_returnFocus = attention;
+    // e0860620 cuts every camera channel to Sumner's shot: e007d1d4, e007d53c and
+    // e007d584 each set the channel's current value to its target.
+    const Vec3 focus = m_native.sumner.position + Vec3{0, kSumnerFocusHeight, 0};
+    m_camera = camera; // the shot keeps this camera's yaw
+    m_camera = shotCamera(focus, kShotDistance, kSumnerShotPitch);
+    m_previousCamera = m_cameraFrom = m_cameraGoal = m_camera;
+    m_cameraFocus = m_focusFrom = m_focusGoal = focus;
+    m_glide = {};
+    // It also empties the caption queue and lifts the ready suppression.
+    m_captions.clear();
+    m_readySuppressed = false;
+    m_flightFrame = -1;
+    m_paneBytes.reset();
+    m_gesture = {};
+    play(kReady);
+    passGesture();
 }
 
-void LegendsTowerCeremony::play(std::string_view name, bool reverse, f32 speed) {
-    m_gesture = name;
+void LegendsTowerCeremony::play(std::string_view name) {
+    // e002f708 leaves the current sequence ended and frozen (0x9000) when it finds none.
     const auto found = std::ranges::find(m_sequences, name, &Sequence::name);
-    m_frameEnd = found == m_sequences.end() ? 0 : static_cast<f32>(std::max(0, found->frames - 1));
-    const f32 period = found == m_sequences.end() ? kTick : found->secondsPerFrame;
-    m_frame = reverse ? m_frameEnd : 0;
-    m_frameStep = (reverse ? -1.0f : 1.0f) * speed * kTick / std::max(period, .0001f);
+    if (found == m_sequences.end() || found->frames <= 0) {
+        m_gesture.done = true;
+        m_gesture.frozen = true;
+        return;
+    }
+    // e002f7a0: frame 0, held through the next pass, at 16 / rate frames a pass. Its
+    // mask 0xfffb6f00 keeps the Tower's once flag and the previous frame (+0x30).
+    m_gesture.name = found->name;
+    m_gesture.frames = found->frames;
+    m_gesture.step = kTick / std::max(found->secondsPerFrame, kMinimumPeriod);
+    m_gesture.repeats = found->repeats;
+    m_gesture.frame = 0;
+    m_gesture.reversed = false;
+    m_gesture.held = true;
+    m_gesture.done = false;
+    m_gesture.frozen = false;
 }
 
-bool LegendsTowerCeremony::advanceGesture() {
-    m_frame = std::clamp(m_frame + m_frameStep, 0.0f, m_frameEnd);
-    return m_frameStep < 0 ? m_frame <= 0 : m_frame >= m_frameEnd;
+void LegendsTowerCeremony::perform(std::string_view name) {
+    // e0860ca4 plays every gesture but REDY once; REDY keeps the flag it inherits, so
+    // the REDY after MKRU plays once too.
+    play(name);
+    if (name != kReady) {
+        m_gesture.once = true;
+    }
+}
+
+void LegendsTowerCeremony::passGesture() {
+    // e00327e4 as e0032c80 runs it after the callback, skipping a frozen object.
+    auto& gesture = m_gesture;
+    if (gesture.frozen || gesture.frames <= 0) {
+        return;
+    }
+    const auto count = static_cast<f32>(gesture.frames);
+    f32 frame = gesture.held ? gesture.frame : gesture.frame + gesture.step;
+    bool ended = count <= frame;
+    gesture.previousFrame = gesture.frame;
+    if (ended) {
+        frame -= count;
+    }
+    gesture.frame = frame;
+    // A loop wraps and raises only the end flag; a once-sequence clamps at its last
+    // frame and freezes on the pass that reaches it.
+    const bool once = gesture.once || !gesture.repeats;
+    if (once && (count - 1 <= frame || ended)) {
+        gesture.frame = count - 1;
+        ended = true;
+    }
+    gesture.held = false;
+    if (ended) {
+        gesture.done = true;
+        gesture.frozen = once;
+    }
+}
+
+bool LegendsTowerCeremony::crossed(f32 frame) const {
+    return m_gesture.previousFrame < frame && frame <= m_gesture.frame;
+}
+
+f32 LegendsTowerCeremony::gestureFrame() const {
+    if (!m_gesture.reversed) {
+        return m_gesture.frame;
+    }
+    // e00327e4 shows a reversed once-sequence from its last frame, a loop from its count.
+    if (m_gesture.frames < 2) {
+        return 0;
+    }
+    const bool once = m_gesture.once || !m_gesture.repeats;
+    const f32 shown = static_cast<f32>(m_gesture.frames - (once ? 1 : 0)) - m_gesture.frame;
+    return shown < 0 ? shown + static_cast<f32>(m_gesture.frames) : shown;
 }
 
 void LegendsTowerCeremony::queueCaptions(std::span<const u32> ids) {
-    if (m_captions.empty()) {
-        m_captionSeconds = 0;
-    }
     for (const u32 id : ids) {
         if (captionHasText(id)) {
-            m_captions.push_back(id);
+            m_captions.push_back({.id = id});
         }
     }
 }
 
-void LegendsTowerCeremony::next() {
-    m_phase = 0;
-    m_ticks = 0;
-    m_flightFrame = -1;
-    play("REDY");
-    if (const auto* entry = current()) {
-        queueCaptions(entry->captions);
-        if (entry->kind == Kind::Rune) {
-            makeRuneFlight(entry->index);
+void LegendsTowerCeremony::stepCaptions() {
+    // e086098c runs the front caption's float32 clock: it fades in over its first .3 s,
+    // fades out over its last and goes when its time reaches 0, on its 91st update.
+    if (m_captions.empty()) {
+        return;
+    }
+    auto& front = m_captions.front();
+    front.remaining = std::max(front.remaining - kTick, 0.0f);
+    const auto faded = [](f32 seconds) {
+        return static_cast<u8>(static_cast<s32>((1 - seconds / kCaptionFade) * kByteScale));
+    };
+    switch (front.stage) {
+    case Caption::Stage::Queued: front.stage = Caption::Stage::FadingIn; [[fallthrough]];
+    case Caption::Stage::FadingIn: {
+        const f32 elapsed = kCaptionSeconds - front.remaining;
+        if (elapsed >= kCaptionFade) {
+            front.transparency = 0;
+            front.stage = Caption::Stage::Shown;
+        } else {
+            front.transparency = faded(elapsed);
         }
-    } else {
-        // e086736c cases 40/41 restore the ordinary camera before handing back
-        // control. Ownership was committed before the ceremony began.
-        m_phase = 100;
-        m_cameraFrom = m_camera;
-        m_cameraGoal = m_returnCamera;
-        m_focusFrom = m_cameraFocus;
-        m_focusGoal = m_returnFocus;
-        m_cameraSeconds = 0;
+        break;
+    }
+    case Caption::Stage::Shown:
+        // The update that starts the fade-out keeps the caption's transparency.
+        if (front.remaining < kCaptionFade) {
+            front.stage = Caption::Stage::FadingOut;
+        }
+        break;
+    case Caption::Stage::FadingOut: front.transparency = faded(front.remaining); break;
+    }
+    if (front.remaining <= 0) {
+        m_captions.erase(m_captions.begin());
     }
 }
 
-void LegendsTowerCeremony::finishEntry() {
-    ++m_next;
-    next();
+void LegendsTowerCeremony::attend() {
+    // e0860d1c restarts REDY, looping, once a gesture that plays once has ended (0x9000),
+    // unless the shard spell suppresses it. Sumner's turn toward the shot is not modelled.
+    if (!m_readySuppressed && m_gesture.done && m_gesture.frozen) {
+        play(kReady);
+        m_gesture.once = false;
+    }
+    stepCaptions();
+}
+
+void LegendsTowerCeremony::select() {
+    // Case 1 runs the next pending entry's setup, or picks the return (0x28).
+    const auto* entry = current();
+    if (!entry) {
+        m_dispatch = Dispatch::PlanReturn;
+        return;
+    }
+    m_dispatch = Dispatch::Script;
+    m_count = 0;
+    m_paneBytes.reset();
+    switch (entry->kind) {
+    case Kind::Rune:
+        // e08622f4 records the flight (e08618a8), then runs e086239c's time-0 events
+        // with no time step: the caption is queued here and shown on the next update.
+        makeRuneFlight(entry->index);
+        m_runeTime = 0;
+        m_runeStage = RuneStage::Waiting;
+        m_spellAt = -1;
+        m_flightStart = -1;
+        m_settledAt = -1;
+        m_flightFrame = -1;
+        runeScript(*entry);
+        break;
+    case Kind::Door:
+        // e086544c, then one e0865c98 call: a camera step, the captions, the first count.
+        m_doorCase = DoorCase::Captions;
+        m_doorHold = -1;
+        m_doorBolt = false;
+        advanceCamera();
+        doorScript(*entry);
+        break;
+    case Kind::Shard:
+        // e0863410 only resets the script.
+        m_shardCase = ShardCase::Captions;
+        break;
+    }
+}
+
+bool LegendsTowerCeremony::runScript(const Entry& entry) {
+    // Each script steps the camera (e007dd70) before its own case.
+    advanceCamera();
+    switch (entry.kind) {
+    case Kind::Rune: ++m_runeTime; return runeScript(entry);
+    case Kind::Door: return doorScript(entry);
+    case Kind::Shard: return shardScript(entry);
+    }
+    return false;
+}
+
+bool LegendsTowerCeremony::runeScript(const Entry& entry) {
+    // e086239c's events fall on whole updates since its setup. An event slot marked
+    // on one update is stamped and acts on the next (-0x29a, 0x1046a, then 1).
+    const s32 now = m_runeTime;
+    if (now == 0) {
+        queueCaptions(entry.captions);
+    }
+    if (now == kRuneShotTime) {
+        shot(m_runeFocus, kShotDistance, kRuneShotPitch);
+    }
+    if (now == kRuneSpellTime) {
+        m_sounds.push_back(kRuneSpellSound);
+        m_spellAt = now + 1;
+    }
+    if (m_flightStart >= 0 && now >= m_flightStart) {
+        const s32 pose = now - m_flightStart;
+        if (pose < static_cast<s32>(kFlightPoses)) {
+            m_flightFrame = pose;
+        } else if (pose == static_cast<s32>(kFlightPoses)) {
+            // The stone lands in its final pose with 0x8a; the settle slot follows.
+            m_flightFrame = -1;
+            m_displayed.runestones |= u64{1} << entry.index;
+            m_sounds.push_back(kRuneLandingSound);
+            m_settledAt = now + 1;
+        }
+    }
+    // The thirteenth stone returns at its settle stamp (slot 0), the others 30 later.
+    if (m_settledAt >= 0 && now == m_settledAt + (entry.completesRunes ? 0 : kRuneSettleUpdates)) {
+        return true;
+    }
+    // The stage is read before MKRU starts, so the release test first runs on the next update.
+    const RuneStage stage = m_runeStage;
+    if (now == m_spellAt) {
+        perform(kRuneSpell);
+        m_gesture.step *= kRuneSpellSpeed;
+        m_runeStage = RuneStage::Spell;
+    }
+    if (stage == RuneStage::Spell) {
+        // Retail waits for MKRU's frame 14 however long it takes; a spell that ends
+        // short of it, or is absent, releases the stone as it ends instead.
+        if (m_flightStart < 0 && (crossed(kRuneReleaseFrame) || m_gesture.done)) {
+            m_flightStart = now + 1;
+        }
+        if (m_gesture.done) {
+            perform(kReady);
+            m_runeStage = RuneStage::Ready;
+        }
+    }
+    return false;
+}
+
+bool LegendsTowerCeremony::doorScript(const Entry& entry) {
+    switch (m_doorCase) {
+    case DoorCase::Captions:
+        queueCaptions(entry.captions);
+        m_count = 0;
+        m_doorCase = DoorCase::Opening;
+        [[fallthrough]];
+    case DoorCase::Opening:
+        if (++m_count >= kOpeningCount) {
+            m_doorCase = DoorCase::Shot;
+        }
+        break;
+    case DoorCase::Shot:
+        shot(m_doorFocus[entry.index], kShotDistance, kDoorShotPitch);
+        m_count = 0;
+        m_doorCase = DoorCase::Spell;
+        break;
+    case DoorCase::Spell:
+        if (++m_count >= kDoorSpellCount) {
+            perform(kDoorSpell);
+            m_gesture.reversed = true;
+            m_doorCase = DoorCase::Unwind;
+        }
+        break;
+    case DoorCase::Unwind:
+        // The chime comes as the reversed STRT's own count passes 30; its end starts STRT forward.
+        if (crossed(kDoorChimeFrame)) {
+            m_sounds.push_back(kDoorChimeSound);
+        }
+        if (m_gesture.done) {
+            perform(kDoorSpell);
+            m_doorCase = DoorCase::Rewind;
+        }
+        break;
+    case DoorCase::Rewind:
+        if (m_gesture.done) {
+            perform(kDoorRelease);
+            m_count = 0;
+            m_doorHold = -1;
+            m_doorCase = DoorCase::Bolt;
+        }
+        break;
+    case DoorCase::Bolt:
+        // ODOR freezes at frame 15 for a countdown taken from the update that sees it; the
+        // bolt it sends chimes once past frame 16, and frame 19 lets the door go.
+        if (!m_gesture.frozen && crossed(kDoorHoldFrame)) {
+            m_doorHold = kDoorHoldUpdates;
+            m_gesture.frozen = true;
+            m_doorBolt = true;
+        }
+        if (m_doorHold >= 0) {
+            --m_doorHold;
+            if (m_doorHold < 0) {
+                m_gesture.frozen = false;
+            }
+        }
+        if (m_doorBolt && m_gesture.frame > kDoorShimmerFrame) {
+            m_doorBolt = false;
+            m_sounds.push_back(kDoorShimmerSound);
+        }
+        // Retail waits for frame 19 however long it takes; an ODOR that ends short of
+        // it, or is absent, lets the door go as it ends instead.
+        if (m_gesture.frame > kDoorReleaseFrame || m_gesture.done) {
+            m_count = 0;
+            m_doorCase = DoorCase::Release;
+        }
+        break;
+    case DoorCase::Release:
+        // The door's held animation goes on; the adapter plays 0x10 from the displayed bits.
+        m_count = 0;
+        m_displayed.obelisks |= LegendsTowerProgress::kDoorObelisks[entry.index];
+        m_doorCase = DoorCase::Closing;
+        break;
+    case DoorCase::Closing:
+        if (++m_count >= kClosingCount) {
+            m_doorCase = DoorCase::Finished;
+        }
+        break;
+    case DoorCase::Finished: return true;
+    }
+    return false;
+}
+
+bool LegendsTowerCeremony::shardScript(const Entry& entry) {
+    switch (m_shardCase) {
+    case ShardCase::Captions:
+        queueCaptions(entry.captions);
+        m_count = 0;
+        m_shardCase = ShardCase::Opening;
+        [[fallthrough]];
+    case ShardCase::Opening:
+        if (++m_count >= kOpeningCount) {
+            m_shardCase = ShardCase::Shot;
+        }
+        break;
+    case ShardCase::Shot:
+        shot(m_shardFocus, kShotDistance, kShardShotPitch);
+        m_count = 0;
+        m_shardCase = ShardCase::Spell;
+        break;
+    case ShardCase::Spell:
+        if (++m_count >= kShardSpellCount) {
+            perform(kShardSpell);
+            m_readySuppressed = true;
+            m_shardCase = ShardCase::Install;
+        }
+        break;
+    case ShardCase::Install:
+        // The pane shows, clear and white, once SHD1 has ended.
+        if (m_gesture.done) {
+            m_displayed.shards |= u64{1} << entry.index;
+            m_paneBytes = PaneBytes{kTransparent, kWhite};
+            m_count = 0;
+            m_shardCase = ShardCase::Rest;
+        }
+        break;
+    case ShardCase::Rest:
+        // Counts 0 to 20 keep the clear pane; the 22nd update plays 0x68.
+        if (m_count > kShardRestCount) {
+            m_count = 0;
+            m_shardCase = ShardCase::Settle;
+            m_sounds.push_back(kShardChimeSound);
+        }
+        ++m_count;
+        break;
+    case ShardCase::Settle:
+        if (m_count < kShardSettleCount) {
+            m_paneBytes = paneBytes(m_count);
+        } else {
+            // Settled at transparency 208 and no white, as every installed pane shows.
+            m_paneBytes.reset();
+            m_shardCase = ShardCase::Restore;
+        }
+        ++m_count;
+        break;
+    case ShardCase::Restore:
+        perform(kShardRestore);
+        m_readySuppressed = false;
+        m_count = 0;
+        if ((m_displayed.shards & kWholeWindow) != kWholeWindow) {
+            m_shardCase = ShardCase::Closing;
+            break;
+        }
+        // The fourth shard (e086ae04) turns to the window, queues its captions and
+        // unhides CATH_BEAM fully transparent.
+        shot(m_shardFocus - Vec3{0, kWindowFocusDrop, 0}, kWindowShotDistance, kWindowShotPitch);
+        queueCaptions(captions(m_windowCaptions));
+        m_beamShown = true;
+        m_beamTransparency = kTransparent;
+        m_shardCase = ShardCase::WindowWait;
+        break;
+    case ShardCase::WindowWait:
+        // Hands over on its 52nd update.
+        if (m_count < kWindowWaitCount) {
+            ++m_count;
+        } else {
+            m_count = 0;
+            m_shardCase = ShardCase::Reveal;
+        }
+        break;
+    case ShardCase::Reveal: {
+        // Counts 0 to 40 fade the beam and the panes in; the portal's parts fade on to 80.
+        const s32 fading = std::min(m_count, kWindowFadeCount);
+        m_windowReveal = static_cast<f32>(fading) / kWindowFadeCount;
+        m_beamTransparency =
+            static_cast<u8>((kWindowFadeCount - fading) * kTransparent / kWindowFadeCount);
+        if (m_count < kPortalFadeCount) {
+            ++m_count;
+        } else {
+            m_count = 0;
+            m_shardCase = ShardCase::Revealed;
+        }
+        break;
+    }
+    case ShardCase::Revealed:
+        m_count = 0;
+        m_shardCase = ShardCase::Closing;
+        break;
+    case ShardCase::Closing:
+        if (++m_count >= kClosingCount) {
+            m_shardCase = ShardCase::Finished;
+        }
+        break;
+    case ShardCase::Finished: return true;
+    }
+    return false;
 }
 
 void LegendsTowerCeremony::tick() {
     m_previousCamera = m_camera;
-    updateCamera();
-    m_captionSeconds += kTick;
-    if (!m_captions.empty() && m_captionSeconds >= 3) {
-        m_captions.erase(m_captions.begin());
-        m_captionSeconds -= 3;
-    }
-    if (m_phase == 100) {
-        if (++m_ticks >= 54 && m_captions.empty()) {
-            m_displayed = m_owned;
-            m_started = false;
+    bool attends = false;
+    switch (m_dispatch) {
+    case Dispatch::Select: select(); break;
+    case Dispatch::Script:
+        if (runScript(m_entries[m_next])) {
+            // A finished script's pieces stop pending; case 1 selects on the next update.
+            ++m_next;
+            m_dispatch = Dispatch::Select;
         }
-        return;
-    }
-    const auto* entry = current();
-    if (!entry) {
-        return;
-    }
-    const bool gestureDone = m_phase == 5 && entry->kind == Kind::Door ? false : advanceGesture();
-    ++m_ticks;
-    if (entry->kind == Kind::Rune) {
-        // e086239c: camera at 20, MKRU at 50 (half speed), release at frame 14,
-        // reverse the 62-sample native falling/tumbling path, then wait 30 ticks.
-        if (m_phase == 0 && m_ticks == 20) {
-            shot(m_runeFocus, 30, 25 * kPi / 180);
+        attends = true;
+        break;
+    case Dispatch::PlanReturn:
+        // Case 0x28 plans the return to the gameplay camera; it first moves next update.
+        glideTo(m_returnCamera, m_returnFocus, kReturnAcceleration);
+        m_dispatch = Dispatch::Return;
+        attends = true;
+        break;
+    case Dispatch::Return:
+        if (advanceCamera()) {
+            m_dispatch = Dispatch::HandBack;
         }
-        if (m_phase == 0 && m_ticks >= 50) {
-            play("MKRU", false, .5f);
-            m_sounds.push_back(0x68);
-            m_phase = 1;
-        } else if (m_phase == 1 && (m_frame >= 14 || gestureDone)) {
-            m_flightFrame = 0;
-            m_phase = 2;
-        } else if (m_phase == 2) {
-            ++m_flightFrame;
-            if (gestureDone && m_gesture != "REDY") {
-                play("REDY");
-            }
-            if (m_flightFrame >= static_cast<s32>(m_flight.size())) {
-                m_displayed.runestones |= u64{1} << entry->index;
-                m_flightFrame = -1;
-                m_sounds.push_back(0x8a);
-                m_ticks = 0;
-                m_phase = 3;
-            }
-        } else if (m_phase == 3 && m_ticks >= 30) {
-            finishEntry();
-        }
-        return;
+        attends = true;
+        break;
+    case Dispatch::HandBack:
+        // Case 0x3c (e0861260) cuts the captions, restarts REDY and resumes play.
+        // Ownership was committed before the ceremony began.
+        m_captions.clear();
+        play(kReady);
+        m_displayed = m_owned;
+        m_started = false;
+        break;
     }
-    if (entry->kind == Kind::Shard) {
-        // e0863440: all waits count native 30 Hz updates, not rendered frames.
-        if (m_phase == 0 && m_ticks >= 41) {
-            shot(m_shardFocus, 30, 10 * kPi / 180);
-            m_phase = 1;
-            m_ticks = 0;
-        } else if (m_phase == 1 && m_ticks >= 51) {
-            play("SHD1");
-            m_phase = 2;
-        } else if (m_phase == 2 && gestureDone) {
-            m_displayed.shards |= u64{1} << entry->index;
-            m_phase = 3;
-            m_ticks = 0;
-        } else if (m_phase == 3 && m_ticks >= 22) {
-            // Case 5 waits out counts 0 to 20 and plays 0x68 on its 22nd update.
-            m_sounds.push_back(0x68);
-            m_phase = 4;
-            m_ticks = 0;
-        } else if (m_phase == 4 && m_ticks > kShardSettleCount) {
-            // Case 6 settles the pane at count 25; case 7 plays SHDR on the next update.
-            play("SHDR");
-            m_ticks = 0;
-            m_phase = (m_displayed.shards & 15U) == 15U ? 6 : 5;
-            if (m_phase == 6) {
-                shot(m_shardFocus - Vec3{0, 7, 0}, 38, kPi / 6);
-                const auto lines = captions(m_windowCaptions);
-                queueCaptions(lines);
-            }
-        } else if (m_phase == 5 && m_ticks >= 41) {
-            finishEntry();
-        } else if (m_phase == 6 && m_ticks >= 51) {
-            m_phase = 7;
-            m_ticks = 0;
-        } else if (m_phase == 7) {
-            m_windowReveal = std::min(static_cast<f32>(m_ticks) / 40, 1.0f);
-            if (m_ticks >= 80) {
-                m_phase = 5;
-                m_ticks = 0;
-            }
-        }
-        return;
+    if (attends) {
+        attend();
     }
-    // e0865c98: STRT reverses then plays forward; ODOR holds frame 15 for 50
-    // updates before releasing the door at frame 19. No proximity unlock.
-    if (m_phase == 0 && m_ticks >= 41) {
-        shot(m_doorFocus[entry->index], 30, 25 * kPi / 180);
-        m_phase = 1;
-        m_ticks = 0;
-    } else if (m_phase == 1 && m_ticks >= 6) {
-        play("STRT", true);
-        m_ticks = 0;
-        m_phase = 2;
-    } else if (m_phase == 2 && gestureDone) {
-        play("STRT");
-        m_phase = 3;
-    } else if (m_phase == 3 && gestureDone) {
-        play("ODOR");
-        m_phase = 4;
-    } else if (m_phase == 4 && (m_frame >= 15 || gestureDone)) {
-        m_frame = std::min(15.0f, m_frameEnd);
-        m_phase = 5;
-        m_ticks = 0;
-    } else if (m_phase == 5 && m_ticks >= 50) {
-        m_phase = 6;
-        m_sounds.push_back(0x6e);
-    } else if (m_phase == 6 && (m_frame > 19 || gestureDone)) {
-        m_displayed.obelisks |= LegendsTowerProgress::kDoorObelisks[entry->index];
-        m_phase = 7;
-        m_ticks = 0;
-    } else if (m_phase == 7 && m_ticks > 40) {
-        finishEntry();
-    }
-    if (m_phase == 2 && m_frameEnd - m_frame >= 30 && m_frameEnd - m_frame + m_frameStep < 30) {
-        m_sounds.push_back(0xb9);
-    }
+    passGesture();
 }
 
 void LegendsTowerCeremony::update(f32 seconds) {
@@ -326,32 +679,116 @@ void LegendsTowerCeremony::update(f32 seconds) {
     }
 }
 
-void LegendsTowerCeremony::shot(const Vec3& focus, f32 distance, f32 pitch) {
-    m_cameraFrom = m_camera;
-    m_focusFrom = m_cameraFocus;
-    m_focusGoal = focus;
-    m_cameraGoal = m_camera;
-    m_cameraGoal.pitch = pitch;
-    m_cameraGoal.roll = 0;
-    m_cameraGoal.position = focus - m_cameraGoal.forward() * distance;
-    m_cameraSeconds = 0;
+WorldCamera LegendsTowerCeremony::shotCamera(const Vec3& focus, f32 distance, f32 pitch) const {
+    // The shot keeps the camera's yaw rather than e007d53c's own.
+    WorldCamera goal = m_camera;
+    goal.pitch = pitch;
+    goal.roll = 0;
+    goal.position = focus - goal.forward() * distance;
+    return goal;
 }
 
-void LegendsTowerCeremony::updateCamera() {
-    // e08694e4 configures acceleration .7, cruise 1 and braking .3 seconds;
-    // e086736c changes the acceleration to .5 for the return to gameplay.
-    // Integrate that trapezoidal speed profile, rather than snapping shots.
-    const f32 acceleration = m_phase == 100 ? .5f : .7f;
-    const f32 cruiseEnd = acceleration + 1;
-    m_cameraSeconds = std::min(m_cameraSeconds + kTick, cruiseEnd + .3f);
-    const f32 t = m_cameraSeconds;
-    const f32 distance = t < acceleration ? t * t / (2 * acceleration)
-                         : t < cruiseEnd  ? acceleration * .5f + t - acceleration
-                                          : acceleration * .5f + 1 + (t - cruiseEnd) -
-                                               (t - cruiseEnd) * (t - cruiseEnd) / .6f;
-    const f32 blend = std::clamp(distance / ((acceleration + .3f) * .5f + 1), 0.0f, 1.0f);
-    m_camera = m_cameraGoal.interpolate(m_cameraFrom, blend);
-    m_cameraFocus = glm::mix(m_focusFrom, m_focusGoal, blend);
+void LegendsTowerCeremony::shot(const Vec3& focus, f32 distance, f32 pitch) {
+    glideTo(shotCamera(focus, distance, pitch), focus, kShotAcceleration);
+}
+
+void LegendsTowerCeremony::glideTo(const WorldCamera& goal, const Vec3& focus, f32 acceleration) {
+    m_cameraFrom = m_camera;
+    m_focusFrom = m_cameraFocus;
+    m_cameraGoal = goal;
+    m_focusGoal = focus;
+    if (goal == m_camera && focus == m_cameraFocus) {
+        m_glide = {}; // e007cdf0 finds nothing to move.
+    } else {
+        m_glide.plan(acceleration);
+    }
+}
+
+bool LegendsTowerCeremony::advanceCamera() {
+    if (!m_glide.advance(kTick)) {
+        m_camera = m_cameraGoal.interpolate(m_cameraFrom, m_glide.travelled);
+        m_cameraFocus = glm::mix(m_focusFrom, m_focusGoal, m_glide.travelled);
+        return false;
+    }
+    m_camera = m_cameraGoal;
+    m_cameraFocus = m_focusGoal;
+    return true;
+}
+
+void LegendsTowerCeremony::Glide::plan(f32 accelerationSeconds) {
+    // e007cdf0 for a move of length one; every channel of a shot shares these times.
+    acceleration = accelerationSeconds;
+    elapsed = 0;
+    speed = 0;
+    travelled = 0;
+    cruiseSpeed = 1 / ((acceleration + kBrakingSeconds) * .5f + kCruiseSeconds);
+    fall = -cruiseSpeed / kBrakingSeconds;
+    rise = acceleration > 0 ? cruiseSpeed / acceleration : 0;
+    phase = acceleration > 0 ? Phase::Accelerating : Phase::Cruising;
+}
+
+bool LegendsTowerCeremony::Glide::advance(f32 seconds) {
+    // e007d774 in float32: a step that overruns a phase spends the rest in the next, and
+    // the move ends on the step that overruns the braking.
+    if (phase == Phase::Done) {
+        return true;
+    }
+    f32 rest = seconds;
+    f32 moved = 0;
+    if (phase == Phase::Accelerating) {
+        f32 slice = rest;
+        const f32 left = acceleration - elapsed;
+        if (rest <= left) {
+            elapsed += rest;
+            rest = 0;
+        } else {
+            slice = left;
+            rest -= left;
+            elapsed = 0;
+            phase = Phase::Cruising;
+        }
+        const f32 before = speed;
+        speed = before + rise * slice;
+        moved = (before + rise * slice * .5f) * slice;
+    }
+    if (phase == Phase::Cruising) {
+        f32 slice = rest;
+        const f32 left = kCruiseSeconds - elapsed;
+        speed = cruiseSpeed;
+        if (rest <= left) {
+            elapsed += rest;
+            rest = 0;
+        } else {
+            slice = left;
+            rest -= left;
+            elapsed = 0;
+            phase = Phase::Braking;
+        }
+        moved += speed * slice;
+    }
+    if (phase == Phase::Braking) {
+        f32 slice = rest;
+        const f32 left = kBrakingSeconds - elapsed;
+        if (rest <= left) {
+            elapsed += rest;
+        } else {
+            slice = left;
+            elapsed = 0;
+            phase = Phase::Done;
+        }
+        const f32 before = speed;
+        speed = before + fall * slice;
+        moved += (before + fall * slice * .5f) * slice;
+    }
+    if (phase == Phase::Done) {
+        speed = 0;
+        travelled = 1;
+        return true;
+    }
+    if (moved > 0) {
+        travelled += moved;
+    }
+    return false;
 }
 
 WorldCamera LegendsTowerCeremony::camera(f32 alpha) const {
@@ -405,39 +842,59 @@ Mat4 LegendsTowerCeremony::runePlacement() const {
     if (!current() || current()->kind != Kind::Rune || m_flightFrame < 0) {
         return Mat4{1};
     }
-    const auto& pose = m_flight[61 - std::min(m_flightFrame, 61)];
+    // Flight pose k shows recorded pose 61 - k.
+    constexpr auto kLast = static_cast<s32>(kFlightPoses) - 1;
+    const auto& pose = m_flight[static_cast<usize>(kLast - std::min(m_flightFrame, kLast))];
     return glm::translate(Mat4{1}, pose.position) *
            glm::rotate(Mat4{1}, pose.angles.y, Vec3{0, 1, 0}) *
            glm::rotate(Mat4{1}, -pose.angles.x, Vec3{1, 0, 0}) *
-           glm::rotate(Mat4{1}, -pose.angles.z, Vec3{0, 0, 1}) * glm::scale(Mat4{1}, Vec3{1.8f});
+           glm::rotate(Mat4{1}, -pose.angles.z, Vec3{0, 0, 1}) *
+           glm::scale(Mat4{1}, Vec3{kRuneFlightScale});
 }
 
 f32 LegendsTowerCeremony::runeOpacity() const {
-    return std::clamp(static_cast<f32>(m_flightFrame) * kTick / .8f, 0.0f, 1.0f);
+    return std::clamp(static_cast<f32>(m_flightFrame) * kTick / kRuneFadeSeconds, 0.0f, 1.0f);
 }
+
+LegendsTowerCeremony::PaneBytes LegendsTowerCeremony::paneBytes(s32 count) {
+    // e0863440 case 6 stores +1, the transparency (count - 4) * 208 / 20, through sb, so
+    // counts 1 to 3 wrap (Tower e08638a0..e08638d0), and +5, the white blend
+    // ~((count - 4)^2 * 255 / 400). game e001ea34 draws 255 less the transparency, so
+    // counts 1 to 3 flash 30, 19 and 9 before the opaque pop at 4.
+    const s32 offset = count - kPaneOpaqueCount;
+    return {static_cast<u8>(offset * LegendsTowerProgress::kShardTransparency / kPaneFadeCount),
+            static_cast<u8>(kWhite - offset * offset * kWhite / (kPaneFadeCount * kPaneFadeCount))};
+}
+
 f32 LegendsTowerCeremony::shardOpacity() const {
-    // Phase 3 and the update case 5 hands over to case 6 still show case 4's clear 0xff.
-    if (m_phase == 3 || (m_phase == 4 && m_ticks == 0)) {
-        return 0;
+    // e001ea34 draws 255 less the drawable's transparency byte.
+    if (m_paneBytes) {
+        return static_cast<f32>(kTransparent - m_paneBytes->transparency) / kByteScale;
     }
-    if (m_phase == 4) {
-        return static_cast<f32>(255 - shardBytes(m_ticks).transparency) / 255;
-    }
-    return (255.0f - LegendsTowerProgress::kShardTransparency * (1 - m_windowReveal)) / 255;
+    return (kByteScale - LegendsTowerProgress::kShardTransparency * (1 - m_windowReveal)) /
+           kByteScale;
 }
+
 f32 LegendsTowerCeremony::shardWhiteBlend() const {
-    if (m_phase == 3 || (m_phase == 4 && m_ticks == 0)) {
-        return 1;
-    }
-    return m_phase == 4 ? static_cast<f32>(shardBytes(m_ticks).white) / 255 : 0;
+    return m_paneBytes ? static_cast<f32>(m_paneBytes->white) / kByteScale : 0;
 }
+
+f32 LegendsTowerCeremony::cathedralBeamOpacity() const {
+    return m_beamShown ? static_cast<f32>(kTransparent - m_beamTransparency) / kByteScale : 0;
+}
+
 std::optional<u32> LegendsTowerCeremony::caption() const {
-    return m_captions.empty() ? std::nullopt : std::optional{m_captions.front()};
+    if (m_captions.empty() || m_captions.front().stage == Caption::Stage::Queued) {
+        return std::nullopt;
+    }
+    return m_captions.front().id;
 }
+
 f32 LegendsTowerCeremony::captionOpacity() const {
-    return static_cast<f32>(
-        std::clamp(std::min(m_captionSeconds, 3 - m_captionSeconds) / .3, 0.0, 1.0));
+    return caption() ? static_cast<f32>(kTransparent - m_captions.front().transparency) / kByteScale
+                     : 0;
 }
+
 std::vector<u32> LegendsTowerCeremony::takeSounds() {
     return std::exchange(m_sounds, {});
 }

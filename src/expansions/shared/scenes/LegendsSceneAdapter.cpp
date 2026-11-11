@@ -1084,7 +1084,8 @@ void LegendsSceneAdapter::loadN64Tower(RenderDevice& device, const std::filesyst
         if (const auto* sequence = m_fixtures[variant.figure].sequenceInfo(0)) {
             ceremonySequences.push_back(
                 {variant.sequence, sequence->frames,
-                 static_cast<f32>(sequence->frameRate > 0 ? sequence->frameRate : 30) / 900});
+                 static_cast<f32>(sequence->frameRate > 0 ? sequence->frameRate : 30) / 900,
+                 sequence->repeats});
         }
     }
     m_towerCeremony->bindSequences(std::move(ceremonySequences));
