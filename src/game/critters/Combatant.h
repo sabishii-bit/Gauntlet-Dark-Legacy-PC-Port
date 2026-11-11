@@ -79,8 +79,14 @@ public:
     void captureEncounterPlayers(std::span<const EnemyView> players);
     void update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
                 std::span<const Combatant> peers = {}, bool timeStopped = false);
-    /** Follows the supporting moving floor without advancing combat or animation. */
+    /** A great one follows the moving floor it last stood on, without advancing combat or
+     * animation; a boss settles in its own update instead (settleOnFloor). */
     void syncFloor();
+    /** A boss body's floor probe after its step (CritterBossAI's FloorCollide, 0x8003a2d4):
+     * stands it and its parts on the highest boss-side floor within reach under it and returns
+     * that floor. What was captured to draw from is left as it was, so the draw blends the
+     * floor's motion. None for the great ones, a part, or without collision. */
+    std::optional<FloorHit> settleOnFloor();
     /** Healing credit after armor/party scaling, before level and hit-node adjustments. */
     f32 hurt(const EnemyHit& hit, s32 partId = -1);
     /** Records a routed hit's nominal damage to a player, after contact/cooldown gates. */
@@ -428,6 +434,9 @@ private:
     bool startMove(Actor& critter, usize index, bool recordUse = true);
     void updateActor(s32 ticks, f32 seconds, std::span<const EnemyView> players,
                      std::span<const Combatant> peers, bool timeStopped);
+    /** Whether this update ends its death's hold, which removes it before its floor probe
+     * (CritterBossAI's CritterDelInst at 0x8003a0c4). */
+    static bool deathHoldRunsOut(const Actor& critter, const MoveDefinition* move);
     void rememberFloor();
     /** What it deals of `amount`: half while shrunk, unless it is a boss. */
     f32 dealt(f32 amount) const;

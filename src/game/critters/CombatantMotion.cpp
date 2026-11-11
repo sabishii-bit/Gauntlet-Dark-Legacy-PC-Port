@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cmath>
+#include <optional>
 
 #include "engine/core/Types.h"
 #include "engine/math/PortableMath.h"
@@ -28,6 +29,7 @@ constexpr f32 kTrampleHeight = 2.0f; ///< the tallest half-height of a swarm bod
 /** How far a boss's floor probe reaches up and down (CritterBossAI's FloorCollide). */
 constexpr f32 kBossFloorAbove = 4.0f;
 constexpr f32 kBossFloorBelow = 1000.0f;
+constexpr f32 kBossFloorEdgeReach = 0.0f; ///< only the faces under it, no edge beside it
 
 Vec3 travelWorld(const WorldCollision& collision, const Vec3& from, const Vec3& wanted,
                  f32 radius) {
@@ -81,26 +83,9 @@ void Combatant::rememberFloor() {
 
 void Combatant::syncFloor() {
     Actor& actor = m_sim.actor;
-    if (!present() || m_sim.collision == nullptr) {
-        return;
-    }
-    if (actor.stock->definition.boundsToHome) {
-        // Bosses retain support even during INIT: DC ProcessCritter8c08b730
-        // and GC CritterBossAI probe outside the active-move branch. In A5,
-        // waiting for START before probing strands Chimera above its elevator.
-        if (const auto floor = m_sim.collision->floorAt(
-                actor.position, kBossFloorAbove, kBossFloorBelow, 0, WorldCollision::kBossSide)) {
-            const f32 shift = floor->y - actor.position.y;
-            actor.position.y = floor->y;
-            actor.presentation.position.y += shift;
-            for (auto& part : children()) {
-                part->m_sim.actor.position.y = floor->y;
-                part->m_sim.actor.presentation.position.y += shift;
-            }
-        }
-        return;
-    }
-    if (!actor.floor) {
+    // Nothing carries a boss between its updates: it settles in its own (settleOnFloor).
+    if (!present() || m_sim.collision == nullptr || actor.stock->definition.boundsToHome ||
+        !actor.floor) {
         return;
     }
     const auto placement = m_sim.collision->objectTransform(actor.floor->object);
@@ -111,6 +96,26 @@ void Combatant::syncFloor() {
     const Vec3 carried = Vec3{*placement * Vec4{actor.floor->local, 1}};
     actor.presentation.position += carried - actor.position;
     actor.position = carried;
+}
+
+std::optional<FloorHit> Combatant::settleOnFloor() {
+    Actor& actor = m_sim.actor;
+    if (!present() || m_sim.collision == nullptr || actor.parent != nullptr ||
+        !actor.stock->definition.boundsToHome) {
+        return std::nullopt;
+    }
+    // In every state, asleep and through its INIT too (DC ProcessCritter 0x8c08b742 as well):
+    // in A5 the Chimera rides its elevator down before it wakes. position is floor-space; the
+    // model root adds the TYPE floorOffset.
+    const auto floor = m_sim.collision->floorAt(actor.position, kBossFloorAbove, kBossFloorBelow,
+                                                kBossFloorEdgeReach, WorldCollision::kBossSide);
+    if (floor) {
+        actor.position.y = floor->y;
+        for (auto& part : children()) {
+            part->m_sim.actor.position.y = floor->y;
+        }
+    }
+    return floor;
 }
 
 void Combatant::carry(Actor& critter, f32 seconds, const MoveDefinition* move,
@@ -154,15 +159,6 @@ bool Combatant::translate(Actor& critter, f32 seconds, const MoveDefinition* mov
                           std::span<const EnemyView> players, std::span<const Combatant> peers) {
     const CritterMovement& movement = critter.definition->movement();
     const bool bounded = critter.stock->definition.boundsToHome;
-    // CritterBossAI (GC 0x80039ad8) probes the supporting floor every frame,
-    // independently of locomotion. In A5 this is the descending elevator.
-    // position is floor-space here; rootTransform adds the TYPE floorOffset.
-    if (bounded && m_sim.collision != nullptr) {
-        if (const auto floor = m_sim.collision->floorAt(
-                critter.position, kBossFloorAbove, kBossFloorBelow, 0, WorldCollision::kBossSide)) {
-            critter.position.y = floor->y;
-        }
-    }
     if (bounded && movement.roamRadius <= 0.0f) {
         return false; // Zero-radius bosses may still turn, but cannot change position.
     }

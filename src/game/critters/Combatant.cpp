@@ -433,7 +433,6 @@ void Combatant::advanceEntrance(f32 seconds) {
         moveType() != MoveDefinition::kInit || !actor.player.playing() || seconds <= 0) {
         return;
     }
-    syncFloor();
     // N64 Boss.bin e08842e8 still calls e0882b38 while state0 waits for the
     // party. e0882f9c keeps INIT selected: a looping REDY (Chimera) animates,
     // while a one-frame INIT (Skorne) remains unchanged. Do not run combat AI
@@ -469,10 +468,16 @@ void Combatant::update(s32 ticks, f32 seconds, std::span<const EnemyView> player
     }
 }
 
+bool Combatant::deathHoldRunsOut(const Actor& critter, const MoveDefinition* move) {
+    return critter.state == State::Dying && move != nullptr &&
+           move->type == MoveDefinition::kDeath && move->hold > 0.0f && critter.moveDone;
+}
+
 void Combatant::updateActor(s32 ticks, f32 seconds, std::span<const EnemyView> players,
                             std::span<const Combatant> peers, bool timeStopped) {
     syncFloor();
     if (ticks <= 0) {
+        settleOnFloor();
         return;
     }
     Actor& critter = m_sim.actor;
@@ -518,6 +523,7 @@ void Combatant::updateActor(s32 ticks, f32 seconds, std::span<const EnemyView> p
     if (critter.frozenTicks > 0) {
         critter.presentation.valid = false;
         critter.frozenTicks = std::max(critter.frozenTicks - ticks, 0);
+        settleOnFloor();
         aimGaze(critter, seconds, players);
         holdBrokenPoses(critter);
         updateAreas(critter, i, players);
@@ -739,6 +745,12 @@ void Combatant::updateActor(s32 ticks, f32 seconds, std::span<const EnemyView> p
         carry(critter, seconds, move, players, peers);
         rememberFloor();
     }
+    // CritterBossAI probes its floor (FloorCollide, 0x8003a2d4) after its step
+    // (CritterTranslate, 0x8003a218), before what it holds, its areas and its heads follow it.
+    // The update its death's hold runs out removes it before then (0x8003a0c4).
+    if (!deathHoldRunsOut(critter, move)) {
+        settleOnFloor();
+    }
     carryGrab(critter, players);
     updateAreas(critter, i, players);
     critter.push *= portable::pow(kPushDecay, seconds * kPushFrameRate);
@@ -757,7 +769,7 @@ void Combatant::updateActor(s32 ticks, f32 seconds, std::span<const EnemyView> p
         constexpr f32 kBossDeathFade = 0.5f;
         const f32 remaining = move->hold - critter.finishedSeconds;
         critter.alpha = std::clamp(remaining / kBossDeathFade, 0.0f, 1.0f);
-        if (critter.moveDone) {
+        if (deathHoldRunsOut(critter, move)) {
             critter = Actor{};
         }
     } else if (critter.state == State::Dying &&

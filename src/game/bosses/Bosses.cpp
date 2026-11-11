@@ -420,7 +420,6 @@ void Bosses::update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
     if (!m_sim.id.has_value()) {
         return;
     }
-    m_fighter.syncFloor();
     m_fighter.captureEncounterPlayers(players);
     // Wait through the bound family's activation deadline, then until the whole
     // party is within its threshold. Ordinary GDL retains its two-second delay.
@@ -462,6 +461,9 @@ void Bosses::update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
                 }
                 m_fighter.advanceEntrance(seconds);
             }
+            // CritterBossAI's wake test (0x80039bac) comes before its floor probe (0x8003a2d4),
+            // so the party was measured from where the last update stood it.
+            [[maybe_unused]] const std::optional<FloorHit> support = m_fighter.settleOnFloor();
             return;
         }
     }
@@ -474,6 +476,8 @@ void Bosses::update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
             assets->textures.advance(seconds);
         }
     }
+    // The update that removes it never reaches its floor probe (CritterDelInst at 0x8003a0c4):
+    // it falls where the last update stood it.
     const Vec3 before = m_fighter.position();
     m_fighter.update(ticks, seconds, players);
     stageLegend(ticks);
