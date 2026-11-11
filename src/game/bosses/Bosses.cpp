@@ -12,6 +12,7 @@
 #include "engine/core/Types.h"
 
 #include "game/level/BossKinds.h"
+#include "game/level/LevelTriggers.h"
 #include "game/level/NativeStateResources.h"
 
 namespace gdl::game {
@@ -413,7 +414,7 @@ bool Bosses::spawn(s32 kind, const Vec3& position, f32 yaw, f32 wakeDistance) {
 }
 
 void Bosses::update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
-                    bool activationReady) {
+                    bool activationReady, const LevelTriggers* triggers) {
     for (const auto& assets : m_sim.assets) {
         assets->textures.advance(0);
     }
@@ -424,13 +425,6 @@ void Bosses::update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
     // Wait through the bound family's activation deadline, then until the whole
     // party is within its threshold. Ordinary GDL retains its two-second delay.
     if (!m_sim.awake) {
-        // DC ProcessCritter8c08b774 arms TYPE0x80 only after its supporting
-        // object's triggerstate0x10. Once armed it keeps the deadline even if
-        // the platform stops. No new irreversible/presentation event is needed.
-        const bool armed = activationReady || m_sim.wakeClock > 0;
-        if (armed) {
-            m_sim.wakeClock += seconds;
-        }
         const auto stock = std::ranges::find_if(
             m_sim.assets, [&](const auto* assets) { return &assets->data == m_fighter.data(); });
         const bool decodedEntrance = stock != m_sim.assets.end() && (*stock)->initialMoveBeforeWake;
@@ -450,7 +444,9 @@ void Bosses::update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
             }
         }
         const f32 delay = stock != m_sim.assets.end() ? (*stock)->wakeDelay : kWakeArmSeconds;
-        if (armed && m_sim.wakeClock >= delay &&
+        // The test reads a deadline an earlier update set (CritterBossAI 0x80039bf0): the clock
+        // as the last update left it.
+        if (m_sim.wakeClock > 0 && m_sim.wakeClock >= delay &&
             (m_sim.wakeDistance <= 0.0f || (anyone && farthest <= m_sim.wakeDistance))) {
             wake();
         }
@@ -463,7 +459,8 @@ void Bosses::update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
             }
             // CritterBossAI's wake test (0x80039bac) comes before its floor probe (0x8003a2d4),
             // so the party was measured from where the last update stood it.
-            [[maybe_unused]] const std::optional<FloorHit> support = m_fighter.settleOnFloor();
+            const std::optional<FloorHit> support = m_fighter.settleOnFloor();
+            advanceWakeClock(seconds, deadlineMayStart(activationReady, triggers, support));
             return;
         }
     }
@@ -485,6 +482,36 @@ void Bosses::update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
         m_sim.defeat = before;
         m_sim.id.reset();
         m_sim.rite.clear();
+    }
+}
+
+void Bosses::arm(f32 seconds, bool activationReady, const LevelTriggers* triggers) {
+    if (!m_sim.awake) {
+        advanceWakeClock(seconds, deadlineMayStart(activationReady, triggers, std::nullopt));
+    }
+}
+
+bool Bosses::supportActivated() const {
+    const CritterData* data = m_fighter.data();
+    return data != nullptr && (data->typeFlags() & CritterData::kSupportActivated) != 0;
+}
+
+bool Bosses::deadlineMayStart(bool activationReady, const LevelTriggers* triggers,
+                              const std::optional<FloorHit>& support) const {
+    // A type that waits for its floor arms in its floor probe, once the floor found there or
+    // that floor's parent has moved on this pass (GC CritterBossAI 0x8003a314-0x8003a398, DC
+    // ProcessCritter 0x8c08b786-0x8c08b7c4). An imported level answers for its own floors.
+    if (!activationReady || triggers == nullptr || !supportActivated()) {
+        return activationReady;
+    }
+    return support.has_value() && triggers->movesFloor(support->object);
+}
+
+void Bosses::advanceWakeClock(f32 seconds, bool mayStart) {
+    // Only the level's loading clears a deadline once set (CritterInit 0x80042374): a floor
+    // that stops does not disarm it.
+    if (m_sim.wakeClock > 0 || mayStart) {
+        m_sim.wakeClock += seconds;
     }
 }
 
@@ -601,6 +628,9 @@ BossView Bosses::view() const {
     view.kind = m_sim.kind;
     view.name = m_sim.name;
     view.awake = m_sim.awake;
+    // BossActivate (0x8001b844) sets gBossActive at the wake, and for a type that waits for
+    // its floor already as it arms (0x8003a398).
+    view.engaged = m_sim.awake || (supportActivated() && m_sim.wakeClock > 0);
     if (m_sim.id.has_value() && (m_fighter.alive() || m_fighter.dying())) {
         view.health = m_fighter.health();
         view.maxHealth = m_fighter.maxHealth();

@@ -22,6 +22,7 @@
 
 namespace gdl::game {
 
+class LevelTriggers;
 class NativeStateResources;
 
 /** A step of a legend item's rite the game shows: which, and whose item it is. */
@@ -42,6 +43,10 @@ struct BossView {
     f32 health = 0.0f;
     f32 maxHealth = 1.0f;
     bool awake = false;
+    /** The encounter has begun (retail's gBossActive): from the wake, or from the arming of a
+     * boss that waits for its floor to move, at least two seconds before it wakes. The fight's
+     * camera frames it and a boss level's powerup timers run from then on. */
+    bool engaged = false;
     bool alive = false;
     f32 fraction() const { return maxHealth > 0.0f ? std::max(health, 0.0f) / maxHealth : 0.0f; }
 };
@@ -87,15 +92,15 @@ public:
     /** Actual animated attachment targeted by this encounter's legendary item. */
     std::optional<Mat4> legendTargetTransform() const;
 
+    /** Asleep, a boss whose type waits for its floor to move (CritterData::kSupportActivated)
+     * arms its wake deadline on an imported level's `activationReady`, sampled before the
+     * update; given the base game's `triggers` instead, only on an update one of them moves
+     * the floor its probe stands it on. Any other boss arms on its first update. */
     void update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
-                bool activationReady = true);
-    /** Runs through the held entrance too, but an imported support-triggered
-     * encounter must first receive its activation signal. Arming is sticky. */
-    void arm(f32 seconds, bool activationReady = true) {
-        if (!m_sim.awake && (activationReady || m_sim.wakeClock > 0)) {
-            m_sim.wakeClock += seconds;
-        }
-    }
+                bool activationReady = true, const LevelTriggers* triggers = nullptr);
+    /** Runs through the held entrance too. It never arms a boss that waits for the base
+     * game's triggers, which do not move during the entrance. Arming is sticky. */
+    void arm(f32 seconds, bool activationReady = true, const LevelTriggers* triggers = nullptr);
     void setArenaAnchors(std::span<const Mat4> anchors) { m_fighter.setArenaAnchors(anchors); }
     void setArenaTargets(std::span<const CombatArenaTarget> targets) {
         m_fighter.setArenaTargets(targets);
@@ -168,6 +173,15 @@ public:
 private:
     void stageLegend(s32 ticks);
     void strikeWithLegend();
+    /** Whether its type arms only once its floor moves (TYPE flag 0x80). */
+    bool supportActivated() const;
+    /** Whether this update may arm its wake deadline, `support` being the floor its probe
+     * found (none in the entrance, which does not probe). */
+    bool deadlineMayStart(bool activationReady, const LevelTriggers* triggers,
+                          const std::optional<FloorHit>& support) const;
+    /** Arms the wake deadline if it may, then counts this update's time toward it once armed:
+     * the deadline is set as the update ends and first tested in the next. */
+    void advanceWakeClock(f32 seconds, bool mayStart);
 
     Combatant m_fighter;
     // Effects and projectiles can outlive their boss. Retain borrowed assets until close().
@@ -191,7 +205,9 @@ private:
         std::string name;
         bool awake = false;
         f32 wakeDistance = 0.0f;
-        f32 wakeClock = 0.0f; ///< elapsed since placement or imported support-trigger arming
+        /** Elapsed since it armed: at placement, or once its floor first moved; nought
+         * until then. */
+        f32 wakeClock = 0.0f;
         LegendRite rite;
         bool roarAsked = false;
         bool legendStruck = false;

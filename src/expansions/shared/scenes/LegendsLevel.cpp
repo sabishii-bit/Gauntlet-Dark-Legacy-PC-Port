@@ -394,7 +394,7 @@ void LegendsLevel::trackBoss(std::optional<Vec3> floorAnchor) {
             if (m_dreamcastBossCamera) {
                 subject.radius = m_dreamcastBossCamera->radius;
             }
-            subject.awake = true;
+            subject.engaged = true;
             trackBoss(subject);
         } else {
             m_dreamcastArenaCamera->freeze();
@@ -410,7 +410,7 @@ void LegendsLevel::trackBoss(std::optional<Vec3> floorAnchor) {
 
 void LegendsLevel::trackBoss(const BossCameraSubject& subject) {
     if (platform() != LegendsPlatform::Dreamcast) {
-        if (subject.awake) {
+        if (subject.engaged) {
             trackBoss(subject.position);
         }
         return;

@@ -130,13 +130,13 @@ public:
                                  const SelectionHighlight& /*highlight*/) const {}
 
     virtual void resetCamera(std::span<const CameraSubject> /*subjects*/) {}
-    /** Live boss floor anchor after awakening; null removes a defeated boss.
+    /** Live boss floor anchor once the encounter has begun; null removes a defeated boss.
      * The native adapter owns its camera focus offset and fitting radius. */
     virtual void trackBoss(std::optional<Vec3> /*floorAnchor*/) {}
     /** Native arena cameras may also need live facing, size and activation state.
-     * Floor-anchor-only adapters retain their existing post-awakening behavior. */
+     * Floor-anchor-only adapters follow the boss once the encounter has begun. */
     virtual void trackBoss(const BossCameraSubject& subject) {
-        if (subject.awake) {
+        if (subject.engaged) {
             trackBoss(std::optional<Vec3>{subject.position});
         }
     }

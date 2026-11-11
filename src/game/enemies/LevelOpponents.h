@@ -244,7 +244,13 @@ public:
     static f32 attenuation(const Vec3& at, std::span<const Vec3> hearers);
 
 private:
+    /** An imported level's own signal that its boss's floor moves it, sampled before the
+     * update; true for a boss that does not wait for its floor, and on the base game, whose
+     * triggers answer instead (supportTriggers). */
     bool bossActivationReady() const;
+    /** The base game's triggers, which arm a boss that waits for its floor; none on an
+     * imported level. */
+    const LevelTriggers* supportTriggers() const;
     /** Plays `name` at `level` of 255 as heard from where the players stand. */
     SoundHandle playAt(std::string_view name, f32 level, const Vec3& at);
     void landEnemyMissiles(std::span<PlayerRuntime> players, OpponentHost& host);

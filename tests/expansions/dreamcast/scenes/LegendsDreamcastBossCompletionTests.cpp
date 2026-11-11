@@ -901,6 +901,7 @@ TEST_CASE("Dreamcast Chimera entrance cannot pre-arm the platform activation dea
         REQUIRE(play.update(kStep, {}) == PlayOutcome::Running);
         CHECK_FALSE(fixture.level->bossActivationReady(*play.bosses().position()));
         CHECK_FALSE(play.bosses().view().awake);
+        CHECK_FALSE(play.bossSubject().engaged);
     }
 
     const auto* motion = fixture.level->adapter().dreamcastWorldMotion();
@@ -915,14 +916,28 @@ TEST_CASE("Dreamcast Chimera entrance cannot pre-arm the platform activation dea
     switchPoint.y = floor->y;
     REQUIRE(play.relocate(switchPoint));
     bool moving = false;
+    // ProcessCritter's arming calls BossActivate (0x8c08b7c4), whose gBossActive turns the
+    // arena camera to the boss (0x8c082d8c) two seconds before the deadline it set can pass.
+    s32 engaged = -1;
+    s32 woke = -1;
     for (s32 tick = 0; tick < 600 && !play.bosses().view().awake; ++tick) {
         REQUIRE(play.update(kStep, {}) == PlayOutcome::Running);
         moving |= fixture.level->bossActivationReady(*play.bosses().position());
+        if (engaged < 0 && play.bossSubject().engaged) {
+            engaged = tick;
+            CHECK_FALSE(play.bosses().view().awake);
+        }
+        if (play.bosses().view().awake) {
+            woke = tick;
+        }
     }
     CHECK(pad->active);
     CHECK(moving);
     CHECK(play.bosses().view().awake);
     CHECK(play.bosses().position()->y < boss.y - 1);
+    REQUIRE(engaged >= 0);
+    // f32 sums of 1/60 first reach two seconds at 121 additions.
+    CHECK(woke - engaged >= 121);
 }
 
 } // namespace

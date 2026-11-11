@@ -101,13 +101,26 @@ TEST_CASE("native boss combat keeps the represented diagnostic observations avai
                                      Boundary{"G5", 627}, Boundary{"H4", 354}, Boundary{"J5", 609},
                                      Boundary{"K5", 439}};
     const u32 boundary = std::ranges::find(kBoundaries, name, &Boundary::name)->tick;
+    // The journal never brings A5's four into the Chimera's arena together, and only the whole
+    // party there lowers the lift that arms it: they are put down in the arena before the
+    // journal starts, so that its window holds the Chimera awake.
+    const bool arena = name == "A5";
+    constexpr u32 kArenaTick = 300;
+    constexpr Vec3 kArena{-3, 0, -11};
     auto fixture = std::make_unique<Fixture>(name);
     PlayScene::LocalSnapshot before;
     std::vector<PlayScene::NativeDigestProfile> uninterrupted;
     for (u32 tick = 1; tick <= boundary + 8; ++tick) {
+        if (arena && tick == kArenaTick) {
+            REQUIRE_FALSE(fixture->scene.spawning());
+            REQUIRE(fixture->scene.relocate(kArena));
+        }
         REQUIRE(fixture->scene.update(1.0 / 60, combatJournal(tick)) == PlayOutcome::Running);
         if (tick < boundary - 1) {
             continue;
+        }
+        if (arena) {
+            CHECK(fixture->scene.bosses().view().awake);
         }
         PlayScene::NativeDigestProfile profile;
         const auto digest = fixture->scene.nativeAgreementDigest(&profile);

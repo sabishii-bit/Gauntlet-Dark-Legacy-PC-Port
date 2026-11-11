@@ -400,7 +400,7 @@ TEST_CASE("native boss owner digest bytes stay pinned after a headed boss wakes 
     // what is visited changes on purpose.
     test::checkPinnedDigests("Bosses", test::liveDigest(boss, resources.resources()),
                              test::savedDigest(boss, saved, resources.resources()),
-                             "896d737d7286f8c1b9a0e70f969043f066f7389eb49e9eb67f9a7bfe34fc3bba",
+                             "036a122da90cbe30afb25c798728ccf4d67e04400f1ebcadd1cc9e2c58ebae0c",
                              "aaedc20e8986a28eb27f985acf4cb9a7a47c616d93467dfc23717cff07a2f01e");
 }
 } // namespace

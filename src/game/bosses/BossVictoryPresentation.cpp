@@ -211,7 +211,7 @@ BossCameraSubject BossVictoryPresentation::wizardSubject() const {
     subject.attentionOffset = Vec3{0, 10, 0};
     subject.height = std::max(0.0f, m_model.maxBounds().y);
     subject.focus = BossCameraSubject::Focus::Wizard;
-    subject.awake = true;
+    subject.engaged = true;
     return subject;
 }
 

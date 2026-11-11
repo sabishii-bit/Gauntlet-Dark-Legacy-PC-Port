@@ -467,6 +467,18 @@ bool LevelTriggers::settled(s32 object) const {
     return target == nullptr || target->settled;
 }
 
+bool LevelTriggers::movesFloor(s32 floorObject) const {
+    if (floorObject < 0 || static_cast<usize>(floorObject) >= m_parents.size()) {
+        return false;
+    }
+    const auto moving = [this](s32 object) {
+        const Target* target = targetOf(object);
+        return target != nullptr && (target->kind & LevelTrigger::kKeepsState) != 0 &&
+               !target->settled;
+    };
+    return moving(floorObject) || moving(m_parents[static_cast<usize>(floorObject)]);
+}
+
 TriggerOpening LevelTriggers::openingOf(const Target& target, WorldAnimator::Finish finish) {
     return TriggerOpening{target.object,
                           target.spot,

@@ -186,7 +186,7 @@ TEST_CASE("victory wizard placement animation lighting and fade follow the visit
     REQUIRE(subject.height == 1.0f);
     REQUIRE(subject.attentionOffset == Vec3{0, 10, 0});
     REQUIRE(subject.focus == BossCameraSubject::Focus::Wizard);
-    REQUIRE(subject.awake);
+    REQUIRE(subject.engaged);
     WorldLighting lighting;
     lighting.ambient = Vec3{0.25f, 0.5f, 0.75f};
     lighting.lightColor = Vec3{0.0f};

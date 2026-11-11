@@ -345,7 +345,7 @@ BossCameraSubject BossSequence::restSubject() const {
     subject.baseAttention = m_sim.fallenSpot;
     subject.facing = m_sim.fallenFacing;
     subject.radius = kFallenRadius;
-    subject.awake = true;
+    subject.engaged = true;
     return subject;
 }
 
@@ -356,7 +356,7 @@ BossCameraSubject BossSequence::victorySubject() const {
     BossCameraSubject subject;
     subject.position = m_sim.shardPosition;
     subject.radius = 5.0f;
-    subject.awake = true;
+    subject.engaged = true;
     subject.focus = BossCameraSubject::Focus::Shard;
     return subject;
 }

@@ -1305,8 +1305,13 @@ bool LevelOpponents::bossActivationReady() const {
            imported->bossActivationReady(*position);
 }
 
+const LevelTriggers* LevelOpponents::supportTriggers() const {
+    return m_resources && m_resources->world.imported() == nullptr ? &m_resources->world.triggers()
+                                                                   : nullptr;
+}
+
 void LevelOpponents::armBoss(f32 seconds) {
-    m_bosses.arm(seconds, bossActivationReady());
+    m_bosses.arm(seconds, bossActivationReady(), supportTriggers());
 }
 
 void LevelOpponents::beginOrdinaryFrame(f32 seconds, std::span<PlayerRuntime> players) {
@@ -1446,7 +1451,7 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
     m_bosses.setArenaAnchors(encounter.arenaAnchors());
     m_bosses.setArenaTargets(encounter.arenaTargets());
     const bool bossWasAwake = m_bosses.view().awake;
-    m_bosses.update(ticks, seconds, views, bossActivationReady());
+    m_bosses.update(ticks, seconds, views, bossActivationReady(), supportTriggers());
     if (!bossWasAwake && m_bosses.view().awake && m_bosses.position() != nullptr) {
         cues().awoke(*m_bosses.position());
     }

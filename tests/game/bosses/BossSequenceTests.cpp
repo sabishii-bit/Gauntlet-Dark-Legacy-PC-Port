@@ -194,7 +194,7 @@ TEST_CASE("the boss's fall keeps the arena's camera subject to the level's end",
     CHECK(rest.position == Vec3{2, 3, 4});
     CHECK(rest.baseAttention == std::optional{Vec3{2, 3, 4}});
     CHECK(rest.focus == BossCameraSubject::Focus::Combat);
-    CHECK(rest.awake);
+    CHECK(rest.engaged);
     CHECK(rest.radius == 5.0f);
     f.bind();
     CHECK_FALSE(f.sequence.fallen());

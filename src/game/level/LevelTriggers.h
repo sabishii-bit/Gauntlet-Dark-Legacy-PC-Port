@@ -145,6 +145,10 @@ struct LevelTrigger {
     static constexpr u32 kKindMask = 0xFF;
     /** The kinds that hold their target; a pad with none of them is momentary. */
     static constexpr u32 kLatches = kCloses | kOpensOnce | kToggles;
+    /** The kinds whose target keeps its trigger state from one pass to the next; every other
+     * target's is wiped each pass, but a fading one's while something stands on it
+     * (ProcessItemWobjs' gate, 0x80062F7C-0x80062F9C). */
+    static constexpr u32 kKeepsState = kLatches | kRequirement;
     static constexpr s32 kShootableSubtype = 31;
     static constexpr s32 kMomentaryBridge = 20;   ///< subtype: fades out, back when left
     static constexpr s32 kLatchedBridge = 22;     ///< subtype: fades out once and stays
@@ -266,6 +270,11 @@ public:
     /** Whether the target of a trigger has been opened. */
     bool opened(s32 object) const;
     bool settled(s32 object) const;
+    /** Whether a trigger is moving this floor or the object it hangs from, as CritterBossAI
+     * reads the trigger states of both (0x8003a340-0x8003a378): a target of a kind that keeps
+     * its state, commanded and short of its endpoint. Retail's moving bit (0x10) also stands
+     * on the pass that arrives; a target its riders hold still counts here. */
+    bool movesFloor(s32 floorObject) const;
     /** How solid a fading target still looks, 1 shut to 0 gone. */
     f32 alphaOf(s32 object) const;
 

@@ -173,7 +173,8 @@ BossCameraSubject PlayScene::bossSubject() const {
     subject.height = m_opponents.bosses().height();
     subject.attentionOffset = m_opponents.bosses().cameraOffset();
     subject.baseAttention = m_opponents.bosses().cameraBase();
-    subject.awake = m_opponents.bosses().view().awake;
+    // BossCameraUpdate frames the party alone until gBossActive (0x8001c68c).
+    subject.engaged = m_opponents.bosses().view().engaged;
     return subject;
 }
 

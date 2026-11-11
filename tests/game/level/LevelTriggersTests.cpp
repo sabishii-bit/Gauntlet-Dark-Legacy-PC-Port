@@ -999,6 +999,86 @@ TEST_CASE("a platform that goes clear as it moves holds still under a player sta
     CHECK(f.height() < start);
 }
 
+TEST_CASE("a trigger moves its target and the floors hung from it while it travels, if its kind "
+          "keeps its state",
+          "[game][world][triggers][boss-support]") {
+    // CritterBossAI arms a boss that waits for its floor once the floor its probe found, or
+    // that floor's parent, moved on this pass (0x8003a340-0x8003a378). LIFT carries DECK,
+    // which carries RAIL; the pad lowers LIFT by 23, as A5's lowers its elevator.
+    constexpr std::string_view kLift =
+        R"({"name":"WALL","position":[0,10,0],"flags":4096,"child":1},
+                       {"name":"WALL","position":[0,2,0],"flags":4096,"child":2},
+                       {"name":"WALL","position":[0,1,0],"flags":4096})";
+    constexpr s32 kLiftObject = 0;
+    constexpr s32 kDeck = 1;
+    constexpr s32 kRail = 2;
+    constexpr std::string_view kPad =
+        R"({"info":0,"position":[20,0,0],"params":[0,0,0,0,2,255,5,0,0,0,26,255]})";
+    const std::array button{TriggerVisitor{.position = Vec3{20, 0, 0}, .party = 0}};
+    const auto movesNothing = [](const SwitchFixture& f) {
+        for (const s32 object : {kLiftObject, kDeck, kRail}) {
+            CAPTURE(object);
+            CHECK_FALSE(f.triggers.movesFloor(object));
+        }
+    };
+    SECTION("a latch moves them from the update it is set off until the one it arrives on") {
+        SwitchFixture f(kPad, kLift, 26);
+        movesNothing(f);
+        f.step(kStep, button); // commanded, and the first step down
+        CHECK(f.height() < 10);
+        CHECK(f.triggers.movesFloor(kLiftObject));
+        CHECK(f.triggers.movesFloor(kDeck));
+        CHECK_FALSE(f.triggers.movesFloor(kRail)); // only the floor and its own parent count
+        CHECK_FALSE(f.triggers.movesFloor(-1));
+        CHECK_FALSE(f.triggers.movesFloor(3));
+        // Twenty-three at four a second is 173 steps of a thirtieth. Here the step that
+        // arrives settles the lift; retail's arrival pass still counts as moving.
+        s32 steps = 1;
+        while (!f.triggers.settled(kLiftObject) && steps < 1000) {
+            CHECK(f.triggers.movesFloor(kDeck));
+            f.step(kStep);
+            ++steps;
+        }
+        CHECK(steps == 173);
+        CHECK(f.height() == Approx(10 - 23));
+        movesNothing(f);
+    }
+    SECTION("a pressure plate moves its lift while held, but keeps no state") {
+        SwitchFixture f(kPad, kLift, 21);
+        for (s32 tick = 0; tick < 30; ++tick) {
+            f.step(kStep, button);
+            movesNothing(f);
+        }
+        CHECK(f.height() < 10);
+    }
+    SECTION("an opening at once never moves them") {
+        SwitchFixture f(kPad, kLift, 26);
+        f.triggers.openAtOnce(std::array{5}, f.animator, f.scene, nullptr);
+        CHECK(f.triggers.opened(kLiftObject));
+        CHECK(f.height() == Approx(10 - 23));
+        movesNothing(f);
+        f.step(kStep);
+        movesNothing(f);
+    }
+    SECTION("a rider anywhere on it holds it where it stands, still commanded") {
+        // ProcessItemWobjs holds a slide only for a rider on the target itself (did_generate,
+        // 0x80063854) and leaves its trigger state unwritten (0x80062E40-0x80062E68), so a
+        // rider on the deck would not stop retail's lift. Here anyone on its subtree holds
+        // it, and it counts as moving while it waits.
+        SwitchFixture f(kPad, kLift, 26);
+        const std::array riding{
+            TriggerVisitor{.position = Vec3{20, 0, 0}, .party = 0},
+            TriggerVisitor{.position = Vec3{0, 12, 0}, .floorObject = kDeck, .party = 1}};
+        for (s32 tick = 0; tick < 30; ++tick) {
+            f.step(kStep, riding);
+        }
+        CHECK(f.height() == Approx(10));
+        CHECK_FALSE(f.triggers.settled(kLiftObject));
+        CHECK(f.triggers.movesFloor(kLiftObject));
+        CHECK(f.triggers.movesFloor(kDeck));
+    }
+}
+
 TEST_CASE("revealed momentary bridges wait for their final rider without pressing the pad",
           "[game][world][triggers][bridge-occupants][triggers-local-rewind]") {
     const bool enemy = GENERATE(false, true);

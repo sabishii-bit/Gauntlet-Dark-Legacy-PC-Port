@@ -324,11 +324,12 @@ TEST_CASE("All native Legends boss arenas open through the common opponent owner
             CHECK(witnessedWake);
             REQUIRE(opponents.bosses().view().awake);
             REQUIRE(wakeFrame >= 0);
-            // The native family arms at four seconds, independently of the
-            // debris clock. Allow one tick for the float wake accumulator.
-            const f64 wakeSeconds = static_cast<f64>(wakeFrame + 1) * kStep;
-            CHECK(wakeSeconds >= 4);
-            CHECK(wakeSeconds <= 4 + 2 * static_cast<f64>(kStep));
+            // The native family's four-second deadline, independent of the debris clock, is
+            // set on its first frame and first tested on the next (Boss.bin e08843ac, then
+            // e08843c0-e08843d0). f32 sums of 1/60 first reach four at 241 additions, the
+            // first frame's among them, so it wakes on the 242nd update.
+            constexpr s32 kWakeFrame = 241;
+            CHECK(wakeFrame == kWakeFrame);
             if (skorneEntrance) {
                 // updateArena runs before the actual wake callback, so that
                 // frame releases fragments at age zero. At six seconds of

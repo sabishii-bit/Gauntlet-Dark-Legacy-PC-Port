@@ -21,9 +21,9 @@ struct BossCameraSubject {
     Vec3 position{0.0f, 0.0f, 0.0f};
     f32 facing = 0.0f;
     f32 radius = 4.0f;
-    f32 height = 4.0f; ///< of its body's centre, which is kept in view
-    bool awake = false;
-    Vec3 attentionOffset{0.0f};        ///< root and vertical drift above the floor position
+    f32 height = 4.0f;          ///< of its body's centre, which is kept in view
+    bool engaged = false;       ///< the encounter has begun (BossView::engaged), framed as a fight
+    Vec3 attentionOffset{0.0f}; ///< root and vertical drift above the floor position
     std::optional<Vec3> baseAttention; ///< initialized model root, without vertical drift
     Focus focus = Focus::Combat;
 };
@@ -34,8 +34,8 @@ struct BossCameraSubject {
  * the party's line to the boss, swung no further about the boss's facing than the record
  * allows; it looks down at the record's pitch, steeper the closer it is; and it backs off
  * or comes in, within the record's distances, so that the boss and every player stay in
- * view. Before the boss wakes it follows the party alone from the level camera markers,
- * at the record's player distances.
+ * view. Before the encounter begins it follows the party alone from the level camera
+ * markers, at the record's player distances.
  *
  * Nothing it does is sudden: the look point, the yaw, the distance and the pitch each
  * move toward where they are wanted under a speed and an acceleration (LimitCamVal2), as

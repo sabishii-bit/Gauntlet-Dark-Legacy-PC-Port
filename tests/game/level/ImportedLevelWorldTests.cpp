@@ -36,7 +36,7 @@ public:
     }
 };
 
-TEST_CASE("Imported floor-only boss tracking still waits for awakening",
+TEST_CASE("Imported floor-only boss tracking waits for the encounter to begin",
           "[legends][imported-level][boss-camera]") {
     ImportedPresentation presentation;
     ImportedLevel& level = presentation;
@@ -45,7 +45,7 @@ TEST_CASE("Imported floor-only boss tracking still waits for awakening",
     level.trackBoss(boss);
     CHECK(presentation.bossAnchors.empty());
 
-    boss.awake = true;
+    boss.engaged = true;
     boss.position.y = 0;
     level.trackBoss(boss);
     REQUIRE(presentation.bossAnchors.size() == 1);

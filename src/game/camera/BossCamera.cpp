@@ -69,7 +69,7 @@ f32 BossCamera::limit(f32 value, f32 target, f32 least, f32 most, f32 accelerati
 }
 
 /** Where the camera looks: the boss, offset by the record's near or far offset by how far
- * back the camera stands; the party's middle while the boss sleeps. */
+ * back the camera stands; the party's middle until the encounter begins. */
 Vec3 BossCamera::lookPoint(const BossCameraSubject& boss, std::span<const CameraSubject> party,
                            const BossCameraInfo& record, const ApproachPolicy* approach) const {
     if (boss.focus != BossCameraSubject::Focus::Combat) {
@@ -77,7 +77,7 @@ Vec3 BossCamera::lookPoint(const BossCameraSubject& boss, std::span<const Camera
                (boss.focus == BossCameraSubject::Focus::Wizard ? record.wizardAttention
                                                                : record.keyAttention);
     }
-    if (!boss.awake) {
+    if (!boss.engaged) {
         Vec3 middle = middleOf(party);
         if (approach != nullptr && approach->boundsMidpoint && !party.empty()) {
             Vec3 low = party.front().follow;
@@ -111,7 +111,7 @@ Vec3 BossCamera::lookPoint(const BossCameraSubject& boss, std::span<const Camera
  * toward them. */
 f32 BossCamera::wantedYaw(const BossCameraSubject& boss, std::span<const CameraSubject> party,
                           const BossCameraInfo& record) const {
-    if (!boss.awake) {
+    if (!boss.engaged) {
         return m_camera.yaw;
     }
     const Vec3 toParty = middleOf(party) - boss.position;
@@ -172,9 +172,10 @@ f32 BossCamera::viewMargin(const BossCameraSubject& boss, std::span<const Camera
         least = std::min(least, (z * tanX - std::abs(x)) / normX - radius);
         least = std::min(least, (z * tanY - std::abs(y)) / normY - radius);
     };
-    // BossCamPlayerCalc fits only the players. Including the sleeping boss pulls the
-    // camera back to frame the raised arena before the party has climbed its stairs.
-    if (boss.awake || boss.focus != BossCameraSubject::Focus::Combat) {
+    // BossCamPlayerCalc fits only the players. Including the boss before the encounter
+    // begins pulls the camera back to frame the raised arena before the party has climbed
+    // its stairs.
+    if (boss.engaged || boss.focus != BossCameraSubject::Focus::Combat) {
         consider(boss.position, boss.radius);
         consider(boss.position + Vec3{0.0f, boss.height, 0.0f}, 0.0f);
     }
@@ -291,7 +292,7 @@ const WorldLocator* BossCamera::approachMarker(std::span<const WorldLocator> mar
 void BossCamera::reset(const BossCameraSubject& boss, std::span<const CameraSubject> party,
                        const BossCameraInfo& record, const CameraView& view,
                        std::span<const WorldLocator> markers, const ApproachPolicy* approach) {
-    if (boss.awake || boss.focus != BossCameraSubject::Focus::Combat) {
+    if (boss.engaged || boss.focus != BossCameraSubject::Focus::Combat) {
         approach = nullptr;
     }
     m_lookLength = 0.0f;
@@ -303,14 +304,14 @@ void BossCamera::reset(const BossCameraSubject& boss, std::span<const CameraSubj
     m_pitchVelocity = 0.0f;
     m_band = 0;
     m_marker = -1;
-    m_distance = boss.awake ? record.minDistance : record.minPlayerDistance;
+    m_distance = boss.engaged ? record.minDistance : record.minPlayerDistance;
     // With no approach markers, fall back to the line from the boss to the party.
     const Vec3 toParty = middleOf(party) - boss.position;
     m_camera.yaw = flatLength(toParty) > 0.5f
                        ? wrapAngle(portable::atan2(toParty.x, toParty.z) + kPi)
                        : boss.facing;
     m_camera.pitch = record.minPitch;
-    if (!boss.awake) {
+    if (!boss.engaged) {
         const Vec3 near =
             approach != nullptr ? lookPoint(boss, party, record, approach) : middleOf(party);
         if (const auto* marker = approachMarker(markers, near); marker != nullptr) {
@@ -339,13 +340,13 @@ void BossCamera::update(const BossCameraSubject& boss, std::span<const CameraSub
     if (seconds <= 0.0f) {
         return;
     }
-    if (boss.awake || boss.focus != BossCameraSubject::Focus::Combat) {
+    if (boss.engaged || boss.focus != BossCameraSubject::Focus::Combat) {
         approach = nullptr;
     }
     const Vec3 target = lookPoint(boss, party, record, approach);
     const WorldLocator* marker =
-        !boss.awake ? approachMarker(markers, approach != nullptr ? target : middleOf(party))
-                    : nullptr;
+        !boss.engaged ? approachMarker(markers, approach != nullptr ? target : middleOf(party))
+                      : nullptr;
     // A distant new look point (the boss waking, the wizard arriving) turns the camera
     // toward its eased attention while retaining at least the current distance. The eye
     // stays put when attention moves away, but backs out when attention comes closer.
@@ -370,12 +371,12 @@ void BossCamera::update(const BossCameraSubject& boss, std::span<const CameraSub
     m_camera.yaw = wrapAngle(limit(m_camera.yaw, yaw, -kYawSpeed, kYawSpeed, kYawAcceleration,
                                    kStopScale, m_yawVelocity, true, seconds));
     // The distance goes out or comes in by how everyone fits, under its speeds.
-    const f32 nearest = boss.awake ? record.minDistance : record.minPlayerDistance;
+    const f32 nearest = boss.engaged ? record.minDistance : record.minPlayerDistance;
     // BossCameraUpdate doubles the greatest distance while the good wizard stands, so the
     // party may spread about the arena for the coins without going out of view.
     const f32 approachScale = approach != nullptr ? approach->maxDistanceScale : 1.0f;
     const f32 farthest =
-        (boss.awake ? record.maxDistance : record.maxPlayerDistance * approachScale) *
+        (boss.engaged ? record.maxDistance : record.maxPlayerDistance * approachScale) *
         (boss.focus == BossCameraSubject::Focus::Wizard ? kWizardReach : 1.0f);
     m_margin = viewMargin(boss, party, view);
     const f32 wanted = wantedDistance(nearest, farthest, approach);

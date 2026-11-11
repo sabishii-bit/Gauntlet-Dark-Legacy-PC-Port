@@ -54,7 +54,7 @@ TEST_CASE("boss approach policy defaults preserve Dark Legacy camera state",
     explicitDefaults.reset(boss, party, record, {}, {}, &defaults);
     CHECK(explicitDefaults == baseline);
     for (s32 tick = 0; tick < 240; ++tick) {
-        boss.awake = tick >= 120;
+        boss.engaged = tick >= 120;
         party[0] = standing({-15.0f + static_cast<f32>(tick) * 0.05f, 0, 30});
         baseline.update(boss, party, record, {}, 1.0f / 60);
         explicitDefaults.update(boss, party, record, {}, 1.0f / 60, {}, &defaults);
@@ -81,7 +81,7 @@ TEST_CASE("platform approach distance and attention limits do not alter combat f
     adapted.reset(boss, party, record, {}, {}, &approach);
     CHECK(ordinary.distance() == Approx(record.maxPlayerDistance * 2));
     CHECK(adapted.distance() == Approx(record.maxPlayerDistance * 3));
-    boss.awake = true;
+    boss.engaged = true;
     ordinary.reset(boss, party, record, {});
     adapted.reset(boss, party, record, {}, {}, &approach);
     CHECK(adapted == ordinary);
@@ -212,7 +212,7 @@ TEST_CASE("boss approach follows horizontal camera markers until the boss wakes"
     }
     CHECK(std::abs(BossCamera::wrapAngle(camera.yaw() - kPi)) < 0.001f);
     CHECK(camera.pitch() == Approx(markers[1].rotation.x).margin(0.001f));
-    boss.awake = true;
+    boss.engaged = true;
     const f32 before = camera.pitch();
     camera.update(boss, party, record, {}, 1.0f / 60, markers);
     CHECK(std::abs(camera.pitch() - before) < 0.01f); // the pan to the boss, not a cut
@@ -227,7 +227,7 @@ TEST_CASE("boss framing keeps the player's collision envelope inside the view",
     const auto record = cryptRecord();
     const CameraView view;
     BossCameraSubject boss;
-    boss.awake = true;
+    boss.engaged = true;
     std::vector<CameraSubject> party{standing({0, 0, 70})};
     party[0].viewRadius = 3;
     BossCamera body;
@@ -258,7 +258,7 @@ TEST_CASE("native Chimera camera frames the player body at the front of the aren
     CHECK(record.maxDistance == 135);
     CHECK(record.minPitch == Approx(25.0f * kPi / 180.0f));
     BossCameraSubject boss;
-    boss.awake = true;
+    boss.engaged = true;
     boss.height = 20;
     boss.attentionOffset = Vec3{0, 20, 0};
     std::vector<CameraSubject> party{standing({0, 0, 70})};
@@ -289,7 +289,7 @@ TEST_CASE("victory camera uses wizard and shard offsets instead of combat attent
     subject.position = Vec3{0, 3, 5};
     subject.attentionOffset = Vec3{0, 10, 0};
     subject.focus = BossCameraSubject::Focus::Wizard;
-    subject.awake = true;
+    subject.engaged = true;
     BossCamera camera;
     camera.reset(subject, party, record, {});
     REQUIRE(camera.attention() == Vec3{1, 15, 8});
@@ -308,7 +308,7 @@ TEST_CASE("the boss camera looks at the boss from behind the party, flatter than
     lich.position = Vec3{0.0f, 0.0f, 0.0f};
     lich.facing = 0.0f; // faces +z, toward the party
     lich.radius = 4.0f;
-    lich.awake = false;
+    lich.engaged = false;
     const std::vector<CameraSubject> party{standing(Vec3{0.0f, 0.0f, 30.0f})};
     BossCamera camera;
     camera.reset(lich, party, record, view);
@@ -323,7 +323,7 @@ TEST_CASE("the boss camera looks at the boss from behind the party, flatter than
     REQUIRE(camera.margin() >= 0.0f);
     // Awake: it looks at the boss, a little off it, and stands far enough back for the boss
     // and the player both to be on screen.
-    lich.awake = true;
+    lich.engaged = true;
     for (s32 i = 0; i < 600; ++i) {
         camera.update(lich, party, record, view, 1.0f / 60.0f);
     }
@@ -368,7 +368,7 @@ TEST_CASE("the boss camera keeps within the boss's facing when the record limits
     const CameraView view;
     BossCameraSubject boss;
     boss.facing = 0.0f;
-    boss.awake = true;
+    boss.engaged = true;
     // Straight behind the boss: the line would look along +z from behind it, but the swing
     // is held to a quarter turn off its facing, so the camera looks from its front quarter.
     const std::vector<CameraSubject> behind{standing(Vec3{0.0f, 0.0f, -30.0f})};
@@ -398,7 +398,7 @@ TEST_CASE("waking holds the camera while its look pans farther away to the boss,
     camera.reset(boss, party, record, {});
     const f32 asleepPitch = camera.pitch();
     const Vec3 stood = camera.camera().position;
-    boss.awake = true;
+    boss.engaged = true;
     camera.update(boss, party, record, {}, 0.0f);
     REQUIRE(camera.pitch() == asleepPitch);
     // The look point is further off than it may go in a step: the camera stays put and
@@ -437,7 +437,7 @@ TEST_CASE("boss attention transitions preserve the retained eye distance when at
     record.flags = BossCameraInfo::kLiveAnchor;
     record.minAttention = record.maxAttention = Vec3{0};
     BossCameraSubject boss;
-    boss.awake = true;
+    boss.engaged = true;
     const std::vector<CameraSubject> party{standing({0, 0, 30})};
     BossCamera camera;
     camera.reset(boss, party, record, {});
@@ -473,7 +473,7 @@ TEST_CASE("the boss camera backs off and comes in no faster than its speeds and 
     const auto record = cryptRecord();
     const CameraView view;
     BossCameraSubject boss;
-    boss.awake = true;
+    boss.engaged = true;
     std::vector<CameraSubject> party{standing({0, 0, 30})};
     party[0].viewRadius = 3;
     BossCamera camera;
@@ -517,7 +517,7 @@ TEST_CASE("the dragon camera uses its authored yaw limit and elevated attention 
     record.cosMaxYaw = std::cos(kPi / 4.0f); // stale cache in the level record
     record.minAttention = record.maxAttention = Vec3{0.0f, -5.0f, 0.0f};
     BossCameraSubject boss;
-    boss.awake = true;
+    boss.engaged = true;
     boss.attentionOffset = Vec3{0.0f, 18.5f, 0.0f};
     const CameraView view;
     for (const f32 side : {-1.0f, 1.0f}) {
@@ -547,7 +547,7 @@ TEST_CASE("the genie camera selects the base anchor without vertical drift",
     record.minAttention = Vec3{0, 13, 0};
     record.maxAttention = Vec3{0, 9, 0};
     BossCameraSubject boss;
-    boss.awake = true;
+    boss.engaged = true;
     boss.position = Vec3{10, 0, 20};
     boss.baseAttention = Vec3{10, 7, 20};
     boss.attentionOffset = Vec3{0, 17, 0};

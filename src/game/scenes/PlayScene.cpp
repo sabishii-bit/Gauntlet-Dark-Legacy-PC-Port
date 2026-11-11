@@ -1532,9 +1532,11 @@ void PlayScene::advancePowerupsAndWorld(s32 ticks, f32 seconds, bool held) {
     if (!held && !m_world->isTower()) {
         const bool bossLevel = m_world->level() != nullptr && m_world->level()->bossType >= 0;
         const BossView boss = m_opponents.bosses().view();
+        // A boss level holds the timers until gBossActive, then runs them three times as fast
+        // while the boss stands (PlayerProcessPowerups 0x8007ce50-0x8007ce80).
         if (!bossLevel) {
             powerupClock = PlayerPowerups::Clock::Level;
-        } else if (boss.awake && boss.alive) {
+        } else if (boss.engaged && boss.alive) {
             powerupClock = PlayerPowerups::Clock::BossFight;
         }
     }

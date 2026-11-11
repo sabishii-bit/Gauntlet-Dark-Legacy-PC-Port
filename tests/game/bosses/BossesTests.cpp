@@ -1,6 +1,9 @@
 #include <algorithm>
+#include <array>
 #include <filesystem>
+#include <format>
 #include <set>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -8,9 +11,17 @@
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
+#include "engine/assets/ModelSet.h"
+#include "engine/assets/TextureSet.h"
+#include "engine/assets/WorldLayout.h"
 #include "engine/core/Types.h"
 #include "engine/io/File.h"
+#include "engine/world/SampleLevel.h"
+#include "engine/world/WorldAnimator.h"
+#include "engine/world/WorldCollision.h"
+#include "engine/world/WorldScene.h"
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
@@ -20,6 +31,7 @@
 #include "game/critters/CombatantAssets.h"
 #include "game/critters/CombatantFixture.h"
 #include "game/level/BossKinds.h"
+#include "game/level/LevelTriggers.h"
 
 namespace {
 
@@ -39,10 +51,11 @@ EnemyView playerAt(const Vec3& position, s32 player = 0) {
     return view;
 }
 
-/** A synthetic boss archive for `name`: a body with an EYEBALL node, and the plague fiend's
- * replacement eye mesh beside it, so the legend's eye can be checked without game data. */
-std::filesystem::path eyedBossAssets(const std::string& name) {
-    const auto root = test::scratchDirectory("eyed-boss-" + name);
+/** A synthetic boss archive for `name` of TYPE flags `typeFlags`: a body with an EYEBALL node,
+ * and the plague fiend's replacement eye mesh beside it, so the legend's eye can be checked
+ * without game data. */
+std::filesystem::path eyedBossAssets(const std::string& name, u32 typeFlags = 0) {
+    const auto root = test::scratchDirectory(std::format("eyed-boss-{}-{}", name, typeFlags));
     std::filesystem::create_directories(root / "critter");
     const auto archive = root / "MONSTERS" / name;
     std::filesystem::create_directories(archive / "models");
@@ -61,11 +74,94 @@ std::filesystem::path eyedBossAssets(const std::string& name) {
                {"name":"EYEBALL","object":"BODY","parent":0,"position":[0,5,0]}],
       "sequences":[{"name":"READY","frames":30}]}]})");
     writeTextFile(root / "critter" / (name + ".json"),
-                  R"({"descriptors":[{"prefix":"BODY","name":")" + name + R"(","type":4}],
-      "types":[{"moveCount":1,"maxHealth":1000,"radius":3,"expValue":500}],
-      "moves":[{"name":"READY","anim":"READY","type":32,"priority":512,"interrupt":20}]})");
+                  std::format(R"({{"descriptors":[{{"prefix":"BODY","name":"{}","type":4}}],
+      "types":[{{"moveCount":1,"maxHealth":1000,"radius":3,"expValue":500,"typeFlags":{},
+                 "lookNode0":""}}],
+      "moves":[{{"name":"READY","anim":"READY","type":32,"priority":512,"interrupt":20}}]}})",
+                              name, typeFlags));
     return root;
 }
+
+/** CHIMERA's TYPE flags (0x82): aimed at by parts, and asleep it arms its wake only once its
+ * floor's trigger moves it. */
+constexpr u32 kChimeraTypeFlags = CritterData::kByParts | CritterData::kSupportActivated;
+
+/**
+ * A lift for a boss to stand on, A5's elevator in small. LIFT (object 0) at (0, 10, 0) carries
+ * DECK (1) two up; beside the deck lies LIFT's own face, and STILL ground (2) lies thirty under
+ * the lift. The pad at kPad, of trigger `subtype`, lowers LIFT by twenty at four a second.
+ * The collision follows the scene once the triggers have moved it, as LevelWorld places it.
+ */
+struct LiftFixture {
+    static constexpr s32 kLift = 0;
+    static constexpr s32 kDeck = 1;
+    static constexpr s32 kStill = 2;
+    static constexpr Vec3 kPad{-30, 0, 0};
+    static constexpr Vec3 kOnDeck{0, 12, 0};
+    static constexpr Vec3 kOnLiftFace{30, 10, 0};
+    static constexpr f32 kTravel = 20;
+
+    test::FakeRenderDevice device;
+    WorldLayout layout;
+    ModelSet models;
+    TextureSet textures;
+    WorldScene scene;
+    WorldAnimator animator;
+    LevelTriggers triggers;
+    WorldCollision collision;
+
+    explicit LiftFixture(s32 subtype) {
+        const auto dir = test::sampleLevel(std::format("boss-lift-{}", subtype));
+        // The pad's open endpoint is -200 tenths (bytes 56, 255).
+        writeTextFile(dir / "world.json", std::format(R"({{
+          "objects":[{{"name":"WALL","position":[0,10,0],"flags":4096,"child":1,"next":2}},
+                     {{"name":"WALL","position":[0,2,0],"flags":4096}},
+                     {{"name":"WALL","position":[0,-20,0]}}],
+          "itemInfos":[{{"type":5,"subtype":{},"name":"BRIDGEPAD","radius":1}}],
+          "itemInstances":[{{"info":0,"position":[{},{},{}],
+                            "params":[0,0,0,0,2,255,0,0,0,0,56,255]}}]}})",
+                                                      subtype, kPad.x, kPad.y, kPad.z));
+        REQUIRE(layout.load(dir));
+        REQUIRE(models.load(dir));
+        REQUIRE(textures.load(dir));
+        REQUIRE(scene.build(layout, models, textures, device));
+        animator.bind(layout);
+        std::vector<CollisionTriangle> faces;
+        floor(faces, kLift, 20, 40, 0); // local to the lift, as moving objects keep theirs
+        floor(faces, kDeck, -10, 10, 0);
+        floor(faces, kStill, -100, 100, -20); // in world space
+        std::vector<s32> parents;
+        for (const WorldObject& object : layout.objects()) {
+            parents.push_back(object.parent);
+        }
+        collision.build(std::move(faces), parents);
+        collision.setMovingObjects(std::array{kLift, kDeck});
+        place();
+        triggers.bind(layout, animator, &collision);
+        triggers.openMet({}, animator, scene, &collision);
+        place();
+    }
+    /** A floor of `object` over x from `from` to `to` and z within ten, at height `y`. */
+    static void floor(std::vector<CollisionTriangle>& faces, s32 object, f32 from, f32 to, f32 y) {
+        CollisionTriangle half;
+        half.object = object;
+        half.vertices = {Vec3{from, y, -10}, Vec3{to, y, 10}, Vec3{to, y, -10}};
+        faces.push_back(half);
+        half.vertices = {Vec3{from, y, -10}, Vec3{from, y, 10}, Vec3{to, y, 10}};
+        faces.push_back(half);
+    }
+    void place() {
+        for (const s32 object : {kLift, kDeck}) {
+            collision.setObjectTransform(object, scene.worldTransform(static_cast<usize>(object)));
+        }
+    }
+    /** The triggers' turn in a frame, after the opponents', with `visitors` on them. */
+    void step(f32 seconds, std::span<const TriggerVisitor> visitors = {}) {
+        triggers.update(seconds, visitors, animator, scene, &collision);
+        place();
+    }
+    f32 descent() const { return 10 - scene.worldTransform(static_cast<usize>(kLift))[3].y; }
+};
 
 TEST_CASE("Wraith waits in its lowered entrance pose and rises only in START3",
           "[game][enemies][wraith][assets]") {
@@ -691,7 +787,9 @@ TEST_CASE("a boss arms only once its activation signal comes, stays armed after 
     Bosses bosses;
     bosses.open(device, root, nullptr, {}, 'G');
     REQUIRE(bosses.spawn(41, Vec3{0}, 0, 20));
-    // Half-second steps add up to the two-second arming time exactly.
+    // Half-second steps add up to the two-second arming time exactly. CritterBossAI sets the
+    // deadline on the frame that arms it and tests it from the next on (0x80039bac-0x80039bfc),
+    // so the boss wakes on the update after the one that completes its two seconds.
     constexpr f32 kHalfSecond = 0.5f;
     const std::vector<EnemyView> near{playerAt(Vec3{0, 0, 10})};
     const auto updates = [&](s32 count, bool activationReady) {
@@ -701,7 +799,7 @@ TEST_CASE("a boss arms only once its activation signal comes, stays armed after 
         }
     };
     SECTION("the default signal keeps the GameCube's two seconds") {
-        for (s32 update = 0; update < 3; ++update) {
+        for (s32 update = 0; update < 4; ++update) {
             bosses.update(kTicks, kHalfSecond, near);
             REQUIRE_FALSE(bosses.view().awake);
         }
@@ -714,12 +812,12 @@ TEST_CASE("a boss arms only once its activation signal comes, stays armed after 
             bosses.update(kTicks, kHalfSecond, near, false);
         }
         CHECK_FALSE(bosses.view().awake);
-        updates(4, true); // the signal arriving at last starts the full two seconds
+        updates(5, true); // the signal arriving at last starts the full two seconds
         CHECK(bosses.view().awake);
     }
     SECTION("an update's signal keeps it armed through updates without one") {
         updates(1, true);
-        updates(2, false);
+        updates(3, false);
         REQUIRE_FALSE(bosses.view().awake);
         bosses.update(kTicks, kHalfSecond, near, false);
         CHECK(bosses.view().awake);
@@ -731,8 +829,135 @@ TEST_CASE("a boss arms only once its activation signal comes, stays armed after 
         bosses.arm(kHalfSecond, false);
         bosses.update(kTicks, 0, near, false); // a second and a half armed
         REQUIRE_FALSE(bosses.view().awake);
+        bosses.update(kTicks, kHalfSecond, near, false); // two seconds, tested on the next
+        REQUIRE_FALSE(bosses.view().awake);
         bosses.update(kTicks, kHalfSecond, near, false);
         CHECK(bosses.view().awake);
+    }
+    // An ordinary boss is engaged only once it wakes (BossActivate at 0x80039ca4).
+    CHECK(bosses.view().engaged == bosses.view().awake);
+}
+
+TEST_CASE("a boss that waits for its floor arms on the update after a trigger first moves the "
+          "floor, wakes two seconds later and stays armed",
+          "[game][bosses][boss-activation][boss-support]") {
+    const s32 fps = GENERATE(30, 60, 120);
+    CAPTURE(fps);
+    const f32 step = 1.0f / static_cast<f32>(fps);
+    const s32 ticks = std::max(1, Combatant::kTicksPerSecond / fps);
+    // f32 sums of 1/30, 1/60 and 1/120 from nought first reach two seconds at 61, 121 and 241
+    // additions (60, 120 and 240 give 1.9999994, 1.9999988 and 1.9999985). The arming update
+    // counts the first, and the test on the update after the last passes.
+    const s32 waited = fps == 30 ? 61 : (fps == 60 ? 121 : 241);
+    const auto subtype = GENERATE(26, 29);
+    CAPTURE(subtype);
+    LiftFixture lift(subtype);
+    test::FakeRenderDevice device;
+    Bosses bosses;
+    bosses.open(device, eyedBossAssets("CHIMERA", kChimeraTypeFlags), &lift.collision, {}, 'A');
+    // On the deck hung from the lift, or on the lift's own face where it stays solid as it moves
+    // (subtype 29, flags 0x0A; subtype 26 leaves its own triangles behind while it moves).
+    const Vec3 mark = subtype == 26 ? LiftFixture::kOnDeck : LiftFixture::kOnLiftFace;
+    REQUIRE(bosses.spawn(boss_type::kChimera, mark, 0, 20));
+    REQUIRE(bosses.position()->y == Approx(mark.y));
+    const auto near = [&] { return std::array{playerAt(*bosses.position() + Vec3{0, 0, 10})}; };
+    const std::array far{playerAt(Vec3{0, 0, 500})};
+    const std::array onPad{TriggerVisitor{.position = LiftFixture::kPad}};
+    // PlayScene's order: the boss in the opponents' turn, then the triggers and the collision.
+    const auto frame = [&](std::span<const EnemyView> party,
+                           std::span<const TriggerVisitor> visitors = {}) {
+        bosses.update(ticks, step, party, true, &lift.triggers);
+        lift.step(step, visitors);
+    };
+    // The held entrance arms nothing: no trigger moves while it lasts. Nor do updates with the
+    // party all about it while the pad lies idle.
+    for (s32 update = 0; update < 30; ++update) {
+        bosses.arm(step, true, &lift.triggers);
+    }
+    for (s32 update = 0; update < 3 * fps; ++update) {
+        frame(near());
+        REQUIRE_FALSE(bosses.view().engaged);
+    }
+    REQUIRE_FALSE(bosses.view().awake);
+    REQUIRE(lift.descent() == 0);
+    SECTION("contact arms it on the next update, which the wake follows two seconds on") {
+        // Update P: the boss's turn finds its floor still; the pad then starts the lift.
+        frame(near(), onPad);
+        CHECK_FALSE(bosses.view().engaged);
+        CHECK(lift.descent() > 0);
+        // P+1: its probe finds the floor moving, and the encounter begins.
+        frame(near());
+        CHECK(bosses.view().engaged);
+        CHECK_FALSE(bosses.view().awake);
+        for (s32 update = 2; update <= waited; ++update) {
+            frame(near());
+            CAPTURE(update);
+            REQUIRE_FALSE(bosses.view().awake);
+        }
+        frame(near()); // P + waited + 1: P+62 at 30 a second
+        CHECK(bosses.view().awake);
+        CHECK(bosses.view().engaged);
+        CHECK_FALSE(lift.triggers.settled(LiftFixture::kLift)); // it wakes on the way down
+        CHECK(bosses.position()->y < mark.y - 5);
+    }
+    SECTION("the floor settling does not disarm it") {
+        frame(far, onPad);
+        while (!lift.triggers.settled(LiftFixture::kLift)) {
+            frame(far);
+        }
+        CHECK(lift.descent() == Approx(LiftFixture::kTravel));
+        for (s32 update = 0; update < fps; ++update) {
+            frame(far);
+            REQUIRE(bosses.view().engaged);
+        }
+        CHECK_FALSE(bosses.view().awake);
+        frame(near());
+        CHECK(bosses.view().awake);
+    }
+}
+
+TEST_CASE("a boss that waits for its floor never arms on a lift held up by a pressure plate, and "
+          "any other boss arms at once whatever the pad",
+          "[game][bosses][boss-activation][boss-support]") {
+    const s32 fps = GENERATE(30, 60, 120);
+    CAPTURE(fps);
+    const f32 step = 1.0f / static_cast<f32>(fps);
+    const s32 ticks = std::max(1, Combatant::kTicksPerSecond / fps);
+    const std::array onPad{TriggerVisitor{.position = LiftFixture::kPad}};
+    test::FakeRenderDevice device;
+    SECTION("a pressure plate keeps no trigger state, so the lift it moves arms nothing") {
+        LiftFixture lift(21);
+        Bosses bosses;
+        bosses.open(device, eyedBossAssets("CHIMERA", kChimeraTypeFlags), &lift.collision, {}, 'A');
+        REQUIRE(bosses.spawn(boss_type::kChimera, LiftFixture::kOnDeck, 0, 20));
+        for (s32 update = 0; update < 4 * fps; ++update) {
+            const std::array near{playerAt(*bosses.position() + Vec3{0, 0, 10})};
+            bosses.update(ticks, step, near, true, &lift.triggers);
+            lift.step(step, onPad);
+            REQUIRE_FALSE(bosses.view().engaged);
+        }
+        CHECK(lift.descent() > 5);
+        CHECK_FALSE(bosses.view().awake);
+    }
+    SECTION("an ordinary boss wakes on the 62nd update after placement at 30 a second") {
+        // CritterBossAI sets an ordinary boss's deadline on its first frame and first passes
+        // its test 61 frames on (0x80039bd8-0x80039bfc): the 62nd update, the 122nd at 60 a
+        // second and the 242nd at 120. Pressing the pad on the way changes nothing.
+        const s32 wakes = fps == 30 ? 62 : (fps == 60 ? 122 : 242);
+        LiftFixture lift(26);
+        Bosses bosses;
+        bosses.open(device, eyedBossAssets("CHIMERA"), &lift.collision, {}, 'A');
+        REQUIRE(bosses.spawn(boss_type::kChimera, LiftFixture::kOnDeck, 0, 20));
+        for (s32 update = 1; update <= wakes; ++update) {
+            CAPTURE(update);
+            REQUIRE_FALSE(bosses.view().engaged);
+            const std::array near{playerAt(*bosses.position() + Vec3{0, 0, 10})};
+            bosses.update(ticks, step, near, true, &lift.triggers);
+            lift.step(step, update == 10 ? std::span<const TriggerVisitor>{onPad}
+                                         : std::span<const TriggerVisitor>{});
+            CHECK(bosses.view().awake == (update == wakes));
+            CHECK(bosses.view().engaged == bosses.view().awake);
+        }
     }
 }
 

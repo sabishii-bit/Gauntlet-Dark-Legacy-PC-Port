@@ -106,7 +106,7 @@ TEST_CASE("Dreamcast BCAM fits the native arena before and after boss registrati
             const auto checkPlayer = [&] {
                 const Vec4 clip = WorldCamera::projection(kPi / 3, 640.0f / 416) *
                                   at30.camera().view() * Vec4{player, 1};
-                CAPTURE(clip.x, clip.y, clip.w, boss.awake);
+                CAPTURE(clip.x, clip.y, clip.w, boss.engaged);
                 REQUIRE(clip.w > 0);
                 CHECK(std::abs(clip.x / clip.w) < 1);
                 CHECK(std::abs(clip.y / clip.w) < 1);
@@ -145,7 +145,7 @@ TEST_CASE("Dreamcast BCAM fits the native arena before and after boss registrati
                 CHECK(glm::distance(Vec2{player.x, player.z},
                                     Vec2{boss.position.x, boss.position.z}) < wakeDistance);
             }
-            boss.awake = true;
+            boss.engaged = true;
             at30.trackBoss(boss);
             at60.trackBoss(boss);
             for (s32 tick = 0; tick < 600; ++tick) {
@@ -228,7 +228,7 @@ TEST_CASE(
     };
     bool corrected = false;
     bool unchanged = false;
-    boss.awake = true;
+    boss.engaged = true;
     presented.trackBoss(boss);
     for (s32 tick = 0; tick < 180; ++tick) {
         native.update(boss, party, record, kView, 1.0f / 30, markers, &approach);
