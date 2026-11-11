@@ -38,6 +38,13 @@ constexpr std::string_view kShardRestore = "SHDR";
 /// The shortest frame period a bound sequence may claim.
 constexpr f32 kMinimumPeriod = .0001f;
 
+/** The bound gesture e002f708 would start: named and with frames to play. */
+const LegendsTowerCeremony::Sequence*
+findSequence(std::span<const LegendsTowerCeremony::Sequence> sequences, std::string_view name) {
+    const auto found = std::ranges::find(sequences, name, &LegendsTowerCeremony::Sequence::name);
+    return found != sequences.end() && found->frames > 0 ? &*found : nullptr;
+}
+
 // Shots: e007d53c's distance and pitch about e007d584's focus.
 constexpr f32 kShotDistance = 30;
 constexpr f32 kSumnerShotPitch = kPi / 6;
@@ -213,8 +220,8 @@ void LegendsTowerCeremony::start(const WorldCamera& camera, const Vec3& attentio
 
 void LegendsTowerCeremony::play(std::string_view name) {
     // e002f708 leaves the current sequence ended and frozen (0x9000) when it finds none.
-    const auto found = std::ranges::find(m_sequences, name, &Sequence::name);
-    if (found == m_sequences.end() || found->frames <= 0) {
+    const auto* found = findSequence(m_sequences, name);
+    if (!found) {
         m_gesture.done = true;
         m_gesture.frozen = true;
         return;
@@ -427,8 +434,9 @@ bool LegendsTowerCeremony::runeScript(const Entry& entry) {
         m_runeStage = RuneStage::Spell;
     }
     if (stage == RuneStage::Spell) {
-        // Retail waits for MKRU's frame 14 however long it takes; a spell that ends
-        // short of it, or is absent, releases the stone as it ends instead.
+        // The release test reads frame 14 of whatever Sumner plays: MKRU, or the REDY that
+        // e0860d1c starts when MKRU is absent. A gesture that ends short of it would leave
+        // retail waiting forever; the stone goes as it ends instead.
         if (m_flightStart < 0 && (crossed(kRuneReleaseFrame) || m_gesture.done)) {
             m_flightStart = now + 1;
         }
@@ -482,7 +490,7 @@ bool LegendsTowerCeremony::doorScript(const Entry& entry) {
             m_doorCase = DoorCase::Bolt;
         }
         break;
-    case DoorCase::Bolt:
+    case DoorCase::Bolt: {
         // ODOR freezes at frame 15 for a countdown taken from the update that sees it; the
         // bolt it sends chimes once past frame 16, and frame 19 lets the door go.
         if (!m_gesture.frozen && crossed(kDoorHoldFrame)) {
@@ -500,13 +508,18 @@ bool LegendsTowerCeremony::doorScript(const Entry& entry) {
             m_doorBolt = false;
             m_sounds.push_back(kDoorShimmerSound);
         }
-        // Retail waits for frame 19 however long it takes; an ODOR that ends short of
-        // it, or is absent, lets the door go as it ends instead.
-        if (m_gesture.frame > kDoorReleaseFrame || m_gesture.done) {
+        // Case 6 lets the door go past frame 19 of whatever Sumner plays: when ODOR ends
+        // short of it or is absent, the REDY e0860d1c starts holds at 15 and passes 19.
+        // A REDY that ends short of 19 too, or an absent one, would leave retail waiting;
+        // the door goes as the gesture ends instead.
+        const bool stalled = m_gesture.done && (m_gesture.name == kReady ||
+                                                findSequence(m_sequences, kReady) == nullptr);
+        if (m_gesture.frame > kDoorReleaseFrame || stalled) {
             m_count = 0;
             m_doorCase = DoorCase::Release;
         }
         break;
+    }
     case DoorCase::Release:
         // The door's held animation goes on; the adapter plays 0x10 from the displayed bits.
         m_count = 0;

@@ -2,6 +2,7 @@
 #include <array>
 #include <limits>
 #include <optional>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -27,10 +28,20 @@ std::vector<LegendsTowerCeremony::Sequence> nativeSequences() {
 }
 
 /** Without its overlay a ceremony keeps the scripts' clocks; only the captions and the
- * shots' focus points come from Tower.bin. */
-LegendsTowerCeremony nativeCeremony() {
+ * shots' focus points come from Tower.bin. A replacement without frames leaves its gesture
+ * out, as a WIZMOVES that lacks it would. */
+LegendsTowerCeremony
+nativeCeremony(std::initializer_list<LegendsTowerCeremony::Sequence> replacements = {}) {
+    auto sequences = nativeSequences();
+    for (const auto& replacement : replacements) {
+        std::erase_if(sequences,
+                      [&](const auto& sequence) { return sequence.name == replacement.name; });
+        if (replacement.frames > 0) {
+            sequences.push_back(replacement);
+        }
+    }
     LegendsTowerCeremony result;
-    result.bindSequences(nativeSequences());
+    result.bindSequences(std::move(sequences));
     return result;
 }
 
@@ -254,6 +265,48 @@ TEST_CASE("N64 runestone completing thirteen returns on the update after it land
     }
 }
 
+TEST_CASE("N64 runestone ceremony releases the stone at frame 14 of whatever Sumner plays",
+          "[legends][tower-ceremony]") {
+    LegendsProgress now;
+    now.runestones = 1;
+    SECTION("MKRU is absent") {
+        // e002f708 finds no MKRU on 52 and e0860d1c restarts REDY in that update; e086239c's
+        // release test sees REDY's frame 14 on 67, so the flight shows from 68.
+        auto value = nativeCeremony({{.name = "MKRU"}});
+        value.begin({}, now);
+        value.start({}, {});
+        for (s32 tick = 1; tick <= 218; ++tick) {
+            CAPTURE(tick);
+            value.update(kTick);
+            CHECK(value.takeSounds() == (tick == 51    ? sounds({0x68})
+                                         : tick == 130 ? sounds({0x8a})
+                                                       : sounds({})));
+            CHECK(value.gesture() == "REDY");
+            CHECK(value.runeInFlight() == (tick >= 68 && tick < 130));
+            CHECK(value.displayedProgress().runestones == (tick >= 130 ? 1U : 0U));
+            CHECK(value.active() == (tick < 218));
+        }
+    }
+    SECTION("MKRU ends short of frame 14") {
+        // A 10-frame MKRU ends at frame 9 on 70. Retail would wait for frame 14 forever; the
+        // stone goes as the spell ends and flies from 72.
+        auto value = nativeCeremony({{"MKRU", 10}});
+        value.begin({}, now);
+        value.start({}, {});
+        for (s32 tick = 1; tick <= 222; ++tick) {
+            CAPTURE(tick);
+            value.update(kTick);
+            CHECK(value.takeSounds() == (tick == 51    ? sounds({0x68})
+                                         : tick == 134 ? sounds({0x8a})
+                                                       : sounds({})));
+            CHECK((value.gesture() == "MKRU") == (tick >= 52 && tick < 71));
+            CHECK(value.runeInFlight() == (tick >= 72 && tick < 134));
+            CHECK(value.displayedProgress().runestones == (tick >= 134 ? 1U : 0U));
+            CHECK(value.active() == (tick < 222));
+        }
+    }
+}
+
 TEST_CASE("N64 door ceremony runs e0865c98's counts", "[legends][tower-ceremony]") {
     auto value = nativeCeremony();
     LegendsProgress now;
@@ -296,6 +349,105 @@ TEST_CASE("N64 door ceremony runs e0865c98's counts", "[legends][tower-ceremony]
         CHECK(value.displayedProgress().obelisks == (tick >= 259 ? 7U : 0U));
         CHECK((value.gesture() == "REDY") == (tick < 48 || tick >= 267));
         CHECK(value.active() == (tick < 358));
+    }
+}
+
+TEST_CASE("N64 door ceremony lets REDY carry the door past a short or absent ODOR",
+          "[legends][tower-ceremony]") {
+    LegendsProgress now;
+    now.obelisks = 7;
+    SECTION("ODOR ends short of frame 19") {
+        // An 18-frame ODOR holds at 15, sounds 0x6e and ends at frame 17 on 252. Case 6 reads
+        // whatever Sumner plays, so the REDY that e0860d1c starts on 253 holds at 15 and
+        // sounds 0x6e again; 324 sees 20 and case 7 releases the door on 325.
+        auto value = nativeCeremony({{"ODOR", 18, 1.0f / 15}});
+        value.begin({}, now);
+        value.start({}, {});
+        for (s32 tick = 1; tick <= 424; ++tick) {
+            CAPTURE(tick);
+            value.update(kTick);
+            CHECK(value.takeSounds() == (tick == 79                   ? sounds({0xb9})
+                                         : tick == 252 || tick == 321 ? sounds({0x6e})
+                                                                      : sounds({})));
+            CHECK((value.gesture() == "ODOR") == (tick >= 168 && tick < 253));
+            if (tick >= 268 && tick <= 318) {
+                CHECK(value.gesture() == "REDY");
+                CHECK(value.gestureFrame() == 15);
+            }
+            CHECK(value.displayedProgress().obelisks == (tick >= 325 ? 7U : 0U));
+            CHECK(value.active() == (tick < 424));
+        }
+    }
+    SECTION("ODOR is absent") {
+        // e002f708 finds no ODOR on 168 and e0860d1c restarts REDY in that update. REDY holds
+        // at 15 from 183 and sounds 0x6e on 236; 239 sees 20 and case 7 releases the door on 240.
+        auto value = nativeCeremony({{.name = "ODOR"}});
+        value.begin({}, now);
+        value.start({}, {});
+        for (s32 tick = 1; tick <= 339; ++tick) {
+            CAPTURE(tick);
+            value.update(kTick);
+            CHECK(value.takeSounds() == (tick == 79    ? sounds({0xb9})
+                                         : tick == 236 ? sounds({0x6e})
+                                                       : sounds({})));
+            CHECK((value.gesture() == "REDY") == (tick < 48 || tick >= 168));
+            if (tick >= 183 && tick <= 233) {
+                CHECK(value.gestureFrame() == 15);
+            }
+            CHECK(value.displayedProgress().obelisks == (tick >= 240 ? 7U : 0U));
+            CHECK(value.active() == (tick < 339));
+        }
+    }
+}
+
+TEST_CASE("N64 ceremonies hand back where retail would wait for a frame no gesture reaches",
+          "[legends][tower-ceremony]") {
+    SECTION("no gestures are bound") {
+        // The rune's release test and the door's case 6 see only an ended gesture and move
+        // on at once; the shard's cases wait for no frame.
+        LegendsProgress rune;
+        rune.runestones = 1;
+        LegendsProgress door;
+        door.obelisks = 7;
+        LegendsProgress shard;
+        shard.shards = 1;
+        struct Visit {
+            std::string_view kind;
+            LegendsProgress after;
+            s32 placed;   ///< the update the piece shows
+            s32 handBack; ///< the update control returns
+        };
+        const std::array<Visit, 3> visits{
+            {{"rune", rune, 116, 204}, {"door", door, 52, 151}, {"shard", shard, 95, 242}}};
+        for (const auto& visit : visits) {
+            LegendsTowerCeremony value;
+            value.begin({}, visit.after);
+            value.start({}, {});
+            for (s32 tick = 1; tick <= visit.handBack; ++tick) {
+                CAPTURE(visit.kind, tick);
+                value.update(kTick);
+                CHECK((value.displayedProgress() == visit.after) == (tick >= visit.placed));
+                CHECK(value.active() == (tick < visit.handBack));
+            }
+        }
+    }
+    SECTION("REDY ends short of the door's frame 19 too") {
+        // After an 18-frame ODOR, an 18-frame REDY loop holds at 15, then wraps from 17 on 321
+        // without passing 19; 322 sees the wrap and the door goes on 323.
+        auto value = nativeCeremony({{"ODOR", 18, 1.0f / 15}, {"REDY", 18, 1.0f / 30, true}});
+        LegendsProgress now;
+        now.obelisks = 7;
+        value.begin({}, now);
+        value.start({}, {});
+        for (s32 tick = 1; tick <= 422; ++tick) {
+            CAPTURE(tick);
+            value.update(kTick);
+            CHECK(value.takeSounds() == (tick == 79                   ? sounds({0xb9})
+                                         : tick == 252 || tick == 321 ? sounds({0x6e})
+                                                                      : sounds({})));
+            CHECK(value.displayedProgress().obelisks == (tick >= 323 ? 7U : 0U));
+            CHECK(value.active() == (tick < 422));
+        }
     }
 }
 
