@@ -518,8 +518,10 @@ bool LegendsTowerCeremony::doorScript(const Entry& entry) {
         }
         // Case 6 lets the door go past frame 19 of whatever Sumner plays: when ODOR ends
         // short of it or is absent, the REDY e0860d1c starts holds at 15 and passes 19.
-        // A REDY that ends short of 19 too, or an absent one, would leave retail waiting;
-        // the door goes as the gesture ends instead.
+        // The door also goes as any gesture ends with no REDY bound, and as REDY itself
+        // ends, where retail would wait forever; for REDY that holds while it adds at most
+        // four frames a pass, as every shipped rate does. A faster REDY can jump from under
+        // 15 past 19 on a later lap, and retail lets the door go then, with a second 0x6e.
         const bool stalled = m_gesture.done && (m_gesture.name == kReady ||
                                                 findSequence(m_sequences, kReady) == nullptr);
         if (m_gesture.frame > kDoorReleaseFrame || stalled) {
