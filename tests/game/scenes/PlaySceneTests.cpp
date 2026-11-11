@@ -3503,7 +3503,8 @@ TEST_CASE("Chimera scenario walks up the stairs before lowering the occupied pla
 }
 
 TEST_CASE("the Chimera sleeps with the party in its range until the arena lift starts, then wakes "
-          "two seconds after it arms, its camera and powerup clock engaged from the arming",
+          "two seconds after it arms, its camera engaged from the arming and its powerup clock "
+          "from the update after",
           "[game][screens][camera][chimera-approach][boss-support][assets]") {
     const auto root =
         test::assetOrSkip("LEVELS/LEVELA5/WORLDS.PS2").parent_path().parent_path().parent_path();
