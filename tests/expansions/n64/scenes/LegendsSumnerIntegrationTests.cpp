@@ -165,8 +165,8 @@ struct SumnerScene {
     GDL_NON_COPYABLE_NON_MOVABLE(SumnerScene);
     ~SumnerScene() { scene.close(); }
 
-    void step(const PlayScene::Inputs& inputs = {}) {
-        REQUIRE(scene.update(1.0 / 60, inputs) == PlayOutcome::Running);
+    void step(const PlayScene::Inputs& inputs = {}, f64 seconds = 1.0 / 60) {
+        REQUIRE(scene.update(seconds, inputs) == PlayOutcome::Running);
     }
 
     void approach() {
@@ -440,4 +440,34 @@ TEST_CASE("A Tower return opens on its ceremony with the party standing, turned 
     fixture.step();
     REQUIRE(ceremony->active());
     checkFacing();
+}
+
+TEST_CASE("An N64 Tower ceremony's first Select comes a whole 30 Hz update after its cut",
+          "[legends][sumner-integration][tower-ceremony][assets]") {
+    LegendsProgress brought;
+    brought.runestones = 1;
+    SumnerScene fixture{brought};
+    const auto* ceremony = fixture.level->adapter().towerCeremony();
+    REQUIRE(ceremony);
+    // State 0x12's handler (game.bin e0045208) runs one dispatcher case an update. Case 0
+    // cuts and starts REDY, held at its first frame through that update's gesture pass;
+    // case 1, the first Select, comes on the next 30 Hz update, and its pass moves REDY on.
+    const auto cut = [&](f64 seconds) {
+        fixture.step({}, seconds);
+        REQUIRE(ceremony->active());
+        CHECK(ceremony->gesture() == "REDY");
+        CHECK(ceremony->gestureFrame() == 0);
+    };
+    SECTION("at 60 updates a second") {
+        cut(1.0 / 60);
+        fixture.step({}, 1.0 / 60);
+        CHECK(ceremony->gestureFrame() == 0);
+        fixture.step({}, 1.0 / 60);
+        CHECK(ceremony->gestureFrame() > 0);
+    }
+    SECTION("at 30 updates a second") {
+        cut(1.0 / 30);
+        fixture.step({}, 1.0 / 30);
+        CHECK(ceremony->gestureFrame() > 0);
+    }
 }

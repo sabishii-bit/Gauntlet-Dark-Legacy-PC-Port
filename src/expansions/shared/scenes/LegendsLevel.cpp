@@ -194,14 +194,17 @@ void LegendsLevel::update(f32 seconds, bool timeStopped) {
                                       static_cast<f64>(kLegendsPortalDepartureSeconds));
     }
     // Scenery clocks are independent of Stop Time's enemy freeze, as in GDL.
+    m_world.adapter()->update(seconds);
     if (const auto* ceremony = adapter().towerCeremony(); ceremony && ceremony->pending() &&
                                                           !ceremony->active() && m_camera &&
                                                           !m_camera->introActive()) {
         // Player callbacks are deliberately held by opponentsReady during this
-        // script. Start on the independent world clock, never behind that hold.
+        // script. Start on the independent world clock, never behind that hold. The cut
+        // follows this update's scenery tick, as the party update's start does: state
+        // 0x12's handler (game.bin e0045208) runs one dispatcher case an update, so the
+        // first Select comes a whole 30 Hz update after the cut.
         m_world.adapter()->startTowerCeremonies(m_camera->camera(), m_camera->attention());
     }
-    m_world.adapter()->update(seconds);
     m_world.adapter()->updateTraps(seconds, timeStopped);
     if (m_collision) {
         m_world.adapter()->updateBossRewards(seconds, *m_collision);
