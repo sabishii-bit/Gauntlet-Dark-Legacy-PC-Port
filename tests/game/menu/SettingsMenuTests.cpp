@@ -1086,6 +1086,29 @@ TEST_CASE("Controls is available in every scope and opening it does not mutate b
     }
 }
 
+TEST_CASE("a player's Controls page names each action by its entry in the shipped table",
+          "[settings][controls][text]") {
+    Fixture f;
+    f.choose(3);
+    REQUIRE(f.menu.page() == SettingsMenu::Page::Controls);
+    f.select(); // Player 1
+    // An action's row carries the action's index as its code; the page's other rows count
+    // from 100.
+    std::vector<std::string> actions;
+    for (const auto& item : f.menu.menu().definition().items) {
+        if (item.code >= 0 && item.code < static_cast<s32>(controlActions().size())) {
+            actions.push_back(item.text);
+        }
+    }
+    CHECK(actions == std::vector<std::string>{
+                         "MOVE UP",        "MOVE DOWN",     "MOVE LEFT",      "MOVE RIGHT",
+                         "QUICK ATTACK",   "SLOW ATTACK",   "TURBO / DEFEND", "Magic",
+                         "Throw Potion",   "Potion Shield", "CHARGE",         "Partner Combo",
+                         "STRAFE",         "SELECTOR UP",   "SELECTOR DOWN",  "SELECTOR LEFT",
+                         "SELECTOR RIGHT", "Menu Up",       "Menu Down",      "Menu Left",
+                         "Menu Right",     "Menu Confirm",  "Menu Back",      "Start / Pause"});
+}
+
 TEST_CASE("controls capture waits for release and binds the chosen player's mouse buttons",
           "[settings][controls][mouse]") {
     Fixture f;

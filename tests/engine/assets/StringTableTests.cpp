@@ -1,9 +1,14 @@
 #include <filesystem>
+#include <set>
+#include <string>
+#include <utility>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
+#include <nlohmann/json.hpp>
 
 #include "engine/assets/StringTable.h"
+#include "engine/core/Types.h"
 #include "engine/io/File.h"
 
 #include "TestSupport.h"
@@ -11,6 +16,25 @@
 namespace {
 
 using namespace gdl;
+
+/** The top-level ids a table names more than once, each repeat in turn: a parser keeps only
+ * the last entry of an id, so the earlier ones are never shown. */
+std::vector<std::string> repeatedIds(const std::vector<u8>& table) {
+    std::set<std::string> seen;
+    std::vector<std::string> repeated;
+    const auto note = [&](int depth, nlohmann::json::parse_event_t event, nlohmann::json& parsed) {
+        // The outermost object's keys arrive one level down.
+        if (depth == 1 && event == nlohmann::json::parse_event_t::key) {
+            auto id = parsed.get<std::string>();
+            if (!seen.insert(id).second) {
+                repeated.push_back(std::move(id));
+            }
+        }
+        return true;
+    };
+    (void)nlohmann::json::parse(table.begin(), table.end(), note);
+    return repeated;
+}
 
 std::filesystem::path sampleTables() {
     const auto dir = test::scratchDirectory("string-tables");
@@ -81,6 +105,23 @@ TEST_CASE("the shipped English table names the title screen text", "[assets][tex
     REQUIRE(table.get("title.pressStart") == "Press Start");
     REQUIRE(table.get("menu.options") == "Options");
     REQUIRE(table.get("menu.player") == "Player {}");
+}
+
+TEST_CASE("every shipped text table names each identifier once", "[text]") {
+    // Only the outermost object's ids count, and each repeat is named.
+    const auto scratch = test::scratchDirectory("string-tables-repeats");
+    writeTextFile(scratch / "en.json", R"({"a": "x", "b": {"a": "inner"}, "a": "y", "a": "z"})");
+    CHECK(repeatedIds(readFile(scratch / "en.json")) == std::vector<std::string>{"a", "a"});
+    usize tables = 0;
+    for (const auto& entry : std::filesystem::directory_iterator(test::dataDirectory() / "text")) {
+        if (entry.path().extension() != ".json") {
+            continue;
+        }
+        ++tables;
+        INFO(entry.path().filename().string());
+        CHECK(repeatedIds(readFile(entry.path())) == std::vector<std::string>{});
+    }
+    CHECK(tables > 0);
 }
 
 TEST_CASE("text identity hashes resolved entries not JSON formatting or insertion order",
