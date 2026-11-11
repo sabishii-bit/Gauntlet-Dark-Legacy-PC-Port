@@ -203,9 +203,11 @@ void LegendsLevel::update(f32 seconds, bool timeStopped) {
         // follows this update's scenery tick, as the party update's start does: state
         // 0x12's handler (game.bin e0045208) runs one dispatcher case an update, so the
         // first Select comes a whole 30 Hz update after the cut. The shots turn about the
-        // feet the camera follows, the party standing in the Tower.
-        m_world.adapter()->startTowerCeremonies(m_camera->camera(), m_camera->attention(),
-                                                m_camera->partyFeet());
+        // standing party's mean feet (e086007c): those the visit opened with, else, for a
+        // ceremony queued in play, those the camera follows.
+        const Vec3 party =
+            std::exchange(m_ceremonyParty, std::nullopt).value_or(m_camera->partyFeet());
+        m_world.adapter()->startTowerCeremonies(m_camera->camera(), m_camera->attention(), party);
     }
     m_world.adapter()->updateTraps(seconds, timeStopped);
     if (m_collision) {

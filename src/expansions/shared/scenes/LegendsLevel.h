@@ -181,7 +181,8 @@ private:
     bool updateSumner(std::span<PlayerActor*> players, f32 seconds, bool blocked);
     bool updateN64Sumner(std::span<PlayerActor*> players, f32 seconds, bool blocked);
     bool updateDreamcastSumner(std::span<PlayerActor*> players, f32 seconds, bool blocked);
-    /** A Tower ceremony waiting to open the visit stands the party facing Sumner. */
+    /** A Tower ceremony waiting to open the visit stands the party facing Sumner and keeps its
+     * mean feet for the ceremony's start. */
     bool placeN64OpeningParty(std::span<PlayerActor*> party);
     std::vector<std::string> answerN64Dialogue(s32 topic);
     std::unique_ptr<ItemArchive> loadN64EnemyAssets(s32 kind) const;
@@ -215,6 +216,9 @@ private:
     std::optional<LegendsSumner> m_sumner;
     std::optional<LegendsDreamcastSumner> m_dreamcastSumner;
     std::array<bool, 4> m_podiumContacts{};
+    /** e086007c's mean feet of the standing party a Tower ceremony visit opened with, which
+     * the ceremony's start takes. */
+    std::optional<Vec3> m_ceremonyParty;
     std::vector<LegendsProgress> m_hintProgress;
     std::optional<ImportedDialogue> m_dialogue;
     bool m_dialogueOpen = false;

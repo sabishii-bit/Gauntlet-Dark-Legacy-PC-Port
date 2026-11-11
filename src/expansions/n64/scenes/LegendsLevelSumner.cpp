@@ -43,6 +43,9 @@ bool LegendsLevel::placeN64OpeningParty(std::span<PlayerActor*> party) {
         return false;
     }
     faceSumner(party, *ceremony);
+    // Its shots turn about these members' mean feet (e086007c skips the players whose state
+    // byte is 0 or 6), not about everyone the camera opened on: one who fell waits outside.
+    m_ceremonyParty = partyFeet(party);
     return true;
 }
 

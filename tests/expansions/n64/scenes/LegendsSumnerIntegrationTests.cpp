@@ -66,8 +66,10 @@ struct SumnerScene {
     /** The Tower settled into play, the party south of Sumner's podium. With `brought` it is
      * a Tower return as the app opens one instead: the second member comes home with those
      * pieces, their ceremony is queued before the scene opens, and the party stands at the
-     * Tower's start with its native heading, as the ceremony opens the visit. */
-    explicit SumnerScene(std::optional<LegendsProgress> brought = std::nullopt)
+     * Tower's start with its native heading, as the ceremony opens the visit. With
+     * `firstFallen` the first member comes home fallen, waiting outside the visit. */
+    explicit SumnerScene(std::optional<LegendsProgress> brought = std::nullopt,
+                         bool firstFallen = false)
         : characters(test::assetOrSkip("PDATA/WAR.WAD").parent_path().parent_path()),
           assets(characters) {
         if (!std::filesystem::is_regular_file(directory / "worlds.wad") ||
@@ -99,6 +101,7 @@ struct SumnerScene {
         CharacterSave second = save;
         second.color = 1;
         std::array party{PartyMember{0, save}, PartyMember{1, second}};
+        party[0].fallen = firstFallen;
         const auto left = party;
         if (brought) {
             auto& native = party[1].save.progress().legendsProgress(LegendsPlatform::N64);
@@ -141,7 +144,7 @@ struct SumnerScene {
         // still flow through PlayScene, PartyMotion and native scenery contact.
         const auto podium = tower.residentVolumes[1].centre;
         options.position = Vec3{podium.x - PlayScene::kSpawnSpacing * .5f, 0, podium.z - 6};
-        options.yaw = 0;
+        options.yaw = 0.0f;
         REQUIRE(scene.open(device, context, world, party, options));
         const auto entering = [&] {
             return scene.animator(0)->entering() || scene.animator(1)->entering();
@@ -514,6 +517,30 @@ TEST_CASE("An N64 Tower return's cut shows on its Select, about the party and Su
     CHECK(glm::distance(cut->position, sumnerCutEye(feet, sumner)) < 1e-4f);
     CHECK(glm::distance(cut->forward(), glm::normalize(sumner + Vec3{0, 3, 0} - cut->position)) <
           1e-5f);
+}
+
+TEST_CASE("An N64 Tower return's cut turns about the members standing and not one who fell",
+          "[legends][sumner-integration][tower-ceremony][assets]") {
+    LegendsProgress brought;
+    brought.runestones = 1;
+    SumnerScene fixture{brought, true};
+    const auto* ceremony = fixture.level->adapter().towerCeremony();
+    REQUIRE(ceremony);
+    REQUIRE(ceremony->pending());
+    // The scene keeps the fallen member waiting where it came in, untouched by the opening's
+    // turn; e086007c's mean, like that turn, takes only the arrived players.
+    const auto* fallen = fixture.scene.actor(0);
+    const auto* standing = fixture.scene.actor(1);
+    REQUIRE(fallen);
+    REQUIRE(standing);
+    REQUIRE(glm::distance(fallen->position(), standing->position()) > 1);
+    CHECK(fallen->yaw() == fixture.arrivalYaw);
+    fixture.step({}, 1.0 / 30);
+    fixture.step({}, 1.0 / 30);
+    const auto cut = fixture.level->camera();
+    REQUIRE(cut);
+    CHECK(glm::distance(cut->position,
+                        sumnerCutEye(standing->position(), towerSumner(fixture.root))) < 1e-4f);
 }
 
 TEST_CASE("An N64 Tower ceremony the podium's party update opens turns about that party",
