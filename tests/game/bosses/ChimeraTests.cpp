@@ -383,7 +383,8 @@ TEST_CASE("asleep, an entrance held in its INIT is drawn going down with its flo
     MovingFloor floor;
     Bosses bosses;
     bosses.open(renderer, root, &floor.collision, {}, 'A');
-    REQUIRE(bosses.preload(boss_type::kChimera, std::move(stock)) != nullptr);
+    const auto* const preloaded = bosses.preload(boss_type::kChimera, std::move(stock));
+    REQUIRE(preloaded != nullptr);
     REQUIRE(bosses.spawn(boss_type::kChimera, Vec3{0}, 0, 20));
     const Combatant& body = bosses.fighter();
     REQUIRE(body.childCount() == 1);
