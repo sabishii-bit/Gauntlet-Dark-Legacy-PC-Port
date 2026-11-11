@@ -287,7 +287,8 @@ std::string Gauntlet::LabelRouting::label(s32 player, std::string_view action) c
             }
         }
     }
-    return m_game.m_promptDevices.label(m_game.input(), m_game.m_config, player, action);
+    return m_game.m_promptDevices.label(m_game.input(), m_game.m_config, &m_game.m_strings, player,
+                                        action);
 }
 
 PlayScene::Links Gauntlet::playLinks() {
@@ -514,7 +515,7 @@ void Gauntlet::updateTitle(f64 deltaSeconds, const SceneInput& sceneInput) {
             m_netplay->notice = "Netplay is not included in this build.";
             m_netplay->view.status = m_netplay->notice;
         }
-        m_netplay->menu.show(renderDevice(), m_netplay->view);
+        m_netplay->menu.show(renderDevice(), m_strings, m_netplay->view);
         return;
     }
     if (outcome == TitleOutcome::StartGame && startPlayerSelect(playerPressingStart(sceneInput))) {

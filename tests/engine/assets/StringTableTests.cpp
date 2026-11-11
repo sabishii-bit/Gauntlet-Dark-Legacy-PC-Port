@@ -118,8 +118,10 @@ TEST_CASE("every shipped text table names each identifier once", "[text]") {
             continue;
         }
         ++tables;
+        const auto repeated = repeatedIds(readFile(entry.path()));
         INFO(entry.path().filename().string());
-        CHECK(repeatedIds(readFile(entry.path())) == std::vector<std::string>{});
+        CAPTURE(repeated);
+        CHECK(repeated.empty());
     }
     CHECK(tables > 0);
 }

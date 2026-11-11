@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 
+#include "engine/assets/StringTable.h"
 #include "engine/core/Types.h"
 #include "engine/render/RenderDevice.h"
 
@@ -63,13 +64,17 @@ public:
         s32 direction = 0;
         u8 rule = 0; ///< the room rule's bit, for Action::Rule
     };
-    void show(RenderDevice& device, const View& view);
+    /** Lays out `view`'s page in `strings`' words; a view already shown stays as it is. */
+    void show(RenderDevice& device, const StringTable& strings, const View& view);
     Event update(const MenuInput& raw);
     void render(RenderDevice& device, const Mat4& projection, f32 width, f32 height);
     const View& view() const { return m_view; }
     usize selection() const { return m_selection; }
     static Rect rowArea(usize row);
     usize rows() const { return m_rows.size(); }
+    /** What the page's title and a row read, as last shown. */
+    const std::string& title() const { return m_titleText; }
+    const std::string& label(usize row) const { return m_rows[row].label; }
 
 private:
     struct Row {
@@ -83,6 +88,7 @@ private:
     View m_view;
     std::vector<Row> m_rows;
     PointerTargets<usize> m_pointerTargets; ///< the enabled rows, each by its index
+    std::string m_titleText;
     std::unique_ptr<Texture> m_title;
     std::unique_ptr<Texture> m_notice;
     std::unique_ptr<Texture> m_code;

@@ -3,12 +3,40 @@
 #include <algorithm>
 #include <array>
 #include <format>
+#include <string_view>
 
+#include "engine/core/Log.h"
 #include "engine/ui/Canvas.h"
 #include "engine/ui/SystemFont.h"
 
+#include "game/config/GameConfig.h"
+
 namespace gdl::game {
 namespace {
+/** The friendly-fire rule's words, by `RoomSettings::friendlyFire`. */
+constexpr std::array<std::string_view, 3> kFriendlyFireText{
+    "netplay.friendlyFire.off", "netplay.friendlyFire.stun", "netplay.friendlyFire.damage"};
+/** The camera rule's words, by `RoomSettings::camera`. */
+constexpr std::array<std::string_view, 2> kCameraText{"netplay.camera.shared",
+                                                      "netplay.camera.solo"};
+/** A room rule's words, off then on, as the settings pages write a switch. */
+constexpr std::array<std::string_view, 2> kSwitchText{"settings.off", "settings.on"};
+
+/** A table entry with its `{}` filled in; one that does not format reads as written. */
+template <typename... Values>
+std::string filled(std::string_view pattern, const Values&... values) {
+    try {
+        return std::vformat(pattern, std::make_format_args(values...));
+    } catch (const std::format_error& error) {
+        log::warn("Netplay menu: text '{}' does not format: {}", pattern, error.what());
+        return std::string(pattern);
+    }
+}
+/** An adjustable row: its label, then its value between the arrows that change it. */
+template <typename Value> std::string adjustableText(std::string_view label, const Value& value) {
+    return std::format("{}    < {} >", label, value);
+}
+
 std::unique_ptr<Texture> text(RenderDevice& device, const std::string& label) {
     if (label.empty()) {
         return {};
@@ -36,7 +64,7 @@ void draw(Canvas& canvas, const Texture* texture, f32 x, f32 y, f32 width, f32 h
                 color);
 }
 } // namespace
-void NetplayMenu::show(RenderDevice& device, const View& view) {
+void NetplayMenu::show(RenderDevice& device, const StringTable& strings, const View& view) {
     if (m_open && m_view == view) {
         return;
     }
@@ -48,83 +76,86 @@ void NetplayMenu::show(RenderDevice& device, const View& view) {
                          bool adjustable = false, u8 rule = 0) {
         m_rows.push_back({std::move(label), action, enabled, adjustable, {}, rule});
     };
-    std::string title = "Netplay";
+    const auto words = [&](std::string_view id) { return std::string(strings.get(id)); };
+    std::string title = words("netplay.title");
     switch (view.page) {
     case Page::Choose:
-        row("Host Game", Action::Host, view.available);
-        row("Join Game", Action::Join, view.available);
-        row(std::format("Local players    < {} >", view.localPlayers), Action::LocalPlayers,
+        row(words("netplay.host"), Action::Host, view.available);
+        row(words("netplay.join"), Action::Join, view.available);
+        row(adjustableText(words("netplay.localPlayers"), view.localPlayers), Action::LocalPlayers,
             view.available, true);
-        row("Back", Action::Back);
+        row(words("netplay.back"), Action::Back);
         break;
     case Page::Host:
     case Page::Guest: {
         const bool host = view.page == Page::Host;
-        title = host ? "Host Game" : "Joined Game";
-        row(host ? "Copy invitation code" : "Connected to host", Action::Copy,
+        title = words(host ? "netplay.host" : "netplay.joinedGame");
+        row(words(host ? "netplay.copyInvitation" : "netplay.connected"), Action::Copy,
             host && !view.invitation.empty());
-        row(std::format("Player limit    < {} >    ({} joined)", view.settings.maxPlayers,
-                        view.players),
+        row(std::format("{}    {}",
+                        adjustableText(words("netplay.playerLimit"), view.settings.maxPlayers),
+                        filled(words("netplay.joinedCount"), view.players)),
             Action::Capacity, host && view.connected, true);
         // The game's rules have a page of their own; a guest reads them there.
-        row("Game Settings", Action::GameSettings, view.connected);
-        row(std::format("Select {} local character(s)", view.localPlayers),
-            Action::SelectCharacters, view.connected && !view.ready);
-        row(view.ready ? "Not Ready" : "Ready", Action::Ready, view.connected && view.selected);
+        row(words("netplay.gameSettings"), Action::GameSettings, view.connected);
+        row(filled(words("netplay.selectCharacters"), view.localPlayers), Action::SelectCharacters,
+            view.connected && !view.ready);
+        row(words(view.ready ? "netplay.notReady" : "netplay.ready"), Action::Ready,
+            view.connected && view.selected);
         if (host) {
-            row("Start Game", Action::Start, view.canStart);
+            row(words("netplay.start"), Action::Start, view.canStart);
         }
-        row("Leave Room", Action::Leave);
+        row(words("netplay.leaveRoom"), Action::Leave);
         break;
     }
     case Page::Settings: {
-        // The host sets the game's rules for everyone; a guest sees them, greyed.
-        title = "Game Settings";
-        static constexpr std::array<const char*, 3> kDifficulty{"Easy", "Normal", "Hard"};
-        static constexpr std::array<const char*, 3> kDamage{"Off", "Stun", "Damage"};
-        static constexpr std::array<const char*, 2> kCamera{"Shared", "Solo"};
-        static constexpr std::array<const char*, 2> kSwitch{"Off", "On"};
+        // The host sets the game's rules for everyone; a guest sees them, greyed. The
+        // difficulty reads as the Difficulty page writes it.
+        title = words("netplay.gameSettings");
         const bool sets = view.host && view.connected;
-        row(std::format("Difficulty    < {} >", kDifficulty[view.settings.difficulty]),
+        const std::string difficulty(DifficultyConfig::kNames[view.settings.difficulty]);
+        row(adjustableText(words("settings.difficulty"), words("settings." + difficulty)),
             Action::Difficulty, sets, true);
-        row(std::format("Friendly fire    < {} >", kDamage[view.settings.friendlyFire]),
+        row(adjustableText(words("netplay.friendlyFire"),
+                           words(kFriendlyFireText[view.settings.friendlyFire])),
             Action::FriendlyFire, sets, true);
-        row(std::format("Camera    < {} >", kCamera[view.settings.camera & 1U]), Action::Camera,
-            sets, true);
+        row(adjustableText(words("netplay.camera"), words(kCameraText[view.settings.camera & 1U])),
+            Action::Camera, sets, true);
         for (usize bit = 0; bit < view.rules.size() && bit < 8; ++bit) {
             const u32 on = (static_cast<u32>(view.settings.mechanics) >> bit) & 1U;
-            row(std::format("{}    < {} >", view.rules[bit], kSwitch[on]), Action::Rule, sets, true,
+            row(adjustableText(view.rules[bit], words(kSwitchText[on])), Action::Rule, sets, true,
                 static_cast<u8>(bit));
         }
-        row("Back", Action::Back);
+        row(words("netplay.back"), Action::Back);
         break;
     }
     case Page::Join:
-        title = "Join Game";
-        row("Paste invitation code", Action::Paste);
-        row("Clear code", Action::Clear, !view.invitation.empty());
-        row("Connect", Action::Connect, !view.invitation.empty());
-        row("Back", Action::Back);
+        title = words("netplay.join");
+        row(words("netplay.paste"), Action::Paste);
+        row(words("netplay.clear"), Action::Clear, !view.invitation.empty());
+        row(words("netplay.connect"), Action::Connect, !view.invitation.empty());
+        row(words("netplay.back"), Action::Back);
         break;
     case Page::Pause:
-        title = "Online Menu - game continues";
-        row("Resume", Action::Resume);
-        row("Save Completed Progress", Action::SaveCompletedProgress,
+        title = words("netplay.pauseTitle");
+        row(words("netplay.resume"), Action::Resume);
+        row(words("netplay.saveProgress"), Action::SaveCompletedProgress,
             view.canSaveCompletedProgress);
-        row("Leave Game", Action::Leave);
+        row(words("netplay.leaveGame"), Action::Leave);
         break;
     case Page::Finished:
-        title = "Online Session Ended";
-        row("Save Completed Progress", Action::SaveCompletedProgress,
+        title = words("netplay.finishedTitle");
+        row(words("netplay.saveProgress"), Action::SaveCompletedProgress,
             view.canSaveCompletedProgress);
-        row("Return to Title", Action::ReturnTitle);
+        row(words("netplay.returnTitle"), Action::ReturnTitle);
         break;
     case Page::Leave:
-        title = "Leave the online game?";
-        row("Cancel", Action::Back);
-        row("Leave Game", Action::Leave);
+        title = words("netplay.leaveTitle");
+        row(words("netplay.cancel"), Action::Back);
+        row(words("netplay.leaveGame"), Action::Leave);
         break;
     }
+    m_titleText = title;
     m_title = text(device, title);
     m_notice = text(device, view.status);
     // The complete opaque ticket is copied, never truncated for transport or logged. Its
@@ -133,7 +164,7 @@ void NetplayMenu::show(RenderDevice& device, const View& view) {
     if (code.size() > 58) {
         code = code.substr(0, 38) + "..." + code.substr(code.size() - 16);
     }
-    m_code = text(device, code.empty() ? "" : "Code: " + code);
+    m_code = text(device, code.empty() ? "" : filled(words("netplay.code"), code));
     for (auto& item : m_rows) {
         item.texture = text(device, item.label);
     }

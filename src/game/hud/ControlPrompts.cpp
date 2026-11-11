@@ -38,13 +38,22 @@ std::string buttonLabel(PadButton button) {
     default: return std::string(padButtonName(button));
     }
 }
+/** `strings`' text for `id`; without a table, the id itself, as the table gives an unknown one. */
+std::string wordsOf(const StringTable* strings, std::string_view id) {
+    return std::string(strings != nullptr ? strings->get(id) : id);
+}
+/** A binding a potion gesture borrows with the gesture after it, as the Controls page shows it. */
+std::string gestureLabel(const std::string& binding, const StringTable* strings,
+                         std::string_view gesture) {
+    return binding + " (" + wordsOf(strings, gesture) + ")";
+}
 } // namespace
 
-std::string boundControlLabel(const GameConfig& config, s32 player, bool keyboard,
-                              std::string_view action) {
+std::string boundControlLabel(const GameConfig& config, const StringTable* strings, s32 player,
+                              bool keyboard, std::string_view action) {
     if (player < 0 || player >= static_cast<s32>(config.controls.size()) ||
         config.controls[static_cast<usize>(player)].device == "none") {
-        return "Unbound";
+        return wordsOf(strings, "controls.unbound");
     }
     const auto& play = playBindings(config, player);
     const auto& menu = menuBindings(config, player);
@@ -66,22 +75,24 @@ std::string boundControlLabel(const GameConfig& config, s32 player, bool keyboar
             }
             if (play.padMagicGestures && !play.padUsePotion.empty()) {
                 if (action == "throwPotion") {
-                    return buttonLabel(play.padUsePotion.front()) + " (hold)";
+                    return gestureLabel(buttonLabel(play.padUsePotion.front()), strings,
+                                        "controls.hold");
                 }
                 if (action == "shieldPotion") {
-                    return buttonLabel(play.padUsePotion.front()) + " (double tap)";
+                    return gestureLabel(buttonLabel(play.padUsePotion.front()), strings,
+                                        "controls.doubleTap");
                 }
             }
         }
         break;
     }
-    return "Unbound";
+    return wordsOf(strings, "controls.unbound");
 }
 
 std::string controlLabel(const ControlLabels* labels, s32 player, std::string_view action) {
     return labels != nullptr
                ? labels->label(player, action)
-               : boundControlLabel(GameConfig{}, std::max(0, player), player <= 0, action);
+               : boundControlLabel(GameConfig{}, nullptr, std::max(0, player), player <= 0, action);
 }
 
 std::string controlText(std::string_view text, const ControlLabels* labels, s32 player) {
@@ -164,12 +175,13 @@ void PromptDevices::update(const Input& input, const GameConfig& config) {
     }
 }
 
-std::string PromptDevices::label(const Input& input, const GameConfig& config, s32 player,
+std::string PromptDevices::label(const Input& input, const GameConfig& config,
+                                 const StringTable* strings, s32 player,
                                  std::string_view action) const {
     player = std::clamp(player, 0, static_cast<s32>(config.controls.size()) - 1);
     const auto source = controlDevices(config, input)[static_cast<usize>(player)];
     const bool keyboard = source.keyboard && (m_keyboard[static_cast<usize>(player)] ||
                                               !input.isPadConnected(source.pad));
-    return boundControlLabel(config, player, keyboard, action);
+    return boundControlLabel(config, strings, player, keyboard, action);
 }
 } // namespace gdl::game

@@ -128,7 +128,7 @@ void Gauntlet::updateNetplay(f64 deltaSeconds, const SceneInput& sceneInput) {
         }
         ui.view.invitation.clear();
     }
-    ui.menu.show(renderDevice(), ui.view);
+    ui.menu.show(renderDevice(), m_strings, ui.view);
     const auto event = ui.menu.update(menu);
     const auto cycle = [&](u8 value, s32 count, s32 minimum = 0) {
         return static_cast<u8>(
@@ -278,6 +278,6 @@ void Gauntlet::updateNetplay(f64 deltaSeconds, const SceneInput& sceneInput) {
     if (!ui.notice.empty()) {
         ui.view.status = ui.notice;
     }
-    ui.menu.show(renderDevice(), ui.view);
+    ui.menu.show(renderDevice(), m_strings, ui.view);
 }
 } // namespace gdl::game

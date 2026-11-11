@@ -1437,6 +1437,23 @@ TEST_CASE("disabling another player's device stays pending and old navigation su
     CHECK(f.menu.menu().definition().items[selected].code == 102); // Restore Defaults
 }
 
+TEST_CASE("difficulty radio choices use retail labels", "[settings][text]") {
+    // GC OPTMENU 0x8011EC94, titled 0x801138C4 'Difficulty': its entries at 0x8011EC04 name
+    // 'Easy' 0x80347550, 'Medium' 0x80347558 and 'Hard' 0x80347560 (codes 28 to 30).
+    Fixture f;
+    f.down();
+    f.select(); // Game Options
+    REQUIRE(f.menu.page() == SettingsMenu::Page::Game);
+    f.select(); // its first row, Difficulty
+    REQUIRE(f.menu.page() == SettingsMenu::Page::Difficulty);
+    CHECK(f.menu.menu().definition().title == "Difficulty");
+    const auto& rows = f.menu.menu().definition().items;
+    REQUIRE(rows.size() == 3);
+    CHECK(rows[0].text == "Easy");
+    CHECK(rows[1].text == "Medium");
+    CHECK(rows[2].text == "Hard");
+}
+
 TEST_CASE("multiplayer radio choices use retail labels and persist only successful writes",
           "[settings][multiplayer]") {
     // GC OPTMENU_MULTIPLAYER entries at 0x8011ED7C: strings at 0x80347568,
