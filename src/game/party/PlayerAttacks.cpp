@@ -49,7 +49,19 @@ constexpr std::array<std::string_view, 5> kShieldSounds{"S_SHIELD2", "S_SHIELD2"
 constexpr f32 kShieldSeconds = 3.0f; ///< how long a potion's ring lasts
 constexpr f32 kShieldDamage = 25.0f;
 constexpr f32 kShieldPotency = 0.25f; ///< of the character's magic power, its radius
-constexpr f32 kGasEffectGap = 0.5f;   ///< a gas blow's wait before its next effect
+/** How long what a ring struck waits before it strikes that again (ProcessEffects' mode 2,
+ * StartShieldFX 0x80092794 effect flags 0x13A): a creature a second (0x80095160-0x800951B0),
+ * an item a second or what is left of the ring if less (0x80095090-0x800950B4). */
+constexpr f32 kRingWait = 1.0f;
+/** A hit of no more than this marks neither a swarm body nor an item (0x80095CAC, 0x80096598);
+ * a great one or the boss waits whatever the hit (0x80037ED0, before the damage). */
+constexpr f32 kRingMarksOver = 2.0f;
+/** A wave of magic's phase falls from one on the frame it goes off (StartMagicFX 0x80092DF4,
+ * ProcessEffects' mode 1 at 0x800951DC); over kWaveSpent it reaches its potency times one and
+ * kWaveSpent less the phase, harming kWaveHarm times its damage a unit of phase over that. */
+constexpr f32 kWaveSpent = 0.33f;
+constexpr f32 kWaveHarm = 1.5f;
+constexpr f32 kGasEffectGap = 0.5f; ///< a gas blow's wait before its next effect
 constexpr std::string_view kBlockEffect = "BLOCKFX";
 constexpr f32 kRamDamage = 3.0f;   ///< what a charge does to what it runs into
 constexpr f32 kChargeBlow = 32.0f; ///< and to an enemy or a great one (PlayerMotion's anim 8)
@@ -1354,31 +1366,44 @@ void PlayerAttacks::updateShields(f32 seconds, std::span<PlayerRuntime> players,
     if (!m_resources.has_value()) {
         return;
     }
+    // Every ring's time and waits run down before any ring strikes, so that the wait one ring
+    // sets on an item holds alike for the rest.
     for (PotionShield& shield : m_sim.shields) {
         shield.secondsLeft -= seconds;
         if (shield.secondsLeft <= 0 || shield.actor >= players.size() ||
             players[shield.actor].life != PlayerLife::Standing) {
             shield.secondsLeft = 0.0f;
-            continue;
         }
-        const Vec3 at = players[shield.actor].actor.position();
-        m_resources->effects.moveTo(shield.effect, at);
-        // ProcessEffects strikes whatever is within the ring at once and, per target, not
-        // again for a quarter second; nothing it pushes away escapes the first blow.
         for (PotionShield::Mark& mark : shield.marks) {
             mark.wait -= seconds;
         }
         std::erase_if(shield.marks,
                       [](const PotionShield::Mark& mark) { return mark.wait <= 0.0f; });
-        const auto fresh = [&shield](s32 kind, s32 id) {
-            for (const PotionShield::Mark& mark : shield.marks) {
-                if (mark.kind == kind && mark.id == id) {
-                    return false;
-                }
-            }
-            shield.marks.push_back({kind, id, kShieldHitAgain});
-            return true;
+    }
+    const auto marked = [](const PotionShield& ring, s32 kind, s32 id) {
+        return std::ranges::any_of(ring.marks, [kind, id](const PotionShield::Mark& mark) {
+            return mark.kind == kind && mark.id == id;
+        });
+    };
+    // An item keeps one wait for every ring (+0xD8), and a ring's wait on it ends with the ring.
+    const auto itemWaits = [this, &marked](s32 kind, s32 id) {
+        return std::ranges::any_of(m_sim.shields, [&marked, kind, id](const PotionShield& ring) {
+            return ring.secondsLeft > 0.0f && marked(ring, kind, id);
+        });
+    };
+    for (PotionShield& shield : m_sim.shields) {
+        if (shield.secondsLeft <= 0.0f) {
+            continue;
+        }
+        const Vec3 at = players[shield.actor].actor.position();
+        m_resources->effects.moveTo(shield.effect, at);
+        // ProcessEffects strikes whatever is within the ring at once, then waits on it; nothing
+        // it pushes away escapes the first blow.
+        const auto mark = [&shield](s32 kind, s32 id, f32 wait) {
+            shield.marks.push_back({kind, id, wait});
         };
+        const bool marks = shield.damage > kRingMarksOver;
+        const f32 itemWait = std::min(kRingWait, shield.secondsLeft);
         constexpr s32 kEnemy = 0;
         constexpr s32 kCritter = 1;
         constexpr s32 kGenerator = 2;
@@ -1400,7 +1425,7 @@ void PlayerAttacks::updateShields(f32 seconds, std::span<PlayerRuntime> players,
         }
         for (const s32 id : targets.opponents.enemies().reachedBy(
                  at, shield.radius, std::numbers::pi_v<f32>, {0, 0, 1})) {
-            if (!fresh(kEnemy, id)) {
+            if (marked(shield, kEnemy, id)) {
                 continue;
             }
             const Enemies& enemies = targets.opponents.enemies();
@@ -1411,12 +1436,16 @@ void PlayerAttacks::updateShields(f32 seconds, std::span<PlayerRuntime> players,
             countEnemyBlow(targets, players, actor.player(), BlowSource::Potion, enemies, id,
                            stood);
             healHit(actor.player(), shield.flags, credit, struck, players, targets);
+            if (marks) {
+                mark(kEnemy, id, kRingWait);
+            }
         }
         for (const s32 id : targets.opponents.critters().reachedBy(
                  at, shield.radius, std::numbers::pi_v<f32>, {0, 0, 1})) {
-            if (!fresh(kCritter, id)) {
+            if (marked(shield, kCritter, id)) {
                 continue;
             }
+            mark(kCritter, id, kRingWait);
             const Vec3 struck = targets.opponents.critters().positionOf(id);
             Vec3 direction{struck.x - at.x, 0, struck.z - at.z};
             if (const f32 length = glm::length(direction); length > 0) {
@@ -1432,11 +1461,19 @@ void PlayerAttacks::updateShields(f32 seconds, std::span<PlayerRuntime> players,
             healHit(actor.player(), shield.flags, credit, struck, players, targets);
         }
         for (const s32 id : targets.opponents.generators().within(at, shield.radius)) {
-            if (fresh(kGenerator, id) && blowRulesOf(targets).generatorTakes(BlowSource::Potion)) {
-                targets.opponents.strikeGenerator(id, shield.damage, actor.player());
+            if (itemWaits(kGenerator, id) ||
+                !blowRulesOf(targets).generatorTakes(BlowSource::Potion)) {
+                continue;
+            }
+            // Its caster's level against the place's tells as every blow's (fn_8005C1DC's
+            // ramp, the item pass handing it its owner at 0x80096558).
+            targets.opponents.strikeGenerator(id, shield.damage, actor.player(), players);
+            if (marks) {
+                mark(kGenerator, id, itemWait);
             }
         }
-        if (targets.opponents.bosses().within(at, shield.radius) && fresh(kBoss, 0)) {
+        if (targets.opponents.bosses().within(at, shield.radius) && !marked(shield, kBoss, 0)) {
+            mark(kBoss, 0, kRingWait);
             EnemyHit hit;
             hit.damage = shield.damage;
             hit.flags = shield.flags;
@@ -1452,11 +1489,15 @@ void PlayerAttacks::updateShields(f32 seconds, std::span<PlayerRuntime> players,
         }
         // Magic leaves the walls, the rocks and every barrel but one holding something alone.
         for (const usize barrel : targets.fixtures.barrels().within(at, shield.radius)) {
-            if (!immuneToMagic(static_cast<s32>(barrel), targets) &&
-                fresh(kBarrel, static_cast<s32>(barrel))) {
-                targets.fixtures.strikeBarrel(barrel, shield.damage,
-                                              players[shield.actor].actor.player(), players,
-                                              targets.fixtureHost);
+            const auto id = static_cast<s32>(barrel);
+            if (immuneToMagic(id, targets) || itemWaits(kBarrel, id)) {
+                continue;
+            }
+            targets.fixtures.strikeBarrel(barrel, shield.damage,
+                                          players[shield.actor].actor.player(), players,
+                                          targets.fixtureHost);
+            if (marks) {
+                mark(kBarrel, id, itemWait);
             }
         }
         if (auto* imported = m_resources->world.imported()) {
@@ -1466,10 +1507,14 @@ void PlayerAttacks::updateShields(f32 seconds, std::span<PlayerRuntime> players,
                     continue;
                 }
                 const Vec3 away = native.base - at;
-                if (portable::hypot(away.x, away.z) <= shield.radius + native.radius &&
-                    std::abs(away.y) <= shield.radius + native.height &&
-                    fresh(kImported, native.id)) {
-                    imported->strike(native.id, shield.damage, shield.flags, actor.player());
+                if (portable::hypot(away.x, away.z) > shield.radius + native.radius ||
+                    std::abs(away.y) > shield.radius + native.height ||
+                    itemWaits(kImported, native.id)) {
+                    continue;
+                }
+                imported->strike(native.id, shield.damage, shield.flags, actor.player());
+                if (marks) {
+                    mark(kImported, native.id, itemWait);
                 }
             }
         }
@@ -2774,15 +2819,16 @@ void PlayerAttacks::bless(PotionBurst& burst, f32 radius, std::span<const Player
 void PlayerAttacks::updatePotions(f32 seconds, std::span<PlayerRuntime> players,
                                   const Targets& targets) {
     for (PotionBurst& burst : m_sim.potions) {
-        // ProcessEffects expands the magic wave while its damage falls. Each
-        // target is struck once, not once per frame while it tries to get up.
-        burst.elapsed += seconds;
+        // ProcessEffects expands the magic wave while its damage falls, its first pass at the
+        // whole of its phase, the clock it goes off on. Each target is struck once, not once
+        // per frame while it tries to get up.
         const f32 phase = 1.0f - burst.elapsed / burst.duration;
-        if (phase <= 0.33f) {
+        burst.elapsed += seconds;
+        if (phase <= kWaveSpent) {
             continue;
         }
-        const f32 radius = burst.impact.potency * (1.33f - phase);
-        const f32 power = burst.impact.damage * 1.5f * (phase - 0.33f);
+        const f32 radius = burst.impact.potency * (1.0f + kWaveSpent - phase);
+        const f32 power = burst.impact.damage * kWaveHarm * (phase - kWaveSpent);
         targets.fixtures.shootScenery(burst.impact.position, radius);
         const u32 flags = EnemyHit::kMagic | static_cast<u32>(burst.impact.potion) |
                           (burst.impact.flags & damage::kHeal);

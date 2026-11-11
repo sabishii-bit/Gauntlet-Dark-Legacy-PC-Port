@@ -378,12 +378,11 @@ private:
     void dispatchStrikeHit(const StrikeHit& hit, std::span<PlayerRuntime> players,
                            const Targets& targets);
     void finishStrikes();
-    /** A potion's magic ringing a character: it goes about with them and harms what it
-     * touches, every so often, until it is spent. */
-    static constexpr f32 kShieldHitAgain = 0.25f; ///< ProcessEffects' per-target fxhittime
 
 public:
-    /** A potion shield up about its bearer (by party index). */
+    /** A potion shield up about its bearer (by party index): a potion's magic ringing a
+     * character, going about with them and harming what it touches, every so often, until it
+     * is spent. */
     struct PotionShield {
         usize actor = 0;
         u32 flags = 0;
@@ -391,7 +390,9 @@ public:
         f32 radius = 0.0f;
         f32 damage = 0.0f;
         f32 secondsLeft = 0.0f;
-        /** What it has struck and how long until it may again (fxhittime per owner). */
+        /** What it has struck and how long until it may strike that again: a swarm body or an
+         * item after a hit of more than two, a great one or the boss after any; no ring strikes
+         * an item another ring waits on. */
         struct Mark {
             s32 kind = 0;
             s32 id = 0;

@@ -101,14 +101,14 @@ struct PlayerAttacksTestPeer {
                 sim.shields.size(),         static_cast<usize>(heard)};
     }
     static void shield(PlayerAttacks& attacks) { ring(attacks, EnemyHit::kMagic, 10, 30); }
-    /** A potion's ring about the first player, for a second. */
-    static void ring(PlayerAttacks& attacks, u32 flags, f32 radius, f32 damage) {
+    /** A potion's ring about the first player, for `seconds`. */
+    static void ring(PlayerAttacks& attacks, u32 flags, f32 radius, f32 damage, f32 seconds = 1) {
         PlayerAttacks::PotionShield shield;
         shield.actor = 0;
         shield.flags = flags;
         shield.radius = radius;
         shield.damage = damage;
-        shield.secondsLeft = 1;
+        shield.secondsLeft = seconds;
         attacks.m_sim.shields.push_back(shield);
     }
 };

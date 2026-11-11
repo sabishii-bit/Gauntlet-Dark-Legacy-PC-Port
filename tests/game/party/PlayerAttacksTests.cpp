@@ -3158,8 +3158,8 @@ TEST_CASE("a potion shield of the caster's own colour harms a tenth more",
     f.attacks.shieldPotion(0, f.players);
     f.attacks.updateShields(0.1f, f.players, f.targets);
     CHECK(whole - enemies.healthOf(*id) == Approx(25.0f * 1.1f * 1.5f));
-    // The first shield waits half a second before harming again; a second, of the other
-    // potion, harms at once.
+    // The first shield waits a second before harming again; a second, of the other potion,
+    // harms at once.
     const f32 again = enemies.healthOf(*id);
     f.attacks.shieldPotion(0, f.players);
     REQUIRE(f.attacks.shieldCount() == 2);
@@ -5367,8 +5367,8 @@ TEST_CASE("potion shields harm enemies behind the bearer and stop at expiration"
     f.attacks.updateShields(0.01f, f.players, f.targets);
     CHECK(enemies.healthOf(*id) < before);
     const auto after = enemies.healthOf(*id);
-    f.attacks.updateShields(0.1f, f.players, f.targets);
-    CHECK(enemies.healthOf(*id) == after); // not again within a quarter second
+    f.attacks.updateShields(0.9f, f.players, f.targets);
+    CHECK(enemies.healthOf(*id) == after); // not again within a second
     f.attacks.updateShields(0.2f, f.players, f.targets);
     CHECK(enemies.healthOf(*id) < after); // then it is, while still within the ring
     const auto twice = enemies.healthOf(*id);
@@ -5497,13 +5497,9 @@ TEST_CASE("explosions shatter world potions into ownerless magic without consumi
     f.attacks.updateProjectiles(1.0f / 30, f.players, f.targets);
     const f32 after = enemies.healthOf(*enemy);
     REQUIRE(after < before);
-    const auto& sequence = f.effects.effect(0).tree->sequences[0];
-    AnimationPlayer wave;
-    wave.start(sequence, 0);
-    const f32 duration = wave.secondsPerFrame() * static_cast<f32>(sequence.frames);
-    const f32 phase = 1.0f - (1.0f / 30) / duration;
-    // Magic bypasses armor; an unshielded enemy takes the retail 1.5 elemental multiplier.
-    CHECK(before - after == Approx(32 * 1.5f * (phase - 0.33f) * 1.5f));
+    // The wave's first pass is at the whole of its phase, on the update it goes off. Magic
+    // bypasses armor; an unshielded enemy takes the retail 1.5 elemental multiplier.
+    CHECK(before - after == Approx(32 * 1.5f * (1.0f - 0.33f) * 1.5f));
     CHECK(enemies.takeLosses().empty()); // No player gets experience for ownerless magic.
     for (s32 frame = 0; frame < 120; ++frame) {
         f.attacks.updateProjectiles(1.0f / 30, f.players, f.targets);

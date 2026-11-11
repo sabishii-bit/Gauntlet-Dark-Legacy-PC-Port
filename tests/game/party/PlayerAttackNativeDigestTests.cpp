@@ -513,8 +513,8 @@ TEST_CASE("native player attack digest bytes stay pinned holding every value and
     test::checkPinnedDigests("PlayerAttacks",
                              test::liveDigest(fixture.attacks, resources.resources()),
                              test::savedDigest(fixture.attacks, saved, resources.resources()),
-                             "90f70304d78e7558707be5fc16ffac547c1d7f05580a9a70fdffd4e3dfcb170a",
-                             "9caa0fc23b5eafc3aeb44834a6c6b0bde48e8d918e52e98ed526d173beccc055");
+                             "5f5cca6b92ca7dc6c83605de719be3edef04fad0f5a35a24c86129bf30c90ac2",
+                             "2a224484adb76fcac2c3c1a1423534aead82ea9e2950124f6f6da0cbcca5d147");
     test::checkPinnedDigests("PlayerAttacks' MoveStrikes",
                              test::liveDigest(fixture.attacks.strikes()),
                              test::savedDigest(fixture.attacks.strikes(), strikes),

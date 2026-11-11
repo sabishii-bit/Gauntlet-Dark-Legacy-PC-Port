@@ -466,11 +466,15 @@ TEST_CASE("attack rewind resumes independent native potion shield target cooldow
     saved.save(fixture);
     const auto victims = snapshotOf(enemies);
     REQUIRE(fixture.attacks.shieldCount() == 1);
+    // Each grunt the ring struck waits a second on it (ProcessEffects' mode 2), counted from the
+    // update that struck it.
+    constexpr f32 kRingWait = 1.0f;
     const auto marks = fixture.attacks.potionShields()[0].marks;
     REQUIRE(marks.size() == 2);
     CHECK((std::tuple{marks[0].kind, marks[0].id, marks[0].wait} ==
-           std::tuple{0, *first, 0.25f - seconds}));
-    CHECK((std::tuple{marks[1].kind, marks[1].id, marks[1].wait} == std::tuple{0, *second, 0.25f}));
+           std::tuple{0, *first, kRingWait - seconds}));
+    CHECK((std::tuple{marks[1].kind, marks[1].id, marks[1].wait} ==
+           std::tuple{0, *second, kRingWait}));
     const auto uploads = fixture.device.texturesCreated;
     std::vector<Digests> expected;
     std::vector<std::array<f32, 2>> health;

@@ -10,6 +10,7 @@
 #include <utility>
 #include <vector>
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 #include <nlohmann/json.hpp>
@@ -260,7 +261,7 @@ void loadPlace(BlowScene& f, f32 playerLevel) {
     REQUIRE(f.world.level()->tuning.playerLevel == playerLevel);
 }
 
-TEST_CASE("a shield ring's blow on a generator alone goes unscaled by the striker's level",
+TEST_CASE("every blow path's blow on a generator is scaled by the striker's level",
           "[game][player-attacks][blow-paths]") {
     const BlowPath path = GENERATE(BlowPath::Swing, BlowPath::Shot, BlowPath::Area,
                                    BlowPath::PotionWave, BlowPath::ShieldRing, BlowPath::Combo);
@@ -269,7 +270,9 @@ TEST_CASE("a shield ring's blow on a generator alone goes unscaled by the strike
     BlowScene f;
     loadPlace(f, 10.0f);
     f.open();
-    // Ten levels over the place's: a scaled blow does twice its harm (fn_8005C1DC's ramp).
+    // Ten levels over the place's: a scaled blow does twice its harm (fn_8005C1DC's ramp), the
+    // ring's too, its owner handed on by the item pass (0x80096558). A wave's first pass harms
+    // by its whole phase, 1.005 of its damage (60.3).
     f.striker().save().progress().experience = levelExperience(20);
     placeGenerator(f, Vec3{0, 0, 6});
     standBeforeGenerator(f);
@@ -277,14 +280,10 @@ TEST_CASE("a shield ring's blow on a generator alone goes unscaled by the strike
     const f32 swing = f.attacks.meleeDamageOf(0, f.players);
     land(f, path, generators.target(0, 2000), 30, 0, generators.positionOf(0));
     const f32 taken = kGeneratorHealth - generators.healthOf(0);
-    switch (path) {
-    case BlowPath::Swing: CHECK(taken == std::round(2 * swing)); break;
-    case BlowPath::Shot:
-    case BlowPath::Area:
-    case BlowPath::Combo: CHECK(taken == 60); break;
-    case BlowPath::PotionWave: CHECK(taken == 59); break;
-    case BlowPath::ShieldRing: CHECK(taken == 30); break;
-    case BlowPath::Charge: break;
+    if (path == BlowPath::Swing) {
+        CHECK(taken == std::round(2 * swing));
+    } else {
+        CHECK(taken == 60);
     }
     f.close();
 }
@@ -919,6 +918,130 @@ TEST_CASE("the attacks' rules over target ids answer each family's first and las
         CHECK(PlayerAttacksTestPeer::immuneToMagic(f.attacks, rules.id, f.targets) == rules.immune);
         CHECK(PlayerAttacksTestPeer::meleeLow(f.players[0].actor, body) == rules.low);
     }
+}
+
+/** Which of `frames` updates of the rings, `seconds` apart, `health` fell on. */
+template <class Health>
+std::vector<s32> framesStruck(BlowScene& f, s32 frames, f32 seconds, const Health& health) {
+    std::vector<s32> struck;
+    for (s32 frame = 0; frame < frames; ++frame) {
+        const f32 before = health();
+        f.attacks.updateShields(seconds, f.players, f.targets);
+        if (health() < before) {
+            struck.push_back(frame);
+        }
+    }
+    return struck;
+}
+
+/** An eighth of a second, which every wait below counts down exactly. */
+constexpr f32 kEighth = 0.125f;
+
+TEST_CASE("a potion ring strikes a swarm body again a second after a hit over two, and on every "
+          "update after a slighter one",
+          "[game][player-attacks][blow-paths][potion-shield]") {
+    const f32 harm = GENERATE(30.0f, 2.0f);
+    CAPTURE(harm);
+    BlowScene f;
+    f.open();
+    Enemies& enemies = f.opponents.enemies();
+    const auto grunt =
+        enemies.spawn({.kind = kGruntKind, .position = {0, 0, 5}, .placed = true}, {});
+    REQUIRE(grunt);
+    PlayerAttacksTestPeer::ring(f.attacks, EnemyHit::kMagic, 10, harm, 3);
+    // ProcessEffects marks a swarm body only after a hit over two (0x80095CAC), for a second.
+    const auto struck =
+        framesStruck(f, 20, kEighth, [&enemies, &grunt] { return enemies.healthOf(*grunt); });
+    REQUIRE(enemies.alive(*grunt));
+    if (harm > 2) {
+        CHECK(struck == std::vector<s32>{0, 8, 16});
+    } else {
+        CHECK(struck.size() == 20);
+    }
+    f.close();
+}
+
+TEST_CASE("a potion ring waits a second on a great one it struck, however slight the hit",
+          "[game][player-attacks][blow-paths][potion-shield]") {
+    const f32 harm = GENERATE(30.0f, 2.0f);
+    CAPTURE(harm);
+    BlowScene f;
+    addGreatOne(f.root);
+    f.open();
+    spawnGreatOne(f, Vec3{0, 0, 8});
+    const Critters& critters = f.opponents.critters();
+    PlayerAttacksTestPeer::ring(f.attacks, EnemyHit::kMagic, 10, harm, 3);
+    // CritterSetFxHitTime's wait is set before the damage, whatever it comes to (0x80037ED0).
+    const auto struck = framesStruck(f, 20, kEighth, [&critters] { return critters.healthOf(0); });
+    REQUIRE(critters.alive(0));
+    CHECK(struck == std::vector<s32>{0, 8, 16});
+    f.close();
+}
+
+TEST_CASE("a generator waits on every ring a second after a hit over two, or until the ring "
+          "that struck it is spent",
+          "[game][player-attacks][blow-paths][potion-shield]") {
+    const f32 harm = GENERATE(30.0f, 2.0f);
+    CAPTURE(harm);
+    BlowScene f;
+    f.open();
+    placeGenerator(f, Vec3{0, 0, 6});
+    standBeforeGenerator(f);
+    const Generators& generators = f.opponents.generators();
+    // A ring with half a second left and a fresh one beside it. The item's one wait (+0xD8) is
+    // what is left of the ring that struck it, at most a second (0x80095090-0x800950B4): the
+    // fresh ring waits on the spent one's blow until that is gone, then on its own.
+    PlayerAttacksTestPeer::ring(f.attacks, EnemyHit::kMagic, 10, harm, 0.5f);
+    PlayerAttacksTestPeer::ring(f.attacks, EnemyHit::kMagic, 10, harm, 3);
+    const auto struck =
+        framesStruck(f, 20, kEighth, [&generators] { return generators.healthOf(0); });
+    if (harm > 2) {
+        CHECK(struck == std::vector<s32>{0, 3, 11, 19});
+        CHECK(generators.healthOf(0) == kGeneratorHealth - 4 * harm);
+    } else {
+        // A hit of two or less marks nothing: both rings strike it on every update while the
+        // first lasts, then the fresh one alone.
+        CHECK(struck.size() == 20);
+        CHECK(generators.healthOf(0) == kGeneratorHealth - (2 * 3 + 17) * harm);
+    }
+    f.close();
+}
+
+TEST_CASE("a wave of magic first strikes on the update it goes off, at its whole harm and a "
+          "third of its potency out",
+          "[game][player-attacks][blow-paths][potion-wave]") {
+    BlowScene f;
+    f.open();
+    Enemies& enemies = f.opponents.enemies();
+    // Two grunts either side of a wave going off at the origin, their near sides a tenth inside
+    // and a tenth beyond its first reach: a third of its potency of twenty (ProcessEffects'
+    // mode 1 at phase one, StartFXTree's maxtime from the clock it goes off on).
+    constexpr f32 kPotency = 20;
+    constexpr f32 kReach = 0.33f * kPotency;
+    constexpr f32 kMargin = 0.1f;
+    const f32 radius = enemyKind(kGruntKind).radius;
+    const auto inside = enemies.spawn(
+        {.kind = kGruntKind, .position = {kReach + radius - kMargin, 0, 0}, .placed = true}, {});
+    const auto beyond = enemies.spawn(
+        {.kind = kGruntKind, .position = {-(kReach + radius + kMargin), 0, 0}, .placed = true}, {});
+    REQUIRE(inside);
+    REQUIRE(beyond);
+    REQUIRE(enemies.targets().size() == 2);
+    REQUIRE(enemies.targets().front().radius == radius);
+    const f32 whole = enemies.healthOf(*inside);
+    MissileImpact impact;
+    impact.position = Vec3{0};
+    impact.owner = f.striker().player();
+    impact.potion = kWavePotion;
+    impact.potency = kPotency;
+    impact.damage = 30;
+    PlayerAttacksTestPeer::burst(f.attacks, impact);
+    PlayerAttacksTestPeer::potions(f.attacks, f.players, f.targets);
+    // Its damage times one and a half for each part of its phase over a third, its element's
+    // one and a half on the swarm.
+    CHECK(whole - enemies.healthOf(*inside) == Catch::Approx(30 * 1.5f * (1 - 0.33f) * 1.5f));
+    CHECK(enemies.healthOf(*beyond) == whole);
+    f.close();
 }
 
 } // namespace
