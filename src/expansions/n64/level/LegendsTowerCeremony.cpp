@@ -408,8 +408,9 @@ void LegendsTowerCeremony::attend() {
     // e0860d1c restarts REDY, looping, once a gesture that plays once has ended (0x9000),
     // unless the shard spell suppresses it. Its turns are not modelled: Sumner's toward
     // e086adbc, and, while e086adac is set, each arrived player's toward e086adb0
-    // (e0860d54..e0860ed8), which the cut sets to Sumner and each rune, door and shard shot
-    // to its focus: retail's party watches each piece, the party here keeps facing Sumner.
+    // (e0860d54..e0860ed8), which the cut points at Sumner (e08606a0) and each shot at its
+    // focus (the rune's e0862600, the door's e0865e9c, the shard's e08635bc, case 0x32's
+    // e0866b3c): retail's party watches each piece, the party here keeps facing Sumner.
     if (!m_readySuppressed && m_gesture.done && m_gesture.frozen) {
         play(kReady);
         m_gesture.once = false;
