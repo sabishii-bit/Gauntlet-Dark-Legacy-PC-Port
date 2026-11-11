@@ -792,16 +792,22 @@ TEST_CASE("a boss arms only once its activation signal comes, stays armed after 
     // so the boss wakes on the update after the one that completes its two seconds.
     constexpr f32 kHalfSecond = 0.5f;
     const std::vector<EnemyView> near{playerAt(Vec3{0, 0, 10})};
+    // An ordinary boss is engaged only once it wakes (BossActivate at 0x80039ca4), however long
+    // it has been armed.
+    const auto asleep = [&bosses] {
+        REQUIRE_FALSE(bosses.view().awake);
+        REQUIRE_FALSE(bosses.view().engaged);
+    };
     const auto updates = [&](s32 count, bool activationReady) {
         for (s32 update = 0; update < count; ++update) {
-            REQUIRE_FALSE(bosses.view().awake);
+            asleep();
             bosses.update(kTicks, kHalfSecond, near, activationReady);
         }
     };
     SECTION("the default signal keeps the GameCube's two seconds") {
         for (s32 update = 0; update < 4; ++update) {
             bosses.update(kTicks, kHalfSecond, near);
-            REQUIRE_FALSE(bosses.view().awake);
+            asleep();
         }
         bosses.update(kTicks, kHalfSecond, near);
         CHECK(bosses.view().awake);
@@ -818,7 +824,7 @@ TEST_CASE("a boss arms only once its activation signal comes, stays armed after 
     SECTION("an update's signal keeps it armed through updates without one") {
         updates(1, true);
         updates(3, false);
-        REQUIRE_FALSE(bosses.view().awake);
+        asleep();
         bosses.update(kTicks, kHalfSecond, near, false);
         CHECK(bosses.view().awake);
     }
@@ -828,14 +834,14 @@ TEST_CASE("a boss arms only once its activation signal comes, stays armed after 
         bosses.arm(kHalfSecond, false);
         bosses.arm(kHalfSecond, false);
         bosses.update(kTicks, 0, near, false); // a second and a half armed
-        REQUIRE_FALSE(bosses.view().awake);
+        asleep();
         bosses.update(kTicks, kHalfSecond, near, false); // two seconds, tested on the next
-        REQUIRE_FALSE(bosses.view().awake);
+        asleep();
         bosses.update(kTicks, kHalfSecond, near, false);
         CHECK(bosses.view().awake);
     }
-    // An ordinary boss is engaged only once it wakes (BossActivate at 0x80039ca4).
-    CHECK(bosses.view().engaged == bosses.view().awake);
+    // Awake, it is engaged.
+    CHECK(bosses.view().engaged);
 }
 
 TEST_CASE("a boss that waits for its floor arms on the update after a trigger first moves the "
