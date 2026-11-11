@@ -227,9 +227,11 @@ void LegendsSceneAdapter::updateTowerProgress(bool initial) {
         // During a ceremony CATH_BEAM follows e0863440's drawable bytes: the window's case 7
         // clears its hidden flag with the transparency byte at 255, which case 9 fades to 0.
         // e001ea34 draws it in 2-cycle mode (e001f08c) and, for this 0x400000 drawable with a
-        // nonzero byte, blends it with memory in both cycles at the texel's alpha times the
-        // prim alpha (e001f14c..e001f1e0), so the fade shows the prim alpha squared; at 0 it
-        // blends once, at the texel's alpha. The texel's alpha, squared there too, is not here.
+        // nonzero byte, blends it with memory in both cycles at the texel's alpha a times the
+        // prim alpha p (e001f14c..e001f1e0), so the fade shows (a * p)^2; at 0 it blends once,
+        // at a. No draw state here squares the alpha after filtering, so this draws a * p^2: a
+        // partly clear texel fades in brighter than the N64's, and reaches a without its step
+        // up at count 40.
         const bool scripted = m_towerCeremony && m_towerCeremony->active();
         const f32 alpha = scripted ? m_towerCeremony->cathedralBeamAlpha() : 1;
         m_hiddenWorldObjects[*m_cathedralBeam] =
