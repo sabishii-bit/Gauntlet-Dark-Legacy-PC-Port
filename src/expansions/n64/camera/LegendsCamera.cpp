@@ -212,7 +212,7 @@ void LegendsCamera::resetImpl(formats::LegendsN64CameraData data,
         m_data.bossFocus.reset();
     }
     m_partySize = party.size();
-    std::ranges::copy(party, m_party.begin());
+    std::ranges::copy(party, m_party.data());
     m_mode = m_data.tower ? Mode::TowerInner : Mode::Markers;
     m_marker = nearestMarker(m_data, feet, -1);
     const auto& marker = m_data.markers[static_cast<usize>(m_marker)];
@@ -503,7 +503,7 @@ void LegendsCamera::update(std::span<const CameraSubject> party, f32 seconds) {
         return;
     }
     m_partySize = party.size();
-    std::ranges::copy(party, m_party.begin());
+    std::ranges::copy(party, m_party.data());
     m_accumulator += std::min(seconds, .25f);
     while (m_accumulator >= kStep) {
         tick(feet);
