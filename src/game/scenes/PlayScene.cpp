@@ -2235,25 +2235,34 @@ const PlayerAnimator* PlayScene::animator(s32 player) const {
 
 /** Stands the materialising effect at every character's feet and the optional start
  * camera at its arrival marker to hold and ride in; the party holds still for it. (The
- * realm's entering sound belongs to the loading screen, not to this.) */
+ * realm's entering sound belongs to the loading screen, not to this.) A party an imported
+ * level places itself keeps the hold without the effect or its sound. */
 void PlayScene::beginSpawn(RenderDevice& device, const std::optional<WorldCamera>& marker) {
     if (!m_weapons.loaded()) {
         m_weapons.load(m_services->unpackedRoot / kWeaponsArchive);
     }
     std::vector<Vec3> positions;
     positions.reserve(m_players.size());
+    std::vector<PlayerActor*> standing;
     std::optional<Vec3> low;
     Vec3 high{0};
-    for (const PlayerRuntime& runtime : m_players) {
+    for (PlayerRuntime& runtime : m_players) {
         positions.push_back(runtime.actor.position());
         const Vec3 follow = runtime.actor.followPoint();
         high = low ? glm::max(high, follow) : follow;
         low = low ? glm::min(*low, follow) : follow;
+        if (!runtime.departed && runtime.life == PlayerLife::Standing && !runtime.ghost) {
+            standing.push_back(&runtime.actor);
+        }
     }
-    m_arrival.begin(device, m_weapons, positions, marker,
+    auto* imported = m_world->imported();
+    const bool placed = imported != nullptr && imported->placeOpeningParty(standing);
+    const std::span<const Vec3> materialising =
+        placed ? std::span<const Vec3>{} : std::span<const Vec3>{positions};
+    m_arrival.begin(device, m_weapons, materialising, marker,
                     bossCameraOn() ? StartCamera::Mode::Legacy : StartCamera::Mode::Standard,
                     low ? std::optional<Vec3>{(*low + high) * 0.5f} : std::nullopt);
-    if (!positions.empty()) {
+    if (!positions.empty() && !placed) {
         m_audio.playEntrance();
     }
 }

@@ -80,6 +80,7 @@ public:
     std::vector<std::string> answerDialogue(s32 topic) override;
     void dismissDialogue() override;
     bool takeShopRequest() override;
+    bool placeOpeningParty(std::span<PlayerActor*> party) override;
     void updateParty(std::span<PlayerActor*> players, f32 seconds, bool activatePowerups) override;
     void initializeParty(std::span<const PartyMember> party);
     void announceProgress(std::span<const PartyMember> before, std::span<const PartyMember> after);
@@ -180,6 +181,8 @@ private:
     bool updateSumner(std::span<PlayerActor*> players, f32 seconds, bool blocked);
     bool updateN64Sumner(std::span<PlayerActor*> players, f32 seconds, bool blocked);
     bool updateDreamcastSumner(std::span<PlayerActor*> players, f32 seconds, bool blocked);
+    /** A Tower ceremony waiting to open the visit stands the party facing Sumner. */
+    bool placeN64OpeningParty(std::span<PlayerActor*> party);
     std::vector<std::string> answerN64Dialogue(s32 topic);
     std::unique_ptr<ItemArchive> loadN64EnemyAssets(s32 kind) const;
     std::unique_ptr<ItemArchive> loadDreamcastEnemyAssets(s32 kind) const;

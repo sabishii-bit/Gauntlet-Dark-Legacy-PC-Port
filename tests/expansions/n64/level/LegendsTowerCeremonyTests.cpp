@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <limits>
 #include <optional>
 #include <string_view>
@@ -11,6 +12,7 @@
 
 #include "engine/io/ByteReader.h"
 #include "engine/io/File.h"
+#include "engine/math/PortableMath.h"
 
 #include "TestSupport.h"
 #include "expansions/n64/level/LegendsTowerCeremony.h"
@@ -792,6 +794,37 @@ TEST_CASE("N64 ceremony camera cuts to Sumner, moves on script updates and retur
         CHECK(value.active() == (tick < 260));
         previous = camera;
     }
+}
+
+TEST_CASE("N64 ceremony's cut turns each arrived player to face Sumner in the native yaw",
+          "[legends][tower-ceremony]") {
+    // e0860620 hands e0010e50 Sumner's x and z offsets from each player, the arc tangent of
+    // x over z: a player due south of him (less z) faces him at yaw 0, and height plays no
+    // part. Without the overlay Sumner stands at the origin.
+    const auto value = nativeCeremony();
+    CHECK(value.partyFacing({0, 0, -10}) == 0);
+    CHECK(value.partyFacing({0, 7, 10}) == Catch::Approx(kPi));
+    CHECK(value.partyFacing({10, -2, 0}) == Catch::Approx(-kPi / 2));
+    const f32 yaw = value.partyFacing({-3, 1, 4});
+    CHECK(yaw == portable::atan2(3.0f, -4.0f));
+    // The actors face (sin, cos) of their yaw: toward him.
+    CHECK(portable::sin(yaw) == Catch::Approx(.6f));
+    CHECK(portable::cos(yaw) == Catch::Approx(-.8f));
+}
+
+TEST_CASE("N64 ceremony's party faces Sumner where Tower.bin stands him",
+          "[legends][tower-ceremony][assets]") {
+    const auto value = ceremony();
+    const auto overlay =
+        readFile(test::dataDirectory().parent_path() / "assets/n64/extracted/_program/Tower.bin");
+    // e0860198 stands Sumner at e086a678 (through e002fbfc), where e0860620 reads him.
+    const auto coordinate = [&](usize at) { return std::bit_cast<f32>(readU32BE(overlay, at)); };
+    const Vec3 sumner{coordinate(0xa678), coordinate(0xa67c), coordinate(0xa680)};
+    for (const Vec3& player : {Vec3{0}, sumner + Vec3{3, 9, -4}, sumner - Vec3{6, 0, 0}}) {
+        CHECK(value.partyFacing(player) ==
+              portable::atan2(sumner.x - player.x, sumner.z - player.z));
+    }
+    CHECK(value.partyFacing(sumner + Vec3{0, 0, -6}) == 0);
 }
 
 TEST_CASE("N64 shard gesture cannot install the piece before its animation completes",

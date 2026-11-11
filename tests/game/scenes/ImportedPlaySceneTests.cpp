@@ -1,12 +1,14 @@
 #include <algorithm>
 #include <array>
 #include <memory>
+#include <optional>
 #include <utility>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/assets/SoundSet.h"
 #include "engine/assets/StringTable.h"
 #include "engine/audio/AudioMixer.h"
 #include "engine/audio/SoundPlayer.h"
@@ -49,6 +51,8 @@ public:
     s32 soundServices = 0;
     s32 soundStops = 0;
     s32 soundPauses = 0;
+    usize placedMembers = 0;
+    std::optional<f32> placedYaw; ///< set: the level places its opening party facing it
     mutable std::vector<f32> samples;
     mutable std::vector<WorldCamera> drawnCameras;
     ImportedGameplay() {
@@ -86,6 +90,15 @@ public:
     Vec3 resolveMovement(const Vec3& from, const Vec3& to, f32 /*radius*/,
                          f32 /*height*/) const override {
         return block && to.x > from.x ? Vec3{from.x, to.y, to.z} : to;
+    }
+    bool placeOpeningParty(std::span<PlayerActor*> party) override {
+        placedMembers = party.size();
+        if (placedYaw) {
+            for (auto* actor : party) {
+                actor->turnTo(*placedYaw);
+            }
+        }
+        return placedYaw.has_value();
     }
     void updateParty(std::span<PlayerActor*> actors, f32 /*seconds*/, bool activateItems) override {
         ++partyUpdates;
@@ -596,6 +609,57 @@ TEST_CASE("Imported maps retain ordinary gameplay while supplying native camera 
         const auto stops = imported->soundStops;
         scene.close(); // before this section's SoundPlayer and borrowed clip die
         CHECK(imported->soundStops == stops + 1);
+    }
+    SECTION("a party the level places itself keeps the arrival hold without its effect or sound") {
+        scene.close();
+        SoundSet common;
+        REQUIRE(common.load(root / "audio/COMMON"));
+        const auto entranceCall = common.find("S_ENTRANCE");
+        REQUIRE(entranceCall);
+        const SoundSequence entrance = common.sequence(*entranceCall);
+        AudioMixer mixer(48000);
+        SoundPlayer sounds(mixer);
+        context.sounds = &sounds;
+        const std::array pair{PartyMember{0, CharacterSave{}}, PartyMember{1, CharacterSave{}}};
+        options.yaw = 0;
+        const auto arrive = [&] {
+            s32 entrances = 0;
+            const SoundPlayer::Capture capture(&sounds, [&](const SoundPlayer::Event& event) {
+                if (event.kind == SoundPlayer::Event::Kind::Play && event.bank == entrance.bank &&
+                    event.call == entrance.call) {
+                    ++entrances;
+                }
+            });
+            REQUIRE(scene.open(device, context, world, pair, options));
+            return entrances;
+        };
+        // Asked with both standing members, a level that does not place them leaves the
+        // ordinary materialisation: STARTFX at each member's feet and S_ENTRANCE.
+        CHECK(arrive() == 1);
+        CHECK(imported->placedMembers == pair.size());
+        CHECK(scene.spawnEffectCount() == pair.size());
+        CHECK(scene.actor(0)->yaw() == 0);
+        // A level that places them gets neither, and the facing it gives them stands.
+        imported->placedYaw = 1.25f;
+        CHECK(arrive() == 0);
+        CHECK(imported->placedMembers == pair.size());
+        CHECK(scene.spawnEffectCount() == 0);
+        CHECK(scene.actor(0)->yaw() == 1.25f);
+        CHECK(scene.actor(1)->yaw() == 1.25f);
+        // The rest of the arrival is unchanged: the hold, under which the names, the entrance
+        // and the imported party callbacks wait, runs its whole length.
+        REQUIRE(scene.spawning());
+        CHECK(scene.animator(0)->entering());
+        const s32 partyUpdates = imported->partyUpdates;
+        s32 held = 0;
+        for (; held < 600 && scene.spawning(); ++held) {
+            REQUIRE(scene.update(1.0 / 60, {}) == PlayOutcome::Running);
+            CHECK(imported->partyUpdates == partyUpdates);
+        }
+        CHECK(held == LevelArrivalPresentation::kSpawnTicks);
+        CHECK(scene.actor(0)->yaw() == 1.25f);
+        CHECK(scene.actor(1)->yaw() == 1.25f);
+        scene.close(); // before this section's SoundPlayer dies
     }
     scene.close();
 }

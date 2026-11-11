@@ -32,4 +32,9 @@ bool LegendsLevel::takeShopRequest() {
     return std::exchange(m_shopRequested, false);
 }
 
+bool LegendsLevel::placeOpeningParty(std::span<PlayerActor*> party) {
+    // Of the native visits, only the N64 Tower's ceremonies open on a script.
+    return platform() == LegendsPlatform::N64 && placeN64OpeningParty(party);
+}
+
 } // namespace gdl::game

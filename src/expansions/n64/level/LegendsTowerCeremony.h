@@ -85,6 +85,10 @@ public:
     WorldCamera camera(f32 alpha = -1) const;
     const Vec3& attention() const { return m_cameraFocus; }
     const Vec3& sumnerPosition() const { return m_native.sumner.position; }
+    /** The yaw dispatcher case 0's cut (e0860620) turns an arrived player standing at
+     * `position` to through game.bin e0048acc: e0010e50's arc tangent of Sumner's x and z
+     * offsets from it, in the native yaw the N64 actors keep. Sumner keeps his own yaw. */
+    f32 partyFacing(const Vec3& position) const;
 
 private:
     /** e086736c's case for the next tick. */

@@ -167,6 +167,12 @@ public:
     virtual std::vector<std::string> answerDialogue(s32 /*topic*/) { return {}; }
     virtual void dismissDialogue() {}
     virtual bool takeShopRequest() { return false; }
+    /** A native visit that opens on a script holding play, its party standing where it
+     * arrived, sets that party up itself: it may turn the standing members it is handed and
+     * returns true, and the scene then plays no materialisation effect or entrance sound
+     * for them. The arrival hold and the characters' entrance still run. Asked once, as
+     * the level opens; the actors stay the scene's. */
+    virtual bool placeOpeningParty(std::span<PlayerActor*> /*party*/) { return false; }
     /** Post-motion living visitors only. Grants and local transport are native
      * level rules; the common scene still owns inventory and departure effects. */
     virtual void updateParty(std::span<PlayerActor*> /*players*/, f32 /*seconds*/,

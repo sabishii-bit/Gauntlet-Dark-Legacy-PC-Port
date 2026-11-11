@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "engine/io/ByteReader.h"
+#include "engine/math/PortableMath.h"
 
 #include "expansions/n64/level/LegendsTowerProgress.h"
 
@@ -249,6 +250,12 @@ void LegendsTowerCeremony::start(const WorldCamera& camera, const Vec3& attentio
     m_gesture = {};
     play(kReady);
     passGesture();
+}
+
+f32 LegendsTowerCeremony::partyFacing(const Vec3& position) const {
+    // e0860620 passes e0010e50 Sumner's +0x1c and +0x24 less the player's +0x24 and +0x2c.
+    const Vec3 offset = m_native.sumner.position - position;
+    return portable::atan2(offset.x, offset.z);
 }
 
 void LegendsTowerCeremony::play(std::string_view name) {

@@ -1,8 +1,10 @@
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <cmath>
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <utility>
@@ -13,7 +15,9 @@
 #include "engine/assets/StringTable.h"
 #include "engine/core/SpecialMembers.h"
 #include "engine/io/AssetLocator.h"
+#include "engine/io/ByteReader.h"
 #include "engine/io/File.h"
+#include "engine/math/PortableMath.h"
 #include "engine/ui/Canvas.h"
 
 #include "FakeRenderDevice.h"
@@ -57,8 +61,13 @@ struct SumnerScene {
     AssetLocator assets;
     GameServices context; ///< what the scene reads while it stands
     PlayScene scene;
+    f32 arrivalYaw = 0; ///< a Tower return's heading at its start, before any turn
 
-    SumnerScene()
+    /** The Tower settled into play, the party south of Sumner's podium. With `brought` it is
+     * a Tower return as the app opens one instead: the second member comes home with those
+     * pieces, their ceremony is queued before the scene opens, and the party stands at the
+     * Tower's start with its native heading, as the ceremony opens the visit. */
+    explicit SumnerScene(std::optional<LegendsProgress> brought = std::nullopt)
         : characters(test::assetOrSkip("PDATA/WAR.WAD").parent_path().parent_path()),
           assets(characters) {
         if (!std::filesystem::is_regular_file(directory / "worlds.wad") ||
@@ -89,8 +98,18 @@ struct SumnerScene {
         save.autoAttack = false;
         CharacterSave second = save;
         second.color = 1;
-        const std::array party{PartyMember{0, save}, PartyMember{1, second}};
+        std::array party{PartyMember{0, save}, PartyMember{1, second}};
+        const auto left = party;
+        if (brought) {
+            auto& native = party[1].save.progress().legendsProgress(LegendsPlatform::N64);
+            native.runestones |= brought->runestones;
+            native.shards |= brought->shards;
+            native.obelisks |= brought->obelisks;
+        }
         level->initializeParty(party);
+        if (brought) {
+            level->announceProgress(left, party);
+        }
         LegendsTraversal traversal;
         traversal.open(map, 0, save, classes.stats(save.character));
         auto layout = WorldLayout::fromDecoded(
@@ -111,6 +130,12 @@ struct SumnerScene {
         context.unpackedRoot = characters;
         PlayOptions options;
         options.welcome = false;
+        if (brought) {
+            options.position = traversal.start();
+            options.yaw = arrivalYaw = traversal.actor().yaw();
+            REQUIRE(scene.open(device, context, world, party, options));
+            return; // the ceremony holds play until it hands back
+        }
         // Place the test party on the real Tower floor, south of the authored
         // podium. Only the approach is shortened; all collision and movement
         // still flow through PlayScene, PartyMotion and native scenery contact.
@@ -381,4 +406,38 @@ TEST_CASE("Native Tower return presents new milestones once and restores the mat
     fixture.approach();
     fixture.choose(5);
     CHECK(fixture.readPages() == words(fixture.strings.get(legendsN64SumnerHistoryKey(12))));
+}
+
+TEST_CASE("A Tower return opens on its ceremony with the party standing, turned to face Sumner",
+          "[legends][sumner-integration][tower-ceremony][assets]") {
+    LegendsProgress brought;
+    brought.runestones = 1;
+    SumnerScene fixture{brought};
+    const auto* ceremony = fixture.level->adapter().towerCeremony();
+    REQUIRE(ceremony);
+    REQUIRE(ceremony->pending());
+    REQUIRE_FALSE(ceremony->active());
+    // Setup e08694e4 opens the visit in state 0x12, whose arrival (game.bin e004b070) stands
+    // the party without e004b098's entrance effect. The arrival hold itself still runs.
+    CHECK(fixture.scene.spawning());
+    CHECK(fixture.scene.spawnEffectCount() == 0);
+    // e0860198 stands Sumner at e086a678; the cut (e0860620) turns each arrived player to
+    // e0010e50's arc tangent of his x and z offsets, through e0048acc. Sumner keeps his yaw.
+    const auto overlay = readFile(fixture.root / "_program/Tower.bin");
+    const auto coordinate = [&](usize at) { return std::bit_cast<f32>(readU32BE(overlay, at)); };
+    const Vec3 sumner{coordinate(0xa678), coordinate(0xa67c), coordinate(0xa680)};
+    const auto checkFacing = [&] {
+        for (s32 seat = 0; seat < 2; ++seat) {
+            const auto* actor = fixture.scene.actor(seat);
+            REQUIRE(actor);
+            const Vec3 offset = sumner - actor->position();
+            CAPTURE(seat, fixture.arrivalYaw);
+            CHECK(actor->yaw() == portable::atan2(offset.x, offset.z));
+        }
+    };
+    checkFacing();
+    // The first update cuts to his shot, the party held still as it was turned.
+    fixture.step();
+    REQUIRE(ceremony->active());
+    checkFacing();
 }

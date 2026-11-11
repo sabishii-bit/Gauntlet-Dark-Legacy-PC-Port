@@ -7,6 +7,31 @@
 #include "expansions/shared/scenes/LegendsLevel.h"
 
 namespace gdl::game {
+namespace {
+/** Dispatcher case 0's turn (Tower.bin e0860620): every arrived player faces Sumner through
+ * game.bin e0048acc, in the native yaw the N64 actors keep. Sumner is not turned. */
+void faceSumner(std::span<PlayerActor*> party, const LegendsTowerCeremony& ceremony) {
+    for (auto* actor : party) {
+        if (actor != nullptr) {
+            actor->turnTo(ceremony.partyFacing(actor->position()));
+        }
+    }
+}
+} // namespace
+
+bool LegendsLevel::placeN64OpeningParty(std::span<PlayerActor*> party) {
+    // With a ceremony pending, Tower.bin's setup e08694e4 opens the visit in state 0x12,
+    // whose arrival (game.bin e004b070) skips e004b098's entrance effect, and the
+    // dispatcher's first update cuts to Sumner and turns the arrived players to him. The
+    // party stands here as the scene opens, an update before that cut, and is held still
+    // until the ceremony hands play back, so it faces him from the cut on.
+    const auto* ceremony = adapter().towerCeremony();
+    if (ceremony == nullptr || !ceremony->pending() || ceremony->active()) {
+        return false;
+    }
+    faceSumner(party, *ceremony);
+    return true;
+}
 
 void LegendsLevel::updateExitReminder(std::span<const CharacterSave* const> party) {
     m_exitReminder.reset();
