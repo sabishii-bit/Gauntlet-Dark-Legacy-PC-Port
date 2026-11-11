@@ -19,6 +19,8 @@ namespace gdl::game {
 namespace {
 constexpr f32 kDrop = 6.0f;
 constexpr f32 kDeathFade = 1.0f;
+/** The last of a held death, over which a boss fades out (CritterBossAI 0x8003a10c-0x8003a13c). */
+constexpr f32 kBossDeathFade = 0.5f;
 constexpr f32 kPushDecay = 0.8f;
 constexpr f32 kPushFrameRate = 30.0f; ///< knock-back decays once per game frame
 constexpr f32 kGravity = 100.0f;
@@ -468,9 +470,26 @@ void Combatant::update(s32 ticks, f32 seconds, std::span<const EnemyView> player
     }
 }
 
-bool Combatant::deathHoldRunsOut(const Actor& critter, const MoveDefinition* move) {
+bool Combatant::holdsDeath(const Actor& critter, const MoveDefinition* move) {
     return critter.state == State::Dying && move != nullptr &&
-           move->type == MoveDefinition::kDeath && move->hold > 0.0f && critter.moveDone;
+           move->type == MoveDefinition::kDeath && move->hold > 0.0f;
+}
+
+bool Combatant::holdRunsOut(const Actor& critter, f32 seconds) {
+    if (critter.move < 0 || critter.moveDone || !critter.player.finished()) {
+        return false;
+    }
+    const f32 hold = critter.definition->moves()[static_cast<usize>(critter.move)].hold;
+    return hold > 0.0f && critter.finishedSeconds + seconds >= hold;
+}
+
+bool Combatant::deathPlayed() const {
+    const Actor& critter = m_sim.actor;
+    const MoveDefinition* move =
+        critter.move >= 0 && critter.definition != nullptr
+            ? &critter.definition->moves()[static_cast<usize>(critter.move)]
+            : nullptr;
+    return critter.parent == nullptr && holdsDeath(critter, move) && critter.player.finished();
 }
 
 void Combatant::updateActor(s32 ticks, f32 seconds, std::span<const EnemyView> players,
@@ -548,6 +567,11 @@ void Combatant::updateActor(s32 ticks, f32 seconds, std::span<const EnemyView> p
             critter.blindTicks = std::max(critter.blindTicks - ticks, 0);
         }
     }
+    // CritterAnimate keeps a finished move only while its hold's deadline lies ahead of the
+    // frame's clock (0x8003c51c-0x8003c54c), so what follows may begin in the update it runs out.
+    if (holdRunsOut(critter, seconds)) {
+        critter.moveDone = true;
+    }
     // CritterGolemAI still animates START/DEATH during Stop Time. Follow an
     // entrance's explicit continuation, without running ready/attack selection.
     if (!stopped || critter.move < 0) {
@@ -582,7 +606,6 @@ void Combatant::updateActor(s32 ticks, f32 seconds, std::span<const EnemyView> p
     // The move plays; over its harmful frames its part strikes.
     critter.skinAge += seconds;
     if (move != nullptr && critter.player.playing()) {
-        const bool wasFinished = critter.player.finished();
         critter.player.advance(seconds, false);
         for (usize j = 0; j < critter.attachments.size(); ++j) {
             auto& attachment = critter.attachments[j];
@@ -591,13 +614,28 @@ void Combatant::updateActor(s32 ticks, f32 seconds, std::span<const EnemyView> p
                                       tree.sequences[attachment.player.sequence()].repeats);
             attachment.pose.evaluate(tree, attachment.player.sequence(), attachment.player.frame());
         }
-        if (wasFinished) {
+        // CritterBossAI sets a held move's deadline (+0x214) a hold past every frame its
+        // animation is unfinished (0x8003a06c-0x8003a07c, 0x8003a144-0x8003a160): the hold counts
+        // from the last of them, so the update the animation finishes in counts toward it. A
+        // move without a hold keeps no deadline (0x8003a168).
+        if (move->hold > 0.0f && critter.player.finished()) {
             critter.finishedSeconds += seconds;
         }
         critter.moveDone = critter.player.finished() && critter.finishedSeconds >= move->hold;
         critter.pose.evaluate(*critter.stock->tree, critter.player.sequence(),
                               critter.player.frame());
         inheritBodyPose();
+        if (critter.parent == nullptr && holdsDeath(critter, move)) {
+            // A boss fades out over the last of its death's hold (MBTreeSetAlpha at 0x8003a13c)
+            // and goes the update it runs out (CritterDelInst at 0x8003a0c4), returning before
+            // its move's frames, its step, its heads and its floor probe (0x8003a1fc-0x8003a2d4).
+            critter.alpha =
+                std::clamp((move->hold - critter.finishedSeconds) / kBossDeathFade, 0.0f, 1.0f);
+            if (critter.moveDone) {
+                critter = Actor{};
+                return;
+            }
+        }
         aimGaze(critter, seconds, players);
         holdBrokenPoses(critter);
         const auto frame = static_cast<s32>(std::floor(critter.player.frame()));
@@ -747,10 +785,7 @@ void Combatant::updateActor(s32 ticks, f32 seconds, std::span<const EnemyView> p
     }
     // CritterBossAI probes its floor (FloorCollide, 0x8003a2d4) after its step
     // (CritterTranslate, 0x8003a218), before what it holds, its areas and its heads follow it.
-    // The update its death's hold runs out removes it before then (0x8003a0c4).
-    if (!deathHoldRunsOut(critter, move)) {
-        settleOnFloor();
-    }
+    settleOnFloor();
     carryGrab(critter, players);
     updateAreas(critter, i, players);
     critter.push *= portable::pow(kPushDecay, seconds * kPushFrameRate);
@@ -764,16 +799,10 @@ void Combatant::updateActor(s32 ticks, f32 seconds, std::span<const EnemyView> p
         return; // Dead branches retain their attachment for persistent stump effects.
     }
     updateChildren(ticks, seconds, players);
-    if (critter.state == State::Dying && move != nullptr && move->type == MoveDefinition::kDeath &&
-        move->hold > 0.0f) {
-        constexpr f32 kBossDeathFade = 0.5f;
-        const f32 remaining = move->hold - critter.finishedSeconds;
-        critter.alpha = std::clamp(remaining / kBossDeathFade, 0.0f, 1.0f);
-        if (deathHoldRunsOut(critter, move)) {
-            critter = Actor{};
-        }
-    } else if (critter.state == State::Dying &&
-               critter.stock->definition.departure == CombatantDefinition::Departure::Drops) {
+    if (critter.state != State::Dying || holdsDeath(critter, move)) {
+        return; // a boss's held death fades and ends with its animation, above
+    }
+    if (critter.stock->definition.departure == CombatantDefinition::Departure::Drops) {
         if (move != nullptr && move->type == MoveDefinition::kDeath && !critter.moveDone) {
             const auto& sequence = critter.stock->tree->sequences[critter.player.sequence()];
             if (move->frameStart > 0 && sequence.frames > move->frameStart) {
@@ -792,8 +821,7 @@ void Combatant::updateActor(s32 ticks, f32 seconds, std::span<const EnemyView> p
             m_sim.losses.push_back(std::move(drop));
             critter = Actor{};
         }
-    } else if (critter.state == State::Dying &&
-               (move == nullptr || move->type != MoveDefinition::kDeath || critter.moveDone)) {
+    } else if (move == nullptr || move->type != MoveDefinition::kDeath || critter.moveDone) {
         critter.alpha -= seconds / kDeathFade;
         if (critter.alpha <= 0.0f) {
             critter = Actor{};

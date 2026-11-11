@@ -79,6 +79,10 @@ public:
     /** Begins for `player`, who carries the item of `weakness`. */
     void begin(s32 player, const LegendWeakness& weakness);
     void clear();
+    /** Ends a rite still running as the boss's death plays out (world_update's state 99 once
+     * gBossDead is set, 0x80056d04-0x80056d14): over where it stands, its weakness never heard
+     * wearing off. */
+    void conclude();
 
     /** Moves the rite `ticks` on, told whether the boss has finished rising and whether it
      * has finished roaring; the cues to show come back. */

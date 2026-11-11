@@ -135,6 +135,9 @@ public:
                                          bool healthBars = true) const;
     bool alive() const { return m_sim.actor.state == State::Active; }
     bool dying() const { return m_sim.actor.state == State::Dying; }
+    /** Whether its death has played: dying, the animation of a held DEATH done and its hold
+     * running out (CritterBossAI sets gBossDead then, 0x8003a0f8-0x8003a108). */
+    bool deathPlayed() const;
     s32 id() const { return m_sim.id; }
     CombatantKind kind() const {
         return data() != nullptr ? data()->kind() : CombatantKind::Unknown;
@@ -442,9 +445,11 @@ private:
     bool startMove(Actor& critter, usize index, bool recordUse = true);
     void updateActor(s32 ticks, f32 seconds, std::span<const EnemyView> players,
                      std::span<const Combatant> peers, bool timeStopped);
-    /** Whether this update ends its death's hold, which removes it before its floor probe
-     * (CritterBossAI's CritterDelInst at 0x8003a0c4). */
-    static bool deathHoldRunsOut(const Actor& critter, const MoveDefinition* move);
+    /** Whether it dies by a held death, playing `move`: a DEATH with a hold, after which it
+     * goes (CritterBossAI's DEATH branch, 0x8003a05c-0x8003a0cc). */
+    static bool holdsDeath(const Actor& critter, const MoveDefinition* move);
+    /** Whether the hold of a finished move runs out by the end of an update of `seconds`. */
+    static bool holdRunsOut(const Actor& critter, f32 seconds);
     void rememberFloor();
     /** What it deals of `amount`: half while shrunk, unless it is a boss. */
     f32 dealt(f32 amount) const;

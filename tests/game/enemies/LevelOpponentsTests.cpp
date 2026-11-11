@@ -898,8 +898,12 @@ TEST_CASE("Garm's death effects play once at their native cue frames and hold th
     std::array<u32, 2> ids{};
     std::array<f32, 2> previousFrames{};
     constexpr std::array kNames{"GAR1DEATH1", "GAR1DEATH2"};
+    s32 deathRan = -1;
     for (frame = 0; frame < 600; ++frame) {
         opponents.update(2, 1.0f / 30, {}, {}, host, host, host);
+        if (boss.present() && !boss.fighter().animation().finished()) {
+            deathRan = frame;
+        }
         effects.update(1.0f / 30);
         for (usize i = 0; i < effects.count(); ++i) {
             const auto& effect = effects.effect(i);
@@ -926,12 +930,14 @@ TEST_CASE("Garm's death effects play once at their native cue frames and hold th
         }
     }
     // GARM.DEATH uses a 120/900-second frame period: cues at frames 1 and 30,
-    // then the 90-frame sequence and two-second hold before BossDeath.
+    // then the 90-frame sequence and two-second hold before BossDeath. The hold counts from the
+    // frame the sequence last ran, and sixty updates of 1/30 s fall just short of two seconds.
     CHECK(starts[0] >= 0);
     CHECK(starts[0] <= 4);
     CHECK(starts[1] - starts[0] == Catch::Approx(116).margin(1));
     CHECK(victories == 1);
-    CHECK(victoryFrame == Catch::Approx(420).margin(2));
+    CHECK(deathRan == 356);
+    CHECK(victoryFrame - deathRan == 61);
     CHECK_FALSE(boss.present());
     CHECK(effects.playing(ids[0]));
     CHECK_FALSE(effects.playing(ids[1]));

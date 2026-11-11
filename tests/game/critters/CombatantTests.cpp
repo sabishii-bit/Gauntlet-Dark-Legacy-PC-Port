@@ -2,6 +2,7 @@
 #include <array>
 #include <cmath>
 #include <filesystem>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -2040,6 +2041,170 @@ TEST_CASE("a fallen great one leaves its drop as its death ends; a fallen boss f
             CHECK(drops[0].form == definition.dropForm);
             CHECK(drops[0].position == Vec3{3, 0, 4});
         }
+    }
+}
+
+/** How many updates of `seconds` a hold of `hold` lasts once a move's animation is done, summed
+ * in f32 from the last update the animation ran, as a fighter counts it. */
+s32 heldUpdates(f32 hold, f32 seconds) {
+    f32 held = 0;
+    s32 updates = 0;
+    while (held < hold) {
+        held += seconds;
+        ++updates;
+    }
+    return updates;
+}
+
+/** A boss of the family archive's LICH whose moves are `moves`, its STEP three frames long. */
+std::filesystem::path heldMoveBoss(std::string_view moves) {
+    const auto root = familyAssets();
+    const std::string table = R"({"descriptors":[{"prefix":"BODY","type":4}],
+        "types":[{"moveCount":3,"maxHealth":100,"radius":4}],"moves":[)";
+    writeTextFile(root / "critter/LICH.json", table + std::string(moves) + "]}");
+    return root;
+}
+
+TEST_CASE("a boss goes the update its death's hold runs out, counted from the last update its "
+          "death ran, fading over the last half second of it",
+          "[game][combatant][death][boss-death]") {
+    const s32 fps = GENERATE(30, 60, 120);
+    CAPTURE(fps);
+    const auto root = heldMoveBoss(R"({"name":"READY","anim":"STEP","type":32},
+        {"name":"DEATH","anim":"STEP","type":17,"priority":4095,"hold":2})");
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, bossDefinition("LICH"), 'G'));
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+    CHECK_FALSE(actor.deathPlayed());
+    EnemyHit hit;
+    hit.damage = 10000;
+    actor.hurt(hit);
+    REQUIRE(actor.dying());
+    CHECK_FALSE(actor.deathPlayed());
+    const s32 ticks = std::max(1, Combatant::kTicksPerSecond / fps);
+    const f32 seconds = 1.0f / static_cast<f32>(fps);
+    s32 lastRan = -1;
+    f32 held = 0;
+    s32 update = 0;
+    while (update < 10 * fps) {
+        ++update;
+        actor.update(ticks, seconds, {});
+        if (!actor.present()) {
+            break;
+        }
+        REQUIRE(actor.moveName() == "DEATH");
+        if (!actor.animation().finished()) {
+            lastRan = update;
+            CHECK_FALSE(actor.deathPlayed());
+            continue;
+        }
+        // CritterBossAI sets gBossDead from the first frame the death is done and its hold runs.
+        CHECK(actor.deathPlayed());
+        held += seconds;
+        const auto visuals = actor.visuals();
+        REQUIRE_FALSE(visuals.empty());
+        CHECK(visuals.front().alpha == Approx(std::clamp((2.0f - held) / 0.5f, 0.0f, 1.0f)));
+    }
+    REQUIRE(lastRan > 0);
+    REQUIRE_FALSE(actor.present());
+    // Sixty updates of 1/30 s come to just under two seconds in f32, so it goes on the 61st
+    // after its death last ran, one after the first finished one's sixtieth; 121 at 60 a second
+    // and 241 at 120.
+    CHECK(update - lastRan == heldUpdates(2, seconds));
+    CHECK(update - lastRan == (fps == 30 ? 61 : (fps == 60 ? 121 : 241)));
+}
+
+TEST_CASE("the update a boss goes in leaves its heads as the update before left them and sets "
+          "nothing else off",
+          "[game][combatant][death][boss-death]") {
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, test::headedBodyAssets(), bossDefinition("CHIMERA"), 'A'));
+    Combatant body;
+    REQUIRE(body.spawn(assets, 0, {}, 0, nullptr, {}, 'A'));
+    REQUIRE(body.childCount() == 2);
+    EnemyHit hit;
+    hit.damage = 100000;
+    body.hurt(hit);
+    REQUIRE(body.dying());
+    std::vector<AnimationPlayer> heads;
+    s32 update = 0;
+    while (body.present() && update < 600) {
+        heads.clear();
+        for (s32 id = 1; id <= 2; ++id) {
+            REQUIRE(body.child(id) != nullptr);
+            heads.push_back(body.child(id)->animation());
+        }
+        body.takeCues();
+        body.update(2, 1.0f / 30, {});
+        ++update;
+    }
+    REQUIRE_FALSE(body.present());
+    // CritterDelInst returns before the heads' step loop (0x8003a234): the heads' clocks stand
+    // as they were, and nothing the body would do later in the update is heard of.
+    for (s32 id = 1; id <= 2; ++id) {
+        CHECK(body.child(id)->animation() == heads[static_cast<usize>(id - 1)]);
+    }
+    CHECK(body.takeCues().empty());
+    CHECK(body.takeBlows().empty());
+    CHECK(body.takeGrabs().empty());
+}
+
+TEST_CASE("a boss's held move gives way to the next the update its hold runs out, counted from "
+          "the last update it ran, a linked entrance's as an attack's",
+          "[game][combatant][boss-attacks][move-hold]") {
+    const s32 fps = GENERATE(30, 60, 120);
+    CAPTURE(fps);
+    const s32 ticks = std::max(1, Combatant::kTicksPerSecond / fps);
+    const f32 seconds = 1.0f / static_cast<f32>(fps);
+    test::FakeRenderDevice device;
+    // Updates `actor` until it leaves move `name`: how many updates after the last one `name`'s
+    // animation ran that took, or -1 if it never left.
+    const auto leaves = [&](Combatant& actor, std::string_view name,
+                            std::span<const EnemyView> players) {
+        s32 lastRan = 0;
+        for (s32 update = 1; update < 20 * fps; ++update) {
+            actor.update(ticks, seconds, players);
+            if (actor.moveName() != name) {
+                return update - lastRan;
+            }
+            if (!actor.animation().finished()) {
+                lastRan = update;
+            }
+        }
+        return -1;
+    };
+    SECTION("PBOSS's SPOUT") {
+        const auto root = heldMoveBoss(R"({"name":"READY","anim":"STEP","type":32},
+            {"name":"SPOUT","anim":"STEP","type":135,"priority":20,"hold":1.5,"cooldown":1000,
+             "target":{"maxDistance":50}},
+            {"name":"DEATH","anim":"STEP","type":17,"priority":4095})");
+        CombatantAssets assets;
+        REQUIRE(assets.load(device, root, bossDefinition("LICH"), 'G'));
+        Combatant actor;
+        REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+        const std::array party{EnemyView{.player = 0, .position = Vec3{0, 0, 10}}};
+        for (s32 update = 0; update < fps && actor.moveName() != "SPOUT"; ++update) {
+            actor.update(ticks, seconds, party);
+        }
+        REQUIRE(actor.moveName() == "SPOUT");
+        CHECK(leaves(actor, "SPOUT", party) == heldUpdates(1.5f, seconds));
+    }
+    SECTION("the Wraith's START and START2") {
+        const auto root = heldMoveBoss(R"({"name":"READY","anim":"STEP","type":32},
+            {"name":"START","anim":"STEP","type":16,"priority":4095,"hold":2,"link":2},
+            {"name":"START2","anim":"STEP","type":16,"priority":4095,"hold":3.8})");
+        CombatantAssets assets;
+        REQUIRE(assets.load(device, root, bossDefinition("LICH"), 'G'));
+        Combatant actor;
+        REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+        REQUIRE(actor.moveName() == "START");
+        CHECK(leaves(actor, "START", {}) == heldUpdates(2, seconds));
+        REQUIRE(actor.moveName() == "START2");
+        CHECK(leaves(actor, "START2", {}) == heldUpdates(3.8f, seconds));
+        CHECK(actor.moveName() == "READY");
     }
 }
 

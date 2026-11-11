@@ -494,6 +494,11 @@ void Bosses::update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
     const Vec3 before = m_fighter.position();
     m_fighter.update(ticks, seconds, players);
     stageLegend(ticks);
+    // The rite runs on through the death throes until gBossDead, when world_update ends it
+    // (state 99, 0x80056d04-0x80056d14) after its turn of the frame the hold begins in.
+    if (m_fighter.deathPlayed()) {
+        m_sim.rite.conclude();
+    }
     if (!m_fighter.present()) {
         m_sim.defeat = before;
         m_sim.id.reset();
@@ -598,13 +603,7 @@ std::optional<Vec3> Bosses::takeDefeat() {
 f32 Bosses::hurt(const EnemyHit& hit, s32 partId) {
     // Asleep it takes nothing and is not woken by it (CritterDamage: state under two).
     if (m_sim.id.has_value() && m_sim.awake) {
-        const f32 credited = m_fighter.hurt(hit, partId);
-        if (!m_fighter.alive()) {
-            m_sim.rite.clear();
-            m_fighter.hold(false);
-            m_sim.legendEvents.clear();
-        }
-        return credited;
+        return m_fighter.hurt(hit, partId);
     }
     return 0;
 }

@@ -84,6 +84,36 @@ std::filesystem::path eyedBossAssets(const std::string& name, u32 typeFlags = 0)
     return root;
 }
 
+/** A synthetic boss archive for `name` that stands, roars and dies: a READY of a second, a ROAR
+ * of a fifth, and a DEATH of two seconds held two more, as every shipped boss's death is held. */
+std::filesystem::path dyingBossAssets(const std::string& name) {
+    const auto root = test::scratchDirectory(std::format("dying-boss-{}", name));
+    std::filesystem::create_directories(root / "critter");
+    const auto archive = root / "MONSTERS" / name;
+    std::filesystem::create_directories(archive / "models");
+    std::filesystem::create_directories(archive / "textures");
+    writeTextFile(archive / "models/body.obj",
+                  "v 0 0 0\nv 1 0 0\nv 0 1 0\nvn 0 0 1\nusemtl tex0\nf 1//1 2//1 3//1\n");
+    writeTextFile(archive / "objects.json", R"({"objects":[
+      {"index":0,"name":"BODY","file":"models/body.obj","meshTriangles":1}]})");
+    writeFile(archive / "textures/skin.png", test::kTinyPng);
+    writeTextFile(archive / "textures.json", R"({"bitmaps":[
+      {"index":0,"name":"SKIN","file":"textures/skin.png","width":2,"height":2,"flags":0}]})");
+    test::convertModelFixture(archive);
+    writeTextFile(archive / "animations.json", R"({"trees":[{"name":"BODY",
+      "nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
+      "sequences":[{"name":"READY","frames":30},{"name":"ROAR","frames":6},
+                   {"name":"DEATH","frames":60}]}]})");
+    writeTextFile(root / "critter" / (name + ".json"),
+                  std::format(R"({{"descriptors":[{{"prefix":"BODY","name":"{}","type":4}}],
+      "types":[{{"moveCount":3,"maxHealth":1000,"radius":3,"expValue":500}}],
+      "moves":[{{"name":"READY","anim":"READY","type":32,"priority":512,"interrupt":60}},
+               {{"name":"ROAR","anim":"ROAR","type":34,"priority":600}},
+               {{"name":"DEATH","anim":"DEATH","type":17,"priority":4095,"hold":2}}]}})",
+                              name));
+    return root;
+}
+
 /** CHIMERA's TYPE flags (0x82): aimed at by parts, and asleep it arms its wake only once its
  * floor's trigger moves it. */
 constexpr u32 kChimeraTypeFlags = CritterData::kByParts | CritterData::kSupportActivated;
@@ -647,6 +677,80 @@ TEST_CASE("Plague's lingering eye injury does not extend the opening's full-part
     hit.damage = 100;
     bosses.hurt(hit);
     CHECK(before - bosses.view().health == Approx((100 - 2) * 0.5f));
+}
+
+TEST_CASE("a legend item's rite runs on through its boss's death throes and ends, its weakness "
+          "unheard, once the death has played",
+          "[game][enemies][legend][boss-death]") {
+    test::FakeRenderDevice device;
+    Bosses bosses;
+    bosses.open(device, dyingBossAssets("YETI"), nullptr, {}, 'I');
+    REQUIRE(bosses.spawn(boss_type::kYeti, Vec3{0}, 0, 100));
+    REQUIRE(bosses.bringLegend(0));
+    bosses.wake();
+    const std::vector<EnemyView> party{playerAt({0, 0, 40})};
+    std::vector<LegendCue> heard;
+    const auto step = [&] {
+        bosses.update(kTicks, kStep, party);
+        for (const LegendEvent& event : bosses.takeLegendEvents()) {
+            heard.push_back(event.cue);
+        }
+        bosses.takeCues();
+        bosses.takeLosses();
+    };
+    const auto hears = [&](LegendCue cue) { return std::ranges::find(heard, cue) != heard.end(); };
+    const auto until = [&](LegendCue cue) {
+        for (s32 frame = 0; frame < 900 && !hears(cue); ++frame) {
+            step();
+        }
+        REQUIRE(hears(cue));
+    };
+    // The parchment's curb wears off 29 seconds after the roar, 870 updates of two ticks.
+    constexpr s32 kWearUpdates = 870;
+    s32 afterRoar = 0;
+    bool wearsOffDying = false;
+    SECTION("slain in the dark before its roar") {
+        until(LegendCue::Thrown);
+    }
+    SECTION("slain while its weakness wears off") {
+        until(LegendCue::Roared);
+        afterRoar = 60;
+    }
+    SECTION("slain with its weakness about to wear off") {
+        until(LegendCue::Roared);
+        afterRoar = kWearUpdates - 30; // a second left, well within its death
+        wearsOffDying = true;
+    }
+    for (s32 frame = 0; frame < afterRoar; ++frame) {
+        step();
+    }
+    REQUIRE(bosses.legend().running());
+    const bool dark = bosses.legend().darkens();
+    CHECK(dark == !hears(LegendCue::Roared));
+    EnemyHit lethal;
+    lethal.damage = 100000;
+    lethal.player = 0;
+    bosses.hurt(lethal);
+    REQUIRE(bosses.fighter().dying());
+    // world_update ends the rite only once gBossDead is set (state 99, 0x80056d04-0x80056d14):
+    // till then the dark of states 2 and 3 stays, a dying boss never roaring, and the curb of
+    // state 5 counts on.
+    for (s32 frame = 0; frame < 600 && !bosses.fighter().deathPlayed(); ++frame) {
+        CHECK(bosses.legend().running() != hears(LegendCue::WornOff));
+        CHECK(bosses.legend().darkens() == dark);
+        step();
+        REQUIRE(bosses.present());
+    }
+    REQUIRE(bosses.fighter().deathPlayed());
+    CHECK(hears(LegendCue::WornOff) == wearsOffDying);
+    CHECK(bosses.legend().stage() == LegendRite::Stage::Over);
+    CHECK_FALSE(bosses.legend().darkens());
+    const usize cues = heard.size();
+    for (s32 frame = 0; frame < 600 && bosses.present(); ++frame) {
+        step();
+    }
+    CHECK_FALSE(bosses.present());
+    CHECK(heard.size() == cues);
 }
 
 TEST_CASE("the genie selects projectile attacks and launches them from its animated body",

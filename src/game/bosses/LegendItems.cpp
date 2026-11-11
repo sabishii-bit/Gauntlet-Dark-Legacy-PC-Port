@@ -95,6 +95,12 @@ void LegendRite::clear() {
     m_wearLeft = 0.0f;
 }
 
+void LegendRite::conclude() {
+    if (running()) {
+        m_stage = Stage::Over;
+    }
+}
+
 std::vector<LegendCue> LegendRite::update(s32 ticks, bool bossRisen, bool bossRoarDone) {
     std::vector<LegendCue> cues;
     if (!running() || ticks <= 0) {
