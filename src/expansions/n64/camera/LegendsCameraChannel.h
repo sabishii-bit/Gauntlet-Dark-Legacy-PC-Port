@@ -23,6 +23,10 @@ public:
 
     explicit LegendsCameraChannel(bool angular = false) : m_angular{angular} {}
 
+    /** A vector's length in game.bin's order of sums, ((x^2 + y^2) + z^2), as the channels plan
+     * and step by it and the rig measures its return. */
+    static f32 length(const Vec3& value);
+
     /** The setters' shared part (e007d1d4, e007d2c0, e007d394, e007d584 and e007d67c): the
      * goal, and for a cut or a channel that was off the value too, at rest. The channel turns
      * on and plans with `times`. */

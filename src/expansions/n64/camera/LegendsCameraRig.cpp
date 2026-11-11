@@ -6,11 +6,7 @@
 
 namespace gdl::game {
 namespace {
-/** The length in the native order of sums, ((x^2 + y^2) + z^2). */
-f32 length(const Vec3& value) {
-    return std::sqrt(value.x * value.x + value.y * value.y + value.z * value.z);
-}
-
+/** The length across the floor, as the look and the return's rise take it. */
 f32 level(const Vec3& value) {
     return std::sqrt(value.x * value.x + value.z * value.z);
 }
@@ -68,7 +64,7 @@ void LegendsCameraRig::returnTo(const Vec3& eye, f32 pitch, f32 yaw) {
     // The distance and the orbit's angles back along the offset put the eye at `eye`: the orbit
     // looks from there, half a turn round from the offset's bearing.
     const Vec3 offset = eye - m_centre.goal();
-    m_distance.set({0, 0, length(offset)}, false, m_times);
+    m_distance.set({0, 0, LegendsCameraChannel::length(offset)}, false, m_times);
     const f32 bearing = portable::atan2(offset.x, offset.z);
     const f32 rise = portable::atan2(offset.y, level(offset));
     m_orbit.set({-rise, bearing - kPi, 0}, false, m_times);

@@ -27,15 +27,14 @@ f32 wrap(f32 angle) {
     return angle;
 }
 
-/** The length in the native order of sums, ((x^2 + y^2) + z^2). */
-f32 length(const Vec3& value) {
-    return std::sqrt(value.x * value.x + value.y * value.y + value.z * value.z);
-}
-
 bool still(const Vec3& remaining) {
     return glm::all(glm::lessThan(glm::abs(remaining), Vec3{kStill}));
 }
 } // namespace
+
+f32 LegendsCameraChannel::length(const Vec3& value) {
+    return std::sqrt(value.x * value.x + value.y * value.y + value.z * value.z);
+}
 
 void LegendsCameraChannel::set(const Vec3& goal, bool cut, const Times& times) {
     m_goal = goal;
