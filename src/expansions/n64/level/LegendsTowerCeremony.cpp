@@ -85,6 +85,10 @@ constexpr f32 kRuneFadeSeconds = .8f;
 constexpr f32 kRuneFlightScale = 1.8f;
 constexpr u64 kAllRunestones = 0x1fff;
 
+/// Door indices in e08653bc's priority: it assigns Town, Ice, Battlefield, then Castle, and the
+/// last assignment wins.
+constexpr std::array<usize, 4> kDoorPriority{1, 3, 2, 0};
+
 // e0865c98's counts and frames.
 constexpr s32 kOpeningCount = 41;
 constexpr s32 kDoorSpellCount = 6;
@@ -115,6 +119,14 @@ constexpr u64 kWholeWindow = 15;
 constexpr f32 kCaptionFade = .3f;
 constexpr u8 kWhite = 255;
 constexpr f32 kByteScale = 255;
+
+/** The party's progress less some of its Tower pieces. */
+LegendsProgress without(LegendsProgress party, const LegendsProgress& pieces) {
+    party.runestones &= ~pieces.runestones;
+    party.shards &= ~pieces.shards;
+    party.obelisks &= ~pieces.obelisks;
+    return party;
+}
 } // namespace
 
 LegendsTowerCeremony LegendsTowerCeremony::decode(std::span<const u8> overlay) {
@@ -151,8 +163,9 @@ void LegendsTowerCeremony::begin(const LegendsProgress& before, const LegendsPro
     m_started = false;
     m_entries.clear();
     m_next = 0;
-    m_displayed = after;
     m_owned = after;
+    m_withheld = {};
+    m_unrevealed = {};
     m_captions.clear();
     m_sounds.clear();
     // e0862fc4 shows CATH_BEAM and the whole panes only when the seen shards make the window.
@@ -163,37 +176,49 @@ void LegendsTowerCeremony::begin(const LegendsProgress& before, const LegendsPro
     if (!before.valid() || !after.valid()) {
         return;
     }
-    m_displayed.runestones &= before.runestones;
-    m_displayed.shards &= before.shards;
-    m_displayed.obelisks &= before.obelisks;
-    auto count = static_cast<usize>(std::popcount(before.runestones & kAllRunestones));
-    // e0862220 chooses the lowest pending rune. e08653bc's final assignment
-    // gives Castle, Battlefield, Ice, Town priority. e0863364 takes the highest
-    // pending shard. Keep this order when several players bring pieces home.
-    for (usize i = 0; i < 13; ++i) {
-        if ((after.runestones & ~before.runestones & (u64{1} << i)) != 0) {
-            m_entries.push_back({Kind::Rune, i, {m_runeCaptions[count++]}});
-        }
+    m_owned.runestones |= before.runestones;
+    m_owned.shards |= before.shards;
+    m_owned.obelisks |= before.obelisks;
+    // e0862220 selects the lowest new stone, captioned by e086aec8's count of the seen ones, and
+    // sets e086af00 when the stones make all thirteen.
+    if (const u64 runes = after.runestones & ~before.runestones & kAllRunestones; runes != 0) {
+        const auto seen = static_cast<usize>(std::popcount(before.runestones & kAllRunestones));
+        const bool whole = (m_owned.runestones & kAllRunestones) == kAllRunestones;
+        m_entries.push_back({.kind = Kind::Rune,
+                             .index = static_cast<usize>(std::countr_zero(runes)),
+                             .captions = {m_runeCaptions[seen]},
+                             .completesRunes = whole});
+        m_withheld.runestones = runes;
+        m_unrevealed.runestones = whole ? runes : 0;
     }
-    // e0862220 sets e086af00 when the stones make all thirteen: the last of them returns early.
-    if (!m_entries.empty() &&
-        ((before.runestones | after.runestones) & kAllRunestones) == kAllRunestones) {
-        m_entries.back().completesRunes = true;
-    }
-    for (const usize i : {1U, 3U, 2U, 0U}) {
+    // e08653bc selects the newly opened door it ranks first; e0864e7c builds the others open.
+    for (const usize i : kDoorPriority) {
         const auto required = LegendsTowerProgress::kDoorObelisks[i];
         if ((after.obelisks & required) == required && (before.obelisks & required) != required) {
             m_entries.push_back({Kind::Door, i, captions(m_doorCaptions[i])});
+            m_withheld.obelisks = required & ~before.obelisks;
+            break;
         }
     }
-    for (usize i = 4; i-- > 0;) {
-        if ((after.shards & ~before.shards & (u64{1} << i)) != 0) {
-            m_entries.push_back({Kind::Shard, i, captions(m_shardCaptions[i])});
-        }
+    // e0863364 selects the highest new shard and sets e086ae04 when the shards make the window.
+    if (const u64 shards = after.shards & ~before.shards & kWholeWindow; shards != 0) {
+        const auto index = static_cast<usize>(std::bit_width(shards)) - 1;
+        const bool whole = (m_owned.shards & kWholeWindow) == kWholeWindow;
+        m_entries.push_back({.kind = Kind::Shard,
+                             .index = index,
+                             .captions = captions(m_shardCaptions[index]),
+                             .completesWindow = whole});
+        m_withheld.shards = shards;
+        m_unrevealed.shards = whole ? shards : 0;
     }
-    if (!pending()) {
-        m_displayed = after;
-    }
+}
+
+LegendsProgress LegendsTowerCeremony::displayed(const LegendsProgress& party) const {
+    return without(party, m_withheld);
+}
+
+LegendsProgress LegendsTowerCeremony::completed(const LegendsProgress& party) const {
+    return without(party, m_unrevealed);
 }
 
 const LegendsTowerCeremony::Entry* LegendsTowerCeremony::current() const {
@@ -425,13 +450,15 @@ bool LegendsTowerCeremony::runeScript(const Entry& entry) {
         } else if (pose == static_cast<s32>(kFlightPoses)) {
             // The stone lands in its final pose with 0x8a; the settle slot follows.
             m_flightFrame = -1;
-            m_displayed.runestones |= u64{1} << entry.index;
+            m_withheld.runestones &= ~(u64{1} << entry.index);
             m_sounds.push_back(kRuneLandingSound);
             m_settledAt = now + 1;
         }
     }
-    // The thirteenth stone returns at its settle stamp (slot 0), the others 30 later.
+    // The thirteenth stone returns at its settle stamp (slot 0), the others 30 later. That
+    // stamp also turns the rune portal on (e086aec0).
     if (m_settledAt >= 0 && now == m_settledAt + (entry.completesRunes ? 0 : kRuneSettleUpdates)) {
+        m_unrevealed.runestones = 0;
         return true;
     }
     // The stage is read before MKRU starts, so the release test first runs on the next update.
@@ -531,9 +558,9 @@ bool LegendsTowerCeremony::doorScript(const Entry& entry) {
         break;
     }
     case DoorCase::Release:
-        // The door's held animation goes on; the adapter plays 0x10 from the displayed bits.
+        // The door's held animation goes on; the adapter plays 0x10 as the door shows open.
         m_count = 0;
-        m_displayed.obelisks |= LegendsTowerProgress::kDoorObelisks[entry.index];
+        m_withheld.obelisks &= ~u64{LegendsTowerProgress::kDoorObelisks[entry.index]};
         m_doorCase = DoorCase::Closing;
         break;
     case DoorCase::Closing:
@@ -573,7 +600,7 @@ bool LegendsTowerCeremony::shardScript(const Entry& entry) {
     case ShardCase::Install:
         // The pane shows, clear and white, once SHD1 has ended.
         if (m_gesture.done) {
-            m_displayed.shards |= u64{1} << entry.index;
+            m_withheld.shards &= ~(u64{1} << entry.index);
             m_paneBytes = PaneBytes{kTransparent, kWhite};
             m_count = 0;
             m_shardCase = ShardCase::Rest;
@@ -602,16 +629,18 @@ bool LegendsTowerCeremony::shardScript(const Entry& entry) {
         perform(kShardRestore);
         m_readySuppressed = false;
         m_count = 0;
-        if ((m_displayed.shards & kWholeWindow) != kWholeWindow) {
+        if (!entry.completesWindow) {
             m_shardCase = ShardCase::Closing;
             break;
         }
-        // The fourth shard (e086ae04) turns to the window, queues its captions and
-        // unhides CATH_BEAM fully transparent.
+        // A shard that makes the window (e086ae04) turns to it, queues its captions and
+        // unhides CATH_BEAM fully transparent; the completed window shows from here, even
+        // with a new pane left for the next visit.
         shot(m_shardFocus - Vec3{0, kWindowFocusDrop, 0}, kWindowShotDistance, kWindowShotPitch);
         queueCaptions(captions(m_windowCaptions));
         m_beamShown = true;
         m_beamTransparency = kTransparent;
+        m_unrevealed.shards = 0;
         m_shardCase = ShardCase::WindowWait;
         break;
     case ShardCase::WindowWait:
@@ -677,11 +706,11 @@ void LegendsTowerCeremony::tick() {
         attends = true;
         break;
     case Dispatch::HandBack:
-        // Case 0x3c (e0861260) cuts the captions, restarts REDY and resumes play.
-        // Ownership was committed before the ceremony began.
+        // Case 0x3c (e0861260) cuts the captions, restarts REDY and resumes play. Ownership
+        // was committed before the ceremony began; the pieces it left undrawn stay so for
+        // the rest of the visit.
         m_captions.clear();
         play(kReady);
-        m_displayed = m_owned;
         m_started = false;
         break;
     }

@@ -14,6 +14,7 @@
 
 #include "TestSupport.h"
 #include "expansions/n64/level/LegendsTowerCeremony.h"
+#include "expansions/n64/level/LegendsTowerProgress.h"
 
 namespace {
 using namespace gdl;
@@ -99,7 +100,7 @@ TEST_CASE("N64 active podium state dispatches the six-choice Sumner menu with it
     CHECK(word(options + 6 * 32) == 0xffffffffU);
 }
 
-TEST_CASE("N64 ceremonies distinguish installed progress and follow native dispatch priority",
+TEST_CASE("N64 Tower setup presents one new piece of each kind and leaves the rest for later",
           "[legends][tower-ceremony][assets]") {
     auto value = ceremony();
     LegendsProgress old;
@@ -111,33 +112,49 @@ TEST_CASE("N64 ceremonies distinguish installed progress and follow native dispa
     now.obelisks = 255;
     value.begin(old, now);
     CHECK_FALSE(value.active());
-    REQUIRE(value.entries().size() == 19);
-    for (usize i = 0; i < 12; ++i) {
-        CHECK(value.entries()[i].kind == LegendsTowerCeremony::Kind::Rune);
-        CHECK(value.entries()[i].index == i + 1);
-        CHECK(value.entries()[i].captions == std::vector<u32>{542U + static_cast<u32>(i)});
-        // Only the stone that makes all thirteen returns as it settles (e086af00).
-        CHECK(value.entries()[i].completesRunes == (i == 11));
-    }
-    constexpr std::array<usize, 4> kOrder{1, 3, 2, 0};
-    // The Ice door's second line is the empty 526, which the queue skips.
-    const std::array<std::vector<u32>, 4> doorCaptions{
-        std::vector<u32>{523, 524}, std::vector<u32>{529, 530}, std::vector<u32>{525},
-        std::vector<u32>{527, 528}};
-    for (usize i = 0; i < 4; ++i) {
-        CHECK(value.entries()[12 + i].kind == LegendsTowerCeremony::Kind::Door);
-        CHECK(value.entries()[12 + i].index == kOrder[i]);
-        CHECK(value.entries()[12 + i].captions == doorCaptions[i]);
-    }
-    CHECK(value.entries()[16].index == 3);
-    CHECK(value.entries()[16].captions == std::vector<u32>{535, 536});
-    CHECK(value.entries()[17].index == 2);
-    CHECK(value.entries()[17].captions == std::vector<u32>{537, 538});
-    CHECK(value.entries()[18].index == 1);
-    CHECK(value.entries()[18].captions == std::vector<u32>{533, 534});
+    // e0862220 takes the lowest new stone, captioned by e086aec8's one seen stone; e08653bc
+    // takes the Castle door; e0863364 takes the highest new shard.
+    REQUIRE(value.entries().size() == 3);
+    const auto& rune = value.entries()[0];
+    CHECK(rune.kind == LegendsTowerCeremony::Kind::Rune);
+    CHECK(rune.index == 1);
+    CHECK(rune.captions == std::vector<u32>{542});
+    CHECK(rune.completesRunes);
+    const auto& door = value.entries()[1];
+    CHECK(door.kind == LegendsTowerCeremony::Kind::Door);
+    CHECK(door.index == 1);
+    CHECK(door.captions == std::vector<u32>{523, 524});
+    const auto& shard = value.entries()[2];
+    CHECK(shard.kind == LegendsTowerCeremony::Kind::Shard);
+    CHECK(shard.index == 3);
+    CHECK(shard.captions == std::vector<u32>{535, 536});
+    CHECK(shard.completesWindow);
     CHECK(value.displayedProgress().runestones == old.runestones);
     CHECK(value.displayedProgress().shards == old.shards);
+    // e0864e7c builds the Town, Ice and Battlefield doors already open.
+    CHECK(LegendsTowerProgress::of(value.displayedProgress()).doors ==
+          std::array{true, false, true, true});
     CHECK(now.runestones == 0x1fff); // Presentation does not own/save the award.
+    value.start({}, {});
+    std::vector<u32> shown;
+    for (s32 i = 0; i < 3000 && value.active(); ++i) {
+        if (const auto caption = value.caption();
+            caption && (shown.empty() || shown.back() != *caption)) {
+            shown.push_back(*caption);
+        }
+        value.update(kTick);
+    }
+    CHECK_FALSE(value.active());
+    // Each script runs once; the shard that makes the window still turns to it.
+    CHECK(shown == std::vector<u32>{542, 523, 524, 535, 536, 539, 540});
+    // The other eleven stones and two panes stay undrawn for the rest of the visit, while the
+    // window and the rune portal show the completions.
+    CHECK(value.displayedProgress().runestones == 3);
+    CHECK(value.displayedProgress().shards == 9);
+    CHECK(value.displayedProgress().obelisks == 255);
+    const auto completed = LegendsTowerProgress::of(value.completed(now));
+    CHECK(completed.cathedralBeam);
+    CHECK(completed.runestonePortal);
     value.begin(now, now);
     CHECK_FALSE(value.pending());
     CHECK(value.displayedProgress() == now);
@@ -292,6 +309,59 @@ TEST_CASE("N64 runestone completing thirteen returns on the update after it land
     }
 }
 
+TEST_CASE("N64 Tower return places only the lowest new runestone and leaves the other undrawn",
+          "[legends][tower-ceremony]") {
+    auto value = nativeCeremony();
+    LegendsProgress before;
+    before.runestones = 1;
+    LegendsProgress after;
+    after.runestones = 0b111;
+    value.begin(before, after);
+    // e0862220 breaks at the lowest new stone; the dispatcher runs its script once.
+    REQUIRE(value.entries().size() == 1);
+    CHECK(value.entries()[0].kind == LegendsTowerCeremony::Kind::Rune);
+    CHECK(value.entries()[0].index == 1);
+    CHECK_FALSE(value.entries()[0].completesRunes);
+    value.start({}, {});
+    for (s32 tick = 1; tick <= 232; ++tick) {
+        CAPTURE(tick);
+        value.update(kTick);
+        // Stone 1 keeps a lone stone's clock; e0861630 drew only the seen stone 0.
+        CHECK(value.displayedProgress().runestones == (tick >= 144 ? 0b011U : 0b001U));
+        CHECK(value.active() == (tick < 232));
+    }
+    // Stone 2 stays undrawn for the rest of the visit; a stone gained later shows at once.
+    CHECK(value.displayed(after).runestones == 0b011);
+    LegendsProgress later = after;
+    later.runestones |= 1U << 5;
+    CHECK(value.displayed(later).runestones == 0b100011);
+}
+
+TEST_CASE("N64 thirteen stones made by two new ones open the rune portal as the first settles",
+          "[legends][tower-ceremony]") {
+    auto value = nativeCeremony();
+    LegendsProgress before;
+    before.runestones = 0x1ffc;
+    LegendsProgress after;
+    after.runestones = 0x1fff;
+    value.begin(before, after);
+    // e0862220 sets e086af00 from the seen and new stones together.
+    REQUIRE(value.entries().size() == 1);
+    CHECK(value.entries()[0].index == 0);
+    CHECK(value.entries()[0].completesRunes);
+    CHECK_FALSE(LegendsTowerProgress::of(value.completed(after)).runestonePortal);
+    value.start({}, {});
+    for (s32 tick = 1; tick <= 202; ++tick) {
+        CAPTURE(tick);
+        value.update(kTick);
+        // Stone 0 lands on 144 and its script returns at its settle stamp on 145, where
+        // e086239c turns the portal on (e086aec0); stone 1 stays undrawn.
+        CHECK(value.displayedProgress().runestones == (tick >= 144 ? 0x1ffdU : 0x1ffcU));
+        CHECK(LegendsTowerProgress::of(value.completed(after)).runestonePortal == (tick >= 145));
+        CHECK(value.active() == (tick < 202));
+    }
+}
+
 TEST_CASE("N64 runestone ceremony releases the stone at frame 14 of whatever Sumner plays",
           "[legends][tower-ceremony]") {
     LegendsProgress now;
@@ -427,6 +497,49 @@ TEST_CASE("N64 door ceremony lets REDY carry the door past a short or absent ODO
     }
 }
 
+TEST_CASE("N64 Tower return opens only the new door e08653bc ranks first",
+          "[legends][tower-ceremony]") {
+    // Doors stand Town, Castle, Ice, Battlefield, wanting obelisks 0x60, 0x07, 0x18 and 0x80;
+    // e08653bc ranks Castle, Battlefield, Ice, then Town.
+    struct Return {
+        u64 before;
+        u64 after;
+        usize selected;
+        std::array<bool, 4> open; ///< the doors e0864e7c builds open at the setup
+    };
+    constexpr std::array<Return, 5> kReturns{{{0, 0xff, 1, {true, false, true, true}},
+                                              {0, 0xf8, 3, {true, false, true, false}},
+                                              {0, 0x78, 2, {true, false, false, false}},
+                                              {0, 0x60, 0, {false, false, false, false}},
+                                              {0x01, 0x87, 1, {false, false, false, true}}}};
+    for (const auto& visit : kReturns) {
+        CAPTURE(visit.after);
+        auto value = nativeCeremony();
+        LegendsProgress before;
+        before.obelisks = visit.before;
+        LegendsProgress after;
+        after.obelisks = visit.after;
+        value.begin(before, after);
+        // e08653bc's last assignment wins; the doors it does not select get no script.
+        REQUIRE(value.entries().size() == 1);
+        CHECK(value.entries()[0].kind == LegendsTowerCeremony::Kind::Door);
+        CHECK(value.entries()[0].index == visit.selected);
+        CHECK(LegendsTowerProgress::of(value.displayedProgress()).doors == visit.open);
+    }
+    // The Castle door opens on a lone door's clock, the other three open throughout.
+    auto value = nativeCeremony();
+    LegendsProgress after;
+    after.obelisks = 0xff;
+    value.begin({}, after);
+    value.start({}, {});
+    for (s32 tick = 1; tick <= 358; ++tick) {
+        CAPTURE(tick);
+        value.update(kTick);
+        CHECK(value.displayedProgress().obelisks == (tick >= 259 ? 0xffU : 0xf8U));
+        CHECK(value.active() == (tick < 358));
+    }
+}
+
 TEST_CASE("N64 ceremonies hand back where retail would wait for a frame no gesture reaches",
           "[legends][tower-ceremony]") {
     SECTION("no gestures are bound") {
@@ -549,6 +662,57 @@ TEST_CASE("N64 last shard reveals the window on case 9's counts", "[legends][tow
         value.update(kTick);
     }
     CHECK_FALSE(value.active());
+}
+
+TEST_CASE("N64 Tower return installs only the highest new shard and keeps the other pane hidden",
+          "[legends][tower-ceremony]") {
+    auto value = nativeCeremony();
+    LegendsProgress after;
+    after.shards = 0b0101;
+    value.begin({}, after);
+    // e0863364 keeps the highest new shard; the dispatcher runs its script once.
+    REQUIRE(value.entries().size() == 1);
+    CHECK(value.entries()[0].kind == LegendsTowerCeremony::Kind::Shard);
+    CHECK(value.entries()[0].index == 2);
+    CHECK_FALSE(value.entries()[0].completesWindow);
+    value.start({}, {});
+    for (s32 tick = 1; tick <= 260; ++tick) {
+        CAPTURE(tick);
+        value.update(kTick);
+        // Case 4 unhides only the selected pane, on a lone shard's clock.
+        CHECK(value.displayedProgress().shards == (tick >= 113 ? 0b0100U : 0U));
+        CHECK(value.active() == (tick < 260));
+    }
+    CHECK(value.displayed(after).shards == 0b0100);
+}
+
+TEST_CASE("N64 window made by two new shards still turns to its reveal",
+          "[legends][tower-ceremony]") {
+    auto value = nativeCeremony();
+    LegendsProgress before;
+    before.shards = 0b0011;
+    LegendsProgress after;
+    after.shards = 0b1111;
+    value.begin(before, after);
+    // e0863364 sets e086ae04 from the seen and new shards together.
+    REQUIRE(value.entries().size() == 1);
+    CHECK(value.entries()[0].index == 3);
+    CHECK(value.entries()[0].completesWindow);
+    value.start({}, {});
+    for (s32 tick = 1; tick <= 394; ++tick) {
+        CAPTURE(tick);
+        value.update(kTick);
+        // A fourth shard's counts: case 7 (161) unhides the beam and case 9 fades it from 214.
+        const s32 count = std::clamp(tick - 214, 0, 40);
+        const s32 transparency = (40 - count) * 255 / 40;
+        CHECK(value.windowReveal() == Catch::Approx(static_cast<f32>(count) / 40));
+        CHECK(value.cathedralBeamOpacity() ==
+              Catch::Approx(static_cast<f32>(255 - transparency) / 255));
+        // Pane 2 stays hidden, but the window's completion shows from the turn to it.
+        CHECK(value.displayedProgress().shards == (tick >= 113 ? 0b1011U : 0b0011U));
+        CHECK(LegendsTowerProgress::of(value.completed(after)).cathedralBeam == (tick >= 161));
+        CHECK(value.active() == (tick < 394));
+    }
 }
 
 TEST_CASE("N64 ceremonies select each entry on the update after the last one returns",

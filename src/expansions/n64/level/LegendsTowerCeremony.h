@@ -27,8 +27,11 @@ public:
         Kind kind = Kind::Rune;
         usize index = 0;
         std::vector<u32> captions;
-        /** The stone completes all thirteen (e086af00): its script returns as it settles. */
+        /** The stones make all thirteen (e086af00): its script returns as it settles, and
+         * the rune portal waits for that. */
         bool completesRunes = false;
+        /** The shards make the window (e086ae04): its script turns to the window's reveal. */
+        bool completesWindow = false;
     };
     struct Sequence {
         std::string name;
@@ -41,7 +44,8 @@ public:
     /** Sumner's gestures as bindSequences received them. */
     std::span<const Sequence> sequences() const { return m_sequences; }
     /** Only the completed travel path supplies before/after. Loading an existing
-     * save never manufactures a newly acquired piece. */
+     * save never manufactures a newly acquired piece. Setup e08694e4 selects one new
+     * piece of each kind for the dispatcher, which runs each selected script once. */
     void begin(const LegendsProgress& before, const LegendsProgress& after);
     bool pending() const { return m_next < m_entries.size(); }
     bool active() const { return m_started; }
@@ -51,7 +55,17 @@ public:
     void update(f32 seconds);
     std::span<const Entry> entries() const { return m_entries; }
     const Entry* current() const;
-    const LegendsProgress& displayedProgress() const { return m_displayed; }
+    /** The party's pieces as this visit draws them: a selected piece shows once its script
+     * places it, and the other new stones and panes stay undrawn until the next visit
+     * (e0861630 draws the seen stones, e0862fc4 hides the new panes). e0864e7c builds the
+     * doors it did not select already open. */
+    LegendsProgress displayed(const LegendsProgress& party) const;
+    /** The party's progress as the completed window and the rune portal show it: a
+     * completion this visit brings waits for its reveal, the window's turn (e086ae04) or
+     * the thirteenth stone's settling (e086aec0). */
+    LegendsProgress completed(const LegendsProgress& party) const;
+    /** displayed() for the party begin() was given. */
+    LegendsProgress displayedProgress() const { return displayed(m_owned); }
     std::string_view gesture() const { return m_gesture.name; }
     /** The frame Sumner shows: a reversed sequence counts back from its end. */
     f32 gestureFrame() const;
@@ -188,8 +202,9 @@ private:
     Vec3 m_shardFocus{0};
     std::vector<Sequence> m_sequences;
     std::vector<Entry> m_entries;
-    LegendsProgress m_displayed;
-    LegendsProgress m_owned;
+    LegendsProgress m_owned;      ///< begin()'s party with the pieces seen before it
+    LegendsProgress m_withheld;   ///< pieces this visit does not draw (yet)
+    LegendsProgress m_unrevealed; ///< pieces whose completion waits for its reveal
     usize m_next = 0;
     bool m_started = false;
     f64 m_remainder = 0;

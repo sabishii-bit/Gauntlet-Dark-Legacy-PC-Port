@@ -94,6 +94,19 @@ std::vector<ImmediateVertex> relicVertices(const test::FakeRenderDevice& device,
     return result;
 }
 
+/** The console identity of the bound fixture with this tree standing at this place. */
+s32 fixtureId(const LegendsSceneAdapter& scene, std::string_view name, const Vec3& near) {
+    for (usize index = 0; index < scene.fixtureCount(); ++index) {
+        const auto id = LegendsSceneAdapter::kFixtureObjectBase + static_cast<s32>(index);
+        if (const auto object = scene.fixtureObject(id);
+            object && object->name == name && glm::distance(object->position, near) < 1) {
+            return id;
+        }
+    }
+    FAIL("Native Tower artwork " << name << " was not bound");
+    return -1;
+}
+
 TEST_CASE("Native Tower realm barriers use only the attending N64 obelisk union",
           "[legends][progression-scene][tower][assets]") {
     const auto root = nativeRoot();
@@ -334,6 +347,153 @@ TEST_CASE("The N64 cathedral beam waits for the window ceremony's fade and stays
         CHECK(scene->worldObjectVisible(beamIndex));
     }
     CHECK_FALSE(ceremony->active());
+}
+
+TEST_CASE("An N64 Tower return builds its unselected new doors open without their cue",
+          "[legends][progression-scene][tower][tower-ceremony][assets]") {
+    const auto root = nativeRoot();
+    const auto directory = root / "levels/tower2";
+    auto map = nativeMap(directory);
+    const auto config = formats::decodeLegendsN64Tower(readFile(root / "_program/Tower.bin"));
+    test::FakeRenderDevice device;
+    auto scene = LegendsSceneAdapter::load(device, LegendsPlatform::N64, directory, map);
+    // A closed door turns back a step into its contact cylinder.
+    const auto closed = [&](u8 obelisks) {
+        const auto door = std::ranges::find(config.doors, obelisks,
+                                            &formats::LegendsN64TowerDoor::requiredObelisks);
+        REQUIRE(door != config.doors.end());
+        const Vec3 to = door->triggerPosition;
+        const Vec3 from = to + Vec3{door->triggerRadius + 4, 0, 0};
+        return scene->resolveMovement(from, to, 1, 6) != to;
+    };
+    constexpr u8 kCastle = 0x07;
+    constexpr u8 kIce = 0x18;
+    CharacterSave save;
+    const std::array<const CharacterSave*, 1> party{&save};
+    LegendsProgress after;
+    after.obelisks = kCastle | kIce;
+    save.progress().legendsProgress(LegendsPlatform::N64) = after;
+    scene->synchronizeProgress(party);
+    REQUIRE_FALSE(closed(kCastle));
+    REQUIRE_FALSE(closed(kIce));
+    scene->queueTowerCeremonies({}, after);
+    // e08653bc selects Castle over Ice; e0864e7c builds the Ice door open, with no 0x10.
+    CHECK(closed(kCastle));
+    CHECK_FALSE(closed(kIce));
+    CHECK(scene->takeSounds().empty());
+    scene->startTowerCeremonies({}, {});
+    const auto* ceremony = scene->towerCeremony();
+    REQUIRE(ceremony);
+    REQUIRE(ceremony->active());
+    std::vector<s32> opened;
+    for (s32 tick = 1; tick <= 358; ++tick) {
+        CAPTURE(tick);
+        scene->update(1.0f / 30);
+        scene->synchronizeProgress(party);
+        for (const auto& sound : scene->takeSounds()) {
+            if (sound.token == 0x10) {
+                opened.push_back(tick);
+            }
+        }
+        CHECK(closed(kCastle) == (tick < 259));
+        CHECK_FALSE(closed(kIce));
+    }
+    CHECK_FALSE(ceremony->active());
+    // Only the selected door's case 7 plays 0x10.
+    CHECK(opened == std::vector<s32>{259});
+}
+
+TEST_CASE("A window two new N64 shards complete is revealed with the other new pane left out",
+          "[legends][progression-scene][tower][native-tower-window][tower-ceremony][assets]") {
+    const auto root = nativeRoot();
+    const auto directory = root / "levels/tower2";
+    auto map = nativeMap(directory);
+    const auto config = formats::decodeLegendsN64Tower(readFile(root / "_program/Tower.bin"));
+    const auto shardImages = texturePixels(root, config.shards);
+    const auto beam = std::ranges::find(map.objects, "CATH_BEAM", &formats::LegendsMapObject::name);
+    REQUIRE(beam != map.objects.end());
+    const auto beamIndex = static_cast<usize>(beam - map.objects.begin());
+    test::FakeRenderDevice device;
+    auto scene = LegendsSceneAdapter::load(device, LegendsPlatform::N64, directory, map);
+    CharacterSave save;
+    const std::array<const CharacterSave*, 1> party{&save};
+    LegendsProgress before;
+    before.shards = 0b0011;
+    LegendsProgress after;
+    after.shards = 0b1111;
+    save.progress().legendsProgress(LegendsPlatform::N64) = after;
+    scene->synchronizeProgress(party);
+    scene->queueTowerCeremonies(before, after);
+    std::array<s32, 4> panes{};
+    for (usize i = 0; i < panes.size(); ++i) {
+        panes[i] = fixtureId(*scene, config.shards[i].model, Vec3{config.shards[i].placement[3]});
+    }
+    const s32 exit = fixtureId(*scene, "TRAP:EXNR", {0, 1, -30});
+    CHECK_FALSE(scene->worldObjectVisible(beamIndex));
+    scene->startTowerCeremonies({}, {});
+    const auto* ceremony = scene->towerCeremony();
+    REQUIRE(ceremony);
+    for (s32 tick = 0; tick < 2000 && ceremony->active(); ++tick) {
+        scene->update(1.0f / 30);
+        scene->synchronizeProgress(party);
+    }
+    REQUIRE_FALSE(ceremony->active());
+    // e0863440 case 9 faded the whole window in, but case 4 unhid only pane 3; pane 2 waits
+    // for the next visit.
+    CHECK(scene->worldObjectVisible(beamIndex));
+    for (usize i = 0; i < panes.size(); ++i) {
+        CAPTURE(i);
+        CHECK(scene->fixtureObject(panes[i])->visible == (i != 2));
+    }
+    capture(*scene, device);
+    const auto drawn = relicVertices(device, shardImages);
+    REQUIRE_FALSE(drawn.empty());
+    CHECK(std::ranges::all_of(drawn, [](const auto& vertex) { return vertex.color.a == 255; }));
+    // The completed window's exit shows as a visitor charges it.
+    const std::array visitors{LegendsPortalVisitor{0, {0, 1, -30}}};
+    REQUIRE_FALSE(scene->tickPortals(visitors, .5f));
+    CHECK(scene->fixtureObject(exit)->visible);
+}
+
+TEST_CASE("Thirteen N64 stones two new ones complete light the circle with the other left out",
+          "[legends][progression-scene][tower][tower-ceremony][assets]") {
+    const auto root = nativeRoot();
+    const auto directory = root / "levels/tower2";
+    auto map = nativeMap(directory);
+    const auto config = formats::decodeLegendsN64Tower(readFile(root / "_program/Tower.bin"));
+    test::FakeRenderDevice device;
+    auto scene = LegendsSceneAdapter::load(device, LegendsPlatform::N64, directory, map);
+    CharacterSave save;
+    const std::array<const CharacterSave*, 1> party{&save};
+    LegendsProgress before;
+    before.runestones = 0x1ffc;
+    LegendsProgress after;
+    after.runestones = 0x1fff;
+    save.progress().legendsProgress(LegendsPlatform::N64) = after;
+    scene->synchronizeProgress(party);
+    scene->queueTowerCeremonies(before, after);
+    std::array<s32, 2> stones{};
+    for (usize i = 0; i < stones.size(); ++i) {
+        stones[i] =
+            fixtureId(*scene, config.runestones[i].model, Vec3{config.runestones[i].placement[3]});
+        CHECK_FALSE(scene->fixtureObject(stones[i])->visible);
+    }
+    const s32 fire = fixtureId(*scene, "BOSSDEATHFX:", {1.5f, -40, 14});
+    scene->startTowerCeremonies({}, {});
+    const auto* ceremony = scene->towerCeremony();
+    REQUIRE(ceremony);
+    for (s32 tick = 0; tick < 2000 && ceremony->active(); ++tick) {
+        scene->update(1.0f / 30);
+        scene->synchronizeProgress(party);
+    }
+    REQUIRE_FALSE(ceremony->active());
+    // e0862220 selected stone 0; stone 1 waits for the next visit, yet the circle is complete
+    // (e086af00) and e0864914 creates its fire on first contact.
+    CHECK(scene->fixtureObject(stones[0])->visible);
+    CHECK_FALSE(scene->fixtureObject(stones[1])->visible);
+    const std::array visitors{LegendsPortalVisitor{0, {1.5f, 0, 14}}};
+    REQUIRE_FALSE(scene->tickPortals(visitors, .25f));
+    CHECK(scene->fixtureObject(fire)->visible);
 }
 
 TEST_CASE("The N64 Tower binds Sumner's ceremony gestures with their WIZMOVES timing and loop",
@@ -768,19 +928,8 @@ TEST_CASE("Tower completion portal artwork follows native contact rather than in
     progress.shards = 0xf;
     const std::array<const CharacterSave*, 1> party{&save};
     scene->synchronizeProgress(party);
-    const auto fixture = [&](std::string_view name, Vec3 near) {
-        for (usize index = 0; index < scene->fixtureCount(); ++index) {
-            const auto id = LegendsSceneAdapter::kFixtureObjectBase + static_cast<s32>(index);
-            if (const auto object = scene->fixtureObject(id);
-                object && object->name == name && glm::distance(object->position, near) < 1) {
-                return id;
-            }
-        }
-        FAIL("Native completion portal artwork was not bound");
-        return -1;
-    };
-    const s32 cathedral = fixture("TRAP:EXNR", {0, 1, -30});
-    const s32 fire = fixture("BOSSDEATHFX:", {1.5f, -40, 14});
+    const s32 cathedral = fixtureId(*scene, "TRAP:EXNR", {0, 1, -30});
+    const s32 fire = fixtureId(*scene, "BOSSDEATHFX:", {1.5f, -40, 14});
     CHECK_FALSE(scene->fixtureObject(cathedral)->visible);
     CHECK_FALSE(scene->fixtureObject(fire)->visible);
     const auto allocated = device.texturesCreated;
