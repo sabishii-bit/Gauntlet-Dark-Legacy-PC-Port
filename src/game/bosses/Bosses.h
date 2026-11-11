@@ -45,7 +45,8 @@ struct BossView {
     bool awake = false;
     /** The encounter has begun (retail's gBossActive): from the wake, or from the arming of a
      * boss that waits for its floor to move, at least two seconds before it wakes. The fight's
-     * camera frames it and a boss level's powerup timers run from then on. */
+     * camera frames it from then on, and a boss level's powerup timers run from the update
+     * after: the party's turn comes before the opponents'. */
     bool engaged = false;
     bool alive = false;
     f32 fraction() const { return maxHealth > 0.0f ? std::max(health, 0.0f) / maxHealth : 0.0f; }
@@ -92,10 +93,11 @@ public:
     /** Actual animated attachment targeted by this encounter's legendary item. */
     std::optional<Mat4> legendTargetTransform() const;
 
-    /** Asleep, a boss whose type waits for its floor to move (CritterData::kSupportActivated)
-     * arms its wake deadline on an imported level's `activationReady`, sampled before the
-     * update; given the base game's `triggers` instead, only on an update one of them moves
-     * the floor its probe stands it on. Any other boss arms on its first update. */
+    /** Asleep, a boss arms its wake deadline on its first update with `activationReady` (an
+     * imported level's signal, sampled before the update) and never without it. Given the
+     * base game's `triggers`, a boss whose type waits for its floor to move
+     * (CritterData::kSupportActivated) arms only on such an update on which one of them moves
+     * the floor its probe stands it on. */
     void update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
                 bool activationReady = true, const LevelTriggers* triggers = nullptr);
     /** Runs through the held entrance too. It never arms a boss that waits for the base

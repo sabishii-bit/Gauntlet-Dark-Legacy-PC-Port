@@ -1529,7 +1529,10 @@ void PlayScene::advancePowerupsAndWorld(s32 ticks, f32 seconds, bool held) {
         const bool bossLevel = m_world->level() != nullptr && m_world->level()->bossType >= 0;
         const BossView boss = m_opponents.bosses().view();
         // A boss level holds the timers until gBossActive, then runs them three times as fast
-        // while the boss stands (PlayerProcessPowerups 0x8007ce50-0x8007ce80).
+        // while the boss stands (PlayerProcessPowerups 0x8007ce50-0x8007ce80). The boss is read
+        // as its last update left it: the party's turn comes first here, where retail's
+        // do_players follows do_enemies (0x8005499c, 0x80054994), so the timers turn an update
+        // after the encounter begins.
         if (!bossLevel) {
             powerupClock = PlayerPowerups::Clock::Level;
         } else if (boss.engaged && boss.alive) {
