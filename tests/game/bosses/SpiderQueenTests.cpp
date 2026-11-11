@@ -5,7 +5,9 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/assets/WorldLayout.h"
 #include "engine/core/Types.h"
+#include "engine/math/ApproximateLength.h"
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
@@ -53,7 +55,7 @@ TEST_CASE("Spider Queen exposes her attack families within her authored territor
                 f.actor.takeCues();
                 f.actor.takeBlows();
                 const Vec3 delta = f.actor.position() - kHome;
-                REQUIRE(glm::length(Vec2{delta.x, delta.z}) <= 22.001f);
+                REQUIRE(approximateFlatLength(delta) <= 22.001f); // the territory's own measure
                 pursued |= glm::length(delta) > 5;
             }
         }
@@ -73,6 +75,49 @@ TEST_CASE("Spider Queen exposes her attack families within her authored territor
     REQUIRE(attacks.contains("ATTACK9"));
     REQUIRE(attacks.contains("KICKBACK"));
     REQUIRE(attacks.contains("CHARGE"));
+}
+
+TEST_CASE("asleep in D5, the Spider Queen is held inside her territory from her first update, and "
+          "the party is measured from where she is held",
+          "[spider][boss-movement][assets]") {
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELD5/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/DRIDER/ANIM.PS2");
+    test::FakeRenderDevice device;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto level = catalog.byName("D5");
+    REQUIRE(level.has_value());
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *level));
+    const WorldLocator* mark = world.layout().findLocator(LocatorKind::Boss);
+    REQUIRE(mark != nullptr);
+    CHECK(mark->position.x == -52.75f);
+    CHECK(mark->position.z == -121.0f);
+    Bosses bosses;
+    bosses.open(device, root, &world.collision(), {}, 'D');
+    REQUIRE(bosses.spawn(37, mark->position, mark->rotation.y));
+    // Her mark lies 24.874 from her home by the original's measure, past her 22: her first
+    // update, asleep in INIT, takes her 2.83 inward (CritterTranslate, 0x8003a218).
+    const std::array<EnemyView, 1> far{{{0, Vec3{0, 0, 500}, 1, 6}}};
+    bosses.update(2, 1.0f / 30, far);
+    REQUIRE_FALSE(bosses.view().awake);
+    const Vec3 held = *bosses.position();
+    CHECK(held.x == Approx(-50.1214f));
+    CHECK(held.z == Approx(-119.9601f));
+    CHECK(approximateFlatLength(held - kHome) == Approx(22));
+    // Just inside her range from where she is held, and 2.83 more from her mark.
+    const f32 range = bosses.fighter().data()->wakeThreshold();
+    CHECK(range == 55);
+    const Vec3 away = glm::normalize(Vec3{held.x - mark->position.x, 0, held.z - mark->position.z});
+    const std::array<EnemyView, 1> near{{{0, held + away * (range - 0.5f), 1, 6}}};
+    s32 updates = 1;
+    while (!bosses.view().awake && updates < 120) {
+        bosses.update(2, 1.0f / 30, near);
+        ++updates;
+    }
+    CHECK(bosses.view().awake);
+    CHECK(updates == 62); // the update after her two seconds
 }
 
 TEST_CASE("Spider Queen egg attacks create generators that breed the stage's spiders",

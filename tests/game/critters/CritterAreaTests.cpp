@@ -452,8 +452,12 @@ TEST_CASE("Spider Queen and Wraith encounters emit damaging areas from their aut
             Combatant& critters = fixture.actor;
             fixture.open(device, root, nullptr, {}, 'D');
             REQUIRE(fixture.spawn(name, Vec3{0}, 0));
+            // At its home, when its type has one: the Spider Queen's lies 116 from the origin,
+            // and a boss placed outside its territory is drawn into it on its first update.
+            const Vec3 home = fixture.assets.data.movement().home.value_or(Vec3{0});
+            REQUIRE(critters.spawn(fixture.assets, 0, home, 0, nullptr, {}, 'D'));
             REQUIRE(critters.present());
-            const std::array<EnemyView, 1> players{playerAt({0, 0, 15})};
+            const std::array<EnemyView, 1> players{playerAt(home + Vec3{0, 0, 15})};
             bool areaHit = false;
             for (s32 frame = 0; frame < 1800 && !areaHit; ++frame) {
                 fixture.update(2, 1.0f / 30.0f, players);

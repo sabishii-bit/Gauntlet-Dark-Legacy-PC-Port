@@ -5,6 +5,7 @@
 
 #include "engine/core/Types.h"
 #include "engine/io/File.h"
+#include "engine/math/ApproximateLength.h"
 
 #include "TestSupport.h"
 #include "game/critters/CritterData.h"
@@ -20,13 +21,39 @@ TEST_CASE("boss territories constrain displacement not move speed", "[game][boss
     CritterMovement movement;
     const Vec3 home{10, 7, -20};
     movement.roamRadius = 5;
+    // CritterTranslate measures (30, 40) by the original's fast length: 40 and a third of 30
+    // (the band past five eighths), 49.99 rather than 50.
     const Vec3 limited = movement.constrain(home + Vec3{30, 2, 40}, home);
-    REQUIRE(limited == Vec3{13, 9, -16});
+    CHECK(limited.x == Approx(13.0006f));
+    CHECK(limited.y == 9);
+    CHECK(limited.z == Approx(-15.9992f));
+    CHECK(approximateFlatLength(limited - home) == Approx(5));
     REQUIRE(movement.constrain(home + Vec3{1, 0, 1}, home) == home + Vec3{1, 0, 1});
     movement.squareBounds = true;
     REQUIRE(movement.constrain(home + Vec3{30, 2, -40}, home) == home + Vec3{5, 2, -5});
     movement.roamRadius = 0;
     REQUIRE(movement.constrain(home + Vec3{30, 0, 40}, home) == home);
+}
+
+TEST_CASE("a boss territory's edge is the original's fast length, not a circle",
+          "[game][boss-movement]") {
+    CritterMovement movement;
+    movement.roamRadius = 10;
+    // (9.9, 1.3) lies 9.985 out by the round measure but 10.061 by the original's: past an
+    // eighth of the longer, it adds 0.124 of the shorter.
+    const Vec3 proposed{9.9f, 0, 1.3f};
+    REQUIRE(glm::length(Vec2{proposed.x, proposed.z}) < 10);
+    const f32 measured = approximateFlatLength(proposed);
+    CHECK(measured == Approx(10.0612f));
+    const Vec3 kept = movement.constrain(proposed, Vec3{0});
+    CHECK(kept.x == Approx(9.9f * 10 / measured));
+    CHECK(kept.z == Approx(1.3f * 10 / measured));
+    CHECK(approximateFlatLength(kept) == Approx(10));
+    // Along a diagonal the original's length falls a little short of the round one, so a point
+    // just outside the circle stays.
+    const Vec3 diagonal{7.0715f, 0, 7.0715f};
+    REQUIRE(glm::length(Vec2{diagonal.x, diagonal.z}) > 10);
+    CHECK(movement.constrain(diagonal, Vec3{0}) == diagonal);
 }
 
 TEST_CASE("boss turning respects the initial facing and wraparound", "[game][boss-movement]") {

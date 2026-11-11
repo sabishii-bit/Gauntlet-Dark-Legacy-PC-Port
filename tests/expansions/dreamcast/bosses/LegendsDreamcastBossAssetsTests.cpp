@@ -3,11 +3,15 @@
 #include <cmath>
 #include <filesystem>
 #include <set>
+#include <string>
+#include <vector>
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/core/Error.h"
 #include "engine/io/File.h"
+#include "engine/math/ApproximateLength.h"
 #include "engine/world/TreePose.h"
 
 #include "FakeRenderDevice.h"
@@ -15,12 +19,15 @@
 #include "expansions/dreamcast/bosses/LegendsDreamcastBossAssets.h"
 #include "expansions/dreamcast/bosses/LegendsDreamcastBosses.h"
 #include "expansions/dreamcast/formats/LegendsDreamcastScene.h"
+#include "game/bosses/Bosses.h"
 #include "game/critters/Combatant.h"
 #include "game/critters/CombatantAssets.h"
+#include "game/level/BossKinds.h"
 
 namespace {
 using namespace gdl;
 using namespace gdl::game;
+using Catch::Approx;
 
 TEST_CASE("Dreamcast boss loading never falls back to another platform",
           "[dreamcast][dc-boss-assets]") {
@@ -331,5 +338,42 @@ TEST_CASE(
             }
         }
     }
+}
+
+TEST_CASE("Dreamcast Spider Queen is held inside her territory from her first update asleep",
+          "[dreamcast][dc-boss-ai][boss-movement][assets]") {
+    const auto root = test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native";
+    if (!std::filesystem::is_regular_file(root / "critters/drider.wad")) {
+        SKIP("Dreamcast boss data not installed");
+    }
+    const auto encounter =
+        legendsDreamcastBoss(readFile(root / formats::dreamcastLegendsWorldDataFile("leveld5")),
+                             readFile(root / "levels/leveld5/worlds.rom"), "leveld5");
+    REQUIRE(encounter);
+    REQUIRE(encounter->combat.kind == boss_type::kDrider);
+    // D5's mark and DRIDER's home and roam as the GameCube has them (TYPE +0x94, +0xA0).
+    const Vec3 mark = encounter->combat.position;
+    CHECK(mark.x == -52.75f);
+    CHECK(mark.z == -121.0f);
+    test::FakeRenderDevice device;
+    std::vector<std::string> warnings;
+    auto stock = loadLegendsDreamcastBossAssets(device, root, {}, boss_type::kDrider, {}, warnings);
+    REQUIRE(stock);
+    REQUIRE(stock->data.movement().home.has_value());
+    const Vec3 home = *stock->data.movement().home;
+    CHECK(home == Vec3{-30, 57, -112});
+    CHECK(stock->data.movement().roamRadius == 22);
+    Bosses bosses;
+    bosses.open(device, {}, nullptr, {}, 'D');
+    REQUIRE(bosses.preload(boss_type::kDrider, std::move(stock)));
+    REQUIRE(bosses.spawn(boss_type::kDrider, mark, encounter->combat.yaw));
+    // The Dreamcast's translate clamps a zero step too (1ST_READ.BIN 0x8c08a5c0, by the fast
+    // length at 0x8c0ed4a0), so her first update, asleep in INIT, takes her 2.83 inward.
+    const std::array players{EnemyView{.player = 0, .position = Vec3{0, 0, 500}}};
+    bosses.update(1, 1.f / 60, players);
+    REQUIRE_FALSE(bosses.view().awake);
+    CHECK(bosses.position()->x == Approx(-50.1214f));
+    CHECK(bosses.position()->z == Approx(-119.9601f));
+    CHECK(approximateFlatLength(*bosses.position() - home) == Approx(22));
 }
 } // namespace

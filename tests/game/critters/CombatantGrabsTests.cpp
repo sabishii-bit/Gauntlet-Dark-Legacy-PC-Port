@@ -6,6 +6,7 @@
 
 #include "engine/core/Types.h"
 #include "engine/io/File.h"
+#include "engine/math/ApproximateLength.h"
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
@@ -194,7 +195,8 @@ TEST_CASE("destination steps follow the ready target within the authored home ra
     REQUIRE(f.fighter.actor.position().x < 0.95f);
     REQUIRE(f.fighter.actor.position().z > 0);
     f.fighter.update(60, 1.0f, f.players);
-    REQUIRE(glm::length(f.fighter.actor.position()) == Approx(5));
+    // On its territory's edge, by the original's fast length (4.99 round, this way).
+    REQUIRE(approximateFlatLength(f.fighter.actor.position()) == Approx(5));
 }
 TEST_CASE("retail Yeti grab uses the animated hand and its frame 100 release",
           "[game][yeti][combatant-grab][assets]") {

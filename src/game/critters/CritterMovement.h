@@ -20,6 +20,8 @@ struct CritterMovement {
     bool initialStepBasis = false;
     bool unrestrictedTurn = false;
 
+    /** Where `proposed` stands once its territory takes it back: within the roam radius of
+     * `homePosition` along the ground, or of a square that wide with `squareBounds`. */
     Vec3 constrain(const Vec3& proposed, const Vec3& homePosition) const;
     f32 facing(f32 wanted, f32 initialYaw) const;
     /** Local translation for an authored MOVE type. Destination-driven steps need a

@@ -1,5 +1,6 @@
 #include <array>
 #include <filesystem>
+#include <format>
 #include <string>
 #include <vector>
 
@@ -232,19 +233,66 @@ TEST_CASE("boss health gates use exclusive upper bounds, a band closed on itself
     TargetCriteria target;
     target.minRateScale = 1.5f;
     target.maxRateScale = 2.5f;
-    REQUIRE_FALSE(target.allowsPhase(1.49f, 0));
-    REQUIRE(target.allowsPhase(1.5f, 0));
-    REQUIRE_FALSE(target.allowsPhase(2.5f, 0));
+    REQUIRE_FALSE(target.allowsPhase(1.49f));
+    REQUIRE(target.allowsPhase(1.5f));
+    REQUIRE_FALSE(target.allowsPhase(2.5f));
     // The Dragon's SPLITFBALL and the Chimera's strafes close their bands on themselves:
     // CritterCalcTarget never admits them, so only a pattern or a link reaches them.
     target.maxRateScale = target.minRateScale;
-    REQUIRE_FALSE(target.allowsPhase(5, 0));
-    REQUIRE_FALSE(target.allowsPhase(1.5f, 0));
+    REQUIRE_FALSE(target.allowsPhase(5));
+    REQUIRE_FALSE(target.allowsPhase(1.5f));
     target.maxRateScale = 0;
-    REQUIRE(target.allowsPhase(5, 0));
+    REQUIRE(target.allowsPhase(5));
+    // The home distance is CritterGetTargetSub's alone, inclusive; nought means none.
+    REQUIRE(target.allowsFromHome(1000));
     target.maxHomeDistance = 10;
-    REQUIRE(target.allowsPhase(5, 10));
-    REQUIRE_FALSE(target.allowsPhase(5, 10.01f));
+    REQUIRE(target.allowsPhase(5));
+    REQUIRE(target.allowsFromHome(10));
+    REQUIRE_FALSE(target.allowsFromHome(10.01f));
+}
+
+TEST_CASE("a boss aims a move gated by home distance by how far its last step would have taken "
+          "it, by the original's fast length",
+          "[game][boss-attacks][boss-movement]") {
+    test::FakeRenderDevice device;
+    // A boss homed at the origin whose stance stands and whose walk goes `pace` a second, with a
+    // shot gated `gate` from home that reaches only to 20.05: whether it ever shoots.
+    const auto shoots = [&](f32 roam, f32 gate, f32 pace, const Vec3& spawn, const Vec3& playerAt) {
+        const auto root =
+            attackTable(std::format(R"({{"descriptors":[{{"prefix":"DJINN","type":4}}],
+          "types":[{{"moveCount":3,"maxHealth":100,"roamRadius":{},"defaultPos":[0,0,0]}}],
+          "moves":[{{"name":"READY","anim":"STEP","type":32}},
+                   {{"name":"WALK","anim":"STEP","type":52,"speed":{}}},
+                   {{"name":"SHOT","anim":"STEP","type":128,
+                     "target":{{"maxDistance":20.05,"idleGate":{}}}}}]}})",
+                                    roam, pace, gate));
+        test::CombatantFixture fixture;
+        fixture.open(device, root, nullptr, {}, 'C');
+        REQUIRE(fixture.spawn("DJINN", spawn, 0));
+        EnemyView player;
+        player.player = 0;
+        player.position = playerAt;
+        player.height = 6;
+        player.radius = 1;
+        const std::array party{player};
+        for (s32 frame = 0; frame < 300; ++frame) {
+            fixture.update(2, 1.0f / 30, party);
+            if (fixture.actor.moveName() == "SHOT") {
+                return true;
+            }
+        }
+        return false;
+    };
+    SECTION("standing 9.985 out round but 10.061 by the original's measure") {
+        CHECK_FALSE(shoots(50, 10, 0, {9.9f, 0, 1.3f}, {9.9f, 0, 21.3f}));
+        CHECK(shoots(50, 10.1f, 0, {9.9f, 0, 1.3f}, {9.9f, 0, 21.3f}));
+    }
+    SECTION("walking against the edge of its territory, held at 10, each step proposing 10.3") {
+        // The walk reaches 9.9 in 33 steps of 0.3, out of the shot's reach of the player, then
+        // proposes 10.2 and 10.3 a step after, each taken back to 10.
+        CHECK_FALSE(shoots(10, 10.1f, 9, Vec3{0}, {0, 0, 30}));
+        CHECK(shoots(10, 10.35f, 9, Vec3{0}, {0, 0, 30}));
+    }
 }
 
 TEST_CASE(

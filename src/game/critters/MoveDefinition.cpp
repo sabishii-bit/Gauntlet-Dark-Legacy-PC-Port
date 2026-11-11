@@ -18,11 +18,16 @@ bool TargetCriteria::allows(f32 distance, f32 bearing, f32 vertical) const {
     return maxVertical <= 0.0f || std::abs(vertical) <= maxVertical;
 }
 
-bool TargetCriteria::allowsPhase(f32 rateScale, f32 homeDistance) const {
+bool TargetCriteria::allowsPhase(f32 rateScale) const {
     // CritterCalcTarget: a positive upper bound is exclusive whatever the lower; a band that
     // closes on itself admits nothing, so such a move comes only by its pattern or link.
-    return rateScale >= minRateScale && (maxRateScale <= 0.0f || rateScale < maxRateScale) &&
-           (maxHomeDistance <= 0.0f || homeDistance <= maxHomeDistance);
+    return rateScale >= minRateScale && (maxRateScale <= 0.0f || rateScale < maxRateScale);
+}
+
+bool TargetCriteria::allowsFromHome(f32 homeDistance) const {
+    // Only CritterGetTargetSub tests it (0x80036a84-0x80036aa4; DC 0x8c08d128-0x8c08d13a):
+    // CritterCalcTarget, which sight and the step search use, never does.
+    return maxHomeDistance <= 0.0f || homeDistance <= maxHomeDistance;
 }
 
 bool MoveDefinition::interrupts(const MoveDefinition& current) const {

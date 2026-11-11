@@ -1,9 +1,9 @@
 #include "game/critters/CritterMovement.h"
 
 #include <algorithm>
-#include <cmath>
 
 #include "engine/core/Types.h"
+#include "engine/math/ApproximateLength.h"
 #include "engine/math/PortableMath.h"
 
 #include "game/critters/CritterData.h"
@@ -18,7 +18,9 @@ Vec3 CritterMovement::constrain(const Vec3& proposed, const Vec3& homePosition) 
         offset.x = std::clamp(offset.x, -radius, radius);
         offset.z = std::clamp(offset.z, -radius, radius);
     } else {
-        const f32 distance = glm::length(Vec2{offset.x, offset.z});
+        // CritterTranslate measures the offset by the original's fast length (0x8003ad50;
+        // DC 0x8c08a878, N64 Boss.bin 0xe0883f6c), so the territory's edge is not quite round.
+        const f32 distance = approximateFlatLength(offset);
         if (distance > radius) {
             offset.x *= radius / distance;
             offset.z *= radius / distance;

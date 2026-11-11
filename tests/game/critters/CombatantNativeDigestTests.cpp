@@ -359,7 +359,7 @@ TEST_CASE("combatant native digest bytes stay pinned for an inactive configured 
     // SHA-256 of the native digest of the fighter above, which netplay peers must hash alike: a
     // literal moves only when what is visited changes on purpose.
     constexpr std::string_view kDigest =
-        "7e3b1d4985508f79dd843d5eac8e6c45ac3bc937fcf6462e2489111102884a51";
+        "a35144b1ddade65a57f4a5a0b4ca54fed31c84d60ddf072235645d2a5be840da";
     CHECK(test::hexBytes(checked(digest)) == kDigest);
 }
 
@@ -379,8 +379,8 @@ TEST_CASE("combatant native digest bytes stay pinned after the encounter script 
     // it saved twelve frames in, which netplay peers must hash alike: a literal moves only when
     // what is visited changes on purpose.
     test::checkPinnedDigests("Combatant", encounter->digest(), encounter->digest(saved),
-                             "2362ff0ec9ecea9f9b55cd76ccfc176a5300981686f6caec2e93e73714ec488a",
-                             "6aa77d11fa2f11d4852f3fffb61bb782622c7c92ebfedbaac293a15126c4e780");
+                             "312339fb87b0e5bb1b8c57483f89f179fa685b5cafc1f6238de454c6ddf5f45c",
+                             "a7d9decbb9d7702d9e053615e882f6eb4ccc9697c400b51923b0fb02a034fda3");
 }
 
 } // namespace

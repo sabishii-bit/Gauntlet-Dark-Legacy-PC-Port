@@ -468,8 +468,13 @@ void Bosses::update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
                 }
                 m_fighter.advanceEntrance(seconds);
             }
-            // CritterBossAI's wake test (0x80039bac) comes before its floor probe (0x8003a2d4),
-            // so the party was measured from where the last update stood it.
+            // CritterBossAI's wake test (0x80039bac) comes before its step (CritterTranslate,
+            // 0x8003a218), which holds it to its territory on INIT's zero pace, and before its
+            // floor probe (0x8003a2d4), so the party was measured from where the last update
+            // stood it.
+            if (ticks > 0) {
+                m_fighter.holdTerritory();
+            }
             const std::optional<FloorHit> support = m_fighter.settleOnFloor();
             advanceWakeClock(seconds, deadlineMayStart(activationReady, triggers, support));
             return;

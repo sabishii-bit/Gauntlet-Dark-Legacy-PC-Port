@@ -157,9 +157,7 @@ void Combatant::chooseTarget(Actor& critter, std::span<const EnemyView> players)
         const f32 distance = glm::length(Vec2{delta.x, delta.z});
         const Vec2 direction = distance > 0 ? Vec2{delta.x, delta.z} / distance : Vec2{0};
         const f32 bearing = yawBetween(origin, target) - critter.yaw;
-        if (!sight.allows(distance, bearing, delta.y) ||
-            !sight.allowsPhase(attackRate(critter),
-                               flatDistance(critter.position, critter.homePosition))) {
+        if (!sight.allows(distance, bearing, delta.y) || !sight.allowsPhase(attackRate(critter))) {
             continue;
         }
         const f32 score = targetScore(critter, target);
@@ -349,9 +347,7 @@ std::optional<usize> Combatant::bestMove(const Actor& critter,
             continue;
         }
         if (!move.target.allows(distance, bearing, vertical) ||
-            !move.target.allowsPhase(attackRate(critter),
-                                     flatDistance(critter.position, critter.homePosition)) ||
-            curbedMove(critter, move)) {
+            !move.target.allowsPhase(attackRate(critter)) || curbedMove(critter, move)) {
             continue;
         }
         constexpr f32 kSquarelyAhead = 0.5f;

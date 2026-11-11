@@ -1,5 +1,4 @@
 #include <algorithm>
-#include <cmath>
 #include <limits>
 
 #include "engine/core/Types.h"
@@ -29,13 +28,12 @@ s32 Combatant::attackTarget(const Actor& critter, const TargetCriteria& criteria
     for (const Actor* owner = &critter; owner != nullptr;
          owner = fallback && owner->parent != nullptr ? &owner->parent->m_sim.actor : nullptr) {
         const Actor& source = *owner;
-        const Vec3 home = source.position - source.homePosition;
-        if (criteria.maxHomeDistance > 0 &&
-            glm::length(Vec2{home.x, home.z}) > criteria.maxHomeDistance) {
+        // CritterGetTargetSub refuses the move outright, without asking the parent, while the
+        // last step strayed past the window's home distance (+0x4ac, 0x80036a94).
+        if (!criteria.allowsFromHome(source.homeDistance)) {
             return -1;
         }
-        const bool phase =
-            criteria.allowsPhase(attackRate(source), glm::length(Vec2{home.x, home.z}));
+        const bool phase = criteria.allowsPhase(attackRate(source));
         if (!phase && !fallback) {
             return -1;
         }

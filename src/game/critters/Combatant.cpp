@@ -162,8 +162,8 @@ void Combatant::appendSimulationDigest(NativeStateDigest& digest, const Simulati
                  pushes, blows, losses, assets] = state;
     const auto& [actorState, hidden, forcedPattern, childrenIntact, smoothValid, stock, definition,
                  parent, branch, health, burnGap, maxHealth, position, floor, yaw, initialYaw,
-                 homePosition, initialRoot, push, target, targetDistance, targetYaw, targets,
-                 playerDamage, move, moveTarget, pattern, finishedSeconds, age, moveTimes,
+                 homePosition, initialRoot, homeDistance, push, target, targetDistance, targetYaw,
+                 targets, playerDamage, move, moveTarget, pattern, finishedSeconds, age, moveTimes,
                  patternTimes, patternStep, struckThisMove, areas, arenaAnchors, arenaTargets,
                  patrol, lastArenaTarget, hurtPending, hurtFlags, hurtDirection, roarOwed,
                  sinceHurt, flashTicks, skin, skinAge, hitNodes, modelReplacements, alpha, tint,
@@ -183,8 +183,8 @@ void Combatant::appendSimulationDigest(NativeStateDigest& digest, const Simulati
     // read its current state: a saved child's parent may be on a wrong branch.
     digest.flag(parent != nullptr);
     digest.values(branch, health, burnGap, maxHealth, position, floor, yaw, initialYaw,
-                  homePosition, initialRoot, push, target, targetDistance, targetYaw, targets,
-                  playerDamage, move, moveTarget, pattern, finishedSeconds, age, moveTimes,
+                  homePosition, initialRoot, homeDistance, push, target, targetDistance, targetYaw,
+                  targets, playerDamage, move, moveTarget, pattern, finishedSeconds, age, moveTimes,
                   patternTimes, patternStep, struckThisMove, areas, arenaAnchors, arenaTargets,
                   patrol, lastArenaTarget, hurtPending, hurtFlags, hurtDirection, roarOwed,
                   sinceHurt, flashTicks);
@@ -249,8 +249,8 @@ bool Combatant::Actor::equalLocal(const Actor& other) const {
     const auto placement = [](const Actor& a) {
         return std::tie(a.state, a.hidden, a.forcedPattern, a.childrenIntact, a.smoothValid,
                         a.branch, a.health, a.burnGap, a.maxHealth, a.position, a.floor, a.yaw,
-                        a.initialYaw, a.homePosition, a.initialRoot, a.push, a.target,
-                        a.targetDistance, a.targetYaw, a.targets, a.playerDamage);
+                        a.initialYaw, a.homePosition, a.initialRoot, a.homeDistance, a.push,
+                        a.target, a.targetDistance, a.targetYaw, a.targets, a.playerDamage);
     };
     const auto moves = [](const Actor& a) {
         return std::tie(a.move, a.moveTarget, a.pattern, a.finishedSeconds, a.age, a.moveTimes,

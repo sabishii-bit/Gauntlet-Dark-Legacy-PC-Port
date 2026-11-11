@@ -26,7 +26,11 @@ struct TargetCriteria {
     /** Whether a target `distance` away, `bearing` round from ahead and `vertical` above or
      * below, passes. */
     bool allows(f32 distance, f32 bearing, f32 vertical) const;
-    bool allowsPhase(f32 rateScale, f32 homeDistance) const;
+    /** Whether the fighter's attack rate `rateScale` lies in the window's band. */
+    bool allowsPhase(f32 rateScale) const;
+    /** Whether a fighter `homeDistance` from home may aim the move: none past the window's
+     * home distance, when it has one. */
+    bool allowsFromHome(f32 homeDistance) const;
 };
 
 /** A gated sequence of moves. Its entry criteria do not apply again between steps. */

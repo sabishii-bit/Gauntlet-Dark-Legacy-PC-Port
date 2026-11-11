@@ -3,6 +3,7 @@
 #include <optional>
 
 #include "engine/core/Types.h"
+#include "engine/math/ApproximateLength.h"
 #include "engine/math/PortableMath.h"
 
 #include "game/combat/BodyContact.h"
@@ -118,6 +119,27 @@ std::optional<FloorHit> Combatant::settleOnFloor() {
     return floor;
 }
 
+void Combatant::holdTerritory() {
+    Actor& actor = m_sim.actor;
+    if (actor.state != State::Active || actor.parent != nullptr ||
+        !actor.stock->definition.boundsToHome || actor.definition->movement().roamRadius <= 0.0f) {
+        return;
+    }
+    keepToTerritory(actor);
+    for (auto& part : children()) {
+        part->m_sim.actor.position.x = actor.position.x;
+        part->m_sim.actor.position.z = actor.position.z;
+    }
+}
+
+void Combatant::keepToTerritory(Actor& critter) {
+    // CritterTranslate keeps the fast length of the offset its step proposed, before the clamp
+    // (+0x4ac, 0x8003ad54; DC +0x238), for CritterGetTargetSub's home distance.
+    critter.homeDistance = approximateFlatLength(critter.position - critter.homePosition);
+    critter.position =
+        critter.definition->movement().constrain(critter.position, critter.homePosition);
+}
+
 void Combatant::carry(Actor& critter, f32 seconds, const MoveDefinition* move,
                       std::span<const EnemyView> players, std::span<const Combatant> peers) {
     // Both native AIs translate using the previous facing, then turn. Only
@@ -183,19 +205,21 @@ bool Combatant::translate(Actor& critter, f32 seconds, const MoveDefinition* mov
             translation += CritterMovement::direction(move->type, basis) * pace;
         }
     }
+    // Retail bosses clamp to their home region directly, on a frame they stand still too
+    // (CritterTranslate has no return for a zero step, 0x8003ad04-0x8003ae00; DC 0x8c08a5c0,
+    // N64 Boss.bin 0xe0883d14). Their authored stage/root heights are not ordinary walking-floor
+    // probes (several stand above the arena).
+    if (bounded) {
+        critter.position += translation;
+        if (critter.state != State::Dying) {
+            keepToTerritory(critter);
+        }
+        return false;
+    }
     if (glm::length(translation) <= 0.0f) {
         return false;
     }
     Vec3 to = critter.position + translation;
-    if (bounded && critter.state != State::Dying) {
-        to = movement.constrain(to, critter.homePosition);
-    }
-    // Retail bosses clamp to their home region directly. Their authored stage/root
-    // heights are not ordinary walking-floor probes (several stand above the arena).
-    if (bounded) {
-        critter.position = to;
-        return false;
-    }
     // CritterCollidePlayers sweeps collision centres, not floor positions. An
     // overlapping body may move outward; players on another floor do not block it.
     const Vec3 offset = to - critter.position;

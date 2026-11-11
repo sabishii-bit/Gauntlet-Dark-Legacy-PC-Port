@@ -18,6 +18,7 @@
 #include "engine/assets/WorldLayout.h"
 #include "engine/core/Types.h"
 #include "engine/io/File.h"
+#include "engine/math/ApproximateLength.h"
 #include "engine/world/SampleLevel.h"
 #include "engine/world/WorldAnimator.h"
 #include "engine/world/WorldCollision.h"
@@ -30,6 +31,7 @@
 #include "game/bosses/LegendProfile.h"
 #include "game/critters/CombatantAssets.h"
 #include "game/critters/CombatantFixture.h"
+#include "game/critters/HeadedBodyFixture.h"
 #include "game/level/BossKinds.h"
 #include "game/level/LevelTriggers.h"
 
@@ -733,8 +735,10 @@ TEST_CASE("every retail boss can enter animate draw take damage and die",
             REQUIRE(bosses.spawn(kind, Vec3{0}, 0, 100));
             REQUIRE(bosses.view().alive);
             REQUIRE(bosses.view().maxHealth > 0);
-            const std::vector<EnemyView> party{playerAt(Vec3{0, 0, 20})};
+            // Twenty from wherever it stands: one homed away from the origin, the Spider Queen,
+            // is drawn into its territory while it sleeps.
             for (s32 tick = 0; tick < 180; ++tick) {
+                const std::vector<EnemyView> party{playerAt(*bosses.position() + Vec3{0, 0, 20})};
                 bosses.update(kTicks, kStep, party);
             }
             REQUIRE(bosses.view().awake);
@@ -868,6 +872,46 @@ TEST_CASE("a boss wakes by its farthest player measured along the ground, strict
     CHECK_FALSE(woken(std::array{playerAt({0, 5, 0})})); // straight over it, nought out
     CHECK_FALSE(woken({}));
     CHECK(woken({}, 0)); // a range of nought (the table's, here) wakes it with nobody about
+}
+
+TEST_CASE("asleep, a boss outside its territory is held inside it from its first update, its heads "
+          "with it, and the party is measured from there",
+          "[game][bosses][boss-movement][boss-activation]") {
+    // DRIDER's home and roam, and D5's mark 24.874 from it by the original's measure.
+    const Vec3 home{-30, 0, -112};
+    const Vec3 mark{-52.75f, 0, -121.0f};
+    test::FakeRenderDevice device;
+    Bosses bosses;
+    bosses.open(device, test::headedBodyAssets(R"(,"roamRadius":22,"defaultPos":[-30,0,-112],
+                                          "wakeThreshold":20)"),
+                nullptr, {}, 'A');
+    REQUIRE(bosses.spawn(boss_type::kChimera, mark, 0));
+    const Combatant& body = bosses.fighter();
+    REQUIRE(body.childCount() == 2);
+    const std::array far{playerAt({0, 0, 500})};
+    bosses.update(kTicks, kStep, far);
+    REQUIRE_FALSE(bosses.view().awake);
+    const Vec3 offset = mark - home;
+    const Vec3 held = home + offset * (22 / approximateFlatLength(offset));
+    CHECK(bosses.position()->x == Approx(held.x));
+    CHECK(bosses.position()->z == Approx(held.z));
+    for (s32 part = 1; part <= 2; ++part) {
+        CAPTURE(part);
+        REQUIRE(body.child(part) != nullptr);
+        CHECK(body.child(part)->position().x == Approx(held.x));
+        CHECK(body.child(part)->position().z == Approx(held.z));
+    }
+    // 19.9 out from where it is held, beyond the mark: 22.7 from the mark itself.
+    const Vec3 away = glm::normalize(Vec3{held.x - mark.x, 0, held.z - mark.z});
+    const std::array near{playerAt(held + away * 19.9f)};
+    REQUIRE(glm::length(Vec2{near[0].position.x - mark.x, near[0].position.z - mark.z}) > 22);
+    s32 updates = 1;
+    while (!bosses.view().awake && updates < 120) {
+        bosses.update(kTicks, kStep, near);
+        ++updates;
+    }
+    CHECK(bosses.view().awake);
+    CHECK(updates == 62); // the update after its two seconds
 }
 
 TEST_CASE("an imported rite that wakes its boss at the deadline does so wherever the party "

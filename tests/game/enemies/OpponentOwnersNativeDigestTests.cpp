@@ -319,9 +319,9 @@ TEST_CASE("empty native opponent owner digest bytes stay pinned for distinct con
     // SHA-256 of the native digest of each owner above, which netplay peers must hash alike: a
     // literal moves only when what is visited changes on purpose.
     constexpr std::string_view kBoss =
-        "2f37e7181bc4211d7c76a92dc95ddebb1f05375e228b92c93169fd402990a0ff";
+        "24411247ba67fb12f858251bc3b13690e3c32f464915852b835dc72f1e59cc26";
     constexpr std::string_view kCritters =
-        "bdad86f77f05233df43526fb5faced0b8b471c858947c7e5f8c2b9cfa3f94f61";
+        "29afe57e7fec8e97be224e179920192fbb1323d9abad55904433096c27fc6241";
     CHECK(test::hexBytes(*bossDigest.checkedFinish()) == kBoss);
     CHECK(test::hexBytes(*critterDigest.checkedFinish()) == kCritters);
 }
@@ -367,8 +367,8 @@ TEST_CASE("native critter owner digest bytes stay pinned after three families' s
     // netplay peers must hash alike: a literal moves only when what is visited changes on purpose.
     test::checkPinnedDigests("Critters", test::liveDigest(critters, resources.resources()),
                              test::savedDigest(critters, saved, resources.resources()),
-                             "893b93a932ba22fc8322145390954cae988e1d0a6c12472c4c6d922a932ba40f",
-                             "40b36c3d9f665855dc30b4db5cd08fad41534accf930c233d5458cc9a3b0f89d");
+                             "29db3f18e5c05bfbda387b254dbed9b2d197148c11808f082b9dacb04e697fcc",
+                             "673bc634f7184537d599e3a96636e923b75b1ed40600964f72623aa3f4e6a962");
 }
 
 TEST_CASE("native boss owner digest bytes stay pinned after a headed boss wakes and its save",
@@ -400,7 +400,7 @@ TEST_CASE("native boss owner digest bytes stay pinned after a headed boss wakes 
     // what is visited changes on purpose.
     test::checkPinnedDigests("Bosses", test::liveDigest(boss, resources.resources()),
                              test::savedDigest(boss, saved, resources.resources()),
-                             "036a122da90cbe30afb25c798728ccf4d67e04400f1ebcadd1cc9e2c58ebae0c",
-                             "aaedc20e8986a28eb27f985acf4cb9a7a47c616d93467dfc23717cff07a2f01e");
+                             "fad7daca4d25a7fab78240d412d963b9fd04e09736743560c477d476e5c54527",
+                             "c204b97f64e450055fc0886b4d4e6e3fefe4c838835a29d22081b197dd011269");
 }
 } // namespace

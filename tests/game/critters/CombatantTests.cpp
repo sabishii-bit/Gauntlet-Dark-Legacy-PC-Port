@@ -14,6 +14,7 @@
 #include "engine/assets/WorldLayout.h"
 #include "engine/core/Types.h"
 #include "engine/io/File.h"
+#include "engine/math/ApproximateLength.h"
 #include "engine/world/WorldCollision.h"
 
 #include "FakeRenderDevice.h"
@@ -21,6 +22,7 @@
 #include "fixtures/NativeModelFixture.h"
 #include "game/bosses/Bosses.h"
 #include "game/critters/Combatant.h"
+#include "game/critters/CombatantFixture.h"
 #include "game/critters/Critters.h"
 #include "game/critters/Gargoyle.h"
 #include "game/critters/General.h"
@@ -1913,6 +1915,44 @@ TEST_CASE("a sleeping boss takes nothing, and awake takes less the more are in t
         CHECK(losses[0].experience ==
               Approx(20.0f * share / (1.0f + whole) * 50.0f * static_cast<f32>(players)));
     }
+}
+
+TEST_CASE("a boss outside its territory is taken back on a frame it stands still, by the "
+          "original's fast length, and left where it dies",
+          "[game][combatant][boss-movement]") {
+    // DRIDER's home and roam with D5's mark: 24.874 out by the original's measure (CritterTranslate
+    // runs its clamp whatever the step, 0x8003ad04-0x8003ae00), 24.466 round.
+    const auto root = familyAssets();
+    writeTextFile(root / "critter/DJINN.json", R"({
+      "descriptors":[{"prefix":"BODY","name":"DJINN","type":4}],
+      "types":[{"moveCount":2,"maxHealth":100,"radius":1,"roamRadius":22,
+                "defaultPos":[-30,57,-112]}],
+      "moves":[{"name":"READY","anim":"STEP","type":32},
+               {"name":"DEATH","anim":"STEP","type":17,"priority":4095,"hold":1}]})");
+    test::FakeRenderDevice device;
+    test::CombatantFixture fixture;
+    fixture.open(device, root, nullptr, {}, 'C');
+    const Vec3 home{-30, 57, -112};
+    const Vec3 mark{-52.75f, 61.25f, -121.0f};
+    REQUIRE(fixture.spawn("DJINN", mark, 0));
+    CHECK(fixture.actor.position() == mark); // spawned where it is put
+    fixture.update(2, 1.0f / 30, {});
+    const Vec3 offset = mark - home;
+    const f32 measured = approximateFlatLength(offset);
+    CHECK(measured == Approx(24.874f));
+    const Vec3 held = home + offset * (22 / measured);
+    CHECK(fixture.actor.position().x == Approx(held.x)); // -50.121
+    CHECK(fixture.actor.position().z == Approx(held.z)); // -119.960
+    CHECK(held.x == Approx(-50.1214f));
+    CHECK(held.z == Approx(-119.9601f));
+    // Dying, it is clamped no more (CritterTranslate's state test, 0x8003ad3c-0x8003ad44).
+    REQUIRE(fixture.actor.spawn(fixture.assets, 0, mark, 0, nullptr, {}, 'C'));
+    EnemyHit lethal;
+    lethal.damage = 1000;
+    fixture.actor.hurt(lethal);
+    REQUIRE(fixture.actor.dying());
+    fixture.update(2, 1.0f / 30, {});
+    CHECK(fixture.actor.position() == mark);
 }
 
 TEST_CASE("boss damage and experience follow standing slots after players leave combat",

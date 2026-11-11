@@ -87,6 +87,10 @@ public:
      * that floor. What was captured to draw from is left as it was, so the draw blends the
      * floor's motion. None for the great ones, a part, or without collision. */
     std::optional<FloorHit> settleOnFloor();
+    /** Takes a boss body standing still back into its territory, its parts with it, as
+     * CritterTranslate does on the zero pace of its INIT while the boss sleeps (0x8003a218).
+     * Nothing for the great ones, a part, a dying body or one without a territory. */
+    void holdTerritory();
     /** Healing credit after armor/party scaling, before level and hit-node adjustments. */
     f32 hurt(const EnemyHit& hit, s32 partId = -1);
     /** Records a routed hit's nominal damage to a player, after contact/cooldown gates. */
@@ -285,6 +289,10 @@ private:
         f32 initialYaw = 0.0f;
         Vec3 homePosition{0.0f}; ///< floor-space home anchor, independent of current position
         Vec3 initialRoot{0.0f};  ///< geometry's saved base, distinct from an explicit roaming home
+        /** How far along the ground from home its last step would have taken it, by the
+         * original's fast length, before its territory took it back (+0x4ac); nought until a
+         * boss first steps, and never set for the great ones. */
+        f32 homeDistance = 0.0f;
         Vec3 push{0.0f, 0.0f, 0.0f};
         s32 target = -1;
         f32 targetDistance = 100000.0f;
@@ -515,6 +523,9 @@ private:
     /** Integrates translation, returning whether a player stopped the step. */
     bool translate(Actor& critter, f32 seconds, const MoveDefinition* move,
                    std::span<const EnemyView> players, std::span<const Combatant> peers);
+    /** Takes `critter` back into its territory from where its step left it, noting how far
+     * out that was. */
+    static void keepToTerritory(Actor& critter);
     static void rotate(Actor& critter, f32 seconds, const MoveDefinition* move,
                        std::span<const EnemyView> players);
     void chooseTarget(Actor& critter, std::span<const EnemyView> players) const;

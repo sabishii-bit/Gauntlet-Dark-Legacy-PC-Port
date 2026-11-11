@@ -1,6 +1,7 @@
 #pragma once
 #include <filesystem>
 #include <string>
+#include <string_view>
 
 #include "engine/core/Types.h"
 #include "engine/io/File.h"
@@ -11,9 +12,10 @@
 namespace gdl::test {
 /** A synthetic boss with two heads of its own: the body's HEAD looks about, each head is a
  * branch (HEAD_L, HEAD_R) with a look node at its tip, a spit of its own and a pattern the
- * body's drives, so head scheduling, gaze and death can be checked without game data. */
-inline std::filesystem::path headedBodyAssets() {
-    const auto root = scratchDirectory("headed-body");
+ * body's drives, so head scheduling, gaze and death can be checked without game data.
+ * `bodyFields` adds fields to the body's TYPE record, such as a territory. */
+inline std::filesystem::path headedBodyAssets(std::string_view bodyFields = {}) {
+    const auto root = scratchDirectory(bodyFields.empty() ? "headed-body" : "headed-body-fields");
     std::filesystem::create_directories(root / "critter");
     const auto archive = root / "MONSTERS" / "CHIMERA";
     std::filesystem::create_directories(archive / "models");
@@ -43,7 +45,8 @@ inline std::filesystem::path headedBodyAssets() {
       "descriptors":[{"prefix":"BODY","name":"CHIMERA","type":4}],
       "types":[{"moveCount":6,"patternCount":1,"maxHealth":1000,"radius":3,"expValue":500,
                 "childIndex":1,"lookNode0":"HEAD","lookYawRate0":0.3,"lookPitchRate0":0.2,
-                "lookPitchBias0":0.1},
+                "lookPitchBias0":0.1)" + std::string(bodyFields) +
+                                                     R"(},
                {"rootNode":"HEAD_L","lookNode0":"HEAD_L_TIP","moveIndex":6,"patternIndex":1,
                 "childIndex":2,)" + head + R"(},
                {"rootNode":"HEAD_R","lookNode0":"HEAD_R_TIP","moveIndex":10,"patternIndex":2,
