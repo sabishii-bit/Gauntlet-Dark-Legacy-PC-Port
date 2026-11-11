@@ -121,12 +121,12 @@ public:
         }
         return m_sim.carried[static_cast<usize>(critter)];
     }
-    /** Hits by player `player` on bred enemies since it last destroyed a generator. */
-    s32 hitStreakOf(s32 player) const {
-        if (player < 0 || static_cast<usize>(player) >= m_sim.hitStreak.size()) {
+    /** Kills by player `player` of what generators bred since it last destroyed a generator. */
+    s32 broodKillsOf(s32 player) const {
+        if (player < 0 || static_cast<usize>(player) >= m_sim.broodKills.size()) {
             return 0;
         }
-        return m_sim.hitStreak[static_cast<usize>(player)];
+        return m_sim.broodKills[static_cast<usize>(player)];
     }
     /** The lessons waiting for the next settling, (lesson, player) in the order they go out. */
     std::span<const std::pair<s32, s32>> pendingLessons() const { return m_sim.lessons; }
@@ -384,8 +384,8 @@ private:
     std::unique_ptr<TextureSet> m_importedBossTextures;
     LegendsActors m_importedActors;
     Critters m_critters;
-    static constexpr usize kPlayerIds = 4;   ///< players are numbered 0 to 3
-    static constexpr s32 kStreakLesson = 10; ///< this many hits teach to destroy generators
+    static constexpr usize kPlayerIds = 4;       ///< players are numbered 0 to 3
+    static constexpr s32 kBroodKillsLesson = 10; ///< this many kills teach to destroy generators
     static constexpr s32 kGeneratorRamBase = 2000;
     static constexpr std::string_view kHitFlashSkin = "AAAWHITE"; ///< of POWERUPS
     static constexpr f32 kShortGenerator = 3.0f; ///< a great one breaks one no taller
@@ -444,8 +444,8 @@ private:
         u32 bagSeed = 1;
         std::vector<CombatantRam> barrelRams;
         std::vector<RockHit> rockHits;
-        /** Native hit_streak: hits on bred enemies since destroying a generator. */
-        std::array<s32, kPlayerIds> hitStreak{};
+        /** Each player's kills of bred enemies since destroying a generator (player +0x918). */
+        std::array<s32, kPlayerIds> broodKills{};
         /** Pending lessons in dispatch order, by player identity. */
         std::vector<std::pair<s32, s32>> lessons;
         std::vector<CritterEffect> critterEffects;

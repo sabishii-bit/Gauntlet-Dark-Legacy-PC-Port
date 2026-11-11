@@ -80,7 +80,7 @@ bool cloudRealm(const std::string& level) {
 } // namespace
 
 void LevelOpponents::appendFollowupValues(NativeStateDigest& digest, const Simulation& values) {
-    const auto& [clouds, deathShots, carried, bags, bagSeed, barrelRams, rockHits, hitStreak,
+    const auto& [clouds, deathShots, carried, bags, bagSeed, barrelRams, rockHits, broodKills,
                  lessons, critterEffects, moveEffects, cueEffects, deathEffects, deathContact,
                  deathSound, yells, yellClocks, hearers, shrink, critterExperienceOwed,
                  generatorRewards, unseen, borrowedRoster] = values;
@@ -103,7 +103,7 @@ void LevelOpponents::appendFollowupValues(NativeStateDigest& digest, const Simul
     rows.template operator()<9>(bags);
     digest.value(bagSeed);
     rows.template operator()<2>(barrelRams);
-    digest.values(rockHits, hitStreak, lessons);
+    digest.values(rockHits, broodKills, lessons);
     rows.template operator()<9>(critterEffects);
     rows.template operator()<3>(moveEffects);
     digest.values(cueEffects, deathEffects, deathContact);
@@ -648,7 +648,7 @@ void LevelOpponents::close() {
     m_sim.yellClocks.fill({});
     m_sim.hearers.clear();
     m_sim.lessons.clear();
-    m_sim.hitStreak.fill(0); // load_player resets the new party's hit_streak
+    m_sim.broodKills.fill(0); // load_player resets the new party's count (0x8007A1D4)
     m_critters.close();
     m_bossMeter.clear();
     m_bosses.close();
@@ -1777,16 +1777,19 @@ f32 LevelOpponents::strikeEnemy(s32 id, f32 power, u32 flags, const Vec3& direct
                              DeathRules::kProtection) != 0;
         }
     }
-    const f32 before = m_enemies.healthOf(id);
+    const bool stood = m_enemies.alive(id);
     const f32 credited = m_enemies.hurt(id, hit);
-    // A player hitting what generators breed is taught, the tenth time, to go for them
-    // instead (combat.c:307; not where a boss is fought).
-    const LevelInfo* level = m_resources->world.level();
-    if (byPlayer >= 0 && static_cast<usize>(byPlayer) < m_sim.hitStreak.size() &&
-        m_enemies.bred(id) && before > 0.0f && m_enemies.healthOf(id) < before &&
-        (level == nullptr || level->bossType < 0) &&
-        ++m_sim.hitStreak[static_cast<usize>(byPlayer)] >= kStreakLesson) {
-        m_sim.lessons.emplace_back(HelpMessages::kDestroyGenerators, byPlayer);
+    // A player killing what generators breed is taught, the tenth time, to go for them instead,
+    // though not where a boss is fought (PlayerDamagedEnemy 0x8002F2D4: the count at player
+    // +0x918 goes up only for a kill, damage_enemy's 1, of a body of birth style 0, at
+    // 0x8002F320-0x8002F344, and the lesson needs no boss type at 0x8002F348).
+    if (byPlayer >= 0 && static_cast<usize>(byPlayer) < m_sim.broodKills.size() && stood &&
+        !m_enemies.alive(id) && m_enemies.bred(id)) {
+        const LevelInfo* level = m_resources->world.level();
+        if (++m_sim.broodKills[static_cast<usize>(byPlayer)] >= kBroodKillsLesson &&
+            (level == nullptr || level->bossType < 0)) {
+            m_sim.lessons.emplace_back(HelpMessages::kDestroyGenerators, byPlayer);
+        }
     }
     return credited;
 }
@@ -1941,8 +1944,8 @@ bool LevelOpponents::strikeGenerator(s32 id, f32 power, s32 byPlayer,
     }
     if (event->destroyed) {
         m_enemies.generatorGone(id);
-        if (byPlayer >= 0 && static_cast<usize>(byPlayer) < m_sim.hitStreak.size()) {
-            m_sim.hitStreak[static_cast<usize>(byPlayer)] = 0;
+        if (byPlayer >= 0 && static_cast<usize>(byPlayer) < m_sim.broodKills.size()) {
+            m_sim.broodKills[static_cast<usize>(byPlayer)] = 0;
         }
     }
     return true;

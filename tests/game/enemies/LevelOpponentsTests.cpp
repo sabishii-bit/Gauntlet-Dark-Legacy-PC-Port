@@ -1742,9 +1742,10 @@ TEST_CASE("Mothership Death rides its crane while dormant and throughout its awa
     opponents.close();
 }
 
-TEST_CASE("the tenth hit on what generators bred teaches to destroy generators",
+TEST_CASE("the tenth kill of what generators bred teaches to destroy generators, and no hit short "
+          "of a kill counts",
           "[game][screens][level-opponents][help][generator-lesson]") {
-    const auto root = test::scratchDirectory("hit-streak");
+    const auto root = test::scratchDirectory("brood-kills");
     writeMeleeEnemy(root, kGruntKind);
     test::FakeRenderDevice device;
     LevelWorld world;
@@ -1753,18 +1754,27 @@ TEST_CASE("the tenth hit on what generators bred teaches to destroy generators",
     LevelSoundscape audio;
     std::array<PlayerRuntime, 1> players;
     players[0].actor.spawn(2, {}, nullptr, {0, 0, 20}, 0);
+    // Room for every body the case lays low, none of them retired in between.
+    constexpr s32 kPool = 16;
+    constexpr f32 kLethal = 1e6f;
     LevelOpponents opponents;
     opponents.open({device, world, weapons, effects, audio, root, 1}, players);
-    opponents.enemies().open(device, root, nullptr, 2, {.health = 1000}, 1);
+    opponents.enemies().open(device, root, nullptr, kPool, {.health = 1000}, 1);
     REQUIRE(opponents.enemies().loadKind(kGruntKind));
-    auto bred = opponents.enemies().spawn(
-        EnemySpawn{.kind = kGruntKind, .tier = 1, .generator = 0, .placed = true}, {});
-    const auto placed = opponents.enemies().spawn(
-        EnemySpawn{.kind = kGruntKind, .tier = 1, .position = {5, 0, 0}, .placed = true}, {});
-    REQUIRE(bred.has_value());
-    REQUIRE(placed.has_value());
-    CHECK(opponents.enemies().bred(*bred));
-    CHECK_FALSE(opponents.enemies().bred(*placed));
+    s32 spawned = 0;
+    // A grunt a generator bred, or one the level placed, each set down beside the last.
+    const auto spawn = [&](bool bred) {
+        const Vec3 at{static_cast<f32>(++spawned) * 4, 0, 0};
+        const auto id = opponents.enemies().spawn(EnemySpawn{.kind = kGruntKind,
+                                                             .tier = 1,
+                                                             .position = at,
+                                                             .generator = bred ? 0 : -1,
+                                                             .placed = true},
+                                                  {});
+        REQUIRE(id.has_value());
+        CHECK(opponents.enemies().bred(*id) == bred);
+        return *id;
+    };
     std::vector<s32> helps;
     test::OpponentScript events;
     test::ScriptedOpponents host{events};
@@ -1778,38 +1788,95 @@ TEST_CASE("the tenth hit on what generators bred teaches to destroy generators",
         helps.push_back(id);
         return true;
     };
-    const auto hit = [&](s32 id) {
-        opponents.strikeEnemy(id, 5.0f, 0, {0, 0, 1}, 2, players);
+    const auto strike = [&](s32 id, f32 harm) {
+        opponents.strikeEnemy(id, harm, 0, {0, 0, 1}, 2, players);
         // The live scene updates opponents each frame; settleRewards is only
         // called on portal departure and must not be needed to deliver lessons.
         opponents.update(1, 1.0f / 60.0f, players, {}, host, host, host);
     };
+    // Hits that leave what a generator bred standing count for nothing, however many
+    // (PlayerDamagedEnemy counts damage_enemy's kills), nor does killing what a level placed.
+    const s32 standing = spawn(true);
     for (s32 i = 0; i < 20; ++i) {
-        hit(*placed); // what a level placed does not count
+        strike(standing, 5.0f);
     }
+    REQUIRE(opponents.enemies().alive(standing));
+    strike(spawn(false), kLethal);
+    CHECK(opponents.broodKillsOf(2) == 0);
     for (s32 i = 0; i < 9; ++i) {
-        hit(*bred);
+        strike(spawn(true), kLethal);
     }
+    CHECK(opponents.broodKillsOf(2) == 9);
     CHECK(helps.empty());
-    SECTION("normal updates deliver the tenth-hit lesson") {}
-    SECTION("reopening discards a queued lesson and the previous party's hit streak") {
-        opponents.strikeEnemy(*bred, 5.0f, 0, {0, 0, 1}, 2, players);
-        opponents.close(); // the tenth hit queued a lesson, but it never reached an update
+    SECTION("normal updates deliver the tenth kill's lesson") {}
+    SECTION("reopening discards a queued lesson and the previous party's count") {
+        opponents.strikeEnemy(spawn(true), kLethal, 0, {0, 0, 1}, 2, players);
+        opponents.close(); // the tenth kill queued a lesson, but it never reached an update
         opponents.open({device, world, weapons, effects, audio, root, 1}, players);
-        opponents.enemies().open(device, root, nullptr, 2, {.health = 1000}, 1);
+        opponents.enemies().open(device, root, nullptr, kPool, {.health = 1000}, 1);
         REQUIRE(opponents.enemies().loadKind(kGruntKind));
-        bred = opponents.enemies().spawn(
-            EnemySpawn{.kind = kGruntKind, .tier = 1, .generator = 0, .placed = true}, {});
-        REQUIRE(bred);
+        CHECK(opponents.broodKillsOf(2) == 0);
         for (s32 i = 0; i < 9; ++i) {
-            hit(*bred);
+            strike(spawn(true), kLethal);
         }
         CHECK(helps.empty());
     }
-    hit(*bred);
+    strike(spawn(true), kLethal);
     CHECK(helps == std::vector<s32>{HelpMessages::kDestroyGenerators});
     opponents.settleRewards(players, host, host); // leaving cannot replay an already delivered tip
     CHECK(helps == std::vector<s32>{HelpMessages::kDestroyGenerators});
+    opponents.close();
+}
+
+TEST_CASE("where a boss is fought, kills of what generators bred still count but teach nothing",
+          "[game][level-opponents][help][generator-lesson]") {
+    // PlayerDamagedEnemy counts the kill wherever it is and looks for no boss only before the
+    // lesson (0x8002F334-0x8002F350).
+    const auto root = test::sampleLevel("brood-kills-boss");
+    writeMeleeEnemy(root, kGruntKind);
+    std::filesystem::create_directories(root / "wdata");
+    writeTextFile(root / "wdata/TEST.json", R"({"levels":[{"name":"TEST","bossType":42}]})");
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    REQUIRE(world.load(device, root, LevelRef{"TEST", 0, "TEST", "", "", "", "", 0}));
+    REQUIRE(world.level() != nullptr);
+    REQUIRE(world.level()->bossType >= 0);
+    ItemArchive weapons;
+    EffectTrees effects;
+    LevelSoundscape audio;
+    std::array<PlayerRuntime, 1> players;
+    players[0].actor.spawn(2, {}, nullptr, {0, 0, 20}, 0);
+    constexpr s32 kKills = 12;
+    LevelOpponents opponents;
+    opponents.open({device, world, weapons, effects, audio, root, 1}, players);
+    opponents.enemies().open(device, root, nullptr, kKills, {.health = 1000}, 1);
+    REQUIRE(opponents.enemies().loadKind(kGruntKind));
+    std::vector<s32> helps;
+    test::OpponentScript events;
+    test::ScriptedOpponents host{events};
+    events.settleBlasts = [] {};
+    events.advanceLegend = [](f32) {};
+    events.advanceVictory = [](s32, f32) {};
+    events.levels = [] {};
+    events.award = [](s32, s32, bool) {};
+    events.help = [&](s32 id, usize) {
+        helps.push_back(id);
+        return true;
+    };
+    for (s32 kill = 0; kill < kKills; ++kill) {
+        const auto bred =
+            opponents.enemies().spawn(EnemySpawn{.kind = kGruntKind,
+                                                 .tier = 1,
+                                                 .position = {static_cast<f32>(kill) * 4, 0, 0},
+                                                 .generator = 0,
+                                                 .placed = true},
+                                      {});
+        REQUIRE(bred);
+        opponents.strikeEnemy(*bred, 1e6f, 0, {0, 0, 1}, 2, players);
+        opponents.update(1, 1.0f / 60.0f, players, {}, host, host, host);
+    }
+    CHECK(opponents.broodKillsOf(2) == kKills);
+    CHECK(helps.empty());
     opponents.close();
 }
 

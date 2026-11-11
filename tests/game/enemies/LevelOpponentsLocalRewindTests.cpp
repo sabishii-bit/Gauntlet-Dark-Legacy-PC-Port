@@ -36,7 +36,8 @@ namespace {
 using namespace gdl;
 using namespace gdl::game;
 
-/** A level's opponents with one grunt generator, and one player standing away from it. */
+/** A level's opponents with one grunt generator, a swarm of `swarm` bodies at most, and one
+ * player standing away from it. */
 struct OpponentsFixture {
     std::filesystem::path root = test::attackSceneAssets();
     test::FakeRenderDevice device;
@@ -48,10 +49,10 @@ struct OpponentsFixture {
     std::array<PlayerRuntime, 1> players;
     LevelOpponents opponents;
 
-    OpponentsFixture() {
+    explicit OpponentsFixture(s32 swarm = 2) {
         players[0].actor.spawn(2, {}, nullptr, {0, 0, 20}, 0);
         opponents.open({device, world, weapons, effects, audio, root, 1}, players);
-        opponents.enemies().open(device, root, nullptr, 2, {.health = 1000}, 1);
+        opponents.enemies().open(device, root, nullptr, swarm, {.health = 1000}, 1);
         REQUIRE(opponents.enemies().loadKind(kGruntKind));
         writeTextFile(root / "world.json", R"({
           "objects":[{"name":"GROUND","position":[0,0,0]}],
@@ -106,18 +107,30 @@ std::optional<NativeStateDigest::Digest> swarmDigest(const LevelOpponents& oppon
     return digest.checkedFinish();
 }
 
-TEST_CASE("native hit streak and generator rewards replay in their original settlement order",
-          "[level-opponents-local-rewind][generator-lesson]") {
-    OpponentsFixture fixture;
-    const auto enemy = fixture.opponents.enemies().spawn(
-        EnemySpawn{.kind = kGruntKind, .tier = 1, .generator = 0, .placed = true}, {});
+/** Room in the swarm for every bred grunt the lesson's cases lay low, none retired between. */
+constexpr s32 kKillingSwarm = 12;
+
+/** A grunt the fixture's generator bred, set down at `x` and slain by player 2. */
+void slayBred(OpponentsFixture& f, f32 x) {
+    constexpr f32 kLethal = 1e6f;
+    const auto enemy = f.opponents.enemies().spawn(
+        EnemySpawn{
+            .kind = kGruntKind, .tier = 1, .position = {x, 0, 0}, .generator = 0, .placed = true},
+        {});
     REQUIRE(enemy);
-    for (s32 hit = 0; hit < 9; ++hit) {
-        fixture.opponents.strikeEnemy(*enemy, 5, 0, {0, 0, 1}, 2, fixture.players);
+    f.opponents.strikeEnemy(*enemy, kLethal, 0, {0, 0, 1}, 2, f.players);
+    REQUIRE_FALSE(f.opponents.enemies().alive(*enemy));
+}
+
+TEST_CASE("native brood kills and generator rewards replay in their original settlement order",
+          "[level-opponents-local-rewind][generator-lesson]") {
+    OpponentsFixture fixture{kKillingSwarm};
+    for (s32 kill = 0; kill < 9; ++kill) {
+        slayBred(fixture, static_cast<f32>(kill) * 4);
     }
-    REQUIRE(fixture.opponents.hitStreakOf(2) == 9);
+    REQUIRE(fixture.opponents.broodKillsOf(2) == 9);
     REQUIRE(fixture.opponents.pendingLessons().empty());
-    fixture.opponents.strikeEnemy(*enemy, 5, 0, {0, 0, 1}, 2, fixture.players);
+    slayBred(fixture, 40);
     fixture.opponents.strikeGenerator(0, 1, 1, fixture.players);
     fixture.opponents.strikeGenerator(0, 100000, 2, fixture.players);
     const auto lessons = fixture.opponents.pendingLessons();
@@ -127,7 +140,7 @@ TEST_CASE("native hit streak and generator rewards replay in their original sett
     REQUIRE(rewards.size() == 2);
     REQUIRE_FALSE(rewards[0].destroyed);
     REQUIRE(rewards[1].destroyed);
-    CHECK(fixture.opponents.hitStreakOf(2) == 0); // destruction resets only its hitter's streak
+    CHECK(fixture.opponents.broodKillsOf(2) == 0); // destruction resets only its hitter's count
     auto queued = std::make_unique<LevelOpponents::LocalSnapshot>();
     REQUIRE(fixture.opponents.saveLocal(*queued));
     std::vector<std::string> events;
@@ -248,14 +261,11 @@ TEST_CASE("opponent rewind preserves defeated critters and their pending rewards
 
 TEST_CASE("native opponent owner replays wrong branches through pools queues and rewards",
           "[level-opponents-local-rewind][native-equality]") {
-    auto reference = std::make_unique<OpponentsFixture>();
-    auto predicted = std::make_unique<OpponentsFixture>();
+    auto reference = std::make_unique<OpponentsFixture>(kKillingSwarm);
+    auto predicted = std::make_unique<OpponentsFixture>(kKillingSwarm);
     const auto prepare = [](OpponentsFixture& f) {
-        const auto enemy = f.opponents.enemies().spawn(
-            EnemySpawn{.kind = kGruntKind, .tier = 1, .generator = 0, .placed = true}, {});
-        REQUIRE(enemy);
-        for (s32 hit = 0; hit < 10; ++hit) {
-            f.opponents.strikeEnemy(*enemy, 1, 0, {0, 0, 1}, 2, f.players);
+        for (s32 kill = 0; kill < 10; ++kill) {
+            slayBred(f, static_cast<f32>(kill) * 4);
         }
         f.opponents.strikeGenerator(0, 1, 2, f.players);
     };
@@ -454,7 +464,7 @@ TEST_CASE("native opponent digest bytes stay pinned after the replay script and 
         spawn.placed = true;
         return spawn;
     };
-    // The generator's grunt struck ten times and the generator once, as the replay script opens.
+    // The generator's grunt struck ten times, short of killing it, and the generator once.
     auto bred = grunt(Vec3{0});
     bred.generator = 0;
     const auto enemy = opponents.enemies().spawn(bred, {});
@@ -466,7 +476,10 @@ TEST_CASE("native opponent digest bytes stay pinned after the replay script and 
     test::ScriptedOpponents host;
     // Each tick the camera moves a unit across, twenty short of the generator and facing its way;
     // a grunt is set down every eleventh tick, and the first grunt and the generator are struck
-    // every seventh.
+    // every seventh, the grunt slain at the fourteenth, after the save, so that its kill counts
+    // toward the generators' lesson.
+    constexpr s32 kSlainAt = 14;
+    constexpr f32 kLethal = 1e6f;
     const auto advance = [&](s32 tick) {
         ViewVolume view;
         view.position = {static_cast<f32>(tick), 0, -20};
@@ -477,7 +490,8 @@ TEST_CASE("native opponent digest bytes stay pinned after the replay script and 
         opponents.update(1, 1.0f / 60, {}, {}, host, host, host);
         if (tick % 7 == 0) {
             opponents.strikeGenerator(0, 1, 2, fixture->players);
-            opponents.strikeEnemy(0, 1, 0, {0, 0, 1}, 2, fixture->players);
+            opponents.strikeEnemy(0, tick == kSlainAt ? kLethal : 1, 0, {0, 0, 1}, 2,
+                                  fixture->players);
         }
     };
     for (s32 tick = 0; tick < 6; ++tick) {
@@ -493,9 +507,11 @@ TEST_CASE("native opponent digest bytes stay pinned after the replay script and 
     REQUIRE(boss.saveLocal(*bosses));
     opponents.generators().saveLocal(generators);
     opponents.placements().saveLocal(placements);
+    REQUIRE(opponents.broodKillsOf(2) == 0);
     for (s32 tick = 6; tick < 18; ++tick) {
         advance(tick);
     }
+    REQUIRE(opponents.broodKillsOf(2) == 1);
     NativeStateResources registry;
     registerOpponents(registry, *fixture);
     const auto resources = registry.resources();
@@ -505,19 +521,19 @@ TEST_CASE("native opponent digest bytes stay pinned after the replay script and 
     // them, so that a moved digest names the child that moved it.
     test::checkPinnedDigests("LevelOpponents", test::liveDigest(opponents, resources),
                              test::savedDigest(opponents, *saved, resources),
-                             "6e190f740672c4f9a67ce3578fb20a06eb8441303df159caa669f7ff970fb1c1",
-                             "29e7270c57b3003cd2a135f50c9c26a2bbdd5b744a3b04261b97362032fcd3ba");
+                             "2e822a1f321972ed3b9653253ad4867406ed07113577f8baa4ccb43163f80df8",
+                             "ba8406fdf842fd9a692c218952de36f109db6abf902f9466a3d80366b4b52196");
     test::checkPinnedDigests("LevelOpponents' follow-up", followupDigest(opponents),
                              followupDigest(opponents, *saved),
-                             "e55575677166e6a689f04bbea949b80e7d04cb4f984721785eb2014449057fd5",
-                             "7644bf15fdabd846f2e36044f889ddeda89d5b8cec37e4a594f860893a591bba");
+                             "f1769a112bec90a097c6912cccd388f9babe8ef28853f7d3685c53d4c634017f",
+                             "abb0dcad55d633637fe9402ac3ae291c55984301b6dd62396534fccf08c151a6");
     test::checkPinnedDigests("Generators", test::liveDigest(opponents.generators(), resources),
                              test::savedDigest(opponents.generators(), generators, resources),
-                             "3c3a29b5be03119b2c02b2fdcc7dfc2b55e775299b150e3ed47958e87d7b9177",
+                             "8196e441a1d929aeacd890e7f84040b657f007a39f233e72a52b10e748abc24e",
                              "7a4d103ae4a34a8b4b912050b9728b0d39aa0ec71614be24c277729f103333a6");
     test::checkPinnedDigests("Enemies", test::liveDigest(opponents.enemies(), resources),
                              test::savedDigest(opponents.enemies(), *enemies, resources),
-                             "116af08724c24114d046da49136ce486dd5af409a921d8121f4de6480ccbed4c",
+                             "02d3e24feb0e18188de1c33beb5f96d6c60d34bac615a704ea1ec5430af8dfba",
                              "01ab1d8cf4029499cda73239813ed2cfdbba9ba45258f5dbf677ba12b2977297");
     test::checkPinnedDigests("PlacedEnemies", test::liveDigest(opponents.placements(), resources),
                              test::savedDigest(opponents.placements(), placements, resources),
