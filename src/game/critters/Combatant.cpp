@@ -468,11 +468,6 @@ void Combatant::update(s32 ticks, f32 seconds, std::span<const EnemyView> player
     }
 }
 
-bool Combatant::deathHoldRunsOut(const Actor& critter, const MoveDefinition* move) {
-    return critter.state == State::Dying && move != nullptr &&
-           move->type == MoveDefinition::kDeath && move->hold > 0.0f && critter.moveDone;
-}
-
 void Combatant::updateActor(s32 ticks, f32 seconds, std::span<const EnemyView> players,
                             std::span<const Combatant> peers, bool timeStopped) {
     syncFloor();
@@ -747,10 +742,7 @@ void Combatant::updateActor(s32 ticks, f32 seconds, std::span<const EnemyView> p
     }
     // CritterBossAI probes its floor (FloorCollide, 0x8003a2d4) after its step
     // (CritterTranslate, 0x8003a218), before what it holds, its areas and its heads follow it.
-    // The update its death's hold runs out removes it before then (0x8003a0c4).
-    if (!deathHoldRunsOut(critter, move)) {
-        settleOnFloor();
-    }
+    settleOnFloor();
     carryGrab(critter, players);
     updateAreas(critter, i, players);
     critter.push *= portable::pow(kPushDecay, seconds * kPushFrameRate);
@@ -769,7 +761,7 @@ void Combatant::updateActor(s32 ticks, f32 seconds, std::span<const EnemyView> p
         constexpr f32 kBossDeathFade = 0.5f;
         const f32 remaining = move->hold - critter.finishedSeconds;
         critter.alpha = std::clamp(remaining / kBossDeathFade, 0.0f, 1.0f);
-        if (deathHoldRunsOut(critter, move)) {
+        if (critter.moveDone) {
             critter = Actor{};
         }
     } else if (critter.state == State::Dying &&

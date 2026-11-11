@@ -99,16 +99,18 @@ f32 drawnHeight(const Combatant& fighter, std::string_view node, f32 alpha) {
 /** The start, middle and end of the time between two updates. */
 constexpr std::array kAlphas{0.0f, 0.5f, 1.0f};
 
-/** The ticks of update `frame` at `fps` updates a second, as the scene's fixed clock deals them
- * out: two at 30, one at 60, none and one by turns at 120. */
-s32 ticksOf(s32 frame, s32 fps) {
-    return ((frame + 1) * Combatant::kTicksPerSecond / fps) -
-           (frame * Combatant::kTicksPerSecond / fps);
-}
+/** The ticks and seconds of one update. */
+struct UpdateStep {
+    s32 ticks = 0;
+    f32 seconds = 0.0f;
+};
 
-/** The seconds `ticks` make. */
-f32 secondsOf(s32 ticks) {
-    return static_cast<f32>(ticks) / static_cast<f32>(Combatant::kTicksPerSecond);
+/** An update at `fps` updates a second as PlayScene deals it: two of its sixty ticks a second
+ * at 30, one at 60, and at 120, its clock set to 120, one tick of 1/120 s. It never deals an
+ * update without a tick. */
+UpdateStep updateAt(s32 fps) {
+    return {.ticks = std::max(1, Combatant::kTicksPerSecond / fps),
+            .seconds = 1.0f / static_cast<f32>(fps)};
 }
 
 TEST_CASE("a boss rides a moving floor asleep and fighting, its heads with it, and keeps its "
@@ -148,7 +150,8 @@ TEST_CASE("a boss rides a moving floor asleep and fighting, its heads with it, a
     bosses.update(2, kStep, party);
     standsAt(body, -17);
     REQUIRE_FALSE(bosses.view().awake);
-    // Awake and fighting, it rides on.
+    // Awake and fighting, it rides on, on an update without a tick as well, which only a direct
+    // caller makes (PlayScene deals at least one).
     bosses.wake();
     party[0].position = Vec3{0, -17, 40};
     for (s32 frame = 1; frame <= 60; ++frame) {
@@ -158,6 +161,9 @@ TEST_CASE("a boss rides a moving floor asleep and fighting, its heads with it, a
         bosses.takeCues();
         standsAt(body, height);
     }
+    floor.at(-35);
+    bosses.update(0, 0, party);
+    standsAt(body, -35);
     REQUIRE(bosses.view().awake);
     REQUIRE(bosses.view().alive);
 }
@@ -255,14 +261,13 @@ TEST_CASE("a boss that steps up a slope stands on the floor where its step ends 
     const Combatant& body = fight.actor;
     REQUIRE(body.childCount() == 1);
     const std::array players{EnemyView{.player = 0, .position = Vec3{0, 0, 90}}};
-    // Two thirds of a second takes it twenty up the slope, five above where it began. At 120 a
-    // second every other update has no tick and takes no step.
+    // Two thirds of a second takes it twenty up the slope, five above where it began.
+    const UpdateStep step = updateAt(fps);
     f32 walked = 0;
     for (s32 frame = 0; frame < 2 * fps / 3; ++frame) {
         CAPTURE(frame);
-        const s32 ticks = ticksOf(frame, fps);
-        fight.update(ticks, secondsOf(ticks), players);
-        walked += kPace * secondsOf(ticks);
+        fight.update(step.ticks, step.seconds, players);
+        walked += kPace * step.seconds;
         REQUIRE(body.position().z == Approx(walked));
         CHECK(body.position().y == Approx(kRise * walked).margin(kHeightMargin));
         CHECK(drawnHeight(body, "", 1) == Approx(kRise * walked).margin(kHeightMargin));
@@ -289,16 +294,16 @@ TEST_CASE("a boss that dies on a moving floor is defeated where the update befor
     lethal.damage = 100000;
     bosses.hurt(lethal);
     REQUIRE(bosses.fighter().dying());
-    // The floor goes half a unit down every update while it dies. The update its death's hold
-    // runs out removes it before its floor probe, so it falls on the floor of the update
-    // before. At 120 a second that update has no tick and settles it all the same.
+    // The floor goes half a unit down every update while it dies. Bosses::update takes the
+    // defeat where the boss stood as the update that removes it began, since the original
+    // removes it before its floor probe, so it falls on the floor of the update before.
+    const UpdateStep step = updateAt(fps);
     std::optional<Vec3> defeat;
     for (s32 update = 1; update <= 4 * fps && !defeat; ++update) {
         CAPTURE(update);
         const f32 height = -0.5f * static_cast<f32>(update);
         floor.at(height);
-        const s32 ticks = ticksOf(update - 1, fps);
-        bosses.update(ticks, secondsOf(ticks), party);
+        bosses.update(step.ticks, step.seconds, party);
         bosses.takeCues();
         bosses.takeSpews();
         defeat = bosses.takeDefeat();

@@ -472,8 +472,8 @@ void Bosses::update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
             assets->textures.advance(seconds);
         }
     }
-    // The update that removes it never reaches its floor probe (CritterDelInst at 0x8003a0c4):
-    // it falls where the last update stood it.
+    // It falls where the last update stood it: the original removes it before its floor probe
+    // (CritterDelInst at 0x8003a0c4), so its defeat is taken before the fighter's update.
     const Vec3 before = m_fighter.position();
     m_fighter.update(ticks, seconds, players);
     stageLegend(ticks);
