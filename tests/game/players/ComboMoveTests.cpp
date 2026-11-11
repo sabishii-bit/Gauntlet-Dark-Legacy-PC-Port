@@ -1,6 +1,9 @@
 #include <array>
 #include <cmath>
+#include <initializer_list>
 #include <numbers>
+#include <optional>
+#include <vector>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -57,6 +60,34 @@ TEST_CASE("a partner is the nearest standing ahead within five and three up or d
     REQUIRE(ComboMove::findPartner(0, Vec3{0.0f}, facing, others) == std::nullopt);
     // Nobody with no facing to look along.
     REQUIRE(ComboMove::findPartner(0, Vec3{0.0f}, Vec3{0.0f}, others) == std::nullopt);
+}
+
+TEST_CASE("a partner's reach, nearness and cone go by the original's fast length",
+          "[game][players][combo]") {
+    const Vec3 north{0.0f, 0.0f, 1.0f};
+    const auto partnerAt = [](const Vec3& facing, std::initializer_list<Vec3> positions) {
+        std::vector<ComboMove::Candidate> candidates{{Vec3{0.0f}, true}};
+        for (const Vec3& position : positions) {
+            candidates.push_back({position, true});
+        }
+        return ComboMove::findPartner(0, Vec3{0.0f}, facing, candidates);
+    };
+    // 4.98 away as the crow flies, but 3.9 + 0.376 x 3.1 = 5.07 by fqdist: out of reach.
+    CHECK(partnerAt(north, {Vec3{3.1f, 0.0f, 3.9f}}) == std::nullopt);
+    CHECK(partnerAt(north, {Vec3{0.0f, 0.0f, 4.99f}}) == 1);
+    // The nearer by fqdist is taken: 4.05 straight ahead over 4.02 (4.09 by fqdist) aside.
+    CHECK(partnerAt(north, {Vec3{2.5f, 0.0f, 3.15f}, Vec3{0.0f, 0.0f, 4.05f}}) == 2);
+    CHECK(partnerAt(north, {Vec3{0.0f, 0.0f, 4.05f}, Vec3{2.5f, 0.0f, 3.15f}}) == 1);
+    // A tie goes to the later candidate.
+    CHECK(partnerAt(north, {Vec3{1.0f, 0.0f, 2.0f}, Vec3{-1.0f, 0.0f, 2.0f}}) == 2);
+    // Facing 26.6 degrees round from +z, both vectors laid flat to fqdist's unit: a partner
+    // 44 degrees off the facing is outside the cone (a cosine of 0.701, against 0.719 as
+    // measured truly), one 42 degrees off is inside.
+    const Vec3 askew{0.4477591f, 0.0f, 0.8941543f};
+    CHECK(partnerAt(askew, {Vec3{2.82967f, 0.0f, 0.99648f}}) == std::nullopt);
+    CHECK(partnerAt(askew, {Vec3{2.79317f, 0.0f, 1.09463f}}) == 1);
+    // One standing where the grabber stands has no direction to be ahead in.
+    CHECK(partnerAt(north, {Vec3{0.0f, 1.0f, 0.0f}}) == std::nullopt);
 }
 
 TEST_CASE("linking ties both sides to each other and the grabber's class",

@@ -112,6 +112,9 @@ public:
     bool flying(usize i) const override {
         return m_scene.cheats(m_scene.m_players[i].actor.player()).noclip;
     }
+    bool bearsLegend(usize i) const override {
+        return m_scene.m_opponents.bosses().legend().carriedBy(m_scene.m_players[i].actor.player());
+    }
 
 private:
     PlayScene& m_scene;

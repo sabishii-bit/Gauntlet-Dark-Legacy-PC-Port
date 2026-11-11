@@ -1083,6 +1083,18 @@ bool PlayerAnimator::isMelee(Action action) {
     return info(action).family == ActionFamily::Melee;
 }
 
+static_assert(std::ranges::all_of(PlayerAnimator::kNativeActions,
+                                  [](u8 row) { return row < PlayerAnimator::kNativeActionCount; }),
+              "every action is a row of the original's table");
+
+bool PlayerAnimator::takeableIn(Action action) {
+    if (index(action) >= kActionCount) {
+        return false;
+    }
+    const u8 row = kNativeActions[index(action)];
+    return row < kNativePowerLow || (row >= kNativeThrow && row < kNativeSpecialShot);
+}
+
 bool PlayerAnimator::comboing() const {
     return info(m_current).family == ActionFamily::ComboAct;
 }

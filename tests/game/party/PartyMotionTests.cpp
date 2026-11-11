@@ -71,7 +71,9 @@ struct Fixture {
         .grabDeath = {},
         .resolveMovement = {},
         .startPoint = {},
-        .comboImpact = {}};
+        .comboImpact = {},
+        .flying = {},
+        .bearsLegend = {}};
     test::ScriptedMotion level{events};
 
     Fixture() {
@@ -162,6 +164,11 @@ test::MotionScript orderLog(std::vector<std::string>& log) {
             .flying =
                 [note](usize i) {
                     note("flying", i);
+                    return false;
+                },
+            .bearsLegend =
+                [note](usize i) {
+                    note("bearsLegend", i);
                     return false;
                 }};
 }
@@ -1711,6 +1718,83 @@ TEST_CASE("the combo button with half the meter lifts a warrior's partner ahead,
     CHECK(f.players[1].actor.position().x > landed + 0.5f); // its own stick again
 }
 
+TEST_CASE("a potion asked for first, or a legend item yet to be thrown, keeps the combo button "
+          "from taking hold",
+          "[game][screens][party-motion][combo][assets]") {
+    const auto root = test::assetOrSkip("PLAYERS/WAR/ANIM/ANIM.PS2")
+                          .parent_path()
+                          .parent_path()
+                          .parent_path()
+                          .parent_path();
+    using Action = PlayerAnimator::Action;
+    test::FakeRenderDevice device;
+    struct Try {
+        bool potion = false;   ///< a potion button held with the combo's
+        bool carrying = false; ///< a potion to use
+        bool bearer = false;   ///< bringing the boss's legend item into its fight
+    };
+    const auto attempt = [&](const Try& asked, Fixture& f) {
+        for (PlayerRuntime& player : f.players) {
+            player.figure = PlayerFigure::load(device, root, player.actor.save(), Entrance::Skip);
+            REQUIRE(player.figure);
+            player.floor.object = 0;
+        }
+        f.players[1].actor.place(Vec3{0, 0, 3}); // three ahead of player 3's warrior
+        f.players[0].turbo.add(ComboMove::kMeterNeeded);
+        if (asked.carrying) {
+            f.players[0].actor.save().progress().inventory.addPotions(1, 1);
+        }
+        f.events.advanceTurbo = [](usize, s32, f32) {};
+        f.events.perform = [&f](usize i, PartyMotion::Action action) {
+            if (action == PartyMotion::Action::NoPotion) {
+                f.calls.push_back("help" + std::to_string(i));
+            }
+        };
+        f.events.bearsLegend = [bearer = asked.bearer](usize i) { return bearer && i == 0; };
+        f.inputs[3].combo = true;
+        f.inputs[3].usePotion = asked.potion;
+        f.step();
+    };
+    SECTION("the combo alone takes hold") {
+        Fixture f;
+        attempt({}, f);
+        CHECK(f.players[0].combo.role == ComboRole::Grabber);
+        CHECK(f.players[0].figure->animator().action() == Action::ComboAct1);
+    }
+    SECTION("a potion asked for goes instead, carried or not") {
+        Fixture carried;
+        attempt({.potion = true, .carrying = true}, carried);
+        CHECK_FALSE(carried.players[0].combo.active());
+        CHECK(carried.players[0].figure->animator().action() == Action::UsePotion);
+        Fixture none;
+        attempt({.potion = true}, none);
+        CHECK_FALSE(none.players[0].combo.active());
+        CHECK(none.calls == std::vector<std::string>{"help0", "select0", "select1"});
+    }
+    SECTION("once its potion has gone, the button still held no longer stands in the way") {
+        Fixture f;
+        attempt({.potion = true, .carrying = true}, f);
+        REQUIRE(f.players[0].figure->animator().conjuring());
+        bool conjuring = true; // as the step that took hold began
+        s32 frames = 0;
+        while (!f.players[0].combo.active() && frames < 120) {
+            conjuring = f.players[0].figure->animator().conjuring();
+            f.step();
+            ++frames;
+        }
+        CHECK(f.players[0].combo.active());
+        CHECK_FALSE(conjuring); // taken once the potion's gesture was over
+        CHECK(frames > 1);
+        CHECK(f.players[0].figure->animator().action() == Action::ComboAct1);
+    }
+    SECTION("a legend item's bearer takes hold of nobody") {
+        Fixture f;
+        attempt({.bearer = true}, f);
+        CHECK_FALSE(f.players[0].combo.active());
+        CHECK_FALSE(f.players[1].combo.active());
+    }
+}
+
 TEST_CASE("a step asks the level in phase order", "[game][screens][party-motion][motion-order]") {
     Fixture f;
     std::vector<std::string> log;
@@ -1803,6 +1887,7 @@ TEST_CASE("a movement level with nothing scripted answers as a level with nothin
     CHECK(level.limitMovement(0, from, to) == to);
     CHECK_FALSE(level.startPoint());
     CHECK_FALSE(level.flying(0));
+    CHECK_FALSE(level.bearsLegend(0));
     CHECK_FALSE(level.comboImpact(0, 1, ComboMove::kWarriorBlow));
 }
 
@@ -1825,12 +1910,15 @@ TEST_CASE("a scripted movement level asks its script as the script stands at eac
     };
     script.limitMovement = [](usize, const Vec3& before, const Vec3&) { return before; };
     script.flying = [](usize index) { return index == 1; };
+    script.bearsLegend = [](usize index) { return index == 0; };
     script.chainHeldMelee = true;
     CHECK(level.attackDeed(1, false, true, facing) == PlayerDeed::MeleeSlow);
     CHECK(level.meleeSense(1, true, facing) == MeleeSense{.range = MeleeRange::Step, .low = true});
     CHECK(level.limitMovement(1, Vec3{0}, Vec3{0, 0, 2}) == Vec3{0});
     CHECK(level.flying(1));
     CHECK_FALSE(level.flying(0));
+    CHECK(level.bearsLegend(0));
+    CHECK_FALSE(level.bearsLegend(1));
     CHECK(level.chainsHeldMelee());
 }
 

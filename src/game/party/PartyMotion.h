@@ -75,6 +75,9 @@ public:
         /** Whether the developer console holds a player's body aloft (noclip): it then
          * rides no floor, collides with nothing and never falls. */
         virtual bool flying(usize index) const = 0;
+        /** Whether member `index` brings a boss's legend item into that boss's fight and has
+         * yet to throw it: such a bearer takes hold of no combo partner. */
+        virtual bool bearsLegend(usize index) const = 0;
     };
     static constexpr f32 kLostDepth = 4.5f;   ///< under the world's lowest point a body is lost
     static constexpr f32 kTurnFrames = 30.0f; ///< the rate a partial turn is taken at, a second

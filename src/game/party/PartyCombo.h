@@ -35,8 +35,9 @@ public:
         virtual Vec3 limitMovement(usize index, const Vec3& before, const Vec3& after) const = 0;
     };
 
-    /** Whom `index` may take hold of now: the nearest other standing member ahead who is
-     * free to be (fn_80088EF4); none when nobody is, or `index` cannot begin. */
+    /** Whom `index` may take hold of now: the nearest other standing member ahead who may be
+     * taken (fn_80088EF4); none when nobody may, or `index` is not clear to take hold. Its
+     * own action is not asked: whether its move may begin is for its animator to say. */
     static std::optional<usize> partnerFor(std::span<const PlayerRuntime> players, usize index);
     /** Ties the pair together as the grabber's move begins. */
     static void begin(std::span<PlayerRuntime> players, usize grabber, usize partner);

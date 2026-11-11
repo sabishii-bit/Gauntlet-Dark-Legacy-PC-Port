@@ -102,6 +102,8 @@ public:
     /** Whether the boss should roar now. */
     bool wantsRoar() const { return m_roarDue && !m_roared; }
     bool thrown() const { return m_thrown; }
+    /** Whether `player` carries the item into the fight and has yet to throw it. */
+    bool carriedBy(s32 player) const { return running() && !m_thrown && m_player == player; }
     /** Whether its weakness is on the boss. */
     bool weakening() const { return m_thrown && m_stage != Stage::Over; }
     /** The opening presentation dims the scene, not the weakness timer. The Dragon's

@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "engine/core/Types.h"
+#include "engine/math/ApproximateLength.h"
 #include "engine/math/PortableMath.h"
 
 namespace gdl::game {
@@ -13,6 +14,16 @@ namespace {
 /** The horizontal length of a vector. */
 f32 groundLength(const Vec3& v) {
     return portable::hypot(v.x, v.z);
+}
+
+/** `v` laid flat and scaled by the original's fast length (NormalVector2D, 0x800BD938): the
+ * reciprocal of that length in single precision times each component, nothing scaled for a
+ * vector of no length. Returns the length it had. */
+f32 flattenToUnit(Vec3& v) {
+    const f32 length = approximateFlatLength(v);
+    const f32 scale = length <= 0.0f ? 1.0f : static_cast<f32>(1.0 / static_cast<f64>(length));
+    v = Vec3{v.x * scale, 0.0f, v.z * scale};
+    return length;
 }
 
 /** The two are no longer tied: neither holds, rides or flies. */
@@ -25,26 +36,27 @@ void unlink(ComboState& grabber, ComboState& partner) {
 
 std::optional<usize> ComboMove::findPartner(usize self, const Vec3& position, const Vec3& facing,
                                             std::span<const Candidate> candidates) {
-    const f32 length = groundLength(facing);
-    if (length <= 0.0f) {
-        return std::nullopt;
-    }
-    const Vec3 ahead{facing.x / length, 0.0f, facing.z / length};
+    Vec3 ahead = facing;
+    flattenToUnit(ahead);
     std::optional<usize> closest;
     f32 best = kReach;
     for (usize i = 0; i < candidates.size(); ++i) {
         if (i == self || !candidates[i].eligible) {
             continue;
         }
-        const Vec3 gap = candidates[i].position - position;
+        Vec3 gap = candidates[i].position - position;
         if (std::abs(gap.y) > kRise) {
             continue;
         }
-        const f32 distance = groundLength(gap);
-        if (distance > best || distance <= 0.0f) {
+        // The nearest by the original's fast length, a tie going to the later candidate.
+        const f32 distance = flattenToUnit(gap);
+        if (distance > best) {
             continue;
         }
-        if ((gap.x * ahead.x + gap.z * ahead.z) / distance < kCone) {
+        // Summed as the original's fmadds: the first product is not rounded on its own.
+        const auto cosine =
+            static_cast<f32>(static_cast<f64>(gap.x) * ahead.x + static_cast<f64>(gap.z * ahead.z));
+        if (cosine < kCone) {
             continue;
         }
         closest = i;

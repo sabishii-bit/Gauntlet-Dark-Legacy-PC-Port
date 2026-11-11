@@ -131,6 +131,29 @@ TEST_CASE("the rite waits for the boss to rise, brandishes and throws, has it ro
     REQUIRE(forGood.stage() == LegendRite::Stage::None);
 }
 
+TEST_CASE("only the bearer carries the item into the fight, from the rite's start until the throw",
+          "[game][enemies][legend][combo]") {
+    LegendRite rite;
+    CHECK_FALSE(rite.carriedBy(-1)); // no rite: nobody, not even the bearer of none
+    CHECK_FALSE(rite.carriedBy(2));
+    rite.begin(2, *legendWeaknessOf(41)); // the lich's book
+    CHECK(rite.carriedBy(2));
+    CHECK_FALSE(rite.carriedBy(0));
+    // Still the bearer's while the boss rises and as the item is held up.
+    rite.update(2, false, false);
+    CHECK(rite.carriedBy(2));
+    rite.update(2, true, false);
+    REQUIRE(rite.stage() == LegendRite::Stage::Woken);
+    CHECK(rite.carriedBy(2));
+    for (s32 ticks = 0; !rite.thrown() && ticks < LegendRite::kBrandishTicks; ticks += 2) {
+        rite.update(2, true, false);
+    }
+    REQUIRE(rite.thrown());
+    CHECK_FALSE(rite.carriedBy(2));
+    rite.clear();
+    CHECK_FALSE(rite.carriedBy(2));
+}
+
 TEST_CASE("the dragon's item presentation ends on impact without waiting for it to thaw or roar",
           "[game][enemies][legend]") {
     LegendRite rite;

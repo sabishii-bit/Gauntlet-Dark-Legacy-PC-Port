@@ -295,6 +295,26 @@ public:
         "COMBOWAR1",    "COMBOWAR2",    "COMBOWAR3",    "COMBOVAL",     "COMBOWIZ",
         "COMBOARC",     "COMBODWF1",    "COMBODWF2",    "COMBODWF3",    "COMBOKNI",
         "COMBOSOR",     "COMBOJES"};
+    /** How many rows the original's action table has (0x80126C68, READY to GRABBED). */
+    static constexpr usize kNativeActionCount = 149;
+    /** Each action's row of the original's action table, the number PlayerData +0x208 holds
+     * while it plays; where the table repeats a sequence, the row PlayerMotion and
+     * DoPlayerAction use for it (the plain throw's THROW1S 92, from a stride THROW2S 94). */
+    static constexpr std::array<u8, kActionCount> kNativeActions{
+        0,   1,   2,   3,   17,  18,  19,  20,  124, 92,  94,  95,  96,  97,  98,  115, 116,
+        117, 118, 126, 130, 127, 86,  87,  8,   119, 120, 121, 99,  100, 9,   10,  11,  12,
+        13,  14,  15,  16,  71,  72,  73,  74,  75,  76,  77,  78,  131, 132, 133, 134, 107,
+        109, 129, 148, 128, 39,  40,  41,  42,  43,  32,  33,  34,  82,  83,  79,  80,  81,
+        44,  45,  46,  47,  48,  49,  50,  51,  52,  53,  54,  55,  56,  57,  58,  59,  60,
+        61,  62,  63,  64,  65,  66,  69,  70,  35,  36,  37,  38,  84,  85,  108, 112, 113,
+        110, 111, 103, 104, 105, 106, 28,  122, 21,  22,  29,  30,  31,  135, 26,  88,  89,
+        90,  136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147};
+    /** The first of the rows a partner is never taken from in the original (ATTPWRALOW, then
+     * the turbo moves and the combo move), the row after them (THROW1S), and the first of
+     * the rows from which none is taken again (SSHOT1): fn_80088EF4, 0x80089010. */
+    static constexpr u8 kNativePowerLow = 84;
+    static constexpr u8 kNativeThrow = 91;
+    static constexpr u8 kNativeSpecialShot = 107;
     static constexpr f32 kReleaseFrame = 2.0f;     ///< of the wind-up, from which it gives way
     static constexpr f32 kGagHold = 10.0f;         ///< frames of retching before anything cuts in
     static constexpr s32 kFidgetTicks = 1800;      ///< standing still before the first fidget
@@ -338,14 +358,15 @@ public:
     bool comboThrown() const {
         return m_current == Action::ComboWar2 || m_current == Action::ComboDwf2;
     }
-    /** Whether a partner may take hold of the body now (fn_80088EF4's actions 84 to 90 and
-     * from 107): not in a power swing, a turbo move, a potion, a guard, a reaction, its
-     * entrance, its death or a combo. */
-    bool comboTakeable() const {
-        return !entering() && !dying() && !reacting() && !turboing() && !conjuring() &&
-               !guarding() && !comboBound() && m_current != Action::PowerLow &&
-               m_current != Action::PowerLowRecover;
-    }
+    /** Whether a partner may take hold of the body now: its entrance played and its action
+     * one a partner may be taken from (takeableIn). */
+    bool comboTakeable() const { return m_entered && takeableIn(m_current); }
+    /** Whether a partner may be taken from `action` (fn_80088EF4, 0x80089010): the original
+     * refuses its rows 84 to 90 (the low power swing, the turbo moves, the combo move) and
+     * those from 107 (the special shot, the hammer and breath, potions, the guard, the gag,
+     * the entrance, death, the reactions and a partner's combo); a charge, a strong throw or
+     * a gauntlet's shot is taken. None outside the actions. */
+    static bool takeableIn(Action action);
     /** What a partner held by a grabber of `grabberClass` plays (PlayerMotion's case 38). */
     static Action comboHeldActionOf(s32 grabberClass);
     /** What a partner let go of by one plays (case 39): only the warrior's and the dwarf's. */
@@ -388,6 +409,9 @@ public:
     bool potionThrown() const { return m_potionThrown; }
     /** Held game ticks during the potion's wind-up; frozen on first release. */
     s32 potionThrowTicks() const { return m_potionThrowTicks; }
+    /** Whether a potion has gone for the press of its button still held: until the button
+     * comes up it asks for no other. */
+    bool potionLatched() const { return m_potionLatch; }
     /** Whether the weapon has left the hand and the body is recovering from the throw. */
     bool recovering() const {
         return m_current == Action::ThrowRecover || m_current == Action::ThrowMovingRecover;

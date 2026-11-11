@@ -319,6 +319,50 @@ TEST_CASE("a charger goes where the dwarf's stick sends it at half again the pac
     REQUIRE(f.players[1].actor.yaw() < std::numbers::pi_v<f32> / 2.0f);
 }
 
+TEST_CASE("with the real warriors only the partner's action decides whether it may be taken",
+          "[game][screens][combo][assets]") {
+    const auto root = test::assetOrSkip("PLAYERS/WAR/ANIM/ANIM.PS2")
+                          .parent_path()
+                          .parent_path()
+                          .parent_path()
+                          .parent_path();
+    using Action = PlayerAnimator::Action;
+    test::FakeRenderDevice device;
+    struct Doing {
+        PlayerDeed deed;
+        Action action;
+        bool takeable; ///< as a partner (fn_80088EF4's rows 84 to 90 and from 107 refused)
+    };
+    constexpr std::array kDoings{
+        Doing{PlayerDeed::None, Action::Ready, true},
+        Doing{PlayerDeed::Shove, Action::Shove, true},
+        Doing{PlayerDeed::StrongAttack, Action::StrongThrow, true},
+        Doing{PlayerDeed::FireLeft, Action::FireLeft, true},
+        Doing{PlayerDeed::FireRight, Action::FireRight, true},
+        Doing{PlayerDeed::Defend, Action::DefendRaise, false},
+        Doing{PlayerDeed::Gag, Action::Gag, false},
+        Doing{PlayerDeed::TurboStrong, Action::TurboStrong, false},
+    };
+    for (const Doing& doing : kDoings) {
+        CAPTURE(doing.action);
+        for (const usize busy : {usize{0}, usize{1}}) {
+            CAPTURE(busy);
+            Fixture f;
+            for (PlayerRuntime& player : f.players) {
+                player.figure =
+                    PlayerFigure::load(device, root, player.actor.save(), Entrance::Skip);
+                REQUIRE(player.figure != nullptr);
+            }
+            f.players[busy].figure->animate(0, kTicks, kStep, doing.deed);
+            REQUIRE(f.players[busy].figure->animator().action() == doing.action);
+            // The grabber, player 0, takes hold from whatever it is doing; its partner only
+            // from what a partner may be taken from.
+            const bool taken = busy == 0 || doing.takeable;
+            CHECK(PartyCombo::partnerFor(f.players, 0).has_value() == taken);
+        }
+    }
+}
+
 TEST_CASE("with the real warrior a partner ahead is taken hold of and rides its DUMMY node",
           "[game][screens][combo][assets]") {
     const auto root = test::assetOrSkip("PLAYERS/WAR/ANIM/ANIM.PS2")

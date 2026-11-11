@@ -19,17 +19,25 @@ namespace {
 
 constexpr std::string_view kSeatNode = "DUMMY"; ///< the costume's marker the partner hangs on
 
-/** Whether a member may be taken hold of, or take hold: standing, free and carrying no one
- * (fn_80088EF4's tests of the other player). */
-bool free(const PlayerRuntime& runtime) {
+/** Whether a member is clear to take part in a combo, on either side (fn_80088EF4's tests of
+ * both players): standing in the level, in no combo, capture or departure, its figure bound,
+ * on a floor that does not move, and without Pojo. */
+bool clearToCombo(const PlayerRuntime& runtime) {
     if (runtime.life != PlayerLife::Standing || runtime.departed || runtime.combo.active() ||
         runtime.capture.active() || runtime.transport.active() || runtime.figure == nullptr ||
         runtime.floor.object < 0 || (runtime.floor.flags & FloorRiding::kMoving) != 0 ||
-        !runtime.figure->animator().bound() || !runtime.figure->animator().comboTakeable()) {
+        !runtime.figure->animator().bound()) {
         return false;
     }
     const auto worn = PowerupEffects::of(runtime.actor.save().progress().inventory);
     return (worn.special & powerup::kPojo) == 0;
+}
+
+/** Whether a member may be taken hold of: clear, and in an action a partner may be taken from.
+ * Only the partner's action is tested; whether the grabber's move may begin is its
+ * animator's to say (DoPlayerAction's cut rules). */
+bool takeable(const PlayerRuntime& runtime) {
+    return clearToCombo(runtime) && runtime.figure->animator().comboTakeable();
 }
 
 /** Heading `wanted` taken part of the way from `yaw` at `turn` a 30 Hz frame. */
@@ -41,13 +49,13 @@ f32 turnToward(f32 yaw, f32 wanted, f32 turn, f32 seconds) {
 } // namespace
 
 std::optional<usize> PartyCombo::partnerFor(std::span<const PlayerRuntime> players, usize index) {
-    if (index >= players.size() || !free(players[index])) {
+    if (index >= players.size() || !clearToCombo(players[index])) {
         return std::nullopt;
     }
     std::vector<ComboMove::Candidate> candidates;
     candidates.reserve(players.size());
     for (const PlayerRuntime& runtime : players) {
-        candidates.push_back({runtime.actor.position(), free(runtime)});
+        candidates.push_back({runtime.actor.position(), takeable(runtime)});
     }
     const PlayerActor& actor = players[index].actor;
     return ComboMove::findPartner(index, actor.position(), actor.facing(), candidates);

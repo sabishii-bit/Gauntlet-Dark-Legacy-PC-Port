@@ -373,6 +373,11 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
             player < inputs.size()) {
             const PlayInput& in = inputs[player];
             const bool carrying = !actor.save().progress().inventory.potions.empty();
+            // fn_80088938 asks the potion buttons before the combo: one held whose potion has
+            // yet to go for this press keeps the combo from being tried, carried or not
+            // (0x80088AF8-0x80088B68).
+            const bool potionAsked = (in.usePotion || in.throwPotion || in.shieldPotion) &&
+                                     (animator == nullptr || !animator->potionLatched());
             if ((in.usePotion || in.throwPotion) && !carrying) {
                 level.perform(i, Action::NoPotion);
             }
@@ -398,9 +403,12 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
                 deed = level.attackDeed(i, false, move.any(), attackFacing);
             }
             // The combo button with half the meter takes hold of a partner ahead, over
-            // anything else the buttons ask (fn_80088938, pmotion.c 4656).
-            if (in.combo && players[i].turbo.held() >= ComboMove::kMeterNeeded &&
-                animator != nullptr && animator->canBegin(PlayerDeed::Combo)) {
+            // anything else the buttons ask but a potion (fn_80088938, 0x80088B6C); a player
+            // bringing a boss's legend item into its fight takes hold of nobody (fn_80088EF4's
+            // quest_state test, 0x80089038).
+            if (!potionAsked && in.combo && players[i].turbo.held() >= ComboMove::kMeterNeeded &&
+                animator != nullptr && animator->canBegin(PlayerDeed::Combo) &&
+                !level.bearsLegend(i)) {
                 if (const auto partner = PartyCombo::partnerFor(players, i)) {
                     PartyCombo::begin(players, i, *partner);
                     deed = PlayerDeed::Combo;

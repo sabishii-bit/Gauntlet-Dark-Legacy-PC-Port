@@ -1045,15 +1045,21 @@ TEST_CASE("each action keeps its answer to every animator predicate and each dee
          answer::kTurboing | answer::kDamageProtected | answer::kIsBlockableAttack |
              answer::kRollbackTurboAction,
          0x0000000000},
-        {Action::Shove, answer::kShoving | answer::kTurboing | answer::kRollbackShoveAction,
+        {Action::Shove,
+         answer::kComboTakeable | answer::kShoving | answer::kTurboing |
+             answer::kRollbackShoveAction,
          0x2070000300},
         {Action::DefendRaise, answer::kGuarding, 0x2070050700},
         {Action::Defend, answer::kGuarding | answer::kDefending, 0x2070050700},
         {Action::DefendLower, answer::kGuarding, 0x2070050700},
         {Action::StrongThrow,
-         answer::kTurboing | answer::kStrongThrowing | answer::kIsBlockableAttack, 0x2070000300},
+         answer::kComboTakeable | answer::kTurboing | answer::kStrongThrowing |
+             answer::kIsBlockableAttack,
+         0x2070000300},
         {Action::StrongThrowRecover,
-         answer::kTurboing | answer::kStrongThrowing | answer::kIsBlockableAttack, 0x2070000300},
+         answer::kComboTakeable | answer::kTurboing | answer::kStrongThrowing |
+             answer::kIsBlockableAttack,
+         0x2070000300},
         {Action::StrafeForward1,
          answer::kComboTakeable | answer::kStrafing | answer::kCanAutoMelee | answer::kLocomotion,
          0x21F0071700},
@@ -1226,16 +1232,24 @@ TEST_CASE("each action keeps its answer to every animator predicate and each dee
          answer::kTurboing | answer::kDamageProtected | answer::kItemAttacking |
              answer::kIsBlockableAttack,
          0x0000000000},
-        {Action::FireLeft, answer::kTurboing | answer::kItemAttacking | answer::kIsBlockableAttack,
+        {Action::FireLeft,
+         answer::kComboTakeable | answer::kTurboing | answer::kItemAttacking |
+             answer::kIsBlockableAttack,
          0x2070000300},
         {Action::FireLeftRecover,
-         answer::kTurboing | answer::kItemAttacking | answer::kIsBlockableAttack, 0x2070000300},
-        {Action::FireRight, answer::kTurboing | answer::kItemAttacking | answer::kIsBlockableAttack,
+         answer::kComboTakeable | answer::kTurboing | answer::kItemAttacking |
+             answer::kIsBlockableAttack,
+         0x2070000300},
+        {Action::FireRight,
+         answer::kComboTakeable | answer::kTurboing | answer::kItemAttacking |
+             answer::kIsBlockableAttack,
          0x2070000300},
         {Action::FireRightRecover,
-         answer::kTurboing | answer::kItemAttacking | answer::kIsBlockableAttack, 0x2070000300},
+         answer::kComboTakeable | answer::kTurboing | answer::kItemAttacking |
+             answer::kIsBlockableAttack,
+         0x2070000300},
         {Action::Pick, answer::kComboTakeable | answer::kCanAutoMelee, 0x21F0071700},
-        {Action::Gag, answer::kComboTakeable | answer::kCanAutoMelee, 0x21F0071700},
+        {Action::Gag, answer::kCanAutoMelee, 0x21F0071700},
         {Action::ShieldReady, answer::kComboTakeable | answer::kCanAutoMelee | answer::kLocomotion,
          0x21F0071700},
         {Action::ShieldRun, answer::kComboTakeable | answer::kCanAutoMelee | answer::kLocomotion,
@@ -1312,6 +1326,96 @@ TEST_CASE("each action keeps its answer to every animator predicate and each dee
         CHECK_FALSE(PlayerAnimator::locomotion(action));
         CHECK_FALSE(PlayerAnimator::rollbackTurboAction(action));
         CHECK_FALSE(PlayerAnimator::rollbackShoveAction(action));
+    }
+}
+
+/** The original's action table (main.dol 0x80126C68): the sequence each of its rows plays. */
+constexpr std::array<std::string_view, PlayerAnimator::kNativeActionCount> kNativeSequences{
+    "READY",         "IDLE1",         "IDLE2",        "IDLE2_LOOP",    "DEFENDLEFT",
+    "DEFENDRIGHT",   "DEFENDBACK",    "DEFENDBACK",   "SHOVE",         "STRAFE_WLKF1",
+    "STRAFE_WLKF2",  "STRAFE_WLKB1",  "STRAFE_WLKB2", "STRAFE_WLKL1",  "STRAFE_WLKL2",
+    "STRAFE_WLKR1",  "STRAFE_WLKR2",  "WALK1",        "WALK2",         "RUN1",
+    "RUN2",          "SHIELD_READY",  "SHIELD_RUN",   "PIVOTL",        "PIVOTR",
+    "PUSH",          "PUSHED",        "HITREACT",     "PICK",          "DEATHGRABS",
+    "DEATHGRAB",     "DEATHGRABR",    "ATTSTART",     "ATTSLOW1",      "ATTSLOW1R",
+    "ATTPWRACLOSE",  "ATTPWRACLOSER", "ATTPWRAMED",   "ATTPWRAMEDR",   "ATTQUICK1",
+    "ATTQUICK2",     "ATTQUICK3",     "ATTQUICK2R",   "ATTQUICK3R",    "ATTQ3RIGHT",
+    "ATTQ2RIGHT",    "ATTQ3RIGHTR",   "ATTQ2RIGHTR",  "ATTQ3LEFT",     "ATTQ2LEFT",
+    "ATTQ3LEFTR",    "ATTQ2LEFTR",    "ATTQ2180",     "ATTQ3180",      "ATTQ2180R",
+    "ATTQ3180R",     "ATTQ2180L",     "ATTQ3180L",    "ATTQ2180LR",    "ATTQ3180LR",
+    "ATT360",        "ATT360R",       "ATTSTEP1",     "ATTSTEP2",      "ATTSTEP3",
+    "ATTSTEP2R",     "ATTSTEP3R",     "ATTQ3TOSTEP1", "ATTQ3TOSTEP1R", "ATTWALK2",
+    "ATTWALK2R",     "STRAFE_ATKF1",  "STRAFE_ATKF2", "STRAFE_ATKB1",  "STRAFE_ATKB2",
+    "STRAFE_ATKL1",  "STRAFE_ATKL2",  "STRAFE_ATKR1", "STRAFE_ATKR2",  "ATTLOW1",
+    "ATTLOW2",       "ATTLOWR",       "ATTLOWK",      "ATTLOWKR",      "ATTPWRALOW",
+    "ATTPWRALOWR",   "ATTPWRB",       "ATTPWRC",      "COMBOACT1",     "COMBOACT2",
+    "COMBOACT3",     "THROW1S",       "THROW1S",      "THROW2S",       "THROW2S",
+    "THROW1",        "THROW2",        "THROW1R",      "THROW2R",       "ATTPWRATHROW",
+    "ATTPWRATHROWR", "STRAFE_ATKF1",  "STRAFE_ATKF2", "ATTFIREL",      "ATTFIRELR",
+    "ATTFIRER",      "ATTFIRERR",     "SSHOT1",       "SSHOT2",        "SSHOTR",
+    "ATTBREATHE",    "ATTBREATHER",   "ATTCHOP",      "ATTCHOPR",      "ATTACK1",
+    "MAGICS",        "MAGICR",        "THROWPOTIONS", "THROWPOTIONR",  "DEFEND1",
+    "DEFEND2",       "DEFENDR",       "STUN2",        "VICTORY",       "START",
+    "INIT",          "DEATH",         "STUN1",        "WEBREACT",      "HITREACT",
+    "HITREACT",      "FALLDOWN",      "GETUP",        "FALLFRNT",      "GETUP2",
+    "FLYUP",         "COMBOWAR1",     "COMBOWAR2",    "COMBOWAR3",     "COMBOVAL",
+    "COMBOWIZ",      "COMBOARC",      "COMBODWF1",    "COMBODWF2",     "COMBODWF3",
+    "COMBOKNI",      "COMBOSOR",      "COMBOJES",     "GRABBED"};
+
+TEST_CASE("each action's row of the original's action table names the sequence it plays",
+          "[game][players][player-animation][action-traits]") {
+    for (usize i = 0; i < PlayerAnimator::kActionCount; ++i) {
+        CAPTURE(i);
+        const u8 row = PlayerAnimator::kNativeActions[i];
+        REQUIRE(row < kNativeSequences.size());
+        CHECK(kNativeSequences[row] == PlayerAnimator::kSequenceNames[i]);
+    }
+    // Where the table repeats a sequence, the rows PlayerMotion asks for: the plain throw
+    // (0x80083964) and its stride's wind-up (DoPlayerAction, 0x800AD114), and the knockback
+    // (0x80083AE0), the spikes' being the other.
+    CHECK(PlayerAnimator::kNativeActions[static_cast<usize>(Action::Throw)] == 92);
+    CHECK(PlayerAnimator::kNativeActions[static_cast<usize>(Action::ThrowMoving)] == 94);
+    CHECK(PlayerAnimator::kNativeActions[static_cast<usize>(Action::HitReact)] == 130);
+    CHECK(PlayerAnimator::kNativeActions[static_cast<usize>(Action::SpikeHit)] == 129);
+}
+
+TEST_CASE("a partner is taken from every action but the original's rows 84 to 90 and from 107, "
+          "and not before the entrance",
+          "[game][players][player-animation][combo]") {
+    // The rows fn_80088EF4 refuses a partner in (0x80089010): ATTPWRALOW to COMBOACT3, and
+    // every row from SSHOT1.
+    constexpr u8 kFirstRefused = 84;
+    constexpr u8 kLastRefused = 90;
+    constexpr u8 kRefusedFrom = 107;
+    constexpr usize kTakeableActions = 86;
+    const auto tree = actionTree();
+    const auto bound = boundTo(tree);
+    usize takeable = 0;
+    for (usize i = 0; i < PlayerAnimator::kActionCount; ++i) {
+        CAPTURE(i);
+        const auto action = static_cast<Action>(i);
+        const u8 row = PlayerAnimator::kNativeActions[i];
+        const bool refused = (row >= kFirstRefused && row <= kLastRefused) || row >= kRefusedFrom;
+        CHECK(PlayerAnimator::takeableIn(action) == !refused);
+        CHECK(restoredInto(bound, action).comboTakeable() == !refused);
+        takeable += refused ? 0 : 1;
+    }
+    CHECK(takeable == kTakeableActions);
+    // A charge, the strong throw and a gauntlet's shot are taken; the gag and the low power
+    // swing are not.
+    for (const Action action : {Action::Shove, Action::StrongThrow, Action::StrongThrowRecover,
+                                Action::FireLeft, Action::FireRightRecover}) {
+        CHECK(PlayerAnimator::takeableIn(action));
+    }
+    CHECK_FALSE(PlayerAnimator::takeableIn(Action::Gag));
+    CHECK_FALSE(PlayerAnimator::takeableIn(Action::PowerLow));
+    // An entrance yet to play stands for the original's START.
+    PlayerAnimator arriving;
+    REQUIRE(arriving.bind(tree, Entrance::Play));
+    CHECK(arriving.action() == Action::Ready);
+    CHECK_FALSE(arriving.comboTakeable());
+    for (const usize beyond : {PlayerAnimator::kActionCount, usize{255}}) {
+        CHECK_FALSE(PlayerAnimator::takeableIn(static_cast<Action>(beyond)));
     }
 }
 
