@@ -37,6 +37,8 @@ public:
     };
     static LegendsTowerCeremony decode(std::span<const u8> overlay);
     void bindSequences(std::vector<Sequence> sequences);
+    /** Sumner's gestures as bindSequences received them. */
+    std::span<const Sequence> sequences() const { return m_sequences; }
     /** Only the completed travel path supplies before/after. Loading an existing
      * save never manufactures a newly acquired piece. */
     void begin(const LegendsProgress& before, const LegendsProgress& after);

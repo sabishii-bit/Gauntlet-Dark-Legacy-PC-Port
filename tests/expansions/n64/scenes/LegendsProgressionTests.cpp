@@ -19,6 +19,7 @@
 #include "expansions/n64/formats/LegendsN64Tower.h"
 #include "expansions/n64/level/LegendsGates.h"
 #include "expansions/n64/level/LegendsObelisk.h"
+#include "expansions/n64/level/LegendsTowerCeremony.h"
 #include "expansions/shared/scenes/LegendsPreview.h"
 #include "expansions/shared/scenes/LegendsSceneAdapter.h"
 
@@ -333,6 +334,41 @@ TEST_CASE("The N64 cathedral beam waits for the window ceremony's fade and stays
         CHECK(scene->worldObjectVisible(beamIndex));
     }
     CHECK_FALSE(ceremony->active());
+}
+
+TEST_CASE("The N64 Tower binds Sumner's ceremony gestures with their WIZMOVES timing and loop",
+          "[legends][progression-scene][tower-ceremony][assets]") {
+    const auto root = nativeRoot();
+    const auto directory = root / "levels/tower2";
+    auto map = nativeMap(directory);
+    test::FakeRenderDevice device;
+    auto scene = LegendsSceneAdapter::load(device, LegendsPlatform::N64, directory, map);
+    const auto* ceremony = scene->towerCeremony();
+    REQUIRE(ceremony);
+    // The sequence headers: rate 16 shows a frame an update and ODOR's 32 one in two, and only
+    // REDY's flag byte leaves it looping.
+    struct Gesture {
+        std::string_view name;
+        s32 frames;
+        f32 secondsPerFrame;
+        bool repeats;
+    };
+    constexpr std::array<Gesture, 6> kGestures{{{"REDY", 60, 1.0f / 30, true},
+                                                {"MKRU", 30, 1.0f / 30, false},
+                                                {"SHD1", 19, 1.0f / 30, false},
+                                                {"SHDR", 11, 1.0f / 30, false},
+                                                {"STRT", 60, 1.0f / 30, false},
+                                                {"ODOR", 25, 1.0f / 15, false}}};
+    const auto bound = ceremony->sequences();
+    for (const auto& gesture : kGestures) {
+        CAPTURE(gesture.name);
+        const auto found =
+            std::ranges::find(bound, gesture.name, &LegendsTowerCeremony::Sequence::name);
+        REQUIRE(found != bound.end());
+        CHECK(found->frames == gesture.frames);
+        CHECK(found->secondsPerFrame == Catch::Approx(gesture.secondsPerFrame));
+        CHECK(found->repeats == gesture.repeats);
+    }
 }
 
 TEST_CASE("Native obelisk grants are shared and a spent obelisk remains a visible solid body",
