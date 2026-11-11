@@ -246,6 +246,33 @@ TEST_CASE("N64 runestone ceremony runs e086239c's clock after the dispatcher sel
     CHECK(value.gestureFrame() == 0);
 }
 
+TEST_CASE("N64 REDY after MKRU plays once and the ready loop wraps without e0860d1c",
+          "[legends][tower-ceremony]") {
+    // Only an update that runs no e0860d1c tells them apart: the rune's script returns on
+    // 175, so 176 selects nothing and 177 plans the return. Frames on 175 to 178:
+    const auto readyFrames = [](s32 frames, bool repeats) {
+        auto value = nativeCeremony({{"REDY", frames, 1.0f / 30, repeats}});
+        LegendsProgress now;
+        now.runestones = 1;
+        value.begin({}, now);
+        value.start({}, {});
+        ticks(value, 174);
+        std::array<f32, 4> shown{};
+        for (auto& frame : shown) {
+            value.update(kTick);
+            frame = value.gestureFrame();
+        }
+        return shown;
+    };
+    // The REDY that MKRU's end starts on 111 keeps e0860ca4's once flag: 65 frames freeze at
+    // the last on 175 and stay through 176, until e0860d1c restarts REDY looping on 177.
+    CHECK(readyFrames(65, true) == std::array<f32, 4>{64, 64, 0, 1});
+    // The loop e0860d1c restarts wraps in every update's pass; bound to play once, it
+    // freezes at its last frame until e0860d1c runs.
+    CHECK(readyFrames(5, true) == std::array<f32, 4>{4, 0, 1, 2});
+    CHECK(readyFrames(5, false) == std::array<f32, 4>{4, 4, 0, 1});
+}
+
 TEST_CASE("N64 runestone completing thirteen returns on the update after it lands",
           "[legends][tower-ceremony]") {
     auto value = nativeCeremony();
@@ -567,7 +594,9 @@ TEST_CASE("N64 ceremony camera cuts to Sumner, moves on script updates and retur
     original.yaw = .8f;
     const Vec3 attention{1, 2, 3};
     value.start(original, attention);
-    // e0860620 cuts every channel: nothing glides from the gameplay camera, whose yaw stays.
+    // e0860620 cuts every channel, so nothing glides from the gameplay camera. It cuts to yaw
+    // pi/3 (e007d53c's third argument); the remake keeps the gameplay yaw for every shot
+    // until the native yaw convention is matched on screen.
     const auto cut = value.camera();
     CHECK(value.camera(0) == cut);
     CHECK(value.camera(.5f) == cut);
@@ -735,6 +764,32 @@ TEST_CASE("N64 ceremony captions run e086098c's clock on script and return updat
     const std::vector<std::pair<s32, std::optional<u32>>> expected{
         {2, 535},   {92, std::nullopt},  {93, 536},  {183, std::nullopt},
         {184, 539}, {274, std::nullopt}, {275, 540}, {366, std::nullopt}};
+    CHECK(changes == expected);
+}
+
+TEST_CASE("N64 door ceremony captions run e086098c's clock from the select update",
+          "[legends][tower-ceremony][assets]") {
+    auto value = ceremony();
+    value.bindSequences(nativeSequences());
+    LegendsProgress now;
+    now.obelisks = 7;
+    value.begin({}, now);
+    value.start({}, {});
+    // e0865c98 queues the door's pair in the select update (tick 1); each caption shows from
+    // its first caption update and goes on its 91st.
+    std::vector<std::pair<s32, std::optional<u32>>> changes;
+    std::optional<u32> showing;
+    for (s32 tick = 1; tick <= 358; ++tick) {
+        CAPTURE(tick);
+        value.update(kTick);
+        if (value.caption() != showing) {
+            showing = value.caption();
+            changes.emplace_back(tick, showing);
+        }
+    }
+    CHECK_FALSE(value.active());
+    const std::vector<std::pair<s32, std::optional<u32>>> expected{
+        {2, 523}, {92, std::nullopt}, {93, 524}, {183, std::nullopt}};
     CHECK(changes == expected);
 }
 
