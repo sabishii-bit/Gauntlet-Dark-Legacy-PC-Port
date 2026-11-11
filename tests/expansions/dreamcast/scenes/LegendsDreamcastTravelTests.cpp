@@ -12,6 +12,7 @@
 #include "TestSupport.h"
 #include "expansions/dreamcast/formats/LegendsDreamcastTexture.h"
 #include "expansions/shared/scenes/LegendsLevel.h"
+#include "expansions/shared/scenes/LegendsMapCatalog.h"
 #include "game/party/PortalDeparture.h"
 
 namespace {

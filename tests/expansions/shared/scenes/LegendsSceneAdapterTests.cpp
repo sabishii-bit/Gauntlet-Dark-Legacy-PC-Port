@@ -11,6 +11,7 @@
 #include "expansions/dreamcast/formats/LegendsDreamcastTexture.h"
 #include "expansions/n64/formats/LegendsN64Texture.h"
 #include "expansions/shared/scenes/LegendsLevel.h"
+#include "expansions/shared/scenes/LegendsMapCatalog.h"
 #include "expansions/shared/scenes/LegendsSceneAdapter.h"
 
 namespace {

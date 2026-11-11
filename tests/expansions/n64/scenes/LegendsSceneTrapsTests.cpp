@@ -12,6 +12,7 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "expansions/n64/assets/LegendsN64Archive.h"
+#include "expansions/shared/scenes/LegendsMapCatalog.h"
 #include "expansions/shared/scenes/LegendsSceneAdapter.h"
 #include "game/combat/DamageTypes.h"
 

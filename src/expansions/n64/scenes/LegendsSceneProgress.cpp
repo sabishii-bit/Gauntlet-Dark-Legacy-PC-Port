@@ -7,6 +7,7 @@
 #include "engine/render/ImmediateBatch.h"
 
 #include "expansions/n64/level/LegendsGates.h"
+#include "expansions/n64/level/LegendsTowerProgress.h"
 #include "expansions/shared/scenes/LegendsSceneAdapter.h"
 
 namespace gdl::game {

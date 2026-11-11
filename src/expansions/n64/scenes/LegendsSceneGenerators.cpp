@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "expansions/n64/enemies/LegendsGenerators.h"
 #include "expansions/shared/scenes/LegendsSceneAdapter.h"
 
 namespace gdl::game {
