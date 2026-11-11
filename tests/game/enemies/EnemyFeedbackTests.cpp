@@ -189,7 +189,7 @@ TEST_CASE("enemy impact and death skins retain elemental and nonflesh distinctio
     CHECK(feedback.effect() == "HITDIE");
     CHECK(feedback.effectScale() == Approx(1));
     CHECK(feedback.deathSkin() == "DEATHALT");
-    CHECK(feedback.deathSkinFrames() == 15);
+    CHECK(feedback.deathSkinFrames() == 10);
     feedback.kind = 11;
     CHECK(feedback.deathSkinFrames() == 10);
     CHECK(feedback.effect() == "TREEDIE");
@@ -286,7 +286,7 @@ TEST_CASE("each kind keeps its marks and death skins with and without an element
         {2, "BLOODFX1", "BLOODFX2", "FIREHIT", "FIREDIE", 1.5f, "DEATHBLOOD", 10, "DEATHFIRE", 10},
         {3, "BLOODFX1", "BLOODFX2", "FIREHIT", "FIREDIE", 0.75f, "", 0, "", 0},
         {4, "BLOODFX1", "BLOODFX2", "FIREHIT", "FIREDIE", 1.5f, "DEATHBLOOD", 10, "DEATHFIRE", 10},
-        {5, "HITCOL", "HITDIE", "FIREHIT", "FIREDIE", 1.0f, "DEATHALT", 15, "DEATHFIRE", 10},
+        {5, "HITCOL", "HITDIE", "FIREHIT", "FIREDIE", 1.0f, "DEATHALT", 10, "DEATHFIRE", 10},
         {6, "BLOODFX1", "BLOODFX2", "FIREHIT", "FIREDIE", 0.75f, "", 0, "", 0},
         {7, "BLOODFX1", "BLOODFX2", "FIREHIT", "FIREDIE", 1.5f, "DEATHBLOOD", 10, "DEATHFIRE", 10},
         {8, "BLOODFX1", "BLOODFX2", "FIREHIT", "FIREDIE", 1.5f, "DEATHBLOOD", 10, "DEATHFIRE", 10},

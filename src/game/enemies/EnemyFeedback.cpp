@@ -12,26 +12,26 @@
 namespace gdl::game {
 namespace {
 constexpr f32 kLowEnemyHeight = 4.0f;
-constexpr s32 kDeathSkinFrames = 10; ///< a death skin's run
-constexpr s32 kPlateSkinFrames = 15; ///< the knight's DEATHALT run
+/** The frames every death skin runs, the knight's and the tree folk's DEATHALT as much as the
+ * element skins (damage_enemy's SetSkinFX calls, 0x8004EE88, 0x8004EEB8 and 0x8004EEF8). */
+constexpr s32 kDeathSkinFrames = 10;
 
 /** How an unelemental hit and death look on a hide (fn_800945D0): the marks of a hit and of a
- * kill, whether the mark keeps its own size, the death skin and its frames. An empty mark or
- * skin is the element's own. */
+ * kill, whether the mark keeps its own size, and the death skin. An empty mark or skin is the
+ * element's own. */
 struct HideLook {
     std::string_view hitEffect;
     std::string_view killEffect;
     bool unscaledEffect;
     std::string_view deathSkin;
-    s32 deathFrames;
 };
 
 /** Flesh, plate (the knight), bark (the tree folk) and ooze (the acid blob), in Hide order. */
 constexpr std::array<HideLook, 4> kHides{{
-    {{}, {}, false, {}, kDeathSkinFrames},
-    {"HITCOL", "HITDIE", true, "DEATHALT", kPlateSkinFrames},
-    {"TREEHIT", "TREEDIE", false, "DEATHALT", kDeathSkinFrames},
-    {"TREEHIT", "TREEDIE", false, {}, kDeathSkinFrames},
+    {{}, {}, false, {}},
+    {"HITCOL", "HITDIE", true, "DEATHALT"},
+    {"TREEHIT", "TREEDIE", false, "DEATHALT"},
+    {"TREEHIT", "TREEDIE", false, {}},
 }};
 
 /** The look of `kind`'s hide; flesh outside the kinds. */
@@ -143,9 +143,6 @@ std::string_view EnemyFeedback::deathSkin() const {
 }
 
 s32 EnemyFeedback::deathSkinFrames() const {
-    if (deathSkin().empty()) {
-        return 0;
-    }
-    return (flags & damage::kElementMask) == 0 ? hideOf(kind).deathFrames : kDeathSkinFrames;
+    return deathSkin().empty() ? 0 : kDeathSkinFrames;
 }
 } // namespace gdl::game

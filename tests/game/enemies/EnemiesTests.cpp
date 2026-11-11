@@ -23,7 +23,9 @@
 #include "TestSupport.h"
 #include "fixtures/NativeModelFixture.h"
 #include "game/app/Scenario.h"
+#include "game/combat/DamageTypes.h"
 #include "game/enemies/Enemies.h"
+#include "game/enemies/EnemyKinds.h"
 #include "game/enemies/EnemyMind.h"
 #include "game/enemies/EnemyMissiles.h"
 #include "game/enemies/LevelOpponents.h"
@@ -2314,6 +2316,85 @@ TEST_CASE("small enemies retire on their first death update without an invented 
     enemies.update(kTicks, kStep, {});
     CHECK(enemies.takeLosses().empty());
     CHECK(enemies.takeFeedback().empty());
+}
+
+constexpr s32 kKnightDissolveFrames = 10; ///< the knight archive's DEATHALT frames
+
+/** A knight whose fall outlasts its dissolve: the HIT2 that stands in for the DEATH its tree
+ * lacks runs twenty frames at half speed, as the Dreamcast knight's does, and its own archive
+ * holds DEATHALT's DTH_ARMOR frames. */
+std::filesystem::path slowFallingKnightAssets() {
+    const auto root = test::scratchDirectory("enemy-knight-dissolve");
+    const auto dir = root / "MONSTERS/KNI";
+    std::filesystem::create_directories(dir);
+    writeTextFile(dir / "body.obj",
+                  "v 0 0 0\nv 1 0 0\nv 0 1 0\nvn 0 0 1\nusemtl tex0\nf 1//1 2//1 3//1\n");
+    writeTextFile(dir / "objects.json", R"({"objects":[
+        {"index":0,"name":"BODY","file":"body.obj","meshTriangles":1}]})");
+    writeFile(dir / "skin.png", test::kTinyPng);
+    std::string bitmaps = R"({"index":0,"name":"SKIN","file":"skin.png","width":2,"height":2})";
+    for (s32 frame = 0; frame < kKnightDissolveFrames; ++frame) {
+        bitmaps += R"(,{"index":)" + std::to_string(frame + 1) + R"(,"name":"DTH_ARMOR0)" +
+                   std::to_string(frame) + R"(","file":"skin.png","width":2,"height":2})";
+    }
+    writeTextFile(dir / "textures.json", R"({"bitmaps":[)" + bitmaps + "]}");
+    test::convertModelFixture(dir);
+    writeTextFile(dir / "animations.json", R"({"trees":[{"name":"KNI1",
+        "nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
+        "sequences":[{"name":"READY","frames":29,"frameRate":30},
+                     {"name":"HIT2","frames":20,"frameRate":60}]}],
+        "textureAnimations":[{"name":"DEATHALT","frameName":"DTH_ARMOR00","texture":1,
+                              "source":1,"frames":10,"rate":2,"flag":-1}]})");
+    return root;
+}
+
+TEST_CASE("a knight slain without an element is gone as its ten-frame dissolve runs out",
+          "[game][enemies][enemy-feedback][death-retirement]") {
+    // damage_enemy runs the knight's DEATHALT ten frames (SetSkinFX, 0x8004EEB8) from half a
+    // frame early, ProcessSkinFX adds half a frame each 30 Hz update, and do_enemies retires the
+    // body once the run is out (0x8004D634): frame nine shows last and the 21st update ends it.
+    // The fall lasts forty updates, so the dissolve alone decides; fire runs the same ten.
+    const u32 element = GENERATE(0U, damage::kFire);
+    CAPTURE(element);
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, slowFallingKnightAssets(), nullptr, 1, {}, 1);
+    REQUIRE(enemies.loadKind(enemy_type::kKnight));
+    const auto id = enemies.spawn({.kind = enemy_type::kKnight, .placed = true}, {});
+    REQUIRE(id);
+    EnemyHit hit;
+    hit.damage = 1000;
+    hit.flags = element;
+    hit.player = 0;
+    enemies.hurt(*id, hit);
+    const auto feedback = enemies.takeFeedback();
+    REQUIRE(feedback.size() == 1);
+    CHECK(feedback[0].deathSkin() == (element == 0 ? "DEATHALT" : "DEATHFIRE"));
+    CHECK(feedback[0].deathSkinFrames() == kKnightDissolveFrames);
+    ItemArchive* archive = enemies.archive(enemy_type::kKnight);
+    REQUIRE(archive != nullptr);
+    for (s32 update = 1; update <= 2 * kKnightDissolveFrames; ++update) {
+        CAPTURE(update);
+        enemies.update(kTicks, kStep, {});
+        REQUIRE(enemies.count() == 1);
+        REQUIRE(enemies.animatorOf(*id)->dying());
+        const auto frame = static_cast<u32>(update - 1) / 2;
+        CHECK(enemies.observe(*id)->deathFrame == frame);
+        if (element == 0) {
+            // Every draw keeps the dissolve: the undissolved armour never shows again.
+            device.draws.clear();
+            enemies.draw(device, Mat4{1}, {});
+            REQUIRE_FALSE(device.draws.empty());
+            for (const auto& draw : device.draws) {
+                CHECK(draw.state.maskedTexture == &archive->textures.texture(device, 1 + frame));
+            }
+        }
+    }
+    enemies.update(kTicks, kStep, {});
+    CHECK(enemies.count() == 0);
+    device.draws.clear();
+    enemies.draw(device, Mat4{1}, {});
+    CHECK(device.draws.empty());
 }
 
 TEST_CASE("Dream World hands vanish promptly while imps and warlocks play their death skins",
