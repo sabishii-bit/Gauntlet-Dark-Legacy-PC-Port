@@ -36,8 +36,9 @@ bool LegendsLevel::placeN64OpeningParty(std::span<PlayerActor*> party) {
     // With a ceremony pending, Tower.bin's setup e08694e4 opens the visit in state 0x12,
     // whose arrival (game.bin e004b070) skips e004b098's entrance effect, and the
     // dispatcher's first update cuts to Sumner and turns the arrived players to him. The
-    // party stands here as the scene opens, an update before that cut, and is held still
-    // until the ceremony hands play back, so it faces him from the cut on.
+    // party stands here as the scene opens, an update before that cut, and the scene holds
+    // it still, so it faces him when the cut shows. Retail goes on to turn it toward each
+    // shot's focus (e0860d1c); the held party keeps this facing to the hand-back.
     const auto* ceremony = adapter().towerCeremony();
     if (ceremony == nullptr || !ceremony->pending() || ceremony->active()) {
         return false;

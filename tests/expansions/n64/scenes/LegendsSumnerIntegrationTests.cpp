@@ -429,13 +429,17 @@ TEST_CASE("A Tower return opens on its ceremony with the party standing, turned 
     const auto overlay = readFile(fixture.root / "_program/Tower.bin");
     const auto coordinate = [&](usize at) { return std::bit_cast<f32>(readU32BE(overlay, at)); };
     const Vec3 sumner{coordinate(0xa678), coordinate(0xa67c), coordinate(0xa680)};
+    /// Radians a member's facing must lie from the start's heading for the turn to show.
+    constexpr f32 kTurned = .5f;
     const auto checkFacing = [&] {
         for (s32 seat = 0; seat < 2; ++seat) {
             const auto* actor = fixture.scene.actor(seat);
             REQUIRE(actor);
             const Vec3 offset = sumner - actor->position();
+            const f32 facing = portable::atan2(offset.x, offset.z);
             CAPTURE(seat, fixture.arrivalYaw);
-            CHECK(actor->yaw() == portable::atan2(offset.x, offset.z));
+            CHECK(actor->yaw() == facing);
+            CHECK(std::abs(std::remainder(facing - fixture.arrivalYaw, kTwoPi)) > kTurned);
         }
     };
     checkFacing();
