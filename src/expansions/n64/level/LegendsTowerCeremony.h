@@ -7,6 +7,7 @@
 #include <string_view>
 #include <vector>
 
+#include "engine/core/Types.h"
 #include "engine/world/WorldCamera.h"
 
 #include "expansions/n64/formats/LegendsN64Tower.h"
@@ -76,14 +77,14 @@ private:
     enum class Dispatch { Select, Script, PlanReturn, Return, HandBack };
     /** e086239c's stage counter (e086ac78). */
     enum class RuneStage { Waiting, Spell, Ready };
-    /** e0865c98's cases (table e086a9d8). */
+    /** e0865c98's cases (table e086a9d8); STRT plays reversed, then forward. */
     enum class DoorCase {
         Captions,
         Opening,
         Shot,
         Spell,
-        Unwind,
-        Rewind,
+        SpellReversed,
+        SpellForward,
         Bolt,
         Release,
         Closing,
@@ -172,7 +173,6 @@ private:
     void perform(std::string_view name);
     void passGesture();
     bool crossed(f32 frame) const;
-    WorldCamera shotCamera(const Vec3& focus, f32 distance, f32 pitch) const;
     void shot(const Vec3& focus, f32 distance, f32 pitch);
     void glideTo(const WorldCamera& goal, const Vec3& focus, f32 acceleration);
     bool advanceCamera();

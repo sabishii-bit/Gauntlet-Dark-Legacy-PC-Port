@@ -62,6 +62,15 @@ constexpr f32 kReturnAcceleration = .5f;
 constexpr f32 kCruiseSeconds = 1;
 constexpr f32 kBrakingSeconds = .3f;
 
+/** A shot of focus from distance at pitch. It keeps the base camera's yaw rather than the
+ * one e007d53c is given, until the native yaw convention is matched on screen. */
+WorldCamera shotCamera(WorldCamera base, const Vec3& focus, f32 distance, f32 pitch) {
+    base.pitch = pitch;
+    base.roll = 0;
+    base.position = focus - base.forward() * distance;
+    return base;
+}
+
 // e086239c's time line, in updates from its setup.
 constexpr s32 kRuneShotTime = 20;
 constexpr s32 kRuneSpellTime = 50;
@@ -203,8 +212,7 @@ void LegendsTowerCeremony::start(const WorldCamera& camera, const Vec3& attentio
     // e0860620 cuts every camera channel to Sumner's shot: e007d1d4, e007d53c and
     // e007d584 each set the channel's current value to its target.
     const Vec3 focus = m_native.sumner.position + Vec3{0, kSumnerFocusHeight, 0};
-    m_camera = camera; // the shot keeps this camera's yaw
-    m_camera = shotCamera(focus, kShotDistance, kSumnerShotPitch);
+    m_camera = shotCamera(camera, focus, kShotDistance, kSumnerShotPitch);
     m_previousCamera = m_cameraFrom = m_cameraGoal = m_camera;
     m_cameraFocus = m_focusFrom = m_focusGoal = focus;
     m_glide = {};
@@ -469,20 +477,20 @@ bool LegendsTowerCeremony::doorScript(const Entry& entry) {
         if (++m_count >= kDoorSpellCount) {
             perform(kDoorSpell);
             m_gesture.reversed = true;
-            m_doorCase = DoorCase::Unwind;
+            m_doorCase = DoorCase::SpellReversed;
         }
         break;
-    case DoorCase::Unwind:
+    case DoorCase::SpellReversed:
         // The chime comes as the reversed STRT's own count passes 30; its end starts STRT forward.
         if (crossed(kDoorChimeFrame)) {
             m_sounds.push_back(kDoorChimeSound);
         }
         if (m_gesture.done) {
             perform(kDoorSpell);
-            m_doorCase = DoorCase::Rewind;
+            m_doorCase = DoorCase::SpellForward;
         }
         break;
-    case DoorCase::Rewind:
+    case DoorCase::SpellForward:
         if (m_gesture.done) {
             perform(kDoorRelease);
             m_count = 0;
@@ -692,17 +700,8 @@ void LegendsTowerCeremony::update(f32 seconds) {
     }
 }
 
-WorldCamera LegendsTowerCeremony::shotCamera(const Vec3& focus, f32 distance, f32 pitch) const {
-    // The shot keeps the camera's yaw rather than e007d53c's own.
-    WorldCamera goal = m_camera;
-    goal.pitch = pitch;
-    goal.roll = 0;
-    goal.position = focus - goal.forward() * distance;
-    return goal;
-}
-
 void LegendsTowerCeremony::shot(const Vec3& focus, f32 distance, f32 pitch) {
-    glideTo(shotCamera(focus, distance, pitch), focus, kShotAcceleration);
+    glideTo(shotCamera(m_camera, focus, distance, pitch), focus, kShotAcceleration);
 }
 
 void LegendsTowerCeremony::glideTo(const WorldCamera& goal, const Vec3& focus, f32 acceleration) {
