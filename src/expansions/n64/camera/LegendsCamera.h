@@ -26,6 +26,8 @@ public:
      * remaining fractional simulation step. Never feed this into movement. */
     WorldCamera sample(f32 extraSeconds = 0) const;
     const Vec3& attention() const { return m_attention; }
+    /** The mean of the feet the camera last followed (the subjects reset or update took). */
+    Vec3 partyFeet() const;
     f32 distance() const { return m_distance; }
     Mode mode() const { return m_mode; }
     s32 marker() const { return m_marker; }

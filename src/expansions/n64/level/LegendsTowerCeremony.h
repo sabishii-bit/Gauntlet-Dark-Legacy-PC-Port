@@ -10,6 +10,8 @@
 #include "engine/core/Types.h"
 #include "engine/world/WorldCamera.h"
 
+#include "expansions/n64/camera/LegendsCameraChannel.h"
+#include "expansions/n64/camera/LegendsCameraRig.h"
 #include "expansions/n64/formats/LegendsN64Tower.h"
 #include "expansions/shared/characters/LegendsProgress.h"
 
@@ -49,9 +51,12 @@ public:
     void begin(const LegendsProgress& before, const LegendsProgress& after);
     bool pending() const { return m_next < m_entries.size(); }
     bool active() const { return m_started; }
-    /** Dispatcher case 0 (e0860620) with its update's gesture pass: cuts to Sumner's
-     * shot and starts REDY. The next tick selects the first entry. */
-    void start(const WorldCamera& camera, const Vec3& attention);
+    /** Dispatcher case 0 with its update's gesture pass: e007de28 settles the camera channels on
+     * the gameplay `camera`, e0860620 cuts them to Sumner's shot about the midpoint of him and
+     * `party`, the standing party's mean feet (e086007c), and REDY starts. The cut shows once a
+     * script steps the camera; until then the view stays `camera`, looking at `attention`,
+     * where the return glides back to. The next tick selects the first entry. */
+    void start(const WorldCamera& camera, const Vec3& attention, const Vec3& party);
     void update(f32 seconds);
     std::span<const Entry> entries() const { return m_entries; }
     const Entry* current() const;
@@ -82,7 +87,11 @@ public:
     std::optional<u32> caption() const;
     f32 captionOpacity() const;
     std::vector<u32> takeSounds();
+    /** The view the camera channels last built (e007dd70), from the previous update's with a
+     * blend `alpha`; the gameplay camera until the cut shows. */
     WorldCamera camera(f32 alpha = -1) const;
+    /** The point that view looks at. While the return has the attention channel off (e007df20),
+     * a glide from the last shot's point to the gameplay attention on the return's times. */
     const Vec3& attention() const { return m_cameraFocus; }
     const Vec3& sumnerPosition() const { return m_native.sumner.position; }
     /** The yaw dispatcher case 0's cut (e0860620) turns an arrived player standing at
@@ -138,23 +147,6 @@ private:
         bool done = false;     ///< 0x1000: a pass reached the end
         bool frozen = false;   ///< 0x8000: passes skip it
     };
-    /** One camera move as e007cdf0 plans it and e007d774 advances it: accelerate,
-     * cruise and brake, each phase on its own clock, as a fraction of the move. */
-    struct Glide {
-        enum class Phase { Accelerating, Cruising, Braking, Done };
-        Phase phase = Phase::Done;
-        f32 acceleration = 0; ///< seconds to reach the cruising speed
-        f32 elapsed = 0;      ///< seconds into the phase
-        f32 speed = 0;
-        f32 cruiseSpeed = 0;
-        f32 rise = 0;      ///< speed gained a second while accelerating
-        f32 fall = 0;      ///< speed lost a second while braking
-        f32 travelled = 0; ///< fraction of the move made
-
-        void plan(f32 accelerationSeconds);
-        /** True once the braking phase has run out. */
-        bool advance(f32 seconds);
-    };
     /** e08608e8's seconds a caption stays, and a drawable's clear transparency byte. */
     static constexpr f32 kCaptionSeconds = 3;
     static constexpr u8 kTransparent = 255;
@@ -191,19 +183,22 @@ private:
     void perform(std::string_view name);
     void passGesture();
     bool crossed(f32 frame) const;
-    void shot(const Vec3& focus, f32 distance, f32 pitch);
-    void glideTo(const WorldCamera& goal, const Vec3& focus, f32 acceleration);
-    bool advanceCamera();
+    /** e007d53c and e007d584 as the scripts call them: both move on the shots' times. */
+    void shot(f32 distance, f32 pitch, f32 yaw, const Vec3& focus);
+    void planReturn();
+    /** A script's e007dd70: true once every camera channel rests. */
+    bool stepCamera(f32 seconds);
     void makeRuneFlight(usize index);
     void queueCaptions(std::span<const u32> ids);
     formats::LegendsN64Tower m_native;
     std::array<u16, 13> m_runeCaptions{};
     std::array<std::array<u16, 2>, 4> m_shardCaptions{};
     std::array<std::array<u16, 2>, 4> m_doorCaptions{};
-    std::array<Vec3, 4> m_doorFocus{};
+    std::array<Vec3, 4> m_doorPoints{}; ///< e0869634's rows, by door
+    std::array<f32, 4> m_doorYaws{};    ///< e08696c4's rows in radians, by door
     std::array<u16, 2> m_windowCaptions{};
-    Vec3 m_runeFocus{0};
-    Vec3 m_shardFocus{0};
+    Vec3 m_runePoint{0};  ///< e086967c
+    Vec3 m_shardPoint{0}; ///< e0869670
     std::vector<Sequence> m_sequences;
     std::vector<Entry> m_entries;
     LegendsProgress m_owned;      ///< begin()'s party with the pieces seen before it
@@ -233,16 +228,15 @@ private:
     u8 m_beamTransparency = 0;
     std::vector<u32> m_sounds;
     std::vector<Caption> m_captions;
-    WorldCamera m_camera;
+    LegendsCameraRig m_rig;
+    WorldCamera m_camera; ///< the view shown: the rig's last build, or the gameplay camera
     WorldCamera m_previousCamera;
+    bool m_cutShown = false; ///< a step has built the view since start()
     WorldCamera m_returnCamera;
-    WorldCamera m_cameraFrom;
-    WorldCamera m_cameraGoal;
+    Vec3 m_party{0}; ///< e086007c's mean, which case 0x28 finds again with the party held
     Vec3 m_cameraFocus{0};
-    Vec3 m_focusFrom{0};
-    Vec3 m_focusGoal{0};
     Vec3 m_returnFocus{0};
-    Glide m_glide;
+    LegendsCameraChannel m_reportedFocus; ///< attention()'s glide while the return is under way
 };
 
 } // namespace gdl::game

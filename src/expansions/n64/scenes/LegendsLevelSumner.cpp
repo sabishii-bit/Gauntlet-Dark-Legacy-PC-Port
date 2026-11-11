@@ -17,6 +17,19 @@ void faceSumner(std::span<PlayerActor*> party, const LegendsTowerCeremony& cerem
         }
     }
 }
+
+/** e086007c: the mean of the arrived players' feet, the origin when none has arrived. */
+Vec3 partyFeet(std::span<PlayerActor*> party) {
+    Vec3 feet{0};
+    usize arrived = 0;
+    for (const auto* actor : party) {
+        if (actor != nullptr) {
+            feet += actor->position();
+            ++arrived;
+        }
+    }
+    return arrived > 0 ? feet / static_cast<f32>(arrived) : feet;
+}
 } // namespace
 
 bool LegendsLevel::placeN64OpeningParty(std::span<PlayerActor*> party) {
@@ -110,7 +123,7 @@ bool LegendsLevel::updateN64Sumner(std::span<PlayerActor*> players, f32 seconds,
             const auto view = camera();
             const auto focus = cameraAttention();
             if (view && focus) {
-                m_world.adapter()->startTowerCeremonies(*view, *focus);
+                m_world.adapter()->startTowerCeremonies(*view, *focus, partyFeet(players));
             }
         }
         return true;

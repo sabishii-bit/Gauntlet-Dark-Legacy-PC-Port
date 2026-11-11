@@ -471,3 +471,71 @@ TEST_CASE("An N64 Tower ceremony's first Select comes a whole 30 Hz update after
         CHECK(ceremony->gestureFrame() > 0);
     }
 }
+
+namespace {
+/** Sumner where e0860198 stands him, e086a678 in Tower.bin. */
+Vec3 towerSumner(const std::filesystem::path& root) {
+    const auto overlay = readFile(root / "_program/Tower.bin");
+    const auto coordinate = [&](usize at) { return std::bit_cast<f32>(readU32BE(overlay, at)); };
+    return {coordinate(0xa678), coordinate(0xa67c), coordinate(0xa680)};
+}
+
+/** e0860620's cut eye: 30 back from the midpoint of the party's mean feet and Sumner along
+ * e007d53c's pitch 0x3f060a92 and yaw 0x3f860a92. */
+Vec3 sumnerCutEye(const Vec3& feet, const Vec3& sumner) {
+    WorldCamera orbit;
+    orbit.pitch = std::bit_cast<f32>(0x3f060a92U);
+    orbit.yaw = std::bit_cast<f32>(0x3f860a92U);
+    return (feet + sumner) * .5f - orbit.forward() * 30.0f;
+}
+} // namespace
+
+TEST_CASE("An N64 Tower return's cut shows on its Select, about the party and Sumner",
+          "[legends][sumner-integration][tower-ceremony][assets]") {
+    LegendsProgress brought;
+    brought.runestones = 1;
+    SumnerScene fixture{brought};
+    const auto* ceremony = fixture.level->adapter().towerCeremony();
+    REQUIRE(ceremony);
+    const auto gameplay = fixture.level->camera();
+    REQUIRE(gameplay);
+    // The shots turn about the feet the camera follows, the party it opened on (e086007c).
+    const Vec3 feet =
+        (fixture.scene.actor(0)->position() + fixture.scene.actor(1)->position()) * .5f;
+    const Vec3 sumner = towerSumner(fixture.root);
+    // Case 0 installs no view; the stone's Select a whole update later (e086239c(1, 0)) builds
+    // the cut.
+    fixture.step({}, 1.0 / 30);
+    REQUIRE(ceremony->active());
+    CHECK(fixture.level->camera() == gameplay);
+    fixture.step({}, 1.0 / 30);
+    const auto cut = fixture.level->camera();
+    REQUIRE(cut);
+    CHECK(glm::distance(cut->position, sumnerCutEye(feet, sumner)) < 1e-4f);
+    CHECK(glm::distance(cut->forward(), glm::normalize(sumner + Vec3{0, 3, 0} - cut->position)) <
+          1e-5f);
+}
+
+TEST_CASE("An N64 Tower ceremony the podium's party update opens turns about that party",
+          "[legends][sumner-integration][tower-ceremony][assets]") {
+    LegendsProgress brought;
+    brought.runestones = 1;
+    const SumnerScene fixture{brought};
+    const auto* ceremony = fixture.level->adapter().towerCeremony();
+    REQUIRE(ceremony);
+    REQUIRE(ceremony->pending());
+    // The party update opens a pending ceremony from the standing members it is handed, away
+    // from those the camera follows; their mean is (-4, 0, -16).
+    CharacterSave save;
+    save.progress().health = 500;
+    PlayerActor first;
+    PlayerActor second;
+    first.spawn(0, save, nullptr, Vec3{-6, 0, -20}, 0);
+    second.spawn(1, save, nullptr, Vec3{-2, 0, -12}, 0);
+    std::array<PlayerActor*, 2> party{&first, &second};
+    fixture.level->updateParty(party, 1.0f / 30, false);
+    REQUIRE(ceremony->active());
+    fixture.level->update(1.0f / 30, false);
+    CHECK(glm::distance(ceremony->camera().position,
+                        sumnerCutEye({-4, 0, -16}, towerSumner(fixture.root))) < 1e-4f);
+}

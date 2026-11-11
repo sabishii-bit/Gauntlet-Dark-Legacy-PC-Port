@@ -73,6 +73,15 @@ void ticks(LegendsTowerCeremony& value, s32 count) {
 std::vector<u32> sounds(std::initializer_list<u32> ids) {
     return ids;
 }
+
+/** A built view against the eye and angles the channels' float32 arithmetic gives, within
+ * the trig's last bits. */
+void checkView(const WorldCamera& camera, const Vec3& eye, f32 pitch, f32 yaw) {
+    CHECK(glm::distance(camera.position, eye) < 1e-4f);
+    CHECK(camera.pitch == Catch::Approx(pitch).margin(1e-5f));
+    CHECK(camera.yaw == Catch::Approx(yaw).margin(1e-5f));
+    CHECK(camera.roll == 0);
+}
 } // namespace
 
 TEST_CASE("N64 active podium state dispatches the six-choice Sumner menu with its heading",
@@ -137,7 +146,7 @@ TEST_CASE("N64 Tower setup presents one new piece of each kind and leaves the re
     CHECK(LegendsTowerProgress::of(value.displayedProgress()).doors ==
           std::array{true, false, true, true});
     CHECK(now.runestones == 0x1fff); // Presentation does not own/save the award.
-    value.start({}, {});
+    value.start({}, {}, {});
     std::vector<u32> shown;
     for (s32 i = 0; i < 3000 && value.active(); ++i) {
         if (const auto caption = value.caption();
@@ -172,7 +181,7 @@ TEST_CASE("N64 runestone ceremony uses its recorded flight and restores control 
     original.position = {20, 30, 40};
     original.pitch = .4f;
     original.yaw = .8f;
-    value.start(original, {0, 0, 0});
+    value.start(original, {0, 0, 0}, {0, 0, 0});
     // Case 0 empties the caption queue; the Select update (tick 1) queues the stone's
     // caption and e086098c first shows it on tick 2.
     CHECK_FALSE(value.caption());
@@ -205,7 +214,11 @@ TEST_CASE("N64 runestone ceremony uses its recorded flight and restores control 
     ticks(value, 100);
     CHECK_FALSE(value.active());
     CHECK_FALSE(value.pending());
-    CHECK(value.camera() == original);
+    // e007df20 rebuilds the gameplay view about the party, within its last thousandths.
+    const auto back = value.camera();
+    CHECK(glm::distance(back.position, original.position) < .05f);
+    CHECK(back.pitch == Catch::Approx(original.pitch).margin(.001f));
+    CHECK(back.yaw == Catch::Approx(original.yaw).margin(.001f));
     const auto heard = value.takeSounds();
     CHECK(heard == sounds({0x68, 0x8a}));
     CHECK(value.takeSounds().empty());
@@ -221,7 +234,7 @@ TEST_CASE("N64 runestone ceremony runs e086239c's clock after the dispatcher sel
     CHECK_FALSE(value.entries()[0].completesRunes);
     // start() is dispatcher case 0 with its pass, REDY held at frame 0; tick n below is the
     // nth update after case 0.
-    value.start({}, {});
+    value.start({}, {}, {});
     CHECK(value.gesture() == "REDY");
     CHECK(value.gestureFrame() == 0);
     for (s32 tick = 1; tick <= 232; ++tick) {
@@ -274,7 +287,7 @@ TEST_CASE("N64 REDY after MKRU plays once and the ready loop wraps without e0860
         LegendsProgress now;
         now.runestones = 1;
         value.begin({}, now);
-        value.start({}, {});
+        value.start({}, {}, {});
         ticks(value, 174);
         std::array<f32, 4> shown{};
         for (auto& frame : shown) {
@@ -302,7 +315,7 @@ TEST_CASE("N64 runestone completing thirteen returns on the update after it land
     value.begin(before, after);
     REQUIRE(value.entries().size() == 1);
     CHECK(value.entries()[0].completesRunes);
-    value.start({}, {});
+    value.start({}, {}, {});
     for (s32 tick = 1; tick <= 202; ++tick) {
         CAPTURE(tick);
         value.update(kTick);
@@ -324,7 +337,7 @@ TEST_CASE("N64 Tower return places only the lowest new runestone and leaves the 
     CHECK(value.entries()[0].kind == LegendsTowerCeremony::Kind::Rune);
     CHECK(value.entries()[0].index == 1);
     CHECK_FALSE(value.entries()[0].completesRunes);
-    value.start({}, {});
+    value.start({}, {}, {});
     for (s32 tick = 1; tick <= 232; ++tick) {
         CAPTURE(tick);
         value.update(kTick);
@@ -352,7 +365,7 @@ TEST_CASE("N64 thirteen stones made by two new ones open the rune portal as the 
     CHECK(value.entries()[0].index == 0);
     CHECK(value.entries()[0].completesRunes);
     CHECK_FALSE(LegendsTowerProgress::of(value.completed(after)).runestonePortal);
-    value.start({}, {});
+    value.start({}, {}, {});
     for (s32 tick = 1; tick <= 202; ++tick) {
         CAPTURE(tick);
         value.update(kTick);
@@ -373,7 +386,7 @@ TEST_CASE("N64 runestone ceremony releases the stone at frame 14 of whatever Sum
         // release test sees REDY's frame 14 on 67, so the flight shows from 68.
         auto value = nativeCeremony({{.name = "MKRU"}});
         value.begin({}, now);
-        value.start({}, {});
+        value.start({}, {}, {});
         for (s32 tick = 1; tick <= 218; ++tick) {
             CAPTURE(tick);
             value.update(kTick);
@@ -391,7 +404,7 @@ TEST_CASE("N64 runestone ceremony releases the stone at frame 14 of whatever Sum
         // stone goes as the spell ends and flies from 72.
         auto value = nativeCeremony({{"MKRU", 10}});
         value.begin({}, now);
-        value.start({}, {});
+        value.start({}, {}, {});
         for (s32 tick = 1; tick <= 222; ++tick) {
             CAPTURE(tick);
             value.update(kTick);
@@ -412,7 +425,7 @@ TEST_CASE("N64 door ceremony runs e0865c98's counts", "[legends][tower-ceremony]
     now.obelisks = 7;
     value.begin({}, now);
     REQUIRE(value.entries().size() == 1);
-    value.start({}, {});
+    value.start({}, {}, {});
     for (s32 tick = 1; tick <= 358; ++tick) {
         CAPTURE(tick);
         value.update(kTick);
@@ -461,7 +474,7 @@ TEST_CASE("N64 door ceremony lets REDY carry the door past a short or absent ODO
         // sounds 0x6e again; 324 sees 20 and case 7 releases the door on 325.
         auto value = nativeCeremony({{"ODOR", 18, 1.0f / 15}});
         value.begin({}, now);
-        value.start({}, {});
+        value.start({}, {}, {});
         for (s32 tick = 1; tick <= 424; ++tick) {
             CAPTURE(tick);
             value.update(kTick);
@@ -482,7 +495,7 @@ TEST_CASE("N64 door ceremony lets REDY carry the door past a short or absent ODO
         // at 15 from 183 and sounds 0x6e on 236; 239 sees 20 and case 7 releases the door on 240.
         auto value = nativeCeremony({{.name = "ODOR"}});
         value.begin({}, now);
-        value.start({}, {});
+        value.start({}, {}, {});
         for (s32 tick = 1; tick <= 339; ++tick) {
             CAPTURE(tick);
             value.update(kTick);
@@ -533,7 +546,7 @@ TEST_CASE("N64 Tower return opens only the new door e08653bc ranks first",
     LegendsProgress after;
     after.obelisks = 0xff;
     value.begin({}, after);
-    value.start({}, {});
+    value.start({}, {}, {});
     for (s32 tick = 1; tick <= 358; ++tick) {
         CAPTURE(tick);
         value.update(kTick);
@@ -564,7 +577,7 @@ TEST_CASE("N64 ceremonies hand back where retail would wait for a frame no gestu
         for (const auto& visit : visits) {
             LegendsTowerCeremony value;
             value.begin({}, visit.after);
-            value.start({}, {});
+            value.start({}, {}, {});
             for (s32 tick = 1; tick <= visit.handBack; ++tick) {
                 CAPTURE(visit.kind, tick);
                 value.update(kTick);
@@ -580,7 +593,7 @@ TEST_CASE("N64 ceremonies hand back where retail would wait for a frame no gestu
         LegendsProgress now;
         now.obelisks = 7;
         value.begin({}, now);
-        value.start({}, {});
+        value.start({}, {}, {});
         for (s32 tick = 1; tick <= 422; ++tick) {
             CAPTURE(tick);
             value.update(kTick);
@@ -599,7 +612,7 @@ TEST_CASE("N64 shard ceremony runs e0863440's counts and keeps REDY cycling",
     LegendsProgress now;
     now.shards = 1;
     value.begin({}, now);
-    value.start({}, {});
+    value.start({}, {}, {});
     for (s32 tick = 1; tick <= 260; ++tick) {
         CAPTURE(tick);
         value.update(kTick);
@@ -637,7 +650,7 @@ TEST_CASE("N64 last shard reveals the window on case 9's counts", "[legends][tow
     LegendsProgress after;
     after.shards = 15;
     value.begin(before, after);
-    value.start({}, {});
+    value.start({}, {}, {});
     CHECK(value.cathedralBeamOpacity() == 0);
     for (s32 tick = 1; tick <= 394; ++tick) {
         CAPTURE(tick);
@@ -657,7 +670,7 @@ TEST_CASE("N64 last shard reveals the window on case 9's counts", "[legends][tow
     LegendsProgress rune = window;
     rune.runestones = 1;
     value.begin(window, rune);
-    value.start({}, {});
+    value.start({}, {}, {});
     for (s32 tick = 1; tick <= 232; ++tick) {
         CAPTURE(tick);
         CHECK(value.cathedralBeamOpacity() == 1);
@@ -677,7 +690,7 @@ TEST_CASE("N64 Tower return installs only the highest new shard and keeps the ot
     CHECK(value.entries()[0].kind == LegendsTowerCeremony::Kind::Shard);
     CHECK(value.entries()[0].index == 2);
     CHECK_FALSE(value.entries()[0].completesWindow);
-    value.start({}, {});
+    value.start({}, {}, {});
     for (s32 tick = 1; tick <= 260; ++tick) {
         CAPTURE(tick);
         value.update(kTick);
@@ -700,7 +713,7 @@ TEST_CASE("N64 window made by two new shards still turns to its reveal",
     REQUIRE(value.entries().size() == 1);
     CHECK(value.entries()[0].index == 3);
     CHECK(value.entries()[0].completesWindow);
-    value.start({}, {});
+    value.start({}, {}, {});
     for (s32 tick = 1; tick <= 394; ++tick) {
         CAPTURE(tick);
         value.update(kTick);
@@ -725,7 +738,7 @@ TEST_CASE("N64 ceremonies select each entry on the update after the last one ret
     now.shards = 1;
     value.begin({}, now);
     REQUIRE(value.entries().size() == 2);
-    value.start({}, {});
+    value.start({}, {}, {});
     // The rune returns on 175, so the shard's Select is 176 and its tick n is 175 + n.
     for (s32 tick = 1; tick <= 435; ++tick) {
         CAPTURE(tick);
@@ -739,7 +752,7 @@ TEST_CASE("N64 ceremonies select each entry on the update after the last one ret
     now.obelisks = 7;
     value.begin({}, now);
     REQUIRE(value.entries().size() == 3);
-    value.start({}, {});
+    value.start({}, {}, {});
     for (s32 tick = 1; tick <= 736; ++tick) {
         CAPTURE(tick);
         value.update(kTick);
@@ -748,8 +761,10 @@ TEST_CASE("N64 ceremonies select each entry on the update after the last one ret
     }
 }
 
-TEST_CASE("N64 ceremony camera cuts to Sumner, moves on script updates and returns in 54",
+TEST_CASE("N64 ceremony camera orbits the party's midpoint with Sumner and returns in 54",
           "[legends][tower-ceremony]") {
+    // Without the overlay Sumner and the shard point stand at the origin. The views are
+    // game.bin's channels (e007cdf0, e007d774) and e007db00's build worked through in float32.
     auto value = nativeCeremony();
     LegendsProgress now;
     now.shards = 1;
@@ -759,41 +774,148 @@ TEST_CASE("N64 ceremony camera cuts to Sumner, moves on script updates and retur
     original.pitch = .4f;
     original.yaw = .8f;
     const Vec3 attention{1, 2, 3};
-    value.start(original, attention);
-    // e0860620 cuts every channel, so nothing glides from the gameplay camera. It cuts to yaw
-    // pi/3 (e007d53c's third argument); the remake keeps the gameplay yaw for every shot
-    // until the native yaw convention is matched on screen.
-    const auto cut = value.camera();
-    CHECK(value.camera(0) == cut);
-    CHECK(value.camera(.5f) == cut);
-    CHECK(cut.pitch == Catch::Approx(kPi / 6));
-    CHECK(cut.yaw == original.yaw);
-    CHECK(cut.roll == 0);
-    CHECK(value.attention() == Vec3{0, 3, 0}); // Sumner, at the origin without the overlay
-    CHECK(glm::distance(cut.position + cut.forward() * 30.0f, value.attention()) < 1e-4f);
-    WorldCamera previous = cut;
+    const Vec3 party{3, 0, 12};
+    value.start(original, attention, party);
+    // Case 0 installs no view, and the shard's Select (e0863410) does not step the camera:
+    // the gameplay view stays until the script's first update builds the cut.
+    CHECK(value.camera() == original);
+    CHECK(value.attention() == attention);
+    const Vec3 centre = party * .5f;
+    WorldCamera previous = original;
     for (s32 tick = 1; tick <= 260; ++tick) {
         CAPTURE(tick);
         value.update(kTick);
         const auto camera = value.camera();
-        // The shard shot, planned on 43, glides over .7, 1 and .3 s: 60 updates from 44.
-        // The script returns on 203; Select (204) and case 0x28's planning update (205)
-        // hold the camera, and the return ends on its 54th advance.
+        // The shard shot, planned on 43, moves over .7, 1 and .3 s: 60 updates from 44. The
+        // script returns on 203; Select (204) and case 0x28's planning update (205) hold the
+        // camera, and the return ends on its 54th step.
         CHECK((camera != previous) ==
-              ((tick >= 44 && tick <= 103) || (tick >= 206 && tick <= 259)));
-        if (tick == 103) {
-            CHECK(camera.pitch == Catch::Approx(10 * kPi / 180));
+              (tick == 2 || (tick >= 44 && tick <= 103) || (tick >= 206 && tick <= 259)));
+        if (tick == 2) {
+            // e0860620's (30, pi/6, pi/3) about the midpoint, looking over Sumner, unblended.
+            CHECK(value.camera(0) == camera);
+            CHECK(value.camera(.5f) == camera);
+            checkView(camera, {-21, 15, -6.99038029f}, .49681893f, 1.24945807f);
+            CHECK(value.attention() == Vec3{0, 3, 0});
         }
-        if (tick == 258) {
-            CHECK(camera != original);
+        if (tick >= 44 && tick <= 103) {
+            // The orbit's angles move, not the eye along a line: it keeps 30 from the centre,
+            // looking at the moving attention.
+            CHECK(glm::distance(camera.position, centre) == Catch::Approx(30).margin(.001f));
+            CHECK(glm::distance(camera.forward(),
+                                glm::normalize(value.attention() - camera.position)) < 1e-5f);
+        }
+        if (tick == 73) {
+            checkView(camera, {-24.4095802f, 10.9137983f, 16.4681683f}, .234910622f, 2.16431236f);
+        }
+        if (tick == 103) {
+            checkView(camera, {1.50000262f, 5.20944595f, 35.5442314f}, .00588723645f, -3.09941673f);
+            CHECK(value.attention() == Vec3{0, 5, 0});
         }
         if (tick == 259) {
-            CHECK(camera == original);
+            // e007df20 rebuilds the eye about the party; the orbit's last remainders fall under
+            // .001 an update early, leaving it a little short of the gameplay eye.
+            checkView(camera, {19.9913311f, 29.9754162f, 40.0315704f}, .4f, .8f);
+            CHECK(glm::distance(camera.position, original.position) < .05f);
             CHECK(value.attention() == attention);
         }
         CHECK(value.active() == (tick < 260));
         previous = camera;
     }
+}
+
+TEST_CASE("N64 ceremony's cut shows on the update a script first steps the camera",
+          "[legends][tower-ceremony]") {
+    // e086239c(1, 0) and e0865c98(1, dt) step the camera on the Select update; e0863410 does
+    // not, so a shard's cut waits for its script's first update.
+    WorldCamera original;
+    original.position = {20, 30, 40};
+    original.pitch = .4f;
+    original.yaw = .8f;
+    LegendsProgress rune;
+    rune.runestones = 1;
+    LegendsProgress door;
+    door.obelisks = 7;
+    LegendsProgress shard;
+    shard.shards = 1;
+    for (const auto& [now, cutTick] :
+         {std::pair{rune, 1}, std::pair{door, 1}, std::pair{shard, 2}}) {
+        CAPTURE(cutTick);
+        auto value = nativeCeremony();
+        value.begin({}, now);
+        value.start(original, {1, 2, 3}, {3, 0, 12});
+        for (s32 tick = 1; tick <= 3; ++tick) {
+            CAPTURE(tick);
+            value.update(kTick);
+            CHECK((value.camera() == original) == (tick < cutTick));
+            if (tick == cutTick) {
+                CHECK(value.camera(.5f) == value.camera());
+            }
+        }
+        checkView(value.camera(), {-21, 15, -6.99038029f}, .49681893f, 1.24945807f);
+    }
+}
+
+TEST_CASE("N64 ceremony shots orbit the party's midpoint with Sumner at Tower.bin's angles",
+          "[legends][tower-ceremony][assets]") {
+    // A party at tower2's entrance. Sumner stands at e086a678 and the shots are e0860620's,
+    // e086239c's, e0865c98's (yaws from e08696c4) and e0863440's; the views are game.bin's
+    // channels and e007db00's build worked through in float32. The Ice door's and the
+    // window's orbits change in pitch alone, and their last thousandth falls short as retail's.
+    const Vec3 party{-4.5f, 0, -15.5f};
+    WorldCamera original;
+    original.position = {20, 30, 40};
+    original.pitch = .4f;
+    original.yaw = .8f;
+    {
+        auto value = ceremony();
+        LegendsProgress now;
+        now.runestones = 1;
+        value.begin({}, now);
+        value.start(original, {}, party);
+        ticks(value, 1);
+        checkView(value.camera(), {-21.75f, 15, -24.7403793f}, .3546215f, 1.02798545f);
+    }
+    // The settled shot: the camera when the script returns.
+    const auto settled = [&](const LegendsProgress& before, const LegendsProgress& after) {
+        auto value = ceremony();
+        value.begin(before, after);
+        value.start(original, {}, party);
+        for (s32 tick = 0; tick < 2000 && value.current() != nullptr; ++tick) {
+            value.update(kTick);
+        }
+        return value.camera();
+    };
+    LegendsProgress now;
+    now.runestones = 1;
+    checkView(settled({}, now), {.75f, 12.6785479f, -38.9392319f}, .144025818f, .0141662396f);
+    // Doors in LegendsTowerProgress order: Town, Castle, Ice and Battlefield.
+    struct Shot {
+        Vec3 eye;
+        f32 pitch;
+        f32 yaw;
+    };
+    const std::array<Shot, 4> doors{
+        {{{24.2965679f, 12.6785488f, -25.3446159f}, .0445852242f, -.913980901f},
+         {{-16.7268982f, 12.6785488f, 9.07816505f}, .084050633f, 2.08375835f},
+         {{-22.7859135f, 12.7048979f, -25.3384647f}, .0513792336f, .907872558f},
+         {{.75f, 12.6785488f, -38.9392319f}, .138238087f, -.00893479772f}}};
+    for (usize i = 0; i < doors.size(); ++i) {
+        CAPTURE(i);
+        LegendsProgress opened;
+        opened.obelisks = LegendsTowerProgress::kDoorObelisks[i];
+        checkView(settled({}, opened), doors[i].eye, doors[i].pitch, doors[i].yaw);
+    }
+    LegendsProgress shard;
+    shard.shards = 1;
+    checkView(settled({}, shard), {.750002563f, 5.20944595f, 17.7942314f}, -.157120496f,
+              -3.12945604f);
+    LegendsProgress seen;
+    seen.shards = 7;
+    LegendsProgress window;
+    window.shards = 15;
+    checkView(settled(seen, window), {.750002861f, 18.9858017f, 21.16716f}, .166997686f,
+              -3.13008428f);
 }
 
 TEST_CASE("N64 ceremony's cut turns each arrived player to face Sumner in the native yaw",
@@ -833,7 +955,7 @@ TEST_CASE("N64 shard gesture cannot install the piece before its animation compl
     LegendsProgress now;
     now.shards = 1;
     value.begin({}, now);
-    value.start({}, {});
+    value.start({}, {}, {});
     ticks(value, 93);
     CHECK(value.displayedProgress().shards == 0);
     ticks(value, 1);
@@ -860,7 +982,7 @@ TEST_CASE("N64 shard pane fades in through the native wrapped transparency bytes
     LegendsProgress now;
     now.shards = 1;
     value.begin({}, now);
-    value.start({}, {});
+    value.start({}, {}, {});
     ticks(value, 94 + 45); // SHD1 starts on tick 94; its end is read 45 updates on
     REQUIRE(value.displayedProgress().shards == 1);
     CHECK(value.takeSounds().empty());
@@ -913,7 +1035,7 @@ TEST_CASE("N64 last shard queues the completed window's caption pair after its o
     LegendsProgress now = old;
     now.shards = 15;
     value.begin(old, now);
-    value.start({}, {});
+    value.start({}, {}, {});
     std::vector<u32> shown;
     for (s32 i = 0; i < 2000 && value.active(); ++i) {
         if (const auto caption = value.caption();
@@ -935,7 +1057,7 @@ TEST_CASE("N64 ceremony captions run e086098c's clock on script and return updat
     LegendsProgress now = old;
     now.shards = 15;
     value.begin(old, now);
-    value.start({}, {});
+    value.start({}, {}, {});
     CHECK_FALSE(value.caption());
     // Each caption is removed on its 91st update and the next shows from the update after;
     // 540's updates skip the Select update, 338.
@@ -971,7 +1093,7 @@ TEST_CASE("N64 door ceremony captions run e086098c's clock from the select updat
     LegendsProgress now;
     now.obelisks = 7;
     value.begin({}, now);
-    value.start({}, {});
+    value.start({}, {}, {});
     // e0865c98 queues the door's pair in the select update (tick 1); each caption shows from
     // its first caption update and goes on its 91st.
     std::vector<std::pair<s32, std::optional<u32>>> changes;
@@ -996,7 +1118,7 @@ TEST_CASE("N64 gate animation holds the staff spell before releasing the actual 
     LegendsProgress now;
     now.obelisks = 7;
     value.begin({}, now);
-    value.start({}, {});
+    value.start({}, {}, {});
     ticks(value, 48);
     CHECK(value.gesture() == "STRT");
     CHECK(value.gestureFrame() == 44);
@@ -1028,7 +1150,7 @@ TEST_CASE("N64 ceremony clocks ignore invalid steps and are independent of rende
     auto b = a;
     auto c = a;
     for (auto* value : {&a, &b, &c}) {
-        value->start({}, {});
+        value->start({}, {}, {});
     }
     a.update(-1);
     a.update(0);

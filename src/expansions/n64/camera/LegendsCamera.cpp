@@ -415,6 +415,14 @@ void LegendsCamera::place() {
     m_camera.position = m_attention - m_camera.forward() * m_distance;
 }
 
+Vec3 LegendsCamera::partyFeet() const {
+    Vec3 feet{0};
+    for (usize i = 0; i < m_partySize; ++i) {
+        feet += m_party[i].feet;
+    }
+    return feet / static_cast<f32>(m_partySize);
+}
+
 Vec3 LegendsCamera::partyTarget(const Vec3& feet) const {
     // e0035380 adds the arena focus as one additional subject, not half the
     // target regardless of player count. The common +3 camera-up offset is

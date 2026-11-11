@@ -261,9 +261,10 @@ void LegendsSceneAdapter::queueTowerCeremonies(const LegendsProgress& before,
     updateTowerProgress(false);
 }
 
-void LegendsSceneAdapter::startTowerCeremonies(const WorldCamera& camera, const Vec3& attention) {
+void LegendsSceneAdapter::startTowerCeremonies(const WorldCamera& camera, const Vec3& attention,
+                                               const Vec3& party) {
     if (m_tower && m_towerCeremony) {
-        m_towerCeremony->start(camera, attention);
+        m_towerCeremony->start(camera, attention, party);
         updateTowerCeremony(0);
     }
 }

@@ -316,7 +316,7 @@ TEST_CASE("The N64 cathedral beam waits for the window ceremony's fade and stays
     REQUIRE(scene->worldObjectVisible(beamIndex));
     scene->queueTowerCeremonies(before, after);
     CHECK_FALSE(scene->worldObjectVisible(beamIndex));
-    scene->startTowerCeremonies({}, {});
+    scene->startTowerCeremonies({}, {}, {});
     const auto* ceremony = scene->towerCeremony();
     REQUIRE(ceremony);
     REQUIRE(ceremony->active());
@@ -339,7 +339,7 @@ TEST_CASE("The N64 cathedral beam waits for the window ceremony's fade and stays
     scene->synchronizeProgress(party);
     scene->queueTowerCeremonies(window, rune);
     CHECK(scene->worldObjectVisible(beamIndex));
-    scene->startTowerCeremonies({}, {});
+    scene->startTowerCeremonies({}, {}, {});
     REQUIRE(ceremony->active());
     for (s32 tick = 1; tick <= 232; ++tick) {
         CAPTURE(tick);
@@ -381,7 +381,7 @@ TEST_CASE("An N64 Tower return builds its unselected new doors open without thei
     CHECK(closed(kCastle));
     CHECK_FALSE(closed(kIce));
     CHECK(scene->takeSounds().empty());
-    scene->startTowerCeremonies({}, {});
+    scene->startTowerCeremonies({}, {}, {});
     const auto* ceremony = scene->towerCeremony();
     REQUIRE(ceremony);
     REQUIRE(ceremony->active());
@@ -430,7 +430,7 @@ TEST_CASE("A window two new N64 shards complete is revealed with the other new p
     }
     const s32 exit = fixtureId(*scene, "TRAP:EXNR", {0, 1, -30});
     CHECK_FALSE(scene->worldObjectVisible(beamIndex));
-    scene->startTowerCeremonies({}, {});
+    scene->startTowerCeremonies({}, {}, {});
     const auto* ceremony = scene->towerCeremony();
     REQUIRE(ceremony);
     for (s32 tick = 0; tick < 2000 && ceremony->active(); ++tick) {
@@ -479,7 +479,7 @@ TEST_CASE("Thirteen N64 stones two new ones complete light the circle with the o
         CHECK_FALSE(scene->fixtureObject(stones[i])->visible);
     }
     const s32 fire = fixtureId(*scene, "BOSSDEATHFX:", {1.5f, -40, 14});
-    scene->startTowerCeremonies({}, {});
+    scene->startTowerCeremonies({}, {}, {});
     const auto* ceremony = scene->towerCeremony();
     REQUIRE(ceremony);
     for (s32 tick = 0; tick < 2000 && ceremony->active(); ++tick) {

@@ -94,7 +94,9 @@ public:
         return m_towerCeremony ? &*m_towerCeremony : nullptr;
     }
     void queueTowerCeremonies(const LegendsProgress& before, const LegendsProgress& after);
-    void startTowerCeremonies(const WorldCamera& camera, const Vec3& attention);
+    /** Opens the queued ceremonies from the gameplay view, about `party`, the mean feet of the
+     * party standing in the Tower. */
+    void startTowerCeremonies(const WorldCamera& camera, const Vec3& attention, const Vec3& party);
     std::string_view dreamcastTitle() const { return m_dreamcastTitle; }
     std::span<const LegendsDreamcastPortal> dreamcastPortals() const { return m_dreamcastPortals; }
     bool dreamcastPortalUnlocked(usize index) const {

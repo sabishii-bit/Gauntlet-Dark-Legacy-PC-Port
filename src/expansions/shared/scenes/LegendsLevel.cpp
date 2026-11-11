@@ -202,8 +202,10 @@ void LegendsLevel::update(f32 seconds, bool timeStopped) {
         // script. Start on the independent world clock, never behind that hold. The cut
         // follows this update's scenery tick, as the party update's start does: state
         // 0x12's handler (game.bin e0045208) runs one dispatcher case an update, so the
-        // first Select comes a whole 30 Hz update after the cut.
-        m_world.adapter()->startTowerCeremonies(m_camera->camera(), m_camera->attention());
+        // first Select comes a whole 30 Hz update after the cut. The shots turn about the
+        // feet the camera follows, the party standing in the Tower.
+        m_world.adapter()->startTowerCeremonies(m_camera->camera(), m_camera->attention(),
+                                                m_camera->partyFeet());
     }
     m_world.adapter()->updateTraps(seconds, timeStopped);
     if (m_collision) {

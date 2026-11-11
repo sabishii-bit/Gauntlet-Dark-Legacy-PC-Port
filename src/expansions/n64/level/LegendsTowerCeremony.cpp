@@ -46,30 +46,33 @@ findSequence(std::span<const LegendsTowerCeremony::Sequence> sequences, std::str
     return found != sequences.end() && found->frames > 0 ? &*found : nullptr;
 }
 
-// Shots: e007d53c's distance and pitch about e007d584's focus.
+// Shots: e007d53c's distance, pitch and yaw, as WorldCamera has them, and e007d584's point.
 constexpr f32 kShotDistance = 30;
-constexpr f32 kSumnerShotPitch = kPi / 6;
+constexpr auto kSumnerShotPitch = std::bit_cast<f32>(0x3f060a92U); ///< pi / 6
+constexpr auto kSumnerShotYaw = std::bit_cast<f32>(0x3f860a92U);   ///< pi / 3
 constexpr f32 kSumnerFocusHeight = 3;
-constexpr f32 kRuneShotPitch = 25 * kPi / 180;
-constexpr f32 kDoorShotPitch = 25 * kPi / 180;
-constexpr f32 kShardShotPitch = 10 * kPi / 180;
+constexpr auto kRuneShotPitch = std::bit_cast<f32>(0x3edf66f3U); ///< 25 degrees
+constexpr f32 kRuneShotYaw = 0;
+/// 25 degrees, one ulp above the rune's.
+constexpr auto kDoorShotPitch = std::bit_cast<f32>(0x3edf66f4U);
+constexpr auto kShardShotPitch = std::bit_cast<f32>(0x3e32b8c3U); ///< 10 degrees
+constexpr f32 kShardShotYaw = kPi;
 constexpr f32 kWindowShotDistance = 38;
-constexpr f32 kWindowShotPitch = kPi / 6;
-/// The window shot looks 2 under the overlay's shard point, 7 under the shard shot's focus.
-constexpr f32 kWindowFocusDrop = 7;
-// Camera moves (e007cfd0): e08694e4 accelerates shots over .7 s, case 0x28 the return over .5 s.
-constexpr f32 kShotAcceleration = .7f;
-constexpr f32 kReturnAcceleration = .5f;
-constexpr f32 kCruiseSeconds = 1;
-constexpr f32 kBrakingSeconds = .3f;
+constexpr f32 kWindowShotPitch = kSumnerShotPitch;
+constexpr f32 kWindowShotYaw = kPi;
+/// The scripts look 5 over the overlay's rune, door and shard points, the window 2 under the
+/// shard's.
+constexpr f32 kFocusLift = 5;
+constexpr f32 kWindowFocusDrop = 2;
+/// e0865c98 turns a door row's degrees to radians as degrees * pi * (1 / 180).
+constexpr auto kRadiansPerDegree = std::bit_cast<f32>(0x3bb60b61U);
+// Camera times (e007cfd0): e08694e4 sets the shots', case 0x28 the return's.
+constexpr LegendsCameraChannel::Times kShotTimes{.acceleration = .7f, .cruise = 1, .braking = .3f};
+constexpr LegendsCameraChannel::Times kReturnTimes{
+    .acceleration = .5f, .cruise = 1, .braking = .3f};
 
-/** A shot of focus from distance at pitch. It keeps the base camera's yaw rather than the
- * one e007d53c is given, until the native yaw convention is matched on screen. */
-WorldCamera shotCamera(WorldCamera base, const Vec3& focus, f32 distance, f32 pitch) {
-    base.pitch = pitch;
-    base.roll = 0;
-    base.position = focus - base.forward() * distance;
-    return base;
+Vec3 above(const Vec3& point, f32 height) {
+    return {point.x, point.y + height, point.z};
 }
 
 // e086239c's time line, in updates from its setup.
@@ -138,14 +141,19 @@ LegendsTowerCeremony LegendsTowerCeremony::decode(std::span<const u8> overlay) {
                     std::bit_cast<f32>(readU32BE(overlay, at + 4)),
                     std::bit_cast<f32>(readU32BE(overlay, at + 8))};
     };
-    result.m_runeFocus = vector(0x967c) + Vec3{0, 5, 0};
-    result.m_shardFocus = vector(0x9670) + Vec3{0, 5, 0};
+    result.m_runePoint = vector(0x967c);
+    result.m_shardPoint = vector(0x9670);
     constexpr std::array<usize, 4> kDoorRows{3, 1, 2, 4};
+    /// e08696c4: each door row's shot yaw in degrees.
+    constexpr usize kDoorDegrees = 0x96c4;
     for (usize i = 0; i < 13; ++i) {
         result.m_runeCaptions[i] = readU16BE(overlay, 0x9700 + 2 * i);
     }
     for (usize i = 0; i < 4; ++i) {
-        result.m_doorFocus[i] = vector(0x9634 + kDoorRows[i] * 12) + Vec3{0, 5, 0};
+        result.m_doorPoints[i] = vector(0x9634 + kDoorRows[i] * 12);
+        const auto degrees =
+            std::bit_cast<f32>(readU32BE(overlay, kDoorDegrees + 4 * kDoorRows[i]));
+        result.m_doorYaws[i] = degrees * kPi * kRadiansPerDegree;
         for (usize line = 0; line < 2; ++line) {
             result.m_shardCaptions[i][line] = readU16BE(overlay, 0x96ec + 4 * i + 2 * line);
             result.m_doorCaptions[i][line] =
@@ -226,7 +234,8 @@ const LegendsTowerCeremony::Entry* LegendsTowerCeremony::current() const {
     return pending() ? &m_entries[m_next] : nullptr;
 }
 
-void LegendsTowerCeremony::start(const WorldCamera& camera, const Vec3& attention) {
+void LegendsTowerCeremony::start(const WorldCamera& camera, const Vec3& attention,
+                                 const Vec3& party) {
     if (!pending() || active()) {
         return;
     }
@@ -235,13 +244,22 @@ void LegendsTowerCeremony::start(const WorldCamera& camera, const Vec3& attentio
     m_dispatch = Dispatch::Select;
     m_returnCamera = camera;
     m_returnFocus = attention;
-    // e0860620 cuts every camera channel to Sumner's shot: e007d1d4, e007d53c and
-    // e007d584 each set the channel's current value to its target.
-    const Vec3 focus = m_native.sumner.position + Vec3{0, kSumnerFocusHeight, 0};
-    m_camera = shotCamera(camera, focus, kShotDistance, kSumnerShotPitch);
-    m_previousCamera = m_cameraFrom = m_cameraGoal = m_camera;
-    m_cameraFocus = m_focusFrom = m_focusGoal = focus;
-    m_glide = {};
+    m_party = party;
+    // Case 0 installs no view: the gameplay one stays until a script's e007dd70 builds the cut.
+    m_camera = m_previousCamera = camera;
+    m_cameraFocus = attention;
+    m_cutShown = false;
+    m_reportedFocus = LegendsCameraChannel{};
+    // e08694e4 set the shots' times. e007de28 settles the channels on the gameplay view, then
+    // e0860620 cuts the centre between the party and Sumner, the orbit and distance to his
+    // shot and the attention over him, and turns the rotation off.
+    m_rig.setTimes(kShotTimes);
+    m_rig.settle(camera);
+    const Vec3& sumner = m_native.sumner.position;
+    m_rig.setCentre((party + sumner) * .5f, true);
+    m_rig.setOrbit(kShotDistance, kSumnerShotPitch, kSumnerShotYaw, true);
+    m_rig.setAttention(above(sumner, kSumnerFocusHeight), true);
+    m_rig.setRotation(std::nullopt, true);
     // It also empties the caption queue and lifts the ready suppression.
     m_captions.clear();
     m_readySuppressed = false;
@@ -400,7 +418,8 @@ void LegendsTowerCeremony::select() {
     switch (entry->kind) {
     case Kind::Rune:
         // e08622f4 records the flight (e08618a8), then runs e086239c's time-0 events
-        // with no time step: the caption is queued here and shown on the next update.
+        // with no time step: the caption is queued here and shown on the next update, and
+        // the camera step by 0 builds the view.
         makeRuneFlight(entry->index);
         m_runeTime = 0;
         m_runeStage = RuneStage::Waiting;
@@ -408,6 +427,7 @@ void LegendsTowerCeremony::select() {
         m_flightStart = -1;
         m_settledAt = -1;
         m_flightFrame = -1;
+        stepCamera(0);
         runeScript(*entry);
         break;
     case Kind::Door:
@@ -415,11 +435,11 @@ void LegendsTowerCeremony::select() {
         m_doorCase = DoorCase::Captions;
         m_doorHold = -1;
         m_doorBolt = false;
-        advanceCamera();
+        stepCamera(kTick);
         doorScript(*entry);
         break;
     case Kind::Shard:
-        // e0863410 only resets the script.
+        // e0863410 only resets the script; the camera steps from its next update.
         m_shardCase = ShardCase::Captions;
         break;
     }
@@ -427,7 +447,7 @@ void LegendsTowerCeremony::select() {
 
 bool LegendsTowerCeremony::runScript(const Entry& entry) {
     // Each script steps the camera (e007dd70) before its own case.
-    advanceCamera();
+    stepCamera(kTick);
     switch (entry.kind) {
     case Kind::Rune: ++m_runeTime; return runeScript(entry);
     case Kind::Door: return doorScript(entry);
@@ -444,7 +464,7 @@ bool LegendsTowerCeremony::runeScript(const Entry& entry) {
         queueCaptions(entry.captions);
     }
     if (now == kRuneShotTime) {
-        shot(m_runeFocus, kShotDistance, kRuneShotPitch);
+        shot(kShotDistance, kRuneShotPitch, kRuneShotYaw, above(m_runePoint, kFocusLift));
     }
     if (now == kRuneSpellTime) {
         m_sounds.push_back(kRuneSpellSound);
@@ -503,7 +523,8 @@ bool LegendsTowerCeremony::doorScript(const Entry& entry) {
         }
         break;
     case DoorCase::Shot:
-        shot(m_doorFocus[entry.index], kShotDistance, kDoorShotPitch);
+        shot(kShotDistance, kDoorShotPitch, m_doorYaws[entry.index],
+             above(m_doorPoints[entry.index], kFocusLift));
         m_count = 0;
         m_doorCase = DoorCase::Spell;
         break;
@@ -593,7 +614,7 @@ bool LegendsTowerCeremony::shardScript(const Entry& entry) {
         }
         break;
     case ShardCase::Shot:
-        shot(m_shardFocus, kShotDistance, kShardShotPitch);
+        shot(kShotDistance, kShardShotPitch, kShardShotYaw, above(m_shardPoint, kFocusLift));
         m_count = 0;
         m_shardCase = ShardCase::Spell;
         break;
@@ -643,7 +664,8 @@ bool LegendsTowerCeremony::shardScript(const Entry& entry) {
         // A shard that makes the window (e086ae04) turns to it, queues its captions and
         // unhides CATH_BEAM fully transparent; the completed window shows from here, even
         // with a new pane left for the next visit.
-        shot(m_shardFocus - Vec3{0, kWindowFocusDrop, 0}, kWindowShotDistance, kWindowShotPitch);
+        shot(kWindowShotDistance, kWindowShotPitch, kWindowShotYaw,
+             above(m_shardPoint, -kWindowFocusDrop));
         queueCaptions(captions(m_windowCaptions));
         m_beamShown = true;
         m_beamTransparency = kTransparent;
@@ -702,12 +724,13 @@ void LegendsTowerCeremony::tick() {
         break;
     case Dispatch::PlanReturn:
         // Case 0x28 plans the return to the gameplay camera; it first moves next update.
-        glideTo(m_returnCamera, m_returnFocus, kReturnAcceleration);
+        planReturn();
         m_dispatch = Dispatch::Return;
         attends = true;
         break;
     case Dispatch::Return:
-        if (advanceCamera()) {
+        // Case 0x29 steps the camera until every channel rests.
+        if (stepCamera(kTick)) {
             m_dispatch = Dispatch::HandBack;
         }
         attends = true;
@@ -738,107 +761,35 @@ void LegendsTowerCeremony::update(f32 seconds) {
     }
 }
 
-void LegendsTowerCeremony::shot(const Vec3& focus, f32 distance, f32 pitch) {
-    glideTo(shotCamera(m_camera, focus, distance, pitch), focus, kShotAcceleration);
+void LegendsTowerCeremony::shot(f32 distance, f32 pitch, f32 yaw, const Vec3& focus) {
+    m_rig.setOrbit(distance, pitch, yaw, false);
+    m_rig.setAttention(focus, false);
 }
 
-void LegendsTowerCeremony::glideTo(const WorldCamera& goal, const Vec3& focus, f32 acceleration) {
-    m_cameraFrom = m_camera;
-    m_focusFrom = m_cameraFocus;
-    m_cameraGoal = goal;
-    m_focusGoal = focus;
-    if (goal == m_camera && focus == m_cameraFocus) {
-        m_glide = {}; // e007cdf0 finds nothing to move.
-    } else {
-        m_glide.plan(acceleration);
-    }
+void LegendsTowerCeremony::planReturn() {
+    // Case 0x28: e0860000 drops the channels' own times and e007cfd0 sets the return's; the
+    // centre moves to the party's mean (e086007c, the party held where it stood) and e007df20
+    // turns back to the gameplay view saved at the cut.
+    m_rig.setTimes(kReturnTimes);
+    m_rig.setCentre(m_party, false);
+    m_rig.returnTo(m_returnCamera.position, m_returnCamera.pitch, m_returnCamera.yaw);
+    // Retail's attention goes off here; the remake's users of the camera's attention follow
+    // a point gliding back to the gameplay one on the same times.
+    m_reportedFocus.set(m_cameraFocus, true, kReturnTimes);
+    m_reportedFocus.set(m_returnFocus, false, kReturnTimes);
 }
 
-bool LegendsTowerCeremony::advanceCamera() {
-    if (!m_glide.advance(kTick)) {
-        m_camera = m_cameraGoal.interpolate(m_cameraFrom, m_glide.travelled);
-        m_cameraFocus = glm::mix(m_focusFrom, m_focusGoal, m_glide.travelled);
-        return false;
+bool LegendsTowerCeremony::stepCamera(f32 seconds) {
+    const bool still = m_rig.step(seconds);
+    m_reportedFocus.advance(seconds);
+    m_camera = m_rig.view();
+    m_cameraFocus = m_rig.attention().value_or(m_reportedFocus.value());
+    if (!m_cutShown) {
+        // The cut replaces the gameplay view whole, unblended.
+        m_previousCamera = m_camera;
+        m_cutShown = true;
     }
-    m_camera = m_cameraGoal;
-    m_cameraFocus = m_focusGoal;
-    return true;
-}
-
-void LegendsTowerCeremony::Glide::plan(f32 accelerationSeconds) {
-    // e007cdf0 for a move of length one; every channel of a shot shares these times.
-    acceleration = accelerationSeconds;
-    elapsed = 0;
-    speed = 0;
-    travelled = 0;
-    cruiseSpeed = 1 / ((acceleration + kBrakingSeconds) * .5f + kCruiseSeconds);
-    fall = -cruiseSpeed / kBrakingSeconds;
-    rise = acceleration > 0 ? cruiseSpeed / acceleration : 0;
-    phase = acceleration > 0 ? Phase::Accelerating : Phase::Cruising;
-}
-
-bool LegendsTowerCeremony::Glide::advance(f32 seconds) {
-    // e007d774 in float32: a step that overruns a phase spends the rest in the next, and
-    // the move ends on the step that overruns the braking.
-    if (phase == Phase::Done) {
-        return true;
-    }
-    f32 rest = seconds;
-    f32 moved = 0;
-    if (phase == Phase::Accelerating) {
-        f32 slice = rest;
-        const f32 left = acceleration - elapsed;
-        if (rest <= left) {
-            elapsed += rest;
-            rest = 0;
-        } else {
-            slice = left;
-            rest -= left;
-            elapsed = 0;
-            phase = Phase::Cruising;
-        }
-        const f32 before = speed;
-        speed = before + rise * slice;
-        moved = (before + rise * slice * .5f) * slice;
-    }
-    if (phase == Phase::Cruising) {
-        f32 slice = rest;
-        const f32 left = kCruiseSeconds - elapsed;
-        speed = cruiseSpeed;
-        if (rest <= left) {
-            elapsed += rest;
-            rest = 0;
-        } else {
-            slice = left;
-            rest -= left;
-            elapsed = 0;
-            phase = Phase::Braking;
-        }
-        moved += speed * slice;
-    }
-    if (phase == Phase::Braking) {
-        f32 slice = rest;
-        const f32 left = kBrakingSeconds - elapsed;
-        if (rest <= left) {
-            elapsed += rest;
-        } else {
-            slice = left;
-            elapsed = 0;
-            phase = Phase::Done;
-        }
-        const f32 before = speed;
-        speed = before + fall * slice;
-        moved += (before + fall * slice * .5f) * slice;
-    }
-    if (phase == Phase::Done) {
-        speed = 0;
-        travelled = 1;
-        return true;
-    }
-    if (moved > 0) {
-        travelled += moved;
-    }
-    return false;
+    return still;
 }
 
 WorldCamera LegendsTowerCeremony::camera(f32 alpha) const {
@@ -851,7 +802,7 @@ void LegendsTowerCeremony::makeRuneFlight(usize index) {
     // e086239c reads the recording backwards. This is not a hand-to-floor lerp.
     const auto& final = m_native.runestones[index].placement;
     FlightPose pose{Vec3{final[3]}, {kHalfPi, 0, 0}};
-    const Vec3 centre = m_runeFocus - Vec3{0, 5, 0};
+    const Vec3& centre = m_runePoint;
     pose.angles.y = std::atan2(centre.x - pose.position.x, centre.z - pose.position.z);
     std::minstd_rand random{static_cast<u32>(index + 1)};
     Vec3 spin;
