@@ -357,27 +357,24 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
         if (!down && players[i].reaction != PlayerDeed::None) {
             deed = players[i].reaction;
         }
-        // Still, a body retches while gas or Death's touch lasts, heeding no button
-        // (PlayerMotion's reaction 100, pmotion.c 1485).
+        // While gas or Death's touch lasts, a body standing still with nothing pending may
+        // retch (PlayerMotion's reaction 100, the clock field_898).
         players[i].gagSeconds = std::max(players[i].gagSeconds - seconds, 0.0f);
-        const bool gagging =
+        const bool mayGag =
             !down && deed == PlayerDeed::None && players[i].gagSeconds > 0.0f && !move.any();
-        if (gagging) {
-            deed = PlayerDeed::Gag;
-        }
         if (deathHeld) {
             deed = PlayerDeed::DeathGrab;
         }
         players[i].reaction = PlayerDeed::None;
-        if (!held && !down && !reeling && !entering && !gagging && !deathHeld &&
-            player < inputs.size()) {
+        bool potionAsked = false;
+        if (!held && !down && !reeling && !entering && !deathHeld && player < inputs.size()) {
             const PlayInput& in = inputs[player];
             const bool carrying = !actor.save().progress().inventory.potions.empty();
             // fn_80088938 asks the potion buttons before the combo: one held whose potion has
             // yet to go for this press keeps the combo from being tried, carried or not
             // (0x80088AF8-0x80088B68).
-            const bool potionAsked = (in.usePotion || in.throwPotion || in.shieldPotion) &&
-                                     (animator == nullptr || !animator->potionLatched());
+            potionAsked = (in.usePotion || in.throwPotion || in.shieldPotion) &&
+                          (animator == nullptr || !animator->potionLatched());
             if ((in.usePotion || in.throwPotion) && !carrying) {
                 level.perform(i, Action::NoPotion);
             }
@@ -422,6 +419,11 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
                 actor.save().autoAttack && animator != nullptr && animator->canAutoMelee()) {
                 deed = level.automaticMeleeDeed(i, attackFacing);
             }
+        }
+        // It retches only on a step the buttons ask nothing of: PlayerMotion takes reaction
+        // 100 only on fn_80088938's stand (0x800829A8), so whatever is pressed is heeded.
+        if (mayGag && deed == PlayerDeed::None && !potionAsked) {
+            deed = PlayerDeed::Gag;
         }
         // mini_inventory_update (8008033C) is a HUD input path, not an attack
         // action. Damage reactions and a halo hold must not block item toggles.

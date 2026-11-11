@@ -1496,22 +1496,20 @@ TEST_CASE("it transfers on the resolved body contact even when the recipient is 
     CHECK(tagged.size() == 1);
 }
 
-TEST_CASE(
-    "a body retches while gas lasts with the stick let go, allowing only inventory; a pickup's "
-    "gesture waits for nothing else to be asked",
-    "[game][screens][party-motion][pickup]") {
+TEST_CASE("a gassed body standing still still has its buttons read; a pickup's gesture waits for "
+          "nothing else to be asked",
+          "[game][screens][party-motion][pickup]") {
     Fixture f;
+    std::vector<std::string> log;
+    f.events = orderLog(log);
     f.players[0].gagSeconds = 0.5f;
     f.inputs[3].attack = true;
     f.step();
-    const auto selected = [&] { return std::ranges::find(f.calls, "select0") != f.calls.end(); };
-    CHECK(selected()); // retching blocks attacks, not the separate HUD selector
+    // PlayerMotion retches only on fn_80088938's stand: the attack is asked for as ever, and
+    // the HUD selector stepped.
+    CHECK(std::ranges::find(log, "attackDeed0") != log.end());
+    CHECK(std::ranges::find(log, "select0") != log.end());
     CHECK(f.players[0].gagSeconds == Approx(0.5f - 1.0f / 30.0f));
-    // Moving, it does not retch, and the buttons are read again.
-    f.inputs[3].move = MoveInput{Vec2{0, 1}, 1};
-    f.step();
-    CHECK(selected());
-    f.calls.clear();
     f.inputs[3] = {};
     f.players[0].gagSeconds = 0.0f;
     f.players[0].gesture = PlayerDeed::Pick;
@@ -1792,6 +1790,52 @@ TEST_CASE("a potion asked for first, or a legend item yet to be thrown, keeps th
         attempt({.bearer = true}, f);
         CHECK_FALSE(f.players[0].combo.active());
         CHECK_FALSE(f.players[1].combo.active());
+    }
+}
+
+TEST_CASE("a gassed warrior retches only while nothing is pressed: an attack is thrown, the combo "
+          "takes hold and an empty potion button stands",
+          "[game][screens][party-motion][combo][assets]") {
+    const auto root = test::assetOrSkip("PLAYERS/WAR/ANIM/ANIM.PS2")
+                          .parent_path()
+                          .parent_path()
+                          .parent_path()
+                          .parent_path();
+    using Action = PlayerAnimator::Action;
+    test::FakeRenderDevice device;
+    Fixture f;
+    for (PlayerRuntime& player : f.players) {
+        player.figure = PlayerFigure::load(device, root, player.actor.save(), Entrance::Skip);
+        REQUIRE(player.figure);
+        player.floor.object = 0;
+    }
+    f.players[1].actor.place(Vec3{0, 0, 3}); // three ahead of player 3's warrior
+    f.players[0].turbo.add(ComboMove::kMeterNeeded);
+    f.events.advanceTurbo = [](usize, s32, f32) {};
+    f.events.perform = [](usize, PartyMotion::Action) {};
+    const auto& animator = f.players[0].figure->animator();
+    // One step gassed, the stick let go and `button` (when any) held.
+    const auto gassed = [&](bool PlayInput::*button) {
+        f.players[0].gagSeconds = 0.5f;
+        f.inputs[3] = {};
+        if (button != nullptr) {
+            f.inputs[3].*button = true;
+        }
+        f.step();
+        return animator.action();
+    };
+    SECTION("nothing pressed") {
+        CHECK(gassed(nullptr) == Action::Gag);
+    }
+    SECTION("the attack held") {
+        CHECK(gassed(&PlayInput::attack) == Action::Throw);
+    }
+    SECTION("a potion button with none carried") {
+        CHECK(gassed(&PlayInput::usePotion) == Action::Ready);
+    }
+    SECTION("the combo button with a partner ahead") {
+        CHECK(gassed(&PlayInput::combo) == Action::ComboAct1);
+        CHECK(f.players[0].combo.role == ComboRole::Grabber);
     }
 }
 
