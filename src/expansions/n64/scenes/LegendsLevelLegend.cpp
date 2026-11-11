@@ -66,6 +66,10 @@ LegendsLegendBinding loadLegendsLegend(const std::filesystem::path& nativeRoot, 
     result.profile.held = kTrees[static_cast<usize>(index)];
     result.profile.projectile = result.profile.held;
     result.profile.flight = LegendShow::Flight::Flies;
+    // Boss.bin e088ddf8 raises the rite's flag 0xe088f438 (0xe088dedc) as the level opens with a
+    // bearer, and the rite script that e088dd34 runs clears it as it ends: meanwhile e08842e8
+    // wakes the boss once its deadline passes, wherever the party stands (0xe0884424).
+    result.profile.wakesOnDeadline = true;
     if (index == 2 || index == 3) {
         // chi TYPE child2 is BODY1_LION; slime TYPE.lookNode1 is
         // BODY1_EYEBALL. BNAM is the native skeletal identity, not the model's

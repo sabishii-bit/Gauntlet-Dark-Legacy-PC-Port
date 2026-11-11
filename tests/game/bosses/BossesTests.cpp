@@ -414,7 +414,7 @@ TEST_CASE("sustained damage cannot lock the Lich in its roar reaction",
     bosses.open(device, root, nullptr, scales, 'G');
     REQUIRE(bosses.spawn(41, Vec3{0}, 0, 20));
     REQUIRE(bosses.rewardOffset() == Vec3{0, 10, 0});
-    const std::vector<EnemyView> near{playerAt({0, 0, 20})};
+    const std::vector<EnemyView> near{playerAt({0, 0, 19.5f})}; // strictly inside his twenty
     // Two seconds asleep, then the whole of his entrance, which nothing may cut.
     for (s32 frame = 0; frame < 400; ++frame) {
         bosses.update(kTicks, kStep, near);
@@ -842,6 +842,61 @@ TEST_CASE("a boss arms only once its activation signal comes, stays armed after 
     }
     // Awake, it is engaged.
     CHECK(bosses.view().engaged);
+}
+
+TEST_CASE("a boss wakes by its farthest player measured along the ground, strictly inside its "
+          "range, and never for nobody",
+          "[game][bosses][boss-activation]") {
+    test::FakeRenderDevice device;
+    const auto root = eyedBossAssets("LICH");
+    // Four half seconds complete its two-second deadline, and the fifth update is the first to
+    // test it.
+    const auto woken = [&](std::span<const EnemyView> party, f32 range = 20) {
+        Bosses bosses;
+        bosses.open(device, root, nullptr, {}, 'G');
+        REQUIRE(bosses.spawn(41, Vec3{0}, 0, range));
+        for (s32 update = 0; update < 5; ++update) {
+            bosses.update(kTicks, 0.5f, party);
+        }
+        return bosses.view().awake;
+    };
+    // Fifteen over it and 19.5 out: 24.9 away, but inside its twenty along the ground.
+    CHECK(woken(std::array{playerAt({0, 15, 19.5f})}));
+    CHECK(woken(std::array{playerAt({0, 0, 5}), playerAt({12, -9, 15}, 1)}));
+    CHECK_FALSE(woken(std::array{playerAt({0, 0, 20})})); // on the edge of its range
+    CHECK_FALSE(woken(std::array{playerAt({0, 0, 5}), playerAt({0, 0, 25}, 1)}));
+    CHECK_FALSE(woken(std::array{playerAt({0, 5, 0})})); // straight over it, nought out
+    CHECK_FALSE(woken({}));
+    CHECK(woken({}, 0)); // a range of nought (the table's, here) wakes it with nobody about
+}
+
+TEST_CASE("an imported rite that wakes its boss at the deadline does so wherever the party "
+          "stands, and only while the rite runs",
+          "[game][bosses][boss-activation][legend]") {
+    test::FakeRenderDevice device;
+    const auto root = eyedBossAssets("LICH");
+    const std::array far{playerAt({0, 0, 500})};
+    const auto woken = [&](const LegendProfile* profile, bool borne) {
+        Bosses bosses;
+        bosses.open(device, root, nullptr, {}, 'G', {}, profile);
+        REQUIRE(bosses.spawn(41, Vec3{0}, 0, 20));
+        if (borne) {
+            REQUIRE(bosses.bringLegend(0));
+        }
+        for (s32 update = 0; update < 4; ++update) {
+            bosses.update(kTicks, 0.5f, far);
+            REQUIRE_FALSE(bosses.view().awake); // never before its deadline
+        }
+        bosses.update(kTicks, 0.5f, far);
+        return bosses.view().awake;
+    };
+    LegendProfile wakes;
+    wakes.wakesOnDeadline = true;
+    CHECK(woken(&wakes, true));
+    CHECK_FALSE(woken(&wakes, false)); // nobody bears the item: no rite
+    const LegendProfile waits;
+    CHECK_FALSE(woken(&waits, true));
+    CHECK_FALSE(woken(nullptr, true)); // the base game's rite waits for the party
 }
 
 TEST_CASE("a boss that waits for its floor arms on the update after a trigger first moves the "

@@ -1,6 +1,10 @@
 #include <algorithm>
 #include <array>
 #include <filesystem>
+#include <optional>
+#include <span>
+#include <string>
+#include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -14,6 +18,7 @@
 #include "expansions/shared/scenes/LegendsLevel.h"
 #include "expansions/shared/scenes/LegendsTraversal.h"
 #include "game/bosses/BossSequence.h"
+#include "game/bosses/Bosses.h"
 #include "game/bosses/LegendPresentation.h"
 #include "game/critters/Combatant.h"
 #include "game/effects/EffectObservation.h"
@@ -385,6 +390,7 @@ TEST_CASE("Native legendary rites consume only their bearer and native campaign 
         REQUIRE(level.hasBossLegend(bearer));
         REQUIRE(level.bossLegendArchive());
         REQUIRE(level.bossLegendProfile());
+        CHECK(level.bossLegendProfile()->wakesOnDeadline);
         CHECK(level.consumeBossLegend(bearer));
         CHECK_FALSE(level.consumeBossLegend(bearer));
         CHECK(native.legendItems == (0x1fU & ~(u64{1} << index)));
@@ -392,6 +398,42 @@ TEST_CASE("Native legendary rites consume only their bearer and native campaign 
         CHECK(dreamcast.legendItems == 0x1f);
         CHECK(bearer.progress().relics == gc);
     }
+}
+
+TEST_CASE("A native legendary rite wakes its boss once the deadline passes, wherever the party is",
+          "[legends][native-legends][native-legend-wake][assets]") {
+    const auto root = nativeRoot();
+    const auto common = test::assetOrSkip("CRITTER").parent_path();
+    const auto program = readFile(root / "_program/game.bin");
+    std::vector<std::string> warnings;
+    const auto scimitar = loadLegendsLegend(root, 2, program, warnings);
+    test::FakeRenderDevice device;
+    // The Chimera, with its scimitar's rite and the party far beyond its sixty: f32 sixtieths
+    // first reach its four seconds at the 241st, so the 242nd update wakes it.
+    const auto wakesAt = [&](bool borne) -> std::optional<s32> {
+        auto stock = loadLegendsBossAssets(device, root, common, 35, program, {}, warnings);
+        REQUIRE(stock);
+        Bosses bosses;
+        bosses.open(device, common, nullptr, {}, 'C', {}, &scimitar.profile);
+        REQUIRE(bosses.preload(35, std::move(stock)));
+        REQUIRE(bosses.spawn(35, Vec3{0}, 0));
+        if (borne) {
+            REQUIRE(bosses.bringLegend(0));
+        }
+        EnemyView player;
+        player.player = 0;
+        player.position = {0, 0, 500};
+        player.height = 6;
+        for (s32 update = 1; update <= 600; ++update) {
+            bosses.update(1, 1.0f / 60, std::span{&player, 1});
+            if (bosses.view().awake) {
+                return update;
+            }
+        }
+        return std::nullopt;
+    };
+    CHECK(wakesAt(true) == 242);
+    CHECK_FALSE(wakesAt(false).has_value());
 }
 
 TEST_CASE("The common opponent and boss sequence owners consume and apply a native legendary rite",

@@ -25,8 +25,30 @@ void appendConfiguration(NativeStateDigest& digest, const WorldCollision* collis
     digest.values(scales, realm, open);
     digest.flag(profile.has_value());
     if (profile) {
-        digest.fields<12>(*profile);
+        digest.fields<13>(*profile);
     }
+}
+
+/** How far along the ground the farthest standing player is from `at`, nought for nobody: the
+ * original's target records measure with the rise zeroed (CritterCalcTarget 0x80037338-0x80037340,
+ * DC 0x8c08c95a, N64 Boss.bin 0xe0886240) and the wake takes their largest (0x80039c20). */
+f32 farthestAlongGround(const Vec3& at, std::span<const EnemyView> players) {
+    f32 farthest = 0.0f;
+    for (const EnemyView& view : players) {
+        if (!view.hidden) {
+            farthest = std::max(farthest,
+                                glm::length(Vec2{view.position.x - at.x, view.position.z - at.z}));
+        }
+    }
+    return farthest;
+}
+
+/** Whether a party whose farthest player stands `farthest` away wakes a boss of `threshold`:
+ * strictly inside it, or at once for a threshold of nought or under (CritterBossAI
+ * 0x80039c50-0x80039c64, DC 0x8c08ac96-0x8c08ac9e, N64 0xe08843e8-0xe0884400). A farthest of
+ * nought stands for nobody, whom the original counts 1e21 away (0x80039c4c). */
+bool partyWakes(f32 farthest, f32 threshold) {
+    return threshold <= 0.0f || (farthest > 0.0f && farthest < threshold);
 }
 } // namespace
 
@@ -421,32 +443,22 @@ void Bosses::update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
         return;
     }
     m_fighter.captureEncounterPlayers(players);
-    // Wait through the bound family's activation deadline, then until the whole
-    // party is within its threshold. Ordinary GDL retains its two-second delay.
+    // Wait through the bound family's activation deadline, then for the whole party to come
+    // within its threshold. Ordinary GDL retains its two-second delay.
     if (!m_sim.awake) {
         const auto stock = std::ranges::find_if(
             m_sim.assets, [&](const auto* assets) { return &assets->data == m_fighter.data(); });
         const bool decodedEntrance = stock != m_sim.assets.end() && (*stock)->initialMoveBeforeWake;
-        const Vec3* at = position();
-        f32 farthest = 0.0f;
-        bool anyone = false;
-        for (const EnemyView& view : players) {
-            if (at != nullptr && !view.hidden) {
-                const Vec3 delta = view.position - *at;
-                // Native e0886190 explicitly zeros Y before measuring targets;
-                // e0886e54 returns the furthest admitted player's distance.
-                // Preserve the existing three-dimensional GDL wake test.
-                const f32 distance =
-                    decodedEntrance ? glm::length(Vec2{delta.x, delta.z}) : glm::length(delta);
-                farthest = std::max(farthest, distance);
-                anyone = true;
-            }
-        }
+        const f32 farthest = farthestAlongGround(*position(), players);
+        // An imported rite that wakes its boss does so wherever the party stands (N64 Boss.bin
+        // 0xe0884424).
+        const bool riteWakes =
+            m_legendProfile && m_legendProfile->wakesOnDeadline && m_sim.rite.running();
         const f32 delay = stock != m_sim.assets.end() ? (*stock)->wakeDelay : kWakeArmSeconds;
         // The test reads a deadline an earlier update set (CritterBossAI 0x80039bf0): the clock
         // as the last update left it.
         if (m_sim.wakeClock > 0 && m_sim.wakeClock >= delay &&
-            (m_sim.wakeDistance <= 0.0f || (anyone && farthest <= m_sim.wakeDistance))) {
+            (riteWakes || partyWakes(farthest, m_sim.wakeDistance))) {
             wake();
         }
         if (!m_sim.awake) {

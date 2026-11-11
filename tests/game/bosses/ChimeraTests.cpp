@@ -325,8 +325,8 @@ TEST_CASE("a boss that dies on a moving floor is defeated where the update befor
     REQUIRE(defeat.has_value());
 }
 
-TEST_CASE("asleep, a boss measures the party from where its previous update left it, then keeps "
-          "to its floor",
+TEST_CASE("asleep, a boss measures the party along the ground, however its floor has moved, then "
+          "keeps to its floor",
           "[game][bosses][boss-platform]") {
     MovingFloor floor;
     test::FakeRenderDevice renderer;
@@ -340,32 +340,36 @@ TEST_CASE("asleep, a boss measures the party from where its previous update left
     party[0].position = Vec3{0, 0, 30}; // beyond its twenty, so it sleeps
     // Its two-second wait is over before the measured update: seventy-two updates of 1/30 s
     // come to 2.4 s in f32 (sixty would come to 1.9999994 s), whichever side of the wake test
-    // the clock steps on. Only the party's distance decides the measured update, taken in
-    // three dimensions; the party is placed for it before the boss's update, as the scene runs
-    // them.
+    // the clock steps on. Only the party's distance decides the measured update, taken along the
+    // ground (CritterCalcTarget zeroes the rise); the party is placed for it before the boss's
+    // update, as the scene runs them.
     constexpr s32 kAsleep = 72;
     for (s32 frame = 0; frame < kAsleep; ++frame) {
         bosses.update(2, kStep, party);
         standsAt(body, 0);
     }
     REQUIRE_FALSE(bosses.view().awake);
-    SECTION("a party within reach of where it stood wakes it, though its floor has gone down") {
-        // 19.9 from where it stood; 20.5 from the floor it goes down to.
+    SECTION("a party within reach along the ground wakes it as its floor goes down") {
+        // 19.9 out, level with where it stood and five over the floor it goes down to.
         floor.at(-5);
         party[0].position = Vec3{0, 0, 19.9f};
         bosses.update(2, kStep, party);
         CHECK(bosses.view().awake);
         standsAt(body, -5);
     }
-    SECTION("a party within reach only of where its floor takes it lets it sleep on") {
-        // 20.1 from where it stood; 19.9 from the floor it goes down to.
+    SECTION("a party within reach along the ground wakes it however far above it stands") {
+        // 19.9 out and twelve over the floor it goes down to: 23.2 away in three dimensions.
         floor.at(-3);
-        party[0].position = Vec3{0, -3, 19.9f};
-        bosses.update(2, kStep, party);
-        CHECK_FALSE(bosses.view().awake);
-        standsAt(body, -3);
+        party[0].position = Vec3{0, 9, 19.9f};
         bosses.update(2, kStep, party);
         CHECK(bosses.view().awake);
+        standsAt(body, -3);
+    }
+    SECTION("a party on the edge of its reach lets it sleep on") {
+        floor.at(-3);
+        party[0].position = Vec3{0, -3, 20};
+        bosses.update(2, kStep, party);
+        CHECK_FALSE(bosses.view().awake);
         standsAt(body, -3);
     }
 }

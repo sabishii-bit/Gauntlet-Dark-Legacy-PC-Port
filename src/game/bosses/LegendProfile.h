@@ -6,8 +6,8 @@
 #include "game/bosses/LegendItems.h"
 
 namespace gdl::game {
-/** Optional immutable presentation bindings for another game's authored art.
- * The ordinary GDL rite still controls gestures, impact and weakening. */
+/** Optional immutable bindings for another game's legend rite: its authored art, and where its
+ * rite wakes the boss. The ordinary GDL rite still controls gestures, impact and weakening. */
 struct LegendProfile {
     std::string held;
     std::string projectile;
@@ -25,5 +25,8 @@ struct LegendProfile {
     std::string eyeReplacement;
     std::string lionStump;
     f32 impactAttachmentSeconds = 0; ///< retain the projectile at targetNode after impact
+    /** While the rite runs, its boss wakes once its wake deadline passes, wherever the party
+     * stands. */
+    bool wakesOnDeadline = false;
 };
 } // namespace gdl::game

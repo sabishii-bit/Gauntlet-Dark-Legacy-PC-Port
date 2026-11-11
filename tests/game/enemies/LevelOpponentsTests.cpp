@@ -197,7 +197,8 @@ TEST_CASE("the live Dragon encounter borrows its death skin from the stage textu
     Bosses& boss = opponents.bosses();
     REQUIRE(boss.present());
     REQUIRE(boss.position() != nullptr);
-    const std::array players{EnemyView{0, *boss.position(), 1, 6}};
+    // Off its mark: a party measured nought out along the ground wakes nobody (CritterBossAI).
+    const std::array players{EnemyView{0, *boss.position() + Vec3{0, 0, 10}, 1, 6}};
     for (s32 step = 0; step < 600 && !boss.view().awake; ++step) {
         boss.update(2, 1.0f / 30, players);
     }
@@ -3278,7 +3279,7 @@ TEST_CASE("on a native level a brandished legend spends the bearer's relic once 
     REQUIRE(opponents.bosses().legend().player() == 0);
     REQUIRE(opponents.bosses().position() != nullptr);
     for (PlayerRuntime& player : players) {
-        player.actor.place(*opponents.bosses().position());
+        player.actor.place(*opponents.bosses().position() + Vec3{0, 0, 10});
     }
     test::OpponentScript events;
     test::ScriptedOpponents host{events};
@@ -3333,7 +3334,7 @@ TEST_CASE("the Lich's emergence cue hides the arena mound when he wakes",
     opponents.open({device, world, weapons, effects, audio, root, 1}, {});
     REQUIRE(opponents.bosses().view().kind == 41);
     REQUIRE(opponents.bosses().position() != nullptr);
-    players[0].actor.spawn(0, {}, nullptr, *opponents.bosses().position(), 0);
+    players[0].actor.spawn(0, {}, nullptr, *opponents.bosses().position() + Vec3{0, 0, 10}, 0);
     test::OpponentScript events;
     test::ScriptedOpponents host{events};
     events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};

@@ -772,7 +772,8 @@ TEST_CASE("Native Skorne keeps its four-second wake and complete authored entran
             const auto* const preloaded = bosses.preload(kind, std::move(stock));
             REQUIRE(preloaded != nullptr);
             REQUIRE(bosses.spawn(kind, Vec3{0}, 0, 100));
-            const std::array players{EnemyView{.player = 0, .position = Vec3{0}}};
+            // Off its mark: a party measured nought out along the ground wakes nobody (e0886e54).
+            const std::array players{EnemyView{.player = 0, .position = Vec3{0, 0, 10}}};
             for (int tick = 0; tick < 210; ++tick) {
                 bosses.update(1, 1.0f / 60, players);
             }
