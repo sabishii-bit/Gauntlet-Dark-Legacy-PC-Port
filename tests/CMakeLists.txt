@@ -231,6 +231,7 @@ add_executable(tests
     engine/core/ClockTests.cpp
     engine/math/MathTests.cpp
     engine/math/PortableMathTests.cpp
+    engine/math/ApproximateLengthTests.cpp
     engine/io/ByteReaderTests.cpp
     engine/io/ByteWriterTests.cpp
     engine/io/FileTests.cpp

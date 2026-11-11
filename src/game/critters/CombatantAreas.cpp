@@ -1,9 +1,6 @@
-#include <algorithm>
-#include <array>
-#include <cmath>
-
 #include "engine/core/Log.h"
 #include "engine/core/Types.h"
+#include "engine/math/ApproximateLength.h"
 #include "engine/math/PortableMath.h"
 
 #include "game/combat/DamageTypes.h"
@@ -12,24 +9,6 @@
 #include "game/critters/CombatantProjectile.h"
 
 namespace gdl::game {
-namespace {
-/** The arena selector's piecewise distance; replacing it with sqrt can change near ties. */
-f32 arenaDistance(const Vec3& delta) {
-    const f64 high = std::max(std::abs(delta.x), std::abs(delta.z));
-    const f64 low = std::min(std::abs(delta.x), std::abs(delta.z));
-    if (low < 0.0001) {
-        return static_cast<f32>(high);
-    }
-    constexpr std::array<f64, 8> kSlopes{0.064, 0.124, 0.181, 0.236, 0.287, 0.333, 0.376, 0.414};
-    constexpr f64 kBandWidth = 0.125;
-    for (usize i = 0; i < kSlopes.size(); ++i) {
-        if (low <= high * kBandWidth * static_cast<f64>(i + 1)) {
-            return static_cast<f32>(high + kSlopes[i] * low);
-        }
-    }
-    return static_cast<f32>(high + kSlopes.back() * low);
-}
-} // namespace
 
 bool Combatant::supportsArea(const AttackDefinition& damage, const CombatEffectDefinition* sound) {
     constexpr u32 kAttachedAppearanceFlags = effect_flags::kBodyParent | effect_flags::kShakes |
@@ -204,7 +183,7 @@ void Combatant::eruptArena(Actor& critter, s32 id, const AttackDefinition& damag
             selected = (critter.lastArenaTarget + i + 1) % count;
             break;
         }
-        const f32 distance = arenaDistance(Vec3{target.placement[3]} - player->position);
+        const f32 distance = approximateFlatLength(Vec3{target.placement[3]} - player->position);
         if (distance < best) {
             selected = i;
             best = distance;
