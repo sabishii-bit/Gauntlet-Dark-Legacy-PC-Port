@@ -3389,6 +3389,21 @@ TEST_CASE("the fields' zombies are bred from their generators, chase the party, 
     scene.close();
 }
 
+/** A5ELEVATOR, the lift that lowers the Chimera's arena in LEVELA5, and how far it goes down. */
+constexpr usize kA5Elevator = 25;
+constexpr f32 kA5ElevatorTravel = 23;
+
+/** Timed fire armour, whose clock a boss level holds until the encounter begins. */
+constexpr f32 kTimedArmor = 120;
+
+/** What is left of the timed fire armour the first player wears. */
+f32 armorLeft(const PlayScene& scene) {
+    const PowerupSlot* slot =
+        scene.actor(0)->save().progress().inventory.powerup(powerup::kArmor, armor::kFireArmor);
+    REQUIRE(slot != nullptr);
+    return slot->strength;
+}
+
 TEST_CASE("Chimera scenario walks up the stairs before lowering the occupied platform",
           "[game][screens][camera][chimera-approach][assets]") {
     const auto root =
@@ -3427,9 +3442,8 @@ TEST_CASE("Chimera scenario walks up the stairs before lowering the occupied pla
     const Vec3 initialBoss = *scene.bosses().position();
     CHECK(glm::distance(initialBoss, boss->position) < 1.01f);
     CHECK(scene.bosses().facing() == Approx(boss->rotation.y));
-    constexpr usize kElevator = 25;
-    REQUIRE(world.layout().objects()[kElevator].name == "A5ELEVATOR");
-    const f32 initialLift = world.scene().worldTransform(kElevator)[3].y;
+    REQUIRE(world.layout().objects()[kA5Elevator].name == "A5ELEVATOR");
+    const f32 initialLift = world.scene().worldTransform(kA5Elevator)[3].y;
     REQUIRE(scene.startCamera().active());
     REQUIRE(world.entranceCamera().has_value());
     CHECK(scene.viewCamera().position == world.entranceCamera()->position);
@@ -3447,8 +3461,8 @@ TEST_CASE("Chimera scenario walks up the stairs before lowering the occupied pla
     for (s32 frame = 0; frame < rate * 2; ++frame) {
         scene.update(1.0 / rate, {});
     }
-    CHECK_FALSE(world.triggers().opened(kElevator));
-    CHECK(world.scene().worldTransform(kElevator)[3].y == Approx(initialLift));
+    CHECK_FALSE(world.triggers().opened(kA5Elevator));
+    CHECK(world.scene().worldTransform(kA5Elevator)[3].y == Approx(initialLift));
     CHECK(*scene.bosses().position() == initialBoss);
     PlayScene::Inputs walking{};
     walking[0].move = {{0, 1}, 1};
@@ -3461,7 +3475,7 @@ TEST_CASE("Chimera scenario walks up the stairs before lowering the occupied pla
         }
         scene.update(1.0 / rate, walking);
         reachedTop |= scene.actor(0)->position().y > -0.5f;
-        const f32 descent = initialLift - world.scene().worldTransform(kElevator)[3].y;
+        const f32 descent = initialLift - world.scene().worldTransform(kA5Elevator)[3].y;
         // However near the party comes on the stairs, only the lift's descent arms the boss.
         if (!lowering) {
             CHECK_FALSE(scene.bosses().view().awake);
@@ -3476,9 +3490,10 @@ TEST_CASE("Chimera scenario walks up the stairs before lowering the occupied pla
     CAPTURE(scene.actor(0)->position().y, scene.actor(0)->position().z);
     CHECK(reachedTop);
     CHECK(halfway);
-    CHECK(world.triggers().opened(kElevator));
-    CHECK(world.scene().worldTransform(kElevator)[3].y == Approx(initialLift - 23));
-    CHECK(scene.bosses().position()->y == Approx(initialBoss.y - 23).margin(0.2f));
+    CHECK(world.triggers().opened(kA5Elevator));
+    CHECK(world.scene().worldTransform(kA5Elevator)[3].y ==
+          Approx(initialLift - kA5ElevatorTravel));
+    CHECK(scene.bosses().position()->y == Approx(initialBoss.y - kA5ElevatorTravel).margin(0.2f));
     CHECK(scene.bosses().position()->x == Approx(initialBoss.x));
     // Its authored STEP moves may advance it within the TYPE's twelve-unit home
     // radius after waking; the boss is not pinned to its initial z throughout combat.
@@ -3509,26 +3524,18 @@ TEST_CASE("the Chimera sleeps with the party in its range until the arena lift s
     context.config = &config;
     context.levels = &levels;
     context.unpackedRoot = root;
-    // Timed armour, whose clock a boss level holds until the encounter begins.
-    constexpr f32 kArmor = 120;
     std::vector<PartyMember> party = scenario.partyMembers();
     REQUIRE(party.size() == 1);
-    party[0].save.progress().inventory.addPowerup(powerup::kArmor, armor::kFireArmor, 0, kArmor);
+    party[0].save.progress().inventory.addPowerup(powerup::kArmor, armor::kFireArmor, 0,
+                                                  kTimedArmor);
     PlayScene scene;
     REQUIRE(scene.open(device, context, world, party, scenario.tower));
-    const auto armorLeft = [&scene] {
-        const PowerupSlot* slot =
-            scene.actor(0)->save().progress().inventory.powerup(powerup::kArmor, armor::kFireArmor);
-        REQUIRE(slot != nullptr);
-        return slot->strength;
-    };
     for (s32 frame = 0; frame < rate * 30 && awaitingEntrance(scene); ++frame) {
         scene.update(1.0 / rate, {});
     }
     REQUIRE_FALSE(awaitingEntrance(scene));
-    constexpr usize kElevator = 25;
-    REQUIRE(world.layout().objects()[kElevator].name == "A5ELEVATOR");
-    const f32 initialLift = world.scene().worldTransform(kElevator)[3].y;
+    REQUIRE(world.layout().objects()[kA5Elevator].name == "A5ELEVATOR");
+    const f32 initialLift = world.scene().worldTransform(kA5Elevator)[3].y;
     REQUIRE(scene.bosses().position() != nullptr);
     const Vec3 initialBoss = *scene.bosses().position();
     const f32 range = scene.bosses().fighter().data()->wakeThreshold();
@@ -3536,9 +3543,9 @@ TEST_CASE("the Chimera sleeps with the party in its range until the arena lift s
     // The pad lowering the elevator, and the arena's zones chained to it.
     const LevelTriggers& triggers = world.triggers();
     const auto arenaTrigger = [&triggers](const LevelTrigger& trigger) {
-        return trigger.target == static_cast<s32>(kElevator) ||
+        return trigger.target == static_cast<s32>(kA5Elevator) ||
                (trigger.next >= 0 && triggers.trigger(static_cast<usize>(trigger.next)).target ==
-                                         static_cast<s32>(kElevator));
+                                         static_cast<s32>(kA5Elevator));
     };
     // Up the stairs, then a halt three seconds long well within the boss's range, by three
     // dimensions and by retail's flat measure alike, yet in none of the arena's zones.
@@ -3564,8 +3571,8 @@ TEST_CASE("the Chimera sleeps with the party in its range until the arena lift s
         CHECK_FALSE(scene.bossSubject().engaged);
     }
     CHECK_FALSE(scene.bosses().view().awake);
-    CHECK(world.scene().worldTransform(kElevator)[3].y == initialLift);
-    CHECK(armorLeft() == kArmor);
+    CHECK(world.scene().worldTransform(kA5Elevator)[3].y == initialLift);
+    CHECK(armorLeft(scene) == kTimedArmor);
     // On into the arena. The party's contact on update P sets the lift going as P ends, after
     // the boss's turn (retail's lift first moves on P+1, ProcessItemWobjs before do_enemies);
     // on P+1 the boss's probe finds its deck moving and it arms, as retail's does, and its
@@ -3580,7 +3587,7 @@ TEST_CASE("the Chimera sleeps with the party in its range until the arena lift s
         }
         scene.update(1.0 / rate, walking);
         CAPTURE(update);
-        const f32 descent = initialLift - world.scene().worldTransform(kElevator)[3].y;
+        const f32 descent = initialLift - world.scene().worldTransform(kA5Elevator)[3].y;
         if (!lowered && descent > 0) {
             lowered = update;
         }
@@ -3589,9 +3596,9 @@ TEST_CASE("the Chimera sleeps with the party in its range until the arena lift s
         CHECK(scene.bossSubject().engaged == armed);
         // The powerups run before the boss in an update, so their clock turns on the next.
         if (!lowered || update <= *lowered + 1) {
-            CHECK(armorLeft() == kArmor);
+            CHECK(armorLeft(scene) == kTimedArmor);
         } else if (update == *lowered + 2) {
-            CHECK(armorLeft() == Approx(kArmor - (3 * seconds)));
+            CHECK(armorLeft(scene) == Approx(kTimedArmor - (3 * seconds)));
         }
         if (scene.bosses().view().awake) {
             woke = update;
@@ -3601,10 +3608,12 @@ TEST_CASE("the Chimera sleeps with the party in its range until the arena lift s
     REQUIRE(lowered.has_value());
     REQUIRE(woke.has_value());
     CHECK(*woke - *lowered == (rate == 30 ? 62 : 122));
-    // It wakes on the deck on its way down, standing where the lift stood as its turn came.
-    CHECK_FALSE(world.triggers().settled(kElevator));
-    CHECK(descentAtWake > 5);
-    CHECK(descentAtWake < 23 - 5);
+    // It wakes on the deck on its way down, well clear of either end of the lift's travel,
+    // standing where the lift stood as its turn came.
+    constexpr f32 kClearOfEnds = 5;
+    CHECK_FALSE(world.triggers().settled(kA5Elevator));
+    CHECK(descentAtWake > kClearOfEnds);
+    CHECK(descentAtWake < kA5ElevatorTravel - kClearOfEnds);
     CHECK(scene.bosses().position()->y == Approx(initialBoss.y - descentAtWake).margin(0.2f));
     for (s32 frame = 0; frame < rate; ++frame) {
         scene.update(1.0 / rate, {});
@@ -3687,9 +3696,7 @@ TEST_CASE("Garm's entrance rides to the boss camera without a floor detour or ha
     CharacterSave save;
     save.progress().experience = levelExperience(99);
     save.progress().health = 10000;
-    // Timed armour, whose clock a boss level holds until the encounter begins.
-    constexpr f32 kArmor = 120;
-    save.progress().inventory.addPowerup(powerup::kArmor, armor::kFireArmor, 0, kArmor);
+    save.progress().inventory.addPowerup(powerup::kArmor, armor::kFireArmor, 0, kTimedArmor);
     const std::array party{PartyMember{0, save}};
     PlayOptions options;
     options.welcome = false;
@@ -3698,12 +3705,6 @@ TEST_CASE("Garm's entrance rides to the boss camera without a floor detour or ha
     REQUIRE(scene.bossCameraOn());
     REQUIRE(scene.startCamera().active());
     REQUIRE(scene.startCamera().mode() == StartCamera::Mode::Legacy);
-    const auto armorLeft = [&scene] {
-        const PowerupSlot* slot =
-            scene.actor(0)->save().progress().inventory.powerup(powerup::kArmor, armor::kFireArmor);
-        REQUIRE(slot != nullptr);
-        return slot->strength;
-    };
     // Both boss entrance solvers look at the party before it wakes. The ordinary level
     // camera is not an intermediate destination on the way to the boss camera.
     const Vec3 attention = scene.bossCamera().attention();
@@ -3737,7 +3738,7 @@ TEST_CASE("Garm's entrance rides to the boss camera without a floor detour or ha
         // Until then the camera frames the party alone and the armour's clock holds.
         CHECK_FALSE(scene.bosses().view().awake);
         CHECK_FALSE(scene.bossSubject().engaged);
-        CHECK(armorLeft() == kArmor);
+        CHECK(armorLeft(scene) == kTimedArmor);
         scene.update(1.0 / rate, {});
         ++updates;
         REQUIRE_FALSE(scene.spawning());
@@ -3748,9 +3749,9 @@ TEST_CASE("Garm's entrance rides to the boss camera without a floor detour or ha
     CHECK(scene.bosses().view().awake);
     CHECK(scene.bossSubject().engaged);
     // The powerups run before the boss in an update, so their clock turns on the next.
-    CHECK(armorLeft() == kArmor);
+    CHECK(armorLeft(scene) == kTimedArmor);
     scene.update(1.0 / rate, {});
-    CHECK(armorLeft() == Approx(kArmor - (3.0f / static_cast<f32>(rate))));
+    CHECK(armorLeft(scene) == Approx(kTimedArmor - (3.0f / static_cast<f32>(rate))));
 }
 
 TEST_CASE("Lich entrance uses its authored camera and seals the walkway before waking",
