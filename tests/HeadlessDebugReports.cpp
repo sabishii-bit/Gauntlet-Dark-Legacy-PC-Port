@@ -1,13 +1,14 @@
 // Windows Debug runtimes stop a program on a failed assert, an STL debug check, an invalid
 // parameter or abort() with a modal dialog, which holds an unattended test run until someone
 // answers it. Every test program lists this source, so each reports those on stderr and fails.
+// The reports write through stdio without allocating: one may come from the debug heap itself.
 #if defined(_MSC_VER) && defined(_DEBUG)
 
 #include <csignal>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
-#include <cstring>
+#include <string_view>
 
 #include <crtdbg.h>
 #include <windows.h>
@@ -25,19 +26,23 @@ constexpr UINT kReportedExit = 3;
     std::_Exit(static_cast<int>(kReportedExit));
 }
 
+// NOLINTNEXTLINE(readability-non-const-parameter): _CRT_REPORT_HOOK fixes the signature
 int reportToStderr(int type, char* message, int* /*returnValue*/) {
     if (type == _CRT_WARN) {
         return FALSE; // the runtime's own handling: debugger output only
     }
-    const char* const text = message != nullptr ? message : "";
-    const auto length = std::strlen(text);
-    std::fprintf(stderr, "Debug runtime %s: %s%s", type == _CRT_ASSERT ? "assertion" : "error",
-                 text, length != 0 && text[length - 1] == '\n' ? "" : "\n");
+    const std::string_view text = message != nullptr ? message : "";
+    std::fputs(type == _CRT_ASSERT ? "Debug runtime assertion: " : "Debug runtime error: ", stderr);
+    std::fwrite(text.data(), 1, text.size(), stderr);
+    if (!text.ends_with('\n')) {
+        std::fputc('\n', stderr);
+    }
     endReported();
 }
 
 void reportInvalidParameter(const wchar_t* expression, const wchar_t* function, const wchar_t* file,
                             unsigned int line, std::uintptr_t /*reserved*/) {
+    // NOLINTNEXTLINE(modernize-use-std-print): std::print takes no wide strings
     std::fprintf(stderr, "Debug runtime invalid parameter: %ls in %ls (%ls:%u)\n",
                  expression != nullptr ? expression : L"?", function != nullptr ? function : L"?",
                  file != nullptr ? file : L"?", line);
