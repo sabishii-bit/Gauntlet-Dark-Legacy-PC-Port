@@ -47,6 +47,21 @@ constexpr std::string_view kMenuExitSound = "S_OPTMENUEXIT";
 constexpr s32 kMinTicks = 1; ///< a frame advances the clock by at least one tick
 constexpr s32 kMaxTicks = 4; ///< and, however late, by at most four
 
+/** How fast the powerup clock runs (PlayerProcessPowerups 0x8007ce24-0x8007ce90): not while
+ * held or in the tower; on a boss level three times as fast while its boss is engaged and its
+ * death has not played (gBossActive, gBossDead), else not at all; elsewhere at its own rate, an
+ * imported level, which has no level record, included. */
+PlayerPowerups::Clock powerupClockOf(bool held, const LevelWorld& world, const BossView& boss) {
+    if (held || world.isTower()) {
+        return PlayerPowerups::Clock::Paused;
+    }
+    if (world.level() == nullptr || world.level()->bossType < 0) {
+        return PlayerPowerups::Clock::Level;
+    }
+    return boss.engaged && !boss.deathPlayed ? PlayerPowerups::Clock::BossFight
+                                             : PlayerPowerups::Clock::Paused;
+}
+
 } // namespace
 
 void PlayScene::pauseGameplaySounds() {
@@ -1524,22 +1539,11 @@ PlayOutcome PlayScene::advancePlay(s32 ticks, f32 seconds, const Inputs& inputs)
 }
 
 void PlayScene::advancePowerupsAndWorld(s32 ticks, f32 seconds, bool held) {
-    auto powerupClock = PlayerPowerups::Clock::Paused;
-    if (!held && !m_world->isTower()) {
-        const bool bossLevel = m_world->level() != nullptr && m_world->level()->bossType >= 0;
-        const BossView boss = m_opponents.bosses().view();
-        // A boss level holds the timers until gBossActive, then runs them three times as fast
-        // while the boss stands (PlayerProcessPowerups 0x8007ce50-0x8007ce80). The boss is read
-        // as its last update left it: the party's turn comes first here, where retail's
-        // do_players follows do_enemies (0x8005499c, 0x80054994), so the timers turn an update
-        // after the encounter begins.
-        if (!bossLevel) {
-            powerupClock = PlayerPowerups::Clock::Level;
-        } else if (boss.engaged && boss.alive) {
-            powerupClock = PlayerPowerups::Clock::BossFight;
-        }
-    }
-    for (const PowerupEnding& ending : PlayerPowerups::update(m_players, seconds, powerupClock)) {
+    // The clock itself runs once the party and its opponents have had their turns
+    // (advanceCombat). A decoy let loose now spends its slot by the boss as the last update left
+    // it, the party's turn coming first here.
+    const auto clock = powerupClockOf(held, *m_world, m_opponents.bosses().view());
+    for (const PowerupEnding& ending : PlayerPowerups::wear(m_players, seconds, clock)) {
         // Separate semantic endings: removing Pojo's cue must not renumber the
         // same player's levitation cue, or another player's ending.
         const u32 cue = ending.sound == "S_UNPOJO"         ? 1
@@ -1643,6 +1647,15 @@ void PlayScene::advanceCombat(s32 ticks, f32 seconds, bool held) {
     m_attacks.updateStrikes(seconds, m_players, attackTargets());
     m_attacks.updateShields(seconds, m_players, attackTargets());
     m_attacks.updateArmour(seconds, m_players, attackTargets());
+    // PlayerProcessPowerups takes a slot's flags into its frame in the pass that runs its time
+    // down, nought or not, and sets it aside only after (0x8007ce94-0x8007d070), so a powerup
+    // works through the update its time runs out in: the clock runs once the party has acted
+    // and its opponents have answered, before what it picks up. A boss level's reads the boss as
+    // this update left it, retail's do_enemies coming before do_players (0x80054994, 0x8005499c):
+    // its timers run three times as fast from the update the encounter begins in until the one
+    // its death has played in.
+    PlayerPowerups::runClock(m_players, seconds,
+                             powerupClockOf(held, *m_world, m_opponents.bosses().view()));
     if (auto* imported = m_world->imported()) {
         imported->updateGenerators(m_opponents.importedGeneratorStates());
     }

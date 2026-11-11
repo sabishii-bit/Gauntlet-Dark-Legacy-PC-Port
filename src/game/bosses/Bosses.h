@@ -45,9 +45,13 @@ struct BossView {
     bool awake = false;
     /** The encounter has begun (retail's gBossActive): from the wake, or from the arming of a
      * boss that waits for its floor to move, at least two seconds before it wakes. The fight's
-     * camera frames it from then on, and a boss level's powerup timers run from the update
-     * after: the party's turn comes before the opponents'. */
+     * camera frames it from then on, and a boss level's powerup timers run three times as fast
+     * from the update it begins in. */
     bool engaged = false;
+    /** Its death has played (retail's gBossDead): from the update its DEATH is done and its
+     * hold runs, and for good once a boss that woke is gone. A boss level's powerup timers
+     * stop then. */
+    bool deathPlayed = false;
     bool alive = false;
     f32 fraction() const { return maxHealth > 0.0f ? std::max(health, 0.0f) / maxHealth : 0.0f; }
 };

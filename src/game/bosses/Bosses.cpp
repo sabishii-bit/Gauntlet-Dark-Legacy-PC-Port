@@ -646,6 +646,9 @@ BossView Bosses::view() const {
     // BossActivate (0x8001b844) sets gBossActive at the wake, and for a type that waits for
     // its floor already as it arms (0x8003a398).
     view.engaged = m_sim.awake || (supportActivated() && m_sim.wakeClock > 0);
+    // CritterBossAI sets gBossDead as the death's hold begins (0x8003a108) and BossDeath as the
+    // boss goes (0x8001b8bc); only the level's loading clears it (0x8001bc34, 0x80042378).
+    view.deathPlayed = m_sim.id.has_value() ? m_fighter.deathPlayed() : m_sim.awake;
     if (m_sim.id.has_value() && (m_fighter.alive() || m_fighter.dying())) {
         view.health = m_fighter.health();
         view.maxHealth = m_fighter.maxHealth();

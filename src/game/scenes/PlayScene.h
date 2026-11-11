@@ -679,8 +679,8 @@ private:
     PlayOutcome advancePlay(s32 ticks, f32 seconds, const Inputs& inputs);
     /** Play's phases, in order: the powerups worn and the world stood in; the party's
      * movement, which gives the camera its subjects; the fixtures, hazards, opponents and
-     * attacks; an imported level's own services (not while held); the triggers; the portals
-     * (when they may end the tick); the cameras; the rune meter. */
+     * attacks, then the powerup clock; an imported level's own services (not while held); the
+     * triggers; the portals (when they may end the tick); the cameras; the rune meter. */
     void advancePowerupsAndWorld(s32 ticks, f32 seconds, bool held);
     std::vector<CameraSubject> advancePartyMotion(s32 ticks, f32 seconds, const Inputs& inputs,
                                                   bool held);

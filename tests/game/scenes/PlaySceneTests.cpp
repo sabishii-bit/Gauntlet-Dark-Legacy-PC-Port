@@ -3503,8 +3503,7 @@ TEST_CASE("Chimera scenario walks up the stairs before lowering the occupied pla
 }
 
 TEST_CASE("the Chimera sleeps with the party in its range until the arena lift starts, then wakes "
-          "two seconds after it arms, its camera engaged from the arming and its powerup clock "
-          "from the update after",
+          "two seconds after it arms, its camera and its powerup clock engaged from the arming",
           "[game][screens][camera][chimera-approach][boss-support][assets]") {
     const auto root =
         test::assetOrSkip("LEVELS/LEVELA5/WORLDS.PS2").parent_path().parent_path().parent_path();
@@ -3595,10 +3594,11 @@ TEST_CASE("the Chimera sleeps with the party in its range until the arena lift s
         const bool armed = lowered && update > *lowered;
         CHECK(scene.bosses().view().engaged == armed);
         CHECK(scene.bossSubject().engaged == armed);
-        // The powerups run before the boss in an update, so their clock turns on the next.
-        if (!lowered || update <= *lowered + 1) {
+        // The powerup clock runs after the boss's turn, as do_players follows do_enemies: three
+        // times as fast from the update it arms.
+        if (!armed) {
             CHECK(armorLeft(scene) == kTimedArmor);
-        } else if (update == *lowered + 2) {
+        } else if (update == *lowered + 1) {
             CHECK(armorLeft(scene) == Approx(kTimedArmor - (3 * seconds)));
         }
         if (scene.bosses().view().awake) {
@@ -3749,10 +3749,140 @@ TEST_CASE("Garm's entrance rides to the boss camera without a floor detour or ha
     }
     CHECK(scene.bosses().view().awake);
     CHECK(scene.bossSubject().engaged);
-    // The powerups run before the boss in an update, so their clock turns on the next.
-    CHECK(armorLeft(scene) == kTimedArmor);
-    scene.update(1.0 / rate, {});
+    // The powerup clock runs after the boss's turn, as do_players follows do_enemies: three
+    // times as fast from the update it wakes.
     CHECK(armorLeft(scene) == Approx(kTimedArmor - (3.0f / static_cast<f32>(rate))));
+    scene.update(1.0 / rate, {});
+    CHECK(armorLeft(scene) == Approx(kTimedArmor - (6.0f / static_cast<f32>(rate))));
+}
+
+TEST_CASE("a boss level's powerups run down three times as fast through its boss's death throes "
+          "and stop once its death has played",
+          "[game][screens][powerup-clock][boss-death][assets]") {
+    const std::filesystem::path root = unpackedRoot();
+    test::assetOrSkip("LEVELS/LEVELG5/WORLDS.PS2");
+    test::assetOrSkip("CRITTER/LICH.WAD");
+    test::assetOrSkip("MONSTERS/LICH/ANIM.PS2");
+    const GameConfig config;
+    test::FakeRenderDevice device;
+    LevelCatalog levels;
+    REQUIRE(levels.load(root));
+    const auto crypt = levels.byName("G5");
+    REQUIRE(crypt.has_value());
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *crypt));
+    GameServices context;
+    context.config = &config;
+    context.levels = &levels;
+    context.unpackedRoot = root;
+    CharacterSave save;
+    save.progress().health = 9999;
+    save.progress().inventory.addPowerup(powerup::kArmor, armor::kFireArmor, 0, kTimedArmor);
+    const std::array party{PartyMember{0, save}};
+    PlayOptions options;
+    options.welcome = false;
+    PlayScene scene;
+    REQUIRE(scene.open(device, context, world, party, options));
+    const PlayScene::Inputs still{};
+    for (s32 i = 0; i < 400 && awaitingEntrance(scene); ++i) {
+        scene.update(1.0 / 60.0, still);
+    }
+    REQUIRE_FALSE(awaitingEntrance(scene));
+    CHECK(armorLeft(scene) == kTimedArmor); // asleep, the lich holds the clock
+    constexpr f32 kStep = 1.0f / 60;
+    scene.bosses().wake();
+    scene.update(1.0 / 60.0, still);
+    REQUIRE(scene.bosses().view().engaged);
+    CHECK(armorLeft(scene) == Approx(kTimedArmor - 3 * kStep));
+    EnemyHit slay;
+    slay.damage = 100000.0f;
+    slay.player = 0;
+    scene.bosses().hurt(slay);
+    REQUIRE(scene.bosses().fighter().dying());
+    // PlayerProcessPowerups runs a boss level's timers three times as fast while gBossActive is
+    // set and gBossDead is not (0x8007ce5c-0x8007ce80): through the death's animation, and not
+    // from the update its hold begins in (0x8003a108) nor after the lich has gone.
+    s32 throes = 0;
+    s32 spent = 0;
+    for (s32 i = 0; i < 60 * 20 && scene.bosses().present(); ++i) {
+        const f32 before = armorLeft(scene);
+        scene.update(1.0 / 60.0, still);
+        const bool played = scene.bosses().view().deathPlayed;
+        throes += played ? 0 : 1;
+        if (armorLeft(scene) != before) {
+            ++spent;
+            CHECK(before - armorLeft(scene) == Approx(3 * kStep).margin(1e-4)); // f32 near 100
+        }
+        CHECK((armorLeft(scene) != before) == !played);
+    }
+    REQUIRE_FALSE(scene.bosses().present());
+    CHECK(spent == throes);
+    // The lich's DEATH, 269 frames of 1/30 s, runs unfinished for its first 536 updates at 60 a
+    // second: 26.8 seconds of the armour go with it.
+    CHECK(spent == 536);
+    const f32 gone = armorLeft(scene);
+    for (s32 i = 0; i < 60; ++i) {
+        scene.update(1.0 / 60.0, still);
+    }
+    CHECK(armorLeft(scene) == gone);
+    scene.close();
+}
+
+TEST_CASE("a level's powerup is worn through the update its time runs out in",
+          "[game][screens][powerup-clock][assets]") {
+    const std::filesystem::path root = unpackedRoot();
+    test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2");
+    const GameConfig config;
+    test::FakeRenderDevice device;
+    LevelCatalog levels;
+    REQUIRE(levels.load(root));
+    const auto town = levels.byName("G1");
+    REQUIRE(town.has_value());
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *town));
+    REQUIRE(world.level()->bossType < 0);
+    GameServices context;
+    context.config = &config;
+    context.levels = &levels;
+    context.unpackedRoot = root;
+    // A second of a speed powerup that adds half a unit a second to the pace.
+    constexpr f32 kPaceAdd = 0.5f;
+    CharacterSave save;
+    save.progress().inventory.addPowerup(powerup::kSpeed, 0, kPaceAdd, 1.0f);
+    const std::array party{PartyMember{0, save}};
+    PlayOptions options;
+    options.welcome = false;
+    PlayScene scene;
+    REQUIRE(scene.open(device, context, world, party, options));
+    const PlayScene::Inputs still{};
+    for (s32 i = 0; i < 400 && awaitingEntrance(scene); ++i) {
+        scene.update(1.0 / 60.0, still);
+    }
+    REQUIRE_FALSE(awaitingEntrance(scene));
+    const auto wearing = [&scene] {
+        return std::ranges::any_of(
+            scene.actor(0)->save().progress().inventory.powerups,
+            [](const PowerupSlot& slot) { return slot.held() && slot.kind == powerup::kSpeed; });
+    };
+    REQUIRE(wearing());
+    // PlayerProcessPowerups takes a slot's flags into the frame its time reaches nought in and
+    // sets the slot aside only after (0x8007ce94-0x8007d070): the party moves at the powerup's
+    // pace through that update, and without it from the next.
+    f32 worn = 0;
+    bool ranOut = false;
+    for (s32 i = 0; i < 120 && !ranOut; ++i) {
+        scene.update(1.0 / 60.0, still);
+        if (wearing()) {
+            worn = scene.actor(0)->speed();
+            continue;
+        }
+        ranOut = true;
+        CHECK(scene.actor(0)->speed() == worn);
+        scene.update(1.0 / 60.0, still);
+        CHECK(scene.actor(0)->speed() == Approx(worn - kPaceAdd));
+    }
+    REQUIRE(ranOut);
+    scene.close();
 }
 
 TEST_CASE("Lich entrance uses its authored camera and seals the walkway before waking",

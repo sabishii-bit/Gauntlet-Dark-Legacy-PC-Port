@@ -5,6 +5,8 @@
 
 #include "game/combat/PowerupFlags.h"
 #include "game/party/PlayerPowerups.h"
+#include "game/players/MikeyDecoy.h"
+#include "game/players/PowerupEffects.h"
 
 namespace {
 using namespace gdl;
@@ -29,6 +31,68 @@ TEST_CASE("powerup clocks pause and boss combat spends three seconds per second"
     CHECK_FALSE(inventory.powerups[0].held());
     CHECK(inventory.powerups[2].charge == 3);
 }
+
+TEST_CASE("the clock runs apart from what is worn: a boss fight spends three seconds a second, "
+          "a level one, a pause none, and only the standing players' timed slots",
+          "[game][items][powerups]") {
+    CHECK(PlayerPowerups::rateOf(PlayerPowerups::Clock::Paused) == 0);
+    CHECK(PlayerPowerups::rateOf(PlayerPowerups::Clock::Level) == 1);
+    CHECK(PlayerPowerups::rateOf(PlayerPowerups::Clock::BossFight) ==
+          PlayerPowerups::kBossFightRate);
+    CHECK(PlayerPowerups::kBossFightRate == 3);
+    std::array<PlayerRuntime, 2> players;
+    players[1].life = PlayerLife::Dying;
+    for (auto& player : players) {
+        player.actor.save().progress().inventory.powerups[0] = {10, 5, 0, 1, true};
+    }
+    const auto left = [&](usize player) {
+        return players[player].actor.save().progress().inventory.powerups[0].strength;
+    };
+    // Wearing spends nothing of a timed powerup, at whatever rate.
+    PlayerPowerups::wear(players, 2, PlayerPowerups::Clock::BossFight);
+    CHECK(left(0) == 10);
+    PlayerPowerups::runClock(players, 2, PlayerPowerups::Clock::Paused);
+    CHECK(left(0) == 10);
+    PlayerPowerups::runClock(players, 2, PlayerPowerups::Clock::Level);
+    CHECK(left(0) == 8);
+    PlayerPowerups::runClock(players, 2, PlayerPowerups::Clock::BossFight);
+    CHECK(left(0) == 2);
+    CHECK(left(1) == 10); // the fallen keep theirs
+}
+
+TEST_CASE("a powerup is worn through the update its time runs out in, its ending heard on the "
+          "next",
+          "[game][items][powerups][endings]") {
+    std::array<PlayerRuntime, 1> players;
+    auto& inventory = players[0].actor.save().progress().inventory;
+    inventory.addPowerup(powerup::kSpecial, powerup::kLevitation, 0, 0.5f);
+    // The scene's update: what is worn, the party's turn, then the clock.
+    CHECK(PlayerPowerups::wear(players, 0.5f, PlayerPowerups::Clock::Level).empty());
+    CHECK(PowerupEffects::of(inventory).levitating());
+    PlayerPowerups::runClock(players, 0.5f, PlayerPowerups::Clock::Level);
+    CHECK_FALSE(inventory.powerups[0].held());
+    const auto endings = PlayerPowerups::wear(players, 0.5f, PlayerPowerups::Clock::Level);
+    REQUIRE(endings.size() == 1);
+    CHECK(endings[0].sound == "S_LEVITATEDOWN");
+}
+
+TEST_CASE("a decoy let loose spends its slot at the clock it is worn by",
+          "[game][items][powerups][mikey]") {
+    for (const auto clock : {PlayerPowerups::Clock::Paused, PlayerPowerups::Clock::Level,
+                             PlayerPowerups::Clock::BossFight}) {
+        CAPTURE(static_cast<s32>(clock));
+        std::array<PlayerRuntime, 1> players;
+        auto& inventory = players[0].actor.save().progress().inventory;
+        inventory.addPowerup(powerup::kSpecial, powerup::kMikey, 0, 10);
+        inventory.powerups[0].on = true;
+        constexpr f32 kFrame = 1.0f / MikeyDecoy::kFramesPerSecond;
+        PlayerPowerups::wear(players, kFrame, clock);
+        CHECK(players[0].mikey.shown());
+        CHECK(inventory.powerups[0].strength ==
+              Approx(10 - PlayerPowerups::rateOf(clock) * kFrame));
+    }
+}
+
 TEST_CASE("activated turbo refills once while activated permanent turbo replenishes",
           "[game][items][powerups][turbo-activation]") {
     std::array<PlayerRuntime, 1> players;

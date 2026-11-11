@@ -47,15 +47,37 @@ f32 PlayerPowerups::enemyShrink(std::span<const PlayerRuntime> players, bool bos
     return EnemyShrink::scaleOf(enemyShrinkers(players), bossEncounter);
 }
 
+f32 PlayerPowerups::rateOf(Clock clock) {
+    switch (clock) {
+    case Clock::Paused: return 0.0f;
+    case Clock::Level: return 1.0f;
+    case Clock::BossFight: return kBossFightRate;
+    }
+    return 0.0f;
+}
+
 std::vector<PowerupEnding> PlayerPowerups::update(std::span<PlayerRuntime> players, f32 seconds,
                                                   Clock clock) {
-    std::vector<PowerupEnding> endings;
-    f32 timerRate = 1.0f;
-    if (clock == Clock::Paused) {
-        timerRate = 0;
-    } else if (clock == Clock::BossFight) {
-        timerRate = 3;
+    runClock(players, seconds, clock);
+    return wear(players, seconds, clock);
+}
+
+void PlayerPowerups::runClock(std::span<PlayerRuntime> players, f32 seconds, Clock clock) {
+    const f32 rate = rateOf(clock);
+    if (rate <= 0.0f) {
+        return;
     }
+    for (PlayerRuntime& player : players) {
+        if (player.life == PlayerLife::Standing) {
+            player.actor.save().progress().inventory.advance(seconds * rate);
+        }
+    }
+}
+
+std::vector<PowerupEnding> PlayerPowerups::wear(std::span<PlayerRuntime> players, f32 seconds,
+                                                Clock clock) {
+    std::vector<PowerupEnding> endings;
+    const f32 timerRate = rateOf(clock);
     for (usize i = 0; i < players.size(); ++i) {
         PlayerRuntime& player = players[i];
         auto& inventory = player.actor.save().progress().inventory;
@@ -66,9 +88,6 @@ std::vector<PowerupEnding> PlayerPowerups::update(std::span<PlayerRuntime> playe
                 player.mikey.clear();
             }
             continue;
-        }
-        if (clock != Clock::Paused) {
-            inventory.advance(seconds * (clock == Clock::BossFight ? 3.0f : 1.0f));
         }
         player.mikey.update(seconds, inventory, player.actor.followPoint(), timerRate);
         for (auto& slot : inventory.powerups) {
