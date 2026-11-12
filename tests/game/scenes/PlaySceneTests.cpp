@@ -51,8 +51,10 @@
 #include "game/level/ItemFigure.h"
 #include "game/level/LevelTriggers.h"
 #include "game/level/LevelWorld.h"
+#include "game/players/ComboMove.h"
 #include "game/players/PlayerControls.h"
 #include "game/players/PowerupEffects.h"
+#include "game/players/TurboMeter.h"
 #include "game/scenes/PlayScene.h"
 #include "game/scenes/SceneSelection.h"
 #include "game/widgets/ScrollBox.h"
@@ -3737,6 +3739,75 @@ TEST_CASE("bringing the scimitar to the Chimera holds every step to two a second
         freed = std::max(freed, std::abs(scene.actor(0)->position().z - from.z));
     }
     CHECK(freed > crawl + 1.0e-3f);
+}
+
+TEST_CASE("a legend item's bearer takes hold of no partner while it carries the item, whatever "
+          "its place in the party, and is taken by one",
+          "[game][screens][chimera-approach][legend][combo][assets]") {
+    // fn_80088EF4 refuses the grabber whose quest_state is set in a boss level (0x80089038); the
+    // partner's is not asked.
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELA5/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/CHIMERA/ANIM.PS2");
+    const auto scenario = Scenario::load(test::dataDirectory().parent_path() /
+                                         "tests/scenarios/level-a5-chimera.json");
+    const GameConfig config;
+    test::FakeRenderDevice device;
+    LevelCatalog levels;
+    REQUIRE(levels.load(root));
+    const auto arena = levels.byName(scenario.level);
+    REQUIRE(arena.has_value());
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *arena));
+    GameServices context;
+    context.config = &config;
+    context.levels = &levels;
+    context.unpackedRoot = root;
+    // The bearer plays as player 0 but stands second in the party, after a companion playing as
+    // player 1, so that a party place taken for a seat would show. Both have a full meter.
+    std::vector<PartyMember> party = scenario.partyMembers();
+    REQUIRE(party.size() == 1);
+    PartyMember companion = party[0];
+    companion.player = 1;
+    companion.turbo = TurboMeter::kFull;
+    PartyMember bearer = party[0];
+    bearer.save.progress().relics.addLegend(1); // the scimitar, the castle's
+    bearer.turbo = TurboMeter::kFull;
+    party = {companion, bearer};
+    PlayScene scene;
+    REQUIRE(scene.open(device, context, world, party, scenario.tower));
+    constexpr s32 kRate = 30;
+    for (s32 frame = 0; frame < kRate * 30 && awaitingEntrance(scene); ++frame) {
+        scene.update(1.0 / kRate, {});
+    }
+    REQUIRE_FALSE(awaitingEntrance(scene));
+    const LegendRite& rite = scene.bosses().legend();
+    REQUIRE(rite.stage() == LegendRite::Stage::Carried);
+    REQUIRE(rite.player() == 0);
+    REQUIRE(scene.participants()[1].actor.player() == 0);
+    REQUIRE(scene.runtime(0)->turbo.held() >= ComboMove::kMeterNeeded);
+    REQUIRE(scene.runtime(1)->turbo.held() >= ComboMove::kMeterNeeded);
+    const Vec3 across = scene.actor(1)->position() - scene.actor(0)->position();
+    REQUIRE(glm::length(Vec2{across.x, across.z}) < ComboMove::kReach);
+    REQUIRE(std::abs(across.y) < ComboMove::kRise);
+    const Vec3 toCompanion{across.x, 0.0f, across.z};
+    // The bearer, facing the companion with the combo button down, takes hold of nobody.
+    PlayScene::Inputs input{};
+    input[0].combo = true;
+    input[0].aimDirection = toCompanion;
+    for (s32 frame = 0; frame < kRate; ++frame) {
+        scene.update(1.0 / kRate, input);
+        CHECK_FALSE(scene.runtime(0)->combo.active());
+        CHECK_FALSE(scene.runtime(1)->combo.active());
+    }
+    REQUIRE(rite.stage() == LegendRite::Stage::Carried);
+    // The companion, facing the bearer, takes hold of it.
+    input = {};
+    input[1].combo = true;
+    input[1].aimDirection = -toCompanion;
+    scene.update(1.0 / kRate, input);
+    CHECK(scene.runtime(1)->combo.role == ComboRole::Grabber);
+    CHECK(scene.runtime(0)->combo.active());
 }
 
 TEST_CASE("the Peak's placed enemies stand during the entrance while nothing breeds or "

@@ -55,6 +55,14 @@ TEST_CASE("Imported floor-only boss tracking waits for the encounter to begin",
     CHECK_FALSE(presentation.bossAnchors.back());
 }
 
+TEST_CASE("Imported levels' legend rites restrain the party as the base game's unless they say "
+          "otherwise",
+          "[legends][imported-level][legend]") {
+    const ImportedPresentation presentation;
+    const ImportedLevel& level = presentation;
+    CHECK(level.legendRiteRestrainsParty());
+}
+
 WorldCollision importedCollision() {
     WorldCollision collision;
     CollisionTriangle floor;

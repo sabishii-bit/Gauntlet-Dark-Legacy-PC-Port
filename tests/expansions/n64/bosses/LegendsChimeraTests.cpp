@@ -638,9 +638,11 @@ TEST_CASE("Native Chimera combined breath retains the cancelling damage and effe
 
 TEST_CASE("Native Chimera's legend rite holds, slows and disarms nobody in its own arena",
           "[legends][native-chimera][legend][rite-hold][assets]") {
-    // Boss.bin's rites run beside game.bin's ordinary player motion, which reads none of them.
+    // Boss.bin's rites run beside game.bin's ordinary player motion, which reads none of them:
+    // the level says its rite restrains nobody the base game's way.
     constexpr u64 kAllLegends = 0x1f;
     ChimeraScene test{kAllLegends, 2};
+    REQUIRE_FALSE(test.imported->legendRiteRestrainsParty());
     auto& bosses = test.scene.bosses();
     const LegendRite& rite = bosses.legend();
     REQUIRE(rite.stage() == LegendRite::Stage::Carried);

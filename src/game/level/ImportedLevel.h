@@ -217,6 +217,11 @@ public:
     virtual bool consumeBossLegend(CharacterSave& /*save*/) { return false; }
     virtual ItemArchive* bossLegendArchive() const { return nullptr; }
     virtual const LegendProfile* bossLegendProfile() const { return nullptr; }
+    /** Whether a legend item's rite here restrains the party as the base game's does: held
+     * turned to the risen boss, no potion going off before its roar, and the item's bearer
+     * taking hold of no partner until it is thrown. A native rite that holds its party its own
+     * way answers no. */
+    virtual bool legendRiteRestrainsParty() const { return true; }
     /** True handles this phase, including deliberate silence, without donor audio. */
     virtual bool playBossLegendSound(LegendSound /*phase*/) { return false; }
     /** A native importer either supplies its complete body/moves or throws.

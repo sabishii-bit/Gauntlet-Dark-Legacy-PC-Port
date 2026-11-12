@@ -113,6 +113,7 @@ public:
     }
     bool hasBossLegend(const CharacterSave& save) const override;
     bool consumeBossLegend(CharacterSave& save) override;
+    bool legendRiteRestrainsParty() const override;
     bool playBossLegendSound(LegendSound phase) override;
     ItemArchive* bossLegendArchive() const override { return m_bossLegend.get(); }
     const LegendProfile* bossLegendProfile() const override {

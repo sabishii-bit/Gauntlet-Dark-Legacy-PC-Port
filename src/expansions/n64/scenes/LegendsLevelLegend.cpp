@@ -142,4 +142,13 @@ bool LegendsLevel::consumeBossLegend(CharacterSave& save) {
     return true;
 }
 
+bool LegendsLevel::legendRiteRestrainsParty() const {
+    // The N64 holds its party through a rite its own way: game.bin's player step (e004af60)
+    // runs a state-5 player through e004a6e8, which moves it with its controls cleared
+    // (0xe004aa00), until each of the four rite scripts (Boss.bin e088a638/b324/c150/cd48)
+    // hands the party back (e088a240); nothing in game.bin reads the rite's flag (Boss.bin
+    // 0xe088f438, set by e088ddf8).
+    return platform() != LegendsPlatform::N64;
+}
+
 } // namespace gdl::game
