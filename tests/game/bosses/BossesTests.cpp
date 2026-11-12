@@ -839,6 +839,107 @@ TEST_CASE("a boss slain mid-roar has the roar counted as its death cuts it short
     CHECK(bosses.legend().stage() == LegendRite::Stage::Over);
 }
 
+TEST_CASE("a boss slain in its legend rite holds the party until its roar falls due and "
+          "restrains it until its death has played",
+          "[game][enemies][legend][rite-hold][boss-death]") {
+    const s32 fps = GENERATE(30, 60);
+    CAPTURE(fps);
+    const s32 ticks = Combatant::kTicksPerSecond / fps;
+    const f32 seconds = 1.0f / static_cast<f32>(fps);
+    test::FakeRenderDevice device;
+    Bosses bosses;
+    bosses.open(device, dyingBossAssets("YETI"), nullptr, {}, 'I');
+    REQUIRE(bosses.spawn(boss_type::kYeti, Vec3{0}, 0, 100));
+    REQUIRE(bosses.bringLegend(0));
+    bosses.wake();
+    const std::vector<EnemyView> party{playerAt({0, 0, 40})};
+    const auto step = [&] {
+        bosses.update(ticks, seconds, party);
+        bosses.takeLegendEvents();
+        bosses.takeCues();
+        bosses.takeLosses();
+    };
+    const LegendRite& rite = bosses.legend();
+    EnemyHit lethal;
+    lethal.damage = 100000;
+    lethal.player = 0;
+    // PlayerMotion holds the party in rite state 2 and restrains it in states 1 to 4
+    // (0x800816c4-0x80081720, 0x80081b00-0x80081b30, 0x80085264-0x80085280) whatever the boss's
+    // life; world_update's state-2 wait runs out regardless (0x80056d44-0x80056dd8), and only
+    // gBossDead, set as the death's hold begins (CritterBossAI 0x8003a108), ends the rite
+    // (0x80056d04-0x80056d14).
+    SECTION("slain a second before its roar falls due") {
+        // The fixture has no START: the Yeti rises with its first update, throws a second on
+        // and asks for its roar three seconds after rising.
+        for (s32 frame = 0; frame < 30 * fps && !rite.thrown(); ++frame) {
+            step();
+        }
+        REQUIRE(rite.thrown());
+        for (s32 frame = 0; frame < fps; ++frame) {
+            step();
+        }
+        REQUIRE(rite.holdsParty());
+        REQUIRE_FALSE(rite.wantsRoar());
+        bosses.hurt(lethal);
+        REQUIRE(bosses.fighter().dying());
+        s32 held = 0;
+        s32 restrained = 0;
+        for (s32 frame = 0; frame < 20 * fps && !bosses.fighter().deathPlayed(); ++frame) {
+            CAPTURE(frame);
+            CHECK(rite.restrainsParty());
+            CHECK(rite.holdsParty() == !rite.wantsRoar());
+            held += rite.holdsParty() ? 1 : 0;
+            restrained += rite.holdsParty() ? 0 : 1;
+            step();
+            REQUIRE(bosses.present());
+        }
+        REQUIRE(bosses.fighter().deathPlayed());
+        // Held for the second its roar's wait had left, then restrained alone until its death
+        // had played.
+        CHECK(held == fps);
+        CHECK(restrained > 0);
+    }
+    SECTION("slain mid-roar") {
+        const auto roaringForRite = [&] {
+            return rite.wantsRoar() && bosses.fighter().moveType() == MoveDefinition::kRoar;
+        };
+        for (s32 frame = 0; frame < 30 * fps && !roaringForRite(); ++frame) {
+            step();
+        }
+        REQUIRE(roaringForRite());
+        // Its roar due (state 3), the party is no longer held but still restrained.
+        REQUIRE_FALSE(rite.holdsParty());
+        REQUIRE(rite.restrainsParty());
+        bosses.hurt(lethal);
+        REQUIRE(bosses.fighter().dying());
+        CHECK(rite.restrainsParty());
+        // The move switch takes the rite to state 4 as DEATH replaces the ROAR
+        // (0x8003c780-0x8003c790), and world_update's next pass on to 5: nobody is held or
+        // restrained from that update on.
+        step();
+        REQUIRE(bosses.fighter().moveType() == MoveDefinition::kDeath);
+        for (s32 frame = 0; frame < 20 * fps && !bosses.fighter().deathPlayed(); ++frame) {
+            CAPTURE(frame);
+            CHECK_FALSE(rite.holdsParty());
+            CHECK_FALSE(rite.restrainsParty());
+            step();
+            REQUIRE(bosses.present());
+        }
+        REQUIRE(bosses.fighter().deathPlayed());
+    }
+    // Concluded once the death has played, the rite holds and restrains nobody while the body is
+    // held and once it has gone.
+    CHECK(rite.stage() == LegendRite::Stage::Over);
+    for (s32 frame = 0; frame < 20 * fps && bosses.present(); ++frame) {
+        CHECK_FALSE(rite.holdsParty());
+        CHECK_FALSE(rite.restrainsParty());
+        step();
+    }
+    CHECK_FALSE(bosses.present());
+    CHECK_FALSE(rite.holdsParty());
+    CHECK_FALSE(rite.restrainsParty());
+}
+
 TEST_CASE("a dying boss backs away at its death's pace out of its territory, and its key lies by "
           "the root it was first stood at",
           "[game][enemies][boss-death][boss-movement][boss-sequence]") {

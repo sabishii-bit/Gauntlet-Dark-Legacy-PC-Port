@@ -228,6 +228,29 @@ TEST_CASE("the rite holds the party turned to the boss from its rising until its
         CHECK_FALSE(rite.holdsParty());
         CHECK_FALSE(rite.restrainsParty());
     }
+    SECTION("concluded as its boss's death plays, the rite holds and restrains nobody again") {
+        // world_update's state 99 (0x80056d04-0x80056d14), from rite state 2 and from state 1.
+        LegendRite rite;
+        rite.begin(0, *legendWeaknessOf(41));
+        rite.update(2, true, false);
+        REQUIRE(rite.holdsParty());
+        rite.conclude();
+        CHECK(rite.stage() == LegendRite::Stage::Over);
+        CHECK_FALSE(rite.holdsParty());
+        CHECK_FALSE(rite.restrainsParty());
+        // Over, its roar's wait running out and the boss roaring hold and restrain nobody.
+        rite.update(LegendRite::kLongRoarWait, true, true);
+        CHECK_FALSE(rite.holdsParty());
+        CHECK_FALSE(rite.restrainsParty());
+        LegendRite carried;
+        carried.begin(0, *legendWeaknessOf(41));
+        REQUIRE(carried.restrainsParty());
+        carried.conclude();
+        CHECK_FALSE(carried.restrainsParty());
+        carried.update(2, true, false);
+        CHECK_FALSE(carried.holdsParty());
+        CHECK_FALSE(carried.restrainsParty());
+    }
 }
 
 TEST_CASE("the dragon's item presentation ends on impact without waiting for it to thaw or roar",

@@ -3741,6 +3741,122 @@ TEST_CASE("bringing the scimitar to the Chimera holds every step to two a second
     CHECK(freed > crawl + 1.0e-3f);
 }
 
+TEST_CASE("the Chimera slain in its scimitar's rite keeps the party held, then crawling with its "
+          "potions barred, through its death throes, and frees it once its death has played",
+          "[game][screens][chimera-approach][legend][rite-hold][boss-death][potion][assets]") {
+    // PlayerMotion asks nothing of the boss's life: it holds the party in rite state 2
+    // (0x800816c4-0x80081720), bars potions in states 1 to 4 (0x80085264-0x80085280) and holds
+    // the Chimera's party to its crawl in them while gBossActive is set (0x80081b00-0x80081b30),
+    // which only BossActivate sets (0x8001b860). world_update ends the rite only on gBossDead
+    // (0x80056d04-0x80056d14), set as the death's hold begins (CritterBossAI 0x8003a108).
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELA5/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/CHIMERA/ANIM.PS2");
+    const auto scenario = Scenario::load(test::dataDirectory().parent_path() /
+                                         "tests/scenarios/level-a5-chimera.json");
+    const s32 rate = GENERATE(30, 60);
+    CAPTURE(rate);
+    const GameConfig config;
+    test::FakeRenderDevice device;
+    LevelCatalog levels;
+    REQUIRE(levels.load(root));
+    const auto arena = levels.byName(scenario.level);
+    REQUIRE(arena.has_value());
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *arena));
+    GameServices context;
+    context.config = &config;
+    context.levels = &levels;
+    context.unpackedRoot = root;
+    // The bearer, and a companion who carries three potions and no item.
+    std::vector<PartyMember> party = scenario.partyMembers();
+    REQUIRE(party.size() == 1);
+    PartyMember companion = party[0];
+    companion.player = 1;
+    companion.save.progress().inventory.addPotions(1, 3);
+    party[0].save.progress().relics.addLegend(1); // the scimitar, the castle's
+    party.push_back(companion);
+    PlayScene scene;
+    REQUIRE(scene.open(device, context, world, party, scenario.tower));
+    for (s32 frame = 0; frame < rate * 30 && awaitingEntrance(scene); ++frame) {
+        scene.update(1.0 / rate, {});
+    }
+    REQUIRE_FALSE(awaitingEntrance(scene));
+    const LegendRite& rite = scene.bosses().legend();
+    REQUIRE(rite.stage() == LegendRite::Stage::Carried);
+    const auto potions = [&scene] {
+        return scene.actor(1)->save().progress().inventory.potions.size();
+    };
+    const f32 crawl = 2.0f / static_cast<f32>(rate); // 0x80347B98 a second
+    constexpr f32 kEpsilon = 1.0e-4f;
+    // On into the arena until the Chimera has risen and holds the party; then it is slain.
+    PlayScene::Inputs input{};
+    input[0].move = {{0, 1}, 1};
+    input[1].move = {{0, 1}, 1};
+    for (s32 frame = 0; frame < rate * 60 && !rite.holdsParty(); ++frame) {
+        scene.update(1.0 / rate, input);
+    }
+    REQUIRE(rite.holdsParty());
+    EnemyHit slay;
+    slay.damage = 100000.0f;
+    slay.player = 0;
+    scene.bosses().hurt(slay);
+    REQUIRE(scene.bosses().fighter().dying());
+    // Apart through the throes, each to its own side of the line to the boss: across the view,
+    // which the boss camera, backing away after the dying Chimera, never closes on a step, as it
+    // does on steps back toward it. Each update's party moves before the boss, so what holds a
+    // step is what the rite was as the update began. The companion's potion, used as the hold
+    // ends, plays its gesture and goes nowhere.
+    input[0].move = {{-1, 0}, 1};
+    input[1].move = {{1, 0}, 1};
+    s32 heldSteps = 0;
+    s32 crawledSteps = 0;
+    bool gestured = false;
+    for (s32 update = 0; update < rate * 20 && !scene.bosses().fighter().deathPlayed(); ++update) {
+        const bool held = rite.holdsParty();
+        CAPTURE(update, held);
+        REQUIRE(rite.restrainsParty());
+        input[1].usePotion = !held && crawledSteps == 0;
+        const std::array from{scene.actor(0)->position(), scene.actor(1)->position()};
+        scene.update(1.0 / rate, input);
+        for (s32 player = 0; player < 2; ++player) {
+            CAPTURE(player);
+            const Vec3 moved = scene.actor(player)->position() - from[static_cast<usize>(player)];
+            const f32 most = (held ? 0.0f : crawl) + kEpsilon;
+            CHECK(std::abs(moved.x) <= most);
+            CHECK(std::abs(moved.z) <= most);
+        }
+        gestured = gestured || scene.animator(1)->conjuring();
+        heldSteps += held ? 1 : 0;
+        crawledSteps += held ? 0 : 1;
+        REQUIRE(scene.bosses().present());
+    }
+    input[1].usePotion = false;
+    REQUIRE(scene.bosses().fighter().deathPlayed());
+    CHECK(heldSteps > 0);
+    CHECK(crawledSteps > rate); // the gesture long over
+    CHECK(gestured);
+    CHECK(potions() == 3);
+    // Its death played, the rite is over: on the very next update both walk at their pace, and
+    // the companion's potion goes off.
+    CHECK_FALSE(rite.restrainsParty());
+    const std::array from{scene.actor(0)->position(), scene.actor(1)->position()};
+    scene.update(1.0 / rate, input);
+    for (s32 player = 0; player < 2; ++player) {
+        CAPTURE(player);
+        const Vec3 moved = scene.actor(player)->position() - from[static_cast<usize>(player)];
+        CHECK(std::max(std::abs(moved.x), std::abs(moved.z)) > crawl + 1.0e-3f);
+    }
+    PlayScene::Inputs potion{};
+    potion[1].usePotion = true;
+    scene.update(1.0 / rate, potion);
+    for (s32 i = 0; i < rate * 4 && potions() == 3; ++i) {
+        scene.update(1.0 / rate, {});
+    }
+    CHECK(potions() == 2);
+    scene.close();
+}
+
 TEST_CASE("a legend item's bearer takes hold of no partner while it carries the item, whatever "
           "its place in the party, and is taken by one",
           "[game][screens][chimera-approach][legend][combo][assets]") {
