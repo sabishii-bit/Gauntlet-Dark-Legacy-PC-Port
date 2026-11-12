@@ -31,6 +31,7 @@ struct MessageList {
 };
 
 /** The messages of one unpacked text rom (`text/<name>.json`), such as the scroll texts. */
+// NOLINTNEXTLINE(bugprone-exception-escape): the map's move is not noexcept on every library
 class MessageTable {
 public:
     /** Reads the file; false (with a warning) when missing or malformed. */

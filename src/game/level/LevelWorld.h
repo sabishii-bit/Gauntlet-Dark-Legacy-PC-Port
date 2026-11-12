@@ -52,6 +52,7 @@ namespace gdl::game {
  * realm's data its light, its camera range and its sounds, shared by the screens that show
  * it.
  */
+// NOLINTNEXTLINE(bugprone-exception-escape): a member's map move is not noexcept on every library
 class LevelWorld {
     struct Simulation {
         s32 playerCount = -1;

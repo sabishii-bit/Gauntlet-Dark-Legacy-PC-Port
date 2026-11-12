@@ -54,6 +54,7 @@ struct HintPage {
  * beaten or found (then all the open ones, then the first), runestones through those still
  * missing. A guardian, item or runestone tried before shows a passage more each time.
  */
+// NOLINTNEXTLINE(bugprone-exception-escape): a member's map move is not noexcept on every library
 class SumnerHints {
     struct Cursor {
         s32 index = 0;

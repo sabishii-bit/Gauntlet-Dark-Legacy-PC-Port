@@ -40,6 +40,7 @@ class WorldCollision;
  * drawn after the figures that stand under it so it blends over them, where the original,
  * drawing its world before its items, cut them off behind the haze.
  */
+// NOLINTNEXTLINE(bugprone-exception-escape): the map's move is not noexcept on every library
 class WorldScene {
 public:
     static constexpr f32 kAlphaTest = DrawState::kTranslucentAlphaTest;

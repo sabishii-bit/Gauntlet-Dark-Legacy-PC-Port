@@ -11,6 +11,7 @@
 namespace gdl::game {
 /** The level-specific item archive, falling back to the realm's, and its ordered
  * texture lenders. Shared by level loading and native dependency validation. */
+// NOLINTNEXTLINE(bugprone-exception-escape): a member's map move is not noexcept on every library
 class LevelItemArchives {
 public:
     bool load(const std::filesystem::path& root, const LevelRef& level);
