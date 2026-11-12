@@ -1100,13 +1100,16 @@ TEST_CASE("a player's Controls page names each action by its entry in the shippe
             actions.push_back(item.text);
         }
     }
+    // The GameCube controller diagram's words where it has one (ENGLISH.ROM text list 3
+    // CONTROLS_DESC, message 180 CONTROLS1, which do_controlsmenu 0x800721C8 draws), each in
+    // title case.
     CHECK(actions == std::vector<std::string>{
-                         "MOVE UP",        "MOVE DOWN",     "MOVE LEFT",      "MOVE RIGHT",
-                         "QUICK ATTACK",   "SLOW ATTACK",   "TURBO / DEFEND", "Magic",
-                         "Throw Potion",   "Potion Shield", "CHARGE",         "Partner Combo",
-                         "STRAFE",         "SELECTOR UP",   "SELECTOR DOWN",  "SELECTOR LEFT",
-                         "SELECTOR RIGHT", "Menu Up",       "Menu Down",      "Menu Left",
-                         "Menu Right",     "Menu Confirm",  "Menu Back",      "Start / Pause"});
+                         "Move Up",        "Move Down",     "Move Left",     "Move Right",
+                         "Quick Attack",   "Slow Attack",   "Turbo Defend",  "Magic",
+                         "Throw Potion",   "Potion Shield", "Charge",        "2P Combo",
+                         "Strafe",         "Selector Up",   "Selector Down", "Selector Left",
+                         "Selector Right", "Menu Up",       "Menu Down",     "Menu Left",
+                         "Menu Right",     "Menu Confirm",  "Menu Back",     "Start/Pause Menu"});
 }
 
 TEST_CASE("controls capture waits for release and binds the chosen player's mouse buttons",
