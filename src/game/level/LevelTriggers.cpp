@@ -1041,12 +1041,15 @@ void LevelTriggers::finishMotion(const WorldAnimator& animator, WorldCollision* 
     }
     if (collision != nullptr) {
         for (const Target& target : m_sim.targets) {
-            // ProcessItemWobjs / PlayerNewFloor: active height targets, or animated
-            // lifts carrying the whole party, prohibit changing floors until stopped.
+            // PlayerCollideFloor keeps a rider on its floor while that floor's chain is marked
+            // moving (WorldObjGetAllFlags, 0x80088130-0x80088174): active height targets,
+            // animated lifts carrying the whole party, and any lift that opens to players as it
+            // moves, whose decks the players' own probes pass through, hold their riders.
             const bool heightTarget = !target.animated && (target.kind & LevelTrigger::kFades) == 0;
-            collision->setFloorExitBlocked(target.object,
-                                           !target.settled && !target.ridden &&
-                                               (heightTarget || target.wholePartyReady));
+            collision->setFloorExitBlocked(
+                target.object,
+                (!target.settled && !target.ridden && (heightTarget || target.wholePartyReady)) ||
+                    target.opensToPlayers());
         }
     }
 }

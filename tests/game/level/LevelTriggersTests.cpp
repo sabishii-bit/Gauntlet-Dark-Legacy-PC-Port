@@ -1195,6 +1195,46 @@ TEST_CASE("an animated lift that goes clear as it moves waits where its track st
     CHECK_FALSE(collision.playerPassThrough(0));
 }
 
+TEST_CASE("an animated lift that goes clear as it moves keeps the rider of its deck aboard",
+          "[game][world][triggers][platform-riders][floor-riding]") {
+    // A rider on the deck does not hold the lift (did_generate, 0x80063854), and the players'
+    // own probes pass through the deck while it moves (WorldCollide 0x8000D578); what keeps the
+    // rider aboard is PlayerCollideFloor's test of its floor's chain (WorldObjGetAllFlags,
+    // 0x80088130-0x80088174), as for a height lift. LIFT carries DECK.
+    constexpr s32 kLiftObject = 0;
+    constexpr s32 kDeck = 1;
+    SwitchFixture f(R"({"info":0,"position":[20,0,0],"params":[0,0,0,0,2,255,0,0,0,0,0,0]})",
+                    R"({"name":"WALL","position":[0,10,0],"flags":4096,"child":1},
+                       {"name":"WALL","position":[0,2,0],"flags":4096})",
+                    26,
+                    R"({"object":0,"frames":10,"state":257,"start":0,
+                        "track":{"flags":2,"frames":[0,9],"values":[0,1]}})");
+    WorldCollision collision;
+    collision.build({}, std::array<s32, 2>{-1, kLiftObject});
+    const std::array riding{
+        TriggerVisitor{.position = Vec3{20, 0, 0}, .party = 0},
+        TriggerVisitor{.position = Vec3{0, 12, 0}, .floorObject = kDeck, .party = 1}};
+    const auto step = [&] {
+        f.animator.step(kStep, f.scene, false, f.triggers.heldTracks());
+        f.triggers.update(kStep, riding, f.animator, f.scene, &collision);
+    };
+    step();
+    REQUIRE(f.triggers.opened(kLiftObject));
+    REQUIRE_FALSE(f.triggers.settled(kLiftObject));
+    s32 travel = 0;
+    for (; travel < 60 && !f.triggers.settled(kLiftObject); ++travel) {
+        CAPTURE(travel);
+        CHECK(f.triggers.heldTracks().empty());
+        CHECK(collision.playerPassThrough(kDeck));
+        CHECK(collision.floorExitBlocked(kDeck));
+        step();
+    }
+    REQUIRE(f.triggers.settled(kLiftObject));
+    CHECK(travel > 1);
+    CHECK_FALSE(collision.playerPassThrough(kDeck));
+    CHECK_FALSE(collision.floorExitBlocked(kDeck));
+}
+
 TEST_CASE("an animated bridge's own faces follow its fade alone while its track still runs",
           "[game][world][triggers][animated-fade]") {
     // ProcessItemWobjs tests a fade kind (0x10) before the animated branch (flags 0x2000000),

@@ -126,7 +126,9 @@ bool WorldMotion::beforeMotion(f32 seconds, WorldScene& scene, WorldCollision& c
     if (!m_prepared || !std::isfinite(seconds) || seconds < 0 || seconds > 0.25f) {
         return false;
     }
-    m_animator.step(seconds, scene, m_pauseLoops, m_triggers.heldTracks());
+    // A rider holding its lift is a contact, which the replay never sees: no track is held
+    // under one here, and a lift the live game holds moves on, open to the players' probes.
+    m_animator.step(seconds, scene, m_pauseLoops);
     sync(scene, collision);
     return true;
 }
