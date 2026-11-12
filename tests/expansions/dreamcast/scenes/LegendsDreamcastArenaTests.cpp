@@ -21,8 +21,6 @@
 #include "expansions/dreamcast/level/LegendsDreamcastPlacement.h"
 #include "expansions/shared/scenes/LegendsLevel.h"
 #include "expansions/shared/scenes/LegendsSceneAdapter.h"
-#include "game/combat/MissileTarget.h"
-#include "game/combat/StrikeHit.h"
 #include "game/level/MissileStop.h"
 
 namespace {
@@ -112,8 +110,8 @@ private:
     }
 };
 
-TEST_CASE("Dreamcast Chimera compatibility cover uses native art and three independent box bodies",
-          "[legends][dreamcast-scenery][dreamcast-arena-cover][dreamcast-chimera-cover][assets]") {
+TEST_CASE("Dreamcast Chimera arena stands no cover though its archive holds the rock",
+          "[legends][dreamcast-scenery][dreamcast-arena-cover][assets]") {
     const auto directory =
         test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native/levels/levela5";
     if (!std::filesystem::is_regular_file(directory / "worlds.rom")) {
@@ -121,96 +119,43 @@ TEST_CASE("Dreamcast Chimera compatibility cover uses native art and three indep
     }
     const auto bytes = readFile(directory / "worlds.rom");
     const auto records = formats::LegendsDreamcastScene::parse(bytes);
-    // This is an intentional compatibility repair: the DC level omitted the
-    // three GC/N64 cover placements, despite retaining their matching model.
-    CHECK(std::ranges::none_of(
-        records.itemInfos, [](const auto& info) { return info.type == 10 && info.subtype == 41; }));
+    // CollectSafeRocks 8c0a9ce0 takes only type 10 items of subtype 41. A5 defines no type 10
+    // item at all, so CritterProcessSafeRocks 8c08aa00 leaves the roster empty (8c08aa4a).
+    CHECK(
+        std::ranges::none_of(records.itemInfos, [](const auto& info) { return info.type == 10; }));
     auto art = loadLegendsDreamcastArchive(directory.parent_path().parent_path() / "items/levela5");
     REQUIRE(art);
-    const auto model = art->models.find("SAFEROCK1L1");
-    REQUIRE(model);
-    const auto& mesh = art->models.mesh(*model);
-    usize nativeVertices = 0;
-    for (const auto& part : mesh.parts) {
-        nativeVertices += part.indices.size();
-    }
-    REQUIRE(nativeVertices == 30);
+    REQUIRE(art->models.find("SAFEROCK1L1"));
     const auto objectBytes = readFile(directory / "objects.rom");
     auto map = formats::LegendsMap::parseDreamcast(bytes, objectBytes);
     map.textures =
         formats::decodeLegendsDreamcastTextures(objectBytes, readFile(directory / "textures.rom"));
     test::FakeRenderDevice device;
-    auto adapter = LegendsSceneAdapter::load(device, LegendsPlatform::Dreamcast, directory, map);
+    // A full party shows every placement, and CollectSafeRocks never reads the party flag.
+    constexpr s32 kFullParty = 4;
+    auto adapter =
+        LegendsSceneAdapter::load(device, LegendsPlatform::Dreamcast, directory, map, kFullParty);
     REQUIRE(adapter);
+    CHECK(adapter->arenaTargets().empty());
+    CHECK(adapter->arenaDamageTargets().empty());
+    CHECK(adapter->arenaObstacles().empty());
+    CHECK(adapter->arenaAnchors().empty());
+    CHECK(adapter->arenaMissileStops().empty());
+    // The level's archive keeps the tier-one rock, but no fixture places or draws it.
+    for (usize index = 0; index < adapter->fixtureCount(); ++index) {
+        const auto figure = adapter->fixtureObject(LegendsSceneAdapter::kFixtureObjectBase +
+                                                   static_cast<s32>(index));
+        CAPTURE(index);
+        CHECK_FALSE((figure && figure->name.starts_with("SAFEROCK")));
+    }
     const auto root = test::assetOrSkip("PLAYERS").parent_path();
     LegendsLevel level{device, map, std::move(adapter), directory, root};
-    constexpr std::array<Vec3, 3> kPositions{Vec3{-30.125f, .25f, -16.5f},
-                                             Vec3{29.4609375f, .25f, -16.5f}, Vec3{0, 0, -6.5f}};
-    const auto targets = level.adapter().arenaDamageTargets();
-    const auto bodies = level.adapter().arenaObstacles();
-    const auto anchors = level.arenaAnchors();
-    REQUIRE(targets.size() == 3);
-    REQUIRE(bodies.size() == 3);
-    REQUIRE(anchors.size() == 3);
-    REQUIRE(level.targets().size() == 3);
-    REQUIRE(level.arenaMissileStops().size() == 3);
-    for (usize index = 0; index < kPositions.size(); ++index) {
-        CAPTURE(index);
-        const auto& body = bodies[index];
-        const auto& target = targets[index];
-        CHECK(target.id == kImportedArenaBase + static_cast<s32>(index));
-        CHECK(target.base == kPositions[index]);
-        CHECK(target.radius == 6.4f);
-        CHECK(target.height == 5);
-        REQUIRE(target.surface.size() == 12);
-        CHECK(body.centre == kPositions[index]);
-        CHECK(body.cylinderRadius == 0);
-        CHECK(body.halfAcross == 4.5f);
-        CHECK(body.halfAlong == 4.5f);
-        CHECK(body.height == 5);
-        REQUIRE(body.enemyItem);
-        CHECK_FALSE(body.enemyItem->cylindrical);
-        const Vec3 centre = kPositions[index] + Vec3{0, 2, 0};
-        CHECK(body.pushOut(centre, .5f) != centre);
-        CHECK(body.blocksSegment(centre + Vec3{4.4f, 0, 8}, centre + Vec3{4.4f, 0, -8}, .01f));
-        CHECK_FALSE(body.blocksSegment(centre + Vec3{6, 0, 8}, centre + Vec3{6, 0, -8}, .01f));
-        CHECK_FALSE(body.blocksSegment(centre + Vec3{0, 4, 8}, centre + Vec3{0, 4, -8}, .01f));
-        const MissileTarget missile{target.id, target.base, target.radius, target.height,
-                                    target.surface};
-        StrikeHit shot;
-        shot.from = centre + Vec3{0, 0, 8};
-        shot.centre = centre;
-        shot.radius = .1f;
-        shot.damage = 40;
-        shot.swept = true;
-        CHECK(missile.reachedBy(shot));
-        CHECK_FALSE(missile.touches(centre + Vec3{6, 0, 0}, .1f));
-        CHECK(level.arenaMissileStops()[index].rockHealth == 100);
-        CHECK(level.arenaMissileStops()[index].rockArmor == 10);
-        CHECK(placedMeshVertices(device, level.adapter(), mesh, anchors[index]) == nativeVertices);
-    }
-    const auto allocations = device.texturesCreated;
-    CHECK(level.strike(kImportedArenaBase, 10, 0, 0));
-    CHECK(level.arenaMissileStops()[0].rockHealth == 99);
-    CHECK(level.strike(kImportedArenaBase, 49.75f, 0, 0));
-    CHECK(level.arenaMissileStops()[0].rockHealth == 60);
-    CHECK(level.strike(kImportedArenaBase, 1000, 0, 0));
-    CHECK_FALSE(level.strike(kImportedArenaBase, 1, 0, 0));
-    CHECK(level.targets().size() == 2);
-    CHECK(level.arenaMissileStops().size() == 2);
-    CHECK(level.arenaMissileStops()[0].rock == kImportedArenaBase + 1);
-    CHECK_FALSE(level.arenaTargets()[0].active);
-    CHECK(placedMeshVertices(device, level.adapter(), mesh, anchors[0]) == 0);
-    CHECK(placedMeshVertices(device, level.adapter(), mesh, anchors[1]) == nativeVertices);
-    CHECK(device.texturesCreated == allocations);
-    auto freshMap = formats::LegendsMap::parseDreamcast(bytes, readFile(directory / "objects.rom"));
-    const auto reloaded =
-        LegendsSceneAdapter::load(device, LegendsPlatform::Dreamcast, directory, freshMap);
-    REQUIRE(reloaded);
-    REQUIRE(reloaded->arenaMissileStops().size() == 3);
-    CHECK(reloaded->arenaMissileStops()[0].rockHealth == 100);
-    CHECK(reloaded->arenaAnchors() == anchors);
-    CHECK(placedMeshVertices(device, *reloaded, mesh, anchors[0]) == nativeVertices);
+    CHECK(level.arenaTargets().empty());
+    CHECK(level.arenaAnchors().empty());
+    CHECK(level.arenaMissileStops().empty());
+    CHECK(level.targets().empty());
+    CHECK(level.obstacles().empty());
+    CHECK_FALSE(level.strike(kImportedArenaBase, 1000, 0, 0));
 }
 
 TEST_CASE("Dreamcast Dragon arena safe rocks block and change native health tiers",

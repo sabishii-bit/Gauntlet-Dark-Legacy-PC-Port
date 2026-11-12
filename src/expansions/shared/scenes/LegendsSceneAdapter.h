@@ -268,8 +268,6 @@ private:
      * safe rock, left to the ordinary fixtures. */
     bool bindDreamcastArenaRock(RenderDevice& device, const formats::ItemInfoRecord& info,
                                 const formats::ItemInstanceRecord& instance, u32 nativeIndex);
-    void restoreDreamcastChimeraCover(RenderDevice& device, const std::filesystem::path& directory,
-                                      ItemArchive* art);
     bool bindDreamcastEntranceRock(const formats::ItemInfoRecord& info,
                                    const formats::ItemInstanceRecord& instance, u32 index,
                                    usize figure);

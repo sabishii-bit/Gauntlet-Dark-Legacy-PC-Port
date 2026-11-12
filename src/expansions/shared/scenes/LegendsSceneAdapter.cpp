@@ -285,13 +285,9 @@ void LegendsSceneAdapter::loadDreamcast(RenderDevice& device,
     }
     const bool tower =
         scope->realmType == 13 && toLowerAscii(paths::utf8(directory.filename())) == "levelt1";
-    ItemArchive* chimeraCoverArchive = nullptr;
     for (const auto& relative : scope->archives) {
         try {
             if (auto archive = loadLegendsDreamcastArchive(root / relative)) {
-                if (toLowerAscii(relative) == "items/levela5") {
-                    chimeraCoverArchive = archive.get();
-                }
                 m_archives.push_back(std::move(archive));
             }
         } catch (const FormatError& error) {
@@ -419,7 +415,6 @@ void LegendsSceneAdapter::loadDreamcast(RenderDevice& device,
             bindRider();
         }
     }
-    restoreDreamcastChimeraCover(device, directory, chimeraCoverArchive);
     if (scope->realmType == 13 && toLowerAscii(paths::utf8(directory.filename())) == "levelt1") {
         // Tower wizard creation, 1ST_READ.BIN 8c066640, case2: WIZARD
         // from items/levelT, identity placement at (0,0,16). He is scripted,
