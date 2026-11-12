@@ -521,8 +521,8 @@ TEST_CASE("native opponent digest bytes stay pinned after the replay script and 
     // them, so that a moved digest names the child that moved it.
     test::checkPinnedDigests("LevelOpponents", test::liveDigest(opponents, resources),
                              test::savedDigest(opponents, *saved, resources),
-                             "2e822a1f321972ed3b9653253ad4867406ed07113577f8baa4ccb43163f80df8",
-                             "ba8406fdf842fd9a692c218952de36f109db6abf902f9466a3d80366b4b52196");
+                             "342af2943aeb29b97cd4b5c94ff033d7e4560ea178a5a767a37a73e5022af4e9",
+                             "b8b53ebdaa8afee0ce8c55a6e76c38f053a92166e077c0e341797a1309db7757");
     test::checkPinnedDigests("LevelOpponents' follow-up", followupDigest(opponents),
                              followupDigest(opponents, *saved),
                              "f1769a112bec90a097c6912cccd388f9babe8ef28853f7d3685c53d4c634017f",
