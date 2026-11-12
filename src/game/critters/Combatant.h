@@ -89,7 +89,7 @@ public:
     std::optional<FloorHit> settleOnFloor();
     /** The floor a boss's probe finds under `from`: the highest boss-side floor from four above
      * it to a thousand below (FloorCollide's window, from the placement in CritterInitGeo
-     * 0x8003e60c and after each step in CritterBossAI 0x8003a2d4; DC 0x8c087850, 0x8c08b730). */
+     * 0x8003e60c and after each step in CritterBossAI 0x8003a2d4). */
     static std::optional<FloorHit> bossFloorUnder(const WorldCollision& collision,
                                                   const Vec3& from);
     /** Takes a boss body standing still back into its territory, its parts with it, as

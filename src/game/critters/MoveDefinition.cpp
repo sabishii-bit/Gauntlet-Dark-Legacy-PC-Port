@@ -25,8 +25,8 @@ bool TargetCriteria::allowsPhase(f32 rateScale) const {
 }
 
 bool TargetCriteria::allowsFromHome(f32 homeDistance) const {
-    // Only CritterGetTargetSub tests it (0x80036a84-0x80036aa4; DC 0x8c08d128-0x8c08d13a):
-    // CritterCalcTarget, which sight and the step search use, never does.
+    // Only CritterGetTargetSub tests it (0x80036a84-0x80036aa4): CritterCalcTarget, which sight
+    // and the step search use, never does.
     return maxHomeDistance <= 0.0f || homeDistance <= maxHomeDistance;
 }
 

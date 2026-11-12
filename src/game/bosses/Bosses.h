@@ -170,12 +170,12 @@ public:
     Vec3 cameraOffset() const;
     /** The root its type was first stood at, kept for good: the floor CritterInitGeo's probe
      * finds under the placement, else the placement's own height, raised by the type's
-     * floorOffset (+0x418, 0x8003e60c-0x8003e6fc; DC +0x208, 0x8c087850-0x8c087972). The
-     * fight's camera keeps it as its base; none until a boss has stood this level. */
+     * floorOffset (+0x418, 0x8003e60c-0x8003e6fc). The fight's camera keeps it as its base; none
+     * until a boss has stood this level. */
     const std::optional<Vec3>& spawnRoot() const { return m_sim.spawnRoot; }
     /** Where BossDeath leaves the fallen boss's key: its spawn root plus its type's key offset,
-     * in world axes, wherever the boss went meanwhile (0x8001b908-0x8001b960; DC BossEnd
-     * 0x8c071370-0x8c0713b2); none until a boss has stood this level. */
+     * in world axes, wherever the boss went meanwhile (0x8001b908-0x8001b960); none until a boss
+     * has stood this level. */
     std::optional<Vec3> keySpot() const;
     std::string_view moveName() const;
     /** The id targets and sweeps name the boss by. */

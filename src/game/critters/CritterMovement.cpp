@@ -18,8 +18,8 @@ Vec3 CritterMovement::constrain(const Vec3& proposed, const Vec3& homePosition) 
         offset.x = std::clamp(offset.x, -radius, radius);
         offset.z = std::clamp(offset.z, -radius, radius);
     } else {
-        // CritterTranslate measures the offset by the original's fast length (0x8003ad50;
-        // DC 0x8c08a878, N64 Boss.bin 0xe0883f6c), so the territory's edge is not quite round.
+        // CritterTranslate measures the offset by the original's fast length (0x8003ad50), so
+        // the territory's edge is not quite round.
         const f32 distance = approximateFlatLength(offset);
         if (distance > radius) {
             offset.x *= radius / distance;

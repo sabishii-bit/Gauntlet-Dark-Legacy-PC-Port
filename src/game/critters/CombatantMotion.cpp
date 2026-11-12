@@ -139,7 +139,7 @@ void Combatant::holdTerritory() {
 
 void Combatant::keepToTerritory(Actor& critter) {
     // CritterTranslate keeps the fast length of the offset its step proposed, before the clamp
-    // (+0x4ac, 0x8003ad54; DC +0x238), for CritterGetTargetSub's home distance.
+    // (+0x4ac, 0x8003ad54), for CritterGetTargetSub's home distance.
     critter.homeDistance = approximateFlatLength(critter.position - critter.homePosition);
     critter.position =
         critter.definition->movement().constrain(critter.position, critter.homePosition);
@@ -198,8 +198,7 @@ bool Combatant::translate(Actor& critter, f32 seconds, const MoveDefinition* mov
         critter.stepTarget = destination->position;
     }
     // The move's pace carries it in every state, so a dying Chimera backs away on its DEATH's
-    // (CritterTranslate 0x8003a9ec-0x8003aa0c, DC 0x8c08a5da-0x8c08a5e4, N64 Boss.bin
-    // 0xe0883d38-0xe0883d5c); dying only frees it from its territory, below.
+    // (CritterTranslate 0x8003a9ec-0x8003aa0c); dying only frees it from its territory, below.
     if (move != nullptr && move->speed != 0.0f) {
         const f32 pace = move->speed * m_sim.scales.speed * seconds;
         const f32 basis = movement.initialStepBasis ? critter.initialYaw : critter.yaw;
@@ -214,10 +213,9 @@ bool Combatant::translate(Actor& critter, f32 seconds, const MoveDefinition* mov
         }
     }
     // Retail bosses clamp to their home region directly, on a frame they stand still too
-    // (CritterTranslate has no return for a zero step, 0x8003ad04-0x8003ae00; DC 0x8c08a5c0,
-    // N64 Boss.bin 0xe0883d14), but not while dying (0x8003ad3c-0x8003ad44; DC
-    // 0x8c08a864-0x8c08a86a; N64 0xe0883ee4-0xe0883eec). Their authored stage/root heights are
-    // not ordinary walking-floor probes (several stand above the arena).
+    // (CritterTranslate has no return for a zero step, 0x8003ad04-0x8003ae00), but not while
+    // dying (0x8003ad3c-0x8003ad44). Their authored stage/root heights are not ordinary
+    // walking-floor probes (several stand above the arena).
     if (bounded) {
         critter.position += translation;
         if (critter.state != State::Dying) {

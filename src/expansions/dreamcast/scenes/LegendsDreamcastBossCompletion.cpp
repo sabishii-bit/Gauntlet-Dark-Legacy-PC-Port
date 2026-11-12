@@ -38,7 +38,9 @@ void LegendsLevel::dreamcastBossDefeated(const Vec3& position, std::span<PlayerA
     // not a collectible whose pickup can race the speech or next-stage load.
     shards |= u64{1} << realm;
     // BossInit 8c071120 retains the original locator for Sumner's midpoint,
-    // independently of where the moving boss eventually falls.
+    // independently of where the moving boss eventually falls. BossEnd starts the
+    // key at `position`, the boss's spawn root plus its key offset, wherever it
+    // fell (8c071370-8c0713b2).
     if (!m_dreamcastVisit.begin(m_dreamcastBoss->nativeKind, realm, runes, shards,
                                 m_dreamcastBoss->combat.position, positions, position)) {
         return;

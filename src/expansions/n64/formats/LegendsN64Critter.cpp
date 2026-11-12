@@ -173,6 +173,7 @@ CritterFile decodeLegendsN64Critter(std::span<const u8> bytes) {
         move.link = small(bytes, at + 0x60);
         move.interrupt = small(bytes, at + 0x62);
         move.cooldown = real(bytes, at + 0x64);
+        // e0883d14 takes this pace in every state, dying too (0xe0883d38-0xe0883d5c).
         move.speed = real(bytes, at + 0x68);
         move.turnRate = real(bytes, at + 0x6c);
         // e08842e8 holds only the completed death and special 0x86 reaction.
@@ -267,12 +268,18 @@ CritterFile decodeLegendsN64Critter(std::span<const u8> bytes) {
         type.typeFlags = readU32BE(bytes, at + 0x84);
         type.radius = real(bytes, at + 0x88);
         type.wallRadius = real(bytes, at + 0x8c);
+        // Boss.bin e0883d14 holds a boss to this territory about its home on every step, one of
+        // nought too, by game.bin's fast length (0xe0883f6c), but never while it dies
+        // (0xe0883ee4-0xe0883eec).
         type.roamRadius = real(bytes, at + 0x90);
         type.floorOffset = real(bytes, at + 0x94);
         type.originOffset = {0, real(bytes, at + 0x9c), 0};
         type.turnLimit = real(bytes, at + 0xa0);
         type.maxHealth = real(bytes, at + 0xac);
         type.expValue = real(bytes, at + 0xb0);
+        // Past its deadline e08842e8 wakes the boss for a range of nought or under, or once its
+        // farthest player stands strictly inside it (0xe08843e8-0xe0884400), measured with the
+        // rise zeroed (0xe0886240).
         type.wakeThreshold = real(bytes, at + 0xb4);
         type.pressureReferenceDamage = real(bytes, at + 0xb8);
         type.hitSoundFar = small(bytes, at + 0xbc);

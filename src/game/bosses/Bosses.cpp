@@ -30,8 +30,8 @@ void appendConfiguration(NativeStateDigest& digest, const WorldCollision* collis
 }
 
 /** How far along the ground the farthest standing player is from `at`, nought for nobody: the
- * original's target records measure with the rise zeroed (CritterCalcTarget 0x80037338-0x80037340,
- * DC 0x8c08c95a, N64 Boss.bin 0xe0886240) and the wake takes their largest (0x80039c20). */
+ * original's target records measure with the rise zeroed (CritterCalcTarget 0x80037338-0x80037340)
+ * and the wake takes their largest (0x80039c20). */
 f32 farthestAlongGround(const Vec3& at, std::span<const EnemyView> players) {
     f32 farthest = 0.0f;
     for (const EnemyView& view : players) {
@@ -45,15 +45,15 @@ f32 farthestAlongGround(const Vec3& at, std::span<const EnemyView> players) {
 
 /** Whether a party whose farthest player stands `farthest` away wakes a boss of `threshold`:
  * strictly inside it, or at once for a threshold of nought or under (CritterBossAI
- * 0x80039c50-0x80039c64, DC 0x8c08ac96-0x8c08ac9e, N64 0xe08843e8-0xe0884400). A farthest of
- * nought stands for nobody, whom the original counts 1e21 away (0x80039c4c). */
+ * 0x80039c50-0x80039c64). A farthest of nought stands for nobody, whom the original counts 1e21
+ * away (0x80039c4c). */
 bool partyWakes(f32 farthest, f32 threshold) {
     return threshold <= 0.0f || (farthest > 0.0f && farthest < threshold);
 }
 
 /** The root CritterInitGeo stands a type of `floorOffset` at over `placement`: on the floor its
  * probe finds there, else at the placement's own height, raised by the offset
- * (0x8003e628-0x8003e6b4; DC 0x8c087866-0x8c087932). */
+ * (0x8003e628-0x8003e6b4). */
 Vec3 rootOver(const WorldCollision* collision, const Vec3& placement, f32 floorOffset) {
     Vec3 root = placement;
     if (collision != nullptr) {
@@ -467,8 +467,7 @@ void Bosses::update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
             m_sim.assets, [&](const auto* assets) { return &assets->data == m_fighter.data(); });
         const bool decodedEntrance = stock != m_sim.assets.end() && (*stock)->initialMoveBeforeWake;
         const f32 farthest = farthestAlongGround(*position(), players);
-        // An imported rite that wakes its boss does so wherever the party stands (N64 Boss.bin
-        // 0xe0884424).
+        // An imported rite that wakes its boss does so wherever the party stands.
         const bool riteWakes =
             m_legendProfile && m_legendProfile->wakesOnDeadline && m_sim.rite.running();
         const f32 delay = stock != m_sim.assets.end() ? (*stock)->wakeDelay : kWakeArmSeconds;

@@ -40,6 +40,8 @@ std::array<f32, 3> vector(std::span<const u8> bytes, usize at) {
     return {real(bytes, at), real(bytes, at + 4), real(bytes, at + 8)};
 }
 CritterTargetRecord target(std::span<const u8> bytes, usize at) {
+    // The seventh word (+0x18) bounds the home distance: GetTargetSub 8c08d100 refuses the move
+    // while the fast length Translate 8c08a5c0 kept at +0x238 is past it (8c08d128-8c08d13a).
     return {real(bytes, at),      real(bytes, at + 4),  real(bytes, at + 8), real(bytes, at + 12),
             real(bytes, at + 16), real(bytes, at + 20), real(bytes, at + 24)};
 }
@@ -212,6 +214,7 @@ CritterFile decodeLegendsDreamcastCritter(std::span<const u8> bytes) {
         move.link = small(bytes, at + 0x64);
         move.interrupt = small(bytes, at + 0x66);
         move.cooldown = real(bytes, at + 0x68);
+        // Translate takes this pace in every state, dying too (8c08a5da-8c08a5e4).
         move.speed = real(bytes, at + 0x6c);
         move.turnRate = real(bytes, at + 0x70);
         move.sfx = small(bytes, at + 0x74);
@@ -304,7 +307,14 @@ CritterFile decodeLegendsDreamcastCritter(std::span<const u8> bytes) {
         type.radius = real(bytes, at + 0x8c);
         type.wallRadius = real(bytes, at + 0x90);
         type.defaultPos = vector(bytes, at + 0x94);
+        // Translate holds a boss to this territory about its home on every step, one of nought
+        // too, by the fast length it keeps at +0x238 (8c08a878), but never while it dies
+        // (8c08a864-8c08a86a).
         type.roamRadius = real(bytes, at + 0xa0);
+        // CritterGeo stands the root this far over the floor its probe finds from four above
+        // the placement to a thousand below, else over the placement, and keeps it at +0x208
+        // (8c087850-8c087972); ProcessCritter probes that window again after each step and
+        // raises the body by this over what it finds (8c08b730).
         type.floorOffset = real(bytes, at + 0xa4);
         // CritterGeo publishes the target centre as root+(0, TYPE.AC, 0)
         // (8c087994..7a8), consumed by CalcTarget 8c08c928. B4..BC is not
@@ -321,6 +331,9 @@ CritterFile decodeLegendsDreamcastCritter(std::span<const u8> bytes) {
         type.armor = real(bytes, at + 0xc8);
         type.maxHealth = real(bytes, at + 0xcc);
         type.expValue = real(bytes, at + 0xd0);
+        // Past its deadline the boss AI 8c08abc0 wakes the boss for a range of nought or under,
+        // or once its farthest player stands strictly inside it (8c08ac96-8c08ac9e), measured
+        // with the rise zeroed (CalcTarget, 8c08c95a).
         type.wakeThreshold = real(bytes, at + 0xd4);
         type.pressureReferenceDamage = real(bytes, at + 0xd8);
         type.hitSoundFar = small(bytes, at + 0xdc);
