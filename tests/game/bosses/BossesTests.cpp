@@ -840,7 +840,7 @@ TEST_CASE("a boss slain mid-roar has the roar counted as its death cuts it short
 }
 
 TEST_CASE("a boss slain in its legend rite holds the party until its roar falls due and "
-          "restrains it until its death has played",
+          "restrains it until its roar ends or its death has played",
           "[game][enemies][legend][rite-hold][boss-death]") {
     const s32 fps = GENERATE(30, 60);
     CAPTURE(fps);
