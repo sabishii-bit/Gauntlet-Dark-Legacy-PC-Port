@@ -381,6 +381,8 @@ add_executable(tests
     expansions/n64/formats/LegendsN64SceneTests.cpp
     expansions/n64/formats/LegendsN64CameraTests.cpp
     expansions/n64/camera/LegendsCameraTests.cpp
+    expansions/n64/camera/LegendsCameraChannelTests.cpp
+    expansions/n64/camera/LegendsCameraRigTests.cpp
     expansions/n64/level/LegendsObeliskTests.cpp
     expansions/n64/formats/LegendsN64AmbientTests.cpp
     expansions/n64/audio/LegendsAmbientTests.cpp
