@@ -26,7 +26,6 @@
 #include "fixtures/NativeSoundBank.h"
 #include "game/characters/Progression.h"
 #include "game/combat/ArmorFlags.h"
-#include "game/combat/Damage.h"
 #include "game/combat/DamageTypes.h"
 #include "game/combat/PowerupFlags.h"
 #include "game/enemies/BomberTestSupport.h"
@@ -4102,7 +4101,7 @@ TEST_CASE("native opponent sound lifetimes survive pause and corrected cancellat
     if (draining) {
         enemies.finishDeath(*enemy, -1);
     } else {
-        enemies.hurt(*enemy, EnemyHit{.damage = 100000, .player = -1});
+        enemies.hurt(*enemy, EnemyHit{.damage = 100000, .player = -1, .where = std::nullopt});
     }
     const auto wrong = step(tick + 1, 0, 0);
     CHECK(wrong.loops.empty());

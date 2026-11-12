@@ -16,7 +16,6 @@
 #include "game/bosses/LegendItems.h"
 #include "game/characters/Progression.h"
 #include "game/combat/ArmorFlags.h"
-#include "game/combat/Damage.h"
 #include "game/combat/DamageTypes.h"
 #include "game/combat/EffectFlags.h"
 #include "game/combat/PowerupFlags.h"
@@ -1582,6 +1581,9 @@ void PlayerAttacks::updateTurbo(usize index, s32 ticks, f32 seconds,
                 m_resources->dimmer.ask(amount);
                 players[index].glow.raise(BodyGlow::kStrike);
             },
+        // The identified forms below replace the plain volley and strike.
+        .volley = {},
+        .strike = {},
         .identifiedVolley =
             [this, index, players](const TurboMove::Volley& volley) {
                 const auto& actor = players[index].actor;

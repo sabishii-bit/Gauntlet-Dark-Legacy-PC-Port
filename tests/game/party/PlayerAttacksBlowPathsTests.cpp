@@ -807,9 +807,9 @@ TEST_CASE("every blow path that reaches a statue wakes it by its own index",
 class ImportedFixtures final : public ImportedLevel {
 public:
     std::vector<s32> struck;
-    std::vector<ImportedTarget> bodies{{0, {0, 0, 6}, 1, 3, true, false},
-                                       {kImportedArenaBase, {20, 0, 0}, 1, 3, true, false},
-                                       {kImportedSceneryBase, {-20, 0, 0}, 1, 3, true, false}};
+    std::vector<ImportedTarget> bodies{{0, {0, 0, 6}, 1, 3, true, false, {}},
+                                       {kImportedArenaBase, {20, 0, 0}, 1, 3, true, false, {}},
+                                       {kImportedSceneryBase, {-20, 0, 0}, 1, 3, true, false, {}}};
     void capturePresentation() override {}
     void update(f32 /*seconds*/, bool /*timeStopped*/) override {}
     void draw(RenderDevice& /*device*/, const Mat4& /*clip*/, const WorldCamera& /*camera*/,
