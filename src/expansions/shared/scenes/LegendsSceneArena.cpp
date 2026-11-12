@@ -8,16 +8,17 @@
 
 namespace gdl::game {
 namespace {
-Obstacle arenaBody(const ImportedBoss::ArenaRock& definition, Vec2 boxHalfExtents) {
+/** The segments a rock stands with once an arena raises it again: DC 8c0a9e80 restores three
+ * times its definition's health, which AddItemWobj 8c0a9d80 stands as three segments. */
+constexpr s32 kRaisedTier = 3;
+
+Obstacle arenaBody(const ImportedBoss::ArenaRock& definition) {
     Obstacle body;
     body.centre = definition.position;
     body.yaw = definition.yaw;
-    const bool box = boxHalfExtents.x > 0 && boxHalfExtents.y > 0;
-    body.cylinderRadius = box ? 0 : definition.radius;
-    body.halfAcross = boxHalfExtents.x;
-    body.halfAlong = boxHalfExtents.y;
+    body.cylinderRadius = definition.radius;
     body.height = definition.height;
-    body.enemyItem = Obstacle::ItemQuery{!box, definition.radius};
+    body.enemyItem = Obstacle::ItemQuery{true, definition.radius};
     return body;
 }
 } // namespace
@@ -86,8 +87,8 @@ void LegendsSceneAdapter::updateArena(f32 seconds) {
             rock.activationDelay -= seconds;
             if (rock.activationDelay <= 0) {
                 rock.activationDelay = 0;
-                rock.health = rock.definition.tierHealth * rock.initialTier;
-                rock.tier = rock.initialTier;
+                rock.health = rock.definition.tierHealth * kRaisedTier;
+                rock.tier = kRaisedTier;
                 rock.dormant = false;
                 selectArenaRock(index);
             }
@@ -121,8 +122,14 @@ std::vector<ImportedTarget> LegendsSceneAdapter::arenaDamageTargets() const {
             continue;
         }
         const auto& definition = rock.definition;
-        result.push_back({kImportedArenaBase + static_cast<s32>(i), definition.position,
-                          definition.radius, definition.height, true, true, rock.surface});
+        // Attacks reach a rock by its cylinder; it has no breakable faces of its own.
+        result.push_back({kImportedArenaBase + static_cast<s32>(i),
+                          definition.position,
+                          definition.radius,
+                          definition.height,
+                          true,
+                          true,
+                          {}});
     }
     return result;
 }
@@ -143,7 +150,7 @@ std::vector<Obstacle> LegendsSceneAdapter::arenaObstacles() const {
     std::vector<Obstacle> result;
     for (const auto& rock : m_arenaRocks) {
         if (!rock.dormant && rock.health > 0) {
-            result.push_back(arenaBody(rock.definition, rock.boxHalfExtents));
+            result.push_back(arenaBody(rock.definition));
         }
     }
     return result;
@@ -154,7 +161,7 @@ std::vector<MissileStop> LegendsSceneAdapter::arenaMissileStops() const {
     for (usize index = 0; index < m_arenaRocks.size(); ++index) {
         const auto& rock = m_arenaRocks[index];
         if (!rock.dormant && rock.health > 0) {
-            result.push_back(MissileStop{.box = arenaBody(rock.definition, rock.boxHalfExtents),
+            result.push_back(MissileStop{.box = arenaBody(rock.definition),
                                          .rock = kImportedArenaBase + static_cast<s32>(index),
                                          .rockHealth = rock.health,
                                          .rockArmor = rock.armor});
@@ -166,7 +173,7 @@ std::vector<MissileStop> LegendsSceneAdapter::arenaMissileStops() const {
 bool LegendsSceneAdapter::arenaBlocksSegment(const Vec3& from, const Vec3& to, f32 radius) const {
     return std::ranges::any_of(m_arenaRocks, [&](const auto& rock) {
         return !rock.dormant && rock.health > 0 &&
-               arenaBody(rock.definition, rock.boxHalfExtents).blocksSegment(from, to, radius);
+               arenaBody(rock.definition).blocksSegment(from, to, radius);
     });
 }
 

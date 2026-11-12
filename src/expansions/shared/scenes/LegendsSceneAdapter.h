@@ -511,14 +511,11 @@ private:
     bool m_bossRewardsReleased = false;
     struct ArenaRockPresentation {
         ImportedBoss::ArenaRock definition;
-        Vec2 boxHalfExtents{0}; ///< Zero retains the ordinary native cylindrical cover.
-        std::vector<CollisionTriangle> surface;
         std::array<std::optional<usize>, 4> figures;
         std::optional<usize> burstFigure, activeFigure;
         s32 health = 0;
         s32 armor = 0;
         s32 tier = 3;
-        s32 initialTier = 3;
         bool dormant = false;
         f32 activationDelay = 0;
     };
