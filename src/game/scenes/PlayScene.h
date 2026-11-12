@@ -681,7 +681,11 @@ private:
      * movement, which gives the camera its subjects; the fixtures, hazards, opponents and
      * attacks, then the powerup clock; an imported level's own services (only its held party
      * while held); the triggers; the portals (when they may end the tick); the cameras; the rune
-     * meter. */
+     * meter. The party's movement takes its rite restraint from the boss as the last update left
+     * it, the clock its rate from the boss as the opponents' turn leaves it, so what the boss's
+     * turn changes reaches the clock in that update and the restraint in the next; retail's
+     * do_players, after do_enemies (0x8005499c, 0x80054994), gives both that frame
+     * (PlayerProcessPowerups 0x800775a4, PlayerMotion 0x800775fc). */
     void advancePowerupsAndWorld(s32 ticks, f32 seconds, bool held);
     std::vector<CameraSubject> advancePartyMotion(s32 ticks, f32 seconds, const Inputs& inputs,
                                                   bool held);
