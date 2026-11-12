@@ -87,7 +87,7 @@ public:
     static constexpr s32 kTransporter = 9;  ///< on arriving by a transporter
     static constexpr s32 kSecretWalls = 20; ///< a blow on a wall that breaks
     static constexpr s32 kTrapsHurt = 21;
-    static constexpr s32 kDestroyGenerators = 22; ///< ten hits on what generators bred
+    static constexpr s32 kDestroyGenerators = 22; ///< ten kills of what generators bred
     static constexpr s32 kRandomChest = 23;
     static constexpr s32 kEveryoneToExit = 11; ///< one waits on an exit the rest have not reached
     static constexpr s32 kShotMagic = 14;      ///< a bottle shot does less than one drunk
