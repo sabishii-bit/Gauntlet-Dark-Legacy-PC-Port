@@ -208,13 +208,13 @@ template <LocalOwnerLive Live> LocalOwnerRules observeLocalOwner() {
         rules.blank = ask(*live, live->owner(), blank);
     }
     {
-        Saved<Live> saved;
+        const Saved<Live> saved;
         if (saved.live->clear()) {
             rules.cleared = ask(*saved.live, saved.live->owner(), saved.snapshot);
         }
     }
     {
-        Saved<Live> saved;
+        const Saved<Live> saved;
         const bool restored = saved.live->owner().restoreLocal(saved.snapshot);
         CHECK(restored);
         if (restored && saved.live->clear()) {
@@ -222,31 +222,31 @@ template <LocalOwnerLive Live> LocalOwnerRules observeLocalOwner() {
         }
     }
     {
-        Saved<Live> saved;
+        const Saved<Live> saved;
         if (saved.live->rebind()) {
             rules.rebound = ask(*saved.live, saved.live->owner(), saved.snapshot);
         }
     }
     if constexpr (std::is_move_constructible_v<Owner>) {
-        Saved<Live> saved;
+        const Saved<Live> saved;
         auto moved = std::make_unique<Owner>(std::move(saved.live->owner()));
         rules.movedInto = ask(*saved.live, *moved, saved.snapshot);
         rules.movedFrom = local_owner::askMovedFrom(saved.live->owner(), saved.snapshot);
     }
     if constexpr (std::is_move_assignable_v<Owner>) {
-        Saved<Live> saved;
+        const Saved<Live> saved;
         auto other = std::make_unique<Live>();
         other->owner() = std::move(saved.live->owner());
         // The assigned values still borrow the first context, so its resources name them.
         rules.assignedInto = ask(*saved.live, other->owner(), saved.snapshot);
     }
     if constexpr (kCopiedOwner<Owner>) {
-        Saved<Live> saved;
+        const Saved<Live> saved;
         auto copy = std::make_unique<Owner>(std::as_const(saved.live->owner()));
         rules.copied = ask(*saved.live, *copy, saved.snapshot);
     }
     {
-        Saved<Live> saved;
+        const Saved<Live> saved;
         Live& live = *saved.live;
         const auto before = local_owner::liveDigest(live, live.owner());
         REQUIRE(before.has_value());
@@ -273,7 +273,7 @@ template <LocalOwnerLive Live> void checkLocalOwner() {
  * opened or bound in more ways than its row's rebind takes. */
 template <LocalOwnerLive Live, std::invocable<Live&> Act> Admission askAfter(Act act) {
     CAPTURE(Live::kName);
-    local_owner::Saved<Live> saved;
+    const local_owner::Saved<Live> saved;
     std::invoke(act, *saved.live);
     return local_owner::ask(*saved.live, saved.live->owner(), saved.snapshot);
 }
