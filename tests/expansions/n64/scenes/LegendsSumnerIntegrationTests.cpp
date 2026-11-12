@@ -547,6 +547,57 @@ TEST_CASE("An N64 Tower return's cut turns about the members standing and not on
                         sumnerCutEye(standing->position(), towerSumner(fixture.root))) < 1e-4f);
 }
 
+TEST_CASE("An N64 Tower return turns its held party to each shot's focus as the scene holds it",
+          "[legends][sumner-integration][tower-ceremony][assets]") {
+    LegendsProgress brought;
+    brought.runestones = 1;
+    SumnerScene fixture{brought};
+    const auto* ceremony = fixture.level->adapter().towerCeremony();
+    REQUIRE(ceremony);
+    // On every update of the hold, its arrival and the script after it, the scene hands the
+    // standing pair over and Tower.bin's e0860d1c draws each facing the party's target: Sumner
+    // from the cut, then the stone circle over e086967c from the rune's shot, which falls
+    // inside the arrival.
+    const auto facing = [&](s32 seat, const Vec3& target) {
+        const auto* actor = fixture.scene.actor(seat);
+        REQUIRE(actor);
+        return portable::atan2(target.x - actor->position().x, target.z - actor->position().z);
+    };
+    std::vector<Vec3> targets;
+    bool shotInArrival = false;
+    for (s32 update = 0; update < 600 && (update == 0 || ceremony->active()); ++update) {
+        CAPTURE(update);
+        fixture.step({}, 1.0 / 30);
+        const auto target = ceremony->partyFacingTarget();
+        if (!target) {
+            continue;
+        }
+        if (targets.empty() || targets.back() != *target) {
+            targets.push_back(*target);
+            shotInArrival |= targets.size() == 2 && fixture.scene.spawning();
+        }
+        for (s32 seat = 0; seat < 2; ++seat) {
+            CAPTURE(seat);
+            CHECK(fixture.scene.actor(seat)->yaw() == facing(seat, *target));
+        }
+    }
+    REQUIRE_FALSE(ceremony->active());
+    const Vec3 sumner = towerSumner(fixture.root);
+    const auto overlay = readFile(fixture.root / "_program/Tower.bin");
+    const auto coordinate = [&](usize at) { return std::bit_cast<f32>(readU32BE(overlay, at)); };
+    const Vec3 circle{coordinate(0x967c), coordinate(0x9680) + 5, coordinate(0x9684)};
+    CHECK(targets == std::vector<Vec3>{sumner, circle});
+    CHECK(shotInArrival);
+    // Play takes the party back facing the circle, and nothing turns it while it stands.
+    for (s32 update = 0; update < 30; ++update) {
+        fixture.step({}, 1.0 / 30);
+        for (s32 seat = 0; seat < 2; ++seat) {
+            CAPTURE(update, seat);
+            CHECK(fixture.scene.actor(seat)->yaw() == facing(seat, circle));
+        }
+    }
+}
+
 TEST_CASE("An N64 Tower ceremony the podium's party update opens turns about that party",
           "[legends][sumner-integration][tower-ceremony][assets]") {
     LegendsProgress brought;

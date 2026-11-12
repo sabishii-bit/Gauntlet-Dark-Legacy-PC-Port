@@ -90,6 +90,11 @@ public:
     const LegendsTowerCeremony* towerCeremony() const {
         return m_towerCeremony ? &*m_towerCeremony : nullptr;
     }
+    LegendsTowerCeremony* towerCeremony() { return m_towerCeremony ? &*m_towerCeremony : nullptr; }
+    /** The N64 Tower's Sumner as his shown gesture's figure stands, and the staff in his hand;
+     * null outside the N64 Tower or without their artwork. */
+    const ItemFigure* towerSumner() const;
+    const ItemFigure* towerStaff() const;
     void queueTowerCeremonies(const LegendsProgress& before, const LegendsProgress& after);
     /** Opens the queued ceremonies from the gameplay view, about `party`, the mean feet of the
      * party standing in the Tower. */
@@ -299,6 +304,9 @@ private:
     void selectArenaRock(usize index, bool burst = false);
     void updateTowerProgress(bool initial);
     void updateTowerCeremony(f32 seconds);
+    /** Stands every gesture's figure of Sumner at the ceremony's yaw and the staff, while it
+     * shows, in the shown one's hand. */
+    void placeTowerSumner();
     void bindN64Gate(RenderDevice& device, formats::LegendsN64Gate definition, usize idleFigure);
     void touchGates(PlayerActor& actor);
     void updateGates();

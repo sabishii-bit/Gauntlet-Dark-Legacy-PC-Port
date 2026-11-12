@@ -37,4 +37,11 @@ bool LegendsLevel::placeOpeningParty(std::span<PlayerActor*> party) {
     return platform() == LegendsPlatform::N64 && placeN64OpeningParty(party);
 }
 
+void LegendsLevel::holdParty(std::span<PlayerActor* const> party) {
+    // Of the native scripts that hold play, only the N64 Tower's ceremonies turn the party.
+    if (platform() == LegendsPlatform::N64) {
+        holdN64Party(party);
+    }
+}
+
 } // namespace gdl::game

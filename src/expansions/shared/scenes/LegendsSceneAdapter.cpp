@@ -1238,7 +1238,12 @@ void LegendsSceneAdapter::updateTower() {
         tower.activePodium != tower.podium.front().figure) {
         select(tower.podium, "REDY", tower.activePodium);
     }
-    if (m_fixtures[tower.activeSumner].finished()) {
+    if (m_towerCeremony && m_towerCeremony->takeLookDown()) {
+        // A ceremony's return left e086ade8 at -1: e08612e0 looks down first, whatever Sumner
+        // plays, and its next choice reads, as after its LKDN branch's e086ade8 = 1.
+        select(tower.sumner, LegendsTowerIdle::initialSequence(), tower.activeSumner);
+        tower.idle = {};
+    } else if (m_fixtures[tower.activeSumner].finished()) {
         const auto random =
             static_cast<u16>(*random_distribution::boundedIndex(tower.random, 32768));
         if (const auto cue = tower.idle.update(true, random)) {
@@ -1372,6 +1377,7 @@ void LegendsSceneAdapter::update(f32 seconds) {
     }
     updateTowerCeremony(seconds);
     updateTower();
+    placeTowerSumner();
     updatePortals();
     updateContainerSelectors(seconds);
     m_dreamcastLoot.advance(seconds);

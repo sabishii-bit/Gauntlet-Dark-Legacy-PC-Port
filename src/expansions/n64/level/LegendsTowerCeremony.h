@@ -19,12 +19,23 @@ namespace gdl::game {
 
 /** Local Tower presentation, independent of ownership/save transactions. Native
  * e086736c dispatches rune, door and shard scripts while gameplay is held. Each
- * 30 Hz tick runs one dispatcher case, then e0860d1c's ready restart and caption
+ * 30 Hz tick runs one dispatcher case, then e0860d1c's turns, ready restart and caption
  * clock on script and return ticks, then the gesture pass (e0032c80), so a script
- * reads the frame and end flag that the previous tick's pass left. */
+ * reads the frame and end flag that the previous tick's pass left. After the hand-back
+ * the ticks go on as state 0x11's e0860d1c while Sumner's staff shrinks away. */
 class LegendsTowerCeremony {
 public:
     enum class Kind { Rune, Door, Shard };
+    /** A held player's facings in e0860d1c's turn (e0860d54..e0860ed8): `drawn`, the yaw its
+     * matrix is rebuilt at (e00135b8, e0013a70), the party's target's angle at once, and
+     * `kept`, its record's yaw (+0xa4), which steps at most .05 rad an update toward that. */
+    struct HeldFacing {
+        f32 drawn = 0;
+        f32 kept = 0;
+        bool operator==(const HeldFacing&) const = default;
+    };
+    /** The input seats e0860d1c turns: the native four players' records. */
+    static constexpr usize kSeats = 4;
     struct Entry {
         Kind kind = Kind::Rune;
         usize index = 0;
@@ -51,11 +62,14 @@ public:
     void begin(const LegendsProgress& before, const LegendsProgress& after);
     bool pending() const { return m_next < m_entries.size(); }
     bool active() const { return m_started; }
+    /** Its scripts run, or Sumner's staff still shrinks away after them. */
+    bool presenting() const { return m_started || m_staff == Staff::Shrinking; }
     /** Dispatcher case 0 with its update's gesture pass: e007de28 settles the camera channels on
      * the gameplay `camera`, e0860620 cuts them to Sumner's shot about the midpoint of him and
-     * `party`, the standing party's mean feet (e086007c), and REDY starts. The cut shows once a
-     * script steps the camera; until then the view stays `camera`, looking at `attention`,
-     * where the return glides back to. The next tick selects the first entry. */
+     * `party`, the standing party's mean feet (e086007c), aims Sumner at those feet and the
+     * party at his, and REDY starts. The cut shows once a script steps the camera; until then
+     * the view stays `camera`, looking at `attention`, where the return glides back to. The next
+     * tick selects the first entry. */
     void start(const WorldCamera& camera, const Vec3& attention, const Vec3& party);
     void update(f32 seconds);
     std::span<const Entry> entries() const { return m_entries; }
@@ -77,7 +91,17 @@ public:
     std::string_view gesture() const { return m_gesture.name; }
     /** The frame Sumner shows: a reversed sequence counts back from its end. */
     f32 gestureFrame() const;
-    bool staffVisible() const { return m_started; }
+    /** True once, on the first update after the hand-back: the return left e086ade8 at -1
+     * (e0861210), so state 0x11's idle (e08612e0) starts LKDN before its own choices. */
+    bool takeLookDown();
+    /** Sumner's staff (e086add4) shows from the start until it has shrunk away after the
+     * hand-back: hidden in a visit that opens on no ceremony (e086961c) and once shrunk
+     * (e0861198), whose state 3 e0860d1c hides it in. */
+    bool staffVisible() const { return m_staff != Staff::Hidden; }
+    /** The staff's local scale (e0013820 on e086a6d0's (1, 1, 1)), along its model's native
+     * x, y and z: whole while raised; from the hand-back z is what remains of e086ade4's
+     * second, and x and y that over .3 once z falls under it. */
+    Vec3 staffScale() const;
     bool runeInFlight() const { return m_flightFrame >= 0; }
     Mat4 runePlacement() const;
     f32 runeOpacity() const;
@@ -101,10 +125,29 @@ public:
      * a glide from the last shot's point to the gameplay attention on the return's times. */
     const Vec3& attention() const { return m_cameraFocus; }
     const Vec3& sumnerPosition() const { return m_native.sumner.position; }
+    /** Sumner's native yaw (+0x28 of e086ad74), which his placement takes: e0860198's, turned
+     * by e0860d1c toward the party, each shot's focus and back to his podium. */
+    f32 sumnerYaw() const { return m_sumnerYaw; }
+    /** The point e0860d1c turns the held party toward while a ceremony runs (e086adb0):
+     * Sumner's feet from the cut, then each rune, door and shard shot's focus. */
+    std::optional<Vec3> partyFacingTarget() const;
     /** The yaw dispatcher case 0's cut (e0860620) turns an arrived player standing at
      * `position` to through game.bin e0048acc: e0010e50's arc tangent of Sumner's x and z
      * offsets from it, in the native yaw the N64 actors keep. Sumner keeps his own yaw. */
     f32 partyFacing(const Vec3& position) const;
+    /** Holds the standing player in input `seat` at `feet` while a ceremony runs (e086adac)
+     * and gives its facings: one first held faces Sumner as the cut turned it (e0048acc sets
+     * both), and each later script and return update turns it toward partyFacingTarget().
+     * None while no ceremony runs, or for a seat past the native four. */
+    std::optional<HeldFacing> hold(usize seat, const Vec3& feet);
+    /** One update of e0860d1c's turn of Sumner (e0860ef0..e0861020), standing at `sumner`
+     * with native `yaw`, toward `target`: his yaw faces minus the arc tangent of its x and z
+     * offsets, and a turn left after one wrap each way past float pi moves at most .2 rad. */
+    static f32 turnSumner(f32 yaw, const Vec3& sumner, const Vec3& target);
+    /** One update of e0860d1c's turn of a held player at `feet` toward `target`: the drawn
+     * facing takes the target's angle; the kept yaw takes it when the wrapped turn is 0, else
+     * moves at most .05 rad. */
+    static HeldFacing turnHeld(const HeldFacing& facing, const Vec3& feet, const Vec3& target);
 
 private:
     /** e086736c's case for the next tick. */
@@ -176,9 +219,22 @@ private:
     };
     /** e08618a8 records 1 + 4 + 4 + 3 + 50 poses (e086aea4). */
     static constexpr usize kFlightPoses = 62;
+    /** e086add4's states: only e0861198, e08612c8 and e086961c write it, so its grow (2) never
+     * runs. */
+    enum class Staff : u8 { Raised, Shrinking, Hidden };
+    /** A player the ceremony holds: where it stands and how it faces. */
+    struct Held {
+        Vec3 feet{0};
+        HeldFacing facing;
+    };
 
     static PaneBytes paneBytes(s32 count);
+    /** e086adc8, where Sumner's turn rests: e0860198 turns (0, 0, 1.8) by his yaw (e0014364)
+     * onto his feet. */
+    Vec3 podium() const;
     void tick();
+    /** State 0x11's update after the hand-back. */
+    void idle();
     void select();
     bool runScript(const Entry& entry);
     bool runeScript(const Entry& entry);
@@ -192,12 +248,22 @@ private:
     bool crossed(f32 frame) const;
     /** e007d53c and e007d584 as the scripts call them: both move on the shots' times. */
     void shot(f32 distance, f32 pitch, f32 yaw, const Vec3& focus);
+    /** A rune, door or shard shot aims Sumner (e086adbc) and the held party (e086adb0) at its
+     * focus. */
+    void face(const Vec3& focus);
     void planReturn();
     /** A script's e007dd70: true once every camera channel rests. */
     bool stepCamera(f32 seconds);
     void makeRuneFlight(usize index);
     void queueCaptions(std::span<const u32> ids);
     formats::LegendsN64Tower m_native;
+    f32 m_sumnerYaw = m_native.sumner.yaw; ///< +0x28 of e086ad74
+    Vec3 m_sumnerTarget = podium();        ///< e086adbc
+    Vec3 m_partyTarget{0};                 ///< e086adb0
+    std::array<std::optional<Held>, kSeats> m_held{};
+    Staff m_staff = Staff::Hidden;
+    f32 m_staffSeconds = 0;  ///< e086ade4, from the hand-back
+    bool m_lookDown = false; ///< e086ade8 at -1 since the return, until the idle takes it
     std::array<u16, 13> m_runeCaptions{};
     std::array<std::array<u16, 2>, 4> m_shardCaptions{};
     std::array<std::array<u16, 2>, 4> m_doorCaptions{};

@@ -37,8 +37,8 @@ bool LegendsLevel::placeN64OpeningParty(std::span<PlayerActor*> party) {
     // whose arrival (game.bin e004b070) skips e004b098's entrance effect, and the
     // dispatcher's first update cuts to Sumner and turns the arrived players to him. The
     // party stands here as the scene opens, an update before that cut, and the scene holds
-    // it still, so it faces him when the cut shows. Retail goes on to turn it toward each
-    // shot's focus (e0860d1c); the held party keeps this facing to the hand-back.
+    // it still, so it faces him when the cut shows; holdN64Party then turns it on as
+    // e0860d1c does.
     const auto* ceremony = adapter().towerCeremony();
     if (ceremony == nullptr || !ceremony->pending() || ceremony->active()) {
         return false;
@@ -48,6 +48,33 @@ bool LegendsLevel::placeN64OpeningParty(std::span<PlayerActor*> party) {
     // byte is 0 or 6), not about everyone the camera opened on: one who fell waits outside.
     m_ceremonyParty = partyFeet(party);
     return true;
+}
+
+void LegendsLevel::holdN64Party(std::span<PlayerActor* const> party) {
+    // While a ceremony runs (e086adac) e0860d1c turns every arrived player toward e086adb0 on
+    // each script and return update: Sumner from the cut (which a ceremony opened in play
+    // turns them to here first), then each rune, door and shard shot's focus. Of its two
+    // facings the actor takes the drawn one: it is what the party shows, and after the
+    // hand-back retail keeps that matrix until the player steers (game.bin e0048a24 and
+    // e0048b2c rebuild it only for a stick or a new desired yaw), when the actor turns to
+    // the stick at once. The kept yaw meets it long before then: a half turn takes 63
+    // updates, and each shipped script holds its last shot's focus for 180 or more.
+    auto* ceremony = m_world.adapter()->towerCeremony();
+    if (ceremony == nullptr) {
+        return;
+    }
+    for (auto* actor : party) {
+        if (actor == nullptr || actor->player() < 0) {
+            continue;
+        }
+        if (const auto facing =
+                ceremony->hold(static_cast<usize>(actor->player()), actor->position())) {
+            // This writes the actor's digested yaw from ceremony state outside rollback, which
+            // holds while Legends levels play offline only (ImportedLevel; GauntletLegends'
+            // walkingNative wants no online session).
+            actor->turnTo(facing->drawn);
+        }
+    }
 }
 
 void LegendsLevel::updateExitReminder(std::span<const CharacterSave* const> party) {

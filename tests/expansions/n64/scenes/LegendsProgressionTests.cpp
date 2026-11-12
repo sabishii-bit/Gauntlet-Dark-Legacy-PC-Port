@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <filesystem>
 #include <span>
 #include <string>
@@ -575,6 +576,117 @@ TEST_CASE("The N64 Tower binds Sumner's ceremony gestures with their WIZMOVES ti
         CHECK(found->frames == gesture.frames);
         CHECK(found->secondsPerFrame == Catch::Approx(gesture.secondsPerFrame));
         CHECK(found->repeats == gesture.repeats);
+    }
+}
+
+TEST_CASE("An N64 Tower ceremony turns Sumner and his staff shrinks away on LKDN after it",
+          "[legends][progression-scene][tower-ceremony][assets]") {
+    const auto root = nativeRoot();
+    const auto directory = root / "levels/tower2";
+    auto map = nativeMap(directory);
+    // SUM_STAFF's length runs along its model's z, the axis e0860d1c shrinks first.
+    const auto models = formats::decodeLegendsN64Models(readFile(root / "sum/objects.wad"));
+    const auto staffModel =
+        std::ranges::find(models, std::string{"SUM_STAFF"}, &formats::LegendsN64Model::name);
+    REQUIRE(staffModel != models.end());
+    REQUIRE_FALSE(staffModel->mesh.vertices.empty());
+    Vec3 low{staffModel->mesh.vertices.front().position};
+    Vec3 high = low;
+    for (const auto& vertex : staffModel->mesh.vertices) {
+        low = glm::min(low, vertex.position);
+        high = glm::max(high, vertex.position);
+    }
+    const Vec3 extent = high - low;
+    INFO("SUM_STAFF extent " << extent.x << ", " << extent.y << ", " << extent.z);
+    CHECK(extent.z > 2 * std::max(extent.x, extent.y));
+    constexpr f32 kTick = 1.0f / 30;
+    test::FakeRenderDevice device;
+    for (const s32 steps : {1, 2}) {
+        CAPTURE(steps);
+        auto scene = LegendsSceneAdapter::load(device, LegendsPlatform::N64, directory, map);
+        const LegendsTowerCeremony* ceremony = scene->towerCeremony();
+        REQUIRE(ceremony);
+        REQUIRE(scene->towerSumner());
+        REQUIRE(scene->towerStaff());
+        s32 staff = -1;
+        for (usize index = 0; index < scene->fixtureCount(); ++index) {
+            const auto id = LegendsSceneAdapter::kFixtureObjectBase + static_cast<s32>(index);
+            if (const auto object = scene->fixtureObject(id);
+                object && object->name == "SUM_STAFF") {
+                staff = id;
+            }
+        }
+        REQUIRE(staff >= 0);
+        CHECK_FALSE(scene->fixtureObject(staff)->visible);
+        // Sumner's shown figure stands at the ceremony's yaw (e002fcf8), and the staff at its
+        // ARMR3 (e0860198) under its local scale, while it shows.
+        const auto placed = [&] {
+            const auto* sumner = scene->towerSumner();
+            CHECK(sumner->transform() ==
+                  itemPlacement(ceremony->sumnerPosition(), Vec3{0, ceremony->sumnerYaw(), 0}));
+            const bool shown = scene->fixtureObject(staff)->visible;
+            CHECK(shown == ceremony->staffVisible());
+            if (shown) {
+                const auto hand = sumner->nodeTransform("ARMR3");
+                REQUIRE(hand);
+                CHECK(scene->towerStaff()->transform() ==
+                      *hand * glm::scale(Mat4{1}, ceremony->staffScale()));
+            }
+            return std::string{sumner->tree()->name};
+        };
+        CharacterSave save;
+        LegendsProgress now;
+        now.runestones = 1;
+        save.progress().legendsProgress(LegendsPlatform::N64) = now;
+        const std::array<const CharacterSave*, 1> party{&save};
+        scene->synchronizeProgress(party);
+        scene->queueTowerCeremonies({}, now);
+        scene->startTowerCeremonies({}, {}, Vec3{-4.5f, 0, -15.5f});
+        REQUIRE(ceremony->active());
+        CHECK(placed() == "WIZMOVES:REDY");
+        const f32 rest = ceremony->sumnerYaw();
+        const auto update = [&] {
+            std::string shown;
+            for (s32 i = 0; i < steps; ++i) {
+                scene->capturePresentation();
+                scene->update(kTick / static_cast<f32>(steps));
+                shown = placed();
+            }
+            return shown;
+        };
+        bool turned = false;
+        for (s32 tick = 1; tick <= 232; ++tick) {
+            CAPTURE(tick);
+            update();
+            turned |= ceremony->sumnerYaw() != rest;
+        }
+        CHECK(turned);
+        // The hand-back's update keeps REDY, which e0861260 restarts, and the whole staff.
+        REQUIRE_FALSE(ceremony->active());
+        CHECK(placed() == "WIZMOVES:REDY");
+        CHECK(ceremony->staffScale() == Vec3{1});
+        CHECK(scene->fixtureObject(staff)->visible);
+        // State 0x11's first update looks down, and the staff follows LKDN's hand as it shrinks;
+        // on the 30th update it hides.
+        for (s32 shrink = 1; shrink <= 30; ++shrink) {
+            CAPTURE(shrink);
+            const auto shown = update();
+            if (shrink == 1) {
+                CHECK(shown == "WIZMOVES:LKDN");
+                CHECK(ceremony->staffScale().z < 1);
+            }
+            if (shrink == 21) {
+                CHECK(ceremony->staffScale() == Vec3{std::bit_cast<f32>(0x3f7ffff6U),
+                                                     std::bit_cast<f32>(0x3f7ffff6U),
+                                                     std::bit_cast<f32>(0x3e999994U)});
+            }
+            CHECK(scene->fixtureObject(staff)->visible == (shrink < 30));
+        }
+        // Afterwards the idle goes on choosing for him, and the staff stays hidden.
+        for (s32 tick = 0; tick < 300; ++tick) {
+            update();
+            CHECK_FALSE(scene->fixtureObject(staff)->visible);
+        }
     }
 }
 

@@ -273,16 +273,31 @@ void LegendsSceneAdapter::startTowerCeremonies(const WorldCamera& camera, const 
     if (m_tower && m_towerCeremony) {
         m_towerCeremony->start(camera, attention, party);
         updateTowerCeremony(0);
+        placeTowerSumner();
     }
 }
 
+const ItemFigure* LegendsSceneAdapter::towerSumner() const {
+    return m_tower ? &m_fixtures[m_tower->activeSumner] : nullptr;
+}
+
+const ItemFigure* LegendsSceneAdapter::towerStaff() const {
+    return m_towerStaff ? &m_fixtures[*m_towerStaff] : nullptr;
+}
+
 void LegendsSceneAdapter::updateTowerCeremony(f32 seconds) {
-    if (!m_tower || !m_towerCeremony || !m_towerCeremony->active()) {
+    if (!m_tower || !m_towerCeremony || !m_towerCeremony->presenting()) {
         return;
     }
     auto& tower = *m_tower;
     auto& ceremony = *m_towerCeremony;
+    // After the hand-back only Sumner's turn and the staff go on, which placeTowerSumner shows;
+    // the idle (updateTower) chooses his gestures again.
+    const bool scripted = ceremony.active();
     ceremony.update(seconds);
+    if (!scripted) {
+        return;
+    }
     for (const auto sound : ceremony.takeSounds()) {
         m_soundEvents.push_back({sound, ceremony.sumnerPosition()});
     }
@@ -320,15 +335,32 @@ void LegendsSceneAdapter::updateTowerCeremony(f32 seconds) {
             m_fixtureOpacity[*figure] = ceremony.shardOpacity();
         }
     }
-    if (m_towerStaff) {
-        m_hiddenFixtures[*m_towerStaff] = !ceremony.staffVisible();
-        if (const auto attachment =
-                m_fixtures[tower.activeSumner].nodeTransform(m_towerStaffParent)) {
-            m_fixtures[*m_towerStaff].placeAt(*attachment);
-        }
-    }
     if (!ceremony.active()) {
         m_towerGesture.clear();
+    }
+}
+
+void LegendsSceneAdapter::placeTowerSumner() {
+    if (!m_tower || !m_towerCeremony) {
+        return;
+    }
+    const auto& ceremony = *m_towerCeremony;
+    // e002fcf8 turns the one native body, so every gesture's figure stands at his yaw: the one
+    // a script or the idle shows next turns with him, untouched by an older placement.
+    const Mat4 placement =
+        itemPlacement(ceremony.sumnerPosition(), Vec3{0, ceremony.sumnerYaw(), 0});
+    for (const auto& variant : m_tower->sumner) {
+        m_fixtures[variant.figure].placeAt(placement);
+    }
+    if (!m_towerStaff) {
+        return;
+    }
+    // The staff hangs from the shown figure's hand node (e0860198) at e0860d1c's local scale.
+    m_hiddenFixtures[*m_towerStaff] = !ceremony.staffVisible();
+    if (ceremony.staffVisible()) {
+        if (const auto hand = m_fixtures[m_tower->activeSumner].nodeTransform(m_towerStaffParent)) {
+            m_fixtures[*m_towerStaff].placeAt(*hand * glm::scale(Mat4{1}, ceremony.staffScale()));
+        }
     }
 }
 

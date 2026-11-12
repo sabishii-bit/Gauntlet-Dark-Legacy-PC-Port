@@ -124,6 +124,28 @@ constexpr f32 kCaptionFade = .3f;
 constexpr u8 kWhite = 255;
 constexpr f32 kByteScale = 255;
 
+// e0860d1c's turns: Sumner moves at most .2 rad an update (0x3e4ccccd), a held player's kept
+// yaw .05 (0x3d4ccccd).
+constexpr f32 kSumnerTurn = .2f;
+constexpr f32 kHeldTurn = .05f;
+/// e0860198's podium point stands 1.8 (0x3fe66666) before Sumner.
+constexpr f32 kPodiumReach = 1.8f;
+// e086107c..e08611dc: the staff shrinks over a second of e086ade4 and thins once less than .3
+// (0x3e99999a) of its length is left.
+constexpr f32 kStaffSeconds = 1;
+constexpr f32 kStaffKnee = .3f;
+
+/** e0860d1c's wrap of a turn: once each way past float pi, its compares strict. */
+f32 wrapped(f32 turn) {
+    if (kPi < turn) {
+        turn -= kTwoPi;
+    }
+    if (turn < -kPi) {
+        turn += kTwoPi;
+    }
+    return turn;
+}
+
 /** The party's Tower pieces less `withheld`. */
 LegendsProgress without(const LegendsProgress& party, const LegendsProgress& withheld) {
     auto result = LegendsTowerCeremony::pieces(party);
@@ -137,6 +159,9 @@ LegendsProgress without(const LegendsProgress& party, const LegendsProgress& wit
 LegendsTowerCeremony LegendsTowerCeremony::decode(std::span<const u8> overlay) {
     LegendsTowerCeremony result;
     result.m_native = formats::decodeLegendsN64Tower(overlay); // Revision authentication.
+    // e0860198 stands Sumner at his yaw (e002fcf8) and aims his turn at his podium (e08605ec).
+    result.m_sumnerYaw = result.m_native.sumner.yaw;
+    result.m_sumnerTarget = result.podium();
     const auto vector = [&](usize at) {
         return Vec3{std::bit_cast<f32>(readU32BE(overlay, at)),
                     std::bit_cast<f32>(readU32BE(overlay, at + 4)),
@@ -269,6 +294,14 @@ void LegendsTowerCeremony::start(const WorldCamera& camera, const Vec3& attentio
     m_rig.setOrbit(kShotDistance, kSumnerShotPitch, kSumnerShotYaw, true);
     m_rig.setAttention(above(sumner, kSumnerFocusHeight), true);
     m_rig.setRotation(std::nullopt, true);
+    // It aims Sumner's turn at the party's mean feet (e0860684) and the party's at his
+    // (e08606a0), leaving his own yaw (e08608b8 passes +0x28). The staff stands raised while
+    // the scripts run: a visit's ceremonies open it, before anything writes e086add4.
+    m_sumnerTarget = party;
+    m_partyTarget = sumner;
+    m_held.fill(std::nullopt);
+    m_staff = Staff::Raised;
+    m_lookDown = false;
     // It also empties the caption queue and lifts the ready suppression.
     m_captions.clear();
     m_readySuppressed = false;
@@ -283,6 +316,48 @@ f32 LegendsTowerCeremony::partyFacing(const Vec3& position) const {
     // e0860620 passes e0010e50 Sumner's +0x1c and +0x24 less the player's +0x24 and +0x2c.
     const Vec3 offset = m_native.sumner.position - position;
     return portable::atan2(offset.x, offset.z);
+}
+
+std::optional<Vec3> LegendsTowerCeremony::partyFacingTarget() const {
+    return m_started ? std::optional{m_partyTarget} : std::nullopt;
+}
+
+std::optional<LegendsTowerCeremony::HeldFacing> LegendsTowerCeremony::hold(usize seat,
+                                                                           const Vec3& feet) {
+    if (!m_started || seat >= m_held.size()) {
+        return std::nullopt;
+    }
+    auto& held = m_held[seat];
+    if (!held) {
+        const f32 facing = partyFacing(feet);
+        held = Held{.feet = feet, .facing = {facing, facing}};
+    }
+    held->feet = feet;
+    return held->facing;
+}
+
+f32 LegendsTowerCeremony::turnSumner(f32 yaw, const Vec3& sumner, const Vec3& target) {
+    // e0860ef0: e0010e50 of the target's x and z less his +0x1c and +0x24, negated, less his
+    // yaw; a turn that is not 0 goes to e002fcf8 clamped.
+    const f32 turn = wrapped(-portable::atan2(target.x - sumner.x, target.z - sumner.z) - yaw);
+    return turn == 0 ? yaw : yaw + std::clamp(turn, -kSumnerTurn, kSumnerTurn);
+}
+
+LegendsTowerCeremony::HeldFacing
+LegendsTowerCeremony::turnHeld(const HeldFacing& facing, const Vec3& feet, const Vec3& target) {
+    // e0860dc0: e0010e50 of the target's x and z less the player's +0x24 and +0x2c builds the
+    // matrix; the kept yaw (+0xa4 of the record) takes that angle at a turn of 0 (e0860eb0).
+    const f32 drawn = portable::atan2(target.x - feet.x, target.z - feet.z);
+    const f32 turn = wrapped(drawn - facing.kept);
+    return {drawn, turn == 0 ? drawn : facing.kept + std::clamp(turn, -kHeldTurn, kHeldTurn)};
+}
+
+Vec3 LegendsTowerCeremony::podium() const {
+    // e0014364 turns (0, 0, 1.8) to (-1.8 sin yaw, 0, 1.8 cos yaw), which e0860198 adds to
+    // Sumner's feet in float, untruncated (e086049c..e08604b0).
+    const auto& sumner = m_native.sumner;
+    return {sumner.position.x - kPodiumReach * portable::sin(sumner.yaw), sumner.position.y,
+            sumner.position.z + kPodiumReach * portable::cos(sumner.yaw)};
 }
 
 void LegendsTowerCeremony::play(std::string_view name) {
@@ -405,12 +480,16 @@ void LegendsTowerCeremony::stepCaptions() {
 }
 
 void LegendsTowerCeremony::attend() {
-    // e0860d1c restarts REDY, looping, once a gesture that plays once has ended (0x9000),
-    // unless the shard spell suppresses it. Its turns are not modelled: Sumner's toward
-    // e086adbc, and, while e086adac is set, each arrived player's toward e086adb0
-    // (e0860d54..e0860ed8), which the cut points at Sumner (e08606a0) and each shot at its
-    // focus (the rune's e0862600, the door's e0865e9c, the shard's e08635bc, case 0x32's
-    // e0866b3c): retail's party watches each piece, the party here keeps facing Sumner.
+    // e0860d1c turns each held player toward e086adb0 (e0860d54..e0860ed8) and Sumner toward
+    // e086adbc (e0860ef0..e0861020), then restarts REDY, looping, once a gesture that plays
+    // once has ended (0x9000), unless the shard spell suppresses it. Its staff block scales
+    // states 1 and 2 alone, so the raised staff keeps its size.
+    for (auto& held : m_held) {
+        if (held) {
+            held->facing = turnHeld(held->facing, held->feet, m_partyTarget);
+        }
+    }
+    m_sumnerYaw = turnSumner(m_sumnerYaw, m_native.sumner.position, m_sumnerTarget);
     if (!m_readySuppressed && m_gesture.done && m_gesture.frozen) {
         play(kReady);
         m_gesture.once = false;
@@ -477,7 +556,9 @@ bool LegendsTowerCeremony::runeScript(const Entry& entry) {
         queueCaptions(entry.captions);
     }
     if (now == kRuneShotTime) {
-        shot(kShotDistance, kRuneShotPitch, kRuneShotYaw, above(m_runePoint, kFocusLift));
+        const Vec3 focus = above(m_runePoint, kFocusLift);
+        shot(kShotDistance, kRuneShotPitch, kRuneShotYaw, focus);
+        face(focus);
     }
     if (now == kRuneSpellTime) {
         m_sounds.push_back(kRuneSpellSound);
@@ -535,12 +616,14 @@ bool LegendsTowerCeremony::doorScript(const Entry& entry) {
             m_doorCase = DoorCase::Shot;
         }
         break;
-    case DoorCase::Shot:
-        shot(kShotDistance, kDoorShotPitch, m_doorYaws[entry.index],
-             above(m_doorPoints[entry.index], kFocusLift));
+    case DoorCase::Shot: {
+        const Vec3 focus = above(m_doorPoints[entry.index], kFocusLift);
+        shot(kShotDistance, kDoorShotPitch, m_doorYaws[entry.index], focus);
+        face(focus);
         m_count = 0;
         m_doorCase = DoorCase::Spell;
         break;
+    }
     case DoorCase::Spell:
         if (++m_count >= kDoorSpellCount) {
             perform(kDoorSpell);
@@ -626,11 +709,14 @@ bool LegendsTowerCeremony::shardScript(const Entry& entry) {
             m_shardCase = ShardCase::Shot;
         }
         break;
-    case ShardCase::Shot:
-        shot(kShotDistance, kShardShotPitch, kShardShotYaw, above(m_shardPoint, kFocusLift));
+    case ShardCase::Shot: {
+        const Vec3 focus = above(m_shardPoint, kFocusLift);
+        shot(kShotDistance, kShardShotPitch, kShardShotYaw, focus);
+        face(focus);
         m_count = 0;
         m_shardCase = ShardCase::Spell;
         break;
+    }
     case ShardCase::Spell:
         if (++m_count >= kShardSpellCount) {
             perform(kShardSpell);
@@ -676,7 +762,7 @@ bool LegendsTowerCeremony::shardScript(const Entry& entry) {
         }
         // A shard that makes the window (e086ae04) turns to it, queues its captions and
         // unhides CATH_BEAM fully transparent; the completed window shows from here, even
-        // with a new pane left for the next visit.
+        // with a new pane left for the next visit. This shot aims neither Sumner nor the party.
         shot(kWindowShotDistance, kWindowShotPitch, kWindowShotYaw,
              above(m_shardPoint, -kWindowFocusDrop));
         queueCaptions(captions(m_windowCaptions));
@@ -723,6 +809,10 @@ bool LegendsTowerCeremony::shardScript(const Entry& entry) {
 }
 
 void LegendsTowerCeremony::tick() {
+    if (!m_started) {
+        idle();
+        return;
+    }
     m_previousCamera = m_camera;
     bool attends = false;
     switch (m_dispatch) {
@@ -749,12 +839,15 @@ void LegendsTowerCeremony::tick() {
         attends = true;
         break;
     case Dispatch::HandBack:
-        // Case 0x3c (e0861260) cuts the captions, restarts REDY and resumes play. Ownership
-        // was committed before the ceremony began; the pieces it left undrawn stay so for
-        // the rest of the visit.
+        // Case 0x3c (e0861260) cuts the captions, lets the party go (e08612b4), restarts REDY,
+        // starts the staff shrinking from 0 (e08612c8, e08612d0) and resumes play, skipping
+        // e0860d1c, so the staff keeps its size this update. Ownership was committed before
+        // the ceremony began; the pieces it left undrawn stay so for the rest of the visit.
         m_captions.clear();
         play(kReady);
         m_started = false;
+        m_staff = Staff::Shrinking;
+        m_staffSeconds = 0;
         break;
     }
     if (attends) {
@@ -763,20 +856,53 @@ void LegendsTowerCeremony::tick() {
     passGesture();
 }
 
+void LegendsTowerCeremony::idle() {
+    // e0869494 runs e08612e0 (see takeLookDown), then e0860d1c with the party let go: Sumner
+    // turns on toward his podium, and the staff's clock adds the update's time up to 1 (c.le.S
+    // at e08610c8), where state 1 becomes 3 and hides it (e0861198).
+    m_sumnerYaw = turnSumner(m_sumnerYaw, m_native.sumner.position, m_sumnerTarget);
+    m_staffSeconds = std::min(m_staffSeconds + kTick, kStaffSeconds);
+    if (m_staffSeconds >= kStaffSeconds) {
+        m_staff = Staff::Hidden;
+    }
+}
+
 void LegendsTowerCeremony::update(f32 seconds) {
-    if (!active() || !std::isfinite(seconds) || seconds <= 0) {
+    if (!presenting() || !std::isfinite(seconds) || seconds <= 0) {
         return;
     }
     m_remainder += std::min(seconds, 1.0f);
-    while (m_remainder + 1e-9 >= kTick && active()) {
+    while (m_remainder + 1e-9 >= kTick && presenting()) {
         m_remainder -= kTick;
         tick();
     }
 }
 
+bool LegendsTowerCeremony::takeLookDown() {
+    // That first update is the one that first adds to the staff's clock, which the hand-back
+    // zeroed.
+    return !m_started && m_staffSeconds > 0 && std::exchange(m_lookDown, false);
+}
+
+Vec3 LegendsTowerCeremony::staffScale() const {
+    if (m_staff == Staff::Raised) {
+        return Vec3{1};
+    }
+    const f32 length = 1 - m_staffSeconds;
+    const f32 girth = length < kStaffKnee ? length / kStaffKnee : 1;
+    return {girth, girth, length};
+}
+
 void LegendsTowerCeremony::shot(f32 distance, f32 pitch, f32 yaw, const Vec3& focus) {
     m_rig.setOrbit(distance, pitch, yaw, false);
     m_rig.setAttention(focus, false);
+}
+
+void LegendsTowerCeremony::face(const Vec3& focus) {
+    // The rune's e08625e8/e0862600, the shard's e08635a4/e08635bc and the door's
+    // e0865e84/e0865e9c store the focus they hand e007d584.
+    m_sumnerTarget = focus;
+    m_partyTarget = focus;
 }
 
 void LegendsTowerCeremony::planReturn() {
@@ -790,6 +916,9 @@ void LegendsTowerCeremony::planReturn() {
     // a point gliding back to the gameplay one on the same times.
     m_reportedFocus.set(m_cameraFocus, true, kReturnTimes);
     m_reportedFocus.set(m_returnFocus, false, kReturnTimes);
+    // e0861210 then aims Sumner back at his podium (e0861244) and leaves e086ade8 at -1.
+    m_sumnerTarget = podium();
+    m_lookDown = true;
 }
 
 bool LegendsTowerCeremony::stepCamera(f32 seconds) {

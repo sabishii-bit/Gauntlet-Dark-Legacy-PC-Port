@@ -81,6 +81,7 @@ public:
     void dismissDialogue() override;
     bool takeShopRequest() override;
     bool placeOpeningParty(std::span<PlayerActor*> party) override;
+    void holdParty(std::span<PlayerActor* const> party) override;
     void updateParty(std::span<PlayerActor*> players, f32 seconds, bool activatePowerups) override;
     void initializeParty(std::span<const PartyMember> party);
     void announceProgress(std::span<const PartyMember> before, std::span<const PartyMember> after);
@@ -184,6 +185,8 @@ private:
     /** A Tower ceremony waiting to open the visit stands the party facing Sumner and keeps its
      * mean feet for the ceremony's start. */
     bool placeN64OpeningParty(std::span<PlayerActor*> party);
+    /** A running Tower ceremony turns the party it holds toward each shot's focus. */
+    void holdN64Party(std::span<PlayerActor* const> party);
     std::vector<std::string> answerN64Dialogue(s32 topic);
     std::unique_ptr<ItemArchive> loadN64EnemyAssets(s32 kind) const;
     std::unique_ptr<ItemArchive> loadDreamcastEnemyAssets(s32 kind) const;

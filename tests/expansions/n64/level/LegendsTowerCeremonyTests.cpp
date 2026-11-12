@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <array>
 #include <bit>
+#include <cmath>
 #include <limits>
 #include <optional>
 #include <string_view>
@@ -81,6 +82,17 @@ void checkView(const WorldCamera& camera, const Vec3& eye, f32 pitch, f32 yaw) {
     CHECK(camera.pitch == Catch::Approx(pitch).margin(1e-5f));
     CHECK(camera.yaw == Catch::Approx(yaw).margin(1e-5f));
     CHECK(camera.roll == 0);
+}
+
+/** The yaw Tower.bin's turn faces Sumner at `sumner` toward `target`: minus the arc tangent of
+ * its x and z offsets. */
+f32 sumnerAngle(const Vec3& sumner, const Vec3& target) {
+    return -portable::atan2(target.x - sumner.x, target.z - sumner.z);
+}
+
+/** A point before Sumner at the origin facing `yaw`, along (-sin, cos) as his podium is. */
+Vec3 before(f32 yaw) {
+    return {-portable::sin(yaw), 0, portable::cos(yaw)};
 }
 } // namespace
 
@@ -1213,9 +1225,388 @@ TEST_CASE("N64 ceremony clocks ignore invalid steps and are independent of rende
             CHECK(other->displayedProgress() == a.displayedProgress());
             CHECK(other->camera() == a.camera());
             CHECK(other->active() == a.active());
+            CHECK(other->sumnerYaw() == a.sumnerYaw());
         }
     }
     CHECK(tick == 736);
     CHECK_FALSE(b.active());
     CHECK_FALSE(c.active());
+    // The staff's shrink after the hand-back runs on the same updates.
+    s32 shrinking = 0;
+    while (a.presenting() && shrinking < 100) {
+        ++shrinking;
+        CAPTURE(shrinking);
+        a.update(1.0f / 30);
+        for (s32 i = 0; i < 2; ++i) {
+            b.update(1.0f / 60);
+        }
+        for (s32 i = 0; i < 4; ++i) {
+            c.update(1.0f / 120);
+        }
+        for (auto* other : {&b, &c}) {
+            CHECK(other->staffVisible() == a.staffVisible());
+            CHECK(other->staffScale() == a.staffScale());
+            CHECK(other->presenting() == a.presenting());
+        }
+    }
+    CHECK(shrinking == 30);
+}
+
+TEST_CASE("N64 Sumner turns at most .2 rad an update, wrapping once each way past pi",
+          "[legends][tower-ceremony]") {
+    // Tower.bin e0860ef0..e0861020 in float32, Sumner at the origin.
+    using Ceremony = LegendsTowerCeremony;
+    const Vec3 sumner{0};
+    // A long turn moves .2 (0x3e4ccccd) an update and its last step lands on the angle, where a
+    // turn of 0 leaves him.
+    const Vec3 target = before(.9f);
+    const f32 angle = sumnerAngle(sumner, target);
+    f32 yaw = 0;
+    for (s32 update = 1; update <= 4; ++update) {
+        CAPTURE(update);
+        const f32 previous = yaw;
+        yaw = Ceremony::turnSumner(yaw, sumner, target);
+        CHECK(yaw == previous + .2f);
+    }
+    yaw = Ceremony::turnSumner(yaw, sumner, target);
+    CHECK(yaw == angle);
+    CHECK(Ceremony::turnSumner(yaw, sumner, target) == angle);
+    // A turn past float pi wraps the short way round, beyond pi rather than back through 0;
+    // one short of it does not, and goes the long way.
+    CHECK(Ceremony::turnSumner(3, sumner, before(-3)) == 3 + .2f);
+    CHECK(Ceremony::turnSumner(-3, sumner, before(3)) == -3 - .2f);
+    CHECK(Ceremony::turnSumner(0, sumner, before(3.1f)) == .2f);
+    CHECK(Ceremony::turnSumner(0, sumner, before(-3.1f)) == -.2f);
+    // It wraps once each way, however far his yaw has run: from 10 toward 0 the turn of -10
+    // becomes -10 + 2 pi, still under -pi, and he steps down.
+    CHECK(Ceremony::turnSumner(10, sumner, Vec3{0, 0, 1}) == 10 - .2f);
+}
+
+TEST_CASE("N64 held players face each target at once while their kept yaw steps .05",
+          "[legends][tower-ceremony]") {
+    // Tower.bin e0860d9c..e0860ed8 in float32: the matrix takes the arc tangent of the
+    // target's x and z offsets from the feet; the record's yaw steps toward that.
+    using Ceremony = LegendsTowerCeremony;
+    const Vec3 feet{2, 0, 3};
+    const Vec3 east = feet + Vec3{1, 0, 0};
+    const f32 angle = portable::atan2(1.0f, 0.0f);
+    Ceremony::HeldFacing facing;
+    for (s32 update = 1; update <= 31; ++update) {
+        CAPTURE(update);
+        const f32 kept = facing.kept;
+        facing = Ceremony::turnHeld(facing, feet, east);
+        CHECK(facing.drawn == angle);
+        CHECK(facing.kept == kept + .05f);
+    }
+    facing = Ceremony::turnHeld(facing, feet, east);
+    CHECK(facing == Ceremony::HeldFacing{angle, angle});
+    // A turn of 0 takes the angle itself (e0860eb0); past pi the kept yaw wraps the short way,
+    // and once each way however far it has run.
+    CHECK(Ceremony::turnHeld({angle, angle}, feet, east) == Ceremony::HeldFacing{angle, angle});
+    const Vec3 behind = feet + Vec3{portable::sin(-3.0f), 0, portable::cos(-3.0f)};
+    CHECK(Ceremony::turnHeld({0, 3}, feet, behind).kept == 3 + .05f);
+    CHECK(Ceremony::turnHeld({0, 10}, feet, feet + Vec3{0, 0, 1}).kept == 10 - .05f);
+}
+
+TEST_CASE("N64 Sumner turns toward the party until a shot, then toward its focus",
+          "[legends][tower-ceremony]") {
+    // Without the overlay Sumner stands at the origin at yaw 0 and the scripts' foci stand
+    // over him, so a shot turns him back to 0, as his podium does. The cut aims him at the
+    // party's mean feet (e0860684) and leaves his yaw; e0860d1c turns him on the script and
+    // return updates only, so neither the cut, the Select updates nor the hand-back turn him.
+    const Vec3 party{3, 0, -4};
+    const f32 towardParty = sumnerAngle(Vec3{0}, party);
+    struct Visit {
+        std::string_view kind;
+        LegendsProgress after;
+        s32 shot;     ///< the rune's time 20, the door's and shard's case 2 after their opening
+        s32 handBack; ///< the update control returns
+    };
+    LegendsProgress rune;
+    rune.runestones = 1;
+    LegendsProgress door;
+    door.obelisks = 7;
+    LegendsProgress shard;
+    shard.shards = 1;
+    const std::array<Visit, 3> visits{
+        {{"rune", rune, 21, 232}, {"door", door, 42, 358}, {"shard", shard, 43, 260}}};
+    for (const auto& visit : visits) {
+        CAPTURE(visit.kind);
+        auto value = nativeCeremony();
+        value.begin({}, visit.after);
+        CHECK(value.sumnerYaw() == 0);
+        CHECK_FALSE(value.partyFacingTarget());
+        value.start({}, {}, party);
+        CHECK(value.sumnerYaw() == 0);
+        CHECK(value.partyFacingTarget() == Vec3{0});
+        f32 expected = 0;
+        for (s32 tick = 1; tick <= visit.handBack; ++tick) {
+            CAPTURE(tick);
+            value.update(kTick);
+            if (tick >= 2) {
+                expected = LegendsTowerCeremony::turnSumner(
+                    expected, Vec3{0}, tick < visit.shot ? party : Vec3{0, 5, 0});
+            }
+            CHECK(value.sumnerYaw() == expected);
+            // Twelve updates of .2 and the rest bring him round to the party on update 14, and
+            // the shot's turn back to 0 lands as many updates after it.
+            if (tick == 1) {
+                CHECK(value.sumnerYaw() == 0);
+            }
+            if (tick == 14 || tick == visit.shot - 1) {
+                CHECK(value.sumnerYaw() == towardParty);
+            }
+            if (tick == visit.shot) {
+                CHECK(value.sumnerYaw() == towardParty + .2f);
+            }
+            if (tick >= visit.shot + 12) {
+                CHECK(value.sumnerYaw() == 0);
+            }
+            // e086adb0: Sumner's feet from the cut, the focus from the shot, none once the
+            // party is let go.
+            CHECK(value.partyFacingTarget() == (tick == visit.handBack ? std::nullopt
+                                                : tick < visit.shot
+                                                    ? std::optional{Vec3{0}}
+                                                    : std::optional{Vec3{0, 5, 0}}));
+        }
+    }
+}
+
+TEST_CASE("N64 ceremony holds the standing party from its cut to its hand-back",
+          "[legends][tower-ceremony]") {
+    auto value = nativeCeremony();
+    LegendsProgress now;
+    now.runestones = 1;
+    value.begin({}, now);
+    const Vec3 feet{-3, 0, 4};
+    CHECK_FALSE(value.hold(0, feet));
+    value.start({}, {}, feet);
+    // The cut turned each arrived player to Sumner, its record's yaw and its matrix alike
+    // (e0048acc); the native four seats are all it holds.
+    const auto cut = value.hold(1, feet);
+    REQUIRE(cut);
+    CHECK(cut->drawn == value.partyFacing(feet));
+    CHECK(cut->kept == cut->drawn);
+    CHECK_FALSE(value.hold(LegendsTowerCeremony::kSeats, feet));
+    // Without the overlay every focus stands over Sumner, so its angle from the feet is his.
+    for (s32 tick = 1; tick <= 232; ++tick) {
+        CAPTURE(tick);
+        value.update(kTick);
+        const auto facing = value.hold(1, feet);
+        CHECK(facing.has_value() == (tick < 232));
+        if (facing) {
+            CHECK(*facing == *cut);
+        }
+    }
+}
+
+TEST_CASE("N64 Sumner turns to the party and Tower.bin's foci and back onto his podium",
+          "[legends][tower-ceremony][assets]") {
+    // Sumner stands at e086a678 at e0860198's yaw 0x40278d37, the party at tower2's entrance.
+    // The angles are Tower.bin's turn worked through in float32 apart from this code, within
+    // the arc tangent's last bits.
+    const Vec3 party{-4.5f, 0, -15.5f};
+    const auto rest = std::bit_cast<f32>(0x40278d37U);
+    constexpr f32 kTowardParty = 2.19104576f;
+    constexpr f32 kTowardCircle = .201762348f;
+    constexpr f32 kAngleBits = 1e-6f;
+    {
+        auto value = ceremony();
+        LegendsProgress now;
+        now.runestones = 1;
+        value.begin({}, now);
+        CHECK(value.sumnerYaw() == rest);
+        value.start({}, {}, party);
+        ticks(value, 1);
+        CHECK(value.sumnerYaw() == rest);
+        // Updates 2 and 3 turn .2 each, and 4 lands on the party.
+        ticks(value, 2);
+        CHECK(value.sumnerYaw() == rest - .2f - .2f);
+        ticks(value, 1);
+        const f32 towardParty = value.sumnerYaw();
+        CHECK(towardParty == Catch::Approx(kTowardParty).margin(kAngleBits));
+        ticks(value, 16);
+        CHECK(value.sumnerYaw() == towardParty);
+        // The rune's shot on 21 turns him -114 degrees to the stone circle by 30.
+        ticks(value, 1);
+        CHECK(value.sumnerYaw() == towardParty - .2f);
+        ticks(value, 9);
+        const f32 towardCircle = value.sumnerYaw();
+        CHECK(towardCircle == Catch::Approx(kTowardCircle).margin(kAngleBits));
+        // The return's planning update (177) aims him at his podium: he rests on it by 189,
+        // where the turn left is 0, through the hand-back on 232 and the shrink after it.
+        ticks(value, 146);
+        CHECK(value.sumnerYaw() == towardCircle);
+        ticks(value, 1);
+        CHECK(value.sumnerYaw() == towardCircle + .2f);
+        ticks(value, 12);
+        const f32 settled = value.sumnerYaw();
+        CHECK(settled == Catch::Approx(rest).margin(kAngleBits));
+        for (s32 tick = 190; value.presenting(); ++tick) {
+            CAPTURE(tick);
+            value.update(kTick);
+            CHECK(value.sumnerYaw() == settled);
+        }
+    }
+    // Where each door's and the shard's shot leaves him as its script returns: Castle's turn
+    // wraps the short way past pi, so his yaw runs on beyond it.
+    const auto settled = [&](const LegendsProgress& after) {
+        auto value = ceremony();
+        value.begin({}, after);
+        value.start({}, {}, party);
+        for (s32 tick = 0; tick < 2000 && value.current() != nullptr; ++tick) {
+            value.update(kTick);
+        }
+        const f32 yaw = value.sumnerYaw();
+        for (s32 tick = 0; tick < 2000 && value.presenting(); ++tick) {
+            value.update(kTick);
+        }
+        // The return brings him round to rest: the Ice door's a whole turn below it.
+        CHECK(std::remainder(value.sumnerYaw() - rest, kTwoPi) ==
+              Catch::Approx(0).margin(kAngleBits * 10));
+        return yaw;
+    };
+    // Doors in LegendsTowerProgress order: Town, Castle, Ice and Battlefield.
+    constexpr std::array<f32, 4> kDoors{.958643854f, 4.29416466f, -.803577960f, .112727612f};
+    for (usize i = 0; i < kDoors.size(); ++i) {
+        CAPTURE(i);
+        LegendsProgress opened;
+        opened.obelisks = LegendsTowerProgress::kDoorObelisks[i];
+        CHECK(settled(opened) == Catch::Approx(kDoors[i]).margin(kAngleBits * 10));
+    }
+    LegendsProgress shard;
+    shard.shards = 1;
+    CHECK(settled(shard) == Catch::Approx(2.97644401f).margin(kAngleBits * 10));
+}
+
+TEST_CASE("N64 ceremony turns the held party's drawn facing at a shot while its kept yaw follows",
+          "[legends][tower-ceremony][assets]") {
+    // Two players at tower2's entrance, held from the cut; the facings are Tower.bin's turn in
+    // float32 worked apart from this code.
+    auto value = ceremony();
+    LegendsProgress now;
+    now.runestones = 1;
+    value.begin({}, now);
+    const std::array<Vec3, 2> feet{Vec3{-6, 0, -16}, Vec3{-3, 0, -15}};
+    value.start({}, {}, (feet[0] + feet[1]) * .5f);
+    constexpr f32 kAngleBits = 1e-6f;
+    constexpr std::array<f32, 2> kTowardSumner{.982793748f, .909753144f};
+    constexpr std::array<f32, 2> kTowardCircle{.244978666f, .153944671f};
+    // The kept yaw meets the drawn facing 15 and 16 updates after the shot on 21.
+    constexpr std::array<s32, 2> kMet{35, 36};
+    std::array<LegendsTowerCeremony::HeldFacing, 2> cut{};
+    for (usize seat = 0; seat < feet.size(); ++seat) {
+        const auto facing = value.hold(seat, feet[seat]);
+        REQUIRE(facing);
+        CHECK(facing->drawn == Catch::Approx(kTowardSumner[seat]).margin(kAngleBits));
+        CHECK(facing->kept == facing->drawn);
+        cut[seat] = *facing;
+    }
+    auto last = cut;
+    for (s32 tick = 1; tick <= 232; ++tick) {
+        CAPTURE(tick);
+        value.update(kTick);
+        for (usize seat = 0; seat < feet.size(); ++seat) {
+            CAPTURE(seat);
+            const auto facing = value.hold(seat, feet[seat]);
+            if (tick == 232) {
+                // The hand-back lets the party go (e08612b4), the two facings as one.
+                CHECK_FALSE(facing);
+                CHECK(last[seat].kept == last[seat].drawn);
+                continue;
+            }
+            REQUIRE(facing);
+            if (tick < 21) {
+                CHECK(*facing == cut[seat]);
+            } else {
+                CHECK(facing->drawn == Catch::Approx(kTowardCircle[seat]).margin(kAngleBits));
+                CHECK(facing->kept == (tick < kMet[seat] ? last[seat].kept - .05f : facing->drawn));
+            }
+            last[seat] = *facing;
+        }
+    }
+}
+
+TEST_CASE("N64 Sumner's staff shrinks away over the second after the hand-back",
+          "[legends][tower-ceremony]") {
+    // Tower.bin e086107c..e08611dc in float32 on each update's dt, the N64's two VIs
+    // (0x3d088889), from e0861260's state 1 and zeroed clock: z is what is left of the second,
+    // x and y that over .3 once under it. The summed clock leaves z .33333319 on the 20th update
+    // after the hand-back, thins the staff from the 21st and reaches 1 on the 30th.
+    {
+        auto value = nativeCeremony();
+        LegendsProgress now;
+        now.runestones = 1;
+        value.begin({}, now);
+        value.start({}, {}, {});
+        ticks(value, 232 + 20);
+        CHECK(value.staffScale() == Vec3{1, 1, std::bit_cast<f32>(0x3eaaaaa6U)});
+        ticks(value, 1);
+        CHECK(value.staffScale() == Vec3{std::bit_cast<f32>(0x3f7ffff6U),
+                                         std::bit_cast<f32>(0x3f7ffff6U),
+                                         std::bit_cast<f32>(0x3e999994U)});
+        ticks(value, 8);
+        CHECK(value.staffVisible());
+        CHECK(value.staffScale() == Vec3{std::bit_cast<f32>(0x3de38d8aU),
+                                         std::bit_cast<f32>(0x3de38d8aU),
+                                         std::bit_cast<f32>(0x3d088820U)});
+        ticks(value, 1);
+        CHECK_FALSE(value.staffVisible());
+        CHECK_FALSE(value.presenting());
+    }
+    // 30 and 60 updates a second feed the same updates.
+    for (const s32 steps : {1, 2}) {
+        CAPTURE(steps);
+        auto value = nativeCeremony();
+        CHECK_FALSE(value.staffVisible());
+        LegendsProgress now;
+        now.runestones = 1;
+        value.begin({}, now);
+        value.start({}, {}, {});
+        const auto step = [&] {
+            for (s32 i = 0; i < steps; ++i) {
+                value.update(kTick / static_cast<f32>(steps));
+            }
+        };
+        for (s32 tick = 1; tick < 232; ++tick) {
+            CAPTURE(tick);
+            step();
+            CHECK(value.staffVisible());
+            CHECK(value.staffScale() == Vec3{1});
+        }
+        CHECK_FALSE(value.takeLookDown());
+        // The hand-back skips e0860d1c: the staff keeps its size there.
+        step();
+        CHECK_FALSE(value.active());
+        CHECK(value.presenting());
+        CHECK(value.staffVisible());
+        CHECK(value.staffScale() == Vec3{1});
+        CHECK_FALSE(value.takeLookDown());
+        f32 seconds = 0;
+        for (s32 update = 1; update <= 30; ++update) {
+            CAPTURE(update);
+            if (steps == 2) {
+                value.update(kTick / 2);
+                CHECK_FALSE(value.takeLookDown());
+                CHECK(value.staffScale().z == 1 - seconds);
+                value.update(kTick / 2);
+            } else {
+                value.update(kTick);
+            }
+            // State 0x11's first update looks down; LKDN waits for the idle to take it once.
+            CHECK(value.takeLookDown() == (update == 1));
+            CHECK_FALSE(value.takeLookDown());
+            seconds = std::min(seconds + kTick, 1.0f);
+            const f32 length = 1 - seconds;
+            const f32 girth = length < .3f ? length / .3f : 1;
+            CHECK(value.staffScale() == Vec3{girth, girth, length});
+            CHECK(value.staffVisible() == (update < 30));
+            CHECK(value.presenting() == (update < 30));
+        }
+        // Nothing presents after it: further updates change nothing.
+        ticks(value, 10);
+        CHECK_FALSE(value.staffVisible());
+        CHECK_FALSE(value.presenting());
+        CHECK_FALSE(value.takeLookDown());
+    }
 }
