@@ -53,6 +53,9 @@ public:
     s32 soundPauses = 0;
     usize placedMembers = 0;
     std::optional<f32> placedYaw; ///< set: the level places its opening party facing it
+    s32 heldUpdates = 0;
+    usize heldMembers = 0;
+    std::optional<f32> heldYaw; ///< set: the level turns the party it holds to face it
     mutable std::vector<f32> samples;
     mutable std::vector<WorldCamera> drawnCameras;
     ImportedGameplay() {
@@ -100,6 +103,15 @@ public:
         }
         return placedYaw.has_value();
     }
+    void holdParty(std::span<PlayerActor* const> party) override {
+        ++heldUpdates;
+        heldMembers = party.size();
+        if (heldYaw) {
+            for (auto* actor : party) {
+                actor->turnTo(*heldYaw);
+            }
+        }
+    }
     void updateParty(std::span<PlayerActor*> actors, f32 /*seconds*/, bool activateItems) override {
         ++partyUpdates;
         activate = activateItems;
@@ -107,7 +119,7 @@ public:
         if (grants == 0 && !actors.empty()) {
             const ItemOffer offer{.kind = static_cast<s32>(ItemKind::Gold), .amount = 17};
             const auto taking = takeItem(actors.front()->save(), offer);
-            pickups.push_back({actors.front()->player(), offer, "Gold", taking});
+            pickups.push_back({actors.front()->player(), offer, "Gold", taking, {}});
             ++grants;
         }
     }
@@ -520,7 +532,7 @@ TEST_CASE("Imported maps retain ordinary gameplay while supplying native camera 
         const ItemOffer offer{.kind = static_cast<s32>(ItemKind::Gold), .amount = 23};
         const auto taking = takeItem(*save, offer);
         REQUIRE(taking.took());
-        imported->pickups.push_back({2, offer, "Treasure", taking});
+        imported->pickups.push_back({2, offer, "Treasure", taking, {}});
         REQUIRE(scene.update(1.0 / 30, {}) == PlayOutcome::Running);
         CHECK(scene.actor(2)->save().gold == 23);
         REQUIRE(scene.hud().pickups().cards().size() == 1);
@@ -661,6 +673,62 @@ TEST_CASE("Imported maps retain ordinary gameplay while supplying native camera 
         CHECK(scene.actor(1)->yaw() == 1.25f);
         scene.close(); // before this section's SoundPlayer dies
     }
+    SECTION("the level is handed the party it holds on each held update and never once it plays") {
+        const std::array pair{PartyMember{0, CharacterSave{}}, PartyMember{1, CharacterSave{}}};
+        options.yaw = 0;
+        // Every update runs one of the level's party callbacks: the held one through the
+        // arrival and the characters' entrance, then the party's own for good.
+        const auto arrive = [&] {
+            REQUIRE(scene.open(device, context, world, pair, options));
+            REQUIRE(scene.spawning());
+            s32 held = 0;
+            bool played = false;
+            for (s32 tick = 0; tick < 600; ++tick) {
+                CAPTURE(tick);
+                const s32 heldBefore = imported->heldUpdates;
+                const s32 partyBefore = imported->partyUpdates;
+                REQUIRE(scene.update(1.0 / 60, {}) == PlayOutcome::Running);
+                const s32 handed = imported->heldUpdates - heldBefore;
+                const s32 updated = imported->partyUpdates - partyBefore;
+                CHECK(handed + updated == 1);
+                if (handed == 1) {
+                    CHECK_FALSE(played);
+                    CHECK(imported->heldMembers == pair.size());
+                    ++held;
+                }
+                played |= updated == 1;
+            }
+            CHECK(played);
+            return held;
+        };
+        // A level that leaves its held party alone keeps the facing the party opened with.
+        CHECK(arrive() >= LevelArrivalPresentation::kSpawnTicks);
+        CHECK(scene.actor(0)->yaw() == 0);
+        CHECK(scene.actor(1)->yaw() == 0);
+        // One that turns it sees the turn stand once play takes it back.
+        imported->heldYaw = .75f;
+        CHECK(arrive() >= LevelArrivalPresentation::kSpawnTicks);
+        CHECK(scene.actor(0)->yaw() == .75f);
+        CHECK(scene.actor(1)->yaw() == .75f);
+    }
     scene.close();
+}
+
+TEST_CASE("An imported level that does not hold its party leaves the members it is handed",
+          "[legends][imported-play]") {
+    class Unscripted final : public ImportedLevel {
+    public:
+        void capturePresentation() override {}
+        void update(f32 /*seconds*/, bool /*timeStopped*/) override {}
+        void draw(RenderDevice& /*device*/, const Mat4& /*clip*/, const WorldCamera& /*camera*/,
+                  TreeModel::Pass /*pass*/, f32 /*presentationAlpha*/) const override {}
+    };
+    Unscripted level;
+    PlayerActor actor;
+    actor.spawn(0, CharacterSave{}, nullptr, Vec3{1, 2, 3}, .5f);
+    const PlayerActor before = actor;
+    const std::array<PlayerActor*, 1> party{&actor};
+    level.holdParty(party);
+    CHECK(actor == before);
 }
 } // namespace

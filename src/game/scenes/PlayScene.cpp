@@ -1452,6 +1452,7 @@ void PlayScene::advanceEntrance(s32 ticks, f32 seconds, const Inputs& inputs) {
         const auto subjects = partySubjects(Vec3{0});
         imported->followCamera(subjects, seconds);
     }
+    holdImportedParty();
     updateAmbience();
     const bool cameraHandoff = m_arrival.camera().active();
     // Ride to the camera that will actually take over. A boss entrance must not
@@ -1511,6 +1512,8 @@ PlayOutcome PlayScene::advancePlay(s32 ticks, f32 seconds, const Inputs& inputs)
     advanceCombat(ticks, seconds, held);
     if (!held) {
         advanceImportedLevel(seconds, subjects, inputs);
+    } else {
+        holdImportedParty();
     }
     advanceTriggers(seconds);
     if (m_sim.switchCutscene.active()) {

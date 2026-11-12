@@ -156,6 +156,20 @@ void PlayScene::advanceImportedLevel(f32 seconds, std::vector<CameraSubject>& su
     }
 }
 
+void PlayScene::holdImportedParty() {
+    auto* imported = m_world->imported();
+    if (imported == nullptr) {
+        return;
+    }
+    std::vector<PlayerActor*> standing;
+    for (auto& player : m_players) {
+        if (!player.departed && player.life == PlayerLife::Standing && !player.ghost) {
+            standing.push_back(&player.actor);
+        }
+    }
+    imported->holdParty(standing);
+}
+
 /** The hazards an imported level's own traps dealt the party this tick. */
 void PlayScene::applyImportedHazards(ImportedLevel& imported) {
     for (const auto& hit : imported.takeHazardHits()) {

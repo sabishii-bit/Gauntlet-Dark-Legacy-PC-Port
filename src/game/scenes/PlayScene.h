@@ -679,14 +679,17 @@ private:
     PlayOutcome advancePlay(s32 ticks, f32 seconds, const Inputs& inputs);
     /** Play's phases, in order: the powerups worn and the world stood in; the party's
      * movement, which gives the camera its subjects; the fixtures, hazards, opponents and
-     * attacks, then the powerup clock; an imported level's own services (not while held); the
-     * triggers; the portals (when they may end the tick); the cameras; the rune meter. */
+     * attacks, then the powerup clock; an imported level's own services (only its held party
+     * while held); the triggers; the portals (when they may end the tick); the cameras; the rune
+     * meter. */
     void advancePowerupsAndWorld(s32 ticks, f32 seconds, bool held);
     std::vector<CameraSubject> advancePartyMotion(s32 ticks, f32 seconds, const Inputs& inputs,
                                                   bool held);
     void advanceCombat(s32 ticks, f32 seconds, bool held);
     void advanceImportedLevel(f32 seconds, std::vector<CameraSubject>& subjects,
                               const Inputs& inputs);
+    /** Hands an imported level the standing members of the party it holds still, to turn. */
+    void holdImportedParty();
     void applyImportedHazards(ImportedLevel& imported);
     void presentImportedPickups(ImportedLevel& imported);
     void advanceTriggers(f32 seconds);

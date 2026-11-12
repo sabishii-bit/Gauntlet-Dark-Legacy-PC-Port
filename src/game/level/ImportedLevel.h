@@ -173,6 +173,10 @@ public:
      * for them. The arrival hold and the characters' entrance still run. Asked once, as
      * the level opens; the actors stay the scene's. */
     virtual bool placeOpeningParty(std::span<PlayerActor*> /*party*/) { return false; }
+    /** In place of updateParty on each update the scene holds the party still for its arrival
+     * or a native script holding it (opponentsReady): the script may turn the standing members
+     * it holds while they wait. Their places, and the rest of the actors, stay the scene's. */
+    virtual void holdParty(std::span<PlayerActor* const> /*party*/) {}
     /** Post-motion living visitors only. Grants and local transport are native
      * level rules; the common scene still owns inventory and departure effects. */
     virtual void updateParty(std::span<PlayerActor*> /*players*/, f32 /*seconds*/,
