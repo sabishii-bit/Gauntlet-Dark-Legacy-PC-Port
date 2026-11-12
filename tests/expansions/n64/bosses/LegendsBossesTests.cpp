@@ -55,7 +55,7 @@ const std::array kExpected{
     Expected{"hell2", "sko2", "F2", 43, {0, -34, -8}, 0},
 };
 
-TEST_CASE("Native boss camera reads attention separately from the reward origin",
+TEST_CASE("Native boss camera reads attention separately from the combat origin",
           "[legends][bosses][camera]") {
     constexpr usize kType = 8;
     constexpr usize kDirectory = kType + 0xf8;
@@ -122,8 +122,6 @@ TEST_CASE("native Legends boss stages preserve placements and deferred pickup re
         CHECK(encounter->combat.rangedAimFirst);
         CHECK(encounter->combat.counterpartStage == expected.donor);
         CHECK(encounter->combat.position == expected.position);
-        CHECK(legendsN64BossRewardAnchor(*encounter) ==
-              expected.position + Vec3{0, expected.kind == 34 ? 0.0f : 8.0f, 0});
         CHECK(encounter->combat.yaw == Catch::Approx(expected.kind == 34 ? -0.209439516f : 0));
         CHECK(encounter->destination == "tower2");
         const usize rockCount = expected.kind == 34   ? 6
@@ -174,19 +172,31 @@ TEST_CASE("native Legends boss stages preserve placements and deferred pickup re
     CHECK_THROWS_AS(legendsN64Boss("mount6", program, overlay), FormatError);
 }
 
-TEST_CASE("N64 boss rewards fly about the boss's pose record, eight up except in the Dragon's "
-          "realm, wherever the boss fell",
+TEST_CASE("an N64 boss's focus, which its rewards fly about, is its floor raised by its root's "
+          "height and its focus's over the root",
           "[legends][bosses]") {
-    // e006b110 keeps the record's place, raised by eight but in realm 3 (e006b54c-e006b598), for
-    // e0889850; e08898d8 throws the rewards about it.
-    LegendsBossEncounter chimera;
-    chimera.nativeRealm = 0;
-    chimera.combat.position = {0, 20, -52};
-    CHECK(legendsN64BossRewardAnchor(chimera) == Vec3{0, 28, -52});
-    LegendsBossEncounter dragon;
-    dragon.nativeRealm = 3;
-    dragon.combat.position = {-4, 47, -16};
-    CHECK(legendsN64BossRewardAnchor(dragon) == Vec3{-4, 47, -16});
+    // e0884a9c stands the root TYPE+0x94 over the floor its probe finds (e0884cfc-e0884d0c) and
+    // publishes the root raised by TYPE+0x98 (e0884d60-e0884dac); the combat origin's TYPE+0x9c
+    // and the camera's radius play no part.
+    const LegendsBossCamera type{.floorOffset = -3, .attentionHeight = 27, .radius = 12};
+    CHECK(legendsN64BossFocus(type, Vec3{4, 10, -6}) == Vec3{4, 34, -6});
+    CHECK(legendsN64BossFocus({}, Vec3{4, 10, -6}) == Vec3{4, 10, -6});
+}
+
+TEST_CASE("each shipped N64 boss's focus stands its own height over its floor",
+          "[legends][bosses][camera][assets]") {
+    const auto root = nativeRoot();
+    struct Focus {
+        std::string_view archive;
+        f32 height; ///< TYPE+0x94 plus TYPE+0x98
+    };
+    constexpr std::array kFocus{Focus{"dragon", 13}, Focus{"yeti", 10}, Focus{"slime", 9},
+                                Focus{"chi", 9},     Focus{"sko1", 20}, Focus{"sko2", 33}};
+    for (const auto& expected : kFocus) {
+        CAPTURE(expected.archive);
+        const auto type = legendsN64BossCamera(readFile(root / expected.archive / "moves.wad"));
+        CHECK(legendsN64BossFocus(type, Vec3{0}) == Vec3{0, expected.height, 0});
+    }
 }
 
 TEST_CASE("native Legends boss reward fan retains vertical direction and launch velocity",

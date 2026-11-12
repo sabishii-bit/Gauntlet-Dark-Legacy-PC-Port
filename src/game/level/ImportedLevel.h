@@ -219,6 +219,9 @@ public:
     virtual void bossIntro(const Vec3& /*position*/) {}
     /** Authored boss SFXX arena impulse, distinct from its initial wake. */
     virtual void bossArenaCue(const Vec3& /*position*/) {}
+    /** The boss's death has played and its hold begins, the boss standing on `position`: told
+     * once, before bossDefeated. */
+    virtual void bossDeathPlayed(const Vec3& /*position*/) {}
     /** Native death completion, after animation/hold; never a lethal-hit grant. */
     virtual void bossDefeated(const Vec3& /*position*/, std::span<PlayerActor*> /*players*/) {}
     virtual std::vector<Mat4> arenaAnchors() const { return {}; }

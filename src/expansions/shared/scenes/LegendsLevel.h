@@ -124,6 +124,8 @@ public:
     void bossIntro(const Vec3& position) override;
     bool bossActivationReady(const Vec3& position) const override;
     void bossArenaCue(const Vec3& position) override;
+    /** An N64 boss's rewards fly as its death has played, about the boss as it then stands. */
+    void bossDeathPlayed(const Vec3& position) override;
     void bossDefeated(const Vec3& position, std::span<PlayerActor*> players) override;
     std::vector<Mat4> arenaAnchors() const override { return adapter().arenaAnchors(); }
     std::vector<CombatArenaTarget> arenaTargets() const override {

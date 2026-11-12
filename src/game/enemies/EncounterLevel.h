@@ -6,12 +6,16 @@
 namespace gdl::game {
 struct CharacterSave;
 
-/** What the level itself does as its boss wakes and a legend weapon is spent. */
+/** What the level itself does as its boss wakes, its death plays out and a legend weapon is
+ * spent. */
 class EncounterLevel {
 public:
     virtual ~EncounterLevel() = default;
     /** The boss woke this tick, at `at`. */
     virtual void awoke(const Vec3& at) = 0;
+    /** The boss's death played out this tick and its hold began (the original's gBossDead), the
+     * boss standing at `at`. */
+    virtual void deathPlayed(const Vec3& at) = 0;
     /** A legend weapon brandished by `bearer` in `realm` is spent: on an imported level its
      * own legends, never the relic. */
     virtual void spendLegend(CharacterSave& bearer, s32 realm) = 0;

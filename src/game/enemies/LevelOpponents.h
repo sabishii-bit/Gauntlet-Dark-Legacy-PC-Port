@@ -345,15 +345,17 @@ private:
         void deathContactReleased() override {}
         /** Nothing to do: a native level has no boss intro of its own. */
         void awoke(const Vec3& /*at*/) override {}
+        /** Nothing to do: a native level's boss leaves its rewards as it goes (BossDeath). */
+        void deathPlayed(const Vec3& /*at*/) override {}
         void spendLegend(CharacterSave& bearer, s32 realm) override;
 
     private:
         LevelOpponents& m_owner;
     };
     NativeCues m_nativeCues{*this};
-    /** Where the cues go on the level as it stands, and who answers as its boss wakes and a
-     * legend is spent: an imported level first, the rest to the native cues. Callers have
-     * checked the borrowed services. */
+    /** Where the cues go on the level as it stands, and who answers as its boss wakes, its death
+     * plays out and a legend is spent: an imported level first, the rest to the native cues.
+     * Callers have checked the borrowed services. */
     ImportedOpponentCues cues();
     /** A great one slain lets what it carried go, a gargoyle its piece of the wings if it
      * carried nothing (CritterDropItem), with the lesson its kind teaches. */

@@ -1451,9 +1451,13 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
     m_bosses.setArenaAnchors(encounter.arenaAnchors());
     m_bosses.setArenaTargets(encounter.arenaTargets());
     const bool bossWasAwake = m_bosses.view().awake;
+    const bool bossDeathHadPlayed = m_bosses.view().deathPlayed;
     m_bosses.update(ticks, seconds, views, bossActivationReady(), supportTriggers());
     if (!bossWasAwake && m_bosses.view().awake && m_bosses.position() != nullptr) {
         cues().awoke(*m_bosses.position());
+    }
+    if (!bossDeathHadPlayed && m_bosses.view().deathPlayed && m_bosses.position() != nullptr) {
+        cues().deathPlayed(*m_bosses.position());
     }
     for (const auto& grab : m_critters.takeGrabs()) {
         applyGrab(grab, false, players);

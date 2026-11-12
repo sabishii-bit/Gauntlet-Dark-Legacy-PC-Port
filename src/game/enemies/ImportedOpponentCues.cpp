@@ -103,6 +103,14 @@ void ImportedOpponentCues::awoke(const Vec3& at) {
     }
 }
 
+void ImportedOpponentCues::deathPlayed(const Vec3& at) {
+    if (m_level != nullptr) {
+        m_level->bossDeathPlayed(at);
+    } else {
+        m_nativeEncounter.deathPlayed(at);
+    }
+}
+
 void ImportedOpponentCues::spendLegend(CharacterSave& bearer, s32 realm) {
     if (m_level != nullptr) {
         m_level->consumeBossLegend(bearer);

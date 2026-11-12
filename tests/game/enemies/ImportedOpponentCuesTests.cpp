@@ -69,6 +69,9 @@ public:
     void bossIntro(const Vec3& position) override {
         m_log.push_back(std::format("level intro at {}", position.x));
     }
+    void bossDeathPlayed(const Vec3& position) override {
+        m_log.push_back(std::format("level death played at {}", position.x));
+    }
     bool consumeBossLegend(CharacterSave& save) override {
         return ask(std::format("level legend {}", save.name));
     }
@@ -127,6 +130,9 @@ public:
     void deathContactReleased() override { m_log.emplace_back("native released"); }
     void awoke(const Vec3& at) override {
         m_log.push_back(std::format("native awoke at {}", at.x));
+    }
+    void deathPlayed(const Vec3& at) override {
+        m_log.push_back(std::format("native death played at {}", at.x));
     }
     void spendLegend(CharacterSave& bearer, s32 realm) override {
         m_log.push_back(std::format("native legend {} realm {}", bearer.name, realm));
@@ -278,7 +284,8 @@ TEST_CASE("an imported level is asked about a melee or a generator without a sou
                              "level generator 2", "native generator 2 "}));
 }
 
-TEST_CASE("on a native level the boss's waking and a legend's spending go to the native level",
+TEST_CASE("on a native level the boss's waking, its death and a legend's spending go to the "
+          "native level",
           "[game][level-opponents][imported-opponent-cues]") {
     Log log;
     RecordingCues native{log};
@@ -287,11 +294,13 @@ TEST_CASE("on a native level the boss's waking and a legend's spending go to the
     bearer.name = "ANNA";
     cues.awoke(Vec3{7, 0, 0});
     cues.spendLegend(bearer, 7);
-    CHECK(log == Log{"native awoke at 7", "native legend ANNA realm 7"});
+    cues.deathPlayed(Vec3{8, 0, 0});
+    CHECK(log ==
+          Log{"native awoke at 7", "native legend ANNA realm 7", "native death played at 8"});
 }
 
-TEST_CASE("an imported level answers its boss's waking and spends its own legend and never "
-          "the relic",
+TEST_CASE("an imported level answers its boss's waking and death and spends its own legend and "
+          "never the relic",
           "[game][level-opponents][imported-opponent-cues]") {
     const bool owns = GENERATE(false, true);
     Log log;
@@ -302,6 +311,7 @@ TEST_CASE("an imported level answers its boss's waking and spends its own legend
     bearer.name = "ANNA";
     cues.awoke(Vec3{7, 0, 0});
     cues.spendLegend(bearer, 7);
-    CHECK(log == Log{"level intro at 7", "level legend ANNA"});
+    cues.deathPlayed(Vec3{8, 0, 0});
+    CHECK(log == Log{"level intro at 7", "level legend ANNA", "level death played at 8"});
 }
 } // namespace

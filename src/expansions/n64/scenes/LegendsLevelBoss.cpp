@@ -44,6 +44,17 @@ void LegendsLevel::bossIntro(const Vec3& position) {
     }
 }
 
+void LegendsLevel::bossDeathPlayed(const Vec3& position) {
+    // Boss.bin's DEATH raises e088eaf0 on every frame of its hold (e0884808); the play loop
+    // runs the critters (e0044e80) before e006a134 (e0044f0c), which, its departure clock not
+    // yet set, throws the rewards the frame it first sees the flag (e006a5a8-e006a61c) about
+    // e088f990, where the boss's process last published it (e0884d60-e0884dac, e0889850).
+    if (platform() == LegendsPlatform::N64 && m_boss && m_bossCamera && !m_bossDefeated) {
+        m_world.adapter()->spawnBossRewards(legendsN64BossFocus(*m_bossCamera, position),
+                                            m_playerStart);
+    }
+}
+
 void LegendsLevel::n64BossDefeated(const Vec3& /*keySpot*/, std::span<PlayerActor*> players) {
     if (!m_boss || m_bossDefeated || players.empty()) {
         return;
@@ -66,9 +77,7 @@ void LegendsLevel::n64BossDefeated(const Vec3& /*keySpot*/, std::span<PlayerActo
             progress.runestones = 0;
         }
     }
-    // The N64 drops no key: its rewards fly from the boss's pose record, however far the boss
-    // walked before it fell.
-    m_world.adapter()->spawnBossRewards(legendsN64BossRewardAnchor(*m_boss), m_playerStart);
+    // The N64 drops no key; its rewards flew as the death played (bossDeathPlayed).
     if (m_boss->finalNativeGrant != 0) {
         // Native 0x300290 is permanent, locked Anti-Death. GDL's timed,
         // toggleable inventory must not silently turn it into another reward.

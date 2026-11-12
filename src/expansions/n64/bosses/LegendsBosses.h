@@ -39,7 +39,8 @@ struct LegendsBossEncounter {
 std::optional<LegendsBossEncounter>
 legendsN64Boss(std::string_view map, std::span<const u8> program, std::span<const u8> bossOverlay);
 
-/** Native TYPE camera fields, deliberately separate from the damage/reward origin. */
+/** Native TYPE focus fields, apart from the combat origin (TYPE+0x9c): the camera follows the
+ * point they give and the rewards are thrown about it (legendsN64BossFocus). */
 struct LegendsBossCamera {
     f32 floorOffset = 0;
     f32 attentionHeight = 0;
@@ -63,9 +64,10 @@ struct LegendsBossRewardMotion {
 std::optional<LegendsBossRewardMotion>
 legendsBossRewardMotion(const LegendsBossReward& reward, Vec3 deathPosition, Vec3 playerStart);
 
-/** Where e08898d8 throws a fallen boss's rewards about, wherever the boss fell: the place
- * e006b110 kept from its pose record as the level loaded (e0889850's e088f990), eight up
- * except in the Dragon's realm. */
-Vec3 legendsN64BossRewardAnchor(const LegendsBossEncounter& encounter);
+/** The point Boss.bin's e0884a9c publishes through e0038d90 on each frame a boss of `type`
+ * stands on `floorAnchor`: its root, TYPE+0x94 over that floor, raised by TYPE+0x98
+ * (e0884cfc-e0884d0c, e0884d60-e0884dac). e0889850 keeps it at e088f990, which e08898d8 throws
+ * the rewards about. */
+Vec3 legendsN64BossFocus(const LegendsBossCamera& type, const Vec3& floorAnchor);
 
 } // namespace gdl::game

@@ -104,8 +104,9 @@ LegendsBossCamera legendsN64BossCamera(std::span<const u8> moves) {
         throw FormatError("N64 Legends boss camera: invalid TYPE records");
     }
     // Boss.bin e0881474 grounds the actor then adds TYPE+94. e0884a9c
-    // publishes actor+TYPE+98 to e0038d90, independently of TYPE+9c's
-    // combat/reward origin. e08842e8 supplies TYPE+8c to e0038df4.
+    // publishes actor+TYPE+98 to e0038d90, the camera's focus and the rewards'
+    // centre, apart from TYPE+9c's combat origin. e08842e8 supplies TYPE+8c to
+    // e0038df4.
     LegendsBossCamera result{scalar(moves, offset + 0x94), scalar(moves, offset + 0x98),
                              scalar(moves, offset + 0x8c)};
     if (!std::isfinite(result.floorOffset) || !std::isfinite(result.attentionHeight) ||
@@ -304,13 +305,8 @@ legendsBossRewardMotion(const LegendsBossReward& reward, Vec3 deathPosition, Vec
     return LegendsBossRewardMotion{origin, travel / duration + Vec3{0, 32 * duration, 0}};
 }
 
-Vec3 legendsN64BossRewardAnchor(const LegendsBossEncounter& encounter) {
-    // e006b54c-e006b598 copies the pose record's place and, except in realm 3, raises it by
-    // eight before e0038d90 hands it to e0889850; nothing writes e088f990 after.
-    constexpr u32 kUnraisedRealm = 3;
-    constexpr f32 kRaise = 8.0f;
-    return encounter.combat.position +
-           Vec3{0.0f, encounter.nativeRealm == kUnraisedRealm ? 0.0f : kRaise, 0.0f};
+Vec3 legendsN64BossFocus(const LegendsBossCamera& type, const Vec3& floorAnchor) {
+    return floorAnchor + Vec3{0.0f, type.floorOffset + type.attentionHeight, 0.0f};
 }
 
 } // namespace gdl::game

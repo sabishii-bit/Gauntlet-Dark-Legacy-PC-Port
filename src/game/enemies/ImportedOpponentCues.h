@@ -15,9 +15,9 @@ namespace gdl::game {
 class ImportedLevel;
 
 /** Lets an imported level take the opponents' cues it owns, the rest falling to `native`, and
- * answer for itself as its boss wakes and a legend is spent, which `nativeEncounter` does on a
- * native level. Built per use from the world's current imported level (null on a native
- * level); none of them is kept past that use. */
+ * answer for itself as its boss wakes, its death plays out and a legend is spent, which
+ * `nativeEncounter` does on a native level. Built per use from the world's current imported
+ * level (null on a native level); none of them is kept past that use. */
 class ImportedOpponentCues final : public OpponentCues, public EncounterLevel {
 public:
     ImportedOpponentCues(ImportedLevel* level, OpponentCues& native,
@@ -42,6 +42,8 @@ public:
     void deathContactReleased() override;
     /** The level's own boss intro; nothing native follows. */
     void awoke(const Vec3& at) override;
+    /** The level's own answer to its boss's death; nothing native follows. */
+    void deathPlayed(const Vec3& at) override;
     /** The level spends its own legend whether or not the bearer held one; the relic is never
      * touched. */
     void spendLegend(CharacterSave& bearer, s32 realm) override;

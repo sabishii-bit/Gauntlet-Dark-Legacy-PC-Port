@@ -2,9 +2,11 @@
 #include <cmath>
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <set>
 #include <vector>
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/assets/SoundSet.h"
@@ -14,6 +16,7 @@
 #include "TestSupport.h"
 #include "expansions/n64/audio/LegendsSoundTable.h"
 #include "expansions/n64/audio/LegendsSounds.h"
+#include "expansions/n64/bosses/LegendsBosses.h"
 #include "expansions/n64/formats/LegendsN64Critter.h"
 #include "expansions/n64/formats/LegendsN64Texture.h"
 #include "expansions/n64/level/LegendsBossEruption.h"
@@ -22,6 +25,7 @@
 #include "game/critters/CombatantAssets.h"
 #include "game/enemies/LevelOpponents.h"
 #include "game/enemies/ScriptedOpponents.h"
+#include "game/level/BossKinds.h"
 
 namespace {
 using namespace gdl;
@@ -401,21 +405,58 @@ TEST_CASE("All native Legends boss arenas open through the common opponent owner
             CHECK_FALSE(imported->travelRequested());
             std::array visitors{&players[0].actor};
             usize victories = 0;
+            std::optional<Vec3> fell;
             events.fallen = [&](const Vec3& position) {
                 ++victories;
+                fell = position;
                 imported->bossDefeated(opponents.bosses().keySpot().value_or(position), visitors);
             };
+            // Boss.bin's DEATH raises e088eaf0 as its hold begins (e0884808), and e006a134 throws
+            // the rewards that frame (e006a5a8-e006a61c), after the critters' turn, about where
+            // the boss's process then published it (e088f990: e0884d60-e0884dac, e0889850).
+            const auto type =
+                legendsN64BossCamera(readFile(nativeRoot / encounter->nativeArchive / "moves.wad"));
+            REQUIRE_FALSE(map.starts.empty());
+            const Vec3 start = map.starts.front().position;
+            std::optional<Vec3> held;
+            std::vector<LegendsPickup> thrown;
             hit.damage = 100000;
             for (s32 frame = 0; frame < 1800 && victories == 0; ++frame) {
                 if (opponents.bosses().view().alive) {
                     opponents.bosses().hurt(hit);
                 }
+                const bool played = opponents.bosses().view().deathPlayed;
                 imported->update(kStep, false);
                 opponents.update(1, kStep, players, {}, host, host, host);
+                if (!played && opponents.bosses().view().deathPlayed) {
+                    REQUIRE(opponents.bosses().position());
+                    held = *opponents.bosses().position();
+                    thrown = scriptRewards();
+                }
+                for (const auto& reward : scriptRewards()) {
+                    CHECK(reward.active == held.has_value());
+                }
             }
             REQUIRE(victories == 1);
             CHECK_FALSE(opponents.bosses().present());
             CHECK_FALSE(imported->travelRequested());
+            REQUIRE(held);
+            REQUIRE(fell);
+            REQUIRE(thrown.size() == encounter->rewards.size());
+            for (const auto& reward : thrown) {
+                const auto index = static_cast<usize>(reward.nativeIndex - 0x80000000U);
+                REQUIRE(index < encounter->rewards.size());
+                const auto motion = legendsBossRewardMotion(
+                    encounter->rewards[index], legendsN64BossFocus(type, *held), start);
+                REQUIRE(motion);
+                CHECK(reward.position == motion->position);
+            }
+            if (encounter->combat.kind == boss_type::kChimera) {
+                // chi/moves.wad's DEATH backs it away ten a second through its hold: it falls
+                // twenty on from where its rewards flew.
+                CHECK(glm::distance(Vec2{held->x, held->z}, Vec2{fell->x, fell->z}) ==
+                      Catch::Approx(20).margin(0.5));
+            }
             for (s32 frame = 0; frame < 3; ++frame) {
                 opponents.update(1, kStep, players, {}, host, host, host);
             }
