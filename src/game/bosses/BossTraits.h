@@ -75,7 +75,7 @@ struct BossDefeat {
     VictoryFollowUp followUp = VictoryFollowUp::Realm;
     bool longWizardWait = false; ///< BossVictory::kLongWaitTicks, not kWaitTicks
     bool wizardAtAltar = false;  ///< DoGoodWizard's fixed altar spot, not the midpoint
-    bool dropsKey = false;       ///< the BOSSKEY tree and S_BOSSKEY rise where it fell
+    bool dropsKey = false;       ///< BOSSKEY and S_BOSSKEY rise at its key spot, wherever it fell
     BossSpew spew = BossSpew::Coins;
 };
 

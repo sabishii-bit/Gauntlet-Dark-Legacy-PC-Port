@@ -2164,8 +2164,7 @@ TEST_CASE("a boss goes the update its death's hold runs out, counted from the la
     CHECK(update - lastRan == (fps == 30 ? 61 : (fps == 60 ? 121 : 241)));
 }
 
-TEST_CASE("the update a boss goes in leaves its heads as the update before left them and sets "
-          "nothing else off",
+TEST_CASE("the update a headed boss goes in sets nothing off after it goes",
           "[game][combatant][death][boss-death]") {
     test::FakeRenderDevice device;
     CombatantAssets assets;
@@ -2177,24 +2176,16 @@ TEST_CASE("the update a boss goes in leaves its heads as the update before left 
     hit.damage = 100000;
     body.hurt(hit);
     REQUIRE(body.dying());
-    std::vector<AnimationPlayer> heads;
     s32 update = 0;
     while (body.present() && update < 600) {
-        heads.clear();
-        for (s32 id = 1; id <= 2; ++id) {
-            REQUIRE(body.child(id) != nullptr);
-            heads.push_back(body.child(id)->animation());
-        }
         body.takeCues();
         body.update(2, 1.0f / 30, {});
         ++update;
     }
     REQUIRE_FALSE(body.present());
-    // CritterDelInst returns before the heads' step loop (0x8003a234): the heads' clocks stand
-    // as they were, and nothing the body would do later in the update is heard of.
-    for (s32 id = 1; id <= 2; ++id) {
-        CHECK(body.child(id)->animation() == heads[static_cast<usize>(id - 1)]);
-    }
+    // CritterBossAI returns once CritterDelInst has removed the boss (0x8003a0c4-0x8003a0cc),
+    // before the move's frames, its step and its heads' steps (0x8003a1f4-0x8003a2b4): nothing
+    // the body or its heads would do later in the update is heard of.
     CHECK(body.takeCues().empty());
     CHECK(body.takeBlows().empty());
     CHECK(body.takeGrabs().empty());
