@@ -682,10 +682,16 @@ private:
      * attacks, then the powerup clock; an imported level's own services (only its held party
      * while held); the triggers; the portals (when they may end the tick); the cameras; the rune
      * meter. The party's movement takes its rite restraint from the boss as the last update left
-     * it, the clock its rate from the boss as the opponents' turn leaves it, so what the boss's
-     * turn changes reaches the clock in that update and the restraint in the next; retail's
-     * do_players, after do_enemies (0x8005499c, 0x80054994), gives both that frame
-     * (PlayerProcessPowerups 0x800775a4, PlayerMotion 0x800775fc). */
+     * it, the clock its rate from the boss as the opponents' turn leaves it. Retail runs
+     * do_players after do_enemies (0x8005499c, 0x80054994): its clock (PlayerProcessPowerups
+     * 0x800775a4) meets the boss's turn in that frame, as here, and so does its PlayerMotion
+     * (0x800775fc) for the encounter's start, which sets the Chimera's crawl (gBossActive), and
+     * for the hold's start (rite state 2); the hold's end, which world_update makes first in the
+     * frame (0x8005498c), reaches it in that frame too. Here those three reach the party an
+     * update late. The release at the roar or at the death reaches retail's party a frame late
+     * as well, as here: state 4 still restrains, and the next frame's world_update makes it 5,
+     * or 99 once gBossDead is set (0x8003a1d0, 0x8003c790, 0x8003a108, 0x80056dfc,
+     * 0x80056d04-0x80056d14). */
     void advancePowerupsAndWorld(s32 ticks, f32 seconds, bool held);
     std::vector<CameraSubject> advancePartyMotion(s32 ticks, f32 seconds, const Inputs& inputs,
                                                   bool held);
