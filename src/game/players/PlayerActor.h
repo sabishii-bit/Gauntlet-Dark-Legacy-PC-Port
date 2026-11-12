@@ -97,8 +97,8 @@ public:
     void faceToward(const Vec3& point);
     /** Faces `yaw` at once, as a hit turns the body it knocks. */
     void turnTo(f32 yaw) { m_yaw = yaw; }
-    /** Carried along the ground by `offset` as a knock slides it: out of walls, and never
-     * over an edge it could not walk off. */
+    /** Carried along the ground by `offset`, as something pushes it or a combo carries it: out
+     * of walls, and never over an edge it could not walk off. */
     void slide(const Vec3& offset, const WorldCollision* collision);
     /** Raised off its floor by `height`, as a step's rise lifts it (PlayerMotion's dpos.y over
      * the floor's pull); fall() lowers it again at the native pace. */

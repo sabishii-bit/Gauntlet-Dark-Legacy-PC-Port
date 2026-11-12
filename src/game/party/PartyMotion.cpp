@@ -336,7 +336,9 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
             if (!freeAim) {
                 move = cursorRelativeMove(move, actor.position(), facing, cameraYaw);
             }
-            if (animator == nullptr || !animator->shoving()) {
+            // Held turned to its point, the body takes no facing from the cursor: the hold
+            // turns it, as it would whatever the stick asked.
+            if ((animator == nullptr || !animator->shoving()) && !restraint.faceToward) {
                 const f32 turn = animator != nullptr ? animator->turnScale() : 1.0f;
                 if (steeringTurbo) {
                     const Vec3 offset = facing - actor.position();
@@ -371,14 +373,18 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
         }
         players[i].reaction = PlayerDeed::None;
         bool potionAsked = false;
+        bool potionHeld = false;
         if (!held && !down && !reeling && !entering && !deathHeld && player < inputs.size()) {
             const PlayInput& in = inputs[player];
             const bool carrying = !actor.save().progress().inventory.potions.empty();
             // fn_80088938 asks the potion buttons before the combo: one held whose potion has
             // yet to go for this press keeps the combo from being tried, carried or not
-            // (0x80088AF8-0x80088B68).
-            potionAsked = (in.usePotion || in.throwPotion || in.shieldPotion) &&
-                          (animator == nullptr || !animator->potionLatched());
+            // (0x80088AF8-0x80088B68). One held on once its potion has gone and its gesture is
+            // over asks for nothing (+0x956 & 0x80), and the buttons after it are heard.
+            potionHeld = in.usePotion || in.throwPotion || in.shieldPotion;
+            const bool latched = animator != nullptr && animator->potionLatched();
+            const bool spent = latched && !animator->conjuring();
+            potionAsked = potionHeld && !latched;
             if ((in.usePotion || in.throwPotion) && !carrying) {
                 level.perform(i, Action::NoPotion);
             }
@@ -388,11 +394,11 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
             if (const PlayerDeed turbo = turboDeed(players[i], in); turbo != PlayerDeed::None) {
                 deed = turbo;
                 players[i].pojoTurbo = turbo == PlayerDeed::Breathe;
-            } else if (in.shieldPotion && carrying) {
+            } else if (in.shieldPotion && carrying && !spent) {
                 deed = PlayerDeed::ShieldPotion;
-            } else if (in.usePotion && carrying) {
+            } else if (in.usePotion && carrying && !spent) {
                 deed = PlayerDeed::UsePotion;
-            } else if (in.throwPotion && carrying) {
+            } else if (in.throwPotion && carrying && !spent) {
                 deed = PlayerDeed::ThrowPotion;
             } else if (in.defendPressed) {
                 // fn_80088938 tests S_DEFEND's edge (0x1000), not the held
@@ -479,15 +485,21 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
         // A knock slides the body on with the walk and the shove, then what hit it last frame
         // kicks it, turning it to face along the push or against it (PlayerMotion,
         // PlayerKnockback). The step is held to its limit along each axis, which a restraint's
-        // pace replaces (0x80081ac8-0x80081b5c, 0x80081c40-0x80081c84).
+        // pace replaces (0x80081ac8-0x80081b5c, 0x80081c40-0x80081c84). A planted body goes by
+        // its walk alone while the slide dies away all the same (0x80081860-0x80081888; the
+        // decay, 0x80082914).
         f32 limit = restraint.axisPace ? *restraint.axisPace * seconds : PlayerActor::kUnlimited;
         const Vec3 knocked = players[i].knockback.velocity();
+        const bool planted = animator != nullptr && animator->planted();
         Vec3 slide{0.0f};
         if (!down && !flying) {
             if (!restraint.axisPace) {
                 limit = players[i].knockback.limit(seconds, actor.speed());
             }
             slide = players[i].knockback.step(seconds, actor.speed());
+            if (planted) {
+                slide = Vec3{0.0f};
+            }
             if (const auto heading = players[i].knockback.kick(
                     actor.yaw(), (powerups.special & powerup::kPojo) != 0)) {
                 actor.turnTo(*heading);
@@ -501,7 +513,7 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
                                : charging           ? chargeInput(actor, move, cameraYaw)
                                                     : plannedMove;
         // A knock carrying it back against its walk lets the walk go nowhere; it still turns.
-        const bool opposed = !down && !flying && walk.any() &&
+        const bool opposed = !down && !flying && !planted && walk.any() &&
                              Knockback::opposes(knocked, PlayerActor::headingOf(walk, cameraYaw));
         actor.update(walk, cameraYaw, seconds, &collision, opposed ? 0.0f : pace, strafes,
                      Vec3{slide.x, 0.0f, slide.z}, limit);
@@ -612,7 +624,7 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
             }
             players[i].figure->setCombo(players[i].combo.grabberClass, players[i].combo.rideAsked);
             players[i].figure->animate(move.magnitude, ticks, seconds, deed,
-                                       level.chainsHeldMelee());
+                                       level.chainsHeldMelee(), potionHeld);
             players[i].figure->updateTrail(
                 players[i].figure->placement(players[i].capture.body().value_or(actor.transform()),
                                              actor.save(), powerups),

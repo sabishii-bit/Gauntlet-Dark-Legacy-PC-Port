@@ -108,8 +108,9 @@ public:
     static std::string_view actionsClassOf(const std::filesystem::path& root, s32 character);
     static std::filesystem::path costumeDirectory(const std::filesystem::path& root,
                                                   const CharacterSave& save);
+    /** Steps the body's actions; `potionHeld` as PlayerAnimator::update takes it. */
     void animate(f32 stickMagnitude, s32 ticks, f32 seconds, PlayerDeed deed = PlayerDeed::None,
-                 bool chainHeldMelee = false);
+                 bool chainHeldMelee = false, bool potionHeld = false);
     /** Advance the held departure pose and cosmetic clocks, without attack releases. */
     void animateDeparture(f32 seconds);
     /** Clears the last presentation interval when a scene tick may hold the figure. */

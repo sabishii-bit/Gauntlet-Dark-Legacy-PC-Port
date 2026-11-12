@@ -339,8 +339,11 @@ public:
     void update(PlayerMotion motion, s32 ticks, f32 seconds, bool attack = false) {
         update(motion, ticks, seconds, attack ? PlayerDeed::Attack : PlayerDeed::None);
     }
+    /** Steps under `motion` and `deed`. `potionHeld` says a potion button is still held: the
+     * potion gone for its press then asks for no other, whatever the deed, until every potion
+     * button is up (fn_80088938, 0x80088B50-0x80088B60); without it the deed alone says so. */
     void update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerDeed deed,
-                bool chainHeldMelee = false);
+                bool chainHeldMelee = false, bool potionHeld = false);
     /** What the close attack knows of its nearest target, set before each update. */
     void setMelee(const MeleeSense& sense) { m_melee = sense; }
     /** The class of the partner making the combo this body is held or thrown in (which
@@ -367,6 +370,13 @@ public:
      * the entrance, death, the reactions and a partner's combo); a charge, a strong throw or
      * a gauntlet's shot is taken. None outside the actions. */
     static bool takeableIn(Action action);
+    /** Whether a knock or a shove leaves the body where it stands (plantedIn). */
+    bool planted() const { return plantedIn(m_current); }
+    /** Whether `action` is in the original's attack categories 11 and 12 (the turbo moves, the
+     * special shot, the hammer, the breath and the combo; PlayerAttackType, 0x800ADBFC), in
+     * which PlayerMotion carries the body by its walk alone, leaving the knock and the shove
+     * out (0x80081860-0x80081888). None outside the actions. */
+    static bool plantedIn(Action action);
     /** What a partner held by a grabber of `grabberClass` plays (PlayerMotion's case 38). */
     static Action comboHeldActionOf(s32 grabberClass);
     /** What a partner let go of by one plays (case 39): only the warrior's and the dwarf's. */
@@ -560,6 +570,9 @@ private:
     static bool isThrow(Action action);
     /** Native attack categories 1..10, excluding an active legend-item gesture. */
     bool ordinaryAttack() const;
+    /** Whether the gag still holds every request off: STUN2 lets nothing cut in before its
+     * kGagHold-th frame unless its cycle is over (DoPlayerAction 0x800ACDD8-0x800ACE0C). */
+    bool retchHolds() const;
     Decision decide(Action requested) const;
     /** What the current action gives way to by itself, the request aside from cutting
      * in: a chain's next swing, a wind-up's release, a loop's next cycle. */

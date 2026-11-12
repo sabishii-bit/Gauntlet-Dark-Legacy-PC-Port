@@ -423,7 +423,7 @@ void PlayerFigure::loadActions(const std::filesystem::path& root, const Characte
 }
 
 void PlayerFigure::animate(f32 stickMagnitude, s32 ticks, f32 seconds, PlayerDeed deed,
-                           bool chainHeldMelee) {
+                           bool chainHeldMelee, bool potionHeld) {
     ++m_action.revision;
     m_visualTransforms.clear();
     m_costumeTextures.advance(seconds);
@@ -435,7 +435,7 @@ void PlayerFigure::animate(f32 stickMagnitude, s32 ticks, f32 seconds, PlayerDee
         return;
     }
     m_action.animator.update(PlayerAnimator::motionFor(stickMagnitude), ticks, seconds, deed,
-                             chainHeldMelee);
+                             chainHeldMelee, potionHeld);
     const bool phoenix = phoenixActive();
     m_action.familiarPending =
         (phoenix || familiarTier() > 0) &&

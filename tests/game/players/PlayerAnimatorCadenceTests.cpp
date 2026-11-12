@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <array>
 #include <format>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -1249,7 +1250,8 @@ TEST_CASE("each action keeps its answer to every animator predicate and each dee
              answer::kIsBlockableAttack,
          0x2070000300},
         {Action::Pick, answer::kComboTakeable | answer::kCanAutoMelee, 0x21F0071700},
-        {Action::Gag, answer::kCanAutoMelee, 0x21F0071700},
+        // Restored at its first frame, a retch lets nothing begin yet.
+        {Action::Gag, 0, 0x0000000000},
         {Action::ShieldReady, answer::kComboTakeable | answer::kCanAutoMelee | answer::kLocomotion,
          0x21F0071700},
         {Action::ShieldRun, answer::kComboTakeable | answer::kCanAutoMelee | answer::kLocomotion,
@@ -1416,6 +1418,94 @@ TEST_CASE("a partner is taken from every action but the original's rows 84 to 90
     CHECK_FALSE(arriving.comboTakeable());
     for (const usize beyond : {PlayerAnimator::kActionCount, usize{255}}) {
         CHECK_FALSE(PlayerAnimator::takeableIn(static_cast<Action>(beyond)));
+    }
+}
+
+TEST_CASE("knocks and shoves leave a body where it stands only in the original's attack "
+          "categories 11 and 12",
+          "[game][players][player-animation][knockback]") {
+    // PlayerAttackType (0x800ADBFC) gives its rows 86 and 87 and 107 to 113 category 11, and 88
+    // to 90 and 136 to 147 category 12; PlayerMotion moves a body in either by its walk alone
+    // (0x80081860-0x80081888).
+    constexpr u8 kFirstTurbo = 86;
+    constexpr u8 kLastComboMove = 90;
+    constexpr u8 kFirstSpecialShot = 107;
+    constexpr u8 kLastHammer = 113;
+    constexpr u8 kFirstComboBound = 136;
+    constexpr u8 kLastComboBound = 147;
+    constexpr usize kPlantedActions = 24;
+    const auto tree = actionTree();
+    const auto bound = boundTo(tree);
+    usize planted = 0;
+    for (usize i = 0; i < PlayerAnimator::kActionCount; ++i) {
+        CAPTURE(i);
+        const auto action = static_cast<Action>(i);
+        const u8 row = PlayerAnimator::kNativeActions[i];
+        const bool held = (row >= kFirstTurbo && row <= kLastComboMove) ||
+                          (row >= kFirstSpecialShot && row <= kLastHammer) ||
+                          (row >= kFirstComboBound && row <= kLastComboBound);
+        CHECK(PlayerAnimator::plantedIn(action) == held);
+        CHECK(restoredInto(bound, action).planted() == held);
+        planted += held ? 1 : 0;
+    }
+    CHECK(planted == kPlantedActions);
+    // The charge, the strong throw and a gauntlet's shot are carried; the turbo moves are not.
+    for (const Action carried : {Action::Shove, Action::StrongThrow, Action::FireLeft}) {
+        CHECK_FALSE(PlayerAnimator::plantedIn(carried));
+    }
+    for (const Action stays : {Action::TurboStrong, Action::TurboFull, Action::SpecialShot,
+                               Action::Breathe, Action::ComboAct1}) {
+        CHECK(PlayerAnimator::plantedIn(stays));
+    }
+    for (const usize beyond : {PlayerAnimator::kActionCount, usize{255}}) {
+        CHECK_FALSE(PlayerAnimator::plantedIn(static_cast<Action>(beyond)));
+    }
+}
+
+TEST_CASE("a retch lets nothing the buttons ask cut in before its tenth frame",
+          "[game][players][player-animation][gag]") {
+    // DoPlayerAction's STUN2 case answers every request with mode 0 until the retch's tenth
+    // frame or the end of its cycle, and with mode 2 after (0x800ACDD8-0x800ACE0C).
+    struct Asked {
+        PlayerDeed deed;
+        Action begins;   ///< what the deed starts once let in
+        bool turboClass; ///< whether canBegin answers for it
+    };
+    constexpr std::array kAsked{
+        Asked{PlayerDeed::Attack, Action::Throw, false},
+        Asked{PlayerDeed::Melee, Action::Quick1, false},
+        Asked{PlayerDeed::UsePotion, Action::UsePotion, false},
+        Asked{PlayerDeed::ThrowPotion, Action::ThrowPotion, false},
+        Asked{PlayerDeed::Defend, Action::DefendRaise, false},
+        Asked{PlayerDeed::TurboStrong, Action::TurboStrong, true},
+        Asked{PlayerDeed::Shove, Action::Shove, true},
+        Asked{PlayerDeed::Combo, Action::ComboAct1, true},
+    };
+    constexpr s32 kMostTicks = 120;
+    const auto tree = longActionTree();
+    const auto bound = boundTo(tree);
+    for (const Asked& asked : kAsked) {
+        CAPTURE(static_cast<s32>(asked.deed));
+        auto animator = bound;
+        animator.update(PlayerMotion::Stand, 1, kStep, PlayerDeed::Gag);
+        REQUIRE(animator.action() == Action::Gag);
+        std::optional<f32> letIn;
+        for (s32 tick = 0; tick < kMostTicks && !letIn; ++tick) {
+            const f32 frame = animator.player().frame();
+            if (asked.turboClass) {
+                CHECK(animator.canBegin(asked.deed) == (frame >= PlayerAnimator::kGagHold));
+            }
+            animator.update(PlayerMotion::Stand, 1, kStep, asked.deed);
+            if (animator.action() != Action::Gag) {
+                letIn = frame;
+            }
+        }
+        REQUIRE(letIn.has_value());
+        CHECK(animator.action() == asked.begins);
+        // Let in on the first update past the hold, from the frame that update began on.
+        CHECK(*letIn >= PlayerAnimator::kGagHold);
+        CHECK(*letIn < PlayerAnimator::kGagHold + 1.0f);
+        CHECK(static_cast<f32>(kLongFrames) > PlayerAnimator::kGagHold + 1.0f);
     }
 }
 
@@ -1726,25 +1816,25 @@ TEST_CASE("each action keeps what it does over every input script for every clas
         TraceScript{"afoot", afoot,
                     "154feac6822b91c3b4ed69b07182769412e1acbf0f8ebf9bbae03e081635aa75"},
         TraceScript{"throwing", throwing,
-                    "894d1e67fa5b8148e6b82a7d623ef627de074081943d49d52b1595a49fd26e32"},
+                    "1f5053fca6c7f2670c6718e02d48697e3d8bfc97b4f2f26847c675d730a92b60"},
         TraceScript{"quickPresses", quickPresses,
-                    "772ca27b2205d0820ed25f2cd35494c706a5ee794a3f41fe585f9c293cdcfad4"},
+                    "ea779c33ab0391ae970996d4acf10bc2efd664252d1fb0e255dbed30eb720483"},
         TraceScript{"steppingSwings", steppingSwings,
-                    "9b00a4d3eccd3c6fc8dc6da10700dfd612abfd0e5bcad486c9314827fa301d49"},
+                    "b1bbf212667b54a45d237c42964c07510f637ecca7bf3a31379197ecd324974e"},
         TraceScript{"lowStrikes", lowStrikes,
-                    "0dc2f1b041504687565988fe469ccb0dc571e2f7269a6c084f4182b78241a163"},
+                    "b8e806d2d2ec0662b66cbc3ee7fe685ccd4c6aa31b2b1485fd8aed566067a085"},
         TraceScript{"heldChains", heldChains,
-                    "cd80fd5459f0b94c430b6242782efefa07e494f0607eafcd19f4f2671f6ce10b"},
+                    "dc94862a665a4a403c1511654bfd6786568265212904156282c82aa834b36689"},
         TraceScript{"automaticMelee", automaticMelee,
-                    "d4299a285a57b410aa4cd98346190b56b4ba699510da95563809c7c91982115b"},
+                    "610911a098384ea98b498bbb8592c4c614c7cd810173e649397d2d9365b2f98b"},
         TraceScript{"everyDeed", everyDeed,
-                    "b3430aa56cbed5d3c1a887a65b60793d07e594054d50232f441b76a257d0bc21"},
+                    "9c97598a5b36cea1f158db72646e30e6b5ff515b023212e423c507b1b94dc136"},
         TraceScript{"heldDeeds", heldDeeds,
-                    "1777c9493ae9beabc8604e89d731ed0223b36026ca53ac646d2d91172833ca6b"},
+                    "f75890a814bbd3893882eda624b4b4a90088ae22f0c56b53526aa91b707bcbff"},
         TraceScript{"strafing", strafing,
                     "bbe4ad40632572cb0267790b3a8b5f8496efdbaf2056109a169fdb7c2c7255fd"},
         TraceScript{"combos", combos,
-                    "da4a15d2ca954eed6d40105973f419ab98889f742fa508d0a474042bfeaf141d"},
+                    "754cc13ffe51c9ee5c1abfbd1d170c4c1df14802c4cbbd303d9db2f1ce841322"},
         TraceScript{"falling", falling,
                     "ba95d6e9882c5cd47cf97a09e52ee67060e561ef6b12442fb33c00c330500f0f"},
     };

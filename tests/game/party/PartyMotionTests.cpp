@@ -1496,6 +1496,48 @@ TEST_CASE("a step's knock, shove and walk go together, held along each axis to o
     }
 }
 
+TEST_CASE("a body in a turbo move goes by its walk alone: a push or a shove carries it nowhere, "
+          "though the slide dies away all the same",
+          "[game][screens][party-motion][knockback][assets]") {
+    // PlayerMotion leaves the knock and the shove out of a body in attack category 11 or 12
+    // (0x80081860-0x80081888) and decays the knock a frame regardless (0x80082914).
+    const auto root = test::assetOrSkip("PLAYERS/WAR/ANIM/ANIM.PS2")
+                          .parent_path()
+                          .parent_path()
+                          .parent_path()
+                          .parent_path();
+    test::FakeRenderDevice device;
+    constexpr f32 kPush = 30.0f;               ///< a great one's contact, units a second
+    constexpr f32 kNativeFrame = 1.0f / 30.0f; ///< the fixture's step
+    const auto stepped = [&](bool turbo) {
+        Fixture f;
+        f.players[1].life = PlayerLife::InTower;
+        PlayerRuntime& player = f.players[0];
+        player.figure = PlayerFigure::load(device, root, player.actor.save(), Entrance::Skip);
+        REQUIRE(player.figure);
+        player.floor.object = 0;
+        f.events.advanceTurbo = [](usize, s32, f32) {};
+        f.events.perform = [](usize, PartyMotion::Action) {};
+        if (turbo) {
+            player.figure->animate(0, 2, kNativeFrame, PlayerDeed::TurboStrong);
+        }
+        REQUIRE(player.figure->animator().planted() == turbo);
+        player.knockback.addVelocity(Vec3{kPush, 0, 0});
+        player.knockback.shove(Vec3{0, 0, 1}, kNativeFrame);
+        const Vec3 before = player.actor.position();
+        f.step();
+        CHECK(player.figure->animator().planted() == turbo);
+        CHECK(player.knockback.velocity().x == Approx(kPush * Knockback::kDecay));
+        return player.actor.position() - before;
+    };
+    const Vec3 standing = stepped(false);
+    CHECK(standing.x > 0.1f);
+    CHECK(standing.z > 0.01f);
+    const Vec3 turbo = stepped(true);
+    CHECK(turbo.x == Approx(0.0f).margin(1.0e-6f));
+    CHECK(turbo.z == Approx(0.0f).margin(1.0e-6f));
+}
+
 TEST_CASE("a held member walks nowhere, turns to its point at the native rate, still slides, "
           "and walks again when let go",
           "[game][screens][party-motion][legend][rite-hold]") {
@@ -1534,6 +1576,32 @@ TEST_CASE("a held member walks nowhere, turns to its point at the native rate, s
     const Vec3 from = f.players[0].actor.position();
     f.step();
     CHECK(f.players[0].actor.position().x - from.x == Approx(f.players[0].actor.speed() / 30.0f));
+}
+
+TEST_CASE("a held member aiming with the cursor turns to its point at the native rate all the "
+          "same, and to the cursor again when let go",
+          "[game][screens][party-motion][legend][rite-hold][cursor]") {
+    // State 2 sets every player's heading to the boss (0x800816c4-0x80081720); the cursor's
+    // facing gives way to it as the stick's does.
+    Fixture f;
+    f.events.restraint = [](usize i) {
+        return i == 0 ? PartyMotion::Restraint{.faceToward = Vec3{0, 0, -10}}
+                      : PartyMotion::Restraint{};
+    };
+    f.players[0].actor.turnTo(std::numbers::pi_v<f32> / 2); // facing +x, the point behind it
+    f.inputs[3].aimDirection = Vec3{1, 0, 0};               // the cursor off along +x
+    constexpr f32 kFrameTurn = 5.0f * std::numbers::pi_v<f32> / 30.0f;
+    f.step();
+    CHECK(f.players[0].actor.yaw() == Approx(std::numbers::pi_v<f32> / 2 + kFrameTurn));
+    for (s32 frame = 0; frame < 6; ++frame) {
+        f.step();
+    }
+    CHECK(std::abs(std::remainder(f.players[0].actor.yaw() - std::numbers::pi_v<f32>,
+                                  2.0f * std::numbers::pi_v<f32>)) == Approx(0.0f).margin(1.0e-5f));
+    CHECK(f.players[0].actor.position() == Vec3{0});
+    f.events.restraint = {};
+    f.step();
+    CHECK(f.players[0].actor.yaw() == Approx(std::numbers::pi_v<f32> / 2));
 }
 
 TEST_CASE("a restraint's pace holds every step along each axis, a heavy kick's free frame too",
@@ -2060,6 +2128,70 @@ TEST_CASE("a gassed warrior retches only while nothing is pressed: an attack is 
         CHECK(gassed(&PlayInput::combo) == Action::ComboAct1);
         CHECK(f.players[0].combo.role == ComboRole::Grabber);
     }
+}
+
+TEST_CASE("a potion button held on once its potion has gone asks for nothing: a gassed warrior "
+          "retches, the attack is heard, and no second potion goes until the button comes up",
+          "[game][screens][party-motion][potion][assets]") {
+    // fn_80088938 skips a potion button whose potion has gone for its press (+0x956 & 0x80,
+    // 0x80088AF8-0x80088B4C) and clears that latch only once every potion button is up
+    // (0x80088B50-0x80088B60).
+    const auto root = test::assetOrSkip("PLAYERS/WAR/ANIM/ANIM.PS2")
+                          .parent_path()
+                          .parent_path()
+                          .parent_path()
+                          .parent_path();
+    using Action = PlayerAnimator::Action;
+    constexpr s32 kMostFrames = 120;
+    test::FakeRenderDevice device;
+    Fixture f;
+    f.players[1].life = PlayerLife::InTower;
+    PlayerRuntime& player = f.players[0];
+    player.figure = PlayerFigure::load(device, root, player.actor.save(), Entrance::Skip);
+    REQUIRE(player.figure);
+    player.floor.object = 0;
+    player.actor.save().progress().inventory.addPotions(1, 2);
+    s32 used = 0;
+    f.events.advanceTurbo = [](usize, s32, f32) {};
+    f.events.perform = [&used](usize i, PartyMotion::Action action) {
+        used += i == 0 && action == PartyMotion::Action::UsePotion ? 1 : 0;
+    };
+    const auto& animator = player.figure->animator();
+    // Held, the first potion goes and its gesture plays out.
+    f.inputs[3].usePotion = true;
+    bool conjured = false;
+    for (s32 frame = 0; frame < kMostFrames && (!conjured || animator.conjuring()); ++frame) {
+        f.step();
+        conjured = conjured || animator.conjuring();
+    }
+    REQUIRE(conjured);
+    REQUIRE_FALSE(animator.conjuring());
+    REQUIRE(used == 1);
+    REQUIRE(animator.potionLatched());
+    SECTION("gassed, it retches") {
+        player.gagSeconds = 0.5f;
+        f.step();
+        CHECK(animator.action() == Action::Gag);
+    }
+    SECTION("the attack is heard") {
+        f.inputs[3].attack = true;
+        f.step();
+        CHECK(animator.action() == Action::Throw);
+    }
+    // Whatever was asked meanwhile, the button still held asks for no other potion.
+    f.inputs[3].attack = false;
+    for (s32 frame = 0; frame < kMostFrames; ++frame) {
+        f.step();
+    }
+    CHECK(used == 1);
+    // Up and down again, it is a fresh press.
+    f.inputs[3].usePotion = false;
+    f.step();
+    f.inputs[3].usePotion = true;
+    for (s32 frame = 0; frame < kMostFrames && used == 1; ++frame) {
+        f.step();
+    }
+    CHECK(used == 2);
 }
 
 TEST_CASE("a step asks the level in phase order", "[game][screens][party-motion][motion-order]") {

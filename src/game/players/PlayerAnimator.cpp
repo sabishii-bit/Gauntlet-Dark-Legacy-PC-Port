@@ -1095,6 +1095,11 @@ bool PlayerAnimator::takeableIn(Action action) {
     return row < kNativePowerLow || (row >= kNativeThrow && row < kNativeSpecialShot);
 }
 
+bool PlayerAnimator::plantedIn(Action action) {
+    const AttackType type = info(action).attackType;
+    return type == AttackType::Special || type == AttackType::Combo;
+}
+
 bool PlayerAnimator::comboing() const {
     return info(m_current).family == ActionFamily::ComboAct;
 }
@@ -1337,10 +1342,14 @@ bool PlayerAnimator::ordinaryAttack() const {
     return !m_legendAsked && ordinaryAttackType(info(m_current).attackType);
 }
 
+bool PlayerAnimator::retchHolds() const {
+    return m_current == Action::Gag && m_player.frame() < kGagHold && !m_player.finished();
+}
+
 bool PlayerAnimator::canBegin(PlayerDeed deed) const {
     const Action action = turboActionOf(deed);
     if (action == Action::Ready || !bound() || !playable(action) || entering() || conjuring() ||
-        reacting() || comboBound() || dying()) {
+        reacting() || comboBound() || dying() || retchHolds()) {
         return false;
     }
     // DoPlayerAction (800AC068) resets current attack categories 1..10 to
@@ -1375,7 +1384,7 @@ u32 PlayerAnimator::sequenceOf(Action action) const {
 }
 
 void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerDeed deed,
-                            bool chainHeldMelee) {
+                            bool chainHeldMelee, bool potionHeld) {
     m_meleeBlow = MeleeBlow::None;
     if (!bound()) {
         return;
@@ -1531,8 +1540,8 @@ void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerD
     // true turbos, special shots, hammer, breath and combos do not.
     const bool interruptibleAttack = throwing() || meleeing() || m_current == Action::Shove ||
                                      info(m_current).attackType == AttackType::StrongThrow;
-    const bool free =
-        !entering() && !conjuring() && !reacting() && (!turboing() || interruptibleAttack);
+    const bool free = !entering() && !conjuring() && !reacting() && !retchHolds() &&
+                      (!turboing() || interruptibleAttack);
     const bool asked =
         deed == PlayerDeed::Defend && free && m_sequences[index(Action::Defend)] >= 0;
     if (asked) {
@@ -1572,9 +1581,10 @@ void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerD
         melee = Action::Ready;
     }
     // A class without a deed's sequences does not do it.
-    // One potion a press: the button must come up before it asks for another.
+    // One potion a press: every potion button must come up before it asks for another.
     const bool forShield = deed == PlayerDeed::ShieldPotion;
-    if (deed != PlayerDeed::UsePotion && deed != PlayerDeed::ThrowPotion && !forShield) {
+    if (!potionHeld && deed != PlayerDeed::UsePotion && deed != PlayerDeed::ThrowPotion &&
+        !forShield) {
         m_potionLatch = false;
     }
     // A shield is raised with the same gesture as a potion is used.
@@ -1882,6 +1892,11 @@ PlayerAnimator::Decision PlayerAnimator::continuation(Action requested) const {
 }
 
 void PlayerAnimator::applyCutIns(Action requested, Decision& d) const {
+    // Early in a retch nothing cuts in: STUN2's case answers every request with mode 0 until
+    // its tenth frame (DoPlayerAction 0x800ACDD8-0x800ACE0C).
+    if (retchHolds()) {
+        return;
+    }
     // A partner's combo takes the body at once (action.c 558's mode 2 for P_FALL_DOWN to
     // P_GRABBED), once and not looped.
     if (info(requested).family == ActionFamily::ComboBound && d.action == requested &&
@@ -1952,7 +1967,7 @@ PlayerAnimator::Action PlayerAnimator::meleeRequest(PlayerDeed deed, bool moved)
 }
 
 bool PlayerAnimator::canAutoMelee() const {
-    if (!bound() || entering() || m_quickPress || m_strongPress) {
+    if (!bound() || entering() || m_quickPress || m_strongPress || retchHolds()) {
         return false;
     }
     return (info(m_current).traits & action_trait::kAutoMelee) != 0;

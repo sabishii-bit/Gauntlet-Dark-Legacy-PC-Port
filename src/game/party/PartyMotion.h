@@ -41,10 +41,10 @@ public:
      * ground axis, letting no potion go off. A member held to none is free. */
     struct Restraint {
         /** It walks nowhere, the stick still choosing its gait, and turns to face this. */
-        std::optional<Vec3> faceToward;
+        std::optional<Vec3> faceToward = std::nullopt;
         /** Units a second its step is held to along each ground axis, in place of the step's
          * own limit. */
-        std::optional<f32> axisPace;
+        std::optional<f32> axisPace = std::nullopt;
         /** A potion's release does nothing and takes no potion. */
         bool potionsBarred = false;
         bool operator==(const Restraint&) const = default;
