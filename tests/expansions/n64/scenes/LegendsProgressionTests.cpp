@@ -618,12 +618,20 @@ TEST_CASE("An N64 Tower ceremony turns Sumner and his staff shrinks away on LKDN
         }
         REQUIRE(staff >= 0);
         CHECK_FALSE(scene->fixtureObject(staff)->visible);
-        // Sumner's shown figure stands at the ceremony's yaw (e002fcf8), and the staff at its
-        // ARMR3 (e0860198) under its local scale, while it shows.
+        // Every gesture's figure of Sumner, the shown one among them, stands at the ceremony's
+        // yaw (e002fcf8 turns the one native body), so the one shown next does not blend in
+        // from an older placement; the staff hangs at the shown one's ARMR3 (e0860198) under
+        // its local scale, while it shows.
+        const auto figures = scene->towerSumnerFigures();
+        REQUIRE(figures.size() > 1);
+        REQUIRE(std::ranges::find(figures, scene->towerSumner()) != figures.end());
         const auto placed = [&] {
+            const Mat4 placement =
+                itemPlacement(ceremony->sumnerPosition(), Vec3{0, ceremony->sumnerYaw(), 0});
+            for (const auto* figure : figures) {
+                CHECK(figure->transform() == placement);
+            }
             const auto* sumner = scene->towerSumner();
-            CHECK(sumner->transform() ==
-                  itemPlacement(ceremony->sumnerPosition(), Vec3{0, ceremony->sumnerYaw(), 0}));
             const bool shown = scene->fixtureObject(staff)->visible;
             CHECK(shown == ceremony->staffVisible());
             if (shown) {

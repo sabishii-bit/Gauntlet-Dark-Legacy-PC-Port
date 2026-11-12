@@ -95,6 +95,9 @@ public:
      * null outside the N64 Tower or without their artwork. */
     const ItemFigure* towerSumner() const;
     const ItemFigure* towerStaff() const;
+    /** Every gesture's figure of the N64 Tower's Sumner, the shown one among them; none outside
+     * the N64 Tower. */
+    std::vector<const ItemFigure*> towerSumnerFigures() const;
     void queueTowerCeremonies(const LegendsProgress& before, const LegendsProgress& after);
     /** Opens the queued ceremonies from the gameplay view, about `party`, the mean feet of the
      * party standing in the Tower. */
@@ -304,6 +307,9 @@ private:
     void selectArenaRock(usize index, bool burst = false);
     void updateTowerProgress(bool initial);
     void updateTowerCeremony(f32 seconds);
+    /** The gesture Sumner's idle starts at once when a ceremony's return has asked it to look
+     * down, which also turns the idle back to its reading choices; none otherwise. */
+    std::optional<std::string_view> takeTowerLookDown();
     /** Stands every gesture's figure of Sumner at the ceremony's yaw and the staff, while it
      * shows, in the shown one's hand. */
     void placeTowerSumner();

@@ -285,6 +285,26 @@ const ItemFigure* LegendsSceneAdapter::towerStaff() const {
     return m_towerStaff ? &m_fixtures[*m_towerStaff] : nullptr;
 }
 
+std::vector<const ItemFigure*> LegendsSceneAdapter::towerSumnerFigures() const {
+    std::vector<const ItemFigure*> result;
+    if (m_tower) {
+        for (const auto& variant : m_tower->sumner) {
+            result.push_back(&m_fixtures[variant.figure]);
+        }
+    }
+    return result;
+}
+
+std::optional<std::string_view> LegendsSceneAdapter::takeTowerLookDown() {
+    if (!m_tower || !m_towerCeremony || !m_towerCeremony->takeLookDown()) {
+        return std::nullopt;
+    }
+    // A ceremony's return left e086ade8 at -1: e08612e0 looks down first, whatever Sumner
+    // plays, and its next choice reads, as after its LKDN branch's e086ade8 = 1.
+    m_tower->idle = {};
+    return LegendsTowerIdle::initialSequence();
+}
+
 void LegendsSceneAdapter::updateTowerCeremony(f32 seconds) {
     if (!m_tower || !m_towerCeremony || !m_towerCeremony->presenting()) {
         return;
