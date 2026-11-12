@@ -32,16 +32,22 @@ struct LegendStaging {
     f32 burstSeconds = LegendShow::kBurstSeconds;
     f32 burstFollowSeconds = 0.0f;     ///< the landed burst rides the boss this long; nought: not
     Vec3 bossOffset{0.0f, 0.0f, 0.0f}; ///< where on the boss the item is set; profile: bossOffset
-    std::string_view trailTexture;     ///< the flight's particle trail; empty: none; profile: trail
-    std::string_view targetNode;       ///< the node aimed at; empty: none; profile: targetNode
-    std::string_view eyeReplacement;   ///< its struck EYEBALL; empty: none; profile: eyeReplacement
+    // NOLINTNEXTLINE(readability-redundant-member-init) -- default for partial aggregates
+    std::string_view trailTexture{}; ///< the flight's particle trail; empty: none; profile: trail
+    // NOLINTNEXTLINE(readability-redundant-member-init) -- default for partial aggregates
+    std::string_view targetNode{}; ///< the node aimed at; empty: none; profile: targetNode
+    // NOLINTNEXTLINE(readability-redundant-member-init) -- default for partial aggregates
+    std::string_view eyeReplacement{}; ///< its struck EYEBALL; empty: none; profile: eyeReplacement
     bool restoresSight = false; ///< wearing off ends its blindness and gives back its eye, silently
-    std::string_view lionStump; ///< the tree shown for its STUMPL; empty: none; profile: lionStump
-    std::optional<Color> strikeTint; ///< the tint the strike leaves on it
-    std::string_view frozenSkin;     ///< the item archive's texture it wears once the item lands
+    /** The tree shown for its STUMPL; empty: none; profile: lionStump. */
+    // NOLINTNEXTLINE(readability-redundant-member-init) -- default for partial aggregates
+    std::string_view lionStump{};
+    std::optional<Color> strikeTint = std::nullopt; ///< the tint the strike leaves on it
+    // NOLINTNEXTLINE(readability-redundant-member-init) -- default for partial aggregates
+    std::string_view frozenSkin{}; ///< the item archive's texture it wears once the item lands
     /** Units a second every member's step is held to along each ground axis while the rite's
      * opening restrains the party and the encounter has begun; none: the step's own limit. */
-    std::optional<f32> partyPace;
+    std::optional<f32> partyPace = std::nullopt;
 
     bool operator==(const LegendStaging&) const = default;
 };
@@ -86,9 +92,9 @@ struct BossDefeat {
  * (LegendItems.cpp), a BossStage row (level/BossKinds.cpp) and bossDefinition's family. */
 struct BossTraits {
     s32 kind = -1;
-    BossGeneratorVisual generator;    ///< its eggs' generator art in its own archive
+    BossGeneratorVisual generator{};  ///< its eggs' generator art in its own archive
     bool projectileEndVisual = false; ///< read by bossDefinition through its name
-    LegendStaging legend;
+    LegendStaging legend{};
     BossDefeat defeat;
 };
 
