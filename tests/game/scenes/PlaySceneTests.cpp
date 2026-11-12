@@ -3802,9 +3802,9 @@ TEST_CASE("the Chimera slain in its scimitar's rite keeps the party held, then c
     slay.player = 0;
     scene.bosses().hurt(slay);
     REQUIRE(scene.bosses().fighter().dying());
-    // Apart through the throes, each to its own side of the line to the boss: across the view,
-    // which the boss camera, backing away after the dying Chimera, never closes on a step, as it
-    // does on steps back toward it. Each update's party moves before the boss, so what holds a
+    // Apart through the throes, each to its own side of the line to the boss: steps back toward
+    // the camera would meet the foot of its window as it draws back after the dying Chimera, and
+    // steps across the view do not. Each update's party moves before the boss, so what holds a
     // step is what the rite was as the update began. The companion's potion, used as the hold
     // ends, plays its gesture and goes nowhere.
     input[0].move = {{-1, 0}, 1};
