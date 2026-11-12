@@ -40,6 +40,7 @@ public:
     const LegendsDreamcastBossCeremony& dreamcastBossCeremony() const {
         return m_dreamcastVisit.state();
     }
+    const LegendsDreamcastBossVisit& dreamcastBossVisit() const { return m_dreamcastVisit; }
     const DialoguePresentation* messagePresentation() const override {
         return m_messageStyle.get();
     }

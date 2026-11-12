@@ -40,6 +40,8 @@ public:
     const Vec3& position() const { return m_position; }
     f32 facing() const { return m_yaw; }
     const Texture* skin() const;
+    /** What BossEnd leaves as the boss goes: its BOSSKEY, read-only. */
+    const EffectTrees& rewards() const { return m_rewards; }
 
 private:
     std::vector<std::string> pages(usize group) const;

@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <string_view>
 #include <vector>
 
@@ -475,6 +476,76 @@ TEST_CASE("Dreamcast Dragon enters victory through the actual opponent death cal
               .hasCompleted("levelb6"));
     opponents.close();
     audio.close();
+}
+
+TEST_CASE("Dreamcast boss keys rise at the key spot through the scene's own opponent host, however "
+          "far the boss backed away as it died",
+          "[legends][dreamcast-boss-completion][dreamcast-boss-integration][assets]") {
+    BossFixture fixture{"levela5"};
+    const auto common = test::assetOrSkip("PDATA/WAR.WAD").parent_path().parent_path();
+    REQUIRE_FALSE(fixture.map.starts.empty());
+    CharacterSave save;
+    save.name = "KEY";
+    save.progress().health = 9000;
+    const std::array party{PartyMember{0, save}};
+    fixture.level->initializeParty(party);
+    LegendsTraversal traversal;
+    traversal.open(fixture.map, 0, save);
+    const auto& start = fixture.map.starts.front();
+    LevelWorld world;
+    LevelRef ref;
+    ref.realmId = -1;
+    ref.name = "dreamcast:levela5";
+    REQUIRE(world.loadImported(
+        fixture.device, common, ref,
+        WorldLayout::fromDecoded({}, {{.kind = LocatorKind::Start, .position = start.position}},
+                                 fixture.map.minBounds, fixture.map.maxBounds),
+        traversal.collision(), fixture.level));
+    const AssetLocator assets{common};
+    const GameConfig config;
+    StringTable strings;
+    REQUIRE(strings.load(test::dataDirectory() / "text", config.text.language));
+    GameServices services;
+    services.config = &config;
+    services.strings = &strings;
+    services.assets = &assets;
+    services.unpackedRoot = common;
+    PlayOptions options;
+    options.welcome = false;
+    PlayScene play;
+    REQUIRE(play.open(fixture.device, services, world, party, options));
+    for (s32 tick = 0; tick < 900 && play.spawning(); ++tick) {
+        REQUIRE(play.update(kStep, {}) == PlayOutcome::Running);
+    }
+    REQUIRE_FALSE(play.spawning());
+    play.setCheats(0, {.god = true});
+    auto& bosses = play.bosses();
+    bosses.wake();
+    EnemyHit lethal;
+    lethal.player = 0;
+    lethal.damage = 100000;
+    bosses.hurt(lethal);
+    REQUIRE(bosses.fighter().dying());
+    REQUIRE(bosses.keySpot());
+    const Vec3 key = *bosses.keySpot();
+    Vec3 fell = *bosses.position();
+    for (s32 tick = 0; tick < 60 * 30 && bosses.present(); ++tick) {
+        fell = *bosses.position();
+        REQUIRE(play.update(kStep, {}) == PlayOutcome::Running);
+    }
+    REQUIRE_FALSE(bosses.present());
+    // BossEnd starts BOSSKEY by the root CritterGeo kept, raised by TYPE+0xB4..+0xBC
+    // (0x8c071370-0x8c0713b2), not where the Chimera's DEATH backed it away to.
+    const auto& rewards = fixture.level->dreamcastBossVisit().rewards();
+    std::optional<Vec3> rose;
+    for (usize i = 0; i < rewards.count(); ++i) {
+        if (rewards.effect(i).name == "BOSSKEY") {
+            rose = rewards.effect(i).position;
+        }
+    }
+    REQUIRE(rose);
+    CHECK(*rose == key);
+    CHECK(glm::distance(Vec2{fell.x, fell.z}, Vec2{key.x, key.z}) > 10);
 }
 
 TEST_CASE("Dreamcast E2 entrance cues move the native floor through the real opponent route",
