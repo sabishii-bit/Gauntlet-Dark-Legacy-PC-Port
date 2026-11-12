@@ -1267,8 +1267,9 @@ TEST_CASE("a boss that waits for its floor arms on the update after a trigger fi
     test::FakeRenderDevice device;
     Bosses bosses;
     bosses.open(device, eyedBossAssets("CHIMERA", kChimeraTypeFlags), &lift.collision, {}, 'A');
-    // On the deck hung from the lift, or on the lift's own face where it stays solid as it moves
-    // (subtype 29, flags 0x0A; subtype 26 leaves its own triangles behind while it moves).
+    // Subtype 26's boss stands on the deck hung from the lift and subtype 29's (flags 0x0A) on the
+    // lift's own face: a boss's probe meets a moving lift whether it stays solid as it moves (29)
+    // or lets only the players' own probes through (26).
     const Vec3 mark = subtype == 26 ? LiftFixture::kOnDeck : LiftFixture::kOnLiftFace;
     REQUIRE(bosses.spawn(boss_type::kChimera, mark, 0, 20));
     REQUIRE(bosses.position()->y == Approx(mark.y));
