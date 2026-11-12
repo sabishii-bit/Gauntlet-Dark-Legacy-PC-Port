@@ -26,14 +26,6 @@ namespace gdl::game {
 class LegendsTowerCeremony {
 public:
     enum class Kind { Rune, Door, Shard };
-    /** A held player's facings in e0860d1c's turn (e0860d54..e0860ed8): `drawn`, the yaw its
-     * matrix is rebuilt at (e00135b8, e0013a70), the party's target's angle at once, and
-     * `kept`, its record's yaw (+0xa4), which steps at most .05 rad an update toward that. */
-    struct HeldFacing {
-        f32 drawn = 0;
-        f32 kept = 0;
-        bool operator==(const HeldFacing&) const = default;
-    };
     /** The input seats e0860d1c turns: the native four players' records. */
     static constexpr usize kSeats = 4;
     struct Entry {
@@ -135,19 +127,19 @@ public:
      * `position` to through game.bin e0048acc: e0010e50's arc tangent of Sumner's x and z
      * offsets from it, in the native yaw the N64 actors keep. Sumner keeps his own yaw. */
     f32 partyFacing(const Vec3& position) const;
-    /** Holds the standing player in input `seat` at `feet` while a ceremony runs (e086adac)
-     * and gives its facings: one first held faces Sumner as the cut turned it (e0048acc sets
-     * both), and each later script and return update turns it toward partyFacingTarget().
-     * None while no ceremony runs, or for a seat past the native four. */
-    std::optional<HeldFacing> hold(usize seat, const Vec3& feet);
+    /** Holds the standing player in input `seat` at `feet` for the queued ceremonies and gives
+     * the yaw it shows. Its first hold since begin() keeps `heading`, the yaw it stood at
+     * before the cut: its record's +0xa8, which nothing the ceremonies run writes. While one
+     * runs (e086adac) the yaw is e0010e50's arc tangent of partyFacingTarget()'s x and z
+     * offsets from `feet`, at which e0860d1c rebuilds the player's matrix (e0860d54..e0860ed8).
+     * Once the hand-back lets the party go, the next hold gives back the kept heading, once:
+     * on that update game.bin's e00496d4 stands the player again and e0048b2c turns it back to
+     * +0xa8 (e0048c34..e0048c58). None otherwise, or for a seat past the native four. */
+    std::optional<f32> hold(usize seat, const Vec3& feet, f32 heading);
     /** One update of e0860d1c's turn of Sumner (e0860ef0..e0861020), standing at `sumner`
      * with native `yaw`, toward `target`: his yaw faces minus the arc tangent of its x and z
      * offsets, and a turn left after one wrap each way past float pi moves at most .2 rad. */
     static f32 turnSumner(f32 yaw, const Vec3& sumner, const Vec3& target);
-    /** One update of e0860d1c's turn of a held player at `feet` toward `target`: the drawn
-     * facing takes the target's angle; the kept yaw takes it when the wrapped turn is 0, else
-     * moves at most .05 rad. */
-    static HeldFacing turnHeld(const HeldFacing& facing, const Vec3& feet, const Vec3& target);
 
 private:
     /** e086736c's case for the next tick. */
@@ -219,14 +211,9 @@ private:
     };
     /** e08618a8 records 1 + 4 + 4 + 3 + 50 poses (e086aea4). */
     static constexpr usize kFlightPoses = 62;
-    /** e086add4's states: only e0861198, e08612c8 and e086961c write it, so its grow (2) never
-     * runs. */
-    enum class Staff : u8 { Raised, Shrinking, Hidden };
-    /** A player the ceremony holds: where it stands and how it faces. */
-    struct Held {
-        Vec3 feet{0};
-        HeldFacing facing;
-    };
+    /** e086add4's states, at their native values: only e0861198, e08612c8 and e086961c write
+     * it, so its grow (2) never runs. */
+    enum class Staff : u8 { Raised = 0, Shrinking = 1, Hidden = 3 };
 
     static PaneBytes paneBytes(s32 count);
     /** e086adc8, where Sumner's turn rests: e0860198 turns (0, 0, 1.8) by his yaw (e0014364)
@@ -260,7 +247,8 @@ private:
     f32 m_sumnerYaw = m_native.sumner.yaw; ///< +0x28 of e086ad74
     Vec3 m_sumnerTarget = podium();        ///< e086adbc
     Vec3 m_partyTarget{0};                 ///< e086adb0
-    std::array<std::optional<Held>, kSeats> m_held{};
+    /// Each held seat's +0xa8: its yaw from before the cut, from its first hold since begin().
+    std::array<std::optional<f32>, kSeats> m_headings{};
     Staff m_staff = Staff::Hidden;
     f32 m_staffSeconds = 0;  ///< e086ade4, from the hand-back
     bool m_lookDown = false; ///< e086ade8 at -1 since the return, until the idle takes it

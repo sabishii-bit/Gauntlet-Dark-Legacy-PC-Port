@@ -38,10 +38,18 @@ bool LegendsLevel::placeN64OpeningParty(std::span<PlayerActor*> party) {
     // dispatcher's first update cuts to Sumner and turns the arrived players to him. The
     // party stands here as the scene opens, an update before that cut, and the scene holds
     // it still, so it faces him when the cut shows; holdN64Party then turns it on as
-    // e0860d1c does.
-    const auto* ceremony = adapter().towerCeremony();
+    // e0860d1c does. Retail shows the arrival heading again for the Select update after the
+    // cut (e004a6e8 runs e00496d4 while +0x16c still holds e004b340's 0x5b, and its e0048b2c
+    // turns each player back to +0xa8); the party here goes on facing Sumner through it.
+    auto* ceremony = m_world.adapter()->towerCeremony();
     if (ceremony == nullptr || !ceremony->pending() || ceremony->active()) {
         return false;
+    }
+    // The hold keeps each member's arrival heading, its record's +0xa8, for the hand-back.
+    for (auto* actor : party) {
+        if (actor != nullptr && actor->player() >= 0) {
+            ceremony->hold(static_cast<usize>(actor->player()), actor->position(), actor->yaw());
+        }
     }
     faceSumner(party, *ceremony);
     // Its shots turn about these members' mean feet (e086007c skips the players whose state
@@ -51,14 +59,12 @@ bool LegendsLevel::placeN64OpeningParty(std::span<PlayerActor*> party) {
 }
 
 void LegendsLevel::holdN64Party(std::span<PlayerActor* const> party) {
-    // While a ceremony runs (e086adac) e0860d1c turns every arrived player toward e086adb0 on
+    // While a ceremony runs (e086adac) e0860d1c draws every arrived player facing e086adb0 on
     // each script and return update: Sumner from the cut (which a ceremony opened in play
-    // turns them to here first), then each rune, door and shard shot's focus. Of its two
-    // facings the actor takes the drawn one: it is what the party shows, and after the
-    // hand-back retail keeps that matrix until the player steers (game.bin e0048a24 and
-    // e0048b2c rebuild it only for a stick or a new desired yaw), when the actor turns to
-    // the stick at once. The kept yaw meets it long before then: a half turn takes 63
-    // updates, and each shipped script holds its last shot's focus for 180 or more.
+    // turns them to here first), then each rune, door and shard shot's focus. The hand-back
+    // (e0860154) stands them again on its own update, where game.bin's e0048b2c turns each
+    // back to the heading its record kept from before the cut (+0xa8); one who steers turns
+    // with play from the next update.
     auto* ceremony = m_world.adapter()->towerCeremony();
     if (ceremony == nullptr) {
         return;
@@ -67,12 +73,12 @@ void LegendsLevel::holdN64Party(std::span<PlayerActor* const> party) {
         if (actor == nullptr || actor->player() < 0) {
             continue;
         }
-        if (const auto facing =
-                ceremony->hold(static_cast<usize>(actor->player()), actor->position())) {
+        if (const auto yaw = ceremony->hold(static_cast<usize>(actor->player()), actor->position(),
+                                            actor->yaw())) {
             // This writes the actor's digested yaw from ceremony state outside rollback, which
             // holds while Legends levels play offline only (ImportedLevel; GauntletLegends'
             // walkingNative wants no online session).
-            actor->turnTo(facing->drawn);
+            actor->turnTo(*yaw);
         }
     }
 }

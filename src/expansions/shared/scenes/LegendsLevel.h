@@ -182,10 +182,11 @@ private:
     bool updateSumner(std::span<PlayerActor*> players, f32 seconds, bool blocked);
     bool updateN64Sumner(std::span<PlayerActor*> players, f32 seconds, bool blocked);
     bool updateDreamcastSumner(std::span<PlayerActor*> players, f32 seconds, bool blocked);
-    /** A Tower ceremony waiting to open the visit stands the party facing Sumner and keeps its
-     * mean feet for the ceremony's start. */
+    /** A Tower ceremony waiting to open the visit stands the party facing Sumner, keeping each
+     * member's arrival heading for its hand-back and their mean feet for its start. */
     bool placeN64OpeningParty(std::span<PlayerActor*> party);
-    /** A running Tower ceremony turns the party it holds toward each shot's focus. */
+    /** A Tower ceremony turns the party it holds toward each shot's focus, and its hand-back
+     * turns each member back to the heading it stood at before the cut. */
     void holdN64Party(std::span<PlayerActor* const> party);
     std::vector<std::string> answerN64Dialogue(s32 topic);
     std::unique_ptr<ItemArchive> loadN64EnemyAssets(s32 kind) const;

@@ -124,10 +124,8 @@ constexpr f32 kCaptionFade = .3f;
 constexpr u8 kWhite = 255;
 constexpr f32 kByteScale = 255;
 
-// e0860d1c's turns: Sumner moves at most .2 rad an update (0x3e4ccccd), a held player's kept
-// yaw .05 (0x3d4ccccd).
+/// e0860d1c turns Sumner at most .2 rad an update (0x3e4ccccd).
 constexpr f32 kSumnerTurn = .2f;
-constexpr f32 kHeldTurn = .05f;
 /// e0860198's podium point stands 1.8 (0x3fe66666) before Sumner.
 constexpr f32 kPodiumReach = 1.8f;
 // e086107c..e08611dc: the staff shrinks over a second of e086ade4 and thins once less than .3
@@ -198,6 +196,7 @@ void LegendsTowerCeremony::begin(const LegendsProgress& before, const LegendsPro
     m_started = false;
     m_entries.clear();
     m_next = 0;
+    m_headings.fill(std::nullopt);
     m_owned = pieces(after);
     m_withheld = {};
     m_unrevealed = {};
@@ -299,7 +298,6 @@ void LegendsTowerCeremony::start(const WorldCamera& camera, const Vec3& attentio
     // the scripts run: a visit's ceremonies open it, before anything writes e086add4.
     m_sumnerTarget = party;
     m_partyTarget = sumner;
-    m_held.fill(std::nullopt);
     m_staff = Staff::Raised;
     m_lookDown = false;
     // It also empties the caption queue and lifts the ready suppression.
@@ -322,18 +320,25 @@ std::optional<Vec3> LegendsTowerCeremony::partyFacingTarget() const {
     return m_started ? std::optional{m_partyTarget} : std::nullopt;
 }
 
-std::optional<LegendsTowerCeremony::HeldFacing> LegendsTowerCeremony::hold(usize seat,
-                                                                           const Vec3& feet) {
-    if (!m_started || seat >= m_held.size()) {
+std::optional<f32> LegendsTowerCeremony::hold(usize seat, const Vec3& feet, f32 heading) {
+    if (seat >= m_headings.size()) {
         return std::nullopt;
     }
-    auto& held = m_held[seat];
-    if (!held) {
-        const f32 facing = partyFacing(feet);
-        held = Held{.feet = feet, .facing = {facing, facing}};
+    auto& kept = m_headings[seat];
+    if (!m_started && !pending()) {
+        return std::exchange(kept, std::nullopt);
     }
-    held->feet = feet;
-    return held->facing;
+    if (!kept) {
+        kept = heading;
+    }
+    if (!m_started) {
+        return std::nullopt;
+    }
+    // e0860dc0: e0010e50 of the target's x and z less the player's +0x24 and +0x2c builds the
+    // matrix. The record's own yaw (+0xa4), which the turn steps .05 toward that angle
+    // (e0860e08..e0860eb8), is not drawn, and the hand-back's update replaces it: e0048b2c
+    // with +0xa8, or e0048a24 with the stick's heading for a player who steers.
+    return portable::atan2(m_partyTarget.x - feet.x, m_partyTarget.z - feet.z);
 }
 
 f32 LegendsTowerCeremony::turnSumner(f32 yaw, const Vec3& sumner, const Vec3& target) {
@@ -341,15 +346,6 @@ f32 LegendsTowerCeremony::turnSumner(f32 yaw, const Vec3& sumner, const Vec3& ta
     // yaw; a turn that is not 0 goes to e002fcf8 clamped.
     const f32 turn = wrapped(-portable::atan2(target.x - sumner.x, target.z - sumner.z) - yaw);
     return turn == 0 ? yaw : yaw + std::clamp(turn, -kSumnerTurn, kSumnerTurn);
-}
-
-LegendsTowerCeremony::HeldFacing
-LegendsTowerCeremony::turnHeld(const HeldFacing& facing, const Vec3& feet, const Vec3& target) {
-    // e0860dc0: e0010e50 of the target's x and z less the player's +0x24 and +0x2c builds the
-    // matrix; the kept yaw (+0xa4 of the record) takes that angle at a turn of 0 (e0860eb0).
-    const f32 drawn = portable::atan2(target.x - feet.x, target.z - feet.z);
-    const f32 turn = wrapped(drawn - facing.kept);
-    return {drawn, turn == 0 ? drawn : facing.kept + std::clamp(turn, -kHeldTurn, kHeldTurn)};
 }
 
 Vec3 LegendsTowerCeremony::podium() const {
@@ -480,15 +476,11 @@ void LegendsTowerCeremony::stepCaptions() {
 }
 
 void LegendsTowerCeremony::attend() {
-    // e0860d1c turns each held player toward e086adb0 (e0860d54..e0860ed8) and Sumner toward
-    // e086adbc (e0860ef0..e0861020), then restarts REDY, looping, once a gesture that plays
-    // once has ended (0x9000), unless the shard spell suppresses it. Its staff block scales
-    // states 1 and 2 alone, so the raised staff keeps its size.
-    for (auto& held : m_held) {
-        if (held) {
-            held->facing = turnHeld(held->facing, held->feet, m_partyTarget);
-        }
-    }
+    // e0860d1c draws each held player facing e086adb0 (e0860d54..e0860ed8), which hold() gives
+    // from the target a script has just set, and turns Sumner toward e086adbc
+    // (e0860ef0..e0861020), then restarts REDY, looping, once a gesture that plays once has
+    // ended (0x9000), unless the shard spell suppresses it. Its staff block scales states 1 and
+    // 2 alone, so the raised staff keeps its size.
     m_sumnerYaw = turnSumner(m_sumnerYaw, m_native.sumner.position, m_sumnerTarget);
     if (!m_readySuppressed && m_gesture.done && m_gesture.frozen) {
         play(kReady);

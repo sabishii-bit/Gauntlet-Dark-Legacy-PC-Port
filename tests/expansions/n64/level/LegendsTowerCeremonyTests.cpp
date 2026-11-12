@@ -1252,7 +1252,7 @@ TEST_CASE("N64 ceremony clocks ignore invalid steps and are independent of rende
     CHECK(shrinking == 30);
 }
 
-TEST_CASE("N64 Sumner turns at most .2 rad an update, wrapping once each way past pi",
+TEST_CASE("N64 Sumner turns at most .2 rad an update and wraps once each way past pi",
           "[legends][tower-ceremony]") {
     // Tower.bin e0860ef0..e0861020 in float32, Sumner at the origin.
     using Ceremony = LegendsTowerCeremony;
@@ -1282,33 +1282,7 @@ TEST_CASE("N64 Sumner turns at most .2 rad an update, wrapping once each way pas
     CHECK(Ceremony::turnSumner(10, sumner, Vec3{0, 0, 1}) == 10 - .2f);
 }
 
-TEST_CASE("N64 held players face each target at once while their kept yaw steps .05",
-          "[legends][tower-ceremony]") {
-    // Tower.bin e0860d9c..e0860ed8 in float32: the matrix takes the arc tangent of the
-    // target's x and z offsets from the feet; the record's yaw steps toward that.
-    using Ceremony = LegendsTowerCeremony;
-    const Vec3 feet{2, 0, 3};
-    const Vec3 east = feet + Vec3{1, 0, 0};
-    const f32 angle = portable::atan2(1.0f, 0.0f);
-    Ceremony::HeldFacing facing;
-    for (s32 update = 1; update <= 31; ++update) {
-        CAPTURE(update);
-        const f32 kept = facing.kept;
-        facing = Ceremony::turnHeld(facing, feet, east);
-        CHECK(facing.drawn == angle);
-        CHECK(facing.kept == kept + .05f);
-    }
-    facing = Ceremony::turnHeld(facing, feet, east);
-    CHECK(facing == Ceremony::HeldFacing{angle, angle});
-    // A turn of 0 takes the angle itself (e0860eb0); past pi the kept yaw wraps the short way,
-    // and once each way however far it has run.
-    CHECK(Ceremony::turnHeld({angle, angle}, feet, east) == Ceremony::HeldFacing{angle, angle});
-    const Vec3 behind = feet + Vec3{portable::sin(-3.0f), 0, portable::cos(-3.0f)};
-    CHECK(Ceremony::turnHeld({0, 3}, feet, behind).kept == 3 + .05f);
-    CHECK(Ceremony::turnHeld({0, 10}, feet, feet + Vec3{0, 0, 1}).kept == 10 - .05f);
-}
-
-TEST_CASE("N64 Sumner turns toward the party until a shot, then toward its focus",
+TEST_CASE("N64 Sumner turns toward the party until a shot and then toward its focus",
           "[legends][tower-ceremony]") {
     // Without the overlay Sumner stands at the origin at yaw 0 and the scripts' foci stand
     // over him, so a shot turns him back to 0, as his podium does. The cut aims him at the
@@ -1372,32 +1346,46 @@ TEST_CASE("N64 Sumner turns toward the party until a shot, then toward its focus
     }
 }
 
-TEST_CASE("N64 ceremony holds the standing party from its cut to its hand-back",
+TEST_CASE("N64 ceremony holds the party from its cut and gives back each heading at its hand-back",
           "[legends][tower-ceremony]") {
     auto value = nativeCeremony();
+    const Vec3 feet{-3, 0, 4};
+    // Nothing is held before a ceremony is queued.
+    CHECK_FALSE(value.hold(0, feet, .5f));
     LegendsProgress now;
     now.runestones = 1;
     value.begin({}, now);
-    const Vec3 feet{-3, 0, 4};
-    CHECK_FALSE(value.hold(0, feet));
+    // Queued, a seat's first hold keeps the heading it stands at before the cut turns it, its
+    // record's +0xa8; the holds after it, the party turned to Sumner already, keep that one.
+    CHECK_FALSE(value.hold(0, feet, .5f));
+    CHECK_FALSE(value.hold(0, feet, 2));
     value.start({}, {}, feet);
-    // The cut turned each arrived player to Sumner, its record's yaw and its matrix alike
-    // (e0048acc); the native four seats are all it holds.
-    const auto cut = value.hold(1, feet);
-    REQUIRE(cut);
-    CHECK(cut->drawn == value.partyFacing(feet));
-    CHECK(cut->kept == cut->drawn);
-    CHECK_FALSE(value.hold(LegendsTowerCeremony::kSeats, feet));
+    // From the cut each held seat faces Sumner (e0048acc, then e0860d1c's matrix), and one first
+    // held now keeps the heading it stands at now. The native four seats are all it holds.
+    const f32 towardSumner = value.partyFacing(feet);
+    CHECK(value.hold(0, feet, 2) == towardSumner);
+    CHECK(value.hold(1, feet, 1.25f) == towardSumner);
+    CHECK(value.hold(2, feet, .75f) == towardSumner);
+    CHECK_FALSE(value.hold(LegendsTowerCeremony::kSeats, feet, 1));
     // Without the overlay every focus stands over Sumner, so its angle from the feet is his.
-    for (s32 tick = 1; tick <= 232; ++tick) {
+    for (s32 tick = 1; tick < 232; ++tick) {
         CAPTURE(tick);
         value.update(kTick);
-        const auto facing = value.hold(1, feet);
-        CHECK(facing.has_value() == (tick < 232));
-        if (facing) {
-            CHECK(*facing == *cut);
-        }
+        CHECK(value.hold(0, feet, 3) == towardSumner);
+        CHECK(value.hold(1, feet, 3) == towardSumner);
     }
+    // The hand-back's update (e0860154) gives each seat back the heading it kept, once: there
+    // game.bin's e0048b2c turns a standing player whose yaw is not +0xa8 back to it.
+    value.update(kTick);
+    REQUIRE_FALSE(value.active());
+    CHECK(value.hold(0, feet, 3) == .5f);
+    CHECK(value.hold(1, feet, 3) == 1.25f);
+    CHECK_FALSE(value.hold(0, feet, 3));
+    CHECK_FALSE(value.hold(1, feet, 3));
+    CHECK_FALSE(value.hold(3, feet, 3));
+    // A new queue holds the party afresh, dropping a heading no hand-back gave back.
+    value.begin({}, {});
+    CHECK_FALSE(value.hold(2, feet, 3));
 }
 
 TEST_CASE("N64 Sumner turns to the party and Tower.bin's foci and back onto his podium",
@@ -1442,11 +1430,12 @@ TEST_CASE("N64 Sumner turns to the party and Tower.bin's foci and back onto his 
         ticks(value, 12);
         const f32 settled = value.sumnerYaw();
         CHECK(settled == Catch::Approx(rest).margin(kAngleBits));
-        for (s32 tick = 190; value.presenting(); ++tick) {
+        for (s32 tick = 190; tick < 2000 && value.presenting(); ++tick) {
             CAPTURE(tick);
             value.update(kTick);
             CHECK(value.sumnerYaw() == settled);
         }
+        CHECK_FALSE(value.presenting());
     }
     // Where each door's and the shard's shot leaves him as its script returns: Castle's turn
     // wraps the short way past pi, so his yaw runs on beyond it.
@@ -1479,51 +1468,44 @@ TEST_CASE("N64 Sumner turns to the party and Tower.bin's foci and back onto his 
     CHECK(settled(shard) == Catch::Approx(2.97644401f).margin(kAngleBits * 10));
 }
 
-TEST_CASE("N64 ceremony turns the held party's drawn facing at a shot while its kept yaw follows",
+TEST_CASE("N64 ceremony turns the held party to Tower.bin's foci and back at its hand-back",
           "[legends][tower-ceremony][assets]") {
-    // Two players at tower2's entrance, held from the cut; the facings are Tower.bin's turn in
-    // float32 worked apart from this code.
+    // Two players at tower2's entrance, held from the visit's opening with the headings they
+    // came in at; the facings are Tower.bin's turn in float32 worked apart from this code.
     auto value = ceremony();
     LegendsProgress now;
     now.runestones = 1;
     value.begin({}, now);
     const std::array<Vec3, 2> feet{Vec3{-6, 0, -16}, Vec3{-3, 0, -15}};
+    constexpr std::array<f32, 2> kArrival{0, .5f};
+    for (usize seat = 0; seat < feet.size(); ++seat) {
+        CHECK_FALSE(value.hold(seat, feet[seat], kArrival[seat]));
+    }
     value.start({}, {}, (feet[0] + feet[1]) * .5f);
     constexpr f32 kAngleBits = 1e-6f;
     constexpr std::array<f32, 2> kTowardSumner{.982793748f, .909753144f};
     constexpr std::array<f32, 2> kTowardCircle{.244978666f, .153944671f};
-    // The kept yaw meets the drawn facing 15 and 16 updates after the shot on 21.
-    constexpr std::array<s32, 2> kMet{35, 36};
-    std::array<LegendsTowerCeremony::HeldFacing, 2> cut{};
-    for (usize seat = 0; seat < feet.size(); ++seat) {
-        const auto facing = value.hold(seat, feet[seat]);
-        REQUIRE(facing);
-        CHECK(facing->drawn == Catch::Approx(kTowardSumner[seat]).margin(kAngleBits));
-        CHECK(facing->kept == facing->drawn);
-        cut[seat] = *facing;
-    }
-    auto last = cut;
-    for (s32 tick = 1; tick <= 232; ++tick) {
+    for (s32 tick = 0; tick <= 232; ++tick) {
         CAPTURE(tick);
-        value.update(kTick);
+        if (tick > 0) {
+            value.update(kTick);
+        }
         for (usize seat = 0; seat < feet.size(); ++seat) {
             CAPTURE(seat);
-            const auto facing = value.hold(seat, feet[seat]);
+            // The heading a later hold passes is not kept: the opening's first hold gave it.
+            const auto yaw = value.hold(seat, feet[seat], kTowardSumner[seat]);
+            REQUIRE(yaw);
             if (tick == 232) {
-                // The hand-back lets the party go (e08612b4), the two facings as one.
-                CHECK_FALSE(facing);
-                CHECK(last[seat].kept == last[seat].drawn);
-                continue;
-            }
-            REQUIRE(facing);
-            if (tick < 21) {
-                CHECK(*facing == cut[seat]);
+                // The hand-back's update turns each back to the heading it came in at.
+                CHECK(*yaw == kArrival[seat]);
             } else {
-                CHECK(facing->drawn == Catch::Approx(kTowardCircle[seat]).margin(kAngleBits));
-                CHECK(facing->kept == (tick < kMet[seat] ? last[seat].kept - .05f : facing->drawn));
+                CHECK(*yaw == Catch::Approx(tick < 21 ? kTowardSumner[seat] : kTowardCircle[seat])
+                                  .margin(kAngleBits));
             }
-            last[seat] = *facing;
         }
+    }
+    for (usize seat = 0; seat < feet.size(); ++seat) {
+        CHECK_FALSE(value.hold(seat, feet[seat], kArrival[seat]));
     }
 }
 

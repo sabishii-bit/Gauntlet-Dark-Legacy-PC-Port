@@ -543,11 +543,24 @@ TEST_CASE("An N64 Tower return's cut turns about the members standing and not on
     fixture.step({}, 1.0 / 30);
     const auto cut = fixture.level->camera();
     REQUIRE(cut);
-    CHECK(glm::distance(cut->position,
-                        sumnerCutEye(standing->position(), towerSumner(fixture.root))) < 1e-4f);
+    const Vec3 sumner = towerSumner(fixture.root);
+    CHECK(glm::distance(cut->position, sumnerCutEye(standing->position(), sumner)) < 1e-4f);
+    // Through the whole hold, past the rune's shot and the hand-back, only the standing member
+    // turns: the scene hands the level no member who fell.
+    REQUIRE(ceremony->active());
+    bool shot = false;
+    for (s32 update = 0; update < 600 && ceremony->active(); ++update) {
+        CAPTURE(update);
+        fixture.step({}, 1.0 / 30);
+        shot |= ceremony->partyFacingTarget().value_or(sumner) != sumner;
+        CHECK(fallen->yaw() == fixture.arrivalYaw);
+    }
+    REQUIRE_FALSE(ceremony->active());
+    CHECK(shot);
+    CHECK(standing->yaw() == fixture.arrivalYaw);
 }
 
-TEST_CASE("An N64 Tower return turns its held party to each shot's focus as the scene holds it",
+TEST_CASE("An N64 Tower return turns its held party to each shot's focus and back to its arrival",
           "[legends][sumner-integration][tower-ceremony][assets]") {
     LegendsProgress brought;
     brought.runestones = 1;
@@ -588,12 +601,18 @@ TEST_CASE("An N64 Tower return turns its held party to each shot's focus as the 
     const Vec3 circle{coordinate(0x967c), coordinate(0x9680) + 5, coordinate(0x9684)};
     CHECK(targets == std::vector<Vec3>{sumner, circle});
     CHECK(shotInArrival);
-    // Play takes the party back facing the circle, and nothing turns it while it stands.
+    // The hand-back's update turns the pair back to the heading it came in at, as game.bin's
+    // e0048b2c turns each standing player to its record's +0xa8, and play keeps it there while
+    // the pair stands.
+    for (s32 seat = 0; seat < 2; ++seat) {
+        CAPTURE(seat);
+        CHECK(fixture.scene.actor(seat)->yaw() == fixture.arrivalYaw);
+    }
     for (s32 update = 0; update < 30; ++update) {
         fixture.step({}, 1.0 / 30);
         for (s32 seat = 0; seat < 2; ++seat) {
             CAPTURE(update, seat);
-            CHECK(fixture.scene.actor(seat)->yaw() == facing(seat, circle));
+            CHECK(fixture.scene.actor(seat)->yaw() == fixture.arrivalYaw);
         }
     }
 }
