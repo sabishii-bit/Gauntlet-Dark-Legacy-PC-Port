@@ -194,7 +194,8 @@ TEST_CASE("Native Chimera backs away ten a second through its death throes",
     CHECK(stock->data.moves()[*death].hold == 2);
     Bosses bosses;
     bosses.open(device, common, nullptr, {}, 'C');
-    REQUIRE(bosses.preload(35, std::move(stock)));
+    const auto* const preloaded = bosses.preload(35, std::move(stock));
+    REQUIRE(preloaded);
     REQUIRE(bosses.spawn(35, Vec3{0, 20, -52}, 0));
     bosses.wake();
     EnemyView player;

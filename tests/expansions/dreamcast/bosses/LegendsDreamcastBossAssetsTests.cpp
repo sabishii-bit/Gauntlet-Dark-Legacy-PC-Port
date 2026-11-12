@@ -365,7 +365,8 @@ TEST_CASE("Dreamcast Spider Queen is held inside her territory from her first up
     CHECK(stock->data.movement().roamRadius == 22);
     Bosses bosses;
     bosses.open(device, {}, nullptr, {}, 'D');
-    REQUIRE(bosses.preload(boss_type::kDrider, std::move(stock)));
+    const auto* const preloaded = bosses.preload(boss_type::kDrider, std::move(stock));
+    REQUIRE(preloaded);
     REQUIRE(bosses.spawn(boss_type::kDrider, mark, encounter->combat.yaw));
     // The Dreamcast's translate clamps a zero step too (1ST_READ.BIN 0x8c08a5c0, by the fast
     // length at 0x8c0ed4a0), so her first update, asleep in INIT, takes her 2.83 inward.
@@ -405,7 +406,8 @@ TEST_CASE("Dreamcast Chimera backs away nine a second through its death throes, 
     const f32 floorOffset = stock->data.floorOffset();
     Bosses bosses;
     bosses.open(device, {}, nullptr, {}, 'A');
-    REQUIRE(bosses.preload(boss_type::kChimera, std::move(stock)));
+    const auto* const preloaded = bosses.preload(boss_type::kChimera, std::move(stock));
+    REQUIRE(preloaded);
     const Vec3 mark = encounter->combat.position;
     REQUIRE(bosses.spawn(boss_type::kChimera, mark, encounter->combat.yaw));
     const Vec3 key = mark + Vec3{0, floorOffset, 0} + Vec3{0, -22, 27};

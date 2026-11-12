@@ -407,6 +407,8 @@ TEST_CASE("An N64 Tower return builds its unselected new doors open without thei
     auto scene = LegendsSceneAdapter::load(device, LegendsPlatform::N64, directory, map);
     // A closed door turns back a step into its contact cylinder.
     const auto closed = [&](u8 obelisks) {
+        // MSVC's checked array iterator is not a pointer; keep the portable iterator type.
+        // NOLINTNEXTLINE(readability-qualified-auto)
         const auto door = std::ranges::find(config.doors, obelisks,
                                             &formats::LegendsN64TowerDoor::requiredObelisks);
         REQUIRE(door != config.doors.end());

@@ -415,7 +415,8 @@ TEST_CASE("A native legendary rite wakes its boss once the deadline passes, wher
         REQUIRE(stock);
         Bosses bosses;
         bosses.open(device, common, nullptr, {}, 'C', {}, &scimitar.profile);
-        REQUIRE(bosses.preload(35, std::move(stock)));
+        const auto* const preloaded = bosses.preload(35, std::move(stock));
+        REQUIRE(preloaded);
         REQUIRE(bosses.spawn(35, Vec3{0}, 0));
         if (borne) {
             REQUIRE(bosses.bringLegend(0));
