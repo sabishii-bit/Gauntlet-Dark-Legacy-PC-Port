@@ -8,8 +8,9 @@
 
 namespace gdl::game {
 namespace {
-/** The segments a rock stands with once an arena raises it again: DC 8c0a9e80 restores three
- * times its definition's health, which AddItemWobj 8c0a9d80 stands as three segments. */
+/** The segments a rock stands with once an arena's eruption raises it: DC 8c0a9e80 and GC
+ * 0x80063D40 (whose eruption the N64 Yeti follows) set three times its definition's health,
+ * which AddItemWobj (8c0a9d80, 0x80063DB0) stands as three segments. */
 constexpr s32 kRaisedTier = 3;
 
 Obstacle arenaBody(const ImportedBoss::ArenaRock& definition) {
