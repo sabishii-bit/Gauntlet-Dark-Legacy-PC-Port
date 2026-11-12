@@ -549,7 +549,8 @@ TEST_CASE("Savior weakens Skorne on release and death finishes before the victor
     REQUIRE_FALSE(bosses.view().alive);
     REQUIRE(bosses.present());
     REQUIRE_FALSE(bosses.takeDefeat().has_value());
-    const Vec3 rewardOffset = bosses.rewardOffset();
+    const auto keySpot = bosses.keySpot();
+    REQUIRE(keySpot.has_value());
     s32 spews = 0;
     for (s32 frame = 0; frame < 900 && bosses.present(); ++frame) {
         bosses.update(2, 1.0f / 30, players);
@@ -562,6 +563,6 @@ TEST_CASE("Savior weakens Skorne on release and death finishes before the victor
     REQUIRE_FALSE(bosses.present());
     REQUIRE(bosses.takeDefeat().has_value());
     REQUIRE_FALSE(bosses.takeDefeat().has_value());
-    REQUIRE(bosses.rewardOffset() == rewardOffset);
+    REQUIRE(bosses.keySpot() == keySpot);
 }
 } // namespace

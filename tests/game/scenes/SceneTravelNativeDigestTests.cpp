@@ -286,15 +286,15 @@ TEST_CASE("speculative first victory artwork cannot contaminate an earlier nativ
     BossVictoryPresentation::LocalSnapshot before;
     victory.saveLocal(before);
     const auto empty = native(victory, fixture.resources);
-    victory.begin(41, 'G', 1, 0, false);
-    victory.bindWizard(fixture.device, fixture.items, Vec3{0}, std::array{Vec3{2, 0, 2}});
+    victory.begin(41, 'G', 1, 0, false, Vec3{0});
+    victory.bindWizard(fixture.device, fixture.items);
     fixture.refresh();
     CHECK(native(victory, fixture.resources) != empty);
     CHECK(captured(victory, before, fixture.resources) == empty);
     REQUIRE(victory.restoreLocal(before));
     CHECK(native(victory, fixture.resources) == empty);
-    victory.begin(41, 'G', 1, 0, false);
-    victory.bindWizard(fixture.device, fixture.items, Vec3{0}, std::array{Vec3{2, 0, 2}});
+    victory.begin(41, 'G', 1, 0, false, Vec3{0});
+    victory.bindWizard(fixture.device, fixture.items);
     const MessageTable strings;
     victory.update(1, kStep, false, strings);
     const auto stable = native(victory, fixture.resources);
@@ -474,8 +474,8 @@ TEST_CASE("arrival and victory digest bytes stay pinned after the travel script 
           "[native-state-digest][scene-travel-native-digest][digest-golden]") {
     Travel fixture("travel-presentation-golden");
     BossVictoryPresentation victory;
-    victory.begin(41, 'G', 1, 0, false);
-    victory.bindWizard(fixture.device, fixture.items, Vec3{0}, std::array{Vec3{2, 0, 2}});
+    victory.begin(41, 'G', 1, 0, false, Vec3{0});
+    victory.bindWizard(fixture.device, fixture.items);
     fixture.refresh();
     const MessageTable strings;
     const auto step = [&](s32 tick) {
@@ -502,8 +502,8 @@ TEST_CASE("arrival and victory digest bytes stay pinned after the travel script 
                              "48ce4f0c371589edacdff1ab7bcd383fc09341ab760b82b8ea1b8630c23a88e0");
     test::checkPinnedDigests("BossVictoryPresentation", native(victory, fixture.resources),
                              captured(victory, victorySaved, fixture.resources),
-                             "dc21f63f69ea4d64c6d218b2964a106f19735ec50f5beeccec1db827212fe1a4",
-                             "5e05ccee2b6c0ef725aa8a27ef6fe49809aacdf4d8fdc3a627562d451f582428");
+                             "0c0f521a76b942a3761c4641901f12f4b0da9690c9a829fda67037072c7d1a45",
+                             "434ca2a03f07246aca45495f740ffe3e7530121d49322109888c951651bcb34e");
 }
 
 TEST_CASE("promotion and hint digest bytes stay pinned after their scripts and what they saved",

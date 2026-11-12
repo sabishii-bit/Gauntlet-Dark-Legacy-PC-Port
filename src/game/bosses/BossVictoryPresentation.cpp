@@ -15,12 +15,12 @@
 namespace gdl::game {
 void BossVictoryPresentation::appendState(NativeStateDigest& digest, const Simulation& state,
                                           const TextureAnimator::Clock& clock) const {
-    const auto& [visit, tree, player, pose, previousFrame, previousGeneration, advanced, position,
-                 yaw, sparkled] = state;
+    const auto& [visit, tree, player, pose, previousFrame, previousGeneration, advanced, mark,
+                 position, yaw, sparkled] = state;
     digest.string("BossVictoryPresentation.native.1");
     digest.value(visit);
     digest.resource(tree);
-    digest.values(player, pose, previousFrame, previousGeneration, advanced, position, yaw,
+    digest.values(player, pose, previousFrame, previousGeneration, advanced, mark, position, yaw,
                   sparkled);
     // The first speculative boss fall may warm this retained draw bank. A
     // pre-fall snapshot has no wizard and must not hash a later cache birth.
@@ -69,16 +69,21 @@ bool BossVictoryPresentation::restoreLocal(const LocalSnapshot& saved) {
 
 namespace {
 constexpr std::string_view kWizardTree = "WIZARD";
-constexpr f32 kWizardLift = 3.0f;
+constexpr f32 kWizardLift = 3.0f; ///< over the middle he comes to (0x80345A18)
+/** The first player's height counts twice, in the mark's place (0x80345A48). */
+constexpr f32 kFirstHeightWeight = 2.0f;
+/** Where he stands for both Skorne arenas (0x80345A08-0x80345A10). */
+constexpr Vec3 kAltar{0.0f, -12.0f, 6.0f};
 constexpr f32 kCaptionScale = 0.667f; ///< CaptionText: two thirds of the scroll's scale
 constexpr f32 kCaptionTop = 16.0f;    ///< do_good_wizard lays its captions at y 16 of 384
 constexpr f32 kCaptionLineHeight = 32.0f * kCaptionScale;
 } // namespace
 
 void BossVictoryPresentation::begin(s32 kind, char realm, u16 runesInRealm, u16 runesFound,
-                                    bool goldLeft) {
+                                    bool goldLeft, const Vec3& mark) {
     reset();
     m_sim.visit.begin(kind, realm, runesInRealm, runesFound, goldLeft);
+    m_sim.mark = mark;
 }
 
 void BossVictoryPresentation::clear() {
@@ -97,13 +102,13 @@ void BossVictoryPresentation::reset() {
     m_sim.pose = TreePose{};
     m_sim.presentationAdvanced = false;
     m_textures.restoreClock({});
+    m_sim.mark = Vec3{0.0f};
     m_sim.position = Vec3{0.0f};
     m_sim.yaw = 0.0f;
     m_sim.sparkled = false;
 }
 
-void BossVictoryPresentation::bindWizard(RenderDevice& device, ItemArchive& items, const Vec3& boss,
-                                         std::span<const Vec3> party) {
+void BossVictoryPresentation::bindWizard(RenderDevice& device, ItemArchive& items) {
     m_sim.tree = nullptr;
     m_sim.player.stop();
     m_sim.pose = TreePose{};
@@ -147,30 +152,34 @@ void BossVictoryPresentation::bindWizard(RenderDevice& device, ItemArchive& item
         m_model.setFrame(0, 0);
         m_textures.apply(m_model, figure, 0, 0);
     }
-    // Over the middle of the boss's mark and the party, facing the party.
-    Vec3 centre = boss;
-    f32 count = 1.0f;
+}
+
+/** DoGoodWizard stands him as he begins to appear (0x8001923c-0x80019284), facing the party:
+ * at the altar for both Skorne, else over the middle of the boss's mark and the players standing
+ * or dying then, the first one's height counted twice in the mark's place (0x80019b5c). */
+void BossVictoryPresentation::place(std::span<const Vec3> party) {
+    Vec3 centre = m_sim.mark;
     Vec3 partyCentre{0.0f};
-    for (const Vec3& position : party) {
-        centre += position;
-        partyCentre += position;
-        count += 1.0f;
+    for (usize i = 0; i < party.size(); ++i) {
+        centre += party[i];
+        if (i == 0) {
+            centre.y = kFirstHeightWeight * party[i].y;
+        }
+        partyCentre += party[i];
     }
+    const auto count = static_cast<f32>(party.size() + 1);
     m_sim.position = centre / count + Vec3{0.0f, kWizardLift, 0.0f};
     if (const BossTraits* traits = bossTraitsOf(m_sim.visit.kind());
         traits != nullptr && traits->defeat.wizardAtAltar) {
-        // Both Skorne arenas use DoGoodWizard's fixed altar position, not the
-        // ordinary boss/party midpoint (0x80345a08..0x80345a10).
-        m_sim.position = Vec3{0, -12, 6};
+        m_sim.position = kAltar;
     }
     const Vec3 toParty = partyCentre / std::max(count - 1.0f, 1.0f) - m_sim.position;
     m_sim.yaw = portable::atan2(toParty.x, toParty.z);
 }
 
-BossVictoryPresentation::Update BossVictoryPresentation::update(s32 ticks, f32 seconds,
-                                                                bool goldLeft,
-                                                                const MessageTable& strings,
-                                                                bool voicePlaying) {
+BossVictoryPresentation::Update
+BossVictoryPresentation::update(s32 ticks, f32 seconds, bool goldLeft, const MessageTable& strings,
+                                bool voicePlaying, std::span<const Vec3> party) {
     Update result;
     m_textures.advance(0);
     m_sim.previousFrame = m_sim.player.presentationFrame();
@@ -186,7 +195,11 @@ BossVictoryPresentation::Update BossVictoryPresentation::update(s32 ticks, f32 s
             pages = strings.message(*found).pages;
         }
     }
+    const bool waiting = m_sim.visit.stage() == BossVictory::Stage::Waiting;
     result.voices = m_sim.visit.update(ticks, pages, voicePlaying);
+    if (waiting && m_sim.visit.wizardShown()) {
+        place(party);
+    }
     if (m_sim.tree != nullptr && m_sim.player.playing() && m_sim.visit.wizardShown()) {
         m_sim.player.advance(seconds, true);
         m_sim.pose.evaluate(*m_sim.tree, m_sim.player.sequence(), m_sim.player.frame());

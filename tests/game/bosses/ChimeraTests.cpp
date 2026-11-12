@@ -777,4 +777,52 @@ TEST_CASE("Chimera shared death stops surviving heads and emits only body reward
     REQUIRE_FALSE(body.present());
     REQUIRE(rewards == 1);
 }
+
+TEST_CASE("the Chimera backs away seven a second through its death throes, out of its territory",
+          "[game][chimera][boss-death][boss-movement][assets]") {
+    ChimeraFixture fixture;
+    auto& body = fixture.fight.actor;
+    const auto death = body.data()->moveOfType(MoveDefinition::kDeath);
+    REQUIRE(death.has_value());
+    // CHIMERA.WAD's DEATH paces minus seven and holds two seconds (MOVE +0x84, +0x8C), which
+    // CritterTranslate takes in every state, holding only a living boss to its twelve.
+    const MoveDefinition& move = body.data()->moves()[*death];
+    REQUIRE(move.speed == -7);
+    REQUIRE(move.hold == 2);
+    REQUIRE(body.data()->movement().roamRadius == 12);
+    for (s32 frame = 0; frame < 300; ++frame) {
+        fixture.step();
+        body.takeShots();
+        body.takeCues();
+        body.takeBlows();
+    }
+    EnemyHit hit;
+    hit.damage = 100000;
+    body.hurt(hit);
+    REQUIRE(body.dying());
+    const Vec3 fell = body.position();
+    Vec3 last = fell;
+    s32 steps = 0;
+    for (s32 frame = 0; frame < 900 && body.present(); ++frame) {
+        const f32 yaw = body.yaw();
+        fixture.step();
+        body.takeShots();
+        body.takeCues();
+        body.takeBlows();
+        body.takeSpews();
+        if (body.present()) {
+            const Vec3 moved = body.position() - last;
+            CHECK(moved.x == Approx(-7 * std::sin(yaw) / 30).margin(1e-4));
+            CHECK(moved.z == Approx(-7 * std::cos(yaw) / 30).margin(1e-4));
+            last = body.position();
+            ++steps;
+        }
+    }
+    REQUIRE_FALSE(body.present());
+    // Its DEATH runs 174 frames at thirty a second and its hold two more: some 55 back.
+    CHECK(steps > 225);
+    const f32 back = glm::length(Vec2{last.x - fell.x, last.z - fell.z});
+    CHECK(back == Approx(7.0f * static_cast<f32>(steps) / 30).epsilon(0.01));
+    CHECK(back > 50);
+}
 } // namespace

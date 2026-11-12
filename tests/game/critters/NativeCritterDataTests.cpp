@@ -146,6 +146,29 @@ TEST_CASE("bad native critter data clears earlier and partial loads without expo
     emptyState(data);
 }
 
+TEST_CASE("a boss's key offset comes from TYPE +0xD0 natively and from keyOffset in an export",
+          "[native-assets][native-critter][boss-sequence]") {
+    const auto root = test::scratchDirectory("native-critter-key");
+    std::filesystem::create_directories(root / "CRITTER");
+    auto bytes = tinyCritter();
+    setF32LE(bytes, kType + 0xD0, -4.0f);
+    setF32LE(bytes, kType + 0xD4, 4.0f);
+    setF32LE(bytes, kType + 0xD8, 0.5f);
+    writeFile(root / "CRITTER/GOLEM.WAD", bytes);
+    CritterData native;
+    REQUIRE(native.load(root / "CRITTER/GOLEM.WAD"));
+    CHECK(native.keyOffset() == Vec3{-4, 4, 0.5f});
+    const auto legacy = root / "legacy.json";
+    writeTextFile(legacy, R"({"types":[{"moveCount":1,"keyOffset":[25,-5,10]}],
+        "descriptors":[{}],"moves":[{}]})");
+    CritterData exported;
+    REQUIRE(exported.load(legacy));
+    CHECK(exported.keyOffset() == Vec3{25, -5, 10});
+    writeTextFile(legacy, R"({"types":[{"moveCount":1}],"descriptors":[{}],"moves":[{}]})");
+    REQUIRE(exported.load(legacy));
+    CHECK(exported.keyOffset() == Vec3{0});
+}
+
 TEST_CASE("legacy critter fixtures clear partially decoded failures", "[native-critter]") {
     const auto root = test::scratchDirectory("legacy-critter-failure");
     const auto file = root / "fixture.json";
@@ -220,6 +243,7 @@ void equivalent(const CritterData& a, const CritterData& b) {
     REQUIRE(a.shadowed() == b.shadowed());
     REQUIRE(a.floorOffset() == b.floorOffset());
     REQUIRE(a.originOffset() == b.originOffset());
+    REQUIRE(a.keyOffset() == b.keyOffset());
     REQUIRE(a.hitSoundFar() == b.hitSoundFar());
     REQUIRE(a.hitSoundClose() == b.hitSoundClose());
     REQUIRE((targetValues(a.sight()) == targetValues(b.sight())));

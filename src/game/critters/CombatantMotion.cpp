@@ -108,8 +108,7 @@ std::optional<FloorHit> Combatant::settleOnFloor() {
     // In every state, asleep and through its INIT too (DC ProcessCritter 0x8c08b742 as well):
     // in A5 the Chimera rides its elevator down before it wakes. position is floor-space; the
     // model root adds the TYPE floorOffset.
-    const auto floor = m_sim.collision->floorAt(actor.position, kBossFloorAbove, kBossFloorBelow,
-                                                kBossFloorEdgeReach, WorldCollision::kBossSide);
+    const auto floor = bossFloorUnder(*m_sim.collision, actor.position);
     if (floor) {
         actor.position.y = floor->y;
         for (auto& part : children()) {
@@ -117,6 +116,12 @@ std::optional<FloorHit> Combatant::settleOnFloor() {
         }
     }
     return floor;
+}
+
+std::optional<FloorHit> Combatant::bossFloorUnder(const WorldCollision& collision,
+                                                  const Vec3& from) {
+    return collision.floorAt(from, kBossFloorAbove, kBossFloorBelow, kBossFloorEdgeReach,
+                             WorldCollision::kBossSide);
 }
 
 void Combatant::holdTerritory() {
@@ -192,7 +197,10 @@ bool Combatant::translate(Actor& critter, f32 seconds, const MoveDefinition* mov
         // the raw TYPE does not yet have its derived 0x10000 flag.
         critter.stepTarget = destination->position;
     }
-    if (move != nullptr && move->speed != 0.0f && critter.state == State::Active) {
+    // The move's pace carries it in every state, so a dying Chimera backs away on its DEATH's
+    // (CritterTranslate 0x8003a9ec-0x8003aa0c, DC 0x8c08a5da-0x8c08a5e4, N64 Boss.bin
+    // 0xe0883d38-0xe0883d5c); dying only frees it from its territory, below.
+    if (move != nullptr && move->speed != 0.0f) {
         const f32 pace = move->speed * m_sim.scales.speed * seconds;
         const f32 basis = movement.initialStepBasis ? critter.initialYaw : critter.yaw;
         if (move->type == MoveDefinition::kStepToPoint && critter.stepTarget.has_value()) {
@@ -207,8 +215,9 @@ bool Combatant::translate(Actor& critter, f32 seconds, const MoveDefinition* mov
     }
     // Retail bosses clamp to their home region directly, on a frame they stand still too
     // (CritterTranslate has no return for a zero step, 0x8003ad04-0x8003ae00; DC 0x8c08a5c0,
-    // N64 Boss.bin 0xe0883d14). Their authored stage/root heights are not ordinary walking-floor
-    // probes (several stand above the arena).
+    // N64 Boss.bin 0xe0883d14), but not while dying (0x8003ad3c-0x8003ad44; DC
+    // 0x8c08a864-0x8c08a86a; N64 0xe0883ee4-0xe0883eec). Their authored stage/root heights are
+    // not ordinary walking-floor probes (several stand above the arena).
     if (bounded) {
         critter.position += translation;
         if (critter.state != State::Dying) {

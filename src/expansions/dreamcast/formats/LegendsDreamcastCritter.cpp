@@ -313,7 +313,9 @@ CritterFile decodeLegendsDreamcastCritter(std::span<const u8> bytes) {
         (void)real(bytes, at + 0xa8); // separate camera attention height
         type.originOffset = {0, real(bytes, at + 0xac), 0};
         type.turnLimit = real(bytes, at + 0xb0);
-        (void)vector(bytes, at + 0xb4);
+        // BossEnd adds B4..BC to the root CritterGeo kept (+0x208) for the boss's key
+        // (8c071370-8c0713b2), GameCube's TYPE +0xD0.
+        type.keyOffset = vector(bytes, at + 0xb4);
         (void)real(bytes, at + 0xc0);
         type.damageScale = real(bytes, at + 0xc4);
         type.armor = real(bytes, at + 0xc8);

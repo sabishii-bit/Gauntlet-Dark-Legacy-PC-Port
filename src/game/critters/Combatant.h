@@ -87,6 +87,11 @@ public:
      * that floor. What was captured to draw from is left as it was, so the draw blends the
      * floor's motion. None for the great ones, a part, or without collision. */
     std::optional<FloorHit> settleOnFloor();
+    /** The floor a boss's probe finds under `from`: the highest boss-side floor from four above
+     * it to a thousand below (FloorCollide's window, from the placement in CritterInitGeo
+     * 0x8003e60c and after each step in CritterBossAI 0x8003a2d4; DC 0x8c087850, 0x8c08b730). */
+    static std::optional<FloorHit> bossFloorUnder(const WorldCollision& collision,
+                                                  const Vec3& from);
     /** Takes a boss body standing still back into its territory, its parts with it, as
      * CritterTranslate does on the zero pace of its INIT while the boss sleeps (0x8003a218).
      * Nothing for the great ones, a part, a dying body or one without a territory. */

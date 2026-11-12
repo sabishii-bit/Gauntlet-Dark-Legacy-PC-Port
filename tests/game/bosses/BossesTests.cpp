@@ -84,12 +84,9 @@ std::filesystem::path eyedBossAssets(const std::string& name, u32 typeFlags = 0)
     return root;
 }
 
-/** A synthetic boss archive for `name` that stands, roars and dies: a READY of a second, a ROAR
- * of a fifth, and a DEATH of two seconds held two more, as every shipped boss's death is held. */
-std::filesystem::path dyingBossAssets(const std::string& name) {
-    const auto root = test::scratchDirectory(std::format("dying-boss-{}", name));
-    std::filesystem::create_directories(root / "critter");
-    const auto archive = root / "MONSTERS" / name;
+/** Writes `archive` as a one-node BODY tree playing a READY of a second, a ROAR of a fifth and a
+ * DEATH of two seconds, with its mesh and skin. */
+void writeBodyArchive(const std::filesystem::path& archive) {
     std::filesystem::create_directories(archive / "models");
     std::filesystem::create_directories(archive / "textures");
     writeTextFile(archive / "models/body.obj",
@@ -104,12 +101,38 @@ std::filesystem::path dyingBossAssets(const std::string& name) {
       "nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
       "sequences":[{"name":"READY","frames":30},{"name":"ROAR","frames":6},
                    {"name":"DEATH","frames":60}]}]})");
+}
+
+/** A synthetic boss archive for `name` that stands, roars and dies: a READY of a second, a ROAR
+ * of a fifth, and a DEATH of two seconds held two more, as every shipped boss's death is held. */
+std::filesystem::path dyingBossAssets(const std::string& name) {
+    const auto root = test::scratchDirectory(std::format("dying-boss-{}", name));
+    std::filesystem::create_directories(root / "critter");
+    writeBodyArchive(root / "MONSTERS" / name);
     writeTextFile(root / "critter" / (name + ".json"),
                   std::format(R"({{"descriptors":[{{"prefix":"BODY","name":"{}","type":4}}],
       "types":[{{"moveCount":3,"maxHealth":1000,"radius":3,"expValue":500}}],
       "moves":[{{"name":"READY","anim":"READY","type":32,"priority":512,"interrupt":60}},
                {{"name":"ROAR","anim":"ROAR","type":34,"priority":600}},
                {{"name":"DEATH","anim":"DEATH","type":17,"priority":4095,"hold":2}}]}})",
+                              name));
+    return root;
+}
+
+/** A synthetic boss archive for `name` whose DEATH of two seconds, held one more, backs it away
+ * at seven a second as the Chimera's does, out of a territory of three. Its root stands two over
+ * its floor and its key lies (5, -2, 7) from that root. */
+std::filesystem::path walkingDeathBossAssets(const std::string& name) {
+    const auto root = test::scratchDirectory(std::format("walking-death-boss-{}", name));
+    std::filesystem::create_directories(root / "critter");
+    writeBodyArchive(root / "MONSTERS" / name);
+    writeTextFile(root / "critter" / (name + ".json"),
+                  std::format(R"({{"descriptors":[{{"prefix":"BODY","name":"{}","type":4}}],
+      "types":[{{"moveCount":2,"maxHealth":1000,"radius":3,"expValue":500,"roamRadius":3,
+                 "floorOffset":2,"keyOffset":[5,-2,7]}}],
+      "moves":[{{"name":"READY","anim":"READY","type":32,"priority":512,"interrupt":60}},
+               {{"name":"DEATH","anim":"DEATH","type":17,"priority":4095,"hold":1,
+                 "speed":-7}}]}})",
                               name));
     return root;
 }
@@ -445,7 +468,7 @@ TEST_CASE("sustained damage cannot lock the Lich in its roar reaction",
     scales.health = 100.0f;
     bosses.open(device, root, nullptr, scales, 'G');
     REQUIRE(bosses.spawn(41, Vec3{0}, 0, 20));
-    REQUIRE(bosses.rewardOffset() == Vec3{0, 10, 0});
+    REQUIRE(bosses.keySpot() == Vec3{-4, 4, 0});                // LICH's TYPE +0xD0 from its root
     const std::vector<EnemyView> near{playerAt({0, 0, 19.5f})}; // strictly inside his twenty
     // Two seconds asleep, then the whole of his entrance, which nothing may cut.
     for (s32 frame = 0; frame < 400; ++frame) {
@@ -753,6 +776,122 @@ TEST_CASE("a legend item's rite runs on through its boss's death throes and ends
     CHECK(heard.size() == cues);
 }
 
+TEST_CASE("a dying boss backs away at its death's pace out of its territory, and its key lies by "
+          "the root it was first stood at",
+          "[game][enemies][boss-death][boss-movement][boss-sequence]") {
+    // A floor fifty under the placement: beyond the six a fighter's spawn looks, within the
+    // thousand CritterInitGeo's probe reaches from four above the placement (0x8003e60c).
+    WorldCollision collision;
+    CollisionTriangle face;
+    face.vertices = {Vec3{-200, -50, -200}, Vec3{200, -50, -200}, Vec3{0, -50, 200}};
+    collision.build({face});
+    test::FakeRenderDevice device;
+    Bosses bosses;
+    bosses.open(device, walkingDeathBossAssets("YETI"), &collision, {}, 'I');
+    const Vec3 mark{10, 0, 20};
+    REQUIRE(bosses.spawn(boss_type::kYeti, mark, 0, 100));
+    // Its root is that floor raised by its floorOffset of two; its key (5, -2, 7) from it,
+    // unturned (BossDeath, 0x8001b908-0x8001b960).
+    const Vec3 root{10, -48, 20};
+    const Vec3 key{15, -50, 27};
+    CHECK(bosses.spawnRoot() == root);
+    CHECK(bosses.keySpot() == key);
+    bosses.wake();
+    const std::vector<EnemyView> party{playerAt({10, -50, 60})};
+    bosses.update(kTicks, kStep, party);
+    REQUIRE(bosses.position()->y == Approx(-50)); // its probe stands it on that floor
+    EnemyHit lethal;
+    lethal.damage = 100000;
+    lethal.player = 0;
+    bosses.hurt(lethal);
+    REQUIRE(bosses.fighter().dying());
+    // CritterTranslate takes DEATH's pace of minus seven in every state, through the hold too,
+    // and only a living boss keeps to its territory of three (0x8003ad3c-0x8003ad44).
+    Vec3 last = *bosses.position();
+    s32 walked = 0;
+    std::optional<Vec3> defeat;
+    for (s32 frame = 0; frame < 300 && !defeat; ++frame) {
+        bosses.update(kTicks, kStep, party);
+        bosses.takeCues();
+        bosses.takeLosses();
+        defeat = bosses.takeDefeat();
+        if (bosses.present()) {
+            CHECK(bosses.position()->x == Approx(last.x));
+            CHECK(bosses.position()->z == Approx(last.z - 7 * kStep));
+            last = *bosses.position();
+            ++walked;
+        }
+    }
+    REQUIRE(defeat.has_value());
+    CHECK(defeat->z == Approx(last.z));
+    CHECK(walked > 85); // its death's three seconds, but for the update it goes in
+    CHECK(mark.z - defeat->z == Approx(7 * kStep * static_cast<f32>(walked)));
+    // The walk takes nothing of its key or root with it.
+    CHECK(bosses.spawnRoot() == root);
+    CHECK(bosses.keySpot() == key);
+}
+
+TEST_CASE("the spawn root stands over the floor four above the placement or under it, else at "
+          "the placement",
+          "[game][enemies][boss-sequence]") {
+    const auto floorAt = [](f32 height) {
+        CollisionTriangle face;
+        face.vertices = {Vec3{-200, height, -200}, Vec3{200, height, -200}, Vec3{0, height, 200}};
+        return face;
+    };
+    test::FakeRenderDevice device;
+    const auto assets = walkingDeathBossAssets("YETI");
+    const auto rootOver = [&](std::vector<CollisionTriangle> faces) {
+        WorldCollision collision;
+        collision.build(std::move(faces));
+        Bosses bosses;
+        bosses.open(device, assets, &collision, {}, 'I');
+        REQUIRE(bosses.spawn(boss_type::kYeti, Vec3{0, 10, 0}, 0, 100));
+        return *bosses.spawnRoot();
+    };
+    // FloorCollide's window from the placement: four up (0x80346588), a thousand down
+    // (0x8034658C); the root two over what it finds (TYPE +0xB0).
+    CHECK(rootOver({floorAt(13)}) == Vec3{0, 15, 0});
+    CHECK(rootOver({floorAt(15), floorAt(-500)}) == Vec3{0, -498, 0});
+    CHECK(rootOver({floorAt(-1500)}) == Vec3{0, 12, 0});
+    CHECK(rootOver({}) == Vec3{0, 12, 0});
+}
+
+TEST_CASE("every retail boss's key lies at its own TYPE offset from the root it was first stood at",
+          "[game][boss-sequence][boss-roster][assets]") {
+    struct Expected {
+        s32 kind;
+        Vec3 key;
+        f32 floorOffset;
+    };
+    // TYPE +0xD0 and +0xB0 of the shipped CRITTER WADs, as BossDeath and CritterInitGeo read them.
+    const std::array kBosses{Expected{34, {0, -15, 12}, 18.5f}, Expected{35, {0, -20, 32}, 0},
+                             Expected{36, {0, -2, 0}, 7},       Expected{37, {25, -5, 10}, 0},
+                             Expected{38, {0, 5, 20}, 0},       Expected{39, {0, 3, 30}, 0},
+                             Expected{40, {0, 16, 25}, 4},      Expected{41, {-4, 4, 0}, 0},
+                             Expected{42, {0, 10, 0}, 0},       Expected{43, {0, 10, 0}, 8},
+                             Expected{44, {0, 10, 0}, -1}};
+    for (const Expected& expected : kBosses) {
+        const std::string name{bossNameOf(expected.kind)};
+        DYNAMIC_SECTION(name) {
+            const auto path = test::assetOrSkip("critter/" + name + ".WAD");
+            CritterData data;
+            REQUIRE(data.load(path));
+            CHECK(data.keyOffset() == expected.key);
+            CHECK(data.floorOffset() == expected.floorOffset);
+            test::assetOrSkip("MONSTERS/" + name + "/ANIM.PS2");
+            test::FakeRenderDevice device;
+            Bosses bosses;
+            bosses.open(device, path.parent_path().parent_path(), nullptr, {}, 'G');
+            const Vec3 mark{12, 34, 56};
+            REQUIRE(bosses.spawn(expected.kind, mark, 0.5f, 100));
+            const Vec3 root = mark + Vec3{0, expected.floorOffset, 0};
+            CHECK(bosses.spawnRoot() == root);
+            CHECK(bosses.keySpot() == root + expected.key);
+        }
+    }
+}
+
 TEST_CASE("the genie selects projectile attacks and launches them from its animated body",
           "[game][boss-projectiles][assets]") {
     const auto root = test::assetOrSkip("CRITTER/DJINN.WAD").parent_path().parent_path();
@@ -761,7 +900,7 @@ TEST_CASE("the genie selects projectile attacks and launches them from its anima
     Bosses bosses;
     bosses.open(device, root, nullptr, {}, 'C');
     REQUIRE(bosses.spawn(36, Vec3{0}, 0, 100));
-    REQUIRE(bosses.cameraBase() == Vec3{0, 7, 0});
+    REQUIRE(bosses.spawnRoot() == Vec3{0, 7, 0});
     REQUIRE(bosses.cameraOffset() == Vec3{0, 17, 0});
     const std::vector<EnemyView> party{playerAt(Vec3{0, 0, 40})};
     std::vector<CombatShot> shots;
@@ -780,7 +919,8 @@ TEST_CASE("the genie selects projectile attacks and launches them from its anima
     }
     bosses.close();
     REQUIRE(bosses.takeShots().empty());
-    REQUIRE_FALSE(bosses.cameraBase().has_value());
+    REQUIRE_FALSE(bosses.spawnRoot().has_value());
+    REQUIRE_FALSE(bosses.keySpot().has_value());
 }
 
 TEST_CASE("anchored bosses retain local territories and the lich and spider can pursue",

@@ -122,6 +122,8 @@ TEST_CASE("native Legends boss stages preserve placements and deferred pickup re
         CHECK(encounter->combat.rangedAimFirst);
         CHECK(encounter->combat.counterpartStage == expected.donor);
         CHECK(encounter->combat.position == expected.position);
+        CHECK(legendsN64BossRewardAnchor(*encounter) ==
+              expected.position + Vec3{0, expected.kind == 34 ? 0.0f : 8.0f, 0});
         CHECK(encounter->combat.yaw == Catch::Approx(expected.kind == 34 ? -0.209439516f : 0));
         CHECK(encounter->destination == "tower2");
         const usize rockCount = expected.kind == 34   ? 6
@@ -170,6 +172,21 @@ TEST_CASE("native Legends boss stages preserve placements and deferred pickup re
     CHECK(upper->map == "mount6");
     overlay[0x9c04] ^= 1;
     CHECK_THROWS_AS(legendsN64Boss("mount6", program, overlay), FormatError);
+}
+
+TEST_CASE("N64 boss rewards fly about the boss's pose record, eight up except in the Dragon's "
+          "realm, wherever the boss fell",
+          "[legends][bosses]") {
+    // e006b110 keeps the record's place, raised by eight but in realm 3 (e006b54c-e006b598), for
+    // e0889850; e08898d8 throws the rewards about it.
+    LegendsBossEncounter chimera;
+    chimera.nativeRealm = 0;
+    chimera.combat.position = {0, 20, -52};
+    CHECK(legendsN64BossRewardAnchor(chimera) == Vec3{0, 28, -52});
+    LegendsBossEncounter dragon;
+    dragon.nativeRealm = 3;
+    dragon.combat.position = {-4, 47, -16};
+    CHECK(legendsN64BossRewardAnchor(dragon) == Vec3{-4, 47, -16});
 }
 
 TEST_CASE("native Legends boss reward fan retains vertical direction and launch velocity",

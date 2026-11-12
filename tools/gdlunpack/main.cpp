@@ -927,6 +927,7 @@ void unpackCritter(const std::filesystem::path& file, const std::filesystem::pat
         json.key("armor").value(static_cast<f64>(t.armor));
         vec("originOffset", t.originOffset);
         json.key("turnLimit").value(static_cast<f64>(t.turnLimit));
+        vec("keyOffset", t.keyOffset);
         json.key("shieldFlags").value(t.shieldFlags);
         json.key("maxHealth").value(static_cast<f64>(t.maxHealth));
         json.key("expValue").value(static_cast<f64>(t.expValue));

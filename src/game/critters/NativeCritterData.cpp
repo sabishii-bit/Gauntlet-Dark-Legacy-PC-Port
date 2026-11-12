@@ -185,6 +185,7 @@ void CritterData::assignDecoded(std::string_view name, const formats::CritterFil
     m_vertDrift = type.vertDrift;
     m_floorOffset = type.floorOffset;
     m_originOffset = vectorOf(type.originOffset);
+    m_keyOffset = vectorOf(type.keyOffset);
     m_sight = targetOf(type.target);
     m_movement.roamRadius = type.roamRadius;
     m_movement.turnLimit = type.turnLimit;

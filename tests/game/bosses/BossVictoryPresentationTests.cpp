@@ -72,7 +72,7 @@ TEST_CASE("retail boss captions keep the rune report behind the full defeat read
         for (const s32 step : {1, 2}) {
             CAPTURE(kind, step);
             BossVictoryPresentation presentation;
-            presentation.begin(kind, realm, 1, 0, false);
+            presentation.begin(kind, realm, 1, 0, false, Vec3{0});
             presentation.update(300, 5, false, strings);
             REQUIRE(presentation.update(64, 64.0f / 60, false, strings).voices.size() == 1);
             for (s32 tick = step; tick < runeTick; tick += step) {
@@ -102,8 +102,8 @@ TEST_CASE("victory presentation is inert when cleared and tolerates an absent wi
     presentation.drawCaption(canvas, text, strings, 512, 384);
     REQUIRE(device.draws.empty());
     ItemArchive missing;
-    presentation.begin(41, 'G', 0, 0, false);
-    presentation.bindWizard(device, missing, Vec3{10.0f}, {});
+    presentation.begin(41, 'G', 0, 0, false, Vec3{10.0f});
+    presentation.bindWizard(device, missing);
     presentation.update(BossVictory::kWaitTicks, 0.0f, false, strings);
     const auto result = presentation.update(64, 1.0f, false, strings);
     REQUIRE(result.voices.size() == 1);
@@ -123,8 +123,10 @@ TEST_CASE("Skorne victory uses the fixed altar position regardless of party spre
     BossVictoryPresentation presentation;
     const std::array party{Vec3{40, 10, 50}, Vec3{-10, 5, 20}};
     for (const s32 kind : {42, 43}) {
-        presentation.begin(kind, 'E', 0, 0, false);
-        presentation.bindWizard(device, archive, {0, -25, -19}, party);
+        presentation.begin(kind, 'E', 0, 0, false, {0, -25, -19});
+        presentation.bindWizard(device, archive);
+        // The temple's Skorne waits the long wait (DoGoodWizard's ten seconds for 0x2a).
+        presentation.update(BossVictory::kLongWaitTicks, 0, false, {}, false, party);
         REQUIRE(presentation.wizardSubject().position == Vec3{0, -12, 6});
         REQUIRE(presentation.wizardSubject().attentionOffset == Vec3{0, 10, 0});
     }
@@ -136,7 +138,9 @@ TEST_CASE("only the two Skorne codes stand the wizard at the altar; every other 
     ItemArchive archive;
     REQUIRE(archive.load(wizardFixture("victory-position-by-code")));
     test::FakeRenderDevice device;
-    // The boss and the party sum to (9, -3, 12): a third of it, lifted three, is the midpoint.
+    // Across, the boss's mark and the party sum to (9, 12): a third of it is the middle. Up and
+    // down the first player's height counts twice in the mark's place, (0 + 0 + 3) / 3, and the
+    // wizard stands three over it.
     constexpr Vec3 kBoss{3, -6, 9};
     constexpr std::array kParty{Vec3{6, 0, 0}, Vec3{0, 3, 3}};
     struct Row {
@@ -144,29 +148,66 @@ TEST_CASE("only the two Skorne codes stand the wizard at the altar; every other 
         Vec3 position;
     };
     constexpr std::array<Row, 15> kRows{{
-        {-1, Vec3{3, 2, 4}},
-        {33, Vec3{3, 2, 4}},
-        {34, Vec3{3, 2, 4}},
-        {35, Vec3{3, 2, 4}},
-        {36, Vec3{3, 2, 4}},
-        {37, Vec3{3, 2, 4}},
-        {38, Vec3{3, 2, 4}},
-        {39, Vec3{3, 2, 4}},
-        {40, Vec3{3, 2, 4}},
-        {41, Vec3{3, 2, 4}},
+        {-1, Vec3{3, 4, 4}},
+        {33, Vec3{3, 4, 4}},
+        {34, Vec3{3, 4, 4}},
+        {35, Vec3{3, 4, 4}},
+        {36, Vec3{3, 4, 4}},
+        {37, Vec3{3, 4, 4}},
+        {38, Vec3{3, 4, 4}},
+        {39, Vec3{3, 4, 4}},
+        {40, Vec3{3, 4, 4}},
+        {41, Vec3{3, 4, 4}},
         {42, Vec3{0, -12, 6}},
         {43, Vec3{0, -12, 6}},
-        {44, Vec3{3, 2, 4}},
-        {45, Vec3{3, 2, 4}},
-        {std::numeric_limits<s32>::min(), Vec3{3, 2, 4}},
+        {44, Vec3{3, 4, 4}},
+        {45, Vec3{3, 4, 4}},
+        {std::numeric_limits<s32>::min(), Vec3{3, 4, 4}},
     }};
     for (const Row& row : kRows) {
         CAPTURE(row.code);
         BossVictoryPresentation presentation;
-        presentation.begin(row.code, 'G', 0, 0, false);
-        presentation.bindWizard(device, archive, kBoss, kParty);
+        presentation.begin(row.code, 'G', 0, 0, false, kBoss);
+        presentation.bindWizard(device, archive);
+        // Through the longest wait, so the temple's Skorne and the garm come too.
+        presentation.update(BossVictory::kLongWaitTicks, 0, false, {}, false, kParty);
         CHECK(presentation.wizardSubject().position == row.position);
     }
+}
+
+TEST_CASE("the wizard comes among the party as it stands when he begins to appear, the first "
+          "player's height in the mark's place",
+          "[game][screens][victory-presentation]") {
+    ItemArchive archive;
+    REQUIRE(archive.load(wizardFixture("victory-position-at-appearing")));
+    test::FakeRenderDevice device;
+    BossVictoryPresentation presentation;
+    const MessageTable strings;
+    presentation.begin(41, 'G', 0, 0, false, Vec3{9, 30, 12});
+    presentation.bindWizard(device, archive);
+    // Where the party stood as the boss fell does not place him: DoGoodWizard averages the
+    // players of the update he is made in (0x80019b5c).
+    const std::array before{Vec3{100, 0, 100}, Vec3{-100, 0, -100}};
+    presentation.update(BossVictory::kWaitTicks - 1, 0, false, strings, false, before);
+    REQUIRE(presentation.state().stage() == Stage::Waiting);
+    CHECK(presentation.wizardSubject().position == Vec3{0});
+    const std::array party{Vec3{10, 8, -2}, Vec3{1, 2, 3}};
+    presentation.update(1, 0, false, strings, false, party);
+    REQUIRE(presentation.state().stage() == Stage::Appearing);
+    // (9 + 10 + 1, 2 x 8 + 2, 12 - 2 + 3) / 3, three up: the mark's own height of thirty is
+    // never counted while anyone stands.
+    const Vec3 placed = presentation.wizardSubject().position;
+    CHECK(placed.x == Approx(20.0f / 3));
+    CHECK(placed.y == Approx(9));
+    CHECK(placed.z == Approx(13.0f / 3));
+    // He stays there however the party goes on.
+    const std::array later{Vec3{50, 50, 50}};
+    presentation.update(2, 0, false, strings, false, later);
+    CHECK(presentation.wizardSubject().position == placed);
+    // With nobody standing he comes three over the mark itself.
+    presentation.begin(41, 'G', 0, 0, false, Vec3{9, 30, 12});
+    presentation.update(BossVictory::kWaitTicks, 0, false, strings);
+    CHECK(presentation.wizardSubject().position == Vec3{9, 33, 12});
 }
 
 TEST_CASE("victory wizard placement animation lighting and fade follow the visit",
@@ -178,8 +219,14 @@ TEST_CASE("victory wizard placement animation lighting and fade follow the visit
     BossVictoryPresentation presentation;
     const MessageTable strings;
     const std::array<Vec3, 2> standing{Vec3{6, 0, 0}, Vec3{0, 0, 6}};
-    presentation.begin(41, 'G', 0, 0, false);
-    presentation.bindWizard(device, archive, Vec3{0.0f}, standing);
+    presentation.begin(41, 'G', 0, 0, false, Vec3{0.0f});
+    presentation.bindWizard(device, archive);
+    WorldLighting lighting;
+    lighting.ambient = Vec3{0.25f, 0.5f, 0.75f};
+    lighting.lightColor = Vec3{0.0f};
+    presentation.drawWizard(device, Mat4{1.0f}, lighting);
+    REQUIRE(device.draws.empty());
+    presentation.update(BossVictory::kWaitTicks, 0.0f, false, strings, false, standing);
     const auto subject = presentation.wizardSubject();
     REQUIRE(subject.position == Vec3{2, 3, 2});
     REQUIRE(subject.facing == Approx(kPi / 4.0f));
@@ -187,12 +234,6 @@ TEST_CASE("victory wizard placement animation lighting and fade follow the visit
     REQUIRE(subject.attentionOffset == Vec3{0, 10, 0});
     REQUIRE(subject.focus == BossCameraSubject::Focus::Wizard);
     REQUIRE(subject.engaged);
-    WorldLighting lighting;
-    lighting.ambient = Vec3{0.25f, 0.5f, 0.75f};
-    lighting.lightColor = Vec3{0.0f};
-    presentation.drawWizard(device, Mat4{1.0f}, lighting);
-    REQUIRE(device.draws.empty());
-    presentation.update(BossVictory::kWaitTicks, 0.0f, false, strings);
     presentation.drawWizard(device, Mat4{1.0f}, lighting);
     REQUIRE(device.draws.empty()); // appearing starts transparent
     presentation.update(32, 0.0f, false, strings);
@@ -241,8 +282,8 @@ TEST_CASE("victory wizard selects and advances its animated lower body meshes",
     REQUIRE(archive.load(root));
     test::FakeRenderDevice device;
     BossVictoryPresentation presentation;
-    presentation.begin(41, 'G', 0, 0, false);
-    presentation.bindWizard(device, archive, Vec3{0}, {});
+    presentation.begin(41, 'G', 0, 0, false, Vec3{0});
+    presentation.bindWizard(device, archive);
     presentation.update(BossVictory::kWaitTicks, 0, false, {});
     presentation.update(64, 0, false, {});
     presentation.drawWizard(device, Mat4{1}, {});
@@ -262,16 +303,16 @@ TEST_CASE("a static victory wizard needs no animation sequence and can be reboun
     test::FakeRenderDevice device;
     BossVictoryPresentation presentation;
     const MessageTable strings;
-    presentation.begin(41, 'G', 0, 0, false);
-    presentation.bindWizard(device, archive, Vec3{4, 0, 8}, {});
-    REQUIRE(presentation.wizardSubject().position == Vec3{4, 3, 8});
+    presentation.begin(41, 'G', 0, 0, false, Vec3{4, 0, 8});
+    presentation.bindWizard(device, archive);
     presentation.update(BossVictory::kWaitTicks, 0.0f, false, strings);
+    REQUIRE(presentation.wizardSubject().position == Vec3{4, 3, 8});
     presentation.update(64, 1.0f, false, strings);
     presentation.drawWizard(device, Mat4{1.0f}, {});
     REQUIRE(device.draws.size() == 1);
     REQUIRE(device.draws.front().vertices.front().position == Vec3{4, 3, 8});
     ItemArchive missing;
-    presentation.bindWizard(device, missing, Vec3{0.0f}, {});
+    presentation.bindWizard(device, missing);
     archive.clear();
     device.draws.clear();
     presentation.update(2, 1.0f, false, strings);
@@ -285,7 +326,7 @@ TEST_CASE("victory captions use the table's weighted text and render typed multi
     MessageTable strings;
     loadCaptions(strings);
     BossVictoryPresentation presentation;
-    presentation.begin(41, 'G', 0, 0, false);
+    presentation.begin(41, 'G', 0, 0, false, Vec3{0});
     presentation.update(BossVictory::kWaitTicks, 0.0f, false, strings);
     presentation.update(64, 0.0f, false, strings);
     presentation.update(2, 0.0f, false, strings);
@@ -339,7 +380,7 @@ TEST_CASE("victory presentation reports voices and one sparkle then resets for a
     loadCaptions(strings);
     BossVictoryPresentation presentation;
     for (s32 visit = 0; visit < 2; ++visit) {
-        presentation.begin(41, 'G', 0, 0, true);
+        presentation.begin(41, 'G', 0, 0, true, Vec3{0});
         std::vector<std::string> voices;
         s32 sparkles = 0;
         s32 tick = 0;
@@ -373,9 +414,9 @@ TEST_CASE("victory fractional poses preserve speech state and snap loop boundari
     BossVictoryPresentation presentation;
     const MessageTable strings;
     const std::array<Vec3, 1> party{Vec3{0, 0, 10}};
-    presentation.begin(41, 'G', 0, 0, false);
-    presentation.bindWizard(device, archive, {}, party);
-    presentation.update(BossVictory::kWaitTicks, 0, false, strings);
+    presentation.begin(41, 'G', 0, 0, false, {});
+    presentation.bindWizard(device, archive);
+    presentation.update(BossVictory::kWaitTicks, 0, false, strings, false, party);
     presentation.update(32, 0, false, strings);
     presentation.update(32, 1.0f / 30, false, strings);
     const auto stage = presentation.state().stage();
@@ -417,15 +458,15 @@ TEST_CASE("native victory rewind survives lazy wizard binding and corrects an en
     BossVictoryPresentation::LocalSnapshot saved;
     CHECK_FALSE(actual.restoreLocal(saved));
     actual.saveLocal(saved);
-    actual.begin(43, 'E', 0, 0, true);
-    actual.bindWizard(device, archive, {90, -20, 4}, party);
-    actual.update(800, 5, true, strings);
+    actual.begin(43, 'E', 0, 0, true, {90, -20, 4});
+    actual.bindWizard(device, archive);
+    actual.update(800, 5, true, strings, false, party);
     const auto textures = device.texturesCreated;
     REQUIRE(actual.restoreLocal(saved));
     CHECK(actual.state().stage() == Stage::None);
     for (auto* presentation : {&actual, &expected}) {
-        presentation->begin(41, 'G', 1, 0, false);
-        presentation->bindWizard(device, archive, {1, 2, 3}, party);
+        presentation->begin(41, 'G', 1, 0, false, {1, 2, 3});
+        presentation->bindWizard(device, archive);
     }
     CHECK(device.texturesCreated == textures);
     const auto draw = [&](const BossVictoryPresentation& presentation) {
@@ -441,8 +482,8 @@ TEST_CASE("native victory rewind survives lazy wizard binding and corrects an en
         actual.saveLocal(saved);
         CHECK_FALSE(foreign.restoreLocal(saved));
         const auto before = draw(actual);
-        actual.begin(43, 'E', 0, 0, true);
-        actual.bindWizard(device, archive, {90, -20, 4}, {});
+        actual.begin(43, 'E', 0, 0, true, {90, -20, 4});
+        actual.bindWizard(device, archive);
         for (s32 tick = 0; tick < distance; ++tick) {
             actual.update(180, 0.7f, true, strings, true);
         }
@@ -455,8 +496,8 @@ TEST_CASE("native victory rewind survives lazy wizard binding and corrects an en
         for (s32 tick = 0; tick < distance; ++tick) {
             actual.capturePresentation();
             expected.capturePresentation();
-            const auto a = actual.update(2, 1.0f / 30, false, strings);
-            const auto b = expected.update(2, 1.0f / 30, false, strings);
+            const auto a = actual.update(2, 1.0f / 30, false, strings, false, party);
+            const auto b = expected.update(2, 1.0f / 30, false, strings, false, party);
             CHECK(a.sparkle == b.sparkle);
             sparkles += static_cast<s32>(a.sparkle);
             REQUIRE(a.voices.size() == b.voices.size());
@@ -488,11 +529,11 @@ TEST_CASE("native victory rewind survives lazy wizard binding and corrects an en
     actual.clear();
     CHECK_FALSE(actual.restoreLocal(saved));
     actual.saveLocal(saved);
-    actual.bindWizard(device, archive, {}, {});
+    actual.bindWizard(device, archive);
     REQUIRE(actual.restoreLocal(saved));
     ItemArchive different;
     REQUIRE(different.load(wizardFixture("victory-local-rewind-different")));
-    actual.bindWizard(device, different, {}, {});
+    actual.bindWizard(device, different);
     CHECK_FALSE(actual.restoreLocal(saved));
 }
 } // namespace

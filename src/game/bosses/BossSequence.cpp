@@ -82,6 +82,26 @@ constexpr std::string_view kBossKeySoundPrefix = "S_BOSSKEY";
 constexpr std::string_view kSpawnEffect = "STARTFX";
 constexpr f32 kBossDeathBlast = 1000.0f;
 constexpr f32 kBossDeathBlastRadius = 1000.0f;
+
+/** Where the players standing or dying stand, in their slots' order: those the wizard comes
+ * among (FUN_80019b5c counts states 1 and 8, slot by slot). */
+std::vector<Vec3> wizardParty(std::span<const PlayerRuntime> players) {
+    std::vector<const PlayerRuntime*> present;
+    for (const PlayerRuntime& runtime : players) {
+        if (!runtime.departed &&
+            (runtime.life == PlayerLife::Standing || runtime.life == PlayerLife::Dying)) {
+            present.push_back(&runtime);
+        }
+    }
+    std::ranges::stable_sort(present, {},
+                             [](const PlayerRuntime* runtime) { return runtime->actor.player(); });
+    std::vector<Vec3> party;
+    party.reserve(present.size());
+    for (const PlayerRuntime* runtime : present) {
+        party.push_back(runtime->actor.position());
+    }
+    return party;
+}
 } // namespace
 
 void BossSequence::bind(Resources resources) {
@@ -237,8 +257,9 @@ void BossSequence::advanceLegend(f32 seconds, Bosses& bosses, std::span<PlayerRu
     }
 }
 
-/** Standing players receive the victory bit (BossDeath followed by PlayerGiveRune).
- * BossDeath only creates the floating key and its sound for the eight ordinary bosses. */
+/** Standing players receive the victory bit (BossDeath followed by PlayerGiveRune, which skips
+ * the dying: 0x800a2544-0x800a254c). BossDeath only creates the floating key and its sound for
+ * the eight ordinary bosses, by the boss's spawn root wherever it fell. */
 void BossSequence::fallen(const Vec3& where, const Bosses& bosses,
                           std::span<PlayerRuntime> players) {
     if (!m_resources) {
@@ -276,8 +297,12 @@ void BossSequence::fallen(const Vec3& where, const Bosses& bosses,
         }
     }
     const char letter = r.world.ref().name.empty() ? 'G' : r.world.ref().name.front();
-    m_victory.begin(level->bossType, letter, inRealm, found, false);
-    m_sim.shardPosition = where + bosses.rewardOffset();
+    // The wizard comes between the boss's mark as AddBoss kept it, the locator's own place
+    // (0x8001bbcc-0x8001bbe0), and the party.
+    const WorldLocator* mark = r.world.layout().findLocator(LocatorKind::Boss);
+    m_victory.begin(level->bossType, letter, inRealm, found, false,
+                    mark != nullptr ? mark->position : where);
+    m_sim.shardPosition = bosses.keySpot().value_or(where);
     m_sim.fallenSpot = where;
     m_sim.fallenFacing = bosses.facing();
     const bool dropsKey = orderedBossTraitsOf(level->bossType).defeat.dropsKey;
@@ -289,14 +314,7 @@ void BossSequence::fallen(const Vec3& where, const Bosses& bosses,
             r.effects.startSet(r.device, r.world.items(), kBossKeyTree, m_sim.shardPosition,
                                setting);
         }
-        std::vector<Vec3> standing;
-        for (const PlayerRuntime& runtime : players) {
-            if (!runtime.departed && runtime.life == PlayerLife::Standing) {
-                standing.push_back(runtime.actor.position());
-            }
-        }
-        const Vec3* boss = bosses.position();
-        m_victory.bindWizard(r.device, r.world.items(), boss != nullptr ? *boss : where, standing);
+        m_victory.bindWizard(r.device, r.world.items());
     }
     if (dropsKey) {
         r.audio.playNamed(std::format("{}{}", kBossKeySoundPrefix, letter));
@@ -311,8 +329,8 @@ bool BossSequence::advanceVictory(s32 ticks, f32 seconds, std::span<const Player
         return false;
     }
     auto& r = *m_resources;
-    const auto result =
-        m_victory.update(ticks, seconds, r.world.goldLeft(), strings, m_sim.speech.playing());
+    const auto result = m_victory.update(ticks, seconds, r.world.goldLeft(), strings,
+                                         m_sim.speech.playing(), wizardParty(players));
     for (const VictoryVoice& voice : result.voices) {
         // Wizard speech is serialized even if a caption is absent or finishes early.
         const auto next =

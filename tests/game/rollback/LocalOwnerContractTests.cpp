@@ -1439,8 +1439,8 @@ struct BossVictoryPresentationRow {
 
     BossVictoryPresentationRow() { begin(); }
     void begin() {
-        victory.begin(41, 'G', 1, 0, false);
-        victory.bindWizard(stage.device, stage.items, Vec3{0}, std::array{Vec3{2, 0, 2}});
+        victory.begin(41, 'G', 1, 0, false, Vec3{0});
+        victory.bindWizard(stage.device, stage.items);
     }
     Owner& owner() { return victory; }
     void advance() {

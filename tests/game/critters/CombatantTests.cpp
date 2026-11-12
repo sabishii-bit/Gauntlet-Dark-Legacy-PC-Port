@@ -1956,6 +1956,54 @@ TEST_CASE("a boss outside its territory is taken back on a frame it stands still
     CHECK(fixture.actor.position() == mark);
 }
 
+TEST_CASE("a dying boss takes its death's pace in every update until it goes, free of its "
+          "territory",
+          "[game][combatant][death][boss-death][boss-movement]") {
+    const s32 fps = GENERATE(30, 60);
+    CAPTURE(fps);
+    // CritterTranslate takes the move's pace whatever the state (0x8003a9ec-0x8003aa0c) and holds
+    // only a living boss to its territory (0x8003ad3c-0x8003ad44): a DEATH of minus seven, as
+    // the Chimera's, backs it away through the death and its hold.
+    const auto root = familyAssets();
+    writeTextFile(root / "critter/LICH.json", R"({
+      "descriptors":[{"prefix":"BODY","type":4}],
+      "types":[{"moveCount":2,"maxHealth":100,"radius":4,"roamRadius":3}],
+      "moves":[{"name":"READY","anim":"STEP","type":32},
+               {"name":"DEATH","anim":"STEP","type":17,"priority":4095,"hold":1,"speed":-7}]})");
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, bossDefinition("LICH"), 'G'));
+    Combatant actor;
+    constexpr f32 kYaw = 0.5f;
+    const Vec3 home{2, 0, 5};
+    REQUIRE(actor.spawn(assets, 0, home, kYaw, nullptr, {}, 'G'));
+    EnemyHit hit;
+    hit.damage = 10000;
+    hit.direction = Vec3{0};
+    actor.hurt(hit);
+    REQUIRE(actor.dying());
+    const s32 ticks = std::max(1, Combatant::kTicksPerSecond / fps);
+    const f32 seconds = 1.0f / static_cast<f32>(fps);
+    const Vec3 backward{-std::sin(kYaw), 0, -std::cos(kYaw)};
+    Vec3 last = actor.position();
+    s32 steps = 0;
+    for (s32 update = 0; update < 10 * fps && actor.present(); ++update) {
+        actor.update(ticks, seconds, {});
+        if (actor.present()) {
+            const Vec3 moved = actor.position() - last;
+            CHECK(moved.x == Approx(7 * seconds * backward.x));
+            CHECK(moved.z == Approx(7 * seconds * backward.z));
+            last = actor.position();
+            ++steps;
+        }
+    }
+    REQUIRE_FALSE(actor.present());
+    // STEP's tenth of a second and its hold of one carry it some 7.7 back, past its three.
+    const f32 back = glm::length(Vec2{last.x - home.x, last.z - home.z});
+    CHECK(back == Approx(7 * seconds * static_cast<f32>(steps)));
+    CHECK(back > 7);
+}
+
 TEST_CASE("boss damage and experience follow standing slots after players leave combat",
           "[combatant][multiplayer-targeting][combatant-active-count]") {
     const auto root = test::headedBodyAssets();

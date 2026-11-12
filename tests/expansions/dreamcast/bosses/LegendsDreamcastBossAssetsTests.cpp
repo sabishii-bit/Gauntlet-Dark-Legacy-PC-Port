@@ -376,4 +376,68 @@ TEST_CASE("Dreamcast Spider Queen is held inside her territory from her first up
     CHECK(bosses.position()->z == Approx(-119.9601f));
     CHECK(approximateFlatLength(*bosses.position() - home) == Approx(22));
 }
+
+TEST_CASE("Dreamcast Chimera backs away nine a second through its death throes, its key by the "
+          "root it first stood at",
+          "[dreamcast][dc-boss-ai][boss-death][boss-movement][assets]") {
+    const auto root = test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native";
+    if (!std::filesystem::is_regular_file(root / "critters/chimera.wad")) {
+        SKIP("Dreamcast boss data not installed");
+    }
+    const auto encounter =
+        legendsDreamcastBoss(readFile(root / formats::dreamcastLegendsWorldDataFile("levela5")),
+                             readFile(root / "levels/levela5/worlds.rom"), "levela5");
+    REQUIRE(encounter);
+    REQUIRE(encounter->combat.kind == boss_type::kChimera);
+    test::FakeRenderDevice device;
+    std::vector<std::string> warnings;
+    auto stock =
+        loadLegendsDreamcastBossAssets(device, root, {}, boss_type::kChimera, {}, warnings);
+    REQUIRE(stock);
+    // chimera.wad's DEATH paces minus nine and holds two (MOVE +0x6C, +0x7C), which the
+    // translate at 0x8c08a5c0 takes in every state; its key lies (0, -22, 27) from its root
+    // (TYPE +0xB4, BossEnd 0x8c071370-0x8c0713b2).
+    const auto death = stock->data.moveOfType(MoveDefinition::kDeath);
+    REQUIRE(death.has_value());
+    CHECK(stock->data.moves()[*death].speed == -9);
+    CHECK(stock->data.moves()[*death].hold == 2);
+    CHECK(stock->data.keyOffset() == Vec3{0, -22, 27});
+    const f32 floorOffset = stock->data.floorOffset();
+    Bosses bosses;
+    bosses.open(device, {}, nullptr, {}, 'A');
+    REQUIRE(bosses.preload(boss_type::kChimera, std::move(stock)));
+    const Vec3 mark = encounter->combat.position;
+    REQUIRE(bosses.spawn(boss_type::kChimera, mark, encounter->combat.yaw));
+    const Vec3 key = mark + Vec3{0, floorOffset, 0} + Vec3{0, -22, 27};
+    CHECK(bosses.keySpot() == key);
+    bosses.wake();
+    const std::array players{EnemyView{.player = 0, .position = mark + Vec3{0, 0, 500}}};
+    EnemyHit lethal;
+    lethal.damage = 100000;
+    lethal.player = 0;
+    bosses.hurt(lethal);
+    REQUIRE(bosses.fighter().dying());
+    const Vec3 fell = *bosses.position();
+    Vec3 last = fell;
+    s32 steps = 0;
+    std::optional<Vec3> defeat;
+    for (s32 tick = 0; tick < 1800 && !defeat; ++tick) {
+        bosses.update(1, 1.f / 60, players);
+        bosses.takeCues();
+        bosses.takeSpews();
+        bosses.takeLosses();
+        defeat = bosses.takeDefeat();
+        if (bosses.present()) {
+            CHECK(glm::length(Vec2{bosses.position()->x - last.x, bosses.position()->z - last.z}) ==
+                  Approx(9.0f / 60).margin(1e-4));
+            last = *bosses.position();
+            ++steps;
+        }
+    }
+    REQUIRE(defeat.has_value());
+    CHECK(steps > 120);
+    CHECK(glm::length(Vec2{defeat->x - fell.x, defeat->z - fell.z}) ==
+          Approx(9.0f * static_cast<f32>(steps) / 60).epsilon(0.01));
+    CHECK(bosses.keySpot() == key);
+}
 } // namespace

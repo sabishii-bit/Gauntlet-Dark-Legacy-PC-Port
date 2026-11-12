@@ -212,6 +212,7 @@ CritterFile parseCritterWad(std::span<const u8> bytes) {
         type.armor = readWadF32(bytes, at + 0xBC, kWhat);
         type.originOffset = readVec(bytes, at + 0xC0);
         type.turnLimit = readWadF32(bytes, at + 0xCC, kWhat);
+        type.keyOffset = readVec(bytes, at + 0xD0);
         type.shieldFlags = readWadU32(bytes, at + 0xE0, kWhat);
         type.maxHealth = readWadF32(bytes, at + 0xE4, kWhat);
         type.expValue = readWadF32(bytes, at + 0xE8, kWhat);

@@ -89,6 +89,8 @@ public:
     /** Height of the model root above the floor anchor; may be negative. */
     f32 floorOffset() const { return m_floorOffset; }
     const Vec3& originOffset() const { return m_originOffset; }
+    /** Where a fallen boss's key appears from the root it was first stood at, in world axes. */
+    const Vec3& keyOffset() const { return m_keyOffset; }
     const TargetCriteria& sight() const { return m_sight; }
     const HealthMeterDefinition& meter() const { return m_meter; }
     std::span<const MoveDefinition> moves() const { return m_moves; }
@@ -135,6 +137,7 @@ private:
     bool m_shadowed = false;
     f32 m_floorOffset = 0.0f;
     Vec3 m_originOffset{0.0f, 0.0f, 0.0f};
+    Vec3 m_keyOffset{0.0f, 0.0f, 0.0f};
     TargetCriteria m_sight;
     HealthMeterDefinition m_meter;
     std::vector<MoveDefinition> m_moves;

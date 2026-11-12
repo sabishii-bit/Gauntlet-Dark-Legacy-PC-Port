@@ -144,6 +144,9 @@ struct CritterTypeRecord {
     f32 armor = 0.0f;
     std::array<f32, 3> originOffset{};
     f32 turnLimit = 0.0f;
+    /** Where a fallen boss's key appears from the root it was first stood at, in world axes
+     * (TYPE +0xD0, read only by BossDeath). */
+    std::array<f32, 3> keyOffset{};
     u32 shieldFlags = 0;
     f32 maxHealth = 0.0f;
     f32 expValue = 0.0f;

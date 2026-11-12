@@ -118,6 +118,36 @@ TEST_CASE("critter TYPE decodes home radius separately from MOVE speed",
     REQUIRE(file.types[0].healthBarOffset == std::array<f32, 3>{1, 9, 7});
 }
 
+TEST_CASE("critter TYPE decodes the fallen boss's key offset beside its turn limit",
+          "[formats][boss-sequence]") {
+    constexpr usize kRecord = 16;
+    constexpr usize kDirectory = kRecord + 0x140;
+    std::vector<u8> bytes(kDirectory + 16);
+    const auto put = [&](usize at, u32 value) {
+        for (usize byte = 0; byte < 4; ++byte) {
+            bytes[at + byte] = static_cast<u8>(value >> (byte * 8));
+        }
+    };
+    put(0, kDirectory);
+    put(4, 1);
+    put(kDirectory, 0x54595045); // TYPE
+    put(kDirectory + 4, kRecord);
+    put(kDirectory + 8, 1);
+    put(kDirectory + 12, 1);
+    // BossDeath adds TYPE +0xD0..+0xD8 to the spawn root (0x8001b908-0x8001b960): DRIDER's.
+    put(kRecord + 0xCC, std::bit_cast<u32>(3.0f));
+    put(kRecord + 0xD0, std::bit_cast<u32>(25.0f));
+    put(kRecord + 0xD4, std::bit_cast<u32>(-5.0f));
+    put(kRecord + 0xD8, std::bit_cast<u32>(10.0f));
+    put(kRecord + 0xE0, 0x21);
+    const auto file = parseCritterWad(bytes);
+    REQUIRE(file.types.size() == 1);
+    CHECK(file.types[0].keyOffset == std::array<f32, 3>{25, -5, 10});
+    CHECK(file.types[0].turnLimit == 3.0f);
+    CHECK(file.types[0].shieldFlags == 0x21);
+    CHECK(file.types[0].healthBarOffset == std::array<f32, 3>{0, 0, 0});
+}
+
 TEST_CASE("critter TYPE decodes the head and eye look-at nodes and their rates",
           "[formats][combatant][gaze]") {
     constexpr usize kRecord = 16;

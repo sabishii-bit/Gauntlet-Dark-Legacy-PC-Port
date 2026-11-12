@@ -304,4 +304,13 @@ legendsBossRewardMotion(const LegendsBossReward& reward, Vec3 deathPosition, Vec
     return LegendsBossRewardMotion{origin, travel / duration + Vec3{0, 32 * duration, 0}};
 }
 
+Vec3 legendsN64BossRewardAnchor(const LegendsBossEncounter& encounter) {
+    // e006b54c-e006b598 copies the pose record's place and, except in realm 3, raises it by
+    // eight before e0038d90 hands it to e0889850; nothing writes e088f990 after.
+    constexpr u32 kUnraisedRealm = 3;
+    constexpr f32 kRaise = 8.0f;
+    return encounter.combat.position +
+           Vec3{0.0f, encounter.nativeRealm == kUnraisedRealm ? 0.0f : kRaise, 0.0f};
+}
+
 } // namespace gdl::game

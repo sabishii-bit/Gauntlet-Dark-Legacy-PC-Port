@@ -407,7 +407,7 @@ TEST_CASE("Dreamcast Dragon enters victory through the actual opponent death cal
     usize victories = 0;
     events.fallen = [&](const Vec3& position) {
         ++victories;
-        fixture.level->bossDefeated(position + opponents.bosses().rewardOffset(), visitors);
+        fixture.level->bossDefeated(opponents.bosses().keySpot().value_or(position), visitors);
     };
     test::ScriptedOpponents host{events};
     const auto tick = [&] {

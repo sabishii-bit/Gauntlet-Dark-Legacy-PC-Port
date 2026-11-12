@@ -44,7 +44,7 @@ void LegendsLevel::bossIntro(const Vec3& position) {
     }
 }
 
-void LegendsLevel::n64BossDefeated(const Vec3& position, std::span<PlayerActor*> players) {
+void LegendsLevel::n64BossDefeated(const Vec3& /*keySpot*/, std::span<PlayerActor*> players) {
     if (!m_boss || m_bossDefeated || players.empty()) {
         return;
     }
@@ -66,7 +66,9 @@ void LegendsLevel::n64BossDefeated(const Vec3& position, std::span<PlayerActor*>
             progress.runestones = 0;
         }
     }
-    m_world.adapter()->spawnBossRewards(position, m_playerStart);
+    // The N64 drops no key: its rewards fly from the boss's pose record, however far the boss
+    // walked before it fell.
+    m_world.adapter()->spawnBossRewards(legendsN64BossRewardAnchor(*m_boss), m_playerStart);
     if (m_boss->finalNativeGrant != 0) {
         // Native 0x300290 is permanent, locked Anti-Death. GDL's timed,
         // toggleable inventory must not silently turn it into another reward.

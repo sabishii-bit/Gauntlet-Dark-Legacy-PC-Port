@@ -82,7 +82,10 @@ public:
                     survivors.push_back(&player.actor);
                 }
             }
-            imported->bossDefeated(where + m_scene.m_opponents.bosses().rewardOffset(), survivors);
+            // An imported level is told where the key belongs, wherever the boss fell: the
+            // Dreamcast's BossEnd leaves it by the spawn root as BossDeath does.
+            imported->bossDefeated(m_scene.m_opponents.bosses().keySpot().value_or(where),
+                                   survivors);
         } else {
             m_scene.m_bossSequence.fallen(where, m_scene.m_opponents.bosses(), m_scene.m_players);
         }

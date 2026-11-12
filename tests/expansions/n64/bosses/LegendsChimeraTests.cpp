@@ -170,6 +170,57 @@ TEST_CASE("Native Chimera loops its dormant idle without attacking and wakes at 
     CHECK(bosses.moveName() == "START");
 }
 
+TEST_CASE("Native Chimera backs away ten a second through its death throes",
+          "[legends][native-chimera][boss-death][boss-movement][assets]") {
+    const auto root = nativeRoot();
+    test::FakeRenderDevice device;
+    const auto common = test::assetOrSkip("CRITTER").parent_path();
+    std::vector<std::string> warnings;
+    auto stock = loadLegendsBossAssets(device, root, common, 35,
+                                       readFile(root / "_program/game.bin"), {}, warnings);
+    REQUIRE(stock);
+    // chi/moves.wad's DEATH paces minus ten, held two seconds, which Boss.bin's translate
+    // (e0883d14) takes in every state and its AI runs through the hold (e08847b0-e08847e8).
+    const auto death = stock->data.moveOfType(MoveDefinition::kDeath);
+    REQUIRE(death.has_value());
+    CHECK(stock->data.moves()[*death].speed == -10);
+    CHECK(stock->data.moves()[*death].hold == 2);
+    Bosses bosses;
+    bosses.open(device, common, nullptr, {}, 'C');
+    REQUIRE(bosses.preload(35, std::move(stock)));
+    REQUIRE(bosses.spawn(35, Vec3{0, 20, -52}, 0));
+    bosses.wake();
+    EnemyView player;
+    player.player = 0;
+    player.position = {0, 0, 500};
+    EnemyHit lethal;
+    lethal.damage = 100000;
+    lethal.player = 0;
+    bosses.hurt(lethal);
+    REQUIRE(bosses.fighter().dying());
+    const Vec3 fell = *bosses.position();
+    Vec3 last = fell;
+    s32 steps = 0;
+    std::optional<Vec3> defeat;
+    for (s32 tick = 0; tick < 1800 && !defeat; ++tick) {
+        bosses.update(1, 1.0f / 60, std::span{&player, 1});
+        bosses.takeCues();
+        bosses.takeSpews();
+        bosses.takeLosses();
+        defeat = bosses.takeDefeat();
+        if (bosses.present()) {
+            CHECK(glm::length(Vec2{bosses.position()->x - last.x, bosses.position()->z - last.z}) ==
+                  Approx(10.0f / 60).margin(1e-4));
+            last = *bosses.position();
+            ++steps;
+        }
+    }
+    REQUIRE(defeat.has_value());
+    CHECK(steps > 120);
+    CHECK(glm::length(Vec2{defeat->x - fell.x, defeat->z - fell.z}) ==
+          Approx(10.0f * static_cast<f32>(steps) / 60).epsilon(0.01));
+}
+
 TEST_CASE("Native Chimera attacks a grounded distant player through actual PlayScene entry",
           "[legends][native-chimera][native-chimera-gameplay][assets]") {
     ChimeraScene test;

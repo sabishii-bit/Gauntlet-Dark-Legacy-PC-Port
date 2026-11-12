@@ -213,6 +213,15 @@ TEST_CASE("Dreamcast critter decoder reads a synthetic native directory",
     CHECK(elsewhere.types[0].originOffset == boss.originOffset);
     CHECK(elsewhere.types[0].floorOffset == boss.floorOffset);
     CHECK(elsewhere.types[0].turnLimit == boss.turnLimit);
+    // BossEnd adds TYPE +0xB4..+0xBC to the root CritterGeo kept for the key (8c071370-8c0713b2).
+    CHECK(boss.keyOffset == std::array<f32, 3>{0, 0, 0});
+    auto key = wad.bytes;
+    test::setF32LE(key, wad.record("TYPE") + 0xb4, 25);
+    test::setF32LE(key, wad.record("TYPE") + 0xb8, -5);
+    test::setF32LE(key, wad.record("TYPE") + 0xbc, 10);
+    const auto keyed = decodeLegendsDreamcastCritter(key);
+    CHECK(keyed.types[0].keyOffset == std::array<f32, 3>{25, -5, 10});
+    CHECK(keyed.types[0].originOffset == boss.originOffset);
 
     SECTION("an empty section may share another's offset") {
         test::setU32LE(wad.bytes, wad.entry("ADDA") + 4, static_cast<u32>(wad.record("MOVE")));
@@ -410,11 +419,14 @@ TEST_CASE("Dreamcast six shipped bosses preserve their own combat records",
         usize moves;
         usize types;
         f32 health;
+        std::array<f32, 3> key; ///< where BossEnd leaves the key from the spawn root
     };
-    const std::array rows{
-        Expected{"dragon", "DRAGON", 32, 1, 2000}, Expected{"chimera", "CHIM", 58, 4, 3500},
-        Expected{"djinn", "DJINN", 25, 1, 3500},   Expected{"drider", "DRIDER", 38, 1, 2000},
-        Expected{"skorne1", "BOSS", 25, 1, 2500},  Expected{"skorne2", "BOSS", 19, 1, 3000}};
+    const std::array rows{Expected{"dragon", "DRAGON", 32, 1, 2000, {0, -18, 25}},
+                          Expected{"chimera", "CHIM", 58, 4, 3500, {0, -22, 27}},
+                          Expected{"djinn", "DJINN", 25, 1, 3500, {0, -2, 0}},
+                          Expected{"drider", "DRIDER", 38, 1, 2000, {25, -5, 10}},
+                          Expected{"skorne1", "BOSS", 25, 1, 2500, {0, 10, 0}},
+                          Expected{"skorne2", "BOSS", 19, 1, 3000, {0, 10, 0}}};
     for (const auto& row : rows) {
         CAPTURE(row.bank);
         const auto bytes = readFile(root / "critters" / (std::string(row.bank) + ".wad"));
@@ -423,6 +435,7 @@ TEST_CASE("Dreamcast six shipped bosses preserve their own combat records",
         CHECK(source.types.size() == row.types);
         CHECK(source.types.front().maxHealth == row.health);
         CHECK(source.types.front().vertDrift == 0);
+        CHECK(source.types.front().keyOffset == row.key);
         for (usize i = 0; i < source.types.size(); ++i) {
             const auto data = game::CritterData::fromDecoded(row.bank, source, i);
             CHECK(data.kind() == game::CombatantKind::Boss);

@@ -403,7 +403,7 @@ TEST_CASE("All native Legends boss arenas open through the common opponent owner
             usize victories = 0;
             events.fallen = [&](const Vec3& position) {
                 ++victories;
-                imported->bossDefeated(position + opponents.bosses().rewardOffset(), visitors);
+                imported->bossDefeated(opponents.bosses().keySpot().value_or(position), visitors);
             };
             hit.damage = 100000;
             for (s32 frame = 0; frame < 1800 && victories == 0; ++frame) {

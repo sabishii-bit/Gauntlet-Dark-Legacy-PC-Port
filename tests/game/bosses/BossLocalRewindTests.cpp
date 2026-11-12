@@ -77,8 +77,8 @@ struct NativeBoss {
                                                   reference.maxHealth, reference.awake,
                                                   reference.alive)));
         CHECK(boss.present() == expected.boss.present());
-        CHECK(boss.cameraBase() == expected.boss.cameraBase());
-        CHECK(boss.rewardOffset() == expected.boss.rewardOffset());
+        CHECK(boss.spawnRoot() == expected.boss.spawnRoot());
+        CHECK(boss.keySpot() == expected.boss.keySpot());
         const auto legendValues = [](const LegendRite& rite) {
             return std::tuple{rite.stage(),     rite.player(), rite.running(),   rite.holdsBoss(),
                               rite.wantsRoar(), rite.thrown(), rite.weakening(), rite.darkens()};

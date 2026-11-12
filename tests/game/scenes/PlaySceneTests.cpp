@@ -4126,13 +4126,21 @@ TEST_CASE("in the town's crypt the lich rises for the party, its meter over the 
         scene.update(1.0 / 60.0, still);
     }
     REQUIRE(scene.dimmer().offset() >= -0.05f);
-    // Slain, the lich leaves the town's shard to everyone and its key where it fell; the
-    // wizard comes five seconds on, names it beaten, counts the realm's runestones (none
-    // found), and sees the party off to the tower.
+    // Slain, the lich leaves the town's shard to everyone and its key by where it first stood,
+    // however far it has chased the party: its spawn root over the mark plus LICH's key offset
+    // of (-4, 4, 0), as BossDeath leaves it. The wizard comes five seconds on, names it beaten,
+    // counts the realm's runestones (none found), and sees the party off to the tower.
     EnemyHit slay;
     slay.damage = 100000.0f;
     slay.player = 0;
-    const Vec3 shardSpot = *scene.bosses().position() + scene.bosses().rewardOffset();
+    const WorldLocator* mark = world.layout().findLocator(LocatorKind::Boss);
+    REQUIRE(mark != nullptr);
+    REQUIRE(scene.bosses().spawnRoot().has_value());
+    const Vec3 bossRoot = *scene.bosses().spawnRoot();
+    CHECK(bossRoot.x == mark->position.x);
+    CHECK(bossRoot.z == mark->position.z);
+    const Vec3 shardSpot = bossRoot + Vec3{-4, 4, 0};
+    CHECK(scene.bosses().keySpot() == shardSpot);
     scene.bosses().hurt(slay);
     scene.update(1.0 / 60.0, still);
     REQUIRE_FALSE(scene.bossView()->alive);

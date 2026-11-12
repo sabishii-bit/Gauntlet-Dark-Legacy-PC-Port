@@ -50,6 +50,20 @@ f32 farthestAlongGround(const Vec3& at, std::span<const EnemyView> players) {
 bool partyWakes(f32 farthest, f32 threshold) {
     return threshold <= 0.0f || (farthest > 0.0f && farthest < threshold);
 }
+
+/** The root CritterInitGeo stands a type of `floorOffset` at over `placement`: on the floor its
+ * probe finds there, else at the placement's own height, raised by the offset
+ * (0x8003e628-0x8003e6b4; DC 0x8c087866-0x8c087932). */
+Vec3 rootOver(const WorldCollision* collision, const Vec3& placement, f32 floorOffset) {
+    Vec3 root = placement;
+    if (collision != nullptr) {
+        if (const auto floor = Combatant::bossFloorUnder(*collision, placement)) {
+            root.y = floor->y;
+        }
+    }
+    root.y += floorOffset;
+    return root;
+}
 } // namespace
 
 void Bosses::appendSimulationDigest(
@@ -195,9 +209,9 @@ void Bosses::close() {
     m_device = nullptr;
     m_collision = nullptr;
     m_sim.id.reset();
-    m_sim.cameraBase.reset();
+    m_sim.spawnRoot.reset();
     m_sim.defeat.reset();
-    m_sim.rewardOffset = Vec3{0};
+    m_sim.keyOffset = Vec3{0};
     m_sim.kind = -1;
     m_sim.name.clear();
     m_sim.awake = false;
@@ -425,9 +439,8 @@ bool Bosses::spawn(s32 kind, const Vec3& position, f32 yaw, f32 wakeDistance) {
     m_sim.wakeClock = 0.0f;
     const CritterData* data = m_fighter.data();
     m_sim.wakeDistance = wakeDistance;
-    m_sim.rewardOffset = rewardOffset();
-    m_sim.cameraBase =
-        m_fighter.position() + Vec3{0.0f, data != nullptr ? data->floorOffset() : 0.0f, 0.0f};
+    m_sim.keyOffset = data != nullptr ? data->keyOffset() : Vec3{0};
+    m_sim.spawnRoot = rootOver(m_collision, position, data != nullptr ? data->floorOffset() : 0.0f);
     if (m_sim.wakeDistance <= 0.0f && data != nullptr) {
         m_sim.wakeDistance = data->wakeThreshold();
     }
@@ -714,10 +727,11 @@ Vec3 Bosses::cameraOffset() const {
     return data != nullptr ? Vec3{0.0f, data->floorOffset() + data->vertDrift(), 0.0f} : Vec3{0.0f};
 }
 
-Vec3 Bosses::rewardOffset() const {
-    const CritterData* data = m_sim.id.has_value() ? m_fighter.data() : nullptr;
-    return data != nullptr ? data->originOffset() + Vec3{0, data->floorOffset(), 0}
-                           : m_sim.rewardOffset;
+std::optional<Vec3> Bosses::keySpot() const {
+    if (!m_sim.spawnRoot.has_value()) {
+        return std::nullopt;
+    }
+    return *m_sim.spawnRoot + m_sim.keyOffset;
 }
 
 std::string_view Bosses::moveName() const {

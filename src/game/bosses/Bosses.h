@@ -168,9 +168,15 @@ public:
     f32 height() const;
     /** The tracking camera anchor includes the model root and vertical drift. */
     Vec3 cameraOffset() const;
-    /** BossDeath places the shard above the body root by TYPE.originOffset. */
-    Vec3 rewardOffset() const;
-    const std::optional<Vec3>& cameraBase() const { return m_sim.cameraBase; }
+    /** The root its type was first stood at, kept for good: the floor CritterInitGeo's probe
+     * finds under the placement, else the placement's own height, raised by the type's
+     * floorOffset (+0x418, 0x8003e60c-0x8003e6fc; DC +0x208, 0x8c087850-0x8c087972). The
+     * fight's camera keeps it as its base; none until a boss has stood this level. */
+    const std::optional<Vec3>& spawnRoot() const { return m_sim.spawnRoot; }
+    /** Where BossDeath leaves the fallen boss's key: its spawn root plus its type's key offset,
+     * in world axes, wherever the boss went meanwhile (0x8001b908-0x8001b960; DC BossEnd
+     * 0x8c071370-0x8c0713b2); none until a boss has stood this level. */
+    std::optional<Vec3> keySpot() const;
     std::string_view moveName() const;
     /** The id targets and sweeps name the boss by. */
     static constexpr s32 kTargetId = 0;
@@ -204,9 +210,9 @@ private:
     struct Simulation {
         std::vector<CombatantAssets*> assets;
         std::optional<s32> id;
-        std::optional<Vec3> cameraBase;
+        std::optional<Vec3> spawnRoot;
         std::optional<Vec3> defeat;
-        Vec3 rewardOffset{0}; ///< retained through removal for the victory presentation
+        Vec3 keyOffset{0}; ///< its type's, retained through removal for the key
         s32 kind = -1;
         std::string name;
         bool awake = false;

@@ -63,4 +63,9 @@ struct LegendsBossRewardMotion {
 std::optional<LegendsBossRewardMotion>
 legendsBossRewardMotion(const LegendsBossReward& reward, Vec3 deathPosition, Vec3 playerStart);
 
+/** Where e08898d8 throws a fallen boss's rewards about, wherever the boss fell: the place
+ * e006b110 kept from its pose record as the level loaded (e0889850's e088f990), eight up
+ * except in the Dragon's realm. */
+Vec3 legendsN64BossRewardAnchor(const LegendsBossEncounter& encounter);
+
 } // namespace gdl::game

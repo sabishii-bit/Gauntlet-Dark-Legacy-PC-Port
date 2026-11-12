@@ -6,6 +6,7 @@
 #include <type_traits>
 #include <vector>
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/audio/AudioMixer.h"
@@ -19,13 +20,16 @@
 #include "fixtures/NativeModelFixture.h"
 #include "fixtures/NativeSoundBank.h"
 #include "game/bosses/BossSequence.h"
+#include "game/critters/HeadedBodyFixture.h"
 #include "game/effects/EffectObservation.h"
+#include "game/level/BossKinds.h"
 #include "game/level/NativeStateResources.h"
 #include "game/level/StageRegistry.h"
 
 namespace {
 using namespace gdl;
 using namespace gdl::game;
+using Catch::Approx;
 
 static_assert(!std::is_move_constructible_v<BossSequence>);
 static_assert(!std::is_copy_constructible_v<BossSequence>);
@@ -184,7 +188,9 @@ TEST_CASE("the boss's fall keeps the arena's camera subject to the level's end",
     REQUIRE_FALSE(f.sequence.fallen());
     f.sequence.fallen({2, 3, 4}, f.bosses, f.players);
     REQUIRE(f.sequence.fallen());
-    CHECK(f.sequence.shardPosition() == Vec3{2, 3, 4} + f.bosses.rewardOffset());
+    // No boss stood here, so the key has no spawn root to lie by and falls back to the fall.
+    REQUIRE_FALSE(f.bosses.keySpot().has_value());
+    CHECK(f.sequence.shardPosition() == Vec3{2, 3, 4});
     for (s32 tick = 0; tick < 2000 && !f.sequence.victory().state().finished(); ++tick) {
         f.sequence.advanceVictory(2, 1.0f / 30.0f, f.players, f.strings);
     }
@@ -198,6 +204,67 @@ TEST_CASE("the boss's fall keeps the arena's camera subject to the level's end",
     CHECK(rest.radius == 5.0f);
     f.bind();
     CHECK_FALSE(f.sequence.fallen());
+}
+
+TEST_CASE("the fallen boss's key rises by the root it first stood at, at its type's offset, "
+          "wherever it fell",
+          "[game][screens][boss-sequence]") {
+    Fixture f;
+    f.loadLevel();
+    // Stood at (10, 0, 20), its root two over that; BossDeath adds the type's (0, -20, 32)
+    // unturned (0x8001b908-0x8001b960), however far its death walk took it.
+    f.bosses.open(f.device, test::headedBodyAssets(R"(,"floorOffset":2,"keyOffset":[0,-20,32])"),
+                  nullptr, {}, 'G');
+    REQUIRE(f.bosses.spawn(boss_type::kChimera, Vec3{10, 0, 20}, 0.75f));
+    const Vec3 key{10, -18, 52};
+    REQUIRE(f.bosses.keySpot() == key);
+    f.sequence.fallen({10, 0, -35}, f.bosses, f.players);
+    REQUIRE(f.effects.count() == 1);
+    CHECK(f.effects.effect(0).name == "BOSSKEY");
+    CHECK(f.effects.effect(0).position == key);
+    CHECK(f.sequence.shardPosition() == key);
+    CHECK(f.sequence.victorySubject().position == key);
+    CHECK(f.sequence.restSubject().position == Vec3{10, 0, -35});
+}
+
+TEST_CASE("the wizard comes between the boss's mark and the players standing or dying as he "
+          "begins to appear",
+          "[game][screens][boss-sequence][victory]") {
+    Fixture f;
+    f.loadLevel(41, R"(,"locators":[{"type":"boss","position":[9,30,12],"rotation":[0,0,0]}])");
+    // players[1] is player 1 and players[0] player 3: by their slots players[1] comes first.
+    f.sequence.fallen({50, 0, 50}, f.bosses, f.players);
+    f.sequence.advanceVictory(BossVictory::kWaitTicks - 1, 0, f.players, f.strings);
+    REQUIRE(f.sequence.victory().state().stage() == BossVictory::Stage::Waiting);
+    f.players[1].actor.place({10, 8, -2});
+    f.players[1].life = PlayerLife::Dying;
+    SECTION("the dying count, the first slot's height twice in the mark's place") {
+        f.sequence.advanceVictory(1, 0, f.players, f.strings);
+        REQUIRE(f.sequence.victory().state().wizardShown());
+        // (9 + 10 + 1, 2 x 8 + 2, 12 - 2 + 3) / 3, three up (FUN_80019b5c, 0x80345A18).
+        const Vec3 at = f.sequence.victorySubject().position;
+        CHECK(at.x == Approx(20.0f / 3));
+        CHECK(at.y == Approx(9));
+        CHECK(at.z == Approx(13.0f / 3));
+    }
+    SECTION("one waiting in the tower does not count") {
+        f.players[0].life = PlayerLife::InTower;
+        f.sequence.advanceVictory(1, 0, f.players, f.strings);
+        REQUIRE(f.sequence.victory().state().wizardShown());
+        CHECK(f.sequence.victorySubject().position == Vec3{9.5f, 11, 5});
+    }
+}
+
+TEST_CASE("the fall gives the realm's shard to the standing, never to the dying",
+          "[game][screens][boss-sequence]") {
+    // PlayerGiveRune sets the bit only for a player in state 1 (0x800a2544-0x800a254c), though
+    // BossDeath offers it to the dying too (0x8001b8cc-0x8001b904).
+    Fixture f;
+    f.loadLevel();
+    f.players[1].life = PlayerLife::Dying;
+    f.sequence.fallen(Vec3{0}, f.bosses, f.players);
+    CHECK(f.players[0].actor.save().progress().relics.hasShard(LevelRef::orderOf(7)));
+    CHECK_FALSE(f.players[1].actor.save().progress().relics.hasShard(LevelRef::orderOf(7)));
 }
 
 TEST_CASE("boss victory rewards survivors once and counts the fallen party's runes",
@@ -558,12 +625,12 @@ TEST_CASE("boss sequence digest bytes stay pinned through its legend after the v
     // the child that moved it.
     test::checkPinnedDigests("BossSequence", test::liveDigest(sequence, view),
                              test::savedDigest(sequence, saved, view),
-                             "597a67d637298661982771bca634135efb862cf9951d16f1a4545be12a7574aa",
-                             "24babc80425244a38b0ff4ffa1bcc57e5179e75190379445ea5ca4189601a1c0");
+                             "49c1580e97f3103acbb403c669c1cde456457b85d62fc8690c26679eb3e69ff1",
+                             "d769b7a98e189e7ed0bbbe77310198c9a65fae528965ff9bd24813957232f00c");
     test::checkPinnedDigests("BossVictoryPresentation", test::liveDigest(sequence.victory(), view),
                              test::savedDigest(sequence.victory(), victory, view),
-                             "0f9d36da8271f5c706ac827e63c5565246cbe4532c13b45ee2098be3fb671512",
-                             "e556fc620c55d2a30daca6e810977309a9af7b6ccd85e4597ada86678c4d5024");
+                             "304c2e0ae7c915a23f86cff87ae8db84c1d47ed46ae1ecb471a99daf1a6b3c5c",
+                             "7ceaa95f36ebfbb9b128f7331de470f02ac510c4264a75860ab2c05e797e063c");
     f.sequence.clear();
 }
 
