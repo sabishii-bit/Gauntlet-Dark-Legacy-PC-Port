@@ -56,12 +56,6 @@ f32 PlayerPowerups::rateOf(Clock clock) {
     return 0.0f;
 }
 
-std::vector<PowerupEnding> PlayerPowerups::update(std::span<PlayerRuntime> players, f32 seconds,
-                                                  Clock clock) {
-    runClock(players, seconds, clock);
-    return wear(players, seconds, clock);
-}
-
 void PlayerPowerups::runClock(std::span<PlayerRuntime> players, f32 seconds, Clock clock) {
     const f32 rate = rateOf(clock);
     if (rate <= 0.0f) {

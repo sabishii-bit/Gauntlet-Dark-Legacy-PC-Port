@@ -7,6 +7,7 @@
 #include "game/combat/PowerupFlags.h"
 #include "game/enemies/LevelOpponents.h"
 #include "game/party/PlayerPowerups.h"
+#include "game/party/PowerupUpdate.h"
 #include "game/players/MikeyDecoy.h"
 
 namespace {
@@ -96,7 +97,7 @@ TEST_CASE("Mikey's lure reaches the swarm snapshot without replacing the player'
     auto& inventory = player.actor.save().progress().inventory;
     inventory.addPowerup(powerup::kSpecial, powerup::kMikey, 0, 10);
     inventory.powerups[0].on = true;
-    PlayerPowerups::update(players, 2 * kFrame, PlayerPowerups::Clock::Paused);
+    test::powerupUpdate(players, 2 * kFrame, PlayerPowerups::Clock::Paused);
     CHECK(inventory.powerups[0].strength == 10); // Tower freezes item time, not the decoy.
     const auto views = LevelOpponents::enemyViews(players);
     REQUIRE(views.size() == 1);
@@ -105,12 +106,12 @@ TEST_CASE("Mikey's lure reaches the swarm snapshot without replacing the player'
     CHECK(*views[0].decoy == player.actor.followPoint());
     player.life = PlayerLife::Dying;
     const s32 beforeDeath = player.mikey.state();
-    PlayerPowerups::update(players, kFrame, PlayerPowerups::Clock::Level);
+    test::powerupUpdate(players, kFrame, PlayerPowerups::Clock::Level);
     CHECK(player.mikey.shown());
     CHECK(player.mikey.state() == beforeDeath + 1);
     CHECK(LevelOpponents::enemyViews(players)[0].hidden);
     player.life = PlayerLife::InTower;
-    PlayerPowerups::update(players, kFrame, PlayerPowerups::Clock::Level);
+    test::powerupUpdate(players, kFrame, PlayerPowerups::Clock::Level);
     CHECK_FALSE(player.mikey.shown());
     CHECK_FALSE(LevelOpponents::enemyViews(players)[0].decoy);
 }

@@ -5,6 +5,7 @@
 
 #include "game/combat/PowerupFlags.h"
 #include "game/party/PlayerPowerups.h"
+#include "game/party/PowerupUpdate.h"
 #include "game/players/MikeyDecoy.h"
 #include "game/players/PowerupEffects.h"
 
@@ -19,15 +20,15 @@ TEST_CASE("powerup clocks pause and boss combat spends three seconds per second"
     inventory.powerups[0] = {10, 5, 0, 1, true};
     inventory.powerups[1] = {10, 5, 0, 2, false};
     inventory.powerups[2] = {-1, 5, 3, 0x100000, true};
-    PlayerPowerups::update(players, 2, PlayerPowerups::Clock::Paused);
+    test::powerupUpdate(players, 2, PlayerPowerups::Clock::Paused);
     CHECK(inventory.powerups[0].strength == 10);
-    PlayerPowerups::update(players, 2, PlayerPowerups::Clock::Level);
+    test::powerupUpdate(players, 2, PlayerPowerups::Clock::Level);
     CHECK(inventory.powerups[0].strength == 8);
-    PlayerPowerups::update(players, 2, PlayerPowerups::Clock::BossFight);
+    test::powerupUpdate(players, 2, PlayerPowerups::Clock::BossFight);
     CHECK(inventory.powerups[0].strength == 2);
     CHECK(inventory.powerups[1].strength == 10);
     CHECK(inventory.powerups[2].strength == -1);
-    PlayerPowerups::update(players, 2, PlayerPowerups::Clock::Level);
+    test::powerupUpdate(players, 2, PlayerPowerups::Clock::Level);
     CHECK_FALSE(inventory.powerups[0].held());
     CHECK(inventory.powerups[2].charge == 3);
 }
@@ -98,26 +99,26 @@ TEST_CASE("activated turbo refills once while activated permanent turbo replenis
     std::array<PlayerRuntime, 1> players;
     auto& inventory = players[0].actor.save().progress().inventory;
     inventory.addPowerup(powerup::kSpecial, powerup::kTurbo, 0, 1);
-    PlayerPowerups::update(players, 0.01f, PlayerPowerups::Clock::Level);
+    test::powerupUpdate(players, 0.01f, PlayerPowerups::Clock::Level);
     CHECK(players[0].turbo.held() == 0);
     CHECK(inventory.powerupCount() == 1);
     inventory.powerups[0].on = true;
-    PlayerPowerups::update(players, 0.01f, PlayerPowerups::Clock::Level);
+    test::powerupUpdate(players, 0.01f, PlayerPowerups::Clock::Level);
     CHECK(players[0].turbo.held() == 100);
     CHECK(inventory.powerupCount() == 0);
     REQUIRE(players[0].turbo.spend(40));
-    PlayerPowerups::update(players, 0.01f, PlayerPowerups::Clock::Level);
+    test::powerupUpdate(players, 0.01f, PlayerPowerups::Clock::Level);
     CHECK(players[0].turbo.held() == 60);
     inventory.addPowerup(powerup::kSpecial, powerup::kTurbo, 0, -1);
     CHECK_FALSE(inventory.powerups[0].on);
-    PlayerPowerups::update(players, 0.01f, PlayerPowerups::Clock::Level);
+    test::powerupUpdate(players, 0.01f, PlayerPowerups::Clock::Level);
     CHECK(players[0].turbo.held() == 60);
     inventory.powerups[0].on = true;
-    PlayerPowerups::update(players, 0.01f, PlayerPowerups::Clock::Level);
+    test::powerupUpdate(players, 0.01f, PlayerPowerups::Clock::Level);
     CHECK(players[0].turbo.held() == 100);
     CHECK(inventory.powerupCount() == 1);
     REQUIRE(players[0].turbo.spend(40));
-    PlayerPowerups::update(players, 0.01f, PlayerPowerups::Clock::Level);
+    test::powerupUpdate(players, 0.01f, PlayerPowerups::Clock::Level);
     CHECK(players[0].turbo.held() == 100);
 }
 
@@ -129,7 +130,7 @@ TEST_CASE("saved enabled Turbo Boost keeps its activation when loaded",
     REQUIRE(loaded.progress().inventory.powerups[0].on);
     std::array<PlayerRuntime, 1> players;
     players[0].actor.spawn(0, loaded, nullptr, Vec3{0}, 0);
-    PlayerPowerups::update(players, 0.01f, PlayerPowerups::Clock::Level);
+    test::powerupUpdate(players, 0.01f, PlayerPowerups::Clock::Level);
     CHECK(players[0].turbo.held() == 100);
     CHECK(players[0].actor.save().progress().inventory.powerupCount() == 0);
 }
@@ -148,11 +149,11 @@ TEST_CASE("Stop Time is shared only by standing players with a working item",
     CHECK_FALSE(PlayerPowerups::timeStopped(players));
     second.addPowerup(powerup::kSpecial, powerup::kStopTime | powerup::kInvisible, 0, 1);
     CHECK(PlayerPowerups::timeStopped(players));
-    PlayerPowerups::update(players, 1, PlayerPowerups::Clock::Level);
+    test::powerupUpdate(players, 1, PlayerPowerups::Clock::Level);
     CHECK_FALSE(PlayerPowerups::timeStopped(players));
     players[0].life = PlayerLife::Standing;
     CHECK(PlayerPowerups::timeStopped(players));
-    PlayerPowerups::update(players, 2, PlayerPowerups::Clock::Level);
+    test::powerupUpdate(players, 2, PlayerPowerups::Clock::Level);
     CHECK_FALSE(PlayerPowerups::timeStopped(players));
 }
 
@@ -169,7 +170,7 @@ TEST_CASE("coin challenges disable Stop Time without consuming any participant's
     REQUIRE(PlayerPowerups::timeStopped(players));
     PlayerPowerups::restrictToChallenge(players);
     CHECK_FALSE(PlayerPowerups::timeStopped(players));
-    PlayerPowerups::update(players, 2, PlayerPowerups::Clock::Level);
+    test::powerupUpdate(players, 2, PlayerPowerups::Clock::Level);
     for (auto& player : players) {
         auto& inventory = player.actor.save().progress().inventory;
         CHECK(inventory.powerupCount() == 2);
@@ -181,7 +182,7 @@ TEST_CASE("coin challenges disable Stop Time without consuming any participant's
     auto& carried = players[0].actor.save().progress().inventory;
     carried.powerups[0].on = true;
     CHECK(PlayerPowerups::timeStopped(players));
-    PlayerPowerups::update(players, 2, PlayerPowerups::Clock::Level);
+    test::powerupUpdate(players, 2, PlayerPowerups::Clock::Level);
     CHECK(carried.powerups[0].strength == 43);
 }
 
@@ -206,7 +207,7 @@ TEST_CASE("the shrinkers counted are the standing players with a working slot sw
     players[1].life = PlayerLife::Dying;
     CHECK(PlayerPowerups::enemyShrinkers(players) == 1);
     players[1].life = PlayerLife::Standing;
-    PlayerPowerups::update(players, 2, PlayerPowerups::Clock::Level);
+    test::powerupUpdate(players, 2, PlayerPowerups::Clock::Level);
     CHECK(PlayerPowerups::enemyShrinkers(players) == 1); // the timed one has run out
 }
 
@@ -222,33 +223,36 @@ TEST_CASE("a special wearing off, or switched off, is heard once against the fla
     second.addPowerup(powerup::kSpecial, powerup::kGrowth | powerup::kPojo, 0, -1);
     ogre.addPowerup(powerup::kSpecial, powerup::kGrowth | powerup::kPojo, 0, -1);
     // Coming on is no ending.
-    CHECK(PlayerPowerups::update(players, 0.5f, PlayerPowerups::Clock::Level).empty());
+    CHECK(test::powerupUpdate(players, 0.5f, PlayerPowerups::Clock::Level).empty());
     CHECK(players[0].wornSpecial == powerup::kLevitation);
     CHECK(players[1].wornSpecial == (powerup::kGrowth | powerup::kPojo));
     CHECK(players[2].wornSpecial == (powerup::kGrowth | powerup::kPojo));
-    // The wings run out; Pojo's for good is switched off.
+    // Pojo's for good is switched off, and the wings' last half second runs out in this
+    // update's clock: worn through it, they are heard ending on the next.
     second.powerups[0].on = false;
-    const auto endings = PlayerPowerups::update(players, 1.0f, PlayerPowerups::Clock::Level);
-    REQUIRE(endings.size() == 3);
-    CHECK(endings[0].partyIndex == 0);
-    CHECK(endings[0].sound == "S_LEVITATEDOWN");
+    const auto endings = test::powerupUpdate(players, 1.0f, PlayerPowerups::Clock::Level);
+    REQUIRE(endings.size() == 2);
+    CHECK(endings[0].partyIndex == 1);
+    CHECK(endings[0].sound == "S_UNPOJO");
     CHECK(endings[1].partyIndex == 1);
-    CHECK(endings[1].sound == "S_UNPOJO");
-    CHECK(endings[2].partyIndex == 1);
-    CHECK(endings[2].sound == "S_UNGROW");
-    CHECK(PlayerPowerups::update(players, 1.0f, PlayerPowerups::Clock::Level).empty());
+    CHECK(endings[1].sound == "S_UNGROW");
+    const auto wings = test::powerupUpdate(players, 1.0f, PlayerPowerups::Clock::Level);
+    REQUIRE(wings.size() == 1);
+    CHECK(wings[0].partyIndex == 0);
+    CHECK(wings[0].sound == "S_LEVITATEDOWN");
+    CHECK(test::powerupUpdate(players, 1.0f, PlayerPowerups::Clock::Level).empty());
     // An ogre never goes back to a plain size, so its growth ends unheard.
     ogre.powerups[0].on = false;
-    const auto unheard = PlayerPowerups::update(players, 1.0f, PlayerPowerups::Clock::Level);
+    const auto unheard = test::powerupUpdate(players, 1.0f, PlayerPowerups::Clock::Level);
     REQUIRE(unheard.size() == 1);
     CHECK(unheard[0].partyIndex == 2);
     CHECK(unheard[0].sound == "S_UNPOJO");
     // The fallen keep their flags for when they stand again.
     second.powerups[0].on = true;
-    PlayerPowerups::update(players, 1.0f, PlayerPowerups::Clock::Level);
+    test::powerupUpdate(players, 1.0f, PlayerPowerups::Clock::Level);
     players[1].life = PlayerLife::InTower;
     second.powerups[0].on = false;
-    CHECK(PlayerPowerups::update(players, 1.0f, PlayerPowerups::Clock::Level).empty());
+    CHECK(test::powerupUpdate(players, 1.0f, PlayerPowerups::Clock::Level).empty());
     CHECK(players[1].wornSpecial == (powerup::kGrowth | powerup::kPojo));
 }
 } // namespace

@@ -24,9 +24,6 @@ public:
     static constexpr f32 kBossFightRate = 3.0f;
     /** Seconds of a timed powerup spent for each second of `clock`. */
     static f32 rateOf(Clock clock);
-    /** One update of the clock and of what is worn: runClock, then wear. */
-    static std::vector<PowerupEnding> update(std::span<PlayerRuntime> players, f32 seconds,
-                                             Clock clock);
     /** Spends the standing players' timed powerups at `clock`'s rate (PlayerProcessPowerups'
      * slot loop); a decoy's slot is spent as it is let loose, in wear. */
     static void runClock(std::span<PlayerRuntime> players, f32 seconds, Clock clock);

@@ -13,6 +13,7 @@
 #include "game/combat/PowerupFlags.h"
 #include "game/party/PlayerPowerups.h"
 #include "game/party/PlayerRuntime.h"
+#include "game/party/PowerupUpdate.h"
 #include "game/players/PowerupEffects.h"
 
 namespace {
@@ -206,7 +207,7 @@ TEST_CASE("permanent turbo and super shot cheats use normal gameplay consumers",
     players[0].actor.spawn(3, save, nullptr, {}, 0);
     players[0].life = PlayerLife::Standing;
     for (s32 i = 0; i < 3; ++i) {
-        PlayerPowerups::update(players, 1, PlayerPowerups::Clock::Level);
+        test::powerupUpdate(players, 1, PlayerPowerups::Clock::Level);
         CHECK(players[0].turbo.held() == TurboMeter::kFull);
         players[0].turbo.spend(TurboMeter::kFull);
     }

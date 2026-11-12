@@ -25,6 +25,7 @@
 #include "game/level/LevelCatalog.h"
 #include "game/party/PartyPickups.h"
 #include "game/party/PlayerPowerups.h"
+#include "game/party/PowerupUpdate.h"
 #include "game/party/RecordingPickupPresentation.h"
 #include "game/players/ItemPickup.h"
 #include "game/scenes/PlayScene.h"
@@ -357,7 +358,7 @@ TEST_CASE("with Auto-Use off a native Turbo Boost waits for its owner's selector
     CHECK(hud.selector(3).selection() == 0);
     CHECK_FALSE(hud.selector(3).showing());
     CHECK(hud.selector(1).selection() == -1);
-    PlayerPowerups::update(players, 60, PlayerPowerups::Clock::Level);
+    test::powerupUpdate(players, 60, PlayerPowerups::Clock::Level);
     CHECK(players[0].turbo.held() == 0);
     REQUIRE(inventory.powerupCount() == 1);
     hud.stepSelector(players[0].actor, SelectorInput{.up = true}, 32, audio);
@@ -366,18 +367,18 @@ TEST_CASE("with Auto-Use off a native Turbo Boost waits for its owner's selector
     CHECK_FALSE(inventory.powerups[0].on); // Opening is not activation.
     hud.stepSelector(players[0].actor, SelectorInput{.up = true}, 1, audio);
     REQUIRE(inventory.powerups[0].on);
-    PlayerPowerups::update(players, 0.01f, PlayerPowerups::Clock::Level);
+    test::powerupUpdate(players, 0.01f, PlayerPowerups::Clock::Level);
     CHECK(players[0].turbo.held() == 100);
     CHECK(inventory.powerupCount() == 0);
     REQUIRE(players[0].turbo.spend(40));
-    PlayerPowerups::update(players, 0.01f, PlayerPowerups::Clock::Level);
+    test::powerupUpdate(players, 0.01f, PlayerPowerups::Clock::Level);
     CHECK(players[0].turbo.held() == 60);
     CHECK_FALSE(inventory.powerups[0].on);
     REQUIRE(world.placeItem(device, "TURBOPUP", spot));
     pickups.collect(device, players, services);
     REQUIRE(inventory.powerupCount() == 1);
     CHECK_FALSE(inventory.powerups[0].on);
-    PlayerPowerups::update(players, 0.01f, PlayerPowerups::Clock::Level);
+    test::powerupUpdate(players, 0.01f, PlayerPowerups::Clock::Level);
     CHECK(players[0].turbo.held() == 60); // Collecting again must not reuse the old activation.
     CHECK(inventory.powerupCount() == 1);
     CHECK(players[1].turbo.held() == 0);
@@ -426,11 +427,11 @@ TEST_CASE("world pickups honor auto use and remain available in the selector",
     CHECK(inventory.powerups[0].on == activate);
     CHECK(hud.selector(3).selection() == 0);
     if (turbo && activate) {
-        PlayerPowerups::update(players, 0.01f, PlayerPowerups::Clock::Level);
+        test::powerupUpdate(players, 0.01f, PlayerPowerups::Clock::Level);
         CHECK(players[0].turbo.held() == 100);
         CHECK(inventory.powerupCount() == 0);
         REQUIRE(players[0].turbo.spend(40));
-        PlayerPowerups::update(players, 0.01f, PlayerPowerups::Clock::Level);
+        test::powerupUpdate(players, 0.01f, PlayerPowerups::Clock::Level);
         CHECK(players[0].turbo.held() == 60);
         return;
     }
@@ -487,7 +488,7 @@ TEST_CASE("Stop Time pickups honor the coin-stage restriction without being cons
     CHECK(inventory.powerups[0].held());
     CHECK(hud.selector(3).selection() == 0);
     const f32 duration = inventory.powerups[0].strength;
-    PlayerPowerups::update(players, 1, PlayerPowerups::Clock::Level);
+    test::powerupUpdate(players, 1, PlayerPowerups::Clock::Level);
     CHECK(inventory.powerups[0].strength == (world.ref().isSecret() ? duration : duration - 1));
 }
 
