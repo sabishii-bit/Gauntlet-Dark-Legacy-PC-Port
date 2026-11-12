@@ -221,7 +221,7 @@ NetplayMenu::Event NetplayMenu::update(const MenuInput& raw) {
 void NetplayMenu::render(RenderDevice& device, const Mat4& projection, f32 width, f32 height) {
     m_pointerTransform = makeVirtualScreenTransform(projection, 512, 384, width, height);
     Canvas canvas;
-    canvas.begin(device, m_pointerTransform, {.depthWrite = false, .depthTest = false});
+    canvas.begin(device, m_pointerTransform, {.depthWrite = false, .depthTest = false, .fog = {}});
     canvas.fillScreen(Color::rgba(0, 0, 0, 190));
     canvas.fill({28, 30, 456, 324}, Color::rgba(15, 15, 27, 245));
     draw(canvas, m_title.get(), 44, 42, 424, 23);

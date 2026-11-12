@@ -557,7 +557,7 @@ TEST_CASE("Video chooses supported resolutions and borderless uses the desktop w
           "preference",
           "[settings][graphics]") {
     Fixture f;
-    f.settings.displayOptions = {{1920, 1080}, {{1280, 720}, {1920, 1080}}};
+    f.settings.displayOptions = {{1920, 1080}, {{1280, 720}, {1920, 1080}}, {0, 0}, {}};
     f.menu.open(f.config, &f.strings, &f.settings, f.painter, {}, {}, SettingsMenu::Scope::Level);
     f.choose(4);
     REQUIRE(f.menu.menu().definition().title == "Video");
@@ -590,7 +590,7 @@ TEST_CASE("Video chooses supported resolutions and borderless uses the desktop w
 TEST_CASE("fullscreen replaces a custom window size with an advertised desktop mode",
           "[settings][graphics]") {
     Fixture f;
-    f.settings.displayOptions = {{1920, 1080}, {{1920, 1080}}};
+    f.settings.displayOptions = {{1920, 1080}, {{1920, 1080}}, {0, 0}, {}};
     f.menu.open(f.config, &f.strings, &f.settings, f.painter, {}, {}, SettingsMenu::Scope::Level);
     f.choose(4);
     f.down();
@@ -914,7 +914,7 @@ TEST_CASE("Video rollback preserves a manually resized window", "[settings][grap
     Fixture f;
     GameConfig active = f.config;
     f.settings.fail = true; // nothing is saved
-    f.settings.displayOptions = {{1920, 1080}, {{1920, 1080}}, {1152, 700}};
+    f.settings.displayOptions = {{1920, 1080}, {{1920, 1080}}, {1152, 700}, {}};
     f.settings.video = [&](const auto& next) {
         active = next;
         return true;
@@ -951,7 +951,7 @@ TEST_CASE("Video font and columns reserve the widest choices before selecting th
     const auto font = BitmapFont::fromGlyphs(32, 12, std::move(glyphs));
     f.painter.setFont(&font, &f.texture);
     f.settings.fail = true; // nothing is saved
-    f.settings.displayOptions = {{1920, 1080}, {{1280, 896}, {1920, 1080}}};
+    f.settings.displayOptions = {{1920, 1080}, {{1280, 896}, {1920, 1080}}, {0, 0}, {}};
     f.menu.open(f.config, &f.strings, &f.settings, f.painter, {}, MenuDefinition::parchment(),
                 SettingsMenu::Scope::Level);
     f.choose(4);
@@ -994,7 +994,7 @@ TEST_CASE("Restore Defaults previews the default window size and thirty fps befo
     f.config.timing.gameplayFrameRate = 60;
     Extent2D actualSize{1600, 1000}; // saved dimensions still say 1280x896
     s32 resizes = 0;
-    f.settings.displayOptions = {{1920, 1080}, {{1920, 1080}}, actualSize};
+    f.settings.displayOptions = {{1920, 1080}, {{1920, 1080}}, actualSize, {}};
     f.settings.video = [&](const auto& next) {
         if (!next.display.matchesWindow(WindowMode::Windowed, actualSize)) {
             actualSize = {next.display.windowWidth, next.display.windowHeight};

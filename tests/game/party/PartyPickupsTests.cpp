@@ -83,10 +83,13 @@ TEST_CASE("completed imported pickups use common feedback without granting rewar
                                           .presentation = presentation,
                                           .audio = audio,
                                           .classes = classes,
-                                          .help = [&](s32 id, usize recipient) {
-                                              lessons.emplace_back(id, recipient);
-                                              return true;
-                                          }};
+                                          .help =
+                                              [&](s32 id, usize recipient) {
+                                                  lessons.emplace_back(id, recipient);
+                                                  return true;
+                                              },
+                                          .openMessage = {},
+                                          .challengeCoin = {}};
     PartyPickups pickups;
     ItemOffer offer{static_cast<s32>(ItemKind::Keys), 1};
     ItemTaking taking;
@@ -118,7 +121,8 @@ TEST_CASE("completed imported pickups use common feedback without granting rewar
         offer = {};
         auto& progress = players[0].actor.save().progress();
         REQUIRE(progress.legendsProgress(LegendsPlatform::N64).add(LegendsRelic::Runestone, 3));
-        taking = {.outcome = ItemTaking::Outcome::Taken, .count = 1, .sound = "S_PICKUPRUNE"};
+        taking = {
+            .outcome = ItemTaking::Outcome::Taken, .count = 1, .card = {}, .sound = "S_PICKUPRUNE"};
         cardExpected = false;
         campaign = true;
         presented = {};

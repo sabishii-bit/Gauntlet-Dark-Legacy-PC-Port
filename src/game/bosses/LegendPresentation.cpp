@@ -1,7 +1,6 @@
 #include "game/bosses/LegendPresentation.h"
 
 #include <algorithm>
-#include <cmath>
 #include <string>
 #include <utility>
 

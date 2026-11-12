@@ -6,7 +6,7 @@
 #include <string>
 #include <string_view>
 #include <typeindex>
-#include <typeinfo>
+#include <typeinfo> // IWYU pragma: keep
 #include <utility>
 #include <vector>
 
@@ -2623,7 +2623,7 @@ struct MechanicsFacadeRow {
         facade.configure(on);
     }
     Owner& owner() { return facade; }
-    void advance() { facade.step({.seconds = 0.25f}); }
+    void advance() { facade.step({.seconds = 0.25f, .runs = {}}); }
     bool clear() {
         facade.close();
         return true;

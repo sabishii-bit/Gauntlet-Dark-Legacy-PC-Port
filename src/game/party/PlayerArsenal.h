@@ -92,7 +92,8 @@ public:
         const MultiplayerMode* multiplayer = nullptr; ///< sampled when a weapon is launched
         /** Optional imported-world item bridge. Ordinary GDL wall obstruction
          * remains feedback-only; the receiver accepts only authored destructibles. */
-        std::function<bool(s32 object, f32 power, u32 flags, s32 player)> strikeMuzzleObject;
+        std::function<bool(s32 object, f32 power, u32 flags, s32 player)> strikeMuzzleObject =
+            nullptr;
     };
     PlayerArsenal() = default;
     ~PlayerArsenal() = default;

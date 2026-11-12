@@ -1,7 +1,6 @@
 #include "game/party/PlayerArsenal.h"
 
 #include <algorithm>
-#include <cmath>
 #include <exception>
 #include <utility>
 
@@ -13,7 +12,6 @@
 #include "game/characters/Progression.h"
 #include "game/combat/DamageTypes.h"
 #include "game/combat/PowerupFlags.h"
-#include "game/effects/DynamicLights.h"
 #include "game/effects/WeaponGlow.h"
 #include "game/level/NativeStateResources.h"
 #include "game/party/TargetAssist.h"
@@ -402,7 +400,7 @@ PlayerArsenal::WeaponCue PlayerArsenal::weaponCue(u32 weapon, const PlayerFigure
     if (element > 0 && element < kElementThrows.size()) {
         return {.name = kElementThrows[element]};
     }
-    return {.call = figure.throwSound()};
+    return {.name = {}, .call = figure.throwSound()};
 }
 
 Vec3 PlayerArsenal::weaponMuzzle(const MissileLaunch& first,

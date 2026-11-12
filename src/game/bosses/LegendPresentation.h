@@ -33,16 +33,17 @@ public:
     };
     /** Synchronous audio port: the caller selects banks, the presentation owns its loop. */
     struct Audio {
-        std::function<SoundHandle(std::string_view)> play;
-        std::function<void(SoundHandle)> stop;
+        std::function<SoundHandle(std::string_view)> play = nullptr;
+        std::function<void(SoundHandle)> stop = nullptr;
         /** Resource availability, independent of whether the mixer made a voice. */
-        std::function<bool(std::string_view)> available;
+        std::function<bool(std::string_view)> available = nullptr;
         /** An engaged result means recorded (even a silent/missing cue). A loop
          * reserves its native start token; gathering presents its final desire. */
-        std::function<std::optional<SoundCueToken>(std::string_view, bool, s32, s32, u32)> record;
-        std::function<void(std::string_view, s32, s32, SoundCueToken)> desire;
+        std::function<std::optional<SoundCueToken>(std::string_view, bool, s32, s32, u32)> record =
+            nullptr;
+        std::function<void(std::string_view, s32, s32, SoundCueToken)> desire = nullptr;
         /** Optional imported phase route. True suppresses ordinary named cues. */
-        std::function<bool(LegendSound)> mapped;
+        std::function<bool(LegendSound)> mapped = nullptr;
     };
     /** Current pose supplied by the scene, independent of its actor/figure storage. */
     struct Bearer {

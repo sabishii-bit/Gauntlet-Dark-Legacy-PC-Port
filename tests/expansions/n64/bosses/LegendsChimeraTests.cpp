@@ -1,8 +1,8 @@
 #include <algorithm>
 #include <array>
-#include <cmath>
 #include <filesystem>
 #include <limits>
+#include <optional>
 #include <set>
 
 #include <catch2/catch_approx.hpp>
@@ -53,8 +53,11 @@ struct ChimeraScene {
         auto map = formats::LegendsMap::parseN64(readFile(directory / "worlds.wad"), models,
                                                  readFile(directory / "ipr.rom"));
         for (auto& texture : formats::decodeLegendsN64Textures(models)) {
-            map.textures.push_back({std::move(texture.image), texture.clampU, texture.clampV,
-                                    texture.hasTransparency});
+            map.textures.push_back({std::move(texture.image),
+                                    texture.clampU,
+                                    texture.clampV,
+                                    texture.hasTransparency,
+                                    {}});
         }
         auto adapter = LegendsSceneAdapter::load(device, LegendsPlatform::N64, directory, map);
         REQUIRE(adapter);
@@ -346,8 +349,9 @@ TEST_CASE("Native Chimera breath cues follow all three animated mouth bones with
             const auto sequence = stock->tree->findSequence(move.anim);
             REQUIRE(sequence);
             REQUIRE(actor.childCount() == 3);
-            REQUIRE(branch->setMove(
-                *moveIndex, {.frame = static_cast<f32>(head.cueFrame - 1), .soundsGiven = 2}));
+            REQUIRE(branch->setMove(*moveIndex, {.frame = static_cast<f32>(head.cueFrame - 1),
+                                                 .soundsGiven = 2,
+                                                 .yaw = std::nullopt}));
             // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast): mutable test fixture
             branch = const_cast<Combatant*>(actor.child(head.id));
             REQUIRE(branch);
