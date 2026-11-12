@@ -183,7 +183,8 @@ public:
     static constexpr f32 kWakeArmSeconds = 2.0f; ///< asleep at least this long after placing
 
 private:
-    void stageLegend(s32 ticks);
+    /** Moves the rite on, told the type of the move the fighter played as the update began. */
+    void stageLegend(s32 ticks, s32 movedFrom);
     void strikeWithLegend();
     /** Whether its type arms only once its floor moves (TYPE flag 0x80). */
     bool supportActivated() const;

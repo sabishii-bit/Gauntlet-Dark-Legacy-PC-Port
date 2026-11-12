@@ -705,6 +705,10 @@ TEST_CASE("Plague's lingering eye injury does not extend the opening's full-part
 TEST_CASE("a legend item's rite runs on through its boss's death throes and ends, its weakness "
           "unheard, once the death has played",
           "[game][enemies][legend][boss-death]") {
+    const s32 fps = GENERATE(30, 60);
+    CAPTURE(fps);
+    const s32 ticks = Combatant::kTicksPerSecond / fps;
+    const f32 seconds = 1.0f / static_cast<f32>(fps);
     test::FakeRenderDevice device;
     Bosses bosses;
     bosses.open(device, dyingBossAssets("YETI"), nullptr, {}, 'I');
@@ -714,7 +718,7 @@ TEST_CASE("a legend item's rite runs on through its boss's death throes and ends
     const std::vector<EnemyView> party{playerAt({0, 0, 40})};
     std::vector<LegendCue> heard;
     const auto step = [&] {
-        bosses.update(kTicks, kStep, party);
+        bosses.update(ticks, seconds, party);
         for (const LegendEvent& event : bosses.takeLegendEvents()) {
             heard.push_back(event.cue);
         }
@@ -723,13 +727,14 @@ TEST_CASE("a legend item's rite runs on through its boss's death throes and ends
     };
     const auto hears = [&](LegendCue cue) { return std::ranges::find(heard, cue) != heard.end(); };
     const auto until = [&](LegendCue cue) {
-        for (s32 frame = 0; frame < 900 && !hears(cue); ++frame) {
+        for (s32 frame = 0; frame < 30 * fps && !hears(cue); ++frame) {
             step();
         }
         REQUIRE(hears(cue));
     };
-    // The parchment's curb wears off 29 seconds after the roar, 870 updates of two ticks.
-    constexpr s32 kWearUpdates = 870;
+    // The parchment's curb wears off 29 seconds after the roar: 870 updates at 30 a second,
+    // 1740 at 60.
+    const s32 wearUpdates = 29 * fps;
     s32 afterRoar = 0;
     bool wearsOffDying = false;
     SECTION("slain in the dark before its roar") {
@@ -737,11 +742,11 @@ TEST_CASE("a legend item's rite runs on through its boss's death throes and ends
     }
     SECTION("slain while its weakness wears off") {
         until(LegendCue::Roared);
-        afterRoar = 60;
+        afterRoar = 2 * fps;
     }
     SECTION("slain with its weakness about to wear off") {
         until(LegendCue::Roared);
-        afterRoar = kWearUpdates - 30; // a second left, well within its death
+        afterRoar = wearUpdates - fps; // a second left, well within its death
         wearsOffDying = true;
     }
     for (s32 frame = 0; frame < afterRoar; ++frame) {
@@ -758,7 +763,7 @@ TEST_CASE("a legend item's rite runs on through its boss's death throes and ends
     // world_update ends the rite only once gBossDead is set (state 99, 0x80056d04-0x80056d14):
     // till then the dark of states 2 and 3 stays, a dying boss never roaring, and the curb of
     // state 5 counts on.
-    for (s32 frame = 0; frame < 600 && !bosses.fighter().deathPlayed(); ++frame) {
+    for (s32 frame = 0; frame < 20 * fps && !bosses.fighter().deathPlayed(); ++frame) {
         CHECK(bosses.legend().running() != hears(LegendCue::WornOff));
         CHECK(bosses.legend().darkens() == dark);
         step();
@@ -769,11 +774,69 @@ TEST_CASE("a legend item's rite runs on through its boss's death throes and ends
     CHECK(bosses.legend().stage() == LegendRite::Stage::Over);
     CHECK_FALSE(bosses.legend().darkens());
     const usize cues = heard.size();
-    for (s32 frame = 0; frame < 600 && bosses.present(); ++frame) {
+    for (s32 frame = 0; frame < 20 * fps && bosses.present(); ++frame) {
         step();
     }
     CHECK_FALSE(bosses.present());
     CHECK(heard.size() == cues);
+}
+
+TEST_CASE("a boss slain mid-roar has the roar counted as its death cuts it short, lighting the "
+          "level and setting its weakness wearing off",
+          "[game][enemies][legend][boss-death]") {
+    const s32 fps = GENERATE(30, 60);
+    CAPTURE(fps);
+    const s32 ticks = Combatant::kTicksPerSecond / fps;
+    const f32 seconds = 1.0f / static_cast<f32>(fps);
+    test::FakeRenderDevice device;
+    Bosses bosses;
+    bosses.open(device, dyingBossAssets("YETI"), nullptr, {}, 'I');
+    REQUIRE(bosses.spawn(boss_type::kYeti, Vec3{0}, 0, 100));
+    REQUIRE(bosses.bringLegend(0));
+    bosses.wake();
+    const std::vector<EnemyView> party{playerAt({0, 0, 40})};
+    std::vector<LegendCue> heard;
+    const auto step = [&] {
+        bosses.update(ticks, seconds, party);
+        for (const LegendEvent& event : bosses.takeLegendEvents()) {
+            heard.push_back(event.cue);
+        }
+        bosses.takeCues();
+        bosses.takeLosses();
+    };
+    const auto hears = [&](LegendCue cue) { return std::ranges::find(heard, cue) != heard.end(); };
+    // The rite asks for its roar three seconds after the rise (state 3); a ROAR left before then
+    // counts for nothing.
+    const auto roaringForRite = [&] {
+        return bosses.legend().wantsRoar() && bosses.fighter().moveType() == MoveDefinition::kRoar;
+    };
+    for (s32 frame = 0; frame < 30 * fps && !roaringForRite(); ++frame) {
+        step();
+    }
+    REQUIRE(roaringForRite());
+    REQUIRE_FALSE(bosses.fighter().moveDone());
+    REQUIRE(bosses.legend().darkens());
+    REQUIRE_FALSE(hears(LegendCue::Roared));
+    EnemyHit lethal;
+    lethal.damage = 100000;
+    lethal.player = 0;
+    bosses.hurt(lethal);
+    // The move switch takes the rite from state 3 to 4 as the ROAR is left
+    // (0x8003c780-0x8003c790): the dark of state 3 ends as DEATH replaces it, and world_update's
+    // state 5 sets the curb counting, though not so far as to wear off before gBossDead.
+    step();
+    REQUIRE(bosses.fighter().moveType() == MoveDefinition::kDeath);
+    CHECK(hears(LegendCue::Roared));
+    CHECK_FALSE(bosses.legend().darkens());
+    for (s32 frame = 0; frame < 20 * fps && !bosses.fighter().deathPlayed(); ++frame) {
+        CHECK(bosses.legend().running());
+        CHECK_FALSE(bosses.legend().darkens());
+        step();
+        REQUIRE(bosses.present());
+    }
+    REQUIRE(bosses.fighter().deathPlayed());
+    CHECK_FALSE(hears(LegendCue::WornOff));
+    CHECK(bosses.legend().stage() == LegendRite::Stage::Over);
 }
 
 TEST_CASE("a dying boss backs away at its death's pace out of its territory, and its key lies by "

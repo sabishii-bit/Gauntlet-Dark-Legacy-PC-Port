@@ -253,7 +253,7 @@ bool Bosses::bringLegend(s32 player) {
 
 /** The rite goes by what the boss is doing: risen once its start is over, roared once its
  * roar is; each cue is acted on and kept for the game. */
-void Bosses::stageLegend(s32 ticks) {
+void Bosses::stageLegend(s32 ticks, s32 movedFrom) {
     if (!m_sim.rite.running() || !m_sim.id.has_value()) {
         return;
     }
@@ -261,8 +261,12 @@ void Bosses::stageLegend(s32 ticks) {
     const bool risen = m_sim.awake && moveType >= 0 && moveType != MoveDefinition::kStart;
     const CritterData* data = m_fighter.data();
     const bool canRoar = data != nullptr && data->moveOfType(MoveDefinition::kRoar).has_value();
-    const bool roarDone = m_sim.roarAsked &&
-                          (!canRoar || (moveType == MoveDefinition::kRoar && m_fighter.moveDone()));
+    // The roar it was asked for counts once a ROAR is done (CritterBossAI 0x8003a1b8-0x8003a1d0)
+    // or left, as when its death cuts it short (the move switch, 0x8003c780-0x8003c790).
+    const bool roarLeft = movedFrom == MoveDefinition::kRoar && moveType != MoveDefinition::kRoar;
+    const bool roarDone =
+        m_sim.roarAsked &&
+        (!canRoar || roarLeft || (moveType == MoveDefinition::kRoar && m_fighter.moveDone()));
     for (const LegendCue cue : m_sim.rite.update(ticks, risen, roarDone)) {
         if (cue == LegendCue::Thrown && LegendShow::strikeOf(m_sim.kind) == LegendStrike::OnThrow) {
             strikeWithLegend();
@@ -505,8 +509,9 @@ void Bosses::update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
     // It falls where the last update stood it: the original removes it before its floor probe
     // (CritterDelInst at 0x8003a0c4), so its defeat is taken before the fighter's update.
     const Vec3 before = m_fighter.position();
+    const s32 movedFrom = m_fighter.moveType();
     m_fighter.update(ticks, seconds, players);
-    stageLegend(ticks);
+    stageLegend(ticks, movedFrom);
     // The rite runs on through the death throes until gBossDead, when world_update ends it
     // (state 99, 0x80056d04-0x80056d14) after its turn of the frame the hold begins in.
     if (m_fighter.deathPlayed()) {
