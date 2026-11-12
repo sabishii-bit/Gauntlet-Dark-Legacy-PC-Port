@@ -3763,6 +3763,8 @@ TEST_CASE("a boss level's powerups run down three times as fast through its boss
     test::assetOrSkip("LEVELS/LEVELG5/WORLDS.PS2");
     test::assetOrSkip("CRITTER/LICH.WAD");
     test::assetOrSkip("MONSTERS/LICH/ANIM.PS2");
+    const s32 rate = GENERATE(30, 60);
+    CAPTURE(rate);
     const GameConfig config;
     test::FakeRenderDevice device;
     LevelCatalog levels;
@@ -3785,15 +3787,15 @@ TEST_CASE("a boss level's powerups run down three times as fast through its boss
     REQUIRE(scene.open(device, context, world, party, options));
     const PlayScene::Inputs still{};
     for (s32 i = 0; i < 400 && awaitingEntrance(scene); ++i) {
-        scene.update(1.0 / 60.0, still);
+        scene.update(1.0 / rate, still);
     }
     REQUIRE_FALSE(awaitingEntrance(scene));
     CHECK(armorLeft(scene) == kTimedArmor); // asleep, the lich holds the clock
-    constexpr f32 kStep = 1.0f / 60;
+    const f32 step = 1.0f / static_cast<f32>(rate);
     scene.bosses().wake();
-    scene.update(1.0 / 60.0, still);
+    scene.update(1.0 / rate, still);
     REQUIRE(scene.bosses().view().engaged);
-    CHECK(armorLeft(scene) == Approx(kTimedArmor - 3 * kStep));
+    CHECK(armorLeft(scene) == Approx(kTimedArmor - 3 * step));
     EnemyHit slay;
     slay.damage = 100000.0f;
     slay.player = 0;
@@ -3804,25 +3806,25 @@ TEST_CASE("a boss level's powerups run down three times as fast through its boss
     // from the update its hold begins in (0x8003a108) nor after the lich has gone.
     s32 throes = 0;
     s32 spent = 0;
-    for (s32 i = 0; i < 60 * 20 && scene.bosses().present(); ++i) {
+    for (s32 i = 0; i < rate * 20 && scene.bosses().present(); ++i) {
         const f32 before = armorLeft(scene);
-        scene.update(1.0 / 60.0, still);
+        scene.update(1.0 / rate, still);
         const bool played = scene.bosses().view().deathPlayed;
         throes += played ? 0 : 1;
         if (armorLeft(scene) != before) {
             ++spent;
-            CHECK(before - armorLeft(scene) == Approx(3 * kStep).margin(1e-4)); // f32 near 100
+            CHECK(before - armorLeft(scene) == Approx(3 * step).margin(1e-4)); // f32 near 100
         }
         CHECK((armorLeft(scene) != before) == !played);
     }
     REQUIRE_FALSE(scene.bosses().present());
     CHECK(spent == throes);
-    // The lich's DEATH, 269 frames of 1/30 s, runs unfinished for its first 536 updates at 60 a
-    // second: 26.8 seconds of the armour go with it.
-    CHECK(spent == 536);
+    // The lich's DEATH, 269 frames of 1/30 s, runs unfinished for its first 268 updates at 30 a
+    // second and 536 at 60: 26.8 seconds of the armour go with it.
+    CHECK(spent == (rate == 30 ? 268 : 536));
     const f32 gone = armorLeft(scene);
-    for (s32 i = 0; i < 60; ++i) {
-        scene.update(1.0 / 60.0, still);
+    for (s32 i = 0; i < rate; ++i) {
+        scene.update(1.0 / rate, still);
     }
     CHECK(armorLeft(scene) == gone);
     scene.close();
@@ -3832,6 +3834,8 @@ TEST_CASE("a level's powerup is worn through the update its time runs out in",
           "[game][screens][powerup-clock][assets]") {
     const std::filesystem::path root = unpackedRoot();
     test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2");
+    const s32 rate = GENERATE(30, 60);
+    CAPTURE(rate);
     const GameConfig config;
     test::FakeRenderDevice device;
     LevelCatalog levels;
@@ -3856,7 +3860,7 @@ TEST_CASE("a level's powerup is worn through the update its time runs out in",
     REQUIRE(scene.open(device, context, world, party, options));
     const PlayScene::Inputs still{};
     for (s32 i = 0; i < 400 && awaitingEntrance(scene); ++i) {
-        scene.update(1.0 / 60.0, still);
+        scene.update(1.0 / rate, still);
     }
     REQUIRE_FALSE(awaitingEntrance(scene));
     const auto wearing = [&scene] {
@@ -3870,15 +3874,15 @@ TEST_CASE("a level's powerup is worn through the update its time runs out in",
     // pace through that update, and without it from the next.
     f32 worn = 0;
     bool ranOut = false;
-    for (s32 i = 0; i < 120 && !ranOut; ++i) {
-        scene.update(1.0 / 60.0, still);
+    for (s32 i = 0; i < 2 * rate && !ranOut; ++i) {
+        scene.update(1.0 / rate, still);
         if (wearing()) {
             worn = scene.actor(0)->speed();
             continue;
         }
         ranOut = true;
         CHECK(scene.actor(0)->speed() == worn);
-        scene.update(1.0 / 60.0, still);
+        scene.update(1.0 / rate, still);
         CHECK(scene.actor(0)->speed() == Approx(worn - kPaceAdd));
     }
     REQUIRE(ranOut);
