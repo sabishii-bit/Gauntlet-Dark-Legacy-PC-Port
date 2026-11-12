@@ -100,6 +100,20 @@ public:
      * of removal/visibility. Queries probe as kPlayerSide unless they name another. */
     void setCollisionSide(s32 object, u8 side);
     bool solid(s32 object, u8 sideMask = kPlayerSide) const;
+    /** Whose probe a query is. A player's own floor and wall probes (PlayerCollideFloor's and
+     * PlayerWallCollide's side mask 1) pass through what is opened to players; the creatures',
+     * the weapons' and every other probe still meet it. */
+    enum class Prober : u8 { Other, Player };
+    /** Opens a moving object to the players, as ProcessItemWobjs marks a lift in motion
+     * (WorldObj +0x35 set to 1, 0x80062F4C): a player's own probe passes through it and its
+     * direct children, since WorldCollide takes each object's mark with its direct parent's
+     * (0x8000D578). */
+    void setPlayerPassThrough(s32 object, bool passes);
+    /** Whether a player's own probe passes through the object: opened itself, or hung from an
+     * opened parent. */
+    bool playerPassThrough(s32 object) const;
+    /** Only this object's own opening; snapshots must not materialize inherited ones. */
+    bool ownPlayerPassThrough(s32 object) const;
     /** Retain wall contacts for hazards, but do not stop or push a moving body. */
     void setContactOnly(s32 object, bool contactOnly);
     bool contactOnly(s32 object) const;
@@ -123,7 +137,8 @@ public:
     /** Highest floor in the vertical range. A nonzero edge reach also accepts the closest
      * point on a face within that horizontal distance, for a body's small contact margin. */
     std::optional<FloorHit> floorAt(const Vec3& position, f32 above, f32 below,
-                                    f32 edgeReach = 0.0f, u8 sideMask = kPlayerSide) const;
+                                    f32 edgeReach = 0.0f, u8 sideMask = kPlayerSide,
+                                    Prober prober = Prober::Other) const;
     /** The floor an item was set on (FloorPos): of the faces under the point and the edges
      * within reach, the one nearest the point's height. A ledge's edge a hand's breadth away
      * does not lift an item off the floor under it, and a landing's edge keeps a switch
@@ -175,14 +190,16 @@ public:
      * inside a wall. Contact-only objects are left out.
      */
     std::optional<SphereHit> sweepSphere(const Vec3& from, const Vec3& to, f32 radius,
-                                         u32 mask = kWallQueryFlags) const;
+                                         u32 mask = kWallQueryFlags,
+                                         Prober prober = Prober::Other) const;
     /**
      * FloorCollide's sphere, swept down from `origin` by `depth`: the highest floor face
      * under the point within the sweep and the sphere's reach below it; failing a face,
      * the nearest floor edge within `radius` (CTriListCollide ranks a crossing far before
      * an edge contact). A floor above the origin is behind the sweep and never counts.
      */
-    std::optional<FloorHit> floorUnder(const Vec3& origin, f32 depth, f32 radius) const;
+    std::optional<FloorHit> floorUnder(const Vec3& origin, f32 depth, f32 radius,
+                                       Prober prober = Prober::Other) const;
     /**
      * Pushes PlayerWallCollide's sphere out of the walls it overlaps, as SlideAlongWall
      * corrects a step: out along each face's normal by what of the width is within its
@@ -206,6 +223,7 @@ public:
         std::vector<s32> m_contactOnly;
         std::vector<s32> m_blockedFloorExits;
         std::vector<std::pair<s32, u8>> m_collisionSides;
+        std::vector<s32> m_playerPassThrough;
         const WorldCollision* m_owner = nullptr;
         std::weak_ptr<const u8> m_binding;
     };
@@ -224,8 +242,10 @@ private:
     const CanonicalDigestSink::Digest& geometryDigest() const;
     std::optional<FloorHit> surfaceAt(const Vec3& position, f32 above, f32 below, bool liquid,
                                       f32 edgeReach = 0.0f, const Vec2* direction = nullptr,
-                                      bool nearestToHeight = false,
-                                      u8 sideMask = kPlayerSide) const;
+                                      bool nearestToHeight = false, u8 sideMask = kPlayerSide,
+                                      Prober prober = Prober::Other) const;
+    /** Whether a probe of this side and prober meets the object's triangles. */
+    bool meets(s32 object, u8 sideMask, Prober prober) const;
     /** An object whose triangles move with it. */
     struct MovingObject {
         s32 object = -1;
@@ -250,7 +270,7 @@ private:
     /** Every triangle that may lie in the rectangle, still and moving, that blocks. */
     template <typename Visit>
     void eachTriangle(f32 minX, f32 minZ, f32 maxX, f32 maxZ, const Visit& visit,
-                      u8 sideMask = kPlayerSide) const;
+                      u8 sideMask = kPlayerSide, Prober prober = Prober::Other) const;
 
     std::shared_ptr<const u8> m_localBinding = std::make_shared<const u8>(0);
     std::vector<CollisionTriangle> m_triangles;
@@ -264,6 +284,7 @@ private:
     std::vector<s32> m_contactOnly;
     std::vector<s32> m_blockedFloorExits;
     std::vector<std::pair<s32, u8>> m_collisionSides; ///< sorted by owner; zero masks omitted
+    std::vector<s32> m_playerPassThrough;             ///< objects opened to players' probes
     Vec3 m_min{0.0f, 0.0f, 0.0f};
     Vec3 m_max{0.0f, 0.0f, 0.0f};
     u32 m_columns = 0;

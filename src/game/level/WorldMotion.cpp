@@ -10,7 +10,7 @@ bool WorldMotion::State::valid() const {
         return false;
     }
     for (const u8 flags : collision) {
-        if ((flags & ~(kSolid | kContactOnly | kFloorExitBlocked)) != 0) {
+        if ((flags & ~(kSolid | kContactOnly | kFloorExitBlocked | kPlayerPassThrough)) != 0) {
             return false;
         }
     }
@@ -69,7 +69,8 @@ WorldMotion::State WorldMotion::capture(const WorldAnimator& animator,
         result.collision.push_back(
             static_cast<u8>((collision.solid(object) ? kSolid : 0) |
                             (collision.contactOnly(object) ? kContactOnly : 0) |
-                            (collision.ownFloorExitBlocked(object) ? kFloorExitBlocked : 0)));
+                            (collision.ownFloorExitBlocked(object) ? kFloorExitBlocked : 0) |
+                            (collision.ownPlayerPassThrough(object) ? kPlayerPassThrough : 0)));
     }
     return result;
 }
@@ -104,6 +105,7 @@ bool WorldMotion::prepare(const State& state, const SceneGeometry& geometry, Wor
         collision.setSolid(object, (flags & kSolid) != 0);
         collision.setContactOnly(object, (flags & kContactOnly) != 0);
         collision.setFloorExitBlocked(object, (flags & kFloorExitBlocked) != 0);
+        collision.setPlayerPassThrough(object, (flags & kPlayerPassThrough) != 0);
         if (collision.moving(object)) {
             m_moving.push_back(object);
         }
@@ -124,7 +126,7 @@ bool WorldMotion::beforeMotion(f32 seconds, WorldScene& scene, WorldCollision& c
     if (!m_prepared || !std::isfinite(seconds) || seconds < 0 || seconds > 0.25f) {
         return false;
     }
-    m_animator.step(seconds, scene, m_pauseLoops);
+    m_animator.step(seconds, scene, m_pauseLoops, m_triggers.heldTracks());
     sync(scene, collision);
     return true;
 }

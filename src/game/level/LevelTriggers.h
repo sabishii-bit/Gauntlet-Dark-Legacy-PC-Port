@@ -209,8 +209,9 @@ public:
         bool wholePartyReady = false;
         bool returning = false;
         bool forced = false;
-        /** A player stands on it (did_generate past one): a height target that goes clear of
-         * collision as it moves holds still until they step off, as ProcessItemWobjs does. */
+        /** A player stands on the target itself (did_generate past one), not on a deck hung
+         * from it: a target that opens to players as it moves holds still until they step off,
+         * as ProcessItemWobjs does (0x80062D68-0x80062D8C, 0x80062E40-0x80062E68). */
         bool ridden = false;
         f32 alpha = 1;
         Vec3 origin{0};
@@ -221,9 +222,12 @@ public:
         Vec3 spot{0};
         s32 sound = -1;
         bool operator==(const Target&) const = default;
-        /** Whether it is a height target that waits for its riders to leave before moving:
-         * neither animated nor a fade, and not one that keeps blocking while it moves. */
+        /** Whether it waits for its riders to leave before moving: a height or animated
+         * target, not a fade, and not one that keeps blocking while it moves. */
         bool holdsForRiders() const;
+        /** Whether players' own probes pass through it and its direct children now: it moves
+         * without keeping its collision, and its riders do not hold it. */
+        bool opensToPlayers() const;
     };
 
     static constexpr std::array<s32, 9> kCrystalsToOpen{0, 15, 100, 125, 150, 175, 200, 225, 250};
@@ -273,8 +277,13 @@ public:
     /** Whether a trigger is moving this floor or the object it hangs from, as CritterBossAI
      * reads the trigger states of both (0x8003a340-0x8003a378): a target of a kind that keeps
      * its state, commanded and short of its endpoint. Retail's moving bit (0x10) also stands
-     * on the pass that arrives; a target its riders hold still counts here. */
+     * on the pass that arrives; a height target its riders hold keeps it, while an animated
+     * one loses it (0x80062D80-0x80062D88). */
     bool movesFloor(s32 floorObject) const;
+    /** The animated targets whose riders hold them: their tracks stand where they are until
+     * the riders leave (ProcessItemWobjs sets both play flags, 0x80062D78, and DoWorldAnimSub
+     * 0x800A87C8 runs no track with both). */
+    std::vector<s32> heldTracks() const;
     /** How solid a fading target still looks, 1 shut to 0 gone. */
     f32 alphaOf(s32 object) const;
 

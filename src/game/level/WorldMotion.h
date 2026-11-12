@@ -16,6 +16,7 @@ public:
     static constexpr u8 kSolid = 1;
     static constexpr u8 kContactOnly = 2;
     static constexpr u8 kFloorExitBlocked = 4;
+    static constexpr u8 kPlayerPassThrough = 8;
     struct State {
         std::vector<WorldAnimator::Cursor> animations;
         LevelTriggers::Motion triggers;

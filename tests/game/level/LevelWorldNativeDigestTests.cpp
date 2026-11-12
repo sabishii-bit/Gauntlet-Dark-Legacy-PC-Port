@@ -1,6 +1,5 @@
 #include <array>
 #include <functional>
-#include <string>
 #include <string_view>
 #include <vector>
 
@@ -376,7 +375,7 @@ TEST_CASE("native world digest bytes stay pinned for a bound level and queued cu
     // SHA-256 of the native digest of the world above, which netplay peers must hash alike: a
     // literal moves only when what is visited changes on purpose.
     constexpr std::string_view kDigest =
-        "f873e8af4c59d14cf5ae15e18b0c572bdb5fd190e61576e5810ae131861f4eca";
+        "4fe80eb6b1d9f752dbf1f78a21827955feee6f6c3400df4d7c519cfbeeea2442";
     CHECK(test::hexBytes(fixture.hash()) == kDigest);
 }
 
@@ -413,8 +412,8 @@ TEST_CASE("native world and child digest bytes stay pinned after the script and 
     // which netplay peers must hash alike: a literal moves only when what is visited changes on
     // purpose. The world's children follow it, so that a moved world names the child that moved.
     test::checkPinnedDigests("LevelWorld", fixture.hash(), fixture.hash(saved),
-                             "28b213df49d153dc49d827665022ab4283b76b5f203d802f85ee922f8c91ec8f",
-                             "c7f66969c9dd5ff652660634c4576cda35ef25ae8b6a98674879d0c71260ba12");
+                             "1cebc9fff6c821a46cc2e432e667d439b97bf722d406741588b753e6aa1f5cf2",
+                             "2c16d50cb02f87424a3b28577c40301dc0c7b3e86f6b14a81475083b98623a06");
     const auto resources = fixture.refreshed();
     test::checkPinnedDigests("WorldScene", test::liveDigest(world.scene(), resources),
                              test::savedDigest(world.scene(), scene, resources),
@@ -426,8 +425,8 @@ TEST_CASE("native world and child digest bytes stay pinned after the script and 
                              "9658ac35a748711c349c034caa46b73fc9ee428b1ed7a2dc1123407c3a9cadb9");
     test::checkPinnedDigests("WorldCollision", test::liveDigest(world.collision(), resources),
                              test::savedDigest(world.collision(), collision, resources),
-                             "f76500c65b51fe2caa70fd7273d04a892555ddf68c1427b7875056467a7a4625",
-                             "5e52871a7aaef184d1868270a6be72d1db23175206b47d1716fc685a7a128160");
+                             "4d1917b395c6906d6fedf704bfbe82d35b7caa8636959da13bef49e06792e9f5",
+                             "01924433178c51914440a0072c9aeb5aa524d22df2ad9c5007e03e7200d9ba6b");
     test::checkPinnedDigests("PlacedItems", test::liveDigest(world.placedItems(), resources),
                              test::savedDigest(world.placedItems(), items, resources),
                              "6a093a8504480677804b3e98b4c5b7df25265f5500ddd2978a57681839287042",

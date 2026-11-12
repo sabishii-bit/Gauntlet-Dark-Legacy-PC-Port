@@ -2,6 +2,7 @@
 #include <filesystem>
 #include <string_view>
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
@@ -23,6 +24,7 @@ namespace {
 
 using namespace gdl;
 using namespace gdl::game;
+using Catch::Approx;
 
 constexpr f32 kStep = 1.0f / 30.0f;
 
@@ -413,6 +415,108 @@ TEST_CASE("G3 fountain scenario settles on the completion pad and lowers the fir
     for (const s32 fence : {1313, 1323, 1326, 1335}) {
         CHECK(walk.world.triggers().opened(fence));
     }
+}
+
+/** The trigger that drives a level object, as the native levels register one a target. */
+usize triggerOf(const LevelTriggers& triggers, s32 target) {
+    for (usize i = 0; i < triggers.size(); ++i) {
+        if (triggers.trigger(i).target == target) {
+            return i;
+        }
+    }
+    return triggers.size();
+}
+
+/** D3ELEV2 (446), which trigger item 46 raises ten units, its stone D3FLOOR_SMA#02 (447)
+ * rising beside the walkway stone D3FLOOR_SMA#13. */
+constexpr s32 kD3Lift = 446;
+constexpr s32 kD3Stone = 447;
+constexpr s32 kD3Walkway = 1225;
+constexpr f32 kD3Rise = 10;
+
+/** Sets the D3 stone rising for a party of one: pressed, it goes on the next update. */
+void raiseD3Stone(NativeWalk& walk) {
+    const LevelTriggers& triggers = walk.world.triggers();
+    const usize pad = triggerOf(triggers, kD3Lift);
+    REQUIRE(pad < triggers.size());
+    walk.world.setPlayerCount(1);
+    REQUIRE(walk.world.pressTrigger(pad));
+    walk.step();
+    REQUIRE(triggers.opened(kD3Lift));
+    REQUIRE_FALSE(triggers.settled(kD3Lift));
+}
+
+TEST_CASE("D3 stepping stone rises to the walkway carrying a rider on its stone",
+          "[native-traversal][d3-stepping-stones][assets]") {
+    // did_generate (0x80063854) counts a player standing on the lift itself, not on the stone
+    // hung from it, so the stone carries its rider all the way up.
+    const auto root = test::assetOrSkip("PDATA/WAR.WAD").parent_path().parent_path();
+    ClassDataSet classes;
+    REQUIRE(classes.load(root / "PDATA"));
+    const auto* stats = classes.stats(0);
+    REQUIRE(stats != nullptr);
+    const s32 hz = GENERATE(30, 60);
+    CAPTURE(hz);
+    NativeWalk walk("D3", Vec3{0}, 1.0f / static_cast<f32>(hz));
+    REQUIRE(walk.world.layout().objects()[kD3Stone].name == "D3FLOOR_SMA#02");
+    const Vec3 bottom{walk.world.scene().worldTransform(kD3Stone)[3]};
+    walk.stand(bottom, 0, *stats);
+    REQUIRE(walk.party[0].floor.object == kD3Stone);
+    REQUIRE((walk.party[0].floor.flags & FloorRiding::kMoving) != 0);
+    raiseD3Stone(walk);
+    const LevelTriggers& triggers = walk.world.triggers();
+    for (s32 frame = 0; frame < 5 * hz && !triggers.settled(kD3Lift); ++frame) {
+        walk.step();
+        CHECK(walk.party[0].floor.object == kD3Stone);
+    }
+    REQUIRE(triggers.settled(kD3Lift));
+    const Vec3 top{walk.world.scene().worldTransform(kD3Stone)[3]};
+    CHECK(top.y == Approx(bottom.y + kD3Rise));
+    walk.wait(hz / 2);
+    CHECK(walk.party[0].floor.object == kD3Stone);
+    CHECK(walk.party[0].actor.position().y == Approx(top.y).margin(0.01f));
+}
+
+TEST_CASE("D3 stepping stone cannot be stepped onto from the walkway until it stops rising",
+          "[native-traversal][d3-stepping-stones][assets]") {
+    // Rising, D3ELEV2 and its stone are open to the players' own probes (ProcessItemWobjs'
+    // WorldObj +0x35 and WorldCollide's direct-parent OR, 0x8000D578), so a player on the
+    // walkway pushing toward the stone cannot step down onto it in its last units of travel
+    // and hold it short of the top: it reaches the top, and only then can the player step on.
+    constexpr Vec3 kWalkway{-111.8f, 72.5f, 0}; // on D3FLOOR_SMA#13, north of the stone
+    constexpr Vec2 kTowardStone{0, -1};
+    const s32 hz = GENERATE(30, 60);
+    CAPTURE(hz);
+    NativeWalk walk("D3", kWalkway, 1.0f / static_cast<f32>(hz));
+    REQUIRE(walk.world.layout().objects()[kD3Walkway].name == "D3FLOOR_SMA#13");
+    REQUIRE(walk.party[0].floor.object == kD3Walkway);
+    const f32 bottom = walk.world.scene().worldTransform(kD3Stone)[3].y;
+    raiseD3Stone(walk);
+    const LevelTriggers& triggers = walk.world.triggers();
+    bool withinStep = false;
+    for (s32 frame = 0; frame < 5 * hz && !triggers.settled(kD3Lift); ++frame) {
+        walk.step(kTowardStone);
+        CHECK(walk.party[0].floor.object != kD3Stone);
+        // While the stone still rises within a step down of the walkway, every other probe
+        // meets it and the player's passes through it.
+        const Vec3 stone{walk.world.scene().worldTransform(kD3Stone)[3]};
+        if (!triggers.settled(kD3Lift) &&
+            stone.y >= walk.party[0].actor.floorBase() - PlayerActor::kStepUp) {
+            const Vec3 over = stone + Vec3{0, 0.5f, 0};
+            const auto other = walk.world.collision().floorAt(over, 1, 1);
+            withinStep |= other.has_value() && other->object == kD3Stone;
+            const auto player = walk.world.collision().floorAt(
+                over, 1, 1, 0, WorldCollision::kPlayerSide, WorldCollision::Prober::Player);
+            CHECK_FALSE((player.has_value() && player->object == kD3Stone));
+        }
+    }
+    CHECK(withinStep);
+    REQUIRE(triggers.settled(kD3Lift));
+    CHECK(walk.world.scene().worldTransform(kD3Stone)[3].y == Approx(bottom + kD3Rise));
+    for (s32 frame = 0; frame < hz && walk.party[0].floor.object != kD3Stone; ++frame) {
+        walk.step(kTowardStone);
+    }
+    CHECK(walk.party[0].floor.object == kD3Stone);
 }
 
 } // namespace

@@ -4,6 +4,7 @@
 #include <cmath>
 #include <format>
 #include <set>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -1060,23 +1061,281 @@ TEST_CASE("a trigger moves its target and the floors hung from it while it trave
         f.step(kStep);
         movesNothing(f);
     }
-    SECTION("a rider anywhere on it holds it where it stands, still commanded") {
-        // ProcessItemWobjs holds a slide only for a rider on the target itself (did_generate,
-        // 0x80063854) and leaves its trigger state unwritten (0x80062E40-0x80062E68), so a
-        // rider on the deck would not stop retail's lift. Here anyone on its subtree holds
-        // it, and it counts as moving while it waits.
+    SECTION("a rider on its deck rides it on, and one on the lift itself holds it where it "
+            "stands, still commanded") {
+        // did_generate (0x80063854) counts a player whose floor is the target itself, so a rider
+        // on the deck does not stop the lift. One on the lift does: ProcessItemWobjs skips the
+        // height step and leaves its trigger state unwritten (0x80062E40-0x80062E68), so it
+        // still counts as moving while it waits.
         SwitchFixture f(kPad, kLift, 26);
-        const std::array riding{
-            TriggerVisitor{.position = Vec3{20, 0, 0}, .party = 0},
-            TriggerVisitor{.position = Vec3{0, 12, 0}, .floorObject = kDeck, .party = 1}};
+        const auto riding = [](s32 floor) {
+            return std::array{
+                TriggerVisitor{.position = Vec3{20, 0, 0}, .party = 0},
+                TriggerVisitor{.position = Vec3{0, 12, 0}, .floorObject = floor, .party = 1}};
+        };
+        const auto onDeck = riding(kDeck);
         for (s32 tick = 0; tick < 30; ++tick) {
-            f.step(kStep, riding);
+            f.step(kStep, onDeck);
         }
-        CHECK(f.height() == Approx(10));
+        const f32 lowered = f.height();
+        CHECK(lowered == Approx(10 - 4));
+        const auto onLift = riding(kLiftObject);
+        for (s32 tick = 0; tick < 30; ++tick) {
+            f.step(kStep, onLift);
+        }
+        CHECK(f.height() == Approx(lowered));
         CHECK_FALSE(f.triggers.settled(kLiftObject));
         CHECK(f.triggers.movesFloor(kLiftObject));
         CHECK(f.triggers.movesFloor(kDeck));
     }
+}
+
+TEST_CASE("a lift that goes clear as it moves opens itself and its deck to the players' probes "
+          "alone, but not while a rider on it holds it",
+          "[game][world][triggers][platform-riders]") {
+    // ProcessItemWobjs marks a moving target of a kind without 0x8 (WorldObj +0x35 = 1,
+    // 0x80062F4C) and WorldCollide ORs that mark with the direct parent's for the players' side
+    // mask 1 (0x8000D578). A kind that keeps its collision is never marked; a held lift skips
+    // the tail and stays solid. LIFT carries DECK, which carries RAIL.
+    const s32 subtype = GENERATE(26, 29); // latched; latched and keeping its collision (0x8)
+    CAPTURE(subtype);
+    constexpr std::string_view kLift =
+        R"({"name":"WALL","position":[0,10,0],"flags":4096,"child":1},
+                       {"name":"WALL","position":[0,2,0],"flags":4096,"child":2},
+                       {"name":"WALL","position":[0,1,0],"flags":4096})";
+    constexpr s32 kLiftObject = 0;
+    constexpr s32 kDeck = 1;
+    constexpr s32 kRail = 2;
+    SwitchFixture f(R"({"info":0,"position":[20,0,0],"params":[0,0,0,0,2,255,5,0,0,0,26,255]})",
+                    kLift, subtype);
+    WorldCollision collision;
+    collision.build({}, std::array<s32, 3>{-1, kLiftObject, kDeck});
+    const bool opens = subtype == 26;
+    const TriggerVisitor presser{.position = Vec3{20, 0, 0}, .party = 0};
+    const std::array press{presser};
+    const auto step = [&](std::span<const TriggerVisitor> visitors) {
+        f.animator.step(kStep, f.scene, false, f.triggers.heldTracks());
+        f.triggers.update(kStep, visitors, f.animator, f.scene, &collision);
+    };
+    step(press);
+    REQUIRE(f.triggers.opened(kLiftObject));
+    REQUIRE_FALSE(f.triggers.settled(kLiftObject));
+    CHECK(collision.ownPlayerPassThrough(kLiftObject) == opens);
+    CHECK(collision.playerPassThrough(kDeck) == opens);
+    CHECK_FALSE(collision.ownPlayerPassThrough(kDeck));
+    CHECK_FALSE(collision.playerPassThrough(kRail));
+    CHECK(collision.solid(kLiftObject)); // still met by every other probe
+    CHECK(collision.solid(kDeck));
+    // A rider carried on the deck stays aboard: its lock walks up to the travelling lift.
+    CHECK(collision.floorExitBlocked(kDeck));
+    if (opens) {
+        const std::array held{
+            presser,
+            TriggerVisitor{.position = Vec3{0, 12, 0}, .floorObject = kLiftObject, .party = 1}};
+        const f32 stopped = f.height();
+        step(held);
+        CHECK(f.height() == stopped);
+        CHECK_FALSE(collision.playerPassThrough(kLiftObject));
+        CHECK_FALSE(collision.playerPassThrough(kDeck));
+        CHECK_FALSE(collision.floorExitBlocked(kDeck));
+    }
+    for (s32 tick = 0; tick < 300 && !f.triggers.settled(kLiftObject); ++tick) {
+        step(press);
+    }
+    REQUIRE(f.triggers.settled(kLiftObject));
+    CHECK(f.height() == Approx(10 - 23));
+    CHECK_FALSE(collision.playerPassThrough(kLiftObject));
+    CHECK_FALSE(collision.playerPassThrough(kDeck));
+    CHECK_FALSE(collision.floorExitBlocked(kDeck));
+}
+
+TEST_CASE("an animated lift that goes clear as it moves waits where its track stands under a "
+          "rider on it, and goes on once they step off",
+          "[game][world][triggers][platform-riders]") {
+    // ProcessItemWobjs holds an animated target of a kind without 0x8 that did_generate finds a
+    // player on: both play flags (0x80062D78), so DoWorldAnimSub (0x800A87C8) leaves the track
+    // where it stands, and its moving bit cleared (0x80062D80-0x80062D88).
+    SwitchFixture f(R"({"info":0,"position":[20,0,0],"params":[0,0,0,0,2,255,0,0,0,0,0,0]})",
+                    R"({"name":"WALL","position":[0,10,0],"flags":4096})", 26,
+                    R"({"object":0,"frames":10,"state":257,"start":0,
+                        "track":{"flags":2,"frames":[0,9],"values":[0,1]}})");
+    WorldCollision collision;
+    const auto track = f.animator.trackOf(0);
+    REQUIRE(track.has_value());
+    const TriggerVisitor presser{.position = Vec3{20, 0, 0}, .party = 0};
+    const std::array aboard{
+        presser, TriggerVisitor{.position = Vec3{0, 10, 0}, .floorObject = 0, .party = 1}};
+    const std::array off{presser};
+    const auto step = [&](std::span<const TriggerVisitor> visitors) {
+        f.animator.step(kStep, f.scene, false, f.triggers.heldTracks());
+        f.triggers.update(kStep, visitors, f.animator, f.scene, &collision);
+    };
+    step(aboard); // commanded with its rider aboard
+    REQUIRE(f.triggers.opened(0));
+    for (s32 tick = 0; tick < 30; ++tick) {
+        step(aboard);
+        CHECK(f.animator.frame(*track) == 0);
+        CHECK_FALSE(f.triggers.settled(0));
+        CHECK_FALSE(f.triggers.movesFloor(0));
+        CHECK(f.triggers.heldTracks() == std::vector<s32>{0});
+        CHECK_FALSE(collision.playerPassThrough(0));
+    }
+    step(off); // stepped off: it goes on from where it stood, open to the players' probes
+    CHECK(f.triggers.heldTracks().empty());
+    CHECK(f.triggers.movesFloor(0));
+    CHECK(collision.playerPassThrough(0));
+    step(off);
+    CHECK(f.animator.frame(*track) == Approx(1));
+    for (s32 tick = 0; tick < 30 && !f.triggers.settled(0); ++tick) {
+        step(off);
+    }
+    CHECK(f.triggers.settled(0));
+    CHECK(f.animator.frame(*track) == Approx(9));
+    CHECK_FALSE(f.triggers.movesFloor(0));
+    CHECK_FALSE(collision.playerPassThrough(0));
+}
+
+TEST_CASE("an animated bridge's own faces follow its fade alone while its track still runs",
+          "[game][world][triggers][animated-fade]") {
+    // ProcessItemWobjs tests a fade kind (0x10) before the animated branch (flags 0x2000000),
+    // so the fade alone decides a fading target's collision, never its track.
+    constexpr s32 kTrackFrames = 300;
+    SwitchFixture f(R"({"info":0,"position":[20,0,0],"params":[0,0,0,0,2,255,0,0,0,0,0,0]})",
+                    R"({"name":"WALL","position":[0,10,0],"flags":4096})",
+                    LevelTrigger::kMomentaryBridge,
+                    std::format(R"({{"object":0,"frames":{},"state":257,"start":0,
+                        "track":{{"flags":2,"frames":[0,{}],"values":[0,1]}}}})",
+                                kTrackFrames, kTrackFrames - 1));
+    WorldCollision collision;
+    const auto track = f.animator.trackOf(0);
+    REQUIRE(track.has_value());
+    const std::array pad{TriggerVisitor{.position = Vec3{20, 0, 0}, .party = 0}};
+    const auto step = [&] {
+        f.animator.step(kStep, f.scene, false, f.triggers.heldTracks());
+        f.triggers.update(kStep, pad, f.animator, f.scene, &collision);
+    };
+    step();
+    REQUIRE(f.triggers.opened(0));
+    bool fading = false;
+    for (s32 tick = 0; tick < kTrackFrames && f.triggers.alphaOf(0) < 1; ++tick) {
+        step();
+        REQUIRE_FALSE(f.animator.finished(*track));
+        if (f.triggers.alphaOf(0) < 1) {
+            fading = true;
+            CHECK(collision.solid(0)); // revealing, whatever the track
+        }
+    }
+    CHECK(fading);
+    CHECK(f.triggers.alphaOf(0) == 1);
+    CHECK(collision.solid(0));
+    CHECK_FALSE(collision.playerPassThrough(0));
+}
+
+TEST_CASE("a lift whose deck is a separate piece carries the deck's rider to its end, the other "
+          "player cannot board it on the way, and the swarm still stands on it",
+          "[game][world][triggers][platform-riders][floor-riding]") {
+    // LIFT carries DECK beside the still LANDING; the lift rises two from the landing's height.
+    // Its rider stands on DECK, not on LIFT, so did_generate finds nobody on the target and the
+    // lift moves (0x80063854). Moving, it opens LIFT and DECK to the players' own probes alone
+    // (WorldObj +0x35, WorldCollide 0x8000D578): the other player cannot step aboard until it
+    // stops, the rider's floor lock walks up to the lift and keeps it aboard (PlayerCollideFloor
+    // 0x80088068 with WorldObjGetAllFlags 0x800AB47C), and the swarm's probe (side mask 2,
+    // 0x800457C0) still meets the deck.
+    constexpr s32 kLiftObject = 0;
+    constexpr s32 kDeck = 1;
+    constexpr s32 kLanding = 2;
+    constexpr f32 kFloorY = 10;
+    constexpr f32 kRise = 2;
+    constexpr u32 kFloorQuery = 0x4; ///< of WorldCollision::kFloorQueryFlags
+    SwitchFixture f(R"({"info":0,"position":[-10,10,0],"params":[0,0,0,0,2,255,0,0,0,0,20,0]})",
+                    R"({"name":"WALL","position":[0,10,0],"flags":4096,"child":1},
+                       {"name":"WALL","position":[0,0,0],"flags":4096},
+                       {"name":"WALL","position":[0,0,0]})",
+                    26);
+    const auto plate = [](Vec2 min, Vec2 max, f32 y, s32 object, u32 flags) {
+        CollisionTriangle first;
+        first.vertices = {Vec3{min.x, y, min.y}, Vec3{max.x, y, max.y}, Vec3{max.x, y, min.y}};
+        first.object = object;
+        first.objectFlags = flags;
+        CollisionTriangle second = first;
+        second.vertices = {Vec3{min.x, y, min.y}, Vec3{min.x, y, max.y}, Vec3{max.x, y, max.y}};
+        return std::array{first, second};
+    };
+    std::vector<CollisionTriangle> triangles;
+    for (const auto& triangle :
+         plate({-2, -2}, {2, 2}, 0, kDeck, FloorRiding::kMoving | kFloorQuery)) {
+        triangles.push_back(triangle); // in the deck's own space
+    }
+    for (const auto& triangle : plate({-12, -2}, {-2, 2}, kFloorY, kLanding, kFloorQuery)) {
+        triangles.push_back(triangle);
+    }
+    WorldCollision collision;
+    collision.build(triangles, std::array<s32, 3>{-1, kLiftObject, -1});
+    collision.setMovingObjects(std::array<s32, 1>{kDeck});
+    const auto sync = [&] { collision.setObjectTransform(kDeck, f.scene.worldTransform(kDeck)); };
+    sync();
+    std::array<PlayerRuntime, 2> players;
+    players[0].actor.spawn(0, {}, nullptr, Vec3{0, kFloorY, 0}, 0);  // on the deck
+    players[1].actor.spawn(1, {}, nullptr, Vec3{-3, kFloorY, 0}, 0); // on the landing beside it
+    for (usize i = 0; i < players.size(); ++i) {
+        players[i].actor.settle(collision);
+        FloorRiding::land(players, i, players[i].actor.position(), collision);
+    }
+    REQUIRE(players[0].floor.object == kDeck);
+    REQUIRE(players[1].floor.object == kLanding);
+    // The party's step, then the triggers', as the scene orders them; the other walks onto
+    // the deck.
+    const auto frame = [&] {
+        f.animator.step(kStep, f.scene, false, f.triggers.heldTracks());
+        sync();
+        for (usize i = 0; i < players.size(); ++i) {
+            PlayerActor& actor = players[i].actor;
+            FloorRiding::carry(players[i], collision);
+            const Vec3 before = actor.position();
+            const MoveInput walk =
+                i == 1 ? MoveInput{.direction = {1, 0}, .magnitude = 1} : MoveInput{};
+            actor.update(walk, 0, kStep, &collision);
+            FloorRiding::land(players, i, before, collision);
+            actor.fall(kStep, collision);
+        }
+        std::vector<TriggerVisitor> visitors;
+        for (usize i = 0; i < players.size(); ++i) {
+            visitors.push_back(TriggerVisitor{.position = players[i].actor.position(),
+                                              .radius = players[i].actor.reach(),
+                                              .floorObject = players[i].floor.object,
+                                              .party = static_cast<s32>(i)});
+        }
+        f.triggers.update(kStep, visitors, f.animator, f.scene, &collision);
+        sync();
+    };
+    REQUIRE(f.triggers.press(0));
+    frame();
+    REQUIRE(f.triggers.opened(kLiftObject));
+    s32 travel = 0;
+    for (; travel < 60 && !f.triggers.settled(kLiftObject); ++travel) {
+        CAPTURE(travel);
+        CHECK(players[0].floor.object == kDeck);
+        CHECK(players[1].floor.object != kDeck);
+        const Vec3 deckTop{0, f.scene.worldTransform(kDeck)[3].y, 0};
+        const auto swarm = collision.floorAt(deckTop, 0.1f, 0.1f);
+        REQUIRE(swarm.has_value());
+        CHECK(swarm->object == kDeck);
+        CHECK_FALSE(collision.floorAt(deckTop, 0.1f, 0.1f, 0.0f, WorldCollision::kPlayerSide,
+                                      WorldCollision::Prober::Player));
+        frame();
+    }
+    REQUIRE(f.triggers.settled(kLiftObject));
+    CHECK(travel > 1);
+    CHECK(f.height() == Approx(kFloorY + kRise));
+    // Stopped, the deck is a floor to the players again: the other steps up onto it, and the
+    // rider, carried through the lift's last step as the party next moves, stands at its top.
+    for (s32 tick = 0; tick < 30 && players[1].floor.object != kDeck; ++tick) {
+        frame();
+    }
+    CHECK(players[1].floor.object == kDeck);
+    CHECK(players[1].actor.position().y == Approx(kFloorY + kRise));
+    CHECK(players[0].floor.object == kDeck);
+    CHECK(players[0].actor.position().y == Approx(kFloorY + kRise));
 }
 
 TEST_CASE("revealed momentary bridges wait for their final rider without pressing the pad",

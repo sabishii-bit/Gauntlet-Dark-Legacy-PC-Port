@@ -513,7 +513,7 @@ void LevelWorld::update(f32 seconds, bool timeStopped) {
     if (m_imported) {
         m_imported->update(seconds, timeStopped);
     }
-    m_worldAnimator.step(seconds, m_scene, timeStopped);
+    m_worldAnimator.step(seconds, m_scene, timeStopped, m_triggers.heldTracks());
     m_sim.lightning.update(seconds, m_scene);
     m_destruction.update(m_worldAnimator.cycleEvents(), m_scene, m_collision);
     m_skorneArena.update(seconds);

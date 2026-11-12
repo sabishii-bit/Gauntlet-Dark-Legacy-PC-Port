@@ -474,9 +474,19 @@ bool LevelTriggers::movesFloor(s32 floorObject) const {
     const auto moving = [this](s32 object) {
         const Target* target = targetOf(object);
         return target != nullptr && (target->kind & LevelTrigger::kKeepsState) != 0 &&
-               !target->settled;
+               !target->settled && !(target->animated && target->ridden);
     };
     return moving(floorObject) || moving(m_parents[static_cast<usize>(floorObject)]);
+}
+
+std::vector<s32> LevelTriggers::heldTracks() const {
+    std::vector<s32> held;
+    for (const Target& target : m_sim.targets) {
+        if (target.animated && target.ridden && !target.settled) {
+            held.push_back(target.object);
+        }
+    }
+    return held;
 }
 
 TriggerOpening LevelTriggers::openingOf(const Target& target, WorldAnimator::Finish finish) {
@@ -574,6 +584,7 @@ bool LevelTriggers::openTarget(Target& target, bool open, WorldAnimator::Finish 
     target.settled = atOnce; // only an opening before the party is worth reporting done
     if (atOnce && collision != nullptr) {
         collision->setFloorExitBlocked(target.object, false);
+        collision->setPlayerPassThrough(target.object, false);
     }
     if (target.animated) {
         if (!target.forced && (target.kind & LevelTrigger::kOscillates) != 0 && !atOnce) {
@@ -806,20 +817,23 @@ void LevelTriggers::update(f32 seconds, std::span<const TriggerVisitor> visitors
     }
     std::vector<u32> contacts(m_sim.triggers.size(), 0);
     for (Target& target : m_sim.targets) {
+        // A platform that opens to players as it moves cannot move under one standing on it:
+        // it waits for them to step off, solid where it stands. did_generate (0x80063854)
+        // counts a player whose floor (+0x8C4) is the target itself, so a lift whose deck is a
+        // separate piece carries the deck's riders on.
+        target.ridden = target.holdsForRiders() &&
+                        std::ranges::any_of(visitors, [&](const TriggerVisitor& visitor) {
+                            return visitor.floorObject == target.object;
+                        });
         // ProcessItemWobjs (GC 0x80062A00) keeps a momentary fade's activation
-        // while did_generate (0x80063854) finds a player or live enemy on it.
-        // Retain an already revealed bridge only: standing over an absent one
-        // must not activate its button, chain, camera or whole-party requirement.
+        // while did_generate finds a player or live enemy on it; here anyone on the
+        // bridge's subtree keeps it. Retain an already revealed bridge only: standing
+        // over an absent one must not activate its button, chain, camera or whole-party
+        // requirement.
         const auto supported = [&](s32 floor) {
             return floor >= 0 && std::ranges::find(target.subtree, static_cast<usize>(floor)) !=
                                      target.subtree.end();
         };
-        // A platform that goes clear as it moves cannot move under a player: it waits for
-        // them to step off (did_generate's 2 skips the height step), solid where it stands.
-        target.ridden = target.holdsForRiders() &&
-                        std::ranges::any_of(visitors, [&](const TriggerVisitor& visitor) {
-                            return supported(visitor.floorObject);
-                        });
         const bool momentaryBridge = LevelTrigger::momentaryFade(target.kind);
         target.pressed = target.open && momentaryBridge &&
                          (std::ranges::any_of(visitors,
@@ -958,10 +972,8 @@ void LevelTriggers::stepMotion(f32 seconds, WorldScene& scene, WorldCollision* c
     m_sim.frameRemainder -= frames;
     for (Target& target : m_sim.targets) {
         if (!target.animated && (target.kind & LevelTrigger::kFades) == 0) {
-            if (!target.settled && target.ridden) {
-                continue; // held under its riders, as solid as it stands
-            }
-            if (!target.settled) {
+            const bool held = !target.settled && target.ridden;
+            if (!target.settled && !held) {
                 // GameCube items.c ProcessItemWobjs: 4.0 * gClockFrameStep.
                 const f32 goal =
                     target.open && !target.returning ? target.openHeight : target.closedHeight;
@@ -982,9 +994,12 @@ void LevelTriggers::stepMotion(f32 seconds, WorldScene& scene, WorldCollision* c
                         target.settled = false;
                     }
                 }
-                if (collision != nullptr && (target.kind & LevelTrigger::kStaysSolid) == 0) {
-                    collision->setSolid(target.object, target.settled);
-                }
+            }
+            if (collision != nullptr) {
+                collision->setPlayerPassThrough(target.object, target.opensToPlayers());
+            }
+            if (held) {
+                continue; // held under its riders, as solid as it stands
             }
             placeHeight(scene, target.object, target.origin.y + target.height);
         }
@@ -1010,18 +1025,18 @@ void LevelTriggers::finishMotion(const WorldAnimator& animator, WorldCollision* 
                                  bool report) {
     // An animated target is done once its animation has run to the end.
     for (Target& target : m_sim.targets) {
-        if (target.settled || !target.animated) {
+        if (!target.animated) {
             continue;
         }
         if (const auto track = animator.trackOf(target.object);
-            track.has_value() && animator.finished(*track)) {
+            !target.settled && track.has_value() && animator.finished(*track)) {
             target.settled = true;
             if (report) {
                 m_sim.settled.push_back(openingOf(target, WorldAnimator::Finish::Animated));
             }
         }
-        if (collision != nullptr && (target.kind & LevelTrigger::kStaysSolid) == 0) {
-            collision->setSolid(target.object, target.settled);
+        if (collision != nullptr) {
+            collision->setPlayerPassThrough(target.object, target.opensToPlayers());
         }
     }
     if (collision != nullptr) {
@@ -1037,7 +1052,13 @@ void LevelTriggers::finishMotion(const WorldAnimator& animator, WorldCollision* 
 }
 
 bool LevelTriggers::Target::holdsForRiders() const {
-    return !animated && (kind & (LevelTrigger::kFades | LevelTrigger::kStaysSolid)) == 0;
+    return (kind & (LevelTrigger::kFades | LevelTrigger::kStaysSolid)) == 0;
+}
+
+bool LevelTriggers::Target::opensToPlayers() const {
+    // ProcessItemWobjs' tail marks a target that moved this pass (0x80062F38-0x80062F4C);
+    // one its riders hold skips the tail and stays solid.
+    return holdsForRiders() && !settled && !ridden;
 }
 
 bool LevelTriggers::Motion::Target::valid() const {

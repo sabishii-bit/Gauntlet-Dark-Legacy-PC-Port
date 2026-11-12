@@ -2,8 +2,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <limits>
-#include <ranges>
 
 #include "engine/core/Types.h"
 #include "engine/math/PortableMath.h"
@@ -129,16 +127,19 @@ void PlayerActor::travel(const Vec3& offset, const WorldCollision* collision) {
     }
     // fn_80088714: the wall sphere stands at the collision centre a unit up, as wide as the
     // body (PlayerWallCollide's radius is the class width). A wall met turns the step along
-    // it (SlideAlongWall); a second wall against the first stops it.
+    // it (SlideAlongWall); a second wall against the first stops it. The player's probes pass
+    // through what a moving lift opens to players.
+    constexpr auto kPlayer = WorldCollision::Prober::Player;
     const f32 width = reach();
     const Vec3 centre = m_position + Vec3{0.0f, m_followHeight + kWallSphereLift, 0.0f};
     bool walled = false;
-    if (const auto wall = collision->sweepSphere(centre, centre + dpos, width)) {
+    if (const auto wall = collision->sweepSphere(centre, centre + dpos, width,
+                                                 WorldCollision::kWallQueryFlags, kPlayer)) {
         walled = true;
         noteContact(wall->object, wall->point);
         slideAlongWall(dpos, centre, *wall, width);
-        if (const auto second =
-                collision->sweepSphere(centre, centre + dpos, kSecondSweep * width)) {
+        if (const auto second = collision->sweepSphere(centre, centre + dpos, kSecondSweep * width,
+                                                       WorldCollision::kWallQueryFlags, kPlayer)) {
             noteContact(second->object, second->point);
             if (second->time > 0.0f) {
                 if (glm::dot(second->normal, wall->normal) < 0.5f) {
@@ -159,7 +160,8 @@ void PlayerActor::travel(const Vec3& offset, const WorldCollision* collision) {
     // sphere swept down from the collision centre by three and the body's half height.
     const f32 depth = kFloorProbe + m_height * 0.5f;
     const auto floorAt = [&](const Vec3& feet) {
-        return collision->floorUnder(feet + Vec3{0.0f, m_followHeight, 0.0f}, depth, width);
+        return collision->floorUnder(feet + Vec3{0.0f, m_followHeight, 0.0f}, depth, width,
+                                     kPlayer);
     };
     if (m_floorObject < 0) {
         if (const auto here = floorAt(m_position)) {
@@ -305,9 +307,10 @@ bool PlayerActor::fall(f32 seconds, const WorldCollision& collision) {
     // more than a step away or moves; PlayerMotion then rises to it at once or sinks to it
     // at sixteen a second. A floor just above the feet lifts them too, as nothing in the
     // original ever leaves a body below its floor.
+    constexpr auto kPlayer = WorldCollision::Prober::Player;
     const f32 depth = kFloorProbe + m_height * 0.5f;
-    const auto floor =
-        collision.floorUnder(m_position + Vec3{0.0f, m_followHeight, 0.0f}, depth, reach());
+    const auto floor = collision.floorUnder(m_position + Vec3{0.0f, m_followHeight, 0.0f}, depth,
+                                            reach(), kPlayer);
     if (floor) {
         if (collision.floorExitBlocked(m_floorObject) && floor->object != m_floorObject) {
             // A lift that holds its riders keeps this one at its height (PlayerCollideFloor
@@ -323,7 +326,8 @@ bool PlayerActor::fall(f32 seconds, const WorldCollision& collision) {
         // held by its lift still
     } else {
         // Nothing within reach: it sinks, never through whatever floor is far below.
-        const auto far = collision.floorAt(m_position, m_followHeight, kFallReach, reach());
+        const auto far = collision.floorAt(m_position, m_followHeight, kFallReach, reach(),
+                                           WorldCollision::kPlayerSide, kPlayer);
         m_floorBase = far ? far->y : m_position.y - kFallReach;
         m_floorObject = -1;
         m_floorFlags = 0;

@@ -296,13 +296,15 @@ void WorldAnimator::apply(WorldScene& scene) const {
     }
 }
 
-void WorldAnimator::step(f32 seconds, WorldScene& scene, bool pauseLoops) {
+void WorldAnimator::step(f32 seconds, WorldScene& scene, bool pauseLoops,
+                         std::span<const s32> held) {
     m_cycleEvents.clear();
     const f32 advance = seconds * kFramesPerSecond;
     for (Track& track : m_tracks) {
         pose(track, scene);
         track.presentationCut = false;
-        if (seconds <= 0 || track.finished || (pauseLoops && !track.once && !track.reverse)) {
+        if (seconds <= 0 || track.finished || (pauseLoops && !track.once && !track.reverse) ||
+            std::ranges::find(held, track.object) != held.end()) {
             continue;
         }
         // Retail reveals a spent cart in its first two 30-Hz frames. Emit the

@@ -2,6 +2,7 @@
 #include <bit>
 #include <cmath>
 #include <filesystem>
+#include <utility>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
@@ -231,6 +232,95 @@ TEST_CASE("moving floor locks inherit from parents without owning the inherited 
     CHECK(parented.finish() != unparented.finish());
     collision.setFloorExitBlocked(0, true);
     CHECK_FALSE(collision.floorExitBlocked(1)); // rebuilding discards the previous hierarchy
+}
+
+TEST_CASE("a moving lift opened to players lets only their own probes through it and its direct "
+          "children",
+          "[world][collision][player-pass-through][local-rewind]") {
+    // ProcessItemWobjs marks a lift in motion (WorldObj +0x35 = 1) and WorldCollide ORs each
+    // object's mark with its direct parent's alone (0x8000D578): the player probes' side mask 1
+    // passes the lift and its deck, a creature's mask 2 meets them, and a rail on the deck, two
+    // below the marked lift, stays solid to everyone.
+    constexpr s32 kLift = 0;
+    constexpr s32 kDeck = 1;
+    constexpr s32 kRail = 2;
+    constexpr s32 kGround = 3;
+    constexpr auto kPlayer = WorldCollision::Prober::Player;
+    const Vec3 up{0, 1, 0};
+    std::vector<CollisionTriangle> triangles;
+    for (const auto& [x, object] : std::array{std::pair{0.0f, kLift}, std::pair{10.0f, kDeck},
+                                              std::pair{20.0f, kRail}, std::pair{30.0f, kGround}}) {
+        triangles.push_back(triangle({x - 2, 0, -2}, {x + 2, 0, -2}, {x + 2, 0, 2}, up, object));
+        triangles.push_back(triangle({x - 2, 0, -2}, {x + 2, 0, 2}, {x - 2, 0, 2}, up, object));
+    }
+    const Vec3 west{-1, 0, 0};
+    triangles.push_back(triangle({12, 0, -2}, {12, 3, -2}, {12, 3, 2}, west, kDeck));
+    triangles.push_back(triangle({12, 0, -2}, {12, 3, 2}, {12, 0, 2}, west, kDeck));
+    WorldCollision collision;
+    collision.build(triangles, std::array<s32, 4>{-1, kLift, kDeck, -1});
+    const auto above = [](f32 x) { return Vec3{x, 0.5f, 0}; };
+    const auto floorFor = [&](f32 x, WorldCollision::Prober prober) {
+        const auto floor =
+            collision.floorAt(above(x), 1, 1, 0, WorldCollision::kPlayerSide, prober);
+        return floor ? floor->object : -1;
+    };
+    const auto wallFor = [&](WorldCollision::Prober prober) {
+        return collision
+            .sweepSphere({10, 1.5f, 0}, {13, 1.5f, 0}, 0.5f, WorldCollision::kWallQueryFlags,
+                         prober)
+            .has_value();
+    };
+    WorldCollision::LocalSnapshot shut;
+    collision.saveLocal(shut);
+    collision.setPlayerPassThrough(-1, true); // nothing to open
+    collision.setPlayerPassThrough(kLift, true);
+    collision.setPlayerPassThrough(kLift, true); // idempotent
+    CHECK(collision.ownPlayerPassThrough(kLift));
+    CHECK(collision.playerPassThrough(kDeck));
+    CHECK_FALSE(collision.ownPlayerPassThrough(kDeck));
+    CHECK_FALSE(collision.playerPassThrough(kRail));
+    CHECK_FALSE(collision.playerPassThrough(kGround));
+    CHECK_FALSE(collision.playerPassThrough(-1));
+    // Opened to players is not removed: the lift still blocks everything else.
+    CHECK(collision.solid(kLift));
+    CHECK(collision.solid(kDeck));
+    for (const auto& [x, object] : std::array{std::pair{0.0f, kLift}, std::pair{10.0f, kDeck}}) {
+        CAPTURE(object);
+        CHECK(floorFor(x, WorldCollision::Prober::Other) == object);
+        CHECK(floorFor(x, kPlayer) == -1);
+        const auto creature = collision.floorAt(above(x), 1, 1, 0, WorldCollision::kBossSide);
+        REQUIRE(creature.has_value());
+        CHECK(creature->object == object);
+        CHECK(collision.floorUnder(above(x) + up, 3, 0.5f).has_value());
+        CHECK_FALSE(collision.floorUnder(above(x) + up, 3, 0.5f, kPlayer).has_value());
+    }
+    CHECK(floorFor(20, kPlayer) == kRail);
+    CHECK(floorFor(30, kPlayer) == kGround);
+    CHECK(wallFor(WorldCollision::Prober::Other));
+    CHECK_FALSE(wallFor(kPlayer));
+    // A carried rider stays aboard: the deck's lock walks up to the opened lift.
+    collision.setFloorExitBlocked(kLift, true);
+    CHECK(collision.floorExitBlocked(kDeck));
+    collision.setFloorExitBlocked(kLift, false);
+
+    WorldCollision::LocalSnapshot opened;
+    collision.saveLocal(opened);
+    CHECK_FALSE(collision.equalLocal(shut, opened));
+    NativeStateDigest openedDigest;
+    REQUIRE(collision.appendLocalDigest(openedDigest, opened));
+    NativeStateDigest shutDigest;
+    REQUIRE(collision.appendLocalDigest(shutDigest, shut));
+    CHECK(openedDigest.finish() != shutDigest.finish());
+    collision.setPlayerPassThrough(kLift, false);
+    CHECK(floorFor(10, kPlayer) == kDeck);
+    CHECK(wallFor(kPlayer));
+    REQUIRE(collision.restoreLocal(opened));
+    CHECK(floorFor(10, kPlayer) == -1);
+    NativeStateDigest restored;
+    REQUIRE(collision.appendNativeDigest(restored));
+    CHECK(restored.finish() == openedDigest.finish());
+    collision.build(triangles, std::array<s32, 4>{-1, kLift, kDeck, -1});
+    CHECK(floorFor(10, kPlayer) == kDeck); // a new map keeps no openings
 }
 
 TEST_CASE("native floor collision sides distinguish players from bosses and rewind exactly",

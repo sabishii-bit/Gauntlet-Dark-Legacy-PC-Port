@@ -1,7 +1,5 @@
 #include "game/party/FloorRiding.h"
 
-#include <cmath>
-
 #include "engine/core/Types.h"
 #include "engine/math/PortableMath.h"
 
@@ -42,9 +40,10 @@ bool FloorRiding::keptApart(std::span<const PlayerRuntime> players, usize index,
 std::optional<FloorHit> FloorRiding::support(const PlayerActor& actor,
                                              const WorldCollision& collision) {
     // FloorCollide's sphere from the collision centre: the face under the point, else the
-    // nearest edge within the body's width.
+    // nearest edge within the body's width, as a player's probe meets them.
     return collision.floorUnder(actor.followPoint(),
-                                PlayerActor::kFloorProbe + actor.height() * 0.5f, actor.reach());
+                                PlayerActor::kFloorProbe + actor.height() * 0.5f, actor.reach(),
+                                WorldCollision::Prober::Player);
 }
 
 void FloorRiding::land(std::span<PlayerRuntime> players, usize index, const Vec3& from,

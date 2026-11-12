@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <limits>
 
@@ -153,6 +154,34 @@ TEST_CASE("world animations turn their objects thirty frames a second and loop",
 
     f.animator.clear();
     REQUIRE(f.animator.size() == 0);
+}
+
+TEST_CASE("held world tracks stand where they are and go on from there once let go",
+          "[world][animation][held-tracks]") {
+    // ProcessItemWobjs holds a lift its riders stand on by setting both play flags, and
+    // DoWorldAnimSub (0x800A87C8) runs no track with both: it stands at its frame until then.
+    Fixture f("world-animator-held");
+    f.animator.bind(f.layout);
+    f.animator.hold(8);
+    f.animator.fire(8, true);
+    f.animator.step(kStep, f.scene);
+    REQUIRE(f.animator.frame(0) == Approx(1.0f));
+    const std::array<s32, 1> held{8};
+    f.animator.step(kStep, f.scene, false, held);
+    const Vec3 standing = f.bladeAt();
+    for (s32 i = 0; i < 5; ++i) {
+        f.animator.step(kStep, f.scene, false, held);
+        CHECK(f.animator.frame(0) == Approx(1.0f));
+        CHECK_FALSE(f.animator.finished(0));
+        CHECK(f.bladeAt() == standing);
+        CHECK(f.animator.cycleEvents().empty());
+    }
+    const std::array<s32, 1> other{7};
+    f.animator.step(kStep, f.scene, false, other); // only the named objects stand
+    CHECK(f.animator.frame(0) == Approx(2.0f));
+    f.animator.step(kStep, f.scene);
+    CHECK(f.animator.frame(0) == Approx(3.0f));
+    CHECK(f.animator.finished(0));
 }
 
 TEST_CASE("world animation jumps and loop resets cut the presentation without extra clock steps",

@@ -369,7 +369,7 @@ const CanonicalDigestSink::Digest& WorldCollision::geometryDigest() const {
 }
 
 bool WorldCollision::appendDigest(NativeStateDigest& digest, const LocalSnapshot* saved) const {
-    digest.string("WorldCollision/3");
+    digest.string("WorldCollision/4");
     digest.bytes(geometryDigest());
     for (usize i = 0; i < m_moving.size(); ++i) {
         const auto& [object, local, placed, boundsMin, boundsMax, world] = m_moving[i];
@@ -384,7 +384,8 @@ bool WorldCollision::appendDigest(NativeStateDigest& digest, const LocalSnapshot
     }
     digest.values(saved ? saved->m_hidden : m_hidden, saved ? saved->m_contactOnly : m_contactOnly,
                   saved ? saved->m_blockedFloorExits : m_blockedFloorExits,
-                  saved ? saved->m_collisionSides : m_collisionSides);
+                  saved ? saved->m_collisionSides : m_collisionSides,
+                  saved ? saved->m_playerPassThrough : m_playerPassThrough);
     return digest.good();
 }
 
@@ -396,7 +397,7 @@ bool WorldCollision::appendLocalDigest(NativeStateDigest& digest,
                                        const LocalSnapshot& saved) const {
     // Guard the native snapshot roster too; owner/epoch are admission, not peer state.
     [[maybe_unused]] const auto& [transforms, hidden, contactOnly, blockedFloorExits,
-                                  collisionSides, owner, binding] = saved;
+                                  collisionSides, playerPassThrough, owner, binding] = saved;
     if (!canRestoreLocal(saved)) {
         digest.invalidate();
         return false;
@@ -413,6 +414,7 @@ void WorldCollision::saveLocal(LocalSnapshot& saved) const {
     saved.m_contactOnly = m_contactOnly;
     saved.m_blockedFloorExits = m_blockedFloorExits;
     saved.m_collisionSides = m_collisionSides;
+    saved.m_playerPassThrough = m_playerPassThrough;
     saved.m_owner = this;
     saved.m_binding = m_localBinding;
 }
@@ -427,7 +429,8 @@ bool WorldCollision::equalLocal(const LocalSnapshot& left, const LocalSnapshot& 
            left.m_transforms == right.m_transforms && left.m_hidden == right.m_hidden &&
            left.m_contactOnly == right.m_contactOnly &&
            left.m_blockedFloorExits == right.m_blockedFloorExits &&
-           left.m_collisionSides == right.m_collisionSides;
+           left.m_collisionSides == right.m_collisionSides &&
+           left.m_playerPassThrough == right.m_playerPassThrough;
 }
 
 bool WorldCollision::restoreLocal(const LocalSnapshot& saved) {
@@ -443,6 +446,7 @@ bool WorldCollision::restoreLocal(const LocalSnapshot& saved) {
     m_contactOnly = saved.m_contactOnly;
     m_blockedFloorExits = saved.m_blockedFloorExits;
     m_collisionSides = saved.m_collisionSides;
+    m_playerPassThrough = saved.m_playerPassThrough;
     return true;
 }
 
@@ -595,6 +599,33 @@ bool WorldCollision::solid(s32 object, u8 sideMask) const {
            (found->second & sideMask) == 0;
 }
 
+void WorldCollision::setPlayerPassThrough(s32 object, bool passes) {
+    const auto found = std::ranges::find(m_playerPassThrough, object);
+    if (!passes && found != m_playerPassThrough.end()) {
+        m_playerPassThrough.erase(found);
+    } else if (passes && object >= 0 && found == m_playerPassThrough.end()) {
+        m_playerPassThrough.push_back(object);
+    }
+}
+
+bool WorldCollision::ownPlayerPassThrough(s32 object) const {
+    return object >= 0 &&
+           std::ranges::find(m_playerPassThrough, object) != m_playerPassThrough.end();
+}
+
+bool WorldCollision::playerPassThrough(s32 object) const {
+    if (ownPlayerPassThrough(object)) {
+        return true;
+    }
+    // WorldCollide ORs in the direct parent's mark alone, never a grandparent's.
+    return object >= 0 && static_cast<usize>(object) < m_objectParents.size() &&
+           ownPlayerPassThrough(m_objectParents[static_cast<usize>(object)]);
+}
+
+bool WorldCollision::meets(s32 object, u8 sideMask, Prober prober) const {
+    return solid(object, sideMask) && (prober != Prober::Player || !playerPassThrough(object));
+}
+
 bool WorldCollision::moving(s32 object) const {
     return std::ranges::any_of(m_moving,
                                [&](const MovingObject& mover) { return mover.object == object; });
@@ -630,15 +661,15 @@ usize WorldCollision::triangleCount() const {
 
 template <typename Visit>
 void WorldCollision::eachTriangle(f32 minX, f32 minZ, f32 maxX, f32 maxZ, const Visit& visit,
-                                  u8 sideMask) const {
+                                  u8 sideMask, Prober prober) const {
     for (const u32 index : candidates(minX, minZ, maxX, maxZ)) {
         const CollisionTriangle& triangle = m_triangles[index];
-        if (solid(triangle.object, sideMask)) {
+        if (meets(triangle.object, sideMask, prober)) {
             visit(triangle);
         }
     }
     for (const MovingObject& mover : m_moving) {
-        if (!mover.overlaps(minX, minZ, maxX, maxZ) || !solid(mover.object, sideMask)) {
+        if (!mover.overlaps(minX, minZ, maxX, maxZ) || !meets(mover.object, sideMask, prober)) {
             continue;
         }
         for (const CollisionTriangle& triangle : mover.placed) {
@@ -659,6 +690,7 @@ void WorldCollision::clear() {
     m_contactOnly.clear();
     m_blockedFloorExits.clear();
     m_collisionSides.clear();
+    m_playerPassThrough.clear();
     m_cells.clear();
     m_columns = 0;
     m_rows = 0;
@@ -728,9 +760,9 @@ std::vector<u32> WorldCollision::candidates(f32 minX, f32 minZ, f32 maxX, f32 ma
 }
 
 std::optional<FloorHit> WorldCollision::floorAt(const Vec3& position, f32 above, f32 below,
-                                                f32 edgeReach, u8 sideMask) const {
+                                                f32 edgeReach, u8 sideMask, Prober prober) const {
     return surfaceAt(position, above, below, false, std::max(0.0f, edgeReach), nullptr, false,
-                     sideMask);
+                     sideMask, prober);
 }
 
 std::optional<FloorHit> WorldCollision::restingFloorAt(const Vec3& position, f32 above, f32 below,
@@ -819,7 +851,8 @@ std::optional<FloorHit> WorldCollision::projectileFloorAt(const Vec3& position, 
 
 std::optional<FloorHit> WorldCollision::surfaceAt(const Vec3& position, f32 above, f32 below,
                                                   bool liquid, f32 edgeReach, const Vec2* direction,
-                                                  bool nearestToHeight, u8 sideMask) const {
+                                                  bool nearestToHeight, u8 sideMask,
+                                                  Prober prober) const {
     std::optional<FloorHit> best;
     const f32 highest = position.y + above;
     const f32 lowest = position.y - below;
@@ -879,7 +912,7 @@ std::optional<FloorHit> WorldCollision::surfaceAt(const Vec3& position, f32 abov
                                 {point.x, y, point.y}};
             }
         },
-        sideMask);
+        sideMask, prober);
     return best;
 }
 
@@ -1208,7 +1241,7 @@ std::optional<std::pair<f32, Vec3>> sphereMeetsFront(const CollisionTriangle& tr
 } // namespace
 
 std::optional<SphereHit> WorldCollision::sweepSphere(const Vec3& from, const Vec3& to, f32 radius,
-                                                     u32 mask) const {
+                                                     u32 mask, Prober prober) const {
     radius = std::max(0.0f, radius);
     const Vec3 step = to - from;
     std::optional<SphereHit> best;
@@ -1234,12 +1267,12 @@ std::optional<SphereHit> WorldCollision::sweepSphere(const Vec3& from, const Vec
     const f32 maxZ = std::max(from.z, to.z) + radius;
     for (const u32 index : candidates(minX, minZ, maxX, maxZ)) {
         const CollisionTriangle& triangle = m_triangles[index];
-        if (solid(triangle.object)) {
+        if (meets(triangle.object, kPlayerSide, prober)) {
             consider(triangle, triangle.normal.y);
         }
     }
     for (const MovingObject& mover : m_moving) {
-        if (!mover.overlaps(minX, minZ, maxX, maxZ) || !solid(mover.object)) {
+        if (!mover.overlaps(minX, minZ, maxX, maxZ) || !meets(mover.object, kPlayerSide, prober)) {
             continue;
         }
         for (usize i = 0; i < mover.placed.size(); ++i) {
@@ -1251,64 +1284,65 @@ std::optional<SphereHit> WorldCollision::sweepSphere(const Vec3& from, const Vec
     return best;
 }
 
-std::optional<FloorHit> WorldCollision::floorUnder(const Vec3& origin, f32 depth,
-                                                   f32 radius) const {
+std::optional<FloorHit> WorldCollision::floorUnder(const Vec3& origin, f32 depth, f32 radius,
+                                                   Prober prober) const {
     radius = std::max(0.0f, radius);
     const f32 lowest = origin.y - depth - radius;
     std::optional<FloorHit> face;
     std::optional<FloorHit> edge;
     f32 edgeDistance = radius * radius;
-    eachTriangle(origin.x - radius, origin.z - radius, origin.x + radius, origin.z + radius,
-                 [&](const CollisionTriangle& triangle) {
-                     if ((triangle.objectFlags & kFloorQueryFlags) == 0 ||
-                         (triangle.objectFlags & kLiquidSurface) != 0 ||
-                         triangle.normal.y < kFloorNormalY) {
-                         return;
-                     }
-                     const Vec3& v = triangle.vertices[0];
-                     const auto heightAt = [&](const Vec2& point) {
-                         return v.y - (triangle.normal.x * (point.x - v.x) +
-                                       triangle.normal.z * (point.y - v.z)) /
-                                          triangle.normal.y;
-                     };
-                     const Vec2 here{origin.x, origin.z};
-                     if (insideXZ(triangle, here.x, here.y)) {
-                         const f32 y = heightAt(here);
-                         if (y <= origin.y && y >= lowest && (!face || y > face->y)) {
-                             face = FloorHit{y,
-                                             triangle.normal,
-                                             triangle.object,
-                                             triangle.objectFlags,
-                                             {here.x, y, here.y}};
-                         }
-                         return;
-                     }
-                     if (face.has_value() || radius <= 0.0f) {
-                         return; // a face under the point outranks every edge
-                     }
-                     for (usize i = 0; i < triangle.vertices.size(); ++i) {
-                         const Vec3& a = triangle.vertices[i];
-                         const Vec3& b = triangle.vertices[(i + 1) % triangle.vertices.size()];
-                         const Vec2 point = closestOnSegment({a.x, a.z}, {b.x, b.z}, here);
-                         const Vec2 delta = point - here;
-                         const f32 distance = glm::dot(delta, delta);
-                         if (distance > edgeDistance) {
-                             continue;
-                         }
-                         const f32 y = heightAt(point);
-                         // The sphere reaches less far down away from its centre line.
-                         const f32 reach = std::sqrt(std::max(0.0f, radius * radius - distance));
-                         if (y > origin.y || y < origin.y - depth - reach) {
-                             continue;
-                         }
-                         edgeDistance = distance;
-                         edge = FloorHit{y,
-                                         triangle.normal,
-                                         triangle.object,
-                                         triangle.objectFlags,
-                                         {point.x, y, point.y}};
-                     }
-                 });
+    eachTriangle(
+        origin.x - radius, origin.z - radius, origin.x + radius, origin.z + radius,
+        [&](const CollisionTriangle& triangle) {
+            if ((triangle.objectFlags & kFloorQueryFlags) == 0 ||
+                (triangle.objectFlags & kLiquidSurface) != 0 || triangle.normal.y < kFloorNormalY) {
+                return;
+            }
+            const Vec3& v = triangle.vertices[0];
+            const auto heightAt = [&](const Vec2& point) {
+                return v.y -
+                       (triangle.normal.x * (point.x - v.x) + triangle.normal.z * (point.y - v.z)) /
+                           triangle.normal.y;
+            };
+            const Vec2 here{origin.x, origin.z};
+            if (insideXZ(triangle, here.x, here.y)) {
+                const f32 y = heightAt(here);
+                if (y <= origin.y && y >= lowest && (!face || y > face->y)) {
+                    face = FloorHit{y,
+                                    triangle.normal,
+                                    triangle.object,
+                                    triangle.objectFlags,
+                                    {here.x, y, here.y}};
+                }
+                return;
+            }
+            if (face.has_value() || radius <= 0.0f) {
+                return; // a face under the point outranks every edge
+            }
+            for (usize i = 0; i < triangle.vertices.size(); ++i) {
+                const Vec3& a = triangle.vertices[i];
+                const Vec3& b = triangle.vertices[(i + 1) % triangle.vertices.size()];
+                const Vec2 point = closestOnSegment({a.x, a.z}, {b.x, b.z}, here);
+                const Vec2 delta = point - here;
+                const f32 distance = glm::dot(delta, delta);
+                if (distance > edgeDistance) {
+                    continue;
+                }
+                const f32 y = heightAt(point);
+                // The sphere reaches less far down away from its centre line.
+                const f32 reach = std::sqrt(std::max(0.0f, radius * radius - distance));
+                if (y > origin.y || y < origin.y - depth - reach) {
+                    continue;
+                }
+                edgeDistance = distance;
+                edge = FloorHit{y,
+                                triangle.normal,
+                                triangle.object,
+                                triangle.objectFlags,
+                                {point.x, y, point.y}};
+            }
+        },
+        kPlayerSide, prober);
     return face ? face : edge;
 }
 

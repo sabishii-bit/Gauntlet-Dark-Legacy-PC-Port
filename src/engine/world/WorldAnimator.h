@@ -76,8 +76,10 @@ public:
 
     /** Poses every object at its current frame. */
     void apply(WorldScene& scene) const;
-    /** Poses every object, then moves `seconds` on. */
-    void step(f32 seconds, WorldScene& scene, bool pauseLoops = false);
+    /** Poses every object, then moves `seconds` on; the tracks of the `held` objects stand
+     * where they are, to go on from there once they are no longer held. */
+    void step(f32 seconds, WorldScene& scene, bool pauseLoops = false,
+              std::span<const s32> held = {});
     struct CycleEvent {
         s32 object = -1;
         bool wrapped = false; ///< loop endpoint, otherwise the first frames of a new pass

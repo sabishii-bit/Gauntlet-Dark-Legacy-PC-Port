@@ -1849,7 +1849,9 @@ std::vector<TriggerVisitor> PlayScene::visitors() const {
         // beneath the feet finds.
         if (m_players[i].floor.object >= 0) {
             visitor.floorObject = m_players[i].floor.object;
-        } else if (const auto floor = m_world->collision().floorAt(visitor.position, 0.5f, 1.0f)) {
+        } else if (const auto floor = m_world->collision().floorAt(
+                       visitor.position, 0.5f, 1.0f, 0.0f, WorldCollision::kPlayerSide,
+                       WorldCollision::Prober::Player)) {
             visitor.floorObject = floor->object;
         }
         out.push_back(visitor);

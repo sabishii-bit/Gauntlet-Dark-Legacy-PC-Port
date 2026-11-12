@@ -1,4 +1,3 @@
-#include <algorithm>
 #include <limits>
 #include <string>
 
@@ -220,6 +219,27 @@ TEST_CASE("motion restore retains invisible solid and visible nonsolid collision
     CHECK(replay.checkpoint(collision) == captured);
 }
 
+TEST_CASE("motion restore retains what a moving lift opens to the players' probes",
+          "[world-motion][rollback][player-pass-through]") {
+    Fixture host;
+    host.collision.setPlayerPassThrough(4, true);
+    const auto captured = host.state();
+    REQUIRE(captured.valid());
+    CHECK((captured.collision[4] & WorldMotion::kPlayerPassThrough) != 0);
+    CHECK((captured.collision[5] & WorldMotion::kPlayerPassThrough) == 0);
+    auto scene = host.scene;
+    auto collision = host.collision;
+    collision.setPlayerPassThrough(4, false);
+    collision.setPlayerPassThrough(5, true);
+    WorldMotion replay;
+    replay.bind(host.layout);
+    REQUIRE(replay.prepare(captured, host.scene.geometry(), scene, collision));
+    CHECK(collision.ownPlayerPassThrough(4));
+    CHECK_FALSE(collision.ownPlayerPassThrough(5));
+    CHECK(collision.solid(4));
+    CHECK(replay.checkpoint(collision) == captured);
+}
+
 TEST_CASE("world motion rejects malformed and foreign states atomically",
           "[world-motion][rollback]") {
     Fixture host;
@@ -235,7 +255,7 @@ TEST_CASE("world motion rejects malformed and foreign states atomically",
         auto bad = good;
         switch (variant) {
         case 0: bad.collision.clear(); break;
-        case 1: bad.collision[0] = 8; break;
+        case 1: bad.collision[0] = static_cast<u8>(WorldMotion::kPlayerPassThrough << 1); break;
         case 2: bad.collision.push_back(1); break;
         case 3: bad.animations[0].frame = std::numeric_limits<f32>::quiet_NaN(); break;
         case 4: ++bad.animations[0].frames; break;
