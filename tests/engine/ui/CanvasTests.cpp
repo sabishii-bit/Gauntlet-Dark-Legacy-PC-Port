@@ -204,7 +204,8 @@ TEST_CASE("masking above and below a frame covers only the rows a narrower displ
         CHECK(device.draws.empty()); // the frame fills the display's height
         return;
     }
-    // The GameCube's 640x448 frame in its 480-line picture: a sixteenth of 448 on each side.
+    // The GameCube's 640x448 frame in its 480-line picture: sixteen of its 480 lines on each
+    // side, 48 of 1440 rows here.
     if (extent.width == 1920 && extent.height == 1440) {
         CHECK(top == Approx(-1 + 96.0f / 1440));
         CHECK(bottom == Approx(1 - 96.0f / 1440));

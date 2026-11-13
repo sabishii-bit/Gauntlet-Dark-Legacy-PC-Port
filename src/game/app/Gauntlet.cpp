@@ -22,6 +22,7 @@
 #include "expansions/shared/characters/LegendsVisit.h"
 #include "expansions/shared/scenes/LegendsLevel.h"
 #include "formats/TplFile.h"
+#include "game/app/FrameBorder.h"
 #include "game/app/GameCursor.h"
 #include "game/app/ImportedShop.h"
 #include "game/app/Scenario.h"
@@ -1348,7 +1349,10 @@ void Gauntlet::onRender(RenderDevice& device) {
     // The console's suggestion is drawn by what the session admits now.
     m_console.setSession(consoleSession());
     renderScene(device);
-    drawFrameBorder(device);
+    drawFrameBorder(m_canvas, device,
+                    {static_cast<f32>(m_config.display.frameWidth),
+                     static_cast<f32>(m_config.display.frameHeight)},
+                    device.framebufferExtent());
     if (m_online && m_online->consoleAllowed() && m_console.visible()) {
         const auto width = static_cast<f32>(m_config.display.frameWidth);
         const auto height = static_cast<f32>(m_config.display.frameHeight);
@@ -1387,16 +1391,6 @@ std::vector<std::string> Gauntlet::levelDebugLines() const {
     }
     return LevelDebugOverlay::describe(*world, scene->participants(), scene->camera().localState(),
                                        enemiesAlive);
-}
-
-void Gauntlet::drawFrameBorder(RenderDevice& device) {
-    const auto width = static_cast<f32>(m_config.display.frameWidth);
-    const auto height = static_cast<f32>(m_config.display.frameHeight);
-    const Extent2D extent = device.framebufferExtent();
-    m_canvas.begin(device, makeLetterboxProjection(width, height, static_cast<f32>(extent.width),
-                                                   static_cast<f32>(extent.height)));
-    m_canvas.maskAboveAndBelow(0, height);
-    m_canvas.end();
 }
 
 PlayScene::Inputs Gauntlet::readPlayInputs(f64 deltaSeconds, const SceneInput& sceneInput) {

@@ -141,6 +141,7 @@ add_executable(tests
     game/netplay/OnlinePartyTests.cpp
     game/rollback/SessionInputsTests.cpp
     game/app/BuildLabelTests.cpp
+    game/app/FrameBorderTests.cpp
     game/app/LevelDebugOverlayTests.cpp
     game/console/DevConsoleTests.cpp
     game/console/ConsolePolicyTests.cpp

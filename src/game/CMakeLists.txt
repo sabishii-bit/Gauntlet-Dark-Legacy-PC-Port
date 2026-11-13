@@ -105,6 +105,7 @@ add_library(game STATIC
     app/GauntletNetplay.cpp
     app/GameCursor.cpp
     app/BuildLabel.cpp
+    app/FrameBorder.cpp
     app/LevelDebugOverlay.cpp
     console/ConsoleActionSink.h
     console/ConsoleCommand.h

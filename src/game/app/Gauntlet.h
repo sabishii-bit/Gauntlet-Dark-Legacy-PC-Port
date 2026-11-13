@@ -262,11 +262,6 @@ private:
     OnlineRun::Links onlineLinks();
     void applyWindowIcon();
     void renderScene(RenderDevice& device);
-    /** Blacks out the display above and below the frame, whatever a screen drew there, as the
-     * GameCube's video border shows its 640x448 frame within the 480-line picture
-     * (GXAdjustForOverscan by 16 lines at 0x800CBA80); beside the frame a wide display goes on
-     * showing the view. */
-    void drawFrameBorder(RenderDevice& device);
 
     GameOptions m_options;
     GameConfig m_config;
