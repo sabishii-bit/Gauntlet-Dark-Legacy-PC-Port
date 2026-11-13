@@ -1,8 +1,23 @@
 #include "game/tower/TowerCompletion.h"
 
+#include <optional>
+#include <span>
+
+#include "engine/core/Types.h"
+
 #include "game/level/TowerAccess.h"
 
 namespace gdl::game {
+
+namespace {
+
+constexpr u16 kLastRune = 1U << 12; ///< the thirteenth runestone
+/** The level whose beating brings the reminder: the battlefield's third, the fortress before
+ * Garm's citadel (TowerCheckMessages compares 0x803448AC with 8 and 0x803448A8 with 2,
+ * 0x800A2F68-0x800A2F7C). */
+constexpr LevelBeaten kBattlefieldFortress{TowerAccess::kBattlefieldWorld, 2};
+
+} // namespace
 
 u16 TowerCompletion::pending(std::span<const Relics> party) {
     u16 runes = 0;
@@ -32,7 +47,6 @@ u16 TowerCompletion::pending(std::span<const Relics> party) {
                    (pendingShards & ~installedShards & kTempleShard) != 0)) {
         result |= bit(skorne ? Kind::Underworld : Kind::TwelveWaiting);
     }
-    constexpr u16 kLastRune = 1U << 12;
     if (thirteen && (runes & ~installedRunes & kLastRune) != 0) {
         result |= bit(Kind::Garm);
     }
@@ -59,6 +73,21 @@ u16 TowerCompletion::pending(std::span<const Relics> party) {
     return result & kKnown;
 }
 
+bool TowerCompletion::remindsThirteenth(std::span<const Relics> party,
+                                        const std::optional<LevelBeaten>& beaten) {
+    if (beaten != kBattlefieldFortress) {
+        return false;
+    }
+    u16 runes = 0;
+    u16 installed = 0;
+    for (const auto& relics : party) {
+        runes |= relics.runes;
+        installed |= static_cast<u16>(relics.runes & ~relics.pendingRunes);
+    }
+    // A runestone new to the tower has its own ceremony, and the reminder is not weighed.
+    return (runes & ~installed & Relics::kAllRunes) == 0 && (installed & kLastRune) == 0;
+}
+
 std::string_view TowerCompletion::message(Kind kind) {
     switch (kind) {
     case Kind::MoreShards: return "MORESHARDS";
@@ -66,6 +95,7 @@ std::string_view TowerCompletion::message(Kind kind) {
     case Kind::TwelveWaiting: return "ALL12RUNESNO";
     case Kind::Underworld: return "ALL12RUNESYES";
     case Kind::Garm: return "RUNE13YES";
+    case Kind::ThirteenMissing: return "RUNE13NO"; // SumnerDoSpeech's "Rune13No", 0x80114E20
     }
     return {};
 }
@@ -76,6 +106,7 @@ std::string_view TowerCompletion::voice(Kind kind) {
     case Kind::TwelveWaiting: return "S_12RUNENO";
     case Kind::Underworld: return "S_12RUNEYES";
     case Kind::Garm: return "S_RUNE13YES";
+    case Kind::ThirteenMissing: return "S_RUNE13NO"; // 0xE00A8, speech 113's voice
     }
     return {};
 }

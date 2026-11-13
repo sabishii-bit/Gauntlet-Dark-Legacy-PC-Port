@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -12,6 +13,7 @@
 #include "game/audio/SpeechTiming.h"
 #include "game/level/NativeStateResources.h"
 #include "game/party/PlayerRuntime.h"
+#include "game/tower/LevelBeaten.h"
 #include "game/tower/TowerPromotion.h"
 #include "game/tower/TowerRelics.h"
 
@@ -43,9 +45,10 @@ public:
     };
 
     /** Begins what a tower arrival has earned: the promotions due, and the relic ceremonies,
-     * already-presented pieces struck from everyone's pending bits. */
+     * already-presented pieces struck from everyone's pending bits, with Sumner's answer to the
+     * level `beaten` on the way back when it calls for one. */
     void open(const Scene& scene, const MessageTable& hudStrings, const MessageTable& scrollStrings,
-              ExitPortals& portals);
+              ExitPortals& portals, const std::optional<LevelBeaten>& beaten);
     /** Forgets the ceremonies and their voices; the retained costumes stay until
      * releaseFigures(), after the soundscape that borrows their voices has closed. */
     void clearCeremonies();

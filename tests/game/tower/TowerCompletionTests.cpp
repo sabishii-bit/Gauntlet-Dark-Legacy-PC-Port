@@ -1,9 +1,12 @@
 #include <array>
+#include <optional>
+#include <string_view>
 #include <utility>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include "engine/assets/SoundSet.h"
 #include "engine/core/Types.h"
@@ -13,6 +16,8 @@
 #include "TestSupport.h"
 #include "game/app/Scenario.h"
 #include "game/characters/CharacterSave.h"
+#include "game/level/TowerAccess.h"
+#include "game/tower/LevelBeaten.h"
 #include "game/tower/TowerCompletion.h"
 #include "game/tower/TowerRelics.h"
 
@@ -20,6 +25,9 @@ namespace {
 using namespace gdl;
 using namespace gdl::game;
 using Kind = TowerCompletion::Kind;
+
+/** The battlefield's third level, the fortress before Garm's citadel. */
+constexpr LevelBeaten kFortress{TowerAccess::kBattlefieldWorld, 2};
 
 TEST_CASE("completion scenarios stage the intended route and Dream World arrival",
           "[game][tower-completion][scenario]") {
@@ -128,6 +136,113 @@ TEST_CASE("a pending waiting speech upgrades when the party has now defeated Sko
     REQUIRE(TowerCompletion::pending(party) == TowerCompletion::bit(Kind::Underworld));
 }
 
+TEST_CASE("back from the battlefield's fortress without the thirteenth runestone, Sumner says so",
+          "[game][tower-completion]") {
+    std::array<Relics, 2> party;
+    party[0].runes = 0xfff; // the twelve, set in their places on earlier visits
+    party[0].shards = 0x7fe;
+    CHECK(TowerCompletion::remindsThirteenth(party, kFortress));
+    // Only the fortress beaten on the way back brings it.
+    CHECK_FALSE(TowerCompletion::remindsThirteenth(party, std::nullopt));
+    for (const LevelBeaten other : {LevelBeaten{8, 0}, LevelBeaten{8, 1}, LevelBeaten{8, 3},
+                                    LevelBeaten{6, 1}, LevelBeaten{7, 2}}) {
+        CAPTURE(other.realm, other.level);
+        CHECK_FALSE(TowerCompletion::remindsThirteenth(party, other));
+    }
+    // Anyone's thirteenth already in its place silences it.
+    party[1].runes = 0x1000;
+    CHECK_FALSE(TowerCompletion::remindsThirteenth(party, kFortress));
+    // So does the thirteenth found on the way, which has its own ceremony instead.
+    party[1] = {};
+    REQUIRE(party[1].addRune(12));
+    CHECK_FALSE(TowerCompletion::remindsThirteenth(party, kFortress));
+    // And any other runestone new to the tower: the reminder waits for a return with none.
+    party[0].runes = 0xffe;
+    party[1] = {};
+    REQUIRE(party[1].addRune(0));
+    CHECK_FALSE(TowerCompletion::remindsThirteenth(party, kFortress));
+    // A stone one member has just found but another already set in its place is new to nobody.
+    party[0].runes = 0xfff;
+    CHECK(TowerCompletion::remindsThirteenth(party, kFortress));
+    // It answers one arrival: nothing of it is among what the tower keeps for a later visit.
+    CHECK((TowerCompletion::bit(Kind::ThirteenMissing) & TowerCompletion::kKnown) == 0);
+    CHECK((TowerCompletion::pending(party) & TowerCompletion::bit(Kind::ThirteenMissing)) == 0);
+}
+
+TEST_CASE("Sumner's reminder of the thirteenth runestone follows the party's new pieces",
+          "[game][tower-completion]") {
+    const MessageTable strings;
+    std::array<Relics, 2> party;
+    party[0].runes = 0xfff;
+    party[0].shards = 0x6fe;
+    REQUIRE(party[1].addShard(8)); // the window's last pane, new to the tower
+    TowerRelics ceremony;
+    ceremony.begin(party, strings, kFortress);
+    std::vector<std::pair<TowerRelics::Kind, s32>> order;
+    for (s32 i = 0; i < 200 && ceremony.active(); ++i) {
+        const auto* entry = ceremony.current();
+        const std::pair now{entry->kind, entry->index};
+        if (order.empty() || order.back() != now) {
+            order.push_back(now);
+        }
+        ceremony.update(2000, 40.0f, false);
+    }
+    REQUIRE_FALSE(ceremony.active());
+    CHECK(order == std::vector<std::pair<TowerRelics::Kind, s32>>{
+                       {TowerRelics::Kind::Shard, 8},
+                       {TowerRelics::Kind::Followup, static_cast<s32>(Kind::Window)},
+                       {TowerRelics::Kind::Followup, static_cast<s32>(Kind::ThirteenMissing)}});
+    CHECK(ceremony.pendingCeremonies() == 0);
+}
+
+TEST_CASE("Sumner's reminder of the thirteenth runestone is voiced and paged as his speeches are",
+          "[game][tower-completion]") {
+    const s32 ticks = GENERATE(2, 1); // thirty and sixty updates a second
+    CAPTURE(ticks);
+    const auto file = test::scratchDirectory("tower-thirteenth") / "text.json";
+    writeTextFile(file,
+                  R"({"messages":[{"name":"RUNE13NO","lines":["Not found","Search again"]}]})");
+    MessageTable strings;
+    REQUIRE(strings.load(file));
+    std::array<Relics, 1> party;
+    party[0].runes = 0xfff;
+    party[0].shards = 0x7fe;
+    TowerRelics ceremony;
+    ceremony.begin(party, strings, kFortress);
+    REQUIRE(ceremony.active());
+    REQUIRE(ceremony.current()->kind == TowerRelics::Kind::Followup);
+    REQUIRE(ceremony.current()->followup() == Kind::ThirteenMissing);
+    // Nothing is revealed: Sumner speaks after the lead every speech of his takes.
+    REQUIRE(ceremony.phase() == TowerRelics::Phase::Speech);
+    const f32 seconds = static_cast<f32>(ticks) / 60.0f;
+    s32 elapsed = 0;
+    std::string_view voice;
+    while (voice.empty() && elapsed < 1000) {
+        voice = ceremony.update(ticks, seconds, false).voice;
+        elapsed += ticks;
+    }
+    CHECK(voice == "S_RUNE13NO");
+    CHECK(elapsed == 120);
+    CHECK(ceremony.caption() == "Not found");
+    s32 paging = 0;
+    while (ceremony.captionPage() == 0 && paging < 1000) {
+        ceremony.update(ticks, seconds, true);
+        paging += ticks;
+    }
+    CHECK(paging == 78); // two ticks a letter, then a second's hold
+    CHECK(ceremony.caption() == "Search again");
+    // The last page waits for him to finish speaking.
+    for (s32 reading = 0; reading < 400; reading += ticks) {
+        REQUIRE_FALSE(ceremony.update(ticks, seconds, true).completed);
+    }
+    const auto completed = ceremony.update(ticks, seconds, false).completed;
+    REQUIRE(completed.has_value());
+    CHECK(completed->followup() == Kind::ThirteenMissing);
+    CHECK_FALSE(ceremony.active());
+    CHECK(ceremony.pendingCeremonies() == 0);
+    CHECK(ceremony.figures().count() == 0);
+}
+
 TEST_CASE("tower completion reveals then speaks every page once and waits for the voice",
           "[game][tower-completion]") {
     const auto file = test::scratchDirectory("tower-completion") / "text.json";
@@ -197,8 +312,8 @@ TEST_CASE("completion captions voices and reveal cameras exist in the shipped to
     SoundSet tower;
     REQUIRE(wizard.load(root / "audio/WIZTOWER"));
     REQUIRE(tower.load(root / "audio/TOWAMB"));
-    for (const auto kind :
-         {Kind::MoreShards, Kind::Window, Kind::TwelveWaiting, Kind::Underworld, Kind::Garm}) {
+    for (const auto kind : {Kind::MoreShards, Kind::Window, Kind::TwelveWaiting, Kind::Underworld,
+                            Kind::Garm, Kind::ThirteenMissing}) {
         INFO(TowerCompletion::message(kind));
         const auto message = strings.find(TowerCompletion::message(kind));
         REQUIRE(message.has_value());
@@ -368,6 +483,74 @@ TEST_CASE("saving between final shard placement and speech resumes only the foll
     REQUIRE(frames < 2000);
     REQUIRE(scene.party()[0].save.progress().relics.pendingCeremonies == 0);
     REQUIRE(scene.towerRelics().figures().count() == 8);
+    scene.close();
+}
+
+TEST_CASE("back from the fortress without the thirteenth runestone Sumner says so once the "
+          "promotions are over",
+          "[game][tower-completion][promotion][assets]") {
+    const f64 step = GENERATE(1.0 / 30.0, 1.0 / 60.0);
+    CAPTURE(step);
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELL1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    REQUIRE(world.load(device, root));
+    LevelCatalog levels;
+    REQUIRE(levels.load(root));
+    const auto fortress = levels.byName("H3");
+    REQUIRE(fortress.has_value());
+    REQUIRE(LevelBeaten{fortress->realmId, fortress->index} == kFortress);
+    const auto scenario = Scenario::fromJson(R"({"welcome":false,"arrivalWorld":8,
+        "party":[{"class":"WAR","level":30,"runes":[0,1,2,3,4,5,6,7,8,9,10,11],
+        "shards":[1,2,3,4,5,6,7,8,9,10]}]})");
+    auto party = scenario.partyMembers();
+    party[0].save.progress().promotedLevel = 29; // the thirtieth level's promotion is due too
+    const GameConfig config;
+    GameServices context;
+    context.config = &config;
+    context.levels = &levels;
+    context.unpackedRoot = root;
+    PlayOptions options = scenario.tower;
+    options.arriving = true;
+    options.beaten = kFortress;
+    PlayScene scene;
+    REQUIRE(scene.open(device, context, world, party, options));
+    REQUIRE(scene.promotion().active());
+    REQUIRE(scene.towerRelics().active());
+    REQUIRE(scene.towerRelics().current()->kind == TowerRelics::Kind::Followup);
+    REQUIRE(scene.towerRelics().current()->followup() == Kind::ThirteenMissing);
+    // Sumner speaks to the battlefield's wing from its rune camera (its event marker is 11).
+    const auto* camera = world.layout().findLocator(LocatorKind::TriggerCamera, 181);
+    REQUIRE(camera != nullptr);
+    const Vec3 position = scene.actor(0)->position();
+    PlayScene::Inputs inputs{};
+    inputs[0].move = MoveInput{Vec2{1, 0}, 1};
+    bool spoken = false;
+    s32 frames = 0;
+    while (scene.towerRelics().active() && frames++ < 6000) {
+        REQUIRE_FALSE(scene.canPause(0));
+        REQUIRE_FALSE(scene.canJoin(1));
+        scene.update(step, inputs);
+        REQUIRE(scene.actor(0)->position() == position);
+        if (scene.showingRelicCeremony()) {
+            REQUIRE_FALSE(scene.promotion().active());
+            CHECK(scene.viewCamera().position == camera->position);
+            spoken =
+                spoken || scene.towerRelics().caption() == "You did not find the 13th Runestone.";
+        }
+    }
+    REQUIRE(frames < 6000);
+    CHECK(spoken);
+    CHECK(scene.canPause(0));
+    const auto saved = scene.party();
+    CHECK(saved[0].save.progress().promotedLevel == 30);
+    CHECK(saved[0].save.progress().relics.pendingCeremonies == 0);
+    scene.close();
+    // Nothing of it is kept: back another way, the party hears it no more.
+    options.beaten.reset();
+    REQUIRE(scene.open(device, context, world, saved, options));
+    CHECK_FALSE(scene.towerRelics().active());
     scene.close();
 }
 } // namespace

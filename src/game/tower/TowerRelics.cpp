@@ -136,7 +136,8 @@ void TowerRelics::clear() {
     m_device = nullptr;
     m_world = nullptr;
 }
-void TowerRelics::begin(std::span<const Relics> party, const MessageTable& strings) {
+void TowerRelics::begin(std::span<const Relics> party, const MessageTable& strings,
+                        const std::optional<LevelBeaten>& beaten) {
     clear();
     u16 runes = 0;
     u16 shards = 0;
@@ -180,12 +181,19 @@ void TowerRelics::begin(std::span<const Relics> party, const MessageTable& strin
         }
     }
     appendFollowup(TowerCompletion::Kind::Garm, strings);
+    // TowerCheckMessages weighs the reminder once the runestones are seen to and none is new;
+    // it answers this arrival alone, so it takes no pending bit and nothing of it is saved.
+    if (TowerCompletion::remindsThirteenth(party, beaten)) {
+        queueFollowup(TowerCompletion::Kind::ThirteenMissing, strings);
+    }
     prepareEntry();
 }
 void TowerRelics::appendFollowup(TowerCompletion::Kind kind, const MessageTable& strings) {
-    if ((m_sim.pendingCeremonies & TowerCompletion::bit(kind)) == 0) {
-        return;
+    if ((m_sim.pendingCeremonies & TowerCompletion::bit(kind)) != 0) {
+        queueFollowup(kind, strings);
     }
+}
+void TowerRelics::queueFollowup(TowerCompletion::Kind kind, const MessageTable& strings) {
     m_sim.entries.push_back({Kind::Followup, static_cast<s32>(kind)});
     std::vector<std::string> pages;
     if (const auto message = strings.find(TowerCompletion::message(kind))) {

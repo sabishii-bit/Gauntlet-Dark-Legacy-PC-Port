@@ -14,6 +14,7 @@
 #include "game/characters/Relics.h"
 #include "game/effects/EffectTrees.h"
 #include "game/level/LevelWorld.h"
+#include "game/tower/LevelBeaten.h"
 #include "game/tower/TowerCompletion.h"
 
 namespace gdl::game {
@@ -43,7 +44,11 @@ public:
         bool placement = false;
         std::string_view sound;
     };
-    void begin(std::span<const Relics> party, const MessageTable& strings);
+    /** Queues what an arrival presents: the party's new glass and runestones with the speeches
+     * that follow them, then Sumner's reminder when the level `beaten` on the way calls for
+     * one. */
+    void begin(std::span<const Relics> party, const MessageTable& strings,
+               const std::optional<LevelBeaten>& beaten = std::nullopt);
     void bind(RenderDevice& device, LevelWorld& world, const Vec3& partyCentre);
     void clear();
     /** Start a scene tick even when a cutscene will hold this presentation. */
@@ -75,7 +80,9 @@ private:
     f32 place(const Entry& entry, bool settled);
     void prepareSpeech();
     void prepareEntry();
+    /** Queues the follow-up `kind` when its bit is pending. */
     void appendFollowup(TowerCompletion::Kind kind, const MessageTable& strings);
+    void queueFollowup(TowerCompletion::Kind kind, const MessageTable& strings);
     void finish(Cue& cue);
     void updateLights();
     struct Simulation {

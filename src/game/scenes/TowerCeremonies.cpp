@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <format>
+#include <optional>
 #include <string_view>
 #include <vector>
 
@@ -18,7 +19,8 @@
 namespace gdl::game {
 
 void TowerCeremonies::open(const Scene& scene, const MessageTable& hudStrings,
-                           const MessageTable& scrollStrings, ExitPortals& portals) {
+                           const MessageTable& scrollStrings, ExitPortals& portals,
+                           const std::optional<LevelBeaten>& beaten) {
     m_promotion.begin(scene.players, hudStrings);
     m_promotion.bind(scene.device, scene.world.items(), scene.world.layout(), scene.players);
     std::vector<Relics> collection;
@@ -30,7 +32,7 @@ void TowerCeremonies::open(const Scene& scene, const MessageTable& hudStrings,
     if (!scene.players.empty()) {
         centre /= static_cast<f32>(scene.players.size());
     }
-    m_relics.begin(collection, scrollStrings);
+    m_relics.begin(collection, scrollStrings, beaten);
     m_relics.bind(scene.device, scene.world, centre);
     // If another party member has already installed a piece, nobody needs to
     // replay it. The acquisition itself remains in each character's save.

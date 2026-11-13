@@ -288,7 +288,8 @@ bool PlayScene::open(RenderDevice& device, const GameServices& services, LevelWo
     m_bossSequence.advanceLegend(0, m_opponents.bosses(), m_players);
     m_open = true;
     if (world.isTower()) {
-        m_ceremonies.open(ceremonyScene(), m_hud.strings(), m_messages.strings(), m_portals);
+        m_ceremonies.open(ceremonyScene(), m_hud.strings(), m_messages.strings(), m_portals,
+                          m_levelBeaten);
     }
     log::info("Tower: {} in the party", m_players.size());
     log::info("Level {} ({}): {} exit portals", world.ref().name, world.ref().title,
