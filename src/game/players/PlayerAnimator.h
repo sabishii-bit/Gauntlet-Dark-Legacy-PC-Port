@@ -199,7 +199,7 @@ public:
         ComboSor,  ///< in the sorceress's
         ComboJes   ///< in the jester's
     };
-    /** The foot that came down as a walk or run half cycle ended. */
+    /** The foot that came down as a stepping cycle ended. */
     enum class Foot : u8 { None, First, Second };
 
     /** Native action-machine state at a completed simulation tick. No pointers,
@@ -530,7 +530,8 @@ public:
                m_current == Action::SpikeHit || m_current == Action::Grabbed ||
                m_current == Action::WebReact || floored();
     }
-    /** The footfall this tick, if a half cycle of walking or running just ended. */
+    /** The footfall this tick, if a half cycle of walking or running, or a cycle of the
+     * shield's gait or the charge, just ended. */
     Foot footfall() const { return m_footfall; }
     const TreePose& pose() const { return m_pose; }
     /** Visual-only fractional pose, interpolated between simulation updates. Gameplay

@@ -296,6 +296,7 @@ const PlayerAnimator::ActionInfo& PlayerAnimator::info(Action action) {
          .family = ActionFamily::Shove,
          .attackType = AttackType::Guard,
          .pace = kChargePace,
+         .foot = Foot::First,
          .traits = kBlendsToReady},
         {.action = Action::DefendRaise,
          .family = ActionFamily::Guard,
@@ -783,6 +784,7 @@ const PlayerAnimator::ActionInfo& PlayerAnimator::info(Action action) {
         {.action = Action::ShieldRun,
          .family = ActionFamily::Shield,
          .pace = kRunPace,
+         .foot = Foot::First,
          .traits = kBlendsToReady | kAutoMelee},
         {.action = Action::DeathGrabStart,
          .family = ActionFamily::DeathGrab,
@@ -894,11 +896,13 @@ const PlayerAnimator::ActionInfo& PlayerAnimator::info(Action action) {
     static_assert(kActions.back().action == Action::ComboJes, "the last row is the last action");
     static_assert(std::ranges::all_of(kActions,
                                       [](const ActionInfo& row) {
-                                          if (row.foot == Foot::None) {
-                                              return row.otherHalf == Action::Ready;
+                                          // A whole cycle comes down on its first foot.
+                                          if (row.otherHalf == Action::Ready) {
+                                              return row.foot != Foot::Second;
                                           }
                                           const ActionInfo& other = kActions[index(row.otherHalf)];
-                                          return other.otherHalf == row.action &&
+                                          return row.foot != Foot::None &&
+                                                 other.otherHalf == row.action &&
                                                  other.foot != Foot::None && other.foot != row.foot;
                                       }),
                   "each half cycle's other half pairs back to it on the other foot");
@@ -1875,7 +1879,7 @@ PlayerAnimator::Decision PlayerAnimator::continuation(Action requested) const {
         }
         d.cut = row.cut;
         d.shotBoundary = (row.traits & action_trait::kShotBoundary) != 0;
-        if (row.foot != Foot::None && requested == firstHalfOf(m_current)) {
+        if (row.otherHalf != Action::Ready && requested == firstHalfOf(m_current)) {
             d.action = row.otherHalf;
         }
         // AnimAction's walking-strafe cases use mode 2 for an attack: it cuts in
@@ -2081,7 +2085,7 @@ void PlayerAnimator::play(const Decision& decision, f32 seconds) {
     // InitAnim caches animscale in seqscale at sequence start. Advance the
     // old sequence and any blend using real elapsed time, not a new item's
     // multiplier; CalcAnimInfo's smooth/snap test uses that cached period.
-    m_player.advance(seconds, decision.repeat);
+    const bool cycled = m_player.advance(seconds, decision.repeat);
     if (shotBoundary) {
         // decide() has already tested the previous boundary's frame, just as
         // DoPlayerAction tests the old frame before calling AnimateTree.
@@ -2096,7 +2100,16 @@ void PlayerAnimator::play(const Decision& decision, f32 seconds) {
     case Cut::IfDifferent: restart = done || different; break;
     case Cut::Now: restart = true; break;
     }
-    if (!restart || (decision.shotBoundary && !shotBoundary)) {
+    const bool deferred = restart && decision.shotBoundary && !shotBoundary;
+    // An action with a foot giving way is that foot coming down, and so is a looping one coming
+    // round: DoPlayerAction's table of finished actions (0x80127384) sets the foot for
+    // AnimateTree's end and wrap alike. A strafing step sounds like a walk's.
+    if ((restart && !deferred) || (!restart && cycled && decision.repeat)) {
+        if (const Foot foot = info(m_current).foot; foot != Foot::None) {
+            m_footfall = foot;
+        }
+    }
+    if (!restart || deferred) {
         return;
     }
     // action.c emits breath at entry, but hammer and gauntlets at the
@@ -2119,11 +2132,6 @@ void PlayerAnimator::play(const Decision& decision, f32 seconds) {
     } else if (m_current == Action::Idle2Loop && decision.action != Action::Idle2Loop) {
         m_stillTicks = 0;
         m_fidgetTicks = 0;
-    }
-    // A walk, run or strafing half cycle giving way is a foot coming down: a strafing step
-    // sounds like a walk's.
-    if (const Foot foot = info(m_current).foot; foot != Foot::None) {
-        m_footfall = foot;
     }
     // Both ordinary releases and strafing half-cycles let fly when they give way,
     // including the last moving shot when the strafe modifier is released.

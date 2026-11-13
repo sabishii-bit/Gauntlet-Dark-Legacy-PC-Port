@@ -2054,6 +2054,54 @@ TEST_CASE("a shield on the arm has its own stance and a gait at a run's pace",
     CHECK(playOut(animator, Action::ShieldRun, PlayerDeed::None) == Action::Ready);
 }
 
+TEST_CASE("the shield's gait comes down on its first foot each time its cycle comes round, and "
+          "the charge as it ends",
+          "[game][players][animation][shield][footfall]") {
+    TreeInfo tree = meleeTree();
+    TreeSequenceInfo charge = tree.sequences.front();
+    charge.name = "SHOVE";
+    charge.frames = 8;
+    charge.repeats = false;
+    tree.sequences.push_back(charge);
+    for (const s32 rate : {30, 60}) {
+        CAPTURE(rate);
+        const s32 ticks = 60 / rate;
+        const f32 seconds = 1.0f / static_cast<f32>(rate);
+        PlayerAnimator animator;
+        REQUIRE(animator.bind(tree, Entrance::Skip));
+        animator.setShielded(true);
+        animator.update(PlayerMotion::Run, ticks, seconds);
+        REQUIRE(animator.action() == Action::ShieldRun);
+        // Six frames a cycle at thirty a second: fourteen cycles come round in just under three
+        // seconds, each on the first foot and nothing in between.
+        u64 cycle = animator.player().generation();
+        s32 rounds = 0;
+        for (s32 step = 1; step < 3 * rate; ++step) {
+            animator.update(PlayerMotion::Run, ticks, seconds);
+            REQUIRE(animator.action() == Action::ShieldRun);
+            const bool round = animator.player().generation() != cycle;
+            cycle = animator.player().generation();
+            rounds += round ? 1 : 0;
+            CHECK(animator.footfall() ==
+                  (round ? PlayerAnimator::Foot::First : PlayerAnimator::Foot::None));
+        }
+        CHECK(rounds == 14);
+        // The charge cuts the gait short, which comes down as it gives way, and plays through
+        // to come down on its first foot as it ends.
+        animator.update(PlayerMotion::Stand, ticks, seconds, PlayerDeed::Shove);
+        REQUIRE(animator.action() == Action::Shove);
+        CHECK(animator.footfall() == PlayerAnimator::Foot::First);
+        for (s32 step = 0; step < 2 * rate && animator.action() == Action::Shove; ++step) {
+            animator.update(PlayerMotion::Stand, ticks, seconds);
+            if (animator.action() == Action::Shove) {
+                CHECK(animator.footfall() == PlayerAnimator::Foot::None);
+            }
+        }
+        CHECK(animator.action() == Action::ShieldReady);
+        CHECK(animator.footfall() == PlayerAnimator::Foot::First);
+    }
+}
+
 TEST_CASE("a halo reaches out to Death, holds him in a loop and lets go",
           "[game][players][animation][death]") {
     const TreeInfo tree = meleeTree();

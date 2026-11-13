@@ -20,6 +20,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "game/combat/ArmorFlags.h"
 #include "game/combat/DamageTypes.h"
 #include "game/combat/PowerupFlags.h"
 #include "game/enemies/LevelOpponents.h"
@@ -1921,6 +1922,48 @@ TEST_CASE("a levitating body walks without a footfall", "[game][screens][party-m
         }
         CHECK(f.players[0].actor.position().z > 0);
         CHECK((footfalls > 0) == !levitating);
+    }
+}
+
+TEST_CASE("a shield borne on the arm steps on its first foot every cycle, but not while levitating",
+          "[game][screens][party-motion][shield][assets]") {
+    const auto root = test::assetOrSkip("PLAYERS/WAR/ANIM/ANIM.PS2")
+                          .parent_path()
+                          .parent_path()
+                          .parent_path()
+                          .parent_path();
+    const u32 shield = GENERATE(armor::kReflect, armor::kFireArmor, armor::kElectricArmor);
+    for (const bool levitating : {false, true}) {
+        CAPTURE(shield, levitating);
+        Fixture f;
+        test::FakeRenderDevice device;
+        f.players[0].figure =
+            PlayerFigure::load(device, root, f.players[0].actor.save(), Entrance::Skip);
+        REQUIRE(f.players[0].figure);
+        auto& inventory = f.players[0].actor.save().progress().inventory;
+        inventory.addPowerup(powerup::kArmor, shield, 0, 60);
+        inventory.addPowerup(powerup::kSpecial, powerup::kLevitation, 0, 60);
+        for (PowerupSlot& slot : inventory.powerups) {
+            if (slot.kind == powerup::kSpecial) {
+                slot.on = levitating;
+            }
+        }
+        std::vector<PartyMotion::Action> feet;
+        f.events.advanceTurbo = [](usize, s32, f32) {};
+        f.events.perform = [&](usize, PartyMotion::Action action) {
+            if (action == PartyMotion::Action::FirstFoot ||
+                action == PartyMotion::Action::SecondFoot) {
+                feet.push_back(action);
+            }
+        };
+        f.inputs[3].move = MoveInput{Vec2{0, 1}, 1};
+        for (s32 frame = 0; frame < 120; ++frame) {
+            f.step();
+        }
+        CHECK(f.players[0].figure->animator().action() == PlayerAnimator::Action::ShieldRun);
+        CHECK(feet.empty() == levitating);
+        CHECK(std::ranges::all_of(
+            feet, [](PartyMotion::Action foot) { return foot == PartyMotion::Action::FirstFoot; }));
     }
 }
 
