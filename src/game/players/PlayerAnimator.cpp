@@ -2103,7 +2103,8 @@ void PlayerAnimator::play(const Decision& decision, f32 seconds) {
     const bool deferred = restart && decision.shotBoundary && !shotBoundary;
     // An action with a foot giving way is that foot coming down, and so is a looping one coming
     // round: DoPlayerAction's table of finished actions (0x80127384) sets the foot for
-    // AnimateTree's end and wrap alike. A strafing step sounds like a walk's.
+    // AnimateTree's end and wrap alike. That table gives the strafes no foot (0x800AD534,
+    // 0x800AD488); here a strafing step sounds like a walk's.
     if ((restart && !deferred) || (!restart && cycled && decision.repeat)) {
         if (const Foot foot = info(m_current).foot; foot != Foot::None) {
             m_footfall = foot;
