@@ -599,6 +599,11 @@ public:
     /** Whether `player`, not in the party, may join: in the tower, with nothing scripted
      * running (game_main's MG_PLAY, world 13, no options or scripted camera). */
     bool canJoin(s32 player) const;
+    /** How the tower opens again once the select screen it is left for (Manage Character, or
+     * a player joining) hands the party back: at the start marker nearest the standing party
+     * among the worlds open to it, seen from that marker's start camera, without the scrolls
+     * of an arrival (towerUpdateCurWorldObj 0x800A194C, EnterTower 0x800A3378). */
+    PlayOptions reentry() const;
     const GameOver& gameOver() const { return m_sim.gameOver; }
     /** Where the party is bound once update() has said Travel, and the realm it leaves. */
     const LevelRef& destination() const { return m_sim.destination; }

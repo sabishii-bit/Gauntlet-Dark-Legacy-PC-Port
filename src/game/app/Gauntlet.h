@@ -379,6 +379,9 @@ private:
         std::optional<ImportedDestination> importedDestination;
     };
     std::optional<Journey> m_journey;
+    /** How the tower opens again when the select screen it was left for (Manage Character, or
+     * a player joining) ends with Done; none when the select screen was opened another way. */
+    std::optional<PlayOptions> m_towerReentry;
     void returnFromChallenge(std::span<const PartyMember> party);
     /** Opens a completed Legends journey's native destination. When it does not open, the
      * journey is kept, with its purchases and save slots, and the after-level menu opens

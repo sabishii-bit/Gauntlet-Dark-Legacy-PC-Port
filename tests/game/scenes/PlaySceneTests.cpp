@@ -52,6 +52,7 @@
 #include "game/level/ItemFigure.h"
 #include "game/level/LevelTriggers.h"
 #include "game/level/LevelWorld.h"
+#include "game/level/TowerAccess.h"
 #include "game/players/ComboMove.h"
 #include "game/players/PlayerControls.h"
 #include "game/players/PowerupEffects.h"
@@ -2447,6 +2448,71 @@ TEST_CASE("a party back from a realm descends from that wing's entrance camera",
     CHECK(scene.startCamera().active());
     CHECK(scene.viewCamera().position == world.entranceCamera()->position);
     CHECK(glm::distance(scene.actor(0)->position(), world.startPoint(0)->position) < 3);
+    scene.close();
+}
+
+TEST_CASE("from the select screen the party goes back to the wing it stood in, unwelcomed",
+          "[game][screens][tower-return-camera][assets]") {
+    const f64 step = GENERATE(1.0 / 30.0, 1.0 / 60.0);
+    CAPTURE(step);
+    const std::filesystem::path root = unpackedRoot();
+    const GameConfig config;
+    StringTable strings;
+    REQUIRE(strings.load(test::dataDirectory() / "text", "en"));
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    REQUIRE(world.load(device, root));
+    GameServices context;
+    context.config = &config;
+    context.strings = &strings;
+    context.unpackedRoot = root;
+    // The forest's wing, whose five portals stand about start marker 5.
+    constexpr u32 kForestMarker = 5;
+    const s32 forest = TowerAccess::kMarkerWorlds[kForestMarker];
+    const s32 forestGate = TowerAccess::kWorldGates[static_cast<usize>(forest)];
+    const WorldLocator* wing = world.startPoint(kForestMarker);
+    REQUIRE(wing != nullptr);
+    // New characters, whose first coming to the tower Sumner welcomes.
+    CharacterSave save;
+    save.name = "AB";
+    save.progress().crystals[static_cast<usize>(forestGate)] =
+        LevelTriggers::crystalsNeeded(forestGate);
+    const std::vector<PartyMember> party{PartyMember{0, save}};
+    PlayOptions standing;
+    standing.welcome = false;
+    standing.position = wing->position + Vec3{4.0f, 0.0f, -6.0f};
+    PlayScene scene;
+    REQUIRE(scene.open(device, context, world, party, standing));
+    // Manage Character (or a player joining) leaves the tower for the select screen; Done
+    // brings the party back among the forest's portals, seen first from that wing's camera.
+    const PlayOptions back = scene.reentry();
+    scene.close();
+    REQUIRE(scene.open(device, context, world, party, back));
+    CHECK(glm::distance(scene.actor(0)->position(), wing->position) < 3.0f);
+    const auto camera = world.entranceCamera(wing->next);
+    REQUIRE(camera);
+    REQUIRE(scene.startCamera().active());
+    CHECK(scene.viewCamera().position == camera->position);
+    CHECK(scene.viewCamera().position != world.entranceCamera()->position);
+    // The party materialises there, and the visit goes on: no welcome follows.
+    const PlayScene::Inputs still{};
+    for (s32 i = 0; i < 1200 && scene.spawning(); ++i) {
+        scene.update(step, still);
+    }
+    REQUIRE_FALSE(scene.spawning());
+    CHECK(scene.intro() == PlayScene::Intro::None);
+    CHECK_FALSE(scene.scroll().active());
+    scene.close();
+    // A party to which the forest is shut goes back to the entrance from the same spot.
+    CharacterSave locked;
+    locked.name = "CD";
+    const std::vector<PartyMember> lockedParty{PartyMember{0, locked}};
+    REQUIRE(scene.open(device, context, world, lockedParty, standing));
+    const PlayOptions entrance = scene.reentry();
+    scene.close();
+    REQUIRE(scene.open(device, context, world, lockedParty, entrance));
+    CHECK(glm::distance(scene.actor(0)->position(), world.startPoint(0)->position) < 3.0f);
+    CHECK(scene.viewCamera().position == world.entranceCamera()->position);
     scene.close();
 }
 

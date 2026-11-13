@@ -1232,6 +1232,38 @@ TEST_CASE("the tower puts out a shut portal's glow, opens the lifts and stands a
     REQUIRE(tower.triggers().opened(static_cast<s32>(elevator)));
 }
 
+TEST_CASE("the select screen hands a party back at the open start marker nearest where it stood",
+          "[game][world][tower-access]") {
+    // The entrance, the town's wing (marker 1, world 7) and the mountain's (marker 2, world 2),
+    // the mountain's lower down.
+    const auto start = [](u32 marker, const Vec3& position) {
+        return WorldLocator{.kind = LocatorKind::Start, .next = marker, .position = position};
+    };
+    const WorldLayout layout =
+        WorldLayout::fromDecoded({},
+                                 {start(0, Vec3{0.0f}), start(1, Vec3{40.0f, 0.0f, -110.0f}),
+                                  start(2, Vec3{40.0f, -60.0f, -100.0f})},
+                                 Vec3{-200.0f}, Vec3{200.0f});
+    const Vec3 byTown{38.0f, 0.0f, -112.0f};
+    const Vec3 byMountain{40.0f, -58.0f, -101.0f};
+    std::vector<ClassProgress> party(1);
+    // With only the tower open the party goes back to the entrance, however near a wing.
+    CHECK(LevelWorld::closestTowerMarker(layout, byTown, TowerAccess{party}) == 0);
+    party[0].crystals[1] = LevelTriggers::crystalsNeeded(1); // the town's gate
+    const TowerAccess town{party};
+    CHECK(LevelWorld::closestTowerMarker(layout, byTown, town) == 1);
+    // A shut wing is passed over for the nearest open one.
+    CHECK(LevelWorld::closestTowerMarker(layout, byMountain, town) == 1);
+    party[0].crystals[2] = LevelTriggers::crystalsNeeded(2); // the mountain's
+    const TowerAccess both{party};
+    CHECK(LevelWorld::closestTowerMarker(layout, byMountain, both) == 2);
+    // The distance is taken in three dimensions: level with the town's marker but over the
+    // mountain's, the party is nearer the town's.
+    CHECK(LevelWorld::closestTowerMarker(layout, Vec3{40.0f, 0.0f, -102.0f}, both) == 1);
+    // Halfway between two markers the first is kept.
+    CHECK(LevelWorld::closestTowerMarker(layout, Vec3{20.0f, 0.0f, -55.0f}, both) == 0);
+}
+
 TEST_CASE("level trigger eligibility uses joined count independently of standing contacts",
           "[game][world][trigger-party-integration][assets]") {
     const auto root =

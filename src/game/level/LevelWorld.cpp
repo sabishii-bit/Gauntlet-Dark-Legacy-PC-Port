@@ -4,6 +4,7 @@
 #include <array>
 #include <cmath>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -682,6 +683,25 @@ const WorldLocator* LevelWorld::arrivalPoint(u32 realm, const TowerAccess* acces
         access != nullptr ? access->startMarker(towerMarkerOf(realm)) : towerMarkerOf(realm);
     const WorldLocator* marker = isTower() ? startPoint(index) : nullptr;
     return marker != nullptr ? marker : startPoint(0);
+}
+
+u32 LevelWorld::closestTowerMarker(const WorldLayout& layout, const Vec3& point,
+                                   const TowerAccess& access) {
+    u32 closest = 0;
+    std::optional<f32> nearest;
+    for (u32 marker = 0; marker < TowerAccess::kMarkerWorlds.size(); ++marker) {
+        const WorldLocator* start = layout.findLocator(LocatorKind::Start, marker);
+        if (start == nullptr || !access.worldOpen(TowerAccess::kMarkerWorlds[marker])) {
+            continue;
+        }
+        const Vec3 away = start->position - point;
+        const f32 distance = glm::dot(away, away);
+        if (!nearest || distance < *nearest) {
+            nearest = distance;
+            closest = marker;
+        }
+    }
+    return closest;
 }
 
 } // namespace gdl::game

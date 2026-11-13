@@ -545,6 +545,7 @@ s32 Gauntlet::playerPressingStart(const SceneInput& sceneInput) {
 
 bool Gauntlet::startPlayerSelect(s32 startingPlayer, std::span<const PartyMember> party,
                                  bool manage) {
+    m_towerReentry.reset(); // Manage Character and joining set it again once the screen opens
     if (m_select.open(renderDevice(), services(), startingPlayer, party, manage,
                       m_title.musicHandle(), &m_play->world)) {
         // Native game-main state8 calls e0070d2c on entering player selection.
@@ -567,6 +568,8 @@ void Gauntlet::updateSelect(f64 deltaSeconds) {
     }
     std::vector<PartyMember> party = m_select.party();
     m_select.close();
+    // Left from the tower, the party goes back where it stood (towerUpdateCurWorldObj).
+    const std::optional<PlayOptions> reentry = std::exchange(m_towerReentry, std::nullopt);
     if (m_netplay && m_online) {
         if (outcome == SelectOutcome::Done && !m_online->select(party)) {
             m_netplay->notice =
@@ -592,7 +595,7 @@ void Gauntlet::updateSelect(f64 deltaSeconds) {
         m_loadingPicture.release();
         m_levelLoading.close();
     }
-    if (outcome == SelectOutcome::Done && startTower(party)) {
+    if (outcome == SelectOutcome::Done && startTower(party, reentry.value_or(PlayOptions{}))) {
         return;
     }
     if (!startTitleScreen()) {
@@ -660,9 +663,11 @@ bool Gauntlet::startTower(std::span<const PartyMember> party, const PlayOptions&
 
 bool Gauntlet::joinTower(const PlayerSelectScene::Inputs& joining) {
     std::vector<PartyMember> party = m_play->scene.party();
+    PlayOptions reentry = m_play->scene.reentry();
     if (!startPlayerSelect(-1, party)) {
         return false;
     }
+    m_towerReentry = std::move(reentry);
     m_select.join(joining);
     m_play->scene.close();
     resetPlayInput();
@@ -1014,7 +1019,9 @@ void Gauntlet::updatePause(f64 deltaSeconds, const SceneInput& sceneInput) {
         return;
     }
     if (outcome == PauseOutcome::Manage) {
+        PlayOptions reentry = m_play->scene.reentry();
         if (startPlayerSelect(pausePlayer, party, true)) {
+            m_towerReentry = std::move(reentry);
             m_play->scene.close();
         }
         return;

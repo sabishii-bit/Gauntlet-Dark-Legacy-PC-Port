@@ -316,6 +316,11 @@ public:
      * portals (at the entrance instead when `access` says that realm's world is shut to it,
      * SetPlayerStartPos), anywhere else at the level's entrance. */
     const WorldLocator* arrivalPoint(u32 realm, const TowerAccess* access = nullptr) const;
+    /** Which of the tower's start markers in `layout` a party standing about `point` goes back
+     * to from the select screen: the nearest whose world `access` opens, the first of a tie,
+     * else the entrance (ClosestStartPos 0x800668F8). */
+    static u32 closestTowerMarker(const WorldLayout& layout, const Vec3& point,
+                                  const TowerAccess& access);
 
     /** The game camera markers the follow camera takes its angles from. */
     const std::vector<WorldLocator>& cameraMarkers() const { return m_markers; }

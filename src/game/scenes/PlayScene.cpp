@@ -2222,6 +2222,33 @@ bool PlayScene::canJoin(s32 player) const {
            !relicCeremonyOn();
 }
 
+PlayOptions PlayScene::reentry() const {
+    PlayOptions options;
+    if (!m_open || m_world == nullptr || !m_world->isTower()) {
+        return options;
+    }
+    // The tower stays loaded across the select screen, so an arrival's one-shot scrolls are
+    // not armed again (LoadTowerAndSelect arms them only for a tower loaded afresh, 0x80053C44).
+    options.welcome = false;
+    // Where the standing party is on average (GetPlayerAvgPos 0x8006F678), judged against
+    // the worlds open to it as it is now, crystals gathered in the tower included.
+    Vec3 total{0.0f};
+    s32 standing = 0;
+    for (const PlayerRuntime& runtime : m_players) {
+        if (runtime.life == PlayerLife::Standing) {
+            total += runtime.actor.position();
+            ++standing;
+        }
+    }
+    if (standing > 0) {
+        const u32 marker = LevelWorld::closestTowerMarker(
+            m_world->layout(), total / static_cast<f32>(standing), TowerAccess{party()});
+        // The realm whose wing the marker stands in: its arrival takes the party back there.
+        options.arrivalWorld = static_cast<u32>(TowerAccess::kMarkerWorlds[marker]);
+    }
+    return options;
+}
+
 const PlayerActor* PlayScene::actor(s32 player) const {
     for (const PlayerRuntime& runtime : m_players) {
         const PlayerActor& actor = runtime.actor;
