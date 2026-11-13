@@ -1072,6 +1072,9 @@ void Gauntlet::updatePause(f64 deltaSeconds, const SceneInput& sceneInput) {
         journey.destination = LevelRef::tower();
         journey.party = party;
         journey.options.welcome = false;
+        // The tower stays loaded through its own shop, so the way back opens no arrival scroll
+        // (do_shop's LoadTowerAndSelect arms them for a tower loaded afresh alone, 0x80053C44).
+        journey.options.gatewayScroll = false;
         if (const auto* actor = m_play->scene.actor(pausePlayer)) {
             journey.options.position = actor->position();
         }

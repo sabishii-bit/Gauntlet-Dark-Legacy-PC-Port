@@ -1,5 +1,6 @@
 #include <array>
 #include <filesystem>
+#include <string>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -350,6 +351,26 @@ TEST_CASE("a character keeps the help it has been shown, in order", "[game][play
     const CharacterSave loaded = CharacterSave::fromJson(save.toJson());
     REQUIRE(loaded.helpSeen == std::vector<s32>{2, 21, 133});
     REQUIRE(CharacterSave::fromJson(sampleSave().toJson()).helpSeen.empty());
+}
+
+TEST_CASE("a character keeps having been told of Sumner's gateways; older saves were not",
+          "[game][players][save][gateways]") {
+    CharacterSave save = sampleSave();
+    CHECK_FALSE(save.gatewaysAnnounced);
+    CHECK_FALSE(CharacterSave::fromJson(save.toJson()).gatewaysAnnounced);
+    save.gatewaysAnnounced = true;
+    const std::string text = save.toJson();
+    CHECK(text.find("\"gatewaysAnnounced\": true") != std::string::npos);
+    const CharacterSave loaded = CharacterSave::fromJson(text);
+    CHECK(loaded.gatewaysAnnounced);
+    CHECK(loaded.toJson() == text);
+    // Once for the character, whatever class it goes on to play.
+    CharacterSave switched = loaded;
+    switched.selectClass(5);
+    CHECK(CharacterSave::fromJson(switched.toJson()).gatewaysAnnounced);
+    // A save from before the record has not been told.
+    CHECK_FALSE(
+        CharacterSave::fromJson(R"({"version":1,"name":"OLD","character":0})").gatewaysAnnounced);
 }
 
 TEST_CASE("legacy class rewards migrate without loading or rewriting a character",

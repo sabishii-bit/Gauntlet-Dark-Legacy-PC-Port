@@ -124,6 +124,10 @@ struct PlayOptions {
     /** The level the party comes back to the tower having just beaten, which Sumner answers as
      * it arrives; none when it beat none on the way. */
     std::optional<LevelBeaten> beaten;
+    /** Whether the arrival may tell a party owed it that Sumner's gateways have woken. The
+     * tower's arrival scrolls come only as it loads afresh (LoadTowerAndSelect, 0x80053C44), so
+     * a party taken back from the select screen or from the tower's own shop is not told. */
+    bool gatewayScroll = true;
     /** The party size the level sets itself up for (its items, gates, generators, placed
      * enemies and its boss's share of harm) instead of the players present: the console's party
      * count; none follows the players. */
@@ -879,6 +883,9 @@ private:
     void beginSpawn(RenderDevice& device, const std::optional<WorldCamera>& marker);
     bool anyButton(const Inputs& inputs) const;
     bool openMessage(std::string_view name, usize page);
+    /** What the arrival's scroll `opened` leaves behind: once Sumner's word of his gateways is
+     * up, the party's characters owed it have been told. */
+    void arrivalScrollOpened(TowerWelcome::Due opened);
     void handleTriggerEvents();
     /** The scene's answers to what the party's movement asks as it steps; one is made for
      * each step. */

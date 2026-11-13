@@ -3,6 +3,9 @@
 #include <memory>
 #include <optional>
 #include <span>
+#include <string>
+#include <string_view>
+#include <vector>
 
 #include "engine/assets/BitmapFont.h"
 #include "engine/assets/MessageTable.h"
@@ -67,6 +70,10 @@ public:
     /** Imported native prose uses this scroll UI without borrowing GC message IDs. */
     bool openImported(RenderDevice& device, std::span<const std::string> text,
                       const StringTable* strings);
+    /** The game's own pages, already broken into lines, drawn as the rom's message `style` is
+     * (at its scale); false while a scroll is up, or without that message or a page. */
+    bool openStyled(RenderDevice& device, std::string_view style, std::vector<std::string> pages,
+                    const StringTable* strings);
     /** Requests audio at the start/end of dismissal, never on ordinary page turns. */
     Cues step(s32 ticks, u32 accepted);
     void prepare(RenderDevice& device) { m_scroll.prepare(device); }

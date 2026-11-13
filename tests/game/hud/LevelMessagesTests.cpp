@@ -42,7 +42,8 @@ std::filesystem::path sampleRoot(std::string_view name, bool burn) {
         {"code": 66, "width": 8, "x": 0, "y": 0}]})");
     writeTextFile(root / "text/scroll_e.json", R"({"fonts": ["font32"], "messages": [
         {"name": "WELCOME", "font": 0, "scale": 1, "lines": ["A", "B"]},
-        {"name": "EMPTY", "font": 0, "scale": 1, "lines": []}], "lists": []})");
+        {"name": "EMPTY", "font": 0, "scale": 1, "lines": []},
+        {"name": "SMALL", "font": 0, "scale": 0.5, "lines": ["A"]}], "lists": []})");
     return root;
 }
 
@@ -179,6 +180,42 @@ TEST_CASE("level messages translate pages and clear their borrowed rendering sta
     f.messages.load(f.device, f.textures, f.root, nullptr);
     REQUIRE(f.messages.open(f.device, "WELCOME", nullptr));
     REQUIRE(f.messages.scroll().lines() == std::vector<std::string>{"A"});
+}
+
+TEST_CASE("the game's own pages open drawn as a named message of the rom's is",
+          "[game][screens][level-messages]") {
+    Fixture f("level-messages-styled");
+    REQUIRE(f.messages.text().ready());
+    writeTextFile(f.root / "text/test.json", R"({"scroll.pressButton": "AB"})");
+    StringTable strings;
+    REQUIRE(strings.load(f.root / "text", "test", "test"));
+    // The pages keep their lines, at that message's scale, with the prompt under them and no
+    // message of the rom's named.
+    REQUIRE(f.messages.openStyled(f.device, "SMALL", {"AB\nB", "A"}, &strings));
+    const ScrollBox& scroll = f.messages.scroll();
+    CHECK(scroll.pageCount() == 2);
+    CHECK(scroll.lines() == std::vector<std::string>{"AB", "B"});
+    CHECK(scroll.area() == scroll.layout("AB\nB", 0.5f, "AB").area);
+    CHECK_FALSE(scroll.area() == scroll.layout("AB\nB", 1.0f, "AB").area);
+    CHECK_FALSE(f.messages.look());
+    // It never cuts another scroll short.
+    CHECK_FALSE(f.messages.openStyled(f.device, "WELCOME", {"A"}, &strings));
+    CHECK(scroll.lines() == std::vector<std::string>{"AB", "B"});
+    // Each page holds as the rom's do: no button for its first fifteen ticks.
+    f.messages.step(ScrollBox::kHoldTicks, 1);
+    CHECK(scroll.page() == 0);
+    f.messages.step(1, 1);
+    CHECK(scroll.page() == 1);
+    CHECK(scroll.lines() == std::vector<std::string>{"A"});
+    f.accept();
+    CHECK_FALSE(f.messages.active());
+    // Without the message, a page or the scroll's text, nothing opens.
+    CHECK_FALSE(f.messages.openStyled(f.device, "UNKNOWN", {"A"}, &strings));
+    CHECK_FALSE(f.messages.openStyled(f.device, "SMALL", {}, &strings));
+    LevelMessages unloaded;
+    CHECK_FALSE(unloaded.openStyled(f.device, "SMALL", {"A"}, &strings));
+    CHECK_FALSE(f.messages.active());
+    CHECK_FALSE(unloaded.active());
 }
 
 TEST_CASE("scroll continuation uses plain device independent localized text",

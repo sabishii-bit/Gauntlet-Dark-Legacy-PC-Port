@@ -182,6 +182,7 @@ TEST_CASE("native player digest includes all inactive classes and the untouched 
         saveChange("auto attack", [](auto& s) { s.autoAttack = false; });
         saveChange("help history", [](auto& s) { s.helpSeen.push_back(7); });
         saveChange("movie history", [](auto& s) { s.moviesSeen.push_back("INTRO"); });
+        saveChange("told of the gateways", [](auto& s) { s.gatewaysAnnounced = true; });
         for (usize index = 0; index < kClassCount; ++index) {
             CAPTURE(index);
             const auto change = [&](std::string_view field, auto mutate) {
@@ -477,7 +478,7 @@ TEST_CASE("native player digest bytes stay pinned for a pending gesture and reac
     // SHA-256 of the native digest of the player above, which netplay peers must hash alike: a
     // literal moves only when what is visited, or the number a deed is stored as, changes.
     constexpr std::string_view kDigest =
-        "a30c0c6471a82efcdfeab9db80d59551d8972ce50c7e367582d4fa4ffe626825";
+        "f1cb06ec1e5f8c741c1bfb3c30dcacdbec423b62657ecc70cdf2ef72ea75a5e2";
     CHECK(test::hexBytes(nativeDigest(player)) == kDigest);
 }
 } // namespace

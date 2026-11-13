@@ -24,6 +24,7 @@ CharacterSave character() {
     save.autoAttack = false;
     save.helpSeen = {150, 0, 31, 32, 70, 150};
     save.moviesSeen = {"local/private/history"};
+    save.gatewaysAnnounced = true;
     save.classUnlock = 511;
     save.classes[0].experience = 1234;
     auto& p = save.progress();
@@ -71,6 +72,7 @@ TEST_CASE("network character profiles preserve selected progress without exporti
     CHECK(CharacterProfilePacket::encode(*decoded) == packet);
     auto expected = source;
     expected.moviesSeen.clear();
+    expected.gatewaysAnnounced = false; // what Sumner told this machine's character stays here
     expected.classUnlock = 0;
     expected.classes[0] = {};
     expected.helpSeen = {0, 31, 32, 70, 150};
@@ -78,6 +80,7 @@ TEST_CASE("network character profiles preserve selected progress without exporti
     CHECK(source.classes[0].experience == 1234);
     CHECK(source.moviesSeen.size() == 1);
     CHECK(source.helpSeen.size() == 6);
+    CHECK(source.gatewaysAnnounced);
 }
 TEST_CASE("network character profiles keep their byte layout", "[netplay][character-profile]") {
     const auto profile = CharacterProfile::capture(character());

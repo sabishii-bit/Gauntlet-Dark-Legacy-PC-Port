@@ -29,6 +29,7 @@
 #include "engine/ui/Canvas.h"
 #include "engine/world/SelectionHighlight.h"
 
+#include "FakeGameServices.h"
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "game/app/Scenario.h"
@@ -60,6 +61,7 @@
 #include "game/scenes/PlayScene.h"
 #include "game/scenes/SceneSelection.h"
 #include "game/tower/LevelBeaten.h"
+#include "game/tower/TowerWelcome.h"
 #include "game/widgets/ScrollBox.h"
 
 namespace {
@@ -1402,6 +1404,227 @@ TEST_CASE("back from the Underworld's throne the tower opens GarmMessage before 
     CHECK_FALSE(scene.scroll().active()); // shown once an arrival
     scene.close();
     CHECK_FALSE(scene.levelBeaten().has_value());
+}
+
+/** A character back from Garm's citadel: experienced, and holding his piece with the class it
+ * plays. */
+CharacterSave garmBeaten(std::string_view name) {
+    CharacterSave save;
+    save.name = std::string(name);
+    save.progress().experience = levelExperience(40);
+    save.progress().relics.addShard(LevelRef::orderOf(TowerAccess::kBattlefieldWorld));
+    return save;
+}
+
+/** How the journey back from Garm's citadel opens the tower. */
+PlayOptions backFromGarm() {
+    PlayOptions options;
+    options.welcome = false;
+    options.arriving = true;
+    options.arrivalWorld = static_cast<u32>(TowerAccess::kBattlefieldWorld);
+    options.beaten = LevelBeaten{TowerAccess::kBattlefieldWorld, TowerAccess::kGarmGate};
+    return options;
+}
+
+/** The tower in English, with the worlds past Sumner's gateways a test's installation offers:
+ * the first usable and the second not, unless the test says otherwise. */
+struct GatewayTower {
+    const std::filesystem::path root = unpackedRoot();
+    const GameConfig config;
+    StringTable strings;
+    test::FakeRenderDevice device;
+    LevelCatalog levels;
+    LevelWorld world;
+    GameServices context;
+    test::FixedGateways gateways;
+    PlayScene scene;
+
+    GatewayTower() {
+        REQUIRE(strings.load(test::dataDirectory() / "text", "en"));
+        REQUIRE(levels.load(root));
+        REQUIRE(world.load(device, root));
+        context.config = &config;
+        context.strings = &strings;
+        context.levels = &levels;
+        context.unpackedRoot = root;
+        gateways.offered = {{0, "legends.n64.gateway.label", true},
+                            {1, "legends.dreamcast.gateway.label", false}};
+    }
+
+    /** Opens the tower for `party` as `options` say, with the gateways (offline) or without
+     * them (as online), and lets the party materialise, `step` an update; no scroll shows
+     * meanwhile. */
+    void arrive(std::span<const PartyMember> party, f64 step,
+                const PlayOptions& options = backFromGarm(), bool offline = true) {
+        scene.close();
+        REQUIRE(scene.open(device, context, world, party, options,
+                           offline ? PlayScene::Links{.gateways = &gateways} : PlayScene::Links{}));
+        const PlayScene::Inputs still{};
+        for (s32 i = 0; i < 1200 && scene.spawning(); ++i) {
+            REQUIRE_FALSE(scene.scroll().active());
+            scene.update(step, still);
+        }
+        REQUIRE_FALSE(scene.spawning());
+    }
+    /** Whether the scroll up is Sumner's one page about his gateways, as the English has it. */
+    bool tellingGateways() const {
+        return scene.scroll().active() && !scene.scrollLook() && scene.scroll().pageCount() == 1 &&
+               scene.scroll().lines() ==
+                   ScrollBox::splitLines(strings.get(TowerWelcome::kGatewayScroll));
+    }
+    /** Turns the scroll's pages as they take a button, until it has burnt away. */
+    void readThrough(f64 step) {
+        PlayScene::Inputs accept{};
+        accept[0].menu.select = true;
+        const PlayScene::Inputs still{};
+        for (s32 i = 0; i < 2000 && scene.scroll().active(); ++i) {
+            scene.update(step, i % 2 == 0 ? accept : still);
+        }
+        REQUIRE_FALSE(scene.scroll().active());
+    }
+};
+
+TEST_CASE("back from beating Garm, Sumner tells the party once that his gateways have woken",
+          "[game][screens][welcome][gateways][assets]") {
+    const f64 step = GENERATE(1.0 / 30.0, 1.0 / 60.0);
+    CAPTURE(step);
+    GatewayTower tower;
+    PlayScene& scene = tower.scene;
+    tower.arrive(std::vector{PartyMember{0, garmBeaten("AB")}}, step);
+    // The worlds past the gateways were looked for once, as the tower opened.
+    CHECK(tower.gateways.asks == 1);
+    // The tick the party stands, his page unrolls, and the character has been told: as it is
+    // and as it came in, which a level given up goes back to.
+    REQUIRE(tower.tellingGateways());
+    CHECK(scene.party()[0].save.gatewaysAnnounced);
+    CHECK(scene.runtime(0)->entrySave.gatewaysAnnounced);
+    // It holds everything as the original's message boxes do: the page takes no button for
+    // its first fifteen ticks, and meanwhile nobody walks, pauses or joins.
+    PlayScene::Inputs accept{};
+    accept[0].menu.select = true;
+    scene.update(step, accept);
+    REQUIRE(tower.tellingGateways());
+    PlayScene::Inputs walk{};
+    walk[0].move = MoveInput{Vec2{0.0f, 1.0f}, 1.0f};
+    const Vec3 position = scene.actor(0)->position();
+    for (s32 i = 0; i < 20; ++i) {
+        scene.update(step, walk);
+        REQUIRE(tower.tellingGateways());
+        REQUIRE(scene.actor(0)->position() == position);
+        REQUIRE_FALSE(scene.canPause(0));
+        REQUIRE_FALSE(scene.canJoin(1));
+    }
+    scene.update(step, accept);
+    // It burns away, and only then is the party free again.
+    const PlayScene::Inputs still{};
+    for (s32 i = 0; i < 300 && scene.scroll().active(); ++i) {
+        REQUIRE(scene.actor(0)->position() == position);
+        scene.update(step, still);
+    }
+    REQUIRE_FALSE(scene.scroll().active());
+    CHECK(scene.canPause(0));
+    CHECK(scene.canJoin(1));
+    // Told, the party's next arrival opens no scroll and looks for nothing on disk.
+    const std::vector<PartyMember> told = scene.party();
+    tower.arrive(told, step);
+    CHECK_FALSE(scene.scroll().active());
+    CHECK(tower.gateways.asks == 1);
+    scene.close();
+}
+
+TEST_CASE("Sumner's gateways go untold until a world past them is usable, then are told once",
+          "[game][screens][welcome][gateways][assets]") {
+    const f64 step = GENERATE(1.0 / 30.0, 1.0 / 60.0);
+    CAPTURE(step);
+    GatewayTower tower;
+    std::vector<PartyMember> party{PartyMember{0, garmBeaten("AB")}};
+    // Neither campaign usable: no scroll, and the character has still not been told.
+    tower.gateways.offered[0].usable = false;
+    tower.arrive(party, step);
+    CHECK_FALSE(tower.scene.scroll().active());
+    party = tower.scene.party();
+    CHECK_FALSE(party[0].save.gatewaysAnnounced);
+    // One installed later: the next arrival tells it.
+    tower.gateways.offered[1].usable = true;
+    tower.arrive(party, step);
+    REQUIRE(tower.tellingGateways());
+    tower.readThrough(step);
+    party = tower.scene.party();
+    CHECK(party[0].save.gatewaysAnnounced);
+    // The other installed after that brings no second scroll.
+    tower.gateways.offered[0].usable = true;
+    tower.arrive(party, step);
+    CHECK_FALSE(tower.scene.scroll().active());
+    tower.scene.close();
+}
+
+TEST_CASE("only those that beat Garm hear of the gateways, never online or on the way back",
+          "[game][screens][welcome][gateways][assets]") {
+    const f64 step = GENERATE(1.0 / 30.0, 1.0 / 60.0);
+    CAPTURE(step);
+    GatewayTower tower;
+    CharacterSave unbeaten;
+    unbeaten.name = "CD";
+    unbeaten.progress().experience = levelExperience(40);
+    // A party none of whom has beaten Garm is told nothing, and nothing is looked for.
+    tower.arrive(std::vector{PartyMember{0, unbeaten}}, step);
+    CHECK_FALSE(tower.scene.scroll().active());
+    CHECK(tower.gateways.asks == 0);
+    // Online the scene has no gateways: nothing is told, and the party stays owed.
+    const std::vector<PartyMember> mixed{PartyMember{0, garmBeaten("AB")},
+                                         PartyMember{1, unbeaten}};
+    tower.arrive(mixed, step, backFromGarm(), false);
+    CHECK_FALSE(tower.scene.scroll().active());
+    CHECK_FALSE(tower.scene.party()[0].save.gatewaysAnnounced);
+    CHECK(tower.gateways.asks == 0);
+    // Taken back from the select screen (or from the tower's own shop), the tower opens no
+    // arrival scroll.
+    const PlayOptions back = tower.scene.reentry();
+    CHECK_FALSE(back.gatewayScroll);
+    tower.arrive(mixed, step, back);
+    CHECK_FALSE(tower.scene.scroll().active());
+    CHECK(tower.gateways.asks == 0);
+    // Arriving afresh, the one who beat Garm is told and the other is not.
+    tower.arrive(mixed, step);
+    REQUIRE(tower.tellingGateways());
+    const std::vector<PartyMember> told = tower.scene.party();
+    CHECK(told[0].save.gatewaysAnnounced);
+    CHECK_FALSE(told[1].save.gatewaysAnnounced);
+    tower.scene.close();
+}
+
+TEST_CASE("back from the Underworld's throne, Sumner tells of his gateways after GarmMessage",
+          "[game][screens][welcome][gateways][assets]") {
+    const f64 step = GENERATE(1.0 / 30.0, 1.0 / 60.0);
+    CAPTURE(step);
+    GatewayTower tower;
+    PlayScene& scene = tower.scene;
+    PlayOptions options = backFromGarm();
+    options.arrivalWorld = static_cast<u32>(TowerAccess::kUnderworldWorld);
+    options.beaten = LevelBeaten{TowerAccess::kUnderworldWorld, 1};
+    tower.arrive(std::vector{PartyMember{0, garmBeaten("AB")}}, step, options);
+    // GarmMessage first; the character is told only once Sumner's own page is up.
+    REQUIRE(scene.scroll().active());
+    REQUIRE(scene.scrollLook());
+    CHECK(scene.scroll().pageCount() == 2);
+    CHECK_FALSE(scene.party()[0].save.gatewaysAnnounced);
+    // Read through, it gives way straight to his word of the gateways, with no tick between
+    // in which anyone might move, pause or join.
+    PlayScene::Inputs accept{};
+    accept[0].menu.select = true;
+    const PlayScene::Inputs still{};
+    for (s32 i = 0; i < 2000 && !tower.tellingGateways(); ++i) {
+        REQUIRE(scene.scroll().active());
+        REQUIRE_FALSE(scene.canPause(0));
+        REQUIRE_FALSE(scene.canJoin(1));
+        scene.update(step, i % 2 == 0 ? accept : still);
+    }
+    REQUIRE(tower.tellingGateways());
+    CHECK(scene.party()[0].save.gatewaysAnnounced);
+    tower.readThrough(step);
+    scene.update(step, still);
+    CHECK_FALSE(scene.scroll().active());
+    scene.close();
 }
 
 TEST_CASE("a new party's welcome turns a joining player away only while it runs",

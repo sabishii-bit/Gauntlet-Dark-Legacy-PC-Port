@@ -28,7 +28,7 @@ void visitNativeState(NativeStateDigest& digest, const PlayerSimulation::Floor& 
 }
 
 void visitNativeState(NativeStateDigest& digest, const CharacterSave& value) {
-    digest.fields<10>(value);
+    digest.fields<11>(value);
 }
 
 void visitNativeState(NativeStateDigest& digest, const ClassProgress& value) {

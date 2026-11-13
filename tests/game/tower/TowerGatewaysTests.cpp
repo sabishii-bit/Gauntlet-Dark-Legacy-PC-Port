@@ -4,6 +4,10 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "FakeGameServices.h"
+#include "game/characters/CharacterSave.h"
+#include "game/characters/Relics.h"
+#include "game/level/LevelCatalog.h"
+#include "game/level/TowerAccess.h"
 #include "game/tower/TowerGateways.h"
 
 namespace {
@@ -28,5 +32,23 @@ TEST_CASE("the worlds past Sumner's gateways come as offered, every ask a look o
     CHECK(worlds[1] == GatewayWorld{1, "b", false});
     CHECK(worlds[1] != GatewayWorld{1, "b", true});
     CHECK(GatewayWorld{} == GatewayWorld{0, "", false}); // none usable until found
+}
+
+TEST_CASE("a character has beaten Garm while the class it plays holds his piece",
+          "[game][tower][gateways]") {
+    // His piece is the battlefield's, eleventh in the tower's order (0x80124D14).
+    REQUIRE(LevelRef::orderOf(TowerAccess::kBattlefieldWorld) == 11);
+    CharacterSave save;
+    CHECK_FALSE(beatenGarm(save));
+    // Every other boss's piece, the ten a Sumner starts with, is not his.
+    save.progress().relics.shards = Relics::kAllShards;
+    CHECK_FALSE(beatenGarm(save));
+    save.progress().relics.addShard(11);
+    CHECK(beatenGarm(save));
+    // Another class keeps its own pieces: playing it, the character has not beaten him.
+    save.selectClass(2);
+    CHECK_FALSE(beatenGarm(save));
+    save.selectClass(0);
+    CHECK(beatenGarm(save));
 }
 } // namespace

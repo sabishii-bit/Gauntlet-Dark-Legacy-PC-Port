@@ -294,6 +294,7 @@ std::string CharacterSave::toJson() const {
     root["autoAttack"] = autoAttack;
     root["helpSeen"] = helpSeen;
     root["moviesSeen"] = moviesSeen;
+    root["gatewaysAnnounced"] = gatewaysAnnounced;
     root["levelTotal"] = levelTotal;
     Json progress = Json::object();
     for (s32 i = 0; i < kClassCount; ++i) {
@@ -326,6 +327,8 @@ CharacterSave CharacterSave::fromJson(std::string_view text) {
     save.autoAttack = root.value("autoAttack", save.autoAttack);
     save.helpSeen = root.value("helpSeen", std::vector<s32>{});
     save.moviesSeen = root.value("moviesSeen", std::vector<std::string>{});
+    // A save from before the record has not been told.
+    save.gatewaysAnnounced = root.value("gatewaysAnnounced", false);
     std::ranges::sort(save.helpSeen);
     save.levelTotal = root.value("levelTotal", 0);
     if (save.character < 0 || save.character >= kClassCount || save.color < 0 ||

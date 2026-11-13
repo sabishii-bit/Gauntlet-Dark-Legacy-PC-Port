@@ -32,6 +32,9 @@ struct CharacterSave {
     bool autoAttack = true;    ///< native control_autoattack belongs to the name, not the class
     std::vector<s32> helpSeen; ///< the help messages already shown to it, in order
     std::vector<std::string> moviesSeen; ///< legacy saves only; never gates level-entry movies
+    /** Sumner has told it, back in the tower after Garm, that his gateways have woken: once to
+     * each character, whatever class it plays. */
+    bool gatewaysAnnounced = false;
     std::array<ClassProgress, kClassCount> classes{};
 
     const ClassProgress& progress() const { return classes[static_cast<usize>(character)]; }

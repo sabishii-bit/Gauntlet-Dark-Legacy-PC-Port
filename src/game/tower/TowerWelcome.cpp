@@ -3,9 +3,11 @@
 #include <algorithm>
 #include <cmath>
 #include <optional>
+#include <string>
 #include <string_view>
 #include <utility>
 
+#include "engine/assets/StringTable.h"
 #include "engine/core/Log.h"
 #include "engine/core/Types.h"
 
@@ -23,17 +25,27 @@ constexpr LevelBeaten kUnderworldThrone{TowerAccess::kUnderworldWorld, 1};
 
 } // namespace
 
-void TowerWelcome::open(LevelWorld& world, bool welcome, std::optional<LevelBeaten> beaten) {
+void TowerWelcome::open(LevelWorld& world, bool welcome, std::optional<LevelBeaten> beaten,
+                        bool gateways) {
     clear();
-    m_due = welcome ? Due::Welcome : beaten == kUnderworldThrone ? Due::Garm : Due::Nothing;
-    if (m_due == Due::Welcome) {
+    if (welcome) {
+        m_due = Due::Welcome;
         world.hideCrystals(); // Sumner reveals them once the scroll has gone
+        return;
+    }
+    const Due told = gateways ? Due::Gateways : Due::Nothing;
+    if (beaten == kUnderworldThrone) {
+        m_due = Due::Garm;
+        m_next = told;
+    } else {
+        m_due = told;
     }
 }
 
 void TowerWelcome::clear() {
     m_cutTicks = 0;
     m_due = Due::Nothing;
+    m_next = Due::Nothing;
     m_intro = Intro::None;
 }
 
@@ -43,6 +55,31 @@ bool TowerWelcome::freshParty(std::span<const PartyMember> party) {
             return progress.experience > 0;
         });
     });
+}
+
+bool TowerWelcome::owesGateways(std::span<const PartyMember> party, TowerGateways* gateways) {
+    const bool untold = std::ranges::any_of(party, [](const PartyMember& member) {
+        return beatenGarm(member.save) && !member.save.gatewaysAnnounced;
+    });
+    // Nothing is looked for on disk for a party none of whom is owed it.
+    return gateways != nullptr && untold &&
+           std::ranges::any_of(gateways->worlds(), &GatewayWorld::usable);
+}
+
+usize TowerWelcome::tellGateways(std::span<PlayerRuntime> players) {
+    usize told = 0;
+    for (PlayerRuntime& runtime : players) {
+        CharacterSave& save = runtime.actor.save();
+        if (runtime.departed || !beatenGarm(save)) {
+            continue;
+        }
+        if (!save.gatewaysAnnounced) {
+            ++told;
+        }
+        save.gatewaysAnnounced = true;
+        runtime.entrySave.gatewaysAnnounced = true;
+    }
+    return told;
 }
 
 std::optional<s32> TowerWelcome::visitorOf(const LevelTriggers& triggers,
@@ -68,28 +105,55 @@ std::optional<s32> TowerWelcome::visitorOf(const LevelTriggers& triggers,
     return std::nullopt;
 }
 
-void TowerWelcome::arrived(RenderDevice& device, LevelMessages& messages,
-                           const StringTable* strings, const WorldLayout& layout,
-                           SumnerFigure& sumner) {
-    const Due due = std::exchange(m_due, Due::Nothing);
-    if (due == Due::Garm && !messages.open(device, kGarmMessage, strings)) {
-        log::warn("Tower: no {} scroll to show", kGarmMessage);
-    }
-    if (due != Due::Welcome) {
-        return;
-    }
-    if (messages.open(device, kWelcomeMessage, strings)) {
-        m_intro = Intro::Scroll;
-        return;
-    }
-    log::warn("Tower: no welcome scroll to show; on to the crystals");
-    startCrystalCut(layout, sumner);
+TowerWelcome::Due TowerWelcome::arrived(RenderDevice& device, LevelMessages& messages,
+                                        const StringTable* strings, const WorldLayout& layout,
+                                        SumnerFigure& sumner) {
+    return openDue(device, messages, strings, layout, sumner);
 }
 
-void TowerWelcome::scrollClosed(const WorldLayout& layout, SumnerFigure& sumner) {
+TowerWelcome::Due TowerWelcome::scrollClosed(RenderDevice& device, LevelMessages& messages,
+                                             const StringTable* strings, const WorldLayout& layout,
+                                             SumnerFigure& sumner) {
     if (m_intro == Intro::Scroll) {
         startCrystalCut(layout, sumner);
+        return Due::Nothing;
     }
+    return openDue(device, messages, strings, layout, sumner);
+}
+
+TowerWelcome::Due TowerWelcome::openDue(RenderDevice& device, LevelMessages& messages,
+                                        const StringTable* strings, const WorldLayout& layout,
+                                        SumnerFigure& sumner) {
+    while (m_due != Due::Nothing) {
+        const Due due = std::exchange(m_due, std::exchange(m_next, Due::Nothing));
+        switch (due) {
+        case Due::Welcome:
+            if (messages.open(device, kWelcomeMessage, strings)) {
+                m_intro = Intro::Scroll;
+                return due;
+            }
+            log::warn("Tower: no welcome scroll to show; on to the crystals");
+            startCrystalCut(layout, sumner);
+            return Due::Nothing;
+        case Due::Garm:
+            if (messages.open(device, kGarmMessage, strings)) {
+                return due;
+            }
+            log::warn("Tower: no {} scroll to show", kGarmMessage);
+            break;
+        case Due::Gateways:
+            // Drawn as GarmMessage is, the arrival's scroll before it.
+            if (strings != nullptr && strings->has(kGatewayScroll) &&
+                messages.openStyled(device, kGarmMessage,
+                                    {std::string(strings->get(kGatewayScroll))}, strings)) {
+                return due;
+            }
+            log::warn("Tower: no scroll to tell of Sumner's gateways; a later arrival tells it");
+            break;
+        case Due::Nothing: break;
+        }
+    }
+    return Due::Nothing;
 }
 
 bool TowerWelcome::hold(s32 ticks) {

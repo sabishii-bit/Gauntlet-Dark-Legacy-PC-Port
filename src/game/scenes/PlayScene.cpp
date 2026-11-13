@@ -249,11 +249,13 @@ bool PlayScene::open(RenderDevice& device, const GameServices& services, LevelWo
     m_audio.startMusic(services.assets,
                        world.level() != nullptr ? world.level()->musicVolume : 1.0f);
     // The party materialises first; Sumner's welcome, or the scroll for the level it has just
-    // beaten, follows when one is due.
+    // beaten, follows when one is due, and then his word of his gateways to a party owed it.
     m_levelBeaten = world.isTower() ? options.beaten : std::nullopt;
     m_sim.welcome.open(world,
                        world.isTower() && options.welcome.value_or(TowerWelcome::freshParty(party)),
-                       m_levelBeaten);
+                       m_levelBeaten,
+                       world.isTower() && options.gatewayScroll &&
+                           TowerWelcome::owesGateways(party, m_links.gateways));
     // Every tower spawn has its own entrance view, including returns to a realm's wing.
     const WorldLocator* arrival = world.arrivalPoint(options.arrivalWorld, &m_sim.towerAccess);
     beginSpawn(device, options.position.has_value()
@@ -1351,7 +1353,8 @@ void PlayScene::advanceScroll(s32 ticks, const Inputs& inputs) {
         m_audio.playNamed(kScrollBurnSound);
     }
     if (!m_messages.active()) {
-        m_sim.welcome.scrollClosed(m_world->layout(), m_sumner);
+        arrivalScrollOpened(m_sim.welcome.scrollClosed(*m_device, m_messages, m_services->strings,
+                                                       m_world->layout(), m_sumner));
     }
 }
 
@@ -1492,8 +1495,8 @@ void PlayScene::advanceEntrance(s32 ticks, f32 seconds, const Inputs& inputs) {
                 // GDL's follow-camera warm-up must not fast-forward them.
             }
         }
-        m_sim.welcome.arrived(*m_device, m_messages, m_services->strings, m_world->layout(),
-                              m_sumner);
+        arrivalScrollOpened(m_sim.welcome.arrived(*m_device, m_messages, m_services->strings,
+                                                  m_world->layout(), m_sumner));
     }
 }
 
@@ -2230,6 +2233,7 @@ PlayOptions PlayScene::reentry() const {
     // The tower stays loaded across the select screen, so an arrival's one-shot scrolls are
     // not armed again (LoadTowerAndSelect arms them only for a tower loaded afresh, 0x80053C44).
     options.welcome = false;
+    options.gatewayScroll = false;
     // Where the standing party is on average (GetPlayerAvgPos 0x8006F678), judged against
     // the worlds open to it as it is now, crystals gathered in the tower included.
     Vec3 total{0.0f};
@@ -2307,6 +2311,12 @@ void PlayScene::beginSpawn(RenderDevice& device, const std::optional<WorldCamera
 /** Opens one page of a scroll message over the tower: the party reads it and presses on. */
 bool PlayScene::openMessage(std::string_view name, usize page) {
     return m_device != nullptr && m_messages.open(*m_device, name, m_services->strings, page);
+}
+
+void PlayScene::arrivalScrollOpened(TowerWelcome::Due opened) {
+    if (opened == TowerWelcome::Due::Gateways) {
+        TowerWelcome::tellGateways(m_players);
+    }
 }
 
 /** Tells a refused party what a gate wants; a target opening before them (a gate's field, a

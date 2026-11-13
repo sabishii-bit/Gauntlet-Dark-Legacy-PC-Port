@@ -199,6 +199,27 @@ bool LevelMessages::openImported(RenderDevice& device, std::span<const std::stri
     return opened;
 }
 
+bool LevelMessages::openStyled(RenderDevice& device, std::string_view style,
+                               std::vector<std::string> pages, const StringTable* strings) {
+    if (!m_scrollText.loaded() || pages.empty() || active()) {
+        return false;
+    }
+    const auto found = m_scrollText.find(style);
+    if (!found.has_value()) {
+        log::warn("Tower: no message {} to draw a scroll as", style);
+        return false;
+    }
+    const bool opened = m_scroll.open(
+        device, std::move(pages), m_scrollText.message(*found).scale,
+        strings != nullptr ? std::string(strings->get("scroll.pressButton")) : std::string{});
+    if (opened) {
+        // None of the rom's messages, so nothing for look() to name.
+        m_sim.message.reset();
+        m_sim.firstPage = 0;
+    }
+    return opened;
+}
+
 LevelMessages::Cues LevelMessages::step(s32 ticks, u32 accepted) {
     if (!m_scroll.active()) {
         return {};

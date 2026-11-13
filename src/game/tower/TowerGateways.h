@@ -5,6 +5,8 @@
 
 #include "engine/core/Types.h"
 
+#include "game/characters/CharacterSave.h"
+
 namespace gdl::game {
 
 /** A world past the campaign's own that an optional expansion leads to through Sumner's
@@ -27,5 +29,10 @@ public:
      * each ask looks on disk afresh. */
     virtual std::span<const GatewayWorld> worlds() = 0;
 };
+
+/** Whether `save`'s character has beaten Garm, which wakes the gateways: its class holds his
+ * piece, the battlefield's place in the tower's order (0x80124D14), which BossDeath gives every
+ * player standing as he falls (PlayerGiveRune 0x800A2500). */
+bool beatenGarm(const CharacterSave& save);
 
 } // namespace gdl::game
