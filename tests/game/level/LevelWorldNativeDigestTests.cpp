@@ -413,7 +413,7 @@ TEST_CASE("native world and child digest bytes stay pinned after the script and 
     // purpose. The world's children follow it, so that a moved world names the child that moved.
     test::checkPinnedDigests("LevelWorld", fixture.hash(), fixture.hash(saved),
                              "1cebc9fff6c821a46cc2e432e667d439b97bf722d406741588b753e6aa1f5cf2",
-                             "2c16d50cb02f87424a3b28577c40301dc0c7b3e86f6b14a81475083b98623a06");
+                             "c9497b513a9fc5a075e4e27b0cfa96dd1bf9b40ccb235600abe739be242537f9");
     const auto resources = fixture.refreshed();
     test::checkPinnedDigests("WorldScene", test::liveDigest(world.scene(), resources),
                              test::savedDigest(world.scene(), scene, resources),
@@ -426,7 +426,7 @@ TEST_CASE("native world and child digest bytes stay pinned after the script and 
     test::checkPinnedDigests("WorldCollision", test::liveDigest(world.collision(), resources),
                              test::savedDigest(world.collision(), collision, resources),
                              "4d1917b395c6906d6fedf704bfbe82d35b7caa8636959da13bef49e06792e9f5",
-                             "01924433178c51914440a0072c9aeb5aa524d22df2ad9c5007e03e7200d9ba6b");
+                             "4fb92b7d327cd8d4b0dddac8d518f60f72771a7efd8b4a9fb17f48e1b948c9ef");
     test::checkPinnedDigests("PlacedItems", test::liveDigest(world.placedItems(), resources),
                              test::savedDigest(world.placedItems(), items, resources),
                              "6a093a8504480677804b3e98b4c5b7df25265f5500ddd2978a57681839287042",

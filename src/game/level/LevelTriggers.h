@@ -206,7 +206,7 @@ public:
         bool open = false;
         bool settled = true;
         bool pressed = false;
-        bool wholePartyReady = false;
+        bool wholePartyReady = false; ///< the whole party stands in a pad of it this update
         bool returning = false;
         bool forced = false;
         /** A player stands on the target itself (did_generate past one), not on a deck hung

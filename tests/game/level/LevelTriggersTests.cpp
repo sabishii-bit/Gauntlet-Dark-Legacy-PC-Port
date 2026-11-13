@@ -866,8 +866,13 @@ TEST_CASE("a whole-party lift releases its floor boundary at the endpoint",
     CHECK_FALSE(collision.floorExitBlocked(0));
 }
 
-TEST_CASE("animated lifts retain the party only while everyone is aboard and travel is active",
+TEST_CASE("an animated lift keeps its riders for its whole travel, whoever leaves its pad",
           "[game][world][triggers][floor-riding]") {
+    // PlayerCollideFloor holds a rider while its floor's chain carries 0x20000000, which
+    // ProcessItemWobjs' tail sets on a target still moving (0x80062F38-0x80062F64), and
+    // 0x08000000, which DoWorldAnimSub sets on every pass a track plays (0x800A8A54-0x800A8A68).
+    // The whole party standing in a whole-party lift's pad sets it going; it holds its riders
+    // to the end of its track all the same once one of them has left.
     SwitchFixture f(R"({"info":0,"position":[0,0,0],
       "params":[0,0,10,5,2,255,0,0,0,0,0,0]})",
                     R"({"name":"WALL","position":[0,10,0],"flags":4096})", 24,
@@ -876,23 +881,55 @@ TEST_CASE("animated lifts retain the party only while everyone is aboard and tra
     WorldCollision collision;
     std::array party{TriggerVisitor{.floorObject = 0, .party = 0},
                      TriggerVisitor{.floorObject = -1, .party = 1}};
-    f.triggers.update(kStep, party, f.animator, f.scene, &collision);
+    const auto step = [&] {
+        f.animator.step(kStep, f.scene, false, f.triggers.heldTracks());
+        f.triggers.update(kStep, party, f.animator, f.scene, &collision);
+    };
+    step();
+    CHECK_FALSE(f.triggers.opened(0)); // one aboard is not the whole party
     CHECK_FALSE(collision.floorExitBlocked(0));
     party[1].floorObject = 0;
-    f.triggers.update(kStep, party, f.animator, f.scene, &collision);
-    REQUIRE(collision.floorExitBlocked(0));
+    step();
+    REQUIRE(f.triggers.opened(0));
     REQUIRE_FALSE(f.triggers.settled(0));
-    // Losing a rider clears whole-party readiness, even before the track ends.
     party[1].floorObject = -1;
-    f.triggers.update(kStep, party, f.animator, f.scene, &collision);
-    CHECK_FALSE(collision.floorExitBlocked(0));
-    party[1].floorObject = 0;
-    f.triggers.update(kStep, party, f.animator, f.scene, &collision);
-    REQUIRE(collision.floorExitBlocked(0));
-    f.animator.step(1.0f, f.scene);
-    f.triggers.update(kStep, party, f.animator, f.scene, &collision);
+    s32 travel = 0;
+    for (; travel < 30 && !f.triggers.settled(0); ++travel) {
+        CAPTURE(travel);
+        CHECK(collision.floorExitBlocked(0));
+        CHECK(f.triggers.heldTracks().empty()); // a kind that stays solid never waits
+        step();
+    }
     REQUIRE(f.triggers.settled(0));
+    CHECK(travel > 1);
     CHECK_FALSE(collision.floorExitBlocked(0));
+}
+
+TEST_CASE("a bridge coming in keeps its riders only while the whole party stands in its pad",
+          "[game][world][triggers][floor-riding]") {
+    // A fade's step sets no 0x08000000 (ProcessItemWobjs, 0x80062A00), so PlayerCollideFloor holds
+    // the rider of a bridge still coming in only through 0x04000000, which a whole-party pad sets
+    // on its target while the whole party stands in it (0x800619D4-0x80061A1C).
+    const bool wholeParty = GENERATE(false, true);
+    CAPTURE(wholeParty);
+    SwitchFixture f(std::format(R"({{"info":0,"position":[20,0,0],
+      "params":[0,0,18,{},2,255,0,0,0,0,0,0]}})",
+                                wholeParty ? 4 : 0));
+    WorldCollision collision;
+    const std::array party{TriggerVisitor{.position = Vec3{20, 0, 0}, .party = 0},
+                           TriggerVisitor{.position = Vec3{20, 0, 0}, .party = 1}};
+    // Left alone, the bridge fades away.
+    for (s32 tick = 0; tick < 30; ++tick) {
+        f.triggers.update(kStep, {}, f.animator, f.scene, &collision);
+    }
+    REQUIRE(f.triggers.settled(0));
+    REQUIRE(f.triggers.alphaOf(0) == 0);
+    f.triggers.update(kStep, party, f.animator, f.scene, &collision);
+    REQUIRE(f.triggers.opened(0));
+    REQUIRE_FALSE(f.triggers.settled(0));
+    REQUIRE(f.triggers.alphaOf(0) > 0);
+    REQUIRE(collision.solid(0));
+    CHECK(collision.floorExitBlocked(0) == wholeParty);
 }
 
 TEST_CASE("pressure targets return when vacated", "[game][world][triggers]") {

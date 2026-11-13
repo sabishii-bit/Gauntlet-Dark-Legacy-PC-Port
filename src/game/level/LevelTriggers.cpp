@@ -1041,15 +1041,17 @@ void LevelTriggers::finishMotion(const WorldAnimator& animator, WorldCollision* 
     }
     if (collision != nullptr) {
         for (const Target& target : m_sim.targets) {
-            // PlayerCollideFloor keeps a rider on its floor while that floor's chain is marked
-            // moving (WorldObjGetAllFlags, 0x80088130-0x80088174): active height targets,
-            // animated lifts carrying the whole party, and any lift that opens to players as it
-            // moves, whose decks the players' own probes pass through, hold their riders.
-            const bool heightTarget = !target.animated && (target.kind & LevelTrigger::kFades) == 0;
-            collision->setFloorExitBlocked(
-                target.object,
-                (!target.settled && !target.ridden && (heightTarget || target.wholePartyReady)) ||
-                    target.opensToPlayers());
+            // PlayerCollideFloor keeps a rider on its floor while the flags of that floor and its
+            // parents (WorldObjGetAllFlags) hold 0x20000000 with 0x08000000 or 0x04000000
+            // (0x80088128-0x80088174). ProcessItemWobjs' tail sets 0x20000000 on a target that
+            // moved this pass (0x80062F38-0x80062F64), and a height step (0x80062F08) or a
+            // playing track (DoWorldAnimSub, 0x800A8A54-0x800A8A68) 0x08000000: a lift keeps its
+            // riders for its whole travel, whoever stands in its pads. A fade's step sets no
+            // 0x08000000, so a fade keeps them only while the whole party stands in its pads
+            // (0x04000000, 0x800619D4-0x80061A1C). A target its riders hold skips the tail.
+            const bool fades = (target.kind & LevelTrigger::kFades) != 0;
+            collision->setFloorExitBlocked(target.object, !target.settled && !target.ridden &&
+                                                              (!fades || target.wholePartyReady));
         }
     }
 }

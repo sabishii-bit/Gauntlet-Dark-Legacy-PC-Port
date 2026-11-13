@@ -638,4 +638,95 @@ TEST_CASE("G1 crates under the bridge reach their tops before a player running a
     CHECK(lowest > start - PlayerActor::kStepUp);
 }
 
+/** J4's flipping tile: the lever TRIGGER3 #428 slides J4A35 (601) twenty units west, bringing the
+ * spiked tile J4FLIPPPER (602) to x -164..-154. Stood on, the tile's pad #356 swings the rainbow
+ * tile in beside it on J4A38, bringing the whole-party pad #359 within reach, which rolls J4A36
+ * (600) a half turn about its hinge at x -154 and, through #357, J4A37 (599) a half turn about
+ * x -144: the tile leapfrogs under the rainbow tile and comes up on its far side, x -144..-134. */
+constexpr s32 kJ4Lever = 428;
+constexpr s32 kJ4Slide = 601;
+constexpr s32 kJ4Tile = 602;
+constexpr s32 kJ4FirstRoll = 600;
+constexpr s32 kJ4SecondRoll = 599;
+constexpr std::array kJ4Rolls{kJ4FirstRoll, kJ4SecondRoll};
+constexpr Vec3 kJ4Rider{-155.5f, 26, -26.75f}; ///< on the slid tile, a unit and a half short of
+                                               ///< its hinge, within #359's reach
+constexpr f32 kJ4FarWest = -144;
+constexpr f32 kJ4FarEast = -134;
+constexpr s32 kJ4WaitSeconds = 10;
+
+TEST_CASE("J4's flipping tile carries the player standing on it over to the far side",
+          "[native-traversal][j4-flipping-tile][assets]") {
+    // PlayerCheckFloor (0x80087F88) parents a player to a floor flagged 0x1000, and
+    // PlayerCollideFloor (0x80088068) zeroes the whole step, leaving the floor as it is, while the
+    // flags of the floor and its parents (WorldObjGetAllFlags, 0x800AB47C) hold 0x0C000000 and
+    // 0x20000000 and the probe finds another floor or none (0x80088128-0x80088174). DoWorldAnimSub
+    // sets 0x08000000 on every pass a track plays (0x800A8A54-0x800A8A68), and ProcessItemWobjs'
+    // tail 0x20000000 on every target that moved, whatever its kind (0x80062F38-0x80062F64): the
+    // rolling tile keeps its rider for both half turns, whoever stands in #359.
+    const s32 hz = GENERATE(30, 60);
+    CAPTURE(hz);
+    const auto root = test::assetOrSkip("PDATA/WAR.WAD").parent_path().parent_path();
+    ClassDataSet classes;
+    REQUIRE(classes.load(root / "PDATA"));
+    const auto* stats = classes.stats(kKnightClass);
+    REQUIRE(stats != nullptr);
+    NativeWalk walk("J4", kJ4Rider, 1.0f / static_cast<f32>(hz));
+    const auto& objects = walk.world.layout().objects();
+    REQUIRE(objects[kJ4Tile].name == "J4FLIPPPER");
+    REQUIRE(objects[kJ4FirstRoll].name == "J4A36");
+    REQUIRE(objects[kJ4SecondRoll].name == "J4A37");
+    const LevelTriggers& triggers = walk.world.triggers();
+    const usize leverPad = triggerOf(triggers, kJ4Slide);
+    REQUIRE(leverPad < triggers.size());
+    REQUIRE(triggers.trigger(leverPad).instance == kJ4Lever);
+    walk.world.setPlayerCount(1);
+    // At the lever: the tile slides over beside the rainbow tile's place.
+    walk.stand(triggers.trigger(leverPad).spot, kKnightClass, *stats);
+    for (s32 frame = 0;
+         frame < 3 * hz && !(triggers.opened(kJ4Slide) && triggers.settled(kJ4Slide)); ++frame) {
+        walk.step();
+    }
+    REQUIRE(triggers.opened(kJ4Slide));
+    REQUIRE(triggers.settled(kJ4Slide));
+    walk.stand(kJ4Rider, kKnightClass, *stats);
+    REQUIRE(walk.party[0].floor.object == kJ4Tile);
+    const f32 startY = walk.party[0].actor.position().y;
+    f32 lowest = startY;
+    bool rolled = false;
+    const auto rolling = [&] {
+        return std::ranges::any_of(
+            kJ4Rolls, [&](s32 roll) { return triggers.opened(roll) && !triggers.settled(roll); });
+    };
+    const auto rolledOver = [&] {
+        return std::ranges::all_of(
+            kJ4Rolls, [&](s32 roll) { return triggers.opened(roll) && triggers.settled(roll); });
+    };
+    for (s32 frame = 0; frame < kJ4WaitSeconds * hz && !rolledOver(); ++frame) {
+        walk.step();
+        rolled |= rolling();
+        const Vec3 at = walk.party[0].actor.position();
+        CAPTURE(frame, at.x, at.y, at.z);
+        lowest = std::min(lowest, at.y);
+        REQUIRE(walk.party[0].floor.object == kJ4Tile);
+    }
+    CHECK(rolled);
+    REQUIRE(rolledOver());
+    const Vec3 end = walk.party[0].actor.position();
+    CAPTURE(end.x, end.y, end.z, lowest);
+    CHECK(walk.party[0].floor.object == kJ4Tile);
+    CHECK(end.x > kJ4FarWest);
+    CHECK(end.x < kJ4FarEast);
+    // Left alone on the far side, it stands on the tile's top, as high as it started.
+    walk.wait(hz);
+    const Vec3 rest = walk.party[0].actor.position();
+    CAPTURE(rest.x, rest.y, rest.z);
+    CHECK(walk.party[0].floor.object == kJ4Tile);
+    CHECK(rest.y == Approx(startY).margin(0.01f));
+    const auto under = walk.world.collision().floorAt(rest, 1, 1);
+    REQUIRE(under.has_value());
+    CHECK(under->object == kJ4Tile);
+    CHECK(under->y == Approx(rest.y).margin(0.01f));
+}
+
 } // namespace
