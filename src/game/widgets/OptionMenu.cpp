@@ -725,7 +725,9 @@ void OptionMenu::draw(Canvas& canvas, const TextPainter& painter,
             continue;
         }
         const auto label = item.text + (item.markedPart == 1 ? " ~" : "");
-        const bool selected = static_cast<s32>(i) == m_selection;
+        // The original lights the selected row only when it can be chosen (show_optmenu
+        // 0x80072AA4); the selection rests on a greyed row only when none can be.
+        const bool selected = static_cast<s32>(i) == m_selection && item.enabled;
         const auto drawPart = [&](s32 x, const std::string& part) {
             if (selected) {
                 if (m_definition.colors.hi.a != 0) {

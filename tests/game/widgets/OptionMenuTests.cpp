@@ -2,6 +2,7 @@
 #include <array>
 #include <cmath>
 #include <filesystem>
+#include <utility>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -409,6 +410,54 @@ TEST_CASE("a menu with no enabled entries cannot confirm a disabled choice", "[g
     f.menu.open(definition, f.painter, {});
     CHECK(f.menu.update(pressed(false, false, true, false), 1).action == MenuAction::None);
     CHECK(f.menu.update(pressed(false, false, false, true), 1).action == MenuAction::Back);
+}
+
+TEST_CASE("a menu with no row to choose lights none, its arrow still at the selection",
+          "[game][menu]") {
+    Fixture f;
+    test::FakeRenderDevice device;
+    const test::FakeTexture glow{64, 64};
+    const test::FakeTexture arrows{32, 32};
+    MenuTextures textures;
+    textures.font = &f.sheet;
+    textures.glow = &glow;
+    textures.arrows = &arrows;
+    MenuDefinition definition = threeItems();
+    const auto drawn = [&] {
+        f.menu.open(definition, f.painter, MenuScreen{});
+        device.draws.clear();
+        Canvas canvas;
+        canvas.begin(device, Mat4{1.0f});
+        f.menu.draw(canvas, f.painter, textures);
+        canvas.end();
+        bool glowing = false;
+        bool pointing = false;
+        for (const test::RecordedDraw& draw : device.draws) {
+            glowing = glowing || draw.texture == &glow;
+            pointing = pointing || draw.texture == &arrows;
+        }
+        return std::pair{glowing, pointing};
+    };
+    definition.items[0].enabled = false;
+    definition.items[2].enabled = false;
+    CHECK(drawn() == std::pair{true, true}); // the one row left to choose is lit and pointed at
+    // show_optmenu (0x80072AA4) lights the selected row only when its value is not negative, and
+    // draws its arrow at the selection whatever the row.
+    definition.items[1].enabled = false;
+    CHECK(drawn() == std::pair{false, true});
+    // Every row is drawn greyed, the one the selection rests on among them.
+    CHECK(f.menu.selection() == 0);
+    usize letters = 0;
+    for (const test::RecordedDraw& draw : device.draws) {
+        if (draw.texture != &f.sheet) {
+            continue;
+        }
+        for (const ImmediateVertex& vertex : draw.vertices) {
+            CHECK(vertex.color == definition.colors.off.withAlpha(127));
+            ++letters;
+        }
+    }
+    CHECK(letters > 0);
 }
 
 TEST_CASE("fading menus close over thirty ticks and others at once", "[game][menu]") {

@@ -36,16 +36,17 @@ struct HintMenuLabels {
 
 /** What a step of the scroll did, for the sounds and the answer it wants. */
 struct HintMenuEvent {
-    enum class Kind : u8 { None, Moved, Asked, Returned, Left };
+    /** Chose: a page of choices was answered, and the scroll goes as backing out sends it. */
+    enum class Kind : u8 { None, Moved, Asked, Returned, Left, Chose };
     Kind kind = Kind::None;
-    s32 topic = 0; ///< the asked topic's code
+    s32 topic = 0; ///< the asked topic's code, or the chosen choice's
 };
 
 /**
  * The scroll Sumner holds out to a player who steps up to him, laid out as the original's:
  * a list of topics under his question, each answered by a page of the same scroll (a title,
- * the hint's passages in ink, Back to return), and the scroll burning away once the player
- * backs out of the list.
+ * the hint's passages in ink, or a list of choices; Back to return), and the scroll burning
+ * away once the player backs out of the list or makes a choice.
  */
 class HintMenu {
     struct Simulation {
@@ -79,6 +80,10 @@ public:
     static constexpr f32 kPageTitleScale = 0.8f;
     static constexpr f32 kPageScale = 0.667f;
     static constexpr s32 kPageTop = 112; ///< where a page's passages start when not centred
+    /** The room a page of choices keeps each row within, centred on the scroll, shrinking the
+     * rows from the topics' scale to fit: the scroll less the margin the original's message box
+     * keeps at either side of its text (ControllerMessageBox 0x8006D7EC, 96 over the text). */
+    static constexpr s32 kChoicesRoom = kBackdropWidth - 96;
     static constexpr Color kInk = Color::rgba(92, 26, 3);
 
     void setArt(HintMenuArt art) {
@@ -92,6 +97,10 @@ public:
     /** Shows the answer to the topic just asked. */
     void read(const TextPainter& painter, std::string title, std::vector<std::string> passages,
               f32 scale, bool centred, s32 gap);
+    /** Answers the topic just asked with a page of choices under the scroll's heading, each with
+     * the code it answers to, in the native look the topics opened in; a disabled one is greyed
+     * and cannot be chosen. False without a list of topics open or a choice to offer. */
+    bool choose(std::vector<MenuItem> choices);
     /** Drops everything at once. */
     void close();
 

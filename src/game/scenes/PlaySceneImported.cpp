@@ -1,10 +1,12 @@
 #include <algorithm>
+#include <cstddef>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "game/combat/HurtKind.h"
 #include "game/scenes/PlayScene.h"
+#include "game/tower/TowerGateways.h"
 #include "game/widgets/DialoguePresentation.h"
 
 namespace gdl::game {
@@ -44,6 +46,14 @@ void PlayScene::openImportedDialogue() {
     for (const auto& topic : request->topics) {
         labels.topics.push_back({std::string{strings.get(topic.label)}, topic.code});
     }
+    // A tower past the gateways offers them, offline, where its resident's menu takes the row.
+    m_gatewayHere = {};
+    if (request->gateways && m_links.gateways != nullptr) {
+        const usize row = std::min(request->gateways->row, labels.topics.size());
+        labels.topics.insert(labels.topics.begin() + static_cast<std::ptrdiff_t>(row),
+                             MenuItem{std::string{strings.get(kGatewayTopicText)}, kGatewayTopic});
+        m_gatewayHere = GatewayDestination{request->gateways->world};
+    }
     const auto& config = *m_services->config;
     MenuScreen screen;
     screen.width = static_cast<s32>(config.display.virtualWidth);
@@ -79,7 +89,14 @@ void PlayScene::updateImportedDialogue(const Inputs& inputs, s32 ticks) {
     }
     input.back |= input.escape || input.pointerBack;
     const auto event = m_sumnerVisit.update(*m_device, input, ticks);
-    if (event.kind == HintMenuEvent::Kind::Asked) {
+    if (event.kind == HintMenuEvent::Kind::Asked && event.topic == kGatewayTopic &&
+        m_links.gateways != nullptr) {
+        openGatewayChoices();
+    } else if (event.kind == HintMenuEvent::Kind::Chose) {
+        takeGatewayChoice(event.topic);
+        m_sumnerVisit.closeTopics();
+        imported->dismissDialogue();
+    } else if (event.kind == HintMenuEvent::Kind::Asked) {
         const auto keys = imported->answerDialogue(event.topic);
         m_sumnerVisit.closeTopics();
         if (m_services->strings) {

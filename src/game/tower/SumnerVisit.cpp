@@ -9,6 +9,8 @@
 #include "engine/core/Types.h"
 #include "engine/io/NativeStateDigest.h"
 
+#include "game/tower/TowerGateways.h"
+
 namespace gdl::game {
 bool SumnerVisit::appendNativeDigest(NativeStateDigest& digest) const {
     digest.string("SumnerVisit.native.1");
@@ -154,7 +156,7 @@ void SumnerVisit::clear() {
 
 bool SumnerVisit::visit(f32 seconds, std::optional<s32> visitor, bool sumnerReady,
                         const TextPainter& text, const GameConfig* config,
-                        const StringTable* strings) {
+                        const StringTable* strings, bool gateways) {
     if (m_sim.greetingLeft > 0.0f) {
         m_sim.greetingLeft = std::max(m_sim.greetingLeft - seconds, 0.0f);
     }
@@ -172,13 +174,13 @@ bool SumnerVisit::visit(f32 seconds, std::optional<s32> visitor, bool sumnerRead
     if (m_sim.greetingLeft == 0.0f) {
         m_sim.greetingLeft = -1.0f;
         m_sim.hintsGiven = true;
-        open(*visitor, text, config, strings);
+        open(*visitor, text, config, strings, gateways);
     }
     return false;
 }
 
 void SumnerVisit::open(s32 player, const TextPainter& text, const GameConfig* config,
-                       const StringTable* stringsTable) {
+                       const StringTable* stringsTable, bool gateways) {
     if (stringsTable == nullptr || config == nullptr) {
         return;
     }
@@ -187,6 +189,10 @@ void SumnerVisit::open(s32 player, const TextPainter& text, const GameConfig* co
     labels.title = std::string(strings.get("hints.title"));
     for (const HintTopicEntry& topic : kHintTopics) {
         labels.topics.push_back(MenuItem{std::string(strings.get(topic.text)), topic.code});
+    }
+    if (gateways) {
+        labels.topics.push_back(
+            MenuItem{std::string(strings.get(kGatewayTopicText)), kGatewayTopic});
     }
     labels.select = std::string(strings.get("menu.select"));
     labels.player = std::string(strings.get("menu.player"));

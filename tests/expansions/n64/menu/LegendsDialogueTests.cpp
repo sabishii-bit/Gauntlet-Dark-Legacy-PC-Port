@@ -21,6 +21,7 @@
 #include "expansions/n64/scenes/LegendsSumnerText.h"
 #include "game/hud/LevelMessages.h"
 #include "game/tower/HintMenu.h"
+#include "game/tower/TowerGateways.h"
 
 namespace {
 using namespace gdl;
@@ -378,4 +379,96 @@ TEST_CASE("N64 Sumner presents all six native choices with its two native fonts"
     CHECK_FALSE(style.text().ready());
     CHECK(style.menuTextures()->backdrop == nullptr);
     CHECK_FALSE(style.nativeTopics(labels.title, labels.topics));
+}
+
+TEST_CASE("N64 Sumner's gateway row and his list of places stand whole on his own scroll",
+          "[legends][assets][dialogue][native-dialogue][sumner][gateways]") {
+    const auto root = test::dataDirectory().parent_path() / "assets/n64/extracted";
+    if (!std::filesystem::is_regular_file(root / "Font/bigfont.fnt") ||
+        !std::filesystem::is_regular_file(root / "_program/Tower.bin")) {
+        SKIP("Native N64 Sumner assets are not installed");
+    }
+    StringTable strings;
+    REQUIRE(strings.load(test::dataDirectory() / "text", "en"));
+    const auto native = LegendsSumner::decode(readFile(root / "_program/game.bin"),
+                                              readFile(root / "_program/Tower.bin"));
+    HintMenuLabels labels;
+    labels.title = strings.get(legendsN64SumnerTextKey(native.titleId()));
+    for (const auto& choice : native.choices()) {
+        // No native action answers to the gateway row's code.
+        CHECK(static_cast<s32>(choice.action) != kGatewayTopic);
+        labels.topics.push_back({std::string{strings.get(legendsN64SumnerTextKey(choice.textId))},
+                                 static_cast<s32>(choice.action)});
+    }
+    labels.topics.push_back({std::string{strings.get(kGatewayTopicText)}, kGatewayTopic});
+    test::FakeRenderDevice device;
+    LegendsDialogue style;
+    REQUIRE(style.load(device, root));
+    // Every letter of the new words is one the native font draws.
+    const std::array words{strings.get(kGatewayTopicText), strings.get(kGatewayHomeText),
+                           strings.get("legends.n64.gateway.label"),
+                           strings.get("legends.dreamcast.gateway.label")};
+    REQUIRE(style.text().font());
+    for (const std::string_view word : words) {
+        for (const char letter : word) {
+            CAPTURE(word, letter);
+            CHECK(
+                (letter == ' ' || style.text().font()->glyph(static_cast<u8>(letter)) != nullptr));
+        }
+    }
+    HintMenuArt art;
+    art.textures = *style.menuTextures();
+    art.presentation = &style;
+    HintMenu menu;
+    menu.setArt(art);
+    /** Every row of `shown` whole on the scroll, and the scroll on the screen. */
+    const auto checkWhole = [](const OptionMenu& shown) {
+        const Rect scroll = shown.backdropArea();
+        CHECK(scroll.x >= 0);
+        CHECK(scroll.x + scroll.width <= 512);
+        CHECK(scroll.y >= 0);
+        CHECK(scroll.bottom() <= 384);
+        for (usize i = 0; i < shown.definition().items.size(); ++i) {
+            CAPTURE(i, shown.definition().items[i].text);
+            const Rect row = shown.itemArea(i);
+            CHECK(row.x >= scroll.x);
+            CHECK(row.x + row.width <= scroll.x + scroll.width);
+            CHECK(row.y >= scroll.y);
+            CHECK(row.y + row.height <= scroll.bottom());
+        }
+    };
+    REQUIRE(menu.open(style.text(), {}, labels, style.nativeTopics(labels.title, labels.topics)));
+    REQUIRE(menu.topics().definition().items.size() == 7);
+    checkWhole(menu.topics());
+    // Asked for, the list is laid out as his topics are, under his own heading.
+    const auto row = menu.topics().itemArea(6);
+    MenuInput click;
+    click.pointer = Vec2{row.x + row.width / 2, row.y + row.height / 2};
+    click.pointerPressed = true;
+    const auto asked = menu.update(device, click, 1);
+    REQUIRE(asked.kind == HintMenuEvent::Kind::Asked);
+    REQUIRE(asked.topic == kGatewayTopic);
+    std::vector<MenuItem> places{
+        {std::string{words[1]}, 0}, {std::string{words[2]}, 1}, {std::string{words[3]}, 2}};
+    places[1].enabled = false; // the N64's own world, where the party stands
+    REQUIRE(menu.choose(places));
+    const OptionMenu& list = menu.page();
+    CHECK(list.definition().backdrop == "TEXTSCROLL");
+    CHECK_FALSE(list.definition().showCursor);
+    checkWhole(list);
+    Canvas canvas;
+    canvas.begin(device, Mat4{1});
+    device.draws.clear();
+    menu.draw(canvas, style.text());
+    canvas.end();
+    // The scroll, its heading in the title font, and the rows in the body font: the greyed one
+    // at half strength.
+    REQUIRE(device.draws.size() == 3);
+    CHECK(device.draws[0].texture == art.textures.backdrop);
+    CHECK(device.draws[1].vertices.front().color == Color::rgba(0, 0, 132));
+    bool greyed = false;
+    for (const ImmediateVertex& vertex : device.draws[2].vertices) {
+        greyed = greyed || vertex.color == Color::rgba(0, 0, 0, 127);
+    }
+    CHECK(greyed);
 }

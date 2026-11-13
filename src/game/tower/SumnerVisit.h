@@ -2,6 +2,8 @@
 
 #include <memory>
 #include <optional>
+#include <utility>
+#include <vector>
 
 #include "engine/assets/ItemArchive.h"
 #include "engine/assets/TextureSet.h"
@@ -64,9 +66,10 @@ public:
     void clear();
 
     /** True requests Sumner's welcome gesture. A completed delay opens the current
-     * visitor's scroll. The delay keeps running while nobody occupies the spot. */
+     * visitor's scroll, its topics ending with his gateway row (kGatewayTopic) when `gateways`
+     * says he offers them. The delay keeps running while nobody occupies the spot. */
     bool visit(f32 seconds, std::optional<s32> visitor, bool sumnerReady, const TextPainter& text,
-               const GameConfig* config, const StringTable* strings);
+               const GameConfig* config, const StringTable* strings, bool gateways = false);
     /** The caller routes only owner()'s menu input. Returns sound/gesture cues. */
     HintMenuEvent update(RenderDevice& device, const MenuInput& input, s32 ticks);
     /** Semantic topic input is checked again against the actual scroll owner. */
@@ -76,6 +79,8 @@ public:
     /** Responds to Asked with a fresh party snapshot; no party scan is needed otherwise. */
     void answer(s32 topic, const TextPainter& text, const StringTable* strings,
                 const HintKnowledge& knowledge);
+    /** Responds to Asked with a page of choices (HintMenu::choose). */
+    bool choose(std::vector<MenuItem> choices) { return m_menu.choose(std::move(choices)); }
     void prepare(RenderDevice& device) { m_menu.prepare(device); }
     void draw(Canvas& canvas, const TextPainter& text) const { m_menu.draw(canvas, text); }
 
@@ -89,7 +94,7 @@ public:
 
 private:
     void open(s32 player, const TextPainter& text, const GameConfig* config,
-              const StringTable* strings);
+              const StringTable* strings, bool gateways);
 
     SumnerHints m_hints;
     HintMenu m_menu;

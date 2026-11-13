@@ -1,9 +1,13 @@
+#include <string>
 #include <type_traits>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/assets/StringTable.h"
+
 #include "FakeGameServices.h"
+#include "TestSupport.h"
 #include "game/characters/CharacterSave.h"
 #include "game/characters/Relics.h"
 #include "game/level/LevelCatalog.h"
@@ -32,6 +36,69 @@ TEST_CASE("the worlds past Sumner's gateways come as offered, every ask a look o
     CHECK(worlds[1] == GatewayWorld{1, "b", false});
     CHECK(worlds[1] != GatewayWorld{1, "b", true});
     CHECK(GatewayWorld{} == GatewayWorld{0, "", false}); // none usable until found
+}
+
+TEST_CASE("Sumner lists the same places in every tower, greying what cannot be chosen",
+          "[game][tower][gateways]") {
+    constexpr u8 kFirst = 0;
+    constexpr u8 kSecond = 1;
+    const GatewayDestination home;
+    const GatewayDestination first{kFirst};
+    const GatewayDestination second{kSecond};
+    CHECK(home != first);
+    CHECK(first != second);
+    // Which worlds this installation can open: none, either one, or both.
+    const auto offered = [](bool firstUsable, bool secondUsable) {
+        return std::vector<GatewayWorld>{{kFirst, "first", firstUsable},
+                                         {kSecond, "second", secondUsable}};
+    };
+    const auto enabled = [](const std::vector<GatewayChoice>& choices) {
+        std::vector<bool> result;
+        result.reserve(choices.size());
+        for (const GatewayChoice& choice : choices) {
+            result.push_back(choice.enabled);
+        }
+        return result;
+    };
+    for (const bool firstUsable : {false, true}) {
+        for (const bool secondUsable : {false, true}) {
+            CAPTURE(firstUsable, secondUsable);
+            const auto worlds = offered(firstUsable, secondUsable);
+            for (const GatewayDestination& here : {home, first, second}) {
+                CAPTURE(here.world.value_or(0xFF));
+                // The campaign's own tower first, then the worlds in the order offered.
+                const auto choices = gatewayChoices(worlds, here);
+                REQUIRE(choices.size() == 3);
+                CHECK(choices[0].destination == home);
+                CHECK(choices[0].label == kGatewayHomeText);
+                CHECK(choices[1].destination == first);
+                CHECK(choices[1].label == "first");
+                CHECK(choices[2].destination == second);
+                CHECK(choices[2].label == "second");
+                // Greyed: a world this installation cannot open, and where the party stands.
+                CHECK(enabled(choices) == std::vector<bool>{here != home,
+                                                            firstUsable && here != first,
+                                                            secondUsable && here != second});
+            }
+        }
+    }
+    // With no world offered past the gateways, the list holds the campaign's own tower alone.
+    CHECK(gatewayChoices({}, home) ==
+          std::vector<GatewayChoice>{{home, std::string(kGatewayHomeText), false}});
+    CHECK(gatewayChoices({}, first) ==
+          std::vector<GatewayChoice>{{home, std::string(kGatewayHomeText), true}});
+}
+
+TEST_CASE("Sumner's gateway row and his own tower read as the user worded them",
+          "[game][tower][gateways]") {
+    StringTable strings;
+    REQUIRE(strings.load(test::dataDirectory() / "text", "en"));
+    CHECK(strings.get(kGatewayTopicText) == "Legacy of Legends");
+    CHECK(strings.get(kGatewayHomeText) == "The Dark Legacy");
+    // The row answers to no topic of the original's (39 to 42, OPTMENU 0x8011F804's items).
+    for (const s32 retail : {39, 40, 41, 42}) {
+        CHECK(kGatewayTopic != retail);
+    }
 }
 
 TEST_CASE("a character has beaten Garm while the class it plays holds his piece",

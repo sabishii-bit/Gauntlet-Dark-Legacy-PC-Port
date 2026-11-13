@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <utility>
+#include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -13,6 +14,7 @@
 #include "RecordedDrawChecks.h"
 #include "TestSupport.h"
 #include "game/tower/SumnerVisit.h"
+#include "game/tower/TowerGateways.h"
 #include "game/widgets/DialoguePresentation.h"
 
 namespace {
@@ -132,6 +134,51 @@ TEST_CASE("Sumner answers topics and emits navigation and departure cues",
     input.select = true;
     REQUIRE(f.step(input).kind == HintMenuEvent::Kind::Asked);
     REQUIRE(f.visit.menu().page().definition().body == std::vector<std::string>{"SECOND"});
+}
+
+TEST_CASE("Sumner ends his topics with his gateway row only when he offers his gateways",
+          "[game][screens][sumner-visit][gateways]") {
+    Fixture f("sumner-visit-gateways");
+    f.open();
+    CHECK(f.visit.menu().topics().definition().items.size() == 4); // the original's four alone
+    f.visit.clear();
+    REQUIRE(f.visit.visit(0.0f, 0, true, f.text, &f.config, &f.strings, true));
+    REQUIRE_FALSE(
+        f.visit.visit(SumnerVisit::kGreetingSeconds, 0, true, f.text, &f.config, &f.strings, true));
+    const auto& items = f.visit.menu().topics().definition().items;
+    REQUIRE(items.size() == 5);
+    CHECK(items[0].code == 39); // the original's topics first, as they stand
+    CHECK(items[4].text == "Legacy of Legends");
+    CHECK(items[4].code == kGatewayTopic);
+    CHECK(items[4].enabled);
+    // Asked, the row is the scene's to answer: no page of hints opens for it.
+    MenuInput down;
+    down.down = true;
+    for (s32 i = 0; i < 4; ++i) {
+        REQUIRE(f.visit.update(f.device, down, 2).kind == HintMenuEvent::Kind::Moved);
+    }
+    MenuInput select;
+    select.select = true;
+    const HintMenuEvent asked = f.visit.update(f.device, select, 2);
+    CHECK(asked.kind == HintMenuEvent::Kind::Asked);
+    CHECK(asked.topic == kGatewayTopic);
+    f.visit.answer(asked.topic, f.text, &f.strings, {});
+    CHECK_FALSE(f.visit.menu().reading());
+    // It answers with a page of choices, and a choice comes back with its code while the scroll
+    // stays the visitor's until it has gone.
+    std::vector<MenuItem> places{{"A", 0}, {"B", 1}};
+    places[0].enabled = false;
+    REQUIRE(f.visit.choose(places));
+    CHECK(f.visit.menu().reading());
+    const HintMenuEvent chosen = f.visit.update(f.device, select, 2);
+    CHECK(chosen.kind == HintMenuEvent::Kind::Chose);
+    CHECK(chosen.topic == 1);
+    CHECK(f.visit.owner() == 0);
+    for (s32 i = 0; i < 100 && f.visit.active(); ++i) {
+        f.visit.update(f.device, {}, 2);
+    }
+    CHECK_FALSE(f.visit.active());
+    CHECK(f.visit.owner() == -1);
 }
 
 TEST_CASE("clearing a Sumner visit releases the menu and resets the greeting, not hint progress",

@@ -176,6 +176,10 @@ bool LegendsLevel::updateN64Sumner(std::span<PlayerActor*> players, f32 seconds,
         request.topics.push_back(
             {static_cast<s32>(choice.action), legendsN64SumnerTextKey(choice.textId)});
     }
+    // His gateways end the menu, after History. The tower is the N64's world past them, which
+    // legendsGatewayWorlds numbers by its campaign.
+    request.gateways =
+        ImportedDialogue::Gateways{request.topics.size(), static_cast<u8>(LegendsPlatform::N64)};
     m_dialogue = std::move(request);
     m_dialogueOpen = true;
     return false;

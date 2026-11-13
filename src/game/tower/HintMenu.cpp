@@ -1,5 +1,7 @@
 #include "game/tower/HintMenu.h"
 
+#include <algorithm>
+#include <optional>
 #include <utility>
 
 #include "engine/core/Types.h"
@@ -119,6 +121,41 @@ void HintMenu::read(const TextPainter& painter, std::string title,
     ++m_sim.revision;
 }
 
+bool HintMenu::choose(std::vector<MenuItem> choices) {
+    if (m_sim.painter == nullptr || !m_sim.topics.isOpen() || choices.empty()) {
+        return false;
+    }
+    const TextPainter& painter = *m_sim.painter;
+    std::optional<MenuDefinition> native;
+    if (m_art.presentation != nullptr) {
+        native = m_art.presentation->nativeChoices(m_sim.labels.title, choices);
+    }
+    MenuDefinition menu;
+    if (native) {
+        menu = std::move(*native);
+    } else {
+        // The list's own look under its heading, the rows centred and shrunk together, the
+        // arrow with them, until the widest keeps within the room.
+        menu = scrollDefinition(m_sim.labels);
+        menu.title = m_sim.labels.title;
+        menu.titleScale = kTitleScale;
+        menu.x = -(m_sim.screen.width / 2);
+        menu.selectLabel = m_sim.labels.select;
+        menu.garamondIntro = true;
+        menu.backdropFades = false; // the scroll is already out
+        s32 widest = 1;
+        for (const MenuItem& choice : choices) {
+            widest = std::max(widest, painter.measure(choice.text, 1.0f));
+        }
+        menu.scale = std::min(1.0f, static_cast<f32>(kChoicesRoom) / static_cast<f32>(widest));
+        menu.cursorScale = menu.scale;
+    }
+    menu.items = std::move(choices);
+    m_sim.page.open(menu, painter, m_sim.screen);
+    ++m_sim.revision;
+    return true;
+}
+
 void HintMenu::close() {
     m_sim.topics = OptionMenu{};
     m_sim.page = OptionMenu{};
@@ -127,14 +164,20 @@ void HintMenu::close() {
     ++m_sim.revision;
 }
 
-/** Backing out of the list hands the scroll to the flames while the words fade. */
+/** Backing out of the list, or a choice on a page of choices, hands the scroll to the flames
+ * while the words fade; the list under a page goes with it. */
 void HintMenu::leave(RenderDevice& device) {
+    const bool choosing = m_sim.page.isOpen();
+    OptionMenu& shown = choosing ? m_sim.page : m_sim.topics;
     if (m_art.scroll != nullptr && !m_art.burnMasks.empty() && !m_art.burnRing.empty() &&
-        m_fire.start(device, m_sim.topics.backdropArea(), *m_art.scroll, m_art.burnMasks,
+        m_fire.start(device, shown.backdropArea(), *m_art.scroll, m_art.burnMasks,
                      m_art.burnRing)) {
-        m_sim.topics.releaseBackdrop();
+        shown.releaseBackdrop();
     }
-    m_sim.topics.close();
+    shown.close();
+    if (choosing) {
+        m_sim.topics = OptionMenu{};
+    }
     ++m_sim.revision;
 }
 
@@ -163,12 +206,19 @@ HintMenuEvent HintMenu::update(RenderDevice& device, const MenuInput& input, s32
     if (m_sim.page.isOpen()) {
         const MenuEvent event = m_sim.page.update(heard, ticks);
         if (event.action == MenuAction::Back && m_sim.painter != nullptr) {
-            // Back to the list where it was left, the scroll staying as it is.
+            // Back to the list where it was left, in the look it opened in, the scroll staying
+            // as it is.
             const s32 selection = m_sim.topics.selection();
+            MenuDefinition list = m_sim.topics.definition();
+            list.backdropFades = false;
             m_sim.page = OptionMenu{};
-            m_sim.topics.open(topicsDefinition(false), *m_sim.painter, m_sim.screen, selection);
+            m_sim.topics.open(list, *m_sim.painter, m_sim.screen, selection);
             ++m_sim.revision;
             return HintMenuEvent{HintMenuEvent::Kind::Returned, 0};
+        }
+        if (event.action == MenuAction::Choice) {
+            leave(device);
+            return HintMenuEvent{HintMenuEvent::Kind::Chose, event.code};
         }
         return {};
     }
@@ -194,16 +244,14 @@ void HintMenu::prepare(RenderDevice& device) {
 void HintMenu::draw(Canvas& canvas, const TextPainter& painter) const {
     const auto& text = m_sim.painter ? *m_sim.painter : painter;
     m_fire.draw(canvas);
-    if (m_sim.page.isOpen()) {
-        m_sim.page.draw(canvas, text, m_art.textures);
-    } else {
-        auto art = m_art.textures;
-        if (m_art.presentation && m_sim.topics.isOpen() && !m_sim.topics.backdropReleased() &&
-            m_art.presentation->drawTopicsBackdrop(canvas, m_sim.topics, m_sim.labels.title)) {
-            art.backdrop = nullptr;
-        }
-        m_sim.topics.draw(canvas, text, art);
+    // A page shows over the list; a native look draws its own backdrop and heading under either.
+    const OptionMenu& shown = m_sim.page.isOpen() ? m_sim.page : m_sim.topics;
+    auto art = m_art.textures;
+    if (m_art.presentation && shown.isOpen() && !shown.backdropReleased() &&
+        m_art.presentation->drawTopicsBackdrop(canvas, shown, m_sim.labels.title)) {
+        art.backdrop = nullptr;
     }
+    shown.draw(canvas, text, art);
 }
 
 void HintMenu::saveLocal(LocalSnapshot& saved) const {

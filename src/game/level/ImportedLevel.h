@@ -84,9 +84,15 @@ struct ImportedDialogue {
         s32 code = 0;
         std::string label;
     };
+    /** Where the Sumner of a tower past the campaign's gateways offers them among his topics. */
+    struct Gateways {
+        usize row = 0; ///< the topic the gateway row stands before; the topics' count ends with it
+        u8 world = 0; ///< the world whose tower this is, numbered as the scene's gateways number it
+    };
     s32 player = 0;
     std::string title;
     std::vector<Topic> topics;
+    std::optional<Gateways> gateways = std::nullopt; ///< none for a resident offering no gateways
 };
 
 /** Native level presentation and scenery rules hosted by the ordinary gameplay scene.

@@ -29,7 +29,6 @@
 #include "engine/ui/Canvas.h"
 #include "engine/world/SelectionHighlight.h"
 
-#include "FakeGameServices.h"
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "game/app/Scenario.h"
@@ -58,10 +57,10 @@
 #include "game/players/PlayerControls.h"
 #include "game/players/PowerupEffects.h"
 #include "game/players/TurboMeter.h"
+#include "game/scenes/GatewayTower.h"
 #include "game/scenes/PlayScene.h"
 #include "game/scenes/SceneSelection.h"
 #include "game/tower/LevelBeaten.h"
-#include "game/tower/TowerWelcome.h"
 #include "game/widgets/ScrollBox.h"
 
 namespace {
@@ -1406,83 +1405,9 @@ TEST_CASE("back from the Underworld's throne the tower opens GarmMessage before 
     CHECK_FALSE(scene.levelBeaten().has_value());
 }
 
-/** A character back from Garm's citadel: experienced, and holding his piece with the class it
- * plays. */
-CharacterSave garmBeaten(std::string_view name) {
-    CharacterSave save;
-    save.name = std::string(name);
-    save.progress().experience = levelExperience(40);
-    save.progress().relics.addShard(LevelRef::orderOf(TowerAccess::kBattlefieldWorld));
-    return save;
-}
-
-/** How the journey back from Garm's citadel opens the tower. */
-PlayOptions backFromGarm() {
-    PlayOptions options;
-    options.welcome = false;
-    options.arriving = true;
-    options.arrivalWorld = static_cast<u32>(TowerAccess::kBattlefieldWorld);
-    options.beaten = LevelBeaten{TowerAccess::kBattlefieldWorld, TowerAccess::kGarmGate};
-    return options;
-}
-
-/** The tower in English, with the worlds past Sumner's gateways a test's installation offers:
- * the first usable and the second not, unless the test says otherwise. */
-struct GatewayTower {
-    const std::filesystem::path root = unpackedRoot();
-    const GameConfig config;
-    StringTable strings;
-    test::FakeRenderDevice device;
-    LevelCatalog levels;
-    LevelWorld world;
-    GameServices context;
-    test::FixedGateways gateways;
-    PlayScene scene;
-
-    GatewayTower() {
-        REQUIRE(strings.load(test::dataDirectory() / "text", "en"));
-        REQUIRE(levels.load(root));
-        REQUIRE(world.load(device, root));
-        context.config = &config;
-        context.strings = &strings;
-        context.levels = &levels;
-        context.unpackedRoot = root;
-        gateways.offered = {{0, "legends.n64.gateway.label", true},
-                            {1, "legends.dreamcast.gateway.label", false}};
-    }
-
-    /** Opens the tower for `party` as `options` say, with the gateways (offline) or without
-     * them (as online), and lets the party materialise, `step` an update; no scroll shows
-     * meanwhile. */
-    void arrive(std::span<const PartyMember> party, f64 step,
-                const PlayOptions& options = backFromGarm(), bool offline = true) {
-        scene.close();
-        REQUIRE(scene.open(device, context, world, party, options,
-                           offline ? PlayScene::Links{.gateways = &gateways} : PlayScene::Links{}));
-        const PlayScene::Inputs still{};
-        for (s32 i = 0; i < 1200 && scene.spawning(); ++i) {
-            REQUIRE_FALSE(scene.scroll().active());
-            scene.update(step, still);
-        }
-        REQUIRE_FALSE(scene.spawning());
-    }
-    /** Whether the scroll up is Sumner's one page about his gateways, as the English has it. */
-    bool tellingGateways() const {
-        return scene.scroll().active() && !scene.scrollLook() && scene.scroll().pageCount() == 1 &&
-               scene.scroll().lines() ==
-                   ScrollBox::splitLines(strings.get(TowerWelcome::kGatewayScroll));
-    }
-    /** Turns the scroll's pages as they take a button, until it has burnt away. */
-    void readThrough(f64 step) {
-        PlayScene::Inputs accept{};
-        accept[0].menu.select = true;
-        const PlayScene::Inputs still{};
-        for (s32 i = 0; i < 2000 && scene.scroll().active(); ++i) {
-            scene.update(step, i % 2 == 0 ? accept : still);
-        }
-        REQUIRE_FALSE(scene.scroll().active());
-    }
-};
+using test::backFromGarm;
+using test::garmBeaten;
+using test::GatewayTower;
 
 TEST_CASE("back from beating Garm, Sumner tells the party once that his gateways have woken",
           "[game][screens][welcome][gateways][assets]") {

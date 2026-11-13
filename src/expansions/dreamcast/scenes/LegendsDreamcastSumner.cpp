@@ -21,13 +21,19 @@ bool LegendsLevel::updateDreamcastSumner(std::span<PlayerActor*> players, f32 se
     const auto owner = m_dreamcastSumner->update(visitors, seconds, blocked || m_dialogueOpen);
     m_world.adapter()->faceDreamcastSumner(m_dreamcastSumner->yaw());
     if (owner) {
-        m_dialogue = ImportedDialogue{*owner,
-                                      {},
-                                      {{0, "legends.dreamcast.sumner.topic.history"},
-                                       {1, "legends.dreamcast.sumner.topic.obelisk"},
-                                       {2, "legends.dreamcast.sumner.topic.rune"},
-                                       {3, "legends.dreamcast.sumner.topic.enemy"},
-                                       {4, "legends.dreamcast.sumner.topic.exit"}}};
+        ImportedDialogue dialogue{*owner,
+                                  {},
+                                  {{0, "legends.dreamcast.sumner.topic.history"},
+                                   {1, "legends.dreamcast.sumner.topic.obelisk"},
+                                   {2, "legends.dreamcast.sumner.topic.rune"},
+                                   {3, "legends.dreamcast.sumner.topic.enemy"},
+                                   {4, "legends.dreamcast.sumner.topic.exit"}}};
+        // His gateways stand last among the topics, before "exit", which the native menu keeps
+        // apart at the right. The tower is the Dreamcast's world past them, which
+        // legendsGatewayWorlds numbers by its campaign.
+        dialogue.gateways = ImportedDialogue::Gateways{dialogue.topics.size() - 1,
+                                                       static_cast<u8>(LegendsPlatform::Dreamcast)};
+        m_dialogue = std::move(dialogue);
         m_dialogueOpen = true;
     }
     return m_dialogueOpen;

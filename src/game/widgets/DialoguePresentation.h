@@ -38,6 +38,12 @@ public:
                                                        std::span<const MenuItem> /*topics*/) const {
         return {};
     }
+    /** Optional native layout of a list of choices opened from a topic, under the topic menu's
+     * `title`: the topic menu's own unless a look sets its last topic apart. */
+    virtual std::optional<MenuDefinition> nativeChoices(std::string_view title,
+                                                        std::span<const MenuItem> choices) const {
+        return nativeTopics(title, choices);
+    }
     /** Optional native backdrop/title draw. True replaces the ordinary single-image backdrop. */
     virtual bool drawTopicsBackdrop(Canvas& /*canvas*/, const OptionMenu& /*menu*/,
                                     std::string_view /*title*/) const {

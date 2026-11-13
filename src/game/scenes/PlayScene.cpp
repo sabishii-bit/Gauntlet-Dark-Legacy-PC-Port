@@ -331,6 +331,9 @@ void PlayScene::close() {
     endRecordedAudio();
     m_audio.stopCues();
     m_sumnerVisit.clear();
+    m_gatewayHere = {};
+    m_gatewayChoices.clear();
+    m_gatewayRequest.reset();
     m_spawned.clear();
     m_sim.cheats = {};
     m_sim.consoleTravel.reset();
@@ -900,7 +903,7 @@ std::vector<PartyMember> PlayScene::abandonedParty(std::span<const PartyMember> 
 void PlayScene::updateSumnerVisit(f32 seconds) {
     const std::optional<s32> player = TowerWelcome::visitorOf(m_world->triggers(), m_players);
     if (m_sumnerVisit.visit(seconds, player, m_sumner.loaded(), m_messages.text(),
-                            m_services->config, m_services->strings)) {
+                            m_services->config, m_services->strings, offersGateways())) {
         m_sumner.play(SumnerFigure::kWelcomeIndex);
     }
 }
@@ -920,6 +923,10 @@ void PlayScene::updateHints(const Inputs& inputs, s32 ticks) {
     case HintMenuEvent::Kind::Moved: m_audio.playNamed(kMenuMoveSound); break;
     case HintMenuEvent::Kind::Asked: {
         m_audio.playNamed(kMenuSelectSound);
+        if (event.topic == kGatewayTopic) {
+            openGatewayChoices();
+            break;
+        }
         std::vector<ClassProgress> party;
         party.reserve(m_players.size());
         for (const PlayerRuntime& runtime : m_players) {
@@ -933,6 +940,13 @@ void PlayScene::updateHints(const Inputs& inputs, s32 ticks) {
     case HintMenuEvent::Kind::Left:
         m_audio.playNamed(m_sumnerVisit.menu().burning() ? kScrollBurnSound : kMenuExitSound);
         m_sumner.play(SumnerFigure::kGoAwayIndex);
+        break;
+    case HintMenuEvent::Kind::Chose:
+        m_audio.playNamed(kMenuSelectSound);
+        if (m_sumnerVisit.menu().burning()) {
+            m_audio.playNamed(kScrollBurnSound);
+        }
+        takeGatewayChoice(event.topic);
         break;
     case HintMenuEvent::Kind::None: break;
     }

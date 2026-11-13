@@ -1,13 +1,20 @@
 #include <array>
+#include <string>
+#include <string_view>
+#include <vector>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+
+#include "engine/assets/StringTable.h"
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "expansions/dreamcast/menu/LegendsDreamcastDialogue.h"
 #include "expansions/dreamcast/menu/LegendsDreamcastEntrance.h"
 #include "game/hud/LevelMessages.h"
+#include "game/tower/TowerGateways.h"
+#include "game/widgets/OptionMenu.h"
 
 namespace {
 using namespace gdl;
@@ -136,4 +143,74 @@ TEST_CASE("Dreamcast scroll pages and menus use their own native font atlases",
     CHECK_FALSE(style.text().ready());
     CHECK_FALSE(style.menuText().ready());
     CHECK(style.menuTextures()->backdrop == nullptr);
+}
+
+TEST_CASE("Dreamcast Sumner's gateway row and his list of places stand whole on his own scroll",
+          "[dreamcast-dialogue][gateways][assets]") {
+    const auto root = nativeRoot();
+    test::FakeRenderDevice device;
+    LegendsDreamcastDialogue style;
+    REQUIRE(style.load(device, root));
+    StringTable strings;
+    REQUIRE(strings.load(test::dataDirectory() / "text", "en"));
+    // Every letter of the new words is one the native font draws.
+    const std::array words{strings.get(kGatewayTopicText), strings.get(kGatewayHomeText),
+                           strings.get("legends.n64.gateway.label"),
+                           strings.get("legends.dreamcast.gateway.label")};
+    REQUIRE(style.text().font());
+    for (const std::string_view word : words) {
+        for (const char letter : word) {
+            CAPTURE(word, letter);
+            CHECK(
+                (letter == ' ' || style.text().font()->glyph(static_cast<u8>(letter)) != nullptr));
+        }
+    }
+    /** Every row of `definition`, opened, whole on the scroll, and the scroll on the screen. */
+    const auto checkWhole = [&](const MenuDefinition& definition) {
+        OptionMenu opened;
+        opened.open(definition, style.text(), {});
+        const Rect scroll = opened.backdropArea();
+        CHECK(scroll.x >= 0);
+        CHECK(scroll.x + scroll.width <= 512);
+        CHECK(scroll.y >= 0);
+        CHECK(scroll.bottom() <= 384);
+        for (usize i = 0; i < definition.items.size(); ++i) {
+            CAPTURE(i, definition.items[i].text);
+            const Rect row = opened.itemArea(i);
+            CHECK(row.x >= scroll.x);
+            CHECK(row.x + row.width <= scroll.x + scroll.width);
+            CHECK(row.y >= scroll.y);
+            CHECK(row.y + row.height <= scroll.bottom());
+        }
+    };
+    const std::vector<MenuItem> topics{
+        {std::string{strings.get("legends.dreamcast.sumner.topic.history")}, 0},
+        {std::string{strings.get("legends.dreamcast.sumner.topic.obelisk")}, 1},
+        {std::string{strings.get("legends.dreamcast.sumner.topic.rune")}, 2},
+        {std::string{strings.get("legends.dreamcast.sumner.topic.enemy")}, 3},
+        {std::string{words[0]}, kGatewayTopic},
+        {std::string{strings.get("legends.dreamcast.sumner.topic.exit")}, 4}};
+    const auto menu = style.nativeTopics({}, topics);
+    REQUIRE(menu);
+    REQUIRE(menu->itemPositions.size() == topics.size());
+    // The gateway row stands in the topics' column; "exit" is still set apart below it at right.
+    const f32 row = 16 * style.scale();
+    CHECK(menu->itemPositions[4] == Vec2(-256, menu->itemPositions[3].y + row));
+    CHECK(menu->itemPositions[5].x > 256);
+    CHECK(menu->itemPositions[5].y > menu->itemPositions[4].y + row);
+    checkWhole(*menu);
+    // The list of places: every one in the same column, none set apart.
+    const std::vector<MenuItem> places{
+        {std::string{words[1]}, 0}, {std::string{words[2]}, 1}, {std::string{words[3]}, 2}};
+    const auto list = style.nativeChoices({}, places);
+    REQUIRE(list);
+    REQUIRE(list->itemPositions.size() == places.size());
+    for (usize i = 0; i < places.size(); ++i) {
+        CAPTURE(i);
+        CHECK(list->itemPositions[i] ==
+              Vec2(-256, list->itemPositions[0].y + row * static_cast<f32>(i)));
+    }
+    CHECK(list->backdrop == menu->backdrop);
+    CHECK(list->colors.off == menu->colors.off);
+    checkWhole(*list);
 }

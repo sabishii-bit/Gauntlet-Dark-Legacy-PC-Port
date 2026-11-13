@@ -511,6 +511,7 @@ add_library(game STATIC
     party/PlayerHealth.cpp
     scenes/PlayScene.cpp
     scenes/PlaySceneImported.cpp
+    scenes/PlaySceneGateways.cpp
     scenes/PlaySceneConsole.cpp
     scenes/SharedConsoleVerbs.h
     scenes/SharedConsoleVerbs.cpp

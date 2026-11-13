@@ -407,6 +407,7 @@ add_executable(tests
     expansions/n64/scenes/LegendsSumnerIntegrationTests.cpp
     game/level/ImportedLevelWorldTests.cpp
     game/scenes/ImportedPlaySceneTests.cpp
+    game/scenes/PlaySceneGatewaysTests.cpp
     expansions/n64/scenes/LegendsGameplayTests.cpp
     expansions/n64/scenes/LegendsTowerTests.cpp
     expansions/n64/scenes/LegendsRidersTests.cpp

@@ -75,14 +75,25 @@ bool LegendsDreamcastDialogue::load(RenderDevice& device, const std::filesystem:
 std::optional<MenuDefinition>
 LegendsDreamcastDialogue::nativeTopics(std::string_view /*title*/,
                                        std::span<const MenuItem> topics) const {
-    if (!m_text.ready() || !m_scroll || topics.empty()) {
+    return topicMenu(topics, true);
+}
+
+std::optional<MenuDefinition>
+LegendsDreamcastDialogue::nativeChoices(std::string_view /*title*/,
+                                        std::span<const MenuItem> choices) const {
+    return topicMenu(choices, false);
+}
+
+std::optional<MenuDefinition> LegendsDreamcastDialogue::topicMenu(std::span<const MenuItem> rows,
+                                                                  bool closingRow) const {
+    if (!m_text.ready() || !m_scroll || rows.empty()) {
         return {};
     }
     MenuDefinition result;
     // 8c065e60 sizes TEXTSCROLL from the four advice labels, not the screen.
     // There is no header. The fifth, lowercase "exit" sits below them at right.
     result.scale = kScale;
-    result.items.assign(topics.begin(), topics.end());
+    result.items.assign(rows.begin(), rows.end());
     result.rowGap = static_cast<s32>(16 * kScale) - m_text.lineHeight(kScale);
     result.showCursor = false;
     result.colors.off = Color::rgba(0, 31, 0);
@@ -90,23 +101,23 @@ LegendsDreamcastDialogue::nativeTopics(std::string_view /*title*/,
     result.colors.hi = Color::rgba(0, 0, 0, 0);
     result.backdrop = "TEXTSCROLL";
     s32 width = 0;
-    for (const auto& topic : topics) {
-        width = std::max(width, m_text.measure(topic.text, kScale));
+    for (const auto& item : rows) {
+        width = std::max(width, m_text.measure(item.text, kScale));
     }
     const s32 side = width / 4;
     const s32 row = static_cast<s32>(16 * kScale);
-    const s32 gap = static_cast<s32>(8 * kScale);
-    const s32 content = static_cast<s32>(topics.size()) * row + gap;
+    const s32 gap = closingRow ? static_cast<s32>(8 * kScale) : 0;
+    const s32 content = static_cast<s32>(rows.size()) * row + gap;
     const s32 margin = static_cast<s32>(static_cast<f32>(content) * .1875f);
     result.backdropWidth = std::min(512, width + 2 * side);
     result.backdropHeight = std::min(320, content + 2 * margin);
     result.backdropX = 256 - result.backdropWidth / 2;
     result.backdropY = 160 - result.backdropHeight / 2;
     const s32 top = result.backdropY + margin + m_font.height() / 2;
-    for (usize i = 0; i < topics.size(); ++i) {
-        const bool exit = i + 1 == topics.size();
+    for (usize i = 0; i < rows.size(); ++i) {
+        const bool exit = closingRow && i + 1 == rows.size();
         const s32 x = exit ? result.backdropX + result.backdropWidth - side -
-                                 m_text.measure(topics[i].text, kScale)
+                                 m_text.measure(rows[i].text, kScale)
                            : -256;
         result.itemPositions.emplace_back(x, top + static_cast<s32>(i) * row + (exit ? gap : 0));
     }

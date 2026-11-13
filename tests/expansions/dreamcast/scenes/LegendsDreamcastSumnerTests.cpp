@@ -95,6 +95,10 @@ TEST_CASE("Dreamcast tower hosts Sumner interaction and restores its own party p
     REQUIRE(dialogue);
     CHECK(dialogue->player == 2);
     REQUIRE(dialogue->topics.size() == 5);
+    // He offers his gateways last among his topics, before "exit", in the Dreamcast's tower.
+    REQUIRE(dialogue->gateways);
+    CHECK(dialogue->gateways->row == 4);
+    CHECK(dialogue->gateways->world == static_cast<u8>(LegendsPlatform::Dreamcast));
     StringTable text;
     REQUIRE(text.load(test::dataDirectory() / "text", "en"));
     CHECK(dialogue->title.empty());

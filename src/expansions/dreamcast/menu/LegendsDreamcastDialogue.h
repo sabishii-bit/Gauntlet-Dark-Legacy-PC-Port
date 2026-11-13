@@ -22,6 +22,9 @@ public:
     const MenuTextures* menuTextures() const override { return &m_menuTextures; }
     std::optional<MenuDefinition> nativeTopics(std::string_view title,
                                                std::span<const MenuItem> topics) const override;
+    /** A list of choices in the topics' own column, with no "exit" set apart. */
+    std::optional<MenuDefinition> nativeChoices(std::string_view title,
+                                                std::span<const MenuItem> choices) const override;
     f32 scale() const override { return kScale; }
     s32 textWidth() const override { return 320; }
     usize linesPerPage() const override { return 10; }
@@ -30,6 +33,10 @@ public:
               u8 promptAlpha) const override;
 
 private:
+    /** The topic menu's TEXTSCROLL about `rows`, the last set apart below them at right when
+     * `closingRow` says it is the menu's "exit". */
+    std::optional<MenuDefinition> topicMenu(std::span<const MenuItem> rows, bool closingRow) const;
+
     static constexpr f32 kScale = 1.25f;
     BitmapFont m_font;
     BitmapFont m_menuFont;

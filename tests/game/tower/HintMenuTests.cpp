@@ -1,4 +1,9 @@
 #include <algorithm>
+#include <optional>
+#include <span>
+#include <string>
+#include <string_view>
+#include <utility>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -13,6 +18,7 @@
 #include "FakeRenderDevice.h"
 #include "RecordedDrawChecks.h"
 #include "game/tower/HintMenu.h"
+#include "game/widgets/DialoguePresentation.h"
 
 namespace {
 
@@ -189,6 +195,201 @@ TEST_CASE("backing out of the topics burns the scroll away", "[game][menu][hints
     REQUIRE_FALSE(plain.burning());
     plain.close();
     REQUIRE_FALSE(plain.active());
+}
+
+/** Three places to choose from, the first and last greyed. */
+std::vector<MenuItem> choices() {
+    std::vector<MenuItem> out{{"HOME", 0}, {"FIRST", 1}, {"SECOND", 2}};
+    out[0].enabled = false;
+    out[2].enabled = false;
+    return out;
+}
+
+TEST_CASE("a topic answered with a page of choices greys some and burns once one is chosen",
+          "[game][menu][hints][gateways]") {
+    Fixture f;
+    REQUIRE_FALSE(f.menu.choose(choices())); // no list of topics open to answer
+    REQUIRE(f.menu.open(f.painter, MenuScreen{}, labels()));
+    REQUIRE(f.menu.update(f.device, press(true, false, false), 2).kind ==
+            HintMenuEvent::Kind::Moved);
+    REQUIRE(f.menu.update(f.device, press(false, true, false), 2).kind ==
+            HintMenuEvent::Kind::Asked);
+    REQUIRE_FALSE(f.menu.choose({})); // nothing to offer
+    REQUIRE(f.menu.choose(choices()));
+    REQUIRE(f.menu.reading());
+    // The list's own scroll and heading, the rows centred, the select prompt beneath.
+    const OptionMenu& page = f.menu.page();
+    CHECK(page.definition().title == "HELP");
+    CHECK(page.definition().titleScale == HintMenu::kTitleScale);
+    CHECK(page.definition().x == -256);
+    CHECK(page.definition().selectLabel == "SELECT");
+    CHECK(page.definition().playerLabel == "PLAYER");
+    CHECK(page.definition().backdrop == "SCROLL_A");
+    CHECK(page.backdropArea().x == 16.0f);
+    CHECK_FALSE(page.definition().backdropFades); // the scroll is already out
+    CHECK(page.definition().scale == 1.0f);       // short rows keep the topics' scale
+    REQUIRE(page.definition().items.size() == 3);
+    CHECK_FALSE(page.definition().items[0].enabled);
+    CHECK(page.definition().items[1].enabled);
+    CHECK_FALSE(page.definition().items[2].enabled);
+    // The selection starts on the first that can be chosen and never rests on a greyed one.
+    CHECK(page.selection() == 1);
+    f.menu.update(f.device, press(true, false, false), 2);
+    CHECK(page.selection() == 1);
+    // Choosing it burns the scroll, the list under the page going with it.
+    const HintMenuEvent chosen = f.menu.update(f.device, press(false, true, false), 2);
+    CHECK(chosen.kind == HintMenuEvent::Kind::Chose);
+    CHECK(chosen.topic == 1);
+    CHECK(f.menu.burning());
+    CHECK(f.menu.page().backdropReleased());
+    CHECK_FALSE(f.menu.topics().isOpen());
+    // While it burns nothing answers, and once burnt and faded the scroll is gone.
+    CHECK(f.menu.update(f.device, press(false, true, false), 2).kind == HintMenuEvent::Kind::None);
+    for (s32 i = 0; i < 40 && f.menu.active(); ++i) {
+        f.menu.update(f.device, MenuInput{}, 2);
+    }
+    CHECK_FALSE(f.menu.active());
+}
+
+TEST_CASE("a page of choices keeps its widest row within the scroll's room, shrinking all rows",
+          "[game][menu][hints][gateways]") {
+    Fixture f;
+    REQUIRE(f.menu.open(f.painter, MenuScreen{}, labels()));
+    f.menu.update(f.device, press(false, true, false), 2);
+    const std::string wide(60, 'W');
+    REQUIRE(f.painter.measure(wide, 1.0f) > HintMenu::kChoicesRoom);
+    REQUIRE(f.menu.choose({{"HOME", 0}, {wide, 1}}));
+    const OptionMenu& page = f.menu.page();
+    const f32 scale = page.definition().scale;
+    CHECK(scale < 1.0f);
+    CHECK(page.definition().cursorScale == scale); // the arrow shrinks with the rows
+    // Written whole, never cut short, and every row on the scroll.
+    CHECK(page.definition().items[1].text == wide);
+    CHECK(f.painter.measure(wide, scale) <= HintMenu::kChoicesRoom);
+    const Rect scroll = page.backdropArea();
+    for (usize i = 0; i < page.definition().items.size(); ++i) {
+        CAPTURE(i);
+        const Rect area = page.itemArea(i);
+        CHECK(area.width ==
+              static_cast<f32>(f.painter.measure(page.definition().items[i].text, scale)));
+        CHECK(area.x >= scroll.x);
+        CHECK(area.x + area.width <= scroll.x + scroll.width);
+    }
+}
+
+TEST_CASE("Back from a page of choices returns to the list where it was left",
+          "[game][menu][hints][gateways]") {
+    Fixture f;
+    REQUIRE(f.menu.open(f.painter, MenuScreen{}, labels()));
+    const MenuDefinition list = f.menu.topics().definition();
+    f.menu.update(f.device, press(true, false, false), 2);
+    REQUIRE(f.menu.update(f.device, press(false, true, false), 2).kind ==
+            HintMenuEvent::Kind::Asked);
+    REQUIRE(f.menu.choose(choices()));
+    CHECK(f.menu.update(f.device, press(false, false, true), 2).kind ==
+          HintMenuEvent::Kind::Returned);
+    CHECK_FALSE(f.menu.reading());
+    CHECK_FALSE(f.menu.burning());
+    const OptionMenu& topics = f.menu.topics();
+    REQUIRE(topics.isOpen());
+    CHECK(topics.selection() == 1);
+    CHECK(topics.definition().title == list.title);
+    CHECK(topics.definition().x == list.x);
+    CHECK(topics.definition().items.size() == list.items.size());
+    CHECK_FALSE(topics.definition().backdropFades); // the scroll stays out
+    // All greyed, nothing can be chosen; Back still returns.
+    f.menu.update(f.device, press(false, true, false), 2);
+    std::vector<MenuItem> greyed = choices();
+    greyed[1].enabled = false;
+    REQUIRE(f.menu.choose(greyed));
+    CHECK(f.menu.update(f.device, press(false, true, false), 2).kind == HintMenuEvent::Kind::None);
+    CHECK(f.menu.reading());
+    CHECK(f.menu.update(f.device, press(false, false, true), 2).kind ==
+          HintMenuEvent::Kind::Returned);
+}
+
+TEST_CASE("a page of choices takes the native look its topics opened in",
+          "[game][menu][hints][gateways][imported-menu]") {
+    Fixture f;
+    /** Lays the topics out in its own column and draws its own backdrop and heading; a list of
+     * choices takes the topics' layout unless it says otherwise. */
+    class NativeLook final : public DialoguePresentation {
+    public:
+        explicit NativeLook(const TextPainter& text) : m_text(text) {}
+        const TextPainter& text() const override { return m_text; }
+        std::optional<MenuDefinition>
+        nativeTopics(std::string_view /*title*/, std::span<const MenuItem> topics) const override {
+            MenuDefinition definition;
+            definition.backdrop = "native";
+            definition.backdropX = 100;
+            definition.backdropY = 60;
+            definition.backdropWidth = 300;
+            definition.backdropHeight = 200;
+            definition.showCursor = false;
+            definition.items.assign(topics.begin(), topics.end());
+            for (usize i = 0; i < topics.size(); ++i) {
+                definition.itemPositions.emplace_back(-256, 90 + static_cast<s32>(i) * 20);
+            }
+            return definition;
+        }
+        bool drawTopicsBackdrop(Canvas& /*canvas*/, const OptionMenu& menu,
+                                std::string_view title) const override {
+            drawn.emplace_back(&menu, std::string(title));
+            return true;
+        }
+        f32 scale() const override { return 1; }
+        s32 textWidth() const override { return 256; }
+        usize linesPerPage() const override { return 8; }
+        DialoguePage layout(std::string_view /*page*/, f32 /*scale*/,
+                            std::string_view /*prompt*/) const override {
+            return {};
+        }
+        void draw(Canvas& /*canvas*/, const DialoguePage& /*page*/, f32 /*scale*/,
+                  std::string_view /*prompt*/, u8 /*promptAlpha*/) const override {}
+        mutable std::vector<std::pair<const OptionMenu*, std::string>> drawn;
+
+    private:
+        const TextPainter& m_text;
+    } native(f.painter);
+    HintMenu menu;
+    HintMenuArt art;
+    art.textures.font = &f.sheet;
+    art.textures.backdrop = &f.backdrop;
+    art.presentation = &native;
+    menu.setArt(std::move(art));
+    HintMenuLabels words = labels();
+    words.title = "SUMNER";
+    REQUIRE(
+        menu.open(f.painter, MenuScreen{}, words, native.nativeTopics(words.title, words.topics)));
+    REQUIRE(menu.update(f.device, press(false, true, false), 2).kind == HintMenuEvent::Kind::Asked);
+    REQUIRE(menu.choose(choices()));
+    // Laid out as the look lays its topics out, its own heading drawn over the page.
+    const OptionMenu& page = menu.page();
+    CHECK(page.definition().backdrop == "native");
+    CHECK(page.definition().title.empty());
+    REQUIRE(page.definition().itemPositions.size() == 3);
+    CHECK(page.definition().itemPositions[2] == Vec2(-256, 130));
+    CHECK_FALSE(page.definition().items[0].enabled);
+    Canvas canvas;
+    canvas.begin(f.device, Mat4{1});
+    menu.draw(canvas, f.painter);
+    canvas.end();
+    REQUIRE(native.drawn.size() == 1);
+    CHECK(native.drawn.front().first == &page);
+    CHECK(native.drawn.front().second == "SUMNER");
+    // Back returns to the topics in the same look.
+    CHECK(menu.update(f.device, press(false, false, true), 2).kind ==
+          HintMenuEvent::Kind::Returned);
+    CHECK(menu.topics().definition().backdrop == "native");
+    CHECK(menu.topics().definition().itemPositions.size() == 2);
+    // A choice closes it at once: a native scroll does not burn.
+    REQUIRE(menu.update(f.device, press(false, true, false), 2).kind == HintMenuEvent::Kind::Asked);
+    REQUIRE(menu.choose(choices()));
+    const HintMenuEvent chosen = menu.update(f.device, press(false, true, false), 2);
+    CHECK(chosen.kind == HintMenuEvent::Kind::Chose);
+    CHECK(chosen.topic == 1);
+    CHECK_FALSE(menu.burning());
+    CHECK_FALSE(menu.active());
 }
 
 TEST_CASE("the hint scroll draws its page's passages in ink on the scroll", "[game][menu][hints]") {

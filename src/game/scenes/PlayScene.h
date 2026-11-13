@@ -438,6 +438,9 @@ public:
     const ScrollBox& scroll() const { return m_messages.scroll(); }
     std::optional<LevelMessages::Look> scrollLook() const { return m_messages.look(); }
     const HintMenu& hints() const { return m_sumnerVisit.menu(); }
+    /** Where the party last asked Sumner's gateways to take it, until the scene closes; the
+     * journey is the application's to make. */
+    const std::optional<GatewayDestination>& gatewayRequest() const { return m_gatewayRequest; }
     const PlayerMissiles& missiles() const { return m_arsenal.missiles(); }
     PlayerArsenal::SoundCapture captureWeaponSounds(PlayerArsenal::SoundObserver observer) {
         return {&m_arsenal, std::move(observer)};
@@ -902,6 +905,13 @@ private:
     void openImportedDialogue();
     bool importedOpening() const;
     void updateImportedDialogue(const Inputs& inputs, s32 ticks);
+    /** Whether Dark Legacy's Sumner offers his gateways: offline, once someone in the party has
+     * beaten Garm. */
+    bool offersGateways() const;
+    /** Answers his gateway row with his list of where they lead, greying what cannot be chosen. */
+    void openGatewayChoices();
+    /** Takes the place the list's row `code` stands for as the party's request. */
+    void takeGatewayChoice(s32 code);
 
     RenderDevice* m_device = nullptr;
     const GameServices* m_services = &GameServices::none(); ///< the game's, from open on
@@ -954,6 +964,10 @@ private:
     std::vector<PointLight> m_lights; ///< this frame's, gathered before it is drawn
     BossSequence m_bossSequence;
     SumnerVisit m_sumnerVisit;
+    // Sumner's gateways are offered offline alone, so what they hold is never shared state.
+    GatewayDestination m_gatewayHere;            ///< where his list says the party stands
+    std::vector<GatewayChoice> m_gatewayChoices; ///< his list's places, row by row, while it is up
+    std::optional<GatewayDestination> m_gatewayRequest;
     TowerCeremonies m_ceremonies;
     TriggerCues m_triggerCues;
 

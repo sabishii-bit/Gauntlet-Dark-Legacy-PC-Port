@@ -20,6 +20,7 @@
 #include "engine/math/PortableMath.h"
 #include "engine/ui/Canvas.h"
 
+#include "FakeGameServices.h"
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "expansions/n64/formats/LegendsN64Font.h"
@@ -29,6 +30,7 @@
 #include "expansions/shared/scenes/LegendsLevel.h"
 #include "expansions/shared/scenes/LegendsTraversal.h"
 #include "game/scenes/PlayScene.h"
+#include "game/tower/TowerGateways.h"
 
 namespace {
 using namespace gdl;
@@ -59,7 +61,8 @@ struct SumnerScene {
     GameConfig config;
     StringTable strings;
     AssetLocator assets;
-    GameServices context; ///< what the scene reads while it stands
+    GameServices context;         ///< what the scene reads while it stands
+    test::FixedGateways gateways; ///< what lies past Sumner's gateways, when the scene has them
     PlayScene scene;
     f32 arrivalYaw = 0; ///< a Tower return's heading at its start, before any turn
 
@@ -67,9 +70,10 @@ struct SumnerScene {
      * a Tower return as the app opens one instead: the second member comes home with those
      * pieces, their ceremony is queued before the scene opens, and the party stands at the
      * Tower's start with its native heading, as the ceremony opens the visit. With
-     * `firstFallen` the first member comes home fallen, waiting outside the visit. */
+     * `firstFallen` the first member comes home fallen, waiting outside the visit. With
+     * `offline` the scene has Sumner's gateways, as offline play gives them. */
     explicit SumnerScene(std::optional<LegendsProgress> brought = std::nullopt,
-                         bool firstFallen = false)
+                         bool firstFallen = false, bool offline = false)
         : characters(test::assetOrSkip("PDATA/WAR.WAD").parent_path().parent_path()),
           assets(characters) {
         if (!std::filesystem::is_regular_file(directory / "worlds.wad") ||
@@ -133,10 +137,11 @@ struct SumnerScene {
         context.unpackedRoot = characters;
         PlayOptions options;
         options.welcome = false;
+        const auto links = offline ? PlayScene::Links{.gateways = &gateways} : PlayScene::Links{};
         if (brought) {
             options.position = traversal.start();
             options.yaw = arrivalYaw = traversal.actor().yaw();
-            REQUIRE(scene.open(device, context, world, party, options));
+            REQUIRE(scene.open(device, context, world, party, options, links));
             return; // the ceremony holds play until it hands back
         }
         // Place the test party on the real Tower floor, south of the authored
@@ -145,7 +150,7 @@ struct SumnerScene {
         const auto podium = tower.residentVolumes[1].centre;
         options.position = Vec3{podium.x - PlayScene::kSpawnSpacing * .5f, 0, podium.z - 6};
         options.yaw = 0.0f;
-        REQUIRE(scene.open(device, context, world, party, options));
+        REQUIRE(scene.open(device, context, world, party, options, links));
         const auto entering = [&] {
             return scene.animator(0)->entering() || scene.animator(1)->entering();
         };
@@ -320,6 +325,62 @@ TEST_CASE("Native Tower podium contact routes the complete Sumner menu to its vi
     for (u32 tick = 0; tick < 300 && fixture.scene.hints().active(); ++tick) {
         fixture.step();
     }
+    CHECK_FALSE(fixture.scene.hints().active());
+    CHECK(fixture.scene.canPause(1));
+}
+
+TEST_CASE("The N64 Tower's Sumner ends his menu with the gateways, his own world greyed",
+          "[legends][sumner-integration][gateways][assets]") {
+    SumnerScene fixture{std::nullopt, false, true};
+    fixture.approach();
+    const auto& menu = fixture.scene.hints().topics();
+    // His six native rows as they were, then Legacy of Legends; nothing looked for on disk yet.
+    const std::array<s32, 6> actions{0x11, 0x15, 0x2e, 0xd, 0x2f, 2};
+    REQUIRE(menu.definition().items.size() == actions.size() + 1);
+    for (usize i = 0; i < actions.size(); ++i) {
+        CHECK(menu.definition().items[i].code == actions[i]);
+    }
+    CHECK(menu.definition().items[6].text == "Legacy of Legends");
+    CHECK(menu.definition().items[6].code == kGatewayTopic);
+    CHECK(fixture.gateways.asks == 0);
+    const std::vector<std::string> places{"The Dark Legacy", "Legend of What Once Was",
+                                          "Legend of What Could Have Been"};
+    PlayScene::Inputs escape{};
+    escape[1].menu.escape = true;
+    // With neither campaign usable, then each, then both: the same three places, the N64's
+    // own world greyed where the party stands, the Dreamcast's as installed.
+    for (const auto& [n64, dreamcast] : std::array{std::pair{false, false}, std::pair{true, false},
+                                                   std::pair{false, true}, std::pair{true, true}}) {
+        CAPTURE(n64, dreamcast);
+        fixture.gateways.offered = {{0, "legends.n64.gateway.label", n64},
+                                    {1, "legends.dreamcast.gateway.label", dreamcast}};
+        fixture.choose(6);
+        REQUIRE(fixture.scene.hints().reading());
+        const auto& list = fixture.scene.hints().page();
+        CHECK(list.definition().backdrop == "TEXTSCROLL");
+        REQUIRE(list.definition().items.size() == places.size());
+        for (usize i = 0; i < places.size(); ++i) {
+            CHECK(list.definition().items[i].text == places[i]);
+        }
+        CHECK(list.definition().items[0].enabled);
+        CHECK_FALSE(list.definition().items[1].enabled);
+        CHECK(list.definition().items[2].enabled == dreamcast);
+        // Back goes to his own menu, in his own look.
+        fixture.step(escape);
+        REQUIRE(fixture.scene.hints().active());
+        REQUIRE_FALSE(fixture.scene.hints().reading());
+        CHECK(fixture.scene.hints().topics().definition().backdrop == "TEXTSCROLL");
+    }
+    CHECK(fixture.gateways.asks == 4);
+    // The party's own tower chosen: the menu goes, and the way home is the party's request.
+    fixture.choose(6);
+    const auto home = fixture.scene.hints().page().itemArea(0);
+    PlayScene::Inputs click{};
+    click[1].menu.pointer = Vec2{home.x + home.width * .5f, home.y + home.height * .5f};
+    click[1].menu.pointerPressed = true;
+    fixture.step(click);
+    REQUIRE(fixture.scene.gatewayRequest());
+    CHECK(*fixture.scene.gatewayRequest() == GatewayDestination{});
     CHECK_FALSE(fixture.scene.hints().active());
     CHECK(fixture.scene.canPause(1));
 }
