@@ -89,6 +89,20 @@ TEST_CASE("Sumner lists the same places in every tower, greying what cannot be c
           std::vector<GatewayChoice>{{home, std::string(kGatewayHomeText), true}});
 }
 
+TEST_CASE("a world whose tower would not open is greyed, and no other", "[game][tower][gateways]") {
+    std::vector<GatewayWorld> worlds{{0, "first", true}, {1, "second", true}, {2, "third", false}};
+    greyUnopened(worlds, {});
+    CHECK(worlds ==
+          std::vector<GatewayWorld>{{0, "first", true}, {1, "second", true}, {2, "third", false}});
+    const std::vector<u8> unopened{1, 2, 7};
+    greyUnopened(worlds, unopened);
+    CHECK(worlds ==
+          std::vector<GatewayWorld>{{0, "first", true}, {1, "second", false}, {2, "third", false}});
+    // So Sumner's list greys it as it greys a world this installation cannot open.
+    CHECK(gatewayChoices(worlds, {})[2].enabled == false);
+    CHECK(gatewayChoices(worlds, {})[1].enabled == true);
+}
+
 TEST_CASE("Sumner's gateway row and his own tower read as the user worded them",
           "[game][tower][gateways]") {
     StringTable strings;

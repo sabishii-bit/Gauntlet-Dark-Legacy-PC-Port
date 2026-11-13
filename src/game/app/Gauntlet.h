@@ -70,6 +70,7 @@
 namespace gdl::game {
 
 struct LegendsAdviceState;
+struct LegendsOpening;
 
 /** The game: owns the top-level game flow and drives the engine each frame. */
 class Gauntlet final : public Application {
@@ -106,15 +107,21 @@ private:
         Gauntlet& m_game;
     };
     /** The worlds the expansions built into the game offer through Sumner's gateways, looked
-     * for afresh at each ask where the game's own data is found (GauntletLegends.cpp). */
+     * for afresh at each ask where the game's own data is found, and the journeys through them
+     * (GauntletLegends.cpp). */
     class GatewayRouting final : public TowerGateways {
     public:
         explicit GatewayRouting(Gauntlet& game) : m_game(game) {}
         std::span<const GatewayWorld> worlds() override;
+        /** Takes the party where the scene's departure through the gateways is bound, once it
+         * covers the view; false, with a log line, when that place does not open. A world
+         * that does not open is greyed until the game starts again. */
+        bool depart(const GatewayDestination& destination);
 
     private:
         Gauntlet& m_game;
         std::vector<GatewayWorld> m_worlds; ///< what the last ask found
+        std::vector<u8> m_unopened;         ///< the worlds whose towers would not open
     };
     /** Saves the online game's local characters as the party in play is saved. */
     class PartyRouting final : public PartyStore {
@@ -205,13 +212,17 @@ private:
     /** The folder of the Legends map named `name`: on `platform`, or on whichever has it. */
     std::optional<std::pair<LegendsPlatform, std::filesystem::path>>
     findLegendsMap(std::string_view name, std::optional<LegendsPlatform> platform) const;
-    /** Opens the Legends map in `directory` of `platform`, walked when `playable`, else flown
-     * through as a preview; `completedTravel` is finishLegendsTravel's own flag. */
-    void consoleLegendsOpen(DevConsole& console, LegendsPlatform platform,
-                            const std::filesystem::path& directory, bool playable,
-                            bool completedTravel = false,
-                            std::optional<std::vector<PartyMember>> visitingParty = std::nullopt,
-                            bool completionRecorded = false);
+    /** Opens the Legends map `opening` names, walked or flown through as a preview, for the
+     * way the party comes to it; false, the reason printed to `console`, when it does not open
+     * (GauntletLegends.cpp). */
+    bool openLegendsMap(DevConsole& console, LegendsOpening opening);
+    /** Takes the party through Sumner's gateway to the tower of `world`, a Legends campaign's,
+     * once the departure covers the view; false, with a log line, when it does not open. */
+    bool openGatewayWorld(u8 world);
+    /** Takes the party home through Sumner's gateway: Dark Legacy's Tower opens afresh and the
+     * visit to the Legends campaigns is over; false, with a log line, when the Tower does not
+     * open, the party staying where it stood. */
+    bool openGatewayHome();
     /** Leaves a Legends map or its preview for the level left for it. */
     void consoleLegendsClose(DevConsole& console);
     void updateLegendsPreview(f64 deltaSeconds);

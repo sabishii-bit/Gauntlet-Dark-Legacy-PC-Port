@@ -1,4 +1,8 @@
+#include <algorithm>
+#include <cctype>
 #include <filesystem>
+#include <optional>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -7,6 +11,7 @@
 #include "engine/assets/StringTable.h"
 #include "engine/core/Types.h"
 #include "engine/io/File.h"
+#include "engine/platform/Paths.h"
 
 #include "TestSupport.h"
 #include "expansions/shared/app/LegendsGateways.h"
@@ -65,6 +70,36 @@ std::vector<bool> usable(const std::vector<GatewayWorld>& worlds) {
     }
     return result;
 }
+
+/** The tower Sumner's gateway to `world` leads to in a game installed in `install`. */
+std::optional<LegendsGatewayTower> towerOf(const std::filesystem::path& install, u8 world) {
+    return legendsGatewayTower(world, install / "Gauntlet", install / "bin", install / "working");
+}
+
+/** A tower's folder name as the campaign's stage tables spell it. */
+std::string folderOf(const LegendsGatewayTower& tower) {
+    std::string name = paths::utf8(tower.directory.filename());
+    std::ranges::transform(name, name.begin(), [](unsigned char letter) {
+        return static_cast<char>(std::tolower(letter));
+    });
+    return name;
+}
+
+/** Each world's tower is found exactly when the world is usable, in its own campaign's folder. */
+void checkTowers(const std::filesystem::path& install, const std::vector<bool>& expected) {
+    const auto n64 = towerOf(install, kN64);
+    const auto dreamcast = towerOf(install, kDreamcast);
+    CHECK(n64.has_value() == expected[0]);
+    CHECK(dreamcast.has_value() == expected[1]);
+    if (n64) {
+        CHECK(n64->platform == LegendsPlatform::N64);
+        CHECK(folderOf(*n64) == "tower2");
+    }
+    if (dreamcast) {
+        CHECK(dreamcast->platform == LegendsPlatform::Dreamcast);
+        CHECK(folderOf(*dreamcast) == "levelt1");
+    }
+}
 } // namespace
 
 TEST_CASE("a GameCube-only installation is offered both Legends towers, neither usable",
@@ -78,6 +113,9 @@ TEST_CASE("a GameCube-only installation is offered both Legends towers, neither 
     // Asked of roots that are not there at all, it still answers.
     CHECK(usable(legendsGatewayWorlds(install / "missing", {}, install / "missing too")) ==
           std::vector<bool>{false, false});
+    // Neither gateway leads anywhere, and no world past the two is offered.
+    checkTowers(install, {false, false});
+    CHECK_FALSE(towerOf(install, 2));
 }
 
 TEST_CASE("a Legends tower is usable once its campaign's extraction holds it whole",
@@ -112,6 +150,7 @@ TEST_CASE("a Legends tower is usable once its campaign's extraction holds it who
     }
     const auto worlds = worldsOf(install);
     CHECK(usable(worlds) == expected);
+    checkTowers(install, expected);
     // The worlds and their names stay the campaigns' own, whatever is installed.
     REQUIRE(worlds.size() == 2);
     CHECK(worlds[0].id == kN64);
@@ -160,6 +199,7 @@ TEST_CASE("a Legends tower missing what opening it needs is not usable, and hide
         expected = {false, false};
     }
     CHECK(usable(worldsOf(install)) == expected);
+    checkTowers(install, expected);
 }
 
 TEST_CASE("the Legends towers are named in the user's own words", "[legends][gateways]") {

@@ -26,6 +26,7 @@
 #include "expansions/shared/app/LegendsCompletion.h"
 #include "expansions/shared/app/LegendsConsoleWords.h"
 #include "expansions/shared/app/LegendsGateways.h"
+#include "expansions/shared/app/LegendsTravel.h"
 #include "expansions/shared/characters/LegendsVisit.h"
 #include "expansions/shared/formats/LegendsMap.h"
 #include "expansions/shared/scenes/LegendsLevel.h"
@@ -33,6 +34,7 @@
 #include "game/app/Gauntlet.h"
 #include "game/console/ConsoleHost.h"
 #include "game/console/ConsoleListings.h"
+#include "game/tower/TowerGateways.h"
 
 namespace gdl::game {
 namespace {
@@ -102,7 +104,78 @@ std::span<const GatewayWorld> Gauntlet::GatewayRouting::worlds() {
     const auto working = std::filesystem::current_path(error); // none when it cannot be read
     m_worlds = legendsGatewayWorlds(m_game.m_options.unpackedDirectory,
                                     paths::executableDirectory(), working);
+    greyUnopened(m_worlds, m_unopened);
     return m_worlds;
+}
+
+bool Gauntlet::GatewayRouting::depart(const GatewayDestination& destination) {
+    if (!destination.world) {
+        return m_game.openGatewayHome();
+    }
+    if (m_game.openGatewayWorld(*destination.world)) {
+        return true;
+    }
+    if (std::ranges::find(m_unopened, *destination.world) == m_unopened.end()) {
+        m_unopened.push_back(*destination.world);
+    }
+    return false;
+}
+
+bool Gauntlet::openGatewayWorld(u8 world) {
+    std::error_code error;
+    const auto working = std::filesystem::current_path(error);
+    auto tower = legendsGatewayTower(world, m_options.unpackedDirectory,
+                                     paths::executableDirectory(), working);
+    if (!tower) {
+        log::warn("Sumner's gateway: world {} has no tower this installation can open; the "
+                  "party stays where it stood",
+                  world);
+        return false;
+    }
+    return openLegendsMap(m_console, {.platform = tower->platform,
+                                      .directory = std::move(tower->directory),
+                                      .arrival = LegendsArrival::Gateway,
+                                      .party = m_play->scene.party()});
+}
+
+bool Gauntlet::openGatewayHome() {
+    // Dark Legacy's Tower opens afresh for the party as it stands, the way a level's journey
+    // opens it, beside the world it leaves; that world stays should the Tower not open.
+    auto party = m_play->scene.party();
+    PlayOptions options = gatewayHomeArrival();
+    options.partyCount = m_partyCountOverride;
+    options.consoleCheats = m_consoleCheats;
+    auto next = std::make_unique<PlaySession>();
+    m_play->scene.suspendForImportedLevel();
+    if (!next->scene.open(renderDevice(), services(), next->world, party, options, playLinks())) {
+        m_play->scene.resumeAfterImportedLevel();
+        log::warn("Sumner's gateway home: Dark Legacy's Tower did not open; the party stays where "
+                  "it stood");
+        return false;
+    }
+    // A save boundary, as every Legends map opened for a party is, once the Tower stands open.
+    autoSave(party);
+    for (const auto& member : party) {
+        next->scene.setSaveSlot(member.player, member.slot);
+    }
+    renderDevice().waitIdle();
+    // The visit is over: its music, its books and any level the console parked for it go.
+    if (m_legendsSounds) {
+        m_legendsSounds->stopAll();
+        m_legendsSounds.reset();
+    }
+    m_legendsOrigin.reset();
+    m_legendsEntryParty.clear();
+    m_legendsTowerParty.clear();
+    m_play = std::move(next);
+    m_play->scene.releaseSounds();
+    m_sounds->setCategoryScale(SoundCategory::Music, m_musicDuck.level());
+    m_sounds->setCategoryScale(SoundCategory::Effects, 1);
+    setMaxFrameRate(m_config.timing.gameplayFrameRate);
+    window().stopRumble();
+    resetPlayInput();
+    log::info("Through Sumner's gateway home to Dark Legacy's Tower");
+    return true;
 }
 
 bool Gauntlet::legendsMapsInstalled(bool rescan) const {
@@ -124,7 +197,11 @@ std::optional<std::span<const std::string_view>> Gauntlet::legendsConsoleHold() 
 void Gauntlet::registerLegendsConsole(ConsoleHost& host, ConsoleListings& listings) {
     registerLegendsConsoleWords(
         host, listings,
-        {.visiting = [this] { return m_legendsPreview.isOpen() || m_legendsOrigin != nullptr; },
+        {.visiting =
+             [this] {
+                 return m_legendsPreview.isOpen() || m_legendsOrigin != nullptr ||
+                        !m_legendsEntryParty.empty();
+             },
          .installed = [this](bool rescan) { return legendsMapsInstalled(rescan); },
          .mapNames =
              [this](LegendsPlatform platform) {
@@ -138,9 +215,12 @@ void Gauntlet::registerLegendsConsole(ConsoleHost& host, ConsoleListings& listin
              [this](std::string_view name, std::optional<LegendsPlatform> platform) {
                  return findLegendsMap(name, platform);
              },
-         .open = [this](DevConsole& console, LegendsPlatform platform,
-                        const std::filesystem::path& directory,
-                        bool walk) { consoleLegendsOpen(console, platform, directory, walk); },
+         .open =
+             [this](DevConsole& console, LegendsPlatform platform,
+                    const std::filesystem::path& directory, bool walk) {
+                 openLegendsMap(console,
+                                {.platform = platform, .directory = directory, .playable = walk});
+             },
          .close = [this](DevConsole& console) { consoleLegendsClose(console); },
          .walkingNative =
              [this] {
@@ -206,6 +286,14 @@ void Gauntlet::consoleLegendsClose(DevConsole& console) {
         }
         return;
     }
+    // A visit begun at Sumner's gateway parks nothing: goto back takes the party home as his
+    // gateway does.
+    if (!m_legendsPreview.isOpen() && !m_legendsEntryParty.empty() && m_play->world.imported()) {
+        if (openGatewayHome()) {
+            console.print("Returned from the Legends level.");
+        }
+        return;
+    }
     if (!m_legendsPreview.isOpen()) {
         console.print("Not in a Legends map.");
         return;
@@ -228,38 +316,45 @@ void Gauntlet::consoleLegendsClose(DevConsole& console) {
     console.print("Returned from the Legends map preview.");
 }
 
-void Gauntlet::consoleLegendsOpen(DevConsole& console, LegendsPlatform platform,
-                                  const std::filesystem::path& directory, bool playable,
-                                  bool completedTravel,
-                                  std::optional<std::vector<PartyMember>> visitingParty,
-                                  bool completionRecorded) {
+bool Gauntlet::openLegendsMap(DevConsole& console, LegendsOpening opening) {
+    const bool n64 = opening.platform == LegendsPlatform::N64;
+    const bool gateway = opening.arrival == LegendsArrival::Gateway;
+    // Nobody reads the console on a journey through Sumner's gateway: the log says what failed.
+    const auto refuse = [&](std::string_view message) {
+        console.print(message);
+        if (gateway) {
+            log::warn("Sumner's gateway to {}: {}", paths::utf8(opening.directory), message);
+        }
+        return false;
+    };
     const auto* imported = m_play->world.imported();
     const auto nativeDeparture = imported ? imported->departure() : std::nullopt;
-    const bool internalTravel =
-        completedTravel && imported != nullptr && imported->travelRequested() &&
-        m_play->scene.leaving() &&
-        (nativeDeparture
-             ? nativeDeparture->covered(m_play->scene.transition().covering())
-             : m_play->scene.transition().covering() && m_play->scene.departure().finished());
-    if (completedTravel && !internalTravel) {
-        console.print("The native departure has not finished.");
-        return;
+    // Only the Legends world's own departure and the departure through Sumner's gateway open a
+    // map from a scene that is leaving, once they cover the view: a console command never
+    // bypasses the exit animation.
+    const bool internalTravel = opening.arrival == LegendsArrival::Departure;
+    if (internalTravel &&
+        !(imported != nullptr && imported->travelRequested() && m_play->scene.leaving() &&
+          (nativeDeparture
+               ? nativeDeparture->covered(m_play->scene.transition().covering())
+               : m_play->scene.transition().covering() && m_play->scene.departure().finished()))) {
+        return refuse("The native departure has not finished.");
     }
-    const bool n64 = platform == LegendsPlatform::N64;
+    if (gateway && !(m_play->scene.gatewayDeparture() && m_play->scene.transition().covering())) {
+        return refuse("The departure through the gateway has not finished.");
+    }
+    const PlaySession* const left = m_play.get();
+    bool suspended = false;
     try {
-        // Only finishLegendsTravel supplies the private completed-travel flag.
-        // A player console command cannot bypass the pending exit animation.
-        if (!m_play->scene.isOpen() || (m_play->scene.leaving() && !internalTravel) ||
+        if (!m_play->scene.isOpen() || (m_play->scene.leaving() && !internalTravel && !gateway) ||
             m_journey.has_value()) {
-            console.print("Enter an offline level before opening a Legends map.");
-            return;
+            return refuse("Enter an offline level before opening a Legends map.");
         }
-        const AssetLocator files{directory};
+        const AssetLocator files{opening.directory};
         const auto world = files.find(n64 ? "worlds.wad" : "worlds.rom");
         const auto models = files.find(n64 ? "objects.wad" : "objects.rom");
         if (!world || !models) {
-            console.print("The directory must contain the native worlds and objects files.");
-            return;
+            return refuse("The directory must contain the native worlds and objects files.");
         }
         const auto worldBytes = readFile(*world);
         const auto modelBytes = readFile(*models);
@@ -285,10 +380,10 @@ void Gauntlet::consoleLegendsOpen(DevConsole& console, LegendsPlatform platform,
             }
         }
         auto adapter = LegendsSceneAdapter::load(
-            renderDevice(), platform, files.root(), map,
-            playable ? static_cast<s32>(visitingParty ? visitingParty->size()
-                                                      : m_play->scene.party().size())
-                     : 1);
+            renderDevice(), opening.platform, files.root(), map,
+            opening.playable ? static_cast<s32>(opening.party ? opening.party->size()
+                                                              : m_play->scene.party().size())
+                             : 1);
         console.print(std::format("Native presentation: {} fixtures, {} world texture animations.",
                                   adapter->fixtureCount(), adapter->textureAnimationCount()));
         console.print(std::format("{} placed pickups have verified gameplay mappings.",
@@ -299,12 +394,12 @@ void Gauntlet::consoleLegendsOpen(DevConsole& console, LegendsPlatform platform,
         if (m_legendsPreview.isOpen()) {
             renderDevice().waitIdle();
             if (!commitLegendsProgress()) {
-                return;
+                return false;
             }
         }
-        if (playable) {
-            auto party = visitingParty ? std::move(*visitingParty) : m_play->scene.party();
-            if (internalTravel && !completionRecorded) {
+        if (opening.playable) {
+            auto party = opening.party ? std::move(*opening.party) : m_play->scene.party();
+            if (internalTravel && !opening.completionRecorded) {
                 if (const auto* previous = dynamic_cast<const LegendsLevel*>(imported)) {
                     previous->completeTravel(party);
                 }
@@ -312,8 +407,7 @@ void Gauntlet::consoleLegendsOpen(DevConsole& console, LegendsPlatform platform,
             const auto selected = std::ranges::find_if(
                 party, [](const PartyMember& member) { return !member.fallen; });
             if (selected == party.end()) {
-                console.print("Select a character before exploring a Legends map.");
-                return;
+                return refuse("Select a character before exploring a Legends map.");
             }
             ClassDataSet classes;
             classes.load(m_options.unpackedDirectory / "pdata");
@@ -339,22 +433,24 @@ void Gauntlet::consoleLegendsOpen(DevConsole& console, LegendsPlatform platform,
                                                          files.root(), m_options.unpackedDirectory,
                                                          n64 ? m_legendsAdvice : nullptr);
             native->initializeParty(party);
-            if (n64 && native->adapter().isTower() && m_legendsOrigin) {
+            // Within a visit the N64 Tower shows what the party has brought it since its last stay
+            // there; a first visit queues nothing, as the native Tower opens straight into play.
+            const bool visiting = !m_legendsEntryParty.empty();
+            if (n64 && native->adapter().isTower() && visiting) {
                 native->announceProgress(
                     m_legendsTowerParty.empty() ? m_legendsEntryParty : m_legendsTowerParty, party);
             }
             auto next = std::make_unique<PlaySession>();
             LevelRef ref;
             ref.realmId = -1; // native realm IDs must never index the GDL campaign
-            ref.realm = std::string(legendsPlatformName(platform));
+            ref.realm = std::string(legendsPlatformName(opening.platform));
             ref.name = paths::utf8(native->directory().filename());
             ref.title = ref.name;
             ref.directory = paths::utf8(files.root());
             if (!next->world.loadImported(renderDevice(), m_options.unpackedDirectory, ref,
                                           WorldLayout::fromDecoded({}, {start}, low, high),
                                           entrance.collision(), native)) {
-                console.print("The native map could not be bound to gameplay.");
-                return;
+                return refuse("The native map could not be bound to gameplay.");
             }
             PlayOptions options;
             options.position = entrance.start();
@@ -365,17 +461,17 @@ void Gauntlet::consoleLegendsOpen(DevConsole& console, LegendsPlatform platform,
             // Keep an admitted exit phrase alive until the successfully opened
             // destination takes ownership. A console jump still stops it.
             m_play->scene.suspendForImportedLevel(internalTravel);
+            suspended = true;
             if (!next->scene.open(renderDevice(), services(), next->world, party, options,
                                   playLinks())) {
                 m_play->scene.resumeAfterImportedLevel();
-                console.print("The native map's shared gameplay resources could not be loaded.");
-                return;
+                return refuse("The native map's shared gameplay resources could not be loaded.");
             }
-            // A native departure is a normal save boundary too. Prepare/open the
-            // destination first so a missing or malformed destination cannot
-            // manufacture completion on disk. Preserve assigned save slots in
-            // the new live party, not only in this temporary snapshot.
-            if (internalTravel || visitingParty) {
+            // Every way a party comes to a native map but the console's is a save boundary.
+            // Prepare/open the destination first so a missing or malformed destination cannot
+            // manufacture completion on disk. Preserve assigned save slots in the new live
+            // party, not only in this temporary snapshot.
+            if (opening.arrival != LegendsArrival::Console) {
                 autoSave(party);
                 for (const auto& member : party) {
                     next->scene.setSaveSlot(member.player, member.slot);
@@ -388,9 +484,14 @@ void Gauntlet::consoleLegendsOpen(DevConsole& console, LegendsPlatform platform,
                 }
             }
             m_legendsPreview.close();
-            if (!m_legendsOrigin) {
+            // The visit starts with the first map opened for it. Only the console's goto parks
+            // the campaign level it leaves, for goto back; any other scene left goes.
+            const LegendsVisitStep step = legendsVisitStep(opening.arrival, visiting);
+            if (step.starts) {
                 m_legendsEntryParty = party;
                 m_legendsTowerParty = party;
+            }
+            if (step.parks) {
                 m_legendsOrigin = std::move(m_play);
             }
             if (n64 && native->adapter().isTower()) {
@@ -410,11 +511,11 @@ void Gauntlet::consoleLegendsOpen(DevConsole& console, LegendsPlatform platform,
             m_legendsSounds.reset();
         }
         m_legendsSounds =
-            openLegendsMusic(files.root(), platform, m_audio->mixer(), m_config, console);
+            openLegendsMusic(files.root(), opening.platform, m_audio->mixer(), m_config, console);
         window().stopRumble();
         resetPlayInput();
         console.print(std::format("Legends native map: {} objects.", map.objects.size()));
-        if (playable) {
+        if (opening.playable) {
             console.print("Normal party controls, combat, inventory and pause are active.");
             console.print(
                 "Escape opens the pause menu. Save normally after returning to keep rewards.");
@@ -426,11 +527,19 @@ void Gauntlet::consoleLegendsOpen(DevConsole& console, LegendsPlatform platform,
         for (const auto& warning : map.warnings) {
             console.print(warning);
         }
+        return true;
     } catch (const std::exception& error) {
-        if (m_play->scene.isOpen() && !m_legendsPreview.isOpen()) {
+        // A scene that stood aside for a map that did not open is taken up again.
+        const bool opened = opening.playable ? m_play.get() != left : m_legendsPreview.isOpen();
+        if (!opened && suspended && m_play->scene.isOpen()) {
             m_play->scene.resumeAfterImportedLevel();
         }
-        console.print(std::format("Legends map was not opened: {}", error.what()));
+        const std::string message = std::format("Legends map was not opened: {}", error.what());
+        if (opened) {
+            console.print(message);
+            return true;
+        }
+        return refuse(message);
     }
 }
 
@@ -564,11 +673,12 @@ bool Gauntlet::quitLegendsLevel() {
             retainLegendsProgress(member.save, *current, platform);
         }
     }
-    const auto* before = m_play.get();
-    consoleLegendsOpen(m_console, platform, *tower, true, false, std::move(restored));
     // On failure retain the original scene and unsaved awards. Never silently
     // send a native Quit Level to the parked Dark Legacy campaign.
-    return m_play.get() != before;
+    return openLegendsMap(m_console, {.platform = platform,
+                                      .directory = *tower,
+                                      .arrival = LegendsArrival::Retreat,
+                                      .party = std::move(restored)});
 }
 
 void Gauntlet::finishLegendsTravel() {
@@ -605,12 +715,11 @@ void Gauntlet::finishLegendsTravel() {
         return;
     }
     // Resolve beside the currently loaded extraction, never through an unrelated
-    // installed copy. consoleLegendsOpen builds the replacement before swapping.
+    // installed copy. openLegendsMap builds the replacement before swapping.
     const std::filesystem::path path = native->directory().parent_path() / *native->destination();
-    const auto generation = m_play->scene.loadGeneration();
-    const auto* previous = m_play.get();
-    consoleLegendsOpen(m_console, native->platform(), path, true, true);
-    if (m_play.get() == previous && m_play->scene.loadGeneration() == generation) {
+    if (!openLegendsMap(m_console, {.platform = native->platform(),
+                                    .directory = path,
+                                    .arrival = LegendsArrival::Departure})) {
         m_play->scene.recoverImportedDeparture();
         m_console.print("Native destination unavailable; this level and its rewards were kept. "
                         "Leave and re-enter the portal to retry, or use Quit Level for its Tower.");
@@ -642,11 +751,11 @@ bool Gauntlet::saveLegendsCompletion() {
 
 void Gauntlet::finishImportedJourney(Journey journey) {
     const auto& destination = *journey.importedDestination;
-    const auto* previous = m_play.get();
-    const auto generation = m_play->scene.loadGeneration();
-    consoleLegendsOpen(m_console, destination.platform, destination.directory, true, true,
-                       journey.party, true);
-    if (m_play.get() != previous || m_play->scene.loadGeneration() != generation) {
+    if (openLegendsMap(m_console, {.platform = destination.platform,
+                                   .directory = destination.directory,
+                                   .arrival = LegendsArrival::Departure,
+                                   .party = journey.party,
+                                   .completionRecorded = true})) {
         return;
     }
     // Keep the purchased inventory and save-slot choices if loading failed.

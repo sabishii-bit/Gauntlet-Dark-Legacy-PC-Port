@@ -5,7 +5,9 @@
 
 #include "engine/assets/StringTable.h"
 
+#include "game/party/PartyTeleport.h"
 #include "game/scenes/PlayScene.h"
+#include "game/tower/GatewayDeparture.h"
 #include "game/tower/TowerGateways.h"
 
 namespace gdl::game {
@@ -34,14 +36,46 @@ void PlayScene::openGatewayChoices() {
     m_sumnerVisit.choose(std::move(rows));
 }
 
-void PlayScene::takeGatewayChoice(s32 code) {
+bool PlayScene::takeGatewayChoice(s32 code) {
     if (code < 0 || static_cast<usize>(code) >= m_gatewayChoices.size()) {
-        return;
+        return false;
     }
     const GatewayChoice& choice = m_gatewayChoices[static_cast<usize>(code)];
-    if (choice.enabled) {
-        m_gatewayRequest = choice.destination;
+    if (!choice.enabled) {
+        return false;
     }
+    m_gatewayDeparture.begin(choice.destination);
+    return true;
+}
+
+bool PlayScene::advanceGatewayDeparture(s32 ticks) {
+    if (!m_gatewayDeparture.holding()) {
+        return false;
+    }
+    const GatewayDeparture::Step step = m_gatewayDeparture.update(ticks);
+    if (step.sparkle && m_device != nullptr) {
+        PartyTeleport::sparkle(*m_device, m_effects, m_weapons, m_players);
+    }
+    if (step.leave) {
+        // Gone as the boss's fall sends a party on: the transition comes up over the view.
+        m_sim.destination = {};
+        m_sim.leaving = true;
+        m_transition.comeUp();
+    }
+    return true;
+}
+
+bool PlayScene::cancelGatewayDeparture() {
+    if (!m_open || !m_gatewayDeparture.active()) {
+        return false;
+    }
+    if (m_gatewayDeparture.departed()) {
+        m_sim.leaving = false;
+        m_sim.destination = {};
+        m_transition.clearAway();
+    }
+    m_gatewayDeparture.cancel();
+    return true;
 }
 
 } // namespace gdl::game

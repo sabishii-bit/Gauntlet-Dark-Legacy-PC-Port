@@ -333,7 +333,7 @@ void PlayScene::close() {
     m_sumnerVisit.clear();
     m_gatewayHere = {};
     m_gatewayChoices.clear();
-    m_gatewayRequest.reset();
+    m_gatewayDeparture.cancel();
     m_spawned.clear();
     m_sim.cheats = {};
     m_sim.consoleTravel.reset();
@@ -946,7 +946,10 @@ void PlayScene::updateHints(const Inputs& inputs, s32 ticks) {
         if (m_sumnerVisit.menu().burning()) {
             m_audio.playNamed(kScrollBurnSound);
         }
-        takeGatewayChoice(event.topic);
+        // He sends a party through his gateways with his sweep, where a visit done gets his wave.
+        if (takeGatewayChoice(event.topic)) {
+            m_sumner.play(SumnerFigure::kGestureIndex);
+        }
         break;
     case HintMenuEvent::Kind::None: break;
     }
@@ -1516,7 +1519,9 @@ void PlayScene::advanceEntrance(s32 ticks, f32 seconds, const Inputs& inputs) {
 
 PlayOutcome PlayScene::advancePlay(s32 ticks, f32 seconds, const Inputs& inputs) {
     const bool welcomeHeld = m_sim.welcome.hold(ticks);
-    const bool held = welcomeHeld || importedOpening();
+    // A party bound through Sumner's gateways stands held until the teleport takes it.
+    const bool departing = advanceGatewayDeparture(ticks);
+    const bool held = welcomeHeld || importedOpening() || departing;
     if (!held && m_world->isTower()) {
         m_sim.towerNoticeSeconds += seconds;
         if (m_sim.towerNoticeSeconds >= 3.0f &&
@@ -2225,7 +2230,8 @@ void PlayScene::setSaveSlot(s32 player, std::optional<usize> slot) {
 }
 
 bool PlayScene::canPause(s32 player) const {
-    return m_open && !m_sim.leaving && !m_sim.gameOver.active() && !m_sim.switchCutscene.active() &&
+    return m_open && !m_sim.leaving && !m_gatewayDeparture.active() && !m_sim.gameOver.active() &&
+           !m_sim.switchCutscene.active() &&
            (m_world->imported() == nullptr || !m_sumnerVisit.active()) && !m_messages.active() &&
            !m_ceremonies.promotion().active() && !m_ceremonies.relics().active() &&
            actor(player) != nullptr && !fallen(player);
@@ -2234,8 +2240,9 @@ bool PlayScene::canPause(s32 player) const {
 bool PlayScene::canJoin(s32 player) const {
     return m_open && m_world != nullptr && m_world->isTower() && actor(player) == nullptr &&
            m_players.size() < static_cast<usize>(kPlayerCount) && !m_sim.leaving &&
-           !m_sim.gameOver.active() && !m_sim.switchCutscene.active() && !spawning() &&
-           !m_messages.active() && !m_sumnerVisit.active() && !m_sim.welcome.cutting() &&
+           !m_gatewayDeparture.active() && !m_sim.gameOver.active() &&
+           !m_sim.switchCutscene.active() && !spawning() && !m_messages.active() &&
+           !m_sumnerVisit.active() && !m_sim.welcome.cutting() &&
            !m_ceremonies.promotion().active() && !relicCeremonyOn();
 }
 

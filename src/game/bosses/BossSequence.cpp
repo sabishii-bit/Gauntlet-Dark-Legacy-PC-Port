@@ -10,6 +10,7 @@
 #include "game/bosses/BossTraits.h"
 #include "game/bosses/SkorneRelics.h"
 #include "game/level/ImportedLevel.h"
+#include "game/party/PartyTeleport.h"
 #include "game/party/PlayerFigure.h"
 #include "game/players/PowerupEffects.h"
 
@@ -79,7 +80,6 @@ constexpr std::string_view kBossKeyTree = "BOSSKEY";
 constexpr std::string_view kBossKeyLaterTree = "BOSSKEY2";
 constexpr f32 kBossKeySeconds = 30.0f;
 constexpr std::string_view kBossKeySoundPrefix = "S_BOSSKEY";
-constexpr std::string_view kSpawnEffect = "STARTFX";
 constexpr f32 kBossDeathBlast = 1000.0f;
 constexpr f32 kBossDeathBlastRadius = 1000.0f;
 
@@ -343,13 +343,7 @@ bool BossSequence::advanceVictory(s32 ticks, f32 seconds, std::span<const Player
         m_sim.speechCue = next.cue;
     }
     if (result.sparkle) {
-        if (r.weapons.loaded()) {
-            for (const PlayerRuntime& runtime : players) {
-                if (!runtime.departed && runtime.life == PlayerLife::Standing) {
-                    r.effects.start(r.device, r.weapons, kSpawnEffect, runtime.actor.position());
-                }
-            }
-        }
+        PartyTeleport::sparkle(r.device, r.effects, r.weapons, players);
     }
     return m_victory.state().finished();
 }

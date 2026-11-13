@@ -80,6 +80,7 @@
 #include "game/scenes/TowerCeremonies.h"
 #include "game/scenes/TransitionScreen.h"
 #include "game/tower/GameOver.h"
+#include "game/tower/GatewayDeparture.h"
 #include "game/tower/LevelArrivalPresentation.h"
 #include "game/tower/LevelBeaten.h"
 #include "game/tower/SumnerFigure.h"
@@ -438,9 +439,21 @@ public:
     const ScrollBox& scroll() const { return m_messages.scroll(); }
     std::optional<LevelMessages::Look> scrollLook() const { return m_messages.look(); }
     const HintMenu& hints() const { return m_sumnerVisit.menu(); }
-    /** Where the party last asked Sumner's gateways to take it, until the scene closes; the
-     * journey is the application's to make. */
-    const std::optional<GatewayDestination>& gatewayRequest() const { return m_gatewayRequest; }
+    /** Where the party last asked Sumner's gateways to take it, until the scene closes or the
+     * journey is called off. */
+    const std::optional<GatewayDestination>& gatewayRequest() const {
+        return m_gatewayDeparture.destination();
+    }
+    /** Where the party has left for through Sumner's gateways, once it has gone: the Travel that
+     * update() then says, as the transition covers the view, is that journey, the application's
+     * to make. */
+    std::optional<GatewayDestination> gatewayDeparture() const {
+        return m_gatewayDeparture.departed();
+    }
+    /** Calls off a journey through the gateways that the application could not make: the party
+     * stands where it stood, in play again, as the transition clears away. False with none under
+     * way. */
+    bool cancelGatewayDeparture();
     const PlayerMissiles& missiles() const { return m_arsenal.missiles(); }
     PlayerArsenal::SoundCapture captureWeaponSounds(PlayerArsenal::SoundObserver observer) {
         return {&m_arsenal, std::move(observer)};
@@ -910,8 +923,12 @@ private:
     bool offersGateways() const;
     /** Answers his gateway row with his list of where they lead, greying what cannot be chosen. */
     void openGatewayChoices();
-    /** Takes the place the list's row `code` stands for as the party's request. */
-    void takeGatewayChoice(s32 code);
+    /** Sends the party where the list's row `code` stands for; false for a row that cannot be
+     * chosen. */
+    bool takeGatewayChoice(s32 code);
+    /** Runs the party's way out through the gateways once his scroll has gone: the teleport's
+     * sparkle, then the leaving; whether it holds the party still this update. */
+    bool advanceGatewayDeparture(s32 ticks);
 
     RenderDevice* m_device = nullptr;
     const GameServices* m_services = &GameServices::none(); ///< the game's, from open on
@@ -967,7 +984,7 @@ private:
     // Sumner's gateways are offered offline alone, so what they hold is never shared state.
     GatewayDestination m_gatewayHere;            ///< where his list says the party stands
     std::vector<GatewayChoice> m_gatewayChoices; ///< his list's places, row by row, while it is up
-    std::optional<GatewayDestination> m_gatewayRequest;
+    GatewayDeparture m_gatewayDeparture;         ///< the party's way out through them, once chosen
     TowerCeremonies m_ceremonies;
     TriggerCues m_triggerCues;
 

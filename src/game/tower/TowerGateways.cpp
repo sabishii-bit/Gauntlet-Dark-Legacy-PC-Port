@@ -1,5 +1,7 @@
 #include "game/tower/TowerGateways.h"
 
+#include <algorithm>
+
 #include "game/level/LevelCatalog.h"
 #include "game/level/TowerAccess.h"
 
@@ -16,6 +18,14 @@ std::vector<GatewayChoice> gatewayChoices(std::span<const GatewayWorld> worlds,
         choices.push_back({destination, world.label, world.usable && here != destination});
     }
     return choices;
+}
+
+void greyUnopened(std::span<GatewayWorld> worlds, std::span<const u8> unopened) {
+    for (GatewayWorld& world : worlds) {
+        if (std::ranges::find(unopened, world.id) != unopened.end()) {
+            world.usable = false;
+        }
+    }
 }
 
 bool beatenGarm(const CharacterSave& save) {

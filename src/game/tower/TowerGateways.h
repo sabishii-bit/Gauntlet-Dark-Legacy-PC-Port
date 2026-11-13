@@ -64,6 +64,10 @@ struct GatewayChoice {
 std::vector<GatewayChoice> gatewayChoices(std::span<const GatewayWorld> worlds,
                                           GatewayDestination here);
 
+/** Greys each of `worlds` among `unopened`: those whose towers would not open when a party set
+ * out for them, which a second try would find no better. */
+void greyUnopened(std::span<GatewayWorld> worlds, std::span<const u8> unopened);
+
 /** Whether `save`'s character has beaten Garm, which wakes the gateways: its class holds his
  * piece, the battlefield's place in the tower's order (0x80124D14), which BossDeath gives every
  * player standing as he falls (PlayerGiveRune 0x800A2500). */

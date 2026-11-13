@@ -608,9 +608,9 @@ void Gauntlet::updateSelect(f64 deltaSeconds) {
 
 bool Gauntlet::startLevel(const LevelRef& level, std::span<const PartyMember> party,
                           const PlayOptions& options) {
-    if (m_legendsOrigin && level.realmId >= 0) {
-        // An explicit ordinary-level console command ends the visit. Its supplied
-        // party is authoritative; do not leave a stale parked scene or soundtrack.
+    if ((m_legendsOrigin || !m_legendsEntryParty.empty()) && level.realmId >= 0) {
+        // An explicit ordinary-level console command ends the visit, parked level or not. Its
+        // supplied party is authoritative; do not leave a stale parked scene or soundtrack.
         m_legendsOrigin.reset();
         m_legendsEntryParty.clear();
         m_legendsTowerParty.clear();
@@ -796,6 +796,15 @@ void Gauntlet::updateTower(f64 deltaSeconds, const SceneInput& sceneInput) {
     if (outcome == PlayOutcome::Travel) {
         if (m_play->scene.consoleTravelRequest()) {
             travelByConsole();
+            return;
+        }
+        // Through Sumner's gateways, from whichever tower: where it leads opens behind the
+        // covered view, or the party stays where it stood.
+        if (const auto gateway = m_play->scene.gatewayDeparture()) {
+            if (!m_gateways.depart(*gateway)) {
+                m_play->scene.cancelGatewayDeparture();
+                resetPlayInput();
+            }
             return;
         }
         if (m_play->world.imported()) {
@@ -1089,7 +1098,9 @@ void Gauntlet::updatePause(f64 deltaSeconds, const SceneInput& sceneInput) {
         return;
     }
     if (outcome == PauseOutcome::ReturnTower) {
-        if (m_legendsOrigin) {
+        // An imported world's Quit Level goes back to its own tower, whether or not a level
+        // waits parked behind the visit.
+        if (m_play->world.imported()) {
             quitLegendsLevel();
             return;
         }

@@ -11,12 +11,14 @@
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include "engine/assets/StringTable.h"
 #include "engine/core/SpecialMembers.h"
 #include "engine/io/AssetLocator.h"
 #include "engine/io/ByteReader.h"
 #include "engine/io/File.h"
+#include "engine/math/Math.h"
 #include "engine/math/PortableMath.h"
 #include "engine/ui/Canvas.h"
 
@@ -29,6 +31,7 @@
 #include "expansions/n64/scenes/LegendsSumnerText.h"
 #include "expansions/shared/scenes/LegendsLevel.h"
 #include "expansions/shared/scenes/LegendsTraversal.h"
+#include "game/party/PartyTeleport.h"
 #include "game/scenes/PlayScene.h"
 #include "game/tower/TowerGateways.h"
 
@@ -382,7 +385,67 @@ TEST_CASE("The N64 Tower's Sumner ends his menu with the gateways, his own world
     REQUIRE(fixture.scene.gatewayRequest());
     CHECK(*fixture.scene.gatewayRequest() == GatewayDestination{});
     CHECK_FALSE(fixture.scene.hints().active());
+    CHECK_FALSE(fixture.scene.canPause(1)); // held now until the party is taken
+}
+
+TEST_CASE("Through the N64 Tower's gateways the party is teleported home or on to the Dreamcast's",
+          "[legends][sumner-integration][gateways][assets]") {
+    const f64 seconds = GENERATE(1.0 / 30.0, 1.0 / 60.0);
+    // The Dark Legacy, first on his list, or Legend of What Could Have Been, last.
+    const usize row = GENERATE(0U, 2U);
+    CAPTURE(seconds, row);
+    SumnerScene fixture{std::nullopt, false, true};
+    fixture.gateways.offered = {{0, "legends.n64.gateway.label", true},
+                                {1, "legends.dreamcast.gateway.label", true}};
+    fixture.approach();
+    fixture.choose(6);
+    REQUIRE(fixture.scene.hints().reading());
+    const auto place = fixture.scene.hints().page().itemArea(row);
+    PlayScene::Inputs click{};
+    click[1].menu.pointer = Vec2{place.x + place.width * .5f, place.y + place.height * .5f};
+    click[1].menu.pointerPressed = true;
+    fixture.step(click);
+    const GatewayDestination chosen = row == 0 ? GatewayDestination{} : GatewayDestination{1};
+    REQUIRE(fixture.scene.gatewayRequest() == chosen);
+    CHECK_FALSE(fixture.scene.hints().active());
+    // Held where they chose, nobody pausing, both are teleported away as the good wizard takes
+    // a party; the Tower's own way out through its portals never begins.
+    const std::array stood{fixture.scene.actor(0)->position(), fixture.scene.actor(1)->position()};
+    const auto teleports = [&] {
+        usize count = 0;
+        for (usize i = 0; i < fixture.scene.effects().count(); ++i) {
+            count += fixture.scene.effects().effect(i).name == PartyTeleport::kEffect ? 1 : 0;
+        }
+        return count;
+    };
+    const usize before = teleports();
+    PlayScene::Inputs walk{};
+    walk[0].move = {{0.0f, 1.0f}, 1.0f};
+    walk[1].move = {{0.0f, 1.0f}, 1.0f};
+    PlayOutcome outcome = PlayOutcome::Running;
+    usize sparkled = 0;
+    for (u32 update = 0; update < 600 && outcome == PlayOutcome::Running; ++update) {
+        CHECK_FALSE(fixture.scene.canPause(0));
+        CHECK_FALSE(fixture.scene.canPause(1));
+        outcome = fixture.scene.update(seconds, walk);
+        sparkled = std::max(sparkled, teleports() - before);
+        for (s32 seat = 0; seat < 2; ++seat) {
+            CHECK(glm::distance(fixture.scene.actor(seat)->position(),
+                                stood[static_cast<usize>(seat)]) < 1e-4f);
+        }
+        CHECK_FALSE(fixture.level->travelRequested());
+        CHECK_FALSE(fixture.level->departure());
+    }
+    REQUIRE(outcome == PlayOutcome::Travel);
+    CHECK(sparkled == 2); // one at each member's feet
+    CHECK(fixture.scene.gatewayDeparture() == chosen);
+    CHECK(fixture.scene.transition().covering());
+    // A place that does not open leaves the party where it stood, free to pause and walk on.
+    REQUIRE(fixture.scene.cancelGatewayDeparture());
+    CHECK_FALSE(fixture.scene.leaving());
     CHECK(fixture.scene.canPause(1));
+    fixture.step(walk, seconds);
+    CHECK_FALSE(fixture.scene.gatewayDeparture());
 }
 
 TEST_CASE("Native Tower return presents new milestones once and restores the matching History",
