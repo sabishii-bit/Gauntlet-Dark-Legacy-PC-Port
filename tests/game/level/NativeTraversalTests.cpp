@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <array>
 #include <filesystem>
 #include <string_view>
@@ -13,10 +14,13 @@
 #include "TestSupport.h"
 #include "game/characters/CharacterSave.h"
 #include "game/characters/ClassData.h"
+#include "game/level/Chests.h"
 #include "game/level/LevelCatalog.h"
 #include "game/level/LevelTriggers.h"
 #include "game/level/LevelWorld.h"
+#include "game/level/PlacedItems.h"
 #include "game/party/FloorRiding.h"
+#include "game/party/PartyPickups.h"
 #include "game/party/PlayerRuntime.h"
 #include "game/players/PlayerActor.h"
 
@@ -517,6 +521,121 @@ TEST_CASE("D3 stepping stone cannot be stepped onto from the walkway until it st
         walk.step(kTowardStone);
     }
     CHECK(walk.party[0].floor.object == kD3Stone);
+}
+
+/** G1's crates under the bridge: G1ELEV7 and G1ELEV6, which the hidden pads #53 and #54 on the
+ * stump G1ELEV5 raise ten and twenty units out of the water, each carrying a deck hung from it,
+ * G1CRATE2 beside the stump and G1CRATE1 beyond it under the Super Shot, XBOWICON #398. */
+constexpr s32 kG1Stump = 229;
+constexpr s32 kG1NearLift = 820;
+constexpr s32 kG1NearCrate = 821;
+constexpr s32 kG1FarLift = 818;
+constexpr s32 kG1FarCrate = 819;
+constexpr s32 kG1SuperShot = 398;
+constexpr Vec3 kG1Pads{54.69f, 17.7f, -203.05f}; ///< on the stump, within both hidden pads
+constexpr std::array kG1Lifts{kG1NearLift, kG1FarLift};
+constexpr std::array kG1Crates{kG1NearCrate, kG1FarCrate};
+constexpr f32 kG1Arrival = 0.5f; ///< as near the Super Shot as a walk's waypoint
+constexpr s32 kG1RunSeconds = 10;
+
+TEST_CASE("G1 crates under the bridge reach their tops before a player running at them boards",
+          "[native-traversal][g1-rising-crates][assets]") {
+    // Rising, each lift and the deck hung from it are open to the players' own probes
+    // (ProcessItemWobjs marks WorldObj +0x35 for a kind without 8, 0x80062F40-0x80062F4C, and
+    // WorldCollide 0x8000D578 takes the direct parent's mark with the object's own), and a lift
+    // holds only for a player whose floor is the lift itself (did_generate 0x80063854, the height
+    // hold at 0x80062E40-0x80062E68), which a deck's rider never is. A player running from the
+    // pads at the crates waits at the stump's edge until each has stopped at its top, crosses
+    // both and takes the Super Shot, never sinking into the water. The decks rock on their own
+    // keyed loop, so their lifts give the heights.
+    const s32 hz = GENERATE(30, 60);
+    const s32 character = GENERATE(0, kArcherClass);
+    CAPTURE(hz, character);
+    const auto root = test::assetOrSkip("PDATA/WAR.WAD").parent_path().parent_path();
+    ClassDataSet classes;
+    REQUIRE(classes.load(root / "PDATA"));
+    const auto* stats = classes.stats(character);
+    REQUIRE(stats != nullptr);
+    NativeWalk walk("G1", kG1Pads, 1.0f / static_cast<f32>(hz));
+    const auto& objects = walk.world.layout().objects();
+    REQUIRE(objects[kG1NearCrate].name == "G1CRATE2");
+    REQUIRE(objects[kG1FarCrate].name == "G1CRATE1");
+    walk.world.setPlayerCount(1);
+    walk.stand(kG1Pads, character, *stats);
+    REQUIRE(walk.party[0].floor.object == kG1Stump);
+    usize superShot = walk.world.placedItems().size();
+    for (usize i = 0; i < walk.world.placedItems().size(); ++i) {
+        if (walk.world.placedItems().item(i).instance == kG1SuperShot) {
+            superShot = i;
+        }
+    }
+    REQUIRE(superShot < walk.world.placedItems().size());
+    const auto& prize = walk.world.placedItems().item(superShot);
+    REQUIRE(prize.name == "XBOWICON");
+    const Vec2 goal{prize.position.x, prize.position.z};
+    const LevelTriggers& triggers = walk.world.triggers();
+    walk.step(); // on the pads: both lifts set off
+    REQUIRE(triggers.opened(kG1NearLift));
+    REQUIRE(triggers.opened(kG1FarLift));
+    REQUIRE_FALSE(triggers.settled(kG1NearLift));
+    REQUIRE_FALSE(triggers.settled(kG1FarLift));
+    std::array<bool, kG1Crates.size()> withinStep{};
+    const f32 start = walk.party[0].actor.position().y;
+    f32 lowest = start;
+    bool crossedNear = false;
+    bool took = false;
+    bool arrived = false;
+    const Chests chests;
+    for (s32 frame = 0; frame < kG1RunSeconds * hz && !arrived; ++frame) {
+        const Vec3 at = walk.party[0].actor.position();
+        const Vec2 toward = goal - Vec2{at.x, at.z};
+        walk.step(glm::length(toward) > 0 ? glm::normalize(toward) : Vec2{0});
+        const PlayerActor& actor = walk.party[0].actor;
+        const s32 floor = walk.party[0].floor.object;
+        lowest = std::min(lowest, actor.position().y);
+        crossedNear |= floor == kG1NearCrate;
+        for (usize i = 0; i < kG1Crates.size(); ++i) {
+            if (triggers.settled(kG1Lifts[i])) {
+                continue;
+            }
+            CHECK(floor != kG1Crates[i]);
+            // While the deck still rises within a step below the player, every other probe
+            // meets it and the player's passes through it.
+            const Vec3 deck{walk.world.scene().worldTransform(static_cast<usize>(kG1Crates[i]))[3]};
+            const Vec3 over{deck.x, actor.floorBase(), deck.z};
+            const auto other = walk.world.collision().floorAt(over, FloorRiding::kProbeAbove,
+                                                              PlayerActor::kStepUp);
+            if (other && other->object == kG1Crates[i]) {
+                withinStep[i] = true;
+                const auto player = walk.world.collision().floorAt(
+                    over, FloorRiding::kProbeAbove, PlayerActor::kStepUp, 0,
+                    WorldCollision::kPlayerSide, WorldCollision::Prober::Player);
+                CHECK_FALSE((player.has_value() && player->object == kG1Crates[i]));
+            }
+        }
+        const auto collectors = PartyPickups::collectors(walk.party, walk.world, chests);
+        for (const Pickup& pickup : walk.world.placedItems().collect(walk.device, collectors)) {
+            took |= pickup.item == superShot;
+        }
+        if (took) {
+            CHECK(triggers.settled(kG1FarLift)); // never from a deck still under the water
+        }
+        const Vec3 now = actor.position();
+        arrived =
+            took && floor == kG1FarCrate && glm::length(goal - Vec2{now.x, now.z}) < kG1Arrival;
+    }
+    CHECK(withinStep[0]);
+    CHECK(withinStep[1]);
+    for (const s32 lift : kG1Lifts) {
+        CAPTURE(lift);
+        CHECK(triggers.settled(lift));
+        const auto object = static_cast<usize>(lift);
+        CHECK(walk.world.scene().worldTransform(object)[3].y == Approx(objects[object].position.y));
+    }
+    CHECK(crossedNear);
+    CHECK(took);
+    CHECK(arrived);
+    CHECK(lowest > start - PlayerActor::kStepUp);
 }
 
 } // namespace
