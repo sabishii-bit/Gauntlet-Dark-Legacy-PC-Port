@@ -741,8 +741,9 @@ void LevelOpponents::open(const Resources& resources, std::span<const PlayerRunt
     m_sim.critterExperienceOwed.fill(0.0f);
     const auto present = static_cast<s32>(std::ranges::count_if(
         players, [](const PlayerRuntime& player) { return !player.departed; }));
-    // What is placed for a larger party stands for the party the level is set up for, as
-    // ItemVisible (0x80065D98) takes an option's count, when set, in place of gNumPlayers.
+    // Placements stand for the party the level is set up for as though that many players were
+    // present, by ItemVisible's test of gNumPlayers (0x80065D98, 0x80065E0C); its own option
+    // count at 0x802575A0 would show only the placements for exactly that many.
     const s32 partySize = m_partyCountOverride.value_or(present);
     const std::array generatorTextures{&world.textures(), &world.items().textures,
                                        &world.realmItems().textures};

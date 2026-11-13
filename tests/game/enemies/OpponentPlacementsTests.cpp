@@ -185,8 +185,8 @@ TEST_CASE("IT placed for a party stands for the party a level is set up for only
                                             [](s32) { return true; })
             .has_value();
     };
-    // The minimum goes by the party the level is set up for (ItemVisible's count), the company
-    // by the players present (fn_80060114's gNumPlayers).
+    // The minimum goes by the party the level is set up for, as ItemVisible's test of the player
+    // count would see it, the company by the players present (fn_80060114's gNumPlayers).
     CHECK_FALSE(stands(1, 3));
     CHECK_FALSE(stands(3, 1));
     CHECK(stands(3, 2));

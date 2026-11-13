@@ -21,8 +21,8 @@ public:
     using ClaimItem = std::function<std::optional<usize>(const Vec3&, f32, f32)>;
     /** Load time only. Resolves statues and carried pickups in authored order;
      * the returned immutable roster includes every remaining native family. A placement
-     * stands when the `party` the level is set up for meets its minimum (ItemVisible); IT
-     * waits for company among the players `present` (fn_80060114). */
+     * stands when the `party` the level is set up for meets its minimum, as ItemVisible
+     * tests gNumPlayers; IT waits for company among the players `present` (fn_80060114). */
     static std::vector<PlacedEnemies::Placement>
     load(RenderDevice& device, const WorldLayout& layout, std::span<const LevelEnemy> roster,
          s32 party, s32 present, Enemies& enemies, Critters& critters, CritterStatues& statues,
