@@ -482,6 +482,7 @@ add_library(game STATIC
     party/PartyRecords.cpp
     level/TriggerCues.cpp
     tower/LevelBeaten.h
+    tower/TowerGateways.h
     tower/TowerWelcome.cpp
     party/PickupPresentation.h
     party/PartyPickups.cpp

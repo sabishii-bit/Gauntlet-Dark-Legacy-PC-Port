@@ -1199,5 +1199,7 @@
   "legends.dreamcast.victory.remaining_shards.0": "Continue now on your quest\n",
   "legends.dreamcast.victory.remaining_shards.1": "To recover all four shards that unlock\nthe Altar of Skorne.\n",
   "legends.dreamcast.victory.all_shards.0": "Now that you have all four shards,\ngo to the Altar of Skorne\n",
-  "legends.dreamcast.victory.all_shards.1": "And banish him from the realm!\n"
+  "legends.dreamcast.victory.all_shards.1": "And banish him from the realm!\n",
+  "legends.n64.gateway.label": "Legend of What Once Was",
+  "legends.dreamcast.gateway.label": "Legend of What Could Have Been"
 }

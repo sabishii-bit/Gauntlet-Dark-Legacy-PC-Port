@@ -224,6 +224,8 @@ function(gdl_add_expansion_game_sources target)
         "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/shared/app/LegendsCompletion.h"
         "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/shared/app/LegendsConsoleWords.cpp"
         "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/shared/app/LegendsConsoleWords.h"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/shared/app/LegendsGateways.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/shared/app/LegendsGateways.h"
         "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/shared/characters/LegendsProgress.cpp"
         "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/shared/characters/LegendsProgress.h"
         "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/shared/characters/LegendsVisit.cpp"

@@ -84,6 +84,7 @@
 #include "game/tower/LevelBeaten.h"
 #include "game/tower/SumnerFigure.h"
 #include "game/tower/SumnerVisit.h"
+#include "game/tower/TowerGateways.h"
 #include "game/tower/TowerWelcome.h"
 
 namespace gdl::game {
@@ -132,14 +133,17 @@ struct PlayOptions {
 };
 
 /** The application's owners an open scene answers through: the controllers' rumble, the
- * classes a won challenge grants and the Stop Time total. Any may be missing; closing the scene
- * lets them all go. */
+ * classes a won challenge grants, the Stop Time total and the worlds past Sumner's gateways.
+ * Any may be missing; closing the scene lets them all go. */
 struct PlaySceneLinks {
     Haptics* haptics = nullptr;
     ClassUnlocks* unlocks = nullptr;
     /** The most recent Stop Time pickup's total, shared across the levels a run visits; without
      * it the scene keeps its own. */
     f32* stopTimeTotal = nullptr;
+    /** The worlds Sumner's gateways lead to, offline alone: an online game leaves them out, and
+     * its tower tells of none. */
+    TowerGateways* gateways = nullptr;
 };
 
 enum class PlayOutcome : u8 {

@@ -64,6 +64,7 @@
 #include "game/scenes/SmokeTestScene.h"
 #include "game/scenes/TitleScene.h"
 #include "game/tower/LevelExitSpeech.h"
+#include "game/tower/TowerGateways.h"
 #include "game/widgets/SceneInput.h"
 
 namespace gdl::game {
@@ -103,6 +104,17 @@ private:
 
     private:
         Gauntlet& m_game;
+    };
+    /** The worlds the expansions built into the game offer through Sumner's gateways, looked
+     * for afresh at each ask where the game's own data is found (GauntletLegends.cpp). */
+    class GatewayRouting final : public TowerGateways {
+    public:
+        explicit GatewayRouting(Gauntlet& game) : m_game(game) {}
+        std::span<const GatewayWorld> worlds() override;
+
+    private:
+        Gauntlet& m_game;
+        std::vector<GatewayWorld> m_worlds; ///< what the last ask found
     };
     /** Saves the online game's local characters as the party in play is saved. */
     class PartyRouting final : public PartyStore {
@@ -256,7 +268,8 @@ private:
     static s32 playerPressingStart(const SceneInput& sceneInput);
     /** The view every screen is opened with, its levels read on the first ask. */
     const GameServices& services();
-    /** What a play scene answers its rumble, won classes and Stop Time total through. */
+    /** What an offline play scene answers its rumble, won classes and Stop Time total through,
+     * and where it finds the worlds past Sumner's gateways. */
     PlayScene::Links playLinks();
     /** What the online game answers its rumble, won classes and saves through. */
     OnlineRun::Links onlineLinks();
@@ -283,6 +296,7 @@ private:
     std::string m_version;
     RumbleRouting m_rumble{*this}; ///< outlives every scene and online game that rumbles
     UnlockRouting m_unlocks{*this};
+    GatewayRouting m_gateways{*this}; ///< outlives every offline scene that asks it
     PartyRouting m_partyStore{*this};
     SettingsRouting m_liveSettings{*this}; ///< outlives the title and pause menus that edit it
     LabelRouting m_controlLabels{*this};   ///< outlives every screen that shows a prompt

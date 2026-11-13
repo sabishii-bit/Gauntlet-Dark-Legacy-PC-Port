@@ -647,6 +647,7 @@ add_executable(tests
     game/hud/PartyHudTests.cpp
     game/party/PartyRecordsTests.cpp
     game/level/TriggerCuesTests.cpp
+    game/tower/TowerGatewaysTests.cpp
     game/tower/TowerWelcomeTests.cpp
     game/party/PartyPickupsTests.cpp
     game/party/PickupPresentationTests.cpp
@@ -1016,6 +1017,7 @@ target_sources(tests PRIVATE
     expansions/ExpansionIsolationTests.cpp
     expansions/shared/app/LegendsConsoleWordsTests.cpp
     expansions/shared/app/LegendsCompletionTests.cpp
+    expansions/shared/app/LegendsGatewaysTests.cpp
     expansions/shared/audio/RestoredSpeechTests.cpp
     expansions/n64/audio/LegendsAnnouncementsTests.cpp
     expansions/n64/audio/LegendsAnnouncementIntegrationTests.cpp

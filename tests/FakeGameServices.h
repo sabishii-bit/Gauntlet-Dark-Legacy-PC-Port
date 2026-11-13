@@ -15,6 +15,7 @@
 #include "game/online/PartyStore.h"
 #include "game/scenes/ClassUnlocks.h"
 #include "game/scenes/Haptics.h"
+#include "game/tower/TowerGateways.h"
 
 namespace gdl::test {
 /** One rumble a controller was asked for. */
@@ -52,6 +53,19 @@ public:
 
     std::function<void(u16)> hook; ///< runs first on every grant, for a test's own checks
     std::vector<u16> masks;
+};
+
+/** The worlds past Sumner's gateways a test's installation offers: `offered` as it stands,
+ * each ask counted. */
+class FixedGateways final : public game::TowerGateways {
+public:
+    std::span<const game::GatewayWorld> worlds() override {
+        ++asks;
+        return offered;
+    }
+
+    std::vector<game::GatewayWorld> offered;
+    u32 asks = 0;
 };
 
 /** A test's save store: counts each checkpoint save and each explicit one, after `hook` has

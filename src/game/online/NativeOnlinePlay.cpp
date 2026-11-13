@@ -704,7 +704,8 @@ struct NativeOnlinePlay::Data {
                 !candidate->scene.open(*device, services, candidate->world, members, opened,
                                        {.haptics = &seatRumble,
                                         .unlocks = nullptr,
-                                        .stopTimeTotal = &setup->stopTimeTotal()})) {
+                                        .stopTimeTotal = &setup->stopTimeTotal(),
+                                        .gateways = nullptr})) {
                 fail(Failure::Assets);
                 return false;
             }
@@ -846,7 +847,8 @@ struct NativeOnlinePlay::Data {
                 !candidate->scene.open(*device, services, candidate->world, levelMembers, reopened,
                                        {.haptics = &seatRumble,
                                         .unlocks = nullptr,
-                                        .stopTimeTotal = &setup->stopTimeTotal()})) {
+                                        .stopTimeTotal = &setup->stopTimeTotal(),
+                                        .gateways = nullptr})) {
                 return fail(Failure::Assets);
             }
             candidate->scene.setLocalSeats(seatMask(session->seats()));

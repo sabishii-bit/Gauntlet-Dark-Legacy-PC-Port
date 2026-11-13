@@ -296,7 +296,10 @@ std::string Gauntlet::LabelRouting::label(s32 player, std::string_view action) c
 }
 
 PlayScene::Links Gauntlet::playLinks() {
-    return {.haptics = &m_rumble, .unlocks = &m_unlocks, .stopTimeTotal = &m_stopTimeTotal};
+    return {.haptics = &m_rumble,
+            .unlocks = &m_unlocks,
+            .stopTimeTotal = &m_stopTimeTotal,
+            .gateways = &m_gateways};
 }
 
 OnlineRun::Links Gauntlet::onlineLinks() {

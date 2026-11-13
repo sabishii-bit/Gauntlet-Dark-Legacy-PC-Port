@@ -6,6 +6,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -24,6 +25,7 @@
 #include "expansions/n64/scenes/LegendsN64Music.h"
 #include "expansions/shared/app/LegendsCompletion.h"
 #include "expansions/shared/app/LegendsConsoleWords.h"
+#include "expansions/shared/app/LegendsGateways.h"
 #include "expansions/shared/characters/LegendsVisit.h"
 #include "expansions/shared/formats/LegendsMap.h"
 #include "expansions/shared/scenes/LegendsLevel.h"
@@ -92,6 +94,15 @@ const std::vector<LegendsMapEntry>& Gauntlet::foundLegendsMaps(LegendsPlatform p
                             std::filesystem::current_path());
     }
     return *found;
+}
+
+std::span<const GatewayWorld> Gauntlet::GatewayRouting::worlds() {
+    // Searched from where the console's maps are, so both find the same extraction.
+    std::error_code error;
+    const auto working = std::filesystem::current_path(error); // none when it cannot be read
+    m_worlds = legendsGatewayWorlds(m_game.m_options.unpackedDirectory,
+                                    paths::executableDirectory(), working);
+    return m_worlds;
 }
 
 bool Gauntlet::legendsMapsInstalled(bool rescan) const {
