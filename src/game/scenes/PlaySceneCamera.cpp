@@ -128,7 +128,7 @@ WorldCamera PlayScene::simulationCamera() const {
         return *cut;
     }
     if (const auto& promotion = m_ceremonies.promotion().camera();
-        promotion.has_value() && !spawning() && m_ceremonies.promotion().active()) {
+        promotion.has_value() && !ceremoniesWaiting() && m_ceremonies.promotion().active()) {
         return *promotion;
     }
     if (const auto& ceremony = m_ceremonies.relics().camera();

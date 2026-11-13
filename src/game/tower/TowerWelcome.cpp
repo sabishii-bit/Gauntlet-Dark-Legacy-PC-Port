@@ -2,30 +2,38 @@
 
 #include <algorithm>
 #include <cmath>
+#include <optional>
 #include <string_view>
+#include <utility>
 
 #include "engine/core/Log.h"
 #include "engine/core/Types.h"
+
+#include "game/level/TowerAccess.h"
 
 namespace gdl::game {
 
 namespace {
 
 constexpr std::string_view kWelcomeMessage = "WELCOMEMESSAGE";
+constexpr std::string_view kGarmMessage = "GARMMESSAGE"; ///< 0x80113EEC
+/** The level whose beating brings GarmMessage: the Underworld's second, its throne (do_players
+ * compares 0x803448AC with 6 and 0x803448A8 with 1, 0x80076B60-0x80076B74). */
+constexpr LevelBeaten kUnderworldThrone{TowerAccess::kUnderworldWorld, 1};
 
 } // namespace
 
-void TowerWelcome::open(LevelWorld& world, bool welcome) {
+void TowerWelcome::open(LevelWorld& world, bool welcome, std::optional<LevelBeaten> beaten) {
     clear();
-    m_pending = welcome;
-    if (m_pending) {
+    m_due = welcome ? Due::Welcome : beaten == kUnderworldThrone ? Due::Garm : Due::Nothing;
+    if (m_due == Due::Welcome) {
         world.hideCrystals(); // Sumner reveals them once the scroll has gone
     }
 }
 
 void TowerWelcome::clear() {
     m_cutTicks = 0;
-    m_pending = false;
+    m_due = Due::Nothing;
     m_intro = Intro::None;
 }
 
@@ -63,10 +71,13 @@ std::optional<s32> TowerWelcome::visitorOf(const LevelTriggers& triggers,
 void TowerWelcome::arrived(RenderDevice& device, LevelMessages& messages,
                            const StringTable* strings, const WorldLayout& layout,
                            SumnerFigure& sumner) {
-    if (!m_pending) {
+    const Due due = std::exchange(m_due, Due::Nothing);
+    if (due == Due::Garm && !messages.open(device, kGarmMessage, strings)) {
+        log::warn("Tower: no {} scroll to show", kGarmMessage);
+    }
+    if (due != Due::Welcome) {
         return;
     }
-    m_pending = false;
     if (messages.open(device, kWelcomeMessage, strings)) {
         m_intro = Intro::Scroll;
         return;

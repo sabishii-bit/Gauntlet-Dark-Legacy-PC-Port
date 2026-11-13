@@ -5,9 +5,13 @@
 
 namespace gdl::game {
 
+bool PlayScene::ceremoniesWaiting() const {
+    return spawning() || m_messages.active();
+}
+
 bool PlayScene::relicCeremonyOn() const {
-    return m_ceremonies.relics().active() && !spawning() && !m_ceremonies.promotion().active() &&
-           m_sim.welcome.intro() != Intro::Crystal && m_sim.welcome.intro() != Intro::Scroll;
+    return m_ceremonies.relics().active() && !ceremoniesWaiting() &&
+           !m_ceremonies.promotion().active() && m_sim.welcome.intro() != Intro::Crystal;
 }
 
 TowerCeremonies::Scene PlayScene::ceremonyScene() {

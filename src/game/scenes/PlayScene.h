@@ -81,6 +81,7 @@
 #include "game/scenes/TransitionScreen.h"
 #include "game/tower/GameOver.h"
 #include "game/tower/LevelArrivalPresentation.h"
+#include "game/tower/LevelBeaten.h"
 #include "game/tower/SumnerFigure.h"
 #include "game/tower/SumnerVisit.h"
 #include "game/tower/TowerWelcome.h"
@@ -119,6 +120,9 @@ struct PlayOptions {
                                     ///< it arrives at (none: the level's own entrance)
     bool arriving = false;          ///< the party comes through a portal (the level still cuts
                                     ///< in, as the original's does; kept for the online setup)
+    /** The level the party comes back to the tower having just beaten, which Sumner answers as
+     * it arrives; none when it beat none on the way. */
+    std::optional<LevelBeaten> beaten;
     /** The party size the level sets itself up for (its items, gates and generators) instead
      * of the players present: the console's party count; none follows the players. */
     std::optional<s32> partyCount;
@@ -420,6 +424,8 @@ public:
     SoundHandle fieldSound() const { return m_audio.fieldSound(); }
     bool exitFlameOn() const { return m_audio.exitFlameOn(); }
     Intro intro() const { return m_sim.welcome.intro(); }
+    /** The level the tower was told the party has just beaten, for the visit; none elsewhere. */
+    const std::optional<LevelBeaten>& levelBeaten() const { return m_levelBeaten; }
     const ScrollBox& scroll() const { return m_messages.scroll(); }
     std::optional<LevelMessages::Look> scrollLook() const { return m_messages.look(); }
     const HintMenu& hints() const { return m_sumnerVisit.menu(); }
@@ -842,6 +848,9 @@ private:
     void updateLevels();
     void updatePromotion(s32 ticks, f32 seconds);
     void updateTowerRelics(s32 ticks, f32 seconds);
+    /** Whether the tower's ceremonies still wait unseen: while the party materialises and while
+     * a scroll is up, both of which hold them back. */
+    bool ceremoniesWaiting() const;
     bool relicCeremonyOn() const;
     static constexpr f32 kLevelUpHealth = 100.0f;
     void sayWithName(usize index, std::string_view line, f32 wait);
@@ -879,6 +888,7 @@ private:
     RenderDevice* m_device = nullptr;
     const GameServices* m_services = &GameServices::none(); ///< the game's, from open on
     Links m_links;
+    std::optional<LevelBeaten> m_levelBeaten; ///< as the options told it; fixed for the visit
     LevelWorld* m_world = nullptr;
     CompassHud m_compass;
     ClassDataSet m_classes;

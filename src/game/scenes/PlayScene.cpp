@@ -247,9 +247,12 @@ bool PlayScene::open(RenderDevice& device, const GameServices& services, LevelWo
     }
     m_audio.startMusic(services.assets,
                        world.level() != nullptr ? world.level()->musicVolume : 1.0f);
-    // The party materialises first; Sumner's welcome, when it is due, follows.
-    m_sim.welcome.open(world, world.isTower() &&
-                                  options.welcome.value_or(TowerWelcome::freshParty(party)));
+    // The party materialises first; Sumner's welcome, or the scroll for the level it has just
+    // beaten, follows when one is due.
+    m_levelBeaten = world.isTower() ? options.beaten : std::nullopt;
+    m_sim.welcome.open(world,
+                       world.isTower() && options.welcome.value_or(TowerWelcome::freshParty(party)),
+                       m_levelBeaten);
     // Every tower spawn has its own entrance view, including returns to a realm's wing.
     const WorldLocator* arrival = world.arrivalPoint(options.arrivalWorld, &m_sim.towerAccess);
     beginSpawn(device, options.position.has_value()
@@ -363,6 +366,7 @@ void PlayScene::close() {
     m_sim.soloCameras = false;
     m_staticTextures.releaseTextures();
     m_sim.welcome.clear();
+    m_levelBeaten.reset();
     m_sim.dimmer.reset();
     if (m_world != nullptr) {
         m_world->setAmbientOffset(0.0f);
@@ -1929,7 +1933,7 @@ void PlayScene::drawShadows(RenderDevice& device, const Mat4& clip, const Vec3& 
 }
 
 bool PlayScene::cinematicBars() const {
-    return m_sim.welcome.cutting() || (m_ceremonies.promotion().active() && !spawning()) ||
+    return m_sim.welcome.cutting() || (m_ceremonies.promotion().active() && !ceremoniesWaiting()) ||
            relicCeremonyOn() || m_sim.switchCutscene.showing();
 }
 
@@ -2046,7 +2050,7 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     PartyFigures::drawEffects(device, m_players, figureScene(frameBlend), clip, effectCamera);
     // The wizards add onto the frame without writing depth, so the translucent scenery behind
     // them (the portals' horizon sheets) must be down first or it paints over them.
-    if (!spawning()) {
+    if (!ceremoniesWaiting()) {
         m_ceremonies.promotion().draw(device, clip, m_world->lighting(), effectBlend);
     }
     if (relicCeremonyOn()) {
@@ -2181,7 +2185,7 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
                        height);
     }
     m_messages.draw(m_canvas);
-    if (!spawning()) {
+    if (!ceremoniesWaiting()) {
         m_ceremonies.promotion().drawCaption(m_canvas, m_messages.text(), width, height);
     }
     if (relicCeremonyOn()) {

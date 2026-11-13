@@ -31,6 +31,7 @@
 #include "game/party/PlayInputReader.h"
 #include "game/rollback/ConsoleAction.h"
 #include "game/scenes/ConsoleTravel.h"
+#include "game/tower/LevelBeaten.h"
 #include "game/widgets/MenuInput.h"
 #include "game/widgets/SceneInput.h"
 
@@ -237,8 +238,10 @@ bool Gauntlet::startScenario(const std::filesystem::path& file) {
                     log::error("Ending scenario requires Garm or Underworld Skorne");
                     return false;
                 }
-                recordLevelBeaten(journey.party, reference->realmId, reference->index, level->rune,
-                                  level->legend);
+                if (recordLevelBeaten(journey.party, reference->realmId, reference->index,
+                                      level->rune, level->legend) > 0) {
+                    journey.options.beaten = LevelBeaten{reference->realmId, reference->index};
+                }
                 journey.completion =
                     Journey::Completion{flow, scenario.results, level->shopMaxima, levelName};
             } else if (!m_afterLevel.open(renderDevice(), game, journey.party, scenario.results,
@@ -817,14 +820,17 @@ void Gauntlet::updateTower(f64 deltaSeconds, const SceneInput& sceneInput) {
         const bool completedLevel = !journey.secret && !m_play->world.isTower();
         // A level left by its exit (or its boss's fall) is beaten by everyone still standing,
         // as game_main records it before the shop (towerRecordLevelBeaten); a party all
-        // fallen records nothing.
+        // fallen records nothing. The tower the party comes back to is told which it beat.
         if (completedLevel) {
             const LevelRef& left = m_play->world.ref();
             const LevelInfo* level = m_play->world.level();
-            recordLevelBeaten(journey.party, left.realmId, left.index,
-                              level != nullptr ? level->rune : 0,
-                              level != nullptr ? level->legend : 0);
+            const usize recorded = recordLevelBeaten(journey.party, left.realmId, left.index,
+                                                     level != nullptr ? level->rune : 0,
+                                                     level != nullptr ? level->legend : 0);
             if (journey.destination.isTower()) {
+                if (recorded > 0) {
+                    journey.options.beaten = LevelBeaten{left.realmId, left.index};
+                }
                 journey.completion = Journey::Completion{
                     LevelCompletion(level != nullptr ? level->bossType : -1,
                                     m_play->scene.victory().finished()),

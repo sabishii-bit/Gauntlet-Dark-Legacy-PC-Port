@@ -480,6 +480,7 @@ add_library(game STATIC
     hud/PartyHud.cpp
     party/PartyRecords.cpp
     level/TriggerCues.cpp
+    tower/LevelBeaten.h
     tower/TowerWelcome.cpp
     party/PickupPresentation.h
     party/PartyPickups.cpp

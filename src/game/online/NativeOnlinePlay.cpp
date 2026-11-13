@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <exception>
+#include <optional>
 #include <set>
 #include <span>
 #include <utility>
@@ -17,6 +18,7 @@
 #include "game/scenes/ClassUnlocks.h"
 #include "game/scenes/ConsoleTravel.h"
 #include "game/scenes/Haptics.h"
+#include "game/tower/LevelBeaten.h"
 
 namespace {
 
@@ -403,9 +405,15 @@ struct NativeOnlinePlay::Data {
         next.scene = *id;
         next.members = scene.party();
         const auto* info = world.level();
+        // The tower the party comes back to is told which level it beat, as offline play's is.
+        std::optional<LevelBeaten> beaten;
         if (!consoleTravel && !world.isTower() && !scene.secretTravel()) {
-            recordLevelBeaten(next.members, world.ref().realmId, world.ref().index,
-                              info != nullptr ? info->rune : 0, info != nullptr ? info->legend : 0);
+            const usize recorded = recordLevelBeaten(
+                next.members, world.ref().realmId, world.ref().index,
+                info != nullptr ? info->rune : 0, info != nullptr ? info->legend : 0);
+            if (recorded > 0 && destination.isTower()) {
+                beaten = LevelBeaten{world.ref().realmId, world.ref().index};
+            }
         }
         const auto profiles = profilesOf(next.members, session->match().context().owners);
         if (!profiles) {
@@ -467,6 +475,7 @@ struct NativeOnlinePlay::Data {
         options.welcome = false;
         options.arriving = true;
         options.arrivalWorld = static_cast<u32>(std::max(world.ref().realmId, 0));
+        options.beaten = beaten;
         if (consoleTravel) {
             options.arriving = false;
             options.position = consoleTravel->position;

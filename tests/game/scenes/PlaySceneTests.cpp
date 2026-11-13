@@ -57,6 +57,7 @@
 #include "game/players/TurboMeter.h"
 #include "game/scenes/PlayScene.h"
 #include "game/scenes/SceneSelection.h"
+#include "game/tower/LevelBeaten.h"
 #include "game/widgets/ScrollBox.h"
 
 namespace {
@@ -1302,6 +1303,103 @@ TEST_CASE("a scenario's options place the party and skip the welcome",
     REQUIRE(world.objectAlpha(windowIndex) == 0.0f); // Sumner cannot reveal the Temple's beam
     REQUIRE(world.placedItems().size() > 0);
     scene.close();
+}
+
+TEST_CASE("back from the Underworld's throne the tower opens GarmMessage before its ceremonies",
+          "[game][screens][welcome][promotion][tower-relics][assets]") {
+    const f64 step = GENERATE(1.0 / 30.0, 1.0 / 60.0);
+    const bool promotion = GENERATE(true, false);
+    CAPTURE(step, promotion);
+    const std::filesystem::path root = unpackedRoot();
+    const GameConfig config;
+    StringTable strings;
+    REQUIRE(strings.load(test::dataDirectory() / "text", "en"));
+    test::FakeRenderDevice device;
+    LevelCatalog levels;
+    REQUIRE(levels.load(root));
+    LevelWorld world;
+    REQUIRE(world.load(device, root));
+    GameServices context;
+    context.config = &config;
+    context.strings = &strings;
+    context.levels = &levels;
+    context.unpackedRoot = root;
+    const auto throne = levels.byName("F2");
+    REQUIRE(throne.has_value());
+    CharacterSave save;
+    save.name = "AB";
+    save.progress().experience = levelExperience(30);
+    if (promotion) {
+        save.progress().promotedLevel = 29; // the thirtieth level's promotion waits for the tower
+    } else {
+        save.progress().relics.addRune(0); // the first runestone waits to be set in its place
+    }
+    const std::vector<PartyMember> party{PartyMember{0, save}};
+    PlayOptions options;
+    options.welcome = false;
+    options.arriving = true;
+    options.arrivalWorld = static_cast<u32>(throne->realmId);
+    options.beaten = LevelBeaten{throne->realmId, throne->index};
+    PlayScene scene;
+    REQUIRE(scene.open(device, context, world, party, options));
+    CHECK(scene.levelBeaten() == options.beaten);
+    const auto ceremony = [&] {
+        return promotion ? scene.promotion().active() : scene.towerRelics().active();
+    };
+    REQUIRE(ceremony());
+    const PlayScene::Inputs still{};
+    for (s32 i = 0; i < 1200 && scene.spawning(); ++i) {
+        REQUIRE_FALSE(scene.scroll().active());
+        scene.update(step, still);
+    }
+    REQUIRE_FALSE(scene.spawning());
+    // The tick the party stands, Sumner's scroll unrolls: the two pages of GARMMESSAGE.
+    REQUIRE(scene.scroll().active());
+    CHECK(scene.scroll().pageCount() == 2);
+    REQUIRE_FALSE(scene.scroll().lines().empty());
+    CHECK(scene.scroll().lines().front() == "The spirit of Garm has absorbed the");
+    CHECK(scene.intro() == PlayScene::Intro::None);
+    // It holds everything: the ceremony waits unseen behind it, the party is seen from its own
+    // camera over its boxes, and nobody walks, pauses or joins.
+    PlayScene::Inputs walk{};
+    walk[0].move = MoveInput{Vec2{0.0f, 1.0f}, 1.0f};
+    const Vec3 position = scene.actor(0)->position();
+    const auto heldBehind = [&] {
+        REQUIRE(scene.actor(0)->position() == position);
+        REQUIRE(ceremony());
+        REQUIRE_FALSE(scene.cinematicBars());
+        REQUIRE(scene.hudVisible());
+        REQUIRE_FALSE(scene.showingRelicCeremony());
+        REQUIRE(scene.viewCamera().position == scene.camera().camera().position);
+        REQUIRE_FALSE(scene.canPause(0));
+        REQUIRE_FALSE(scene.canJoin(1));
+    };
+    heldBehind();
+    for (usize page = 0; page < 2; ++page) {
+        for (s32 i = 0; i < 20; ++i) {
+            scene.update(step, walk);
+            heldBehind();
+        }
+        PlayScene::Inputs accept{};
+        accept[0].menu.select = true;
+        scene.update(step, accept);
+    }
+    // It burns away, and only then does the ceremony take the tower.
+    for (s32 i = 0; i < 300 && scene.scroll().active(); ++i) {
+        heldBehind();
+        scene.update(step, still);
+    }
+    REQUIRE_FALSE(scene.scroll().active());
+    scene.update(step, still);
+    CHECK(scene.cinematicBars());
+    CHECK(scene.showingRelicCeremony() == !promotion);
+    for (s32 i = 0; i < 4000 && ceremony(); ++i) {
+        scene.update(step, still);
+    }
+    REQUIRE_FALSE(ceremony());
+    CHECK_FALSE(scene.scroll().active()); // shown once an arrival
+    scene.close();
+    CHECK_FALSE(scene.levelBeaten().has_value());
 }
 
 TEST_CASE("the tower tells a short party what a gate wants and congratulates a ready one",

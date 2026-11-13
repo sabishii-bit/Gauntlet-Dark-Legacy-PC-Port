@@ -19,6 +19,7 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "game/config/ControlProfiles.h"
+#include "game/level/LevelCatalog.h"
 #include "game/level/TowerAccess.h"
 #include "game/netplay/OnlinePair.h"
 #include "game/netplay/OnlineParty.h"
@@ -28,6 +29,7 @@
 #include "game/scenes/AfterLevelScene.h"
 #include "game/scenes/NativeDigestProfileSupport.h"
 #include "game/scenes/PlayScene.h"
+#include "game/tower/LevelBeaten.h"
 
 namespace {
 using namespace gdl;
@@ -1324,6 +1326,10 @@ TEST_CASE("native online travel drains the terminal tick and retains the native 
     REQUIRE(pair->guest.scene());
     CHECK(pair->host.scene()->world()->ref().name == "G1");
     CHECK(pair->guest.scene()->world()->ref().name == "G1");
+    // Leaving the tower beats nothing, and only the tower is told what was beaten.
+    CHECK_FALSE(pair->host.scene()->levelBeaten().has_value());
+    CHECK_FALSE(pair->guest.scene()->levelBeaten().has_value());
+    const LevelRef fields = pair->host.scene()->world()->ref();
     CHECK(pair->hostSession.match().context() == pair->guestSession.match().context());
     for (const auto seat : kSeats) {
         CHECK(pair->host.scene()->actor(seat)->save().name ==
@@ -1455,6 +1461,10 @@ TEST_CASE("native online travel drains the terminal tick and retains the native 
     REQUIRE(pair->guest.scene());
     CHECK(pair->host.scene()->world()->isTower());
     CHECK(pair->guest.scene()->world()->isTower());
+    // Every peer's tower is told the party has just beaten the fields.
+    const std::optional<LevelBeaten> beaten = LevelBeaten{fields.realmId, fields.index};
+    CHECK(pair->host.scene()->levelBeaten() == beaten);
+    CHECK(pair->guest.scene()->levelBeaten() == beaten);
     CHECK(pair->hostSession.match().context() == pair->guestSession.match().context());
     CHECK(pair->hostSession.match().context().sourceEpoch == shopEpoch);
     CHECK(pair->hostSession.match().context().sourceTick == 0);

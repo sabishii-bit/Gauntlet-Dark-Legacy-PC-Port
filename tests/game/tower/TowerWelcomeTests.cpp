@@ -1,5 +1,7 @@
 #include <array>
 #include <filesystem>
+#include <optional>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -7,6 +9,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
+#include "engine/assets/TextureSet.h"
 #include "engine/assets/WorldLayout.h"
 #include "engine/core/Types.h"
 #include "engine/io/File.h"
@@ -15,14 +18,125 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "game/hud/LevelMessages.h"
 #include "game/level/LevelTriggers.h"
 #include "game/party/PlayerRuntime.h"
+#include "game/tower/LevelBeaten.h"
 #include "game/tower/TowerRelics.h"
 #include "game/tower/TowerWelcome.h"
+#include "game/widgets/ScrollBox.h"
 
 namespace {
 using namespace gdl;
 using namespace gdl::game;
+
+/** The tower's two arrival scrolls in a table of their own, with the art to show them (no burn
+ * frames, so a scroll read through closes at once). */
+struct ArrivalScrolls {
+    test::FakeRenderDevice device;
+    TextureSet textures;
+    LevelMessages messages;
+    LevelWorld world;
+    SumnerFigure sumner;
+
+    ArrivalScrolls() {
+        const auto root = test::scratchDirectory("tower-arrival-scrolls");
+        std::filesystem::create_directories(root / "STATIC");
+        std::filesystem::create_directories(root / "fonts");
+        std::filesystem::create_directories(root / "text");
+        writeFile(root / "STATIC/tile.png", test::kTinyPng);
+        writeTextFile(root / "STATIC/textures.json", R"({"bitmaps": [
+            {"index": 0, "name": "FONT32", "file": "tile.png", "width": 2, "height": 2},
+            {"index": 1, "name": "SCROLL_A", "file": "tile.png", "width": 2, "height": 2},
+            {"index": 2, "name": "FONT32_GLOW", "file": "tile.png", "width": 2, "height": 2}]})");
+        writeTextFile(root / "fonts/font32.json", R"({"height": 10, "glyphs": [
+            {"code": 65, "width": 6, "x": 0, "y": 0},
+            {"code": 71, "width": 6, "x": 0, "y": 0}]})");
+        writeTextFile(root / "text/scroll_e.json", R"({"fonts": ["font32"], "messages": [
+            {"name": "WELCOMEMESSAGE", "font": 0, "scale": 1, "lines": ["A", "AA"]},
+            {"name": "GARMMESSAGE", "font": 0, "scale": 1, "lines": ["G", "GG"]}], "lists": []})");
+        messages.load(device, textures, root, nullptr);
+    }
+
+    /** The message on the scroll, by its name in the table; none while no scroll is up. */
+    std::optional<std::string> shown() const {
+        const auto look = messages.look();
+        return look ? std::optional{messages.strings().message(look->message).name} : std::nullopt;
+    }
+    void arrive(TowerWelcome& welcome) {
+        welcome.arrived(device, messages, nullptr, world.layout(), sumner);
+    }
+    /** Turns every page as soon as it may be turned. */
+    void readThrough() {
+        for (s32 page = 0; page < 8 && messages.active(); ++page) {
+            messages.step(ScrollBox::kHoldTicks, 0);
+            messages.step(1, 1);
+        }
+    }
+};
+
+TEST_CASE("a party back from the Underworld's throne arrives to GarmMessage and no cut",
+          "[game][screens][welcome]") {
+    ArrivalScrolls f;
+    REQUIRE(f.messages.text().ready());
+    TowerWelcome welcome;
+    welcome.open(f.world, false, LevelBeaten{6, 1});
+    CHECK(welcome.due() == TowerWelcome::Due::Garm);
+    CHECK_FALSE(f.messages.active()); // nothing shows while the party materialises
+    f.arrive(welcome);
+    REQUIRE(f.shown() == "GARMMESSAGE");
+    CHECK(f.messages.scroll().pageCount() == 2);
+    CHECK(f.messages.scroll().lines() == std::vector<std::string>{"G"});
+    CHECK(welcome.due() == TowerWelcome::Due::Nothing);
+    CHECK(welcome.intro() == TowerWelcome::Intro::None);
+    // Read through, it leaves the tower as it was: no cut to the crystals follows it.
+    f.readThrough();
+    REQUIRE_FALSE(f.messages.active());
+    welcome.scrollClosed(f.world.layout(), f.sumner);
+    CHECK(welcome.intro() == TowerWelcome::Intro::None);
+    CHECK_FALSE(welcome.camera().has_value());
+    CHECK_FALSE(welcome.hold(1));
+    // It is shown once an arrival.
+    f.arrive(welcome);
+    CHECK_FALSE(f.messages.active());
+    welcome.open(f.world, false, LevelBeaten{6, 1});
+    welcome.clear();
+    CHECK(welcome.due() == TowerWelcome::Due::Nothing);
+}
+
+TEST_CASE("no other level beaten brings a scroll, and a new party's welcome goes alone",
+          "[game][screens][welcome]") {
+    ArrivalScrolls f;
+    REQUIRE(f.messages.text().ready());
+    // The Underworld's gates, Garm's citadel, the temple's second stage, another realm's second.
+    for (const std::optional<LevelBeaten> beaten :
+         {std::optional<LevelBeaten>{}, std::optional{LevelBeaten{6, 0}},
+          std::optional{LevelBeaten{8, 3}}, std::optional{LevelBeaten{5, 1}},
+          std::optional{LevelBeaten{1, 1}}}) {
+        CAPTURE(beaten.has_value(), beaten.value_or(LevelBeaten{}).realm,
+                beaten.value_or(LevelBeaten{}).level);
+        TowerWelcome welcome;
+        welcome.open(f.world, false, beaten);
+        CHECK(welcome.due() == TowerWelcome::Due::Nothing);
+        f.arrive(welcome);
+        CHECK_FALSE(f.messages.active());
+        CHECK(welcome.intro() == TowerWelcome::Intro::None);
+    }
+    // A party welcomed comes to the tower for the first time, after no level: the welcome is
+    // all it is shown, whatever it is said to have beaten.
+    TowerWelcome welcome;
+    welcome.open(f.world, true, LevelBeaten{6, 1});
+    CHECK(welcome.due() == TowerWelcome::Due::Welcome);
+    f.arrive(welcome);
+    REQUIRE(f.shown() == "WELCOMEMESSAGE");
+    CHECK(welcome.intro() == TowerWelcome::Intro::Scroll);
+    f.readThrough();
+    REQUIRE_FALSE(f.messages.active());
+    welcome.scrollClosed(f.world.layout(), f.sumner);
+    CHECK(welcome.intro() == TowerWelcome::Intro::Done); // no crystal marker in an empty world
+    f.arrive(welcome);
+    CHECK_FALSE(f.messages.active());
+}
 
 TEST_CASE("Sumner's approach pad and the completed Temple window own different light rays",
           "[welcome][tower-relics][tower-lights][assets]") {
