@@ -2,6 +2,7 @@
 #include <array>
 #include <cmath>
 #include <memory>
+#include <vector>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -28,7 +29,7 @@ struct CameraFixture {
     GameServices context; ///< what the scene reads while it stands
     PlayScene scene;
 
-    explicit CameraFixture(bool wide) {
+    explicit CameraFixture(bool wide, usize seats = 2) {
         device.recordDraws = false;
         if (wide) {
             config.camera.horizontalFovDegrees = 85;
@@ -42,7 +43,7 @@ struct CameraFixture {
         context.config = &config;
         context.levels = &catalog;
         context.unpackedRoot = root;
-        std::array<PartyMember, 2> party;
+        std::vector<PartyMember> party(seats);
         for (usize seat = 0; seat < party.size(); ++seat) {
             CharacterSave save;
             save.character = static_cast<s32>(seat);
@@ -81,6 +82,22 @@ void sameNative(CameraFixture& left, CameraFixture& right) {
     REQUIRE(left.scene.nativeAgreementDigest(&first));
     REQUIRE(right.scene.nativeAgreementDigest(&second));
     CHECK(test::firstDivergence(first, second).empty());
+}
+
+/** How far `point` lies outside `camera`'s whole frame, as a share of the frame's half size
+ * at its depth: nought or less on screen. */
+f32 outsideFrame(const WorldCamera& camera, const Vec3& point) {
+    const CameraView view = PlayScene::cameraView();
+    const Vec3 relative = point - camera.position;
+    const f32 depth = glm::dot(relative, camera.forward());
+    if (depth <= WorldCamera::kNear) {
+        return 1.0f;
+    }
+    const f32 tanX = std::tan(view.horizontalFov * 0.5f);
+    const f32 tanY = tanX / view.aspect;
+    return std::max(std::abs(glm::dot(relative, camera.right())) / (depth * tanX),
+                    std::abs(glm::dot(relative, camera.up())) / (depth * tanY)) -
+           1.0f;
 }
 
 Vec2 cursorFor(const Mat4& clip, const Vec3& target) {
@@ -201,4 +218,52 @@ TEST_CASE("local cursor projection resolves once into a render-independent world
         sameCamera(first->scene.camera().camera(), second->scene.camera().camera());
     }
     sameNative(*first, *second);
+}
+
+TEST_CASE("the shared view holds every seat of a party inside it, except under netplay's solo "
+          "cameras",
+          "[simulation-camera][camera-limit][assets]") {
+    const bool solo = GENERATE(false, true);
+    CAPTURE(solo);
+    constexpr usize kSeats = 3;
+    // G1's start is walled in close on every side but its way out, ahead and to the right.
+    const Vec2 wayOut = glm::normalize(Vec2{1, 1});
+    constexpr u32 kRunTicks = 300;
+    auto fixture = std::make_unique<CameraFixture>(false, kSeats);
+    PlayScene& scene = fixture->scene;
+    scene.setSoloCameras(solo);
+    for (u32 tick = 0; tick < 360; ++tick) {
+        REQUIRE(scene.update(1.0 / 60, {}) == PlayOutcome::Running);
+    }
+    REQUIRE_FALSE(scene.spawning());
+    // One seat runs off along the way out for five seconds while the others stand.
+    const Vec3 start = scene.actor(0)->position();
+    // The furthest any seat got outside the view the party is held in, and outside the shared
+    // camera's frame.
+    f32 beyondHeld = -1;
+    f32 beyondShown = -1;
+    for (u32 tick = 0; tick < kRunTicks; ++tick) {
+        PlayScene::Inputs inputs;
+        inputs[0].move = {wayOut, 1};
+        REQUIRE(scene.update(1.0 / 60, inputs) == PlayOutcome::Running);
+        const WorldCamera held = scene.camera().heldView(kSeats, fixture->world.cameraMarkers(),
+                                                         fixture->world.cameraRange());
+        for (s32 seat = 0; seat < static_cast<s32>(kSeats); ++seat) {
+            const PlayerActor& actor = *scene.actor(seat);
+            for (const Vec3& point : {actor.position(), actor.followPoint()}) {
+                beyondHeld = std::max(beyondHeld, outsideFrame(held, point));
+                beyondShown = std::max(beyondShown, outsideFrame(scene.camera().camera(), point));
+            }
+        }
+    }
+    const f32 run = glm::distance(scene.actor(0)->position(), start);
+    CAPTURE(beyondHeld, beyondShown, run);
+    if (solo) {
+        // Each seat looks through its own camera: nothing holds the party together, and the
+        // runner leaves the view the shared camera would have held it in.
+        CHECK(beyondHeld > 0);
+    } else {
+        CHECK(beyondHeld <= 0);
+        CHECK(beyondShown <= 0);
+    }
 }

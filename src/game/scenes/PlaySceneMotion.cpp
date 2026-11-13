@@ -239,13 +239,17 @@ Vec3 PlayScene::limitStep(usize index, const Vec3& before, const Vec3& after) co
     }
     // A lone player's follow camera can travel with them. The shared
     // view must constrain separation; fixed boss views also need bounds.
-    if (!bossCameraOn() && std::ranges::count_if(m_players, [](const PlayerRuntime& player) {
-                               return player.life == PlayerLife::Standing;
-                           }) <= 1) {
+    const usize standing = standingCount();
+    if (!bossCameraOn() && standing <= 1) {
         return after;
     }
-    // Use the unshaken gameplay camera, never the promotion/victory cut.
-    auto camera = bossCameraOn() ? m_sim.bossCamera.camera() : m_camera.camera();
+    // Use the unshaken gameplay camera, never the promotion/victory cut. The follow camera
+    // holds the party inside its view from the kept distance (fn_8006DC64 stands its planes
+    // on +0xDC), not from wherever its fit has backed off to, which caps how far the party
+    // can spread and so draw the camera out.
+    auto camera = bossCameraOn() ? m_sim.bossCamera.camera()
+                                 : m_camera.heldView(standing, m_world->cameraMarkers(),
+                                                     m_world->cameraRange());
     auto attention = bossCameraOn() ? m_sim.bossCamera.attention() : m_camera.attention();
     auto projection = cameraView();
     if (const auto* imported = m_world->imported()) {

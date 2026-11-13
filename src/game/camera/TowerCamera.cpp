@@ -165,17 +165,7 @@ bool TowerCamera::update(std::span<const CameraSubject> subjects,
     const bool turned = turn(seconds * kStepRate);
     const bool followed = follow();
 
-    f32 current = range.radiusMin;
-    if (range.radiusMin < range.radiusMax) {
-        if (subjects.size() == 1) {
-            current = range.radiusMin * kAloneDistance;
-        } else if (m_state.marker >= 0 && static_cast<usize>(m_state.marker) < markers.size() &&
-                   markers[static_cast<usize>(m_state.marker)].delay != 0) {
-            current = static_cast<f32>(markers[static_cast<usize>(m_state.marker)].delay);
-        } else {
-            current = range.radiusMax * kPartyDistance;
-        }
-    }
+    const f32 current = keptDistance(subjects.size(), markers, range);
     m_state.ringDistances[static_cast<usize>(m_state.ringIndex)] =
         fitDistance(m_state.ringPositions[static_cast<usize>(m_state.ringIndex)], subjects, view,
                     range, current);
@@ -188,6 +178,28 @@ bool TowerCamera::update(std::span<const CameraSubject> subjects,
 
     place();
     return turned || followed || slack != 0.0f;
+}
+
+f32 TowerCamera::keptDistance(usize count, std::span<const WorldLocator> markers,
+                              const CameraRange& range) const {
+    if (range.radiusMin >= range.radiusMax) {
+        return range.radiusMin;
+    }
+    if (count == 1) {
+        return range.radiusMin * kAloneDistance;
+    }
+    if (m_state.marker >= 0 && static_cast<usize>(m_state.marker) < markers.size() &&
+        markers[static_cast<usize>(m_state.marker)].delay != 0) {
+        return static_cast<f32>(markers[static_cast<usize>(m_state.marker)].delay);
+    }
+    return range.radiusMax * kPartyDistance;
+}
+
+WorldCamera TowerCamera::heldView(usize count, std::span<const WorldLocator> markers,
+                                  const CameraRange& range) const {
+    WorldCamera view = m_state.camera;
+    view.position = m_state.attention - view.forward() * keptDistance(count, markers, range);
+    return view;
 }
 
 /** The nearest marker takes over once it is clearly closer than the current one. */
@@ -274,6 +286,10 @@ bool TowerCamera::follow() {
 /**
  * How far behind `point` the camera must sit so that every player, standing and at the
  * followed point, fits inside the view; with some slack so the distance does not chatter.
+ * Like CalcDist (0x8006ED50-0x8006EF78) it never stops at the range's longest: the party's
+ * own steps are held inside heldView(), so only what carries a player out of it (a lift, a
+ * throw, a fall, a turn to another marker) takes the camera further than the party's own
+ * spread does, and nobody is left unseen.
  */
 f32 TowerCamera::fitDistance(const Vec3& point, std::span<const CameraSubject> subjects,
                              const CameraView& view, const CameraRange& range, f32 current) const {
@@ -304,7 +320,7 @@ f32 TowerCamera::fitDistance(const Vec3& point, std::span<const CameraSubject> s
     if (required <= current - kFarGap) {
         return current;
     }
-    return std::min(required + kFarGap, range.radiusMax);
+    return required + kFarGap;
 }
 
 void TowerCamera::place() {

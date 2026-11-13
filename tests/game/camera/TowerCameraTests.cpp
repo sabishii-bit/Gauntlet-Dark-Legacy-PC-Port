@@ -1,3 +1,6 @@
+#include <algorithm>
+#include <array>
+#include <cmath>
 #include <numbers>
 #include <tuple>
 #include <type_traits>
@@ -78,33 +81,78 @@ TEST_CASE("the camera settles behind one player at the marker's angle and the sh
     REQUIRE_FALSE(camera.update(party, markers, CameraRange{}, CameraView{}, 1.0f / 30.0f));
 }
 
-TEST_CASE("a spread party pulls the camera out no further than the level's maximum",
+/** Whether `subject` shows whole in `camera`'s frame. */
+bool inFrame(const WorldCamera& camera, const CameraView& view, const CameraSubject& subject) {
+    const f32 tanX = std::tan(view.horizontalFov * 0.5f);
+    const auto shows = [&](const Vec3& point) {
+        const Vec3 relative = point - camera.position;
+        const f32 depth = glm::dot(relative, camera.forward());
+        return depth > 0 && std::abs(glm::dot(relative, camera.right())) <= depth * tanX &&
+               std::abs(glm::dot(relative, camera.up())) <= depth * tanX / view.aspect;
+    };
+    return std::ranges::all_of(std::array{subject.feet, subject.follow}, shows);
+}
+
+TEST_CASE("a party carried apart draws the camera out as far as it takes to show everyone",
           "[game][world][camera]") {
     const std::vector<WorldLocator> markers{marker(Vec3{0.0f, 10.0f, 0.0f}, 0.2f, 0.0f)};
     std::vector<CameraSubject> party{standing(-2.0f, 0.0f), standing(2.0f, 0.0f)};
+    const CameraRange range;
+    const CameraView view;
     TowerCamera camera;
-    camera.reset(party, markers, CameraRange{}, CameraView{});
+    camera.reset(party, markers, range, view);
     // Two players are looked down on by at least the level's minimum pitch.
-    REQUIRE(camera.pitch() == Approx(CameraRange{}.minPitch));
+    REQUIRE(camera.pitch() == Approx(range.minPitch));
     // Close together they still fit at the shortest range.
     REQUIRE(camera.distance() == Approx(24.0f).margin(0.01f));
     REQUIRE(camera.attention().x == Approx(0.0f).margin(0.01f));
 
+    // Set further apart than the party could walk, they draw the camera out past the range
+    // (CalcDist never stops at it) and stay in frame.
     party[0] = standing(-30.0f, 0.0f);
     party[1] = standing(30.0f, 0.0f);
     for (s32 i = 0; i < 200; ++i) {
-        camera.update(party, markers, CameraRange{}, CameraView{}, 1.0f / 30.0f);
+        camera.update(party, markers, range, view, 1.0f / 30.0f);
     }
-    // Impossible spreads do not defeat the level's limit. Movement back into view
-    // remains available through CameraMovementLimit.
-    REQUIRE(camera.distance() == Approx(CameraRange{}.radiusMax).margin(0.01f));
+    CHECK(camera.distance() > range.radiusMax);
+    for (const CameraSubject& subject : party) {
+        CHECK(inFrame(camera.camera(), view, subject));
+    }
+    // The view they are held inside as they walk stays where the camera keeps.
+    const WorldCamera held = camera.heldView(party.size(), markers, range);
+    CHECK(glm::distance(held.position, camera.attention()) ==
+          Approx(range.radiusMax * TowerCamera::kPartyDistance));
+    CHECK(held.yaw == camera.yaw());
+    CHECK(held.pitch == camera.pitch());
+    CHECK(glm::dot(camera.attention() - held.position, held.forward()) ==
+          Approx(range.radiusMax * TowerCamera::kPartyDistance));
+}
+
+TEST_CASE("the camera keeps the range's longest for a party, a marker's own distance, and the "
+          "shortest for one player",
+          "[game][world][camera]") {
+    const CameraRange range;
+    std::vector<WorldLocator> markers{marker(Vec3{0.0f, 10.0f, 0.0f}, 0.2f, 0.0f)};
+    std::vector<CameraSubject> party{standing(-2.0f, 0.0f), standing(2.0f, 0.0f)};
+    TowerCamera camera;
+    camera.reset(party, markers, range, CameraView{});
+    // fn_8006DF34: maxrad times 0.9375 for a party, minrad times 0.8 alone (0x8006E1EC-0x8006E26C).
+    CHECK(camera.keptDistance(2, markers, range) == range.radiusMax * TowerCamera::kPartyDistance);
+    CHECK(camera.keptDistance(1, markers, range) == range.radiusMin * TowerCamera::kAloneDistance);
+    CHECK(camera.keptDistance(2, {}, range) == range.radiusMax * TowerCamera::kPartyDistance);
+    // A level whose range has no span keeps its shortest.
+    CameraRange fixedRange = range;
+    fixedRange.radiusMax = fixedRange.radiusMin;
+    CHECK(camera.keptDistance(2, markers, fixedRange) == fixedRange.radiusMin);
 
     // A marker with a fixed distance overrides the range for the party.
-    const std::vector<WorldLocator> fixed{marker(Vec3{0.0f, 10.0f, 0.0f}, 0.2f, 0.0f, 40)};
-    party[0] = standing(-2.0f, 0.0f);
-    party[1] = standing(2.0f, 0.0f);
-    camera.reset(party, fixed, CameraRange{}, CameraView{});
-    REQUIRE(camera.distance() == Approx(24.0f).margin(0.01f)); // compact: the shortest range wins
+    markers[0].delay = 25;
+    camera.reset(party, markers, range, CameraView{});
+    CHECK(camera.keptDistance(2, markers, range) == 25.0f);
+    CHECK(camera.keptDistance(1, markers, range) == range.radiusMin * TowerCamera::kAloneDistance);
+    CHECK(camera.distance() == Approx(24.0f).margin(0.01f)); // compact: the shortest range wins
+    CHECK(glm::distance(camera.heldView(2, markers, range).position, camera.attention()) ==
+          Approx(25.0f));
 }
 
 TEST_CASE("near and far players are centred in projected space rather than world space",

@@ -38,7 +38,8 @@ struct CameraView {
  * The tower's follow camera, as the original's standard camera works: it looks at the middle
  * of the party from the angle of the nearest camera marker, turning to a new marker's angle
  * over a short while, keeps the look-at point and its distance smoothed over the last few
- * frames, and backs away just far enough to keep every player on screen.
+ * frames, and backs away just far enough to keep every player on screen. A party is held
+ * inside heldView() as it moves, which caps how far it can draw the camera out.
  */
 class TowerCamera {
 public:
@@ -103,6 +104,17 @@ public:
                 const CameraRange& range, const CameraView& view, f32 seconds);
     /** End a trigger-camera hold at the current party target, without re-aiming the view. */
     void snapAttention(std::span<const CameraSubject> subjects, const CameraRange& range);
+
+    /** How far behind the look-at point the camera keeps while the party fits easily
+     * (fn_8006DF34's +0xDC): the range's shortest when it has no span, 0.8 of that for one
+     * player, else the nearest marker's own distance or 0.9375 of the range's longest. */
+    f32 keptDistance(usize count, std::span<const WorldLocator> markers,
+                     const CameraRange& range) const;
+    /** The view a party of `count` is held inside as it moves (fn_8006DC64): this camera's
+     * angles from keptDistance() behind the look-at point, however far the fit has backed the
+     * camera off to show someone carried out of it. */
+    WorldCamera heldView(usize count, std::span<const WorldLocator> markers,
+                         const CameraRange& range) const;
 
     const WorldCamera& camera() const { return m_state.camera; }
     f32 yaw() const { return m_state.camera.yaw; }

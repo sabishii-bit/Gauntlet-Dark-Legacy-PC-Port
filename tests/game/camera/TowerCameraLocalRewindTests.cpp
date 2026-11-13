@@ -106,16 +106,20 @@ TEST_CASE("camera rewind preserves subsequent native leash and camera relative d
     fixture.replay.restoreLocal(baseline);
     CHECK(TowerCamera::equalLocal(fixture.native.localState(), baseline));
     bool limited = false;
+    const auto held = [&](const TowerCamera& camera) {
+        return camera.heldView(fixture.party.size(), fixture.world.cameraMarkers(),
+                               fixture.world.cameraRange());
+    };
     for (s32 tick = 0; tick < 120; ++tick) {
         CAPTURE(rate, tick);
         const Vec3 before = fixture.native.attention() + Vec3{60, -2.5f, 0};
         const Vec3 desired = before + Vec3{0.2f, 0, 0.1f};
-        const Vec3 expected = CameraMovementLimit::constrain(
-            before, desired, fixture.native.attention(), fixture.native.camera(),
-            fixture.projection, {0, 2.5f, 0});
-        const Vec3 actual = CameraMovementLimit::constrain(
-            before, desired, fixture.replay.attention(), fixture.replay.camera(),
-            fixture.projection, {0, 2.5f, 0});
+        const Vec3 expected =
+            CameraMovementLimit::constrain(before, desired, fixture.native.attention(),
+                                           held(fixture.native), fixture.projection, {0, 2.5f, 0});
+        const Vec3 actual =
+            CameraMovementLimit::constrain(before, desired, fixture.replay.attention(),
+                                           held(fixture.replay), fixture.projection, {0, 2.5f, 0});
         CHECK(actual == expected);
         CHECK(fixture.replay.camera().right() == fixture.native.camera().right());
         CHECK(fixture.replay.camera().forward() == fixture.native.camera().forward());
