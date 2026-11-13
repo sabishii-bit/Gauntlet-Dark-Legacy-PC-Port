@@ -129,9 +129,10 @@ std::vector<Collector> PartyPickups::collectors(std::span<const PlayerRuntime> p
     for (const PlayerRuntime& runtime : players) {
         const PlayerActor& actor = runtime.actor;
         // Against an open chest, a character reaches what lies in it; the fallen reach
-        // nothing, nor does one the console flies.
-        const bool canCollect =
-            runtime.life == PlayerLife::Standing && !runtime.departed && !runtime.ghost;
+        // nothing, nor does one the console flies, nor one hung on its combo partner's node
+        // (PlayerMotion skips a held body's item sweeps, 0x80081D5C).
+        const bool canCollect = runtime.life == PlayerLife::Standing && !runtime.departed &&
+                                !runtime.ghost && !runtime.combo.riding;
         const Vec3 here = canCollect ? actor.position() : kNowhere;
         const s32 chest = chests.holdingTouchedBy(ChestVisitor{here, actor.radius()});
         // PlayerMotion's first sItems sweep (8008760C) uses effectpos + dpos

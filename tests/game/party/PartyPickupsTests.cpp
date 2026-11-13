@@ -12,21 +12,28 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
+#include "engine/assets/ItemArchive.h"
+#include "engine/assets/WorldLayout.h"
 #include "engine/audio/AudioMixer.h"
 #include "engine/core/Types.h"
+#include "engine/io/File.h"
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "fixtures/NativeModelFixture.h"
 #include "fixtures/NativeSoundBank.h"
 #include "game/characters/NameCheats.h"
 #include "game/combat/PowerupFlags.h"
 #include "game/config/GameConfig.h"
 #include "game/hud/PartyHud.h"
 #include "game/level/LevelCatalog.h"
+#include "game/level/PlacedItems.h"
+#include "game/party/PartyCombo.h"
 #include "game/party/PartyPickups.h"
 #include "game/party/PlayerPowerups.h"
 #include "game/party/PowerupUpdate.h"
 #include "game/party/RecordingPickupPresentation.h"
+#include "game/players/ComboMove.h"
 #include "game/players/ItemPickup.h"
 #include "game/scenes/PlayScene.h"
 
@@ -199,8 +206,80 @@ TEST_CASE("pickup contact is centered on the native body anchor rather than the 
     SECTION("ghost players cannot collect") {
         players[0].ghost = true;
     }
+    SECTION("a body hung on its combo partner cannot collect") {
+        players[0].combo.riding = true;
+    }
     item.position.y = 12;
     CHECK_FALSE(item.touchedBy(PartyPickups::collectors(players, world, chests)[0]));
+}
+
+TEST_CASE("what a combo's two bodies meet goes to the one on its feet, never to the one it holds "
+          "up",
+          "[pickups][combo][multiplayer]") {
+    // A coin and an apple of a level's roster, dropped where the pair stands.
+    const auto root = test::scratchDirectory("combo-rider-pickups");
+    writeTextFile(root / "tri.obj", "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n");
+    writeTextFile(root / "objects.json", R"({"objects":[{"name":"TRI","file":"tri.obj"}]})");
+    writeFile(root / "white.png", test::kTinyPng);
+    writeTextFile(root / "textures.json",
+                  R"({"bitmaps":[{"name":"WHITE","file":"white.png","width":2,"height":2}]})");
+    writeTextFile(root / "animations.json", R"({"trees":[
+      {"name":"COIN","nodes":[{"name":"ROOT","object":"TRI","parent":-1,"position":[0,0,0]}]},
+      {"name":"APPLE","nodes":[{"name":"ROOT","object":"TRI","parent":-1,"position":[0,0,0]}]}]})");
+    writeTextFile(root / "world.json", R"({"objects":[{"name":"ROOT","position":[0,0,0]}],
+      "itemInfos":[
+        {"type":1,"subtype":1,"name":"COIN","value":50,"radius":1,"height":2,"collisionType":1},
+        {"type":1,"subtype":3,"name":"APPLE","value":50,"radius":1,"height":2,"collisionType":1}],
+      "itemInstances":[]})");
+    test::convertModelFixture(root);
+    WorldLayout layout;
+    REQUIRE(layout.load(root));
+    ItemArchive archive;
+    REQUIRE(archive.load(root));
+    test::FakeRenderDevice device;
+    PlacedItems items;
+    const std::array archives{&archive};
+    items.bind(device, layout, nullptr, archives);
+
+    // The held body comes first in the party, where the first collector to touch an item
+    // takes it.
+    std::array<PlayerRuntime, 2> players;
+    constexpr usize kHeld = 0;
+    constexpr usize kAfoot = 1;
+    CharacterSave held;
+    CharacterSave afoot;
+    ComboPhase begun;
+    begun.act1 = true;
+    SECTION("a dwarf on its partner's back, steering it") {
+        held.character = ComboMove::kDwarf;
+        players[kHeld].actor.spawn(0, held, nullptr, {0, 0, 0}, 0);
+        players[kAfoot].actor.spawn(1, afoot, nullptr, {0, 0, 3}, 0);
+        PartyCombo::begin(players, kHeld, kAfoot);
+        ComboMove::advance(players[kHeld].combo, players[kAfoot].combo, begun, 1);
+        ComboMove::advance(players[kHeld].combo, players[kAfoot].combo, {}, 1);
+        REQUIRE(ComboMove::ridden(players[kAfoot].combo));
+    }
+    SECTION("a partner lifted in a wizard's hands") {
+        afoot.character = ComboMove::kWizard;
+        players[kHeld].actor.spawn(0, held, nullptr, {0, 0, 3}, 0);
+        players[kAfoot].actor.spawn(1, afoot, nullptr, {0, 0, 0}, 0);
+        PartyCombo::begin(players, kAfoot, kHeld);
+        ComboMove::advance(players[kAfoot].combo, players[kHeld].combo, begun, 1);
+    }
+    REQUIRE(players[kHeld].combo.riding);
+    PartyCombo::carry(players);
+    const Vec3 at = players[kAfoot].actor.position();
+    REQUIRE(glm::distance(players[kHeld].actor.position(), at) < 0.001f);
+    REQUIRE(items.place(device, "COIN", at, nullptr));
+    REQUIRE(items.place(device, "APPLE", at, nullptr));
+    const LevelWorld world;
+    const Chests chests;
+    const std::vector<Pickup> taken =
+        items.collect(device, PartyPickups::collectors(players, world, chests));
+    REQUIRE(taken.size() == 2);
+    for (const Pickup& pickup : taken) {
+        CHECK(pickup.collector == kAfoot);
+    }
 }
 
 TEST_CASE("native blue crystals beside Mausoleum and Cliffs walls can be collected",
