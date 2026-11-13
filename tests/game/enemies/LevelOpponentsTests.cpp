@@ -39,6 +39,8 @@
 #include "fixtures/NativeSoundBank.h"
 #include "game/audio/SceneSoundEvents.h"
 #include "game/bosses/LegendItems.h"
+#include "game/characters/Progression.h"
+#include "game/characters/Vitality.h"
 #include "game/combat/ArmorFlags.h"
 #include "game/combat/DamageTypes.h"
 #include "game/combat/EffectFlags.h"
@@ -643,6 +645,57 @@ TEST_CASE("Hand of Death and Health Vamp return melee without player pain or kil
     }
     opponents.close();
     CHECK(effects.count() == 0);
+}
+
+TEST_CASE("a Health Vamp's healing at the top level stops at 9999",
+          "[level-opponents][enemy-melee][health-limit]") {
+    // 8004DF58 heals the wearer through heal_player (8004E19C), whose most stops at the limit.
+    const auto [ticks, seconds] = GENERATE(std::pair{2, 1.0f / 30}, std::pair{1, 1.0f / 60});
+    CAPTURE(ticks);
+    const auto root = test::scratchDirectory("enemy-melee-vamp-limit");
+    writeMeleeEnemy(root, kGruntKind);
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    ItemArchive weapons;
+    EffectTrees effects;
+    LevelSoundscape audio;
+    std::array<PlayerRuntime, 1> players;
+    ClassStats stats;
+    stats.height = 6;
+    stats.collisionY = 4;
+    players[0].actor.spawn(2, {}, &stats, {0, 0, 2}, 0);
+    auto& progress = players[0].actor.save().progress();
+    progress.experience = levelExperience(kMaxLevel);
+    progress.health = kHealthLimit - 5;
+    progress.inventory.addPowerup(powerup::kSpecial, powerup::kHealthVamp, 0, 60);
+    LevelOpponents opponents;
+    opponents.open({device, world, weapons, effects, audio, root, 1}, players);
+    opponents.enemies().open(device, root, nullptr, 2, {}, 1);
+    REQUIRE(opponents.enemies().loadKind(kGruntKind));
+    const auto enemy =
+        opponents.enemies().spawn(EnemySpawn{.kind = kGruntKind, .tier = 3, .placed = true}, {});
+    REQUIRE(enemy);
+    const f32 enemyHealth = opponents.enemies().healthOf(*enemy);
+    usize damageEvents = 0;
+    test::OpponentScript events;
+    test::ScriptedOpponents host{events};
+    events.settleBlasts = [] {};
+    events.advanceLegend = [](f32) {};
+    events.advanceVictory = [](s32, f32) {};
+    events.levels = [] {};
+    events.award = [](s32, s32, bool) {};
+    events.hurt = [&](usize, f32 amount, HurtKind, bool, const PlayerImpact&) {
+        damageEvents += amount > 0 ? 1 : 0;
+    };
+    for (s32 frame = 0; frame < 240 && opponents.enemies().healthOf(*enemy) == enemyHealth;
+         ++frame) {
+        opponents.update(ticks, seconds, players, {}, host, host, host);
+    }
+    // The blow went back to the grunt, and its fifteen healed only the five that were missing.
+    REQUIRE(opponents.enemies().healthOf(*enemy) < enemyHealth);
+    CHECK(damageEvents == 0);
+    CHECK(progress.health == kHealthLimit);
+    opponents.close();
 }
 
 TEST_CASE("an imported level that sounds an enemy's melee itself makes the hurt a plain blow",

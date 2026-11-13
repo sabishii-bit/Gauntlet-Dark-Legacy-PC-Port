@@ -9,8 +9,8 @@
 #include "engine/core/Types.h"
 
 #include "game/characters/NameCheats.h"
+#include "game/characters/Vitality.h"
 #include "game/party/PartyRecords.h"
-#include "game/players/ItemPickup.h"
 
 namespace {
 using namespace gdl;

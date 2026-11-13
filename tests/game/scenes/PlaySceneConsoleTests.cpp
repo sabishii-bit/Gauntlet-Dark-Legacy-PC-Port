@@ -12,6 +12,7 @@
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include "engine/assets/ItemArchive.h"
 #include "engine/assets/StringTable.h"
@@ -26,6 +27,7 @@
 #include "game/characters/Inventory.h"
 #include "game/characters/Progression.h"
 #include "game/characters/Relics.h"
+#include "game/characters/Vitality.h"
 #include "game/combat/DamageTypes.h"
 #include "game/combat/PowerupFlags.h"
 #include "game/console/NoclipMotion.h"
@@ -297,7 +299,8 @@ TEST_CASE("every shared verb answers with its words today", "[native-console][as
     reopen();
     fixture->save(0).progress().health = kNearlyFull;
     CHECK(fixture->say("get health 37") == "That item grant would exceed the character's counter.");
-    CHECK(fixture->save(0).progress().health == kNearlyFull);
+    // The grant gave nothing; the update's limit then put the counter back to 9999.
+    CHECK(fixture->save(0).progress().health == kHealthLimit);
     reopen();
     fixture->save(0).progress().inventory.powerups.front() = {.strength = kForGood,
                                                               .kind = powerup::kWeapon,
@@ -1280,4 +1283,28 @@ TEST_CASE("cheats set on a scene resumed from a challenge hold", "[native-consol
     holds();
     REQUIRE(fixture->sharedStep().outcome == PlayOutcome::Running);
     holds();
+}
+
+TEST_CASE("a level the console grants adds its hundred to health, no further than 9999",
+          "[native-console][health-limit][assets]") {
+    // AddExp adds 100 (0x80076400); the status box puts anything over 9999 back each frame.
+    const f64 step = GENERATE(1.0 / 30.0, 1.0 / 60.0);
+    CAPTURE(step);
+    auto fixture = std::make_unique<Fixture>("G2");
+    auto& scene = fixture->scene;
+    for (s32 i = 0; i < 1200 && scene.spawning(); ++i) {
+        scene.step(step, {}, {});
+    }
+    REQUIRE_FALSE(scene.spawning());
+    fixture->save(0).progress().experience = levelExperience(97);
+    fixture->save(0).progress().health = kHealthLimit;
+    scene.step(step, {}, {}); // the watch takes the new level in, its hundred going nowhere
+    CHECK(fixture->save(0).health() == kHealthLimit);
+    const std::array actions{ConsoleAction{0, "get level 98"}};
+    const auto said = scene.step(step, {}, actions);
+    REQUIRE(said.replies.size() == 1);
+    CHECK(said.replies.front().text == "Level 98");
+    CHECK(fixture->save(0).health() == kHealthLimit);
+    scene.step(step, {}, {});
+    CHECK(fixture->save(0).health() == kHealthLimit);
 }

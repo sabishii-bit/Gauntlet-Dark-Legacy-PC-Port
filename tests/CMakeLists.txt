@@ -368,6 +368,7 @@ add_executable(tests
     expansions/n64/formats/LegendsN64TextureTests.cpp
     expansions/shared/scenes/LegendsPreviewTests.cpp
     expansions/shared/scenes/LegendsPlayableTests.cpp
+    expansions/shared/scenes/LegendsLevelTests.cpp
     expansions/shared/scenes/LegendsLevelBossTests.cpp
     expansions/shared/scenes/LegendsTraversalTests.cpp
     expansions/dreamcast/scenes/LegendsMusicTests.cpp
@@ -513,6 +514,7 @@ add_executable(tests
     game/scenes/NativeGameplayTests.cpp
     game/players/MagicPerksTests.cpp
     game/characters/ProgressionTests.cpp
+    game/characters/VitalityTests.cpp
     game/characters/CharacterSaveTests.cpp
     game/characters/AutoSaveTests.cpp
     game/characters/NameCheatsTests.cpp

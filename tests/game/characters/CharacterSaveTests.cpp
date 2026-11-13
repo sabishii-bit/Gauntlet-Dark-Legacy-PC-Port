@@ -10,6 +10,8 @@
 
 #include "TestSupport.h"
 #include "game/characters/CharacterSave.h"
+#include "game/characters/Progression.h"
+#include "game/characters/Vitality.h"
 
 namespace {
 
@@ -210,6 +212,22 @@ TEST_CASE("an old underlevelled Sumner save receives the missing initial supplie
     CHECK(save.progress().inventory.potions.size() == 9);
     CHECK(save.progress().relics.runes == 0x1fff);
     CHECK(save.progress().relics.shards == 0x7fe);
+}
+
+TEST_CASE("a save holding more health than the limit reads back at the limit",
+          "[save][health-limit]") {
+    // The status box puts anything over the limit back on its first frame
+    // (write_health_and_items, 0x8007516C); reading the save does the same.
+    CharacterSave save;
+    save.name = "OVER";
+    save.progress().experience = levelExperience(kMaxLevel);
+    save.progress().health = 10400;
+    save.classes[4].health = 12000;
+    const auto loaded = CharacterSave::fromJson(save.toJson());
+    CHECK(loaded.health() == kHealthLimit);
+    CHECK(loaded.classes[4].health == kHealthLimit);
+    // A class never played keeps its nought, which still reads as full.
+    CHECK(loaded.classes[3].health == 0);
 }
 
 TEST_CASE("legacy SUM224 saves retain earned progress when adopting the Sumner class",

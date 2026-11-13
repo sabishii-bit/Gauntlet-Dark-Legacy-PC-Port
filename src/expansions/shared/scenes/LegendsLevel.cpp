@@ -12,6 +12,7 @@
 #include "engine/platform/Paths.h"
 
 #include "expansions/dreamcast/camera/LegendsDreamcastCamera.h"
+#include "expansions/dreamcast/characters/LegendsDreamcastVitality.h"
 #include "expansions/dreamcast/menu/LegendsDreamcastDialogue.h"
 #include "expansions/dreamcast/menu/LegendsDreamcastEntrance.h"
 #include "expansions/n64/bosses/LegendsLegend.h"
@@ -494,6 +495,13 @@ f32 LegendsLevel::horizontalFov(f32 preferred) const {
     return platform() == LegendsPlatform::Dreamcast && adapter().isTower()
                ? std::max(preferred, LegendsDreamcastTowerCamera::kHorizontalFov)
                : preferred;
+}
+
+s32 LegendsLevel::healthLimit() const {
+    // The N64 game has no fixed limit (its health stops at each character's own most,
+    // e0054fdc), so the base game's stands for it.
+    return platform() == LegendsPlatform::Dreamcast ? kLegendsDreamcastHealthLimit
+                                                    : ImportedLevel::healthLimit();
 }
 
 bool LegendsLevel::opponentsReady() const {

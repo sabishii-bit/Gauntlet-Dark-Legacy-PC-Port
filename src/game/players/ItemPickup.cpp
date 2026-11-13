@@ -7,6 +7,7 @@
 #include "engine/core/Types.h"
 
 #include "game/characters/Progression.h"
+#include "game/characters/Vitality.h"
 #include "game/combat/ArmorFlags.h"
 #include "game/combat/Damage.h"
 #include "game/combat/DamageTypes.h"
@@ -18,9 +19,6 @@ namespace gdl::game {
 namespace {
 
 constexpr s32 kMostGold = 99999;
-constexpr s32 kBaseHealth = 500;
-constexpr s32 kHealthPerLevel = 100;
-constexpr s32 kHealthLimit = 9999;
 constexpr s32 kFeast = 100;   ///< food from here up is meat, down from its negative bad meat
 constexpr s32 kRealGold = 10; ///< more than this is treasure, else junk
 constexpr std::string_view kKeySound = "S_PICKUPKEY";
@@ -137,10 +135,6 @@ std::string_view foodCard(s32 amount) {
 
 } // namespace
 
-s32 mostHealth(s32 level) {
-    return std::min(kHealthPerLevel * (level - 1) + kBaseHealth, kHealthLimit);
-}
-
 s32 goldCapacity(const CharacterSave& save) {
     return kMostGold - std::clamp(save.gold, 0, kMostGold);
 }
@@ -182,9 +176,7 @@ ItemTaking takeItem(CharacterSave& save, const ItemOffer& offer, f32 powerupTime
         return taken(0, "MAGIC", kMagicSound);
     }
     case ItemKind::Food: {
-        const s32 most = mostHealth(experienceLevel(save.experience()));
-        const s32 health = save.health();
-        if (offer.amount >= 0 && health >= most) {
+        if (offer.amount >= 0 && healthFull(save)) {
             return refused(ItemTaking::Outcome::HealthFull, offer.amount);
         }
         if (offer.amount < 0) {
@@ -194,11 +186,11 @@ ItemTaking takeItem(CharacterSave& save, const ItemOffer& offer, f32 powerupTime
             const auto worn = PowerupEffects::of(inventory);
             const auto damage =
                 Damage::modify(-static_cast<f32>(offer.amount), damage::kGas, worn.armor, 0, false);
-            save.progress().health =
-                std::clamp(static_cast<s32>(std::lround(static_cast<f32>(health) - damage.amount)),
-                           1, kHealthLimit);
+            save.progress().health = std::clamp(
+                static_cast<s32>(std::lround(static_cast<f32>(save.health()) - damage.amount)), 1,
+                kHealthLimit);
         } else {
-            save.progress().health = std::clamp(health + offer.amount, 1, most);
+            heal(save, offer.amount);
         }
         ItemTaking taking = taken(offer.amount, foodCard(offer.amount), {});
         taking.ate = offer.amount >= 0;

@@ -26,6 +26,7 @@
 #include "fixtures/NativeSoundBank.h"
 #include "game/characters/ClassData.h"
 #include "game/characters/Progression.h"
+#include "game/characters/Vitality.h"
 #include "game/combat/DamageTypes.h"
 #include "game/combat/PowerupFlags.h"
 #include "game/enemies/Enemies.h"

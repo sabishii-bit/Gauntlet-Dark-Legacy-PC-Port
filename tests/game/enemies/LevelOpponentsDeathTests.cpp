@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <array>
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -12,6 +13,7 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "fixtures/NativeSoundBank.h"
+#include "game/characters/Vitality.h"
 #include "game/combat/PowerupFlags.h"
 #include "game/enemies/DeathRules.h"
 #include "game/enemies/DeathTestSupport.h"
@@ -20,7 +22,6 @@
 #include "game/hud/HelpMessages.h"
 #include "game/level/LevelCatalog.h"
 #include "game/party/PlayerHealth.h"
-#include "game/players/ItemPickup.h"
 
 namespace {
 using namespace gdl;
@@ -780,10 +781,14 @@ TEST_CASE("Authored Red and Black Death placements enter the level roster",
     opponents.close();
 }
 
-TEST_CASE("the health a halo takes back from Death stops at the level's most, 9999 at the top",
-          "[death][level-opponents][player-health]") {
-    // heal_player: no further than 100 a level over 500, and 9999 however high the level.
+TEST_CASE("the health a halo takes back from Death passes the level's most, the limit holding it "
+          "at 9999",
+          "[death][level-opponents][player-health][health-limit]") {
+    // damage_enemy adds each point outright (0x8004E8FC), not through heal_player's ceiling;
+    // the status box, the scene's holdToLimit after each update, puts anything over 9999 back.
     const s32 level = GENERATE(1, 99);
+    const auto [ticks, seconds] = GENERATE(std::pair{2, 1.0f / 30}, std::pair{1, 1.0f / 60});
+    CAPTURE(level, ticks);
     const auto root = test::deathArchive();
     test::FakeRenderDevice device;
     LevelWorld world;
@@ -816,11 +821,14 @@ TEST_CASE("the health a halo takes back from Death stops at the level's most, 99
     };
     events.help = [](s32, usize) { return true; };
     // Each blow through the halo takes a point of health back from him.
-    for (s32 blow = 0; blow < 3; ++blow) {
+    constexpr s32 kBlows = 3;
+    for (s32 blow = 0; blow < kBlows; ++blow) {
         opponents.strikeEnemy(*id, 0, 0, Vec3{0}, 3, players);
-        opponents.update(2, 1.0f / 30, players, {}, host, host, host);
+        opponents.update(ticks, seconds, players, {}, host, host, host);
+        PlayerHealth::holdToLimit(players, kHealthLimit);
+        CHECK(progress.health <= kHealthLimit);
     }
-    CHECK(progress.health == most);
+    CHECK(progress.health == std::min(most - 1 + kBlows, kHealthLimit));
     opponents.close();
 }
 } // namespace

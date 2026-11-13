@@ -5,10 +5,10 @@
 
 #include "engine/core/Types.h"
 
+#include "game/characters/Vitality.h"
 #include "game/combat/ArmorFlags.h"
 #include "game/combat/DamageTypes.h"
 #include "game/combat/PowerupFlags.h"
-#include "game/players/ItemPickup.h"
 
 namespace gdl::game {
 namespace {
@@ -94,8 +94,7 @@ ShopResult shopEligibility(const CharacterSave& save, const ClassStats& stats,
     const auto& inventory = save.progress().inventory;
     if ((item.type == ShopItem::kKey && inventory.keys >= Inventory::kMostKeys) ||
         (item.type == ShopItem::kPotion && inventory.potions.size() >= Inventory::kMostPotions) ||
-        (item.type == ShopItem::kHealthRefill &&
-         save.health() >= mostHealth(experienceLevel(save.experience())))) {
+        (item.type == ShopItem::kHealthRefill && healthFull(save))) {
         return ShopResult::Full;
     }
     if (item.type >= 5 && item.type <= 8) {
@@ -127,10 +126,7 @@ ShopResult buyShopItem(CharacterSave& save, const ClassStats& stats, const ShopI
     case 6: progress.speedAdd += 10; break;
     case 7: progress.armorAdd += 10; break;
     case 8: progress.magicAdd += 10; break;
-    case 17:
-        progress.health =
-            std::min(save.health() + item.amount, mostHealth(experienceLevel(save.experience())));
-        break;
+    case 17: heal(save, item.amount); break; // do_shopping's heal_player (0x8009B114)
     default: {
         const auto& effect = kPowerups[static_cast<usize>(item.type)];
         progress.inventory.addPowerup(effect.kind, effect.flags, effect.charge,

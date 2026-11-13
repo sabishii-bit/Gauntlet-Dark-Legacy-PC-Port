@@ -8,7 +8,7 @@
 
 #include "game/characters/NameCheats.h"
 #include "game/characters/Progression.h"
-#include "game/players/ItemPickup.h"
+#include "game/characters/Vitality.h"
 #include "game/players/TurboMeter.h"
 
 namespace gdl::game {

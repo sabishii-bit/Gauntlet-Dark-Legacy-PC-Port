@@ -14,6 +14,7 @@
 #include "engine/math/PortableMath.h"
 
 #include "game/characters/Progression.h"
+#include "game/characters/Vitality.h"
 #include "game/combat/ArmorFlags.h"
 #include "game/combat/DamageTypes.h"
 #include "game/combat/PowerupFlags.h"
@@ -33,7 +34,6 @@
 #include "game/party/PlayerHealth.h"
 #include "game/party/PlayerPowerups.h"
 #include "game/players/EnemyShrink.h"
-#include "game/players/ItemPickup.h"
 #include "game/players/PlayerAnimator.h"
 #include "game/players/PowerupEffects.h"
 namespace gdl::game {
@@ -1185,12 +1185,8 @@ void LevelOpponents::applyEnemyBlow(const EnemyBlow& blow, std::span<PlayerRunti
             continue;
         }
         if (blow.ward == EnemyMeleeWard::HealthVamp && blow.damage > 0) {
-            CharacterSave& save = player.actor.save();
-            const s32 cap = mostHealth(experienceLevel(save.experience()));
-            if (save.health() < cap) {
-                save.progress().health =
-                    std::min(cap, save.health() + static_cast<s32>(std::lround(blow.damage)));
-            }
+            // fn_8004DF58 heals the wearer by the blow through heal_player (0x8004E19C).
+            heal(player.actor.save(), static_cast<s32>(std::lround(blow.damage)));
         }
         ItemArchive& archive = m_resources->world.powerups();
         if (archive.trees.find("GETGEMORANGE").has_value()) {

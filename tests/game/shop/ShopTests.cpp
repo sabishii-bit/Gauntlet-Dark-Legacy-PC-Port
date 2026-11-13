@@ -14,6 +14,8 @@
 
 #include "TestSupport.h"
 #include "game/characters/LevelResults.h"
+#include "game/characters/Progression.h"
+#include "game/characters/Vitality.h"
 #include "game/shop/ShopPurchase.h"
 #include "game/shop/ShopSession.h"
 
@@ -222,6 +224,18 @@ TEST_CASE("shop food heals without exceeding the level health limit", "[shop]") 
     REQUIRE(save.gold == 4750);
     REQUIRE(buyShopItem(save, stats, item(17, 250, 100), 1) == ShopResult::Full);
     REQUIRE(sellShopItem(save, item(17, 250, 100)) == ShopResult::NotOwned);
+}
+TEST_CASE("shop food at the top level heals no further than 9999", "[shop][health-limit]") {
+    // do_shopping heals through heal_player (0x8009B114), whose most stops at the limit.
+    auto save = shopper();
+    save.progress().experience = levelExperience(kMaxLevel);
+    save.progress().health = kHealthLimit - 30;
+    const ClassStats stats;
+    REQUIRE(buyShopItem(save, stats, item(17, 250, 100), 1) == ShopResult::Bought);
+    CHECK(save.health() == kHealthLimit);
+    CHECK(buyShopItem(save, stats, item(17, 250, 100), 1) == ShopResult::Full);
+    CHECK(save.health() == kHealthLimit);
+    CHECK(save.gold == 4750);
 }
 
 TEST_CASE("purchased inventory and stat bonuses survive a real save-slot round trip", "[shop]") {

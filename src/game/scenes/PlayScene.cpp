@@ -18,9 +18,11 @@
 #include "game/characters/ClassData.h"
 #include "game/characters/NameCheats.h"
 #include "game/characters/Progression.h"
+#include "game/characters/Vitality.h"
 #include "game/combat/PowerupFlags.h"
 #include "game/hud/CinematicBars.h"
 #include "game/hud/StatusBox.h"
+#include "game/level/ImportedLevel.h"
 #include "game/party/PartyLighting.h"
 #include "game/party/PartyRecords.h"
 #include "game/party/PlayerPowerups.h"
@@ -748,7 +750,7 @@ void PlayScene::updateLevels() {
         if (!change.has_value() || !change->gained()) {
             continue;
         }
-        save.progress().health += static_cast<s32>(kLevelUpHealth);
+        addHealth(save, kLevelUpHealth);
         if (m_device != nullptr && m_weapons.loaded()) {
             const std::string tree = std::format("LEVELUP_{}", colorCode(save.color));
             if (m_weapons.trees.find(tree).has_value()) {
@@ -761,6 +763,12 @@ void PlayScene::updateLevels() {
         }
         postHelp(HelpMessages::kLevelUp, i, change->to);
     }
+}
+
+void PlayScene::holdHealthToLimit() {
+    const ImportedLevel* imported = m_world->imported();
+    PlayerHealth::holdToLimit(m_players,
+                              imported != nullptr ? imported->healthLimit() : kHealthLimit);
 }
 
 void PlayScene::updateVictory(s32 ticks, f32 seconds) {
@@ -1085,6 +1093,8 @@ PlayScene::RecordedStep PlayScene::advanceStep(u64 epoch, u64 tick, f64 deltaSec
             result.outcome = advanceNative(deltaSeconds, gameplayInputs);
         }
         if (m_open) {
+            // The status box's limit, after everything that tick could raise health.
+            holdHealthToLimit();
             // Point lights are derived from native state. Refresh even when this peer
             // does not draw a frame; rendering must not decide what a tick observes.
             gatherLights();

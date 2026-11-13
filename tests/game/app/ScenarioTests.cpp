@@ -13,6 +13,7 @@
 #include "game/bosses/LegendItems.h"
 #include "game/characters/LevelRecord.h"
 #include "game/characters/Progression.h"
+#include "game/characters/Vitality.h"
 #include "game/level/LevelWorld.h"
 #include "game/level/TowerAccess.h"
 
@@ -34,6 +35,19 @@ TEST_CASE("Mikey scenario carries an inactive decoy without altering a real save
     CHECK(slot.flags == 0x100000);
     CHECK(slot.strength == 120);
     CHECK_FALSE(slot.on);
+}
+
+TEST_CASE("a scenario asking for more health than the limit hands its member the limit",
+          "[scenario][health-limit]") {
+    const auto scenario = Scenario::fromJson(R"({"screen": "tower", "level": "H4",
+        "party": [{"player": 0, "class": "WAR", "color": "BLU", "name": "TEST", "level": 99,
+                   "health": 10400},
+                  {"player": 1, "class": "VAL", "color": "RED", "name": "LOW", "level": 2,
+                   "health": 640}]})");
+    const auto party = scenario.partyMembers();
+    REQUIRE(party.size() == 2);
+    CHECK(party[0].save.health() == kHealthLimit);
+    CHECK(party[1].save.health() == 640);
 }
 
 TEST_CASE("platform and Death statue scenarios load the affected level locations without saves",
@@ -259,7 +273,7 @@ TEST_CASE("mountain creature scenarios provide unsaved level 99 green knights",
         REQUIRE(party[0].save.character == classIndexOf("KNI").value());
         REQUIRE(party[0].save.color == colorIndexOf("GRE").value());
         REQUIRE(experienceLevel(party[0].save.experience()) == 99);
-        REQUIRE(party[0].save.health() == 10400);
+        REQUIRE(party[0].save.health() == kHealthLimit); // the file asks for 10400
         REQUIRE_FALSE(party[0].slot.has_value());
         REQUIRE(scenario.tower.position.has_value());
         REQUIRE(scenario.tower.welcome == false);

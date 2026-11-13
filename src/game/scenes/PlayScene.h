@@ -877,13 +877,15 @@ private:
     /** Answers levels gained with immediate health, effects and narration.
      * Appearance upgrades and title ceremonies wait for a tower return. */
     void updateLevels();
+    /** Puts the party's health over this level's limit back to it, whatever raised it. */
+    void holdHealthToLimit();
     void updatePromotion(s32 ticks, f32 seconds);
     void updateTowerRelics(s32 ticks, f32 seconds);
     /** Whether the tower's ceremonies still wait unseen: while the party materialises and while
      * a scroll is up, both of which hold them back. */
     bool ceremoniesWaiting() const;
     bool relicCeremonyOn() const;
-    static constexpr f32 kLevelUpHealth = 100.0f;
+    static constexpr s32 kLevelUpHealth = 100; ///< AddExp's 100.0 at 0x803477D0
     void sayWithName(usize index, std::string_view line, f32 wait);
     void updateHazardSurfaces(f32 seconds);
     void launchWeapon(usize index, const Vec3& direction, f32 scale, bool spreads);

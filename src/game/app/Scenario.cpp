@@ -13,6 +13,7 @@
 
 #include "game/characters/ClassData.h"
 #include "game/characters/Progression.h"
+#include "game/characters/Vitality.h"
 #include "game/level/ExitPortals.h"
 #include "game/level/TowerAccess.h"
 
@@ -88,8 +89,8 @@ Scenario Scenario::fromJson(std::string_view text) {
                            totals.value("bestStreak", 0)};
         if (member.lifetime.enemiesKilled < 0 || member.lifetime.generatorsDestroyed < 0 ||
             member.lifetime.goldFound < 0 || member.lifetime.bestStreak < 0 ||
-            !std::isfinite(member.lifetime.playSeconds) ||
-            member.lifetime.playSeconds < 0 || member.lifetime.playSeconds > 1e12) {
+            !std::isfinite(member.lifetime.playSeconds) || member.lifetime.playSeconds < 0 ||
+            member.lifetime.playSeconds > 1e12) {
             throw FormatError("scenario: invalid lifetime statistics");
         }
         if (scenario.afterLevel) {
@@ -217,6 +218,7 @@ std::vector<PartyMember> Scenario::partyMembers() const {
         }
         save.gold = member.gold;
         progress.health = member.health;
+        limitHealth(progress);
         progress.inventory.keys = member.keys;
         progress.inventory.potions = member.potions;
         for (usize kind = 0; kind < member.gargoylePieces.size(); ++kind) {

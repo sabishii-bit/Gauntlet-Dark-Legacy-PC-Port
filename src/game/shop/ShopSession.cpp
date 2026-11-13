@@ -8,6 +8,8 @@
 #include "engine/core/Error.h"
 #include "engine/core/Types.h"
 #include "engine/math/RandomDistribution.h"
+
+#include "game/characters/Vitality.h"
 namespace gdl::game {
 namespace {
 constexpr f64 kTickRate = 60.0;
@@ -51,8 +53,7 @@ std::array<s32, 5> ShopLane::statsValues(bool previous) const {
                      ? masteryStats()
                      : displayStats(stats, level, member.save.progress());
     }
-    return {values.strength(), values.armor(), values.magic(), values.speed(),
-            std::min(9999, kStartingHealth + 100 * (level - 1))};
+    return {values.strength(), values.armor(), values.magic(), values.speed(), mostHealth(level)};
 }
 std::array<s32, 5> ShopLane::statsRevealTicks() const {
     std::array<s32, 5> result{};

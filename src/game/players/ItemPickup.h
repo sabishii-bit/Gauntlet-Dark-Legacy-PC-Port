@@ -63,9 +63,6 @@ struct ItemTaking {
     }
 };
 
-/** The most health a character of `level` holds. */
-s32 mostHealth(s32 level);
-
 /** How much more gold this character's wallet can hold. */
 s32 goldCapacity(const CharacterSave& save);
 

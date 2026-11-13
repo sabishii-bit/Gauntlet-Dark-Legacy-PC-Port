@@ -25,6 +25,7 @@
 #include "fixtures/NativeModelFixture.h"
 #include "fixtures/NativeSoundBank.h"
 #include "game/characters/Progression.h"
+#include "game/characters/Vitality.h"
 #include "game/combat/ArmorFlags.h"
 #include "game/combat/DamageTypes.h"
 #include "game/combat/PowerupFlags.h"
@@ -3017,6 +3018,43 @@ TEST_CASE("from level 75 magic heals its caster by a share of the harm it does",
         f.attacks.clear();
         f.opponents.close();
     }
+}
+
+TEST_CASE("healing magic at the top level stops at 9999",
+          "[player-attacks][healing-magic][health-limit]") {
+    // do_heal_players tops the caster up no further than its level's most, which the limit
+    // caps (0x80078348, 0x800783A8).
+    const f32 step = GENERATE(1.0f / 30, 1.0f / 60);
+    CAPTURE(step);
+    const auto root = turboAssets();
+    Fixture f;
+    REQUIRE(f.classes.load(root / "pdata"));
+    f.opponents.open({f.device, f.world, f.weapons, f.effects, f.audio, root, 1}, f.players);
+    auto& save = f.players[0].actor.save();
+    save.progress().experience = levelExperience(kMaxLevel);
+    save.progress().health = kHealthLimit - 3;
+    save.progress().inventory.addPotions(1, 1);
+    EnemyScales scales;
+    scales.health = 100;
+    auto& enemies = f.opponents.enemies();
+    enemies.open(f.device, root, nullptr, 8, scales, 1);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    EnemySpawn spawn;
+    spawn.kind = kGruntKind;
+    spawn.placed = true;
+    spawn.position = Vec3{0, 0, 2};
+    const auto id = enemies.spawn(spawn, {});
+    REQUIRE(id);
+    const f32 before = enemies.healthOf(*id);
+    f.attacks.usePotion(0, f.players);
+    const auto frames = static_cast<s32>(std::lround(2.0f / step));
+    for (s32 frame = 0; frame < frames; ++frame) {
+        f.attacks.updateProjectiles(step, f.players, f.targets);
+    }
+    REQUIRE(enemies.healthOf(*id) < before);
+    CHECK(save.health() == kHealthLimit);
+    f.attacks.clear();
+    f.opponents.close();
 }
 
 TEST_CASE("healing magic shares half with nearby living partners but never departed records",

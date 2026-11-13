@@ -6,6 +6,7 @@
 #include "engine/core/Types.h"
 
 #include "game/characters/Progression.h"
+#include "game/characters/Vitality.h"
 #include "game/combat/ArmorFlags.h"
 #include "game/combat/PowerupFlags.h"
 #include "game/players/ItemPickup.h"
@@ -123,6 +124,18 @@ TEST_CASE("food heals up to the level's most, is left at full health, and unprot
     REQUIRE(takeItem(save, offer(ItemKind::Food, 25)).card == "FRUIT");
 }
 
+TEST_CASE("food at the top level heals no further than 9999, then is left lying",
+          "[game][players][items][health-limit]") {
+    // heal_player stops at the level's most, which the limit caps (0x800784E0, 0x8007857C).
+    CharacterSave save;
+    save.progress().experience = levelExperience(kMaxLevel);
+    save.progress().health = kHealthLimit - 50;
+    CHECK(takeItem(save, offer(ItemKind::Food, 100)).outcome == Outcome::Taken);
+    CHECK(save.health() == kHealthLimit);
+    CHECK(takeItem(save, offer(ItemKind::Food, 100)).outcome == Outcome::HealthFull);
+    CHECK(save.health() == kHealthLimit);
+}
+
 TEST_CASE("poison food passes through active armor including Gold Invulnerability healing",
           "[game][players][items][poison-food]") {
     CharacterSave save;
@@ -151,6 +164,13 @@ TEST_CASE("poison food passes through active armor including Gold Invulnerabilit
             CHECK(takeItem(save, offer(ItemKind::Food, -100)).took());
             CHECK(save.health() == 300);
         }
+    }
+    SECTION("at the top level, gold healing stops at the limit") {
+        inventory.addPowerup(powerup::kArmor, armor::kGoldInvulnerable, 0, 30);
+        save.progress().experience = levelExperience(kMaxLevel);
+        save.progress().health = kHealthLimit - 2;
+        CHECK(takeItem(save, offer(ItemKind::Food, -100)).took());
+        CHECK(save.health() == kHealthLimit);
     }
     SECTION("inactive and expired gold do not protect") {
         inventory.addPowerup(powerup::kArmor, armor::kGoldInvulnerable, 0, 30, false);

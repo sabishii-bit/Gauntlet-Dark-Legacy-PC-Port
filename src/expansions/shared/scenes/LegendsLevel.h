@@ -70,6 +70,7 @@ public:
     std::optional<Vec3> cameraAttention() const override;
     f32 horizontalFov(f32 preferred) const override;
     bool playerLevelGrowth() const override { return false; }
+    s32 healthLimit() const override;
     bool opponentsReady() const override;
     bool protectsParty() const override { return m_dreamcastBoss && m_bossDefeated; }
     Vec3 resolveMovement(const Vec3& from, const Vec3& to, f32 radius, f32 height) const override;

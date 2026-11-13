@@ -21,6 +21,7 @@
 #include "engine/platform/Paths.h"
 
 #include "game/characters/NameCheats.h"
+#include "game/characters/Vitality.h"
 
 namespace gdl::game {
 
@@ -41,7 +42,7 @@ void prepareSumner(CharacterSave& save) {
     auto& progress = save.progress();
     progress.experience = levelExperience(kMaxLevel);
     progress.promotedLevel = kMaxLevel;
-    progress.health = 9999;
+    progress.health = mostHealth(kMaxLevel);
     save.gold = progress.gold = 5000;
     progress.inventory.keys = Inventory::kMostKeys;
     progress.inventory.potions.clear();
@@ -228,6 +229,7 @@ ClassProgress progressFromJson(const Json& object) {
         std::clamp(object.value("promotedLevel", experienceLevel(progress.experience)), 1,
                    experienceLevel(progress.experience));
     progress.health = object.value("health", 0);
+    limitHealth(progress);
     progress.fightAdd = object.value("fightAdd", 0.0f);
     progress.armorAdd = object.value("armorAdd", 0.0f);
     progress.magicAdd = object.value("magicAdd", 0.0f);

@@ -6,12 +6,12 @@
 #include "engine/math/PortableMath.h"
 
 #include "game/characters/Progression.h"
+#include "game/characters/Vitality.h"
 #include "game/combat/DamageTypes.h"
 #include "game/enemies/ImportedOpponentCues.h"
 #include "game/enemies/LevelOpponents.h"
 #include "game/enemies/OpponentCues.h"
 #include "game/hud/HelpMessages.h"
-#include "game/players/ItemPickup.h"
 #include "game/players/PickupVoices.h"
 
 namespace gdl::game {
@@ -129,14 +129,6 @@ void LevelOpponents::updateDeaths(std::span<PlayerRuntime> players, OpponentHost
             }
             auto& progress = player.actor.save().progress();
             const auto amount = static_cast<s32>(std::lround(cue.amount));
-            // heal_player: no further than the level's most, 9999 at the top, whether the
-            // health is his magic's (hurtDeath) or his own taken back through the halo.
-            const auto heal = [&] {
-                const s32 cap = mostHealth(experienceLevel(progress.experience));
-                if (progress.health < cap) {
-                    progress.health = std::min(cap, progress.health + amount);
-                }
-            };
             if (cue.form == DeathForm::Black && cue.kind != DeathEvent::Kind::MagicHeal) {
                 const s32 before = experienceLevel(progress.experience);
                 progress.experience =
@@ -151,9 +143,12 @@ void LevelOpponents::updateDeaths(std::span<PlayerRuntime> players, OpponentHost
                                              PickupVoices::carriesPojo(save), lines, kLostLevelWait,
                                              AnnouncementSubject{save.character, save.color});
                 }
-            } else if (cue.kind == DeathEvent::Kind::MagicHeal ||
-                       cue.kind == DeathEvent::Kind::Return) {
-                heal();
+            } else if (cue.kind == DeathEvent::Kind::MagicHeal) {
+                // damage_enemy's magic heals through heal_player (0x8004E7F8).
+                heal(player.actor.save(), amount);
+            } else if (cue.kind == DeathEvent::Kind::Return) {
+                // Its halo branch adds the point outright (0x8004E8FC), past the level's most.
+                addHealth(player.actor.save(), amount);
             } else {
                 host.hurtMember(i, cue.amount, HurtKind::DeathDrain, true,
                                 PlayerImpact{.flags = damage::kDeathStun});

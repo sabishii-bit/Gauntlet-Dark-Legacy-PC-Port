@@ -17,11 +17,11 @@
 #include "game/characters/NameCheats.h"
 #include "game/characters/Progression.h"
 #include "game/characters/Relics.h"
+#include "game/characters/Vitality.h"
 #include "game/console/GiftRequest.h"
 #include "game/console/SpawnRequest.h"
 #include "game/enemies/EnemyKinds.h"
 #include "game/level/InstanceNames.h"
-#include "game/players/ItemPickup.h"
 
 namespace gdl::game {
 

@@ -21,6 +21,7 @@
 #include "game/audio/LegendSound.h"
 #include "game/camera/BossCamera.h"
 #include "game/camera/TowerCamera.h"
+#include "game/characters/Vitality.h"
 #include "game/combat/CombatArenaTarget.h"
 #include "game/critters/CombatEvents.h"
 #include "game/critters/CombatantAssets.h"
@@ -154,6 +155,9 @@ public:
     /** Imported worlds may keep the character's initial physical artwork size
      * without changing its stats, costume tier or growth powerups. */
     virtual bool playerLevelGrowth() const { return true; }
+    /** The most health a character holds here, which the scene puts it back to after each
+     * update: the base game's limit unless the native game keeps one of its own. */
+    virtual s32 healthLimit() const { return kHealthLimit; }
     /** Native opening cameras may hold both placed enemies and generator births.
      * Ordinary imported maps without a scripted opening are ready immediately. */
     virtual bool opponentsReady() const { return true; }

@@ -38,6 +38,7 @@
 #include "game/characters/Inventory.h"
 #include "game/characters/Party.h"
 #include "game/characters/Progression.h"
+#include "game/characters/Vitality.h"
 #include "game/combat/ArmorFlags.h"
 #include "game/combat/DamageTypes.h"
 #include "game/combat/PowerupFlags.h"
@@ -3421,6 +3422,77 @@ TEST_CASE("a level gained is announced with its number and a hundred health, and
     if (next / 10 == gained / 10) {
         REQUIRE(scene.seatFigureDirectory(0) == tiered);
     }
+    scene.close();
+}
+
+TEST_CASE("after every update no one holds more than 9999 health, whatever raised it",
+          "[game][screens][health-limit][assets]") {
+    // The status box puts anything over 9999 back each frame (write_health_and_items,
+    // 0x8007516C), past a level's hundred (AddExp, 0x80076400) or a healed blow (0x80078994).
+    const std::filesystem::path root = unpackedRoot();
+    test::assetOrSkip("TEXT/english.rom");
+    test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2");
+    const f64 step = GENERATE(1.0 / 30.0, 1.0 / 60.0);
+    CAPTURE(step);
+    const GameConfig config;
+    StringTable strings;
+    strings.load(test::dataDirectory() / "text", config.text.language);
+    test::FakeRenderDevice device;
+    LevelCatalog levels;
+    REQUIRE(levels.load(root));
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *levels.byName("G1")));
+    GameServices context;
+    context.config = &config;
+    context.strings = &strings;
+    context.levels = &levels;
+    context.unpackedRoot = root;
+    CharacterSave top;
+    top.name = "TOP";
+    top.progress().experience = levelExperience(96);
+    top.progress().health = kHealthLimit;
+    CharacterSave fresh; // a class never played: its nought shows as a full five hundred
+    fresh.name = "NEW";
+    fresh.progress().experience = levelExperience(9);
+    CharacterSave gilded;
+    gilded.name = "GOLD";
+    gilded.progress().experience = levelExperience(kMaxLevel);
+    gilded.progress().health = kHealthLimit - 20;
+    gilded.progress().inventory.addPowerup(powerup::kArmor, armor::kGoldInvulnerable, 0, 600);
+    const std::vector<PartyMember> party{PartyMember{0, top}, PartyMember{1, fresh},
+                                         PartyMember{2, gilded}};
+    PlayOptions options;
+    options.welcome = false;
+    options.position = Vec3{15.8f, 0.2f, 0.7f};
+    PlayScene scene;
+    REQUIRE(scene.open(device, context, world, party, options));
+    const PlayScene::Inputs still{};
+    for (s32 i = 0; i < 800 && awaitingEntrance(scene); ++i) {
+        scene.update(step, still);
+        CHECK(scene.actor(2)->save().health() <= kHealthLimit);
+    }
+    REQUIRE_FALSE(awaitingEntrance(scene));
+    REQUIRE(scene.actor(0)->save().health() == kHealthLimit);
+    REQUIRE(scene.actor(1)->save().progress().health == 0);
+
+    // A level gained adds its hundred to the health shown, no further than the limit. (The
+    // fields pay a character far above them a fraction of what is won, so the first gets more.)
+    constexpr s32 kPlenty = 50000;
+    scene.awardExperience(0, kPlenty, false);
+    scene.awardExperience(1, levelExperience(10) - levelExperience(9) + 1, false);
+    scene.update(step, still);
+    REQUIRE(experienceLevel(scene.actor(0)->save().experience()) >= 97);
+    REQUIRE(experienceLevel(scene.actor(1)->save().experience()) >= 10);
+    CHECK(scene.actor(0)->save().health() == kHealthLimit);
+    CHECK(scene.actor(1)->save().health() == kStartingHealth + 100);
+
+    // A blast that gold invulnerability turns to healing heals up to the limit and no further.
+    scene.blast(scene.actor(2)->position(), 6.0f, 1000.0f);
+    for (s32 i = 0; i < 120; ++i) {
+        scene.update(step, still);
+        CHECK(scene.actor(2)->save().health() <= kHealthLimit);
+    }
+    CHECK(scene.actor(2)->save().health() == kHealthLimit);
     scene.close();
 }
 

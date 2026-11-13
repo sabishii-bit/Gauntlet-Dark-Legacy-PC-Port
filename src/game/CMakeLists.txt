@@ -178,6 +178,8 @@ add_library(game STATIC
     characters/NativeClassData.cpp
     characters/Progression.h
     characters/Progression.cpp
+    characters/Vitality.h
+    characters/Vitality.cpp
     characters/CharacterSave.h
     characters/CharacterSave.cpp
     characters/AutoSave.cpp

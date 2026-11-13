@@ -15,6 +15,7 @@
 
 #include "game/bosses/LegendItems.h"
 #include "game/characters/Progression.h"
+#include "game/characters/Vitality.h"
 #include "game/combat/ArmorFlags.h"
 #include "game/combat/DamageTypes.h"
 #include "game/combat/EffectFlags.h"
@@ -34,7 +35,6 @@
 #include "game/party/PotionEmission.h"
 #include "game/party/TargetAssist.h"
 #include "game/players/ComboMove.h"
-#include "game/players/ItemPickup.h"
 #include "game/players/MagicPerks.h"
 #include "game/players/PlayerDeeds.h"
 #include "game/players/PowerupEffects.h"
@@ -2980,23 +2980,19 @@ void PlayerAttacks::healFrom(s32 owner, f32 harm, const Vec3& at, std::span<Play
     if (level < kHealingLevel) {
         return;
     }
-    const auto heal = [](PlayerRuntime& runtime, f32 amount) {
-        CharacterSave& save = runtime.actor.save();
-        const s32 most = mostHealth(experienceLevel(save.experience()));
-        if (save.health() < most) {
-            save.progress().health =
-                std::min(most, save.health() + static_cast<s32>(std::lround(amount)));
-        }
+    // do_heal_players tops each up no further than their level's most (0x80078398, 0x8007847C).
+    const auto healOne = [](PlayerRuntime& runtime, f32 amount) {
+        heal(runtime.actor.save(), static_cast<s32>(std::lround(amount)));
     };
     const f32 given =
         harm * (kHealingShare + kHealingShareALevel * static_cast<f32>(level - kHealingLevel));
-    heal(*caster, given);
+    healOne(*caster, given);
     const f32 reach = m_resources->arsenal.magicPowerOf(caster->actor);
     for (PlayerRuntime& other : players) {
         const Vec3 apart = other.actor.position() - caster->actor.position();
         if (&other != &*caster && other.life == PlayerLife::Standing && !other.departed &&
             portable::hypot(apart.x, apart.z) < reach) {
-            heal(other, given * kHealingOthers);
+            healOne(other, given * kHealingOthers);
         }
     }
     if (m_resources->weapons.loaded()) {

@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <array>
 #include <filesystem>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -14,6 +15,8 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "fixtures/NativeModelFixture.h"
+#include "game/characters/Progression.h"
+#include "game/characters/Vitality.h"
 #include "game/combat/ArmorFlags.h"
 #include "game/combat/Damage.h"
 #include "game/combat/DamageTypes.h"
@@ -461,6 +464,48 @@ TEST_CASE("gold invulnerability retains fractional healing between absorbed hits
         f.hit(2.5f);
     }
     CHECK(f.player.actor.save().health() == 1001);
+}
+
+TEST_CASE("gold invulnerability's healing passes 9999 only until the limit puts it back",
+          "[player-health][health-limit]") {
+    // damage_player heals without a ceiling (0x80078994); the status box puts anything over
+    // 9999 back (write_health_and_items, 0x8007516C), as holdToLimit does after each update.
+    Fixture f;
+    auto& progress = f.player.actor.save().progress();
+    progress.experience = levelExperience(kMaxLevel);
+    progress.health = kHealthLimit;
+    progress.inventory.addPowerup(powerup::kArmor, armor::kGoldInvulnerable, 0, 60);
+    f.hit(100);
+    CHECK(f.player.actor.save().health() == kHealthLimit + 10);
+    PlayerHealth::holdToLimit(std::span{&f.player, 1}, kHealthLimit);
+    CHECK(f.player.actor.save().health() == kHealthLimit);
+    CHECK(f.player.healthFraction == 0.0f);
+    // A fraction of a point over it goes as well.
+    f.hit(2.5f);
+    REQUIRE(f.player.actor.save().health() == kHealthLimit);
+    REQUIRE(f.player.healthFraction > 0.0f);
+    PlayerHealth::holdToLimit(std::span{&f.player, 1}, kHealthLimit);
+    CHECK(f.player.actor.save().health() == kHealthLimit);
+    CHECK(f.player.healthFraction == 0.0f);
+}
+
+TEST_CASE("the limit leaves health under it, and a fallen player's last point, as they are",
+          "[player-health][health-limit]") {
+    std::array<PlayerRuntime, 3> players;
+    players[0].actor.save().progress().health = 1200;
+    players[0].healthFraction = 0.25f;
+    players[1].actor.save().progress().health = 1;
+    players[1].life = PlayerLife::Dying;
+    players[2].actor.save().progress().health = 0; // a class never played reads as full
+    PlayerHealth::holdToLimit(players, kHealthLimit);
+    CHECK(players[0].actor.save().health() == 1200);
+    CHECK(players[0].healthFraction == 0.25f);
+    CHECK(players[1].actor.save().health() == 1);
+    CHECK(players[2].actor.save().progress().health == 0);
+    PlayerHealth::holdToLimit(players, 1000);
+    CHECK(players[0].actor.save().health() == 1000);
+    CHECK(players[0].healthFraction == 0.0f);
+    CHECK(players[2].actor.save().progress().health == 0);
 }
 
 TEST_CASE("a heavy blow taken unguarded teaches the guard to one who never blocked",

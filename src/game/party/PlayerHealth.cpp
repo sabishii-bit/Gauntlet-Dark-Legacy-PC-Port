@@ -100,6 +100,14 @@ void PlayerHealth::fall(PlayerRuntime& runtime, const Events& events) {
     }
 }
 
+void PlayerHealth::holdToLimit(std::span<PlayerRuntime> players, s32 limit) {
+    for (PlayerRuntime& runtime : players) {
+        if (liveHealth(runtime) > static_cast<f32>(limit)) {
+            storeHealth(runtime, static_cast<f32>(limit));
+        }
+    }
+}
+
 void PlayerHealth::hurt(PlayerRuntime& runtime, f32 damage, HurtKind kind, HurtSource source,
                         const Setting& setting, const Events& events, const PlayerImpact& impact,
                         const ClassStats* stats) {
@@ -125,6 +133,7 @@ void PlayerHealth::hurt(PlayerRuntime& runtime, f32 damage, HurtKind kind, HurtS
         return;
     }
     if (damage < 0) {
+        // damage_player heals without a ceiling (0x80078994); holdToLimit keeps it to the limit.
         storeHealth(runtime, liveHealth(runtime) - damage);
         return;
     }

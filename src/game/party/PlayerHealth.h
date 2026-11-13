@@ -64,6 +64,9 @@ public:
     /** Fells the character outright, as the last point of health going does: a point is kept
      * that the status box does not show, the turbo meter empties, and the death is heard. */
     static void fall(PlayerRuntime& runtime, const Events& events);
+    /** Puts each player's health over `limit` back to it, whatever raised it, as the status
+     * box does every frame (write_health_and_items, 0x8007516C and 0x8007521C). */
+    static void holdToLimit(std::span<PlayerRuntime> players, s32 limit);
     /** Each fallen player's answer to the box's prompt, by seat: select waits in the tower;
      * back leaves the game when `quitOffered`, and an online match, whose party is fixed to
      * its end, does not offer it. */
