@@ -1844,6 +1844,179 @@ TEST_CASE("Mothership Death rides its crane while dormant and throughout its awa
     opponents.close();
 }
 
+/** C2's tile room: eight tiles that rise together from their closed height to their open one
+ * once the entrance pad #91 fires their chain, which ends by waking the golems standing on
+ * them, 152 on C2ELEVI8 and 151 on C2ELEVJ6 (#473, #474). */
+constexpr std::array<std::string_view, 8> kC2Tiles{"C2ELEVI5", "C2ELEVI6", "C2ELEVI7", "C2ELEVI8",
+                                                   "C2ELEVJ5", "C2ELEVJ6", "C2ELEVJ7", "C2ELEVJ8"};
+constexpr s32 kC2EntrancePad = 91;
+constexpr std::array kC2Golems{Vec2{150.50f, -40.88f}, Vec2{150.69f, -22.00f}}; ///< 152, 151
+constexpr f32 kC2SameSpot = 2.0f;      ///< how near its placement a golem standing still stays
+constexpr f32 kC2SinkReach = 8.0f;     ///< past the tiles' travel, for a body left under a top
+constexpr f32 kC2TileEdgeReach = 0.5f; ///< the golems stand where four tiles meet
+constexpr f32 kC2Level = 0.01f;        ///< how near its floor's height a body stands on it
+constexpr s32 kC2Seconds = 15;
+
+TEST_CASE("C2's golems ride the tiles the room's entrance raises under them",
+          "[level-opponents][critter-statues][statue-platform][c2-tile-golems][assets]") {
+    // A rising tile is open to the players' own probes only (ProcessItemWobjs marks WorldObj
+    // +0x35 for a kind without 8, 0x80062F40-0x80062F4C, and WorldCollide 0x8000D578 skips an
+    // object only for a probe whose side mask meets that mark). A great one's floor probe has
+    // side mask 2 (CritterCollideWorld 0x80035408, which CritterTranslate runs every update,
+    // 0x8003AE38), so a golem stands on its tile's top as the tile rises, woken before the
+    // tiles move or by their chain.
+    const s32 hz = GENERATE(30, 60);
+    const bool wokenFirst = GENERATE(false, true);
+    CAPTURE(hz, wokenFirst);
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELC2/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::FakeRenderDevice device;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *catalog.byName("C2")));
+    std::vector<s32> tiles;
+    const auto& objects = world.layout().objects();
+    for (usize i = 0; i < objects.size(); ++i) {
+        if (std::ranges::find(kC2Tiles, objects[i].name) != kC2Tiles.end()) {
+            tiles.push_back(static_cast<s32>(i));
+        }
+    }
+    REQUIRE(tiles.size() == kC2Tiles.size());
+    ItemArchive weapons;
+    EffectTrees effects;
+    LevelSoundscape audio;
+    LevelOpponents opponents;
+    // Nobody in reach for the golems to go for: they stand where they rise.
+    std::array<PlayerRuntime, 1> players;
+    players[0].actor.spawn(0, {}, nullptr, {0, -1000, 0}, 0);
+    opponents.open({device, world, weapons, effects, audio, root, 1}, players);
+    world.startTriggers({});
+    world.setPlayerCount(1);
+    const LevelTriggers& triggers = world.triggers();
+    usize pad = triggers.size();
+    for (usize i = 0; i < triggers.size(); ++i) {
+        if (triggers.trigger(i).instance == kC2EntrancePad) {
+            pad = i;
+        }
+    }
+    REQUIRE(pad < triggers.size());
+    const std::array entrance{TriggerVisitor{.position = triggers.trigger(pad).spot, .party = 0}};
+    const f32 step = 1.0f / static_cast<f32>(hz);
+    test::ScriptedOpponents host;
+    // PlayScene's order: the world, the opponents, then the triggers and what they carry.
+    const auto advance = [&](std::span<const TriggerVisitor> visitors) {
+        world.update(step);
+        opponents.syncFloors();
+        opponents.update(Critters::kTicksPerSecond / hz, step, {}, {}, host, host, host);
+        world.updateTriggers(step, visitors);
+        opponents.syncFloors();
+    };
+    const auto statueAt = [&](Vec2 spot) -> std::optional<usize> {
+        const CritterStatues& statues = opponents.statues();
+        for (usize i = 0; i < statues.count(); ++i) {
+            const Vec3& placed = statues.placement(i).instance.position;
+            if (statues.placement(i).kind == CombatantKind::Golem &&
+                glm::distance(Vec2{placed.x, placed.z}, spot) < kC2SameSpot) {
+                return i;
+            }
+        }
+        return std::nullopt;
+    };
+    const auto golemAt = [&](Vec2 spot) -> std::optional<s32> {
+        const Critters& critters = opponents.critters();
+        for (s32 id = 0; id < Critters::kMost; ++id) {
+            const Vec3& at = critters.positionOf(id);
+            if (critters.alive(id) && critters.kindOf(id) == CombatantKind::Golem &&
+                glm::distance(Vec2{at.x, at.z}, spot) < kC2SameSpot) {
+                return id;
+            }
+        }
+        return std::nullopt;
+    };
+    // Where a golem at its spot stands, as a statue (a tenth over its floor) or risen.
+    const auto standing = [&](Vec2 spot) -> std::pair<Vec3, f32> {
+        if (const auto statue = statueAt(spot)) {
+            return {opponents.statues().positionOf(*statue), ItemFigure::kFloorLift};
+        }
+        const auto golem = golemAt(spot);
+        REQUIRE(golem);
+        return {opponents.critters().positionOf(*golem), 0.0f};
+    };
+    // The top of the room's tile under a body, however far below it the body was left.
+    const auto tileTop = [&](const Vec3& at) {
+        const auto top =
+            world.collision().floorAt(at, kC2SinkReach, kC2SinkReach, kC2TileEdgeReach);
+        REQUIRE(top);
+        REQUIRE(std::ranges::find(tiles, top->object) != tiles.end());
+        return *top;
+    };
+    const auto bothRisen = [&] {
+        return std::ranges::all_of(kC2Golems, [&](Vec2 spot) { return golemAt(spot).has_value(); });
+    };
+    if (wokenFirst) {
+        // As a blow before the entrance would: they rise on the tiles still down.
+        for (const Vec2 spot : kC2Golems) {
+            const auto statue = statueAt(spot);
+            REQUIRE(statue);
+            opponents.wakeStatue(*statue);
+        }
+        for (s32 frame = 0; frame < kC2Seconds * hz && !bothRisen(); ++frame) {
+            advance({});
+        }
+        REQUIRE(bothRisen());
+        for (const s32 tile : tiles) {
+            REQUIRE_FALSE(triggers.opened(tile));
+        }
+    }
+    // Each golem's tile, and how far its top stands over the tile's origin, which the tile
+    // carries as it moves whatever stands on it.
+    const auto originOf = [&](s32 tile) {
+        const auto placement = world.collision().objectTransform(tile);
+        REQUIRE(placement);
+        return (*placement)[3].y;
+    };
+    std::array<FloorHit, kC2Golems.size()> closed{};
+    std::array<f32, kC2Golems.size()> topOverOrigin{};
+    for (usize i = 0; i < kC2Golems.size(); ++i) {
+        const auto [at, lift] = standing(kC2Golems[i]);
+        closed[i] = tileTop(at);
+        topOverOrigin[i] = closed[i].y - originOf(closed[i].object);
+        CHECK(at.y == Catch::Approx(closed[i].y + lift).margin(kC2Level));
+    }
+    const auto still = [&] {
+        return bothRisen() && std::ranges::all_of(tiles, [&](s32 tile) {
+                   return triggers.opened(tile) && triggers.settled(tile);
+               });
+    };
+    s32 settling = hz / 2; // and half a second more once everything stands still
+    for (s32 frame = 0; frame < kC2Seconds * hz && settling > 0; ++frame) {
+        advance(entrance);
+        for (usize i = 0; i < kC2Golems.size(); ++i) {
+            const auto [at, lift] = standing(kC2Golems[i]);
+            const f32 top = originOf(closed[i].object) + topOverOrigin[i];
+            CAPTURE(frame, i, at.y, top);
+            CHECK(at.y == Catch::Approx(top + lift).margin(kC2Level));
+        }
+        settling -= still() ? 1 : 0;
+    }
+    REQUIRE(still());
+    const auto targets = triggers.targets();
+    for (usize i = 0; i < kC2Golems.size(); ++i) {
+        const auto target = std::ranges::find_if(
+            targets, [&](const auto& candidate) { return candidate.object == closed[i].object; });
+        REQUIRE(target != targets.end());
+        const auto golem = golemAt(kC2Golems[i]);
+        REQUIRE(golem);
+        const Vec3& at = opponents.critters().positionOf(*golem);
+        const FloorHit top = tileTop(at);
+        CAPTURE(i, closed[i].y, top.y, at.y);
+        CHECK(top.y == Catch::Approx(closed[i].y + target->openHeight - target->closedHeight));
+        CHECK(at.y == Catch::Approx(top.y).margin(kC2Level));
+    }
+    opponents.close();
+}
+
 TEST_CASE("the tenth kill of what generators bred teaches to destroy generators, and no hit short "
           "of a kill counts",
           "[game][screens][level-opponents][help][generator-lesson]") {
