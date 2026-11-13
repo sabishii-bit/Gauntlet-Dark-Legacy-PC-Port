@@ -185,6 +185,50 @@ TEST_CASE("cutscene bands extend across widescreen without masking the side view
     }
 }
 
+TEST_CASE("masking above and below a frame covers only the rows a narrower display leaves",
+          "[ui][canvas][frame-border]") {
+    // 640x448 exactly, wide (16:9, 21:9), then narrower than the frame (4:3, 5:4, portrait).
+    const auto extent = GENERATE(Extent2D{640, 448}, Extent2D{1920, 1080}, Extent2D{3440, 1440},
+                                 Extent2D{1920, 1440}, Extent2D{1280, 1024}, Extent2D{600, 1000});
+    CAPTURE(extent.width, extent.height);
+    test::FakeRenderDevice device;
+    Canvas canvas;
+    const auto projection = makeLetterboxProjection(640, 448, static_cast<f32>(extent.width),
+                                                    static_cast<f32>(extent.height));
+    canvas.begin(device, projection);
+    canvas.maskAboveAndBelow(0, 448);
+    canvas.end();
+    const f32 top = (projection * Vec4{0, 0, 0, 1}).y;
+    const f32 bottom = (projection * Vec4{0, 448, 0, 1}).y;
+    if (extent.width * 448 >= extent.height * 640) {
+        CHECK(device.draws.empty()); // the frame fills the display's height
+        return;
+    }
+    // The GameCube's 640x448 frame in its 480-line picture: a sixteenth of 448 on each side.
+    if (extent.width == 1920 && extent.height == 1440) {
+        CHECK(top == Approx(-1 + 96.0f / 1440));
+        CHECK(bottom == Approx(1 - 96.0f / 1440));
+    }
+    REQUIRE(device.draws.size() == 1);
+    const auto& draw = device.draws.front();
+    CHECK(draw.transform == Mat4{1});
+    CHECK_FALSE(draw.state.depthTest);
+    CHECK_FALSE(draw.state.depthWrite);
+    f32 area = 0;
+    for (usize i = 0; i + 2 < draw.vertices.size(); i += 3) {
+        const Vec2 a{draw.vertices[i].position};
+        const Vec2 b{draw.vertices[i + 1].position};
+        const Vec2 c{draw.vertices[i + 2].position};
+        const Vec2 middle = (a + b + c) / 3.0f;
+        CHECK((middle.y < top || middle.y > bottom)); // the frame itself stays open
+        area += std::abs((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x)) / 2;
+        CHECK(draw.vertices[i].color == Color::black());
+    }
+    CHECK(test::minCorner(draw) == Vec2{-1, -1});
+    CHECK(test::maxCorner(draw) == Vec2{1, 1});
+    CHECK(area == Approx(2 * ((top + 1) + (1 - bottom))));
+}
+
 TEST_CASE("the virtual screen transform stretches onto the frame", "[ui][canvas]") {
     const Mat4 projection = makeScreenProjection(640.0f, 448.0f);
     const Mat4 transform = makeVirtualScreenTransform(projection, 512.0f, 384.0f, 640.0f, 448.0f);

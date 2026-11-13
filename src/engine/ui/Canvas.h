@@ -27,6 +27,9 @@ public:
     void fillHorizontalBand(f32 y, f32 height, Color color);
     /** Masks the viewport outside an axis-aligned virtual-space rectangle. */
     void maskOutside(const Rect& area, Color color = Color::black());
+    /** Masks the viewport's whole width above virtual row `top` and below row `bottom`, out
+     * to its edges, leaving the rows between alone and whatever lies beside them. */
+    void maskAboveAndBelow(f32 top, f32 bottom, Color color = Color::black());
 
     /** Draws a prepared batch with `local` applied before the canvas transform, after any
      * pending sprites. */

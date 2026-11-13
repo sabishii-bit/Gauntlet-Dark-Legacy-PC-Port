@@ -11,6 +11,8 @@ namespace {
 
 /** Every sprite shares one depth; the depth test keeps later draws in front. */
 constexpr f32 kSpriteDepth = 0.5f;
+/** A mask thinner than this in clip space covers nothing and is not drawn. */
+constexpr f32 kClipEpsilon = 1e-6f;
 
 } // namespace
 
@@ -96,7 +98,6 @@ void Canvas::maskOutside(const Rect& area, Color color) {
     const f32 bottom = std::clamp(std::max(a.y / a.w, b.y / b.w), -1.0f, 1.0f);
     ImmediateBatch batch;
     const auto fillMargin = [&](const Rect& margin) {
-        constexpr f32 kClipEpsilon = 1e-6f;
         if (margin.width > kClipEpsilon && margin.height > kClipEpsilon) {
             batch.rect(margin, kSpriteDepth, color);
         }
@@ -108,6 +109,28 @@ void Canvas::maskOutside(const Rect& area, Color color) {
     if (!batch.empty()) {
         m_device->draw(batch, m_device->whiteTexture(), Mat4{1},
                        {.depthWrite = false, .depthTest = false});
+    }
+}
+
+void Canvas::maskAboveAndBelow(f32 top, f32 bottom, Color color) {
+    GDL_VERIFY(m_device != nullptr, "Canvas::maskAboveAndBelow outside begin/end");
+    flush();
+    const Vec4 a = m_transform * Vec4{0, top, kSpriteDepth, 1};
+    const Vec4 b = m_transform * Vec4{0, bottom, kSpriteDepth, 1};
+    const f32 first = std::clamp(std::min(a.y / a.w, b.y / b.w), -1.0f, 1.0f);
+    const f32 last = std::clamp(std::max(a.y / a.w, b.y / b.w), -1.0f, 1.0f);
+    ImmediateBatch batch;
+    if (first + 1 > kClipEpsilon) {
+        batch.rect({-1, -1, 2, first + 1}, kSpriteDepth, color);
+    }
+    if (1 - last > kClipEpsilon) {
+        batch.rect({-1, last, 2, 1 - last}, kSpriteDepth, color);
+    }
+    if (!batch.empty()) {
+        DrawState over;
+        over.depthWrite = false;
+        over.depthTest = false;
+        m_device->draw(batch, m_device->whiteTexture(), Mat4{1}, over);
     }
 }
 
