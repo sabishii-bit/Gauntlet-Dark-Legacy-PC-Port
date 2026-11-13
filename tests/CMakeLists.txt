@@ -201,6 +201,7 @@ add_executable(tests
     game/menu/SettingsRowsTests.cpp
     game/menu/VideoSettingsTests.cpp
     game/hud/CompassHudTests.cpp
+    game/hud/CinematicBarsTests.cpp
     game/menu/SaveMenuTests.cpp
     game/menu/PauseMenuTests.cpp
     formats/ShopWadTests.cpp
