@@ -516,6 +516,7 @@ void Combatant::updateActor(s32 ticks, f32 seconds, std::span<const EnemyView> p
         // CritterInitPlayerData recounts state-1 slots before processing the list.
         // This affects damage, experience and roar thresholds, not spawn population.
         // Until the first update, direct callers retain their supplied spawn count.
+        // A level set up for another party size counts that many instead.
         std::array<bool, kPlayerSlots> standing{};
         for (const EnemyView& player : players) {
             if (!player.hidden && player.player >= 0 &&
@@ -523,7 +524,8 @@ void Combatant::updateActor(s32 ticks, f32 seconds, std::span<const EnemyView> p
                 standing[static_cast<usize>(player.player)] = true;
             }
         }
-        m_sim.scales.players = static_cast<s32>(std::ranges::count(standing, true));
+        m_sim.scales.players =
+            m_partyCount.value_or(static_cast<s32>(std::ranges::count(standing, true)));
         for (auto& child : children()) {
             child->m_sim.scales.players = m_sim.scales.players;
         }

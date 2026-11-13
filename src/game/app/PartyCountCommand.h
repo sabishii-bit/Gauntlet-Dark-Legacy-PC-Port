@@ -22,7 +22,8 @@ struct PartyCountAccess {
 };
 
 /** party_count: the party size the level sets itself up for, or off, in offline play alone;
- * the scene in play takes it at once and every level opened after it. */
+ * every level opened after is set up for it, and the scene in play takes it at once for what
+ * follows the count as it plays. */
 class PartyCountCommand final : public ConsoleCommand {
 public:
     explicit PartyCountCommand(PartyCountAccess access);

@@ -57,7 +57,7 @@ TEST_CASE("ordinary placement resolution keeps native tuning fields and load ord
     sight(instance, 13.75f);
     const std::array roster{LevelEnemy{6, kMediumClass, {}}, LevelEnemy{9, kMediumOtherClass, {}}};
     std::vector<s32> loads;
-    const auto result = OpponentPlacements::ordinary(instance, info, roster, 1, [&](s32 kind) {
+    const auto result = OpponentPlacements::ordinary(instance, info, roster, 1, 1, [&](s32 kind) {
         loads.push_back(kind);
         return true;
     });
@@ -121,7 +121,7 @@ TEST_CASE("ordinary placement filters never invent a fallback resource or a grea
         expectedLoads = 1;
     }
     usize loads = 0;
-    CHECK_FALSE(OpponentPlacements::ordinary(instance, info, {}, players, [&](s32) {
+    CHECK_FALSE(OpponentPlacements::ordinary(instance, info, {}, players, players, [&](s32) {
         ++loads;
         return allowsResource;
     }));
@@ -147,11 +147,11 @@ TEST_CASE("ordinary placement admits the swarm, Death and IT and no other kind",
         for (const s32 kind : kinds) {
             const std::array roster{LevelEnemy{kind, kSmallClass, {}}};
             std::vector<s32> loads;
-            const auto placement =
-                OpponentPlacements::ordinary(instance, info, roster, players, [&](s32 loaded) {
-                    loads.push_back(loaded);
-                    return true;
-                });
+            const auto placement = OpponentPlacements::ordinary(instance, info, roster, players,
+                                                                players, [&](s32 loaded) {
+                                                                    loads.push_back(loaded);
+                                                                    return true;
+                                                                });
             CAPTURE(kind);
             CHECK(loads.size() == (placement ? 1U : 0U));
             if (placement) {
@@ -168,6 +168,29 @@ TEST_CASE("ordinary placement admits the swarm, Death and IT and no other kind",
         }
         CHECK(placed == expected);
     }
+}
+
+TEST_CASE("IT placed for a party stands for the party a level is set up for only with company "
+          "present",
+          "[rollback][opponent-placements][it]") {
+    // A rat placement breeds the roster's small class, here IT, placed for three.
+    ItemInfo info;
+    info.type = ItemInfo::kPlacedEnemy;
+    info.name = enemyKind(kRatKind).name;
+    ItemInstance instance;
+    instance.minPlayers = 3;
+    const std::array roster{LevelEnemy{kItKind, kSmallClass, {}}};
+    const auto stands = [&](s32 players, s32 present) {
+        return OpponentPlacements::ordinary(instance, info, roster, players, present,
+                                            [](s32) { return true; })
+            .has_value();
+    };
+    // The minimum goes by the party the level is set up for (ItemVisible's count), the company
+    // by the players present (fn_80060114's gNumPlayers).
+    CHECK_FALSE(stands(1, 3));
+    CHECK_FALSE(stands(3, 1));
+    CHECK(stands(3, 2));
+    CHECK(stands(3, 3));
 }
 
 TEST_CASE("native placement loader retains missing-statue fallbacks and ordered carried claims",
@@ -197,7 +220,7 @@ TEST_CASE("native placement loader retains missing-statue fallbacks and ordered 
     CritterStatues statues;
     std::vector<Vec3> claimed;
     const auto rows = OpponentPlacements::load(
-        device, layout, {}, 1, enemies, critters, statues, nullptr,
+        device, layout, {}, 1, 1, enemies, critters, statues, nullptr,
         [&](const Vec3& position, f32 reach, f32 rise) -> std::optional<usize> {
             CHECK(reach == 2);
             CHECK(rise == 3);
@@ -251,7 +274,7 @@ TEST_CASE("native statue placement loader preserves the authored floor-binding f
     CritterStatues statues;
     critters.open(device, root, &collision, {}, 'G');
     const auto rows = OpponentPlacements::load(
-        device, layout, {}, 1, enemies, critters, statues, &collision,
+        device, layout, {}, 1, 1, enemies, critters, statues, &collision,
         [](const Vec3&, f32, f32) -> std::optional<usize> { return std::nullopt; });
     CHECK(rows.empty());
     REQUIRE(statues.count() == 2);
@@ -287,8 +310,8 @@ TEST_CASE("Ancient Tree's placed archers and bombers keep their stump floor bind
     Critters critters;
     CritterStatues statues;
     const auto rows = OpponentPlacements::load(
-        device, world.layout(), world.level()->enemies, 1, enemies, critters, statues, &collision,
-        [](const Vec3&, f32, f32) -> std::optional<usize> { return std::nullopt; });
+        device, world.layout(), world.level()->enemies, 1, 1, enemies, critters, statues,
+        &collision, [](const Vec3&, f32, f32) -> std::optional<usize> { return std::nullopt; });
     for (const usize instance : {101U, 102U, 106U, 109U, 137U}) {
         const Vec3 authored = world.layout().itemInstances().at(instance).position;
         const auto row = std::ranges::find_if(rows, [&](const auto& placement) {

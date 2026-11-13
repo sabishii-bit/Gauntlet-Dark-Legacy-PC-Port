@@ -30,8 +30,8 @@ f32 sightParamOf(const ItemInstance& instance) {
 
 std::vector<PlacedEnemies::Placement>
 OpponentPlacements::load(RenderDevice& device, const WorldLayout& layout,
-                         std::span<const LevelEnemy> roster, s32 players, Enemies& enemies,
-                         Critters& critters, CritterStatues& statues,
+                         std::span<const LevelEnemy> roster, s32 party, s32 present,
+                         Enemies& enemies, Critters& critters, CritterStatues& statues,
                          const WorldCollision* collision, const ClaimItem& claim) {
     std::vector<PlacedEnemies::Placement> placements;
     const auto authored = itemSupportWorld(layout, collision);
@@ -41,7 +41,7 @@ OpponentPlacements::load(RenderDevice& device, const WorldLayout& layout,
             continue;
         }
         const auto& info = infos[static_cast<usize>(instance.info)];
-        if (info.type != ItemInfo::kPlacedEnemy || !shownToParty(instance.minPlayers, players)) {
+        if (info.type != ItemInfo::kPlacedEnemy || !shownToParty(instance.minPlayers, party)) {
             continue;
         }
         const auto named = enemyKindOf(info.name);
@@ -114,7 +114,7 @@ OpponentPlacements::load(RenderDevice& device, const WorldLayout& layout,
             placements.push_back(placement);
             continue;
         }
-        const auto row = ordinary(instance, info, roster, players,
+        const auto row = ordinary(instance, info, roster, party, present,
                                   [&](s32 family) { return enemies.loadKind(family); });
         if (!row) {
             continue;
@@ -153,9 +153,9 @@ OpponentPlacements::load(RenderDevice& device, const WorldLayout& layout,
 
 std::optional<PlacedEnemies::Placement>
 OpponentPlacements::ordinary(const ItemInstance& instance, const ItemInfo& info,
-                             std::span<const LevelEnemy> roster, s32 players,
+                             std::span<const LevelEnemy> roster, s32 party, s32 present,
                              const LoadKind& load) {
-    if (info.type != ItemInfo::kPlacedEnemy || !shownToParty(instance.minPlayers, players)) {
+    if (info.type != ItemInfo::kPlacedEnemy || !shownToParty(instance.minPlayers, party)) {
         return std::nullopt;
     }
     const auto named = enemyKindOf(info.name);
@@ -164,12 +164,13 @@ OpponentPlacements::ordinary(const ItemInstance& instance, const ItemInfo& info,
     }
     const s32 strength = Generators::paramOf(instance, 0);
     const s32 kind = levelKindOf(roster, *named, strength);
-    // IT waits for company; great creatures use the separate statue/carried-item
+    // IT waits for company among the players present, whatever party the level is set up for
+    // (gNumPlayers at 0x800601B0); great creatures use the separate statue/carried-item
     // loader, not this ordinary swarm-row path.
     const EnemyTraits* traits = enemyTraits(kind);
     const bool swarmPool = traits != nullptr && (traits->home == EnemyHome::Swarm ||
                                                  traits->home == EnemyHome::PlacedOnly);
-    if ((kind == kItKind && players <= 1) || !swarmPool || !load || !load(kind)) {
+    if ((kind == kItKind && present <= 1) || !swarmPool || !load || !load(kind)) {
         return std::nullopt;
     }
     const Mat4 stood = itemPlacement(instance.position, instance.rotation);

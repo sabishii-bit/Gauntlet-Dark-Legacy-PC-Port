@@ -123,8 +123,9 @@ struct PlayOptions {
     /** The level the party comes back to the tower having just beaten, which Sumner answers as
      * it arrives; none when it beat none on the way. */
     std::optional<LevelBeaten> beaten;
-    /** The party size the level sets itself up for (its items, gates and generators) instead
-     * of the players present: the console's party count; none follows the players. */
+    /** The party size the level sets itself up for (its items, gates, generators, placed
+     * enemies and its boss's share of harm) instead of the players present: the console's party
+     * count; none follows the players. */
     std::optional<s32> partyCount;
     /** Each seat's console cheats, which the scene holds from its first tick. */
     std::array<ConsoleCheats, kSeats> consoleCheats{};
@@ -504,8 +505,9 @@ public:
     void setCheats(s32 player, const ConsoleCheats& cheats);
     const ConsoleCheats& cheats(s32 player) const;
     /** The party size the level sets itself up for from now on, or none to follow the
-     * players present: what is placed for a larger party appears, and the generators breed
-     * for it, on the next tick. */
+     * players present: the items and gates placed for a larger party appear, the generators
+     * breed for it and the boss takes its share of harm for it on the next tick, while the
+     * enemies placed for it stand only in a level opened after. */
     void setPartyCountOverride(std::optional<s32> count);
     std::optional<s32> partyCountOverride() const { return m_sim.partyCountOverride; }
     /** The party size the level is set up for: the override, else `present`. */

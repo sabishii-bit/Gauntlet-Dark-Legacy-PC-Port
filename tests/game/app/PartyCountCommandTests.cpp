@@ -37,15 +37,16 @@ struct PartyCount {
 
 TEST_CASE("party_count sets the party size levels set themselves up for", "[dev-console]") {
     PartyCount fixture{std::make_unique<test::PlayedLevel>()};
-    CHECK(fixture.say("party_count") == "The level is set up for the players present");
-    CHECK(fixture.say("party_count 3") == "The level is set up for a party of 3");
+    CHECK(fixture.say("party_count") == "Levels are set up for the players present as they open");
+    CHECK(fixture.say("party_count 3") == "Levels are set up for a party of 3 as they open");
     CHECK(fixture.count == 3);
     CHECK(fixture.say("party_count 5") ==
           "party_count <1-4>  sets the level up for a party that size\n"
           "party_count off    follows the players present again\n"
           "party_count        says which it is");
     CHECK(fixture.count == 3);
-    CHECK(fixture.say("party_count off") == "The level is set up for the players present");
+    CHECK(fixture.say("party_count off") ==
+          "Levels are set up for the players present as they open");
     CHECK_FALSE(fixture.count.has_value());
     const ConsoleCommand* command = fixture.console.commands().find("party_count");
     REQUIRE(command != nullptr);
@@ -58,8 +59,12 @@ TEST_CASE("party_count sets the party size levels set themselves up for", "[dev-
 TEST_CASE("party_count reaches the scene in play", "[dev-console][assets]") {
     PartyCount fixture{std::make_unique<test::PlayedLevel>("G2")};
     const PlayScene& scene = fixture.level->scene;
-    CHECK(fixture.say("party_count 3") == "The level is set up for a party of 3");
+    const usize placed = scene.opponents().placements().roster().size();
+    CHECK(fixture.say("party_count 3") == "Levels are set up for a party of 3 as they open");
     CHECK(scene.partyCountOverride() == 3);
-    CHECK(fixture.say("party_count off") == "The level is set up for the players present");
+    // The level in play keeps the enemies it placed as it opened.
+    CHECK(scene.opponents().placements().roster().size() == placed);
+    CHECK(fixture.say("party_count off") ==
+          "Levels are set up for the players present as they open");
     CHECK_FALSE(scene.partyCountOverride().has_value());
 }

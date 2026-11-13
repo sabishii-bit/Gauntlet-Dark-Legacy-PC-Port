@@ -81,8 +81,13 @@ public:
     /** The additive mechanics, borrowed until close and handed on to the swarm and its
      * generators; the original's rules when null. */
     void setMechanics(MechanicsFacade* mechanics);
-    /** The party size the generators breed for instead of the players present, or none. */
-    void setPartyCount(std::optional<s32> count) { m_partyCountOverride = count; }
+    /** The party size the level is set up for instead of the players present, or none: what
+     * the next open places for that party, what the generators breed for and the boss's share
+     * of harm, these two at once. */
+    void setPartyCount(std::optional<s32> count) {
+        m_partyCountOverride = count;
+        m_bosses.setPartyCount(count);
+    }
     /** The living swarm, for presentation drawn over it. */
     std::vector<SwarmBodyView> swarmBodies() const;
     /** Imported boss mesh effects share their parent's presented hierarchy;

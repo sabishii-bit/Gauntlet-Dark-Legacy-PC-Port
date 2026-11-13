@@ -1659,6 +1659,30 @@ TEST_CASE("a boss takes harm by the party's size without the under-level loss a 
     }
 }
 
+TEST_CASE("a boss counts the party it is set up for in place of the players standing",
+          "[game][combatant][critter-damage][party-count]") {
+    const auto root = familyAssets();
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, bossDefinition("LICH"), 'G'));
+    const s32 count = GENERATE(0, 2, 3, 4);
+    CAPTURE(count);
+    // Stood for four, it counts the one player standing once it updates, unless set up for
+    // another party.
+    EnemyScales scales;
+    scales.players = 4;
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, scales, 'G'));
+    actor.setPartyCount(count > 0 ? std::optional{count} : std::nullopt);
+    const std::array players{EnemyView{.player = 0, .position = Vec3{0, 0, 20}}};
+    actor.update(2, 1.0f / 30, players);
+    EnemyHit hit;
+    hit.player = 0;
+    hit.damage = 20;
+    const auto counted = static_cast<usize>(count > 0 ? count : 1);
+    CHECK(actor.hurt(hit) == Approx(20.0f * Combatant::kBossShares[counted]));
+}
+
 TEST_CASE("creature families supply distinct policies without duplicating move execution",
           "[game][combatant]") {
     const auto golem = Golem::definition();

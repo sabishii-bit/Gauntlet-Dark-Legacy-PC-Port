@@ -17,10 +17,12 @@ std::string PartyCountCommand::summary() const {
 }
 
 void PartyCountCommand::run(DevConsole& console, Arguments arguments) {
+    // A level sets itself up as it opens: the one in play keeps the enemies it placed.
     const auto describe = [&] {
         return m_access.count.has_value()
-                   ? std::format("The level is set up for a party of {}", *m_access.count)
-                   : std::string("The level is set up for the players present");
+                   ? std::format("Levels are set up for a party of {} as they open",
+                                 *m_access.count)
+                   : std::string("Levels are set up for the players present as they open");
     };
     if (arguments.empty()) {
         console.print(describe());

@@ -107,6 +107,9 @@ public:
     /** Runs through the held entrance too. It never arms a boss that waits for the base
      * game's triggers, which do not move during the entrance. Arming is sticky. */
     void arm(f32 seconds, bool activationReady = true, const LevelTriggers* triggers = nullptr);
+    /** The party size the boss takes its share of harm by, is worth and roars for in place of
+     * the players standing (the console's party count); none counts those standing. */
+    void setPartyCount(std::optional<s32> players) { m_fighter.setPartyCount(players); }
     void setArenaAnchors(std::span<const Mat4> anchors) { m_fighter.setArenaAnchors(anchors); }
     void setArenaTargets(std::span<const CombatArenaTarget> targets) {
         m_fighter.setArenaTargets(targets);

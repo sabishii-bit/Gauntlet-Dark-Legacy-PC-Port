@@ -6432,6 +6432,37 @@ TEST_CASE("the lich comes for a party that waits by the crypt's gate",
     scene.close();
 }
 
+TEST_CASE("a level opened for the console's party count places the enemies that party meets",
+          "[game][screens][party-count][assets]") {
+    const auto root = unpackedRoot();
+    test::assetOrSkip("LEVELS/LEVELG3/WORLDS.PS2");
+    LevelCatalog levels;
+    REQUIRE(levels.load(root));
+    const auto level = levels.byName("G3");
+    REQUIRE(level);
+    test::FakeRenderDevice device;
+    const GameConfig config;
+    GameServices context;
+    context.config = &config;
+    context.levels = &levels;
+    context.unpackedRoot = root;
+    const std::array party{PartyMember{0, CharacterSave{}}};
+    const auto generals = [&](std::optional<s32> count) {
+        LevelWorld world;
+        REQUIRE(world.load(device, root, *level));
+        PlayOptions options;
+        options.welcome = false;
+        options.partyCount = count;
+        PlayScene scene;
+        REQUIRE(scene.open(device, context, world, party, options));
+        return std::ranges::count(scene.opponents().placements().roster(), kGeneralEnemyKind,
+                                  &PlacedEnemies::Placement::kind);
+    };
+    // The Town places two generals for one player and eight for four.
+    CHECK(generals(std::nullopt) == 2);
+    CHECK(generals(4) == 8);
+}
+
 } // namespace
 
 TEST_CASE("auto aim off keeps a standing throw on the player's facing",

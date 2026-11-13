@@ -194,11 +194,12 @@ bool PlayScene::open(RenderDevice& device, const GameServices& services, LevelWo
         return false;
     }
     m_fixtures.setPlayerCount(partySize);
+    // The opponents are placed for the party the level is set up for as they open.
+    m_opponents.setPartyCount(m_sim.partyCountOverride);
     m_opponents.open({device, world, m_weapons, m_effects, m_audio, services.unpackedRoot,
                       services.config != nullptr ? services.config->difficulty.gain() : 1.0f, true},
                      m_players);
     m_opponents.setMechanics(&m_mechanics);
-    m_opponents.setPartyCount(m_sim.partyCountOverride);
     if (auto* imported = world.imported()) {
         imported->updateGenerators(m_opponents.importedGeneratorStates());
     }

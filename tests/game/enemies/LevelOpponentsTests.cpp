@@ -43,6 +43,7 @@
 #include "game/combat/DamageTypes.h"
 #include "game/combat/EffectFlags.h"
 #include "game/combat/PowerupFlags.h"
+#include "game/critters/Combatant.h"
 #include "game/critters/CombatantKind.h"
 #include "game/critters/CritterStatues.h"
 #include "game/enemies/BomberTestSupport.h"
@@ -1458,6 +1459,107 @@ TEST_CASE("the town's IT stands for a party of three, with no body of its own",
         opponents.open({device, world, weapons, effects, audio, root, 1}, players);
         CHECK(countIt(opponents) == (party >= 3 ? 1 : 0));
         opponents.close();
+    }
+}
+
+TEST_CASE("a level set up for a larger party places for it what that party would meet, but IT",
+          "[level-opponents][party-count][assets]") {
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELG3/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::FakeRenderDevice device;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto level = catalog.byName("G3");
+    REQUIRE(level);
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *level));
+    // What a level opened for `party` players, set up for `count`, places: its waiting
+    // placements by kind, and how many statues it stands.
+    const auto open = [&](usize party, std::optional<s32> count) {
+        ItemArchive weapons;
+        EffectTrees effects;
+        LevelSoundscape audio;
+        std::vector<PlayerRuntime> players(party);
+        for (usize i = 0; i < party; ++i) {
+            players[i].actor.spawn(static_cast<s32>(i), {}, nullptr, Vec3{0, 0, 0}, 0);
+        }
+        LevelOpponents opponents;
+        opponents.setPartyCount(count);
+        opponents.open({device, world, weapons, effects, audio, root, 1, true}, players);
+        std::map<s32, s32> kinds;
+        for (const auto& placement : opponents.placements().roster()) {
+            ++kinds[placement.kind];
+        }
+        const usize statues = opponents.statues().count();
+        opponents.close();
+        return std::pair{kinds, statues};
+    };
+    const auto alone = open(1, std::nullopt).first;
+    for (const s32 count : {2, 3, 4}) {
+        CAPTURE(count);
+        auto [party, partyStatues] = open(static_cast<usize>(count), std::nullopt);
+        const auto [setUp, setUpStatues] = open(1, count);
+        // The generals and golems placed for a larger party stand for it, but IT waits for a
+        // second player present to tag.
+        CHECK(setUp.at(kGeneralEnemyKind) > alone.at(kGeneralEnemyKind));
+        CHECK(setUpStatues == partyStatues);
+        CHECK(party[kItKind] == (count >= 3 ? 1 : 0));
+        CHECK_FALSE(setUp.contains(kItKind));
+        party.erase(kItKind);
+        CHECK(setUp == party);
+    }
+}
+
+TEST_CASE("a boss takes the share of harm of the party its level is set up for",
+          "[level-opponents][party-count][assets]") {
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELG5/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/LICH/ANIM.PS2");
+    test::FakeRenderDevice device;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto level = catalog.byName("G5");
+    REQUIRE(level.has_value());
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *level));
+    test::OpponentScript events;
+    test::ScriptedOpponents host{events};
+    events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
+    events.settleBlasts = [] {};
+    events.legend = [](const LegendEvent&) {};
+    events.advanceLegend = [](f32) {};
+    events.fallen = [](const Vec3&) {};
+    events.spew = [](const CombatSpew&) {};
+    events.advanceVictory = [](s32, f32) {};
+    events.levels = [] {};
+    events.award = [](s32, s32, bool) {};
+    // A lone player strikes the waking Lich once its first update has counted the party.
+    const auto harm = [&](std::optional<s32> count) {
+        ItemArchive weapons;
+        EffectTrees effects;
+        LevelSoundscape audio;
+        std::array<PlayerRuntime, 1> players;
+        players[0].actor.spawn(0, {}, nullptr, {0, 0, 20}, 0);
+        LevelOpponents opponents;
+        opponents.setPartyCount(count);
+        opponents.open({device, world, weapons, effects, audio, root, 1}, players);
+        opponents.bosses().wake();
+        players[0].actor.place(*opponents.bosses().position() + Vec3{0, 0, 20});
+        opponents.update(2, 1.0f / 30, players, {}, host, host, host);
+        EnemyHit hit;
+        hit.player = 0;
+        hit.damage = 20;
+        const f32 dealt = opponents.bosses().hurt(hit);
+        opponents.close();
+        return dealt;
+    };
+    const f32 alone = harm(std::nullopt);
+    REQUIRE(alone > 0.0f);
+    for (const s32 count : {2, 3, 4}) {
+        CAPTURE(count);
+        CHECK(
+            harm(count) ==
+            Catch::Approx(alone * Combatant::kBossShares[static_cast<usize>(count)]).margin(0.001));
     }
 }
 
