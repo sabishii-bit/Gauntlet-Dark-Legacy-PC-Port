@@ -1404,6 +1404,50 @@ TEST_CASE("back from the Underworld's throne the tower opens GarmMessage before 
     CHECK_FALSE(scene.levelBeaten().has_value());
 }
 
+TEST_CASE("a new party's welcome turns a joining player away only while it runs",
+          "[game][screens][welcome][assets]") {
+    const f64 step = GENERATE(1.0 / 30.0, 1.0 / 60.0);
+    CAPTURE(step);
+    const std::filesystem::path root = unpackedRoot();
+    const GameConfig config;
+    StringTable strings;
+    REQUIRE(strings.load(test::dataDirectory() / "text", "en"));
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    REQUIRE(world.load(device, root));
+    GameServices context;
+    context.config = &config;
+    context.strings = &strings;
+    context.unpackedRoot = root;
+    CharacterSave save;
+    save.name = "AB";
+    PlayScene scene;
+    REQUIRE(scene.open(device, context, world, std::vector<PartyMember>{PartyMember{0, save}}));
+    const PlayScene::Inputs still{};
+    for (s32 i = 0; i < 1200 && scene.spawning(); ++i) {
+        REQUIRE_FALSE(scene.canJoin(1));
+        scene.update(step, still);
+    }
+    // Sumner's scroll holds everything, and then his cut to the crystals holds the party.
+    REQUIRE(scene.intro() == PlayScene::Intro::Scroll);
+    PlayScene::Inputs accept{};
+    accept[0].menu.select = true;
+    for (s32 i = 0; i < 2000 && scene.intro() == PlayScene::Intro::Scroll; ++i) {
+        REQUIRE_FALSE(scene.canJoin(1));
+        scene.update(step, i % 20 == 19 ? accept : still);
+    }
+    REQUIRE(scene.intro() == PlayScene::Intro::Crystal);
+    for (s32 i = 0; i < 1200 && scene.intro() == PlayScene::Intro::Crystal; ++i) {
+        REQUIRE_FALSE(scene.canJoin(1));
+        scene.update(step, still);
+    }
+    REQUIRE(scene.intro() == PlayScene::Intro::Done);
+    // Welcomed, the party is in the tower like any other: a Start on another controller joins.
+    CHECK(scene.canJoin(1));
+    CHECK_FALSE(scene.canJoin(0));
+    scene.close();
+}
+
 TEST_CASE("the tower tells a short party what a gate wants and congratulates a ready one",
           "[game][screens][assets]") {
     const std::filesystem::path root = unpackedRoot();

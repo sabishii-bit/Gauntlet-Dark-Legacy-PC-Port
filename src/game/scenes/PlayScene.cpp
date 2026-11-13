@@ -2217,9 +2217,8 @@ bool PlayScene::canJoin(s32 player) const {
     return m_open && m_world != nullptr && m_world->isTower() && actor(player) == nullptr &&
            m_players.size() < static_cast<usize>(kPlayerCount) && !m_sim.leaving &&
            !m_sim.gameOver.active() && !m_sim.switchCutscene.active() && !spawning() &&
-           !m_messages.active() && !m_sumnerVisit.active() &&
-           m_sim.welcome.intro() == Intro::None && !m_ceremonies.promotion().active() &&
-           !relicCeremonyOn();
+           !m_messages.active() && !m_sumnerVisit.active() && !m_sim.welcome.cutting() &&
+           !m_ceremonies.promotion().active() && !relicCeremonyOn();
 }
 
 PlayOptions PlayScene::reentry() const {
