@@ -15,6 +15,7 @@
 #include "game/level/LevelWorld.h"
 #include "game/party/PlayerRuntime.h"
 #include "game/party/PortalDeparture.h"
+#include "game/players/PlayerAnimator.h"
 #include "game/players/PowerupEffects.h"
 
 namespace gdl::game {
@@ -60,6 +61,10 @@ public:
     /** The shield an armour bears on the arm, none without one: reflecting, fire, then
      * lightning, as PlayerProcessPowerups tries them. */
     static std::string_view shieldObjectOf(u32 armor);
+    /** Whether who is it wears the sign while `action` plays: not while it dies, falls, gets
+     * up or is flung by a whirlwind, the actions DoPlayerAction marks with hud flag 2
+     * (0x800AD6E0) and PlayerProcessPowerups takes the sign off for (0x8007E240). */
+    static bool wearsItSign(PlayerAnimator::Action action);
 
     /** Solid bodies write depth among the actors; translucent ones (invisible, in
      * transport) are drawn later, over the generators and enemies they stand before,

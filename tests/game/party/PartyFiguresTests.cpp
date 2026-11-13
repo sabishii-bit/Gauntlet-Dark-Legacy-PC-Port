@@ -13,8 +13,10 @@
 #include "game/combat/ArmorFlags.h"
 #include "game/combat/PowerupFlags.h"
 #include "game/effects/DynamicLights.h"
+#include "game/level/LevelCatalog.h"
 #include "game/party/PartyFigures.h"
 #include "game/players/PlayerAnimator.h"
+#include "game/players/PlayerDeeds.h"
 #include "game/players/PowerupEffects.h"
 
 namespace {
@@ -61,6 +63,74 @@ TEST_CASE("a shield armour is borne on the arm, reflecting before fire before li
     CHECK(PartyFigures::shieldObjectOf(armor::kElectricArmor) == "L_SHLD");
     CHECK(PartyFigures::shieldObjectOf(armor::kFireArmor | armor::kElectricArmor) == "FW_SHLD");
     CHECK(PartyFigures::shieldObjectOf(armor::kReflect | armor::kFireArmor) == "RF_SHLD");
+}
+
+TEST_CASE("who is it takes the sign off only while dying, falling, getting up or whirled",
+          "[game][screens][figures][it]") {
+    // DoPlayerAction marks these rows with hud flag 2 (0x800AD6E0), and the victory pose's
+    // 123, which no action here plays.
+    constexpr std::array<u8, 6> kDownRows{126, 131, 132, 133, 134, 135};
+    for (usize i = 0; i < PlayerAnimator::kActionCount; ++i) {
+        CAPTURE(PlayerAnimator::kSequenceNames[i]);
+        const bool down = std::ranges::contains(kDownRows, PlayerAnimator::kNativeActions[i]);
+        CHECK(PartyFigures::wearsItSign(static_cast<PlayerAnimator::Action>(i)) == !down);
+    }
+    CHECK_FALSE(PartyFigures::wearsItSign(PlayerAnimator::Action::FallForward));
+    CHECK(PartyFigures::wearsItSign(PlayerAnimator::Action::HitReact));
+}
+
+TEST_CASE("who is it wears the sign of an ordinary level's items, but not while down",
+          "[game][screens][figures][it][assets]") {
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELG3/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("PLAYERS/WAR/ANIM/ANIM.PS2");
+    test::FakeRenderDevice device;
+    LevelCatalog levels;
+    REQUIRE(levels.load(root));
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *levels.byName("G3")));
+    // G3, where IT is placed, has no item archive of its own: the realm's is the level's.
+    REQUIRE_FALSE(world.realmItems().loaded());
+    const auto object = world.items().models.find("IT_SIGN");
+    REQUIRE(object);
+    const auto& sign = world.items().models.mesh(*object);
+    ItemArchive weapons;
+    const PortalDeparture departure;
+    std::array<PlayerRuntime, 1> players;
+    auto& runtime = players[0];
+    runtime.actor.spawn(0, CharacterSave{}, nullptr, Vec3{5, 2, 9}, 0);
+    runtime.figure = PlayerFigure::load(device, root, runtime.actor.save(), Entrance::Skip);
+    REQUIRE(runtime.figure);
+    const PartyFigures::Scene scene{.world = world, .weapons = weapons, .departure = departure};
+    const PartyFigures figures;
+    const auto signDrawn = [&] {
+        const Mat4 body = runtime.figure->placement(
+            PartyFigures::presentationBody(runtime, 1), runtime.actor.save(),
+            PowerupEffects::of(runtime.actor.save().progress().inventory));
+        device.draws.clear();
+        figures.draw(device, players, scene, Mat4{1}, CameraFrame{});
+        REQUIRE_FALSE(device.draws.empty());
+        return std::ranges::any_of(device.draws, [&](const test::RecordedDraw& draw) {
+            return !draw.vertices.empty() &&
+                   std::ranges::any_of(sign.vertices, [&](const auto& vertex) {
+                       return glm::distance(draw.vertices.front().position,
+                                            Vec3{body * Vec4{vertex.position, 1}}) < 0.0001f;
+                   });
+        });
+    };
+    CHECK_FALSE(signDrawn()); // nobody is it yet
+    runtime.itTicks = 1;
+    CHECK(signDrawn());
+    runtime.figure->animate(0, 1, 1.0f / 60, PlayerDeed::FallBack);
+    REQUIRE(runtime.figure->animator().action() == PlayerAnimator::Action::FallBack);
+    CHECK_FALSE(signDrawn());
+    // Up again, it wears the sign again.
+    for (s32 tick = 0;
+         tick < 600 && !PartyFigures::wearsItSign(runtime.figure->animator().action()); ++tick) {
+        runtime.figure->animate(0, 1, 1.0f / 60);
+    }
+    REQUIRE(PartyFigures::wearsItSign(runtime.figure->animator().action()));
+    CHECK(signDrawn());
 }
 
 TEST_CASE("in a dark level each standing player carries a lantern", "[game][screens][figures]") {

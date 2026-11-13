@@ -140,6 +140,19 @@ std::string_view PartyFigures::shieldObjectOf(u32 armor) {
     return {};
 }
 
+bool PartyFigures::wearsItSign(PlayerAnimator::Action action) {
+    using Action = PlayerAnimator::Action;
+    switch (action) {
+    case Action::Death:
+    case Action::FallBack:
+    case Action::GetUpBack:
+    case Action::FallForward:
+    case Action::GetUpForward:
+    case Action::Whirled: return false;
+    default: return true;
+    }
+}
+
 bool PartyFigures::shown(const PlayerRuntime& runtime, const Scene& scene) {
     const auto* imported = scene.world.imported();
     const auto native = imported ? imported->departure(scene.frameBlend) : std::nullopt;
@@ -193,9 +206,13 @@ void PartyFigures::draw(RenderDevice& device, std::span<const PlayerRuntime> pla
                     runtime.actor.player() == scene.occupiedHand, TreeModel::Pass::DepthWriting);
         figure.drawHeadwear(device, world.powerups(), worn, clip, body, lighting, alpha);
         figure.drawGem(device, world.powerups(), runtime.gem.shown(), clip, body, lighting, alpha);
-        // Who is it wears the realm's sign on their back (player.c 5885).
-        if (runtime.itTicks > 0) {
-            figure.drawMarker(device, world.realmItems(), kItSign, clip, body, lighting, alpha);
+        // Who is it wears IT_SIGN on their back from whichever of the level's item archives
+        // holds it, as MBOX_NewObject searches every one loaded (PlayerProcessPowerups,
+        // 0x8007E268).
+        if (runtime.itTicks > 0 && wearsItSign(figure.animator().action())) {
+            if (const auto sign = world.itemScope().findObject(kItSign)) {
+                figure.drawMarker(device, *sign->archive, sign->name, clip, body, lighting, alpha);
+            }
         }
         figure.setSkinTexture(nullptr);
     }
