@@ -1,9 +1,7 @@
 #include <algorithm>
 #include <array>
-#include <cmath>
 #include <format>
 #include <string>
-#include <vector>
 
 #include "engine/core/Types.h"
 
@@ -29,6 +27,8 @@ constexpr Color kPriceFlash = Color::rgba(255, 0, 0);
 constexpr Color kPointerHighlight = TextHighlight::kGlow;
 /** A pile fills its lane's column, the width of its art. */
 constexpr f32 kPileWidth = 128;
+/** The rows of a pile's art: show_gold and show_piles crop it to height / 256 (0x803483B0). */
+constexpr f32 kPileRows = 256;
 } // namespace
 bool AfterLevelScene::pointerHovered(const ShopLane& lane, PointerAction action, usize row) const {
     return m_hoverTargets[static_cast<usize>(lane.member.player)] ==
@@ -86,34 +86,13 @@ void AfterLevelScene::drawFrame(std::string_view name, s32 x, s32 y) {
     state.colorScale = 2;
     m_canvas.submit(batch, *art, Mat4{1}, state);
 }
-std::vector<AfterLevelScene::PilePiece> AfterLevelScene::pilePieces(f32 x, f32 height) {
-    // show_piles (0x80099CC4) blits the pile up from the baseline with v running from 0 to
-    // height / 256, which a pile grown past its art by a sale takes over 1. DrawBlit
-    // (0x800B448C) samples the texture object pbSetupTextures made GX_REPEAT both ways
-    // (0x800C6FBC, 0x800C6FE4), whatever its record's clamp flags say, so the art starts
-    // over from its top; the picture ends at the frame's top edge.
-    const f32 top = LevelTally::kBaseline - height;
-    const f32 visible = std::max(top, 0.0f);
-    // Where the repeat of the art that shows first begins: the pile's top, or above the frame
-    // when the pile reaches past it.
-    const f32 first = visible - std::fmod(visible - top, kPileRows);
-    std::vector<PilePiece> pieces;
-    for (s32 band = 0; first + static_cast<f32>(band) * kPileRows < LevelTally::kBaseline; ++band) {
-        const f32 start = first + static_cast<f32>(band) * kPileRows;
-        const f32 from = std::max(start, visible);
-        const f32 to = std::min(start + kPileRows, LevelTally::kBaseline);
-        pieces.push_back({.area = Rect{x, from, kPileWidth, to - from},
-                          .uv = Rect{0, (from - start) / kPileRows, 1, (to - from) / kPileRows}});
-    }
-    return pieces;
-}
 void AfterLevelScene::drawPile(usize pile, s32 x, f32 height) {
     constexpr std::array<std::string_view, 3> kPiles{"SHP_GOLD", "SHP_BONES", "SHP_EXP"};
     if (const auto* art = texture(kPiles.at(pile))) {
         // Reveal the top of the pile without squeezing a 256-pixel image into a tiny icon.
-        for (const PilePiece& piece : pilePieces(static_cast<f32>(x), height)) {
-            m_canvas.draw(*art, piece.area, piece.uv, Color::white());
-        }
+        m_canvas.draw(*art,
+                      Rect{static_cast<f32>(x), LevelTally::kBaseline - height, kPileWidth, height},
+                      Rect{0, 0, 1, height / kPileRows}, Color::white());
     }
 }
 void AfterLevelScene::drawLaneBackdrop(const ShopLane& lane) {
@@ -129,9 +108,8 @@ void AfterLevelScene::drawLaneBackdrop(const ShopLane& lane) {
             }
         }
     } else if (lane.phase == ShopPhase::Shopping) {
-        if (lane.member.save.gold > 0) {
-            drawPile(0, x, lane.goldHeight);
-        }
+        // The pile stands for what the level yielded, not for the purse, so trades leave it be.
+        drawPile(0, x, lane.shopPileHeight());
         image("SHOP_SCROLL_1", x, 0);
         image("SHOP_SCROLL_2", x, 256);
     }

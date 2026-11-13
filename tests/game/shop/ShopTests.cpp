@@ -859,6 +859,59 @@ TEST_CASE("retail tally order follows each player's relative gains rather than l
     CHECK(first.finished());
 }
 
+TEST_CASE("the shop's gold pile stays where the tally left it whatever is bought or sold",
+          "[shop][results][piles]") {
+    // fn_8009A0AC heights the gold pile by the gold the level yielded over the level's maximum
+    // plus one, from 64 to 208 rows, and the shop starts its pile there (do_shop, 0x80098BDC).
+    struct Visit {
+        ShopVisit visit = ShopVisit::Level;
+        s32 yielded = 0; ///< the level's gold, against a maximum of 1000
+        f32 pile = 0;
+    };
+    const auto visit = GENERATE(Visit{ShopVisit::Level, 600, 124}, // 600 * 208 / 1001
+                                Visit{ShopVisit::Level, 5000, LevelTally::kMaxHeight},
+                                Visit{ShopVisit::Shop, 0, 64}); // no level: the tally's least
+    const s32 rate = GENERATE(30, 60);
+    CAPTURE(visit.yielded, rate);
+    auto save = shopper();
+    save.gold = 10;
+    save.progress().inventory.addKeys(2);
+    const std::array<PartyMember, 1> party{{{1, save}}};
+    const std::array<LevelResults, 1> results{{{1, {visit.yielded, 0, 0}}}};
+    ShopSession session;
+    session.start(party, results, {1000, 100, 1000}, classes(), catalog(), visit.visit);
+    const auto& lane = session.lanes()[0];
+    const auto step = [&](const ShopSession::Inputs& input) { session.update(1.0 / rate, input); };
+    ShopSession::Inputs confirm;
+    confirm[1].select = true;
+    for (s32 frame = 0; lane.phase == ShopPhase::Tally && frame < 10 * rate; ++frame) {
+        step(lane.tally.finished() ? confirm : ShopSession::Inputs{});
+    }
+    REQUIRE(lane.phase == ShopPhase::Shopping);
+    // The pile two seconds after a step, time enough for any pile to settle.
+    const auto pileAfter = [&](const ShopSession::Inputs& input) {
+        step(input);
+        for (s32 frame = 0; frame < 2 * rate; ++frame) {
+            step({});
+        }
+        return lane.shopPileHeight();
+    };
+    CHECK(pileAfter({}) == visit.pile);
+    // A trade the purse can no longer repeat sends the cursor up, so put it on the keys each time.
+    ShopSession::Inputs sell;
+    sell[1].back = true;
+    REQUIRE(session.focus(1, 1)); // the keys, which sell from a thin purse
+    CHECK(pileAfter(sell) == visit.pile);
+    REQUIRE(session.focus(1, 1));
+    CHECK(pileAfter(sell) == visit.pile);
+    REQUIRE(lane.member.save.gold == 160); // sixteen times the purse brought in
+    ShopSession::Inputs buy;
+    buy[1].select = true;
+    REQUIRE(session.focus(1, 1));
+    CHECK(pileAfter(buy) == visit.pile);
+    CHECK(lane.member.save.gold == 60);
+}
+
 TEST_CASE("retail level-up stats reveal changes before accepting Continue", "[shop][results]") {
     // 80099410: no level change skips the page; promotion waits 90 ticks then 60 per change.
     auto save = shopper();

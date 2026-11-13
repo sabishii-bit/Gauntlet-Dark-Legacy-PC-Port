@@ -93,8 +93,6 @@ bool ShopLane::selectable(const ShopItem& item) const {
            ownsShopItem(member.save, item);
 }
 void ShopLane::rememberShopEntry() {
-    entryGold = member.save.gold;
-    goldHeight = tally.targetHeight(0);
     entryLevel = experienceLevel(member.save.experience());
     entryStats = member.save.character == kSumnerClass
                      ? masteryStats()
@@ -234,12 +232,6 @@ void ShopSession::update(f64 seconds, const Inputs& inputs, const std::array<s32
             }
             break;
         case ShopPhase::Shopping: {
-            const f32 targetHeight = LevelTally::kInitialHeight +
-                                     static_cast<f32>(lane.member.save.gold) *
-                                         (LevelTally::kMaxHeight - LevelTally::kInitialHeight) /
-                                         (static_cast<f32>(lane.entryGold) + 1);
-            lane.goldHeight = std::max(
-                targetHeight, lane.goldHeight - static_cast<f32>(std::min(seconds, 60.0)) * 60);
             const usize count = m_catalog.items().size();
             const s32 movement = lane.navigation(input, ticks);
             lane.navigationSteps = std::abs(movement);

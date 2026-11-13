@@ -1319,40 +1319,7 @@ TEST_CASE("the level panel names a level gained, shows the magic perks' line at 
     scene.close();
 }
 
-TEST_CASE("a pile taller than its art repeats the art from its top, and none shows above the frame",
-          "[shop][screens][piles]") {
-    using Piece = AfterLevelScene::PilePiece;
-    const auto check = [](f32 height, const std::vector<Piece>& expected) {
-        CAPTURE(height);
-        const auto pieces = AfterLevelScene::pilePieces(128, height);
-        REQUIRE(pieces.size() == expected.size());
-        for (usize i = 0; i < pieces.size(); ++i) {
-            CAPTURE(i);
-            CHECK(pieces[i].area == expected[i].area);
-            CHECK(pieces[i].uv == expected[i].uv);
-        }
-    };
-    // Up to its art's height a pile is one piece, its art cropped from the top.
-    check(20, {{.area = {128, 300, 128, 20}, .uv = {0, 0, 1, 20.0f / 256}}});
-    check(256, {{.area = {128, 64, 128, 256}, .uv = {0, 0, 1, 1}}});
-    // Past it the art starts over below, as the GameCube's repeating texture does.
-    check(300, {{.area = {128, 20, 128, 256}, .uv = {0, 0, 1, 1}},
-                {.area = {128, 276, 128, 44}, .uv = {0, 0, 1, 44.0f / 256}}});
-    // The reported sale: 1300 gold over 626 at the shop's start lifts the pile to 410 rows,
-    // whose top 90 are above the frame.
-    check(410, {{.area = {128, 0, 128, 166}, .uv = {0, 90.0f / 256, 1, 166.0f / 256}},
-                {.area = {128, 166, 128, 154}, .uv = {0, 0, 1, 154.0f / 256}}});
-    // A repeat may begin right at the frame's top; one wholly above it is not drawn.
-    check(576, {{.area = {128, 0, 128, 256}, .uv = {0, 0, 1, 1}},
-                {.area = {128, 256, 128, 64}, .uv = {0, 0, 1, 0.25f}}});
-    // 3000 gold sold for with none brought in: 563700 rows above the frame, 244 into a repeat.
-    check(20 + 3000 * 188, {{.area = {128, 0, 128, 12}, .uv = {0, 244.0f / 256, 1, 12.0f / 256}},
-                            {.area = {128, 12, 128, 256}, .uv = {0, 0, 1, 1}},
-                            {.area = {128, 268, 128, 52}, .uv = {0, 0, 1, 52.0f / 256}}});
-    check(0, {});
-}
-
-TEST_CASE("a pile a sale lifts past its art repeats it as the GameCube does, not smeared",
+TEST_CASE("a sale leaves the shop's gold pile whole and on screen where the tally left it",
           "[shop][screens][piles][assets]") {
     const auto root = test::assetOrSkip("SHPDATA/SHOP.WAD").parent_path().parent_path();
     test::assetOrSkip("SELECT/textures.ngc");
@@ -1368,12 +1335,44 @@ TEST_CASE("a pile a sale lifts past its art repeats it as the GameCube does, not
     save.progress().health = 100;
     save.progress().inventory.keys = 9;
     const std::array<PartyMember, 1> party{{{0, save}}};
+    // The level yielded 600 of its 1000 gold: a pile of 600 * 208 / 1001 rows (fn_8009A0AC).
+    constexpr f32 kPile = 124;
+    const std::array<LevelResults, 1> results{{{0, {600, 0, 0}}}};
     AfterLevelScene scene;
-    REQUIRE(scene.open(device, context, party, {}, {1000, 100, 1000}, "G1", ShopVisit::Shop));
+    REQUIRE(scene.open(device, context, party, results, {1000, 100, 1000}, "G1"));
     const auto& lane = scene.session().lanes()[0];
-    REQUIRE(lane.phase == ShopPhase::Shopping);
-    const auto& items = scene.session().catalog().items();
+    REQUIRE_FALSE(scene.update(10, {})); // the piles grow to their heights
     ShopSession::Inputs input;
+    input[0].select = true;
+    REQUIRE_FALSE(scene.update(0, input));
+    REQUIRE(lane.phase == ShopPhase::Shopping);
+    TextureSet art;
+    REQUIRE(art.load(root / "SELECT"));
+    const auto gold = art.find("SHP_GOLD");
+    REQUIRE(gold);
+    const auto& pixels = art.image(*gold).pixels;
+    // One quad up from the baseline, the art's top rows, sampled within the art.
+    const auto checkPile = [&] {
+        device.draws.clear();
+        scene.render(device, Mat4{1}, 512, 384);
+        std::vector<const test::RecordedDraw*> piles;
+        for (const auto& draw : device.draws) {
+            const auto* image = dynamic_cast<const test::FakeTexture*>(draw.texture);
+            if (image != nullptr && image->pixels == pixels) {
+                piles.push_back(&draw);
+            }
+        }
+        REQUIRE(piles.size() == 1);
+        CHECK(test::minCorner(*piles[0]) == Vec2{0, LevelTally::kBaseline - kPile});
+        CHECK(test::maxCorner(*piles[0]) == Vec2{128, LevelTally::kBaseline});
+        CHECK(std::ranges::max(piles[0]->vertices, {}, [](const auto& vertex) {
+                  return vertex.uv.y;
+              }).uv.y == kPile / 256);
+    };
+    REQUIRE_FALSE(scene.update(2, {}));
+    checkPile();
+    const auto& items = scene.session().catalog().items();
+    input = {};
     input[0].down = true;
     for (usize step = 0; step < items.size() && items[lane.cursor].type != ShopItem::kKey; ++step) {
         REQUIRE_FALSE(scene.update(0, input));
@@ -1384,37 +1383,9 @@ TEST_CASE("a pile a sale lifts past its art repeats it as the GameCube does, not
     input = {};
     input[0].back = true;
     REQUIRE_FALSE(scene.update(0, input));
-    REQUIRE(lane.member.save.gold > save.gold);
-    REQUIRE_FALSE(scene.update(1.0 / 60, {}));
-    // The pile stands for the gold now held against the gold brought in: far past its art.
-    REQUIRE(lane.goldHeight > LevelTally::kBaseline);
-    device.draws.clear();
-    scene.render(device, Mat4{1}, 512, 384);
-    TextureSet art;
-    REQUIRE(art.load(root / "SELECT"));
-    const auto gold = art.find("SHP_GOLD");
-    REQUIRE(gold);
-    const auto& pixels = art.image(*gold).pixels;
-    std::vector<ImmediateVertex> pile;
-    for (const auto& draw : device.draws) {
-        const auto* image = dynamic_cast<const test::FakeTexture*>(draw.texture);
-        if (image != nullptr && image->pixels == pixels) {
-            pile.insert(pile.end(), draw.vertices.begin(), draw.vertices.end());
-        }
-    }
-    REQUIRE_FALSE(pile.empty());
-    // Sampled within the art, a clamped edge never stretches its last row down the column.
-    CHECK(std::ranges::all_of(
-        pile, [](const auto& vertex) { return vertex.uv.y >= 0 && vertex.uv.y <= 1; }));
-    // The art starts over inside the column, and the column ends at the frame's top.
-    CHECK(std::ranges::any_of(
-        pile, [](const auto& vertex) { return vertex.uv.y == 0 && vertex.position.y > 0; }));
-    CHECK(std::ranges::min(pile, {}, [](const auto& vertex) {
-              return vertex.position.y;
-          }).position.y == 0);
-    CHECK(std::ranges::max(pile, {}, [](const auto& vertex) {
-              return vertex.position.y;
-          }).position.y == LevelTally::kBaseline);
+    REQUIRE(lane.member.save.gold > save.gold); // past the purse brought in
+    REQUIRE_FALSE(scene.update(2, {}));
+    checkPile();
     scene.close();
 }
 

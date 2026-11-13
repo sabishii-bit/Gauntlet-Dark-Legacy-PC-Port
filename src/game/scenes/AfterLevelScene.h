@@ -44,18 +44,6 @@ public:
     /** Ends a seat's lane for a player who dropped out of the online game. */
     bool abandonLane(s32 seat);
     void render(RenderDevice& device, const Mat4& projection, f32 width, f32 height);
-    /** A part of a pile on the screen and the part of its art drawn there. */
-    struct PilePiece {
-        Rect area;
-        Rect uv;
-    };
-    /** How a pile `height` rows tall over the column at `x` is drawn, top to bottom: its art
-     * from the top down, a row a screen row, starting over every `kPileRows` rows as the
-     * GameCube's repeating textures do, and none of it above the frame. */
-    static std::vector<PilePiece> pilePieces(f32 x, f32 height);
-    /** The screen rows a pile's art spans before it starts over: show_piles' v of
-     * height / 256 (0x803483B0). */
-    static constexpr f32 kPileRows = 256;
     const ShopSession& session() const { return m_session; }
     /** The sounds the last update asked for, by name, whether or not audio is on. */
     const std::vector<std::string>& lastSounds() const { return m_lastSounds; }

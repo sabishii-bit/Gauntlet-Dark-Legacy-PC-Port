@@ -55,10 +55,11 @@ struct ShopLane {
     s32 entryLevel = 1;
     StatBlock entryStats;
     f64 phaseSeconds = 0;
-    s32 entryGold = 0;
-    f32 goldHeight = LevelTally::kInitialHeight;
     InventoryPanel inventory;
     f64 tickRemainder = 0; ///< the 60 Hz ticks not yet taken from the seconds given
+    /** The gold pile behind the shop's parchment: the tally's, standing for the gold the level
+     * (with any stages that led straight into it) yielded, whatever is bought or sold. */
+    f32 shopPileHeight() const { return tally.targetHeight(0); }
     /** Strength, armor, magic, speed, max health, in the shop's row order. */
     std::array<s32, 5> statsValues(bool previous) const;
     std::array<s32, 5> statsRevealTicks() const;
