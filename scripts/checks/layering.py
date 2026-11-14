@@ -121,8 +121,9 @@ def read_baseline(path: pathlib.Path) -> set[str]:
 def write_baseline(path: pathlib.Path, entries: set[str]) -> None:
     header = ("# Includes that climb the layering, kept until fixed (scripts/checks/layering.py).\n"
               "# This list only shrinks: fix a new break rather than adding it here.\n")
-    path.write_text(header + "".join(f"{entry}\n" for entry in sorted(entries)),
-                    encoding="utf-8", newline="\n")
+    # Path.write_text takes newline only from Python 3.10; open does on every version.
+    with path.open("w", encoding="utf-8", newline="\n") as baseline:
+        baseline.write(header + "".join(f"{entry}\n" for entry in sorted(entries)))
 
 
 def main(argv: list[str] | None = None) -> int:

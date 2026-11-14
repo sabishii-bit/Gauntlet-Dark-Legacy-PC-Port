@@ -15,6 +15,8 @@ Start/Enter opens a local menu; simulation continues for everyone. Escape exits.
 Settings and unsaved test characters are isolated under build/netplay/scene-*.
 """
 
+from __future__ import annotations
+
 import argparse
 import contextlib
 import copy

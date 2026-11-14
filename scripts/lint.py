@@ -22,6 +22,8 @@ unit's time; the pre-push hook under scripts/hooks runs that pair over what is b
 pushed, and CI runs the full profile over everything, cached. Nothing affected passes.
 """
 
+from __future__ import annotations
+
 import argparse
 import concurrent.futures
 import json

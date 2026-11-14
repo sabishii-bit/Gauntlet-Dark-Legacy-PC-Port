@@ -9,6 +9,8 @@ so CI can skip its build, test and lint jobs for a README edit. An unknown base 
 first push) counts as code.
 """
 
+from __future__ import annotations
+
 import argparse
 import pathlib
 import subprocess

@@ -5,6 +5,9 @@ lint under that hook, nor the clang-tidy workers under the lint: on Windows the 
 runs behind the shell and batch wrappers of a Python shim and never sees the interrupt.
 So a helper watches the process it answers to and takes its own children down with it.
 """
+
+from __future__ import annotations
+
 import ctypes
 import os
 import pathlib

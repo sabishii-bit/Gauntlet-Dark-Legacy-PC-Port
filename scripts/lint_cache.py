@@ -6,6 +6,8 @@ Hash complete files, not preprocessed text, so comments/NOLINT and directives co
 Any unsupported command or failed dependency scan falls back to uncached analysis.
 """
 
+from __future__ import annotations
+
 import hashlib
 import json
 import os
