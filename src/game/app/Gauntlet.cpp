@@ -19,8 +19,6 @@
 #include "engine/platform/Paths.h"
 #include "engine/render/RenderTypes.h"
 
-#include "expansions/shared/characters/LegendsVisit.h"
-#include "expansions/shared/scenes/LegendsLevel.h"
 #include "formats/TplFile.h"
 #include "game/app/FrameBorder.h"
 #include "game/app/GameCursor.h"
@@ -553,9 +551,7 @@ bool Gauntlet::startPlayerSelect(s32 startingPlayer, std::span<const PartyMember
                       m_title.musicHandle(), &m_play->world)) {
         // Native game-main state8 calls e0070d2c on entering player selection.
         // Failed selection loads and ordinary map/quit transitions do not reset it.
-        if (m_legendsAdvice) {
-            *m_legendsAdvice = {};
-        }
+        resetLegendsAdvice();
         return true;
     }
     log::warn("Player select unavailable; unpack the game data into {} with gdlunpack",
@@ -870,26 +866,11 @@ void Gauntlet::updateTower(f64 deltaSeconds, const SceneInput& sceneInput) {
         return;
     }
     if (outcome == PlayOutcome::GameOver) {
-        if (const auto* native = dynamic_cast<const LegendsLevel*>(m_play->world.imported());
-            native && native->platform() == LegendsPlatform::N64) {
-            // A failed visit still owns its permanent native discoveries. Keep
-            // the normal abandoned-level gold/XP policy and AutoSave setting;
-            // never turn defeat into stage completion or a GDL campaign grant.
-            // GameOver is reached after every runtime has departed, so party()
-            // intentionally contains nobody. Snapshot those actual participants
-            // before the scene is destroyed, including their original save slots.
-            std::vector<PartyMember> participants;
-            for (s32 seat = 0; seat < PlayScene::kPlayerCount; ++seat) {
-                if (const auto* runtime = m_play->scene.runtime(seat)) {
-                    participants.push_back({seat, runtime->actor.save(), runtime->slot});
-                }
-            }
-            auto party = m_play->scene.abandonedParty(participants);
-            for (auto& member : party) {
-                if (const auto* current = m_play->scene.liveSave(member.player)) {
-                    retainLegendsProgress(member.save, *current, LegendsPlatform::N64);
-                }
-            }
+        // A failed visit still owns its permanent native discoveries. Keep the normal
+        // abandoned-level gold/XP policy and AutoSave setting; never turn defeat into stage
+        // completion or a GDL campaign grant.
+        auto party = m_play->scene.abandonedParty(participants());
+        if (keepVisitProgress(party)) {
             autoSave(party);
         }
         m_legendsOrigin.reset();
@@ -1050,14 +1031,7 @@ void Gauntlet::updatePause(f64 deltaSeconds, const SceneInput& sceneInput) {
         }
         if (!m_play->world.isTower()) {
             party = m_play->scene.abandonedParty(party);
-            if (const auto* native = dynamic_cast<const LegendsLevel*>(m_play->world.imported());
-                native && native->platform() == LegendsPlatform::N64) {
-                for (auto& member : party) {
-                    if (const auto* current = m_play->scene.liveSave(member.player)) {
-                        retainLegendsProgress(member.save, *current, LegendsPlatform::N64);
-                    }
-                }
-            }
+            keepVisitProgress(party);
         }
         autoSave(party);
         m_parent.reset();
@@ -1559,29 +1533,27 @@ bool Gauntlet::saveLocalParty(std::span<PartyMember> party) {
     return result.written == party.size() && result.failed == 0 && result.unavailable == 0;
 }
 
+std::vector<PartyMember> Gauntlet::participants() const {
+    std::vector<PartyMember> played;
+    for (s32 seat = 0; seat < PlayScene::kPlayerCount; ++seat) {
+        if (const auto* runtime = m_play->scene.runtime(seat)) {
+            played.push_back({seat, runtime->actor.save(), runtime->slot});
+        }
+    }
+    return played;
+}
+
 void Gauntlet::onShutdown() {
     m_netplay.reset();
     window().stopRumble();
     m_online.reset();
     const bool completingNative = saveLegendsCompletion();
     if (!completingNative && m_play && m_play->scene.isOpen()) {
-        if (const auto* native = dynamic_cast<const LegendsLevel*>(m_play->world.imported());
-            native && native->platform() == LegendsPlatform::N64) {
-            // Closing the window during the GameOver caption precedes its
-            // outcome callback. Include departed participants just as that
-            // callback does, or their permanent native discoveries disappear.
-            std::vector<PartyMember> participants;
-            for (s32 seat = 0; seat < PlayScene::kPlayerCount; ++seat) {
-                if (const auto* runtime = m_play->scene.runtime(seat)) {
-                    participants.push_back({seat, runtime->actor.save(), runtime->slot});
-                }
-            }
-            auto party = m_play->scene.abandonedParty(participants);
-            for (auto& member : party) {
-                if (const auto* current = m_play->scene.liveSave(member.player)) {
-                    retainLegendsProgress(member.save, *current, LegendsPlatform::N64);
-                }
-            }
+        // Closing the window during the GameOver caption precedes its outcome callback, so
+        // the departed are kept as that callback keeps them, or their permanent native
+        // discoveries disappear.
+        auto party = m_play->scene.abandonedParty(participants());
+        if (keepVisitProgress(party)) {
             autoSave(party);
         }
     }

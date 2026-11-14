@@ -21,6 +21,7 @@
 #include "expansions/n64/audio/LegendsAudioMix.h"
 #include "expansions/n64/audio/N64LegendsStream.h"
 #include "expansions/n64/formats/LegendsN64Texture.h"
+#include "expansions/n64/level/LegendsAdvice.h"
 #include "expansions/n64/level/LegendsUnlocks.h"
 #include "expansions/n64/scenes/LegendsN64Music.h"
 #include "expansions/shared/app/LegendsCompletion.h"
@@ -652,6 +653,25 @@ bool Gauntlet::closeLegendsLevel(bool keepProgress) {
     m_sounds->setCategoryScale(SoundCategory::Music, m_musicDuck.level());
     m_sounds->setCategoryScale(SoundCategory::Effects, 1);
     resetPlayInput();
+    return true;
+}
+
+void Gauntlet::resetLegendsAdvice() {
+    if (m_legendsAdvice) {
+        *m_legendsAdvice = {};
+    }
+}
+
+bool Gauntlet::keepVisitProgress(std::span<PartyMember> party) {
+    const auto* native = dynamic_cast<const LegendsLevel*>(m_play->world.imported());
+    if (native == nullptr) {
+        return false;
+    }
+    for (PartyMember& member : party) {
+        if (const auto* current = m_play->scene.liveSave(member.player)) {
+            retainLegendsProgress(member.save, *current, native->platform());
+        }
+    }
     return true;
 }
 

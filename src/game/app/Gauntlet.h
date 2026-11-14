@@ -227,6 +227,15 @@ private:
     void consoleLegendsClose(DevConsole& console);
     void updateLegendsPreview(f64 deltaSeconds);
     bool commitLegendsProgress();
+    /** Everyone who played the open level, the departed too, with their save slots: a game
+     * over comes once all have departed, when the scene's party holds nobody. */
+    std::vector<PartyMember> participants() const;
+    /** Keeps, in each member of a party giving up a Legends level's earnings (a game over,
+     * the title, a shutdown), the permanent discoveries its live save made in that level's
+     * campaign, the N64's or the Dreamcast's; false, the party left as it is, outside one. */
+    bool keepVisitProgress(std::span<PartyMember> party);
+    /** Forgets the N64 advice a new party has been given, as player selection opens. */
+    void resetLegendsAdvice();
     bool closeLegendsLevel(bool keepProgress = true);
     bool quitLegendsLevel();
     void finishLegendsTravel();
