@@ -6,8 +6,10 @@ use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::str::FromStr;
 
-/// A release's semantic version. Versions that differ only in build metadata are the same
-/// release: they compare equal, hash alike and neither is newer than the other.
+/// A release's semantic version, ordered by precedence: versions that differ only in build
+/// metadata compare equal, hash alike and neither is newer than the other. Equal versions can
+/// still be different builds, so whether two records name the same release is a comparison of
+/// their texts, which `Display` gives back unchanged.
 #[derive(Clone, Debug)]
 pub struct Version(semver::Version);
 
