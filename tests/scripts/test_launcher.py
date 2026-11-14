@@ -30,6 +30,20 @@ def listed(pid, expected, seconds=5):
         time.sleep(0.1)
 
 
+def locked_dependencies(package):
+    """The names of the dependencies the workspace's Cargo.lock lists under each locked version of
+    `package`, without the version cargo adds to a name while two versions of it are locked."""
+    lock = (WORKSPACE / "Cargo.lock").read_text(encoding="utf-8")
+    found = []
+    for block in re.split(r"^\[\[package\]\]$", lock, flags=re.MULTILINE)[1:]:
+        if re.search(r'^name = "(.*)"$', block, re.MULTILINE).group(1) == package:
+            dependencies = re.search(r"^dependencies = \[$(.*?)^\]$", block,
+                                     re.MULTILINE | re.DOTALL)
+            found.append(re.findall(r'^ "([^ "]+)', dependencies.group(1), re.MULTILINE)
+                         if dependencies else [])
+    return found
+
+
 class PlanTests(unittest.TestCase):
     def test_check_formats_lints_and_tests_the_whole_workspace(self):
         self.assertEqual(launcher.plan("check"), [
@@ -130,6 +144,19 @@ class WorkspaceTests(unittest.TestCase):
         config = json.loads((WORKSPACE / "desktop" / "tauri.conf.json").read_text(encoding="utf-8"))
         self.assertEqual(config.get("version"), "gen/version.json")
 
+    def test_single_instance_starts_one_launcher_for_every_prerelease(self):
+        # The single-instance plugin's semver feature adds the version to the name a running
+        # launcher registers, a name of its own for every prerelease: a launcher of 1.0.0-beta.1
+        # would then open a second window beside one of 1.0.0-beta instead of handing its start
+        # over. The lock is resolved with every feature of every workspace crate, so the semver
+        # dependency the feature brings shows there whichever manifest turns it on; the plugin's
+        # tauri dependency shows that its list was read.
+        locked = locked_dependencies("tauri-plugin-single-instance")
+        self.assertTrue(locked)
+        for names in locked:
+            self.assertIn("tauri", names)
+            self.assertNotIn("semver", names)
+
 
 class RunTests(unittest.TestCase):
     def run_main(self, argv, codes):
@@ -212,13 +239,13 @@ class SignalTreeTests(unittest.TestCase):
                   "import launcher\n"
                   "launcher.stop_on_signals()\n"
                   f"launcher.run([sys.executable, '-c', {cargo!r}], dict(os.environ))\n")
-        process = subprocess.Popen([sys.executable, "-c", runner], stdout=subprocess.PIPE,
-                                   stderr=subprocess.DEVNULL, text=True)
-        rustc = int(process.stdout.readline())
-        self.assertTrue(listed(rustc, True))
-        process.send_signal(signal.SIGTERM)
-        process.wait(timeout=10)
-        self.assertFalse(listed(rustc, False))
+        with subprocess.Popen([sys.executable, "-c", runner], stdout=subprocess.PIPE,
+                              stderr=subprocess.DEVNULL, text=True) as process:
+            rustc = int(process.stdout.readline())
+            self.assertTrue(listed(rustc, True))
+            process.send_signal(signal.SIGTERM)
+            process.wait(timeout=10)
+            self.assertFalse(listed(rustc, False))
 
 
 if __name__ == "__main__":
