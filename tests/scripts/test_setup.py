@@ -86,9 +86,9 @@ class HookTests(unittest.TestCase):
 
 class LauncherSetupTests(unittest.TestCase):
     def test_every_manager_lists_the_window_packages(self):
-        expected = {"apt-get": {"libwebkit2gtk-4.1-dev", "librsvg2-dev", "xvfb"},
-                    "dnf": {"webkit2gtk4.1-devel", "librsvg2-devel", "xorg-x11-server-Xvfb"},
-                    "pacman": {"webkit2gtk-4.1", "librsvg", "xorg-server-xvfb"}}
+        expected = {"apt-get": {"libwebkit2gtk-4.1-dev", "xvfb"},
+                    "dnf": {"webkit2gtk4.1-devel", "xorg-x11-server-Xvfb"},
+                    "pacman": {"webkit2gtk-4.1", "xorg-server-xvfb"}}
         for manager, packages in setup.PACKAGES.items():
             with self.subTest(manager=manager):
                 self.assertTrue(expected[manager] <= set(packages["launcher"]))
