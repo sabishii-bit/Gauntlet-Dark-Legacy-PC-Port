@@ -34,6 +34,9 @@ void TowerCeremonies::open(const Scene& scene, const MessageTable& hudStrings,
     }
     m_relics.begin(collection, scrollStrings, beaten);
     m_relics.bind(scene.device, scene.world, centre);
+    if (m_promotion.active()) {
+        m_relics.followPromotions();
+    }
     // If another party member has already installed a piece, nobody needs to
     // replay it. The acquisition itself remains in each character's save.
     for (auto& runtime : scene.players) {

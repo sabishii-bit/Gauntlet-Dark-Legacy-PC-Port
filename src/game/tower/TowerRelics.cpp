@@ -73,6 +73,9 @@ constexpr f32 kPlacementHold = 2;
 // pane's strike (S_STNDGLASS) as that count drops under 250, 91 ticks in, whatever the
 // effect's own length (tower.c, AudioTowerFX; both cameras' variants read 300 in the DOL).
 constexpr f32 kStrikeSeconds = 91.0f / 60.0f;
+/** Sumner's three speech camera banks, each a camera per event marker: promotion, window
+ * shard, runestone. */
+constexpr std::array<u32, 3> kSpeechCameras{240, 220, 170};
 std::optional<WorldCamera> cameraAt(const WorldLayout& layout, u32 id) {
     if (const auto* marker = layout.findLocator(LocatorKind::TriggerCamera, id)) {
         WorldCamera camera;
@@ -276,16 +279,14 @@ void TowerRelics::prepareSpeech() {
     if (!active() || m_world == nullptr || m_device == nullptr) {
         return;
     }
-    // Three camera banks: promotion, window shard, runestone. Missing special
-    // views fall back through the lower banks, just like the authored lookup.
-    const std::array<u32, 3> bases{240, 220, 170};
+    // Missing special views fall back through the lower banks, just like the authored lookup.
     const bool rune = current()->kind == Kind::Rune ||
                       (current()->kind == Kind::Followup &&
                        current()->followup() >= TowerCompletion::Kind::TwelveWaiting);
     s32 bank = rune ? 2 : 1;
     do {
-        m_sim.speechCamera =
-            cameraAt(m_world->layout(), bases[static_cast<usize>(bank)] + m_sim.wizardMarker);
+        m_sim.speechCamera = cameraAt(m_world->layout(), kSpeechCameras[static_cast<usize>(bank)] +
+                                                             m_sim.wizardMarker);
     } while (!m_sim.speechCamera && --bank >= 0);
     m_sim.placementCamera = cameraAt(m_world->layout(), current()->camera());
     EffectTrees::Setting setting;
@@ -295,6 +296,15 @@ void TowerRelics::prepareSpeech() {
     setting.depthWrite = false;
     setting.additive = true;
     m_wizard.startSet(*m_device, m_world->items(), "WIZARD", m_sim.wizardPosition, setting);
+}
+void TowerRelics::followPromotions() {
+    if (!active() || m_sim.phase != Phase::Speech || m_world == nullptr) {
+        return;
+    }
+    if (const auto camera = cameraAt(m_world->layout(), kSpeechCameras[0] + m_sim.wizardMarker)) {
+        m_sim.speechCamera = camera;
+    }
+    m_sim.ticks = 0;
 }
 void TowerRelics::prepareEntry() {
     prepareSpeech();

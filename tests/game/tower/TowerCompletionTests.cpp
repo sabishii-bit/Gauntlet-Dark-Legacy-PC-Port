@@ -520,28 +520,42 @@ TEST_CASE("back from the fortress without the thirteenth runestone Sumner says s
     REQUIRE(scene.towerRelics().active());
     REQUIRE(scene.towerRelics().current()->kind == TowerRelics::Kind::Followup);
     REQUIRE(scene.towerRelics().current()->followup() == Kind::ThirteenMissing);
-    // Sumner speaks to the battlefield's wing from its rune camera (its event marker is 11).
-    const auto* camera = world.layout().findLocator(LocatorKind::TriggerCamera, 181);
+    // The promotion opened Sumner's speaking and ended none of it, so he goes on to the
+    // battlefield's wing from the promotion's camera (its event marker is 11), not the
+    // runestone bank's 181, and at once, the promotion having spent the speech's lead.
+    const auto* camera = world.layout().findLocator(LocatorKind::TriggerCamera, 251);
     REQUIRE(camera != nullptr);
     const Vec3 position = scene.actor(0)->position();
     PlayScene::Inputs inputs{};
     inputs[0].move = MoveInput{Vec2{1, 0}, 1};
     bool spoken = false;
     s32 frames = 0;
+    s32 promotionOver = -1;
+    s32 firstWords = -1;
     while (scene.towerRelics().active() && frames++ < 6000) {
         REQUIRE_FALSE(scene.canPause(0));
         REQUIRE_FALSE(scene.canJoin(1));
         scene.update(step, inputs);
         REQUIRE(scene.actor(0)->position() == position);
+        if (promotionOver < 0 && !scene.promotion().active()) {
+            promotionOver = frames;
+        }
         if (scene.showingRelicCeremony()) {
             REQUIRE_FALSE(scene.promotion().active());
             CHECK(scene.viewCamera().position == camera->position);
+            if (firstWords < 0 && scene.towerRelics().captionLetters() > 0) {
+                firstWords = frames;
+            }
             spoken =
                 spoken || scene.towerRelics().caption() == "You did not find the 13th Runestone.";
         }
     }
     REQUIRE(frames < 6000);
     CHECK(spoken);
+    REQUIRE(promotionOver >= 0);
+    REQUIRE(firstWords >= promotionOver);
+    // Its words begin within a few ticks, not after the two seconds of a fresh lead.
+    CHECK(static_cast<f64>(firstWords - promotionOver) * step < 0.25);
     CHECK(scene.canPause(0));
     const auto saved = scene.party();
     CHECK(saved[0].save.progress().promotedLevel == 30);
