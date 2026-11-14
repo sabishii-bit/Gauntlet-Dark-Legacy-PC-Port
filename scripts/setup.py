@@ -6,6 +6,7 @@
     python scripts/setup.py --yes       # install without asking
     python scripts/setup.py --test      # ... and run the unit tests afterwards
     python scripts/setup.py --tooling   # also want the LLVM tooling (clangd, clang-tidy, clang-format)
+    python scripts/setup.py --launcher  # also want the launcher's Rust toolchain and window packages
     python scripts/setup.py --no-build  # stop once the tools are in place
     python scripts/setup.py --hooks     # only install the git hooks (pre-push lint)
 
@@ -226,6 +227,7 @@ PACKAGES = {
                   "libvulkan1", "mesa-vulkan-drivers", "autoconf", "autoconf-archive",
                   "automake", "libtool"],
         "tooling": ["clangd", "clang-format", "clang-tidy"],
+        "launcher": ["libwebkit2gtk-4.1-dev", "librsvg2-dev", "pkg-config", "xvfb"],
         "install": ["sudo", "apt-get", "install", "-y"],
         "refresh": ["sudo", "apt-get", "update"],
     },
@@ -236,6 +238,8 @@ PACKAGES = {
                   "vulkan-loader", "vulkan-loader-devel", "mesa-vulkan-drivers", "autoconf",
                   "autoconf-archive", "automake", "libtool"],
         "tooling": ["clang", "clang-tools-extra"],
+        "launcher": ["webkit2gtk4.1-devel", "librsvg2-devel", "pkgconf-pkg-config",
+                     "xorg-x11-server-Xvfb"],
         "install": ["sudo", "dnf", "install", "-y"],
         "refresh": [],
     },
@@ -245,6 +249,7 @@ PACKAGES = {
                   "wayland", "mesa", "vulkan-icd-loader", "vulkan-headers", "autoconf",
                   "autoconf-archive", "automake", "libtool"],
         "tooling": ["clang"],
+        "launcher": ["webkit2gtk-4.1", "librsvg", "pkgconf", "xorg-server-xvfb"],
         "install": ["sudo", "pacman", "-S", "--needed", "--noconfirm"],
         "refresh": ["sudo", "pacman", "-Sy"],
     },
@@ -345,15 +350,104 @@ def check_linux(report: Report, tooling: bool) -> None:
                                optional=True))
 
 
+# --- the launcher (--launcher) ---------------------------------------------------------------
+
+LAUNCHER = ROOT / "src" / "launcher"
+WEBVIEW2_CLIENT = r"Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
+
+
+def launcher_toolchain() -> str:
+    """The Rust toolchain the launcher's workspace pins in its rust-toolchain.toml."""
+    text = (LAUNCHER / "rust-toolchain.toml").read_text(encoding="utf-8")
+    match = re.search(r'^channel\s*=\s*"([^"]+)"', text, re.MULTILINE)
+    if not match:
+        sys.exit(f"{LAUNCHER / 'rust-toolchain.toml'} names no channel")
+    return match.group(1)
+
+
+def rustup() -> Optional[str]:
+    return program("rustup", devenv.rust_bin())
+
+
+def rust_toolchain_ready(channel: str) -> Optional[str]:
+    """Which rustup holds `channel` with rustfmt and clippy, or None while any is missing."""
+    tool = rustup()
+    if tool is None:
+        return None
+    toolchains = output([tool, "toolchain", "list"]).split()
+    if not any(name.startswith(f"{channel}-") for name in toolchains):
+        return None
+    components = output([tool, "component", "list", "--installed", "--toolchain", channel]).split()
+    if not all(any(line.startswith(f"{part}-") for line in components)
+               for part in ("rustfmt", "clippy")):
+        return None
+    return f"{tool} ({channel})"
+
+
+def install_rust_toolchain() -> None:
+    """Installs rustup when it is missing, then the pinned toolchain with rustfmt and clippy."""
+    if rustup() is None:
+        if WINDOWS:
+            winget_install("Rustlang.Rustup")()
+        elif package_manager() in ("apt-get", "pacman"):
+            package_install(["rustup"])()
+        else:
+            sys.exit("install rustup from https://rustup.rs, then run this again")
+    tool = rustup()
+    if tool is None:
+        sys.exit("rustup is installed but not on PATH yet; open a new shell and run this again")
+    # A distribution's packaged rustup cannot update itself and fails the install when it tries.
+    run([tool, "toolchain", "install", "--no-self-update", launcher_toolchain(),
+         "--profile", "minimal", "--component", "rustfmt", "--component", "clippy"])
+
+
+def webview2_version() -> Optional[str]:
+    """The WebView2 runtime's version from the pv value Microsoft documents, or None."""
+    if not WINDOWS:
+        return None
+    import winreg  # Windows only
+    for hive, prefix in ((winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node"),
+                         (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE"),
+                         (winreg.HKEY_CURRENT_USER, r"Software")):
+        try:
+            with winreg.OpenKey(hive, f"{prefix}\\{WEBVIEW2_CLIENT}") as key:
+                value, _ = winreg.QueryValueEx(key, "pv")
+        except OSError:
+            continue
+        if value and value != "0.0.0.0":
+            return str(value)
+    return None
+
+
+def check_launcher(report: Report) -> None:
+    channel = launcher_toolchain()
+    report.add(Requirement(f"Rust {channel} (rustfmt, clippy)", rust_toolchain_ready(channel),
+                           install_rust_toolchain))
+    if WINDOWS:
+        report.add(Requirement("WebView2 runtime", webview2_version(), optional=True,
+                               advice="install Microsoft's Evergreen WebView2 Runtime "
+                                      "(Windows 11 already has it)"))
+        return
+    manager = package_manager()
+    if manager:
+        names = PACKAGES[manager]["launcher"]
+        missing = missing_packages(manager, names)
+        report.add(Requirement("Launcher window packages", None if missing else "installed",
+                               package_install(names),
+                               advice="missing packages: " + ", ".join(missing)))
+
+
 # --- putting it together -----------------------------------------------------------------------
 
-def gather(tooling: bool) -> Report:
+def gather(tooling: bool, launcher: bool = False) -> Report:
     report = Report()
     check_common(report)
     if WINDOWS:
         check_windows(report, tooling)
     else:
         check_linux(report, tooling)
+    if launcher:
+        check_launcher(report)
     return report
 
 
@@ -371,7 +465,8 @@ def fix_key(fix: Callable[[], None]) -> tuple:
             tuple(str(cell.cell_contents) for cell in cells))
 
 
-def install_missing(report: Report, yes: bool) -> bool:
+def install_missing(report: Report, yes: bool, tooling: bool = False,
+                    launcher: bool = False) -> bool:
     """Runs each missing item's fix (once per distinct fix); false when something still lacks."""
     done = set()
     for item in report.missing():
@@ -385,7 +480,7 @@ def install_missing(report: Report, yes: bool) -> bool:
             continue
         item.fix()
         done.add(key)
-    after = gather(tooling=any(item.optional for item in report.items))
+    after = gather(tooling, launcher)
     print("\nAfter installing:")
     after.show()
     return not [item for item in after.missing() if not item.optional]
@@ -433,6 +528,8 @@ def main() -> int:
     parser.add_argument("--check", action="store_true", help="report only; install nothing")
     parser.add_argument("--yes", action="store_true", help="install without asking")
     parser.add_argument("--tooling", action="store_true", help="also want the LLVM editor tooling")
+    parser.add_argument("--launcher", action="store_true",
+                        help="also want the launcher's Rust toolchain and window packages")
     parser.add_argument("--no-build", action="store_true", help="stop once the tools are in place")
     parser.add_argument("--test", action="store_true", help="run the unit tests after building")
     parser.add_argument("--hooks", action="store_true", help="only install the git hooks")
@@ -440,7 +537,7 @@ def main() -> int:
     if args.hooks:
         return 0 if install_hooks() else 1
 
-    report = gather(args.tooling)
+    report = gather(args.tooling, args.launcher)
     print(f"Tools for building under {ROOT} ({'Windows' if WINDOWS else 'Linux'}):")
     report.show()
     required_missing = [item for item in report.missing() if not item.optional]
@@ -448,7 +545,7 @@ def main() -> int:
         return 1 if required_missing else 0
     if report.missing():
         print()
-        if not install_missing(report, args.yes):
+        if not install_missing(report, args.yes, args.tooling, args.launcher):
             print("\nSomething is still missing; see the advice above, then run this again.")
             return 1
     install_hooks()

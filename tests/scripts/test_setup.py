@@ -84,5 +84,82 @@ class HookTests(unittest.TestCase):
             self.assertTrue(setup.install_hooks(root, out=messages.append))
 
 
+class LauncherSetupTests(unittest.TestCase):
+    def test_every_manager_lists_the_window_packages(self):
+        expected = {"apt-get": {"libwebkit2gtk-4.1-dev", "librsvg2-dev", "xvfb"},
+                    "dnf": {"webkit2gtk4.1-devel", "librsvg2-devel", "xorg-x11-server-Xvfb"},
+                    "pacman": {"webkit2gtk-4.1", "librsvg", "xorg-server-xvfb"}}
+        for manager, packages in setup.PACKAGES.items():
+            with self.subTest(manager=manager):
+                self.assertTrue(expected[manager] <= set(packages["launcher"]))
+
+    def test_the_toolchain_is_the_one_the_workspace_pins(self):
+        pin = (setup.LAUNCHER / "rust-toolchain.toml").read_text(encoding="utf-8")
+        self.assertIn(f'channel = "{setup.launcher_toolchain()}"', pin)
+
+    def test_the_toolchain_is_ready_only_with_rustfmt_and_clippy(self):
+        listing = "stable-x86_64-pc-windows-msvc (default)\n1.98.0-x86_64-pc-windows-msvc\n"
+        both = "cargo-x86_64-pc-windows-msvc\nclippy-x86_64-pc-windows-msvc\n" \
+               "rustfmt-x86_64-pc-windows-msvc\n"
+        without_clippy = "cargo-x86_64-pc-windows-msvc\nrustfmt-x86_64-pc-windows-msvc\n"
+        with mock.patch.object(setup, "rustup", return_value="rustup"):
+            with mock.patch.object(setup, "output", side_effect=[listing, both]):
+                self.assertEqual(setup.rust_toolchain_ready("1.98.0"), "rustup (1.98.0)")
+            with mock.patch.object(setup, "output", side_effect=[listing, without_clippy]):
+                self.assertIsNone(setup.rust_toolchain_ready("1.98.0"))
+            with mock.patch.object(setup, "output", return_value="stable-x86_64 (default)\n"):
+                self.assertIsNone(setup.rust_toolchain_ready("1.98.0"))
+        with mock.patch.object(setup, "rustup", return_value=None):
+            self.assertIsNone(setup.rust_toolchain_ready("1.98.0"))
+
+    def test_the_toolchain_installs_minimal_with_rustfmt_and_clippy(self):
+        with mock.patch.object(setup, "rustup", return_value="rustup"), \
+                mock.patch.object(setup, "run") as run:
+            setup.install_rust_toolchain()
+        run.assert_called_once_with(["rustup", "toolchain", "install", "--no-self-update",
+                                     setup.launcher_toolchain(), "--profile", "minimal",
+                                     "--component", "rustfmt", "--component", "clippy"])
+
+    def test_rustup_is_looked_for_where_rustup_keeps_it_first(self):
+        with mock.patch.object(setup.devenv, "rust_bin", return_value=pathlib.Path("cargo-bin")), \
+                mock.patch.object(setup, "program", return_value="found") as program:
+            self.assertEqual(setup.rustup(), "found")
+        program.assert_called_once_with("rustup", pathlib.Path("cargo-bin"))
+
+    def test_webview2_is_only_advised_on_windows(self):
+        with mock.patch.object(setup, "WINDOWS", True), \
+                mock.patch.object(setup, "rust_toolchain_ready", return_value="rustup (1.98.0)"), \
+                mock.patch.object(setup, "webview2_version", return_value=None):
+            report = setup.Report()
+            setup.check_launcher(report)
+        missing = report.missing()
+        self.assertEqual([item.name for item in missing], ["WebView2 runtime"])
+        self.assertTrue(missing[0].optional)
+        self.assertIsNone(missing[0].fix)
+
+    def test_missing_window_packages_are_named_and_installed_together_on_linux(self):
+        with mock.patch.object(setup, "WINDOWS", False), \
+                mock.patch.object(setup, "rust_toolchain_ready", return_value="rustup (1.98.0)"), \
+                mock.patch.object(setup, "package_manager", return_value="apt-get"), \
+                mock.patch.object(setup, "missing_packages", return_value=["xvfb"]), \
+                mock.patch.object(setup, "package_install") as install:
+            report = setup.Report()
+            setup.check_launcher(report)
+        missing = report.missing()
+        self.assertEqual([item.name for item in missing], ["Launcher window packages"])
+        self.assertIn("xvfb", missing[0].advice)
+        install.assert_called_once_with(setup.PACKAGES["apt-get"]["launcher"])
+
+    def test_launcher_checks_join_the_report_only_when_asked(self):
+        with mock.patch.object(setup, "check_common"), \
+                mock.patch.object(setup, "check_windows"), \
+                mock.patch.object(setup, "check_linux"), \
+                mock.patch.object(setup, "check_launcher") as launcher:
+            setup.gather(tooling=False)
+            launcher.assert_not_called()
+            setup.gather(tooling=False, launcher=True)
+            launcher.assert_called_once()
+
+
 if __name__ == "__main__":
     unittest.main()
