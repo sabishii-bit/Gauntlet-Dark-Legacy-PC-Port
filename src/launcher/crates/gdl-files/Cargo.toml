@@ -9,6 +9,7 @@ publish.workspace = true
 
 [dependencies]
 tempfile.workspace = true
+thiserror.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 windows-sys.workspace = true
