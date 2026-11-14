@@ -353,6 +353,7 @@ add_executable(tests
     game/audio/LevelSoundscapeTests.cpp
     game/audio/VoiceQueueTests.cpp
     game/tower/HintMenuTests.cpp
+    game/level/CodePlacedSpecialsTests.cpp
     game/level/PlacedItemsTests.cpp
     game/level/SpawnedObjectsTests.cpp
     game/audio/AmbientSoundsTests.cpp

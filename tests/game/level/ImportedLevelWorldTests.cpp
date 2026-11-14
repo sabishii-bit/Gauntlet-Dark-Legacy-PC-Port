@@ -209,4 +209,17 @@ TEST_CASE("Imported levels keep common character powerup assets available",
     CHECK(world.placedItems().size() == 0);
     CHECK(world.layout().itemInfos().empty());
 }
+
+TEST_CASE("Imported levels take none of the specials the original's code stands in its own",
+          "[legends][imported-level][code-specials][assets]") {
+    const auto root = test::assetOrSkip("POWERUPS").parent_path();
+    test::FakeRenderDevice device;
+    // Even named as the Ancient Tree, whose rows stand two Mikeys.
+    LevelRef level = importedRef();
+    level.name = "D3";
+    LevelWorld world;
+    REQUIRE(world.loadImported(device, root, level, importedLayout(), importedCollision(),
+                               std::make_shared<ImportedPresentation>()));
+    CHECK(world.placedItems().size() == 0);
+}
 } // namespace

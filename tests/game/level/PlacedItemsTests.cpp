@@ -2,8 +2,10 @@
 #include <array>
 #include <cmath>
 #include <filesystem>
+#include <map>
 #include <optional>
 #include <set>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -24,8 +26,11 @@
 #include "TestSupport.h"
 #include "fixtures/NativeModelFixture.h"
 #include "game/app/Scenario.h"
+#include "game/combat/PowerupFlags.h"
 #include "game/level/Chests.h"
+#include "game/level/CodePlacedSpecials.h"
 #include "game/level/ItemFigure.h"
+#include "game/level/ItemSupport.h"
 #include "game/level/LevelCatalog.h"
 #include "game/level/LevelWorld.h"
 #include "game/level/PlacedItems.h"
@@ -1713,6 +1718,139 @@ TEST_CASE("gem bursts keep their field entries until the last collection effect 
     CHECK(retained);
     CHECK(fixture.items.effectCount() == 0);
     CHECK(fixture.items.bursts().size() == 0);
+}
+
+TEST_CASE("the Ancient Tree's Mikeys stand where the original's code puts them, one on a stump",
+          "[placed-items][code-specials][assets]") {
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELD3/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("POWERUPS/ANIM.PS2");
+    test::FakeRenderDevice device;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto level = catalog.byName("D3");
+    REQUIRE(level);
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *level));
+    PlacedItems& items = world.placedItems();
+    const WorldCollision& collision = world.collision();
+    // Its two rows, after the level's own pickups and no other level's.
+    REQUIRE(items.size() >= 2);
+    const usize first = items.size() - 2;
+    for (usize index = 0; index < first; ++index) {
+        CAPTURE(index, items.item(index).name);
+        REQUIRE(items.item(index).instance >= 0);
+    }
+    for (usize row = 0; row < 2; ++row) {
+        const CodePlacedSpecial& special = codePlacedSpecials()[16 + row];
+        const PlacedItems::Item& mikey = items.item(first + row);
+        CAPTURE(row, mikey.position.x, mikey.position.y, mikey.position.z);
+        CHECK(mikey.name == "MIKEYPUP");
+        CHECK(mikey.instance == -1);
+        CHECK(mikey.subtype == powerup::kSpecial);
+        CHECK(mikey.flags == powerup::kMikey);
+        CHECK(mikey.strength == 30.0f);
+        CHECK(mikey.radius == 0.5f);
+        CHECK(mikey.height == 2.0f);
+        CHECK(mikey.minPlayers == 0);
+        CHECK(mikey.visible);
+        CHECK(mikey.position.x == Approx(special.position.x));
+        CHECK(mikey.position.z == Approx(special.position.z));
+    }
+    // The pumpkin of the GameCube shot rides the moving stump it was stood on.
+    const PlacedItems::Item& onStump = items.item(first);
+    REQUIRE(onStump.floor);
+    CHECK(world.layout().objects().at(static_cast<usize>(onStump.floor->object)).name ==
+          "D3FLOOR_SMA#10");
+    CHECK(collision.moving(onStump.floor->object));
+    const auto stump = collision.objectTransform(onStump.floor->object);
+    REQUIRE(stump);
+    CHECK(glm::distance(Vec3{(*stump * onStump.floor->local)[3]}, onStump.position) < 0.001f);
+    // The other stands a tenth over the still floor under its row.
+    const PlacedItems::Item& still = items.item(first + 1);
+    const auto floor =
+        collision.restingFloorAt(codePlacedSpecials()[17].position, PlacedItems::kFloorReachAbove,
+                                 PlacedItems::kFloorReachBelow, 1);
+    REQUIRE(floor);
+    CHECK_FALSE(collision.moving(floor->object));
+    CHECK(still.position.y == Approx(floor->y + PlacedItems::kFloorLift));
+    // Out of reach for its first 60 ticks, then the Mikey to take.
+    items.setPlayerCount(1);
+    Collector on;
+    on.position = still.position;
+    CHECK(items.collect(device, std::array{on}).empty());
+    items.update(1.0f);
+    const std::vector<Pickup> pickups = items.collect(device, std::array{on});
+    REQUIRE(pickups.size() == 1);
+    CHECK(pickups[0].item == first + 1);
+    CHECK(pickups[0].subtype == powerup::kSpecial);
+    CHECK(pickups[0].flags == powerup::kMikey);
+    CHECK(pickups[0].strength == 30.0f);
+}
+
+TEST_CASE("every special the original's code places stands as its rows put it in its level",
+          "[placed-items][code-specials][assets]") {
+    // How many of each level's rows find no floor in FloorPos's reach, and so stay where the
+    // row says. The table files the sky levels' rows one along (K4's fit K1, K3's K4, K2's
+    // K3) and J6's under J4, and A3's, A4's, B3's, D2's and D1's Mikey fit no level at all.
+    const std::map<std::string, usize> floorless{{"A3", 1}, {"A4", 1}, {"B3", 1}, {"D1", 1},
+                                                 {"D2", 2}, {"J4", 2}, {"K1", 1}, {"K2", 1},
+                                                 {"K3", 1}, {"K4", 2}};
+    const std::string code =
+        GENERATE("G3", "B3", "B4", "B5", "A1", "A3", "A4", "K1", "K2", "K3", "K4", "D1", "D2", "D3",
+                 "D4", "C1", "C3", "C4", "I1", "I2", "I4", "J1", "J2", "J3", "J4");
+    CAPTURE(code);
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELD3/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("POWERUPS/ANIM.PS2");
+    test::FakeRenderDevice device;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto level = catalog.byName(code);
+    REQUIRE(level);
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *level));
+    std::vector<CodePlacedSpecial> rows;
+    for (const CodePlacedSpecial& special : codePlacedSpecials()) {
+        if (inLevel(code, special.level)) {
+            rows.push_back(special);
+        }
+    }
+    REQUIRE_FALSE(rows.empty());
+    const PlacedItems& items = world.placedItems();
+    REQUIRE(items.size() >= rows.size());
+    const usize first = items.size() - rows.size();
+    const WorldCollision& collision = world.collision();
+    const auto restPose = itemSupportWorld(world.layout(), &collision);
+    usize unsupported = 0;
+    for (usize row = 0; row < rows.size(); ++row) {
+        const CodePlacedSpecial& special = rows[row];
+        const PlacedItems::Item& item = items.item(first + row);
+        CAPTURE(row, special.name, item.position.x, item.position.y, item.position.z);
+        CHECK(item.name == special.name);
+        CHECK(item.flags == special.flag);
+        const auto* support =
+            itemSupportAt(special.position, &collision, restPose ? &*restPose : nullptr);
+        REQUIRE(support);
+        const auto floor = support->restingFloorAt(special.position, PlacedItems::kFloorReachAbove,
+                                                   PlacedItems::kFloorReachBelow, 1);
+        if (!floor) {
+            ++unsupported;
+            CHECK_FALSE(item.floor);
+            CHECK(item.position == special.position);
+            continue;
+        }
+        // A tenth over the floor FloorPos finds, riding it when it moves.
+        CAPTURE(floor->object, floor->y);
+        if (collision.moving(floor->object)) {
+            REQUIRE(item.floor);
+            CHECK(item.floor->object == floor->object);
+        } else {
+            CHECK(item.position.y == Approx(floor->y + PlacedItems::kFloorLift));
+        }
+    }
+    const auto expected = floorless.find(code);
+    CHECK(unsupported == (expected == floorless.end() ? 0 : expected->second));
 }
 
 } // namespace

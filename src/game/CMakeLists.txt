@@ -377,6 +377,8 @@ add_library(game STATIC
     effects/ThermalTextures.h
     effects/DynamicLights.cpp
     effects/EffectTrees.cpp
+    level/CodePlacedSpecials.h
+    level/CodePlacedSpecials.cpp
     level/PlacedItems.h
     level/PlacedItems.cpp
     level/SpawnedObjects.h

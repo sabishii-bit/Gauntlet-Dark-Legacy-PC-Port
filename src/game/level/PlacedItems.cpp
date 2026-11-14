@@ -10,6 +10,7 @@
 
 #include "game/effects/ThermalTextures.h"
 #include "game/level/Chests.h"
+#include "game/level/CodePlacedSpecials.h"
 #include "game/level/ItemFigure.h"
 #include "game/level/ItemSupport.h"
 #include "game/level/NativeStateResources.h"
@@ -19,6 +20,8 @@ namespace gdl::game {
 namespace {
 // External relocations larger than a normal pickup/platform tick are visual cuts.
 constexpr f32 kPresentationCutDistance = 32.0f;
+// AppendItemToLevel holds a special it stands out of reach for 60 ticks.
+constexpr f32 kSpecialNoGrabSeconds = 1.0f;
 
 Mat4 blendPlacement(const Mat4& previous, const Mat4& current, f32 blend) {
     Mat3 from{previous};
@@ -232,7 +235,8 @@ s32 PlacedItems::Item::realm() const {
 }
 
 bool PlacedItems::bind(RenderDevice& device, const WorldLayout& layout,
-                       const WorldCollision* collision, std::span<ItemArchive* const> archives) {
+                       const WorldCollision* collision, std::span<ItemArchive* const> archives,
+                       std::string_view level) {
     clear();
     m_layout = &layout;
     m_collision = collision;
@@ -325,8 +329,52 @@ bool PlacedItems::bind(RenderDevice& device, const WorldLayout& layout,
         item.visible = item.shownTo(m_sim.players);
         m_sim.items.push_back(std::move(item));
     }
+    // InitWorld ends by standing the specials of the level's rows, after its own items, so
+    // their indices and the rollback's bindings to them stay put.
+    for (const CodePlacedSpecial& special : codePlacedSpecials()) {
+        if (!inLevel(level, special.level)) {
+            continue;
+        }
+        Item item;
+        const s32 record = specialRecord(special);
+        setRecord(item, m_infos[static_cast<usize>(record)], record, 0);
+        if (!makeFigure(device, item)) {
+            log::warn("Placed items: no archive holds {}", item.name);
+            continue;
+        }
+        item.position = special.position;
+        item.transform = itemPlacement(item.position, Vec3{0.0f, 0.0f, 0.0f});
+        restOnFloor(
+            item,
+            itemSupportAt(special.position, collision, restCollision ? &*restCollision : nullptr),
+            kFloorLift);
+        item.noGrabSeconds = kSpecialNoGrabSeconds;
+        item.visible = item.shownTo(m_sim.players);
+        m_sim.items.push_back(std::move(item));
+    }
     syncFloors();
     return !m_sim.items.empty();
+}
+
+/** AppendItemToLevel's (0x8007ECB0) record: a special powerup half a unit across and two
+ * high with collision 1, no armour, active type 16 and on for 30, its flag the special. */
+s32 PlacedItems::specialRecord(const CodePlacedSpecial& special) {
+    if (const auto record = recordOf(special.name)) {
+        return *record;
+    }
+    ItemInfo info;
+    info.type = ItemInfo::kPowerup;
+    info.subtype = static_cast<s32>(ItemKind::SpecialPowerup);
+    info.name = special.name;
+    info.collisionType = 1;
+    info.radius = .5f;
+    info.height = 2;
+    info.properties = special.flag;
+    info.armor = -1;
+    info.activeType = 16;
+    info.activeOn = 30;
+    m_infos.push_back(std::move(info));
+    return static_cast<s32>(m_infos.size() - 1);
 }
 
 void PlacedItems::restOnFloor(Item& item, const WorldCollision* collision, f32 lift) {

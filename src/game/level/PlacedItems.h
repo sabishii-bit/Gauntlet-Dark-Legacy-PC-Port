@@ -29,6 +29,7 @@
 
 namespace gdl::game {
 class NativeStateResources;
+struct CodePlacedSpecial;
 
 /** A character who can pick things up: where they stand and how big they are. */
 struct Collector {
@@ -212,10 +213,11 @@ public:
     bool appendLocalDigest(NativeStateDigest& digest, const LocalSnapshot& saved) const;
     bool registerNativeResources(NativeStateResources& resources) const;
 
-    /** Stands every powerup instance of the layout whose figure an archive holds; false
-     * when none could be placed. The collision, when given, sets their height. */
+    /** Stands every powerup instance of the layout whose figure an archive holds, then the
+     * specials the original's code adds to the level named `level` (codePlacedSpecials);
+     * false when none could be placed. The collision, when given, sets their height. */
     bool bind(RenderDevice& device, const WorldLayout& layout, const WorldCollision* collision,
-              std::span<ItemArchive* const> archives);
+              std::span<ItemArchive* const> archives, std::string_view level = {});
     void clear();
     usize size() const { return m_sim.items.size(); }
     const Item& item(usize index) const { return m_sim.items[index]; }
@@ -382,6 +384,8 @@ private:
     /** Builds the figure of an item named `name`; false when no archive holds it. */
     bool makeFigure(RenderDevice& device, Item& item);
     std::optional<s32> recordOf(std::string_view name) const;
+    /** The record of a code-placed special's kind, added the first time one stands. */
+    s32 specialRecord(const CodePlacedSpecial& special);
     static void setRecord(Item& item, const ItemInfo& info, s32 record, s32 amount);
     static void placeAt(Item& item, const Vec3& position, const WorldCollision* collision);
     static void throwFrom(Item& item, const Vec3& position, const Vec3& velocity,

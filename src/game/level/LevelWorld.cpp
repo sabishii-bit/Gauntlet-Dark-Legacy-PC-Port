@@ -353,7 +353,7 @@ bool LevelWorld::load(RenderDevice& device, const std::filesystem::path& unpacke
     }
     const std::array<ItemArchive*, 2> archives{&items(), &m_powerups};
     if (!m_placedItems.bind(device, m_layout, m_collision.loaded() ? &m_collision : nullptr,
-                            archives)) {
+                            archives, m_ref.name)) {
         log::warn("Level: none of the level's pickups could be placed");
     }
     // Initial pickup placement probes world floors, not breakable-item roofs. Append
