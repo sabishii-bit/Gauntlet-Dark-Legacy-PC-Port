@@ -153,6 +153,42 @@ jobs:
           path: build/netplay/network-test-*/**/*.log
           if-no-files-found: warn
 
+  # The launcher's cargo workspace under src/launcher: formatting, clippy and its crates'
+  # tests. Only the crate registries are cached; its build is too large to share the cache
+  # with vcpkg and the lint shards, so it builds from scratch with line tables only and no
+  # incremental state, neither of which anything here reads.
+  launcher:
+    name: Launcher (${{ matrix.os }})
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-24.04]
+    env:
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
+      CARGO_INCREMENTAL: "0"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Cache the launcher's crates
+        uses: actions/cache@v4
+        with:
+          path: |
+            build/cargo-home/registry/index
+            build/cargo-home/registry/cache
+            build/cargo-home/git/db
+          key: launcher-${{ runner.os }}-${{ hashFiles('src/launcher/Cargo.lock') }}
+          restore-keys: launcher-${{ runner.os }}-
+      - name: Tools
+        run: python scripts/setup.py --yes --no-build --launcher
+      - name: Formatting, clippy and tests
+        run: python scripts/launcher.py check
+
   # Every unit under the full profile, in eight shards, each starting from the clean
   # results its predecessor saved: a push re-lints only what it reached. The cache is
   # saved whatever the outcome, so a failing shard still keeps the units it cleared.
