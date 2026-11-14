@@ -464,8 +464,9 @@ struct ResidentTower {
         auto layout =
             WorldLayout::fromDecoded({}, {{.kind = LocatorKind::Start, .position = {0, 0, 0}}},
                                      {-100, 0, -100}, {100, 40, 100});
-        REQUIRE(world.loadImported(device, root, ref, std::move(layout), std::move(collision),
-                                   resident));
+        const bool loaded = world.loadImported(device, root, ref, std::move(layout),
+                                               std::move(collision), resident);
+        REQUIRE(loaded);
         context.config = &config;
         context.strings = &strings;
         context.assets = &assets;

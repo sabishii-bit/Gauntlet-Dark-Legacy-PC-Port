@@ -1,6 +1,5 @@
 #include "expansions/shared/app/LegendsGateways.h"
 
-#include <algorithm>
 #include <array>
 #include <exception>
 #include <optional>
@@ -89,18 +88,18 @@ std::optional<LegendsGatewayTower>
 legendsGatewayTower(u8 world, const std::filesystem::path& assetRoot,
                     const std::filesystem::path& executableDirectory,
                     const std::filesystem::path& workingDirectory) {
-    const auto gateway = std::ranges::find_if(kGateways, [world](const LegendsGateway& offered) {
-        return static_cast<u8>(offered.platform) == world;
-    });
-    if (gateway == kGateways.end()) {
-        return std::nullopt;
-    }
-    try {
-        if (auto tower = usableTower(*gateway, assetRoot, executableDirectory, workingDirectory)) {
-            return LegendsGatewayTower{gateway->platform, std::move(*tower)};
+    for (const LegendsGateway& gateway : kGateways) {
+        if (static_cast<u8>(gateway.platform) != world) {
+            continue;
         }
-    } catch (const std::exception& error) {
-        log::warn("Legends gateway to {}: {}", gateway->tower, error.what());
+        try {
+            if (auto tower =
+                    usableTower(gateway, assetRoot, executableDirectory, workingDirectory)) {
+                return LegendsGatewayTower{gateway.platform, std::move(*tower)};
+            }
+        } catch (const std::exception& error) {
+            log::warn("Legends gateway to {}: {}", gateway.tower, error.what());
+        }
     }
     return std::nullopt;
 }
