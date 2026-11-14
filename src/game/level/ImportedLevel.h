@@ -155,9 +155,10 @@ public:
     /** Imported worlds may keep the character's initial physical artwork size
      * without changing its stats, costume tier or growth powerups. */
     virtual bool playerLevelGrowth() const { return true; }
-    /** The most health a character holds here, which the scene puts it back to after each
-     * update: the base game's limit unless the native game keeps one of its own. */
-    virtual s32 healthLimit() const { return kHealthLimit; }
+    /** The most health a character of experience level `level` holds here, which the scene
+     * puts it back to after each update: the base game's limit unless the native game keeps
+     * one of its own. */
+    virtual s32 healthLimit(s32 /*level*/) const { return kHealthLimit; }
     /** Native opening cameras may hold both placed enemies and generator births.
      * Ordinary imported maps without a scripted opening are ready immediately. */
     virtual bool opponentsReady() const { return true; }

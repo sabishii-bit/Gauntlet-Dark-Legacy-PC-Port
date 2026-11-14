@@ -19,6 +19,7 @@
 #include "expansions/n64/formats/LegendsN64Texture.h"
 #include "expansions/n64/menu/LegendsDialogue.h"
 #include "expansions/n64/scenes/LegendsSumnerText.h"
+#include "game/characters/Vitality.h"
 #include "game/players/PowerupEffects.h"
 
 namespace gdl::game {
@@ -497,11 +498,11 @@ f32 LegendsLevel::horizontalFov(f32 preferred) const {
                : preferred;
 }
 
-s32 LegendsLevel::healthLimit() const {
-    // The N64 game has no fixed limit (its health stops at each character's own most,
-    // e0054fdc), so the base game's stands for it.
+s32 LegendsLevel::healthLimit(s32 level) const {
+    // The N64 game stops health at the character's own most, inventory entry 0xD, on every
+    // gain (e0054fdc); the Dreamcast's status update stores its 9999 over more (8C0C1726).
     return platform() == LegendsPlatform::Dreamcast ? kLegendsDreamcastHealthLimit
-                                                    : ImportedLevel::healthLimit();
+                                                    : mostHealth(level);
 }
 
 bool LegendsLevel::opponentsReady() const {

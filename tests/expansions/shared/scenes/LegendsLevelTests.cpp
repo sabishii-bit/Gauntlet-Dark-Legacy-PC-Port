@@ -33,12 +33,15 @@ TEST_CASE("a Dreamcast level holds health to the Dreamcast game's own limit",
         formats::decodeLegendsDreamcastTextures(objects, readFile(directory / "textures.rom"));
     auto adapter = LegendsSceneAdapter::load(device, LegendsPlatform::Dreamcast, directory, map);
     const LegendsLevel level(device, map, std::move(adapter), directory, test::dataDirectory());
-    CHECK(level.healthLimit() == kLegendsDreamcastHealthLimit);
+    for (const s32 characterLevel : {1, 10, 99}) {
+        CAPTURE(characterLevel);
+        CHECK(level.healthLimit(characterLevel) == kLegendsDreamcastHealthLimit);
+    }
 }
 
-TEST_CASE("an N64 level, whose game holds no fixed limit, keeps the base game's",
+TEST_CASE("an N64 level holds health to each character's own most, as the N64 game does",
           "[legends][n64][health-limit][assets]") {
-    // e0054fdc stops health at each character's own most (entry 0xD), never at a fixed number.
+    // e0054fdc stores inventory entry 0xD, the character's own most, over more on every gain.
     const auto directory =
         test::dataDirectory().parent_path() / "assets/n64/extracted/levels/boss1";
     if (!std::filesystem::is_regular_file(directory / "worlds.wad")) {
@@ -51,7 +54,10 @@ TEST_CASE("an N64 level, whose game holds no fixed limit, keeps the base game's"
     test::FakeRenderDevice device;
     auto adapter = LegendsSceneAdapter::load(device, LegendsPlatform::N64, directory, map);
     const LegendsLevel level(device, map, std::move(adapter), directory, characters);
-    CHECK(level.healthLimit() == kHealthLimit);
+    CHECK(level.healthLimit(1) == 500);
+    CHECK(level.healthLimit(10) == 1400);
+    CHECK(level.healthLimit(10) == mostHealth(10));
+    CHECK(level.healthLimit(99) == kHealthLimit);
 }
 
 } // namespace

@@ -767,8 +767,12 @@ void PlayScene::updateLevels() {
 
 void PlayScene::holdHealthToLimit() {
     const ImportedLevel* imported = m_world->imported();
-    PlayerHealth::holdToLimit(m_players,
-                              imported != nullptr ? imported->healthLimit() : kHealthLimit);
+    for (PlayerRuntime& player : m_players) {
+        const s32 level = experienceLevel(player.actor.save().experience());
+        PlayerHealth::holdToLimit(std::span{&player, 1}, imported != nullptr
+                                                             ? imported->healthLimit(level)
+                                                             : kHealthLimit);
+    }
 }
 
 void PlayScene::updateVictory(s32 ticks, f32 seconds) {

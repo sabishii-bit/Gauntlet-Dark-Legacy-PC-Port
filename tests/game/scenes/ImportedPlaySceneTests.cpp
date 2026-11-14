@@ -17,6 +17,8 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "game/camera/CameraMovementLimit.h"
+#include "game/characters/Progression.h"
+#include "game/characters/Vitality.h"
 #include "game/config/GameConfig.h"
 #include "game/level/LevelWorld.h"
 #include "game/scenes/PlayScene.h"
@@ -730,5 +732,60 @@ TEST_CASE("An imported level that does not hold its party leaves the members it 
     const std::array<PlayerActor*, 1> party{&actor};
     level.holdParty(party);
     CHECK(actor == before);
+}
+
+TEST_CASE("An imported level's own limit holds each member's health to that member's level",
+          "[legends][imported-play][health-limit][assets]") {
+    // The N64 game's rule: health never passes the character's own most.
+    class MostHolding final : public ImportedLevel {
+    public:
+        void capturePresentation() override {}
+        void update(f32 /*seconds*/, bool /*timeStopped*/) override {}
+        void draw(RenderDevice& /*device*/, const Mat4& /*clip*/, const WorldCamera& /*camera*/,
+                  TreeModel::Pass /*pass*/, f32 /*presentationAlpha*/) const override {}
+        s32 healthLimit(s32 level) const override { return mostHealth(level); }
+    };
+    const auto root = test::assetOrSkip("PDATA/WAR.WAD").parent_path().parent_path();
+    const AssetLocator assets(root);
+    const GameConfig config;
+    StringTable strings;
+    REQUIRE(strings.load(test::dataDirectory() / "text", config.text.language));
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    LevelRef ref;
+    ref.realm = "Legends";
+    ref.name = "n64:test";
+    WorldCollision collision;
+    collision.build(
+        {{{0, 1, 0}, {Vec3{-100, 0, -100}, Vec3{-100, 0, 100}, Vec3{100, 0, -100}}, 0, 4},
+         {{0, 1, 0}, {Vec3{100, 0, -100}, Vec3{-100, 0, 100}, Vec3{100, 0, 100}}, 0, 4}});
+    auto layout = WorldLayout::fromDecoded(
+        {}, {{.kind = LocatorKind::Start, .position = {0, 0, 0}}}, {-100, 0, -100}, {100, 40, 100});
+    const bool loaded = world.loadImported(device, root, ref, std::move(layout),
+                                           std::move(collision), std::make_shared<MostHolding>());
+    REQUIRE(loaded);
+    GameServices context;
+    context.config = &config;
+    context.strings = &strings;
+    context.assets = &assets;
+    context.unpackedRoot = root;
+    // Both stand far over their most: a first-level character's 500 and a tenth-level's 1400.
+    CharacterSave first;
+    first.progress().health = 3000;
+    CharacterSave tenth;
+    tenth.progress().experience = levelExperience(10);
+    tenth.progress().health = 3000;
+    const std::array party{PartyMember{0, first}, PartyMember{1, tenth}};
+    PlayOptions options;
+    options.welcome = false;
+    options.position = Vec3{0};
+    PlayScene scene;
+    REQUIRE(scene.open(device, context, world, party, options));
+    REQUIRE(scene.update(1.0 / 30, {}) == PlayOutcome::Running);
+    REQUIRE(scene.actor(0));
+    REQUIRE(scene.actor(1));
+    CHECK(scene.actor(0)->save().health() == mostHealth(1));
+    CHECK(scene.actor(1)->save().health() == mostHealth(10));
+    CHECK(mostHealth(10) == 1400);
 }
 } // namespace
