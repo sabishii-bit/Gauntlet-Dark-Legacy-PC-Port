@@ -12,3 +12,6 @@ flate2.workspace = true
 sha1.workspace = true
 sha2.workspace = true
 zip.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
