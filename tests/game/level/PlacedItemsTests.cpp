@@ -1774,12 +1774,18 @@ TEST_CASE("the Ancient Tree's Mikeys stand where the original's code puts them, 
     REQUIRE(floor);
     CHECK_FALSE(collision.moving(floor->object));
     CHECK(still.position.y == Approx(floor->y + PlacedItems::kFloorLift));
-    // Out of reach for its first 60 ticks, then the Mikey to take.
+    // Out of reach for its first 60 ticks, a second, then the Mikey to take.
     items.setPlayerCount(1);
+    CHECK(still.noGrabSeconds == 1.0f);
     Collector on;
     on.position = still.position;
-    CHECK(items.collect(device, std::array{on}).empty());
-    items.update(1.0f);
+    for (s32 quarter = 0; quarter < 3; ++quarter) {
+        CAPTURE(quarter);
+        CHECK(items.collect(device, std::array{on}).empty());
+        items.update(0.25f);
+    }
+    CHECK(items.collect(device, std::array{on}).empty()); // a quarter of a second still held
+    items.update(0.25f);
     const std::vector<Pickup> pickups = items.collect(device, std::array{on});
     REQUIRE(pickups.size() == 1);
     CHECK(pickups[0].item == first + 1);
