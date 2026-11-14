@@ -1389,6 +1389,63 @@ TEST_CASE("a sale leaves the shop's gold pile whole and on screen where the tall
     scene.close();
 }
 
+TEST_CASE("a shop opened in the tower shows no gold pile behind its parchment",
+          "[shop][screens][piles][assets]") {
+    const auto root = test::assetOrSkip("SHPDATA/SHOP.WAD").parent_path().parent_path();
+    test::assetOrSkip("SELECT/textures.ngc");
+    test::assetOrSkip("PDATA/WAR.WAD");
+    test::FakeRenderDevice device;
+    StringTable strings;
+    REQUIRE(strings.load(test::dataDirectory() / "text", "en"));
+    GameServices context;
+    context.unpackedRoot = root;
+    context.strings = &strings;
+    CharacterSave save;
+    save.gold = 10;
+    save.progress().health = 100;
+    save.progress().inventory.keys = 9;
+    const std::array<PartyMember, 1> party{{{0, save}}};
+    // No level was beaten, so there is nothing for a pile to stand for.
+    AfterLevelScene scene;
+    REQUIRE(scene.open(device, context, party, {}, {}, "L1", ShopVisit::Shop));
+    const auto& lane = scene.session().lanes()[0];
+    REQUIRE(lane.phase == ShopPhase::Shopping);
+    TextureSet art;
+    REQUIRE(art.load(root / "SELECT"));
+    const auto drawsOf = [&](std::string_view name) {
+        const auto id = art.find(name);
+        REQUIRE(id.has_value());
+        const auto& pixels = art.image(*id).pixels;
+        device.draws.clear();
+        scene.render(device, Mat4{1}, 512, 384);
+        return std::ranges::count_if(device.draws, [&](const test::RecordedDraw& draw) {
+            const auto* image = dynamic_cast<const test::FakeTexture*>(draw.texture);
+            return image != nullptr && image->pixels == pixels;
+        });
+    };
+    REQUIRE_FALSE(scene.update(2, {}));
+    CHECK(drawsOf("SHOP_SCROLL_1") == 1); // the parchment stands, with nothing behind it
+    CHECK(drawsOf("SHP_GOLD") == 0);
+    // A sale, which raised the original's purse gauge, raises no pile here either.
+    const auto& items = scene.session().catalog().items();
+    ShopSession::Inputs input;
+    input[0].down = true;
+    for (usize step = 0; step < items.size() && items[lane.cursor].type != ShopItem::kKey; ++step) {
+        REQUIRE_FALSE(scene.update(0, input));
+        REQUIRE_FALSE(scene.update(0, {}));
+    }
+    REQUIRE(items[lane.cursor].type == ShopItem::kKey);
+    REQUIRE_FALSE(scene.update(2, {})); // the list settles before anything is traded
+    input = {};
+    input[0].back = true;
+    REQUIRE_FALSE(scene.update(0, input));
+    REQUIRE(lane.member.save.gold > save.gold);
+    REQUIRE_FALSE(scene.update(2, {}));
+    CHECK(drawsOf("SHOP_SCROLL_1") == 1);
+    CHECK(drawsOf("SHP_GOLD") == 0);
+    scene.close();
+}
+
 TEST_CASE("shop layout uses catalog scale and line breaks rather than fixed rows",
           "[shop][screens]") {
     // 8009BE24 lays out icon rows with 24 pixels, scaled FONT32 lines, then a 16-pixel gap.

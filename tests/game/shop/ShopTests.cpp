@@ -1,5 +1,6 @@
 #include <array>
 #include <limits>
+#include <optional>
 #include <random>
 #include <string>
 
@@ -873,18 +874,20 @@ TEST_CASE("retail tally order follows each player's relative gains rather than l
     CHECK(first.finished());
 }
 
-TEST_CASE("the shop's gold pile stays where the tally left it whatever is bought or sold",
+TEST_CASE("the shop's gold pile stays where the tally left it whatever is traded and a tower's "
+          "shop has none",
           "[shop][results][piles]") {
     // fn_8009A0AC heights the gold pile by the gold the level yielded over the level's maximum
     // plus one, from 64 to 208 rows, and the shop starts its pile there (do_shop, 0x80098BDC).
+    // A shop opened in the tower follows no level, so there is nothing for a pile to stand for.
     struct Visit {
         ShopVisit visit = ShopVisit::Level;
         s32 yielded = 0; ///< the level's gold, against a maximum of 1000
-        f32 pile = 0;
+        std::optional<f32> pile;
     };
-    const auto visit = GENERATE(Visit{ShopVisit::Level, 600, 124}, // 600 * 208 / 1001
+    const auto visit = GENERATE(Visit{ShopVisit::Level, 600, 124.0f}, // 600 * 208 / 1001
                                 Visit{ShopVisit::Level, 5000, LevelTally::kMaxHeight},
-                                Visit{ShopVisit::Shop, 0, 64}); // no level: the tally's least
+                                Visit{ShopVisit::Shop, 0, std::nullopt});
     const s32 rate = GENERATE(30, 60);
     CAPTURE(visit.yielded, rate);
     auto save = shopper();
@@ -908,7 +911,7 @@ TEST_CASE("the shop's gold pile stays where the tally left it whatever is bought
         for (s32 frame = 0; frame < 2 * rate; ++frame) {
             step({});
         }
-        return lane.shopPileHeight();
+        return session.shopPile(lane);
     };
     CHECK(pileAfter({}) == visit.pile);
     // A trade the purse can no longer repeat sends the cursor up, so put it on the keys each time.

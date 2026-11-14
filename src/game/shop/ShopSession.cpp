@@ -155,6 +155,12 @@ void ShopSession::start(std::span<const PartyMember> party, std::span<const Leve
         }
     }
 }
+std::optional<f32> ShopSession::shopPile(const ShopLane& lane) const {
+    if (m_visit != ShopVisit::Level && m_visit != ShopVisit::Completion) {
+        return std::nullopt;
+    }
+    return lane.tally.targetHeight(0);
+}
 void ShopSession::enterInventory(ShopLane& lane) {
     lane.phase = ShopPhase::Inventory;
     lane.inventory.open(InventoryContents::of(lane.member.save.progress()));

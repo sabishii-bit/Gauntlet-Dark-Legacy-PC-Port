@@ -57,9 +57,6 @@ struct ShopLane {
     f64 phaseSeconds = 0;
     InventoryPanel inventory;
     f64 tickRemainder = 0; ///< the 60 Hz ticks not yet taken from the seconds given
-    /** The gold pile behind the shop's parchment: the tally's, standing for the gold the level
-     * (with any stages that led straight into it) yielded, whatever is bought or sold. */
-    f32 shopPileHeight() const { return tally.targetHeight(0); }
     /** Strength, armor, magic, speed, max health, in the shop's row order. */
     std::array<s32, 5> statsValues(bool previous) const;
     std::array<s32, 5> statsRevealTicks() const;
@@ -94,6 +91,10 @@ public:
     const std::vector<ShopLane>& lanes() const { return m_lanes; }
     const ShopCatalog& catalog() const { return m_catalog; }
     ShopVisit visit() const { return m_visit; }
+    /** The rows of the gold pile behind a lane's parchment: the tally's, standing for the gold
+     * the level (with any stages that led straight into it) yielded, whatever is bought or
+     * sold. A visit that tallies no level, such as the tower's shop, has none. */
+    std::optional<f32> shopPile(const ShopLane& lane) const;
     std::vector<PartyMember> party() const;
     /** The cues asked for since last taken, oldest first. */
     std::vector<ShopEvent> takeEvents();

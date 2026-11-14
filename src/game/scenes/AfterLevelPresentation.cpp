@@ -108,8 +108,11 @@ void AfterLevelScene::drawLaneBackdrop(const ShopLane& lane) {
             }
         }
     } else if (lane.phase == ShopPhase::Shopping) {
-        // The pile stands for what the level yielded, not for the purse, so trades leave it be.
-        drawPile(0, x, lane.shopPileHeight());
+        // The pile stands for what the level yielded, not for the purse, so trades leave it be,
+        // and a shop that follows no level has none.
+        if (const auto pile = m_session.shopPile(lane)) {
+            drawPile(0, x, *pile);
+        }
         image("SHOP_SCROLL_1", x, 0);
         image("SHOP_SCROLL_2", x, 256);
     }
