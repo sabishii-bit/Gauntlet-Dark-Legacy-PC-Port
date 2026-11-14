@@ -37,6 +37,13 @@ def release_preset() -> str:
     return "windows-ninja-release" if WINDOWS else "linux-ninja-release"
 
 
+def rust_bin() -> pathlib.Path:
+    """Where rustup keeps rustup, cargo and their proxies: CARGO_HOME's bin, ~/.cargo/bin by
+    default. A fresh rustup install puts it on PATH only for shells opened after it."""
+    home = os.environ.get("CARGO_HOME")
+    return (pathlib.Path(home) if home else pathlib.Path.home() / ".cargo") / "bin"
+
+
 def _vswhere() -> pathlib.Path:
     program_files = os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")
     vswhere = pathlib.Path(program_files) / "Microsoft Visual Studio" / "Installer" / "vswhere.exe"
