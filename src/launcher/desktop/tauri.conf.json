@@ -1,5 +1,6 @@
 {
   "productName": "Gauntlet Dark Legacy Launcher",
+  "version": "gen/version.json",
   "identifier": "io.github.sabishii-bit.gdl-launcher",
   "build": {
     "frontendDist": ["../ui/index.html"]

@@ -16,4 +16,6 @@ tauri-plugin-opener.workspace = true
 tauri-plugin-single-instance.workspace = true
 
 [build-dependencies]
+semver.workspace = true
+serde_json.workspace = true
 tauri-build.workspace = true

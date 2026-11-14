@@ -123,6 +123,13 @@ class WorkspaceTests(unittest.TestCase):
         self.assertTrue(publisher.strip())
         self.assertNotIn(publisher, config["identifier"].split(".")[:2])
 
+    def test_the_window_takes_its_version_from_the_file_its_build_writes_from_version(self):
+        # desktop/build.rs writes gen/version.json from VERSION, and the build fails while the
+        # file is missing. A literal here would be a second copy; no version at all would put
+        # the crate's 0.0.0 into the Windows version resource and the package information.
+        config = json.loads((WORKSPACE / "desktop" / "tauri.conf.json").read_text(encoding="utf-8"))
+        self.assertEqual(config.get("version"), "gen/version.json")
+
 
 class RunTests(unittest.TestCase):
     def run_main(self, argv, codes):

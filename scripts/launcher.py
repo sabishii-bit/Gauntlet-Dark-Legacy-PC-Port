@@ -8,11 +8,12 @@
 
 Cargo runs from src/launcher, so its rust-toolchain.toml and .cargo/config.toml apply, with its
 home in build/cargo-home (shared with the netplay crate) and its target directory in
-build/launcher, never under src/. The one thing a build writes under src/ is Tauri's: the window's
-capability schemas in src/launcher/desktop/gen/, which .gitignore hides. On Windows cargo runs in
-the MSVC developer environment. rustup's folder joins PATH when a fresh install has not reached
-this shell yet. A run that is interrupted, told to stop, or whose caller is gone ends cargo and
-every compiler under it.
+build/launcher, never under src/. The one place a build writes under src/ is
+src/launcher/desktop/gen/, which .gitignore hides: Tauri's capability schemas for the window and
+the version.json its build script writes from VERSION. On Windows cargo runs in the MSVC
+developer environment. rustup's folder joins PATH when a fresh install has not reached this shell
+yet. A run that is interrupted, told to stop, or whose caller is gone ends cargo and every
+compiler under it.
 """
 
 import argparse

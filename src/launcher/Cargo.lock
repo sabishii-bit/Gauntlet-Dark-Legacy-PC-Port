@@ -1332,6 +1332,8 @@ version = "0.0.0"
 dependencies = [
  "gdl-native",
  "gdl-session",
+ "semver",
+ "serde_json",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
