@@ -1,0 +1,22 @@
+[package]
+name = "gdl-install"
+description = "The install folder: installing, updating, recovering, the expansions and launching the game"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+gdl-extract.workspace = true
+gdl-files.workspace = true
+gdl-media.workspace = true
+gdl-release.workspace = true
+tar.workspace = true
+zip.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+libc.workspace = true

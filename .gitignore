@@ -8,6 +8,8 @@ out/
 vcpkg_installed/
 compile_commands.json
 src/engine/net/iroh/target/
+# Tauri's build writes the launcher window's capability schemas here on every build.
+src/launcher/desktop/gen/
 __pycache__/
 *.py[cod]
 

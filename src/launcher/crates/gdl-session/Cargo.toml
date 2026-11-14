@@ -1,0 +1,14 @@
+[package]
+name = "gdl-session"
+description = "The launcher window's logic without the window: modes, plans, jobs and their events, error codes"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+gdl-extract.workspace = true
+gdl-install.workspace = true
+gdl-release.workspace = true
+thiserror.workspace = true

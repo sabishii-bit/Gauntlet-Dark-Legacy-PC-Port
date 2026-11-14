@@ -1,0 +1,58 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/gdl-files",
+    "crates/gdl-media",
+    "crates/gdl-extract",
+    "crates/gdl-release",
+    "crates/gdl-install",
+    "crates/gdl-session",
+    "crates/gdl-native",
+    "crates/gdl-fixtures",
+    "headless",
+    "desktop",
+]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+license = "GPL-3.0-only"
+rust-version = "1.90"
+publish = false
+
+[workspace.dependencies]
+gdl-files = { path = "crates/gdl-files" }
+gdl-media = { path = "crates/gdl-media" }
+gdl-extract = { path = "crates/gdl-extract" }
+gdl-release = { path = "crates/gdl-release" }
+gdl-install = { path = "crates/gdl-install" }
+gdl-session = { path = "crates/gdl-session" }
+gdl-native = { path = "crates/gdl-native" }
+gdl-fixtures = { path = "crates/gdl-fixtures" }
+
+flate2 = "1.1.10"
+libc = "0.2.191"
+minisign-verify = "0.3.0"
+semver = "1.0.28"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+sha1 = "0.11.0"
+sha2 = "0.11.1"
+tar = "0.4.46"
+tempfile = "3.27.0"
+thiserror = "2.0.21"
+ureq = { version = "3.5.0", default-features = false, features = ["rustls", "platform-verifier"] }
+windows-sys = "0.61.2"
+zip = { version = "9.1.3", default-features = false, features = ["deflate"] }
+
+tauri = { version = "=2.12.5", features = ["custom-protocol"] }
+tauri-build = "=2.7.4"
+tauri-plugin-dialog = "=2.8.4"
+tauri-plugin-opener = "=2.7.2"
+tauri-plugin-single-instance = "=2.5.5"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
+panic = "unwind"

@@ -1,0 +1,29 @@
+{
+  "productName": "Gauntlet Dark Legacy Launcher",
+  "identifier": "io.github.sabishii-bit.gdl-launcher",
+  "build": {
+    "frontendDist": ["../ui/index.html"]
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "Gauntlet Dark Legacy Launcher",
+        "width": 1080,
+        "height": 700,
+        "minWidth": 720,
+        "minHeight": 480
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self'; connect-src ipc: http://ipc.localhost; object-src 'none'; base-uri 'none'; form-action 'none'",
+      "freezePrototype": true
+    }
+  },
+  "bundle": {
+    "active": false,
+    "publisher": "sabishii-bit",
+    "icon": ["icons/icon.png", "icons/icon.ico"]
+  }
+}

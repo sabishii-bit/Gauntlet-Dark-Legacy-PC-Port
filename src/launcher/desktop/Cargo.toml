@@ -1,0 +1,19 @@
+[package]
+name = "gdl-launcher"
+description = "The launcher's window"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+gdl-native.workspace = true
+gdl-session.workspace = true
+tauri.workspace = true
+tauri-plugin-dialog.workspace = true
+tauri-plugin-opener.workspace = true
+tauri-plugin-single-instance.workspace = true
+
+[build-dependencies]
+tauri-build.workspace = true

@@ -1,0 +1,6 @@
+{
+  "identifier": "main",
+  "description": "What the launcher's page may ask of the window: events and the window's defaults, nothing of the file system, shell, dialogs or opener",
+  "windows": ["main"],
+  "permissions": ["core:event:default", "core:window:default"]
+}

@@ -1,0 +1,9 @@
+# Cargo started anywhere inside src/launcher keeps its target directory in build/launcher, never
+# under src/: scripts/checks/source_identity.py hashes the C and C++ files under src/, and a
+# target directory holds some.
+[build]
+target-dir = "../../build/launcher"
+
+# The launcher carries its own C runtime, so players need no Visual C++ redistributable.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
