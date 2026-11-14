@@ -1299,7 +1299,7 @@ PlayOutcome PlayScene::advanceNative(f64 deltaSeconds, const Inputs& inputs) {
         advanceEntrance(ticks, seconds, inputs);
         return PlayOutcome::Running;
     }
-    if (m_ceremonies.promotion().active() && !m_sim.welcome.cutting()) {
+    if (m_ceremonies.promotion().active() && !m_sim.welcome.cutting() && !relicsLead()) {
         updatePromotion(ticks, seconds);
         return PlayOutcome::Running;
     }
@@ -2088,7 +2088,7 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     PartyFigures::drawEffects(device, m_players, figureScene(frameBlend), clip, effectCamera);
     // The wizards add onto the frame without writing depth, so the translucent scenery behind
     // them (the portals' horizon sheets) must be down first or it paints over them.
-    if (!ceremoniesWaiting()) {
+    if (!ceremoniesWaiting() && !relicsLead()) {
         m_ceremonies.promotion().draw(device, clip, m_world->lighting(), effectBlend);
     }
     if (relicCeremonyOn()) {
@@ -2223,7 +2223,7 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
                        height);
     }
     m_messages.draw(m_canvas);
-    if (!ceremoniesWaiting()) {
+    if (!ceremoniesWaiting() && !relicsLead()) {
         m_ceremonies.promotion().drawCaption(m_canvas, m_messages.text(), width, height);
     }
     if (relicCeremonyOn()) {

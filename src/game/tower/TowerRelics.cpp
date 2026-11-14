@@ -298,7 +298,7 @@ void TowerRelics::prepareSpeech() {
     m_wizard.startSet(*m_device, m_world->items(), "WIZARD", m_sim.wizardPosition, setting);
 }
 void TowerRelics::followPromotions() {
-    if (!active() || m_sim.phase != Phase::Speech || m_world == nullptr) {
+    if (!active() || m_sim.phase != Phase::Speech || m_sim.spoken || m_world == nullptr) {
         return;
     }
     if (const auto camera = cameraAt(m_world->layout(), kSpeechCameras[0] + m_sim.wizardMarker)) {

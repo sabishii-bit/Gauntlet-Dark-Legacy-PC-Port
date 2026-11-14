@@ -567,4 +567,88 @@ TEST_CASE("back from the fortress without the thirteenth runestone Sumner says s
     CHECK_FALSE(scene.towerRelics().active());
     scene.close();
 }
+
+TEST_CASE("back from the temple with a promotion due, the Underworld opens before the promotion "
+          "and Sumner speaks on from its camera",
+          "[game][tower-completion][promotion][assets]") {
+    const f64 step = GENERATE(1.0 / 30.0, 1.0 / 60.0);
+    CAPTURE(step);
+    const auto root =
+        test::assetOrSkip("LEVELS/LEVELL1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    REQUIRE(world.load(device, root));
+    LevelCatalog levels;
+    REQUIRE(levels.load(root));
+    // Twelve runestones set and the temple's piece new: the return opens the Underworld.
+    const auto scenario = Scenario::fromJson(R"({"welcome":false,"arrivalWorld":5,
+        "party":[{"class":"WAR","level":30,"runes":[0,1,2,3,4,5,6,7,8,9,10,11],
+        "shards":[1,2,3,4,5,6,7,8],"newShards":[9]}]})");
+    auto party = scenario.partyMembers();
+    party[0].save.progress().promotedLevel = 29;
+    const GameConfig config;
+    GameServices context;
+    context.config = &config;
+    context.levels = &levels;
+    context.unpackedRoot = root;
+    PlayScene scene;
+    REQUIRE(scene.open(device, context, world, party, scenario.tower));
+    REQUIRE(scene.promotion().active());
+    REQUIRE(scene.towerRelics().active());
+    REQUIRE(scene.towerRelics().current()->kind == TowerRelics::Kind::Followup);
+    REQUIRE(scene.towerRelics().current()->followup() == Kind::Underworld);
+    REQUIRE(scene.towerRelics().phase() == TowerRelics::Phase::Reveal);
+    const auto* reveal = world.layout().findLocator(LocatorKind::TriggerCamera,
+                                                    TowerCompletion::camera(Kind::Underworld));
+    REQUIRE(reveal != nullptr);
+    // The temple's wing is event marker 9: the promotion speaks from camera 249.
+    const auto* promotionCamera = world.layout().findLocator(LocatorKind::TriggerCamera, 249);
+    REQUIRE(promotionCamera != nullptr);
+    REQUIRE(scene.promotion().camera().has_value());
+    REQUIRE(scene.promotion().camera()->position == promotionCamera->position);
+    bool revealed = false;
+    bool promoting = false;
+    s32 frames = 0;
+    s32 promotionOver = -1;
+    s32 firstWords = -1;
+    while (scene.towerRelics().active() && frames++ < 6000) {
+        scene.update(step, {});
+        const auto& relics = scene.towerRelics();
+        const bool promoted = scene.actor(0)->save().progress().promotedLevel == 30;
+        if (relics.phase() == TowerRelics::Phase::Reveal) {
+            // The route opens first, once the party stands, the promotion waiting for it.
+            REQUIRE_FALSE(promoted);
+            if (scene.showingRelicCeremony()) {
+                CHECK(scene.viewCamera().position == reveal->position);
+                revealed = true;
+            }
+        } else if (scene.promotion().active()) {
+            REQUIRE(revealed);
+            CHECK_FALSE(scene.showingRelicCeremony());
+            CHECK(scene.viewCamera().position == promotionCamera->position);
+            promoting = true;
+        } else {
+            if (promotionOver < 0) {
+                promotionOver = frames;
+            }
+            if (scene.showingRelicCeremony()) {
+                CHECK(scene.viewCamera().position == promotionCamera->position);
+                if (firstWords < 0 && relics.captionLetters() > 0) {
+                    firstWords = frames;
+                }
+            }
+        }
+    }
+    REQUIRE(frames < 6000);
+    CHECK(revealed);
+    CHECK(promoting);
+    REQUIRE(promotionOver >= 0);
+    REQUIRE(firstWords >= promotionOver);
+    // Its words begin within a few ticks, not after the two seconds of a fresh lead.
+    CHECK(static_cast<f64>(firstWords - promotionOver) * step < 0.25);
+    const auto saved = scene.party();
+    CHECK(saved[0].save.progress().promotedLevel == 30);
+    CHECK(saved[0].save.progress().relics.pendingCeremonies == 0);
+    scene.close();
+}
 } // namespace

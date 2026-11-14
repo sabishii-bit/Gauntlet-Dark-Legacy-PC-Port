@@ -11,7 +11,15 @@ bool PlayScene::ceremoniesWaiting() const {
 
 bool PlayScene::relicCeremonyOn() const {
     return m_ceremonies.relics().active() && !ceremoniesWaiting() &&
-           !m_ceremonies.promotion().active() && m_sim.welcome.intro() != Intro::Crystal;
+           (!m_ceremonies.promotion().active() || relicsLead()) &&
+           m_sim.welcome.intro() != Intro::Crystal;
+}
+
+bool PlayScene::relicsLead() const {
+    // TowerCheckMessages ends the speech it opens a route with at once (SumnerSpeechEnd,
+    // 0x800A30A4), so the route's reveal plays while the level-ups wait for the speech timer
+    // the reveal sets (0x800A2B50 to 0x800A2B84).
+    return m_ceremonies.relics().phase() == TowerRelics::Phase::Reveal;
 }
 
 TowerCeremonies::Scene PlayScene::ceremonyScene() {

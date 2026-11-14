@@ -885,6 +885,8 @@ private:
      * a scroll is up, both of which hold them back. */
     bool ceremoniesWaiting() const;
     bool relicCeremonyOn() const;
+    /** Whether the arrival's relics go before its promotions: a route revealed first. */
+    bool relicsLead() const;
     static constexpr s32 kLevelUpHealth = 100; ///< AddExp's 100.0 at 0x803477D0
     void sayWithName(usize index, std::string_view line, f32 wait);
     void updateHazardSurfaces(f32 seconds);

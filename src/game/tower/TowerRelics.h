@@ -50,9 +50,10 @@ public:
     void begin(std::span<const Relics> party, const MessageTable& strings,
                const std::optional<LevelBeaten>& beaten = std::nullopt);
     void bind(RenderDevice& device, LevelWorld& world, const Vec3& partyCentre);
-    /** The arrival's promotions speak first. SumnerDoSpeech keeps a session's camera until a
-     * speech ends and the promotions end none (0x80344C74), so the first speech after them
-     * keeps the promotion camera and, the promotions having spent its lead, starts at once. */
+    /** The arrival's promotions have just been spoken. SumnerDoSpeech keeps a session's camera
+     * until a speech ends and the promotions end none (0x80344C74), so the speech after them,
+     * whether first or after a route's reveal, keeps the promotion camera and, the promotions
+     * having spent its lead, starts at once. */
     void followPromotions();
     void clear();
     /** Start a scene tick even when a cutscene will hold this presentation. */
