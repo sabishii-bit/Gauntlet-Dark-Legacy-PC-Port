@@ -6,6 +6,7 @@
 #include "engine/platform/Paths.h"
 
 #include "expansions/dreamcast/level/LegendsDreamcastPortals.h"
+#include "expansions/shared/characters/LegendsVisit.h"
 #include "expansions/shared/scenes/LegendsLevel.h"
 #include "game/scenes/AfterLevelScene.h"
 #include "game/scenes/PlayScene.h"
@@ -54,5 +55,19 @@ std::vector<PartyMember> legendsCompletionParty(std::span<const PartyMember> com
         return shop.session().party();
     }
     return {completed.begin(), completed.end()};
+}
+
+bool keepLegendsVisitProgress(const ImportedLevel* level, std::span<PartyMember> party,
+                              const std::function<const CharacterSave*(s32 player)>& live) {
+    const auto* native = dynamic_cast<const LegendsLevel*>(level);
+    if (native == nullptr) {
+        return false;
+    }
+    for (PartyMember& member : party) {
+        if (const CharacterSave* current = live ? live(member.player) : nullptr) {
+            retainLegendsProgress(member.save, *current, native->platform());
+        }
+    }
+    return true;
 }
 } // namespace gdl::game

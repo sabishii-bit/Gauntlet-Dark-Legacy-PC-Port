@@ -663,16 +663,9 @@ void Gauntlet::resetLegendsAdvice() {
 }
 
 bool Gauntlet::keepVisitProgress(std::span<PartyMember> party) {
-    const auto* native = dynamic_cast<const LegendsLevel*>(m_play->world.imported());
-    if (native == nullptr) {
-        return false;
-    }
-    for (PartyMember& member : party) {
-        if (const auto* current = m_play->scene.liveSave(member.player)) {
-            retainLegendsProgress(member.save, *current, native->platform());
-        }
-    }
-    return true;
+    return keepLegendsVisitProgress(
+        m_play->world.imported(), party,
+        [this](s32 player) -> const CharacterSave* { return m_play->scene.liveSave(player); });
 }
 
 bool Gauntlet::quitLegendsLevel() {

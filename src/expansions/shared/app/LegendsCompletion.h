@@ -1,9 +1,12 @@
 #pragma once
 
 #include <filesystem>
+#include <functional>
 #include <optional>
 #include <span>
 #include <vector>
+
+#include "engine/core/Types.h"
 
 #include "expansions/shared/characters/LegendsProgress.h"
 #include "game/characters/Party.h"
@@ -12,6 +15,8 @@ namespace gdl::game {
 class PlayScene;
 class AfterLevelScene;
 class PlayerSelectScene;
+class ImportedLevel;
+struct CharacterSave;
 
 /** A completed native departure waiting for the common tally and shop. The
  * source scene remains parked until its destination has opened successfully. */
@@ -35,4 +40,11 @@ std::optional<LegendsCompletedTravel> completedLegendsTravel(const PlayScene& sc
 std::vector<PartyMember> legendsCompletionParty(std::span<const PartyMember> completed,
                                                 const AfterLevelScene& shop,
                                                 const PlayerSelectScene& characters);
+
+/** Keeps, in each member of a party giving up a Legends level's earnings (a game over, the
+ * title, a shutdown), the permanent discoveries its live save (`live`, none for a member
+ * without one) made in the campaign of `level`, the N64's or the Dreamcast's; false, the
+ * party left as it is, when `level` is no Legends level. */
+bool keepLegendsVisitProgress(const ImportedLevel* level, std::span<PartyMember> party,
+                              const std::function<const CharacterSave*(s32 player)>& live);
 } // namespace gdl::game

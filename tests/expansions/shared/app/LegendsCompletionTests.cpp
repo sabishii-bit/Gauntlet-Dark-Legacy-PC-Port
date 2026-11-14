@@ -13,6 +13,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "expansions/dreamcast/formats/LegendsDreamcastTexture.h"
 #include "expansions/shared/app/LegendsCompletion.h"
 #include "expansions/shared/app/LegendsConsoleWords.h"
 #include "expansions/shared/scenes/LegendsLevel.h"
@@ -518,5 +519,80 @@ TEST_CASE("An unopened scene cannot manufacture a native completion",
           "[legends][legends-completion]") {
     const PlayScene scene{};
     CHECK_FALSE(completedLegendsTravel(scene));
+}
+
+/** A member giving up `level`'s earnings keeps what it found there in `platform`'s campaign. */
+void keepsVisitDiscoveries(const LegendsLevel& level, LegendsPlatform platform) {
+    CharacterSave entry;
+    entry.name = "FIRST";
+    entry.gold = 25;
+    CharacterSave live = entry;
+    live.gold = 500; // the level's earnings, given up
+    auto& found = live.progress().legendsProgress(platform);
+    found.runestones = 5;
+    found.obelisks = 0x87;
+    found.shards = 3;
+    std::array party{PartyMember{0, entry}};
+    REQUIRE(keepLegendsVisitProgress(&level, party, [&](s32 player) -> const CharacterSave* {
+        return player == 0 ? &live : nullptr;
+    }));
+    CHECK(party[0].save.gold == 25);
+    CHECK(party[0].save.progress().legendsProgress(platform) ==
+          live.progress().legendsProgress(platform));
+}
+
+TEST_CASE("A game over in a Dreamcast level keeps its discoveries as an N64 level's are kept",
+          "[legends][legends-completion][save][assets]") {
+    const auto directory =
+        test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native/levels/levelb1";
+    if (!std::filesystem::is_regular_file(directory / "worlds.rom")) {
+        SKIP("Dreamcast extraction is not installed");
+    }
+    test::FakeRenderDevice device;
+    const auto objects = readFile(directory / "objects.rom");
+    auto map = formats::LegendsMap::parseDreamcast(readFile(directory / "worlds.rom"), objects);
+    map.textures =
+        formats::decodeLegendsDreamcastTextures(objects, readFile(directory / "textures.rom"));
+    auto adapter = LegendsSceneAdapter::load(device, LegendsPlatform::Dreamcast, directory, map);
+    const LegendsLevel level(device, map, std::move(adapter), directory, test::dataDirectory());
+    keepsVisitDiscoveries(level, LegendsPlatform::Dreamcast);
+}
+
+TEST_CASE("A game over in an N64 level keeps its discoveries",
+          "[legends][legends-completion][save][assets]") {
+    const auto directory =
+        test::dataDirectory().parent_path() / "assets/n64/extracted/levels/boss1";
+    if (!std::filesystem::is_regular_file(directory / "worlds.wad")) {
+        SKIP("Native N64 extraction is not installed");
+    }
+    const auto characters = test::assetOrSkip("PLAYERS").parent_path();
+    auto map = formats::LegendsMap::parseN64(readFile(directory / "worlds.wad"),
+                                             readFile(directory / "objects.wad"),
+                                             readFile(directory / "ipr.rom"));
+    test::FakeRenderDevice device;
+    auto adapter = LegendsSceneAdapter::load(device, LegendsPlatform::N64, directory, map);
+    const LegendsLevel level(device, map, std::move(adapter), directory, characters);
+    keepsVisitDiscoveries(level, LegendsPlatform::N64);
+}
+
+TEST_CASE("A level that is no Legends level keeps no visit's discoveries",
+          "[legends][legends-completion][save]") {
+    class Plain final : public ImportedLevel {
+    public:
+        void capturePresentation() override {}
+        void update(f32 /*seconds*/, bool /*timeStopped*/) override {}
+        void draw(RenderDevice& /*device*/, const Mat4& /*clip*/, const WorldCamera& /*camera*/,
+                  TreeModel::Pass /*pass*/, f32 /*presentationAlpha*/) const override {}
+    };
+    CharacterSave entry;
+    entry.name = "FIRST";
+    CharacterSave live = entry;
+    live.progress().legendsProgress(LegendsPlatform::Dreamcast).runestones = 5;
+    std::array party{PartyMember{0, entry}};
+    const auto lookup = [&](s32 /*player*/) -> const CharacterSave* { return &live; };
+    CHECK_FALSE(keepLegendsVisitProgress(nullptr, party, lookup));
+    const Plain plain;
+    CHECK_FALSE(keepLegendsVisitProgress(&plain, party, lookup));
+    CHECK(party[0].save == entry);
 }
 } // namespace
