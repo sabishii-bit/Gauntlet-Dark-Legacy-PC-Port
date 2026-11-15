@@ -11,6 +11,7 @@ use std::io::{self, Read, Seek, SeekFrom};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
+use crate::runtime::hex;
 use crate::zip::{put_u16, put_u32, put_u64};
 
 /// The last 8 bytes of a trailer, by which a reader knows that a file carries sections.
@@ -451,11 +452,6 @@ pub fn table_and_trailer(table: &[u8]) -> Vec<u8> {
     tail
 }
 
-/// A SHA-256 digest in lower-case hexadecimal, as the table records it.
-fn hex(digest: &[u8; 32]) -> String {
-    digest.iter().map(|byte| format!("{byte:02x}")).collect()
-}
-
 /// A file of `len` bytes that holds `chunks` and zeros everywhere else, read through `Read` and
 /// `Seek` without the memory its length would take, so that a test can place sections past 4 GiB.
 /// Where chunks overlap, the later one is read; their bytes past `len` never are.
@@ -516,6 +512,7 @@ mod tests {
         FAKE_CERTIFICATE_LEN, SparseFile, TRAILER_MAGIC, append_sections, append_sections_at,
         fake_sign, table_and_trailer, tiny_elf, tiny_pe,
     };
+    use crate::runtime::hex;
 
     /// The SHA-256 digest of no bytes, as Python's hashlib writes it.
     const EMPTY_SHA256: &str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
@@ -542,10 +539,6 @@ mod tests {
 
     fn sha256(bytes: &[u8]) -> [u8; 32] {
         Sha256::digest(bytes).into()
-    }
-
-    fn hex(bytes: &[u8]) -> String {
-        bytes.iter().map(|byte| format!("{byte:02x}")).collect()
     }
 
     /// Bytes that are not all alike, as a runtime zip's are not.

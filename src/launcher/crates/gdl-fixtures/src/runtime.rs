@@ -128,8 +128,14 @@ impl RuntimeFiles {
 
 /// The SHA-256 digest of `data`, in lower-case hexadecimal.
 fn sha256_hex(data: &[u8]) -> String {
-    let mut text = String::with_capacity(2 * Sha256::output_size());
-    for byte in Sha256::digest(data) {
+    hex(&Sha256::digest(data))
+}
+
+/// `bytes` in lower-case hexadecimal, two digits a byte, as release records and section tables
+/// write digests.
+pub(crate) fn hex(bytes: &[u8]) -> String {
+    let mut text = String::with_capacity(2 * bytes.len());
+    for &byte in bytes {
         text.push(char::from(HEX_DIGITS[usize::from(byte >> 4)]));
         text.push(char::from(HEX_DIGITS[usize::from(byte & 0x0F)]));
     }
@@ -145,7 +151,7 @@ mod tests {
     use flate2::read::DeflateDecoder;
     use serde_json::{Value, json};
 
-    use super::{RuntimeFiles, sha256_hex};
+    use super::{RuntimeFiles, hex, sha256_hex};
     use crate::zip::crc32;
 
     // The SHA-256 digests of the standard runtime's contents, as Python's hashlib gives them.
@@ -196,6 +202,7 @@ mod tests {
 
     #[test]
     fn build_info_lists_each_file_by_its_digest() {
+        assert_eq!(hex(b"\x01\x23\x45\x67\x89\xab\xcd\xef"), "0123456789abcdef");
         assert_eq!(sha256_hex(b""), EMPTY_SHA256);
         let mut runtime = RuntimeFiles::standard("windows-x64", "1.0.0-beta");
         assert_eq!(
