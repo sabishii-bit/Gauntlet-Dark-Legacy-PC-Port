@@ -6,11 +6,20 @@ import sys
 import threading
 import time
 import unittest
+from unittest import mock
 
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "scripts"))
+SCRIPTS = pathlib.Path(__file__).resolve().parents[2] / "scripts"
+sys.path.insert(0, str(SCRIPTS))
 import process_tree  # noqa: E402
 
 SLEEPER = [sys.executable, "-c", "import time; time.sleep(60)"]
+# What a process prints of its own scheduling priority: its class, or its nice value.
+PRIORITY = ("import ctypes\n"
+            "kernel32 = ctypes.WinDLL('kernel32')\n"
+            "kernel32.GetCurrentProcess.restype = ctypes.c_void_p\n"
+            "kernel32.GetPriorityClass.argtypes = [ctypes.c_void_p]\n"
+            "print(kernel32.GetPriorityClass(kernel32.GetCurrentProcess()))\n"
+            if process_tree.WINDOWS else "import os; print(os.nice(0))\n")
 
 
 def listed(pid, expected, seconds=5):
@@ -82,6 +91,35 @@ class TreeTests(unittest.TestCase):
         process.wait()
         process_tree.stop(process)
         self.assertEqual(process.returncode, 0)
+
+
+class PriorityTests(unittest.TestCase):
+    def test_a_helper_lowers_its_priority_and_its_children_inherit_it(self):
+        # In a helper of its own, started at normal priority: this runner's is left alone.
+        helper = (f"import subprocess, sys\n"
+                  f"sys.path.insert(0, {str(SCRIPTS)!r})\n"
+                  f"import process_tree\n"
+                  f"print(process_tree.lower_priority())\n"
+                  f"print(subprocess.run([sys.executable, '-c', {PRIORITY!r}], capture_output=True,"
+                  f" text=True, check=True).stdout.strip())\n")
+        options = {}
+        if process_tree.WINDOWS:
+            options["creationflags"] = subprocess.NORMAL_PRIORITY_CLASS
+        result = subprocess.run([sys.executable, "-c", helper], capture_output=True, text=True,
+                                check=True, timeout=60, **options)
+        took, child = result.stdout.split()
+        self.assertEqual(took, "True")
+        if process_tree.WINDOWS:
+            self.assertEqual(int(child), process_tree.BELOW_NORMAL_PRIORITY_CLASS)
+        else:
+            self.assertEqual(int(child), min(19, os.nice(0) + process_tree.NICENESS_STEP))
+
+    def test_a_refusal_is_not_an_error(self):
+        lowering = "_lower_windows_priority" if process_tree.WINDOWS else "_lower_posix_priority"
+        for error in (OSError("refused"), AttributeError("no such call")):
+            with self.subTest(error=error), \
+                 mock.patch.object(process_tree, lowering, side_effect=error):
+                self.assertFalse(process_tree.lower_priority())
 
 
 if __name__ == "__main__":

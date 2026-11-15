@@ -1,9 +1,12 @@
-"""Notice when the process a helper answers to is gone, and stop a helper's whole tree.
+"""Notice when the process a helper answers to is gone, stop a helper's whole tree, and let a
+helper's work give way to whoever is using the machine.
 
 A push interrupted at the terminal ends git but not the hook git was running, nor the
 lint under that hook, nor the clang-tidy workers under the lint: on Windows the hook
 runs behind the shell and batch wrappers of a Python shim and never sees the interrupt.
 So a helper watches the process it answers to and takes its own children down with it.
+A helper that keeps every CPU busy for long lowers its own priority first, and the
+children it starts inherit it.
 """
 
 from __future__ import annotations
@@ -20,6 +23,9 @@ import time
 
 WINDOWS = sys.platform == "win32"
 GIT = ("git", "git.exe")
+BELOW_NORMAL_PRIORITY_CLASS = 0x4000
+IDLE_PRIORITY_CLASS = 0x40
+NICENESS_STEP = 10  # how much nicer a POSIX helper makes itself
 
 
 def table() -> dict[int, tuple[int, str]]:
@@ -100,6 +106,37 @@ def stop(process: subprocess.Popen) -> None:
     except subprocess.TimeoutExpired:
         process.kill()
         process.wait()
+
+
+def lower_priority() -> bool:
+    """Lower this process's scheduling priority, which the children it starts afterwards
+    inherit: below normal on Windows (never raising a lower class), NICENESS_STEP nicer on
+    POSIX, where the nice value is a thread's, so call it before starting any thread.
+    Whether it took; a refusal is never an error."""
+    try:
+        return _lower_windows_priority() if WINDOWS else _lower_posix_priority()
+    except (OSError, AttributeError, ValueError):
+        return False
+
+
+def _lower_posix_priority() -> bool:
+    os.nice(NICENESS_STEP)
+    return True
+
+
+def _lower_windows_priority() -> bool:
+    from ctypes import wintypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.GetCurrentProcess.restype = ctypes.c_void_p
+    kernel32.GetPriorityClass.argtypes = [ctypes.c_void_p]
+    kernel32.GetPriorityClass.restype = wintypes.DWORD
+    kernel32.SetPriorityClass.argtypes = [ctypes.c_void_p, wintypes.DWORD]
+    kernel32.SetPriorityClass.restype = wintypes.BOOL
+    process = kernel32.GetCurrentProcess()
+    if kernel32.GetPriorityClass(process) in (BELOW_NORMAL_PRIORITY_CLASS, IDLE_PRIORITY_CLASS):
+        return True
+    return bool(kernel32.SetPriorityClass(process, BELOW_NORMAL_PRIORITY_CLASS))
 
 
 def _proc_table() -> dict[int, tuple[int, str]]:

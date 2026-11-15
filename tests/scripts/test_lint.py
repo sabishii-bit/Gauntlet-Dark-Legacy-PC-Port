@@ -16,6 +16,13 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "scripts"))
 import lint
 
 
+def setUpModule():
+    # A lint run in this process must leave the test runner's own priority alone.
+    patcher = mock.patch.object(lint.process_tree, "lower_priority", return_value=True)
+    patcher.start()
+    unittest.addModuleCleanup(patcher.stop)
+
+
 class EditorSettingsTests(unittest.TestCase):
     def test_version_is_plain_text_and_not_formatted_on_save(self):
         path = lint.ROOT / ".vscode/settings.json"
@@ -37,6 +44,15 @@ class ConfigurationTests(unittest.TestCase):
         self.assertIn("bugprone-*", checks)
         self.assertNotIn("clang-analyzer", checks)
         self.assertIn("scripts/lint.py --profile full", header)
+
+
+class JobsTests(unittest.TestCase):
+    def test_ci_runners_use_every_cpu_and_other_machines_three_quarters(self):
+        for environ, cpus, jobs in (({"CI": "true"}, 16, 16), ({}, 16, 12), ({"CI": ""}, 16, 12),
+                                    ({"CI": "false"}, 16, 12), ({}, 4, 3), ({}, 1, 1),
+                                    ({"CI": "true"}, 1, 1)):
+            with self.subTest(environ=environ, cpus=cpus):
+                self.assertEqual(lint.default_jobs(environ, cpus), jobs)
 
 
 class ShardTests(unittest.TestCase):
@@ -156,6 +172,41 @@ class DriverTests(unittest.TestCase):
         with mock.patch.object(lint, "run_one", return_value=[]) as run:
             self.assertEqual(lint.main(["--jobs", "2"]), 0)
             self.assertCountEqual([call.args[1] for call in run.call_args_list], self.units)
+
+    def test_the_lint_lowers_its_priority_before_anything_starts(self):
+        events = []
+        output = io.StringIO()
+
+        def note(event, result=None):
+            return lambda *_: events.append(event) or result
+
+        lowering = note("lowered", True)
+        with mock.patch.object(lint.process_tree, "lower_priority", side_effect=lowering), \
+             mock.patch.object(lint, "watch_parent", side_effect=note("watched")), \
+             mock.patch.object(lint, "run_one", side_effect=note("unit", [])), \
+             contextlib.redirect_stdout(output):
+            self.assertEqual(lint.main(["--jobs", "1"]), 0)
+        self.assertEqual(events, ["lowered", "watched", *["unit"] * len(self.units)])
+        self.assertIn("1 workers at low priority", output.getvalue())
+
+    def test_a_lint_whose_priority_stays_where_it_was_still_runs(self):
+        output = io.StringIO()
+        with mock.patch.object(lint.process_tree, "lower_priority", return_value=False), \
+             mock.patch.object(lint, "run_one", return_value=[]) as run, \
+             contextlib.redirect_stdout(output):
+            self.assertEqual(lint.main([]), 0)
+        self.assertEqual(run.call_count, len(self.units))
+        self.assertNotIn("low priority", output.getvalue())
+
+    def test_the_jobs_default_reaches_the_pool(self):
+        for ci, workers in (("true", 8), ("", 6)):
+            output = io.StringIO()
+            with self.subTest(ci=ci), mock.patch.dict(lint.os.environ, {"CI": ci}), \
+                 mock.patch.object(lint.os, "cpu_count", return_value=8), \
+                 mock.patch.object(lint, "run_one", return_value=[]), \
+                 contextlib.redirect_stdout(output):
+                self.assertEqual(lint.main([]), 0)
+                self.assertIn(f"{workers} workers", output.getvalue())
 
     def test_the_default_profile_is_fast_and_full_is_asked_for(self):
         for options, profile in (([], "fast"), (["--profile", "full"], "full")):

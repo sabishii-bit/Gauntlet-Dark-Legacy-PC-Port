@@ -5,7 +5,10 @@ Findings in headers are reported once. Exit status is 1 when anything is
 reported. Configure and build first so compile_commands.json exists. A lint that is
 interrupted, told to stop, or whose caller is gone ends its clang-tidy workers. CI can
 instead configure with CMAKE_CXX_SCAN_FOR_MODULES=OFF (no C++ modules are used)
-and build only compile_commands, avoiding build-only module mapper files.
+and build only compile_commands, avoiding build-only module mapper files. The lint
+lowers its own priority, which its workers inherit, and runs as many of them as there
+are logical CPUs under CI (CI set) and three quarters of that elsewhere, so the machine's
+user keeps the rest.
 
     python scripts/lint.py             # everything
     python scripts/lint.py src/game    # a subtree or single file
@@ -212,6 +215,16 @@ PROFILES = {"fast": [], "full": [f"--checks={ANALYZER_CHECKS}", *ANALYZER_CONFIG
 DEFAULT_PROFILE = "fast"
 
 
+def default_jobs(environ=None, cpus: int | None = None) -> int:
+    """Every logical CPU on a CI runner (GitHub sets CI=true), which has nothing else to
+    run; three quarters of them, at least one, on a machine someone is using."""
+    environ = os.environ if environ is None else environ
+    cpus = cpus or os.cpu_count() or 4
+    if environ.get("CI", "").strip().lower() not in ("", "0", "false"):
+        return cpus
+    return max(1, cpus * 3 // 4)
+
+
 class Workers:
     """The clang-tidy processes under way, so a stopped lint ends them instead of
     leaving them to finish for nobody."""
@@ -296,8 +309,9 @@ def main(argv=None) -> int:
     parser.add_argument("paths", nargs="*", help="source files or subtrees (default: src and tests)")
     parser.add_argument("--shard-index", type=int, default=0, help="zero-based CI shard index")
     parser.add_argument("--shard-count", type=int, default=1, help="number of disjoint CI shards")
-    parser.add_argument("--jobs", type=int, default=os.cpu_count() or 4,
-                        help="maximum concurrent clang-tidy processes")
+    parser.add_argument("--jobs", type=int, default=default_jobs(),
+                        help="maximum concurrent clang-tidy processes (default: every logical "
+                             "CPU under CI, else three quarters of them)")
     parser.add_argument("--cache-dir", type=pathlib.Path,
                         help="reuse clean results after hashing clang dependencies (GCC-style commands)")
     parser.add_argument("--changed", metavar="REVISION",
@@ -323,6 +337,9 @@ def main(argv=None) -> int:
         select_shard([], args.shard_index, args.shard_count)
     except ValueError as error:
         parser.error(str(error))
+    # Before any thread starts: on Linux the nice value is a thread's, and the threads
+    # started later, and the workers they start, take it from this one.
+    lowered = process_tree.lower_priority()
     global WORKERS
     WORKERS = Workers()
     watch_parent()
@@ -359,8 +376,8 @@ def main(argv=None) -> int:
         return findings, False
 
     print(f"Lint shard {args.shard_index + 1}/{args.shard_count}: "
-          f"{len(units)} of {len(roster)} translation units, {args.jobs} workers, "
-          f"{args.profile} profile", flush=True)
+          f"{len(units)} of {len(roster)} translation units, {args.jobs} workers"
+          f"{' at low priority' if lowered else ''}, {args.profile} profile", flush=True)
     seen: set[str] = set()
     ordered: list[str] = []
     hits = 0
