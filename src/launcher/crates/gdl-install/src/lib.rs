@@ -3,9 +3,14 @@
 //! icon and launching. Only its `platform` module may call the OS directly.
 #![deny(unsafe_code)]
 
+mod compat;
 mod payload;
 mod sections;
 
+pub use compat::{
+    Access, JOURNAL_NAMES, JOURNAL_SCHEMA, MIN_LAUNCHER, Stamp, StampError, StateName, access,
+    launcher_state_name, stamp_of,
+};
 pub use payload::{
     BUILD_INFO, BuildInfo, DATA_SUFFIX, DEFAULT_CONFIG, LIBRARY_SUFFIX, MAX_BUILD_INFO_LEN,
     MAX_PAYLOAD_BYTES, MAX_PAYLOAD_ENTRIES, MAX_VERSION_FILE_LEN, PORTABLE_FLAG, Payload,
