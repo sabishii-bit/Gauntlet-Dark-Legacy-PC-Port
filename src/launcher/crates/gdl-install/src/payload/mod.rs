@@ -172,7 +172,8 @@ impl<R: Read + Seek> Payload<R> {
     /// exactly as many bytes as it declares, with the checksum the archive gives it and the
     /// SHA-256 digest its release record lists, or for `build-info.json` the digest of the record
     /// read when the runtime was opened; whatever the zip crate or the decompressor cannot read
-    /// is damage too. What was written before a refusal is the caller's to throw away.
+    /// is damage too. What was written before a refusal, never more than one byte past the
+    /// entry's declared size, is the caller's to throw away.
     ///
     /// Panics when `index` is not that of one of [`entries`](Self::entries).
     pub fn copy_entry(
@@ -187,10 +188,13 @@ impl<R: Read + Seek> Payload<R> {
         } else {
             &self.build_info.files[entry.name.as_str()]
         };
-        let mut file = self
+        let file = self
             .archive
             .by_index(index)
             .map_err(|error| damaged(&entry.name, error))?;
+        // One byte past the declared size, so that a longer entry is refused with no more written,
+        // whatever size the zip crate reads for it.
+        let mut file = file.take(entry.size + 1);
         let mut block = block_for(entry.size);
         let mut hasher = Sha256::new();
         let mut done = 0;
@@ -438,8 +442,8 @@ fn check_sizes(entries: &[PayloadEntry]) -> Result<usize, PayloadError> {
 }
 
 /// Has the zip crate read the archive, and refuses it unless the crate reads the same entries, as
-/// many and in the same order, and finds every local header in agreement with its row and no two
-/// entries overlapping. Gives back the archive as the crate reads it.
+/// many, in the same order and of the same sizes, and finds every local header in agreement with
+/// its row and no two entries overlapping. Gives back the archive as the crate reads it.
 fn check_with_zip<R: Read + Seek>(
     reader: R,
     entries: &[PayloadEntry],
@@ -452,6 +456,20 @@ fn check_with_zip<R: Read + Seek>(
         return Err(PayloadError::Rows {
             detail: "the zip crate reads other entries than the central directory's rows".into(),
         });
+    }
+    // The size the crate reads for an entry is what it bounds the entry's bytes by, so it must be
+    // the one the payload's limits were held to.
+    for entry in entries {
+        let size = archive.by_index_data(entry.index).map(|data| data.size());
+        if size.ok() != Some(entry.size) {
+            return Err(PayloadError::Rows {
+                detail: format!(
+                    "the zip crate reads another size for {} than its row declares",
+                    entry.name.as_str()
+                )
+                .into(),
+            });
+        }
     }
     archive
         .validate_header_consistency()
@@ -1317,7 +1335,8 @@ mod tests {
         let entries = open(zip.clone()).unwrap().entries().to_vec();
         check_with_zip(Cursor::new(zip.clone()), &entries).unwrap();
 
-        // An entry the crate does not read, one too few, and another name in an entry's place.
+        // An entry the crate does not read, one too few, another name or size in an entry's
+        // place, and two entries in each other's.
         let mut more = entries.clone();
         more.push(PayloadEntry {
             name: rel("data/more.json"),
@@ -1328,12 +1347,15 @@ mod tests {
         fewer.pop();
         let mut renamed = entries.clone();
         renamed[1].name = rel("data/other.json");
+        let mut resized = entries.clone();
+        resized[1].size += 1;
         let mut reordered = entries.clone();
         reordered.swap(0, 1);
         for (what, claimed) in [
             ("more", more),
             ("fewer", fewer),
             ("renamed", renamed),
+            ("resized", resized),
             ("reordered", reordered),
         ] {
             let error = check_with_zip(Cursor::new(zip.clone()), &claimed).unwrap_err();
@@ -1823,6 +1845,29 @@ mod tests {
         assert_eq!(copied, 3 * block);
         let own = |done| (done, 3 * block, LARGE.to_owned());
         assert_eq!(alone.steps(), [own(block), own(2 * block), own(3 * block)]);
+    }
+
+    #[test]
+    fn a_copy_writes_at_most_a_byte_past_the_declared_size() {
+        // The large shader of three blocks declared, after the zip crate read its row, as a block
+        // and a few bytes: a row the crate reads for more than the limits were held to.
+        let mut payload = open(with_large_shader()).unwrap();
+        let at = place(&payload, LARGE);
+        let declared = BLOCK_LEN as u64 + 5;
+        payload.entries[at].size = declared;
+        let mut copy = Vec::new();
+        match payload.copy_entry(at, &mut copy, &quiet(&Cancel::default())) {
+            Err(PayloadError::Damaged { name, detail }) => {
+                assert_eq!(&*name, LARGE);
+                let held = declared + 1;
+                assert_eq!(
+                    &*detail,
+                    format!("it holds {held} bytes and declares {declared}")
+                );
+            }
+            other => panic!("{other:?}"),
+        }
+        assert_eq!(copy.len() as u64, declared + 1);
     }
 
     #[test]
