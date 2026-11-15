@@ -3,4 +3,5 @@
 //! the window may start under the process's token or user.
 #![forbid(unsafe_code)]
 
+pub mod codes;
 pub mod privilege;
