@@ -135,13 +135,13 @@ fn read_end_record<R: Read + Seek>(
         return Err(PayloadError::Zip64);
     }
     if disk != 0 || directory_disk != 0 {
-        return Err(damaged(format!(
+        return Err(bad_directory(format!(
             "the end record lies on disk {disk} and its central directory on disk \
              {directory_disk}"
         )));
     }
     if disk_count != count {
-        return Err(damaged(format!(
+        return Err(bad_directory(format!(
             "the end record counts {disk_count} rows on its disk and {count} in all"
         )));
     }
@@ -154,12 +154,12 @@ fn read_end_record<R: Read + Seek>(
         .ok()
         .filter(|&bytes| bytes <= MAX_CENTRAL_DIRECTORY_LEN)
     else {
-        return Err(damaged(format!(
+        return Err(bad_directory(format!(
             "the central directory takes {len} bytes, more than {MAX_CENTRAL_DIRECTORY_LEN}"
         )));
     };
     if u64::from(offset) + len as u64 != start {
-        return Err(damaged(format!(
+        return Err(bad_directory(format!(
             "the central directory at byte {offset} takes {len} bytes, so it does not end where \
              the end record begins, at byte {start}"
         )));
@@ -214,19 +214,19 @@ fn read_rows<R: Read + Seek>(reader: &mut R, end: &EndRecord) -> Result<Vec<Row>
         let at = u64::from(end.offset) + (end.len - rest.len()) as u64;
         // Stopping at the rows counted keeps a directory padded past them from being parsed.
         if rows.len() == count {
-            return Err(damaged(format!(
+            return Err(bad_directory(format!(
                 "the central directory goes on at byte {at}, past the {count} rows its end \
                  record counts"
             )));
         }
         let Some((fixed, after)) = rest.split_first_chunk::<CENTRAL_ROW_LEN>() else {
-            return Err(damaged(format!(
+            return Err(bad_directory(format!(
                 "the central directory ends inside the row at byte {at}"
             )));
         };
         let mut fields = Fields::new(fixed);
         if fields.u32() != CENTRAL_SIGNATURE {
-            return Err(damaged(format!("no row begins at byte {at}")));
+            return Err(bad_directory(format!("no row begins at byte {at}")));
         }
         // The system and version that made the entry, and the version that extracts it.
         fields.skip(4);
@@ -246,18 +246,18 @@ fn read_rows<R: Read + Seek>(reader: &mut R, end: &EndRecord) -> Result<Vec<Row>
         let header_offset = fields.u32();
         let Some((variable, after)) = after.split_at_checked(name_len + extra_len + comment_len)
         else {
-            return Err(damaged(format!(
+            return Err(bad_directory(format!(
                 "the row at byte {at} runs past the central directory"
             )));
         };
         if extra_len != 0 || comment_len != 0 {
-            return Err(damaged(format!(
+            return Err(bad_directory(format!(
                 "the row at byte {at} has an extra field of {extra_len} bytes and a comment of \
                  {comment_len}"
             )));
         }
         if disk != 0 {
-            return Err(damaged(format!(
+            return Err(bad_directory(format!(
                 "the row at byte {at} starts its entry on disk {disk}"
             )));
         }
@@ -273,7 +273,7 @@ fn read_rows<R: Read + Seek>(reader: &mut R, end: &EndRecord) -> Result<Vec<Row>
         rest = after;
     }
     if rows.len() != count {
-        return Err(damaged(format!(
+        return Err(bad_directory(format!(
             "the end record counts {count} rows, and the central directory holds {}",
             rows.len()
         )));
@@ -308,7 +308,7 @@ impl Row {
             });
         }
         if self.method == METHOD_STORED && self.compressed_size != self.size {
-            return Err(damaged(format!(
+            return Err(bad_directory(format!(
                 "the stored entry {:?} holds {} bytes and declares {}",
                 self.shown_name(),
                 self.compressed_size,
@@ -318,7 +318,7 @@ impl Row {
         // The local header that comes first must open the archive: bytes before it are data
         // prepended to the zip, which no runtime carries.
         if self.header_offset == first_header && first_header != 0 {
-            return Err(damaged(format!(
+            return Err(bad_directory(format!(
                 "{first_header} bytes come before the first local header"
             )));
         }
@@ -353,7 +353,7 @@ impl Row {
 
 /// The refusal of a central directory or end record that a runtime's could not be, for the reason
 /// `detail` gives.
-fn damaged(detail: String) -> PayloadError {
+fn bad_directory(detail: String) -> PayloadError {
     PayloadError::Rows {
         detail: detail.into(),
     }

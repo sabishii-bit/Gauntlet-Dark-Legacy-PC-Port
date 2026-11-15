@@ -96,20 +96,8 @@ pub struct Payload<R> {
 
 impl<R: Read + Seek> Payload<R> {
     /// Reads the runtime zip in `reader` and holds it to the payload's rules, refusing it for the
-    /// first rule it breaks. Its end record must end the archive, without a comment or ZIP64, and
-    /// count at most [`MAX_PAYLOAD_ENTRIES`] rows; the central directory must hold exactly those
-    /// rows, without extra fields or comments; no entry may be encrypted, compressed but by
-    /// deflate, or a folder or link, and no bytes may come before the first; every name must keep
-    /// to the payload's name rules, lie under one of the runtime's own roots in their exact case,
-    /// and be one no other name shares in any letter case or stands above; the declared sizes
-    /// must keep within [`MAX_PAYLOAD_BYTES`], with a `build-info.json` of at most
-    /// [`MAX_BUILD_INFO_LEN`]; and the zip crate must read the same entries, every local header
-    /// agreeing with its row. Then `build-info.json` must hold a release record as
-    /// [`BuildInfo::parse`] reads one; no entry may be one that only another platform's runtime
-    /// has; the record must list exactly the archive's other entries, by their exact names; and
-    /// `VERSION` must declare at most [`MAX_VERSION_FILE_LEN`] bytes and hold, in UTF-8, the
-    /// record's version with nothing but ASCII whitespace around it. Those two files are read
-    /// whole here; the others are read when they are copied.
+    /// first it breaks, as the variants of [`PayloadError`] name them. `build-info.json` and
+    /// `VERSION` are read whole here, the other files only as they are copied.
     pub fn open(mut reader: R) -> Result<Payload<R>, PayloadError> {
         let entries = rows::read_entries(&mut reader)?;
         for entry in &entries {

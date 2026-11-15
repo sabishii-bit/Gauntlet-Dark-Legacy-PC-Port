@@ -50,13 +50,13 @@ const MAGIC: [u8; 8] = *b"GDLSECT1";
 const TRAILER_LEN: u64 = 48;
 
 /// Where the trailer keeps the table's length, as 8 little-endian bytes.
-const TRAILER_TABLE_LEN: usize = 0;
+const TABLE_LEN_AT: usize = 0;
 
 /// Where the trailer keeps the table's SHA-256 digest.
-const TRAILER_DIGEST: Range<usize> = 8..40;
+const DIGEST_AT: Range<usize> = 8..40;
 
 /// Where the trailer keeps [`MAGIC`].
-const TRAILER_MAGIC: Range<usize> = 40..48;
+const MAGIC_AT: Range<usize> = 40..48;
 
 /// The schema of the tables this launcher reads.
 const TABLE_SCHEMA: u64 = 1;
@@ -141,19 +141,10 @@ impl<R> Sections<R> {
 }
 
 impl<R: Read + Seek> Sections<R> {
-    /// Finds the sections `source` carries and checks their table, refusing it for the first rule
-    /// it breaks. The program must be a PE, or an x86-64 ELF64 little-endian program, whose headers
-    /// say where it ends; a PE's certificate table must start at a multiple of 8, at or after the
-    /// program's end, and end the file. The trailer must end where the certificate table starts,
-    /// or the file ends, less up to 7 zero bytes, and give a table of at most [`MAX_TABLE_LEN`]
-    /// bytes between the program and itself, with the table's digest. The table must be JSON of
-    /// schema 1 that records the program's length as the headers give it, and lists each
-    /// section's name, of 1 to [`MAX_SECTION_NAME`] characters of printable ASCII and unlike any
-    /// other's, its SHA-256 digest in lower-case hexadecimal, a size of at most
-    /// [`MAX_SECTION_LEN`] bytes, and an offset where the program or the section before it ends;
-    /// and the table must start where the last section ends. Keys the table does not know, and
-    /// sections of names this launcher does not know, are allowed. The sections' own bytes are
-    /// read by [`verify`](Self::verify).
+    /// Finds the sections `source` carries after its program and checks their table, refusing the
+    /// file for the first rule it breaks, as the variants of [`SectionsError`] name them. Keys the
+    /// table does not know, and sections of names this launcher does not know, are allowed; the
+    /// sections' own bytes are read by [`verify`](Self::verify).
     ///
     /// Gives back `None` for a file without a trailer: a program that carries no sections.
     pub fn find(mut source: R) -> Result<Option<Sections<R>>, SectionsError> {
@@ -171,16 +162,16 @@ impl<R: Read + Seek> Sections<R> {
             return Ok(None);
         };
         let trailer: [u8; TRAILER_LEN as usize] = read_array(&mut source, trailer_start)?;
-        if trailer[TRAILER_MAGIC] != MAGIC {
+        if trailer[MAGIC_AT] != MAGIC {
             return Ok(None);
         }
-        let table_len = u64_at(&trailer, TRAILER_TABLE_LEN);
+        let table_len = u64_at(&trailer, TABLE_LEN_AT);
         if table_len == 0 || table_len > MAX_TABLE_LEN || table_len > trailer_start - program.end {
             return Err(SectionsError::TableLength { len: table_len });
         }
         let table_start = trailer_start - table_len;
         let table = read_vec(&mut source, table_start, table_len as usize)?;
-        if Sha256::digest(&table)[..] != trailer[TRAILER_DIGEST] {
+        if Sha256::digest(&table)[..] != trailer[DIGEST_AT] {
             return Err(SectionsError::TableHash);
         }
         let table = Table::parse(&table)?;

@@ -50,14 +50,8 @@ pub struct BuildInfo {
 
 impl BuildInfo {
     /// Reads a release record and holds it to the rules a runtime's record keeps, refusing it for
-    /// the first rule it breaks: a JSON object whose version, commit, platform and executable are
-    /// texts; a semantic version; a platform a release is built for, and that platform's
-    /// executable; and an inventory of at most [`MAX_PAYLOAD_ENTRIES`] files whose names keep to
-    /// the payload's name rules, share a name in no ASCII letter case with another or with the
-    /// record itself, lie where a runtime of that platform keeps its files, stand above no other,
-    /// include `VERSION`, `portable.flag`, `data/config.json` and the executable in their exact
-    /// case, and each carry a SHA-256 digest in lower-case hexadecimal. Keys the record does not
-    /// know are kept.
+    /// the first it breaks, as the variants of [`PayloadError`] name them. Keys the record does
+    /// not know are kept in `other`.
     pub fn parse(bytes: &[u8]) -> Result<BuildInfo, PayloadError> {
         let record = serde_json::from_slice(bytes)
             .map_err(|error| invalid(format_args!("build-info.json is not JSON: {error}")))?;
