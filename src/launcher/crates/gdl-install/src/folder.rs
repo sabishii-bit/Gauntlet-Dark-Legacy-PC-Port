@@ -134,7 +134,7 @@ fn open_lock_file(path: &Path) -> io::Result<File> {
 
 /// Whether an error looking at a path says that nothing is there: the path is missing, or a
 /// folder above it is a file.
-fn is_absent(error: &io::Error) -> bool {
+pub(crate) fn is_absent(error: &io::Error) -> bool {
     matches!(
         error.kind(),
         io::ErrorKind::NotFound | io::ErrorKind::NotADirectory

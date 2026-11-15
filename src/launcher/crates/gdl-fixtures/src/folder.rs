@@ -1,11 +1,18 @@
 //! Install folders in the states the launcher's tests need: roots of an exact length, links to
-//! folders and files, the names the alpha installer leaves and entries only root may open, and the
-//! names a folder holds, to compare.
+//! folders and files, the names the alpha installer leaves, entries only root may open and
+//! installations as the launcher leaves them; and the names a folder holds and what a tree holds,
+//! to compare.
 
+use std::collections::BTreeMap;
 use std::fs;
-use std::io;
+use std::io::{self, Write};
 use std::iter;
 use std::path::{Component, Path, PathBuf};
+use std::time::SystemTime;
+
+use serde_json::{Map, Value, json};
+
+use crate::runtime::{BUILD_INFO, RuntimeFiles, WINDOWS_PLATFORM, pretty_json, sha256_hex};
 
 /// The most characters a padding folder of a long root takes, well under the 255 that NTFS and
 /// ext4 allow a name.
@@ -34,6 +41,53 @@ const NO_ACCESS: u32 = 0o000;
 /// The bits of a mode that hold its permissions, the set-id and sticky bits included.
 #[cfg(unix)]
 const PERMISSION_BITS: u32 = 0o7777;
+
+/// The folder at an installation's top that holds the launcher's own state.
+const STATE_DIR: &str = ".gdl-launcher";
+
+/// The installation's receipt, in the state folder.
+const RECEIPT_FILE: &str = "receipt.json";
+
+/// The memory card's icon on the disc, which the launcher sets into the Windows executable.
+const DISC_ICON: &str = "carddemo/icon.tpl";
+
+/// What an installation fixture holds as the icon: no real one.
+const ICON_BYTES: &[u8] = b"not a real icon";
+
+/// What an installation fixture holds of the disc, by name under its top: one of the game's data
+/// files, which is no real one either, and the icon.
+const DISC_FILES: [(&str, &[u8]); 2] = [
+    ("Gauntlet/PDATA/WAR.WAD", b"not a real class file"),
+    (DISC_ICON, ICON_BYTES),
+];
+
+/// The folders an installation keeps for the player's own files, which a new one has empty.
+const PLAYER_FOLDERS: [&str; 2] = ["saves", "config"];
+
+/// The launcher copy a Windows installation keeps at its top.
+const WINDOWS_LAUNCHER: &str = "GauntletDarkLegacy-Launcher.exe";
+
+/// The launcher copy an installation keeps at its top on every other platform.
+const LAUNCHER: &str = "GauntletDarkLegacy-Launcher";
+
+/// What an installation fixture's launcher copy holds: no real program.
+const LAUNCHER_BYTES: &[u8] = b"not a real launcher";
+
+/// What an installation fixture adds to the Windows executable in place of the disc's icon, so
+/// that the executable it installs differs from the one the runtime ships, as the launcher's does.
+const ICON_MARK: &[u8] = b" with the disc's icon";
+
+/// The schema of the receipt the first launcher writes.
+const RECEIPT_SCHEMA: u64 = 1;
+
+/// The lowest launcher version a receipt of the first schema lets change it.
+const MIN_LAUNCHER: &str = "1.0.0-beta";
+
+/// The disc an installation's game data comes from.
+const DISC: &str = "GUNE5D";
+
+/// The revision the disc's header gives.
+const DISC_REVISION: u8 = 1;
 
 /// Makes a new, empty folder under `base` whose absolute path is exactly `utf16_units` UTF-16
 /// units long, the measure the launcher holds an install root to, and returns that path.
@@ -231,6 +285,47 @@ pub fn folder_names(folder: &Path) -> io::Result<Vec<String>> {
     Ok(names)
 }
 
+/// What [`snapshot`] keeps of an entry: enough to tell that it was changed, replaced or made anew.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct EntryState {
+    /// What kind of entry it is, a link counting as a link and not as what it leads to.
+    pub file_type: fs::FileType,
+    /// Its length in bytes, as the system gives it.
+    pub len: u64,
+    /// When it was last changed; for a folder, when an entry was last made in it or removed.
+    pub modified: SystemTime,
+}
+
+/// Every entry of the tree at `root`, by its path under `root`, `root` itself as the empty path:
+/// what a test compares before and after an operation that must change nothing. A link is
+/// recorded and never followed.
+pub fn snapshot(root: &Path) -> io::Result<BTreeMap<PathBuf, EntryState>> {
+    let mut entries = BTreeMap::new();
+    let mut unvisited = vec![PathBuf::new()];
+    while let Some(relative) = unvisited.pop() {
+        // Not joined for the root itself, which a join would give a trailing separator.
+        let path = if relative.as_os_str().is_empty() {
+            root.to_path_buf()
+        } else {
+            root.join(&relative)
+        };
+        let metadata = fs::symlink_metadata(&path)?;
+        let file_type = metadata.file_type();
+        if file_type.is_dir() {
+            for entry in fs::read_dir(&path)? {
+                unvisited.push(relative.join(entry?.file_name()));
+            }
+        }
+        let state = EntryState {
+            file_type,
+            len: metadata.len(),
+            modified: metadata.modified()?,
+        };
+        entries.insert(relative, state);
+    }
+    Ok(entries)
+}
+
 /// Leaves `names` in `root` the way the alpha installer leaves them: its transaction folders, in
 /// any letter case, as empty folders, and every other name as an empty file. Each must be a single
 /// name, or nothing is made, and one that exists already is refused.
@@ -302,6 +397,150 @@ impl Drop for DeniedAccess {
     }
 }
 
+/// An installation as the launcher leaves one, for the tests that read or change one: a runtime's
+/// files, the disc's, the player's folders, the launcher copy and a receipt that describes them.
+#[derive(Clone, Debug)]
+pub struct InstallFixture {
+    /// The installation's folder.
+    pub root: PathBuf,
+    /// The runtime installed in it, as the release shipped it.
+    pub runtime: RuntimeFiles,
+}
+
+impl InstallFixture {
+    /// Lays out an installation of `runtime` in `root`, which is made when missing: the runtime's
+    /// files and its `build-info.json`, the Windows executable carrying the disc's icon as the
+    /// launcher sets it in; `Gauntlet/PDATA/WAR.WAD` and `carddemo/icon.tpl` from the disc; empty
+    /// `saves` and `config` folders; the launcher copy, `GauntletDarkLegacy-Launcher.exe` on
+    /// windows-x64 and `GauntletDarkLegacy-Launcher` elsewhere; and `.gdl-launcher/receipt.json`
+    /// holding [`receipt`](Self::receipt). Every file and folder is made new, so a name that
+    /// exists already is refused. A Linux installation holds both the executable `gauntlet` and
+    /// the disc's `Gauntlet`, which a file system that ignores letter case, as Windows' does, takes
+    /// for one name, so there it is refused the same way.
+    pub fn write(root: &Path, runtime: RuntimeFiles) -> io::Result<Self> {
+        let fixture = InstallFixture {
+            root: root.to_path_buf(),
+            runtime,
+        };
+        fs::create_dir_all(root)?;
+        for (name, data) in fixture.installed_files() {
+            write_new(&path_under(root, name), &data)?;
+        }
+        write_new(&root.join(BUILD_INFO), &fixture.runtime.build_info_bytes())?;
+        for (name, data) in DISC_FILES {
+            write_new(&path_under(root, name), data)?;
+        }
+        for folder in PLAYER_FOLDERS {
+            fs::create_dir(root.join(folder))?;
+        }
+        write_new(&root.join(fixture.launcher_name()), LAUNCHER_BYTES)?;
+        fs::create_dir(root.join(STATE_DIR))?;
+        write_new(&fixture.receipt_path(), &pretty_json(&fixture.receipt()))?;
+        Ok(fixture)
+    }
+
+    /// The receipt the launcher writes for this installation, from [`runtime`](Self::runtime) and
+    /// what the fixture lays out beside it: the stamp of the first schema; the release's version,
+    /// commit and platform; the disc and its revision; the SHA-256 digest of `build-info.json`;
+    /// the installed digest of each file installed with other bytes than the runtime's, which is
+    /// the Windows executable alone; on windows-x64 where its icon came from and the digest the
+    /// runtime gives the executable; and the launcher copy's name and digest.
+    pub fn receipt(&self) -> Value {
+        let installed_digests: Map<String, Value> = self
+            .installed_files()
+            .into_iter()
+            .filter(|(name, _)| self.personalises(name))
+            .map(|(name, data)| (name.to_owned(), Value::String(sha256_hex(&data))))
+            .collect();
+        let mut receipt = json!({
+            "schema": RECEIPT_SCHEMA,
+            "minLauncher": MIN_LAUNCHER,
+            "version": self.runtime.version,
+            "commit": self.runtime.commit,
+            "platform": self.runtime.platform,
+            "disc": DISC,
+            "discRevision": DISC_REVISION,
+            "buildInfoSha256": sha256_hex(&self.runtime.build_info_bytes()),
+            "installedDigests": installed_digests,
+            "launcher": {"name": self.launcher_name(), "sha256": sha256_hex(LAUNCHER_BYTES)},
+        });
+        if self.is_windows() {
+            // The digest the release record lists, whatever the runtime holds: nothing when it
+            // lists none.
+            let release = self.runtime.build_info()["files"][&self.runtime.executable].clone();
+            receipt["discIcon"] = json!({
+                "path": DISC_ICON,
+                "sha256": sha256_hex(ICON_BYTES),
+                "releaseExecutableSha256": release,
+            });
+        }
+        receipt
+    }
+
+    /// Writes `receipt` in place of the installation's receipt, as the launcher writes its JSON:
+    /// indented by two spaces, with LF line ends and a line end after it.
+    pub fn write_receipt(&self, receipt: &Value) -> io::Result<()> {
+        fs::write(self.receipt_path(), pretty_json(receipt))
+    }
+
+    /// The runtime's files as the installation holds them, by name: the Windows executable with
+    /// [`ICON_MARK`] after its bytes, every other file as the runtime ships it.
+    fn installed_files(&self) -> Vec<(&str, Vec<u8>)> {
+        self.runtime
+            .files
+            .iter()
+            .map(|(name, data)| {
+                let data = if self.personalises(name) {
+                    [data.as_slice(), ICON_MARK].concat()
+                } else {
+                    data.clone()
+                };
+                (name.as_str(), data)
+            })
+            .collect()
+    }
+
+    /// Whether the runtime's file `name` is installed carrying the disc's icon: the executable,
+    /// on Windows.
+    fn personalises(&self, name: &str) -> bool {
+        self.is_windows() && name == self.runtime.executable
+    }
+
+    /// Whether the runtime was built for Windows.
+    fn is_windows(&self) -> bool {
+        self.runtime.platform == WINDOWS_PLATFORM
+    }
+
+    /// The name of the launcher copy at the installation's top.
+    fn launcher_name(&self) -> &'static str {
+        if self.is_windows() {
+            WINDOWS_LAUNCHER
+        } else {
+            LAUNCHER
+        }
+    }
+
+    /// Where the installation keeps its receipt.
+    fn receipt_path(&self) -> PathBuf {
+        self.root.join(STATE_DIR).join(RECEIPT_FILE)
+    }
+}
+
+/// The path of `name`, a name of `/`-separated parts as a runtime and a disc give them, under
+/// `root`.
+fn path_under(root: &Path, name: &str) -> PathBuf {
+    name.split('/')
+        .fold(root.to_path_buf(), |path, part| path.join(part))
+}
+
+/// Makes the file `path` new, with the folders above it, and writes `data` in it.
+fn write_new(path: &Path, data: &[u8]) -> io::Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::File::create_new(path)?.write_all(data)
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
@@ -324,6 +563,16 @@ mod tests {
 
     /// Those of them that are folders: the transaction folders of its game updates and of its own.
     const ALPHA_FOLDER_NAMES: [&str; 2] = [".gdl-update", ".gdl-installer-update"];
+
+    /// Whether the file system that holds `dir` takes names that differ only in letter case for
+    /// one name, as Windows' does.
+    fn names_fold_case(dir: &Path) -> bool {
+        let probe = dir.join("case-probe");
+        fs::write(&probe, b"").unwrap();
+        let folds = fs::symlink_metadata(dir.join("CASE-PROBE")).is_ok();
+        fs::remove_file(&probe).unwrap();
+        folds
+    }
 
     /// A path's absolute length in UTF-16 units, as the launcher measures an install root.
     fn absolute_units(path: &Path) -> usize {
@@ -658,5 +907,207 @@ mod tests {
 
         // With every mode back, the folder is removed whole.
         dir.close().unwrap();
+    }
+
+    #[test]
+    fn snapshots_see_what_changes() {
+        use std::path::PathBuf;
+        use std::time::{Duration, SystemTime};
+
+        use super::{link_folder, snapshot};
+
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("tree");
+        let inner = root.join("inner");
+        fs::create_dir_all(&inner).unwrap();
+        fs::write(root.join("a.txt"), b"first").unwrap();
+        fs::write(inner.join("b.txt"), b"second").unwrap();
+        let before = snapshot(&root).unwrap();
+        // The root itself, every folder and every file, by path under the root.
+        let paths: Vec<PathBuf> = before.keys().cloned().collect();
+        let nested = Path::new("inner").join("b.txt");
+        assert_eq!(
+            paths,
+            [
+                PathBuf::new(),
+                PathBuf::from("a.txt"),
+                PathBuf::from("inner"),
+                nested.clone()
+            ]
+        );
+        assert!(before[Path::new("")].file_type.is_dir());
+        assert!(before[Path::new("inner")].file_type.is_dir());
+        assert!(before[Path::new("a.txt")].file_type.is_file());
+        assert_eq!(before[Path::new("a.txt")].len, 5);
+
+        // Reading a file, and looking again, change nothing.
+        assert_eq!(fs::read(root.join("a.txt")).unwrap(), b"first");
+        assert_eq!(snapshot(&root).unwrap(), before);
+
+        // New contents, a new time of change and a new entry each show.
+        fs::write(inner.join("b.txt"), b"changed!").unwrap();
+        let changed = snapshot(&root).unwrap();
+        assert_ne!(changed, before);
+        assert_eq!(changed[&nested].len, 8);
+        let long_ago = SystemTime::UNIX_EPOCH + Duration::from_secs(1);
+        let file = fs::File::options()
+            .write(true)
+            .open(root.join("a.txt"))
+            .unwrap();
+        file.set_modified(long_ago).unwrap();
+        drop(file);
+        let touched = snapshot(&root).unwrap();
+        assert_eq!(touched[Path::new("a.txt")].modified, long_ago);
+        assert_eq!(touched[Path::new("a.txt")].len, 5);
+        fs::write(inner.join("c.txt"), b"").unwrap();
+        let grown = snapshot(&root).unwrap();
+        assert!(grown.contains_key(&Path::new("inner").join("c.txt")));
+        assert_eq!(grown.len(), before.len() + 1);
+
+        // A link is recorded as a link, and what it leads to is not walked.
+        let outside = dir.path().join("outside");
+        fs::create_dir(&outside).unwrap();
+        fs::write(outside.join("far.txt"), b"far").unwrap();
+        link_folder(&root.join("link"), &outside).unwrap();
+        let linked = snapshot(&root).unwrap();
+        assert!(linked[Path::new("link")].file_type.is_symlink());
+        assert!(!linked.keys().any(|path| path.ends_with("far.txt")));
+
+        // A tree that is not there gives nothing to compare.
+        let error = snapshot(&dir.path().join("missing")).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::NotFound);
+    }
+
+    #[test]
+    fn install_fixtures_lay_out_an_installation() {
+        use serde_json::{Value, json};
+
+        use super::{InstallFixture, folder_names};
+        use crate::runtime::{RuntimeFiles, sha256_hex};
+
+        let dir = tempfile::tempdir().unwrap();
+        let folds_case = names_fold_case(dir.path());
+        for (platform, executable, launcher) in [
+            (
+                "windows-x64",
+                "gauntlet.exe",
+                "GauntletDarkLegacy-Launcher.exe",
+            ),
+            ("linux-x64", "gauntlet", "GauntletDarkLegacy-Launcher"),
+        ] {
+            let windows = platform == "windows-x64";
+            // The folder is made, with the folders above it.
+            let root = dir.path().join(platform).join("install");
+            let runtime = RuntimeFiles::standard(platform, "1.0.0-beta");
+            if folds_case && !windows {
+                // The Linux executable and the disc's folder are one name here, so the layout is
+                // refused rather than merged.
+                let error = InstallFixture::write(&root, runtime).unwrap_err();
+                assert_eq!(error.kind(), io::ErrorKind::AlreadyExists, "{platform}");
+                eprintln!(
+                    "only the refusal of the {platform} layout was checked: this file system takes \
+                     gauntlet and Gauntlet for one name"
+                );
+                continue;
+            }
+            let fixture = InstallFixture::write(&root, runtime.clone()).unwrap();
+            assert_eq!(fixture.root, root);
+            let mut names = vec![
+                ".gdl-launcher",
+                "Gauntlet",
+                launcher,
+                "VERSION",
+                "build-info.json",
+                "carddemo",
+                "config",
+                "data",
+                executable,
+                "portable.flag",
+                "saves",
+                "shaders",
+            ];
+            names.sort_unstable();
+            assert_eq!(folder_names(&root).unwrap(), names, "{platform}");
+            let read = |name: &str| {
+                let path = name
+                    .split('/')
+                    .fold(root.clone(), |path, part| path.join(part));
+                fs::read(path).unwrap()
+            };
+
+            // The runtime as it ships, but for the Windows executable, which carries the disc's
+            // icon after its own bytes.
+            for (name, data) in &runtime.files {
+                let installed = read(name);
+                if windows && name == executable {
+                    assert!(installed.len() > data.len(), "{name}");
+                    assert!(installed.starts_with(data), "{name}");
+                } else {
+                    assert_eq!(installed, *data, "{platform} {name}");
+                }
+            }
+            assert_eq!(read("build-info.json"), runtime.build_info_bytes());
+            assert!(!read("Gauntlet/PDATA/WAR.WAD").is_empty());
+            assert!(!read("carddemo/icon.tpl").is_empty());
+            for folder in ["saves", "config"] {
+                assert!(folder_names(&root.join(folder)).unwrap().is_empty());
+            }
+            assert_eq!(
+                folder_names(&root.join(".gdl-launcher")).unwrap(),
+                ["receipt.json"]
+            );
+
+            // The receipt it writes is the one it gives, and pins what it laid out.
+            let bytes = read(".gdl-launcher/receipt.json");
+            let receipt: Value = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(receipt, fixture.receipt(), "{platform}");
+            let digest = |name: &str| Value::String(sha256_hex(&read(name)));
+            let mut expected = json!({
+                "schema": 1,
+                "minLauncher": "1.0.0-beta",
+                "version": "1.0.0-beta",
+                "commit": "test-commit",
+                "platform": platform,
+                "disc": "GUNE5D",
+                "discRevision": 1,
+                "buildInfoSha256": digest("build-info.json"),
+                "installedDigests": {},
+                "launcher": {"name": launcher, "sha256": digest(launcher)},
+            });
+            if windows {
+                expected["installedDigests"] = json!({executable: digest(executable)});
+                expected["discIcon"] = json!({
+                    "path": "carddemo/icon.tpl",
+                    "sha256": digest("carddemo/icon.tpl"),
+                    "releaseExecutableSha256": runtime.build_info()["files"][executable],
+                });
+            }
+            assert_eq!(receipt, expected, "{platform}");
+            // Written as the launcher writes JSON.
+            let text = std::str::from_utf8(&bytes).unwrap();
+            assert!(text.starts_with("{\n  \""), "{text}");
+            assert!(text.ends_with("\n}\n"), "{text}");
+            assert!(!text.contains('\r'), "{text}");
+
+            // Another receipt takes its place whole.
+            fixture.write_receipt(&json!({"schema": 2})).unwrap();
+            assert_eq!(
+                read(".gdl-launcher/receipt.json"),
+                b"{\n  \"schema\": 2\n}\n"
+            );
+            // Nothing is laid over an installation that is there.
+            let error = InstallFixture::write(&root, runtime).unwrap_err();
+            assert_eq!(error.kind(), io::ErrorKind::AlreadyExists, "{platform}");
+        }
+
+        // The executable's digest as the release shipped it is the one its record lists: none,
+        // when the record lists none.
+        let mut runtime = RuntimeFiles::standard("windows-x64", "1.0.0-beta");
+        runtime.extra.insert("files".to_owned(), json!({}));
+        let fixture = InstallFixture::write(&dir.path().join("unlisted"), runtime).unwrap();
+        assert_eq!(
+            fixture.receipt()["discIcon"]["releaseExecutableSha256"],
+            Value::Null
+        );
     }
 }

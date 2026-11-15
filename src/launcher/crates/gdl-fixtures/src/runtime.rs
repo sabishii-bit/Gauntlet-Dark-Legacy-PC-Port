@@ -8,10 +8,11 @@ use sha2::{Digest, Sha256};
 use crate::zip::{RawEntry, RawZip};
 
 /// The release record's name, at the top of the runtime.
-const BUILD_INFO: &str = "build-info.json";
+pub(crate) const BUILD_INFO: &str = "build-info.json";
 
-/// The platform whose executable takes Windows' suffix; every other platform's goes without.
-const WINDOWS_PLATFORM: &str = "windows-x64";
+/// The platform whose executable, and whose installations' launcher copy, take Windows' suffix;
+/// every other platform's go without.
+pub(crate) const WINDOWS_PLATFORM: &str = "windows-x64";
 
 /// The game's executable on Windows.
 const WINDOWS_EXECUTABLE: &str = "gauntlet.exe";
@@ -98,10 +99,7 @@ impl RuntimeFiles {
 
     /// `build-info.json` as release.py writes it: JSON indented by two spaces, then a line end.
     pub fn build_info_bytes(&self) -> Vec<u8> {
-        let mut bytes = serde_json::to_vec_pretty(&self.build_info())
-            .expect("a JSON value always has a JSON form");
-        bytes.push(b'\n');
-        bytes
+        pretty_json(&self.build_info())
     }
 
     /// The runtime's archive, field by field: each file deflated, in byte order of the names, then
@@ -126,8 +124,16 @@ impl RuntimeFiles {
     }
 }
 
+/// `value` as the release scripts and the launcher write JSON files: indented by two spaces, with
+/// LF line ends and a line end after it.
+pub(crate) fn pretty_json(value: &Value) -> Vec<u8> {
+    let mut bytes = serde_json::to_vec_pretty(value).expect("a JSON value always has a JSON form");
+    bytes.push(b'\n');
+    bytes
+}
+
 /// The SHA-256 digest of `data`, in lower-case hexadecimal.
-fn sha256_hex(data: &[u8]) -> String {
+pub(crate) fn sha256_hex(data: &[u8]) -> String {
     hex(&Sha256::digest(data))
 }
 

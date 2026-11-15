@@ -1328,6 +1328,7 @@ dependencies = [
  "gdl-media",
  "gdl-release",
  "libc",
+ "serde",
  "serde_json",
  "sha2 0.11.1",
  "tar",

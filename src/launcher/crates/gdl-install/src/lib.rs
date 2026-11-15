@@ -6,6 +6,7 @@
 mod compat;
 mod folder;
 mod payload;
+mod receipt;
 mod sections;
 
 pub use compat::{
@@ -20,6 +21,10 @@ pub use payload::{
     BUILD_INFO, BuildInfo, DATA_SUFFIX, DEFAULT_CONFIG, LIBRARY_SUFFIX, MAX_BUILD_INFO_LEN,
     MAX_PAYLOAD_BYTES, MAX_PAYLOAD_ENTRIES, MAX_VERSION_FILE_LEN, PORTABLE_FLAG, Payload,
     PayloadEntry, PayloadError, ROOT_FILES, ROOT_FOLDERS, VERSION_FILE,
+};
+pub use receipt::{
+    DiscIcon, GUNE5D, InstalledGame, InstalledLauncher, MAX_RECEIPT_LEN, RECEIPT_SCHEMA, Receipt,
+    ReceiptError, installed_launcher_name,
 };
 pub use sections::{
     MAX_SECTION_LEN, MAX_SECTION_NAME, MAX_TABLE_LEN, RUNTIME_SECTION, Section, SectionView,
