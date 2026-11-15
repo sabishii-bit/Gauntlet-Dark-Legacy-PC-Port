@@ -133,7 +133,7 @@ pub fn pretty_json(value: &Value) -> Vec<u8> {
 }
 
 /// The SHA-256 digest of `data`, in lower-case hexadecimal.
-pub(crate) fn sha256_hex(data: &[u8]) -> String {
+pub fn sha256_hex(data: &[u8]) -> String {
     hex(&Sha256::digest(data))
 }
 

@@ -19,5 +19,5 @@ pub use program::{
     FAKE_CERTIFICATE_LEN, SparseFile, TRAILER_MAGIC, append_sections, append_sections_at,
     fake_sign, table_and_trailer, tiny_elf, tiny_pe,
 };
-pub use runtime::{RuntimeFiles, pretty_json};
+pub use runtime::{RuntimeFiles, pretty_json, sha256_hex};
 pub use zip::{RawEntry, RawZip, crc32};

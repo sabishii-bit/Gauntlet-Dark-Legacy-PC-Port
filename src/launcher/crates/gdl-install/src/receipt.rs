@@ -449,7 +449,8 @@ mod tests {
 
     use gdl_files::{ALPHA_NAMES, FilesError, PAYLOAD_NAMES, check_component, retry_locked};
     use gdl_fixtures::{
-        InstallFixture, RuntimeFiles, backdate, folder_names, link_folder, snapshot, symlink_file,
+        InstallFixture, RuntimeFiles, backdate, folder_names, link_folder, sha256_hex, snapshot,
+        symlink_file,
     };
     use gdl_release::{Platform, Version};
     use serde_json::{Value, json};
@@ -954,6 +955,35 @@ mod tests {
         let digests = json!({"data/config.json": unmatched_digest()});
         write_changed_receipt(&fixture, &[("installedDigests", digests)]);
         read(&folder).unwrap();
+    }
+
+    #[test]
+    fn build_info_is_read_to_its_bound() {
+        let (_dir, fixture, folder) = installation();
+        let build_info = folder.root().join(BUILD_INFO);
+        let longest = usize::try_from(MAX_BUILD_INFO_LEN).unwrap();
+        let later = json!({"schema": 2, "minLauncher": MIN_LAUNCHER});
+        for (len, within) in [(longest, true), (longest + 1, false)] {
+            // The shipped record with spaces after it, which reads as the same record, and a
+            // receipt that pins it, so that only the bound can refuse it; then a later launcher's
+            // receipt, which pins nothing.
+            let mut bytes = fixture.runtime.build_info_bytes();
+            bytes.resize(len, b' ');
+            fs::write(&build_info, &bytes).unwrap();
+            write_changed_receipt(&fixture, &[("buildInfoSha256", json!(sha256_hex(&bytes)))]);
+            let own = read(&folder);
+            fixture.write_receipt(&later).unwrap();
+            let read_only = read(&folder);
+            for (what, result) in [("its own receipt", own), ("a later receipt", read_only)] {
+                let what = format!("{len} bytes under {what}");
+                if within {
+                    let game = result.unwrap_or_else(|error| panic!("{what}: {error}"));
+                    assert_eq!(game.build_info.version, MIN_LAUNCHER, "{what}");
+                } else {
+                    assert_disagrees(result, BUILD_INFO, &what);
+                }
+            }
+        }
     }
 
     #[test]

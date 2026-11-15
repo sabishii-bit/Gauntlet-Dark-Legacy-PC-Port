@@ -1535,6 +1535,25 @@ mod tests {
             assert!(detail.starts_with(&shown), "{what}: {detail}");
         }
         assert_state(&inspect(&root), FolderState::Pending, "given back");
+
+        // With no job to decide, a receipt, or a file it pins, that may not be read is the
+        // system's refusal too, not a receipt that is wrong, and tells of no installation.
+        let (_other, fixture) = installation();
+        let root = fixture.root.clone();
+        for (what, denied) in [
+            ("the receipt", root.join(STATE_DIR).join(RECEIPT_FILE)),
+            ("build-info.json", root.join(BUILD_INFO)),
+        ] {
+            let held = DeniedAccess::deny(&[&denied]).unwrap();
+            let inspection = inspect(&root);
+            drop(held);
+            assert_state(&inspection, FolderState::Unreadable, what);
+            let detail = inspection.detail.unwrap_or_default();
+            let shown = format!("{}: ", denied.display());
+            assert!(detail.starts_with(&shown), "{what}: {detail}");
+            assert_eq!(inspection.installation, None, "{what}");
+        }
+        assert_state(&inspect(&root), FolderState::Installed, "read again");
     }
 
     #[cfg(target_os = "linux")]
