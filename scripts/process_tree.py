@@ -4,9 +4,10 @@ helper's work give way to whoever is using the machine.
 A push interrupted at the terminal ends git but not the hook git was running, nor the
 lint under that hook, nor the clang-tidy workers under the lint: on Windows the hook
 runs behind the shell and batch wrappers of a Python shim and never sees the interrupt.
-So a helper watches the process it answers to and takes its own children down with it.
-A helper that keeps every CPU busy for long lowers its own priority first, and the
-children it starts inherit it.
+So a helper watches the process it answers to and takes its own children down with it,
+and tethers the children it must not leave behind, which then end with it even when it is
+killed outright, as a timeout kills. A helper that keeps every CPU busy for long lowers its
+own priority first, and the children it starts inherit it.
 """
 
 from __future__ import annotations
@@ -26,6 +27,15 @@ GIT = ("git", "git.exe")
 BELOW_NORMAL_PRIORITY_CLASS = 0x4000
 IDLE_PRIORITY_CLASS = 0x40
 NICENESS_STEP = 10  # how much nicer a POSIX helper makes itself
+PR_SET_PDEATHSIG = 1  # prctl: the signal a child gets once the thread that started it ends
+JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x2000
+JOB_OBJECT_EXTENDED_LIMIT_INFORMATION = 9  # SetInformationJobObject's class for those limits
+PROCESS_SET_QUOTA = 0x0100
+PROCESS_TERMINATE = 0x0001
+
+_tether_lock = threading.Lock()
+_job = None  # Windows: the job tethered children join; 0 once the system refused one
+_prctl = None  # Linux: libc's prctl; False where there is none
 
 
 def table() -> dict[int, tuple[int, str]]:
@@ -106,6 +116,130 @@ def stop(process: subprocess.Popen) -> None:
     except subprocess.TimeoutExpired:
         process.kill()
         process.wait()
+
+
+def start_tethered(command: list[str], **kwargs) -> subprocess.Popen:
+    """Start a child that ends with this process however this process ends, killed outright
+    included. On Windows it joins a job object that kills what it holds once its last
+    handle, which only this process has, closes; on Linux it asks for SIGKILL once the
+    thread that started it ends, so that thread must outlive it. Elsewhere, or where the
+    system refuses, it is an ordinary child, which the other ways of ending one still reach."""
+    if WINDOWS:
+        process = subprocess.Popen(command, **kwargs)
+        job = _windows_job()
+        if job:
+            _join_job(job, process.pid)
+        return process
+    prctl = _linux_prctl()
+    if prctl:
+        kwargs["preexec_fn"] = _death_signal_request(prctl, os.getpid(), kwargs.get("preexec_fn"))
+    return subprocess.Popen(command, **kwargs)
+
+
+def _death_signal_request(prctl, parent: int, previous=None):
+    """What a forked child runs before it executes its program, to die with `parent`."""
+    def request():
+        if previous is not None:
+            previous()
+        prctl(PR_SET_PDEATHSIG, signal.SIGKILL, 0, 0, 0)
+        if os.getppid() != parent:  # the parent ended before the request took hold
+            os._exit(1)
+    return request
+
+
+def _linux_prctl():
+    global _prctl
+    with _tether_lock:
+        if _prctl is None:
+            _prctl = False
+            if sys.platform.startswith("linux"):
+                try:
+                    prctl = ctypes.CDLL(None, use_errno=True).prctl
+                    prctl.argtypes = [ctypes.c_int, ctypes.c_ulong, ctypes.c_ulong,
+                                      ctypes.c_ulong, ctypes.c_ulong]
+                    prctl.restype = ctypes.c_int
+                    _prctl = prctl
+                except (OSError, AttributeError):
+                    pass
+        return _prctl or None
+
+
+def _windows_job():
+    """The job this process's tethered children join, made once and held until it ends."""
+    global _job
+    with _tether_lock:
+        if _job is None:
+            _job = _create_kill_on_close_job() or 0
+        return _job or None
+
+
+def _job_api():
+    from ctypes import wintypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.CreateJobObjectW.restype = ctypes.c_void_p
+    kernel32.CreateJobObjectW.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p]
+    kernel32.SetInformationJobObject.restype = wintypes.BOOL
+    kernel32.SetInformationJobObject.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p,
+                                                 wintypes.DWORD]
+    kernel32.OpenProcess.restype = ctypes.c_void_p
+    kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel32.AssignProcessToJobObject.restype = wintypes.BOOL
+    kernel32.AssignProcessToJobObject.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+    kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
+    return kernel32
+
+
+def _create_kill_on_close_job():
+    from ctypes import wintypes
+
+    class BasicLimits(ctypes.Structure):
+        _fields_ = [("PerProcessUserTimeLimit", ctypes.c_int64),
+                    ("PerJobUserTimeLimit", ctypes.c_int64), ("LimitFlags", wintypes.DWORD),
+                    ("MinimumWorkingSetSize", ctypes.c_size_t),
+                    ("MaximumWorkingSetSize", ctypes.c_size_t),
+                    ("ActiveProcessLimit", wintypes.DWORD), ("Affinity", ctypes.c_size_t),
+                    ("PriorityClass", wintypes.DWORD), ("SchedulingClass", wintypes.DWORD)]
+
+    class IoCounters(ctypes.Structure):
+        _fields_ = [(name, ctypes.c_uint64) for name in (
+            "ReadOperationCount", "WriteOperationCount", "OtherOperationCount",
+            "ReadTransferCount", "WriteTransferCount", "OtherTransferCount")]
+
+    class ExtendedLimits(ctypes.Structure):
+        _fields_ = [("BasicLimitInformation", BasicLimits), ("IoInfo", IoCounters),
+                    ("ProcessMemoryLimit", ctypes.c_size_t), ("JobMemoryLimit", ctypes.c_size_t),
+                    ("PeakProcessMemoryUsed", ctypes.c_size_t),
+                    ("PeakJobMemoryUsed", ctypes.c_size_t)]
+
+    try:
+        kernel32 = _job_api()
+        job = kernel32.CreateJobObjectW(None, None)  # not inheritable: no child keeps it open
+        if not job:
+            return None
+        limits = ExtendedLimits()
+        limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        if not kernel32.SetInformationJobObject(job, JOB_OBJECT_EXTENDED_LIMIT_INFORMATION,
+                                                ctypes.byref(limits), ctypes.sizeof(limits)):
+            kernel32.CloseHandle(job)
+            return None
+        return job
+    except (OSError, AttributeError):
+        return None
+
+
+def _join_job(job, pid: int) -> bool:
+    try:
+        kernel32 = _job_api()
+        handle = kernel32.OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE, False, pid)
+        if not handle:
+            return False
+        try:
+            return bool(kernel32.AssignProcessToJobObject(job, handle))
+        finally:
+            kernel32.CloseHandle(handle)
+    except (OSError, AttributeError):
+        return False
 
 
 def lower_priority() -> bool:

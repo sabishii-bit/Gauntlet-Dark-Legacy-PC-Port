@@ -3,7 +3,8 @@
 
 Findings in headers are reported once. Exit status is 1 when anything is
 reported. Configure and build first so compile_commands.json exists. A lint that is
-interrupted, told to stop, or whose caller is gone ends its clang-tidy workers. CI can
+interrupted, told to stop, or whose caller is gone ends its clang-tidy workers, and one
+killed outright takes them with it (process_tree.start_tethered). CI can
 instead configure with CMAKE_CXX_SCAN_FOR_MODULES=OFF (no C++ modules are used)
 and build only compile_commands, avoiding build-only module mapper files. The lint
 lowers its own priority, which its workers inherit, and runs as many of them as there
@@ -238,8 +239,10 @@ class Workers:
         with self._lock:
             if self.stopped:
                 raise InterruptedError("the lint was stopped")
-            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                       text=True, cwd=ROOT)
+            # Tethered, so a lint killed outright, as a timeout kills, takes its workers with
+            # it; the pool thread starting a worker waits for it, as Linux's tether needs.
+            process = process_tree.start_tethered(command, stdout=subprocess.PIPE,
+                                                  stderr=subprocess.PIPE, text=True, cwd=ROOT)
             self._running.add(process)
         try:
             stdout, stderr = process.communicate()

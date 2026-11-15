@@ -140,6 +140,14 @@ class WorkerTests(unittest.TestCase):
         with self.assertRaises(InterruptedError):
             workers.run(self.SLEEPER)
 
+    def test_workers_are_tethered_to_the_lint(self):
+        command = [sys.executable, "-c", "print('checked')"]
+        with mock.patch.object(lint.process_tree, "start_tethered",
+                               wraps=lint.process_tree.start_tethered) as start:
+            result = lint.Workers().run(command)
+        self.assertEqual(result.stdout.strip(), "checked")
+        self.assertEqual(start.call_args.args[0], command)
+
 
 class DriverTests(unittest.TestCase):
     def setUp(self):

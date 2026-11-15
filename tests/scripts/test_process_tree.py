@@ -1,6 +1,8 @@
 """A helper notices the process it answers to is gone, and ends its own tree."""
+import ctypes
 import os
 import pathlib
+import signal
 import subprocess
 import sys
 import threading
@@ -30,6 +32,35 @@ def listed(pid, expected, seconds=5):
         if present == expected or time.monotonic() >= deadline:
             return present
         time.sleep(0.1)
+
+
+def running(pid):
+    """Whether `pid` still runs: listed, and on Linux not a zombie awaiting a reaper (an
+    orphan's goes to init, which a container may not have)."""
+    if process_tree.WINDOWS:
+        return pid in process_tree.table()
+    try:
+        stat = pathlib.Path(f"/proc/{pid}/stat").read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return False
+    return stat[stat.rfind(")") + 2:][:1] not in ("Z", "X")
+
+
+def settles(pid, expected, seconds=10):
+    """`running(pid)`, polled until it matches `expected`."""
+    deadline = time.monotonic() + seconds
+    while True:
+        state = running(pid)
+        if state == expected or time.monotonic() >= deadline:
+            return state
+        time.sleep(0.1)
+
+
+def end(pid):
+    try:
+        os.kill(pid, signal.SIGTERM)  # TerminateProcess on Windows
+    except OSError:
+        pass  # already gone
 
 
 class AncestorTests(unittest.TestCase):
@@ -91,6 +122,77 @@ class TreeTests(unittest.TestCase):
         process.wait()
         process_tree.stop(process)
         self.assertEqual(process.returncode, 0)
+
+
+TETHERED = process_tree.WINDOWS or sys.platform.startswith("linux")
+
+
+class TetherTests(unittest.TestCase):
+    @unittest.skipUnless(TETHERED, "children are tethered on Windows and Linux")
+    def test_a_tethered_child_ends_when_its_parent_is_killed_outright(self):
+        script = (f"import subprocess, sys, time\n"
+                  f"sys.path.insert(0, {str(SCRIPTS)!r})\n"
+                  f"import process_tree\n"
+                  f"tethered = process_tree.start_tethered({SLEEPER!r})\n"
+                  f"loose = subprocess.Popen({SLEEPER!r})\n"
+                  f"print(tethered.pid, loose.pid, flush=True)\n"
+                  f"time.sleep(60)\n")
+        helper = subprocess.Popen([sys.executable, "-c", script], stdout=subprocess.PIPE,
+                                  text=True)
+        self.addCleanup(helper.wait)
+        self.addCleanup(helper.kill)
+        with helper.stdout:
+            tethered, loose = (int(pid) for pid in helper.stdout.readline().split())
+        self.addCleanup(end, tethered)
+        self.addCleanup(end, loose)
+        self.assertTrue(settles(tethered, True))
+        helper.kill()  # TerminateProcess or SIGKILL: nothing of the helper's own code runs
+        helper.wait()
+        self.assertFalse(settles(tethered, False))
+        # An ordinary child outlives it, which is what the tether is for.
+        self.assertTrue(running(loose))
+
+    @unittest.skipUnless(process_tree.WINDOWS, "Windows tethers through a job object")
+    def test_a_tethered_child_joins_this_process_job(self):
+        from ctypes import wintypes
+        child = process_tree.start_tethered(SLEEPER)
+        self.addCleanup(child.wait)
+        self.addCleanup(child.kill)
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.OpenProcess.restype = ctypes.c_void_p
+        kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        kernel32.IsProcessInJob.argtypes = [ctypes.c_void_p, ctypes.c_void_p,
+                                            ctypes.POINTER(wintypes.BOOL)]
+        kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
+        handle = kernel32.OpenProcess(0x1000, False, child.pid)  # QUERY_LIMITED_INFORMATION
+        self.assertTrue(handle)
+        try:
+            inside = wintypes.BOOL()
+            self.assertTrue(kernel32.IsProcessInJob(handle, process_tree._windows_job(),
+                                                    ctypes.byref(inside)))
+            self.assertTrue(inside.value)
+        finally:
+            kernel32.CloseHandle(handle)
+
+    @unittest.skipUnless(sys.platform.startswith("linux"), "Linux tethers by prctl")
+    def test_a_tethered_child_asks_for_sigkill_once_its_parent_thread_ends(self):
+        report = ("import ctypes; signal = ctypes.c_int(); "
+                  "ctypes.CDLL(None).prctl(2, ctypes.byref(signal), 0, 0, 0); "  # PR_GET_PDEATHSIG
+                  "print(signal.value)")
+        # A request of the caller's own still runs first.
+        child = process_tree.start_tethered([sys.executable, "-c", report],
+                                            stdout=subprocess.PIPE, text=True,
+                                            preexec_fn=lambda: os.write(1, b"first\n"))
+        output, _ = child.communicate(timeout=30)
+        self.assertEqual(output.split(), ["first", str(int(signal.SIGKILL))])
+
+    def test_where_the_system_refuses_a_tether_the_child_is_ordinary(self):
+        tether = "_windows_job" if process_tree.WINDOWS else "_linux_prctl"
+        with mock.patch.object(process_tree, tether, return_value=None):
+            child = process_tree.start_tethered([sys.executable, "-c", "print('ran')"],
+                                                stdout=subprocess.PIPE, text=True)
+            output, _ = child.communicate(timeout=30)
+        self.assertEqual(output.strip(), "ran")
 
 
 class PriorityTests(unittest.TestCase):
