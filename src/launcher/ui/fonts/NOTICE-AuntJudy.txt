@@ -1,0 +1,18 @@
+AuntJudy.ttf
+
+AuntJudy is a typeface by Judith Sutcliffe, The Electric Typographer.
+The font file's own copyright line reads:
+
+    (c) 1992 Judith Sutcliffe: The Electric Typographer 805-966-7563
+
+The file carries no licence text of its own. It was obtained from a
+font website that offers it free for personal use, and it is included
+here unmodified:
+
+    SHA-256 437da01ccd1901650a2d36d85ddab76f2e6c6c996da66bf0aa23656d49c03b89
+    16,932 bytes (the download's AUNTJUDY.TTF)
+
+The original game's lettering is drawn in this typeface. The launcher
+sets its game-style lettering in it. The font has no figures, hyphen,
+slash, brackets, ampersand or percent sign; those characters fall back
+to other faces.
