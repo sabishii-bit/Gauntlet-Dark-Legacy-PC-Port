@@ -225,6 +225,8 @@ add_executable(tests
     fixtures/ReferenceWavTests.cpp
     fixtures/NativeSoundBank.cpp
     FakeRenderDevice.h
+    DrawStreamDigest.h
+    DrawStreamDigestTests.cpp
     engine/core/TypesTests.cpp
     engine/core/LogTests.cpp
     engine/core/AssertTests.cpp
@@ -634,6 +636,7 @@ add_executable(tests
     game/tower/TowerCompletionTests.cpp
     game/bosses/LegendPresentationTests.cpp
     game/scenes/PlaySceneTests.cpp
+    game/scenes/PlaySceneHudDrawTests.cpp
     game/scenes/PlaySceneG4Tests.cpp
     game/scenes/MultiplayerJourneyTests.cpp
     game/party/PartyMotionTests.cpp
@@ -649,6 +652,7 @@ add_executable(tests
     game/party/PartyFiguresTests.cpp
     game/party/PartyNamesTests.cpp
     game/hud/PartyHudTests.cpp
+    game/hud/DarkLegacyHudDrawPinTests.cpp
     game/party/PartyRecordsTests.cpp
     game/party/PartyTeleportTests.cpp
     game/level/TriggerCuesTests.cpp
