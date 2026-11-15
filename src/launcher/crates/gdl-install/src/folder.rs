@@ -23,6 +23,14 @@ pub const RECEIPT_FILE: &str = "receipt.json";
 /// The folder in the state folder that holds the journals of the jobs under way.
 pub const JOURNAL_DIR: &str = "journal";
 
+/// The flag that has Windows open a link or a junction itself rather than what it leads to.
+#[cfg(windows)]
+const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
+
+/// Why a lock is refused when the file it locked is no longer the one at the lock file's name.
+#[cfg(unix)]
+const LOCK_FILE_REPLACED: &str = "the lock file was replaced while the lock was taken";
+
 /// Refuses `root`, an installation's folder, when it or a folder above it is a link. Every reader
 /// and writer of an installation judges its folder by this one rule, so that none of them finds
 /// linked a folder that another accepted, and an installation the launcher made is never later
@@ -75,53 +83,51 @@ impl InstallFolder {
     /// is in use instead of facing a launcher that hangs. The lock is the system's own on
     /// [`LOCK_FILE`], so a launcher that crashes never leaves it held.
     ///
-    /// The state folder must exist already, as a real folder, and the lock file, when it exists,
-    /// may not be a link, so that the lock is always one on a file inside the installation. The
-    /// lock file is made when it is missing, never emptied, and never removed: were one job to
-    /// remove it while another held its lock, a third could lock a new file of the same name.
+    /// The state folder must exist already, as a real folder. The lock file is opened without
+    /// following a link at its name, made when it is missing, never emptied, and never removed:
+    /// were one job to remove it while another held its lock, a third could lock a new file of the
+    /// same name. Once the lock is taken, the state folder and the lock file are looked at again,
+    /// and on Unix the file locked must be the one at the lock file's name, so that a lock taken
+    /// through a link that took either name meanwhile is let go and refused.
     pub fn lock(&self) -> Result<InstallLock, LockError> {
         let state = self.state_dir();
-        match fs::symlink_metadata(&state) {
-            Ok(metadata) if metadata.file_type().is_symlink() => {
-                return Err(LockError::Links { path: state });
-            }
-            Ok(metadata) if metadata.is_dir() => {}
-            Ok(_) => return Err(LockError::NoStateFolder { path: state }),
-            Err(error) if is_absent(&error) => {
-                return Err(LockError::NoStateFolder { path: state });
-            }
-            Err(source) => {
-                return Err(LockError::Io {
-                    path: state,
-                    source,
-                });
-            }
-        }
+        check_state_folder(&state)?;
         let path = state.join(LOCK_FILE);
-        match fs::symlink_metadata(&path) {
-            Ok(metadata) if metadata.file_type().is_symlink() => {
-                return Err(LockError::Links { path });
-            }
-            Ok(_) => {}
-            Err(error) if is_absent(&error) => {}
-            Err(source) => return Err(LockError::Io { path, source }),
-        }
-        let file = match open_lock_file(&path) {
-            Ok(file) => file,
-            Err(source) => return Err(LockError::Io { path, source }),
-        };
+        let file = open_lock_file(&path)?;
         match file.try_lock() {
-            Ok(()) => Ok(InstallLock { file }),
-            Err(TryLockError::WouldBlock) => Err(LockError::Busy),
-            Err(TryLockError::Error(source)) => Err(LockError::Io { path, source }),
+            Ok(()) => {}
+            Err(TryLockError::WouldBlock) => return Err(LockError::Busy),
+            Err(TryLockError::Error(source)) => return Err(LockError::Io { path, source }),
         }
+        // Dropped, and so let go, when a second look refuses it.
+        let lock = InstallLock { file };
+        check_state_folder(&state)?;
+        check_lock_file(&path, &lock.file)?;
+        Ok(lock)
+    }
+}
+
+/// Refuses `state` unless a real folder is there to hold the lock file: a link is refused as one,
+/// and nothing there, or something other than a folder, is no state folder.
+fn check_state_folder(state: &Path) -> Result<(), LockError> {
+    let path = || state.to_path_buf();
+    match fs::symlink_metadata(state) {
+        Ok(metadata) if metadata.file_type().is_symlink() => Err(LockError::Links { path: path() }),
+        Ok(metadata) if metadata.is_dir() => Ok(()),
+        Ok(_) => Err(LockError::NoStateFolder { path: path() }),
+        Err(error) if is_absent(&error) => Err(LockError::NoStateFolder { path: path() }),
+        Err(source) => Err(LockError::Io {
+            path: path(),
+            source,
+        }),
     }
 }
 
 /// Opens the lock file at `path` to read and to write, since whether a file open only to read can
-/// be locked differs between systems, making it when it is missing and keeping what it holds. On
-/// Unix the open never follows a link that took the name since it was looked at.
-fn open_lock_file(path: &Path) -> io::Result<File> {
+/// be locked differs between systems, making it when it is missing and keeping what it holds. The
+/// open never follows a link at the name: Unix refuses to open one, and Windows opens the link
+/// itself, so that a link there is refused as one rather than locked through.
+fn open_lock_file(path: &Path) -> Result<File, LockError> {
     let mut options = OpenOptions::new();
     options.read(true).write(true).create(true).truncate(false);
     #[cfg(unix)]
@@ -129,7 +135,82 @@ fn open_lock_file(path: &Path) -> io::Result<File> {
         use std::os::unix::fs::OpenOptionsExt;
         options.custom_flags(libc::O_NOFOLLOW);
     }
-    options.open(path)
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        options.custom_flags(FILE_FLAG_OPEN_REPARSE_POINT);
+    }
+    let file = options.open(path).map_err(|source| {
+        // A link refused by Unix, or a junction that Windows will not open as a file, is told
+        // from any other refusal by what is at the name.
+        if is_link(path) {
+            LockError::Links {
+                path: path.to_path_buf(),
+            }
+        } else {
+            LockError::Io {
+                path: path.to_path_buf(),
+                source,
+            }
+        }
+    })?;
+    match file.metadata() {
+        Ok(metadata) if metadata.file_type().is_symlink() => Err(LockError::Links {
+            path: path.to_path_buf(),
+        }),
+        Ok(_) => Ok(file),
+        Err(source) => Err(LockError::Io {
+            path: path.to_path_buf(),
+            source,
+        }),
+    }
+}
+
+/// Refuses the lock that `file` holds unless what is at the lock file's name `path` is no link
+/// and, on Unix, is the file that `file` has open.
+fn check_lock_file(path: &Path, file: &File) -> Result<(), LockError> {
+    let entry = fs::symlink_metadata(path).map_err(|source| LockError::Io {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    if entry.file_type().is_symlink() {
+        return Err(LockError::Links {
+            path: path.to_path_buf(),
+        });
+    }
+    check_same_file(path, file, &entry)
+}
+
+/// Refuses the lock that `file` holds unless `entry`, what is at the lock file's name `path`, is
+/// the file it has open, by device and inode.
+#[cfg(unix)]
+fn check_same_file(path: &Path, file: &File, entry: &fs::Metadata) -> Result<(), LockError> {
+    use std::os::unix::fs::MetadataExt;
+
+    let held = file.metadata().map_err(|source| LockError::Io {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    if (held.dev(), held.ino()) == (entry.dev(), entry.ino()) {
+        Ok(())
+    } else {
+        Err(LockError::Io {
+            path: path.to_path_buf(),
+            source: io::Error::other(LOCK_FILE_REPLACED),
+        })
+    }
+}
+
+/// Windows gives an open file no identity that std lets a program compare with what is at a name,
+/// so there only the links are looked at.
+#[cfg(not(unix))]
+fn check_same_file(_: &Path, _: &File, _: &fs::Metadata) -> Result<(), LockError> {
+    Ok(())
+}
+
+/// Whether a link is at `path`, looked at without following it.
+fn is_link(path: &Path) -> bool {
+    fs::symlink_metadata(path).is_ok_and(|metadata| metadata.file_type().is_symlink())
 }
 
 /// Whether an error looking at a path says that nothing is there: the path is missing, or a
@@ -281,7 +362,7 @@ mod tests {
 
     use super::{
         FolderError, InstallFolder, InstallLock, LOCK_FILE, LockError, STATE_DIR, alpha_markers,
-        check_links,
+        check_links, check_lock_file, check_state_folder,
     };
 
     /// The most bytes an error may take, so that returning one by value stays cheap.
@@ -556,6 +637,53 @@ mod tests {
             other => panic!("{other:?}"),
         }
         assert!(folder_names(&lock_file).unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_lock_whose_names_changed_meanwhile_is_let_go() {
+        let (dir, folder) = installation();
+        let state = folder.state_dir();
+        let lock_file = state.join(LOCK_FILE);
+        let held = folder.lock().unwrap();
+        // Looked at again as they are, the names keep the lock.
+        check_state_folder(&state).unwrap();
+        check_lock_file(&lock_file, &held.file).unwrap();
+
+        // A link that has taken either name refuses it.
+        let elsewhere = dir.path().join("elsewhere");
+        fs::create_dir(&elsewhere).unwrap();
+        let link = dir.path().join("link");
+        link_folder(&link, &elsewhere).unwrap();
+        match check_state_folder(&link) {
+            Err(LockError::Links { path }) => assert_eq!(path, link),
+            other => panic!("{other:?}"),
+        }
+        match check_lock_file(&link, &held.file) {
+            Err(LockError::Links { path }) => assert_eq!(path, link),
+            other => panic!("{other:?}"),
+        }
+
+        // On Unix, so does another file at the lock file's name than the one locked, as a lock
+        // taken through a link that took the state folder's name and left it again would hold.
+        #[cfg(unix)]
+        {
+            let other = dir.path().join("other");
+            fs::write(&other, b"").unwrap();
+            let opened = File::open(&other).unwrap();
+            match check_lock_file(&lock_file, &opened) {
+                Err(LockError::Io { path, source }) => {
+                    assert_eq!(path, lock_file);
+                    assert_eq!(
+                        source.to_string(),
+                        "the lock file was replaced while the lock was taken"
+                    );
+                }
+                other => panic!("{other:?}"),
+            }
+        }
+        drop(held);
+        // Nothing was made by looking.
+        assert_eq!(folder_names(&state).unwrap(), [LOCK_FILE]);
     }
 
     /// How a test opens `path` to read, as a folder when it is one, since a folder's handle needs
