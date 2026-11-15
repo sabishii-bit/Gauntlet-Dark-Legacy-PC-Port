@@ -2,11 +2,17 @@
 //! and retries. Only its `platform` module may call the OS directly.
 #![deny(unsafe_code)]
 
+mod long_path;
 mod names;
+#[allow(unsafe_code)]
+mod platform;
+mod rename;
 mod retry;
 
+pub use long_path::{MAX_INSTALL_ROOT_UTF16, root_fits, root_utf16_len, strip_verbatim};
 pub use names::{
     ALPHA_NAMES, DEVICE_NAMES, FORBIDDEN_CHARS, MAX_COMPONENT_CHARS, MAX_PAYLOAD_PATH_CHARS,
     NameError, NameRule, NameRules, NameSet, PAYLOAD_NAMES, RelPath, check_component,
 };
+pub use rename::{rename_noreplace, replace};
 pub use retry::{RETRIED_WINDOWS_ERRORS, RETRY_INTERVAL, RETRY_WINDOW, retry_locked};

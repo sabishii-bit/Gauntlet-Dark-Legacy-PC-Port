@@ -12,7 +12,7 @@ tempfile.workspace = true
 thiserror.workspace = true
 
 [target.'cfg(windows)'.dependencies]
-windows-sys.workspace = true
+windows-sys = { workspace = true, features = ["Win32_Storage_FileSystem"] }
 
 [target.'cfg(unix)'.dependencies]
 libc.workspace = true
