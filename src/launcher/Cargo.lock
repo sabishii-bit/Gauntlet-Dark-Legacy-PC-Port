@@ -1377,6 +1377,7 @@ name = "gdl-native"
 version = "0.0.0"
 dependencies = [
  "gdl-session",
+ "libc",
  "windows-sys 0.61.2",
 ]
 

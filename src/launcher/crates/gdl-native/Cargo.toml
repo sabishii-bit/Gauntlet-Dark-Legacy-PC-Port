@@ -1,6 +1,6 @@
 [package]
 name = "gdl-native"
-description = "The system dialogs the launcher shows when its window cannot open"
+description = "The system dialogs the launcher shows when its window cannot open, and the process token or user that decides whether the window may start"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -11,4 +11,7 @@ publish.workspace = true
 gdl-session.workspace = true
 
 [target.'cfg(windows)'.dependencies]
-windows-sys.workspace = true
+windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_Security", "Win32_System_Threading"] }
+
+[target.'cfg(unix)'.dependencies]
+libc.workspace = true
