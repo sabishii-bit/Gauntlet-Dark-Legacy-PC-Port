@@ -10,7 +10,7 @@
 
 namespace gdl::game {
 namespace {
-constexpr f32 kSize = 128;
+constexpr f32 kSize = ChallengeHud::kFrameArea.width; ///< the glass, which the sand crops share
 constexpr f32 kUpperTop = 23;
 constexpr f32 kUpperHeight = 41;
 constexpr f32 kUpperTravel = 39;

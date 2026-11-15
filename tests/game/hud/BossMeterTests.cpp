@@ -72,6 +72,34 @@ TEST_CASE("multipart meters retain independent eased health and clear every laye
     REQUIRE_FALSE(meters.meter(1).bound());
 }
 
+TEST_CASE("only a shown reading of a strip or more gets a meter, binding and easing alike",
+          "[game][screens][hud]") {
+    HealthMeterReading reading;
+    reading.definition = lichMeter();
+    CHECK(BossMeters::drawsReading(reading));
+    reading.definition.pieces = 0;
+    CHECK_FALSE(BossMeters::drawsReading(reading));
+    reading.definition.pieces = 1;
+    reading.definition.shown = false;
+    CHECK_FALSE(BossMeters::drawsReading(reading));
+    // A reading with no meter takes no slot: the shown one after it binds and eases in the first.
+    std::array<HealthMeterReading, 2> readings;
+    readings[0].definition = lichMeter();
+    readings[0].definition.shown = false;
+    readings[0].health = 10;
+    readings[0].maxHealth = 1200;
+    readings[1].definition = lichMeter();
+    readings[1].health = 600;
+    readings[1].maxHealth = 1200;
+    BossMeters meters;
+    meters.bind(readings, nullptr);
+    REQUIRE(meters.count() == 1);
+    CHECK(meters.meter(0).shown() == 600);
+    readings[1].health = 300;
+    meters.update(500, readings, true, false);
+    CHECK(meters.meter(0).shown() == 300);
+}
+
 TEST_CASE("Chimera draws its three head fills on one shared frame and drains the struck head",
           "[game][screens][hud][chimera][assets]") {
     const auto root = test::assetOrSkip("CRITTER/CHIMERA.WAD").parent_path().parent_path();

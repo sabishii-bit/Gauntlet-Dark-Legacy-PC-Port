@@ -95,7 +95,7 @@ usize hudBossReadingsOf(std::span<const HealthMeterReading> readings,
                         std::array<HudBossReading, BossMeters::kCapacity>& out) {
     usize count = 0;
     for (const HealthMeterReading& reading : readings) {
-        if (!reading.definition.shown || reading.definition.pieces <= 0) {
+        if (!BossMeters::drawsReading(reading)) {
             continue;
         }
         if (count == out.size()) {

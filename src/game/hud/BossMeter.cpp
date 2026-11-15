@@ -281,7 +281,7 @@ void BossMeters::bind(std::span<const HealthMeterReading> readings, TextureSet* 
     s32 left = 0;
     s32 nextLeft = 0;
     for (const auto& reading : readings) {
-        if (!reading.definition.shown || reading.definition.pieces <= 0) {
+        if (!drawsReading(reading)) {
             continue;
         }
         if (m_count == kCapacity) {
@@ -302,7 +302,7 @@ void BossMeters::update(s32 ticks, std::span<const HealthMeterReading> readings,
                         bool frozen) {
     usize index = 0;
     for (const auto& reading : readings) {
-        if (!reading.definition.shown || reading.definition.pieces <= 0) {
+        if (!drawsReading(reading)) {
             continue;
         }
         if (index == m_count) {

@@ -137,6 +137,10 @@ public:
     BossMeters& operator=(BossMeters&&) = delete;
     ~BossMeters() = default;
     static constexpr usize kCapacity = 3;
+    /** Whether `reading` gets a meter of its own: one shown, of a strip or more. */
+    static bool drawsReading(const HealthMeterReading& reading) {
+        return reading.definition.shown && reading.definition.pieces > 0;
+    }
     class LocalSnapshot {
         friend class BossMeters;
         std::array<BossMeter::LocalSnapshot, kCapacity> m_meters;

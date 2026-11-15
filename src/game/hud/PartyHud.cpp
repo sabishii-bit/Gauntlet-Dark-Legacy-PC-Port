@@ -252,8 +252,8 @@ bool PartyHud::appendDigest(NativeStateDigest& digest, const LocalSnapshot* save
     digest.fields<6>(saved ? saved->m_state : m_sim);
     digest.flag(m_sharedStopTimeTotal != nullptr);
     digest.real(saved ? saved->m_total : stopTimeTotal());
-    // Status-box art, local control labels and font GPU caches only draw. Help's
-    // actual borrowed text content is visited with its admission state below.
+    // The message table only lends help its words: the lines help shows are visited with its
+    // admission state above.
     if (saved) {
         m_hourglass.appendLocalDigest(digest, saved->m_hourglass);
     } else {
