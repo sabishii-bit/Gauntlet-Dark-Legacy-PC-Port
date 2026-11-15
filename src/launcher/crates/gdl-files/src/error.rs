@@ -67,6 +67,30 @@ impl FilesError {
     }
 }
 
+/// Checks, in the crate's tests, that `result` refused the link at `link`.
+#[cfg(test)]
+#[track_caller]
+pub(crate) fn assert_link<T: std::fmt::Debug>(result: Result<T, FilesError>, link: &Path) {
+    match result {
+        Err(FilesError::Link { path }) => assert_eq!(path, link),
+        other => panic!("{other:?}"),
+    }
+}
+
+/// Checks, in the crate's tests, that `result` is the system's refusal of an operation on `at`,
+/// and gives back what the system answered.
+#[cfg(test)]
+#[track_caller]
+pub(crate) fn assert_io<T: std::fmt::Debug>(result: Result<T, FilesError>, at: &Path) -> io::Error {
+    match result {
+        Err(FilesError::Io { path, source }) => {
+            assert_eq!(path, at);
+            source
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::error::Error;

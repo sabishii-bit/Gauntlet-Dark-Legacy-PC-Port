@@ -1,5 +1,6 @@
-//! Install folders in the states the launcher's tests need: roots of an exact length, junctions,
-//! the names the alpha installer leaves, and entries only root may open.
+//! Install folders in the states the launcher's tests need: roots of an exact length, links to
+//! folders and files, the names the alpha installer leaves and entries only root may open, and the
+//! names a folder holds, to compare.
 
 use std::fs;
 use std::io;
@@ -192,6 +193,42 @@ pub fn make_junction(link: &Path, target: &Path) -> io::Result<()> {
         )));
     }
     Ok(())
+}
+
+/// Makes `link` a link to the folder `target` the way each system lets any account make one: a
+/// junction on Windows, as [`make_junction`] makes it, and a symbolic link elsewhere.
+pub fn link_folder(link: &Path, target: &Path) -> io::Result<()> {
+    #[cfg(windows)]
+    return make_junction(link, target);
+    #[cfg(unix)]
+    return std::os::unix::fs::symlink(target, link);
+}
+
+/// Makes `link` a symbolic link to the file `target`, which need not exist. Windows makes one only
+/// for an account allowed to, as in developer mode, and refuses it otherwise, so a test that needs
+/// one returns early there.
+pub fn symlink_file(link: &Path, target: &Path) -> io::Result<()> {
+    #[cfg(windows)]
+    return std::os::windows::fs::symlink_file(target, link);
+    #[cfg(unix)]
+    return std::os::unix::fs::symlink(target, link);
+}
+
+/// The names in `folder`, sorted, as a test compares what a folder holds. A name that is not
+/// Unicode is refused.
+pub fn folder_names(folder: &Path) -> io::Result<Vec<String>> {
+    let mut names = Vec::new();
+    for entry in fs::read_dir(folder)? {
+        let name = entry?.file_name().into_string().map_err(|name| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("{name:?} is not Unicode"),
+            )
+        })?;
+        names.push(name);
+    }
+    names.sort();
+    Ok(names)
 }
 
 /// Leaves `names` in `root` the way the alpha installer leaves them: its transaction folders, in
@@ -430,6 +467,84 @@ mod tests {
             assert_eq!(error.kind(), io::ErrorKind::InvalidInput, "{name}");
         }
         assert!(fs::symlink_metadata(&other).is_err());
+    }
+
+    #[test]
+    fn folder_links_read_as_links() {
+        use super::link_folder;
+
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("target");
+        fs::create_dir(&target).unwrap();
+        fs::write(target.join("file.txt"), b"through the link").unwrap();
+        let link = dir.path().join("link");
+        link_folder(&link, &target).unwrap();
+        assert!(
+            fs::symlink_metadata(&link)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        assert!(fs::metadata(&link).unwrap().is_dir());
+        let read = fs::read(link.join("file.txt")).unwrap();
+        assert_eq!(read, b"through the link");
+        // A name that is taken is refused.
+        assert!(link_folder(&link, &target).is_err());
+    }
+
+    #[test]
+    fn file_links_read_as_links() {
+        use super::symlink_file;
+
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("file.txt");
+        fs::write(&target, b"through the link").unwrap();
+        let link = dir.path().join("link.txt");
+        if let Err(error) = symlink_file(&link, &target) {
+            eprintln!("skipped: this account cannot make symbolic links ({error})");
+            return;
+        }
+        assert!(
+            fs::symlink_metadata(&link)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        assert_eq!(fs::read(&link).unwrap(), b"through the link");
+        // One to nothing is made too, and is a link all the same.
+        let dangling = dir.path().join("dangling.txt");
+        symlink_file(&dangling, &dir.path().join("nowhere.txt")).unwrap();
+        let kind = fs::symlink_metadata(&dangling).unwrap().file_type();
+        assert!(kind.is_symlink());
+        assert!(fs::metadata(&dangling).is_err());
+    }
+
+    #[test]
+    fn folder_names_come_sorted() {
+        use super::folder_names;
+
+        let dir = tempfile::tempdir().unwrap();
+        for name in ["b.json", "a", "C"] {
+            fs::write(dir.path().join(name), b"").unwrap();
+        }
+        let inner = dir.path().join("d");
+        fs::create_dir(&inner).unwrap();
+        // In byte order, which puts capitals first.
+        assert_eq!(folder_names(dir.path()).unwrap(), ["C", "a", "b.json", "d"]);
+        assert!(folder_names(&inner).unwrap().is_empty());
+        let error = folder_names(&dir.path().join("missing")).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::NotFound);
+
+        // A name that is no text has nothing to compare by.
+        #[cfg(target_os = "linux")]
+        {
+            use std::ffi::OsStr;
+            use std::os::unix::ffi::OsStrExt;
+
+            fs::write(inner.join(OsStr::from_bytes(b"r\xff")), b"").unwrap();
+            let error = folder_names(&inner).unwrap_err();
+            assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+        }
     }
 
     #[test]

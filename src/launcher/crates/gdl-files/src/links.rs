@@ -124,6 +124,8 @@ mod tests {
     use std::io;
     use std::path::{Path, PathBuf};
 
+    use gdl_fixtures::symlink_file;
+
     use super::{absolute_lexical, no_links};
     use crate::FilesError;
 
@@ -215,10 +217,10 @@ mod tests {
 
         // A link to a file, and one to nothing, are refused as links too.
         let file_link = dir.path().join("receipt.json");
-        symlink_file(&real.join("sub").join("receipt.json"), &file_link).unwrap();
+        symlink_file(&file_link, &real.join("sub").join("receipt.json")).unwrap();
         assert_link(&file_link, &file_link);
         let dangling = dir.path().join("dangling.json");
-        symlink_file(&dir.path().join("nowhere.json"), &dangling).unwrap();
+        symlink_file(&dangling, &dir.path().join("nowhere.json")).unwrap();
         assert_link(&dangling, &dangling);
 
         // Unix resolves a `..` after a link through the link's target, so the link is still
@@ -236,14 +238,6 @@ mod tests {
     fn symlink_folder(target: &Path, link: &Path) -> io::Result<()> {
         #[cfg(windows)]
         return std::os::windows::fs::symlink_dir(target, link);
-        #[cfg(unix)]
-        return std::os::unix::fs::symlink(target, link);
-    }
-
-    /// Makes `link` a symbolic link to the file `target`, which need not exist.
-    fn symlink_file(target: &Path, link: &Path) -> io::Result<()> {
-        #[cfg(windows)]
-        return std::os::windows::fs::symlink_file(target, link);
         #[cfg(unix)]
         return std::os::unix::fs::symlink(target, link);
     }

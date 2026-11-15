@@ -4,13 +4,14 @@
 
 use std::fs;
 use std::io::{self, Write};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use gdl_files::{
     FilesError, Journal, MAX_INSTALL_ROOT_UTF16, MAX_JSON_LEN, PAYLOAD_NAMES, RelPath, Staging,
     no_links, read_json_bounded, rename_noreplace, replace, root_fits, root_utf16_len,
     write_json_atomic,
 };
+use gdl_fixtures::folder_names;
 use serde_json::{Value, json};
 
 /// MAX_PATH: the most UTF-16 units a plain Windows path may hold, its NUL included.
@@ -48,16 +49,6 @@ fn stage(staging: &Staging, path: &RelPath, bytes: &[u8]) -> PathBuf {
     file.write_all(bytes).unwrap();
     file.sync_all().unwrap();
     path.path_under(staging.path())
-}
-
-/// The names in `folder`, sorted.
-fn names(folder: &Path) -> Vec<String> {
-    let mut names: Vec<String> = fs::read_dir(folder)
-        .unwrap()
-        .map(|entry| entry.unwrap().file_name().into_string().unwrap())
-        .collect();
-    names.sort();
-    names
 }
 
 #[test]
@@ -113,7 +104,7 @@ fn everything_works_under_a_180_unit_root() {
     );
     replace(&next, &manifest).unwrap();
     assert_eq!(fs::read(&manifest).unwrap(), b"{}\n");
-    assert_eq!(names(&folder), ["manifest.json", DEEP_NAME]);
+    assert_eq!(folder_names(&folder).unwrap(), ["manifest.json", DEEP_NAME]);
 
     // A root as deep that is never published.
     let unpublished = DEEP_FOLDER.replacen("n64", "n64-unpublished", 1);
@@ -136,9 +127,9 @@ fn everything_works_under_a_180_unit_root() {
     let manifest = published.with_file_name("manifest.json");
     assert_eq!(fs::read(manifest).unwrap(), b"{}\n");
     let staged = staging.path().to_path_buf();
-    assert_eq!(names(&staged), ["n64-unpublished"]);
+    assert_eq!(folder_names(&staged).unwrap(), ["n64-unpublished"]);
     drop(staging);
     assert!(fs::symlink_metadata(&staged).is_err());
-    assert!(names(&state).is_empty());
-    assert_eq!(names(&root), [".gdl-launcher", "n64"]);
+    assert!(folder_names(&state).unwrap().is_empty());
+    assert_eq!(folder_names(&root).unwrap(), [".gdl-launcher", "n64"]);
 }

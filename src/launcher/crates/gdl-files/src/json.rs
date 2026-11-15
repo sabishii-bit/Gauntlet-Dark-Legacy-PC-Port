@@ -165,6 +165,7 @@ mod tests {
     use std::io;
     use std::path::Path;
 
+    use gdl_fixtures::{folder_names, link_folder, symlink_file};
     use serde::{Deserialize, Serialize};
     use serde_json::{Value, json};
 
@@ -173,6 +174,7 @@ mod tests {
         serialize_error, write_json_atomic,
     };
     use crate::FilesError;
+    use crate::error::assert_link;
 
     /// The bound a receipt is read to: 64 KiB.
     const RECEIPT_LIMIT: u64 = 64 << 10;
@@ -204,39 +206,12 @@ mod tests {
         }
     }
 
-    /// The names in `folder`, sorted.
-    fn names(folder: &Path) -> Vec<String> {
-        let mut names: Vec<String> = fs::read_dir(folder)
-            .unwrap()
-            .map(|entry| entry.unwrap().file_name().into_string().unwrap())
-            .collect();
-        names.sort();
-        names
-    }
-
     /// A JSON document of exactly `len` bytes: an object holding one padded string.
     fn padded_document(len: u64) -> Vec<u8> {
         let padding = usize::try_from(len - PADDING_FRAME).unwrap();
         let document = format!("{{\"pad\":\"{}\"}}\n", "x".repeat(padding)).into_bytes();
         assert_eq!(u64::try_from(document.len()).unwrap(), len);
         document
-    }
-
-    /// Links `link` to the folder `target` as each system can without privilege: a junction on
-    /// Windows, a symbolic link elsewhere.
-    fn link_folder(target: &Path, link: &Path) {
-        #[cfg(windows)]
-        gdl_fixtures::make_junction(link, target).unwrap();
-        #[cfg(unix)]
-        std::os::unix::fs::symlink(target, link).unwrap();
-    }
-
-    /// Checks that `result` refused the link at `link`.
-    fn assert_link<T: std::fmt::Debug>(result: Result<T, FilesError>, link: &Path) {
-        match result {
-            Err(FilesError::Link { path }) => assert_eq!(path, link),
-            other => panic!("{other:?}"),
-        }
     }
 
     #[test]
@@ -274,7 +249,7 @@ mod tests {
 
         let first = json!({"version": "1.0.0-beta", "files": ["a", "b", "c"]});
         write_json_atomic(&path, &first).unwrap();
-        assert_eq!(names(&folder), ["receipt.json"]);
+        assert_eq!(folder_names(&folder).unwrap(), ["receipt.json"]);
         let first_bytes = fs::read(&path).unwrap();
 
         // Unix renames over a file a reader holds open, and the reader keeps reading the old
@@ -287,7 +262,7 @@ mod tests {
             read_json_bounded::<Value>(&path, MAX_JSON_LEN).unwrap(),
             second
         );
-        assert_eq!(names(&folder), ["receipt.json"]);
+        assert_eq!(folder_names(&folder).unwrap(), ["receipt.json"]);
         #[cfg(unix)]
         {
             use std::io::Read;
@@ -329,7 +304,7 @@ mod tests {
             read_json_bounded::<Value>(&path, MAX_JSON_LEN).unwrap(),
             json!({"version": "1.0.1"})
         );
-        assert_eq!(names(dir.path()), ["receipt.json"]);
+        assert_eq!(folder_names(dir.path()).unwrap(), ["receipt.json"]);
     }
 
     #[test]
@@ -344,21 +319,21 @@ mod tests {
         let path = folder.join("receipt.json");
         let pending = pending_path(&path);
         let untouched = || {
-            assert_eq!(names(&outside), ["receipt.json"]);
+            assert_eq!(folder_names(&outside).unwrap(), ["receipt.json"]);
             assert_eq!(fs::read(&kept).unwrap(), b"kept");
             assert!(fs::symlink_metadata(&pending).is_err());
-            assert_eq!(names(&folder), ["receipt.json"]);
+            assert_eq!(folder_names(&folder).unwrap(), ["receipt.json"]);
         };
 
         // A link to a folder: a junction on Windows.
-        link_folder(&outside, &pending);
+        link_folder(&pending, &outside).unwrap();
         write_json_atomic(&path, &json!({"round": 1})).unwrap();
         untouched();
         assert_eq!(fs::read(&path).unwrap(), b"{\n  \"round\": 1\n}\n");
 
         // A link to a file, and one to nothing.
         for (round, target) in [(2, kept.clone()), (3, dir.path().join("nowhere.json"))] {
-            if let Err(error) = symlink_file(&target, &pending) {
+            if let Err(error) = symlink_file(&pending, &target) {
                 eprintln!("skipped the file links: this account cannot make them ({error})");
                 break;
             }
@@ -383,39 +358,31 @@ mod tests {
         assert_eq!(fs::read(&path).unwrap(), b"{\n  \"round\": 4\n}\n");
     }
 
-    /// Makes `link` a symbolic link to the file `target`, which need not exist.
-    fn symlink_file(target: &Path, link: &Path) -> io::Result<()> {
-        #[cfg(windows)]
-        return std::os::windows::fs::symlink_file(target, link);
-        #[cfg(unix)]
-        return std::os::unix::fs::symlink(target, link);
-    }
-
     #[test]
     fn writes_only_through_real_folders() {
         let dir = tempfile::tempdir().unwrap();
         let real = dir.path().join("real");
         fs::create_dir(&real).unwrap();
         let link = dir.path().join("link");
-        link_folder(&real, &link);
+        link_folder(&link, &real).unwrap();
         assert_link(
             write_json_atomic(&link.join("receipt.json"), &json!({})),
             &link,
         );
         let deeper = link.join(".gdl-launcher").join("receipt.json");
         assert_link(write_json_atomic(&deeper, &json!({})), &link);
-        assert!(names(&real).is_empty());
+        assert!(folder_names(&real).unwrap().is_empty());
 
         // The folder the link leads to is written to when it is named directly.
         write_json_atomic(&real.join("receipt.json"), &json!({})).unwrap();
-        assert_eq!(names(&real), ["receipt.json"]);
+        assert_eq!(folder_names(&real).unwrap(), ["receipt.json"]);
 
         // A link at the file's own name is replaced by the file, and what it led to is left as
         // it was: the rename takes the name, never the link's target.
         let outside = dir.path().join("outside.json");
         fs::write(&outside, b"outside").unwrap();
         let state = dir.path().join("state.json");
-        if let Err(error) = symlink_file(&outside, &state) {
+        if let Err(error) = symlink_file(&state, &outside) {
             eprintln!("skipped the file link: this account cannot make one ({error})");
             return;
         }
@@ -445,7 +412,7 @@ mod tests {
             }
         }
         assert_eq!(fs::read(&path).unwrap(), before);
-        assert_eq!(names(dir.path()), ["receipt.json"]);
+        assert_eq!(folder_names(dir.path()).unwrap(), ["receipt.json"]);
 
         // A folder that is not there: nothing is made in it, or in its place.
         let missing = dir.path().join("missing").join("receipt.json");
@@ -456,7 +423,7 @@ mod tests {
             }
             other => panic!("{other:?}"),
         }
-        assert_eq!(names(dir.path()), ["receipt.json"]);
+        assert_eq!(folder_names(dir.path()).unwrap(), ["receipt.json"]);
 
         // A replace that fails: Linux will not rename a file over a folder. Windows answers it
         // with an error the replace waits out, as it waits out a scanner.
@@ -470,7 +437,10 @@ mod tests {
                 other => panic!("{other:?}"),
             }
             assert_eq!(fs::read(taken.join("inside.json")).unwrap(), b"inside");
-            assert_eq!(names(dir.path()), ["receipt.json", "taken.json"]);
+            assert_eq!(
+                folder_names(dir.path()).unwrap(),
+                ["receipt.json", "taken.json"]
+            );
         }
 
         // No name at all to write to.
@@ -602,7 +572,7 @@ mod tests {
 
         // A link to the folder the file is in: a junction on Windows.
         let link = dir.path().join("link");
-        link_folder(&real, &link);
+        link_folder(&link, &real).unwrap();
         let through = link.join("receipt.json");
         assert_link(read_bounded(&through, RECEIPT_LIMIT), &link);
         assert_link(read_json_bounded::<Value>(&through, RECEIPT_LIMIT), &link);
@@ -610,10 +580,10 @@ mod tests {
         // A link at the file itself, and one to nothing, which is a link all the same.
         let linked = dir.path().join("receipt.json");
         let dangling = dir.path().join("dangling.json");
-        match symlink_file(&receipt, &linked) {
+        match symlink_file(&linked, &receipt) {
             Ok(()) => {
                 assert_link(read_bounded(&linked, RECEIPT_LIMIT), &linked);
-                symlink_file(&dir.path().join("nowhere.json"), &dangling).unwrap();
+                symlink_file(&dangling, &dir.path().join("nowhere.json")).unwrap();
                 assert_link(read_bounded(&dangling, RECEIPT_LIMIT), &dangling);
             }
             Err(error) => {

@@ -8,4 +8,4 @@ mod folder;
 pub use folder::DeniedAccess;
 #[cfg(windows)]
 pub use folder::make_junction;
-pub use folder::{long_root, make_alpha_markers};
+pub use folder::{folder_names, link_folder, long_root, make_alpha_markers, symlink_file};

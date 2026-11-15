@@ -192,7 +192,10 @@ mod tests {
     use std::io::{self, Write};
     use std::path::{Path, PathBuf};
 
+    use gdl_fixtures::{folder_names, link_folder, symlink_file};
+
     use super::{Journal, STAGING_RANDOM_CHARS, Staging};
+    use crate::error::{assert_io, assert_link};
     use crate::{FilesError, PAYLOAD_NAMES, RelPath};
 
     /// What is at a path in a tree, to compare before and after.
@@ -227,16 +230,6 @@ mod tests {
         found
     }
 
-    /// The names in `folder`, sorted.
-    fn names(folder: &Path) -> Vec<String> {
-        let mut names: Vec<String> = fs::read_dir(folder)
-            .unwrap()
-            .map(|entry| entry.unwrap().file_name().into_string().unwrap())
-            .collect();
-        names.sort();
-        names
-    }
-
     fn rel(text: &str) -> RelPath {
         RelPath::parse(text, &PAYLOAD_NAMES).unwrap_or_else(|error| panic!("{error}"))
     }
@@ -250,23 +243,6 @@ mod tests {
         let mut file = staging.create_file(&rel(path)).unwrap();
         file.write_all(bytes).unwrap();
         file.sync_all().unwrap();
-    }
-
-    /// Links `link` to the folder `target` as each system can without privilege: a junction on
-    /// Windows, a symbolic link elsewhere.
-    fn link_folder(target: &Path, link: &Path) {
-        #[cfg(windows)]
-        gdl_fixtures::make_junction(link, target).unwrap();
-        #[cfg(unix)]
-        std::os::unix::fs::symlink(target, link).unwrap();
-    }
-
-    /// Makes `link` a symbolic link to the file `target`, which need not exist.
-    fn symlink_file(target: &Path, link: &Path) -> io::Result<()> {
-        #[cfg(windows)]
-        return std::os::windows::fs::symlink_file(target, link);
-        #[cfg(unix)]
-        return std::os::unix::fs::symlink(target, link);
     }
 
     /// Removes what is at `path`: a folder with what it holds, and a link as the link alone,
@@ -283,26 +259,6 @@ mod tests {
             fs::remove_dir(path).unwrap();
         } else {
             fs::remove_file(path).unwrap();
-        }
-    }
-
-    /// Checks that `result` refused the link at `link`.
-    fn assert_link<T: std::fmt::Debug>(result: Result<T, FilesError>, link: &Path) {
-        match result {
-            Err(FilesError::Link { path }) => assert_eq!(path, link),
-            other => panic!("{other:?}"),
-        }
-    }
-
-    /// Checks that `result` is the system's refusal of an operation on `at`, and gives back what
-    /// the system answered.
-    fn assert_io<T: std::fmt::Debug>(result: Result<T, FilesError>, at: &Path) -> io::Error {
-        match result {
-            Err(FilesError::Io { path, source }) => {
-                assert_eq!(path, at);
-                source
-            }
-            other => panic!("{other:?}"),
         }
     }
 
@@ -396,17 +352,17 @@ mod tests {
             assert!(staging.path().is_absolute());
             assert_eq!(staging.path().parent(), Some(install.state.as_path()));
             assert!(fs::symlink_metadata(staging.path()).unwrap().is_dir());
-            assert!(names(staging.path()).is_empty());
+            assert!(folder_names(staging.path()).unwrap().is_empty());
         }
         assert_ne!(first.path(), second.path());
-        assert_eq!(names(&install.state).len(), 3);
+        assert_eq!(folder_names(&install.state).unwrap().len(), 3);
 
         // A destination with a link on its path is refused, and nothing is made through it.
         let link = install.root.join("linked");
-        link_folder(&install.outside, &link);
+        link_folder(&link, &install.outside).unwrap();
         assert_link(Staging::create_in(&link, "install-"), &link);
         assert_link(Staging::create_in(&link.join("deeper"), "install-"), &link);
-        assert!(names(&install.outside).is_empty());
+        assert!(folder_names(&install.outside).unwrap().is_empty());
 
         // A destination that is not there is the system's error.
         let missing = install.root.join("missing");
@@ -442,15 +398,15 @@ mod tests {
 
         // A link at the name is never followed: nothing is made where it leads.
         let link = staging.path().join("shaders");
-        link_folder(&install.outside, &link);
+        link_folder(&link, &install.outside).unwrap();
         assert_io(staging.create_file(&rel("shaders")), &link);
-        assert!(names(&install.outside).is_empty());
+        assert!(folder_names(&install.outside).unwrap().is_empty());
         let kept = install.outside.join("kept.json");
         fs::write(&kept, b"kept").unwrap();
         let nowhere = install.outside.join("nowhere.json");
         for (name, target) in [("config.json", &kept), ("dangling.json", &nowhere)] {
             let link = staging.path().join(name);
-            if let Err(error) = symlink_file(target, &link) {
+            if let Err(error) = symlink_file(&link, target) {
                 eprintln!("skipped the file links: this account cannot make them ({error})");
                 break;
             }
@@ -488,7 +444,7 @@ mod tests {
         // A link planted on the way is refused where it stands, and nothing is made through it,
         // however deep the name below it runs.
         let link = staging.path().join("shaders");
-        link_folder(&install.outside, &link);
+        link_folder(&link, &install.outside).unwrap();
         for name in ["shaders", "shaders/spirv", "shaders/spirv/deeper"] {
             assert_link(staging.create_dir(&rel(name)), &link);
         }
@@ -496,10 +452,10 @@ mod tests {
             assert_link(staging.create_file(&rel(name)), &link);
         }
         let deeper = staging.path().join("data").join("linked");
-        link_folder(&install.outside, &deeper);
+        link_folder(&deeper, &install.outside).unwrap();
         assert_link(staging.create_file(&rel("data/linked/x/y.json")), &deeper);
         assert_link(staging.create_dir(&rel("data/linked/x")), &deeper);
-        assert!(names(&install.outside).is_empty());
+        assert!(folder_names(&install.outside).unwrap().is_empty());
 
         // A file on the way is no folder.
         stage(&staging, "VERSION", b"1.0.0-beta\n");
@@ -542,7 +498,7 @@ mod tests {
         let staging_entry = format!(".gdl-launcher/{staging_name}");
         assert_eq!(published.remove(&staging_entry), Some(Entry::Folder));
         assert_eq!(published, staged);
-        assert!(names(staging.path()).is_empty());
+        assert!(folder_names(staging.path()).unwrap().is_empty());
 
         // Publishing nothing moves nothing.
         staging
@@ -554,7 +510,7 @@ mod tests {
         let folder = staging.path().to_path_buf();
         drop(staging);
         assert!(fs::symlink_metadata(&folder).is_err());
-        assert!(names(&install.state).is_empty());
+        assert!(folder_names(&install.state).unwrap().is_empty());
         let mut published = tree(&install.root);
         assert_eq!(published.remove(".gdl-launcher"), Some(Entry::Folder));
         assert_eq!(published, staged);
@@ -569,8 +525,8 @@ mod tests {
         journal: &Recorder<'_>,
     ) {
         assert!(journal.roots.is_empty());
-        assert_eq!(names(&install.root), [".gdl-launcher"]);
-        assert!(names(&install.outside).is_empty());
+        assert_eq!(folder_names(&install.root).unwrap(), [".gdl-launcher"]);
+        assert!(folder_names(&install.outside).unwrap().is_empty());
         let mut now = tree(staging.path());
         now.retain(|_, entry| *entry != Entry::Link);
         assert_eq!(&now, before);
@@ -600,9 +556,9 @@ mod tests {
         for (name, published, file) in planted {
             let link = rel(name).path_under(staging.path());
             match file {
-                None => link_folder(&install.outside, &link),
+                None => link_folder(&link, &install.outside).unwrap(),
                 Some(target) => {
-                    if let Err(error) = symlink_file(target, &link) {
+                    if let Err(error) = symlink_file(&link, target) {
                         eprintln!(
                             "skipped the file links: this account cannot make them ({error})"
                         );
@@ -620,7 +576,7 @@ mod tests {
         // A link on the way to the staging itself, put where its folder was.
         let real_state = install.state.with_file_name(".gdl-launcher-real");
         fs::rename(&install.state, &real_state).unwrap();
-        link_folder(&real_state, &install.state);
+        link_folder(&install.state, &real_state).unwrap();
         let mut journal = Recorder::new(&staging, &install.root);
         let publish = staging.publish_new(&roots, &install.root, &mut journal);
         assert_link(publish, &install.state);
@@ -630,7 +586,7 @@ mod tests {
 
         // A link on the way to the folder published into.
         let linked_root = install.root.with_file_name("linked root");
-        link_folder(&install.root, &linked_root);
+        link_folder(&linked_root, &install.root).unwrap();
         let mut journal = Recorder::new(&staging, &linked_root);
         let publish = staging.publish_new(&roots, &linked_root, &mut journal);
         assert_link(publish, &linked_root);
@@ -687,8 +643,8 @@ mod tests {
             other => panic!("{other:?}"),
         }
         assert!(journal.roots.is_empty());
-        assert_eq!(names(&install.root), [".gdl-launcher"]);
-        assert_eq!(names(staging.path()), ["Data", "data"]);
+        assert_eq!(folder_names(&install.root).unwrap(), [".gdl-launcher"]);
+        assert_eq!(folder_names(staging.path()).unwrap(), ["Data", "data"]);
     }
 
     #[test]
@@ -710,17 +666,20 @@ mod tests {
         // The first root is in place and recorded; the others wait in the staging.
         assert_eq!(journal.roots, ["a-first"]);
         assert_eq!(
-            names(&install.root),
+            folder_names(&install.root).unwrap(),
             [".gdl-launcher", "a-first", "b-second"]
         );
         assert_eq!(fs::read(&taken).unwrap(), b"kept");
-        assert_eq!(names(staging.path()), ["b-second", "c-third"]);
+        assert_eq!(
+            folder_names(staging.path()).unwrap(),
+            ["b-second", "c-third"]
+        );
 
         // Dropped, the staging takes them with it, and nothing published goes.
         drop(staging);
-        assert!(names(&install.state).is_empty());
+        assert!(folder_names(&install.state).unwrap().is_empty());
         assert_eq!(
-            names(&install.root),
+            folder_names(&install.root).unwrap(),
             [".gdl-launcher", "a-first", "b-second"]
         );
         let placed = install.root.join("a-first").join("a-first.json");
@@ -765,10 +724,10 @@ mod tests {
         // The root it failed to record has moved; the one after it has not.
         assert_eq!(journal.told, ["a-first", "b-second"]);
         assert_eq!(
-            names(&install.root),
+            folder_names(&install.root).unwrap(),
             [".gdl-launcher", "a-first", "b-second"]
         );
-        assert_eq!(names(staging.path()), ["c-third"]);
+        assert_eq!(folder_names(staging.path()).unwrap(), ["c-third"]);
     }
 
     /// Puts something at a root's target, the first path, given a folder outside, the second.
@@ -791,12 +750,12 @@ mod tests {
                 fs::write(target.join("kept.json"), b"kept").unwrap();
             }),
             ("a link to a folder", |target, outside| {
-                link_folder(outside, target)
+                link_folder(target, outside).unwrap()
             }),
             ("a link to nothing", |target, outside| {
                 let gone = outside.join("gone");
                 fs::create_dir(&gone).unwrap();
-                link_folder(&gone, target);
+                link_folder(target, &gone).unwrap();
                 fs::remove_dir(&gone).unwrap();
             }),
         ];
@@ -811,7 +770,7 @@ mod tests {
             assert!(journal.roots.is_empty(), "{kind}");
             assert_eq!(tree(staging.path()), before, "{kind}");
             assert_eq!(tree(&install.root), occupied, "{kind}");
-            assert!(names(&install.outside).is_empty(), "{kind}");
+            assert!(folder_names(&install.outside).unwrap().is_empty(), "{kind}");
             clear(&target);
         }
         // Once the name is free again, the root goes there.
@@ -852,12 +811,12 @@ mod tests {
         // A link left in it goes as a link: what it leads to is kept.
         let kept = install.outside.join("kept.json");
         fs::write(&kept, b"kept").unwrap();
-        link_folder(&install.outside, &staging.path().join("linked"));
+        link_folder(&staging.path().join("linked"), &install.outside).unwrap();
         let folder = staging.path().to_path_buf();
         drop(staging);
         assert!(fs::symlink_metadata(&folder).is_err());
-        assert_eq!(names(&install.state), ["receipt.json"]);
-        assert_eq!(names(&install.outside), ["kept.json"]);
+        assert_eq!(folder_names(&install.state).unwrap(), ["receipt.json"]);
+        assert_eq!(folder_names(&install.outside).unwrap(), ["kept.json"]);
         assert_eq!(fs::read(&kept).unwrap(), b"kept");
     }
 
@@ -880,7 +839,7 @@ mod tests {
         let source = assert_io(publish, &locked);
         assert_eq!(source.kind(), io::ErrorKind::PermissionDenied);
         assert!(journal.roots.is_empty());
-        assert_eq!(names(&install.root), [".gdl-launcher"]);
+        assert_eq!(folder_names(&install.root).unwrap(), [".gdl-launcher"]);
         // The mode comes back before the staging goes, so that it can be removed whole.
         drop(denied);
         let folder = staging.path().to_path_buf();
