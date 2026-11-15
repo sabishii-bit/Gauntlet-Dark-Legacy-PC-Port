@@ -31,10 +31,12 @@ const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
 #[cfg(unix)]
 const LOCK_FILE_REPLACED: &str = "the lock file was replaced while the lock was taken";
 
-/// Refuses `root`, an installation's folder, when it or a folder above it is a link. Every reader
-/// and writer of an installation judges its folder by this one rule, so that none of them finds
-/// linked a folder that another accepted, and an installation the launcher made is never later
-/// refused for its links.
+/// Refuses `root`, an installation's folder, when it or a folder above it is a link: the rule that
+/// [`InstallFolder::at`], [`InstallFolder::installed`] and [`InstallFolder::inspect`] hold an
+/// installation's folder to. gdl-files' readers and writers hold each whole path they take to the
+/// same rule through [`no_links`], the folders above the installation included, so a change to
+/// what this refuses above the folder must reach them too; otherwise a folder accepted here would
+/// be refused once something in it is read or written.
 pub fn check_links(root: &Path) -> Result<(), FilesError> {
     no_links(root)
 }
