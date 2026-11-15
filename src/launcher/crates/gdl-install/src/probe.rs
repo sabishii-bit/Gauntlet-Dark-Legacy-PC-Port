@@ -216,9 +216,10 @@ impl VersionProbe {
 /// version alone on its first line before any window opens, to learn whether the system runs the
 /// game at all.
 ///
-/// The path must be absolute, since the game is run by it, never through a shell or a search of
-/// `PATH`. The game runs in its own folder, with nothing to read, and on Windows without a console
-/// window. It is given [`GAME_PROBE_LIMIT`] to end; past that it is stopped and the probe is
+/// The path must be absolute, since the game is run by it and never looked for along `PATH`. It
+/// runs as a program, not as a command for a shell; only a batch file, which an installation's
+/// executable never is, would Windows run through `cmd.exe`. The game runs in its own folder, with
+/// nothing to read, and on Windows without a console window. It is given [`GAME_PROBE_LIMIT`] to end; past that it is stopped and the probe is
 /// [`GameStartError::TimedOut`]. Of what it writes, the first [`MAX_PROBE_OUTPUT`] bytes of its
 /// standard output are kept, for its first line, and the last as many of its standard error; the
 /// rest is read and dropped, so that the game never waits on a full pipe.
@@ -522,9 +523,9 @@ mod tests {
     #[cfg(windows)]
     use super::NO_SHARING;
     use super::{
-        GAME_PROBE_LIMIT, GameStartError, GameUseError, MAX_PROBE_OUTPUT, VERSION_ARGUMENT,
-        VersionProbe, first_line, keep_head, keep_tail, probe_game_version, require_game_closed,
-        run_probe,
+        DRAIN_LIMIT, GAME_PROBE_LIMIT, GameStartError, GameUseError, MAX_PROBE_OUTPUT,
+        VERSION_ARGUMENT, VersionProbe, first_line, keep_head, keep_tail, probe_game_version,
+        require_game_closed, run_probe,
     };
 
     /// The most bytes an error may take, so that returning one by value stays cheap.
@@ -562,6 +563,19 @@ mod tests {
 
     /// The time a probe that must be stopped is given.
     const SHORT_LIMIT: Duration = Duration::from_secs(1);
+
+    /// How long a program left running by a probed one holds the probe's pipes, unless it is
+    /// stopped: far longer than a probe reads a program's output for once the program has ended.
+    const LEFT_RUNNING: Duration = Duration::from_secs(20);
+
+    /// The arguments that make [`WAITER`] run for [`LEFT_RUNNING`]: an echo request a second,
+    /// the first at once.
+    #[cfg(windows)]
+    const LEFT_RUNNING_ARGS: &[&str] = &["-n", "21", "127.0.0.1"];
+
+    /// The arguments that make [`WAITER`] run for [`LEFT_RUNNING`].
+    #[cfg(unix)]
+    const LEFT_RUNNING_ARGS: &[&str] = &["20"];
 
     /// The name of a script that writes back the arguments it is run with.
     #[cfg(windows)]
@@ -975,6 +989,21 @@ mod tests {
         let read = answer_of(&reader, &[]);
         assert!(read.succeeded(), "{read:?}");
         assert_eq!(read.first_line, None);
+
+        // On Linux the input is the null device itself, whatever this process reads from.
+        #[cfg(target_os = "linux")]
+        {
+            const NULL_DEVICE: &str = "/dev/null";
+            let input = shell_answer(&["readlink", "/proc/self/fd/0"]);
+            assert_eq!(input.first_line.as_deref(), Some(NULL_DEVICE), "{input:?}");
+            let own = fs::read_link("/proc/self/fd/0");
+            if own.is_ok_and(|own| own == Path::new(NULL_DEVICE)) {
+                eprintln!(
+                    "only half checked: this process reads from the null device too, so an input \
+                     it passed on would look the same"
+                );
+            }
+        }
     }
 
     #[test]
@@ -1022,6 +1051,81 @@ mod tests {
         assert!(waited < WAITER_RUN, "{waited:?}");
         // Stopped rather than left to wait its time out: nothing runs the copy any more.
         assert_closed(&copy);
+    }
+
+    /// Probes the system's shell starting a copy of [`WAITER`] from `dir` that holds the shell's
+    /// output pipes for [`LEFT_RUNNING`], then answering and ending, and stops the copy once the
+    /// probe is over. Gives the answer and how long the probe took, or `None` where cmd would read
+    /// the copy's path otherwise than it is written.
+    #[cfg(windows)]
+    fn answer_leaving_a_program_running(dir: &Path) -> Option<(VersionProbe, Duration)> {
+        use std::os::windows::process::CommandExt;
+
+        /// What cmd reads as a path, quoted or not, as it is written.
+        fn plain(path: &str) -> bool {
+            path.chars()
+                .all(|c| c.is_ascii_alphanumeric() || " :\\._-~".contains(c))
+        }
+
+        // A name of its own, by which it alone is stopped.
+        let name = format!("left-running-{}.exe", std::process::id());
+        let copy = dir.join(&name);
+        let path = copy.to_str().filter(|path| plain(path))?;
+        fs::copy(system_program(WAITER), &copy).unwrap();
+        let mut words = vec!["start", "", "/b", path];
+        words.extend(LEFT_RUNNING_ARGS);
+        words.extend([">NUL", "&", "echo", FIRST_LINE]);
+        let begun = Instant::now();
+        let answer = shell_answer(&words);
+        let waited = begun.elapsed();
+        let _ = Command::new(system_program("taskkill.exe"))
+            .args(["/F", "/IM", &name])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .creation_flags(windows_sys::Win32::System::Threading::CREATE_NO_WINDOW)
+            .status();
+        // Its file can go once it no longer runs.
+        gdl_files::retry_locked(|| fs::remove_file(&copy))
+            .unwrap_or_else(|error| panic!("{name} still runs: {error}"));
+        Some((answer, waited))
+    }
+
+    /// Probes the system's shell starting [`WAITER`], which holds the shell's output pipes for
+    /// [`LEFT_RUNNING`], then answering and ending, and stops it once the probe is over. Gives the
+    /// answer and how long the probe took.
+    #[cfg(unix)]
+    fn answer_leaving_a_program_running(_: &Path) -> Option<(VersionProbe, Duration)> {
+        // The shell names what it left running on its standard error, so that it can be stopped.
+        let mut words = vec![WAITER];
+        words.extend(LEFT_RUNNING_ARGS);
+        words.extend(["&", "echo", FIRST_LINE, ";", "echo", "$!", ">&2"]);
+        let begun = Instant::now();
+        let answer = shell_answer(&words);
+        let waited = begun.elapsed();
+        let left = answer.stderr_tail.trim();
+        if !left.is_empty() && left.bytes().all(|byte| byte.is_ascii_digit()) {
+            let _ = Command::new(system_program("sh"))
+                .args(["-c", &format!("kill {left}")])
+                .status();
+        }
+        Some((answer, waited))
+    }
+
+    #[test]
+    fn a_program_left_running_does_not_keep_the_probe_waiting() {
+        let dir = tempfile::tempdir().unwrap();
+        let Some((answer, waited)) = answer_leaving_a_program_running(dir.path()) else {
+            eprintln!(
+                "skipped: cmd would read the test folder's path otherwise than it is written"
+            );
+            return;
+        };
+        assert!(answer.succeeded(), "{answer:?}");
+        assert_eq!(answer.first_line.as_deref(), Some(FIRST_LINE));
+        // What the shell wrote was read for a moment after it ended, and then no longer.
+        assert!(waited >= DRAIN_LIMIT, "{waited:?}");
+        assert!(waited < LEFT_RUNNING / 2, "{waited:?}");
     }
 
     #[test]
