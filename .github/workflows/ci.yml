@@ -189,7 +189,7 @@ jobs:
       - name: Formatting, clippy and tests
         run: python scripts/launcher.py check
 
-  # Every unit under the full profile, in eight shards, each starting from the clean
+  # Every unit under the fast profile, in eight shards, each starting from the clean
   # results its predecessor saved: a push re-lints only what it reached. The cache is
   # saved whatever the outcome, so a failing shard still keeps the units it cleared.
   lint-shards:
