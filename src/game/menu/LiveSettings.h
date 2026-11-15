@@ -1,12 +1,16 @@
 #pragma once
 
+#include <vector>
+
 #include "engine/platform/DisplayMode.h"
 #include "engine/render/RenderTypes.h"
 
 #include "game/config/GameConfig.h"
+#include "game/hud/HudStyles.h"
 
 namespace gdl::game {
-/** The running game's settings: applied and saved, previewed, and the display it offers. */
+/** The running game's settings: applied and saved, previewed, and the display and the HUD looks
+ * it offers. */
 class LiveSettings {
 public:
     virtual ~LiveSettings() = default;
@@ -20,5 +24,8 @@ public:
     virtual DisplayOptions display() const = 0;
     /** The graphics API drawing now. */
     virtual GraphicsApi renderer() const = 0;
+    /** The HUD looks the expansions offer and whether each can be drawn, as they stand now;
+     * none by default. */
+    virtual std::vector<HudStyleOffer> hudStyles() { return {}; }
 };
 } // namespace gdl::game

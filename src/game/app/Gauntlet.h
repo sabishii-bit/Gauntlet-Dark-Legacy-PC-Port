@@ -44,6 +44,7 @@
 #include "game/context/GameServices.h"
 #include "game/hud/AutoSaveIcon.h"
 #include "game/hud/ControlPrompts.h"
+#include "game/hud/HudStyles.h"
 #include "game/level/LevelCatalog.h"
 #include "game/level/LevelWorld.h"
 #include "game/mechanics/MechanicCatalog.h"
@@ -123,6 +124,20 @@ private:
         std::vector<GatewayWorld> m_worlds; ///< what the last ask found
         std::vector<u8> m_unopened;         ///< the worlds whose towers would not open
     };
+    /** The HUD looks the expansions built into the game offer, looked for afresh at each ask
+     * where the game's own data is found, and their painters (GauntletHud.cpp). */
+    class HudRouting final : public HudStyles {
+    public:
+        explicit HudRouting(Gauntlet& game) : m_game(game) {}
+        std::span<const HudStyleOffer> offers() override;
+        std::unique_ptr<HudPainter> open(std::string_view id, RenderDevice& device,
+                                         DarkLegacyHudArt& darkLegacy,
+                                         std::span<const HudMember> party) override;
+
+    private:
+        Gauntlet& m_game;
+        std::vector<HudStyleOffer> m_offers; ///< what the last ask found
+    };
     /** Saves the online game's local characters as the party in play is saved. */
     class PartyRouting final : public PartyStore {
     public:
@@ -155,6 +170,8 @@ private:
         void previewAudio(const AudioConfig& audio) override;
         DisplayOptions display() const override;
         GraphicsApi renderer() const override;
+        /** The HUD looks the expansions offer, as m_hudStyles finds them (GauntletHud.cpp). */
+        std::vector<HudStyleOffer> hudStyles() override;
 
     private:
         Gauntlet& m_game;
@@ -317,6 +334,7 @@ private:
     RumbleRouting m_rumble{*this}; ///< outlives every scene and online game that rumbles
     UnlockRouting m_unlocks{*this};
     GatewayRouting m_gateways{*this}; ///< outlives every offline scene that asks it
+    HudRouting m_hudStyles{*this};    ///< outlives every menu and scene that asks it
     PartyRouting m_partyStore{*this};
     SettingsRouting m_liveSettings{*this}; ///< outlives the title and pause menus that edit it
     LabelRouting m_controlLabels{*this};   ///< outlives every screen that shows a prompt

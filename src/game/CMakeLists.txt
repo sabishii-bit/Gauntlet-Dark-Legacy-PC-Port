@@ -489,6 +489,7 @@ add_library(game STATIC
     hud/DarkLegacyHudArt.h
     hud/DarkLegacyHudPainter.h
     hud/DarkLegacyHudPainter.cpp
+    hud/HudStyles.h
     party/PartyRecords.cpp
     party/PartyTeleport.h
     party/PartyTeleport.cpp

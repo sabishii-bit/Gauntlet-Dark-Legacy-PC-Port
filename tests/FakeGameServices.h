@@ -11,6 +11,7 @@
 #include "game/characters/Party.h"
 #include "game/config/ControlProfiles.h"
 #include "game/config/GameConfig.h"
+#include "game/hud/HudStyles.h"
 #include "game/menu/LiveSettings.h"
 #include "game/online/PartyStore.h"
 #include "game/scenes/ClassUnlocks.h"
@@ -94,8 +95,8 @@ public:
 
 /** A test's running settings: a save is refused while `fail` holds, else written back to
  * `target` and counted, after `hook` has seen it; each audio preview is kept in turn; the
- * Video trials answer through `video`, refused without one; the display and the renderer
- * are what the test sets. */
+ * Video trials answer through `video`, refused without one; the display, the renderer and the
+ * HUD looks offered are what the test sets. */
 class FakeSettings final : public game::LiveSettings {
 public:
     bool save(const game::GameConfig& next) override {
@@ -115,6 +116,7 @@ public:
     void previewAudio(const game::AudioConfig& audio) override { audioPreviews.push_back(audio); }
     DisplayOptions display() const override { return displayOptions; }
     GraphicsApi renderer() const override { return drawingApi; }
+    std::vector<game::HudStyleOffer> hudStyles() override { return hudOffers; }
 
     game::GameConfig* target = nullptr; ///< where a save is written back; nowhere without one
     std::function<void(const game::GameConfig&)> hook;  ///< runs first on every save
@@ -122,6 +124,7 @@ public:
     std::vector<game::AudioConfig> audioPreviews;
     DisplayOptions displayOptions;
     GraphicsApi drawingApi = GraphicsApi::Vulkan;
+    std::vector<game::HudStyleOffer> hudOffers; ///< usable or not, in the order offered
     s32 writes = 0;
     bool fail = false;
 };

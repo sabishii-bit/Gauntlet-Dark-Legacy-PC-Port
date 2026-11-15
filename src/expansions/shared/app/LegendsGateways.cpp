@@ -5,13 +5,13 @@
 #include <optional>
 #include <string>
 #include <string_view>
-#include <system_error>
 #include <utility>
 
 #include "engine/core/Log.h"
 #include "engine/core/Types.h"
 #include "engine/io/AssetLocator.h"
 
+#include "expansions/shared/app/LegendsFiles.h"
 #include "expansions/shared/characters/LegendsProgress.h"
 #include "expansions/shared/scenes/LegendsMapCatalog.h"
 
@@ -30,16 +30,6 @@ struct LegendsGateway {
 constexpr std::array kGateways{
     LegendsGateway{LegendsPlatform::N64, "legends.n64.gateway.label", "tower2"},
     LegendsGateway{LegendsPlatform::Dreamcast, "legends.dreamcast.gateway.label", "levelt1"}};
-
-bool nonemptyFile(const AssetLocator& files, std::string_view name) {
-    const auto path = files.find(name);
-    std::error_code error;
-    if (!path || !std::filesystem::is_regular_file(*path, error)) {
-        return false;
-    }
-    const auto size = std::filesystem::file_size(*path, error);
-    return !error && size != 0;
-}
 
 /** The folder of the campaign's tower, when its extraction holds the tower whole. */
 std::optional<std::filesystem::path> usableTower(const LegendsGateway& gateway,
