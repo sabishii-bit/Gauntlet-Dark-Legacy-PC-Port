@@ -2,6 +2,9 @@
 //! and retries. Only its `platform` module may call the OS directly.
 #![deny(unsafe_code)]
 
+mod error;
+mod json;
+mod links;
 mod long_path;
 mod names;
 #[allow(unsafe_code)]
@@ -9,6 +12,11 @@ mod platform;
 mod rename;
 mod retry;
 
+pub use error::FilesError;
+pub use json::{
+    MAX_JSON_LEN, PENDING_SUFFIX, pending_path, read_bounded, read_json_bounded, write_json_atomic,
+};
+pub use links::{absolute_lexical, no_links};
 pub use long_path::{MAX_INSTALL_ROOT_UTF16, root_fits, root_utf16_len, strip_verbatim};
 pub use names::{
     ALPHA_NAMES, DEVICE_NAMES, FORBIDDEN_CHARS, MAX_COMPONENT_CHARS, MAX_PAYLOAD_PATH_CHARS,
