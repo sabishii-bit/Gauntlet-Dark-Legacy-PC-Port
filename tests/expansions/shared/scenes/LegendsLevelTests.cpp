@@ -9,8 +9,11 @@
 #include "TestSupport.h"
 #include "expansions/dreamcast/characters/LegendsDreamcastVitality.h"
 #include "expansions/dreamcast/formats/LegendsDreamcastTexture.h"
+#include "expansions/shared/hud/LegendsHudStyleIds.h"
 #include "expansions/shared/scenes/LegendsLevel.h"
 #include "game/characters/Vitality.h"
+#include "game/config/GameConfig.h"
+#include "game/level/ImportedLevel.h"
 
 namespace {
 
@@ -58,6 +61,48 @@ TEST_CASE("an N64 level holds health to each character's own most, as the N64 ga
     CHECK(level.healthLimit(10) == 1400);
     CHECK(level.healthLimit(10) == mostHealth(10));
     CHECK(level.healthLimit(99) == kHealthLimit);
+}
+
+TEST_CASE("a Dreamcast level names the Dreamcast HUD look as its own",
+          "[legends][dreamcast][hud-style][assets]") {
+    const auto directory =
+        test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native/levels/levelb1";
+    if (!std::filesystem::is_regular_file(directory / "worlds.rom")) {
+        SKIP("Dreamcast extraction is not installed");
+    }
+    test::FakeRenderDevice device;
+    const auto objects = readFile(directory / "objects.rom");
+    auto map = formats::LegendsMap::parseDreamcast(readFile(directory / "worlds.rom"), objects);
+    map.textures =
+        formats::decodeLegendsDreamcastTextures(objects, readFile(directory / "textures.rom"));
+    auto adapter = LegendsSceneAdapter::load(device, LegendsPlatform::Dreamcast, directory, map);
+    const LegendsLevel level(device, map, std::move(adapter), directory, test::dataDirectory());
+    REQUIRE(level.platform() == LegendsPlatform::Dreamcast);
+    // Asked as the scene asks any imported level.
+    const ImportedLevel& imported = level;
+    CHECK(imported.hudStyleId() == kLegendsDreamcastHudStyle);
+    CHECK(imported.hudStyleId() == legendsHudStyleOf(level.platform()));
+    CHECK(imported.hudStyleId() != kDarkLegacyHudStyle);
+}
+
+TEST_CASE("an N64 level names the N64 HUD look as its own", "[legends][n64][hud-style][assets]") {
+    const auto directory =
+        test::dataDirectory().parent_path() / "assets/n64/extracted/levels/boss1";
+    if (!std::filesystem::is_regular_file(directory / "worlds.wad")) {
+        SKIP("Native N64 extraction is not installed");
+    }
+    const auto characters = test::assetOrSkip("PLAYERS").parent_path();
+    auto map = formats::LegendsMap::parseN64(readFile(directory / "worlds.wad"),
+                                             readFile(directory / "objects.wad"),
+                                             readFile(directory / "ipr.rom"));
+    test::FakeRenderDevice device;
+    auto adapter = LegendsSceneAdapter::load(device, LegendsPlatform::N64, directory, map);
+    const LegendsLevel level(device, map, std::move(adapter), directory, characters);
+    REQUIRE(level.platform() == LegendsPlatform::N64);
+    const ImportedLevel& imported = level;
+    CHECK(imported.hudStyleId() == kLegendsN64HudStyle);
+    CHECK(imported.hudStyleId() == legendsHudStyleOf(level.platform()));
+    CHECK(imported.hudStyleId() != kDarkLegacyHudStyle);
 }
 
 } // namespace
