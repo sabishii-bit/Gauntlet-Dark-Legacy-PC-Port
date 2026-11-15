@@ -229,6 +229,11 @@ mod tests {
             (r"\\srv\s\..\t", r"\\?\UNC\srv\s\t"),
             // A verbatim path is never folded: its dots are names.
             (r"\\?\C:\a\..\b", r"\\?\C:\a\..\b"),
+            // A verbatim prefix spelt with a forward slash is none to std, but Windows gives one
+            // back when it makes the path absolute, and that path is then taken as it is.
+            (r"//?/C:/x", r"\\?\C:\x"),
+            (r"/\?\C:\x", r"\\?\C:\x"),
+            (r"//?/UNC/srv/s/x", r"\\?\UNC\srv\s\x"),
             ("C:\\\u{e9}\u{1d11e}", "\\\\?\\C:\\\u{e9}\u{1d11e}"),
         ] {
             assert_eq!(verbatim(given), expected, "{given}");
