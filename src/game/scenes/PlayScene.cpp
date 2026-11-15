@@ -1733,8 +1733,7 @@ void PlayScene::advanceTriggers(f32 seconds) {
     handleTriggerEvents();
 }
 
-std::optional<PlayOutcome> PlayScene::advancePortals(s32 ticks, f32 seconds, const Inputs& inputs) {
-    // A portal waits for everyone still on their feet.
+std::vector<PortalVisitor> PlayScene::portalVisitors(const Inputs* inputs) const {
     std::vector<PortalVisitor> standing;
     standing.reserve(m_players.size());
     for (usize i = 0; i < m_players.size(); ++i) {
@@ -1742,9 +1741,15 @@ std::optional<PlayOutcome> PlayScene::advancePortals(s32 ticks, f32 seconds, con
             const auto player = static_cast<usize>(m_players[i].actor.player());
             standing.push_back(PortalVisitor{
                 m_players[i].actor.position(), m_players[i].actor.radius(), static_cast<s32>(i),
-                player >= inputs.size() || !inputs[player].move.any()});
+                inputs != nullptr && (player >= inputs->size() || !(*inputs)[player].move.any())});
         }
     }
+    return standing;
+}
+
+std::optional<PlayOutcome> PlayScene::advancePortals(s32 ticks, f32 seconds, const Inputs& inputs) {
+    // A portal waits for everyone still on their feet.
+    const std::vector<PortalVisitor> standing = portalVisitors(&inputs);
     // With everyone fallen, the last death played out and the announcer done, the party
     // goes back to the tower as it came into the level (game_main sends a party of the
     // dead or waiting to the tower, where PlayerRestoreState stands them again). The

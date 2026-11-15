@@ -121,10 +121,11 @@ public:
     /** Who is ready on a portal the rest of a party of more than one has yet to reach
      * (DoExit's wait), by place in the party. */
     std::vector<s32> takeWaiting() { return std::exchange(m_wait.waiting, {}); }
-    /** The exit `visitor` stands on, counted as update() counts it (`extra`: the party less one):
-     * shut ones too, and a secret one while it is shown to a party of `partySize`; never a spent
-     * one or one naming no level. None off every exit. */
-    std::optional<usize> padUnder(const PortalVisitor& visitor, f32 extra, usize partySize) const;
+    /** The exit `visitor`, one of `party`, stands on, counted as update() counts it for that
+     * party: shut ones too, and a secret one while it is shown to the party; never a spent one
+     * or one naming no level. None off every exit. */
+    std::optional<usize> padUnder(const PortalVisitor& visitor,
+                                  std::span<const PortalVisitor> party) const;
     /** Whether leaving `here` by `exit` takes the party back to the tower, as every ordinary
      * stage's exits do, rather than to the level the exit names: the tower's own portals,
      * secret exits and the Temple's and Underworld's first stages, which go straight on to
@@ -178,6 +179,8 @@ private:
     bool readyToLeave(s32 partyIndex) const;
     void updateReadiness(s32 ticks, std::span<const PortalVisitor> party, f32 extra);
     static void shut(RenderDevice& device, Portal& portal, const AssetScope& scope);
+    /** How much further an ordinary portal reaches for `party`: a unit for each past the first. */
+    static f32 partyReach(std::span<const PortalVisitor> party);
     static bool standsOn(const Portal& portal, const PortalVisitor& visitor, f32 extra);
 
     const TreeInfo* m_tree = nullptr;

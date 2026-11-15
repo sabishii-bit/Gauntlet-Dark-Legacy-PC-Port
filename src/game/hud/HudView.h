@@ -105,8 +105,8 @@ struct HudSeatRules {
 /** Seat `seat`'s part of the view; an empty seat when nobody plays it. */
 HudSeat hudSeatOf(s32 seat, std::span<const PlayerRuntime> players, const PowerupSelector& selector,
                   const ClassDataSet& classes, const HudSeatRules& rules);
-/** Each seat's Dark Legacy exit in the level `here`. `standing` are the visitors advancePortals
- * builds, each read as its runtime's seat; the identity is kDarkLegacyPadIdentityBase plus the
+/** Each seat's Dark Legacy exit in the level `here`. `standing` is the party the portals count,
+ * each visitor read as its runtime's seat; the identity is kDarkLegacyPadIdentityBase plus the
  * portal's index, and the destination is where leaving by it takes the party. */
 std::array<std::optional<HudPad>, HudView::kSeats>
 darkLegacyPadsOf(const ExitPortals& portals, const LevelRef& here,

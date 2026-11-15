@@ -569,32 +569,47 @@ TEST_CASE("the HUD learns which exit a visitor stands on, shut and secret ones t
     REQUIRE(portals.portal(1).shut);
     REQUIRE_FALSE(portals.portal(2).destination.has_value());
     REQUIRE(portals.portal(3).secret);
-    const auto at = [](f32 x, f32 y = 0) { return PortalVisitor{Vec3{x, y, 10}, 0.75f, 0}; };
+    const auto at = [](f32 x, f32 y = 0, s32 partyIndex = 0) {
+        return PortalVisitor{Vec3{x, y, 10}, 0.75f, partyIndex};
+    };
+    // `visitor` in a party of `size`, the rest of it far off every exit.
+    const auto under = [&](const PortalVisitor& visitor, usize size) {
+        std::vector<PortalVisitor> party(size, at(1000));
+        party.front() = visitor;
+        return portals.padUnder(visitor, party);
+    };
 
-    CHECK(portals.padUnder(at(11), 0, 1) == 0U);
+    CHECK(under(at(11), 1) == 0U);
     // A shut exit takes nobody, but its pad is still under the visitor.
-    CHECK(portals.padUnder(at(30), 0, 1) == 1U);
+    CHECK(under(at(30), 1) == 1U);
     const std::array onShut{at(30)};
     for (s32 frame = 0; frame < 60; ++frame) {
         REQUIRE_FALSE(portals.update(2, 1.0f / 30, onShut));
     }
     CHECK(portals.portal(1).action == 0);
-    CHECK_FALSE(portals.padUnder(at(50), 0, 1));    // it leads nowhere
-    CHECK_FALSE(portals.padUnder(at(90), 0, 1));    // off every exit
-    CHECK_FALSE(portals.padUnder(at(10, 9), 0, 1)); // too far over it
+    CHECK_FALSE(under(at(50), 1));    // it leads nowhere
+    CHECK_FALSE(under(at(90), 1));    // off every exit
+    CHECK_FALSE(under(at(10, 9), 1)); // too far over it
     // The party's size widens an ordinary exit: 4.25 off is past 3 + 0.75, within one more.
-    CHECK_FALSE(portals.padUnder(at(14.25f), 0, 2));
-    CHECK(portals.padUnder(at(14.25f), 1, 2) == 0U);
+    CHECK_FALSE(under(at(14.25f), 1));
+    CHECK(under(at(14.25f), 2) == 0U);
+    // That is the widening update() gives the party: both of two, the second 4.25 off, are on it
+    // and wake it.
+    const std::array pair{at(11, 0, 0), at(14.25f, 0, 1)};
+    CHECK(portals.padUnder(pair[1], pair) == 0U);
+    REQUIRE(portals.portal(0).action == 0);
+    REQUIRE_FALSE(portals.update(2, 1.0f / 30, pair));
+    CHECK(portals.portal(0).action > 0);
     // The secret exit shows only to a party of two or more, and never grows with it.
-    CHECK_FALSE(portals.padUnder(at(70.5f), 0, 1));
-    CHECK(portals.padUnder(at(70.5f), 1, 2) == 3U);
-    CHECK_FALSE(portals.padUnder(at(72.25f), 1, 2));
+    CHECK_FALSE(under(at(70.5f), 1));
+    CHECK(under(at(70.5f), 2) == 3U);
+    CHECK_FALSE(under(at(72.25f), 2));
     // A spent exit is gone from under its visitor.
     portals.consume(0);
     portals.consume(3);
-    CHECK_FALSE(portals.padUnder(at(11), 0, 1));
-    CHECK_FALSE(portals.padUnder(at(70.5f), 1, 2));
-    CHECK(portals.padUnder(at(30), 0, 1) == 1U);
+    CHECK_FALSE(under(at(11), 1));
+    CHECK_FALSE(under(at(70.5f), 2));
+    CHECK(under(at(30), 1) == 1U);
 }
 
 TEST_CASE("an ordinary stage's exits lead back to the tower; the tower's, secret ones and a "

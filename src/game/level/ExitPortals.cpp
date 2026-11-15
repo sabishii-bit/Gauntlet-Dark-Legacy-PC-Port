@@ -328,6 +328,11 @@ void ExitPortals::advance(Portal& portal, s32 action) {
                            : static_cast<s32>(std::ceil(seconds * kTicksPerSecond));
 }
 
+f32 ExitPortals::partyReach(std::span<const PortalVisitor> party) {
+    // A larger party is given a wider portal: a unit more for each member past the first.
+    return party.empty() ? 0.0f : static_cast<f32>(party.size() - 1);
+}
+
 bool ExitPortals::standsOn(const Portal& portal, const PortalVisitor& visitor, f32 extra) {
     return portal.touches(visitor, extra);
 }
@@ -386,8 +391,7 @@ std::optional<usize> ExitPortals::update(s32 ticks, f32 seconds,
                                          std::span<const PortalVisitor> party) {
     syncFloors();
     std::optional<usize> left;
-    // A larger party is given a wider portal: a unit more for each member past the first.
-    const f32 extra = party.empty() ? 0.0f : static_cast<f32>(party.size() - 1);
+    const f32 extra = partyReach(party);
     updateReadiness(ticks, party, extra);
     // all_players_go_to_same_level 0x80078108 rejects any active state1 player,
     // so a lit portal alone is not enough: every visitor must be ready (state4).
@@ -455,8 +459,9 @@ std::optional<usize> ExitPortals::update(s32 ticks, f32 seconds,
     return left;
 }
 
-std::optional<usize> ExitPortals::padUnder(const PortalVisitor& visitor, f32 extra,
-                                           usize partySize) const {
+std::optional<usize> ExitPortals::padUnder(const PortalVisitor& visitor,
+                                           std::span<const PortalVisitor> party) const {
+    const f32 extra = partyReach(party);
     for (usize index = 0; index < m_portals.size(); ++index) {
         const Portal& portal = m_portals[index];
         if (portal.consumed || !portal.destination.has_value()) {
@@ -464,7 +469,7 @@ std::optional<usize> ExitPortals::padUnder(const PortalVisitor& visitor, f32 ext
         }
         // A secret exit takes its toucher at its own radius, and only while the party sees it.
         const bool on = portal.secret
-                            ? shownToParty(portal.minPlayers, static_cast<s32>(partySize)) &&
+                            ? shownToParty(portal.minPlayers, static_cast<s32>(party.size())) &&
                                   standsOn(portal, visitor, 0)
                             : standsOn(portal, visitor, extra);
         if (on) {
@@ -495,7 +500,7 @@ void ExitPortals::animate(f32 seconds) {
 }
 
 std::optional<Vec3> ExitPortals::flamePosition(std::span<const PortalVisitor> party) const {
-    const f32 extra = party.empty() ? 0.0f : static_cast<f32>(party.size() - 1);
+    const f32 extra = partyReach(party);
     for (const auto& visitor : party) {
         for (const auto& portal : m_portals) {
             if (!portal.shut && !portal.secret && !portal.consumed &&

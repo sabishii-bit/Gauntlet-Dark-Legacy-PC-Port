@@ -797,6 +797,9 @@ private:
     void throwWeapon(const PlayerActor& actor);
     u32 acceptedPlayers(const Inputs& inputs) const;
     std::vector<TriggerVisitor> visitors() const;
+    /** Those the portals wait for: everyone still on their feet, by place in the party; each
+     * is `still` while its stick in `inputs` is let go, and never without inputs. */
+    std::vector<PortalVisitor> portalVisitors(const Inputs* inputs = nullptr) const;
     /** Living floor occupants retain bridges even while a cinematic holds controls. */
     std::vector<s32> occupiedFloors() const;
     PartyPickups::Services pickupServices();

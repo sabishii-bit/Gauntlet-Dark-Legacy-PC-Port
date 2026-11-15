@@ -1,11 +1,9 @@
 #include <optional>
-#include <vector>
 
 #include "engine/core/Types.h"
 #include "engine/math/Math.h"
 
 #include "game/hud/HudView.h"
-#include "game/level/ExitPortals.h"
 #include "game/level/ImportedLevel.h"
 #include "game/level/SecretChallenge.h"
 #include "game/scenes/PlayScene.h"
@@ -58,17 +56,9 @@ HudView PlayScene::hudView(const Mat4& clip, const Mat4& canvasProjection, f32 w
             }
             view.levelHud = imported->hudStyleId();
         } else if (m_world != nullptr) {
-            // Those the portals wait for, as advancePortals stands them.
-            std::vector<PortalVisitor> standing;
-            standing.reserve(m_players.size());
-            for (usize i = 0; i < m_players.size(); ++i) {
-                if (!isDown(i) && !m_players[i].ghost) {
-                    standing.push_back(PortalVisitor{.position = m_players[i].actor.position(),
-                                                     .radius = m_players[i].actor.radius(),
-                                                     .partyIndex = static_cast<s32>(i)});
-                }
-            }
-            const auto pads = darkLegacyPadsOf(m_portals, m_world->ref(), standing, m_players);
+            // Each seat's pad among those the portals wait for, as they count them.
+            const auto pads =
+                darkLegacyPadsOf(m_portals, m_world->ref(), portalVisitors(), m_players);
             for (usize seat = 0; seat < view.seats.size(); ++seat) {
                 view.seats[seat].pad = pads.at(seat);
             }

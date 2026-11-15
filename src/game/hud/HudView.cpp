@@ -55,8 +55,6 @@ std::array<std::optional<HudPad>, HudView::kSeats>
 darkLegacyPadsOf(const ExitPortals& portals, const LevelRef& here,
                  std::span<const PortalVisitor> standing, std::span<const PlayerRuntime> players) {
     std::array<std::optional<HudPad>, HudView::kSeats> pads;
-    // A unit wider for each visitor past the first, as the portals count a party.
-    const f32 extra = standing.empty() ? 0.0f : static_cast<f32>(standing.size() - 1);
     for (const PortalVisitor& visitor : standing) {
         if (visitor.partyIndex < 0 || static_cast<usize>(visitor.partyIndex) >= players.size()) {
             continue;
@@ -65,7 +63,7 @@ darkLegacyPadsOf(const ExitPortals& portals, const LevelRef& here,
         if (seat < 0 || static_cast<usize>(seat) >= pads.size()) {
             continue;
         }
-        if (const auto index = portals.padUnder(visitor, extra, standing.size())) {
+        if (const auto index = portals.padUnder(visitor, standing)) {
             const ExitPortals::Portal& exit = portals.portal(*index);
             pads.at(static_cast<usize>(seat)) =
                 HudPad{.identity = kDarkLegacyPadIdentityBase + static_cast<u32>(*index),
