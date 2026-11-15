@@ -229,7 +229,8 @@ def default_jobs(environ=None, cpus: int | None = None) -> int:
 
 class Workers:
     """The clang-tidy processes under way, so a stopped lint ends them instead of
-    leaving them to finish for nobody."""
+    leaving them to finish for nobody. A run the stop ends, like one asked for after it,
+    raises InterruptedError: it has no result to report."""
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
@@ -250,6 +251,10 @@ class Workers:
         finally:
             with self._lock:
                 self._running.discard(process)
+        if self.stopped:
+            # Ended by the stop, or finished as it came: a killed clang-tidy's exit status
+            # would read as a failure of its unit.
+            raise InterruptedError("the lint was stopped")
         return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
 
     def running(self) -> int:
@@ -398,14 +403,19 @@ def main(argv=None) -> int:
                 finished, remaining = concurrent.futures.wait(
                     remaining, timeout=0.5, return_when=concurrent.futures.FIRST_COMPLETED)
                 # Units that finished together report in roster order.
+                cut_short = False
                 for future in sorted(finished, key=pending.__getitem__):
-                    done += 1
                     unit = pending[future]
                     try:
                         findings, reused = future.result()
-                        hits += int(reused)
+                    except InterruptedError:
+                        cut_short = True  # ended by the stop, so never checked
+                        continue
                     except Exception as error:
                         findings = [f"{unit}: clang-tidy could not complete: {error}"]
+                        reused = False
+                    done += 1
+                    hits += int(reused)
                     label = unit.relative_to(ROOT) if unit.is_relative_to(ROOT) else unit
                     print(f"[{done}/{len(units)}] {label} "
                           f"({time.monotonic() - started:.1f}s elapsed)", flush=True)
@@ -416,6 +426,8 @@ def main(argv=None) -> int:
                         if key not in seen:
                             seen.add(key)
                             print(f"{finding}\n", flush=True)
+                if cut_short:  # stopped, though nothing may be left to wait for
+                    raise KeyboardInterrupt
         except KeyboardInterrupt:
             interrupted = True
             WORKERS.stop()

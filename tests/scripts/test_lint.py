@@ -1,4 +1,5 @@
 """Sharded lint must retain full coverage and fail on diagnostics or tool failures."""
+import concurrent.futures
 import contextlib
 import fnmatch
 import io
@@ -125,10 +126,17 @@ class ToolResultTests(unittest.TestCase):
 class WorkerTests(unittest.TestCase):
     SLEEPER = [sys.executable, "-c", "import time; time.sleep(30)"]
 
-    def test_stop_ends_the_running_workers_and_refuses_new_ones(self):
+    def test_stop_ends_the_running_workers_unreported_and_refuses_new_ones(self):
         workers = lint.Workers()
-        results = []
-        thread = threading.Thread(target=lambda: results.append(workers.run(self.SLEEPER)))
+        outcome = []
+
+        def work():
+            try:
+                outcome.append(workers.run(self.SLEEPER))
+            except InterruptedError as error:
+                outcome.append(error)
+
+        thread = threading.Thread(target=work)
         thread.start()
         deadline = time.monotonic() + 5
         while workers.running() == 0 and time.monotonic() < deadline:
@@ -137,7 +145,8 @@ class WorkerTests(unittest.TestCase):
         workers.stop()
         thread.join(timeout=10)
         self.assertFalse(thread.is_alive())
-        self.assertNotEqual(results[0].returncode, 0)
+        # A worker the stop ended has no result: its exit would read as clang-tidy failing.
+        self.assertIsInstance(outcome[0], InterruptedError)
         with self.assertRaises(InterruptedError):
             workers.run(self.SLEEPER)
 
@@ -277,6 +286,28 @@ class DriverTests(unittest.TestCase):
         self.assertIn(own, output.getvalue())
         self.assertNotIn("translation units checked", output.getvalue())
         self.assertIn("with 1 findings", errors.getvalue())
+
+    def test_units_the_stop_cut_short_are_never_reported(self):
+        own = "src/0.cpp:1:2: warning: own [c]"
+        wait = concurrent.futures.wait
+
+        def run_one(_clang_tidy, unit, _profile):
+            if unit == self.units[0]:
+                return [own]
+            if unit == self.units[1]:
+                lint.WORKERS.stop()  # as the watcher does once the lint's caller is gone
+            raise InterruptedError("the lint was stopped")  # Workers.run's, for what it ended
+
+        output, errors = io.StringIO(), io.StringIO()
+        # Every unit in one wait, so what the stop ended comes back beside a whole result.
+        with mock.patch.object(lint.concurrent.futures, "wait",
+                               side_effect=lambda futures, **_: wait(futures)), \
+             mock.patch.object(lint, "run_one", side_effect=run_one), \
+             contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+            self.assertEqual(lint.main(["--jobs", "1"]), 130)
+        self.assertIn(own, output.getvalue())
+        self.assertNotIn("could not complete", output.getvalue())
+        self.assertIn("after 1 of 8 translation units with 1 findings", errors.getvalue())
 
     def test_launch_failure_causes_failure(self):
         with mock.patch.object(lint, "run_one", side_effect=OSError("cannot launch")):
