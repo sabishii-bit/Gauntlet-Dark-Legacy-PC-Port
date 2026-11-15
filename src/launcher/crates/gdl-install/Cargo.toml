@@ -20,7 +20,7 @@ thiserror.workspace = true
 zip.workspace = true
 
 [target.'cfg(windows)'.dependencies]
-windows-sys.workspace = true
+windows-sys = { workspace = true, features = ["Win32_System_Threading"] }
 
 [target.'cfg(unix)'.dependencies]
 libc.workspace = true
