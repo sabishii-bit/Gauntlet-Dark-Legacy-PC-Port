@@ -425,6 +425,7 @@ add_executable(tests
     expansions/n64/scenes/LegendsN64MusicTests.cpp
     expansions/shared/characters/LegendsProgressTests.cpp
     expansions/shared/characters/LegendsVisitTests.cpp
+    expansions/shared/hud/LegendsHudStyleIdsTests.cpp
     expansions/shared/level/LegendsContainersTests.cpp
     expansions/shared/level/LegendsGatesTests.cpp
     expansions/shared/level/LegendsItemsTests.cpp

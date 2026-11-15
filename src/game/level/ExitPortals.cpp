@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <initializer_list>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -454,6 +453,25 @@ std::optional<usize> ExitPortals::update(s32 ticks, f32 seconds,
     }
     animate(seconds);
     return left;
+}
+
+std::optional<usize> ExitPortals::padUnder(const PortalVisitor& visitor, f32 extra,
+                                           usize partySize) const {
+    for (usize index = 0; index < m_portals.size(); ++index) {
+        const Portal& portal = m_portals[index];
+        if (portal.consumed || !portal.destination.has_value()) {
+            continue;
+        }
+        // A secret exit takes its toucher at its own radius, and only while the party sees it.
+        const bool on = portal.secret
+                            ? shownToParty(portal.minPlayers, static_cast<s32>(partySize)) &&
+                                  standsOn(portal, visitor, 0)
+                            : standsOn(portal, visitor, extra);
+        if (on) {
+            return index;
+        }
+    }
+    return std::nullopt;
 }
 
 void ExitPortals::animate(f32 seconds) {

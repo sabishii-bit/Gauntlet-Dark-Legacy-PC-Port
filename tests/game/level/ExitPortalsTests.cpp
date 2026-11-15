@@ -530,6 +530,73 @@ TEST_CASE("a portal the tower keeps shut never wakes and takes nobody",
     REQUIRE(f.run(on, 400) == 0);
 }
 
+TEST_CASE("the HUD learns which exit a visitor stands on, shut and secret ones too, never a spent "
+          "one",
+          "[game][world][portals]") {
+    // An open exit to G1, one the tower keeps shut to G2, one to nowhere and a secret one for
+    // two players or more.
+    const auto dir = sampleLevel("portals-pad-under");
+    writeTextFile(dir / "wdata/TOWN.json", R"({"realm": 7, "prefix": "levelG", "levels": [
+      {"name": "G1", "title": "Fields"}, {"name": "G2", "title": "Farm"}]})");
+    writeTextFile(dir / "wdata/SECRET.json", R"({"realm": 12, "prefix": "levelS",
+      "levels": [{"name": "S1", "title": "Secret"}]})");
+    writeTextFile(dir / "world.json", R"({
+  "objects": [{"name": "GROUND", "position": [0, 0, 0], "next": -1, "child": -1}],
+  "itemInfos": [
+    {"type": 9, "subtype": 0, "name": "EXIT_PORTAL", "radius": 3, "height": 2},
+    {"type": 9, "subtype": 50, "name": "SECRET_ICON", "radius": 1}],
+  "itemInstances": [
+    {"info": 0, "minPlayers": 1, "position": [10, 0, 10], "rotation": [0, 0, 0],
+     "params": [0, 0, 0, 0, 103, 49, 0, 0, 0, 0, 0, 0]},
+    {"info": 0, "minPlayers": 1, "position": [30, 0, 10], "rotation": [0, 0, 0],
+     "params": [0, 0, 0, 0, 103, 50, 0, 0, 0, 0, 0, 0]},
+    {"info": 0, "minPlayers": 1, "position": [50, 0, 10], "rotation": [0, 0, 0],
+     "params": [0, 0, 0, 0, 122, 57, 0, 0, 0, 0, 0, 0]},
+    {"info": 1, "minPlayers": 2, "position": [70, 0, 10], "rotation": [0, 0, 0],
+     "params": [0, 0, 0, 0, 83, 49, 0, 0, 0, 0, 0, 0]}]})");
+    test::FakeRenderDevice device;
+    WorldLayout layout;
+    LevelCatalog catalog;
+    ItemArchive items;
+    ExitPortals portals;
+    REQUIRE(layout.load(dir));
+    REQUIRE(catalog.load(dir));
+    const std::vector<ClassProgress> party(1);
+    const TowerAccess access{party};
+    REQUIRE(portals.bind(device, layout, AssetScope(items), catalog, nullptr, &access));
+    REQUIRE(portals.size() == 4);
+    REQUIRE_FALSE(portals.portal(0).shut);
+    REQUIRE(portals.portal(1).shut);
+    REQUIRE_FALSE(portals.portal(2).destination.has_value());
+    REQUIRE(portals.portal(3).secret);
+    const auto at = [](f32 x, f32 y = 0) { return PortalVisitor{Vec3{x, y, 10}, 0.75f, 0}; };
+
+    CHECK(portals.padUnder(at(11), 0, 1) == 0U);
+    // A shut exit takes nobody, but its pad is still under the visitor.
+    CHECK(portals.padUnder(at(30), 0, 1) == 1U);
+    const std::array onShut{at(30)};
+    for (s32 frame = 0; frame < 60; ++frame) {
+        REQUIRE_FALSE(portals.update(2, 1.0f / 30, onShut));
+    }
+    CHECK(portals.portal(1).action == 0);
+    CHECK_FALSE(portals.padUnder(at(50), 0, 1));    // it leads nowhere
+    CHECK_FALSE(portals.padUnder(at(90), 0, 1));    // off every exit
+    CHECK_FALSE(portals.padUnder(at(10, 9), 0, 1)); // too far over it
+    // The party's size widens an ordinary exit: 4.25 off is past 3 + 0.75, within one more.
+    CHECK_FALSE(portals.padUnder(at(14.25f), 0, 2));
+    CHECK(portals.padUnder(at(14.25f), 1, 2) == 0U);
+    // The secret exit shows only to a party of two or more, and never grows with it.
+    CHECK_FALSE(portals.padUnder(at(70.5f), 0, 1));
+    CHECK(portals.padUnder(at(70.5f), 1, 2) == 3U);
+    CHECK_FALSE(portals.padUnder(at(72.25f), 1, 2));
+    // A spent exit is gone from under its visitor.
+    portals.consume(0);
+    portals.consume(3);
+    CHECK_FALSE(portals.padUnder(at(11), 0, 1));
+    CHECK_FALSE(portals.padUnder(at(70.5f), 1, 2));
+    CHECK(portals.padUnder(at(30), 0, 1) == 1U);
+}
+
 TEST_CASE("the real tower shuts the portals past what the party has beaten, wearing EXIT_OFF",
           "[game][world][portals][tower-access][assets]") {
     const auto root =

@@ -42,6 +42,46 @@ HudSeat hudSeatOf(s32 seat, std::span<const PlayerRuntime> players, const Poweru
     return shown;
 }
 
+std::array<std::optional<HudPad>, HudView::kSeats>
+darkLegacyPadsOf(const ExitPortals& portals, std::span<const PortalVisitor> standing,
+                 std::span<const PlayerRuntime> players) {
+    std::array<std::optional<HudPad>, HudView::kSeats> pads;
+    // A unit wider for each visitor past the first, as the portals count a party.
+    const f32 extra = standing.empty() ? 0.0f : static_cast<f32>(standing.size() - 1);
+    for (const PortalVisitor& visitor : standing) {
+        if (visitor.partyIndex < 0 || static_cast<usize>(visitor.partyIndex) >= players.size()) {
+            continue;
+        }
+        const s32 seat = players[static_cast<usize>(visitor.partyIndex)].actor.player();
+        if (seat < 0 || static_cast<usize>(seat) >= pads.size()) {
+            continue;
+        }
+        if (const auto index = portals.padUnder(visitor, extra, standing.size())) {
+            pads.at(static_cast<usize>(seat)) =
+                HudPad{.identity = kDarkLegacyPadIdentityBase + static_cast<u32>(*index),
+                       .nativeCode = std::nullopt,
+                       .destination = &*portals.portal(*index).destination};
+        }
+    }
+    return pads;
+}
+
+std::array<std::optional<ImportedExit>, HudView::kSeats>
+importedExitsOf(const ImportedLevel& level) {
+    std::array<std::optional<ImportedExit>, HudView::kSeats> exits;
+    for (usize seat = 0; seat < exits.size(); ++seat) {
+        exits.at(seat) = level.exitUnder(static_cast<s32>(seat));
+    }
+    return exits;
+}
+
+std::optional<HudPad> importedPadOf(const ImportedExit& exit) {
+    if (!exit.code || *exit.code == 0) {
+        return std::nullopt;
+    }
+    return HudPad{.identity = *exit.code, .nativeCode = exit.code, .destination = nullptr};
+}
+
 usize hudBossReadingsOf(std::span<const HealthMeterReading> readings,
                         std::array<HudBossReading, BossMeters::kCapacity>& out) {
     usize count = 0;

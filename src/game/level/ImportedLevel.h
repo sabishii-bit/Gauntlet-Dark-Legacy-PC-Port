@@ -7,6 +7,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "engine/audio/SoundPlayer.h"
@@ -96,6 +97,12 @@ struct ImportedDialogue {
     std::optional<Gateways> gateways = std::nullopt; ///< none for a resident offering no gateways
 };
 
+/** The exit a seat stands on in an imported level, for the HUD. */
+struct ImportedExit {
+    std::optional<u32> code; ///< the exit's native destination code, where the level's HUD names it
+    bool waiting = false;    ///< on it while not every living member is
+};
+
 /** Native level presentation and scenery rules hosted by the ordinary gameplay scene.
  * Character controls, combat, inventory, HUD and pause remain PlayScene responsibilities.
  * Implementations retain their native archive resources for as long as LevelWorld uses them.
@@ -112,6 +119,10 @@ public:
     virtual const DialoguePresentation* messagePresentation() const { return nullptr; }
     /** Optional native entry title; resources and its clock belong to the adapter. */
     virtual void drawEntranceTitle(Canvas& /*canvas*/, f32 /*width*/) const {}
+    /** The exit seat `seat` stands on; none off every exit. */
+    virtual std::optional<ImportedExit> exitUnder(s32 /*seat*/) const { return std::nullopt; }
+    /** The id of the HUD look native to this level's own game; empty for Dark Legacy's. */
+    virtual std::string_view hudStyleId() const { return {}; }
     virtual std::vector<PointLight> pointLights() const { return {}; }
     virtual void update(f32 seconds, bool timeStopped) = 0;
     virtual void draw(RenderDevice& device, const Mat4& clip, const WorldCamera& camera,

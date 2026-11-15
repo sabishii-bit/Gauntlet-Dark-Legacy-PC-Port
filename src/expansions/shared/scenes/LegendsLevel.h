@@ -45,6 +45,7 @@ public:
         return m_messageStyle.get();
     }
     void drawEntranceTitle(Canvas& canvas, f32 width) const override;
+    std::string_view hudStyleId() const override;
     void update(f32 seconds, bool timeStopped) override;
     void bindCollision(WorldCollision& collision) const override;
     void syncCollision(WorldCollision& collision) const override;

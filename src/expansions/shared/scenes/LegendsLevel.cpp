@@ -19,6 +19,7 @@
 #include "expansions/n64/formats/LegendsN64Texture.h"
 #include "expansions/n64/menu/LegendsDialogue.h"
 #include "expansions/n64/scenes/LegendsSumnerText.h"
+#include "expansions/shared/hud/LegendsHudStyleIds.h"
 #include "game/characters/Vitality.h"
 #include "game/players/PowerupEffects.h"
 
@@ -336,6 +337,10 @@ void LegendsLevel::drawEntranceTitle(Canvas& canvas, f32 width) const {
             }
         }
     }
+}
+
+std::string_view LegendsLevel::hudStyleId() const {
+    return legendsHudStyleOf(platform());
 }
 
 void LegendsLevel::resetCamera(std::span<const CameraSubject> subjects) {

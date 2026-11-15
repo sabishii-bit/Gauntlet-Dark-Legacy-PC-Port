@@ -234,6 +234,7 @@ function(gdl_add_expansion_game_sources target)
         "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/shared/characters/LegendsVisit.h"
         "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/shared/enemies/LegendsActors.cpp"
         "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/shared/enemies/LegendsActors.h"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/shared/hud/LegendsHudStyleIds.h"
         "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/shared/level/LegendsContainers.cpp"
         "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/shared/level/LegendsContainers.h"
         "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/shared/level/LegendsFixtureEvents.h"

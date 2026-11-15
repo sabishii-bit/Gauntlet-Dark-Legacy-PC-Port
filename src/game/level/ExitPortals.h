@@ -121,6 +121,10 @@ public:
     /** Who is ready on a portal the rest of a party of more than one has yet to reach
      * (DoExit's wait), by place in the party. */
     std::vector<s32> takeWaiting() { return std::exchange(m_wait.waiting, {}); }
+    /** The exit `visitor` stands on, counted as update() counts it (`extra`: the party less one):
+     * shut ones too, and a secret one while it is shown to a party of `partySize`; never a spent
+     * one or one naming no level. None off every exit. */
+    std::optional<usize> padUnder(const PortalVisitor& visitor, f32 extra, usize partySize) const;
     /** The occupied exit's position for its continuous flame, including moving visitors. */
     std::optional<Vec3> flamePosition(std::span<const PortalVisitor> party) const;
     /** Continues the selected sequences while gameplay is held for transportation. */

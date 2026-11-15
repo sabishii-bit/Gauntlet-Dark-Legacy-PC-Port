@@ -1,4 +1,5 @@
 #include <array>
+#include <filesystem>
 #include <optional>
 #include <string>
 #include <utility>
@@ -6,12 +7,19 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/assets/AssetScope.h"
+#include "engine/assets/ItemArchive.h"
 #include "engine/assets/MessageTable.h"
+#include "engine/assets/WorldLayout.h"
 #include "engine/core/Types.h"
 #include "engine/io/File.h"
 #include "engine/math/Math.h"
+#include "engine/render/RenderDevice.h"
 #include "engine/ui/Canvas.h"
+#include "engine/world/TreeModel.h"
+#include "engine/world/WorldCamera.h"
 
+#include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "game/characters/CharacterSave.h"
 #include "game/characters/ClassData.h"
@@ -23,6 +31,9 @@
 #include "game/hud/HudView.h"
 #include "game/hud/PartyHud.h"
 #include "game/hud/PowerupSelector.h"
+#include "game/level/ExitPortals.h"
+#include "game/level/ImportedLevel.h"
+#include "game/level/LevelCatalog.h"
 #include "game/party/PartyNames.h"
 #include "game/party/PlayerRuntime.h"
 
@@ -48,6 +59,58 @@ ClassDataSet warriorOnly() {
     REQUIRE(classes.load(dir));
     return classes;
 }
+
+/** A level with an exit to G1 at (10, 0, 10) and one to G2 at (40, 0, 10), both radius 3. */
+struct TwoExits {
+    test::FakeRenderDevice device;
+    WorldLayout layout;
+    LevelCatalog catalog;
+    ItemArchive items; ///< left unloaded: the portals work unseen
+    ExitPortals portals;
+
+    TwoExits() {
+        const auto dir = test::scratchDirectory("hud-view-exits");
+        std::filesystem::create_directories(dir / "wdata");
+        writeTextFile(dir / "wdata/TOWN.json", R"({"realm": 7, "prefix": "levelG", "levels": [
+          {"name": "G1", "title": "Fields"}, {"name": "G2", "title": "Farm"}]})");
+        writeTextFile(dir / "world.json", R"({
+  "objects": [{"name": "GROUND", "position": [0, 0, 0], "next": -1, "child": -1}],
+  "itemInfos": [{"type": 9, "subtype": 0, "name": "EXIT_PORTAL", "radius": 3, "height": 2}],
+  "itemInstances": [
+    {"info": 0, "minPlayers": 1, "position": [10, 0, 10], "rotation": [0, 0, 0],
+     "params": [0, 0, 0, 0, 103, 49, 0, 0, 0, 0, 0, 0]},
+    {"info": 0, "minPlayers": 1, "position": [40, 0, 10], "rotation": [0, 0, 0],
+     "params": [0, 0, 0, 0, 103, 50, 0, 0, 0, 0, 0, 0]}]})");
+        REQUIRE(layout.load(dir));
+        REQUIRE(catalog.load(dir));
+        REQUIRE(portals.bind(device, layout, AssetScope(items), catalog, nullptr));
+        REQUIRE(portals.size() == 2);
+    }
+};
+
+/** An imported level that answers only what every importer must. */
+class PlainImported : public ImportedLevel {
+public:
+    void capturePresentation() override {}
+    void update(f32 /*seconds*/, bool /*timeStopped*/) override {}
+    void draw(RenderDevice& /*device*/, const Mat4& /*clip*/, const WorldCamera& /*camera*/,
+              TreeModel::Pass /*pass*/, f32 /*presentationAlpha*/) const override {}
+};
+
+/** One whose seat 1 waits on its exit to 0x0203 and whose seat 2 waits on an exit it names
+ * no code for. */
+class ExitingImported final : public PlainImported {
+public:
+    std::optional<ImportedExit> exitUnder(s32 seat) const override {
+        if (seat == 1) {
+            return ImportedExit{.code = 0x0203, .waiting = true};
+        }
+        if (seat == 2) {
+            return ImportedExit{.code = std::nullopt, .waiting = true};
+        }
+        return std::nullopt;
+    }
+};
 
 TEST_CASE("a seat's view holds what its box and the other looks need", "[game][hud][hud-view]") {
     const ClassDataSet classes = warriorOnly();
@@ -182,6 +245,80 @@ TEST_CASE("every seat's view comes from its own seat whatever the party's order"
         CHECK(shown.it == (seat == 3));
         CHECK(shown.selector == &selectors.at(seat));
     }
+}
+
+TEST_CASE("a seat's Dark Legacy exit is named by its own seat, not its party place", "[hud-view]") {
+    const TwoExits level;
+    // Party places 0, 1 and 2 are seats 2, 0 and 3.
+    std::array<PlayerRuntime, 3> players;
+    players[0].actor.spawn(2, member("ODO", 0, 0), nullptr, Vec3{40, 0, 10}, 0);
+    players[1].actor.spawn(0, member("ULRIC", 4, 3), nullptr, Vec3{10, 0, 10}, 0);
+    players[2].actor.spawn(3, member("IVO", 2, 1), nullptr, Vec3{15.25f, 0, 10}, 0);
+    std::array<PortalVisitor, 3> standing;
+    for (usize index = 0; index < standing.size(); ++index) {
+        standing.at(index) = PortalVisitor{.position = players.at(index).actor.position(),
+                                           .radius = 0.75f,
+                                           .partyIndex = static_cast<s32>(index)};
+    }
+    const auto pads = darkLegacyPadsOf(level.portals, standing, players);
+
+    REQUIRE(pads[2].has_value());
+    CHECK(pads[2]->identity == kDarkLegacyPadIdentityBase + 1);
+    CHECK_FALSE(pads[2]->nativeCode.has_value());
+    REQUIRE(pads[2]->destination != nullptr);
+    CHECK(pads[2]->destination == &*level.portals.portal(1).destination);
+    CHECK(pads[2]->destination->name == "G2");
+    REQUIRE(pads[0].has_value());
+    CHECK(pads[0]->identity == kDarkLegacyPadIdentityBase);
+    REQUIRE(pads[0]->destination != nullptr);
+    CHECK(pads[0]->destination->name == "G1");
+    // 5.25 off G1's exit, past 3 + 0.75 but within the two more a party of three is given.
+    REQUIRE(pads[3].has_value());
+    CHECK(pads[3]->identity == kDarkLegacyPadIdentityBase);
+    CHECK_FALSE(pads[1].has_value()); // nobody plays seat 1
+
+    // Alone, the same player is off the exit; a visitor naming no party place is nobody's.
+    const std::array alone{
+        standing[2], PortalVisitor{.position = Vec3{10, 0, 10}, .radius = 0.75f, .partyIndex = 7}};
+    const auto fewer = darkLegacyPadsOf(level.portals, std::span{alone}.first(1), players);
+    CHECK_FALSE(fewer[3].has_value());
+    for (const auto& pad : darkLegacyPadsOf(level.portals, std::span{alone}.last(1), players)) {
+        CHECK_FALSE(pad.has_value());
+    }
+    for (const auto& pad : darkLegacyPadsOf(level.portals, {}, players)) {
+        CHECK_FALSE(pad.has_value());
+    }
+}
+
+TEST_CASE("an imported level names no exit, no wait and no native look unless it says so; one "
+          "that does reaches the seat it names",
+          "[hud-view]") {
+    const PlainImported plain{};
+    CHECK(plain.hudStyleId().empty());
+    for (const auto& exit : importedExitsOf(plain)) {
+        CHECK_FALSE(exit.has_value());
+    }
+
+    const ExitingImported exiting{};
+    const auto exits = importedExitsOf(exiting);
+    CHECK_FALSE(exits[0].has_value());
+    REQUIRE(exits[1].has_value());
+    CHECK(exits[1]->code == 0x0203U);
+    CHECK(exits[1]->waiting);
+    REQUIRE(exits[2].has_value());
+    CHECK_FALSE(exits[2]->code.has_value());
+    CHECK(exits[2]->waiting);
+    CHECK_FALSE(exits[3].has_value());
+
+    // An exit that names its destination is a pad of its own code, clear of Dark Legacy's.
+    const auto pad = importedPadOf(*exits[1]);
+    REQUIRE(pad.has_value());
+    CHECK(pad->identity == 0x0203U);
+    CHECK(pad->nativeCode == 0x0203U);
+    CHECK(pad->destination == nullptr);
+    CHECK(pad->identity < kDarkLegacyPadIdentityBase);
+    CHECK_FALSE(importedPadOf(*exits[2]).has_value());
+    CHECK_FALSE(importedPadOf(ImportedExit{.code = 0, .waiting = false}).has_value());
 }
 
 TEST_CASE("boss readings are filtered and capped as the meters bind them", "[hud-view]") {
