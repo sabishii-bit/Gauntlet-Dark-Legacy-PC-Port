@@ -370,12 +370,10 @@ mod tests {
             let from = folder.path().join("scanned.json");
             let to = folder.path().join("published.json");
             fs::write(&from, b"{}").unwrap();
-            // A handle that shares nothing refuses the rename, whoever asks for it.
-            let handle = OpenOptions::new()
-                .read(true)
-                .share_mode(0)
-                .open(&from)
-                .unwrap();
+            // A handle that shares nothing refuses the rename, whoever asks for it. It is taken
+            // once any real scanner of the file just written has let it go.
+            let handle =
+                retry_locked(|| OpenOptions::new().read(true).share_mode(0).open(&from)).unwrap();
             let (refused, holder) = close_after_refusal(handle);
             let (result, refusals) = rename_through_holds(&from, &to, refused);
             holder.join().unwrap();

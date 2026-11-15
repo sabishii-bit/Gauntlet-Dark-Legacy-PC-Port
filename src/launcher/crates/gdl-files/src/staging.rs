@@ -644,15 +644,17 @@ mod tests {
             clear(&link);
         }
 
-        // A link on the way to the staging itself, put where its folder was.
+        // A link on the way to the staging itself, put where its folder was. The folder holds
+        // files just written and read, which a scanner may still hold, so its moves wait as the
+        // launcher's own do.
         let real_state = install.state.with_file_name(".gdl-launcher-real");
-        fs::rename(&install.state, &real_state).unwrap();
+        crate::retry_locked(|| fs::rename(&install.state, &real_state)).unwrap();
         link_folder(&install.state, &real_state).unwrap();
         let mut journal = Recorder::new(&staging, &install.root);
         let publish = staging.publish_new(&roots, &install.root, &mut journal);
         assert_link(publish, &install.state);
         clear(&install.state);
-        fs::rename(&real_state, &install.state).unwrap();
+        crate::retry_locked(|| fs::rename(&real_state, &install.state)).unwrap();
         assert_unmoved(&install, &staging, &before, &journal);
 
         // A link on the way to the folder published into.

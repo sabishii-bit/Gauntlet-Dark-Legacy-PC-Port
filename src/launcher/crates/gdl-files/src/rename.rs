@@ -746,13 +746,10 @@ mod tests {
         /// How long a test's stand-in for a scanner holds its file: a few retries' worth.
         const HOLD: Duration = Duration::from_millis(300);
 
-        /// A handle on `path` that shares nothing, as a scanner's may.
+        /// A handle on `path` that shares nothing, as a scanner's may, taken once any real scanner
+        /// of the file just written has let it go.
         fn hold(path: &Path) -> File {
-            OpenOptions::new()
-                .read(true)
-                .share_mode(0)
-                .open(path)
-                .unwrap()
+            crate::retry_locked(|| OpenOptions::new().read(true).share_mode(0).open(path)).unwrap()
         }
 
         /// Closes `handle` on a thread of its own once HOLD has passed.
