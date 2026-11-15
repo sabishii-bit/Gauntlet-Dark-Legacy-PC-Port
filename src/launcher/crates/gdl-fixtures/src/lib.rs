@@ -12,8 +12,8 @@ pub use folder::DeniedAccess;
 #[cfg(windows)]
 pub use folder::make_junction;
 pub use folder::{
-    EntryState, InstallFixture, folder_names, link_folder, long_root, make_alpha_markers, snapshot,
-    symlink_file,
+    EntryState, InstallFixture, backdate, folder_names, link_folder, long_root, make_alpha_markers,
+    snapshot, symlink_file,
 };
 pub use program::{
     FAKE_CERTIFICATE_LEN, SparseFile, TRAILER_MAGIC, append_sections, append_sections_at,

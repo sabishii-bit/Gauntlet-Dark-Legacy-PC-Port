@@ -449,7 +449,7 @@ mod tests {
 
     use gdl_files::{ALPHA_NAMES, FilesError, PAYLOAD_NAMES, check_component, retry_locked};
     use gdl_fixtures::{
-        InstallFixture, RuntimeFiles, folder_names, link_folder, snapshot, symlink_file,
+        InstallFixture, RuntimeFiles, backdate, folder_names, link_folder, snapshot, symlink_file,
     };
     use gdl_release::{Platform, Version};
     use serde_json::{Value, json};
@@ -696,6 +696,8 @@ mod tests {
             ),
         ] {
             write_changed_receipt(&fixture, &changes);
+            // Dated back first, so that even bytes written again as they were would show.
+            backdate(folder.root()).unwrap();
             let before = snapshot(folder.root()).unwrap();
             assert_disagrees(read(&folder), field, what);
             assert_eq!(snapshot(folder.root()).unwrap(), before, "{what}");
@@ -751,6 +753,8 @@ mod tests {
     #[test]
     fn nothing_changes_while_reading() {
         let (_dir, fixture, folder) = installation();
+        // Dated back first, so that even bytes written again as they were would show.
+        backdate(folder.root()).unwrap();
         let before = snapshot(folder.root()).unwrap();
         read(&folder).unwrap();
         assert_eq!(snapshot(folder.root()).unwrap(), before);
@@ -767,6 +771,7 @@ mod tests {
             ("one that cannot be read", json!([])),
         ] {
             fixture.write_receipt(&receipt).unwrap();
+            backdate(folder.root()).unwrap();
             let before = snapshot(folder.root()).unwrap();
             let _ = read(&folder);
             assert_eq!(snapshot(folder.root()).unwrap(), before, "{what}");

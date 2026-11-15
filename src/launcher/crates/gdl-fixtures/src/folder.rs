@@ -8,9 +8,10 @@ use std::fs;
 use std::io::{self, Write};
 use std::iter;
 use std::path::{Component, Path, PathBuf};
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use serde_json::{Map, Value, json};
+use sha2::{Digest, Sha256};
 
 use crate::runtime::{BUILD_INFO, RuntimeFiles, WINDOWS_PLATFORM, pretty_json, sha256_hex};
 
@@ -41,6 +42,18 @@ const NO_ACCESS: u32 = 0o000;
 /// The bits of a mode that hold its permissions, the set-id and sticky bits included.
 #[cfg(unix)]
 const PERMISSION_BITS: u32 = 0o7777;
+
+/// How long after the Unix epoch the time lies that [`backdate`] gives an entry: September 2001,
+/// long before any test runs, and a time every file system the launcher meets can hold.
+const LONG_AGO: Duration = Duration::from_secs(1_000_000_000);
+
+/// The right to change an entry's times, all that [`backdate`] opens one with on Windows.
+#[cfg(windows)]
+const FILE_WRITE_ATTRIBUTES: u32 = 0x0100;
+
+/// The flag without which Windows opens no folder as a handle.
+#[cfg(windows)]
+const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
 
 /// The folder at an installation's top that holds the launcher's own state.
 const STATE_DIR: &str = ".gdl-launcher";
@@ -294,11 +307,18 @@ pub struct EntryState {
     pub len: u64,
     /// When it was last changed; for a folder, when an entry was last made in it or removed.
     pub modified: SystemTime,
+    /// The SHA-256 digest of what it holds, when it is a regular file: other bytes show even where
+    /// they keep the length and fall within the clock's tick.
+    pub digest: Option<[u8; 32]>,
 }
 
 /// Every entry of the tree at `root`, by its path under `root`, `root` itself as the empty path:
 /// what a test compares before and after an operation that must change nothing. A link is
-/// recorded and never followed.
+/// recorded and never followed, and every regular file is read for its digest.
+///
+/// Bytes written again as they were show only by the time of change, which a write soon after
+/// the tree was made may share with it; a test that must see those too takes its first snapshot
+/// after a [`backdate`].
 pub fn snapshot(root: &Path) -> io::Result<BTreeMap<PathBuf, EntryState>> {
     let mut entries = BTreeMap::new();
     let mut unvisited = vec![PathBuf::new()];
@@ -316,14 +336,63 @@ pub fn snapshot(root: &Path) -> io::Result<BTreeMap<PathBuf, EntryState>> {
                 unvisited.push(relative.join(entry?.file_name()));
             }
         }
+        let digest = if file_type.is_file() {
+            Some(Sha256::digest(fs::read(&path)?).into())
+        } else {
+            None
+        };
         let state = EntryState {
             file_type,
             len: metadata.len(),
             modified: metadata.modified()?,
+            digest,
         };
         entries.insert(relative, state);
     }
     Ok(entries)
+}
+
+/// Gives every folder and regular file of the tree at `root`, `root` itself included, a time of
+/// last change long before the test, so that a [`snapshot`] taken after it shows anything written
+/// later: bytes written again as they were, and an entry made and removed again in a folder. A
+/// link is passed over, and what it leads to is left as it was.
+pub fn backdate(root: &Path) -> io::Result<()> {
+    let long_ago = SystemTime::UNIX_EPOCH + LONG_AGO;
+    let mut unvisited = vec![root.to_path_buf()];
+    while let Some(path) = unvisited.pop() {
+        let file_type = fs::symlink_metadata(&path)?.file_type();
+        if file_type.is_dir() {
+            for entry in fs::read_dir(&path)? {
+                unvisited.push(entry?.path());
+            }
+        } else if !file_type.is_file() {
+            // A link, or what no test makes: a FIFO, a socket or a device.
+            continue;
+        }
+        open_to_set_times(&path, file_type.is_dir())?.set_modified(long_ago)?;
+    }
+    Ok(())
+}
+
+/// Opens the folder or file at `path`, which `folder` says it is, to change its times and nothing
+/// else.
+#[cfg(windows)]
+fn open_to_set_times(path: &Path, folder: bool) -> io::Result<fs::File> {
+    use std::os::windows::fs::OpenOptionsExt;
+
+    let mut options = fs::OpenOptions::new();
+    options.access_mode(FILE_WRITE_ATTRIBUTES);
+    if folder {
+        options.custom_flags(FILE_FLAG_BACKUP_SEMANTICS);
+    }
+    options.open(path)
+}
+
+/// Opens the folder or file at `path` to change its times, which its owner may do through any
+/// open of it.
+#[cfg(unix)]
+fn open_to_set_times(path: &Path, _: bool) -> io::Result<fs::File> {
+    fs::File::open(path)
 }
 
 /// Leaves `names` in `root` the way the alpha installer leaves them: its transaction folders, in
@@ -914,6 +983,8 @@ mod tests {
         use std::path::PathBuf;
         use std::time::{Duration, SystemTime};
 
+        use sha2::{Digest, Sha256};
+
         use super::{link_folder, snapshot};
 
         let dir = tempfile::tempdir().unwrap();
@@ -949,6 +1020,16 @@ mod tests {
         let changed = snapshot(&root).unwrap();
         assert_ne!(changed, before);
         assert_eq!(changed[&nested].len, 8);
+        // Other bytes of the same length too, by their digest.
+        fs::write(inner.join("b.txt"), b"CHANGED!").unwrap();
+        let recased = snapshot(&root).unwrap();
+        assert_eq!(recased[&nested].len, 8);
+        assert_ne!(recased[&nested].digest, changed[&nested].digest);
+        assert_eq!(
+            recased[&nested].digest,
+            Some(Sha256::digest(b"CHANGED!").into())
+        );
+        assert_eq!(recased[Path::new("inner")].digest, None);
         let long_ago = SystemTime::UNIX_EPOCH + Duration::from_secs(1);
         let file = fs::File::options()
             .write(true)
@@ -975,6 +1056,64 @@ mod tests {
 
         // A tree that is not there gives nothing to compare.
         let error = snapshot(&dir.path().join("missing")).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::NotFound);
+    }
+
+    #[test]
+    fn backdated_trees_show_any_later_write() {
+        use std::path::PathBuf;
+        use std::time::SystemTime;
+
+        use super::{LONG_AGO, backdate, link_folder, snapshot};
+
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("tree");
+        let inner = root.join("inner");
+        fs::create_dir_all(&inner).unwrap();
+        let file = inner.join("same.txt");
+        fs::write(&file, b"same").unwrap();
+        let outside = dir.path().join("outside");
+        fs::create_dir(&outside).unwrap();
+        link_folder(&root.join("link"), &outside).unwrap();
+        let outside_before = fs::metadata(&outside).unwrap().modified().unwrap();
+
+        // Every folder and file is dated long ago; a link is not followed.
+        let long_ago = SystemTime::UNIX_EPOCH + LONG_AGO;
+        backdate(&root).unwrap();
+        let before = snapshot(&root).unwrap();
+        for (path, state) in &before {
+            if !state.file_type.is_symlink() {
+                assert_eq!(state.modified, long_ago, "{}", path.display());
+            }
+        }
+        assert_eq!(
+            fs::metadata(&outside).unwrap().modified().unwrap(),
+            outside_before
+        );
+
+        // The same bytes written again show by their time, though not by their digest.
+        fs::write(&file, b"same").unwrap();
+        let rewritten = snapshot(&root).unwrap();
+        let same = PathBuf::from("inner").join("same.txt");
+        assert_eq!(rewritten[&same].digest, before[&same].digest);
+        assert_ne!(rewritten[&same].modified, before[&same].modified);
+        assert_ne!(rewritten, before);
+
+        // So does an entry made and removed again, in the folder that held it.
+        backdate(&root).unwrap();
+        let before = snapshot(&root).unwrap();
+        let passing = inner.join("passing");
+        fs::create_dir(&passing).unwrap();
+        fs::remove_dir(&passing).unwrap();
+        let after = snapshot(&root).unwrap();
+        assert_eq!(after.len(), before.len());
+        assert_ne!(
+            after[Path::new("inner")].modified,
+            before[Path::new("inner")].modified
+        );
+
+        // A tree that is not there cannot be dated.
+        let error = backdate(&dir.path().join("missing")).unwrap_err();
         assert_eq!(error.kind(), io::ErrorKind::NotFound);
     }
 

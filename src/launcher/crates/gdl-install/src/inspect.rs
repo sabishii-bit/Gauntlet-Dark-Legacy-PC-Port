@@ -561,7 +561,8 @@ mod tests {
 
     use gdl_files::{ALPHA_NAMES, FilesError, MAX_JSON_LEN, retry_locked};
     use gdl_fixtures::{
-        InstallFixture, RuntimeFiles, folder_names, link_folder, make_alpha_markers, snapshot,
+        InstallFixture, RuntimeFiles, backdate, folder_names, link_folder, make_alpha_markers,
+        snapshot,
     };
     use gdl_release::{Platform, Version};
     use serde_json::{Value, json};
@@ -1267,6 +1268,7 @@ mod tests {
         let moved = dir.path().join("moved state");
         retry_locked(|| fs::rename(&state, &moved)).unwrap();
         link_folder(&state, &moved).unwrap();
+        backdate(&moved).unwrap();
         let before = snapshot(&moved).unwrap();
         let inspection = inspect(&fixture.root);
         assert_state(&inspection, FolderState::Links, "a linked state folder");
@@ -1406,6 +1408,8 @@ mod tests {
             .collect();
         roots.extend([alpha, empty, link, file, base.join("missing")]);
 
+        // Dated back first, so that even bytes written again as they were would show.
+        backdate(base).unwrap();
         let before = snapshot(base).unwrap();
         let states: Vec<FolderState> = roots.iter().map(|root| inspect(root).state).collect();
         assert_eq!(snapshot(base).unwrap(), before);
