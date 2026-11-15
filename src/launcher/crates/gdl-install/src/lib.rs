@@ -5,6 +5,7 @@
 
 mod compat;
 mod folder;
+mod inspect;
 mod payload;
 mod probe;
 mod receipt;
@@ -18,6 +19,7 @@ pub use folder::{
     FolderError, InstallFolder, InstallLock, JOURNAL_DIR, LOCK_FILE, LockError, RECEIPT_FILE,
     STATE_DIR, alpha_markers, check_links,
 };
+pub use inspect::{FolderState, INSPECTION_SCHEMA, Inspection, InstallationSummary, Relation};
 pub use payload::{
     BUILD_INFO, BuildInfo, DATA_SUFFIX, DEFAULT_CONFIG, LIBRARY_SUFFIX, MAX_BUILD_INFO_LEN,
     MAX_PAYLOAD_BYTES, MAX_PAYLOAD_ENTRIES, MAX_VERSION_FILE_LEN, PORTABLE_FLAG, Payload,
