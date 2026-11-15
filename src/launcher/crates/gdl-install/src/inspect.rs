@@ -561,8 +561,8 @@ mod tests {
 
     use gdl_files::{ALPHA_NAMES, FilesError, MAX_JSON_LEN, retry_locked};
     use gdl_fixtures::{
-        InstallFixture, RuntimeFiles, backdate, folder_names, link_folder, make_alpha_markers,
-        snapshot,
+        InstallFixture, RuntimeFiles, backdate, folder_names, hold_closed, link_folder,
+        make_alpha_markers, pretty_json, snapshot,
     };
     use gdl_release::{Platform, Version};
     use serde_json::{Value, json};
@@ -599,18 +599,6 @@ mod tests {
 
     /// The disc revision an installation fixture's receipt records.
     const DISC_REVISION: u8 = 1;
-
-    /// The share mode of a handle that lets nothing else open what it holds open.
-    #[cfg(windows)]
-    const NO_SHARING: u32 = 0;
-
-    /// The flag without which Windows opens no folder as a handle.
-    #[cfg(windows)]
-    const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
-
-    /// What Windows refuses an open with while another handle shares nothing.
-    #[cfg(windows)]
-    const ERROR_SHARING_VIOLATION: i32 = 32;
 
     fn version(text: &str) -> Version {
         Version::parse(text).unwrap_or_else(|error| panic!("{error}"))
@@ -666,16 +654,9 @@ mod tests {
         fs::write(dir.join(name), bytes).unwrap();
     }
 
-    /// `value` written as the launcher writes JSON.
-    fn pretty(value: &Value) -> Vec<u8> {
-        let mut bytes = serde_json::to_vec_pretty(value).unwrap();
-        bytes.push(b'\n');
-        bytes
-    }
-
     /// A journal of a job partway through, stamped with `schema` and `min_launcher`.
     fn journal(schema: Value, min_launcher: Value) -> Vec<u8> {
-        pretty(&json!({"schema": schema, "minLauncher": min_launcher, "phase": "staging"}))
+        pretty_json(&json!({"schema": schema, "minLauncher": min_launcher, "phase": "staging"}))
     }
 
     /// A journal as the first launcher writes one.
@@ -718,56 +699,6 @@ mod tests {
             relation,
             access: Access::Writable,
         }
-    }
-
-    /// Holds each of `paths` open without sharing, so that nothing can open one while the
-    /// handles live, and checks that an open of each is refused. A file is held, and tried,
-    /// without the backup flag: with it, a process whose backup privilege is enabled opens a file
-    /// whatever another handle shares. Gives back the handles, and that the proof holds.
-    #[cfg(windows)]
-    fn hold_closed(paths: &[PathBuf]) -> (Vec<fs::File>, bool) {
-        use std::os::windows::fs::OpenOptionsExt;
-
-        let options = |folder: bool| {
-            let mut options = fs::OpenOptions::new();
-            options.read(true);
-            if folder {
-                options.custom_flags(FILE_FLAG_BACKUP_SEMANTICS);
-            }
-            options
-        };
-        let folders: Vec<bool> = paths.iter().map(|path| path.is_dir()).collect();
-        let held = paths
-            .iter()
-            .zip(&folders)
-            .map(|(path, &folder)| {
-                let mut holding = options(folder);
-                holding.share_mode(NO_SHARING);
-                // A scanner still looking at a new entry would refuse the open for a moment.
-                retry_locked(|| holding.open(path))
-                    .unwrap_or_else(|error| panic!("{}: {error}", path.display()))
-            })
-            .collect();
-        for (path, &folder) in paths.iter().zip(&folders) {
-            let error = options(folder).open(path).expect_err("a held entry opened");
-            assert_eq!(
-                error.raw_os_error(),
-                Some(ERROR_SHARING_VIOLATION),
-                "{}: {error}",
-                path.display()
-            );
-        }
-        (held, true)
-    }
-
-    /// Takes every permission from each of `paths` until the result is dropped. Gives back the
-    /// guard, and whether an open of each is now refused, as it is for every user but root.
-    #[cfg(unix)]
-    fn hold_closed(paths: &[PathBuf]) -> (gdl_fixtures::DeniedAccess, bool) {
-        let denied: Vec<&Path> = paths.iter().map(PathBuf::as_path).collect();
-        let held = gdl_fixtures::DeniedAccess::deny(&denied).unwrap();
-        let closed = paths.iter().all(|path| fs::File::open(path).is_err());
-        (held, closed)
     }
 
     #[test]
@@ -1008,7 +939,11 @@ mod tests {
                 journal(json!(1), json!("0.1.0-alpha.3")),
                 FolderState::Pending,
             ),
-            ("keys of its own", pretty(&own_keys), FolderState::Pending),
+            (
+                "keys of its own",
+                pretty_json(&own_keys),
+                FolderState::Pending,
+            ),
             (
                 "schema 2",
                 journal(json!(2), json!(MIN_LAUNCHER)),
@@ -1028,7 +963,7 @@ mod tests {
             ("an array", b"[]\n".to_vec(), FolderState::JournalUnreadable),
             (
                 "no stamp",
-                pretty(&json!({"phase": "staging"})),
+                pretty_json(&json!({"phase": "staging"})),
                 FolderState::JournalUnreadable,
             ),
             (
@@ -1043,7 +978,7 @@ mod tests {
             ),
             (
                 "a later schema without a version",
-                pretty(&json!({"schema": 2})),
+                pretty_json(&json!({"schema": 2})),
                 FolderState::JournalUnreadable,
             ),
         ] {
@@ -1060,7 +995,7 @@ mod tests {
         write_journal(
             &root,
             "update.json",
-            &pretty(&json!({"minLauncher": "1.0.0"})),
+            &pretty_json(&json!({"minLauncher": "1.0.0"})),
         );
         let path = journal_dir(&root).join("update.json");
         assert_eq!(
@@ -1459,12 +1394,13 @@ mod tests {
         for (made, found) in cases {
             let (_dir, root) = bare_folder();
             make_alpha_markers(&root, &made).unwrap();
-            let paths: Vec<PathBuf> = made.iter().map(|name| root.join(name)).collect();
+            let markers: Vec<PathBuf> = made.iter().map(|name| root.join(name)).collect();
+            let paths: Vec<&Path> = markers.iter().map(PathBuf::as_path).collect();
             // Any open of a marker fails while it is held, but for root's on Unix.
-            let (held, closed) = hold_closed(&paths);
+            let held = hold_closed(&paths).unwrap();
             let inspection = inspect(&root);
+            proven &= held.proven();
             drop(held);
-            proven &= closed;
             let what = format!("{made:?}");
             assert_state(&inspection, FolderState::AlphaInstall, &what);
             assert_eq!(inspection.alpha_markers, found, "{what}");

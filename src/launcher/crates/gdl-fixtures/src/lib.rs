@@ -12,12 +12,12 @@ pub use folder::DeniedAccess;
 #[cfg(windows)]
 pub use folder::make_junction;
 pub use folder::{
-    EntryState, InstallFixture, backdate, folder_names, link_folder, long_root, make_alpha_markers,
-    snapshot, symlink_file,
+    EntryState, HeldClosed, InstallFixture, backdate, folder_names, hold_closed, link_folder,
+    long_root, make_alpha_markers, snapshot, symlink_file,
 };
 pub use program::{
     FAKE_CERTIFICATE_LEN, SparseFile, TRAILER_MAGIC, append_sections, append_sections_at,
     fake_sign, table_and_trailer, tiny_elf, tiny_pe,
 };
-pub use runtime::RuntimeFiles;
+pub use runtime::{RuntimeFiles, pretty_json};
 pub use zip::{RawEntry, RawZip, crc32};

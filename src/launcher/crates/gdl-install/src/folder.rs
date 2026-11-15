@@ -348,18 +348,12 @@ pub enum LockError {
 #[cfg(test)]
 mod tests {
     use std::error::Error;
-    #[cfg(windows)]
-    use std::fs::OpenOptions;
-    use std::fs::{self, File};
+    use std::fs;
     use std::io;
-    #[cfg(windows)]
-    use std::os::windows::fs::OpenOptionsExt;
     use std::path::{Path, PathBuf};
 
-    #[cfg(windows)]
-    use gdl_files::retry_locked;
     use gdl_files::{ALPHA_NAMES, FilesError};
-    use gdl_fixtures::{folder_names, link_folder, make_alpha_markers, symlink_file};
+    use gdl_fixtures::{folder_names, hold_closed, link_folder, make_alpha_markers, symlink_file};
     use tempfile::TempDir;
 
     use super::{
@@ -372,18 +366,6 @@ mod tests {
 
     /// How many times a test takes the lock again the moment it is released.
     const TAKES_IN_A_ROW: usize = 100;
-
-    /// What Windows refuses an open with while another handle shares nothing.
-    #[cfg(windows)]
-    const ERROR_SHARING_VIOLATION: i32 = 32;
-
-    /// The share mode of a handle that lets nothing else open what it holds open.
-    #[cfg(windows)]
-    const NO_SHARING: u32 = 0;
-
-    /// The flag without which Windows opens no folder as a handle.
-    #[cfg(windows)]
-    const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
 
     /// A new installation folder, holding nothing yet, in a folder of the test's own.
     fn bare_installation() -> (TempDir, InstallFolder) {
@@ -671,7 +653,7 @@ mod tests {
         {
             let other = dir.path().join("other");
             fs::write(&other, b"").unwrap();
-            let opened = File::open(&other).unwrap();
+            let opened = fs::File::open(&other).unwrap();
             match check_lock_file(&lock_file, &opened) {
                 Err(LockError::Io { path, source }) => {
                     assert_eq!(path, lock_file);
@@ -686,78 +668,6 @@ mod tests {
         drop(held);
         // Nothing was made by looking.
         assert_eq!(folder_names(&state).unwrap(), [LOCK_FILE]);
-    }
-
-    /// How a test opens `path` to read, as a folder when it is one, since a folder's handle needs
-    /// the backup flag. A file is opened without it: with it, a process whose backup privilege is
-    /// enabled opens a file whatever another handle shares.
-    #[cfg(windows)]
-    fn read_options(path: &Path) -> OpenOptions {
-        let mut options = OpenOptions::new();
-        options.read(true);
-        if fs::symlink_metadata(path).unwrap().is_dir() {
-            options.custom_flags(FILE_FLAG_BACKUP_SEMANTICS);
-        }
-        options
-    }
-
-    /// Holds each of `paths` open without sharing, so that nothing can open one to read or write
-    /// it while the handles live.
-    #[cfg(windows)]
-    fn hold_unopenable(paths: &[PathBuf]) -> Vec<File> {
-        paths
-            .iter()
-            .map(|path| {
-                let mut options = read_options(path);
-                options.share_mode(NO_SHARING);
-                // A scanner still looking at a new entry would refuse the open for a moment.
-                retry_locked(|| options.open(path))
-                    .unwrap_or_else(|error| panic!("{}: {error}", path.display()))
-            })
-            .collect()
-    }
-
-    /// Whether `path` is kept from this process while [`hold_unopenable`] holds it, as it is from
-    /// every other. On Windows it always is: an open that shares everything is refused for
-    /// sharing.
-    #[cfg(windows)]
-    fn kept_closed(path: &Path) -> bool {
-        match read_options(path).open(path) {
-            Ok(_) => panic!("{} opened while held", path.display()),
-            Err(error) => assert_eq!(
-                error.raw_os_error(),
-                Some(ERROR_SHARING_VIOLATION),
-                "{}: {error}",
-                path.display()
-            ),
-        }
-        true
-    }
-
-    /// Takes every permission from each of `paths`, so that nothing but root can open one until
-    /// the result is dropped.
-    #[cfg(unix)]
-    fn hold_unopenable(paths: &[PathBuf]) -> gdl_fixtures::DeniedAccess {
-        let paths: Vec<&Path> = paths.iter().map(PathBuf::as_path).collect();
-        gdl_fixtures::DeniedAccess::deny(&paths).unwrap()
-    }
-
-    /// Whether `path` is kept from this user while [`hold_unopenable`] holds it: it is from every
-    /// user but root, who opens entries of mode 0o000.
-    #[cfg(unix)]
-    fn kept_closed(path: &Path) -> bool {
-        match File::open(path) {
-            Ok(_) => false,
-            Err(error) => {
-                assert_eq!(
-                    error.kind(),
-                    io::ErrorKind::PermissionDenied,
-                    "{}: {error}",
-                    path.display()
-                );
-                true
-            }
-        }
     }
 
     #[test]
@@ -782,12 +692,11 @@ mod tests {
         for (made, found) in cases {
             let dir = tempfile::tempdir().unwrap();
             make_alpha_markers(dir.path(), &made).unwrap();
-            let paths: Vec<PathBuf> = made.iter().map(|name| dir.path().join(name)).collect();
-            let held = hold_unopenable(&paths);
+            let markers: Vec<PathBuf> = made.iter().map(|name| dir.path().join(name)).collect();
+            let paths: Vec<&Path> = markers.iter().map(PathBuf::as_path).collect();
             // Any open of a marker would fail now, but for root on Unix.
-            for path in &paths {
-                proven &= kept_closed(path);
-            }
+            let held = hold_closed(&paths).unwrap();
+            proven &= held.proven();
             assert_eq!(alpha_markers(dir.path()).unwrap(), found, "{made:?}");
             drop(held);
         }

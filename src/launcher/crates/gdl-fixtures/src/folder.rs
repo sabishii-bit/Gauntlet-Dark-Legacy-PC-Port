@@ -8,6 +8,10 @@ use std::fs;
 use std::io::{self, Write};
 use std::iter;
 use std::path::{Component, Path, PathBuf};
+#[cfg(windows)]
+use std::thread;
+#[cfg(windows)]
+use std::time::Instant;
 use std::time::{Duration, SystemTime};
 
 use serde_json::{Map, Value, json};
@@ -54,6 +58,28 @@ const FILE_WRITE_ATTRIBUTES: u32 = 0x0100;
 /// The flag without which Windows opens no folder as a handle.
 #[cfg(windows)]
 const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
+
+/// The share mode of a handle that lets nothing else open what it holds open.
+#[cfg(windows)]
+const NO_SHARING: u32 = 0;
+
+/// What Windows refuses an open with while another handle on the entry shares nothing.
+#[cfg(windows)]
+const ERROR_SHARING_VIOLATION: i32 = 32;
+
+/// What Windows may refuse an open with, besides a sharing violation, while a scanner looks at an
+/// entry just made.
+#[cfg(windows)]
+const ERROR_ACCESS_DENIED: i32 = 5;
+
+/// How long [`hold_closed`] waits out a scanner that looks at an entry just made: as long as the
+/// launcher waits one out.
+#[cfg(windows)]
+const SCANNER_WINDOW: Duration = Duration::from_secs(8);
+
+/// How long [`hold_closed`] waits between two tries while a scanner looks at an entry.
+#[cfg(windows)]
+const SCANNER_PAUSE: Duration = Duration::from_millis(200);
 
 /// The folder at an installation's top that holds the launcher's own state.
 const STATE_DIR: &str = ".gdl-launcher";
@@ -462,6 +488,125 @@ impl Drop for DeniedAccess {
         for (path, mode) in self.modes.iter().rev() {
             // A drop cannot report a failure; removing the test's folder reports it instead.
             let _ = fs::set_permissions(path, fs::Permissions::from_mode(*mode));
+        }
+    }
+}
+
+/// Entries that [`hold_closed`] keeps every open from, until this is dropped.
+#[derive(Debug)]
+#[must_use = "dropping it lets the entries be opened again at once"]
+pub struct HeldClosed {
+    /// A handle on each entry that shares nothing.
+    #[cfg(windows)]
+    _handles: Vec<fs::File>,
+    /// The entries' modes, taken away.
+    #[cfg(unix)]
+    _denied: DeniedAccess,
+    /// Whether every open of an entry fails for this process too.
+    proven: bool,
+}
+
+impl HeldClosed {
+    /// Whether every open of a held entry fails for this process too, so that code which still
+    /// found what it looked for while they were held opened none of them: always on Windows, and
+    /// on Unix for every user but root, who opens entries of mode 0o000.
+    pub fn proven(&self) -> bool {
+        self.proven
+    }
+}
+
+/// Keeps every open of each of `paths`, files and folders, from succeeding until the result is
+/// dropped, so that a test can show that code which looks at them never opens one.
+///
+/// On Windows each is held open sharing nothing, a folder with the flag that a folder's handle
+/// needs and a file without it: with it, a process whose backup privilege is enabled, as one
+/// started from Git Bash may be, opens a file whatever another handle shares. A scanner that
+/// still looks at a new entry is waited out. Each is then opened as such a process would open it,
+/// and one that opens is an error. On Unix each loses every permission, which root passes.
+#[cfg(windows)]
+pub fn hold_closed(paths: &[&Path]) -> io::Result<HeldClosed> {
+    use std::os::windows::fs::OpenOptionsExt;
+
+    let mut handles = Vec::with_capacity(paths.len());
+    for &path in paths {
+        let mut holding = read_options(path)?;
+        holding.share_mode(NO_SHARING);
+        let handle = while_scanned(|| holding.open(path)).map_err(|error| {
+            io::Error::new(error.kind(), format!("{}: {error}", path.display()))
+        })?;
+        handles.push(handle);
+    }
+    for &path in paths {
+        match read_options(path)?.open(path) {
+            Err(error) if error.raw_os_error() == Some(ERROR_SHARING_VIOLATION) => {}
+            Err(error) => return Err(error),
+            Ok(_) => {
+                return Err(io::Error::other(format!(
+                    "{} opened while it was held",
+                    path.display()
+                )));
+            }
+        }
+    }
+    Ok(HeldClosed {
+        _handles: handles,
+        proven: true,
+    })
+}
+
+/// Keeps every open of each of `paths`, files and folders, from succeeding until the result is
+/// dropped, so that a test can show that code which looks at them never opens one.
+///
+/// On Unix each loses every permission, as [`DeniedAccess`] takes them, which root passes; an
+/// entry inside a folder must come before that folder. On Windows each is held open sharing
+/// nothing.
+#[cfg(unix)]
+pub fn hold_closed(paths: &[&Path]) -> io::Result<HeldClosed> {
+    let denied = DeniedAccess::deny(paths)?;
+    let mut proven = true;
+    for &path in paths {
+        match fs::File::open(path) {
+            Ok(_) => proven = false,
+            Err(error) if error.kind() == io::ErrorKind::PermissionDenied => {}
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(HeldClosed {
+        _denied: denied,
+        proven,
+    })
+}
+
+/// How a test opens `path` to read: a folder with the flag without which Windows opens no folder
+/// as a handle, and a file without it.
+#[cfg(windows)]
+fn read_options(path: &Path) -> io::Result<fs::OpenOptions> {
+    use std::os::windows::fs::OpenOptionsExt;
+
+    let mut options = fs::OpenOptions::new();
+    options.read(true);
+    if fs::symlink_metadata(path)?.is_dir() {
+        options.custom_flags(FILE_FLAG_BACKUP_SEMANTICS);
+    }
+    Ok(options)
+}
+
+/// Runs `open` again while Windows refuses it as it refuses an open of an entry that a scanner
+/// still looks at, for up to [`SCANNER_WINDOW`].
+#[cfg(windows)]
+fn while_scanned(mut open: impl FnMut() -> io::Result<fs::File>) -> io::Result<fs::File> {
+    let deadline = Instant::now() + SCANNER_WINDOW;
+    loop {
+        match open() {
+            Err(error)
+                if matches!(
+                    error.raw_os_error(),
+                    Some(ERROR_ACCESS_DENIED | ERROR_SHARING_VIOLATION)
+                ) && Instant::now() < deadline =>
+            {
+                thread::sleep(SCANNER_PAUSE);
+            }
+            result => return result,
         }
     }
 }
@@ -1056,6 +1201,38 @@ mod tests {
 
         // A tree that is not there gives nothing to compare.
         let error = snapshot(&dir.path().join("missing")).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::NotFound);
+    }
+
+    #[test]
+    fn held_entries_cannot_be_opened_until_dropped() {
+        use super::{folder_names, hold_closed};
+
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("file.txt");
+        fs::write(&file, b"held").unwrap();
+        let folder = dir.path().join("folder");
+        fs::create_dir(&folder).unwrap();
+        // On Windows a hold that any open passes is an error, so only root's on Unix is not proven.
+        let held = hold_closed(&[&file, &folder]).unwrap();
+        if held.proven() {
+            assert!(fs::read(&file).is_err());
+            #[cfg(unix)]
+            assert!(fs::read_dir(&folder).is_err());
+        } else {
+            eprintln!(
+                "only the hold was made: this user opens entries of mode 0o000, as root does"
+            );
+        }
+        // The listing of the folder that holds them is not kept from anyone.
+        assert_eq!(folder_names(dir.path()).unwrap(), ["file.txt", "folder"]);
+        drop(held);
+        assert_eq!(fs::read(&file).unwrap(), b"held");
+        assert!(folder_names(&folder).unwrap().is_empty());
+
+        // Nothing there cannot be held.
+        let missing = dir.path().join("missing");
+        let error = hold_closed(&[&missing]).unwrap_err();
         assert_eq!(error.kind(), io::ErrorKind::NotFound);
     }
 

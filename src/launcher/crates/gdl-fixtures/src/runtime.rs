@@ -126,7 +126,7 @@ impl RuntimeFiles {
 
 /// `value` as the release scripts and the launcher write JSON files: indented by two spaces, with
 /// LF line ends and a line end after it.
-pub(crate) fn pretty_json(value: &Value) -> Vec<u8> {
+pub fn pretty_json(value: &Value) -> Vec<u8> {
     let mut bytes = serde_json::to_vec_pretty(value).expect("a JSON value always has a JSON form");
     bytes.push(b'\n');
     bytes
