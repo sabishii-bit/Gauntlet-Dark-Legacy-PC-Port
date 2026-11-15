@@ -1,6 +1,7 @@
 //! The renames that put what the launcher has staged in place: one that never replaces what is at
-//! its target, and one that replaces a state file whole. On Windows both are written through to
-//! disk, reach past MAX_PATH and wait out a scanner's hold on a file.
+//! its target, and one that replaces a state file whole. Both are on disk before they return: on
+//! Windows they are written through, and elsewhere the folders they change are synced. On Windows
+//! they also reach past MAX_PATH and wait out a scanner's hold on a file.
 
 use std::fs;
 use std::io;
@@ -17,15 +18,19 @@ use crate::retry::retry_locked;
 /// FUSE file systems and 9p), the target is first looked for and then renamed onto, and another
 /// writer could come between the two.
 ///
-/// On Windows the move is on disk before this returns, and it is tried again as [`retry_locked`]
-/// tries while a scanner holds the file, or a file inside the folder. A target that exists is
-/// reported as [`io::ErrorKind::AlreadyExists`] without a system error code, the same on every
-/// system, and is never waited for.
+/// The move is on disk before this returns. On Windows it is written through, and tried again as
+/// [`retry_locked`] tries while a scanner holds the file, or a file inside the folder. Elsewhere
+/// the folders it changes are synced once it is made, so an error from that sync comes after the
+/// move. A target that exists is reported as [`io::ErrorKind::AlreadyExists`] without a system
+/// error code, the same on every system, and is never waited for.
 pub fn rename_noreplace(from: &Path, to: &Path) -> io::Result<()> {
     retry_locked(|| match rename_once(from, to) {
         Err(_) if is_present(to) => Err(target_exists()),
         result => result,
-    })
+    })?;
+    #[cfg(unix)]
+    sync_renamed(from, to, &fs::File::sync_all)?;
+    Ok(())
 }
 
 /// One attempt at a rename that never replaces its target.
@@ -81,9 +86,9 @@ pub(crate) fn rename_checked(from: &Path, to: &Path) -> io::Result<()> {
 /// written `from`, synced it through its own handle and closed it: on Windows a handle opened
 /// again only to read cannot be flushed, so this never opens `from` itself.
 ///
-/// On Windows the move is on disk before this returns, and it is tried again as [`retry_locked`]
-/// tries while a scanner holds either file. On Linux the folder is synced after the rename, so
-/// that the rename is on disk too; an error from that sync comes after the rename is made.
+/// The rename is on disk before this returns. On Windows it is written through, and tried again
+/// as [`retry_locked`] tries while a scanner holds either file. Elsewhere the folders it changes
+/// are synced once it is made, so an error from that sync comes after `to` is replaced.
 pub fn replace(from: &Path, to: &Path) -> io::Result<()> {
     #[cfg(windows)]
     {
@@ -94,16 +99,45 @@ pub fn replace(from: &Path, to: &Path) -> io::Result<()> {
     #[cfg(unix)]
     {
         fs::rename(from, to)?;
-        fs::File::open(folder_of(to))?.sync_all()
+        sync_renamed(from, to, &fs::File::sync_all)
     }
 }
 
 /// The folder that holds `path`: its parent, or the working folder for a bare name.
-#[cfg(unix)]
-fn folder_of(path: &Path) -> &Path {
+pub(crate) fn folder_of(path: &Path) -> &Path {
     match path.parent() {
         Some(parent) if !parent.as_os_str().is_empty() => parent,
         _ => Path::new("."),
+    }
+}
+
+/// How a folder, opened, is synced: with [`fs::File::sync_all`], unless a test stands in for it.
+#[cfg(unix)]
+type SyncFolder<'a> = &'a dyn Fn(&fs::File) -> io::Result<()>;
+
+/// Syncs the folders that a rename of `from` to `to` changed: the folder `to` is now in, then the
+/// one `from` left when that is another, so that neither the new name nor the old one's going is
+/// lost to a crash. The first error stops it.
+#[cfg(unix)]
+fn sync_renamed(from: &Path, to: &Path, sync: SyncFolder<'_>) -> io::Result<()> {
+    let target = folder_of(to);
+    let source = folder_of(from);
+    sync_folder(target, sync)?;
+    if source != target {
+        sync_folder(source, sync)?;
+    }
+    Ok(())
+}
+
+/// Opens `folder` and syncs it with `sync`. A folder whose file system cannot sync folders at all
+/// counts as synced, since nothing more can be done for it there: Linux answers EINVAL where a file
+/// system has no sync of folders, as VirtualBox's shared folders have none, and some systems EBADF
+/// for a folder opened only to read.
+#[cfg(unix)]
+fn sync_folder(folder: &Path, sync: SyncFolder<'_>) -> io::Result<()> {
+    match sync(&fs::File::open(folder)?) {
+        Err(error) if matches!(error.raw_os_error(), Some(libc::EINVAL | libc::EBADF)) => Ok(()),
+        result => result,
     }
 }
 
@@ -561,12 +595,11 @@ mod tests {
         assert_eq!(snapshot(&from), Entry::Missing);
     }
 
-    #[cfg(unix)]
     #[test]
-    fn replace_syncs_the_folder_that_holds_the_target() {
+    fn folder_of_is_the_parent_or_the_working_folder() {
         use super::folder_of;
 
-        for (target, folder) in [
+        for (path, folder) in [
             (
                 "/install/.gdl-launcher/receipt.json",
                 "/install/.gdl-launcher",
@@ -575,8 +608,121 @@ mod tests {
             ("receipt.json", "."),
             ("./receipt.json", "."),
         ] {
-            assert_eq!(folder_of(Path::new(target)), Path::new(folder), "{target}");
+            assert_eq!(folder_of(Path::new(path)), Path::new(folder), "{path}");
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn renames_sync_the_folders_they_change() {
+        use std::cell::RefCell;
+        use std::os::unix::fs::MetadataExt;
+
+        use super::sync_renamed;
+
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("install-AbC123xy");
+        let target = dir.path().join("install");
+        fs::create_dir(&source).unwrap();
+        fs::create_dir(&target).unwrap();
+        let inode = |path: &Path| fs::metadata(path).unwrap().ino();
+        let (source_inode, target_inode) = (inode(&source), inode(&target));
+
+        // The folder renamed into, then the one renamed out of, each the folder itself and never
+        // the file; a folder both lie in is synced once.
+        let synced = RefCell::new(Vec::new());
+        let record = |folder: &File| {
+            synced.borrow_mut().push(folder.metadata()?.ino());
+            folder.sync_all()
+        };
+        sync_renamed(&source.join("data"), &target.join("data"), &record).unwrap();
+        assert_eq!(*synced.borrow(), [target_inode, source_inode]);
+        synced.borrow_mut().clear();
+        let pending = target.join("receipt.json.pending");
+        sync_renamed(&pending, &target.join("receipt.json"), &record).unwrap();
+        assert_eq!(*synced.borrow(), [target_inode]);
+
+        // A file system that cannot sync folders answers EINVAL, or EBADF on some systems, and
+        // its folders count as synced. Any other answer is the answer, and stops the syncs.
+        for (code, refused) in [
+            (libc::EINVAL, false),
+            (libc::EBADF, false),
+            (libc::EIO, true),
+            (libc::ENOSPC, true),
+        ] {
+            synced.borrow_mut().clear();
+            let answer = |folder: &File| {
+                synced.borrow_mut().push(folder.metadata()?.ino());
+                Err(io::Error::from_raw_os_error(code))
+            };
+            let result = sync_renamed(&source.join("data"), &target.join("data"), &answer);
+            if refused {
+                assert_eq!(result.unwrap_err().raw_os_error(), Some(code));
+                assert_eq!(*synced.borrow(), [target_inode], "{code}");
+            } else {
+                result.unwrap();
+                assert_eq!(*synced.borrow(), [target_inode, source_inode], "{code}");
+            }
+        }
+    }
+
+    /// Gives a folder back its owner's whole access when dropped, before the `TempDir` above it
+    /// goes, which could not remove a folder that it may not read.
+    #[cfg(unix)]
+    struct AccessRestored<'a>(&'a Path);
+
+    #[cfg(unix)]
+    impl Drop for AccessRestored<'_> {
+        fn drop(&mut self) {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = fs::set_permissions(self.0, fs::Permissions::from_mode(0o700));
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_folder_that_cannot_be_synced_is_reported_after_the_rename() {
+        use std::os::unix::fs::PermissionsExt;
+
+        /// Writing and searching but no reading: names can be made and removed in such a folder,
+        /// but it cannot be opened to be synced.
+        const WRITE_AND_SEARCH: u32 = 0o300;
+
+        let dir = tempfile::tempdir().unwrap();
+        let locked = dir.path().join("locked");
+        fs::create_dir(&locked).unwrap();
+        let receipt = locked.join("receipt.json");
+        let pending = locked.join("receipt.json.pending");
+        write_synced(&receipt, b"old");
+        write_synced(&pending, b"new");
+        let staged = dir.path().join("staged");
+        write_synced(&staged, b"staged");
+        let _restored = AccessRestored(&locked);
+        fs::set_permissions(&locked, fs::Permissions::from_mode(WRITE_AND_SEARCH)).unwrap();
+        if File::open(&locked).is_ok() {
+            eprintln!("skipped: this user opens folders it may not read, as root does");
+            return;
+        }
+
+        // Into the folder: the move is made, and then its sync is refused.
+        let moved = locked.join("staged");
+        let error = rename_noreplace(&staged, &moved).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::PermissionDenied, "{error}");
+        assert_eq!(snapshot(&staged), Entry::Missing);
+        assert_eq!(fs::read(&moved).unwrap(), b"staged");
+
+        // Out of it, which is synced too, after the folder moved into.
+        let back = dir.path().join("back");
+        let error = rename_noreplace(&moved, &back).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::PermissionDenied, "{error}");
+        assert_eq!(snapshot(&moved), Entry::Missing);
+        assert_eq!(fs::read(&back).unwrap(), b"staged");
+
+        // A state file replaced in it: the new file is in place when the error comes.
+        let error = replace(&pending, &receipt).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::PermissionDenied, "{error}");
+        assert_eq!(snapshot(&pending), Entry::Missing);
+        assert_eq!(fs::read(&receipt).unwrap(), b"new");
     }
 
     /// Holds on files, which make Windows refuse a rename until they close.

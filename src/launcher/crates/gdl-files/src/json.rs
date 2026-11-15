@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
-use crate::rename::replace;
+use crate::rename::{folder_of, replace};
 use crate::{FilesError, no_links};
 
 /// The most bytes a JSON file the launcher reads may hold, unless its kind holds it to less.
@@ -64,7 +64,9 @@ pub fn read_json_bounded<T: DeserializeOwned>(path: &Path, limit: u64) -> Result
 ///
 /// A pending file that an interrupted write left behind is removed first, a link as a link and
 /// never what it leads to; a folder of that name is not the launcher's to empty, and refuses the
-/// write. Once the pending file is made, a failure removes it again where it can.
+/// write. Once the pending file is made, a failure removes it again where it can. An error in
+/// putting the rename on disk comes after it is made: `path` then holds the new contents, though
+/// a crash could still lose them.
 pub fn write_json_atomic(path: &Path, value: &impl Serialize) -> Result<(), FilesError> {
     if path.file_name().is_none() {
         let unnamed = io::Error::new(
@@ -89,14 +91,6 @@ pub fn write_json_atomic(path: &Path, value: &impl Serialize) -> Result<(), File
         let _ = fs::remove_file(&pending);
     }
     written
-}
-
-/// The folder that holds `path`: its parent, or the working folder for a bare name.
-fn folder_of(path: &Path) -> &Path {
-    match path.parent() {
-        Some(parent) if !parent.as_os_str().is_empty() => parent,
-        _ => Path::new("."),
-    }
 }
 
 /// Removes what an interrupted write left at `pending`: a file, or a link, which is removed
@@ -273,6 +267,10 @@ mod tests {
         let path = folder.join("receipt.json");
         assert_eq!(PENDING_SUFFIX, ".pending");
         assert_eq!(pending_path(&path), folder.join("receipt.json.pending"));
+        assert_eq!(
+            pending_path(Path::new("receipt.json")),
+            Path::new("receipt.json.pending")
+        );
 
         let first = json!({"version": "1.0.0-beta", "files": ["a", "b", "c"]});
         write_json_atomic(&path, &first).unwrap();
@@ -425,27 +423,6 @@ mod tests {
         assert!(fs::symlink_metadata(&state).unwrap().is_file());
         assert_eq!(fs::read(&state).unwrap(), b"{\n  \"round\": 1\n}\n");
         assert_eq!(fs::read(&outside).unwrap(), b"outside");
-    }
-
-    #[test]
-    fn checks_the_folder_that_holds_the_file() {
-        use super::folder_of;
-
-        for (path, folder) in [
-            ("receipt.json", "."),
-            ("./receipt.json", "."),
-            ("state/receipt.json", "state"),
-            (
-                "/install/.gdl-launcher/receipt.json",
-                "/install/.gdl-launcher",
-            ),
-        ] {
-            assert_eq!(folder_of(Path::new(path)), Path::new(folder), "{path}");
-        }
-        assert_eq!(
-            pending_path(Path::new("receipt.json")),
-            Path::new("receipt.json.pending")
-        );
     }
 
     #[test]

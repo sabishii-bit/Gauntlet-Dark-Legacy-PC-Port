@@ -78,9 +78,10 @@ impl Staging {
     /// it is written there, named once in any letter case, and neither the staged tree nor
     /// `into`'s path may hold a link. The roots then move in byte order, and the first failure
     /// stops the publish and is returned: a target that is there already is
-    /// [`FilesError::Exists`]. The roots moved before it stay in place and recorded. Those not
-    /// moved stay in the staging, for the caller's journal to decide whether they are moved too
-    /// or what moved is taken back, until the staging is dropped.
+    /// [`FilesError::Exists`]. The roots moved before it stay in place and recorded, and a root
+    /// that moved but whose sync or record then failed stays in place unrecorded. Those not moved
+    /// stay in the staging, for the caller's journal to decide whether they are moved too or what
+    /// moved is taken back, until the staging is dropped.
     pub fn publish_new(
         &self,
         roots: &[RelPath],
