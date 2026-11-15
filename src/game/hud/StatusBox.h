@@ -101,11 +101,17 @@ public:
     static constexpr s32 kHeight = 64;
     static constexpr s32 kBarY = 304;
     static constexpr s32 kBarHeight = 16;
+    static constexpr std::string_view kStrip = "S3"; ///< over a box no player owns, and over a card
     static constexpr s32 kUsageY = 377;
     static constexpr s32 kUsageLeft = 8;
     static constexpr s32 kUsageRight = 120;
     static constexpr f32 kUsageScale = 0.375f; ///< SCORE digits fit in the unused bottom row
     static constexpr f32 kUsageNameScale = 0.75f;
+    static constexpr s32 kCountIconSize = 16; ///< a pickup count's icon, square
+    static constexpr s32 kCountTextDy = 4;    ///< its "count/total" this far below the icon's top
+    static constexpr s32 kCountIconGap = 4;   ///< and this far after the icon
+    static constexpr s32 kCountRowGap = 4;    ///< between the counts of a stack
+    static constexpr f32 kCountScale = 1.5f;  ///< the count's size in the small capitals
 
     /** Loads the panels and fonts from the unpacked data; false when they are missing. */
     bool load(RenderDevice& device, const std::filesystem::path& unpackedRoot,
@@ -116,6 +122,13 @@ public:
     bool loaded() const { return m_device != nullptr; }
     /** The small capitals the boxes' levels are written in, which the help messages share. */
     const TextPainter& smallCaps() const { return m_smallCaps; }
+    /** STATIC's picture `name`, the very texture the boxes draw with: uploaded on its first use
+     * and kept until release(). Null when STATIC has no such picture or it cannot be read. */
+    const Texture* staticTexture(std::string_view name);
+    /** SELECT's picture `name`, the same way. */
+    const Texture* selectTexture(std::string_view name);
+    /** A pickup count's icon, the same way: STATIC's, else the level's own (setCountTextures). */
+    const Texture* countTexture(std::string_view icon);
 
     /** Whether a box carries the strip above it that the game shows in play. */
     enum class Strip : u8 { None, Play };
@@ -146,9 +159,6 @@ public:
     static std::string usageAmount(const PowerupSlot& slot);
 
 private:
-    const Texture* countTexture(std::string_view icon);
-    const Texture* selectTexture(std::string_view name);
-    const Texture* staticTexture(std::string_view name);
     std::string_view text(std::string_view id) const;
     void drawUsage(Canvas& canvas, s32 left, const PowerupSlot& powerup, Color tint);
 

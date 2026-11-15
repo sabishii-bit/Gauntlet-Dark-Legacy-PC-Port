@@ -39,6 +39,8 @@ public:
         Rect lower;
         Rect lowerUv;
     };
+    static constexpr Rect kFrameArea{1, 1, 128, 128};  ///< the glass, a pixel in from the corner
+    static constexpr Rect kFallingArea{63, 58, 8, 32}; ///< the grains falling between the bulbs
     bool bind(RenderDevice& device, ItemArchive& archive);
     void clear();
     void step(f32 seconds);
@@ -47,10 +49,11 @@ public:
     bool accepts(const Look& look) const;
     void draw(Canvas& canvas, const Look& look) const;
     static Sand sand(f32 remaining, f32 duration);
+    /** The two bulbs' crops with `elapsed` of the time gone, nought to one. */
+    static Sand sandAt(f32 elapsed);
 
 private:
     bool appendDigest(NativeStateDigest& digest, const LocalSnapshot* saved) const;
-    static Sand sandAt(f32 elapsed);
     const Texture* m_frame = nullptr;
     const Texture* m_sand = nullptr;
     TextureAnimator m_falling;

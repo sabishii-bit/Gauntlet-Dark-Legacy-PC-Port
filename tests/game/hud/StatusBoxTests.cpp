@@ -2,11 +2,15 @@
 #include <filesystem>
 #include <limits>
 #include <optional>
+#include <string>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/assets/TextureSet.h"
 #include "engine/core/Types.h"
+#include "engine/math/Math.h"
+#include "engine/render/Image.h"
 #include "engine/ui/Canvas.h"
 
 #include "FakeRenderDevice.h"
@@ -180,6 +184,113 @@ TEST_CASE("the runestones held line the box, the bosses' keys a while as a level
     REQUIRE(device.draws.size() == 1);
     CHECK(test::maxCorner(device.draws[0]) == Vec2{128.0f + 24.0f, 356.0f});
     painter.release();
+}
+
+TEST_CASE("the boxes lend the textures they draw with", "[game][screens][relic-strip][assets]") {
+    const std::filesystem::path root =
+        test::assetOrSkip("STATIC/textures.ngc").parent_path().parent_path();
+    test::FakeRenderDevice device;
+    StatusBoxPainter painter;
+    REQUIRE(painter.load(device, root, nullptr));
+    // A level's own pickup icon, which STATIC does not have.
+    const std::string levelIcon = "LEVEL_PICKUP_ICON";
+    auto level =
+        TextureSet::fromDecoded({{.name = levelIcon, .width = 16, .height = 16, .file = {}}},
+                                {Image::filled(16, 16, Color::white())});
+    painter.setCountTextures(&level);
+
+    // The warrior's box with the first boss's key up, a card over the second box, and two
+    // counts over the third: STATIC's crystal, and the level's own icon above it.
+    StatusBoxView view;
+    view.mode = StatusBoxView::Mode::Status;
+    view.active = true;
+    view.classIndex = 0;
+    view.bossKeys = 0x1;
+    view.keysShown = true;
+    const std::array<StatusBoxPainter::CountEntry, 2> counts{
+        {{"SM_CRYSTAL_ORA", 3, 15}, {levelIcon, 1, 12}}};
+    Canvas canvas;
+    const auto draw = [&] {
+        device.draws.clear();
+        canvas.begin(device, Mat4{1.0f});
+        painter.draw(canvas, 0, view, StatusBoxPainter::Strip::Play);
+        painter.drawCard(canvas, 1, "CRYSTAL", 304);
+        painter.drawCounts(canvas, 2, counts, 288);
+        canvas.end();
+    };
+    // Where the one draw of `texture` lies; none unless exactly one draw used it.
+    const auto areaOf = [&device](const Texture* texture) -> std::optional<Rect> {
+        std::optional<Rect> area;
+        usize found = 0;
+        for (const test::RecordedDraw& recorded : device.draws) {
+            if (recorded.texture == texture) {
+                const Vec2 low = test::minCorner(recorded);
+                const Vec2 high = test::maxCorner(recorded);
+                area = Rect{low.x, low.y, high.x - low.x, high.y - low.y};
+                ++found;
+            }
+        }
+        return found == 1 ? area : std::nullopt;
+    };
+    draw();
+    const u32 created = device.texturesCreated;
+
+    // Each lender gives the very texture drawn, and uploads nothing to do so.
+    const Texture* panel = painter.selectTexture("S4_WAR");
+    const Texture* key = painter.staticTexture("SM_KEY_BLU");
+    const Texture* strip = painter.staticTexture(StatusBoxPainter::kStrip);
+    const Texture* crystal = painter.countTexture("SM_CRYSTAL_ORA");
+    const Texture* own = painter.countTexture(levelIcon);
+    REQUIRE(panel != nullptr);
+    REQUIRE(key != nullptr);
+    REQUIRE(strip != nullptr);
+    REQUIRE(crystal != nullptr);
+    REQUIRE(own != nullptr);
+    CHECK(device.texturesCreated == created);
+    CHECK(own == &level.texture(device, 0));
+    CHECK(areaOf(panel) == Rect{0.0f, 320.0f, 128.0f, 64.0f});
+    CHECK(areaOf(key) ==
+          Rect{12.0f, 300.0f, static_cast<f32>(key->width()), static_cast<f32>(key->height())});
+    CHECK(areaOf(strip) == Rect{128.0f, 304.0f, 128.0f, 16.0f});
+    const auto icon = static_cast<f32>(StatusBoxPainter::kCountIconSize);
+    const std::optional<Rect> crystalArea = areaOf(crystal);
+    REQUIRE(crystalArea.has_value());
+    CHECK(crystalArea->x > 256.0f);
+    CHECK(crystalArea->y == 288.0f);
+    CHECK(crystalArea->width == icon);
+    CHECK(crystalArea->height == icon);
+    const std::optional<Rect> ownArea = areaOf(own);
+    REQUIRE(ownArea.has_value());
+    CHECK(ownArea->x > 256.0f);
+    CHECK(ownArea->y == 288.0f - icon - static_cast<f32>(StatusBoxPainter::kCountRowGap));
+    CHECK(ownArea->width == icon);
+    CHECK(ownArea->height == icon);
+    CHECK(painter.selectTexture("S4_WAR") == panel);
+    CHECK(painter.staticTexture("SM_KEY_BLU") == key);
+    CHECK(painter.countTexture("SM_CRYSTAL_ORA") == crystal);
+    CHECK(painter.countTexture(levelIcon) == own);
+    CHECK(device.texturesCreated == created);
+
+    // A picture lent before the boxes draw it is uploaded once, and drawn as lent.
+    const Texture* second = painter.staticTexture("SM_KEY_RED");
+    REQUIRE(second != nullptr);
+    CHECK(device.texturesCreated == created + 1);
+    CHECK(painter.staticTexture("SM_KEY_RED") == second);
+    view.bossKeys = 0x2;
+    draw();
+    CHECK(device.texturesCreated == created + 1);
+    CHECK(areaOf(second) == Rect{24.0f, 300.0f, static_cast<f32>(second->width()),
+                                 static_cast<f32>(second->height())});
+
+    // What the sets do not hold, or a released painter, lends nothing.
+    CHECK(painter.staticTexture("NO_SUCH_PICTURE") == nullptr);
+    CHECK(painter.selectTexture("NO_SUCH_PICTURE") == nullptr);
+    CHECK(painter.countTexture("NO_SUCH_PICTURE") == nullptr);
+    CHECK(device.texturesCreated == created + 1);
+    painter.release();
+    CHECK(painter.staticTexture("SM_KEY_BLU") == nullptr);
+    CHECK(painter.selectTexture("S4_WAR") == nullptr);
+    CHECK(painter.countTexture(levelIcon) == nullptr);
 }
 
 TEST_CASE("status boxes need the unpacked panels", "[game][screens]") {

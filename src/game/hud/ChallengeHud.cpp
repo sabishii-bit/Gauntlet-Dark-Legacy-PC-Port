@@ -98,10 +98,9 @@ void ChallengeHud::draw(Canvas& canvas, const Look& look) const {
     if (!accepts(look)) {
         return;
     }
-    canvas.draw(*m_frame, {1, 1, kSize, kSize});
+    canvas.draw(*m_frame, kFrameArea);
     if (look.fallingFrame >= 0) {
-        constexpr Rect kFalling{63, 58, 8, 32};
-        canvas.draw(*m_falling.cycleFrame(0, static_cast<usize>(look.fallingFrame)), kFalling);
+        canvas.draw(*m_falling.cycleFrame(0, static_cast<usize>(look.fallingFrame)), kFallingArea);
     }
     const auto shape = sandAt(look.elapsed);
     canvas.draw(*m_sand, shape.upper, shape.upperUv, Color::white());

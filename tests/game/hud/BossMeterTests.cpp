@@ -1,8 +1,17 @@
+#include <algorithm>
+#include <array>
+#include <string_view>
+#include <utility>
+#include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/assets/ItemArchive.h"
+#include "engine/assets/TextureSet.h"
 #include "engine/core/Types.h"
+#include "engine/math/Math.h"
+#include "engine/render/Image.h"
+#include "engine/render/RenderTypes.h"
 #include "engine/ui/Canvas.h"
 
 #include "FakeRenderDevice.h"
@@ -134,6 +143,108 @@ TEST_CASE("Chimera draws its three head fills on one shared frame and drains the
     REQUIRE(device.draws.empty());
     meters.clear();
     bosses.close();
+}
+
+TEST_CASE("a bound meter tells its boss art, pieces, origin and insets", "[game][screens][hud]") {
+    // A boss's own two strips, a head of one strip over a background of its own, and a head
+    // that shares that background's origin.
+    std::vector<TextureSetEntry> entries;
+    std::vector<Image> images;
+    for (const char* name : {"METER_BG1", "METER_FG1", "METER_BG2", "METER_FG2", "EAGLE_METER_BG1",
+                             "EAGLE_METER_FG1", "LION_METER_BG1", "LION_METER_FG1"}) {
+        entries.push_back({.name = name, .width = 256, .height = 16, .file = {}});
+        images.push_back(Image::filled(256, 16, Color::white()));
+    }
+    auto art = TextureSet::fromDecoded(std::move(entries), std::move(images));
+    std::array<HealthMeterReading, 3> readings;
+    readings[0].definition = lichMeter();
+    readings[0].health = 750; // a quarter: the first strip's fill cropped, the second's none
+    readings[0].maxHealth = 3000;
+    readings[1].definition = lichMeter();
+    readings[1].definition.name = "EAGLE";
+    readings[1].definition.pieces = 1;
+    readings[1].definition.leftInset = 12;
+    readings[1].definition.rightInset = 20;
+    readings[1].health = readings[1].maxHealth = 500;
+    readings[2].definition = readings[1].definition;
+    readings[2].definition.name = "LION";
+    readings[2].definition.backed = false;
+    readings[2].health = readings[2].maxHealth = 500;
+    BossMeters meters;
+    meters.bind(readings, &art);
+    REQUIRE(meters.count() == 3);
+    const BossMeter::Layout boss{.textures = &art,
+                                 .name = "",
+                                 .pieces = 2,
+                                 .left = 0,
+                                 .leftInset = 44,
+                                 .rightInset = 53,
+                                 .backed = true};
+    const BossMeter::Layout eagle{.textures = &art,
+                                  .name = "EAGLE",
+                                  .pieces = 1,
+                                  .left = 256,
+                                  .leftInset = 12,
+                                  .rightInset = 20,
+                                  .backed = true};
+    BossMeter::Layout lion = eagle;
+    lion.name = "LION";
+    lion.backed = false;
+    CHECK(meters.meter(0).layout() == boss);
+    CHECK(meters.meter(1).layout() == eagle);
+    CHECK(meters.meter(2).layout() == lion);
+
+    test::FakeRenderDevice device;
+    Canvas canvas;
+    canvas.begin(device, Mat4{1.0f});
+    meters.draw(canvas, device);
+    canvas.end();
+    const u32 created = device.texturesCreated;
+    const auto picture = [&](std::string_view name) {
+        const auto index = art.find(name);
+        REQUIRE(index.has_value());
+        return &art.texture(device, *index);
+    };
+    using Part = BossMeter::MeterPart;
+    // The boss's backgrounds and its first fill, cropped; then the eagle's background and fill,
+    // and the lion's fill over the eagle's background.
+    REQUIRE(device.draws.size() == 6);
+    const Texture* fill = meters.meter(0).pieceTexture(device, Part::Fill, 0);
+    CHECK(fill == picture("METER_FG1"));
+    CHECK(device.draws[1].texture == fill);
+    CHECK(test::minCorner(device.draws[1]) == Vec2{0.0f, BossMeter::kY});
+    CHECK(test::maxCorner(device.draws[1]) == Vec2{150.0f, BossMeter::kY + 16.0f});
+    f32 across = 0;
+    for (const ImmediateVertex& vertex : device.draws[1].vertices) {
+        across = std::max(across, vertex.uv.x);
+    }
+    CHECK(across == 150.0f / 256.0f);
+    CHECK(device.draws[0].texture == meters.meter(0).pieceTexture(device, Part::Background, 0));
+    CHECK(device.draws[0].texture == picture("METER_BG1"));
+    CHECK(device.draws[2].texture == meters.meter(0).pieceTexture(device, Part::Background, 1));
+    CHECK(test::minCorner(device.draws[2]) == Vec2{256.0f, BossMeter::kY});
+    CHECK(device.draws[3].texture == meters.meter(1).pieceTexture(device, Part::Background, 0));
+    CHECK(device.draws[3].texture == picture("EAGLE_METER_BG1"));
+    CHECK(test::minCorner(device.draws[3]) == Vec2{256.0f, BossMeter::kY});
+    CHECK(device.draws[4].texture == meters.meter(1).pieceTexture(device, Part::Fill, 0));
+    CHECK(device.draws[5].texture == meters.meter(2).pieceTexture(device, Part::Fill, 0));
+    CHECK(device.draws[5].texture == picture("LION_METER_FG1"));
+    CHECK(test::minCorner(device.draws[5]) == Vec2{256.0f, BossMeter::kY});
+    CHECK(device.texturesCreated == created);
+    // A strip drawn empty still has its fill; none past a meter's strips, and no background
+    // where the meter draws none.
+    CHECK(meters.meter(0).pieceTexture(device, Part::Fill, 1) == picture("METER_FG2"));
+    CHECK(meters.meter(0).pieceTexture(device, Part::Fill, 2) == nullptr);
+    CHECK(meters.meter(0).pieceTexture(device, Part::Background, -1) == nullptr);
+    CHECK(meters.meter(1).pieceTexture(device, Part::Fill, 1) == nullptr);
+    CHECK(meters.meter(2).pieceTexture(device, Part::Background, 0) == nullptr);
+
+    meters.clear();
+    for (usize index = 0; index < BossMeters::kCapacity; ++index) {
+        CAPTURE(index);
+        CHECK(meters.meter(index).layout() == BossMeter::Layout{});
+        CHECK(meters.meter(index).pieceTexture(device, Part::Fill, 0) == nullptr);
+    }
 }
 
 TEST_CASE("a boss meter fills its two strips by the original's arithmetic and eases toward "

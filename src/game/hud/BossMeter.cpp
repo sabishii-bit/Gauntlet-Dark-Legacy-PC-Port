@@ -233,12 +233,18 @@ void BossMeter::draw(Canvas& canvas, RenderDevice& device) const {
     draw(canvas, device, look());
 }
 
+const Texture* BossMeter::pieceTexture(RenderDevice& device, MeterPart part, s32 piece) const {
+    if (piece < 0 || piece >= m_pieces || (part == MeterPart::Background && !m_backed)) {
+        return nullptr;
+    }
+    return textureOf(m_textures, device, m_name,
+                     part == MeterPart::Background ? kBackground : kFill, piece);
+}
+
 void BossMeter::preload(RenderDevice& device) const {
     for (s32 piece = 0; piece < m_pieces; ++piece) {
-        if (m_backed) {
-            textureOf(m_textures, device, m_name, kBackground, piece);
-        }
-        textureOf(m_textures, device, m_name, kFill, piece);
+        pieceTexture(device, MeterPart::Background, piece);
+        pieceTexture(device, MeterPart::Fill, piece);
     }
 }
 
@@ -249,19 +255,17 @@ void BossMeter::draw(Canvas& canvas, RenderDevice& device, const Look& look) con
     const Color plain = Color::rgba(255, 255, 255, kAlpha);
     for (s32 piece = 0; piece < m_pieces; ++piece) {
         const auto x = static_cast<f32>(m_left + piece * kPieceWidth);
-        if (m_backed) {
-            if (const Texture* back = textureOf(m_textures, device, m_name, kBackground, piece)) {
-                canvas.draw(*back,
-                            Rect{x, static_cast<f32>(kY), static_cast<f32>(kPieceWidth),
-                                 static_cast<f32>(back->height())},
-                            look.frozen ? kFrozenTint : plain);
-            }
+        if (const Texture* back = pieceTexture(device, MeterPart::Background, piece)) {
+            canvas.draw(*back,
+                        Rect{x, static_cast<f32>(kY), static_cast<f32>(kPieceWidth),
+                             static_cast<f32>(back->height())},
+                        look.frozen ? kFrozenTint : plain);
         }
         const s32 width = std::clamp(look.widths[static_cast<usize>(piece)], 0, kPieceWidth);
         if (width <= 0) {
             continue;
         }
-        if (const Texture* fill = textureOf(m_textures, device, m_name, kFill, piece)) {
+        if (const Texture* fill = pieceTexture(device, MeterPart::Fill, piece)) {
             // Cropped, not squeezed: the fill's left `width` pixels.
             const f32 across = static_cast<f32>(width) / static_cast<f32>(kPieceWidth);
             canvas.draw(*fill,

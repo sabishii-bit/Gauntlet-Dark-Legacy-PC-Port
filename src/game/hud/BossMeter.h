@@ -4,6 +4,7 @@
 #include <memory>
 #include <span>
 #include <string>
+#include <string_view>
 
 #include "engine/assets/TextureSet.h"
 #include "engine/core/Types.h"
@@ -37,6 +38,20 @@ public:
         bool frozen = false;
         std::array<s32, 2> widths{};
     };
+    /** A strip's two pictures. */
+    enum class MeterPart : u8 { Background, Fill };
+    /** What the meter was bound to draw, and where; `name` is the meter's own until it is bound
+     * again or cleared. */
+    struct Layout {
+        TextureSet* textures = nullptr; ///< the boss's own archive's, borrowed
+        std::string_view name;          ///< the pictures' prefix: a head's name, empty for a boss
+        s32 pieces = 0;                 ///< strips of kPieceWidth, at most kMostPieces
+        s32 left = 0;                   ///< the first strip's left edge
+        s32 leftInset = 0;              ///< the first strip's cap, never fill
+        s32 rightInset = 0;             ///< the last strip's tail, never fill
+        bool backed = false;            ///< each strip's fill lies over its background
+        bool operator==(const Layout&) const = default;
+    };
     static constexpr s32 kY = 8;
     static constexpr s32 kPieceWidth = 256;
     static constexpr s32 kMostPieces = 2;
@@ -58,6 +73,13 @@ public:
     /** How wide each strip's fill is drawn, in pixels of the virtual screen. */
     std::array<s32, kMostPieces> fillWidths() const;
     Look look() const { return {showing(), m_sim.frozen, fillWidths()}; }
+    Layout layout() const {
+        return {m_textures, m_name, m_pieces, m_left, m_leftInset, m_rightInset, m_backed};
+    }
+    /** The picture draw() uses for `part` of strip `piece`, uploaded on its first use; null for a
+     * strip the meter does not have, a background it does not draw, or a picture its archive
+     * lacks. */
+    const Texture* pieceTexture(RenderDevice& device, MeterPart part, s32 piece) const;
     void preload(RenderDevice& device) const;
 
     void draw(Canvas& canvas, RenderDevice& device) const;
