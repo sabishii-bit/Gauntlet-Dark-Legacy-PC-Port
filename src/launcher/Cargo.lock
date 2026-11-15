@@ -1357,9 +1357,14 @@ dependencies = [
 name = "gdl-launcher-headless"
 version = "0.0.0"
 dependencies = [
+ "gdl-fixtures",
+ "gdl-install",
  "gdl-native",
  "gdl-session",
  "libc",
+ "semver",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]
@@ -1399,8 +1404,13 @@ name = "gdl-session"
 version = "0.0.0"
 dependencies = [
  "gdl-extract",
+ "gdl-files",
+ "gdl-fixtures",
  "gdl-install",
  "gdl-release",
+ "serde",
+ "serde_json",
+ "tempfile",
  "thiserror 2.0.21",
 ]
 

@@ -13,3 +13,13 @@ gdl-session.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 libc.workspace = true
+
+[build-dependencies]
+semver.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+gdl-fixtures.workspace = true
+gdl-install.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true

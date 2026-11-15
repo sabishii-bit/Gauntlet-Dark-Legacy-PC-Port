@@ -1,6 +1,6 @@
 [package]
 name = "gdl-session"
-description = "The launcher window's logic without the window: modes, plans, jobs and their events, error codes"
+description = "The launcher window's logic without the window: modes, plans, jobs and their events, error codes, the headless modes and when the window may start"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -9,6 +9,13 @@ publish.workspace = true
 
 [dependencies]
 gdl-extract.workspace = true
+gdl-files.workspace = true
 gdl-install.workspace = true
 gdl-release.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
+
+[dev-dependencies]
+gdl-fixtures.workspace = true
+tempfile.workspace = true
