@@ -822,9 +822,10 @@ private:
     /** Lets the mechanics draw on the HUD for this machine's seats still in the game. */
     void drawMechanicsHud();
     /** What the HUD shows this frame on a canvas of `width` by `height`, seen through `clip`
-     * and `canvasProjection`; with `legends`, also what only the other looks read. */
+     * and `canvasProjection`; with `otherLook`, a look other than Dark Legacy's, also what only
+     * such looks read. */
     HudView hudView(const Mat4& clip, const Mat4& canvasProjection, f32 width, f32 height,
-                    bool legends) const;
+                    bool otherLook) const;
     bool leaveBy(usize portal);
     void updateFixtures(s32 ticks, f32 seconds);
     void updateTransporters(s32 ticks, f32 seconds, bool held);

@@ -11,7 +11,7 @@
 namespace gdl::game {
 
 HudView PlayScene::hudView(const Mat4& clip, const Mat4& canvasProjection, f32 width, f32 height,
-                           bool legends) const {
+                           bool otherLook) const {
     HudView view;
     view.players = m_players;
     view.relicsShown = m_hud.relicsShown();
@@ -44,7 +44,7 @@ HudView PlayScene::hudView(const Mat4& clip, const Mat4& canvasProjection, f32 w
     view.bossMeters = &m_opponents.meter();
     view.strings = m_services->strings;
     view.largeText = &m_messages.text();
-    if (legends) {
+    if (otherLook) {
         view.bossCount = hudBossReadingsOf(m_opponents.bosses().healthMeters(), view.bossReadings);
         if (const ImportedLevel* imported = m_world != nullptr ? m_world->imported() : nullptr) {
             // An imported level's exits are its own, and so is who waits on them.

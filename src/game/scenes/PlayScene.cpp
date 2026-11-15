@@ -2194,8 +2194,8 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
         return;
     }
     HudPainter& hud = m_darkLegacyHud;
-    const bool legends = hud.id() != kDarkLegacyHudStyle;
-    const HudView view = hudView(clip, canvasProjection, width, height, legends);
+    const bool otherLook = hud.id() != kDarkLegacyHudStyle;
+    const HudView view = hudView(clip, canvasProjection, width, height, otherLook);
     HudFrame frame{.canvas = m_canvas, .device = device, .darkLegacy = m_darkLegacyHud};
     hud.prepare(frame, view);
     // Rendering can precede the first simulation tick, before PartyNames has observed the hold.
