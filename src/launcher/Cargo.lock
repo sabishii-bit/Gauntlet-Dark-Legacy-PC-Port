@@ -1324,10 +1324,12 @@ version = "0.0.0"
 dependencies = [
  "gdl-extract",
  "gdl-files",
+ "gdl-fixtures",
  "gdl-media",
  "gdl-release",
  "libc",
  "tar",
+ "thiserror 2.0.21",
  "windows-sys 0.61.2",
  "zip",
 ]
