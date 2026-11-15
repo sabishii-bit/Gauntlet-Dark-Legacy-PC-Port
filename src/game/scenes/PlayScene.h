@@ -39,6 +39,8 @@
 #include "game/hud/ChallengeHud.h"
 #include "game/hud/CompanionArrows.h"
 #include "game/hud/CompassHud.h"
+#include "game/hud/DarkLegacyHudPainter.h"
+#include "game/hud/HudView.h"
 #include "game/hud/LevelMessages.h"
 #include "game/hud/PartyHud.h"
 #include "game/hud/RuneMeter.h"
@@ -816,6 +818,10 @@ private:
     void syncMechanics();
     /** Lets the mechanics draw on the HUD for this machine's seats still in the game. */
     void drawMechanicsHud();
+    /** What the HUD shows this frame on a canvas of `width` by `height`, seen through `clip`
+     * and `canvasProjection`; with `legends`, also what only the other looks read. */
+    HudView hudView(const Mat4& clip, const Mat4& canvasProjection, f32 width, f32 height,
+                    bool legends) const;
     bool leaveBy(usize portal);
     void updateFixtures(s32 ticks, f32 seconds);
     void updateTransporters(s32 ticks, f32 seconds, bool held);
@@ -942,6 +948,7 @@ private:
     CompassHud m_compass;
     ClassDataSet m_classes;
     PartyHud m_hud;
+    DarkLegacyHudPainter m_darkLegacyHud; ///< the boxes' own look, and the art others borrow
     PickupRouting m_pickupRouting{*this}; ///< what the pickups put up
     Canvas m_canvas;
     TowerCamera m_camera;
@@ -964,8 +971,6 @@ private:
     u8 m_localSeats = 0xF;
     bool m_open = false;
     const Texture* m_glowSheet = nullptr; ///< FONT32's glow, borrowed from the static set
-    const Texture* m_runeFrame = nullptr;
-    const Texture* m_runeColumn = nullptr;
     SumnerFigure m_sumner;
     TextureSet m_staticTextures;
     LevelMessages m_messages;

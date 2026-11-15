@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <span>
 
 #include "engine/core/Types.h"
@@ -32,7 +33,10 @@ public:
     Cue update(const Vec3& attention, bool available);
     bool visible() const { return m_visible; }
     f32 fill() const { return m_fill; }
-    void draw(Canvas& canvas, const Texture& frame, const Texture& fillTexture) const;
+    /** The fill the finder shows; none while it is hidden. */
+    std::optional<f32> shownFill() const {
+        return m_visible ? std::optional<f32>{m_fill} : std::nullopt;
+    }
     static void drawFill(Canvas& canvas, const Texture& frame, const Texture& fillTexture,
                          f32 fill);
     static bool eligible(s32 rune, s32 realm, std::span<const PartyMember> party);

@@ -21,7 +21,6 @@
 #include "game/characters/Vitality.h"
 #include "game/combat/PowerupFlags.h"
 #include "game/hud/CinematicBars.h"
-#include "game/hud/StatusBox.h"
 #include "game/level/ImportedLevel.h"
 #include "game/party/PartyLighting.h"
 #include "game/party/PartyRecords.h"
@@ -95,9 +94,10 @@ bool PlayScene::open(RenderDevice& device, const GameServices& services, LevelWo
     if ((!world.built() || world.isTower()) && !world.load(device, services.unpackedRoot)) {
         return false;
     }
-    if (!m_hud.load(device, services.unpackedRoot, services.strings)) {
+    if (!m_darkLegacyHud.load(device, services.unpackedRoot, services.strings)) {
         return false;
     }
+    m_hud.load(services.unpackedRoot, services.strings);
     m_classes.load(services.unpackedRoot / kClassDataDirectory);
     m_audio.open(services.unpackedRoot, services.sounds, world.audio(),
                  world.ref().name.empty() ? 'L' : world.ref().name.front(),
@@ -121,8 +121,9 @@ bool PlayScene::open(RenderDevice& device, const GameServices& services, LevelWo
     m_effects.setTextureLenders(effectTextures);
     if (const auto glow = m_staticTextures.find("FONT32_GLOW")) {
         m_glowSheet = &m_staticTextures.texture(device, *glow);
-        m_hud.setGlow(m_glowSheet);
+        m_darkLegacyHud.setGlow(m_glowSheet);
     }
+    m_darkLegacyHud.setHelpScroll(&m_staticTextures);
     // Imported residents reuse the menu artwork, not the GC tower figure or
     // its campaign advice. Bind it now, never during an interactive frame.
     if (world.isTower() || world.imported()) {
@@ -182,12 +183,15 @@ bool PlayScene::open(RenderDevice& device, const GameServices& services, LevelWo
             }
         }
         if (m_sim.runeMeter.visible()) {
-            if (const auto frame = m_staticTextures.find("THERMBASE")) {
-                m_runeFrame = &m_staticTextures.texture(device, *frame);
+            const Texture* frame = nullptr;
+            const Texture* column = nullptr;
+            if (const auto found = m_staticTextures.find("THERMBASE")) {
+                frame = &m_staticTextures.texture(device, *found);
             }
-            if (const auto column = m_staticTextures.find("THERMCOL")) {
-                m_runeColumn = &m_staticTextures.texture(device, *column);
+            if (const auto found = m_staticTextures.find("THERMCOL")) {
+                column = &m_staticTextures.texture(device, *found);
             }
+            m_darkLegacyHud.setRuneMeter(frame, column);
         }
     }
     beginChallenge();
@@ -324,8 +328,6 @@ void PlayScene::close() {
     m_previousSeatView.reset();
     m_sim.runeMeter.clear();
     m_sim.runeItem.reset();
-    m_runeFrame = nullptr;
-    m_runeColumn = nullptr;
     m_sim.challenge.clear();
     m_challengeHud.clear();
     m_sim.secretTravel = false;
@@ -366,7 +368,8 @@ void PlayScene::close() {
     m_sim.projectilesAdvanced = false;
     m_sim.playSeconds = 0.0f;
     m_sim.towerNoticeSeconds = 0.0f;
-    m_hud.clear();   // before the static texture borrowed for selector glow
+    m_darkLegacyHud.clear(); // before the static textures its glow, finder and help borrow
+    m_hud.clear();
     m_names.clear(); // before the static sheet its font borrows
     m_glowSheet = nullptr;
     m_localSeats = 0xF;
@@ -2185,6 +2188,11 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
         m_canvas.end(); // the developer console asked for the view alone
         return;
     }
+    HudPainter& hud = m_darkLegacyHud;
+    const bool legends = hud.id() != kDarkLegacyHudStyle;
+    const HudView view = hudView(clip, canvasProjection, width, height, legends);
+    HudFrame frame{.canvas = m_canvas, .device = device, .darkLegacy = m_darkLegacyHud};
+    hud.prepare(frame, view);
     // Rendering can precede the first simulation tick, before PartyNames has observed the hold.
     if (!spawning()) {
         m_names.draw(m_canvas, m_players, clip, canvasProjection, frameBlend);
@@ -2192,19 +2200,13 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     if (!cut && !optionsOpen && !m_viewOverride) {
         // The way to each companion off this view, over the world and under the boxes.
         m_arrows.draw(m_canvas, m_players, arrowOwnSeats(), camera, clip, canvasProjection, width,
-                      height, static_cast<f32>(StatusBoxPainter::kBarY), frameBlend);
+                      height, hud.statusTop(), frameBlend);
     }
     if (!cut) {
-        m_hud.drawStatus(m_canvas, m_players, !m_sim.fixedRoster);
-        if (m_runeFrame != nullptr && m_runeColumn != nullptr) {
-            m_sim.runeMeter.draw(m_canvas, *m_runeFrame, *m_runeColumn);
-        }
-        if (!m_hud.drawHourglass(m_canvas, m_players) &&
-            m_sim.challenge.state() != SecretChallenge::State::Inactive) {
-            m_challengeHud.draw(m_canvas, m_sim.challenge.remaining(), m_sim.challenge.duration(),
-                                !spawning() && !m_messages.active());
-        }
-        m_opponents.meter().draw(m_canvas, device);
+        hud.drawStatus(frame, view);
+        hud.drawRuneMeter(frame, view);
+        hud.drawHourglass(frame, view);
+        hud.drawBossMeters(frame, view);
         m_bossSequence.victory().drawCaption(m_canvas, m_messages.text(), m_hud.strings(), width,
                                              height);
         drawMechanicsHud();
@@ -2218,9 +2220,8 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
         drawCinematicBars(m_canvas, height);
     }
     if (!cut) {
-        m_hud.drawSelectors(m_canvas, m_messages.text(), m_services->strings, m_players);
-        m_hud.drawHelp(m_canvas, device, m_staticTextures, m_players, clip, canvasProjection, width,
-                       height);
+        hud.drawSelectors(frame, view);
+        hud.drawHelp(frame, view);
     }
     m_messages.draw(m_canvas);
     if (!ceremoniesWaiting() && !relicsLead()) {

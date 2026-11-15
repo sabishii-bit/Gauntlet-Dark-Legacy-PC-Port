@@ -55,7 +55,7 @@ void PlayScene::beginChallenge() {
     // The eight-second warning belongs to SELECT; the numbered voices are VOICE2.
     m_audio.borrowBank(m_services->unpackedRoot / "audio/SELECT");
     m_challengeHud.bind(*m_device, m_world->powerups());
-    m_hud.setCountTextures(&m_world->items().textures);
+    m_darkLegacyHud.setCountTextures(&m_world->items().textures);
 }
 
 void PlayScene::collectChallengeCoin(usize item) {

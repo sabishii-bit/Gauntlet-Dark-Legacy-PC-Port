@@ -17,6 +17,9 @@
 
 namespace gdl::game {
 
+/** The id of the play HUD's own look; the optional expansions name their own looks' ids. */
+inline constexpr std::string_view kDarkLegacyHudStyle = "darkLegacy";
+
 struct DisplayConfig {
     /** The graphics API the game draws with, from its next start: Vulkan, or OpenGL for a
      * machine whose driver has none. Vulkan's absence falls back to OpenGL either way. */

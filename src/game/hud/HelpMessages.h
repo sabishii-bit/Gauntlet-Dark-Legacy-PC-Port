@@ -172,12 +172,10 @@ public:
     std::optional<Look> look() const;
     /** Resolves display text only; does not post, change seen flags, or start a timer. */
     std::vector<std::string> linesFor(const Look& look) const;
+    /** Draws `lines` on `scroll` centred over `head`, a point of the virtual screen, kept on
+     * the screen, in `player`'s ink. */
     static void drawLines(Canvas& canvas, const TextPainter& text, const Texture* scroll,
                           const Vec2& head, std::span<const std::string> lines, s32 player);
-
-    /** Draws it centred over `head`, a point of the virtual screen, kept on the screen. */
-    void draw(Canvas& canvas, const TextPainter& text, const Texture* scroll,
-              const Vec2& head) const;
     /** Where its scroll lies for a character whose head is at `head`. */
     Rect areaFor(const TextPainter& text, const Vec2& head) const;
 

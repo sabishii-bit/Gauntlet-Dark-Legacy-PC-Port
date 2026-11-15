@@ -25,6 +25,9 @@
 #include "game/combat/ArmorFlags.h"
 #include "game/combat/DamageTypes.h"
 #include "game/combat/PowerupFlags.h"
+#include "game/hud/DarkLegacyHudPainter.h"
+#include "game/hud/HudPainter.h"
+#include "game/hud/HudView.h"
 #include "game/level/ImportedLevel.h"
 #include "game/party/TargetAssist.h"
 #include "game/players/PlayerAnimator.h"
@@ -153,14 +156,23 @@ struct GameplayFixture {
             }
         }
         test::FakeRenderDevice expectedDevice;
-        PartyHud expected;
+        DarkLegacyHudPainter expected;
         REQUIRE(expected.load(expectedDevice, root, &strings));
-        if (scene.hud().relicsShown()) {
-            expected.showRelics();
+        // Every seat as Dark Legacy's look is handed it, with closed selectors and no cards.
+        const PowerupSelector closed;
+        const PickupHud noPickups;
+        const ClassDataSet classes;
+        HudView view;
+        view.players = scene.participants();
+        view.pickups = &noPickups;
+        for (usize seat = 0; seat < view.seats.size(); ++seat) {
+            view.seats[seat] = hudSeatOf(static_cast<s32>(seat), scene.participants(), closed,
+                                         classes, {.keysShown = scene.hud().relicsShown()});
         }
         Canvas canvas;
+        HudFrame frame{.canvas = canvas, .device = expectedDevice, .darkLegacy = expected};
         canvas.begin(expectedDevice, projection);
-        expected.drawStatus(canvas, scene.participants());
+        expected.drawStatus(frame, view);
         canvas.end();
         std::vector<ImmediateVertex> expectedVertices;
         std::array<bool, 4> plates{};

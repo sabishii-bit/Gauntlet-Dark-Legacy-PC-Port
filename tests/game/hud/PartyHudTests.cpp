@@ -1,5 +1,6 @@
 #include <array>
 #include <format>
+#include <span>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -10,12 +11,47 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "fixtures/NativeSoundBank.h"
+#include "game/characters/ClassData.h"
 #include "game/characters/NameCheats.h"
 #include "game/combat/PowerupFlags.h"
+#include "game/hud/DarkLegacyHudPainter.h"
+#include "game/hud/HudPainter.h"
+#include "game/hud/HudView.h"
 #include "game/hud/PartyHud.h"
 namespace {
 using namespace gdl;
 using namespace gdl::game;
+
+/** Stop Time's hourglass as the scene draws it: the HUD's sand in the art it binds, through
+ * Dark Legacy's look; whether there was any to draw. */
+bool drawStopTime(Canvas& canvas, RenderDevice& device, const PartyHud& hud,
+                  std::span<const PlayerRuntime> players) {
+    DarkLegacyHudPainter look;
+    HudFrame frame{.canvas = canvas, .device = device, .darkLegacy = look};
+    HudView view;
+    view.hourglass = hud.hourglassLook(players);
+    view.hourglassArt = &hud.hourglass();
+    look.drawHourglass(frame, view);
+    return view.hourglass.has_value();
+}
+
+/** The selector labels as the scene draws them, through Dark Legacy's look, without a glow. */
+void drawLabels(Canvas& canvas, RenderDevice& device, const PartyHud& hud,
+                std::span<const PlayerRuntime> players, const TextPainter& text,
+                const StringTable& strings) {
+    DarkLegacyHudPainter look;
+    HudFrame frame{.canvas = canvas, .device = device, .darkLegacy = look};
+    const ClassDataSet classes;
+    HudView view;
+    view.players = players;
+    for (usize seat = 0; seat < view.seats.size(); ++seat) {
+        const auto index = static_cast<s32>(seat);
+        view.seats[seat] = hudSeatOf(index, players, hud.selector(index), classes, {});
+    }
+    view.strings = &strings;
+    view.largeText = &text;
+    look.drawSelectors(frame, view);
+}
 
 TEST_CASE("level announcement queues gained-level behind the color and character name",
           "[game][screens][party-hud]") {
@@ -229,7 +265,7 @@ TEST_CASE("Stop Time sand follows native pickup totals and first active player i
     const auto draw = [&] {
         device.draws.clear();
         canvas.begin(device, Mat4{1});
-        const bool shown = hud.drawHourglass(canvas, players);
+        const bool shown = drawStopTime(canvas, device, hud, players);
         canvas.end();
         return shown;
     };
@@ -300,7 +336,7 @@ TEST_CASE("permanent Stop Time keeps the signed shared timer ratio",
     const auto expectSand = [&](bool full) {
         device.draws.clear();
         canvas.begin(device, Mat4{1});
-        REQUIRE(hud.drawHourglass(canvas, players));
+        REQUIRE(drawStopTime(canvas, device, hud, players));
         canvas.end();
         REQUIRE(device.draws.size() == 3);
         REQUIRE(device.draws.back().vertices.size() == 12);
@@ -347,7 +383,7 @@ TEST_CASE("parent and secret-level hourglasses share pickup totals across visits
                                 f32 remaining, f32 total) {
         device.draws.clear();
         canvas.begin(device, Mat4{1});
-        REQUIRE(hud.drawHourglass(canvas, players));
+        REQUIRE(drawStopTime(canvas, device, hud, players));
         canvas.end();
         REQUIRE(device.draws.size() == 3);
         REQUIRE(device.draws.back().vertices.size() == 12);
@@ -413,7 +449,7 @@ TEST_CASE("native inventory labels remain below crystal counts in every player l
         }
         device.draws.clear();
         canvas.begin(device, Mat4{1});
-        hud.drawSelectors(canvas, text, &strings, players);
+        drawLabels(canvas, device, hud, players, text, strings);
         canvas.end();
         REQUIRE(device.draws.size() == 1);
         CHECK(test::minCorner(device.draws.front()).y > countBottom);
@@ -434,9 +470,9 @@ TEST_CASE("native inventory labels remain below crystal counts in every player l
         // Labels stay inside their lane, centered within glyph rounding.
         device.draws.clear();
         canvas.begin(device, Mat4{1});
-        PartyHud::drawSelector(canvas, text, &strings, nullptr, lane,
-                               PowerupSlot{30, powerup::kSpecial, 0, powerup::kEnemyShrink, false},
-                               top);
+        DarkLegacyHudPainter::drawSelectorLabel(
+            canvas, text, &strings, nullptr, lane,
+            PowerupSlot{30, powerup::kSpecial, 0, powerup::kEnemyShrink, false}, top);
         canvas.end();
         REQUIRE(device.draws.size() == 1);
         const f32 laneLeft = static_cast<f32>(lane * StatusBoxPainter::kWidth);

@@ -8,6 +8,9 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "game/hud/DarkLegacyHudPainter.h"
+#include "game/hud/HudPainter.h"
+#include "game/hud/HudView.h"
 #include "game/hud/RuneMeter.h"
 #include "game/scenes/PlayScene.h"
 
@@ -96,16 +99,23 @@ TEST_CASE("runestone finder draws both retail textures and nothing after collect
     RuneMeter meter;
     meter.begin(0, Vec3{0}, Vec3{100, 0, 0}, 7, party);
     meter.update(Vec3{0}, true);
+    // Drawn as the scene draws it: the fill it shows, through Dark Legacy's look.
+    DarkLegacyHudPainter look;
+    look.setRuneMeter(&frameTexture, &columnTexture);
     Canvas canvas;
-    canvas.begin(device, Mat4{1});
-    meter.draw(canvas, frameTexture, columnTexture);
-    canvas.end();
+    HudFrame hudFrame{.canvas = canvas, .device = device, .darkLegacy = look};
+    const auto draw = [&] {
+        HudView view;
+        view.runeFill = meter.shownFill();
+        canvas.begin(device, Mat4{1});
+        look.drawRuneMeter(hudFrame, view);
+        canvas.end();
+    };
+    draw();
     CHECK(device.draws.size() == 2);
     device.draws.clear();
     meter.update(Vec3{0}, false);
-    canvas.begin(device, Mat4{1});
-    meter.draw(canvas, frameTexture, columnTexture);
-    canvas.end();
+    draw();
     CHECK(device.draws.empty());
 }
 TEST_CASE("the level scene binds its authored runestone and stops the finder when it goes",

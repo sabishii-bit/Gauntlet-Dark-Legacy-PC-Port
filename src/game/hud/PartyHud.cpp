@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <array>
-#include <exception>
 #include <span>
 
 #include "engine/core/Types.h"
@@ -10,14 +9,9 @@
 
 #include "game/characters/Progression.h"
 #include "game/combat/PowerupFlags.h"
-#include "game/party/PartyNames.h"
 #include "game/players/PickupVoices.h"
-#include "game/players/PowerupEffects.h"
-#include "game/widgets/OptionMenu.h"
-#include "game/widgets/ScrollBox.h"
 namespace gdl::game {
 namespace {
-constexpr std::string_view kScrollTexture = "SCROLL_A";
 constexpr std::string_view kHelpTextPrefix = "help";
 constexpr std::string_view kStringsFile = "text/english.json";
 constexpr std::string_view kSelectorMoveSound = "S_OPTMENUMOVHRZ";
@@ -43,25 +37,19 @@ const PowerupSlot* stopTimeOf(std::span<const PlayerRuntime> players) {
 }
 
 } // namespace
-bool PartyHud::load(RenderDevice& device, const std::filesystem::path& root,
-                    const StringTable* strings) {
+void PartyHud::load(const std::filesystem::path& root, const StringTable* strings) {
     clear();
-    if (!m_boxes.load(device, root, strings)) {
-        return false;
-    }
     m_strings.load(root / kStringsFile);
     if (strings != nullptr) {
         m_strings.translate(*strings, kHelpTextPrefix);
     }
     m_sim.help.setTexts(&m_strings);
-    return true;
 }
 void PartyHud::clear() {
     m_localBinding = std::make_shared<const u8>(0);
     for (PowerupSelector& selector : m_sim.selectors) {
         selector.close();
     }
-    m_glowSheet = nullptr;
     m_sim.relicTicks = 0;
     m_sim.help.clear();
     m_sim.helpPosition.reset();
@@ -69,7 +57,6 @@ void PartyHud::clear() {
     m_hourglass.clear();
     m_sim.localStopTimeTotal = 0;
     m_sharedStopTimeTotal = nullptr;
-    m_boxes.release();
 }
 
 bool PartyHud::bindHourglass(RenderDevice& device, ItemArchive& archive, f32* sharedTotal) {
@@ -89,15 +76,6 @@ void PartyHud::stepHourglass(f32 seconds, std::span<const PlayerRuntime> players
     }
 }
 
-bool PartyHud::drawHourglass(Canvas& canvas, std::span<const PlayerRuntime> players) const {
-    const auto look = hourglassLook(players);
-    if (!look) {
-        return false;
-    }
-    m_hourglass.draw(canvas, *look);
-    return true;
-}
-
 std::optional<ChallengeHud::Look>
 PartyHud::hourglassLook(std::span<const PlayerRuntime> players) const {
     const auto* slot = stopTimeOf(players);
@@ -108,23 +86,6 @@ PartyHud::hourglassLook(std::span<const PlayerRuntime> players) const {
     // whereas a permanent wearer with another player's finite total is over-empty.
     const f32 ratio = stopTimeTotal() != 0 ? slot->strength / stopTimeTotal() : 0;
     return m_hourglass.look(ratio, 1, true);
-}
-void PartyHud::drawStatus(Canvas& canvas, std::span<const PlayerRuntime> players,
-                          bool quitOffered) {
-    for (s32 player = 0; player < kPlayerCount; ++player) {
-        StatusBoxView view = status(player, players, &selector(player));
-        view.keysShown = relicsShown();
-        view.quitOffered = quitOffered;
-        m_boxes.draw(canvas, player, view, StatusBoxPainter::Strip::Play);
-    }
-    std::array<std::optional<s32>, PickupHud::kSlots> labelTops{};
-    for (s32 player = 0; player < kPlayerCount; ++player) {
-        if (selector(player).showing()) {
-            labelTops.at(static_cast<usize>(player)) =
-                selector(player).labelY(StatusBoxPainter::kY);
-        }
-    }
-    m_sim.pickups.draw(canvas, m_boxes, labelTops);
 }
 bool PartyHud::postHelp(s32 id, usize index, std::span<PlayerRuntime> players,
                         LevelSoundscape& audio, s32 number, std::optional<Vec3> position) {
@@ -251,71 +212,6 @@ StatusBoxView PartyHud::status(s32 player, std::span<const PlayerRuntime> player
         view.powerup = inventory.powerups[static_cast<usize>(usage)];
     }
     return view;
-}
-
-void PartyHud::drawSelectors(Canvas& canvas, const TextPainter& text, const StringTable* strings,
-                             std::span<const PlayerRuntime> players) const {
-    if (!text.ready() || strings == nullptr) {
-        return;
-    }
-    for (const PlayerRuntime& runtime : players) {
-        const PlayerActor& actor = runtime.actor;
-        const PowerupSelector& selector = this->selector(actor.player());
-        const s32 chosen = selector.selection();
-        if (!selector.showing() || chosen < 0) {
-            continue;
-        }
-        const PowerupSlot& slot =
-            actor.save().progress().inventory.powerups[static_cast<usize>(chosen)];
-        drawSelector(canvas, text, strings, m_glowSheet, actor.player(), slot,
-                     selector.labelY(StatusBoxPainter::kY));
-    }
-}
-
-void PartyHud::drawSelector(Canvas& canvas, const TextPainter& text, const StringTable* strings,
-                            const Texture* glowSheet, s32 player, const PowerupSlot& slot, s32 y) {
-    if (!text.ready() || strings == nullptr || player < 0 || player >= kPlayerCount) {
-        return;
-    }
-    const std::string_view label = strings->get(powerupTextId(slot.kind, slot.flags));
-    // A negative x centers the line on the middle of this player's box. A line
-    // that would pass the box shrinks, and keeps the same bottom, just above the
-    // runestones.
-    const f32 scale = PowerupSelector::labelScale(text, label);
-    const s32 x = -((player * StatusBoxPainter::kWidth) + (StatusBoxPainter::kWidth / 2));
-    const s32 fitted = y + text.lineHeight(PowerupSelector::kLabelScale) - text.lineHeight(scale);
-    TextStyle style;
-    style.scale = scale;
-    if (slot.on && glowSheet != nullptr) {
-        TextStyle glow = style;
-        glow.texture = glowSheet;
-        glow.color = ScrollBox::kGlowColor;
-        glow.expand = OptionMenu::kGlowExpand;
-        text.draw(canvas, x, fitted, label, glow);
-    }
-    text.draw(canvas, x, fitted, label, style);
-}
-
-void PartyHud::drawHelp(Canvas& canvas, RenderDevice& device, TextureSet& textures,
-                        std::span<const PlayerRuntime> players, const Mat4& clip,
-                        const Mat4& canvasProjection, f32 width, f32 height) const {
-    if (!m_sim.help.showing()) {
-        return;
-    }
-    Vec2 head{width * 0.5f, height * 0.5f};
-    if (const auto anchor = helpAnchor(players)) {
-        head = PartyNames::screenOf(clip, *anchor, canvasProjection).value_or(head);
-    }
-    const auto sheet = textures.loaded() ? textures.find(kScrollTexture) : std::nullopt;
-    const Texture* scroll = nullptr;
-    if (sheet.has_value()) {
-        try {
-            scroll = &textures.texture(device, *sheet);
-        } catch (const std::exception&) {
-            scroll = nullptr;
-        }
-    }
-    m_sim.help.draw(canvas, m_boxes.smallCaps(), scroll, head); // the strings' own font
 }
 
 std::optional<Vec3> PartyHud::helpAnchor(std::span<const PlayerRuntime> players) const {

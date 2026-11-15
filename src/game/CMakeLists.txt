@@ -483,6 +483,12 @@ add_library(game STATIC
     party/PartyFigures.cpp
     party/PartyNames.cpp
     hud/PartyHud.cpp
+    hud/HudView.h
+    hud/HudView.cpp
+    hud/HudPainter.h
+    hud/DarkLegacyHudArt.h
+    hud/DarkLegacyHudPainter.h
+    hud/DarkLegacyHudPainter.cpp
     party/PartyRecords.cpp
     party/PartyTeleport.h
     party/PartyTeleport.cpp
@@ -542,6 +548,7 @@ add_library(game STATIC
     scenes/PlaySceneHarm.cpp
     scenes/PlaySceneOpponents.cpp
     scenes/PlaySceneCamera.cpp
+    scenes/PlaySceneHud.cpp
     scenes/ScenePicking.cpp
     scenes/SeatCameras.cpp
     scenes/SceneSelection.cpp

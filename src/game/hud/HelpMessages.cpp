@@ -406,14 +406,6 @@ Rect HelpMessages::areaForLines(const TextPainter& text, const Vec2& head,
     return Rect{left, top, width, height};
 }
 
-void HelpMessages::draw(Canvas& canvas, const TextPainter& text, const Texture* scroll,
-                        const Vec2& head) const {
-    if (!showing() || !text.ready()) {
-        return;
-    }
-    drawLines(canvas, text, scroll, head, m_lines, m_player);
-}
-
 void HelpMessages::drawLines(Canvas& canvas, const TextPainter& text, const Texture* scroll,
                              const Vec2& head, std::span<const std::string> lines, s32 player) {
     if (lines.empty() || !text.ready()) {

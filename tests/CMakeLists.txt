@@ -653,6 +653,8 @@ add_executable(tests
     game/party/PartyNamesTests.cpp
     game/hud/PartyHudTests.cpp
     game/hud/DarkLegacyHudDrawPinTests.cpp
+    game/hud/HudViewTests.cpp
+    game/hud/DarkLegacyHudPainterTests.cpp
     game/party/PartyRecordsTests.cpp
     game/party/PartyTeleportTests.cpp
     game/level/TriggerCuesTests.cpp

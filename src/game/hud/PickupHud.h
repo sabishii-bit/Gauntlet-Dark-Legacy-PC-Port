@@ -8,9 +8,6 @@
 #include <vector>
 
 #include "engine/core/Types.h"
-#include "engine/ui/Canvas.h"
-
-#include "game/hud/StatusBox.h"
 
 namespace gdl::game {
 
@@ -97,11 +94,6 @@ public:
     /** The bottom count's top given where the selector label's top is: at rest with no label,
      * and just above the label while one is up. */
     static s32 countRowY(std::optional<s32> labelTop);
-
-    /** Draws the cards over the boxes and the tickers above them; `labelTops` holds the
-     * top of each player's selector label while it is up, which the stack keeps clear of. */
-    void draw(Canvas& canvas, StatusBoxPainter& boxes,
-              const std::array<std::optional<s32>, kSlots>& labelTops) const;
 
 private:
     template <class Visitor>

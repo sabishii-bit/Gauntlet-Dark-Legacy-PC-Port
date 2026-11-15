@@ -18,9 +18,8 @@
 #include "game/party/PlayerRuntime.h"
 #include "game/players/PlayerControls.h"
 namespace gdl::game {
-/** Owns the party's HUD artwork, help text, pickup cards and selectors.
- * Borrows the glow texture until clear(); help refers to this owner's string table.
- * Canvas lifetime and screen overlay ordering belong to the caller, not this HUD. */
+/** Owns the party's help text, pickup cards and selectors, which the scene's HUD look draws.
+ * Help refers to this owner's string table. */
 class PartyHud {
 public:
     static constexpr s32 kPlayerCount = 4;
@@ -57,15 +56,14 @@ public:
     PartyHud& operator=(const PartyHud&) = delete;
     PartyHud(PartyHud&&) = delete;
     PartyHud& operator=(PartyHud&&) = delete;
-    bool load(RenderDevice& device, const std::filesystem::path& root, const StringTable* strings);
+    /** Loads the help messages' strings from the unpacked data, in `strings`' words. */
+    void load(const std::filesystem::path& root, const StringTable* strings);
     void clear();
-    void setGlow(const Texture* texture) { m_glowSheet = texture; }
-    void setCountTextures(TextureSet* textures) { m_boxes.setCountTextures(textures); }
     /** The optional shared total belongs to the application and survives level travel. */
     bool bindHourglass(RenderDevice& device, ItemArchive& archive, f32* sharedTotal = nullptr);
     void stepHourglass(f32 seconds, std::span<const PlayerRuntime> players);
-    /** Stop Time uses the secret-level timer's artwork and takes precedence while worn. */
-    bool drawHourglass(Canvas& canvas, std::span<const PlayerRuntime> players) const;
+    /** Stop Time's sand while a standing player wears it, drawn in the secret-level timer's
+     * artwork (hourglass()); it takes precedence over the secret level's own. */
     std::optional<ChallengeHud::Look> hourglassLook(std::span<const PlayerRuntime> players) const;
     /** Stop Time's hourglass, as bound and stepped, which draws hourglassLook()'s look. */
     const ChallengeHud& hourglass() const { return m_hourglass; }
@@ -76,20 +74,10 @@ public:
                   s32 number = -1, std::optional<Vec3> position = std::nullopt);
     static StatusBoxView status(s32 player, std::span<const PlayerRuntime> players,
                                 const PowerupSelector* selector = nullptr);
-    /** The boxes; a fallen player's offers Quit Game only when `quitOffered`. */
-    void drawStatus(Canvas& canvas, std::span<const PlayerRuntime> players,
-                    bool quitOffered = true);
     /** Shows the bosses' keys in the boxes a while (a level opening, a runestone found). */
     void showRelics() { m_sim.relicTicks = kRelicTicks; }
     void stepRelics(s32 ticks) { m_sim.relicTicks = std::max(m_sim.relicTicks - ticks, 0); }
     bool relicsShown() const { return m_sim.relicTicks > 0; }
-    void drawSelectors(Canvas& canvas, const TextPainter& text, const StringTable* strings,
-                       std::span<const PlayerRuntime> players) const;
-    static void drawSelector(Canvas& canvas, const TextPainter& text, const StringTable* strings,
-                             const Texture* glow, s32 player, const PowerupSlot& slot, s32 y);
-    void drawHelp(Canvas& canvas, RenderDevice& device, TextureSet& textures,
-                  std::span<const PlayerRuntime> players, const Mat4& clip,
-                  const Mat4& canvasProjection, f32 width, f32 height) const;
     const PowerupSelector& selector(s32 player) const {
         return m_sim.selectors[static_cast<usize>(std::clamp(player, 0, kPlayerCount - 1))];
     }
@@ -97,6 +85,7 @@ public:
     const PickupHud& pickups() const { return m_sim.pickups; }
     HelpMessages& help() { return m_sim.help; }
     const HelpMessages& help() const { return m_sim.help; }
+    /** Where the help message up is anchored: its player's attention point, else its place. */
     std::optional<Vec3> helpAnchor(std::span<const PlayerRuntime> players) const;
     const MessageTable& strings() const { return m_strings; }
 
@@ -108,11 +97,9 @@ private:
     f32 stopTimeTotal() const {
         return m_sharedStopTimeTotal != nullptr ? *m_sharedStopTimeTotal : m_sim.localStopTimeTotal;
     }
-    StatusBoxPainter m_boxes;
     ChallengeHud m_hourglass;
     f32* m_sharedStopTimeTotal = nullptr;
     MessageTable m_strings;
-    const Texture* m_glowSheet = nullptr;
     Simulation m_sim;
     std::shared_ptr<const u8> m_localBinding = std::make_shared<const u8>(0);
 };

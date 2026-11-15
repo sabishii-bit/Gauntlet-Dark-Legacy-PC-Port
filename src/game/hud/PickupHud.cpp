@@ -123,23 +123,4 @@ s32 PickupHud::countRowY(std::optional<s32> labelTop) {
     return labelTop ? *labelTop - kCountLabelGap - kCountHeight : kCountRestY;
 }
 
-void PickupHud::draw(Canvas& canvas, StatusBoxPainter& boxes,
-                     const std::array<std::optional<s32>, kSlots>& labelTops) const {
-    for (const PickupCard& card : m_cards) {
-        boxes.drawCard(canvas, card.player, card.texture, card.y);
-    }
-    for (usize slot = 0; slot < kSlots; ++slot) {
-        std::array<StatusBoxPainter::CountEntry, kCountsPerPlayer> row;
-        usize shown = 0;
-        for (const PickupCount& held : counts(static_cast<s32>(slot))) {
-            if (held.showing()) {
-                row.at(shown++) = {.icon = held.icon, .count = held.count, .total = held.total};
-            }
-        }
-        boxes.drawCounts(canvas, static_cast<s32>(slot),
-                         std::span<const StatusBoxPainter::CountEntry>(row).first(shown),
-                         countRowY(labelTops.at(slot)));
-    }
-}
-
 } // namespace gdl::game

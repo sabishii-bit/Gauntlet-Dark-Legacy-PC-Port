@@ -1,4 +1,5 @@
 #include <array>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -17,13 +18,17 @@
 #include "TestSupport.h"
 #include "game/audio/LevelSoundscape.h"
 #include "game/characters/CharacterSave.h"
+#include "game/characters/ClassData.h"
 #include "game/characters/Inventory.h"
 #include "game/characters/Party.h"
 #include "game/combat/PowerupFlags.h"
 #include "game/hud/BossMeter.h"
 #include "game/hud/ChallengeHud.h"
+#include "game/hud/DarkLegacyHudPainter.h"
 #include "game/hud/HealthMeter.h"
 #include "game/hud/HelpMessages.h"
+#include "game/hud/HudPainter.h"
+#include "game/hud/HudView.h"
 #include "game/hud/LevelMessages.h"
 #include "game/hud/PartyHud.h"
 #include "game/hud/PickupHud.h"
@@ -86,8 +91,10 @@ TEST_CASE("the Dark Legacy HUD draws stay byte for byte what they were",
     // Everything is taken as the scene takes it: the boxes and help first, then the scene's
     // STATIC set with the messages' FONT32, the glow and the finder borrowed from that set,
     // and the hourglasses' art from POWERUPS.
+    DarkLegacyHudPainter look;
+    REQUIRE(look.load(device, root, &strings));
     PartyHud hud;
-    REQUIRE(hud.load(device, root, &strings));
+    hud.load(root, &strings);
     TextureSet sceneStatic;
     LevelMessages messages;
     messages.load(device, sceneStatic, root, &strings);
@@ -97,7 +104,8 @@ TEST_CASE("the Dark Legacy HUD draws stay byte for byte what they were",
         REQUIRE(index);
         return sceneStatic.texture(device, *index);
     };
-    hud.setGlow(&staticArt("FONT32_GLOW"));
+    look.setGlow(&staticArt("FONT32_GLOW"));
+    look.setHelpScroll(&sceneStatic);
     ItemArchive powerups;
     REQUIRE(powerups.load(powerupsDirectory));
     REQUIRE(hud.bindHourglass(device, powerups));
@@ -105,6 +113,7 @@ TEST_CASE("the Dark Legacy HUD draws stay byte for byte what they were",
     REQUIRE(challenge.bind(device, powerups));
     const Texture& finderFrame = staticArt("THERMBASE");
     const Texture& finderColumn = staticArt("THERMCOL");
+    look.setRuneMeter(&finderFrame, &finderColumn);
     ItemArchive lich;
     REQUIRE(lich.load(lichDirectory));
     const u32 loadedTextures = device.texturesCreated;
@@ -115,6 +124,7 @@ TEST_CASE("the Dark Legacy HUD draws stay byte for byte what they were",
     // The view's clip transform is the canvas's own here, so a head lies where its x and y say.
     const Mat4& clip = canvasProjection;
     Canvas canvas;
+    HudFrame frame{.canvas = canvas, .device = device, .darkLegacy = look};
     std::vector<DrawnPart> drawn;
     const auto draw = [&](const auto& part) {
         device.draws.clear();
@@ -125,6 +135,21 @@ TEST_CASE("the Dark Legacy HUD draws stay byte for byte what they were",
         drawn.push_back({test::hexBytes(test::drawStreamDigest(device.draws)),
                          device.texturesCreated, device.textureUpdates});
     };
+    // The seats the scene hands its HUD look for `party`, each from that seat's own player.
+    const ClassDataSet classes;
+    const auto seatsOf = [&](HudView& view, std::span<const PlayerRuntime> party,
+                             bool quitOffered) {
+        view.players = party;
+        view.relicsShown = hud.relicsShown();
+        view.quitOffered = quitOffered;
+        view.pickups = &hud.pickups();
+        for (usize seat = 0; seat < view.seats.size(); ++seat) {
+            const auto index = static_cast<s32>(seat);
+            view.seats[seat] = hudSeatOf(
+                index, party, hud.selector(index), classes,
+                {.keysShown = view.relicsShown, .quitOffered = quitOffered, .local = true});
+        }
+    };
 
     // An online party of two: seat 1 fallen and asked only to wait, seat 3 gone from the
     // game, seats 0 and 2 never joined.
@@ -134,7 +159,11 @@ TEST_CASE("the Dark Legacy HUD draws stay byte for byte what they were",
     online[0].towerPrompt = true;
     online[1].actor.spawn(3, member(2, 3, "IVO"), nullptr, Vec3{0}, 0);
     online[1].departed = true;
-    draw([&] { hud.drawStatus(canvas, online, false); });
+    draw([&] {
+        HudView view;
+        seatsOf(view, online, false);
+        look.drawStatus(frame, view);
+    });
 
     // Four players, out of seat order: seat 2 standing with all a box shows, seat 0 fallen
     // and asked to wait in the tower or quit, seat 3 waiting in the tower, and seat 1
@@ -209,25 +238,56 @@ TEST_CASE("the Dark Legacy HUD draws stay byte for byte what they were",
     readings[0].maxHealth = 3000;
     meters.bind(readings, &lich.textures);
 
-    draw([&] { hud.drawStatus(canvas, players, true); });
-    draw([&] { finder.draw(canvas, finderFrame, finderColumn); });
-    draw([&] { REQUIRE(hud.drawHourglass(canvas, players)); });
-    draw([&] { challenge.draw(canvas, 40, 90, true); });
-    draw([&] { meters.draw(canvas, device); });
-    draw([&] { hud.drawSelectors(canvas, messages.text(), &strings, players); });
+    draw([&] {
+        HudView view;
+        seatsOf(view, players, true);
+        look.drawStatus(frame, view);
+    });
+    draw([&] {
+        HudView view;
+        view.runeFill = finder.shownFill();
+        look.drawRuneMeter(frame, view);
+    });
+    draw([&] {
+        HudView view;
+        view.hourglass = hud.hourglassLook(players);
+        view.hourglassArt = &hud.hourglass();
+        REQUIRE(view.hourglass.has_value());
+        look.drawHourglass(frame, view);
+    });
+    draw([&] {
+        HudView view;
+        view.hourglass = challenge.look(40, 90, true);
+        view.hourglassArt = &challenge;
+        look.drawHourglass(frame, view);
+    });
+    draw([&] {
+        HudView view;
+        view.bossMeters = &meters;
+        look.drawBossMeters(frame, view);
+    });
+    draw([&] {
+        HudView view;
+        seatsOf(view, players, true);
+        view.strings = &strings;
+        view.largeText = &messages.text();
+        look.drawSelectors(frame, view);
+    });
     REQUIRE(hud.postHelp(HelpMessages::kChestNeedsKey, 3, players, audio));
     REQUIRE(hud.help().player() == 1);
     REQUIRE(hud.helpAnchor(players).has_value());
-    draw([&] {
-        hud.drawHelp(canvas, device, sceneStatic, players, clip, canvasProjection, 512, 384);
-    });
+    const auto drawHelp = [&] {
+        HudView view;
+        view.help = hudHelpOf(hud.help(), hud.helpAnchor(players), players, clip, canvasProjection,
+                              512, 384);
+        look.drawHelp(frame, view);
+    };
+    draw(drawHelp);
     // A message for nobody in particular has no anchor, and sits at the canvas's centre.
     hud.help().clear();
     REQUIRE(hud.help().post(HelpMessages::kLevelUp, -1, {}, 12) != nullptr);
     REQUIRE_FALSE(hud.helpAnchor(players).has_value());
-    draw([&] {
-        hud.drawHelp(canvas, device, sceneStatic, players, clip, canvasProjection, 512, 384);
-    });
+    draw(drawHelp);
 
     // SHA-256 of each part's draws, with the textures the device had created and updated by
     // then. Dark Legacy's look keeps every one while its code moves: a literal moves only when
@@ -264,6 +324,7 @@ TEST_CASE("the Dark Legacy HUD draws stay byte for byte what they were",
     meters.clear();
     challenge.clear();
     hud.clear();
+    look.clear();
 }
 
 } // namespace

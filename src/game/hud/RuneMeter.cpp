@@ -76,13 +76,6 @@ RuneMeter::Column RuneMeter::column(f32 fill, f32 width) {
     return {{392, 102 - height, width, height + 27}, {0, top, 1, 1 - top}};
 }
 
-void RuneMeter::draw(Canvas& canvas, const Texture& frame, const Texture& fillTexture) const {
-    if (!m_visible) {
-        return;
-    }
-    drawFill(canvas, frame, fillTexture, m_fill);
-}
-
 void RuneMeter::drawFill(Canvas& canvas, const Texture& frame, const Texture& fillTexture,
                          f32 fill) {
     canvas.draw(frame,

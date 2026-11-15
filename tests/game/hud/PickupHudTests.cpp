@@ -4,8 +4,8 @@
 #include "engine/ui/Canvas.h"
 
 #include "FakeRenderDevice.h"
+#include "game/hud/DarkLegacyHudPainter.h"
 #include "game/hud/PickupHud.h"
-#include "game/hud/StatusBox.h"
 
 namespace {
 
@@ -85,12 +85,12 @@ TEST_CASE("a pickup count shows for three seconds", "[game][screens][hud]") {
     REQUIRE(PickupHud::crystalIcon(9).empty());
     // Without the boxes' art, drawing is a no-op.
     test::FakeRenderDevice device;
-    StatusBoxPainter boxes;
+    DarkLegacyHudPainter look;
     Canvas canvas;
     canvas.begin(device, Mat4{1.0f});
     hud.addCard(0, PickupHud::kCrystalCard);
     hud.showCount(0, PickupHud::crystalIcon(1), 1, 15);
-    hud.draw(canvas, boxes, {});
+    look.drawPickups(canvas, hud, {});
     canvas.end();
     REQUIRE(device.draws.empty());
 }
