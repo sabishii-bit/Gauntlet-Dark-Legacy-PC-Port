@@ -229,7 +229,12 @@ TEST_CASE("Imported shop transactions resume the same party camera and encounter
     auto& scene = fixture.scene;
     const auto before = scene.party();
     auto after = before;
-    const ShopItem key{.type = 1, .price = 10, .amount = 1};
+    const ShopItem key{.texture = {},
+                       .description = {},
+                       .scale = 1.0f,
+                       .type = ShopItem::kKey,
+                       .price = 10,
+                       .amount = 1};
     REQUIRE(buyShopItem(after[0].save, ClassStats{}, key, 0) == ShopResult::Bought);
     const auto position = scene.actor(0)->position();
     const auto secondPosition = scene.actor(2)->position();
