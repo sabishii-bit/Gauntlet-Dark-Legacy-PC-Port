@@ -8,6 +8,8 @@ use gdl_files::{PENDING_SUFFIX, STAGING_RANDOM_CHARS};
 use gdl_release::Version;
 use serde_json::{Map, Value};
 
+use crate::folder::{JOURNAL_DIR, LOCK_FILE, RECEIPT_FILE};
+
 /// The lowest launcher version allowed to change a state file of schema 1, which every such file
 /// records. It is the first launcher's version, not the writer's own: a file that a later
 /// launcher writes in a schema every launcher reads stays one that every launcher may change.
@@ -40,11 +42,12 @@ const FIRST_SCHEMA: u64 = 1;
 const MAX_SHOWN_CHARS: usize = 64;
 
 /// The names this launcher gives its state directly under `.gdl-launcher/`, beside those it makes
-/// with a random part, and what each holds.
+/// with a random part, and what each holds. The receipt's, the lock's and the journals' are the
+/// folder module's constants, so that each name has one spelling.
 const FIXED_NAMES: [(&str, StateName); 8] = [
-    ("receipt.json", StateName::Receipt),
-    ("lock", StateName::Lock),
-    ("journal", StateName::Journal),
+    (RECEIPT_FILE, StateName::Receipt),
+    (LOCK_FILE, StateName::Lock),
+    (JOURNAL_DIR, StateName::Journal),
     ("state.json", StateName::State),
     ("disc-files.json", StateName::DiscFiles),
     ("update-backup", StateName::UpdateBackup),

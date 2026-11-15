@@ -4,12 +4,17 @@
 #![deny(unsafe_code)]
 
 mod compat;
+mod folder;
 mod payload;
 mod sections;
 
 pub use compat::{
     Access, JOURNAL_NAMES, JOURNAL_SCHEMA, MIN_LAUNCHER, Stamp, StampError, StateName, access,
     launcher_state_name, stamp_of,
+};
+pub use folder::{
+    FolderError, InstallFolder, InstallLock, JOURNAL_DIR, LOCK_FILE, LockError, RECEIPT_FILE,
+    STATE_DIR, alpha_markers, check_links,
 };
 pub use payload::{
     BUILD_INFO, BuildInfo, DATA_SUFFIX, DEFAULT_CONFIG, LIBRARY_SUFFIX, MAX_BUILD_INFO_LEN,
