@@ -237,6 +237,13 @@ TEST_CASE("an empty, departed or fallen seat shows only what its box shows", "[h
     CHECK_FALSE(departed.box.active);
     CHECK_FALSE(departed.turbo);
     CHECK(departed.runtime->actor.save().color == 1);
+    // Gone from the game, it shows no turbo even were it on its feet.
+    players[1].life = PlayerLife::Standing;
+    const HudSeat departedStanding = hudSeatOf(3, players, selector, classes, rules);
+    CHECK(departedStanding.departed);
+    CHECK_FALSE(departedStanding.box.active);
+    CHECK_FALSE(departedStanding.turbo);
+    players[1].life = PlayerLife::InTower;
 
     const HudSeat fallen = hudSeatOf(1, players, selector, classes, rules);
     REQUIRE(fallen.runtime == players.data());
@@ -490,6 +497,15 @@ TEST_CASE("help sits on its player's head, or the canvas centre", "[hud-view]") 
     CHECK_FALSE(centred->anchored);
     CHECK(centred->head == Vec2{256, 192});
     CHECK(centred->color == 0);
+    // An anchor behind the eye does not project, and the message keeps to the canvas centre.
+    Mat4 behind{1.0f};
+    behind[3][3] = -1.0f;
+    REQUIRE_FALSE(PartyNames::screenOf(behind, head, canvasProjection).has_value());
+    const auto unseen = hudHelpOf(help, head, players, behind, canvasProjection, 512, 384);
+    REQUIRE(unseen.has_value());
+    CHECK_FALSE(unseen->anchored);
+    CHECK(unseen->head == Vec2{256, 192});
+    CHECK(unseen->player == 3);
 
     // A message at a place is for nobody and wears no seat's colour.
     help.clear();
