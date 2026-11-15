@@ -26,3 +26,4 @@ libc.workspace = true
 
 [dev-dependencies]
 gdl-fixtures.workspace = true
+tempfile.workspace = true

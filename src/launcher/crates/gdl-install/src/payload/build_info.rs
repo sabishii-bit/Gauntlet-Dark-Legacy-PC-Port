@@ -98,7 +98,7 @@ impl BuildInfo {
         check_names(&files, platform)?;
         let files = files
             .into_iter()
-            .map(|(name, digest)| match sha256_of(&digest) {
+            .map(|(name, digest)| match digest.as_str().and_then(sha256_of) {
                 Some(digest) => Ok((name, digest)),
                 None => Err(PayloadError::Digest { name: name.into() }),
             })
@@ -159,8 +159,8 @@ fn check_names(files: &Map<String, Value>, platform: Platform) -> Result<(), Pay
 
 /// A SHA-256 digest written as Python's `hexdigest` writes one: 64 lower-case hexadecimal digits.
 /// Anything else is no digest.
-fn sha256_of(value: &Value) -> Option<[u8; SHA256_LEN]> {
-    let digits = value.as_str()?.as_bytes();
+pub(crate) fn sha256_of(digits: &str) -> Option<[u8; SHA256_LEN]> {
+    let digits = digits.as_bytes();
     if digits.len() != 2 * SHA256_LEN {
         return None;
     }

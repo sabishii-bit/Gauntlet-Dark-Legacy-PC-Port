@@ -16,7 +16,10 @@ use gdl_release::Platform;
 use sha2::{Digest, Sha256};
 use zip::ZipArchive;
 
+use crate::sections::SectionsError;
+
 pub use build_info::BuildInfo;
+pub(crate) use build_info::sha256_of;
 
 /// The most entries a runtime may have.
 pub const MAX_PAYLOAD_ENTRIES: usize = 20_000;
@@ -62,7 +65,7 @@ const DATA_FOLDER: &str = "data";
 const LIB_FOLDER: &str = "lib";
 
 /// The bytes of a SHA-256 digest.
-const SHA256_LEN: usize = 32;
+pub(crate) const SHA256_LEN: usize = 32;
 
 /// One file of a runtime zip, as its row in the central directory declares it.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -704,6 +707,11 @@ pub enum PayloadError {
     /// The job was asked to stop before the runtime was read whole.
     #[error("cancelled")]
     Cancelled,
+    /// The launcher file's sections were refused as the runtime was taken from them, as when the
+    /// file carries no runtime zip. The refusal is reported as the sections' own: its rule, its
+    /// text and its source.
+    #[error(transparent)]
+    Sections(#[from] SectionsError),
     /// The archive could not be read, or a copy of a file written.
     #[error("The runtime zip cannot be read or copied: {0}")]
     Io(#[from] io::Error),
@@ -744,6 +752,7 @@ impl PayloadError {
             PayloadError::OtherPlatform { .. } => "otherPlatform",
             PayloadError::OtherVersion { .. } => "otherVersion",
             PayloadError::Cancelled => "cancelled",
+            PayloadError::Sections(error) => error.rule(),
             PayloadError::Io(_) => "io",
         }
     }
@@ -772,6 +781,7 @@ mod tests {
         BUILD_INFO, DEFAULT_CONFIG, MAX_BUILD_INFO_LEN, MAX_PAYLOAD_BYTES, MAX_PAYLOAD_ENTRIES,
         MAX_VERSION_FILE_LEN, Payload, PayloadEntry, PayloadError, VERSION_FILE, check_with_zip,
     };
+    use crate::SectionsError;
 
     /// The platforms a release is built for, as the release scripts name them.
     pub(super) const WINDOWS: &str = "windows-x64";
@@ -2041,6 +2051,20 @@ mod tests {
                 r#"The runtime's version "1.0.1" is not the launcher's version "1.0.0-beta""#,
             ),
             (PayloadError::Cancelled, "cancelled", "cancelled"),
+            // A refusal of the launcher file's sections is reported as their own: its rule, its
+            // text and its source.
+            (
+                PayloadError::Sections(SectionsError::MissingSection {
+                    name: "runtime.zip".into(),
+                }),
+                "missingSection",
+                r#"no section "runtime.zip""#,
+            ),
+            (
+                PayloadError::Sections(SectionsError::Io(io::Error::other("unreadable sector"))),
+                "io",
+                "the launcher file cannot be read: unreadable sector",
+            ),
             (
                 PayloadError::Io(io::Error::other("unreadable sector")),
                 "io",
@@ -2054,7 +2078,7 @@ mod tests {
                     let source = error.source().unwrap().downcast_ref::<NameError>();
                     assert_eq!(source, Some(inner));
                 }
-                PayloadError::Io(_) => {
+                PayloadError::Io(_) | PayloadError::Sections(SectionsError::Io(_)) => {
                     assert_eq!(error.source().unwrap().to_string(), "unreadable sector");
                 }
                 _ => assert!(error.source().is_none(), "{rule}"),
