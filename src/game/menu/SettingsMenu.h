@@ -2,12 +2,14 @@
 
 #include <optional>
 #include <utility>
+#include <vector>
 
 #include "engine/assets/StringTable.h"
 #include "engine/core/Types.h"
 #include "engine/render/RenderTypes.h"
 
 #include "game/config/GameConfig.h"
+#include "game/hud/HudStyles.h"
 #include "game/mechanics/MechanicCatalog.h"
 #include "game/menu/ControlSettings.h"
 #include "game/menu/LiveSettings.h"
@@ -28,7 +30,8 @@ public:
         Multiplayer,
         Graphics,
         Controls,
-        Combat
+        Combat,
+        Hud
     };
     enum class Scope : u8 { Title, Tower, Level };
     /** `settings` saves and previews the edits and says which displays the Video page offers
@@ -69,12 +72,15 @@ private:
     void rebuild(s32 selection = 0);
     /** The row a list page opens on: its current choice, else the first. */
     s32 currentChoice() const;
-    /** The code of the row a choice page (Difficulty, Multiplayer, Compass) marks; none for a
-     * difficulty it does not know, or on any other page. */
+    /** The code of the row a choice page (Difficulty, Multiplayer, Compass, HUD) marks: none
+     * for a difficulty it does not know, Dark Legacy's for a HUD look the page does not list,
+     * and none on any other page. */
     [[nodiscard]] std::optional<s32> chosen() const;
     void change(s32 direction);
     /** Takes the display the running game offers now, when there is one. */
     void refreshDisplay();
+    /** Takes the HUD looks the running game offers now that can be drawn, when there is one. */
+    void refreshHudStyles();
     bool flushAudio();
     void commit(GameConfig next);
     /** The volume the Audio page's slider `row` sets. */
@@ -93,6 +99,9 @@ private:
     const MechanicCatalog* m_mechanics = nullptr;
     LiveSettings* m_settings = nullptr;
     DisplayOptions m_display;
+    /** The looks besides Dark Legacy's that the HUD page lists, as they stood when last asked:
+     * only those this installation can draw. */
+    std::vector<HudStyleOffer> m_hudOffers;
     std::vector<Extent2D> resolutions() const;
     /** The display the Video page shows: the one chosen, else the one the window is on. */
     s32 shownMonitor() const;

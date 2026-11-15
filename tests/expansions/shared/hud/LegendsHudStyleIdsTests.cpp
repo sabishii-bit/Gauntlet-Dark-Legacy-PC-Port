@@ -3,8 +3,10 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/assets/StringTable.h"
 #include "engine/core/Types.h"
 
+#include "TestSupport.h"
 #include "expansions/shared/characters/LegendsProgress.h"
 #include "expansions/shared/hud/LegendsHudStyleIds.h"
 #include "game/config/GameConfig.h"
@@ -39,6 +41,14 @@ TEST_CASE("each Legends platform names its own HUD look, never Dark Legacy's",
         }
     }
     CHECK(kLegendsN64HudLabel != kLegendsDreamcastHudLabel);
+}
+
+TEST_CASE("the shipped text names the Legends HUD looks as the HUD page lists them",
+          "[legends][hud-style][text]") {
+    StringTable strings;
+    REQUIRE(strings.load(test::dataDirectory() / "text", "en"));
+    CHECK(strings.get(kLegendsN64HudLabel) == "Legends N64");
+    CHECK(strings.get(kLegendsDreamcastHudLabel) == "Legends Dreamcast");
 }
 
 } // namespace

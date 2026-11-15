@@ -17,6 +17,7 @@
 namespace gdl::game {
 namespace {
 constexpr s32 kGraphicsCode = 4;
+constexpr s32 kHudCode = 5; ///< the root's row that opens the HUD page
 constexpr s32 kLanguageCode = 5;
 constexpr s32 kFirstMechanicCode = 16; ///< the Game page's mechanics, one code each in order
 constexpr s32 kDisplayCode = 13;
@@ -27,6 +28,9 @@ constexpr s32 kSaveCode = 100;   ///< the Video confirmation's Save
 constexpr s32 kRevertCode = 101; ///< the Video confirmation's Revert
 constexpr s32 kHideCompassCode = 0;
 constexpr s32 kShowCompassCode = 1;
+/** The HUD page's first row, Dark Legacy's look; the looks offered follow it in the order
+ * offered, each row's code its place. */
+constexpr s32 kDarkLegacyHudCode = 0;
 /** Where the Difficulty page opens on a difficulty it does not know: normal's row. */
 constexpr s32 kNormalDifficultyRow = 1;
 static_assert(DifficultyConfig::kNames[static_cast<usize>(kNormalDifficultyRow)] == "normal");
@@ -85,12 +89,18 @@ struct PageLink {
     std::string_view label;
     Page page = Page::Root;
 };
-/** The root's pages, in the order listed; the compass is not offered in a level. */
-constexpr std::array<PageLink, 5> kRootLinks{{{0, "menu.audio", Page::Audio},
+/** The root's pages, in the order listed; the compass is not offered in a level, nor the HUD
+ * page while no look but Dark Legacy's can be drawn. */
+constexpr std::array<PageLink, 6> kRootLinks{{{0, "menu.audio", Page::Audio},
                                               {1, "menu.gameOptions", Page::Game},
                                               {2, "menu.compass", Page::Compass},
+                                              {kHudCode, "menu.hud", Page::Hud},
                                               {kGraphicsCode, "menu.graphics", Page::Graphics},
                                               {3, "menu.controls", Page::Controls}}};
+/** The HUD page's code for the look offered at `offer`. */
+s32 hudCodeOf(usize offer) {
+    return kDarkLegacyHudCode + 1 + static_cast<s32>(offer);
+}
 /** The Game page's own pages: its first rows, each code its place. */
 constexpr std::array<PageLink, 3> kGameLinks{{{0, "settings.difficulty", Page::Difficulty},
                                               {1, "settings.multiplayer", Page::Multiplayer},
@@ -456,6 +466,7 @@ void SettingsMenu::open(const GameConfig& config, const StringTable* strings,
     m_backdrop = std::move(backdrop);
     m_page = Page::Root;
     m_notice.clear();
+    refreshHudStyles();
     rebuild();
 }
 void SettingsMenu::close() {
@@ -468,6 +479,11 @@ void SettingsMenu::refreshDisplay() {
     if (m_settings != nullptr) {
         m_display = m_settings->display();
     }
+}
+void SettingsMenu::refreshHudStyles() {
+    m_hudOffers = m_settings != nullptr ? m_settings->hudStyles() : std::vector<HudStyleOffer>{};
+    // A look this installation cannot draw is not offered at all.
+    std::erase_if(m_hudOffers, [](const HudStyleOffer& offer) { return !offer.usable; });
 }
 s32 SettingsMenu::shownMonitor() const {
     const auto count = static_cast<s32>(m_display.monitors.size());
@@ -505,7 +521,9 @@ void SettingsMenu::rebuild(s32 selection) {
         break;
     case Page::Root: {
         for (const PageLink& link : kRootLinks) {
-            if (link.page != Page::Compass || m_scope != Scope::Level) {
+            const bool hidden = (link.page == Page::Compass && m_scope == Scope::Level) ||
+                                (link.page == Page::Hud && m_hudOffers.empty());
+            if (!hidden) {
                 add(text(link.label), link.code);
             }
         }
@@ -676,6 +694,16 @@ void SettingsMenu::rebuild(s32 selection) {
         rows.marked(text("settings.hide"), kHideCompassCode, choice == kHideCompassCode);
         rows.marked(text("settings.show"), kShowCompassCode, choice == kShowCompassCode);
         break;
+    case Page::Hud:
+        definition.title = text("menu.hud");
+        rows.marked(text("hud.style.darkLegacy"), kDarkLegacyHudCode, choice == kDarkLegacyHudCode);
+        for (usize i = 0; i < m_hudOffers.size(); ++i) {
+            rows.marked(text(m_hudOffers[i].label), hudCodeOf(i), choice == hudCodeOf(i));
+        }
+        // The looks' names come from the expansions: the rows, each with room for its mark,
+        // shrink to stay on the parchment.
+        rows.fit(definition.scale, m_screen.width, " ~");
+        break;
     }
     // A page written again (a row toggled, a key captured) keeps its window where it was;
     // another page, or another player's controls, starts at the top.
@@ -774,6 +802,10 @@ void SettingsMenu::change(s32 direction) {
         next.multiplayer.mode = static_cast<MultiplayerMode>(code);
     } else if (m_page == Page::Compass) {
         next.camera.compass = code == kShowCompassCode;
+    } else if (m_page == Page::Hud) {
+        next.display.hudStyle = code == kDarkLegacyHudCode
+                                    ? std::string(kDarkLegacyHudStyle)
+                                    : m_hudOffers[static_cast<usize>(code - hudCodeOf(0))].id;
     } else if (m_page == Page::Combat) {
         if (!flipSwitch(kCombatSwitches, code, next.combat)) {
             return;
@@ -952,6 +984,9 @@ MenuEvent SettingsMenu::update(const MenuInput& input, s32 ticks) {
             if (m_page == Page::Audio) {
                 m_audioSampleTicks = 0;
             }
+            if (m_page == Page::Hud) {
+                refreshHudStyles();
+            }
             if (m_page == Page::Graphics) {
                 refreshDisplay();
                 if (m_config.display.windowMode == WindowMode::Windowed &&
@@ -991,6 +1026,7 @@ s32 SettingsMenu::currentChoice() const {
     case Page::Difficulty:
     case Page::Multiplayer:
     case Page::Compass: return chosen().value_or(kNormalDifficultyRow);
+    case Page::Hud: return chosen().value_or(kDarkLegacyHudCode);
     default: return 0;
     }
 }
@@ -1005,6 +1041,14 @@ std::optional<s32> SettingsMenu::chosen() const {
         return std::nullopt;
     case Page::Multiplayer: return static_cast<s32>(m_config.multiplayer.mode);
     case Page::Compass: return m_config.camera.compass ? kShowCompassCode : kHideCompassCode;
+    case Page::Hud: {
+        // A saved look the page does not list is drawn as Dark Legacy's, so that one is marked.
+        const std::string& saved = m_config.display.hudStyle;
+        const auto offer = std::ranges::find(m_hudOffers, saved, &HudStyleOffer::id);
+        return saved == kDarkLegacyHudStyle || offer == m_hudOffers.end()
+                   ? kDarkLegacyHudCode
+                   : hudCodeOf(static_cast<usize>(offer - m_hudOffers.begin()));
+    }
     default: return std::nullopt;
     }
 }

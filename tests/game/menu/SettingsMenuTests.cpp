@@ -380,6 +380,233 @@ TEST_CASE("Game Options are available in title tower and level settings", "[sett
     CHECK(open(SettingsMenu::Scope::Level) == std::vector<s32>{0, 1, 4, 3});
 }
 
+/** Each row's code on the page shown. */
+std::vector<s32> rowCodes(const SettingsMenu& menu) {
+    std::vector<s32> codes;
+    for (const MenuItem& row : menu.menu().definition().items) {
+        codes.push_back(row.code);
+    }
+    return codes;
+}
+
+/** Each row's mark on the page shown: 1 beside the choice held, else 0. */
+std::vector<s32> rowMarks(const SettingsMenu& menu) {
+    std::vector<s32> marks;
+    for (const MenuItem& row : menu.menu().definition().items) {
+        marks.push_back(row.markedPart);
+    }
+    return marks;
+}
+
+constexpr s32 kHudCode = 5; ///< the code of the root's row that opens the HUD page
+
+/** Offers the fixture's settings three looks besides Dark Legacy's, each named by text of its
+ * own, the second of which this installation cannot draw, and opens the settings over them. */
+void offerHudLooks(Fixture& f, SettingsMenu::Scope scope = SettingsMenu::Scope::Title) {
+    const auto texts = test::scratchDirectory("settings-hud-looks");
+    writeTextFile(texts / "en.json", R"({"hud.style.fake": "Fake Look",
+                                         "hud.style.gone": "Gone Look",
+                                         "hud.style.other": "Other Look"})");
+    REQUIRE(f.strings.layer(texts));
+    f.settings.hudOffers = {{.id = "fake", .label = "hud.style.fake", .usable = true},
+                            {.id = "gone", .label = "hud.style.gone", .usable = false},
+                            {.id = "other", .label = "hud.style.other", .usable = true}};
+    f.menu.open(f.config, &f.strings, &f.settings, f.painter, {}, {}, scope);
+}
+
+TEST_CASE("the HUD page is offered in title tower and level settings while another look can be "
+          "drawn",
+          "[settings][hud-settings]") {
+    Fixture f;
+    const auto rootCodes = [&](SettingsMenu::Scope scope) {
+        f.menu.open(f.config, &f.strings, &f.settings, f.painter, {}, {}, scope);
+        return rowCodes(f.menu);
+    };
+    // With no look but Dark Legacy's to offer, the root is as it always was.
+    CHECK(rootCodes(SettingsMenu::Scope::Title) == std::vector<s32>{0, 1, 2, 4, 3});
+    CHECK(rootCodes(SettingsMenu::Scope::Tower) == std::vector<s32>{0, 1, 2, 4, 3});
+    CHECK(rootCodes(SettingsMenu::Scope::Level) == std::vector<s32>{0, 1, 4, 3});
+    // A look this installation cannot draw is hidden, not greyed, and with it the page.
+    f.settings.hudOffers = {{.id = "gone", .label = "hud.style.gone", .usable = false}};
+    CHECK(rootCodes(SettingsMenu::Scope::Title) == std::vector<s32>{0, 1, 2, 4, 3});
+    CHECK(rootCodes(SettingsMenu::Scope::Level) == std::vector<s32>{0, 1, 4, 3});
+    // One it can draw opens the page from every scope, a level's too, where the compass is not.
+    f.settings.hudOffers.push_back({.id = "fake", .label = "hud.style.fake", .usable = true});
+    CHECK(rootCodes(SettingsMenu::Scope::Title) == std::vector<s32>{0, 1, 2, kHudCode, 4, 3});
+    CHECK(rootCodes(SettingsMenu::Scope::Tower) == std::vector<s32>{0, 1, 2, kHudCode, 4, 3});
+    CHECK(rootCodes(SettingsMenu::Scope::Level) == std::vector<s32>{0, 1, kHudCode, 4, 3});
+    const auto& items = f.menu.menu().definition().items;
+    const auto row = std::ranges::find(items, kHudCode, &MenuItem::code);
+    REQUIRE(row != items.end());
+    CHECK(row->text == "HUD");
+    CHECK(row->enabled);
+}
+
+TEST_CASE("the HUD page lists Dark Legacy's look and each that can be drawn with the saved one "
+          "marked",
+          "[settings][hud-settings]") {
+    Fixture f;
+    offerHudLooks(f);
+    f.choose(kHudCode);
+    REQUIRE(f.menu.page() == SettingsMenu::Page::Hud);
+    {
+        const auto& definition = f.menu.menu().definition();
+        CHECK(definition.title == "HUD");
+        // Each look by the text its offer names, in the order offered; the one this
+        // installation cannot draw is left out, not greyed.
+        REQUIRE(definition.items.size() == 3);
+        CHECK(definition.items[0].text == "Dark Legacy");
+        CHECK(definition.items[1].text == "Fake Look");
+        CHECK(definition.items[2].text == "Other Look");
+        CHECK(std::ranges::all_of(definition.items, &MenuItem::enabled));
+    }
+    CHECK(rowCodes(f.menu) == std::vector<s32>{0, 1, 2});
+    CHECK(rowMarks(f.menu) == std::vector<s32>{1, 0, 0}); // the default, Dark Legacy's
+    CHECK(f.menu.menu().selection() == 0);
+    // A saved look is marked, and the page opens on it.
+    const auto savedPage = [&](const char* saved) {
+        f.config.display.hudStyle = saved;
+        f.menu.open(f.config, &f.strings, &f.settings, f.painter, {}, {});
+        f.choose(kHudCode);
+        REQUIRE(f.menu.page() == SettingsMenu::Page::Hud);
+        return rowMarks(f.menu);
+    };
+    CHECK(savedPage("fake") == std::vector<s32>{0, 1, 0});
+    CHECK(f.menu.menu().selection() == 1);
+    CHECK(savedPage("other") == std::vector<s32>{0, 0, 1}); // listed past the look left out
+    CHECK(f.menu.menu().selection() == 2);
+    CHECK(f.settings.writes == 0); // listing the looks saves nothing
+}
+
+TEST_CASE("the HUD page lists the looks as they stand when it is entered",
+          "[settings][hud-settings]") {
+    Fixture f;
+    offerHudLooks(f);
+    // Since the settings opened, one look's files went and another's came.
+    f.settings.hudOffers[0].usable = false;
+    f.settings.hudOffers[1].usable = true;
+    f.choose(kHudCode);
+    REQUIRE(f.menu.page() == SettingsMenu::Page::Hud);
+    const auto& items = f.menu.menu().definition().items;
+    REQUIRE(items.size() == 3);
+    CHECK(items[1].text == "Gone Look");
+    CHECK(items[2].text == "Other Look");
+    f.choose(1);
+    CHECK(f.config.display.hudStyle == "gone"); // a row names the look listed there
+}
+
+TEST_CASE("a saved look that can no longer be drawn stays saved while Dark Legacy's is marked",
+          "[settings][hud-settings]") {
+    for (const char* saved :
+         {"gone", "future"}) { // a look offered but not drawable, or not offered
+        CAPTURE(saved);
+        Fixture f;
+        f.config.display.hudStyle = saved;
+        offerHudLooks(f);
+        f.choose(kHudCode);
+        REQUIRE(f.menu.page() == SettingsMenu::Page::Hud);
+        CHECK(rowMarks(f.menu) == std::vector<s32>{1, 0, 0});
+        CHECK(f.menu.menu().selection() == 0);
+        f.back();
+        REQUIRE(f.menu.page() == SettingsMenu::Page::Root);
+        MenuInput back;
+        back.back = true;
+        CHECK(f.menu.update(back, 1).action == MenuAction::Back);
+        CHECK(f.config.display.hudStyle == saved);
+        CHECK(f.menu.config().display.hudStyle == saved);
+        CHECK(f.settings.writes == 0);
+    }
+}
+
+TEST_CASE("choosing a look saves its id and a refused save leaves the setting",
+          "[settings][hud-settings]") {
+    Fixture f;
+    // The capitals are enough to draw the notice, the only text below the rows.
+    std::vector<BitmapGlyph> glyphs;
+    for (s32 c = 'A'; c <= 'Z'; ++c) {
+        glyphs.push_back({c, 16, 0, 0});
+    }
+    f.font = BitmapFont::fromGlyphs(32, 16, std::move(glyphs));
+    f.painter.setFont(&f.font, &f.texture);
+    const auto noticeShown = [&] {
+        test::FakeRenderDevice device;
+        Canvas canvas;
+        canvas.begin(device, Mat4{1});
+        f.menu.draw(canvas, f.painter, {});
+        canvas.end();
+        return std::ranges::any_of(device.draws, [](const auto& draw) {
+            return std::ranges::any_of(draw.vertices,
+                                       [](const auto& vertex) { return vertex.position.y >= 276; });
+        });
+    };
+    offerHudLooks(f);
+    f.choose(kHudCode);
+    REQUIRE(f.menu.page() == SettingsMenu::Page::Hud);
+    CHECK_FALSE(noticeShown());
+    f.settings.fail = true;
+    f.choose(2);
+    CHECK(noticeShown()); // the settings could not be saved
+    CHECK(f.config.display.hudStyle == kDarkLegacyHudStyle);
+    CHECK(f.menu.config().display.hudStyle == kDarkLegacyHudStyle);
+    CHECK(rowMarks(f.menu) == std::vector<s32>{1, 0, 0});
+    f.settings.fail = false;
+    f.choose(2);
+    // The look's own id, not its row's place: the look listed past the one left out.
+    CHECK(f.config.display.hudStyle == "other");
+    CHECK(f.menu.config().display.hudStyle == "other");
+    CHECK(rowMarks(f.menu) == std::vector<s32>{0, 0, 1});
+    CHECK_FALSE(noticeShown());
+    f.choose(0);
+    CHECK(f.config.display.hudStyle == kDarkLegacyHudStyle);
+    CHECK(rowMarks(f.menu) == std::vector<s32>{1, 0, 0});
+    CHECK(f.settings.writes == 2);
+}
+
+TEST_CASE("Back from the HUD page lands on its row", "[settings][hud-settings]") {
+    for (const auto scope :
+         {SettingsMenu::Scope::Title, SettingsMenu::Scope::Tower, SettingsMenu::Scope::Level}) {
+        Fixture f;
+        offerHudLooks(f, scope);
+        f.choose(kHudCode);
+        REQUIRE(f.menu.page() == SettingsMenu::Page::Hud);
+        f.back();
+        REQUIRE(f.menu.page() == SettingsMenu::Page::Root);
+        const auto& items = f.menu.menu().definition().items;
+        CHECK(items[static_cast<usize>(f.menu.menu().selection())].code == kHudCode);
+    }
+}
+
+TEST_CASE("the HUD page keeps each look's name and its mark on the parchment",
+          "[settings][hud-settings]") {
+    Fixture f;
+    std::vector<BitmapGlyph> glyphs;
+    for (s32 c = 33; c <= 126; ++c) {
+        glyphs.push_back({c, 24, 0, 0});
+    }
+    f.font = BitmapFont::fromGlyphs(32, 12, std::move(glyphs));
+    f.painter.setFont(&f.font, &f.texture);
+    const auto texts = test::scratchDirectory("settings-hud-names");
+    writeTextFile(texts / "en.json",
+                  R"({"hud.style.short": "Fake", "hud.style.long": "A Look of a Very Long Name"})");
+    REQUIRE(f.strings.layer(texts));
+    const auto hudPage = [&](const char* label) {
+        f.settings.hudOffers = {{.id = "fake", .label = label, .usable = true}};
+        f.menu.open(f.config, &f.strings, &f.settings, f.painter, {}, MenuDefinition::parchment());
+        f.choose(kHudCode);
+        REQUIRE(f.menu.page() == SettingsMenu::Page::Hud);
+        return f.menu.menu().definition();
+    };
+    // Names that fit keep the size the other choice pages read at.
+    CHECK(hudPage("hud.style.short").scale == 1.0f);
+    const auto definition = hudPage("hud.style.long");
+    CHECK(definition.scale < 1.0f);
+    CHECK(definition.cursorScale == definition.scale);
+    for (const auto& item : definition.items) {
+        CAPTURE(item.text);
+        CHECK(definition.x + f.painter.measure(item.text + " ~", definition.scale) <= 512 - 64);
+    }
+}
+
 TEST_CASE("Combat auto melee changes are shared persisted and reversible from every scope",
           "[settings][combat-settings]") {
     for (const auto scope :
