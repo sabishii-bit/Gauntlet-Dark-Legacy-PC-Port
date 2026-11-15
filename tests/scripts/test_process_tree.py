@@ -143,14 +143,22 @@ class TetherTests(unittest.TestCase):
         self.addCleanup(helper.kill)
         with helper.stdout:
             tethered, loose = (int(pid) for pid in helper.stdout.readline().split())
-        self.addCleanup(end, tethered)
-        self.addCleanup(end, loose)
-        self.assertTrue(settles(tethered, True))
+        # Ended at cleanup unless the test saw it end: by then its id may be another process's.
+        alive = {tethered, loose}
+        self.addCleanup(lambda: [end(pid) for pid in alive])
+
+        def seen(pid, expected):
+            state = settles(pid, expected)
+            if not state:
+                alive.discard(pid)
+            return state
+
+        self.assertTrue(seen(tethered, True))
         helper.kill()  # TerminateProcess or SIGKILL: nothing of the helper's own code runs
         helper.wait()
-        self.assertFalse(settles(tethered, False))
+        self.assertFalse(seen(tethered, False))
         # An ordinary child outlives it, which is what the tether is for.
-        self.assertTrue(running(loose))
+        self.assertTrue(seen(loose, True))
 
     @unittest.skipUnless(process_tree.WINDOWS, "Windows tethers through a job object")
     def test_a_tethered_child_joins_this_process_job(self):
@@ -185,6 +193,18 @@ class TetherTests(unittest.TestCase):
                                             preexec_fn=lambda: os.write(1, b"first\n"))
         output, _ = child.communicate(timeout=30)
         self.assertEqual(output.split(), ["first", str(int(signal.SIGKILL))])
+
+    @unittest.skipUnless(hasattr(signal, "SIGKILL"), "the death signal is POSIX's")
+    def test_a_child_whose_parent_ended_before_its_request_took_hold_exits(self):
+        prctl = mock.Mock(return_value=0)
+        request = process_tree._death_signal_request(prctl, 4242)
+        for parent_now, exits in ((4242, False), (1, True)):  # still there, or gone (to init)
+            with self.subTest(parent_now=parent_now), \
+                 mock.patch.object(process_tree.os, "getppid", return_value=parent_now), \
+                 mock.patch.object(process_tree.os, "_exit") as leave:
+                request()
+                prctl.assert_called_with(process_tree.PR_SET_PDEATHSIG, signal.SIGKILL, 0, 0, 0)
+                self.assertEqual(leave.call_args_list, [mock.call(1)] if exits else [])
 
     def test_where_the_system_refuses_a_tether_the_child_is_ordinary(self):
         tether = "_windows_job" if process_tree.WINDOWS else "_linux_prctl"
@@ -228,25 +248,37 @@ class RunTetheredTests(unittest.TestCase):
 
 
 class PriorityTests(unittest.TestCase):
-    def test_a_helper_lowers_its_priority_and_its_children_inherit_it(self):
-        # In a helper of its own, started at normal priority: this runner's is left alone.
+    @staticmethod
+    def lowered(**options):
+        """Whether lower_priority took in a helper of its own, started with `options` so that
+        this runner's priority is left alone, and the priority of a child it starts after."""
         helper = (f"import subprocess, sys\n"
                   f"sys.path.insert(0, {str(SCRIPTS)!r})\n"
                   f"import process_tree\n"
                   f"print(process_tree.lower_priority())\n"
                   f"print(subprocess.run([sys.executable, '-c', {PRIORITY!r}], capture_output=True,"
                   f" text=True, check=True).stdout.strip())\n")
-        options = {}
-        if process_tree.WINDOWS:
-            options["creationflags"] = subprocess.NORMAL_PRIORITY_CLASS
         result = subprocess.run([sys.executable, "-c", helper], capture_output=True, text=True,
                                 check=True, timeout=60, **options)
         took, child = result.stdout.split()
-        self.assertEqual(took, "True")
+        return took == "True", int(child)
+
+    def test_a_helper_lowers_its_priority_and_its_children_inherit_it(self):
+        options = {}
         if process_tree.WINDOWS:
-            self.assertEqual(int(child), process_tree.BELOW_NORMAL_PRIORITY_CLASS)
+            options["creationflags"] = subprocess.NORMAL_PRIORITY_CLASS
+        took, child = self.lowered(**options)
+        self.assertTrue(took)
+        if process_tree.WINDOWS:
+            self.assertEqual(child, process_tree.BELOW_NORMAL_PRIORITY_CLASS)
         else:
-            self.assertEqual(int(child), min(19, os.nice(0) + process_tree.NICENESS_STEP))
+            self.assertEqual(child, min(19, os.nice(0) + process_tree.NICENESS_STEP))
+
+    @unittest.skipUnless(process_tree.WINDOWS, "Windows priority classes")
+    def test_an_idle_helper_is_never_raised_to_below_normal(self):
+        # Already lower than lowering would make it, which counts as having taken.
+        self.assertEqual(self.lowered(creationflags=subprocess.IDLE_PRIORITY_CLASS),
+                         (True, process_tree.IDLE_PRIORITY_CLASS))
 
     def test_a_refusal_is_not_an_error(self):
         lowering = "_lower_windows_priority" if process_tree.WINDOWS else "_lower_posix_priority"

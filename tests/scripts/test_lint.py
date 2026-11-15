@@ -50,8 +50,10 @@ class ConfigurationTests(unittest.TestCase):
 
 class JobsTests(unittest.TestCase):
     def test_ci_runners_use_every_cpu_and_other_machines_three_quarters(self):
-        for environ, cpus, jobs in (({"CI": "true"}, 16, 16), ({}, 16, 12), ({"CI": ""}, 16, 12),
-                                    ({"CI": "false"}, 16, 12), ({}, 4, 3), ({}, 1, 1),
+        for environ, cpus, jobs in (({"CI": "true"}, 16, 16), ({"CI": "1"}, 16, 16),
+                                    ({}, 16, 12), ({"CI": ""}, 16, 12), ({"CI": "false"}, 16, 12),
+                                    ({"CI": "False"}, 16, 12), ({"CI": "0"}, 16, 12),
+                                    ({"CI": "false\n"}, 16, 12), ({}, 4, 3), ({}, 1, 1),
                                     ({"CI": "true"}, 1, 1)):
             with self.subTest(environ=environ, cpus=cpus):
                 self.assertEqual(lint.default_jobs(environ, cpus), jobs)
@@ -396,12 +398,17 @@ class ChangedTests(unittest.TestCase):
             "tests/fixtures/Recorder.h": "",
             "tests/fixtures/Recorder.cpp": '#include "fixtures/Recorder.h"\n',
             "tests/fixtures/RecorderTests.cpp": '#include "fixtures/Recorder.h"\n',
+            # A header that nothing includes, and a unit outside the roster, which lints the
+            # units under src and tests.
+            "src/engine/core/Unused.h": "",
+            "tools/dump/Reader.cpp": '#include "engine/core/Types.h"\n',
         }
         for name, text in cls.files.items():
             path = cls.root / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(text, encoding="utf-8")
-        cls.roster = sorted(cls.root / name for name in cls.files if name.endswith(".cpp"))
+        cls.roster = sorted(cls.root / name for name in cls.files
+                            if name.endswith(".cpp") and name.startswith(("src/", "tests/")))
 
     def setUp(self):
         patcher = mock.patch.object(lint, "ROOT", self.root)
@@ -437,6 +444,7 @@ class ChangedTests(unittest.TestCase):
                          ["src/engine/world/Scene.cpp", "src/game/world/Level.cpp",
                           "tests/engine/core/TypesTests.cpp", "tests/game/world/LevelTests.cpp"])
         self.assertEqual(self.affected("docs/notes.md"), [])
+        self.assertEqual(self.affected("src/engine/core/Unused.h", "tools/dump/Reader.cpp"), [])
 
     def test_one_unit_exercises_each_changed_header(self):
         # The header's own .cpp first, under src or tests.
@@ -461,6 +469,9 @@ class ChangedTests(unittest.TestCase):
                                               "docs/a.md"),
                          ["src/game/app/App.cpp", "src/game/world/Level.cpp"])
         self.assertEqual(self.representatives("src/unused/Nothing.h"), [])
+        # A header that nothing includes has no unit, and a unit outside the roster is not one.
+        self.assertEqual(self.representatives("src/engine/core/Unused.h"), [])
+        self.assertEqual(self.representatives("tools/dump/Reader.cpp"), [])
 
     def test_an_own_source_outside_the_database_gives_way_to_the_mirrored_test(self):
         header = self.root / "src/game/net/Room.h"
