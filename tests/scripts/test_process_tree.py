@@ -195,6 +195,38 @@ class TetherTests(unittest.TestCase):
         self.assertEqual(output.strip(), "ran")
 
 
+class RunTetheredTests(unittest.TestCase):
+    def started(self):
+        """Patch start_tethered to keep the children it starts; returns their list."""
+        children, start = [], process_tree.start_tethered
+
+        def keep(*args, **kwargs):
+            children.append(start(*args, **kwargs))
+            return children[-1]
+
+        patcher = mock.patch.object(process_tree, "start_tethered", side_effect=keep)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        return children
+
+    def test_a_tethered_child_s_output_and_status_come_back(self):
+        children = self.started()
+        result = process_tree.run_tethered(
+            [sys.executable, "-c", "print('out'); raise SystemExit(3)"],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=60)
+        self.assertEqual((result.returncode, result.stdout.strip()), (3, "out"))
+        self.assertEqual(len(children), 1)
+
+    def test_a_timeout_ends_the_child_before_it_is_passed_on(self):
+        children = self.started()
+        started = time.monotonic()
+        with self.assertRaises(subprocess.TimeoutExpired):
+            process_tree.run_tethered(SLEEPER, stdout=subprocess.PIPE, timeout=0.5)
+        # Killed, not waited for through its minute's sleep.
+        self.assertLess(time.monotonic() - started, 30)
+        self.assertNotIn(children[0].returncode, (None, 0))
+
+
 class PriorityTests(unittest.TestCase):
     def test_a_helper_lowers_its_priority_and_its_children_inherit_it(self):
         # In a helper of its own, started at normal priority: this runner's is left alone.

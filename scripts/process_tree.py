@@ -120,10 +120,11 @@ def stop(process: subprocess.Popen) -> None:
 
 def start_tethered(command: list[str], **kwargs) -> subprocess.Popen:
     """Start a child that ends with this process however this process ends, killed outright
-    included. On Windows it joins a job object that kills what it holds once its last
-    handle, which only this process has, closes; on Linux it asks for SIGKILL once the
-    thread that started it ends, so that thread must outlive it. Elsewhere, or where the
-    system refuses, it is an ordinary child, which the other ways of ending one still reach."""
+    included. On Windows it joins, as soon as it has started, a job object that kills what
+    it holds once its last handle, which only this process has, closes (a kill in the
+    instant before it joins misses it); on Linux it asks for SIGKILL once the thread that
+    started it ends, so that thread must outlive it. Elsewhere, or where the system
+    refuses, it is an ordinary child, which the other ways of ending one still reach."""
     if WINDOWS:
         process = subprocess.Popen(command, **kwargs)
         job = _windows_job()
@@ -134,6 +135,20 @@ def start_tethered(command: list[str], **kwargs) -> subprocess.Popen:
     if prctl:
         kwargs["preexec_fn"] = _death_signal_request(prctl, os.getpid(), kwargs.get("preexec_fn"))
     return subprocess.Popen(command, **kwargs)
+
+
+def run_tethered(command: list[str], timeout: float | None = None,
+                 **kwargs) -> subprocess.CompletedProcess:
+    """subprocess.run for a child started by start_tethered and waited for by the thread
+    that starts it, as Linux's tether needs; a timeout, or any other error while it runs,
+    ends the child before the error is passed on."""
+    with start_tethered(command, **kwargs) as process:
+        try:
+            stdout, stderr = process.communicate(timeout=timeout)
+        except BaseException:
+            process.kill()
+            raise
+    return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
 
 
 def _death_signal_request(prctl, parent: int, previous=None):

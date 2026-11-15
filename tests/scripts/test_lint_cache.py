@@ -54,7 +54,9 @@ class CacheTests(unittest.TestCase):
         self.dependency_text = "lint: src/a.cpp header.h\n"
         self.preprocessed = b"int main() {}"
         self.returncode = 0
-        self.scan = mock.patch.object(lint_cache.subprocess, "run", side_effect=self.scan_result)
+        # The scan runs tethered to the lint; a scan started any other way misses this stand-in.
+        self.scan = mock.patch.object(lint_cache.process_tree, "run_tethered",
+                                      side_effect=self.scan_result)
         self.run = self.scan.start()
         self.addCleanup(self.scan.stop)
         self.cache = self.create_cache()

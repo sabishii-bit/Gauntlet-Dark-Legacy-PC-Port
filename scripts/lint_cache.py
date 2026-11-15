@@ -17,6 +17,8 @@ import subprocess
 import tempfile
 import threading
 
+import process_tree
+
 
 def dependency_command(entry: dict, compiler: pathlib.Path, depfile: pathlib.Path) -> list[str]:
     arguments = entry.get("arguments") or shlex.split(entry["command"])
@@ -98,8 +100,10 @@ class CleanCache:
             with tempfile.TemporaryDirectory(prefix="gdl-lint-") as scratch:
                 depfile = pathlib.Path(scratch) / "inputs.d"
                 command = dependency_command(entry, self.compiler, depfile)
-                result = subprocess.run(command, cwd=directory, capture_output=True,
-                                        check=False, timeout=120)
+                # Tethered, as the clang-tidy workers are: a lint killed outright takes an
+                # unfinished scan with it.
+                result = process_tree.run_tethered(command, cwd=directory, stdout=subprocess.PIPE,
+                                                   stderr=subprocess.PIPE, timeout=120)
                 if result.returncode:
                     return None
                 files = set(dependencies(depfile.read_text(encoding="utf-8"), directory))
