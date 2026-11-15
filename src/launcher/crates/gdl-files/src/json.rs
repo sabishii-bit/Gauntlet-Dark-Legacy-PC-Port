@@ -1,6 +1,7 @@
 //! The launcher's JSON state files: read to a bound, so that a damaged or hostile file cannot
-//! make the launcher read without end, and written whole, so that a reader, or the next start
-//! after a crash, finds either the old file or the new one and never part of either.
+//! make the launcher read without end or wait for a writer, and written whole, so that a reader,
+//! or the next start after a crash, finds either the old file or the new one and never part of
+//! either.
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufWriter, Read, Write};
@@ -28,23 +29,55 @@ pub fn pending_path(path: &Path) -> PathBuf {
     path.with_file_name(name)
 }
 
-/// Reads the whole file at `path`, refusing it when it, or a folder above it, is a link, and when
-/// it holds more than `limit` bytes; a file of exactly `limit` bytes is read. Whatever the file's
-/// size, no more than one byte past `limit` is read.
+/// Reads the whole file at `path`, refusing it when it, or a folder above it, is a link, when it
+/// is not a regular file, and when it holds more than `limit` bytes; a file of exactly `limit`
+/// bytes is read. Whatever is at `path`, the read never waits for a writer and takes no more than
+/// one byte past `limit`.
 pub fn read_bounded(path: &Path, limit: u64) -> Result<Vec<u8>, FilesError> {
     no_links(path)?;
-    let file = File::open(path).map_err(|source| FilesError::io(path, source))?;
-    let mut bytes = Vec::new();
-    file.take(limit.saturating_add(1))
-        .read_to_end(&mut bytes)
-        .map_err(|source| FilesError::io(path, source))?;
-    if u64::try_from(bytes.len()).map_or(true, |read| read > limit) {
-        return Err(FilesError::TooLarge {
+    let file = open_regular(path).map_err(|source| FilesError::io(path, source))?;
+    match read_to_bound(file, limit) {
+        Ok(Some(bytes)) => Ok(bytes),
+        Ok(None) => Err(FilesError::TooLarge {
             path: path.to_path_buf(),
             limit,
-        });
+        }),
+        Err(source) => Err(FilesError::io(path, source)),
     }
-    Ok(bytes)
+}
+
+/// Opens the file at `path` to read, and refuses it unless it is a regular file: a FIFO, a socket,
+/// a device or a folder holds no state of the launcher's. On Unix the open itself never waits, as
+/// a plain open of a FIFO waits for a writer, and never follows a link that took the name since
+/// [`no_links`] looked.
+fn open_regular(path: &Path) -> io::Result<File> {
+    let mut options = OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NONBLOCK | libc::O_NOFOLLOW);
+    }
+    let file = options.open(path)?;
+    if file.metadata()?.is_file() {
+        Ok(file)
+    } else {
+        Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "not a regular file",
+        ))
+    }
+}
+
+/// Reads all of `source` when it holds at most `limit` bytes, and gives `None` when it holds
+/// more, taking no more than one byte past `limit` from it either way.
+fn read_to_bound(source: impl Read, limit: u64) -> io::Result<Option<Vec<u8>>> {
+    let mut bytes = Vec::new();
+    source
+        .take(limit.saturating_add(1))
+        .read_to_end(&mut bytes)?;
+    let within = u64::try_from(bytes.len()).is_ok_and(|read| read <= limit);
+    Ok(within.then_some(bytes))
 }
 
 /// Reads the file at `path` as [`read_bounded`] does, and then as JSON into a `T`.
@@ -160,6 +193,7 @@ fn serialize_error(error: serde_json::Error, pending: &Path, path: &Path) -> Fil
 
 #[cfg(test)]
 mod tests {
+    use std::cell::Cell;
     use std::collections::BTreeMap;
     use std::fs;
     use std::io;
@@ -170,11 +204,11 @@ mod tests {
     use serde_json::{Value, json};
 
     use super::{
-        MAX_JSON_LEN, PENDING_SUFFIX, pending_path, read_bounded, read_json_bounded,
+        MAX_JSON_LEN, PENDING_SUFFIX, pending_path, read_bounded, read_json_bounded, read_to_bound,
         serialize_error, write_json_atomic,
     };
     use crate::FilesError;
-    use crate::error::assert_link;
+    use crate::error::{assert_io, assert_link};
 
     /// The bound a receipt is read to: 64 KiB.
     const RECEIPT_LIMIT: u64 = 64 << 10;
@@ -538,19 +572,6 @@ mod tests {
         fs::write(&path, b" ").unwrap();
         too_large(read_bounded(&path, 0).map(drop), 0);
 
-        // A file without end is read only to one byte past the bound, then refused.
-        #[cfg(target_os = "linux")]
-        {
-            let endless = Path::new("/dev/zero");
-            match read_bounded(endless, RECEIPT_LIMIT) {
-                Err(FilesError::TooLarge { path: at, limit }) => {
-                    assert_eq!(at, endless);
-                    assert_eq!(limit, RECEIPT_LIMIT);
-                }
-                other => panic!("{other:?}"),
-            }
-        }
-
         // A file that is not there is the system's error.
         let missing = dir.path().join("missing.json");
         match read_bounded(&missing, RECEIPT_LIMIT) {
@@ -594,5 +615,99 @@ mod tests {
         // The file read through real folders is read.
         let value: Value = read_json_bounded(&receipt, RECEIPT_LIMIT).unwrap();
         assert_eq!(value, json!({"version": "1.0.0-beta"}));
+    }
+
+    /// A source without end, which counts the bytes taken from it.
+    struct Endless<'a>(&'a Cell<u64>);
+
+    impl io::Read for Endless<'_> {
+        fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+            buffer.fill(b'{');
+            let taken = u64::try_from(buffer.len()).unwrap();
+            self.0.set(self.0.get() + taken);
+            Ok(buffer.len())
+        }
+    }
+
+    #[test]
+    fn a_read_takes_one_byte_past_its_bound_at_most() {
+        // A source without end is read only to one byte past the bound, then refused.
+        for limit in [RECEIPT_LIMIT, MAX_JSON_LEN, 1, 0] {
+            let taken = Cell::new(0);
+            assert_eq!(read_to_bound(Endless(&taken), limit).unwrap(), None);
+            assert_eq!(taken.get(), limit + 1, "{limit}");
+        }
+        // One of exactly the bound is read whole, and one of nothing passes any bound.
+        let whole = vec![b'{'; usize::try_from(RECEIPT_LIMIT).unwrap()];
+        let read = read_to_bound(whole.as_slice(), RECEIPT_LIMIT).unwrap();
+        assert_eq!(read.as_deref(), Some(whole.as_slice()));
+        assert_eq!(read_to_bound(io::empty(), 0).unwrap(), Some(Vec::new()));
+    }
+
+    #[test]
+    fn refuses_what_is_not_a_regular_file() {
+        let dir = tempfile::tempdir().unwrap();
+        // A folder at the name: Linux opens it to read and finds no file, Windows will not open
+        // it so.
+        let folder = dir.path().join("receipt.json");
+        fs::create_dir(&folder).unwrap();
+        let source = assert_io(read_bounded(&folder, RECEIPT_LIMIT), &folder);
+        #[cfg(unix)]
+        assert_eq!(source.kind(), io::ErrorKind::InvalidInput, "{source}");
+        #[cfg(windows)]
+        assert_eq!(source.kind(), io::ErrorKind::PermissionDenied, "{source}");
+
+        #[cfg(target_os = "linux")]
+        {
+            use std::sync::mpsc;
+            use std::thread;
+            use std::time::Duration;
+
+            /// Far longer than any refusal takes, and short enough for a test to fail in.
+            const MOST_WAIT: Duration = Duration::from_secs(10);
+
+            // A device without end is refused before anything is read from it.
+            let endless = Path::new("/dev/zero");
+            let source = assert_io(read_bounded(endless, RECEIPT_LIMIT), endless);
+            assert_eq!(source.kind(), io::ErrorKind::InvalidInput, "{source}");
+
+            // A FIFO, which a plain open waits on until a writer comes, is refused at once.
+            let fifo = dir.path().join("journal.json");
+            let made = std::process::Command::new("mkfifo")
+                .arg(&fifo)
+                .status()
+                .unwrap();
+            assert!(made.success(), "mkfifo: {made}");
+            let (told, answer) = mpsc::channel();
+            let reading = fifo.clone();
+            let reader = thread::spawn(move || {
+                let _ = told.send(read_bounded(&reading, RECEIPT_LIMIT).map(drop));
+            });
+            match answer.recv_timeout(MOST_WAIT) {
+                Ok(result) => {
+                    let source = assert_io(result, &fifo);
+                    assert_eq!(source.kind(), io::ErrorKind::InvalidInput, "{source}");
+                }
+                Err(_) => {
+                    // A writer lets the waiting reader go, so that the test ends.
+                    let _ = fs::OpenOptions::new().write(true).open(&fifo);
+                    panic!("reading a FIFO waited for a writer");
+                }
+            }
+            reader.join().unwrap();
+            let refused = read_json_bounded::<Value>(&fifo, RECEIPT_LIMIT);
+            assert_eq!(
+                assert_io(refused, &fifo).kind(),
+                io::ErrorKind::InvalidInput
+            );
+
+            // A link put at the name once the links were looked for is not followed.
+            let real = dir.path().join("real.json");
+            fs::write(&real, b"{}").unwrap();
+            let raced = dir.path().join("raced.json");
+            symlink_file(&raced, &real).unwrap();
+            let error = super::open_regular(&raced).unwrap_err();
+            assert_eq!(error.raw_os_error(), Some(libc::ELOOP), "{error}");
+        }
     }
 }
