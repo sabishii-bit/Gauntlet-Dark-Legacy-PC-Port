@@ -2,14 +2,17 @@
 """Lint what is about to be pushed, so clang-tidy debt never reaches main unnoticed.
 
 Installed by `python scripts/setup.py` (copied to .git/hooks/pre-push when none exists;
-an existing hook can call this file instead). For every updated ref it lints the
-translation units that the pushed commits touch, against the remote's old tip, through
-`scripts/lint.py --changed --quick --profile fast`: the changed units and one unit per
-changed header, without the static analyzer, so a push waits seconds to a few minutes.
-CI then lints every unit the change reaches with the same checks, from a cache of clean
-results. Set GDL_SKIP_LINT=1 to push regardless, for example to publish a fix for
-the lint itself. A push interrupted at the terminal ends git but not this hook, so the
-hook watches the git that ran it and ends the lint, workers and all, once git is gone.
+an existing hook can call this file instead). For every updated ref it runs
+`scripts/lint.py --changed <base>..<pushed tip>`, the base being the remote's old tip (or,
+when that is not here, where the tip left origin/main), and the lint's defaults are the
+gate: the units the pushed commits change and one unit per changed header (its own .cpp,
+else its mirrored test, else the first that includes it), with the checks .clang-tidy
+enables and so without the static analyzer, at low priority on three quarters of the
+CPUs. A push waits seconds to a few minutes. CI then lints every unit the change reaches
+with the same checks, from a cache of clean results. Set GDL_SKIP_LINT=1 to push
+regardless, for example to publish a fix for the lint itself. A push interrupted at the
+terminal ends git but not this hook, so the hook watches the git that ran it and ends the
+lint, workers and all, once git is gone.
 """
 
 import os
@@ -85,7 +88,7 @@ def main():
         print(f"pre-push: quick clang-tidy over the units changed in {start[:9]}..{head[:9]} "
               "(CI lints the full fan-out)", file=sys.stderr)
         git = process_tree.nearest_ancestor(process_tree.table(), os.getpid(), process_tree.GIT)
-        code = run_lint(["--changed", f"{start}..{head}", "--quick", "--profile", "fast"], git)
+        code = run_lint(["--changed", f"{start}..{head}"], git)
         if code != 0:
             print("pre-push: refused, fix the findings above (or push with GDL_SKIP_LINT=1).",
                   file=sys.stderr)
