@@ -4,24 +4,23 @@
 use std::fs::{self, File};
 use std::path::{Path, PathBuf};
 
-use serde_json::Value;
+#[path = "../version.rs"]
+mod version;
 
 fn main() {
     let manifest = PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").expect("cargo sets it"));
-    let version_file = manifest.join("../../../VERSION");
-    println!("cargo::rerun-if-changed={}", version_file.display());
+    let version_file = version::version_path(&manifest);
     // Tauri's build watches its configuration but not the icons it builds into the program.
     let icons = manifest.join("icons");
     println!("cargo::rerun-if-changed={}", icons.display());
-    let version = fs::read_to_string(&version_file).expect("VERSION is readable");
-    let version = version.trim();
-    let generated = manifest.join("gen").join("version.json");
-    write_version(&generated, version, &version_file);
-    println!("cargo::rerun-if-env-changed=TAURI_CONFIG");
-    match overriding_version() {
-        Ok(overriding) => {
-            let version = overriding.as_deref().unwrap_or(version);
-            println!("cargo::rustc-env=GDL_VERSION={version}");
+    let effective = version::file_version(&version_file).and_then(|file| {
+        let generated = manifest.join("gen").join("version.json");
+        write_version(&generated, &file, &version_file);
+        version::effective_version(&file)
+    });
+    match effective {
+        Ok(effective) => {
+            println!("cargo::rustc-env=GDL_VERSION={effective}");
             tauri_build::build();
         }
         Err(message) => println!("cargo::error={message}"),
@@ -57,23 +56,4 @@ fn write_version(generated: &Path, version: &str, version_file: &Path) {
 fn backdate(path: &Path, like: &Path) -> std::io::Result<()> {
     let time = fs::metadata(like)?.modified()?;
     File::options().write(true).open(path)?.set_modified(time)
-}
-
-/// The version that `TAURI_CONFIG`, Tauri's own override, gives the program, if it gives one.
-/// Tauri then writes it into the resource and the package information in place of VERSION's.
-fn overriding_version() -> Result<Option<String>, String> {
-    let Ok(patch) = std::env::var("TAURI_CONFIG") else {
-        return Ok(None);
-    };
-    let patch: Value = serde_json::from_str(&patch)
-        .map_err(|error| format!("TAURI_CONFIG is not JSON: {error}"))?;
-    match patch.get("version") {
-        None => Ok(None),
-        // Tauri reads a version that names a file as that file's path, so only a version proper
-        // may stand for the program's.
-        Some(Value::String(version)) if semver::Version::parse(version).is_ok() => {
-            Ok(Some(version.clone()))
-        }
-        Some(other) => Err(format!("TAURI_CONFIG has version {other}, not a version")),
-    }
 }
