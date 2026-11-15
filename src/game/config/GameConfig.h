@@ -40,6 +40,9 @@ struct DisplayConfig {
     /** Cut a generator's lava pool to the silhouette its artists drew but shipped without
      * colours; off shows the pool's whole square, as the console did. */
     bool authoredSilhouettes = true;
+    /** The play HUD's look, by id. One no installed expansion offers is kept and drawn as
+     * Dark Legacy's. */
+    std::string hudStyle{kDarkLegacyHudStyle};
     u32 sampleCount = 1;      ///< MSAA samples: 1 (off), 2 or 4; limited by the graphics device
     u32 textureFiltering = 8; ///< off (0), trilinear (1), or 2/4/8/16x anisotropic
     u32 maxFrameRate = 30;    ///< menu presentation cap; 0 follows the monitor, even without V-Sync

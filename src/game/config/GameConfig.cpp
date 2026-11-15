@@ -358,6 +358,7 @@ template <class Io, class Config> void visitSettings(Io& io, Config& config) {
         display.value("ambientOcclusion", config.display.ambientOcclusion);
         display.value("smoothSprites", config.display.smoothSprites);
         display.value("authoredSilhouettes", config.display.authoredSilhouettes);
+        display.value("hudStyle", config.display.hudStyle);
         display.offered("textureFiltering", config.display.textureFiltering, kTextureFilterings);
         display.offered("sampleCount", config.display.sampleCount, kSampleCounts);
         display.frameRate("maxFrameRate", config.display.maxFrameRate);

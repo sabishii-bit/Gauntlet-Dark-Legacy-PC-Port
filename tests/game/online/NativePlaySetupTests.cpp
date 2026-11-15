@@ -107,6 +107,7 @@ TEST_CASE("native setup freezes agreed gameplay but preserves local output prefe
     second.timing.gameplayFrameRate = 144;
     second.display.windowWidth = 1920;
     second.display.vsync = false;
+    second.display.hudStyle = "fake";
     second.camera.horizontalFovDegrees = 100.0f;
     second.audio.masterVolume = 0.0f;
     second.audio.stereo = false;
@@ -149,6 +150,7 @@ TEST_CASE("native setup freezes agreed gameplay but preserves local output prefe
     CHECK(b->config().timing.gameplayFrameRate == 144);
     CHECK(b->config().display.windowWidth == 1920);
     CHECK_FALSE(b->config().display.vsync);
+    CHECK(b->config().display.hudStyle == "fake"); // each machine draws the HUD look it chose
     CHECK(b->config().camera.horizontalFovDegrees == 100.0f);
     CHECK(b->config().audio.masterVolume == 0.0f);
     CHECK_FALSE(b->config().audio.stereo);
@@ -158,8 +160,10 @@ TEST_CASE("native setup freezes agreed gameplay but preserves local output prefe
     CHECK(b->config().controls[0].device == "local-device");
     CHECK(b->config().play.magicHoldSeconds == 0.5f);
     second.display.windowWidth = 640;
+    second.display.hudStyle = kDarkLegacyHudStyle;
     second.combat.autoMelee = false;
     CHECK(b->config().display.windowWidth == 1920);
+    CHECK(b->config().display.hudStyle == "fake");
     CHECK(b->config().combat.autoMelee);
 }
 

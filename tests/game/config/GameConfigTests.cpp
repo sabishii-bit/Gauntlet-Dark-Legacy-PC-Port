@@ -888,6 +888,7 @@ constexpr std::string_view kDefaultSettingsFile = R"json({
     "depthOfField": false,
     "frameHeight": 448,
     "frameWidth": 640,
+    "hudStyle": "darkLegacy",
     "maxFrameRate": 30,
     "monitor": -1,
     "renderer": "vulkan",
@@ -1358,6 +1359,7 @@ constexpr std::string_view kChangedSettingsFile = R"json({
     "depthOfField": true,
     "frameHeight": 600,
     "frameWidth": 800,
+    "hudStyle": "fake",
     "maxFrameRate": 0,
     "monitor": 2,
     "renderer": "opengl",
@@ -1403,8 +1405,8 @@ constexpr std::string_view kChangedSettingsFile = R"json({
 )json";
 
 /** Every setting away from its default: bindings changed, emptied and reordered, a customized
- * profile beside three that are not, two mechanics and a difficulty no table names. Escape
- * keeps its fixed binding, which reading the file's menu keys restores. */
+ * profile beside three that are not, two mechanics, a difficulty no table names and a HUD look
+ * no build offers. Escape keeps its fixed binding, which reading the file's menu keys restores. */
 GameConfig awayFromDefaults() {
     GameConfig config;
     auto& display = config.display;
@@ -1423,6 +1425,7 @@ GameConfig awayFromDefaults() {
     display.ambientOcclusion = true;
     display.smoothSprites = true;
     display.authoredSilhouettes = false;
+    display.hudStyle = "fake";
     display.sampleCount = 4;
     display.textureFiltering = 16;
     display.maxFrameRate = 0;
@@ -1702,6 +1705,35 @@ TEST_CASE("a merge passes over what it does not know, and the save leaves it out
         CHECK(ignored.failure == nullptr);
         CHECK(left.toJson() == kDefaultSettingsFile);
     }
+}
+
+TEST_CASE("the HUD look defaults to Dark Legacy's, and one this build does not know is kept",
+          "[game][config][settings-file]") {
+    CHECK(GameConfig{}.display.hudStyle == kDarkLegacyHudStyle);
+    GameConfig shipped;
+    REQUIRE(shipped.loadFile(test::dataDirectory() / "config.json"));
+    CHECK(shipped.display.hudStyle == kDarkLegacyHudStyle);
+    // An id is kept as the file spells it, case and all, whether or not a look answers to it.
+    for (const auto* id : {"future", "DarkLegacy"}) {
+        CAPTURE(id);
+        GameConfig config;
+        const auto merged =
+            mergeLogged(config, R"({"display":{"hudStyle":")" + std::string(id) + R"("}})");
+        CHECK(merged.warnings.empty());
+        CHECK(merged.failure == nullptr);
+        CHECK(config.display.hudStyle == id);
+        const auto saved = nlohmann::json::parse(config.toJson());
+        CHECK(saved.at("display").at("hudStyle").get<std::string>() == id);
+        GameConfig restored;
+        restored.mergeJson(config.toJson());
+        CHECK(restored.display.hudStyle == id);
+    }
+    // A look that is not a string refuses the file, as every typed setting does.
+    GameConfig number;
+    const auto merged = mergeLogged(number, R"({"display":{"hudStyle":5}})");
+    CHECK(merged.warnings.empty());
+    CHECK(threwTypeError(merged, "302"));
+    CHECK(number.display.hudStyle == kDarkLegacyHudStyle);
 }
 
 TEST_CASE("texture filtering and sample counts not offered fall back to their plainest",
