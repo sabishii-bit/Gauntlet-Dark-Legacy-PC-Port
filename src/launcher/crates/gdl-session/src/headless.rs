@@ -1220,6 +1220,20 @@ mod tests {
             run(&inspecting, &RELEASE, &mut own, &mut Closed, &mut err),
             Some(EXIT_REFUSED)
         );
+        // A runtime that verifies and loses its report, as the release scripts' check could. No
+        // refusal reaches the error stream, so the runtime did verify.
+        if let Some(platform) = this_platform() {
+            let zip = standard_zip(dir.path(), "runtime.zip", platform.as_str(), VERSION);
+            let verifying = [
+                OsString::from("--check-payload"),
+                OsString::from("--payload"),
+                zip.into_os_string(),
+            ];
+            assert_eq!(
+                run(&verifying, &RELEASE, &mut own, &mut Closed, &mut err),
+                Some(EXIT_REFUSED)
+            );
+        }
         assert!(err.is_empty());
         // A refusal and a usage error exit as they do when their line is written.
         let checking = [OsString::from("--check-payload")];
