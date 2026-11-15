@@ -636,6 +636,7 @@ mod tests {
         FAKE_CERTIFICATE_LEN, RuntimeFiles, SparseFile, append_sections, append_sections_at,
         fake_sign, table_and_trailer, tiny_elf, tiny_pe,
     };
+    use gdl_release::Platform;
     use serde_json::{Value, json};
     use sha2::{Digest, Sha256};
 
@@ -1183,6 +1184,12 @@ mod tests {
 
     #[test]
     fn the_running_program_carries_no_sections() {
+        // Elsewhere than on the systems a release is built for, the test program may be of a
+        // kind the reader does not know.
+        if Platform::of_this_build().is_none() {
+            eprintln!("skipped: no release is built for this system");
+            return;
+        }
         // The test program itself, as its linker wrote it, is a program whose headers say it
         // ends where its file does, which is where a launcher file's first section is put.
         let mut own = File::open(super::own_executable().unwrap()).unwrap();
