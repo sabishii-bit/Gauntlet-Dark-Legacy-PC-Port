@@ -3,6 +3,7 @@
 #![deny(unsafe_code)]
 
 mod error;
+mod job;
 mod json;
 mod links;
 mod long_path;
@@ -11,8 +12,10 @@ mod names;
 mod platform;
 mod rename;
 mod retry;
+mod staging;
 
 pub use error::FilesError;
+pub use job::{BLOCK_LEN, Cancel, Cancelled, Job, NoProgress, PhaseId, Progress};
 pub use json::{
     MAX_JSON_LEN, PENDING_SUFFIX, pending_path, read_bounded, read_json_bounded, write_json_atomic,
 };
@@ -24,3 +27,4 @@ pub use names::{
 };
 pub use rename::{rename_noreplace, replace};
 pub use retry::{RETRIED_WINDOWS_ERRORS, RETRY_INTERVAL, RETRY_WINDOW, retry_locked};
+pub use staging::{Journal, STAGING_RANDOM_CHARS, Staging};

@@ -41,6 +41,20 @@ pub enum FilesError {
         #[source]
         source: serde_json::Error,
     },
+    /// Something is at `path`, where a staged root was to go, though the job found the name free
+    /// when it planned: the launcher never replaces what it did not make.
+    #[error("Destination changed during installation: {}", .path.display())]
+    Exists {
+        /// The root's place.
+        path: PathBuf,
+    },
+    /// `name` was given as a root to publish, but is not one name the staging holds at its top,
+    /// or was given twice.
+    #[error("{name:?} is not a single staged root")]
+    NotRoot {
+        /// The name as it was given.
+        name: Box<str>,
+    },
 }
 
 impl FilesError {
@@ -97,6 +111,22 @@ mod tests {
         };
         assert_eq!(error.to_string(), format!("{shown}: {detail}"));
         assert_eq!(error.source().unwrap().to_string(), detail);
+
+        let error = FilesError::Exists { path: path.clone() };
+        assert_eq!(
+            error.to_string(),
+            format!("Destination changed during installation: {shown}")
+        );
+        assert!(error.source().is_none());
+
+        let error = FilesError::NotRoot {
+            name: "data/config.json".into(),
+        };
+        assert_eq!(
+            error.to_string(),
+            r#""data/config.json" is not a single staged root"#
+        );
+        assert!(error.source().is_none());
 
         assert!(size_of::<FilesError>() <= MOST_ERROR_BYTES);
     }
