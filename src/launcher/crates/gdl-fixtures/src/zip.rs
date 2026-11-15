@@ -273,17 +273,17 @@ fn u32_field(len: usize, what: &str) -> u32 {
 }
 
 /// Appends `value` as a little-endian field of 16 bits.
-fn put_u16(bytes: &mut Vec<u8>, value: u16) {
+pub(crate) fn put_u16(bytes: &mut Vec<u8>, value: u16) {
     bytes.extend_from_slice(&value.to_le_bytes());
 }
 
 /// Appends `value` as a little-endian field of 32 bits.
-fn put_u32(bytes: &mut Vec<u8>, value: u32) {
+pub(crate) fn put_u32(bytes: &mut Vec<u8>, value: u32) {
     bytes.extend_from_slice(&value.to_le_bytes());
 }
 
 /// Appends `value` as a little-endian field of 64 bits.
-fn put_u64(bytes: &mut Vec<u8>, value: u64) {
+pub(crate) fn put_u64(bytes: &mut Vec<u8>, value: u64) {
     bytes.extend_from_slice(&value.to_le_bytes());
 }
 
