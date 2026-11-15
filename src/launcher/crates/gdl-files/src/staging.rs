@@ -8,7 +8,9 @@ use std::fs::{self, File, OpenOptions};
 use std::io;
 use std::path::Path;
 
-use crate::{FilesError, NameSet, RelPath, no_links, rename_noreplace};
+use crate::{
+    FilesError, NameSet, PAYLOAD_NAMES, RelPath, check_component, no_links, rename_noreplace,
+};
 
 /// How many random ASCII letters and digits follow a staging folder's prefix, as in
 /// `install-AbC123xy`.
@@ -34,8 +36,13 @@ pub struct Staging {
 impl Staging {
     /// Makes a new staging folder in `dest`, which must have no link on its path, named `prefix`
     /// and then [`STAGING_RANDOM_CHARS`] random ASCII letters and digits. The prefix is one of the
-    /// launcher's own, such as `install-`, and holds no separator.
+    /// launcher's own, such as `install-`: one ASCII name that [`check_component`] passes, so that
+    /// the staging lies in `dest` itself. Any other prefix is refused before anything is made, as
+    /// an [`io::ErrorKind::InvalidInput`] error at `dest`.
     pub fn create_in(dest: &Path, prefix: &str) -> Result<Staging, FilesError> {
+        check_component(prefix, &PAYLOAD_NAMES).map_err(|refused| {
+            FilesError::io(dest, io::Error::new(io::ErrorKind::InvalidInput, refused))
+        })?;
         no_links(dest)?;
         let dir = tempfile::Builder::new()
             .prefix(prefix)
@@ -58,8 +65,10 @@ impl Staging {
 
     /// Makes the file `path` in the staging, new, for writing, with the folders above it made as
     /// [`create_dir`](Staging::create_dir) makes them. Anything already at the name refuses it, a
-    /// link included, which is never followed. Close the file before publishing the root it is
-    /// in: Windows refuses to rename a folder while a file inside it is open.
+    /// link included, which is never followed, and the refusal is
+    /// [`io::ErrorKind::AlreadyExists`] without a system error code, the same on every system,
+    /// whatever holds the name. Close the file before publishing the root it is in: Windows
+    /// refuses to rename a folder while a file inside it is open.
     pub fn create_file(&self, path: &RelPath) -> Result<File, FilesError> {
         let file = path.path_under(self.path());
         make_folders(file.parent().unwrap_or(self.path()), path.depth() - 1)?;
@@ -67,7 +76,11 @@ impl Staging {
             .write(true)
             .create_new(true)
             .open(&file)
-            .map_err(|source| FilesError::io(&file, source))
+            .map_err(|source| {
+                // Windows answers a name that a folder or a junction holds as access denied.
+                let taken = fs::symlink_metadata(&file).is_ok();
+                FilesError::io(&file, if taken { name_taken() } else { source })
+            })
     }
 
     /// Puts each of `roots` in place in the folder `into`, by a rename that never replaces what
@@ -131,6 +144,12 @@ impl Staging {
             })
             .collect()
     }
+}
+
+/// The refusal of a name that something holds already: a kind of its own and no system code, the
+/// same on every system.
+fn name_taken() -> io::Error {
+    io::Error::new(io::ErrorKind::AlreadyExists, "the name is taken")
 }
 
 /// Makes `path` and the folders above it, `count` folders in all, outermost first, as
@@ -369,6 +388,34 @@ mod tests {
         let source = assert_io(Staging::create_in(&missing, "install-"), &missing);
         assert_eq!(source.kind(), io::ErrorKind::NotFound);
         assert!(fs::symlink_metadata(&missing).is_err());
+
+        // A prefix that is not one safe name would put the staging elsewhere, beside the
+        // destination, under it or in place of it, and is refused before anything is made.
+        let folders = [
+            install.root.parent().unwrap(),
+            install.root.as_path(),
+            install.state.as_path(),
+            install.outside.as_path(),
+        ];
+        let lists = || folders.map(|folder| folder_names(folder).unwrap());
+        let before = lists();
+        let absolute = install.outside.join("x-");
+        for prefix in [
+            "../escaped-",
+            "..",
+            ".",
+            "",
+            "a/b-",
+            r"a\b-",
+            "C:",
+            "con",
+            "install-\u{e9}",
+            absolute.to_str().unwrap(),
+        ] {
+            let source = assert_io(Staging::create_in(&install.state, prefix), &install.state);
+            assert_eq!(source.kind(), io::ErrorKind::InvalidInput, "{prefix:?}");
+        }
+        assert_eq!(lists(), before);
     }
 
     #[test]
@@ -386,20 +433,23 @@ mod tests {
         .into();
         assert_eq!(tree(staging.path()), made);
 
-        // A name that is taken refuses the file, whatever takes it, and is left as it was.
+        // A name that is taken refuses the file, whatever takes it, the same way on every system,
+        // and is left as it was.
+        let assert_taken = |result: Result<fs::File, FilesError>, at: &Path| {
+            let source = assert_io(result, at);
+            assert_eq!(source.kind(), io::ErrorKind::AlreadyExists, "{source}");
+            assert_eq!(source.raw_os_error(), None, "{source}");
+        };
         for taken in ["VERSION", "data/text/en.json", "data/text", "data"] {
             let at = rel(taken).path_under(staging.path());
-            assert_io(staging.create_file(&rel(taken)), &at);
+            assert_taken(staging.create_file(&rel(taken)), &at);
         }
-        let at = staging.path().join("VERSION");
-        let source = assert_io(staging.create_file(&rel("VERSION")), &at);
-        assert_eq!(source.kind(), io::ErrorKind::AlreadyExists);
         assert_eq!(tree(staging.path()), made);
 
         // A link at the name is never followed: nothing is made where it leads.
         let link = staging.path().join("shaders");
         link_folder(&link, &install.outside).unwrap();
-        assert_io(staging.create_file(&rel("shaders")), &link);
+        assert_taken(staging.create_file(&rel("shaders")), &link);
         assert!(folder_names(&install.outside).unwrap().is_empty());
         let kept = install.outside.join("kept.json");
         fs::write(&kept, b"kept").unwrap();
@@ -410,8 +460,7 @@ mod tests {
                 eprintln!("skipped the file links: this account cannot make them ({error})");
                 break;
             }
-            let source = assert_io(staging.create_file(&rel(name)), &link);
-            assert_eq!(source.kind(), io::ErrorKind::AlreadyExists, "{name}");
+            assert_taken(staging.create_file(&rel(name)), &link);
         }
         assert_eq!(fs::read(&kept).unwrap(), b"kept");
         assert!(fs::symlink_metadata(&nowhere).is_err());
@@ -422,6 +471,28 @@ mod tests {
         drop(file);
         let flag = staging.path().join("portable.flag");
         assert_eq!(fs::read(flag).unwrap(), b"portable");
+    }
+
+    /// A folder that the system will not let the launcher write in refuses a file for that
+    /// reason, which is not a name that is taken.
+    #[cfg(unix)]
+    #[test]
+    fn a_denial_is_no_taken_name() {
+        let install = install();
+        let staging = Staging::create_in(&install.state, "install-").unwrap();
+        staging.create_dir(&rel("locked")).unwrap();
+        let locked = staging.path().join("locked");
+        let denied = gdl_fixtures::DeniedAccess::deny(&[&locked]).unwrap();
+        if fs::read_dir(&locked).is_ok() {
+            eprintln!("skipped: this user writes in folders of mode 0o000, as root does");
+            return;
+        }
+        let at = locked.join("config.json");
+        let source = assert_io(staging.create_file(&rel("locked/config.json")), &at);
+        assert_eq!(source.kind(), io::ErrorKind::PermissionDenied, "{source}");
+        assert_eq!(source.raw_os_error(), Some(libc::EACCES), "{source}");
+        drop(denied);
+        assert!(folder_names(&locked).unwrap().is_empty());
     }
 
     #[test]
