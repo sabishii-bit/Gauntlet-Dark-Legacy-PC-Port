@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """Run clang-tidy over every translation unit in compile_commands.json.
 
-Findings in headers are reported once. Exit status is 1 when anything is
-reported. Configure and build first so compile_commands.json exists. A lint that is
-interrupted, told to stop, or whose caller is gone ends its clang-tidy workers, and one
-killed outright takes them with it (process_tree.start_tethered). CI can
-instead configure with CMAKE_CXX_SCAN_FOR_MODULES=OFF (no C++ modules are used)
-and build only compile_commands, avoiding build-only module mapper files. The lint
-lowers its own priority, which its workers inherit, and runs as many of them as there
-are logical CPUs under CI (CI set) and three quarters of that elsewhere, so the machine's
-user keeps the rest.
+Configure and build first so compile_commands.json exists; CI can instead configure with
+CMAKE_CXX_SCAN_FOR_MODULES=OFF (no C++ modules are used) and build only compile_commands,
+avoiding build-only module mapper files. Findings print as each unit finishes, those in
+headers once, so a lint that is stopped or times out has shown what it found. Exit status
+is 1 when anything is reported and 130 when the lint is stopped.
+
+The lint lowers its own priority, which its workers inherit, and runs one worker per
+logical CPU under CI (CI set) and three quarters as many elsewhere, leaving the rest to
+the machine's user. A lint that is interrupted, told to stop, or whose caller is gone ends
+its clang-tidy workers, and one killed outright takes them with it.
 
     python scripts/lint.py             # everything
     python scripts/lint.py src/game    # a subtree or single file
@@ -382,7 +383,6 @@ def main(argv=None) -> int:
           f"{len(units)} of {len(roster)} translation units, {args.jobs} workers"
           f"{' at low priority' if lowered else ''}, {args.profile} profile", flush=True)
     seen: set[str] = set()
-    ordered: list[str] = []
     hits = 0
     interrupted = False
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as pool:
@@ -397,7 +397,8 @@ def main(argv=None) -> int:
                 # cannot be interrupted.
                 finished, remaining = concurrent.futures.wait(
                     remaining, timeout=0.5, return_when=concurrent.futures.FIRST_COMPLETED)
-                for future in finished:
+                # Units that finished together report in roster order.
+                for future in sorted(finished, key=pending.__getitem__):
                     done += 1
                     unit = pending[future]
                     try:
@@ -408,25 +409,24 @@ def main(argv=None) -> int:
                     label = unit.relative_to(ROOT) if unit.is_relative_to(ROOT) else unit
                     print(f"[{done}/{len(units)}] {label} "
                           f"({time.monotonic() - started:.1f}s elapsed)", flush=True)
+                    # Now rather than at the end, so a lint stopped or timed out has shown
+                    # what it found; a header's finding, which many units reach, only once.
                     for finding in findings:
                         key = finding.split("\n", 1)[0]
                         if key not in seen:
                             seen.add(key)
-                            ordered.append(finding)
+                            print(f"{finding}\n", flush=True)
         except KeyboardInterrupt:
             interrupted = True
             WORKERS.stop()
             pool.shutdown(wait=False, cancel_futures=True)
     if interrupted:
-        print(f"Lint stopped after {done} of {len(units)} translation units; "
-              "its clang-tidy workers were ended", file=sys.stderr, flush=True)
+        print(f"Lint stopped after {done} of {len(units)} translation units with {len(seen)} "
+              "findings; its clang-tidy workers were ended", file=sys.stderr, flush=True)
         return 130
-    for finding in sorted(ordered):
-        print(finding)
-        print()
-    print(f"{len(units)} translation units checked ({hits} cached), {len(ordered)} findings "
+    print(f"{len(units)} translation units checked ({hits} cached), {len(seen)} findings "
           f"in {time.monotonic() - started:.1f}s", flush=True)
-    return 1 if ordered else 0
+    return 1 if seen else 0
 
 
 if __name__ == "__main__":

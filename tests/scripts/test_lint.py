@@ -4,6 +4,7 @@ import fnmatch
 import io
 import json
 import pathlib
+import re
 import subprocess
 import sys
 import tempfile
@@ -231,6 +232,51 @@ class DriverTests(unittest.TestCase):
     def test_finding_causes_failure(self):
         with mock.patch.object(lint, "run_one", return_value=["header.h:1:2: warning: bad"]):
             self.assertEqual(lint.main([]), 1)
+
+    @staticmethod
+    def printed_after(text):
+        """What printed after each unit's progress line, by the unit's label."""
+        blocks, current = {}, None
+        for line in text.splitlines():
+            progress = re.match(r"\[\d+/\d+\] (.+) \(\d+\.\ds elapsed\)$", line)
+            if progress:
+                current = blocks.setdefault(progress.group(1), [])
+            elif current is not None:
+                current.append(line)
+        return blocks
+
+    def test_findings_print_as_their_unit_finishes_and_each_once(self):
+        own = "src/0.cpp:1:2: warning: own [c]"
+        shared = "src/Shared.h:3:4: warning: shared [c]"
+        results = {self.units[0]: [own, shared], self.units[1]: [f"{shared}\n    context"]}
+        output = io.StringIO()
+        with mock.patch.object(lint, "run_one",
+                               side_effect=lambda _tidy, unit, _profile: results.get(unit, [])), \
+             contextlib.redirect_stdout(output):
+            self.assertEqual(lint.main(["--jobs", "1"]), 1)
+        text = output.getvalue()
+        first = self.printed_after(text)[str(self.units[0].relative_to(lint.ROOT))]
+        self.assertIn(own, first)
+        self.assertIn(shared, first)
+        self.assertEqual(text.count("shared [c]"), 1)
+        self.assertRegex(text.splitlines()[-1],
+                         r"^8 translation units checked \(0 cached\), 2 findings in ")
+
+    def test_a_stopped_lint_has_already_shown_its_findings(self):
+        own = "src/0.cpp:1:2: warning: own [c]"
+
+        def run_one(_clang_tidy, unit, _profile):
+            if unit == self.units[1]:
+                raise KeyboardInterrupt
+            return [own] if unit == self.units[0] else []
+
+        output, errors = io.StringIO(), io.StringIO()
+        with mock.patch.object(lint, "run_one", side_effect=run_one), \
+             contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+            self.assertEqual(lint.main(["--jobs", "1"]), 130)
+        self.assertIn(own, output.getvalue())
+        self.assertNotIn("translation units checked", output.getvalue())
+        self.assertIn("with 1 findings", errors.getvalue())
 
     def test_launch_failure_causes_failure(self):
         with mock.patch.object(lint, "run_one", side_effect=OSError("cannot launch")):
