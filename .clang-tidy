@@ -21,14 +21,13 @@
 #   performance-enum-size                                enum widths are digested and sent as their underlying type
 #   readability-avoid-nested-conditional-operator        chained conditionals laid out as lookup tables are the house style
 #   misc-no-recursion                                    nested actors and effect trees are walked recursively on purpose
+#   clang-analyzer-*                                     slow, and only false positives and crashes here; scripts/lint.py --profile full runs it
 ---
 Checks: >
   -*,
   bugprone-*,
   -bugprone-easily-swappable-parameters,
   -bugprone-unchecked-optional-access,
-  clang-analyzer-*,
-  -clang-analyzer-optin.core.EnumCastOutOfRange,
   cppcoreguidelines-*,
   -cppcoreguidelines-pro-type-union-access,
   -cppcoreguidelines-avoid-const-or-ref-data-members,

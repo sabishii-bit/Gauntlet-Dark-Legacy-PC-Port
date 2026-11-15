@@ -11,15 +11,21 @@ and build only compile_commands, avoiding build-only module mapper files.
     python scripts/lint.py src/game    # a subtree or single file
     python scripts/lint.py --shard-index 0 --shard-count 4  # first CI shard
     python scripts/lint.py --changed origin/main   # only what a change touches
-    python scripts/lint.py --changed origin/main --quick --profile fast   # the hook's gate
+    python scripts/lint.py --changed origin/main --quick   # the hook's gate
+    python scripts/lint.py --profile full src/game/level   # with the static analyzer
+
+The fast profile, the default, runs the checks .clang-tidy enables, as clangd does in the
+editor. The full profile adds the clang static analyzer (clang-analyzer-*, less the families
+that cannot fire here), which costs from nothing to two thirds of a unit's time (a typical
+test unit takes a third longer) and has reported only false positives and its own crashes
+in this tree, so it runs only when asked for. The pre-push hook and CI run fast.
 
 --changed lints the translation units affected by the files that differ from a git
 revision (or a range such as a..b): the changed sources themselves and every unit
 that includes a changed header, directly or through other headers. --quick keeps one
-unit per changed header (its own .cpp when there is one) instead of the whole fan-out,
-and --profile fast leaves out the clang static analyzer, which costs two thirds of a
-unit's time; the pre-push hook under scripts/hooks runs that pair over what is being
-pushed, and CI runs the full profile over everything, cached. Nothing affected passes.
+unit per changed header (its own .cpp when there is one) instead of the whole fan-out;
+the pre-push hook under scripts/hooks runs it over what is being pushed, and CI lints
+everything, cached. Nothing affected passes.
 """
 
 from __future__ import annotations
@@ -153,7 +159,21 @@ def select_shard(units: list[pathlib.Path], index: int, count: int) -> list[path
     return units[index::count]
 
 
-PROFILES = {"full": [], "fast": ["--checks=-clang-analyzer-*"]}
+# The clang static analyzer, which .clang-tidy leaves out, less its enum range check and the
+# families that cannot fire here: Apple, WebKit, Fuchsia and MPI APIs, Grand Central Dispatch
+# and the nullability qualifiers, which no source uses.
+ANALYZER_CHECKS = ",".join([
+    "clang-analyzer-*", "-clang-analyzer-optin.core.EnumCastOutOfRange",
+    *(f"-clang-analyzer-{family}" for family in (
+        "osx.*", "optin.osx.*", "webkit.*", "fuchsia.*", "optin.mpi.*",
+        "optin.performance.GCDAntipattern", "nullability.*")),
+])
+# The LLVM 18 analyzer crashes while inlining the MSVC 14.44 <format> sources; keep it out of
+# standard-library bodies. Nothing but the analyzer reads this.
+ANALYZER_CONFIG = ["--extra-arg=-Xclang", "--extra-arg=-analyzer-config",
+                   "--extra-arg=-Xclang", "--extra-arg=c++-stdlib-inlining=false"]
+PROFILES = {"fast": [], "full": [f"--checks={ANALYZER_CHECKS}", *ANALYZER_CONFIG]}
+DEFAULT_PROFILE = "fast"
 
 
 class Workers:
@@ -202,14 +222,9 @@ def execute(command: list[str]) -> subprocess.CompletedProcess:
     return WORKERS.run(command)
 
 
-def run_one(clang_tidy: str, unit: pathlib.Path, profile: str = "full") -> list[str]:
+def run_one(clang_tidy: str, unit: pathlib.Path, profile: str = DEFAULT_PROFILE) -> list[str]:
     command = [clang_tidy, "-p", str(ROOT), "--quiet", *PROFILES[profile],
-               "--extra-arg=-D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH",
-               # The LLVM 18 analyzer crashes while inlining the MSVC 14.44 <format> sources;
-               # keep it out of standard-library bodies.
-               "--extra-arg=-Xclang", "--extra-arg=-analyzer-config",
-               "--extra-arg=-Xclang", "--extra-arg=c++-stdlib-inlining=false",
-               str(unit)]
+               "--extra-arg=-D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH", str(unit)]
     completed = execute(command)
     findings = []
     current = None
@@ -253,8 +268,10 @@ def main(argv=None) -> int:
                         help="lint only the units affected by the sources that differ from REVISION")
     parser.add_argument("--quick", action="store_true",
                         help="with --changed: one unit per changed header instead of every includer")
-    parser.add_argument("--profile", choices=sorted(PROFILES), default="full",
-                        help="fast leaves out the clang static analyzer (default: full)")
+    parser.add_argument("--profile", choices=sorted(PROFILES), default=DEFAULT_PROFILE,
+                        help="fast (the default; the hook's and CI's) runs the checks "
+                             ".clang-tidy enables; full adds the clang static analyzer, up to "
+                             "three times a unit's time")
     args = parser.parse_args(argv)
     if args.quick and not args.changed:
         parser.error("--quick needs --changed")

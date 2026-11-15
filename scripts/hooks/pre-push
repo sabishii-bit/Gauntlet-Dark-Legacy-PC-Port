@@ -6,8 +6,8 @@ an existing hook can call this file instead). For every updated ref it lints the
 translation units that the pushed commits touch, against the remote's old tip, through
 `scripts/lint.py --changed --quick --profile fast`: the changed units and one unit per
 changed header, without the static analyzer, so a push waits seconds to a few minutes.
-CI then lints every unit the change reaches under the full profile, from a cache of
-clean results. Set GDL_SKIP_LINT=1 to push regardless, for example to publish a fix for
+CI then lints every unit the change reaches with the same checks, from a cache of clean
+results. Set GDL_SKIP_LINT=1 to push regardless, for example to publish a fix for
 the lint itself. A push interrupted at the terminal ends git but not this hook, so the
 hook watches the git that ran it and ends the lint, workers and all, once git is gone.
 """

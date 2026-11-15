@@ -66,8 +66,18 @@ class CacheTests(unittest.TestCase):
     def write_database(self, entries):
         (self.root / "compile_commands.json").write_text(json.dumps(entries), encoding="utf-8")
 
-    def create_cache(self):
-        return lint_cache.CleanCache(self.root, self.root / "cache", str(self.root / "clang-tidy"))
+    def create_cache(self, *profile):
+        return lint_cache.CleanCache(self.root, self.root / "cache", str(self.root / "clang-tidy"),
+                                     *profile)
+
+    def test_profiles_never_share_clean_results(self):
+        # The profile's checks live in lint.py and .clang-tidy, which the key hashes too; the
+        # name keeps a result clean under the configured checks from passing for the analyzer.
+        fast = self.create_cache("fast").key(self.unit)
+        full = self.create_cache("full").key(self.unit)
+        self.assertIsNotNone(fast)
+        self.assertNotEqual(fast, full)
+        self.assertEqual(self.create_cache("fast").key(self.unit), fast)
 
     def test_only_explicitly_clean_results_are_hits_and_survive_new_runs(self):
         key = self.cache.key(self.unit)

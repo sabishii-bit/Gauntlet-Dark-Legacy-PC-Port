@@ -1,5 +1,6 @@
 """Sharded lint must retain full coverage and fail on diagnostics or tool failures."""
 import contextlib
+import fnmatch
 import io
 import json
 import pathlib
@@ -26,6 +27,16 @@ class EditorSettingsTests(unittest.TestCase):
         for action in ("Save", "Paste", "Type"):
             self.assertIs(settings["[plaintext]"][f"editor.formatOn{action}"], False)
         self.assertTrue(settings["[cpp]"]["editor.formatOnSave"])
+
+
+class ConfigurationTests(unittest.TestCase):
+    def test_the_configuration_leaves_the_analyzer_to_the_full_profile(self):
+        text = (lint.ROOT / ".clang-tidy").read_text(encoding="utf-8")
+        header, _, configuration = text.partition("\n---\n")
+        checks = configuration.split("Checks:", 1)[1].split("\n\n", 1)[0]
+        self.assertIn("bugprone-*", checks)
+        self.assertNotIn("clang-analyzer", checks)
+        self.assertIn("scripts/lint.py --profile full", header)
 
 
 class ShardTests(unittest.TestCase):
@@ -146,6 +157,13 @@ class DriverTests(unittest.TestCase):
             self.assertEqual(lint.main(["--jobs", "2"]), 0)
             self.assertCountEqual([call.args[1] for call in run.call_args_list], self.units)
 
+    def test_the_default_profile_is_fast_and_full_is_asked_for(self):
+        for options, profile in (([], "fast"), (["--profile", "full"], "full")):
+            with self.subTest(profile=profile), \
+                 mock.patch.object(lint, "run_one", return_value=[]) as run:
+                self.assertEqual(lint.main(options), 0)
+                self.assertEqual({call.args[2] for call in run.call_args_list}, {profile})
+
     def test_shard_lints_only_its_partition(self):
         with mock.patch.object(lint, "run_one", return_value=[]) as run:
             self.assertEqual(lint.main(["--shard-index", "2", "--shard-count", "4"]), 0)
@@ -209,25 +227,6 @@ class DriverTests(unittest.TestCase):
              mock.patch.object(lint, "run_one", return_value=[]):
             self.assertEqual(lint.main(["--cache-dir", "build/lint-cache"]), 0)
         cache.remember.assert_not_called()
-
-
-class CacheIdentityTests(unittest.TestCase):
-    def test_profiles_never_share_clean_results(self):
-        import lint_cache
-        with tempfile.TemporaryDirectory() as directory:
-            root = pathlib.Path(directory)
-            (root / "compile_commands.json").write_text("[]", encoding="utf-8")
-            (root / "scripts").mkdir()
-            (root / "scripts" / "lint.py").write_text("", encoding="utf-8")
-            tidy = root / "clang-tidy"
-            tidy.write_text("", encoding="utf-8")
-            (root / "clang++").write_text("", encoding="utf-8")
-            full = lint_cache.CleanCache(root, root / "cache", str(tidy))
-            fast = lint_cache.CleanCache(root, root / "cache", str(tidy), "fast")
-            self.assertNotEqual(full.identity.hexdigest(), fast.identity.hexdigest())
-            self.assertEqual(full.identity.hexdigest(),
-                             lint_cache.CleanCache(root, root / "cache", str(tidy), "full")
-                             .identity.hexdigest())
 
 
 class ChangedTests(unittest.TestCase):
@@ -294,15 +293,50 @@ class ChangedTests(unittest.TestCase):
         with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
             lint.main(["--quick"])
 
-    def test_the_fast_profile_leaves_out_the_analyzer_only(self):
-        self.assertEqual(lint.PROFILES["full"], [])
-        self.assertEqual(lint.PROFILES["fast"], ["--checks=-clang-analyzer-*"])
+    def command_for(self, *profile):
         completed = subprocess.CompletedProcess([], 0, "", "")
         with mock.patch.object(lint, "execute", return_value=completed) as run:
-            lint.run_one("clang-tidy", self.root / "src/game/app/App.cpp", "fast")
-            self.assertIn("--checks=-clang-analyzer-*", run.call_args.args[0])
-            lint.run_one("clang-tidy", self.root / "src/game/app/App.cpp")
-            self.assertNotIn("--checks=-clang-analyzer-*", run.call_args.args[0])
+            lint.run_one("clang-tidy", self.root / "src/game/app/App.cpp", *profile)
+        return run.call_args.args[0]
+
+    @staticmethod
+    def enabled(command, check):
+        """What this command's --checks globs make of `check`, as clang-tidy reads them after
+        .clang-tidy's: in order, the last glob that matches decides; None leaves it to the
+        configuration."""
+        verdict = None
+        for argument in command:
+            if argument.startswith("--checks="):
+                for glob in argument[len("--checks="):].split(","):
+                    if fnmatch.fnmatchcase(check, glob.lstrip("-")):
+                        verdict = not glob.startswith("-")
+        return verdict
+
+    def test_fast_adds_nothing_to_the_configured_checks(self):
+        for command in (self.command_for(), self.command_for("fast")):
+            self.assertEqual([arg for arg in command if arg.startswith("--checks")], [])
+            # The analyzer's own configuration goes only where the analyzer runs.
+            self.assertFalse([arg for arg in command if "analyzer" in arg])
+
+    def test_full_adds_the_analyzer_that_can_fire_here(self):
+        command = self.command_for("full")
+        for check in ("clang-analyzer-core.NullDereference", "clang-analyzer-cplusplus.Move",
+                      "clang-analyzer-optin.performance.Padding",
+                      "clang-analyzer-deadcode.DeadStores"):
+            self.assertIs(self.enabled(command, check), True, check)
+        for check in ("clang-analyzer-optin.core.EnumCastOutOfRange",
+                      "clang-analyzer-osx.cocoa.RetainCount", "clang-analyzer-osx.API",
+                      "clang-analyzer-optin.osx.cocoa.localizability.NonLocalizedStringChecker",
+                      "clang-analyzer-webkit.NoUncountedMemberChecker",
+                      "clang-analyzer-fuchsia.HandleChecker",
+                      "clang-analyzer-optin.mpi.MPI-Checker",
+                      "clang-analyzer-optin.performance.GCDAntipattern",
+                      "clang-analyzer-nullability.NullPassedToNonnull"):
+            self.assertIs(self.enabled(command, check), False, check)
+        # Everything else stays as .clang-tidy has it.
+        self.assertIsNone(self.enabled(command, "readability-braces-around-statements"))
+        # The LLVM 18 analyzer stays out of standard-library bodies, where it crashes.
+        self.assertIn("--extra-arg=c++-stdlib-inlining=false", command)
 
     def test_include_names_drop_the_source_roots(self):
         self.assertEqual(lint.include_name(self.root / "src/engine/core/Types.h"), "engine/core/Types.h")
