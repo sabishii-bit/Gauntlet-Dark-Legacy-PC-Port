@@ -230,58 +230,124 @@ class DriverTests(unittest.TestCase):
 
 
 class ChangedTests(unittest.TestCase):
-    """--changed lints the changed units and every unit reached through a changed header."""
+    """--changed lints the changed units and one unit per changed header, or with
+    --all-includers every unit reached through a changed header."""
 
-    def setUp(self):
+    @classmethod
+    def setUpClass(cls):
         directory = tempfile.TemporaryDirectory()
-        self.addCleanup(directory.cleanup)
-        self.root = pathlib.Path(directory.name).resolve()
-        self.files = {
+        cls.addClassCleanup(directory.cleanup)
+        cls.root = pathlib.Path(directory.name).resolve()
+        cls.files = {
             "src/engine/core/Types.h": "",
+            "src/engine/core/Clock.h": "",
             "src/engine/world/Scene.h": '#include "engine/core/Types.h"\n',
             "src/game/world/Level.h": '#include "engine/world/Scene.h"\n',
-            "src/engine/world/Scene.cpp": '#include "engine/world/Scene.h"\n',
-            "src/game/world/Level.cpp": '#include "game/world/Level.h"\n',
+            "src/engine/world/Scene.cpp":
+                '#include "engine/world/Scene.h"\n#include "engine/core/Clock.h"\n',
+            "src/game/world/Level.cpp":
+                '#include "game/world/Level.h"\n#include "engine/core/Clock.h"\n',
             "src/game/app/App.cpp": '#include "engine/core/Log.h"\n',
+            "tests/engine/core/TypesTests.cpp": '#include "engine/core/Types.h"\n',
+            # Named after Clock.h, but never includes it.
+            "tests/engine/core/ClockTests.cpp": '#include "engine/core/Log.h"\n',
             "tests/game/world/LevelTests.cpp": '#include "game/world/Level.h"\n',
+            # A test fixture header, also included by a test that sorts before its own.
+            "tests/game/world/Arena.h": "",
+            "tests/game/audio/EchoTests.cpp": '#include "game/world/Arena.h"\n',
+            "tests/game/world/ArenaTests.cpp": '#include "game/world/Arena.h"\n',
+            # A test support header with both a .cpp of its own and a test.
+            "tests/fixtures/Recorder.h": "",
+            "tests/fixtures/Recorder.cpp": '#include "fixtures/Recorder.h"\n',
+            "tests/fixtures/RecorderTests.cpp": '#include "fixtures/Recorder.h"\n',
         }
-        for name, text in self.files.items():
-            path = self.root / name
+        for name, text in cls.files.items():
+            path = cls.root / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(text, encoding="utf-8")
-        self.roster = sorted(self.root / name for name in self.files if name.endswith(".cpp"))
+        cls.roster = sorted(cls.root / name for name in cls.files if name.endswith(".cpp"))
+
+    def setUp(self):
         patcher = mock.patch.object(lint, "ROOT", self.root)
         patcher.start()
         self.addCleanup(patcher.stop)
 
-    def affected(self, *changed):
-        return [unit.relative_to(self.root).as_posix() for unit in
-                lint.affected_units(self.roster, [self.root / c for c in changed], lint.header_roster())]
+    def names(self, units):
+        return [unit.relative_to(self.root).as_posix() for unit in units]
 
-    def test_changed_sources_and_includers_of_changed_headers_are_linted(self):
+    def affected(self, *changed):
+        return self.names(lint.affected_units(self.roster, [self.root / c for c in changed],
+                                              lint.header_roster()))
+
+    def representatives(self, *changed):
+        return self.names(lint.representative_units(self.roster, [self.root / c for c in changed],
+                                                    lint.header_roster()))
+
+    def linted(self, *options, changed="src/game/world/Level.h"):
+        with mock.patch.object(lint, "find_clang_tidy", return_value="clang-tidy"), \
+             mock.patch.object(lint, "translation_units", return_value=self.roster), \
+             mock.patch.object(lint, "changed_files", return_value=[self.root / changed]), \
+             mock.patch.object(lint, "run_one", return_value=[]) as run, \
+             contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(lint.main(["--changed", "a..b", *options]), 0)
+        return self.names(call.args[1] for call in run.call_args_list)
+
+    def test_all_includers_are_the_changed_sources_and_every_unit_reaching_a_changed_header(self):
         self.assertEqual(self.affected("src/game/app/App.cpp"), ["src/game/app/App.cpp"])
         self.assertEqual(self.affected("src/game/world/Level.h"),
                          ["src/game/world/Level.cpp", "tests/game/world/LevelTests.cpp"])
         # A header reached through two other headers still counts.
         self.assertEqual(self.affected("src/engine/core/Types.h"),
                          ["src/engine/world/Scene.cpp", "src/game/world/Level.cpp",
-                          "tests/game/world/LevelTests.cpp"])
+                          "tests/engine/core/TypesTests.cpp", "tests/game/world/LevelTests.cpp"])
         self.assertEqual(self.affected("docs/notes.md"), [])
 
-    def test_quick_mode_keeps_one_unit_per_changed_header(self):
-        quick = lambda *changed: [unit.relative_to(self.root).as_posix() for unit in lint.quick_units(
-            self.roster, [self.root / c for c in changed], lint.header_roster())]
-        # A header with a .cpp of its own is checked through that unit alone.
-        self.assertEqual(quick("src/engine/world/Scene.h"), ["src/engine/world/Scene.cpp"])
-        self.assertEqual(quick("src/game/world/Level.h"), ["src/game/world/Level.cpp"])
-        # One without is checked through the first unit that reaches it.
-        self.assertEqual(quick("src/engine/core/Types.h"), ["src/engine/world/Scene.cpp"])
+    def test_one_unit_exercises_each_changed_header(self):
+        # The header's own .cpp first, under src or tests.
+        self.assertEqual(self.representatives("src/engine/world/Scene.h"),
+                         ["src/engine/world/Scene.cpp"])
+        self.assertEqual(self.representatives("src/game/world/Level.h"),
+                         ["src/game/world/Level.cpp"])
+        self.assertEqual(self.representatives("tests/fixtures/Recorder.h"),
+                         ["tests/fixtures/Recorder.cpp"])
+        # Then its mirrored test, under tests for a src header and beside one under tests,
+        # though other includers sort before it.
+        self.assertEqual(self.representatives("src/engine/core/Types.h"),
+                         ["tests/engine/core/TypesTests.cpp"])
+        self.assertEqual(self.representatives("tests/game/world/Arena.h"),
+                         ["tests/game/world/ArenaTests.cpp"])
+        # A test named after the header that does not include it is passed over for the
+        # first unit that does.
+        self.assertEqual(self.representatives("src/engine/core/Clock.h"),
+                         ["src/engine/world/Scene.cpp"])
         # Changed units are always their own representatives; documents never are.
-        self.assertEqual(quick("src/game/app/App.cpp", "src/game/world/Level.h", "docs/a.md"),
+        self.assertEqual(self.representatives("src/game/app/App.cpp", "src/game/world/Level.h",
+                                              "docs/a.md"),
                          ["src/game/app/App.cpp", "src/game/world/Level.cpp"])
-        self.assertEqual(quick("src/unused/Nothing.h"), [])
+        self.assertEqual(self.representatives("src/unused/Nothing.h"), [])
 
-    def test_quick_mode_and_the_fast_profile_reach_clang_tidy(self):
+    def test_an_own_source_outside_the_database_gives_way_to_the_mirrored_test(self):
+        header = self.root / "src/game/net/Room.h"
+        mirror = self.root / "tests/game/net/RoomTests.cpp"
+        self.assertEqual(lint.mirrored_test(header), mirror)
+        self.assertEqual(lint.representative(header, [self.root / "src/game/net/Lobby.cpp", mirror]),
+                         mirror)
+        self.assertEqual(lint.mirrored_test(self.root / "tests/Fake.h"), self.root / "tests/FakeTests.cpp")
+        self.assertIsNone(lint.mirrored_test(self.root / "tools/dump/Reader.h"))
+
+    def test_changed_lints_one_unit_per_header_unless_every_includer_is_asked_for(self):
+        self.assertEqual(self.linted(), ["src/game/world/Level.cpp"])
+        # The flag the hook and older callers pass names the default.
+        self.assertEqual(self.linted("--quick"), ["src/game/world/Level.cpp"])
+        self.assertEqual(self.linted("--all-includers"),
+                         ["src/game/world/Level.cpp", "tests/game/world/LevelTests.cpp"])
+        for options in (["--quick"], ["--all-includers"],
+                        ["--changed", "a..b", "--quick", "--all-includers"]):
+            with self.subTest(options=options), self.assertRaises(SystemExit), \
+                 contextlib.redirect_stderr(io.StringIO()):
+                lint.main(options)
+
+    def test_the_selection_and_the_fast_profile_reach_clang_tidy(self):
         with mock.patch.object(lint, "find_clang_tidy", return_value="clang-tidy"), \
              mock.patch.object(lint, "translation_units", return_value=self.roster), \
              mock.patch.object(lint, "changed_files", return_value=[self.root / "src/game/world/Level.h"]), \
@@ -290,8 +356,6 @@ class ChangedTests(unittest.TestCase):
             self.assertEqual(lint.main(["--changed", "a..b", "--quick", "--profile", "fast"]), 0)
         self.assertEqual([call.args[1:] for call in run.call_args_list],
                          [(self.root / "src/game/world/Level.cpp", "fast")])
-        with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
-            lint.main(["--quick"])
 
     def command_for(self, *profile):
         completed = subprocess.CompletedProcess([], 0, "", "")
@@ -368,7 +432,7 @@ class ChangedTests(unittest.TestCase):
              mock.patch.object(lint, "changed_files", return_value=[self.root / "src/game/world/Level.h"]), \
              mock.patch.object(lint, "run_one", return_value=["Level.h:1:1: warning: x [c]"]) as run, \
              contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(lint.main(["--changed", "a..b"]), 1)
+            self.assertEqual(lint.main(["--changed", "a..b", "--all-includers"]), 1)
         self.assertCountEqual([call.args[1] for call in run.call_args_list],
                               [self.root / "src/game/world/Level.cpp",
                                self.root / "tests/game/world/LevelTests.cpp"])

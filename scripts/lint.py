@@ -10,8 +10,8 @@ and build only compile_commands, avoiding build-only module mapper files.
     python scripts/lint.py             # everything
     python scripts/lint.py src/game    # a subtree or single file
     python scripts/lint.py --shard-index 0 --shard-count 4  # first CI shard
-    python scripts/lint.py --changed origin/main   # only what a change touches
-    python scripts/lint.py --changed origin/main --quick   # the hook's gate
+    python scripts/lint.py --changed origin/main   # what a change touches: the hook's gate
+    python scripts/lint.py --changed origin/main --all-includers   # every unit its headers reach
     python scripts/lint.py --profile full src/game/level   # with the static analyzer
 
 The fast profile, the default, runs the checks .clang-tidy enables, as clangd does in the
@@ -21,11 +21,14 @@ test unit takes a third longer) and has reported only false positives and its ow
 in this tree, so it runs only when asked for. The pre-push hook and CI run fast.
 
 --changed lints the translation units affected by the files that differ from a git
-revision (or a range such as a..b): the changed sources themselves and every unit
-that includes a changed header, directly or through other headers. --quick keeps one
-unit per changed header (its own .cpp when there is one) instead of the whole fan-out;
-the pre-push hook under scripts/hooks runs it over what is being pushed, and CI lints
-everything, cached. Nothing affected passes.
+revision (or a range such as a..b): the changed sources themselves and, for each changed
+header, one unit that includes it: its own .cpp, else its mirrored test
+(tests/<path>/<Name>Tests.cpp, or <Name>Tests.cpp beside a header under tests), which
+exercise its declarations, else the first. --all-includers lints every unit that includes
+a changed header instead, directly or through other headers, which for a widely included
+header is hundreds of units. --quick names the default. The pre-push hook under
+scripts/hooks runs --changed over what is being pushed, and CI lints everything, cached.
+Nothing affected passes.
 """
 
 from __future__ import annotations
@@ -104,17 +107,25 @@ def include_name(path: pathlib.Path) -> str:
     return relative
 
 
-def affected_units(roster: list[pathlib.Path], changed: list[pathlib.Path],
-                   headers: list[pathlib.Path]) -> list[pathlib.Path]:
-    """The roster units to lint for `changed`: changed units themselves, plus every unit
-    that includes a changed header, following headers that include headers."""
+def read_includes(paths: list[pathlib.Path]) -> dict[pathlib.Path, set[str]]:
+    """The quoted #include names of each file; none for a file that cannot be read."""
     includes_of = {}
-    for path in [*headers, *roster]:
+    for path in paths:
         try:
             includes_of[path] = set(INCLUDE.findall(path.read_text(encoding="utf-8",
                                                                    errors="replace")))
         except OSError:
             includes_of[path] = set()
+    return includes_of
+
+
+def affected_units(roster: list[pathlib.Path], changed: list[pathlib.Path],
+                   headers: list[pathlib.Path],
+                   includes_of: dict[pathlib.Path, set[str]] | None = None) -> list[pathlib.Path]:
+    """--all-includers: the changed units themselves, plus every unit that includes a
+    changed header, following headers that include headers."""
+    if includes_of is None:
+        includes_of = read_includes([*headers, *roster])
     header_set = set(headers)
     affected_names = {include_name(path) for path in changed if path in header_set}
     grown = True
@@ -135,20 +146,45 @@ def header_roster() -> list[pathlib.Path]:
                   for path in (ROOT / folder).rglob("*") if path.suffix in (".h", ".hpp", ".inl"))
 
 
-def quick_units(roster: list[pathlib.Path], changed: list[pathlib.Path],
-                headers: list[pathlib.Path]) -> list[pathlib.Path]:
-    """--quick: the changed units and, for each changed header, one unit that includes it,
-    its own .cpp when that is one of them, else the first; the full fan-out is CI's."""
+def mirrored_test(header: pathlib.Path) -> pathlib.Path | None:
+    """The test unit named after a header: tests mirror src, so src/<path>/<Name>.h has
+    tests/<path>/<Name>Tests.cpp, and a header under tests has its test beside it."""
+    if not header.is_relative_to(ROOT):
+        return None
+    relative = header.relative_to(ROOT)
+    if relative.parts[0] == "src":
+        folder = ROOT / "tests" / relative.parent.relative_to("src")
+    elif relative.parts[0] == "tests":
+        folder = header.parent
+    else:
+        return None
+    return folder / f"{header.stem}Tests.cpp"
+
+
+def representative(header: pathlib.Path, reached: list[pathlib.Path]) -> pathlib.Path:
+    """The unit that lints a changed header for all of `reached`, the sorted units that
+    include it: the header's own .cpp, else its mirrored test, which exercise its
+    declarations, else the first."""
+    for candidate in (header.with_suffix(".cpp"), mirrored_test(header)):
+        if candidate in reached:
+            return candidate
+    return reached[0]
+
+
+def representative_units(roster: list[pathlib.Path], changed: list[pathlib.Path],
+                         headers: list[pathlib.Path]) -> list[pathlib.Path]:
+    """--changed by default: the changed units and one representative unit per changed
+    header; the whole fan-out is --all-includers' and, cached, CI's."""
     roster_set = set(roster)
     header_set = set(headers)
+    includes_of = read_includes([*headers, *roster])
     units = {unit for unit in changed if unit in roster_set}
     for header in changed:
         if header not in header_set:
             continue
-        reached = affected_units(roster, [header], headers)
+        reached = affected_units(roster, [header], headers, includes_of)
         if reached:
-            home = header.with_suffix(".cpp")
-            units.add(home if home in reached else reached[0])
+            units.add(representative(header, reached))
     return sorted(units)
 
 
@@ -265,16 +301,22 @@ def main(argv=None) -> int:
     parser.add_argument("--cache-dir", type=pathlib.Path,
                         help="reuse clean results after hashing clang dependencies (GCC-style commands)")
     parser.add_argument("--changed", metavar="REVISION",
-                        help="lint only the units affected by the sources that differ from REVISION")
-    parser.add_argument("--quick", action="store_true",
-                        help="with --changed: one unit per changed header instead of every includer")
+                        help="lint only the units affected by the sources that differ from "
+                             "REVISION: the changed units and one unit per changed header")
+    selection = parser.add_mutually_exclusive_group()
+    selection.add_argument("--all-includers", action="store_true",
+                           help="with --changed: every unit that includes a changed header, "
+                                "directly or through other headers")
+    selection.add_argument("--quick", action="store_true",
+                           help="with --changed: one unit per changed header, the default")
     parser.add_argument("--profile", choices=sorted(PROFILES), default=DEFAULT_PROFILE,
                         help="fast (the default; the hook's and CI's) runs the checks "
                              ".clang-tidy enables; full adds the clang static analyzer, up to "
                              "three times a unit's time")
     args = parser.parse_args(argv)
-    if args.quick and not args.changed:
-        parser.error("--quick needs --changed")
+    for option, given in (("--all-includers", args.all_includers), ("--quick", args.quick)):
+        if given and not args.changed:
+            parser.error(f"{option} needs --changed")
     if args.jobs < 1:
         parser.error("--jobs must be positive")
     try:
@@ -290,7 +332,7 @@ def main(argv=None) -> int:
     if not roster:
         parser.error("no translation units found; check the paths and compilation database")
     if args.changed:
-        select = quick_units if args.quick else affected_units
+        select = affected_units if args.all_includers else representative_units
         roster = select(roster, changed_files(args.changed), header_roster())
         if not roster:
             print(f"No translation units are affected by the changes since {args.changed}.")
