@@ -875,7 +875,7 @@ void PlayScene::startGameOver() {
  * Those, tower routes and secret challenges use their available authored destination. */
 bool PlayScene::leaveBy(usize portal) {
     const ExitPortals::Portal& exit = m_portals.portal(portal);
-    if (!m_world->isTower() && !exit.secret && !m_world->ref().continuesToBoss()) {
+    if (ExitPortals::returnsToTower(m_world->ref(), exit)) {
         m_sim.destination = LevelRef::tower();
         log::info("Portal {}: back to the tower", exit.tag);
         return true;

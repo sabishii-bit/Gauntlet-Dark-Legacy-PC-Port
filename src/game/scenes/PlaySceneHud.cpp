@@ -57,7 +57,7 @@ HudView PlayScene::hudView(const Mat4& clip, const Mat4& canvasProjection, f32 w
                 view.seats[seat].pad = exit ? importedPadOf(*exit) : std::nullopt;
             }
             view.levelHud = imported->hudStyleId();
-        } else {
+        } else if (m_world != nullptr) {
             // Those the portals wait for, as advancePortals stands them.
             std::vector<PortalVisitor> standing;
             standing.reserve(m_players.size());
@@ -68,7 +68,7 @@ HudView PlayScene::hudView(const Mat4& clip, const Mat4& canvasProjection, f32 w
                                                      .partyIndex = static_cast<s32>(i)});
                 }
             }
-            const auto pads = darkLegacyPadsOf(m_portals, standing, m_players);
+            const auto pads = darkLegacyPadsOf(m_portals, m_world->ref(), standing, m_players);
             for (usize seat = 0; seat < view.seats.size(); ++seat) {
                 view.seats[seat].pad = pads.at(seat);
             }

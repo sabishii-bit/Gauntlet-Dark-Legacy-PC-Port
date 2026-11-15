@@ -88,6 +88,42 @@ struct TwoExits {
     }
 };
 
+/** A stage's exits: an ordinary one tagged for G2 at (10, 0, 10), radius 3, and a secret one to
+ * S1 at (40, 0, 10), radius 1. */
+struct StageExits {
+    test::FakeRenderDevice device;
+    WorldLayout layout;
+    LevelCatalog catalog;
+    ItemArchive items; ///< left unloaded: the portals work unseen
+    ExitPortals portals;
+
+    StageExits() {
+        const auto dir = test::scratchDirectory("hud-view-stage-exits");
+        std::filesystem::create_directories(dir / "wdata");
+        writeTextFile(dir / "wdata/TOWN.json", R"({"realm": 7, "prefix": "levelG", "levels": [
+          {"name": "G1", "title": "Fields"}, {"name": "G2", "title": "Farm"}]})");
+        writeTextFile(dir / "wdata/SECRET.json", R"({"realm": 12, "prefix": "levelS",
+          "levels": [{"name": "S1", "title": "Secret"}]})");
+        writeTextFile(dir / "world.json", R"({
+  "objects": [{"name": "GROUND", "position": [0, 0, 0], "next": -1, "child": -1}],
+  "itemInfos": [
+    {"type": 9, "subtype": 0, "name": "EXIT_PORTAL", "radius": 3, "height": 2},
+    {"type": 9, "subtype": 50, "name": "SECRET_ICON", "radius": 1}],
+  "itemInstances": [
+    {"info": 0, "minPlayers": 1, "position": [10, 0, 10], "rotation": [0, 0, 0],
+     "params": [0, 0, 0, 0, 103, 50, 0, 0, 0, 0, 0, 0]},
+    {"info": 1, "minPlayers": 1, "position": [40, 0, 10], "rotation": [0, 0, 0],
+     "params": [0, 0, 0, 0, 83, 49, 0, 0, 0, 0, 0, 0]}]})");
+        REQUIRE(layout.load(dir));
+        REQUIRE(catalog.load(dir));
+        REQUIRE(portals.bind(device, layout, AssetScope(items), catalog, nullptr));
+        REQUIRE(portals.size() == 2);
+        REQUIRE_FALSE(portals.portal(0).secret);
+        REQUIRE(portals.portal(1).secret);
+        REQUIRE(portals.portal(1).destination.has_value());
+    }
+};
+
 /** An imported level that answers only what every importer must. */
 class PlainImported : public ImportedLevel {
 public:
@@ -260,7 +296,9 @@ TEST_CASE("a seat's Dark Legacy exit is named by its own seat, not its party pla
                                            .radius = 0.75f,
                                            .partyIndex = static_cast<s32>(index)};
     }
-    const auto pads = darkLegacyPadsOf(level.portals, standing, players);
+    // The tower's portals lead to the levels they name.
+    const LevelRef tower = LevelRef::tower();
+    const auto pads = darkLegacyPadsOf(level.portals, tower, standing, players);
 
     REQUIRE(pads[2].has_value());
     CHECK(pads[2]->identity == kDarkLegacyPadIdentityBase + 1);
@@ -280,14 +318,70 @@ TEST_CASE("a seat's Dark Legacy exit is named by its own seat, not its party pla
     // Alone, the same player is off the exit; a visitor naming no party place is nobody's.
     const std::array alone{
         standing[2], PortalVisitor{.position = Vec3{10, 0, 10}, .radius = 0.75f, .partyIndex = 7}};
-    const auto fewer = darkLegacyPadsOf(level.portals, std::span{alone}.first(1), players);
+    const auto fewer = darkLegacyPadsOf(level.portals, tower, std::span{alone}.first(1), players);
     CHECK_FALSE(fewer[3].has_value());
-    for (const auto& pad : darkLegacyPadsOf(level.portals, std::span{alone}.last(1), players)) {
+    for (const auto& pad :
+         darkLegacyPadsOf(level.portals, tower, std::span{alone}.last(1), players)) {
         CHECK_FALSE(pad.has_value());
     }
-    for (const auto& pad : darkLegacyPadsOf(level.portals, {}, players)) {
+    for (const auto& pad : darkLegacyPadsOf(level.portals, tower, {}, players)) {
         CHECK_FALSE(pad.has_value());
     }
+}
+
+TEST_CASE("a Dark Legacy exit names where it takes the party: the tower from an ordinary stage, "
+          "else the level it names",
+          "[hud-view]") {
+    const StageExits level;
+    // Party place 0 is seat 3, on the stage's exit; place 1 is seat 1, on the secret one.
+    std::array<PlayerRuntime, 2> players;
+    players[0].actor.spawn(3, member("ODO", 0, 0), nullptr, Vec3{10, 0, 10}, 0);
+    players[1].actor.spawn(1, member("IVO", 2, 1), nullptr, Vec3{40, 0, 10}, 0);
+    std::array<PortalVisitor, 2> standing;
+    for (usize index = 0; index < standing.size(); ++index) {
+        standing.at(index) = PortalVisitor{.position = players.at(index).actor.position(),
+                                           .radius = 0.75f,
+                                           .partyIndex = static_cast<s32>(index)};
+    }
+    const ExitPortals::Portal& stageExit = level.portals.portal(0);
+    const ExitPortals::Portal& secretExit = level.portals.portal(1);
+    const auto fields = level.catalog.byName("G1");
+    REQUIRE(fields.has_value());
+
+    // An ordinary stage's exit takes the party back to the tower, whatever its tag names; its
+    // secret exit goes where it says.
+    const auto fromStage = darkLegacyPadsOf(level.portals, *fields, standing, players);
+    REQUIRE(fromStage[3].has_value());
+    CHECK(fromStage[3]->identity == kDarkLegacyPadIdentityBase);
+    REQUIRE(fromStage[3]->destination != nullptr);
+    CHECK(fromStage[3]->destination->isTower());
+    REQUIRE(fromStage[1].has_value());
+    CHECK(fromStage[1]->identity == kDarkLegacyPadIdentityBase + 1);
+    CHECK(fromStage[1]->destination == &*secretExit.destination);
+    CHECK(fromStage[1]->destination->name == "S1");
+
+    // The tower's portals, and the Temple's and Underworld's first stages, which go straight on
+    // to their bosses, lead to the level the exit names.
+    LevelRef firstTemple;
+    firstTemple.realmId = 5;
+    LevelRef firstUnderworld;
+    firstUnderworld.realmId = 6;
+    const std::array<LevelRef, 3> leadOn{LevelRef::tower(), firstTemple, firstUnderworld};
+    for (const LevelRef& here : leadOn) {
+        CAPTURE(here.realmId);
+        const auto pads = darkLegacyPadsOf(level.portals, here, standing, players);
+        REQUIRE(pads[3].has_value());
+        CHECK(pads[3]->destination == &*stageExit.destination);
+        CHECK(pads[3]->destination->name == "G2");
+        REQUIRE(pads[1].has_value());
+        CHECK(pads[1]->destination == &*secretExit.destination);
+    }
+    // The Temple's later stages go back to the tower like any other.
+    LevelRef laterTemple = firstTemple;
+    laterTemple.index = 1;
+    const auto fromLater = darkLegacyPadsOf(level.portals, laterTemple, standing, players);
+    REQUIRE(fromLater[3].has_value());
+    CHECK(fromLater[3]->destination->isTower());
 }
 
 TEST_CASE("an imported level names no exit, no wait and no native look unless it says so; one "

@@ -125,6 +125,13 @@ public:
      * shut ones too, and a secret one while it is shown to a party of `partySize`; never a spent
      * one or one naming no level. None off every exit. */
     std::optional<usize> padUnder(const PortalVisitor& visitor, f32 extra, usize partySize) const;
+    /** Whether leaving `here` by `exit` takes the party back to the tower, as every ordinary
+     * stage's exits do, rather than to the level the exit names: the tower's own portals,
+     * secret exits and the Temple's and Underworld's first stages, which go straight on to
+     * their bosses, lead where they say. */
+    static bool returnsToTower(const LevelRef& here, const Portal& exit) {
+        return !here.isTower() && !exit.secret && !here.continuesToBoss();
+    }
     /** The occupied exit's position for its continuous flame, including moving visitors. */
     std::optional<Vec3> flamePosition(std::span<const PortalVisitor> party) const;
     /** Continues the selected sequences while gameplay is held for transportation. */

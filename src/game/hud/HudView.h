@@ -33,9 +33,11 @@ inline constexpr u32 kDarkLegacyPadIdentityBase = 0x10000;
 
 /** The exit a seat stands on. */
 struct HudPad {
-    u32 identity = 0;                      ///< non-zero; another exit, another identity
-    std::optional<u32> nativeCode;         ///< an imported level's own destination code
-    const LevelRef* destination = nullptr; ///< a Dark Legacy exit's level; borrowed for the frame
+    u32 identity = 0;              ///< non-zero; another exit, another identity
+    std::optional<u32> nativeCode; ///< an imported level's own destination code
+    /** Where leaving by a Dark Legacy exit takes the party: the tower from an ordinary stage,
+     * else the level the exit names. Borrowed for the frame. */
+    const LevelRef* destination = nullptr;
 };
 
 /** One seat as the HUD shows it this frame. What it points to is borrowed for the frame. */
@@ -103,11 +105,12 @@ struct HudSeatRules {
 /** Seat `seat`'s part of the view; an empty seat when nobody plays it. */
 HudSeat hudSeatOf(s32 seat, std::span<const PlayerRuntime> players, const PowerupSelector& selector,
                   const ClassDataSet& classes, const HudSeatRules& rules);
-/** Each seat's Dark Legacy exit. `standing` are the visitors advancePortals builds, each read
- * as its runtime's seat; the identity is kDarkLegacyPadIdentityBase plus the portal's index. */
+/** Each seat's Dark Legacy exit in the level `here`. `standing` are the visitors advancePortals
+ * builds, each read as its runtime's seat; the identity is kDarkLegacyPadIdentityBase plus the
+ * portal's index, and the destination is where leaving by it takes the party. */
 std::array<std::optional<HudPad>, HudView::kSeats>
-darkLegacyPadsOf(const ExitPortals& portals, std::span<const PortalVisitor> standing,
-                 std::span<const PlayerRuntime> players);
+darkLegacyPadsOf(const ExitPortals& portals, const LevelRef& here,
+                 std::span<const PortalVisitor> standing, std::span<const PlayerRuntime> players);
 /** Each seat's exit and wait, as an imported level answers for it. */
 std::array<std::optional<ImportedExit>, HudView::kSeats>
 importedExitsOf(const ImportedLevel& level);

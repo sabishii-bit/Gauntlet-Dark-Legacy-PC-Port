@@ -8,6 +8,15 @@
 #include "game/party/PartyNames.h"
 
 namespace gdl::game {
+namespace {
+
+/** The tower, where an ordinary stage's exits take the party, for the pads that name it. */
+const LevelRef& towerLevel() {
+    static const LevelRef kTower = LevelRef::tower();
+    return kTower;
+}
+
+} // namespace
 
 static_assert(HudView::kSeats == static_cast<usize>(PartyHud::kPlayerCount));
 
@@ -43,8 +52,8 @@ HudSeat hudSeatOf(s32 seat, std::span<const PlayerRuntime> players, const Poweru
 }
 
 std::array<std::optional<HudPad>, HudView::kSeats>
-darkLegacyPadsOf(const ExitPortals& portals, std::span<const PortalVisitor> standing,
-                 std::span<const PlayerRuntime> players) {
+darkLegacyPadsOf(const ExitPortals& portals, const LevelRef& here,
+                 std::span<const PortalVisitor> standing, std::span<const PlayerRuntime> players) {
     std::array<std::optional<HudPad>, HudView::kSeats> pads;
     // A unit wider for each visitor past the first, as the portals count a party.
     const f32 extra = standing.empty() ? 0.0f : static_cast<f32>(standing.size() - 1);
@@ -57,10 +66,12 @@ darkLegacyPadsOf(const ExitPortals& portals, std::span<const PortalVisitor> stan
             continue;
         }
         if (const auto index = portals.padUnder(visitor, extra, standing.size())) {
+            const ExitPortals::Portal& exit = portals.portal(*index);
             pads.at(static_cast<usize>(seat)) =
                 HudPad{.identity = kDarkLegacyPadIdentityBase + static_cast<u32>(*index),
                        .nativeCode = std::nullopt,
-                       .destination = &*portals.portal(*index).destination};
+                       .destination = ExitPortals::returnsToTower(here, exit) ? &towerLevel()
+                                                                              : &*exit.destination};
         }
     }
     return pads;

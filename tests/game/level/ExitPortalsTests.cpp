@@ -597,6 +597,30 @@ TEST_CASE("the HUD learns which exit a visitor stands on, shut and secret ones t
     CHECK(portals.padUnder(at(30), 0, 1) == 1U);
 }
 
+TEST_CASE("an ordinary stage's exits lead back to the tower; the tower's, secret ones and a "
+          "first Temple or Underworld stage's lead where they say",
+          "[game][world][portals]") {
+    Fixture f("portals-returns");
+    const ExitPortals::Portal& exit = f.portals.portal(0);
+    REQUIRE(exit.destination.has_value());
+    const auto fields = f.catalog.byName("G1");
+    REQUIRE(fields.has_value());
+    CHECK(ExitPortals::returnsToTower(*fields, exit));
+    CHECK_FALSE(ExitPortals::returnsToTower(LevelRef::tower(), exit));
+    ExitPortals::Portal secret;
+    secret.secret = true;
+    CHECK_FALSE(ExitPortals::returnsToTower(*fields, secret));
+    // game_main sends the Temple's and Underworld's first stages straight on to their bosses.
+    for (const s32 realm : {5, 6}) {
+        CAPTURE(realm);
+        LevelRef stage;
+        stage.realmId = realm;
+        CHECK_FALSE(ExitPortals::returnsToTower(stage, exit));
+        stage.index = 1;
+        CHECK(ExitPortals::returnsToTower(stage, exit));
+    }
+}
+
 TEST_CASE("the real tower shuts the portals past what the party has beaten, wearing EXIT_OFF",
           "[game][world][portals][tower-access][assets]") {
     const auto root =
