@@ -3,6 +3,7 @@
 //! known. Such a folder is recognised by its names alone, so the launcher never reads, and never
 //! comes to rely on, a file the alpha installer wrote.
 
+use std::ffi::OsString;
 use std::fs::{self, File, OpenOptions, TryLockError};
 use std::io;
 use std::path::{Path, PathBuf};
@@ -250,9 +251,14 @@ impl Drop for InstallLock {
 /// The folder is only listed. No entry in it is opened or looked at, so none of the alpha
 /// installer's files is read, and a marker the launcher may not open is still found.
 pub fn alpha_markers(root: &Path) -> io::Result<Vec<&'static str>> {
+    Ok(markers_among(&names_in(root)?))
+}
+
+/// The alpha installer's names among `names`, the names a folder holds, as [`alpha_markers`]
+/// gives them.
+pub(crate) fn markers_among(names: &[OsString]) -> Vec<&'static str> {
     let mut held = [false; ALPHA_NAMES.len()];
-    for entry in fs::read_dir(root)? {
-        let name = entry?.file_name();
+    for name in names {
         if let Some(index) = ALPHA_NAMES
             .iter()
             .position(|&alpha| name.eq_ignore_ascii_case(alpha))
@@ -260,11 +266,19 @@ pub fn alpha_markers(root: &Path) -> io::Result<Vec<&'static str>> {
             held[index] = true;
         }
     }
-    Ok(ALPHA_NAMES
+    ALPHA_NAMES
         .into_iter()
         .zip(held)
         .filter_map(|(name, held)| held.then_some(name))
-        .collect())
+        .collect()
+}
+
+/// The names the folder `path` holds, in the order the system lists them. The folder is only
+/// listed: no entry in it is opened or looked at.
+pub(crate) fn names_in(path: &Path) -> io::Result<Vec<OsString>> {
+    fs::read_dir(path)?
+        .map(|entry| entry.map(|entry| entry.file_name()))
+        .collect()
 }
 
 /// Why a folder cannot hold an installation, or cannot be looked at, as technical detail for

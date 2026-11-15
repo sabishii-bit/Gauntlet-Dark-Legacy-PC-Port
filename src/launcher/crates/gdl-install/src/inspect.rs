@@ -19,7 +19,7 @@ use serde_json::{Map, Value};
 
 use crate::compat::{Access, JOURNAL_NAMES, JOURNAL_SCHEMA, access, launcher_state_name, stamp_of};
 use crate::folder::{
-    FolderError, InstallFolder, JOURNAL_DIR, RECEIPT_FILE, alpha_markers, is_absent,
+    FolderError, InstallFolder, JOURNAL_DIR, RECEIPT_FILE, is_absent, markers_among, names_in,
 };
 use crate::receipt::{InstalledGame, ReceiptError};
 
@@ -37,8 +37,8 @@ pub struct Inspection {
     /// The text of the refusal that decided the state, as technical detail for logs; `None` when
     /// no refusal decided it.
     pub detail: Option<String>,
-    /// The alpha installer's names at the folder's top, as [`alpha_markers`] gives them, in every
-    /// state; none when the folder could not be listed.
+    /// The alpha installer's names at the folder's top, as [`crate::alpha_markers`] gives them,
+    /// in every state; none when the folder could not be listed.
     pub alpha_markers: Vec<&'static str>,
     /// The journals found in `.gdl-launcher/journal/`, by name, sorted, without the pending files
     /// that interrupted writes leave.
@@ -315,17 +315,13 @@ struct Listing {
 }
 
 impl Listing {
-    /// Lists the folder at `root`.
+    /// Lists the folder at `root`, once, so that its markers and whether it holds anything are
+    /// of the same moment.
     fn of(root: &Path) -> Result<Listing, Verdict> {
-        let refused = |error: io::Error| Verdict::refused(root, error);
-        let markers = alpha_markers(root).map_err(refused)?;
-        let empty = fs::read_dir(root)
-            .and_then(|mut entries| entries.next().transpose())
-            .map_err(refused)?
-            .is_none();
+        let names = names_in(root).map_err(|error| Verdict::refused(root, error))?;
         Ok(Listing {
-            alpha_markers: markers,
-            empty,
+            alpha_markers: markers_among(&names),
+            empty: names.is_empty(),
         })
     }
 
@@ -487,12 +483,7 @@ fn names_at(path: &Path) -> Result<Names, Verdict> {
         Err(error) if is_absent(&error) => return Ok(Names::Missing),
         Err(error) => return Err(Verdict::refused(path, error)),
     }
-    let listed = fs::read_dir(path).and_then(|entries| {
-        entries
-            .map(|entry| entry.map(|entry| entry.file_name()))
-            .collect::<io::Result<Vec<OsString>>>()
-    });
-    match listed {
+    match names_in(path) {
         Ok(mut names) => {
             names.sort();
             Ok(Names::Listed(names))
