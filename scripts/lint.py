@@ -8,9 +8,10 @@ headers once, so a lint that is stopped or times out has shown what it found. Ex
 is 1 when anything is reported and 130 when the lint is stopped.
 
 The lint lowers its own priority, which its workers inherit, and runs one worker per
-logical CPU under CI (CI set) and three quarters as many elsewhere, leaving the rest to
-the machine's user. A lint that is interrupted, told to stop, or whose caller is gone ends
-its clang-tidy workers, and one killed outright takes them with it.
+logical CPU under CI (CI set to anything but empty, 0 or false) and three quarters as many
+elsewhere, leaving the rest to the machine's user. A lint that is interrupted, told to
+stop, or whose caller is gone ends its clang-tidy workers, and on Windows and Linux one
+killed outright takes them with it.
 
     python scripts/lint.py             # everything
     python scripts/lint.py src/game    # a subtree or single file
@@ -20,10 +21,11 @@ its clang-tidy workers, and one killed outright takes them with it.
     python scripts/lint.py --profile full src/game/level   # with the static analyzer
 
 The fast profile, the default, runs the checks .clang-tidy enables, as clangd does in the
-editor. The full profile adds the clang static analyzer (clang-analyzer-*, less the families
-that cannot fire here), which costs from nothing to two thirds of a unit's time (a typical
-test unit takes a third longer) and has reported only false positives and its own crashes
-in this tree, so it runs only when asked for. The pre-push hook and CI run fast.
+editor. The full profile adds the clang static analyzer (clang-analyzer-*, less its enum
+range check and the families that cannot fire here), which makes a unit take from no longer
+to about three times as long (a typical test unit a third longer). In this tree it has
+reported padding, false positives and its own crashes, and found no bug, so it runs only
+when asked for. The pre-push hook and CI run fast.
 
 --changed lints the translation units affected by the files that differ from a git
 revision (or a range such as a..b): the changed sources themselves and, for each changed
@@ -334,8 +336,8 @@ def main(argv=None) -> int:
                            help="with --changed: one unit per changed header, the default")
     parser.add_argument("--profile", choices=sorted(PROFILES), default=DEFAULT_PROFILE,
                         help="fast (the default; the hook's and CI's) runs the checks "
-                             ".clang-tidy enables; full adds the clang static analyzer, up to "
-                             "three times a unit's time")
+                             ".clang-tidy enables; full adds the clang static analyzer, which "
+                             "makes a unit take up to three times as long")
     args = parser.parse_args(argv)
     for option, given in (("--all-includers", args.all_includers), ("--quick", args.quick)):
         if given and not args.changed:
@@ -419,8 +421,8 @@ def main(argv=None) -> int:
                     label = unit.relative_to(ROOT) if unit.is_relative_to(ROOT) else unit
                     print(f"[{done}/{len(units)}] {label} "
                           f"({time.monotonic() - started:.1f}s elapsed)", flush=True)
-                    # Now rather than at the end, so a lint stopped or timed out has shown
-                    # what it found; a header's finding, which many units reach, only once.
+                    # As each unit finishes, so a lint stopped or timed out has shown what
+                    # it found; a header's finding, which many units reach, only once.
                     for finding in findings:
                         key = finding.split("\n", 1)[0]
                         if key not in seen:

@@ -21,7 +21,7 @@
 #   performance-enum-size                                enum widths are digested and sent as their underlying type
 #   readability-avoid-nested-conditional-operator        chained conditionals laid out as lookup tables are the house style
 #   misc-no-recursion                                    nested actors and effect trees are walked recursively on purpose
-#   clang-analyzer-*                                     slow, and only false positives and crashes here; scripts/lint.py --profile full runs it
+#   clang-analyzer-*                                     slow, and no bug found here, only padding, false positives and crashes; scripts/lint.py --profile full runs it
 ---
 Checks: >
   -*,
