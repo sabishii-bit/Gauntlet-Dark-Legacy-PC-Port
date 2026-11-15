@@ -39,6 +39,12 @@ struct RecordedDraw {
     const Texture* lightmap() const { return state.lightmap; }
 };
 
+/** A texture as it was created: what it was asked for, and the pixels it was given. */
+struct CreatedTexture {
+    TextureDesc desc;
+    std::vector<u8> pixels;
+};
+
 /** A RenderDevice that records what is drawn instead of touching a GPU. */
 class FakeRenderDevice final : public RenderDevice {
 public:
@@ -67,6 +73,9 @@ public:
             ++emptyTexturesCreated;
         }
         lastTextureDesc = desc;
+        if (logCreatedTextures) {
+            createdTextures.push_back({desc, {rgba8Pixels.begin(), rgba8Pixels.end()}});
+        }
         auto texture = std::make_unique<FakeTexture>(desc.width, desc.height);
         texture->pixels.assign(rgba8Pixels.begin(), rgba8Pixels.end());
         return texture;
@@ -123,6 +132,8 @@ public:
     u32 emptyTexturesCreated = 0;
     u32 textureUpdates = 0;
     TextureDesc lastTextureDesc;
+    bool logCreatedTextures = false; ///< keep each texture created, in order, in createdTextures
+    std::vector<CreatedTexture> createdTextures;
     bool presentationVsync = true;
     u32 presentationSamples = 1;
     u32 presentationChanges = 0;

@@ -1,4 +1,6 @@
 #include <functional>
+#include <span>
+#include <utility>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -108,6 +110,53 @@ TEST_CASE("a draw stream digest holds each draw's vertices, transform and state 
         changes[index](changed);
         CHECK(digestOf({changed, quad(other)}) != reference);
     }
+}
+
+TEST_CASE("a creation digest holds each texture's description, field by field, and its pixels, "
+          "in order",
+          "[draw-stream-digest]") {
+    const TextureDesc desc{.width = 2, .height = 1};
+    const std::vector<u8> pixels{1, 2, 3, 4, 5, 6, 7, 8};
+    const std::vector<u8> others{8, 7, 6, 5, 4, 3, 2, 1};
+    // A device keeps what it creates, in order, only when asked to.
+    test::FakeRenderDevice quiet;
+    CHECK(quiet.createTexture(desc, pixels) != nullptr);
+    CHECK(quiet.createdTextures.empty());
+    test::FakeRenderDevice device;
+    device.logCreatedTextures = true;
+    CHECK(device.createTexture(desc, pixels) != nullptr);
+    CHECK(device.createTexture(desc, others) != nullptr);
+    REQUIRE(device.createdTextures.size() == 2);
+    CHECK(device.createdTextures[0].pixels == pixels);
+    CHECK(device.createdTextures[1].pixels == others);
+    const auto reference = test::createdTextureDigest(device.createdTextures);
+
+    const std::vector<test::CreatedTexture> alike{{desc, pixels}, {desc, others}};
+    CHECK(test::createdTextureDigest(alike) == reference);
+    const std::vector<test::CreatedTexture> swapped{{desc, others}, {desc, pixels}};
+    CHECK(test::createdTextureDigest(swapped) != reference);
+    CHECK(test::createdTextureDigest(std::span{alike}.first(1)) != reference);
+    auto repainted = alike;
+    repainted[0].pixels.back() = 9;
+    CHECK(test::createdTextureDigest(repainted) != reference);
+    // How a texture is sampled counts as much as what it holds.
+    const std::vector<std::function<void(TextureDesc&)>> changes{
+        [](TextureDesc& changed) { std::swap(changed.width, changed.height); },
+        [](TextureDesc& changed) { changed.filter = TextureFilter::Nearest; },
+        [](TextureDesc& changed) { changed.wrap = TextureWrap::ClampToEdge; },
+        [](TextureDesc& changed) { changed.wrapV = TextureWrap::ClampToEdge; },
+        [](TextureDesc& changed) { changed.wrapV = changed.wrap; },
+        [](TextureDesc& changed) { changed.mipLevels = 2; },
+        [](TextureDesc& changed) { changed.generateMipmaps = true; },
+    };
+    for (usize index = 0; index < changes.size(); ++index) {
+        CAPTURE(index);
+        auto changed = alike;
+        changes[index](changed[0].desc);
+        CHECK(test::createdTextureDigest(changed) != reference);
+    }
+    // It is not the draw stream's digest of nothing.
+    CHECK(test::createdTextureDigest({}) != test::drawStreamDigest({}));
 }
 
 } // namespace

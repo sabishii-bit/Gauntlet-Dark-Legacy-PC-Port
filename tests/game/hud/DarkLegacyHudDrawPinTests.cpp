@@ -43,12 +43,14 @@ namespace {
 using namespace gdl;
 using namespace gdl::game;
 
-/** One part of the HUD as it was drawn: the SHA-256 of its draws, and how many textures the
- * device had created and updated by then, which pins when the art is uploaded. */
+/** One part of the HUD as it was drawn: the SHA-256 of its draws, how many textures the device
+ * had created and updated by then, which pins when the art is uploaded, and the SHA-256 of the
+ * textures created while it was drawn, which pins what was uploaded and how it is sampled. */
 struct DrawnPart {
     std::string draws;
     u32 created = 0;
     u32 updated = 0;
+    std::string creations;
 };
 
 /** What a part is held to. */
@@ -57,6 +59,7 @@ struct PinnedPart {
     std::string_view draws;
     u32 created = 0;
     u32 updated = 0;
+    std::string_view creations;
 };
 
 CharacterSave member(s32 character, s32 color, std::string_view name) {
@@ -87,6 +90,7 @@ TEST_CASE("the Dark Legacy HUD draws stay byte for byte what they were",
     StringTable strings;
     REQUIRE(strings.load(test::dataDirectory() / "text", "en"));
     test::FakeRenderDevice device;
+    device.logCreatedTextures = true;
 
     // Everything is taken as the scene takes it: the boxes and help first, then the scene's
     // STATIC set with the messages' FONT32, the glow and the finder borrowed from that set,
@@ -118,6 +122,8 @@ TEST_CASE("the Dark Legacy HUD draws stay byte for byte what they were",
     REQUIRE(lich.load(lichDirectory));
     const u32 loadedTextures = device.texturesCreated;
     const u32 loadedUpdates = device.textureUpdates;
+    const std::string loadedCreations =
+        test::hexBytes(test::createdTextureDigest(device.createdTextures));
 
     const Mat4 canvasProjection =
         makeVirtualScreenTransform(makeScreenProjection(640, 448), 512, 384, 640, 448);
@@ -128,12 +134,15 @@ TEST_CASE("the Dark Legacy HUD draws stay byte for byte what they were",
     std::vector<DrawnPart> drawn;
     const auto draw = [&](const auto& part) {
         device.draws.clear();
+        const usize createdBefore = device.createdTextures.size();
         canvas.begin(device, canvasProjection);
         part();
         canvas.end();
         REQUIRE_FALSE(device.draws.empty());
+        const auto creations = std::span{device.createdTextures}.subspan(createdBefore);
         drawn.push_back({test::hexBytes(test::drawStreamDigest(device.draws)),
-                         device.texturesCreated, device.textureUpdates});
+                         device.texturesCreated, device.textureUpdates,
+                         test::hexBytes(test::createdTextureDigest(creations))});
     };
     // The seats the scene hands its HUD look for `party`, each from that seat's own player.
     const ClassDataSet classes;
@@ -290,29 +299,40 @@ TEST_CASE("the Dark Legacy HUD draws stay byte for byte what they were",
     draw(drawHelp);
 
     // SHA-256 of each part's draws, with the textures the device had created and updated by
-    // then. Dark Legacy's look keeps every one while its code moves: a literal moves only when
-    // what is drawn, or when its art is uploaded, changes on purpose.
+    // then and the SHA-256 of those it created for the part, after the SHA-256 of those created
+    // as the art was taken. Dark Legacy's look keeps every one while its code moves: a literal
+    // moves only when what is drawn, or what art is uploaded, when and how, changes on purpose.
     CHECK(loadedTextures == 36);
     CHECK(loadedUpdates == 0);
+    CHECK(loadedCreations == "0a7ded848e2bcc90c491413df8c65c42859638a74445b061d6a5c9053bd450e6");
     constexpr std::array kPins{
         PinnedPart{"an online party's empty, waiting and departed boxes",
-                   "62c8b795bee839045d55ec213fab09dcd776cafd87fd578ef918bd726c12c405", 41, 0},
+                   "62c8b795bee839045d55ec213fab09dcd776cafd87fd578ef918bd726c12c405", 41, 0,
+                   "d3ae06ea51dd6bc933e2f51eab45c0379c2d9d8b6d86bbd674c03477a6b12dda"},
         PinnedPart{"four boxes with their relic strip, a card and a ticker",
-                   "5dbe64b3d8dbbde8c0138c2ff75f089f4d60fab322a4855de3d566fa3144dc3c", 66, 0},
+                   "5dbe64b3d8dbbde8c0138c2ff75f089f4d60fab322a4855de3d566fa3144dc3c", 66, 0,
+                   "297989e740dda6020ff9fcb127e5636ae54a538a93b6467a65907289074274fb"},
         PinnedPart{"the runestone finder",
-                   "aacee0ad1d34a9a6afbd24be90bcc40b422a15ec6eb58be6197fa59945383943", 66, 0},
+                   "aacee0ad1d34a9a6afbd24be90bcc40b422a15ec6eb58be6197fa59945383943", 66, 0,
+                   "5a2e9664f069e124b750aebfe1c1e25f9e21c318fd4b75510c18fa93280a08ab"},
         PinnedPart{"Stop Time's hourglass",
-                   "1ab3c585c320206c0396cedd741112407979c46fd1358fc2e356569d06b99e04", 66, 0},
+                   "1ab3c585c320206c0396cedd741112407979c46fd1358fc2e356569d06b99e04", 66, 0,
+                   "5a2e9664f069e124b750aebfe1c1e25f9e21c318fd4b75510c18fa93280a08ab"},
         PinnedPart{"the secret level's hourglass",
-                   "cd0d77379a4f897f61e6dfe8f593d242b858bc97116e71484870d2f20c88a6a1", 66, 0},
+                   "cd0d77379a4f897f61e6dfe8f593d242b858bc97116e71484870d2f20c88a6a1", 66, 0,
+                   "5a2e9664f069e124b750aebfe1c1e25f9e21c318fd4b75510c18fa93280a08ab"},
         PinnedPart{"a two-piece boss meter",
-                   "557224741e0f2a4cfaac554c30028f9e77064a82ff6c93dca148e7c4365e8018", 70, 0},
+                   "557224741e0f2a4cfaac554c30028f9e77064a82ff6c93dca148e7c4365e8018", 70, 0,
+                   "04523d73b375c9df3e6c8438bb5c68feb0ec0eab439971cb8587e36bd4bbe04a"},
         PinnedPart{"two selector labels, one worn",
-                   "7926dea73c88887d5b4daf7b2efa5e3a8d49ed91e31c088fc0564954642438f0", 70, 0},
+                   "7926dea73c88887d5b4daf7b2efa5e3a8d49ed91e31c088fc0564954642438f0", 70, 0,
+                   "5a2e9664f069e124b750aebfe1c1e25f9e21c318fd4b75510c18fa93280a08ab"},
         PinnedPart{"help over a player's head",
-                   "d187318adb7c55ed64f6ed9cef886891f3b5af027b6aa57cfc82bea54db2423d", 70, 0},
+                   "d187318adb7c55ed64f6ed9cef886891f3b5af027b6aa57cfc82bea54db2423d", 70, 0,
+                   "5a2e9664f069e124b750aebfe1c1e25f9e21c318fd4b75510c18fa93280a08ab"},
         PinnedPart{"help at the canvas's centre",
-                   "e17bd1bbc37afa14dc64df39e8347efc88968420c8e2a5d7021bc801a9aaf844", 70, 0},
+                   "e17bd1bbc37afa14dc64df39e8347efc88968420c8e2a5d7021bc801a9aaf844", 70, 0,
+                   "5a2e9664f069e124b750aebfe1c1e25f9e21c318fd4b75510c18fa93280a08ab"},
     };
     REQUIRE(drawn.size() == kPins.size());
     for (usize part = 0; part < kPins.size(); ++part) {
@@ -320,6 +340,7 @@ TEST_CASE("the Dark Legacy HUD draws stay byte for byte what they were",
         CHECK(drawn[part].draws == kPins[part].draws);
         CHECK(drawn[part].created == kPins[part].created);
         CHECK(drawn[part].updated == kPins[part].updated);
+        CHECK(drawn[part].creations == kPins[part].creations);
     }
     meters.clear();
     challenge.clear();

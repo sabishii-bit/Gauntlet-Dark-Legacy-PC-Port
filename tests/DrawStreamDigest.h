@@ -116,4 +116,40 @@ inline CanonicalDigestSink::Digest drawStreamDigest(std::span<const RecordedDraw
     return sink.finish();
 }
 
+/** Names the encoding of the textures a device created, apart from the draw stream's. */
+inline constexpr std::string_view kCreatedTexturesSchema = "created-textures.1";
+
+/** Appends every field of a texture's description, how it is sampled included. Each field is
+ * bound by name, so that a field added to TextureDesc stops this compiling until it is appended
+ * too. */
+inline void appendTextureDesc(CanonicalDigestSink& sink, const TextureDesc& desc) {
+    const auto& [width, height, filter, wrap, wrapV, mipLevels, generateMipmaps] = desc;
+    sink.word(width);
+    sink.word(height);
+    sink.push_back(static_cast<u8>(filter));
+    sink.push_back(static_cast<u8>(wrap));
+    appendDrawnFlag(sink, wrapV.has_value());
+    sink.push_back(static_cast<u8>(wrapV.value_or(wrap)));
+    sink.word(mipLevels);
+    appendDrawnFlag(sink, generateMipmaps);
+}
+
+/** The SHA-256 the textures a device created are pinned by: each, in order, by its description
+ * and the SHA-256 of the pixels it was given. */
+inline CanonicalDigestSink::Digest createdTextureDigest(std::span<const CreatedTexture> created) {
+    CanonicalDigestSink sink;
+    for (const char letter : kCreatedTexturesSchema) {
+        sink.push_back(static_cast<u8>(letter));
+    }
+    sink.wide(created.size());
+    for (const CreatedTexture& texture : created) {
+        appendTextureDesc(sink, texture.desc);
+        Sha256 pixels;
+        pixels.update(texture.pixels);
+        sink.wide(texture.pixels.size());
+        sink.append(pixels.finish());
+    }
+    return sink.finish();
+}
+
 } // namespace gdl::test
