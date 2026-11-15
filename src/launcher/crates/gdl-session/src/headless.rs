@@ -90,8 +90,8 @@ pub fn open_own_file() -> OwnFile {
 /// gives back its exit code; or `None` when no argument is `--check-payload`, `--inspect` or
 /// `--version`, which is no headless run. A mode writes its report to `out` and a refusal to
 /// `err`. Arguments that ask for a mode in a form it does not take get the usage line on `err`
-/// and [`EXIT_USAGE`]. An option's value is the argument after it, which must not begin with
-/// `--`; options may come in any order, each at most once.
+/// and [`EXIT_USAGE`]. An option's value is the argument after it, which must not be empty or
+/// begin with `--`; options may come in any order, each at most once.
 ///
 /// - `--version` writes the build's version.
 /// - `--check-payload` checks the runtime the launcher file carries, its sections as `own` holds
@@ -203,14 +203,15 @@ fn parse(args: &[OsString]) -> Result<Mode<'_>, Misused> {
     }
 }
 
-/// The value of the option just read: the next argument, which must be there and must not be an
-/// option itself.
+/// The value of the option just read: the next argument, which must be there, must not be empty,
+/// since an empty argument names no folder or zip, and must not be an option itself.
 fn value<'a>(rest: &mut impl Iterator<Item = &'a OsStr>) -> Result<&'a OsStr, Misused> {
     rest.next()
         .filter(|value| {
-            !value
-                .as_encoded_bytes()
-                .starts_with(OPTION_PREFIX.as_bytes())
+            !value.is_empty()
+                && !value
+                    .as_encoded_bytes()
+                    .starts_with(OPTION_PREFIX.as_bytes())
         })
         .ok_or(Misused)
 }
@@ -709,7 +710,19 @@ mod tests {
             ),
             (
                 &["--payload", "--check-payload"],
+                "--payload followed by its own mode",
+            ),
+            (
+                &["--check-payload", "--payload", "--json"],
                 "--payload followed by an option",
+            ),
+            (
+                &["--payload", "--version", "--check-payload"],
+                "--payload followed by another mode",
+            ),
+            (
+                &["--check-payload", "--payload", ""],
+                "--payload with an empty value",
             ),
             (
                 &[
@@ -733,6 +746,11 @@ mod tests {
             (&["--version", "--json"], "--json without --inspect"),
             (&["--inspect", "folder", "--json", "--json"], "--json twice"),
             (&["--inspect"], "--inspect without a folder"),
+            (&["--inspect", ""], "--inspect with an empty folder"),
+            (
+                &["--inspect", "", "--json"],
+                "--inspect with an empty folder",
+            ),
             (&["--inspect", "--json"], "--inspect followed by an option"),
             (&["--json", "--inspect"], "--inspect at the end"),
         ];

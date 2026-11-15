@@ -227,7 +227,9 @@ fn usage_errors_exit_2() {
         &["--version", "--json"],
         &["--version", "--check-payload"],
         &["--check-payload", "--payload"],
+        &["--check-payload", "--payload", "--json"],
         &["--inspect"],
+        &["--inspect", ""],
     ];
     for &args in cases {
         let output = run_program(args);
