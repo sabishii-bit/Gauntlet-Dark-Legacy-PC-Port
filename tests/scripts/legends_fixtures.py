@@ -349,6 +349,9 @@ DEVIATIONS = {
        "the launcher refuses as too large",
     9: "two track files whose names differ only in letter case, which the script refuses on "
        "Windows alone and the launcher on every system",
+    12: "a disc whose root lacks SIZES.ROM or DISK.ROM spelled in exactly those letters: the "
+        "script writes the disc's tree and then fails, or on Windows finds the file in other "
+        "letters, and the launcher refuses the disc before it writes anything",
 }
 
 N64_VECTORS = "n64-vectors.json"
@@ -704,13 +707,20 @@ DREAMCAST_RECORD_CASES = [(b"TEST.WAD;1", 45100, 5, 0), (b"\0", ROOT_LBA, dc.SEC
 DREAMCAST_SETS = {"small": fixture, "full": full_set, "fullGdi": full_gdi_set}
 
 # The sets the extractor reads, by name: whether each holds a native table for unpack_native to
-# restore, and the goldens of its tree's manifests, by their paths in the tree. It cannot read the
-# GDI set.
+# restore, and the goldens of its tree's manifests, by their paths in the tree. The small set holds
+# none, so its tree is what extract alone writes. The extractor cannot read the GDI set.
 DREAMCAST_EXTRACTIONS = {
     "small": (False, {"disc-manifest.json": "dreamcast-small-disc-manifest.json"}),
     "full": (True, {"disc-manifest.json": "dreamcast-full-disc-manifest.json",
                     "native-manifest.json": "dreamcast-full-native-manifest.json"}),
 }
+
+# The launcher's outcome for each set, as for the cases: the rule it refuses the set by, or None
+# where it takes the set, and the deviation where it decides otherwise than the extractor. It
+# refuses the small set, whose disc's root holds no SIZES.ROM or DISK.ROM, before writing anything,
+# where the extractor writes the disc's tree and its program then fails restoring native files.
+DREAMCAST_SET_OUTCOMES = {"small": ("nativeTableMissing", 12), "full": (None, None),
+                          "fullGdi": (None, None)}
 
 # The golden of what legends_fingerprints.py writes for the tree the full set's disc extracts to:
 # a fingerprint for IP.BIN and one for each disc file, hashes only.
@@ -1076,8 +1086,10 @@ def gdi_data_tracks(folder: Path) -> list[list]:
 
 
 def extract_set(sheet: Path, output: Path, native: bool) -> None:
-    """Extracts a set into `output` as the Dreamcast extractor's program does: the disc, then, where
-    the set holds a native table, the native files."""
+    """Extracts a set into `output`: its disc as the Dreamcast extractor writes it, then, where the
+    set holds a native table, its native files as unpack_native restores them. The extractor's
+    program restores native files after every disc, so on a set without a table it writes the
+    disc's tree and then fails; this writes that tree and stops."""
     dc.extract(sheet, output)
     if native:
         dc.unpack_native(output)
@@ -1231,22 +1243,28 @@ def dreamcast_records() -> list[dict]:
 
 
 def dreamcast_sets(scratch: Path, goldens: dict[str, bytes]) -> dict:
-    """Each set's files, and the tree the extractor writes for it, whose goldens go into
-    `goldens`; or, for the GDI set, which the extractor cannot read, its data tracks."""
+    """Each set's files and the launcher's outcome for it, with the tree the extractor writes for
+    it, whose goldens go into `goldens`; or, for the GDI set, which the extractor cannot read, its
+    data tracks."""
     sets = {}
     for name, build in DREAMCAST_SETS.items():
         folder = new_folder(scratch)
         sheet = build(folder)
         entry = {"sheet": sheet.name, "files": file_digests(folder)}
+        rule, deviation = DREAMCAST_SET_OUTCOMES[name]
         if name in DREAMCAST_EXTRACTIONS:
             native, tree_goldens = DREAMCAST_EXTRACTIONS[name]
             tree = new_folder(scratch) / "tree"
-            extract_set(sheet, tree, native)
+            _, python = script_result(extract_set, sheet, tree, native, refusal=ValueError)
             for path, golden in tree_goldens.items():
                 goldens[golden] = (tree / path).read_bytes()
-            entry.update(goldens=tree_goldens, tree=tree_listing(tree))
+            entry.update(goldens=tree_goldens, tree=tree_listing(tree),
+                         **outcome(python, rule, deviation=deviation))
         else:
-            entry["dataTracks"] = gdi_data_tracks(folder)
+            if deviation is not None:
+                raise ValueError(f"the {name} set cites deviation {deviation}, but the extractor "
+                                 "cannot read it")
+            entry.update(dataTracks=gdi_data_tracks(folder), rule=rule)
         sets[name] = entry
     return sets
 

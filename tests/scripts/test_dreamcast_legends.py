@@ -249,6 +249,30 @@ class VectorTests(unittest.TestCase):
                                  [0, dc.sector_lba(data[:16]), len(data) // dc.RAW_SECTOR])
                 self.assertEqual([first_lba, sectors], [track["first_lba"], track["sectors"]])
 
+    def test_sets_record_the_launchers_outcome(self):
+        # The launcher refuses a disc whose root lacks SIZES.ROM or DISK.ROM, in exactly those
+        # letters, before it writes anything. The extractor writes such a disc's tree, and its
+        # program then fails restoring the native files.
+        sets = VECTORS["sets"]
+        self.assertTrue(DREAMCAST_EXTRACTIONS)
+        for name in DREAMCAST_EXTRACTIONS:
+            case = sets[name]
+            with self.subTest(set=name):
+                tree = Path(tempfile.mkdtemp(dir=self.root)) / "tree"
+                dc.extract(DREAMCAST_SETS[name](Path(tempfile.mkdtemp(dir=self.root))), tree)
+                names = {path.name for path in (tree / "disc").iterdir()}
+                if {"SIZES.ROM", "DISK.ROM"} <= names:
+                    self.assertEqual((case["python"], case["rule"]), (None, None))
+                    self.assertNotIn("deviation", case)
+                    dc.unpack_native(tree)
+                else:
+                    self.assertEqual((case["python"], case["rule"], case["deviation"]),
+                                     (None, "nativeTableMissing", 12))
+                    with self.assertRaises(OSError):
+                        dc.unpack_native(tree)
+        # The GDI set holds the full set's sectors, so the launcher decides it alike.
+        self.assertEqual(sets["fullGdi"]["rule"], sets["full"]["rule"])
+
     def test_records_are_built_as_the_vectors_pin(self):
         cases = VECTORS["records"]
         self.assertTrue(cases)
