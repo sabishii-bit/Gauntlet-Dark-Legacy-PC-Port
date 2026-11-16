@@ -840,12 +840,17 @@ def outcome(python: str | dict | None, rule: str | None, name_rule: str | None =
             deviation: int | None = None) -> dict:
     """A case's outcome fields: the script's message and the launcher's rule, each None where it
     takes the case, then the name rule and the deviation where they apply. The script's message is
-    given by system where the systems differ. Where one takes a case the other refuses, on any
-    system, a deviation must say why."""
+    given by system where the systems differ. A deviation is cited exactly where one takes a case
+    the other refuses, on some system: without it the difference goes unexplained, and cited where
+    both decide alike it claims a departure that is not there."""
     messages = python.values() if isinstance(python, dict) else [python]
-    if any((message is None) != (rule is None) for message in messages) and deviation is None:
+    disagree = any((message is None) != (rule is None) for message in messages)
+    if disagree and deviation is None:
         raise ValueError(f"the script and the launcher disagree with no deviation: {python!r}, "
                          f"{rule!r}")
+    if deviation is not None and not disagree:
+        raise ValueError(f"deviation {deviation} is cited, but the script and the launcher agree: "
+                         f"{python!r}, {rule!r}")
     fields = {"python": python, "rule": rule}
     if name_rule is not None:
         fields["nameRule"] = name_rule
