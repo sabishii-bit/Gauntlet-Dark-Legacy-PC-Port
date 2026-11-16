@@ -26,6 +26,8 @@ void Canvas::begin(RenderDevice& device, const Mat4& transform, const DrawState&
     GDL_VERIFY(m_device == nullptr, "Canvas::begin called twice");
     m_device = &device;
     m_transform = transform;
+    m_local = Mat4{1.0f};
+    m_hasLocal = false;
     m_state = state;
     m_texture = nullptr;
     m_batch.clear();
@@ -67,15 +69,16 @@ void Canvas::fillTriangle(const Vec2& a, const Vec2& b, const Vec2& c, Color col
     batch.vertex(Vec3{b, kSpriteDepth}, color, Vec2{0});
     batch.vertex(Vec3{c, kSpriteDepth}, color, Vec2{0});
     batch.end();
-    m_device->draw(batch, m_device->whiteTexture(), m_transform,
+    m_device->draw(batch, m_device->whiteTexture(), placement(),
                    {.depthWrite = false, .depthTest = false});
 }
 
 void Canvas::fillHorizontalBand(f32 y, f32 height, Color color) {
     GDL_VERIFY(m_device != nullptr, "Canvas::fillHorizontalBand outside begin/end");
     flush();
-    const Vec4 a = m_transform * Vec4{0, y, kSpriteDepth, 1};
-    const Vec4 b = m_transform * Vec4{0, y + height, kSpriteDepth, 1};
+    const Mat4 transform = placement();
+    const Vec4 a = transform * Vec4{0, y, kSpriteDepth, 1};
+    const Vec4 b = transform * Vec4{0, y + height, kSpriteDepth, 1};
     const f32 top = std::clamp(std::min(a.y / a.w, b.y / b.w), -1.0f, 1.0f);
     const f32 bottom = std::clamp(std::max(a.y / a.w, b.y / b.w), -1.0f, 1.0f);
     if (bottom <= top) {
@@ -90,8 +93,9 @@ void Canvas::fillHorizontalBand(f32 y, f32 height, Color color) {
 void Canvas::maskOutside(const Rect& area, Color color) {
     GDL_VERIFY(m_device != nullptr, "Canvas::maskOutside outside begin/end");
     flush();
-    const Vec4 a = m_transform * Vec4{area.x, area.y, kSpriteDepth, 1};
-    const Vec4 b = m_transform * Vec4{area.x + area.width, area.y + area.height, kSpriteDepth, 1};
+    const Mat4 transform = placement();
+    const Vec4 a = transform * Vec4{area.x, area.y, kSpriteDepth, 1};
+    const Vec4 b = transform * Vec4{area.x + area.width, area.y + area.height, kSpriteDepth, 1};
     const f32 left = std::clamp(std::min(a.x / a.w, b.x / b.w), -1.0f, 1.0f);
     const f32 right = std::clamp(std::max(a.x / a.w, b.x / b.w), -1.0f, 1.0f);
     const f32 top = std::clamp(std::min(a.y / a.w, b.y / b.w), -1.0f, 1.0f);
@@ -115,8 +119,9 @@ void Canvas::maskOutside(const Rect& area, Color color) {
 void Canvas::maskAboveAndBelow(f32 top, f32 bottom, Color color) {
     GDL_VERIFY(m_device != nullptr, "Canvas::maskAboveAndBelow outside begin/end");
     flush();
-    const Vec4 a = m_transform * Vec4{0, top, kSpriteDepth, 1};
-    const Vec4 b = m_transform * Vec4{0, bottom, kSpriteDepth, 1};
+    const Mat4 transform = placement();
+    const Vec4 a = transform * Vec4{0, top, kSpriteDepth, 1};
+    const Vec4 b = transform * Vec4{0, bottom, kSpriteDepth, 1};
     const f32 first = std::clamp(std::min(a.y / a.w, b.y / b.w), -1.0f, 1.0f);
     const f32 last = std::clamp(std::max(a.y / a.w, b.y / b.w), -1.0f, 1.0f);
     ImmediateBatch batch;
@@ -139,8 +144,15 @@ void Canvas::submit(const ImmediateBatch& batch, const Texture& texture, const M
     GDL_VERIFY(m_device != nullptr, "Canvas::submit outside begin/end");
     flush();
     if (!batch.empty()) {
-        m_device->draw(batch, texture, m_transform * local, state);
+        m_device->draw(batch, texture, placement() * local, state);
     }
+}
+
+void Canvas::setLocalTransform(const Mat4& local) {
+    GDL_VERIFY(m_device != nullptr, "Canvas::setLocalTransform outside begin/end");
+    flush();
+    m_local = local;
+    m_hasLocal = local != Mat4{1.0f};
 }
 
 void Canvas::end() {
@@ -148,13 +160,28 @@ void Canvas::end() {
     flush();
     m_device = nullptr;
     m_texture = nullptr;
+    m_local = Mat4{1.0f};
+    m_hasLocal = false;
 }
 
 void Canvas::flush() {
     if (!m_batch.empty() && m_texture != nullptr) {
-        m_device->draw(m_batch, *m_texture, m_transform, m_state);
+        m_device->draw(m_batch, *m_texture, placement(), m_state);
     }
     m_batch.clear();
+}
+
+Mat4 Canvas::placement() const {
+    return m_hasLocal ? m_transform * m_local : m_transform;
+}
+
+CanvasFrame::CanvasFrame(Canvas& canvas, const Mat4& local)
+    : m_canvas(canvas), m_previous(canvas.localTransform()) {
+    m_canvas.setLocalTransform(m_previous * local);
+}
+
+CanvasFrame::~CanvasFrame() {
+    m_canvas.setLocalTransform(m_previous);
 }
 
 } // namespace gdl

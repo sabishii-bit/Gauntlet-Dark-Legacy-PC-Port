@@ -1,10 +1,13 @@
+#include <bit>
 #include <cmath>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
+#include "engine/core/Types.h"
 #include "engine/math/Math.h"
+#include "engine/render/ImmediateBatch.h"
 #include "engine/ui/Canvas.h"
 
 #include "FakeRenderDevice.h"
@@ -13,6 +16,30 @@ namespace {
 
 using namespace gdl;
 using Catch::Approx;
+
+/** Whether two transforms agree bit for bit, -0.0 and +0.0 apart. */
+bool sameBits(const Mat4& a, const Mat4& b) {
+    constexpr s32 kSide = 4;
+    for (s32 column = 0; column < kSide; ++column) {
+        for (s32 row = 0; row < kSide; ++row) {
+            if (std::bit_cast<u32>(a[column][row]) != std::bit_cast<u32>(b[column][row])) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+/** A game's own frame on the canvas: moved, and scaled unevenly as the N64's is. */
+Mat4 gameFrame() {
+    return glm::scale(glm::translate(Mat4{1.0f}, Vec3{8, 9, 0}), Vec3{1.25f, 1.5f, 1});
+}
+
+/** Where `placed` puts a point of its own space in clip space. */
+Vec2 clipOf(const Mat4& placed, f32 x, f32 y) {
+    const Vec4 point = placed * Vec4{x, y, 0, 1};
+    return Vec2{point.x / point.w, point.y / point.w};
+}
 
 TEST_CASE("canvas overlay state applies to glyph batches and resets on the next begin",
           "[ui][canvas][build-label]") {
@@ -240,6 +267,187 @@ TEST_CASE("the virtual screen transform stretches onto the frame", "[ui][canvas]
     const Vec4 middle = transform * Vec4{256.0f, 192.0f, 0.0f, 1.0f};
     REQUIRE(middle.x == Approx(0.0f).margin(1e-5));
     REQUIRE(middle.y == Approx(0.0f).margin(1e-5));
+}
+
+TEST_CASE("a local frame applies before the canvas transform and goes with its scope",
+          "[engine][ui][canvas]") {
+    test::FakeRenderDevice device;
+    const test::FakeTexture sprite{4, 4};
+    const Mat4 transform = makeScreenProjection(512, 384);
+    const Mat4 outer = gameFrame();
+    const Mat4 inner = glm::translate(Mat4{1.0f}, Vec3{20, 30, 0});
+    const Rect area{0, 0, 4, 4};
+    Canvas canvas;
+    canvas.begin(device, transform);
+    canvas.draw(sprite, area);
+    {
+        const CanvasFrame frame(canvas, outer);
+        CHECK(canvas.localTransform() == outer);
+        canvas.draw(sprite, area);
+        {
+            const CanvasFrame nested(canvas, inner);
+            CHECK(canvas.localTransform() == outer * inner);
+            canvas.draw(sprite, area);
+        }
+        CHECK(canvas.localTransform() == outer);
+        canvas.draw(sprite, area);
+    }
+    CHECK(canvas.localTransform() == Mat4{1.0f});
+    canvas.draw(sprite, area);
+    canvas.end();
+    // One texture throughout, yet each change of frame starts a draw of its own, and every
+    // sprite keeps its own corners for its transform to place.
+    REQUIRE(device.draws.size() == 5);
+    CHECK(device.draws[0].transform == transform);
+    CHECK(device.draws[1].transform == transform * outer);
+    CHECK(device.draws[2].transform == transform * (outer * inner));
+    CHECK(device.draws[3].transform == transform * outer);
+    CHECK(device.draws[4].transform == transform);
+    for (const auto& draw : device.draws) {
+        CHECK(draw.texture == &sprite);
+        CHECK(test::minCorner(draw) == Vec2{0, 0});
+        CHECK(test::maxCorner(draw) == Vec2{4, 4});
+    }
+
+    // A triangle and a prepared batch take the frame too, the batch's own transform first.
+    device.draws.clear();
+    ImmediateBatch batch;
+    batch.rect(area, 0.5f, Color::white());
+    const Mat4 batchLocal = glm::translate(Mat4{1.0f}, Vec3{2, 3, 0});
+    canvas.begin(device, transform);
+    {
+        const CanvasFrame frame(canvas, outer);
+        canvas.fillTriangle({0, 0}, {4, 0}, {0, 4}, Color::white());
+        canvas.submit(batch, sprite, batchLocal);
+    }
+    canvas.end();
+    REQUIRE(device.draws.size() == 2);
+    CHECK(device.draws[0].transform == transform * outer);
+    CHECK(Vec2(device.draws[0].vertices[1].position) == Vec2{4, 0});
+    CHECK(device.draws[1].transform == transform * outer * batchLocal);
+
+    // A local transform left set goes with the canvas's end, and the next begin starts with none.
+    device.draws.clear();
+    canvas.begin(device, transform);
+    canvas.setLocalTransform(outer);
+    canvas.draw(sprite, area);
+    canvas.end();
+    CHECK(canvas.localTransform() == Mat4{1.0f});
+    canvas.begin(device, transform);
+    CHECK(canvas.localTransform() == Mat4{1.0f});
+    canvas.draw(sprite, area);
+    canvas.end();
+    REQUIRE(device.draws.size() == 2);
+    CHECK(device.draws[0].transform == transform * outer);
+    CHECK(device.draws[1].transform == transform);
+}
+
+TEST_CASE("masks and bands keep to the local frame", "[engine][ui][canvas]") {
+    test::FakeRenderDevice device;
+    Canvas canvas;
+    // A wide display, so that the masks have margins beside the canvas to reach.
+    const Mat4 transform = makeVirtualScreenTransform(makeLetterboxProjection(640, 448, 1280, 720),
+                                                      512, 384, 640, 448);
+    const Mat4 placed = transform * gameFrame();
+    canvas.begin(device, transform);
+    {
+        const CanvasFrame frame(canvas, gameFrame());
+        canvas.maskOutside({0, 0, 320, 200});
+        canvas.fillHorizontalBand(0, 20, Color::black());
+        canvas.maskAboveAndBelow(40, 160);
+        canvas.fillScreen(Color::white());
+    }
+    canvas.end();
+    REQUIRE(device.draws.size() == 4);
+    for (const auto& draw : device.draws) {
+        CHECK(draw.transform == Mat4{1});
+        CHECK_FALSE(draw.state.depthTest);
+        CHECK_FALSE(draw.state.depthWrite);
+    }
+
+    // The mask leaves open the frame's area, where the frame puts it on the canvas.
+    const Vec2 low = clipOf(placed, 0, 0);
+    const Vec2 high = clipOf(placed, 320, 200);
+    const auto& mask = device.draws[0];
+    f32 masked = 0;
+    for (usize i = 0; i + 2 < mask.vertices.size(); i += 3) {
+        const Vec2 a{mask.vertices[i].position};
+        const Vec2 b{mask.vertices[i + 1].position};
+        const Vec2 c{mask.vertices[i + 2].position};
+        const Vec2 middle = (a + b + c) / 3.0f;
+        CHECK((middle.x <= low.x || middle.x >= high.x || middle.y <= low.y || middle.y >= high.y));
+        masked += std::abs((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x)) / 2;
+    }
+    CHECK(masked == Approx(4 - (high.x - low.x) * (high.y - low.y)));
+
+    // The band runs the display's width over the frame's rows 0 to 20.
+    const auto& band = device.draws[1];
+    CHECK(test::minCorner(band).x == Approx(-1));
+    CHECK(test::maxCorner(band).x == Approx(1));
+    CHECK(test::minCorner(band).y == Approx(clipOf(placed, 0, 0).y));
+    CHECK(test::maxCorner(band).y == Approx(clipOf(placed, 0, 20).y));
+
+    // The rows above the frame's row 40 and below its row 160 are masked out to the edges.
+    const f32 first = clipOf(placed, 0, 40).y;
+    const f32 last = clipOf(placed, 0, 160).y;
+    const auto& rows = device.draws[2];
+    f32 covered = 0;
+    for (usize i = 0; i + 2 < rows.vertices.size(); i += 3) {
+        const Vec2 a{rows.vertices[i].position};
+        const Vec2 b{rows.vertices[i + 1].position};
+        const Vec2 c{rows.vertices[i + 2].position};
+        const Vec2 middle = (a + b + c) / 3.0f;
+        CHECK((middle.y < first || middle.y > last));
+        covered += std::abs((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x)) / 2;
+    }
+    CHECK(test::minCorner(rows) == Vec2{-1, -1});
+    CHECK(test::maxCorner(rows) == Vec2{1, 1});
+    CHECK(covered == Approx(2 * ((first + 1) + (1 - last))));
+
+    // A screen fill still covers the whole viewport.
+    CHECK(test::minCorner(device.draws[3]) == Vec2{-1, -1});
+    CHECK(test::maxCorner(device.draws[3]) == Vec2{1, 1});
+}
+
+TEST_CASE("without a local frame every draw keeps the canvas's own transform, bit for bit",
+          "[engine][ui][canvas]") {
+    // The projection's depth offset is -0.0, which a product with the identity turns to +0.0.
+    const Mat4 transform = makeScreenProjection(512, 384);
+    REQUIRE_FALSE(sameBits(transform * Mat4{1.0f}, transform));
+    const Mat4 local = glm::translate(Mat4{1.0f}, Vec3{3, 4, 0});
+    const Rect area{0, 0, 4, 4};
+    ImmediateBatch batch;
+    batch.rect(area, 0.5f, Color::white());
+    test::FakeRenderDevice device;
+    const test::FakeTexture sprite{4, 4};
+    Canvas canvas;
+    canvas.begin(device, transform);
+    canvas.draw(sprite, area);
+    canvas.fillTriangle({0, 0}, {4, 0}, {0, 4}, Color::white());
+    canvas.submit(batch, sprite, local);
+    {
+        const CanvasFrame frame(canvas, local);
+        canvas.draw(sprite, area);
+    }
+    // Once the frame has gone there is none again, as there is once the identity is set outright.
+    canvas.draw(sprite, area);
+    canvas.fillTriangle({0, 0}, {4, 0}, {0, 4}, Color::white());
+    canvas.submit(batch, sprite, local);
+    canvas.setLocalTransform(local);
+    canvas.draw(sprite, area);
+    canvas.setLocalTransform(Mat4{1.0f});
+    canvas.draw(sprite, area);
+    canvas.end();
+    REQUIRE(device.draws.size() == 9);
+    CHECK(sameBits(device.draws[0].transform, transform));
+    CHECK(sameBits(device.draws[1].transform, transform));
+    CHECK(sameBits(device.draws[2].transform, transform * local));
+    CHECK(device.draws[3].transform == transform * local);
+    CHECK(sameBits(device.draws[4].transform, transform));
+    CHECK(sameBits(device.draws[5].transform, transform));
+    CHECK(sameBits(device.draws[6].transform, transform * local));
+    CHECK(device.draws[7].transform == transform * local);
+    CHECK(sameBits(device.draws[8].transform, transform));
 }
 
 } // namespace

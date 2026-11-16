@@ -1,5 +1,6 @@
 #pragma once
 
+#include "engine/core/SpecialMembers.h"
 #include "engine/core/Types.h"
 #include "engine/math/Math.h"
 #include "engine/render/ImmediateBatch.h"
@@ -31,10 +32,15 @@ public:
      * to its edges, leaving the rows between alone and whatever lies beside them. */
     void maskAboveAndBelow(f32 top, f32 bottom, Color color = Color::black());
 
-    /** Draws a prepared batch with `local` applied before the canvas transform, after any
-     * pending sprites. */
+    /** Draws a prepared batch with `local` applied before the canvas's local transform and its
+     * own, after any pending sprites. */
     void submit(const ImmediateBatch& batch, const Texture& texture, const Mat4& local,
                 const DrawState& state = {});
+
+    /** Draws what follows through `local` before the canvas's own transform (a game's native
+     * frame); what is pending is flushed first. begin() and end() reset it. */
+    void setLocalTransform(const Mat4& local);
+    const Mat4& localTransform() const { return m_local; }
 
     /** Submits what is pending; must be called before the frame ends. */
     void end();
@@ -43,12 +49,30 @@ public:
 
 private:
     void flush();
+    /** What a draw is placed by: the local transform, then the canvas's own; the canvas's own
+     * alone while there is no local one, since a product with the identity loses -0.0. */
+    Mat4 placement() const;
 
     RenderDevice* m_device = nullptr;
     Mat4 m_transform{1.0f};
+    Mat4 m_local{1.0f};
+    bool m_hasLocal = false; ///< set while a local transform other than the identity applies
     DrawState m_state;
     const Texture* m_texture = nullptr;
     ImmediateBatch m_batch;
+};
+
+/** Composes `local` onto a canvas's local transform until it goes out of scope. */
+class CanvasFrame {
+public:
+    CanvasFrame(Canvas& canvas, const Mat4& local);
+    /** Restores the local transform the frame found. */
+    ~CanvasFrame();
+    GDL_NON_COPYABLE_NON_MOVABLE(CanvasFrame);
+
+private:
+    Canvas& m_canvas;
+    Mat4 m_previous;
 };
 
 } // namespace gdl
