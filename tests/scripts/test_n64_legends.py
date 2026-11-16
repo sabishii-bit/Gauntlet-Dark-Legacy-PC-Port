@@ -26,6 +26,10 @@ from legends_fixtures import (JSON_STRINGS, N64_VECTORS, VECTOR_FOLDER, header_i
 VECTORS = vectors(N64_VECTORS)
 IMAGES = {name: bytes.fromhex(text) for name, text in VECTORS["images"].items()}
 
+# The rules the launcher's plan of the tree it writes refuses a ROM by, once its reader of the
+# ROMDISK has taken the ROM.
+TREE_RULES = ("treeDuplicate", "treeFolderCase", "treeConflict")
+
 
 def check_outcome(test: unittest.TestCase, case: dict, function, *args, **kwargs):
     """Checks that the extractor still makes of a case what the vectors hold: it takes the case and
@@ -92,6 +96,12 @@ class DirectoryTests(unittest.TestCase):
         for case in cases:
             with self.subTest(paths=case["paths"]):
                 check_outcome(self, case, n64.read_directory, paths_rom(case["paths"]))
+                # The launcher's extraction refuses by its ROMDISK reader's rule wherever that
+                # reader refuses, and by its tree plan's only where the reader takes the files.
+                if case["romdiskRule"] is None:
+                    self.assertIn(case["rule"], TREE_RULES)
+                else:
+                    self.assertEqual(case["rule"], case["romdiskRule"])
 
     def record_word_cases(self, plain: bool) -> list[dict]:
         """The record word cases on the default image's plain entries, or on its compressed ones."""

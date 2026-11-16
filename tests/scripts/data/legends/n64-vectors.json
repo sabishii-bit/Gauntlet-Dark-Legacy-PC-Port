@@ -300,6 +300,7 @@
         "/file",
         "/FILE"
       ],
+      "romdiskRule": "duplicatePath",
       "python": "duplicate case-insensitive ROMDISK path: FILE",
       "rule": "duplicatePath"
     },
@@ -308,6 +309,7 @@
         "/folder",
         "/folder/file"
       ],
+      "romdiskRule": "collision",
       "python": "ROMDISK file/directory collision: folder/file",
       "rule": "collision"
     },
@@ -316,6 +318,7 @@
         "/Font/a",
         "/font/b"
       ],
+      "romdiskRule": null,
       "python": null,
       "rule": "treeFolderCase",
       "deviation": 6

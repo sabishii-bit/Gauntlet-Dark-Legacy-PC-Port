@@ -434,11 +434,14 @@ N64_PATH_CASES = [
     ("/manifest.json/x", "unsafePath", "reserved", None),
 ]
 
-# (native paths, rule, deviation), together the files of one ROM.
+# (native paths, ROMDISK rule, rule, deviation), together the files of one ROM. The launcher reads
+# the ROMDISK before it plans the tree it writes from it: the ROMDISK rule is what its reader of the
+# ROMDISK alone makes of the files, and the rule what its extraction refuses the ROM by, the
+# reader's where the reader refuses and else the plan's.
 N64_COLLISION_CASES = [
-    (["/file", "/FILE"], "duplicatePath", None),
-    (["/folder", "/folder/file"], "collision", None),
-    (["/Font/a", "/font/b"], "treeFolderCase", 6),
+    (["/file", "/FILE"], "duplicatePath", "duplicatePath", None),
+    (["/folder", "/folder/file"], "collision", "collision", None),
+    (["/Font/a", "/font/b"], None, "treeFolderCase", 6),
 ]
 
 # (lowered expansion limit, rule), on the default image.
@@ -943,9 +946,10 @@ def write_n64_vectors(folder: Path, refreeze: bool) -> list[str]:
         _, python = script_result(n64.read_directory, paths_rom([path]))
         paths.append({"path": path, **outcome(python, rule, name_rule, deviation)})
     collisions = []
-    for native, rule, deviation in N64_COLLISION_CASES:
+    for native, romdisk_rule, rule, deviation in N64_COLLISION_CASES:
         _, python = script_result(n64.read_directory, paths_rom(native))
-        collisions.append({"paths": native, **outcome(python, rule, deviation=deviation)})
+        collisions.append({"paths": native, "romdiskRule": romdisk_rule,
+                           **outcome(python, rule, deviation=deviation)})
     record_words = []
     for index, word, value, rule in n64_record_word_cases(default):
         case = {"index": index, "word": word, "value": value}
