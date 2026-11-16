@@ -767,9 +767,7 @@ TEST_CASE("a missing class bank never stops the N64 look, a missing or truncated
         CHECK(portraitsOf(look) == Names{"WIZ_P1", "WIZ_P2"});
     }
     SECTION("the HUD bank or a font missing") {
-        for (const std::string_view name :
-             {LegendsN64HudPainter::kHudBank, LegendsN64HudPainter::kSmallFontFile,
-              LegendsN64HudPainter::kNameFontFile, LegendsN64HudPainter::kNumberFontFile}) {
+        for (const std::string_view name : LegendsN64HudPainter::kRequiredFiles) {
             CAPTURE(name);
             const Fixture files("n64-hud-load-missing");
             std::filesystem::remove(files.root() / name);
@@ -779,9 +777,7 @@ TEST_CASE("a missing class bank never stops the N64 look, a missing or truncated
     }
     SECTION("the HUD bank or a font cut short") {
         // What cannot be read stops the look with its cause, for the opener's one warning.
-        for (const std::string_view name :
-             {LegendsN64HudPainter::kHudBank, LegendsN64HudPainter::kSmallFontFile,
-              LegendsN64HudPainter::kNameFontFile, LegendsN64HudPainter::kNumberFontFile}) {
+        for (const std::string_view name : LegendsN64HudPainter::kRequiredFiles) {
             CAPTURE(name);
             const Fixture files("n64-hud-load-short");
             files.truncate(name);

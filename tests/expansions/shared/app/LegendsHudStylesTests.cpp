@@ -4,6 +4,7 @@
 #include <format>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -14,12 +15,16 @@
 
 #include "engine/io/File.h"
 
+#include "FakeDarkLegacyArt.h"
 #include "FakeRenderDevice.h"
 #include "LogCapture.h"
 #include "TestSupport.h"
+#include "expansions/n64/hud/LegendsN64HudFixture.h"
+#include "expansions/n64/hud/LegendsN64HudPainter.h"
 #include "expansions/shared/app/LegendsHudStyles.h"
 #include "expansions/shared/characters/LegendsProgress.h"
 #include "expansions/shared/hud/LegendsHudStyleIds.h"
+#include "game/characters/ClassData.h"
 #include "game/config/GameConfig.h"
 #include "game/hud/DarkLegacyHudPainter.h"
 #include "game/hud/HudPainter.h"
@@ -159,6 +164,42 @@ TEST_CASE("each Legends HUD look needs its own files, and one look's fault hides
     CHECK(legendsHudFilesFound(kLegendsDreamcastHudStyle, roots) == n64);
     // The campaign itself is still found: its maps are whole.
     CHECK(legendsHudRoot(n64 ? LegendsPlatform::N64 : LegendsPlatform::Dreamcast, roots));
+}
+
+TEST_CASE("the N64 look's probe looks for just the files its painter cannot open without",
+          "[legends][hud-style]") {
+    test::FakeRenderDevice device;
+    test::FakeDarkLegacyArt art;
+    const std::array party{HudMember{.seat = 0, .classIndex = kWarriorClass, .color = 0}};
+    const std::span<const std::string_view> required = legendsHudRequiredFiles(kLegendsN64HudStyle);
+    REQUIRE_FALSE(required.empty());
+
+    // With the probe's files alone, the rest of the extraction gone, the look opens.
+    const test::LegendsN64HudFixture alone("legends-hud-n64-required");
+    std::vector<std::filesystem::path> others;
+    for (const auto& entry : std::filesystem::recursive_directory_iterator(alone.root())) {
+        const std::string name =
+            std::filesystem::relative(entry.path(), alone.root()).generic_string();
+        if (entry.is_regular_file() &&
+            std::ranges::find(required, std::string_view{name}) == required.end()) {
+            others.push_back(entry.path());
+        }
+    }
+    REQUIRE_FALSE(others.empty());
+    for (const std::filesystem::path& other : others) {
+        std::filesystem::remove(other);
+    }
+    LegendsN64HudPainter look;
+    CHECK(look.load(device, alone.root(), art, party));
+
+    // Without any one of them, it does not.
+    for (const std::string_view name : required) {
+        CAPTURE(name);
+        const test::LegendsN64HudFixture files("legends-hud-n64-lacking");
+        REQUIRE(std::filesystem::remove(files.root() / name));
+        LegendsN64HudPainter lacking;
+        CHECK_FALSE(lacking.load(device, files.root(), art, party));
+    }
 }
 
 TEST_CASE("an empty file counts as missing", "[legends][hud-style]") {

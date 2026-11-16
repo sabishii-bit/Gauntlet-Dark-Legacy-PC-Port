@@ -19,6 +19,7 @@
 #include "engine/platform/Paths.h"
 #include "engine/render/RenderDevice.h"
 
+#include "expansions/n64/hud/LegendsN64HudPainter.h"
 #include "expansions/shared/characters/LegendsProgress.h"
 #include "expansions/shared/hud/LegendsHudStyleIds.h"
 #include "expansions/shared/scenes/LegendsFiles.h"
@@ -30,10 +31,6 @@
 namespace gdl::game {
 namespace {
 
-/** The N64 look's HUD bank and the three fonts it writes in: 4x6font's counts and words, glfm3's
- * names and help, numfont's health. */
-constexpr std::array<std::string_view, 4> kN64Files{"hud/objects.wad", "Font/4x6font.fnt",
-                                                    "Font/glfm3.fnt", "Font/numfont.FNT"};
 /** The Dreamcast look's static set, which holds its boxes' art, and the three fonts the boxes are
  * written in. */
 constexpr std::array<std::string_view, 5> kDreamcastFiles{
@@ -49,11 +46,13 @@ struct LegendsHudLook {
     std::span<const std::string_view> required;
 };
 
-/** Every Legends look, in the order the HUD page lists them. */
-constexpr std::array kLooks{
-    LegendsHudLook{kLegendsN64HudStyle, kLegendsN64HudLabel, LegendsPlatform::N64, kN64Files},
-    LegendsHudLook{kLegendsDreamcastHudStyle, kLegendsDreamcastHudLabel, LegendsPlatform::Dreamcast,
-                   kDreamcastFiles}};
+/** Every Legends look, in the order the HUD page lists them. A look's painter names the files it
+ * cannot be drawn without, so that the probe looks for what the painter needs. */
+constexpr std::array kLooks{LegendsHudLook{kLegendsN64HudStyle, kLegendsN64HudLabel,
+                                           LegendsPlatform::N64,
+                                           LegendsN64HudPainter::kRequiredFiles},
+                            LegendsHudLook{kLegendsDreamcastHudStyle, kLegendsDreamcastHudLabel,
+                                           LegendsPlatform::Dreamcast, kDreamcastFiles}};
 
 /** Opens a look's painter from its campaign's HUD root, taking all its art at once; null when
  * that art does not load. */

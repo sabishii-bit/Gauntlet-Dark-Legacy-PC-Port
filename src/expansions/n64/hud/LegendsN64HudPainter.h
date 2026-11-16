@@ -63,6 +63,10 @@ public:
     static constexpr std::string_view kSmallFontFile = "Font/4x6font.fnt";  ///< counts and words
     static constexpr std::string_view kNameFontFile = "Font/glfm3.fnt";     ///< the player's name
     static constexpr std::string_view kNumberFontFile = "Font/numfont.FNT"; ///< health
+    /** The files of the N64 extraction the look cannot be drawn without, and so what the HUD
+     * page's probe looks for before it offers the look: the HUD bank and the three fonts. */
+    static constexpr std::array<std::string_view, 4> kRequiredFiles{kHudBank, kSmallFontFile,
+                                                                    kNameFontFile, kNumberFontFile};
 
     LegendsN64HudPainter() = default;
     ~LegendsN64HudPainter() override = default;
