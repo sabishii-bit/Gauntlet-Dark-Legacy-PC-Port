@@ -7,10 +7,10 @@
 
 namespace gdl::formats {
 
-/** Native packed five-byte glyph directory and its embedded I4 coverage atlas. */
+/** Native packed five-byte glyph directory and its I4, IA4 or IA8 atlas. */
 struct LegendsN64Font {
     BitmapFont font;
-    Image atlas;
+    Image atlas; ///< with clear rows added down to the lowest glyph's bottom
     static LegendsN64Font parse(std::span<const u8> bytes);
 };
 
