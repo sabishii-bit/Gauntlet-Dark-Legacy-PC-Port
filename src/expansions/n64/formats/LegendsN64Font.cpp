@@ -11,6 +11,8 @@
 #include "engine/io/ByteReader.h"
 #include "engine/math/Math.h"
 
+#include "expansions/n64/formats/LegendsN64IntensityAlpha.h"
+
 namespace gdl::formats {
 
 namespace {
@@ -44,21 +46,13 @@ u32 texelBits(std::span<const u8> packed, AtlasFormat format, usize i) {
     return (i & 1U) != 0 ? packed[i / 2] & 15U : packed[i / 2] >> 4U;
 }
 
-/** A texel's colour as LegendsN64Texture decodes its format, but for I4: a font's I4 texel is
- * coverage alone, drawn in the ink, while an IA texel's intensity shades the ink as well. */
+/** A texel's colour: an IA texel's as every N64 texture's, its intensity shading the ink as well,
+ * while a font's I4 texel is coverage alone, drawn in the ink. */
 Color atlasTexel(AtlasFormat format, u32 bits) {
     switch (format) {
     case AtlasFormat::Intensity4: return Color::rgba(255, 255, 255, static_cast<u8>(bits * 17U));
-    case AtlasFormat::IntensityAlpha4: {
-        // Three bits of intensity, widened by repeating them, over one bit of alpha.
-        const u32 three = bits >> 1U;
-        const auto intensity = static_cast<u8>((three << 5U) | (three << 2U) | (three >> 1U));
-        return Color::rgba(intensity, intensity, intensity, (bits & 1U) != 0 ? 255 : 0);
-    }
-    case AtlasFormat::IntensityAlpha8: {
-        const auto intensity = static_cast<u8>((bits >> 4U) * 17U);
-        return Color::rgba(intensity, intensity, intensity, static_cast<u8>((bits & 15U) * 17U));
-    }
+    case AtlasFormat::IntensityAlpha4: return legendsN64IntensityAlpha4(bits);
+    case AtlasFormat::IntensityAlpha8: return legendsN64IntensityAlpha8(bits);
     }
     return Color::transparent();
 }

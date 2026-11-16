@@ -374,6 +374,7 @@ add_executable(tests
     expansions/dreamcast/assets/LegendsDreamcastArchiveTests.cpp
     expansions/n64/formats/LegendsN64TextureTests.cpp
     expansions/n64/formats/LegendsN64FontTests.cpp
+    expansions/n64/formats/LegendsN64IntensityAlphaTests.cpp
     expansions/shared/scenes/LegendsPreviewTests.cpp
     expansions/shared/scenes/LegendsPlayableTests.cpp
     expansions/shared/scenes/LegendsLevelTests.cpp

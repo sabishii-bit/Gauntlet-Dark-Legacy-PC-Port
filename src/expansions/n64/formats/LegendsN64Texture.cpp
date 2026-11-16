@@ -15,6 +15,7 @@
 #include "engine/core/Types.h"
 #include "engine/math/Math.h"
 
+#include "expansions/n64/formats/LegendsN64IntensityAlpha.h"
 #include "expansions/n64/formats/LegendsN64Scene.h"
 
 namespace gdl::formats {
@@ -211,16 +212,10 @@ Image decodePixels(const LegendsN64Texture& texture, std::span<const u8> data, u
             }
         } else if (format == 3) {
             if (size == 0) {
-                const auto value = (data[row + x / 2] >> ((x & 1U) == 0 ? 4U : 0U)) & 15U;
-                const auto three = value >> 1U;
-                const auto intensity =
-                    static_cast<u8>((three << 5U) | (three << 2U) | (three >> 1U));
-                color = Color::rgba(intensity, intensity, intensity, (value & 1U) != 0 ? 255 : 0);
+                const auto bits = (data[row + x / 2] >> ((x & 1U) == 0 ? 4U : 0U)) & 15U;
+                color = legendsN64IntensityAlpha4(bits);
             } else if (size == 1) {
-                const auto value = data[row + x];
-                const auto intensity = static_cast<u8>((value >> 4U) * 17U);
-                color = Color::rgba(intensity, intensity, intensity,
-                                    static_cast<u8>((value & 15U) * 17U));
+                color = legendsN64IntensityAlpha8(data[row + x]);
             } else {
                 const auto intensity = data[row + x * 2];
                 color = Color::rgba(intensity, intensity, intensity, data[row + x * 2 + 1]);

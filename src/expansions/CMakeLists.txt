@@ -34,6 +34,8 @@ add_library(expansion_formats STATIC
     n64/formats/LegendsN64Text.h
     n64/formats/LegendsN64Font.cpp
     n64/formats/LegendsN64Font.h
+    n64/formats/LegendsN64IntensityAlpha.cpp
+    n64/formats/LegendsN64IntensityAlpha.h
     n64/formats/LegendsN64Texture.cpp
     n64/formats/LegendsN64Texture.h
     n64/formats/LegendsN64Tower.cpp
