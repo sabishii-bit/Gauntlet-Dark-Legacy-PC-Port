@@ -183,6 +183,19 @@ TEST_CASE("a glyph may reach below its atlas into its line, never past it", "[le
     CHECK_THROWS_AS(reaching({'0', 0, 1, 1, 4}), FormatError);
     CHECK_THROWS_AS(reaching({'0', 3, 0, 2, 1}), FormatError);
 
+    // Within its atlas a glyph may pass its line, as most of 4x6font's, glfm3's and bigfont's
+    // glyphs do: the line bounds only what reaches below the atlas.
+    const std::vector<u8> tall(16, 0xFF);
+    const Header tallHeader{.width = 4, .height = 8, .lineHeight = 4};
+    const std::array deep{Glyph{'0', 0, 4, 1, 4}, Glyph{'1', 1, 0, 1, 8}};
+    const auto within = LegendsN64Font::parse(nativeFont(tallHeader, deep, tall));
+    CHECK(within.atlas.height == 8U);
+    REQUIRE(within.font.glyph('1') != nullptr);
+    CHECK(within.font.glyph('1')->rows == 8);
+    CHECK_THROWS_AS(
+        LegendsN64Font::parse(nativeFont(tallHeader, std::array{Glyph{'0', 0, 1, 1, 8}}, tall)),
+        FormatError);
+
     // An I4 atlas gains its rows the same way: white, as the rest of it is, and clear.
     const std::vector<u8> fourBit(4, 0xFF);
     const auto coverage = LegendsN64Font::parse(
