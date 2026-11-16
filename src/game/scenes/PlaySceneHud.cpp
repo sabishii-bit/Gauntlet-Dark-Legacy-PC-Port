@@ -1,11 +1,21 @@
 #include <optional>
+#include <string_view>
+#include <vector>
 
 #include "engine/core/Types.h"
 #include "engine/math/Math.h"
 
+#include "game/characters/CharacterSave.h"
+#include "game/config/GameConfig.h"
+#include "game/hud/HudPainter.h"
+#include "game/hud/HudStyles.h"
 #include "game/hud/HudView.h"
+#include "game/hud/PowerupSelector.h"
 #include "game/level/ImportedLevel.h"
 #include "game/level/SecretChallenge.h"
+#include "game/party/PartyCombo.h"
+#include "game/party/PlayerRuntime.h"
+#include "game/players/PlayerControls.h"
 #include "game/scenes/PlayScene.h"
 
 namespace gdl::game {
@@ -65,6 +75,55 @@ HudView PlayScene::hudView(const Mat4& clip, const Mat4& canvasProjection, f32 w
         }
     }
     return view;
+}
+
+std::string_view PlayScene::configuredHudStyle() const {
+    return m_services->config != nullptr ? std::string_view{m_services->config->display.hudStyle}
+                                         : kDarkLegacyHudStyle;
+}
+
+std::vector<HudMember> PlayScene::hudMembers() const {
+    std::vector<HudMember> members;
+    members.reserve(m_players.size());
+    for (const PlayerRuntime& runtime : m_players) {
+        const s32 seat = runtime.actor.player();
+        if (seat >= 0 && seat < kPlayerCount) {
+            const CharacterSave& save = runtime.actor.save();
+            members.push_back({.seat = seat, .classIndex = save.character, .color = save.color});
+        }
+    }
+    return members;
+}
+
+bool PlayScene::hudBrowsable(s32 seat) const {
+    if (!m_open || m_world == nullptr) {
+        return false;
+    }
+    // A hold that owns the tick heeds no selector: the console's journey, then advanceNative's
+    // holds in their order, then those that hold play's party still.
+    if (m_sim.consoleTravel.has_value() || m_sim.gameOver.active() ||
+        m_sim.switchCutscene.active() || m_messages.active() || m_sim.leaving ||
+        m_sumnerVisit.active() || spawning() ||
+        (m_ceremonies.promotion().active() && !m_sim.welcome.cutting() && !relicsLead()) ||
+        relicCeremonyOn() || m_sim.welcome.holds() || importedOpening() ||
+        m_gatewayDeparture.holding()) {
+        return false;
+    }
+    // Nor does a member down, gone or entering, held or thrown, moved by a combo, or flying
+    // free, whose presses never reach the game.
+    const PlayerRuntime* member = runtime(seat);
+    return member != nullptr && !member->departed && member->life == PlayerLife::Standing &&
+           (member->figure == nullptr || !member->figure->animator().entering()) &&
+           !member->capture.active() && !PartyCombo::aside(*member) && !cheats(seat).noclip;
+}
+
+void PlayScene::browseHud(s32 seat, const SelectorInput& presses) {
+    if (seat < 0 || seat >= kPlayerCount || ((m_localSeats >> seat) & 1U) == 0 ||
+        !(presses.down || presses.left || presses.right) || !hudBrowsable(seat) ||
+        m_hud.selector(seat).state() != PowerupSelector::State::Closed) {
+        return;
+    }
+    m_hudStyle.run(m_darkLegacyHud, [&](HudPainter& look) { look.browse(seat, presses); });
 }
 
 } // namespace gdl::game

@@ -306,9 +306,11 @@ private:
     /** The view every screen is opened with, its levels read on the first ask. */
     const GameServices& services();
     /** What an offline play scene answers its rumble, won classes and Stop Time total through,
-     * and where it finds the worlds past Sumner's gateways. */
+     * and where it finds the worlds past Sumner's gateways and the looks its HUD may be drawn
+     * in. */
     PlayScene::Links playLinks();
-    /** What the online game answers its rumble, won classes and saves through. */
+    /** What the online game answers its rumble, won classes and saves through, and where its
+     * scenes find the looks their HUD may be drawn in. */
     OnlineRun::Links onlineLinks();
     void applyWindowIcon();
     void renderScene(RenderDevice& device);

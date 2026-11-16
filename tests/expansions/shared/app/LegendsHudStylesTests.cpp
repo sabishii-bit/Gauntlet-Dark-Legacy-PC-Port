@@ -1,10 +1,7 @@
 #include <algorithm>
 #include <array>
-#include <cstdio>
-#include <exception>
 #include <filesystem>
 #include <format>
-#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -15,10 +12,10 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
-#include "engine/core/Types.h"
 #include "engine/io/File.h"
 
 #include "FakeRenderDevice.h"
+#include "LogCapture.h"
 #include "TestSupport.h"
 #include "expansions/shared/app/LegendsHudStyles.h"
 #include "expansions/shared/characters/LegendsProgress.h"
@@ -27,12 +24,6 @@
 #include "game/hud/DarkLegacyHudPainter.h"
 #include "game/hud/HudPainter.h"
 #include "game/hud/HudStyles.h"
-
-#if defined(_WIN32)
-#include <io.h>
-#else
-#include <unistd.h>
-#endif
 
 namespace {
 using namespace gdl;
@@ -87,91 +78,6 @@ bool sameFolder(const std::optional<std::filesystem::path>& found,
     return found.has_value() && std::filesystem::equivalent(*found, expected, error);
 }
 
-/** Closes a stream the tests opened. */
-struct FileCloser {
-    void operator()(std::FILE* file) const { std::fclose(file); }
-};
-
-// The C runtime's calls that point the error stream, where the log warns, at another file.
-#if defined(_WIN32)
-std::FILE* openForWriting(const std::filesystem::path& file) {
-    return _wfopen(file.c_str(), L"w");
-}
-int descriptorOf(std::FILE* stream) {
-    return _fileno(stream);
-}
-int duplicateDescriptor(int descriptor) {
-    return _dup(descriptor);
-}
-int redirectDescriptor(int from, int onto) {
-    return _dup2(from, onto);
-}
-int closeDescriptor(int descriptor) {
-    return _close(descriptor);
-}
-#else
-std::FILE* openForWriting(const std::filesystem::path& file) {
-    return std::fopen(file.c_str(), "w");
-}
-int descriptorOf(std::FILE* stream) {
-    return fileno(stream);
-}
-int duplicateDescriptor(int descriptor) {
-    return dup(descriptor);
-}
-int redirectDescriptor(int from, int onto) {
-    return dup2(from, onto);
-}
-int closeDescriptor(int descriptor) {
-    return close(descriptor);
-}
-#endif
-
-/** The warnings the log wrote while `run` ran, each without its time stamp: the error stream
- * goes to a scratch file meanwhile. */
-std::vector<std::string> warningsWhile(const std::function<void()>& run) {
-    const auto file = test::scratchDirectory("legends-hud-warnings") / "errors.txt";
-    std::exception_ptr failure;
-    {
-        const std::unique_ptr<std::FILE, FileCloser> sink{openForWriting(file)};
-        REQUIRE(sink != nullptr);
-        std::fflush(stderr);
-        const int errors = descriptorOf(stderr);
-        const int saved = duplicateDescriptor(errors);
-        REQUIRE(saved >= 0);
-        REQUIRE(redirectDescriptor(descriptorOf(sink.get()), errors) >= 0);
-        try {
-            run();
-        } catch (...) {
-            failure = std::current_exception();
-        }
-        std::fflush(stderr);
-        const bool restored = redirectDescriptor(saved, errors) >= 0;
-        const bool closed = closeDescriptor(saved) == 0;
-        REQUIRE(restored);
-        REQUIRE(closed);
-    }
-    if (failure != nullptr) {
-        std::rethrow_exception(failure);
-    }
-    constexpr std::string_view kWarningTag = "] WARN  ";
-    std::vector<std::string> warnings;
-    const std::string text = readTextFile(file);
-    const std::string_view lines{text};
-    for (usize start = 0; start < lines.size();) {
-        const usize end = std::min(lines.find('\n', start), lines.size());
-        std::string_view line = lines.substr(start, end - start);
-        if (line.ends_with('\r')) {
-            line.remove_suffix(1);
-        }
-        if (const usize tag = line.find(kWarningTag); tag != std::string_view::npos) {
-            warnings.emplace_back(line.substr(tag + kWarningTag.size()));
-        }
-        start = end + 1;
-    }
-    return warnings;
-}
-
 /** What opening look `id` under `roots` gave, and the warnings it wrote. */
 struct Opening {
     std::unique_ptr<HudPainter> painter;
@@ -183,7 +89,7 @@ Opening openingOf(std::string_view id, const LegendsHudRoots& roots, test::FakeR
                   DarkLegacyHudPainter& darkLegacy) {
     const std::array party{HudMember{.seat = 1, .classIndex = 0, .color = 2}};
     Opening opening;
-    opening.warnings = warningsWhile(
+    opening.warnings = test::warningsWhile(
         [&] { opening.painter = openLegendsHud(id, device, darkLegacy, party, roots); });
     return opening;
 }

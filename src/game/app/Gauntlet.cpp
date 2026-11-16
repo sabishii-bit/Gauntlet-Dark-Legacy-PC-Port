@@ -297,11 +297,15 @@ PlayScene::Links Gauntlet::playLinks() {
     return {.haptics = &m_rumble,
             .unlocks = &m_unlocks,
             .stopTimeTotal = &m_stopTimeTotal,
-            .gateways = &m_gateways};
+            .gateways = &m_gateways,
+            .hudStyles = &m_hudStyles};
 }
 
 OnlineRun::Links Gauntlet::onlineLinks() {
-    return {.haptics = &m_rumble, .unlocks = &m_unlocks, .store = &m_partyStore};
+    return {.haptics = &m_rumble,
+            .unlocks = &m_unlocks,
+            .store = &m_partyStore,
+            .hudStyles = &m_hudStyles};
 }
 
 void Gauntlet::RumbleRouting::vibrate(s32 player, s32 frames, ControlFeedback cue) {

@@ -308,6 +308,8 @@ bool PlayScene::open(RenderDevice& device, const GameServices& services, LevelWo
     for (s32 seat = 0; seat < kPlayerCount; ++seat) {
         setCheats(seat, options.consoleCheats[static_cast<usize>(seat)]);
     }
+    // The HUD's look opens last, for the party it draws: it takes all its art now.
+    m_hudStyle.open(links.hudStyles, configuredHudStyle(), device, m_darkLegacyHud, hudMembers());
     return true;
 }
 
@@ -368,6 +370,7 @@ void PlayScene::close() {
     m_sim.projectilesAdvanced = false;
     m_sim.playSeconds = 0.0f;
     m_sim.towerNoticeSeconds = 0.0f;
+    m_hudStyle.close();      // before the Dark Legacy art its look borrows
     m_darkLegacyHud.clear(); // before the static textures its glow, finder and help borrow
     m_hud.clear();
     m_names.clear(); // before the static sheet its font borrows
@@ -1024,6 +1027,19 @@ PlayScene::LocalStep PlayScene::step(f64 deltaSeconds, const Inputs& inputs,
                                      std::span<const ConsoleAction> actions) {
     if (m_audio.recordingSounds()) {
         throw std::logic_error("Recorded scene audio requires explicit tick and output ownership");
+    }
+    if (m_open) {
+        // The HUD's look changes only here, between ticks, once the device has finished the
+        // frames that may still draw the look let go. Online play never comes here: its look
+        // is fixed for the room, and its presses are browsed as they are sampled.
+        const std::string_view look = configuredHudStyle();
+        if (m_hudStyle.unsettled(look)) {
+            m_device->waitIdle();
+            m_hudStyle.settle(look, *m_device, m_darkLegacyHud, hudMembers());
+        }
+        for (s32 seat = 0; seat < kPlayerCount; ++seat) {
+            browseHud(seat, inputs[static_cast<usize>(seat)].selector);
+        }
     }
     // Offline play owns no timeline/ledger. These labels are only meaningful to
     // explicit recordStep callers; every fresh offline journal dispatches once.
@@ -2193,11 +2209,15 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
         m_canvas.end(); // the developer console asked for the view alone
         return;
     }
-    HudPainter& hud = m_darkLegacyHud;
-    const bool otherLook = hud.id() != kDarkLegacyHudStyle;
+    // The look the slot holds draws every HUD part; one that throws is retired as it does, and
+    // Dark Legacy's takes the parts after it.
+    const bool otherLook = m_hudStyle.shown() != kDarkLegacyHudStyle;
     const HudView view = hudView(clip, canvasProjection, width, height, otherLook);
     HudFrame frame{.canvas = m_canvas, .device = device, .darkLegacy = m_darkLegacyHud};
-    hud.prepare(frame, view);
+    const auto drawHud = [&](void (HudPainter::*part)(HudFrame&, const HudView&)) {
+        m_hudStyle.run(m_darkLegacyHud, [&](HudPainter& look) { (look.*part)(frame, view); });
+    };
+    drawHud(&HudPainter::prepare);
     // Rendering can precede the first simulation tick, before PartyNames has observed the hold.
     if (!spawning()) {
         m_names.draw(m_canvas, m_players, clip, canvasProjection, frameBlend);
@@ -2205,13 +2225,13 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     if (!cut && !optionsOpen && !m_viewOverride) {
         // The way to each companion off this view, over the world and under the boxes.
         m_arrows.draw(m_canvas, m_players, arrowOwnSeats(), camera, clip, canvasProjection, width,
-                      height, hud.statusTop(), frameBlend);
+                      height, m_hudStyle.painter(m_darkLegacyHud).statusTop(), frameBlend);
     }
     if (!cut) {
-        hud.drawStatus(frame, view);
-        hud.drawRuneMeter(frame, view);
-        hud.drawHourglass(frame, view);
-        hud.drawBossMeters(frame, view);
+        drawHud(&HudPainter::drawStatus);
+        drawHud(&HudPainter::drawRuneMeter);
+        drawHud(&HudPainter::drawHourglass);
+        drawHud(&HudPainter::drawBossMeters);
         m_bossSequence.victory().drawCaption(m_canvas, m_messages.text(), m_hud.strings(), width,
                                              height);
         drawMechanicsHud();
@@ -2225,8 +2245,8 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
         drawCinematicBars(m_canvas, height);
     }
     if (!cut) {
-        hud.drawSelectors(frame, view);
-        hud.drawHelp(frame, view);
+        drawHud(&HudPainter::drawSelectors);
+        drawHud(&HudPainter::drawHelp);
     }
     m_messages.draw(m_canvas);
     if (!ceremoniesWaiting() && !relicsLead()) {

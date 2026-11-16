@@ -255,7 +255,8 @@ struct NativeOnlinePlay::Data {
     Haptics* appHaptics = nullptr; ///< this machine's controllers, by local device
     ClassUnlocks* unlocks = nullptr;
     PartyStore* store = nullptr;
-    SeatRumble seatRumble{*this}; ///< what the scenes rumble through; outlives them
+    HudStyles* hudStyles = nullptr; ///< the looks this machine's scenes draw their HUD in
+    SeatRumble seatRumble{*this};   ///< what the scenes rumble through; outlives them
     std::unique_ptr<Level> level, parent;
     std::vector<PartyMember> levelMembers; ///< the party the current level was loaded with
     bool levelResumed = false;  ///< a parent brought back from a challenge cannot be reloaded
@@ -319,6 +320,7 @@ struct NativeOnlinePlay::Data {
         appHaptics = nullptr;
         unlocks = nullptr;
         store = nullptr;
+        hudStyles = nullptr;
         options = {};
         phase = Phase::Closed;
         failure = Failure::None;
@@ -705,7 +707,8 @@ struct NativeOnlinePlay::Data {
                                        {.haptics = &seatRumble,
                                         .unlocks = nullptr,
                                         .stopTimeTotal = &setup->stopTimeTotal(),
-                                        .gateways = nullptr})) {
+                                        .gateways = nullptr,
+                                        .hudStyles = hudStyles})) {
                 fail(Failure::Assets);
                 return false;
             }
@@ -848,7 +851,8 @@ struct NativeOnlinePlay::Data {
                                        {.haptics = &seatRumble,
                                         .unlocks = nullptr,
                                         .stopTimeTotal = &setup->stopTimeTotal(),
-                                        .gateways = nullptr})) {
+                                        .gateways = nullptr,
+                                        .hudStyles = hudStyles})) {
                 return fail(Failure::Assets);
             }
             candidate->scene.setLocalSeats(seatMask(session->seats()));
@@ -1262,6 +1266,7 @@ bool NativeOnlinePlay::open(RenderDevice& device, const GameServices& services,
     data.appHaptics = links.haptics;
     data.unlocks = links.unlocks;
     data.store = links.store;
+    data.hudStyles = links.hudStyles;
     data.phase = Phase::Loading;
     return true;
 }

@@ -157,7 +157,7 @@ TowerWelcome::Due TowerWelcome::openDue(RenderDevice& device, LevelMessages& mes
 }
 
 bool TowerWelcome::hold(s32 ticks) {
-    if (m_intro != Intro::Crystal) {
+    if (!holds()) {
         return false;
     }
     m_cutTicks -= ticks;

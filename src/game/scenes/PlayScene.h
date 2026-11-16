@@ -40,6 +40,8 @@
 #include "game/hud/CompanionArrows.h"
 #include "game/hud/CompassHud.h"
 #include "game/hud/DarkLegacyHudPainter.h"
+#include "game/hud/HudStyleSlot.h"
+#include "game/hud/HudStyles.h"
 #include "game/hud/HudView.h"
 #include "game/hud/LevelMessages.h"
 #include "game/hud/PartyHud.h"
@@ -140,8 +142,8 @@ struct PlayOptions {
 };
 
 /** The application's owners an open scene answers through: the controllers' rumble, the
- * classes a won challenge grants, the Stop Time total and the worlds past Sumner's gateways.
- * Any may be missing; closing the scene lets them all go. */
+ * classes a won challenge grants, the Stop Time total, the worlds past Sumner's gateways and the
+ * looks its HUD may be drawn in. Any may be missing; closing the scene lets them all go. */
 struct PlaySceneLinks {
     Haptics* haptics = nullptr;
     ClassUnlocks* unlocks = nullptr;
@@ -151,6 +153,9 @@ struct PlaySceneLinks {
     /** The worlds Sumner's gateways lead to, offline alone: an online game leaves them out, and
      * its tower tells of none. */
     TowerGateways* gateways = nullptr;
+    /** The looks the HUD may be drawn in, offline and online alike; without them it is Dark
+     * Legacy's. */
+    HudStyles* hudStyles = nullptr;
 };
 
 enum class PlayOutcome : u8 {
@@ -655,6 +660,9 @@ public:
     const EffectTrees& effects() const { return m_effects; }
     /** The powerup selector over `player`'s box. */
     const PowerupSelector& selector(s32 player) const { return m_hud.selector(player); }
+    /** A local seat's selector presses as they are sampled, for its HUD look's own pages while
+     * its selector is closed and the scene heeds the selector; never simulation. */
+    void browseHud(s32 seat, const SelectorInput& presses);
     /** How large a character is drawn: an ogre, one grown by a powerup, one of level 99. */
     const SumnerHints& hintTexts() const { return m_sumnerVisit.texts(); }
     const PickupHud& pickups() const { return m_hud.pickups(); }
@@ -826,6 +834,13 @@ private:
      * such looks read. */
     HudView hudView(const Mat4& clip, const Mat4& canvasProjection, f32 width, f32 height,
                     bool otherLook) const;
+    /** The look the settings ask for: their id, else Dark Legacy's. */
+    std::string_view configuredHudStyle() const;
+    /** The party as its HUD look takes its art for it, a member a seat. */
+    std::vector<HudMember> hudMembers() const;
+    /** Whether a tick now would heed `seat`'s selector: no hold owns it and the seat's member
+     * stands free to act. */
+    bool hudBrowsable(s32 seat) const;
     bool leaveBy(usize portal);
     void updateFixtures(s32 ticks, f32 seconds);
     void updateTransporters(s32 ticks, f32 seconds, bool held);
@@ -953,6 +968,7 @@ private:
     ClassDataSet m_classes;
     PartyHud m_hud;
     DarkLegacyHudPainter m_darkLegacyHud; ///< the boxes' own look, and the art others borrow
+    HudStyleSlot m_hudStyle; ///< the look chosen; presentation only, never rewound or digested
     PickupRouting m_pickupRouting{*this}; ///< what the pickups put up
     Canvas m_canvas;
     TowerCamera m_camera;

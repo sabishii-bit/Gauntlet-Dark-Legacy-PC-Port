@@ -102,7 +102,7 @@ public:
         draws.push_back(std::move(record));
     }
 
-    void waitIdle() override {}
+    void waitIdle() override { ++idleWaits; }
     bool applyBloom() override {
         bloomDrawOffsets.push_back(draws.size());
         return true;
@@ -128,6 +128,7 @@ public:
     std::vector<usize> depthOfFieldDrawOffsets;
     std::vector<DepthOfField> depthOfFieldSettings;
     u32 frames = 0;
+    u32 idleWaits = 0; ///< how often the device was waited on to finish its frames
     u32 texturesCreated = 0;
     u32 emptyTexturesCreated = 0;
     u32 textureUpdates = 0;

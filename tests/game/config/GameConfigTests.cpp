@@ -1,11 +1,8 @@
-#include <algorithm>
 #include <cmath>
-#include <cstdio>
 #include <exception>
 #include <filesystem>
 #include <fstream>
 #include <limits>
-#include <memory>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -20,106 +17,23 @@
 #include "engine/platform/Input.h"
 #include "engine/render/RenderTypes.h"
 
+#include "LogCapture.h"
 #include "TestSupport.h"
 #include "game/config/GameConfig.h"
 #include "game/config/MultiplayerMode.h"
-
-#if defined(_WIN32)
-#include <io.h>
-#else
-#include <unistd.h>
-#endif
 
 namespace {
 
 using namespace gdl;
 using namespace gdl::game;
 
-/** Closes a stream the tests opened. */
-struct FileCloser {
-    void operator()(std::FILE* file) const { std::fclose(file); }
-};
-
-// The C runtime's calls that point the error stream, where the log warns, at another file.
-#if defined(_WIN32)
-std::FILE* openForWriting(const std::filesystem::path& file) {
-    return _wfopen(file.c_str(), L"w");
-}
-int descriptorOf(std::FILE* stream) {
-    return _fileno(stream);
-}
-int duplicateDescriptor(int descriptor) {
-    return _dup(descriptor);
-}
-int redirectDescriptor(int from, int onto) {
-    return _dup2(from, onto);
-}
-int closeDescriptor(int descriptor) {
-    return _close(descriptor);
-}
-#else
-std::FILE* openForWriting(const std::filesystem::path& file) {
-    return std::fopen(file.c_str(), "w");
-}
-int descriptorOf(std::FILE* stream) {
-    return fileno(stream);
-}
-int duplicateDescriptor(int descriptor) {
-    return dup(descriptor);
-}
-int redirectDescriptor(int from, int onto) {
-    return dup2(from, onto);
-}
-int closeDescriptor(int descriptor) {
-    return close(descriptor);
-}
-#endif
-
 /** What a merge did besides changing the settings: what the log warned of, and what it threw. */
-struct MergeOutcome {
-    std::vector<std::string> warnings; ///< each warning's message, without its time stamp
-    std::exception_ptr failure;        ///< null when the merge returned
-};
+using MergeOutcome = test::LoggedRun;
 
-/** Merges `json` into `config` with the error stream sent to a scratch file, then reads the
- * log's warnings back from it. What the merge throws is kept, not thrown on. */
+/** Merges `json` into `config` with the log's warnings caught. What the merge throws is kept, not
+ * thrown on. */
 MergeOutcome mergeLogged(GameConfig& config, std::string_view json) {
-    const auto file = test::scratchDirectory("config-warnings") / "errors.txt";
-    MergeOutcome outcome;
-    {
-        const std::unique_ptr<std::FILE, FileCloser> sink{openForWriting(file)};
-        REQUIRE(sink != nullptr);
-        std::fflush(stderr);
-        const int errors = descriptorOf(stderr);
-        const int saved = duplicateDescriptor(errors);
-        REQUIRE(saved >= 0);
-        REQUIRE(redirectDescriptor(descriptorOf(sink.get()), errors) >= 0);
-        try {
-            config.mergeJson(json);
-        } catch (...) {
-            outcome.failure = std::current_exception();
-        }
-        std::fflush(stderr);
-        const bool restored = redirectDescriptor(saved, errors) >= 0;
-        const bool closed = closeDescriptor(saved) == 0;
-        REQUIRE(restored);
-        REQUIRE(closed);
-    }
-    constexpr std::string_view kWarningTag = "] WARN  ";
-    const std::string text = readTextFile(file);
-    const std::string_view lines{text};
-    for (usize start = 0; start < lines.size();) {
-        const usize end = std::min(lines.find('\n', start), lines.size());
-        std::string_view line = lines.substr(start, end - start);
-        if (line.ends_with('\r')) {
-            line.remove_suffix(1);
-        }
-        if (const usize tag = line.find(kWarningTag); tag != std::string_view::npos) {
-            outcome.warnings.emplace_back(line.substr(tag + kWarningTag.size()));
-        }
-        start = end + 1;
-    }
-    return outcome;
+    return test::logWhile([&] { config.mergeJson(json); });
 }
 
 /** The message of what the merge threw when it threw a `Failure`, else empty. */

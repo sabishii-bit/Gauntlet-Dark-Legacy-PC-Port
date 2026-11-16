@@ -487,6 +487,9 @@ bool NativeRollbackDriver::sample(const SessionInputs::Frame& local,
         }
         const auto captured =
             data.scene->captureNativeInput(static_cast<s32>(seat), local[commands.size()]);
+        // The HUD look's own pages turn on this machine's presses as they are sampled, never on
+        // a tick simulated again.
+        data.scene->browseHud(static_cast<s32>(seat), captured.selector);
         // Coarse analogue steps keep a steady hand's commands identical from tick to tick,
         // so peers predicting it by holding its last input are right far more often.
         commands.push_back(SessionInputs::command(captured, data.context.epoch,

@@ -83,6 +83,8 @@ public:
                      const WorldLayout& layout, SumnerFigure& sumner);
     /** Runs the cut down; true while it holds play. */
     bool hold(s32 ticks);
+    /** Whether the next hold() holds play, without running the cut down. */
+    bool holds() const { return m_intro == Intro::Crystal; }
 
     Due due() const { return m_due; } ///< the scroll the arrival opens next
     Intro intro() const { return m_intro; }

@@ -213,6 +213,8 @@ add_executable(tests
     game/hud/LinkIndicatorTests.cpp
     TestSupport.h
     TestSupportTests.cpp
+    LogCapture.h
+    LogCaptureTests.cpp
     HeadlessDebugReportsTests.cpp
     SyntheticBytes.h
     SyntheticBytesTests.cpp
@@ -227,6 +229,8 @@ add_executable(tests
     FakeRenderDevice.h
     DrawStreamDigest.h
     DrawStreamDigestTests.cpp
+    FakeHudStyles.h
+    FakeDarkLegacyArt.h
     engine/core/TypesTests.cpp
     engine/core/LogTests.cpp
     engine/core/AssertTests.cpp
@@ -656,6 +660,7 @@ add_executable(tests
     game/hud/DarkLegacyHudDrawPinTests.cpp
     game/hud/HudViewTests.cpp
     game/hud/DarkLegacyHudPainterTests.cpp
+    game/hud/HudStyleSlotTests.cpp
     game/party/PartyRecordsTests.cpp
     game/party/PartyTeleportTests.cpp
     game/level/TriggerCuesTests.cpp

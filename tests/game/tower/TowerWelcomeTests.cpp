@@ -489,6 +489,33 @@ TEST_CASE("without its scroll or its camera the welcome passes straight on",
     CHECK(welcome.intro() == TowerWelcome::Intro::None);
 }
 
+TEST_CASE("the welcome says whether its cut holds the next tick without running it down",
+          "[game][screens][welcome]") {
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    LevelMessages messages;
+    SumnerFigure sumner;
+    const WorldLayout layout = WorldLayout::fromDecoded(
+        {},
+        {WorldLocator{.kind = LocatorKind::TriggerCamera, .next = TowerWelcome::kCrystalCamera}},
+        Vec3{-1.0f}, Vec3{1.0f});
+    TowerWelcome welcome;
+    welcome.open(world, true);
+    CHECK_FALSE(welcome.holds());
+    // Without its scroll the welcome cuts straight to the crystals.
+    welcome.arrived(device, messages, nullptr, layout, sumner);
+    REQUIRE(welcome.intro() == TowerWelcome::Intro::Crystal);
+    // Asked before each tick, it answers as that tick's hold() does, and asking takes no tick.
+    s32 held = 0;
+    while (welcome.holds()) {
+        REQUIRE(welcome.hold(1));
+        ++held;
+    }
+    CHECK(held == TowerWelcome::kCrystalTicks);
+    CHECK(welcome.intro() == TowerWelcome::Intro::Done);
+    CHECK_FALSE(welcome.hold(1));
+}
+
 TEST_CASE("the welcome crystal cut holds its ticks", "[game][screens][welcome][assets]") {
     const std::filesystem::path root =
         test::assetOrSkip("LEVELS/LEVELL1/WORLDS.PS2").parent_path().parent_path().parent_path();
