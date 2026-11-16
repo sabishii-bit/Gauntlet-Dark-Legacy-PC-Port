@@ -1518,15 +1518,17 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let parent = dir.path().join("parent");
         let dump = parent.join("dump");
-        // Kept: a name below the top that begins with the prefix, and a name at the top that holds
-        // the prefix without beginning with it.
+        // Kept: a name below the top that begins with the prefix, a name at the top that holds the
+        // prefix without beginning with it, and one that begins with it in other letter case.
         let deeper_name = format!("{STAGING_PREFIX}deeper");
         let holding_name = format!("old{STAGING_PREFIX}1");
+        let cased_name = format!("{}1", STAGING_PREFIX.to_ascii_uppercase());
         let deeper = dump.join(&deeper_name);
         fs::create_dir_all(&deeper).unwrap();
         fs::write(dump.join("rom.z64"), b"not a real rom").unwrap();
         fs::write(parent.join("notes.txt"), b"kept").unwrap();
         fs::write(parent.join(&holding_name), b"kept too").unwrap();
+        fs::write(parent.join(&cased_name), b"kept as well").unwrap();
         // Dated long ago, so that an entry made in the folder or removed from it moves its time.
         backdate(&parent).unwrap();
         let whole = snapshot(&parent).unwrap();
@@ -1542,6 +1544,7 @@ mod tests {
             Path::new("dump").join("rom.z64"),
             PathBuf::from("notes.txt"),
             PathBuf::from(&holding_name),
+            PathBuf::from(&cased_name),
         ]
         .into_iter()
         .collect();
