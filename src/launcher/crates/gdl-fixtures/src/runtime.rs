@@ -148,6 +148,18 @@ pub(crate) fn hex(bytes: &[u8]) -> String {
     text
 }
 
+/// The bytes a shared vector's hexadecimal text spells, two digits a byte, for the tests that
+/// hold the builders to the vectors.
+#[cfg(test)]
+pub(crate) fn unhex(text: &Value) -> Vec<u8> {
+    let text = text.as_str().expect("hexadecimal text");
+    assert_eq!(text.len() % 2, 0, "{text}");
+    (0..text.len())
+        .step_by(2)
+        .map(|at| u8::from_str_radix(&text[at..at + 2], 16).expect("hexadecimal digits"))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;

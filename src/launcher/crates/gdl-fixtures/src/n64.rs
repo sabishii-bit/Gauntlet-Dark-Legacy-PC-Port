@@ -351,7 +351,7 @@ mod tests {
         OverlaySpec, ROM_HEADER_LEN, ROMDISK_MAGIC, RomFile, WadOrder, default_rom_files,
         raw_deflate, rom, rom_with_overlays, set_word, wad,
     };
-    use crate::runtime::{hex, sha256_hex};
+    use crate::runtime::{hex, sha256_hex, unhex};
 
     /// The N64 cases the extractor's tests and the launcher's read alike.
     const VECTORS: &str = include_str!(concat!(
@@ -364,16 +364,6 @@ mod tests {
 
     fn vectors() -> Value {
         serde_json::from_str(VECTORS).expect("the N64 vectors are JSON")
-    }
-
-    /// The bytes a vector's hexadecimal text spells.
-    fn unhex(text: &Value) -> Vec<u8> {
-        let text = text.as_str().expect("hexadecimal text");
-        assert_eq!(text.len() % 2, 0, "{text}");
-        (0..text.len())
-            .step_by(2)
-            .map(|at| u8::from_str_radix(&text[at..at + 2], 16).expect("hexadecimal digits"))
-            .collect()
     }
 
     /// The big-endian word at `at`.
