@@ -4,9 +4,11 @@ hashes only; synthetic trees, no game data."""
 from __future__ import annotations
 
 import contextlib
+import errno
 import hashlib
 import io
 import json
+import os
 from pathlib import Path
 import shutil
 import sys
@@ -101,6 +103,18 @@ def write_over_ip_bin(offset: int, data: bytes):
     return change
 
 
+# IP.BIN's identity written over, by what each change is, with the field the refusal names: other
+# values, and the same values padded or placed otherwise, which only a comparison of the exact
+# bytes refuses, as the launcher compares them.
+IDENTITY_CHANGES = [
+    ("another product", "product", 64, b"T9710P    "),
+    ("another version", "version", 74, b"V1.002"),
+    ("another area", "area", 48, b" E      "),
+    ("the product padded with a tab", "product", 64, b"T9710N\t   "),
+    ("the area's letter where Japan's goes", "area", 48, b"U       "),
+]
+
+
 def remove(name: str):
     """A change to a tree that removes its file `name`."""
     return lambda tree: (tree / name).unlink()
@@ -138,6 +152,22 @@ TREE_CHANGES = [
     ("an IP.BIN a byte long", "IP.BIN", grow_ip_bin),
     ("another hardware ID", "IP.BIN", write_over_ip_bin(0, b"SEGA SEGAKATANB")),
 ]
+
+
+class FailingWrites:
+    """A file opened for writing whose every write fails, as on a full disk."""
+
+    def __init__(self, stream):
+        self.stream = stream
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        self.stream.close()
+
+    def write(self, data: bytes) -> int:
+        raise OSError(errno.ENOSPC, "No space left on device")
 
 
 class FingerprintTests(unittest.TestCase):
@@ -211,9 +241,8 @@ class FingerprintTests(unittest.TestCase):
         self.assertEqual(self.output.read_bytes(), GOLDEN)
 
     def test_refuses_another_product_version_or_area(self):
-        for field, offset, value in [("product", 64, b"T9710P    "), ("version", 74, b"V1.002"),
-                                     ("area", 48, b" E      ")]:
-            with self.subTest(field=field):
+        for change, field, offset, value in IDENTITY_CHANGES:
+            with self.subTest(change=change):
                 tree = full_set_tree(self.root)
                 write_over_ip_bin(offset, value)(tree)
                 self.assert_refused(self.run_script(tree=tree), str(tree / "IP.BIN"),
@@ -263,6 +292,51 @@ class FingerprintTests(unittest.TestCase):
         self.assertEqual(list(self.output.parent.iterdir()), [self.output])
         self.assertEqual(self.run_script("--replace")[0], 0)
         self.assertEqual(self.output.read_bytes(), GOLDEN)
+
+    def test_replace_puts_a_new_file_beside_the_output_in_its_place(self):
+        self.output.parent.mkdir()
+        self.output.write_bytes(b"older\n")
+        moves = []
+        move = os.replace
+
+        def recorded(source, target):
+            moves.append((Path(source), Path(target), Path(source).read_bytes()))
+            move(source, target)
+
+        with mock.patch.object(legends_fingerprints.os, "replace", recorded):
+            self.assertEqual(self.run_script("--replace")[0], 0)
+        # The fingerprints were written whole into a new file beside the output, which then took
+        # the output's name.
+        [(source, target, data)] = moves
+        self.assertEqual((source.parent, target, data), (self.output.parent, self.output, GOLDEN))
+        self.assertTrue(source.name.startswith(f".{self.output.name}."), source.name)
+        self.assertEqual(self.output.read_bytes(), GOLDEN)
+
+    def test_a_failed_write_leaves_the_output_as_it_was(self):
+        output = self.output
+        opened = Path.open
+
+        def opening(path, mode="r", *arguments, **options):
+            stream = opened(path, mode, *arguments, **options)
+            return FailingWrites(stream) if path == output and "x" in mode else stream
+
+        with self.subTest(output="new"):
+            with mock.patch.object(Path, "open", opening):
+                code, printed, errors = self.run_script()
+            self.assertEqual((code, printed), (1, ""))
+            self.assertEqual(errors, f"fingerprints refused: {output}: No space left on device\n")
+            # The output whose write began is gone again.
+            self.assertEqual(list(output.parent.iterdir()), [])
+        with self.subTest(output="replaced"):
+            output.write_bytes(b"older\n")
+            denied = OSError(errno.EACCES, "Permission denied")
+            with mock.patch.object(legends_fingerprints.os, "replace", side_effect=denied):
+                code, printed, errors = self.run_script("--replace")
+            self.assertEqual((code, printed), (1, ""))
+            self.assertEqual(errors, f"fingerprints refused: {output}: Permission denied\n")
+            # The output is as it was, and the file the fingerprints went into first is gone.
+            self.assertEqual(output.read_bytes(), b"older\n")
+            self.assertEqual(list(output.parent.iterdir()), [output])
 
     def test_check_reports_equal_and_different(self):
         differ = (1, "", f"fingerprints differ: {self.output}\n")
