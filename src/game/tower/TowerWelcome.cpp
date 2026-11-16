@@ -168,7 +168,7 @@ bool TowerWelcome::hold(s32 ticks) {
 }
 
 std::optional<WorldCamera> TowerWelcome::camera() const {
-    return m_intro == Intro::Crystal ? std::optional<WorldCamera>{m_cutCamera} : std::nullopt;
+    return cutting() ? std::optional<WorldCamera>{m_cutCamera} : std::nullopt;
 }
 
 /** Sumner gestures at the crystals while the camera cuts to them from the level's marker. */

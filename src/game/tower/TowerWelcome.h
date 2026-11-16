@@ -83,11 +83,13 @@ public:
                      const WorldLayout& layout, SumnerFigure& sumner);
     /** Runs the cut down; true while it holds play. */
     bool hold(s32 ticks);
-    /** Whether the next hold() holds play, without running the cut down. */
-    bool holds() const { return m_intro == Intro::Crystal; }
+    /** Whether the next hold() holds play, without running the cut down: the cut holds it
+     * while it shows. */
+    bool holds() const { return cutting(); }
 
     Due due() const { return m_due; } ///< the scroll the arrival opens next
     Intro intro() const { return m_intro; }
+    /** Whether the cut to the crystals shows. */
     bool cutting() const { return m_intro == Intro::Crystal; }
     /** The cut's camera while it shows. */
     std::optional<WorldCamera> camera() const;
