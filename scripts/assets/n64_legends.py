@@ -9,8 +9,7 @@ the different GameCube archive format. The last record word is retained without
 assigning an unverified checksum or timestamp meaning.
 
 The US boot table independently records the executable overlays and their load
-addresses. Its identification is corroborated by Drahsid/gauntlet-legends's
-gauntlet.yaml/common.h; no code from that project is required or incorporated.
+addresses.
 """
 
 from __future__ import annotations
