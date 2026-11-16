@@ -123,11 +123,16 @@ def grow_ip_bin(tree: Path) -> None:
         stream.write(b"\0")
 
 
+# Arrays within arrays, deeper than Python's JSON reader descends on any interpreter.
+TOO_DEEP = 100_000
+
 # Trees no extraction writes, by what is wrong with each, with the file the refusal names.
 TREE_CHANGES = [
     ("no disc manifest", "disc-manifest.json", remove("disc-manifest.json")),
     ("a disc manifest that is not JSON", "disc-manifest.json",
      replace_with("disc-manifest.json", b"{\n")),
+    ("a disc manifest nested too deep to read", "disc-manifest.json",
+     replace_with("disc-manifest.json", b"[" * TOO_DEEP + b"]" * TOO_DEEP)),
     ("no IP.BIN", "IP.BIN", remove("IP.BIN")),
     ("an IP.BIN a byte short", "IP.BIN", cut_ip_bin),
     ("an IP.BIN a byte long", "IP.BIN", grow_ip_bin),

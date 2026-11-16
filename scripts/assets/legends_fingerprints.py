@@ -101,6 +101,9 @@ def disc_rows(tree: Path) -> list[tuple[str, str]]:
         manifest = json.loads(data.decode("utf-8"))
     except ValueError as error:
         raise Refused(f"{path} is not JSON: {error}") from error
+    except RecursionError as error:
+        # JSON nested deeper than Python's reader descends, which no extraction writes.
+        raise Refused(f"{path} nests its JSON too deep to read") from error
     if not isinstance(manifest, dict) or manifest.get("format") != DISC_MANIFEST_FORMAT:
         raise Refused(f"{path} is not a disc manifest of the format {DISC_MANIFEST_FORMAT}")
     product = identity()["product"]
