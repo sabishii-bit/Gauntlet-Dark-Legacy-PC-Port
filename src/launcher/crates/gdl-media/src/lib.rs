@@ -5,8 +5,12 @@
 
 mod digest;
 mod error;
+mod identify;
+mod n64;
 mod source_name;
 
 pub use digest::{Sha1Digest, Sha256Digest};
-pub use error::MediaError;
+pub use error::{MediaError, RomRule};
+pub use identify::Region;
+pub use n64::{ByteOrder, MAX_ROM_LEN, N64Rom, ROM_HEADER_LEN, RomHeader, US_SHA1};
 pub use source_name::SourceName;

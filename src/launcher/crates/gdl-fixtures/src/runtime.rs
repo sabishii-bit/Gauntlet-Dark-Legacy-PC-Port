@@ -149,9 +149,8 @@ pub(crate) fn hex(bytes: &[u8]) -> String {
 }
 
 /// The bytes a shared vector's hexadecimal text spells, two digits a byte, for the tests that
-/// hold the builders to the vectors.
-#[cfg(test)]
-pub(crate) fn unhex(text: &Value) -> Vec<u8> {
+/// hold the launcher's builders and readers to the vectors. Panics when `text` is no such text.
+pub fn unhex(text: &Value) -> Vec<u8> {
     let text = text.as_str().expect("hexadecimal text");
     assert_eq!(text.len() % 2, 0, "{text}");
     (0..text.len())

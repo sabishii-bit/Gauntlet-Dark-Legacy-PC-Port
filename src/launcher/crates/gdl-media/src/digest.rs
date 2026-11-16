@@ -124,20 +124,20 @@ mod tests {
     use std::hint::black_box;
 
     use super::{Sha1Digest, Sha256Digest};
+    use crate::US_SHA1;
 
-    /// The digest the N64 extractor knows the US ROM by, in its canonical byte order.
-    const US_ROM_TEXT: &str = "0489dcce749c6a5102681d288ed0616a4b94e99d";
-
-    /// That digest, read while compiling.
-    const US_ROM: Sha1Digest = Sha1Digest::from_hex_const(US_ROM_TEXT);
+    /// The digest the N64 extractor knows the US ROM by, in its canonical byte order, as it
+    /// writes it.
+    const US_SHA1_TEXT: &str = "0489dcce749c6a5102681d288ed0616a4b94e99d";
 
     #[test]
     fn digests_print_in_lowercase_hex_and_read_back() {
-        assert_eq!(US_ROM.hex(), US_ROM_TEXT);
-        assert_eq!(US_ROM.to_string(), US_ROM_TEXT);
-        assert_eq!(format!("{US_ROM:?}"), US_ROM_TEXT);
-        assert_eq!(US_ROM.0[..2], [0x04, 0x89]);
-        assert_eq!(US_ROM.0[19], 0x9d);
+        // The US ROM's digest, which a constant reads while compiling, prints as it was written.
+        assert_eq!(US_SHA1.hex(), US_SHA1_TEXT);
+        assert_eq!(US_SHA1.to_string(), US_SHA1_TEXT);
+        assert_eq!(format!("{US_SHA1:?}"), US_SHA1_TEXT);
+        assert_eq!(US_SHA1.0[..2], [0x04, 0x89]);
+        assert_eq!(US_SHA1.0[19], 0x9d);
 
         // The digests of FIPS 180's own examples, the empty message and "abc".
         let sha1 = [
