@@ -634,11 +634,10 @@ mod tests {
     };
     use gdl_fixtures::{
         FAKE_CERTIFICATE_LEN, RuntimeFiles, SparseFile, append_sections, append_sections_at,
-        fake_sign, table_and_trailer, tiny_elf, tiny_pe,
+        fake_sign, sha256_hex, table_and_trailer, tiny_elf, tiny_pe,
     };
     use gdl_release::Platform;
     use serde_json::{Value, json};
-    use sha2::{Digest, Sha256};
 
     use super::{
         MAX_SECTION_LEN, MAX_SECTION_NAME, MAX_TABLE_LEN, RUNTIME_SECTION, Section, Sections,
@@ -734,14 +733,6 @@ mod tests {
         assert_eq!(payload.build_info().version, VERSION);
         assert_eq!(payload.build_info().platform.as_str(), platform);
         payload.verify(&quiet(&Cancel::default())).unwrap();
-    }
-
-    fn sha256(bytes: &[u8]) -> [u8; 32] {
-        Sha256::digest(bytes).into()
-    }
-
-    fn hex(bytes: &[u8]) -> String {
-        bytes.iter().map(|byte| format!("{byte:02x}")).collect()
     }
 
     /// Bytes that are not all alike, as a runtime zip's are not.
@@ -961,7 +952,7 @@ mod tests {
     #[test]
     fn refuses_a_section_inside_the_program() {
         let pe = tiny_pe();
-        let digest = hex(&sha256(&pe[0x300..0x303]));
+        let digest = sha256_hex(&pe[0x300..0x303]);
         let file = written(
             pe,
             b"",
@@ -1028,7 +1019,7 @@ mod tests {
 
     #[test]
     fn refuses_a_gap_before_the_first_section() {
-        let digest = hex(&sha256(b"zip"));
+        let digest = sha256_hex(b"zip");
         let at_end = table(PE_END, &[(RUNTIME_SECTION, PE_END, 3, &digest)]);
         assert_eq!(rule_of(written(tiny_pe(), b"zip", &at_end)), "accepted");
         let past = table(PE_END, &[(RUNTIME_SECTION, PE_END + 1, 3, &digest)]);
@@ -1042,7 +1033,7 @@ mod tests {
 
     #[test]
     fn refuses_a_gap_between_sections() {
-        let (zip, elf) = (hex(&sha256(b"zip")), hex(&sha256(b"elf")));
+        let (zip, elf) = (sha256_hex(b"zip"), sha256_hex(b"elf"));
         let placed = |second: u64| {
             table(
                 ELF_END,
@@ -1067,7 +1058,7 @@ mod tests {
 
     #[test]
     fn refuses_a_gap_before_the_table() {
-        let digest = hex(&sha256(b"zip"));
+        let digest = sha256_hex(b"zip");
         let listed = table(PE_END, &[(RUNTIME_SECTION, PE_END, 3, &digest)]);
         let gap = written(tiny_pe(), b"zip\xCC", &listed);
         assert_eq!(rule_of(gap), "tableNotAfterSections");
@@ -1089,7 +1080,7 @@ mod tests {
 
     #[test]
     fn refuses_a_wrong_program_length() {
-        let digest = hex(&sha256(b"zip"));
+        let digest = sha256_hex(b"zip");
         for (program, end) in [(tiny_pe(), PE_END), (tiny_elf(), ELF_END)] {
             for recorded in [end - 1, end + 1, 0] {
                 let listed = table(recorded, &[(RUNTIME_SECTION, end, 3, &digest)]);
@@ -1202,7 +1193,7 @@ mod tests {
     #[test]
     fn refuses_a_table_above_64_kib() {
         assert_eq!(MAX_TABLE_LEN, 64 * 1024);
-        let digest = hex(&sha256(b"zip"));
+        let digest = sha256_hex(b"zip");
         for (len, rule) in [
             (MAX_TABLE_LEN, "accepted"),
             (MAX_TABLE_LEN + 1, "tableLength"),
@@ -1231,7 +1222,7 @@ mod tests {
 
     #[test]
     fn refuses_schema_2_and_a_missing_program_length() {
-        let digest = hex(&sha256(b"zip"));
+        let digest = sha256_hex(b"zip");
         let section =
             json!({"name": RUNTIME_SECTION, "offset": ELF_END, "size": 3, "sha256": digest});
         let of = |schema: Value, length: Value| json!({"schema": schema, "programLength": length, "sections": [section]});
@@ -1327,7 +1318,7 @@ mod tests {
     #[test]
     fn refuses_bad_section_names_and_digest_text() {
         assert_eq!(MAX_SECTION_NAME, 64);
-        let digest = hex(&sha256(b"zip"));
+        let digest = sha256_hex(b"zip");
         let longest = "n".repeat(MAX_SECTION_NAME);
         let too_long = "n".repeat(MAX_SECTION_NAME + 1);
         for (name, rule) in [
@@ -1459,7 +1450,7 @@ mod tests {
         assert_eq!(found.program_length(), end);
         assert_eq!(found.sections(), listed);
         // A table that leaves the symbols out of the program is refused.
-        let digest = hex(&sha256(b"zip"));
+        let digest = sha256_hex(b"zip");
         let short = table(PE_END, &[(RUNTIME_SECTION, end, 3, &digest)]);
         match open(written(pe, b"zip", &short)) {
             Err(SectionsError::ProgramLength { recorded, actual }) => {
@@ -1629,8 +1620,8 @@ mod tests {
             set_certificates(&mut file, offset, size);
             file
         };
-        let digest = hex(&sha256(b"zip"));
-        let wrong = hex(&sha256(b"zap"));
+        let digest = sha256_hex(b"zip");
+        let wrong = sha256_hex(b"zap");
         let big = MAX_SECTION_LEN + 1;
         let after_elf = |table: &[u8]| written(tiny_elf(), b"zip", table);
         let changed = |table: &[u8], change: &dyn Fn(&mut Vec<u8>, usize)| {

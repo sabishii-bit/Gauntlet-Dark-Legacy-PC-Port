@@ -785,7 +785,7 @@ mod tests {
         BLOCK_LEN, Cancel, Job, NameError, NameRule, NoProgress, PAYLOAD_NAMES, PhaseId, Progress,
         RelPath,
     };
-    use gdl_fixtures::{RawEntry, RawZip, RuntimeFiles};
+    use gdl_fixtures::{RawEntry, RawZip, RuntimeFiles, sha256_hex};
     use gdl_release::Platform;
     use serde_json::{Map, Value, json};
     use sha2::{Digest, Sha256};
@@ -833,14 +833,6 @@ mod tests {
         let mut payload = open(zip)?;
         payload.verify(&quiet(&Cancel::default()))?;
         Ok(payload)
-    }
-
-    /// The SHA-256 digest of `data`, as a release record writes it.
-    pub(super) fn hex_sha256(data: &[u8]) -> String {
-        Sha256::digest(data)
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect()
     }
 
     /// The inventory `runtime`'s release record lists.
@@ -1149,9 +1141,9 @@ mod tests {
         }
 
         // The same for the release record, and for what the archive holds beside it.
-        let digest = || Value::String(hex_sha256(b"crafted"));
+        let digest = || Value::String(sha256_hex(b"crafted"));
         let upper = |files: &mut Map<String, Value>| {
-            let digest = hex_sha256(b"{}").to_uppercase();
+            let digest = sha256_hex(b"{}").to_uppercase();
             files.insert(DEFAULT_CONFIG.to_owned(), Value::String(digest));
         };
         let with_entry = |name: &str| {
@@ -1505,7 +1497,7 @@ mod tests {
         let saves = "saves/hero.json";
         // Listed in the release record alone, and held in the archive too.
         let listed_alone = listed(|_, files| {
-            files.insert(saves.to_owned(), Value::String(hex_sha256(b"user-owned")));
+            files.insert(saves.to_owned(), Value::String(sha256_hex(b"user-owned")));
         });
         let mut runtime = standard(LINUX);
         runtime
@@ -2134,13 +2126,13 @@ mod crafted {
     use std::io::Cursor;
 
     use gdl_files::Cancel;
-    use gdl_fixtures::{RawEntry, RawZip, RuntimeFiles};
+    use gdl_fixtures::{RawEntry, RawZip, RuntimeFiles, sha256_hex};
     use serde_json::{Map, Value, json};
 
     use super::rows;
     use super::tests::{
-        LINUX, SHADER, WINDOWS, build_info_of_len, declaring_in_all, entry, hex_sha256, listing,
-        open, open_and_verify, quiet, standard,
+        LINUX, SHADER, WINDOWS, build_info_of_len, declaring_in_all, entry, listing, open,
+        open_and_verify, quiet, standard,
     };
     use super::{
         BUILD_INFO, DEFAULT_CONFIG, MAX_BUILD_INFO_LEN, MAX_PAYLOAD_BYTES, MAX_PAYLOAD_ENTRIES,
@@ -2702,7 +2694,7 @@ mod crafted {
         let mut files = listing(&runtime);
         let more = MAX_PAYLOAD_ENTRIES + 1 - files.len();
         files.extend((0..more).map(|index| {
-            let digest = Value::String(hex_sha256(b""));
+            let digest = Value::String(sha256_hex(b""));
             (format!("shaders/{index:05}.spv"), digest)
         }));
         runtime
@@ -2717,7 +2709,7 @@ mod crafted {
         });
         refuse("a file missing from the inventory", "inventory", zip);
         let zip = with_inventory(LINUX, |files| {
-            let digest = Value::String(hex_sha256(b"crafted"));
+            let digest = Value::String(sha256_hex(b"crafted"));
             files.insert("shaders/extra.spv".to_owned(), digest);
         });
         refuse("a file only the inventory lists", "inventory", zip);
@@ -2731,12 +2723,12 @@ mod crafted {
             zip,
         );
         let zip = with_inventory(LINUX, |files| {
-            let digest = Value::String(hex_sha256(b"crafted"));
+            let digest = Value::String(sha256_hex(b"crafted"));
             files.insert(BUILD_INFO.to_owned(), digest);
         });
         refuse("build-info.json listed", "duplicate", zip);
         let zip = with_inventory(LINUX, |files| {
-            let digest = hex_sha256(b"{}").to_uppercase();
+            let digest = sha256_hex(b"{}").to_uppercase();
             files.insert(DEFAULT_CONFIG.to_owned(), Value::String(digest));
         });
         refuse("a digest in upper case", "digest", zip);
@@ -2844,7 +2836,7 @@ mod crafted {
         let zip = changed(LINUX, |raw| entry(raw, SHADER).data.truncate(2));
         refuse("a deflate stream cut short", zip);
         let zip = with_inventory(LINUX, |files| {
-            let digest = Value::String(hex_sha256(b"damaged"));
+            let digest = Value::String(sha256_hex(b"damaged"));
             files.insert(DEFAULT_CONFIG.to_owned(), digest);
         });
         refuse("a wrong digest value", zip);
