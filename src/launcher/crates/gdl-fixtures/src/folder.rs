@@ -1,7 +1,7 @@
 //! Install folders in the states the launcher's tests need: roots of an exact length, links to
 //! folders and files, the names the alpha installer leaves, entries only root may open and
 //! installations as the launcher leaves them; and the names a folder holds and what a tree holds,
-//! to compare.
+//! all of it or all but a job's staging, to compare.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -395,8 +395,53 @@ pub struct EntryState {
 /// the tree was made may share with it; a test that must see those too takes its first snapshot
 /// after a [`backdate`].
 pub fn snapshot(root: &Path) -> io::Result<BTreeMap<PathBuf, EntryState>> {
+    snapshot_trees(root, vec![PathBuf::new()])
+}
+
+/// What [`snapshot`] gives of the tree at `root`, without `root`'s own entry and without every
+/// entry under a top-level name that begins with `skipped_prefix`: what stays the same of a folder
+/// that a job makes its staging in, whose own time of change moves as the staging comes and goes.
+///
+/// A name is left out only at the top, and only when it begins with the prefix exactly, letter
+/// case included. What is left out is never walked or read, so a staging that is still there
+/// changes nothing here, whatever it holds. A `root` that is not itself a folder, such as a link
+/// to one, and an empty prefix are refused as [`io::ErrorKind::InvalidInput`]: either would leave
+/// nothing to compare, and so a comparison that could never fail.
+pub fn snapshot_outside(
+    root: &Path,
+    skipped_prefix: &str,
+) -> io::Result<BTreeMap<PathBuf, EntryState>> {
+    if skipped_prefix.is_empty() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "an empty prefix leaves out every name",
+        ));
+    }
+    if !fs::symlink_metadata(root)?.is_dir() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("{} is not a folder", root.display()),
+        ));
+    }
+    // On every system a name's encoded bytes begin with a text prefix's exactly when the name
+    // begins with that prefix.
+    let skipped = skipped_prefix.as_bytes();
+    let mut kept = Vec::new();
+    for entry in fs::read_dir(root)? {
+        let name = entry?.file_name();
+        if !name.as_encoded_bytes().starts_with(skipped) {
+            kept.push(PathBuf::from(name));
+        }
+    }
+    snapshot_trees(root, kept)
+}
+
+/// Every entry of the trees whose tops lie at `tops`, paths under `root`, keyed by its own path
+/// under `root` and recorded as [`snapshot`] records one: a link never followed, and every regular
+/// file read for its digest.
+fn snapshot_trees(root: &Path, tops: Vec<PathBuf>) -> io::Result<BTreeMap<PathBuf, EntryState>> {
     let mut entries = BTreeMap::new();
-    let mut unvisited = vec![PathBuf::new()];
+    let mut unvisited = tops;
     while let Some(relative) = unvisited.pop() {
         // Not joined for the root itself, which a join would give a trailing separator.
         let path = if relative.as_os_str().is_empty() {
@@ -870,6 +915,9 @@ mod tests {
 
     /// Those of them that are folders: the transaction folders of its game updates and of its own.
     const ALPHA_FOLDER_NAMES: [&str; 2] = [".gdl-update", ".gdl-installer-update"];
+
+    /// The prefix of a staging that an N64 extraction makes in the folder it writes into.
+    const STAGING_PREFIX: &str = ".gdl-extract-n64-";
 
     /// Whether the file system that holds `dir` takes names that differ only in letter case for
     /// one name, as Windows' does.
@@ -1458,6 +1506,170 @@ mod tests {
 
         // A tree that is not there cannot be dated.
         let error = backdate(&dir.path().join("missing")).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::NotFound);
+    }
+
+    #[test]
+    fn the_outside_snapshot_leaves_out_the_folder_and_its_staging() {
+        use std::path::PathBuf;
+
+        use super::{backdate, snapshot, snapshot_outside};
+
+        let dir = tempfile::tempdir().unwrap();
+        let parent = dir.path().join("parent");
+        let dump = parent.join("dump");
+        // Kept: a name below the top that begins with the prefix, and a name at the top that holds
+        // the prefix without beginning with it.
+        let deeper_name = format!("{STAGING_PREFIX}deeper");
+        let holding_name = format!("old{STAGING_PREFIX}1");
+        let deeper = dump.join(&deeper_name);
+        fs::create_dir_all(&deeper).unwrap();
+        fs::write(dump.join("rom.z64"), b"not a real rom").unwrap();
+        fs::write(parent.join("notes.txt"), b"kept").unwrap();
+        fs::write(parent.join(&holding_name), b"kept too").unwrap();
+        // Dated long ago, so that an entry made in the folder or removed from it moves its time.
+        backdate(&parent).unwrap();
+        let whole = snapshot(&parent).unwrap();
+        let before = snapshot_outside(&parent, STAGING_PREFIX).unwrap();
+        // With nothing under the prefix, the whole snapshot less the folder's own entry.
+        let mut expected = whole.clone();
+        expected.remove(Path::new(""));
+        assert_eq!(before, expected);
+        let kept: BTreeSet<PathBuf> = before.keys().cloned().collect();
+        let listed: BTreeSet<PathBuf> = [
+            PathBuf::from("dump"),
+            Path::new("dump").join(&deeper_name),
+            Path::new("dump").join("rom.z64"),
+            PathBuf::from("notes.txt"),
+            PathBuf::from(&holding_name),
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(kept, listed);
+
+        // An entry made and removed under the prefix moves the folder's own time, which the whole
+        // snapshot shows and the outside one leaves out.
+        let passing = parent.join(format!("{STAGING_PREFIX}AbC123xy"));
+        fs::create_dir(&passing).unwrap();
+        fs::remove_dir(&passing).unwrap();
+        let moved = snapshot(&parent).unwrap();
+        assert_ne!(moved[Path::new("")].modified, whole[Path::new("")].modified);
+        assert_eq!(snapshot_outside(&parent, STAGING_PREFIX).unwrap(), before);
+
+        // A staging that is still there, with what a job wrote in it, is left out whole.
+        let staging = tempfile::Builder::new()
+            .prefix(STAGING_PREFIX)
+            .rand_bytes(8)
+            .tempdir_in(&parent)
+            .unwrap();
+        let levels = staging.path().join("n64").join("levels");
+        fs::create_dir_all(&levels).unwrap();
+        fs::write(levels.join("a.wad"), b"staged").unwrap();
+        let outside = snapshot_outside(&parent, STAGING_PREFIX).unwrap();
+        assert_eq!(outside, before);
+        // The whole snapshot less the folder's own entry and every path whose first component
+        // begins with the prefix.
+        let mut whole_now = snapshot(&parent).unwrap();
+        assert_eq!(whole_now.len(), whole.len() + 4);
+        whole_now.retain(|path, _| {
+            path.iter()
+                .next()
+                .and_then(|first| first.to_str())
+                .is_some_and(|first| !first.starts_with(STAGING_PREFIX))
+        });
+        assert_eq!(outside, whole_now);
+
+        // A changed byte in a kept file shows, there alone.
+        let notes = Path::new("notes.txt");
+        fs::write(parent.join(notes), b"kepT").unwrap();
+        let changed = snapshot_outside(&parent, STAGING_PREFIX).unwrap();
+        assert!(changed.keys().eq(before.keys()));
+        let differing: Vec<&PathBuf> = before
+            .keys()
+            .filter(|path| changed[*path] != before[*path])
+            .collect();
+        assert_eq!(differing, [notes]);
+        assert_eq!(changed[notes].len, before[notes].len);
+        assert_ne!(changed[notes].digest, before[notes].digest);
+
+        // So does an entry made below the top, under a name that begins with the prefix.
+        fs::write(deeper.join("inside"), b"").unwrap();
+        let grown = snapshot_outside(&parent, STAGING_PREFIX).unwrap();
+        let inside = Path::new("dump").join(&deeper_name).join("inside");
+        assert!(grown.contains_key(&inside));
+        assert_eq!(grown.len(), before.len() + 1);
+    }
+
+    #[test]
+    fn the_outside_snapshot_never_reads_what_it_leaves_out() {
+        use super::{hold_closed, holds_bind, snapshot, snapshot_outside};
+
+        let dir = tempfile::tempdir().unwrap();
+        // Asked of a file of its own, made and removed again, before anything is held.
+        let binds = holds_bind(dir.path()).unwrap();
+        let parent = dir.path().join("parent");
+        let staging = parent.join(format!("{STAGING_PREFIX}AbC123xy"));
+        fs::create_dir_all(&staging).unwrap();
+        fs::write(parent.join("kept.txt"), b"kept").unwrap();
+        let held = staging.join("held.bin");
+        fs::write(&held, b"held").unwrap();
+        let before = snapshot_outside(&parent, STAGING_PREFIX).unwrap();
+
+        let hold = hold_closed(&[&held]).unwrap();
+        assert_eq!(hold.proven(), binds);
+        if hold.proven() {
+            // The whole tree cannot be read while a file in the staging is held, ...
+            assert!(snapshot(&parent).is_err());
+        } else {
+            eprintln!(
+                "only the outside snapshot was taken: this user opens entries of mode 0o000, as \
+                 root does"
+            );
+        }
+        // ... but what lies outside the staging can, and is as it was.
+        assert_eq!(snapshot_outside(&parent, STAGING_PREFIX).unwrap(), before);
+        drop(hold);
+        assert!(snapshot(&parent).is_ok());
+    }
+
+    #[test]
+    fn an_outside_snapshot_needs_a_folder_and_a_prefix() {
+        use std::path::PathBuf;
+
+        use super::{link_folder, snapshot, snapshot_outside};
+
+        let dir = tempfile::tempdir().unwrap();
+        let folder = dir.path().join("folder");
+        fs::create_dir(&folder).unwrap();
+        let file = folder.join("kept.txt");
+        fs::write(&file, b"kept").unwrap();
+        let link = dir.path().join("link");
+        link_folder(&link, &folder).unwrap();
+
+        // A folder gives what it holds.
+        let kept: Vec<PathBuf> = snapshot_outside(&folder, STAGING_PREFIX)
+            .unwrap()
+            .into_keys()
+            .collect();
+        assert_eq!(kept, [PathBuf::from("kept.txt")]);
+
+        // An empty prefix would leave out every name, and a file or a link, which a snapshot
+        // records as its own entry alone, would leave nothing once that entry is left out: each
+        // is refused, so that no comparison of nothing passes for one of the folder.
+        let error = snapshot_outside(&folder, "").unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
+        for root in [&file, &link] {
+            assert_eq!(snapshot(root).unwrap().len(), 1, "{}", root.display());
+            let error = snapshot_outside(root, STAGING_PREFIX).unwrap_err();
+            assert_eq!(
+                error.kind(),
+                io::ErrorKind::InvalidInput,
+                "{}",
+                root.display()
+            );
+        }
+        // A folder that is not there is an error of its own.
+        let error = snapshot_outside(&dir.path().join("missing"), STAGING_PREFIX).unwrap_err();
         assert_eq!(error.kind(), io::ErrorKind::NotFound);
     }
 

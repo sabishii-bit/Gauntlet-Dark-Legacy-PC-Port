@@ -15,8 +15,8 @@ pub use folder::DeniedAccess;
 pub use folder::make_junction;
 pub use folder::{
     EntryState, HeldClosed, InstallFixture, backdate, folder_names, hold_closed, holds_bind,
-    link_folder, long_root, make_alpha_markers, snapshot, symlink_file, symlink_file_where_allowed,
-    symlink_folder_where_allowed,
+    link_folder, long_root, make_alpha_markers, snapshot, snapshot_outside, symlink_file,
+    symlink_file_where_allowed, symlink_folder_where_allowed,
 };
 pub use gdrom::{
     BootFields, DiscSet, Edc, RAW_SECTOR, SECTOR, boot_sector, both16, both32, edc, pvd_sector,
