@@ -3,6 +3,7 @@
 
 #include "engine/core/Log.h"
 
+#include "game/hud/PickupHud.h"
 #include "game/party/PlayerPowerups.h"
 #include "game/players/ItemPickup.h"
 #include "game/scenes/PlayScene.h"
@@ -64,10 +65,7 @@ void PlayScene::collectChallengeCoin(usize item) {
     if (before == m_sim.challenge.coinsLeft()) {
         return;
     }
-    const std::string icon =
-        m_sim.challenge.rewardClass() == kSumnerClass
-            ? "16_SUM"
-            : std::format("16_{}COIN", classCode(m_sim.challenge.rewardClass()));
+    const std::string icon = PickupHud::challengeCoinIcon(m_sim.challenge.rewardClass());
     for (auto& player : m_players) {
         if (player.life == PlayerLife::Standing) {
             m_hud.pickups().showCount(

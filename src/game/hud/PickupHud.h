@@ -9,6 +9,8 @@
 
 #include "engine/core/Types.h"
 
+#include "game/characters/Relics.h"
+
 namespace gdl::game {
 
 /** A card sliding up over a player's status box to say what they picked up. */
@@ -73,8 +75,20 @@ public:
                                                                    "SM_CRYSTAL_WHI",
                                                                    "SM_CRYSTAL_BLA"};
 
+    /** The ticker's icon for each kind of gargoyle piece: the serpent's fangs, the eagle's
+     * feathers and the lion's claws. */
+    static constexpr std::array<std::string_view, Relics::kGargoyleKinds> kGargoyleIcons{
+        "SM_FANGS", "SM_FEATHERS", "SM_CLAWS"};
+    static constexpr std::string_view kSumnerCoinIcon = "16_SUM"; ///< not named as the classes'
+
     /** The icon for a realm's crystal; empty for no realm. */
     static std::string_view crystalIcon(s32 realm);
+    /** The ticker's icon for a secret challenge's coins: those of the class it unlocks, which
+     * the level's own pictures hold. */
+    static std::string challengeCoinIcon(s32 classIndex);
+    /** Every icon a count shows: each realm's crystal, each gargoyle piece and the coins of each
+     * class a secret challenge unlocks, for a look that takes its pictures as it opens. */
+    static std::vector<std::string> countIcons();
 
     /** Starts a card for `player`; ignored when every card is in use. */
     void addCard(s32 player, std::string_view texture);

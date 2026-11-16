@@ -171,6 +171,8 @@ function(gdl_add_expansion_game_sources target)
         "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/hud/LegendsN64HudPainter.h"
         "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/hud/LegendsN64HudText.cpp"
         "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/hud/LegendsN64HudText.h"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/hud/LegendsN64Scroll.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/hud/LegendsN64Scroll.h"
         "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/level/LegendsBlast.cpp"
         "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/level/LegendsBlast.h"
         "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/level/LegendsBossEruption.cpp"

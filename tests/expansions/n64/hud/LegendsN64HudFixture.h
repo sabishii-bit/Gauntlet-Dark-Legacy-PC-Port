@@ -140,12 +140,13 @@ inline std::vector<u8> n64FontBytes(const N64Font& font) {
     return bytes.bytes();
 }
 
-/** A synthetic N64 extraction holding what the N64 look's panels draw from: the HUD bank's
- * pictures, the three fonts, and the warrior's and the wizard's portraits, the wizard's light
- * as tall as WIZ_P1. */
+/** A synthetic N64 extraction holding what the N64 look draws from: the HUD bank's pictures,
+ * the three fonts, the warrior's and the wizard's portraits, the wizard's light as tall as
+ * WIZ_P1, and the hourglass's timer bank. */
 class LegendsN64HudFixture {
 public:
-    static constexpr std::array<N64Picture, 12> kPanelPictures{{
+    /** The HUD bank's pictures the look draws: the panels' and the advice scrolls. */
+    static constexpr std::array<N64Picture, 17> kHudPictures{{
         {.name = "COLOR", .width = 52, .height = 25, .mark = 10, .intensity = true},
         {.name = "COLORI", .width = 104, .height = 50, .mark = 11, .intensity = true},
         {.name = "BORDER", .width = 52, .height = 50, .mark = 12},
@@ -158,6 +159,21 @@ public:
         {.name = "POTIONG", .width = 11, .height = 14, .mark = 19},
         {.name = "POTIONR", .width = 11, .height = 14, .mark = 20},
         {.name = "POTIONY", .width = 11, .height = 14, .mark = 21},
+        {.name = "TEXTSCROLL", .width = 64, .height = 32, .mark = 22},
+        {.name = "YEL_TEXTSCROLL", .width = 64, .height = 32, .mark = 23},
+        {.name = "BLU_TEXTSCROLL", .width = 64, .height = 32, .mark = 24},
+        {.name = "RED_TEXTSCROLL", .width = 64, .height = 32, .mark = 25},
+        {.name = "GRE_TEXTSCROLL", .width = 64, .height = 32, .mark = 26},
+    }};
+    /** screens/timer's hourglass: the glass, its sand and the five frames of falling grains. */
+    static constexpr std::array<N64Picture, 7> kTimerPictures{{
+        {.name = "TIMER_P0", .width = 82, .height = 64, .mark = 40},
+        {.name = "TIMER_P1", .width = 82, .height = 64, .mark = 41},
+        {.name = "SAND_ANIM00", .width = 4, .height = 21, .mark = 42},
+        {.name = "SAND_ANIM01", .width = 4, .height = 21, .mark = 43},
+        {.name = "SAND_ANIM02", .width = 4, .height = 21, .mark = 44},
+        {.name = "SAND_ANIM03", .width = 4, .height = 21, .mark = 45},
+        {.name = "SAND_ANIM04", .width = 4, .height = 21, .mark = 46},
     }};
     static constexpr std::array<N64Picture, 2> kWarriorPortraits{{
         {.name = "WAR_P1", .width = 35, .height = 33, .mark = 30},
@@ -169,7 +185,8 @@ public:
     }};
     static constexpr std::string_view kWarriorBank = "hud/warf/objects.wad";
     static constexpr std::string_view kWizardBank = "hud/wizf/objects.wad";
-    static constexpr std::string_view kCharacters = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    /** In code order, as a font's directory runs. */
+    static constexpr std::string_view kCharacters = "/0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
     static constexpr N64Font kSmallFont{.file = game::LegendsN64HudPainter::kSmallFontFile,
                                         .codes = kCharacters,
                                         .columns = 4,
@@ -194,9 +211,10 @@ public:
                                          .intensityAlpha = true};
 
     explicit LegendsN64HudFixture(std::string_view name) : m_root(scratchDirectory(name)) {
-        writeBank(game::LegendsN64HudPainter::kHudBank, kPanelPictures);
+        writeBank(game::LegendsN64HudPainter::kHudBank, kHudPictures);
         writeBank(kWarriorBank, kWarriorPortraits);
         writeBank(kWizardBank, kWizardPortraits);
+        writeBank(game::LegendsN64HudPainter::kTimerBank, kTimerPictures);
         for (const N64Font& font : {kSmallFont, kNameFont, kNumberFont}) {
             write(font.file, n64FontBytes(font));
         }
@@ -227,8 +245,8 @@ public:
         if (image == nullptr || image->pixels.empty()) {
             return {};
         }
-        const std::array<std::span<const N64Picture>, 3> banks{kPanelPictures, kWarriorPortraits,
-                                                               kWizardPortraits};
+        const std::array<std::span<const N64Picture>, 4> banks{kHudPictures, kWarriorPortraits,
+                                                               kWizardPortraits, kTimerPictures};
         for (const std::span<const N64Picture> bank : banks) {
             for (const N64Picture& picture : bank) {
                 if (picture.mark == image->pixels.front() && picture.width == image->width() &&

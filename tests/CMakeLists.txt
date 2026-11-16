@@ -431,6 +431,7 @@ add_executable(tests
     expansions/n64/hud/LegendsN64HudIconsTests.cpp
     expansions/n64/hud/LegendsN64HudPainterTests.cpp
     expansions/n64/hud/LegendsN64HudTextTests.cpp
+    expansions/n64/hud/LegendsN64ScrollTests.cpp
     expansions/n64/scenes/LegendsWorldPresentationTests.cpp
     expansions/dreamcast/formats/LegendsSceneMotionTests.cpp
     expansions/n64/scenes/LegendsN64MusicTests.cpp

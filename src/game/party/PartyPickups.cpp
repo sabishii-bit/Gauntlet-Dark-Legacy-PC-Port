@@ -37,8 +37,6 @@ constexpr std::array<s32, 3> kPotionLessons{7, 94, 95}; ///< the first of them n
 constexpr std::string_view kSecretCoinCard = "COINHUD";
 constexpr std::string_view kDroppedKey = "KEY"; ///< what a fallen player's keys lie as
 constexpr std::string_view kDroppedKeyRing = "KEYRING";
-constexpr std::array<std::string_view, Relics::kGargoyleKinds> kGargoyleIcons{
-    "SM_FANGS", "SM_FEATHERS", "SM_CLAWS"};
 const Vec3 kNowhere{0.0f, -1.0e6f, 0.0f};
 
 } // namespace
@@ -439,7 +437,7 @@ std::optional<s32> PartyPickups::take(const Pickup& pickup, std::span<PlayerRunt
             if (&member != &runtime) {
                 relics.addGargoylePiece(pickup.amount);
             }
-            services.presentation.showCount(member.actor.player(), kGargoyleIcons[piece],
+            services.presentation.showCount(member.actor.player(), PickupHud::kGargoyleIcons[piece],
                                             relics.gargoylePieces[piece],
                                             Relics::kGargoyleNeeded[piece]);
         }

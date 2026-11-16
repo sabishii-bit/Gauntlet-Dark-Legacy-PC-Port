@@ -1,11 +1,20 @@
+#include <algorithm>
+#include <array>
+#include <string>
+#include <string_view>
+#include <vector>
+
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/core/Types.h"
 #include "engine/ui/Canvas.h"
 
 #include "FakeRenderDevice.h"
+#include "game/characters/ClassData.h"
+#include "game/characters/Relics.h"
 #include "game/hud/DarkLegacyHudPainter.h"
 #include "game/hud/PickupHud.h"
+#include "game/level/SecretChallenge.h"
 
 namespace {
 
@@ -125,6 +134,41 @@ TEST_CASE("the count stack rests low and sits above a label while one is up",
     const s32 above = PickupHud::countRowY(kLabelTop);
     REQUIRE(above + PickupHud::kCountHeight + PickupHud::kCountLabelGap == kLabelTop);
     REQUIRE(above < PickupHud::kCountRestY);
+}
+
+TEST_CASE("every icon a pickup count shows is on the roster a look takes its pictures from",
+          "[game][screens][hud]") {
+    const std::vector<std::string> icons = PickupHud::countIcons();
+    const auto listed = [&](std::string_view icon) {
+        return std::ranges::find(icons, icon) != icons.end();
+    };
+    // Each realm's crystal, each kind of gargoyle piece, and the coins of the class each secret
+    // level's challenge unlocks, the level's own pictures: Sumner's by a name of their own.
+    for (s32 realm = 1; realm < static_cast<s32>(PickupHud::kCrystalIcons.size()); ++realm) {
+        CAPTURE(realm);
+        CHECK(listed(PickupHud::crystalIcon(realm)));
+    }
+    CHECK(PickupHud::kGargoyleIcons ==
+          std::array<std::string_view, 3>{"SM_FANGS", "SM_FEATHERS", "SM_CLAWS"});
+    for (const std::string_view piece : PickupHud::kGargoyleIcons) {
+        CHECK(listed(piece));
+    }
+    usize secretLevels = 0;
+    for (; SecretChallenge::classFor(static_cast<s32>(secretLevels)) >= 0; ++secretLevels) {
+        CHECK(listed(PickupHud::challengeCoinIcon(
+            SecretChallenge::classFor(static_cast<s32>(secretLevels)))));
+    }
+    CHECK(secretLevels == 9);
+    CHECK(PickupHud::challengeCoinIcon(kSumnerClass) == "16_SUM");
+    CHECK(PickupHud::challengeCoinIcon(kJackalClass) == "16_JACCOIN");
+    CHECK(PickupHud::challengeCoinIcon(kMinotaurClass) == "16_MINCOIN");
+    // Nothing else, and each once.
+    CHECK(icons.size() ==
+          PickupHud::kCrystalIcons.size() - 1 + Relics::kGargoyleKinds + secretLevels);
+    std::vector<std::string> sorted = icons;
+    std::ranges::sort(sorted);
+    CHECK(std::ranges::adjacent_find(sorted) == sorted.end());
+    CHECK_FALSE(listed(""));
 }
 
 } // namespace

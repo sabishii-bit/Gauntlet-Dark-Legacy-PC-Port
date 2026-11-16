@@ -25,9 +25,11 @@ struct LegendsN64TurboSpan {
 };
 
 /**
- * Where game.bin's HUD puts the parts of its status panels in the 416x220 frame. A point is
- * relative to its panel's top left, (kSlotX[seat], kStripTop); a picture's is its centre, as
- * e005a154's records place them, and a line's its left end and top.
+ * Where game.bin's HUD puts its parts in the 416x220 frame: the status panels, the hourglass,
+ * the advice scrolls and the boss meters. A panel's point is relative to its panel's top left,
+ * (kSlotX[seat], kStripTop); a picture's is its centre, as e005a154's records place them, and a
+ * line's its left end and top. The hourglass's, the scrolls' and the meters' are the frame's
+ * own; the port's ticker stands in canvas units.
  */
 struct LegendsN64HudLayout {
     // FUN_e0056630 and FUN_e0057b90: four 104x50 panels along the frame's bottom, one a seat,
@@ -87,6 +89,48 @@ struct LegendsN64HudLayout {
         {.third = 2, .left = 1, .right = 15, .s = 0},
         {.third = 2, .left = 89, .right = 103, .s = 89},
     }};
+
+    /** The port's: the N64 has no ticker. Dark Legacy's counts stack up from this canvas row,
+     * clear of the panels' top (300.28), while no selector label is up. */
+    static constexpr s32 kTickerRestTop = 282;
+
+    // FUN_e0069ee0: the hourglass, TIMER_P0's glass with TIMER_P1's sand drawn from the same
+    // corner, cropped to the rows of sand each bulb holds, and SAND_ANIM's grains between them.
+    // f, the share of the time gone, drains the top bulb from its top and fills the bottom one
+    // up from its foot, while the stream of grains shortens to meet it.
+    static constexpr LegendsN64Point kTimer{15, 25}; ///< TIMER_P0's and TIMER_P1's top left
+    static constexpr s32 kUpperSandRow = 11;         ///< TIMER_P1's first row of the full top bulb
+    static constexpr s32 kLowerSandRow = 51;         ///< the row past the full bottom bulb's last
+    static constexpr s32 kSandRows = 20;             ///< the rows of sand a full bulb holds
+    static constexpr LegendsN64Point kSandStream{54, 56}; ///< SAND_ANIM's top left, 20 rows long
+    static constexpr u8 kTimerTransparency = 0x40; ///< the glass's and the sand's; grains opaque
+    /** SAND_ANIM00..04. Assumed: the grains change with Dark Legacy's falling counter, as
+     * neither the N64's rate nor the Dreamcast's was measured. */
+    static constexpr usize kSandFrames = 5;
+
+    // FUN_e00717a0 and FUN_e0071a10: an advice scroll as wide as the first of e00ac0e4's widths
+    // whose wrap, e00ac0cc's, takes the widest line within kHelpLinesMost lines, else the last;
+    // its text kHelpTextTop below its top and kHelpInset in for every kHelpInsetSpan across.
+    static constexpr std::array<s32, 6> kHelpWidths{70, 105, 140, 175, 210, 350};
+    static constexpr std::array<s32, 6> kHelpWraps{40, 60, 80, 100, 120, 240};
+    static constexpr usize kHelpLinesMost = 3;
+    static constexpr s32 kHelpMargin = 16; ///< the scroll is this much taller than its text
+    static constexpr s32 kHelpTextTop = 6;
+    static constexpr s32 kHelpInset = 12;
+    static constexpr s32 kHelpInsetSpan = 70;
+    static constexpr s32 kHelpTop = 1; ///< the highest a scroll stands; it stays above the panels
+
+    // Boss.bin FUN_e08887b8 and FUN_e0888a7c: a meter's strips at the frame's top, each
+    // kMeterStripWidth across, with insets its type gives for strips of 256.
+    static constexpr s32 kMeterStripWidth = 200;
+    static constexpr s32 kMeterTop = 1;
+    /** The port's: a meter of art drawn for the canvas, a Dark Legacy boss's, hangs at the
+     * canvas row of the frame's row 1 (10.29). */
+    static constexpr s32 kForeignMeterTop = 10;
+    /** FUN_e08887b8: each bind sets one step for every meter, a hundredth of its maximum.
+     * Assumed: the step is taken once a painter step, as the N64's boss update rate was not
+     * measured. */
+    static constexpr s32 kMeterSteps = 100;
 };
 
 } // namespace gdl::game

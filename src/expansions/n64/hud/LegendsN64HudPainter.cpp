@@ -32,9 +32,17 @@
 #include "expansions/n64/hud/LegendsN64HudIcons.h"
 #include "expansions/n64/hud/LegendsN64HudLayout.h"
 #include "expansions/n64/hud/LegendsN64HudText.h"
+#include "expansions/n64/hud/LegendsN64Scroll.h"
 #include "expansions/shared/hud/LegendsHudArt.h"
+#include "expansions/shared/hud/LegendsHudClock.h"
+#include "expansions/shared/hud/LegendsHudStyleIds.h"
 #include "game/characters/ClassData.h"
+#include "game/hud/BossMeter.h"
+#include "game/hud/ChallengeHud.h"
+#include "game/hud/HelpMessages.h"
 #include "game/hud/HudView.h"
+#include "game/hud/PickupHud.h"
+#include "game/hud/PowerupSelector.h"
 #include "game/hud/StatusBox.h"
 #include "game/party/PlayerRuntime.h"
 #include "game/players/PickupVoices.h"
@@ -56,8 +64,15 @@ constexpr std::string_view kArrow = "ARROW";
 constexpr std::array<std::string_view, 12> kPanelPictures{
     kColor, kEmpty, kBorder,   kTurbo,    kLights,   kHeart,
     kKey,   kArrow, "POTIONB", "POTIONG", "POTIONR", "POTIONY"};
+/** e00722b8: the HUD bank's advice scrolls, the plain one for a message at a place first, then
+ * each costume colour's. */
+constexpr std::array<std::string_view, 5> kHelpScrolls{
+    "TEXTSCROLL", "YEL_TEXTSCROLL", "BLU_TEXTSCROLL", "RED_TEXTSCROLL", "GRE_TEXTSCROLL"};
+constexpr std::string_view kGlass = "TIMER_P0";
+constexpr std::string_view kSand = "TIMER_P1";
 
 constexpr u8 kOpaque = 255;
+constexpr f32 kMeterShares = 2; ///< a meter's two strips share its health between them
 
 /** FUN_e0059b44's levels: a third unlit is 50, and one full 255. */
 constexpr s32 kTurboUnlit = 50;
@@ -223,9 +238,53 @@ std::array<std::optional<LegendsN64SpanPart>, 2> legendsN64MirroredSpan(f32 star
     return parts;
 }
 
+LegendsN64HelpBox legendsN64HelpBox(s32 widest, usize lines, s32 lineHeight, Vec2 centre) {
+    // FUN_e00717a0 tries each width in turn until its wrap holds the text's widest line in no
+    // more than three lines; Dark Legacy's lines stand as they are, whatever the width.
+    usize choice = Layout::kHelpWidths.size() - 1;
+    if (lines <= Layout::kHelpLinesMost) {
+        const auto holds =
+            std::ranges::find_if(Layout::kHelpWraps, [widest](s32 wrap) { return widest < wrap; });
+        if (holds != Layout::kHelpWraps.end()) {
+            choice = static_cast<usize>(holds - Layout::kHelpWraps.begin());
+        }
+    }
+    const s32 width = Layout::kHelpWidths.at(choice);
+    const s32 height = static_cast<s32>(lines) * lineHeight + Layout::kHelpMargin;
+    const auto whole = [](f32 value) {
+        return std::isfinite(value) ? static_cast<s32>(std::lround(value)) : 0;
+    };
+    const s32 x = std::clamp(whole(centre.x - static_cast<f32>(width) / 2), 0,
+                             std::max(static_cast<s32>(LegendsN64Frame::kWidth) - width, 0));
+    const s32 y = std::clamp(whole(centre.y - static_cast<f32>(height) / 2), Layout::kHelpTop,
+                             std::max(Layout::kStripTop - height, Layout::kHelpTop));
+    // FUN_e0071a10 sets the text in by width/70 * 12, rounded.
+    const s32 inset =
+        (width * Layout::kHelpInset + Layout::kHelpInsetSpan / 2) / Layout::kHelpInsetSpan;
+    return {.x = x,
+            .y = y,
+            .width = width,
+            .height = height,
+            .textX = x + inset,
+            .textY = y + Layout::kHelpTextTop};
+}
+
+std::array<s32, 2> legendsN64MeterWidths(f32 share, f32 strip, f32 leftInset, f32 rightInset) {
+    const f32 f = std::isfinite(share) ? std::clamp(share, 0.0f, kMeterShares) : 0.0f;
+    return {f >= 1.0f ? static_cast<s32>(strip)
+                      : static_cast<s32>(leftInset + f * (strip - leftInset)),
+            f > 1.0f ? static_cast<s32>((f - 1.0f) * (strip - rightInset)) : 0};
+}
+
+s32 legendsN64MeterStep(f32 maxHealth) {
+    if (!std::isfinite(maxHealth) || maxHealth <= 0) {
+        return 0;
+    }
+    return static_cast<s32>(std::floor(maxHealth / static_cast<f32>(Layout::kMeterSteps)));
+}
+
 bool LegendsN64HudPainter::load(RenderDevice& device, const std::filesystem::path& root,
-                                DarkLegacyHudArt& /*darkLegacy*/,
-                                std::span<const HudMember> party) {
+                                DarkLegacyHudArt& darkLegacy, std::span<const HudMember> party) {
     release();
     const AssetLocator files{root};
     const auto bank = files.find(kHudBank);
@@ -244,6 +303,7 @@ bool LegendsN64HudPainter::load(RenderDevice& device, const std::filesystem::pat
         release();
         throw;
     }
+    loadTimer(device, files);
     std::array<bool, kClassCount> taken{};
     for (const HudMember& member : party) {
         if (member.classIndex < 0 || member.classIndex >= kClassCount) {
@@ -254,6 +314,7 @@ bool LegendsN64HudPainter::load(RenderDevice& device, const std::filesystem::pat
             loadPortrait(device, files, member.classIndex);
         }
     }
+    borrowCountIcons(darkLegacy);
     return true;
 }
 
@@ -265,12 +326,17 @@ void LegendsN64HudPainter::release() {
     }
     m_portraits = {};
     m_color = m_empty = m_border = m_turbo = m_lights = m_heart = m_key = m_arrow = nullptr;
+    m_glass = m_sand = nullptr;
+    m_grains = {};
+    m_countIcons.clear();
+    m_clock = {};
+    m_meters = {};
     m_art.clear();
 }
 
 void LegendsN64HudPainter::loadPictures(RenderDevice& device, const std::filesystem::path& bank) {
     auto pictures = decodedBank(bank, kHudBank);
-    for (const std::string_view name : kPanelPictures) {
+    const auto take = [&](std::string_view name) {
         formats::LegendsN64Texture* picture = pictureIn(pictures, name);
         if (picture == nullptr) {
             throw FormatError(std::format("{} holds no {}", kHudBank, name));
@@ -285,6 +351,12 @@ void LegendsN64HudPainter::loadPictures(RenderDevice& device, const std::filesys
         }
         m_art.add(std::string{name},
                   uploadHudTexture(device, picture->image.width, picture->image.height, pixels));
+    };
+    for (const std::string_view name : kPanelPictures) {
+        take(name);
+    }
+    for (const std::string_view name : kHelpScrolls) {
+        take(name);
     }
     m_color = m_art.find(kColor);
     m_empty = m_art.find(kEmpty);
@@ -341,6 +413,57 @@ void LegendsN64HudPainter::loadPortrait(RenderDevice& device, const AssetLocator
     }
 }
 
+void LegendsN64HudPainter::loadTimer(RenderDevice& device, const AssetLocator& files) {
+    const auto bank = files.find(kTimerBank);
+    if (!bank) {
+        return;
+    }
+    // The grains' frames, then the glass and its sand.
+    std::vector<std::string> names;
+    for (usize frame = 0; frame < Layout::kSandFrames; ++frame) {
+        names.push_back(std::format("SAND_ANIM{:02}", frame));
+    }
+    names.emplace_back(kGlass);
+    names.emplace_back(kSand);
+    try {
+        auto pictures = formats::decodeLegendsN64Textures(readFile(*bank));
+        // The hourglass is drawn whole or not at all: every picture is found before any is
+        // uploaded.
+        std::vector<const formats::LegendsN64Texture*> found;
+        for (const std::string& name : names) {
+            const formats::LegendsN64Texture* picture = pictureIn(pictures, name);
+            if (picture == nullptr) {
+                throw FormatError(std::format("no {}", name));
+            }
+            found.push_back(picture);
+        }
+        for (usize index = 0; index < names.size(); ++index) {
+            const formats::LegendsN64Texture& picture = *found.at(index);
+            m_art.add(names.at(index),
+                      uploadHudTexture(device, picture.image.width, picture.image.height,
+                                       picture.image.pixels));
+        }
+        for (usize frame = 0; frame < m_grains.size(); ++frame) {
+            m_grains.at(frame) = m_art.find(names.at(frame));
+        }
+        m_glass = m_art.find(kGlass);
+        m_sand = m_art.find(kSand);
+    } catch (const std::exception& error) {
+        m_glass = m_sand = nullptr;
+        m_grains = {};
+        log::warn("N64 HUD: {}: {}; the hourglass is Dark Legacy's", kTimerBank, error.what());
+    }
+}
+
+void LegendsN64HudPainter::borrowCountIcons(DarkLegacyHudArt& darkLegacy) {
+    // Every icon a count may show is taken now, so that drawing looks nothing up.
+    for (std::string& icon : PickupHud::countIcons()) {
+        if (const Texture* picture = darkLegacy.countArt(icon)) {
+            m_countIcons.emplace(std::move(icon), picture);
+        }
+    }
+}
+
 f32 LegendsN64HudPainter::statusTop() const {
     return LegendsN64Frame::toCanvas({0.0f, static_cast<f32>(Layout::kStripTop)}).y;
 }
@@ -348,34 +471,166 @@ f32 LegendsN64HudPainter::statusTop() const {
 void LegendsN64HudPainter::prepare(HudFrame& frame, const HudView& view) {
     // The parts drawn in Dark Legacy's look are prepared as that look prepares them.
     frame.darkLegacy.look().prepare(frame, view);
+    const s64 steps = m_clock.advance(view.seconds);
+    easeMeters(view, steps, m_clock.rewound());
+}
+
+void LegendsN64HudPainter::easeMeters(const HudView& view, s64 steps, bool rewound) {
+    const usize bound = std::min(view.bossCount, m_meters.size());
+    // FUN_e08887b8 sets the one step every meter takes as each is bound: the last sets it.
+    const s32 step =
+        bound == 0 ? 0 : legendsN64MeterStep(view.bossReadings.at(bound - 1).maxHealth);
+    for (usize index = 0; index < m_meters.size(); ++index) {
+        ShownMeter& shown = m_meters.at(index);
+        if (index >= bound) {
+            shown = {};
+            continue;
+        }
+        const HudBossReading& reading = view.bossReadings.at(index);
+        const f32 target = std::max(reading.health, 0.0f);
+        // A meter first seen or bound anew shows its boss's health as it is, and so does every
+        // meter after a rewind or while a step would move it nowhere.
+        if (!shown.seen || shown.maxHealth != reading.maxHealth || rewound || step <= 0) {
+            shown = {.health = target, .maxHealth = reading.maxHealth, .seen = true};
+            continue;
+        }
+        const f32 move = static_cast<f32>(step) * static_cast<f32>(steps);
+        shown.health = shown.health > target ? std::max(shown.health - move, target)
+                                             : std::min(shown.health + move, target);
+    }
 }
 
 void LegendsN64HudPainter::drawStatus(HudFrame& frame, const HudView& view) {
     static_assert(HudView::kSeats == Layout::kSlotX.size());
-    const CanvasFrame native(frame.canvas, LegendsN64Frame::transform());
-    // FUN_e005835c paints every panel's background, frame and pictures, then the words over
-    // them, then the turbo meters' lights.
-    for (usize seat = 0; seat < view.seats.size(); ++seat) {
-        drawPanel(frame.canvas, seat, view.seats.at(seat));
+    {
+        const CanvasFrame native(frame.canvas, LegendsN64Frame::transform());
+        // FUN_e005835c paints every panel's background, frame and pictures, then the words over
+        // them, then the turbo meters' lights.
+        for (usize seat = 0; seat < view.seats.size(); ++seat) {
+            drawPanel(frame.canvas, seat, view.seats.at(seat));
+        }
+        for (usize seat = 0; seat < view.seats.size(); ++seat) {
+            drawWords(frame.canvas, seat, view.seats.at(seat), view);
+        }
+        for (usize seat = 0; seat < view.seats.size(); ++seat) {
+            drawLights(frame.canvas, seat, view.seats.at(seat));
+        }
     }
-    for (usize seat = 0; seat < view.seats.size(); ++seat) {
-        drawWords(frame.canvas, seat, view.seats.at(seat), view);
-    }
-    for (usize seat = 0; seat < view.seats.size(); ++seat) {
-        drawLights(frame.canvas, seat, view.seats.at(seat));
-    }
+    drawCounts(frame.canvas, view);
 }
 
 void LegendsN64HudPainter::drawRuneMeter(HudFrame& frame, const HudView& view) {
+    // The N64 has no runestone finder.
     frame.darkLegacy.look().drawRuneMeter(frame, view);
 }
 
 void LegendsN64HudPainter::drawHourglass(HudFrame& frame, const HudView& view) {
-    frame.darkLegacy.look().drawHourglass(frame, view);
+    if (m_glass == nullptr) {
+        frame.darkLegacy.look().drawHourglass(frame, view);
+        return;
+    }
+    if (!view.hourglass || !std::isfinite(view.hourglass->elapsed)) {
+        return;
+    }
+    const f32 gone = std::clamp(view.hourglass->elapsed, 0.0f, 1.0f);
+    const bool running = view.hourglass->fallingFrame >= 0;
+    const CanvasFrame native(frame.canvas, LegendsN64Frame::transform());
+    const Color clouded = Color::white().withAlpha(kOpaque - Layout::kTimerTransparency);
+    const auto left = static_cast<f32>(Layout::kTimer.x);
+    const auto top = static_cast<f32>(Layout::kTimer.y);
+    frame.canvas.draw(
+        *m_glass,
+        Rect{left, top, static_cast<f32>(m_glass->width()), static_cast<f32>(m_glass->height())},
+        clouded);
+    // TIMER_P1's rows [from, to), where the glass holds them.
+    const auto sand = [&](f32 from, f32 to) {
+        if (to <= from) {
+            return;
+        }
+        const auto rows = static_cast<f32>(m_sand->height());
+        frame.canvas.draw(*m_sand,
+                          Rect{left, top + from, static_cast<f32>(m_sand->width()), to - from},
+                          Rect{0, from / rows, 1, (to - from) / rows}, clouded);
+    };
+    const f32 fallen = static_cast<f32>(Layout::kSandRows) * gone;
+    const auto upper = static_cast<f32>(Layout::kUpperSandRow);
+    const auto lower = static_cast<f32>(Layout::kLowerSandRow);
+    sand(upper + fallen, upper + static_cast<f32>(Layout::kSandRows));
+    // While the clock stands still the bottom bulb and the grains are hidden.
+    if (!running) {
+        return;
+    }
+    sand(lower - fallen, lower);
+    const Texture* grains =
+        m_grains.at(static_cast<usize>(view.hourglass->fallingFrame) % m_grains.size());
+    const f32 stream = static_cast<f32>(Layout::kSandRows) - fallen;
+    if (grains != nullptr && stream > 0) {
+        frame.canvas.draw(
+            *grains,
+            Rect{static_cast<f32>(Layout::kSandStream.x), static_cast<f32>(Layout::kSandStream.y),
+                 static_cast<f32>(grains->width()), stream},
+            Rect{0, 0, 1, stream / static_cast<f32>(grains->height())}, Color::white());
+    }
 }
 
 void LegendsN64HudPainter::drawBossMeters(HudFrame& frame, const HudView& view) {
-    frame.darkLegacy.look().drawBossMeters(frame, view);
+    if (view.bossMeters == nullptr) {
+        return;
+    }
+    // An N64 boss's art stands in the frame; art drawn for the canvas, a Dark Legacy boss's,
+    // stands in the canvas at the row the frame's first lands on.
+    const bool native = view.levelHud == kLegendsN64HudStyle;
+    std::optional<CanvasFrame> inFrame;
+    if (native) {
+        inFrame.emplace(frame.canvas, LegendsN64Frame::transform());
+    }
+    const auto strip = static_cast<f32>(native ? Layout::kMeterStripWidth : BossMeter::kPieceWidth);
+    const auto top = static_cast<f32>(native ? Layout::kMeterTop : Layout::kForeignMeterTop);
+    const f32 insetScale = strip / static_cast<f32>(BossMeter::kPieceWidth);
+    const BossMeters& meters = *view.bossMeters;
+    for (usize index = 0; index < meters.count(); ++index) {
+        const BossMeter& meter = meters.meter(index);
+        if (!meter.showing()) {
+            continue;
+        }
+        const BossMeter::Layout layout = meter.layout();
+        std::array<s32, BossMeter::kMostPieces> widths{};
+        if (layout.pieces >= BossMeter::kMostPieces) {
+            if (index >= view.bossCount || index >= m_meters.size()) {
+                continue;
+            }
+            const HudBossReading& reading = view.bossReadings.at(index);
+            const ShownMeter& shown = m_meters.at(index);
+            const f32 health = shown.seen ? shown.health : std::max(reading.health, 0.0f);
+            widths =
+                legendsN64MeterWidths(kMeterShares * health / std::max(reading.maxHealth, 1.0f),
+                                      strip, static_cast<f32>(layout.leftInset) * insetScale,
+                                      static_cast<f32>(layout.rightInset) * insetScale);
+        } else {
+            // FUN_e0888a7c crops two strips alone, and no N64 boss has one: a single strip
+            // keeps Dark Legacy's crop.
+            widths = meter.look().widths;
+        }
+        const s32 pieces = std::min(layout.pieces, BossMeter::kMostPieces);
+        for (s32 piece = 0; piece < pieces; ++piece) {
+            const f32 x = static_cast<f32>(layout.left) + strip * static_cast<f32>(piece);
+            if (const Texture* back =
+                    meter.pieceTexture(frame.device, BossMeter::MeterPart::Background, piece)) {
+                frame.canvas.draw(*back, Rect{x, top, strip, static_cast<f32>(back->height())});
+            }
+            const f32 width =
+                std::clamp(static_cast<f32>(widths.at(static_cast<usize>(piece))), 0.0f, strip);
+            if (width <= 0) {
+                continue;
+            }
+            if (const Texture* fill =
+                    meter.pieceTexture(frame.device, BossMeter::MeterPart::Fill, piece)) {
+                // Cropped, not squeezed: the fill's left part.
+                frame.canvas.draw(*fill, Rect{x, top, width, static_cast<f32>(fill->height())},
+                                  Rect{0, 0, width / strip, 1}, Color::white());
+            }
+        }
+    }
 }
 
 void LegendsN64HudPainter::drawSelectors(HudFrame& frame, const HudView& view) {
@@ -383,7 +638,38 @@ void LegendsN64HudPainter::drawSelectors(HudFrame& frame, const HudView& view) {
 }
 
 void LegendsN64HudPainter::drawHelp(HudFrame& frame, const HudView& view) {
-    frame.darkLegacy.look().drawHelp(frame, view);
+    if (!view.help || view.help->lines.empty() || !m_name.text.ready()) {
+        return;
+    }
+    const HudHelp& help = *view.help;
+    s32 widest = 0;
+    for (const std::string& line : help.lines) {
+        widest = std::max(widest, m_name.text.measure(line));
+    }
+    // Dark Legacy's place for it, over its player's head or else the screen's middle, and its
+    // lines and timing; the N64's scroll, size and ink. It stands still: the N64's own advice
+    // fades in and holds the game, which Dark Legacy's help does not.
+    const Vec2 centre = LegendsN64Frame::toFrame(
+        {help.head.x, help.head.y - static_cast<f32>(HelpMessages::kAboveHead)});
+    const s32 lineHeight = m_name.text.lineHeight();
+    const LegendsN64HelpBox box = legendsN64HelpBox(widest, help.lines.size(), lineHeight, centre);
+    const CanvasFrame native(frame.canvas, LegendsN64Frame::transform());
+    if (const Texture* scroll = helpScroll(help.color)) {
+        drawLegendsN64Scroll(frame.canvas, *scroll,
+                             Rect{static_cast<f32>(box.x), static_cast<f32>(box.y),
+                                  static_cast<f32>(box.width), static_cast<f32>(box.height)});
+    }
+    const TextStyle ink{.color = Color::black()};
+    s32 y = box.textY;
+    for (const std::string& line : help.lines) {
+        m_name.text.draw(frame.canvas, box.textX, y, line, ink);
+        y += lineHeight;
+    }
+}
+
+const Texture* LegendsN64HudPainter::helpScroll(s32 color) const {
+    const bool coloured = color >= 0 && static_cast<usize>(color) + 1 < kHelpScrolls.size();
+    return m_art.find(kHelpScrolls.at(coloured ? static_cast<usize>(color) + 1 : 0));
 }
 
 void LegendsN64HudPainter::drawPanel(Canvas& canvas, usize seat, const HudSeat& shown) const {
@@ -513,6 +799,48 @@ void LegendsN64HudPainter::drawLights(Canvas& canvas, usize seat, const HudSeat&
                 canvas.draw(*m_lights, Rect{part->start, top, part->length, rows},
                             Rect{part->from, 0, part->to - part->from, down}, tint);
             }
+        }
+    }
+}
+
+void LegendsN64HudPainter::drawCounts(Canvas& canvas, const HudView& view) const {
+    if (view.pickups == nullptr || !m_small.text.ready()) {
+        return;
+    }
+    // The N64 has no ticker: Dark Legacy's, centred over each panel in canvas units, its counts
+    // written in font 2 at the frame's proportions wherever they stand.
+    const auto icon = static_cast<f32>(StatusBoxPainter::kCountIconSize);
+    const auto gap = static_cast<f32>(StatusBoxPainter::kCountIconGap);
+    for (usize seat = 0; seat < view.seats.size(); ++seat) {
+        const PowerupSelector* selector = view.seats.at(seat).selector;
+        const s32 bottom = selector != nullptr && selector->showing()
+                               ? PickupHud::countRowY(selector->labelY(StatusBoxPainter::kY))
+                               : Layout::kTickerRestTop;
+        const f32 middle =
+            static_cast<f32>(Layout::kSlotX.at(seat)) + static_cast<f32>(Layout::kPanelWidth) / 2;
+        const f32 centre = LegendsN64Frame::toCanvas({middle, 0.0f}).x;
+        s32 line = 0;
+        for (const PickupCount& held : view.pickups->counts(static_cast<s32>(seat))) {
+            if (!held.showing()) {
+                continue;
+            }
+            const std::string text = std::format("{}/{}", held.count, held.total);
+            const f32 written =
+                static_cast<f32>(m_small.text.measure(text)) * LegendsN64Frame::kColumn;
+            const f32 left = centre - (icon + gap + written) / 2;
+            const auto top = static_cast<f32>(bottom - line++ * (StatusBoxPainter::kCountIconSize +
+                                                                 StatusBoxPainter::kCountRowGap));
+            if (const auto found = m_countIcons.find(held.icon); found != m_countIcons.end()) {
+                canvas.draw(*found->second, Rect{left, top, icon, icon});
+            }
+            const CanvasFrame pen(
+                canvas,
+                glm::scale(glm::translate(
+                               Mat4{1.0f},
+                               Vec3{left + icon + gap,
+                                    top + static_cast<f32>(StatusBoxPainter::kCountTextDy), 0.0f}),
+                           Vec3{LegendsN64Frame::kColumn, LegendsN64Frame::kRow, 1.0f}));
+            write(canvas, m_small.text, 0, 0, text);
         }
     }
 }

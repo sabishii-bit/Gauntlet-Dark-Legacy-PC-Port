@@ -1,8 +1,15 @@
 #include "game/hud/PickupHud.h"
 
 #include <algorithm>
+#include <format>
+#include <string>
+#include <string_view>
+#include <vector>
 
 #include "engine/core/Types.h"
+
+#include "game/characters/ClassData.h"
+#include "game/level/SecretChallenge.h"
 
 namespace gdl::game {
 
@@ -35,6 +42,26 @@ std::string_view PickupHud::crystalIcon(s32 realm) {
         return {};
     }
     return kCrystalIcons[static_cast<usize>(realm)];
+}
+
+std::string PickupHud::challengeCoinIcon(s32 classIndex) {
+    return classIndex == kSumnerClass ? std::string{kSumnerCoinIcon}
+                                      : std::format("16_{}COIN", classCode(classIndex));
+}
+
+std::vector<std::string> PickupHud::countIcons() {
+    std::vector<std::string> icons;
+    for (const std::string_view crystal : kCrystalIcons) {
+        if (!crystal.empty()) {
+            icons.emplace_back(crystal);
+        }
+    }
+    icons.insert(icons.end(), kGargoyleIcons.begin(), kGargoyleIcons.end());
+    // Each secret level's, in turn, up to the first that unlocks nobody.
+    for (s32 level = 0; SecretChallenge::classFor(level) >= 0; ++level) {
+        icons.push_back(challengeCoinIcon(SecretChallenge::classFor(level)));
+    }
+    return icons;
 }
 
 void PickupHud::addCard(s32 player, std::string_view texture) {
