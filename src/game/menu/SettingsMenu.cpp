@@ -161,7 +161,8 @@ struct VideoView {
 /** What a row shows: a text id to look up, or text shown as it is (a size, a count). */
 struct Shown {
     std::string_view id;
-    std::string literal;
+    // NOLINTNEXTLINE(readability-redundant-member-init) -- default for partial aggregates
+    std::string literal{};
 };
 
 std::string sizeText(Extent2D size) {
@@ -183,7 +184,8 @@ struct VideoRow {
     bool (*step)(GameConfig&, const VideoView&, s32 direction) = nullptr;
     /** What Restore Defaults puts back; none: the row keeps its value. */
     void (*restore)(GameConfig&, const GameConfig& defaults, const VideoView&) = nullptr;
-    std::span<const std::string_view> labels; ///< every text id it may show, for the width
+    // NOLINTNEXTLINE(readability-redundant-member-init) -- default for partial aggregates
+    std::span<const std::string_view> labels{}; ///< every text id it may show, for the width
 };
 
 /** Scene post-processing is the Vulkan device's alone. */
