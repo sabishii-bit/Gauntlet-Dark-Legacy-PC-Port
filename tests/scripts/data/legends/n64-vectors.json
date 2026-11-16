@@ -1,0 +1,675 @@
+{
+  "images": {
+    "default": "803712400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002d3d3d524f4d4449534b20486561646572202d2048455245204920414d3d3d2d0000005800000050000000020000000000636060e0616060604c492c490c710d0e01b239809805006e61746976650000000000580000008420000000000000170000001800000031123456782f6c6576656c732f746573742f776f726c64732e7761640000000000000000060000000600000048123456782f746578747572652e62696e00000000",
+    "mixed": "803712400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002d3d3d524f4d4449534b20486561646572202d2048455245204920414d3d3d2d0000007400000060000000030000000000e36160606004e294c4924486107f670e209b05880100000000000c00000001646174615445535400000008000000040000006c0000008c000000a820000000000000150000001800000031123456782f612f782e5741440000000000000000000000000000000000000048123456782f622e62696e000000000000000000180000001800000048123456782f6c6576656c732f6d2f776f726c64732e77616400000000"
+  },
+  "deflated": {
+    "nativeBytes": "cb2fca4ccfcc4bcc51c84b2cc92c4b5548aa2c492dce1f151c151c151c151c151c151c151c1544150400",
+    "test": "2b492d2e0100"
+  },
+  "plainRom": {
+    "files": [
+      [
+        "/x",
+        "64617461",
+        false
+      ]
+    ],
+    "hex": "803712400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002d3d3d524f4d4449534b20486561646572202d2048455245204920414d3d3d2d0000001c00000038000000010000000000646174610000000000003c00000000000000040000000400000031123456782f780000"
+  },
+  "extractions": [
+    {
+      "image": "default",
+      "name": "source.z64",
+      "golden": "n64-default-manifest.json"
+    },
+    {
+      "image": "mixed",
+      "name": "mixed.z64",
+      "golden": "n64-mixed-manifest.json"
+    }
+  ],
+  "byteOrders": [
+    {
+      "transform": "pairs",
+      "byteOrder": "byte-swapped",
+      "name": "source-byte-swapped.v64",
+      "golden": "n64-byte-swapped-manifest.json"
+    },
+    {
+      "transform": "words",
+      "byteOrder": "little-endian",
+      "name": "source-little-endian.v64",
+      "golden": "n64-little-endian-manifest.json"
+    }
+  ],
+  "headers": [
+    {
+      "hex": "",
+      "python": "ROM must contain a complete, word-aligned N64 header",
+      "rule": "header"
+    },
+    {
+      "hex": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "python": "unrecognized Nintendo 64 ROM byte order",
+      "rule": "byteOrder"
+    },
+    {
+      "image": "default",
+      "drop": 1,
+      "python": "ROM must contain a complete, word-aligned N64 header",
+      "rule": "header"
+    }
+  ],
+  "paths": [
+    {
+      "path": "relative",
+      "python": "ROMDISK paths must have one leading slash",
+      "rule": "leadingSlash"
+    },
+    {
+      "path": "//root/file",
+      "python": "ROMDISK paths must have one leading slash",
+      "rule": "leadingSlash"
+    },
+    {
+      "path": "/../outside",
+      "python": "unsafe ROMDISK path: '/../outside'",
+      "rule": "unsafePath",
+      "nameRule": "dot"
+    },
+    {
+      "path": "/dir/./file",
+      "python": "unsafe ROMDISK path: '/dir/./file'",
+      "rule": "unsafePath",
+      "nameRule": "dot"
+    },
+    {
+      "path": "/dir//file",
+      "python": "unsafe ROMDISK path: '/dir//file'",
+      "rule": "unsafePath",
+      "nameRule": "empty"
+    },
+    {
+      "path": "/dir\\file",
+      "python": "unsafe ROMDISK path: '/dir\\\\file'",
+      "rule": "unsafePath",
+      "nameRule": "forbidden"
+    },
+    {
+      "path": "/C:/file",
+      "python": "unsafe ROMDISK path: '/C:/file'",
+      "rule": "unsafePath",
+      "nameRule": "forbidden"
+    },
+    {
+      "path": "/con.txt",
+      "python": "reserved ROMDISK filename: '/con.txt'",
+      "rule": "unsafePath",
+      "nameRule": "deviceName"
+    },
+    {
+      "path": "/LPT1/file",
+      "python": "reserved ROMDISK filename: '/LPT1/file'",
+      "rule": "unsafePath",
+      "nameRule": "deviceName"
+    },
+    {
+      "path": "/file. ",
+      "python": "unsafe ROMDISK path: '/file. '",
+      "rule": "unsafePath",
+      "nameRule": "trailingDotOrSpace"
+    },
+    {
+      "path": "/CONIN$",
+      "python": "reserved ROMDISK filename: '/CONIN$'",
+      "rule": "unsafePath",
+      "nameRule": "deviceName"
+    },
+    {
+      "path": "/CONOUT$.txt",
+      "python": "reserved ROMDISK filename: '/CONOUT$.txt'",
+      "rule": "unsafePath",
+      "nameRule": "deviceName"
+    },
+    {
+      "path": "/COM0",
+      "python": "reserved ROMDISK filename: '/COM0'",
+      "rule": "unsafePath",
+      "nameRule": "deviceName"
+    },
+    {
+      "path": "/LPT0",
+      "python": "reserved ROMDISK filename: '/LPT0'",
+      "rule": "unsafePath",
+      "nameRule": "deviceName"
+    },
+    {
+      "path": "/_program/game.bin",
+      "python": "reserved extractor output path: '/_program/game.bin'",
+      "rule": "unsafePath",
+      "nameRule": "reserved"
+    },
+    {
+      "path": "/manifest.json",
+      "python": "reserved extractor output path: '/manifest.json'",
+      "rule": "unsafePath",
+      "nameRule": "reserved"
+    },
+    {
+      "path": "/bad\u0001file",
+      "python": "unsafe ROMDISK path: '/bad\\x01file'",
+      "rule": "unsafePath",
+      "nameRule": "control"
+    },
+    {
+      "path": "/a",
+      "python": null,
+      "rule": null
+    },
+    {
+      "path": "/a/b.c",
+      "python": null,
+      "rule": null
+    },
+    {
+      "path": "/COM10",
+      "python": null,
+      "rule": null
+    },
+    {
+      "path": "/x/manifest.json",
+      "python": null,
+      "rule": null
+    },
+    {
+      "path": "/x/_program",
+      "python": null,
+      "rule": null
+    },
+    {
+      "path": "/a b",
+      "python": null,
+      "rule": null
+    },
+    {
+      "path": "/ a",
+      "python": null,
+      "rule": null
+    },
+    {
+      "path": "/.a",
+      "python": null,
+      "rule": null
+    },
+    {
+      "path": "/a..b",
+      "python": null,
+      "rule": null
+    },
+    {
+      "path": "/$",
+      "python": null,
+      "rule": null
+    },
+    {
+      "path": "/a~b",
+      "python": null,
+      "rule": null
+    },
+    {
+      "path": "/a;1",
+      "python": null,
+      "rule": null
+    },
+    {
+      "path": "/a\u007fb",
+      "python": null,
+      "rule": "unsafePath",
+      "nameRule": "control",
+      "deviation": 1
+    },
+    {
+      "path": "/CON .txt",
+      "python": null,
+      "rule": "unsafePath",
+      "nameRule": "deviceName",
+      "deviation": 4
+    },
+    {
+      "path": "/x/installation.json",
+      "python": null,
+      "rule": "unsafePath",
+      "nameRule": "alphaName",
+      "deviation": 3
+    },
+    {
+      "path": "/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "python": null,
+      "rule": "unsafePath",
+      "nameRule": "componentTooLong",
+      "deviation": 2
+    },
+    {
+      "path": "/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "python": null,
+      "rule": "unsafePath",
+      "nameRule": "pathTooLong",
+      "deviation": 2
+    },
+    {
+      "path": "/a.",
+      "python": "unsafe ROMDISK path: '/a.'",
+      "rule": "unsafePath",
+      "nameRule": "trailingDotOrSpace"
+    },
+    {
+      "path": "/a\tb",
+      "python": "unsafe ROMDISK path: '/a\\tb'",
+      "rule": "unsafePath",
+      "nameRule": "control"
+    },
+    {
+      "path": "/Con.tar.gz",
+      "python": "reserved ROMDISK filename: '/Con.tar.gz'",
+      "rule": "unsafePath",
+      "nameRule": "deviceName"
+    },
+    {
+      "path": "/MANIFEST.JSON",
+      "python": "reserved extractor output path: '/MANIFEST.JSON'",
+      "rule": "unsafePath",
+      "nameRule": "reserved"
+    },
+    {
+      "path": "/_Program/x",
+      "python": "reserved extractor output path: '/_Program/x'",
+      "rule": "unsafePath",
+      "nameRule": "reserved"
+    },
+    {
+      "path": "/manifest.json/x",
+      "python": "reserved extractor output path: '/manifest.json/x'",
+      "rule": "unsafePath",
+      "nameRule": "reserved"
+    }
+  ],
+  "collisions": [
+    {
+      "paths": [
+        "/file",
+        "/FILE"
+      ],
+      "python": "duplicate case-insensitive ROMDISK path: FILE",
+      "rule": "duplicatePath"
+    },
+    {
+      "paths": [
+        "/folder",
+        "/folder/file"
+      ],
+      "python": "ROMDISK file/directory collision: folder/file",
+      "rule": "collision"
+    },
+    {
+      "paths": [
+        "/Font/a",
+        "/font/b"
+      ],
+      "python": null,
+      "rule": "treeFolderCase",
+      "deviation": 6
+    }
+  ],
+  "recordWords": [
+    {
+      "index": 0,
+      "word": 0,
+      "value": 1,
+      "python": "unsupported ROMDISK flags 0x1: levels/test/worlds.wad",
+      "rule": "flags"
+    },
+    {
+      "index": 0,
+      "word": 1,
+      "value": 232,
+      "python": "ROMDISK file levels/test/worlds.wad extends outside its containing data",
+      "rule": "outsideData"
+    },
+    {
+      "index": 0,
+      "word": 2,
+      "value": 67108865,
+      "python": "invalid ROMDISK file size: levels/test/worlds.wad",
+      "rule": "fileSize"
+    },
+    {
+      "index": 0,
+      "word": 3,
+      "value": 0,
+      "python": "ROMDISK file overlaps its header: levels/test/worlds.wad",
+      "rule": "fileOverlap"
+    },
+    {
+      "index": 0,
+      "word": 3,
+      "value": 232,
+      "python": "ROMDISK file levels/test/worlds.wad extends outside its containing data",
+      "rule": "outsideData"
+    },
+    {
+      "index": 1,
+      "word": 2,
+      "value": 5,
+      "python": "invalid ROMDISK file size: texture.bin",
+      "rule": "fileSize"
+    }
+  ],
+  "headerWords": [
+    {
+      "offset": 96,
+      "value": 232,
+      "python": "ROMDISK directory extends outside its containing data",
+      "rule": "outsideData"
+    },
+    {
+      "offset": 104,
+      "value": 65537,
+      "python": "unsupported ROMDISK header or directory count",
+      "rule": "directoryCount"
+    },
+    {
+      "offset": 108,
+      "value": 1,
+      "python": "unsupported ROMDISK header or directory count",
+      "rule": "directoryCount"
+    },
+    {
+      "offset": 144,
+      "value": 48,
+      "python": "ROMDISK records overlap or are not word aligned",
+      "rule": "recordPlace"
+    },
+    {
+      "offset": 144,
+      "value": 232,
+      "python": "ROMDISK entry extends outside its containing data",
+      "rule": "outsideData"
+    },
+    {
+      "copy": [
+        148,
+        144
+      ],
+      "python": "ROMDISK records overlap or are not word aligned",
+      "rule": "recordPlace"
+    }
+  ],
+  "limits": [
+    {
+      "maxTotal": 2,
+      "python": "ROMDISK expanded size exceeds extraction limit",
+      "rule": "expandedSize"
+    }
+  ],
+  "deflate": [
+    {
+      "stream": "cb2fca4ccfcc4bcc51c84b2cc92c4b5548aa2c492dce1f151c151c151c151c151c151c151c1544150400",
+      "size": 2100,
+      "trailer": "none",
+      "outputSha256": "ab5c81036cb012c9a1271bbd0e5b05996921ccd5118dbd9b10b7586d20d28e26",
+      "python": null,
+      "rule": null
+    },
+    {
+      "stream": "cb2fca4ccfcc4bcc51c84b2cc92c4b5548aa2c492dce1f151c151c151c151c151c151c151c15441504",
+      "size": 2100,
+      "trailer": "none",
+      "outputSha256": null,
+      "python": "DEFLATE output size or end marker does not match its directory",
+      "rule": "deflateEnd"
+    },
+    {
+      "stream": "cb2fca4ccfcc4bcc51c84b2cc92c4b5548aa2c492dce1f151c151c151c151c151c151c151c154415040078",
+      "size": 2100,
+      "trailer": "none",
+      "outputSha256": null,
+      "python": "unexpected bytes after ROMDISK DEFLATE stream",
+      "rule": "deflateTrailer"
+    },
+    {
+      "stream": "cb2fca4ccfcc4bcc51c84b2cc92c4b5548aa2c492dce1f151c151c151c151c151c151c151c1544150400",
+      "size": 2099,
+      "trailer": "none",
+      "outputSha256": null,
+      "python": "DEFLATE output size or end marker does not match its directory",
+      "rule": "deflateEnd"
+    },
+    {
+      "stream": "cb2fca4ccfcc4bcc51c84b2cc92c4b5548aa2c492dce1f151c151c151c151c151c151c151c1544150400",
+      "size": 2101,
+      "trailer": "none",
+      "outputSha256": null,
+      "python": "DEFLATE output size or end marker does not match its directory",
+      "rule": "deflateEnd"
+    },
+    {
+      "stream": "67617262616765",
+      "size": 2100,
+      "trailer": "none",
+      "outputSha256": null,
+      "python": "invalid raw DEFLATE stream: Error -3 while decompressing data: invalid block type",
+      "rule": "deflate"
+    },
+    {
+      "stream": "2b492d2e0100747261696c6572",
+      "size": 4,
+      "trailer": "overlayPadding",
+      "outputSha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+      "python": null,
+      "rule": null
+    },
+    {
+      "stream": "2b492d2e010078787878787878787878787878787878",
+      "size": 4,
+      "trailer": "overlayPadding",
+      "outputSha256": null,
+      "python": "unsupported executable overlay padding",
+      "rule": "overlayPadding"
+    },
+    {
+      "stream": "2b492d2e0100787878787878787878787878787878",
+      "size": 4,
+      "trailer": "overlayPadding",
+      "outputSha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+      "python": null,
+      "rule": null
+    },
+    {
+      "stream": "2b492d2e0100747261696c6572",
+      "size": 4,
+      "trailer": "none",
+      "outputSha256": null,
+      "python": "unexpected bytes after ROMDISK DEFLATE stream",
+      "rule": "deflateTrailer"
+    },
+    {
+      "stream": "030200",
+      "size": 3,
+      "trailer": "none",
+      "outputSha256": null,
+      "python": "invalid raw DEFLATE stream: Error -3 while decompressing data: invalid distance too far back",
+      "rule": "deflate"
+    },
+    {
+      "stream": "000a00f5ff4141414141414141414107",
+      "size": 5,
+      "trailer": "none",
+      "outputSha256": null,
+      "python": "DEFLATE output size or end marker does not match its directory",
+      "rule": "deflateEnd"
+    },
+    {
+      "stream": "000a00f5ff4141414141414141414107",
+      "size": 10,
+      "trailer": "none",
+      "outputSha256": null,
+      "python": "invalid raw DEFLATE stream: Error -3 while decompressing data: invalid block type",
+      "rule": "deflate"
+    }
+  ],
+  "wads": [
+    {
+      "hex": "0000000c000000016461746100544f430000000800000004",
+      "sections": [
+        {
+          "tag": "\u0000TOC",
+          "offset": 8,
+          "size_or_count": 4,
+          "byte_order": "big-endian"
+        }
+      ],
+      "python": null,
+      "rule": null
+    },
+    {
+      "hex": "0c000000010000006461746100544f430800000004000000",
+      "sections": [
+        {
+          "tag": "\u0000TOC",
+          "offset": 8,
+          "size_or_count": 4,
+          "byte_order": "little-endian"
+        }
+      ],
+      "python": null,
+      "rule": null
+    },
+    {
+      "hex": "",
+      "sections": null,
+      "python": "truncated WAD header",
+      "rule": "wadHeader"
+    },
+    {
+      "hex": "0000000c00000001646174615445535400000008000000",
+      "sections": null,
+      "python": "invalid or ambiguous native WAD directory",
+      "rule": "wadDirectory"
+    },
+    {
+      "hex": "0000000c00000001646174615445535400000008000000046a756e6b",
+      "sections": null,
+      "python": "invalid or ambiguous native WAD directory",
+      "rule": "wadDirectory"
+    },
+    {
+      "hex": "000000040000000164617461544553540000000800000004",
+      "sections": null,
+      "python": "invalid or ambiguous native WAD directory",
+      "rule": "wadDirectory"
+    },
+    {
+      "hex": "0000000800000000",
+      "sections": [],
+      "python": null,
+      "rule": null
+    },
+    {
+      "hex": "0000000c000000016461746154457f540000000800000004",
+      "sections": null,
+      "python": "invalid native WAD section",
+      "rule": "wadSection"
+    },
+    {
+      "hex": "0000000c0000000164617461544553540000000700000004",
+      "sections": null,
+      "python": "invalid native WAD section",
+      "rule": "wadSection"
+    },
+    {
+      "hex": "0000000c0000000164617461544553540000000c00000004",
+      "sections": [
+        {
+          "tag": "TEST",
+          "offset": 12,
+          "size_or_count": 4,
+          "byte_order": "big-endian"
+        }
+      ],
+      "python": null,
+      "rule": null
+    }
+  ],
+  "sourceNames": [
+    {
+      "units": [
+        115,
+        111,
+        117,
+        114,
+        99,
+        233,
+        55348,
+        56606,
+        46,
+        122,
+        54,
+        52
+      ],
+      "line": "    \"name\": \"sourc\\u00e9\\ud834\\udd1e.z64\","
+    },
+    {
+      "units": [
+        120,
+        56448,
+        46,
+        122,
+        54,
+        52
+      ],
+      "line": "    \"name\": \"x\\udc80.z64\","
+    }
+  ],
+  "trees": {
+    "default": [
+      [
+        "levels/test/worlds.wad",
+        24,
+        "fc19ad6f162abde6d1eba20d9bd1be08c6fe05fb16ca0009eaa51db14bc358d7"
+      ],
+      [
+        "manifest.json",
+        1469,
+        "9867d72155693bbbd02360098298ca6a2914ab3dfad3524376d9a45620e126cd"
+      ],
+      [
+        "texture.bin",
+        6,
+        "bef32d2c315a289576f2a6828d27edb16bb316a4d85c271f2d794045f3ea668d"
+      ]
+    ],
+    "mixed": [
+      [
+        "a/x.WAD",
+        24,
+        "ed9ce86274229363511a7c9bcdf341634d40c3eef227cf83d004c5ecbabed0bc"
+      ],
+      [
+        "b.bin",
+        0,
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      ],
+      [
+        "levels/m/worlds.wad",
+        24,
+        "fc19ad6f162abde6d1eba20d9bd1be08c6fe05fb16ca0009eaa51db14bc358d7"
+      ],
+      [
+        "manifest.json",
+        1985,
+        "bb3cba0d2160efe224baebc859c15f6b60324b897227d2af7cf0f3b3e3e579dc"
+      ]
+    ]
+  }
+}

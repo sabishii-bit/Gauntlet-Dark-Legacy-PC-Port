@@ -1,0 +1,51 @@
+{
+  "cases": [
+    {
+      "text": "q\"b\\s/",
+      "rendered": "\"q\\\"b\\\\s/\""
+    },
+    {
+      "text": "\n\r\t\b\f",
+      "rendered": "\"\\n\\r\\t\\b\\f\""
+    },
+    {
+      "text": "\u0000\u001f\u007f~ ",
+      "rendered": "\"\\u0000\\u001f\\u007f~ \""
+    },
+    {
+      "text": "\u00e9",
+      "rendered": "\"\\u00e9\""
+    },
+    {
+      "text": "\u2028",
+      "rendered": "\"\\u2028\""
+    },
+    {
+      "text": "\ud834\udd1e",
+      "rendered": "\"\\ud834\\udd1e\""
+    },
+    {
+      "units": [
+        120,
+        56448,
+        46,
+        122,
+        54,
+        52
+      ],
+      "rendered": "\"x\\udc80.z64\""
+    },
+    {
+      "text": "sourc\u00e9\ud834\udd1e.z64",
+      "rendered": "\"sourc\\u00e9\\ud834\\udd1e.z64\""
+    },
+    {
+      "text": "",
+      "rendered": "\"\""
+    },
+    {
+      "text": " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~",
+      "rendered": "\" !\\\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\""
+    }
+  ]
+}

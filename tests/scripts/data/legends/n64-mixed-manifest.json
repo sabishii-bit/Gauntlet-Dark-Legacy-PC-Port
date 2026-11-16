@@ -1,0 +1,72 @@
+{
+  "format": "gauntlet-legends-n64-romdisk",
+  "version": 1,
+  "source": {
+    "name": "mixed.z64",
+    "size": 276,
+    "byte_order": "big-endian",
+    "sha256": "b9de83bd8ed2b72c7a1e947bb5328094fc59daf11de129e051f55bcadc1e7409",
+    "canonical_sha256": "b9de83bd8ed2b72c7a1e947bb5328094fc59daf11de129e051f55bcadc1e7409"
+  },
+  "romdisk_offset": 64,
+  "files": [
+    {
+      "path": "a/x.WAD",
+      "record_offset": 172,
+      "rom_offset": 113,
+      "flags": 536870912,
+      "stored_size": 21,
+      "size": 24,
+      "unknown_word": 305419896,
+      "stored_sha256": "f2a0b0f9937fe4da676174c4df8a083663e12a126bd95d3a3307e2c751d63003",
+      "sha256": "ed9ce86274229363511a7c9bcdf341634d40c3eef227cf83d004c5ecbabed0bc",
+      "wad_sections": [
+        {
+          "tag": "\u0000TOC",
+          "offset": 8,
+          "size_or_count": 4,
+          "byte_order": "little-endian"
+        }
+      ]
+    },
+    {
+      "path": "b.bin",
+      "record_offset": 204,
+      "rom_offset": 136,
+      "flags": 0,
+      "stored_size": 0,
+      "size": 0,
+      "unknown_word": 305419896,
+      "stored_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "levels/m/worlds.wad",
+      "record_offset": 232,
+      "rom_offset": 136,
+      "flags": 0,
+      "stored_size": 24,
+      "size": 24,
+      "unknown_word": 305419896,
+      "stored_sha256": "fc19ad6f162abde6d1eba20d9bd1be08c6fe05fb16ca0009eaa51db14bc358d7",
+      "sha256": "fc19ad6f162abde6d1eba20d9bd1be08c6fe05fb16ca0009eaa51db14bc358d7",
+      "wad_sections": [
+        {
+          "tag": "TEST",
+          "offset": 8,
+          "size_or_count": 4,
+          "byte_order": "big-endian"
+        }
+      ]
+    }
+  ],
+  "programs": [],
+  "maps": [
+    {
+      "name": "m",
+      "world": "levels/m/worlds.wad",
+      "objects": "levels/m/objects.wad",
+      "runtime_supported": false
+    }
+  ]
+}

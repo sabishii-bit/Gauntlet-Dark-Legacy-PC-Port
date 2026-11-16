@@ -1,9 +1,11 @@
-"""Native ROMDISK extraction, bounds checks and byte preservation."""
+"""Native ROMDISK extraction, bounds checks and byte preservation, held to the vectors the
+launcher's tests share."""
 
 from __future__ import annotations
 
 import hashlib
 import json
+import shutil
 import struct
 import sys
 import tempfile
@@ -16,7 +18,24 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts" / "assets"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import n64_legends as n64
-from legends_fixtures import change_entry, deflate, rom, wad
+from legends_fixtures import (JSON_STRINGS, N64_VECTORS, VECTOR_FOLDER, header_input, json_string,
+                              paths_rom, reorder, rom, tree_listing, vectors, wad, with_header_word,
+                              with_record_word, write_vectors)
+
+
+VECTORS = vectors(N64_VECTORS)
+IMAGES = {name: bytes.fromhex(text) for name, text in VECTORS["images"].items()}
+
+
+def check_outcome(test: unittest.TestCase, case: dict, function, *args, **kwargs):
+    """Checks that the extractor still makes of a case what the vectors hold: it takes the case and
+    gives its result, or refuses it with exactly the vectors' message."""
+    if case["python"] is None:
+        return function(*args, **kwargs)
+    with test.assertRaises(n64.FormatError) as caught:
+        function(*args, **kwargs)
+    test.assertEqual(str(caught.exception), case["python"])
+    return None
 
 
 class RomOrderTests(unittest.TestCase):
@@ -29,9 +48,11 @@ class RomOrderTests(unittest.TestCase):
         self.assertEqual(n64.normalize_rom(words), (image, "little-endian"))
 
     def test_invalid_headers_fail(self):
-        for data in (b"", b"\0" * 64, rom()[:-1]):
-            with self.subTest(size=len(data)), self.assertRaises(n64.FormatError):
-                n64.normalize_rom(data)
+        for case in VECTORS["headers"]:
+            data = header_input(case, IMAGES)
+            with self.subTest(size=len(data)):
+                self.assertIsNotNone(case["python"])
+                check_outcome(self, case, n64.normalize_rom, data)
 
 
 class DirectoryTests(unittest.TestCase):
@@ -49,46 +70,57 @@ class DirectoryTests(unittest.TestCase):
                 n64.read_directory(image)
 
     def test_unsafe_paths_fail(self):
-        for path in ("relative", "//root/file", "/../outside", "/dir/./file", "/dir//file",
-                     "/dir\\file", "/C:/file", "/con.txt", "/LPT1/file", "/file. ",
-                     "/CONIN$", "/CONOUT$.txt", "/COM0", "/LPT0",
-                     "/_program/game.bin", "/manifest.json", "/bad\x01file"):
-            with self.subTest(path=path), self.assertRaises(n64.FormatError):
-                n64.read_directory(rom([(path, b"x", False)]))
+        cases = [case for case in VECTORS["paths"] if case["python"] is not None]
+        self.assertTrue(cases)
+        for case in cases:
+            with self.subTest(path=case["path"]):
+                check_outcome(self, case, n64.read_directory, paths_rom([case["path"]]))
+
+    def test_paths_the_extractor_accepts(self):
+        cases = [case for case in VECTORS["paths"] if case["python"] is None]
+        self.assertTrue(cases)
+        for case in cases:
+            with self.subTest(path=case["path"]):
+                _, entries = n64.read_directory(paths_rom([case["path"]]))
+                self.assertEqual([entry.path for entry in entries], [case["path"][1:]])
 
     def test_case_alias_and_file_directory_collision_fail(self):
-        for names in (("/file", "/FILE"), ("/folder", "/folder/file")):
-            with self.subTest(names=names), self.assertRaises(n64.FormatError):
-                n64.read_directory(rom([(name, b"x", False) for name in names]))
+        for case in VECTORS["collisions"]:
+            with self.subTest(paths=case["paths"]):
+                check_outcome(self, case, n64.read_directory, paths_rom(case["paths"]))
+
+    def record_word_cases(self, plain: bool) -> list[dict]:
+        """The record word cases on the default image's plain entries, or on its compressed ones."""
+        _, entries = n64.read_directory(IMAGES["default"])
+        cases = [case for case in VECTORS["recordWords"]
+                 if (entries[case["index"]].flags == 0) == plain]
+        self.assertTrue(cases)
+        return cases
 
     def test_outside_data_and_unsupported_flags_fail(self):
-        image = rom()
-        for word, value in ((0, 1), (1, len(image)), (2, n64.MAX_FILE_SIZE + 1), (3, 0), (3, len(image))):
-            with self.subTest(word=word, value=value), self.assertRaises(n64.FormatError):
-                n64.read_directory(change_entry(image, word, value))
+        for case in self.record_word_cases(plain=False):
+            with self.subTest(word=case["word"], value=case["value"]):
+                check_outcome(self, case, n64.read_directory,
+                              with_record_word(IMAGES["default"], case))
 
     def test_plain_size_mismatch_fails(self):
-        with self.assertRaises(n64.FormatError):
-            n64.read_directory(change_entry(rom(), 2, 5, index=1))
+        for case in self.record_word_cases(plain=True):
+            with self.subTest(word=case["word"], value=case["value"]):
+                check_outcome(self, case, n64.read_directory,
+                              with_record_word(IMAGES["default"], case))
 
     def test_total_expansion_limit(self):
-        with mock.patch.object(n64, "MAX_TOTAL_SIZE", 2), self.assertRaises(n64.FormatError):
-            n64.read_directory(rom())
+        for case in VECTORS["limits"]:
+            with self.subTest(limit=case["maxTotal"]), \
+                    mock.patch.object(n64, "MAX_TOTAL_SIZE", case["maxTotal"]):
+                check_outcome(self, case, n64.read_directory, IMAGES["default"])
 
     def test_table_bounds_and_overlapping_records(self):
-        image = rom()
-        base = 64
-        table = base + struct.unpack_from(">I", image, base + 36)[0]
-        for offset, value in ((base + 32, len(image)), (base + 40, 65537),
-                              (base + 44, 1), (table, 48), (table, len(image))):
-            changed = bytearray(image)
-            struct.pack_into(">I", changed, offset, value)
-            with self.subTest(offset=offset), self.assertRaises(n64.FormatError):
-                n64.read_directory(bytes(changed))
-        changed = bytearray(image)
-        changed[table + 4:table + 8] = changed[table:table + 4]
-        with self.assertRaises(n64.FormatError):
-            n64.read_directory(bytes(changed))
+        for case in VECTORS["headerWords"]:
+            with self.subTest(offset=case.get("offset"), value=case.get("value"),
+                              copy=case.get("copy")):
+                check_outcome(self, case, n64.read_directory,
+                              with_header_word(IMAGES["default"], case))
 
     def test_unterminated_name_fails(self):
         image = bytearray(rom([("/x", b"data", False)]))
@@ -98,31 +130,36 @@ class DirectoryTests(unittest.TestCase):
 
 
 class DecodeTests(unittest.TestCase):
+    def check_streams(self, trailer: str):
+        cases = [case for case in VECTORS["deflate"] if case["trailer"] == trailer]
+        self.assertTrue(cases)
+        for case in cases:
+            with self.subTest(stream=case["stream"][:32], size=case["size"]):
+                output = check_outcome(self, case, n64.inflate, bytes.fromhex(case["stream"]),
+                                       case["size"], padded=trailer == "overlayPadding")
+                if case["python"] is None:
+                    self.assertEqual(len(output), case["size"])
+                    self.assertEqual(hashlib.sha256(output).hexdigest(), case["outputSha256"])
+
     def test_raw_deflate_strict_size_and_end(self):
-        payload = b"original native bytes" * 100
-        compressed = deflate(payload)
-        self.assertEqual(n64.inflate(compressed, len(payload)), payload)
-        for source, size in ((compressed[:-1], len(payload)), (compressed + b"x", len(payload)),
-                             (compressed, len(payload) - 1), (compressed, len(payload) + 1),
-                             (b"garbage", len(payload))):
-            with self.subTest(size=size), self.assertRaises(n64.FormatError):
-                n64.inflate(source, size)
+        self.check_streams("none")
 
     def test_overlay_padding_is_bounded_and_only_allowed_explicitly(self):
-        compressed = deflate(b"test")
-        self.assertEqual(n64.inflate(compressed + b"trailer", 4, padded=True), b"test")
-        with self.assertRaises(n64.FormatError):
-            n64.inflate(compressed + b"x" * 16, 4, padded=True)
+        self.check_streams("overlayPadding")
 
     def test_native_wad_endian_and_zero_tag_byte(self):
-        for order, name in ((">", "big-endian"), ("<", "little-endian")):
-            sections = n64.wad_directory(wad(order, b"\0TOC"))
-            self.assertEqual(sections, [{"tag": "\0TOC", "offset": 8, "size_or_count": 4, "byte_order": name}])
+        cases = [case for case in VECTORS["wads"] if case["python"] is None]
+        self.assertTrue(cases)
+        for case in cases:
+            with self.subTest(wad=case["hex"]):
+                self.assertEqual(n64.wad_directory(bytes.fromhex(case["hex"])), case["sections"])
 
     def test_native_wad_bounds(self):
-        for data in (b"", wad()[:-1], wad() + b"junk", struct.pack(">2I", 4, 1) + wad()[8:]):
-            with self.assertRaises(n64.FormatError):
-                n64.wad_directory(data)
+        cases = [case for case in VECTORS["wads"] if case["python"] is not None]
+        self.assertTrue(cases)
+        for case in cases:
+            with self.subTest(wad=case["hex"]):
+                check_outcome(self, case, n64.wad_directory, bytes.fromhex(case["hex"]))
 
 
 class ExtractionTests(unittest.TestCase):
@@ -161,6 +198,48 @@ class ExtractionTests(unittest.TestCase):
             with self.assertRaises(n64.FormatError):
                 n64.extract(source, destination)
             self.assertFalse(destination.exists())
+
+    def extract_named(self, root: Path, data: bytes, name: str) -> Path:
+        """Extracts `data` given as a file of that name into a new folder of `root`, checks that the
+        file is left as it was, and returns the new folder."""
+        source, destination = root / name, root / "new"
+        source.write_bytes(data)
+        n64.extract(source, destination)
+        self.assertEqual(source.read_bytes(), data)
+        return destination
+
+    def test_extraction_writes_the_golden_trees(self):
+        for case in VECTORS["extractions"]:
+            with self.subTest(image=case["image"]), tempfile.TemporaryDirectory() as directory:
+                tree = self.extract_named(Path(directory), IMAGES[case["image"]], case["name"])
+                self.assertEqual((tree / "manifest.json").read_bytes(),
+                                 (VECTOR_FOLDER / case["golden"]).read_bytes())
+                self.assertEqual(tree_listing(tree), VECTORS["trees"][case["image"]])
+
+    def test_byte_orders_write_their_goldens(self):
+        default_golden = next(case["golden"] for case in VECTORS["extractions"]
+                              if case["image"] == "default")
+        default = json.loads((VECTOR_FOLDER / default_golden).read_text(encoding="utf-8"))
+        # Only the source's name, byte order and digest set another order's manifest apart.
+        apart = ("name", "byte_order", "sha256")
+        for case in VECTORS["byteOrders"]:
+            with self.subTest(order=case["byteOrder"]), tempfile.TemporaryDirectory() as directory:
+                data = reorder(IMAGES["default"], case["transform"])
+                self.assertEqual(n64.normalize_rom(data), (IMAGES["default"], case["byteOrder"]))
+                tree = self.extract_named(Path(directory), data, case["name"])
+                golden = (VECTOR_FOLDER / case["golden"]).read_bytes()
+                self.assertEqual((tree / "manifest.json").read_bytes(), golden)
+                manifest = json.loads(golden)
+                source = manifest.pop("source")
+                digest = hashlib.sha256(data).hexdigest()
+                self.assertEqual([source[key] for key in apart],
+                                 [case["name"], case["byteOrder"], digest])
+                expected = dict(default)
+                expected_source = expected.pop("source")
+                self.assertEqual(manifest, expected)
+                self.assertEqual({key: value for key, value in source.items() if key not in apart},
+                                 {key: value for key, value in expected_source.items()
+                                  if key not in apart})
 
 
 class NativeRomTests(unittest.TestCase):
@@ -280,6 +359,43 @@ class AudioCatalogTests(unittest.TestCase):
                 self.assertEqual(n64.write_audio_catalog(source, native / "audio-catalog.json"), result)
             self.assertEqual(json.loads((native / "audio-catalog.json").read_text()), result)
             self.assertEqual((native / "manifest.json").read_text(), "unchanged")
+
+
+class ManifestJsonTests(unittest.TestCase):
+    def test_strings_render_as_the_shared_vectors_pin(self):
+        cases = vectors(JSON_STRINGS)["cases"]
+        self.assertTrue(cases)
+        for case in cases:
+            text = json_string(case)
+            with self.subTest(rendered=case["rendered"]):
+                self.assertEqual(json.dumps(text), case["rendered"])
+                # The manifests are written indented, which renders a string the same way.
+                self.assertEqual(json.dumps({"name": text}, indent=2),
+                                 '{\n  "name": ' + case["rendered"] + "\n}")
+
+
+class VectorTests(unittest.TestCase):
+    def test_builder_writes_the_shared_plain_image(self):
+        plain = VECTORS["plainRom"]
+        files = [(path, bytes.fromhex(payload), compressed)
+                 for path, payload, compressed in plain["files"]]
+        self.assertEqual(rom(files).hex(), plain["hex"])
+
+    def test_vectors_are_current(self):
+        self.maxDiff = None
+        committed = sorted([path.name for path in VECTOR_FOLDER.glob("n64-*.json")]
+                           + [JSON_STRINGS])
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            # The frozen images and streams come over from the committed vectors.
+            shutil.copyfile(VECTOR_FOLDER / N64_VECTORS, folder / N64_VECTORS)
+            written = write_vectors(folder, "n64")
+            self.assertEqual(sorted(written), committed)
+            for name in written:
+                with self.subTest(name=name):
+                    # Latin-1 keeps every byte as one character, so a difference shows as text.
+                    self.assertEqual((folder / name).read_bytes().decode("latin-1"),
+                                     (VECTOR_FOLDER / name).read_bytes().decode("latin-1"))
 
 
 if __name__ == "__main__":

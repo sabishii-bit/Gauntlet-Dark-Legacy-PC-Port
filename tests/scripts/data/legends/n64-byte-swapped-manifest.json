@@ -1,0 +1,53 @@
+{
+  "format": "gauntlet-legends-n64-romdisk",
+  "version": 1,
+  "source": {
+    "name": "source-byte-swapped.v64",
+    "size": 232,
+    "byte_order": "byte-swapped",
+    "sha256": "65eb7ae30a9d00c2583a28a3cdb8193218270d616f461cdd2b4fe10d44c64834",
+    "canonical_sha256": "6aeb138da57d9398f32f01e527199abbba8e047041901aed1c24f6be26551e75"
+  },
+  "romdisk_offset": 64,
+  "files": [
+    {
+      "path": "levels/test/worlds.wad",
+      "record_offset": 152,
+      "rom_offset": 113,
+      "flags": 536870912,
+      "stored_size": 23,
+      "size": 24,
+      "unknown_word": 305419896,
+      "stored_sha256": "1cfca93ee4640ba7b5608722057d86fa5496aa9154a3e9873b8998909fe78ad5",
+      "sha256": "fc19ad6f162abde6d1eba20d9bd1be08c6fe05fb16ca0009eaa51db14bc358d7",
+      "wad_sections": [
+        {
+          "tag": "TEST",
+          "offset": 8,
+          "size_or_count": 4,
+          "byte_order": "big-endian"
+        }
+      ]
+    },
+    {
+      "path": "texture.bin",
+      "record_offset": 196,
+      "rom_offset": 136,
+      "flags": 0,
+      "stored_size": 6,
+      "size": 6,
+      "unknown_word": 305419896,
+      "stored_sha256": "bef32d2c315a289576f2a6828d27edb16bb316a4d85c271f2d794045f3ea668d",
+      "sha256": "bef32d2c315a289576f2a6828d27edb16bb316a4d85c271f2d794045f3ea668d"
+    }
+  ],
+  "programs": [],
+  "maps": [
+    {
+      "name": "test",
+      "world": "levels/test/worlds.wad",
+      "objects": "levels/test/objects.wad",
+      "runtime_supported": false
+    }
+  ]
+}
