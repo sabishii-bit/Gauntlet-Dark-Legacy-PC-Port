@@ -30,7 +30,7 @@ bool sameBits(const Mat4& a, const Mat4& b) {
     return true;
 }
 
-/** A game's own frame on the canvas: moved, and scaled unevenly as the N64's is. */
+/** A game's own frame on the canvas: moved, and scaled by more down than across. */
 Mat4 gameFrame() {
     return glm::scale(glm::translate(Mat4{1.0f}, Vec3{8, 9, 0}), Vec3{1.25f, 1.5f, 1});
 }
