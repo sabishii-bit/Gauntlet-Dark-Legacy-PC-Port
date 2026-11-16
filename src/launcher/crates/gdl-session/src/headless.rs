@@ -103,8 +103,8 @@ pub fn open_own_file() -> OwnFile {
 ///   `error: <code> (<rule>): <detail>`, where [`codes`] gives the code, and [`EXIT_REFUSED`].
 /// - `--inspect <dir>` reports what the folder is to a launcher of the build's version, as
 ///   [`InstallFolder::inspect`] finds it: a `name: value` line for each field that holds
-///   something, or with `--json` every field as JSON. Whatever the folder holds, an inspection
-///   exits [`EXIT_OK`].
+///   something, a control character in a value written as its escape, or with `--json` every
+///   field as JSON. Whatever the folder holds, an inspection exits [`EXIT_OK`].
 ///
 /// A report that cannot be written to its stream gives [`EXIT_REFUSED`], since nobody saw it.
 ///
@@ -396,7 +396,9 @@ impl<'a> InspectionView<'a> {
     }
 
     /// The report as text: a `name: value` line for each field, in the report's order, leaving
-    /// out the schema and every field that holds nothing, with a list's names on one line.
+    /// out the schema and every field that holds nothing, with a list's names on one line. A value
+    /// is written as [`text_value`] writes it, since the folder's own names and records may hold
+    /// any character.
     fn text(&self) -> String {
         let mut lines = vec![
             ("state", self.state.to_owned()),
@@ -420,9 +422,24 @@ impl<'a> InspectionView<'a> {
         }
         lines
             .into_iter()
-            .map(|(name, value)| format!("{name}: {value}\n"))
+            .map(|(name, value)| format!("{name}: {}\n", text_value(&value)))
             .collect()
     }
+}
+
+/// `value` as a text report writes it: each control character, such as a line end, which would
+/// start a line of its own, or the escape that begins a terminal's command, as Rust writes it in
+/// a literal, `\n` or `\u{1b}`, and every other character as it is.
+fn text_value(value: &str) -> String {
+    let mut text = String::with_capacity(value.len());
+    for character in value.chars() {
+        if character.is_control() {
+            text.extend(character.escape_debug());
+        } else {
+            text.push(character);
+        }
+    }
+    text
 }
 
 impl<'a> InstallationView<'a> {
@@ -491,7 +508,7 @@ mod tests {
     use gdl_release::{Platform, Version};
     use serde_json::{Value, json};
 
-    use super::{Build, EXIT_OK, EXIT_REFUSED, EXIT_USAGE, OwnFile, USAGE, run, usage};
+    use super::{Build, EXIT_OK, EXIT_REFUSED, EXIT_USAGE, OwnFile, USAGE, run, text_value, usage};
 
     /// The version the tests build the program as: the first launcher's.
     const VERSION: &str = "1.0.0-beta";
@@ -1193,6 +1210,83 @@ mod tests {
             inspected(&strange, false),
             format!("state: absent\npath: {}\n", strange.display())
         );
+    }
+
+    #[test]
+    fn a_folder_cannot_forge_lines_of_the_text_report() {
+        let Some(platform) = this_platform() else {
+            return;
+        };
+        // A commit holding a line end with a field of its own after it, then the commands that
+        // clear a terminal and colour its text; and how the text report shows it.
+        const FORGED: &str = "abc\nstate: empty\u{1b}[2J\u{9b}31m\r";
+        const SHOWN: &str = r"abc\nstate: empty\u{1b}[2J\u{9b}31m\r";
+        // What a report shows of an installation, after the fields of `before`.
+        let fields = |before: &[&'static str]| {
+            let mut fields = vec!["state", "path"];
+            fields.extend_from_slice(before);
+            fields.extend_from_slice(&INSTALLATION_KEYS);
+            fields
+        };
+        // The fields of a text report, in its order: no line but a field's own, and no control
+        // character but the line ends.
+        let fields_of = |text: &str| -> Vec<String> {
+            assert!(
+                !text.chars().any(|c| c.is_control() && c != '\n'),
+                "{text:?}"
+            );
+            text.lines()
+                .map(|line| {
+                    line.split_once(": ")
+                        .map_or(line, |(name, _)| name)
+                        .to_owned()
+                })
+                .collect()
+        };
+
+        // A release record and a receipt that both name it, so the folder reads as installed.
+        let dir = tempfile::tempdir().unwrap();
+        let mut runtime = RuntimeFiles::standard(platform.as_str(), VERSION);
+        runtime.commit = FORGED.to_owned();
+        let fixture = InstallFixture::write(&dir.path().join("forged"), runtime).unwrap();
+        let text = inspected(&fixture.root, false);
+        assert_eq!(fields_of(&text), fields(&[]), "{text}");
+        assert!(text.contains(&format!("\ncommit: {SHOWN}\n")), "{text}");
+        // The JSON report escapes as JSON does, and gives the commit back exactly.
+        let parsed: Value = serde_json::from_str(&inspected(&fixture.root, true)).unwrap();
+        assert_eq!(parsed["installation"]["commit"], FORGED);
+
+        // Unix lets a name hold any character but the separator: in the state folder, and among
+        // the journals, where a name of no kind this launcher knows is listed.
+        #[cfg(unix)]
+        {
+            const NOTES: &str = "notes\nstate: empty";
+            const JOURNAL: &str = "x\u{1b}]0;title\u{7}";
+            let state = fixture.root.join(STATE_DIR);
+            fs::write(state.join(NOTES), b"").unwrap();
+            fs::create_dir(state.join(JOURNAL_DIR)).unwrap();
+            fs::write(state.join(JOURNAL_DIR).join(JOURNAL), b"").unwrap();
+            let text = inspected(&fixture.root, false);
+            let listed = fields(&["code", "journals", "unknownNames"]);
+            assert_eq!(fields_of(&text), listed, "{text}");
+            assert!(text.contains(r"journals: x\u{1b}]0;title\u{7}"), "{text}");
+            assert!(
+                text.contains(r"unknownNames: notes\nstate: empty"),
+                "{text}"
+            );
+            let parsed: Value = serde_json::from_str(&inspected(&fixture.root, true)).unwrap();
+            assert_eq!(parsed["journals"], json!([JOURNAL]));
+            assert_eq!(parsed["unknownNames"], json!([NOTES]));
+        }
+    }
+
+    #[test]
+    fn text_values_escape_control_characters_alone() {
+        // A Windows path keeps its backslashes, and letters beyond ASCII stay as they are.
+        for plain in [r"C:\Games\Gauntlet Dark Legacy", "caf\u{e9} \u{1d11e}", ""] {
+            assert_eq!(text_value(plain), plain);
+        }
+        assert_eq!(text_value("a\tb\0c\u{7f}d\u{85}"), r"a\tb\0c\u{7f}d\u{85}");
     }
 
     #[test]
