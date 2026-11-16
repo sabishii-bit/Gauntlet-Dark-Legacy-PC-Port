@@ -10,7 +10,7 @@
 
 #include "TestSupport.h"
 #include "expansions/n64/formats/LegendsN64Text.h"
-#include "expansions/n64/hud/LegendsN64HudIcons.h"
+#include "expansions/n64/hud/LegendsN64HudText.h"
 
 namespace {
 

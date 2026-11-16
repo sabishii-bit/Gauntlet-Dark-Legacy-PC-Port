@@ -57,8 +57,6 @@ TEST_CASE("the N64 draws nine of Dark Legacy's classes, and names a Pojo carrier
         // Whatever the class, a character carrying Pojo is named by the N64's word for him.
         CHECK(legendsN64ClassText(classIndex, true) == 133);
     }
-    CHECK(legendsN64HudTextKey(129) == "legends.n64.hud.text.129");
-    CHECK(legendsN64HudTextKey(138) == "legends.n64.hud.text.138");
 }
 
 TEST_CASE("potion bottles follow Dark Legacy's kinds", "[legends][n64-hud][n64-hud-icons]") {

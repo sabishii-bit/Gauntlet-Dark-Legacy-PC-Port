@@ -1,7 +1,6 @@
 #pragma once
 
 #include <optional>
-#include <string>
 #include <string_view>
 
 #include "engine/core/Types.h"
@@ -24,8 +23,5 @@ std::optional<std::string_view> legendsN64ClassCode(s32 classIndex);
 /** The english/game.wad string the N64 panel names class `classIndex` by, Pojo's for a
  * character carrying him; none for a class the N64 has no word for. */
 std::optional<s32> legendsN64ClassText(s32 classIndex, bool pojo);
-
-/** The text id of the N64 HUD's english/game.wad string `native`. */
-std::string legendsN64HudTextKey(s32 native);
 
 } // namespace gdl::game

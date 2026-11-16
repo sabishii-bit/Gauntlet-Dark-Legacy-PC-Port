@@ -31,6 +31,7 @@
 #include "expansions/n64/hud/LegendsN64Frame.h"
 #include "expansions/n64/hud/LegendsN64HudIcons.h"
 #include "expansions/n64/hud/LegendsN64HudLayout.h"
+#include "expansions/n64/hud/LegendsN64HudText.h"
 #include "expansions/shared/hud/LegendsHudArt.h"
 #include "game/characters/ClassData.h"
 #include "game/hud/HudView.h"

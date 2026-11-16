@@ -2,9 +2,7 @@
 
 #include <algorithm>
 #include <array>
-#include <format>
 #include <optional>
-#include <string>
 #include <string_view>
 
 #include "engine/core/Types.h"
@@ -76,10 +74,6 @@ std::optional<s32> legendsN64ClassText(s32 classIndex, bool pojo) {
     }
     const NativeClass* found = nativeClassOf(classIndex);
     return found != nullptr ? std::optional{found->text} : std::nullopt;
-}
-
-std::string legendsN64HudTextKey(s32 native) {
-    return std::format("legends.n64.hud.text.{}", native);
 }
 
 } // namespace gdl::game
