@@ -3,6 +3,7 @@
 #![forbid(unsafe_code)]
 
 mod folder;
+mod n64;
 mod program;
 mod runtime;
 mod zip;
@@ -15,6 +16,11 @@ pub use folder::{
     EntryState, HeldClosed, InstallFixture, backdate, folder_names, hold_closed, holds_bind,
     link_folder, long_root, make_alpha_markers, snapshot, symlink_file, symlink_file_where_allowed,
     symlink_folder_where_allowed,
+};
+pub use n64::{
+    BIG_ENDIAN_FIRST_WORD, BUILDER_UNKNOWN_WORD, BuiltRom, OVERLAY_TABLE_OFFSET, OverlaySpec,
+    ROM_HEADER_LEN, RomFile, WadOrder, default_rom_files, raw_deflate, rom, rom_with_overlays,
+    set_word, wad,
 };
 pub use program::{
     FAKE_CERTIFICATE_LEN, SparseFile, TRAILER_MAGIC, append_sections, append_sections_at,
