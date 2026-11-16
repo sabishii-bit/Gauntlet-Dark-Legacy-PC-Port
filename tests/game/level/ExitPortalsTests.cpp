@@ -615,7 +615,7 @@ TEST_CASE("the HUD learns which exit a visitor stands on, shut and secret ones t
 TEST_CASE("an ordinary stage's exits lead back to the tower; the tower's, secret ones and a "
           "first Temple or Underworld stage's lead where they say",
           "[game][world][portals]") {
-    Fixture f("portals-returns");
+    const Fixture f("portals-returns");
     const ExitPortals::Portal& exit = f.portals.portal(0);
     REQUIRE(exit.destination.has_value());
     const auto fields = f.catalog.byName("G1");
