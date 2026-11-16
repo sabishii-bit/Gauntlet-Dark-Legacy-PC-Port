@@ -1,5 +1,6 @@
 #include <array>
 #include <filesystem>
+#include <span>
 #include <string>
 
 #include <catch2/catch_test_macros.hpp>
@@ -19,25 +20,24 @@ using namespace gdl::game;
 
 /** The class words of english/game.wad the N64's panels write (e005a288), Pojo's among them. */
 constexpr std::array<s32, 10> kClassWords{129, 130, 131, 132, 133, 134, 135, 136, 137, 138};
+/** The stat words its stats page writes (the item table's names, e00560a4): its eight stats,
+ * not 146's Damage or 148's Health, which are never browsed. */
+constexpr std::array<s32, 8> kStatWords{140, 141, 142, 143, 144, 145, 147, 149};
 
-TEST_CASE("the N64 HUD's class words are keyed by their native ids",
-          "[legends][n64-hud][n64-hud-text]") {
-    StringTable text;
-    REQUIRE(text.load(test::dataDirectory() / "text", "en"));
-    for (const s32 native : kClassWords) {
+/** Checks every word of `natives` is keyed by its native id and is not empty. */
+void checkKeyed(const StringTable& text, std::span<const s32> natives) {
+    for (const s32 native : natives) {
         CAPTURE(native);
         const std::string key = legendsN64HudTextKey(native);
         CHECK(key == "legends.n64.hud.text." + std::to_string(native));
         REQUIRE(text.has(key));
         CHECK_FALSE(text.get(key).empty());
     }
-    CHECK(text.get(legendsN64HudTextKey(129)) == "Warrior");
-    CHECK(text.get(legendsN64HudTextKey(133)) == "Pojo");
-    CHECK(text.get(legendsN64HudTextKey(138)) == "Sumner");
 }
 
-TEST_CASE("every N64 HUD class word matches its native string bank exactly",
-          "[legends][n64-hud-text][assets]") {
+/** Checks every word of `natives` against the player's own english/game.wad, read as strlib.wad
+ * names its bank; skips without the N64 extraction. */
+void checkAgainstBank(std::span<const s32> natives) {
     const auto root = test::dataDirectory().parent_path() / "assets/n64/extracted";
     if (!std::filesystem::is_regular_file(root / "strlib.wad")) {
         SKIP("Native N64 Legends extraction is not installed");
@@ -45,7 +45,7 @@ TEST_CASE("every N64 HUD class word matches its native string bank exactly",
     const auto library = readFile(root / "strlib.wad");
     StringTable text;
     REQUIRE(text.load(test::dataDirectory() / "text", "en"));
-    for (const s32 native : kClassWords) {
+    for (const s32 native : natives) {
         CAPTURE(native);
         const auto reference =
             formats::legendsN64StringReference(library, static_cast<u32>(native));
@@ -58,6 +58,39 @@ TEST_CASE("every N64 HUD class word matches its native string bank exactly",
         REQUIRE(text.has(key));
         CHECK(text.get(key) == bank[reference->index]);
     }
+}
+
+TEST_CASE("the N64 HUD's class words are keyed by their native ids",
+          "[legends][n64-hud][n64-hud-text]") {
+    StringTable text;
+    REQUIRE(text.load(test::dataDirectory() / "text", "en"));
+    checkKeyed(text, kClassWords);
+    CHECK(text.get(legendsN64HudTextKey(129)) == "Warrior");
+    CHECK(text.get(legendsN64HudTextKey(133)) == "Pojo");
+    CHECK(text.get(legendsN64HudTextKey(138)) == "Sumner");
+}
+
+TEST_CASE("every N64 HUD class word matches its native string bank exactly",
+          "[legends][n64-hud-text][assets]") {
+    checkAgainstBank(kClassWords);
+}
+
+TEST_CASE("the N64 HUD's stat words are keyed by their native ids",
+          "[legends][n64-hud][n64-hud-text]") {
+    StringTable text;
+    REQUIRE(text.load(test::dataDirectory() / "text", "en"));
+    checkKeyed(text, kStatWords);
+    CHECK(text.get(legendsN64HudTextKey(140)) == "Max Hlth");
+    CHECK(text.get(legendsN64HudTextKey(147)) == "Exp.");
+    CHECK(text.get(legendsN64HudTextKey(149)) == "Gold");
+    // The two stats the page never shows have no words here.
+    CHECK_FALSE(text.has(legendsN64HudTextKey(146)));
+    CHECK_FALSE(text.has(legendsN64HudTextKey(148)));
+}
+
+TEST_CASE("every N64 HUD stat word matches its native string bank exactly",
+          "[legends][n64-hud-text][assets]") {
+    checkAgainstBank(kStatWords);
 }
 
 } // namespace

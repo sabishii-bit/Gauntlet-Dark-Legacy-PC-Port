@@ -96,6 +96,10 @@ public:
     static constexpr s32 kKeyY = 300;
     /** The colours the runes run through, three each, and the keys, blue to green twice. */
     static constexpr std::array<std::string_view, 4> kRelicColours{"BLU", "RED", "YEL", "GRE"};
+    /** The bosses' keys' colours, first to eighth, as the GameCube's key table holds them
+     * (0x801205F8, player.c 5142). */
+    static constexpr std::array<std::string_view, static_cast<usize>(kKeyCount)> kKeyColours{
+        "BLU", "RED", "YEL", "GRE", "GRE", "RED", "YEL", "BLU"};
     static constexpr s32 kWidth = 128;
     static constexpr s32 kY = 320;
     static constexpr s32 kHeight = 64;

@@ -145,8 +145,9 @@ inline std::vector<u8> n64FontBytes(const N64Font& font) {
  * WIZ_P1, and the hourglass's timer bank. */
 class LegendsN64HudFixture {
 public:
-    /** The HUD bank's pictures the look draws: the panels' and the advice scrolls. */
-    static constexpr std::array<N64Picture, 17> kHudPictures{{
+    /** The HUD bank's pictures the look draws: the panels', the advice scrolls, and the
+     * carousel's and the quest page's icons, the thunder hammer's bigger than the rest. */
+    static constexpr std::array<N64Picture, 51> kHudPictures{{
         {.name = "COLOR", .width = 52, .height = 25, .mark = 10, .intensity = true},
         {.name = "COLORI", .width = 104, .height = 50, .mark = 11, .intensity = true},
         {.name = "BORDER", .width = 52, .height = 50, .mark = 12},
@@ -164,6 +165,40 @@ public:
         {.name = "BLU_TEXTSCROLL", .width = 64, .height = 32, .mark = 24},
         {.name = "RED_TEXTSCROLL", .width = 64, .height = 32, .mark = 25},
         {.name = "GRE_TEXTSCROLL", .width = 64, .height = 32, .mark = 26},
+        {.name = "HUD_3WAY", .width = 28, .height = 28, .mark = 50},
+        {.name = "HUD_5WAY", .width = 28, .height = 28, .mark = 51},
+        {.name = "HUD_SUPERSHOT", .width = 28, .height = 28, .mark = 52},
+        {.name = "HUD_REFLSHOT", .width = 28, .height = 28, .mark = 53},
+        {.name = "HUD_HAMMER", .width = 32, .height = 32, .mark = 54},
+        {.name = "HUD_RAPIDFIRE", .width = 28, .height = 28, .mark = 55},
+        {.name = "HUD_FIREAMLT", .width = 28, .height = 28, .mark = 56},
+        {.name = "HUD_ELECAMLT", .width = 28, .height = 28, .mark = 57},
+        {.name = "HUD_LITEAMLT", .width = 28, .height = 28, .mark = 58},
+        {.name = "HUD_ACIDAMLT", .width = 28, .height = 28, .mark = 59},
+        {.name = "HUD_INVULNG", .width = 28, .height = 28, .mark = 60},
+        {.name = "HUD_INVULN", .width = 28, .height = 28, .mark = 61},
+        {.name = "HUD_HALO", .width = 28, .height = 28, .mark = 62},
+        {.name = "HUD_REFLSHIELD", .width = 28, .height = 28, .mark = 63},
+        {.name = "HUD_FIRESHIELD", .width = 28, .height = 28, .mark = 64},
+        {.name = "HUD_ELECSHIELD", .width = 28, .height = 28, .mark = 65},
+        {.name = "HUD_SPEEDBOOST", .width = 28, .height = 28, .mark = 66},
+        {.name = "HUD_LEVITATE", .width = 28, .height = 28, .mark = 67},
+        {.name = "HUD_INVIS", .width = 28, .height = 28, .mark = 68},
+        {.name = "HUD_TIMESTOP", .width = 28, .height = 28, .mark = 69},
+        {.name = "HUD_FIREBRETH", .width = 28, .height = 28, .mark = 70},
+        {.name = "HUD_ACIDBRETH", .width = 28, .height = 28, .mark = 71},
+        {.name = "HUD_ELECBRETH", .width = 28, .height = 28, .mark = 72},
+        {.name = "HUD_PHOENIX", .width = 28, .height = 28, .mark = 73},
+        {.name = "HUD_GROWTH", .width = 28, .height = 28, .mark = 74},
+        {.name = "HUD_SHRINK", .width = 28, .height = 28, .mark = 75},
+        {.name = "HUD_SHORN", .width = 28, .height = 28, .mark = 76},
+        {.name = "HUD_SMASK", .width = 28, .height = 28, .mark = 77},
+        {.name = "HUD_SGAUNTR", .width = 28, .height = 28, .mark = 78},
+        {.name = "HUD_SCIMITAR", .width = 28, .height = 28, .mark = 79},
+        {.name = "HUD_ICEAXE", .width = 28, .height = 28, .mark = 80},
+        {.name = "HUD_SAVIOUR", .width = 28, .height = 28, .mark = 81},
+        {.name = "HUD_FLAMESCROLL", .width = 28, .height = 28, .mark = 82},
+        {.name = "HUD_JAVELIN", .width = 28, .height = 28, .mark = 83},
     }};
     /** screens/timer's hourglass: the glass, its sand and the five frames of falling grains. */
     static constexpr std::array<N64Picture, 7> kTimerPictures{{
@@ -186,7 +221,7 @@ public:
     static constexpr std::string_view kWarriorBank = "hud/warf/objects.wad";
     static constexpr std::string_view kWizardBank = "hud/wizf/objects.wad";
     /** In code order, as a font's directory runs. */
-    static constexpr std::string_view kCharacters = "/0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    static constexpr std::string_view kCharacters = "./0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
     static constexpr N64Font kSmallFont{.file = game::LegendsN64HudPainter::kSmallFontFile,
                                         .codes = kCharacters,
                                         .columns = 4,

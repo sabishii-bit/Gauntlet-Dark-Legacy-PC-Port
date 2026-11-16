@@ -37,6 +37,7 @@
 #include "expansions/shared/hud/LegendsHudClock.h"
 #include "expansions/shared/hud/LegendsHudStyleIds.h"
 #include "game/characters/ClassData.h"
+#include "game/characters/Inventory.h"
 #include "game/hud/BossMeter.h"
 #include "game/hud/ChallengeHud.h"
 #include "game/hud/HelpMessages.h"
@@ -46,11 +47,13 @@
 #include "game/hud/StatusBox.h"
 #include "game/party/PlayerRuntime.h"
 #include "game/players/PickupVoices.h"
+#include "game/players/PlayerControls.h"
 
 namespace gdl::game {
 namespace {
 
 using Layout = LegendsN64HudLayout;
+using QuestKind = LegendsN64QuestEntry::Kind;
 
 constexpr std::string_view kColor = "COLOR";
 constexpr std::string_view kEmpty = "COLORI";
@@ -70,9 +73,122 @@ constexpr std::array<std::string_view, 5> kHelpScrolls{
     "TEXTSCROLL", "YEL_TEXTSCROLL", "BLU_TEXTSCROLL", "RED_TEXTSCROLL", "GRE_TEXTSCROLL"};
 constexpr std::string_view kGlass = "TIMER_P0";
 constexpr std::string_view kSand = "TIMER_P1";
+constexpr std::string_view kThirteenthRuneArt = "RUNE13"; ///< STATIC's
 
 constexpr u8 kOpaque = 255;
 constexpr f32 kMeterShares = 2; ///< a meter's two strips share its health between them
+
+/** e00aad34's "%8.8s %6.6d": a stat's name in eight characters, its value in six digits. */
+constexpr usize kStatNameWidth = 8;
+constexpr s32 kStatDigits = 6;
+constexpr s32 kMostCountShown = 9999; ///< what the carousel's "%4d" holds
+
+/** A stat the stats page shows, and the english/game.wad word that names it. */
+enum class Stat : u8 { Strength, Speed, Magic, Armour, MostHealth, Experience, Gold, Level };
+struct StatWord {
+    Stat stat = Stat::Strength;
+    s32 text = 0;
+};
+/** The stats page's ring, as FUN_e0055784 and FUN_e005596c step it: the item table's stats
+ * (e00560a4) in its order. */
+constexpr std::array<StatWord, 8> kStatRing{{
+    {.stat = Stat::Strength, .text = 141},
+    {.stat = Stat::Speed, .text = 142},
+    {.stat = Stat::Magic, .text = 144},
+    {.stat = Stat::Armour, .text = 143},
+    {.stat = Stat::MostHealth, .text = 140},
+    {.stat = Stat::Experience, .text = 147},
+    {.stat = Stat::Gold, .text = 149},
+    {.stat = Stat::Level, .text = 145},
+}};
+
+/** The runestones the realms hold, below StatusBoxView's thirteenth, and the bosses' keys. */
+constexpr auto kRealmRunes = static_cast<u16>((1U << StatusBoxPainter::kRuneCount) - 1);
+constexpr auto kAllKeys = static_cast<u16>((1U << StatusBoxPainter::kKeyCount) - 1);
+
+/** What stat `stat` of seat `shown` reads. */
+s32 statOf(const HudSeat& shown, Stat stat) {
+    switch (stat) {
+    case Stat::Strength: return shown.stats.strength();
+    case Stat::Speed: return shown.stats.speed();
+    case Stat::Magic: return shown.stats.magic();
+    case Stat::Armour: return shown.stats.armor();
+    case Stat::MostHealth: return shown.mostHealth;
+    case Stat::Experience: return shown.experience;
+    case Stat::Gold: return shown.box.gold;
+    case Stat::Level: return shown.box.level;
+    }
+    return 0;
+}
+
+/** Whether seat `shown`'s player stands with its whole panel: not fallen, departed or dying.
+ * A dying player's panel keeps its normal page (FUN_e0059114). */
+bool standing(const HudSeat& shown) {
+    return shown.box.mode != StatusBoxView::Mode::Plain && !shown.box.inTower &&
+           shown.turbo.has_value();
+}
+
+/** Whether `selector` is up, its carousel showing in place of the panel's page. */
+bool selectorUp(const PowerupSelector& selector) {
+    return selector.state() == PowerupSelector::State::SlidingIn ||
+           selector.state() == PowerupSelector::State::Open;
+}
+
+/** Whether `inventory` holds a powerup in slot `slot`. */
+bool heldAt(const Inventory& inventory, s32 slot) {
+    return slot >= 0 && static_cast<usize>(slot) < inventory.powerups.size() &&
+           inventory.powerups[static_cast<usize>(slot)].held();
+}
+
+/** The carousel's places as FUN_e0059e00 keeps them: its selection, the entry before it unless
+ * that is the selection itself, and the one after it unless that is either; -1 for none. */
+struct Places {
+    s32 previous = -1;
+    s32 selected = -1;
+    s32 next = -1;
+};
+Places placesAround(s32 selected, s32 before, s32 after) {
+    return {.previous = before == selected ? -1 : before,
+            .selected = selected,
+            .next = after == before || after == selected ? -1 : after};
+}
+
+/** One place of the carousel: which entry stands in it, its centre and its scale. */
+struct Place {
+    s32 entry = -1;
+    LegendsN64Point centre{};
+    f32 scale = 1;
+};
+std::array<Place, 3> placesOf(const Places& places) {
+    return {
+        {{.entry = places.previous, .centre = Layout::kPrevious, .scale = Layout::kNeighbourScale},
+         {.entry = places.selected, .centre = Layout::kSelected, .scale = 1},
+         {.entry = places.next, .centre = Layout::kNext, .scale = Layout::kNeighbourScale}}};
+}
+
+/** The place of `entry` among `entries`; the first when it is not there. */
+usize placeOf(const LegendsN64QuestEntry& entry, std::span<const LegendsN64QuestEntry> entries) {
+    const auto found = std::ranges::find(entries, entry);
+    return found == entries.end() ? 0 : static_cast<usize>(found - entries.begin());
+}
+
+/** The first of a row's pictures `places` that `held` holds; null for none. */
+const Texture* firstHeld(std::span<const Texture* const> places, u16 held) {
+    for (usize place = 0; place < places.size(); ++place) {
+        if ((held & (1U << place)) != 0) {
+            return places[place];
+        }
+    }
+    return nullptr;
+}
+
+/** STATIC's picture of runestone `rune`, three of each colour (StatusBoxPainter::drawRelics). */
+std::string runeArt(s32 rune) {
+    return std::format("SM_RUNE_{}_{:02}",
+                       StatusBoxPainter::kRelicColours.at(
+                           static_cast<usize>(rune / StatusBoxPainter::kRunesInColour)),
+                       rune % StatusBoxPainter::kRunesInColour + 1);
+}
 
 /** FUN_e0059b44's levels: a third unlit is 50, and one full 255. */
 constexpr s32 kTurboUnlit = 50;
@@ -131,6 +247,54 @@ void drawCentred(Canvas& canvas, const Texture& texture, f32 left, f32 top, Lege
                     top + static_cast<f32>(centre.y) - height / 2, width, height};
     canvas.draw(texture, area, turned ? Rect{1, 0, -1, 1} : Rect{0, 0, 1, 1},
                 Color::white().withAlpha(opacity));
+}
+
+/** Draws an item's picture `texture` centred on `centre` of the panel at (left, top), at
+ * `scale` of its own size, or of its size fitted into an icon's square when `fitted`. */
+void drawItem(Canvas& canvas, const Texture& texture, bool fitted, f32 left, f32 top,
+              LegendsN64Point centre, f32 scale, u8 opacity) {
+    const auto width = static_cast<f32>(texture.width());
+    const auto height = static_cast<f32>(texture.height());
+    if (width <= 0 || height <= 0) {
+        return;
+    }
+    const f32 fit = fitted ? std::min(Layout::kIconSize / width, Layout::kIconSize / height) : 1;
+    const f32 across = width * fit * scale;
+    const f32 down = height * fit * scale;
+    canvas.draw(texture,
+                Rect{left + static_cast<f32>(centre.x) - across / 2,
+                     top + static_cast<f32>(centre.y) - down / 2, across, down},
+                Rect{0, 0, 1, 1}, Color::white().withAlpha(opacity));
+}
+
+/** Draws those of the row's pictures `places` that `held` holds, a bit a place, across the
+ * panel whose left is `left`. */
+void drawRow(Canvas& canvas, f32 left, std::span<const Texture* const> places, u16 held, s32 step,
+             s32 trio) {
+    if (places.empty()) {
+        return;
+    }
+    // Each place `step` on from the one before, and a unit more after each `trio`, as Dark
+    // Legacy's strip spaces them; the row centred on the selection's place from its first place
+    // to the end of its last one's picture.
+    const auto offset = [&](usize place) {
+        const auto index = static_cast<s32>(place);
+        return static_cast<f32>(index * step + (trio > 0 ? index / trio : 0));
+    };
+    const Texture* last = places.back();
+    const f32 span = offset(places.size() - 1) +
+                     (last != nullptr ? static_cast<f32>(last->width()) : static_cast<f32>(step));
+    const f32 start = left + static_cast<f32>(Layout::kSelected.x) - span / 2;
+    const f32 middle = static_cast<f32>(Layout::kStripTop + Layout::kSelected.y);
+    for (usize place = 0; place < places.size(); ++place) {
+        const Texture* picture = places[place];
+        if (picture == nullptr || (held & (1U << place)) == 0) {
+            continue;
+        }
+        const auto width = static_cast<f32>(picture->width());
+        const auto height = static_cast<f32>(picture->height());
+        canvas.draw(*picture, Rect{start + offset(place), middle - height / 2, width, height});
+    }
 }
 
 /** Draws the part of `texture` within the portrait's clip, from its top left. */
@@ -283,6 +447,50 @@ s32 legendsN64MeterStep(f32 maxHealth) {
     return static_cast<s32>(std::floor(maxHealth / static_cast<f32>(Layout::kMeterSteps)));
 }
 
+std::string legendsN64StatLine(std::string_view label, s32 value) {
+    if (value == 0) {
+        return std::format("{} ", label);
+    }
+    return std::format("{:>{}.{}} {:0{}}", label, kStatNameWidth, kStatNameWidth, value,
+                       kStatDigits);
+}
+
+std::optional<s32> legendsN64CarouselCount(const PowerupSlot& slot) {
+    // What the selector would count for the powerup worn: the N64 counts one taken off too.
+    PowerupSlot worn = slot;
+    worn.on = true;
+    const std::optional<f32> left = PowerupSelector::remaining(worn);
+    if (!left || *left < 1) {
+        return std::nullopt;
+    }
+    return static_cast<s32>(std::min(std::floor(*left), static_cast<f32>(kMostCountShown)));
+}
+
+void LegendsN64QuestList::add(LegendsN64QuestEntry entry) {
+    if (m_count < m_entries.size()) {
+        m_entries.at(m_count++) = entry;
+    }
+}
+
+LegendsN64QuestList legendsN64QuestEntries(u16 legends, u16 runes, u16 bossKeys) {
+    LegendsN64QuestList listed;
+    for (const s32 realm : kLegendsN64LegendRealms) {
+        if ((legends & (1U << static_cast<u32>(realm))) != 0) {
+            listed.add({.kind = QuestKind::Legend, .realm = realm});
+        }
+    }
+    if ((runes & StatusBoxPainter::kThirteenthRune) != 0) {
+        listed.add({.kind = QuestKind::ThirteenthRune});
+    }
+    if ((runes & kRealmRunes) != 0) {
+        listed.add({.kind = QuestKind::Runestones});
+    }
+    if ((bossKeys & kAllKeys) != 0) {
+        listed.add({.kind = QuestKind::Keys});
+    }
+    return listed;
+}
+
 bool LegendsN64HudPainter::load(RenderDevice& device, const std::filesystem::path& root,
                                 DarkLegacyHudArt& darkLegacy, std::span<const HudMember> party) {
     release();
@@ -314,7 +522,7 @@ bool LegendsN64HudPainter::load(RenderDevice& device, const std::filesystem::pat
             loadPortrait(device, files, member.classIndex);
         }
     }
-    borrowCountIcons(darkLegacy);
+    borrowPictures(darkLegacy);
     return true;
 }
 
@@ -329,8 +537,13 @@ void LegendsN64HudPainter::release() {
     m_glass = m_sand = nullptr;
     m_grains = {};
     m_countIcons.clear();
+    m_borrowed.clear();
+    m_runes = {};
+    m_thirteenthRune = nullptr;
+    m_keys = {};
     m_clock = {};
     m_meters = {};
+    m_seats = {};
     m_art.clear();
 }
 
@@ -356,6 +569,9 @@ void LegendsN64HudPainter::loadPictures(RenderDevice& device, const std::filesys
         take(name);
     }
     for (const std::string_view name : kHelpScrolls) {
+        take(name);
+    }
+    for (const std::string_view name : legendsN64ItemIcons()) {
         take(name);
     }
     m_color = m_art.find(kColor);
@@ -455,11 +671,38 @@ void LegendsN64HudPainter::loadTimer(RenderDevice& device, const AssetLocator& f
     }
 }
 
-void LegendsN64HudPainter::borrowCountIcons(DarkLegacyHudArt& darkLegacy) {
-    // Every icon a count may show is taken now, so that drawing looks nothing up.
+void LegendsN64HudPainter::borrowPictures(DarkLegacyHudArt& darkLegacy) {
+    // Every picture of Dark Legacy's a count, the carousel or the quest page may show is taken
+    // now, so that drawing looks nothing up.
     for (std::string& icon : PickupHud::countIcons()) {
         if (const Texture* picture = darkLegacy.countArt(icon)) {
             m_countIcons.emplace(std::move(icon), picture);
+        }
+    }
+    const auto keep = [this](std::string_view name, const Texture* picture) {
+        if (picture != nullptr) {
+            m_borrowed.emplace(std::string{name}, picture);
+        }
+    };
+    for (const std::string_view name : legendsN64PowerupFallbacks()) {
+        keep(name, darkLegacy.inventoryArt(name));
+    }
+    for (const s32 realm : kLegendsN64LegendRealms) {
+        if (const auto name = legendsN64LegendFallback(realm)) {
+            keep(*name, darkLegacy.selectArt(*name));
+        }
+    }
+    m_thirteenthRune = darkLegacy.staticArt(kThirteenthRuneArt);
+    for (usize rune = 0; rune < m_runes.size(); ++rune) {
+        m_runes.at(rune) = darkLegacy.staticArt(runeArt(static_cast<s32>(rune)));
+    }
+    // The keys share their four colours' pictures.
+    for (const std::string_view colour : StatusBoxPainter::kRelicColours) {
+        const Texture* picture = darkLegacy.staticArt(std::format("SM_KEY_{}", colour));
+        for (usize key = 0; key < m_keys.size(); ++key) {
+            if (StatusBoxPainter::kKeyColours.at(key) == colour) {
+                m_keys.at(key) = picture;
+            }
         }
     }
 }
@@ -472,7 +715,141 @@ void LegendsN64HudPainter::prepare(HudFrame& frame, const HudView& view) {
     // The parts drawn in Dark Legacy's look are prepared as that look prepares them.
     frame.darkLegacy.look().prepare(frame, view);
     const s64 steps = m_clock.advance(view.seconds);
-    easeMeters(view, steps, m_clock.rewound());
+    const bool rewound = m_clock.rewound();
+    easeMeters(view, steps, rewound);
+    for (usize seat = 0; seat < m_seats.size(); ++seat) {
+        turnPages(m_seats.at(seat), view.seats.at(seat), rewound);
+    }
+}
+
+void LegendsN64HudPainter::turnPages(SeatPages& pages, const HudSeat& shown, bool rewound) {
+    const s64 step = m_clock.step();
+    // A step lights its arrow, and hides the icons it changed, for the look's step it is first
+    // drawn in (FUN_e0056acc brings the swapped icons back an update later); a rewind takes
+    // back whatever showed.
+    if (rewound) {
+        pages.lit.reset();
+        pages.swapped = false;
+        pages.stepped = false;
+    } else if (pages.stepped) {
+        pages.steppedAt = step;
+        pages.stepped = false;
+    } else if (step > pages.steppedAt) {
+        pages.lit.reset();
+        pages.swapped = false;
+    }
+    pages.listed = legendsN64QuestEntries(shown.legends, shown.box.runes, shown.box.bossKeys);
+    const bool whole = standing(shown);
+    // A legend item newly held turns its holder's panel to it, centred, as FUN_e0054fdc turns
+    // the N64's to a new item: only a seat played here, as nobody here could turn another's
+    // back. What the look first sees a seat hold, or holds after a rewind, is not new.
+    if (shown.box.mode != StatusBoxView::Mode::Plain) {
+        const auto found =
+            pages.seen && !rewound ? static_cast<u16>(shown.legends & ~pages.legends) : u16{0};
+        pages.legends = shown.legends;
+        pages.seen = true;
+        // MSVC's checked array iterator is not a pointer; keep the portable iterator type.
+        // NOLINTNEXTLINE(readability-qualified-auto)
+        const auto realm = std::ranges::find_if(kLegendsN64LegendRealms, [found](s32 held) {
+            return (found & (1U << static_cast<u32>(held))) != 0;
+        });
+        if (shown.local && whole && realm != kLegendsN64LegendRealms.end()) {
+            pages.page = Page::Quest;
+            pages.quest = {.kind = QuestKind::Legend, .realm = *realm};
+        }
+    }
+    // While the selector is up its panel shows the carousel, and its own page goes back to the
+    // normal one. Moving the selection lights the arrow of the way it went, and swaps the icons.
+    if (whole && shown.selector != nullptr && selectorUp(*shown.selector)) {
+        const s32 selection = shown.selector->selection();
+        if (!rewound && pages.selection >= 0 && selection != pages.selection) {
+            pages.lit.reset();
+            if (shown.runtime != nullptr) {
+                const Inventory& inventory = shown.runtime->actor.save().progress().inventory;
+                // Dark Legacy's selector hands a powerup that runs out to the one before it,
+                // as left does.
+                if (selection == inventory.nextHeld(pages.selection, -1)) {
+                    pages.lit = Arrow::Left;
+                } else if (selection == inventory.nextHeld(pages.selection, 1)) {
+                    pages.lit = Arrow::Right;
+                }
+            }
+            pages.swapped = true;
+            pages.steppedAt = step;
+        }
+        pages.selection = selection;
+        pages.page = Page::Normal;
+    } else {
+        pages.selection = -1;
+    }
+    if (!whole || (pages.page == Page::Quest && pages.listed.entries().empty())) {
+        pages.page = Page::Normal;
+    }
+}
+
+void LegendsN64HudPainter::browse(s32 seat, const SelectorInput& presses) {
+    if (seat < 0 || static_cast<usize>(seat) >= m_seats.size()) {
+        return;
+    }
+    SeatPages& pages = m_seats.at(static_cast<usize>(seat));
+    const std::span<const LegendsN64QuestEntry> entries = pages.listed.entries();
+    if (presses.down) {
+        // The quest page is passed by while it lists nothing.
+        pages.page = pages.page == Page::Normal                      ? Page::Stats
+                     : pages.page == Page::Stats && !entries.empty() ? Page::Quest
+                                                                     : Page::Normal;
+    }
+    if (!presses.left && !presses.right) {
+        return;
+    }
+    // FUN_e00496d4 takes right before left, and either step lights its own arrow whatever it
+    // moves.
+    const bool right = presses.right;
+    pages.lit = right ? Arrow::Right : Arrow::Left;
+    pages.swapped = false;
+    pages.stepped = true;
+    switch (pages.page) {
+    case Page::Normal:
+        // FUN_e0055784 enters the stats at their first, FUN_e005596c at their last.
+        pages.page = Page::Stats;
+        pages.stat = right ? 0 : kStatRing.size() - 1;
+        break;
+    case Page::Stats:
+        if (right ? pages.stat + 1 < kStatRing.size() : pages.stat > 0) {
+            pages.stat = right ? pages.stat + 1 : pages.stat - 1;
+        } else {
+            // Past either end, the normal page again.
+            pages.page = Page::Normal;
+        }
+        break;
+    case Page::Quest:
+        if (!entries.empty()) {
+            // The entries go round, as the N64's quest items do.
+            const usize at = placeOf(pages.quest, entries);
+            const usize to = (at + (right ? 1 : entries.size() - 1)) % entries.size();
+            pages.swapped = to != at;
+            pages.quest = entries[to];
+        }
+        break;
+    case Page::Powerups: break;
+    }
+}
+
+LegendsN64HudPainter::Page LegendsN64HudPainter::pageOf(usize seat, const HudSeat& shown) const {
+    if (!standing(shown)) {
+        return Page::Normal;
+    }
+    if (shown.selector != nullptr && selectorUp(*shown.selector)) {
+        return Page::Powerups;
+    }
+    const Page page = m_seats.at(seat).page;
+    if (page == Page::Quest &&
+        legendsN64QuestEntries(shown.legends, shown.box.runes, shown.box.bossKeys)
+            .entries()
+            .empty()) {
+        return Page::Normal;
+    }
+    return page;
 }
 
 void LegendsN64HudPainter::easeMeters(const HudView& view, s64 steps, bool rewound) {
@@ -633,8 +1010,8 @@ void LegendsN64HudPainter::drawBossMeters(HudFrame& frame, const HudView& view) 
     }
 }
 
-void LegendsN64HudPainter::drawSelectors(HudFrame& frame, const HudView& view) {
-    frame.darkLegacy.look().drawSelectors(frame, view);
+void LegendsN64HudPainter::drawSelectors(HudFrame& /*frame*/, const HudView& /*view*/) {
+    // The panels draw their carousels.
 }
 
 void LegendsN64HudPainter::drawHelp(HudFrame& frame, const HudView& view) {
@@ -686,11 +1063,15 @@ void LegendsN64HudPainter::drawPanel(Canvas& canvas, usize seat, const HudSeat& 
         drawEmpty(canvas, left, shadeOf(Layout::kDark, box.color));
         return;
     }
+    const Page page = pageOf(seat, shown);
+    // The carousel and the quest page stand in the portrait's place and dim what is carried
+    // (FUN_e0056acc).
+    const bool items = page == Page::Powerups || page == Page::Quest;
     const Color bright = shadeOf(Layout::kBright, box.color);
     if (m_color != nullptr) {
         drawMirrored(canvas, *m_color, left, top, true, bright);
     }
-    if (box.classIndex >= 0 && box.classIndex < kClassCount) {
+    if (!items && box.classIndex >= 0 && box.classIndex < kClassCount) {
         const Portrait& portrait = m_portraits.at(static_cast<usize>(box.classIndex));
         if (portrait.light != nullptr) {
             drawPortraitPart(canvas, *portrait.light, left, top, bright);
@@ -708,12 +1089,13 @@ void LegendsN64HudPainter::drawPanel(Canvas& canvas, usize seat, const HudSeat& 
     }
     // FUN_e0056acc names the key and the bottle only while some are carried. Dark Legacy's
     // health may stand past its level's most, which is full health still.
+    const u8 carried = items ? static_cast<u8>(kOpaque - Layout::kCarriedDimmed) : kOpaque;
     if (box.keys > 0 && m_key != nullptr) {
-        drawCentred(canvas, *m_key, left, top, Layout::kKey, kOpaque);
+        drawCentred(canvas, *m_key, left, top, Layout::kKey, carried);
     }
     if (box.potions > 0) {
         if (const Texture* bottle = m_art.find(legendsN64PotionBottle(box.potionKind))) {
-            drawCentred(canvas, *bottle, left, top, Layout::kPotion, kOpaque);
+            drawCentred(canvas, *bottle, left, top, Layout::kPotion, carried);
         }
     }
     if (m_heart != nullptr) {
@@ -722,10 +1104,129 @@ void LegendsN64HudPainter::drawPanel(Canvas& canvas, usize seat, const HudSeat& 
                     full ? kOpaque : static_cast<u8>(kOpaque - Layout::kHeartShort));
     }
     if (m_arrow != nullptr) {
-        const auto resting = static_cast<u8>(kOpaque - Layout::kArrowResting);
-        drawCentred(canvas, *m_arrow, left, top, Layout::kLeftArrow, resting);
-        drawCentred(canvas, *m_arrow, left, top, Layout::kRightArrow, resting, true);
+        // An arrow a step lit stands opaque until the step settles.
+        const std::optional<Arrow> lit = m_seats.at(seat).lit;
+        const auto opacity = [&](Arrow arrow) {
+            return lit == arrow ? kOpaque : static_cast<u8>(kOpaque - Layout::kArrowResting);
+        };
+        drawCentred(canvas, *m_arrow, left, top, Layout::kLeftArrow, opacity(Arrow::Left));
+        drawCentred(canvas, *m_arrow, left, top, Layout::kRightArrow, opacity(Arrow::Right), true);
     }
+    if (page == Page::Powerups) {
+        drawPowerups(canvas, seat, shown);
+    } else if (page == Page::Quest) {
+        drawQuest(canvas, seat, shown);
+    }
+}
+
+void LegendsN64HudPainter::drawPowerups(Canvas& canvas, usize seat, const HudSeat& shown) const {
+    // The icons go for the step that swaps them.
+    if (m_seats.at(seat).swapped || shown.runtime == nullptr || shown.selector == nullptr) {
+        return;
+    }
+    const Inventory& inventory = shown.runtime->actor.save().progress().inventory;
+    const s32 selected = shown.selector->selection();
+    if (!heldAt(inventory, selected)) {
+        return;
+    }
+    const auto left = static_cast<f32>(Layout::kSlotX.at(seat));
+    const auto top = static_cast<f32>(Layout::kStripTop);
+    const Places places =
+        placesAround(selected, inventory.nextHeld(selected, -1), inventory.nextHeld(selected, 1));
+    for (const Place& place : placesOf(places)) {
+        if (!heldAt(inventory, place.entry)) {
+            continue;
+        }
+        const PowerupSlot& slot = inventory.powerups[static_cast<usize>(place.entry)];
+        const ItemPicture picture = powerupPicture(slot);
+        if (picture.texture != nullptr) {
+            drawItem(canvas, *picture.texture, picture.fitted, left, top, place.centre, place.scale,
+                     slot.on ? kOpaque : static_cast<u8>(kOpaque - Layout::kSwitchedOff));
+        }
+    }
+}
+
+void LegendsN64HudPainter::drawQuest(Canvas& canvas, usize seat, const HudSeat& shown) const {
+    const SeatPages& pages = m_seats.at(seat);
+    if (pages.swapped) {
+        return;
+    }
+    const LegendsN64QuestList listed =
+        legendsN64QuestEntries(shown.legends, shown.box.runes, shown.box.bossKeys);
+    const std::span<const LegendsN64QuestEntry> entries = listed.entries();
+    if (entries.empty()) {
+        return;
+    }
+    const auto left = static_cast<f32>(Layout::kSlotX.at(seat));
+    const auto top = static_cast<f32>(Layout::kStripTop);
+    const usize at = placeOf(pages.quest, entries);
+    // The runestones and the keys, centred, stand as Dark Legacy's whole rows across the panel,
+    // in place of the three icons.
+    if (entries[at].kind == QuestKind::Runestones) {
+        drawRow(canvas, left, m_runes, static_cast<u16>(shown.box.runes & kRealmRunes),
+                StatusBoxPainter::kRuneStep, StatusBoxPainter::kRunesInColour);
+        return;
+    }
+    if (entries[at].kind == QuestKind::Keys) {
+        drawRow(canvas, left, m_keys, static_cast<u16>(shown.box.bossKeys & kAllKeys),
+                StatusBoxPainter::kKeyStep, 0);
+        return;
+    }
+    const auto count = static_cast<s32>(entries.size());
+    const auto selected = static_cast<s32>(at);
+    const Places places =
+        placesAround(selected, (selected + count - 1) % count, (selected + 1) % count);
+    for (const Place& place : placesOf(places)) {
+        if (place.entry < 0) {
+            continue;
+        }
+        // Quest items are never taken off: they stand opaque.
+        const ItemPicture picture = questPicture(entries[static_cast<usize>(place.entry)], shown);
+        if (picture.texture != nullptr) {
+            drawItem(canvas, *picture.texture, picture.fitted, left, top, place.centre, place.scale,
+                     kOpaque);
+        }
+    }
+}
+
+LegendsN64HudPainter::ItemPicture
+LegendsN64HudPainter::powerupPicture(const PowerupSlot& slot) const {
+    if (const auto icon = legendsN64PowerupIcon(slot.kind, slot.flags)) {
+        return {.texture = m_art.find(*icon), .fitted = false};
+    }
+    // A powerup the N64 has no icon for shows Dark Legacy's picture; one neither knows, none.
+    if (const auto fallback = legendsN64PowerupFallback(slot.kind, slot.flags)) {
+        return {.texture = borrowed(*fallback), .fitted = true};
+    }
+    return {};
+}
+
+LegendsN64HudPainter::ItemPicture
+LegendsN64HudPainter::questPicture(const LegendsN64QuestEntry& entry, const HudSeat& shown) const {
+    switch (entry.kind) {
+    case QuestKind::Legend:
+        if (const auto icon = legendsN64LegendIcon(entry.realm)) {
+            return {.texture = m_art.find(*icon), .fitted = false};
+        }
+        if (const auto fallback = legendsN64LegendFallback(entry.realm)) {
+            return {.texture = borrowed(*fallback), .fitted = true};
+        }
+        return {};
+    case QuestKind::ThirteenthRune: return {.texture = m_thirteenthRune, .fitted = true};
+    // Beside the selection, a row is its first piece held.
+    case QuestKind::Runestones:
+        return {.texture = firstHeld(m_runes, static_cast<u16>(shown.box.runes & kRealmRunes)),
+                .fitted = true};
+    case QuestKind::Keys:
+        return {.texture = firstHeld(m_keys, static_cast<u16>(shown.box.bossKeys & kAllKeys)),
+                .fitted = true};
+    }
+    return {};
+}
+
+const Texture* LegendsN64HudPainter::borrowed(std::string_view name) const {
+    const auto found = m_borrowed.find(name);
+    return found == m_borrowed.end() ? nullptr : found->second;
 }
 
 void LegendsN64HudPainter::drawEmpty(Canvas& canvas, f32 left, Color shade) const {
@@ -773,9 +1274,48 @@ void LegendsN64HudPainter::drawWords(Canvas& canvas, usize seat, const HudSeat& 
         write(canvas, m_small.text, left + Layout::kPotionCount.x, top + Layout::kPotionCount.y,
               std::format("{}", box.potions));
     }
-    write(canvas, m_name.text, left + Layout::kName.x, top + Layout::kName.y, cut(box.name));
-    write(canvas, m_small.text, left + Layout::kClass.x, top + Layout::kClass.y,
-          cut(classWords(view, shown)));
+    const Page page = pageOf(seat, shown);
+    if (page == Page::Powerups) {
+        drawCarouselCount(canvas, seat, shown);
+    }
+    // The stats page writes its stat in the name's place; the carousel and the quest page
+    // write neither, nor the class (FUN_e0056acc).
+    if (page == Page::Stats) {
+        const StatWord& stat = kStatRing.at(std::min(m_seats.at(seat).stat, kStatRing.size() - 1));
+        const std::string_view label = words(view, legendsN64HudTextKey(stat.text));
+        if (!label.empty()) {
+            write(canvas, m_small.text, left + Layout::kStatLine.x, top + Layout::kStatLine.y,
+                  legendsN64StatLine(label, statOf(shown, stat.stat)));
+        }
+    } else if (page == Page::Normal) {
+        write(canvas, m_name.text, left + Layout::kName.x, top + Layout::kName.y, cut(box.name));
+    }
+    if (page == Page::Normal || page == Page::Stats) {
+        write(canvas, m_small.text, left + Layout::kClass.x, top + Layout::kClass.y,
+              cut(classWords(view, shown)));
+    }
+}
+
+void LegendsN64HudPainter::drawCarouselCount(Canvas& canvas, usize seat,
+                                             const HudSeat& shown) const {
+    // It goes with the icons for the step that swaps them, and is dimmed with the selection's.
+    if (m_seats.at(seat).swapped || shown.runtime == nullptr || shown.selector == nullptr ||
+        !m_small.text.ready()) {
+        return;
+    }
+    const Inventory& inventory = shown.runtime->actor.save().progress().inventory;
+    const s32 selected = shown.selector->selection();
+    if (!heldAt(inventory, selected)) {
+        return;
+    }
+    const PowerupSlot& slot = inventory.powerups[static_cast<usize>(selected)];
+    if (const std::optional<s32> count = legendsN64CarouselCount(slot)) {
+        const u8 opacity = slot.on ? kOpaque : static_cast<u8>(kOpaque - Layout::kSwitchedOff);
+        m_small.text.draw(canvas, Layout::kSlotX.at(seat) + Layout::kCount.x,
+                          Layout::kStripTop + Layout::kCount.y,
+                          std::format("{:{}}", *count, Layout::kCountDigits),
+                          TextStyle{.color = Color::white().withAlpha(opacity)});
+    }
 }
 
 void LegendsN64HudPainter::drawLights(Canvas& canvas, usize seat, const HudSeat& shown) const {
@@ -808,14 +1348,12 @@ void LegendsN64HudPainter::drawCounts(Canvas& canvas, const HudView& view) const
         return;
     }
     // The N64 has no ticker: Dark Legacy's, centred over each panel in canvas units, its counts
-    // written in font 2 at the frame's proportions wherever they stand.
+    // written in font 2 at the frame's proportions wherever they stand. They keep their place
+    // while a selector is up: its carousel stays within the panel.
     const auto icon = static_cast<f32>(StatusBoxPainter::kCountIconSize);
     const auto gap = static_cast<f32>(StatusBoxPainter::kCountIconGap);
     for (usize seat = 0; seat < view.seats.size(); ++seat) {
-        const PowerupSelector* selector = view.seats.at(seat).selector;
-        const s32 bottom = selector != nullptr && selector->showing()
-                               ? PickupHud::countRowY(selector->labelY(StatusBoxPainter::kY))
-                               : Layout::kTickerRestTop;
+        const s32 bottom = Layout::kTickerRestTop;
         const f32 middle =
             static_cast<f32>(Layout::kSlotX.at(seat)) + static_cast<f32>(Layout::kPanelWidth) / 2;
         const f32 centre = LegendsN64Frame::toCanvas({middle, 0.0f}).x;

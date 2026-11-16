@@ -20,16 +20,20 @@
 #include "engine/ui/Canvas.h"
 #include "engine/ui/TextPainter.h"
 
+#include "expansions/n64/hud/LegendsN64HudIcons.h"
 #include "expansions/n64/hud/LegendsN64HudLayout.h"
 #include "expansions/shared/hud/LegendsHudArt.h"
 #include "expansions/shared/hud/LegendsHudClock.h"
 #include "expansions/shared/hud/LegendsHudStyleIds.h"
 #include "game/characters/ClassData.h"
+#include "game/characters/Inventory.h"
 #include "game/hud/BossMeter.h"
 #include "game/hud/DarkLegacyHudArt.h"
 #include "game/hud/HudPainter.h"
 #include "game/hud/HudStyles.h"
 #include "game/hud/HudView.h"
+#include "game/hud/StatusBox.h"
+#include "game/players/PlayerControls.h"
 
 namespace gdl::game {
 
@@ -82,15 +86,62 @@ std::array<s32, 2> legendsN64MeterWidths(f32 share, f32 strip, f32 leftInset, f3
  * `maxHealth`, the maximum of the meter bound last, in whole health (FUN_e08887b8). */
 s32 legendsN64MeterStep(f32 maxHealth);
 
+/** The line the stats page writes for the stat named `label` at `value` (e00aad34, e00aad40):
+ * the name right-aligned in eight characters and cut to them, a space, then the value in six
+ * digits; the name and a space alone at nought. */
+std::string legendsN64StatLine(std::string_view label, s32 value);
+
+/** What the carousel writes under powerup `slot`: what Dark Legacy's selector counts it has
+ * left, whole, as the N64 writes its seconds and charges; none at nought, or with nothing to
+ * count. A powerup taken off keeps its count, which the N64 writes with its dimmed icon. */
+std::optional<s32> legendsN64CarouselCount(const PowerupSlot& slot);
+
+/** One of the quest page's entries. */
+struct LegendsN64QuestEntry {
+    enum class Kind : u8 {
+        Legend,         ///< the legend item for realm `realm`'s boss
+        ThirteenthRune, ///< the tower's own runestone
+        Runestones,     ///< the twelve the realms hold, as a row
+        Keys,           ///< the bosses' keys, as a row
+    };
+    Kind kind = Kind::Legend;
+    s32 realm = 0;
+    bool operator==(const LegendsN64QuestEntry&) const = default;
+};
+
+/** The quest page's entries, in the order it lists them. */
+class LegendsN64QuestList {
+public:
+    /** Every legend item, the thirteenth rune, the runestones and the keys. */
+    static constexpr usize kMost = kLegendsN64LegendRealms.size() + 3;
+
+    std::span<const LegendsN64QuestEntry> entries() const {
+        return std::span{m_entries}.first(m_count);
+    }
+    void add(LegendsN64QuestEntry entry);
+
+private:
+    std::array<LegendsN64QuestEntry, kMost> m_entries{};
+    usize m_count = 0;
+};
+
+/** The quest page's entries for a seat holding the legend items `legends` (a bit a realm), the
+ * runestones `runes` (StatusBoxView's, the thirteenth apart) and the bosses' keys `bossKeys`:
+ * its legend items in their realms' order, then the thirteenth rune, then the runestones and
+ * then the keys, each while it holds any. */
+LegendsN64QuestList legendsN64QuestEntries(u16 legends, u16 runes, u16 bossKeys);
+
 /**
  * The N64's look of the play HUD, drawn from the player's own N64 extraction in its 416x220
  * frame: a status panel along the bottom for each seat, lit in the costume's colour, with the
  * class's portrait, the turbo meter, health, keys, potions, the name and the class, or the
  * empty panel for a seat nobody plays and a player fallen to the tower; Dark Legacy's pickup
  * counts over the panels, in its own font; the hourglass, the help on the player's coloured
- * scroll and the boss meters across the top. It shows Dark Legacy's state. The runestone finder
- * and the selector labels are Dark Legacy's, as is the hourglass when the N64's timer art is not
- * there.
+ * scroll and the boss meters across the top. It shows Dark Legacy's state. A panel shows the
+ * powerups carousel while its selector is up, and a seat played here browses its own stats and
+ * quest pages while the selector is down; Dark Legacy's runestones, keys and legend items
+ * without N64 art show in Dark Legacy's pictures there. The runestone finder is Dark Legacy's,
+ * as is the hourglass when the N64's timer art is not there.
  */
 class LegendsN64HudPainter final : public HudPainter {
 public:
@@ -110,26 +161,59 @@ public:
     GDL_NON_COPYABLE_NON_MOVABLE(LegendsN64HudPainter);
 
     /** Takes the look's pictures and fonts from the N64 extraction `root`, the portraits of
-     * `party`'s classes, and the pickup counts' icons from `darkLegacy`; false when the HUD bank
-     * or a font is missing. One that is there but cannot be read, or a HUD bank without a
-     * picture the look draws, throws, naming it. A portrait bank that is missing or cannot be
-     * read leaves its class's portrait out, and a timer bank the N64's hourglass. */
+     * `party`'s classes, and from `darkLegacy` the pickup counts' icons and the pictures the
+     * carousel and the quest page show where the N64 has none; false when the HUD bank or a
+     * font is missing. One that is there but cannot be read, or a HUD bank without a picture
+     * the look draws, throws, naming it. A portrait bank that is missing or cannot be read
+     * leaves its class's portrait out, and a timer bank the N64's hourglass. */
     bool load(RenderDevice& device, const std::filesystem::path& root, DarkLegacyHudArt& darkLegacy,
               std::span<const HudMember> party);
 
     std::string_view id() const override { return kLegendsN64HudStyle; }
     /** The canvas row of frame row 170, the panels' top: 300.28. */
     f32 statusTop() const override;
-    /** Steps the look's clock with the play clock and eases the boss meters by it. */
+    /** Steps the look's clock with the play clock, eases the boss meters by it, and turns each
+     * panel's page as its seat's selector and legend items change. */
     void prepare(HudFrame& frame, const HudView& view) override;
     void drawStatus(HudFrame& frame, const HudView& view) override;
     void drawRuneMeter(HudFrame& frame, const HudView& view) override;
     void drawHourglass(HudFrame& frame, const HudView& view) override;
     void drawBossMeters(HudFrame& frame, const HudView& view) override;
+    /** Nothing: an open selector shows as its panel's carousel, and the N64 writes no
+     * powerup's name over its panels. */
     void drawSelectors(HudFrame& frame, const HudView& view) override;
     void drawHelp(HudFrame& frame, const HudView& view) override;
+    /** Down turns the panel from its normal page to the stats page, then the quest page while
+     * it lists anything, then back; left and right go round the stats from either end and back
+     * to the normal page past them, or round the quest page's entries (FUN_e00496d4). */
+    void browse(s32 seat, const SelectorInput& presses) override;
 
 private:
+    /** What a panel shows. A seat's own page is never Powerups: the carousel shows while its
+     * selector is up. */
+    enum class Page : u8 { Normal, Stats, Quest, Powerups };
+    /** Which of a panel's arrows a step lit. */
+    enum class Arrow : u8 { Left, Right };
+    /** A seat's own view of its panel, which only the look keeps. */
+    struct SeatPages {
+        Page page = Page::Normal;
+        usize stat = 0;             ///< the stat the stats page shows, by its place in the ring
+        LegendsN64QuestEntry quest; ///< the entry the quest page centres
+        LegendsN64QuestList listed; ///< the quest page's entries when last prepared
+        s32 selection = -1;         ///< the carousel's selection when last seen; -1 while hidden
+        std::optional<Arrow> lit;   ///< the arrow the last step lit, until it settles
+        bool swapped = false;       ///< the last step changed the icons, hidden until it settles
+        bool stepped = false;       ///< browsed since the last prepare
+        s64 steppedAt = 0;          ///< the look's step the last step was first shown at
+        u16 legends = 0;            ///< the legend items held when last seen
+        bool seen = false;          ///< whether the look has seen the seat played
+    };
+    /** A picture the carousel or the quest page shows: its own size, or fitted into an icon's
+     * square. */
+    struct ItemPicture {
+        const Texture* texture = nullptr;
+        bool fitted = false;
+    };
     /** A font the panels write in: its glyphs, its sheet and what writes with them. */
     struct Font {
         BitmapFont glyphs;
@@ -154,13 +238,23 @@ private:
                          std::string_view name, Font& font);
     void loadPortrait(RenderDevice& device, const AssetLocator& files, s32 classIndex);
     void loadTimer(RenderDevice& device, const AssetLocator& files);
-    void borrowCountIcons(DarkLegacyHudArt& darkLegacy);
+    void borrowPictures(DarkLegacyHudArt& darkLegacy);
     void easeMeters(const HudView& view, s64 steps, bool rewound);
+    void turnPages(SeatPages& pages, const HudSeat& shown, bool rewound);
+    /** What seat `seat`'s panel shows this frame. */
+    Page pageOf(usize seat, const HudSeat& shown) const;
     void drawPanel(Canvas& canvas, usize seat, const HudSeat& shown) const;
     void drawEmpty(Canvas& canvas, f32 left, Color shade) const;
+    void drawPowerups(Canvas& canvas, usize seat, const HudSeat& shown) const;
+    void drawQuest(Canvas& canvas, usize seat, const HudSeat& shown) const;
     void drawWords(Canvas& canvas, usize seat, const HudSeat& shown, const HudView& view) const;
+    void drawCarouselCount(Canvas& canvas, usize seat, const HudSeat& shown) const;
     void drawLights(Canvas& canvas, usize seat, const HudSeat& shown) const;
     void drawCounts(Canvas& canvas, const HudView& view) const;
+    ItemPicture powerupPicture(const PowerupSlot& slot) const;
+    ItemPicture questPicture(const LegendsN64QuestEntry& entry, const HudSeat& shown) const;
+    /** The picture of Dark Legacy's named `name` the look took as it opened; null for none. */
+    const Texture* borrowed(std::string_view name) const;
     /** The scroll for a message in costume colour `color`; the plain one for none. */
     const Texture* helpScroll(s32 color) const;
 
@@ -179,11 +273,20 @@ private:
     std::array<const Texture*, LegendsN64HudLayout::kSandFrames> m_grains{}; ///< SAND_ANIM00..04
     /** Dark Legacy's pickup count icons, borrowed from its art as the look opened. */
     std::map<std::string, const Texture*, std::less<>> m_countIcons;
-    Font m_small;   ///< font 2: the counts, the class and the prompt
+    /** Dark Legacy's INVENTORY and SELECT pictures of the items the N64 has no icon for,
+     * borrowed as the look opened. */
+    std::map<std::string, const Texture*, std::less<>> m_borrowed;
+    /** Dark Legacy's STATIC runestones (SM_RUNE_), the thirteenth's and the bosses' keys
+     * (SM_KEY_, by key), borrowed as the look opened. */
+    std::array<const Texture*, static_cast<usize>(StatusBoxPainter::kRuneCount)> m_runes{};
+    const Texture* m_thirteenthRune = nullptr;
+    std::array<const Texture*, static_cast<usize>(StatusBoxPainter::kKeyCount)> m_keys{};
+    Font m_small;   ///< font 2: the counts, the class, the stats and the prompt
     Font m_name;    ///< font 5: the player's name and the help
     Font m_numbers; ///< font 6: health
     LegendsHudClock m_clock;
     std::array<ShownMeter, BossMeters::kCapacity> m_meters{};
+    std::array<SeatPages, HudView::kSeats> m_seats{};
 };
 
 } // namespace gdl::game

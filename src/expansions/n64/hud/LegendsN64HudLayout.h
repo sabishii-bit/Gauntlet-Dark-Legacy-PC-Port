@@ -25,11 +25,11 @@ struct LegendsN64TurboSpan {
 };
 
 /**
- * Where game.bin's HUD puts its parts in the 416x220 frame: the status panels, the hourglass,
- * the advice scrolls and the boss meters. A panel's point is relative to its panel's top left,
- * (kSlotX[seat], kStripTop); a picture's is its centre, as e005a154's records place them, and a
- * line's its left end and top. The hourglass's, the scrolls' and the meters' are the frame's
- * own; the port's ticker stands in canvas units.
+ * Where game.bin's HUD puts its parts in the 416x220 frame: the status panels with their pages
+ * and carousel, the hourglass, the advice scrolls and the boss meters. A panel's point is
+ * relative to its panel's top left, (kSlotX[seat], kStripTop); a picture's is its centre, as
+ * e005a154's records place them, and a line's its left end and top. The hourglass's, the
+ * scrolls' and the meters' are the frame's own; the port's ticker stands in canvas units.
  */
 struct LegendsN64HudLayout {
     // FUN_e0056630 and FUN_e0057b90: four 104x50 panels along the frame's bottom, one a seat,
@@ -69,7 +69,24 @@ struct LegendsN64HudLayout {
     static constexpr LegendsN64Point kPotionCount{78, 10};
     static constexpr LegendsN64Point kName{25, 30};
     static constexpr LegendsN64Point kClass{20, 40};
-    static constexpr usize kWordLength = 10; ///< "%.10s"
+    static constexpr usize kWordLength = 10;           ///< "%.10s"
+    static constexpr LegendsN64Point kStatLine{8, 28}; ///< the stats page's line, for the name
+    static constexpr LegendsN64Point kCount{64, 40};   ///< what the selection has left, "%4d"
+    static constexpr s32 kCountDigits = 4;
+
+    // e005a154's records 8 to 10 and FUN_e0059e00: the carousel, its selection between the one
+    // before it and the one after, smaller; the quest page lists its entries the same way.
+    static constexpr LegendsN64Point kPrevious{28, 28};
+    static constexpr LegendsN64Point kSelected{52, 32};
+    static constexpr LegendsN64Point kNext{77, 28};
+    static constexpr f32 kNeighbourScale = 0.6f;
+    /** The HUD bank's item icons are this square; a picture borrowed from Dark Legacy is fitted
+     * into it. */
+    static constexpr f32 kIconSize = 28;
+    static constexpr u8 kSwitchedOff = 0x80; ///< a powerup's icon's transparency while it is off
+    /** FUN_e0056acc: the key's and the bottle's transparency while the carousel or the quest
+     * page shows. */
+    static constexpr u8 kCarriedDimmed = 0x78;
 
     /** The port's: the N64 has no fallen prompt, so its two lines stand centred in the empty
      * panel at these tops. */
@@ -91,7 +108,7 @@ struct LegendsN64HudLayout {
     }};
 
     /** The port's: the N64 has no ticker. Dark Legacy's counts stack up from this canvas row,
-     * clear of the panels' top (300.28), while no selector label is up. */
+     * clear of the panels' top (300.28); no label rises over the panels to push them. */
     static constexpr s32 kTickerRestTop = 282;
 
     // FUN_e0069ee0: the hourglass, TIMER_P0's glass with TIMER_P1's sand drawn from the same

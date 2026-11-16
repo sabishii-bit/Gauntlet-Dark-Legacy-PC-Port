@@ -2,6 +2,7 @@
 #include <array>
 #include <cmath>
 #include <filesystem>
+#include <format>
 #include <initializer_list>
 #include <optional>
 #include <span>
@@ -244,24 +245,50 @@ HudSeat fallen(HudSeat seat, bool inTower, bool prompt = false, bool quitOffered
     return seat;
 }
 
+/** A picture Dark Legacy's art lends the look: its set, its name and its size. */
+struct LentPicture {
+    test::DarkLegacyLookup::Set set = test::DarkLegacyLookup::Set::Static;
+    std::string_view name;
+    u32 width = 16;
+    u32 height = 16;
+};
+
 /** The N64 look loaded from a synthetic extraction for `party`, with the device it uploads to,
- * Dark Legacy's art it may borrow, lending the count icons `countIcons`, and the words its
- * panels write. */
+ * Dark Legacy's art it may borrow, lending the count icons `countIcons` and the pictures
+ * `pictures`, and the words its panels write. */
 struct LoadedLook {
     test::LegendsN64HudFixture files;
     test::FakeRenderDevice device;
     test::FakeDarkLegacyArt art;
     StringTable strings;
     LegendsN64HudPainter look;
+    std::vector<std::pair<std::string, const Texture*>> lent; ///< each lent picture, by name
 
     LoadedLook(std::string_view name, std::span<const HudMember> party,
-               std::initializer_list<std::string_view> countIcons = {})
+               std::initializer_list<std::string_view> countIcons = {},
+               std::span<const LentPicture> pictures = {})
         : files(name) {
         for (const std::string_view icon : countIcons) {
             art.give(test::DarkLegacyLookup::Set::Count, icon);
         }
+        for (const LentPicture& picture : pictures) {
+            lent.emplace_back(std::string{picture.name},
+                              &art.give(picture.set, picture.name, picture.width, picture.height));
+        }
         REQUIRE(strings.load(test::dataDirectory() / "text", "en"));
         REQUIRE(look.load(device, files.root(), art, party));
+    }
+
+    /** The picture lent under `name`. */
+    const Texture* lentPicture(std::string_view name) const {
+        const Texture* found = nullptr;
+        for (const auto& [lentName, picture] : lent) {
+            if (lentName == name) {
+                found = picture;
+            }
+        }
+        REQUIRE(found != nullptr);
+        return found;
     }
 
     /** A view of `seats`, with these words. */
@@ -303,6 +330,104 @@ struct LoadedLook {
 f32 secondsAt(s32 step) {
     return (static_cast<f32>(step) + 0.5f) / LegendsHudClock::kStepsPerSecond;
 }
+
+/** `view` at the look's step `step`, readied for its draws. */
+void prepareAt(LoadedLook& n64, HudView& view, s32 step) {
+    view.seconds = secondsAt(step);
+    n64.prepare(view);
+}
+
+/** A standing warrior in seat `seat` whose save carries `carried`, its runtime and Dark Legacy's
+ * selector over its panel, which the case steps with its own copy of what is carried. */
+struct Holder {
+    PlayerRuntime runtime;
+    PowerupSelector selector;
+    Inventory inventory;
+
+    explicit Holder(const Inventory& carried, s32 seat = 0) : inventory(carried) {
+        CharacterSave save;
+        save.name = "A";
+        save.character = kWarriorClass;
+        save.color = seat;
+        save.progress().inventory = carried;
+        runtime.actor.spawn(seat, save, nullptr, Vec3{0}, 0);
+    }
+    /** Slides the selector up and open, naming the last powerup carried. */
+    void open() {
+        selector.step(SelectorInput{.up = true}, inventory,
+                      PowerupSelector::kSlide / PowerupSelector::kSlidePerTick);
+        selector.step({}, inventory, 1);
+        REQUIRE(selector.showing());
+    }
+    /** Slides the selector away and closed. */
+    void close() {
+        selector.step(SelectorInput{.down = true}, inventory, 1);
+        selector.step({}, inventory, PowerupSelector::kSlide / PowerupSelector::kSlidePerTick);
+        selector.step({}, inventory, 1);
+        REQUIRE(selector.state() == PowerupSelector::State::Closed);
+    }
+    /** The seat as the view shows it: costume colour `color`, played here when `local`. */
+    HudSeat seat(s32 color, bool local = true) const {
+        HudSeat shown = standing(kWarriorClass, color, "A");
+        shown.runtime = &runtime;
+        shown.selector = &selector;
+        shown.local = local;
+        return shown;
+    }
+};
+
+/** The lines `font` wrote along row `y` of panel `slot`. */
+std::vector<Line> linesAlong(std::span<const Quad> quads, const test::N64Font& font, usize slot,
+                             f32 y) {
+    std::vector<Line> found;
+    for (const Line& line : linesOf(quads, font)) {
+        if (line.y == kTop + y + 0.5f && slotOf({.area = {line.x, line.y, 0, 0}}) == slot) {
+            found.push_back(line);
+        }
+    }
+    return found;
+}
+
+/** The names of the HUD bank's item icons standing in `slot`, in the order drawn. */
+std::vector<std::string_view> iconsIn(std::span<const Quad> quads, usize slot) {
+    std::vector<std::string_view> names;
+    for (const std::string_view name : pictureOrder(quads, slot)) {
+        if (name.starts_with("HUD_")) {
+            names.push_back(name);
+        }
+    }
+    return names;
+}
+
+/** The quads in `slot` that draw `texture`. */
+std::vector<Quad> drawsOf(std::span<const Quad> quads, const Texture* texture, usize slot) {
+    std::vector<Quad> found;
+    for (const Quad& quad : quads) {
+        if (quad.texture == texture && slotOf(quad) == slot) {
+            found.push_back(quad);
+        }
+    }
+    return found;
+}
+
+/** Where a picture `width` by `height`, drawn at `scale` of its size, stands centred on point
+ * `centre` of panel `slot`. */
+Rect centredAt(usize slot, LegendsN64Point centre, f32 width, f32 height, f32 scale = 1) {
+    return {static_cast<f32>(Layout::kSlotX.at(slot)) + static_cast<f32>(centre.x) -
+                width * scale / 2,
+            kTop + static_cast<f32>(centre.y) - height * scale / 2, width * scale, height * scale};
+}
+
+/** Each arrow's colour in `slot`: the left one, then the right. */
+std::pair<Color, Color> arrowsIn(std::span<const Quad> quads, usize slot) {
+    const auto arrows = picturesIn(quads, "ARROW", slot);
+    REQUIRE(arrows.size() == 2);
+    return {arrows[0].color, arrows[1].color};
+}
+
+/** An arrow at rest, and one a step lit. */
+constexpr Color kArrowResting = Color::white().withAlpha(127);
+constexpr Color kArrowLit = Color::white();
 
 /** A boss's meter art: two strips, each a background and a fill `width` by `height`. */
 TextureSet meterArt(u32 width, u32 height) {
@@ -925,30 +1050,51 @@ TEST_CASE("a missing class bank never stops the N64 look, a missing or truncated
 }
 
 TEST_CASE("the N64 look takes every picture it borrows as it opens", "[legends][n64-hud]") {
+    using Set = test::DarkLegacyLookup::Set;
     test::LegendsN64HudFixture files("n64-hud-borrowed");
     test::FakeRenderDevice device;
     test::FakeDarkLegacyArt art;
     // Dark Legacy's art stands ready to lend what a look might ask of it, and a crystal's
     // count icon.
-    std::vector<const Texture*> lent;
-    for (const auto set :
-         {test::DarkLegacyLookup::Set::Static, test::DarkLegacyLookup::Set::Select,
-          test::DarkLegacyLookup::Set::Count, test::DarkLegacyLookup::Set::Inventory}) {
+    struct Lent {
+        test::DarkLegacyLookup lookup;
+        const Texture* picture = nullptr;
+    };
+    std::vector<Lent> lent;
+    for (const Set set : {Set::Static, Set::Select, Set::Count, Set::Inventory}) {
         for (const std::string_view name : {"RUNE13", "SM_KEY_BLU", "S4_WAR", "SHP_XRAY_GLASSES"}) {
-            lent.push_back(&art.give(set, name));
+            lent.push_back({{set, std::string{name}}, &art.give(set, name)});
         }
     }
-    const Texture& crystal =
-        art.give(test::DarkLegacyLookup::Set::Count, PickupHud::crystalIcon(1));
+    const Texture& crystal = art.give(Set::Count, PickupHud::crystalIcon(1));
     StringTable strings;
     REQUIRE(strings.load(test::dataDirectory() / "text", "en"));
     LegendsN64HudPainter look;
     REQUIRE(look.load(device, files.root(), art, kWarriorAndWizard));
-    // As it opens it takes every icon Dark Legacy's pickup counts may show, and nothing else:
-    // the panels, the hourglass, the help and the meters draw the N64's own art.
+    // As it opens it takes every icon Dark Legacy's pickup counts may show; INVENTORY's pictures
+    // of the powerups the N64 has no icon for and SELECT's of the legend items; STATIC's
+    // thirteenth rune, its twelve runestones and its four keys; and nothing else: the panels,
+    // the hourglass, the help and the meters draw the N64's own art.
     std::vector<test::DarkLegacyLookup> borrowed;
     for (const std::string& icon : PickupHud::countIcons()) {
-        borrowed.push_back({test::DarkLegacyLookup::Set::Count, icon});
+        borrowed.push_back({Set::Count, icon});
+    }
+    for (const std::string_view name :
+         {"SHP_GASMASK", "SHP_XRAY_GLASSES", "SHP_POJOEGG", "SHP_TURBO_BOOST", "SHP_MIKEY",
+          "SHP_HANDOFDEATH", "SHP_HEALTHVAMPIRE"}) {
+        borrowed.push_back({Set::Inventory, std::string{name}});
+    }
+    for (const std::string_view name : {"LAMP", "BILLOWS", "BOOK", "LANTERN"}) {
+        borrowed.push_back({Set::Select, std::string{name}});
+    }
+    borrowed.push_back({Set::Static, "RUNE13"});
+    for (const std::string_view colour : {"BLU", "RED", "YEL", "GRE"}) {
+        for (s32 rune = 1; rune <= 3; ++rune) {
+            borrowed.push_back({Set::Static, std::format("SM_RUNE_{}_0{}", colour, rune)});
+        }
+    }
+    for (const std::string_view colour : {"BLU", "RED", "YEL", "GRE"}) {
+        borrowed.push_back({Set::Static, std::format("SM_KEY_{}", colour)});
     }
     CHECK(art.lookups == borrowed);
 
@@ -962,19 +1108,29 @@ TEST_CASE("the N64 look takes every picture it borrows as it opens", "[legends][
     REQUIRE(uploaded > 0);
 
     // Every seat state and every part of the HUD, drawn twice: nothing is looked up or
-    // uploaded while drawing.
-    HudSeat carrying = standing(kWarriorClass, 0, "A", 250);
+    // uploaded while drawing. Seat 0 carries keys, a potion and an X-ray powerup, its selector
+    // up over its panel; seat 3, played here, browses to its quest page, holding the
+    // thirteenth rune, a scimitar and the first boss's key.
+    Inventory carried;
+    carried.powerups[0] = PowerupSlot{120, powerup::kSpecial, 0, powerup::kXRay, true};
+    Holder holder(carried, 0);
+    holder.open();
+    HudSeat carrying = holder.seat(0);
+    carrying.box.health = 250;
     carrying.box.keys = 2;
     carrying.box.potions = 1;
     carrying.box.potionKind = 3;
+    HudSeat questing = standing(kWarriorClass, 3, "D");
+    questing.local = true;
+    questing.legends = 0x2; // realm 1's
+    questing.box.runes = StatusBoxPainter::kThirteenthRune;
+    questing.box.bossKeys = 1;
     PickupHud pickups;
     pickups.showCount(0, PickupHud::crystalIcon(1), 3, 15);
     const std::vector<std::string> lines{"WATCH OUT"};
     HudView view;
-    view.seats = {carrying,
-                  fallen(standing(kWizardClass, 1, "B"), true, true),
-                  fallen(standing(kWizardClass, 2, "C"), false),
-                  {}};
+    view.seats = {carrying, fallen(standing(kWizardClass, 1, "B"), true, true),
+                  fallen(standing(kWizardClass, 2, "C"), false), questing};
     view.strings = &strings;
     view.pickups = &pickups;
     view.help = HudHelp{.lines = lines, .player = 0, .color = 0, .head = {256, 300}};
@@ -982,8 +1138,8 @@ TEST_CASE("the N64 look takes every picture it borrows as it opens", "[legends][
     view.bossMeters = &meters;
     view.bossCount = hudBossReadingsOf(dragon, view.bossReadings);
     view.levelHud = kLegendsN64HudStyle;
-    for (s32 frame = 0; frame < 2; ++frame) {
-        view.seconds = secondsAt(frame);
+    const auto frameAt = [&](s32 step) {
+        view.seconds = secondsAt(step);
         Canvas canvas;
         canvas.begin(device, Mat4{1.0f});
         HudFrame hud{canvas, device, art};
@@ -995,16 +1151,31 @@ TEST_CASE("the N64 look takes every picture it borrows as it opens", "[legends][
         look.drawSelectors(hud, view);
         look.drawHelp(hud, view);
         canvas.end();
+    };
+    frameAt(0);
+    look.browse(3, SelectorInput{.down = true});
+    look.browse(3, SelectorInput{.down = true});
+    device.draws.clear();
+    for (s32 step = 1; step < 3; ++step) {
+        frameAt(step);
     }
     CHECK(art.lookups == borrowed);
     CHECK(device.texturesCreated == uploaded);
     REQUIRE_FALSE(device.draws.empty());
-    // It draws its own art, the meter's and the icon it took, and no other of Dark Legacy's.
-    for (const test::RecordedDraw& draw : device.draws) {
-        CHECK(std::ranges::find(lent, draw.texture) == lent.end());
+    // It draws its own art, the meter's and the pictures it took: the count's crystal, the
+    // X-ray's, the thirteenth rune's and the key's, and none other of Dark Legacy's.
+    const std::array<test::DarkLegacyLookup, 3> taken{{{Set::Inventory, "SHP_XRAY_GLASSES"},
+                                                       {Set::Static, "RUNE13"},
+                                                       {Set::Static, "SM_KEY_BLU"}}};
+    const auto drawn = [&](const Texture* picture) {
+        return std::ranges::any_of(
+            device.draws, [&](const test::RecordedDraw& draw) { return draw.texture == picture; });
+    };
+    for (const Lent& given : lent) {
+        CAPTURE(given.lookup.name, static_cast<s32>(given.lookup.set));
+        CHECK(drawn(given.picture) == (std::ranges::find(taken, given.lookup) != taken.end()));
     }
-    CHECK(std::ranges::any_of(
-        device.draws, [&](const test::RecordedDraw& draw) { return draw.texture == &crystal; }));
+    CHECK(drawn(&crystal));
 }
 
 TEST_CASE("the N64 look draws the parts it has no art of its own for in Dark Legacy's look",
@@ -1022,20 +1193,22 @@ TEST_CASE("the N64 look draws the parts it has no art of its own for in Dark Leg
     n64.look.drawSelectors(frame, view);
     n64.look.drawHelp(frame, view);
     canvas.end();
-    // The runestone finder and the selector labels are Dark Legacy's, prepared as its look
-    // prepares them; the panels, the hourglass, the boss meters and the help are the N64's own.
+    // The runestone finder is Dark Legacy's, prepared as its look prepares it; the panels with
+    // their carousels, the hourglass, the boss meters and the help are the N64's own, and no
+    // selector's label rises over the panels.
     const test::FakeHudRecord& darkLegacy = n64.art.record;
     for (const test::FakeHudPart part :
-         {test::FakeHudPart::Prepare, test::FakeHudPart::RuneMeter, test::FakeHudPart::Selectors}) {
+         {test::FakeHudPart::Prepare, test::FakeHudPart::RuneMeter}) {
         CAPTURE(static_cast<s32>(part));
         CHECK(darkLegacy.count(kDarkLegacyHudStyle, part) == 1);
     }
-    for (const test::FakeHudPart part : {test::FakeHudPart::Status, test::FakeHudPart::Hourglass,
-                                         test::FakeHudPart::BossMeters, test::FakeHudPart::Help}) {
+    for (const test::FakeHudPart part :
+         {test::FakeHudPart::Status, test::FakeHudPart::Hourglass, test::FakeHudPart::BossMeters,
+          test::FakeHudPart::Selectors, test::FakeHudPart::Help}) {
         CAPTURE(static_cast<s32>(part));
         CHECK(darkLegacy.count(kDarkLegacyHudStyle, part) == 0);
     }
-    CHECK(darkLegacy.calls.size() == 3);
+    CHECK(darkLegacy.calls.size() == 2);
 }
 
 TEST_CASE("the N64 hourglass drains its top bulb and fills the bottom", "[legends][n64-hud]") {
@@ -1513,8 +1686,8 @@ TEST_CASE("the N64 ticker and finder are Dark Legacy's counts in N64 fonts, and 
     };
     CHECK(Layout::kTickerRestTop == 282);
     checkTicker(static_cast<f32>(Layout::kTickerRestTop));
-    // While seat 1's selector names a powerup, its label stands over the panel and the counts
-    // stack above it, as Dark Legacy's do.
+    // While seat 1's selector names a powerup its carousel shows in the panel, and no label
+    // rises over it: the counts keep their place.
     Inventory inventory;
     inventory.powerups[0] = PowerupSlot{30, powerup::kSpecial, 0, powerup::kInvisible, false};
     PowerupSelector selector;
@@ -1523,9 +1696,562 @@ TEST_CASE("the N64 ticker and finder are Dark Legacy's counts in N64 fonts, and 
     selector.step({}, inventory, 1);
     REQUIRE(selector.showing());
     view.seats[1].selector = &selector;
-    checkTicker(static_cast<f32>(PickupHud::countRowY(selector.labelY(StatusBoxPainter::kY))));
+    checkTicker(static_cast<f32>(Layout::kTickerRestTop));
 
     // The runestone finder is Dark Legacy's: the N64 has none.
     CHECK(n64.drawn(view, &LegendsN64HudPainter::drawRuneMeter).empty());
     CHECK(n64.art.record.count(kDarkLegacyHudStyle, test::FakeHudPart::RuneMeter) == 1);
+}
+
+TEST_CASE("down steps a closed selector's panel through the stats and quest pages, and opening "
+          "the selector shows the carousel",
+          "[legends][n64-hud]") {
+    LoadedLook n64("n64-hud-pages", kWarriorAndWizard);
+    // Seat 0, played here, carries an invisibility and a key and holds the scimitar; seat 1,
+    // played here too, holds nothing for the quest page; seat 2 is another machine's.
+    Inventory carried;
+    carried.powerups[0] = PowerupSlot{30, powerup::kSpecial, 0, powerup::kInvisible, true};
+    Holder first(carried, 0);
+    Holder other(carried, 2);
+    HudSeat holding = first.seat(0);
+    holding.legends = 0x2; // realm 1's
+    holding.box.keys = 1;
+    HudSeat empty = standing(kWizardClass, 1, "B");
+    empty.local = true;
+    HudView view = n64.viewOf({holding, empty, other.seat(2, false), {}});
+
+    // What a panel shows, told by what it draws: the normal page names its player beside the
+    // portrait, the stats page writes a stat in the name's place, and the carousel and the quest
+    // page stand where the portrait was.
+    enum class Shown : u8 { Normal, Stats, Items, Neither };
+    const auto shownIn = [](std::span<const Quad> quads, usize slot) {
+        const bool named = !linesAlong(quads, Fixture::kNameFont, slot, 30).empty();
+        const bool stat = !linesAlong(quads, Fixture::kSmallFont, slot, 28).empty();
+        const bool portrait = !picturesIn(quads, slot == 1 ? "WIZ_P1" : "WAR_P1", slot).empty();
+        if (portrait && named && !stat) {
+            return Shown::Normal;
+        }
+        if (portrait && stat && !named) {
+            return Shown::Stats;
+        }
+        return !portrait && !named && !stat ? Shown::Items : Shown::Neither;
+    };
+    using Pages = std::array<Shown, 3>;
+    std::vector<Quad> quads;
+    const auto pagesAt = [&](s32 step) {
+        prepareAt(n64, view, step);
+        quads = n64.panels(view);
+        return Pages{shownIn(quads, 0), shownIn(quads, 1), shownIn(quads, 2)};
+    };
+    const Color dimmed = Color::white().withAlpha(135);
+    const auto keyColour = [&] {
+        const auto key = picturesIn(quads, "KEY1", 0);
+        REQUIRE(key.size() == 1);
+        return key.front().color;
+    };
+
+    CHECK(pagesAt(0) == Pages{Shown::Normal, Shown::Normal, Shown::Normal});
+    n64.look.browse(0, SelectorInput{.down = true});
+    CHECK(pagesAt(1) == Pages{Shown::Stats, Shown::Normal, Shown::Normal});
+    // Down lights no arrow; the stats page leaves the key as it is.
+    CHECK(arrowsIn(quads, 0) == std::pair{kArrowResting, kArrowResting});
+    CHECK(keyColour() == Color::white());
+    n64.look.browse(0, SelectorInput{.down = true});
+    CHECK(pagesAt(2) == Pages{Shown::Items, Shown::Normal, Shown::Normal});
+    // The quest page centres the scimitar, in the N64's own icon, and dims the key.
+    CHECK(iconsIn(quads, 0) == std::vector<std::string_view>{"HUD_SCIMITAR"});
+    checkRect(picturesIn(quads, "HUD_SCIMITAR", 0).front().area,
+              centredAt(0, Layout::kSelected, 28, 28));
+    CHECK(keyColour() == dimmed);
+    n64.look.browse(0, SelectorInput{.down = true});
+    CHECK(pagesAt(3) == Pages{Shown::Normal, Shown::Normal, Shown::Normal});
+    // Seat 1 holds nothing for the quest page: down passes it by.
+    n64.look.browse(1, SelectorInput{.down = true});
+    CHECK(pagesAt(4) == Pages{Shown::Normal, Shown::Stats, Shown::Normal});
+    n64.look.browse(1, SelectorInput{.down = true});
+    CHECK(pagesAt(5) == Pages{Shown::Normal, Shown::Normal, Shown::Normal});
+
+    // Seat 0 on its stats page: its selector sliding up shows the carousel at once, and once
+    // the selector is down again the panel is back on its normal page.
+    n64.look.browse(0, SelectorInput{.down = true});
+    CHECK(pagesAt(6) == Pages{Shown::Stats, Shown::Normal, Shown::Normal});
+    first.selector.step(SelectorInput{.up = true}, first.inventory, 1);
+    REQUIRE(first.selector.state() == PowerupSelector::State::SlidingIn);
+    CHECK(pagesAt(7) == Pages{Shown::Items, Shown::Normal, Shown::Normal});
+    CHECK(iconsIn(quads, 0) == std::vector<std::string_view>{"HUD_INVIS"});
+    CHECK(keyColour() == dimmed);
+    first.selector.step({}, first.inventory,
+                        PowerupSelector::kSlide / PowerupSelector::kSlidePerTick);
+    first.selector.step({}, first.inventory, 1);
+    REQUIRE(first.selector.showing());
+    CHECK(pagesAt(8) == Pages{Shown::Items, Shown::Normal, Shown::Normal});
+    first.close();
+    CHECK(pagesAt(9) == Pages{Shown::Normal, Shown::Normal, Shown::Normal});
+    // Every seat's selector shows its carousel, the other machine's player's too.
+    other.open();
+    CHECK(pagesAt(10) == Pages{Shown::Normal, Shown::Normal, Shown::Items});
+    CHECK(iconsIn(quads, 2) == std::vector<std::string_view>{"HUD_INVIS"});
+}
+
+TEST_CASE("left and right on a closed panel enter the stat ring at either end and leave it past "
+          "either end",
+          "[legends][n64-hud]") {
+    LoadedLook n64("n64-hud-ring", kWarriorAndWizard);
+    HudSeat seat = standing(kWarriorClass, 0, "A");
+    seat.local = true;
+    seat.stats.values = {34, 45, 78, 56};
+    seat.box.level = 21;
+    seat.legends = 0x2 | 0x4 | 0x20; // realms 1, 2 and 5: the scimitar, the ice axe, the saviour
+    HudView view = n64.viewOf({seat, {}, {}, {}});
+    s32 step = 0;
+    prepareAt(n64, view, step);
+    // The panel after a press, drawn in the step it is first shown in.
+    const auto press = [&](const SelectorInput& presses) {
+        n64.look.browse(0, presses);
+        prepareAt(n64, view, ++step);
+        return n64.panels(view);
+    };
+    const auto stat = [](std::span<const Quad> quads) {
+        return linesAlong(quads, Fixture::kSmallFont, 0, 28);
+    };
+    const auto named = [](std::span<const Quad> quads) {
+        return linesAlong(quads, Fixture::kNameFont, 0, 30);
+    };
+    using Lines = std::vector<Line>;
+    const auto lit = std::pair{kArrowResting, kArrowLit};
+    const auto litLeft = std::pair{kArrowLit, kArrowResting};
+    const auto resting = std::pair{kArrowResting, kArrowResting};
+
+    // Right enters the stats at the first, strength, lighting the right arrow for the step the
+    // stat is first shown in.
+    std::vector<Quad> quads = press(SelectorInput{.right = true});
+    CHECK(stat(quads) == Lines{lineAt(0, 8, 28, "STRENGTH 000034")});
+    CHECK(named(quads).empty());
+    CHECK(arrowsIn(quads, 0) == lit);
+    n64.prepare(view);
+    CHECK(arrowsIn(n64.panels(view), 0) == lit);
+    prepareAt(n64, view, ++step);
+    CHECK(arrowsIn(n64.panels(view), 0) == resting);
+    // Seven more reach the last, the level; one more is past it: the normal page again.
+    for (s32 more = 0; more < 7; ++more) {
+        quads = press(SelectorInput{.right = true});
+    }
+    CHECK(stat(quads) == Lines{lineAt(0, 8 + 3 * 3, 28, "LEVEL 000021")});
+    quads = press(SelectorInput{.right = true});
+    CHECK(stat(quads).empty());
+    CHECK(named(quads) == Lines{lineAt(0, 25, 30, "A")});
+    CHECK(arrowsIn(quads, 0) == lit);
+    // Left enters at the level and leaves past strength.
+    quads = press(SelectorInput{.left = true});
+    CHECK(stat(quads) == Lines{lineAt(0, 8 + 3 * 3, 28, "LEVEL 000021")});
+    CHECK(arrowsIn(quads, 0) == litLeft);
+    for (s32 more = 0; more < 7; ++more) {
+        quads = press(SelectorInput{.left = true});
+    }
+    CHECK(stat(quads) == Lines{lineAt(0, 8, 28, "STRENGTH 000034")});
+    quads = press(SelectorInput{.left = true});
+    CHECK(stat(quads).empty());
+    CHECK(named(quads) == Lines{lineAt(0, 25, 30, "A")});
+
+    // On the quest page left and right go round its entries, each the one before it and the
+    // one after it beside it; for the step a move first shows in, the icons go.
+    press(SelectorInput{.down = true});
+    quads = press(SelectorInput{.down = true});
+    using Icons = std::vector<std::string_view>;
+    CHECK(iconsIn(quads, 0) == Icons{"HUD_SAVIOUR", "HUD_SCIMITAR", "HUD_ICEAXE"});
+    const auto settled = [&] {
+        prepareAt(n64, view, ++step);
+        return n64.panels(view);
+    };
+    quads = press(SelectorInput{.right = true});
+    CHECK(iconsIn(quads, 0).empty());
+    CHECK(arrowsIn(quads, 0) == lit);
+    quads = settled();
+    CHECK(iconsIn(quads, 0) == Icons{"HUD_SCIMITAR", "HUD_ICEAXE", "HUD_SAVIOUR"});
+    CHECK(arrowsIn(quads, 0) == resting);
+    press(SelectorInput{.right = true});
+    CHECK(iconsIn(settled(), 0) == Icons{"HUD_ICEAXE", "HUD_SAVIOUR", "HUD_SCIMITAR"});
+    press(SelectorInput{.right = true});
+    CHECK(iconsIn(settled(), 0) == Icons{"HUD_SAVIOUR", "HUD_SCIMITAR", "HUD_ICEAXE"});
+    quads = press(SelectorInput{.left = true});
+    CHECK(arrowsIn(quads, 0) == litLeft);
+    CHECK(iconsIn(settled(), 0) == Icons{"HUD_ICEAXE", "HUD_SAVIOUR", "HUD_SCIMITAR"});
+}
+
+TEST_CASE("the stats page pairs each N64 word with its own value", "[legends][n64-hud]") {
+    // e00aad34's "%8.8s %6.6d": the name right-aligned in eight and cut to them; e00aad40's
+    // "%s " at nought.
+    CHECK(legendsN64StatLine("Strength", 34) == "Strength 000034");
+    CHECK(legendsN64StatLine("Speed", 45) == "   Speed 000045");
+    CHECK(legendsN64StatLine("Exp.", 1234567) == "    Exp. 1234567");
+    CHECK(legendsN64StatLine("Strengths", 7) == "Strength 000007");
+    CHECK(legendsN64StatLine("Speed", 0) == "Speed ");
+
+    LoadedLook n64("n64-hud-stats", kWarriorAndWizard);
+    // Every stat a value of its own, so that a word paired with another's shows.
+    HudSeat seat = standing(kWarriorClass, 0, "A");
+    seat.local = true;
+    seat.stats.values = {34, 45, 78, 56}; // strength, speed, armour, magic
+    seat.experience = 12345;
+    seat.box.gold = 6789;
+    seat.box.level = 21;
+    // Seat 1's speed is nothing.
+    HudSeat slow = standing(kWizardClass, 1, "B");
+    slow.local = true;
+    slow.stats.values = {12, 0, 34, 56};
+    HudView view = n64.viewOf({seat, slow, {}, {}});
+    prepareAt(n64, view, 0);
+    // FUN_e0055784's ring, each word in font 2 from (8,28), its padding the font's spaces of 3,
+    // with the class still under it.
+    const std::array<Line, 8> ring{
+        lineAt(0, 8, 28, "STRENGTH 000034"),  lineAt(0, 8 + 9, 28, "SPEED 000045"),
+        lineAt(0, 8 + 9, 28, "MAGIC 000056"), lineAt(0, 8 + 6, 28, "ARMOUR 000078"),
+        lineAt(0, 8, 28, "MAX HLTH 000600"),  lineAt(0, 8 + 12, 28, "EXP. 012345"),
+        lineAt(0, 8 + 12, 28, "GOLD 006789"), lineAt(0, 8 + 9, 28, "LEVEL 000021"),
+    };
+    for (usize place = 0; place < ring.size(); ++place) {
+        CAPTURE(place);
+        n64.look.browse(0, SelectorInput{.right = true});
+        if (place < 2) {
+            n64.look.browse(1, SelectorInput{.right = true});
+        }
+        prepareAt(n64, view, static_cast<s32>(place) + 1);
+        const std::vector<Quad> quads = n64.panels(view);
+        CHECK(linesAlong(quads, Fixture::kSmallFont, 0, 28) == std::vector<Line>{ring.at(place)});
+        CHECK(linesAlong(quads, Fixture::kSmallFont, 0, 40) ==
+              std::vector<Line>{lineAt(0, 20, 40, "WARRIOR")});
+        if (place == 1) {
+            // A stat at nought is its word alone, unpadded.
+            CHECK(linesAlong(quads, Fixture::kSmallFont, 1, 28) ==
+                  std::vector<Line>{lineAt(1, 8, 28, "SPEED")});
+        }
+    }
+}
+
+TEST_CASE("the carousel shows the selection between its neighbours, dims what is off and blinks "
+          "on a move",
+          "[legends][n64-hud]") {
+    // What it writes under the selection: Dark Legacy's seconds or charges left, whole, kept
+    // for a powerup taken off; nothing for one worn for good or with nought left.
+    const auto timed = [](f32 left, bool on) {
+        return PowerupSlot{left, powerup::kSpecial, 0, powerup::kInvisible, on};
+    };
+    CHECK(legendsN64CarouselCount(timed(20.7f, true)) == 20);
+    CHECK(legendsN64CarouselCount(timed(20.7f, false)) == 20);
+    CHECK_FALSE(legendsN64CarouselCount(timed(0.5f, true)).has_value());
+    CHECK_FALSE(legendsN64CarouselCount(timed(-1, true)).has_value());
+    CHECK_FALSE(legendsN64CarouselCount(timed(0, true)).has_value());
+    CHECK(legendsN64CarouselCount(timed(123456, true)) == 9999);
+    CHECK(legendsN64CarouselCount(PowerupSlot{-1, powerup::kWeapon, 3, damage::kHammer, true}) ==
+          3);
+    CHECK_FALSE(
+        legendsN64CarouselCount(PowerupSlot{-1, powerup::kWeapon, 0.5f, damage::kHammer, true})
+            .has_value());
+
+    // Dark Legacy's Pojo has no N64 icon: its INVENTORY picture, 32 square, is fitted into the
+    // N64's 28.
+    const std::array<LentPicture, 1> lend{{{.set = test::DarkLegacyLookup::Set::Inventory,
+                                            .name = "SHP_POJOEGG",
+                                            .width = 32,
+                                            .height = 32}}};
+    LoadedLook n64("n64-hud-carousel", kWarriorAndWizard, {}, lend);
+    const Texture* pojo = n64.lentPicture("SHP_POJOEGG");
+    Inventory carried;
+    carried.powerups[0] = timed(30.5f, true);
+    carried.powerups[1] = PowerupSlot{20.7f, powerup::kArmor, 0,
+                                      armor::kInvulnerable | armor::kGoldInvulnerable, false};
+    carried.powerups[2] = PowerupSlot{60, powerup::kSpecial, 0, powerup::kPojo, true};
+    carried.powerups[3] = PowerupSlot{-1, powerup::kWeapon, 3, damage::kHammer, true};
+    Holder holder(carried, 0);
+    holder.open();
+    REQUIRE(holder.selector.selection() == 3);
+    HudSeat seat = holder.seat(0);
+    seat.box.keys = 2;
+    seat.box.potions = 1;
+    seat.box.potionKind = 2;
+    HudView view = n64.viewOf({seat, {}, {}, {}});
+    const auto itemsIn = [&](std::span<const Quad> quads) {
+        std::vector<Quad> items;
+        for (const Quad& quad : quads) {
+            if (slotOf(quad) == 0 &&
+                (Fixture::pictureOf(quad.texture).starts_with("HUD_") || quad.texture == pojo)) {
+                items.push_back(quad);
+            }
+        }
+        return items;
+    };
+    const auto check = [](const Quad& quad, std::string_view picture, const Rect& area,
+                          Color color) {
+        CAPTURE(picture);
+        CHECK(Fixture::pictureOf(quad.texture) == picture);
+        checkRect(quad.area, area);
+        CHECK(quad.color == color);
+    };
+    const Color off = Color::white().withAlpha(127);
+    const auto countIn = [](std::span<const Quad> quads) {
+        std::vector<std::pair<Line, Color>> written;
+        for (const Line& line : linesAlong(quads, Fixture::kSmallFont, 0, 40)) {
+            for (const Quad& quad : quads) {
+                if (quad.area.x == line.x && quad.area.y == line.y && isText(quad)) {
+                    written.emplace_back(line, quad.color);
+                }
+            }
+        }
+        return written;
+    };
+    using Count = std::vector<std::pair<Line, Color>>;
+
+    // The thunder hammer named, Pojo before it and invisibility after it, going round: the
+    // neighbours at 0.6 of their size, the hammer's 32 whole, Pojo's picture fitted into 28.
+    prepareAt(n64, view, 0);
+    std::vector<Quad> quads = n64.panels(view);
+    std::vector<Quad> items = itemsIn(quads);
+    REQUIRE(items.size() == 3);
+    CHECK(items[0].texture == pojo);
+    checkRect(items[0].area, centredAt(0, Layout::kPrevious, 28, 28, 0.6f));
+    CHECK(items[0].color == Color::white());
+    check(items[1], "HUD_HAMMER", centredAt(0, Layout::kSelected, 32, 32), Color::white());
+    check(items[2], "HUD_INVIS", centredAt(0, Layout::kNext, 28, 28, 0.6f), Color::white());
+    // Its charges left, "%4d" in font 2 from (64,40), over the panel's own art.
+    CHECK(countIn(quads) == Count{{lineAt(0, 64 + 3 * 3, 40, "3"), Color::white()}});
+    // The carousel stands where the portrait, the name and the class were, and dims the key
+    // and the bottle.
+    CHECK(picturesIn(quads, "WAR_P1", 0).empty());
+    CHECK(linesAlong(quads, Fixture::kNameFont, 0, 30).empty());
+    CHECK(linesAlong(quads, Fixture::kSmallFont, 0, 40).size() == 1);
+    CHECK(picturesIn(quads, "KEY1", 0).front().color == Color::white().withAlpha(135));
+    CHECK(picturesIn(quads, "POTIONB", 0).front().color == Color::white().withAlpha(135));
+    CHECK(arrowsIn(quads, 0) == std::pair{kArrowResting, kArrowResting});
+    // The N64 writes no powerup's name over its panels.
+    CHECK(n64.drawn(view, &LegendsN64HudPainter::drawSelectors).empty());
+
+    // Left moves Dark Legacy's selection to Pojo: for the step that shows it, the icons and the
+    // count go and the left arrow is lit.
+    holder.selector.step(SelectorInput{.left = true}, holder.inventory, 1);
+    REQUIRE(holder.selector.selection() == 2);
+    prepareAt(n64, view, 1);
+    quads = n64.panels(view);
+    CHECK(itemsIn(quads).empty());
+    CHECK(countIn(quads).empty());
+    CHECK(arrowsIn(quads, 0) == std::pair{kArrowLit, kArrowResting});
+    // A step on they are back: the gold invulnerability before it, taken off and so at
+    // transparency 0x80, and the hammer after it.
+    prepareAt(n64, view, 2);
+    quads = n64.panels(view);
+    items = itemsIn(quads);
+    REQUIRE(items.size() == 3);
+    check(items[0], "HUD_INVULNG", centredAt(0, Layout::kPrevious, 28, 28, 0.6f), off);
+    CHECK(items[1].texture == pojo);
+    checkRect(items[1].area, centredAt(0, Layout::kSelected, 28, 28));
+    check(items[2], "HUD_HAMMER", centredAt(0, Layout::kNext, 32, 32, 0.6f), Color::white());
+    CHECK(countIn(quads) == Count{{lineAt(0, 64 + 2 * 3, 40, "60"), Color::white()}});
+    CHECK(arrowsIn(quads, 0) == std::pair{kArrowResting, kArrowResting});
+    // The gold invulnerability named: it and what it has left are dimmed.
+    holder.selector.step(SelectorInput{.left = true}, holder.inventory, 1);
+    prepareAt(n64, view, 3);
+    prepareAt(n64, view, 4);
+    quads = n64.panels(view);
+    items = itemsIn(quads);
+    REQUIRE(items.size() == 3);
+    check(items[0], "HUD_INVIS", centredAt(0, Layout::kPrevious, 28, 28, 0.6f), Color::white());
+    check(items[1], "HUD_INVULNG", centredAt(0, Layout::kSelected, 28, 28), off);
+    CHECK(items[2].texture == pojo);
+    CHECK(countIn(quads) == Count{{lineAt(0, 64 + 2 * 3, 40, "20"), off}});
+    // Right goes back, lighting the right arrow.
+    holder.selector.step(SelectorInput{.right = true}, holder.inventory, 1);
+    prepareAt(n64, view, 5);
+    CHECK(arrowsIn(n64.panels(view), 0) == std::pair{kArrowResting, kArrowLit});
+
+    // Of two powerups only the one before stands beside the selection; of one, neither.
+    Inventory two;
+    two.powerups[0] = timed(30, true);
+    two.powerups[1] = PowerupSlot{30, powerup::kSpecial, 0, powerup::kLevitation, true};
+    Holder pair(two, 1);
+    pair.open();
+    Inventory one;
+    one.powerups[4] = timed(30, true);
+    Holder single(one, 2);
+    single.open();
+    view.seats[1] = pair.seat(1);
+    view.seats[2] = single.seat(2);
+    prepareAt(n64, view, 6);
+    quads = n64.panels(view);
+    CHECK(iconsIn(quads, 1) == std::vector<std::string_view>{"HUD_INVIS", "HUD_LEVITATE"});
+    checkRect(picturesIn(quads, "HUD_LEVITATE", 1).front().area,
+              centredAt(1, Layout::kSelected, 28, 28));
+    CHECK(iconsIn(quads, 2) == std::vector<std::string_view>{"HUD_INVIS"});
+    checkRect(picturesIn(quads, "HUD_INVIS", 2).front().area,
+              centredAt(2, Layout::kSelected, 28, 28));
+}
+
+TEST_CASE("a new legend item turns its local holder's panel to the quest page, never a remote "
+          "seat's",
+          "[legends][n64-hud]") {
+    // Dark Legacy's lamp, which the N64 has no icon of, 32 by 16 in SELECT.
+    const std::array<LentPicture, 1> lend{
+        {{.set = test::DarkLegacyLookup::Set::Select, .name = "LAMP", .width = 32, .height = 16}}};
+    LoadedLook n64("n64-hud-legend-turn", kWarriorAndWizard, {}, lend);
+    // Both hold the scimitar as the look first sees them; seat 1 is another machine's.
+    HudSeat here = standing(kWarriorClass, 0, "A");
+    here.local = true;
+    here.legends = 0x2;
+    HudSeat there = standing(kWizardClass, 1, "B");
+    there.legends = 0x2;
+    HudView view = n64.viewOf({here, there, {}, {}});
+    using Icons = std::vector<std::string_view>;
+    prepareAt(n64, view, 0);
+    std::vector<Quad> quads = n64.panels(view);
+    CHECK(iconsIn(quads, 0).empty());
+    CHECK(picturesIn(quads, "WAR_P1", 0).size() == 1);
+    // The flame scroll found: the panel played here turns to its quest page with the scroll
+    // centred, the scimitar before it; the other machine's player's stays as it was.
+    view.seats[0].legends = 0x202;
+    view.seats[1].legends = 0x202;
+    prepareAt(n64, view, 1);
+    quads = n64.panels(view);
+    CHECK(iconsIn(quads, 0) == Icons{"HUD_SCIMITAR", "HUD_FLAMESCROLL"});
+    checkRect(picturesIn(quads, "HUD_FLAMESCROLL", 0).front().area,
+              centredAt(0, Layout::kSelected, 28, 28));
+    checkRect(picturesIn(quads, "HUD_SCIMITAR", 0).front().area,
+              centredAt(0, Layout::kPrevious, 28, 28, 0.6f));
+    CHECK(iconsIn(quads, 1).empty());
+    CHECK(picturesIn(quads, "WIZ_P1", 1).size() == 1);
+    // It stays there until browsed away.
+    prepareAt(n64, view, 2);
+    CHECK(iconsIn(n64.panels(view), 0) == Icons{"HUD_SCIMITAR", "HUD_FLAMESCROLL"});
+    n64.look.browse(0, SelectorInput{.down = true});
+    prepareAt(n64, view, 3);
+    CHECK(iconsIn(n64.panels(view), 0).empty());
+    // The lamp found turns it to Dark Legacy's picture of it, fitted into 28, between the
+    // scimitar and the flame scroll.
+    view.seats[0].legends = 0x20a;
+    prepareAt(n64, view, 4);
+    quads = n64.panels(view);
+    const std::vector<Quad> lamp = drawsOf(quads, n64.lentPicture("LAMP"), 0);
+    REQUIRE(lamp.size() == 1);
+    checkRect(lamp.front().area, centredAt(0, Layout::kSelected, 28, 14));
+    CHECK(lamp.front().color == Color::white());
+    CHECK(iconsIn(quads, 0) == Icons{"HUD_SCIMITAR", "HUD_FLAMESCROLL"});
+
+    // A look that first sees a seat already holding a legend item leaves its page alone.
+    LoadedLook later("n64-hud-legend-seen", kWarriorAndWizard);
+    HudView seen = later.viewOf({view.seats[0], {}, {}, {}});
+    prepareAt(later, seen, 9);
+    CHECK(iconsIn(later.panels(seen), 0).empty());
+}
+
+TEST_CASE("a centred runestone or key entry draws its whole row across the panel",
+          "[legends][n64-hud]") {
+    // The quest page's entries: its legend items in their realms' order, the thirteenth rune,
+    // the runestones and the keys, each while any is held.
+    using Kind = LegendsN64QuestEntry::Kind;
+    const LegendsN64QuestList listed =
+        legendsN64QuestEntries(0x800 | 0x40 | 0x2, StatusBoxPainter::kThirteenthRune | 0x1, 0x100);
+    CHECK(std::vector(listed.entries().begin(), listed.entries().end()) ==
+          std::vector<LegendsN64QuestEntry>{{.kind = Kind::Legend, .realm = 1},
+                                            {.kind = Kind::Legend, .realm = 11},
+                                            {.kind = Kind::ThirteenthRune},
+                                            {.kind = Kind::Runestones}});
+    CHECK(legendsN64QuestEntries(0, 0, 0).entries().empty());
+
+    // STATIC's pictures as Dark Legacy's boxes draw them: the runestones 8 square, the keys
+    // and the thirteenth rune 16.
+    std::vector<std::string> names{"RUNE13"};
+    for (const std::string_view colour : StatusBoxPainter::kRelicColours) {
+        for (s32 rune = 1; rune <= 3; ++rune) {
+            names.push_back(std::format("SM_RUNE_{}_0{}", colour, rune));
+        }
+    }
+    for (const std::string_view colour : StatusBoxPainter::kRelicColours) {
+        names.push_back(std::format("SM_KEY_{}", colour));
+    }
+    std::vector<LentPicture> lend;
+    for (const std::string& name : names) {
+        const u32 size = name.starts_with("SM_RUNE") ? 8 : 16;
+        lend.push_back({.set = test::DarkLegacyLookup::Set::Static,
+                        .name = name,
+                        .width = size,
+                        .height = size});
+    }
+    LoadedLook n64("n64-hud-rows", kWarriorAndWizard, {}, lend);
+    const auto picture = [&](const std::string& name) { return n64.lentPicture(name); };
+    // Runestones 1, 2, 4 and 12, the thirteenth, and the keys of the first, fifth and eighth
+    // bosses.
+    HudSeat seat = standing(kWarriorClass, 0, "A");
+    seat.local = true;
+    seat.box.runes = StatusBoxPainter::kThirteenthRune | 0x800 | 0x8 | 0x2 | 0x1;
+    seat.box.bossKeys = 0x80 | 0x10 | 0x1;
+    HudView view = n64.viewOf({seat, {}, {}, {}});
+    prepareAt(n64, view, 0);
+    n64.look.browse(0, SelectorInput{.down = true});
+    n64.look.browse(0, SelectorInput{.down = true});
+    prepareAt(n64, view, 1);
+    std::vector<Quad> quads = n64.panels(view);
+    // The thirteenth rune centred, fitted into 28; the keys before it shown by the first held,
+    // the runestones after it by the first held, each fitted at 0.6.
+    const auto only = [&](const std::string& name) {
+        const std::vector<Quad> drawn = drawsOf(quads, picture(name), 0);
+        REQUIRE(drawn.size() == 1);
+        return drawn.front().area;
+    };
+    checkRect(only("RUNE13"), centredAt(0, Layout::kSelected, 28, 28));
+    checkRect(only("SM_KEY_BLU"), centredAt(0, Layout::kPrevious, 28, 28, 0.6f));
+    checkRect(only("SM_RUNE_BLU_01"), centredAt(0, Layout::kNext, 28, 28, 0.6f));
+
+    // The rows' pictures drawn in slot 0, in turn, with where they stand.
+    const auto row = [&] {
+        std::vector<std::pair<std::string, Rect>> drawn;
+        for (const Quad& quad : quads) {
+            for (const std::string& name : names) {
+                if (quad.texture == picture(name) && slotOf(quad) == 0) {
+                    drawn.emplace_back(name, quad.area);
+                }
+            }
+        }
+        return drawn;
+    };
+    const auto checkRow = [&](const std::vector<std::pair<std::string, Rect>>& expected) {
+        const auto drawn = row();
+        REQUIRE(drawn.size() == expected.size());
+        for (usize index = 0; index < expected.size(); ++index) {
+            CAPTURE(index);
+            CHECK(drawn[index].first == expected[index].first);
+            checkRect(drawn[index].second, expected[index].second);
+        }
+    };
+    // Right centres the runestones: Dark Legacy's row, a rune every 8 and a unit more after each
+    // trio, 99 across from its first place to its last rune's end, centred on the panel's 52
+    // and its selection's row 32; nothing stands beside it, and for the step the move first
+    // shows in, nothing at all.
+    n64.look.browse(0, SelectorInput{.right = true});
+    prepareAt(n64, view, 2);
+    quads = n64.panels(view);
+    CHECK(row().empty());
+    prepareAt(n64, view, 3);
+    quads = n64.panels(view);
+    const f32 runes = 52 - 99.0f / 2;
+    const f32 runeTop = kTop + 32 - 4;
+    checkRow({{"SM_RUNE_BLU_01", {runes, runeTop, 8, 8}},
+              {"SM_RUNE_BLU_02", {runes + 8, runeTop, 8, 8}},
+              {"SM_RUNE_RED_01", {runes + 24 + 1, runeTop, 8, 8}},
+              {"SM_RUNE_GRE_03", {runes + 88 + 3, runeTop, 8, 8}}});
+    // Right again centres the keys: the eight places 12 apart, 100 across, each key held in the
+    // GameCube's colour for it, the fifth green and the eighth blue.
+    CHECK(StatusBoxPainter::kKeyColours ==
+          std::array<std::string_view, 8>{"BLU", "RED", "YEL", "GRE", "GRE", "RED", "YEL", "BLU"});
+    n64.look.browse(0, SelectorInput{.right = true});
+    prepareAt(n64, view, 4);
+    prepareAt(n64, view, 5);
+    quads = n64.panels(view);
+    const f32 keys = 52 - 100.0f / 2;
+    const f32 keyTop = kTop + 32 - 8;
+    checkRow({{"SM_KEY_BLU", {keys, keyTop, 16, 16}},
+              {"SM_KEY_GRE", {keys + 48, keyTop, 16, 16}},
+              {"SM_KEY_BLU", {keys + 84, keyTop, 16, 16}}});
+    // Once more and the entries have gone round to the thirteenth rune.
+    n64.look.browse(0, SelectorInput{.right = true});
+    prepareAt(n64, view, 6);
+    prepareAt(n64, view, 7);
+    quads = n64.panels(view);
+    checkRect(only("RUNE13"), centredAt(0, Layout::kSelected, 28, 28));
 }
