@@ -3,6 +3,7 @@
 #![forbid(unsafe_code)]
 
 mod folder;
+mod gdrom;
 mod n64;
 mod program;
 mod runtime;
@@ -16,6 +17,10 @@ pub use folder::{
     EntryState, HeldClosed, InstallFixture, backdate, folder_names, hold_closed, holds_bind,
     link_folder, long_root, make_alpha_markers, snapshot, symlink_file, symlink_file_where_allowed,
     symlink_folder_where_allowed,
+};
+pub use gdrom::{
+    BootFields, DiscSet, Edc, RAW_SECTOR, SECTOR, boot_sector, both16, both32, edc, pvd_sector,
+    raw_sector, record, sizes_rom,
 };
 pub use n64::{
     BIG_ENDIAN_FIRST_WORD, BUILDER_UNKNOWN_WORD, BuiltRom, OVERLAY_TABLE_OFFSET, OverlaySpec,
