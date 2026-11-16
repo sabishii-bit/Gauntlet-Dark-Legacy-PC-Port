@@ -156,6 +156,7 @@ class DreamcastDiscTests(unittest.TestCase):
                 self.assertEqual(tracks, on_this_system(case["tracks"]))
 
     def test_golden_manifests_are_the_extractors_bytes(self):
+        self.assertTrue(DREAMCAST_EXTRACTIONS)
         for name, (native, _) in DREAMCAST_EXTRACTIONS.items():
             case = VECTORS["sets"][name]
             with self.subTest(set=name):

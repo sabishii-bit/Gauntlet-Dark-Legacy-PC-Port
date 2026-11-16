@@ -48,7 +48,9 @@ class RomOrderTests(unittest.TestCase):
         self.assertEqual(n64.normalize_rom(words), (image, "little-endian"))
 
     def test_invalid_headers_fail(self):
-        for case in VECTORS["headers"]:
+        cases = VECTORS["headers"]
+        self.assertTrue(cases)
+        for case in cases:
             data = header_input(case, IMAGES)
             with self.subTest(size=len(data)):
                 self.assertIsNotNone(case["python"])
@@ -85,7 +87,9 @@ class DirectoryTests(unittest.TestCase):
                 self.assertEqual([entry.path for entry in entries], [case["path"][1:]])
 
     def test_case_alias_and_file_directory_collision_fail(self):
-        for case in VECTORS["collisions"]:
+        cases = VECTORS["collisions"]
+        self.assertTrue(cases)
+        for case in cases:
             with self.subTest(paths=case["paths"]):
                 check_outcome(self, case, n64.read_directory, paths_rom(case["paths"]))
 
@@ -110,13 +114,17 @@ class DirectoryTests(unittest.TestCase):
                               with_record_word(IMAGES["default"], case))
 
     def test_total_expansion_limit(self):
-        for case in VECTORS["limits"]:
+        cases = VECTORS["limits"]
+        self.assertTrue(cases)
+        for case in cases:
             with self.subTest(limit=case["maxTotal"]), \
                     mock.patch.object(n64, "MAX_TOTAL_SIZE", case["maxTotal"]):
                 check_outcome(self, case, n64.read_directory, IMAGES["default"])
 
     def test_table_bounds_and_overlapping_records(self):
-        for case in VECTORS["headerWords"]:
+        cases = VECTORS["headerWords"]
+        self.assertTrue(cases)
+        for case in cases:
             with self.subTest(offset=case.get("offset"), value=case.get("value"),
                               copy=case.get("copy")):
                 check_outcome(self, case, n64.read_directory,
@@ -209,7 +217,9 @@ class ExtractionTests(unittest.TestCase):
         return destination
 
     def test_extraction_writes_the_golden_trees(self):
-        for case in VECTORS["extractions"]:
+        cases = VECTORS["extractions"]
+        self.assertTrue(cases)
+        for case in cases:
             with self.subTest(image=case["image"]), tempfile.TemporaryDirectory() as directory:
                 tree = self.extract_named(Path(directory), IMAGES[case["image"]], case["name"])
                 self.assertEqual((tree / "manifest.json").read_bytes(),
@@ -222,7 +232,9 @@ class ExtractionTests(unittest.TestCase):
         default = json.loads((VECTOR_FOLDER / default_golden).read_text(encoding="utf-8"))
         # Only the source's name, byte order and digest set another order's manifest apart.
         apart = ("name", "byte_order", "sha256")
-        for case in VECTORS["byteOrders"]:
+        cases = VECTORS["byteOrders"]
+        self.assertTrue(cases)
+        for case in cases:
             with self.subTest(order=case["byteOrder"]), tempfile.TemporaryDirectory() as directory:
                 data = reorder(IMAGES["default"], case["transform"])
                 self.assertEqual(n64.normalize_rom(data), (IMAGES["default"], case["byteOrder"]))
