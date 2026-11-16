@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <filesystem>
 #include <format>
 #include <memory>
@@ -9,6 +10,7 @@
 #include <string_view>
 #include <vector>
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
@@ -18,6 +20,7 @@
 #include "engine/math/Math.h"
 #include "engine/render/RenderTypes.h"
 #include "engine/ui/Canvas.h"
+#include "engine/world/WorldCamera.h"
 
 #include "FakeHudStyles.h"
 #include "FakeRenderDevice.h"
@@ -30,16 +33,24 @@
 #include "game/combat/PowerupFlags.h"
 #include "game/config/GameConfig.h"
 #include "game/context/GameServices.h"
+#include "game/hud/CompanionArrows.h"
 #include "game/hud/DarkLegacyHudPainter.h"
 #include "game/hud/HudPainter.h"
+#include "game/hud/HudStyles.h"
 #include "game/hud/HudView.h"
 #include "game/hud/PickupHud.h"
 #include "game/hud/PowerupSelector.h"
+#include "game/hud/StatusBox.h"
 #include "game/level/ExitPortals.h"
 #include "game/level/LevelCatalog.h"
 #include "game/level/LevelWorld.h"
+#include "game/party/PartyCombo.h"
 #include "game/party/PlayInput.h"
+#include "game/party/PlayerRuntime.h"
+#include "game/players/ComboMove.h"
 #include "game/players/PlayerControls.h"
+#include "game/players/TurboMeter.h"
+#include "game/rollback/ConsoleAction.h"
 #include "game/rollback/SessionInputs.h"
 #include "game/scenes/PlayScene.h"
 
@@ -61,6 +72,8 @@ static_assert(kCloseTick - kOpenTick > PowerupSelector::kSlide / PowerupSelector
 constexpr u32 kLastTick = 648; ///< the long runs' last tick, the digest tests' later anchor
 /** Where a party stands to be greeted by Sumner and handed his scroll. */
 constexpr Vec3 kSumnerSpot{3.3f, 2.1f, -49.0f};
+/** How far behind the eye a companion is stood, for an arrow to point to it down the view. */
+constexpr f32 kBehindEye = 4.0f;
 /** A powerup that a selector can name, carried for good and not worn. */
 constexpr PowerupSlot kSpeedPowerup{
     .strength = -1.0f, .kind = powerup::kSpeed, .charge = 5.0f, .flags = 0, .on = false};
@@ -524,6 +537,147 @@ TEST_CASE("the selector's presses reach no page while the scene holds them",
     CHECK(browses() == before);
     press();
     CHECK(browses() == before + 1);
+
+    // Nothing is browsed while the party goes through a portal, from the moment it has gone
+    // until it travels.
+    const ExitPortals& exits = scene.portals();
+    usize g1 = 0;
+    while (g1 < exits.size() &&
+           (!exits.portal(g1).destination || exits.portal(g1).destination->name != "G1")) {
+        ++g1;
+    }
+    REQUIRE(g1 < exits.size());
+    REQUIRE(scene.actor(0) != nullptr);
+    REQUIRE(
+        scene.noclipMove(0, exits.portal(g1).position - scene.actor(0)->position(), std::nullopt));
+    for (u32 guard = 0; guard < 600 && !scene.leaving(); ++guard) {
+        fixture->step({});
+    }
+    REQUIRE(scene.leaving());
+    before = browses();
+    PlayOutcome outcome = PlayOutcome::Running;
+    u32 leavingHeld = 0;
+    for (; leavingHeld < 600 && outcome == PlayOutcome::Running; ++leavingHeld) {
+        PlayScene::Inputs inputs{};
+        inputs[0].selector = pressed(kTurns.at(turn++ % kTurns.size()));
+        outcome = scene.update(kStep, inputs);
+    }
+    CHECK(outcome == PlayOutcome::Travel);
+    CHECK(leavingHeld > 1);
+    CHECK(browses() == before);
+
+    // Nor while the game is being quit.
+    scene.close();
+    fixture->options.welcome = false;
+    fixture->open(kFakeLook);
+    fixture->settle();
+    before = browses();
+    press();
+    CHECK(browses() == before + 1);
+    scene.startGameOver();
+    for (s32 tick = 0; tick < 60; ++tick) {
+        press();
+    }
+    CHECK(scene.gameOver().active());
+    CHECK(browses() == before + 1);
+
+    // Nor once the console has sent the party elsewhere, while the journey waits on the game.
+    scene.close();
+    fixture->open(kFakeLook);
+    fixture->settle();
+    const std::array travel{ConsoleAction{.seat = 0, .line = "goto G1"}};
+    REQUIRE(scene.step(kStep, {}, travel).outcome == PlayOutcome::Travel);
+    REQUIRE(scene.consoleTravelRequest().has_value());
+    before = browses();
+    for (s32 tick = 0; tick < 10; ++tick) {
+        PlayScene::Inputs inputs{};
+        inputs[0].selector = pressed(kTurns.at(turn++ % kTurns.size()));
+        CHECK(scene.step(kStep, inputs, {}).outcome == PlayOutcome::Travel);
+    }
+    CHECK(browses() == before);
+}
+
+TEST_CASE("a seat's presses reach no page while its member cannot act",
+          "[play-scene][hud-style][assets]") {
+    // A warrior and, in the second seat, a wizard, whose combo lifts its partner and sets it
+    // down again; both meters full, so that the wizard may take hold of the warrior, and each
+    // member of a class other than its colour.
+    auto fixture = std::make_unique<HudScene>("G2");
+    fixture->party[0].save.color = 2;
+    fixture->party[1].save.character = kWizardClass;
+    for (PartyMember& member : fixture->party) {
+        member.turbo = TurboMeter::kFull;
+    }
+    fixture->open(kFakeLook);
+    fixture->settle();
+    PlayScene& scene = fixture->scene;
+    const test::FakeHudRecord& record = fixture->styles.record;
+    usize from = record.calls.size();
+    // Steps with both seats' selectors pressed `way`, over `inputs`; the seats browsed.
+    const auto press = [&](Press way, PlayScene::Inputs inputs = {}) {
+        for (PlayInput& input : inputs) {
+            input.selector = pressed(way);
+        }
+        fixture->step(inputs);
+        std::vector<s32> seats = browsedFrom(record, from);
+        from = record.calls.size();
+        return seats;
+    };
+    REQUIRE(press(Press::Down) == std::vector{0, 1});
+
+    // A member flying free under the console's noclip heeds no selector until it lands.
+    scene.setCheats(0, ConsoleCheats{.noclip = true});
+    CHECK(press(Press::Left) == std::vector{1});
+    scene.setCheats(0, ConsoleCheats{});
+    CHECK(press(Press::Right) == std::vector{0, 1});
+
+    // Nor does one its partner's combo has taken up, while the partner holding it does.
+    REQUIRE(scene.actor(0) != nullptr);
+    REQUIRE(scene.relocate(scene.actor(0)->position()));
+    const Vec3 across = scene.actor(0)->position() - scene.actor(1)->position();
+    REQUIRE(glm::length(Vec2{across.x, across.z}) < ComboMove::kReach);
+    REQUIRE(std::abs(across.y) < ComboMove::kRise);
+    PlayScene::Inputs grab{};
+    grab[1].combo = true;
+    grab[1].aimDirection = Vec3{across.x, 0.0f, across.z};
+    for (u32 guard = 0; guard < 30 && !scene.runtime(0)->combo.active(); ++guard) {
+        fixture->step(grab);
+    }
+    from = record.calls.size();
+    REQUIRE(scene.runtime(1)->combo.role == ComboRole::Grabber);
+    REQUIRE(PartyCombo::aside(*scene.runtime(0)));
+    u32 heldTicks = 0;
+    for (; heldTicks < 600 && PartyCombo::aside(*scene.runtime(0)); ++heldTicks) {
+        CHECK(press(Press::Down) == std::vector{1});
+    }
+    REQUIRE_FALSE(PartyCombo::aside(*scene.runtime(0)));
+    CHECK(heldTicks > 1);
+    CHECK(press(Press::Left) == std::vector{0, 1});
+
+    // Nor does one down: from its fall, through its death, to the question in its box.
+    REQUIRE(scene.kill(1));
+    u32 downTicks = 0;
+    for (; downTicks < 900 && !scene.runtime(1)->towerPrompt; ++downTicks) {
+        CHECK(press(Press::Right) == std::vector{0});
+    }
+    REQUIRE(scene.runtime(1)->towerPrompt);
+    CHECK(scene.runtime(1)->life == PlayerLife::InTower);
+    CHECK(downTicks > 1);
+    // Nor one that has answered it by leaving the game.
+    PlayScene::Inputs quit{};
+    quit[1].menu.back = true;
+    CHECK(press(Press::Down, quit) == std::vector{0});
+    REQUIRE(scene.runtime(1)->departed);
+    CHECK(press(Press::Left) == std::vector{0});
+
+    // A look the settings choose now opens for every member the scene draws, each in its own
+    // class and colour, the one gone from the game too, whose box still shows its colour.
+    fixture->config.display.hudStyle = std::string{kOtherLook};
+    CHECK(press(Press::Right) == std::vector{0});
+    REQUIRE(fixture->styles.opened.back() == kOtherLook);
+    CHECK(fixture->styles.parties.back() ==
+          std::vector<HudMember>{{.seat = 0, .classIndex = kWarriorClass, .color = 2},
+                                 {.seat = 1, .classIndex = kWizardClass, .color = 1}});
 }
 
 TEST_CASE("a look that throws in play leaves the scene drawing Dark Legacy's",
@@ -602,10 +756,17 @@ TEST_CASE("a look that throws in play leaves the scene drawing Dark Legacy's",
 
 TEST_CASE("a seat standing on a tower portal is told that portal in its own seat's view",
           "[play-scene][hud-style][assets]") {
-    // Two players, the second seat first in the party.
+    // Two players, the second seat first in the party, each of a class other than its colour.
     auto fixture = std::make_unique<HudScene>("L1");
     std::ranges::reverse(fixture->party);
+    fixture->party[0].save.character = kArcherClass;
+    fixture->party[0].save.color = 2;
+    fixture->party[1].save.color = 3;
     fixture->open(kFakeLook);
+    // The look opened for each member's own class and colour, in the party's order.
+    CHECK(fixture->styles.parties.front() ==
+          std::vector<HudMember>{{.seat = 1, .classIndex = kArcherClass, .color = 2},
+                                 {.seat = 0, .classIndex = kWarriorClass, .color = 3}});
     fixture->settle();
     PlayScene& scene = fixture->scene;
     REQUIRE(scene.participants().front().actor.player() == 1);
@@ -638,4 +799,49 @@ TEST_CASE("a seat standing on a tower portal is told that portal in its own seat
     // A tick on it stands there still, and so does what the HUD is told.
     fixture->step({});
     told();
+}
+
+TEST_CASE("a companion's arrow keeps above the panels of the look the HUD is drawn in",
+          "[play-scene][hud-style][assets]") {
+    auto fixture = std::make_unique<HudScene>("L1");
+    fixture->open(kFakeLook);
+    fixture->settle();
+    PlayScene& scene = fixture->scene;
+    // The second seat plays on another machine, so this one is shown the way to it.
+    scene.setLocalSeats(0b01);
+    // The lowest point of the arrow a frame draws to the second seat's character, stood just
+    // behind the eye: the arrow points to it down the view, as low as the look's panels allow.
+    const auto arrowBottom = [&] {
+        const WorldCamera eye = scene.viewCamera();
+        REQUIRE(scene.actor(1) != nullptr);
+        REQUIRE(scene.noclipMove(
+            1, eye.position - eye.forward() * kBehindEye - scene.actor(1)->position(),
+            std::nullopt));
+        fixture->render();
+        REQUIRE(scene.companionArrows().shown() == 1);
+        std::optional<f32> bottom;
+        for (const test::RecordedDraw& draw : fixture->device.draws) {
+            // The arrow is a triangle in its character's colour; its dark rim is left out.
+            if (draw.texture != &fixture->device.whiteTexture() || draw.vertices.size() != 3) {
+                continue;
+            }
+            const Color color = draw.vertices.front().color;
+            if (color.a != CompanionArrows::kAlpha ||
+                (color.r == 0 && color.g == 0 && color.b == 0)) {
+                continue;
+            }
+            for (const ImmediateVertex& vertex : draw.vertices) {
+                bottom = std::max(bottom.value_or(vertex.position.y), vertex.position.y);
+            }
+        }
+        REQUIRE(bottom.has_value());
+        return *bottom;
+    };
+    CHECK(arrowBottom() ==
+          Catch::Approx(test::FakeHudPainter::kStatusTop - CompanionArrows::kInset));
+    // Back in Dark Legacy's look, the arrow keeps above its boxes.
+    fixture->config.display.hudStyle = std::string{kDarkLegacyHudStyle};
+    fixture->step({});
+    CHECK(arrowBottom() ==
+          Catch::Approx(static_cast<f32>(StatusBoxPainter::kBarY) - CompanionArrows::kInset));
 }
