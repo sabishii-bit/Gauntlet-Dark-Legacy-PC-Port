@@ -16,11 +16,12 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import struct
 import sys
 import tempfile
 import zlib
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from unittest import mock
 
 
@@ -136,6 +137,196 @@ def fixture(root, name=b"TEST.WAD;1", file_lba=45100, flags=0):
     return cue
 
 
+# The reflected polynomial of the error detection code ECMA-130 gives a raw sector, and the bytes
+# of the sector it covers: the sync, the header and the user data.
+EDC_POLYNOMIAL = 0xD8018001
+EDC_SPAN = 16 + dc.SECTOR
+
+
+def edc_table() -> list[int]:
+    """The EDC's value for each byte, from which `edc` runs a byte at a time."""
+    table = []
+    for byte in range(256):
+        value = byte
+        for _ in range(8):
+            value = (value >> 1) ^ (EDC_POLYNOMIAL if value & 1 else 0)
+        table.append(value)
+    return table
+
+
+EDC_TABLE = edc_table()
+
+
+def edc(data: bytes) -> int:
+    """The EDC of ECMA-130 over `data`: the reflected CRC from nought with no final inversion that a
+    raw sector keeps, little-endian, after its user data."""
+    value = 0
+    for byte in data:
+        value = EDC_TABLE[(value ^ byte) & 0xFF] ^ (value >> 8)
+    return value
+
+
+# Where the sets' file systems lie: the root directory sector of the high-density area.
+ROOT_LBA = dc.HIGH_DENSITY_LBA + 20
+
+
+def boot_sector(area: bytes = b"", version: bytes = b"",
+                title: bytes = b"GAUNTLET LEGENDS") -> bytearray:
+    """The first sector of a set's boot area: the hardware ID, the product and the executable the
+    small set's boot area holds, with the area, version and title given and the rest nought."""
+    boot = bytearray(dc.SECTOR)
+    boot[:16] = b"SEGA SEGAKATANA "
+    boot[48:48 + len(area)] = area
+    boot[64:74] = b"T9710N    "
+    boot[74:74 + len(version)] = version
+    boot[96:112] = b"1ST_READ.BIN    "
+    boot[128:128 + len(title)] = title
+    return boot
+
+
+def pvd_sector(volume: bytes) -> bytearray:
+    """A primary volume descriptor of 2,048-byte blocks naming `volume`, its root at ROOT_LBA."""
+    pvd = bytearray(dc.SECTOR)
+    pvd[:7] = b"\x01CD001\x01"
+    pvd[40:72] = volume.ljust(32, b" ")
+    pvd[128:132] = both(dc.SECTOR, 2)
+    pvd[156:190] = record(b"\0", ROOT_LBA, dc.SECTOR, 2)
+    return pvd
+
+
+def directory(lba: int, parent: int, entries: bytes) -> bytes:
+    """A one-sector directory at `lba`: its own record, its parent's, then `entries`."""
+    return bytes(record(b"\0", lba, dc.SECTOR, 2) + record(b"\1", parent, dc.SECTOR, 2) + entries)
+
+
+def raw_track(first_lba: int, count: int, payloads: dict[int, bytes]) -> bytes:
+    """`count` raw sectors from `first_lba`, each holding the payload `payloads` gives for its place
+    in the track, or noughts."""
+    return b"".join(raw_sector(first_lba + n, payloads.get(n, b"")) for n in range(count))
+
+
+def sizes_rom(rows, pool: bytes) -> bytes:
+    """A SIZES.ROM table: its count, each row's size, DISK.ROM offset and four pool offsets of its
+    components (the first negative one ending them), then the pool of names."""
+    return (struct.pack("<I", len(rows))
+            + b"".join(struct.pack("<Ii4h", size, offset, *components)
+                       for size, offset, components in rows)
+            + pool)
+
+
+def one_track_cue(name: str = "t.bin", track: str = "03 MODE1/2352",
+                  index: str = "00:00:00") -> str:
+    """A cue sheet of one track in the file `name`, the track's number and mode `track` and its
+    INDEX 01 `index`: by default a raw data track from the file's start."""
+    return f'FILE "{name}" BINARY\nTRACK {track}\nINDEX 01 {index}\n'
+
+
+# Where the name fixture's file lies, between the volume descriptor and the root directory, and
+# what it holds.
+NAME_FILE_LBA = dc.HIGH_DENSITY_LBA + 17
+NAME_FILE = b"hello"
+
+
+def name_fixture(root: Path, identifier: bytes, folders=()) -> Path:
+    """A one-track disc whose only file has `identifier` as its ISO 9660 identifier, in the folders
+    whose identifiers `folders` gives from the root down, and its sheet: 21 sectors, and a sector
+    more for each folder. Its boot area is the small set's."""
+    start = dc.HIGH_DENSITY_LBA
+    lbas = [ROOT_LBA + depth for depth in range(len(folders) + 1)]
+    payloads = {0: boot_sector(), 16: pvd_sector(b"TEST"), NAME_FILE_LBA - start: NAME_FILE}
+    for depth, lba in enumerate(lbas):
+        if depth < len(folders):
+            entry = record(folders[depth], lbas[depth + 1], dc.SECTOR, 2)
+        else:
+            entry = record(identifier, NAME_FILE_LBA, len(NAME_FILE))
+        payloads[lba - start] = directory(lba, lbas[max(depth - 1, 0)], entry)
+    (root / "track3.bin").write_bytes(raw_track(start, lbas[-1] + 1 - start, payloads))
+    sheet = root / "names.cue"
+    sheet.write_bytes(one_track_cue("track3.bin").encode("ascii"))
+    return sheet
+
+
+# The full set's SIZES.ROM: levels/a.wad, DISK.ROM's five bytes; levels/b.rom, empty, after them;
+# and ext.str, seven bytes outside DISK.ROM.
+FULL_SIZES_ROM = sizes_rom([(5, 0, (0, 7, -1, 0)), (0, 5, (0, 13, -1, 0)),
+                            (7, -1, (19, -1, 0, 0))], b"levels\0a.wad\0b.rom\0ext.str\0")
+FULL_DISK_ROM = b"hello"
+
+# The full set's AUDIO/X.STR, which spans two sectors.
+FULL_STREAM = (bytes(range(256)) * 12)[:3000]
+
+# The full set's cue sheet: a byte order mark, CRLF line ends, indents of two and four spaces, and
+# an audio track whose file the set leaves out.
+FULL_CUE = ('\ufeffREM HIGH-DENSITY AREA\r\nFILE "track3.bin" BINARY\r\n'
+            '  TRACK 03 MODE1/2352\r\n    INDEX 01 00:00:00\r\n'
+            'FILE "track4.bin" BINARY\r\n  TRACK 04 AUDIO\r\n'
+            '    INDEX 00 00:00:00\r\n    INDEX 01 00:02:00\r\n'
+            'FILE "track5.bin" BINARY\r\n  TRACK 05 MODE1/2352\r\n'
+            '    INDEX 00 00:00:00\r\n    INDEX 01 00:03:00\r\n')
+
+# The full set's second data track: where it starts, after the audio track, and the sectors of
+# the pregap before it that track5.bin stores.
+FULL_SECOND_LBA = 45100
+FULL_PREGAP_SECTORS = 225
+
+# Where the full set's root lists EMPTY.BIN, a file of no bytes: an LBA no track holds.
+FULL_EMPTY_LBA = 999999
+
+# The GDI set's tracks: number, first LBA, type (4 raw data, 0 audio) and file. The audio track's
+# file is left out of the set, as the full set leaves out its own.
+GDI_DATA, GDI_AUDIO = 4, 0
+FULL_GDI_TRACKS = [(1, dc.HIGH_DENSITY_LBA, GDI_DATA, "track03.bin"),
+                   (2, 45050, GDI_AUDIO, "track04.raw"),
+                   (3, FULL_SECOND_LBA, GDI_DATA, "track05.bin")]
+
+
+def full_tracks() -> tuple[bytes, bytes]:
+    """The full set's two data tracks without the second's pregap. The first is 22 sectors from
+    45000: the boot area, the volume descriptor at 16, the root directory at 20 and AUDIO/ at 21.
+    The second is the four from FULL_SECOND_LBA: DISK.ROM, SIZES.ROM and the two of AUDIO/X.STR."""
+    audio = ROOT_LBA + 1
+    disk, sizes, stream = FULL_SECOND_LBA, FULL_SECOND_LBA + 1, FULL_SECOND_LBA + 2
+    root = directory(ROOT_LBA, ROOT_LBA,
+                     record(b"AUDIO", audio, dc.SECTOR, 2)
+                     + record(b"DISK.ROM;1", disk, len(FULL_DISK_ROM))
+                     + record(b"EMPTY.BIN;1", FULL_EMPTY_LBA, 0)
+                     + record(b"SIZES.ROM;1", sizes, len(FULL_SIZES_ROM)))
+    boot = boot_sector(area=b" U      ", version=b"V1.003",
+                       title=b"GAUNTLET LEGENDS".ljust(128, b" "))
+    first = raw_track(dc.HIGH_DENSITY_LBA, 22, {
+        0: boot, 16: pvd_sector(b"GAUNT1"), 20: root,
+        21: directory(audio, ROOT_LBA, record(b"X.STR;1", stream, len(FULL_STREAM)))})
+    second = raw_track(FULL_SECOND_LBA, 4, {0: FULL_DISK_ROM, 1: FULL_SIZES_ROM,
+                                            2: FULL_STREAM[:dc.SECTOR], 3: FULL_STREAM[dc.SECTOR:]})
+    return first, second
+
+
+def full_set(root: Path) -> Path:
+    """The end-to-end set: a disc whose SIZES.ROM and DISK.ROM restore native files, a folder, a
+    file of no bytes and an external record, behind the cue sheet FULL_CUE. Returns the sheet."""
+    first, second = full_tracks()
+    (root / "track3.bin").write_bytes(first)
+    (root / "track5.bin").write_bytes(b"\0" * dc.RAW_SECTOR * FULL_PREGAP_SECTORS + second)
+    sheet = root / "full.cue"
+    sheet.write_bytes(FULL_CUE.encode("utf-8"))
+    return sheet
+
+
+def full_gdi_set(root: Path) -> Path:
+    """The full set's sectors behind a GDI of FULL_GDI_TRACKS, with CRLF line ends: each data
+    track's file holds its sectors from its first LBA, the second's without the pregap. Returns the
+    GDI."""
+    data = iter(full_tracks())
+    lines = [str(len(FULL_GDI_TRACKS))]
+    for number, lba, kind, name in FULL_GDI_TRACKS:
+        if kind == GDI_DATA:
+            (root / name).write_bytes(next(data))
+        lines.append(f"{number} {lba} {kind} {dc.RAW_SECTOR} {name} 0")
+    sheet = root / "full.gdi"
+    sheet.write_bytes("".join(line + "\r\n" for line in lines).encode("ascii"))
+    return sheet
+
+
 # The cases. Beside the script's own outcome, which the generator finds by running it, each holds
 # the launcher's: the rule its reader refuses the case by, or None when it takes the case; the name
 # rule, where checking a name decides; and, where the launcher decides otherwise than the script,
@@ -148,8 +339,15 @@ DEVIATIONS = {
     2: "a component of over 200 characters or a path of over 220, which the launcher refuses",
     3: "one of the alpha installer's names at any depth, which the launcher never writes",
     4: "a device name followed by spaces, which Windows opens as the device",
+    5: "a port's device name ending in a superscript digit, which Windows opens as the device too",
     6: "a folder spelled in two letter cases, one folder on Windows and two on Linux for the "
        "script, which the launcher refuses so that a tree is the same on both",
+    7: "a cue sheet's number written in digits other than ASCII's, which the launcher does not "
+       "read as a number",
+    8: "a cue sheet's track number past 32 bits, or a time or its count of frames past 64, which "
+       "the launcher refuses as too large",
+    9: "two track files whose names differ only in letter case, which the script refuses on "
+       "Windows alone and the launcher on every system",
 }
 
 N64_VECTORS = "n64-vectors.json"
@@ -283,6 +481,240 @@ JSON_STRING_CASES = [
     {"text": "".join(map(chr, range(0x20, 0x7F)))},
 ]
 
+DREAMCAST_VECTORS = "dreamcast-vectors.json"
+
+
+def sector_header(address: tuple[int, int, int], mode: int = 1) -> bytes:
+    """The 16 bytes a raw sector begins with: the sync, its address as written (the BCD minute,
+    second and frame) and its mode."""
+    return dc.SYNC + bytes((*address, mode))
+
+
+# (header, rule): a raw sector's first bytes, read for the LBA their address gives.
+DREAMCAST_SECTOR_CASES = [
+    (bytes(raw_sector(45000, b"")[:16]), None),
+    (bytes(raw_sector(547163, b"")[:16]), None),
+    (sector_header((0x00, 0x02, 0x00)), None),
+    (sector_header((0x00, 0x00, 0x00)), None),
+    # The minute's tens may pass nine, as the high-density area's addresses do.
+    (sector_header((0xA0, 0x00, 0x00)), None),
+    (sector_header((0xF9, 0x59, 0x74)), None),
+    (sector_header((0x0A, 0x00, 0x00)), "sectorBcd"),
+    (sector_header((0x00, 0xA0, 0x00)), "sectorBcd"),
+    (sector_header((0x00, 0x60, 0x00)), "sectorTime"),
+    (sector_header((0x00, 0x00, 0x75)), "sectorTime"),
+    (sector_header((0x00, 0x02, 0x00), mode=2), "sectorHeader"),
+    (bytes(12) + bytes((0x00, 0x02, 0x00, 1)), "sectorHeader"),
+    (sector_header((0x00, 0x02, 0x00))[:15], "sectorHeader"),
+]
+
+# The text whose EDC is the check value of ECMA-130's code.
+EDC_CHECK_TEXT = "123456789"
+
+# The payloads the EDC cases' sectors hold, by name, each followed by noughts.
+EDC_PAYLOADS = {"zero": b"", "bytes0to255x8": bytes(range(256)) * 8, "hello": b"hello"}
+
+# (LBA, payload): a raw sector the builder makes, whose EDC the launcher checks.
+DREAMCAST_EDC_CASES = [(0, "zero"), (16, "zero"), (45000, "zero"), (45016, "zero"),
+                       (549149, "zero"), (547163, "zero"), (45000, "bytes0to255x8"),
+                       (45100, "hello")]
+
+# (name, name rule, deviation): a name given to each reader that takes one from a dump: a cue
+# sheet's FILE line, an ISO 9660 identifier with ";1" after it, and a SIZES.ROM component. The name
+# rule is what the launcher's check of a name by itself gives it, or None where that check takes
+# it; launcher_name_outcomes says what each reader makes of that.
+DREAMCAST_NAME_CASES = [
+    # Taken by both, or refused by both.
+    ("Track (1).bin", None, None),
+    ("a", None, None),
+    ("a;1", None, None),
+    ("a" * 200, None, None),
+    ("trak\u00e9.bin", None, None),
+    ("../other.bin", "forbidden", None),
+    ("../escape", "forbidden", None),
+    ("", "empty", None),
+    (".", "dot", None),
+    ("..", "dot", None),
+    ("a.", "trailingDotOrSpace", None),
+    ("a ", "trailingDotOrSpace", None),
+    ("a/b", "forbidden", None),
+    ("A/B", "forbidden", None),
+    ("a\\b", "forbidden", None),
+    ("a:b", "forbidden", None),
+    ("NUL.x.y", "deviceName", None),
+    ("con\u0131n$", "deviceName", None),
+    # Taken by the extractor, refused by the launcher.
+    ("a\x7fb", "control", 1),
+    ("a" * 201, "componentTooLong", 2),
+    ("INSTALLATION.JSON", "alphaName", 3),
+    (".gdl-update", "alphaName", 3),
+    ("CON .bin", "deviceName", 4),
+    ("CON .X", "deviceName", 4),
+    ("COM\u00b9.bin", "deviceName", 5),
+]
+
+# The one row of the SIZES.ROM table a name is the one component of: five bytes at the start of a
+# DISK.ROM of five.
+NAME_TABLE_ROW = (5, 0, (0, -1, 0, 0))
+NAME_DISK_LEN = 5
+
+# The folders of the long paths; a path's file takes up what is left of its length.
+LONG_PATH_FOLDERS = ("a" * 54, "b" * 54, "c" * 54)
+
+
+def long_path(chars: int) -> list[str]:
+    """The components of a path of `chars` characters, separators included: the folders of
+    LONG_PATH_FOLDERS, then a file named to make up the length."""
+    used = sum(len(folder) + 1 for folder in LONG_PATH_FOLDERS)
+    return [*LONG_PATH_FOLDERS, "d" * (chars - used)]
+
+
+# (characters, rule, name rule, deviation): a disc's file in the three folders of
+# LONG_PATH_FOLDERS whose path has that many characters, as the walk of the disc lists it.
+DREAMCAST_ISO_PATH_CASES = [(220, None, None, None), (221, "entryName", "pathTooLong", 2)]
+
+# (name, sheet, rule, name rule, deviation): a cue sheet as text, or as bytes where it is no UTF-8.
+DREAMCAST_SHEET_CASES = [
+    ("minimal", one_track_cue(), None, None, None),
+    ("CRLF line ends, indents and a byte order mark",
+     "\ufeff" + one_track_cue().replace("\n", "\r\n").replace("TRACK", "  TRACK"),
+     None, None, None),
+    ("CR line ends", one_track_cue().replace("\n", "\r"), None, None, None),
+    ("file separators between lines", one_track_cue().replace("\n", "\x1c"), None, None, None),
+    ("line separators between lines", one_track_cue().replace("\n", "\u2028"), None, None, None),
+    ("a unit separator ending a line", one_track_cue().replace("BINARY\n", "BINARY\x1f\n"),
+     None, None, None),
+    ("a no-break space indent", one_track_cue().replace("TRACK", "\u00a0TRACK"), None, None, None),
+    ("REM alone", "REM\n" + one_track_cue(), "cueLine", None, None),
+    ("REM and a tab", "REM\tx\n" + one_track_cue(), "cueLine", None, None),
+    ("FILE in lower case", one_track_cue().replace("FILE", "file"), "cueLine", None, None),
+    ("two spaces after FILE", one_track_cue().replace("FILE ", "FILE  "), "cueLine", None, None),
+    ("a MODE2 track", one_track_cue(track="03 MODE2/2352"), "trackMode", None, None),
+    ("CATALOG", "CATALOG 0000000000000\n" + one_track_cue(), "cueLine", None, None),
+    ("FLAGS", one_track_cue() + "FLAGS DCP\n", "cueLine", None, None),
+    ("PREGAP", one_track_cue().replace("INDEX 01", "PREGAP 00:02:00\nINDEX 01"), "cueLine",
+     None, None),
+    ("INDEX before TRACK", 'FILE "t.bin" BINARY\nINDEX 01 00:00:00\n', "cueLine", None, None),
+    ("INDEX 02", one_track_cue() + "INDEX 02 00:01:00\n", "cueLine", None, None),
+    ("INDEX 00 after INDEX 01", one_track_cue() + "INDEX 00 00:01:00\n", "cueLine", None, None),
+    ("second 60", one_track_cue(index="00:60:00"), "cueTime", None, None),
+    ("frame 75", one_track_cue(index="00:00:75"), "cueTime", None, None),
+    ("minute 999", one_track_cue(index="999:00:00"), None, None, None),
+    ("a track number with leading zeros", one_track_cue(track="000999 MODE1/2352"),
+     None, None, None),
+    ("two tracks in one file", one_track_cue() + "TRACK 04 AUDIO\nINDEX 01 00:00:00\n",
+     "trackPerFile", None, None),
+    ("one file named twice", one_track_cue() + one_track_cue(track="04 AUDIO"), "trackPerFile",
+     None, None),
+    ("FILE without TRACK, then FILE", 'FILE "u.bin" BINARY\n' + one_track_cue(), None, None, None),
+    ("FILE without TRACK at the end", one_track_cue() + 'FILE "u.bin" BINARY\n', None, None, None),
+    ("TRACK without INDEX 01 at the end", one_track_cue() + 'FILE "u.bin" BINARY\nTRACK 04 AUDIO\n',
+     "incompleteSheet", None, None),
+    ("FILE before INDEX 01", 'FILE "t.bin" BINARY\nTRACK 03 MODE1/2352\nFILE "u.bin" BINARY\n',
+     "missingIndex", None, None),
+    ("a track number twice", one_track_cue() + one_track_cue("u.bin", "03 AUDIO"),
+     "duplicateTrack", None, None),
+    ("an empty sheet", "", "incompleteSheet", None, None),
+    ("a file outside the sheet's folder", one_track_cue("../t.bin"), "trackName", "forbidden",
+     None),
+    ("the extractor's test's file outside the sheet's folder", one_track_cue("../other.bin"),
+     "trackName", "forbidden", None),
+    ("a file name outside ASCII", one_track_cue("tr\u00e9ck.bin"), None, None, None),
+    ("a quote in a file name", one_track_cue('t"x.bin'), "cueLine", None, None),
+    ("a NUL ending a line", one_track_cue().replace("BINARY", "BINARY\0"), "cueLine", None, None),
+    ("no UTF-8", b"\xff" + one_track_cue().encode("ascii"), "sheetText", None, None),
+    # Taken by the extractor, refused by the launcher.
+    ("Arabic-Indic digits in a track number", one_track_cue(track="\u0660\u0663 MODE1/2352"),
+     "cueLine", None, 7),
+    ("fullwidth digits in an index", one_track_cue(index="\uff10\uff10:00:00"), "cueLine", None, 7),
+    ("a track number past 32 bits", one_track_cue(track="4294967296 MODE1/2352"),
+     "numberTooLarge", None, 8),
+    ("a minute past 64 bits", one_track_cue(index="18446744073709551616:00:00"), "numberTooLarge",
+     None, 8),
+    ("a count of frames past 64 bits", one_track_cue(index="4099276460824345:00:00"),
+     "numberTooLarge", None, 8),
+    # Refused by the extractor on Windows alone, by the launcher on every system.
+    ("one file named in two letter cases", one_track_cue() + one_track_cue("T.BIN", "04 AUDIO"),
+     "trackPerFile", None, 9),
+]
+
+
+def levels_table(offset: int = 0, size: int = 5, component: int = 7) -> bytes:
+    """The extractor's tests' SIZES.ROM table: one row naming levels/worlds.rom, `size` bytes at
+    `offset` of DISK.ROM, its second component at `component` of the pool."""
+    return sizes_rom([(size, offset, (0, component, -1, 0))], b"levels\0worlds.rom\0")
+
+
+def name_table(name: str) -> bytes:
+    """A SIZES.ROM table whose one row, NAME_TABLE_ROW, has `name` as its one component."""
+    return sizes_rom([NAME_TABLE_ROW], name.encode("utf-8") + b"\0")
+
+
+def path_table(components: list[str]) -> bytes:
+    """A SIZES.ROM table whose one row is NAME_TABLE_ROW's file named by four components."""
+    offsets = [sum(len(component) + 1 for component in components[:n])
+               for n in range(len(components))]
+    size, offset, _ = NAME_TABLE_ROW
+    return sizes_rom([(size, offset, tuple(offsets))],
+                     b"".join(component.encode("ascii") + b"\0" for component in components))
+
+
+# SIZES.ROM tables, by the extractor's test that reads each: (table, DISK.ROM's length, rule).
+DREAMCAST_SIZES_CASES = {
+    "firstNegativeComponent": (levels_table(), 5, None),
+    "externalFile": (levels_table(offset=-1), 0, None),
+    "outOfBoundsPayload": (levels_table(size=6), 5, "sizesExtent"),
+    "outOfBoundsName": (levels_table(component=100), 5, "sizesName"),
+    "truncatedTable": (struct.pack("<I", 1000), 5, "sizesTable"),
+    "duplicateNames": (sizes_rom([NAME_TABLE_ROW] * 2, b"file\0"), 5, "sizesDuplicate"),
+    "fileDirectoryConflict": (sizes_rom([NAME_TABLE_ROW, (5, 0, (0, 5, -1, 0))], b"file\0child\0"),
+                              5, "sizesConflict"),
+}
+
+# The extractor's unpack test: a table of a file in DISK.ROM and an external one, DISK.ROM, and
+# the golden of the manifest unpack_native writes for them.
+UNPACK_SIZES_ROM = sizes_rom([(5, 0, (0, -1, 0, 0)), (9, -1, (9, -1, 0, 0))],
+                             b"test.wad\0outside.rom\0")
+UNPACK_DISK_ROM = b"hello"
+UNPACK_GOLDEN = "dreamcast-unpack-native-manifest.json"
+
+# More SIZES.ROM tables: (name, table, DISK.ROM's length, rule, name rule, deviation).
+DREAMCAST_SIZES_EXTRAS = [
+    ("countZero", struct.pack("<I", 0), 5, "sizesTable", None, None),
+    ("headerCutShort", bytes(3), 5, "sizesHeader", None, None),
+    ("offsetBelowExternal", levels_table(offset=-2), 5, "sizesExtent", None, None),
+    ("noComponent", sizes_rom([(5, 0, (-1, 0, 0, 0))], b"x\0"), 5, "sizesNoName", None, None),
+    ("emptyComponent", sizes_rom([(5, 0, (1, -1, 0, 0))], b"x\0"), 5, "sizesNameUnsafe", "empty",
+     None),
+    ("externalOfAnySize", levels_table(offset=-1, size=0xFFFFFFFF), 0, None, None, None),
+    ("separatorInComponent", name_table("a/b"), 5, "sizesNameUnsafe", "forbidden", None),
+    ("pathOf221Characters", path_table(long_path(221)), 5, "sizesNameUnsafe", "pathTooLong", 2),
+]
+
+# (identifier, LBA, size, flags): directory records the builder writes, for files and folders,
+# with identifiers of even length, which a pad byte follows, and of odd.
+DREAMCAST_RECORD_CASES = [(b"TEST.WAD;1", 45100, 5, 0), (b"\0", ROOT_LBA, dc.SECTOR, 2),
+                          (b"AUDIO", ROOT_LBA + 1, dc.SECTOR, 2)]
+
+# The GD-ROM sets, by their names in the vectors, and the builder of each.
+DREAMCAST_SETS = {"small": fixture, "full": full_set, "fullGdi": full_gdi_set}
+
+# The sets the extractor reads, by name: whether each holds a native table for unpack_native to
+# restore, and the goldens of its tree's manifests, by their paths in the tree. It cannot read the
+# GDI set.
+DREAMCAST_EXTRACTIONS = {
+    "small": (False, {"disc-manifest.json": "dreamcast-small-disc-manifest.json"}),
+    "full": (True, {"disc-manifest.json": "dreamcast-full-disc-manifest.json",
+                    "native-manifest.json": "dreamcast-full-native-manifest.json"}),
+}
+
+# The systems the launcher runs on, by the path rules their file systems follow: Windows compares
+# names without letter case, Linux with it.
+SYSTEMS = {"windows": PureWindowsPath, "linux": PurePosixPath}
+
+# The system that runs this, by its name in SYSTEMS.
+THIS_SYSTEM = "windows" if os.name == "nt" else "linux"
+
 
 def n64_record_word_cases(image: bytes) -> list[tuple[int, int, int, str]]:
     """(entry, word, value, rule): one word of an entry's record in `image` changed."""
@@ -389,20 +821,24 @@ def vectors(name: str):
     return json.loads((VECTOR_FOLDER / name).read_text(encoding="utf-8"))
 
 
-def script_result(function, *args, **kwargs) -> tuple[object, str | None]:
-    """What the N64 extractor gives for a case and None, or None and its message refusing it."""
+def script_result(function, *args, refusal: type = n64.FormatError,
+                  **kwargs) -> tuple[object, str | None]:
+    """What an extractor gives for a case and None, or None and its message refusing it with
+    `refusal`: FormatError for the N64 extractor, ValueError for the Dreamcast extractor."""
     try:
         return function(*args, **kwargs), None
-    except n64.FormatError as error:
+    except refusal as error:
         return None, str(error)
 
 
-def outcome(python: str | None, rule: str | None, name_rule: str | None = None,
+def outcome(python: str | dict | None, rule: str | None, name_rule: str | None = None,
             deviation: int | None = None) -> dict:
     """A case's outcome fields: the script's message and the launcher's rule, each None where it
-    takes the case, then the name rule and the deviation where they apply. Where one takes a case
-    the other refuses, a deviation must say why."""
-    if (python is None) != (rule is None) and deviation is None:
+    takes the case, then the name rule and the deviation where they apply. The script's message is
+    given by system where the systems differ. Where one takes a case the other refuses, on any
+    system, a deviation must say why."""
+    messages = python.values() if isinstance(python, dict) else [python]
+    if any((message is None) != (rule is None) for message in messages) and deviation is None:
         raise ValueError(f"the script and the launcher disagree with no deviation: {python!r}, "
                          f"{rule!r}")
     fields = {"python": python, "rule": rule}
@@ -553,8 +989,269 @@ def write_n64_vectors(folder: Path, refreeze: bool) -> list[str]:
     return [N64_VECTORS, *goldens, JSON_STRINGS]
 
 
+def on_this_system(value):
+    """A vector's value for the system that runs this: one value where every system gives the same,
+    else the value by system."""
+    return value[THIS_SYSTEM] if isinstance(value, dict) else value
+
+
+class SheetOnSystem:
+    """A cue sheet's path that read_cue reads the sheet through and joins the track files it names
+    to, by one system's path rules whichever system runs it: Windows takes two names that differ
+    only in letter case for one file."""
+
+    def __init__(self, sheet: Path, system: str):
+        self.sheet = sheet
+        self.parent = SYSTEMS[system]("sheets")
+
+    def read_text(self, encoding: str) -> str:
+        return self.sheet.read_text(encoding=encoding)
+
+
+def cue_tracks(sheet) -> list[list]:
+    """The tracks the Dreamcast extractor reads from a cue sheet: each one's number, file name, mode
+    and index."""
+    return [[track.number, track.path.name, track.mode, track.index]
+            for track in dc.read_cue(sheet)]
+
+
+def disc_paths(sheet: Path) -> list[str]:
+    """The paths of the files the Dreamcast extractor's walk of a disc's file system lists."""
+    with dc.Disc(sheet) as disc:
+        return [entry.path.as_posix() for entry in disc.entries]
+
+
+def packed_rows(table: bytes, disk_len: int) -> list[list]:
+    """The files the Dreamcast extractor reads from a SIZES.ROM table: each one's path, DISK.ROM
+    offset (-1 for one outside DISK.ROM) and size."""
+    return [[file.path.as_posix(), file.offset, file.size]
+            for file in dc.packed_files(table, disk_len)]
+
+
+def name_sheet(folder: Path, name: str) -> Path:
+    """A cue sheet in `folder` whose one track lies in the file `name`."""
+    sheet = folder / "track.cue"
+    sheet.write_bytes(one_track_cue(name).encode("utf-8"))
+    return sheet
+
+
+def iso_identifier(name: str) -> bytes:
+    """The ISO 9660 identifier a disc holds the file `name` by: its UTF-8 bytes, then version 1."""
+    return (name + ";1").encode("utf-8")
+
+
+def sheet_bytes(case: dict) -> bytes:
+    """What the file of a sheet case holds."""
+    return bytes.fromhex(case["bytes"]) if "bytes" in case else case["text"].encode("utf-8")
+
+
+def file_digests(folder: Path) -> dict:
+    """Every file in `folder`, by name, with its size and SHA-256."""
+    files = {}
+    for path in sorted(folder.iterdir(), key=lambda path: path.name):
+        data = path.read_bytes()
+        files[path.name] = {"size": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+    return files
+
+
+def gdi_data_tracks(folder: Path) -> list[list]:
+    """The GDI set's data tracks in `folder` as the launcher's disc manifest lists them: each one's
+    file, index 0, first LBA, and sectors by its file's length."""
+    return [[name, 0, lba, (folder / name).stat().st_size // dc.RAW_SECTOR]
+            for _, lba, kind, name in FULL_GDI_TRACKS if kind == GDI_DATA]
+
+
+def extract_set(sheet: Path, output: Path, native: bool) -> None:
+    """Extracts a set into `output` as the Dreamcast extractor's program does: the disc, then, where
+    the set holds a native table, the native files."""
+    dc.extract(sheet, output)
+    if native:
+        dc.unpack_native(output)
+
+
+def launcher_name_outcomes(name: str, name_rule: str | None) -> dict:
+    """The launcher's (rule, name rule) for a name in each reader that takes one from a dump, or
+    None where the reader takes it. A cue sheet's FILE line holds no empty name and no quote, and
+    the walk of a disc's file system and SIZES.ROM's table read names in ASCII alone: each reader
+    refuses those first, then judges the name by itself as `name_rule` says."""
+    def judged(rule: str):
+        return None if name_rule is None else (rule, name_rule)
+    in_ascii = name.isascii()
+    return {"track": ("cueLine", None) if not name or '"' in name else judged("trackName"),
+            "iso": judged("entryName") if in_ascii else ("entryName", None),
+            "sizes": judged("sizesNameUnsafe") if in_ascii else ("sizesName", None)}
+
+
+def by_system(results: dict) -> tuple:
+    """A (result, message) pair found on each system: the one pair where every system found the
+    same, else the results by system and the messages by system."""
+    first, *others = results.values()
+    if all(result == first for result in others):
+        return first
+    return ({system: result for system, (result, _) in results.items()},
+            {system: message for system, (_, message) in results.items()})
+
+
+def new_folder(scratch: Path) -> Path:
+    """A new, empty folder in `scratch`."""
+    return Path(tempfile.mkdtemp(dir=scratch))
+
+
+def dreamcast_sectors() -> list[dict]:
+    """The sector header cases, with the LBA the extractor reads from each."""
+    cases = []
+    for header, rule in DREAMCAST_SECTOR_CASES:
+        lba, python = script_result(dc.sector_lba, header, refusal=ValueError)
+        cases.append({"header": header.hex(), "lba": lba, **outcome(python, rule)})
+    return cases
+
+
+def dreamcast_edc() -> dict:
+    """The EDC's check value, and the EDC of each EDC case's sector."""
+    sectors = [{"lba": lba, "payload": payload,
+                "edc": f"{edc(raw_sector(lba, EDC_PAYLOADS[payload])[:EDC_SPAN]):08x}"}
+               for lba, payload in DREAMCAST_EDC_CASES]
+    return {"check": {"ascii": EDC_CHECK_TEXT, "edc": f"{edc(EDC_CHECK_TEXT.encode('ascii')):08x}"},
+            "payloads": {name: payload.hex() for name, payload in EDC_PAYLOADS.items()},
+            "sectors": sectors}
+
+
+def dreamcast_names(scratch: Path) -> list[dict]:
+    """The name cases, with what each reader of the extractor makes of each name."""
+    cases = []
+    for name, name_rule, deviation in DREAMCAST_NAME_CASES:
+        folder = new_folder(scratch)
+        found = {
+            "track": script_result(cue_tracks, name_sheet(folder, name), refusal=ValueError),
+            "iso": script_result(disc_paths, name_fixture(folder, iso_identifier(name)),
+                                 refusal=ValueError),
+            "sizes": script_result(packed_rows, name_table(name), NAME_DISK_LEN,
+                                   refusal=ValueError),
+        }
+        case = {"name": name}
+        explained = False
+        for reader, expected in launcher_name_outcomes(name, name_rule).items():
+            _, python = found[reader]
+            rule, reader_name_rule = expected or (None, None)
+            # The deviation goes on the readers that decide the name otherwise than the script.
+            differs = (python is None) != (rule is None)
+            explained = explained or differs
+            case[reader] = outcome(python, rule, reader_name_rule, deviation if differs else None)
+        if deviation is not None and not explained:
+            raise ValueError(f"the name {name!r} cites deviation {deviation}, but every reader "
+                             "decides it as the script does")
+        cases.append(case)
+    return cases
+
+
+def dreamcast_iso_paths(scratch: Path) -> list[dict]:
+    """The long path cases, with what the extractor's walk makes of each disc."""
+    cases = []
+    for chars, rule, name_rule, deviation in DREAMCAST_ISO_PATH_CASES:
+        components = long_path(chars)
+        folders = [component.encode("ascii") for component in components[:-1]]
+        sheet = name_fixture(new_folder(scratch), iso_identifier(components[-1]), folders)
+        _, python = script_result(disc_paths, sheet, refusal=ValueError)
+        cases.append({"depth": len(folders), "chars": chars, "path": "/".join(components),
+                      **outcome(python, rule, name_rule, deviation)})
+    return cases
+
+
+def dreamcast_sheets(scratch: Path) -> list[dict]:
+    """The cue sheet cases, with the tracks the extractor reads from each on each system."""
+    cases = []
+    for name, sheet, rule, name_rule, deviation in DREAMCAST_SHEET_CASES:
+        data = sheet if isinstance(sheet, bytes) else sheet.encode("utf-8")
+        path = new_folder(scratch) / "sheet.cue"
+        path.write_bytes(data)
+        tracks, python = by_system({
+            system: script_result(cue_tracks, SheetOnSystem(path, system), refusal=ValueError)
+            for system in SYSTEMS})
+        written = {"bytes": data.hex()} if isinstance(sheet, bytes) else {"text": sheet}
+        cases.append({"name": name, **written, "tracks": tracks,
+                      **outcome(python, rule, name_rule, deviation)})
+    return cases
+
+
+def table_case(table: bytes, disk_len: int, rule: str | None, name_rule: str | None = None,
+               deviation: int | None = None) -> dict:
+    """A SIZES.ROM table case, with the files the extractor reads from the table."""
+    files, python = script_result(packed_rows, table, disk_len, refusal=ValueError)
+    return {"hex": table.hex(), "diskLen": disk_len, "files": files,
+            **outcome(python, rule, name_rule, deviation)}
+
+
+def dreamcast_sizes(scratch: Path, goldens: dict[str, bytes]) -> dict:
+    """The SIZES.ROM table cases, and the unpack case, whose golden goes into `goldens`."""
+    sizes = {name: table_case(table, disk_len, rule)
+             for name, (table, disk_len, rule) in DREAMCAST_SIZES_CASES.items()}
+    output = new_folder(scratch)
+    (output / "disc").mkdir()
+    (output / "disc" / "SIZES.ROM").write_bytes(UNPACK_SIZES_ROM)
+    (output / "disc" / "DISK.ROM").write_bytes(UNPACK_DISK_ROM)
+    dc.unpack_native(output)
+    goldens[UNPACK_GOLDEN] = (output / "native-manifest.json").read_bytes()
+    sizes["unpack"] = {**table_case(UNPACK_SIZES_ROM, len(UNPACK_DISK_ROM), None),
+                       "disk": UNPACK_DISK_ROM.hex(), "golden": UNPACK_GOLDEN,
+                       "native": tree_listing(output / "native")}
+    sizes["extras"] = [{"name": name, **table_case(table, disk_len, rule, name_rule, deviation)}
+                       for name, table, disk_len, rule, name_rule, deviation
+                       in DREAMCAST_SIZES_EXTRAS]
+    return sizes
+
+
+def dreamcast_records() -> list[dict]:
+    """The directory record cases, with the bytes the builder writes for each."""
+    return [{"name": identifier.decode("ascii"), "lba": lba, "size": size, "flags": flags,
+             "hex": record(identifier, lba, size, flags).hex()}
+            for identifier, lba, size, flags in DREAMCAST_RECORD_CASES]
+
+
+def dreamcast_sets(scratch: Path, goldens: dict[str, bytes]) -> dict:
+    """Each set's files, and the tree the extractor writes for it, whose goldens go into
+    `goldens`; or, for the GDI set, which the extractor cannot read, its data tracks."""
+    sets = {}
+    for name, build in DREAMCAST_SETS.items():
+        folder = new_folder(scratch)
+        sheet = build(folder)
+        entry = {"sheet": sheet.name, "files": file_digests(folder)}
+        if name in DREAMCAST_EXTRACTIONS:
+            native, tree_goldens = DREAMCAST_EXTRACTIONS[name]
+            tree = new_folder(scratch) / "tree"
+            extract_set(sheet, tree, native)
+            for path, golden in tree_goldens.items():
+                goldens[golden] = (tree / path).read_bytes()
+            entry.update(goldens=tree_goldens, tree=tree_listing(tree))
+        else:
+            entry["dataTracks"] = gdi_data_tracks(folder)
+        sets[name] = entry
+    return sets
+
+
+def write_dreamcast_vectors(folder: Path, refreeze: bool) -> list[str]:
+    """Writes the Dreamcast vectors and the golden manifests into `folder`. No Dreamcast vector
+    depends on a compressor, so nothing is carried over and `refreeze` changes nothing."""
+    goldens = {}
+    with tempfile.TemporaryDirectory() as temporary:
+        scratch = Path(temporary)
+        document = {
+            "sectors": dreamcast_sectors(),
+            "edc": dreamcast_edc(),
+            "names": dreamcast_names(scratch),
+            "isoPaths": dreamcast_iso_paths(scratch),
+            "sheets": dreamcast_sheets(scratch),
+            "sizes": dreamcast_sizes(scratch, goldens),
+            "records": dreamcast_records(),
+            "sets": dreamcast_sets(scratch, goldens),
+        }
+    write_document(folder / DREAMCAST_VECTORS, document)
+    for name, data in goldens.items():
+        (folder / name).write_bytes(data)
+    return [DREAMCAST_VECTORS, *goldens]
+
+
 # Each set of vectors, by the name write_vectors takes.
-VECTOR_SETS = {"n64": write_n64_vectors}
+VECTOR_SETS = {"n64": write_n64_vectors, "dreamcast": write_dreamcast_vectors}
 
 
 def write_vectors(folder, which: str, refreeze: bool = False) -> list[str]:

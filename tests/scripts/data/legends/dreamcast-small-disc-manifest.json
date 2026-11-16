@@ -1,0 +1,30 @@
+{
+  "format": "dreamcast-legends-disc-v1",
+  "volume": "TEST",
+  "product": "T9710N",
+  "title": "GAUNTLET LEGENDS\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000",
+  "executable": "1ST_READ.BIN",
+  "files": [
+    {
+      "path": "TEST.WAD",
+      "lba": 45100,
+      "size": 5,
+      "sha256": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+    }
+  ],
+  "data_tracks": [
+    {
+      "file": "track3.bin",
+      "index": 0,
+      "first_lba": 45000,
+      "sectors": 21
+    },
+    {
+      "file": "track5.bin",
+      "index": 225,
+      "first_lba": 45100,
+      "sectors": 1
+    }
+  ],
+  "scope": "Native disc bytes; not converted or certified runtime-compatible"
+}

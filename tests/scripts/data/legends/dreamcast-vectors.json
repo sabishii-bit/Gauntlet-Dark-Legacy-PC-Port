@@ -1,0 +1,1379 @@
+{
+  "sectors": [
+    {
+      "header": "00ffffffffffffffffffff0010020001",
+      "lba": 45000,
+      "python": null,
+      "rule": null
+    },
+    {
+      "header": "00ffffffffffffffffffff00c1373801",
+      "lba": 547163,
+      "python": null,
+      "rule": null
+    },
+    {
+      "header": "00ffffffffffffffffffff0000020001",
+      "lba": 0,
+      "python": null,
+      "rule": null
+    },
+    {
+      "header": "00ffffffffffffffffffff0000000001",
+      "lba": -150,
+      "python": null,
+      "rule": null
+    },
+    {
+      "header": "00ffffffffffffffffffff00a0000001",
+      "lba": 449850,
+      "python": null,
+      "rule": null
+    },
+    {
+      "header": "00ffffffffffffffffffff00f9597401",
+      "lba": 719849,
+      "python": null,
+      "rule": null
+    },
+    {
+      "header": "00ffffffffffffffffffff000a000001",
+      "lba": null,
+      "python": "Invalid BCD sector address",
+      "rule": "sectorBcd"
+    },
+    {
+      "header": "00ffffffffffffffffffff0000a00001",
+      "lba": null,
+      "python": "Invalid BCD sector address",
+      "rule": "sectorBcd"
+    },
+    {
+      "header": "00ffffffffffffffffffff0000600001",
+      "lba": null,
+      "python": "Invalid sector time",
+      "rule": "sectorTime"
+    },
+    {
+      "header": "00ffffffffffffffffffff0000007501",
+      "lba": null,
+      "python": "Invalid sector time",
+      "rule": "sectorTime"
+    },
+    {
+      "header": "00ffffffffffffffffffff0000020002",
+      "lba": null,
+      "python": "Expected a MODE1/2352 sector header",
+      "rule": "sectorHeader"
+    },
+    {
+      "header": "00000000000000000000000000020001",
+      "lba": null,
+      "python": "Expected a MODE1/2352 sector header",
+      "rule": "sectorHeader"
+    },
+    {
+      "header": "00ffffffffffffffffffff00000200",
+      "lba": null,
+      "python": "Expected a MODE1/2352 sector header",
+      "rule": "sectorHeader"
+    }
+  ],
+  "edc": {
+    "check": {
+      "ascii": "123456789",
+      "edc": "6ec2edc4"
+    },
+    "payloads": {
+      "zero": "",
+      "bytes0to255x8": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff",
+      "hello": "68656c6c6f"
+    },
+    "sectors": [
+      {
+        "lba": 0,
+        "payload": "zero",
+        "edc": "2b6813c5"
+      },
+      {
+        "lba": 16,
+        "payload": "zero",
+        "edc": "5f0017bc"
+      },
+      {
+        "lba": 45000,
+        "payload": "zero",
+        "edc": "927613d2"
+      },
+      {
+        "lba": 45016,
+        "payload": "zero",
+        "edc": "e61e17ab"
+      },
+      {
+        "lba": 549149,
+        "payload": "zero",
+        "edc": "d64a2b5c"
+      },
+      {
+        "lba": 547163,
+        "payload": "zero",
+        "edc": "632e7a9e"
+      },
+      {
+        "lba": 45000,
+        "payload": "bytes0to255x8",
+        "edc": "5f279730"
+      },
+      {
+        "lba": 45100,
+        "payload": "hello",
+        "edc": "300dc750"
+      }
+    ]
+  },
+  "names": [
+    {
+      "name": "Track (1).bin",
+      "track": {
+        "python": null,
+        "rule": null
+      },
+      "iso": {
+        "python": null,
+        "rule": null
+      },
+      "sizes": {
+        "python": null,
+        "rule": null
+      }
+    },
+    {
+      "name": "a",
+      "track": {
+        "python": null,
+        "rule": null
+      },
+      "iso": {
+        "python": null,
+        "rule": null
+      },
+      "sizes": {
+        "python": null,
+        "rule": null
+      }
+    },
+    {
+      "name": "a;1",
+      "track": {
+        "python": null,
+        "rule": null
+      },
+      "iso": {
+        "python": null,
+        "rule": null
+      },
+      "sizes": {
+        "python": null,
+        "rule": null
+      }
+    },
+    {
+      "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "track": {
+        "python": null,
+        "rule": null
+      },
+      "iso": {
+        "python": null,
+        "rule": null
+      },
+      "sizes": {
+        "python": null,
+        "rule": null
+      }
+    },
+    {
+      "name": "trak\u00e9.bin",
+      "track": {
+        "python": null,
+        "rule": null
+      },
+      "iso": {
+        "python": "'ascii' codec can't decode byte 0xc3 in position 4: ordinal not in range(128)",
+        "rule": "entryName"
+      },
+      "sizes": {
+        "python": "'ascii' codec can't decode byte 0xc3 in position 4: ordinal not in range(128)",
+        "rule": "sizesName"
+      }
+    },
+    {
+      "name": "../other.bin",
+      "track": {
+        "python": "Unsafe disc name: '../other.bin'",
+        "rule": "trackName",
+        "nameRule": "forbidden"
+      },
+      "iso": {
+        "python": "Unsafe disc name: '../other.bin'",
+        "rule": "entryName",
+        "nameRule": "forbidden"
+      },
+      "sizes": {
+        "python": "Unsafe disc name: '../other.bin'",
+        "rule": "sizesNameUnsafe",
+        "nameRule": "forbidden"
+      }
+    },
+    {
+      "name": "../escape",
+      "track": {
+        "python": "Unsafe disc name: '../escape'",
+        "rule": "trackName",
+        "nameRule": "forbidden"
+      },
+      "iso": {
+        "python": "Unsafe disc name: '../escape'",
+        "rule": "entryName",
+        "nameRule": "forbidden"
+      },
+      "sizes": {
+        "python": "Unsafe disc name: '../escape'",
+        "rule": "sizesNameUnsafe",
+        "nameRule": "forbidden"
+      }
+    },
+    {
+      "name": "",
+      "track": {
+        "python": "Unsupported CUE line: FILE \"\" BINARY",
+        "rule": "cueLine"
+      },
+      "iso": {
+        "python": "Unsafe disc name: ''",
+        "rule": "entryName",
+        "nameRule": "empty"
+      },
+      "sizes": {
+        "python": "Unsafe disc name: ''",
+        "rule": "sizesNameUnsafe",
+        "nameRule": "empty"
+      }
+    },
+    {
+      "name": ".",
+      "track": {
+        "python": "Unsafe disc name: '.'",
+        "rule": "trackName",
+        "nameRule": "dot"
+      },
+      "iso": {
+        "python": "Unsafe disc name: '.'",
+        "rule": "entryName",
+        "nameRule": "dot"
+      },
+      "sizes": {
+        "python": "Unsafe disc name: '.'",
+        "rule": "sizesNameUnsafe",
+        "nameRule": "dot"
+      }
+    },
+    {
+      "name": "..",
+      "track": {
+        "python": "Unsafe disc name: '..'",
+        "rule": "trackName",
+        "nameRule": "dot"
+      },
+      "iso": {
+        "python": "Unsafe disc name: '..'",
+        "rule": "entryName",
+        "nameRule": "dot"
+      },
+      "sizes": {
+        "python": "Unsafe disc name: '..'",
+        "rule": "sizesNameUnsafe",
+        "nameRule": "dot"
+      }
+    },
+    {
+      "name": "a.",
+      "track": {
+        "python": "Unsafe disc name: 'a.'",
+        "rule": "trackName",
+        "nameRule": "trailingDotOrSpace"
+      },
+      "iso": {
+        "python": "Unsafe disc name: 'a.'",
+        "rule": "entryName",
+        "nameRule": "trailingDotOrSpace"
+      },
+      "sizes": {
+        "python": "Unsafe disc name: 'a.'",
+        "rule": "sizesNameUnsafe",
+        "nameRule": "trailingDotOrSpace"
+      }
+    },
+    {
+      "name": "a ",
+      "track": {
+        "python": "Unsafe disc name: 'a '",
+        "rule": "trackName",
+        "nameRule": "trailingDotOrSpace"
+      },
+      "iso": {
+        "python": "Unsafe disc name: 'a '",
+        "rule": "entryName",
+        "nameRule": "trailingDotOrSpace"
+      },
+      "sizes": {
+        "python": "Unsafe disc name: 'a '",
+        "rule": "sizesNameUnsafe",
+        "nameRule": "trailingDotOrSpace"
+      }
+    },
+    {
+      "name": "a/b",
+      "track": {
+        "python": "Unsafe disc name: 'a/b'",
+        "rule": "trackName",
+        "nameRule": "forbidden"
+      },
+      "iso": {
+        "python": "Unsafe disc name: 'a/b'",
+        "rule": "entryName",
+        "nameRule": "forbidden"
+      },
+      "sizes": {
+        "python": "Unsafe disc name: 'a/b'",
+        "rule": "sizesNameUnsafe",
+        "nameRule": "forbidden"
+      }
+    },
+    {
+      "name": "A/B",
+      "track": {
+        "python": "Unsafe disc name: 'A/B'",
+        "rule": "trackName",
+        "nameRule": "forbidden"
+      },
+      "iso": {
+        "python": "Unsafe disc name: 'A/B'",
+        "rule": "entryName",
+        "nameRule": "forbidden"
+      },
+      "sizes": {
+        "python": "Unsafe disc name: 'A/B'",
+        "rule": "sizesNameUnsafe",
+        "nameRule": "forbidden"
+      }
+    },
+    {
+      "name": "a\\b",
+      "track": {
+        "python": "Unsafe disc name: 'a\\\\b'",
+        "rule": "trackName",
+        "nameRule": "forbidden"
+      },
+      "iso": {
+        "python": "Unsafe disc name: 'a\\\\b'",
+        "rule": "entryName",
+        "nameRule": "forbidden"
+      },
+      "sizes": {
+        "python": "Unsafe disc name: 'a\\\\b'",
+        "rule": "sizesNameUnsafe",
+        "nameRule": "forbidden"
+      }
+    },
+    {
+      "name": "a:b",
+      "track": {
+        "python": "Unsafe disc name: 'a:b'",
+        "rule": "trackName",
+        "nameRule": "forbidden"
+      },
+      "iso": {
+        "python": "Unsafe disc name: 'a:b'",
+        "rule": "entryName",
+        "nameRule": "forbidden"
+      },
+      "sizes": {
+        "python": "Unsafe disc name: 'a:b'",
+        "rule": "sizesNameUnsafe",
+        "nameRule": "forbidden"
+      }
+    },
+    {
+      "name": "NUL.x.y",
+      "track": {
+        "python": "Unsafe disc name: 'NUL.x.y'",
+        "rule": "trackName",
+        "nameRule": "deviceName"
+      },
+      "iso": {
+        "python": "Unsafe disc name: 'NUL.x.y'",
+        "rule": "entryName",
+        "nameRule": "deviceName"
+      },
+      "sizes": {
+        "python": "Unsafe disc name: 'NUL.x.y'",
+        "rule": "sizesNameUnsafe",
+        "nameRule": "deviceName"
+      }
+    },
+    {
+      "name": "con\u0131n$",
+      "track": {
+        "python": "Unsafe disc name: 'con\u0131n$'",
+        "rule": "trackName",
+        "nameRule": "deviceName"
+      },
+      "iso": {
+        "python": "'ascii' codec can't decode byte 0xc4 in position 3: ordinal not in range(128)",
+        "rule": "entryName"
+      },
+      "sizes": {
+        "python": "'ascii' codec can't decode byte 0xc4 in position 3: ordinal not in range(128)",
+        "rule": "sizesName"
+      }
+    },
+    {
+      "name": "a\u007fb",
+      "track": {
+        "python": null,
+        "rule": "trackName",
+        "nameRule": "control",
+        "deviation": 1
+      },
+      "iso": {
+        "python": null,
+        "rule": "entryName",
+        "nameRule": "control",
+        "deviation": 1
+      },
+      "sizes": {
+        "python": null,
+        "rule": "sizesNameUnsafe",
+        "nameRule": "control",
+        "deviation": 1
+      }
+    },
+    {
+      "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "track": {
+        "python": null,
+        "rule": "trackName",
+        "nameRule": "componentTooLong",
+        "deviation": 2
+      },
+      "iso": {
+        "python": null,
+        "rule": "entryName",
+        "nameRule": "componentTooLong",
+        "deviation": 2
+      },
+      "sizes": {
+        "python": null,
+        "rule": "sizesNameUnsafe",
+        "nameRule": "componentTooLong",
+        "deviation": 2
+      }
+    },
+    {
+      "name": "INSTALLATION.JSON",
+      "track": {
+        "python": null,
+        "rule": "trackName",
+        "nameRule": "alphaName",
+        "deviation": 3
+      },
+      "iso": {
+        "python": null,
+        "rule": "entryName",
+        "nameRule": "alphaName",
+        "deviation": 3
+      },
+      "sizes": {
+        "python": null,
+        "rule": "sizesNameUnsafe",
+        "nameRule": "alphaName",
+        "deviation": 3
+      }
+    },
+    {
+      "name": ".gdl-update",
+      "track": {
+        "python": null,
+        "rule": "trackName",
+        "nameRule": "alphaName",
+        "deviation": 3
+      },
+      "iso": {
+        "python": null,
+        "rule": "entryName",
+        "nameRule": "alphaName",
+        "deviation": 3
+      },
+      "sizes": {
+        "python": null,
+        "rule": "sizesNameUnsafe",
+        "nameRule": "alphaName",
+        "deviation": 3
+      }
+    },
+    {
+      "name": "CON .bin",
+      "track": {
+        "python": null,
+        "rule": "trackName",
+        "nameRule": "deviceName",
+        "deviation": 4
+      },
+      "iso": {
+        "python": null,
+        "rule": "entryName",
+        "nameRule": "deviceName",
+        "deviation": 4
+      },
+      "sizes": {
+        "python": null,
+        "rule": "sizesNameUnsafe",
+        "nameRule": "deviceName",
+        "deviation": 4
+      }
+    },
+    {
+      "name": "CON .X",
+      "track": {
+        "python": null,
+        "rule": "trackName",
+        "nameRule": "deviceName",
+        "deviation": 4
+      },
+      "iso": {
+        "python": null,
+        "rule": "entryName",
+        "nameRule": "deviceName",
+        "deviation": 4
+      },
+      "sizes": {
+        "python": null,
+        "rule": "sizesNameUnsafe",
+        "nameRule": "deviceName",
+        "deviation": 4
+      }
+    },
+    {
+      "name": "COM\u00b9.bin",
+      "track": {
+        "python": null,
+        "rule": "trackName",
+        "nameRule": "deviceName",
+        "deviation": 5
+      },
+      "iso": {
+        "python": "'ascii' codec can't decode byte 0xc2 in position 3: ordinal not in range(128)",
+        "rule": "entryName"
+      },
+      "sizes": {
+        "python": "'ascii' codec can't decode byte 0xc2 in position 3: ordinal not in range(128)",
+        "rule": "sizesName"
+      }
+    }
+  ],
+  "isoPaths": [
+    {
+      "depth": 3,
+      "chars": 220,
+      "path": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/cccccccccccccccccccccccccccccccccccccccccccccccccccccc/ddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "python": null,
+      "rule": null
+    },
+    {
+      "depth": 3,
+      "chars": 221,
+      "path": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/cccccccccccccccccccccccccccccccccccccccccccccccccccccc/dddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "python": null,
+      "rule": "entryName",
+      "nameRule": "pathTooLong",
+      "deviation": 2
+    }
+  ],
+  "sheets": [
+    {
+      "name": "minimal",
+      "text": "FILE \"t.bin\" BINARY\nTRACK 03 MODE1/2352\nINDEX 01 00:00:00\n",
+      "tracks": [
+        [
+          3,
+          "t.bin",
+          "MODE1/2352",
+          0
+        ]
+      ],
+      "python": null,
+      "rule": null
+    },
+    {
+      "name": "CRLF line ends, indents and a byte order mark",
+      "text": "\ufeffFILE \"t.bin\" BINARY\r\n  TRACK 03 MODE1/2352\r\nINDEX 01 00:00:00\r\n",
+      "tracks": [
+        [
+          3,
+          "t.bin",
+          "MODE1/2352",
+          0
+        ]
+      ],
+      "python": null,
+      "rule": null
+    },
+    {
+      "name": "CR line ends",
+      "text": "FILE \"t.bin\" BINARY\rTRACK 03 MODE1/2352\rINDEX 01 00:00:00\r",
+      "tracks": [
+        [
+          3,
+          "t.bin",
+          "MODE1/2352",
+          0
+        ]
+      ],
+      "python": null,
+      "rule": null
+    },
+    {
+      "name": "file separators between lines",
+      "text": "FILE \"t.bin\" BINARY\u001cTRACK 03 MODE1/2352\u001cINDEX 01 00:00:00\u001c",
+      "tracks": [
+        [
+          3,
+          "t.bin",
+          "MODE1/2352",
+          0
+        ]
+      ],
+      "python": null,
+      "rule": null
+    },
+    {
+      "name": "line separators between lines",
+      "text": "FILE \"t.bin\" BINARY\u2028TRACK 03 MODE1/2352\u2028INDEX 01 00:00:00\u2028",
+      "tracks": [
+        [
+          3,
+          "t.bin",
+          "MODE1/2352",
+          0
+        ]
+      ],
+      "python": null,
+      "rule": null
+    },
+    {
+      "name": "a unit separator ending a line",
+      "text": "FILE \"t.bin\" BINARY\u001f\nTRACK 03 MODE1/2352\nINDEX 01 00:00:00\n",
+      "tracks": [
+        [
+          3,
+          "t.bin",
+          "MODE1/2352",
+          0
+        ]
+      ],
+      "python": null,
+      "rule": null
+    },
+    {
+      "name": "a no-break space indent",
+      "text": "FILE \"t.bin\" BINARY\n\u00a0TRACK 03 MODE1/2352\nINDEX 01 00:00:00\n",
+      "tracks": [
+        [
+          3,
+          "t.bin",
+          "MODE1/2352",
+          0
+        ]
+      ],
+      "python": null,
+      "rule": null
+    },
+    {
+      "name": "REM alone",
+      "text": "REM\nFILE \"t.bin\" BINARY\nTRACK 03 MODE1/2352\nINDEX 01 00:00:00\n",
+      "tracks": null,
+      "python": "Unsupported CUE line: REM",
+      "rule": "cueLine"
+    },
+    {
+      "name": "REM and a tab",
+      "text": "REM\tx\nFILE \"t.bin\" BINARY\nTRACK 03 MODE1/2352\nINDEX 01 00:00:00\n",
+      "tracks": null,
+      "python": "Unsupported CUE line: REM\tx",
+      "rule": "cueLine"
+    },
+    {
+      "name": "FILE in lower case",
+      "text": "file \"t.bin\" BINARY\nTRACK 03 MODE1/2352\nINDEX 01 00:00:00\n",
+      "tracks": null,
+      "python": "Unsupported CUE line: file \"t.bin\" BINARY",
+      "rule": "cueLine"
+    },
+    {
+      "name": "two spaces after FILE",
+      "text": "FILE  \"t.bin\" BINARY\nTRACK 03 MODE1/2352\nINDEX 01 00:00:00\n",
+      "tracks": null,
+      "python": "Unsupported CUE line: FILE  \"t.bin\" BINARY",
+      "rule": "cueLine"
+    },
+    {
+      "name": "a MODE2 track",
+      "text": "FILE \"t.bin\" BINARY\nTRACK 03 MODE2/2352\nINDEX 01 00:00:00\n",
+      "tracks": null,
+      "python": "Unsupported CUE line: TRACK 03 MODE2/2352",
+      "rule": "trackMode"
+    },
+    {
+      "name": "CATALOG",
+      "text": "CATALOG 0000000000000\nFILE \"t.bin\" BINARY\nTRACK 03 MODE1/2352\nINDEX 01 00:00:00\n",
+      "tracks": null,
+      "python": "Unsupported CUE line: CATALOG 0000000000000",
+      "rule": "cueLine"
+    },
+    {
+      "name": "FLAGS",
+      "text": "FILE \"t.bin\" BINARY\nTRACK 03 MODE1/2352\nINDEX 01 00:00:00\nFLAGS DCP\n",
+      "tracks": null,
+      "python": "Unsupported CUE line: FLAGS DCP",
+      "rule": "cueLine"
+    },
+    {
+      "name": "PREGAP",
+      "text": "FILE \"t.bin\" BINARY\nTRACK 03 MODE1/2352\nPREGAP 00:02:00\nINDEX 01 00:00:00\n",
+      "tracks": null,
+      "python": "Unsupported CUE line: PREGAP 00:02:00",
+      "rule": "cueLine"
+    },
+    {
+      "name": "INDEX before TRACK",
+      "text": "FILE \"t.bin\" BINARY\nINDEX 01 00:00:00\n",
+      "tracks": null,
+      "python": "Unsupported CUE line: INDEX 01 00:00:00",
+      "rule": "cueLine"
+    },
+    {
+      "name": "INDEX 02",
+      "text": "FILE \"t.bin\" BINARY\nTRACK 03 MODE1/2352\nINDEX 01 00:00:00\nINDEX 02 00:01:00\n",
+      "tracks": null,
+      "python": "Unsupported CUE line: INDEX 02 00:01:00",
+      "rule": "cueLine"
+    },
+    {
+      "name": "INDEX 00 after INDEX 01",
+      "text": "FILE \"t.bin\" BINARY\nTRACK 03 MODE1/2352\nINDEX 01 00:00:00\nINDEX 00 00:01:00\n",
+      "tracks": null,
+      "python": "Unsupported CUE line: INDEX 00 00:01:00",
+      "rule": "cueLine"
+    },
+    {
+      "name": "second 60",
+      "text": "FILE \"t.bin\" BINARY\nTRACK 03 MODE1/2352\nINDEX 01 00:60:00\n",
+      "tracks": null,
+      "python": "Invalid CUE time",
+      "rule": "cueTime"
+    },
+    {
+      "name": "frame 75",
+      "text": "FILE \"t.bin\" BINARY\nTRACK 03 MODE1/2352\nINDEX 01 00:00:75\n",
+      "tracks": null,
+      "python": "Invalid CUE time",
+      "rule": "cueTime"
+    },
+    {
+      "name": "minute 999",
+      "text": "FILE \"t.bin\" BINARY\nTRACK 03 MODE1/2352\nINDEX 01 999:00:00\n",
+      "tracks": [
+        [
+          3,
+          "t.bin",
+          "MODE1/2352",
+          4495500
+        ]
+      ],
+      "python": null,
+      "rule": null
+    },
+    {
+      "name": "a track number with leading zeros",
+      "text": "FILE \"t.bin\" BINARY\nTRACK 000999 MODE1/2352\nINDEX 01 00:00:00\n",
+      "tracks": [
+        [
+          999,
+          "t.bin",
+          "MODE1/2352",
+          0
+        ]
+      ],
+      "python": null,
+      "rule": null
+    },
+    {
+      "name": "two tracks in one file",
+      "text": "FILE \"t.bin\" BINARY\nTRACK 03 MODE1/2352\nINDEX 01 00:00:00\nTRACK 04 AUDIO\nINDEX 01 00:00:00\n",
+      "tracks": null,
+      "python": "Expected one complete track per BIN file",
+      "rule": "trackPerFile"
+    },
+    {
+      "name": "one file named twice",
+      "text": "FILE \"t.bin\" BINARY\nTRACK 03 MODE1/2352\nINDEX 01 00:00:00\nFILE \"t.bin\" BINARY\nTRACK 04 AUDIO\nINDEX 01 00:00:00\n",
+      "tracks": null,
+      "python": "Expected one complete track per BIN file",
+      "rule": "trackPerFile"
+    },
+    {
+      "name": "FILE without TRACK, then FILE",
+      "text": "FILE \"u.bin\" BINARY\nFILE \"t.bin\" BINARY\nTRACK 03 MODE1/2352\nINDEX 01 00:00:00\n",
+      "tracks": [
+        [
+          3,
+          "t.bin",
+          "MODE1/2352",
+          0
+        ]
+      ],
+      "python": null,
+      "rule": null
+    },
+    {
+      "name": "FILE without TRACK at the end",
+      "text": "FILE \"t.bin\" BINARY\nTRACK 03 MODE1/2352\nINDEX 01 00:00:00\nFILE \"u.bin\" BINARY\n",
+      "tracks": [
+        [
+          3,
+          "t.bin",
+          "MODE1/2352",
+          0
+        ]
+      ],
+      "python": null,
+      "rule": null
+    },
+    {
+      "name": "TRACK without INDEX 01 at the end",
+      "text": "FILE \"t.bin\" BINARY\nTRACK 03 MODE1/2352\nINDEX 01 00:00:00\nFILE \"u.bin\" BINARY\nTRACK 04 AUDIO\n",
+      "tracks": null,
+      "python": "Incomplete CUE",
+      "rule": "incompleteSheet"
+    },
+    {
+      "name": "FILE before INDEX 01",
+      "text": "FILE \"t.bin\" BINARY\nTRACK 03 MODE1/2352\nFILE \"u.bin\" BINARY\n",
+      "tracks": null,
+      "python": "Track is missing INDEX 01",
+      "rule": "missingIndex"
+    },
+    {
+      "name": "a track number twice",
+      "text": "FILE \"t.bin\" BINARY\nTRACK 03 MODE1/2352\nINDEX 01 00:00:00\nFILE \"u.bin\" BINARY\nTRACK 03 AUDIO\nINDEX 01 00:00:00\n",
+      "tracks": null,
+      "python": "Duplicate track number",
+      "rule": "duplicateTrack"
+    },
+    {
+      "name": "an empty sheet",
+      "text": "",
+      "tracks": null,
+      "python": "Incomplete CUE",
+      "rule": "incompleteSheet"
+    },
+    {
+      "name": "a file outside the sheet's folder",
+      "text": "FILE \"../t.bin\" BINARY\nTRACK 03 MODE1/2352\nINDEX 01 00:00:00\n",
+      "tracks": null,
+      "python": "Unsafe disc name: '../t.bin'",
+      "rule": "trackName",
+      "nameRule": "forbidden"
+    },
+    {
+      "name": "the extractor's test's file outside the sheet's folder",
+      "text": "FILE \"../other.bin\" BINARY\nTRACK 03 MODE1/2352\nINDEX 01 00:00:00\n",
+      "tracks": null,
+      "python": "Unsafe disc name: '../other.bin'",
+      "rule": "trackName",
+      "nameRule": "forbidden"
+    },
+    {
+      "name": "a file name outside ASCII",
+      "text": "FILE \"tr\u00e9ck.bin\" BINARY\nTRACK 03 MODE1/2352\nINDEX 01 00:00:00\n",
+      "tracks": [
+        [
+          3,
+          "tr\u00e9ck.bin",
+          "MODE1/2352",
+          0
+        ]
+      ],
+      "python": null,
+      "rule": null
+    },
+    {
+      "name": "a quote in a file name",
+      "text": "FILE \"t\"x.bin\" BINARY\nTRACK 03 MODE1/2352\nINDEX 01 00:00:00\n",
+      "tracks": null,
+      "python": "Unsupported CUE line: FILE \"t\"x.bin\" BINARY",
+      "rule": "cueLine"
+    },
+    {
+      "name": "a NUL ending a line",
+      "text": "FILE \"t.bin\" BINARY\u0000\nTRACK 03 MODE1/2352\nINDEX 01 00:00:00\n",
+      "tracks": null,
+      "python": "Unsupported CUE line: FILE \"t.bin\" BINARY\u0000",
+      "rule": "cueLine"
+    },
+    {
+      "name": "no UTF-8",
+      "bytes": "ff46494c452022742e62696e222042494e4152590a545241434b203033204d4f4445312f323335320a494e4445582030312030303a30303a30300a",
+      "tracks": null,
+      "python": "'utf-8' codec can't decode byte 0xff in position 0: invalid start byte",
+      "rule": "sheetText"
+    },
+    {
+      "name": "Arabic-Indic digits in a track number",
+      "text": "FILE \"t.bin\" BINARY\nTRACK \u0660\u0663 MODE1/2352\nINDEX 01 00:00:00\n",
+      "tracks": [
+        [
+          3,
+          "t.bin",
+          "MODE1/2352",
+          0
+        ]
+      ],
+      "python": null,
+      "rule": "cueLine",
+      "deviation": 7
+    },
+    {
+      "name": "fullwidth digits in an index",
+      "text": "FILE \"t.bin\" BINARY\nTRACK 03 MODE1/2352\nINDEX 01 \uff10\uff10:00:00\n",
+      "tracks": [
+        [
+          3,
+          "t.bin",
+          "MODE1/2352",
+          0
+        ]
+      ],
+      "python": null,
+      "rule": "cueLine",
+      "deviation": 7
+    },
+    {
+      "name": "a track number past 32 bits",
+      "text": "FILE \"t.bin\" BINARY\nTRACK 4294967296 MODE1/2352\nINDEX 01 00:00:00\n",
+      "tracks": [
+        [
+          4294967296,
+          "t.bin",
+          "MODE1/2352",
+          0
+        ]
+      ],
+      "python": null,
+      "rule": "numberTooLarge",
+      "deviation": 8
+    },
+    {
+      "name": "a minute past 64 bits",
+      "text": "FILE \"t.bin\" BINARY\nTRACK 03 MODE1/2352\nINDEX 01 18446744073709551616:00:00\n",
+      "tracks": [
+        [
+          3,
+          "t.bin",
+          "MODE1/2352",
+          83010348331692982272000
+        ]
+      ],
+      "python": null,
+      "rule": "numberTooLarge",
+      "deviation": 8
+    },
+    {
+      "name": "a count of frames past 64 bits",
+      "text": "FILE \"t.bin\" BINARY\nTRACK 03 MODE1/2352\nINDEX 01 4099276460824345:00:00\n",
+      "tracks": [
+        [
+          3,
+          "t.bin",
+          "MODE1/2352",
+          18446744073709552500
+        ]
+      ],
+      "python": null,
+      "rule": "numberTooLarge",
+      "deviation": 8
+    },
+    {
+      "name": "one file named in two letter cases",
+      "text": "FILE \"t.bin\" BINARY\nTRACK 03 MODE1/2352\nINDEX 01 00:00:00\nFILE \"T.BIN\" BINARY\nTRACK 04 AUDIO\nINDEX 01 00:00:00\n",
+      "tracks": {
+        "windows": null,
+        "linux": [
+          [
+            3,
+            "t.bin",
+            "MODE1/2352",
+            0
+          ],
+          [
+            4,
+            "T.BIN",
+            "AUDIO",
+            0
+          ]
+        ]
+      },
+      "python": {
+        "windows": "Expected one complete track per BIN file",
+        "linux": null
+      },
+      "rule": "trackPerFile",
+      "deviation": 9
+    }
+  ],
+  "sizes": {
+    "firstNegativeComponent": {
+      "hex": "01000000050000000000000000000700ffff00006c6576656c7300776f726c64732e726f6d00",
+      "diskLen": 5,
+      "files": [
+        [
+          "levels/worlds.rom",
+          0,
+          5
+        ]
+      ],
+      "python": null,
+      "rule": null
+    },
+    "externalFile": {
+      "hex": "0100000005000000ffffffff00000700ffff00006c6576656c7300776f726c64732e726f6d00",
+      "diskLen": 0,
+      "files": [
+        [
+          "levels/worlds.rom",
+          -1,
+          5
+        ]
+      ],
+      "python": null,
+      "rule": null
+    },
+    "outOfBoundsPayload": {
+      "hex": "01000000060000000000000000000700ffff00006c6576656c7300776f726c64732e726f6d00",
+      "diskLen": 5,
+      "files": null,
+      "python": "SIZES.ROM extent lies outside DISK.ROM: levels/worlds.rom",
+      "rule": "sizesExtent"
+    },
+    "outOfBoundsName": {
+      "hex": "01000000050000000000000000006400ffff00006c6576656c7300776f726c64732e726f6d00",
+      "diskLen": 5,
+      "files": null,
+      "python": "SIZES.ROM name lies outside its string pool",
+      "rule": "sizesName"
+    },
+    "truncatedTable": {
+      "hex": "e8030000",
+      "diskLen": 5,
+      "files": null,
+      "python": "SIZES.ROM table lies outside its file",
+      "rule": "sizesTable"
+    },
+    "duplicateNames": {
+      "hex": "0200000005000000000000000000ffff0000000005000000000000000000ffff0000000066696c6500",
+      "diskLen": 5,
+      "files": null,
+      "python": "Duplicate SIZES.ROM path",
+      "rule": "sizesDuplicate"
+    },
+    "fileDirectoryConflict": {
+      "hex": "0200000005000000000000000000ffff00000000050000000000000000000500ffff000066696c65006368696c6400",
+      "diskLen": 5,
+      "files": null,
+      "python": "SIZES.ROM file/directory path conflict",
+      "rule": "sizesConflict"
+    },
+    "unpack": {
+      "hex": "0200000005000000000000000000ffff0000000009000000ffffffff0900ffff00000000746573742e776164006f7574736964652e726f6d00",
+      "diskLen": 5,
+      "files": [
+        [
+          "test.wad",
+          0,
+          5
+        ],
+        [
+          "outside.rom",
+          -1,
+          9
+        ]
+      ],
+      "python": null,
+      "rule": null,
+      "disk": "68656c6c6f",
+      "golden": "dreamcast-unpack-native-manifest.json",
+      "native": [
+        [
+          "test.wad",
+          5,
+          "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+        ]
+      ]
+    },
+    "extras": [
+      {
+        "name": "countZero",
+        "hex": "00000000",
+        "diskLen": 5,
+        "files": null,
+        "python": "SIZES.ROM table lies outside its file",
+        "rule": "sizesTable"
+      },
+      {
+        "name": "headerCutShort",
+        "hex": "000000",
+        "diskLen": 5,
+        "files": null,
+        "python": "Truncated SIZES.ROM header",
+        "rule": "sizesHeader"
+      },
+      {
+        "name": "offsetBelowExternal",
+        "hex": "0100000005000000feffffff00000700ffff00006c6576656c7300776f726c64732e726f6d00",
+        "diskLen": 5,
+        "files": null,
+        "python": "SIZES.ROM extent lies outside DISK.ROM: levels/worlds.rom",
+        "rule": "sizesExtent"
+      },
+      {
+        "name": "noComponent",
+        "hex": "010000000500000000000000ffff0000000000007800",
+        "diskLen": 5,
+        "files": null,
+        "python": "SIZES.ROM entry has no name",
+        "rule": "sizesNoName"
+      },
+      {
+        "name": "emptyComponent",
+        "hex": "0100000005000000000000000100ffff000000007800",
+        "diskLen": 5,
+        "files": null,
+        "python": "Unsafe disc name: ''",
+        "rule": "sizesNameUnsafe",
+        "nameRule": "empty"
+      },
+      {
+        "name": "externalOfAnySize",
+        "hex": "01000000ffffffffffffffff00000700ffff00006c6576656c7300776f726c64732e726f6d00",
+        "diskLen": 0,
+        "files": [
+          [
+            "levels/worlds.rom",
+            -1,
+            4294967295
+          ]
+        ],
+        "python": null,
+        "rule": null
+      },
+      {
+        "name": "separatorInComponent",
+        "hex": "0100000005000000000000000000ffff00000000612f6200",
+        "diskLen": 5,
+        "files": null,
+        "python": "Unsafe disc name: 'a/b'",
+        "rule": "sizesNameUnsafe",
+        "nameRule": "forbidden"
+      },
+      {
+        "name": "pathOf221Characters",
+        "hex": "010000000500000000000000000037006e00a500616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161006262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262620063636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636300646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646464646400",
+        "diskLen": 5,
+        "files": [
+          [
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/cccccccccccccccccccccccccccccccccccccccccccccccccccccc/dddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+            0,
+            5
+          ]
+        ],
+        "python": null,
+        "rule": "sizesNameUnsafe",
+        "nameRule": "pathTooLong",
+        "deviation": 2
+      }
+    ]
+  },
+  "records": [
+    {
+      "name": "TEST.WAD;1",
+      "lba": 45100,
+      "size": 5,
+      "flags": 0,
+      "hex": "2c002cb000000000b02c050000000000000500000000000000000000010000010a544553542e5741443b3100"
+    },
+    {
+      "name": "\u0000",
+      "lba": 45020,
+      "size": 2048,
+      "flags": 2,
+      "hex": "2200dcaf00000000afdc000800000000080000000000000000020000010000010100"
+    },
+    {
+      "name": "AUDIO",
+      "lba": 45021,
+      "size": 2048,
+      "flags": 2,
+      "hex": "2600ddaf00000000afdd0008000000000800000000000000000200000100000105415544494f"
+    }
+  ],
+  "sets": {
+    "small": {
+      "sheet": "test.cue",
+      "files": {
+        "test.cue": {
+          "size": 166,
+          "sha256": "f2a240e07b17e60e277d0bff8afd26948491ab6241b7cd09102d107104b65096"
+        },
+        "track3.bin": {
+          "size": 49392,
+          "sha256": "30cf6683b8cf30a2c2bc80b00fee81a5e5e39817f23398a3d370f7d73198cfe8"
+        },
+        "track5.bin": {
+          "size": 531552,
+          "sha256": "854b19ff4fc0fcdafe2490f05d3c8cf3eda1afd855a15df96503a883654fb364"
+        }
+      },
+      "goldens": {
+        "disc-manifest.json": "dreamcast-small-disc-manifest.json"
+      },
+      "tree": [
+        [
+          "IP.BIN",
+          32768,
+          "3d42a6a66784acaebc463dce1e94cbff0c9ce43a2d5ce1973f48d17e2ae1eb8a"
+        ],
+        [
+          "disc-manifest.json",
+          1311,
+          "eee41da12e50ed108a674dbf86afa7a09809dde699ab300d185ce5abdb0c7095"
+        ],
+        [
+          "disc/TEST.WAD",
+          5,
+          "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+        ]
+      ]
+    },
+    "full": {
+      "sheet": "full.cue",
+      "files": {
+        "full.cue": {
+          "size": 283,
+          "sha256": "8e819aefa904a40460caf42f9b962d144e8b6f8e28a356de269b8fb899bb4cfc"
+        },
+        "track3.bin": {
+          "size": 51744,
+          "sha256": "6fee260c5f262610c89aaeea9672cf317eb63bd5aa5c15207d3e22b2a8a08d35"
+        },
+        "track5.bin": {
+          "size": 538608,
+          "sha256": "929dd0beedebec3860690a9a0a8dae7288667e302d96b50847ec83310c92bb8a"
+        }
+      },
+      "goldens": {
+        "disc-manifest.json": "dreamcast-full-disc-manifest.json",
+        "native-manifest.json": "dreamcast-full-native-manifest.json"
+      },
+      "tree": [
+        [
+          "IP.BIN",
+          32768,
+          "6e0d628f436e107c7a5a1a24170c7c87a289dfb87c53f4d0a56c09d5a87a34b8"
+        ],
+        [
+          "disc-manifest.json",
+          1128,
+          "016efc8eb322acfe67562811d51f16c58c5a26fd7571967c4a30799239031308"
+        ],
+        [
+          "disc/AUDIO/X.STR",
+          3000,
+          "8238f003ad1a7f56965542e097622333a1e90eb52301496c34fe39ab34c2e9e6"
+        ],
+        [
+          "disc/DISK.ROM",
+          5,
+          "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+        ],
+        [
+          "disc/EMPTY.BIN",
+          0,
+          "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        ],
+        [
+          "disc/SIZES.ROM",
+          79,
+          "457096a0e027dfd3d949d034498d79b392df5ba5cbb786fd5434a5acdd3ef28d"
+        ],
+        [
+          "native-manifest.json",
+          640,
+          "7ad7c854b0208da66c5e68a9b30067177efb96e7e8706d22940875f45dca73ef"
+        ],
+        [
+          "native/levels/a.wad",
+          5,
+          "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+        ],
+        [
+          "native/levels/b.rom",
+          0,
+          "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        ]
+      ]
+    },
+    "fullGdi": {
+      "sheet": "full.gdi",
+      "files": {
+        "full.gdi": {
+          "size": 93,
+          "sha256": "0bb49ea981c20ad3b3be7fd0c6b6e7828c9361555f7e8c03d703d239c3045a96"
+        },
+        "track03.bin": {
+          "size": 51744,
+          "sha256": "6fee260c5f262610c89aaeea9672cf317eb63bd5aa5c15207d3e22b2a8a08d35"
+        },
+        "track05.bin": {
+          "size": 9408,
+          "sha256": "d0fe94abc83f2966d051704fbd08c158e8b17aef3855fe0dea76cb9a494dd28e"
+        }
+      },
+      "dataTracks": [
+        [
+          "track03.bin",
+          0,
+          45000,
+          22
+        ],
+        [
+          "track05.bin",
+          0,
+          45100,
+          4
+        ]
+      ]
+    }
+  }
+}

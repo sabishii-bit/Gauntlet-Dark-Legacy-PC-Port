@@ -1,0 +1,19 @@
+{
+  "format": "dreamcast-legends-native-v1",
+  "files": [
+    {
+      "path": "test.wad",
+      "offset": 0,
+      "size": 5,
+      "sha256": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+    }
+  ],
+  "external": [
+    {
+      "path": "outside.rom",
+      "declared_size": 9
+    }
+  ],
+  "sizes_sha256": "7224272c1be4f50f75427aeeae2a336effa7f9e2acbc6d8cd965da7f3fac5a8e",
+  "scope": "Exact DISK.ROM payloads; external records may be absent from the disc"
+}

@@ -1,0 +1,48 @@
+{
+  "format": "dreamcast-legends-disc-v1",
+  "volume": "GAUNT1",
+  "product": "T9710N",
+  "title": "GAUNTLET LEGENDS",
+  "executable": "1ST_READ.BIN",
+  "files": [
+    {
+      "path": "AUDIO/X.STR",
+      "lba": 45102,
+      "size": 3000,
+      "sha256": "8238f003ad1a7f56965542e097622333a1e90eb52301496c34fe39ab34c2e9e6"
+    },
+    {
+      "path": "DISK.ROM",
+      "lba": 45100,
+      "size": 5,
+      "sha256": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+    },
+    {
+      "path": "EMPTY.BIN",
+      "lba": 999999,
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "SIZES.ROM",
+      "lba": 45101,
+      "size": 79,
+      "sha256": "457096a0e027dfd3d949d034498d79b392df5ba5cbb786fd5434a5acdd3ef28d"
+    }
+  ],
+  "data_tracks": [
+    {
+      "file": "track3.bin",
+      "index": 0,
+      "first_lba": 45000,
+      "sectors": 22
+    },
+    {
+      "file": "track5.bin",
+      "index": 225,
+      "first_lba": 45100,
+      "sectors": 4
+    }
+  ],
+  "scope": "Native disc bytes; not converted or certified runtime-compatible"
+}
