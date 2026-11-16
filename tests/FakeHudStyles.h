@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <memory>
 #include <optional>
 #include <span>
@@ -18,6 +19,7 @@
 #include "game/hud/HudPainter.h"
 #include "game/hud/HudStyles.h"
 #include "game/hud/HudView.h"
+#include "game/level/LevelCatalog.h"
 #include "game/players/PlayerControls.h"
 
 namespace gdl::test {
@@ -42,12 +44,28 @@ struct FakeHudCall {
     bool operator==(const FakeHudCall&) const = default;
 };
 
+/** A seat's exit as a look's view told it, copied: the view's own is borrowed for the frame. */
+struct FakeHudPad {
+    u32 identity = 0;
+    std::optional<u32> nativeCode;
+    std::optional<game::LevelRef> destination;
+    bool operator==(const FakeHudPad&) const = default;
+};
+
+/** The pages each seat's browsing turned a look to. */
+using FakeHudPages = std::array<s32, game::HudView::kSeats>;
+
 /** What fake looks did, kept apart from them so a test reads it after they have gone. */
 struct FakeHudRecord {
     std::vector<FakeHudCall> calls; ///< every call taken, in turn
     std::vector<std::string> made;  ///< the id of each look made, in turn
     std::vector<u32> letGo;         ///< for each look made, its place among those let go; 0: held
-    u32 departures = 0;             ///< how many looks have been let go
+    /// For each look made, the device's idle waits as it went; 0 while held or unwatched.
+    std::vector<u32> idleWaitsAtLetGo;
+    std::vector<FakeHudPages> pages; ///< for each look made, the page each seat browsed it to
+    /// Each seat's exit as the view a look last prepared with told it.
+    std::array<std::optional<FakeHudPad>, game::HudView::kSeats> pads;
+    u32 departures = 0; ///< how many looks have been let go
 
     /** How many calls look `look` took of `part`. */
     usize count(std::string_view look, FakeHudPart part) const {
@@ -67,25 +85,48 @@ struct FakeHudRecord {
     }
 };
 
-/** A HUD look that draws nothing and tells `record` of every call it takes; the part
- * `throwsIn` names throws once told, as a failing look's would. */
+/** A HUD look that draws nothing and tells `record` of every call it takes, of the exits its
+ * views name and of the pages it keeps: down and right turn a seat's on, left back. The part
+ * `throwsIn` names throws once told, as a failing look's would. Given a device's count of idle
+ * waits, it notes the count as it goes. */
 class FakeHudPainter final : public game::HudPainter {
 public:
     static constexpr f32 kStatusTop = 280.0f; ///< its panels' top, other than Dark Legacy's
+    static constexpr s32 kPages = 3;          ///< the pages each seat's browsing turns through
 
-    FakeHudPainter(std::string id, FakeHudRecord& record)
-        : m_id(std::move(id)), m_record(record), m_made(record.made.size()) {
+    FakeHudPainter(std::string id, FakeHudRecord& record, const u32* idleWaits = nullptr)
+        : m_id(std::move(id)), m_record(record), m_made(record.made.size()),
+          m_idleWaits(idleWaits) {
         m_record.made.push_back(m_id);
         m_record.letGo.push_back(0);
+        m_record.idleWaitsAtLetGo.push_back(0);
+        m_record.pages.emplace_back();
     }
     // Its going allocates nothing, as a destructor must not throw.
-    ~FakeHudPainter() override { m_record.letGo[m_made] = ++m_record.departures; }
+    ~FakeHudPainter() override {
+        m_record.letGo[m_made] = ++m_record.departures;
+        if (m_idleWaits != nullptr) {
+            m_record.idleWaitsAtLetGo[m_made] = *m_idleWaits;
+        }
+    }
     GDL_NON_COPYABLE_NON_MOVABLE(FakeHudPainter);
 
     std::string_view id() const override { return m_id; }
     f32 statusTop() const override { return kStatusTop; }
-    void prepare(game::HudFrame& /*frame*/, const game::HudView& /*view*/) override {
+    void prepare(game::HudFrame& /*frame*/, const game::HudView& view) override {
         take(FakeHudPart::Prepare);
+        for (usize seat = 0; seat < view.seats.size(); ++seat) {
+            std::optional<FakeHudPad>& told = m_record.pads.at(seat);
+            told.reset();
+            if (const std::optional<game::HudPad>& pad = view.seats.at(seat).pad) {
+                told = FakeHudPad{.identity = pad->identity,
+                                  .nativeCode = pad->nativeCode,
+                                  .destination = std::nullopt};
+                if (pad->destination != nullptr) {
+                    told->destination = *pad->destination;
+                }
+            }
+        }
     }
     void drawStatus(game::HudFrame& /*frame*/, const game::HudView& /*view*/) override {
         take(FakeHudPart::Status);
@@ -105,8 +146,14 @@ public:
     void drawHelp(game::HudFrame& /*frame*/, const game::HudView& /*view*/) override {
         take(FakeHudPart::Help);
     }
-    void browse(s32 seat, const game::SelectorInput& /*presses*/) override {
+    void browse(s32 seat, const game::SelectorInput& presses) override {
         take(FakeHudPart::Browse, seat);
+        if (seat < 0 || static_cast<usize>(seat) >= m_pages.size()) {
+            return;
+        }
+        s32& page = m_pages.at(static_cast<usize>(seat));
+        page = (page + (presses.left ? kPages - 1 : 1)) % kPages;
+        m_record.pages[m_made] = m_pages;
     }
 
     std::optional<FakeHudPart> throwsIn; ///< the call that throws
@@ -121,13 +168,15 @@ private:
 
     std::string m_id;
     FakeHudRecord& m_record;
-    usize m_made; ///< its place among the looks `m_record` saw made
+    usize m_made;           ///< its place among the looks `m_record` saw made
+    const u32* m_idleWaits; ///< the device's count of idle waits; none unwatched
+    FakeHudPages m_pages{}; ///< the page each seat's browsing has turned it to
 };
 
 /** The HUD looks a test's installation offers: `offered` as it stands, each ask counted. Every
  * open is kept with the party it was given; it borrows STATIC's `borrowed` picture from Dark
  * Legacy's art when one is named, then makes a FakeHudPainter reporting to `record`, throwing
- * in `throwsIn`, unless the id is one of `failing`. */
+ * in `throwsIn` and watching `idleWaits`, unless the id is one of `failing`. */
 class FakeHudStyles final : public game::HudStyles {
 public:
     std::span<const game::HudStyleOffer> offers() override {
@@ -145,7 +194,7 @@ public:
         if (std::ranges::find(failing, id) != failing.end()) {
             return nullptr;
         }
-        auto painter = std::make_unique<FakeHudPainter>(std::string{id}, record);
+        auto painter = std::make_unique<FakeHudPainter>(std::string{id}, record, idleWaits);
         painter->throwsIn = throwsIn;
         return painter;
     }
@@ -154,8 +203,11 @@ public:
     std::vector<std::string> failing;         ///< the ids whose looks do not open
     std::optional<FakeHudPart> throwsIn;      ///< where the looks opened from now on throw
     std::string borrowed;                     ///< what each opening borrows; nothing when empty
-    FakeHudRecord record;                     ///< what the looks opened did, together
-    std::vector<std::string> opened;          ///< each id asked for, in turn
+    /// A device's count of idle waits, which each look made from now on notes as it goes; it
+    /// must outlive them.
+    const u32* idleWaits = nullptr;
+    FakeHudRecord record;                              ///< what the looks opened did, together
+    std::vector<std::string> opened;                   ///< each id asked for, in turn
     std::vector<std::vector<game::HudMember>> parties; ///< the party each opening was given
     u32 asks = 0;
 };

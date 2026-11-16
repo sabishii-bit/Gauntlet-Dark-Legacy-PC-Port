@@ -1,9 +1,11 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
-#include <cstddef>
 #include <iostream>
 #include <memory>
+#include <string>
+#include <string_view>
+#include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
@@ -15,6 +17,7 @@
 #include "engine/io/NativeStateDigest.h"
 
 #include "FakeGameServices.h"
+#include "FakeHudStyles.h"
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "game/characters/CharacterProfile.h"
@@ -44,17 +47,25 @@ struct Fixture {
     test::RecordingUnlocks persistentUnlocks;
     AudioMixer mixer{48000};
     SoundPlayer sounds{mixer};
+    test::FakeHudStyles looks; ///< the HUD looks offered, none unless asked; outlive the scene
     PlayScene scene;
     NativeRollbackDriver driver;
 
+    /** With `hudLook`, the settings choose that look, which the fake catalog offers. */
     explicit Fixture(MatchOwners owners = {1, 2, 0, 0}, bool warm = true,
-                     std::string_view levelName = "G1", bool audio = false) {
+                     std::string_view levelName = "G1", bool audio = false,
+                     std::string_view hudLook = {}) {
         REQUIRE(levels.load(root));
         REQUIRE(strings.load(test::dataDirectory() / "text", "en"));
         const auto level = levels.byName(levelName);
         REQUIRE(level);
         REQUIRE(world.load(device, root, *level));
         config.timing.tickRate = 60;
+        if (!hudLook.empty()) {
+            config.display.hudStyle = std::string{hudLook};
+            looks.offered = {
+                {.id = std::string{hudLook}, .label = "hud.style.fake", .usable = true}};
+        }
         game.config = &config;
         game.levels = &levels;
         game.strings = &strings;
@@ -98,7 +109,9 @@ struct Fixture {
         PlayOptions options;
         options.welcome = false;
         REQUIRE(scene.open(device, game, world, party, options,
-                           {.haptics = &physicalRumbles, .unlocks = &persistentUnlocks}));
+                           {.haptics = &physicalRumbles,
+                            .unlocks = &persistentUnlocks,
+                            .hudStyles = looks.offered.empty() ? nullptr : &looks}));
     }
     std::vector<InputCommand> commands(u8 peer, u64 tick,
                                        const SessionInputs::Frame& frame = {}) const {
@@ -467,6 +480,80 @@ TEST_CASE("late host admitted console input rewinds all peers and survives journ
     REQUIRE(rebuilt->driver.finishRebuild());
     CHECK(rebuilt->scene.nativeAgreementDigest() == reference->scene.nativeAgreementDigest());
     CHECK(rebuilt->scene.actor(target)->save().gold == 321);
+}
+
+TEST_CASE("a corrected tick never reaches the look's pages",
+          "[native-rollback-driver][hud-style][assets]") {
+    // This machine plays the second and third seats; the first seat's peer sends its third
+    // tick late, walking where it was guessed to stand.
+    const MatchOwners owners{1, 2, 2, 0};
+    constexpr u8 kLocalPeer = 2;
+    constexpr u8 kLocalSeats = 0b0110;
+    constexpr u64 kLateTick = 3;
+    constexpr u64 kThrough = 8;
+    constexpr std::string_view kLook = "fake";
+    auto reference = std::make_unique<Fixture>(owners);
+    auto delayed = std::make_unique<Fixture>(owners, true, "G1", false, kLook);
+    REQUIRE(delayed->looks.opened == std::vector{std::string{kLook}});
+    for (auto* fixture : {reference.get(), delayed.get()}) {
+        REQUIRE(fixture->driver.bind(fixture->scene, fixture->match, kLocalPeer));
+        fixture->scene.setLocalSeats(kLocalSeats);
+    }
+    SessionInputs::Frame walking;
+    walking[0].move = {{1, 0}, 1};
+    // The third seat's selector, this machine's second, is pressed on some ticks; the second
+    // seat's never.
+    const auto local = [](u64 tick) {
+        SessionInputs::Frame frame;
+        SelectorInput& selector = frame[1].selector;
+        selector.down = tick == 2 || tick == 7;
+        selector.left = tick == 4;
+        selector.right = tick == 5;
+        return frame;
+    };
+    constexpr usize kPressedTicks = 4;
+    for (u64 tick = 1; tick <= kThrough; ++tick) {
+        for (auto* fixture : {reference.get(), delayed.get()}) {
+            if (fixture != delayed.get() || tick != kLateTick) {
+                const auto remote = fixture->commands(
+                    1, tick, tick == kLateTick ? walking : SessionInputs::Frame{});
+                REQUIRE(fixture->driver.submit(1, remote) == Admission::Accepted);
+            }
+            const auto progress = fixture->driver.observePeerTick(1, kEpoch, tick);
+            REQUIRE((progress == Admission::Accepted || progress == Admission::Duplicate));
+            REQUIRE(fixture->driver.sample(local(tick)));
+            REQUIRE(fixture->driver.advance().status == Status::Advanced);
+        }
+    }
+    const test::FakeHudRecord& record = delayed->looks.record;
+    const auto browsed = [&] {
+        std::vector<s32> seats;
+        for (const test::FakeHudCall& call : record.calls) {
+            if (call.part == test::FakeHudPart::Browse) {
+                seats.push_back(call.seat);
+            }
+        }
+        return seats;
+    };
+    // Each tick sampled with a press turned the third seat's page once, as it was sampled.
+    CHECK(delayed->driver.confirmedTick() == kLateTick - 1);
+    CHECK(browsed() == std::vector<s32>(kPressedTicks, 2));
+
+    // The late tick arrives: the ticks from it on are simulated again, and none of them
+    // browses.
+    REQUIRE(delayed->driver.submit(1, delayed->commands(1, kLateTick, walking)) ==
+            Admission::Accepted);
+    REQUIRE(delayed->driver.advance(false).status == Status::Held);
+    CHECK(delayed->driver.statistics().corrections == 1);
+    CHECK(delayed->driver.statistics().replayTicks == kThrough - kLateTick + 1);
+    CHECK(delayed->driver.confirmedTick() == kThrough);
+    CHECK(browsed() == std::vector<s32>(kPressedTicks, 2));
+    // Its page stands where the sampled presses turned it: on, back, on and on again.
+    REQUIRE(record.pages.size() == 1);
+    CHECK(record.pages.front() == test::FakeHudPages{0, 0, 2, 0});
+    // The pages it keeps changed nothing the peers compare.
+    REQUIRE(reference->scene.nativeAgreementDigest());
+    CHECK(delayed->scene.nativeAgreementDigest() == reference->scene.nativeAgreementDigest());
 }
 
 TEST_CASE("borrowed console births survive late input correction and a fresh audio journal rebuild",

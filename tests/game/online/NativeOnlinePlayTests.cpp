@@ -8,6 +8,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -16,6 +17,7 @@
 #include "engine/audio/AudioMixer.h"
 
 #include "FakeGameServices.h"
+#include "FakeHudStyles.h"
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "game/config/ControlProfiles.h"
@@ -40,7 +42,8 @@ constexpr s32 kHostDevice = 2;
 constexpr s32 kGuestDevice = 0;
 constexpr s32 kSecondHostDevice = 3;
 constexpr u8 kSecondHostSeat = 2;
-constexpr s32 kRumbleFrames = 10; ///< how long each presented damage rumble lasts
+constexpr s32 kRumbleFrames = 10;               ///< how long each presented damage rumble lasts
+constexpr std::string_view kGuestLook = "fake"; ///< the HUD look a guest may draw in, its own
 
 /** A controller's rumble as a machine was asked for it. */
 std::string rumble(s32 device, s32 frames, ControlFeedback cue) {
@@ -96,15 +99,20 @@ struct NativePair {
     test::RecordingHaptics hostHaptics, guestHaptics; ///< what each machine's devices were asked
     test::RecordingUnlocks hostUnlocks, guestUnlocks;
     test::RecordingPartyStore hostStore, guestStore;
+    /// The HUD looks the guest's installation offers; they outlive the scenes that draw them.
+    test::FakeHudStyles guestLooks;
     OnlineParty hostParty, guestParty;
     // Only the diagnostic test opts into these catalogs. NativeOnlinePlay does
     // not require or publish old combat snapshots to run either native scene.
     NativeOnlinePlay host, guest;
     std::unique_ptr<NativePlaySetup> hostSetup, guestSetup;
 
+    /** With `guestLook`, the guest draws its HUD in a look of its own catalog, the host in Dark
+     * Legacy's. */
     explicit NativePair(const PlayOptions& options = {}, std::string_view beatenLevel = {},
                         std::optional<bool> autoSave = {}, std::string_view initialLevel = "L1",
-                        bool withAudio = false, u8 inputDelay = 1, bool secondHostPlayer = false)
+                        bool withAudio = false, u8 inputDelay = 1, bool secondHostPlayer = false,
+                        bool guestLook = false)
         : hostSession(hostService, hostWire, true, static_cast<u8>(secondHostPlayer ? 2 : 1)) {
         if (secondHostPlayer) {
             room.members[0].seats.push_back(kSecondHostSeat);
@@ -118,6 +126,12 @@ struct NativePair {
         guestConfig.camera.horizontalFovDegrees = 97;
         hostConfig.timing.gameplayFrameRate = 30;
         guestConfig.timing.gameplayFrameRate = 120;
+        if (guestLook) {
+            // This machine's own choice, as its field of view is: the room copies it as it starts.
+            guestConfig.display.hudStyle = std::string{kGuestLook};
+            guestLooks.offered = {
+                {.id = std::string{kGuestLook}, .label = "hud.style.fake", .usable = true}};
+        }
         hostConfig.game.autoSave = guestConfig.game.autoSave =
             autoSave.value_or(!beatenLevel.empty());
         hostContext.config = &hostConfig;
@@ -216,8 +230,9 @@ struct NativePair {
         REQUIRE(guestSession.phase() == OnlineSession::Phase::Active);
         REQUIRE(hostSession.match().nativeInputs());
         REQUIRE(guestSession.match().nativeInputs());
-        REQUIRE(guest.open(guestDevice, guestContext, guestSession, guestParty,
-                           std::move(guestSetup), {&guestHaptics, &guestUnlocks, &guestStore}));
+        REQUIRE(guest.open(
+            guestDevice, guestContext, guestSession, guestParty, std::move(guestSetup),
+            {&guestHaptics, &guestUnlocks, &guestStore, guestLook ? &guestLooks : nullptr}));
         REQUIRE(host.open(hostDevice, hostContext, hostSession, hostParty, std::move(hostSetup),
                           {&hostHaptics, &hostUnlocks, &hostStore}));
         for (u32 frame = 0; frame < 3600 && (host.phase() != NativeOnlinePlay::Phase::Playing ||
@@ -430,6 +445,73 @@ TEST_CASE("native online bootstrap opens canonical sparse fresh parties on both 
     CHECK(compared >= 6);
 }
 
+TEST_CASE("peers drawing different HUD looks agree on every digest",
+          "[native-online-play][hud-style][assets]") {
+    auto pair =
+        std::make_unique<NativePair>(immediateTower(), "", false, "L1", false, 1, false, true);
+    // The guest's scene opened its own look as it opened, for the room's whole party; the host's
+    // has none to open and draws Dark Legacy's.
+    REQUIRE(pair->guestLooks.opened == std::vector{std::string{kGuestLook}});
+    REQUIRE(pair->guestLooks.parties.size() == 1);
+    std::vector<s32> drawnFor;
+    for (const HudMember& member : pair->guestLooks.parties.front()) {
+        drawnFor.push_back(member.seat);
+    }
+    CHECK(drawnFor == std::vector<s32>(kSeats.begin(), kSeats.end()));
+    // The party comes in first, so that the guest's presses reach its look.
+    pair->settle();
+
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast): mutable test fixture
+    auto* host = const_cast<PlayScene*>(pair->host.scene());
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast): mutable test fixture
+    auto* guest = const_cast<PlayScene*>(pair->guest.scene());
+    std::map<u64, PlayScene::NativeDigestProfile> first;
+    std::map<u64, PlayScene::NativeDigestProfile> second;
+    const auto observe = [&](NativeOnlinePlay& play, PlayScene& scene,
+                             std::map<u64, PlayScene::NativeDigestProfile>& samples) {
+        if (play.simulatedTick() > 0 && play.simulatedTick() % 30 == 0 &&
+            !samples.contains(play.simulatedTick())) {
+            PlayScene::NativeDigestProfile state;
+            REQUIRE(scene.nativeAgreementDigest(&state));
+            samples.emplace(play.simulatedTick(), std::move(state));
+        }
+    };
+    // Both draw every frame, the guest twice; every twentieth frame the guest's selector is
+    // pressed down, left or right in turn, which its look takes as the input is sampled.
+    for (u32 frame = 0; frame < 240; ++frame) {
+        SessionInputs::Frame pressing;
+        if (frame % 20 == 0) {
+            SelectorInput& selector = pressing[kGuestDevice].selector;
+            const u32 turn = frame / 20 % 3;
+            selector.down = turn == 0;
+            selector.left = turn == 1;
+            selector.right = turn == 2;
+        }
+        REQUIRE(pair->host.update({}) != NativeOnlinePlay::Phase::Failed);
+        pair->draw(pair->host, pair->hostDevice);
+        observe(pair->host, *host, first);
+        REQUIRE(pair->guest.update(pressing) != NativeOnlinePlay::Phase::Failed);
+        pair->draw(pair->guest, pair->guestDevice, 0.25f);
+        pair->draw(pair->guest, pair->guestDevice, 0.75f);
+        observe(pair->guest, *guest, second);
+    }
+    REQUIRE(pair->host.scene() == host);
+    REQUIRE(pair->guest.scene() == guest);
+    u32 compared = 0;
+    for (const auto& [tick, state] : first) {
+        if (const auto found = second.find(tick); found != second.end()) {
+            CAPTURE(tick);
+            CHECK(test::firstDivergence(state, found->second).empty());
+            ++compared;
+        }
+    }
+    CHECK(compared >= 6);
+    const test::FakeHudRecord& record = pair->guestLooks.record;
+    CHECK(record.count(kGuestLook, test::FakeHudPart::Status) > 0);
+    CHECK(record.count(kGuestLook, test::FakeHudPart::Browse) > 0);
+    CHECK(pair->guestLooks.opened.size() == 1);
+}
+
 TEST_CASE("a guest catching up the shop hears only its newest steps' menu cues",
           "[native-online-play][native-shop]") {
     CHECK(NativeOnlinePlay::shopCuesHeard(true, 1000)); // the host steps the shop itself
@@ -590,6 +672,78 @@ TEST_CASE(
     CHECK(pair->hostSession.match().nativeAgreement()->agreedTick() > orderedTick);
     CHECK_FALSE(pair->hostSession.match().resyncing());
     CHECK_FALSE(pair->guestSession.match().resyncing());
+}
+
+TEST_CASE("a guest rebuilt from the host's journal opens its HUD look again and still agrees",
+          "[native-online-play][native-rollback-online][journal][hud-style][assets]") {
+    auto pair =
+        std::make_unique<NativePair>(immediateTower(), "", false, "L1", true, 1, false, true);
+    const test::FakeHudRecord& record = pair->guestLooks.record;
+    pair->settle();
+    pair->synchronize();
+    // Each peer steps its own character back and forth, the guest drawing every frame.
+    const auto play = [&](u32 frame) {
+        SessionInputs::Frame first;
+        SessionInputs::Frame second;
+        first[kHostDevice].move = {{frame % 40 < 20 ? 1.0f : -1.0f, 0}, 0.5f};
+        second[kGuestDevice].move = {{frame % 30 < 15 ? -1.0f : 1.0f, 0}, 0.5f};
+        pair->step(first, second);
+        pair->draw(pair->guest, pair->guestDevice);
+    };
+    for (u32 frame = 0; frame < 40; ++frame) {
+        play(frame);
+    }
+    REQUIRE(pair->host.rollbackStatistics().nativeTicks > 0);
+    REQUIRE(pair->guestLooks.opened == std::vector{std::string{kGuestLook}});
+    const usize drawnBefore = record.count(kGuestLook, test::FakeHudPart::Status);
+    REQUIRE(drawnBefore > 0);
+    // A divergence put straight into the guest's scene, as the case above plants it.
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast): a planted divergence
+    auto* actor = const_cast<PlayerActor*>(pair->guest.scene()->actor(kSeats[1]));
+    REQUIRE(actor != nullptr);
+    actor->place(actor->position() + Vec3{30, 0, 0});
+    const PlayScene* diverged = pair->guest.scene();
+    bool ordered = false;
+    bool rebuilt = false;
+    u64 orderedTick = 0;
+    for (u32 frame = 0; frame < 600 && !rebuilt; ++frame) {
+        play(frame);
+        if (!ordered && pair->hostSession.match().resyncing()) {
+            ordered = true;
+            orderedTick = pair->hostSession.match().resync()->tick;
+        }
+        rebuilt = ordered && !pair->hostSession.match().resyncing() &&
+                  !pair->guestSession.match().resyncing();
+    }
+    REQUIRE(rebuilt);
+    REQUIRE(pair->guest.phase() == NativeOnlinePlay::Phase::Playing);
+    REQUIRE(pair->guest.scene() != diverged);
+    // The scene rebuilt opened the guest's look again, for the same party, and the look the
+    // diverged scene drew went with it.
+    CHECK(pair->guestLooks.opened == std::vector<std::string>(2, std::string{kGuestLook}));
+    REQUIRE(pair->guestLooks.parties.size() == 2);
+    CHECK(pair->guestLooks.parties.back() == pair->guestLooks.parties.front());
+    CHECK(record.letGo == std::vector<u32>{1, 0});
+
+    // Both carry on past the resync point, the rebuilt scene drawing in its look, and the
+    // digests the peers compare go on agreeing: no other resync is ordered.
+    REQUIRE(pair->hostSession.match().nativeAgreement() != nullptr);
+    const u64 agreedAtRebuild =
+        std::max(pair->hostSession.match().nativeAgreement()->agreedTick(), orderedTick);
+    const usize drawnRebuilt = record.count(kGuestLook, test::FakeHudPart::Status);
+    const u64 resumed = pair->guest.simulatedTick();
+    for (u32 frame = 0; frame < 150; ++frame) {
+        play(frame);
+        CHECK_FALSE(pair->hostSession.match().resyncing());
+    }
+    CHECK(pair->guest.simulatedTick() > resumed + 100);
+    CHECK(record.count(kGuestLook, test::FakeHudPart::Status) > drawnRebuilt);
+    CHECK(pair->host.failure() == NativeOnlinePlay::Failure::None);
+    CHECK(pair->guest.failure() == NativeOnlinePlay::Failure::None);
+    REQUIRE(pair->hostSession.match().nativeAgreement() != nullptr);
+    CHECK(pair->hostSession.match().nativeAgreement()->agreedTick() > agreedAtRebuild);
+    CHECK_FALSE(pair->guestSession.match().resyncing());
+    CHECK(pair->guestLooks.opened.size() == 2);
 }
 
 TEST_CASE("a rebuilt guest keeps the input it sent before the host received it",

@@ -642,6 +642,7 @@ add_executable(tests
     game/bosses/LegendPresentationTests.cpp
     game/scenes/PlaySceneTests.cpp
     game/scenes/PlaySceneHudDrawTests.cpp
+    game/scenes/PlaySceneHudStyleTests.cpp
     game/scenes/PlaySceneG4Tests.cpp
     game/scenes/MultiplayerJourneyTests.cpp
     game/party/PartyMotionTests.cpp
