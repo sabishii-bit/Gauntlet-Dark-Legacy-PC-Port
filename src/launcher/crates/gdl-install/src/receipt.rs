@@ -20,7 +20,7 @@ use crate::compat::{Access, Stamp, access, stamp_of};
 use crate::folder::{InstallFolder, RECEIPT_FILE, check_links};
 use crate::payload::{
     BUILD_INFO, BuildInfo, MAX_BUILD_INFO_LEN, MAX_VERSION_FILE_LEN, SHA256_LEN, VERSION_FILE,
-    sha256_of,
+    sha256_of, version_file_holds,
 };
 
 /// The schema of the receipts this launcher reads and writes.
@@ -303,15 +303,16 @@ fn check_playable(root: &Path, build_info: &BuildInfo) -> Result<(), ReceiptErro
 }
 
 /// Refuses an installation under `root` whose `VERSION` is not a file of at most
-/// [`MAX_VERSION_FILE_LEN`] bytes that holds `version` in UTF-8 with nothing but ASCII whitespace
-/// about it.
+/// [`MAX_VERSION_FILE_LEN`] bytes that holds `version` as [`version_file_holds`] says, the rule a
+/// runtime's own `VERSION` was held to.
 fn check_version_file(root: &Path, version: &str) -> Result<(), ReceiptError> {
     let path = root.join(VERSION_FILE);
     let bytes = read_bounded(&path, MAX_VERSION_FILE_LEN)
         .map_err(|error| read_error(error, &path, |_| disagrees(VERSION_FILE)))?;
-    match std::str::from_utf8(&bytes) {
-        Ok(text) if text.trim_ascii() == version => Ok(()),
-        _ => Err(disagrees(VERSION_FILE)),
+    if version_file_holds(&bytes, version) {
+        Ok(())
+    } else {
+        Err(disagrees(VERSION_FILE))
     }
 }
 

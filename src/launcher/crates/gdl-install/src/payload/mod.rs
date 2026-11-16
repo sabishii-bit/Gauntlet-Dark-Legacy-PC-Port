@@ -493,7 +493,7 @@ fn check_inventory(build_info: &BuildInfo, entries: &[PayloadEntry]) -> Result<(
 }
 
 /// Refuses a `VERSION` file that declares more than [`MAX_VERSION_FILE_LEN`] bytes, or does not
-/// hold, in UTF-8, the release record's version with nothing but ASCII whitespace around it.
+/// hold the release record's version as [`version_file_holds`] says.
 fn check_version_file<R: Read + Seek>(
     archive: &mut ZipArchive<R>,
     entries: &[PayloadEntry],
@@ -509,10 +509,18 @@ fn check_version_file<R: Read + Seek>(
         return Err(PayloadError::VersionFile);
     }
     let bytes = read_whole(archive, entry)?;
-    match std::str::from_utf8(&bytes) {
-        Ok(text) if text.trim_ascii() == build_info.version => Ok(()),
-        _ => Err(PayloadError::VersionFile),
+    if version_file_holds(&bytes, &build_info.version) {
+        Ok(())
+    } else {
+        Err(PayloadError::VersionFile)
     }
+}
+
+/// Whether `bytes`, what a `VERSION` file holds, are `version` in UTF-8 with nothing but ASCII
+/// whitespace around it: the one rule for a runtime's `VERSION` and for an installed one, so that
+/// a runtime the launcher installs reads back as the installation its receipt describes.
+pub(crate) fn version_file_holds(bytes: &[u8], version: &str) -> bool {
+    std::str::from_utf8(bytes).is_ok_and(|text| text.trim_ascii() == version)
 }
 
 /// Why a runtime zip is refused: the rule it breaks, and the values that break it, as technical
