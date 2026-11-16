@@ -72,11 +72,15 @@ struct BuiltLook {
 constexpr std::array<BuiltLook, 0> kBuiltLooks{};
 
 const LegendsHudLook* lookOf(std::string_view id) {
+    // MSVC's checked array iterator is not a pointer; keep the portable iterator type.
+    // NOLINTNEXTLINE(readability-qualified-auto)
     const auto found = std::ranges::find(kLooks, id, &LegendsHudLook::id);
     return found == kLooks.end() ? nullptr : &*found;
 }
 
 const BuiltLook* builtLookOf(std::string_view id) {
+    // MSVC's checked array iterator is not a pointer; keep the portable iterator type.
+    // NOLINTNEXTLINE(readability-qualified-auto)
     const auto found = std::ranges::find(kBuiltLooks, id, &BuiltLook::id);
     return found == kBuiltLooks.end() ? nullptr : &*found;
 }
