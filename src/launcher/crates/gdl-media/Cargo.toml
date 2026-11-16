@@ -8,7 +8,14 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
-flate2.workspace = true
+flate2 = { workspace = true, features = ["zlib-rs"] }
 gdl-files.workspace = true
 sha1.workspace = true
 sha2.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+gdl-fixtures.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true
