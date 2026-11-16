@@ -70,6 +70,20 @@ impl FilesError {
             source,
         }
     }
+
+    /// The failure's stable machine name, in camelCase, for reports and logs.
+    pub fn rule(&self) -> &'static str {
+        // Every variant is named, with no wildcard, so that a failure added later is given its
+        // rule on purpose.
+        match self {
+            FilesError::Io { .. } => "io",
+            FilesError::Link { .. } => "link",
+            FilesError::TooLarge { .. } => "tooLarge",
+            FilesError::Json { .. } => "json",
+            FilesError::Exists { .. } => "exists",
+            FilesError::NotRoot { .. } => "notRoot",
+        }
+    }
 }
 
 /// Checks, in the crate's tests, that `result` refused the link at `link`.
@@ -158,5 +172,48 @@ mod tests {
         assert!(error.source().is_none());
 
         assert!(size_of::<FilesError>() <= MOST_ERROR_BYTES);
+    }
+
+    #[test]
+    fn every_failure_names_its_rule() {
+        let path = Path::new(".gdl-launcher").join("receipt.json");
+        let unfinished = serde_json::from_slice::<serde_json::Value>(b"{").unwrap_err();
+        let failures = [
+            // The rule is the variant's, whatever the system answered: a refusal and a full disk
+            // are both `io`.
+            (
+                FilesError::io(&path, io::ErrorKind::PermissionDenied.into()),
+                "io",
+            ),
+            (
+                FilesError::io(&path, io::ErrorKind::StorageFull.into()),
+                "io",
+            ),
+            (FilesError::Link { path: path.clone() }, "link"),
+            (
+                FilesError::TooLarge {
+                    path: path.clone(),
+                    limit: 64 << 10,
+                },
+                "tooLarge",
+            ),
+            (
+                FilesError::Json {
+                    path: path.clone(),
+                    source: unfinished,
+                },
+                "json",
+            ),
+            (FilesError::Exists { path: path.clone() }, "exists"),
+            (
+                FilesError::NotRoot {
+                    name: "data/config.json".into(),
+                },
+                "notRoot",
+            ),
+        ];
+        for (failure, rule) in failures {
+            assert_eq!(failure.rule(), rule, "{failure:?}");
+        }
     }
 }
