@@ -11,8 +11,8 @@
 #include "engine/core/Types.h"
 #include "engine/io/AssetLocator.h"
 
-#include "expansions/shared/app/LegendsFiles.h"
 #include "expansions/shared/characters/LegendsProgress.h"
+#include "expansions/shared/scenes/LegendsFiles.h"
 #include "expansions/shared/scenes/LegendsMapCatalog.h"
 
 namespace gdl::game {

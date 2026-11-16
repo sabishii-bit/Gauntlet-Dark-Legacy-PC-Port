@@ -10,18 +10,10 @@
 #include "engine/io/AssetLocator.h"
 #include "engine/platform/Paths.h"
 
+#include "expansions/shared/scenes/LegendsFiles.h"
+
 namespace gdl::game {
 namespace {
-bool nonemptyFile(const AssetLocator& files, std::string_view name) {
-    const auto path = files.find(name);
-    std::error_code error;
-    if (!path || !std::filesystem::is_regular_file(*path, error)) {
-        return false;
-    }
-    const auto size = std::filesystem::file_size(*path, error);
-    return !error && size != 0;
-}
-
 std::vector<LegendsMapEntry> catalog(const std::filesystem::path& directory,
                                      LegendsPlatform platform) {
     std::vector<LegendsMapEntry> result;

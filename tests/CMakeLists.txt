@@ -379,6 +379,7 @@ add_executable(tests
     expansions/shared/scenes/LegendsLevelBossTests.cpp
     expansions/shared/scenes/LegendsTraversalTests.cpp
     expansions/dreamcast/scenes/LegendsMusicTests.cpp
+    expansions/shared/scenes/LegendsFilesTests.cpp
     expansions/shared/scenes/LegendsMapCatalogTests.cpp
     expansions/shared/scenes/LegendsSceneAdapterTests.cpp
     expansions/shared/scenes/LegendsFixtureSelectionTests.cpp
@@ -1036,7 +1037,6 @@ target_sources(tests PRIVATE
     expansions/ExpansionIsolationTests.cpp
     expansions/shared/app/LegendsConsoleWordsTests.cpp
     expansions/shared/app/LegendsCompletionTests.cpp
-    expansions/shared/app/LegendsFilesTests.cpp
     expansions/shared/app/LegendsGatewaysTests.cpp
     expansions/shared/app/LegendsHudStylesTests.cpp
     expansions/shared/app/LegendsTravelTests.cpp

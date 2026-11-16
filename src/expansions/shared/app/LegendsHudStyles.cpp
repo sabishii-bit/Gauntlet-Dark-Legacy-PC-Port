@@ -19,9 +19,9 @@
 #include "engine/platform/Paths.h"
 #include "engine/render/RenderDevice.h"
 
-#include "expansions/shared/app/LegendsFiles.h"
 #include "expansions/shared/characters/LegendsProgress.h"
 #include "expansions/shared/hud/LegendsHudStyleIds.h"
+#include "expansions/shared/scenes/LegendsFiles.h"
 #include "expansions/shared/scenes/LegendsMapCatalog.h"
 #include "game/hud/DarkLegacyHudArt.h"
 #include "game/hud/HudPainter.h"

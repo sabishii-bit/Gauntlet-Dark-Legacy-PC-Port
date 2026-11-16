@@ -1,4 +1,4 @@
-#include "expansions/shared/app/LegendsFiles.h"
+#include "expansions/shared/scenes/LegendsFiles.h"
 
 #include <filesystem>
 #include <string_view>

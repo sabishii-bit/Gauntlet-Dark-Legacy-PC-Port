@@ -7,7 +7,7 @@
 #include "engine/io/File.h"
 
 #include "TestSupport.h"
-#include "expansions/shared/app/LegendsFiles.h"
+#include "expansions/shared/scenes/LegendsFiles.h"
 
 namespace {
 using namespace gdl;
