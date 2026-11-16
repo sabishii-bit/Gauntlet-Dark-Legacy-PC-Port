@@ -8,64 +8,9 @@ import unittest
 
 SCRIPTS = Path(__file__).resolve().parents[2] / "scripts" / "assets"
 sys.path.insert(0, str(SCRIPTS))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import dreamcast_legends as dc
-
-
-def both(value, width):
-    return value.to_bytes(width, "little") + value.to_bytes(width, "big")
-
-
-def record(name, lba, size, flags=0):
-    length = 33 + len(name) + (len(name) % 2 == 0)
-    result = bytearray(length)
-    result[0] = length
-    result[2:10] = both(lba, 4)
-    result[10:18] = both(size, 4)
-    result[25] = flags
-    result[28:32] = both(1, 2)
-    result[32] = len(name)
-    result[33:33 + len(name)] = name
-    return result
-
-
-def raw_sector(lba, payload):
-    address = lba + 150
-    minute, remainder = divmod(address, 60 * 75)
-    second, frame = divmod(remainder, 75)
-    bcd = lambda n: (n // 10 << 4) | (n % 10)
-    result = bytearray(dc.RAW_SECTOR)
-    result[:12] = dc.SYNC
-    result[12:16] = bytes((bcd(minute), bcd(second), bcd(frame), 1))
-    result[16:16 + len(payload)] = payload
-    return result
-
-
-def fixture(root, name=b"TEST.WAD;1", file_lba=45100, flags=0):
-    boot = bytearray(dc.SECTOR)
-    boot[:16] = b"SEGA SEGAKATANA "
-    boot[64:74] = b"T9710N    "
-    boot[96:112] = b"1ST_READ.BIN    "
-    boot[128:144] = b"GAUNTLET LEGENDS"
-    pvd = bytearray(dc.SECTOR)
-    pvd[:7] = b"\x01CD001\x01"
-    pvd[40:72] = b"TEST".ljust(32, b" ")
-    pvd[128:132] = both(dc.SECTOR, 2)
-    pvd[156:190] = record(b"\0", 45020, dc.SECTOR, 2)
-    directory = record(b"\0", 45020, dc.SECTOR, 2)
-    directory += record(b"\1", 45020, dc.SECTOR, 2)
-    directory += record(name, file_lba, 5, flags)
-    with (root / "track3.bin").open("wb") as stream:
-        for n in range(21):
-            stream.write(raw_sector(45000 + n,
-                                    {0: boot, 16: pvd, 20: directory}.get(n, b"")))
-    (root / "track5.bin").write_bytes(b"\0" * dc.RAW_SECTOR * 225 +
-                                     raw_sector(45100, b"hello"))
-    cue = root / "test.cue"
-    cue.write_text('REM HIGH-DENSITY AREA\nFILE "track3.bin" BINARY\n'
-                   'TRACK 03 MODE1/2352\nINDEX 01 00:00:00\n'
-                   'FILE "track5.bin" BINARY\nTRACK 05 MODE1/2352\n'
-                   'INDEX 00 00:00:00\nINDEX 01 00:03:00\n')
-    return cue
+from legends_fixtures import fixture, raw_sector
 
 
 class DreamcastDiscTests(unittest.TestCase):

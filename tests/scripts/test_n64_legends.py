@@ -8,57 +8,15 @@ import struct
 import sys
 import tempfile
 import unittest
-import zlib
 from pathlib import Path
 from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts" / "assets"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import n64_legends as n64
-
-
-def deflate(data: bytes) -> bytes:
-    compressor = zlib.compressobj(wbits=-15)
-    return compressor.compress(data) + compressor.flush()
-
-
-def wad(order: str = ">", tag: bytes = b"TEST") -> bytes:
-    return struct.pack(order + "2I", 12, 1) + b"data" + struct.pack(order + "4sII", tag, 8, 4)
-
-
-def rom(files=None) -> bytes:
-    if files is None:
-        files = [("/levels/test/worlds.wad", wad(), True), ("/texture.bin", b"native", False)]
-    result = bytearray(64)
-    result[:4] = b"\x80\x37\x12\x40"
-    base = len(result)
-    result.extend(n64.ROMDISK_MAGIC)
-    result.extend(b"\0" * 16)
-    metadata = []
-    for name, payload, compressed in files:
-        stored = deflate(payload) if compressed else payload
-        offset = len(result) - base
-        result.extend(stored)
-        result.extend(b"\0" * (-len(result) % 4))
-        metadata.append((name, n64.COMPRESSED if compressed else 0, len(stored), len(payload), offset))
-    table = len(result)
-    result.extend(b"\0" * (len(files) * 4))
-    for index, (name, flags, stored, size, offset) in enumerate(metadata):
-        record = len(result)
-        struct.pack_into(">I", result, table + index * 4, record - base)
-        result.extend(struct.pack(">5I", flags, stored, size, offset, 0x12345678))
-        result.extend(name.encode("ascii") + b"\0")
-        result.extend(b"\0" * (-len(result) % 4))
-    struct.pack_into(">4I", result, base + 32, len(result) - table, table - base, len(files), 0)
-    return bytes(result)
-
-
-def change_entry(image: bytes, word: int, value: int, index: int = 0) -> bytes:
-    result = bytearray(image)
-    _, entries = n64.read_directory(image)
-    struct.pack_into(">I", result, entries[index].record_offset + 4 * word, value)
-    return bytes(result)
+from legends_fixtures import change_entry, deflate, rom, wad
 
 
 class RomOrderTests(unittest.TestCase):
