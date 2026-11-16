@@ -219,10 +219,11 @@ impl VersionProbe {
 /// The path must be absolute, since the game is run by it and never looked for along `PATH`. It
 /// runs as a program, not as a command for a shell; only a batch file, which an installation's
 /// executable never is, would Windows run through `cmd.exe`. The game runs in its own folder, with
-/// nothing to read, and on Windows without a console window. It is given [`GAME_PROBE_LIMIT`] to end; past that it is stopped and the probe is
-/// [`GameStartError::TimedOut`]. Of what it writes, the first [`MAX_PROBE_OUTPUT`] bytes of its
-/// standard output are kept, for its first line, and the last as many of its standard error; the
-/// rest is read and dropped, so that the game never waits on a full pipe.
+/// nothing to read, and on Windows without a console window. It is given [`GAME_PROBE_LIMIT`] to
+/// end; past that it is stopped and the probe is [`GameStartError::TimedOut`]. Of what it writes,
+/// the first [`MAX_PROBE_OUTPUT`] bytes of its standard output are kept, for its first line, and
+/// the last as many of its standard error; the rest is read and dropped, so that the game never
+/// waits on a full pipe.
 pub fn probe_game_version(executable: &Path) -> Result<VersionProbe, GameStartError> {
     run_probe(executable, &[VERSION_ARGUMENT], GAME_PROBE_LIMIT)
 }
