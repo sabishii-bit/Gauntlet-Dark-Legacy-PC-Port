@@ -211,7 +211,7 @@ mod tests {
     use std::io::{self, Write};
     use std::path::{Path, PathBuf};
 
-    use gdl_fixtures::{folder_names, link_folder, symlink_file};
+    use gdl_fixtures::{folder_names, link_folder, symlink_file_where_allowed};
 
     use super::{Journal, STAGING_RANDOM_CHARS, Staging};
     use crate::error::{assert_io, assert_link};
@@ -456,8 +456,8 @@ mod tests {
         let nowhere = install.outside.join("nowhere.json");
         for (name, target) in [("config.json", &kept), ("dangling.json", &nowhere)] {
             let link = staging.path().join(name);
-            if let Err(error) = symlink_file(&link, target) {
-                eprintln!("skipped the file links: this account cannot make them ({error})");
+            if !symlink_file_where_allowed(&link, target) {
+                eprintln!("skipped the file links: this account may not make them");
                 break;
             }
             assert_taken(staging.create_file(&rel(name)), &link);
@@ -629,10 +629,8 @@ mod tests {
             match file {
                 None => link_folder(&link, &install.outside).unwrap(),
                 Some(target) => {
-                    if let Err(error) = symlink_file(&link, target) {
-                        eprintln!(
-                            "skipped the file links: this account cannot make them ({error})"
-                        );
+                    if !symlink_file_where_allowed(&link, target) {
+                        eprintln!("skipped the file links: this account may not make them");
                         continue;
                     }
                 }

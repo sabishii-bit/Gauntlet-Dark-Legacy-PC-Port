@@ -67,6 +67,10 @@ const NO_SHARING: u32 = 0;
 #[cfg(windows)]
 const ERROR_SHARING_VIOLATION: i32 = 32;
 
+/// What Windows refuses a symbolic link with when the account lacks the privilege to make one, as
+/// one that is neither elevated nor in developer mode does.
+const ERROR_PRIVILEGE_NOT_HELD: i32 = 1314;
+
 /// What Windows may refuse an open with, besides a sharing violation, while a scanner looks at an
 /// entry just made.
 #[cfg(windows)]
@@ -299,12 +303,48 @@ pub fn link_folder(link: &Path, target: &Path) -> io::Result<()> {
 
 /// Makes `link` a symbolic link to the file `target`, which need not exist. Windows makes one only
 /// for an account allowed to, as in developer mode, and refuses it otherwise, so a test that needs
-/// one returns early there.
+/// one makes its first through [`symlink_file_where_allowed`] and returns early there.
 pub fn symlink_file(link: &Path, target: &Path) -> io::Result<()> {
     #[cfg(windows)]
     return std::os::windows::fs::symlink_file(target, link);
     #[cfg(unix)]
     return std::os::unix::fs::symlink(target, link);
+}
+
+/// Makes `link` a symbolic link to the file `target`, as [`symlink_file`] makes one, and says
+/// whether it was made: `false` only where Windows withholds from this account the privilege such
+/// a link needs, the one reason a test may return early for. Any other failure, and any failure
+/// on Unix, where every account may make one, is the test's own and panics, so that no case is
+/// passed over unseen.
+pub fn symlink_file_where_allowed(link: &Path, target: &Path) -> bool {
+    made_where_allowed(symlink_file(link, target), link)
+}
+
+/// Makes `link` a symbolic link to the folder `target`, on Windows a symbolic link and not the
+/// junction [`link_folder`] makes, and says whether it was made, as
+/// [`symlink_file_where_allowed`] does.
+pub fn symlink_folder_where_allowed(link: &Path, target: &Path) -> bool {
+    #[cfg(windows)]
+    let made = std::os::windows::fs::symlink_dir(target, link);
+    #[cfg(unix)]
+    let made = std::os::unix::fs::symlink(target, link);
+    made_where_allowed(made, link)
+}
+
+/// Whether `made`, the making of the symbolic link `link`, made it: `false` when the privilege
+/// was withheld, and a panic for any other failure.
+fn made_where_allowed(made: io::Result<()>, link: &Path) -> bool {
+    match made {
+        Ok(()) => true,
+        Err(error) if withholds_links(&error) => false,
+        Err(error) => panic!("making the symbolic link {}: {error}", link.display()),
+    }
+}
+
+/// Whether `error` is Windows' refusal of a symbolic link to an account that lacks the privilege
+/// to make one. No other refusal is, and none on Unix.
+fn withholds_links(error: &io::Error) -> bool {
+    cfg!(windows) && error.raw_os_error() == Some(ERROR_PRIVILEGE_NOT_HELD)
 }
 
 /// The names in `folder`, sorted, as a test compares what a folder holds. A name that is not
@@ -957,14 +997,14 @@ mod tests {
 
     #[test]
     fn file_links_read_as_links() {
-        use super::symlink_file;
+        use super::{symlink_file, symlink_file_where_allowed};
 
         let dir = tempfile::tempdir().unwrap();
         let target = dir.path().join("file.txt");
         fs::write(&target, b"through the link").unwrap();
         let link = dir.path().join("link.txt");
-        if let Err(error) = symlink_file(&link, &target) {
-            eprintln!("skipped: this account cannot make symbolic links ({error})");
+        if !symlink_file_where_allowed(&link, &target) {
+            eprintln!("skipped: this account may not make symbolic links");
             return;
         }
         assert!(
@@ -980,6 +1020,58 @@ mod tests {
         let kind = fs::symlink_metadata(&dangling).unwrap().file_type();
         assert!(kind.is_symlink());
         assert!(fs::metadata(&dangling).is_err());
+    }
+
+    #[test]
+    fn symbolic_links_are_excused_only_where_the_privilege_is_withheld() {
+        use std::panic;
+
+        use super::{
+            ERROR_PRIVILEGE_NOT_HELD, symlink_file_where_allowed, symlink_folder_where_allowed,
+            withholds_links,
+        };
+
+        // Windows' refusal of an account without the privilege excuses a test there; nothing
+        // else does, and on Unix, where any account makes links, nothing at all.
+        let withheld = io::Error::from_raw_os_error(ERROR_PRIVILEGE_NOT_HELD);
+        assert_eq!(withholds_links(&withheld), cfg!(windows));
+        for error in [
+            io::Error::from(io::ErrorKind::AlreadyExists),
+            io::Error::from(io::ErrorKind::PermissionDenied),
+            io::Error::from(io::ErrorKind::NotFound),
+            io::Error::other("anything else"),
+        ] {
+            assert!(!withholds_links(&error), "{error}");
+        }
+
+        // Where this account may make links, as every account may on Unix, both kinds are made.
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("file.txt");
+        fs::write(&target, b"target").unwrap();
+        let folder = dir.path().join("folder");
+        fs::create_dir(&folder).unwrap();
+        let file_link = dir.path().join("file-link.txt");
+        if !symlink_file_where_allowed(&file_link, &target) {
+            eprintln!("only the refusals were checked: this account may not make symbolic links");
+            return;
+        }
+        assert_eq!(fs::read(&file_link).unwrap(), b"target");
+        let folder_link = dir.path().join("folder-link");
+        assert!(symlink_folder_where_allowed(&folder_link, &folder));
+        let kind = fs::symlink_metadata(&folder_link).unwrap().file_type();
+        assert!(kind.is_symlink());
+        assert!(fs::metadata(&folder_link).unwrap().is_dir());
+
+        // A link that cannot be made there for another reason, such as a name already taken, is
+        // the test's own fault, and fails it loudly instead of passing the case over.
+        let taken = dir.path().join("taken.txt");
+        fs::write(&taken, b"taken").unwrap();
+        let over_file = panic::catch_unwind(|| symlink_file_where_allowed(&taken, &target));
+        assert!(over_file.is_err(), "{over_file:?}");
+        let over_folder = panic::catch_unwind(|| symlink_folder_where_allowed(&folder, &target));
+        assert!(over_folder.is_err(), "{over_folder:?}");
+        assert_eq!(fs::read(&taken).unwrap(), b"taken");
+        assert!(fs::read_dir(&folder).unwrap().next().is_none());
     }
 
     #[test]

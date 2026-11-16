@@ -125,7 +125,7 @@ mod tests {
     use std::io;
     use std::path::{Path, PathBuf};
 
-    use gdl_fixtures::symlink_file;
+    use gdl_fixtures::{symlink_file, symlink_folder_where_allowed};
 
     use super::{absolute_lexical, is_absent, no_links};
     use crate::FilesError;
@@ -207,8 +207,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let real = plain_tree(dir.path());
         let link = dir.path().join("link");
-        if let Err(error) = symlink_folder(&real, &link) {
-            eprintln!("skipped: this account cannot make symbolic links ({error})");
+        if !symlink_folder_where_allowed(&link, &real) {
+            eprintln!("skipped: this account may not make symbolic links");
             return;
         }
         for path in paths_through(&link) {
@@ -233,14 +233,6 @@ mod tests {
         }
 
         no_links(&real.join("sub").join("receipt.json")).unwrap();
-    }
-
-    /// Makes `link` a symbolic link to the folder `target`.
-    fn symlink_folder(target: &Path, link: &Path) -> io::Result<()> {
-        #[cfg(windows)]
-        return std::os::windows::fs::symlink_dir(target, link);
-        #[cfg(unix)]
-        return std::os::unix::fs::symlink(target, link);
     }
 
     #[test]

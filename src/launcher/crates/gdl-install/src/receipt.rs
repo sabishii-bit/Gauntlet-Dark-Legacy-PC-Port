@@ -451,7 +451,7 @@ mod tests {
     use gdl_files::{ALPHA_NAMES, FilesError, PAYLOAD_NAMES, check_component, retry_locked};
     use gdl_fixtures::{
         InstallFixture, RuntimeFiles, backdate, folder_names, link_folder, sha256_hex, snapshot,
-        symlink_file,
+        symlink_file_where_allowed,
     };
     use gdl_release::{Platform, Version};
     use serde_json::{Value, json};
@@ -820,8 +820,8 @@ mod tests {
         let executable = executable_of(&folder);
         let moved = dir.path().join("moved");
         rename(&executable, &moved);
-        if let Err(error) = symlink_file(&executable, &moved) {
-            eprintln!("skipped the link to a file: this account cannot make one ({error})");
+        if !symlink_file_where_allowed(&executable, &moved) {
+            eprintln!("skipped the link to a file: this account may not make one");
             return;
         }
         assert_links(read(&folder), &executable);
@@ -1042,8 +1042,8 @@ mod tests {
         let receipt = receipt_path(&folder);
         let moved = dir.path().join("moved receipt.json");
         rename(&receipt, &moved);
-        if let Err(error) = symlink_file(&receipt, &moved) {
-            eprintln!("skipped the link to a file: this account cannot make one ({error})");
+        if !symlink_file_where_allowed(&receipt, &moved) {
+            eprintln!("skipped the link to a file: this account may not make one");
             return;
         }
         assert_links(read(&folder), &receipt);

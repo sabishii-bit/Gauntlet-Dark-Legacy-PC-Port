@@ -13,7 +13,8 @@ pub use folder::DeniedAccess;
 pub use folder::make_junction;
 pub use folder::{
     EntryState, HeldClosed, InstallFixture, backdate, folder_names, hold_closed, link_folder,
-    long_root, make_alpha_markers, snapshot, symlink_file,
+    long_root, make_alpha_markers, snapshot, symlink_file, symlink_file_where_allowed,
+    symlink_folder_where_allowed,
 };
 pub use program::{
     FAKE_CERTIFICATE_LEN, SparseFile, TRAILER_MAGIC, append_sections, append_sections_at,

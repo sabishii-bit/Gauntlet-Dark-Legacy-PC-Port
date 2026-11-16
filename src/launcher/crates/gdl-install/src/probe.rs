@@ -519,7 +519,7 @@ mod tests {
     use std::time::{Duration, Instant};
 
     use gdl_files::{RETRY_INTERVAL, RETRY_WINDOW};
-    use gdl_fixtures::{folder_names, link_folder, symlink_file};
+    use gdl_fixtures::{folder_names, link_folder, symlink_file_where_allowed};
 
     #[cfg(windows)]
     use super::NO_SHARING;
@@ -889,8 +889,8 @@ mod tests {
         // A link to nothing, where this account may make one.
         let nowhere = dir.path().join("nowhere");
         let dangling = dir.path().join(EXECUTABLE);
-        if let Err(error) = symlink_file(&dangling, &nowhere) {
-            eprintln!("skipped the link to nothing: this account cannot make one ({error})");
+        if !symlink_file_where_allowed(&dangling, &nowhere) {
+            eprintln!("skipped the link to nothing: this account may not make one");
             return;
         }
         assert_missing(&dangling);

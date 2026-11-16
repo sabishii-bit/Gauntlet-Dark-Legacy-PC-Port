@@ -205,7 +205,7 @@ mod tests {
     use std::io;
     use std::path::Path;
 
-    use gdl_fixtures::{folder_names, link_folder, symlink_file};
+    use gdl_fixtures::{folder_names, link_folder, symlink_file, symlink_file_where_allowed};
     use serde::{Deserialize, Serialize};
     use serde_json::{Value, json};
 
@@ -373,8 +373,8 @@ mod tests {
 
         // A link to a file, and one to nothing.
         for (round, target) in [(2, kept.clone()), (3, dir.path().join("nowhere.json"))] {
-            if let Err(error) = symlink_file(&pending, &target) {
-                eprintln!("skipped the file links: this account cannot make them ({error})");
+            if !symlink_file_where_allowed(&pending, &target) {
+                eprintln!("skipped the file links: this account may not make them");
                 break;
             }
             write_json_atomic(&path, &json!({"round": round})).unwrap();
@@ -422,8 +422,8 @@ mod tests {
         let outside = dir.path().join("outside.json");
         fs::write(&outside, b"outside").unwrap();
         let state = dir.path().join("state.json");
-        if let Err(error) = symlink_file(&state, &outside) {
-            eprintln!("skipped the file link: this account cannot make one ({error})");
+        if !symlink_file_where_allowed(&state, &outside) {
+            eprintln!("skipped the file link: this account may not make one");
             return;
         }
         write_json_atomic(&state, &json!({"round": 1})).unwrap();
@@ -607,15 +607,12 @@ mod tests {
         // A link at the file itself, and one to nothing, which is a link all the same.
         let linked = dir.path().join("receipt.json");
         let dangling = dir.path().join("dangling.json");
-        match symlink_file(&linked, &receipt) {
-            Ok(()) => {
-                assert_link(read_bounded(&linked, RECEIPT_LIMIT), &linked);
-                symlink_file(&dangling, &dir.path().join("nowhere.json")).unwrap();
-                assert_link(read_bounded(&dangling, RECEIPT_LIMIT), &dangling);
-            }
-            Err(error) => {
-                eprintln!("skipped the file links: this account cannot make them ({error})")
-            }
+        if symlink_file_where_allowed(&linked, &receipt) {
+            assert_link(read_bounded(&linked, RECEIPT_LIMIT), &linked);
+            symlink_file(&dangling, &dir.path().join("nowhere.json")).unwrap();
+            assert_link(read_bounded(&dangling, RECEIPT_LIMIT), &dangling);
+        } else {
+            eprintln!("skipped the file links: this account may not make them");
         }
 
         // The file read through real folders is read.

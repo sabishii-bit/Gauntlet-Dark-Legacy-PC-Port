@@ -359,7 +359,10 @@ mod tests {
     use std::path::{Path, PathBuf};
 
     use gdl_files::{ALPHA_NAMES, FilesError};
-    use gdl_fixtures::{folder_names, hold_closed, link_folder, make_alpha_markers, symlink_file};
+    use gdl_fixtures::{
+        folder_names, hold_closed, link_folder, make_alpha_markers, symlink_file,
+        symlink_file_where_allowed,
+    };
     use tempfile::TempDir;
 
     use super::{
@@ -582,8 +585,8 @@ mod tests {
         let lock_file = folder.state_dir().join(LOCK_FILE);
         let target = dir.path().join("target");
         fs::write(&target, b"untouched").unwrap();
-        if let Err(error) = symlink_file(&lock_file, &target) {
-            eprintln!("skipped the links to files: this account cannot make them ({error})");
+        if !symlink_file_where_allowed(&lock_file, &target) {
+            eprintln!("skipped the links to files: this account may not make them");
             return;
         }
         assert_lock_links(folder.lock(), &lock_file);
