@@ -104,7 +104,8 @@ TEST_CASE("a GameCube-only installation can draw no Legends HUD look", "[legends
     CHECK_FALSE(legendsHudRoot(LegendsPlatform::Dreamcast, roots));
     CHECK_FALSE(legendsHudFilesFound(kLegendsN64HudStyle, roots));
     CHECK_FALSE(legendsHudFilesFound(kLegendsDreamcastHudStyle, roots));
-    CHECK(legendsHudStyles(roots).empty());
+    // Whichever looks this build has painters for are offered, and none of them can be drawn.
+    CHECK(std::ranges::none_of(legendsHudStyles(roots), &HudStyleOffer::usable));
 
     // Asked of roots that are not there at all, it still answers.
     const LegendsHudRoots nowhere{.assetRoot = install / "missing",
@@ -112,7 +113,7 @@ TEST_CASE("a GameCube-only installation can draw no Legends HUD look", "[legends
                                   .workingDirectory = install / "missing too"};
     CHECK_FALSE(legendsHudRoot(LegendsPlatform::N64, nowhere));
     CHECK_FALSE(legendsHudFilesFound(kLegendsDreamcastHudStyle, nowhere));
-    CHECK(legendsHudStyles(nowhere).empty());
+    CHECK(std::ranges::none_of(legendsHudStyles(nowhere), &HudStyleOffer::usable));
 
     // The looks' files alone, without their campaigns' maps, are no installation of either.
     for (const std::string_view name : kN64Files) {
