@@ -160,6 +160,8 @@ function(gdl_add_expansion_game_sources target)
         "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/enemies/LegendsEnemySounds.cpp"
         "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/enemies/LegendsEnemySounds.h"
         "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/enemies/LegendsGenerators.h"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/hud/LegendsN64Frame.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/hud/LegendsN64Frame.h"
         "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/level/LegendsBlast.cpp"
         "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/level/LegendsBlast.h"
         "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/n64/level/LegendsBossEruption.cpp"

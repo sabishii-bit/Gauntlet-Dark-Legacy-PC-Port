@@ -425,6 +425,7 @@ add_executable(tests
     expansions/n64/bosses/LegendsChimeraTests.cpp
     expansions/n64/bosses/LegendsChimeraTargetingTests.cpp
     expansions/n64/menu/LegendsDialogueTests.cpp
+    expansions/n64/hud/LegendsN64FrameTests.cpp
     expansions/n64/scenes/LegendsWorldPresentationTests.cpp
     expansions/dreamcast/formats/LegendsSceneMotionTests.cpp
     expansions/n64/scenes/LegendsN64MusicTests.cpp
