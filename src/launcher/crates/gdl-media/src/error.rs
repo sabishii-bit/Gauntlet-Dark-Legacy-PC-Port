@@ -89,6 +89,39 @@ pub enum RomRule {
     ByteOrder,
     /// The ROM is longer than the largest cartridge.
     RomTooLarge,
+    /// The ROM holds no ROMDISK header, or more than one.
+    RomdiskHeader,
+    /// A part the ROM describes reaches past the data that holds it, as the ROMDISK's directory
+    /// past the ROM's end or a file's bytes into the directory.
+    OutsideData,
+    /// The ROMDISK header's reserved word is not zero, or it lists no file or more than the most a
+    /// ROMDISK may list.
+    DirectoryCount,
+    /// The ROMDISK's pointer table starts inside its header.
+    DirectoryOverlap,
+    /// A ROMDISK record starts before the one listed before it ends, or off a whole word.
+    RecordPlace,
+    /// A ROMDISK record's path has no end within the directory.
+    UnterminatedPath,
+    /// A ROMDISK record's path holds a byte outside ASCII.
+    NonAsciiPath,
+    /// A ROMDISK record's path does not begin with exactly one `/`.
+    LeadingSlash,
+    /// A ROMDISK record's path is no name the extracted tree may hold.
+    UnsafePath,
+    /// Two ROMDISK paths are the same, or differ only in letter case.
+    DuplicatePath,
+    /// A ROMDISK path is also the folder above another.
+    Collision,
+    /// A ROMDISK record's flags are neither none nor compressed.
+    Flags,
+    /// A ROMDISK file expands past the most a file may, or one kept as it is stores other than
+    /// its size.
+    FileSize,
+    /// A ROMDISK file's bytes start inside its header.
+    FileOverlap,
+    /// The ROMDISK's files together expand past the most they may.
+    ExpandedSize,
 }
 
 impl RomRule {
@@ -98,6 +131,21 @@ impl RomRule {
             RomRule::Header => "header",
             RomRule::ByteOrder => "byteOrder",
             RomRule::RomTooLarge => "romTooLarge",
+            RomRule::RomdiskHeader => "romdiskHeader",
+            RomRule::OutsideData => "outsideData",
+            RomRule::DirectoryCount => "directoryCount",
+            RomRule::DirectoryOverlap => "directoryOverlap",
+            RomRule::RecordPlace => "recordPlace",
+            RomRule::UnterminatedPath => "unterminatedPath",
+            RomRule::NonAsciiPath => "nonAsciiPath",
+            RomRule::LeadingSlash => "leadingSlash",
+            RomRule::UnsafePath => "unsafePath",
+            RomRule::DuplicatePath => "duplicatePath",
+            RomRule::Collision => "collision",
+            RomRule::Flags => "flags",
+            RomRule::FileSize => "fileSize",
+            RomRule::FileOverlap => "fileOverlap",
+            RomRule::ExpandedSize => "expandedSize",
         }
     }
 }
@@ -185,9 +233,30 @@ mod tests {
         for (failure, rule) in failures {
             assert_eq!(failure.rule(), rule, "{failure:?}");
         }
-        let rules = [RomRule::Header, RomRule::ByteOrder, RomRule::RomTooLarge];
-        for rule in rules {
-            assert_eq!(MediaError::rom(rule, "").rule(), rule.as_str());
+        // Every rule of the ROM's format keeps the name the shared vectors give it.
+        let rules = [
+            (RomRule::Header, "header"),
+            (RomRule::ByteOrder, "byteOrder"),
+            (RomRule::RomTooLarge, "romTooLarge"),
+            (RomRule::RomdiskHeader, "romdiskHeader"),
+            (RomRule::OutsideData, "outsideData"),
+            (RomRule::DirectoryCount, "directoryCount"),
+            (RomRule::DirectoryOverlap, "directoryOverlap"),
+            (RomRule::RecordPlace, "recordPlace"),
+            (RomRule::UnterminatedPath, "unterminatedPath"),
+            (RomRule::NonAsciiPath, "nonAsciiPath"),
+            (RomRule::LeadingSlash, "leadingSlash"),
+            (RomRule::UnsafePath, "unsafePath"),
+            (RomRule::DuplicatePath, "duplicatePath"),
+            (RomRule::Collision, "collision"),
+            (RomRule::Flags, "flags"),
+            (RomRule::FileSize, "fileSize"),
+            (RomRule::FileOverlap, "fileOverlap"),
+            (RomRule::ExpandedSize, "expandedSize"),
+        ];
+        for (rule, name) in rules {
+            assert_eq!(rule.as_str(), name);
+            assert_eq!(MediaError::rom(rule, "").rule(), name);
         }
     }
 

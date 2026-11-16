@@ -1,7 +1,7 @@
 //! The N64 ROM as the N64 extractor reads it: a dump in any of the three byte orders cartridges
 //! are copied in, put back into the big-endian order the cartridge holds, with the digests of the
-//! dump as it was given and of the ROM in that order, and what the ROM's header says of the
-//! cartridge.
+//! dump as it was given and of the ROM in that order, what the ROM's header says of the
+//! cartridge, and the ROMDISK that holds the game's files.
 
 use std::fmt;
 use std::fs::File;
@@ -11,6 +11,13 @@ use std::path::Path;
 use gdl_files::{BLOCK_LEN, Job};
 
 use crate::{MediaError, Region, RomRule, Sha1Digest, Sha256Digest, SourceName};
+
+mod romdisk;
+
+pub use romdisk::{
+    COMPRESSED, HEADER_WORDS_AT, RECORD_WORDS_LEN, ROMDISK_HEADER_LEN, ROMDISK_LIMITS,
+    ROMDISK_MAGIC, Romdisk, RomdiskEntry, RomdiskLimits,
+};
 
 /// The length of an N64 ROM's header, the least a ROM may hold.
 pub const ROM_HEADER_LEN: usize = 64;
@@ -297,6 +304,12 @@ impl N64Rom {
             game_code,
             version: self.canonical[VERSION_AT],
         }
+    }
+
+    /// The ROMDISK that holds the game's files, read as the N64 extractor reads it and held to
+    /// `limits`, or the first rule of its format it breaks.
+    pub fn romdisk(&self, limits: &RomdiskLimits) -> Result<Romdisk<'_>, MediaError> {
+        romdisk::read(&self.canonical, limits)
     }
 }
 

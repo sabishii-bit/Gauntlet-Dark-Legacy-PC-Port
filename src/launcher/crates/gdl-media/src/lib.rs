@@ -12,5 +12,9 @@ mod source_name;
 pub use digest::{Sha1Digest, Sha256Digest};
 pub use error::{MediaError, RomRule};
 pub use identify::Region;
-pub use n64::{ByteOrder, MAX_ROM_LEN, N64Rom, ROM_HEADER_LEN, RomHeader, US_SHA1};
+pub use n64::{
+    ByteOrder, COMPRESSED, HEADER_WORDS_AT, MAX_ROM_LEN, N64Rom, RECORD_WORDS_LEN, ROM_HEADER_LEN,
+    ROMDISK_HEADER_LEN, ROMDISK_LIMITS, ROMDISK_MAGIC, RomHeader, Romdisk, RomdiskEntry,
+    RomdiskLimits, US_SHA1,
+};
 pub use source_name::SourceName;
