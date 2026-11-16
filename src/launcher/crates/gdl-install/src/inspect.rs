@@ -12,14 +12,15 @@ use std::io;
 use std::path::Path;
 
 use gdl_files::{
-    FilesError, MAX_JSON_LEN, PENDING_SUFFIX, absolute_lexical, read_json_bounded, strip_verbatim,
+    FilesError, MAX_JSON_LEN, PENDING_SUFFIX, absolute_lexical, is_absent, read_json_bounded,
+    strip_verbatim,
 };
 use gdl_release::{Platform, Version};
 use serde_json::{Map, Value};
 
 use crate::compat::{Access, JOURNAL_NAMES, JOURNAL_SCHEMA, access, launcher_state_name, stamp_of};
 use crate::folder::{
-    FolderError, InstallFolder, JOURNAL_DIR, RECEIPT_FILE, is_absent, markers_among, names_in,
+    FolderError, InstallFolder, JOURNAL_DIR, RECEIPT_FILE, markers_among, names_in,
 };
 use crate::receipt::{InstalledGame, ReceiptError};
 

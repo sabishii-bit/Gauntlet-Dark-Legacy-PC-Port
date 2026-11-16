@@ -10,14 +10,14 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use gdl_files::{FilesError, no_links, read_bounded, write_json_atomic};
+use gdl_files::{FilesError, is_absent, no_links, read_bounded, write_json_atomic};
 use gdl_release::{Platform, Version};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 
 use crate::compat::{Access, Stamp, access, stamp_of};
-use crate::folder::{InstallFolder, RECEIPT_FILE, check_links, is_absent};
+use crate::folder::{InstallFolder, RECEIPT_FILE, check_links};
 use crate::payload::{
     BUILD_INFO, BuildInfo, MAX_BUILD_INFO_LEN, MAX_VERSION_FILE_LEN, SHA256_LEN, VERSION_FILE,
     sha256_of,

@@ -8,7 +8,7 @@ use std::fs::{self, File, OpenOptions, TryLockError};
 use std::io;
 use std::path::{Path, PathBuf};
 
-use gdl_files::{ALPHA_NAMES, FilesError, absolute_lexical, no_links};
+use gdl_files::{ALPHA_NAMES, FilesError, absolute_lexical, is_absent, no_links};
 
 /// The folder at an installation's top that holds the launcher's own state.
 pub const STATE_DIR: &str = ".gdl-launcher";
@@ -214,15 +214,6 @@ fn check_same_file(_: &Path, _: &File, _: &fs::Metadata) -> Result<(), LockError
 /// Whether a link is at `path`, looked at without following it.
 fn is_link(path: &Path) -> bool {
     fs::symlink_metadata(path).is_ok_and(|metadata| metadata.file_type().is_symlink())
-}
-
-/// Whether an error looking at a path says that nothing is there: the path is missing, or a
-/// folder above it is a file.
-pub(crate) fn is_absent(error: &io::Error) -> bool {
-    matches!(
-        error.kind(),
-        io::ErrorKind::NotFound | io::ErrorKind::NotADirectory
-    )
 }
 
 /// An installation's lock, held until this is dropped.

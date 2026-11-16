@@ -11,7 +11,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 #[cfg(target_os = "linux")]
-use crate::folder::is_absent;
+use gdl_files::is_absent;
 
 /// How long the game is given to answer when it is asked for its version.
 pub const GAME_PROBE_LIMIT: Duration = Duration::from_secs(30);

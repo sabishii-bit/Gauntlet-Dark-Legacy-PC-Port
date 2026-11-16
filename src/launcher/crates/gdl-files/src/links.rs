@@ -76,9 +76,9 @@ fn ends_in_separator(path: &OsStr) -> bool {
 /// path is taken from the working folder, whose own folders count as folders above it.
 ///
 /// The path is checked as it is written, every name in it, even one that a `..` then steps back
-/// out of. A name that does not exist yet is passed over, so a path can be checked before it is
-/// made. A folder above the path that the system will not let this process look into is
-/// reported as an error, since nothing then shows that it is free of links.
+/// out of. A name that does not exist yet, as [`is_absent`] tells, is passed over, so a path can
+/// be checked before it is made. A folder above the path that the system will not let this
+/// process look into is reported as an error, since nothing then shows that it is free of links.
 pub fn no_links(path: &Path) -> Result<(), FilesError> {
     let walked = walked(path).map_err(|source| FilesError::io(path, source))?;
     // Without a trailing separator, which would have the system look through a link the path
@@ -110,8 +110,9 @@ fn walked(path: &Path) -> io::Result<Cow<'_, Path>> {
 }
 
 /// Whether an error looking at a path says that nothing is there: the path is missing, or a
-/// folder above it is a file.
-fn is_absent(error: &io::Error) -> bool {
+/// folder above it is a file. [`no_links`] passes over what this calls absent, and code that looks
+/// at a path after checking it uses the same rule, so that both agree on what is there.
+pub fn is_absent(error: &io::Error) -> bool {
     matches!(
         error.kind(),
         io::ErrorKind::NotFound | io::ErrorKind::NotADirectory
@@ -126,7 +127,7 @@ mod tests {
 
     use gdl_fixtures::symlink_file;
 
-    use super::{absolute_lexical, no_links};
+    use super::{absolute_lexical, is_absent, no_links};
     use crate::FilesError;
 
     /// The separator a path is joined with on this system.
@@ -280,6 +281,26 @@ mod tests {
                 assert_eq!(source.kind(), io::ErrorKind::InvalidInput);
             }
             other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn nothing_is_there_when_the_name_is_missing_or_a_file_stands_above_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("receipt.json");
+        fs::write(&file, b"{}").unwrap();
+        for path in [
+            dir.path().join("missing"),
+            dir.path().join("missing").join("deeper.json"),
+            file.join("inside.json"),
+        ] {
+            let error = fs::symlink_metadata(&path).unwrap_err();
+            assert!(is_absent(&error), "{}: {error}", path.display());
+            no_links(&path).unwrap();
+        }
+        // A refusal to look shows nothing, and is no absence.
+        for kind in [io::ErrorKind::PermissionDenied, io::ErrorKind::InvalidInput] {
+            assert!(!is_absent(&io::Error::from(kind)), "{kind:?}");
         }
     }
 
