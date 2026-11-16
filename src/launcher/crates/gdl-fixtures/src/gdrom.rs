@@ -8,7 +8,7 @@
 
 use std::fs::File;
 use std::io::{self, Read, Seek, SeekFrom, Write};
-use std::ops::Range;
+use std::ops::{Range, RangeInclusive};
 use std::path::{Path, PathBuf};
 
 use crate::program::SparseFile;
@@ -284,6 +284,16 @@ const ONE_FILE_CUE_NAME: &str = "names.cue";
 
 /// What a disc of one file's cue sheet says: its one data track, from its file's start.
 const ONE_FILE_CUE: &str = "FILE \"track3.bin\" BINARY\nTRACK 03 MODE1/2352\nINDEX 01 00:00:00\n";
+
+/// The characters the Dreamcast extractor ends a sheet's lines at. A CR followed by an LF ends
+/// one line: the empty line left between the two is passed over, as every empty line is.
+const LINE_BREAKS: [char; 10] = [
+    '\n', '\r', '\u{b}', '\u{c}', '\u{1c}', '\u{1d}', '\u{1e}', '\u{85}', '\u{2028}', '\u{2029}',
+];
+
+/// The ASCII separators the Dreamcast extractor strips from the ends of a sheet's line, besides
+/// Unicode's white space.
+const STRIPPED_SEPARATORS: RangeInclusive<char> = '\u{1c}'..='\u{1f}';
 
 /// What a built sector keeps in its EDC field.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -633,8 +643,8 @@ impl DiscSet {
 
     /// The set with a file for each audio track its sheet lists that the set does not hold yet,
     /// one sector of zeros each, put before the sheet in the order the sheet lists them: the files
-    /// a cue sheet names before each `TRACK nn AUDIO`, and those a GDI lists with type 0, read
-    /// from a sheet whose lines end in LF or CRLF.
+    /// a cue sheet names before each `TRACK nn AUDIO`, and those a GDI lists with type 0, on the
+    /// lines the Dreamcast extractor reads the sheet as.
     pub fn with_audio_files(mut self) -> DiscSet {
         let at = self
             .files
@@ -805,12 +815,16 @@ fn contents(file: &SparseFile) -> Vec<u8> {
 }
 
 /// The files `sheet` lists for its audio tracks, in its order: a GDI's of type 0, or a cue sheet's
-/// named before each `TRACK nn AUDIO`. A sheet whose first line holds only digits is a GDI, as the
-/// launcher's reader tells them apart.
+/// named before each `TRACK nn AUDIO`. Its lines end and are stripped where the Dreamcast
+/// extractor ends and strips them, and a sheet whose first line holds only digits is a GDI, as
+/// the launcher's reader tells them apart.
 fn audio_files(sheet: &[u8]) -> Vec<String> {
     let text = String::from_utf8_lossy(sheet);
     let text = text.strip_prefix('\u{feff}').unwrap_or(&text);
-    let mut lines = text.lines().map(str::trim).filter(|line| !line.is_empty());
+    let mut lines = text
+        .split(LINE_BREAKS)
+        .map(|line| line.trim_matches(stripped))
+        .filter(|line| !line.is_empty());
     let Some(first) = lines.next() else {
         return Vec::new();
     };
@@ -834,6 +848,11 @@ fn audio_files(sheet: &[u8]) -> Vec<String> {
         }
     }
     files
+}
+
+/// Whether the Dreamcast extractor strips `character` from the ends of a sheet's line.
+fn stripped(character: char) -> bool {
+    character.is_whitespace() || STRIPPED_SEPARATORS.contains(&character)
 }
 
 /// The fields of a GDI's line: runs of characters between spaces or tabs, a field that begins
@@ -1437,6 +1456,54 @@ mod tests {
                 "three.raw",
                 "full.gdi"
             ]
+        );
+    }
+
+    #[test]
+    fn audio_files_are_found_on_the_lines_the_extractor_reads() {
+        let sheet = |set: DiscSet| String::from_utf8(bytes_of(&set, &set.sheet)).unwrap();
+        let cue = sheet(DiscSet::full(Edc::Zero));
+        let gdi = sheet(DiscSet::full_gdi(Edc::Zero));
+        // In place of the sets' CRLF: each character a line of a sheet ends at, as the extractor
+        // splits its lines, and line ends that follow a separator it strips from the line.
+        let line_ends = [
+            "\n",
+            "\r",
+            "\u{b}",
+            "\u{c}",
+            "\u{1c}",
+            "\u{1d}",
+            "\u{1e}",
+            "\u{85}",
+            "\u{2028}",
+            "\u{2029}",
+            "\u{1f}\r\n",
+            "\u{1d}\u{1f}\n",
+        ];
+        for line_end in line_ends {
+            assert_eq!(
+                audio_files(cue.replace("\r\n", line_end).as_bytes()),
+                ["track4.bin"],
+                "{line_end:?}"
+            );
+            assert_eq!(
+                audio_files(gdi.replace("\r\n", line_end).as_bytes()),
+                ["track04.raw"],
+                "{line_end:?}"
+            );
+        }
+        // A separator stripped from a line's ends but never ending one leaves a single line,
+        // which lists no track.
+        assert!(audio_files(cue.replace("\r\n", "\u{1f}").as_bytes()).is_empty());
+        assert!(audio_files(gdi.replace("\r\n", "\u{1f}").as_bytes()).is_empty());
+
+        // A set whose sheet ends its lines at a CR alone still gains its audio track.
+        let mut set = DiscSet::full(Edc::Zero);
+        set.files.last_mut().unwrap().1 = whole(cue.replace("\r\n", "\r").into_bytes());
+        let names_after = names(&set.with_audio_files());
+        assert_eq!(
+            names_after,
+            ["track3.bin", "track5.bin", "track4.bin", "full.cue"]
         );
     }
 
