@@ -1,0 +1,30 @@
+{
+  "format": "gdl-legends-fingerprints",
+  "version": 1,
+  "expansion": "dreamcast",
+  "product": "T9710N",
+  "productVersion": "V1.003",
+  "area": "U",
+  "files": [
+    {
+      "pathSha256": "112c517c49bd18206f8d52307398dfc92d4a0b8185982b790bda5f7b6b1f5361",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "pathSha256": "1de399d4a57b1ce8d7886f7ece430bf45616367a9229bdca0b63fba70bc07d82",
+      "sha256": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+    },
+    {
+      "pathSha256": "8ab78a2c8f95a481860dfe3a6ba329c60982817750e536861b9f95228d808efc",
+      "sha256": "8238f003ad1a7f56965542e097622333a1e90eb52301496c34fe39ab34c2e9e6"
+    },
+    {
+      "pathSha256": "df090bdf97287f93dc814db03baea7dfe65c588b05f839f4db40944cc446ef1c",
+      "sha256": "457096a0e027dfd3d949d034498d79b392df5ba5cbb786fd5434a5acdd3ef28d"
+    },
+    {
+      "pathSha256": "e60b7f339972edaa3a7a242795ff7dbf098d6c5f565b1e4c4ceed4469aa67814",
+      "sha256": "6e0d628f436e107c7a5a1a24170c7c87a289dfb87c53f4d0a56c09d5a87a34b8"
+    }
+  ]
+}

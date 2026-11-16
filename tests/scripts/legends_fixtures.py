@@ -1,8 +1,8 @@
 """Synthetic N64 ROMs and Dreamcast GD-ROM sets for the Legends extractor tests, and the vectors
 those tests share with the launcher's; no game data.
 
-The vectors in tests/scripts/data/legends are written by the builders and the extractors, never by
-hand. After a change to either, write them again with
+The vectors in tests/scripts/data/legends are written by the builders, the extractors and
+legends_fingerprints.py, never by hand. After a change to any of them, write them again with
 
     python tests/scripts/legends_fixtures.py --write tests/scripts/data/legends
 
@@ -28,6 +28,7 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts" / "assets"))
 import dreamcast_legends as dc
+import legends_fingerprints
 import n64_legends as n64
 
 # Where the shared vectors live; the launcher's tests read the same files.
@@ -708,6 +709,10 @@ DREAMCAST_EXTRACTIONS = {
                     "native-manifest.json": "dreamcast-full-native-manifest.json"}),
 }
 
+# The golden of what legends_fingerprints.py writes for the tree the full set's disc extracts to:
+# a fingerprint for IP.BIN and one for each disc file, hashes only.
+FULL_FINGERPRINTS = "dreamcast-full-fingerprints.json"
+
 # The systems the launcher runs on, by the path rules their file systems follow: Windows compares
 # names without letter case, Linux with it.
 SYSTEMS = {"windows": PureWindowsPath, "linux": PurePosixPath}
@@ -1097,6 +1102,15 @@ def new_folder(scratch: Path) -> Path:
     return Path(tempfile.mkdtemp(dir=scratch))
 
 
+def full_set_tree(scratch: Path) -> Path:
+    """The tree the Dreamcast extractor writes for the full set's disc, in a new folder of
+    `scratch`, the set built in another: IP.BIN, disc-manifest.json and the disc's files, all that
+    the fingerprints are taken from."""
+    tree = new_folder(scratch) / "tree"
+    dc.extract(full_set(new_folder(scratch)), tree)
+    return tree
+
+
 def dreamcast_sectors() -> list[dict]:
     """The sector header cases, with the LBA the extractor reads from each."""
     cases = []
@@ -1229,8 +1243,9 @@ def dreamcast_sets(scratch: Path, goldens: dict[str, bytes]) -> dict:
 
 
 def write_dreamcast_vectors(folder: Path, refreeze: bool) -> list[str]:
-    """Writes the Dreamcast vectors and the golden manifests into `folder`. No Dreamcast vector
-    depends on a compressor, so nothing is carried over and `refreeze` changes nothing."""
+    """Writes the Dreamcast vectors, the golden manifests and the full set's fingerprints into
+    `folder`. No Dreamcast vector depends on a compressor, so nothing is carried over and
+    `refreeze` changes nothing."""
     goldens = {}
     with tempfile.TemporaryDirectory() as temporary:
         scratch = Path(temporary)
@@ -1244,6 +1259,8 @@ def write_dreamcast_vectors(folder: Path, refreeze: bool) -> list[str]:
             "records": dreamcast_records(),
             "sets": dreamcast_sets(scratch, goldens),
         }
+        goldens[FULL_FINGERPRINTS] = legends_fingerprints.rendered(
+            legends_fingerprints.fingerprints_of(full_set_tree(scratch)))
     write_document(folder / DREAMCAST_VECTORS, document)
     for name, data in goldens.items():
         (folder / name).write_bytes(data)
