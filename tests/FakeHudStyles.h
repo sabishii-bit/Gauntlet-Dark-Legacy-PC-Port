@@ -60,6 +60,7 @@ struct FakeHudRecord {
     std::vector<FakeHudCall> calls; ///< every call taken, in turn
     std::vector<std::string> made;  ///< the id of each look made, in turn
     std::vector<u32> letGo;         ///< for each look made, its place among those let go; 0: held
+    std::vector<u32> goneWhenMade;  ///< for each look made, how many had been let go by then
     /// For each look made, the device's idle waits as it went; 0 while held or unwatched.
     std::vector<u32> idleWaitsAtLetGo;
     std::vector<FakeHudPages> pages; ///< for each look made, the page each seat browsed it to
@@ -99,6 +100,7 @@ public:
           m_idleWaits(idleWaits) {
         m_record.made.push_back(m_id);
         m_record.letGo.push_back(0);
+        m_record.goneWhenMade.push_back(m_record.departures);
         m_record.idleWaitsAtLetGo.push_back(0);
         m_record.pages.emplace_back();
     }

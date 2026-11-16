@@ -95,20 +95,24 @@ TEST_CASE("the slot draws the chosen look, and Dark Legacy's for its own id, an 
     CHECK(fixture.styles.record.count("fake", FakeHudPart::Status) == 1);
     CHECK(fixture.art.record.calls.empty());
 
-    // Dark Legacy's own id, and an id no expansion offers, open nothing; opening again lets
-    // the look held go.
-    for (const std::string_view id : {kDarkLegacyHudStyle, std::string_view{"future"}}) {
-        CAPTURE(id);
-        fixture.open(slot, id);
-        CHECK(slot.shown() == kDarkLegacyHudStyle);
-        CHECK(&slot.painter(fixture.art) == &fixture.art.look());
-    }
-    CHECK(fixture.styles.opened == std::vector<std::string>{"fake"});
+    // Dark Legacy's own id opens nothing and asks the catalog nothing, so a scene in the base
+    // game's look never looks for an expansion's files; opening it lets the look held go.
+    const u32 asked = fixture.styles.asks;
+    CHECK(test::warningsWhile([&] { fixture.open(slot, kDarkLegacyHudStyle); }).empty());
+    CHECK(fixture.styles.asks == asked);
+    CHECK(slot.shown() == kDarkLegacyHudStyle);
+    CHECK(&slot.painter(fixture.art) == &fixture.art.look());
     CHECK(fixture.styles.record.destroyed() == std::vector<std::string>{"fake"});
+    // An id no expansion offers is looked for among the offers, and opens nothing without a word.
+    CHECK(test::warningsWhile([&] { fixture.open(slot, "future"); }).empty());
+    CHECK(fixture.styles.asks == asked + 1);
+    CHECK(slot.shown() == kDarkLegacyHudStyle);
+    CHECK(&slot.painter(fixture.art) == &fixture.art.look());
+    CHECK(fixture.styles.opened == std::vector<std::string>{"fake"});
 
-    // A look offered that cannot be drawn is still asked for, so that its opener says why, and
-    // Dark Legacy's draws in its place.
-    fixture.open(slot, "gone");
+    // A look offered that cannot be drawn is still asked for, so that its opener says why; the
+    // slot adds no word of its own, and Dark Legacy's draws in its place.
+    CHECK(test::warningsWhile([&] { fixture.open(slot, "gone"); }).empty());
     CHECK(fixture.styles.opened == std::vector<std::string>{"fake", "gone"});
     CHECK(slot.shown() == kDarkLegacyHudStyle);
     fixture.call(slot, FakeHudPart::Status);
@@ -125,10 +129,14 @@ TEST_CASE("a look that fails to open is not asked for again until the id changes
     SlotFixture fixture;
     HudStyleSlot slot;
     fixture.open(slot, "gone");
-    for (s32 step = 0; step < 3; ++step) {
-        CHECK_FALSE(slot.unsettled("gone"));
-        fixture.settle(slot, "gone");
-    }
+    // The steps after say nothing either: the opener said why, once.
+    const std::vector<std::string> warnings = test::warningsWhile([&] {
+        for (s32 step = 0; step < 3; ++step) {
+            CHECK_FALSE(slot.unsettled("gone"));
+            fixture.settle(slot, "gone");
+        }
+    });
+    CHECK(warnings.empty());
     CHECK(fixture.styles.opened == std::vector<std::string>{"gone"});
     CHECK(slot.shown() == kDarkLegacyHudStyle);
 
@@ -160,17 +168,21 @@ TEST_CASE("a changed id waits for a settle; opening asks for nothing",
     CHECK(fixture.styles.record.destroyed().empty());
     CHECK(fixture.styles.opened == std::vector<std::string>{"fake"});
 
-    // The step lets the old look go first, then opens the new one for the party it is given.
+    // The step lets the old look go first, so that its art has gone before the new look takes
+    // its own, then opens the new one for the party it is given.
     const std::array joined{HudMember{.seat = 0, .classIndex = 5, .color = 3}};
     slot.settle("other", fixture.device, fixture.art, joined);
     CHECK(slot.shown() == "other");
     CHECK(fixture.styles.record.destroyed() == std::vector<std::string>{"fake"});
+    CHECK(fixture.styles.record.goneWhenMade == std::vector<u32>{0, 1});
     CHECK(fixture.styles.parties.back() == std::vector<HudMember>{joined.front()});
     CHECK_FALSE(slot.unsettled("other"));
 
-    // Back to Dark Legacy's look, which opens nothing.
+    // Back to Dark Legacy's look, which opens nothing and asks the catalog nothing.
     REQUIRE(slot.unsettled(kDarkLegacyHudStyle));
+    const u32 asked = fixture.styles.asks;
     fixture.settle(slot, kDarkLegacyHudStyle);
+    CHECK(fixture.styles.asks == asked);
     CHECK(slot.shown() == kDarkLegacyHudStyle);
     CHECK(fixture.styles.record.destroyed() == std::vector<std::string>{"fake", "other"});
     CHECK(fixture.styles.opened == std::vector<std::string>{"fake", "other"});

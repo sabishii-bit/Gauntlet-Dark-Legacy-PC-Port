@@ -167,12 +167,13 @@ struct HudScene {
     }
 
     /** Opens the scene with the settings choosing `look` of the fake catalog, or with Dark
-     * Legacy's look and no catalog when none is named. */
-    void open(std::string_view look = {}) {
+     * Legacy's look when none is named: then with no catalog, unless `linked`, as the game links
+     * its own whatever the settings choose. */
+    void open(std::string_view look = {}, bool linked = false) {
         config.display.hudStyle =
             look.empty() ? std::string{kDarkLegacyHudStyle} : std::string{look};
         REQUIRE(scene.open(device, context, world, party, options,
-                           {.hudStyles = look.empty() ? nullptr : &styles}));
+                           {.hudStyles = look.empty() && !linked ? nullptr : &styles}));
         tick = 0;
     }
     void step(const PlayScene::Inputs& inputs) {
@@ -307,7 +308,8 @@ TEST_CASE("switching the HUD look mid-level changes no byte of the digests and s
           "[play-scene][hud-style][native-state-digest][assets]") {
     auto darkLegacy = std::make_unique<HudScene>("G2");
     auto switching = std::make_unique<HudScene>("G2");
-    darkLegacy->open();
+    // The Dark Legacy scene has the catalog the game links too, which its look never asks.
+    darkLegacy->open({}, true);
     switching->open(kFakeLook);
     const test::FakeHudRecord& record = switching->styles.record;
     // The scene's opening opens its look at once, waiting for nothing.
@@ -332,6 +334,7 @@ TEST_CASE("switching the HUD look mid-level changes no byte of the digests and s
             const usize calls = record.calls.size();
             const u32 waits = switching->device.idleWaits;
             const u32 gone = record.departures;
+            const u32 asked = switching->styles.asks;
             // Under the settings the scene draws on in the look it had, and opens and lets go of
             // nothing.
             switching->render(-1.0f, true);
@@ -358,7 +361,9 @@ TEST_CASE("switching the HUD look mid-level changes no byte of the digests and s
                 CHECK(record.idleWaitsAtLetGo.at(went) > waits);
             }
             if (chosen == kDarkLegacyHudStyle) {
+                // Dark Legacy's look is the base game's: no expansion's files are looked for.
                 CHECK(switching->styles.opened.size() == opens);
+                CHECK(switching->styles.asks == asked);
             } else {
                 REQUIRE(switching->styles.opened.size() == opens + 1);
                 CHECK(switching->styles.opened.back() == chosen);
@@ -373,10 +378,13 @@ TEST_CASE("switching the HUD look mid-level changes no byte of the digests and s
         CAPTURE(switching->tick);
         REQUIRE(darkLegacy->digest() == switching->digest());
     }
-    // Only the switches waited for the device.
+    // Only the switches waited for the device, and the scene in Dark Legacy's look never asked
+    // its catalog for a look as it opened or as it stepped.
     CHECK(switches == kLastTick / kSwitchEvery);
     CHECK(switching->device.idleWaits == switches);
     CHECK(darkLegacy->device.idleWaits == 0);
+    CHECK(darkLegacy->styles.asks == 0);
+    CHECK(darkLegacy->styles.opened.empty());
 }
 
 TEST_CASE("a closed selector's down, left and right reach the look's pages and nothing else",
