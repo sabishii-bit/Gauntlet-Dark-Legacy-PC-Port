@@ -33,6 +33,12 @@ pub fn pending_path(path: &Path) -> PathBuf {
 /// is not a regular file, and when it holds more than `limit` bytes; a file of exactly `limit`
 /// bytes is read. Whatever is at `path`, the read never waits for a writer and takes no more than
 /// one byte past `limit`.
+///
+/// A link is refused as [`FilesError::Link`] and a file too large as [`FilesError::TooLarge`]. An
+/// entry that is no regular file is refused as [`FilesError::Io`], as the system's own refusals
+/// are: by the launcher, with [`io::ErrorKind::InvalidInput`], where the system opens it, and by
+/// the system itself where it will not, as Windows will not open a folder as a file. A caller that
+/// must tell such an entry from a refusal to read it looks at what is at `path`.
 pub fn read_bounded(path: &Path, limit: u64) -> Result<Vec<u8>, FilesError> {
     no_links(path)?;
     let file = open_regular(path).map_err(|source| FilesError::io(path, source))?;

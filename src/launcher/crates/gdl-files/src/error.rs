@@ -7,12 +7,16 @@ use std::path::{Path, PathBuf};
 /// Why a file operation failed, and on which path.
 #[derive(Debug, thiserror::Error)]
 pub enum FilesError {
-    /// The system refused an operation on `path`.
+    /// An operation on `path` failed: the system refused it, or the launcher refused what it found
+    /// or was given there, as an error of the kind the system would give. The launcher's own
+    /// refusals are those its operations name: an entry that is no regular file where a state file
+    /// is read, a name already taken where a file is made, a file where a folder is to be, a
+    /// staging prefix that is no single name, and a state file's path that names no file.
     #[error("{}: {source}", .path.display())]
     Io {
         /// The path the operation was on.
         path: PathBuf,
-        /// What the system answered.
+        /// What the system answered, or why the launcher refused.
         #[source]
         source: io::Error,
     },
@@ -58,7 +62,8 @@ pub enum FilesError {
 }
 
 impl FilesError {
-    /// The system's refusal of an operation on `path`.
+    /// The refusal of an operation on `path`: the system's, or the launcher's own in the system's
+    /// terms.
     pub(crate) fn io(path: &Path, source: io::Error) -> FilesError {
         FilesError::Io {
             path: path.to_path_buf(),

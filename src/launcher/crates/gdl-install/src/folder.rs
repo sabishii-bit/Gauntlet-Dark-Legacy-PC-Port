@@ -339,12 +339,13 @@ pub enum LockError {
         /// Where the state folder belongs.
         path: PathBuf,
     },
-    /// The system refused to look at, open or lock `path`.
+    /// The system refused to look at, open or lock `path`; or, on Unix, the file locked was no
+    /// longer the one at the lock file's name, and the lock was let go.
     #[error("{}: {source}", .path.display())]
     Io {
         /// The state folder or the lock file.
         path: PathBuf,
-        /// What the system answered.
+        /// What the system answered, or why the lock was let go.
         #[source]
         source: io::Error,
     },
