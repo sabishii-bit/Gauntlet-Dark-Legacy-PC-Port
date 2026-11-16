@@ -1,7 +1,7 @@
-//! Names the launcher takes from outside, such as a runtime zip's entries, checked before anything
-//! is made from them: no name may leave the folder it belongs in, name a Windows device, clash
-//! with another on a case-insensitive file system, or carry the alpha installer's names into an
-//! installation.
+//! Names the launcher takes from outside, such as a runtime zip's entries or the files of a Legends
+//! dump, checked before anything is made from them: no name may leave the folder it belongs in,
+//! name a Windows device, clash with another on a case-insensitive file system, or carry the alpha
+//! installer's names into an installation.
 
 use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
@@ -13,6 +13,9 @@ pub const MAX_COMPONENT_CHARS: usize = 200;
 
 /// The most characters a runtime zip's entry name may have, separators included.
 pub const MAX_PAYLOAD_PATH_CHARS: usize = 1024;
+
+/// The most characters a name a disc or a ROM holds may have, separators included.
+pub const MAX_DISC_PATH_CHARS: usize = 220;
 
 /// Characters no component may hold: the separators of both systems, a drive's colon, and the
 /// characters Windows keeps for wildcards, redirection and quoting.
@@ -84,6 +87,30 @@ pub struct NameRules {
 pub const PAYLOAD_NAMES: NameRules = NameRules {
     max_path_chars: MAX_PAYLOAD_PATH_CHARS,
     ascii_only: true,
+    reserved_first: &[],
+};
+
+/// Names a Legends ROMDISK holds: ASCII, and never the names the N64 extractor writes beside them.
+pub const ROMDISK_NAMES: NameRules = NameRules {
+    max_path_chars: MAX_DISC_PATH_CHARS,
+    ascii_only: true,
+    reserved_first: &["_program", "manifest.json"],
+};
+
+/// Names a disc's file system or its packed file table holds, and the names the extractors give
+/// files of their own.
+pub const DISC_NAMES: NameRules = NameRules {
+    max_path_chars: MAX_DISC_PATH_CHARS,
+    ascii_only: true,
+    reserved_first: &[],
+};
+
+/// The name of a track file a cue sheet or a GDI lists: any characters a component may hold,
+/// since a sheet is UTF-8 text. Such a name is checked alone and never enters a [`NameSet`],
+/// whose fold knows only ASCII letter case.
+pub const TRACK_NAMES: NameRules = NameRules {
+    max_path_chars: MAX_COMPONENT_CHARS,
+    ascii_only: false,
     reserved_first: &[],
 };
 
@@ -283,6 +310,13 @@ impl RelPath {
         path.extend(self.components());
         path
     }
+
+    /// `self` followed by `tail`'s components: both were checked when they were read, so every
+    /// component of the result was too. The result's length is not checked again, since it names
+    /// a place the launcher writes, not a name taken from outside.
+    pub fn join(&self, tail: &RelPath) -> RelPath {
+        RelPath(format!("{}{SEPARATOR}{}", self.0, tail.0))
+    }
 }
 
 /// A name's first component, or the whole name when it has only one.
@@ -331,8 +365,9 @@ mod tests {
     use std::path::Path;
 
     use super::{
-        ALPHA_NAMES, DEVICE_NAMES, FORBIDDEN_CHARS, MAX_COMPONENT_CHARS, MAX_PAYLOAD_PATH_CHARS,
-        NameError, NameRule, NameRules, NameSet, PAYLOAD_NAMES, RelPath, check_component,
+        ALPHA_NAMES, DEVICE_NAMES, DISC_NAMES, FORBIDDEN_CHARS, MAX_COMPONENT_CHARS,
+        MAX_DISC_PATH_CHARS, MAX_PAYLOAD_PATH_CHARS, NameError, NameRule, NameRules, NameSet,
+        PAYLOAD_NAMES, ROMDISK_NAMES, RelPath, TRACK_NAMES, check_component,
     };
 
     /// Rules like a payload's that take any character, for a kind of name that may reach outside
@@ -818,5 +853,111 @@ mod tests {
         assert_eq!(error.to_string(), r#"unsafe name "x\0y": control"#);
         let error = RelPath::parse("data/../escaped", &PAYLOAD_NAMES).unwrap_err();
         assert_eq!(error.to_string(), r#"unsafe name "data/../escaped": dot"#);
+    }
+
+    #[test]
+    fn dump_profiles_take_what_the_extractors_take() {
+        // ROMDISK paths as the N64 extractor reads them once their leading slash is gone.
+        for text in [
+            "levels/test/worlds.wad",
+            "Font/x",
+            "a;1",
+            " a",
+            ".a",
+            "a..b",
+            "COM10",
+        ] {
+            assert_eq!(path_rule(text, &ROMDISK_NAMES), None, "{text:?}");
+        }
+        assert_eq!(path_rule("AUDIO/STREAMS/X.STR", &DISC_NAMES), None);
+        // Neither extractor takes a name outside ASCII from a ROMDISK or a disc.
+        for rules in [ROMDISK_NAMES, DISC_NAMES] {
+            let rule = path_rule("levels/\u{e9}.wad", &rules);
+            assert_eq!(rule, Some(NameRule::NonAscii));
+        }
+    }
+
+    #[test]
+    fn romdisk_names_keep_the_extractors_output_names() {
+        // The N64 tree keeps `_program` for the executable overlays and `manifest.json` for its
+        // manifest, so no ROMDISK file may take either as its first component.
+        for text in [
+            "_program/game.bin",
+            "_PROGRAM/x",
+            "manifest.json",
+            "MANIFEST.JSON/x",
+        ] {
+            let rule = path_rule(text, &ROMDISK_NAMES);
+            assert_eq!(rule, Some(NameRule::Reserved), "{text:?}");
+        }
+        for text in ["x/_program", "x/manifest.json"] {
+            assert_eq!(path_rule(text, &ROMDISK_NAMES), None, "{text:?}");
+        }
+        // A disc reserves nothing, so the extractors' own names read under its rules.
+        for text in ["_program/game.bin", "manifest.json"] {
+            assert_eq!(path_rule(text, &DISC_NAMES), None, "{text:?}");
+        }
+    }
+
+    #[test]
+    fn disc_paths_end_at_220_characters() {
+        assert_eq!(MAX_DISC_PATH_CHARS, 220);
+        for rules in [ROMDISK_NAMES, DISC_NAMES] {
+            assert_eq!(rules.max_path_chars, MAX_DISC_PATH_CHARS);
+            // Two components well within their own limit, so the whole name's length decides.
+            let mut text = format!("{}/", "a".repeat(100));
+            text.push_str(&"b".repeat(MAX_DISC_PATH_CHARS - text.len()));
+            assert_eq!(text.chars().count(), MAX_DISC_PATH_CHARS);
+            assert_eq!(path_rule(&text, &rules), None);
+            text.push('b');
+            assert_eq!(path_rule(&text, &rules), Some(NameRule::PathTooLong));
+        }
+    }
+
+    #[test]
+    fn track_names_take_any_characters_but_the_unsafe() {
+        for name in ["Track (1).bin", "trak\u{e9}.bin"] {
+            assert_eq!(component_rule(name, &TRACK_NAMES), None, "{name:?}");
+        }
+        let rule = component_rule("../other.bin", &TRACK_NAMES);
+        assert_eq!(rule, Some(NameRule::Forbidden));
+        // A port's superscript digit, and the spaces Windows drops after a device's name, still
+        // name the device.
+        for name in ["COM\u{b9}.bin", "CON .bin"] {
+            let rule = component_rule(name, &TRACK_NAMES);
+            assert_eq!(rule, Some(NameRule::DeviceName), "{name:?}");
+        }
+    }
+
+    #[test]
+    fn a_name_holding_a_separator_is_one_unsafe_component() {
+        let rule = component_rule("A/B", &DISC_NAMES);
+        assert_eq!(rule, Some(NameRule::Forbidden));
+        // Read as a whole name, the same text is a folder holding a file, which is why a disc's
+        // readers check each name it holds alone.
+        let path = RelPath::parse("A/B", &DISC_NAMES).unwrap();
+        assert_eq!(path.components().collect::<Vec<_>>(), ["A", "B"]);
+        assert_eq!(path.depth(), 2);
+    }
+
+    #[test]
+    fn joined_paths_keep_both_halves() {
+        let tail = RelPath::parse("levels/a.wad", &ROMDISK_NAMES).unwrap();
+        let joined = rel("n64").join(&tail);
+        assert_eq!(joined.as_str(), "n64/levels/a.wad");
+        assert_eq!(
+            joined.components().collect::<Vec<_>>(),
+            ["n64", "levels", "a.wad"]
+        );
+        assert_eq!(joined.depth(), 3);
+        assert_eq!(joined.first(), "n64");
+        // Neither half's bound holds the result, which names a place to write.
+        let mut longest = format!("{}/", "a".repeat(100));
+        longest.push_str(&"b".repeat(MAX_DISC_PATH_CHARS - longest.len()));
+        let tail = RelPath::parse(&longest, &DISC_NAMES).unwrap();
+        let joined = rel("n64/extracted").join(&tail);
+        assert_eq!(joined.as_str(), format!("n64/extracted/{longest}"));
+        assert!(joined.as_str().len() > MAX_DISC_PATH_CHARS);
+        assert_eq!(joined.depth(), 4);
     }
 }
