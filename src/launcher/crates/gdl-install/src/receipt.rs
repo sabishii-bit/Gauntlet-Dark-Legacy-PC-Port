@@ -112,8 +112,12 @@ impl Receipt {
     /// file that one rename puts in its place, so that a reader finds the old receipt or the new
     /// one and never part of either. The caller holds the installation's lock, and the state
     /// folder exists.
+    ///
+    /// A receipt whose JSON would take more than [`MAX_RECEIPT_LEN`] bytes, which no launcher
+    /// would read again, is refused as [`FilesError::TooLarge`], and the one there is kept. Keys
+    /// kept from a receipt read can make it so, since they are written back indented.
     pub fn write(&self, folder: &InstallFolder) -> Result<(), FilesError> {
-        write_json_atomic(&receipt_path(folder), self)
+        write_json_atomic(&receipt_path(folder), self, MAX_RECEIPT_LEN)
     }
 
     /// The platform the receipt names, once each of its fields holds what a receipt's may: a
@@ -450,8 +454,8 @@ mod tests {
 
     use gdl_files::{ALPHA_NAMES, FilesError, PAYLOAD_NAMES, check_component, retry_locked};
     use gdl_fixtures::{
-        InstallFixture, RuntimeFiles, backdate, folder_names, link_folder, sha256_hex, snapshot,
-        symlink_file_where_allowed,
+        InstallFixture, RuntimeFiles, backdate, folder_names, link_folder, pretty_json, sha256_hex,
+        snapshot, symlink_file_where_allowed,
     };
     use gdl_release::{Platform, Version};
     use serde_json::{Value, json};
@@ -1009,6 +1013,38 @@ mod tests {
         pad(MAX_RECEIPT_LEN + 1);
         let detail = assert_unreadable(read(&folder), "a byte too many");
         assert!(detail.contains("too large"), "{detail}");
+    }
+
+    #[test]
+    fn a_receipt_is_written_only_within_the_bound_it_is_read_to() {
+        /// How many items a key this launcher does not know holds in the receipt below: written
+        /// compact they fit the bound, but not once written back indented, a line each.
+        const FUTURE_ITEMS: usize = 10_000;
+
+        let (_dir, fixture, folder) = installation();
+        let receipt_file = receipt_path(&folder);
+        let mut receipt = fixture.receipt();
+        receipt["future"] = json!(vec![1; FUTURE_ITEMS]);
+        // Written compact, as no launcher writes one, the receipt reads within its bound.
+        let compact = serde_json::to_vec(&receipt).unwrap();
+        assert!(u64::try_from(compact.len()).unwrap() <= MAX_RECEIPT_LEN);
+        fs::write(&receipt_file, &compact).unwrap();
+        let read_back = read(&folder).unwrap().receipt.unwrap();
+        assert_eq!(read_back.other["future"], receipt["future"]);
+
+        // Written back indented, a line an item, it would be a receipt no launcher reads, so it is
+        // refused, and the receipt there is kept as it was.
+        assert!(u64::try_from(pretty_json(&receipt).len()).unwrap() > MAX_RECEIPT_LEN);
+        match read_back.write(&folder) {
+            Err(FilesError::TooLarge { path, limit }) => {
+                assert_eq!(path, receipt_file);
+                assert_eq!(limit, MAX_RECEIPT_LEN);
+            }
+            other => panic!("{other:?}"),
+        }
+        assert_eq!(fs::read(&receipt_file).unwrap(), compact);
+        assert_eq!(folder_names(&folder.state_dir()).unwrap(), [RECEIPT_FILE]);
+        read(&folder).unwrap();
     }
 
     #[test]

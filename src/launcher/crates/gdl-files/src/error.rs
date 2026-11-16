@@ -27,10 +27,10 @@ pub enum FilesError {
         /// The link, which is the path checked or one of the folders above it.
         path: PathBuf,
     },
-    /// The file at `path` holds more than `limit` bytes.
+    /// The file at `path` holds more than `limit` bytes, or would once written.
     #[error("Metadata is too large: {}", .path.display())]
     TooLarge {
-        /// The file read.
+        /// The file read or written.
         path: PathBuf,
         /// The most bytes it may hold.
         limit: u64,

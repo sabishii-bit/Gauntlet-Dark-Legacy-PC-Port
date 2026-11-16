@@ -94,7 +94,7 @@ fn everything_works_under_a_180_unit_root() {
     // A state file there, written whole, read back, then replaced by a file staged beside it.
     let manifest = folder.join("manifest.json");
     let written = json!({"schema": 1, "files": [deep.as_str()]});
-    write_json_atomic(&manifest, &written).unwrap();
+    write_json_atomic(&manifest, &written, MAX_JSON_LEN).unwrap();
     let read: Value = read_json_bounded(&manifest, MAX_JSON_LEN).unwrap();
     assert_eq!(read, written);
     let next = stage(

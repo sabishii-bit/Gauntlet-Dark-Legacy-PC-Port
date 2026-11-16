@@ -4,7 +4,7 @@
 //! either.
 
 use std::fs::{self, File, OpenOptions};
-use std::io::{self, BufWriter, Read, Write};
+use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
@@ -101,12 +101,21 @@ pub fn read_json_bounded<T: DeserializeOwned>(path: &Path, limit: u64) -> Result
 /// disk before this returns. The caller holds the lock of the folder, which must have no link on
 /// its path.
 ///
+/// `limit` is the most bytes the file may hold: the bound its readers read it to, so that the
+/// launcher never writes a state file it would then refuse to read. A value that has no JSON form
+/// is refused as [`FilesError::Json`], and one whose JSON would take more than `limit` bytes as
+/// [`FilesError::TooLarge`], both before anything is written or removed.
+///
 /// A pending file that an interrupted write left behind is removed first, a link as a link and
 /// never what it leads to; a folder of that name is not the launcher's to empty, and refuses the
 /// write. Once the pending file is made, a failure removes it again where it can. An error in
 /// putting the rename on disk comes after it is made: `path` then holds the new contents, though
 /// a crash could still lose them.
-pub fn write_json_atomic(path: &Path, value: &impl Serialize) -> Result<(), FilesError> {
+pub fn write_json_atomic(
+    path: &Path,
+    value: &impl Serialize,
+    limit: u64,
+) -> Result<(), FilesError> {
     if path.file_name().is_none() {
         let unnamed = io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -114,6 +123,7 @@ pub fn write_json_atomic(path: &Path, value: &impl Serialize) -> Result<(), File
         );
         return Err(FilesError::io(path, unnamed));
     }
+    let json = json_within(value, limit, path)?;
     no_links(folder_of(path))?;
     let pending = pending_path(path);
     remove_stale(&pending)?;
@@ -122,7 +132,7 @@ pub fn write_json_atomic(path: &Path, value: &impl Serialize) -> Result<(), File
         .create_new(true)
         .open(&pending)
         .map_err(|source| FilesError::io(&pending, source))?;
-    let written = write_synced(file, value, &pending, path)
+    let written = write_synced(file, &json, &pending)
         .and_then(|()| replace(&pending, path).map_err(|source| FilesError::io(path, source)));
     if written.is_err() {
         // What failed is what is reported. A pending file that cannot be removed now is removed
@@ -130,6 +140,25 @@ pub fn write_json_atomic(path: &Path, value: &impl Serialize) -> Result<(), File
         let _ = fs::remove_file(&pending);
     }
     written
+}
+
+/// `value` as the state file `path` holds it: JSON indented by two spaces, with LF line ends and
+/// a newline after it; refused when the value has no JSON form, or when that takes more than
+/// `limit` bytes.
+fn json_within(value: &impl Serialize, limit: u64, path: &Path) -> Result<Vec<u8>, FilesError> {
+    let mut json = serde_json::to_vec_pretty(value).map_err(|source| FilesError::Json {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    json.push(b'\n');
+    if u64::try_from(json.len()).is_ok_and(|len| len <= limit) {
+        Ok(json)
+    } else {
+        Err(FilesError::TooLarge {
+            path: path.to_path_buf(),
+            limit,
+        })
+    }
 }
 
 /// Removes what an interrupted write left at `pending`: a file, or a link, which is removed
@@ -163,38 +192,12 @@ fn is_folder_link(_: &fs::Metadata) -> bool {
     false
 }
 
-/// Writes `value` as JSON into `file`, the new file at `pending`, then a newline, syncs it and
-/// closes it: the file is on disk whole before anything renames it.
-fn write_synced(
-    file: File,
-    value: &impl Serialize,
-    pending: &Path,
-    path: &Path,
-) -> Result<(), FilesError> {
-    let mut writer = BufWriter::new(file);
-    serde_json::to_writer_pretty(&mut writer, value)
-        .map_err(|error| serialize_error(error, pending, path))?;
-    writer
-        .write_all(b"\n")
-        .map_err(|source| FilesError::io(pending, source))?;
-    let file = writer
-        .into_inner()
-        .map_err(|error| FilesError::io(pending, error.into_error()))?;
-    file.sync_all()
+/// Writes `json` into `file`, the new file at `pending`, syncs it and closes it: the file is on
+/// disk whole before anything renames it.
+fn write_synced(mut file: File, json: &[u8], pending: &Path) -> Result<(), FilesError> {
+    file.write_all(json)
+        .and_then(|()| file.sync_all())
         .map_err(|source| FilesError::io(pending, source))
-}
-
-/// The error of writing JSON into the pending file: the system's, when writing the file failed,
-/// or the JSON writer's, about `path`, when the value has no JSON form.
-fn serialize_error(error: serde_json::Error, pending: &Path, path: &Path) -> FilesError {
-    if error.is_io() {
-        FilesError::io(pending, error.into())
-    } else {
-        FilesError::Json {
-            path: path.to_path_buf(),
-            source: error,
-        }
-    }
 }
 
 #[cfg(test)]
@@ -211,7 +214,7 @@ mod tests {
 
     use super::{
         MAX_JSON_LEN, PENDING_SUFFIX, pending_path, read_bounded, read_json_bounded, read_to_bound,
-        serialize_error, write_json_atomic,
+        write_json_atomic,
     };
     use crate::FilesError;
     use crate::error::{assert_io, assert_link};
@@ -258,7 +261,7 @@ mod tests {
     fn writes_pretty_json_with_lf() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("receipt.json");
-        write_json_atomic(&path, &state()).unwrap();
+        write_json_atomic(&path, &state(), MAX_JSON_LEN).unwrap();
         let expected = "{\n  \"schema\": 1,\n  \"minLauncher\": \"1.0.0-beta\",\n  \
                         \"installedDigests\": {\n    \"gauntlet.exe\": \"ab12\"\n  },\n  \
                         \"roots\": [\n    \"data\",\n    \"\u{e9}t\u{e9}\"\n  ],\n  \
@@ -270,7 +273,7 @@ mod tests {
         assert_eq!(back, state());
 
         // A value of any shape: an empty object is still a document of its own line.
-        write_json_atomic(&path, &json!({})).unwrap();
+        write_json_atomic(&path, &json!({}), MAX_JSON_LEN).unwrap();
         assert_eq!(fs::read(&path).unwrap(), b"{}\n");
     }
 
@@ -288,7 +291,7 @@ mod tests {
         );
 
         let first = json!({"version": "1.0.0-beta", "files": ["a", "b", "c"]});
-        write_json_atomic(&path, &first).unwrap();
+        write_json_atomic(&path, &first, MAX_JSON_LEN).unwrap();
         assert_eq!(folder_names(&folder).unwrap(), ["receipt.json"]);
         let first_bytes = fs::read(&path).unwrap();
 
@@ -297,7 +300,7 @@ mod tests {
         #[cfg(unix)]
         let mut held = fs::File::open(&path).unwrap();
         let second = json!({"version": "1.0.1"});
-        write_json_atomic(&path, &second).unwrap();
+        write_json_atomic(&path, &second, MAX_JSON_LEN).unwrap();
         assert_eq!(
             read_json_bounded::<Value>(&path, MAX_JSON_LEN).unwrap(),
             second
@@ -326,7 +329,7 @@ mod tests {
 
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("receipt.json");
-        write_json_atomic(&path, &json!({"version": "1.0.0-beta"})).unwrap();
+        write_json_atomic(&path, &json!({"version": "1.0.0-beta"}), MAX_JSON_LEN).unwrap();
         let before = fs::read(&path).unwrap();
         let mut reader = fs::File::open(&path).unwrap();
         let started = Instant::now();
@@ -337,7 +340,7 @@ mod tests {
             reader.read_to_end(&mut read).unwrap();
             read
         });
-        write_json_atomic(&path, &json!({"version": "1.0.1"})).unwrap();
+        write_json_atomic(&path, &json!({"version": "1.0.1"}), MAX_JSON_LEN).unwrap();
         assert!(started.elapsed() >= READ_FOR);
         assert_eq!(closer.join().unwrap(), before);
         assert_eq!(
@@ -367,7 +370,7 @@ mod tests {
 
         // A link to a folder: a junction on Windows.
         link_folder(&pending, &outside).unwrap();
-        write_json_atomic(&path, &json!({"round": 1})).unwrap();
+        write_json_atomic(&path, &json!({"round": 1}), MAX_JSON_LEN).unwrap();
         untouched();
         assert_eq!(fs::read(&path).unwrap(), b"{\n  \"round\": 1\n}\n");
 
@@ -377,20 +380,20 @@ mod tests {
                 eprintln!("skipped the file links: this account may not make them");
                 break;
             }
-            write_json_atomic(&path, &json!({"round": round})).unwrap();
+            write_json_atomic(&path, &json!({"round": round}), MAX_JSON_LEN).unwrap();
             untouched();
         }
 
         // A file from a write cut short.
         fs::write(&pending, b"{\"round\": ").unwrap();
-        write_json_atomic(&path, &json!({"round": 4})).unwrap();
+        write_json_atomic(&path, &json!({"round": 4}), MAX_JSON_LEN).unwrap();
         untouched();
         assert_eq!(fs::read(&path).unwrap(), b"{\n  \"round\": 4\n}\n");
 
         // A folder is no file of the launcher's: the write is refused and the folder is kept.
         fs::create_dir(&pending).unwrap();
         fs::write(pending.join("inside.json"), b"inside").unwrap();
-        match write_json_atomic(&path, &json!({"round": 5})) {
+        match write_json_atomic(&path, &json!({"round": 5}), MAX_JSON_LEN) {
             Err(FilesError::Io { path: at, .. }) => assert_eq!(at, pending),
             other => panic!("{other:?}"),
         }
@@ -406,15 +409,15 @@ mod tests {
         let link = dir.path().join("link");
         link_folder(&link, &real).unwrap();
         assert_link(
-            write_json_atomic(&link.join("receipt.json"), &json!({})),
+            write_json_atomic(&link.join("receipt.json"), &json!({}), MAX_JSON_LEN),
             &link,
         );
         let deeper = link.join(".gdl-launcher").join("receipt.json");
-        assert_link(write_json_atomic(&deeper, &json!({})), &link);
+        assert_link(write_json_atomic(&deeper, &json!({}), MAX_JSON_LEN), &link);
         assert!(folder_names(&real).unwrap().is_empty());
 
         // The folder the link leads to is written to when it is named directly.
-        write_json_atomic(&real.join("receipt.json"), &json!({})).unwrap();
+        write_json_atomic(&real.join("receipt.json"), &json!({}), MAX_JSON_LEN).unwrap();
         assert_eq!(folder_names(&real).unwrap(), ["receipt.json"]);
 
         // A link at the file's own name is replaced by the file, and what it led to is left as
@@ -426,7 +429,7 @@ mod tests {
             eprintln!("skipped the file link: this account may not make one");
             return;
         }
-        write_json_atomic(&state, &json!({"round": 1})).unwrap();
+        write_json_atomic(&state, &json!({"round": 1}), MAX_JSON_LEN).unwrap();
         assert!(fs::symlink_metadata(&state).unwrap().is_file());
         assert_eq!(fs::read(&state).unwrap(), b"{\n  \"round\": 1\n}\n");
         assert_eq!(fs::read(&outside).unwrap(), b"outside");
@@ -436,14 +439,14 @@ mod tests {
     fn a_failed_write_leaves_no_pending() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("receipt.json");
-        write_json_atomic(&path, &json!({"kept": true})).unwrap();
+        write_json_atomic(&path, &json!({"kept": true}), MAX_JSON_LEN).unwrap();
         let before = fs::read(&path).unwrap();
 
         // JSON names an object's members only by strings, so a map keyed by pairs has no JSON
-        // form, and the writer finds that once the pending file is made.
+        // form, and the write is refused before anything is made.
         let keyed_by_pairs: BTreeMap<(u8, u8), u8> = [((1, 2), 3)].into();
         for target in [path.clone(), dir.path().join("state.json")] {
-            match write_json_atomic(&target, &keyed_by_pairs) {
+            match write_json_atomic(&target, &keyed_by_pairs, MAX_JSON_LEN) {
                 Err(FilesError::Json { path: at, source }) => {
                     assert_eq!(at, target);
                     assert!(!source.is_io(), "{source}");
@@ -456,7 +459,7 @@ mod tests {
 
         // A folder that is not there: nothing is made in it, or in its place.
         let missing = dir.path().join("missing").join("receipt.json");
-        match write_json_atomic(&missing, &json!({})) {
+        match write_json_atomic(&missing, &json!({}), MAX_JSON_LEN) {
             Err(FilesError::Io { path: at, source }) => {
                 assert_eq!(at, pending_path(&missing));
                 assert_eq!(source.kind(), io::ErrorKind::NotFound);
@@ -472,7 +475,7 @@ mod tests {
             let taken = dir.path().join("taken.json");
             fs::create_dir(&taken).unwrap();
             fs::write(taken.join("inside.json"), b"inside").unwrap();
-            match write_json_atomic(&taken, &json!({})) {
+            match write_json_atomic(&taken, &json!({}), MAX_JSON_LEN) {
                 Err(FilesError::Io { path: at, .. }) => assert_eq!(at, taken),
                 other => panic!("{other:?}"),
             }
@@ -485,7 +488,7 @@ mod tests {
 
         // No name at all to write to.
         for unnamed in [Path::new(""), Path::new("..")] {
-            match write_json_atomic(unnamed, &json!({})) {
+            match write_json_atomic(unnamed, &json!({}), MAX_JSON_LEN) {
                 Err(FilesError::Io { path: at, source }) => {
                     assert_eq!(at, unnamed);
                     assert_eq!(source.kind(), io::ErrorKind::InvalidInput);
@@ -493,31 +496,54 @@ mod tests {
                 other => panic!("{other:?}"),
             }
         }
+    }
 
-        // The system's errors in writing the pending file are its own, not the JSON writer's.
-        let full = serde_json::to_writer(FullDisk, &json!({"kept": true})).unwrap_err();
-        assert!(full.is_io());
+    #[test]
+    fn a_write_is_held_to_the_bound_its_file_is_read_to() {
+        /// The bytes of `{`, a newline, two spaces and `"pad": "`, then `"`, a newline, `}` and
+        /// a newline, around the padding of a document written indented.
+        const INDENTED_FRAME: u64 = 16;
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("receipt.json");
+        let padded = |len: u64| {
+            let padding = usize::try_from(len - INDENTED_FRAME).unwrap();
+            json!({"pad": "x".repeat(padding)})
+        };
+        // A document of exactly the bound is written, and read back to it.
+        write_json_atomic(&path, &padded(RECEIPT_LIMIT), RECEIPT_LIMIT).unwrap();
+        let written = fs::read(&path).unwrap();
+        assert_eq!(u64::try_from(written.len()).unwrap(), RECEIPT_LIMIT);
+        read_json_bounded::<Value>(&path, RECEIPT_LIMIT).unwrap();
+
+        // One a byte longer is refused before anything is made: the file there is kept, a stale
+        // pending file too, and no pending file is made.
         let pending = pending_path(&path);
-        match serialize_error(full, &pending, &path) {
-            FilesError::Io { path: at, source } => {
-                assert_eq!(at, pending);
-                assert_eq!(source.kind(), io::ErrorKind::StorageFull);
+        fs::write(&pending, b"{\"round\": ").unwrap();
+        match write_json_atomic(&path, &padded(RECEIPT_LIMIT + 1), RECEIPT_LIMIT) {
+            Err(FilesError::TooLarge { path: at, limit }) => {
+                assert_eq!(at, path);
+                assert_eq!(limit, RECEIPT_LIMIT);
             }
             other => panic!("{other:?}"),
         }
-    }
+        assert_eq!(fs::read(&path).unwrap(), written);
+        assert_eq!(fs::read(&pending).unwrap(), b"{\"round\": ");
+        fs::remove_file(&pending).unwrap();
 
-    /// A writer onto a disk with no room left.
-    struct FullDisk;
-
-    impl io::Write for FullDisk {
-        fn write(&mut self, _: &[u8]) -> io::Result<usize> {
-            Err(io::ErrorKind::StorageFull.into())
+        // The newline counts: a bound one short of the document refuses it, and a bound of
+        // nothing refuses every document.
+        let small = json!({"version": "1.0.0-beta"});
+        let length = u64::try_from(serde_json::to_vec_pretty(&small).unwrap().len() + 1).unwrap();
+        for bound in [length - 1, 0] {
+            match write_json_atomic(&path, &small, bound) {
+                Err(FilesError::TooLarge { limit, .. }) => assert_eq!(limit, bound),
+                other => panic!("{bound}: {other:?}"),
+            }
         }
-
-        fn flush(&mut self) -> io::Result<()> {
-            Ok(())
-        }
+        write_json_atomic(&path, &small, length).unwrap();
+        assert_eq!(read_json_bounded::<Value>(&path, length).unwrap(), small);
+        assert_eq!(folder_names(dir.path()).unwrap(), ["receipt.json"]);
     }
 
     #[test]
