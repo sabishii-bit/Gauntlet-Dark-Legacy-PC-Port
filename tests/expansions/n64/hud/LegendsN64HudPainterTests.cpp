@@ -536,9 +536,12 @@ TEST_CASE("health, keys and potions sit where the N64 puts them, and only while 
     REQUIRE(blue.size() == 1);
     CHECK(slotOf(blue.front()) == 0);
     checkRect(blue.front().area, {89 - 5.5f, kTop + 16 - 7, 11, 14});
+    // On the normal page the bottle is opaque, as the key is.
+    CHECK(blue.front().color == Color::white());
     const auto green = picturesIn(quads, "POTIONG");
     REQUIRE(green.size() == 1);
     CHECK(slotOf(green.front()) == 2);
+    CHECK(green.front().color == Color::white());
     // Kind 0 is an empty stack's, which would show red: nobody's bottle is red here.
     CHECK(picturesIn(quads, "POTIONR").empty());
     CHECK(picturesIn(quads, "POTIONY").empty());
