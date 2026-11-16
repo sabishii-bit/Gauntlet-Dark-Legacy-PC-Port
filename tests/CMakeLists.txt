@@ -427,11 +427,16 @@ add_executable(tests
     expansions/n64/bosses/LegendsChimeraTargetingTests.cpp
     expansions/n64/menu/LegendsDialogueTests.cpp
     expansions/n64/hud/LegendsN64FrameTests.cpp
+    expansions/n64/hud/LegendsN64HudIconsTests.cpp
+    expansions/n64/hud/LegendsN64HudPainterTests.cpp
+    expansions/n64/hud/LegendsN64HudTextTests.cpp
     expansions/n64/scenes/LegendsWorldPresentationTests.cpp
     expansions/dreamcast/formats/LegendsSceneMotionTests.cpp
     expansions/n64/scenes/LegendsN64MusicTests.cpp
     expansions/shared/characters/LegendsProgressTests.cpp
     expansions/shared/characters/LegendsVisitTests.cpp
+    expansions/shared/hud/LegendsHudArtTests.cpp
+    expansions/shared/hud/LegendsHudClockTests.cpp
     expansions/shared/hud/LegendsHudStyleIdsTests.cpp
     expansions/shared/level/LegendsContainersTests.cpp
     expansions/shared/level/LegendsGatesTests.cpp
