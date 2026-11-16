@@ -553,7 +553,7 @@ mod tests {
 
     use gdl_files::{ALPHA_NAMES, FilesError, MAX_JSON_LEN, retry_locked};
     use gdl_fixtures::{
-        InstallFixture, RuntimeFiles, backdate, folder_names, hold_closed, link_folder,
+        InstallFixture, RuntimeFiles, backdate, folder_names, hold_closed, holds_bind, link_folder,
         make_alpha_markers, pretty_json, snapshot,
     };
     use gdl_release::{Platform, Version};
@@ -1382,7 +1382,9 @@ mod tests {
             cases.push((vec![shouted.as_str()], vec![name]));
         }
         cases.push((ALPHA_NAMES.to_vec(), ALPHA_NAMES.to_vec()));
-        let mut proven = true;
+        // Asked apart from the holds, so that a hold which kept nothing out fails the test.
+        let probe = tempfile::tempdir().unwrap();
+        let binds = holds_bind(probe.path()).unwrap();
         for (made, found) in cases {
             let (_dir, root) = bare_folder();
             make_alpha_markers(&root, &made).unwrap();
@@ -1391,15 +1393,16 @@ mod tests {
             // Any open of a marker fails while it is held, but for root's on Unix.
             let held = hold_closed(&paths).unwrap();
             let inspection = inspect(&root);
-            proven &= held.proven();
+            let proven = held.proven();
             drop(held);
             let what = format!("{made:?}");
+            assert_eq!(proven, binds, "{what}");
             assert_state(&inspection, FolderState::AlphaInstall, &what);
             assert_eq!(inspection.alpha_markers, found, "{what}");
             assert_eq!(inspection.detail, None, "{what}");
             assert_eq!(inspection.installation, None, "{what}");
         }
-        if !proven {
+        if !binds {
             eprintln!(
                 "only the listing was checked: the proof that no marker is opened needs a user \
                  other than root, who opens entries of mode 0o000"

@@ -12,8 +12,8 @@ pub use folder::DeniedAccess;
 #[cfg(windows)]
 pub use folder::make_junction;
 pub use folder::{
-    EntryState, HeldClosed, InstallFixture, backdate, folder_names, hold_closed, link_folder,
-    long_root, make_alpha_markers, snapshot, symlink_file, symlink_file_where_allowed,
+    EntryState, HeldClosed, InstallFixture, backdate, folder_names, hold_closed, holds_bind,
+    link_folder, long_root, make_alpha_markers, snapshot, symlink_file, symlink_file_where_allowed,
     symlink_folder_where_allowed,
 };
 pub use program::{

@@ -360,7 +360,7 @@ mod tests {
 
     use gdl_files::{ALPHA_NAMES, FilesError};
     use gdl_fixtures::{
-        folder_names, hold_closed, link_folder, make_alpha_markers, symlink_file,
+        folder_names, hold_closed, holds_bind, link_folder, make_alpha_markers, symlink_file,
         symlink_file_where_allowed,
     };
     use tempfile::TempDir;
@@ -697,7 +697,9 @@ mod tests {
         reversed.reverse();
         cases.push((reversed, ALPHA_NAMES.to_vec()));
 
-        let mut proven = true;
+        // Asked apart from the holds, so that a hold which kept nothing out fails the test.
+        let probe = tempfile::tempdir().unwrap();
+        let binds = holds_bind(probe.path()).unwrap();
         for (made, found) in cases {
             let dir = tempfile::tempdir().unwrap();
             make_alpha_markers(dir.path(), &made).unwrap();
@@ -705,14 +707,24 @@ mod tests {
             let paths: Vec<&Path> = markers.iter().map(PathBuf::as_path).collect();
             // Any open of a marker would fail now, but for root on Unix.
             let held = hold_closed(&paths).unwrap();
-            proven &= held.proven();
+            assert_eq!(held.proven(), binds, "{made:?}");
             assert_eq!(alpha_markers(dir.path()).unwrap(), found, "{made:?}");
             drop(held);
+            // On Unix nothing in a folder that may only be listed can be looked at, so markers
+            // found there were found by their names alone, with no metadata of any. Windows lets
+            // every process read an entry's metadata, held or not.
+            #[cfg(unix)]
+            {
+                let listed = gdl_fixtures::DeniedAccess::listing_only(&[dir.path()]).unwrap();
+                let markers = alpha_markers(dir.path());
+                drop(listed);
+                assert_eq!(markers.unwrap(), found, "{made:?} in a folder only listed");
+            }
         }
-        if !proven {
+        if !binds {
             eprintln!(
-                "only the listing was checked: the proof that no marker is opened needs a user \
-                 other than root, who opens entries of mode 0o000"
+                "only the listing was checked: the proof that no marker is opened or looked at \
+                 needs a user other than root, who opens entries of mode 0o000"
             );
         }
     }

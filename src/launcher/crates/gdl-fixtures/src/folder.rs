@@ -43,6 +43,15 @@ const CHANGED_BY_CMD: [u8; 3] = *b"%!\"";
 #[cfg(unix)]
 const NO_ACCESS: u32 = 0o000;
 
+/// The mode of a folder whose names alone may be read: no searching, so that nothing it names can
+/// be looked at or opened through it, and no writing, for anyone but root.
+#[cfg(unix)]
+const LISTING_ONLY: u32 = 0o400;
+
+/// The name of the file that [`holds_bind`] makes, denies and removes again.
+#[cfg(unix)]
+const HOLD_PROBE: &str = "hold-probe";
+
 /// The bits of a mode that hold its permissions, the set-id and sticky bits included.
 #[cfg(unix)]
 const PERMISSION_BITS: u32 = 0o7777;
@@ -488,9 +497,10 @@ pub fn make_alpha_markers(root: &Path, names: &[&str]) -> io::Result<()> {
     Ok(())
 }
 
-/// Entries whose every permission a test has taken away, so that opening or listing them fails
-/// for anyone but root. Dropping it gives each its mode back, which a `TempDir` needs before it
-/// can remove them; made after the `TempDir`, it is dropped before it.
+/// Entries whose permissions a test has taken away, every one of them or all but the listing of
+/// a folder's names, so that opening them, or looking at what a folder holds, fails for anyone but
+/// root. Dropping it gives each its mode back, which a `TempDir` needs before it can remove them;
+/// made after the `TempDir`, it is dropped before it.
 #[cfg(unix)]
 #[derive(Debug)]
 #[must_use = "dropping it gives the entries their modes back at once"]
@@ -505,17 +515,58 @@ impl DeniedAccess {
     /// that folder, which cannot be searched once denied. When one cannot be changed, those
     /// already denied get their modes back before the error returns.
     pub fn deny(paths: &[&Path]) -> io::Result<DeniedAccess> {
+        DeniedAccess::set(paths, NO_ACCESS)
+    }
+
+    /// Sets each of `folders` to mode 0o400, in order, as [`deny`](DeniedAccess::deny) sets
+    /// its entries: the names in each can still be listed, but nothing they name can be looked
+    /// at, opened or changed through it, so that code which still finds what it looks for there
+    /// found it by the names alone.
+    pub fn listing_only(folders: &[&Path]) -> io::Result<DeniedAccess> {
+        DeniedAccess::set(folders, LISTING_ONLY)
+    }
+
+    /// Sets each of `paths` to `mode`, in order, keeping the mode it had for the drop.
+    fn set(paths: &[&Path], mode: u32) -> io::Result<DeniedAccess> {
         use std::os::unix::fs::PermissionsExt;
 
         let mut denied = DeniedAccess {
             modes: Vec::with_capacity(paths.len()),
         };
         for path in paths {
-            let mode = fs::metadata(path)?.permissions().mode() & PERMISSION_BITS;
-            fs::set_permissions(path, fs::Permissions::from_mode(NO_ACCESS))?;
-            denied.modes.push((path.to_path_buf(), mode));
+            let before = fs::metadata(path)?.permissions().mode() & PERMISSION_BITS;
+            fs::set_permissions(path, fs::Permissions::from_mode(mode))?;
+            denied.modes.push((path.to_path_buf(), before));
         }
         Ok(denied)
+    }
+}
+
+/// Whether this process is kept from what [`hold_closed`] holds, which is asked apart from any
+/// hold, so that a hold which kept nothing out cannot pass for one that root passes. On Windows
+/// it always is, since a hold there is checked by an open as it is made.
+#[cfg(windows)]
+pub fn holds_bind(_: &Path) -> io::Result<bool> {
+    Ok(true)
+}
+
+/// Whether this process is kept from what [`hold_closed`] holds, which is asked apart from any
+/// hold, so that a hold which kept nothing out cannot pass for one that root passes. On Unix it
+/// is unless the process opens a file of mode 0o000 regardless, as root does, which a file made
+/// for the question in `folder`, and removed again, shows.
+#[cfg(unix)]
+pub fn holds_bind(folder: &Path) -> io::Result<bool> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let probe = folder.join(HOLD_PROBE);
+    fs::File::create_new(&probe)?;
+    fs::set_permissions(&probe, fs::Permissions::from_mode(NO_ACCESS))?;
+    let opened = fs::File::open(&probe);
+    fs::remove_file(&probe)?;
+    match opened {
+        Ok(_) => Ok(false),
+        Err(error) if error.kind() == io::ErrorKind::PermissionDenied => Ok(true),
+        Err(error) => Err(error),
     }
 }
 
@@ -549,7 +600,9 @@ pub struct HeldClosed {
 impl HeldClosed {
     /// Whether every open of a held entry fails for this process too, so that code which still
     /// found what it looked for while they were held opened none of them: always on Windows, and
-    /// on Unix for every user but root, who opens entries of mode 0o000.
+    /// on Unix for every user but root, who opens entries of mode 0o000. A test holds it to
+    /// [`holds_bind`], which asks the same of a file of its own, so that a hold which kept nothing
+    /// out fails the test rather than passing for root's.
     pub fn proven(&self) -> bool {
         self.proven
     }
@@ -1211,6 +1264,23 @@ mod tests {
         assert_eq!(error.kind(), io::ErrorKind::NotFound);
         assert_eq!(mode(&file), 0o640);
 
+        // A folder left only its listing gives its names, but nothing they name can be looked at
+        // or opened through it, by anyone but root.
+        let listed = DeniedAccess::listing_only(&[&folder]).unwrap();
+        assert_eq!(mode(&folder), 0o400);
+        assert_eq!(super::folder_names(&folder).unwrap(), ["inner"]);
+        if super::holds_bind(dir.path()).unwrap() {
+            let error = fs::symlink_metadata(&inner).unwrap_err();
+            assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
+            let error = fs::read(&inner).unwrap_err();
+            assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
+        } else {
+            eprintln!("skipped the listing checks: this user looks into folders it may only list");
+        }
+        drop(listed);
+        assert_eq!(mode(&folder), 0o1750);
+        assert_eq!(fs::read(&inner).unwrap(), b"inside");
+
         // With every mode back, the folder is removed whole.
         dir.close().unwrap();
     }
@@ -1298,15 +1368,20 @@ mod tests {
 
     #[test]
     fn held_entries_cannot_be_opened_until_dropped() {
-        use super::{folder_names, hold_closed};
+        use super::{folder_names, hold_closed, holds_bind};
 
         let dir = tempfile::tempdir().unwrap();
+        // Asked of a file of its own, made and removed again, before anything is held.
+        let binds = holds_bind(dir.path()).unwrap();
+        assert!(folder_names(dir.path()).unwrap().is_empty());
         let file = dir.path().join("file.txt");
         fs::write(&file, b"held").unwrap();
         let folder = dir.path().join("folder");
         fs::create_dir(&folder).unwrap();
-        // On Windows a hold that any open passes is an error, so only root's on Unix is not proven.
+        // On Windows a hold that any open passes is an error, so only root's on Unix is not
+        // proven, and a hold is proven exactly where holds bind this process.
         let held = hold_closed(&[&file, &folder]).unwrap();
+        assert_eq!(held.proven(), binds);
         if held.proven() {
             assert!(fs::read(&file).is_err());
             #[cfg(unix)]
