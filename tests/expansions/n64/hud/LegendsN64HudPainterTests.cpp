@@ -536,7 +536,7 @@ TEST_CASE("the N64 look keeps the companion arrows above its panels", "[legends]
     // A look that never loaded draws nothing.
     test::FakeRenderDevice device;
     test::FakeDarkLegacyArt art;
-    StringTable strings;
+    const StringTable strings;
     HudView view;
     view.seats[0] = standing(kWarriorClass, 0, "ROWENA");
     view.strings = &strings;
@@ -1067,7 +1067,7 @@ TEST_CASE("a missing class bank never stops the N64 look, a missing or truncated
 
 TEST_CASE("the N64 look takes every picture it borrows as it opens", "[legends][n64-hud]") {
     using Set = test::DarkLegacyLookup::Set;
-    test::LegendsN64HudFixture files("n64-hud-borrowed");
+    const test::LegendsN64HudFixture files("n64-hud-borrowed");
     test::FakeRenderDevice device;
     test::FakeDarkLegacyArt art;
     // Dark Legacy's art stands ready to lend what a look might ask of it, and a crystal's
