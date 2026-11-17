@@ -328,10 +328,10 @@ TEST_CASE("the Dark Legacy HUD draws stay byte for byte what they were",
                    "7926dea73c88887d5b4daf7b2efa5e3a8d49ed91e31c088fc0564954642438f0", 70, 0,
                    "5a2e9664f069e124b750aebfe1c1e25f9e21c318fd4b75510c18fa93280a08ab"},
         PinnedPart{"help over a player's head",
-                   "d0c4a78d4135ea370270ee62fb844bac40bf8da3684d5d6ef1cd6c710aac6256", 70, 0,
+                   "a544b6186cf1474cb97e2b105849c00a4851fca21d01c2cf7946e609da37fc99", 70, 0,
                    "5a2e9664f069e124b750aebfe1c1e25f9e21c318fd4b75510c18fa93280a08ab"},
         PinnedPart{"help at the canvas's centre",
-                   "f021d1fd640ec4848a0586bb4fddcba24be611e8bea57f20541ee586f6bfc683", 70, 0,
+                   "15b83f84a2c898c354286f4e15341efe31c2d110c9668b073003f9a9266a8645", 70, 0,
                    "5a2e9664f069e124b750aebfe1c1e25f9e21c318fd4b75510c18fa93280a08ab"},
     };
     REQUIRE(drawn.size() == kPins.size());

@@ -486,13 +486,14 @@ TEST_CASE("help scrolls show at the GameCube's opacity", "[game][screens][help]"
     HelpMessages::drawLines(canvas, text, &scroll, Vec2{256, 200}, lines, 2);
     canvas.end();
     // msgPost gives the scroll's blit an alpha of 0x40, which MBBlitSetAlpha keeps as 96 of
-    // 128: three quarters opaque. The words on it keep the player's ink whole.
+    // 128 and DrawBlit doubles to the 192 it draws with: three quarters opaque. The words on it
+    // keep the player's ink whole.
     REQUIRE(device.draws.size() == 2);
     CHECK(device.draws[0].texture == &scroll);
     REQUIRE_FALSE(device.draws[0].vertices.empty());
     for (const ImmediateVertex& vertex : device.draws[0].vertices) {
         CHECK(vertex.color.withAlpha(255) == Color::white());
-        CHECK(s32{vertex.color.a} == 191);
+        CHECK(s32{vertex.color.a} == 192);
     }
     CHECK(device.draws[1].texture == &sheet);
     REQUIRE_FALSE(device.draws[1].vertices.empty());

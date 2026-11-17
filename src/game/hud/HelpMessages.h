@@ -139,8 +139,9 @@ public:
     static constexpr s32 kLowest = 304; ///< the scroll stays over the status boxes
     static constexpr s32 kWidest = 511;
     /** The scroll's opacity: msgPost (0x800A4A38) gives its blit an alpha of 0x40, which
-     * MBBlitSetAlpha keeps as 96 of 128. */
-    static constexpr u8 kScrollAlpha = 191;
+     * MBBlitSetAlpha (0x800B290C) keeps as 96 of 128 and DrawBlit doubles into the alpha it
+     * draws the blit with (0x800B499C). */
+    static constexpr u8 kScrollAlpha = 192;
 
     static const HelpMessageSpec* specOf(s32 id);
     /** Native repeat policy only, without text, priority or pause suppression.
