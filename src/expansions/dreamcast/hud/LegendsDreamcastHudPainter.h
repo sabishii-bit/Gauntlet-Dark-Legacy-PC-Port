@@ -1,0 +1,135 @@
+#pragma once
+
+#include <array>
+#include <filesystem>
+#include <span>
+#include <string>
+#include <string_view>
+
+#include "engine/assets/BitmapFont.h"
+#include "engine/core/SpecialMembers.h"
+#include "engine/core/Types.h"
+#include "engine/io/AssetLocator.h"
+#include "engine/render/RenderDevice.h"
+#include "engine/render/RenderTypes.h"
+#include "engine/ui/Canvas.h"
+#include "engine/ui/TextPainter.h"
+
+#include "expansions/shared/formats/LegendsMap.h"
+#include "expansions/shared/hud/LegendsHudArt.h"
+#include "expansions/shared/hud/LegendsHudClock.h"
+#include "expansions/shared/hud/LegendsHudStyleIds.h"
+#include "game/characters/ClassData.h"
+#include "game/hud/DarkLegacyHudArt.h"
+#include "game/hud/HudPainter.h"
+#include "game/hud/HudStyles.h"
+#include "game/hud/HudView.h"
+#include "game/hud/StatusBox.h"
+
+namespace gdl::game {
+
+/**
+ * The Dreamcast's look of the play HUD, drawn from the player's own Dreamcast extraction on its
+ * 512x384 frame, the canvas's own: a status box along the bottom in each joined seat's column,
+ * the stone strip over the costume's panel with the class's banner on it, the level, gold and
+ * health with their labels, the keys and the potion thrown next while any are carried, and the
+ * turbo meter's arch, which glows once full. A player fallen to the tower, or gone from the
+ * game, shows the coloured kind-0 box, saying IN TOWER while it waits there; a seat nobody
+ * joined shows nothing. It shows Dark Legacy's state, and never the typed name. A class with no
+ * Dreamcast banner is named in the Dreamcast's large font in the banner's place; one with no
+ * costume bank takes the warrior's panel, as every class's panel of a colour is the same
+ * picture. The runestone finder, the hourglasses, the boss meters, the selector labels and the
+ * help are Dark Legacy's.
+ */
+class LegendsDreamcastHudPainter final : public HudPainter {
+public:
+    /** The static set, which holds the boxes' art and the fonts' sheets. */
+    static constexpr std::string_view kStaticObjects = "static/objects.rom";
+    static constexpr std::string_view kStaticTextures = "static/textures.rom";
+    static constexpr std::string_view kSmallFontFile = "fonts/8hi_fonts5.fnt"; ///< the level, words
+    static constexpr std::string_view kScoreFontFile = "fonts/score.fnt";  ///< gold, health, counts
+    static constexpr std::string_view kLargeFontFile = "fonts/font32.fnt"; ///< a class's name
+    /** The files of the Dreamcast extraction the look cannot be drawn without, and so what the
+     * HUD page's probe looks for before it offers the look: the static set and the three
+     * fonts. */
+    static constexpr std::array<std::string_view, 5> kRequiredFiles{
+        kStaticObjects, kStaticTextures, kSmallFontFile, kScoreFontFile, kLargeFontFile};
+
+    LegendsDreamcastHudPainter() = default;
+    ~LegendsDreamcastHudPainter() override = default;
+    GDL_NON_COPYABLE_NON_MOVABLE(LegendsDreamcastHudPainter);
+
+    /** Takes the boxes' pictures and the fonts from the Dreamcast extraction's native folder
+     * `root`, and the panels and banners of `party`'s classes in their costumes' colours; false
+     * when the static set or a font is missing. One that is there but cannot be read, or a
+     * static set without a picture the boxes draw, throws, naming it. A costume bank that is
+     * missing or cannot be read gives way to the warrior's panel, and its banner to the class's
+     * name. It borrows nothing of Dark Legacy's art. */
+    bool load(RenderDevice& device, const std::filesystem::path& root, DarkLegacyHudArt& darkLegacy,
+              std::span<const HudMember> party);
+
+    std::string_view id() const override { return kLegendsDreamcastHudStyle; }
+    /** The kind-0 box's strip's top, 304. */
+    f32 statusTop() const override;
+    /** Steps the look's clock with the play clock, and each full arch's glow by it. */
+    void prepare(HudFrame& frame, const HudView& view) override;
+    void drawStatus(HudFrame& frame, const HudView& view) override;
+    void drawRuneMeter(HudFrame& frame, const HudView& view) override;
+    void drawHourglass(HudFrame& frame, const HudView& view) override;
+    void drawBossMeters(HudFrame& frame, const HudView& view) override;
+    void drawSelectors(HudFrame& frame, const HudView& view) override;
+    void drawHelp(HudFrame& frame, const HudView& view) override;
+
+private:
+    /** A font the boxes write in: its glyphs, and what writes them from its sheet. */
+    struct Font {
+        BitmapFont glyphs;
+        TextPainter text;
+    };
+    /** A class's art in one costume colour. */
+    struct ClassArt {
+        const Texture* panel = nullptr;  ///< BTMBK_<colour>
+        const Texture* banner = nullptr; ///< <CLS>_NAME
+        bool taken = false;              ///< whether the look has looked for it
+    };
+    using ColourPictures = std::array<const Texture*, kColorCount>;
+
+    void release();
+    void loadStatic(RenderDevice& device, const std::filesystem::path& objects,
+                    const std::filesystem::path& textures);
+    void loadFont(const std::filesystem::path& file, std::string_view name, s32 space,
+                  std::string_view sheet, Font& font);
+    void loadClass(RenderDevice& device, const AssetLocator& files, s32 classIndex, s32 color);
+    /** Picture `name` of the costume bank in `folder`, as `pictures` decoded it, uploaded once
+     * under the bank's name and its own; null when the bank has none. */
+    const Texture* takeCostume(RenderDevice& device,
+                               std::span<const formats::LegendsMapTexture> pictures,
+                               const std::string& folder, std::string_view name);
+    /** The art of class `classIndex` in costume colour `color`; null for none the look took. */
+    const ClassArt* classArtOf(s32 classIndex, s32 color) const;
+    void drawPanel(Canvas& canvas, usize seat, const HudSeat& shown, const HudView& view) const;
+    void drawPlain(Canvas& canvas, usize seat, s32 color) const;
+    void drawNumbers(Canvas& canvas, usize seat, const HudSeat& shown) const;
+    void drawCarried(Canvas& canvas, usize seat, const StatusBoxView& box) const;
+    void drawTurbo(Canvas& canvas, usize seat, const HudSeat& shown) const;
+
+    LegendsHudArt m_art;
+    const Texture* m_strip = nullptr;       ///< BK_RUNE_STONE_02
+    const Texture* m_levelLabel = nullptr;  ///< BTMBK_LEVL
+    const Texture* m_goldLabel = nullptr;   ///< BTMBK_GOLD
+    const Texture* m_healthLabel = nullptr; ///< BTMBK_HELTH
+    const Texture* m_key = nullptr;         ///< KEY_ICON
+    const Texture* m_glow = nullptr;        ///< TURBO_GLOW
+    ColourPictures m_plainStrips{};         ///< S3_W<colour>
+    ColourPictures m_plainPanels{};         ///< S4_W<colour>
+    std::array<std::array<ClassArt, kColorCount>, kClassCount> m_classes{};
+    Font m_small; ///< font 1: the level and the box's words
+    Font m_score; ///< font 4: gold, health and the counts
+    Font m_large; ///< font 6: a class's name, where it has no banner
+    LegendsHudClock m_clock;
+    /** How many of the look's steps each seat's arch has stood full, which its glow's pulse
+     * follows: the pulse waits while the arch is not full, as FUN_8c0c13e0 leaves it. */
+    std::array<s64, HudView::kSeats> m_glowSteps{};
+};
+
+} // namespace gdl::game
