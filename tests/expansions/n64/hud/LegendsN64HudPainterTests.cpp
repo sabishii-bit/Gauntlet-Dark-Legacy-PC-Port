@@ -163,9 +163,9 @@ std::vector<Line> linesOf(std::span<const Quad> quads, const test::N64Font& font
                         static_cast<f32>(font.columns)));
         const char code = font.codes.at(cell);
         const f32 gap = quad.area.x - previous;
-        const auto advance = static_cast<f32>(font.columns);
+        const f32 advance = font.advance();
         if (continuing && !lines.empty() && lines.back().y == quad.area.y &&
-            (gap == advance || gap == advance + static_cast<f32>(font.space))) {
+            (gap == advance || gap == advance + font.spaceAdvance())) {
             if (gap != advance) {
                 lines.back().text.push_back(' ');
             }
@@ -179,10 +179,13 @@ std::vector<Line> linesOf(std::span<const Quad> quads, const test::N64Font& font
     return lines;
 }
 
-/** Where a glyph written from pen point (x, y) of panel `slot` lands: half a texel in. */
+/** Where the first glyph of a line in its own units lands: the N64's unit in, and half a texel
+ * more, as TextPainter samples it. */
+constexpr Vec2 kFirstGlyph{test::N64Font::kLead + 0.5f, 0.5f};
+
+/** Where a glyph written from pen point (x, y) of panel `slot` lands. */
 Line lineAt(usize slot, f32 x, f32 y, std::string text) {
-    constexpr f32 kInset = 0.5f;
-    return {static_cast<f32>(Layout::kSlotX.at(slot)) + x + kInset, kTop + y + kInset,
+    return {static_cast<f32>(Layout::kSlotX.at(slot)) + x + kFirstGlyph.x, kTop + y + kFirstGlyph.y,
             std::move(text)};
 }
 
@@ -705,9 +708,9 @@ TEST_CASE("health, keys and potions sit where the N64 puts them, and only while 
     CHECK(heart(1) == Color::white());
     CHECK(heart(2) == Color::white());
 
-    // Health is "%4d" in numfont from (41,9), held to four digits.
+    // Health is "%4d" in numfont from (41,9), held to four digits, its padding numfont's spaces.
     const auto health = linesOf(quads, Fixture::kNumberFont);
-    const f32 space = Fixture::kNumberFont.space;
+    const f32 space = Fixture::kNumberFont.spaceAdvance();
     CHECK(health == std::vector<Line>{lineAt(0, 41 + space, 9, "250"),
                                       lineAt(1, 41 + space, 9, "600"), lineAt(2, 41, 9, "9999")});
 
@@ -858,11 +861,12 @@ TEST_CASE("a fallen player's N64 panel is the empty panel, with Dark Legacy's pr
     // Dark Legacy's two choices are written in font 2, centred on the panel at tops 16 and 28;
     // the online one offers no quitting.
     const auto measure = [](std::string_view text) {
-        s32 width = 0;
+        f32 width = 0;
         for (const char code : text) {
-            width += code == ' ' ? Fixture::kSmallFont.space : Fixture::kSmallFont.columns;
+            width +=
+                code == ' ' ? Fixture::kSmallFont.spaceAdvance() : Fixture::kSmallFont.advance();
         }
-        return width;
+        return static_cast<s32>(width);
     };
     // TextPainter centres a line on its whole width, halved down.
     const auto centred = [&](usize slot, f32 top, std::string text) {
@@ -884,7 +888,7 @@ TEST_CASE("a fallen player's N64 panel is the empty panel, with Dark Legacy's pr
                                           "BORDER", "BORDER", "TURBO", "TURBO", "HEART1", "ARROW",
                                           "ARROW"});
     CHECK(linesOf(quads, Fixture::kNumberFont) ==
-          std::vector<Line>{lineAt(3, 41 + 3 * f32{Fixture::kNumberFont.space}, 9, "0")});
+          std::vector<Line>{lineAt(3, 41 + 3 * Fixture::kNumberFont.spaceAdvance(), 9, "0")});
     CHECK(linesOf(quads, Fixture::kNameFont) == std::vector<Line>{lineAt(3, 25, 30, "D")});
     // No turbo lights for anyone fallen, and none of it in Dark Legacy's own small capitals.
     CHECK(picturesIn(quads, "TURBOCLR").empty());
@@ -1537,9 +1541,10 @@ TEST_CASE("N64 help sits on its player's coloured scroll, sized by the N64's ste
     const std::vector<std::string> lines{"WATCH OUT", "AN EXIT"};
     const Vec2 head{300, 250};
     view.help = HudHelp{.lines = lines, .player = 1, .color = 2, .head = head, .anchored = true};
-    // glfm3's "WATCH OUT": eight letters of six and a space of five.
-    const Box box = legendsN64HelpBox(53, 2, kLine, LegendsN64Frame::toFrame({300, 250 - 62}));
-    REQUIRE(box.width == 105);
+    // glfm3's "WATCH OUT": eight letters of six and a space of five, each with the unit the N64
+    // writes before it, 62 across: past the 105 scroll's wrap of 60, so the 140.
+    const Box box = legendsN64HelpBox(62, 2, kLine, LegendsN64Frame::toFrame({300, 250 - 62}));
+    REQUIRE(box.width == 140);
     REQUIRE(HelpMessages::kAboveHead == 62);
     const std::vector<Quad> quads = n64.drawn(view, &LegendsN64HudPainter::drawHelp);
     std::vector<Quad> scroll;
@@ -1560,10 +1565,10 @@ TEST_CASE("N64 help sits on its player's coloured scroll, sized by the N64's ste
                                 static_cast<f32>(box.width), static_cast<f32>(box.height)});
     // The lines in glfm3, black, from the box's text point, a line height apart.
     CHECK(linesOf(quads, Fixture::kNameFont) ==
-          std::vector<Line>{
-              {static_cast<f32>(box.textX) + 0.5f, static_cast<f32>(box.textY) + 0.5f, "WATCH OUT"},
-              {static_cast<f32>(box.textX) + 0.5f, static_cast<f32>(box.textY + kLine) + 0.5f,
-               "AN EXIT"}});
+          std::vector<Line>{{static_cast<f32>(box.textX) + kFirstGlyph.x,
+                             static_cast<f32>(box.textY) + kFirstGlyph.y, "WATCH OUT"},
+                            {static_cast<f32>(box.textX) + kFirstGlyph.x,
+                             static_cast<f32>(box.textY + kLine) + kFirstGlyph.y, "AN EXIT"}});
     for (const Quad& quad : quads) {
         if (isText(quad)) {
             CHECK(quad.color == Color::black());
@@ -1635,7 +1640,8 @@ TEST_CASE("the N64 ticker and finder are Dark Legacy's counts in N64 fonts, and 
     // Over panel 1's middle in canvas units, the first count's top at rest at 282 and the next
     // stacked 20 above it: the icon, 4, then the count in white.
     const f32 centre = LegendsN64Frame::toCanvas({156, 0}).x;
-    const f32 written = 4 * 4 * LegendsN64Frame::kColumn; // four glyphs of font 2's four
+    // Four glyphs of font 2, each its four columns and the N64's unit.
+    const f32 written = 4 * Fixture::kSmallFont.advance() * LegendsN64Frame::kColumn;
     const f32 left = centre - (16 + 4 + written) / 2;
     const auto checkTicker = [&](f32 top) {
         const std::vector<Quad> quads = n64.panels(view);
@@ -1661,10 +1667,10 @@ TEST_CASE("the N64 ticker and finder are Dark Legacy's counts in N64 fonts, and 
         REQUIRE(counts.size() == 2);
         CHECK(counts[0].at.x == Approx(left + 20));
         CHECK(counts[0].at.y == Approx(top + 4));
-        CHECK(counts[0].lines == std::vector<Line>{{0.5f, 0.5f, "3/15"}});
+        CHECK(counts[0].lines == std::vector<Line>{{kFirstGlyph.x, kFirstGlyph.y, "3/15"}});
         CHECK(counts[1].at.x == Approx(left + 20));
         CHECK(counts[1].at.y == Approx(top - 20 + 4));
-        CHECK(counts[1].lines == std::vector<Line>{{0.5f, 0.5f, "2/12"}});
+        CHECK(counts[1].lines == std::vector<Line>{{kFirstGlyph.x, kFirstGlyph.y, "2/12"}});
         for (const Quad& quad : quads) {
             if (Fixture::sheetOf(quad.texture, Fixture::kSmallFont)) {
                 CHECK(quad.color == Color::white());
@@ -1817,6 +1823,8 @@ TEST_CASE("left and right on a closed panel enter the stat ring at either end an
     const auto named = [](std::span<const Quad> quads) {
         return linesAlong(quads, Fixture::kNameFont, 0, 30);
     };
+    // "LEVEL" stands three of font 2's spaces in from the stats' 8.
+    const f32 level = 8 + 3 * Fixture::kSmallFont.spaceAdvance();
     using Lines = std::vector<Line>;
     const auto lit = std::pair{kArrowResting, kArrowLit};
     const auto litLeft = std::pair{kArrowLit, kArrowResting};
@@ -1836,14 +1844,14 @@ TEST_CASE("left and right on a closed panel enter the stat ring at either end an
     for (s32 more = 0; more < 7; ++more) {
         quads = press(SelectorInput{.right = true});
     }
-    CHECK(stat(quads) == Lines{lineAt(0, 8 + 3 * 3, 28, "LEVEL 000021")});
+    CHECK(stat(quads) == Lines{lineAt(0, level, 28, "LEVEL 000021")});
     quads = press(SelectorInput{.right = true});
     CHECK(stat(quads).empty());
     CHECK(named(quads) == Lines{lineAt(0, 25, 30, "A")});
     CHECK(arrowsIn(quads, 0) == lit);
     // Left enters at the level and leaves past strength.
     quads = press(SelectorInput{.left = true});
-    CHECK(stat(quads) == Lines{lineAt(0, 8 + 3 * 3, 28, "LEVEL 000021")});
+    CHECK(stat(quads) == Lines{lineAt(0, level, 28, "LEVEL 000021")});
     CHECK(arrowsIn(quads, 0) == litLeft);
     for (s32 more = 0; more < 7; ++more) {
         quads = press(SelectorInput{.left = true});
@@ -1901,13 +1909,16 @@ TEST_CASE("the stats page pairs each N64 word with its own value", "[legends][n6
     slow.stats.values = {12, 0, 34, 56};
     HudView view = n64.viewOf({seat, slow, {}, {}});
     prepareAt(n64, view, 0);
-    // FUN_e0055784's ring, each word in font 2 from (8,28), its padding the font's spaces of 3,
-    // with the class still under it.
+    // FUN_e0055784's ring, each word in font 2 from (8,28), its padding the font's spaces of 3
+    // and their units, with the class still under it.
+    const auto padded = [](s32 spaces) {
+        return 8 + static_cast<f32>(spaces) * Fixture::kSmallFont.spaceAdvance();
+    };
     const std::array<Line, 8> ring{
-        lineAt(0, 8, 28, "STRENGTH 000034"),  lineAt(0, 8 + 9, 28, "SPEED 000045"),
-        lineAt(0, 8 + 9, 28, "MAGIC 000056"), lineAt(0, 8 + 6, 28, "ARMOUR 000078"),
-        lineAt(0, 8, 28, "MAX HLTH 000600"),  lineAt(0, 8 + 12, 28, "EXP. 012345"),
-        lineAt(0, 8 + 12, 28, "GOLD 006789"), lineAt(0, 8 + 9, 28, "LEVEL 000021"),
+        lineAt(0, padded(0), 28, "STRENGTH 000034"), lineAt(0, padded(3), 28, "SPEED 000045"),
+        lineAt(0, padded(3), 28, "MAGIC 000056"),    lineAt(0, padded(2), 28, "ARMOUR 000078"),
+        lineAt(0, padded(0), 28, "MAX HLTH 000600"), lineAt(0, padded(4), 28, "EXP. 012345"),
+        lineAt(0, padded(4), 28, "GOLD 006789"),     lineAt(0, padded(3), 28, "LEVEL 000021"),
     };
     for (usize place = 0; place < ring.size(); ++place) {
         CAPTURE(place);
@@ -2012,8 +2023,12 @@ TEST_CASE("the carousel shows the selection between its neighbours, dims what is
     CHECK(items[0].color == Color::white());
     check(items[1], "HUD_HAMMER", centredAt(0, Layout::kSelected, 32, 32), Color::white());
     check(items[2], "HUD_INVIS", centredAt(0, Layout::kNext, 28, 28, 0.6f), Color::white());
-    // Its charges left, "%4d" in font 2 from (64,40), over the panel's own art.
-    CHECK(countIn(quads) == Count{{lineAt(0, 64 + 3 * 3, 40, "3"), Color::white()}});
+    // Its charges left, "%4d" in font 2 from (64,40), over the panel's own art, padded with the
+    // font's spaces.
+    const auto count = [](s32 digits) {
+        return 64 + static_cast<f32>(4 - digits) * Fixture::kSmallFont.spaceAdvance();
+    };
+    CHECK(countIn(quads) == Count{{lineAt(0, count(1), 40, "3"), Color::white()}});
     // The carousel stands where the portrait, the name and the class were, and dims the key
     // and the bottle.
     CHECK(picturesIn(quads, "WAR_P1", 0).empty());
@@ -2051,7 +2066,7 @@ TEST_CASE("the carousel shows the selection between its neighbours, dims what is
     CHECK(items[1].texture == pojo);
     checkRect(items[1].area, centredAt(0, Layout::kSelected, 28, 28));
     check(items[2], "HUD_HAMMER", centredAt(0, Layout::kNext, 32, 32, 0.6f), Color::white());
-    CHECK(countIn(quads) == Count{{lineAt(0, 64 + 2 * 3, 40, "60"), Color::white()}});
+    CHECK(countIn(quads) == Count{{lineAt(0, count(2), 40, "60"), Color::white()}});
     CHECK(arrowsIn(quads, 0) == std::pair{kArrowResting, kArrowResting});
     // The gold invulnerability named: it and what it has left are dimmed.
     press(SelectorInput{.left = true});
@@ -2063,7 +2078,7 @@ TEST_CASE("the carousel shows the selection between its neighbours, dims what is
     check(items[0], "HUD_INVIS", centredAt(0, Layout::kPrevious, 28, 28, 0.6f), Color::white());
     check(items[1], "HUD_INVULNG", centredAt(0, Layout::kSelected, 28, 28), off);
     CHECK(items[2].texture == pojo);
-    CHECK(countIn(quads) == Count{{lineAt(0, 64 + 2 * 3, 40, "20"), off}});
+    CHECK(countIn(quads) == Count{{lineAt(0, count(2), 40, "20"), off}});
     // Right goes back, lighting the right arrow.
     press(SelectorInput{.right = true});
     prepareAt(n64, view, 5);
@@ -2447,17 +2462,22 @@ TEST_CASE("an N64 exit shows its original plaque, a Dark Legacy exit the port's 
         // on its panel's middle through a frame of its own; the secret level's title alone.
         const auto realms = framedLinesOf(plaques, Fixture::kSmallFont);
         REQUIRE(realms.size() == 1);
-        // 16 of font 2's 4 and a space of 3: 67 across, centred on panel 1's 156, at row 9.
-        checkLineFrame(realms[0].first, {156 - 67.0f / 2, kTop + 9}, 1);
-        CHECK(realms[0].second == std::vector<Line>{{0.5f, 0.5f, "CASTLE STRONGHOLD"}});
+        // 16 of font 2's 4 and a space of 3, each with the N64's unit: 84 across, centred on
+        // panel 1's 156, at row 9.
+        checkLineFrame(realms[0].first, {156 - 84.0f / 2, kTop + 9}, 1);
+        CHECK(realms[0].second ==
+              std::vector<Line>{{kFirstGlyph.x, kFirstGlyph.y, "CASTLE STRONGHOLD"}});
         const auto titles = framedLinesOf(plaques, Fixture::kTitleFont);
         REQUIRE(titles.size() == 2);
-        // 15 of font 8's 9 and a space of 6, 141 across, shrunk to the plaque's 96, at row 22.
-        checkLineFrame(titles[0].first, {156 - 48, kTop + 22}, 96.0f / 141);
-        CHECK(titles[0].second == std::vector<Line>{{0.5f, 0.5f, "CASTLE COURTYARD"}});
-        // 114 across over panel 3's 364, shrunk alike.
-        checkLineFrame(titles[1].first, {364 - 48, kTop + 22}, 96.0f / 114);
-        CHECK(titles[1].second == std::vector<Line>{{0.5f, 0.5f, "HIDDEN VALLEY"}});
+        // 15 of font 8's 9 and a space of 6, with their units 157 across, shrunk to the
+        // plaque's 96, at row 22.
+        checkLineFrame(titles[0].first, {156 - 48, kTop + 22}, 96.0f / 157);
+        CHECK(titles[0].second ==
+              std::vector<Line>{{kFirstGlyph.x, kFirstGlyph.y, "CASTLE COURTYARD"}});
+        // 127 across over panel 3's 364, shrunk alike.
+        checkLineFrame(titles[1].first, {364 - 48, kTop + 22}, 96.0f / 127);
+        CHECK(titles[1].second ==
+              std::vector<Line>{{kFirstGlyph.x, kFirstGlyph.y, "HIDDEN VALLEY"}});
         for (const Quad& quad : plaques) {
             if (Fixture::sheetOf(quad.texture, Fixture::kSmallFont)) {
                 CHECK(quad.color == Layout::kPlaqueRealmInk.withAlpha(opacity));
@@ -2564,15 +2584,17 @@ TEST_CASE("a missing or unreadable level-name bank or title font never stops the
     };
     using Names = std::vector<std::string_view>;
     const Names portMade{"COLOR", "COLOR", "COLOR", "COLOR", "BORDER", "BORDER"};
-    // The level's name over panel 2's middle, 208 + 52, at row 22: in font 8 by its fixture's
-    // 141, shrunk to 96, else in font 5, 15 of its 6 and a space of 5.
+    // The level's name over panel 2's middle, 208 + 52, at row 22, shrunk to the plaque's 96:
+    // in font 8, its fixture's 157 across with the N64's units, else in font 5, 15 of its 6 and
+    // a space of 5 with theirs, 111 across.
     const auto checkTitle = [](std::span<const Quad> plaques, const test::N64Font& font) {
         const auto titles = framedLinesOf(plaques, font);
         REQUIRE(titles.size() == 1);
-        const bool shrunk = font.file == Fixture::kTitleFont.file;
-        checkLineFrame(titles[0].first, {shrunk ? 260 - 48 : 260 - 95.0f / 2, kTop + 22},
-                       shrunk ? 96.0f / 141 : 1);
-        CHECK(titles[0].second == std::vector<Line>{{0.5f, 0.5f, "CASTLE COURTYARD"}});
+        const f32 across = 15 * font.advance() + font.spaceAdvance();
+        CHECK(across == (font.file == Fixture::kTitleFont.file ? 157.0f : 111.0f));
+        checkLineFrame(titles[0].first, {260 - 48, kTop + 22}, 96 / across);
+        CHECK(titles[0].second ==
+              std::vector<Line>{{kFirstGlyph.x, kFirstGlyph.y, "CASTLE COURTYARD"}});
     };
     // Loads `look` from `files`; the warnings it wrote. The look must outlive the draws read
     // from it, as they point at its pictures.

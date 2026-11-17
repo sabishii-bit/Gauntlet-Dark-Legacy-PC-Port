@@ -126,7 +126,8 @@ Reach reachOf(const test::RecordedDraw& draw) {
     return reach;
 }
 
-/** A word of `count` letters A, the synthetic font's only glyph, three columns each. */
+/** A word of `count` letters A, the synthetic font's only glyph, three columns each and four
+ * apart with the unit the N64 writes before each. */
 std::string letters(usize count) {
     // Braces would make the count one of the letters.
     std::string word(count, 'A');
@@ -139,7 +140,8 @@ TEST_CASE("N64 modal fonts decode packed glyphs and coverage without GC font ass
     const auto bytes = smallFont();
     const auto decoded = formats::LegendsN64Font::parse(bytes);
     REQUIRE(decoded.font.height() == 4);
-    REQUIRE(decoded.font.spaceWidth() == 2);
+    // The file's space of two, and the unit the N64 writes before every character.
+    REQUIRE(decoded.font.spaceWidth() == 3);
     REQUIRE(decoded.font.glyph('A'));
     REQUIRE(decoded.font.glyph('a'));
     CHECK(decoded.font.glyph('a')->x == decoded.font.glyph('A')->x);
@@ -318,9 +320,10 @@ TEST_CASE("N64 dialogue draws in the N64's frame, as tall as the video hardware 
     const f32 canvasTop = (frame * Vec4{covered.least, 0, 1}).y;
     const f32 canvasBottom = (frame * Vec4{covered.most, 0, 1}).y;
     CHECK(canvasBottom - canvasTop == Catch::Approx(page.area.height * 1.7160f).epsilon(1e-4));
-    // The lines start 60 in from the scroll's left, and the prompt follows them.
+    // The lines start 60 in from the scroll's left, their first glyph the N64's unit further,
+    // and the prompt follows them.
     const Reach text = reachOf(device.draws.back());
-    CHECK(text.least.x == Catch::Approx(40 + 60 + TextPainter::kCellInset));
+    CHECK(text.least.x == Catch::Approx(40 + 60 + 1 + TextPainter::kCellInset));
     CHECK(text.least.y == Catch::Approx(46 + TextPainter::kCellInset));
     CHECK(text.most.y ==
           Catch::Approx(static_cast<f32>(page.promptY + 4) - TextPainter::kCellInset));
@@ -341,15 +344,19 @@ TEST_CASE("N64 dialogue breaks a line as the N64 does", "[legends][n64-dialogue]
         REQUIRE(messages.openImported(device, std::array{prose}, nullptr));
         return messages.scroll().lines();
     };
-    // The synthetic font's A is three columns and its space two: 39 and 40 letters make 239.
-    const std::string fits = letters(39) + ' ' + letters(40);
+    // The synthetic font's A is three columns and its space two, and FUN_e00189c0 counts a unit
+    // before each character: a letter takes four and a space three, so 29 and 30 letters make
+    // 239.
+    REQUIRE(style.text().measure("A A", style.scale()) == 4 + 3 + 4);
+    const std::string fits = letters(29) + ' ' + letters(30);
     REQUIRE(style.text().measure(fits, style.scale()) == 239);
     CHECK(linesOf(fits) == std::vector{fits});
-    // Words of 20, 20, 19 and 19 letters make 240: the line breaks at its last space.
-    const std::string first = letters(20) + ' ' + letters(20) + ' ' + letters(19);
-    const std::string reaches = first + ' ' + letters(19);
+    // Words of 12, 12, 11, 11 and 11 letters make 240: the line breaks at its last space.
+    const std::string first =
+        letters(12) + ' ' + letters(12) + ' ' + letters(11) + ' ' + letters(11);
+    const std::string reaches = first + ' ' + letters(11);
     REQUIRE(style.text().measure(reaches, style.scale()) == 240);
-    CHECK(linesOf(reaches) == std::vector{first, letters(19)});
+    CHECK(linesOf(reaches) == std::vector{first, letters(11)});
 }
 
 TEST_CASE("the N64 topic scroll, title and rows take the N64's frame, and only the glyphs keep "
@@ -365,13 +372,14 @@ TEST_CASE("the N64 topic scroll, title and rows take the N64's frame, and only t
     // e0046000 / e0041894 in the frame, both synthetic fonts four rows tall: the title takes
     // 4 x 1.5 and a 15-row gap, and the rows four and a five-row gap each, 43 rows with the last
     // gap dropped, centred on row 82.5, the middle of the top three quarters, so from row 61.5.
-    // The widest line is AAA's nine columns: the scroll stands 30 columns beyond its middle
-    // four on either side and ten rows above and below, 68 by 63 from (174, 51.5).
+    // The widest line is AAA's twelve, three glyphs of three columns and the N64's unit before
+    // each: the scroll stands 30 columns beyond its middle six on either side and ten rows above
+    // and below, 72 by 63 from (172, 51.5).
     using Frame = LegendsN64Frame;
-    const Vec2 corner = Frame::toCanvas({174, 51.5f});
+    const Vec2 corner = Frame::toCanvas({172, 51.5f});
     CHECK(definition->backdropX == static_cast<s32>(corner.x));
     CHECK(definition->backdropY == static_cast<s32>(corner.y));
-    CHECK(definition->backdropWidth == static_cast<s32>(68 * Frame::kColumn));
+    CHECK(definition->backdropWidth == static_cast<s32>(72 * Frame::kColumn));
     CHECK(definition->backdropHeight == static_cast<s32>(63 * Frame::kRow));
     // The rows stand under the title from row 82.5, nine rows apart, centred on the frame's
     // middle column.
@@ -428,7 +436,8 @@ TEST_CASE("N64 native popup uses its font and three-piece modal through shared p
     }
     const auto decoded = formats::LegendsN64Font::parse(readFile(root / "Font/glfm3.fnt"));
     CHECK(decoded.font.height() == 11);
-    CHECK(decoded.font.spaceWidth() == 7);
+    // glfm3's space of seven and the N64's unit before it.
+    CHECK(decoded.font.spaceWidth() == 8);
     CHECK(decoded.atlas.width == 128);
     CHECK(decoded.atlas.height == 64);
     REQUIRE(decoded.font.glyph('A'));
@@ -461,9 +470,10 @@ TEST_CASE("N64 native popup uses its font and three-piece modal through shared p
     CHECK(lettering.texture->width() == 128);
     CHECK(lettering.texture->height() == 64);
     CHECK(lettering.vertices.front().color == Color::black());
-    // The text starts six rows under the scroll's top and 60 in, half a texel inside its cells.
+    // The text starts six rows under the scroll's top and 60 in, its first glyph the N64's unit
+    // further, half a texel inside its cells.
     const Reach text = reachOf(lettering);
-    CHECK(text.least.x == Catch::Approx(40 + 60 + TextPainter::kCellInset));
+    CHECK(text.least.x == Catch::Approx(40 + 60 + 1 + TextPainter::kCellInset));
     CHECK(text.least.y == Catch::Approx(40 + 6 + TextPainter::kCellInset));
     const auto hold = messages.step(ScrollBox::kHoldTicks, 1);
     CHECK_FALSE(hold.stopVoice);

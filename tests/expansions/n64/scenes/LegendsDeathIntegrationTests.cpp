@@ -302,7 +302,9 @@ TEST_CASE("Death advice enters the normal PlayScene scroll and holds party contr
         REQUIRE(scene.update(1.0 / 60, {}) == PlayOutcome::Running);
     }
     REQUIRE(scene.scroll().active());
-    CHECK(scene.scroll().lines() == std::vector<std::string>{"Use potions to Kill Death"});
+    // glfm3 measures the advice 241 across with the unit the N64 counts before each character
+    // (FUN_e00189c0), past the long page's wrap of 240, so it breaks at its last space.
+    CHECK(scene.scroll().lines() == std::vector<std::string>{"Use potions to Kill", "Death"});
     CHECK(level->adapter().deathTargets().size() + 1 == statues.size());
     const Vec3 held = scene.actor(2)->position();
     PlayScene::Inputs moving{};

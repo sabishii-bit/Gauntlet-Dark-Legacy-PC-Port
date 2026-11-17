@@ -6,10 +6,12 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/assets/BitmapFont.h"
 #include "engine/core/Error.h"
 #include "engine/core/Types.h"
 #include "engine/math/Math.h"
 #include "engine/render/Image.h"
+#include "engine/ui/TextPainter.h"
 
 #include "SyntheticBytes.h"
 #include "expansions/n64/formats/LegendsN64Font.h"
@@ -36,6 +38,7 @@ struct Header {
     u16 width = 0;
     u16 height = 0;
     u16 lineHeight = 0;
+    u32 flags = 0;
 };
 
 /** One entry of a font's five-byte glyph directory. */
@@ -58,7 +61,7 @@ std::vector<u8> nativeFont(const Header& header, std::span<const Glyph> glyphs,
     // The slot and load band before the dimensions are not read.
     bytes.putU8(0).putU8(header.format).putU8(header.size).putZeros(5);
     bytes.putU16BE(header.width).putU16BE(header.height).putU16BE(header.lineHeight);
-    bytes.putU16BE(kSpace).putU32BE(0).putU32BE(static_cast<u32>(glyphs.size()));
+    bytes.putU16BE(kSpace).putU32BE(header.flags).putU32BE(static_cast<u32>(glyphs.size()));
     bytes.putZeros(kHeaderBytes - bytes.size());
     for (const Glyph& glyph : glyphs) {
         bytes.putU8(glyph.code).putU8(glyph.x).putU8(glyph.y);
@@ -146,6 +149,39 @@ TEST_CASE("N64 fonts read intensity, IA4 and IA8 atlases", "[legends][n64-font]"
             LegendsN64Font::parse(std::span{bytes}.first(bytes.size() - eightBit.size() / 2)),
             FormatError);
     }
+}
+
+TEST_CASE("N64 fonts space every character as the N64 writes its 416-wide text",
+          "[legends][n64-font]") {
+    // game.bin's measure (e00189c0) and string draw (e00180e0) count a unit before every
+    // character of a font loaded for the 416-wide frame (e00180bc): a glyph advances its columns
+    // and the unit and is drawn the unit in, and a space advances the file's width and the unit.
+    constexpr u32 kFoldsLowerCase = 1;
+    const std::array glyphs{Glyph{'A', 0, 0, 3, 4}, Glyph{'B', 3, 0, 1, 4}};
+    const auto font = LegendsN64Font::parse(
+        nativeFont({.width = 4, .height = 4, .lineHeight = 4, .flags = kFoldsLowerCase}, glyphs,
+                   std::vector<u8>(8)));
+    for (const char code : {'A', 'a'}) {
+        CAPTURE(code);
+        const BitmapGlyph* letter = font.font.glyph(static_cast<u8>(code));
+        REQUIRE(letter != nullptr);
+        CHECK(letter->width == 4);
+        CHECK(letter->lead == 1);
+        CHECK(letter->x == 0);
+        CHECK(letter->columns == 3);
+    }
+    const BitmapGlyph* narrow = font.font.glyph('B');
+    REQUIRE(narrow != nullptr);
+    CHECK(narrow->width == 2);
+    CHECK(narrow->lead == 1);
+    CHECK(narrow->x == 3);
+    CHECK(narrow->columns == 1);
+    // The file's space of two, and the unit.
+    CHECK(font.font.spaceWidth() == 3);
+    // Written out, every character takes its unit: 4 + 2 + 3 + 4.
+    TextPainter text;
+    text.setFont(&font.font, nullptr);
+    CHECK(text.measure("AB A") == 13);
 }
 
 TEST_CASE("a glyph may reach below its atlas into its line, never past it", "[legends][n64-font]") {

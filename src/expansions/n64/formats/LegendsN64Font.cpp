@@ -17,6 +17,11 @@ namespace gdl::formats {
 
 namespace {
 
+/** The unit the N64 puts before every character it measures (game.bin e00189c0) or writes
+ * (e00180e0) in a font loaded for its 416-wide frame: e00180bc gives it to any font e0016f30
+ * loaded at that width, and every font of the 416-wide set takes it. */
+constexpr s32 kLead = 1;
+
 /** How a font's atlas stores its texels. */
 enum class AtlasFormat : u8 { Intensity4, IntensityAlpha4, IntensityAlpha8 };
 
@@ -103,14 +108,15 @@ LegendsN64Font LegendsN64Font::parse(std::span<const u8> bytes) {
         }
         previous = code;
         bottom = std::max(bottom, y + rows);
-        glyphs.push_back({code, columns, x, y, 0, 0, columns, rows});
+        // The glyph's own columns, drawn a unit into a cell a unit wider.
+        glyphs.push_back({code, columns + kLead, x, y, kLead, 0, columns, rows});
         // e0016d48 folds ASCII lowercase for fonts carrying flag1.
         if ((flags & 1U) != 0 && code >= 'A' && code <= 'Z') {
-            glyphs.push_back({code + ('a' - 'A'), columns, x, y, 0, 0, columns, rows});
+            glyphs.push_back({code + ('a' - 'A'), columns + kLead, x, y, kLead, 0, columns, rows});
         }
     }
     LegendsN64Font result;
-    result.font = BitmapFont::fromGlyphs(lineHeight, space, std::move(glyphs));
+    result.font = BitmapFont::fromGlyphs(lineHeight, space + kLead, std::move(glyphs));
     result.atlas.width = width;
     result.atlas.height = std::max(height, static_cast<u32>(bottom));
     const usize texels = usize{width} * result.atlas.height;

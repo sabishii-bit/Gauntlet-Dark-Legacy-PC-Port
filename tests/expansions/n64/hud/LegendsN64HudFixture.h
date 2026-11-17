@@ -99,6 +99,9 @@ inline std::vector<u8> n64TextureBank(std::span<const N64Picture> pictures) {
  * side by side along an atlas `atlasRows` tall, which the cells may reach past as numfont's do.
  * It folds lower case onto its capitals, as the HUD's fonts do. */
 struct N64Font {
+    /** The unit the N64 writes before every character of a font of its 416-wide frame. */
+    static constexpr f32 kLead = 1;
+
     std::string_view file;
     std::string_view codes;
     u8 columns = 0;
@@ -110,6 +113,10 @@ struct N64Font {
 
     u32 sheetWidth() const { return static_cast<u32>(codes.size()) * columns; }
     u32 sheetHeight() const { return std::max<u32>(atlasRows, rows); }
+    /** How far the pen moves past one of the glyphs, its unit included. */
+    f32 advance() const { return static_cast<f32>(columns) + kLead; }
+    /** How far the pen moves past a space, its unit included. */
+    f32 spaceAdvance() const { return static_cast<f32>(space) + kLead; }
 };
 
 /** `font`'s native file: the 0x24-byte header, the glyph directory, the atlas. */
