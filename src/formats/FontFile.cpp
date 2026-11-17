@@ -26,6 +26,7 @@ FontFile FontFile::parse(std::span<const u8> file) {
         FontGlyph glyph;
         glyph.code = readS32LE(file, at);
         if (glyph.code == 0) {
+            font.closed = true;
             break;
         }
         glyph.width = readS32LE(file, at + 4);

@@ -81,9 +81,6 @@ constexpr std::string_view kLargeSheet = "FONT32";
 constexpr s32 kSmallSpace = 8;
 constexpr s32 kScoreSpace = 9;
 constexpr s32 kLargeSpace = 16;
-/** A native font: a header, then glyph records up to an empty one. */
-constexpr usize kFontHeaderBytes = 12;
-constexpr usize kGlyphRecordBytes = 16;
 /** The class whose panels stand in for a class's own: every class's panel of a colour is the
  * same picture. */
 constexpr std::string_view kStandInClass = "WAR";
@@ -389,10 +386,9 @@ void LegendsDreamcastHudPainter::loadFont(const std::filesystem::path& file, std
                                           s32 space, std::string_view sheet, Font& font) {
     formats::FontFile parsed;
     try {
-        const std::vector<u8> bytes = readFile(file);
-        parsed = formats::FontFile::parse(bytes);
-        // The glyph table ends at an empty record: a file without one was cut short.
-        if (parsed.glyphs.size() >= (bytes.size() - kFontHeaderBytes) / kGlyphRecordBytes) {
+        parsed = formats::FontFile::parse(readFile(file));
+        // A whole font's glyph table ends at its empty record.
+        if (!parsed.closed) {
             throw FormatError("its glyph table has no end");
         }
     } catch (const std::exception& error) {

@@ -29,6 +29,20 @@ TEST_CASE("font files list glyph cells until a zero code", "[formats][font]") {
     REQUIRE(font.glyphs[1].width == 8);
     REQUIRE(font.glyphs[1].x == 17);
     REQUIRE(font.glyphs[1].y == 20);
+    CHECK(font.closed);
+
+    // A file cut short before its empty record lists the glyphs it holds, and says it was cut.
+    SyntheticBytes cut;
+    cut.putU32(0).putS32(12).putU32(0);
+    cut.putS32('A').putS32(7).putS32(10).putS32(20);
+    cut.putS32('B').putS32(8);
+    const FontFile shortened = FontFile::parse(cut.bytes());
+    REQUIRE(shortened.glyphs.size() == 1);
+    CHECK(shortened.glyphs[0].code == 'A');
+    CHECK_FALSE(shortened.closed);
+    SyntheticBytes headerOnly;
+    headerOnly.putU32(0).putS32(12).putU32(0);
+    CHECK_FALSE(FontFile::parse(headerOnly.bytes()).closed);
 
     REQUIRE_THROWS_AS(FontFile::parse(std::vector<u8>(8, 0)), FormatError);
     SyntheticBytes zeroHeight;

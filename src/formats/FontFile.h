@@ -19,6 +19,7 @@ struct FontGlyph {
 struct FontFile {
     s32 height = 0;
     std::vector<FontGlyph> glyphs;
+    bool closed = false; ///< the glyph table ends at its empty record, which a file cut short lacks
 
     /** Parses the little-endian file; throws FormatError. */
     static FontFile parse(std::span<const u8> file);
