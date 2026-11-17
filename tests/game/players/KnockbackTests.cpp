@@ -70,6 +70,21 @@ TEST_CASE("a knock back kicks sixteen times its push, a fall thirty-two, a blow 
     CHECK(weak.velocity() == Vec3{0.0f});
 }
 
+TEST_CASE("a kick multiplies the frame's summed push as it stands, longer than a unit or not",
+          "[game][players][knockback]") {
+    // PlayerKnockback scales each part of hit_force by the double at 0x80347D40, or 0x80347D38
+    // carrying Pojo, without normalising it first (0x80086600-0x8008664C).
+    for (const bool pojo : {false, true}) {
+        CAPTURE(pojo);
+        Knockback knock;
+        knock.queue(Vec3{3.886f, 0.629f, 0.0f}, Knockback::kKnockDown, 30.0f);
+        knock.kick(0.0f, pojo);
+        CHECK(knock.velocity().x == Approx((pojo ? 80.0f : 32.0f) * 3.886f));
+        CHECK(knock.velocity().y == 0.0f);
+        CHECK(knock.velocity().z == 0.0f);
+    }
+}
+
 TEST_CASE("a frame's pushes add up, never lift, and turn the body along or against them",
           "[game][players][knockback]") {
     Knockback knock;

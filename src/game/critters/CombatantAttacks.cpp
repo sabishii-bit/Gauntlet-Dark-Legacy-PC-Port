@@ -58,6 +58,11 @@ void Combatant::strikeWith(Actor& critter, s32 id, const MoveDefinition& move, s
     const bool gated = breath.has_value() || damage->type == AttackDefinition::kBlow;
     const bool tracksPressure = critter.definition->rules().pressureReferenceDamage > 0 &&
                                 (breath.has_value() || damage->type == AttackDefinition::kBlow);
+    // A blow pushes along its node's swing and away from the body's origin
+    // (CritterNodePlayerCollide); the rest push straight out from where it stands.
+    const bool swingPush =
+        damage->type == AttackDefinition::kBlow && !critter.definition->rules().flatBlowPush;
+    const Vec3 bodyOrigin = swingPush ? targetingOrigin(critter) : Vec3{0.0f};
     for (const EnemyView& view : players) {
         if (view.hidden || (!view.damageable && !tracksPressure) ||
             (!gated && std::ranges::find(critter.struckThisMove, view.player) !=
@@ -106,16 +111,20 @@ void Combatant::strikeWith(Actor& critter, s32 id, const MoveDefinition& move, s
         blow.gated = gated;
         blow.flags = damage->flags;
         blow.origin = centre;
-        const Vec3 away = feet - critter.position;
-        const f32 length = flatDistance(feet, critter.position);
-        blow.direction = length > 0.001f
-                             ? Vec3{away.x / length, 0.0f, away.z / length}
-                             : Vec3{portable::sin(critter.yaw), 0.0f, portable::cos(critter.yaw)};
         if (breath.has_value()) {
             const Vec3 direction = breath->end - breath->origin;
             const f32 size = glm::length(direction);
             blow.direction = size > 0.0f ? direction / size : Vec3{0.0f};
-        } else if (!gated) {
+        } else if (swingPush) {
+            blow.direction = critter.moveNode.blowPush(bodyOrigin, feet);
+        } else {
+            const Vec3 away = feet - critter.position;
+            const f32 length = flatDistance(feet, critter.position);
+            blow.direction = length > 0.001f ? Vec3{away.x / length, 0.0f, away.z / length}
+                                             : Vec3{portable::sin(critter.yaw), 0.0f,
+                                                    portable::cos(critter.yaw)};
+        }
+        if (!gated) {
             critter.struckThisMove.push_back(view.player);
         }
         m_sim.blows.push_back(blow);

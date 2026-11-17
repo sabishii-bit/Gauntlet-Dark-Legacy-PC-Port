@@ -521,8 +521,8 @@ TEST_CASE("native opponent digest bytes stay pinned after the replay script and 
     // them, so that a moved digest names the child that moved it.
     test::checkPinnedDigests("LevelOpponents", test::liveDigest(opponents, resources),
                              test::savedDigest(opponents, *saved, resources),
-                             "ed0d1092ca15eb06d6d7b77fb85bfc3f395c49ba928e397df6e05844ea36af54",
-                             "18ba969c7a360184bfcd13252a68ddedf99da5b66da7e7ed43a160f134ddcfac");
+                             "30dfac2771fb2104f902b0e07024e3b9421708be9ab2bf51ec6a906de009fb51",
+                             "352771214532f2e3bdac94431db33d5b9bc12fb008089cb761300cb142d08dda");
     test::checkPinnedDigests("LevelOpponents' follow-up", followupDigest(opponents),
                              followupDigest(opponents, *saved),
                              "f1769a112bec90a097c6912cccd388f9babe8ef28853f7d3685c53d4c634017f",
@@ -541,8 +541,8 @@ TEST_CASE("native opponent digest bytes stay pinned after the replay script and 
                              "4ee0c032b27473f68c2844240fa00bb5ba528619daf6c09e9ba4d37f2f16f685");
     test::checkPinnedDigests("Bosses", test::liveDigest(boss, resources),
                              test::savedDigest(boss, *bosses, resources),
-                             "f96db8b1a1233a7bd8376b9599ef561531f45b5a25111de0786484bbc6ee3377",
-                             "82b942e5d48d758b9bb3e9ebc1b74d9e1daa9248a3f67fed9a1fa265815dbd57");
+                             "30b0094c62f2bbff6c1e9ae0c0c5ca55f23901b7b1f52aa11b043604e1160cdd",
+                             "27fd487b2384df2c8c89d8d243ada34447ff73975e2d9eafdbc5a8391596489b");
 }
 
 } // namespace

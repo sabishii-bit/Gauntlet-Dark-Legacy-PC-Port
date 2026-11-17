@@ -21,6 +21,7 @@
 #include "engine/world/WorldCollision.h"
 
 #include "FakeRenderDevice.h"
+#include "NativeStateSupport.h"
 #include "TestSupport.h"
 #include "fixtures/NativeModelFixture.h"
 #include "formats/CritterWad.h"
@@ -1914,6 +1915,192 @@ TEST_CASE("a blow's offset turns with its node and reaches by its reach alone",
     CHECK(blows[0].gated); // the player's quarter-second gap holds off the next
     CHECK(blows[0].origin.z == Approx(-8.0f).margin(0.01f));
     CHECK(blows[0].origin.x == Approx(0.0f).margin(0.01f));
+}
+
+/** A general whose HAND, two along x from an ARM five along x from its ROOT, goes a unit further
+ * along x each of SWING's first ten frames, shown `rate` apart (900 over the frames a second).
+ * SWING strikes with HAND over frames four to eight: a blow of 30 that knocks down, reaching
+ * three. Its body's origin stands four over its feet. */
+void loadSwing(test::FakeRenderDevice& device, CombatantAssets& assets, s32 rate = 30,
+               const CritterRules& rules = {}) {
+    const auto root = familyAssets();
+    auto archive = root / "MONSTERS" / General::definition().name;
+    if (General::definition().realmCostume) {
+        archive /= "LEVELG";
+    }
+    writeTextFile(archive / "animations.json", R"({"trees":[{"name":"BODY","nodes":[
+      {"name":"ROOT","object":"BODY","parent":-1,"position":[0,0,0]},
+      {"name":"ARM","object":"BODY","parent":0,"position":[5,0,0]},
+      {"name":"HAND","object":"BODY","parent":1,"position":[2,0,0]}],
+      "sequences":[{"name":"READY","frames":30},{"name":"SWING","frames":12,"frameRate":)" +
+                                                   std::to_string(rate) + R"(,
+        "tracks":[{"node":2,"flags":16,"frames":[0,10],"values":[0,10]}]}]}]})");
+    REQUIRE(assets.load(device, root, General::definition(), 'G'));
+    formats::CritterFile source;
+    source.descriptors.push_back({"general", "BODY", static_cast<s16>(CombatantKind::General)});
+    auto& type = source.types.emplace_back();
+    type.radius = 2;
+    type.wallRadius = 1;
+    type.maxHealth = 100;
+    type.moveCount = 2;
+    type.originOffset = {0, 4, 0};
+    auto& ready = source.moves.emplace_back();
+    ready.name = "READY";
+    ready.anim = "READY";
+    ready.type = MoveDefinition::kReady;
+    ready.interrupt = 60;
+    auto& swing = source.moves.emplace_back();
+    swing.name = "SWING";
+    swing.anim = "SWING";
+    swing.type = MoveDefinition::kAttackFrom;
+    swing.priority = 544;
+    swing.colnode = "HAND";
+    swing.frameStart = 4;
+    swing.frameEnd = 8;
+    swing.damage0 = 0;
+    auto& blow = source.damages.emplace_back();
+    blow.type = AttackDefinition::kBlow;
+    blow.damage = 30;
+    blow.flags = damage::kKnockDown;
+    blow.maxDistance = 3;
+    assets.data = CritterData::fromDecoded("GENERAL", source, 0, rules);
+}
+
+/** The swing's push on a player twelve along x from its feet: the hand's unit along x over a
+ * native frame, and the way from the body's origin, a unit high (CritterNodePlayerCollide). */
+Vec3 swungPush() {
+    return 2.0f * (approximateUnit(Vec3{1, 0, 0}) + approximateUnit(Vec3{12, 1, 0}));
+}
+
+/** Its push there over a native frame in which the hand stood still. */
+Vec3 stillPush() {
+    return 2.0f * approximateUnit(Vec3{12, 1, 0});
+}
+
+EnemyView swingTarget() {
+    EnemyView player;
+    player.player = 0;
+    player.position = {12, 0, 0};
+    return player;
+}
+
+TEST_CASE("a blow pushes along its striking part's swing as well as away from the body, at "
+          "thirty and sixty updates a second",
+          "[game][combatant][blow-push]") {
+    const s32 updates = GENERATE(30, 60);
+    CAPTURE(updates);
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    loadSwing(device, assets);
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+    const std::array players{swingTarget()};
+    std::vector<CombatBlow> blows;
+    for (s32 i = 0; i < updates && blows.empty(); ++i) {
+        actor.update(60 / updates, 1.0f / static_cast<f32>(updates), players);
+        blows = actor.takeBlows();
+    }
+    REQUIRE(blows.size() == 1);
+    REQUIRE(actor.moveName() == "SWING");
+    CHECK(actor.animation().frame() == 4.0f);
+    CHECK(glm::distance(blows[0].direction, swungPush()) < 1e-4f);
+    CHECK(blows[0].direction.x == Approx(3.989f).margin(1e-3));
+    CHECK(blows[0].direction.y == Approx(0.166f).margin(1e-3));
+    CHECK(blows[0].direction.z == 0.0f);
+}
+
+TEST_CASE("a rate-60 swing's blow carries the swing of the frame it lands in, on either tick "
+          "parity",
+          "[game][combatant][blow-push]") {
+    const s32 lead = GENERATE(0, 1, 2, 3);
+    CAPTURE(lead);
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    loadSwing(device, assets, 60);
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+    constexpr f32 kTick = 1.0f / 60;
+    // Standing ready with nobody about, for as many ticks before its swing as the lead.
+    for (s32 i = 0; i < lead; ++i) {
+        actor.update(1, kTick, {});
+    }
+    const auto swing = assets.data.moveNamed("SWING");
+    REQUIRE(swing);
+    Combatant::MovePoint start;
+    start.target = 0;
+    REQUIRE(actor.setMove(*swing, start));
+    const std::array players{swingTarget()};
+    std::vector<Vec3> pushes;
+    for (s32 i = 0; i < 120 && pushes.size() < 4; ++i) {
+        actor.update(1, kTick, players);
+        for (const CombatBlow& blow : actor.takeBlows()) {
+            pushes.push_back(blow.direction);
+        }
+    }
+    REQUIRE(pushes.size() == 4);
+    REQUIRE(actor.animation().frame() == 4.0f);
+    // A frame shows for four ticks: the two it first shows on carry the hand's travel into it,
+    // the two after none.
+    CHECK(glm::distance(pushes[0], swungPush()) < 1e-4f);
+    CHECK(glm::distance(pushes[1], swungPush()) < 1e-4f);
+    CHECK(glm::distance(pushes[2], stillPush()) < 1e-4f);
+    CHECK(glm::distance(pushes[3], stillPush()) < 1e-4f);
+}
+
+TEST_CASE("a definition with flatBlowPush keeps the unit push", "[game][combatant][blow-push]") {
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    CritterRules rules;
+    rules.flatBlowPush = true;
+    loadSwing(device, assets, 30, rules);
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+    const std::array players{swingTarget()};
+    std::vector<CombatBlow> blows;
+    for (s32 i = 0; i < 30 && blows.empty(); ++i) {
+        actor.update(2, 1.0f / 30, players);
+        blows = actor.takeBlows();
+    }
+    REQUIRE(blows.size() == 1);
+    REQUIRE(actor.animation().frame() == 4.0f);
+    CHECK(blows[0].direction == Vec3{1, 0, 0});
+}
+
+TEST_CASE("a blow's push survives a rewind of its fighter",
+          "[game][combatant][blow-push][native-state-digest]") {
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    loadSwing(device, assets);
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+    NativeStateResources resources;
+    REQUIRE(resources.registerCombatantAssets(assets, "test/swing"));
+    constexpr f32 kTick = 1.0f / 60;
+    const std::array players{swingTarget()};
+    // The first blow lands on the seventh tick; saved a native frame before it, the snapshot
+    // holds the sample the blow measures from.
+    for (s32 i = 0; i < 5; ++i) {
+        actor.update(1, kTick, players);
+        REQUIRE(actor.takeBlows().empty());
+    }
+    Combatant::LocalSnapshot saved;
+    REQUIRE(actor.saveLocal(saved));
+    const auto push = [&] {
+        std::vector<CombatBlow> blows;
+        for (s32 i = 0; i < 2; ++i) {
+            actor.update(1, kTick, players);
+            const auto taken = actor.takeBlows();
+            blows.insert(blows.end(), taken.begin(), taken.end());
+        }
+        REQUIRE(blows.size() == 1);
+        return blows[0].direction;
+    };
+    const Vec3 first = push();
+    CHECK(glm::distance(first, swungPush()) < 1e-4f);
+    REQUIRE(actor.restoreLocal(saved));
+    CHECK(test::liveDigest(actor, resources.resources()) ==
+          test::savedDigest(actor, saved, resources.resources()));
+    CHECK(push() == first);
 }
 
 TEST_CASE("a sleeping boss takes nothing, and awake takes less the more are in the game",

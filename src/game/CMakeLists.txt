@@ -296,6 +296,7 @@ add_library(game STATIC
     critters/CombatantParts.cpp
     critters/CombatantNodes.cpp
     critters/CombatantGaze.cpp
+    critters/MoveNodeTrail.cpp
     critters/MoveDefinition.cpp
     critters/CombatantAssets.cpp
     critters/CombatantMoves.cpp

@@ -26,6 +26,7 @@
 #include "game/critters/CritterArea.h"
 #include "game/critters/CritterPatrol.h"
 #include "game/critters/CritterPressure.h"
+#include "game/critters/MoveNodeTrail.h"
 #include "game/enemies/Enemies.h"
 #include "game/level/CombatantObstacle.h"
 #include "game/level/HazardSurfaces.h"
@@ -392,7 +393,8 @@ private:
             }
         };
         std::vector<Attachment> attachments;
-        CombatantGaze gaze; ///< the turn of its head and eyes to its target
+        CombatantGaze gaze;     ///< the turn of its head and eyes to its target
+        MoveNodeTrail moveNode; ///< where the node its move strikes with went
         bool equalLocal(const Actor& other) const;
     };
 
@@ -536,6 +538,9 @@ private:
     static Mat4 partTransform(const Actor& critter, std::string_view node);
     static Mat4 attachmentTransform(const Actor& critter, std::string_view node);
     static Mat4 modelTransform(const Actor& critter);
+    /** Notes where the node `move` strikes with, else the model's root, stands `seconds` on,
+     * as CritterMoveSetup does each native frame (0x8003B1CC). */
+    static void noteMoveNode(Actor& critter, const MoveDefinition& move, f32 seconds);
     void carry(Actor& critter, f32 seconds, const MoveDefinition* move,
                std::span<const EnemyView> players, std::span<const Combatant> peers);
     /** Integrates translation, returning whether a player stopped the step. */

@@ -139,6 +139,28 @@ TEST_CASE("native critter resource identity includes how its parts are placed",
     CHECK(parentIdentity != nodeIdentity);
 }
 
+TEST_CASE("native critter resource identity includes how its blows push",
+          "[native-digest][native-state-resources][blow-push]") {
+    formats::CritterFile source;
+    source.descriptors.resize(1);
+    source.types.resize(1);
+    source.types[0].moveCount = 1;
+    source.moves.resize(1);
+    CritterRules rules;
+    const auto swing = CritterData::fromDecoded("TEST", source, 0, rules);
+    rules.flatBlowPush = true;
+    const auto flat = CritterData::fromDecoded("TEST", source, 0, rules);
+    NativeStateResources first;
+    NativeStateResources second;
+    REQUIRE(first.registerCritter(swing, "native/TEST", 0));
+    REQUIRE(second.registerCritter(flat, "native/TEST", 0));
+    const auto swingIdentity = resourceHash(first, &swing);
+    const auto flatIdentity = resourceHash(second, &flat);
+    REQUIRE(swingIdentity);
+    REQUIRE(flatIdentity);
+    CHECK(swingIdentity != flatIdentity);
+}
+
 TEST_CASE("native builtin white textures identify particle fallbacks without renderer writes",
           "[native-digest][native-state-resources][native-builtin-texture]") {
     const test::FakeRenderDevice first{};

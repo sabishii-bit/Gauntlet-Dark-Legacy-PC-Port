@@ -2,6 +2,7 @@
 #include <array>
 #include <chrono>
 #include <cstddef>
+#include <filesystem>
 #include <iostream>
 #include <memory>
 #include <string_view>
@@ -10,11 +11,13 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
+#include "engine/io/File.h"
 #include "engine/io/NativeStateDigest.h"
 
 #include "FakeRenderDevice.h"
 #include "NativeStateSupport.h"
 #include "TestSupport.h"
+#include "fixtures/NativeModelFixture.h"
 #include "game/bosses/BossDefinition.h"
 #include "game/critters/Combatant.h"
 #include "game/critters/Gargoyle.h"
@@ -351,6 +354,74 @@ TEST_CASE("native combatant equality observes hidden inactive values",
         actor.setArenaTargets(
             std::array{CombatArenaTarget{2, Mat4{1}, false}, CombatArenaTarget{5, Mat4{1}, true}});
     });
+}
+
+/** A general of one node and one move, standing ready, without game data or a head to turn. */
+std::filesystem::path loneGeneralAssets() {
+    const auto root = test::scratchDirectory("combatant-local-rewind-general");
+    std::filesystem::create_directories(root / "critter");
+    auto archive = root / "MONSTERS" / General::definition().name;
+    if (General::definition().realmCostume) {
+        archive /= "LEVELG";
+    }
+    std::filesystem::create_directories(archive / "models");
+    std::filesystem::create_directories(archive / "textures");
+    writeTextFile(archive / "models/body.obj",
+                  "v 0 0 0\nv 1 0 0\nv 0 1 0\nvn 0 0 1\nusemtl tex0\nf 1//1 2//1 3//1\n");
+    writeTextFile(archive / "objects.json", R"({"objects":[
+      {"index":0,"name":"BODY","file":"models/body.obj","meshTriangles":1}]})");
+    writeFile(archive / "textures/skin.png", test::kTinyPng);
+    writeTextFile(archive / "textures.json", R"({"bitmaps":[
+      {"index":0,"name":"SKIN","file":"textures/skin.png","width":2,"height":2,"flags":0}]})");
+    test::convertModelFixture(archive);
+    writeTextFile(archive / "animations.json", R"({"trees":[{"name":"BODY",
+      "nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
+      "sequences":[{"name":"READY","frames":30}]}]})");
+    writeTextFile(root / "critter/GENERAL.json", R"({
+      "descriptors":[{"prefix":"BODY","name":"GENERAL","type":8}],
+      "types":[{"moveCount":1,"maxHealth":100,"radius":1}],
+      "moves":[{"name":"READY","anim":"READY","type":32}]})");
+    return root;
+}
+
+TEST_CASE("native combatant equality observes where its move's node has been",
+          "[local-rewind][combatant-local-rewind][native-equality][blow-push]") {
+    test::FakeRenderDevice device;
+    CombatantAssets stock;
+    REQUIRE(stock.load(device, loneGeneralAssets(), General::definition(), 'G'));
+    Combatant actor;
+    REQUIRE(actor.spawn(stock, 0, {}, 0, nullptr, {}, 'G'));
+    NativeStateResources resources;
+    REQUIRE(resources.registerCombatantAssets(stock, "combatant-local-rewind"));
+    Combatant::LocalSnapshot spawned;
+    REQUIRE(actor.saveLocal(spawned));
+    // An update of no time just after the spawn notes where the move's node stands and changes
+    // nothing else, so the two histories differ in the node's trail alone until the sample it
+    // took is older than the one measured from.
+    const auto after = [&](bool noted, s32 ticks) {
+        REQUIRE(actor.restoreLocal(spawned));
+        if (noted) {
+            actor.update(1, 0.0f, {});
+        }
+        for (s32 tick = 0; tick < ticks; ++tick) {
+            actor.update(1, kStep, {});
+        }
+        Combatant::LocalSnapshot state;
+        REQUIRE(actor.saveLocal(state));
+        return state;
+    };
+    const auto plain = after(false, 1);
+    const auto noted = after(true, 1);
+    CHECK(actor.equalLocal(plain, after(false, 1)));
+    CHECK_FALSE(actor.equalLocal(plain, noted));
+    CHECK_FALSE(actor.equalLocal(noted, plain));
+    CHECK(test::savedDigest(actor, plain, resources.resources()) !=
+          test::savedDigest(actor, noted, resources.resources()));
+    const auto later = after(false, 3);
+    const auto notedLater = after(true, 3);
+    CHECK(actor.equalLocal(later, notedLater));
+    CHECK(test::savedDigest(actor, later, resources.resources()) ==
+          test::savedDigest(actor, notedLater, resources.resources()));
 }
 
 TEST_CASE("native combatant equality retains a cleared slot's next incarnation",

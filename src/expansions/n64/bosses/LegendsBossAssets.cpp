@@ -356,7 +356,10 @@ std::unique_ptr<CombatantAssets> loadLegendsBossAssets(RenderDevice& device,
                        .restoreCaptureSupport = true,
                        // How Boss.bin places hit nodes is unread, so part offsets stay
                        // in their nodes' frames.
-                       .nodeFramePartOffsets = true};
+                       .nodeFramePartOffsets = true,
+                       // Boss.bin's blows (e0887154, e0888598) are unchecked against GDL's
+                       // push, so they push straight out.
+                       .flatBlowPush = true};
     auto data = CritterData::fromDecoded(family.name, decoded, 0, rules);
     std::vector<CritterData> children;
     std::set<s32> visited{0};

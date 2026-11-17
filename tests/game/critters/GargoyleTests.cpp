@@ -9,6 +9,7 @@
 
 #include "engine/core/Types.h"
 #include "engine/io/File.h"
+#include "engine/math/ApproximateLength.h"
 #include "engine/world/WorldCollision.h"
 
 #include "FakeRenderDevice.h"
@@ -101,6 +102,46 @@ TEST_CASE("a strong hit drives an advancing native gargoyle back without inventi
     Combatant::LocalSnapshot replayed;
     REQUIRE(actor.saveLocal(replayed));
     CHECK(actor.equalLocal(after, replayed));
+}
+
+TEST_CASE("a gargoyle's close bite pushes a player in front of its origin back toward it",
+          "[game][enemies][gargoyle][blow-push][assets]") {
+    const auto* form = GENERATE("GAR_EAGL", "GAR_LION");
+    CAPTURE(form);
+    const auto root = test::assetOrSkip("CRITTER/GAR_EAGL.WAD").parent_path().parent_path();
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, Gargoyle::definition(form), 'B'));
+    const auto bite = assets.data.moveNamed("BITECLOSE");
+    REQUIRE(bite.has_value());
+    const MoveDefinition& move = assets.data.moves()[*bite];
+    // These forms lack the torso it names, so it strikes from the body's origin, five ahead of
+    // its feet and three up, and the node it pushes along is the model's own still root.
+    REQUIRE_FALSE(assets.tree->findNode(move.colnode, kCombatantNodeNameLength).has_value());
+    REQUIRE(assets.data.originOffset() == Vec3{0, 3, 5});
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, Vec3{0}, 0, nullptr, {}, 'B'));
+    // Four ahead of its feet: between them and its origin, within the bite's reach.
+    EnemyView player = playerAt({0, 0, 4});
+    player.radius = 0.75f;
+    player.collisionRadius = 1.5f;
+    const std::array players{player};
+    Combatant::MovePoint point;
+    point.frame = static_cast<f32>(move.frameStart - 2);
+    point.target = 0;
+    REQUIRE(actor.setMove(*bite, point));
+    std::vector<CombatBlow> blows;
+    for (s32 update = 0; update < 8 && blows.empty(); ++update) {
+        actor.update(kTicks, kStep, players);
+        blows = actor.takeBlows();
+    }
+    REQUIRE(blows.size() == 1);
+    REQUIRE(actor.position() == Vec3{0});
+    REQUIRE(actor.yaw() == 0.0f);
+    // Twice the lifted way from its origin, where CritterNodePlayerCollide measures it from,
+    // which points back at its feet: the player is pushed toward the gargoyle, not away.
+    CHECK(glm::distance(blows[0].direction, 2.0f * approximateUnit(Vec3{0, 1, -1})) < 1e-4f);
+    CHECK(blows[0].direction.z < -1.0f);
 }
 
 TEST_CASE("gargoyle death skins follow the death cue and the sack waits for the final pose",

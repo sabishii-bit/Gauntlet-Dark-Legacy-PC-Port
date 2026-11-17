@@ -172,7 +172,7 @@ void Combatant::appendSimulationDigest(NativeStateDigest& digest, const Simulati
                  scale, shrink, frozenTicks, blindTicks, curbSeconds, held, roarWanted, moveEffect,
                  moveDone, soundsGiven, arenaCollected, shotFrame, attackTarget, stepTarget,
                  patrolAim, grabbed, grabMove, grabNode, grabOffset, player, pose, smooth,
-                 presentation, attachments, gaze] = actor;
+                 presentation, attachments, gaze, moveNode] = actor;
     if (parent != expectedParent ||
         std::ranges::any_of(assets, [](const auto& asset) { return asset.expired(); })) {
         digest.invalidate();
@@ -195,7 +195,7 @@ void Combatant::appendSimulationDigest(NativeStateDigest& digest, const Simulati
                   blindTicks, curbSeconds, held, roarWanted, moveEffect, moveDone, soundsGiven,
                   arenaCollected, shotFrame, attackTarget, stepTarget, patrolAim, grabbed, grabMove,
                   grabNode, grabOffset, player, pose, smooth, presentation, attachments, gaze,
-                  incarnation, childCount, id);
+                  moveNode, incarnation, childCount, id);
     digest.resource(collision);
     digest.resource(hazards);
     digest.values(scales, realm, fullHarm, pressure, arenaRandom, cues, grabs, spews, shots,
@@ -257,7 +257,7 @@ bool Combatant::Actor::equalLocal(const Actor& other) const {
     const auto moves = [](const Actor& a) {
         return std::tie(a.move, a.moveTarget, a.pattern, a.finishedSeconds, a.age, a.moveTimes,
                         a.patternTimes, a.patternStep, a.struckThisMove, a.areas, a.arenaAnchors,
-                        a.arenaTargets, a.lastArenaTarget);
+                        a.arenaTargets, a.lastArenaTarget, a.moveNode);
     };
     const auto reactions = [](const Actor& a) {
         return std::tie(a.hurtPending, a.hurtFlags, a.hurtDirection, a.roarOwed, a.sinceHurt,
@@ -483,6 +483,21 @@ bool Combatant::holdRunsOut(const Actor& critter, f32 seconds) {
     return hold > 0.0f && critter.finishedSeconds + seconds >= hold;
 }
 
+void Combatant::noteMoveNode(Actor& critter, const MoveDefinition& move, f32 seconds) {
+    // Without its node a move measures the model's root, standing for the root object the
+    // original falls back to (CritterGetNode).
+    Vec3 local{0.0f};
+    if (!move.colnode.empty()) {
+        if (const auto index =
+                critter.stock->tree->findNode(move.colnode, kCombatantNodeNameLength);
+            index.has_value() && *index < critter.pose.matrices().size()) {
+            local = Vec3{critter.pose.matrices()[*index][3]};
+        }
+    }
+    critter.moveNode.step(seconds, Vec3{attachmentTransform(critter, move.colnode)[3]}, local,
+                          modelTransform(critter), critter.parent != nullptr);
+}
+
 bool Combatant::deathPlayed() const {
     const Actor& critter = m_sim.actor;
     const MoveDefinition* move =
@@ -627,6 +642,12 @@ void Combatant::updateActor(s32 ticks, f32 seconds, std::span<const EnemyView> p
         critter.pose.evaluate(*critter.stock->tree, critter.player.sequence(),
                               critter.player.frame());
         inheritBodyPose();
+        // After the animation and before the strikes, the step and the look, as CritterGolemAI
+        // and CritterBossAI set the move up (0x80039938-0x80039A44); Stop Time skips it unless
+        // the fighter is dying (critter.c 4565).
+        if (!stopped) {
+            noteMoveNode(critter, *move, seconds);
+        }
         if (critter.parent == nullptr && holdsDeath(critter, move)) {
             // A boss fades out over the last of its death's hold (MBTreeSetAlpha at 0x8003a13c)
             // and goes the update it runs out (CritterDelInst at 0x8003a0c4), returning before

@@ -611,6 +611,7 @@ add_executable(tests
     game/bosses/BossLocalRewindTests.cpp
     game/bosses/ChimeraTests.cpp
     game/critters/CombatantGazeTests.cpp
+    game/critters/MoveNodeTrailTests.cpp
     game/critters/CombatantGrabsTests.cpp
     game/critters/CombatantNodesTests.cpp
     game/camera/CameraShakeTests.cpp

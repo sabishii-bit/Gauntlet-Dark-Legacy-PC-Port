@@ -4959,7 +4959,8 @@ TEST_CASE("temporary Pojo can exchange real golem blows then retreat and reappro
     CHECK(critters.healthOf(*golem) < initialGolemHealth);
     CHECK(player.actor.save().health() < save.health());
     const f32 beforeRetreat = glm::distance(player.actor.position(), critters.positionOf(*golem));
-    for (s32 tick = 0; tick < 120; ++tick) {
+    // Five seconds: the duel ends under the golem's stomp, which floors the jester for one.
+    for (s32 tick = 0; tick < 150; ++tick) {
         step(false, -1);
     }
     CHECK(glm::distance(player.actor.position(), critters.positionOf(*golem)) > beforeRetreat + 5);

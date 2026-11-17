@@ -6,6 +6,7 @@
 #include <set>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
@@ -16,6 +17,7 @@
 #include "engine/assets/WorldLayout.h"
 #include "engine/core/Types.h"
 #include "engine/io/File.h"
+#include "engine/math/ApproximateLength.h"
 #include "engine/world/WorldCollision.h"
 
 #include "FakeRenderDevice.h"
@@ -67,6 +69,28 @@ CollisionTriangle triangle(const Vec3& a, const Vec3& b, const Vec3& c, const Ve
     out.normal = normal;
     out.object = 0;
     return out;
+}
+
+/** What was noted of a fighter after each update, a native frame apart: its model, and the
+ * world origin of the node its move strikes with. */
+using NodeNotes = std::vector<std::pair<Mat4, Vec3>>;
+
+/** Where CritterMoveSetup noted the node `back` updates before the last: as that update left
+ * it, but under the placement the one before it left, since it notes before the step. */
+Vec3 notedNode(const NodeNotes& noted, usize back) {
+    const auto& [model, node] = noted[noted.size() - 1 - back];
+    const Mat4& placed = noted[noted.size() - 2 - back].first;
+    return Vec3{placed * glm::inverse(model) * Vec4{node, 1.0f}};
+}
+
+/** The push CritterNodePlayerCollide gives a player whose feet stand at `feet` from the last
+ * update's blow: twice the sum of the node's travel over that native frame and the way from the
+ * body's origin, given a height of a unit, each by its fast length. */
+Vec3 nodeBlowPush(const NodeNotes& noted, const Vec3& originOffset, const Vec3& feet) {
+    REQUIRE(noted.size() >= 3);
+    const Vec3 body{noted[noted.size() - 2].first * Vec4{originOffset, 1.0f}};
+    return 2.0f * (approximateUnit(notedNode(noted, 0) - notedNode(noted, 1)) +
+                   approximateUnit(Vec3{feet.x - body.x, 1.0f, feet.z - body.z}));
 }
 
 /** A flat floor sixty across at y 0. */
@@ -509,12 +533,19 @@ TEST_CASE("a golem walks up to the player it sees, strikes when in reach, and is
     REQUIRE(critters.positionOf(*id).z < from.z - 3.0f);
     REQUIRE(critters.positionOf(*id).z > from.z - 6.0f);
     REQUIRE(std::abs(critters.yawOf(*id)) > 3.0f); // facing -z
-    // Within seven it attacks, and the blows land on the player.
+    // Within seven it attacks, and the blows land on the player. Each update is a native frame;
+    // the node its move strikes with is noted after each, and its model with it.
     std::vector<CombatBlow> blows;
     bool attacked = false;
+    NodeNotes noted;
     for (s32 i = 0; i < 1200 && blows.empty(); ++i) {
         critters.update(kTicks, kStep, party);
         attacked = attacked || critters.moveOf(*id).starts_with("ATTACK");
+        const auto move = critters.dataOf(*id)->moveNamed(critters.moveOf(*id));
+        REQUIRE(move.has_value());
+        const auto& colnode = critters.dataOf(*id)->moves()[*move].colnode;
+        noted.emplace_back(*critters.nodeTransformOf(*id, {}),
+                           Vec3{(*critters.nodeTransformOf(*id, colnode))[3]});
         auto taken = critters.takeBlows();
         blows.insert(blows.end(), taken.begin(), taken.end());
     }
@@ -523,7 +554,19 @@ TEST_CASE("a golem walks up to the player it sees, strikes when in reach, and is
     REQUIRE(blows[0].player == 0);
     REQUIRE(blows[0].critter == *id);
     REQUIRE(blows[0].damage >= 10.0f);
-    REQUIRE(blows[0].direction.z < 0.0f);
+    if (blows[0].area) {
+        // The stomp's ring pushes a quarter straight out (ProcessEffects).
+        CHECK(glm::length(blows[0].direction) == Approx(0.25f));
+        CHECK(blows[0].direction.y == 0.0f);
+    } else {
+        const Vec3 expected =
+            nodeBlowPush(noted, critters.dataOf(*id)->originOffset(), party[0].position);
+        CAPTURE(critters.moveOf(*id), blows[0].direction.x, blows[0].direction.z, expected.x,
+                expected.z);
+        CHECK(glm::distance(blows[0].direction, expected) < 1e-3f);
+        CHECK(std::abs(glm::length(Vec2{blows[0].direction.x, blows[0].direction.z}) - 1.0f) >
+              0.05f);
+    }
     REQUIRE(critters.positionOf(*id).z > -25.0f + 4.0f); // never onto the player
     // Its walk sounded its steps as it came (the fields' own, by the realm's letter), and
     // its attack its swish, or its stomp's ring where the heel came down; each once a move.
@@ -656,6 +699,62 @@ TEST_CASE("a golem walks up to the player it sees, strikes when in reach, and is
     }
     REQUIRE(critters.count() == 0);
     REQUIRE(gone > 30);
+}
+
+TEST_CASE("a golem's four blows push along the swing of the part that strikes",
+          "[game][enemies][blow-push][assets]") {
+    const std::filesystem::path root = unpackedRoot();
+    test::assetOrSkip("MONSTERS/GOLEM/LEVELG/ANIM.PS2");
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, Golem::definition(), 'G'));
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+    Combatant::LocalSnapshot initial;
+    REQUIRE(actor.saveLocal(initial));
+    for (const std::string_view name : {"ATTACK1L", "ATTACK1R", "ATTACK2", "ATTACK3"}) {
+        CAPTURE(name);
+        const auto index = assets.data.moveNamed(name);
+        REQUIRE(index.has_value());
+        const MoveDefinition& move = assets.data.moves()[*index];
+        const AttackDefinition* damage = assets.data.damage(move.damage0);
+        REQUIRE(damage != nullptr);
+        REQUIRE(damage->type == AttackDefinition::kBlow);
+        // The player stands where the part strikes from as the window opens, level with it.
+        Combatant::MovePoint point;
+        point.frame = static_cast<f32>(move.frameStart);
+        point.target = 0;
+        REQUIRE(actor.restoreLocal(initial));
+        REQUIRE(actor.setMove(*index, point));
+        const Vec3 centre{*actor.nodeTransform(move.colnode) * Vec4{damage->offset, 1.0f}};
+        EnemyView player = playerAt({centre.x, centre.y - 3.0f, centre.z});
+        player.radius = 0.75f;
+        player.collisionRadius = 1.5f;
+        const std::array players{player};
+        // From two frames before the window, a native frame an update.
+        point.frame = static_cast<f32>(move.frameStart - 2);
+        REQUIRE(actor.restoreLocal(initial));
+        REQUIRE(actor.setMove(*index, point));
+        NodeNotes noted{{*actor.nodeTransform({}), Vec3{0.0f}}};
+        std::vector<CombatBlow> blows;
+        for (s32 update = 0; update < 8 && blows.empty(); ++update) {
+            actor.update(kTicks, kStep, players);
+            noted.emplace_back(*actor.nodeTransform({}),
+                               Vec3{(*actor.nodeTransform(move.colnode))[3]});
+            blows = actor.takeBlows();
+        }
+        REQUIRE(blows.size() == 1);
+        REQUIRE(actor.moveName() == name);
+        REQUIRE(actor.animation().frame() == static_cast<f32>(move.frameStart));
+        const Vec3 push = blows[0].direction;
+        const f32 across = glm::length(Vec2{push.x, push.z});
+        CAPTURE(push.x, push.y, push.z, across);
+        CHECK(glm::distance(
+                  push, nodeBlowPush(noted, assets.data.originOffset(), player.position)) < 1e-3f);
+        // Never the unit straight out from where it stands that every blow used to push.
+        const Vec3 out = glm::normalize(Vec3{player.position.x, 0.0f, player.position.z});
+        CHECK(glm::distance(push, out) > 0.05f);
+    }
 }
 
 TEST_CASE("a general comes with the realm's costume and is found by missiles and sweeps",
