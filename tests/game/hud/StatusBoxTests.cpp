@@ -1,8 +1,10 @@
 #include <array>
 #include <filesystem>
+#include <format>
 #include <limits>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -14,6 +16,7 @@
 #include "engine/ui/Canvas.h"
 
 #include "FakeRenderDevice.h"
+#include "RecordedQuads.h"
 #include "TestSupport.h"
 #include "game/characters/ClassData.h"
 #include "game/combat/ArmorFlags.h"
@@ -183,7 +186,42 @@ TEST_CASE("the runestones held line the box, the bosses' keys a while as a level
     canvas.end();
     REQUIRE(device.draws.size() == 1);
     CHECK(test::maxCorner(device.draws[0]) == Vec2{128.0f + 24.0f, 356.0f});
+
+    // The eight keys take the GameCube's key table, first to eighth (0x801205F8, player.c 5142),
+    // whose fifth to eighth are green, red, yellow and blue. The canvas batches the fourth and
+    // fifth, both green, into one draw, so the keys are read quad by quad.
+    constexpr std::array<std::string_view, static_cast<usize>(StatusBoxPainter::kKeyCount)>
+        kGameCubeKeys{"BLU", "RED", "YEL", "GRE", "GRE", "RED", "YEL", "BLU"};
+    constexpr u16 kEveryKey = 0xFF;
+    const auto drawKeys = [&](StatusBoxPainter& boxes) {
+        device.draws.clear();
+        canvas.begin(device, Mat4{1.0f});
+        boxes.drawRelics(canvas, 1, 0, kEveryKey);
+        canvas.end();
+        return test::quadsOf(device);
+    };
+    const std::vector<test::Quad> drawn = drawKeys(painter);
+    REQUIRE(drawn.size() == kGameCubeKeys.size());
+    for (usize key = 0; key < kGameCubeKeys.size(); ++key) {
+        CAPTURE(key);
+        const Texture* picture =
+            painter.staticTexture(std::format("SM_KEY_{}", kGameCubeKeys[key]));
+        REQUIRE(picture != nullptr);
+        CHECK(drawn[key].texture == picture);
+        CHECK(drawn[key].area == Rect{128.0f + 12.0f * static_cast<f32>(key + 1), 300.0f,
+                                      static_cast<f32>(picture->width()),
+                                      static_cast<f32>(picture->height())});
+    }
     painter.release();
+
+    // Warming the boxes takes every key's picture, so showing the keys uploads nothing more.
+    StatusBoxPainter warmed;
+    REQUIRE(warmed.load(device, root, nullptr));
+    warmed.preloadStatus();
+    const u32 preloaded = device.texturesCreated;
+    CHECK(drawKeys(warmed).size() == kGameCubeKeys.size());
+    CHECK(device.texturesCreated == preloaded);
+    warmed.release();
 }
 
 TEST_CASE("the boxes lend the textures they draw with", "[game][screens][relic-strip][assets]") {

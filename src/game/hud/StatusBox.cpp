@@ -307,8 +307,7 @@ void StatusBoxPainter::drawRelics(Canvas& canvas, s32 seat, u16 runes, std::opti
     }
     for (s32 key = 0; key < kKeyCount; ++key) {
         if ((*keys & (1U << static_cast<u32>(key))) != 0) {
-            place(std::format("SM_KEY_{}",
-                              kRelicColours[static_cast<usize>(key) % kRelicColours.size()]),
+            place(std::format("SM_KEY_{}", kKeyColours[static_cast<usize>(key)]),
                   kKeyX + key * kKeyStep, kKeyY);
         }
     }

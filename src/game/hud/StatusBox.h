@@ -94,7 +94,7 @@ public:
     static constexpr s32 kKeyX = 12;
     static constexpr s32 kKeyStep = 12;
     static constexpr s32 kKeyY = 300;
-    /** The colours the runes run through, three each, and the keys, blue to green twice. */
+    /** The colours the runes run through, three each, and those of the keys' four pictures. */
     static constexpr std::array<std::string_view, 4> kRelicColours{"BLU", "RED", "YEL", "GRE"};
     /** The bosses' keys' colours, first to eighth, as the GameCube's key table holds them
      * (0x801205F8, player.c 5142). */
