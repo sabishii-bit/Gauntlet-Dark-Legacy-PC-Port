@@ -490,7 +490,7 @@ fn program_row(overlay: &Overlay) -> ProgramRow {
 }
 
 /// The manifest's place in the tree, at its top.
-fn manifest_path() -> RelPath {
+pub(crate) fn manifest_path() -> RelPath {
     RelPath::parse(N64_MANIFEST, &DISC_NAMES).expect("the manifest's name is one a tree may hold")
 }
 

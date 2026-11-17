@@ -673,17 +673,17 @@ fn disc_row(file: &DiscFile, sha256: Sha256Digest) -> DiscFileRow {
 
 /// The extractor's own name `name`, of a file or a folder at the tree's top, as a path of the
 /// tree.
-fn own_path(name: &str) -> RelPath {
+pub(crate) fn own_path(name: &str) -> RelPath {
     RelPath::parse(name, &DISC_NAMES).expect("the extractor's own names are names a tree may hold")
 }
 
 /// Where the disc's file at `path` lies in the tree: under [`DISC_FOLDER`].
-fn disc_path(path: &RelPath) -> RelPath {
+pub(crate) fn disc_path(path: &RelPath) -> RelPath {
     own_path(DISC_FOLDER).join(path)
 }
 
 /// Where the native file at `path` lies in the tree: under [`NATIVE_FOLDER`].
-fn native_path(path: &RelPath) -> RelPath {
+pub(crate) fn native_path(path: &RelPath) -> RelPath {
     own_path(NATIVE_FOLDER).join(path)
 }
 

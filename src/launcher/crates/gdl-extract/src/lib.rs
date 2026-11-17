@@ -1,7 +1,7 @@
 //! The Legends expansions' trees: extraction from the N64 and Dreamcast dumps, byte for byte as
 //! the Python extractors write them, held as the scripts hold a dump or as an installation does,
 //! the fingerprints that identify a dump's files, and the check of an extracted tree against its
-//! manifest.
+//! manifests and those fingerprints.
 #![forbid(unsafe_code)]
 
 mod dreamcast;
@@ -13,9 +13,10 @@ mod strictness;
 mod tree;
 #[cfg(test)]
 mod vectors;
+mod verify;
 
 use gdl_files::{BLOCK_LEN, PhaseId};
-use gdl_media::{OverlayTable, ROMDISK_LIMITS, RomdiskLimits, US_OVERLAYS};
+use gdl_media::{Console, OverlayTable, ROMDISK_LIMITS, RomdiskLimits, US_OVERLAYS};
 
 pub use dreamcast::{
     CheckedDisc, DISC_FOLDER, DISC_FORMAT, DISC_MANIFEST, DISC_SCOPE, DISK_ROM, DiscFileRow,
@@ -34,6 +35,45 @@ pub use n64::{
 };
 pub use pyjson::{INDENT, JsonValue, render};
 pub use strictness::{Strictness, Trust};
+pub use verify::{Damage, DamageKind, VerifyError, VerifyLevel, VerifyReport, verify_tree};
+
+/// An expansion the launcher installs from the player's own dump, named as its folder in an
+/// installation is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Expansion {
+    /// The N64 Legends expansion, extracted from the cartridge's ROM.
+    N64,
+    /// The Dreamcast Legends expansion, extracted from the GD-ROM.
+    Dreamcast,
+}
+
+impl Expansion {
+    /// Every expansion.
+    pub const ALL: [Expansion; 2] = [Expansion::N64, Expansion::Dreamcast];
+
+    /// The expansion `word` names exactly, as [`as_str`](Expansion::as_str) gives its name.
+    pub fn parse(word: &str) -> Option<Expansion> {
+        Expansion::ALL
+            .into_iter()
+            .find(|expansion| expansion.as_str() == word)
+    }
+
+    /// The expansion's stable machine name, which is also its folder's name in an installation.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Expansion::N64 => "n64",
+            Expansion::Dreamcast => "dreamcast",
+        }
+    }
+
+    /// The console whose dump the expansion is extracted from.
+    pub fn console(self) -> Console {
+        match self {
+            Expansion::N64 => Console::Nintendo64,
+            Expansion::Dreamcast => Console::Dreamcast,
+        }
+    }
+}
 
 /// The phase of an N64 extraction that reads the ROM's files and decides on them, before anything
 /// is written.
@@ -75,9 +115,33 @@ impl ExtractSettings {
 #[cfg(test)]
 mod tests {
     use gdl_files::BLOCK_LEN;
-    use gdl_media::{ROMDISK_LIMITS, US_OVERLAYS};
+    use gdl_media::{Console, ROMDISK_LIMITS, US_OVERLAYS};
 
-    use super::{CHECK, ExtractSettings, READ_CARTRIDGE, READ_DISC, UNPACK};
+    use super::{CHECK, Expansion, ExtractSettings, READ_CARTRIDGE, READ_DISC, UNPACK};
+
+    #[test]
+    fn expansions_are_named_as_their_folders() {
+        assert_eq!(Expansion::ALL.map(Expansion::as_str), ["n64", "dreamcast"]);
+        for expansion in Expansion::ALL {
+            assert_eq!(Expansion::parse(expansion.as_str()), Some(expansion));
+            // The console's machine name is the expansion's.
+            assert_eq!(expansion.console().as_str(), expansion.as_str());
+        }
+        assert_eq!(Expansion::N64.console(), Console::Nintendo64);
+        assert_eq!(Expansion::Dreamcast.console(), Console::Dreamcast);
+        // Only the exact names are read.
+        for word in [
+            "",
+            "N64",
+            "Dreamcast",
+            "n64 ",
+            " dreamcast",
+            "gamecube",
+            "dc",
+        ] {
+            assert_eq!(Expansion::parse(word), None, "{word:?}");
+        }
+    }
 
     #[test]
     fn a_players_extraction_is_held_to_the_extractors_bounds() {
