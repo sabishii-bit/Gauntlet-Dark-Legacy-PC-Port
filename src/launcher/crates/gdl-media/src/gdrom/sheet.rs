@@ -1,13 +1,13 @@
-//! The sheet that lists a dump's track files, read as the Dreamcast extractor reads its cue sheet:
-//! a small file of UTF-8 text beside the files it names, a byte order mark before its text
-//! dropped, that gives each track's number, its file, what its sectors hold, and how many of its
-//! file's sectors come before its first.
+//! The sheet that lists a dump's track files: a small file of UTF-8 text beside the files it
+//! names, a byte order mark before its text dropped, that gives each track's number, its file,
+//! what its sectors hold and where its first sector lies. It is a cue sheet, read as the Dreamcast
+//! extractor reads one, or a GDI, which begins with the count of its tracks.
 
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-use super::cue;
+use super::{cue, gdi, is_number, lines, strip};
 use crate::{DiscRule, MediaError};
 
 /// The most bytes a sheet may hold: far more than any disc's list of tracks needs, so that a large
@@ -22,6 +22,9 @@ const BYTE_ORDER_MARK: &str = "\u{feff}";
 pub enum SheetKind {
     /// A cue sheet, which names each track's file before the track.
     Cue,
+    /// A GDI, which gives the count of its tracks, then each track's number, the LBA of its first
+    /// sector, its type, the size of its sectors, its file and an offset, a line each.
+    Gdi,
 }
 
 /// What a track's sectors hold.
@@ -42,9 +45,12 @@ pub struct SheetTrack {
     pub file: String,
     /// What its sectors hold.
     pub mode: TrackMode,
-    /// How many sectors of its file come before its first: the frames of the time its INDEX 01
-    /// gives, a sector each.
+    /// How many sectors of its file come before its first: in a cue sheet, the frames of the time
+    /// its INDEX 01 gives, a sector each; a GDI's track starts at its file's first sector.
     pub index: u64,
+    /// The LBA a GDI gives the track's first sector, which that sector's own header must agree
+    /// with. A cue sheet gives none: its tracks are placed by their sectors' headers alone.
+    pub lba: Option<u32>,
 }
 
 /// A sheet as it was read.
@@ -80,10 +86,10 @@ pub fn read_sheet(path: &Path) -> Result<Sheet, MediaError> {
     })
 }
 
-/// The kind of sheet `bytes` hold and the tracks it lists, in its order, read as the Dreamcast
-/// extractor reads a cue sheet: one byte order mark at the start is dropped, the rest must be
-/// UTF-8 text, and its lines are read by the cue sheet's grammar. Refused by the first rule the
-/// text breaks.
+/// The kind of sheet `bytes` hold and the tracks it lists, in its order: one byte order mark at
+/// the start is dropped, and the rest must be UTF-8 text. A text whose first line is the count of
+/// tracks a GDI begins with is read by the GDI's grammar, and any other as the Dreamcast extractor
+/// reads a cue sheet. Refused by the first rule the text breaks.
 pub fn parse_sheet(bytes: &[u8]) -> Result<(SheetKind, Vec<SheetTrack>), MediaError> {
     let unmarked = bytes
         .strip_prefix(BYTE_ORDER_MARK.as_bytes())
@@ -94,7 +100,21 @@ pub fn parse_sheet(bytes: &[u8]) -> Result<(SheetKind, Vec<SheetTrack>), MediaEr
         let detail = format!("Sheet is not UTF-8 text from byte {at}");
         MediaError::disc(DiscRule::SheetText, detail)
     })?;
-    Ok((SheetKind::Cue, cue::read(text)?))
+    if begins_with_count(text) {
+        Ok((SheetKind::Gdi, gdi::read(text)?))
+    } else {
+        Ok((SheetKind::Cue, cue::read(text)?))
+    }
+}
+
+/// Whether the first line of `text` that is not empty once stripped, as the Dreamcast extractor
+/// ends and strips a cue sheet's lines, is a number in ASCII digits: the count of tracks a GDI
+/// begins with, and a line no cue sheet the extractor reads holds.
+fn begins_with_count(text: &str) -> bool {
+    lines(text)
+        .map(strip)
+        .find(|line| !line.is_empty())
+        .is_some_and(is_number)
 }
 
 /// What `sheet`, the file at `path`, holds: read into room for the `len` bytes its metadata gives,
@@ -128,10 +148,10 @@ mod tests {
     use std::path::Path;
 
     use gdl_fixtures::{DiscSet, Edc};
-    use serde_json::json;
+    use serde_json::{Value, json};
 
-    use super::{MAX_SHEET_LEN, SheetKind, parse_sheet, read_sheet, read_within_bound};
-    use crate::vectors::listed;
+    use super::{MAX_SHEET_LEN, SheetKind, TrackMode, parse_sheet, read_sheet, read_within_bound};
+    use crate::vectors::{dreamcast_vectors, listed, placed, text};
     use crate::{DiscRule, MediaError};
 
     /// A cue sheet of one raw data track, from its file's start.
@@ -164,34 +184,135 @@ mod tests {
             // pregap in its file.
             (
                 DiscSet::small(Edc::Zero),
+                SheetKind::Cue,
                 json!([
-                    [3, "track3.bin", "MODE1/2352", 0],
-                    [5, "track5.bin", "MODE1/2352", 225]
+                    [3, "track3.bin", "MODE1/2352", 0, null],
+                    [5, "track5.bin", "MODE1/2352", 225, null]
                 ]),
             ),
             // A byte order mark, CRLF line ends and indents, and an audio track in a file the set
             // leaves out, which reading the sheet does not look for.
             (
                 DiscSet::full(Edc::Zero),
+                SheetKind::Cue,
                 json!([
-                    [3, "track3.bin", "MODE1/2352", 0],
-                    [4, "track4.bin", "AUDIO", 150],
-                    [5, "track5.bin", "MODE1/2352", 225]
+                    [3, "track3.bin", "MODE1/2352", 0, null],
+                    [4, "track4.bin", "AUDIO", 150, null],
+                    [5, "track5.bin", "MODE1/2352", 225, null]
                 ]),
             ),
             (
                 DiscSet::one_file(b"HELLO.BIN;1", &[], Edc::Zero),
-                json!([[3, "track3.bin", "MODE1/2352", 0]]),
+                SheetKind::Cue,
+                json!([[3, "track3.bin", "MODE1/2352", 0, null]]),
+            ),
+            // The full set's sectors behind a GDI with CRLF line ends, each track from its file's
+            // first sector at the LBA the GDI gives, the audio track's file left out too.
+            (
+                DiscSet::full_gdi(Edc::Zero),
+                SheetKind::Gdi,
+                json!([
+                    [1, "track03.bin", "MODE1/2352", 0, 45000],
+                    [2, "track04.raw", "AUDIO", 0, 45050],
+                    [3, "track05.bin", "MODE1/2352", 0, 45100]
+                ]),
             ),
         ];
-        for (set, tracks) in sets {
+        for (set, kind, tracks) in sets {
             let dir = tempfile::tempdir().unwrap();
             let path = set.write(dir.path()).unwrap();
             let sheet = read_sheet(&path).unwrap();
-            assert_eq!(sheet.kind, SheetKind::Cue, "{}", set.sheet);
+            assert_eq!(sheet.kind, kind, "{}", set.sheet);
             assert_eq!(sheet.path, path);
-            assert_eq!(listed(&sheet.tracks), tracks, "{}", set.sheet);
+            assert_eq!(placed(&sheet.tracks), tracks, "{}", set.sheet);
         }
+    }
+
+    #[test]
+    fn the_gdi_set_lists_its_data_tracks_where_the_vectors_place_them() {
+        // The shared vectors give the GDI set's sheet and, for each data track, its file, where
+        // in the file it starts, and the LBA of its first sector.
+        let vectors = dreamcast_vectors();
+        let set = &vectors["sets"]["fullGdi"];
+        let built = DiscSet::full_gdi(Edc::Zero);
+        assert_eq!(built.sheet, text(&set["sheet"]));
+        let dir = tempfile::tempdir().unwrap();
+        let sheet = read_sheet(&built.write(dir.path()).unwrap()).unwrap();
+        assert_eq!(sheet.kind, SheetKind::Gdi);
+        let data: Vec<Value> = sheet
+            .tracks
+            .iter()
+            .filter(|track| track.mode == TrackMode::Mode1Raw)
+            .map(|track| json!([track.file, track.index, track.lba]))
+            .collect();
+        let expected: Vec<Value> = set["dataTracks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|track| json!([track[0], track[1], track[2]]))
+            .collect();
+        assert_eq!(data.len(), 2);
+        assert_eq!(data, expected);
+    }
+
+    #[test]
+    fn a_sheet_whose_first_line_is_a_count_is_a_gdi() {
+        let gdi = b"1\r\n1 45000 4 2352 t.bin 0\r\n";
+        let tracks = json!([[1, "t.bin", "MODE1/2352", 0, 45000]]);
+        // Whatever stands before the count that both grammars pass over: a byte order mark, empty
+        // lines, and spaces and tabs, at the count's ends too. Noughts may lead the count.
+        let sheets = [
+            gdi.to_vec(),
+            joined(&[MARK, gdi]),
+            b"\r\n\n \t\n 1 \t\r\n1 45000 4 2352 t.bin 0".to_vec(),
+            b"001\n1 45000 4 2352 t.bin 0\n".to_vec(),
+        ];
+        for bytes in sheets {
+            let (kind, read) = parse_sheet(&bytes).unwrap();
+            assert_eq!(kind, SheetKind::Gdi, "{bytes:?}");
+            assert_eq!(placed(&read), tracks, "{bytes:?}");
+        }
+        // A count that a GDI may not give still makes a GDI, which is refused by it: no track, or
+        // more than a disc numbers.
+        for count in ["0", "100"] {
+            let error = parse_sheet(format!("{count}\r\n").as_bytes()).unwrap_err();
+            assert_eq!(error.rule(), "gdiCount", "{count}");
+        }
+        // White space and line breaks a cue sheet's reader takes but a GDI's grammar does not, on
+        // the count's line or a line before it, make a first line that gives no count.
+        let kept = [
+            ("\u{3000}\n1\n1 45000 4 2352 t.bin 0\n", "\u{3000}"),
+            ("\x0c\n1\n1 45000 4 2352 t.bin 0\n", "\x0c"),
+            ("1\x1f\n1 45000 4 2352 t.bin 0\n", "1\x1f"),
+            (
+                "1\u{2028}1 45000 4 2352 t.bin 0\n",
+                "1\u{2028}1 45000 4 2352 t.bin 0",
+            ),
+        ];
+        for (sheet, first) in kept {
+            let error = parse_sheet(sheet.as_bytes()).unwrap_err();
+            assert_eq!(error.rule(), "gdiCount", "{sheet:?}");
+            let said = format!("Unsupported GDI track count: {first:?}");
+            assert_eq!(error.to_string(), said);
+        }
+
+        // Any other first line makes a cue sheet, none of whose lines is a number alone: a number
+        // with more on its line, signed, in another script's digits, or after a remark.
+        let cues = [
+            ("3 tracks\n", "3 tracks"),
+            ("+3\n", "+3"),
+            ("\u{663}\n", "\u{663}"),
+            ("REM GDI\n3\n", "3"),
+        ];
+        for (sheet, line) in cues {
+            let error = parse_sheet(sheet.as_bytes()).unwrap_err();
+            assert_eq!(error.rule(), "cueLine", "{sheet:?}");
+            assert_eq!(error.to_string(), format!("Unsupported CUE line: {line}"));
+        }
+        // And a sheet that begins with a cue sheet's command is read as a cue sheet.
+        let (kind, read) = parse_sheet(ONE_TRACK.as_bytes()).unwrap();
+        assert_eq!(kind, SheetKind::Cue);
+        assert_eq!(listed(&read), json!([[3, "t.bin", "MODE1/2352", 0]]));
     }
 
     #[test]

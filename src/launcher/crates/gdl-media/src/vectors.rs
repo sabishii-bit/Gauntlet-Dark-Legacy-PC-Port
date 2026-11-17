@@ -1,7 +1,7 @@
 //! The shared vectors as the readers' tests read them: the N64 and Dreamcast cases that the
 //! extractors' tests and the launcher's read alike, the manifests the N64 extractor wrote for its
 //! dumps, the names it was given those dumps under, and the tracks a sheet lists as the cases
-//! write them.
+//! write them, with the LBA a GDI gives each.
 
 use gdl_fixtures::unhex;
 use serde_json::{Value, json};
@@ -107,12 +107,26 @@ pub(crate) fn named(text: &str) -> SourceName {
 /// A sheet's tracks as the Dreamcast vectors list them: each one's number, file, mode as a cue
 /// sheet spells it, and index.
 pub(crate) fn listed(tracks: &[SheetTrack]) -> Value {
+    let rows = tracks
+        .iter()
+        .map(|track| json!([track.number, track.file, spelled(track.mode), track.index]));
+    Value::Array(rows.collect())
+}
+
+/// A sheet's tracks as [`listed`] gives them, each followed by the LBA the sheet gives its first
+/// sector, or null where it gives none.
+pub(crate) fn placed(tracks: &[SheetTrack]) -> Value {
     let rows = tracks.iter().map(|track| {
-        let mode = match track.mode {
-            TrackMode::Audio => "AUDIO",
-            TrackMode::Mode1Raw => "MODE1/2352",
-        };
-        json!([track.number, track.file, mode, track.index])
+        let mode = spelled(track.mode);
+        json!([track.number, track.file, mode, track.index, track.lba])
     });
     Value::Array(rows.collect())
+}
+
+/// A track's mode as a cue sheet spells it.
+fn spelled(mode: TrackMode) -> &'static str {
+    match mode {
+        TrackMode::Audio => "AUDIO",
+        TrackMode::Mode1Raw => "MODE1/2352",
+    }
 }

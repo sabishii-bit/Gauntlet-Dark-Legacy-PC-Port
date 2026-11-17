@@ -11,8 +11,8 @@ use std::collections::BTreeSet;
 use gdl_files::{TRACK_NAMES, check_component};
 
 use super::{
-    FRAMES_PER_SECOND, SECONDS_PER_MINUTE, SheetTrack, TrackMode, lines, long_start, strip,
-    unsafe_name,
+    FRAMES_PER_SECOND, SECONDS_PER_MINUTE, SheetTrack, TrackMode, is_number, lines, long_start,
+    strip, too_large, unsafe_name,
 };
 use crate::{DiscRule, MediaError};
 
@@ -244,6 +244,7 @@ impl<'a> CueReader<'a> {
             file: track.file.to_owned(),
             mode: track.mode,
             index,
+            lba: None,
         });
         self.open = None;
         Ok(())
@@ -320,11 +321,6 @@ fn index_fields(line: &str) -> Option<(&str, [&str; TIME_PARTS])> {
     whole.then_some((point, time))
 }
 
-/// Whether `text` is a number in ASCII digits: one or more of them, with no sign.
-fn is_number(text: &str) -> bool {
-    !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_digit())
-}
-
 /// The refusal of `line`, which the extractor does not read: the line after its words for one, or
 /// past [`MAX_QUOTED_CHARS`](super::MAX_QUOTED_CHARS) characters its length and its start, quoted.
 fn unsupported_line(line: &str) -> MediaError {
@@ -335,14 +331,6 @@ fn unsupported_line(line: &str) -> MediaError {
         None => format!("{UNSUPPORTED_LINE}: {line}"),
     };
     MediaError::disc(DiscRule::CueLine, detail)
-}
-
-/// The refusal of a number the reader cannot keep, `what` it is and the most it may be.
-fn too_large(what: &str, most: u64) -> MediaError {
-    MediaError::disc(
-        DiscRule::NumberTooLarge,
-        format!("{what} is larger than {most}"),
-    )
 }
 
 #[cfg(test)]

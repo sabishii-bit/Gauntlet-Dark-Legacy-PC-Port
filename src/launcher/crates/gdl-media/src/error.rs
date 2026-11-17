@@ -229,8 +229,8 @@ pub enum DiscRule {
     /// track was read from already, whatever the letter case it names the file in: each track
     /// must lie in a file of its own, so a dump that keeps the whole disc in one file is refused.
     TrackPerFile,
-    /// A cue sheet's track number is past 32 bits, or a number of a time, or the frames the time
-    /// comes to, past 64.
+    /// A cue sheet's track number is past 32 bits, a number of a time, or the frames the time
+    /// comes to, past 64, or a GDI's LBA past 32.
     NumberTooLarge,
     /// A cue sheet gives a track a mode other than audio and raw mode 1 data, as a dump of cooked
     /// or mode 2 sectors does.
@@ -244,6 +244,22 @@ pub enum DiscRule {
     IncompleteSheet,
     /// A cue sheet lists two tracks of one number.
     DuplicateTrack,
+    /// A GDI's first line is no count of tracks from 1 to 99, or the GDI lists another number of
+    /// tracks than that line gives.
+    GdiCount,
+    /// A GDI's track line holds other than six fields, leaves a quote open or closes one within a
+    /// field, or gives a field that should be a number in other than ASCII digits.
+    GdiLine,
+    /// A GDI's tracks are not numbered from 1 up, one at a time, in its order.
+    GdiTrackNumber,
+    /// A GDI gives a track a type other than 0, audio, and 4, data.
+    GdiTrackType,
+    /// A GDI gives a track sectors of other than 2352 bytes, as a dump of cooked 2048-byte
+    /// sectors does, whose sectors keep no header to place them by.
+    GdiSectorSize,
+    /// A GDI gives a track an offset other than 0, which the format's readers do not agree on
+    /// the meaning of.
+    GdiOffset,
 }
 
 impl DiscRule {
@@ -264,6 +280,12 @@ impl DiscRule {
             DiscRule::CueLine => "cueLine",
             DiscRule::IncompleteSheet => "incompleteSheet",
             DiscRule::DuplicateTrack => "duplicateTrack",
+            DiscRule::GdiCount => "gdiCount",
+            DiscRule::GdiLine => "gdiLine",
+            DiscRule::GdiTrackNumber => "gdiTrackNumber",
+            DiscRule::GdiTrackType => "gdiTrackType",
+            DiscRule::GdiSectorSize => "gdiSectorSize",
+            DiscRule::GdiOffset => "gdiOffset",
         }
     }
 }
@@ -417,6 +439,12 @@ mod tests {
             (DiscRule::CueLine, "cueLine"),
             (DiscRule::IncompleteSheet, "incompleteSheet"),
             (DiscRule::DuplicateTrack, "duplicateTrack"),
+            (DiscRule::GdiCount, "gdiCount"),
+            (DiscRule::GdiLine, "gdiLine"),
+            (DiscRule::GdiTrackNumber, "gdiTrackNumber"),
+            (DiscRule::GdiTrackType, "gdiTrackType"),
+            (DiscRule::GdiSectorSize, "gdiSectorSize"),
+            (DiscRule::GdiOffset, "gdiOffset"),
         ];
         for (rule, name) in rules {
             assert_eq!(rule.as_str(), name);
