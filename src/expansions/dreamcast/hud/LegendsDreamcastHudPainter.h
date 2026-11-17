@@ -17,6 +17,7 @@
 #include "engine/ui/Canvas.h"
 #include "engine/ui/TextPainter.h"
 
+#include "expansions/dreamcast/hud/LegendsDreamcastHudLayout.h"
 #include "expansions/shared/formats/LegendsMap.h"
 #include "expansions/shared/hud/LegendsHudArt.h"
 #include "expansions/shared/hud/LegendsHudClock.h"
@@ -43,12 +44,17 @@ namespace gdl::game {
  * shows the coloured kind-0 box, saying IN TOWER while it waits there or asking WAIT IN TOWER?
  * with YES marked, and NO while it may quit; a seat nobody joined shows nothing. The pickup
  * cards rise over the boxes on the taker's coloured strip, and Dark Legacy's counts stand over
- * them in the Dreamcast's small font. It shows Dark Legacy's state, and never the typed name. A
- * class with no Dreamcast banner is named in the Dreamcast's large font in the banner's place;
- * one with no costume bank takes the warrior's panel, as every class's panel of a colour is the
- * same picture; a legend item with no Dreamcast icon shows Dark Legacy's picture of it, a pickup
- * with no Dreamcast card Dark Legacy's card, and a count Dark Legacy's icon. The runestone
- * finder, the hourglasses, the boss meters, the selector labels and the help are Dark Legacy's.
+ * them in the Dreamcast's small font. The runestone finder stands at the top right, its column
+ * rising straight with the closeness whose square Dark Legacy's finder shows; the hourglasses
+ * stand in Dark Legacy's places in the Dreamcast's art; the boss meters hang from the top,
+ * opaque, cropped as Dark Legacy's; a selector's powerup is named in the small font over its
+ * box, in the seat's ink while worn; and Dark Legacy's help is written over its player's head,
+ * or its box, on the scroll and in the ink of the player's colour. It shows Dark Legacy's
+ * state, and never the typed name. A class with no Dreamcast banner is named in the Dreamcast's
+ * large font in the banner's place; one with no costume bank takes the warrior's panel, as every
+ * class's panel of a colour is the same picture; a legend item with no Dreamcast icon shows Dark
+ * Legacy's picture of it, a pickup with no Dreamcast card Dark Legacy's card, a count Dark
+ * Legacy's icon, and an hourglass the powerups bank has no art of Dark Legacy's look.
  */
 class LegendsDreamcastHudPainter final : public HudPainter {
 public:
@@ -63,22 +69,24 @@ public:
      * fonts. */
     static constexpr std::array<std::string_view, 5> kRequiredFiles{
         kStaticObjects, kStaticTextures, kSmallFontFile, kScoreFontFile, kLargeFontFile};
-    /** The powerups bank, which holds the legend items' icons. */
+    /** The powerups bank, which holds the legend items' icons and the hourglass. */
     static constexpr std::string_view kPowerupsFolder = "powerups";
 
     LegendsDreamcastHudPainter() = default;
     ~LegendsDreamcastHudPainter() override = default;
     GDL_NON_COPYABLE_NON_MOVABLE(LegendsDreamcastHudPainter);
 
-    /** Takes the boxes' pictures and the fonts from the Dreamcast extraction's native folder
-     * `root`, the panels and banners of `party`'s classes in their costumes' colours and the
-     * legend items' icons; false when the static set or a font is missing. One that is there but
-     * cannot be read, or a static set without a picture the boxes draw, throws, naming it. A
-     * costume bank that is missing or cannot be read gives way to the warrior's panel, and its
-     * banner to the class's name; a powerups bank that is missing or cannot be read, or an icon
-     * it lacks, to Dark Legacy's picture of the item. Of Dark Legacy's art it borrows SELECT's
-     * pictures of the legend items it has no icon for, STATIC's cards of the pickups it has no
-     * card for and every icon a pickup count shows, and nothing else. */
+    /** Takes the HUD's pictures and the fonts from the Dreamcast extraction's native folder
+     * `root`, the panels and banners of `party`'s classes in their costumes' colours, and the
+     * powerups bank's legend items' icons and hourglass; false when the static set or a font is
+     * missing. One that is there but cannot be read, or a static set without a picture the look
+     * draws, throws, naming it. A costume bank that is missing or cannot be read gives way to the
+     * warrior's panel, and its banner to the class's name; a powerups bank that is missing or
+     * cannot be read, to Dark Legacy's pictures of the legend items and Dark Legacy's hourglass,
+     * as an icon it lacks does to Dark Legacy's picture of the item and a picture of the
+     * hourglass it lacks, with a warning, to Dark Legacy's hourglass. Of Dark Legacy's art it
+     * borrows SELECT's pictures of the legend items it has no icon for, STATIC's cards of the
+     * pickups it has no card for and every icon a pickup count shows, and nothing else. */
     bool load(RenderDevice& device, const std::filesystem::path& root, DarkLegacyHudArt& darkLegacy,
               std::span<const HudMember> party);
 
@@ -119,7 +127,12 @@ private:
     void loadFont(const std::filesystem::path& file, std::string_view name, s32 space,
                   std::string_view sheet, Font& font);
     void loadClass(RenderDevice& device, const AssetLocator& files, s32 classIndex, s32 color);
-    void loadLegends(RenderDevice& device, const AssetLocator& files, DarkLegacyHudArt& darkLegacy);
+    /** Takes the legend items' icons from the powerups bank's `pictures`, none when it is not
+     * there, and Dark Legacy's pictures of the rest. */
+    void loadLegends(RenderDevice& device, std::span<const formats::LegendsMapTexture> pictures,
+                     DarkLegacyHudArt& darkLegacy);
+    /** Takes the hourglass from the powerups bank's `pictures`: all of it, or none. */
+    void loadTimer(RenderDevice& device, std::span<const formats::LegendsMapTexture> pictures);
     /** Takes Dark Legacy's cards of the pickups the Dreamcast has none for, and the icons of its
      * counts, so that drawing looks nothing up. */
     void borrowPictures(DarkLegacyHudArt& darkLegacy);
@@ -145,17 +158,25 @@ private:
     void drawCounts(Canvas& canvas, const HudView& view) const;
 
     LegendsHudArt m_art;
-    const Texture* m_strip = nullptr;          ///< BK_RUNE_STONE_02
-    const Texture* m_levelLabel = nullptr;     ///< BTMBK_LEVL
-    const Texture* m_goldLabel = nullptr;      ///< BTMBK_GOLD
-    const Texture* m_healthLabel = nullptr;    ///< BTMBK_HELTH
-    const Texture* m_key = nullptr;            ///< KEY_ICON
-    const Texture* m_glow = nullptr;           ///< TURBO_GLOW
-    const Texture* m_thirteenthRune = nullptr; ///< RUNE13
-    const Texture* m_it = nullptr;             ///< IT
-    const Texture* m_waitScroll = nullptr;     ///< TEXTSCROLL
-    ColourPictures m_plainStrips{};            ///< S3_W<colour>
-    ColourPictures m_plainPanels{};            ///< S4_W<colour>
+    const Texture* m_strip = nullptr;             ///< BK_RUNE_STONE_02
+    const Texture* m_levelLabel = nullptr;        ///< BTMBK_LEVL
+    const Texture* m_goldLabel = nullptr;         ///< BTMBK_GOLD
+    const Texture* m_healthLabel = nullptr;       ///< BTMBK_HELTH
+    const Texture* m_key = nullptr;               ///< KEY_ICON
+    const Texture* m_glow = nullptr;              ///< TURBO_GLOW
+    const Texture* m_thirteenthRune = nullptr;    ///< RUNE13
+    const Texture* m_it = nullptr;                ///< IT
+    const Texture* m_waitScroll = nullptr;        ///< TEXTSCROLL
+    const Texture* m_thermometerBase = nullptr;   ///< THERMBASE
+    const Texture* m_thermometerColumn = nullptr; ///< THERMCOL
+    const Texture* m_timer = nullptr;             ///< TIMER; none: the hourglass is Dark Legacy's
+    const Texture* m_timerSand = nullptr;         ///< TIMER_SAND
+    /** SAND_ANIM00..04, the falling grains' frames. */
+    std::array<const Texture*, LegendsDreamcastHudLayout::kSandFrames> m_grains{};
+    /** The help scrolls by costume colour, the plain one last. */
+    std::array<const Texture*, LegendsDreamcastHudLayout::kHelpScrolls.size()> m_helpScrolls{};
+    ColourPictures m_plainStrips{}; ///< S3_W<colour>
+    ColourPictures m_plainPanels{}; ///< S4_W<colour>
     /** SM_RUNE_<colour>_0<n>, the runestones in their order. */
     std::array<const Texture*, StatusBoxPainter::kRuneCount> m_runes{};
     /** SM_KEY_<colour>, the bosses' keys in their order, which share the four colours' pictures. */

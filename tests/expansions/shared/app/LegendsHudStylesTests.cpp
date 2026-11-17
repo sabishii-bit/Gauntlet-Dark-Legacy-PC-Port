@@ -92,10 +92,32 @@ struct InstalledN64 {
     }
 };
 
+/** The synthetic Dreamcast extraction of the look's painter tests, installed in a fresh `install`
+ * as the launcher installs it, its native files under native, with a map for legendsMaps to find
+ * it by. */
+struct InstalledDreamcast {
+    test::LegendsDreamcastHudFixture files;
+    LegendsHudRoots roots;
+
+    explicit InstalledDreamcast(std::string_view install)
+        : files(std::format("{}/dreamcast/extracted/native", install)),
+          roots(rootsOf(files.root().parent_path().parent_path().parent_path())) {
+        fixture(files.root() / "levels/levelt1/worlds.rom");
+        fixture(files.root() / "levels/levelt1/objects.rom");
+    }
+};
+
 /** The N64 look's offer as the HUD page is given it. */
 HudStyleOffer n64Offer(bool usable) {
     return {.id = std::string(kLegendsN64HudStyle),
             .label = std::string(kLegendsN64HudLabel),
+            .usable = usable};
+}
+
+/** The Dreamcast look's offer as the HUD page is given it. */
+HudStyleOffer dreamcastOffer(bool usable) {
+    return {.id = std::string(kLegendsDreamcastHudStyle),
+            .label = std::string(kLegendsDreamcastHudLabel),
             .usable = usable};
 }
 
@@ -327,25 +349,22 @@ TEST_CASE("the HUD art is found beside the maps", "[legends][hud-style]") {
     CHECK(legendsHudFilesFound(kLegendsDreamcastHudStyle, roots));
 }
 
-TEST_CASE("a look is offered only once its painter is built", "[legends][hud-style]") {
-    const auto install = test::scratchDirectory("legends-hud-unbuilt");
+TEST_CASE("every Legends look this build has a painter for is offered, in the HUD page's order",
+          "[legends][hud-style]") {
+    const auto install = test::scratchDirectory("legends-hud-built");
     n64At(install / "n64/extracted");
     dreamcastAt(install / "dreamcast/extracted");
     const LegendsHudRoots roots = rootsOf(install);
     REQUIRE(legendsHudFilesFound(kLegendsN64HudStyle, roots));
     REQUIRE(legendsHudFilesFound(kLegendsDreamcastHudStyle, roots));
-    // Every file either look needs is there, but this build has a painter for the N64's alone.
-    CHECK(legendsHudStyles(roots) == std::vector<HudStyleOffer>{n64Offer(true)});
+    // Both looks' painters are built and their files are there: the N64's, then the Dreamcast's.
+    CHECK(legendsHudStyles(roots) ==
+          std::vector<HudStyleOffer>{n64Offer(true), dreamcastOffer(true)});
 
-    // The Dreamcast's opens nothing, saying why in one warning, and nothing is uploaded.
+    // Dark Legacy's own look and an id no look has open nothing, saying why in one warning, and
+    // nothing is uploaded.
     test::FakeRenderDevice device;
     DarkLegacyHudPainter darkLegacy;
-    const Opening dreamcast = openingOf(kLegendsDreamcastHudStyle, roots, device, darkLegacy);
-    CHECK(dreamcast.painter == nullptr);
-    REQUIRE(dreamcast.warnings.size() == 1);
-    CHECK(dreamcast.warnings[0].starts_with("HUD: the dreamcast look could not be"));
-    CHECK(dreamcast.warnings[0].find("no painter") != std::string::npos);
-    // Nor do Dark Legacy's own look or an id no look has.
     for (const std::string_view id :
          std::array<std::string_view, 2>{kDarkLegacyHudStyle, "future"}) {
         CAPTURE(id);
@@ -392,8 +411,10 @@ TEST_CASE("a look whose files went after the probe opens nothing", "[legends][hu
 
 TEST_CASE("the N64 look is offered once its files are found", "[legends][hud-style]") {
     const InstalledN64 n64("legends-hud-n64-offered");
-    // Offered, and usable: the HUD page lists it under its own name.
-    CHECK(legendsHudStyles(n64.roots) == std::vector<HudStyleOffer>{n64Offer(true)});
+    // Offered, and usable: the HUD page lists it under its own name. The Dreamcast's, not
+    // installed here, is listed but cannot be chosen.
+    CHECK(legendsHudStyles(n64.roots) ==
+          std::vector<HudStyleOffer>{n64Offer(true), dreamcastOffer(false)});
 
     // Chosen, it opens the N64's painter, which takes its art at once with nothing to warn of.
     test::FakeRenderDevice device;
@@ -408,7 +429,66 @@ TEST_CASE("the N64 look is offered once its files are found", "[legends][hud-sty
 
     // Without a file it cannot be drawn without, it is still listed, but cannot be chosen.
     REQUIRE(std::filesystem::remove(n64.files.root() / LegendsN64HudPainter::kNumberFontFile));
-    CHECK(legendsHudStyles(n64.roots) == std::vector<HudStyleOffer>{n64Offer(false)});
+    CHECK(legendsHudStyles(n64.roots) ==
+          std::vector<HudStyleOffer>{n64Offer(false), dreamcastOffer(false)});
+}
+
+TEST_CASE("the Dreamcast look is offered once its files are found", "[legends][hud-style]") {
+    const InstalledDreamcast dreamcast("legends-hud-dreamcast-offered");
+    // Offered, and usable: the HUD page lists it under its own name, after the N64's, which is
+    // not installed here.
+    CHECK(legendsHudStyles(dreamcast.roots) ==
+          std::vector<HudStyleOffer>{n64Offer(false), dreamcastOffer(true)});
+
+    // Chosen, it opens the Dreamcast's painter, which takes its art at once with nothing to warn
+    // of.
+    test::FakeRenderDevice device;
+    test::FakeDarkLegacyArt art;
+    const Opening opening = openingOf(kLegendsDreamcastHudStyle, dreamcast.roots, device, art);
+    REQUIRE(opening.painter != nullptr);
+    CHECK(opening.painter->id() == kLegendsDreamcastHudStyle);
+    CHECK(dynamic_cast<const LegendsDreamcastHudPainter*>(opening.painter.get()) != nullptr);
+    CHECK(opening.warnings.empty());
+    CHECK(device.texturesCreated > 0);
+    CHECK_FALSE(art.lookups.empty());
+
+    // Without a file it cannot be drawn without, it is still listed, but cannot be chosen.
+    REQUIRE(std::filesystem::remove(dreamcast.files.root() /
+                                    LegendsDreamcastHudPainter::kLargeFontFile));
+    CHECK(legendsHudStyles(dreamcast.roots) ==
+          std::vector<HudStyleOffer>{n64Offer(false), dreamcastOffer(false)});
+}
+
+TEST_CASE("a Dreamcast look whose files are there but cannot be read opens nothing, and says "
+          "which",
+          "[legends][hud-style]") {
+    std::string_view cut;
+    SECTION("its static set's texels cut short") {
+        cut = LegendsDreamcastHudPainter::kStaticTextures;
+    }
+    SECTION("its static set's table cut short") {
+        cut = LegendsDreamcastHudPainter::kStaticObjects;
+    }
+    SECTION("its score font cut short") {
+        cut = LegendsDreamcastHudPainter::kScoreFontFile;
+    }
+    CAPTURE(cut);
+    const InstalledDreamcast dreamcast("legends-hud-dreamcast-unreadable");
+    dreamcast.files.truncate(cut);
+    // Cut short, not removed: the probe finds it, and the look is offered.
+    REQUIRE(legendsHudFilesFound(kLegendsDreamcastHudStyle, dreamcast.roots));
+    CHECK(legendsHudStyles(dreamcast.roots) ==
+          std::vector<HudStyleOffer>{n64Offer(false), dreamcastOffer(true)});
+    // The scene's opening reads it, and draws Dark Legacy's look: no exception reaches it, and
+    // one warning names the file.
+    test::FakeRenderDevice device;
+    test::FakeDarkLegacyArt art;
+    Opening opening;
+    REQUIRE_NOTHROW(opening = openingOf(kLegendsDreamcastHudStyle, dreamcast.roots, device, art));
+    CHECK(opening.painter == nullptr);
+    REQUIRE(opening.warnings.size() == 1);
+    CHECK(opening.warnings[0].starts_with("HUD: the dreamcast look could not be opened ("));
+    CHECK(opening.warnings[0].find(cut) != std::string::npos);
 }
 
 TEST_CASE("an N64 look whose files are there but cannot be read opens nothing, and says which",
@@ -425,7 +505,8 @@ TEST_CASE("an N64 look whose files are there but cannot be read opens nothing, a
     n64.files.truncate(cut);
     // Cut short, not removed: the probe finds it, and the look is offered.
     REQUIRE(legendsHudFilesFound(kLegendsN64HudStyle, n64.roots));
-    CHECK(legendsHudStyles(n64.roots) == std::vector<HudStyleOffer>{n64Offer(true)});
+    CHECK(legendsHudStyles(n64.roots) ==
+          std::vector<HudStyleOffer>{n64Offer(true), dreamcastOffer(false)});
     // The scene's opening reads it, and draws Dark Legacy's look: no exception reaches it, and
     // one warning names the file.
     test::FakeRenderDevice device;

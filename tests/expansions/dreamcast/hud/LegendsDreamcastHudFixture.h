@@ -115,22 +115,23 @@ struct DreamcastCostume {
 };
 
 /** A synthetic Dreamcast native extraction holding what the Dreamcast look draws from: the
- * static set's pictures, its cards among them, and the fonts' sheets, beside one picture the
- * boxes do not draw; the three fonts; the warrior's costume banks in every colour, the wizard's
- * in blue and the dwarf's in red; and the powerups bank's legend icons, beside one picture the
- * boxes do not draw. */
+ * static set's pictures, its cards and scrolls among them, and the fonts' sheets, beside one
+ * picture the look does not draw; the three fonts; the warrior's costume banks in every colour,
+ * the wizard's in blue and the dwarf's in red; and the powerups bank's legend icons and
+ * hourglass, beside one picture the look does not draw. */
 class LegendsDreamcastHudFixture {
 public:
     using Painter = game::LegendsDreamcastHudPainter;
 
-    /** Font 1: the full stop, the slash, the digits, the capitals and the question mark. */
+    /** Font 1: the full stop, the slash, the digits, the capitals, the question mark, the small
+     * letters and the hyphen. */
     static constexpr DreamcastFont kSmallFont{
         .file = Painter::kSmallFontFile,
-        .codes = "./0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ?",
+        .codes = "./0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ?abcdefghijklmnopqrstuvwxyz-",
         .columns = 6,
         .rows = 8,
         .space = 8,
-        .sheet = {.name = "8HI_FONTS5", .width = 256, .height = 8, .mark = 60}};
+        .sheet = {.name = "8HI_FONTS5", .width = 512, .height = 8, .mark = 60}};
     /** Font 4: the digits. */
     static constexpr DreamcastFont kScoreFont{
         .file = Painter::kScoreFontFile,
@@ -147,9 +148,9 @@ public:
         .rows = 32,
         .space = 16,
         .sheet = {.name = "FONT32", .width = 256, .height = 32, .mark = 62}};
-    /** The static set: the boxes' pictures at the sizes the original's are, the fonts' sheets,
-     * and RUNE_COUNT, which the boxes do not draw. */
-    static constexpr std::array<DreamcastPicture, 51> kStaticPictures{{
+    /** The static set: the look's pictures at the sizes the original's are, the fonts' sheets,
+     * and RUNE_COUNT, which the look does not draw. */
+    static constexpr std::array<DreamcastPicture, 57> kStaticPictures{{
         {.name = "BK_RUNE_STONE_02", .width = 128, .height = 16, .mark = 10},
         {.name = "S3_WYELO", .width = 128, .height = 16, .mark = 11},
         {.name = "S3_WBLUE", .width = 128, .height = 16, .mark = 12},
@@ -197,23 +198,36 @@ public:
         {.name = "POISN_FOOD", .width = 128, .height = 128, .mark = 36},
         {.name = "MAGIC", .width = 128, .height = 128, .mark = 37},
         {.name = "SPECIALS", .width = 128, .height = 128, .mark = 38},
+        {.name = "THERMBASE", .width = 128, .height = 128, .mark = 87},
+        {.name = "THERMCOL", .width = 128, .height = 128, .mark = 88},
+        {.name = "YEL_TEXTSCROLL", .width = 64, .height = 64, .mark = 89},
+        {.name = "BLU_TEXTSCROLL", .width = 64, .height = 64, .mark = 90},
+        {.name = "RED_TEXTSCROLL", .width = 64, .height = 64, .mark = 91},
+        {.name = "GRE_TEXTSCROLL", .width = 64, .height = 64, .mark = 92},
         kSmallFont.sheet,
         kScoreFont.sheet,
         kLargeFont.sheet,
         {.name = "RUNE_COUNT", .width = 32, .height = 32, .mark = 52},
     }};
-    /** The picture of the static set the boxes do not draw: no user of it was found. */
+    /** The picture of the static set the look does not draw: no user of it was found. */
     static constexpr std::string_view kUndrawn = "RUNE_COUNT";
     static constexpr std::string_view kStaticFolder = "static";
-    /** The powerups bank: the legend items' icons, and HOURGLASS, which the boxes do not
-     * draw. */
-    static constexpr std::array<DreamcastPicture, 6> kPowerupPictures{{
+    /** The powerups bank: the legend items' icons, the hourglass's glass, sand and five frames of
+     * grains, and HOURGLASS, which the look does not draw. */
+    static constexpr std::array<DreamcastPicture, 13> kPowerupPictures{{
         {.name = "QUEST_ICON1", .width = 16, .height = 16, .mark = 81},
         {.name = "QUEST_ICON2", .width = 16, .height = 16, .mark = 82},
         {.name = "QUEST_ICON3", .width = 16, .height = 16, .mark = 83},
         {.name = "QUEST_ICON4", .width = 16, .height = 16, .mark = 84},
         {.name = "QUEST_ICON5", .width = 16, .height = 16, .mark = 85},
         {.name = "HOURGLASS", .width = 16, .height = 16, .mark = 86},
+        {.name = "TIMER", .width = 128, .height = 128, .mark = 93},
+        {.name = "TIMER_SAND", .width = 128, .height = 128, .mark = 94},
+        {.name = "SAND_ANIM00", .width = 8, .height = 32, .mark = 95},
+        {.name = "SAND_ANIM01", .width = 8, .height = 32, .mark = 96},
+        {.name = "SAND_ANIM02", .width = 8, .height = 32, .mark = 97},
+        {.name = "SAND_ANIM03", .width = 8, .height = 32, .mark = 98},
+        {.name = "SAND_ANIM04", .width = 8, .height = 32, .mark = 99},
     }};
     static constexpr std::string_view kUndrawnPowerup = "HOURGLASS";
     static constexpr std::string_view kPowerupsFolder = Painter::kPowerupsFolder;

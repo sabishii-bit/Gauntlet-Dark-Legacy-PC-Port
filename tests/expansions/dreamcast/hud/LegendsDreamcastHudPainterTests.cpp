@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <format>
 #include <initializer_list>
+#include <limits>
 #include <optional>
 #include <span>
 #include <string>
@@ -13,18 +14,26 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/assets/AnimationSet.h"
+#include "engine/assets/BitmapFont.h"
+#include "engine/assets/ItemArchive.h"
 #include "engine/assets/StringTable.h"
+#include "engine/assets/TextureSet.h"
 #include "engine/core/Error.h"
+#include "engine/core/SpecialMembers.h"
 #include "engine/core/Strings.h"
 #include "engine/core/Types.h"
 #include "engine/math/Math.h"
+#include "engine/render/Image.h"
 #include "engine/render/RenderTypes.h"
 #include "engine/ui/Canvas.h"
+#include "engine/ui/TextPainter.h"
 
 #include "FakeDarkLegacyArt.h"
 #include "FakeHudStyles.h"
 #include "FakeRenderDevice.h"
 #include "LogCapture.h"
+#include "RecordedDrawChecks.h"
 #include "RecordedQuads.h"
 #include "TestSupport.h"
 #include "expansions/dreamcast/hud/LegendsDreamcastHudFixture.h"
@@ -32,19 +41,27 @@
 #include "expansions/dreamcast/hud/LegendsDreamcastHudPainter.h"
 #include "expansions/shared/hud/LegendsHudClock.h"
 #include "expansions/shared/hud/LegendsHudStyleIds.h"
+#include "formats/AnimationTree.h"
 #include "game/characters/CharacterSave.h"
 #include "game/characters/ClassData.h"
 #include "game/characters/Inventory.h"
 #include "game/characters/Relics.h"
+#include "game/combat/ArmorFlags.h"
 #include "game/combat/PowerupFlags.h"
 #include "game/config/GameConfig.h"
+#include "game/hud/BossMeter.h"
+#include "game/hud/ChallengeHud.h"
+#include "game/hud/DarkLegacyHudPainter.h"
+#include "game/hud/HealthMeter.h"
 #include "game/hud/HudPainter.h"
 #include "game/hud/HudStyles.h"
 #include "game/hud/HudView.h"
 #include "game/hud/PickupHud.h"
 #include "game/hud/PowerupSelector.h"
+#include "game/hud/RuneMeter.h"
 #include "game/hud/StatusBox.h"
 #include "game/party/PlayerRuntime.h"
+#include "game/players/PlayerControls.h"
 
 namespace {
 
@@ -355,17 +372,22 @@ struct LoadedLook {
         view.strings = &strings;
         return view;
     }
-    /** The quads the look's boxes draw for `view`, on a canvas of its own. */
-    std::vector<Quad> boxes(const HudView& view) {
+    using Slot = void (LegendsDreamcastHudPainter::*)(HudFrame&, const HudView&);
+    /** The quads the look's `slot` draws for `view`, on a canvas of its own. */
+    std::vector<Quad> drawn(const HudView& view, Slot slot) {
         device.draws.clear();
         Canvas canvas;
         canvas.begin(device, Mat4{1.0f});
         HudFrame frame{canvas, device, art};
-        look.drawStatus(frame, view);
+        (look.*slot)(frame, view);
         // The Dreamcast's frame is the canvas's own: nothing is drawn through another.
         CHECK(canvas.localTransform() == Mat4{1.0f});
         canvas.end();
         return quadsOf(device);
+    }
+    /** The quads the look's boxes draw for `view`. */
+    std::vector<Quad> boxes(const HudView& view) {
+        return drawn(view, &LegendsDreamcastHudPainter::drawStatus);
     }
     /** Readies the look for a frame of `view`, as the scene does before its draws. */
     void prepare(const HudView& view) {
@@ -404,6 +426,149 @@ constexpr std::array<HudMember, 2> kWarriorAndWizard{{
     {.seat = 0, .classIndex = kWarriorClass, .color = 0},
     {.seat = 1, .classIndex = kWizardClass, .color = 1},
 }};
+
+/** The quads standing in `seat`. */
+std::vector<Quad> quadsIn(std::span<const Quad> quads, usize seat) {
+    std::vector<Quad> found;
+    for (const Quad& quad : quads) {
+        if (seatOf(quad) == seat) {
+            found.push_back(quad);
+        }
+    }
+    return found;
+}
+
+/** A font as TextPainter measures it: one of the fixture's, or a font of no glyphs `rows` tall,
+ * which has only its line. */
+struct MeasuredFont {
+    BitmapFont glyphs;
+    test::FakeTexture sheet{16, 16};
+    TextPainter text;
+
+    explicit MeasuredFont(const test::DreamcastFont& font) {
+        std::vector<BitmapGlyph> cells;
+        for (usize index = 0; index < font.codes.size(); ++index) {
+            cells.push_back({.code = font.codes[index],
+                             .width = font.columns,
+                             .x = static_cast<s32>(index) * font.columns,
+                             .y = 0});
+        }
+        glyphs = BitmapFont::fromGlyphs(font.rows, font.space, std::move(cells));
+        text.setFont(&glyphs, &sheet);
+    }
+    explicit MeasuredFont(s32 rows) {
+        glyphs = BitmapFont::fromGlyphs(rows, rows / 2, {});
+        text.setFont(&glyphs, &sheet);
+    }
+    ~MeasuredFont() = default;
+    GDL_NON_COPYABLE_NON_MOVABLE(MeasuredFont);
+};
+
+/** A standing player in seat `seat`, of class `character` in costume colour `costume`, whose
+ * save carries `carried`: its runtime, and Dark Legacy's selector over its box, which the case
+ * slides up with its own copy of what is carried. */
+struct Holder {
+    PlayerRuntime runtime;
+    PowerupSelector selector;
+    Inventory inventory;
+    s32 classIndex = 0;
+    s32 color = 0;
+
+    Holder(const Inventory& carried, s32 seat, s32 character, s32 costume)
+        : inventory(carried), classIndex(character), color(costume) {
+        CharacterSave save;
+        save.name = "A";
+        save.character = character;
+        save.color = costume;
+        save.progress().inventory = carried;
+        runtime.actor.spawn(seat, save, nullptr, Vec3{0}, 0);
+    }
+    /** Slides the selector up and open, naming the last powerup carried. */
+    void open() {
+        selector.step(SelectorInput{.up = true}, inventory,
+                      PowerupSelector::kSlide / PowerupSelector::kSlidePerTick);
+        selector.step({}, inventory, 1);
+        REQUIRE(selector.showing());
+    }
+    /** The seat as the view shows it. */
+    HudSeat shown() const {
+        HudSeat seat = standing(classIndex, color);
+        seat.runtime = &runtime;
+        seat.selector = &selector;
+        return seat;
+    }
+};
+
+/** A boss's meter art: two strips, each a background and a fill `width` by `height`. */
+TextureSet meterArt(u32 width, u32 height) {
+    std::vector<TextureSetEntry> entries;
+    std::vector<Image> images;
+    for (const char* name : {"METER_BG1", "METER_FG1", "METER_BG2", "METER_FG2"}) {
+        entries.push_back({.name = name, .width = width, .height = height, .file = {}});
+        images.push_back(Image::filled(width, height, Color::white()));
+    }
+    return TextureSet::fromDecoded(std::move(entries), std::move(images));
+}
+
+/** A boss's meter of `pieces` strips with a background each and these insets, at `health` of
+ * `maxHealth`. */
+HealthMeterReading meterReading(s32 pieces, s32 leftInset, s32 rightInset, f32 health,
+                                f32 maxHealth) {
+    HealthMeterReading reading;
+    reading.definition.pieces = pieces;
+    reading.definition.advance = BossMeter::kPieceWidth;
+    reading.definition.leftInset = leftInset;
+    reading.definition.rightInset = rightInset;
+    reading.definition.shown = true;
+    reading.definition.backed = true;
+    reading.health = health;
+    reading.maxHealth = maxHealth;
+    return reading;
+}
+
+/** The meters of `readings` drawn from `art`, as the scene binds them, and told to `view`. */
+void showMeters(HudView& view, BossMeters& meters, std::span<const HealthMeterReading> readings,
+                TextureSet& art) {
+    meters.bind(readings, &art);
+    view.bossMeters = &meters;
+    view.bossCount = hudBossReadingsOf(readings, view.bossReadings);
+}
+
+/** The picture `name` of `art`, uploaded to `device` as a meter's draw uploads it. */
+const Texture* meterPicture(TextureSet& art, test::FakeRenderDevice& device,
+                            std::string_view name) {
+    const auto index = art.find(name);
+    REQUIRE(index.has_value());
+    return &art.texture(device, *index);
+}
+
+/** Dark Legacy's hourglass art as plain pictures: the glass, its sand and two frames of
+ * falling grains, which SAND_ANIM cycles. */
+ItemArchive darkLegacyHourglass() {
+    std::vector<TextureSetEntry> entries{
+        {.name = "TIMER", .width = 128, .height = 128, .file = {}},
+        {.name = "TIMER_SAND", .width = 128, .height = 128, .file = {}},
+        {.name = "SAND_ANIM00", .width = 8, .height = 32, .file = {}},
+        {.name = "SAND_ANIM01", .width = 8, .height = 32, .file = {}}};
+    std::vector<Image> images;
+    images.reserve(entries.size());
+    for (const TextureSetEntry& entry : entries) {
+        images.push_back(Image::filled(entry.width, entry.height, Color::white()));
+    }
+    ItemArchive archive;
+    archive.textures = TextureSet::fromDecoded(std::move(entries), std::move(images));
+    formats::AnimationFile animations;
+    animations.textureAnimations.push_back(
+        {.name = "SAND_ANIM",
+         .frameName = {},
+         .texture = 2,
+         .source = 2,
+         .frames = 2,
+         .rate = 1,
+         .flag = static_cast<s16>(TextureAnimationInfo::kFreeRunning)});
+    archive.trees = AnimationSet::fromDecoded(std::move(animations));
+    return archive;
+}
 
 } // namespace
 
@@ -1489,18 +1654,32 @@ TEST_CASE("the Dreamcast look takes every picture it borrows as it opens",
     }
     CHECK(art.lookups == borrowed);
     art.lookups.clear();
-    // It uploads what the boxes draw of the static set, with the fonts' sheets, the party's
-    // panels and banners, and the legend items' icons of the powerups bank: nothing else it
-    // reads.
+    // It uploads what it draws of the static set, with the fonts' sheets, the party's panels and
+    // banners, and the legend items' icons and the hourglass of the powerups bank: nothing else
+    // it reads.
     CHECK(device.texturesCreated ==
           Fixture::kStaticPictures.size() - 1 + 4 + Fixture::kPowerupPictures.size() - 1);
+    // A boss meter, its pictures up as its archive keeps them once drawn.
+    TextureSet meterPictures = meterArt(BossMeter::kPieceWidth, 64);
+    const std::array<HealthMeterReading, 1> boss{meterReading(2, 46, 72, 1875, 2500)};
+    BossMeters meters;
+    meters.bind(boss, &meterPictures);
+    meters.meter(0).preload(device);
     const u32 uploaded = device.texturesCreated;
 
     // Every seat state and every part of the HUD, over a blink's round of steps: nothing is
     // looked up or uploaded while drawing. Seat 0 carries everything a box shows, among it a
-    // legend item the Dreamcast has no icon of in the place of one it has; it is IT and waits
-    // at an exit, under a card of each kind and a count.
+    // legend item the Dreamcast has no icon of in the place of one it has, and a powerup its
+    // selector names over the box; it is IT and waits at an exit, under a card of each kind and
+    // a count, with its help over its head. The finder and the hourglass show, and a boss's
+    // meter.
+    Inventory carried;
+    carried.powerups[0] = PowerupSlot{30, powerup::kSpecial, 0, powerup::kInvisible, true};
+    Holder holder(carried, 0, kWarriorClass, 0);
+    holder.open();
     HudSeat carrying = standing(kWarriorClass, 0, "A", 250);
+    carrying.runtime = &holder.runtime;
+    carrying.selector = &holder.selector;
     carrying.box.keys = 2;
     carrying.box.potions = 1;
     carrying.box.potionKind = 3;
@@ -1515,6 +1694,7 @@ TEST_CASE("the Dreamcast look takes every picture it borrows as it opens",
     pickups.addCard(0, "GOLD");
     pickups.addCard(0, PickupHud::kCrystalCard);
     pickups.showCount(0, PickupHud::crystalIcon(2), 3, 15);
+    const std::vector<std::string> lines{"WATCH OUT"};
     HudView view;
     view.seats = {carrying, fallen(standing(kWizardClass, 1), true, true),
                   fallen(standing(kWarriorClass, 0), true), gone.seat()};
@@ -1522,6 +1702,12 @@ TEST_CASE("the Dreamcast look takes every picture it borrows as it opens",
     view.relicsShown = true;
     view.joined = 3;
     view.pickups = &pickups;
+    view.help =
+        HudHelp{.lines = lines, .player = 0, .color = 0, .head = {56, 300}, .anchored = true};
+    view.runeFill = 0.5f;
+    view.hourglass = ChallengeHud::Look{.elapsed = 0.5f, .fallingFrame = 2};
+    view.bossMeters = &meters;
+    view.bossCount = hudBossReadingsOf(boss, view.bossReadings);
     constexpr s32 kSteps = 8;
     for (s32 step = 0; step < kSteps; ++step) {
         view.seconds = secondsAt(step);
@@ -1558,39 +1744,406 @@ TEST_CASE("the Dreamcast look takes every picture it borrows as it opens",
     }
     // Once a frame, in its own place.
     CHECK(books == static_cast<usize>(kSteps));
-    // The badge, the blinking scroll and the Dreamcast's card were all drawn.
-    for (const std::string_view name : {"IT", "TEXTSCROLL", "GOLD"}) {
+    // The badge, the blinking scroll, the Dreamcast's card, the finder, the hourglass and the
+    // help's scroll were all drawn, and so was the meter.
+    for (const std::string_view name : {"IT", "TEXTSCROLL", "GOLD", "THERMBASE", "THERMCOL",
+                                        "TIMER", "TIMER_SAND", "SAND_ANIM02", "YEL_TEXTSCROLL"}) {
         CAPTURE(name);
         CHECK(std::ranges::find(drawn, name) != drawn.end());
     }
+    CHECK(std::ranges::any_of(device.draws, [&](const test::RecordedDraw& draw) {
+        return draw.texture == meterPicture(meterPictures, device, "METER_FG1");
+    }));
+    // Of Dark Legacy's look, nothing.
+    CHECK(art.record.calls.empty());
 }
 
-TEST_CASE("the Dreamcast look draws the parts it has no art of its own for in Dark Legacy's look",
+TEST_CASE("the Dreamcast look draws every part in its own art, and its hourglass in Dark "
+          "Legacy's only without its own",
           "[legends][dreamcast-hud]") {
-    LoadedLook dreamcast("dreamcast-hud-lent-look", kWarriorAndWizard);
-    const HudView view = dreamcast.viewOf({standing(kWarriorClass, 0), {}, {}, {}});
-    Canvas canvas;
-    canvas.begin(dreamcast.device, Mat4{1.0f});
-    HudFrame frame{canvas, dreamcast.device, dreamcast.art};
-    dreamcast.look.prepare(frame, view);
-    dreamcast.look.drawStatus(frame, view);
-    dreamcast.look.drawRuneMeter(frame, view);
-    dreamcast.look.drawHourglass(frame, view);
-    dreamcast.look.drawBossMeters(frame, view);
-    dreamcast.look.drawSelectors(frame, view);
-    dreamcast.look.drawHelp(frame, view);
-    canvas.end();
-    // The boxes are the Dreamcast's own; the runestone finder, the hourglass, the boss meters,
-    // the selector labels and the help are Dark Legacy's, prepared as its look prepares them.
-    const test::FakeHudRecord& darkLegacy = dreamcast.art.record;
-    CHECK(darkLegacy.count(kDarkLegacyHudStyle, test::FakeHudPart::Status) == 0);
-    for (const test::FakeHudPart part :
-         {test::FakeHudPart::Prepare, test::FakeHudPart::RuneMeter, test::FakeHudPart::Hourglass,
-          test::FakeHudPart::BossMeters, test::FakeHudPart::Selectors, test::FakeHudPart::Help}) {
-        CAPTURE(static_cast<s32>(part));
-        CHECK(darkLegacy.count(kDarkLegacyHudStyle, part) == 1);
+    /** What Dark Legacy's look was asked while the Dreamcast look, loaded from `files`, drew a
+     * frame of every part. */
+    const auto darkLegacyCalls = [](const Fixture& files) {
+        test::FakeRenderDevice device;
+        test::FakeDarkLegacyArt art;
+        LegendsDreamcastHudPainter look;
+        REQUIRE(look.load(device, files.root(), art, kWarriorAndWizard));
+        HudView view;
+        view.seats[0] = standing(kWarriorClass, 0);
+        Canvas canvas;
+        canvas.begin(device, Mat4{1.0f});
+        HudFrame frame{canvas, device, art};
+        look.prepare(frame, view);
+        look.drawStatus(frame, view);
+        look.drawRuneMeter(frame, view);
+        look.drawHourglass(frame, view);
+        look.drawBossMeters(frame, view);
+        look.drawSelectors(frame, view);
+        look.drawHelp(frame, view);
+        canvas.end();
+        return art.record.calls;
+    };
+    SECTION("its own art whole") {
+        // The boxes, the runestone finder, the hourglass, the boss meters, the selector labels
+        // and the help are the Dreamcast's own: Dark Legacy's look is asked nothing.
+        const Fixture files("dreamcast-hud-own-look");
+        CHECK(darkLegacyCalls(files).empty());
     }
-    CHECK(darkLegacy.calls.size() == 6);
+    SECTION("no powerups bank") {
+        // Without the bank's hourglass, the hourglass is Dark Legacy's, prepared as its look
+        // prepares it, and nothing else is.
+        const Fixture files("dreamcast-hud-own-look-no-timer");
+        REQUIRE(std::filesystem::remove(files.root() / "powerups/objects.rom"));
+        const std::string darkLegacy{kDarkLegacyHudStyle};
+        CHECK(darkLegacyCalls(files) ==
+              std::vector<test::FakeHudCall>{
+                  {.look = darkLegacy, .part = test::FakeHudPart::Prepare, .seat = -1},
+                  {.look = darkLegacy, .part = test::FakeHudPart::Hourglass, .seat = -1}});
+    }
+}
+
+TEST_CASE("the Dreamcast runestone finder stands at the top right, its column rising straight "
+          "with the closeness",
+          "[legends][dreamcast-hud]") {
+    LoadedLook dreamcast("dreamcast-hud-finder", kWarriorAndWizard);
+    HudView view = dreamcast.viewOf({});
+    // Hidden, it draws nothing.
+    CHECK(dreamcast.drawn(view, &LegendsDreamcastHudPainter::drawRuneMeter).empty());
+
+    // FUN_8c09b360: the static set's THERMBASE whole at (392, 1), then THERMCOL over it. At Dark
+    // Legacy's fill of a quarter the closeness is a half, and the column stands half its way up,
+    // where Dark Legacy's own column stands a quarter of its way.
+    view.runeFill = 0.25f;
+    const std::vector<Quad> quads =
+        dreamcast.drawn(view, &LegendsDreamcastHudPainter::drawRuneMeter);
+    REQUIRE(quads.size() == 2);
+    CHECK(Fixture::pictureOf(quads[0].texture).name == "THERMBASE");
+    checkRect(quads[0].area, {392, 1, 128, 128});
+    checkRect(quads[0].uv, {0, 0, 1, 1});
+    CHECK(Fixture::pictureOf(quads[1].texture).name == "THERMCOL");
+    const RuneMeter::Column half = RuneMeter::column(0.5f, 128);
+    checkRect(quads[1].area, half.area);
+    checkRect(quads[1].uv, half.uv);
+    checkRect(quads[1].area, {392, 65, 128, 64});
+    checkRect(RuneMeter::column(0.25f, 128).area, {392, 84, 128, 45});
+    for (const Quad& quad : quads) {
+        CHECK(Fixture::pictureOf(quad.texture).folder == Fixture::kStaticFolder);
+        CHECK(quad.color == Color::white());
+    }
+    // Full, the column stands its whole height.
+    view.runeFill = 1.0f;
+    const std::vector<Quad> full =
+        dreamcast.drawn(view, &LegendsDreamcastHudPainter::drawRuneMeter);
+    REQUIRE(full.size() == 2);
+    checkRect(full[1].area, {392, 29, 128, 100});
+    // The Dreamcast's own art: Dark Legacy's look is not asked.
+    CHECK(dreamcast.art.record.count(kDarkLegacyHudStyle, test::FakeHudPart::RuneMeter) == 0);
+}
+
+TEST_CASE("the Dreamcast hourglass uses its own art in Dark Legacy's places",
+          "[legends][dreamcast-hud]") {
+    LoadedLook dreamcast("dreamcast-hud-hourglass", kWarriorAndWizard);
+    HudView view = dreamcast.viewOf({});
+    // No hourglass, nothing drawn.
+    CHECK(dreamcast.drawn(view, &LegendsDreamcastHudPainter::drawHourglass).empty());
+
+    // FUN_8c09b640 stands the powerups bank's TIMER at (1, 1), its two TIMER_SAND crops from 24
+    // and 106 down, 41 and 23 rows tall from v 23/128 and 105/128, and the grains at (63, 58):
+    // Dark Legacy's hourglass's own numbers.
+    checkRect(ChallengeHud::kFrameArea, {1, 1, 128, 128});
+    checkRect(ChallengeHud::kFallingArea, {63, 58, 8, 32});
+    const ChallengeHud::Sand start = ChallengeHud::sandAt(0);
+    checkRect(start.upper, {1, 24, 128, 41});
+    checkRect(start.upperUv, {0, 23.0f / 128, 1, 0.5f - (23.0f / 128)});
+    checkRect(start.lower, {1, 106, 128, 23});
+    checkRect(start.lowerUv, {0, 105.0f / 128, 1, 1 - (105.0f / 128)});
+    struct Piece {
+        std::string_view picture;
+        Rect area;
+        Rect uv;
+    };
+    const auto check = [&](const ChallengeHud::Look& look, const std::vector<Piece>& expected) {
+        view.hourglass = look;
+        const std::vector<Quad> quads =
+            dreamcast.drawn(view, &LegendsDreamcastHudPainter::drawHourglass);
+        REQUIRE(quads.size() == expected.size());
+        for (usize index = 0; index < expected.size(); ++index) {
+            CAPTURE(index);
+            const Fixture::Found found = Fixture::pictureOf(quads[index].texture);
+            CHECK(found.folder == Fixture::kPowerupsFolder);
+            CHECK(found.name == expected[index].picture);
+            checkRect(quads[index].area, expected[index].area);
+            checkRect(quads[index].uv, expected[index].uv);
+            // Opaque: FUN_8c09b640 sets no transparency on them.
+            CHECK(quads[index].color == Color::white());
+        }
+    };
+    const Rect whole{0, 0, 1, 1};
+    // The blits deepest first, the glass (3.0), the grains (2.0), then the sand (1.0); the
+    // grains' frame is Dark Legacy's falling counter's, held to the five.
+    const ChallengeHud::Sand half = ChallengeHud::sandAt(0.5f);
+    check({.elapsed = 0.5f, .fallingFrame = 7}, {{"TIMER", ChallengeHud::kFrameArea, whole},
+                                                 {"SAND_ANIM02", ChallengeHud::kFallingArea, whole},
+                                                 {"TIMER_SAND", half.upper, half.upperUv},
+                                                 {"TIMER_SAND", half.lower, half.lowerUv}});
+    // While the clock stands still the grains are hidden, and the sand stays where it is.
+    check({.elapsed = 0.5f, .fallingFrame = -1}, {{"TIMER", ChallengeHud::kFrameArea, whole},
+                                                  {"TIMER_SAND", half.upper, half.upperUv},
+                                                  {"TIMER_SAND", half.lower, half.lowerUv}});
+    // Past the whole time it keeps to the glass's end; with no number for it, nothing shows.
+    const ChallengeHud::Sand end = ChallengeHud::sandAt(1);
+    check({.elapsed = 3, .fallingFrame = 0}, {{"TIMER", ChallengeHud::kFrameArea, whole},
+                                              {"SAND_ANIM00", ChallengeHud::kFallingArea, whole},
+                                              {"TIMER_SAND", end.upper, end.upperUv},
+                                              {"TIMER_SAND", end.lower, end.lowerUv}});
+    check({.elapsed = std::numeric_limits<f32>::quiet_NaN(), .fallingFrame = 0}, {});
+    // The Dreamcast's own art: Dark Legacy's look is not asked.
+    CHECK(dreamcast.art.record.count(kDarkLegacyHudStyle, test::FakeHudPart::Hourglass) == 0);
+}
+
+TEST_CASE("without its hourglass art the Dreamcast look draws Dark Legacy's",
+          "[legends][dreamcast-hud]") {
+    // Dark Legacy's own look lends its art, and draws the hourglass it is given.
+    test::FakeRenderDevice device;
+    DarkLegacyHudPainter darkLegacy;
+    ItemArchive archive = darkLegacyHourglass();
+    ChallengeHud stopTime;
+    REQUIRE(stopTime.bind(device, archive));
+    HudView view;
+    view.hourglass = stopTime.look(45, 60, true);
+    view.hourglassArt = &stopTime;
+    REQUIRE(view.hourglass->fallingFrame >= 0);
+    const auto drawsOf = [&](HudPainter& look) {
+        device.draws.clear();
+        Canvas canvas;
+        canvas.begin(device, Mat4{1.0f});
+        HudFrame frame{canvas, device, darkLegacy};
+        look.drawHourglass(frame, view);
+        canvas.end();
+        return device.draws;
+    };
+    const std::vector<test::RecordedDraw> expected = drawsOf(darkLegacy);
+    REQUIRE(expected.size() == 3);
+    const auto check = [&](const Fixture& files, usize warnings) {
+        LegendsDreamcastHudPainter look;
+        bool loaded = false;
+        const auto run = test::logWhile(
+            [&] { loaded = look.load(device, files.root(), darkLegacy, kWarriorAndWizard); });
+        REQUIRE_FALSE(run.failure);
+        CHECK(loaded);
+        REQUIRE(run.warnings.size() == warnings);
+        for (const std::string& warning : run.warnings) {
+            CHECK(warning.find(LegendsDreamcastHudPainter::kPowerupsFolder) != std::string::npos);
+        }
+        const std::vector<test::RecordedDraw> drawn = drawsOf(look);
+        REQUIRE(drawn.size() == expected.size());
+        for (usize index = 0; index < drawn.size(); ++index) {
+            CAPTURE(index);
+            test::checkRecordedDraw(drawn[index], expected[index]);
+        }
+        return run;
+    };
+    SECTION("no powerups bank") {
+        const Fixture files("dreamcast-hud-no-timer");
+        REQUIRE(std::filesystem::remove(files.root() / "powerups/objects.rom"));
+        check(files, 0);
+    }
+    SECTION("a powerups bank cut short") {
+        const Fixture files("dreamcast-hud-short-timer");
+        files.truncate("powerups/objects.rom");
+        check(files, 1);
+    }
+    SECTION("a powerups bank without a frame of the grains") {
+        const Fixture files("dreamcast-hud-incomplete-timer");
+        std::vector<test::DreamcastPicture> pictures;
+        for (const test::DreamcastPicture& picture : Fixture::kPowerupPictures) {
+            if (picture.name != "SAND_ANIM03") {
+                pictures.push_back(picture);
+            }
+        }
+        files.writeBank(Fixture::kPowerupsFolder, pictures);
+        const auto run = check(files, 1);
+        CHECK(run.warnings.front().find("SAND_ANIM03") != std::string::npos);
+    }
+}
+
+TEST_CASE("Dreamcast boss meters hang at the top, opaque, cropped as Dark Legacy's",
+          "[legends][dreamcast-hud]") {
+    LoadedLook dreamcast("dreamcast-hud-meters", kWarriorAndWizard);
+    HudView view = dreamcast.viewOf({});
+    // No meter, nothing drawn.
+    CHECK(dreamcast.drawn(view, &LegendsDreamcastHudPainter::drawBossMeters).empty());
+    struct Piece {
+        const Texture* texture = nullptr;
+        Rect area;
+        Rect uv;
+    };
+    const auto check = [&](const std::vector<Quad>& quads, const std::vector<Piece>& expected) {
+        REQUIRE(quads.size() == expected.size());
+        for (usize index = 0; index < expected.size(); ++index) {
+            CAPTURE(index);
+            CHECK(quads[index].texture == expected[index].texture);
+            checkRect(quads[index].area, expected[index].area);
+            checkRect(quads[index].uv, expected[index].uv);
+            // Opaque and never tinted.
+            CHECK(quads[index].color == Color::white());
+        }
+    };
+
+    // A boss of two strips at three quarters of its health, frozen: FUN_8c071560 hangs each
+    // strip, 256 across, from the frame's top (its blits' y 383). The fills are Dark Legacy's
+    // crop: the first strip whole, and half of what the second's tail of 72 leaves of it.
+    TextureSet art = meterArt(BossMeter::kPieceWidth, 64);
+    const std::array<HealthMeterReading, 1> boss{meterReading(2, 46, 72, 1875, 2500)};
+    BossMeters meters;
+    showMeters(view, meters, boss, art);
+    meters.update(0, boss, true, true);
+    REQUIRE(meters.meter(0).look().frozen);
+    REQUIRE(meters.meter(0).look().widths == std::array<s32, 2>{256, 92});
+    const auto picture = [&](std::string_view name) {
+        return meterPicture(art, dreamcast.device, name);
+    };
+    check(dreamcast.drawn(view, &LegendsDreamcastHudPainter::drawBossMeters),
+          {{picture("METER_BG1"), {0, 1, 256, 64}, {0, 0, 1, 1}},
+           {picture("METER_FG1"), {0, 1, 256, 64}, {0, 0, 1, 1}},
+           {picture("METER_BG2"), {256, 1, 256, 64}, {0, 0, 1, 1}},
+           {picture("METER_FG2"), {256, 1, 92, 64}, {0, 0, 92.0f / 256, 1}}});
+
+    // Two bosses of a strip each, at half and whole health: each strip from its own meter's
+    // left, the second after the first, cropped to its boss's health.
+    const std::array<HealthMeterReading, 2> pair{meterReading(1, 12, 20, 250, 500),
+                                                 meterReading(1, 12, 20, 500, 500)};
+    BossMeters pairMeters;
+    showMeters(view, pairMeters, pair, art);
+    check(dreamcast.drawn(view, &LegendsDreamcastHudPainter::drawBossMeters),
+          {{picture("METER_BG1"), {0, 1, 256, 64}, {0, 0, 1, 1}},
+           {picture("METER_FG1"), {0, 1, 112, 64}, {0, 0, 112.0f / 256, 1}},
+           {picture("METER_BG1"), {256, 1, 256, 64}, {0, 0, 1, 1}},
+           {picture("METER_FG1"), {256, 1, 224, 64}, {0, 0, 224.0f / 256, 1}}});
+    // Their bosses dead, the meters go.
+    pairMeters.update(0, pair, false, false);
+    CHECK(dreamcast.drawn(view, &LegendsDreamcastHudPainter::drawBossMeters).empty());
+    // The Dreamcast's own places: Dark Legacy's look is not asked.
+    CHECK(dreamcast.art.record.count(kDarkLegacyHudStyle, test::FakeHudPart::BossMeters) == 0);
+}
+
+TEST_CASE("a powerup's name shows over its Dreamcast box, in the seat's colour while worn",
+          "[legends][dreamcast-hud]") {
+    LoadedLook dreamcast("dreamcast-hud-label", kWarriorAndWizard);
+    // Dark Legacy's FONT32, by whose line at its label's size the label keeps its bottom.
+    const MeasuredFont font32(32);
+    REQUIRE(font32.text.lineHeight(PowerupSelector::kLabelScale) == 14);
+    // Seat 1, a blue wizard, wears invisibility; seat 2, a red warrior, carries X-ray glasses
+    // it does not wear; seat 3, a green warrior, wears gold invulnerability, whose name is wider
+    // than the box. Each selector is up, naming its powerup.
+    Inventory invisible;
+    invisible.powerups[0] = PowerupSlot{30, powerup::kSpecial, 0, powerup::kInvisible, true};
+    Inventory glasses;
+    glasses.powerups[0] = PowerupSlot{30, powerup::kSpecial, 0, powerup::kXRay, false};
+    Inventory gold;
+    gold.powerups[0] = PowerupSlot{30, powerup::kArmor, 0, armor::kGoldInvulnerable, true};
+    Holder wizard(invisible, 1, kWizardClass, 1);
+    Holder warrior(glasses, 2, kWarriorClass, 2);
+    Holder knight(gold, 3, kWarriorClass, 3);
+    for (Holder* holder : {&wizard, &warrior, &knight}) {
+        holder->open();
+    }
+    // Seat 0's selector is down.
+    Holder closed(invisible, 0, kWarriorClass, 0);
+    HudView view =
+        dreamcast.viewOf({closed.shown(), wizard.shown(), warrior.shown(), knight.shown()});
+    view.largeText = &font32.text;
+    const std::vector<Quad> quads =
+        dreamcast.drawn(view, &LegendsDreamcastHudPainter::drawSelectors);
+    CHECK(quadsIn(quads, 0).empty());
+
+    // Each in font 1, centred on its box, its bottom where Dark Legacy's label's is: the label's
+    // top as the selector slides it, 29 over the box, and Dark Legacy's line of 14 at 0.45.
+    const s32 bottom = wizard.selector.labelY(StatusBoxPainter::kY) + 14;
+    REQUIRE(bottom == 291 + 14);
+    CHECK(
+        linesOf(quadsIn(quads, 1), Fixture::kSmallFont) ==
+        std::vector<Line>{centredAt(Fixture::kSmallFont, 168, bottom - 8, "Invisible", kBlueInk)});
+    CHECK(linesOf(quadsIn(quads, 2), Fixture::kSmallFont) ==
+          std::vector<Line>{
+              centredAt(Fixture::kSmallFont, 344, bottom - 8, "X-Ray", Color::white())});
+    // The name too wide for the box shrinks to the largest size that keeps it within the box's
+    // 96: its glyphs advance 4 of their 6, where at 5 it would be 101 across. Its bottom stays.
+    const std::string_view longName = "Gold Invulnerability";
+    REQUIRE(measure(Fixture::kSmallFont, longName) > 96);
+    const MeasuredFont fontOne(Fixture::kSmallFont);
+    const f32 scale = dreamcastLabelScale(fontOne.text, longName);
+    CHECK(scale > 0.83f);
+    CHECK(scale < 5.0f / 6);
+    CHECK(measure(Fixture::kSmallFont, longName, scale) == 82);
+    CHECK(measure(Fixture::kSmallFont, longName, 0.84f) == 101);
+    const s32 line = static_cast<s32>(8 * scale);
+    CHECK(linesOf(quadsIn(quads, 3), Fixture::kSmallFont, scale) ==
+          std::vector<Line>{centredAt(Fixture::kSmallFont, 456, bottom - line,
+                                      std::string{longName}, kGreenInk, scale)});
+    // A name that fits keeps its own size.
+    CHECK(dreamcastLabelScale(fontOne.text, "Invisible") == 1);
+    // The Dreamcast's own font: Dark Legacy's look is not asked, nor its FONT32 drawn with.
+    CHECK(dreamcast.art.record.count(kDarkLegacyHudStyle, test::FakeHudPart::Selectors) == 0);
+    for (const Quad& quad : quads) {
+        CHECK(Fixture::sheetOf(quad.texture, Fixture::kSmallFont));
+    }
+}
+
+TEST_CASE("Dreamcast help is written on its player's coloured scroll, in that colour's ink",
+          "[legends][dreamcast-hud]") {
+    LoadedLook dreamcast("dreamcast-hud-help", kWarriorAndWizard);
+    HudView view = dreamcast.viewOf({});
+    CHECK(dreamcast.drawn(view, &LegendsDreamcastHudPainter::drawHelp).empty());
+    // Dark Legacy's message for seat 1, who wears red, over its head.
+    const std::vector<std::string> lines{"WATCH OUT", "AN EXIT"};
+    const Vec2 head{300, 250};
+    view.help = HudHelp{.lines = lines, .player = 1, .color = 2, .head = head, .anchored = true};
+    const LegendsDreamcastHelpBox box = dreamcastHelpBox(lines, head, true, 1);
+    const std::vector<Quad> quads = dreamcast.drawn(view, &LegendsDreamcastHudPainter::drawHelp);
+    // FUN_8c0e3420: the scroll of the player's colour whole over the box, at transparency 0x40,
+    // under the lines.
+    REQUIRE_FALSE(quads.empty());
+    CHECK(Fixture::pictureOf(quads.front().texture).name == "RED_TEXTSCROLL");
+    checkRect(quads.front().area, {static_cast<f32>(box.x), static_cast<f32>(box.y),
+                                   static_cast<f32>(box.width), static_cast<f32>(box.height)});
+    checkRect(quads.front().uv, {0, 0, 1, 1});
+    CHECK(quads.front().color == Color::white().withAlpha(191));
+    // The lines in font 1, centred on the scroll, 8 apart down its middle, in red's ink
+    // (8c14e7e0).
+    const Color red = Color::rgba(0x1F, 0x00, 0x00);
+    CHECK(box.textTop == box.y + 12);
+    CHECK(linesOf(quads, Fixture::kSmallFont) ==
+          std::vector<Line>{
+              centredAt(Fixture::kSmallFont, box.textCentre, box.textTop, "WATCH OUT", red),
+              centredAt(Fixture::kSmallFont, box.textCentre, box.textTop + 8, "AN EXIT", red)});
+    REQUIRE(quads.size() == 1 + 14);
+    // Each colour has its scroll and its ink, and a message for nobody the plain scroll in the
+    // scroll's brown.
+    struct Coloured {
+        s32 color = 0;
+        std::string_view picture;
+        Color ink;
+    };
+    for (const Coloured& coloured : std::array<Coloured, 5>{{
+             {.color = 0, .picture = "YEL_TEXTSCROLL", .ink = Color::rgba(0x1F, 0x1F, 0x00)},
+             {.color = 1, .picture = "BLU_TEXTSCROLL", .ink = Color::rgba(0x00, 0x00, 0x1F)},
+             {.color = 3, .picture = "GRE_TEXTSCROLL", .ink = Color::rgba(0x00, 0x1F, 0x00)},
+             {.color = -1, .picture = "TEXTSCROLL", .ink = Color::rgba(0x16, 0x0C, 0x03)},
+             {.color = 7, .picture = "TEXTSCROLL", .ink = Color::rgba(0x16, 0x0C, 0x03)},
+         }}) {
+        CAPTURE(coloured.color);
+        view.help->color = coloured.color;
+        const std::vector<Quad> drawn =
+            dreamcast.drawn(view, &LegendsDreamcastHudPainter::drawHelp);
+        REQUIRE(drawn.size() == quads.size());
+        CHECK(Fixture::pictureOf(drawn.front().texture).name == coloured.picture);
+        for (const Quad& glyph : std::span{drawn}.subspan(1)) {
+            CHECK(glyph.color == coloured.ink);
+        }
+    }
+    // The Dreamcast's own art: Dark Legacy's look is not asked.
+    CHECK(dreamcast.art.record.count(kDarkLegacyHudStyle, test::FakeHudPart::Help) == 0);
 }
 
 TEST_CASE("a missing static set or font stops the Dreamcast look, and one that cannot be read "

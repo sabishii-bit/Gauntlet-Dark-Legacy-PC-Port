@@ -2,12 +2,16 @@
 
 #include <array>
 #include <optional>
+#include <span>
+#include <string>
 #include <string_view>
 
 #include "engine/core/Types.h"
 #include "engine/math/Math.h"
+#include "engine/ui/TextPainter.h"
 
 #include "game/hud/HudView.h"
+#include "game/hud/RuneMeter.h"
 #include "game/hud/StatusBox.h"
 
 namespace gdl::game {
@@ -50,6 +54,9 @@ struct LegendsDreamcastCardKind {
  * edge of what stands there, measured from the top as the blits' negative y measures it.
  */
 struct LegendsDreamcastHudLayout {
+    /** The Dreamcast's frame, the canvas's own. */
+    static constexpr s32 kFrameWidth = 512;
+    static constexpr s32 kFrameHeight = 384;
     // 8c14bbb8 and 8c14bbc0: each seat's column and its box's centre.
     static constexpr std::array<s32, 4> kSeatX{8, 120, 296, 408};
     static constexpr std::array<s32, 4> kSeatCentre{56, 168, 344, 456};
@@ -236,6 +243,57 @@ struct LegendsDreamcastHudLayout {
         {.realm = 10, .icon = {}, .picture = "LANTERN"},
         {.realm = 11, .icon = {}, .picture = "JAVILIN"},
     }};
+
+    // FUN_8c09b360 makes the runestone finder's two blits at the top right, at x 392: THERMBASE
+    // from 1 down (its blit's y of -1), with THERMCOL over it, which FUN_8c09b4e0 crops and
+    // raises by Dark Legacy's finder's rule (RuneMeter::column), but straight with the
+    // closeness, where Dark Legacy's rises with its square.
+    static constexpr s32 kThermometerLeft = 392;
+    static constexpr s32 kThermometerTop = 1;
+
+    /** The powerups bank's frames of the hourglass's falling grains, SAND_ANIM00..04, which
+     * Dark Legacy's falling counter steps through, held to the five: how fast the Dreamcast
+     * steps them was not traced. FUN_8c09b640 stands the glass, the grains and the two crops of
+     * sand where Dark Legacy's hourglass stands them (ChallengeHud's areas and sandAt). */
+    static constexpr usize kSandFrames = 5;
+
+    // FUN_8c071560 hangs a boss's meter from the frame's top, its strips' blits at y 383, each
+    // strip 256 across from the meter's left. How the Dreamcast fills it and how opaque it
+    // stands were not traced: it is cropped as Dark Legacy's, opaque and never tinted.
+    static constexpr s32 kMeterTop = 1;
+    static constexpr u8 kMeterOpacity = 255;
+
+    /** The port's: the Dreamcast has no selector. The powerup a selector names is written in
+     * font 1 over the box, centred on it, its bottom where Dark Legacy's label's is, at its own
+     * size or the largest that keeps it within the box's width. */
+    static constexpr s32 kLabelWidest = 96;
+
+    // FUN_8c0e3420: a help message's scroll is (its longest line's characters + 6) x 9 across
+    // and (its lines + 3) x 8 down. Its middle stands 54 over its anchor, which is 8 over the
+    // point FUN_8c0808a0 projects, or, for a seat's message with no point, the seat's box's
+    // centre 80 up from the frame's bottom. It is kept across the frame, its top from 2 down
+    // and its bottom from 80 up, over the boxes. Its lines are written in font 1, 8 apart,
+    // centred on it and down its middle, on the scroll of the costume colour of the seat it is
+    // for at transparency 0x40, in that colour's ink.
+    static constexpr s32 kHelpCharacterWidth = 9;
+    static constexpr s32 kHelpMarginCharacters = 6;
+    static constexpr s32 kHelpLineHeight = 8;
+    static constexpr s32 kHelpMarginLines = 3;
+    static constexpr s32 kHelpPointLift = 8;
+    static constexpr s32 kHelpOverAnchor = 54;
+    static constexpr s32 kHelpHighest = 2; ///< the scroll's top stands no higher
+    /** 80 up from the frame's bottom: a seat's own anchor, and the lowest a scroll's bottom
+     * stands. */
+    static constexpr s32 kHelpFloor = 304;
+    static constexpr u8 kHelpTransparency = 0x40;
+    /** 8c14e7cc: the scrolls by costume colour, yellow, blue, red and green, and last the plain
+     * one, for a message for nobody. */
+    static constexpr std::array<std::string_view, 5> kHelpScrolls{
+        "YEL_TEXTSCROLL", "BLU_TEXTSCROLL", "RED_TEXTSCROLL", "GRE_TEXTSCROLL", "TEXTSCROLL"};
+    /** 8c14e7e0: the ink written on each. */
+    static constexpr std::array<Color, 5> kHelpInks{
+        Color::rgba(0x1F, 0x1F, 0x00), Color::rgba(0x00, 0x00, 0x1F), Color::rgba(0x1F, 0x00, 0x00),
+        Color::rgba(0x00, 0x1F, 0x00), Color::rgba(0x16, 0x0C, 0x03)};
 };
 
 /** Seat `seat`'s column, and its box's centre. */
@@ -307,5 +365,34 @@ enum class LegendsDreamcastBoxKind : u8 {
  * to wait there, or gone from the game, kind 0 (FUN_8c0bbf80, FUN_8c0bc040 and FUN_8c0bbee0 each
  * rebuild the box so, and nothing hides a gone player's); nobody, none. */
 LegendsDreamcastBoxKind dreamcastBoxKind(const HudSeat& seat);
+
+/** The runestone finder's column for Dark Legacy's fill `fill`, `width` across: Dark Legacy's
+ * column for the closeness of which that fill is the square, as FUN_8c09b4e0 raises it. */
+RuneMeter::Column dreamcastThermometerColumn(f32 fill, f32 width);
+
+/** The size font 1, `font`, writes a selector's label `label` at: its own, else the largest at
+ * which it keeps within the box's width. */
+f32 dreamcastLabelScale(const TextPainter& font, std::string_view label);
+
+/** Where a help message's scroll stands, and its lines on it, in whole canvas units. */
+struct LegendsDreamcastHelpBox {
+    s32 x = 0;
+    s32 y = 0;
+    s32 width = 0;
+    s32 height = 0;
+    s32 textCentre = 0; ///< the lines are centred on it
+    s32 textTop = 0;    ///< the first line's top; each next stands kHelpLineHeight under it
+    bool operator==(const LegendsDreamcastHelpBox&) const = default;
+};
+
+/** The scroll FUN_8c0e3420 puts under a message of `lines` for seat `seat`, -1 for one at a
+ * place: over `head` when it is a projected point (`anchored`); over the seat's box when it is
+ * not and the message has a seat; else over `head`, Dark Legacy's middle of the screen. */
+LegendsDreamcastHelpBox dreamcastHelpBox(std::span<const std::string> lines, Vec2 head,
+                                         bool anchored, s32 seat);
+
+/** Which of the help scrolls, and of their inks, a message for costume colour `color` takes:
+ * its own, else the plain one for a message for nobody. */
+usize dreamcastHelpScroll(s32 color);
 
 } // namespace gdl::game

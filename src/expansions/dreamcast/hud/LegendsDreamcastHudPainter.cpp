@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <exception>
 #include <filesystem>
 #include <format>
@@ -34,11 +35,16 @@
 #include "expansions/shared/hud/LegendsHudArt.h"
 #include "formats/FontFile.h"
 #include "game/characters/ClassData.h"
+#include "game/characters/Inventory.h"
+#include "game/hud/BossMeter.h"
+#include "game/hud/ChallengeHud.h"
 #include "game/hud/HudView.h"
 #include "game/hud/PickupHud.h"
 #include "game/hud/PowerupSelector.h"
+#include "game/hud/RuneMeter.h"
 #include "game/hud/StatusBox.h"
 #include "game/party/PlayerRuntime.h"
+#include "game/players/PowerupEffects.h"
 
 namespace gdl::game {
 namespace {
@@ -53,6 +59,13 @@ constexpr std::string_view kKeyIcon = "KEY_ICON";
 constexpr std::string_view kThirteenthRuneArt = "RUNE13";
 constexpr std::string_view kItArt = "IT";
 constexpr std::string_view kWaitScrollArt = "TEXTSCROLL";
+constexpr std::string_view kThermometerBase = "THERMBASE";
+constexpr std::string_view kThermometerColumn = "THERMCOL";
+/** The powerups bank's hourglass: its glass, its sand, and its falling grains' frames, by
+ * number after this. */
+constexpr std::string_view kTimerArt = "TIMER";
+constexpr std::string_view kTimerSandArt = "TIMER_SAND";
+constexpr std::string_view kGrainsPrefix = "SAND_ANIM";
 constexpr std::string_view kPanelPrefix = "BTMBK_";    ///< a costume's panel, by colour
 constexpr std::string_view kPlainStripPrefix = "S3_W"; ///< a kind-0 box's strip, by colour
 constexpr std::string_view kPlainPanelPrefix = "S4_W"; ///< and its panel
@@ -241,7 +254,16 @@ bool LegendsDreamcastHudPainter::load(RenderDevice& device, const std::filesyste
     for (const HudMember& member : party) {
         loadClass(device, files, member.classIndex, member.color);
     }
-    loadLegends(device, files, darkLegacy);
+    // The powerups bank holds both the legend items' icons and the hourglass: it is read once.
+    const auto powerups = optionalBank(files, std::string{kPowerupsFolder});
+    std::span<const formats::LegendsMapTexture> powerupPictures;
+    if (powerups) {
+        powerupPictures = *powerups;
+    }
+    loadLegends(device, powerupPictures, darkLegacy);
+    if (powerups) {
+        loadTimer(device, powerupPictures);
+    }
     borrowPictures(darkLegacy);
     return true;
 }
@@ -253,6 +275,9 @@ void LegendsDreamcastHudPainter::release() {
     }
     m_strip = m_levelLabel = m_goldLabel = m_healthLabel = m_key = m_glow = nullptr;
     m_thirteenthRune = m_it = m_waitScroll = nullptr;
+    m_thermometerBase = m_thermometerColumn = m_timer = m_timerSand = nullptr;
+    m_grains = {};
+    m_helpScrolls = {};
     m_darkLegacyCards.clear();
     m_countIcons.clear();
     m_plainStrips = {};
@@ -276,8 +301,8 @@ void LegendsDreamcastHudPainter::loadStatic(RenderDevice& device,
         throw FormatError(
             std::format("{} with {}: {}", kStaticObjects, kStaticTextures, error.what()));
     }
-    // Every picture the boxes draw is taken whole before the look is drawn; nothing else of the
-    // set is uploaded.
+    // Every picture the look draws is taken whole before it is drawn; nothing else of the set is
+    // uploaded.
     const auto take = [&](std::string_view name) {
         const formats::LegendsMapTexture* picture = pictureIn(pictures, name);
         if (picture == nullptr) {
@@ -323,6 +348,14 @@ void LegendsDreamcastHudPainter::loadStatic(RenderDevice& device,
     m_thirteenthRune = take(kThirteenthRuneArt);
     m_it = take(kItArt);
     m_waitScroll = take(kWaitScrollArt);
+    m_thermometerBase = take(kThermometerBase);
+    m_thermometerColumn = take(kThermometerColumn);
+    // The help's plain scroll is WAIT HERE's.
+    for (usize colour = 0; colour < m_helpScrolls.size(); ++colour) {
+        const std::string_view scroll = Layout::kHelpScrolls.at(colour);
+        const Texture* taken = m_art.find(scroll);
+        m_helpScrolls.at(colour) = taken != nullptr ? taken : take(scroll);
+    }
     // FUN_8c0b7560's six cards, each standing for one or more of Dark Legacy's.
     for (const LegendsDreamcastCardKind& kind : Layout::kCards) {
         if (!kind.face.empty() && m_art.find(kind.face) == nullptr) {
@@ -388,22 +421,47 @@ void LegendsDreamcastHudPainter::loadClass(RenderDevice& device, const AssetLoca
     }
 }
 
-void LegendsDreamcastHudPainter::loadLegends(RenderDevice& device, const AssetLocator& files,
+void LegendsDreamcastHudPainter::loadLegends(RenderDevice& device,
+                                             std::span<const formats::LegendsMapTexture> pictures,
                                              DarkLegacyHudArt& darkLegacy) {
     // FUN_8c0c08a0 gives the Dreamcast's five legend items' places QUEST_ICON1..5, which the
     // powerups bank holds. Dark Legacy's own picture stands in for an item the Dreamcast has none
     // of, or one the bank does not hold.
     const std::string folder{kPowerupsFolder};
-    const auto pictures = optionalBank(files, folder);
     for (const LegendsDreamcastLegend& legend : Layout::kLegends) {
         LegendArt& art = m_legends.at(static_cast<usize>(legend.realm));
-        if (pictures && !legend.icon.empty()) {
-            art.picture = takePicture(device, *pictures, folder, legend.icon);
+        if (!legend.icon.empty()) {
+            art.picture = takePicture(device, pictures, folder, legend.icon);
         }
         if (art.picture == nullptr) {
             art.picture = darkLegacy.selectArt(legend.picture);
             art.fitted = true;
         }
+    }
+}
+
+void LegendsDreamcastHudPainter::loadTimer(RenderDevice& device,
+                                           std::span<const formats::LegendsMapTexture> pictures) {
+    // FUN_8c09b640's glass, its sand and the grains' frames. The hourglass is drawn whole or not
+    // at all: every picture is found before any is taken.
+    std::array<std::string, Layout::kSandFrames> grains;
+    for (usize frame = 0; frame < grains.size(); ++frame) {
+        grains.at(frame) = std::format("{}{:02}", kGrainsPrefix, frame);
+    }
+    std::vector<std::string_view> names{kTimerArt, kTimerSandArt};
+    names.insert(names.end(), grains.begin(), grains.end());
+    for (const std::string_view name : names) {
+        if (pictureIn(pictures, name) == nullptr) {
+            log::warn("Dreamcast HUD: {}: no {}; the hourglass is Dark Legacy's", kPowerupsFolder,
+                      name);
+            return;
+        }
+    }
+    const std::string folder{kPowerupsFolder};
+    m_timer = takePicture(device, pictures, folder, kTimerArt);
+    m_timerSand = takePicture(device, pictures, folder, kTimerSandArt);
+    for (usize frame = 0; frame < grains.size(); ++frame) {
+        m_grains.at(frame) = takePicture(device, pictures, folder, grains.at(frame));
     }
 }
 
@@ -452,8 +510,10 @@ f32 LegendsDreamcastHudPainter::statusTop() const {
 }
 
 void LegendsDreamcastHudPainter::prepare(HudFrame& frame, const HudView& view) {
-    // The parts drawn in Dark Legacy's look are prepared as that look prepares them.
-    frame.darkLegacy.look().prepare(frame, view);
+    // Without its own art the hourglass is Dark Legacy's, prepared as that look prepares it.
+    if (m_timer == nullptr) {
+        frame.darkLegacy.look().prepare(frame, view);
+    }
     const s64 steps = m_clock.advance(view.seconds);
     const bool rewound = m_clock.rewound();
     for (usize seat = 0; seat < m_glowSteps.size(); ++seat) {
@@ -499,23 +559,131 @@ void LegendsDreamcastHudPainter::drawStatus(HudFrame& frame, const HudView& view
 }
 
 void LegendsDreamcastHudPainter::drawRuneMeter(HudFrame& frame, const HudView& view) {
-    frame.darkLegacy.look().drawRuneMeter(frame, view);
+    if (!view.runeFill || m_thermometerBase == nullptr || m_thermometerColumn == nullptr) {
+        return;
+    }
+    // The base, then its column over it, as their blits' depths stand them (FUN_8c09b360).
+    drawWhole(frame.canvas, m_thermometerBase, static_cast<f32>(Layout::kThermometerLeft),
+              static_cast<f32>(Layout::kThermometerTop));
+    const RuneMeter::Column column =
+        dreamcastThermometerColumn(*view.runeFill, static_cast<f32>(m_thermometerColumn->width()));
+    frame.canvas.draw(*m_thermometerColumn, column.area, column.uv, Color::white());
 }
 
 void LegendsDreamcastHudPainter::drawHourglass(HudFrame& frame, const HudView& view) {
-    frame.darkLegacy.look().drawHourglass(frame, view);
+    if (m_timer == nullptr) {
+        frame.darkLegacy.look().drawHourglass(frame, view);
+        return;
+    }
+    if (!view.hourglass || !std::isfinite(view.hourglass->elapsed)) {
+        return;
+    }
+    // FUN_8c09b640's blits, deepest first: the glass, the grains while the clock runs, then the
+    // sand each bulb holds.
+    Canvas& canvas = frame.canvas;
+    canvas.draw(*m_timer, ChallengeHud::kFrameArea);
+    if (view.hourglass->fallingFrame >= 0) {
+        const auto frameShown = static_cast<usize>(view.hourglass->fallingFrame) % m_grains.size();
+        if (const Texture* grains = m_grains.at(frameShown)) {
+            canvas.draw(*grains, ChallengeHud::kFallingArea);
+        }
+    }
+    const ChallengeHud::Sand sand =
+        ChallengeHud::sandAt(std::clamp(view.hourglass->elapsed, 0.0f, 1.0f));
+    canvas.draw(*m_timerSand, sand.upper, sand.upperUv, Color::white());
+    canvas.draw(*m_timerSand, sand.lower, sand.lowerUv, Color::white());
 }
 
 void LegendsDreamcastHudPainter::drawBossMeters(HudFrame& frame, const HudView& view) {
-    frame.darkLegacy.look().drawBossMeters(frame, view);
+    if (view.bossMeters == nullptr) {
+        return;
+    }
+    const BossMeters& meters = *view.bossMeters;
+    const Color shade = Color::white().withAlpha(Layout::kMeterOpacity);
+    const auto top = static_cast<f32>(Layout::kMeterTop);
+    const auto strip = static_cast<f32>(BossMeter::kPieceWidth);
+    for (usize index = 0; index < meters.count(); ++index) {
+        const BossMeter& meter = meters.meter(index);
+        if (!meter.showing()) {
+            continue;
+        }
+        const BossMeter::Layout layout = meter.layout();
+        const BossMeter::Look look = meter.look();
+        const s32 pieces = std::min(layout.pieces, BossMeter::kMostPieces);
+        for (s32 piece = 0; piece < pieces; ++piece) {
+            const f32 x = static_cast<f32>(layout.left) + (strip * static_cast<f32>(piece));
+            if (const Texture* back =
+                    meter.pieceTexture(frame.device, BossMeter::MeterPart::Background, piece)) {
+                frame.canvas.draw(*back, Rect{x, top, strip, static_cast<f32>(back->height())},
+                                  shade);
+            }
+            const s32 width =
+                std::clamp(look.widths.at(static_cast<usize>(piece)), 0, BossMeter::kPieceWidth);
+            if (width <= 0) {
+                continue;
+            }
+            if (const Texture* fill =
+                    meter.pieceTexture(frame.device, BossMeter::MeterPart::Fill, piece)) {
+                // Cropped, not squeezed: the fill's left part.
+                const auto across = static_cast<f32>(width);
+                frame.canvas.draw(*fill, Rect{x, top, across, static_cast<f32>(fill->height())},
+                                  Rect{0, 0, across / strip, 1}, shade);
+            }
+        }
+    }
 }
 
 void LegendsDreamcastHudPainter::drawSelectors(HudFrame& frame, const HudView& view) {
-    frame.darkLegacy.look().drawSelectors(frame, view);
+    if (!m_small.text.ready()) {
+        return;
+    }
+    // Dark Legacy's label writes FONT32 at its own size from the selector's label top; this one
+    // keeps its bottom there.
+    const s32 darkLegacyLine =
+        view.largeText != nullptr ? view.largeText->lineHeight(PowerupSelector::kLabelScale) : 0;
+    for (usize seat = 0; seat < view.seats.size(); ++seat) {
+        const HudSeat& shown = view.seats.at(seat);
+        const PowerupSelector* selector = shown.selector;
+        if (selector == nullptr || shown.runtime == nullptr || !selector->showing() ||
+            selector->selection() < 0) {
+            continue;
+        }
+        const Inventory& carried = shown.runtime->actor.save().progress().inventory;
+        const auto chosen = static_cast<usize>(selector->selection());
+        if (chosen >= carried.powerups.size()) {
+            continue;
+        }
+        const PowerupSlot& slot = carried.powerups.at(chosen);
+        const std::string_view label = words(view, powerupTextId(slot.kind, slot.flags));
+        const f32 scale = dreamcastLabelScale(m_small.text, label);
+        const s32 bottom = selector->labelY(StatusBoxPainter::kY) + darkLegacyLine;
+        write(frame.canvas, m_small.text, -dreamcastSeatCentre(seat),
+              bottom - m_small.text.lineHeight(scale), label,
+              TextStyle{.scale = scale,
+                        .color = slot.on ? inkOf(seatColour(shown)) : Color::white()});
+    }
 }
 
 void LegendsDreamcastHudPainter::drawHelp(HudFrame& frame, const HudView& view) {
-    frame.darkLegacy.look().drawHelp(frame, view);
+    if (!view.help || view.help->lines.empty()) {
+        return;
+    }
+    const HudHelp& help = *view.help;
+    const LegendsDreamcastHelpBox box =
+        dreamcastHelpBox(help.lines, help.head, help.anchored, help.player);
+    const usize colour = dreamcastHelpScroll(help.color);
+    if (const Texture* scroll = m_helpScrolls.at(colour)) {
+        frame.canvas.draw(*scroll,
+                          Rect{static_cast<f32>(box.x), static_cast<f32>(box.y),
+                               static_cast<f32>(box.width), static_cast<f32>(box.height)},
+                          Color::white().withAlpha(kOpaque - Layout::kHelpTransparency));
+    }
+    const TextStyle ink{.color = Layout::kHelpInks.at(colour)};
+    s32 top = box.textTop;
+    for (const std::string& line : help.lines) {
+        write(frame.canvas, m_small.text, -box.textCentre, top, line, ink);
+        top += Layout::kHelpLineHeight;
+    }
 }
 
 void LegendsDreamcastHudPainter::drawPanel(Canvas& canvas, usize seat, const HudSeat& shown,

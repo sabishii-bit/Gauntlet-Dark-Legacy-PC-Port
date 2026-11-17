@@ -4,17 +4,34 @@
 #include <array>
 #include <cmath>
 #include <optional>
+#include <span>
+#include <string>
 #include <string_view>
 
 #include "engine/core/Types.h"
+#include "engine/math/Math.h"
+#include "engine/ui/TextPainter.h"
 
 #include "game/hud/HudView.h"
+#include "game/hud/RuneMeter.h"
 #include "game/hud/StatusBox.h"
 
 namespace gdl::game {
 namespace {
 
 using Layout = LegendsDreamcastHudLayout;
+
+/** How many times the search for a label's size halves its span: enough to settle it to a
+ * 65536th. */
+constexpr s32 kLabelSearchSteps = 16;
+
+/** `value` kept within [0, most] in whole units, nought for no number: a point off the frame
+ * stands a help scroll at the frame's edge all the same. */
+s32 wholeWithin(f32 value, s32 most) {
+    return std::isfinite(value)
+               ? static_cast<s32>(std::lround(std::clamp(value, 0.0f, static_cast<f32>(most))))
+               : 0;
+}
 
 /** Whether the legend items lead with the Dreamcast's own, place by place: realm n's in place
  * n - 1, each with its icon, and none of the others with one. */
@@ -164,6 +181,76 @@ LegendsDreamcastBoxKind dreamcastBoxKind(const HudSeat& seat) {
         return LegendsDreamcastBoxKind::None;
     }
     return seat.box.inTower ? LegendsDreamcastBoxKind::Plain : LegendsDreamcastBoxKind::Panel;
+}
+
+RuneMeter::Column dreamcastThermometerColumn(f32 fill, f32 width) {
+    const f32 held = std::isfinite(fill) ? std::clamp(fill, 0.0f, 1.0f) : 0.0f;
+    return RuneMeter::column(std::sqrt(held), width);
+}
+
+f32 dreamcastLabelScale(const TextPainter& font, std::string_view label) {
+    if (font.measure(label) <= Layout::kLabelWidest) {
+        return 1.0f;
+    }
+    // Each glyph's advance is cut to whole units as the line shrinks, so the largest size that
+    // fits is searched for, as Dark Legacy's own label's is.
+    f32 low = 0;
+    f32 high = 1;
+    for (s32 step = 0; step < kLabelSearchSteps; ++step) {
+        const f32 middle = (low + high) * 0.5f;
+        if (font.measure(label, middle) <= Layout::kLabelWidest) {
+            low = middle;
+        } else {
+            high = middle;
+        }
+    }
+    return low;
+}
+
+LegendsDreamcastHelpBox dreamcastHelpBox(std::span<const std::string> lines, Vec2 head,
+                                         bool anchored, s32 seat) {
+    usize longest = 0;
+    for (const std::string& line : lines) {
+        longest = std::max(longest, line.size());
+    }
+    const s32 width =
+        (static_cast<s32>(longest) + Layout::kHelpMarginCharacters) * Layout::kHelpCharacterWidth;
+    const s32 height =
+        (static_cast<s32>(lines.size()) + Layout::kHelpMarginLines) * Layout::kHelpLineHeight;
+    // A seat's message with nothing in the world to stand over stands over the seat's box.
+    const bool overBox =
+        !anchored && seat >= 0 && static_cast<usize>(seat) < Layout::kSeatCentre.size();
+    const s32 anchorX = overBox ? dreamcastSeatCentre(static_cast<usize>(seat))
+                                : wholeWithin(head.x, Layout::kFrameWidth);
+    const s32 anchorY = overBox
+                            ? Layout::kHelpFloor
+                            : wholeWithin(head.y, Layout::kFrameHeight) - Layout::kHelpPointLift;
+    // Kept on the frame as FUN_8c0e3420 keeps it: the top first, then the bottom; the left
+    // first, then the right.
+    s32 top = anchorY - Layout::kHelpOverAnchor - (height / 2);
+    if (top < Layout::kHelpHighest) {
+        top = Layout::kHelpHighest;
+    } else if (top + height > Layout::kHelpFloor) {
+        top = Layout::kHelpFloor - height;
+    }
+    s32 left = anchorX - (width / 2);
+    if (left < 0) {
+        left = 0;
+    } else if (left + width > Layout::kFrameWidth) {
+        left = Layout::kFrameWidth - width;
+    }
+    return {.x = left,
+            .y = top,
+            .width = width,
+            .height = height,
+            .textCentre = left + (width / 2),
+            .textTop =
+                top + ((height - (static_cast<s32>(lines.size()) * Layout::kHelpLineHeight)) / 2)};
+}
+
+usize dreamcastHelpScroll(s32 color) {
+    const usize plain = Layout::kHelpScrolls.size() - 1;
+    return color >= 0 && static_cast<usize>(color) < plain ? static_cast<usize>(color) : plain;
 }
 
 } // namespace gdl::game

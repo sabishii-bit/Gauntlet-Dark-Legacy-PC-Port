@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <format>
 #include <initializer_list>
 #include <limits>
@@ -18,13 +19,16 @@
 #include "game/bosses/LegendItems.h"
 #include "game/characters/CharacterSave.h"
 #include "game/characters/ClassData.h"
+#include "game/hud/HelpMessages.h"
 #include "game/hud/HudView.h"
 #include "game/hud/PickupHud.h"
+#include "game/hud/RuneMeter.h"
 #include "game/hud/StatusBox.h"
 #include "game/level/BossKinds.h"
 #include "game/party/PlayerRuntime.h"
 #include "game/players/ItemPickup.h"
 #include "game/shop/InventoryPanel.h"
+#include "game/widgets/ScrollBox.h"
 
 namespace {
 
@@ -377,4 +381,111 @@ TEST_CASE("the Dreamcast box's legend items are Dark Legacy's, with its own icon
         CHECK(std::ranges::any_of(
             pieces, [&](const InventoryPiece& piece) { return piece.texture == legend.picture; }));
     }
+}
+
+TEST_CASE("Dreamcast help sits 62 over its anchor, on its box when it has none, and keeps to the "
+          "screen",
+          "[legends][dreamcast-hud]") {
+    using Box = LegendsDreamcastHelpBox;
+    // FUN_8c0e3420: (the longest line's characters + 6) x 9 across, (the lines + 3) x 8 down.
+    const std::vector<std::string> one{"WATCH OUT"};
+    const std::vector<std::string> two{"USE KEY", "TO OPEN DOORS"};
+    // Over a projected point its middle stands 54 over its anchor, 8 over the point: 62 over
+    // it, Dark Legacy's own rule. Its line runs down its middle, 12 under its top.
+    CHECK(Layout::kHelpPointLift + Layout::kHelpOverAnchor == HelpMessages::kAboveHead);
+    CHECK(dreamcastHelpBox(one, {300, 250}, true, 1) ==
+          Box{.x = 233, .y = 172, .width = 135, .height = 32, .textCentre = 300, .textTop = 184});
+    // A seat's message with nothing to stand over stands over its box, its middle 54 over the
+    // box's centre 80 up from the bottom.
+    CHECK(dreamcastHelpBox(two, {256, 192}, false, 2) ==
+          Box{.x = 259, .y = 230, .width = 171, .height = 40, .textCentre = 344, .textTop = 242});
+    // Over the outer boxes it keeps to the frame's sides.
+    constexpr std::array<s32, 4> kCentres{85, 168, 344, 512 - 171 + 85};
+    for (usize seat = 0; seat < Layout::kSeatX.size(); ++seat) {
+        CAPTURE(seat);
+        const Box box = dreamcastHelpBox(two, {256, 192}, false, static_cast<s32>(seat));
+        CHECK(box.y + (box.height / 2) == 250);
+        CHECK(box.textCentre == kCentres.at(seat));
+    }
+    // A projected point wins over the box; a message at a place, with no point, stands over
+    // Dark Legacy's middle of the screen.
+    CHECK(dreamcastHelpBox(one, {300, 250}, true, 2) == dreamcastHelpBox(one, {300, 250}, true, 1));
+    CHECK(dreamcastHelpBox(one, {256, 192}, false, -1) ==
+          Box{.x = 189, .y = 114, .width = 135, .height = 32, .textCentre = 256, .textTop = 126});
+    // An odd width is halved down, as the original shifts it.
+    const std::vector<std::string> letter{"A"};
+    CHECK(dreamcastHelpBox(letter, {300, 250}, true, 0) ==
+          Box{.x = 269, .y = 172, .width = 63, .height = 32, .textCentre = 300, .textTop = 184});
+
+    // Kept across the frame, its top from 2 down and its bottom over the boxes, 80 up from the
+    // frame's bottom, with its lines on it.
+    CHECK(Layout::kHelpFloor == HelpMessages::kLowest);
+    const Box left = dreamcastHelpBox(one, {10, 250}, true, 0);
+    CHECK(left.x == 0);
+    CHECK(left.textCentre == 67);
+    const Box right = dreamcastHelpBox(one, {500, 250}, true, 0);
+    CHECK(right.x == 512 - 135);
+    CHECK(right.textCentre == 512 - 135 + 67);
+    const Box high = dreamcastHelpBox(one, {300, 40}, true, 0);
+    CHECK(high.y == 2);
+    CHECK(high.textTop == 14);
+    const Box low = dreamcastHelpBox(two, {300, 400}, true, 0);
+    CHECK(low.y == 304 - 40);
+    CHECK(low.textTop == 304 - 40 + 12);
+    // A point off the frame, or no number at all, keeps it there too.
+    CHECK(dreamcastHelpBox(one, {-1.0e9f, 1.0e9f}, true, 0) ==
+          Box{.x = 0, .y = 272, .width = 135, .height = 32, .textCentre = 67, .textTop = 284});
+    constexpr f32 kNan = std::numeric_limits<f32>::quiet_NaN();
+    CHECK(dreamcastHelpBox(one, {kNan, kNan}, true, 0) ==
+          Box{.x = 0, .y = 2, .width = 135, .height = 32, .textCentre = 67, .textTop = 14});
+}
+
+TEST_CASE("each colour's help is written on its own scroll in its own ink, Dark Legacy's",
+          "[legends][dreamcast-hud]") {
+    // 8c14e7cc and 8c14e7e0: yellow, blue, red and green, then the plain scroll in its brown for
+    // a message for nobody; the inks are Dark Legacy's help's, by the same colours.
+    constexpr std::array<std::string_view, 4> kScrolls{"YEL_TEXTSCROLL", "BLU_TEXTSCROLL",
+                                                       "RED_TEXTSCROLL", "GRE_TEXTSCROLL"};
+    for (s32 color = 0; color < kColorCount; ++color) {
+        CAPTURE(color);
+        const usize scroll = dreamcastHelpScroll(color);
+        CHECK(Layout::kHelpScrolls.at(scroll) == kScrolls.at(static_cast<usize>(color)));
+        CHECK(Layout::kHelpInks.at(scroll) == HelpMessages::inkOf(color));
+    }
+    for (const s32 color : {-1, kColorCount, 7}) {
+        CAPTURE(color);
+        const usize scroll = dreamcastHelpScroll(color);
+        CHECK(Layout::kHelpScrolls.at(scroll) == "TEXTSCROLL");
+        CHECK(Layout::kHelpInks.at(scroll) == ScrollBox::kTextColor);
+        CHECK(Layout::kHelpInks.at(scroll) == Layout::kWaitHereInk);
+    }
+}
+
+TEST_CASE("the Dreamcast thermometer draws the linear column from Dark Legacy's fill",
+          "[legends][dreamcast-hud]") {
+    // FUN_8c09b4e0: the column round(73(1 - f)) + 27 tall, its top 102 less that, the picture
+    // from (101 - 73(1 - f))/128 down: straight with the closeness 1 - f, of which Dark Legacy's
+    // fill is the square.
+    for (const f32 closeness : {0.0f, 0.25f, 0.5f, 0.8f, 1.0f}) {
+        CAPTURE(closeness);
+        const RuneMeter::Column column = dreamcastThermometerColumn(closeness * closeness, 128);
+        const RuneMeter::Column expected = RuneMeter::column(closeness, 128);
+        checkRect(column.area, expected.area);
+        checkRect(column.uv, expected.uv);
+        const f32 raised = std::round(73 * closeness);
+        checkRect(column.area, {392, 102 - raised, 128, raised + 27});
+        const f32 from = (101 - (73 * closeness)) / 128;
+        checkRect(column.uv, {0, from, 1, 1 - from});
+    }
+    // At Dark Legacy's quarter fill the column stands half its way up, where Dark Legacy's own
+    // stands a quarter of its way; it stands at the base's x.
+    checkRect(dreamcastThermometerColumn(0.25f, 128).area, {392, 65, 128, 64});
+    checkRect(RuneMeter::column(0.25f, 128).area, {392, 84, 128, 45});
+    CHECK(dreamcastThermometerColumn(0.25f, 64).area.x == Layout::kThermometerLeft);
+    CHECK(dreamcastThermometerColumn(0.25f, 64).area.width == 64);
+    // A fill below nothing, past full, or no number at all keeps to the column's ends.
+    checkRect(dreamcastThermometerColumn(-1, 128).area, {392, 102, 128, 27});
+    checkRect(dreamcastThermometerColumn(std::numeric_limits<f32>::quiet_NaN(), 128).area,
+              {392, 102, 128, 27});
+    checkRect(dreamcastThermometerColumn(4, 128).area, {392, 29, 128, 100});
 }
