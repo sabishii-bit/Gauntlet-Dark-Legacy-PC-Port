@@ -12,6 +12,7 @@ use gdl_media::{
     ByteOrder, N64Rom, Overlay, RomdiskEntry, Sha256Digest, SourceName, WadSection, wad_sections,
 };
 
+use crate::pyjson::{array, digest, text};
 use crate::tree::{SEPARATOR, TreePlan, TreeWriter};
 use crate::{CHECK, ExtractError, ExtractSettings, JsonValue, READ_CARTRIDGE, UNPACK, render};
 
@@ -216,24 +217,9 @@ fn section_json(section: &WadSection) -> JsonValue {
     ])
 }
 
-/// Text, as the manifest writes it.
-fn text(value: &str) -> JsonValue {
-    JsonValue::Str(value.to_owned())
-}
-
 /// A word of the ROM, as the manifest writes it: in decimal.
 fn word(value: u32) -> JsonValue {
     JsonValue::Uint(value.into())
-}
-
-/// A digest, as the manifest writes it: in lowercase hexadecimal.
-fn digest(value: &Sha256Digest) -> JsonValue {
-    JsonValue::Str(value.hex())
-}
-
-/// Rows, as the manifest writes them: an array of what `each` writes of every row, in order.
-fn array<T>(rows: &[T], each: fn(&T) -> JsonValue) -> JsonValue {
-    JsonValue::Array(rows.iter().map(each).collect())
 }
 
 /// An N64 ROM read and decided before anything is written: every file decoded and described, the
@@ -494,7 +480,7 @@ mod tests {
     use std::ffi::{OsStr, OsString};
     use std::fs;
 
-    use gdl_files::{Cancel, Job, NoProgress, ROMDISK_NAMES, Staging};
+    use gdl_files::{Cancel, Job, ROMDISK_NAMES, Staging};
     use gdl_fixtures::{
         OverlaySpec, RomFile, WadOrder, default_rom_files, reorder, rom, rom_with_overlays,
         set_word, sha256_hex, unhex, wad,
@@ -510,9 +496,9 @@ mod tests {
         extract_n64_with,
     };
     use crate::vectors::{
-        CancelAt, Folders, Listed, PanicAt, Recorded, STAGING_PREFIX, SWEEP, Told,
-        assert_injected_panic, frozen, listed, n64_golden, n64_vectors, root, stage_n64, text,
-        tree_listing,
+        CancelAt, Folders, Listed, PanicAt, Recorded, STAGING_PREFIX, SWEEP, Told, array,
+        assert_injected_panic, frozen, listed, n64_golden, n64_vectors, phases_of, quiet, root,
+        stage_n64, text, tree_listing,
     };
     use crate::{CHECK, ExtractError, ExtractSettings, READ_CARTRIDGE, UNPACK, render};
 
@@ -529,22 +515,9 @@ mod tests {
     /// The length of a word of the ROM.
     const WORD_LEN: usize = 4;
 
-    /// A job nobody follows.
-    fn quiet(cancel: &Cancel) -> Job<'_> {
-        Job {
-            cancel,
-            progress: &NoProgress,
-        }
-    }
-
     /// The name of a dump's file called `text`.
     fn named(text: &str) -> SourceName {
         SourceName::from_units(text.encode_utf16().collect())
-    }
-
-    /// The members of a vector's array.
-    fn array(value: &Value) -> &[Value] {
-        value.as_array().expect("an array")
     }
 
     /// A number of the vectors.
@@ -1189,25 +1162,6 @@ mod tests {
         let cartridge = N64Rom::from_bytes(named("maps.z64"), rom(&capitals).bytes).unwrap();
         let checked = check_n64(&cartridge, &quiet(&cancel)).unwrap();
         assert!(checked.manifest().maps.is_empty());
-    }
-
-    /// A phase of a job as its progress was told it: its name, and each advance's done, total and
-    /// item.
-    type Phase = (&'static str, Vec<(u64, u64, String)>);
-
-    /// What `told` tells of each phase, in order.
-    fn phases_of(told: Vec<Told>) -> Vec<Phase> {
-        let mut phases: Vec<Phase> = Vec::new();
-        for told in told {
-            match told {
-                Told::Phase(name) => phases.push((name, Vec::new())),
-                Told::Advance { done, total, item } => {
-                    let (_, advances) = phases.last_mut().expect("an advance within a phase");
-                    advances.push((done, total, item.expect("an advance names its file")));
-                }
-            }
-        }
-        phases
     }
 
     #[test]

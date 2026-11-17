@@ -4,14 +4,17 @@
 //! would make one file, a folder spelled in two letter cases, which Windows would make one folder
 //! and Linux two, or a file that is also the folder above another. Each file is then made new
 //! under the tree's root in the staging, written in blocks with the job's cancel looked at before
-//! each and its progress told after, synced, and closed before the next is made. No folder is made
-//! but those above a file.
+//! each and its progress told after, synced, and closed before the next is made, whether its
+//! bytes are at hand or a reader streams them. No folder is made but those above a file. A file
+//! written already may be read back, only through real folders.
 
 use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
+use std::fs::{self, File};
 use std::io::{self, Write};
+use std::path::PathBuf;
 
-use gdl_files::{Job, NameSet, RelPath, Staging};
+use gdl_files::{Job, NameSet, RelPath, Staging, no_links};
 use gdl_media::Sha256Digest;
 use sha2::{Digest, Sha256};
 
@@ -19,6 +22,14 @@ use crate::{ExtractError, TreeRule};
 
 /// The separator between the components of a tree's paths.
 pub(crate) const SEPARATOR: char = '/';
+
+/// What a reader writing through a [`TreeFile`] is told when a block is refused or stopped. The
+/// writer reports why in its own terms, so these words reach no report.
+const FAILED_WRITE: &str = "the write into the staged file stopped";
+
+/// What a staged file is refused as on being read back when what holds its name is no regular
+/// file, such as a folder.
+const NO_REGULAR_FILE: &str = "the path names no regular file";
 
 /// Every path an extraction will write, gathered before the first is written.
 pub(crate) struct TreePlan {
@@ -120,45 +131,183 @@ impl<'a> TreeWriter<'a> {
         path: &RelPath,
         bytes: &[u8],
     ) -> Result<Sha256Digest, ExtractError> {
+        self.write_with(path, |file| file.put(bytes))
+    }
+
+    /// Writes the file `path` of the tree with what `fill` writes into it, as a reader streams a
+    /// file's bytes, and gives the SHA-256 digest of what was written. The file is made as
+    /// [`write_bytes`](Self::write_bytes) makes one, and what `fill` writes goes out in blocks of
+    /// at most the writer's length however it is handed over, each written as `write_bytes`
+    /// writes one. A block the file refuses, or a block the job's cancel stops, fails the file as
+    /// the writer reports it, whatever `fill` makes of the refusal it is given; any other failure
+    /// of `fill` is its own. The file is synced and closed before this returns.
+    pub(crate) fn write_with(
+        &mut self,
+        path: &RelPath,
+        fill: impl FnOnce(&mut TreeFile<'_>) -> Result<(), ExtractError>,
+    ) -> Result<Sha256Digest, ExtractError> {
         self.job.cancel.check()?;
-        let staged = self.root.join(path);
-        let mut file = self.staging.create_file(&staged)?;
-        let written = staged.path_under(self.staging.path());
+        let created = self.staging.create_file(&self.root.join(path))?;
+        let mut file = TreeFile {
+            file: created,
+            path: self.staged_path(path),
+            item: path,
+            digest: Sha256::new(),
+            job: self.job,
+            block_len: self.block_len,
+            done: &mut self.done,
+            total: self.total,
+            failure: None,
+        };
+        let filled = fill(&mut file);
+        if let Some(failure) = file.failure.take() {
+            return Err(failure);
+        }
+        filled?;
+        file.finish()
+    }
+
+    /// The file `path` of the tree, written already, open for reading, as an extraction reads back
+    /// what it staged. It is reached only through real folders, as the staging made them, and
+    /// only when it is a regular file: a link at its name or at a folder above it is refused, and
+    /// so is a folder or anything else that holds its name, which is never opened.
+    pub(crate) fn read_staged(&self, path: &RelPath) -> Result<File, ExtractError> {
+        let staged = self.staged_path(path);
+        no_links(&staged)?;
         let failed = |source: io::Error| ExtractError::Io {
-            path: written.clone(),
+            path: staged.clone(),
             source,
         };
-        let mut digest = Sha256::new();
-        for block in bytes.chunks(self.block_len) {
-            self.job.cancel.check()?;
-            file.write_all(block).map_err(failed)?;
-            digest.update(block);
-            self.done += block.len() as u64;
-            self.job.progress.advance(self.done, self.total, Some(path));
+        let not_regular = || failed(io::Error::new(io::ErrorKind::InvalidInput, NO_REGULAR_FILE));
+        if !fs::symlink_metadata(&staged).map_err(failed)?.is_file() {
+            return Err(not_regular());
         }
-        file.sync_all().map_err(failed)?;
-        drop(file);
-        Ok(Sha256Digest(digest.finalize().into()))
+        let file = File::open(&staged).map_err(failed)?;
+        // What took the name after it was looked at is not read either.
+        if !file.metadata().map_err(failed)?.is_file() {
+            return Err(not_regular());
+        }
+        Ok(file)
+    }
+
+    /// Where the file `path` of the tree lies in the staging, which a failure to write or read it
+    /// names.
+    pub(crate) fn staged_path(&self, path: &RelPath) -> PathBuf {
+        self.root.join(path).path_under(self.staging.path())
+    }
+}
+
+/// A file of the tree being written: the file in the staging, open for writing, with the digest of
+/// what has gone into it, and the writer's progress, which each block it writes moves on. A reader
+/// streams bytes into it through [`Write`], and a writer that has them at hand through
+/// [`put`](TreeFile::put).
+pub(crate) struct TreeFile<'b> {
+    /// The file, made new in the staging.
+    file: File,
+    /// Where it lies, which a failure to write it names.
+    path: PathBuf,
+    /// Its path in the tree, which its progress names.
+    item: &'b RelPath,
+    /// The digest of what has been written into it.
+    digest: Sha256,
+    /// How the writing is asked to stop, and where its progress goes.
+    job: Job<'b>,
+    /// The most bytes written between two looks at the job's cancel.
+    block_len: usize,
+    /// How many bytes the writer has written, this file's included.
+    done: &'b mut u64,
+    /// How many bytes the writer is to write.
+    total: u64,
+    /// The failure a block written through [`Write`] met, which the writer reports in its own
+    /// terms in place of what the reader makes of it.
+    failure: Option<ExtractError>,
+}
+
+impl TreeFile<'_> {
+    /// Writes `bytes` into the file in blocks of at most the writer's length: the job's cancel is
+    /// looked at before each block, and after it the block is taken into the digest and the
+    /// writer's progress told how far it has come.
+    pub(crate) fn put(&mut self, bytes: &[u8]) -> Result<(), ExtractError> {
+        for block in bytes.chunks(self.block_len) {
+            self.put_block(block)?;
+        }
+        Ok(())
+    }
+
+    /// Writes one block of [`put`](TreeFile::put)'s into the file.
+    fn put_block(&mut self, block: &[u8]) -> Result<(), ExtractError> {
+        self.job.cancel.check()?;
+        self.file
+            .write_all(block)
+            .map_err(|source| ExtractError::Io {
+                path: self.path.clone(),
+                source,
+            })?;
+        self.digest.update(block);
+        *self.done += block.len() as u64;
+        self.job
+            .progress
+            .advance(*self.done, self.total, Some(self.item));
+        Ok(())
+    }
+
+    /// Syncs and closes the file, and gives the digest of what was written into it.
+    fn finish(self) -> Result<Sha256Digest, ExtractError> {
+        self.file.sync_all().map_err(|source| ExtractError::Io {
+            path: self.path.clone(),
+            source,
+        })?;
+        drop(self.file);
+        Ok(Sha256Digest(self.digest.finalize().into()))
+    }
+}
+
+impl Write for TreeFile<'_> {
+    /// Writes one block of `bytes`, at most the writer's length, as [`TreeFile::put`] writes
+    /// each. A block that fails is kept for the writer to report, and the reader is given only a
+    /// stand-in for it; once one has failed, no more is written.
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        if bytes.is_empty() {
+            return Ok(0);
+        }
+        if self.failure.is_some() {
+            return Err(io::Error::other(FAILED_WRITE));
+        }
+        let block = &bytes[..bytes.len().min(self.block_len)];
+        match self.put_block(block) {
+            Ok(()) => Ok(block.len()),
+            Err(failure) => {
+                self.failure = Some(failure);
+                Err(io::Error::other(FAILED_WRITE))
+            }
+        }
+    }
+
+    /// Nothing is held back from the file: each block is written as it is given.
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
-    use std::io;
-    use std::path::Path;
+    use std::fs::{self, File};
+    use std::io::{self, Read, Write};
 
-    use gdl_files::{Cancel, DISC_NAMES, FilesError, Job, NoProgress, RelPath, Staging};
-    use gdl_fixtures::{link_folder, sha256_hex};
-    use gdl_media::{N64Rom, Sha256Digest, SourceName};
+    use gdl_files::{Cancel, DISC_NAMES, FilesError, Job, RelPath, Staging};
+    use gdl_fixtures::{DiscSet, Edc, link_folder, sha256_hex};
+    use gdl_media::{MediaError, N64Rom, Sha256Digest, SourceName};
+    use sha2::{Digest, Sha256};
 
-    use super::{TreePlan, TreeWriter};
+    use super::{FAILED_WRITE, TreeFile, TreePlan, TreeWriter};
+    use crate::dreamcast::extract_dreamcast_with;
     use crate::n64::{check_n64_with, extract_n64_with};
     use crate::vectors::{
-        CancelAt, Folders, Listed, Recorded, STAGING_PREFIX, SWEEP, Told, frozen, listed,
-        n64_vectors, root, tree_listing,
+        CancelAt, DISC_SWEEP, Folders, Listed, Recorded, STAGING_PREFIX, SWEEP, Told, bytes_under,
+        dreamcast_root, dreamcast_vectors, frozen, listed, n64_vectors, quiet, root, tree_listing,
+        written_after_each_advance,
     };
-    use crate::{CheckedRom, ExtractError, TreeRule};
+    use crate::{CheckedRom, ExtractError, NativeRule, TreeRule, check_dreamcast};
 
     /// A path of a tree, as an extraction plans and writes one.
     fn rel(text: &str) -> RelPath {
@@ -168,6 +317,13 @@ mod tests {
     /// Bytes that are not all alike.
     fn noise(len: usize) -> Vec<u8> {
         (0..len).map(|index| (index * 151 % 251) as u8).collect()
+    }
+
+    /// What a reader makes of a write its writer refused, as a disc's copy does: a failure of its
+    /// own, naming the disc file it was copying.
+    fn refused_by_the_writer(source: io::Error) -> ExtractError {
+        let file = rel("SIZES.ROM");
+        MediaError::Write { file, source }.into()
     }
 
     /// Checks that `result` is the tree's refusal by `rule`, in the words `detail` gives.
@@ -192,33 +348,41 @@ mod tests {
         let name = SourceName::from_units("source.z64".encode_utf16().collect());
         let rom = N64Rom::from_bytes(name, frozen(&vectors, "default")).unwrap();
         let cancel = Cancel::default();
-        let job = Job {
-            cancel: &cancel,
-            progress: &NoProgress,
-        };
-        let checked = check_n64_with(&rom, &SWEEP, &job).unwrap();
+        let checked = check_n64_with(&rom, &SWEEP, &quiet(&cancel)).unwrap();
         (checked, listed(&vectors["trees"]["default"]))
     }
 
-    /// How many bytes the regular files under `root` hold together, of a tree partly written.
-    fn bytes_under(root: &Path) -> u64 {
-        if !root.exists() {
-            return 0;
-        }
-        let mut total = 0;
-        let mut folders = vec![root.to_path_buf()];
-        while let Some(folder) = folders.pop() {
-            for entry in fs::read_dir(folder).unwrap() {
-                let entry = entry.unwrap();
-                let kind = entry.file_type().unwrap();
-                if kind.is_dir() {
-                    folders.push(entry.path());
-                } else {
-                    total += entry.metadata().unwrap().len();
-                }
+    /// Checks that `extract`, run into a new staging in which the file `path` of the tree at
+    /// `root` is taken by a folder before the extraction comes to it, fails as the staging refuses
+    /// that name, writes nothing into the folder, and changes nothing outside the staging, which
+    /// goes once dropped.
+    #[track_caller]
+    fn assert_taken_name_fails(
+        folders: &Folders,
+        root: &RelPath,
+        path: &str,
+        extract: impl FnOnce(&Staging) -> Result<(), ExtractError>,
+    ) {
+        let before = folders.before();
+        let staging = Staging::create_in(&folders.parent, STAGING_PREFIX).unwrap();
+        let taken = root.join(&rel(path));
+        staging.create_dir(&taken).unwrap();
+        let at = taken.path_under(staging.path());
+        match extract(&staging) {
+            Err(ExtractError::Files(FilesError::Io {
+                path: refused,
+                source,
+            })) => {
+                assert_eq!(refused, at, "{path}");
+                assert_eq!(source.kind(), io::ErrorKind::AlreadyExists, "{path}");
             }
+            other => panic!("{path}: {other:?}"),
         }
-        total
+        // The folder that took the name is as it was made: nothing was written into it.
+        assert_eq!(fs::read_dir(&at).unwrap().count(), 0, "{path}");
+        folders.assert_outside_unchanged(&before);
+        drop(staging);
+        folders.assert_staging_gone(&before);
     }
 
     #[test]
@@ -391,14 +555,7 @@ mod tests {
         };
         extract_n64_with(&checked, &staging, &root(), &SWEEP, &job).unwrap();
         drop(staging);
-        let mut written = vec![0];
-        let mut phase_start = 0;
-        for told in recorded.told() {
-            match told {
-                Told::Phase(_) => phase_start = *written.last().unwrap(),
-                Told::Advance { done, .. } => written.push(phase_start + done),
-            }
-        }
+        let written = written_after_each_advance(&recorded.told());
         let advances = written.len() - 1;
         let whole: u64 = golden.iter().map(|(_, size, _)| size).sum();
         assert_eq!(written[advances], whole);
@@ -436,38 +593,249 @@ mod tests {
 
     #[test]
     fn a_taken_name_fails_without_touching_anything_outside_the_staging() {
-        let (checked, golden) = checked_default();
         let folders = Folders::new();
         let cancel = Cancel::default();
+        let job = quiet(&cancel);
+        // Each file of each expansion's tree in turn, its name taken in the staging by a folder
+        // before the extraction comes to it: the N64 default image's, from one check, and the
+        // Dreamcast full set's, from one check whose disc each extraction reads again.
+        let (checked, golden) = checked_default();
+        assert!(!golden.is_empty());
+        for (path, _, _) in &golden {
+            assert_taken_name_fails(&folders, &root(), path, |staging| {
+                extract_n64_with(&checked, staging, &root(), &SWEEP, &job).map(drop)
+            });
+        }
+        let sheet = folders.disc(&DiscSet::full(Edc::Zero));
+        let mut disc = check_dreamcast(&sheet, &job).unwrap();
+        let golden = listed(&dreamcast_vectors()["sets"]["full"]["tree"]);
+        assert!(!golden.is_empty());
+        let disc_root = dreamcast_root();
+        for (path, _, _) in &golden {
+            assert_taken_name_fails(&folders, &disc_root, path, |staging| {
+                extract_dreamcast_with(&mut disc, staging, &disc_root, &DISC_SWEEP, &job).map(drop)
+            });
+        }
+    }
+
+    #[test]
+    fn streamed_files_land_in_blocks_with_their_digests() {
+        let folders = Folders::new();
+        let staging = Staging::create_in(&folders.parent, STAGING_PREFIX).unwrap();
+        let root = rel("dreamcast");
+        let bytes = noise(57);
+        let cancel = Cancel::default();
+        let progress = Recorded::default();
         let job = Job {
             cancel: &cancel,
-            progress: &NoProgress,
+            progress: &progress,
         };
-        // Each file of the tree in turn, its name taken in the staging by a folder before the
-        // extraction comes to it.
-        for (path, _, _) in &golden {
-            let before = folders.before();
-            let staging = Staging::create_in(&folders.parent, STAGING_PREFIX).unwrap();
-            let taken = root().join(&rel(path));
-            staging.create_dir(&taken).unwrap();
-            let extracted = extract_n64_with(&checked, &staging, &root(), &SWEEP, &job);
-            let at = taken.path_under(staging.path());
-            match extracted {
-                Err(ExtractError::Files(FilesError::Io {
-                    path: refused,
-                    source,
-                })) => {
-                    assert_eq!(refused, at, "{path}");
-                    assert_eq!(source.kind(), io::ErrorKind::AlreadyExists, "{path}");
+        let total = bytes.len() as u64 + 5;
+        let mut writer = TreeWriter::new(&staging, &root, &job, total, 16);
+        // A reader hands its bytes over in pieces of its own: each piece no longer than a block
+        // goes out as one block, a longer one in blocks, and an empty one not at all.
+        let pieces = [7, 40, 0, 10];
+        assert_eq!(pieces.iter().sum::<usize>(), bytes.len());
+        let streamed = writer
+            .write_with(&rel("disc/AUDIO/X.STR"), |file| {
+                let mut at = 0;
+                for piece in pieces {
+                    let piece = &bytes[at..at + piece];
+                    file.write_all(piece).map_err(refused_by_the_writer)?;
+                    at += piece.len();
+                }
+                file.flush().map_err(refused_by_the_writer)
+            })
+            .unwrap();
+        assert_eq!(streamed, Sha256Digest::of(&bytes));
+        // A writer that has its bytes at hand puts them in blocks as well.
+        let put = writer
+            .write_with(&rel("disc/DISK.ROM"), |file| file.put(b"hello"))
+            .unwrap();
+        assert_eq!(put, Sha256Digest::of(b"hello"));
+
+        // Each file lies under the root with what was written.
+        let tree = root.path_under(staging.path());
+        let expected = vec![
+            ("disc/AUDIO/X.STR".to_owned(), 57, sha256_hex(&bytes)),
+            ("disc/DISK.ROM".to_owned(), 5, sha256_hex(b"hello")),
+        ];
+        assert_eq!(tree_listing(&tree), expected);
+        // Every block was told once written, with the bytes written so far of the whole.
+        let advance = |done: u64, item: &str| Told::Advance {
+            done,
+            total,
+            item: Some(item.to_owned()),
+        };
+        let told = [
+            advance(7, "disc/AUDIO/X.STR"),
+            advance(23, "disc/AUDIO/X.STR"),
+            advance(39, "disc/AUDIO/X.STR"),
+            advance(47, "disc/AUDIO/X.STR"),
+            advance(57, "disc/AUDIO/X.STR"),
+            advance(62, "disc/DISK.ROM"),
+        ];
+        assert_eq!(progress.told(), told);
+    }
+
+    #[test]
+    fn a_streamed_file_fails_as_its_writer_reports_it() {
+        let folders = Folders::new();
+        let staging = Staging::create_in(&folders.parent, STAGING_PREFIX).unwrap();
+        let root = rel("dreamcast");
+
+        // Asked to stop once the first block is written: the next block is refused, and so is
+        // every write after it. The file fails as the writer stops, whatever the reader makes of
+        // the refusal it was given, and holds only the first block.
+        let cancel = Cancel::default();
+        let progress = CancelAt::new(&cancel, 1);
+        let job = Job {
+            cancel: &cancel,
+            progress: &progress,
+        };
+        let mut writer = TreeWriter::new(&staging, &root, &job, 80, 16);
+        let mut refusals = Vec::new();
+        let stopped = writer.write_with(&rel("disc/SIZES.ROM"), |file| {
+            for _ in 0..2 {
+                let refused = file.write_all(&noise(40)).unwrap_err();
+                refusals.push(refused.kind());
+            }
+            Err(refused_by_the_writer(io::ErrorKind::Other.into()))
+        });
+        assert!(
+            matches!(stopped, Err(ExtractError::Cancelled)),
+            "{stopped:?}"
+        );
+        assert_eq!(refusals.len(), 2);
+        let staged = rel("disc/SIZES.ROM").path_under(&root.path_under(staging.path()));
+        assert_eq!(fs::read(&staged).unwrap(), noise(40)[..16]);
+
+        // A failure of the reader's own, which no write met, is its own.
+        let cancel = Cancel::default();
+        let job = quiet(&cancel);
+        let mut writer = TreeWriter::new(&staging, &root, &job, 5, 16);
+        let failed = writer.write_with(&rel("native/a.wad"), |file| {
+            file.put(b"hel")?;
+            Err(ExtractError::native(NativeRule::DiskTruncated, "cut short"))
+        });
+        match failed {
+            Err(error @ ExtractError::Native { .. }) => assert_eq!(error.rule(), "diskTruncated"),
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_block_the_system_refuses_is_kept_with_its_answer() {
+        // A file open only for reading, so that the system refuses every block written to it,
+        // as it refuses one on a full disk.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("DISK.ROM");
+        fs::write(&path, b"").unwrap();
+        let item = rel("disc/DISK.ROM");
+        let cancel = Cancel::default();
+        let mut done = 0;
+        let mut file = TreeFile {
+            file: File::open(&path).unwrap(),
+            path: path.clone(),
+            item: &item,
+            digest: Sha256::new(),
+            job: quiet(&cancel),
+            block_len: 16,
+            done: &mut done,
+            total: 5,
+            failure: None,
+        };
+        // The reader is given a stand-in; the writer keeps the system's own answer, naming the
+        // staged file, so that what reports the failure can tell a full disk from other refusals.
+        let refused = file.write_all(b"hello").unwrap_err();
+        assert_eq!(refused.to_string(), FAILED_WRITE);
+        match file.failure.take() {
+            Some(ExtractError::Io {
+                path: failed,
+                source,
+            }) => {
+                assert_eq!(failed, path);
+                assert!(source.raw_os_error().is_some(), "{source:?}");
+            }
+            other => panic!("{other:?}"),
+        }
+        // Nothing went into the file, and no progress was told.
+        drop(file);
+        assert_eq!(done, 0);
+        assert_eq!(fs::read(&path).unwrap(), b"");
+    }
+
+    #[test]
+    fn staged_files_are_read_back_only_through_real_folders() {
+        let folders = Folders::new();
+        let staging = Staging::create_in(&folders.parent, STAGING_PREFIX).unwrap();
+        let root = rel("dreamcast");
+        let cancel = Cancel::default();
+        let job = quiet(&cancel);
+        let mut writer = TreeWriter::new(&staging, &root, &job, 15, 16);
+        for (path, bytes) in [
+            ("disc/DISK.ROM", b"hello"),
+            ("disc/SIZES.ROM", b"table"),
+            ("other/x.bin", b"other"),
+        ] {
+            writer.write_bytes(&rel(path), bytes).unwrap();
+        }
+        let staged = |path: &str| writer.staged_path(&rel(path));
+        assert_eq!(
+            staged("disc/DISK.ROM"),
+            root.path_under(staging.path())
+                .join("disc")
+                .join("DISK.ROM")
+        );
+
+        // What was written reads back as it was written.
+        let mut read = Vec::new();
+        let mut file = writer.read_staged(&rel("disc/DISK.ROM")).unwrap();
+        file.read_to_end(&mut read).unwrap();
+        assert_eq!(read, b"hello");
+        drop(file);
+
+        // A name nothing holds fails as the system answers, naming where it was looked for; a
+        // folder at the name is no file to read back, and is never opened.
+        match writer.read_staged(&rel("disc/none.bin")) {
+            Err(ExtractError::Io { path, source }) => {
+                assert_eq!(path, staged("disc/none.bin"));
+                assert_eq!(source.kind(), io::ErrorKind::NotFound);
+            }
+            other => panic!("{other:?}"),
+        }
+        fs::create_dir(staged("disc/folder")).unwrap();
+        match writer.read_staged(&rel("disc/folder")) {
+            Err(ExtractError::Io { path, source }) => {
+                assert_eq!(path, staged("disc/folder"));
+                assert_eq!(source.kind(), io::ErrorKind::InvalidInput);
+            }
+            other => panic!("{other:?}"),
+        }
+
+        // A link at the name, or at a folder above it, is refused, and what it leads to is not
+        // read: each leads to the folder outside the staging that holds `kept.txt`.
+        fs::remove_file(staged("disc/SIZES.ROM")).unwrap();
+        link_folder(&staged("disc/SIZES.ROM"), &folders.kept).unwrap();
+        fs::remove_dir_all(staged("other")).unwrap();
+        link_folder(&staged("other"), &folders.kept).unwrap();
+        for (path, link) in [
+            ("disc/SIZES.ROM", "disc/SIZES.ROM"),
+            ("other/kept.txt", "other"),
+        ] {
+            match writer.read_staged(&rel(path)) {
+                Err(ExtractError::Files(FilesError::Link { path: found })) => {
+                    assert_eq!(found, staged(link), "{path}");
                 }
                 other => panic!("{path}: {other:?}"),
             }
-            // The folder that took the name is as it was made: nothing was written into it.
-            assert_eq!(fs::read_dir(&at).unwrap().count(), 0, "{path}");
-            folders.assert_outside_unchanged(&before);
-            drop(staging);
-            folders.assert_staging_gone(&before);
         }
+        drop(writer);
+        drop(staging);
+        assert_eq!(
+            fs::read(folders.kept.join("kept.txt")).unwrap(),
+            b"kept".to_vec()
+        );
     }
 
     #[test]
@@ -475,10 +843,7 @@ mod tests {
         let (checked, _) = checked_default();
         let folders = Folders::new();
         let cancel = Cancel::default();
-        let job = Job {
-            cancel: &cancel,
-            progress: &NoProgress,
-        };
+        let job = quiet(&cancel);
         let kept = fs::read_dir(&folders.kept).unwrap().count();
         // A link where the tree's root goes, and one where the first folder under it goes, each
         // to a folder outside the staging.

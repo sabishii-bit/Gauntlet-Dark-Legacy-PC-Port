@@ -1,8 +1,9 @@
 //! What an extraction reports when it fails: the dump could not be read or breaks a rule of its
-//! format, the staging refused a file or a folder of the tree, writing a staged file failed, the
-//! tree the dump would make breaks a rule that keeps it one tree on every system, or the job was
-//! asked to stop, as technical detail for logs. What a player reads is chosen from the failure
-//! elsewhere.
+//! format, the staging refused a file or a folder of the tree, writing or reading back a staged
+//! file failed, the tree the dump would make breaks a rule that keeps it one tree on every system,
+//! the disc's native table is missing or cannot be restored, the dump changed between two reads of
+//! it, or the job was asked to stop, as technical detail for logs. What a player reads is chosen
+//! from the failure elsewhere.
 
 use std::io;
 use std::path::PathBuf;
@@ -21,7 +22,7 @@ pub enum ExtractError {
     /// stood on its way, or the system refused.
     #[error(transparent)]
     Files(#[from] FilesError),
-    /// Writing or syncing a file made in the staging failed.
+    /// Writing, syncing or reading back a file made in the staging failed.
     #[error("{}: {source}", .path.display())]
     Io {
         /// The staged file.
@@ -37,6 +38,23 @@ pub enum ExtractError {
         rule: TreeRule,
         /// What is wrong, in English.
         detail: Box<str>,
+    },
+    /// The disc's native table, the files DISK.ROM packs and the table SIZES.ROM that lists them,
+    /// is not there to be read, is too large to read, or cannot be restored from what was staged.
+    #[error("{detail}")]
+    Native {
+        /// The rule it breaks.
+        rule: NativeRule,
+        /// What is wrong, in English, in the Dreamcast extractor's own words where it has fixed
+        /// words for it.
+        detail: Box<str>,
+    },
+    /// A file of the dump gave other bytes when it was read to be written than when it was read
+    /// to be checked.
+    #[error("the dump changed while it was read: {path}")]
+    Changed {
+        /// The file's path in the tree.
+        path: Box<str>,
     },
     /// The job was asked to stop before the extraction was done.
     #[error("cancelled")]
@@ -55,6 +73,8 @@ impl ExtractError {
             ExtractError::Files(error) => error.rule(),
             ExtractError::Io { .. } => "io",
             ExtractError::Tree { rule, .. } => rule.as_str(),
+            ExtractError::Native { rule, .. } => rule.as_str(),
+            ExtractError::Changed { .. } => "changed",
             ExtractError::Cancelled => "cancelled",
         }
     }
@@ -62,6 +82,14 @@ impl ExtractError {
     /// A tree refused by `rule`, for the reason `detail` gives.
     pub(crate) fn tree(rule: TreeRule, detail: impl Into<Box<str>>) -> ExtractError {
         ExtractError::Tree {
+            rule,
+            detail: detail.into(),
+        }
+    }
+
+    /// A native table refused by `rule`, for the reason `detail` gives.
+    pub(crate) fn native(rule: NativeRule, detail: impl Into<Box<str>>) -> ExtractError {
+        ExtractError::Native {
             rule,
             detail: detail.into(),
         }
@@ -100,16 +128,40 @@ impl TreeRule {
     }
 }
 
+/// The rules a Dreamcast extraction holds the disc's native table to, beyond those of its format:
+/// that it is there, that it may be read whole, and that what was staged of it holds every file it
+/// lists.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum NativeRule {
+    /// The disc's root holds no SIZES.ROM or no DISK.ROM, by exactly those names.
+    TableMissing,
+    /// SIZES.ROM holds more bytes than a packed file table may be read whole in.
+    TooLarge,
+    /// The staged DISK.ROM ended before a file SIZES.ROM places in it.
+    DiskTruncated,
+}
+
+impl NativeRule {
+    /// The rule's stable machine name, in camelCase, for reports and logs.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            NativeRule::TableMissing => "nativeTableMissing",
+            NativeRule::TooLarge => "sizesTooLarge",
+            NativeRule::DiskTruncated => "diskTruncated",
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::error::Error;
     use std::io;
     use std::path::Path;
 
-    use gdl_files::{Cancelled, FilesError};
+    use gdl_files::{Cancelled, DISC_NAMES, FilesError, RelPath};
     use gdl_media::{MediaError, Trailer, inflate};
 
-    use super::{ExtractError, TreeRule};
+    use super::{ExtractError, NativeRule, TreeRule};
 
     /// The most bytes an error may take, so that returning one by value stays cheap.
     const MOST_ERROR_BYTES: usize = 128;
@@ -136,6 +188,13 @@ mod tests {
                 "io",
             ),
             (ExtractError::from(MediaError::Cancelled), "cancelled"),
+            (
+                ExtractError::from(MediaError::Write {
+                    file: RelPath::parse("DISK.ROM", &DISC_NAMES).unwrap(),
+                    source: io::ErrorKind::StorageFull.into(),
+                }),
+                "io",
+            ),
             // The staging's, for a name taken and for a link on the way.
             (
                 ExtractError::from(FilesError::Io {
@@ -176,6 +235,24 @@ mod tests {
                 ExtractError::tree(TreeRule::Conflict, "conflict"),
                 "treeConflict",
             ),
+            (
+                ExtractError::native(NativeRule::TableMissing, "missing"),
+                "nativeTableMissing",
+            ),
+            (
+                ExtractError::native(NativeRule::TooLarge, "large"),
+                "sizesTooLarge",
+            ),
+            (
+                ExtractError::native(NativeRule::DiskTruncated, "truncated"),
+                "diskTruncated",
+            ),
+            (
+                ExtractError::Changed {
+                    path: "disc/SIZES.ROM".into(),
+                },
+                "changed",
+            ),
             (ExtractError::from(Cancelled), "cancelled"),
         ];
         for (failure, rule) in failures {
@@ -211,9 +288,21 @@ mod tests {
         assert_eq!(error.to_string(), format!("{}: no room", staged.display()));
         assert_eq!(error.source().unwrap().to_string(), "no room");
 
-        // A tree's refusal is its detail alone, and a stop says so.
+        // A tree's refusal is its detail alone, and so is a native table's; a dump that changed
+        // names the file of the tree it changed in, and a stop says so.
         let error = ExtractError::tree(TreeRule::FolderCase, "a folder is spelled Font and font");
         assert_eq!(error.to_string(), "a folder is spelled Font and font");
+        assert!(error.source().is_none());
+        let error = ExtractError::native(NativeRule::DiskTruncated, "Truncated DISK.ROM payload");
+        assert_eq!(error.to_string(), "Truncated DISK.ROM payload");
+        assert!(error.source().is_none());
+        let error = ExtractError::Changed {
+            path: "disc/SIZES.ROM".into(),
+        };
+        assert_eq!(
+            error.to_string(),
+            "the dump changed while it was read: disc/SIZES.ROM"
+        );
         assert!(error.source().is_none());
         assert_eq!(ExtractError::Cancelled.to_string(), "cancelled");
 
@@ -231,6 +320,19 @@ mod tests {
         for (rule, name) in rules {
             assert_eq!(rule.as_str(), name);
             assert_eq!(ExtractError::tree(rule, "").rule(), name);
+        }
+    }
+
+    #[test]
+    fn native_rules_have_stable_names() {
+        let rules = [
+            (NativeRule::TableMissing, "nativeTableMissing"),
+            (NativeRule::TooLarge, "sizesTooLarge"),
+            (NativeRule::DiskTruncated, "diskTruncated"),
+        ];
+        for (rule, name) in rules {
+            assert_eq!(rule.as_str(), name);
+            assert_eq!(ExtractError::native(rule, "").rule(), name);
         }
     }
 }

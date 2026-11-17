@@ -1,8 +1,9 @@
-//! What the extraction's tests share: the shared vectors and the manifests the N64 extractor wrote
+//! What the extraction's tests share: the shared vectors and the manifests the extractors wrote
 //! for their dumps, the folders a test extracts in and the one way it compares what lies outside a
-//! staging before and after a fault, the N64 extraction run as the session runs it, and progress
-//! that writes down what a job tells it or stops the job partway.
+//! staging before and after a fault, each extraction run as the session runs it, and progress that
+//! writes down what a job tells it or stops the job partway.
 
+use std::cell::Cell;
 use std::collections::BTreeMap;
 use std::ffi::OsStr;
 use std::fs;
@@ -11,19 +12,28 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use gdl_files::{Cancel, DISC_NAMES, Job, PhaseId, Progress, RelPath, Staging, retry_locked};
-use gdl_fixtures::{EntryState, backdate, sha256_hex, snapshot, snapshot_outside, unhex};
+use gdl_files::{
+    Cancel, DISC_NAMES, Job, NoProgress, PhaseId, Progress, RelPath, Staging, retry_locked,
+};
+use gdl_fixtures::{DiscSet, EntryState, backdate, sha256_hex, snapshot, snapshot_outside, unhex};
 use gdl_media::N64Rom;
 use serde_json::Value;
 use tempfile::TempDir;
 
+use crate::dreamcast::extract_dreamcast_with;
 use crate::n64::{check_n64_with, extract_n64_with};
-use crate::{ExtractError, ExtractSettings, N64Extraction};
+use crate::{DreamcastExtraction, ExtractError, ExtractSettings, N64Extraction, check_dreamcast};
 
 /// The N64 cases.
 const N64_VECTORS: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../../../tests/scripts/data/legends/n64-vectors.json"
+));
+
+/// The Dreamcast cases.
+const DREAMCAST_VECTORS: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../../../tests/scripts/data/legends/dreamcast-vectors.json"
 ));
 
 /// The manifests the N64 extractor wrote for the vectors' dumps, byte for byte, by the names the
@@ -59,19 +69,65 @@ const N64_GOLDENS: [(&str, &[u8]); 4] = [
     ),
 ];
 
-/// The prefix of the stagings the tests make in the folder they extract in.
-pub(crate) const STAGING_PREFIX: &str = "stage-n64-";
+/// The manifests the Dreamcast extractor wrote for the vectors' sets and for the native files of
+/// the table its unpack test reads, byte for byte, by the names the vectors give them.
+const DREAMCAST_GOLDENS: [(&str, &[u8]); 4] = [
+    (
+        "dreamcast-small-disc-manifest.json",
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../../tests/scripts/data/legends/dreamcast-small-disc-manifest.json"
+        )),
+    ),
+    (
+        "dreamcast-full-disc-manifest.json",
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../../tests/scripts/data/legends/dreamcast-full-disc-manifest.json"
+        )),
+    ),
+    (
+        "dreamcast-full-native-manifest.json",
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../../tests/scripts/data/legends/dreamcast-full-native-manifest.json"
+        )),
+    ),
+    (
+        "dreamcast-unpack-native-manifest.json",
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../../tests/scripts/data/legends/dreamcast-unpack-native-manifest.json"
+        )),
+    ),
+];
 
-/// The root the tests' trees lie under in their stagings.
+/// The prefix of the stagings the tests make in the folder they extract in.
+pub(crate) const STAGING_PREFIX: &str = "stage-";
+
+/// The root the N64 tests' trees lie under in their stagings.
 const TREE_ROOT: &str = "n64";
 
-/// The blocks the sweeps write in: so short that every file of a small tree spans several, and
+/// The root the Dreamcast tests' trees lie under in their stagings.
+const DREAMCAST_ROOT: &str = "dreamcast";
+
+/// The blocks the N64 sweeps write in: so short that every file of a small tree spans several, and
 /// every block is a step a fault can come at.
 const SWEEP_BLOCK_LEN: usize = 16;
 
 /// The shipped settings, but for blocks of [`SWEEP_BLOCK_LEN`] bytes.
 pub(crate) const SWEEP: ExtractSettings = ExtractSettings {
     block_len: SWEEP_BLOCK_LEN,
+    ..ExtractSettings::SHIPPED
+};
+
+/// The blocks the Dreamcast sweeps write in: short enough that the boot area alone spans dozens,
+/// and long enough that a sweep over a whole tree stays a few dozen runs.
+const DISC_SWEEP_BLOCK_LEN: usize = 1 << 10;
+
+/// The shipped settings, but for blocks of [`DISC_SWEEP_BLOCK_LEN`] bytes.
+pub(crate) const DISC_SWEEP: ExtractSettings = ExtractSettings {
+    block_len: DISC_SWEEP_BLOCK_LEN,
     ..ExtractSettings::SHIPPED
 };
 
@@ -88,10 +144,25 @@ pub(crate) fn n64_vectors() -> Value {
     serde_json::from_str(N64_VECTORS).expect("the N64 vectors are JSON")
 }
 
+/// The Dreamcast cases, read.
+pub(crate) fn dreamcast_vectors() -> Value {
+    serde_json::from_str(DREAMCAST_VECTORS).expect("the Dreamcast vectors are JSON")
+}
+
 /// The golden manifest the N64 vectors name `name`, as the extractor wrote it.
 pub(crate) fn n64_golden(name: &Value) -> &'static [u8] {
+    golden(&N64_GOLDENS, name)
+}
+
+/// The golden manifest the Dreamcast vectors name `name`, as the extractor wrote it.
+pub(crate) fn dreamcast_golden(name: &Value) -> &'static [u8] {
+    golden(&DREAMCAST_GOLDENS, name)
+}
+
+/// The manifest among `goldens` that the vectors name `name`.
+fn golden(goldens: &[(&str, &'static [u8])], name: &Value) -> &'static [u8] {
     let name = text(name);
-    let (_, golden) = N64_GOLDENS
+    let (_, golden) = goldens
         .iter()
         .find(|(golden, _)| *golden == name)
         .unwrap_or_else(|| panic!("no golden named {name}"));
@@ -106,6 +177,19 @@ pub(crate) fn frozen(vectors: &Value, name: &str) -> Vec<u8> {
 /// A string of the vectors.
 pub(crate) fn text(value: &Value) -> &str {
     value.as_str().expect("a string")
+}
+
+/// The members of an array of the vectors.
+pub(crate) fn array(value: &Value) -> &[Value] {
+    value.as_array().expect("an array")
+}
+
+/// A job nobody follows, asked to stop only through `cancel`.
+pub(crate) fn quiet(cancel: &Cancel) -> Job<'_> {
+    Job {
+        cancel,
+        progress: &NoProgress,
+    }
 }
 
 /// A tree as the vectors list it: each file's path, size and digest.
@@ -147,9 +231,36 @@ pub(crate) fn tree_listing(root: &Path) -> Vec<Listed> {
     files
 }
 
-/// The root the tests' trees lie under in their stagings.
+/// How many bytes the regular files under `root` hold together, of a tree partly written: none
+/// when nothing of it was made.
+pub(crate) fn bytes_under(root: &Path) -> u64 {
+    if !root.exists() {
+        return 0;
+    }
+    let mut total = 0;
+    let mut folders = vec![root.to_path_buf()];
+    while let Some(folder) = folders.pop() {
+        for entry in fs::read_dir(folder).unwrap() {
+            let entry = entry.unwrap();
+            let kind = entry.file_type().unwrap();
+            if kind.is_dir() {
+                folders.push(entry.path());
+            } else {
+                total += entry.metadata().unwrap().len();
+            }
+        }
+    }
+    total
+}
+
+/// The root the N64 tests' trees lie under in their stagings.
 pub(crate) fn root() -> RelPath {
     RelPath::parse(TREE_ROOT, &DISC_NAMES).unwrap()
+}
+
+/// The root the Dreamcast tests' trees lie under in their stagings.
+pub(crate) fn dreamcast_root() -> RelPath {
+    RelPath::parse(DREAMCAST_ROOT, &DISC_NAMES).unwrap()
 }
 
 /// Extracts the N64 dump at `dump` into a new staging in `parent` as the session does: the dump
@@ -168,6 +279,23 @@ pub(crate) fn stage_n64(
     Ok((staging, extraction))
 }
 
+/// Extracts the Dreamcast disc whose sheet is at `sheet` into a new staging in `parent` as the
+/// session does: the disc read and checked first, the staging made only once the check has
+/// passed, then the tree written under [`dreamcast_root`]. The staging comes back with the tree in
+/// it; on any failure it is gone.
+pub(crate) fn stage_dreamcast(
+    sheet: &Path,
+    parent: &Path,
+    settings: &ExtractSettings,
+    job: &Job<'_>,
+) -> Result<(Staging, DreamcastExtraction), ExtractError> {
+    let mut checked = check_dreamcast(sheet, job)?;
+    let staging = Staging::create_in(parent, STAGING_PREFIX)?;
+    let root = dreamcast_root();
+    let extraction = extract_dreamcast_with(&mut checked, &staging, &root, settings, job)?;
+    Ok((staging, extraction))
+}
+
 /// The folders a test extracts in, apart: one the stagings are made in, which holds a folder and a
 /// file of its own before any staging, and one the dumps lie in.
 pub(crate) struct Folders {
@@ -179,6 +307,8 @@ pub(crate) struct Folders {
     pub(crate) kept: PathBuf,
     /// The folder the dumps lie in.
     dumps: PathBuf,
+    /// How many discs have been written into the dump folder, each into a folder of its own.
+    discs: Cell<usize>,
 }
 
 impl Folders {
@@ -196,6 +326,7 @@ impl Folders {
             parent,
             kept,
             dumps,
+            discs: Cell::new(0),
         }
     }
 
@@ -204,6 +335,16 @@ impl Folders {
         let path = self.dumps.join(name);
         fs::write(&path, bytes).unwrap();
         path
+    }
+
+    /// Writes the files of the disc `set` into a new folder of the dump folder, so that the discs
+    /// a test writes never share a file, and gives the path of its sheet.
+    pub(crate) fn disc(&self, set: &DiscSet) -> PathBuf {
+        let count = self.discs.get();
+        self.discs.set(count + 1);
+        let folder = self.dumps.join(format!("disc{count}"));
+        fs::create_dir(&folder).unwrap();
+        set.write(&folder).unwrap()
     }
 
     /// What a test compares after a fault, taken once every time of change is long before it, so
@@ -322,6 +463,40 @@ impl Progress for Recorded {
         let told = Told::Advance { done, total, item };
         self.told.lock().unwrap().push(told);
     }
+}
+
+/// How many bytes a run had written into its tree before its first advance and after each, from
+/// what its progress was told: each phase's writing counts from nought, after what the phases
+/// before it wrote.
+pub(crate) fn written_after_each_advance(told: &[Told]) -> Vec<u64> {
+    let mut written = vec![0];
+    let mut phase_start = 0;
+    for told in told {
+        match told {
+            Told::Phase(_) => phase_start = *written.last().unwrap(),
+            Told::Advance { done, .. } => written.push(phase_start + done),
+        }
+    }
+    written
+}
+
+/// A phase of a job as its progress was told it: its name, and each advance's done, total and
+/// item.
+pub(crate) type Phase = (&'static str, Vec<(u64, u64, String)>);
+
+/// What `told` tells of each phase, in order.
+pub(crate) fn phases_of(told: Vec<Told>) -> Vec<Phase> {
+    let mut phases: Vec<Phase> = Vec::new();
+    for told in told {
+        match told {
+            Told::Phase(name) => phases.push((name, Vec::new())),
+            Told::Advance { done, total, item } => {
+                let (_, advances) = phases.last_mut().expect("an advance within a phase");
+                advances.push((done, total, item.expect("an advance names its file")));
+            }
+        }
+    }
+    phases
 }
 
 /// Progress that asks its job to stop once it has been told `at` advances, counted from one, or

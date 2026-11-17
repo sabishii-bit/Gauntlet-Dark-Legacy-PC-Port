@@ -1,7 +1,9 @@
 //! JSON as the extraction scripts write their manifests: each member of an array or an object on a
 //! line of its own, two spaces deeper for each container it lies in, members in the order the code
 //! gives them, and every character outside printable ASCII escaped, so that a manifest the launcher
-//! writes is byte for byte the scripts' own.
+//! writes is byte for byte the scripts' own. Beside it, the values every manifest is made of.
+
+use gdl_media::Sha256Digest;
 
 /// What a member of an array or an object is indented by, for each container it lies in.
 pub const INDENT: &str = "  ";
@@ -62,6 +64,21 @@ pub fn render(value: &JsonValue) -> Vec<u8> {
     write_value(&mut document, value, 0);
     document.push(b'\n');
     document
+}
+
+/// Text, as a manifest holds it.
+pub(crate) fn text(value: &str) -> JsonValue {
+    JsonValue::Str(value.to_owned())
+}
+
+/// A digest, as a manifest holds it: in lowercase hexadecimal.
+pub(crate) fn digest(value: &Sha256Digest) -> JsonValue {
+    JsonValue::Str(value.hex())
+}
+
+/// Rows, as a manifest holds them: an array of what `each` makes of every row, in order.
+pub(crate) fn array<T>(rows: &[T], each: fn(&T) -> JsonValue) -> JsonValue {
+    JsonValue::Array(rows.iter().map(each).collect())
 }
 
 /// Writes `value` where it stands in a document: on a line `depth` containers deep.

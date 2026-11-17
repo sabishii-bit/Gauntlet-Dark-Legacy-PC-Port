@@ -3,6 +3,7 @@
 //! of an extracted tree against its manifest.
 #![forbid(unsafe_code)]
 
+mod dreamcast;
 mod error;
 mod n64;
 mod pyjson;
@@ -13,7 +14,13 @@ mod vectors;
 use gdl_files::{BLOCK_LEN, PhaseId};
 use gdl_media::{OverlayTable, ROMDISK_LIMITS, RomdiskLimits, US_OVERLAYS};
 
-pub use error::{ExtractError, TreeRule};
+pub use dreamcast::{
+    CheckedDisc, DISC_FOLDER, DISC_FORMAT, DISC_MANIFEST, DISC_SCOPE, DISK_ROM, DiscFileRow,
+    DiscManifest, DreamcastExtraction, ExternalRow, IP_BIN, NATIVE_BLOCK_LEN, NATIVE_FOLDER,
+    NATIVE_FORMAT, NATIVE_MANIFEST, NATIVE_SCOPE, NativeFileRow, NativeManifest, SIZES_ROM,
+    check_dreamcast, extract_dreamcast,
+};
+pub use error::{ExtractError, NativeRule, TreeRule};
 pub use n64::{
     CheckedRom, MAP_OBJECTS, MAP_PREFIX, MAP_WORLD_SUFFIX, MapRow, N64_FORMAT, N64_MANIFEST,
     N64_VERSION, N64Extraction, N64FileRow, N64Manifest, N64Source, ProgramRow, WAD_SUFFIX,
@@ -24,6 +31,10 @@ pub use pyjson::{INDENT, JsonValue, render};
 /// The phase of an N64 extraction that reads the ROM's files and decides on them, before anything
 /// is written.
 pub const READ_CARTRIDGE: PhaseId = PhaseId("readCartridge");
+
+/// The phase of a Dreamcast extraction that reads the disc and decides on it, before anything is
+/// written.
+pub const READ_DISC: PhaseId = PhaseId("readDisc");
 
 /// The phase of an extraction that writes the tree's files into the staging.
 pub const UNPACK: PhaseId = PhaseId("unpack");
@@ -59,7 +70,7 @@ mod tests {
     use gdl_files::BLOCK_LEN;
     use gdl_media::{ROMDISK_LIMITS, US_OVERLAYS};
 
-    use super::{CHECK, ExtractSettings, READ_CARTRIDGE, UNPACK};
+    use super::{CHECK, ExtractSettings, READ_CARTRIDGE, READ_DISC, UNPACK};
 
     #[test]
     fn a_players_extraction_is_held_to_the_extractors_bounds() {
@@ -68,7 +79,7 @@ mod tests {
         assert_eq!(shipped.overlays, US_OVERLAYS);
         assert_eq!(shipped.block_len, BLOCK_LEN);
         // The phases' names, as a job's progress shows them.
-        let phases = [READ_CARTRIDGE, UNPACK, CHECK].map(|phase| phase.0);
-        assert_eq!(phases, ["readCartridge", "unpack", "check"]);
+        let phases = [READ_CARTRIDGE, READ_DISC, UNPACK, CHECK].map(|phase| phase.0);
+        assert_eq!(phases, ["readCartridge", "readDisc", "unpack", "check"]);
     }
 }
