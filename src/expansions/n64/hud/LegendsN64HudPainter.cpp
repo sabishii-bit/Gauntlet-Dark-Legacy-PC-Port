@@ -79,11 +79,6 @@ constexpr std::string_view kThirteenthRuneArt = "RUNE13"; ///< STATIC's
 constexpr u8 kOpaque = 255;
 constexpr f32 kMeterShares = 2; ///< a meter's two strips share its health between them
 
-/** e00aad34's "%8.8s %6.6d": a stat's name in eight characters, its value in six digits. */
-constexpr usize kStatNameWidth = 8;
-constexpr s32 kStatDigits = 6;
-constexpr s32 kMostCountShown = 9999; ///< what the carousel's "%4d" holds
-
 /** A stat the stats page shows, and the english/game.wad word that names it. */
 enum class Stat : u8 { Strength, Speed, Magic, Armour, MostHealth, Experience, Gold, Level };
 struct StatWord {
@@ -286,7 +281,7 @@ void drawRow(Canvas& canvas, f32 left, std::span<const Texture* const> places, u
     const f32 span = offset(places.size() - 1) +
                      (last != nullptr ? static_cast<f32>(last->width()) : static_cast<f32>(step));
     const f32 start = left + static_cast<f32>(Layout::kSelected.x) - span / 2;
-    const f32 middle = static_cast<f32>(Layout::kStripTop + Layout::kSelected.y);
+    const auto middle = static_cast<f32>(Layout::kStripTop + Layout::kSelected.y);
     for (usize place = 0; place < places.size(); ++place) {
         const Texture* picture = places[place];
         if (picture == nullptr || (held & (1U << place)) == 0) {
@@ -470,8 +465,8 @@ std::string legendsN64StatLine(std::string_view label, s32 value) {
     if (value == 0) {
         return std::format("{} ", label);
     }
-    return std::format("{:>{}.{}} {:0{}}", label, kStatNameWidth, kStatNameWidth, value,
-                       kStatDigits);
+    return std::format("{:>{}.{}} {:0{}}", label, Layout::kStatNameWidth, Layout::kStatNameWidth,
+                       value, Layout::kStatDigits);
 }
 
 std::optional<s32> legendsN64CarouselCount(const PowerupSlot& slot) {
@@ -482,7 +477,7 @@ std::optional<s32> legendsN64CarouselCount(const PowerupSlot& slot) {
     if (!left || *left < 1) {
         return std::nullopt;
     }
-    return static_cast<s32>(std::min(std::floor(*left), static_cast<f32>(kMostCountShown)));
+    return static_cast<s32>(std::min(std::floor(*left), static_cast<f32>(Layout::kMostCountShown)));
 }
 
 void LegendsN64QuestList::add(LegendsN64QuestEntry entry) {

@@ -738,7 +738,7 @@ TEST_CASE("the N64 turbo thirds brighten as the meter fills", "[legends][n64-hud
     const auto lights = picturesIn(quads, "TURBOCLR");
     // Green across the middle, in two mirrored parts; yellow and red a part either side.
     REQUIRE(lights.size() == 6);
-    const f32 left = static_cast<f32>(Layout::kSlotX[1]);
+    const auto left = static_cast<f32>(Layout::kSlotX[1]);
     struct Light {
         Rect area;
         f32 from = 0;

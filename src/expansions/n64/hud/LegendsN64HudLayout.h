@@ -71,8 +71,12 @@ struct LegendsN64HudLayout {
     static constexpr LegendsN64Point kClass{20, 40};
     static constexpr usize kWordLength = 10;           ///< "%.10s"
     static constexpr LegendsN64Point kStatLine{8, 28}; ///< the stats page's line, for the name
-    static constexpr LegendsN64Point kCount{64, 40};   ///< what the selection has left, "%4d"
+    /** e00aad34's "%8.8s %6.6d": a stat's name in eight characters, its value in six digits. */
+    static constexpr usize kStatNameWidth = 8;
+    static constexpr s32 kStatDigits = 6;
+    static constexpr LegendsN64Point kCount{64, 40}; ///< what the selection has left, "%4d"
     static constexpr s32 kCountDigits = 4;
+    static constexpr s32 kMostCountShown = 9999;
 
     // e005a154's records 8 to 10 and FUN_e0059e00: the carousel, its selection between the one
     // before it and the one after, smaller; the quest page lists its entries the same way.
