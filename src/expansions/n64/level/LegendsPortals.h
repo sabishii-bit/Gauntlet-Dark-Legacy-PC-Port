@@ -3,11 +3,14 @@
 #include <optional>
 #include <span>
 
+#include "engine/core/Types.h"
+
 #include "expansions/n64/formats/LegendsN64Portal.h"
 #include "expansions/shared/level/LegendsPortalVisitor.h"
-#include "game/level/ImportedLevel.h"
 
 namespace gdl::game {
+
+struct ImportedExit;
 
 /** Cylinder/cylinder contact, with the same feet/height convention as native
  * player bodies. Invalid visitors are never admitted to an exit. */

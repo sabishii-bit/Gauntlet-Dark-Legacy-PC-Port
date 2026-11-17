@@ -6,6 +6,8 @@
 #include <span>
 #include <stdexcept>
 
+#include "game/level/ImportedLevel.h"
+
 namespace gdl::game {
 namespace {
 bool finite(const Vec3& point) {

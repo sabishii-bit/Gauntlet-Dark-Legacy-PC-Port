@@ -14,6 +14,7 @@
 #include "expansions/n64/formats/LegendsN64Texture.h"
 #include "expansions/n64/level/LegendsPortals.h"
 #include "expansions/shared/scenes/LegendsSceneAdapter.h"
+#include "game/level/ImportedLevel.h"
 
 namespace {
 using namespace gdl;
