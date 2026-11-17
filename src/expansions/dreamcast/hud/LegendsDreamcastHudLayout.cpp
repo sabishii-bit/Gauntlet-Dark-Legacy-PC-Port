@@ -123,6 +123,20 @@ u8 dreamcastTurboGlow(s64 steps) {
     return static_cast<u8>(transparency);
 }
 
+std::optional<LegendsDreamcastCard> dreamcastCard(std::string_view card) {
+    for (const LegendsDreamcastCardKind& kind : Layout::kCards) {
+        if (kind.card == card) {
+            return kind.face.empty() ? LegendsDreamcastCard{.art = kind.card, .darkLegacy = true}
+                                     : LegendsDreamcastCard{.art = kind.face, .darkLegacy = false};
+        }
+    }
+    return std::nullopt;
+}
+
+bool dreamcastWaitHereShown(bool waiting, s32 joined, s64 step) {
+    return waiting && joined >= Layout::kWaitLeastJoined && (step & Layout::kWaitBlink) != 0;
+}
+
 s32 dreamcastGoldLeft(s32 width, s32 seatX) {
     return width < Layout::kGoldNarrow ? seatX + Layout::kGoldRight - width
                                        : seatX + Layout::kGoldLeft;

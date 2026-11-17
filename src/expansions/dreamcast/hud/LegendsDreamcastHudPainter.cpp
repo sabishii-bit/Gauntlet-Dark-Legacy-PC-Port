@@ -35,6 +35,8 @@
 #include "formats/FontFile.h"
 #include "game/characters/ClassData.h"
 #include "game/hud/HudView.h"
+#include "game/hud/PickupHud.h"
+#include "game/hud/PowerupSelector.h"
 #include "game/hud/StatusBox.h"
 #include "game/party/PlayerRuntime.h"
 
@@ -49,6 +51,8 @@ constexpr std::string_view kGoldLabel = "BTMBK_GOLD";
 constexpr std::string_view kHealthLabel = "BTMBK_HELTH";
 constexpr std::string_view kKeyIcon = "KEY_ICON";
 constexpr std::string_view kThirteenthRuneArt = "RUNE13";
+constexpr std::string_view kItArt = "IT";
+constexpr std::string_view kWaitScrollArt = "TEXTSCROLL";
 constexpr std::string_view kPanelPrefix = "BTMBK_";    ///< a costume's panel, by colour
 constexpr std::string_view kPlainStripPrefix = "S3_W"; ///< a kind-0 box's strip, by colour
 constexpr std::string_view kPlainPanelPrefix = "S4_W"; ///< and its panel
@@ -72,7 +76,6 @@ constexpr std::string_view kStandInClass = "WAR";
 /** The N64 HUD's word for Sumner's class (english/game.wad string 138); the Dreamcast names him
  * only in "Sumner's Tower" (1ST_READ.BIN 8c11af74). */
 constexpr std::string_view kSumnerWord = "legends.n64.hud.text.138";
-constexpr std::string_view kInTowerWord = "hud.inTower";
 constexpr u8 kOpaque = 255;
 
 /** The picture `name` of a decoded bank; null when the bank has none, or only a borrowed slot. */
@@ -175,6 +178,13 @@ bool standing(const HudSeat& shown) {
     return shown.turbo.has_value();
 }
 
+/** Seat `shown`'s costume colour: a gone player's, which only its runtime still holds, else its
+ * box's. */
+s32 seatColour(const HudSeat& shown) {
+    return shown.departed && shown.runtime != nullptr ? shown.runtime->actor.save().color
+                                                      : shown.box.color;
+}
+
 /** The static set's picture of runestone `rune`, three of each colour (FUN_8c0ba060's
  * SM_RUNE_%s_%02d). */
 std::string runeArt(usize rune) {
@@ -232,6 +242,7 @@ bool LegendsDreamcastHudPainter::load(RenderDevice& device, const std::filesyste
         loadClass(device, files, member.classIndex, member.color);
     }
     loadLegends(device, files, darkLegacy);
+    borrowPictures(darkLegacy);
     return true;
 }
 
@@ -241,7 +252,9 @@ void LegendsDreamcastHudPainter::release() {
         font->glyphs = {};
     }
     m_strip = m_levelLabel = m_goldLabel = m_healthLabel = m_key = m_glow = nullptr;
-    m_thirteenthRune = nullptr;
+    m_thirteenthRune = m_it = m_waitScroll = nullptr;
+    m_darkLegacyCards.clear();
+    m_countIcons.clear();
     m_plainStrips = {};
     m_plainPanels = {};
     m_runes = {};
@@ -308,6 +321,14 @@ void LegendsDreamcastHudPainter::loadStatic(RenderDevice& device,
         }
     }
     m_thirteenthRune = take(kThirteenthRuneArt);
+    m_it = take(kItArt);
+    m_waitScroll = take(kWaitScrollArt);
+    // FUN_8c0b7560's six cards, each standing for one or more of Dark Legacy's.
+    for (const LegendsDreamcastCardKind& kind : Layout::kCards) {
+        if (!kind.face.empty() && m_art.find(kind.face) == nullptr) {
+            take(kind.face);
+        }
+    }
     for (const std::string_view sheet : {kSmallSheet, kScoreSheet, kLargeSheet}) {
         take(sheet);
     }
@@ -386,6 +407,22 @@ void LegendsDreamcastHudPainter::loadLegends(RenderDevice& device, const AssetLo
     }
 }
 
+void LegendsDreamcastHudPainter::borrowPictures(DarkLegacyHudArt& darkLegacy) {
+    for (const LegendsDreamcastCardKind& kind : Layout::kCards) {
+        if (!kind.face.empty()) {
+            continue;
+        }
+        if (const Texture* picture = darkLegacy.staticArt(kind.card)) {
+            m_darkLegacyCards.emplace(std::string{kind.card}, picture);
+        }
+    }
+    for (std::string& icon : PickupHud::countIcons()) {
+        if (const Texture* picture = darkLegacy.countArt(icon)) {
+            m_countIcons.emplace(std::move(icon), picture);
+        }
+    }
+}
+
 const Texture*
 LegendsDreamcastHudPainter::takePicture(RenderDevice& device,
                                         std::span<const formats::LegendsMapTexture> pictures,
@@ -434,27 +471,31 @@ void LegendsDreamcastHudPainter::prepare(HudFrame& frame, const HudView& view) {
 
 void LegendsDreamcastHudPainter::drawStatus(HudFrame& frame, const HudView& view) {
     static_assert(HudView::kSeats == Layout::kSeatX.size());
+    Canvas& canvas = frame.canvas;
     for (usize seat = 0; seat < view.seats.size(); ++seat) {
         const HudSeat& shown = view.seats.at(seat);
-        switch (dreamcastBoxKind(shown)) {
-        case LegendsDreamcastBoxKind::None: break;
-        case LegendsDreamcastBoxKind::Panel: drawPanel(frame.canvas, seat, shown, view); break;
-        case LegendsDreamcastBoxKind::Plain: {
-            // A gone player's box keeps its costume's colour, which only its runtime still
-            // holds.
-            const s32 color = shown.departed && shown.runtime != nullptr
-                                  ? shown.runtime->actor.save().color
-                                  : shown.box.color;
-            drawPlain(frame.canvas, seat, color);
-            // FUN_8c0c16e0 tells a player waiting in the tower so, and nobody else.
-            if (!shown.departed && shown.box.inTower && !shown.box.towerPrompt) {
-                write(frame.canvas, m_small.text, -dreamcastSeatCentre(seat), Layout::kInTowerTop,
-                      words(view, kInTowerWord), TextStyle{.color = inkOf(color)});
-            }
-            break;
+        const LegendsDreamcastBoxKind kind = dreamcastBoxKind(shown);
+        if (kind == LegendsDreamcastBoxKind::None) {
+            continue;
         }
+        const bool panel = kind == LegendsDreamcastBoxKind::Panel;
+        if (panel) {
+            drawPanel(canvas, seat, shown, view);
+        } else {
+            drawPlain(canvas, seat, seatColour(shown));
+        }
+        if (shown.it) {
+            drawIt(canvas, seat);
+        }
+        if (panel) {
+            drawWaitHere(canvas, seat, shown, view);
+        } else {
+            drawFallen(canvas, seat, shown, view);
         }
     }
+    // FUN_8c0b76a0's cards rise over every box, and Dark Legacy's counts stand over them.
+    drawCards(canvas, view);
+    drawCounts(canvas, view);
 }
 
 void LegendsDreamcastHudPainter::drawRuneMeter(HudFrame& frame, const HudView& view) {
@@ -618,6 +659,126 @@ void LegendsDreamcastHudPainter::drawLegends(Canvas& canvas, usize seat, u16 leg
                           static_cast<f32>(Layout::kQuestIconSize),
                           static_cast<f32>(Layout::kQuestIconSize)};
         canvas.draw(*art.picture, art.fitted ? fittedInto(square, *art.picture) : square);
+    }
+}
+
+void LegendsDreamcastHudPainter::drawIt(Canvas& canvas, usize seat) const {
+    // FUN_8c0c2300 stands the badge over the tagged player's box, whatever the box shows.
+    if (m_it != nullptr) {
+        canvas.draw(*m_it, Rect{static_cast<f32>(dreamcastSeatX(seat) + Layout::kItBadge.x),
+                                static_cast<f32>(Layout::kItBadge.y),
+                                static_cast<f32>(Layout::kItBadgeSize),
+                                static_cast<f32>(Layout::kItBadgeSize)});
+    }
+}
+
+void LegendsDreamcastHudPainter::drawWaitHere(Canvas& canvas, usize seat, const HudSeat& shown,
+                                              const HudView& view) const {
+    if (!dreamcastWaitHereShown(shown.waitingAtExit, view.joined, m_clock.step())) {
+        return;
+    }
+    // The scroll and its words together: one never shows without the other.
+    const s32 x = dreamcastSeatX(seat);
+    if (m_waitScroll != nullptr) {
+        canvas.draw(*m_waitScroll, Rect{static_cast<f32>(x + Layout::kWaitScroll.x),
+                                        static_cast<f32>(Layout::kWaitScroll.y),
+                                        static_cast<f32>(Layout::kWaitScrollWidth),
+                                        static_cast<f32>(Layout::kWaitScrollRows)});
+    }
+    write(canvas, m_small.text, x + Layout::kWaitHereLine.x, Layout::kWaitHereLine.y,
+          words(view, Layout::kWaitHereText), TextStyle{.color = Layout::kWaitHereInk});
+}
+
+void LegendsDreamcastHudPainter::drawFallen(Canvas& canvas, usize seat, const HudSeat& shown,
+                                            const HudView& view) const {
+    // A gone player's box says nothing more (FUN_8c0bbee0).
+    if (shown.departed) {
+        return;
+    }
+    const s32 centre = -dreamcastSeatCentre(seat);
+    const TextStyle ink{.color = inkOf(seatColour(shown))};
+    if (shown.box.towerPrompt) {
+        // Dark Legacy's prompt has no cursor, so YES, where the original's starts, stays
+        // marked; NO is offered only while the player may quit the game.
+        write(canvas, m_small.text, centre, Layout::kPromptWaitTop, words(view, Layout::kWaitText),
+              ink);
+        write(canvas, m_small.text, centre, Layout::kPromptQuestionTop,
+              words(view, Layout::kInTowerQuestionText), ink);
+        write(canvas, m_small.text, centre, Layout::kPromptYesTop, words(view, Layout::kYesText),
+              TextStyle{.color = Layout::kPromptChosenInk});
+        if (shown.box.quitOffered) {
+            write(canvas, m_small.text, centre, Layout::kPromptNoTop, words(view, Layout::kNoText),
+                  ink);
+        }
+        return;
+    }
+    // FUN_8c0c16e0 tells a player waiting in the tower so.
+    if (shown.box.inTower) {
+        write(canvas, m_small.text, centre, Layout::kInTowerTop, words(view, Layout::kInTowerText),
+              ink);
+    }
+}
+
+void LegendsDreamcastHudPainter::drawCards(Canvas& canvas, const HudView& view) const {
+    if (view.pickups == nullptr) {
+        return;
+    }
+    for (const PickupCard& card : view.pickups->cards()) {
+        const auto shown = dreamcastCard(card.texture);
+        if (!shown || card.player < 0 || static_cast<usize>(card.player) >= view.seats.size()) {
+            continue;
+        }
+        const auto seat = static_cast<usize>(card.player);
+        const auto left = static_cast<f32>(dreamcastSeatX(seat) + Layout::kArtLeft);
+        drawWhole(canvas, colourPicture(m_plainStrips, seatColour(view.seats.at(seat))), left,
+                  static_cast<f32>(card.y));
+        const auto top = static_cast<f32>(card.y + Layout::kCardStripRows);
+        if (!shown->darkLegacy) {
+            drawWhole(canvas, m_art.find(shown->art), left, top);
+            continue;
+        }
+        // Dark Legacy's card, as its own boxes size it.
+        if (const auto lent = m_darkLegacyCards.find(shown->art); lent != m_darkLegacyCards.end()) {
+            canvas.draw(*lent->second, Rect{left, top, static_cast<f32>(StatusBoxPainter::kWidth),
+                                            static_cast<f32>(StatusBoxPainter::kHeight)});
+        }
+    }
+}
+
+void LegendsDreamcastHudPainter::drawCounts(Canvas& canvas, const HudView& view) const {
+    if (view.pickups == nullptr) {
+        return;
+    }
+    const TextStyle style{.scale = Layout::kTickerScale};
+    const s32 rowStep = StatusBoxPainter::kCountIconSize + StatusBoxPainter::kCountRowGap;
+    const auto icon = static_cast<f32>(StatusBoxPainter::kCountIconSize);
+    for (usize seat = 0; seat < view.seats.size(); ++seat) {
+        // Dark Legacy's rows: up from over the box, or from above its selector's label.
+        std::optional<s32> labelTop;
+        const PowerupSelector* selector = view.seats.at(seat).selector;
+        if (selector != nullptr && selector->showing()) {
+            labelTop = selector->labelY(StatusBoxPainter::kY);
+        }
+        const s32 bottom = PickupHud::countRowY(labelTop);
+        s32 line = 0;
+        for (const PickupCount& held : view.pickups->counts(static_cast<s32>(seat))) {
+            if (!held.showing()) {
+                continue;
+            }
+            const std::string text = std::format("{}/{}", held.count, held.total);
+            const s32 width = StatusBoxPainter::kCountIconSize + StatusBoxPainter::kCountIconGap +
+                              m_small.text.measure(text, style.scale);
+            const s32 left = dreamcastSeatCentre(seat) - (width / 2);
+            const s32 top = bottom - (line * rowStep);
+            ++line;
+            if (const auto found = m_countIcons.find(held.icon); found != m_countIcons.end()) {
+                canvas.draw(*found->second,
+                            Rect{static_cast<f32>(left), static_cast<f32>(top), icon, icon});
+            }
+            write(canvas, m_small.text,
+                  left + StatusBoxPainter::kCountIconSize + StatusBoxPainter::kCountIconGap,
+                  top + StatusBoxPainter::kCountTextDy, text, style);
+        }
     }
 }
 

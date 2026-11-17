@@ -502,6 +502,7 @@ add_executable(tests
     expansions/dreamcast/menu/LegendsDreamcastPauseTests.cpp
     expansions/dreamcast/hud/LegendsDreamcastHudLayoutTests.cpp
     expansions/dreamcast/hud/LegendsDreamcastHudPainterTests.cpp
+    expansions/dreamcast/hud/LegendsDreamcastHudTextTests.cpp
     expansions/dreamcast/scenes/LegendsDreamcastTravelTests.cpp
     formats/GcTextureTests.cpp
     formats/FontFileTests.cpp

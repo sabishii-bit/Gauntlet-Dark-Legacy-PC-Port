@@ -4,6 +4,7 @@
 #include <initializer_list>
 #include <limits>
 #include <optional>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -15,11 +16,14 @@
 #include "RecordedQuads.h"
 #include "expansions/dreamcast/hud/LegendsDreamcastHudLayout.h"
 #include "game/bosses/LegendItems.h"
+#include "game/characters/CharacterSave.h"
 #include "game/characters/ClassData.h"
 #include "game/hud/HudView.h"
+#include "game/hud/PickupHud.h"
 #include "game/hud/StatusBox.h"
 #include "game/level/BossKinds.h"
 #include "game/party/PlayerRuntime.h"
+#include "game/players/ItemPickup.h"
 #include "game/shop/InventoryPanel.h"
 
 namespace {
@@ -154,6 +158,103 @@ TEST_CASE("Dreamcast gold starts at X+3, or ends at X+35 while it is narrower th
     CHECK(dreamcastGoldLeft(0, kX) == kX + 35);
     CHECK(dreamcastGoldLeft(32, kX) == kX + 3);
     CHECK(dreamcastGoldLeft(45, 8) == 11);
+}
+
+TEST_CASE("each of Dark Legacy's pickup cards shows as the Dreamcast's card of its kind, or as "
+          "its own",
+          "[legends][dreamcast-hud]") {
+    // FUN_8c0b7560's six cards (8c125004..8c12502c) stand for Dark Legacy's of their kinds; the
+    // runestone, legend, crystal and gargoyle cards, which the Dreamcast has none of, stay Dark
+    // Legacy's.
+    struct Shown {
+        std::string_view card;
+        LegendsDreamcastCard face;
+    };
+    constexpr std::array<Shown, 15> kShown{{
+        {.card = "GOLD", .face = {.art = "GOLD", .darkLegacy = false}},
+        {.card = "JUNK", .face = {.art = "GOLD", .darkLegacy = false}},
+        {.card = "COINHUD", .face = {.art = "GOLD", .darkLegacy = false}},
+        {.card = "KEY", .face = {.art = "KEY", .darkLegacy = false}},
+        {.card = "KEY_RING", .face = {.art = "KEY", .darkLegacy = false}},
+        {.card = "MEAT", .face = {.art = "FOOD", .darkLegacy = false}},
+        {.card = "FRUIT", .face = {.art = "FOOD", .darkLegacy = false}},
+        {.card = "BADMEAT", .face = {.art = "POISN_FOOD", .darkLegacy = false}},
+        {.card = "BADFRUIT", .face = {.art = "POISN_FOOD", .darkLegacy = false}},
+        {.card = "MAGIC", .face = {.art = "MAGIC", .darkLegacy = false}},
+        {.card = "SPECIALS", .face = {.art = "SPECIALS", .darkLegacy = false}},
+        {.card = "RUNESTONE", .face = {.art = "RUNESTONE", .darkLegacy = true}},
+        {.card = "LEGEND", .face = {.art = "LEGEND", .darkLegacy = true}},
+        {.card = "CRYSTAL", .face = {.art = "CRYSTAL", .darkLegacy = true}},
+        {.card = "GOLDNICON", .face = {.art = "GOLDNICON", .darkLegacy = true}},
+    }};
+    for (const Shown& shown : kShown) {
+        CAPTURE(shown.card);
+        const auto face = dreamcastCard(shown.card);
+        REQUIRE(face);
+        CHECK(*face == shown.face);
+    }
+    // A name no pickup puts up shows nothing, the cards' strip and a lower-case name included.
+    for (const std::string_view name : {"", "S3", "gold", "BOOK"}) {
+        CAPTURE(name);
+        CHECK_FALSE(dreamcastCard(name));
+    }
+
+    // Every card Dark Legacy's own pickups put up has its face: each kind of item a character
+    // takes, and the crystal's.
+    const std::array<ItemOffer, 17> offers{{
+        {.kind = static_cast<s32>(ItemKind::Gold), .amount = 50},
+        {.kind = static_cast<s32>(ItemKind::Gold), .amount = 5},
+        {.kind = static_cast<s32>(ItemKind::Keys), .amount = 1},
+        {.kind = static_cast<s32>(ItemKind::Keys), .amount = 3},
+        {.kind = static_cast<s32>(ItemKind::Food), .amount = 100},
+        {.kind = static_cast<s32>(ItemKind::Food), .amount = 20},
+        {.kind = static_cast<s32>(ItemKind::Food), .amount = -100},
+        {.kind = static_cast<s32>(ItemKind::Food), .amount = -20},
+        {.kind = static_cast<s32>(ItemKind::Potion), .amount = 1, .flags = 1},
+        {.kind = static_cast<s32>(ItemKind::WeaponPowerup), .amount = 1, .strength = 1.0f},
+        {.kind = static_cast<s32>(ItemKind::ArmorPowerup), .amount = 1, .strength = 1.0f},
+        {.kind = static_cast<s32>(ItemKind::SpeedPowerup), .amount = 1, .strength = 1.0f},
+        {.kind = static_cast<s32>(ItemKind::MagicPowerup), .amount = 1, .strength = 1.0f},
+        {.kind = static_cast<s32>(ItemKind::SpecialPowerup), .amount = 1, .strength = 1.0f},
+        {.kind = static_cast<s32>(ItemKind::Runestone), .amount = 0},
+        {.kind = static_cast<s32>(ItemKind::Legend), .amount = 1},
+        {.kind = static_cast<s32>(ItemKind::GargoyleKey), .amount = 0},
+    }};
+    std::vector<std::string> cards;
+    for (const ItemOffer& offer : offers) {
+        CAPTURE(offer.kind, offer.amount);
+        CharacterSave save;
+        save.progress().health = 1;
+        const ItemTaking taking = takeItem(save, offer, 1.0f, false);
+        REQUIRE_FALSE(taking.card.empty());
+        cards.emplace_back(taking.card);
+    }
+    cards.emplace_back(PickupHud::kCrystalCard);
+    for (const std::string& card : cards) {
+        CAPTURE(card);
+        CHECK(dreamcastCard(card));
+    }
+    // Between them they put up every card the table names but the secret coins', which the
+    // challenge puts up.
+    std::ranges::sort(cards);
+    const auto repeated = std::ranges::unique(cards);
+    cards.erase(repeated.begin(), repeated.end());
+    CHECK(cards.size() == kShown.size() - 1);
+}
+
+TEST_CASE("WAIT HERE shows four steps in eight while a seat waits with company",
+          "[legends][dreamcast-hud]") {
+    // FUN_8c0c16e0: while bit 2 of the frame counter is set (*8c287c78 & 4), and only with more
+    // than one seat in the game (*8c287bb0 > 1).
+    for (s64 step = 0; step < 32; ++step) {
+        CAPTURE(step);
+        const bool on = step % 8 >= 4;
+        CHECK(dreamcastWaitHereShown(true, 2, step) == on);
+        CHECK(dreamcastWaitHereShown(true, 4, step) == on);
+        CHECK_FALSE(dreamcastWaitHereShown(true, 1, step));
+        CHECK_FALSE(dreamcastWaitHereShown(true, 0, step));
+        CHECK_FALSE(dreamcastWaitHereShown(false, 4, step));
+    }
 }
 
 TEST_CASE("each Dreamcast seat state picks its box", "[legends][dreamcast-hud]") {

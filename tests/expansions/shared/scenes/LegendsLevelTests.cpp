@@ -1,6 +1,8 @@
+#include <algorithm>
 #include <array>
 #include <filesystem>
 #include <memory>
+#include <string_view>
 #include <utility>
 
 #include <catch2/catch_test_macros.hpp>
@@ -11,8 +13,10 @@
 #include "TestSupport.h"
 #include "expansions/dreamcast/characters/LegendsDreamcastVitality.h"
 #include "expansions/dreamcast/formats/LegendsDreamcastTexture.h"
+#include "expansions/dreamcast/level/LegendsDreamcastPortals.h"
 #include "expansions/n64/formats/LegendsN64Portal.h"
 #include "expansions/shared/hud/LegendsHudStyleIds.h"
+#include "expansions/shared/level/LegendsPortalVisitor.h"
 #include "expansions/shared/scenes/LegendsLevel.h"
 #include "expansions/shared/scenes/LegendsSceneAdapter.h"
 #include "game/characters/CharacterSave.h"
@@ -109,6 +113,82 @@ TEST_CASE("an N64 level names the N64 HUD look as its own", "[legends][n64][hud-
     CHECK(imported.hudStyleId() == kLegendsN64HudStyle);
     CHECK(imported.hudStyleId() == legendsHudStyleOf(level.platform()));
     CHECK(imported.hudStyleId() != kDarkLegacyHudStyle);
+}
+
+TEST_CASE("a Dreamcast level answers its exits' waits for the HUD",
+          "[legends][dreamcast][hud-style][assets]") {
+    const auto directory =
+        test::dataDirectory().parent_path() / "assets/dreamcast/extracted/native/levels/levelt1";
+    if (!std::filesystem::is_regular_file(directory / "worlds.rom")) {
+        SKIP("Dreamcast extraction is not installed");
+    }
+    test::FakeRenderDevice device;
+    const auto objects = readFile(directory / "objects.rom");
+    auto map = formats::LegendsMap::parseDreamcast(readFile(directory / "worlds.rom"), objects);
+    map.textures =
+        formats::decodeLegendsDreamcastTextures(objects, readFile(directory / "textures.rom"));
+    auto adapter = LegendsSceneAdapter::load(device, LegendsPlatform::Dreamcast, directory, map, 2);
+    LegendsLevel level(device, map, std::move(adapter), directory, test::dataDirectory());
+    const ImportedLevel& imported = level;
+    for (s32 seat = 0; seat < 4; ++seat) {
+        CAPTURE(seat);
+        CHECK_FALSE(imported.exitUnder(seat));
+    }
+    // The tower's exits to the mountain's first level, which a new party may take, and to its
+    // second, which it may not yet.
+    const auto portals = level.adapter().dreamcastPortals();
+    const auto index = [&](std::string_view name) {
+        const auto found = std::ranges::find(portals, name, &LegendsDreamcastPortal::map);
+        REQUIRE(found != portals.end());
+        return static_cast<usize>(found - portals.begin());
+    };
+    const Vec3 first = portals[index("levelb1")].position;
+    const Vec3 second = portals[index("levelb2")].position;
+    // A spot no exit reaches.
+    const Vec3 away = first + Vec3{0, 50, 0};
+    for (const LegendsDreamcastPortal& portal : portals) {
+        REQUIRE_FALSE(touchesDreamcastPortal(portal, away, LegendsPortalVisitor{}.radius, 2));
+    }
+
+    // Seat 1 on the first exit, seat 0 away from every exit: seat 1 waits there for seat 0,
+    // and no exit is named, as the Dreamcast's HUD names none.
+    const CharacterSave save;
+    PlayerActor beside;
+    PlayerActor on;
+    beside.spawn(0, save, nullptr, away, 0);
+    on.spawn(1, save, nullptr, first, 0);
+    std::array<PlayerActor*, 2> party{&beside, &on};
+    level.updateParty(party, 1.0f / 60, false);
+    REQUIRE(level.adapter().dreamcastPortalUnlocked(index("levelb1")));
+    auto under = imported.exitUnder(1);
+    REQUIRE(under);
+    CHECK(under->waiting);
+    CHECK_FALSE(under->code);
+    for (const s32 seat : {0, 2, 3}) {
+        CAPTURE(seat);
+        CHECK_FALSE(imported.exitUnder(seat));
+    }
+
+    // Both on it: nobody waits.
+    beside.place(first);
+    level.updateParty(party, 1.0f / 60, false);
+    for (const s32 seat : {0, 1}) {
+        CAPTURE(seat);
+        under = imported.exitUnder(seat);
+        REQUIRE(under);
+        CHECK_FALSE(under->waiting);
+        CHECK_FALSE(under->code);
+    }
+
+    // Both on the exit the tower keeps shut: nobody stands on an exit.
+    REQUIRE_FALSE(level.adapter().dreamcastPortalUnlocked(index("levelb2")));
+    beside.place(second);
+    on.place(second);
+    level.updateParty(party, 1.0f / 60, false);
+    for (const s32 seat : {0, 1}) {
+        CAPTURE(seat);
+        CHECK_FALSE(imported.exitUnder(seat));
+    }
 }
 
 TEST_CASE("an N64 level with no exit under its party names none to the HUD",

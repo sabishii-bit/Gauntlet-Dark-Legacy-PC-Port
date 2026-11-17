@@ -37,6 +37,12 @@ struct LegendsDreamcastTurboZone {
     f32 span = 0;
 };
 
+/** A pickup card of Dark Legacy's and the Dreamcast's card of the same kind. */
+struct LegendsDreamcastCardKind {
+    std::string_view card; ///< Dark Legacy's STATIC card, as its pickups name it
+    std::string_view face; ///< the Dreamcast's static set's card; empty for none
+};
+
 /**
  * Where 1ST_READ.BIN's HUD puts the parts of a status box. Its frame is 512x384, the canvas's
  * own, so every number is in canvas units. Each seat keeps its column X whatever the size of
@@ -98,6 +104,75 @@ struct LegendsDreamcastHudLayout {
     /** The port's: a class with no banner is named in font32 at half its height, which fills
      * the banner's 16 rows. */
     static constexpr f32 kBannerTextScale = 0.5f;
+
+    // The words the boxes write, by their ids in the string table: 1ST_READ.BIN's own, IN TOWER
+    // at 8c1256b4 (Dark Legacy's words too), WAIT HERE... at 8c1256c0, and the prompt's WAIT,
+    // IN TOWER?, YES and NO at 8c1254cc, 8c1254d4, 8c1254f4 and 8c1254f8.
+    static constexpr std::string_view kInTowerText = "hud.inTower";
+    static constexpr std::string_view kWaitHereText = "legends.dreamcast.hud.waitHere";
+    static constexpr std::string_view kWaitText = "legends.dreamcast.hud.wait";
+    static constexpr std::string_view kInTowerQuestionText =
+        "legends.dreamcast.hud.inTowerQuestion";
+    static constexpr std::string_view kYesText = "legends.dreamcast.hud.yes";
+    static constexpr std::string_view kNoText = "legends.dreamcast.hud.no";
+
+    // FUN_8c0bda40 (8c0bf416..8c0bf5b4): a fallen player's box asks whether to wait in the
+    // tower, each line in font 1 centred on the box: WAIT and IN TOWER? in the seat's ink, then
+    // YES and NO. The choice its cursor is on is red (8c14bcc8[1]) and the other is in the
+    // seat's ink, which 8c0bf42e stores over the table's white before every ask; the cursor
+    // starts on YES (FUN_8c0bc040).
+    static constexpr s32 kPromptWaitTop = 336;
+    static constexpr s32 kPromptQuestionTop = 344;
+    static constexpr s32 kPromptYesTop = 356;
+    static constexpr s32 kPromptNoTop = 368;
+    static constexpr Color kPromptChosenInk = Color::rgba(0xFF, 0x00, 0x00);
+
+    // FUN_8c0c16e0 (8c0c19ee..8c0c1a8e): a player waiting at an exit is told so over its box,
+    // TEXTSCROLL squeezed into 112x16 from 8 left of the column at 324, and WAIT HERE... over it
+    // in font 1, in the scroll's brown, from X+8 at 328. The scroll shows while bit 2 of the
+    // dispatcher's frame counter is set (*8c287c78 & 4), four frames in eight, and only with
+    // more than one seat in the game (*8c287bb0 > 1); the words come with it while another seat
+    // plays (FUN_8c0bcc60), which it always does while one waits.
+    static constexpr LegendsDreamcastPoint kWaitScroll{kArtLeft, 324};
+    static constexpr s32 kWaitScrollWidth = 112;
+    static constexpr s32 kWaitScrollRows = 16;
+    static constexpr LegendsDreamcastPoint kWaitHereLine{8, 328};
+    static constexpr Color kWaitHereInk = Color::rgba(0x16, 0x0C, 0x03);
+    static constexpr s64 kWaitBlink = 4;
+    static constexpr s32 kWaitLeastJoined = 2;
+
+    /** FUN_8c0c2300 (8c0c2422..8c0c245a): the IT badge over the tagged player's box, its 64x64
+     * picture squeezed into 32x32. */
+    static constexpr LegendsDreamcastPoint kItBadge{26, 349};
+    static constexpr s32 kItBadgeSize = 32;
+
+    // FUN_8c0b7560's six kinds of card (names at 8c125004..8c12502c): gold, keys, food, food gone
+    // bad, potions and powerups, each 128x128 under the taker's coloured strip, S3_W<colour>
+    // (FUN_8c0b76a0). Dark Legacy's runestone, legend, crystal and gargoyle cards have none, and
+    // keep Dark Legacy's own 128x64 card. Dark Legacy's motion carries them all.
+    static constexpr std::array<LegendsDreamcastCardKind, 15> kCards{{
+        {.card = "GOLD", .face = "GOLD"},
+        {.card = "JUNK", .face = "GOLD"},
+        {.card = "COINHUD", .face = "GOLD"},
+        {.card = "KEY", .face = "KEY"},
+        {.card = "KEY_RING", .face = "KEY"},
+        {.card = "MEAT", .face = "FOOD"},
+        {.card = "FRUIT", .face = "FOOD"},
+        {.card = "BADMEAT", .face = "POISN_FOOD"},
+        {.card = "BADFRUIT", .face = "POISN_FOOD"},
+        {.card = "MAGIC", .face = "MAGIC"},
+        {.card = "SPECIALS", .face = "SPECIALS"},
+        {.card = "RUNESTONE", .face = {}},
+        {.card = "LEGEND", .face = {}},
+        {.card = "CRYSTAL", .face = {}},
+        {.card = "GOLDNICON", .face = {}},
+    }};
+    /** A card hangs under its strip, which is this tall. */
+    static constexpr s32 kCardStripRows = 16;
+
+    /** The port's: the Dreamcast has no ticker. Dark Legacy's counts stand in Dark Legacy's rows,
+     * centred on the box, written in font 1 at the size Dark Legacy writes them. */
+    static constexpr f32 kTickerScale = StatusBoxPainter::kCountScale;
 
     // FUN_8c0c13e0 (pool 8c0c14e0..8c0c1508, 8c0c16bc..8c0c16cc): the meter's arch, a 128x32
     // picture over the box from kTurboTop. Below 0.3, 0.6 and 0.9999 of the meter it is green,
@@ -201,6 +276,25 @@ std::optional<std::string_view> dreamcastPanelColour(s32 color);
 /** Class `classIndex`'s code in the Dreamcast's costume banks and banners; none for a class it
  * has no bank of. */
 std::optional<std::string_view> dreamcastClassCode(s32 classIndex);
+
+/** A pickup card as the Dreamcast's boxes show it. */
+struct LegendsDreamcastCard {
+    std::string_view art; ///< its picture
+    bool darkLegacy =
+        false; ///< Dark Legacy's own STATIC card, for a kind the Dreamcast has none of
+    bool operator==(const LegendsDreamcastCard&) const = default;
+};
+
+/** How the boxes show Dark Legacy's card `card`: the Dreamcast's card of its kind, or Dark
+ * Legacy's own where the Dreamcast has none; none for a card Dark Legacy never shows. */
+std::optional<LegendsDreamcastCard> dreamcastCard(std::string_view card);
+
+/** Whether a seat's box says WAIT HERE... at the look's step `step` (FUN_8c0c16e0): while it
+ * waits at an exit with `joined` seats in the game, more than one, four steps in eight. The
+ * original has two more gates, untraced and taken as open: the box's timer at +0x1c2 at
+ * nought (FUN_8c0bda40 counts it down in states 0 and 0xE) and *8c0bccd0 at nought
+ * (FUN_8c0bcc60). */
+bool dreamcastWaitHereShown(bool waiting, s32 joined, s64 step);
 
 /** Which box a seat's column shows: FUN_8c0c08a0's kinds. */
 enum class LegendsDreamcastBoxKind : u8 {

@@ -8,7 +8,9 @@
 #include <vector>
 
 #include "expansions/shared/characters/LegendsProgress.h"
+#include "expansions/shared/level/LegendsPortalVisitor.h"
 #include "formats/WorldFile.h"
+#include "game/level/ImportedLevel.h"
 
 namespace gdl::game {
 
@@ -49,6 +51,16 @@ dreamcastLegendsPortal(const formats::ItemInfoRecord& info,
 
 bool touchesDreamcastPortal(const LegendsDreamcastPortal& portal, Vec3 feet, f32 radius,
                             usize partySize);
+
+/** The exit seat `seat` stands on, for the HUD, and whether it waits there: an exit open to the
+ * party (its byte of `enabled`, in `portals`' order, not nought, and placed for a party of the
+ * living's size) that the seat's living visitor touches, as touchesDreamcastPortal counts
+ * contact at that size, while another living visitor is not on it. No code: the Dreamcast's HUD
+ * names no exit. None without the seat's living visitor or off every open exit. */
+std::optional<ImportedExit> dreamcastExitUnder(std::span<const LegendsDreamcastPortal> portals,
+                                               std::span<const u8> enabled,
+                                               std::span<const LegendsPortalVisitor> visitors,
+                                               s32 seat);
 
 /** Temple, Underworld and paired Battlefield stages retain the run's tally
  * checkpoint across their intermediate exits without opening the shop. */

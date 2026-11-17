@@ -1,6 +1,9 @@
 #include <algorithm>
 #include <array>
 #include <limits>
+#include <optional>
+#include <span>
+#include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -12,8 +15,10 @@
 #include "expansions/dreamcast/formats/LegendsDreamcastScene.h"
 #include "expansions/dreamcast/formats/LegendsDreamcastTexture.h"
 #include "expansions/dreamcast/level/LegendsDreamcastPortals.h"
+#include "expansions/shared/level/LegendsPortalVisitor.h"
 #include "expansions/shared/scenes/LegendsSceneAdapter.h"
 #include "formats/AnimationTree.h"
+#include "game/level/ImportedLevel.h"
 
 namespace {
 using namespace gdl;
@@ -137,6 +142,94 @@ TEST_CASE("Dreamcast exit parameters resolve authored codes not arbitrary paths"
     instance.params[0] = 0;
     instance.params[4] = 'Z';
     CHECK_FALSE(dreamcastLegendsPortal(info, instance, 42, policy));
+}
+
+TEST_CASE("the HUD hears when a seat waits on a Dreamcast exit", "[legends][dreamcast-portals]") {
+    // An exit the tower keeps shut, an open one, and one placed for a party of three exactly.
+    const std::array<LegendsDreamcastPortal, 3> portals{{
+        {.nativeIndex = 3, .map = "levelb2", .position = Vec3{0, 0, 0}, .radius = 3},
+        {.nativeIndex = 5, .map = "levelb1", .position = Vec3{40, 0, 0}, .radius = 3},
+        {.nativeIndex = 8,
+         .map = "levelb3",
+         .position = Vec3{80, 0, 0},
+         .radius = 3,
+         .minimumPlayers = 13},
+    }};
+    const std::array<u8, 3> enabled{0, 1, 1};
+    const Vec3 shut{0, 0, 0};
+    const Vec3 open{40, 0, 0};
+    const Vec3 threes{80, 0, 0};
+    const Vec3 away{200, 0, 0};
+    std::vector<LegendsPortalVisitor> visitors{{.player = 0, .position = away},
+                                               {.player = 1, .position = open}};
+    const auto under = [&](s32 seat) {
+        return dreamcastExitUnder(portals, enabled, visitors, seat);
+    };
+
+    // Seat 1 on the open exit, seat 0 away from it: seat 1 waits there, and no exit is named,
+    // as the Dreamcast's HUD names none.
+    std::optional<ImportedExit> exit = under(1);
+    REQUIRE(exit);
+    CHECK(exit->waiting);
+    CHECK_FALSE(exit->code);
+    CHECK_FALSE(under(0));
+    // Seats nobody plays stand on nothing.
+    CHECK_FALSE(under(2));
+    CHECK_FALSE(under(3));
+
+    // Both on it, nobody waits.
+    visitors[0].position = open;
+    for (const s32 seat : {0, 1}) {
+        CAPTURE(seat);
+        exit = under(seat);
+        REQUIRE(exit);
+        CHECK_FALSE(exit->waiting);
+        CHECK_FALSE(exit->code);
+    }
+    // An exit with no enabled byte counts as shut.
+    CHECK_FALSE(dreamcastExitUnder(portals, std::span{enabled}.first(1), visitors, 1));
+
+    // On the exit the tower keeps shut, nobody stands on an exit.
+    for (LegendsPortalVisitor& visitor : visitors) {
+        visitor.position = shut;
+    }
+    for (const s32 seat : {0, 1}) {
+        CAPTURE(seat);
+        CHECK_FALSE(under(seat));
+    }
+
+    // The living alone count: seat 1 waits for no fallen player, and a fallen one waits nowhere.
+    visitors[0] = {.player = 0, .position = away, .alive = false};
+    visitors[1].position = open;
+    exit = under(1);
+    REQUIRE(exit);
+    CHECK_FALSE(exit->waiting);
+    visitors[0].position = open;
+    CHECK_FALSE(under(0));
+
+    // Contact widens a unit for each living player past the first, as the exits count it: 4.25
+    // from the exit's middle reaches it for two living players, not for one.
+    visitors[0] = {.player = 0, .position = away};
+    visitors[1].position = open + Vec3{4.25f, 0, 0};
+    exit = under(1);
+    REQUIRE(exit);
+    CHECK(exit->waiting);
+    visitors[0].alive = false;
+    CHECK_FALSE(under(1));
+
+    // The exit placed for three is there only for three.
+    visitors[0] = {.player = 0, .position = threes};
+    visitors[1].position = threes;
+    CHECK_FALSE(under(0));
+    CHECK_FALSE(under(1));
+    visitors.push_back({.player = 2, .position = away});
+    for (const s32 seat : {0, 1}) {
+        CAPTURE(seat);
+        exit = under(seat);
+        REQUIRE(exit);
+        CHECK(exit->waiting);
+    }
+    CHECK_FALSE(under(2));
 }
 
 TEST_CASE("Dreamcast portal animation waits for the whole party and never repeats departure",

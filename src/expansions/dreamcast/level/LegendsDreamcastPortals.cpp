@@ -8,6 +8,8 @@
 #include "engine/core/Strings.h"
 #include "engine/io/ByteReader.h"
 
+#include "game/level/ItemFigure.h"
+
 namespace gdl::game {
 namespace {
 
@@ -209,6 +211,40 @@ bool touchesDreamcastPortal(const LegendsDreamcastPortal& portal, Vec3 feet, f32
     const Vec3 away = feet - portal.position;
     const f32 reach = portal.radius + radius + static_cast<f32>(partySize - 1);
     return std::abs(away.y) <= 3 && away.x * away.x + away.z * away.z <= reach * reach;
+}
+
+std::optional<ImportedExit> dreamcastExitUnder(std::span<const LegendsDreamcastPortal> portals,
+                                               std::span<const u8> enabled,
+                                               std::span<const LegendsPortalVisitor> visitors,
+                                               s32 seat) {
+    const auto visitor = std::ranges::find_if(visitors, [seat](const LegendsPortalVisitor& body) {
+        return static_cast<s32>(body.player) == seat;
+    });
+    if (visitor == visitors.end() || !visitor->alive) {
+        return std::nullopt;
+    }
+    // Counted as the scene's exits count the party (LegendsSceneAdapter::tickPortals): the
+    // living alone, contact widening with their number, and an exit placed for more players
+    // than are living not there.
+    const auto living = static_cast<usize>(std::ranges::count_if(
+        visitors, [](const LegendsPortalVisitor& body) { return body.alive; }));
+    for (usize index = 0; index < portals.size(); ++index) {
+        const LegendsDreamcastPortal& portal = portals[index];
+        const bool open = index < enabled.size() && enabled[index] != 0 &&
+                          shownToParty(portal.minimumPlayers, static_cast<s32>(living));
+        if (!open || !touchesDreamcastPortal(portal, visitor->position, visitor->radius, living)) {
+            continue;
+        }
+        // Every living player shares an exit before it takes the party
+        // (LegendsDreamcastPortalMotion).
+        ImportedExit under;
+        under.waiting = std::ranges::any_of(visitors, [&](const LegendsPortalVisitor& other) {
+            return other.alive && other.player != visitor->player &&
+                   !touchesDreamcastPortal(portal, other.position, other.radius, living);
+        });
+        return under;
+    }
+    return std::nullopt;
 }
 
 s32 LegendsDreamcastPortalMotion::sequenceTicks(s32 frames, s32 frameRate) {

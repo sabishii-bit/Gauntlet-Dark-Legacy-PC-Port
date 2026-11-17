@@ -13,6 +13,7 @@
 
 #include "expansions/dreamcast/camera/LegendsDreamcastCamera.h"
 #include "expansions/dreamcast/characters/LegendsDreamcastVitality.h"
+#include "expansions/dreamcast/level/LegendsDreamcastPortals.h"
 #include "expansions/dreamcast/menu/LegendsDreamcastDialogue.h"
 #include "expansions/dreamcast/menu/LegendsDreamcastEntrance.h"
 #include "expansions/n64/bosses/LegendsLegend.h"
@@ -341,8 +342,9 @@ void LegendsLevel::drawEntranceTitle(Canvas& canvas, f32 width) const {
 }
 
 std::optional<ImportedExit> LegendsLevel::exitUnder(s32 seat) const {
-    if (platform() != LegendsPlatform::N64) {
-        return std::nullopt;
+    if (platform() == LegendsPlatform::Dreamcast) {
+        return dreamcastExitUnder(adapter().dreamcastPortals(), adapter().dreamcastPortalsEnabled(),
+                                  m_visitors, seat);
     }
     return legendsN64ExitUnder(adapter().portals(), m_visitors, seat);
 }
