@@ -40,7 +40,8 @@ const UNSUPPORTED_PADDING: &str = "unsupported executable overlay padding";
 /// The `size` bytes the raw DEFLATE `stream` holds, decoded as the N64 extractor decodes them:
 /// never to more than a byte past `size`, so that damage past where the bytes should end is left
 /// unread as the extractor leaves it, and refused unless the stream's end marker comes at exactly
-/// `size` bytes, followed by nothing but what `trailer` allows.
+/// `size` bytes, followed by nothing but what `trailer` allows. The bytes come back with no more
+/// room than they fill, so that files kept until they are written take only their own size.
 pub fn inflate(stream: &[u8], size: usize, trailer: Trailer) -> Result<Vec<u8>, MediaError> {
     inflate_in_steps(stream, size, trailer, INFLATE_STEP)
 }
@@ -60,14 +61,20 @@ fn inflate_in_steps(
     let after = stream.len() - decoded.used;
     match trailer {
         Trailer::None if after > 0 => {
-            Err(MediaError::rom(RomRule::DeflateTrailer, BYTES_AFTER_STREAM))
+            return Err(MediaError::rom(RomRule::DeflateTrailer, BYTES_AFTER_STREAM));
         }
-        Trailer::OverlayPadding if after > MAX_OVERLAY_PADDING => Err(MediaError::rom(
-            RomRule::OverlayPadding,
-            UNSUPPORTED_PADDING,
-        )),
-        Trailer::None | Trailer::OverlayPadding => Ok(decoded.output),
+        Trailer::OverlayPadding if after > MAX_OVERLAY_PADDING => {
+            return Err(MediaError::rom(
+                RomRule::OverlayPadding,
+                UNSUPPORTED_PADDING,
+            ));
+        }
+        Trailer::None | Trailer::OverlayPadding => {}
     }
+    // Room was made a step at a time and grew by doubling: up to twice what the bytes fill.
+    let mut output = decoded.output;
+    output.shrink_to_fit();
+    Ok(output)
 }
 
 /// Where decoding a stream stopped.
@@ -366,5 +373,25 @@ mod tests {
                 assert_eq!(stepped, whole, "{size} {trailer:?} by {step}");
             }
         }
+    }
+
+    #[test]
+    fn an_inflated_file_holds_no_more_room_than_its_bytes() {
+        let stream = deflated("nativeBytes");
+        let bytes = NATIVE_BYTES.repeat(NATIVE_REPEATS);
+        for step in [16, INFLATE_STEP] {
+            // Decoded a few bytes a step, the room made grows past the bytes; decoded in one, it
+            // still holds the byte past the size that a longer stream would fill.
+            let grown = decode(&stream, bytes.len(), step).unwrap();
+            assert!(grown.output.capacity() > grown.output.len(), "{step}");
+            // What a file is given back holds its bytes and no more.
+            let output = inflate_in_steps(&stream, bytes.len(), Trailer::None, step).unwrap();
+            assert_eq!(output, bytes, "{step}");
+            assert_eq!(output.capacity(), output.len(), "{step}");
+        }
+        // So does an overlay, whatever pads its extent.
+        let padded = [deflated("test"), vec![0xA5; MAX_OVERLAY_PADDING]].concat();
+        let output = inflate(&padded, 4, Trailer::OverlayPadding).unwrap();
+        assert_eq!((output.capacity(), output.len()), (4, 4));
     }
 }
