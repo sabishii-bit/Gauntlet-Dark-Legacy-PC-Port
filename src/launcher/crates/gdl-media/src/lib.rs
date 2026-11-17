@@ -5,6 +5,7 @@
 
 mod digest;
 mod error;
+mod gdrom;
 mod identify;
 mod n64;
 mod source_name;
@@ -12,7 +13,11 @@ mod source_name;
 mod vectors;
 
 pub use digest::{Sha1Digest, Sha256Digest};
-pub use error::{MediaError, RomRule};
+pub use error::{DiscRule, MediaError, RomRule};
+pub use gdrom::{
+    EDC_FIELD, EDC_POLYNOMIAL, EDC_SPAN, FRAMES_PER_SECOND, HEADER_LEN, LBA_BIAS,
+    MAX_CHUNK_SECTORS, RAW_SECTOR, SECONDS_PER_MINUTE, SECTOR, SYNC, USER_DATA, edc, sector_lba,
+};
 pub use identify::Region;
 pub use n64::{
     ByteOrder, COMPRESSED, HEADER_WORDS_AT, INFLATE_STEP, MAX_OVERLAY_PADDING, MAX_ROM_LEN,

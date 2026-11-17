@@ -35,6 +35,15 @@ pub enum MediaError {
         /// for it.
         detail: Box<str>,
     },
+    /// The Dreamcast disc, as its track files keep it, breaks a rule of its format.
+    #[error("{detail}")]
+    Disc {
+        /// The rule it breaks.
+        rule: DiscRule,
+        /// What is wrong, in English, in the Dreamcast extractor's own words where it has fixed
+        /// words for it.
+        detail: Box<str>,
+    },
 }
 
 impl MediaError {
@@ -46,6 +55,7 @@ impl MediaError {
             MediaError::Io { .. } => "io",
             MediaError::Cancelled => "cancelled",
             MediaError::Rom { rule, .. } => rule.as_str(),
+            MediaError::Disc { rule, .. } => rule.as_str(),
         }
     }
 
@@ -67,6 +77,14 @@ impl MediaError {
     /// An N64 ROM refused by `rule`, for the reason `detail` gives.
     pub(crate) fn rom(rule: RomRule, detail: impl Into<Box<str>>) -> MediaError {
         MediaError::Rom {
+            rule,
+            detail: detail.into(),
+        }
+    }
+
+    /// A Dreamcast disc refused by `rule`, for the reason `detail` gives.
+    pub(crate) fn disc(rule: DiscRule, detail: impl Into<Box<str>>) -> MediaError {
+        MediaError::Disc {
             rule,
             detail: detail.into(),
         }
@@ -184,6 +202,31 @@ impl RomRule {
     }
 }
 
+/// The rules of the Dreamcast GD-ROM's format, and of the track files that keep its raw sectors,
+/// that a disc is refused by.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum DiscRule {
+    /// A raw sector's first bytes are not the sync and a header of mode 1: too few for a header,
+    /// another sync, or another mode.
+    SectorHeader,
+    /// A raw sector's address is not BCD: a digit of it is past nine, but for the minute's tens,
+    /// which count past nine on a disc of more than 100 minutes.
+    SectorBcd,
+    /// A raw sector's address gives a second past 59 or a frame past 74.
+    SectorTime,
+}
+
+impl DiscRule {
+    /// The rule's stable machine name, in camelCase, for reports and logs.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            DiscRule::SectorHeader => "sectorHeader",
+            DiscRule::SectorBcd => "sectorBcd",
+            DiscRule::SectorTime => "sectorTime",
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::error::Error;
@@ -192,7 +235,7 @@ mod tests {
 
     use gdl_files::Cancel;
 
-    use super::{MediaError, RomRule};
+    use super::{DiscRule, MediaError, RomRule};
 
     /// The most bytes an error may take, so that returning one by value stays cheap.
     const MOST_ERROR_BYTES: usize = 128;
@@ -242,6 +285,18 @@ mod tests {
         let worded = MediaError::rom(RomRule::RomTooLarge, format!("{} bytes", 1 << 26));
         assert_eq!(worded.to_string(), "67108864 bytes");
 
+        // A disc's refusal is said the same way, by its own rules.
+        let detail = "Invalid BCD sector address";
+        let refused = MediaError::disc(DiscRule::SectorBcd, detail);
+        assert_eq!(refused.to_string(), detail);
+        assert!(refused.source().is_none());
+        assert!(matches!(
+            &refused,
+            MediaError::Disc { rule: DiscRule::SectorBcd, detail: said } if &**said == detail
+        ));
+        let worded = MediaError::disc(DiscRule::SectorTime, format!("at LBA {}", -150));
+        assert_eq!(worded.to_string(), "at LBA -150");
+
         assert!(size_of::<MediaError>() <= MOST_ERROR_BYTES);
     }
 
@@ -263,6 +318,10 @@ mod tests {
             (MediaError::rom(RomRule::Header, "short"), "header"),
             (MediaError::rom(RomRule::ByteOrder, "order"), "byteOrder"),
             (MediaError::rom(RomRule::RomTooLarge, "long"), "romTooLarge"),
+            (
+                MediaError::disc(DiscRule::SectorHeader, "header"),
+                "sectorHeader",
+            ),
         ];
         for (failure, rule) in failures {
             assert_eq!(failure.rule(), rule, "{failure:?}");
@@ -300,6 +359,16 @@ mod tests {
         for (rule, name) in rules {
             assert_eq!(rule.as_str(), name);
             assert_eq!(MediaError::rom(rule, "").rule(), name);
+        }
+        // Every rule of the disc's format keeps the name the shared vectors give it.
+        let rules = [
+            (DiscRule::SectorHeader, "sectorHeader"),
+            (DiscRule::SectorBcd, "sectorBcd"),
+            (DiscRule::SectorTime, "sectorTime"),
+        ];
+        for (rule, name) in rules {
+            assert_eq!(rule.as_str(), name);
+            assert_eq!(MediaError::disc(rule, "").rule(), name);
         }
     }
 

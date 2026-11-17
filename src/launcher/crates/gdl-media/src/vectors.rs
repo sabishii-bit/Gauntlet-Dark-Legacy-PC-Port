@@ -1,6 +1,6 @@
-//! The shared vectors as the readers' tests read them: the N64 cases that the extractor's tests and
-//! the launcher's read alike, the manifests the extractor wrote for their dumps, and the names it
-//! was given those dumps under.
+//! The shared vectors as the readers' tests read them: the N64 and Dreamcast cases that the
+//! extractors' tests and the launcher's read alike, the manifests the N64 extractor wrote for its
+//! dumps, and the names it was given those dumps under.
 
 use gdl_fixtures::unhex;
 use serde_json::Value;
@@ -11,6 +11,12 @@ use crate::SourceName;
 const N64_VECTORS: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../../../tests/scripts/data/legends/n64-vectors.json"
+));
+
+/// The Dreamcast cases.
+const DREAMCAST_VECTORS: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../../../tests/scripts/data/legends/dreamcast-vectors.json"
 ));
 
 /// The manifests the N64 extractor wrote for the vectors' dumps, by the names the vectors give
@@ -64,6 +70,17 @@ pub(crate) fn n64_golden(name: &Value) -> Value {
 /// The image the N64 vectors freeze under `name`.
 pub(crate) fn frozen(vectors: &Value, name: &str) -> Vec<u8> {
     unhex(&vectors["images"][name])
+}
+
+/// The Dreamcast cases, read.
+pub(crate) fn dreamcast_vectors() -> Value {
+    serde_json::from_str(DREAMCAST_VECTORS).expect("the Dreamcast vectors are JSON")
+}
+
+/// The payload the Dreamcast vectors' EDC cases name `name`: the bytes a sector's user data
+/// begins with, noughts after them.
+pub(crate) fn edc_payload(vectors: &Value, name: &str) -> Vec<u8> {
+    unhex(&vectors["edc"]["payloads"][name])
 }
 
 /// A string of the vectors.
