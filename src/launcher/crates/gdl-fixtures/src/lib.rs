@@ -24,8 +24,8 @@ pub use gdrom::{
 };
 pub use n64::{
     BIG_ENDIAN_FIRST_WORD, BUILDER_UNKNOWN_WORD, BuiltRom, OVERLAY_TABLE_OFFSET, OverlaySpec,
-    ROM_HEADER_LEN, RomFile, WadOrder, default_rom_files, raw_deflate, rom, rom_with_overlays,
-    set_word, wad,
+    ROM_HEADER_LEN, RomFile, WadOrder, default_rom_files, raw_deflate, reorder, rom,
+    rom_with_overlays, set_word, wad,
 };
 pub use program::{
     FAKE_CERTIFICATE_LEN, SparseFile, TRAILER_MAGIC, append_sections, append_sections_at,

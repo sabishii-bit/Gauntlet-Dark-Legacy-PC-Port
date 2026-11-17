@@ -1,11 +1,12 @@
 //! N64 ROMs for the tests of the launcher's N64 reader and extraction, laid out as
 //! tests/scripts/legends_fixtures.py lays out the N64 extractor's: a header whose first word is
 //! the big-endian order's, then a ROMDISK of files kept plain or raw-DEFLATEd, and, for the tests
-//! of the executable overlays, a table of four overlays where the US ROM keeps its own. A ROM of
-//! plain files has the bytes that builder makes. A compressed file is deflated here, into a stream
-//! that may differ from the one Python's deflater gives, in its length too, which moves every part
-//! after it; a test that must match the extractor byte for byte, or the places of its parts, reads
-//! the images the shared vectors freeze instead.
+//! of the executable overlays, a table of four overlays where the US ROM keeps its own. Any ROM
+//! can be put into the two other byte orders dumps keep a cartridge in. A ROM of plain files has
+//! the bytes that builder makes. A compressed file is deflated here, into a stream that may differ
+//! from the one Python's deflater gives, in its length too, which moves every part after it; a
+//! test that must match the extractor byte for byte, or the places of its parts, reads the images
+//! the shared vectors freeze instead.
 
 use std::io::Write;
 
@@ -42,6 +43,9 @@ const COMPRESSED: u32 = 0x2000_0000;
 
 /// The length of a word of the ROM, which the ROMDISK's offsets, records and names are aligned to.
 const WORD_LEN: usize = 4;
+
+/// How many bytes a byte-swapped dump swaps at a time.
+const PAIR_LEN: usize = 2;
 
 /// The level the extractor tests' builder deflates at, Python's default.
 const DEFLATE_LEVEL: u32 = 6;
@@ -244,6 +248,23 @@ pub fn set_word(bytes: &mut [u8], at: usize, value: u32) {
     bytes[at..at + WORD_LEN].copy_from_slice(&value.to_be_bytes());
 }
 
+/// `image`, a ROM in the big-endian byte order, as a dump in another order keeps it, by the
+/// transform the shared vectors name: `pairs` swaps every pair of bytes, as a byte-swapped dump
+/// does, and `words` reverses the bytes of every word, as a little-endian dump does. Panics on any
+/// other transform.
+pub fn reorder(image: &[u8], transform: &str) -> Vec<u8> {
+    let width = match transform {
+        "pairs" => PAIR_LEN,
+        "words" => WORD_LEN,
+        other => panic!("no byte-order transform {other:?}"),
+    };
+    image
+        .chunks(width)
+        .flat_map(|chunk| chunk.iter().rev())
+        .copied()
+        .collect()
+}
+
 /// An executable overlay of [`rom_with_overlays`]'s table.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct OverlaySpec {
@@ -267,13 +288,13 @@ pub struct OverlaySpec {
 /// which are where the extent starts, its length, the load address, the memory the overlay takes
 /// (its data and the zeroed memory after it), where that zeroed memory starts, its size, and two
 /// reserved zeros. Record 3 is all 0xFF. The ROMDISK's magic occurs once. Panics when the ROMDISK
-/// reaches the table, a name is longer than 16 bytes, or a value does not fit its word.
+/// runs past the table's start, a name is longer than 16 bytes, or a value does not fit its word.
 pub fn rom_with_overlays(files: &[RomFile], overlays: [OverlaySpec; 4]) -> BuiltRom {
     let mut built = rom(files);
     let bytes = &mut built.bytes;
     assert!(
         bytes.len() <= OVERLAY_TABLE_OFFSET,
-        "a ROMDISK that ends at {} reaches the overlay table at {OVERLAY_TABLE_OFFSET:#x}",
+        "a ROMDISK that ends at {} runs into the overlay table at {OVERLAY_TABLE_OFFSET:#x}",
         bytes.len()
     );
     bytes.resize(OVERLAYS_AT, 0);
@@ -349,7 +370,7 @@ mod tests {
     use super::{
         BIG_ENDIAN_FIRST_WORD, BUILDER_UNKNOWN_WORD, OVERLAY_FILLER, OVERLAY_TABLE_OFFSET,
         OverlaySpec, ROM_HEADER_LEN, ROMDISK_MAGIC, RomFile, WadOrder, default_rom_files,
-        raw_deflate, rom, rom_with_overlays, set_word, wad,
+        raw_deflate, reorder, rom, rom_with_overlays, set_word, wad,
     };
     use crate::runtime::{hex, sha256_hex, unhex};
 
@@ -358,6 +379,33 @@ mod tests {
         env!("CARGO_MANIFEST_DIR"),
         "/../../../../tests/scripts/data/legends/n64-vectors.json"
     ));
+
+    /// The manifests the N64 extractor wrote for the default image dumped in the two other byte
+    /// orders, by the names the vectors give them.
+    const REORDERED_GOLDENS: [(&str, &str); 2] = [
+        (
+            "n64-byte-swapped-manifest.json",
+            include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../../../tests/scripts/data/legends/n64-byte-swapped-manifest.json"
+            )),
+        ),
+        (
+            "n64-little-endian-manifest.json",
+            include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../../../tests/scripts/data/legends/n64-little-endian-manifest.json"
+            )),
+        ),
+    ];
+
+    /// How many bytes a ROM of the builder holds before its first file's: the header, the
+    /// ROMDISK's magic and the zeros after it.
+    const BEFORE_FIRST_FILE: usize = 113;
+
+    /// How many bytes the builder gives the file `/x`: its pointer, then its record's five words,
+    /// its name and the NUL and padding that end it.
+    const POINTER_AND_RECORD_OF_X: usize = 4 + 24;
 
     /// More than any stream of these tests inflates to.
     const INFLATED_MOST: usize = 1 << 16;
@@ -616,6 +664,39 @@ mod tests {
     }
 
     #[test]
+    fn reordered_dumps_are_the_ones_the_extractor_read() {
+        let vectors = vectors();
+        let default = unhex(&vectors["images"]["default"]);
+        let cases = vectors["byteOrders"].as_array().unwrap();
+        assert_eq!(cases.len(), REORDERED_GOLDENS.len());
+        for case in cases {
+            let transform = case["transform"].as_str().unwrap();
+            let name = case["golden"].as_str().unwrap();
+            let (_, golden) = REORDERED_GOLDENS
+                .iter()
+                .find(|(golden, _)| *golden == name)
+                .unwrap_or_else(|| panic!("no golden named {name}"));
+            let golden: Value = serde_json::from_str(golden).expect("a golden manifest is JSON");
+            // The dump the extractor was given, by its length and its digest.
+            let dump = reorder(&default, transform);
+            assert_eq!(golden["source"]["size"], dump.len(), "{transform}");
+            assert_eq!(golden["source"]["sha256"], sha256_hex(&dump), "{transform}");
+            // Each transform undoes itself.
+            assert_eq!(reorder(&dump, transform), default, "{transform}");
+        }
+        // A pair is two bytes, and a word four.
+        let counting = [1, 2, 3, 4, 5, 6, 7, 8];
+        assert_eq!(reorder(&counting, "pairs"), [2, 1, 4, 3, 6, 5, 8, 7]);
+        assert_eq!(reorder(&counting, "words"), [4, 3, 2, 1, 8, 7, 6, 5]);
+    }
+
+    #[test]
+    #[should_panic(expected = "no byte-order transform")]
+    fn an_unknown_transform_is_refused() {
+        reorder(&[0; 4], "halves");
+    }
+
+    #[test]
     fn set_word_writes_one_big_endian_word() {
         let mut bytes = vec![0xEE; 12];
         set_word(&mut bytes, 4, 0x0102_0304);
@@ -697,8 +778,20 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "reaches the overlay table")]
-    fn a_romdisk_that_reaches_the_overlay_table_has_no_overlays() {
+    fn a_romdisk_may_end_where_the_overlay_table_starts() {
+        // A plain file just long enough that the ROMDISK ends at the table's first byte.
+        let payload = vec![0; OVERLAY_TABLE_OFFSET - BEFORE_FIRST_FILE - POINTER_AND_RECORD_OF_X];
+        let files = [RomFile::plain("/x", &payload)];
+        let plain = rom(&files);
+        assert_eq!(plain.bytes.len(), OVERLAY_TABLE_OFFSET);
+        let built = rom_with_overlays(&files, overlays());
+        assert_eq!(hex(&built.bytes[..plain.bytes.len()]), hex(&plain.bytes));
+        assert_eq!(built.bytes[OVERLAY_TABLE_OFFSET..][..4], *b"firs");
+    }
+
+    #[test]
+    #[should_panic(expected = "runs into the overlay table")]
+    fn a_romdisk_that_runs_into_the_overlay_table_has_no_overlays() {
         let files = [RomFile::plain("/large", &[0; OVERLAY_TABLE_OFFSET])];
         rom_with_overlays(&files, overlays());
     }
