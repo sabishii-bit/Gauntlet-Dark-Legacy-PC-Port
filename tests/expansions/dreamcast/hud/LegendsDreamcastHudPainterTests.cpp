@@ -14,7 +14,6 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include "engine/assets/AnimationSet.h"
 #include "engine/assets/BitmapFont.h"
 #include "engine/assets/ItemArchive.h"
 #include "engine/assets/StringTable.h"
@@ -24,7 +23,6 @@
 #include "engine/core/Strings.h"
 #include "engine/core/Types.h"
 #include "engine/math/Math.h"
-#include "engine/render/Image.h"
 #include "engine/render/RenderTypes.h"
 #include "engine/ui/Canvas.h"
 #include "engine/ui/TextPainter.h"
@@ -32,6 +30,7 @@
 #include "FakeDarkLegacyArt.h"
 #include "FakeHudStyles.h"
 #include "FakeRenderDevice.h"
+#include "HudLookArt.h"
 #include "LogCapture.h"
 #include "RecordedDrawChecks.h"
 #include "RecordedQuads.h"
@@ -41,7 +40,6 @@
 #include "expansions/dreamcast/hud/LegendsDreamcastHudPainter.h"
 #include "expansions/shared/hud/LegendsHudClock.h"
 #include "expansions/shared/hud/LegendsHudStyleIds.h"
-#include "formats/AnimationTree.h"
 #include "game/characters/CharacterSave.h"
 #include "game/characters/ClassData.h"
 #include "game/characters/Inventory.h"
@@ -71,8 +69,13 @@ using Fixture = test::LegendsDreamcastHudFixture;
 using Layout = LegendsDreamcastHudLayout;
 using Names = std::vector<std::string_view>;
 using test::checkRect;
+using test::darkLegacyHourglass;
+using test::meterArt;
+using test::meterPicture;
+using test::meterReading;
 using test::Quad;
 using test::quadsOf;
+using test::showMeters;
 
 /** Full health at the level the cases' characters stand at. */
 constexpr s32 kMostHealth = 600;
@@ -498,77 +501,6 @@ struct Holder {
         return seat;
     }
 };
-
-/** A boss's meter art: two strips, each a background and a fill `width` by `height`. */
-TextureSet meterArt(u32 width, u32 height) {
-    std::vector<TextureSetEntry> entries;
-    std::vector<Image> images;
-    for (const char* name : {"METER_BG1", "METER_FG1", "METER_BG2", "METER_FG2"}) {
-        entries.push_back({.name = name, .width = width, .height = height, .file = {}});
-        images.push_back(Image::filled(width, height, Color::white()));
-    }
-    return TextureSet::fromDecoded(std::move(entries), std::move(images));
-}
-
-/** A boss's meter of `pieces` strips with a background each and these insets, at `health` of
- * `maxHealth`. */
-HealthMeterReading meterReading(s32 pieces, s32 leftInset, s32 rightInset, f32 health,
-                                f32 maxHealth) {
-    HealthMeterReading reading;
-    reading.definition.pieces = pieces;
-    reading.definition.advance = BossMeter::kPieceWidth;
-    reading.definition.leftInset = leftInset;
-    reading.definition.rightInset = rightInset;
-    reading.definition.shown = true;
-    reading.definition.backed = true;
-    reading.health = health;
-    reading.maxHealth = maxHealth;
-    return reading;
-}
-
-/** The meters of `readings` drawn from `art`, as the scene binds them, and told to `view`. */
-void showMeters(HudView& view, BossMeters& meters, std::span<const HealthMeterReading> readings,
-                TextureSet& art) {
-    meters.bind(readings, &art);
-    view.bossMeters = &meters;
-    view.bossCount = hudBossReadingsOf(readings, view.bossReadings);
-}
-
-/** The picture `name` of `art`, uploaded to `device` as a meter's draw uploads it. */
-const Texture* meterPicture(TextureSet& art, test::FakeRenderDevice& device,
-                            std::string_view name) {
-    const auto index = art.find(name);
-    REQUIRE(index.has_value());
-    return &art.texture(device, *index);
-}
-
-/** Dark Legacy's hourglass art as plain pictures: the glass, its sand and two frames of
- * falling grains, which SAND_ANIM cycles. */
-ItemArchive darkLegacyHourglass() {
-    std::vector<TextureSetEntry> entries{
-        {.name = "TIMER", .width = 128, .height = 128, .file = {}},
-        {.name = "TIMER_SAND", .width = 128, .height = 128, .file = {}},
-        {.name = "SAND_ANIM00", .width = 8, .height = 32, .file = {}},
-        {.name = "SAND_ANIM01", .width = 8, .height = 32, .file = {}}};
-    std::vector<Image> images;
-    images.reserve(entries.size());
-    for (const TextureSetEntry& entry : entries) {
-        images.push_back(Image::filled(entry.width, entry.height, Color::white()));
-    }
-    ItemArchive archive;
-    archive.textures = TextureSet::fromDecoded(std::move(entries), std::move(images));
-    formats::AnimationFile animations;
-    animations.textureAnimations.push_back(
-        {.name = "SAND_ANIM",
-         .frameName = {},
-         .texture = 2,
-         .source = 2,
-         .frames = 2,
-         .rate = 1,
-         .flag = static_cast<s16>(TextureAnimationInfo::kFreeRunning)});
-    archive.trees = AnimationSet::fromDecoded(std::move(animations));
-    return archive;
-}
 
 } // namespace
 

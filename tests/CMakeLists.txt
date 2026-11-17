@@ -228,6 +228,7 @@ add_executable(tests
     fixtures/NativeSoundBank.cpp
     FakeRenderDevice.h
     RecordedQuads.h
+    HudLookArt.h
     DrawStreamDigest.h
     DrawStreamDigestTests.cpp
     FakeHudStyles.h
