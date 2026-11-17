@@ -13,6 +13,7 @@ use std::str;
 use gdl_files::{Cancel, DISC_NAMES, NameSet, RelPath, check_component};
 
 use super::{BOOT_LBA, BOOT_SECTORS, DiscFile, SECTOR, Tracks, ascii_text, is_number, unsafe_name};
+use crate::error::quoted;
 use crate::{DiscRule, MediaError};
 
 /// The LBA of the primary volume descriptor: the first sector after the boot area, which fills
@@ -129,6 +130,10 @@ const DIRECTORY_SHAPE: &str = "Cyclic or oversized ISO9660 directory";
 
 /// What it answers for an entry whose path is taken already, or one past the most.
 const EXCESSIVE_ENTRIES: &str = "Duplicate or excessive ISO9660 entries";
+
+/// What the reader answers, before the identifier, for a record whose identifier holds a byte
+/// outside ASCII.
+const NON_ASCII_IDENTIFIER: &str = "ISO9660 file identifier holds a byte outside ASCII";
 
 /// A disc's ISO 9660 volume as its walk read it: the volume's name and every file of its tree.
 #[derive(Debug)]
@@ -396,12 +401,10 @@ fn without_version(name: &str) -> &str {
 }
 
 /// The refusal of `identifier`, which holds a byte outside ASCII and so reads as no name: quoted
-/// with every byte but printable ASCII escaped.
+/// as UTF-8 reads it, with U+FFFD for each run of bytes that is no UTF-8, up to the bound every
+/// refusal quotes to, as SIZES.ROM's reader quotes such a name.
 fn non_ascii(identifier: &[u8]) -> MediaError {
-    let detail = format!(
-        "ISO9660 file identifier \"{}\" holds a byte outside ASCII",
-        identifier.escape_ascii()
-    );
+    let detail = quoted(NON_ASCII_IDENTIFIER, &String::from_utf8_lossy(identifier));
     MediaError::disc(DiscRule::EntryName, detail)
 }
 
@@ -531,12 +534,22 @@ mod tests {
     /// What it answers for a path taken already, or one past the most.
     const ENTRIES_WORDS: &str = "Duplicate or excessive ISO9660 entries";
 
+    /// What the launcher answers, before the identifier, for one that holds a byte outside ASCII.
+    const NON_ASCII_WORDS: &str = "ISO9660 file identifier holds a byte outside ASCII";
+
     /// What a reader gives: what it read, or the rule and the words it refused with.
     type Outcome<T> = Result<T, (&'static str, String)>;
 
     /// The refusal by `rule` with `words`.
     fn said<T>(rule: &'static str, words: &str) -> Outcome<T> {
         Err((rule, words.to_owned()))
+    }
+
+    /// The refusal of `identifier`, which holds a byte outside ASCII, quoted as UTF-8 reads it,
+    /// in the launcher's own words.
+    fn non_ascii<T>(identifier: &[u8]) -> Outcome<T> {
+        let identifier = String::from_utf8_lossy(identifier);
+        Err(("entryName", format!("{NON_ASCII_WORDS}: {identifier:?}")))
     }
 
     /// The refusal of `name`, which breaks the rule of names `name_rule`, in the launcher's own
@@ -863,10 +876,7 @@ mod tests {
                         Some(name_rule) => format!("Unsafe disc name: {name:?} ({name_rule})"),
                         // An identifier outside ASCII reads as no name at all, so it is refused
                         // before any rule of names is judged.
-                        None => format!(
-                            "ISO9660 file identifier \"{}\" holds a byte outside ASCII",
-                            identifier.as_bytes().escape_ascii()
-                        ),
+                        None => format!("{NON_ASCII_WORDS}: {identifier:?}"),
                     };
                     assert_eq!(detail, words, "{case}");
                 }
@@ -940,14 +950,21 @@ mod tests {
         let dots = rooted(&[record(b"..", 999_999, SECTOR_SIZE, FORMAT_DIRECTORY)]);
         assert_eq!(paths(&dots), unsafe_name("..", "dot"));
         // A byte outside ASCII is judged before the rules of names, whatever else the identifier
-        // breaks.
-        let words = "ISO9660 file identifier \"trak\\xc3\\xa9.bin;1\" holds a byte outside ASCII";
-        assert_eq!(
-            paths(&one_file("traké.bin;1".as_bytes())),
-            said("entryName", words)
-        );
-        let words = "ISO9660 file identifier \"\\xe9/..;1\" holds a byte outside ASCII";
-        assert_eq!(paths(&one_file(b"\xe9/..;1")), said("entryName", words));
+        // breaks, and the identifier is quoted as SIZES.ROM's reader quotes a name: a character
+        // written in UTF-8 as it is written, and a byte that is no UTF-8 as U+FFFD.
+        let words = format!("{NON_ASCII_WORDS}: \"trak\u{e9}.bin;1\"");
+        let identifier = "trak\u{e9}.bin;1".as_bytes();
+        assert_eq!(paths(&one_file(identifier)), said("entryName", &words));
+        let words = format!("{NON_ASCII_WORDS}: \"\u{fffd}/..;1\"");
+        assert_eq!(paths(&one_file(b"\xe9/..;1")), said("entryName", &words));
+        // Bytes past ASCII's that begin no character, or a character cut short, alone and between
+        // two letters, at version 1.
+        for byte in [0x80, 0xC3, 0xFF] {
+            for identifier in [vec![byte, b';', b'1'], vec![b'a', byte, b'b', b';', b'1']] {
+                let given = paths(&one_file(&identifier));
+                assert_eq!(given, non_ascii(&identifier), "{byte:#x}");
+            }
+        }
         // A control character, with the name's other bytes, is quoted as the name.
         assert_eq!(paths(&one_file(b"A\tB;1")), unsafe_name("A\tB", "control"));
     }
