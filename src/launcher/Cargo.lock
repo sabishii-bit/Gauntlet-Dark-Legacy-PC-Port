@@ -1288,9 +1288,13 @@ name = "gdl-extract"
 version = "0.0.0"
 dependencies = [
  "gdl-files",
+ "gdl-fixtures",
  "gdl-media",
  "serde",
  "serde_json",
+ "sha2 0.11.1",
+ "tempfile",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
