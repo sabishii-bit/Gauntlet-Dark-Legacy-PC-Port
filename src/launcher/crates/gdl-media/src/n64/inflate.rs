@@ -1,7 +1,8 @@
 //! Raw DEFLATE as the N64 extractor inflates the ROMDISK's compressed files and the executable
-//! overlays: decoded never to more than a byte past the size a record gives, so that nothing past
-//! where the bytes should end is ever looked at, then held to the stream's end marker at exactly
-//! that size, with nothing after it but, for an overlay, the few bytes that pad its extent.
+//! overlays: decoded to at most a byte past the size a record gives, exactly as far as the
+//! extractor decodes, so that damage further on is found only where the extractor finds it, then
+//! held to the stream's end marker at exactly that size, with nothing after it but, for an
+//! overlay, the few bytes that pad its extent.
 
 use flate2::{Decompress, FlushDecompress, Status};
 use gdl_files::BLOCK_LEN;
@@ -38,10 +39,10 @@ const BYTES_AFTER_STREAM: &str = "unexpected bytes after ROMDISK DEFLATE stream"
 const UNSUPPORTED_PADDING: &str = "unsupported executable overlay padding";
 
 /// The `size` bytes the raw DEFLATE `stream` holds, decoded as the N64 extractor decodes them:
-/// never to more than a byte past `size`, so that damage past where the bytes should end is left
-/// unread as the extractor leaves it, and refused unless the stream's end marker comes at exactly
-/// `size` bytes, followed by nothing but what `trailer` allows. The bytes come back with no more
-/// room than they fill, so that files kept until they are written take only their own size.
+/// never to more than a byte past `size`, so that damage further on is found only where the
+/// extractor finds it, and refused unless the stream's end marker comes at exactly `size` bytes,
+/// followed by nothing but what `trailer` allows. The bytes come back with no more room than they
+/// fill, so that files kept until they are written take only their own size.
 pub fn inflate(stream: &[u8], size: usize, trailer: Trailer) -> Result<Vec<u8>, MediaError> {
     inflate_in_steps(stream, size, trailer, INFLATE_STEP)
 }
@@ -331,6 +332,14 @@ mod tests {
     #[test]
     fn a_large_declared_size_grows_the_output_only_as_it_decodes() {
         let test = deflated("test");
+        // Told a size as large as an address allows, which no room could ever hold, the reader
+        // decodes the stream into one step's room and refuses it for ending short.
+        for trailer in [Trailer::None, Trailer::OverlayPadding] {
+            let error = inflate(&test, usize::MAX, trailer).unwrap_err();
+            assert_eq!(error.rule(), "deflateEnd", "{trailer:?}");
+            assert_eq!(error.to_string(), WRONG_END);
+        }
+
         let declared: usize = 2 << 30;
         for trailer in [Trailer::None, Trailer::OverlayPadding] {
             let error = inflate(&test, declared, trailer).unwrap_err();

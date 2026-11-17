@@ -195,7 +195,8 @@ pub(super) fn read<'a>(rom: &'a [u8], limits: &RomdiskLimits) -> Result<Romdisk<
     let mut entries = Vec::new();
     let mut names = NameSet::default();
     let mut total = 0;
-    // Where the record listed last ends: the next may not start before it.
+    // Where the record listed last ends: the next may not start before it, and every record starts
+    // on a word of the ROM, wherever the header lies.
     let mut floor = records_start;
     for pointer in 0..u64::from(count) {
         let record = base + u64::from(word_at(rom, table + WORD_PLACE_LEN * pointer));
@@ -434,6 +435,26 @@ mod tests {
             assert_eq!(moved_entry.rom_offset, entry.rom_offset + 8);
             assert_eq!(moved.stored(moved_entry), romdisk.stored(entry));
         }
+    }
+
+    #[test]
+    fn a_record_starts_on_a_word_of_the_rom() {
+        // A ROM of one file, so that its record's own place decides, with no record after it
+        // that the end of the one before, rounded to a word of the ROM, would refuse.
+        let one = paths_rom(&["/x"]);
+        assert_eq!(paths_of(&read(&one, &ROMDISK_LIMITS).unwrap()), ["x"]);
+        // Two bytes further on, the record lies on a word of the ROMDISK but off a word of the ROM,
+        // and is refused as the extractor refuses it; four bytes on, it lies on both.
+        let shifted = |by: usize| [vec![0; by], one.clone()].concat();
+        let error = refusal(&shifted(2));
+        assert_eq!(error.rule(), "recordPlace");
+        assert_eq!(
+            error.to_string(),
+            "ROMDISK records overlap or are not word aligned"
+        );
+        let on_both = shifted(4);
+        let moved = read(&on_both, &ROMDISK_LIMITS).unwrap();
+        assert_eq!(paths_of(&moved), ["x"]);
     }
 
     #[test]

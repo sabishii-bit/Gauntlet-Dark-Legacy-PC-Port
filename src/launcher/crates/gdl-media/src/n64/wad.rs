@@ -248,6 +248,14 @@ mod tests {
         Err((rule, format!("{words}: {path}")))
     }
 
+    /// `value` as the word a WAD whose words are in `order` keeps.
+    fn word_in(order: WadByteOrder, value: u32) -> [u8; 4] {
+        match order {
+            WadByteOrder::BigEndian => value.to_be_bytes(),
+            WadByteOrder::LittleEndian => value.to_le_bytes(),
+        }
+    }
+
     /// `values` as words in `order`, one after another.
     fn words(order: WadOrder, values: &[u32]) -> Vec<u8> {
         values
@@ -395,31 +403,28 @@ mod tests {
 
     #[test]
     fn a_directory_holds_at_most_65536_rows() {
-        let row = (*b"ROWS", MIN_WAD_DIRECTORY, 0);
-        for order in BUILT_ORDERS {
-            let mut rows = vec![row; MAX_WAD_SECTIONS as usize];
-            let data = built(order, MIN_WAD_DIRECTORY, &rows);
-            assert_eq!(data.len(), 786_440);
-            let sections = wad_sections(&at(MAP), &data).unwrap();
-            assert_eq!(sections.len(), 65_536);
-            let byte_order = match order {
-                WadOrder::Big => WadByteOrder::BigEndian,
-                WadOrder::Little => WadByteOrder::LittleEndian,
-            };
-            let expected = WadSection {
-                tag: *b"ROWS",
-                offset: MIN_WAD_DIRECTORY,
-                size_or_count: 0,
-                byte_order,
-            };
-            assert!(sections.iter().all(|section| *section == expected));
-
-            // A row more is refused, though the directory still ends where the WAD does.
-            rows.push(row);
-            let data = built(order, MIN_WAD_DIRECTORY, &rows);
-            assert_eq!(data.len(), 786_452);
-            let refused = refusal("wadDirectory", NOT_ONE, MAP);
-            assert_eq!(outcome(MAP, &data), refused, "{order:?}");
+        // The bound is the header's alone, so it is judged on a WAD's length, with no bytes made
+        // for its rows. A header that gives a directory of the most rows, ending where the WAD
+        // does, describes it in its own order and not in the other; one a row longer describes it
+        // in neither, so that the reader refuses it as no one directory.
+        assert_eq!(MAX_WAD_SECTIONS, 65_536);
+        let len = |rows: u32| {
+            let len = u64::from(MIN_WAD_DIRECTORY) + WAD_ROW_LEN * u64::from(rows);
+            usize::try_from(len).unwrap()
+        };
+        let cases = [
+            (MAX_WAD_SECTIONS, Some(MIN_WAD_DIRECTORY)),
+            (MAX_WAD_SECTIONS + 1, None),
+        ];
+        for order in ORDERS {
+            for (rows, start) in cases {
+                let header = [word_in(order, MIN_WAD_DIRECTORY), word_in(order, rows)];
+                for reading in ORDERS {
+                    let expected = start.filter(|_| reading == order);
+                    let read = directory_start(reading, header, len(rows));
+                    assert_eq!(read, expected, "{order:?} {rows} read {reading:?}");
+                }
+            }
         }
     }
 

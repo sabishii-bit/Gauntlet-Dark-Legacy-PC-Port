@@ -9,7 +9,7 @@ use std::io::Read;
 use std::path::Path;
 use std::{array, fmt};
 
-use gdl_files::{BLOCK_LEN, Job};
+use gdl_files::{BLOCK_LEN, Cancel, Job};
 
 use crate::{MediaError, Region, RomRule, Sha1Digest, Sha256Digest, SourceName};
 
@@ -233,25 +233,7 @@ impl N64Rom {
         if len > MAX_ROM_LEN {
             return Err(too_large());
         }
-        job.cancel.check()?;
-        let mut bytes = Vec::with_capacity(usize::try_from(len).unwrap_or_default());
-        // One byte past the bound, so that a file that has grown since its length was read is
-        // refused with no more than that held.
-        let mut reader = file.take(MAX_ROM_LEN + 1);
-        loop {
-            let read = reader
-                .by_ref()
-                .take(BLOCK_LEN as u64)
-                .read_to_end(&mut bytes)
-                .map_err(|error| MediaError::io(path, error))?;
-            if read < BLOCK_LEN {
-                break;
-            }
-            job.cancel.check()?;
-        }
-        if bytes.len() as u64 > MAX_ROM_LEN {
-            return Err(too_large());
-        }
+        let bytes = read_in_blocks(file, path, len, job.cancel)?;
         N64Rom::from_bytes(name, bytes)
     }
 
@@ -354,6 +336,37 @@ impl fmt::Debug for N64Rom {
     }
 }
 
+/// What `dump`, the file at `path`, holds: read in blocks of at most [`BLOCK_LEN`] bytes, with
+/// `cancel` looked at before each, into room for the `len` bytes its metadata gives, and refused
+/// once it runs past [`MAX_ROM_LEN`], as a file that has grown since its length was read does.
+fn read_in_blocks(
+    dump: impl Read,
+    path: &Path,
+    len: u64,
+    cancel: &Cancel,
+) -> Result<Vec<u8>, MediaError> {
+    cancel.check()?;
+    let mut bytes = Vec::with_capacity(usize::try_from(len).unwrap_or_default());
+    // One byte past the bound, so that a file that has grown is refused with no more than that
+    // held.
+    let mut dump = dump.take(MAX_ROM_LEN + 1);
+    loop {
+        let read = dump
+            .by_ref()
+            .take(BLOCK_LEN as u64)
+            .read_to_end(&mut bytes)
+            .map_err(|error| MediaError::io(path, error))?;
+        if read < BLOCK_LEN {
+            break;
+        }
+        cancel.check()?;
+    }
+    if bytes.len() as u64 > MAX_ROM_LEN {
+        return Err(too_large());
+    }
+    Ok(bytes)
+}
+
 /// The refusal of a ROM longer than the largest cartridge.
 fn too_large() -> MediaError {
     let detail = format!("ROM is longer than {MAX_ROM_LEN} bytes, the most an N64 cartridge holds");
@@ -415,7 +428,8 @@ fn header_char(byte: u8) -> char {
 mod tests {
     use std::env;
     use std::fs::{self, File};
-    use std::io;
+    use std::io::{self, Read};
+    use std::ops::Range;
     use std::path::{Path, PathBuf};
 
     use gdl_files::{BLOCK_LEN, Cancel, Job, NoProgress};
@@ -423,9 +437,8 @@ mod tests {
     use serde_json::Value;
 
     use super::{
-        BIG_ENDIAN_FIRST_WORD, BYTE_SWAPPED_FIRST_WORD, ByteOrder, GAME_CODE_AT,
-        LITTLE_ENDIAN_FIRST_WORD, MAX_ROM_LEN, N64Rom, ROM_HEADER_LEN, RomHeader, TITLE_AT,
-        TITLE_LEN, US_SHA1, VERSION_AT, WORD_LEN,
+        BIG_ENDIAN_FIRST_WORD, BYTE_SWAPPED_FIRST_WORD, ByteOrder, LITTLE_ENDIAN_FIRST_WORD,
+        MAX_ROM_LEN, N64Rom, ROM_HEADER_LEN, RomHeader, US_SHA1, WORD_LEN, read_in_blocks,
     };
     use crate::vectors::{frozen, n64_golden, n64_vectors, named, number, text};
     use crate::{
@@ -446,6 +459,19 @@ mod tests {
     /// How many bytes the US cartridge holds: 128 Mbit.
     const US_ROM_LEN: u64 = 16 << 20;
 
+    /// How many bytes the format gives a header's title. The places of the header's fields are
+    /// given here apart from the reader's own, so that a reader that looks elsewhere is caught.
+    const FORMAT_TITLE_LEN: usize = 20;
+
+    /// Where the format places the title.
+    const FORMAT_TITLE: Range<usize> = 0x20..0x20 + FORMAT_TITLE_LEN;
+
+    /// Where the format places the game code.
+    const FORMAT_GAME_CODE: Range<usize> = 0x3B..0x3F;
+
+    /// Where the format places the version.
+    const FORMAT_VERSION: usize = 0x3F;
+
     /// A dump the N64 extractor wrote a golden manifest for.
     struct Dump {
         /// The dump's bytes, in the order it keeps them.
@@ -460,6 +486,32 @@ mod tests {
         golden: Value,
     }
 
+    /// A dump of zeros that asks its job to stop once it has given `after` bytes, and counts what
+    /// it gives.
+    struct StoppingDump<'a> {
+        /// How many bytes it has yet to give.
+        left: usize,
+        /// How many it has given.
+        given: usize,
+        /// How many it gives before it asks the job to stop.
+        after: usize,
+        /// The job's request to stop.
+        cancel: &'a Cancel,
+    }
+
+    impl Read for StoppingDump<'_> {
+        fn read(&mut self, into: &mut [u8]) -> io::Result<usize> {
+            let len = into.len().min(self.left);
+            into[..len].fill(0);
+            self.left -= len;
+            self.given += len;
+            if self.given >= self.after {
+                self.cancel.cancel();
+            }
+            Ok(len)
+        }
+    }
+
     /// A job nobody follows, asked to stop only through `cancel`.
     fn quiet(cancel: &Cancel) -> Job<'_> {
         Job {
@@ -468,12 +520,13 @@ mod tests {
         }
     }
 
-    /// The default image with `title`, `game_code` and `version` written into its header.
-    fn with_header(title: &[u8; TITLE_LEN], game_code: &[u8; 4], version: u8) -> Vec<u8> {
+    /// The default image with `title`, `game_code` and `version` written where the format places
+    /// them.
+    fn with_header(title: &[u8; FORMAT_TITLE_LEN], game_code: &[u8; 4], version: u8) -> Vec<u8> {
         let mut image = frozen(&n64_vectors(), "default");
-        image[TITLE_AT..TITLE_AT + TITLE_LEN].copy_from_slice(title);
-        image[GAME_CODE_AT..GAME_CODE_AT + game_code.len()].copy_from_slice(game_code);
-        image[VERSION_AT] = version;
+        image[FORMAT_TITLE].copy_from_slice(title);
+        image[FORMAT_GAME_CODE].copy_from_slice(game_code);
+        image[FORMAT_VERSION] = version;
         image
     }
 
@@ -701,6 +754,21 @@ mod tests {
             assert_eq!(header_of(reorder(&image, transform)), header, "{transform}");
         }
 
+        // Each field is read where the format places it, and no further: a title that fills its
+        // field, and bytes just outside the fields that are not padding, which are no part of them.
+        let mut marked = with_header(b"ABCDEFGHIJKLMNOPQRST", b"NGXE", 2);
+        for outside in [
+            FORMAT_TITLE.start - 1,
+            FORMAT_TITLE.end,
+            FORMAT_GAME_CODE.start - 1,
+        ] {
+            marked[outside] = b'x';
+        }
+        let header = header_of(marked);
+        assert_eq!(header.title, "ABCDEFGHIJKLMNOPQRST");
+        assert_eq!(header.game_code, *b"NGXE");
+        assert_eq!(header.version, 2);
+
         // The game code's last letter is the cartridge's destination, and names the region it
         // lies in: North America, Japan or Europe, or one of their countries.
         let regions = [
@@ -753,7 +821,7 @@ mod tests {
         assert_eq!(katakana.title, "\u{ff71}\u{ff72}\u{ff73}");
         assert_eq!(katakana.game_code_text(), "\u{ff71}Z~ ");
         assert_eq!(katakana.region(), None);
-        let padding = header_of(with_header(&[b' '; TITLE_LEN], b"NGXP", 0));
+        let padding = header_of(with_header(&[b' '; FORMAT_TITLE_LEN], b"NGXP", 0));
         assert_eq!(padding.title, "");
         assert_eq!(padding.region(), Some(Region::Europe));
     }
@@ -816,6 +884,22 @@ mod tests {
     }
 
     #[test]
+    fn a_read_stops_between_blocks_once_its_job_is_asked_to() {
+        // A dump a byte longer than a block, whose job is asked to stop as its first block is
+        // read: the read stops before the second block, and takes no byte of it.
+        let cancel = Cancel::default();
+        let mut dump = StoppingDump {
+            left: BLOCK_LEN + 1,
+            given: 0,
+            after: BLOCK_LEN,
+            cancel: &cancel,
+        };
+        let error = read_in_blocks(&mut dump, Path::new("dump.z64"), 0, &cancel).unwrap_err();
+        assert!(matches!(error, MediaError::Cancelled), "{error:?}");
+        assert_eq!(dump.given, BLOCK_LEN);
+    }
+
+    #[test]
     fn a_path_that_names_no_file_is_refused_before_anything_is_read() {
         let dir = tempfile::tempdir().unwrap();
         let cancel = Cancel::default();
@@ -842,6 +926,15 @@ mod tests {
         assert_eq!(rom.canonical_sha1(), US_SHA1);
         assert_eq!(rom.byte_order(), ByteOrder::BigEndian);
         assert_eq!(rom.source_len(), US_ROM_LEN);
+        // Its header names the game, the US cartridge's game code and the region it was made for,
+        // read where the format places them. A failure says which, never what the header holds.
+        let header = rom.header();
+        assert!(header.title == "GAUNTLET LEGENDS", "another title");
+        assert!(header.game_code == *b"NGXE", "another game code");
+        assert!(
+            header.region() == Some(Region::NorthAmerica),
+            "another region"
+        );
 
         // Every file of its ROMDISK decodes to the size its record gives, and every WAD among them
         // describes its sections. A failure names a file by its place in the directory and the
