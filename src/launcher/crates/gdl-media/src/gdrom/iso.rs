@@ -1245,6 +1245,18 @@ mod tests {
             changed[at] = 0xE9;
             assert_eq!(paths(&with_descriptor(&changed)), outside_ascii, "{at}");
         }
+        // So does a character outside ASCII written in UTF-8: at the name's start, and in the
+        // padding at its end, where an ideographic space would otherwise be stripped as white
+        // space.
+        for character in ["\u{e9}", "\u{3000}"] {
+            let bytes = character.as_bytes();
+            for at in [FORMAT_VOLUME_ID.start, FORMAT_VOLUME_ID.end - bytes.len()] {
+                let mut changed = descriptor();
+                changed[at..at + bytes.len()].copy_from_slice(bytes);
+                let given = paths(&with_descriptor(&changed));
+                assert_eq!(given, outside_ascii, "{at} {character:?}");
+            }
+        }
         // A byte outside ASCII just past the name is no part of it.
         let mut past = descriptor();
         past[FORMAT_VOLUME_ID.end] = 0xE9;

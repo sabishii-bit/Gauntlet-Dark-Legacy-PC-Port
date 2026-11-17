@@ -232,5 +232,19 @@ mod tests {
             }
             assert_eq!(ascii_field(&[byte]), None, "{byte:#04x}");
         }
+        // So does a character outside ASCII that the field writes in UTF-8, alone, within it, or
+        // at its ends: a letter, and the next line control, the no-break space and the
+        // ideographic space, which stripping would take from the ends of a field it read.
+        for character in ['\u{e9}', '\u{85}', '\u{a0}', '\u{3000}'] {
+            let fields = [
+                character.to_string(),
+                format!("T97{character}10N"),
+                format!("{character}T9710N{character}"),
+                format!("T9710N  {character}"),
+            ];
+            for field in fields {
+                assert_eq!(ascii_field(field.as_bytes()), None, "{field:?}");
+            }
+        }
     }
 }

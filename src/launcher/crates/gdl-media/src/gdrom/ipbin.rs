@@ -292,6 +292,36 @@ mod tests {
                 assert_eq!(boot_of(&set), said("textField", words), "{at} {byte:#04x}");
             }
         }
+        // So is a character outside ASCII written in UTF-8, within a field, past the title's
+        // game's name, or in the padding at a field's end, where a no-break space would otherwise
+        // be stripped as white space.
+        let places = [
+            (
+                FORMAT_PRODUCT.start + 2,
+                FORMAT_PRODUCT.end,
+                "IP.BIN's product holds a byte outside ASCII",
+            ),
+            (
+                FORMAT_TITLE.start + 20,
+                FORMAT_TITLE.end,
+                "IP.BIN's title holds a byte outside ASCII",
+            ),
+            (
+                FORMAT_EXECUTABLE.start + 2,
+                FORMAT_EXECUTABLE.end,
+                "IP.BIN's executable holds a byte outside ASCII",
+            ),
+        ];
+        for (within, end, words) in places {
+            for character in ["\u{e9}", "\u{a0}"] {
+                let bytes = character.as_bytes();
+                for at in [within, end - bytes.len()] {
+                    let set = with_boot_bytes(DiscSet::full(Edc::Zero), at, bytes);
+                    let given = boot_of(&set);
+                    assert_eq!(given, said("textField", words), "{at} {character:?}");
+                }
+            }
+        }
         // They are judged in the order the extractor records them: the product, the title, then
         // the executable.
         let late = with_boot_bytes(DiscSet::full(Edc::Zero), FORMAT_EXECUTABLE.start, &[0xE9]);
