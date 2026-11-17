@@ -214,12 +214,20 @@ TEST_CASE("the runestones held line the box, the bosses' keys a while as a level
     }
     painter.release();
 
-    // Warming the boxes takes every key's picture, so showing the keys uploads nothing more.
+    // Warming the boxes takes every picture the strip draws, each key's and each rune's, the
+    // thirteenth's too, so showing them all uploads nothing more.
     StatusBoxPainter warmed;
     REQUIRE(warmed.load(device, root, nullptr));
     warmed.preloadStatus();
     const u32 preloaded = device.texturesCreated;
     CHECK(drawKeys(warmed).size() == kGameCubeKeys.size());
+    constexpr auto kEveryRune = static_cast<u16>(((1U << StatusBoxPainter::kRuneCount) - 1U) |
+                                                 StatusBoxPainter::kThirteenthRune);
+    device.draws.clear();
+    canvas.begin(device, Mat4{1.0f});
+    warmed.drawRelics(canvas, 1, kEveryRune, std::nullopt);
+    canvas.end();
+    CHECK(test::quadsOf(device).size() == StatusBoxPainter::kRuneCount + 1U);
     CHECK(device.texturesCreated == preloaded);
     warmed.release();
 }

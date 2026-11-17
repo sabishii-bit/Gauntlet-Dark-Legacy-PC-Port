@@ -33,6 +33,7 @@ constexpr s32 kValueY = 359;
 constexpr s32 kNameY = 339;
 constexpr s32 kLevelY = 326;
 constexpr f32 kNameScale = 0.667f;
+constexpr std::string_view kThirteenthRuneIcon = "RUNE13";
 
 } // namespace
 
@@ -84,6 +85,7 @@ void StatusBoxPainter::preloadStatus() {
             staticTexture(std::format("SM_RUNE_{}_{:02}", name, rune));
         }
     }
+    staticTexture(kThirteenthRuneIcon);
 }
 
 void StatusBoxPainter::release() {
@@ -297,7 +299,7 @@ void StatusBoxPainter::drawRelics(Canvas& canvas, s32 seat, u16 runes, std::opti
     // The thirteenth (shards & 0x1000) has an icon of its own under the keys, sixteen square
     // and eight in (hod_blit, player.c 5186), shown in play and on the map screen alike.
     if ((runes & kThirteenthRune) != 0) {
-        if (const Texture* texture = staticTexture("RUNE13")) {
+        if (const Texture* texture = staticTexture(kThirteenthRuneIcon)) {
             canvas.draw(*texture, Rect{static_cast<f32>(left + kRune13X),
                                        static_cast<f32>(kRune13Y), kRune13Size, kRune13Size});
         }
