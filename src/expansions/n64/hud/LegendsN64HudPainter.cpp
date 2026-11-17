@@ -839,19 +839,23 @@ void LegendsN64HudPainter::turnPages(SeatPages& pages, const HudSeat& shown, boo
     }
     // While the selector is up its panel shows the carousel, and its own page goes back to the
     // normal one; a legend item found meanwhile turns it once the selector is down. Moving the
-    // selection lights the arrow of the way it went, and swaps the icons.
+    // selection swaps the icons. A seat played here had the arrow of its press lit as the press
+    // was taken; another machine's player's presses are never told, and its arrow is the way
+    // its selection went.
     if (whole && shown.selector != nullptr && selectorUp(*shown.selector)) {
         const s32 selection = shown.selector->selection();
         if (!rewound && pages.selection >= 0 && selection != pages.selection) {
-            pages.lit.reset();
-            if (shown.runtime != nullptr) {
-                const Inventory& inventory = shown.runtime->actor.save().progress().inventory;
-                // Dark Legacy's selector hands a powerup that runs out to the one before it,
-                // as left does.
-                if (selection == inventory.nextHeld(pages.selection, -1)) {
-                    pages.lit = Arrow::Left;
-                } else if (selection == inventory.nextHeld(pages.selection, 1)) {
-                    pages.lit = Arrow::Right;
+            if (!shown.local) {
+                pages.lit.reset();
+                if (shown.runtime != nullptr) {
+                    const Inventory& inventory = shown.runtime->actor.save().progress().inventory;
+                    // Dark Legacy's selector hands a powerup that runs out to the one before
+                    // it, as left does.
+                    if (selection == inventory.nextHeld(pages.selection, -1)) {
+                        pages.lit = Arrow::Left;
+                    } else if (selection == inventory.nextHeld(pages.selection, 1)) {
+                        pages.lit = Arrow::Right;
+                    }
                 }
             }
             pages.swapped = true;
@@ -918,6 +922,17 @@ void LegendsN64HudPainter::browse(s32 seat, const SelectorInput& presses) {
         break;
     case Page::Powerups: break;
     }
+}
+
+void LegendsN64HudPainter::steer(s32 seat, const SelectorInput& presses) {
+    if (seat < 0 || static_cast<usize>(seat) >= m_seats.size() ||
+        (!presses.left && !presses.right)) {
+        return;
+    }
+    SeatPages& pages = m_seats.at(static_cast<usize>(seat));
+    // Dark Legacy's open selector takes left before right, and so does its arrow.
+    pages.lit = presses.left ? Arrow::Left : Arrow::Right;
+    pages.stepped = true;
 }
 
 LegendsN64HudPainter::Page LegendsN64HudPainter::pageOf(usize seat, const HudSeat& shown) const {

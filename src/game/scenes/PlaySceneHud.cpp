@@ -119,11 +119,18 @@ bool PlayScene::hudBrowsable(s32 seat) const {
 
 void PlayScene::browseHud(s32 seat, const SelectorInput& presses) {
     if (seat < 0 || seat >= kPlayerCount || ((m_localSeats >> seat) & 1U) == 0 ||
-        !(presses.down || presses.left || presses.right) || !hudBrowsable(seat) ||
-        m_hud.selector(seat).state() != PowerupSelector::State::Closed) {
+        !(presses.down || presses.left || presses.right) || !hudBrowsable(seat)) {
         return;
     }
-    m_hudStyle.run(m_darkLegacyHud, [&](HudPainter& look) { look.browse(seat, presses); });
+    // A closed selector heeds none of these, so they are the look's own; an open one moves its
+    // selection by left and right, which the look is told of. One sliding heeds none of them.
+    const PowerupSelector::State state = m_hud.selector(seat).state();
+    if (state == PowerupSelector::State::Closed) {
+        m_hudStyle.run(m_darkLegacyHud, [&](HudPainter& look) { look.browse(seat, presses); });
+    } else if (state == PowerupSelector::State::Open && (presses.left || presses.right)) {
+        const SelectorInput moves{.left = presses.left, .right = presses.right};
+        m_hudStyle.run(m_darkLegacyHud, [&](HudPainter& look) { look.steer(seat, moves); });
+    }
 }
 
 } // namespace gdl::game

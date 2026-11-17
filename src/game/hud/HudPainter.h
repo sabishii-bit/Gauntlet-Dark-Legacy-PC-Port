@@ -40,6 +40,9 @@ public:
     virtual void drawHelp(HudFrame& frame, const HudView& view) = 0;
     /** A local seat's selector presses while its selector is closed: the look's own pages. */
     virtual void browse(s32 /*seat*/, const SelectorInput& /*presses*/) {}
+    /** A local seat's left and right while its selector stands open, which move the selection:
+     * a look may show which way each went, whether or not another powerup comes up. */
+    virtual void steer(s32 /*seat*/, const SelectorInput& /*presses*/) {}
 };
 
 } // namespace gdl::game

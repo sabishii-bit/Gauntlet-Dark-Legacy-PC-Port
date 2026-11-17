@@ -2093,9 +2093,16 @@ TEST_CASE("the carousel shows the selection between its neighbours, dims what is
     // The N64 writes no powerup's name over its panels.
     CHECK(n64.drawn(view, &LegendsN64HudPainter::drawSelectors).empty());
 
+    // A press as the scene takes it: the look is told of it as it is sampled, and Dark Legacy's
+    // selector then takes it.
+    const auto press = [&](const SelectorInput& presses) {
+        n64.look.steer(0, presses);
+        holder.selector.step(presses, holder.inventory, 1);
+    };
+
     // Left moves Dark Legacy's selection to Pojo: for the step that shows it, the icons and the
     // count go and the left arrow is lit.
-    holder.selector.step(SelectorInput{.left = true}, holder.inventory, 1);
+    press(SelectorInput{.left = true});
     REQUIRE(holder.selector.selection() == 2);
     prepareAt(n64, view, 1);
     quads = n64.panels(view);
@@ -2115,7 +2122,7 @@ TEST_CASE("the carousel shows the selection between its neighbours, dims what is
     CHECK(countIn(quads) == Count{{lineAt(0, 64 + 2 * 3, 40, "60"), Color::white()}});
     CHECK(arrowsIn(quads, 0) == std::pair{kArrowResting, kArrowResting});
     // The gold invulnerability named: it and what it has left are dimmed.
-    holder.selector.step(SelectorInput{.left = true}, holder.inventory, 1);
+    press(SelectorInput{.left = true});
     prepareAt(n64, view, 3);
     prepareAt(n64, view, 4);
     quads = n64.panels(view);
@@ -2126,7 +2133,7 @@ TEST_CASE("the carousel shows the selection between its neighbours, dims what is
     CHECK(items[2].texture == pojo);
     CHECK(countIn(quads) == Count{{lineAt(0, 64 + 2 * 3, 40, "20"), off}});
     // Right goes back, lighting the right arrow.
-    holder.selector.step(SelectorInput{.right = true}, holder.inventory, 1);
+    press(SelectorInput{.right = true});
     prepareAt(n64, view, 5);
     CHECK(arrowsIn(n64.panels(view), 0) == std::pair{kArrowResting, kArrowLit});
 
@@ -2150,6 +2157,84 @@ TEST_CASE("the carousel shows the selection between its neighbours, dims what is
     CHECK(iconsIn(quads, 2) == std::vector<std::string_view>{"HUD_INVIS"});
     checkRect(picturesIn(quads, "HUD_INVIS", 2).front().area,
               centredAt(2, Layout::kSelected, 28, 28));
+}
+
+TEST_CASE("an open selector's press lights its own arrow, whatever comes up",
+          "[legends][n64-hud]") {
+    // FUN_e00496d4 lights the arrow of every press the carousel takes. Seat 0, played here,
+    // carries two powerups, each the other's neighbour both ways; seat 1, played here, one;
+    // seat 2, another machine's, three, its presses never told to the look.
+    LoadedLook n64("n64-hud-carousel-presses", kWarriorAndWizard);
+    const auto timed = [](u32 special) {
+        return PowerupSlot{30, powerup::kSpecial, 0, special, true};
+    };
+    Inventory two;
+    two.powerups[0] = timed(powerup::kInvisible);
+    two.powerups[1] = timed(powerup::kLevitation);
+    Inventory one;
+    one.powerups[4] = timed(powerup::kInvisible);
+    Inventory three = two;
+    three.powerups[2] = timed(powerup::kGrowth);
+    Holder pair(two, 0);
+    Holder single(one, 1);
+    Holder remote(three, 2);
+    for (Holder* holder : {&pair, &single, &remote}) {
+        holder->open();
+    }
+    HudView view = n64.viewOf({pair.seat(0), single.seat(1), remote.seat(2, false), {}});
+    s32 step = 0;
+    prepareAt(n64, view, step);
+    // A press as the scene takes it, told to the look for a seat played here, and the panels in
+    // the step it first shows in; then the panels a step on.
+    const auto press = [&](Holder& holder, s32 seat, const SelectorInput& presses) {
+        if (view.seats.at(static_cast<usize>(seat)).local) {
+            n64.look.steer(seat, presses);
+        }
+        holder.selector.step(presses, holder.inventory, 1);
+        prepareAt(n64, view, ++step);
+        return n64.panels(view);
+    };
+    const auto settled = [&] {
+        prepareAt(n64, view, ++step);
+        return n64.panels(view);
+    };
+    const auto litLeft = std::pair{kArrowLit, kArrowResting};
+    const auto litRight = std::pair{kArrowResting, kArrowLit};
+    const auto resting = std::pair{kArrowResting, kArrowResting};
+    using Icons = std::vector<std::string_view>;
+
+    // Of two, right comes round to the very one left would: the right arrow is lit for the step
+    // the move first shows in, as the icons swap.
+    REQUIRE(pair.selector.selection() == 1);
+    std::vector<Quad> quads = press(pair, 0, SelectorInput{.right = true});
+    REQUIRE(pair.selector.selection() == 0);
+    CHECK(arrowsIn(quads, 0) == litRight);
+    CHECK(iconsIn(quads, 0).empty());
+    quads = settled();
+    CHECK(arrowsIn(quads, 0) == resting);
+    CHECK(iconsIn(quads, 0) == Icons{"HUD_LEVITATE", "HUD_INVIS"});
+    CHECK(arrowsIn(press(pair, 0, SelectorInput{.left = true}), 0) == litLeft);
+    // Left and right at once: Dark Legacy's selector goes left, and so does the arrow.
+    settled();
+    CHECK(arrowsIn(press(pair, 0, SelectorInput{.left = true, .right = true}), 0) == litLeft);
+
+    // Of one, nothing else comes up and the icon stays, but the press lights its arrow all the
+    // same.
+    settled();
+    quads = press(single, 1, SelectorInput{.right = true});
+    CHECK(arrowsIn(quads, 1) == litRight);
+    CHECK(iconsIn(quads, 1) == Icons{"HUD_INVIS"});
+    CHECK(arrowsIn(settled(), 1) == resting);
+    CHECK(arrowsIn(press(single, 1, SelectorInput{.left = true}), 1) == litLeft);
+
+    // Another machine's player's arrow is lit by the way its selection went.
+    settled();
+    REQUIRE(remote.selector.selection() == 2);
+    quads = press(remote, 2, SelectorInput{.right = true});
+    REQUIRE(remote.selector.selection() == 0);
+    CHECK(arrowsIn(quads, 2) == litRight);
+    CHECK(arrowsIn(settled(), 2) == resting);
+    CHECK(arrowsIn(press(remote, 2, SelectorInput{.left = true}), 2) == litLeft);
 }
 
 TEST_CASE("a new legend item turns its local holder's panel to the quest page, never a remote "

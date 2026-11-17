@@ -660,8 +660,9 @@ public:
     const EffectTrees& effects() const { return m_effects; }
     /** The powerup selector over `player`'s box. */
     const PowerupSelector& selector(s32 player) const { return m_hud.selector(player); }
-    /** A local seat's selector presses as they are sampled, for its HUD look's own pages while
-     * its selector is closed and the scene heeds the selector; never simulation. */
+    /** A local seat's selector presses as they are sampled, for its HUD look while the scene
+     * heeds the selector: the look's own pages while the selector is closed, and the way its
+     * left and right move it while it is open; never simulation. */
     void browseHud(s32 seat, const SelectorInput& presses);
     /** How large a character is drawn: an ogre, one grown by a powerup, one of level 99. */
     const SumnerHints& hintTexts() const { return m_sumnerVisit.texts(); }

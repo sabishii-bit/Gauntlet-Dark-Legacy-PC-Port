@@ -233,11 +233,13 @@ struct HudScene {
     }
 };
 
-/** The seats a look was asked to browse from call `from` of `record` on, in turn. */
-std::vector<s32> browsedFrom(const test::FakeHudRecord& record, usize from) {
+/** The seats a look was asked to browse, or to steer by an open selector's presses, from call
+ * `from` of `record` on, in turn. */
+std::vector<s32> browsedFrom(const test::FakeHudRecord& record, usize from,
+                             FakeHudPart part = FakeHudPart::Browse) {
     std::vector<s32> seats;
     for (usize call = from; call < record.calls.size(); ++call) {
-        if (record.calls[call].part == FakeHudPart::Browse) {
+        if (record.calls[call].part == part) {
             seats.push_back(record.calls[call].seat);
         }
     }
@@ -400,16 +402,18 @@ TEST_CASE("switching the HUD look mid-level changes no byte of the digests and s
     CHECK(darkLegacy->styles.opened.empty());
 }
 
-TEST_CASE("a closed selector's down, left and right reach the look's pages and nothing else",
+TEST_CASE("a closed selector's down, left and right reach the look's pages, an open one's left "
+          "and right its arrows, and nothing else",
           "[play-scene][hud-style][assets]") {
-    // Three players: the first carries a powerup its selector can name, and the third plays on
-    // another machine.
+    // Three players: the first and the third carry a powerup their selectors can name, and the
+    // third plays on another machine.
     constexpr s32 kSeats = 3;
     constexpr u8 kLocalSeats = 0b011;
     auto darkLegacy = std::make_unique<HudScene>("G2", kSeats);
     auto paged = std::make_unique<HudScene>("G2", kSeats);
     for (HudScene* fixture : {darkLegacy.get(), paged.get()}) {
         fixture->party[0].save.progress().inventory.powerups[0] = kSpeedPowerup;
+        fixture->party[2].save.progress().inventory.powerups[0] = kSpeedPowerup;
     }
     darkLegacy->open();
     paged->open(kFakeLook);
@@ -420,48 +424,65 @@ TEST_CASE("a closed selector's down, left and right reach the look's pages and n
     REQUIRE(darkLegacy->tick == paged->tick);
     const test::FakeHudRecord& record = paged->styles.record;
     usize from = record.calls.size();
-    // Both scenes step on the same presses and stay alike; the seats browsed meanwhile.
+    std::vector<s32> steered; ///< the seats the last press steered the look by
+    // Both scenes step on the same presses and stay alike; the seats browsed meanwhile, and
+    // those steered.
     const auto press = [&](const PlayScene::Inputs& inputs) {
         darkLegacy->step(inputs);
         paged->step(inputs);
         CHECK(darkLegacy->digest() == paged->digest());
         std::vector<s32> seats = browsedFrom(record, from);
+        steered = browsedFrom(record, from, FakeHudPart::Steer);
         from = record.calls.size();
         return seats;
     };
     const PowerupSelector& first = paged->scene.selector(0);
+    const PowerupSelector& third = paged->scene.selector(2);
     const auto slide = [&](PowerupSelector::State until) {
         for (s32 tick = 0; tick < 2 * PowerupSelector::kSlide && first.state() != until; ++tick) {
             CHECK(press({}).empty());
+            CHECK(steered.empty());
         }
         REQUIRE(first.state() == until);
     };
 
     // On closed selectors down, left and right turn this machine's seats' pages, never the
-    // third seat's.
+    // third seat's, and steer nothing.
     for (const Press way : {Press::Down, Press::Left, Press::Right}) {
         CAPTURE(static_cast<s32>(way));
         CHECK(press(everyone(way)) == std::vector{0, 1});
+        CHECK(steered.empty());
     }
-    // Up turns none, opening the first seat's selector; nor does a menu's own down.
+    // Up turns none, opening the first and third seats' selectors; nor does a menu's own down.
     CHECK(press(everyone(Press::Up)).empty());
     REQUIRE(first.state() == PowerupSelector::State::SlidingIn);
+    REQUIRE(third.state() == PowerupSelector::State::SlidingIn);
     PlayScene::Inputs menuDown{};
     for (PlayInput& input : menuDown) {
         input.menu.down = true;
     }
     CHECK(press(menuDown).empty());
     // While the first seat's selector slides in, stands open and slides away, its presses are
-    // the selector's, and the second seat's alone turn a page.
+    // the selector's, and the second seat's alone turn a page. Standing open, it moves by left
+    // and right, of which the look is told, even with nothing else to come up; the third
+    // seat's, another machine's, never.
     CHECK(press(everyone(Press::Down)) == std::vector{1});
+    CHECK(steered.empty());
     slide(PowerupSelector::State::Open);
+    REQUIRE(third.state() == PowerupSelector::State::Open);
     CHECK(press(everyone(Press::Right)) == std::vector{1});
+    CHECK(steered == std::vector{0});
+    CHECK(press(everyone(Press::Left)) == std::vector{1});
+    CHECK(steered == std::vector{0});
     CHECK(press(everyone(Press::Down)) == std::vector{1});
+    CHECK(steered.empty());
     REQUIRE(first.state() == PowerupSelector::State::SlidingOut);
     CHECK(press(everyone(Press::Left)) == std::vector{1});
+    CHECK(steered.empty());
     slide(PowerupSelector::State::Closed);
     // Closed again, its presses turn its pages once more.
     CHECK(press(everyone(Press::Left)) == std::vector{0, 1});
+    CHECK(steered.empty());
 }
 
 TEST_CASE("the selector's presses reach no page while the scene holds them",

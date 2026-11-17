@@ -34,13 +34,14 @@ enum class FakeHudPart : u8 {
     Selectors,
     Help,
     Browse,
+    Steer,
 };
 
 /** A call a fake look took. */
 struct FakeHudCall {
     std::string look; ///< the id of the look called
     FakeHudPart part = FakeHudPart::Prepare;
-    s32 seat = -1; ///< a browse's seat; -1 for the rest
+    s32 seat = -1; ///< a browse's or a steer's seat; -1 for the rest
     bool operator==(const FakeHudCall&) const = default;
 };
 
@@ -156,6 +157,9 @@ public:
         s32& page = m_pages.at(static_cast<usize>(seat));
         page = (page + (presses.left ? kPages - 1 : 1)) % kPages;
         m_record.pages[m_made] = m_pages;
+    }
+    void steer(s32 seat, const game::SelectorInput& /*presses*/) override {
+        take(FakeHudPart::Steer, seat);
     }
 
     std::optional<FakeHudPart> throwsIn; ///< the call that throws

@@ -200,6 +200,10 @@ public:
      * it lists anything, then back; left and right go round the stats from either end and back
      * to the normal page past them, or round the quest page's entries (FUN_e00496d4). */
     void browse(s32 seat, const SelectorInput& presses) override;
+    /** Lights the carousel's arrow of the way the press went, for the step it is first shown
+     * in: FUN_e00496d4 lights it at every press the carousel takes, whether or not another
+     * powerup comes up. */
+    void steer(s32 seat, const SelectorInput& presses) override;
 
 private:
     /** What a panel shows. A seat's own page is never Powerups: the carousel shows while its
@@ -216,7 +220,7 @@ private:
         s32 selection = -1;         ///< the carousel's selection when last seen; -1 while hidden
         std::optional<Arrow> lit;   ///< the arrow the last step lit, until it settles
         bool swapped = false;       ///< the last step changed the icons, hidden until it settles
-        bool stepped = false;       ///< browsed since the last prepare
+        bool stepped = false;       ///< browsed or steered since the last prepare
         s64 steppedAt = 0;          ///< the look's step the last step was first shown at
         u16 legends = 0;            ///< the legend items held when last seen
         /** A legend item newly held while the panel showed the carousel, which the panel turns
