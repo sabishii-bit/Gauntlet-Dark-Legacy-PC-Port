@@ -421,10 +421,11 @@ LegendsN64HelpBox legendsN64HelpBox(s32 widest, usize lines, s32 lineHeight, Vec
     // more than three lines; Dark Legacy's lines stand as they are, whatever the width.
     usize choice = Layout::kHelpWidths.size() - 1;
     if (lines <= Layout::kHelpLinesMost) {
-        const auto holds =
-            std::ranges::find_if(Layout::kHelpWraps, [widest](s32 wrap) { return widest < wrap; });
-        if (holds != Layout::kHelpWraps.end()) {
-            choice = static_cast<usize>(holds - Layout::kHelpWraps.begin());
+        for (usize wrap = 0; wrap < Layout::kHelpWraps.size(); ++wrap) {
+            if (widest < Layout::kHelpWraps[wrap]) {
+                choice = wrap;
+                break;
+            }
         }
     }
     const s32 width = Layout::kHelpWidths.at(choice);
