@@ -167,20 +167,20 @@ TEST_CASE("player native digest includes latent animator and glow controls",
     CHECK(nativeValue(weapon, resources) == unlit);
 }
 
-/** A stance and a throw's wind-up, each a still pose of one node. */
-TreeInfo windUpTree() {
+/** The tree `name` of a stance and the sequence `action`, each a still pose of one node. */
+TreeInfo stillTree(std::string_view name, std::string_view action) {
     TreeInfo tree;
-    tree.name = "WINDUP";
+    tree.name = name;
     TreeNodeInfo root;
     root.name = "ROOT";
     root.type = 1;
     tree.nodes.push_back(root);
-    for (const std::string_view name : {"READY", "THROW1S"}) {
+    for (const std::string_view sequenceName : {std::string_view{"READY"}, action}) {
         TreeSequenceInfo sequence;
-        sequence.name = name;
+        sequence.name = sequenceName;
         sequence.frames = 6;
         sequence.frameRate = 30;
-        sequence.repeats = name == "READY";
+        sequence.repeats = sequenceName == "READY";
         tree.sequences.push_back(sequence);
     }
     return tree;
@@ -188,7 +188,7 @@ TreeInfo windUpTree() {
 
 TEST_CASE("player native digest includes the attack-began edge",
           "[native-state-digest][player-figure-native-digest]") {
-    const auto tree = windUpTree();
+    const auto tree = stillTree("WINDUP", "THROW1S");
     NativeStateResources resources;
     REQUIRE(resources.registerBuiltinTree(tree, "wind-up"));
     PlayerAnimator animator;
@@ -431,28 +431,9 @@ TEST_CASE("Mikey native digest retains the random stream after the visible decoy
     CHECK(nativeValue(figures[0], resources) == baseline);
 }
 
-/** A stance and the breath an item gives, each a still pose of one node. */
-TreeInfo breathTree() {
-    TreeInfo tree;
-    tree.name = "BREATH";
-    TreeNodeInfo root;
-    root.name = "ROOT";
-    root.type = 1;
-    tree.nodes.push_back(root);
-    for (const std::string_view name : {"READY", "ATTBREATHE"}) {
-        TreeSequenceInfo sequence;
-        sequence.name = name;
-        sequence.frames = 6;
-        sequence.frameRate = 30;
-        sequence.repeats = name == "READY";
-        tree.sequences.push_back(sequence);
-    }
-    return tree;
-}
-
 TEST_CASE("native animator digest bytes stay pinned for a released item",
           "[native-state-digest][player-figure-native-digest][native-digest-pin]") {
-    const auto tree = breathTree();
+    const auto tree = stillTree("BREATH", "ATTBREATHE");
     NativeStateResources resources;
     REQUIRE(resources.registerBuiltinTree(tree, "pinned-breath"));
     PlayerAnimator animator;
