@@ -53,9 +53,14 @@ TEST_CASE("approximateLength measures along the ground first and then with the h
     CHECK(approximateLength(Vec3{}) == 0.0f);
     CHECK(approximateLength(Vec3{4.0f, 0.00005f, 3.0f}) ==
           approximateFlatLength(Vec3{4.0f, 0.0f, 3.0f}));
-    // Measuring x with the height first would give about 4.642 here.
+    // Measuring x with the height first would give about 4.642 here,
     CHECK(approximateLength(Vec3{1.0f, 2.0f, 4.0f}) ==
           banded(approximateFlatLength(Vec3{1.0f, 0.0f, 4.0f}), 0.236, 2.0));
+    // and measuring either x or z with the height first about 4.596 here.
+    CHECK(approximateLength(Vec3{1.0f, 4.0f, 2.0f}) ==
+          banded(4.0, 0.287, approximateFlatLength(Vec3{1.0f, 0.0f, 2.0f})));
+    // With the ground length and the height both negligible, the height, taken second, is left.
+    CHECK(approximateLength(Vec3{0.00003f, 0.00002f, 0.0f}) == 0.00002f);
 }
 
 TEST_CASE("approximateUnit scales by the fast length's single-precision reciprocal and leaves "
@@ -71,6 +76,8 @@ TEST_CASE("approximateUnit scales by the fast length's single-precision reciproc
     CHECK(unit == Vec3{3.0f * scale, scale, 0.0f});
     // Dividing by the length in single precision rounds x differently.
     CHECK(unit.x != slope.x / length);
+    // A negligible ground length leaves the height as the length scaled by.
+    CHECK(approximateUnit(Vec3{0.00003f, 0.00002f, 0.0f}) == Vec3{1.5f, 1.0f, 0.0f});
 
     // The fast length of the diagonal, 1.414, falls just short of the Euclidean one.
     CHECK(glm::length(approximateUnit(Vec3{1.0f, 0.0f, 1.0f})) != 1.0f);
