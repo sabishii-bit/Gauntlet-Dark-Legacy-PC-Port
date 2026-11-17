@@ -1,7 +1,11 @@
 #pragma once
 
+#include <optional>
+#include <span>
+
 #include "expansions/n64/formats/LegendsN64Portal.h"
 #include "expansions/shared/level/LegendsPortalVisitor.h"
+#include "game/level/ImportedLevel.h"
 
 namespace gdl::game {
 
@@ -9,6 +13,14 @@ namespace gdl::game {
  * player bodies. Invalid visitors are never admitted to an exit. */
 bool touchesLegendsPortal(const formats::LegendsN64Portal& portal,
                           const LegendsPortalVisitor& visitor);
+
+/** The exit seat `seat`'s visitor touches, as touchesLegendsPortal counts contact, a locked one
+ * too (the N64's contact list has no lock test): its destination code, none for code 0, and
+ * whether the seat waits there, on it while another living visitor is not. None without the
+ * seat's visitor or off every exit. */
+std::optional<ImportedExit> legendsN64ExitUnder(std::span<const formats::LegendsN64Portal> portals,
+                                                std::span<const LegendsPortalVisitor> visitors,
+                                                s32 seat);
 
 inline constexpr f32 kLegendsPortalDepartureSeconds = 2.0f;
 

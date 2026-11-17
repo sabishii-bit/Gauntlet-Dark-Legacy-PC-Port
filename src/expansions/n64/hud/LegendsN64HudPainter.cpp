@@ -32,6 +32,7 @@
 #include "expansions/n64/hud/LegendsN64HudIcons.h"
 #include "expansions/n64/hud/LegendsN64HudLayout.h"
 #include "expansions/n64/hud/LegendsN64HudText.h"
+#include "expansions/n64/hud/LegendsN64Plaque.h"
 #include "expansions/n64/hud/LegendsN64Scroll.h"
 #include "expansions/shared/hud/LegendsHudArt.h"
 #include "expansions/shared/hud/LegendsHudClock.h"
@@ -361,6 +362,24 @@ void write(Canvas& canvas, const TextPainter& font, s32 x, s32 y, std::string_vi
     }
 }
 
+/** Writes one of a plaque's lines with `font`, centred on frame column `centre` from row `top`,
+ * in `color`: shrunk whole, through a frame of its own, to the plaque's width when wider. */
+void writeOnPlaque(Canvas& canvas, const TextPainter& font, f32 centre, f32 top,
+                   std::string_view text, Color color) {
+    if (!font.ready() || text.empty()) {
+        return;
+    }
+    const auto width = static_cast<f32>(font.measure(text));
+    if (width <= 0) {
+        return;
+    }
+    const f32 fit = std::min(1.0f, static_cast<f32>(Layout::kPlaqueTextWidth) / width);
+    const CanvasFrame line(
+        canvas, glm::scale(glm::translate(Mat4{1.0f}, Vec3{centre - width * fit / 2, top, 0.0f}),
+                           Vec3{fit, fit, 1.0f}));
+    font.draw(canvas, 0, 0, text, TextStyle{.color = color});
+}
+
 } // namespace
 
 std::array<s32, 3> legendsN64TurboLevels(f32 shown) {
@@ -512,6 +531,8 @@ bool LegendsN64HudPainter::load(RenderDevice& device, const std::filesystem::pat
         throw;
     }
     loadTimer(device, files);
+    loadPlaques(device, files);
+    loadTitleFont(device, files);
     std::array<bool, kClassCount> taken{};
     for (const HudMember& member : party) {
         if (member.classIndex < 0 || member.classIndex >= kClassCount) {
@@ -527,7 +548,7 @@ bool LegendsN64HudPainter::load(RenderDevice& device, const std::filesystem::pat
 }
 
 void LegendsN64HudPainter::release() {
-    for (Font* font : {&m_small, &m_name, &m_numbers}) {
+    for (Font* font : {&m_small, &m_name, &m_numbers, &m_title}) {
         font->text.setFont(nullptr, nullptr);
         font->sheet.reset();
         font->glyphs = {};
@@ -671,6 +692,44 @@ void LegendsN64HudPainter::loadTimer(RenderDevice& device, const AssetLocator& f
     }
 }
 
+void LegendsN64HudPainter::loadPlaques(RenderDevice& device, const AssetLocator& files) {
+    // Every realm's bank at once, where the N64 keeps one at a time and reloads it for another
+    // realm's exit.
+    for (const std::string_view name : kPlaqueBanks) {
+        const auto bank = files.find(name);
+        if (!bank) {
+            continue;
+        }
+        try {
+            // A bank is taken whole or not at all: it is read through before any upload.
+            const auto pictures = formats::decodeLegendsN64Textures(readFile(*bank));
+            for (const formats::LegendsN64Texture& picture : pictures) {
+                if (picture.name.starts_with(kLegendsN64PlaquePrefix) && !picture.external &&
+                    !picture.image.pixels.empty()) {
+                    m_art.add(picture.name,
+                              uploadHudTexture(device, picture.image.width, picture.image.height,
+                                               picture.image.pixels));
+                }
+            }
+        } catch (const std::exception& error) {
+            log::warn("N64 HUD: {}: {}; its exits' plaques are left out", name, error.what());
+        }
+    }
+}
+
+void LegendsN64HudPainter::loadTitleFont(RenderDevice& device, const AssetLocator& files) {
+    const auto file = files.find(kTitleFontFile);
+    if (!file) {
+        return;
+    }
+    try {
+        loadFont(device, *file, kTitleFontFile, m_title);
+    } catch (const std::exception& error) {
+        log::warn("N64 HUD: {}; the port's plaques write their levels' names in {}", error.what(),
+                  kNameFontFile);
+    }
+}
+
 void LegendsN64HudPainter::borrowPictures(DarkLegacyHudArt& darkLegacy) {
     // Every picture of Dark Legacy's a count, the carousel or the quest page may show is taken
     // now, so that drawing looks nothing up.
@@ -719,6 +778,28 @@ void LegendsN64HudPainter::prepare(HudFrame& frame, const HudView& view) {
     easeMeters(view, steps, rewound);
     for (usize seat = 0; seat < m_seats.size(); ++seat) {
         turnPages(m_seats.at(seat), view.seats.at(seat), rewound);
+        namePad(m_seats.at(seat), view.seats.at(seat), steps, rewound);
+    }
+}
+
+void LegendsN64HudPainter::namePad(SeatPages& pages, const HudSeat& shown, s64 steps,
+                                   bool rewound) const {
+    std::optional<u32> wanted;
+    const LevelRef* destination = nullptr;
+    bool pictured = false;
+    if (shown.pad) {
+        // An imported exit answers by its own code; one of Dark Legacy's by the identity the
+        // view gives it, and names the level it leads to, for the port's own plaque.
+        wanted = shown.pad->nativeCode.value_or(shown.pad->identity);
+        destination = shown.pad->destination;
+        pictured = destination != nullptr || m_art.find(legendsN64PlaqueArt(*wanted)) != nullptr;
+    }
+    if (rewound) {
+        pages.plaque.snap(wanted, destination, pictured);
+        return;
+    }
+    for (s64 step = 0; step < steps; ++step) {
+        pages.plaque.step(wanted, destination, pictured);
     }
 }
 
@@ -882,7 +963,7 @@ void LegendsN64HudPainter::drawStatus(HudFrame& frame, const HudView& view) {
     {
         const CanvasFrame native(frame.canvas, LegendsN64Frame::transform());
         // FUN_e005835c paints every panel's background, frame and pictures, then the words over
-        // them, then the turbo meters' lights.
+        // them, then the turbo meters' lights, and last the plaques over the panels.
         for (usize seat = 0; seat < view.seats.size(); ++seat) {
             drawPanel(frame.canvas, seat, view.seats.at(seat));
         }
@@ -891,6 +972,9 @@ void LegendsN64HudPainter::drawStatus(HudFrame& frame, const HudView& view) {
         }
         for (usize seat = 0; seat < view.seats.size(); ++seat) {
             drawLights(frame.canvas, seat, view.seats.at(seat));
+        }
+        for (usize seat = 0; seat < view.seats.size(); ++seat) {
+            drawPlaque(frame.canvas, seat, view.seats.at(seat), view);
         }
     }
     drawCounts(frame.canvas, view);
@@ -1341,6 +1425,45 @@ void LegendsN64HudPainter::drawLights(Canvas& canvas, usize seat, const HudSeat&
             }
         }
     }
+}
+
+void LegendsN64HudPainter::drawPlaque(Canvas& canvas, usize seat, const HudSeat& shown,
+                                      const HudView& view) const {
+    const std::optional<LegendsN64Plaque::Shown>& plaque = m_seats.at(seat).plaque.shown();
+    if (!plaque) {
+        return;
+    }
+    const auto left = static_cast<f32>(Layout::kSlotX.at(seat));
+    const auto top = static_cast<f32>(Layout::kStripTop);
+    const auto opacity = static_cast<u8>(kOpaque - plaque->transparency);
+    const Color clear = Color::white().withAlpha(opacity);
+    if (!plaque->darkLegacy) {
+        // FUN_e0058560: the exit's own picture, over the whole panel.
+        if (const Texture* picture = m_art.find(legendsN64PlaqueArt(plaque->code))) {
+            canvas.draw(*picture,
+                        Rect{left, top, static_cast<f32>(picture->width()),
+                             static_cast<f32>(picture->height())},
+                        clear);
+        }
+        return;
+    }
+    // The port's own, as the N64's pictures are made: the panel's lit background and frame,
+    // the realm's name in gold and the level's under it in white, in the N64's fonts.
+    if (m_color != nullptr) {
+        drawMirrored(canvas, *m_color, left, top, true,
+                     shadeOf(Layout::kBright, shown.box.color).withAlpha(opacity));
+    }
+    if (m_border != nullptr) {
+        drawMirrored(canvas, *m_border, left, top, false, clear);
+    }
+    const f32 centre = left + static_cast<f32>(Layout::kPanelWidth) / 2;
+    // A level outside the realms Dark Legacy's scrolls name shows its title alone.
+    if (const auto realm = darkLegacyRealmNameText(plaque->realmId)) {
+        writeOnPlaque(canvas, m_small.text, centre, top + static_cast<f32>(Layout::kPlaqueRealmTop),
+                      words(view, *realm), Layout::kPlaqueRealmInk.withAlpha(opacity));
+    }
+    writeOnPlaque(canvas, m_title.text.ready() ? m_title.text : m_name.text, centre,
+                  top + static_cast<f32>(Layout::kPlaqueTitleTop), plaque->title, clear);
 }
 
 void LegendsN64HudPainter::drawCounts(Canvas& canvas, const HudView& view) const {

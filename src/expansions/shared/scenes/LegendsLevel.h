@@ -45,6 +45,9 @@ public:
         return m_messageStyle.get();
     }
     void drawEntranceTitle(Canvas& canvas, f32 width) const override;
+    /** In an N64 level, the exit seat `seat` touched at the last party update, as its HUD names
+     * exits; none in a Dreamcast level. */
+    std::optional<ImportedExit> exitUnder(s32 seat) const override;
     std::string_view hudStyleId() const override;
     void update(f32 seconds, bool timeStopped) override;
     void bindCollision(WorldCollision& collision) const override;

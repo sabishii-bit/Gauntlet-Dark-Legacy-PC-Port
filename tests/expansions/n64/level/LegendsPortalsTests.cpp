@@ -75,6 +75,62 @@ TEST_CASE("Legends portal contact uses native cylinder height and GDL player rea
     CHECK_FALSE(touchesLegendsPortal(portal, visitor));
 }
 
+TEST_CASE("the HUD hears the destination of the exit a seat stands on, a locked one too, and "
+          "whether it waits there",
+          "[legends][portal]") {
+    // The mountain's first level's exit, and an ordinary stage's, whose code 0 names nothing.
+    formats::LegendsN64Portal mountain;
+    mountain.destination = 0x0201;
+    mountain.position = {10, 2, -4};
+    mountain.radius = 2.5f;
+    mountain.height = 4;
+    formats::LegendsN64Portal home = mountain;
+    home.destination = 0;
+    home.position = {-40, 2, -4};
+    const std::array portals{mountain, home};
+    const Vec3 away{0, 2, 60};
+    // Seat 2 stands on the mountain's exit and seat 0 away from every exit; nobody plays seats
+    // 1 and 3. Whether the exit is open plays no part: the N64's contact list tests no lock.
+    std::array<LegendsPortalVisitor, 2> visitors{LegendsPortalVisitor{2, mountain.position, true},
+                                                 LegendsPortalVisitor{0, away, true}};
+    auto under = legendsN64ExitUnder(portals, visitors, 2);
+    REQUIRE(under);
+    CHECK(under->code == 0x0201U);
+    CHECK(under->waiting);
+    // Another seat's exit is not its own.
+    for (const s32 seat : {0, 1, 3, -1, 4}) {
+        CAPTURE(seat);
+        CHECK_FALSE(legendsN64ExitUnder(portals, visitors, seat));
+    }
+    // Once every living player is on it, nobody waits.
+    visitors[1].position = mountain.position + Vec3{1, 0, 0};
+    under = legendsN64ExitUnder(portals, visitors, 2);
+    REQUIRE(under);
+    CHECK_FALSE(under->waiting);
+    under = legendsN64ExitUnder(portals, visitors, 0);
+    REQUIRE(under);
+    CHECK(under->code == 0x0201U);
+    CHECK_FALSE(under->waiting);
+    // A fallen player is waited for by nobody, and stands on nothing.
+    visitors[1].position = away;
+    visitors[1].alive = false;
+    under = legendsN64ExitUnder(portals, visitors, 2);
+    REQUIRE(under);
+    CHECK_FALSE(under->waiting);
+    visitors[1].position = mountain.position;
+    CHECK_FALSE(legendsN64ExitUnder(portals, visitors, 0));
+    // An exit of code 0 names no destination, but its seat still waits there.
+    visitors[0].position = home.position;
+    visitors[1] = LegendsPortalVisitor{0, away, true};
+    under = legendsN64ExitUnder(portals, visitors, 2);
+    REQUIRE(under);
+    CHECK_FALSE(under->code);
+    CHECK(under->waiting);
+    // No exits, or no visitors, no exit.
+    CHECK_FALSE(legendsN64ExitUnder({}, visitors, 2));
+    CHECK_FALSE(legendsN64ExitUnder(portals, {}, 2));
+}
+
 TEST_CASE("Legends exits play startup and wait before one-shot departure", "[legends][portal]") {
     LegendsPortalMotion portal{20, true, true};
     CHECK(portal.phase() == Phase::Idle);

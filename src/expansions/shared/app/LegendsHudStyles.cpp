@@ -67,8 +67,19 @@ struct BuiltLook {
     PainterOpener open;
 };
 
+/** The N64 look's painter, from the N64 extraction `root`. */
+std::unique_ptr<HudPainter> openN64Look(RenderDevice& device, const std::filesystem::path& root,
+                                        DarkLegacyHudArt& darkLegacy,
+                                        std::span<const HudMember> party) {
+    auto look = std::make_unique<LegendsN64HudPainter>();
+    if (!look->load(device, root, darkLegacy, party)) {
+        return nullptr;
+    }
+    return look;
+}
+
 /** The looks this build has painters for; a look is offered only once it is listed here. */
-constexpr std::array<BuiltLook, 0> kBuiltLooks{};
+constexpr std::array kBuiltLooks{BuiltLook{kLegendsN64HudStyle, &openN64Look}};
 
 const LegendsHudLook* lookOf(std::string_view id) {
     // MSVC's checked array iterator is not a pointer; keep the portable iterator type.

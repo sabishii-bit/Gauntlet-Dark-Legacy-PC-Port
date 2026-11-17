@@ -76,6 +76,27 @@ LegendsHudRoots rootsOf(const std::filesystem::path& install) {
             .workingDirectory = install / "working"};
 }
 
+/** The synthetic N64 extraction of the look's painter tests, installed in a fresh `install` as
+ * the launcher installs it, with a map for legendsMaps to find it by. */
+struct InstalledN64 {
+    test::LegendsN64HudFixture files;
+    LegendsHudRoots roots;
+
+    explicit InstalledN64(std::string_view install)
+        : files(std::format("{}/n64/extracted", install)),
+          roots(rootsOf(files.root().parent_path().parent_path())) {
+        fixture(files.root() / "levels/tower2/worlds.wad");
+        fixture(files.root() / "levels/tower2/objects.wad");
+    }
+};
+
+/** The N64 look's offer as the HUD page is given it. */
+HudStyleOffer n64Offer(bool usable) {
+    return {.id = std::string(kLegendsN64HudStyle),
+            .label = std::string(kLegendsN64HudLabel),
+            .usable = usable};
+}
+
 /** Whether `found` is the folder `expected`. */
 bool sameFolder(const std::optional<std::filesystem::path>& found,
                 const std::filesystem::path& expected) {
@@ -91,7 +112,7 @@ struct Opening {
 
 /** Opens look `id` for a party of one, borrowing from `darkLegacy`, which outlives the opening. */
 Opening openingOf(std::string_view id, const LegendsHudRoots& roots, test::FakeRenderDevice& device,
-                  DarkLegacyHudPainter& darkLegacy) {
+                  DarkLegacyHudArt& darkLegacy) {
     const std::array party{HudMember{.seat = 1, .classIndex = 0, .color = 2}};
     Opening opening;
     opening.warnings = test::warningsWhile(
@@ -274,20 +295,17 @@ TEST_CASE("a look is offered only once its painter is built", "[legends][hud-sty
     const LegendsHudRoots roots = rootsOf(install);
     REQUIRE(legendsHudFilesFound(kLegendsN64HudStyle, roots));
     REQUIRE(legendsHudFilesFound(kLegendsDreamcastHudStyle, roots));
-    // Every file either look needs is there, but this build has a painter for neither.
-    CHECK(legendsHudStyles(roots).empty());
+    // Every file either look needs is there, but this build has a painter for the N64's alone.
+    CHECK(legendsHudStyles(roots) == std::vector<HudStyleOffer>{n64Offer(true)});
 
-    // Neither opens, each saying why in one warning, and nothing is uploaded.
+    // The Dreamcast's opens nothing, saying why in one warning, and nothing is uploaded.
     test::FakeRenderDevice device;
     DarkLegacyHudPainter darkLegacy;
-    for (const std::string_view id : std::array{kLegendsN64HudStyle, kLegendsDreamcastHudStyle}) {
-        CAPTURE(id);
-        const Opening opening = openingOf(id, roots, device, darkLegacy);
-        CHECK(opening.painter == nullptr);
-        REQUIRE(opening.warnings.size() == 1);
-        CHECK(opening.warnings[0].starts_with(std::format("HUD: the {} look could not be", id)));
-        CHECK(opening.warnings[0].find("no painter") != std::string::npos);
-    }
+    const Opening dreamcast = openingOf(kLegendsDreamcastHudStyle, roots, device, darkLegacy);
+    CHECK(dreamcast.painter == nullptr);
+    REQUIRE(dreamcast.warnings.size() == 1);
+    CHECK(dreamcast.warnings[0].starts_with("HUD: the dreamcast look could not be"));
+    CHECK(dreamcast.warnings[0].find("no painter") != std::string::npos);
     // Nor do Dark Legacy's own look or an id no look has.
     for (const std::string_view id :
          std::array<std::string_view, 2>{kDarkLegacyHudStyle, "future"}) {
@@ -331,4 +349,52 @@ TEST_CASE("a look whose files went after the probe opens nothing", "[legends][hu
     CHECK(gone.painter == nullptr);
     REQUIRE(gone.warnings.size() == 1);
     CHECK(gone.warnings[0].find("no extraction") != std::string::npos);
+}
+
+TEST_CASE("the N64 look is offered once its files are found", "[legends][hud-style]") {
+    const InstalledN64 n64("legends-hud-n64-offered");
+    // Offered, and usable: the HUD page lists it under its own name.
+    CHECK(legendsHudStyles(n64.roots) == std::vector<HudStyleOffer>{n64Offer(true)});
+
+    // Chosen, it opens the N64's painter, which takes its art at once with nothing to warn of.
+    test::FakeRenderDevice device;
+    test::FakeDarkLegacyArt art;
+    const Opening opening = openingOf(kLegendsN64HudStyle, n64.roots, device, art);
+    REQUIRE(opening.painter != nullptr);
+    CHECK(opening.painter->id() == kLegendsN64HudStyle);
+    CHECK(dynamic_cast<const LegendsN64HudPainter*>(opening.painter.get()) != nullptr);
+    CHECK(opening.warnings.empty());
+    CHECK(device.texturesCreated > 0);
+    CHECK_FALSE(art.lookups.empty());
+
+    // Without a file it cannot be drawn without, it is still listed, but cannot be chosen.
+    REQUIRE(std::filesystem::remove(n64.files.root() / LegendsN64HudPainter::kNumberFontFile));
+    CHECK(legendsHudStyles(n64.roots) == std::vector<HudStyleOffer>{n64Offer(false)});
+}
+
+TEST_CASE("an N64 look whose files are there but cannot be read opens nothing, and says which",
+          "[legends][hud-style]") {
+    std::string_view cut;
+    SECTION("its HUD bank cut short") {
+        cut = LegendsN64HudPainter::kHudBank;
+    }
+    SECTION("its health font cut short") {
+        cut = LegendsN64HudPainter::kNumberFontFile;
+    }
+    CAPTURE(cut);
+    const InstalledN64 n64("legends-hud-n64-unreadable");
+    n64.files.truncate(cut);
+    // Cut short, not removed: the probe finds it, and the look is offered.
+    REQUIRE(legendsHudFilesFound(kLegendsN64HudStyle, n64.roots));
+    CHECK(legendsHudStyles(n64.roots) == std::vector<HudStyleOffer>{n64Offer(true)});
+    // The scene's opening reads it, and draws Dark Legacy's look: no exception reaches it, and
+    // one warning names the file.
+    test::FakeRenderDevice device;
+    test::FakeDarkLegacyArt art;
+    Opening opening;
+    REQUIRE_NOTHROW(opening = openingOf(kLegendsN64HudStyle, n64.roots, device, art));
+    CHECK(opening.painter == nullptr);
+    REQUIRE(opening.warnings.size() == 1);
+    CHECK(opening.warnings[0].starts_with("HUD: the n64 look could not be opened ("));
+    CHECK(opening.warnings[0].find(cut) != std::string::npos);
 }

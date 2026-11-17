@@ -17,6 +17,7 @@
 #include "expansions/dreamcast/menu/LegendsDreamcastEntrance.h"
 #include "expansions/n64/bosses/LegendsLegend.h"
 #include "expansions/n64/formats/LegendsN64Texture.h"
+#include "expansions/n64/level/LegendsPortals.h"
 #include "expansions/n64/menu/LegendsDialogue.h"
 #include "expansions/n64/scenes/LegendsSumnerText.h"
 #include "expansions/shared/hud/LegendsHudStyleIds.h"
@@ -337,6 +338,13 @@ void LegendsLevel::drawEntranceTitle(Canvas& canvas, f32 width) const {
             }
         }
     }
+}
+
+std::optional<ImportedExit> LegendsLevel::exitUnder(s32 seat) const {
+    if (platform() != LegendsPlatform::N64) {
+        return std::nullopt;
+    }
+    return legendsN64ExitUnder(adapter().portals(), m_visitors, seat);
 }
 
 std::string_view LegendsLevel::hudStyleId() const {

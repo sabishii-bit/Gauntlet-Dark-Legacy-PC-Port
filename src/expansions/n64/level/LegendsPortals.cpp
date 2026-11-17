@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <optional>
+#include <span>
 #include <stdexcept>
 
 namespace gdl::game {
@@ -10,6 +12,35 @@ bool finite(const Vec3& point) {
     return std::isfinite(point.x) && std::isfinite(point.y) && std::isfinite(point.z);
 }
 } // namespace
+
+std::optional<ImportedExit> legendsN64ExitUnder(std::span<const formats::LegendsN64Portal> portals,
+                                                std::span<const LegendsPortalVisitor> visitors,
+                                                s32 seat) {
+    const auto visitor = std::ranges::find_if(visitors, [seat](const LegendsPortalVisitor& body) {
+        return static_cast<s32>(body.player) == seat;
+    });
+    if (visitor == visitors.end()) {
+        return std::nullopt;
+    }
+    // FUN_e0069c90 names the exit a player touches to its HUD (FUN_e0059ebc), whatever lets
+    // the party through it.
+    const auto exit = std::ranges::find_if(portals, [&](const formats::LegendsN64Portal& portal) {
+        return touchesLegendsPortal(portal, *visitor);
+    });
+    if (exit == portals.end()) {
+        return std::nullopt;
+    }
+    ImportedExit under;
+    if (exit->destination != 0) {
+        under.code = exit->destination;
+    }
+    // Every living player shares an exit before it takes the party (LegendsPortalMotion).
+    under.waiting = std::ranges::any_of(visitors, [&](const LegendsPortalVisitor& other) {
+        return other.alive && other.player != visitor->player &&
+               !touchesLegendsPortal(*exit, other);
+    });
+    return under;
+}
 
 LegendsPortalDeparture legendsPortalDeparture(f32 seconds) {
     if (!std::isfinite(seconds) || seconds < 0) {

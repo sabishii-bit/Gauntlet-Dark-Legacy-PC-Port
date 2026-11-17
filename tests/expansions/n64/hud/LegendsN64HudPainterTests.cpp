@@ -35,6 +35,7 @@
 #include "expansions/n64/hud/LegendsN64HudFixture.h"
 #include "expansions/n64/hud/LegendsN64HudLayout.h"
 #include "expansions/n64/hud/LegendsN64HudPainter.h"
+#include "expansions/n64/hud/LegendsN64Plaque.h"
 #include "expansions/shared/hud/LegendsHudClock.h"
 #include "expansions/shared/hud/LegendsHudStyleIds.h"
 #include "formats/AnimationTree.h"
@@ -54,6 +55,7 @@
 #include "game/hud/PickupHud.h"
 #include "game/hud/PowerupSelector.h"
 #include "game/hud/StatusBox.h"
+#include "game/level/LevelCatalog.h"
 #include "game/party/PlayerRuntime.h"
 #include "game/players/PlayerControls.h"
 
@@ -140,7 +142,8 @@ std::vector<std::string_view> pictureOrder(std::span<const Quad> quads, usize sl
 bool isText(const Quad& quad) {
     return Fixture::sheetOf(quad.texture, Fixture::kSmallFont) ||
            Fixture::sheetOf(quad.texture, Fixture::kNameFont) ||
-           Fixture::sheetOf(quad.texture, Fixture::kNumberFont);
+           Fixture::sheetOf(quad.texture, Fixture::kNumberFont) ||
+           Fixture::sheetOf(quad.texture, Fixture::kTitleFont);
 }
 
 /** The area `quads` cover together. */
@@ -505,6 +508,55 @@ constexpr std::array<HudMember, 2> kWarriorAndWizard{{
     {.seat = 0, .classIndex = kWarriorClass, .color = 0},
     {.seat = 1, .classIndex = kWizardClass, .color = 1},
 }};
+
+/** The lines `font` wrote through frames of their own, as a plaque writes each of its lines:
+ * each frame, in turn, with what it wrote in its units. */
+std::vector<std::pair<Mat4, std::vector<Line>>> framedLinesOf(std::span<const Quad> quads,
+                                                              const test::N64Font& font) {
+    std::vector<std::pair<Mat4, std::vector<Quad>>> frames;
+    for (const Quad& quad : quads) {
+        if (!Fixture::sheetOf(quad.texture, font) ||
+            quad.transform == LegendsN64Frame::transform()) {
+            continue;
+        }
+        if (frames.empty() || frames.back().first != quad.transform) {
+            frames.emplace_back(quad.transform, std::vector<Quad>{});
+        }
+        frames.back().second.push_back(quad);
+    }
+    std::vector<std::pair<Mat4, std::vector<Line>>> lines;
+    lines.reserve(frames.size());
+    for (const auto& [transform, glyphs] : frames) {
+        lines.emplace_back(transform, linesOf(glyphs, font));
+    }
+    return lines;
+}
+
+/** Checks `actual` is the N64's frame carrying a line from frame point `at` at `scale`. */
+void checkLineFrame(const Mat4& actual, Vec2 at, f32 scale) {
+    const Mat4 expected =
+        LegendsN64Frame::transform() *
+        glm::scale(glm::translate(Mat4{1.0f}, Vec3{at.x, at.y, 0.0f}), Vec3{scale, scale, 1.0f});
+    for (s32 column = 0; column < 4; ++column) {
+        for (s32 row = 0; row < 4; ++row) {
+            CAPTURE(column, row);
+            CHECK(actual[column][row] == Approx(expected[column][row]).margin(1e-4));
+        }
+    }
+}
+
+/** The quads drawn after the last of the turbo meters' lights. */
+std::vector<Quad> afterLights(std::span<const Quad> quads) {
+    usize first = 0;
+    for (usize index = 0; index < quads.size(); ++index) {
+        if (Fixture::pictureOf(quads[index].texture) == "TURBOCLR") {
+            first = index + 1;
+        }
+    }
+    REQUIRE(first > 0);
+    const std::span<const Quad> rest = quads.subspan(first);
+    return {rest.begin(), rest.end()};
+}
 
 } // namespace
 
@@ -1109,8 +1161,9 @@ TEST_CASE("the N64 look takes every picture it borrows as it opens", "[legends][
 
     // Every seat state and every part of the HUD, drawn twice: nothing is looked up or
     // uploaded while drawing. Seat 0 carries keys, a potion and an X-ray powerup, its selector
-    // up over its panel; seat 3, played here, browses to its quest page, holding the
-    // thirteenth rune, a scimitar and the first boss's key.
+    // up over its panel, standing on an N64 exit; seat 3, played here, browses to its quest
+    // page, holding the thirteenth rune, a scimitar and the first boss's key, standing on an
+    // exit of Dark Legacy's.
     Inventory carried;
     carried.powerups[0] = PowerupSlot{120, powerup::kSpecial, 0, powerup::kXRay, true};
     Holder holder(carried, 0);
@@ -1120,11 +1173,18 @@ TEST_CASE("the N64 look takes every picture it borrows as it opens", "[legends][
     carrying.box.keys = 2;
     carrying.box.potions = 1;
     carrying.box.potionKind = 3;
+    carrying.pad = HudPad{.identity = 0x0101, .nativeCode = 0x0101, .destination = nullptr};
+    LevelRef courtyard;
+    courtyard.realmId = 1;
+    courtyard.title = "Castle Courtyard";
     HudSeat questing = standing(kWarriorClass, 3, "D");
     questing.local = true;
     questing.legends = 0x2; // realm 1's
     questing.box.runes = StatusBoxPainter::kThirteenthRune;
     questing.box.bossKeys = 1;
+    questing.pad = HudPad{.identity = kDarkLegacyPadIdentityBase,
+                          .nativeCode = std::nullopt,
+                          .destination = &courtyard};
     PickupHud pickups;
     pickups.showCount(0, PickupHud::crystalIcon(1), 3, 15);
     const std::vector<std::string> lines{"WATCH OUT"};
@@ -1176,6 +1236,13 @@ TEST_CASE("the N64 look takes every picture it borrows as it opens", "[legends][
         CHECK(drawn(given.picture) == (std::ranges::find(taken, given.lookup) != taken.end()));
     }
     CHECK(drawn(&crystal));
+    // The plaques were among it: the N64's own picture, and the port's words in font 8.
+    CHECK(std::ranges::any_of(device.draws, [](const test::RecordedDraw& draw) {
+        return Fixture::pictureOf(draw.texture) == "LNAME_0101";
+    }));
+    CHECK(std::ranges::any_of(device.draws, [](const test::RecordedDraw& draw) {
+        return Fixture::sheetOf(draw.texture, Fixture::kTitleFont);
+    }));
 }
 
 TEST_CASE("the N64 look draws the parts it has no art of its own for in Dark Legacy's look",
@@ -2254,4 +2321,271 @@ TEST_CASE("a centred runestone or key entry draws its whole row across the panel
     prepareAt(n64, view, 7);
     quads = n64.panels(view);
     checkRect(only("RUNE13"), centredAt(0, Layout::kSelected, 28, 28));
+}
+
+TEST_CASE("an N64 exit shows its original plaque, a Dark Legacy exit the port's own, and the "
+          "tower's none",
+          "[legends][n64-hud]") {
+    LoadedLook n64("n64-hud-plaques", kWarriorAndWizard);
+    // Seat 0 stands on an N64 exit to the castle's first level; seat 1, in blue, on a Dark
+    // Legacy exit to a castle level; seat 2 on one back to the tower; seat 3, in green, on one to
+    // a level of the secret realm, which no scroll names.
+    LevelRef courtyard;
+    courtyard.realmId = 1;
+    courtyard.title = "Castle Courtyard";
+    LevelRef valley;
+    valley.realmId = LevelRef::kSecretRealm;
+    valley.title = "Hidden Valley";
+    const LevelRef tower = LevelRef::tower();
+    std::array<HudSeat, HudView::kSeats> seats{
+        standing(kWarriorClass, 0, "A"), standing(kWizardClass, 1, "B"),
+        standing(kWarriorClass, 2, "C"), standing(kWizardClass, 3, "D")};
+    seats[0].pad = HudPad{.identity = 0x0101, .nativeCode = 0x0101, .destination = nullptr};
+    seats[1].pad = HudPad{.identity = kDarkLegacyPadIdentityBase + 4,
+                          .nativeCode = std::nullopt,
+                          .destination = &courtyard};
+    seats[2].pad = HudPad{
+        .identity = kDarkLegacyPadIdentityBase, .nativeCode = std::nullopt, .destination = &tower};
+    seats[3].pad = HudPad{.identity = kDarkLegacyPadIdentityBase + 7,
+                          .nativeCode = std::nullopt,
+                          .destination = &valley};
+    HudView view = n64.viewOf(seats);
+    using Names = std::vector<std::string_view>;
+    const Names portMade{"COLOR", "COLOR", "COLOR", "COLOR", "BORDER", "BORDER"};
+    CHECK(Layout::kPlaqueRealmInk == Color::rgba(255, 231, 132));
+
+    // Every plaque at transparency `transparency`, drawn last over the panels, in the frame.
+    const auto checkPlaques = [&](u8 transparency) {
+        CAPTURE(transparency);
+        const auto opacity = static_cast<u8>(255 - transparency);
+        const Color clear = Color::white().withAlpha(opacity);
+        const std::vector<Quad> quads = n64.panels(view);
+        const std::vector<Quad> plaques = afterLights(quads);
+        // Seat 0's is the N64's own picture of the castle's first level, over its whole panel,
+        // and nothing of it stands under the lights.
+        CHECK(pictureOrder(plaques, 0) == Names{"LNAME_0101"});
+        CHECK(picturesIn(quads, "LNAME_0101").size() == 1);
+        const std::vector<Quad> castles = picturesIn(plaques, "LNAME_0101", 0);
+        REQUIRE(castles.size() == 1);
+        const Quad& castle = castles.front();
+        checkRect(castle.area, {0, kTop, 104, 50});
+        checkRect(castle.uv, {0, 0, 1, 1});
+        CHECK(castle.color == clear);
+        CHECK(castle.transform == LegendsN64Frame::transform());
+        // Seats 1 and 3 have the port's: the panel's background lit in the costume's bright
+        // shade, and its frame. The tower's exit has none.
+        for (const usize seat : {usize{1}, usize{3}}) {
+            CAPTURE(seat);
+            CHECK(pictureOrder(plaques, seat) == portMade);
+            const Rect slot{static_cast<f32>(Layout::kSlotX.at(seat)), kTop, 104, 50};
+            const Color bright = Layout::kBright.at(seat).withAlpha(opacity);
+            for (const Quad& quarter : picturesIn(plaques, "COLOR", seat)) {
+                CHECK(quarter.color == bright);
+                CHECK(quarter.transform == LegendsN64Frame::transform());
+            }
+            checkRect(covered(picturesIn(plaques, "COLOR", seat)), slot);
+            for (const Quad& half : picturesIn(plaques, "BORDER", seat)) {
+                CHECK(half.color == clear);
+            }
+            checkRect(covered(picturesIn(plaques, "BORDER", seat)), slot);
+        }
+        CHECK(pictureOrder(plaques, 2).empty());
+        // The realm's name in font 2 in gold, then the level's in font 8 in white, each centred
+        // on its panel's middle through a frame of its own; the secret level's title alone.
+        const auto realms = framedLinesOf(plaques, Fixture::kSmallFont);
+        REQUIRE(realms.size() == 1);
+        // 16 of font 2's 4 and a space of 3: 67 across, centred on panel 1's 156, at row 9.
+        checkLineFrame(realms[0].first, {156 - 67.0f / 2, kTop + 9}, 1);
+        CHECK(realms[0].second == std::vector<Line>{{0.5f, 0.5f, "CASTLE STRONGHOLD"}});
+        const auto titles = framedLinesOf(plaques, Fixture::kTitleFont);
+        REQUIRE(titles.size() == 2);
+        // 15 of font 8's 9 and a space of 6, 141 across, shrunk to the plaque's 96, at row 22.
+        checkLineFrame(titles[0].first, {156 - 48, kTop + 22}, 96.0f / 141);
+        CHECK(titles[0].second == std::vector<Line>{{0.5f, 0.5f, "CASTLE COURTYARD"}});
+        // 114 across over panel 3's 364, shrunk alike.
+        checkLineFrame(titles[1].first, {364 - 48, kTop + 22}, 96.0f / 114);
+        CHECK(titles[1].second == std::vector<Line>{{0.5f, 0.5f, "HIDDEN VALLEY"}});
+        for (const Quad& quad : plaques) {
+            if (Fixture::sheetOf(quad.texture, Fixture::kSmallFont)) {
+                CHECK(quad.color == Layout::kPlaqueRealmInk.withAlpha(opacity));
+            } else if (Fixture::sheetOf(quad.texture, Fixture::kTitleFont)) {
+                CHECK(quad.color == clear);
+            }
+        }
+    };
+    // The look's first sight of the seats only sets its clock going: no plaque yet.
+    prepareAt(n64, view, 0);
+    CHECK(afterLights(n64.panels(view)).empty());
+    // A step on, each is made at transparency 0xdf, and six more steps rest them at 0x1f.
+    prepareAt(n64, view, 1);
+    checkPlaques(0xdf);
+    for (s32 step = 2; step <= 7; ++step) {
+        prepareAt(n64, view, step);
+    }
+    checkPlaques(0x1f);
+
+    // Seat 0 steps off: its plaque clouds over and goes as the machine has it, the others
+    // staying at rest.
+    view.seats[0].pad.reset();
+    const auto castleShown = [&] {
+        const std::vector<Quad> plaques = afterLights(n64.panels(view));
+        CHECK(pictureOrder(plaques, 1) == portMade);
+        const auto castle = picturesIn(plaques, "LNAME_0101", 0);
+        return castle.empty() ? -1 : s32{castle.front().color.a};
+    };
+    std::vector<s32> opacities;
+    for (s32 step = 8; step <= 12; ++step) {
+        prepareAt(n64, view, step);
+        opacities.push_back(castleShown());
+    }
+    CHECK(opacities == std::vector<s32>{255 - 0x5f, 255 - 0x9f, 255 - 0xdf, 255 - 0xdf, -1});
+
+    // An N64 exit whose code has no picture shows nothing however long seat 0 stands on it...
+    view.seats[0].pad = HudPad{.identity = 0x0703, .nativeCode = 0x0703, .destination = nullptr};
+    for (s32 step = 13; step <= 20; ++step) {
+        CAPTURE(step);
+        prepareAt(n64, view, step);
+        CHECK(pictureOrder(afterLights(n64.panels(view)), 0).empty());
+    }
+    // ...and gives way at once: the town's second level's picture, from the town's bank, is made
+    // the step after the code is let go.
+    view.seats[0].pad = HudPad{.identity = 0x0702, .nativeCode = 0x0702, .destination = nullptr};
+    prepareAt(n64, view, 21);
+    CHECK(pictureOrder(afterLights(n64.panels(view)), 0).empty());
+    prepareAt(n64, view, 22);
+    std::vector<Quad> plaques = afterLights(n64.panels(view));
+    REQUIRE(pictureOrder(plaques, 0) == Names{"LNAME_0702"});
+    CHECK(picturesIn(plaques, "LNAME_0702", 0).front().color ==
+          Color::white().withAlpha(255 - 0xdf));
+
+    // A rewind stands every plaque where its seat's exit has it at rest.
+    prepareAt(n64, view, 5);
+    plaques = afterLights(n64.panels(view));
+    REQUIRE(pictureOrder(plaques, 0) == Names{"LNAME_0702"});
+    CHECK(picturesIn(plaques, "LNAME_0702", 0).front().color ==
+          Color::white().withAlpha(255 - 0x1f));
+    CHECK(picturesIn(plaques, "BORDER", 1).front().color == Color::white().withAlpha(255 - 0x1f));
+    CHECK(pictureOrder(plaques, 2).empty());
+}
+
+TEST_CASE("a missing or unreadable level-name bank or title font never stops the N64 look",
+          "[legends][n64-hud]") {
+    test::FakeRenderDevice device;
+    test::FakeDarkLegacyArt art;
+    StringTable strings;
+    REQUIRE(strings.load(test::dataDirectory() / "text", "en"));
+    LevelRef courtyard;
+    courtyard.realmId = 1;
+    courtyard.title = "Castle Courtyard";
+    // The plaques a step after seat 0 steps onto the castle's first exit, seat 1 onto the
+    // town's first and seat 2 onto one of Dark Legacy's.
+    const auto plaquesOf = [&](LegendsN64HudPainter& look) {
+        HudView view;
+        view.seats = {standing(kWarriorClass, 0, "A"),
+                      standing(kWizardClass, 1, "B"),
+                      standing(kWarriorClass, 2, "C"),
+                      {}};
+        view.seats[0].pad =
+            HudPad{.identity = 0x0101, .nativeCode = 0x0101, .destination = nullptr};
+        view.seats[1].pad =
+            HudPad{.identity = 0x0701, .nativeCode = 0x0701, .destination = nullptr};
+        view.seats[2].pad = HudPad{.identity = kDarkLegacyPadIdentityBase,
+                                   .nativeCode = std::nullopt,
+                                   .destination = &courtyard};
+        view.strings = &strings;
+        test::FakeRenderDevice drawing;
+        for (s32 step = 0; step < 2; ++step) {
+            view.seconds = secondsAt(step);
+            Canvas canvas;
+            canvas.begin(drawing, Mat4{1.0f});
+            HudFrame frame{canvas, drawing, art};
+            look.prepare(frame, view);
+            canvas.end();
+        }
+        Canvas canvas;
+        canvas.begin(drawing, Mat4{1.0f});
+        HudFrame frame{canvas, drawing, art};
+        look.drawStatus(frame, view);
+        canvas.end();
+        return afterLights(quadsOf(drawing));
+    };
+    using Names = std::vector<std::string_view>;
+    const Names portMade{"COLOR", "COLOR", "COLOR", "COLOR", "BORDER", "BORDER"};
+    // The level's name over panel 2's middle, 208 + 52, at row 22: in font 8 by its fixture's
+    // 141, shrunk to 96, else in font 5, 15 of its 6 and a space of 5.
+    const auto checkTitle = [](std::span<const Quad> plaques, const test::N64Font& font) {
+        const auto titles = framedLinesOf(plaques, font);
+        REQUIRE(titles.size() == 1);
+        const bool shrunk = font.file == Fixture::kTitleFont.file;
+        checkLineFrame(titles[0].first, {shrunk ? 260 - 48 : 260 - 95.0f / 2, kTop + 22},
+                       shrunk ? 96.0f / 141 : 1);
+        CHECK(titles[0].second == std::vector<Line>{{0.5f, 0.5f, "CASTLE COURTYARD"}});
+    };
+    // Loads `look` from `files`; the warnings it wrote. The look must outlive the draws read
+    // from it, as they point at its pictures.
+    const auto loadFrom = [&](LegendsN64HudPainter& look, const Fixture& files) {
+        bool loaded = false;
+        auto run = test::logWhile(
+            [&] { loaded = look.load(device, files.root(), art, kWarriorAndWizard); });
+        REQUIRE_FALSE(run.failure);
+        CHECK(loaded);
+        return std::move(run.warnings);
+    };
+
+    SECTION("everything there") {
+        const Fixture files("n64-hud-plaques-whole");
+        LegendsN64HudPainter look;
+        CHECK(loadFrom(look, files).empty());
+        const std::vector<Quad> plaques = plaquesOf(look);
+        CHECK(pictureOrder(plaques, 0) == Names{"LNAME_0101"});
+        CHECK(pictureOrder(plaques, 1) == Names{"LNAME_0701"});
+        CHECK(pictureOrder(plaques, 2) == portMade);
+        checkTitle(plaques, Fixture::kTitleFont);
+    }
+    SECTION("no level-name banks") {
+        const Fixture files("n64-hud-plaques-no-banks");
+        REQUIRE(std::filesystem::remove(files.root() / Fixture::kTownPlaqueBank));
+        REQUIRE(std::filesystem::remove(files.root() / Fixture::kCastlePlaqueBank));
+        LegendsN64HudPainter look;
+        CHECK(loadFrom(look, files).empty());
+        // The N64's exits show nothing; Dark Legacy's still the port's.
+        const std::vector<Quad> plaques = plaquesOf(look);
+        CHECK(pictureOrder(plaques, 0).empty());
+        CHECK(pictureOrder(plaques, 1).empty());
+        CHECK(pictureOrder(plaques, 2) == portMade);
+    }
+    SECTION("a level-name bank cut short") {
+        const Fixture files("n64-hud-plaques-short-bank");
+        files.truncate(Fixture::kCastlePlaqueBank);
+        LegendsN64HudPainter look;
+        // The castle's exits lose theirs, with one warning naming its bank; the town's keep
+        // theirs.
+        const std::vector<std::string> warnings = loadFrom(look, files);
+        REQUIRE(warnings.size() == 1);
+        CHECK(warnings.front().find(Fixture::kCastlePlaqueBank) != std::string::npos);
+        const std::vector<Quad> plaques = plaquesOf(look);
+        CHECK(pictureOrder(plaques, 0).empty());
+        CHECK(pictureOrder(plaques, 1) == Names{"LNAME_0701"});
+        CHECK(pictureOrder(plaques, 2) == portMade);
+    }
+    SECTION("no title font") {
+        const Fixture files("n64-hud-plaques-no-title");
+        REQUIRE(std::filesystem::remove(files.root() / Fixture::kTitleFont.file));
+        LegendsN64HudPainter look;
+        CHECK(loadFrom(look, files).empty());
+        const std::vector<Quad> plaques = plaquesOf(look);
+        CHECK(framedLinesOf(plaques, Fixture::kTitleFont).empty());
+        checkTitle(plaques, Fixture::kNameFont);
+    }
+    SECTION("a title font cut short") {
+        const Fixture files("n64-hud-plaques-short-title");
+        files.truncate(Fixture::kTitleFont.file);
+        LegendsN64HudPainter look;
+        const std::vector<std::string> warnings = loadFrom(look, files);
+        REQUIRE(warnings.size() == 1);
+        CHECK(warnings.front().find(Fixture::kTitleFont.file) != std::string::npos);
+        const std::vector<Quad> plaques = plaquesOf(look);
+        CHECK(framedLinesOf(plaques, Fixture::kTitleFont).empty());
+        checkTitle(plaques, Fixture::kNameFont);
+    }
 }

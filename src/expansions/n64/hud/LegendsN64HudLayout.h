@@ -111,6 +111,14 @@ struct LegendsN64HudLayout {
      * clear of the panels' top (300.28); no label rises over the panels to push them. */
     static constexpr s32 kTickerRestTop = 282;
 
+    /** The port's plaque for an exit of Dark Legacy's, lettered as the N64's LNAME pictures
+     * are: the realm's name in gold from row kPlaqueRealmTop, the level's in white from
+     * kPlaqueTitleTop, each centred on the panel and shrunk to kPlaqueTextWidth when wider. */
+    static constexpr s32 kPlaqueRealmTop = 9;
+    static constexpr s32 kPlaqueTitleTop = 22;
+    static constexpr s32 kPlaqueTextWidth = 96;
+    static constexpr Color kPlaqueRealmInk = Color::rgba(255, 231, 132);
+
     // FUN_e0069ee0: the hourglass, TIMER_P0's glass with TIMER_P1's sand drawn from the same
     // corner, cropped to the rows of sand each bulb holds, and SAND_ANIM's grains between them.
     // f, the share of the time gone, drains the top bulb from its top and fills the bottom one

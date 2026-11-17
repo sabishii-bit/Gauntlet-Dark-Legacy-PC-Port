@@ -142,7 +142,8 @@ inline std::vector<u8> n64FontBytes(const N64Font& font) {
 
 /** A synthetic N64 extraction holding what the N64 look draws from: the HUD bank's pictures,
  * the three fonts, the warrior's and the wizard's portraits, the wizard's light as tall as
- * WIZ_P1, and the hourglass's timer bank. */
+ * WIZ_P1, the hourglass's timer bank, two realms' level-name pictures and the plaques' title
+ * font. */
 class LegendsN64HudFixture {
 public:
     /** The HUD bank's pictures the look draws: the panels', the advice scrolls, and the
@@ -218,8 +219,19 @@ public:
         {.name = "WIZ_P1", .width = 35, .height = 35, .mark = 32},
         {.name = "WIZ_P2", .width = 35, .height = 33, .mark = 33},
     }};
+    /** The town's and the castle's level-name pictures, of the town's first two levels and the
+     * castle's first. */
+    static constexpr std::array<N64Picture, 2> kTownPlaques{{
+        {.name = "LNAME_0701", .width = 104, .height = 50, .mark = 90},
+        {.name = "LNAME_0702", .width = 104, .height = 50, .mark = 91},
+    }};
+    static constexpr std::array<N64Picture, 1> kCastlePlaques{{
+        {.name = "LNAME_0101", .width = 104, .height = 50, .mark = 92},
+    }};
     static constexpr std::string_view kWarriorBank = "hud/warf/objects.wad";
     static constexpr std::string_view kWizardBank = "hud/wizf/objects.wad";
+    static constexpr std::string_view kTownPlaqueBank = "levelname/town/objects.wad";
+    static constexpr std::string_view kCastlePlaqueBank = "levelname/castle/objects.wad";
     /** In code order, as a font's directory runs. */
     static constexpr std::string_view kCharacters = "./0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
     static constexpr N64Font kSmallFont{.file = game::LegendsN64HudPainter::kSmallFontFile,
@@ -244,13 +256,24 @@ public:
                                          .lineHeight = 9,
                                          .space = 4,
                                          .intensityAlpha = true};
+    /** The capitals alone, wider than the other fonts' (a glyph's place is a byte, so 26 of 9
+     * fit along one row). */
+    static constexpr N64Font kTitleFont{.file = game::LegendsN64HudPainter::kTitleFontFile,
+                                        .codes = "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                                        .columns = 9,
+                                        .rows = 12,
+                                        .atlasRows = 12,
+                                        .lineHeight = 19,
+                                        .space = 6};
 
     explicit LegendsN64HudFixture(std::string_view name) : m_root(scratchDirectory(name)) {
         writeBank(game::LegendsN64HudPainter::kHudBank, kHudPictures);
         writeBank(kWarriorBank, kWarriorPortraits);
         writeBank(kWizardBank, kWizardPortraits);
         writeBank(game::LegendsN64HudPainter::kTimerBank, kTimerPictures);
-        for (const N64Font& font : {kSmallFont, kNameFont, kNumberFont}) {
+        writeBank(kTownPlaqueBank, kTownPlaques);
+        writeBank(kCastlePlaqueBank, kCastlePlaques);
+        for (const N64Font& font : {kSmallFont, kNameFont, kNumberFont, kTitleFont}) {
             write(font.file, n64FontBytes(font));
         }
     }
@@ -280,8 +303,9 @@ public:
         if (image == nullptr || image->pixels.empty()) {
             return {};
         }
-        const std::array<std::span<const N64Picture>, 4> banks{kHudPictures, kWarriorPortraits,
-                                                               kWizardPortraits, kTimerPictures};
+        const std::array<std::span<const N64Picture>, 6> banks{kHudPictures,     kWarriorPortraits,
+                                                               kWizardPortraits, kTimerPictures,
+                                                               kTownPlaques,     kCastlePlaques};
         for (const std::span<const N64Picture> bank : banks) {
             for (const N64Picture& picture : bank) {
                 if (picture.mark == image->pixels.front() && picture.width == image->width() &&
