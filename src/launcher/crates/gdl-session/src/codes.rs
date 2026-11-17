@@ -4,10 +4,15 @@
 //! stop has no code: it ends as cancelled rather than failed, so it is never shown as a problem or
 //! retried as one.
 
+use std::io;
+
+use gdl_extract::ExtractError;
+use gdl_files::FilesError;
 use gdl_install::{
     FolderError, FolderState, GameStartError, GameUseError, LockError, PayloadError, ReceiptError,
     SectionsError,
 };
+use gdl_media::{DiscRule, DumpRefusal, MediaError, RomRule};
 
 use crate::privilege::Refusal;
 
@@ -17,6 +22,9 @@ const PAYLOAD_DAMAGED: &str = "payload.damaged";
 
 /// Looking at, reading or writing a file or folder failed.
 const IO_FAILED: &str = "io.failed";
+
+/// Writing a file found the disk full or the quota spent.
+const SPACE_RAN_OUT: &str = "space.ranOut";
 
 /// The installation's folder, a folder above it, or an entry in it that the launcher reads or
 /// changes is a link or a junction.
@@ -31,6 +39,10 @@ const FOLDER_NOT_WRITABLE: &str = "folder.notWritable";
 /// The folder holds an installation that the alpha's installer made, which the launcher leaves as
 /// it is.
 const FOLDER_ALPHA_INSTALL: &str = "folder.alphaInstall";
+
+/// Something is already where the launcher was to put what it made, and the launcher never
+/// replaces what it did not make.
+const FOLDER_COLLISION: &str = "folder.collision";
 
 /// Another job holds the installation's lock.
 const LOCK_BUSY: &str = "lock.busy";
@@ -63,15 +75,48 @@ const ELEVATED_REFUSED: &str = "elevated.refused";
 /// The window does not start as root unless the player allows it.
 const ROOT_REFUSED: &str = "root.refused";
 
+/// The dump is nothing the launcher knows: its content is that of no container the launcher reads,
+/// nor of one it knows to refuse.
+const SOURCE_UNRECOGNIZED: &str = "source.unrecognized";
+
+/// The dump is of another game.
+const SOURCE_OTHER_GAME: &str = "source.otherGame";
+
+/// The dump is of the game, but of another region or revision than the one the launcher installs
+/// from.
+const SOURCE_OTHER_REVISION: &str = "source.otherRevision";
+
+/// The dump comes in a container the launcher does not read, such as a compressed disc image or a
+/// cue sheet that keeps the whole disc in one file.
+const SOURCE_UNSUPPORTED_CONTAINER: &str = "source.unsupportedContainer";
+
+/// The dump is a DiscJuggler image, a copy rebuilt for a CD-R, rather than a dump of the GD-ROM.
+const DUMP_DC_CDI: &str = "dump.dc.cdi";
+
+/// The dump is an archive, to unpack first.
+const SOURCE_ARCHIVE: &str = "source.archive";
+
+/// Part of the dump is not there: a file it needs is missing, or ends before what it must hold.
+const SOURCE_INCOMPLETE: &str = "source.incomplete";
+
+/// The dump breaks a rule of its format, or holds files that would make a tree that breaks one.
+const SOURCE_DAMAGED: &str = "source.damaged";
+
+/// The dump's bytes, or a file's, are not the ones the launcher holds them to, or a file of the
+/// dump changed while it was read.
+const DUMP_HASH_MISMATCH: &str = "dump.hashMismatch";
+
 /// Every code this module's functions give, each once: the codes the page's string table holds
 /// words for.
-pub const CODES: [&str; 16] = [
+pub const CODES: [&str; 27] = [
     PAYLOAD_DAMAGED,
     IO_FAILED,
+    SPACE_RAN_OUT,
     FOLDER_LINKS,
     FOLDER_NOT_DIRECTORY,
     FOLDER_NOT_WRITABLE,
     FOLDER_ALPHA_INSTALL,
+    FOLDER_COLLISION,
     LOCK_BUSY,
     GAME_RUNNING,
     GAME_MISSING,
@@ -82,9 +127,19 @@ pub const CODES: [&str; 16] = [
     JOURNAL_UNREADABLE,
     ELEVATED_REFUSED,
     ROOT_REFUSED,
+    SOURCE_UNRECOGNIZED,
+    SOURCE_OTHER_GAME,
+    SOURCE_OTHER_REVISION,
+    SOURCE_UNSUPPORTED_CONTAINER,
+    DUMP_DC_CDI,
+    SOURCE_ARCHIVE,
+    SOURCE_INCOMPLETE,
+    SOURCE_DAMAGED,
+    DUMP_HASH_MISMATCH,
 ];
 
-/// What a refusal met while reading a runtime, or the launcher file that carries one, reports.
+/// What a refusal a job meets reports: that the job was asked to stop, or the problem it fails
+/// with.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Report {
     /// The job was asked to stop, and ends as cancelled.
@@ -251,21 +306,200 @@ pub fn refusal(refusal: Refusal) -> &'static str {
     }
 }
 
+/// The code a failure to read a dump reports. A cancel has none, and the system's failure to read
+/// the dump is `io.failed`. A disc file's copy whose writer would not take its bytes is
+/// `space.ranOut` when the writer found no room, else `io.failed`. A dump that breaks a rule of
+/// its format reports that rule's code: one with a part that is not there is `source.incomplete`,
+/// one in a container the launcher does not read `source.unsupportedContainer`, a disc of another
+/// game `source.otherGame`, and a file that is no dump the launcher knows `source.unrecognized`.
+/// Any other broken rule is `source.damaged`.
+pub fn media(error: &MediaError) -> Report {
+    match error {
+        MediaError::Cancelled => Report::Cancelled,
+        MediaError::Io { .. } => Report::Error(IO_FAILED),
+        MediaError::Write { source, .. } => Report::Error(written(source)),
+        MediaError::Rom { rule, .. } => Report::Error(rom_rule(*rule)),
+        MediaError::Disc { rule, .. } => Report::Error(disc_rule(*rule)),
+    }
+}
+
+/// The code a dump refused for its container or its identity reports.
+pub fn dump_refusal(refusal: DumpRefusal) -> &'static str {
+    match refusal {
+        DumpRefusal::OtherGame => SOURCE_OTHER_GAME,
+        DumpRefusal::OtherRevision => SOURCE_OTHER_REVISION,
+        DumpRefusal::HashMismatch => DUMP_HASH_MISMATCH,
+        DumpRefusal::UnsupportedContainer => SOURCE_UNSUPPORTED_CONTAINER,
+        DumpRefusal::Cdi => DUMP_DC_CDI,
+        DumpRefusal::Archive => SOURCE_ARCHIVE,
+        DumpRefusal::Unrecognized => SOURCE_UNRECOGNIZED,
+    }
+}
+
+/// The code a refusal of one of the launcher's file operations reports, such as making a staging
+/// and writing into it. A name taken where a staged root was to go is `folder.collision`, and a
+/// write that found the disk full or the quota spent is `space.ranOut`. A link is `io.failed`:
+/// one found among what the launcher made was put there by something else, and a job that checks
+/// a path the player or a developer chose reports a link on it as `folder.links` itself. Any other
+/// refusal is `io.failed`.
+pub fn files(error: &FilesError) -> &'static str {
+    match error {
+        FilesError::Io { source, .. } => written(source),
+        FilesError::Exists { .. } => FOLDER_COLLISION,
+        FilesError::Link { .. }
+        | FilesError::TooLarge { .. }
+        | FilesError::Json { .. }
+        | FilesError::NotRoot { .. } => IO_FAILED,
+    }
+}
+
+/// The code an extraction's failure reports. A cancel has none. A reader's failure reports what
+/// [`media`] gives it, the staging's what [`files`] gives it, and a dump an installation's trust
+/// does not name what [`dump_refusal`] gives its refusal. Writing or reading back a staged file is
+/// `space.ranOut` when the disk was full or the quota spent, else `io.failed`. A dump whose tree
+/// would break a rule that keeps it one tree on every system, or whose native table is missing,
+/// too large or cut short, is `source.damaged`; a disc whose files do not match the fingerprints
+/// the trust holds, or that gave other bytes to be written than to be checked, is
+/// `dump.hashMismatch`.
+pub fn extract(error: &ExtractError) -> Report {
+    match error {
+        ExtractError::Cancelled => Report::Cancelled,
+        ExtractError::Media(error) => media(error),
+        ExtractError::Files(error) => Report::Error(files(error)),
+        ExtractError::Io { source, .. } => Report::Error(written(source)),
+        ExtractError::Tree { .. } | ExtractError::Native { .. } => Report::Error(SOURCE_DAMAGED),
+        ExtractError::Fingerprint { .. } | ExtractError::Changed { .. } => {
+            Report::Error(DUMP_HASH_MISMATCH)
+        }
+        ExtractError::Refused { refusal } => Report::Error(dump_refusal(*refusal)),
+    }
+}
+
+/// The code of a rule of the N64 ROM's format: a ROM shorter than its header, or cut off within a
+/// word, is `source.incomplete`, and a file whose first word is that of no byte order a cartridge
+/// is kept in is no ROM the launcher knows, `source.unrecognized`. Every other rule is
+/// `source.damaged`.
+fn rom_rule(rule: RomRule) -> &'static str {
+    match rule {
+        RomRule::Header => SOURCE_INCOMPLETE,
+        RomRule::ByteOrder => SOURCE_UNRECOGNIZED,
+        RomRule::RomTooLarge
+        | RomRule::RomdiskHeader
+        | RomRule::OutsideData
+        | RomRule::DirectoryCount
+        | RomRule::DirectoryOverlap
+        | RomRule::RecordPlace
+        | RomRule::UnterminatedPath
+        | RomRule::NonAsciiPath
+        | RomRule::LeadingSlash
+        | RomRule::UnsafePath
+        | RomRule::DuplicatePath
+        | RomRule::Collision
+        | RomRule::Flags
+        | RomRule::FileSize
+        | RomRule::FileOverlap
+        | RomRule::ExpandedSize
+        | RomRule::Deflate
+        | RomRule::DeflateEnd
+        | RomRule::DeflateTrailer
+        | RomRule::OverlayPadding
+        | RomRule::OverlayMetadata
+        | RomRule::OverlayName
+        | RomRule::WadHeader
+        | RomRule::WadDirectory
+        | RomRule::WadSection => SOURCE_DAMAGED,
+    }
+}
+
+/// The code of a rule of the Dreamcast disc's format, of the sheet that lists its track files, or
+/// of the raw sectors they keep: a rule that tells of a part of the disc that is not there is
+/// `source.incomplete`, one that tells of a container the launcher does not read
+/// `source.unsupportedContainer`, the boot area of another game `source.otherGame`, and a file too
+/// long to be a sheet `source.unrecognized`. Every other rule is `source.damaged`.
+fn disc_rule(rule: DiscRule) -> &'static str {
+    match rule {
+        DiscRule::MissingTrack
+        | DiscRule::TruncatedTrack
+        | DiscRule::ShortRead
+        | DiscRule::NoSheet => SOURCE_INCOMPLETE,
+        DiscRule::TrackPerFile
+        | DiscRule::TrackMode
+        | DiscRule::GdiSectorSize
+        | DiscRule::GdiOffset
+        | DiscRule::HighDensityStart
+        | DiscRule::SeveralSheets => SOURCE_UNSUPPORTED_CONTAINER,
+        DiscRule::NotGauntletLegends => SOURCE_OTHER_GAME,
+        DiscRule::SheetTooLarge => SOURCE_UNRECOGNIZED,
+        DiscRule::SectorHeader
+        | DiscRule::SectorBcd
+        | DiscRule::SectorTime
+        | DiscRule::SheetText
+        | DiscRule::TrackName
+        | DiscRule::MissingIndex
+        | DiscRule::NumberTooLarge
+        | DiscRule::CueTime
+        | DiscRule::CueLine
+        | DiscRule::IncompleteSheet
+        | DiscRule::DuplicateTrack
+        | DiscRule::GdiCount
+        | DiscRule::GdiLine
+        | DiscRule::GdiTrackNumber
+        | DiscRule::GdiTrackType
+        | DiscRule::GdiFirstSector
+        | DiscRule::OverlappingTracks
+        | DiscRule::ExtentOutside
+        | DiscRule::SectorAddress
+        | DiscRule::SectorEdc
+        | DiscRule::TextField
+        | DiscRule::VolumeDescriptor
+        | DiscRule::RootNotDirectory
+        | DiscRule::BothEndian
+        | DiscRule::RecordTruncated
+        | DiscRule::RecordUnsupported
+        | DiscRule::FileIdentifier
+        | DiscRule::DirectoryShape
+        | DiscRule::Entries
+        | DiscRule::EntryName
+        | DiscRule::SizesHeader
+        | DiscRule::SizesTable
+        | DiscRule::SizesName
+        | DiscRule::SizesNoName
+        | DiscRule::SizesNameUnsafe
+        | DiscRule::SizesDuplicate
+        | DiscRule::SizesExtent
+        | DiscRule::SizesConflict => SOURCE_DAMAGED,
+    }
+}
+
+/// The code a failed write reports, by what the system answered: `space.ranOut` when the disk was
+/// full or the quota spent, else `io.failed`.
+fn written(error: &io::Error) -> &'static str {
+    // The system's kinds of failure are an open set, so this match alone ends in a wildcard: every
+    // kind but the two that mean no room is left is a write that failed.
+    match error.kind() {
+        io::ErrorKind::StorageFull | io::ErrorKind::QuotaExceeded => SPACE_RAN_OUT,
+        _ => IO_FAILED,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
     use std::io;
     use std::path::PathBuf;
 
+    use gdl_extract::{ExtractError, FingerprintRule, NativeRule, TreeRule};
+    use gdl_files::{DISC_NAMES, FilesError, RelPath};
     use gdl_install::{
         BuildInfo, FolderError, FolderState, GameStartError, GameUseError, LockError, PayloadError,
         ReceiptError, SectionsError,
     };
+    use gdl_media::{DiscRule, DumpRefusal, MediaError, RomRule};
     use gdl_release::Platform;
 
     use super::{
-        CODES, Report, folder, game_start, game_use, lock, payload, receipt, refusal, sections,
-        state,
+        CODES, Report, dump_refusal, extract, files, folder, game_start, game_use, lock, media,
+        payload, receipt, refusal, sections, state,
     };
     use crate::privilege::Refusal;
 
@@ -274,6 +508,106 @@ mod tests {
 
     /// What a failure to read or copy a runtime, or to read the launcher file, reports.
     const FAILED: Report = Report::Error("io.failed");
+
+    /// Every rule of the N64 ROM's format, with its code: only a ROM cut short and a file of no
+    /// byte order are told apart from damage.
+    const ROM_RULES: [(RomRule, &str); 27] = [
+        (RomRule::Header, "source.incomplete"),
+        (RomRule::ByteOrder, "source.unrecognized"),
+        (RomRule::RomTooLarge, "source.damaged"),
+        (RomRule::RomdiskHeader, "source.damaged"),
+        (RomRule::OutsideData, "source.damaged"),
+        (RomRule::DirectoryCount, "source.damaged"),
+        (RomRule::DirectoryOverlap, "source.damaged"),
+        (RomRule::RecordPlace, "source.damaged"),
+        (RomRule::UnterminatedPath, "source.damaged"),
+        (RomRule::NonAsciiPath, "source.damaged"),
+        (RomRule::LeadingSlash, "source.damaged"),
+        (RomRule::UnsafePath, "source.damaged"),
+        (RomRule::DuplicatePath, "source.damaged"),
+        (RomRule::Collision, "source.damaged"),
+        (RomRule::Flags, "source.damaged"),
+        (RomRule::FileSize, "source.damaged"),
+        (RomRule::FileOverlap, "source.damaged"),
+        (RomRule::ExpandedSize, "source.damaged"),
+        (RomRule::Deflate, "source.damaged"),
+        (RomRule::DeflateEnd, "source.damaged"),
+        (RomRule::DeflateTrailer, "source.damaged"),
+        (RomRule::OverlayPadding, "source.damaged"),
+        (RomRule::OverlayMetadata, "source.damaged"),
+        (RomRule::OverlayName, "source.damaged"),
+        (RomRule::WadHeader, "source.damaged"),
+        (RomRule::WadDirectory, "source.damaged"),
+        (RomRule::WadSection, "source.damaged"),
+    ];
+
+    /// Every rule of the Dreamcast disc's format, its sheet's and its sectors', with its code.
+    const DISC_RULES: [(DiscRule, &str); 50] = [
+        (DiscRule::SectorHeader, "source.damaged"),
+        (DiscRule::SectorBcd, "source.damaged"),
+        (DiscRule::SectorTime, "source.damaged"),
+        (DiscRule::SheetText, "source.damaged"),
+        (DiscRule::SheetTooLarge, "source.unrecognized"),
+        (DiscRule::TrackName, "source.damaged"),
+        (DiscRule::MissingIndex, "source.damaged"),
+        (DiscRule::TrackPerFile, "source.unsupportedContainer"),
+        (DiscRule::NumberTooLarge, "source.damaged"),
+        (DiscRule::TrackMode, "source.unsupportedContainer"),
+        (DiscRule::CueTime, "source.damaged"),
+        (DiscRule::CueLine, "source.damaged"),
+        (DiscRule::IncompleteSheet, "source.damaged"),
+        (DiscRule::DuplicateTrack, "source.damaged"),
+        (DiscRule::GdiCount, "source.damaged"),
+        (DiscRule::GdiLine, "source.damaged"),
+        (DiscRule::GdiTrackNumber, "source.damaged"),
+        (DiscRule::GdiTrackType, "source.damaged"),
+        (DiscRule::GdiSectorSize, "source.unsupportedContainer"),
+        (DiscRule::GdiOffset, "source.unsupportedContainer"),
+        (DiscRule::MissingTrack, "source.incomplete"),
+        (DiscRule::TruncatedTrack, "source.incomplete"),
+        (DiscRule::GdiFirstSector, "source.damaged"),
+        (DiscRule::OverlappingTracks, "source.damaged"),
+        (DiscRule::HighDensityStart, "source.unsupportedContainer"),
+        (DiscRule::ExtentOutside, "source.damaged"),
+        (DiscRule::ShortRead, "source.incomplete"),
+        (DiscRule::SectorAddress, "source.damaged"),
+        (DiscRule::SectorEdc, "source.damaged"),
+        (DiscRule::NotGauntletLegends, "source.otherGame"),
+        (DiscRule::TextField, "source.damaged"),
+        (DiscRule::VolumeDescriptor, "source.damaged"),
+        (DiscRule::RootNotDirectory, "source.damaged"),
+        (DiscRule::BothEndian, "source.damaged"),
+        (DiscRule::RecordTruncated, "source.damaged"),
+        (DiscRule::RecordUnsupported, "source.damaged"),
+        (DiscRule::FileIdentifier, "source.damaged"),
+        (DiscRule::DirectoryShape, "source.damaged"),
+        (DiscRule::Entries, "source.damaged"),
+        (DiscRule::EntryName, "source.damaged"),
+        (DiscRule::SizesHeader, "source.damaged"),
+        (DiscRule::SizesTable, "source.damaged"),
+        (DiscRule::SizesName, "source.damaged"),
+        (DiscRule::SizesNoName, "source.damaged"),
+        (DiscRule::SizesNameUnsafe, "source.damaged"),
+        (DiscRule::SizesDuplicate, "source.damaged"),
+        (DiscRule::SizesExtent, "source.damaged"),
+        (DiscRule::SizesConflict, "source.damaged"),
+        (DiscRule::NoSheet, "source.incomplete"),
+        (DiscRule::SeveralSheets, "source.unsupportedContainer"),
+    ];
+
+    /// Every reason a dump is refused for its container or its identity, with its code.
+    const DUMP_REFUSALS: [(DumpRefusal, &str); 7] = [
+        (DumpRefusal::OtherGame, "source.otherGame"),
+        (DumpRefusal::OtherRevision, "source.otherRevision"),
+        (DumpRefusal::HashMismatch, "dump.hashMismatch"),
+        (
+            DumpRefusal::UnsupportedContainer,
+            "source.unsupportedContainer",
+        ),
+        (DumpRefusal::Cdi, "dump.dc.cdi"),
+        (DumpRefusal::Archive, "source.archive"),
+        (DumpRefusal::Unrecognized, "source.unrecognized"),
+    ];
 
     /// Every state a folder can be in, with the code of the problem it shows.
     const STATES: [(FolderState, Option<&str>); 14] = [
@@ -570,6 +904,162 @@ mod tests {
         ]
     }
 
+    /// What the system answers a write that found the disk full or the quota spent, or that it
+    /// refused, with the code each reports.
+    fn write_failures() -> [(io::Error, &'static str); 3] {
+        [
+            (io::ErrorKind::StorageFull.into(), "space.ranOut"),
+            (io::ErrorKind::QuotaExceeded.into(), "space.ranOut"),
+            (denied(), "io.failed"),
+        ]
+    }
+
+    /// A disc's file, by its path in the disc's tree, as a refused copy of it names it.
+    fn disc_file() -> RelPath {
+        RelPath::parse("DISK.ROM", &DISC_NAMES).expect("a disc's file name")
+    }
+
+    /// What the JSON reader finds in a file cut short.
+    fn json_refusal() -> serde_json::Error {
+        serde_json::from_str::<serde_json::Value>("{").expect_err("an object cut short")
+    }
+
+    /// One failure of every kind a reader of a dump meets, with what each reports: a copy whose
+    /// writer would not take it once for each of the system's answers, and a refusal by every
+    /// rule of both formats.
+    fn media_refusals() -> Vec<(MediaError, Report)> {
+        let mut refusals = vec![
+            (
+                MediaError::Io {
+                    path: path(),
+                    source: denied(),
+                },
+                FAILED,
+            ),
+            // A dump that cannot be read is `io.failed` whatever the system answered: only a
+            // write runs out of room.
+            (
+                MediaError::Io {
+                    path: path(),
+                    source: io::ErrorKind::StorageFull.into(),
+                },
+                FAILED,
+            ),
+            (MediaError::Cancelled, Report::Cancelled),
+        ];
+        refusals.extend(write_failures().into_iter().map(|(source, code)| {
+            let file = disc_file();
+            (MediaError::Write { file, source }, Report::Error(code))
+        }));
+        refusals.extend(ROM_RULES.into_iter().map(|(rule, code)| {
+            let detail = detail();
+            (MediaError::Rom { rule, detail }, Report::Error(code))
+        }));
+        refusals.extend(DISC_RULES.into_iter().map(|(rule, code)| {
+            let detail = detail();
+            (MediaError::Disc { rule, detail }, Report::Error(code))
+        }));
+        refusals
+    }
+
+    /// One refusal of every kind the launcher's file operations meet, with its code: a write once
+    /// for each of the system's answers.
+    fn files_refusals() -> Vec<(FilesError, &'static str)> {
+        let mut refusals: Vec<(FilesError, &'static str)> = write_failures()
+            .into_iter()
+            .map(|(source, code)| {
+                let path = path();
+                (FilesError::Io { path, source }, code)
+            })
+            .collect();
+        refusals.extend([
+            (FilesError::Link { path: path() }, "io.failed"),
+            (
+                FilesError::TooLarge {
+                    path: path(),
+                    limit: 7,
+                },
+                "io.failed",
+            ),
+            (
+                FilesError::Json {
+                    path: path(),
+                    source: json_refusal(),
+                },
+                "io.failed",
+            ),
+            (FilesError::Exists { path: path() }, "folder.collision"),
+            (FilesError::NotRoot { name: name() }, "io.failed"),
+        ]);
+        refusals
+    }
+
+    /// One failure of every kind an extraction meets, with what each reports: a reader's, the
+    /// staging's and a refused dump's once each, a staged file's write once for each of the
+    /// system's answers, and the extraction's own by every rule.
+    fn extract_refusals() -> Vec<(ExtractError, Report)> {
+        let damaged = Report::Error("source.damaged");
+        let mismatch = Report::Error("dump.hashMismatch");
+        let mut refusals = vec![
+            (
+                ExtractError::Media(MediaError::Disc {
+                    rule: DiscRule::SectorEdc,
+                    detail: detail(),
+                }),
+                damaged,
+            ),
+            (
+                ExtractError::Files(FilesError::Exists { path: path() }),
+                Report::Error("folder.collision"),
+            ),
+            (
+                ExtractError::Refused {
+                    refusal: DumpRefusal::OtherRevision,
+                },
+                Report::Error("source.otherRevision"),
+            ),
+            (
+                ExtractError::Changed {
+                    path: "disc/SIZES.ROM".into(),
+                },
+                mismatch,
+            ),
+            (ExtractError::Cancelled, Report::Cancelled),
+        ];
+        refusals.extend(write_failures().into_iter().map(|(source, code)| {
+            let path = path();
+            (ExtractError::Io { path, source }, Report::Error(code))
+        }));
+        let trees = [
+            TreeRule::Duplicate,
+            TreeRule::FolderCase,
+            TreeRule::Conflict,
+        ];
+        refusals.extend(trees.map(|rule| {
+            let detail = detail();
+            (ExtractError::Tree { rule, detail }, damaged)
+        }));
+        let natives = [
+            NativeRule::TableMissing,
+            NativeRule::TooLarge,
+            NativeRule::DiskTruncated,
+        ];
+        refusals.extend(natives.map(|rule| {
+            let detail = detail();
+            (ExtractError::Native { rule, detail }, damaged)
+        }));
+        let fingerprints = [
+            FingerprintRule::Missing,
+            FingerprintRule::Unexpected,
+            FingerprintRule::Digest,
+        ];
+        refusals.extend(fingerprints.map(|rule| {
+            let path = "disc/DISK.ROM".into();
+            (ExtractError::Fingerprint { path, rule }, mismatch)
+        }));
+        refusals
+    }
+
     #[test]
     fn every_refusal_maps_to_its_code() {
         for (error, expected) in payload_refusals() {
@@ -598,6 +1088,39 @@ mod tests {
         }
         for (refused, expected) in REFUSALS {
             assert_eq!(refusal(refused), expected, "{refused:?}");
+        }
+        for (error, expected) in media_refusals() {
+            assert_eq!(media(&error), expected, "{}: {error}", error.rule());
+        }
+        for (refused, expected) in DUMP_REFUSALS {
+            assert_eq!(dump_refusal(refused), expected, "{}", refused.as_str());
+        }
+        for (error, expected) in files_refusals() {
+            assert_eq!(files(&error), expected, "{}: {error}", error.rule());
+        }
+        for (error, expected) in extract_refusals() {
+            assert_eq!(extract(&error), expected, "{}: {error}", error.rule());
+        }
+    }
+
+    #[test]
+    fn an_extraction_refused_by_a_reader_or_the_staging_reports_what_they_do() {
+        // A reader's failure, the staging's refusal and a dump the trust does not name are the
+        // extraction's, so each reports as it does where it is met.
+        for (error, _) in media_refusals() {
+            let expected = media(&error);
+            let error = ExtractError::Media(error);
+            assert_eq!(extract(&error), expected, "{}: {error}", error.rule());
+        }
+        for (error, _) in files_refusals() {
+            let expected = Report::Error(files(&error));
+            let error = ExtractError::Files(error);
+            assert_eq!(extract(&error), expected, "{}: {error}", error.rule());
+        }
+        for (refused, _) in DUMP_REFUSALS {
+            let expected = Report::Error(dump_refusal(refused));
+            let error = ExtractError::Refused { refusal: refused };
+            assert_eq!(extract(&error), expected, "{}: {error}", error.rule());
         }
     }
 
@@ -650,6 +1173,22 @@ mod tests {
                 .filter_map(|(folder_state, _)| state(folder_state)),
         );
         returned.extend(REFUSALS.into_iter().map(|(refused, _)| refusal(refused)));
+        returned.extend(
+            media_refusals()
+                .iter()
+                .filter_map(|(error, _)| code_of(media(error))),
+        );
+        returned.extend(
+            DUMP_REFUSALS
+                .into_iter()
+                .map(|(refused, _)| dump_refusal(refused)),
+        );
+        returned.extend(files_refusals().iter().map(|(error, _)| files(error)));
+        returned.extend(
+            extract_refusals()
+                .iter()
+                .filter_map(|(error, _)| code_of(extract(error))),
+        );
         assert_eq!(returned, listed);
     }
 }

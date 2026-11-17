@@ -1416,6 +1416,7 @@ dependencies = [
  "gdl-files",
  "gdl-fixtures",
  "gdl-install",
+ "gdl-media",
  "gdl-release",
  "serde",
  "serde_json",
