@@ -1,6 +1,5 @@
 #include <vector>
 
-#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/core/Types.h"
@@ -9,6 +8,7 @@
 #include "engine/ui/Canvas.h"
 
 #include "FakeRenderDevice.h"
+#include "RecordedQuads.h"
 #include "expansions/n64/hud/LegendsN64Frame.h"
 #include "expansions/n64/hud/LegendsN64Scroll.h"
 
@@ -16,41 +16,14 @@ namespace {
 
 using namespace gdl;
 using namespace gdl::game;
-using Catch::Approx;
+using test::Quad;
+using test::quadsOf;
 
-/** One recorded quad: where it lands and the part of its texture across it. A quad's first
- * vertex is its top left and its third its bottom right (ImmediateBatch::rect). */
-struct Quad {
-    Rect area;
-    Rect uv;
-    Color color;
-    Mat4 transform{1.0f};
-};
-
-std::vector<Quad> quadsOf(const test::FakeRenderDevice& device) {
-    constexpr usize kQuadVertices = 6;
-    std::vector<Quad> quads;
-    for (const test::RecordedDraw& draw : device.draws) {
-        for (usize at = 0; at + kQuadVertices <= draw.vertices.size(); at += kQuadVertices) {
-            const ImmediateVertex& first = draw.vertices[at];
-            const ImmediateVertex& last = draw.vertices[at + 2];
-            quads.push_back(
-                {.area = {first.position.x, first.position.y, last.position.x - first.position.x,
-                          last.position.y - first.position.y},
-                 .uv = {first.uv.x, first.uv.y, last.uv.x - first.uv.x, last.uv.y - first.uv.y},
-                 .color = first.color,
-                 .transform = draw.transform});
-        }
-    }
-    return quads;
-}
-
+/** Checks `actual` lies on `expected`: the scroll's rects are whole frame units and halves of
+ * texels, within a hundred-thousandth. */
 void checkRect(const Rect& actual, const Rect& expected) {
     constexpr f64 kRounding = 1e-5;
-    CHECK(actual.x == Approx(expected.x).margin(kRounding));
-    CHECK(actual.y == Approx(expected.y).margin(kRounding));
-    CHECK(actual.width == Approx(expected.width).margin(kRounding));
-    CHECK(actual.height == Approx(expected.height).margin(kRounding));
+    test::checkRect(actual, expected, kRounding);
 }
 
 /** The quads of `scroll` drawn over `area` in the N64's frame. */

@@ -30,6 +30,7 @@
 #include "FakeRenderDevice.h"
 #include "LogCapture.h"
 #include "RecordedDrawChecks.h"
+#include "RecordedQuads.h"
 #include "TestSupport.h"
 #include "expansions/n64/hud/LegendsN64Frame.h"
 #include "expansions/n64/hud/LegendsN64HudFixture.h"
@@ -72,37 +73,9 @@ constexpr s32 kMostHealth = 600;
 /** A panel's top on the frame. */
 constexpr f32 kTop = 170;
 
-/** One quad of the recorded draws: where it lands, in the units it was drawn in; the part of
- * its texture across it, which runs backwards where the picture is turned; its colour; and the
- * transform it was drawn through. */
-struct Quad {
-    const Texture* texture = nullptr;
-    Rect area{};
-    Rect uv{};
-    Color color{};
-    Mat4 transform{1.0f};
-};
-
-/** Every quad `device` recorded, in the order drawn. A quad's first vertex is its top left and
- * its third its bottom right (ImmediateBatch::rect). */
-std::vector<Quad> quadsOf(const test::FakeRenderDevice& device) {
-    constexpr usize kQuadVertices = 6;
-    std::vector<Quad> quads;
-    for (const test::RecordedDraw& draw : device.draws) {
-        for (usize at = 0; at + kQuadVertices <= draw.vertices.size(); at += kQuadVertices) {
-            const ImmediateVertex& first = draw.vertices[at];
-            const ImmediateVertex& last = draw.vertices[at + 2];
-            quads.push_back(
-                {.texture = draw.texture,
-                 .area = {first.position.x, first.position.y, last.position.x - first.position.x,
-                          last.position.y - first.position.y},
-                 .uv = {first.uv.x, first.uv.y, last.uv.x - first.uv.x, last.uv.y - first.uv.y},
-                 .color = first.color,
-                 .transform = draw.transform});
-        }
-    }
-    return quads;
-}
+using test::checkRect;
+using test::Quad;
+using test::quadsOf;
 
 /** The panel slot a quad stands in, by its left edge. */
 usize slotOf(const Quad& quad) {
@@ -160,15 +133,6 @@ Rect covered(std::span<const Quad> quads) {
         bottom = std::max(bottom, quad.area.bottom());
     }
     return {left, top, right - left, bottom - top};
-}
-
-/** Checks `actual` lies on `expected`, but for float rounding. */
-void checkRect(const Rect& actual, const Rect& expected) {
-    constexpr f64 kRounding = 1e-4;
-    CHECK(actual.x == Approx(expected.x).margin(kRounding));
-    CHECK(actual.y == Approx(expected.y).margin(kRounding));
-    CHECK(actual.width == Approx(expected.width).margin(kRounding));
-    CHECK(actual.height == Approx(expected.height).margin(kRounding));
 }
 
 /** A line one of the fixture's fonts wrote: its first glyph's place and its characters, read
