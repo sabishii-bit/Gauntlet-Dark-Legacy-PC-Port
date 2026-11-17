@@ -1,7 +1,8 @@
 //! The N64 ROM as the N64 extractor reads it: a dump in any of the three byte orders cartridges
 //! are copied in, put back into the big-endian order the cartridge holds, with the digests of the
 //! dump as it was given and of the ROM in that order, what the ROM's header says of the
-//! cartridge, and the ROMDISK that holds the game's files.
+//! cartridge, the ROMDISK that holds the game's files, and the executable overlays the US ROM's
+//! boot table describes.
 
 use std::fmt;
 use std::fs::File;
@@ -13,10 +14,14 @@ use gdl_files::{BLOCK_LEN, Job};
 use crate::{MediaError, Region, RomRule, Sha1Digest, Sha256Digest, SourceName};
 
 mod inflate;
+mod overlays;
 mod romdisk;
 mod wad;
 
 pub use inflate::{INFLATE_STEP, MAX_OVERLAY_PADDING, Trailer, inflate};
+pub use overlays::{
+    OVERLAY_NAME_LEN, Overlay, OverlayTable, PROGRAM_FOLDER, PROGRAM_SUFFIX, US_OVERLAYS,
+};
 pub use romdisk::{
     COMPRESSED, HEADER_WORDS_AT, RECORD_WORDS_LEN, ROMDISK_HEADER_LEN, ROMDISK_LIMITS,
     ROMDISK_MAGIC, Romdisk, RomdiskEntry, RomdiskLimits,
@@ -317,6 +322,13 @@ impl N64Rom {
     pub fn romdisk(&self, limits: &RomdiskLimits) -> Result<Romdisk<'_>, MediaError> {
         romdisk::read(&self.canonical, limits)
     }
+
+    /// The executable overlays `table` describes, read as the N64 extractor reads the US ROM's:
+    /// none unless the digest of the ROM in the big-endian order is the table's, and otherwise
+    /// every overlay the table lists, in its order, or the first rule of the format one breaks.
+    pub fn overlays(&self, table: &OverlayTable) -> Result<Vec<Overlay>, MediaError> {
+        overlays::read(&self.canonical, table)
+    }
 }
 
 impl fmt::Debug for N64Rom {
@@ -360,9 +372,10 @@ fn header_char(byte: u8) -> char {
 
 #[cfg(test)]
 mod tests {
+    use std::env;
     use std::fs::{self, File};
     use std::io;
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
 
     use gdl_files::{BLOCK_LEN, Cancel, Job, NoProgress};
     use gdl_fixtures::unhex;
@@ -371,9 +384,12 @@ mod tests {
     use super::{
         BIG_ENDIAN_FIRST_WORD, BYTE_SWAPPED_FIRST_WORD, ByteOrder, GAME_CODE_AT,
         LITTLE_ENDIAN_FIRST_WORD, MAX_ROM_LEN, N64Rom, ROM_HEADER_LEN, RomHeader, TITLE_AT,
-        TITLE_LEN, VERSION_AT, WORD_LEN,
+        TITLE_LEN, US_SHA1, VERSION_AT, WORD_LEN,
     };
-    use crate::{MediaError, Region, RomRule, Sha1Digest, Sha256Digest, SourceName};
+    use crate::{
+        COMPRESSED, MediaError, ROMDISK_LIMITS, Region, RomRule, Sha1Digest, Sha256Digest,
+        SourceName, US_OVERLAYS, wad_sections,
+    };
 
     /// The N64 cases the extractor's tests and the launcher's read alike.
     const VECTORS: &str = include_str!(concat!(
@@ -413,6 +429,19 @@ mod tests {
             )),
         ),
     ];
+
+    /// The variable that names the player's own N64 ROM for the tests that need it.
+    const ROM_VARIABLE: &str = "GDL_LEGENDS_N64_ROM";
+
+    /// Where the player's N64 ROM lies in the repository's assets, when the variable names no
+    /// other place.
+    const ROM_IN_ASSETS: &str = "assets/n64/Gauntlet Legends (USA).z64";
+
+    /// The repository's root, from this crate's folder.
+    const REPOSITORY_FROM_CRATE: &str = "../../../..";
+
+    /// How many bytes the US cartridge holds: 128 Mbit.
+    const US_ROM_LEN: u64 = 16 << 20;
 
     /// A dump the N64 extractor wrote a golden manifest for.
     struct Dump {
@@ -489,6 +518,25 @@ mod tests {
         N64Rom::from_bytes(named("dump.z64"), bytes)
             .unwrap()
             .header()
+    }
+
+    /// The player's own N64 ROM: the file the variable names, else the one in the repository's
+    /// assets. Fails, naming the variable to set, when there is none.
+    fn players_rom() -> PathBuf {
+        let path = env::var_os(ROM_VARIABLE).map_or_else(
+            || {
+                Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join(REPOSITORY_FROM_CRATE)
+                    .join(ROM_IN_ASSETS)
+            },
+            PathBuf::from,
+        );
+        assert!(
+            path.is_file(),
+            "no N64 ROM at {}: set {ROM_VARIABLE} to the player's dump",
+            path.display()
+        );
+        path
     }
 
     #[test]
@@ -810,5 +858,56 @@ mod tests {
             assert_eq!(source.to_string(), "the path names no file");
             assert_eq!(error.rule(), "io");
         }
+    }
+
+    #[test]
+    #[ignore = "needs the player's dump"]
+    fn the_players_rom_holds_the_whole_native_corpus() {
+        let rom = N64Rom::open(&players_rom(), &quiet(&Cancel::default())).unwrap();
+        // The US cartridge the extractor knows, dumped in its own order.
+        assert_eq!(rom.canonical_sha1(), US_SHA1);
+        assert_eq!(rom.byte_order(), ByteOrder::BigEndian);
+        assert_eq!(rom.source_len(), US_ROM_LEN);
+
+        // Every file of its ROMDISK decodes to the size its record gives, and every WAD among them
+        // describes its sections. A failure names a file by its place in the directory and the
+        // rule it breaks, never by what it holds.
+        let romdisk = rom
+            .romdisk(&ROMDISK_LIMITS)
+            .unwrap_or_else(|error| panic!("the ROMDISK is refused: {}", error.rule()));
+        let entries = &romdisk.entries;
+        assert_eq!(entries.len(), 618);
+        let compressed = entries
+            .iter()
+            .filter(|entry| entry.flags == COMPRESSED)
+            .count();
+        assert_eq!(compressed, 586);
+        let (mut wads, mut maps) = (0, 0);
+        for (index, entry) in entries.iter().enumerate() {
+            let data = romdisk
+                .decode(entry)
+                .unwrap_or_else(|error| panic!("file {index}: {}", error.rule()));
+            assert_eq!(data.len(), entry.size as usize, "file {index}");
+            let path = entry.path.as_str();
+            if path.to_ascii_lowercase().ends_with(".wad") {
+                if let Err(error) = wad_sections(&entry.path, &data) {
+                    panic!("file {index}: {}", error.rule());
+                }
+                wads += 1;
+            }
+            if path.starts_with("levels/") && path.ends_with("/worlds.wad") {
+                maps += 1;
+            }
+        }
+        assert_eq!((wads, maps), (445, 34));
+
+        // Its boot table describes four overlays, the last of them loaded high in memory.
+        let overlays = rom
+            .overlays(&US_OVERLAYS)
+            .unwrap_or_else(|error| panic!("the overlays are refused: {}", error.rule()));
+        assert_eq!(overlays.len(), 4);
+        let last = &overlays[3];
+        assert_eq!(last.load_address, 0xE000_0400);
+        assert_eq!(last.data.len(), 0xACAF0);
     }
 }

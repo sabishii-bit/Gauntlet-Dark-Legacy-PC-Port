@@ -272,8 +272,8 @@ fn find_magic(rom: &[u8], from: usize) -> Option<usize> {
 
 /// Where the `size` bytes at `offset` end, refused unless they end by `limit`, the end of the data
 /// that holds the part `what` names: the ROM, the directory, or for a file's bytes the pointer
-/// table.
-fn checked_end(
+/// table. The executable overlays' records and extents are held to the ROM's end the same way.
+pub(super) fn checked_end(
     offset: u64,
     size: u64,
     limit: u64,
@@ -311,8 +311,9 @@ fn word_at(rom: &[u8], at: u64) -> u32 {
     u32::from_be_bytes(word)
 }
 
-/// The `N` big-endian words that start at `at`.
-fn words<const N: usize>(rom: &[u8], at: u64) -> [u32; N] {
+/// The `N` big-endian words that start at `at`, which the checks before each read keep within the
+/// ROM, as they keep an overlay's record.
+pub(super) fn words<const N: usize>(rom: &[u8], at: u64) -> [u32; N] {
     array::from_fn(|index| word_at(rom, at + WORD_LEN * index as u64))
 }
 

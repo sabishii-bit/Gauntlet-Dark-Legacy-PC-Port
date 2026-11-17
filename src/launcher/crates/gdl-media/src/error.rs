@@ -92,7 +92,8 @@ pub enum RomRule {
     /// The ROM holds no ROMDISK header, or more than one.
     RomdiskHeader,
     /// A part the ROM describes reaches past the data that holds it, as the ROMDISK's directory
-    /// past the ROM's end or a file's bytes into the directory.
+    /// past the ROM's end, a file's bytes into the directory, or an executable overlay's record or
+    /// extent past the ROM's end.
     OutsideData,
     /// The ROMDISK header's reserved word is not zero, or it lists no file or more than the most a
     /// ROMDISK may list.
@@ -132,6 +133,12 @@ pub enum RomRule {
     DeflateTrailer,
     /// An executable overlay's extent holds more bytes past the end of its stream than pad it.
     OverlayPadding,
+    /// An executable overlay's record keeps a reserved word that is not zero, or places or sizes
+    /// the zeroed memory after the overlay so that it disagrees with the overlay's length.
+    OverlayMetadata,
+    /// An executable overlay's record names it with a byte outside ASCII, or with a name whose
+    /// file the extracted tree may not hold.
+    OverlayName,
     /// A native WAD is shorter than its header.
     WadHeader,
     /// A native WAD's header describes a directory that ends where the WAD does in neither byte
@@ -168,6 +175,8 @@ impl RomRule {
             RomRule::DeflateEnd => "deflateEnd",
             RomRule::DeflateTrailer => "deflateTrailer",
             RomRule::OverlayPadding => "overlayPadding",
+            RomRule::OverlayMetadata => "overlayMetadata",
+            RomRule::OverlayName => "overlayName",
             RomRule::WadHeader => "wadHeader",
             RomRule::WadDirectory => "wadDirectory",
             RomRule::WadSection => "wadSection",
@@ -282,6 +291,8 @@ mod tests {
             (RomRule::DeflateEnd, "deflateEnd"),
             (RomRule::DeflateTrailer, "deflateTrailer"),
             (RomRule::OverlayPadding, "overlayPadding"),
+            (RomRule::OverlayMetadata, "overlayMetadata"),
+            (RomRule::OverlayName, "overlayName"),
             (RomRule::WadHeader, "wadHeader"),
             (RomRule::WadDirectory, "wadDirectory"),
             (RomRule::WadSection, "wadSection"),
