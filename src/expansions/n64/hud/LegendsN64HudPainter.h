@@ -219,8 +219,11 @@ private:
         bool stepped = false;       ///< browsed since the last prepare
         s64 steppedAt = 0;          ///< the look's step the last step was first shown at
         u16 legends = 0;            ///< the legend items held when last seen
-        bool seen = false;          ///< whether the look has seen the seat played
-        LegendsN64Plaque plaque;    ///< the exit the seat stands on, named over its panel
+        /** A legend item newly held while the panel showed the carousel, which the panel turns
+         * to once the selector is down. */
+        std::optional<LegendsN64QuestEntry> turnTo;
+        bool seen = false;       ///< whether the look has seen the seat played
+        LegendsN64Plaque plaque; ///< the exit the seat stands on, named over its panel
     };
     /** A picture the carousel or the quest page shows: its own size, or fitted into an icon's
      * square. */

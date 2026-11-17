@@ -816,6 +816,10 @@ void LegendsN64HudPainter::turnPages(SeatPages& pages, const HudSeat& shown, boo
     }
     pages.listed = legendsN64QuestEntries(shown.legends, shown.box.runes, shown.box.bossKeys);
     const bool whole = standing(shown);
+    // A rewind takes back a turn still to come, and a player down has no page to turn.
+    if (rewound || !whole) {
+        pages.turnTo.reset();
+    }
     // A legend item newly held turns its holder's panel to it, centred, as FUN_e0054fdc turns
     // the N64's to a new item: only a seat played here, as nobody here could turn another's
     // back. What the look first sees a seat hold, or holds after a rewind, is not new.
@@ -830,12 +834,12 @@ void LegendsN64HudPainter::turnPages(SeatPages& pages, const HudSeat& shown, boo
             return (found & (1U << static_cast<u32>(held))) != 0;
         });
         if (shown.local && whole && realm != kLegendsN64LegendRealms.end()) {
-            pages.page = Page::Quest;
-            pages.quest = {.kind = QuestKind::Legend, .realm = *realm};
+            pages.turnTo = LegendsN64QuestEntry{.kind = QuestKind::Legend, .realm = *realm};
         }
     }
     // While the selector is up its panel shows the carousel, and its own page goes back to the
-    // normal one. Moving the selection lights the arrow of the way it went, and swaps the icons.
+    // normal one; a legend item found meanwhile turns it once the selector is down. Moving the
+    // selection lights the arrow of the way it went, and swaps the icons.
     if (whole && shown.selector != nullptr && selectorUp(*shown.selector)) {
         const s32 selection = shown.selector->selection();
         if (!rewound && pages.selection >= 0 && selection != pages.selection) {
@@ -857,6 +861,11 @@ void LegendsN64HudPainter::turnPages(SeatPages& pages, const HudSeat& shown, boo
         pages.page = Page::Normal;
     } else {
         pages.selection = -1;
+        if (pages.turnTo) {
+            pages.page = Page::Quest;
+            pages.quest = *pages.turnTo;
+            pages.turnTo.reset();
+        }
     }
     if (!whole || (pages.page == Page::Quest && pages.listed.entries().empty())) {
         pages.page = Page::Normal;

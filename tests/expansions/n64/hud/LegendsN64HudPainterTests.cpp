@@ -2206,6 +2206,38 @@ TEST_CASE("a new legend item turns its local holder's panel to the quest page, n
     HudView seen = later.viewOf({view.seats[0], {}, {}, {}});
     prepareAt(later, seen, 9);
     CHECK(iconsIn(later.panels(seen), 0).empty());
+
+    // One found while the selector is up waits for it to go down: the carousel shows meanwhile,
+    // and then the panel turns to the item.
+    LoadedLook carousel("n64-hud-legend-under-selector", kWarriorAndWizard);
+    Inventory carried;
+    carried.powerups[0] = PowerupSlot{30, powerup::kSpecial, 0, powerup::kInvisible, true};
+    Holder holder(carried, 0);
+    HudSeat holding = holder.seat(0);
+    holding.legends = 0x2;
+    HudView up = carousel.viewOf({holding, {}, {}, {}});
+    prepareAt(carousel, up, 0);
+    holder.open();
+    up.seats[0].legends = 0x202;
+    prepareAt(carousel, up, 1);
+    CHECK(iconsIn(carousel.panels(up), 0) == Icons{"HUD_INVIS"});
+    holder.close();
+    prepareAt(carousel, up, 2);
+    quads = carousel.panels(up);
+    REQUIRE(iconsIn(quads, 0) == Icons{"HUD_SCIMITAR", "HUD_FLAMESCROLL"});
+    checkRect(picturesIn(quads, "HUD_FLAMESCROLL", 0).front().area,
+              centredAt(0, Layout::kSelected, 28, 28));
+    // One found under the selector and then taken back by a rewind turns nothing.
+    carousel.look.browse(0, SelectorInput{.down = true});
+    prepareAt(carousel, up, 3);
+    CHECK(iconsIn(carousel.panels(up), 0).empty());
+    holder.open();
+    up.seats[0].legends = 0x206;
+    prepareAt(carousel, up, 5);
+    prepareAt(carousel, up, 4);
+    holder.close();
+    prepareAt(carousel, up, 5);
+    CHECK(iconsIn(carousel.panels(up), 0).empty());
 }
 
 TEST_CASE("a centred runestone or key entry draws its whole row across the panel",
