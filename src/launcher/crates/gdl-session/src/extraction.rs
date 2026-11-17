@@ -793,25 +793,31 @@ pub(crate) mod vectors {
 mod tests {
     use std::ffi::OsString;
     use std::fs;
+    use std::ops::Range;
     use std::path::{Path, PathBuf};
     use std::sync::Mutex;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use gdl_extract::{
-        DISC_FOLDER, DISK_ROM, Expansion, ExtractError, FingerprintRule, Trust, UNPACK,
+        DISC_FOLDER, DISK_ROM, Expansion, ExtractError, FingerprintRule, N64_MANIFEST, Trust,
+        UNPACK,
     };
     use gdl_files::{
         Cancel, FilesError, Job, NameRule, PhaseId, Progress, RelPath, STAGING_RANDOM_CHARS,
     };
     use gdl_fixtures::{
         DiscSet, Edc, InstallFixture, RuntimeFiles, backdate, link_folder, make_alpha_markers,
-        snapshot,
+        sha256_hex, snapshot,
     };
-    use gdl_media::{Console, DumpRefusal, MediaError, RomRule, Sha1Digest, Sha256Digest, US_SHA1};
+    use gdl_media::{
+        Console, DumpRefusal, MediaError, RomRule, Sha1Digest, Sha256Digest, US_SHA1, Verdict,
+        identify,
+    };
     use gdl_release::Platform;
+    use serde_json::Value;
 
     use super::vectors::{
-        Folders, default_rom, default_tree, full_fingerprints, full_tree, quiet, trust_of,
+        Folders, Listed, default_rom, default_tree, full_fingerprints, full_tree, quiet, trust_of,
         with_bad_stream,
     };
     use super::{
@@ -822,6 +828,15 @@ mod tests {
 
     /// The version the installation fixtures are of.
     const VERSION: &str = "1.0.0-beta";
+
+    /// Where an N64 ROM's header gives its game code.
+    const GAME_CODE: Range<usize> = 0x3B..0x3F;
+
+    /// The game code the US cartridge's header gives.
+    const US_GAME_CODE: &[u8; 4] = b"NGXE";
+
+    /// The most bytes an error may take, so that returning one by value stays cheap.
+    const MOST_ERROR_BYTES: usize = 128;
 
     /// Extracts `expansion` from `dump` into `output`, held as `strictness` says to `trust`, in a
     /// job nobody stops or follows.
@@ -1107,7 +1122,11 @@ mod tests {
         fs::create_dir(install.join("n64")).unwrap();
         backdate(install).unwrap();
         let installed = snapshot(install).unwrap();
+        // In the installation's own folder, where an expansion's folder goes, and in each folder
+        // it holds.
         let outputs = [
+            install.join("legends"),
+            install.join("dreamcast"),
             install.join("n64").join("extracted"),
             install.join("Gauntlet").join("legends"),
             install.join("Gauntlet").join("PDATA").join("legends"),
@@ -1312,6 +1331,64 @@ mod tests {
             assert_eq!(code_of(&error), Report::Error("dump.hashMismatch"));
             folders.assert_untouched(&before);
         }
+    }
+
+    #[test]
+    fn identification_leaves_a_cartridges_identity_to_the_check() {
+        // The default image given the US cartridge's game code: identifying it finds the code
+        // without the US cartridge's digest, an identity that only the check holds to a trust.
+        // Under the extractor's strictness it extracts as any ROM does; under an installation's
+        // it extracts when the trust names its digest, and the check refuses it when not.
+        let folders = Folders::new();
+        let (name, mut image) = default_rom();
+        image[GAME_CODE].copy_from_slice(US_GAME_CODE);
+        let dump = folders.dump(&name, &image);
+        let identity = identify(&dump).unwrap();
+        assert_eq!(
+            identity.verdict,
+            Verdict::Refused(DumpRefusal::HashMismatch)
+        );
+        // The default image's tree, but for its manifest, which records the dump it was
+        // extracted from.
+        let tree_of = |output: &Path| -> Vec<Listed> {
+            let manifest = fs::read(output.join(N64_MANIFEST)).unwrap();
+            let recorded: Value = serde_json::from_slice(&manifest).unwrap();
+            assert_eq!(recorded["source"]["sha256"], sha256_hex(&image));
+            let rows = default_tree().into_iter();
+            rows.map(|(path, size, digest)| {
+                if path == N64_MANIFEST {
+                    (path, manifest.len() as u64, sha256_hex(&manifest))
+                } else {
+                    (path, size, digest)
+                }
+            })
+            .collect()
+        };
+
+        let before = folders.before(Expansion::N64);
+        let output = folders.output("script");
+        extract_as_script(Expansion::N64, &dump, &output).unwrap();
+        folders.assert_published(&before, "script", &tree_of(&output));
+
+        let install = StrictnessChoice::Install;
+        let named = trust_of(Sha1Digest::of(&image), full_fingerprints());
+        let before = folders.before(Expansion::N64);
+        let output = folders.output("install");
+        extract(Expansion::N64, &dump, &output, install, &named).unwrap();
+        folders.assert_published(&before, "install", &tree_of(&output));
+
+        let shipped = Trust::shipped();
+        let before = folders.before(Expansion::N64);
+        let output = folders.output("refused");
+        let error = extract(Expansion::N64, &dump, &output, install, &shipped).unwrap_err();
+        match &error {
+            ExtractionError::Extract(ExtractError::Refused { refusal }) => {
+                assert_eq!(*refusal, DumpRefusal::HashMismatch);
+            }
+            other => panic!("{other:?}"),
+        }
+        assert_eq!(code_of(&error), Report::Error("dump.hashMismatch"));
+        folders.assert_untouched(&before);
     }
 
     #[test]
@@ -1600,5 +1677,8 @@ mod tests {
             error.to_string(),
             "the dump is for no console the launcher knows, not for dreamcast"
         );
+
+        // Every failure is cheap to return, whatever it carries.
+        assert!(size_of::<ExtractionError>() <= MOST_ERROR_BYTES);
     }
 }
