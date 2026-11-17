@@ -80,14 +80,17 @@ const GAME_CODE_LEN: usize = 4;
 /// Where the game code keeps the letter of the region the cartridge was made for.
 const REGION_LETTER_AT: usize = 3;
 
-/// The region letter of a cartridge made for North America.
-const NORTH_AMERICA_LETTER: u8 = b'E';
+/// The region letters of the cartridges made for North America: `E` for the continent, and `N`
+/// for Canada.
+const NORTH_AMERICA_LETTERS: [u8; 2] = *b"EN";
 
 /// The region letter of a cartridge made for Japan.
 const JAPAN_LETTER: u8 = b'J';
 
-/// The region letters of the cartridges made for Europe.
-const EUROPE_LETTERS: [u8; 4] = *b"PXYZ";
+/// The region letters of the cartridges made for Europe: `P`, `X`, `Y` and `Z` for the continent,
+/// and `D`, `F`, `H`, `I`, `S` and `W` for Germany, France, the Netherlands, Italy, Spain and
+/// Scandinavia.
+const EUROPE_LETTERS: [u8; 10] = *b"PXYZDFHISW";
 
 /// Where the header keeps the ROM's version.
 const VERSION_AT: usize = 0x3F;
@@ -187,11 +190,13 @@ impl RomHeader {
         self.game_code.iter().copied().map(header_char).collect()
     }
 
-    /// The region the game code's last letter names: `E` North America, `J` Japan, and `P`, `X`,
-    /// `Y` or `Z` Europe. Any other letter names none of them.
+    /// The region the game code's last letter, the cartridge's destination, lies in: North
+    /// America for `E`, or `N` for Canada; Japan for `J`; and Europe for `P`, `X`, `Y` or `Z`, or
+    /// the letter of one of its countries, `D`, `F`, `H`, `I`, `S` or `W`. Any other letter, such
+    /// as `U` for Australia, names a place outside the three, or none.
     pub fn region(&self) -> Option<Region> {
         match self.game_code[REGION_LETTER_AT] {
-            NORTH_AMERICA_LETTER => Some(Region::NorthAmerica),
+            letter if NORTH_AMERICA_LETTERS.contains(&letter) => Some(Region::NorthAmerica),
             JAPAN_LETTER => Some(Region::Japan),
             letter if EUROPE_LETTERS.contains(&letter) => Some(Region::Europe),
             _ => None,
@@ -696,16 +701,32 @@ mod tests {
             assert_eq!(header_of(reorder(&image, transform)), header, "{transform}");
         }
 
-        // The game code's last letter names the region.
+        // The game code's last letter is the cartridge's destination, and names the region it
+        // lies in: North America, Japan or Europe, or one of their countries.
         let regions = [
             (b'E', Some(Region::NorthAmerica)),
+            (b'N', Some(Region::NorthAmerica)),
             (b'J', Some(Region::Japan)),
             (b'P', Some(Region::Europe)),
             (b'X', Some(Region::Europe)),
             (b'Y', Some(Region::Europe)),
             (b'Z', Some(Region::Europe)),
-            (b'D', None),
+            (b'D', Some(Region::Europe)),
+            (b'F', Some(Region::Europe)),
+            (b'H', Some(Region::Europe)),
+            (b'I', Some(Region::Europe)),
+            (b'S', Some(Region::Europe)),
+            (b'W', Some(Region::Europe)),
+            // Australia, Brazil, China and Korea lie outside the three, `A` is for every region,
+            // and `G` and `L` name a console's model, not a region.
             (b'U', None),
+            (b'B', None),
+            (b'C', None),
+            (b'K', None),
+            (b'A', None),
+            (b'G', None),
+            (b'L', None),
+            // Neither a letter in lower case nor a NUL is a destination.
             (b'e', None),
             (0, None),
         ];
