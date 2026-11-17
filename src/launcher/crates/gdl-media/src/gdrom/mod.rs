@@ -3,6 +3,8 @@
 //! address its own header gives and guarded by the error detection code it keeps after its user
 //! data. A data track is placed by its first sector's header, never by where the sheet lists it,
 //! and every extent of the disc, its boot area first, is read by LBA from the tracks that hold it.
+//! The disc's files are those of the ISO 9660 volume its high-density area holds, walked from
+//! the volume descriptor after the boot area.
 
 use std::fs::{self, File};
 use std::io::{self, Read, Seek, SeekFrom, Write};
@@ -17,6 +19,7 @@ mod cue;
 mod edc;
 mod gdi;
 mod ipbin;
+mod iso;
 mod sector;
 mod sheet;
 mod sheet_text;
@@ -25,6 +28,10 @@ pub use edc::{EDC_FIELD, EDC_POLYNOMIAL, EDC_SPAN, edc};
 pub use ipbin::{
     AREA, BOOT_LBA, BOOT_LEN, BOOT_SECTORS, EXECUTABLE, HARDWARE_ID, IpBin, PRODUCT, TITLE,
     TITLE_PREFIX, VERSION,
+};
+pub use iso::{
+    ALLOWED_FLAGS, BLOCK_SIZE_AT, FLAG_DIRECTORY, MAX_DIRECTORY_DEPTH, MAX_DIRECTORY_LEN,
+    MAX_ENTRIES, MIN_RECORD_LEN, PVD_LBA, ROOT_RECORD_AT, STANDARD_ID, VOLUME_ID,
 };
 pub use sector::{
     FRAMES_PER_SECOND, HEADER_LEN, LBA_BIAS, MAX_CHUNK_SECTORS, RAW_SECTOR, SECONDS_PER_MINUTE,
@@ -177,7 +184,8 @@ pub struct DiscFile {
 }
 
 /// A GD-ROM dump open for reading: its sheet, its data tracks placed by their sectors' headers,
-/// each with its file open, its boot area, and the rules it is read by.
+/// each with its file open, its boot area, the rules it is read by, and its ISO 9660 volume's
+/// name and files.
 #[derive(Debug)]
 pub struct GdRom {
     /// The sheet it was opened from.
@@ -188,19 +196,30 @@ pub struct GdRom {
     boot: IpBin,
     /// The rules it is read by.
     rules: DiscRules,
+    /// Its volume's name.
+    volume: String,
+    /// Every file of its volume's tree, in the order the walk met them.
+    files: Vec<DiscFile>,
 }
 
 impl GdRom {
-    /// Opens the disc whose sheet is at `sheet`, its head read as [`read_head`] reads it, and
-    /// keeps its data tracks' files open for the reads that follow. The job's cancel is looked at
-    /// before each chunk of the boot area is read.
+    /// Opens the disc whose sheet is at `sheet`, its head read as [`read_head`] reads it, then
+    /// its ISO 9660 volume as the Dreamcast extractor reads it: the volume descriptor after the
+    /// boot area, and the tree of directories from its root, each record's identifier judged as
+    /// one name of the extracted tree, its version dropped, before it is joined to its folder's
+    /// path, and each record's extent held to the data tracks. The data tracks' files stay open
+    /// for the reads that follow. The job's cancel is looked at before each chunk the opening
+    /// reads: the boot area's, the volume descriptor's and each directory's.
     pub fn open(sheet: &Path, rules: &DiscRules, job: &Job<'_>) -> Result<GdRom, MediaError> {
-        let (sheet, tracks, boot) = open_head(sheet, rules, job.cancel)?;
+        let (sheet, mut tracks, boot) = open_head(sheet, rules, job.cancel)?;
+        let volume = iso::read_volume(&mut tracks, job.cancel)?;
         Ok(GdRom {
             sheet,
             tracks,
             boot,
             rules: *rules,
+            volume: volume.name,
+            files: volume.files,
         })
     }
 
@@ -217,6 +236,19 @@ impl GdRom {
     /// The disc's boot area.
     pub fn boot(&self) -> &IpBin {
         &self.boot
+    }
+
+    /// The name of the disc's ISO 9660 volume, as its volume descriptor gives it, without the
+    /// white space that pads it.
+    pub fn volume(&self) -> &str {
+        &self.volume
+    }
+
+    /// Every file of the disc's ISO 9660 tree, in the order the walk met them: each directory's
+    /// records in the order it keeps them, a folder's files where the folder's record stands.
+    /// Folders are not listed; a file's path names them.
+    pub fn files(&self) -> &[DiscFile] {
+        &self.files
     }
 
     /// The sheet the disc was opened from.
@@ -623,8 +655,9 @@ mod tests {
     use tempfile::TempDir;
 
     use super::{DiscFile, DiscRules, GdRom, INSTALL_RULES, SCRIPT_RULES, TrackFile, read_head};
-    use crate::vectors::{dreamcast_golden, dreamcast_vectors, recorded, text, word};
-    use crate::{MediaError, RAW_SECTOR, Sha256Digest};
+    use crate::vectors::{dreamcast_golden, dreamcast_vectors, located, manifest_files};
+    use crate::vectors::{players_disc, recorded, text};
+    use crate::{AREA, MediaError, RAW_SECTOR, Sha256Digest, VERSION};
 
     /// How many bytes of user data the format gives a sector. The format's facts are given here
     /// apart from the reader's own constants, so that a reader that looks elsewhere is caught.
@@ -888,14 +921,19 @@ mod tests {
         assert_eq!(recorded(disc.data_tracks()), golden["data_tracks"]);
         let second = &disc.data_tracks()[1];
         assert_eq!((second.index, second.first_lba), (225, 45_100));
-        // What lies at 45100 is read from that track by its LBA.
+        // The root lists the disc's one file at 45100, in that track, where the extractor's
+        // manifest records it, and what lies there is read from that track by its LBA.
+        assert_eq!(located(disc.files()), manifest_files(&golden));
+        assert_eq!(disc.files()[0].lba, 45_100);
         assert_eq!(disc.read(45_100, 5).unwrap(), b"hello");
-        // The boot area is the IP.BIN the extractor writes, and its fields what it records.
+        // The boot area is the IP.BIN the extractor writes, and its fields and the volume's name
+        // what it records.
         let boot = disc.boot();
         assert_eq!(Sha256Digest::of(boot.bytes()).hex(), ip_bin_digest(small));
         assert_eq!(boot.product(), text(&golden["product"]));
         assert_eq!(boot.title(), text(&golden["title"]));
         assert_eq!(boot.executable(), text(&golden["executable"]));
+        assert_eq!(disc.volume(), text(&golden["volume"]));
         assert_eq!(disc.sheet().path, sheet);
         assert_eq!(*disc.rules(), SCRIPT_RULES);
 
@@ -961,17 +999,15 @@ mod tests {
         let vectors = dreamcast_vectors();
         let golden = dreamcast_golden(&vectors["sets"]["full"]["goldens"]["disc-manifest.json"]);
         // Each file the extractor's manifest lists, where it lists it: one over two sectors, one
-        // in a sector of its own, one of no bytes at an LBA no track holds, and SIZES.ROM.
-        let files: Vec<(DiscFile, &str)> = golden["files"]
+        // in a sector of its own, one of no bytes at an LBA no track holds, and SIZES.ROM, each
+        // with the digest of what it read.
+        let digests: Vec<&str> = golden["files"]
             .as_array()
             .unwrap()
             .iter()
-            .map(|row| {
-                let file = disc_file(text(&row["path"]), word(&row["lba"]), word(&row["size"]));
-                (file, text(&row["sha256"]))
-            })
+            .map(|row| text(&row["sha256"]))
             .collect();
-        assert_eq!(files.len(), 4);
+        assert_eq!(digests.len(), 4);
         let sets = [
             (DiscSet::full(Edc::Zero), SCRIPT_RULES),
             (
@@ -987,7 +1023,15 @@ mod tests {
         for (set, rules) in sets {
             let (_dir, disc) = opened(&set, &rules);
             let mut disc = disc.unwrap();
-            for (file, digest) in &files {
+            // The walk lists them where the manifest does, and each reads to its digest.
+            assert_eq!(
+                located(disc.files()),
+                manifest_files(&golden),
+                "{}",
+                set.sheet
+            );
+            let files = disc.files().to_vec();
+            for (file, digest) in files.iter().zip(&digests) {
                 let mut copied = Vec::new();
                 let given = disc.copy(file, &mut copied, &Cancel::default()).unwrap();
                 let path = file.path.as_str();
@@ -1001,6 +1045,16 @@ mod tests {
 
     #[test]
     fn an_extent_in_the_audio_gap_is_refused() {
+        // The extractor's test: the small set's file listed at 45050, where its audio track
+        // lies, refuses the disc as its root is walked, under any rules.
+        let gap = DiscSet::small_with(b"TEST.WAD;1", 45_050, 0, Edc::Zero);
+        assert_eq!(refused(&gap, &SCRIPT_RULES), outside(45_050));
+        let guarded = DiscSet::small_with(b"TEST.WAD;1", 45_050, 0, Edc::Computed);
+        assert_eq!(refused(&guarded, &INSTALL_RULES), outside(45_050));
+        // A folder listed there is refused the same way, before its directory is read.
+        let folder = DiscSet::small_with(b"AUDIO", 45_050, 2, Edc::Zero);
+        assert_eq!(refused(&folder, &SCRIPT_RULES), outside(45_050));
+
         // The small set's first data track holds 45000 to 45020, its second 45100 alone.
         let (_dir, disc) = opened(&DiscSet::small(Edc::Zero), &SCRIPT_RULES);
         let mut disc = disc.unwrap();
@@ -1212,19 +1266,33 @@ mod tests {
         let (_dir, sheet) = written(&set);
         assert_eq!(refusal(read_head(&sheet, &SCRIPT_RULES)), disagrees);
 
-        // Past the boot area a sector is judged only when it is read: the root directory's, at
-        // 45020, whose frame is set to 21.
+        // The sectors the opening reads after the boot area are judged as they are read: the
+        // volume descriptor's, at 45016, and the root directory's, at 45020, their frames set to
+        // 17 and 21. The head alone reads neither.
+        for (sector, frame) in [(16, 0x17), (20, 0x21)] {
+            let set = patched(
+                DiscSet::small(Edc::Zero),
+                "track3.bin",
+                place_of(sector, 14),
+                &[frame],
+            );
+            assert_eq!(refused(&set, &SCRIPT_RULES), disagrees, "{sector}");
+            let (_dir, sheet) = written(&set);
+            assert!(read_head(&sheet, &SCRIPT_RULES).is_ok(), "{sector}");
+        }
+        // Past those a sector is judged only when it is read: one between the volume descriptor
+        // and the root directory, at 45018, whose frame is set to 19.
         let set = patched(
             DiscSet::small(Edc::Zero),
             "track3.bin",
-            place_of(20, 14),
-            &[0x21],
+            place_of(18, 14),
+            &[0x19],
         );
         let (_dir, disc) = opened(&set, &SCRIPT_RULES);
         let mut disc = disc.unwrap();
-        assert_eq!(refusal(disc.read(45_020, 1)), disagrees);
-        assert_eq!(refusal(disc.read(45_019, 2049)), disagrees);
-        assert_eq!(disc.read(45_019, 2048).unwrap().len(), FORMAT_SECTOR);
+        assert_eq!(refusal(disc.read(45_018, 1)), disagrees);
+        assert_eq!(refusal(disc.read(45_017, 2049)), disagrees);
+        assert_eq!(disc.read(45_017, 2048).unwrap().len(), FORMAT_SECTOR);
 
         // A sector that begins with no mode 1 header is refused for that, as the extractor refuses
         // it, before its address is compared: in the boot area, and the first of a track, which
@@ -1283,10 +1351,27 @@ mod tests {
         assert!(copied(&parity, &INSTALL_RULES, &stream) == kept);
 
         // The sectors the disc reads as it opens are held to their codes as it opens: the boot
-        // area's, and each data track's first, which places it.
+        // area's, each data track's first, which places it, the volume descriptor's, and the
+        // directories', the root's and AUDIO's. The last three are changed where nothing reads
+        // them, so that only their codes tell.
         let cases = [
             ("track3.bin", place_of(5, FORMAT_USER_DATA_AT + 7), 45_005),
             ("track5.bin", place_of(225, FORMAT_USER_DATA_AT), 45_100),
+            (
+                "track3.bin",
+                place_of(16, FORMAT_USER_DATA_AT + 1_000),
+                45_016,
+            ),
+            (
+                "track3.bin",
+                place_of(20, FORMAT_USER_DATA_AT + 2_000),
+                45_020,
+            ),
+            (
+                "track3.bin",
+                place_of(21, FORMAT_USER_DATA_AT + 2_000),
+                45_021,
+            ),
         ];
         for (name, place, lba) in cases {
             let damaged = flipped(set.clone(), name, place);
@@ -1498,5 +1583,41 @@ mod tests {
         let (_dir, sheet) = written(&set);
         let error = GdRom::open(&sheet, &SCRIPT_RULES, &quiet(&cancel)).unwrap_err();
         assert!(matches!(error, MediaError::Cancelled), "{error:?}");
+    }
+
+    #[test]
+    #[ignore = "needs the player's dump"]
+    fn the_players_disc_places_its_tracks_and_walks_its_files() {
+        let sheet = players_disc();
+        // Opened by an installation's rules: every track's file there, the high-density area's
+        // first data track at 45000, and every sector read held to its code, the boot area's,
+        // the volume descriptor's and every directory's among them. A failure says which rule
+        // the disc breaks, never what it holds.
+        let disc = GdRom::open(&sheet, &INSTALL_RULES, &quiet(&Cancel::default()))
+            .unwrap_or_else(|error| panic!("the disc is refused: {}", error.rule()));
+        // Its three data tracks, each placed by its first sector's header: the single-density
+        // area's, and the high-density area's two on either side of its audio track, the second
+        // 225 sectors into its file.
+        let tracks: Vec<(u64, i64, u64)> = disc
+            .data_tracks()
+            .iter()
+            .map(|track| (track.index, track.first_lba, track.sectors))
+            .collect();
+        assert_eq!(
+            tracks,
+            [(0, 0, 850), (0, 45_000, 207_436), (225, 253_187, 295_963)]
+        );
+        // Its boot area names the US release, and its volume the game.
+        let boot = disc.boot();
+        assert!(boot.product() == "T9710N", "another product");
+        assert!(boot.field(VERSION) == b"V1.003", "another version");
+        assert!(boot.field(AREA) == b" U      ", "another area");
+        assert!(boot.title() == "GAUNTLET LEGENDS", "another title");
+        assert!(disc.volume() == "GAUNT1", "another volume");
+        // Its volume's tree lists 156 files, 606,599,222 bytes in all.
+        let files = disc.files();
+        assert_eq!(files.len(), 156);
+        let bytes: u64 = files.iter().map(|file| u64::from(file.size)).sum();
+        assert_eq!(bytes, 606_599_222);
     }
 }

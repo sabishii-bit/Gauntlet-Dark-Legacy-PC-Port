@@ -426,11 +426,10 @@ fn header_char(byte: u8) -> char {
 
 #[cfg(test)]
 mod tests {
-    use std::env;
     use std::fs::{self, File};
     use std::io::{self, Read};
     use std::ops::Range;
-    use std::path::{Path, PathBuf};
+    use std::path::Path;
 
     use gdl_files::{BLOCK_LEN, Cancel, Job, NoProgress};
     use gdl_fixtures::{reorder, unhex};
@@ -440,21 +439,11 @@ mod tests {
         BIG_ENDIAN_FIRST_WORD, BYTE_SWAPPED_FIRST_WORD, ByteOrder, LITTLE_ENDIAN_FIRST_WORD,
         MAX_ROM_LEN, N64Rom, ROM_HEADER_LEN, RomHeader, US_SHA1, WORD_LEN, read_in_blocks,
     };
-    use crate::vectors::{frozen, n64_golden, n64_vectors, named, number, text};
+    use crate::vectors::{frozen, n64_golden, n64_vectors, named, number, players_rom, text};
     use crate::{
         COMPRESSED, MediaError, ROMDISK_LIMITS, Region, RomRule, Sha1Digest, Sha256Digest,
         US_OVERLAYS, wad_sections,
     };
-
-    /// The variable that names the player's own N64 ROM for the tests that need it.
-    const ROM_VARIABLE: &str = "GDL_LEGENDS_N64_ROM";
-
-    /// Where the player's N64 ROM lies in the repository's assets, when the variable names no
-    /// other place.
-    const ROM_IN_ASSETS: &str = "assets/n64/Gauntlet Legends (USA).z64";
-
-    /// The repository's root, from this crate's folder.
-    const REPOSITORY_FROM_CRATE: &str = "../../../..";
 
     /// How many bytes the US cartridge holds: 128 Mbit.
     const US_ROM_LEN: u64 = 16 << 20;
@@ -535,25 +524,6 @@ mod tests {
         N64Rom::from_bytes(named("dump.z64"), bytes)
             .unwrap()
             .header()
-    }
-
-    /// The player's own N64 ROM: the file the variable names, else the one in the repository's
-    /// assets. Fails, naming the variable to set, when there is none.
-    fn players_rom() -> PathBuf {
-        let path = env::var_os(ROM_VARIABLE).map_or_else(
-            || {
-                Path::new(env!("CARGO_MANIFEST_DIR"))
-                    .join(REPOSITORY_FROM_CRATE)
-                    .join(ROM_IN_ASSETS)
-            },
-            PathBuf::from,
-        );
-        assert!(
-            path.is_file(),
-            "no N64 ROM at {}: set {ROM_VARIABLE} to the player's dump",
-            path.display()
-        );
-        path
     }
 
     #[test]

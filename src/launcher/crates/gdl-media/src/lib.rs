@@ -15,12 +15,14 @@ mod vectors;
 pub use digest::{Sha1Digest, Sha256Digest};
 pub use error::{DiscRule, MediaError, RomRule};
 pub use gdrom::{
-    AREA, BOOT_LBA, BOOT_LEN, BOOT_SECTORS, DataTrack, DiscFile, DiscHead, DiscRules, EDC_FIELD,
-    EDC_POLYNOMIAL, EDC_SPAN, EXECUTABLE, FRAMES_PER_SECOND, GdRom, HARDWARE_ID, HEADER_LEN,
-    INSTALL_RULES, IpBin, LBA_BIAS, MAX_CHUNK_SECTORS, MAX_SHEET_LEN, PRODUCT, RAW_SECTOR,
-    SCRIPT_RULES, SECONDS_PER_MINUTE, SECTOR, SYNC, SectorCheck, Sheet, SheetKind, SheetTrack,
-    TITLE, TITLE_PREFIX, TrackMode, USER_DATA, VERSION, ascii_field, edc, lines, parse_sheet,
-    read_head, read_sheet, sector_lba, strip,
+    ALLOWED_FLAGS, AREA, BLOCK_SIZE_AT, BOOT_LBA, BOOT_LEN, BOOT_SECTORS, DataTrack, DiscFile,
+    DiscHead, DiscRules, EDC_FIELD, EDC_POLYNOMIAL, EDC_SPAN, EXECUTABLE, FLAG_DIRECTORY,
+    FRAMES_PER_SECOND, GdRom, HARDWARE_ID, HEADER_LEN, INSTALL_RULES, IpBin, LBA_BIAS,
+    MAX_CHUNK_SECTORS, MAX_DIRECTORY_DEPTH, MAX_DIRECTORY_LEN, MAX_ENTRIES, MAX_SHEET_LEN,
+    MIN_RECORD_LEN, PRODUCT, PVD_LBA, RAW_SECTOR, ROOT_RECORD_AT, SCRIPT_RULES, SECONDS_PER_MINUTE,
+    SECTOR, STANDARD_ID, SYNC, SectorCheck, Sheet, SheetKind, SheetTrack, TITLE, TITLE_PREFIX,
+    TrackMode, USER_DATA, VERSION, VOLUME_ID, ascii_field, edc, lines, parse_sheet, read_head,
+    read_sheet, sector_lba, strip,
 };
 pub use identify::Region;
 pub use n64::{

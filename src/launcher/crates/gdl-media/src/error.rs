@@ -287,8 +287,39 @@ pub enum DiscRule {
     /// The boot area is not Gauntlet Legends' on the Dreamcast: it does not begin with the
     /// console's hardware ID, or its title does not begin with the game's name.
     NotGauntletLegends,
-    /// A text field of the boot area that the extraction records holds a byte outside ASCII.
+    /// A text field the extraction records holds a byte outside ASCII: the boot area's product,
+    /// title or executable, or the volume's name its volume descriptor gives.
     TextField,
+    /// The volume descriptor after the boot area is no primary one of ISO 9660, or gives its
+    /// logical blocks another size than a sector's user data.
+    VolumeDescriptor,
+    /// The volume descriptor's record of the root directory is not a directory's.
+    RootNotDirectory,
+    /// A number ISO 9660 keeps both-endian, little-endian and then big-endian, has halves that
+    /// differ.
+    BothEndian,
+    /// A directory record is shorter than its fixed fields and an identifier of a byte, or runs
+    /// past its directory's end or into the next sector.
+    RecordTruncated,
+    /// A directory record has an extended attribute record, interleaves its file, or carries a
+    /// flag other than hidden and directory, such as the one a file continued in another record
+    /// carries.
+    RecordUnsupported,
+    /// A directory record places its extent on another volume than the disc's one, or gives its
+    /// identifier a length that runs past the record's end.
+    FileIdentifier,
+    /// A directory lies deeper below the root than
+    /// [`MAX_DIRECTORY_DEPTH`](crate::MAX_DIRECTORY_DEPTH), holds more than
+    /// [`MAX_DIRECTORY_LEN`](crate::MAX_DIRECTORY_LEN) bytes, or is one the walk has read
+    /// already, as a folder that holds itself or its parent is.
+    DirectoryShape,
+    /// Two entries of the volume's tree have one path, in this or another letter case, as two
+    /// versions of one file do, or the tree holds more than [`MAX_ENTRIES`](crate::MAX_ENTRIES).
+    Entries,
+    /// An entry's identifier holds a byte outside ASCII or, its version dropped, is no name the
+    /// extracted tree may hold by itself, or makes with its folder's path a path longer than the
+    /// tree may hold.
+    EntryName,
 }
 
 impl DiscRule {
@@ -326,6 +357,15 @@ impl DiscRule {
             DiscRule::SectorEdc => "sectorEdc",
             DiscRule::NotGauntletLegends => "notGauntletLegends",
             DiscRule::TextField => "textField",
+            DiscRule::VolumeDescriptor => "volumeDescriptor",
+            DiscRule::RootNotDirectory => "rootNotDirectory",
+            DiscRule::BothEndian => "bothEndian",
+            DiscRule::RecordTruncated => "recordTruncated",
+            DiscRule::RecordUnsupported => "recordUnsupported",
+            DiscRule::FileIdentifier => "fileIdentifier",
+            DiscRule::DirectoryShape => "directoryShape",
+            DiscRule::Entries => "entries",
+            DiscRule::EntryName => "entryName",
         }
     }
 }
@@ -496,6 +536,15 @@ mod tests {
             (DiscRule::SectorEdc, "sectorEdc"),
             (DiscRule::NotGauntletLegends, "notGauntletLegends"),
             (DiscRule::TextField, "textField"),
+            (DiscRule::VolumeDescriptor, "volumeDescriptor"),
+            (DiscRule::RootNotDirectory, "rootNotDirectory"),
+            (DiscRule::BothEndian, "bothEndian"),
+            (DiscRule::RecordTruncated, "recordTruncated"),
+            (DiscRule::RecordUnsupported, "recordUnsupported"),
+            (DiscRule::FileIdentifier, "fileIdentifier"),
+            (DiscRule::DirectoryShape, "directoryShape"),
+            (DiscRule::Entries, "entries"),
+            (DiscRule::EntryName, "entryName"),
         ];
         for (rule, name) in rules {
             assert_eq!(rule.as_str(), name);

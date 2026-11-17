@@ -1,13 +1,34 @@
 //! The shared vectors as the readers' tests read them: the N64 and Dreamcast cases that the
 //! extractors' tests and the launcher's read alike, the manifests the extractors wrote for their
 //! dumps, the names the N64 extractor was given those dumps under, the tracks a sheet lists as the
-//! cases write them, with the LBA a GDI gives each, and a disc's data tracks as its manifest
-//! records them.
+//! cases write them, with the LBA a GDI gives each, and a disc's data tracks and files as its
+//! manifest records them. Beside them, where the trusted machine keeps the player's own dumps.
+
+use std::env;
+use std::path::{Path, PathBuf};
 
 use gdl_fixtures::unhex;
 use serde_json::{Value, json};
 
-use crate::{DataTrack, SheetTrack, SourceName, TrackMode};
+use crate::{DataTrack, DiscFile, SheetTrack, SourceName, TrackMode};
+
+/// The repository's root, from this crate's folder.
+const REPOSITORY_FROM_CRATE: &str = "../../../..";
+
+/// The variable that names the player's own N64 ROM for the tests that need it.
+const ROM_VARIABLE: &str = "GDL_LEGENDS_N64_ROM";
+
+/// Where the player's N64 ROM lies in the repository's assets, when the variable names no other
+/// place.
+const ROM_IN_ASSETS: &str = "assets/n64/Gauntlet Legends (USA).z64";
+
+/// The variable that names the player's own Dreamcast disc for the tests that need it: the cue
+/// sheet of its dump.
+const DISC_VARIABLE: &str = "GDL_LEGENDS_DREAMCAST_DISC";
+
+/// Where the player's disc lies in the repository's assets, when the variable names no other
+/// place.
+const DISC_IN_ASSETS: &str = "assets/dreamcast/Gauntlet Legends (USA)/Gauntlet Legends (USA).cue";
 
 /// The N64 cases.
 const N64_VECTORS: &str = include_str!(concat!(
@@ -165,6 +186,65 @@ pub(crate) fn recorded(tracks: &[DataTrack]) -> Value {
         })
     });
     Value::Array(rows.collect())
+}
+
+/// A disc's files as the Dreamcast extractor's disc manifest records them, but for their
+/// digests: each one's path, LBA and size, by those names.
+pub(crate) fn located(files: &[DiscFile]) -> Value {
+    let rows = files.iter().map(|file| {
+        json!({
+            "path": file.path.as_str(),
+            "lba": file.lba,
+            "size": file.size,
+        })
+    });
+    Value::Array(rows.collect())
+}
+
+/// The files a disc manifest records, as [`located`] gives a disc's: without their digests.
+pub(crate) fn manifest_files(manifest: &Value) -> Value {
+    let rows = manifest["files"]
+        .as_array()
+        .expect("a manifest lists files");
+    let rows = rows.iter().map(|row| {
+        json!({
+            "path": row["path"],
+            "lba": row["lba"],
+            "size": row["size"],
+        })
+    });
+    Value::Array(rows.collect())
+}
+
+/// The player's own N64 ROM, for the tests that run on the trusted machine, as [`players_dump`]
+/// finds it.
+pub(crate) fn players_rom() -> PathBuf {
+    players_dump(ROM_VARIABLE, ROM_IN_ASSETS, "N64 ROM")
+}
+
+/// The cue sheet of the player's own Dreamcast disc, for the tests that run on the trusted
+/// machine, as [`players_dump`] finds it.
+pub(crate) fn players_disc() -> PathBuf {
+    players_dump(DISC_VARIABLE, DISC_IN_ASSETS, "Dreamcast disc")
+}
+
+/// The player's own dump, `what` it is: the file the variable `variable` names, else the one at
+/// `in_assets` in the repository. Fails, naming the variable to set, when there is none.
+fn players_dump(variable: &str, in_assets: &str, what: &str) -> PathBuf {
+    let path = env::var_os(variable).map_or_else(
+        || {
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join(REPOSITORY_FROM_CRATE)
+                .join(in_assets)
+        },
+        PathBuf::from,
+    );
+    assert!(
+        path.is_file(),
+        "no {what} at {}: set {variable} to the player's dump",
+        path.display()
+    );
+    path
 }
 
 /// A track's mode as a cue sheet spells it.
