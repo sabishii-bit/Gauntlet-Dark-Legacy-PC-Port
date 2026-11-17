@@ -655,7 +655,7 @@ mod tests {
     use std::path::{Path, PathBuf};
 
     use gdl_files::{Cancel, Job, NoProgress};
-    use gdl_fixtures::{DiscSet, Edc, SparseFile, raw_sector, reorder, snapshot};
+    use gdl_fixtures::{DiscSet, Edc, raw_sector, reorder, snapshot};
     use serde_json::Value;
 
     use super::{
@@ -663,11 +663,12 @@ mod tests {
         US_DISC, Verdict, disc_verdict, identify, n64_verdict,
     };
     use crate::vectors::{
-        dreamcast_vectors, frozen, n64_vectors, named, players_disc, players_rom,
+        boot_of, dreamcast_vectors, frozen, n64_vectors, named, players_disc, players_rom,
+        with_boot_bytes,
     };
     use crate::{
         ByteOrder, GdRom, IpBin, MAX_ROM_LEN, MediaError, RomHeader, SCRIPT_RULES, Sha1Digest,
-        Sha256Digest, SheetKind, TrackMode, US_SHA1, parse_sheet, read_head,
+        Sha256Digest, SheetKind, TrackMode, US_SHA1, parse_sheet,
     };
 
     /// How many bytes a raw sector holds. The format's facts are given here apart from the
@@ -832,34 +833,6 @@ mod tests {
                 tracks,
             },
         }
-    }
-
-    /// The file of `set` named `name`.
-    fn file_of<'a>(set: &'a mut DiscSet, name: &str) -> &'a mut SparseFile {
-        set.files
-            .iter_mut()
-            .find(|(held, _)| held == name)
-            .map(|(_, file)| file)
-            .unwrap_or_else(|| panic!("the set holds no file {name}"))
-    }
-
-    /// `set`, a cue set, with `bytes` written over its boot area from `at`, a place in the area's
-    /// user data within one sector, as a chunk of its first data track's file written after the
-    /// set's own.
-    fn with_boot_bytes(mut set: DiscSet, at: usize, bytes: &[u8]) -> DiscSet {
-        let (sector, within) = (at / FORMAT_SECTOR, at % FORMAT_SECTOR);
-        assert!(within + bytes.len() <= FORMAT_SECTOR);
-        let place = sector * FORMAT_RAW_SECTOR + FORMAT_USER_DATA_AT + within;
-        let track = file_of(&mut set, "track3.bin");
-        track.chunks.push((place as u64, bytes.to_vec()));
-        set
-    }
-
-    /// The boot area of the disc `set` holds, read with its head.
-    fn boot_of(set: &DiscSet) -> IpBin {
-        let dir = tempfile::tempdir().unwrap();
-        let sheet = set.write(dir.path()).unwrap();
-        read_head(&sheet, &SCRIPT_RULES).unwrap().boot
     }
 
     /// `boot` with `bytes` written over it from `at`.
@@ -1362,7 +1335,7 @@ mod tests {
                 area: *b" U      ",
             }
         );
-        let full = boot_of(&DiscSet::full(Edc::Zero));
+        let full = boot_of(&DiscSet::full(Edc::Zero)).unwrap();
         assert_eq!(disc_verdict(&full, &US_DISC), Verdict::Supported);
         // Each field the US disc is known by, changed: another revision of the game, another
         // region's disc included, and a disc for every region.
@@ -1399,7 +1372,7 @@ mod tests {
             );
         }
         // Held to another identity, a disc is that identity's disc, and the US disc is not.
-        let small = boot_of(&DiscSet::small(Edc::Zero));
+        let small = boot_of(&DiscSet::small(Edc::Zero)).unwrap();
         let refused = Verdict::Refused(DumpRefusal::OtherRevision);
         assert_eq!(disc_verdict(&small, &US_DISC), refused);
         let small_disc = DiscIdentity {
@@ -1465,9 +1438,9 @@ mod tests {
         let mut set = DiscSet::full(Edc::Zero);
         let boot_end = FORMAT_BOOT_SECTORS * FORMAT_RAW_SECTOR;
         let rest = (FULL_FIRST_SECTORS - FORMAT_BOOT_SECTORS) * FORMAT_RAW_SECTOR;
-        let first = file_of(&mut set, "track3.bin");
+        let first = set.file_mut("track3.bin");
         first.chunks.push((boot_end as u64, vec![0xFF; rest]));
-        let second = file_of(&mut set, "track5.bin");
+        let second = set.file_mut("track5.bin");
         let header_at = (FULL_PREGAP_SECTORS * FORMAT_RAW_SECTOR) as u64;
         let header = raw_sector(FULL_SECOND_LBA, &[], Edc::Zero)[..FORMAT_USER_DATA_AT].to_vec();
         let filled = vec![0xFF; usize::try_from(second.len).unwrap()];

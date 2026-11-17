@@ -560,11 +560,11 @@ fn native_path(path: &RelPath) -> RelPath {
 #[cfg(test)]
 mod tests {
     use std::fs::{self, OpenOptions};
-    use std::io::{self, Read, Seek, SeekFrom, Write};
+    use std::io::{self, Seek, SeekFrom, Write};
     use std::path::PathBuf;
 
     use gdl_files::{Cancel, DISC_NAMES, Job, PhaseId, Progress, RelPath, Staging};
-    use gdl_fixtures::{DiscSet, Edc, SparseFile, raw_sector, sha256_hex, sizes_rom, unhex};
+    use gdl_fixtures::{DiscSet, Edc, raw_sector, sha256_hex, sizes_rom, unhex};
     use gdl_media::{BOOT_LBA, DataTrack, GdRom, MAX_SIZES_ROM_LEN, SCRIPT_RULES, Sha256Digest};
     use serde_json::Value;
 
@@ -633,40 +633,13 @@ mod tests {
         panic!("no data track of the full set holds LBA {lba}")
     }
 
-    /// The file of `set` named `name`.
-    fn file_of<'a>(set: &'a mut DiscSet, name: &str) -> &'a mut SparseFile {
-        set.files
-            .iter_mut()
-            .find(|(held, _)| held == name)
-            .map(|(_, file)| file)
-            .unwrap_or_else(|| panic!("the set holds no file {name}"))
-    }
-
-    /// `set` with `bytes` written over its file `name` from `place`, as a chunk written after the
-    /// set's own, which it wins over.
-    fn patched(mut set: DiscSet, name: &str, place: u64, bytes: &[u8]) -> DiscSet {
-        file_of(&mut set, name).chunks.push((place, bytes.to_vec()));
-        set
-    }
-
-    /// What `file` holds, read whole.
-    fn contents(file: &SparseFile) -> Vec<u8> {
-        let mut from_start = SparseFile {
-            at: 0,
-            ..file.clone()
-        };
-        let mut bytes = Vec::new();
-        from_start.read_to_end(&mut bytes).unwrap();
-        bytes
-    }
-
     /// The full set with the identifier `from`, which its first data track holds once, written as
     /// `to`, of the same length: a name its root directory lists, changed where it is.
     fn renamed(from: &[u8], to: &[u8]) -> DiscSet {
         assert_eq!(from.len(), to.len());
         let track = first_track(&full_golden(&dreamcast_vectors()));
-        let mut set = DiscSet::full(Edc::Zero);
-        let held = contents(file_of(&mut set, &track));
+        let set = DiscSet::full(Edc::Zero);
+        let held = set.file(&track).contents();
         let places: Vec<usize> = held
             .windows(from.len())
             .enumerate()
@@ -674,7 +647,7 @@ mod tests {
             .map(|(at, _)| at)
             .collect();
         assert_eq!(places.len(), 1, "{:?} is held once", from.escape_ascii());
-        patched(set, &track, places[0] as u64, to)
+        set.patched(&track, places[0] as u64, to)
     }
 
     /// The full set with SIZES.ROM holding `table`: its root's record giving the table's length,
@@ -686,7 +659,7 @@ mod tests {
         let len = u32::try_from(table.len()).unwrap();
         let set = DiscSet::full_with_sizes_rom_len(Edc::Zero, len);
         let sector = raw_sector(u32::try_from(lba).unwrap(), table, Edc::Zero);
-        patched(set, &track, place, &sector)
+        set.patched(&track, place, &sector)
     }
 
     /// The full set with a byte outside ASCII in its boot area's title, right after the game's
@@ -696,12 +669,7 @@ mod tests {
         let (track, boot) = sector_place(&golden, u64::from(BOOT_LBA));
         let within =
             gdl_media::USER_DATA.start + gdl_media::TITLE.start + gdl_media::TITLE_PREFIX.len();
-        patched(
-            DiscSet::full(Edc::Zero),
-            &track,
-            boot + within as u64,
-            &[NON_ASCII],
-        )
+        DiscSet::full(Edc::Zero).patched(&track, boot + within as u64, &[NON_ASCII])
     }
 
     /// What a test's extraction of a disc wrote: its tree, its two manifests' bytes, and what the
@@ -1095,7 +1063,7 @@ mod tests {
         // would be refused by the disc's format instead; the extent lies on the disc all the same.
         let (track, place) = sector_place(&golden, sizes_lba(&golden));
         let set = DiscSet::full_with_sizes_rom_len(Edc::Zero, declared);
-        let set = patched(set, &track, place, &[0; gdl_media::HEADER_LEN]);
+        let set = set.patched(&track, place, &[0; gdl_media::HEADER_LEN]);
         let folders = Folders::new();
         let error = refused_before_staging(&folders, &set);
         assert_eq!(error.rule(), "sizesTooLarge", "{error}");
@@ -1121,7 +1089,7 @@ mod tests {
         let (track, place) = sector_place(&golden, lba);
         let elsewhere = u32::try_from(lba + sectors).unwrap();
         let header = &raw_sector(elsewhere, &[], Edc::Zero)[..gdl_media::HEADER_LEN];
-        let set = patched(DiscSet::full(Edc::Zero), &track, place, header);
+        let set = DiscSet::full(Edc::Zero).patched(&track, place, header);
         let folders = Folders::new();
         let sheet = folders.disc(&set);
         let before = folders.before();

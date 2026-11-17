@@ -465,6 +465,31 @@ pub struct SparseFile {
     pub at: u64,
 }
 
+impl SparseFile {
+    /// A file that holds `bytes` and nothing else, read from its start.
+    pub fn holding(bytes: Vec<u8>) -> SparseFile {
+        SparseFile {
+            len: bytes.len() as u64,
+            chunks: vec![(0, bytes)],
+            at: 0,
+        }
+    }
+
+    /// Every byte the file holds, read whole from its start whatever has been read of it: for the
+    /// small files a test changes, since the bytes are held in memory.
+    pub fn contents(&self) -> Vec<u8> {
+        let mut from_start = SparseFile {
+            at: 0,
+            ..self.clone()
+        };
+        let mut bytes = Vec::new();
+        from_start
+            .read_to_end(&mut bytes)
+            .expect("a file held in memory reads whole");
+        bytes
+    }
+}
+
 impl Read for SparseFile {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let read = (buf.len() as u64).min(self.len.saturating_sub(self.at)) as usize;
@@ -1021,5 +1046,31 @@ mod tests {
         let mut around = [0xEE; 5];
         file.read_exact(&mut around).unwrap();
         assert_eq!(around, *b"\0far\0");
+    }
+
+    #[test]
+    fn a_sparse_file_holds_bytes_given_whole_and_gives_them_whole() {
+        // A file of given bytes holds them and nothing else, read from its start.
+        let mut file = SparseFile::holding(b"hello".to_vec());
+        assert_eq!((file.len, file.at), (5, 0));
+        assert_eq!(file.contents(), b"hello");
+        // What it holds is given whole, however much of it has been read, and the reading goes on
+        // where it was.
+        let mut two = [0; 2];
+        file.read_exact(&mut two).unwrap();
+        assert_eq!(file.contents(), b"hello");
+        assert_eq!(file.at, 2);
+        // Chunks and the zeros between them, the later chunk read where two overlap.
+        let file = SparseFile {
+            len: 8,
+            chunks: vec![
+                (1, b"abc".to_vec()),
+                (2, b"Z".to_vec()),
+                (7, b"xy".to_vec()),
+            ],
+            at: 8,
+        };
+        assert_eq!(file.contents(), b"\0aZc\0\0\0x");
+        assert!(SparseFile::holding(Vec::new()).contents().is_empty());
     }
 }

@@ -3,15 +3,19 @@
 //! dumps, the names the N64 extractor was given those dumps under, the tracks a sheet lists as the
 //! cases write them, with the LBA a GDI gives each, a disc's data tracks and files as its manifest
 //! records them, and the files a packed file table lists as the cases and the native manifests
-//! write them. Beside them, where the trusted machine keeps the player's own dumps.
+//! write them. Beside them, where the trusted machine keeps the player's own dumps, and a disc
+//! set's boot area as its head reads it, changed where a test needs it.
 
 use std::env;
 use std::path::{Path, PathBuf};
 
-use gdl_fixtures::unhex;
+use gdl_fixtures::{DiscSet, unhex};
 use serde_json::{Value, json};
 
-use crate::{DataTrack, DiscFile, PackedFile, PackedPlace, SheetTrack, SourceName, TrackMode};
+use crate::{
+    DataTrack, DiscFile, IpBin, MediaError, PackedFile, PackedPlace, SCRIPT_RULES, SheetTrack,
+    SourceName, TrackMode, read_head,
+};
 
 /// The repository's root, from this crate's folder.
 const REPOSITORY_FROM_CRATE: &str = "../../../..";
@@ -112,6 +116,19 @@ const DREAMCAST_GOLDENS: [(&str, &str); 4] = [
 /// The offset the Dreamcast vectors list a file at that SIZES.ROM keeps outside DISK.ROM, as the
 /// table gives it.
 const EXTERNAL_OFFSET: i64 = -1;
+
+/// The file of the cue sets' first data track, whose first sector begins the boot area.
+const FIRST_TRACK: &str = "track3.bin";
+
+/// How many bytes a raw sector holds. The format's facts are given here apart from the readers'
+/// own constants, so that a reader that looks elsewhere is caught.
+const FORMAT_RAW_SECTOR: usize = 2352;
+
+/// Where a raw sector keeps its user data, after its sync and header.
+const FORMAT_USER_DATA_AT: usize = 16;
+
+/// How many bytes of user data a sector holds.
+const FORMAT_SECTOR: usize = 2048;
 
 /// The N64 cases, read.
 pub(crate) fn n64_vectors() -> Value {
@@ -277,6 +294,28 @@ pub(crate) fn manifest_restored(manifest: &Value) -> Value {
         .map(|row| json!({"path": row["path"], "offset": row["offset"], "size": row["size"]}))
         .collect();
     json!({"files": rows, "external": manifest["external"]})
+}
+
+/// The boot area of the disc `set` holds, read with its head under the extractor's rules, or the
+/// rule and the words it is refused by, a rule of the disc's format.
+pub(crate) fn boot_of(set: &DiscSet) -> Result<IpBin, (&'static str, String)> {
+    let dir = tempfile::tempdir().unwrap();
+    let sheet = set.write(dir.path()).unwrap();
+    let head = read_head(&sheet, &SCRIPT_RULES).map_err(|error| {
+        assert!(matches!(error, MediaError::Disc { .. }), "{error:?}");
+        (error.rule(), error.to_string())
+    })?;
+    Ok(head.boot)
+}
+
+/// `set`, a cue set, with `bytes` written over its boot area from `at`, a place in the area's
+/// user data within one sector, as a chunk of its first data track's file written after the
+/// set's own. The sector's code is left as it was, so only the extractor's rules read it.
+pub(crate) fn with_boot_bytes(set: DiscSet, at: usize, bytes: &[u8]) -> DiscSet {
+    let (sector, within) = (at / FORMAT_SECTOR, at % FORMAT_SECTOR);
+    assert!(within + bytes.len() <= FORMAT_SECTOR);
+    let place = sector * FORMAT_RAW_SECTOR + FORMAT_USER_DATA_AT + within;
+    set.patched(FIRST_TRACK, place as u64, bytes)
 }
 
 /// The player's own N64 ROM, for the tests that run on the trusted machine, as [`players_dump`]

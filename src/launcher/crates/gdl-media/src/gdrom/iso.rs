@@ -622,11 +622,7 @@ mod tests {
     /// first data track's file from the sector at `lba`, as a chunk written after the set's own,
     /// which it wins over. The file is lengthened to hold them where it ends first.
     fn with_sectors(mut set: DiscSet, lba: u32, payloads: &[&[u8]]) -> DiscSet {
-        let (_, track) = set
-            .files
-            .iter_mut()
-            .find(|(name, _)| name == TRACK)
-            .expect("a first data track");
+        let track = set.file_mut(TRACK);
         let place = u64::from(lba - TRACK_LBA) * RAW_SECTOR as u64;
         let sectors: Vec<u8> = (lba..)
             .zip(payloads)

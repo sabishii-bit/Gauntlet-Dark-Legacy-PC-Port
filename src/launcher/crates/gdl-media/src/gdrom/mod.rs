@@ -647,7 +647,7 @@ fn too_large(what: &str, most: u64) -> MediaError {
 mod tests {
     use std::fmt;
     use std::fs::{self, File};
-    use std::io::{self, Read, Write};
+    use std::io::{self, Write};
     use std::path::PathBuf;
 
     use gdl_files::{Cancel, DISC_NAMES, Job, NoProgress, RelPath};
@@ -816,72 +816,36 @@ mod tests {
         (rule, words.to_owned())
     }
 
-    /// The file of `set` named `name`.
-    fn file_of<'a>(set: &'a mut DiscSet, name: &str) -> &'a mut SparseFile {
-        set.files
-            .iter_mut()
-            .find(|(held, _)| held == name)
-            .map(|(_, file)| file)
-            .unwrap_or_else(|| panic!("the set holds no file {name}"))
-    }
-
-    /// What `file` holds, read whole.
-    fn contents(file: &SparseFile) -> Vec<u8> {
-        let mut from_start = SparseFile {
-            at: 0,
-            ..file.clone()
-        };
-        let mut bytes = Vec::new();
-        from_start.read_to_end(&mut bytes).unwrap();
-        bytes
-    }
-
-    /// A file that holds `bytes` and nothing else.
-    fn whole(bytes: Vec<u8>) -> SparseFile {
-        SparseFile {
-            len: bytes.len() as u64,
-            chunks: vec![(0, bytes)],
-            at: 0,
-        }
-    }
-
     /// The place in a track's file of the byte `at` bytes into the raw sector `sector` sectors
     /// into the file.
     fn place_of(sector: usize, at: usize) -> u64 {
         (sector * RAW_SECTOR + at) as u64
     }
 
-    /// `set` with `bytes` written over its file `name` at `place`, as a chunk written after the
-    /// set's own, which it wins over.
-    fn patched(mut set: DiscSet, name: &str, place: u64, bytes: &[u8]) -> DiscSet {
-        file_of(&mut set, name).chunks.push((place, bytes.to_vec()));
-        set
-    }
-
     /// `set` with the byte of its file `name` at `place` changed in its lowest bit.
     fn flipped(mut set: DiscSet, name: &str, place: u64) -> DiscSet {
-        let file = file_of(&mut set, name);
-        let mut bytes = contents(file);
+        let file = set.file_mut(name);
+        let mut bytes = file.contents();
         bytes[place as usize] ^= 1;
-        *file = whole(bytes);
+        *file = SparseFile::holding(bytes);
         set
     }
 
     /// `set` with its file `name` starting `sectors` raw sectors later, those before cut away.
     fn without_first(mut set: DiscSet, name: &str, sectors: usize) -> DiscSet {
-        let file = file_of(&mut set, name);
-        let bytes = contents(file);
-        *file = whole(bytes[sectors * RAW_SECTOR..].to_vec());
+        let file = set.file_mut(name);
+        let bytes = file.contents();
+        *file = SparseFile::holding(bytes[sectors * RAW_SECTOR..].to_vec());
         set
     }
 
     /// `set` with its sheet's text `from` written as `to`.
     fn resheeted(mut set: DiscSet, from: &str, to: &str) -> DiscSet {
         let name = set.sheet.clone();
-        let sheet = file_of(&mut set, &name);
-        let text = String::from_utf8(contents(sheet)).unwrap();
+        let sheet = set.file_mut(&name);
+        let text = String::from_utf8(sheet.contents()).unwrap();
         assert!(text.contains(from), "{text:?}");
-        *sheet = whole(text.replace(from, to).into_bytes());
+        *sheet = SparseFile::holding(text.replace(from, to).into_bytes());
         set
     }
 
@@ -1171,20 +1135,17 @@ mod tests {
     #[test]
     fn an_extent_runs_on_from_one_track_into_the_next() {
         // The GDI set with its first data track kept as two files that meet at 45010.
-        let mut full = DiscSet::full_gdi(Edc::Zero);
-        let first = contents(file_of(&mut full, "track03.bin"));
+        let full = DiscSet::full_gdi(Edc::Zero);
+        let first = full.file("track03.bin").contents();
         let (head, rest) = first.split_at(10 * RAW_SECTOR);
         let gdi = "3\r\n1 45000 4 2352 head.bin 0\r\n2 45010 4 2352 rest.bin 0\r\n\
                    3 45100 4 2352 track05.bin 0\r\n";
         let split = DiscSet {
             files: vec![
-                ("head.bin".to_owned(), whole(head.to_vec())),
-                ("rest.bin".to_owned(), whole(rest.to_vec())),
-                (
-                    "track05.bin".to_owned(),
-                    file_of(&mut full, "track05.bin").clone(),
-                ),
-                ("split.gdi".to_owned(), whole(gdi.into())),
+                ("head.bin".to_owned(), SparseFile::holding(head.to_vec())),
+                ("rest.bin".to_owned(), SparseFile::holding(rest.to_vec())),
+                ("track05.bin".to_owned(), full.file("track05.bin").clone()),
+                ("split.gdi".to_owned(), SparseFile::holding(gdi.into())),
             ],
             sheet: "split.gdi".to_owned(),
         };
@@ -1253,20 +1214,20 @@ mod tests {
         assert_eq!(refused(&twice, &SCRIPT_RULES), overlapping);
         // A track whose file runs a sector into the next track's.
         let mut both = full.clone();
-        let first = contents(file_of(&mut both, "track03.bin"));
+        let first = both.file("track03.bin").contents();
         let next: Vec<u8> = (45_022..45_101)
             .flat_map(|lba| raw_sector(lba, &[], Edc::Zero))
             .collect();
-        *file_of(&mut both, "track03.bin") = whole([first, next].concat());
+        *both.file_mut("track03.bin") = SparseFile::holding([first, next].concat());
         assert_eq!(refused(&both, &SCRIPT_RULES), overlapping);
         // Running up to the next track's first sector, it meets it, and the two hold no sector
         // of one LBA.
         let mut meeting = full;
-        let first = contents(file_of(&mut meeting, "track03.bin"));
+        let first = meeting.file("track03.bin").contents();
         let next: Vec<u8> = (45_022..45_100)
             .flat_map(|lba| raw_sector(lba, &[], Edc::Zero))
             .collect();
-        *file_of(&mut meeting, "track03.bin") = whole([first, next].concat());
+        *meeting.file_mut("track03.bin") = SparseFile::holding([first, next].concat());
         let (_dir, disc) = opened(&meeting, &SCRIPT_RULES);
         let disc = disc.unwrap();
         assert_eq!(disc.data_tracks()[0].sectors, 100);
@@ -1281,17 +1242,17 @@ mod tests {
             assert!(opens(&set, &rules), "{rules:?}");
             // The extractor's test: a byte past the second track's last whole sector.
             let mut longer = set.clone();
-            file_of(&mut longer, "track5.bin").len += 1;
+            longer.file_mut("track5.bin").len += 1;
             assert_eq!(refused(&longer, &rules), truncated, "{rules:?}");
             // A byte short of the first track's last.
             let mut shorter = set.clone();
-            file_of(&mut shorter, "track3.bin").len -= 1;
+            shorter.file_mut("track3.bin").len -= 1;
             assert_eq!(refused(&shorter, &rules), truncated, "{rules:?}");
             // A file of no sectors, and one of the pregap's alone, where the sheet places the
             // track 225 sectors in.
             for len in [0, 225 * RAW_SECTOR as u64] {
                 let mut cut = set.clone();
-                file_of(&mut cut, "track5.bin").len = len;
+                cut.file_mut("track5.bin").len = len;
                 assert_eq!(refused(&cut, &rules), truncated, "{len} {rules:?}");
             }
             // The sheet places the track a sector past its file's last.
@@ -1341,12 +1302,7 @@ mod tests {
         let disagrees = said("sectorAddress", DISAGREES_WORDS);
         // The extractor's test: the frame of sector 45010, in the boot area, set to 11, which
         // gives the address of 45011.
-        let set = patched(
-            DiscSet::small(Edc::Zero),
-            "track3.bin",
-            place_of(10, 14),
-            &[0x11],
-        );
+        let set = DiscSet::small(Edc::Zero).patched("track3.bin", place_of(10, 14), &[0x11]);
         assert_eq!(refused(&set, &SCRIPT_RULES), disagrees);
         let (_dir, sheet) = written(&set);
         assert_eq!(refusal(read_head(&sheet, &SCRIPT_RULES)), disagrees);
@@ -1355,24 +1311,15 @@ mod tests {
         // volume descriptor's, at 45016, and the root directory's, at 45020, their frames set to
         // 17 and 21. The head alone reads neither.
         for (sector, frame) in [(16, 0x17), (20, 0x21)] {
-            let set = patched(
-                DiscSet::small(Edc::Zero),
-                "track3.bin",
-                place_of(sector, 14),
-                &[frame],
-            );
+            let set =
+                DiscSet::small(Edc::Zero).patched("track3.bin", place_of(sector, 14), &[frame]);
             assert_eq!(refused(&set, &SCRIPT_RULES), disagrees, "{sector}");
             let (_dir, sheet) = written(&set);
             assert!(read_head(&sheet, &SCRIPT_RULES).is_ok(), "{sector}");
         }
         // Past those a sector is judged only when it is read: one between the volume descriptor
         // and the root directory, at 45018, whose frame is set to 19.
-        let set = patched(
-            DiscSet::small(Edc::Zero),
-            "track3.bin",
-            place_of(18, 14),
-            &[0x19],
-        );
+        let set = DiscSet::small(Edc::Zero).patched("track3.bin", place_of(18, 14), &[0x19]);
         let (_dir, disc) = opened(&set, &SCRIPT_RULES);
         let mut disc = disc.unwrap();
         assert_eq!(refusal(disc.read(45_018, 1)), disagrees);
@@ -1388,7 +1335,7 @@ mod tests {
             ("track5.bin", place_of(225, 15)),
         ];
         for (name, place) in cases {
-            let set = patched(DiscSet::small(Edc::Zero), name, place, &[0x02]);
+            let set = DiscSet::small(Edc::Zero).patched(name, place, &[0x02]);
             assert_eq!(refused(&set, &SCRIPT_RULES), not_mode1, "{name} {place}");
         }
     }
@@ -1490,7 +1437,7 @@ mod tests {
         // not.
         for (len, whole_sectors) in [(0, true), (2 * RAW_SECTOR as u64, true), (2353, false)] {
             let mut sized = with_audio.clone();
-            file_of(&mut sized, "track4.bin").len = len;
+            sized.file_mut("track4.bin").len = len;
             assert!(opens(&sized, &SCRIPT_RULES), "{len}");
             if whole_sectors {
                 assert!(opens(&sized, &INSTALL_RULES), "{len}");
@@ -1599,11 +1546,11 @@ mod tests {
         // Ten sectors before the boot area at the start of the first data track's file, where the
         // sheet places the track: it starts at 44990 and holds the boot area ten sectors in.
         let mut early = set.clone();
-        let track = file_of(&mut early, "track3.bin");
+        let track = early.file_mut("track3.bin");
         let before: Vec<u8> = (44_990..45_000)
             .flat_map(|lba| raw_sector(lba, &[], Edc::Computed))
             .collect();
-        *track = whole([before, contents(track)].concat());
+        *track = SparseFile::holding([before, track.contents()].concat());
         let (_dir, disc) = opened(&early, &SCRIPT_RULES);
         let disc = disc.unwrap();
         let first = &disc.data_tracks()[0];
@@ -1623,10 +1570,13 @@ mod tests {
         // Nor without a data track at all.
         let audio_only = DiscSet {
             files: vec![
-                ("track4.bin".to_owned(), whole(vec![0; RAW_SECTOR])),
+                (
+                    "track4.bin".to_owned(),
+                    SparseFile::holding(vec![0; RAW_SECTOR]),
+                ),
                 (
                     "audio.cue".to_owned(),
-                    whole(
+                    SparseFile::holding(
                         b"FILE \"track4.bin\" BINARY\nTRACK 04 AUDIO\nINDEX 01 00:00:00\n".into(),
                     ),
                 ),
@@ -1648,7 +1598,7 @@ mod tests {
         let long: Vec<u8> = (0..sectors)
             .flat_map(|sector| raw_sector(45_100 + sector as u32, &fill(sector), Edc::Zero))
             .collect();
-        *file_of(&mut set, "track05.bin") = whole(long);
+        *set.file_mut("track05.bin") = SparseFile::holding(long);
         // A file of all of it but the last sector's bytes past its seventh.
         let size = (sectors - 1) * FORMAT_SECTOR + 7;
         let file = disc_file("LONG.BIN", 45_100, size as u32);

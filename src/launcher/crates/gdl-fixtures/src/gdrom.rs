@@ -7,7 +7,7 @@
 //! code as a real disc does, for the checks only an installation's extraction makes.
 
 use std::fs::File;
-use std::io::{self, Read, Seek, SeekFrom, Write};
+use std::io::{self, Seek, SeekFrom, Write};
 use std::ops::{Range, RangeInclusive};
 use std::path::{Path, PathBuf};
 
@@ -528,12 +528,15 @@ impl DiscSet {
         );
         DiscSet {
             files: vec![
-                (TRACK3.to_owned(), whole(first)),
+                (TRACK3.to_owned(), SparseFile::holding(first)),
                 (
                     TRACK5.to_owned(),
                     after_pregap(raw_sector(SECOND_LBA, HELLO, edc), 1),
                 ),
-                (SMALL_CUE_NAME.to_owned(), whole(SMALL_CUE.into())),
+                (
+                    SMALL_CUE_NAME.to_owned(),
+                    SparseFile::holding(SMALL_CUE.into()),
+                ),
             ],
             sheet: SMALL_CUE_NAME.to_owned(),
         }
@@ -562,12 +565,12 @@ impl DiscSet {
         for (number, lba, kind, name) in GDI_TRACKS {
             if kind == GDI_DATA {
                 let track = data.next().expect("a data track for each data line");
-                files.push((name.to_owned(), whole(track)));
+                files.push((name.to_owned(), SparseFile::holding(track)));
             }
             lines.push(format!("{number} {lba} {kind} {RAW_SECTOR} {name} 0"));
         }
         let text: String = lines.iter().map(|line| format!("{line}\r\n")).collect();
-        files.push((GDI_NAME.to_owned(), whole(text.into_bytes())));
+        files.push((GDI_NAME.to_owned(), SparseFile::holding(text.into_bytes())));
         DiscSet {
             files,
             sheet: GDI_NAME.to_owned(),
@@ -586,9 +589,12 @@ impl DiscSet {
             u64::from(FULL_SECOND_SECTORS).max(u64::from(SIZES_ROM_LBA - SECOND_LBA) + extent);
         DiscSet {
             files: vec![
-                (TRACK3.to_owned(), whole(first)),
+                (TRACK3.to_owned(), SparseFile::holding(first)),
                 (TRACK5.to_owned(), after_pregap(second, sectors)),
-                (FULL_CUE_NAME.to_owned(), whole(FULL_CUE.into())),
+                (
+                    FULL_CUE_NAME.to_owned(),
+                    SparseFile::holding(FULL_CUE.into()),
+                ),
             ],
             sheet: FULL_CUE_NAME.to_owned(),
         }
@@ -634,8 +640,11 @@ impl DiscSet {
         );
         DiscSet {
             files: vec![
-                (TRACK3.to_owned(), whole(track)),
-                (ONE_FILE_CUE_NAME.to_owned(), whole(ONE_FILE_CUE.into())),
+                (TRACK3.to_owned(), SparseFile::holding(track)),
+                (
+                    ONE_FILE_CUE_NAME.to_owned(),
+                    SparseFile::holding(ONE_FILE_CUE.into()),
+                ),
             ],
             sheet: ONE_FILE_CUE_NAME.to_owned(),
         }
@@ -652,7 +661,7 @@ impl DiscSet {
             .position(|(name, _)| *name == self.sheet)
             .unwrap_or_else(|| panic!("the set holds no sheet {:?}", self.sheet));
         let mut place = at;
-        for name in audio_files(&contents(&self.files[at].1)) {
+        for name in audio_files(&self.files[at].1.contents()) {
             if self.files.iter().all(|(held, _)| *held != name) {
                 let silence = SparseFile {
                     len: RAW_SECTOR as u64,
@@ -663,6 +672,32 @@ impl DiscSet {
                 place += 1;
             }
         }
+        self
+    }
+
+    /// The file of the set named `name`. Panics when the set holds none.
+    pub fn file(&self, name: &str) -> &SparseFile {
+        self.files
+            .iter()
+            .find(|(held, _)| held == name)
+            .map(|(_, file)| file)
+            .unwrap_or_else(|| panic!("the set holds no file {name}"))
+    }
+
+    /// The file of the set named `name`, to be changed. Panics when the set holds none.
+    pub fn file_mut(&mut self, name: &str) -> &mut SparseFile {
+        self.files
+            .iter_mut()
+            .find(|(held, _)| held == name)
+            .map(|(_, file)| file)
+            .unwrap_or_else(|| panic!("the set holds no file {name}"))
+    }
+
+    /// The set with `bytes` written over its file `name` from `place`, as a chunk written after
+    /// the file's own, which it wins over: a dump changed or damaged where a test needs it.
+    /// Panics when the set holds no such file.
+    pub fn patched(mut self, name: &str, place: u64, bytes: &[u8]) -> DiscSet {
+        self.file_mut(name).chunks.push((place, bytes.to_vec()));
         self
     }
 
@@ -781,15 +816,6 @@ fn raw_track(first_lba: u32, count: u32, payloads: &[(u32, &[u8])], edc: Edc) ->
         .collect()
 }
 
-/// A file that holds `bytes` and nothing else.
-fn whole(bytes: Vec<u8>) -> SparseFile {
-    SparseFile {
-        len: bytes.len() as u64,
-        chunks: vec![(0, bytes)],
-        at: 0,
-    }
-}
-
 /// A second data track's file: the pregap's zeros, then `sectors` sectors that begin with the
 /// raw sectors `data`, zeros after them.
 fn after_pregap(data: Vec<u8>, sectors: u64) -> SparseFile {
@@ -800,18 +826,6 @@ fn after_pregap(data: Vec<u8>, sectors: u64) -> SparseFile {
         chunks: vec![(pregap, data)],
         at: 0,
     }
-}
-
-/// What `file` holds, read whole.
-fn contents(file: &SparseFile) -> Vec<u8> {
-    let mut file = SparseFile {
-        at: 0,
-        ..file.clone()
-    };
-    let mut bytes = Vec::new();
-    file.read_to_end(&mut bytes)
-        .expect("a file held in memory reads whole");
-    bytes
 }
 
 /// The files `sheet` lists for its audio tracks, in its order: a GDI's of type 0, or a cue sheet's
@@ -883,8 +897,7 @@ mod tests {
     use super::{
         BootFields, DiscSet, EDC_FIELD, EDC_SPAN, Edc, FULL_BOOT, RAW_SECTOR, RECORD_FIXED_LEN,
         RECORD_SIZE_AT, SECTOR, SIZES_POOL, SIZES_ROWS, SMALL_BOOT, SYNC, USER_DATA, audio_files,
-        boot_sector, both16, both32, contents, edc, pvd_sector, raw_sector, raw_track, record,
-        sizes_rom, whole,
+        boot_sector, both16, both32, edc, pvd_sector, raw_sector, raw_track, record, sizes_rom,
     };
     use crate::program::SparseFile;
     use crate::runtime::{hex, sha256_hex, unhex};
@@ -919,25 +932,16 @@ mod tests {
         set.files.iter().map(|(name, _)| name.clone()).collect()
     }
 
-    /// The file of `set` named `name`.
-    fn file<'a>(set: &'a DiscSet, name: &str) -> &'a SparseFile {
-        set.files
-            .iter()
-            .find(|(held, _)| held == name)
-            .map(|(_, file)| file)
-            .unwrap_or_else(|| panic!("the set holds no {name}"))
-    }
-
     /// What the file of `set` named `name` holds.
     fn bytes_of(set: &DiscSet, name: &str) -> Vec<u8> {
-        contents(file(set, name))
+        set.file(name).contents()
     }
 
     /// Every file of `set` by its name, with what it holds.
     fn files_of(set: &DiscSet) -> BTreeMap<String, Vec<u8>> {
         set.files
             .iter()
-            .map(|(name, file)| (name.clone(), contents(file)))
+            .map(|(name, file)| (name.clone(), file.contents()))
             .collect()
     }
 
@@ -1136,7 +1140,7 @@ mod tests {
             assert_eq!(names(&zero), names(&computed), "{case}");
             let mut coded = 0;
             for ((name, zero_file), (_, computed_file)) in zero.files.iter().zip(&computed.files) {
-                let (zero_bytes, computed_bytes) = (contents(zero_file), contents(computed_file));
+                let (zero_bytes, computed_bytes) = (zero_file.contents(), computed_file.contents());
                 if *name == zero.sheet {
                     assert_eq!(zero_bytes, computed_bytes, "{case}");
                     continue;
@@ -1199,7 +1203,7 @@ mod tests {
 
         // The second track keeps the full set's sectors and ends where SIZES.ROM's extent does:
         // past the pregap, DISK.ROM's sector at 45100, then the extent's from 45101.
-        let (track, full_track) = (file(&set, "track5.bin"), file(&full, "track5.bin"));
+        let (track, full_track) = (set.file("track5.bin"), full.file("track5.bin"));
         assert_eq!(track.chunks, full_track.chunks);
         let extent = u64::from(declared).div_ceil(SECTOR as u64);
         assert_eq!(extent, 8193);
@@ -1214,7 +1218,7 @@ mod tests {
         }
         let mut written = File::open(folder.path().join("track5.bin")).unwrap();
         assert_eq!(written.metadata().unwrap().len(), track.len);
-        let held = contents(full_track);
+        let held = full_track.contents();
         let mut head = vec![0; held.len()];
         written.read_exact(&mut head).unwrap();
         assert_eq!(head, held);
@@ -1435,7 +1439,7 @@ mod tests {
         assert!(audio_files(b"").is_empty());
 
         let mut set = DiscSet::full_gdi(Edc::Zero);
-        set.files.last_mut().unwrap().1 = whole(gdi.into());
+        set.files.last_mut().unwrap().1 = SparseFile::holding(gdi.into());
         let names_after = names(&set.with_audio_files());
         assert_eq!(
             names_after,
@@ -1489,7 +1493,8 @@ mod tests {
 
         // A set whose sheet ends its lines at a CR alone still gains its audio track.
         let mut set = DiscSet::full(Edc::Zero);
-        set.files.last_mut().unwrap().1 = whole(cue.replace("\r\n", "\r").into_bytes());
+        set.files.last_mut().unwrap().1 =
+            SparseFile::holding(cue.replace("\r\n", "\r").into_bytes());
         let names_after = names(&set.with_audio_files());
         assert_eq!(
             names_after,
@@ -1553,7 +1558,7 @@ mod tests {
         let folder = tempfile::tempdir().unwrap();
         let path = odd.write(folder.path()).unwrap();
         assert_eq!(fs::read(&path).unwrap(), b"\0aXY12");
-        assert_eq!(contents(&odd.files[0].1), b"\0aXY12");
+        assert_eq!(odd.files[0].1.contents(), b"\0aXY12");
     }
 
     #[test]
@@ -1578,5 +1583,32 @@ mod tests {
         assert!(panics(|| record(&[b'a'; 222], 0, 0, 0)));
         assert!(panics(|| pvd_sector(&[b'v'; 33], 45_020, 2048)));
         assert!(panics(|| raw_track(0, 2, &[(2, b"x")], Edc::Zero)));
+    }
+
+    #[test]
+    fn a_sets_files_are_found_and_patched_by_name() {
+        let full = DiscSet::full(Edc::Zero);
+        // Each file of the set, by its name.
+        for (name, file) in &full.files {
+            assert_eq!(full.file(name).contents(), file.contents(), "{name}");
+        }
+        // Bytes written over a file win over its own from where they are put, and nothing else
+        // of the set changes.
+        let mut expected = files_of(&full);
+        expected.get_mut("track5.bin").unwrap()[3..5].copy_from_slice(b"XY");
+        let patched = full.clone().patched("track5.bin", 3, b"XY");
+        assert_eq!(files_of(&patched), expected);
+        assert_eq!(names(&patched), names(&full));
+        // A file is changed in place.
+        let mut set = full.clone();
+        set.file_mut("full.cue").len = 1;
+        assert_eq!(
+            bytes_of(&set, "full.cue"),
+            &bytes_of(&full, "full.cue")[..1]
+        );
+        // A name the set does not hold is a test's mistake.
+        assert!(panics(|| full.file("none.bin").len));
+        assert!(panics(|| full.clone().patched("none.bin", 0, b"x")));
+        assert!(panics(move || set.file_mut("none.bin").len));
     }
 }

@@ -134,8 +134,8 @@ mod tests {
         AREA, BOOT_LBA, BOOT_LEN, BOOT_SECTORS, EXECUTABLE, HARDWARE_ID, PRODUCT, TITLE,
         TITLE_PREFIX, VERSION, names_gauntlet_legends,
     };
-    use crate::vectors::{dreamcast_golden, dreamcast_vectors, text};
-    use crate::{IpBin, MediaError, RAW_SECTOR, SCRIPT_RULES, read_head};
+    use crate::IpBin;
+    use crate::vectors::{boot_of, dreamcast_golden, dreamcast_vectors, text, with_boot_bytes};
 
     /// The LBA the format gives the boot area's first sector. The format's facts are given here
     /// apart from the reader's own constants, so that a reader that looks elsewhere is caught.
@@ -146,9 +146,6 @@ mod tests {
 
     /// How many bytes of user data a sector holds.
     const FORMAT_SECTOR: usize = 2048;
-
-    /// Where a raw sector keeps its user data, after its sync and header.
-    const FORMAT_USER_DATA_AT: usize = 16;
 
     /// What the boot area begins with on every Dreamcast disc.
     const FORMAT_HARDWARE_ID: &[u8; 16] = b"SEGA SEGAKATANA ";
@@ -171,40 +168,9 @@ mod tests {
     /// Where it keeps the title.
     const FORMAT_TITLE: Range<usize> = 128..256;
 
-    /// The file of the cue sets' first data track, whose first sector begins the boot area.
-    const FIRST_TRACK: &str = "track3.bin";
-
-    /// The boot area of the disc `set` holds, read with its head under the extractor's rules, or
-    /// the rule and the words it is refused by, a rule of the disc's format.
-    fn boot_of(set: &DiscSet) -> Result<IpBin, (&'static str, String)> {
-        let dir = tempfile::tempdir().unwrap();
-        let sheet = set.write(dir.path()).unwrap();
-        let head = read_head(&sheet, &SCRIPT_RULES).map_err(|error| {
-            assert!(matches!(error, MediaError::Disc { .. }), "{error:?}");
-            (error.rule(), error.to_string())
-        })?;
-        Ok(head.boot)
-    }
-
     /// The refusal by `rule` with `words`.
     fn said(rule: &'static str, words: &str) -> Result<IpBin, (&'static str, String)> {
         Err((rule, words.to_owned()))
-    }
-
-    /// `set` with `bytes` written over its boot area from `at`, a place in the area's user data
-    /// within one sector, as a chunk of its first data track's file written after the set's own.
-    /// The sector's code is left as it was, so only the extractor's rules read it.
-    fn with_boot_bytes(mut set: DiscSet, at: usize, bytes: &[u8]) -> DiscSet {
-        let (sector, within) = (at / FORMAT_SECTOR, at % FORMAT_SECTOR);
-        assert!(within + bytes.len() <= FORMAT_SECTOR);
-        let place = sector * RAW_SECTOR + FORMAT_USER_DATA_AT + within;
-        let (_, track) = set
-            .files
-            .iter_mut()
-            .find(|(name, _)| name == FIRST_TRACK)
-            .unwrap();
-        track.chunks.push((place as u64, bytes.to_vec()));
-        set
     }
 
     /// The three text fields the extraction records, as `boot` gives them.
