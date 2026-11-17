@@ -123,13 +123,8 @@ mod tests {
     use serde_json::Value;
 
     use super::{INFLATE_STEP, MAX_OVERLAY_PADDING, Trailer, decode, inflate, inflate_in_steps};
+    use crate::vectors::{n64_vectors, number, text};
     use crate::{MediaError, Sha256Digest};
-
-    /// The N64 cases the extractor's tests and the launcher's read alike.
-    const VECTORS: &str = include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../../../tests/scripts/data/legends/n64-vectors.json"
-    ));
 
     /// What the N64 extractor answers for a stream that does not end at exactly its size.
     const WRONG_END: &str = "DEFLATE output size or end marker does not match its directory";
@@ -147,24 +142,10 @@ mod tests {
     /// stream was refused with.
     type Said = Result<Vec<u8>, (&'static str, String)>;
 
-    fn vectors() -> Value {
-        serde_json::from_str(VECTORS).expect("the N64 vectors are JSON")
-    }
-
     /// The base stream the vectors deflate under `name`: `nativeBytes`, or `test`, the four bytes
     /// `test`.
     fn deflated(name: &str) -> Vec<u8> {
-        unhex(&vectors()["deflated"][name])
-    }
-
-    /// A string of the vectors.
-    fn text(value: &Value) -> &str {
-        value.as_str().expect("a string")
-    }
-
-    /// A number of the vectors.
-    fn number(value: &Value) -> usize {
-        usize::try_from(value.as_u64().expect("a number")).unwrap()
+        unhex(&n64_vectors()["deflated"][name])
     }
 
     /// The trailer a case names.
@@ -209,7 +190,7 @@ mod tests {
 
     #[test]
     fn streams_follow_the_shared_vectors() {
-        let vectors = vectors();
+        let vectors = n64_vectors();
         let cases = vectors["deflate"].as_array().unwrap();
         assert!(!cases.is_empty());
         let mut rules = Vec::new();
@@ -364,7 +345,7 @@ mod tests {
     fn small_steps_decode_as_one_does() {
         // Every shared case, and the cut-off stream at every size, with the output grown a few
         // bytes at a time, decide as when it is grown in steps no file here fills.
-        let vectors = vectors();
+        let vectors = n64_vectors();
         let mut inputs: Vec<(Vec<u8>, usize, Trailer)> = vectors["deflate"]
             .as_array()
             .unwrap()

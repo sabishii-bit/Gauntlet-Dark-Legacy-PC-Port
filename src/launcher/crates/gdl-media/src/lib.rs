@@ -8,6 +8,8 @@ mod error;
 mod identify;
 mod n64;
 mod source_name;
+#[cfg(test)]
+mod vectors;
 
 pub use digest::{Sha1Digest, Sha256Digest};
 pub use error::{MediaError, RomRule};

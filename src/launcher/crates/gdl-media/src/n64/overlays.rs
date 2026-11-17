@@ -200,14 +200,16 @@ fn program_path(field: &[u8]) -> Result<RelPath, MediaError> {
 mod tests {
     use gdl_files::{NameRule, ROMDISK_NAMES, RelPath};
     use gdl_fixtures::{
-        OVERLAY_TABLE_OFFSET, OverlaySpec, default_rom_files, rom, rom_with_overlays, set_word,
+        OVERLAY_TABLE_OFFSET, OverlaySpec, default_rom_files, reorder, rom, rom_with_overlays,
+        set_word,
     };
 
     use super::{
         OVERLAY_NAME_LEN, Overlay, OverlayTable, PROGRAM_FOLDER, PROGRAM_SUFFIX, RECORD_LEN,
         US_OVERLAYS, read,
     };
-    use crate::{MAX_OVERLAY_PADDING, MediaError, N64Rom, Sha1Digest, SourceName, US_SHA1};
+    use crate::vectors::named;
+    use crate::{MAX_OVERLAY_PADDING, MediaError, N64Rom, Sha1Digest, US_SHA1};
 
     /// The word of a record, counted from the first after its name, that says where an
     /// overlay's extent starts.
@@ -328,11 +330,6 @@ mod tests {
             .collect()
     }
 
-    /// The name of a file called `text`.
-    fn named(text: &str) -> SourceName {
-        SourceName::from_units(text.encode_utf16().collect())
-    }
-
     /// Where the word `word` of the record `index` of the US table's layout lies.
     fn word_place(index: usize, word: usize) -> usize {
         OVERLAY_TABLE_OFFSET + index * RECORD_LEN + OVERLAY_NAME_LEN + WORD_BYTES * word
@@ -404,11 +401,7 @@ mod tests {
         // The digest is the ROM's in the cartridge's own order: a dump that keeps its byte pairs
         // swapped holds the overlays of the ROM it is, and a table made for the dump's own bytes
         // finds none.
-        let swapped: Vec<u8> = bytes
-            .chunks(2)
-            .flat_map(|pair| pair.iter().rev())
-            .copied()
-            .collect();
+        let swapped = reorder(&bytes, "pairs");
         let dump = N64Rom::from_bytes(named("dump.v64"), swapped.clone()).unwrap();
         let overlays = dump.overlays(&table_for(&bytes)).unwrap();
         assert_eq!(overlays, injected(&bytes).unwrap());

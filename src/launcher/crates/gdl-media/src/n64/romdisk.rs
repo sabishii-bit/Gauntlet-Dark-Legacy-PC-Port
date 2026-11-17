@@ -325,76 +325,17 @@ fn place(at: u64) -> u32 {
 #[cfg(test)]
 mod tests {
     use gdl_files::{ROMDISK_NAMES, RelPath};
-    use gdl_fixtures::{BUILDER_UNKNOWN_WORD, RomFile, rom, set_word, unhex};
-    use serde_json::Value;
+    use gdl_fixtures::{BUILDER_UNKNOWN_WORD, RomFile, reorder, rom, set_word};
 
     use super::{
         COMPRESSED, HEADER_WORDS_AT, RECORD_WORDS_LEN, ROMDISK_HEADER_LEN, ROMDISK_LIMITS,
         ROMDISK_MAGIC, Romdisk, RomdiskLimits, read,
     };
-    use crate::{MAX_ROM_LEN, MediaError, N64Rom, Sha256Digest, SourceName};
-
-    /// The N64 cases the extractor's tests and the launcher's read alike.
-    const VECTORS: &str = include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../../../tests/scripts/data/legends/n64-vectors.json"
-    ));
-
-    /// The manifests the N64 extractor wrote for the frozen images, by the names the vectors give
-    /// them.
-    const GOLDENS: [(&str, &str); 2] = [
-        (
-            "n64-default-manifest.json",
-            include_str!(concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/../../../../tests/scripts/data/legends/n64-default-manifest.json"
-            )),
-        ),
-        (
-            "n64-mixed-manifest.json",
-            include_str!(concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/../../../../tests/scripts/data/legends/n64-mixed-manifest.json"
-            )),
-        ),
-    ];
+    use crate::vectors::{frozen, n64_golden, n64_vectors, named, number, text, word};
+    use crate::{MAX_ROM_LEN, MediaError, N64Rom, Sha256Digest};
 
     /// How the extractor names the default image's map in its refusals.
     const MAP: &str = "levels/test/worlds.wad";
-
-    fn vectors() -> Value {
-        serde_json::from_str(VECTORS).expect("the N64 vectors are JSON")
-    }
-
-    /// The image the vectors freeze under `name`.
-    fn frozen(vectors: &Value, name: &str) -> Vec<u8> {
-        unhex(&vectors["images"][name])
-    }
-
-    /// The golden manifest the vectors name `name`.
-    fn golden(name: &Value) -> Value {
-        let name = text(name);
-        let (_, golden) = GOLDENS
-            .iter()
-            .find(|(golden, _)| *golden == name)
-            .unwrap_or_else(|| panic!("no golden named {name}"));
-        serde_json::from_str(golden).expect("a golden manifest is JSON")
-    }
-
-    /// A string of the vectors.
-    fn text(value: &Value) -> &str {
-        value.as_str().expect("a string")
-    }
-
-    /// A number of the vectors.
-    fn number(value: &Value) -> usize {
-        usize::try_from(value.as_u64().expect("a number")).unwrap()
-    }
-
-    /// A word-sized number of the vectors.
-    fn word(value: &Value) -> u32 {
-        u32::try_from(value.as_u64().expect("a number")).unwrap()
-    }
 
     /// A ROM whose ROMDISK holds a plain file of one byte at each native path, as the extractor's
     /// tests build one for a path case. Plain files make the same bytes in either builder.
@@ -463,7 +404,7 @@ mod tests {
 
     #[test]
     fn the_default_image_lists_its_two_files() {
-        let vectors = vectors();
+        let vectors = n64_vectors();
         let image = frozen(&vectors, "default");
         let romdisk = read(&image, &ROMDISK_LIMITS).unwrap();
         assert_eq!(romdisk.offset, 64);
@@ -492,17 +433,12 @@ mod tests {
         assert!(shown.contains(MAP) && !shown.contains("128, 55"), "{shown}");
 
         // The ROM's ROMDISK is read in the cartridge's own order, whatever order its dump keeps.
-        for width in [2, 4] {
-            let dump: Vec<u8> = image
-                .chunks(width)
-                .flat_map(|chunk| chunk.iter().rev())
-                .copied()
-                .collect();
-            let name = SourceName::from_units("dump.v64".encode_utf16().collect());
-            let cartridge = N64Rom::from_bytes(name, dump).unwrap();
+        for transform in ["pairs", "words"] {
+            let dump = reorder(&image, transform);
+            let cartridge = N64Rom::from_bytes(named("dump.v64"), dump).unwrap();
             let again = cartridge.romdisk(&ROMDISK_LIMITS).unwrap();
-            assert_eq!(again.offset, romdisk.offset, "{width}");
-            assert_eq!(again.entries, romdisk.entries, "{width}");
+            assert_eq!(again.offset, romdisk.offset, "{transform}");
+            assert_eq!(again.entries, romdisk.entries, "{transform}");
         }
 
         // The magic may lie anywhere, and every place the ROMDISK gives counts from it.
@@ -521,13 +457,18 @@ mod tests {
 
     #[test]
     fn every_entry_is_what_the_extractors_manifest_records() {
-        let vectors = vectors();
+        let vectors = n64_vectors();
         let extractions = vectors["extractions"].as_array().unwrap();
-        assert_eq!(extractions.len(), GOLDENS.len());
+        // Both frozen images, each as the extractor read it.
+        let images: Vec<&str> = extractions
+            .iter()
+            .map(|extraction| text(&extraction["image"]))
+            .collect();
+        assert_eq!(images, ["default", "mixed"]);
         for extraction in extractions {
             let image = frozen(&vectors, text(&extraction["image"]));
-            let golden = golden(&extraction["golden"]);
-            let name = SourceName::from_units(text(&extraction["name"]).encode_utf16().collect());
+            let golden = n64_golden(&extraction["golden"]);
+            let name = named(text(&extraction["name"]));
             let cartridge = N64Rom::from_bytes(name, image).unwrap();
             let romdisk = cartridge.romdisk(&ROMDISK_LIMITS).unwrap();
             assert_eq!(golden["romdisk_offset"], romdisk.offset);
@@ -555,7 +496,7 @@ mod tests {
 
     #[test]
     fn a_file_decodes_to_exactly_the_size_its_record_gives() {
-        let vectors = vectors();
+        let vectors = n64_vectors();
         let image = frozen(&vectors, "default");
         // Where the map's and the texture's records start, and where the map's stream does.
         let (map, texture, stream) = (152, 196, 113);
@@ -631,7 +572,7 @@ mod tests {
 
     #[test]
     fn one_header_and_only_one() {
-        let vectors = vectors();
+        let vectors = n64_vectors();
         let mut twice = frozen(&vectors, "default");
         twice.extend_from_slice(ROMDISK_MAGIC);
         for image in [vec![0; 512], twice] {
@@ -660,7 +601,7 @@ mod tests {
 
     #[test]
     fn paths_follow_the_shared_vectors() {
-        let vectors = vectors();
+        let vectors = n64_vectors();
         let cases = vectors["paths"].as_array().unwrap();
         assert!(!cases.is_empty());
         let mut deviations = Vec::new();
@@ -701,7 +642,7 @@ mod tests {
 
     #[test]
     fn case_aliases_and_file_folder_collisions_are_refused() {
-        let vectors = vectors();
+        let vectors = n64_vectors();
         let cases = vectors["collisions"].as_array().unwrap();
         assert!(!cases.is_empty());
         for case in cases {
@@ -768,7 +709,7 @@ mod tests {
 
     #[test]
     fn record_words_follow_the_shared_vectors() {
-        let vectors = vectors();
+        let vectors = n64_vectors();
         let image = frozen(&vectors, "default");
         let entries = read(&image, &ROMDISK_LIMITS).unwrap().entries;
         let cases = vectors["recordWords"].as_array().unwrap();
@@ -789,7 +730,7 @@ mod tests {
 
     #[test]
     fn record_words_are_taken_up_to_their_bounds() {
-        let vectors = vectors();
+        let vectors = n64_vectors();
         let image = frozen(&vectors, "default");
         // Where the map's and the texture's records start; the pointer table starts at 144.
         let (map, texture, table) = (152, 196, 144);
@@ -837,7 +778,7 @@ mod tests {
 
     #[test]
     fn the_expansion_limit_is_injectable() {
-        let vectors = vectors();
+        let vectors = n64_vectors();
         let image = frozen(&vectors, "default");
         let cases = vectors["limits"].as_array().unwrap();
         assert!(!cases.is_empty());
@@ -915,7 +856,7 @@ mod tests {
 
     #[test]
     fn header_words_follow_the_shared_vectors() {
-        let vectors = vectors();
+        let vectors = n64_vectors();
         let image = frozen(&vectors, "default");
         let cases = vectors["headerWords"].as_array().unwrap();
         assert!(!cases.is_empty());
@@ -937,7 +878,7 @@ mod tests {
 
     #[test]
     fn the_pointer_table_lies_past_the_header_and_within_the_directory() {
-        let vectors = vectors();
+        let vectors = n64_vectors();
         let image = frozen(&vectors, "default");
         // Where the header keeps the directory's length, the table's offset and the count of
         // files, from 96, and where the first pointer lies.
@@ -1060,7 +1001,7 @@ mod tests {
 
     #[test]
     fn every_byte_flip_in_the_directory_is_refused_or_harmless() {
-        let vectors = vectors();
+        let vectors = n64_vectors();
         let image = frozen(&vectors, "default");
         assert_eq!(image.len(), 232);
         let mut refused = 0;
@@ -1081,7 +1022,7 @@ mod tests {
 
     #[test]
     fn every_word_of_the_directory_at_a_bound_is_refused_or_harmless() {
-        let vectors = vectors();
+        let vectors = n64_vectors();
         let image = frozen(&vectors, "default");
         let len = u32::try_from(image.len()).unwrap();
         let bounds = [

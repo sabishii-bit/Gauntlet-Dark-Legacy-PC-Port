@@ -378,7 +378,7 @@ mod tests {
     use std::path::{Path, PathBuf};
 
     use gdl_files::{BLOCK_LEN, Cancel, Job, NoProgress};
-    use gdl_fixtures::unhex;
+    use gdl_fixtures::{reorder, unhex};
     use serde_json::Value;
 
     use super::{
@@ -386,49 +386,11 @@ mod tests {
         LITTLE_ENDIAN_FIRST_WORD, MAX_ROM_LEN, N64Rom, ROM_HEADER_LEN, RomHeader, TITLE_AT,
         TITLE_LEN, US_SHA1, VERSION_AT, WORD_LEN,
     };
+    use crate::vectors::{frozen, n64_golden, n64_vectors, named, number, text};
     use crate::{
         COMPRESSED, MediaError, ROMDISK_LIMITS, Region, RomRule, Sha1Digest, Sha256Digest,
-        SourceName, US_OVERLAYS, wad_sections,
+        US_OVERLAYS, wad_sections,
     };
-
-    /// The N64 cases the extractor's tests and the launcher's read alike.
-    const VECTORS: &str = include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../../../tests/scripts/data/legends/n64-vectors.json"
-    ));
-
-    /// The manifests the N64 extractor wrote for the vectors' dumps, by the names the vectors
-    /// give them.
-    const GOLDENS: [(&str, &str); 4] = [
-        (
-            "n64-default-manifest.json",
-            include_str!(concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/../../../../tests/scripts/data/legends/n64-default-manifest.json"
-            )),
-        ),
-        (
-            "n64-mixed-manifest.json",
-            include_str!(concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/../../../../tests/scripts/data/legends/n64-mixed-manifest.json"
-            )),
-        ),
-        (
-            "n64-byte-swapped-manifest.json",
-            include_str!(concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/../../../../tests/scripts/data/legends/n64-byte-swapped-manifest.json"
-            )),
-        ),
-        (
-            "n64-little-endian-manifest.json",
-            include_str!(concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/../../../../tests/scripts/data/legends/n64-little-endian-manifest.json"
-            )),
-        ),
-    ];
 
     /// The variable that names the player's own N64 ROM for the tests that need it.
     const ROM_VARIABLE: &str = "GDL_LEGENDS_N64_ROM";
@@ -457,45 +419,6 @@ mod tests {
         golden: Value,
     }
 
-    fn vectors() -> Value {
-        serde_json::from_str(VECTORS).expect("the N64 vectors are JSON")
-    }
-
-    /// The golden manifest the vectors name `name`.
-    fn golden(name: &Value) -> Value {
-        let name = name.as_str().expect("a golden's name");
-        let (_, text) = GOLDENS
-            .iter()
-            .find(|(golden, _)| *golden == name)
-            .unwrap_or_else(|| panic!("no golden named {name}"));
-        serde_json::from_str(text).expect("a golden manifest is JSON")
-    }
-
-    /// A string of the vectors.
-    fn text(value: &Value) -> String {
-        value.as_str().expect("a string").to_owned()
-    }
-
-    /// The name of a file called `text`.
-    fn named(text: &str) -> SourceName {
-        SourceName::from_units(text.encode_utf16().collect())
-    }
-
-    /// `image`, a ROM in the big-endian order, in the order a vector's transform names: every
-    /// byte pair swapped, or every word's bytes reversed.
-    fn reordered(image: &[u8], transform: &str) -> Vec<u8> {
-        let width = match transform {
-            "pairs" => 2,
-            "words" => WORD_LEN,
-            other => panic!("no transform {other}"),
-        };
-        image
-            .chunks(width)
-            .flat_map(|chunk| chunk.iter().rev())
-            .copied()
-            .collect()
-    }
-
     /// A job nobody follows, asked to stop only through `cancel`.
     fn quiet(cancel: &Cancel) -> Job<'_> {
         Job {
@@ -506,7 +429,7 @@ mod tests {
 
     /// The default image with `title`, `game_code` and `version` written into its header.
     fn with_header(title: &[u8; TITLE_LEN], game_code: &[u8; 4], version: u8) -> Vec<u8> {
-        let mut image = unhex(&vectors()["images"]["default"]);
+        let mut image = frozen(&n64_vectors(), "default");
         image[TITLE_AT..TITLE_AT + TITLE_LEN].copy_from_slice(title);
         image[GAME_CODE_AT..GAME_CODE_AT + game_code.len()].copy_from_slice(game_code);
         image[VERSION_AT] = version;
@@ -541,29 +464,28 @@ mod tests {
 
     #[test]
     fn byte_orders_normalise_to_the_same_rom() {
-        let vectors = vectors();
-        let images = &vectors["images"];
+        let vectors = n64_vectors();
         // The frozen images as the extractor read them, then the default image in the two other
         // orders.
         let mut dumps = Vec::new();
         for extraction in vectors["extractions"].as_array().unwrap() {
-            let image = unhex(&images[extraction["image"].as_str().unwrap()]);
+            let image = frozen(&vectors, text(&extraction["image"]));
             dumps.push(Dump {
                 source: image.clone(),
                 canonical: image,
-                name: text(&extraction["name"]),
+                name: text(&extraction["name"]).to_owned(),
                 order: "big-endian".to_owned(),
-                golden: golden(&extraction["golden"]),
+                golden: n64_golden(&extraction["golden"]),
             });
         }
-        let default = unhex(&images["default"]);
+        let default = frozen(&vectors, "default");
         for case in vectors["byteOrders"].as_array().unwrap() {
             dumps.push(Dump {
-                source: reordered(&default, case["transform"].as_str().unwrap()),
+                source: reorder(&default, text(&case["transform"])),
                 canonical: default.clone(),
-                name: text(&case["name"]),
-                order: text(&case["byteOrder"]),
-                golden: golden(&case["golden"]),
+                name: text(&case["name"]).to_owned(),
+                order: text(&case["byteOrder"]).to_owned(),
+                golden: n64_golden(&case["golden"]),
             });
         }
 
@@ -602,7 +524,7 @@ mod tests {
 
     #[test]
     fn short_misaligned_and_unknown_headers_are_refused() {
-        let vectors = vectors();
+        let vectors = n64_vectors();
         let cases = vectors["headers"].as_array().unwrap();
         assert!(!cases.is_empty());
         for case in cases {
@@ -610,8 +532,8 @@ mod tests {
             let bytes = match case.get("hex") {
                 Some(hex) => unhex(hex),
                 None => {
-                    let image = unhex(&vectors["images"][case["image"].as_str().unwrap()]);
-                    let drop = usize::try_from(case["drop"].as_u64().unwrap()).unwrap();
+                    let image = frozen(&vectors, text(&case["image"]));
+                    let drop = number(&case["drop"]);
                     image[..image.len() - drop].to_vec()
                 }
             };
@@ -716,7 +638,7 @@ mod tests {
     fn the_header_names_a_rom() {
         // The default image's header is zeros but for its first word: it has no title, and its
         // game code is four NULs, which name no region.
-        let plain = header_of(unhex(&vectors()["images"]["default"]));
+        let plain = header_of(frozen(&n64_vectors(), "default"));
         let nothing = RomHeader {
             title: String::new(),
             game_code: [0; 4],
@@ -735,11 +657,7 @@ mod tests {
         assert_eq!(header.region(), Some(Region::NorthAmerica));
         // The header is read in the cartridge's own order, whatever order the dump keeps.
         for transform in ["pairs", "words"] {
-            assert_eq!(
-                header_of(reordered(&image, transform)),
-                header,
-                "{transform}"
-            );
+            assert_eq!(header_of(reorder(&image, transform)), header, "{transform}");
         }
 
         // The game code's last letter names the region.
@@ -785,8 +703,7 @@ mod tests {
 
     #[test]
     fn a_dump_is_read_whole_and_left_as_it_was() {
-        let vectors = vectors();
-        let default = unhex(&vectors["images"]["default"]);
+        let default = frozen(&n64_vectors(), "default");
         let dir = tempfile::tempdir().unwrap();
         let cancel = Cancel::default();
 
@@ -813,7 +730,7 @@ mod tests {
         // A dump in another order is read as its bytes are, under the name its path gives,
         // letter case included.
         let swapped = dir.path().join("Source (Swapped).V64");
-        let bytes = reordered(&default, "pairs");
+        let bytes = reorder(&default, "pairs");
         fs::write(&swapped, &bytes).unwrap();
         let rom = N64Rom::open(&swapped, &quiet(&cancel)).unwrap();
         let read = N64Rom::from_bytes(named("Source (Swapped).V64"), bytes.clone()).unwrap();

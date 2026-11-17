@@ -179,32 +179,8 @@ mod tests {
         MAX_WAD_SECTIONS, MIN_WAD_DIRECTORY, ORDERS, WAD_ROW_LEN, WadByteOrder, WadSection,
         directory_start, wad_sections,
     };
-    use crate::{MediaError, N64Rom, ROMDISK_LIMITS, SourceName};
-
-    /// The N64 cases the extractor's tests and the launcher's read alike.
-    const VECTORS: &str = include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../../../tests/scripts/data/legends/n64-vectors.json"
-    ));
-
-    /// The manifests the N64 extractor wrote for the frozen images, by the names the vectors give
-    /// them.
-    const GOLDENS: [(&str, &str); 2] = [
-        (
-            "n64-default-manifest.json",
-            include_str!(concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/../../../../tests/scripts/data/legends/n64-default-manifest.json"
-            )),
-        ),
-        (
-            "n64-mixed-manifest.json",
-            include_str!(concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/../../../../tests/scripts/data/legends/n64-mixed-manifest.json"
-            )),
-        ),
-    ];
+    use crate::vectors::{frozen, n64_golden, n64_vectors, named, text};
+    use crate::{MediaError, N64Rom, ROMDISK_LIMITS};
 
     /// Where the default image keeps its WAD: a place in the tree, which a refusal names.
     const MAP: &str = "levels/test/worlds.wad";
@@ -227,25 +203,6 @@ mod tests {
     /// What the reader gives a WAD, as the vectors write it: its sections, or the rule and the
     /// words it is refused with.
     type Outcome = Result<Vec<Value>, (&'static str, String)>;
-
-    fn vectors() -> Value {
-        serde_json::from_str(VECTORS).expect("the N64 vectors are JSON")
-    }
-
-    /// The golden manifest the vectors name `name`.
-    fn golden(name: &Value) -> Value {
-        let name = text(name);
-        let (_, golden) = GOLDENS
-            .iter()
-            .find(|(golden, _)| *golden == name)
-            .unwrap_or_else(|| panic!("no golden named {name}"));
-        serde_json::from_str(golden).expect("a golden manifest is JSON")
-    }
-
-    /// A string of the vectors.
-    fn text(value: &Value) -> &str {
-        value.as_str().expect("a string")
-    }
 
     /// The place in the tree `path` names.
     fn at(path: &str) -> RelPath {
@@ -321,7 +278,7 @@ mod tests {
 
     #[test]
     fn wads_follow_the_shared_vectors() {
-        let vectors = vectors();
+        let vectors = n64_vectors();
         let cases = vectors["wads"].as_array().unwrap();
         assert!(!cases.is_empty());
         let (mut rules, mut orders) = (Vec::new(), Vec::new());
@@ -548,16 +505,20 @@ mod tests {
 
     #[test]
     fn the_frozen_images_wads_are_what_the_extractors_manifests_record() {
-        let vectors = vectors();
+        let vectors = n64_vectors();
         let extractions = vectors["extractions"].as_array().unwrap();
-        assert_eq!(extractions.len(), GOLDENS.len());
+        // Both frozen images, each as the extractor read it.
+        let images: Vec<&str> = extractions
+            .iter()
+            .map(|extraction| text(&extraction["image"]))
+            .collect();
+        assert_eq!(images, ["default", "mixed"]);
         let mut read = Vec::new();
         for extraction in extractions {
-            let image = unhex(&vectors["images"][text(&extraction["image"])]);
-            let name = SourceName::from_units(text(&extraction["name"]).encode_utf16().collect());
-            let cartridge = N64Rom::from_bytes(name, image).unwrap();
+            let image = frozen(&vectors, text(&extraction["image"]));
+            let cartridge = N64Rom::from_bytes(named(text(&extraction["name"])), image).unwrap();
             let romdisk = cartridge.romdisk(&ROMDISK_LIMITS).unwrap();
-            let golden = golden(&extraction["golden"]);
+            let golden = n64_golden(&extraction["golden"]);
             let rows = golden["files"].as_array().unwrap();
             assert_eq!(rows.len(), romdisk.entries.len());
             for (row, entry) in rows.iter().zip(&romdisk.entries) {
