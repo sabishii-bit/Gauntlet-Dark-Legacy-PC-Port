@@ -5,25 +5,29 @@
 //! under `native` from the DISK.ROM the tree holds; and `native-manifest.json`, which records each
 //! of them, each file the disc keeps outside DISK.ROM, and SIZES.ROM's digest. [`check_dreamcast`]
 //! opens the disc, reads its native table and decides on the whole tree first, writing nothing,
-//! so that a staging is made only for a disc that passed; [`extract_dreamcast`] then reads the disc
-//! again to write its tree there, and reads the sectors of every disc file but SIZES.ROM for the
-//! first time as it does.
+//! so that a staging is made only for a disc that passed; held to an installation's fingerprints,
+//! it reads every disc file then as well. [`extract_dreamcast`] then reads the disc again to write
+//! its tree there, and reads the sectors of a disc file the check did not read for the first time
+//! as it does.
 
+use std::collections::BTreeSet;
 use std::fmt;
 use std::fs::File;
-use std::io::{self, Read, Seek, SeekFrom};
+use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
-use gdl_files::{Cancel, DISC_NAMES, Job, RelPath, Staging};
+use gdl_files::{Cancel, DISC_NAMES, Job, Progress, RelPath, Staging};
 use gdl_media::{
-    DataTrack, DiscFile, GdRom, MAX_SIZES_ROM_LEN, PackedFile, PackedPlace, SCRIPT_RULES,
-    Sha256Digest, packed_files,
+    DataTrack, DiscFile, GdRom, MAX_SIZES_ROM_LEN, PackedFile, PackedPlace, Sha256Digest,
+    disc_verdict, packed_files,
 };
 
 use crate::pyjson::{array, digest, text};
+use crate::strictness::held;
 use crate::tree::{TreeFile, TreePlan, TreeWriter};
 use crate::{
-    CHECK, ExtractError, ExtractSettings, JsonValue, NativeRule, READ_DISC, UNPACK, render,
+    CHECK, ExtractError, ExtractSettings, FingerprintRule, Fingerprints, JsonValue, NativeRule,
+    READ_DISC, Strictness, UNPACK, render,
 };
 
 /// The format the disc manifest names.
@@ -211,9 +215,11 @@ impl ExternalRow {
     }
 }
 
-/// A Dreamcast dump read and decided before anything is written: the disc opened under the
-/// Dreamcast extractor's rules, SIZES.ROM read and its table parsed, and every path of the tree
-/// planned. The disc stays open for the second read, which writes its files.
+/// A Dreamcast dump read and decided before anything is written: the disc opened under the rules
+/// of the strictness it was held to, its identity held to an installation's trust, SIZES.ROM read
+/// and its table parsed, every path of the tree planned, and, under a trust that holds
+/// fingerprints, every disc file and IP.BIN hashed against them. The disc stays open for the
+/// second read, which writes its files.
 pub struct CheckedDisc {
     /// The disc, its data tracks' files open.
     disc: GdRom,
@@ -221,6 +227,10 @@ pub struct CheckedDisc {
     packed: Vec<PackedFile>,
     /// The SHA-256 digest of SIZES.ROM as the check read it.
     sizes_sha256: Sha256Digest,
+    /// The digest of each disc file, in the order the walk met them, as the check read them
+    /// against an installation's fingerprints; none when the check read no disc file but
+    /// SIZES.ROM.
+    first_read: Option<Vec<Sha256Digest>>,
 }
 
 impl CheckedDisc {
@@ -291,21 +301,42 @@ pub struct DreamcastExtraction {
     pub bytes: u64,
 }
 
-/// Reads the disc whose sheet is at `sheet` as the Dreamcast extractor reads it and decides on
-/// it, writing nothing. In the phase [`READ_DISC`], the disc is opened by the extractor's rules:
-/// its sheet, its data tracks, its boot area and its ISO 9660 volume, the job's cancel looked at
-/// before each chunk a directory's read takes. Its root must then list [`SIZES_ROM`] and
-/// [`DISK_ROM`] by exactly those names; SIZES.ROM, no larger than
+/// Reads the disc whose sheet is at `sheet` and decides on it, writing nothing, holding it as
+/// `mode` says. In the phase [`READ_DISC`], the disc is opened: its sheet, its data tracks, its
+/// boot area and its ISO 9660 volume, the job's cancel looked at before each chunk a directory's
+/// read takes. Under [`Strictness::Script`] it is opened by the Dreamcast extractor's rules; under
+/// [`Strictness::Install`] by an installation's, which hold every sector read to its error
+/// detection code, want every track's file there and a data track to start where a pressed disc's
+/// high-density area begins, and the boot area's product, version and areas are then held to the
+/// trust's, any other disc refused as [`ExtractError::Refused`]. Its root must then list
+/// [`SIZES_ROM`] and [`DISK_ROM`] by exactly those names; SIZES.ROM, no larger than
 /// [`MAX_SIZES_ROM_LEN`](gdl_media::MAX_SIZES_ROM_LEN), is read, the cancel looked at before each
 /// chunk, and its table parsed against DISK.ROM's size; and every path the tree will hold is
-/// planned. The disc is refused by the first rule a part of it breaks, in that order: its format's,
-/// its native table's, and then the tree's, which refuses a native folder spelled in two letter
-/// cases or a native file that is also the folder above another. Of the disc's files only
-/// SIZES.ROM is read here, as the extractor reads the disc once: a sector of another file that
-/// breaks a rule of the disc's format is first met as the extraction writes that file.
-pub fn check_dreamcast(sheet: &Path, job: &Job<'_>) -> Result<CheckedDisc, ExtractError> {
+/// planned. When the trust holds fingerprints, every disc file and IP.BIN must then have one,
+/// every one must be theirs, and IP.BIN and then each disc file, read in the order the walk met
+/// them with the cancel looked at before each chunk and the job's progress told the bytes read of
+/// them all, must match its own, else the disc is refused as [`ExtractError::Fingerprint`]. The
+/// disc is refused by the first rule a part of it breaks, in that order: its format's, its
+/// identity's, its native table's, the tree's, which refuses a native folder spelled in two letter
+/// cases or a native file that is also the folder above another, and its fingerprints'. Without
+/// fingerprints, only SIZES.ROM of the disc's files is read here, as the extractor reads the disc
+/// once: a sector of another file that breaks a rule of the disc's format is first met as the
+/// extraction writes that file. With them, every disc file is read here, and such a sector is
+/// refused before anything is written.
+pub fn check_dreamcast(
+    sheet: &Path,
+    mode: &Strictness<'_>,
+    job: &Job<'_>,
+) -> Result<CheckedDisc, ExtractError> {
     job.progress.phase(READ_DISC);
-    let mut disc = GdRom::open(sheet, &SCRIPT_RULES, job)?;
+    let mut disc = GdRom::open(sheet, mode.disc_rules(), job)?;
+    let fingerprints = match mode {
+        Strictness::Script => None,
+        Strictness::Install(trust) => {
+            held(disc_verdict(disc.boot(), &trust.disc))?;
+            trust.fingerprints.as_ref()
+        }
+    };
     let sizes = root_file(&disc, SIZES_ROM)?;
     let disk = root_file(&disc, DISK_ROM)?;
     if sizes.size > MAX_SIZES_ROM_LEN {
@@ -320,11 +351,106 @@ pub fn check_dreamcast(sheet: &Path, job: &Job<'_>) -> Result<CheckedDisc, Extra
     let sizes_sha256 = disc.copy(&sizes, &mut table, job.cancel)?;
     let packed = packed_files(&table, u64::from(disk.size))?;
     plan_tree(&disc, &packed)?;
+    let first_read = match fingerprints {
+        Some(fingerprints) => Some(read_against(&mut disc, fingerprints, job)?),
+        None => None,
+    };
     Ok(CheckedDisc {
         disc,
         packed,
         sizes_sha256,
+        first_read,
     })
+}
+
+/// Holds IP.BIN and every disc file of `disc` to `fingerprints`, finding each by its path in the
+/// tree, and gives each disc file's digest, in the order the walk met them. Every disc file and
+/// IP.BIN must have a fingerprint, else the first without one is refused as
+/// [`FingerprintRule::Missing`]; every fingerprint must be one of theirs, else the first of the
+/// others, by its key, is refused as [`FingerprintRule::Unexpected`]; and IP.BIN and then each disc
+/// file, read whole as the extraction reads it with `job`'s cancel looked at before each chunk,
+/// must match its own, else it is refused as [`FingerprintRule::Digest`]. The job's progress is
+/// told, after each chunk, how many bytes of all the disc files have been read.
+fn read_against(
+    disc: &mut GdRom,
+    fingerprints: &Fingerprints,
+    job: &Job<'_>,
+) -> Result<Vec<Sha256Digest>, ExtractError> {
+    let files = disc.files().to_vec();
+    let paths: Vec<RelPath> = files.iter().map(|file| disc_path(&file.path)).collect();
+    let fingerprint_of = |path: &str| {
+        let digest = fingerprints.get(path);
+        digest.ok_or_else(|| ExtractError::fingerprint(FingerprintRule::Missing, path))
+    };
+    let expected = paths
+        .iter()
+        .map(|path| fingerprint_of(path.as_str()))
+        .collect::<Result<Vec<_>, _>>()?;
+    let boot = fingerprint_of(IP_BIN)?;
+    let covered: BTreeSet<Sha256Digest> = paths
+        .iter()
+        .map(|path| Fingerprints::path_key(path.as_str()))
+        .chain([Fingerprints::path_key(IP_BIN)])
+        .collect();
+    if let Some(key) = fingerprints.keys().find(|key| !covered.contains(key)) {
+        return Err(ExtractError::fingerprint(
+            FingerprintRule::Unexpected,
+            key.hex(),
+        ));
+    }
+    if Sha256Digest::of(disc.boot().bytes()) != boot {
+        return Err(ExtractError::fingerprint(FingerprintRule::Digest, IP_BIN));
+    }
+    let total = files.iter().map(|file| u64::from(file.size)).sum();
+    let mut done = 0;
+    let mut digests = Vec::with_capacity(files.len());
+    for ((file, path), expected) in files.iter().zip(&paths).zip(expected) {
+        let mut read = ReadProgress {
+            done: &mut done,
+            total,
+            item: path,
+            progress: job.progress,
+        };
+        let digest = disc.copy(file, &mut read, job.cancel)?;
+        if digest != expected {
+            return Err(ExtractError::fingerprint(
+                FingerprintRule::Digest,
+                path.as_str(),
+            ));
+        }
+        digests.push(digest);
+    }
+    Ok(digests)
+}
+
+/// Where a disc file read against its fingerprint goes: nowhere, since only its digest is kept,
+/// but the job's progress is told of each chunk, as the bytes read of all the disc files so far.
+struct ReadProgress<'a> {
+    /// How many bytes of the disc files have been read.
+    done: &'a mut u64,
+    /// How many bytes the disc files hold together.
+    total: u64,
+    /// The path of the file being read, in the tree.
+    item: &'a RelPath,
+    /// Where the progress goes.
+    progress: &'a dyn Progress,
+}
+
+impl Write for ReadProgress<'_> {
+    /// Takes a chunk of the file whole, and tells the progress of it.
+    fn write(&mut self, chunk: &[u8]) -> io::Result<usize> {
+        if !chunk.is_empty() {
+            *self.done += chunk.len() as u64;
+            self.progress
+                .advance(*self.done, self.total, Some(self.item));
+        }
+        Ok(chunk.len())
+    }
+
+    /// Nothing is held back.
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
 }
 
 /// Writes the tree of `checked` into the staging `into`, under `root` there, reading the disc a
@@ -334,11 +460,12 @@ pub fn check_dreamcast(sheet: &Path, job: &Job<'_>) -> Result<CheckedDisc, Extra
 /// [`NATIVE_BLOCK_LEN`] bytes from the DISK.ROM just written, which is closed once they are. In
 /// the phase [`CHECK`], `native-manifest.json`, last. Each file is made new and written in blocks
 /// of at most [`BLOCK_LEN`](gdl_files::BLOCK_LEN) bytes, the job's cancel looked at before each
-/// and its progress told after. Each disc file's sectors are held to the rules of the disc's
-/// format as they are read, so a disc file whose sectors break one, which the check did not read,
-/// refuses the dump here. SIZES.ROM must give the bytes it gave the check, else the dump changed
-/// while it was read; and the DISK.ROM read back must hold every file the table places in it. On
-/// a failure, what was written stays in the staging, for its drop to remove.
+/// and its progress told after. Each disc file's sectors are held to the rules the disc was
+/// checked by as they are read, so a disc file whose sectors break one, which the check did not
+/// read, refuses the dump here. SIZES.ROM must give the bytes it gave the check, and every disc
+/// file the check read against fingerprints the bytes it gave then, else the dump changed while it
+/// was read; and the DISK.ROM read back must hold every file the table places in it. On a failure,
+/// what was written stays in the staging, for its drop to remove.
 pub fn extract_dreamcast(
     checked: &mut CheckedDisc,
     into: &Staging,
@@ -361,7 +488,7 @@ pub(crate) fn extract_dreamcast_with(
     let mut writer = TreeWriter::new(into, root, job, unpacked, settings.block_len);
     let files = checked.disc.files().to_vec();
     let mut rows = Vec::with_capacity(files.len());
-    for file in &files {
+    for (index, file) in files.iter().enumerate() {
         let path = disc_path(&file.path);
         let disc = &mut checked.disc;
         let sha256 = writer.write_with(&path, |to| {
@@ -369,8 +496,11 @@ pub(crate) fn extract_dreamcast_with(
             Ok(())
         })?;
         // The native files are restored by the table the check read, so the tree must hold that
-        // very table.
-        if file.path.as_str() == SIZES_ROM && sha256 != checked.sizes_sha256 {
+        // very table; and it must hold every file the check held to its fingerprint as it was
+        // then.
+        let first = checked.first_read.as_ref().and_then(|read| read.get(index));
+        let table_changed = file.path.as_str() == SIZES_ROM && sha256 != checked.sizes_sha256;
+        if table_changed || first.is_some_and(|first| *first != sha256) {
             return Err(ExtractError::Changed {
                 path: path.as_str().into(),
             });
@@ -560,7 +690,7 @@ fn native_path(path: &RelPath) -> RelPath {
 #[cfg(test)]
 mod tests {
     use std::fs::{self, OpenOptions};
-    use std::io::{self, Seek, SeekFrom, Write};
+    use std::io;
     use std::path::PathBuf;
 
     use gdl_files::{Cancel, DISC_NAMES, Job, PhaseId, Progress, RelPath, Staging};
@@ -574,11 +704,13 @@ mod tests {
         extract_dreamcast_with, own_path,
     };
     use crate::vectors::{
-        CancelAt, DISC_SWEEP, Folders, Listed, PanicAt, Recorded, STAGING_PREFIX, array,
-        assert_injected_panic, bytes_under, dreamcast_golden, dreamcast_root, dreamcast_vectors,
-        listed, phases_of, quiet, stage_dreamcast, text, tree_listing, written_after_each_advance,
+        CancelAt, ChangedAtUnpack, DISC_SWEEP, Folders, Listed, PanicAt, Recorded, STAGING_PREFIX,
+        Told, array, assert_injected_panic, bytes_under, disc_file_lba, disc_trust,
+        dreamcast_golden, dreamcast_root, dreamcast_vectors, full_golden, installable_disc,
+        items_of, listed, phases_of, quiet, sector_place, stage_dreamcast, text, tree_listing,
+        written_after_each_advance,
     };
-    use crate::{CHECK, ExtractError, ExtractSettings, READ_DISC, UNPACK, render};
+    use crate::{CHECK, ExtractError, ExtractSettings, READ_DISC, Strictness, UNPACK, render};
 
     /// The flag of a directory record whose file goes on in the next record's extent, which the
     /// extractor refuses.
@@ -598,39 +730,10 @@ mod tests {
     /// The pool of names those rows' components point into.
     const TWO_SPELLINGS_POOL: &[u8] = b"Font\0a\0font\0b\0";
 
-    /// The full set's disc manifest as the extractor wrote it, read: where its files and data
-    /// tracks lie.
-    fn full_golden(vectors: &Value) -> Value {
-        let golden = dreamcast_golden(&vectors["sets"]["full"]["goldens"]["disc-manifest.json"]);
-        serde_json::from_slice(golden).expect("a golden manifest is JSON")
-    }
-
     /// The file of the full set's that holds its first data track, which holds the boot area and
     /// the root directory.
     fn first_track(golden: &Value) -> String {
         text(&array(&golden["data_tracks"])[0]["file"]).to_owned()
-    }
-
-    /// The LBA the full set's golden records SIZES.ROM at.
-    fn sizes_lba(golden: &Value) -> u64 {
-        let rows = array(&golden["files"]);
-        let row = rows.iter().find(|row| row["path"] == SIZES_ROM).unwrap();
-        row["lba"].as_u64().unwrap()
-    }
-
-    /// The file of the full set's that holds the raw sector at `lba`, and where in it the sector
-    /// starts, as the full set's golden records its data tracks.
-    fn sector_place(golden: &Value, lba: u64) -> (String, u64) {
-        for track in array(&golden["data_tracks"]) {
-            let first = track["first_lba"].as_u64().unwrap();
-            let sectors = track["sectors"].as_u64().unwrap();
-            if (first..first + sectors).contains(&lba) {
-                let sector = track["index"].as_u64().unwrap() + lba - first;
-                let place = sector * gdl_fixtures::RAW_SECTOR as u64;
-                return (text(&track["file"]).to_owned(), place);
-            }
-        }
-        panic!("no data track of the full set holds LBA {lba}")
     }
 
     /// The full set with the identifier `from`, which its first data track holds once, written as
@@ -654,7 +757,7 @@ mod tests {
     /// and the table in SIZES.ROM's one sector.
     fn with_sizes_rom(table: &[u8]) -> DiscSet {
         let golden = full_golden(&dreamcast_vectors());
-        let lba = sizes_lba(&golden);
+        let lba = disc_file_lba(&golden, SIZES_ROM);
         let (track, place) = sector_place(&golden, lba);
         let len = u32::try_from(table.len()).unwrap();
         let set = DiscSet::full_with_sizes_rom_len(Edc::Zero, len);
@@ -690,7 +793,7 @@ mod tests {
         let before = folders.before();
         let cancel = Cancel::default();
         let job = quiet(&cancel);
-        let mut checked = check_dreamcast(&sheet, &job).unwrap();
+        let mut checked = check_dreamcast(&sheet, &Strictness::Script, &job).unwrap();
         let staging = Staging::create_in(&folders.parent, STAGING_PREFIX).unwrap();
         let extraction =
             extract_dreamcast(&mut checked, &staging, &dreamcast_root(), &job).unwrap();
@@ -706,20 +809,6 @@ mod tests {
         drop(checked);
         folders.assert_staging_gone(&before);
         written
-    }
-
-    /// What the disc `set` is refused by, once it is shown that the refusal came before any
-    /// staging: the folder the staging would have been made in is as it was, its own entry
-    /// included, and so is the dump.
-    fn refused_before_staging(folders: &Folders, set: &DiscSet) -> ExtractError {
-        let sheet = folders.disc(set);
-        let before = folders.before();
-        let cancel = Cancel::default();
-        let shipped = ExtractSettings::SHIPPED;
-        let error =
-            stage_dreamcast(&sheet, &folders.parent, &shipped, &quiet(&cancel)).unwrap_err();
-        folders.assert_untouched(&before);
-        error
     }
 
     /// A refusal of the vectors' tables, as a disc's SIZES.ROM brings it to the check: its case's
@@ -807,26 +896,35 @@ mod tests {
         let vectors = dreamcast_vectors();
         let golden = listed(&vectors["sets"]["full"]["tree"]);
         let folders = Folders::new();
-        let sheet = folders.disc(&DiscSet::full(Edc::Zero));
         let cancel = Cancel::default();
         let job = quiet(&cancel);
-        let mut checked = check_dreamcast(&sheet, &job).unwrap();
-        // The disc stays open between the extractions, each of which reads it again.
-        let mut extractions = Vec::new();
-        for _ in 0..2 {
-            let staging = Staging::create_in(&folders.parent, STAGING_PREFIX).unwrap();
-            let root = dreamcast_root();
-            extractions.push(extract_dreamcast(&mut checked, &staging, &root, &job).unwrap());
-            assert_eq!(tree_listing(&root.path_under(staging.path())), golden);
+        // Under the extractor's rules, and under an installation's, which holds every disc file
+        // read again to what it read against the fingerprints.
+        let trust = disc_trust();
+        let runs = [
+            (Strictness::Script, DiscSet::full(Edc::Zero)),
+            (Strictness::Install(&trust), installable_disc()),
+        ];
+        for (mode, set) in &runs {
+            let sheet = folders.disc(set);
+            let mut checked = check_dreamcast(&sheet, mode, &job).unwrap();
+            // The disc stays open between the extractions, each of which reads it again.
+            let mut extractions = Vec::new();
+            for _ in 0..2 {
+                let staging = Staging::create_in(&folders.parent, STAGING_PREFIX).unwrap();
+                let root = dreamcast_root();
+                extractions.push(extract_dreamcast(&mut checked, &staging, &root, &job).unwrap());
+                assert_eq!(tree_listing(&root.path_under(staging.path())), golden);
+            }
+            assert_eq!(extractions[0], extractions[1]);
+            // The checked disc describes itself by counts, never by a path of the disc.
+            let described = format!("{checked:?}");
+            assert!(
+                described.contains("native_files: 2, external: 1"),
+                "{described}"
+            );
+            assert!(!described.contains("X.STR"), "{described}");
         }
-        assert_eq!(extractions[0], extractions[1]);
-        // The checked disc describes itself by counts, never by a path of the disc.
-        let described = format!("{checked:?}");
-        assert!(
-            described.contains("native_files: 2, external: 1"),
-            "{described}"
-        );
-        assert!(!described.contains("X.STR"), "{described}");
     }
 
     #[test]
@@ -1045,7 +1143,7 @@ mod tests {
             cases.push((table.case, with_sizes_rom(&table.table), table.rule, ending));
         }
         for (case, set, rule, ending) in cases {
-            let error = refused_before_staging(&folders, &set);
+            let error = folders.refused_disc(&set, &Strictness::Script);
             assert_eq!(error.rule(), rule, "{case}: {error}");
             if let Some(ending) = ending {
                 let detail = error.to_string();
@@ -1061,11 +1159,11 @@ mod tests {
         let declared = MAX_SIZES_ROM_LEN + 1;
         // SIZES.ROM's first sector holds no header, so that a check that read a sector of it
         // would be refused by the disc's format instead; the extent lies on the disc all the same.
-        let (track, place) = sector_place(&golden, sizes_lba(&golden));
+        let (track, place) = sector_place(&golden, disc_file_lba(&golden, SIZES_ROM));
         let set = DiscSet::full_with_sizes_rom_len(Edc::Zero, declared);
         let set = set.patched(&track, place, &[0; gdl_media::HEADER_LEN]);
         let folders = Folders::new();
-        let error = refused_before_staging(&folders, &set);
+        let error = folders.refused_disc(&set, &Strictness::Script);
         assert_eq!(error.rule(), "sizesTooLarge", "{error}");
         let detail = error.to_string();
         assert!(detail.contains(&declared.to_string()), "{detail}");
@@ -1074,9 +1172,9 @@ mod tests {
     #[test]
     fn a_fault_in_a_files_own_sectors_is_refused_within_the_staging() {
         // The full set with the last sector of the first file the walk meets, which the check
-        // does not read, under a header that gives another address. The check takes the disc;
-        // the extraction refuses it as it reads that file, with nothing outside the staging
-        // changed and nothing left of the run once the staging is dropped.
+        // does not read under the extractor's rules, under a header that gives another address.
+        // The check takes the disc; the extraction refuses it as it reads that file, with nothing
+        // outside the staging changed and nothing left of the run once the staging is dropped.
         let vectors = dreamcast_vectors();
         let golden = full_golden(&vectors);
         let first = &array(&golden["files"])[0];
@@ -1095,7 +1193,7 @@ mod tests {
         let before = folders.before();
         let cancel = Cancel::default();
         let job = quiet(&cancel);
-        let mut checked = check_dreamcast(&sheet, &job).unwrap();
+        let mut checked = check_dreamcast(&sheet, &Strictness::Script, &job).unwrap();
         let staging = Staging::create_in(&folders.parent, STAGING_PREFIX).unwrap();
         let root = dreamcast_root();
         let error = extract_dreamcast(&mut checked, &staging, &root, &job).unwrap_err();
@@ -1115,79 +1213,110 @@ mod tests {
         let vectors = dreamcast_vectors();
         let golden = listed(&vectors["sets"]["full"]["tree"]);
         let folders = Folders::new();
-        let sheet = folders.disc(&DiscSet::full(Edc::Zero));
         let cancel = Cancel::default();
+        // The extractor's rules on the set as its tests build it, and an installation's on the
+        // set as a pressed disc's dump holds it, the check's read against the fingerprints
+        // included.
+        let trust = disc_trust();
+        let runs = [
+            (Strictness::Script, DiscSet::full(Edc::Zero)),
+            (Strictness::Install(&trust), installable_disc()),
+        ];
+        for (mode, set) in &runs {
+            let sheet = folders.disc(set);
+            let name = mode.as_str();
 
-        // A whole run, in blocks short enough that the boot area alone spans dozens, counts its
-        // steps, its phases and its advances, and the bytes written by each advance.
-        let recorded = Recorded::default();
-        let job = Job {
-            cancel: &cancel,
-            progress: &recorded,
-        };
-        let (staging, _) = stage_dreamcast(&sheet, &folders.parent, &DISC_SWEEP, &job).unwrap();
-        drop(staging);
-        let told = recorded.told();
-        let written = written_after_each_advance(&told);
-        let advances = written.len() - 1;
-        let whole: u64 = golden.iter().map(|(_, size, _)| size).sum();
-        assert_eq!(written[advances], whole);
-        assert!(advances > golden.len() * 2, "{advances} advances");
-
-        // Asked to stop before the job begins, the check stops, and nothing is made. Asked after
-        // any advance but the last, the extraction stops before its next block, with only what it
-        // wrote in the staging and nothing outside it changed; asked after the last, it is done,
-        // and the tree is whole.
-        for (at, &written_before) in written.iter().enumerate() {
-            let before = folders.before();
-            let cancel = Cancel::default();
-            let progress = CancelAt::new(&cancel, at);
+            // A whole run, in blocks short enough that the boot area alone spans dozens, counts
+            // its steps, its phases and its advances, and the bytes written by each advance.
+            let recorded = Recorded::default();
             let job = Job {
                 cancel: &cancel,
-                progress: &progress,
+                progress: &recorded,
             };
-            let mut checked = match check_dreamcast(&sheet, &job) {
-                Ok(checked) => checked,
-                Err(error) => {
-                    // The disc's reader heeds the cancel as it opens the disc, and its stop is
-                    // the extraction's own.
-                    let stopped = matches!(error, ExtractError::Cancelled);
-                    assert!(at == 0 && stopped, "{at}: {error:?}");
-                    folders.assert_untouched(&before);
-                    continue;
-                }
-            };
-            let staging = Staging::create_in(&folders.parent, STAGING_PREFIX).unwrap();
-            let root = dreamcast_root();
-            let extracted =
-                extract_dreamcast_with(&mut checked, &staging, &root, &DISC_SWEEP, &job);
-            let tree = root.path_under(staging.path());
-            if at < advances {
-                let error = extracted.unwrap_err();
-                assert!(matches!(error, ExtractError::Cancelled), "{at}: {error:?}");
-                assert_eq!(bytes_under(&tree), written_before, "{at}");
-            } else {
-                extracted.unwrap();
-                assert_eq!(tree_listing(&tree), golden);
-            }
-            folders.assert_outside_unchanged(&before);
+            let (staging, _) =
+                stage_dreamcast(&sheet, &folders.parent, mode, &DISC_SWEEP, &job).unwrap();
             drop(staging);
-            drop(checked);
-            folders.assert_staging_gone(&before);
-        }
+            let told = recorded.told();
+            let written = written_after_each_advance(&told);
+            let advances = written.len() - 1;
+            let whole: u64 = golden.iter().map(|(_, size, _)| size).sum();
+            assert_eq!(written[advances], whole, "{name}");
+            assert!(advances > golden.len() * 2, "{name}: {advances} advances");
+            // The advances the check tells as it reads the disc's files, before anything is
+            // written: only an installation's, which holds them to their fingerprints.
+            let checking = told
+                .iter()
+                .take_while(|told| **told != Told::Phase(UNPACK.0))
+                .filter(|told| matches!(told, Told::Advance { .. }))
+                .count();
+            assert_eq!(
+                checking > 0,
+                matches!(mode, Strictness::Install(_)),
+                "{name}"
+            );
 
-        // A panic at any step unwinds through the check or the extraction, and the staging, when
-        // one was made, goes as it unwinds: nothing is left of the run, in the staging or outside
-        // it.
-        for at in 1..=told.len() {
-            let before = folders.before();
-            let progress = PanicAt::new(at);
-            let job = Job {
-                cancel: &cancel,
-                progress: &progress,
-            };
-            assert_injected_panic(|| stage_dreamcast(&sheet, &folders.parent, &DISC_SWEEP, &job));
-            folders.assert_staging_gone(&before);
+            // Asked to stop before the job begins, or after any of the check's advances but its
+            // last, the check stops, and nothing is made. Asked after any later advance but the
+            // last, the extraction stops before its next block, with only what it wrote in the
+            // staging and nothing outside it changed; asked after the last, it is done, and the
+            // tree is whole.
+            for (at, &written_before) in written.iter().enumerate() {
+                let before = folders.before();
+                let cancel = Cancel::default();
+                let progress = CancelAt::new(&cancel, at);
+                let job = Job {
+                    cancel: &cancel,
+                    progress: &progress,
+                };
+                let check_stops = at < checking.max(1);
+                let mut checked = match check_dreamcast(&sheet, mode, &job) {
+                    Ok(checked) => {
+                        assert!(!check_stops, "{name} {at}");
+                        checked
+                    }
+                    Err(error) => {
+                        // The disc's reader heeds the cancel as it opens the disc and as it reads
+                        // each file, and its stop is the extraction's own.
+                        let stopped = matches!(error, ExtractError::Cancelled);
+                        assert!(check_stops && stopped, "{name} {at}: {error:?}");
+                        folders.assert_untouched(&before);
+                        continue;
+                    }
+                };
+                let staging = Staging::create_in(&folders.parent, STAGING_PREFIX).unwrap();
+                let root = dreamcast_root();
+                let extracted =
+                    extract_dreamcast_with(&mut checked, &staging, &root, &DISC_SWEEP, &job);
+                let tree = root.path_under(staging.path());
+                if at < advances {
+                    let error = extracted.unwrap_err();
+                    let stopped = matches!(error, ExtractError::Cancelled);
+                    assert!(stopped, "{name} {at}: {error:?}");
+                    assert_eq!(bytes_under(&tree), written_before, "{name} {at}");
+                } else {
+                    extracted.unwrap();
+                    assert_eq!(tree_listing(&tree), golden, "{name}");
+                }
+                folders.assert_outside_unchanged(&before);
+                drop(staging);
+                drop(checked);
+                folders.assert_staging_gone(&before);
+            }
+
+            // A panic at any step unwinds through the check or the extraction, and the staging,
+            // when one was made, goes as it unwinds: nothing is left of the run, in the staging
+            // or outside it.
+            for at in 1..=told.len() {
+                let before = folders.before();
+                let progress = PanicAt::new(at);
+                let job = Job {
+                    cancel: &cancel,
+                    progress: &progress,
+                };
+                let parent = &folders.parent;
+                assert_injected_panic(|| stage_dreamcast(&sheet, parent, mode, &DISC_SWEEP, &job));
+                folders.assert_staging_gone(&before);
+            }
         }
     }
 
@@ -1214,13 +1343,15 @@ mod tests {
         let folders = Folders::new();
         let sheet = folders.disc(&DiscSet::full(Edc::Zero));
         let cancel = Cancel::default();
+        let script = Strictness::Script;
         for settings in [ExtractSettings::SHIPPED, DISC_SWEEP] {
             let progress = Recorded::default();
             let job = Job {
                 cancel: &cancel,
                 progress: &progress,
             };
-            let (staging, _) = stage_dreamcast(&sheet, &folders.parent, &settings, &job).unwrap();
+            let (staging, _) =
+                stage_dreamcast(&sheet, &folders.parent, &script, &settings, &job).unwrap();
             drop(staging);
             let phases = phases_of(progress.told());
             let names: Vec<&str> = phases.iter().map(|(name, _)| *name).collect();
@@ -1238,45 +1369,16 @@ mod tests {
                 assert!(done.windows(2).all(|pair| pair[0] <= pair[1]), "{name}");
                 assert_eq!(done.last(), Some(&total), "{name}");
             }
-            let written = |advances: &[(u64, u64, String)]| {
-                let mut items: Vec<String> = Vec::new();
-                for (_, _, item) in advances {
-                    if items.last() != Some(item) {
-                        items.push(item.clone());
-                    }
-                }
-                items
-            };
-            assert_eq!(written(&phases[1].1), unpacked);
-            assert_eq!(written(&phases[2].1), [NATIVE_MANIFEST]);
+            assert_eq!(items_of(&phases[1].1), unpacked);
+            assert_eq!(items_of(&phases[2].1), [NATIVE_MANIFEST]);
         }
-    }
-
-    /// Progress that, as the extraction begins to write, writes `bytes` over the dump's file at
-    /// `path` from `place`: a dump that changes between the check's read and the extraction's.
-    struct ChangedAtUnpack {
-        path: PathBuf,
-        place: u64,
-        bytes: Vec<u8>,
-    }
-
-    impl Progress for ChangedAtUnpack {
-        fn phase(&self, phase: PhaseId) {
-            if phase == UNPACK {
-                let mut file = OpenOptions::new().write(true).open(&self.path).unwrap();
-                file.seek(SeekFrom::Start(self.place)).unwrap();
-                file.write_all(&self.bytes).unwrap();
-            }
-        }
-
-        fn advance(&self, _: u64, _: u64, _: Option<&RelPath>) {}
     }
 
     #[test]
     fn a_sizes_rom_that_changes_after_the_check_is_refused() {
         let vectors = dreamcast_vectors();
         let golden = full_golden(&vectors);
-        let lba = sizes_lba(&golden);
+        let lba = disc_file_lba(&golden, SIZES_ROM);
         let (track, place) = sector_place(&golden, lba);
         // The dump lies apart from the test's dump folder, since the test changes it: only what
         // lies outside the staging is held to stay as it was.
@@ -1296,7 +1398,8 @@ mod tests {
             progress: &progress,
         };
         let shipped = ExtractSettings::SHIPPED;
-        let error = stage_dreamcast(&sheet, &folders.parent, &shipped, &job).unwrap_err();
+        let script = Strictness::Script;
+        let error = stage_dreamcast(&sheet, &folders.parent, &script, &shipped, &job).unwrap_err();
         assert_eq!(error.rule(), "changed", "{error:?}");
         assert_eq!(
             error.to_string(),
@@ -1330,7 +1433,7 @@ mod tests {
         let sheet = folders.disc(&DiscSet::full(Edc::Zero));
         let before = folders.before();
         let cancel = Cancel::default();
-        let mut checked = check_dreamcast(&sheet, &quiet(&cancel)).unwrap();
+        let mut checked = check_dreamcast(&sheet, &Strictness::Script, &quiet(&cancel)).unwrap();
         let staging = Staging::create_in(&folders.parent, STAGING_PREFIX).unwrap();
         let root = dreamcast_root();
         // Cut once the disc manifest is written: after DISK.ROM, and before it is read back.

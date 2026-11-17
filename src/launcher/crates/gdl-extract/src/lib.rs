@@ -1,12 +1,15 @@
 //! The Legends expansions' trees: extraction from the N64 and Dreamcast dumps, byte for byte as
-//! the Python extractors write them, the fingerprints that identify a dump's files, and the check
-//! of an extracted tree against its manifest.
+//! the Python extractors write them, held as the scripts hold a dump or as an installation does,
+//! the fingerprints that identify a dump's files, and the check of an extracted tree against its
+//! manifest.
 #![forbid(unsafe_code)]
 
 mod dreamcast;
 mod error;
+mod fingerprints;
 mod n64;
 mod pyjson;
+mod strictness;
 mod tree;
 #[cfg(test)]
 mod vectors;
@@ -20,13 +23,17 @@ pub use dreamcast::{
     NATIVE_FORMAT, NATIVE_MANIFEST, NATIVE_SCOPE, NativeFileRow, NativeManifest, SIZES_ROM,
     check_dreamcast, extract_dreamcast,
 };
-pub use error::{ExtractError, NativeRule, TreeRule};
+pub use error::{ExtractError, FingerprintRule, NativeRule, TreeRule};
+pub use fingerprints::{
+    FINGERPRINTS_FORMAT, FINGERPRINTS_VERSION, Fingerprints, FingerprintsError, MAX_FINGERPRINTS,
+};
 pub use n64::{
     CheckedRom, MAP_OBJECTS, MAP_PREFIX, MAP_WORLD_SUFFIX, MapRow, N64_FORMAT, N64_MANIFEST,
     N64_VERSION, N64Extraction, N64FileRow, N64Manifest, N64Source, ProgramRow, WAD_SUFFIX,
     check_n64, extract_n64,
 };
 pub use pyjson::{INDENT, JsonValue, render};
+pub use strictness::{Strictness, Trust};
 
 /// The phase of an N64 extraction that reads the ROM's files and decides on them, before anything
 /// is written.

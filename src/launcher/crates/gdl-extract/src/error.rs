@@ -2,14 +2,15 @@
 //! format, the staging refused a file or a folder of the tree, writing or reading back a staged
 //! file failed, the tree the dump would make breaks a rule that keeps it one tree on every system,
 //! the disc's native table is missing or cannot be restored, the dump changed between two reads of
-//! it, or the job was asked to stop, as technical detail for logs. What a player reads is chosen
-//! from the failure elsewhere.
+//! it, an installation's trust names another dump, a file of the disc does not match its
+//! fingerprint, or the job was asked to stop, as technical detail for logs. What a player reads is
+//! chosen from the failure elsewhere.
 
 use std::io;
 use std::path::PathBuf;
 
 use gdl_files::{Cancelled, FilesError};
-use gdl_media::MediaError;
+use gdl_media::{DumpRefusal, MediaError};
 
 /// Why an extraction failed.
 #[derive(Debug, thiserror::Error)]
@@ -56,6 +57,23 @@ pub enum ExtractError {
         /// The file's path in the tree.
         path: Box<str>,
     },
+    /// The dump is not the one an installation's trust names: another game, another region or
+    /// revision of it, or a cartridge whose header names the trusted one while its bytes differ.
+    #[error("the dump is refused for an installation: {}", .refusal.as_str())]
+    Refused {
+        /// What its identity says of it against the trust.
+        refusal: DumpRefusal,
+    },
+    /// A file of the disc does not match the fingerprints an installation's trust holds, or they
+    /// hold one for a file the disc does not have.
+    #[error("{path}: {}", .rule.as_str())]
+    Fingerprint {
+        /// The file's path in the tree, or, for a fingerprint of no file, the digest it is kept
+        /// under, in lowercase hexadecimal.
+        path: Box<str>,
+        /// The rule it breaks.
+        rule: FingerprintRule,
+    },
     /// The job was asked to stop before the extraction was done.
     #[error("cancelled")]
     Cancelled,
@@ -64,7 +82,7 @@ pub enum ExtractError {
 impl ExtractError {
     /// The failure's stable machine name, in camelCase, for reports and logs: the reader's rule
     /// for a dump it refused or could not read, the staging's for a file or folder it refused,
-    /// and the extraction's own otherwise.
+    /// the refusal's for a dump the trust does not name, and the extraction's own otherwise.
     pub fn rule(&self) -> &'static str {
         // Every variant is named, with no wildcard, so that a failure added later is given its
         // rule on purpose.
@@ -75,6 +93,8 @@ impl ExtractError {
             ExtractError::Tree { rule, .. } => rule.as_str(),
             ExtractError::Native { rule, .. } => rule.as_str(),
             ExtractError::Changed { .. } => "changed",
+            ExtractError::Refused { refusal } => refusal.as_str(),
+            ExtractError::Fingerprint { rule, .. } => rule.as_str(),
             ExtractError::Cancelled => "cancelled",
         }
     }
@@ -92,6 +112,14 @@ impl ExtractError {
         ExtractError::Native {
             rule,
             detail: detail.into(),
+        }
+    }
+
+    /// A disc refused by the fingerprint `rule`, at the tree's path `path`.
+    pub(crate) fn fingerprint(rule: FingerprintRule, path: impl Into<Box<str>>) -> ExtractError {
+        ExtractError::Fingerprint {
+            path: path.into(),
+            rule,
         }
     }
 }
@@ -164,6 +192,30 @@ impl NativeRule {
     }
 }
 
+/// The rules an installation's extraction holds a disc's files to when its trust holds their
+/// fingerprints: IP.BIN and every disc file must have one, every one must be theirs, and each
+/// must match what the disc holds.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum FingerprintRule {
+    /// A file of the disc has no fingerprint.
+    Missing,
+    /// A fingerprint is of no file of the disc.
+    Unexpected,
+    /// A file of the disc does not match its fingerprint.
+    Digest,
+}
+
+impl FingerprintRule {
+    /// The rule's stable machine name, in camelCase, for reports and logs.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            FingerprintRule::Missing => "fingerprintMissing",
+            FingerprintRule::Unexpected => "fingerprintUnexpected",
+            FingerprintRule::Digest => "fingerprintDigest",
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::error::Error;
@@ -171,9 +223,9 @@ mod tests {
     use std::path::Path;
 
     use gdl_files::{Cancelled, DISC_NAMES, FilesError, RelPath};
-    use gdl_media::{MediaError, Trailer, inflate};
+    use gdl_media::{DumpRefusal, MediaError, Trailer, inflate};
 
-    use super::{ExtractError, NativeRule, TreeRule};
+    use super::{ExtractError, FingerprintRule, NativeRule, TreeRule};
 
     /// The most bytes an error may take, so that returning one by value stays cheap.
     const MOST_ERROR_BYTES: usize = 128;
@@ -265,6 +317,37 @@ mod tests {
                 },
                 "changed",
             ),
+            // The refusal's, for a dump an installation's trust does not name.
+            (
+                ExtractError::Refused {
+                    refusal: DumpRefusal::OtherGame,
+                },
+                "otherGame",
+            ),
+            (
+                ExtractError::Refused {
+                    refusal: DumpRefusal::OtherRevision,
+                },
+                "otherRevision",
+            ),
+            (
+                ExtractError::Refused {
+                    refusal: DumpRefusal::HashMismatch,
+                },
+                "hashMismatch",
+            ),
+            (
+                ExtractError::fingerprint(FingerprintRule::Missing, "disc/DISK.ROM"),
+                "fingerprintMissing",
+            ),
+            (
+                ExtractError::fingerprint(FingerprintRule::Unexpected, "e60b7f33"),
+                "fingerprintUnexpected",
+            ),
+            (
+                ExtractError::fingerprint(FingerprintRule::Digest, "IP.BIN"),
+                "fingerprintDigest",
+            ),
             (ExtractError::from(Cancelled), "cancelled"),
         ];
         for (failure, rule) in failures {
@@ -328,6 +411,20 @@ mod tests {
         assert!(error.source().is_none());
         assert_eq!(ExtractError::Cancelled.to_string(), "cancelled");
 
+        // A dump an installation's trust does not name says why; a file that does not match its
+        // fingerprint is named by its path in the tree, with the rule it breaks.
+        let error = ExtractError::Refused {
+            refusal: DumpRefusal::HashMismatch,
+        };
+        assert_eq!(
+            error.to_string(),
+            "the dump is refused for an installation: hashMismatch"
+        );
+        assert!(error.source().is_none());
+        let error = ExtractError::fingerprint(FingerprintRule::Digest, "disc/AUDIO/X.STR");
+        assert_eq!(error.to_string(), "disc/AUDIO/X.STR: fingerprintDigest");
+        assert!(error.source().is_none());
+
         // Every failure is cheap to return, whatever it carries.
         assert!(size_of::<ExtractError>() <= MOST_ERROR_BYTES);
     }
@@ -355,6 +452,19 @@ mod tests {
         for (rule, name) in rules {
             assert_eq!(rule.as_str(), name);
             assert_eq!(ExtractError::native(rule, "").rule(), name);
+        }
+    }
+
+    #[test]
+    fn fingerprint_rules_have_stable_names() {
+        let rules = [
+            (FingerprintRule::Missing, "fingerprintMissing"),
+            (FingerprintRule::Unexpected, "fingerprintUnexpected"),
+            (FingerprintRule::Digest, "fingerprintDigest"),
+        ];
+        for (rule, name) in rules {
+            assert_eq!(rule.as_str(), name);
+            assert_eq!(ExtractError::fingerprint(rule, "IP.BIN").rule(), name);
         }
     }
 }

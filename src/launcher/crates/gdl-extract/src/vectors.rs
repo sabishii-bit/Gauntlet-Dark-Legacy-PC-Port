@@ -1,12 +1,14 @@
 //! What the extraction's tests share: the shared vectors and the manifests the extractors wrote
 //! for their dumps, the folders a test extracts in and the one way it compares what lies outside a
-//! staging before and after a fault, each extraction run as the session runs it, and progress that
-//! writes down what a job tells it or stops the job partway.
+//! staging before and after a fault, each extraction run as the session runs it, the trust an
+//! installation's extraction of the vectors' disc is held to, and progress that writes down what a
+//! job tells it, stops the job partway or changes the dump under it.
 
 use std::cell::Cell;
 use std::collections::BTreeMap;
 use std::ffi::OsStr;
-use std::fs;
+use std::fs::{self, OpenOptions};
+use std::io::{Seek, SeekFrom, Write};
 use std::panic::{self, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -15,14 +17,19 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use gdl_files::{
     Cancel, DISC_NAMES, Job, NoProgress, PhaseId, Progress, RelPath, Staging, retry_locked,
 };
-use gdl_fixtures::{DiscSet, EntryState, backdate, sha256_hex, snapshot, snapshot_outside, unhex};
-use gdl_media::N64Rom;
+use gdl_fixtures::{
+    DiscSet, Edc, EntryState, backdate, sha256_hex, snapshot, snapshot_outside, unhex,
+};
+use gdl_media::{N64Rom, Sha256Digest, US_DISC, US_SHA1};
 use serde_json::Value;
 use tempfile::TempDir;
 
 use crate::dreamcast::extract_dreamcast_with;
 use crate::n64::{check_n64_with, extract_n64_with};
-use crate::{DreamcastExtraction, ExtractError, ExtractSettings, N64Extraction, check_dreamcast};
+use crate::{
+    DISC_FOLDER, DreamcastExtraction, ExtractError, ExtractSettings, Fingerprints, IP_BIN,
+    N64Extraction, READ_CARTRIDGE, READ_DISC, Strictness, Trust, UNPACK, check_dreamcast,
+};
 
 /// The N64 cases.
 const N64_VECTORS: &str = include_str!(concat!(
@@ -102,8 +109,17 @@ const DREAMCAST_GOLDENS: [(&str, &[u8]); 4] = [
     ),
 ];
 
+/// What the fingerprint writer wrote for the tree the vectors' full set extracts to.
+pub(crate) const FULL_FINGERPRINTS: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../../../tests/scripts/data/legends/dreamcast-full-fingerprints.json"
+));
+
 /// The prefix of the stagings the tests make in the folder they extract in.
 pub(crate) const STAGING_PREFIX: &str = "stage-";
+
+/// The name the refusal tests give the N64 dumps they write.
+const REFUSED_DUMP: &str = "refused.z64";
 
 /// The root the N64 tests' trees lie under in their stagings.
 const N64_ROOT: &str = "n64";
@@ -172,6 +188,84 @@ fn golden(goldens: &[(&str, &'static [u8])], name: &Value) -> &'static [u8] {
 /// The image the N64 vectors freeze under `name`.
 pub(crate) fn frozen(vectors: &Value, name: &str) -> Vec<u8> {
     unhex(&vectors["images"][name])
+}
+
+/// The N64 vectors' case that extracts the frozen image `image`: the dump's name and its golden
+/// manifest's.
+pub(crate) fn extraction_case<'a>(vectors: &'a Value, image: &str) -> &'a Value {
+    let cases = array(&vectors["extractions"]);
+    cases
+        .iter()
+        .find(|case| case["image"] == image)
+        .unwrap_or_else(|| panic!("no extraction of {image}"))
+}
+
+/// The full set's disc manifest as the extractor wrote it, read: where its files and data tracks
+/// lie.
+pub(crate) fn full_golden(vectors: &Value) -> Value {
+    let golden = dreamcast_golden(&vectors["sets"]["full"]["goldens"]["disc-manifest.json"]);
+    serde_json::from_slice(golden).expect("a golden manifest is JSON")
+}
+
+/// The LBA the full set's golden records the disc file at `path` at, its path in the disc's tree.
+pub(crate) fn disc_file_lba(golden: &Value, path: &str) -> u64 {
+    let rows = array(&golden["files"]);
+    let row = rows.iter().find(|row| row["path"] == path);
+    row.and_then(|row| row["lba"].as_u64())
+        .unwrap_or_else(|| panic!("the full set holds no {path}"))
+}
+
+/// The file of the full set's that holds the raw sector at `lba`, and where in it the sector
+/// starts, as the full set's golden records its data tracks.
+pub(crate) fn sector_place(golden: &Value, lba: u64) -> (String, u64) {
+    for track in array(&golden["data_tracks"]) {
+        let first = track["first_lba"].as_u64().unwrap();
+        let sectors = track["sectors"].as_u64().unwrap();
+        if (first..first + sectors).contains(&lba) {
+            let sector = track["index"].as_u64().unwrap() + lba - first;
+            let place = sector * gdl_fixtures::RAW_SECTOR as u64;
+            return (text(&track["file"]).to_owned(), place);
+        }
+    }
+    panic!("no data track of the full set holds LBA {lba}")
+}
+
+/// The vectors' full set as a pressed disc's dump holds it, for an installation's extraction:
+/// every sector keeping its error detection code, and a file for its audio track.
+pub(crate) fn installable_disc() -> DiscSet {
+    DiscSet::full(Edc::Computed).with_audio_files()
+}
+
+/// What the fingerprint writer takes from a tree as `listing` lists it: the path and digest of
+/// IP.BIN and of every file under `disc`, never a native file's or a manifest's.
+pub(crate) fn fingerprint_files(listing: &[Listed]) -> Vec<(String, Sha256Digest)> {
+    let disc_folder = format!("{DISC_FOLDER}/");
+    let taken = listing
+        .iter()
+        .filter(|(path, _, _)| path == IP_BIN || path.starts_with(&disc_folder));
+    taken
+        .map(|(path, _, digest)| {
+            let digest = Sha256Digest::from_hex(digest).expect("a listed digest");
+            (path.clone(), digest)
+        })
+        .collect()
+}
+
+/// The fingerprints of a tree as `listing` lists it, as the fingerprint writer takes them.
+pub(crate) fn fingerprints_of(listing: &[Listed]) -> Fingerprints {
+    Fingerprints::from_files(fingerprint_files(listing)).expect("a tree's fingerprints")
+}
+
+/// What an installation's trust holds for the vectors' full set: the US disc's identity, which its
+/// boot area gives, and the fingerprints of the tree the set extracts to. Its cartridge is the US
+/// one, which no ROM of the tests is.
+pub(crate) fn disc_trust() -> Trust {
+    let tree = listed(&dreamcast_vectors()["sets"]["full"]["tree"]);
+    Trust {
+        n64_canonical_sha1: US_SHA1,
+        disc: US_DISC,
+        fingerprints: Some(fingerprints_of(&tree)),
+    }
 }
 
 /// A string of the vectors.
@@ -264,32 +358,35 @@ pub(crate) fn dreamcast_root() -> RelPath {
 }
 
 /// Extracts the N64 dump at `dump` into a new staging in `parent` as the session does: the dump
-/// read and checked first, the staging made only once the check has passed, then the tree written
-/// under [`n64_root`]. The staging comes back with the tree in it; on any failure it is gone.
+/// read and checked under `mode` first, the staging made only once the check has passed, then the
+/// tree written under [`n64_root`]. The staging comes back with the tree in it; on any failure it
+/// is gone.
 pub(crate) fn stage_n64(
     dump: &Path,
     parent: &Path,
+    mode: &Strictness<'_>,
     settings: &ExtractSettings,
     job: &Job<'_>,
 ) -> Result<(Staging, N64Extraction), ExtractError> {
     let rom = N64Rom::open(dump, job)?;
-    let checked = check_n64_with(&rom, settings, job)?;
+    let checked = check_n64_with(&rom, mode, settings, job)?;
     let staging = Staging::create_in(parent, STAGING_PREFIX)?;
     let extraction = extract_n64_with(&checked, &staging, &n64_root(), settings, job)?;
     Ok((staging, extraction))
 }
 
 /// Extracts the Dreamcast disc whose sheet is at `sheet` into a new staging in `parent` as the
-/// session does: the disc read and checked first, the staging made only once the check has
-/// passed, then the tree written under [`dreamcast_root`]. The staging comes back with the tree in
-/// it; on any failure it is gone.
+/// session does: the disc read and checked under `mode` first, the staging made only once the
+/// check has passed, then the tree written under [`dreamcast_root`]. The staging comes back with
+/// the tree in it; on any failure it is gone.
 pub(crate) fn stage_dreamcast(
     sheet: &Path,
     parent: &Path,
+    mode: &Strictness<'_>,
     settings: &ExtractSettings,
     job: &Job<'_>,
 ) -> Result<(Staging, DreamcastExtraction), ExtractError> {
-    let mut checked = check_dreamcast(sheet, job)?;
+    let mut checked = check_dreamcast(sheet, mode, job)?;
     let staging = Staging::create_in(parent, STAGING_PREFIX)?;
     let root = dreamcast_root();
     let extraction = extract_dreamcast_with(&mut checked, &staging, &root, settings, job)?;
@@ -414,6 +511,40 @@ impl Folders {
             "the dump folder changed"
         );
     }
+
+    /// What `image`, given as an N64 dump, is refused by under `mode` and `settings`, once it is
+    /// shown that the refusal came before any staging: the folder the staging would have been made
+    /// in is as it was, its own entry included, and so is the dump.
+    #[track_caller]
+    pub(crate) fn refused_rom(
+        &self,
+        image: &[u8],
+        mode: &Strictness<'_>,
+        settings: &ExtractSettings,
+    ) -> ExtractError {
+        let dump = self.dump(OsStr::new(REFUSED_DUMP), image);
+        let before = self.before();
+        let cancel = Cancel::default();
+        let staged = stage_n64(&dump, &self.parent, mode, settings, &quiet(&cancel));
+        let error = staged.expect_err("the dump is refused");
+        self.assert_untouched(&before);
+        error
+    }
+
+    /// What the disc `set` is refused by under `mode`, once it is shown that the refusal came
+    /// before any staging: the folder the staging would have been made in is as it was, its own
+    /// entry included, and so is the dump.
+    #[track_caller]
+    pub(crate) fn refused_disc(&self, set: &DiscSet, mode: &Strictness<'_>) -> ExtractError {
+        let sheet = self.disc(set);
+        let before = self.before();
+        let cancel = Cancel::default();
+        let shipped = ExtractSettings::SHIPPED;
+        let staged = stage_dreamcast(&sheet, &self.parent, mode, &shipped, &quiet(&cancel));
+        let error = staged.expect_err("the disc is refused");
+        self.assert_untouched(&before);
+        error
+    }
 }
 
 /// What lay in a test's folders before a fault.
@@ -467,14 +598,21 @@ impl Progress for Recorded {
 
 /// How many bytes a run had written into its tree before its first advance and after each, from
 /// what its progress was told: each phase's writing counts from nought, after what the phases
-/// before it wrote.
+/// before it wrote, and a check's phase, which reads the dump, writes nothing.
 pub(crate) fn written_after_each_advance(told: &[Told]) -> Vec<u64> {
     let mut written = vec![0];
     let mut phase_start = 0;
+    let mut writes = true;
     for told in told {
         match told {
-            Told::Phase(_) => phase_start = *written.last().unwrap(),
-            Told::Advance { done, .. } => written.push(phase_start + done),
+            Told::Phase(name) => {
+                phase_start = *written.last().unwrap();
+                writes = ![READ_CARTRIDGE.0, READ_DISC.0].contains(name);
+            }
+            Told::Advance { done, .. } => {
+                let wrote = if writes { *done } else { 0 };
+                written.push(phase_start + wrote);
+            }
         }
     }
     written
@@ -497,6 +635,41 @@ pub(crate) fn phases_of(told: Vec<Told>) -> Vec<Phase> {
         }
     }
     phases
+}
+
+/// The files a phase's `advances` tell of, in the order it told of them, each once for a run of
+/// advances in a row.
+pub(crate) fn items_of(advances: &[(u64, u64, String)]) -> Vec<String> {
+    let mut items: Vec<String> = Vec::new();
+    for (_, _, item) in advances {
+        if items.last() != Some(item) {
+            items.push(item.clone());
+        }
+    }
+    items
+}
+
+/// Progress that, as the extraction begins to write, writes `bytes` over the dump's file at
+/// `path` from `place`: a dump that changes between the check's read and the extraction's.
+pub(crate) struct ChangedAtUnpack {
+    /// The dump's file it changes.
+    pub(crate) path: PathBuf,
+    /// Where in the file it writes.
+    pub(crate) place: u64,
+    /// What it writes there.
+    pub(crate) bytes: Vec<u8>,
+}
+
+impl Progress for ChangedAtUnpack {
+    fn phase(&self, phase: PhaseId) {
+        if phase == UNPACK {
+            let mut file = OpenOptions::new().write(true).open(&self.path).unwrap();
+            file.seek(SeekFrom::Start(self.place)).unwrap();
+            file.write_all(&self.bytes).unwrap();
+        }
+    }
+
+    fn advance(&self, _: u64, _: u64, _: Option<&RelPath>) {}
 }
 
 /// Progress that asks its job to stop once it has been told `at` advances, counted from one, or

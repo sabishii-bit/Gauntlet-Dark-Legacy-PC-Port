@@ -307,7 +307,7 @@ mod tests {
         bytes_under, dreamcast_root, dreamcast_vectors, frozen, listed, n64_root, n64_vectors,
         quiet, tree_listing, written_after_each_advance,
     };
-    use crate::{CheckedRom, ExtractError, NativeRule, TreeRule, check_dreamcast};
+    use crate::{CheckedRom, ExtractError, NativeRule, Strictness, TreeRule, check_dreamcast};
 
     /// A path of a tree, as an extraction plans and writes one.
     fn rel(text: &str) -> RelPath {
@@ -348,7 +348,8 @@ mod tests {
         let name = SourceName::from_units("source.z64".encode_utf16().collect());
         let rom = N64Rom::from_bytes(name, frozen(&vectors, "default")).unwrap();
         let cancel = Cancel::default();
-        let checked = check_n64_with(&rom, &N64_SWEEP, &quiet(&cancel)).unwrap();
+        let script = Strictness::Script;
+        let checked = check_n64_with(&rom, &script, &N64_SWEEP, &quiet(&cancel)).unwrap();
         (checked, listed(&vectors["trees"]["default"]))
     }
 
@@ -607,7 +608,7 @@ mod tests {
             });
         }
         let sheet = folders.disc(&DiscSet::full(Edc::Zero));
-        let mut disc = check_dreamcast(&sheet, &job).unwrap();
+        let mut disc = check_dreamcast(&sheet, &Strictness::Script, &job).unwrap();
         let golden = listed(&dreamcast_vectors()["sets"]["full"]["tree"]);
         assert!(!golden.is_empty());
         let disc_root = dreamcast_root();

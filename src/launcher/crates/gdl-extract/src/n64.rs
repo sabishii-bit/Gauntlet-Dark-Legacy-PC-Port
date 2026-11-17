@@ -2,19 +2,23 @@
 //! path its directory gives it; each executable overlay the boot table describes, under
 //! `_program`; and `manifest.json`, which records the dump, each file with its digests and a WAD's
 //! sections, each overlay and each map. [`check_n64`] reads, decodes and decides on the whole ROM
-//! first and writes nothing, so that a staging is made only for a ROM that passed; [`extract_n64`]
-//! then writes its tree there.
+//! first and writes nothing, holding it to an installation's trust when asked to, so that a
+//! staging is made only for a ROM that passed; [`extract_n64`] then writes its tree there.
 
 use std::fmt;
 
 use gdl_files::{DISC_NAMES, Job, RelPath, Staging};
 use gdl_media::{
-    ByteOrder, N64Rom, Overlay, RomdiskEntry, Sha256Digest, SourceName, WadSection, wad_sections,
+    ByteOrder, N64Rom, Overlay, RomdiskEntry, Sha256Digest, SourceName, WadSection, n64_verdict,
+    wad_sections,
 };
 
 use crate::pyjson::{array, digest, text};
+use crate::strictness::held;
 use crate::tree::{SEPARATOR, TreePlan, TreeWriter};
-use crate::{CHECK, ExtractError, ExtractSettings, JsonValue, READ_CARTRIDGE, UNPACK, render};
+use crate::{
+    CHECK, ExtractError, ExtractSettings, JsonValue, READ_CARTRIDGE, Strictness, UNPACK, render,
+};
 
 /// The format the manifest names.
 pub const N64_FORMAT: &str = "gauntlet-legends-n64-romdisk";
@@ -286,18 +290,26 @@ pub struct N64Extraction {
     pub bytes: u64,
 }
 
-/// Reads `rom` as the N64 extractor reads it and decides on it, writing nothing. In the phase
-/// [`READ_CARTRIDGE`], every file of its ROMDISK is decoded in the order of the pointer table,
-/// the job's cancel looked at before each and its progress told the stored bytes decoded after
-/// each; each file is then described, a WAD by its sections; the overlays of the US ROM's boot
-/// table are read; and every path the tree will hold is planned, before the manifest is rendered.
-/// The ROM is refused by the first rule of its format a part of it breaks, in the order the
-/// extractor checks them: the ROMDISK's, a stream's that does not inflate, a WAD's that does not
-/// parse, an overlay's. It is refused too when its tree would not be the same on every system:
-/// two paths that differ only in letter case, among them two overlays', a folder spelled in two
-/// letter cases, or a file that is also the folder above another.
-pub fn check_n64(rom: &N64Rom, job: &Job<'_>) -> Result<CheckedRom, ExtractError> {
-    check_n64_with(rom, &ExtractSettings::SHIPPED, job)
+/// Reads `rom` as the N64 extractor reads it and decides on it, writing nothing, holding it as
+/// `mode` says. In the phase [`READ_CARTRIDGE`], under [`Strictness::Install`], the ROM's identity
+/// is first held to the trust's: its SHA-1 digest in the big-endian byte order must be the one the
+/// trust names, and any other ROM is refused as [`ExtractError::Refused`], for what its header's
+/// game code says of it, before a file is decoded. Then every file of its ROMDISK is decoded in the
+/// order of the pointer table, the job's cancel looked at before each and its progress told the
+/// stored bytes decoded after each; each file is then described, a WAD by its sections; the
+/// overlays of the US ROM's boot table are read; and every path the tree will hold is planned,
+/// before the manifest is rendered. The ROM is refused by the first rule of its format a part of it
+/// breaks, in the order the extractor checks them: the ROMDISK's, a stream's that does not
+/// inflate, a WAD's that does not parse, an overlay's. It is refused too when its tree would not
+/// be the same on every system: two paths that differ only in letter case, among them two
+/// overlays', a folder spelled in two letter cases, or a file that is also the folder above
+/// another.
+pub fn check_n64(
+    rom: &N64Rom,
+    mode: &Strictness<'_>,
+    job: &Job<'_>,
+) -> Result<CheckedRom, ExtractError> {
+    check_n64_with(rom, mode, &ExtractSettings::SHIPPED, job)
 }
 
 /// Writes the tree of `checked` into the staging `into`, under `root` there: in the phase
@@ -320,10 +332,19 @@ pub fn extract_n64(
 /// boot table.
 pub(crate) fn check_n64_with(
     rom: &N64Rom,
+    mode: &Strictness<'_>,
     settings: &ExtractSettings,
     job: &Job<'_>,
 ) -> Result<CheckedRom, ExtractError> {
     job.progress.phase(READ_CARTRIDGE);
+    if let Strictness::Install(trust) = mode {
+        let header = rom.header();
+        held(n64_verdict(
+            &header,
+            rom.canonical_sha1(),
+            trust.n64_canonical_sha1,
+        ))?;
+    }
     let romdisk = rom.romdisk(&settings.romdisk_limits)?;
     let entries = &romdisk.entries;
     // Every file is decoded before any is described, as the extractor decodes them, so that a
@@ -497,13 +518,10 @@ mod tests {
     };
     use crate::vectors::{
         CancelAt, Folders, Listed, N64_SWEEP, PanicAt, Recorded, STAGING_PREFIX, Told, array,
-        assert_injected_panic, frozen, listed, n64_golden, n64_root, n64_vectors, phases_of, quiet,
-        stage_n64, text, tree_listing,
+        assert_injected_panic, extraction_case, frozen, listed, n64_golden, n64_root, n64_vectors,
+        phases_of, quiet, stage_n64, text, tree_listing,
     };
-    use crate::{CHECK, ExtractError, ExtractSettings, READ_CARTRIDGE, UNPACK, render};
-
-    /// The name the refusal sweep gives its dumps.
-    const REFUSED_DUMP: &str = "refused.z64";
+    use crate::{CHECK, ExtractError, ExtractSettings, READ_CARTRIDGE, Strictness, UNPACK, render};
 
     /// Where the refusal sweep keeps a WAD in its ROMs: named in capitals, which make it a WAD all
     /// the same, and named by its refusal.
@@ -528,15 +546,6 @@ mod tests {
     /// A number of the vectors that fits a word.
     fn word(value: &Value) -> u32 {
         u32::try_from(value.as_u64().expect("a number")).unwrap()
-    }
-
-    /// The vectors' case that extracts the frozen image `image`.
-    fn extraction_case<'a>(vectors: &'a Value, image: &str) -> &'a Value {
-        let cases = array(&vectors["extractions"]);
-        cases
-            .iter()
-            .find(|case| case["image"] == image)
-            .unwrap_or_else(|| panic!("no extraction of {image}"))
     }
 
     /// The files the ROMDISK of `image` lists.
@@ -573,7 +582,7 @@ mod tests {
         let cancel = Cancel::default();
         let job = quiet(&cancel);
         let rom = N64Rom::open(&dump, &job).unwrap();
-        let checked = check_n64(&rom, &job).unwrap();
+        let checked = check_n64(&rom, &Strictness::Script, &job).unwrap();
         let staging = Staging::create_in(&folders.parent, STAGING_PREFIX).unwrap();
         let extraction = extract_n64(&checked, &staging, &n64_root(), &job).unwrap();
         let tree = n64_root().path_under(staging.path());
@@ -844,33 +853,18 @@ mod tests {
         refusals
     }
 
-    /// What `image`, given as a dump, is refused by under `settings`, once it is shown that the
-    /// refusal came before any staging: the folder the staging would have been made in is as it
-    /// was, its own entry included, and so is the dump.
-    fn refused_before_staging(
-        folders: &Folders,
-        image: &[u8],
-        settings: &ExtractSettings,
-    ) -> ExtractError {
-        let dump = folders.dump(OsStr::new(REFUSED_DUMP), image);
-        let before = folders.before();
-        let cancel = Cancel::default();
-        let error = stage_n64(&dump, &folders.parent, settings, &quiet(&cancel)).unwrap_err();
-        folders.assert_untouched(&before);
-        error
-    }
-
     #[test]
     fn the_check_refuses_before_any_staging_is_made() {
         let vectors = n64_vectors();
         let folders = Folders::new();
+        let script = Strictness::Script;
 
         // The extractor's own case: the default image's first stored byte made 0xFF, which no
         // raw DEFLATE stream begins with.
         let mut image = frozen(&vectors, "default");
         let first = entries_of(&image)[0].rom_offset as usize;
         image[first] = 0xFF;
-        let error = refused_before_staging(&folders, &image, &ExtractSettings::SHIPPED);
+        let error = folders.refused_rom(&image, &script, &ExtractSettings::SHIPPED);
         assert!(
             matches!(error, ExtractError::Media(MediaError::Rom { .. })),
             "{error:?}"
@@ -910,7 +904,7 @@ mod tests {
                 romdisk_limits: refusal.limits,
                 ..ExtractSettings::SHIPPED
             };
-            let error = refused_before_staging(&folders, &refusal.image, &settings);
+            let error = folders.refused_rom(&refusal.image, &script, &settings);
             assert_eq!(error.rule(), refusal.rule, "{}", refusal.case);
             if let Some(ending) = &refusal.ending {
                 let detail = error.to_string();
@@ -950,7 +944,7 @@ mod tests {
             let image = paths_rom(paths);
             let rom = N64Rom::from_bytes(named("source.z64"), image).unwrap();
             rom.romdisk(&ROMDISK_LIMITS).unwrap();
-            let error = check_n64(&rom, &quiet(&cancel)).unwrap_err();
+            let error = check_n64(&rom, &Strictness::Script, &quiet(&cancel)).unwrap_err();
             assert_eq!(error.rule(), "treeFolderCase", "{paths:?}");
             assert_eq!(error.to_string(), detail);
         }
@@ -1025,7 +1019,7 @@ mod tests {
         let (rom, settings) = rom_with_table(&specs);
         let cancel = Cancel::default();
         let job = quiet(&cancel);
-        let checked = check_n64_with(&rom, &settings, &job).unwrap();
+        let checked = check_n64_with(&rom, &Strictness::Script, &settings, &job).unwrap();
         // Each overlay is recorded as its record describes it and its stream inflates.
         let overlays = rom.overlays(&settings.overlays).unwrap();
         let programs = &checked.manifest().programs;
@@ -1085,7 +1079,7 @@ mod tests {
         }
 
         // Under the shipped boot table the same ROM has none: its digest is not the US ROM's.
-        let shipped = check_n64(&rom, &quiet(&cancel)).unwrap();
+        let shipped = check_n64(&rom, &Strictness::Script, &quiet(&cancel)).unwrap();
         assert!(shipped.manifest().programs.is_empty());
     }
 
@@ -1108,7 +1102,7 @@ mod tests {
             let specs = overlay_specs(names);
             let (rom, settings) = rom_with_table(&specs);
             assert_eq!(rom.overlays(&settings.overlays).unwrap().len(), 4);
-            let error = refused_before_staging(&folders, rom.canonical(), &settings);
+            let error = folders.refused_rom(rom.canonical(), &Strictness::Script, &settings);
             assert_eq!(error.rule(), "treeDuplicate", "{names:?}");
             assert_eq!(error.to_string(), detail);
         }
@@ -1135,7 +1129,8 @@ mod tests {
             .collect();
         let cartridge = N64Rom::from_bytes(named("maps.z64"), rom(&files).bytes).unwrap();
         let cancel = Cancel::default();
-        let checked = check_n64(&cartridge, &quiet(&cancel)).unwrap();
+        let script = Strictness::Script;
+        let checked = check_n64(&cartridge, &script, &quiet(&cancel)).unwrap();
         let manifest = checked.manifest();
         let map = |name: &str, world: &str, objects: &str| MapRow {
             name: name.to_owned(),
@@ -1160,7 +1155,7 @@ mod tests {
         // A folder named in capitals is no map's either.
         let capitals = [RomFile::plain("/Levels/d/worlds.wad", &world)];
         let cartridge = N64Rom::from_bytes(named("maps.z64"), rom(&capitals).bytes).unwrap();
-        let checked = check_n64(&cartridge, &quiet(&cancel)).unwrap();
+        let checked = check_n64(&cartridge, &script, &quiet(&cancel)).unwrap();
         assert!(checked.manifest().maps.is_empty());
     }
 
@@ -1178,7 +1173,7 @@ mod tests {
                 cancel: &cancel,
                 progress: &progress,
             };
-            let checked = check_n64_with(&rom, &settings, &job).unwrap();
+            let checked = check_n64_with(&rom, &Strictness::Script, &settings, &job).unwrap();
             let staging = Staging::create_in(&folders.parent, STAGING_PREFIX).unwrap();
             extract_n64_with(&checked, &staging, &n64_root(), &settings, &job).unwrap();
             let phases = phases_of(progress.told());
@@ -1229,7 +1224,7 @@ mod tests {
                 cancel: &cancel,
                 progress: &progress,
             };
-            let error = check_n64(&rom, &job).unwrap_err();
+            let error = check_n64(&rom, &Strictness::Script, &job).unwrap_err();
             assert!(matches!(error, ExtractError::Cancelled), "{at}: {error:?}");
         }
     }
@@ -1248,7 +1243,8 @@ mod tests {
             cancel: &cancel,
             progress: &counted,
         };
-        let (staging, _) = stage_n64(&dump, &folders.parent, &N64_SWEEP, &job).unwrap();
+        let script = Strictness::Script;
+        let (staging, _) = stage_n64(&dump, &folders.parent, &script, &N64_SWEEP, &job).unwrap();
         drop(staging);
         let steps = counted.told().len();
         assert!(steps > 3 * 4, "{steps} steps");
@@ -1262,7 +1258,8 @@ mod tests {
                 cancel: &cancel,
                 progress: &progress,
             };
-            assert_injected_panic(|| stage_n64(&dump, &folders.parent, &N64_SWEEP, &job));
+            let parent = &folders.parent;
+            assert_injected_panic(|| stage_n64(&dump, parent, &script, &N64_SWEEP, &job));
             folders.assert_staging_gone(&before);
         }
     }
