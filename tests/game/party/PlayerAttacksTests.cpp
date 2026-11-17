@@ -785,6 +785,67 @@ TEST_CASE("moving melee capture respects dying critters' remaining solid bodies"
     CHECK(f.meleeHits.empty());
 }
 
+/** A golem of its own making with no parts: one body a unit wide that stands, is knocked
+ * down and dies; its root. */
+std::filesystem::path plainGolemAssets() {
+    const auto root = test::scratchDirectory("player-attacks-plain-golem");
+    const auto archive = root / "MONSTERS/GOLEM/LEVELG";
+    std::filesystem::create_directories(root / "critter");
+    std::filesystem::create_directories(archive);
+    writeTextFile(archive / "body.obj",
+                  "v 0 0 0\nv 1 0 0\nv 0 1 0\nvn 0 0 1\nusemtl tex0\nf 1//1 2//1 3//1\n");
+    writeTextFile(archive / "objects.json", R"({"objects":[
+      {"index":0,"name":"BODY","file":"body.obj","meshTriangles":1}]})");
+    writeFile(archive / "skin.png", test::kTinyPng);
+    writeTextFile(archive / "textures.json", R"({"bitmaps":[
+      {"index":0,"name":"SKIN","file":"skin.png","width":2,"height":2}]})");
+    test::convertModelFixture(archive);
+    writeTextFile(archive / "animations.json", R"({"trees":[{"name":"BODY",
+      "nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
+      "sequences":[{"name":"STEP","frames":3}]}]})");
+    writeTextFile(root / "critter/GOLEM.json", R"({
+      "descriptors":[{"prefix":"BODY","name":"GOLEM","type":3}],
+      "types":[{"moveCount":3,"maxHealth":100,"radius":1}],
+      "moves":[{"name":"READY","anim":"STEP","type":32,"interrupt":60},
+               {"name":"KD","anim":"STEP","type":66,"priority":100},
+               {"name":"DEATH","anim":"STEP","type":17,"priority":999}]})");
+    return root;
+}
+
+TEST_CASE("moving melee capture keeps a killed great one's body off by the player's whole width",
+          "[game][player-attacks][moving-melee-capture][critter-contact]") {
+    Fixture f;
+    auto& enemies = f.opponents.enemies();
+    enemies.open(f.device, turboAssets(), nullptr, 4, {}, 1);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    REQUIRE(enemies.spawn({.kind = kGruntKind, .position = {0, 0, 3}, .placed = true}, {}));
+    const auto& actor = f.players[0].actor;
+    constexpr f32 kMovement = 2;
+    REQUIRE(f.attacks.meleeGeometry(actor, f.targets, kMovement));
+    auto& critters = f.opponents.critters();
+    critters.open(f.device, plainGolemAssets(), nullptr, {}, 'G');
+    // Further off than the movement and the footprint reach, yet within the movement and the
+    // whole width a great one's body meets the player by.
+    constexpr f32 kGolemRadius = 1;
+    constexpr f32 kBeyondFootprint = 0.3f;
+    const auto golem = critters.spawnGolem(
+        {-(kMovement + actor.radius() + kGolemRadius + kBeyondFootprint), 0, 0}, 0);
+    REQUIRE(golem);
+    EnemyHit slay;
+    slay.damage = 10000;
+    slay.player = 0;
+    critters.hurt(*golem, slay);
+    REQUIRE(critters.dying(*golem));
+    REQUIRE(critters.targets().empty());
+    const auto bodies = critters.targets(true);
+    REQUIRE(bodies.size() == 1);
+    REQUIRE(bodies.front().radius == kGolemRadius);
+    CHECK_FALSE(f.attacks.meleeGeometry(actor, f.targets, kMovement));
+    CHECK(critters.dying(*golem));
+    CHECK(enemies.count() == 1);
+    CHECK(f.meleeHits.empty());
+}
+
 TEST_CASE("moving melee capture refuses multiplayer damage and an unbound selector",
           "[game][player-attacks][moving-melee-capture]") {
     Fixture f;
@@ -4264,9 +4325,9 @@ TEST_CASE("fire shield uses the retail one-unit contact band rather than its fla
     const auto targets = enemies.targets();
     REQUIRE(targets.size() == 1);
     const auto& target = targets.front();
-    // PlayerMotion (80081504): targetDistance < col_radius + 1.0,
-    // with the enemy radius already removed by PlayerGetTarget/closest_enemy.
-    const f32 boundary = player.actor.radius() + target.radius + 1.0f;
+    // PlayerMotion (80081504): targetDistance < col_radius + 1.0, col_radius the class's whole
+    // width (load_player), with the enemy radius already removed by PlayerGetTarget/closest_enemy.
+    const f32 boundary = player.actor.reach() + target.radius + 1.0f;
     for (const f32 offset : {0.125f, 0.0f, -0.125f}) {
         CAPTURE(offset, boundary);
         player.actor.place(target.base - Vec3{0, 0, boundary + offset});
@@ -4274,6 +4335,134 @@ TEST_CASE("fire shield uses the retail one-unit contact band rather than its fla
         f.attacks.updateArmour(1.0f / 30, f.players, f.targets);
         CHECK((enemies.healthOf(*id) < health) == (offset < 0));
     }
+}
+
+/** Where a character walking down z from where it stands is first stopped by the level's
+ * opponents, a quarter of a unit a step; nothing when nothing stops it. */
+std::optional<Vec3> walkedInto(const LevelOpponents& opponents, const PlayerActor& actor) {
+    Vec3 stop = actor.position();
+    for (s32 step = 0; step < 240; ++step) {
+        const Vec3 wanted = stop + Vec3{0, 0, -0.25f};
+        stop = opponents.resolveMovement(actor, stop, wanted);
+        if (glm::distance(stop, wanted) > 1e-4f) {
+            return stop;
+        }
+    }
+    return std::nullopt;
+}
+
+/** A great one as a level stands it: its family, the level's realm and the archive it needs. */
+struct StandingGreatOne {
+    CombatantKind kind = CombatantKind::Golem;
+    char realm = 'G';
+    const char* archive = "";
+};
+
+TEST_CASE("a charge throws down the golem it is stopped against",
+          "[game][player-attacks][charge][critter-contact][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/GOLEM.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/GOLEM/LEVELG/ANIM.PS2");
+    Fixture f;
+    f.opponents.open({f.device, f.world, f.weapons, f.effects, f.audio, root, 1}, f.players);
+    auto& critters = f.opponents.critters();
+    critters.open(f.device, root, nullptr, {}, 'G');
+    const auto golem = critters.spawn(CombatantKind::Golem, {}, 0);
+    REQUIRE(golem);
+    auto& actor = f.players[0].actor;
+    actor.place({0, 0, 30});
+    actor.turnTo(std::numbers::pi_v<f32>);
+    const auto stop = walkedInto(f.opponents, actor);
+    REQUIRE(stop);
+    actor.place(*stop);
+    const f32 whole = critters.healthOf(*golem);
+    f.attacks.ramBarrels(0, f.players, f.targets);
+    CHECK(critters.healthOf(*golem) < whole);
+    const f32 once = critters.healthOf(*golem);
+    f.attacks.ramBarrels(0, f.players, f.targets);
+    CHECK(critters.healthOf(*golem) == once); // not again in the same charge
+    f.opponents.close();
+}
+
+TEST_CASE("held and automatic melee reach a great one from the original's stand-off",
+          "[game][player-attacks][critter-contact][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/GOLEM.WAD").parent_path().parent_path();
+    test::assetOrSkip("PLAYERS/WAR/ANIM/ANIM.PS2");
+    const auto one =
+        GENERATE(StandingGreatOne{CombatantKind::Golem, 'G', "MONSTERS/GOLEM/LEVELG/ANIM.PS2"},
+                 StandingGreatOne{CombatantKind::Golem, 'F', "MONSTERS/GOLEM/LEVELF/ANIM.PS2"},
+                 StandingGreatOne{CombatantKind::Gargoyle, 'B', "MONSTERS/GAR_EAGL/ANIM.PS2"},
+                 StandingGreatOne{CombatantKind::General, 'G', "MONSTERS/GENERAL/LEVELG/ANIM.PS2"});
+    test::assetOrSkip(one.archive);
+    CAPTURE(static_cast<s32>(one.kind), one.realm);
+    Fixture f;
+    REQUIRE(f.classes.load(root / "PDATA"));
+    f.opponents.open({f.device, f.world, f.weapons, f.effects, f.audio, root, 1}, f.players);
+    auto& critters = f.opponents.critters();
+    critters.open(f.device, root, nullptr, {}, one.realm);
+    const auto id = critters.spawn(one.kind, {}, 0);
+    REQUIRE(id);
+    auto& player = f.players[0];
+    player.actor.spawn(3, {}, f.classes.stats(0), {0, 0, 30}, std::numbers::pi_v<f32>);
+    player.figure = PlayerFigure::load(f.device, root, player.actor.save(), Entrance::Skip);
+    REQUIRE(player.figure);
+    f.targets.players = f.players;
+    const auto stop = walkedInto(f.opponents, player.actor);
+    REQUIRE(stop);
+    player.actor.place(*stop);
+    CAPTURE(stop->z);
+    // The part that holds the player off lies within a swing, held or not (AnimAction's bands
+    // of col_radius + 1 and + 2), so the blow lands there as the original's does.
+    CHECK(f.attacks.meleeSense(player.actor, false, f.targets).range == MeleeRange::Swing);
+    CHECK(f.attacks.meleeSense(player.actor, true, f.targets).range == MeleeRange::Swing);
+    CHECK(f.attacks.automaticMeleeDeed(player.actor, f.targets, player.actor.facing()) !=
+          PlayerDeed::None);
+    const f32 before = critters.healthOf(*id);
+    f.attacks.melee(0, f.players, f.targets);
+    CHECK(critters.healthOf(*id) < before);
+    f.opponents.close();
+}
+
+TEST_CASE("a fire shield burns a standing gargoyle every frame from the original's stand-off",
+          "[game][player-attacks][fire-shield][critter-contact][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/GAR_LION.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/GAR_LION/ANIM.PS2");
+    test::assetOrSkip("PLAYERS/WAR/ANIM/ANIM.PS2");
+    Fixture f;
+    REQUIRE(f.classes.load(root / "PDATA"));
+    f.opponents.open({f.device, f.world, f.weapons, f.effects, f.audio, root, 1}, f.players);
+    auto& critters = f.opponents.critters();
+    critters.open(f.device, root, nullptr, {}, 'B');
+    const auto id = critters.spawnGargoyle({}, 0, "GAR_LION");
+    REQUIRE(id);
+    for (s32 frame = 0; frame < 300 && critters.moveOf(*id) != "READY"; ++frame) {
+        critters.update(2, 1.0f / 30, {});
+    }
+    REQUIRE(critters.moveOf(*id) == "READY");
+    auto& player = f.players[0];
+    player.actor.spawn(3, {}, f.classes.stats(0), {0, 0, 30}, std::numbers::pi_v<f32>);
+    player.figure = PlayerFigure::load(f.device, root, player.actor.save(), Entrance::Skip);
+    REQUIRE(player.figure);
+    const auto stop = walkedInto(f.opponents, player.actor);
+    REQUIRE(stop);
+    player.actor.place(*stop);
+    auto& inventory = player.actor.save().progress().inventory;
+    inventory.addPowerup(powerup::kArmor, armor::kFireArmor, 0, 60);
+    // Grown, the burn gets a point a frame past the lion's armour and fire resistance, too
+    // little for it to roar off its stance (fifty taken) within the frames watched.
+    inventory.addPowerup(powerup::kSpecial, powerup::kGrowth, 0, 60);
+    // Its stance sways the parts that hold the player off; the shield's band of col_radius
+    // + 1 (PlayerMotion, 0x80081504) keeps them through more than a whole cycle of it.
+    constexpr s32 kFrames = 45;
+    for (s32 frame = 0; frame < kFrames; ++frame) {
+        CAPTURE(frame);
+        critters.update(2, 1.0f / 30, {});
+        REQUIRE(critters.moveOf(*id) == "READY");
+        const f32 health = critters.healthOf(*id);
+        f.attacks.updateArmour(1.0f / 30, f.players, f.targets);
+        CHECK(critters.healthOf(*id) < health);
+    }
+    f.attacks.clear();
+    f.opponents.close();
 }
 
 TEST_CASE("melee acquires ahead of the requested heading, within a swing or a step",

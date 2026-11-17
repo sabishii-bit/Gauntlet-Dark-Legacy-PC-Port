@@ -2307,7 +2307,7 @@ TEST_CASE("asset loading rejects a descriptor from the wrong combatant family",
 constexpr u32 kKnockOver = 0x100; ///< a hit that knocks a great one over
 
 TEST_CASE("ordinary critter movement sweeps player collision volumes in three dimensions",
-          "[combatant][critter-body-contact]") {
+          "[combatant][critter-body-contact][critter-contact]") {
     const auto root = familyAssets();
     writeTextFile(root / "critter/GENERAL.json", R"({
       "descriptors":[{"prefix":"BODY","name":"GENERAL","type":8}],
@@ -2342,6 +2342,12 @@ TEST_CASE("ordinary critter movement sweeps player collision volumes in three di
         player.position.x = 2.5f;
         blocked = false;
     }
+    SECTION("the player's whole width meets the wall radius") {
+        // CritterCollidePlayers widens the body by col_radius, the class's whole width.
+        player.position.x = 2.3f;
+        player.radius = 0.75f;
+        player.collisionRadius = 1.5f;
+    }
     SECTION("native collision centre overrides visual height") {
         player.position.y = -12;
         player.collisionHeight = 18.0f;
@@ -2361,7 +2367,7 @@ TEST_CASE("ordinary critter movement sweeps player collision volumes in three di
     actor.update(2, seconds, std::span{&player, 1});
     CHECK(actor.position().x == Approx(blocked ? 0.0f : 10.0f * seconds));
     const auto pushes = actor.takePushes();
-    CHECK(pushes.size() == (blocked ? 1 : 0));
+    REQUIRE(pushes.size() == (blocked ? 1 : 0));
     if (blocked) {
         CHECK(pushes.front().player == 3);
         CHECK(glm::length(pushes.front().velocity) >= 2.0f);
@@ -2371,7 +2377,7 @@ TEST_CASE("ordinary critter movement sweeps player collision volumes in three di
 }
 
 TEST_CASE("node-based critters use solid animated parts for player movement contact",
-          "[combatant][critter-body-contact]") {
+          "[combatant][critter-body-contact][critter-contact]") {
     const auto root = familyAssets();
     writeTextFile(root / "critter/GENERAL.json", R"({
       "descriptors":[{"prefix":"BODY","name":"GENERAL","type":8}],
@@ -2398,6 +2404,17 @@ TEST_CASE("node-based critters use solid animated parts for player movement cont
     }
     SECTION("a player above that node is not in contact") {
         player.position.y = 20;
+        blocked = false;
+    }
+    SECTION("the player's whole width holds the walk off") {
+        // CritterMoveNodeColSub widens a solid node by col_radius, the class's whole width.
+        player.position.x = 7.4f;
+        player.radius = 0.75f;
+        player.collisionRadius = 1.5f;
+    }
+    SECTION("a footprint without a contact width keeps the narrower contact") {
+        player.position.x = 7.4f;
+        player.radius = 0.75f;
         blocked = false;
     }
     EnemyHit hit;

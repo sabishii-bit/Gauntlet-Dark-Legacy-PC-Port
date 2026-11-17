@@ -139,7 +139,8 @@ public:
     f32 radius() const { return m_radius; }
     f32 height() const { return m_height; }
     /** How far the character's touch takes items: the class's whole width, as the original
-     * counts it, twice the footprint that walls stop. */
+     * counts it (col_radius), twice the footprint that walls stop. It is also the width the
+     * great ones, their spreading attacks and the contact shields meet the character by. */
     f32 reach() const { return m_radius * 2.0f; }
     /** Lowest height of the native wall-contact sphere for the given foot height.
      * Both walking and post-body correction must ignore faces wholly below it. */

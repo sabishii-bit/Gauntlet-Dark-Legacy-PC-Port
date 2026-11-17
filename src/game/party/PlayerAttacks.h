@@ -29,7 +29,9 @@ namespace gdl::game {
  * Clear before releasing its borrowed effect store, arsenal, figures or archives. */
 class PlayerAttacks {
 public:
-    static constexpr f32 kRamReach = 0.3f; ///< native charge contact margin beyond body radius
+    /** A charge's contact margin past the width its movement meets a body by: the footprint
+     * for the swarm and the items, the whole width for the great ones. */
+    static constexpr f32 kRamReach = 0.3f;
     struct Resources {
         RenderDevice& device;
         const ClassDataSet& classes;
@@ -109,7 +111,7 @@ public:
     static constexpr f32 kHeldCone = 0.5f;   ///< and one already held
     /** The fire and lightning shields harm the creature their bearer stands against. */
     void updateArmour(f32 seconds, std::span<PlayerRuntime> players, const Targets& targets);
-    static constexpr f32 kArmourReach = 1.0f;      ///< past the body's radius
+    static constexpr f32 kArmourReach = 1.0f; ///< past the character's whole width (col_radius)
     static constexpr f32 kFireShieldDamage = 3.0f; ///< a 30 Hz frame, never waiting
     static constexpr f32 kLightningShieldDamage = 20.0f;
     static constexpr f32 kShockGap = 1.0f; ///< seconds before the lightning strikes one again

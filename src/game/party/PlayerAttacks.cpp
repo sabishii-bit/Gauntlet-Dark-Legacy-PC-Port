@@ -322,21 +322,23 @@ void PlayerAttacks::ramBarrels(usize index, std::span<PlayerRuntime> players,
         }
     }
     // A body run into is thrown down (PlayerMotion_DamageTarget, 0x20): swarm and great ones,
-    // never a boss, each once a charge.
+    // never a boss, each once a charge. Each is reached a margin past the width the charge's
+    // movement stops against it by.
     const f32 blow = PowerupEffects::of(actor.save().progress().inventory).grown() ? 2 * kChargeBlow
                                                                                    : kChargeBlow;
     const Vec3 facing = actor.facing();
-    const auto ram = [&](const MissileTarget& target, TargetFamily family, const auto& strike) {
+    const auto ram = [&](const MissileTarget& target, TargetFamily family, f32 width,
+                         const auto& strike) {
         const usize key = AttackTargetId::of(family, target.id).key();
         if (std::ranges::find(rammed, key) != rammed.end() ||
-            !target.touches(actor.followPoint(), actor.radius() + kRamReach)) {
+            !target.touches(actor.followPoint(), width + kRamReach)) {
             return;
         }
         rammed.push_back(key);
         strike(target);
     };
     for (const MissileTarget& target : targets.opponents.enemies().targets()) {
-        ram(target, TargetFamily::Enemy, [&](const MissileTarget& hit) {
+        ram(target, TargetFamily::Enemy, actor.radius(), [&](const MissileTarget& hit) {
             const Enemies& enemies = targets.opponents.enemies();
             const bool stood = enemies.alive(hit.id);
             targets.opponents.strikeEnemy(hit.id, blow, EnemyHit::kKnockDown, facing,
@@ -346,7 +348,7 @@ void PlayerAttacks::ramBarrels(usize index, std::span<PlayerRuntime> players,
         });
     }
     for (const MissileTarget& target : targets.opponents.critters().targets()) {
-        ram(target, TargetFamily::Critter, [&](const MissileTarget& hit) {
+        ram(target, TargetFamily::Critter, actor.reach(), [&](const MissileTarget& hit) {
             const Critters& critters = targets.opponents.critters();
             const bool stood = critters.alive(hit.id) && !critters.dying(hit.id);
             targets.opponents.strikeCritter(hit.id, blow, EnemyHit::kKnockDown, facing,
@@ -1309,10 +1311,12 @@ void PlayerAttacks::updateArmour(f32 seconds, std::span<PlayerRuntime> players,
             std::erase_if(creatures,
                           [](const MissileTarget& target) { return !isCreature(target.id); });
         }
+        // PlayerMotion's shields take the target within col_radius, the class's whole width,
+        // and a unit (lbl_80347BD0) of the character.
         const PlayerActor& actor = runtime.actor;
         const auto target =
             TargetAssist::around(actor.position(), actor.height(), creatures,
-                                 actor.radius() + kArmourReach, &m_resources->world.collision());
+                                 actor.reach() + kArmourReach, &m_resources->world.collision());
         if (!target) {
             continue;
         }
@@ -2240,7 +2244,7 @@ PlayerAttacks::meleeGeometry(const PlayerActor& actor, const Targets& targets, f
     // movement query as LevelOpponents when excluding an unsupported contact.
     for (const auto& body : targets.opponents.critters().targets(true)) {
         const Vec3 offset = body.base - actor.position();
-        if (portable::hypot(offset.x, offset.z) <= movementRadius + actor.radius() + body.radius) {
+        if (portable::hypot(offset.x, offset.z) <= movementRadius + actor.reach() + body.radius) {
             return std::nullopt;
         }
     }

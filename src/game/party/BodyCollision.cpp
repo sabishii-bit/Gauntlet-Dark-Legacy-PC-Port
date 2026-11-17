@@ -2,10 +2,24 @@
 
 #include <algorithm>
 #include <cmath>
+#include <vector>
 
 #include "game/players/PlayerActor.h"
 
 namespace gdl::game {
+namespace {
+/** What a step may not cross: a centre along the ground and how near it lets the step come. */
+struct Circle {
+    Vec2 centre{0};
+    f32 reach = 0;
+};
+} // namespace
+
+ContactCylinder BodyCollision::critterContact(const MissileTarget& volume, f32 width) {
+    const f32 halfHeight = 0.5f * volume.height;
+    return {volume.base + Vec3{0, halfHeight, 0}, width + volume.radius, width + halfHeight};
+}
+
 Vec3 BodyCollision::resolveItems(const Vec3& from, const Vec3& to, f32 radius, f32 height,
                                  std::span<const Obstacle> items) {
     if (items.empty() || radius <= 0 || height <= 0) {
@@ -36,6 +50,33 @@ Vec3 BodyCollision::resolveItems(const Vec3& from, const Vec3& to, f32 radius, f
 
 Vec3 BodyCollision::resolve(const Vec3& from, const Vec3& to, f32 radius, f32 height,
                             std::span<const MissileTarget> bodies) {
+    return resolve(from, to, radius, height, bodies, 0, {});
+}
+
+Vec3 BodyCollision::resolve(const Vec3& from, const Vec3& to, f32 radius, f32 height,
+                            std::span<const MissileTarget> bodies, f32 centreHeight,
+                            std::span<const ContactCylinder> cylinders) {
+    std::vector<Circle> circles;
+    circles.reserve(bodies.size() + cylinders.size());
+    for (const auto& body : bodies) {
+        if (body.radius <= 0 || body.height <= 0 ||
+            std::min(from.y, to.y) >= body.base.y + body.height ||
+            std::max(from.y, to.y) + height <= body.base.y) {
+            continue;
+        }
+        circles.push_back({{body.base.x, body.base.z}, radius + body.radius});
+    }
+    // LineCylinderCollide (0x8002FA70) lets the centre pass only beyond the half height, so a
+    // band's edges still hold it.
+    const f32 lowest = std::min(from.y, to.y) + centreHeight;
+    const f32 highest = std::max(from.y, to.y) + centreHeight;
+    for (const auto& cylinder : cylinders) {
+        if (cylinder.radius <= 0 || cylinder.centre.y - cylinder.halfHeight > highest ||
+            cylinder.centre.y + cylinder.halfHeight < lowest) {
+            continue;
+        }
+        circles.push_back({{cylinder.centre.x, cylinder.centre.z}, cylinder.radius});
+    }
     Vec2 position{from.x, from.z};
     Vec2 remaining{to.x - from.x, to.z - from.z};
     // Re-sweep the slide, so resolving one body cannot push through another.
@@ -47,15 +88,9 @@ Vec3 BodyCollision::resolve(const Vec3& from, const Vec3& to, f32 radius, f32 he
         f32 first = 1;
         Vec2 normal{0};
         bool hit = false;
-        for (const auto& body : bodies) {
-            if (body.radius <= 0 || body.height <= 0 ||
-                std::min(from.y, to.y) >= body.base.y + body.height ||
-                std::max(from.y, to.y) + height <= body.base.y) {
-                continue;
-            }
-            const Vec2 delta = position - Vec2{body.base.x, body.base.z};
-            const f32 reach = radius + body.radius;
-            const f32 separation = glm::dot(delta, delta) - reach * reach;
+        for (const Circle& circle : circles) {
+            const Vec2 delta = position - circle.centre;
+            const f32 separation = glm::dot(delta, delta) - circle.reach * circle.reach;
             const f32 toward = glm::dot(delta, remaining);
             // A spawn/animation may begin overlapping. Allow escape, not a deeper step.
             if (toward >= 0) {
@@ -92,19 +127,28 @@ Vec3 BodyCollision::resolve(const Vec3& from, const Vec3& to, f32 radius, f32 he
 Vec3 BodyCollision::resolveMovement(const PlayerActor& player, const Vec3& from, const Vec3& to,
                                     std::span<const MissileTarget> bodies,
                                     std::span<const Obstacle> generators,
-                                    const WorldCollision* collision) {
-    Vec3 resolved = resolve(from, to, player.radius(), player.height(), bodies);
+                                    const WorldCollision* collision,
+                                    std::span<const MissileTarget> critters) {
+    // PlayerCollideItems meets the great ones by col_radius, the class's whole width, about
+    // the collision centre (CritterMoveNodeCol, 0x800374FC).
+    std::vector<ContactCylinder> cylinders;
+    cylinders.reserve(critters.size());
+    for (const auto& volume : critters) {
+        cylinders.push_back(critterContact(volume, player.reach()));
+    }
+    const f32 centreHeight = player.followPoint().y - player.position().y;
+    Vec3 resolved =
+        resolve(from, to, player.radius(), player.height(), bodies, centreHeight, cylinders);
     resolved = resolveItems(from, resolved, player.radius(), player.height(), generators);
     if (collision != nullptr) {
         // A body's push can leave the player in a wall: put PlayerWallCollide's sphere
         // back out of the still faces it is in front of. Animated contacts have already
         // been swept. A face the player stands behind is air to it (BTriLineCol), so it
         // is never put through a one-sided railing.
-        const Vec3 lift{0.0f,
-                        player.followPoint().y - player.position().y + PlayerActor::kWallSphereLift,
-                        0.0f};
+        const Vec3 lift{0.0f, centreHeight + PlayerActor::kWallSphereLift, 0.0f};
         resolved = collision->resolveSphere(resolved + lift, player.reach(), true) - lift;
-        const Vec3 checked = resolve(from, resolved, player.radius(), player.height(), bodies);
+        const Vec3 checked = resolve(from, resolved, player.radius(), player.height(), bodies,
+                                     centreHeight, cylinders);
         if (glm::distance(checked, resolved) > 1e-4f) {
             return {from.x, to.y, from.z};
         }

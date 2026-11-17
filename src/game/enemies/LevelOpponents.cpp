@@ -536,15 +536,14 @@ Vec3 LevelOpponents::resolveMovement(const PlayerActor& player, const Vec3& from
             return m_enemies.kindOf(body.id) == kDeathKind;
         });
     }
-    const auto critters = m_critters.targets(true);
     const auto bosses = m_bosses.targets();
-    bodies.insert(bodies.end(), critters.begin(), critters.end());
     bodies.insert(bodies.end(), bosses.begin(), bosses.end());
     const auto generators = m_generators.obstacles();
     // A slide along a creature must still respect the level walls. If wall resolution
     // would move back inside a creature, retain the already-safe pre-step position.
     return BodyCollision::resolveMovement(player, from, to, bodies, generators,
-                                          m_resources ? &m_resources->world.collision() : nullptr);
+                                          m_resources ? &m_resources->world.collision() : nullptr,
+                                          m_critters.targets(true));
 }
 
 bool LevelOpponents::saveLocal(LocalSnapshot& saved) const {

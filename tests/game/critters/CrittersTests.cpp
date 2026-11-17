@@ -10,6 +10,7 @@
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include "engine/assets/ItemArchive.h"
 #include "engine/assets/WorldLayout.h"
@@ -23,6 +24,7 @@
 #include "formats/CritterWad.h"
 #include "game/bosses/BossCoins.h"
 #include "game/characters/ClassData.h"
+#include "game/combat/DamageTypes.h"
 #include "game/combat/EffectFlags.h"
 #include "game/critters/CombatantBreath.h"
 #include "game/critters/CombatantFixture.h"
@@ -30,8 +32,11 @@
 #include "game/critters/Critters.h"
 #include "game/critters/General.h"
 #include "game/critters/Golem.h"
+#include "game/enemies/LevelOpponents.h"
 #include "game/level/BossKinds.h"
 #include "game/level/PlacedItems.h"
+#include "game/party/PlayerRuntime.h"
+#include "game/players/PlayerActor.h"
 
 namespace {
 
@@ -1025,6 +1030,65 @@ TEST_CASE("native town golem weapon swings retain their authored contact reach w
             }
         }
     }
+}
+
+TEST_CASE("a golem's stomp knocks down a warrior held at the original's stand-off",
+          "[game][enemies][golem-contact][critter-contact][assets]") {
+    // ProcessEffects meets a player col_radius, the class's whole width, past the ring's reach
+    // (0x80095604-0x80095638), the same width a golem's parts hold the player off by.
+    const auto root = unpackedRoot();
+    const char realm = GENERATE('G', 'I');
+    CAPTURE(realm);
+    test::assetOrSkip(std::string("MONSTERS/GOLEM/LEVEL") + realm + "/ANIM.PS2");
+    test::assetOrSkip("PDATA/WAR.WAD");
+    ClassDataSet classes;
+    REQUIRE(classes.load(root / "PDATA"));
+    test::FakeRenderDevice device;
+    LevelOpponents opponents;
+    auto& critters = opponents.critters();
+    critters.open(device, root, nullptr, {}, realm);
+    const auto golem = critters.spawn(CombatantKind::Golem, {}, 0);
+    REQUIRE(golem);
+    std::array<PlayerRuntime, 1> players;
+    PlayerActor& warrior = players[0].actor;
+    warrior.spawn(0, {}, classes.stats(0), {0, 0, 30}, kPi);
+    Vec3 stop = warrior.position();
+    bool cut = false;
+    for (s32 step = 0; step < 240 && !cut; ++step) {
+        const Vec3 wanted = stop + Vec3{0, 0, -0.25f};
+        stop = opponents.resolveMovement(warrior, stop, wanted);
+        cut = glm::distance(stop, wanted) > 1e-4f;
+    }
+    REQUIRE(cut);
+    warrior.place(stop);
+    CAPTURE(stop.z);
+    const auto party = LevelOpponents::enemyViews(players);
+    s32 stomps = 0;
+    bool stomping = false;
+    bool landed = false;
+    for (s32 update = 0; update < 60 * 30 && stomps < 2; ++update) {
+        critters.update(kTicks, kStep, party);
+        const bool now = critters.moveOf(*golem) == "ATTACK4";
+        if (now && !stomping) {
+            landed = false;
+        }
+        stomping = now;
+        for (const CombatBlow& blow : critters.takeBlows()) {
+            // The ring's first touch is what the player takes; its repeat gap holds off the rest.
+            if (!blow.area || landed) {
+                continue;
+            }
+            landed = true;
+            ++stomps;
+            CAPTURE(blow.damage, blow.flags);
+            CHECK(blow.damage >= 5);
+            CHECK((blow.flags & damage::kKnockDown) != 0);
+        }
+        critters.takeCues();
+        critters.takePushes();
+    }
+    REQUIRE(stomps > 0);
+    opponents.close();
 }
 
 TEST_CASE("a return-facing move turns to its initial yaw rather than its player target",

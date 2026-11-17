@@ -1479,6 +1479,134 @@ TEST_CASE("mountain creatures stop players until their dying collision bodies ar
     }
 }
 
+/** A golem of its own making whose one solid part, BODY, is two wide about (0, `partY`, 3) and
+ * whose body is half a unit wide and four high either side of (0, 4, 0); its root. */
+std::filesystem::path writeContactGolem(f32 partY) {
+    const auto root = test::scratchDirectory("level-opponents-contact-golem");
+    const auto archive = root / "MONSTERS/GOLEM/LEVELG";
+    std::filesystem::create_directories(root / "critter");
+    std::filesystem::create_directories(archive / "models");
+    std::filesystem::create_directories(archive / "textures");
+    writeTextFile(archive / "models/body.obj",
+                  "v 0 0 0\nv 1 0 0\nv 0 1 0\nvn 0 0 1\nusemtl tex0\nf 1//1 2//1 3//1\n");
+    writeTextFile(archive / "objects.json", R"({"objects":[
+      {"index":0,"name":"BODY","file":"models/body.obj","meshTriangles":1}]})");
+    writeFile(archive / "textures/skin.png", test::kTinyPng);
+    writeTextFile(archive / "textures.json", R"({"bitmaps":[
+      {"index":0,"name":"SKIN","file":"textures/skin.png","width":2,"height":2,"flags":0}]})");
+    test::convertModelFixture(archive);
+    writeTextFile(archive / "animations.json", R"({"trees":[{"name":"BODY",
+      "nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
+      "sequences":[{"name":"STEP","frames":3}]}]})");
+    writeTextFile(root / "critter/GOLEM.json",
+                  std::format(R"({{
+      "descriptors":[{{"prefix":"BODY","name":"GOLEM","type":{}}}],
+      "types":[{{"moveCount":2,"maxHealth":100,"radius":4,"wallRadius":0.5,
+                 "originOffset":[0,4,0],"typeFlags":258,"colCount":1}}],
+      "nodes":[{{"nodeName":"BODY","position":[0,{},3],"radius":2,"flags":8}}],
+      "moves":[{{"name":"READY","anim":"STEP","type":32,"interrupt":60}},
+        {{"name":"DEATH","anim":"STEP","type":17,"priority":999}}]}})",
+                              static_cast<s32>(CombatantKind::Golem), partY));
+    return root;
+}
+
+TEST_CASE("a great one's solid part holds a player's collision centre a whole width off",
+          "[level-opponents][collision][critter-contact]") {
+    // CritterMoveNodeCol (0x800374FC) meets a solid part col_radius, the class's whole width,
+    // beyond its own radius, across and up or down from the player's collision centre; a part
+    // out of that band leaves the player to the body behind it.
+    f32 partY = 4;
+    f32 stopZ = 6.5f;
+    SECTION("the part's band holds the collision centre") {}
+    SECTION("a part held over the band leaves the player to the body") {
+        partY = 6.25f;
+        stopZ = 2;
+    }
+    SECTION("a part held under the band leaves the player to the body") {
+        partY = -1.25f;
+        stopZ = 2;
+    }
+    const auto root = writeContactGolem(partY);
+    test::FakeRenderDevice device;
+    LevelOpponents opponents;
+    opponents.critters().open(device, root, nullptr, {}, 'G');
+    REQUIRE(opponents.critters().spawnGolem(Vec3{0}, 0));
+    REQUIRE(opponents.critters().targets(true).size() == 2);
+    PlayerActor player;
+    player.spawn(0, {}, nullptr, {0, 0, 20}, 0);
+    REQUIRE(player.reach() == 1.5f);
+    REQUIRE(player.followPoint().y - player.position().y == 2.5f);
+    Vec3 stop = player.position();
+    for (s32 step = 0; step < 120; ++step) {
+        stop = opponents.resolveMovement(player, stop, stop + Vec3{0, 0, -0.25f});
+    }
+    CHECK(stop.x == 0);
+    CHECK(stop.y == 0);
+    CHECK(stop.z == Catch::Approx(stopZ).margin(1e-3));
+    opponents.close();
+}
+
+/** A great one as a level stands it: its family, the level's realm and the archive it needs. */
+struct StandingGreatOne {
+    CombatantKind kind = CombatantKind::Golem;
+    char realm = 'G';
+    const char* archive = "";
+};
+
+TEST_CASE("great ones hold a player at the original's stand-off",
+          "[level-opponents][collision][critter-contact][assets]") {
+    // Whatever part or body stops a step stands the player's collision centre a whole width
+    // (col_radius) out from it across, measured here as the port's true circle (the original's
+    // fqdist reaches a little short of it off the axes). A castle or Underworld golem's head,
+    // held higher than that width over the collision centre, no longer holds the player back.
+    const auto root = test::assetOrSkip("CRITTER/GOLEM.WAD").parent_path().parent_path();
+    const auto one =
+        GENERATE(StandingGreatOne{CombatantKind::Golem, 'A', "MONSTERS/GOLEM/LEVELA/ANIM.PS2"},
+                 StandingGreatOne{CombatantKind::Golem, 'G', "MONSTERS/GOLEM/LEVELG/ANIM.PS2"},
+                 StandingGreatOne{CombatantKind::Golem, 'F', "MONSTERS/GOLEM/LEVELF/ANIM.PS2"},
+                 StandingGreatOne{CombatantKind::Golem, 'I', "MONSTERS/GOLEM/LEVELI/ANIM.PS2"},
+                 StandingGreatOne{CombatantKind::Gargoyle, 'B', "MONSTERS/GAR_EAGL/ANIM.PS2"},
+                 StandingGreatOne{CombatantKind::General, 'G', "MONSTERS/GENERAL/LEVELG/ANIM.PS2"});
+    test::assetOrSkip(one.archive);
+    CAPTURE(static_cast<s32>(one.kind), one.realm);
+    test::FakeRenderDevice device;
+    LevelOpponents opponents;
+    auto& critters = opponents.critters();
+    critters.open(device, root, nullptr, {}, one.realm);
+    const auto id = critters.spawn(one.kind, Vec3{0}, 0);
+    REQUIRE(id);
+    PlayerActor player;
+    player.spawn(0, {}, nullptr, {0, 0, 30}, 0);
+    Vec3 stop = player.position();
+    bool cut = false;
+    for (s32 step = 0; step < 240 && !cut; ++step) {
+        const Vec3 wanted = stop + Vec3{0, 0, -0.25f};
+        stop = opponents.resolveMovement(player, stop, wanted);
+        cut = glm::distance(stop, wanted) > 1e-4f;
+    }
+    REQUIRE(cut);
+    const Vec3& anchor = critters.positionOf(*id);
+    CAPTURE(stop.x, stop.z, glm::length(Vec2{stop.x - anchor.x, stop.z - anchor.z}));
+    const f32 centre = stop.y + player.followPoint().y - player.position().y;
+    std::optional<f32> nearest;
+    for (const MissileTarget& volume : critters.targets(true)) {
+        const f32 middle = volume.base.y + 0.5f * volume.height;
+        if (std::abs(centre - middle) > player.reach() + 0.5f * volume.height) {
+            continue;
+        }
+        const f32 gap =
+            glm::length(Vec2{stop.x - volume.base.x, stop.z - volume.base.z}) - volume.radius;
+        CAPTURE(volume.node, gap);
+        CHECK(gap >= player.reach() - 2e-3f);
+        nearest = nearest ? std::min(*nearest, gap) : gap;
+    }
+    REQUIRE(nearest);
+    // A step that met a part off its axis slides along it a little before it is cut.
+    CHECK(*nearest >= player.reach() - 2e-3f);
+    CHECK(*nearest <= player.reach() + 0.01f);
+    opponents.close();
+}
+
 TEST_CASE("the town's IT stands for a party of three, with no body of its own",
           "[level-opponents][it][assets]") {
     const auto root =

@@ -30,7 +30,8 @@ bool CritterArea::touches(const Mat4& parent, const EnemyView& player) const {
     const Mat4 world = transform(parent);
     const Vec3 delta = player.position + Vec3{0, player.height * 0.5f, 0} - Vec3{world[3]};
     const f32 distance = glm::length(Vec2{delta.x, delta.z});
-    const f32 reach = activeRadius + player.radius;
+    // ProcessEffects widens the reach by col_radius, the class's whole width (0x80095620).
+    const f32 reach = activeRadius + player.collisionRadius.value_or(player.radius);
     if (std::abs(delta.y) > player.height * 0.5f + (halfHeight > 0 ? halfHeight : activeRadius) ||
         distance > reach) {
         return false;

@@ -81,8 +81,10 @@ void Combatant::strikeWith(Actor& critter, s32 id, const MoveDefinition& move, s
             within = flatDistance(centre, feet) <= reach + playerRadius &&
                      std::abs(centre.y - playerCentre) <= 0.5f * view.height + reach;
         } else {
-            within = flatDistance(centre, feet) <= reach + view.radius &&
-                     std::abs(centre.y - body.y) <= 0.5f * view.height + damage->radius;
+            // A ring or targeted area reaches the player's whole width too (ProcessEffects).
+            within =
+                flatDistance(centre, feet) <= reach + view.collisionRadius.value_or(view.radius) &&
+                std::abs(centre.y - body.y) <= 0.5f * view.height + damage->radius;
         }
         if (!within) {
             continue;

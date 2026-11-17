@@ -227,12 +227,14 @@ bool Combatant::translate(Actor& critter, f32 seconds, const MoveDefinition* mov
         return false;
     }
     Vec3 to = critter.position + translation;
-    // CritterCollidePlayers sweeps collision centres, not floor positions. An
-    // overlapping body may move outward; players on another floor do not block it.
+    // CritterCollidePlayers sweeps collision centres, not floor positions, widened by
+    // col_radius, the class's whole width. An overlapping body may move outward; players on
+    // another floor do not block it.
     const Vec3 offset = to - critter.position;
     const auto playerSeparation = [&](const EnemyView& player) -> std::optional<Vec3> {
         const Vec3 centre =
             player.position + Vec3{0, player.collisionHeight.value_or(0.5f * player.height), 0};
+        const f32 width = player.collisionRadius.value_or(player.radius);
         if ((critter.definition->typeFlags() & kNodeMovement) != 0) {
             std::optional<Vec3> separation;
             f32 nearest = 0;
@@ -244,7 +246,7 @@ bool Combatant::translate(Actor& critter, f32 seconds, const MoveDefinition* mov
                     continue;
                 }
                 const Vec3 from = partCentre(critter, part);
-                if (movementTouchesBody(from, from + offset, centre, player.radius + part.radius,
+                if (movementTouchesBody(from, from + offset, centre, width + part.radius,
                                         0.5f * player.height + part.radius)) {
                     const f32 distance = glm::length(
                         Vec2{centre.x - from.x - offset.x, centre.z - from.z - offset.z});
@@ -258,7 +260,7 @@ bool Combatant::translate(Actor& critter, f32 seconds, const MoveDefinition* mov
         }
         const Vec3 from = partPosition(critter, {});
         if (movementTouchesBody(from, from + offset, centre,
-                                player.radius + critter.definition->wallRadius(),
+                                width + critter.definition->wallRadius(),
                                 0.5f * player.height + critter.definition->radius())) {
             return centre - (from + offset);
         }
@@ -273,8 +275,9 @@ bool Combatant::translate(Actor& critter, f32 seconds, const MoveDefinition* mov
             playerContact = true;
             const f32 length = glm::length(*separation);
             if (length > 0) {
-                const f32 depth = std::clamp(
-                    critter.definition->wallRadius() + other.radius - length, 1.0f, 3.0f);
+                const f32 width = other.collisionRadius.value_or(other.radius);
+                const f32 depth =
+                    std::clamp(critter.definition->wallRadius() + width - length, 1.0f, 3.0f);
                 m_sim.pushes.push_back({other.player, *separation * (2.0f * depth / length)});
             }
         }
