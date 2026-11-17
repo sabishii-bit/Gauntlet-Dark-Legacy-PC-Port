@@ -6,7 +6,8 @@
 //! of them, each file the disc keeps outside DISK.ROM, and SIZES.ROM's digest. [`check_dreamcast`]
 //! opens the disc, reads its native table and decides on the whole tree first, writing nothing,
 //! so that a staging is made only for a disc that passed; [`extract_dreamcast`] then reads the disc
-//! again to write its tree there.
+//! again to write its tree there, and reads the sectors of every disc file but SIZES.ROM for the
+//! first time as it does.
 
 use std::fmt;
 use std::fs::File;
@@ -299,7 +300,9 @@ pub struct DreamcastExtraction {
 /// chunk, and its table parsed against DISK.ROM's size; and every path the tree will hold is
 /// planned. The disc is refused by the first rule a part of it breaks, in that order: its format's,
 /// its native table's, and then the tree's, which refuses a native folder spelled in two letter
-/// cases or a native file that is also the folder above another.
+/// cases or a native file that is also the folder above another. Of the disc's files only
+/// SIZES.ROM is read here, as the extractor reads the disc once: a sector of another file that
+/// breaks a rule of the disc's format is first met as the extraction writes that file.
 pub fn check_dreamcast(sheet: &Path, job: &Job<'_>) -> Result<CheckedDisc, ExtractError> {
     job.progress.phase(READ_DISC);
     let mut disc = GdRom::open(sheet, &SCRIPT_RULES, job)?;
@@ -331,9 +334,11 @@ pub fn check_dreamcast(sheet: &Path, job: &Job<'_>) -> Result<CheckedDisc, Extra
 /// [`NATIVE_BLOCK_LEN`] bytes from the DISK.ROM just written, which is closed once they are. In
 /// the phase [`CHECK`], `native-manifest.json`, last. Each file is made new and written in blocks
 /// of at most [`BLOCK_LEN`](gdl_files::BLOCK_LEN) bytes, the job's cancel looked at before each
-/// and its progress told after. SIZES.ROM must give the bytes it gave the check, else the dump
-/// changed while it was read; and the DISK.ROM read back must hold every file the table places in
-/// it. On a failure, what was written stays in the staging, for its drop to remove.
+/// and its progress told after. Each disc file's sectors are held to the rules of the disc's
+/// format as they are read, so a disc file whose sectors break one, which the check did not read,
+/// refuses the dump here. SIZES.ROM must give the bytes it gave the check, else the dump changed
+/// while it was read; and the DISK.ROM read back must hold every file the table places in it. On
+/// a failure, what was written stays in the staging, for its drop to remove.
 pub fn extract_dreamcast(
     checked: &mut CheckedDisc,
     into: &Staging,
@@ -558,7 +563,7 @@ mod tests {
     use std::io::{self, Read, Seek, SeekFrom, Write};
     use std::path::PathBuf;
 
-    use gdl_files::{Cancel, Job, PhaseId, Progress, RelPath, Staging};
+    use gdl_files::{Cancel, DISC_NAMES, Job, PhaseId, Progress, RelPath, Staging};
     use gdl_fixtures::{DiscSet, Edc, SparseFile, raw_sector, sha256_hex, sizes_rom, unhex};
     use gdl_media::{BOOT_LBA, DataTrack, GdRom, MAX_SIZES_ROM_LEN, SCRIPT_RULES, Sha256Digest};
     use serde_json::Value;
@@ -1096,6 +1101,45 @@ mod tests {
         assert_eq!(error.rule(), "sizesTooLarge", "{error}");
         let detail = error.to_string();
         assert!(detail.contains(&declared.to_string()), "{detail}");
+    }
+
+    #[test]
+    fn a_fault_in_a_files_own_sectors_is_refused_within_the_staging() {
+        // The full set with the last sector of the first file the walk meets, which the check
+        // does not read, under a header that gives another address. The check takes the disc;
+        // the extraction refuses it as it reads that file, with nothing outside the staging
+        // changed and nothing left of the run once the staging is dropped.
+        let vectors = dreamcast_vectors();
+        let golden = full_golden(&vectors);
+        let first = &array(&golden["files"])[0];
+        let sectors = first["size"]
+            .as_u64()
+            .unwrap()
+            .div_ceil(gdl_fixtures::SECTOR as u64);
+        assert!(sectors > 1, "{first}");
+        let lba = first["lba"].as_u64().unwrap() + sectors - 1;
+        let (track, place) = sector_place(&golden, lba);
+        let elsewhere = u32::try_from(lba + sectors).unwrap();
+        let header = &raw_sector(elsewhere, &[], Edc::Zero)[..gdl_media::HEADER_LEN];
+        let set = patched(DiscSet::full(Edc::Zero), &track, place, header);
+        let folders = Folders::new();
+        let sheet = folders.disc(&set);
+        let before = folders.before();
+        let cancel = Cancel::default();
+        let job = quiet(&cancel);
+        let mut checked = check_dreamcast(&sheet, &job).unwrap();
+        let staging = Staging::create_in(&folders.parent, STAGING_PREFIX).unwrap();
+        let root = dreamcast_root();
+        let error = extract_dreamcast(&mut checked, &staging, &root, &job).unwrap_err();
+        assert_eq!(error.rule(), "sectorAddress", "{error:?}");
+        // The file was made, and nothing of it written.
+        let file = disc_path(&RelPath::parse(text(&first["path"]), &DISC_NAMES).unwrap());
+        let staged = root.join(&file).path_under(staging.path());
+        assert_eq!(fs::metadata(&staged).unwrap().len(), 0);
+        folders.assert_outside_unchanged(&before);
+        drop(staging);
+        drop(checked);
+        folders.assert_staging_gone(&before);
     }
 
     #[test]
