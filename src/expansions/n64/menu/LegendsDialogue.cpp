@@ -139,11 +139,11 @@ LegendsDialogue::nativeTopics(std::string_view title, std::span<const MenuItem> 
     for (const auto& topic : topics) {
         width = std::max(width, m_text.measure(topic.text, 1));
     }
-    // The halves are whole native pixels.
+    // The halves are whole native pixels, and so is the top: e0041ae8 truncates it to its row.
     const s32 halfContentHeight = contentHeight / 2;
     const s32 halfWidth = width / 2;
-    const f32 top =
-        LegendsN64Frame::kHeight * kTopicsShare / 2 - static_cast<f32>(halfContentHeight);
+    const f32 top = std::trunc(LegendsN64Frame::kHeight * kTopicsShare / 2 -
+                               static_cast<f32>(halfContentHeight));
     const Vec2 corner =
         LegendsN64Frame::toCanvas({kFrameMiddle - static_cast<f32>(halfWidth + kMarginColumns),
                                    top - static_cast<f32>(kMarginRows)});

@@ -2,7 +2,6 @@
 #include <array>
 #include <cstddef>
 #include <filesystem>
-#include <limits>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -109,21 +108,6 @@ std::filesystem::path syntheticRoot(std::string_view name, bool titleFont) {
     }
     writeFile(root / "hud/objects.wad", scrollArchive());
     return root;
-}
-
-/** The corners of what a draw's vertices cover, in the units they were drawn in. */
-struct Reach {
-    Vec2 least{std::numeric_limits<f32>::max()};
-    Vec2 most{std::numeric_limits<f32>::lowest()};
-};
-
-Reach reachOf(const test::RecordedDraw& draw) {
-    Reach reach;
-    for (const ImmediateVertex& vertex : draw.vertices) {
-        reach.least = glm::min(reach.least, Vec2{vertex.position});
-        reach.most = glm::max(reach.most, Vec2{vertex.position});
-    }
-    return reach;
 }
 
 /** A word of `count` letters A, the synthetic font's only glyph, three columns each and four
@@ -311,21 +295,22 @@ TEST_CASE("N64 dialogue draws in the N64's frame, as tall as the video hardware 
     const auto& scroll = device.draws.front();
     CHECK(scroll.texture == style.menuTextures()->backdrop);
     REQUIRE(scroll.vertices.size() == 18); // the caps and the stretched rows between them
-    const Reach covered = reachOf(scroll);
-    CHECK(covered.least == Vec2{40, 40});
-    CHECK(covered.most == Vec2{390, 40 + page.area.height});
+    const Vec2 top = test::minCorner(scroll);
+    const Vec2 bottom = test::maxCorner(scroll);
+    CHECK(top == Vec2{40, 40});
+    CHECK(bottom == Vec2{390, 40 + page.area.height});
     // On the canvas a frame row is 1.7160 tall, as the video interface scales it, where the
     // uniform 512/416 made it 1.2308.
     const Mat4 frame = LegendsN64Frame::transform();
-    const f32 canvasTop = (frame * Vec4{covered.least, 0, 1}).y;
-    const f32 canvasBottom = (frame * Vec4{covered.most, 0, 1}).y;
+    const f32 canvasTop = (frame * Vec4{top, 0, 1}).y;
+    const f32 canvasBottom = (frame * Vec4{bottom, 0, 1}).y;
     CHECK(canvasBottom - canvasTop == Catch::Approx(page.area.height * 1.7160f).epsilon(1e-4));
     // The lines start 60 in from the scroll's left, their first glyph the N64's unit further,
     // and the prompt follows them.
-    const Reach text = reachOf(device.draws.back());
-    CHECK(text.least.x == Catch::Approx(40 + 60 + 1 + TextPainter::kCellInset));
-    CHECK(text.least.y == Catch::Approx(46 + TextPainter::kCellInset));
-    CHECK(text.most.y ==
+    const auto& lettering = device.draws.back();
+    CHECK(test::minCorner(lettering).x == Catch::Approx(40 + 60 + 1 + TextPainter::kCellInset));
+    CHECK(test::minCorner(lettering).y == Catch::Approx(46 + TextPainter::kCellInset));
+    CHECK(test::maxCorner(lettering).y ==
           Catch::Approx(static_cast<f32>(page.promptY + 4) - TextPainter::kCellInset));
 }
 
@@ -371,22 +356,23 @@ TEST_CASE("the N64 topic scroll, title and rows take the N64's frame, and only t
     REQUIRE(definition);
     // e0046000 / e0041894 in the frame, both synthetic fonts four rows tall: the title takes
     // 4 x 1.5 and a 15-row gap, and the rows four and a five-row gap each, 43 rows with the last
-    // gap dropped, centred on row 82.5, the middle of the top three quarters, so from row 61.5.
+    // gap dropped, centred on row 82.5, the middle of the top three quarters: from row 61.5,
+    // which e0041ae8 truncates to the whole row 61.
     // The widest line is AAA's twelve, three glyphs of three columns and the N64's unit before
     // each: the scroll stands 30 columns beyond its middle six on either side and ten rows above
-    // and below, 72 by 63 from (172, 51.5).
+    // and below, 72 by 63 from (172, 51).
     using Frame = LegendsN64Frame;
-    const Vec2 corner = Frame::toCanvas({172, 51.5f});
+    const Vec2 corner = Frame::toCanvas({172, 51});
     CHECK(definition->backdropX == static_cast<s32>(corner.x));
     CHECK(definition->backdropY == static_cast<s32>(corner.y));
     CHECK(definition->backdropWidth == static_cast<s32>(72 * Frame::kColumn));
     CHECK(definition->backdropHeight == static_cast<s32>(63 * Frame::kRow));
-    // The rows stand under the title from row 82.5, nine rows apart, centred on the frame's
+    // The rows stand under the title from row 82, nine rows apart, centred on the frame's
     // middle column.
     REQUIRE(definition->itemPositions.size() == topics.size());
     for (usize i = 0; i < topics.size(); ++i) {
         CAPTURE(i);
-        const f32 row = 82.5f + 9.0f * static_cast<f32>(i);
+        const f32 row = 82.0f + 9.0f * static_cast<f32>(i);
         CHECK(definition->itemPositions[i].x == -256);
         CHECK(definition->itemPositions[i].y == Catch::Approx(Frame::toCanvas({0, row}).y));
     }
@@ -413,7 +399,7 @@ TEST_CASE("the N64 topic scroll, title and rows take the N64's frame, and only t
     REQUIRE(device.draws.size() == 2);
     const Rect scroll = menu.backdropArea();
     CHECK(device.draws.front().texture == style.menuTextures()->backdrop);
-    CHECK(reachOf(device.draws.front()).least == Vec2{scroll.x, scroll.y});
+    CHECK(test::minCorner(device.draws.front()) == Vec2{scroll.x, scroll.y});
     const auto title = formats::LegendsN64Font::parse(smallFont());
     const test::FakeTexture sheet{title.atlas.width, title.atlas.height};
     TextPainter heading;
@@ -472,9 +458,8 @@ TEST_CASE("N64 native popup uses its font and three-piece modal through shared p
     CHECK(lettering.vertices.front().color == Color::black());
     // The text starts six rows under the scroll's top and 60 in, its first glyph the N64's unit
     // further, half a texel inside its cells.
-    const Reach text = reachOf(lettering);
-    CHECK(text.least.x == Catch::Approx(40 + 60 + 1 + TextPainter::kCellInset));
-    CHECK(text.least.y == Catch::Approx(40 + 6 + TextPainter::kCellInset));
+    CHECK(test::minCorner(lettering).x == Catch::Approx(40 + 60 + 1 + TextPainter::kCellInset));
+    CHECK(test::minCorner(lettering).y == Catch::Approx(40 + 6 + TextPainter::kCellInset));
     const auto hold = messages.step(ScrollBox::kHoldTicks, 1);
     CHECK_FALSE(hold.stopVoice);
     CHECK(messages.active());
@@ -489,10 +474,20 @@ TEST_CASE("N64 native popup uses its font and three-piece modal through shared p
     for (const auto& line : messages.scroll().lines()) {
         CHECK(style.text().measure(line, style.scale()) <= style.textWidth());
     }
-    // A full page of twelve lines stays within the frame rows the video interface shows.
+    // Twelve lines make a full page, sixteen rows taller than its lines.
     CHECK(messages.scroll().lines().size() == style.linesPerPage());
     CHECK(messages.scroll().area().bottom() == 40 + 12 * 11 + 16);
-    CHECK(messages.scroll().area().bottom() <= LegendsN64Frame::kRowsShown);
+    // In play a page also carries its prompt's line. A full one then reaches over the panels'
+    // strip at row 170, as the N64's own long documents do (FUN_e0071bc8's scroll runs from row
+    // 5 as far down as its frame's 220th), and still ends on the rows the video interface shows.
+    StringTable strings;
+    REQUIRE(strings.load(test::dataDirectory() / "text", "en"));
+    LevelMessages prompted;
+    prompted.setPresentation(&style);
+    REQUIRE(prompted.openImported(device, longText, &strings));
+    REQUIRE(prompted.scroll().lines().size() == style.linesPerPage());
+    CHECK(prompted.scroll().area().bottom() <= LegendsN64Frame::kRowsShown);
+    prompted.clear();
     messages.clear();
     CHECK_FALSE(messages.active());
     CHECK_FALSE(messages.openImported(device, prose, nullptr));
