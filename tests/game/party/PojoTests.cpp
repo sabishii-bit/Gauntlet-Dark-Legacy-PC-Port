@@ -427,6 +427,58 @@ TEST_CASE("a Pojo carrier's legend shot gesture shows no peck",
     CHECK(figure->companion().sequence() != PowerupCompanion::kAttack);
 }
 
+TEST_CASE("a legend item's release drops a peck still waiting for Pojo",
+          "[pojo][figure][animation][assets]") {
+    const auto root = test::assetOrSkip("POWERUPS/ANIM.PS2").parent_path().parent_path();
+    test::FakeRenderDevice device;
+    ItemArchive powerups;
+    REQUIRE(powerups.load(root / "POWERUPS"));
+    Inventory carried;
+    carried.addPowerup(powerup::kSpecial, powerup::kPojo, 0, 60);
+    const Inventory none;
+    CharacterSave save;
+    save.character = kWarriorClass;
+    const auto figure = PlayerFigure::load(device, root, save, Entrance::Skip);
+    REQUIRE(figure);
+    // A throw begun while carried, and Pojo gone before he could answer it.
+    figure->setCompanionPowerups(device, powerups, carried);
+    REQUIRE(figure->pojoActive());
+    figure->animate(0, 1, kTick, PlayerDeed::Attack);
+    REQUIRE(figure->animator().attackBegan());
+    figure->setCompanionPowerups(device, powerups, none);
+    REQUIRE_FALSE(figure->pojoActive());
+    for (s32 tick = 0; tick < 240 && figure->animator().action() != PlayerAnimator::Action::Ready;
+         ++tick) {
+        figure->animate(0, 1, kTick);
+    }
+    REQUIRE(figure->animator().action() == PlayerAnimator::Action::Ready);
+
+    SECTION("kept through a long absence, it is pecked as he returns") {
+        figure->setCompanionPowerups(device, powerups, carried);
+        REQUIRE(figure->pojoActive());
+        figure->animate(0, 1, kTick);
+        const auto peck = pojoOf(*figure);
+        CHECK(peck.sequence == PowerupCompanion::kAttack);
+        CHECK(peck.frame == 0);
+    }
+
+    SECTION("a legend item's shot let go of meanwhile drops it") {
+        figure->animate(0, 1, kTick, PlayerDeed::ShootLegend);
+        REQUIRE(figure->animator().action() == PlayerAnimator::Action::SpecialShot);
+        REQUIRE(figure->animator().castingLegend());
+        s32 released = 0;
+        for (s32 tick = 0; tick < 240 && figure->animator().castingLegend(); ++tick) {
+            figure->animate(0, 1, kTick);
+            released += figure->animator().legendReleased() ? 1 : 0;
+        }
+        REQUIRE(released == 1);
+        figure->setCompanionPowerups(device, powerups, carried);
+        REQUIRE(figure->pojoActive());
+        figure->animate(0, 1, kTick);
+        CHECK(figure->companion().sequence() == PowerupCompanion::kReady);
+    }
+}
+
 TEST_CASE("Pojo survives the figure replacement during a tower promotion",
           "[pojo][promotion][assets]") {
     const auto root = test::assetOrSkip("POWERUPS/ANIM.PS2").parent_path().parent_path();

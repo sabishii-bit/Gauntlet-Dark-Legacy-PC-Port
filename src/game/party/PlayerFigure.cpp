@@ -445,9 +445,13 @@ void PlayerFigure::animate(f32 stickMagnitude, s32 ticks, f32 seconds, PlayerDee
     }
     m_action.animator.update(PlayerAnimator::motionFor(stickMagnitude), ticks, seconds, deed,
                              chainHeldMelee, potionHeld);
-    // An attack begun while Pojo is carried is his to answer (0x80085060-0x80085074).
+    // An attack begun while Pojo is carried is his to answer (0x80085060-0x80085074); a legend
+    // item's release zeroes act_bits (0x80083ED4), dropping a peck still waiting for him.
     if (m_action.animator.attackBegan() && pojoActive()) {
         m_action.pojoAttack = true;
+    }
+    if (m_action.animator.legendReleased()) {
+        m_action.pojoAttack = false;
     }
     const bool phoenix = phoenixActive();
     m_action.familiarPending =
