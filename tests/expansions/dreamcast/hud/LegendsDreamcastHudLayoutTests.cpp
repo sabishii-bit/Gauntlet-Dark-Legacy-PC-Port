@@ -261,6 +261,41 @@ TEST_CASE("WAIT HERE shows four steps in eight while a seat waits with company",
     }
 }
 
+TEST_CASE("a fallen player left alone in the game is asked to return to the tower",
+          "[legends][dreamcast-hud]") {
+    // FUN_8c0bda40 counts the other seats playing, dying, asked or in the tower (states 1, 11,
+    // 12 and 14); with none it asks RETURN / TO TOWER? in place of WAIT / IN TOWER?.
+    HudSeat playing;
+    playing.box.mode = StatusBoxView::Mode::Status;
+    playing.box.active = true;
+    playing.turbo = 0.0f;
+    HudSeat dying = playing;
+    dying.turbo.reset();
+    HudSeat inTower = dying;
+    inTower.box.inTower = true;
+    HudSeat asked = inTower;
+    asked.box.towerPrompt = true;
+    // One waiting at an exit is in state 7, which is not counted; a player gone from the game, or
+    // a seat nobody joined, is in none.
+    HudSeat waiting = playing;
+    waiting.waitingAtExit = true;
+    const PlayerRuntime runtime{};
+    HudSeat departed;
+    departed.runtime = &runtime;
+    departed.departed = true;
+    using Seats = std::array<HudSeat, 4>;
+    CHECK(dreamcastPromptReturns(Seats{asked, {}, {}, {}}, 0));
+    CHECK(dreamcastPromptReturns(Seats{asked, waiting, departed, {}}, 0));
+    for (const HudSeat& other : {playing, dying, inTower, asked}) {
+        CHECK_FALSE(dreamcastPromptReturns(Seats{asked, {}, other, {}}, 0));
+        CHECK_FALSE(dreamcastPromptReturns(Seats{other, waiting, {}, asked}, 3));
+    }
+    // A player who falls on an exit no longer waits there: it is counted.
+    HudSeat fellWaiting = dying;
+    fellWaiting.waitingAtExit = true;
+    CHECK_FALSE(dreamcastPromptReturns(Seats{asked, fellWaiting, {}, {}}, 0));
+}
+
 TEST_CASE("each Dreamcast seat state picks its box", "[legends][dreamcast-hud]") {
     const PlayerRuntime runtime{};
     HudSeat standing;

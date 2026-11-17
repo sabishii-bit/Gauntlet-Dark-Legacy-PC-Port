@@ -173,6 +173,18 @@ std::optional<std::string_view> dreamcastClassCode(s32 classIndex) {
     return Layout::kClassCodes.at(static_cast<usize>(classIndex));
 }
 
+bool dreamcastPromptReturns(std::span<const HudSeat> seats, usize seat) {
+    for (usize other = 0; other < seats.size(); ++other) {
+        const HudSeat& shown = seats[other];
+        const bool inGame = !shown.departed && shown.box.mode != StatusBoxView::Mode::Plain;
+        const bool waitingAtExit = shown.turbo.has_value() && shown.waitingAtExit;
+        if (other != seat && inGame && !waitingAtExit) {
+            return false;
+        }
+    }
+    return true;
+}
+
 LegendsDreamcastBoxKind dreamcastBoxKind(const HudSeat& seat) {
     if (seat.departed && seat.runtime != nullptr) {
         return LegendsDreamcastBoxKind::Plain;

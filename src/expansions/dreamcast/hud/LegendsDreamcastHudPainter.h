@@ -41,8 +41,9 @@ namespace gdl::game {
  * bosses' keys over it a while, the thirteenth rune, the legend items held in the box's five
  * places, the IT badge over the tagged player's box, and WAIT HERE... blinking over a box whose
  * player waits at an exit for the others. A player fallen to the tower, or gone from the game,
- * shows the coloured kind-0 box, saying IN TOWER while it waits there or asking WAIT IN TOWER?
- * with YES marked, and NO while it may quit; a seat nobody joined shows nothing. The pickup
+ * shows the coloured kind-0 box, saying IN TOWER while it waits there or asking whether to wait
+ * there, or to return there when left alone, with YES marked, and NO while it may quit; a seat
+ * nobody joined shows nothing. The pickup
  * cards rise over the boxes on the taker's coloured strip, and Dark Legacy's counts stand over
  * them in the Dreamcast's small font. The runestone finder stands at the top right, its column
  * rising straight with the closeness whose square Dark Legacy's finder shows; the hourglasses

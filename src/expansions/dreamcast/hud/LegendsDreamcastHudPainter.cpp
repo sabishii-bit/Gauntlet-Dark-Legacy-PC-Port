@@ -880,14 +880,17 @@ void LegendsDreamcastHudPainter::drawFallen(Canvas& canvas, usize seat, const Hu
         return;
     }
     const s32 centre = -dreamcastSeatCentre(seat);
-    const TextStyle ink{.color = inkOf(seatColour(shown))};
     if (shown.box.towerPrompt) {
         // Dark Legacy's prompt has no cursor, so YES, where the original's starts, stays
-        // marked; NO is offered only while the player may quit the game.
-        write(canvas, m_small.text, centre, Layout::kPromptWaitTop, words(view, Layout::kWaitText),
-              ink);
+        // marked; NO is offered only while the player may quit the game. The words take the
+        // ink of the seat's place.
+        const TextStyle ink{.color = Layout::kTextColours.at(seat)};
+        const bool alone = dreamcastPromptReturns(view.seats, seat);
+        write(canvas, m_small.text, centre, Layout::kPromptWaitTop,
+              words(view, alone ? Layout::kReturnText : Layout::kWaitText), ink);
         write(canvas, m_small.text, centre, Layout::kPromptQuestionTop,
-              words(view, Layout::kInTowerQuestionText), ink);
+              words(view, alone ? Layout::kToTowerQuestionText : Layout::kInTowerQuestionText),
+              ink);
         write(canvas, m_small.text, centre, Layout::kPromptYesTop, words(view, Layout::kYesText),
               TextStyle{.color = Layout::kPromptChosenInk});
         if (shown.box.quitOffered) {
@@ -896,10 +899,10 @@ void LegendsDreamcastHudPainter::drawFallen(Canvas& canvas, usize seat, const Hu
         }
         return;
     }
-    // FUN_8c0c16e0 tells a player waiting in the tower so.
+    // FUN_8c0c16e0 tells a player waiting in the tower so, in its costume colour's ink.
     if (shown.box.inTower) {
         write(canvas, m_small.text, centre, Layout::kInTowerTop, words(view, Layout::kInTowerText),
-              ink);
+              TextStyle{.color = inkOf(seatColour(shown))});
     }
 }
 

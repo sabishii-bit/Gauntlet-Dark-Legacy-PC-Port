@@ -29,10 +29,12 @@ struct NativeWord {
 
 /** The words of FUN_8c0c16e0's boxes and FUN_8c0bda40's prompt. IN TOWER is Dark Legacy's own
  * words too, which its boxes write. */
-constexpr std::array<NativeWord, 6> kWords{{
+constexpr std::array<NativeWord, 8> kWords{{
     {.key = Layout::kWaitHereText, .address = 0x8c1256c0, .text = "WAIT HERE..."},
     {.key = Layout::kWaitText, .address = 0x8c1254cc, .text = "WAIT"},
     {.key = Layout::kInTowerQuestionText, .address = 0x8c1254d4, .text = "IN TOWER?"},
+    {.key = Layout::kReturnText, .address = 0x8c1254e0, .text = "RETURN"},
+    {.key = Layout::kToTowerQuestionText, .address = 0x8c1254e8, .text = "TO TOWER?"},
     {.key = Layout::kYesText, .address = 0x8c1254f4, .text = "YES"},
     {.key = Layout::kNoText, .address = 0x8c1254f8, .text = "NO"},
     {.key = Layout::kInTowerText, .address = 0x8c1256b4, .text = "IN TOWER"},

@@ -114,20 +114,26 @@ struct LegendsDreamcastHudLayout {
 
     // The words the boxes write, by their ids in the string table: 1ST_READ.BIN's own, IN TOWER
     // at 8c1256b4 (Dark Legacy's words too), WAIT HERE... at 8c1256c0, and the prompt's WAIT,
-    // IN TOWER?, YES and NO at 8c1254cc, 8c1254d4, 8c1254f4 and 8c1254f8.
+    // IN TOWER?, RETURN, TO TOWER?, YES and NO at 8c1254cc, 8c1254d4, 8c1254e0, 8c1254e8,
+    // 8c1254f4 and 8c1254f8.
     static constexpr std::string_view kInTowerText = "hud.inTower";
     static constexpr std::string_view kWaitHereText = "legends.dreamcast.hud.waitHere";
     static constexpr std::string_view kWaitText = "legends.dreamcast.hud.wait";
     static constexpr std::string_view kInTowerQuestionText =
         "legends.dreamcast.hud.inTowerQuestion";
+    static constexpr std::string_view kReturnText = "legends.dreamcast.hud.return";
+    static constexpr std::string_view kToTowerQuestionText =
+        "legends.dreamcast.hud.toTowerQuestion";
     static constexpr std::string_view kYesText = "legends.dreamcast.hud.yes";
     static constexpr std::string_view kNoText = "legends.dreamcast.hud.no";
 
     // FUN_8c0bda40 (8c0bf416..8c0bf5b4): a fallen player's box asks whether to wait in the
-    // tower, each line in font 1 centred on the box: WAIT and IN TOWER? in the seat's ink, then
-    // YES and NO. The choice its cursor is on is red (8c14bcc8[1]) and the other is in the
-    // seat's ink, which 8c0bf42e stores over the table's white before every ask; the cursor
-    // starts on YES (FUN_8c0bc040).
+    // tower, each line in font 1 centred on the box: WAIT and IN TOWER?, or RETURN and TO
+    // TOWER? for a player left alone in the game, then YES and NO. The choice its cursor is on
+    // is red (8c14bcc8[1]) and the other is in the seat's ink, which 8c0bf42e stores over the
+    // table's white before every ask; the cursor starts on YES (FUN_8c0bc040). The prompt takes
+    // the ink of the seat's place (8c14bb98 by seat, 8c0bf424), where the box's other words take
+    // its costume colour's.
     static constexpr s32 kPromptWaitTop = 336;
     static constexpr s32 kPromptQuestionTop = 344;
     static constexpr s32 kPromptYesTop = 356;
@@ -353,6 +359,12 @@ std::optional<LegendsDreamcastCard> dreamcastCard(std::string_view card);
  * nought (FUN_8c0bda40 counts it down in states 0 and 0xE) and *8c0bccd0 at nought
  * (FUN_8c0bcc60). */
 bool dreamcastWaitHereShown(bool waiting, s32 joined, s64 step);
+
+/** Whether the prompt in seat `seat` of `seats` asks RETURN / TO TOWER?, as FUN_8c0bda40 asks it
+ * while no other seat is playing, dying, asked or in the tower (states 1, 11, 12 and 14,
+ * 8c0bf386..8c0bf3be): one gone from the game is not counted, nor one waiting at an exit
+ * (state 7). */
+bool dreamcastPromptReturns(std::span<const HudSeat> seats, usize seat);
 
 /** Which box a seat's column shows: FUN_8c0c08a0's kinds. */
 enum class LegendsDreamcastBoxKind : u8 {

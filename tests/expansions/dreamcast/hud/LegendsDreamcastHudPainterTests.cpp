@@ -822,16 +822,17 @@ TEST_CASE("a fallen player's Dreamcast box says IN TOWER on the kind-0 panel",
     checkRect(strip.front().area, {0, 304, 128, 16});
     checkRect(panel.front().area, {0, 320, 128, 64});
     checkRect(panel.front().uv, {0, 0, 1, 0.5f});
-    // FUN_8c0c16e0 writes IN TOWER (8c1256b4) in font 1, in the seat's ink, centred on the box
-    // at 344, for the player waiting in the tower; the one asked whether to wait there is asked
-    // instead (FUN_8c0bda40). The dying player's level follows.
+    // FUN_8c0c16e0 writes IN TOWER (8c1256b4) in font 1, in the costume colour's ink, centred
+    // on the box at 344, for the player waiting in the tower; the one asked whether to wait
+    // there is asked instead, in the ink of its seat's place (FUN_8c0bda40). The dying player's
+    // level follows.
     CHECK(
         linesOf(quads, Fixture::kSmallFont) ==
         std::vector<Line>{centredAt(Fixture::kSmallFont, 56, 344, "IN TOWER", kBlueInk),
-                          centredAt(Fixture::kSmallFont, 168, 336, "WAIT", kGreenInk),
-                          centredAt(Fixture::kSmallFont, 168, 344, "IN TOWER?", kGreenInk),
+                          centredAt(Fixture::kSmallFont, 168, 336, "WAIT", kBlueInk),
+                          centredAt(Fixture::kSmallFont, 168, 344, "IN TOWER?", kBlueInk),
                           centredAt(Fixture::kSmallFont, 168, 356, "YES", Layout::kPromptChosenInk),
-                          centredAt(Fixture::kSmallFont, 168, 368, "NO", kGreenInk),
+                          centredAt(Fixture::kSmallFont, 168, 368, "NO", kBlueInk),
                           centredAt(Fixture::kSmallFont, 344, 330, "12", Color::white())});
 
     // Dying, the box is still the panel with its banner, labels, level, gold and health, and no
@@ -1617,8 +1618,8 @@ TEST_CASE("WAIT HERE blinks with its words in a waiting player's box, never alon
     }
 }
 
-TEST_CASE("a fallen player is asked WAIT IN TOWER? on the kind-0 panel, with YES marked, and NO "
-          "when it may quit",
+TEST_CASE("a fallen player is asked WAIT IN TOWER?, or RETURN TO TOWER? when left alone, on the "
+          "kind-0 panel, with YES marked, and NO when it may quit",
           "[legends][dreamcast-hud]") {
     const std::array<HudMember, 2> party{{
         {.seat = 0, .classIndex = kWarriorClass, .color = 2},
@@ -1634,19 +1635,37 @@ TEST_CASE("a fallen player is asked WAIT IN TOWER? on the kind-0 panel, with YES
     CHECK(pictureOrder(quads, 0) == Names{"S3_WRED", "S4_WRED"});
     CHECK(pictureOrder(quads, 3) == Names{"S3_WBLUE", "S4_WBLUE"});
     // FUN_8c0bda40 asks in font 1, each line centred on the box: WAIT (8c1254cc) at 336 and IN
-    // TOWER? (8c1254d4) at 344 in the seat's ink, YES (8c1254f4) at 356 in red, as its cursor
-    // starts on it, and NO (8c1254f8) at 368 in the seat's ink, which 8c0bf42e stores over the
-    // table's white. Online it never offers NO; and the box does not say IN TOWER while it asks.
+    // TOWER? (8c1254d4) at 344, YES (8c1254f4) at 356 in red, as its cursor starts on it, and
+    // NO (8c1254f8) at 368, which 8c0bf42e stores over the table's white. All but YES take the
+    // ink of the seat's place, 8c14bb98 by seat (8c0bf424), not the costume's. Online it never
+    // offers NO; and the box does not say IN TOWER while it asks.
     CHECK(Layout::kPromptChosenInk == Color::rgba(0xFF, 0x00, 0x00));
     CHECK(linesOf(quads, Fixture::kSmallFont) ==
           std::vector<Line>{
-              centredAt(Fixture::kSmallFont, 56, 336, "WAIT", kRedInk),
-              centredAt(Fixture::kSmallFont, 56, 344, "IN TOWER?", kRedInk),
+              centredAt(Fixture::kSmallFont, 56, 336, "WAIT", kYellowInk),
+              centredAt(Fixture::kSmallFont, 56, 344, "IN TOWER?", kYellowInk),
               centredAt(Fixture::kSmallFont, 56, 356, "YES", Layout::kPromptChosenInk),
-              centredAt(Fixture::kSmallFont, 56, 368, "NO", kRedInk),
-              centredAt(Fixture::kSmallFont, 456, 336, "WAIT", kBlueInk),
-              centredAt(Fixture::kSmallFont, 456, 344, "IN TOWER?", kBlueInk),
+              centredAt(Fixture::kSmallFont, 56, 368, "NO", kYellowInk),
+              centredAt(Fixture::kSmallFont, 456, 336, "WAIT", kGreenInk),
+              centredAt(Fixture::kSmallFont, 456, 344, "IN TOWER?", kGreenInk),
               centredAt(Fixture::kSmallFont, 456, 356, "YES", Layout::kPromptChosenInk)});
+
+    // With no other seat playing, dying, asked or in the tower (8c0bf386..8c0bf3be), it asks
+    // RETURN (8c1254e0) and TO TOWER? (8c1254e8) instead; a player waiting at an exit is not
+    // counted.
+    const std::vector<Line> returning{
+        centredAt(Fixture::kSmallFont, 56, 336, "RETURN", kYellowInk),
+        centredAt(Fixture::kSmallFont, 56, 344, "TO TOWER?", kYellowInk),
+        centredAt(Fixture::kSmallFont, 56, 356, "YES", Layout::kPromptChosenInk),
+        centredAt(Fixture::kSmallFont, 56, 368, "NO", kYellowInk)};
+    CHECK(linesOf(dreamcast.boxes(dreamcast.viewOf({asked, {}, {}, {}})), Fixture::kSmallFont) ==
+          returning);
+    HudSeat waiting = standing(kWizardClass, 1);
+    waiting.waitingAtExit = true;
+    std::vector<Line> withWaiting = returning;
+    withWaiting.push_back(centredAt(Fixture::kSmallFont, 456, 330, "12", Color::white()));
+    CHECK(linesOf(dreamcast.boxes(dreamcast.viewOf({asked, {}, {}, waiting})),
+                  Fixture::kSmallFont) == withWaiting);
 }
 
 TEST_CASE("the Dreamcast look takes every picture it borrows as it opens",
