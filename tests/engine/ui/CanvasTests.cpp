@@ -8,6 +8,7 @@
 #include "engine/core/Types.h"
 #include "engine/math/Math.h"
 #include "engine/render/ImmediateBatch.h"
+#include "engine/render/RenderDevice.h"
 #include "engine/ui/Canvas.h"
 
 #include "FakeRenderDevice.h"
@@ -45,7 +46,10 @@ TEST_CASE("canvas overlay state applies to glyph batches and resets on the next 
           "[ui][canvas][build-label]") {
     test::FakeRenderDevice device;
     Canvas canvas;
-    canvas.begin(device, Mat4{1}, {.depthWrite = false, .depthTest = false});
+    DrawState overlay;
+    overlay.depthWrite = false;
+    overlay.depthTest = false;
+    canvas.begin(device, Mat4{1}, overlay);
     canvas.fill({0, 0, 8, 8}, Color::white());
     canvas.end();
     REQUIRE(device.draws.size() == 1);

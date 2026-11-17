@@ -14,6 +14,14 @@ constexpr f32 kSpriteDepth = 0.5f;
 /** A mask thinner than this in clip space covers nothing and is not drawn. */
 constexpr f32 kClipEpsilon = 1e-6f;
 
+/** How the canvas's own fills and masks draw: over everything, writing no depth. */
+DrawState overEverything() {
+    DrawState state;
+    state.depthWrite = false;
+    state.depthTest = false;
+    return state;
+}
+
 } // namespace
 
 Mat4 makeVirtualScreenTransform(const Mat4& frameProjection, f32 virtualWidth, f32 virtualHeight,
@@ -56,8 +64,7 @@ void Canvas::fillScreen(Color color) {
     flush();
     ImmediateBatch batch;
     batch.rect({-1, -1, 2, 2}, kSpriteDepth, color);
-    m_device->draw(batch, m_device->whiteTexture(), Mat4{1},
-                   {.depthWrite = false, .depthTest = false});
+    m_device->draw(batch, m_device->whiteTexture(), Mat4{1}, overEverything());
 }
 
 void Canvas::fillTriangle(const Vec2& a, const Vec2& b, const Vec2& c, Color color) {
@@ -69,8 +76,7 @@ void Canvas::fillTriangle(const Vec2& a, const Vec2& b, const Vec2& c, Color col
     batch.vertex(Vec3{b, kSpriteDepth}, color, Vec2{0});
     batch.vertex(Vec3{c, kSpriteDepth}, color, Vec2{0});
     batch.end();
-    m_device->draw(batch, m_device->whiteTexture(), placement(),
-                   {.depthWrite = false, .depthTest = false});
+    m_device->draw(batch, m_device->whiteTexture(), placement(), overEverything());
 }
 
 void Canvas::fillHorizontalBand(f32 y, f32 height, Color color) {
@@ -86,8 +92,7 @@ void Canvas::fillHorizontalBand(f32 y, f32 height, Color color) {
     }
     ImmediateBatch batch;
     batch.rect({-1, top, 2, bottom - top}, kSpriteDepth, color);
-    m_device->draw(batch, m_device->whiteTexture(), Mat4{1},
-                   {.depthWrite = false, .depthTest = false});
+    m_device->draw(batch, m_device->whiteTexture(), Mat4{1}, overEverything());
 }
 
 void Canvas::maskOutside(const Rect& area, Color color) {
@@ -111,8 +116,7 @@ void Canvas::maskOutside(const Rect& area, Color color) {
     fillMargin({left, -1, right - left, top + 1});
     fillMargin({left, bottom, right - left, 1 - bottom});
     if (!batch.empty()) {
-        m_device->draw(batch, m_device->whiteTexture(), Mat4{1},
-                       {.depthWrite = false, .depthTest = false});
+        m_device->draw(batch, m_device->whiteTexture(), Mat4{1}, overEverything());
     }
 }
 
@@ -132,10 +136,7 @@ void Canvas::maskAboveAndBelow(f32 top, f32 bottom, Color color) {
         batch.rect({-1, last, 2, 1 - last}, kSpriteDepth, color);
     }
     if (!batch.empty()) {
-        DrawState over;
-        over.depthWrite = false;
-        over.depthTest = false;
-        m_device->draw(batch, m_device->whiteTexture(), Mat4{1}, over);
+        m_device->draw(batch, m_device->whiteTexture(), Mat4{1}, overEverything());
     }
 }
 
