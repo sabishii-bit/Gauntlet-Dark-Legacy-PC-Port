@@ -2033,7 +2033,7 @@ TEST_CASE("a powerup's name shows over its Dreamcast box, in the seat's colour w
         holder->open();
     }
     // Seat 0's selector is down.
-    Holder closed(invisible, 0, kWarriorClass, 0);
+    const Holder closed(invisible, 0, kWarriorClass, 0);
     HudView view =
         dreamcast.viewOf({closed.shown(), wizard.shown(), warrior.shown(), knight.shown()});
     view.largeText = &font32.text;
