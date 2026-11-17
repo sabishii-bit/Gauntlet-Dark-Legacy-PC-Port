@@ -13,8 +13,8 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use gdl_fixtures::{
-    DiscSet, Edc, EntryState, InstallFixture, RuntimeFiles, append_sections_at, backdate,
-    make_alpha_markers, sha256_hex, snapshot, snapshot_outside, unhex,
+    DiscSet, Edc, EntryState, InstallFixture, Listed, RuntimeFiles, append_sections_at, backdate,
+    listed, make_alpha_markers, snapshot, snapshot_outside, tree_listing, unhex,
 };
 use gdl_install::{RUNTIME_SECTION, probe_game_version};
 use serde_json::{Value, json};
@@ -354,10 +354,6 @@ fn inspect_reports_json() {
     );
 }
 
-/// A file of a tree as the vectors list one: its path, with `/` between its components, its size
-/// and the SHA-256 digest of its bytes in hexadecimal.
-type Listed = (String, u64, String);
-
 /// The cases of `text`, a file of the shared vectors, read.
 fn vectors(text: &str) -> Value {
     serde_json::from_str(text).expect("the vectors are JSON")
@@ -366,38 +362,6 @@ fn vectors(text: &str) -> Value {
 /// A string of the vectors.
 fn string(value: &Value) -> &str {
     value.as_str().expect("a string")
-}
-
-/// A tree as the vectors list it: each file's path, size and digest.
-fn listed(rows: &Value) -> Vec<Listed> {
-    let rows = rows.as_array().expect("a tree lists its files");
-    rows.iter()
-        .map(|row| {
-            let size = row[1].as_u64().expect("a size");
-            (string(&row[0]).to_owned(), size, string(&row[2]).to_owned())
-        })
-        .collect()
-}
-
-/// Every file of the tree at `root`, as the vectors list a tree: sorted by the path's text, which
-/// orders as its UTF-8 bytes do.
-fn tree_listing(root: &Path) -> Vec<Listed> {
-    let mut files = Vec::new();
-    let mut folders = vec![(root.to_path_buf(), String::new())];
-    while let Some((folder, above)) = folders.pop() {
-        for entry in fs::read_dir(&folder).unwrap() {
-            let entry = entry.unwrap();
-            let path = format!("{above}{}", entry.file_name().into_string().unwrap());
-            if entry.file_type().unwrap().is_dir() {
-                folders.push((entry.path(), format!("{path}/")));
-            } else {
-                let bytes = fs::read(entry.path()).unwrap();
-                files.push((path, bytes.len() as u64, sha256_hex(&bytes)));
-            }
-        }
-    }
-    files.sort();
-    files
 }
 
 /// The image the N64 vectors freeze as their default, and the name their extraction of it gives

@@ -513,13 +513,12 @@ pub(crate) mod vectors {
     use std::cell::Cell;
     use std::collections::BTreeMap;
     use std::fs;
-    use std::path::{Path, PathBuf};
+    use std::path::PathBuf;
 
     use gdl_extract::{DISC_FOLDER, Expansion, Fingerprints, IP_BIN, Trust};
     use gdl_files::{Cancel, Job, NoProgress, retry_locked};
-    use gdl_fixtures::{
-        DiscSet, EntryState, backdate, sha256_hex, snapshot, snapshot_outside, unhex,
-    };
+    use gdl_fixtures::{DiscSet, EntryState, backdate, listed, snapshot, snapshot_outside, unhex};
+    pub(crate) use gdl_fixtures::{Listed, tree_listing};
     use gdl_media::{N64Rom, ROMDISK_LIMITS, Sha1Digest, Sha256Digest, SourceName, US_DISC};
     use serde_json::Value;
     use tempfile::TempDir;
@@ -545,10 +544,6 @@ pub(crate) mod vectors {
     /// What no raw DEFLATE stream begins with: a last block of the type the format reserves.
     const NO_STREAM: u8 = 0xFF;
 
-    /// A file of a tree as the vectors list one: its path, with `/` between its components, its
-    /// size and the SHA-256 digest of its bytes in hexadecimal.
-    pub(crate) type Listed = (String, u64, String);
-
     /// The N64 cases, read.
     fn n64_vectors() -> Value {
         serde_json::from_str(N64_VECTORS).expect("the N64 vectors are JSON")
@@ -562,17 +557,6 @@ pub(crate) mod vectors {
     /// A string of the vectors.
     fn text(value: &Value) -> &str {
         value.as_str().expect("a string")
-    }
-
-    /// A tree as the vectors list it: each file's path, size and digest.
-    fn listed(rows: &Value) -> Vec<Listed> {
-        let rows = rows.as_array().expect("a tree lists its files");
-        rows.iter()
-            .map(|row| {
-                let size = row[1].as_u64().expect("a size");
-                (text(&row[0]).to_owned(), size, text(&row[2]).to_owned())
-            })
-            .collect()
     }
 
     /// The image the N64 vectors freeze as their default, and the name their extraction of it
@@ -643,34 +627,6 @@ pub(crate) mod vectors {
             cancel,
             progress: &NoProgress,
         }
-    }
-
-    /// Every file of the tree at `root`, as the vectors list a tree: sorted by the path's text,
-    /// which orders as its UTF-8 bytes do. Panics on what is neither a folder nor a regular file,
-    /// and on a folder that holds nothing, since an extraction makes no folder but those above
-    /// its files.
-    pub(crate) fn tree_listing(root: &Path) -> Vec<Listed> {
-        let mut files = Vec::new();
-        let mut folders = vec![(root.to_path_buf(), String::new())];
-        while let Some((folder, above)) = folders.pop() {
-            let mut empty = true;
-            for entry in fs::read_dir(&folder).unwrap() {
-                empty = false;
-                let entry = entry.unwrap();
-                let path = format!("{above}{}", entry.file_name().into_string().unwrap());
-                let kind = entry.file_type().unwrap();
-                if kind.is_dir() {
-                    folders.push((entry.path(), format!("{path}/")));
-                } else {
-                    assert!(kind.is_file(), "{path} is no file");
-                    let bytes = fs::read(entry.path()).unwrap();
-                    files.push((path, bytes.len() as u64, sha256_hex(&bytes)));
-                }
-            }
-            assert!(!empty, "the folder {above} holds nothing");
-        }
-        files.sort();
-        files
     }
 
     /// The folders a test extracts in, apart: one the outputs are made in, which holds a folder

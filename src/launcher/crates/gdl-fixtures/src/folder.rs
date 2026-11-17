@@ -1,7 +1,8 @@
 //! Install folders in the states the launcher's tests need: roots of an exact length, links to
 //! folders and files, the names the alpha installer leaves, entries only root may open and
-//! installations as the launcher leaves them; and the names a folder holds and what a tree holds,
-//! all of it or all but a job's staging, to compare.
+//! installations as the launcher leaves them; and the names a folder holds, what a tree holds, all
+//! of it or all but a job's staging, and a tree's files as the shared vectors list them, to
+//! compare.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -371,6 +372,54 @@ pub fn folder_names(folder: &Path) -> io::Result<Vec<String>> {
     }
     names.sort();
     Ok(names)
+}
+
+/// A file of a tree as the shared vectors list one: its path, with `/` between its components, its
+/// size and the SHA-256 digest of its bytes in lowercase hexadecimal.
+pub type Listed = (String, u64, String);
+
+/// A tree as the shared vectors list it: each file's path, size and digest. Panics when `rows` is
+/// no such list.
+pub fn listed(rows: &Value) -> Vec<Listed> {
+    let rows = rows.as_array().expect("a tree lists its files");
+    let text = |value: &Value| value.as_str().expect("a string").to_owned();
+    rows.iter()
+        .map(|row| {
+            let size = row[1].as_u64().expect("a size");
+            (text(&row[0]), size, text(&row[2]))
+        })
+        .collect()
+}
+
+/// Every file of the tree at `root`, as the shared vectors list a tree: sorted by the path's text,
+/// which orders as its UTF-8 bytes do. Panics on what is neither a folder nor a regular file, such
+/// as a link, which is never followed, and on a folder that holds nothing, since an extraction
+/// makes no folder but those above its files; and on a tree that cannot be read, or a name in it
+/// that is not Unicode.
+#[track_caller]
+pub fn tree_listing(root: &Path) -> Vec<Listed> {
+    let mut files = Vec::new();
+    let mut folders = vec![(root.to_path_buf(), String::new())];
+    while let Some((folder, above)) = folders.pop() {
+        let mut empty = true;
+        for entry in fs::read_dir(&folder).unwrap() {
+            empty = false;
+            let entry = entry.unwrap();
+            let name = entry.file_name().into_string().unwrap();
+            let path = format!("{above}{name}");
+            let kind = entry.file_type().unwrap();
+            if kind.is_dir() {
+                folders.push((entry.path(), format!("{path}/")));
+            } else {
+                assert!(kind.is_file(), "{path} is no file");
+                let bytes = fs::read(entry.path()).unwrap();
+                files.push((path, bytes.len() as u64, sha256_hex(&bytes)));
+            }
+        }
+        assert!(!empty, "the folder {} holds nothing", folder.display());
+    }
+    files.sort();
+    files
 }
 
 /// What [`snapshot`] keeps of an entry: enough to tell that it was changed, replaced or made anew.
@@ -1201,6 +1250,43 @@ mod tests {
             let error = folder_names(&inner).unwrap_err();
             assert_eq!(error.kind(), io::ErrorKind::InvalidData);
         }
+    }
+
+    #[test]
+    fn trees_list_their_files_as_the_vectors_do() {
+        use std::panic;
+
+        use serde_json::json;
+
+        use super::{link_folder, listed, tree_listing};
+        use crate::sha256_hex;
+
+        let dir = tempfile::tempdir().unwrap();
+        // A tree's files, in folders and not, are listed by their paths' text, which puts
+        // capitals first, each with its size and digest, as the vectors list a tree.
+        let tree = dir.path().join("tree");
+        fs::create_dir_all(tree.join("b").join("c")).unwrap();
+        fs::write(tree.join("b").join("c").join("x.bin"), b"deep").unwrap();
+        fs::write(tree.join("a.json"), b"{}").unwrap();
+        fs::write(tree.join("B.txt"), b"").unwrap();
+        let rows = json!([
+            ["B.txt", 0, sha256_hex(b"")],
+            ["a.json", 2, sha256_hex(b"{}")],
+            ["b/c/x.bin", 4, sha256_hex(b"deep")],
+        ]);
+        assert_eq!(tree_listing(&tree), listed(&rows));
+
+        // A folder that holds nothing is no part of a tree an extraction writes, and neither is a
+        // link, which is never followed.
+        let empty = dir.path().join("empty");
+        fs::create_dir_all(empty.join("b")).unwrap();
+        fs::write(empty.join("a.bin"), b"a").unwrap();
+        assert!(panic::catch_unwind(|| tree_listing(&empty)).is_err());
+        let linked = dir.path().join("linked");
+        fs::create_dir(&linked).unwrap();
+        fs::write(linked.join("a.bin"), b"a").unwrap();
+        link_folder(&linked.join("b"), &tree).unwrap();
+        assert!(panic::catch_unwind(|| tree_listing(&linked)).is_err());
     }
 
     #[test]
