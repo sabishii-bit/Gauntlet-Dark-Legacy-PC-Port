@@ -1,4 +1,6 @@
 """The launcher script runs cargo where the workspace's own settings apply, and builds outside src."""
+import contextlib
+import io
 import json
 import os
 import pathlib
@@ -28,6 +30,16 @@ def listed(pid, expected, seconds=5):
         if present == expected or time.monotonic() >= deadline:
             return present
         time.sleep(0.1)
+
+
+def main_runs(argv, codes):
+    """The script's exit code for `argv`, and the calls it made to run, each run standing in for
+    a command that exits with the next of `codes`."""
+    with mock.patch.object(launcher, "environment", return_value={"PATH": ""}), \
+            mock.patch.object(launcher, "stop_on_signals"), \
+            mock.patch.object(launcher, "run", side_effect=codes) as run:
+        result = launcher.main(argv)
+    return result, run.call_args_list
 
 
 def locked_dependencies(package):
@@ -75,9 +87,30 @@ class PlanTests(unittest.TestCase):
                          [["cargo", "run", "--locked", "--package", "gdl-launcher", "--",
                            "--check-window"]])
 
+    def test_build_of_named_packages_stays_within_them(self):
+        headless = ["--package", "gdl-launcher-headless"]
+        self.assertEqual(launcher.plan("build", packages=["gdl-launcher-headless"], release=True),
+                         [["cargo", "build", "--locked", *headless, "--release"]])
+        named = ["--package", "gdl-media", "--package", "gdl-extract"]
+        self.assertEqual(launcher.plan("build", packages=["gdl-media", "gdl-extract"]),
+                         [["cargo", "build", "--locked", *named]])
+        # The command line names them as check's does.
+        result, calls = main_runs(["build", "--release", "--package", "gdl-launcher-headless"],
+                                  [0])
+        self.assertEqual(result, 0)
+        self.assertEqual([call.args[0] for call in calls],
+                         [["cargo", "build", "--locked", *headless, "--release"]])
+
+    def test_parity_runs_the_gate_with_this_python(self):
+        gate = ROOT / "scripts" / "checks" / "launcher_parity.py"
+        self.assertEqual(launcher.PARITY_GATE, gate)
+        self.assertEqual(launcher.plan("parity", arguments=["--verify", "--keep"]),
+                         [[sys.executable, str(gate), "--verify", "--keep"]])
+        self.assertEqual(launcher.plan("parity"), [[sys.executable, str(gate)]])
+
     def test_an_unknown_command_is_refused(self):
         with self.assertRaises(ValueError):
-            launcher.plan("extract")
+            launcher.plan("unpack")
 
 
 class EnvironmentTests(unittest.TestCase):
@@ -160,11 +193,8 @@ class WorkspaceTests(unittest.TestCase):
 
 class RunTests(unittest.TestCase):
     def run_main(self, argv, codes):
-        with mock.patch.object(launcher, "environment", return_value={"PATH": ""}), \
-                mock.patch.object(launcher, "stop_on_signals"), \
-                mock.patch.object(launcher, "run", side_effect=codes) as run:
-            result = launcher.main(argv)
-        return result, [call.args[0] for call in run.call_args_list]
+        result, calls = main_runs(argv, codes)
+        return result, [call.args[0] for call in calls]
 
     def test_check_stops_at_the_first_step_that_fails(self):
         result, steps = self.run_main(["check"], [0, 3, 0])
@@ -212,6 +242,104 @@ class RunTests(unittest.TestCase):
                 launcher.run(["cargo", "run"], {"PATH": "x"})
         stop.assert_called_once_with(started)
         self.assertEqual(started.wait.call_args.kwargs, {"timeout": launcher.WAIT_SLICE})
+
+    def test_extract_runs_the_headless_program_on_absolute_paths(self):
+        # Cargo starts the program in the workspace, so a dump and an output named from the
+        # developer's own folder are made absolute first. The program holds the dump as the
+        # extraction scripts hold one unless --install asks for an installation's strictness.
+        program = ["cargo", "run", "--locked", "--package", "gdl-launcher-headless"]
+        rom = os.path.join("dumps", "Gauntlet Legends (USA).z64")
+        disc = os.path.join("dumps", "Gauntlet Legends (USA)", "Gauntlet Legends (USA).cue")
+        output = os.path.join("trees", "legends")
+        result, steps = self.run_main(["extract", "n64", rom, "--output", output], [0])
+        self.assertEqual(result, 0)
+        self.assertEqual(steps, [[*program, "--", "--extract", "n64", os.path.abspath(rom),
+                                  "--output", os.path.abspath(output), "--strict", "script"]])
+        result, steps = self.run_main(["extract", "dreamcast", disc, "--output", output,
+                                       "--install", "--release"], [0])
+        self.assertEqual(result, 0)
+        self.assertEqual(steps, [[*program, "--release", "--", "--extract", "dreamcast",
+                                  os.path.abspath(disc), "--output", os.path.abspath(output)]])
+        self.assertTrue(os.path.isabs(steps[0][-3]))
+        self.assertTrue(os.path.isabs(steps[0][-1]))
+        # A refusal is the program's exit code.
+        self.assertEqual(self.run_main(["extract", "n64", rom, "--output", output], [1])[0], 1)
+        # Only an expansion the program extracts, and never without --output.
+        for argv in (["extract", "gamecube", rom, "--output", output], ["extract", "n64", rom]):
+            with self.subTest(argv=argv), contextlib.redirect_stderr(io.StringIO()):
+                with self.assertRaises(SystemExit) as refused:
+                    self.run_main(argv, [])
+                self.assertEqual(refused.exception.code, 2)
+
+    def test_extract_and_parity_pass_their_arguments_through(self):
+        # A path that is absolute already reaches the program as it was given, spaces and all,
+        # each one argument; cargo, which runs from the workspace, takes --release.
+        disc = os.path.abspath(os.path.join("Gauntlet Legends (USA)",
+                                            "Gauntlet Legends (USA).cue"))
+        output = os.path.abspath(os.path.join("Legends trees", "dreamcast"))
+        result, calls = main_runs(["extract", "dreamcast", disc, "--output", output, "--release"],
+                                  [0])
+        self.assertEqual(result, 0)
+        self.assertEqual([call.args[0] for call in calls], [[
+            "cargo", "run", "--locked", "--package", "gdl-launcher-headless", "--release", "--",
+            "--extract", "dreamcast", disc, "--output", output, "--strict", "script"]])
+        self.assertEqual(calls[0].kwargs["cwd"], launcher.WORKSPACE)
+        # Every argument after parity is the gate's, as it was given, the options this script
+        # takes itself and a separator included; the gate runs from the folder this script was
+        # started in, where a relative path given to it means what was typed.
+        given = ["--verify", "--platform", "n64", "--n64-rom", os.path.join("dumps", "rom.z64"),
+                 "--release", "--package", "gdl-media", "--help", "--", "--keep"]
+        result, calls = main_runs(["parity", *given], [0])
+        self.assertEqual(result, 0)
+        self.assertEqual([call.args[0] for call in calls],
+                         [[sys.executable, str(launcher.PARITY_GATE), *given]])
+        self.assertIsNone(calls[0].kwargs["cwd"])
+        # The gate's exit code is the run's, and an argument before the word is refused rather
+        # than handed to the gate.
+        self.assertEqual(main_runs(["parity", "--verify"], [1])[0], 1)
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as refused:
+            main_runs(["--verify", "parity"], [])
+        self.assertEqual(refused.exception.code, 2)
+
+    def test_a_run_past_its_timeout_ends_cargos_tree(self):
+        # Cargo runs in a session of its own, so only the run that holds it can end its tree.
+        # This cargo never exits, and the clock moves only as the run waits on it.
+        now = [0.0]
+
+        def wait(timeout):
+            now[0] += timeout
+            raise subprocess.TimeoutExpired("cargo", timeout)
+
+        started = mock.Mock()
+        started.wait.side_effect = wait
+        timeout = 2.5 * launcher.WAIT_SLICE
+        with mock.patch.object(launcher.shutil, "which", return_value="cargo"), \
+                mock.patch.object(launcher.process_tree, "start", return_value=started), \
+                mock.patch.object(launcher.process_tree, "stop_when_gone"), \
+                mock.patch.object(launcher.process_tree, "stop") as stop, \
+                mock.patch.object(launcher, "time") as clock, \
+                contextlib.redirect_stderr(io.StringIO()) as err:
+            clock.monotonic.side_effect = lambda: now[0]
+            result = launcher.run(["cargo", "build", "--release"], {"PATH": "x"}, timeout=timeout)
+        self.assertEqual(result, launcher.TIMED_OUT)
+        stop.assert_called_once_with(started)
+        # It waited a slice at a time up to the first slice past its deadline, and no further.
+        self.assertEqual(started.wait.call_count, 3)
+        self.assertEqual(started.wait.call_args.kwargs, {"timeout": launcher.WAIT_SLICE})
+        self.assertEqual(err.getvalue(),
+                         f"cargo build --release ran longer than {timeout:g} s and was stopped\n")
+
+    def test_a_run_within_its_timeout_gives_cargos_code(self):
+        started = mock.Mock()
+        started.wait.side_effect = [subprocess.TimeoutExpired("cargo", launcher.WAIT_SLICE), 3]
+        with mock.patch.object(launcher.shutil, "which", return_value="cargo"), \
+                mock.patch.object(launcher.process_tree, "start", return_value=started), \
+                mock.patch.object(launcher.process_tree, "stop_when_gone"), \
+                mock.patch.object(launcher.process_tree, "stop") as stop, \
+                mock.patch.object(launcher, "time") as clock:
+            clock.monotonic.return_value = 100.0
+            self.assertEqual(launcher.run(["cargo", "test"], {"PATH": "x"}, timeout=60), 3)
+        stop.assert_not_called()
 
     def test_the_signals_that_end_a_run_become_an_interrupt(self):
         with mock.patch.object(launcher.signal, "signal") as handler:

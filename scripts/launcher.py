@@ -3,8 +3,10 @@
 
     python scripts/launcher.py check                   # formatting, clippy and every crate's tests
     python scripts/launcher.py check --package gdl-files [--package ...]   # the same for those crates
-    python scripts/launcher.py build [--release]      # the launcher's programs, into build/launcher
+    python scripts/launcher.py build [--release] [--package <crate> ...]   # into build/launcher
     python scripts/launcher.py run [--release] [-- args]   # the launcher's window, for development
+    python scripts/launcher.py extract <n64|dreamcast> <dump> --output <new folder> [--install] [--release]
+    python scripts/launcher.py parity <arguments for launcher_parity.py, such as --verify>
 
 Cargo runs from src/launcher, so its rust-toolchain.toml and .cargo/config.toml apply, with its
 home in build/cargo-home (shared with the netplay crate) and its target directory in
@@ -13,7 +15,13 @@ src/launcher/desktop/gen/, which .gitignore hides: Tauri's capability schemas fo
 the version.json its build script writes from VERSION. On Windows cargo runs in the MSVC
 developer environment. rustup's folder joins PATH when a fresh install has not reached this shell
 yet. A run that is interrupted, told to stop, or whose caller is gone ends cargo and every
-compiler under it.
+compiler under it, and so does one that outlasts the timeout a caller in this process gives it.
+
+build builds the whole workspace, or only the crates --package names. extract runs the headless
+program's --extract, which writes a Legends expansion's tree from a dump into a new folder,
+holding the dump as the extraction scripts hold one unless --install asks for an installation's
+strictness. parity runs the parity gate, scripts/checks/launcher_parity.py, with this Python and
+every argument after the word, from the folder this script was started in.
 """
 
 import argparse
@@ -23,6 +31,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import time
 from typing import Dict, List, Optional, Sequence
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
@@ -34,16 +43,20 @@ WORKSPACE = ROOT / "src" / "launcher"
 CARGO_HOME = ROOT / "build" / "cargo-home"
 TARGET = ROOT / "build" / "launcher"
 WINDOW_PACKAGE = "gdl-launcher"
+HEADLESS_PACKAGE = "gdl-launcher-headless"  # the launcher's modes without a window
+PARITY_GATE = ROOT / "scripts" / "checks" / "launcher_parity.py"
+PLATFORMS = ("n64", "dreamcast")  # the expansions the headless program's --extract takes
+TIMED_OUT = 124  # the exit code of a run stopped at its timeout
 WAIT_SLICE = 0.5  # seconds; on Windows a bare Popen.wait() holds a Ctrl+C until cargo exits
 STOP_SIGNALS = ("SIGTERM", "SIGHUP", "SIGQUIT", "SIGBREAK")  # those the platform has
 
 
 def plan(command: str, packages: Optional[Sequence[str]] = None, release: bool = False,
          arguments: Optional[List[str]] = None) -> List[List[str]]:
-    """The cargo commands a launcher command runs, in order."""
+    """The commands a launcher command runs, in order: cargo's, or the parity gate's."""
     profile = ["--release"] if release else []
+    chosen = [part for name in packages or () for part in ("--package", name)]
     if command == "check":
-        chosen = [part for name in packages or () for part in ("--package", name)]
         return [
             ["cargo", "fmt", *(chosen or ["--all"]), "--check"],
             ["cargo", "clippy", "--locked", *(chosen or ["--workspace"]), "--all-targets", "--",
@@ -51,10 +64,15 @@ def plan(command: str, packages: Optional[Sequence[str]] = None, release: bool =
             ["cargo", "test", "--locked", *(chosen or ["--workspace"])],
         ]
     if command == "build":
-        return [["cargo", "build", "--locked", "--workspace", *profile]]
+        return [["cargo", "build", "--locked", *(chosen or ["--workspace"]), *profile]]
     if command == "run":
         return [["cargo", "run", "--locked", "--package", WINDOW_PACKAGE, *profile, "--",
                  *(arguments or [])]]
+    if command == "extract":
+        return [["cargo", "run", "--locked", "--package", HEADLESS_PACKAGE, *profile, "--",
+                 "--extract", *(arguments or [])]]
+    if command == "parity":
+        return [[sys.executable, str(PARITY_GATE), *(arguments or [])]]
     raise ValueError(f"unknown launcher command: {command}")
 
 
@@ -88,47 +106,90 @@ def stop_on_signals() -> None:
             signal.signal(getattr(signal, name), _interrupt)
 
 
-def run(command: List[str], env: Dict[str, str]) -> int:
-    """Runs one cargo command from the workspace, ending its whole tree if this run ends early."""
+def run(command: List[str], env: Dict[str, str], timeout: Optional[float] = None,
+        cwd: Optional[pathlib.Path] = WORKSPACE) -> int:
+    """Runs one command from `cwd` (the workspace, where cargo runs, unless told otherwise; None
+    is this process's own folder), ending its whole tree if this run ends early. A command still
+    running `timeout` seconds after it started has its tree ended too, and the run gives back
+    TIMED_OUT."""
     executable = shutil.which(command[0], path=env.get("PATH"))
     if executable is None:
         print(f"{command[0]} not found; open a new shell, or run python scripts/setup.py --launcher",
               file=sys.stderr)
         return 1
-    child = process_tree.start([executable, *command[1:]], cwd=WORKSPACE, env=env)
+    child = process_tree.start([executable, *command[1:]], cwd=cwd, env=env)
+    deadline = None if timeout is None else time.monotonic() + timeout
     try:
         process_tree.stop_when_gone(os.getppid(), lambda: process_tree.stop(child))
         while True:
             try:
                 return child.wait(timeout=WAIT_SLICE)
             except subprocess.TimeoutExpired:
-                continue
+                pass
+            if deadline is not None and time.monotonic() >= deadline:
+                print(f"{' '.join(command)} ran longer than {timeout:g} s and was stopped",
+                      file=sys.stderr)
+                process_tree.stop(child)
+                return TIMED_OUT
     except KeyboardInterrupt:
         process_tree.stop(child)
         raise
 
 
 def main(argv: Optional[List[str]] = None) -> int:
+    argv = sys.argv[1:] if argv is None else list(argv)
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     commands = parser.add_subparsers(dest="command", required=True)
     check = commands.add_parser("check", help="formatting, clippy and the tests")
     check.add_argument("--package", action="append", dest="packages", metavar="CRATE",
                        help="a crate of the workspace, such as gdl-files; repeat for more")
-    build = commands.add_parser("build", help="build the launcher's programs")
+    build = commands.add_parser("build", help="build the launcher's programs, or the crates named")
     build.add_argument("--release", action="store_true", help="the optimised profile")
+    build.add_argument("--package", action="append", dest="packages", metavar="CRATE",
+                       help="only this crate of the workspace, such as gdl-launcher-headless; "
+                            "repeat for more")
     window = commands.add_parser("run", help="run the launcher's window")
     window.add_argument("--release", action="store_true", help="the optimised profile")
     window.add_argument("arguments", nargs=argparse.REMAINDER,
                         help="arguments for the launcher, after --")
-    args = parser.parse_args(argv)
-    arguments = list(getattr(args, "arguments", None) or [])
-    if arguments[:1] == ["--"]:
-        arguments = arguments[1:]
+    extract = commands.add_parser("extract", help="extract a Legends expansion's tree from a dump "
+                                                  "into a new folder")
+    extract.add_argument("platform", choices=PLATFORMS, help="the expansion the dump is of")
+    extract.add_argument("dump", help="the N64 ROM; for Dreamcast a cue sheet or a GDI, the "
+                                      "folder holding one, or a track file one names")
+    extract.add_argument("--output", required=True, metavar="FOLDER",
+                         help="the new folder the tree goes into, whose parent exists")
+    extract.add_argument("--install", action="store_true",
+                         help="hold the dump as an installation does, to the trust the launcher "
+                              "carries, rather than as the extraction scripts do")
+    extract.add_argument("--release", action="store_true", help="the optimised profile")
+    # Listed for --help alone: every argument after the word goes to the gate unread, since
+    # argparse would refuse the gate's options as ones it does not know.
+    commands.add_parser("parity", add_help=False,
+                        help="run the parity gate, scripts/checks/launcher_parity.py, with every "
+                             "argument that follows, such as --verify")
+    if argv[:1] == ["parity"]:
+        args, arguments = argparse.Namespace(command="parity"), argv[1:]
+    else:
+        args = parser.parse_args(argv)
+        arguments = list(getattr(args, "arguments", None) or [])
+        if arguments[:1] == ["--"]:
+            arguments = arguments[1:]
+    if args.command == "extract":
+        # Cargo starts the program in the workspace, so the paths are made absolute here, where
+        # they still mean what was typed. Without --install the dump is held as the extraction
+        # scripts hold one, as the program does only when asked.
+        strictness = [] if args.install else ["--strict", "script"]
+        arguments = [args.platform, os.path.abspath(args.dump), "--output",
+                     os.path.abspath(args.output), *strictness]
+    # The gate runs from the folder this script was started in, where a relative path given to
+    # it means what was typed.
+    folder = None if args.command == "parity" else WORKSPACE
     stop_on_signals()
     env = environment()
     for step in plan(args.command, getattr(args, "packages", None),
                      getattr(args, "release", False), arguments):
-        code = run(step, env)
+        code = run(step, env, cwd=folder)
         if code != 0:
             return code
     return 0
