@@ -169,13 +169,14 @@ TEST_CASE("an N64 level answers its exits for the HUD", "[legends][n64][hud-styl
         CHECK_FALSE(imported.exitUnder(seat));
     }
 
-    // Seat 1 on the first exit, seat 0 a little way off: seat 1 waits there for seat 0.
+    // Seat 1 on the first exit, seat 0 a little way off: seat 1 waits there for seat 0. Seat 1
+    // comes first in the party, so that a party place taken for a seat names the wrong one.
     const CharacterSave save;
     PlayerActor beside;
     PlayerActor on;
     beside.spawn(0, save, nullptr, first.position + Vec3{12, 0, 0}, 0);
     on.spawn(1, save, nullptr, first.position, 0);
-    std::array<PlayerActor*, 2> party{&beside, &on};
+    std::array<PlayerActor*, 2> party{&on, &beside};
     level.updateParty(party, 1.0f / 60, false);
     REQUIRE(level.adapter().portalUnlocked(5));
     auto under = imported.exitUnder(1);
