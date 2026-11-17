@@ -154,8 +154,9 @@ jobs:
           if-no-files-found: warn
 
   # The launcher's cargo workspace under src/launcher: formatting, clippy and its crates'
-  # tests. Only the crate registries are cached; its build is too large to share the cache
-  # with vcpkg and the lint shards, so it builds from scratch with line tables only and no
+  # tests, then the optimised headless program and the script tests that drive it. Only
+  # the crate registries are cached; its build is too large to share the cache with vcpkg
+  # and the lint shards, so it builds from scratch with line tables only and no
   # incremental state, neither of which anything here reads.
   launcher:
     name: Launcher (${{ matrix.os }})
@@ -188,6 +189,14 @@ jobs:
         run: python scripts/setup.py --yes --no-build --launcher
       - name: Formatting, clippy and tests
         run: python scripts/launcher.py check
+      - name: The headless program, optimised
+        run: python scripts/launcher.py build --release --package gdl-launcher-headless
+      # The program is named so that the parity tests fail, not skip, when it is missing,
+      # and never run the debug build the check left instead.
+      - name: Script tests against the built launcher
+        run: python -m unittest discover -s tests/scripts -p "test_launcher*.py" -v
+        env:
+          GDL_LAUNCHER_BIN: build/launcher/release/gdl-launcher-headless${{ runner.os == 'Windows' && '.exe' || '' }}
 
   # Every unit under the fast profile, in eight shards, each starting from the clean
   # results its predecessor saved: a push re-lints only what it reached. The cache is
