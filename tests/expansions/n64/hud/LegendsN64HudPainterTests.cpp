@@ -1457,6 +1457,30 @@ TEST_CASE("N64 boss meters stand at the top, in the N64's frame for N64 bosses a
             {0, 0, 112.0f / 256, 1}}},
           Mat4{1.0f});
     CHECK(n64.art.record.count(kDarkLegacyHudStyle, test::FakeHudPart::BossMeters) == 0);
+
+    // Below half its health the dragon's first strip fills from its cap, its type's 46 at
+    // 200/256, over its share of the rest, and its second strip shows no fill; once the dragon
+    // is dead its meter goes.
+    LoadedLook hurt("n64-hud-meters-hurt", kWarriorAndWizard);
+    HudView hurtView = hurt.viewOf({});
+    hurtView.levelHud = kLegendsN64HudStyle;
+    TextureSet hurtArt = meterArt(LegendsN64HudLayout::kMeterStripWidth, 32);
+    const std::array<HealthMeterReading, 1> hurtDragon{meterReading(2, 46, 72, 625, 2500)};
+    BossMeters hurtMeters;
+    showMeters(hurtView, hurtMeters, hurtDragon, hurtArt);
+    hurt.prepare(hurtView);
+    const auto hurtPicture = [&](std::string_view name) {
+        return meterPicture(hurtArt, hurt.device, name);
+    };
+    // 35.9375 + 0.5 * (200 - 35.9375), cut to the whole unit.
+    check(hurt.drawn(hurtView, &LegendsN64HudPainter::drawBossMeters),
+          {{hurtPicture("METER_BG1"), {0, 1, 200, 32}, {0, 0, 1, 1}},
+           {hurtPicture("METER_FG1"), {0, 1, 117, 32}, {0, 0, 117.0f / 200, 1}},
+           {hurtPicture("METER_BG2"), {200, 1, 200, 32}, {0, 0, 1, 1}}},
+          LegendsN64Frame::transform());
+    hurtMeters.update(0, hurtDragon, false, false);
+    hurt.prepare(hurtView);
+    CHECK(hurt.drawn(hurtView, &LegendsN64HudPainter::drawBossMeters).empty());
 }
 
 TEST_CASE("every boss meter eases by one shared step, a hundredth of the last-bound maximum",
@@ -1822,6 +1846,19 @@ TEST_CASE("down steps a closed selector's panel through the stats and quest page
     other.open();
     CHECK(pagesAt(10) == Pages{Shown::Normal, Shown::Normal, Shown::Items});
     CHECK(iconsIn(quads, 2) == std::vector<std::string_view>{"HUD_INVIS"});
+
+    // A dying player's panel keeps its normal page (FUN_e0059114), whether it was on another
+    // page or its selector stands open, and is on its normal page once it stands again.
+    n64.look.browse(0, SelectorInput{.down = true});
+    CHECK(pagesAt(11) == Pages{Shown::Stats, Shown::Normal, Shown::Items});
+    view.seats[0] = fallen(holding, false);
+    CHECK(pagesAt(12) == Pages{Shown::Normal, Shown::Normal, Shown::Items});
+    first.open();
+    CHECK(pagesAt(13) == Pages{Shown::Normal, Shown::Normal, Shown::Items});
+    CHECK(iconsIn(quads, 0).empty());
+    first.close();
+    view.seats[0] = holding;
+    CHECK(pagesAt(14) == Pages{Shown::Normal, Shown::Normal, Shown::Items});
 }
 
 TEST_CASE("left and right on a closed panel enter the stat ring at either end and leave it past "
@@ -2291,9 +2328,10 @@ TEST_CASE("an N64 exit shows its original plaque, a Dark Legacy exit the port's 
           "tower's none",
           "[legends][n64-hud]") {
     LoadedLook n64("n64-hud-plaques", kWarriorAndWizard);
-    // Seat 0 stands on an N64 exit to the castle's first level; seat 1, in blue, on a Dark
-    // Legacy exit to a castle level; seat 2 on one back to the tower; seat 3, in green, on one to
-    // a level of the secret realm, which no scroll names.
+    // Seat 0 stands on an N64 exit to the castle's first level; seat 1, in red, on a Dark Legacy
+    // exit to a castle level; seat 2 on one back to the tower; seat 3, in yellow, on one to a
+    // level of the secret realm, which no scroll names. No seat wears its own seat's colour, so a
+    // plaque lit by its seat rather than its costume shows.
     LevelRef courtyard;
     courtyard.realmId = 1;
     courtyard.title = "Castle Courtyard";
@@ -2302,8 +2340,8 @@ TEST_CASE("an N64 exit shows its original plaque, a Dark Legacy exit the port's 
     valley.title = "Hidden Valley";
     const LevelRef tower = LevelRef::tower();
     std::array<HudSeat, HudView::kSeats> seats{
-        standing(kWarriorClass, 0, "A"), standing(kWizardClass, 1, "B"),
-        standing(kWarriorClass, 2, "C"), standing(kWizardClass, 3, "D")};
+        standing(kWarriorClass, 3, "A"), standing(kWizardClass, 2, "B"),
+        standing(kWarriorClass, 1, "C"), standing(kWizardClass, 0, "D")};
     seats[0].pad = HudPad{.identity = 0x0101, .nativeCode = 0x0101, .destination = nullptr};
     seats[1].pad = HudPad{.identity = kDarkLegacyPadIdentityBase + 4,
                           .nativeCode = std::nullopt,
@@ -2342,7 +2380,9 @@ TEST_CASE("an N64 exit shows its original plaque, a Dark Legacy exit the port's 
             CAPTURE(seat);
             CHECK(pictureOrder(plaques, seat) == portMade);
             const Rect slot{static_cast<f32>(Layout::kSlotX.at(seat)), kTop, 104, 50};
-            const Color bright = Layout::kBright.at(seat).withAlpha(opacity);
+            const Color bright =
+                Layout::kBright.at(static_cast<usize>(view.seats.at(seat).box.color))
+                    .withAlpha(opacity);
             for (const Quad& quarter : picturesIn(plaques, "COLOR", seat)) {
                 CHECK(quarter.color == bright);
                 CHECK(quarter.transform == LegendsN64Frame::transform());
