@@ -93,4 +93,41 @@ TEST_CASE("bodies and contact cylinders share one sweep", "[game][collision][cri
     CHECK(BodyCollision::resolve({0, 0, 0}, {3, 0, 20}, 1, 6, bodies, 2.5f, {}) ==
           BodyCollision::resolve({0, 0, 0}, {3, 0, 20}, 1, 6, bodies));
 }
+
+TEST_CASE("a step meets a contact cylinder as the original's line-cylinder test does",
+          "[game][collision][auto-attack-stop]") {
+    // Four across and four up or down about (0, 4, 10), as in the case above.
+    const std::array cylinders{
+        BodyCollision::critterContact(MissileTarget{0, {0, 1.5f, 10}, 2.5f, 5}, 1.5f)};
+    const auto meets = [&](const Vec3& from, const Vec3& to) {
+        return BodyCollision::touches(from, to, cylinders);
+    };
+    // Head on, a step ending at the radius meets it and one ending short of it does not.
+    CHECK(meets({0, 4, 0}, {0, 4, 6.5f}));
+    CHECK(meets({0, 4, 0}, {0, 4, 6}));
+    CHECK_FALSE(meets({0, 4, 0}, {0, 4, 5.99f}));
+    // From inside, a step along the body still meets it, as does one leaning away from it by
+    // less than LineCylinderCollide's hundredth (combat.c 568-573); one leaning further away, or
+    // heading straight out, is let go.
+    CHECK(meets({0, 4, 7}, {1, 4, 7}));
+    CHECK(meets({0, 4, 7}, {1, 4, 6.995f}));
+    CHECK_FALSE(meets({0, 4, 7}, {1, 4, 6.98f}));
+    CHECK_FALSE(meets({0, 4, 7}, {0, 4, 6.5f}));
+    // A step passing by clear of it, or grazing it just outside the radius, does not meet it;
+    // one passing just inside does.
+    CHECK_FALSE(meets({-6, 4, 0}, {-6, 4, 20}));
+    CHECK_FALSE(meets({-4.01f, 4, 0}, {-4.01f, 4, 20}));
+    CHECK(meets({-3.99f, 4, 0}, {-3.99f, 4, 20}));
+    // Over the band or under it the step passes; at its edges it still meets it.
+    CHECK_FALSE(meets({0, 8.01f, 0}, {0, 8.01f, 20}));
+    CHECK_FALSE(meets({0, -0.01f, 0}, {0, -0.01f, 20}));
+    CHECK(meets({0, 8, 0}, {0, 8, 20}));
+    CHECK(meets({0, 0, 0}, {0, 0, 20}));
+    // Any one of several is met; none, nothing is.
+    const std::array pair{cylinders.front(), BodyCollision::critterContact(
+                                                 MissileTarget{1, {10, 1.5f, 10}, 2.5f, 5}, 1.5f)};
+    CHECK(BodyCollision::touches({10, 4, 0}, {10, 4, 6.5f}, pair));
+    CHECK_FALSE(BodyCollision::touches({5, 4, 0}, {5, 4, 20}, pair));
+    CHECK_FALSE(BodyCollision::touches({0, 4, 0}, {0, 4, 20}, {}));
+}
 } // namespace

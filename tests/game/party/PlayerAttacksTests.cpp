@@ -4673,6 +4673,168 @@ TEST_CASE("Pojo keeps attacking while approaching a golem with held mouse attack
     f.opponents.close();
 }
 
+TEST_CASE("Auto Attack stops a strafe and a charge dead at a golem where without it they slide",
+          "[game][player-attacks][auto-attack-stop][assets]") {
+    // PlayerCollideItems meets a great one's solid parts and body, and Auto Attack zeroes the step,
+    // a charge's as well (pmotion.c 1385-1417, 0x80082820-0x8008283C). The charge still throws
+    // down the great one it is held short of.
+    const auto root = test::assetOrSkip("CRITTER/GOLEM.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/GOLEM/LEVELG/ANIM.PS2");
+    test::assetOrSkip("PLAYERS/WAR/ANIM/ANIM.PS2");
+    test::assetOrSkip("PLAYERS/JES/ANIM/ANIM.PS2");
+    const bool stop = GENERATE(false, true);
+    CAPTURE(stop);
+    Fixture f;
+    REQUIRE(f.classes.load(root / "PDATA"));
+    f.opponents.open({f.device, f.world, f.weapons, f.effects, f.audio, root, 1}, f.players);
+    auto& critters = f.opponents.critters();
+    // Health for every charge's blow.
+    critters.open(f.device, root, nullptr, {.health = 100}, 'G');
+    const auto golem = critters.spawn(CombatantKind::Golem, {}, 0);
+    REQUIRE(golem);
+    WorldCollision floor;
+    CollisionTriangle first;
+    first.vertices = {Vec3{-100, 0, -100}, Vec3{100, 0, -100}, Vec3{100, 0, 100}};
+    first.normal = {0, 1, 0};
+    first.object = 0;
+    CollisionTriangle second = first;
+    second.vertices = {Vec3{-100, 0, -100}, Vec3{100, 0, 100}, Vec3{-100, 0, 100}};
+    floor.build({first, second});
+    auto& player = f.players[0];
+    test::MotionScript events;
+    test::ScriptedMotion level{events};
+    events.perform = [&](usize index, PartyMotion::Action action) {
+        if (action == PartyMotion::Action::Ram) {
+            f.attacks.ramBarrels(index, f.players, f.targets);
+        }
+    };
+    events.resolveMovement = [&](usize, const Vec3& from, const Vec3& to) {
+        return f.opponents.resolveMovement(
+            player.actor, from, to,
+            {.autoAttack = stop, .charging = player.figure->animator().shoving()});
+    };
+    std::array<PlayInput, 4> inputs;
+    const auto update = [&] {
+        PartyMotion::step(f.players, inputs, false, 0, 2, 1.0f / 30, floor, level);
+    };
+    const auto across = [](const Vec3& a, const Vec3& b) {
+        return glm::length(Vec2{a.x - b.x, a.z - b.z});
+    };
+    // Whether the collision centre stands inside a solid part's or the body's whole-width reach.
+    const auto inside = [&] {
+        const Vec3 centre = player.actor.followPoint();
+        return std::ranges::any_of(critters.targets(true), [&](const MissileTarget& volume) {
+            const auto cylinder = BodyCollision::critterContact(volume, player.actor.reach());
+            return std::abs(centre.y - cylinder.centre.y) <= cylinder.halfHeight &&
+                   across(centre, cylinder.centre) < cylinder.radius - 1e-4f;
+        });
+    };
+    SECTION("a strafe") {
+        player.actor.spawn(3, {}, f.classes.stats(0), {1.5f, 0, -20}, 0);
+        player.figure = PlayerFigure::load(f.device, root, player.actor.save(), Entrance::Skip);
+        REQUIRE(player.figure);
+        f.targets.players = f.players;
+        inputs[3].strafe = true;
+        inputs[3].move = {{0, 1}, 1};
+        f32 stride = 0;
+        std::optional<Vec3> cut; // where the first step left short of the stick's ended
+        for (s32 tick = 0; tick < 240; ++tick) {
+            const Vec3 before = player.actor.position();
+            update();
+            const Vec3 now = player.actor.position();
+            const f32 moved = across(now, before);
+            if (stop) {
+                CHECK_FALSE(inside());
+                if (cut) {
+                    CHECK(across(now, *cut) < 1e-4f);
+                } else if (moved < 0.5f * stride) {
+                    cut = now;
+                }
+            }
+            stride = std::max(stride, moved);
+        }
+        CAPTURE(stride, player.actor.position().x, player.actor.position().z);
+        if (stop) {
+            REQUIRE(cut);
+            CHECK(cut->z < critters.positionOf(*golem).z);
+        } else {
+            CHECK(player.actor.position().z > critters.positionOf(*golem).z + 3);
+        }
+        // Turning back frees the body either way.
+        const Vec3 turned = player.actor.position();
+        inputs[3].move = {{0, -1}, 1};
+        for (s32 tick = 0; tick < 30; ++tick) {
+            update();
+        }
+        CHECK(across(player.actor.position(), turned) > 2);
+    }
+    SECTION("a charge") {
+        // A top-speed class: a jester of level 99 charges 0.62 a 30 Hz step, over twice
+        // kRamReach, so where it is held short varies over that whole step with where it starts.
+        constexpr s32 kJester = 7;
+        CharacterSave save;
+        save.character = kJester;
+        save.progress().experience = levelExperience(99);
+        player.actor.spawn(3, save, f.classes.stats(kJester), {0, 0, -30}, 0);
+        player.figure = PlayerFigure::load(f.device, root, save, Entrance::Skip);
+        REQUIRE(player.figure);
+        f.targets.players = f.players;
+        const f32 stride = player.actor.speed() * PlayerAnimator::kChargePace / 30;
+        REQUIRE(stride > 0.6f);
+        // Where a walk up z from the south first touches the golem.
+        std::optional<Vec3> contact;
+        for (Vec3 at = player.actor.position(); !contact && at.z < 0;) {
+            const Vec3 wanted = at + Vec3{0, 0, 0.25f};
+            at = f.opponents.resolveMovement(player.actor, at, wanted);
+            if (glm::distance(at, wanted) > 1e-4f) {
+                contact = at;
+            }
+        }
+        REQUIRE(contact);
+        constexpr s32 kStarts = 8;
+        for (s32 start = 0; start < kStarts; ++start) {
+            CAPTURE(start);
+            player.actor.place(*contact -
+                               Vec3{0, 0, 2 + stride * static_cast<f32>(start) / kStarts});
+            player.actor.turnTo(0);
+            player.turbo.add(100);
+            inputs[3] = {};
+            inputs[3].chargePressed = true;
+            update();
+            inputs[3].chargePressed = false;
+            REQUIRE(player.figure->animator().shoving());
+            s32 blows = 0;
+            std::optional<Vec3> held;
+            for (s32 tick = 0; tick < 60 && player.figure->animator().shoving(); ++tick) {
+                const f32 health = critters.healthOf(*golem);
+                const Vec3 before = player.actor.position();
+                update();
+                blows += critters.healthOf(*golem) < health ? 1 : 0;
+                if (!stop) {
+                    continue;
+                }
+                CHECK_FALSE(inside());
+                if (held) {
+                    CHECK(across(player.actor.position(), *held) < 1e-4f);
+                } else if (across(player.actor.position(), before) < 1e-4f) {
+                    held = player.actor.position();
+                }
+            }
+            CHECK(blows == 1);
+            if (stop) {
+                REQUIRE(held);
+                CAPTURE(across(*held, *contact));
+                CHECK(held->z < contact->z);
+            }
+            for (s32 tick = 0; tick < 60 && player.figure->animator().shoving(); ++tick) {
+                update();
+            }
+            REQUIRE_FALSE(player.figure->animator().shoving());
+        }
+    }
+    f.opponents.close();
+}
+
 TEST_CASE("temporary Pojo can exchange real golem blows then retreat and reapproach",
           "[game][player-attacks][pojo-duel][assets]") {
     constexpr s32 kJester = 7;

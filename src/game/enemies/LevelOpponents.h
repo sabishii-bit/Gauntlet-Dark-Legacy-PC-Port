@@ -38,6 +38,13 @@
 namespace gdl::game {
 struct GeneratorFeedbackEmission;
 class ImportedOpponentCues;
+/** How a player's step answers the swarm, great ones and boss it runs into (PlayerMotion,
+ * pmotion.c 1385-1417): under Auto Attack it stops dead, a charge only at the great ones and
+ * the boss; otherwise it slides along them. */
+struct CreatureContact {
+    bool autoAttack = false; ///< the room's Auto Melee and the character's own control
+    bool charging = false;   ///< the body is in its charge (SHOVE)
+};
 /** Level enemy population, damage/reward routing and following combat cues.
  * Owns enemy archives, missiles, generators and the boss meter. Borrowed level services
  * must outlive close(). Its hosts are answered synchronously at their phases, interleaving
@@ -190,7 +197,8 @@ public:
     /** Feedback-only view of the roster; imported worlds have no GDL level record,
      * so their borrowed voices use an otherwise empty non-boss view. */
     const LevelInfo* levelNow() const;
-    Vec3 resolveMovement(const PlayerActor& player, const Vec3& from, const Vec3& to) const;
+    Vec3 resolveMovement(const PlayerActor& player, const Vec3& from, const Vec3& to,
+                         CreatureContact contact = {}) const;
     /** Routes a contact by player identity; breath uses a shared quarter-second gate. */
     static bool applyCritterBlow(const CombatBlow& blow, std::span<PlayerRuntime> players,
                                  OpponentHost& host, const CombatCover& cover);
@@ -249,6 +257,10 @@ public:
     static f32 attenuation(const Vec3& at, std::span<const Vec3> hearers);
 
 private:
+    /** Whether a player's step runs into one of the swarm (not while `charging`), a great one or
+     * the boss, as PlayerCollideItems finds them (pmotion.c 4101-4234). */
+    bool meetsCreature(const PlayerActor& player, const Vec3& from, const Vec3& to,
+                       bool charging) const;
     /** An imported level's own signal that its boss's floor moves it, sampled before the
      * update; true for a boss that does not wait for its floor, and on the base game, whose
      * triggers answer instead (supportTriggers). */

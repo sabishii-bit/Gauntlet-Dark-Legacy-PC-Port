@@ -4,6 +4,7 @@
 #include <cmath>
 #include <vector>
 
+#include "game/combat/BodyContact.h"
 #include "game/players/PlayerActor.h"
 
 namespace gdl::game {
@@ -18,6 +19,13 @@ struct Circle {
 ContactCylinder BodyCollision::critterContact(const MissileTarget& volume, f32 width) {
     const f32 halfHeight = 0.5f * volume.height;
     return {volume.base + Vec3{0, halfHeight, 0}, width + volume.radius, width + halfHeight};
+}
+
+bool BodyCollision::touches(const Vec3& from, const Vec3& to,
+                            std::span<const ContactCylinder> cylinders) {
+    return std::ranges::any_of(cylinders, [&](const ContactCylinder& cylinder) {
+        return movementTouchesBody(from, to, cylinder.centre, cylinder.radius, cylinder.halfHeight);
+    });
 }
 
 Vec3 BodyCollision::resolveItems(const Vec3& from, const Vec3& to, f32 radius, f32 height,

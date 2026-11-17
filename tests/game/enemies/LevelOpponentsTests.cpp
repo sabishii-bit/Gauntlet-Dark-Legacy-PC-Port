@@ -49,6 +49,7 @@
 #include "game/critters/CombatantKind.h"
 #include "game/critters/CritterStatues.h"
 #include "game/enemies/BomberTestSupport.h"
+#include "game/enemies/DeathTestSupport.h"
 #include "game/enemies/EnemyKinds.h"
 #include "game/enemies/EnemyMind.h"
 #include "game/enemies/LevelOpponents.h"
@@ -1543,6 +1544,140 @@ TEST_CASE("a great one's solid part holds a player's collision centre a whole wi
     CHECK(stop.x == 0);
     CHECK(stop.y == 0);
     CHECK(stop.z == Catch::Approx(stopZ).margin(1e-3));
+    opponents.close();
+}
+
+TEST_CASE("Auto Attack stops a player's step at the swarm and the great ones, a charge only at the "
+          "great ones, and never at a generator",
+          "[level-opponents][collision][auto-attack-stop]") {
+    // PlayerCollideItems meets one of the swarm whose middle a step ends within col_radius and its
+    // own radius of, or a great one's solid part or body, and Auto Attack then zeroes the step but
+    // for its rise (pmotion.c 4101-4234, 0x80082820-0x8008283C). Generators are another sweep's.
+    const auto root = writeContactGolem(4);
+    writeMeleeEnemy(root, kGruntKind);
+    writeTextFile(root / "MONSTERS/GRU/objects.json", R"({"objects":[
+      {"index":0,"name":"BODY","file":"body.obj","meshTriangles":1},
+      {"index":1,"name":"GEN_GRU1L1","file":"body.obj","meshTriangles":1}]})");
+    test::convertModelFixture(root / "MONSTERS/GRU");
+    writeTextFile(root / "world.json", R"({"objects":[{"name":"GROUND","position":[0,0,0]}],
+      "itemInfos":[{"type":3,"name":"GRU","radius":2,"height":5,
+        "xSize":3,"zSize":1,"hitPoints":10}],
+      "itemInstances":[{"info":0,"position":[10,0,0],"rotation":[0,0.7,0],
+        "params":[1,0,7,0,5,0,20,0,0,0,0,0]}]})");
+    test::FakeRenderDevice device;
+    LevelOpponents opponents;
+    WorldLayout layout;
+    REQUIRE(layout.load(root));
+    auto& enemies = opponents.enemies();
+    enemies.open(device, root, nullptr, 4, {}, 1);
+    REQUIRE(opponents.generators().bind(device, layout, enemies, nullptr, {}, 1));
+    REQUIRE(opponents.generators().count() == 1);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    const auto grunt = enemies.spawn(
+        EnemySpawn{.kind = kGruntKind, .position = {0, 0, 0}, .placed = true, .asleep = true}, {});
+    REQUIRE(grunt);
+    // The golem's one solid part stands four across and up or down about (-20, 4, 3).
+    opponents.critters().open(device, root, nullptr, {}, 'G');
+    REQUIRE(opponents.critters().spawnGolem(Vec3{-20, 0, 0}, 0));
+    PlayerActor player;
+    player.spawn(0, {}, nullptr, {}, 0);
+    REQUIRE(player.reach() + enemies.radiusOf(*grunt) == 3);
+    constexpr CreatureContact kAuto{.autoAttack = true};
+    constexpr CreatureContact kCharge{.autoAttack = true, .charging = true};
+    // Where 64 quarter-unit steps from `at` along `way` end, and how near the grunt they came.
+    const auto walk = [&](Vec3 at, const Vec3& way, CreatureContact contact) {
+        f32 nearest = glm::length(Vec2{at.x, at.z});
+        for (s32 step = 0; step < 64; ++step) {
+            at = opponents.resolveMovement(player, at, at + way, contact);
+            nearest = std::min(nearest, glm::length(Vec2{at.x, at.z}));
+        }
+        return std::pair{at, nearest};
+    };
+    const Vec3 north{0, 0, 0.25f};
+    const Vec3 south{0, 0, -0.25f};
+    // Without Auto Attack the player slides round the grunt's footprint, nearer than the
+    // original's col_radius would let it come.
+    const auto [slid, slidNearest] = walk({0.6f, 0, -6}, north, {});
+    CHECK(slidNearest == Catch::Approx(player.radius() + 1.5f).margin(1e-3));
+    CHECK(slid.x > 1.1f);
+    // With it, the step from 3.06 off the grunt's middle that would end 2.81 off is the first
+    // stopped, and so is every one after it; one ending 3.31 off goes on, as does a clear one.
+    CHECK(walk({0.6f, 0, -6}, north, kAuto).first == Vec3{0.6f, 0, -3});
+    CHECK(opponents.resolveMovement(player, {0.6f, 0, -3.5f}, {0.6f, 0, -3.25f}, kAuto) ==
+          Vec3{0.6f, 0, -3.25f});
+    CHECK(opponents.resolveMovement(player, {5, 0, -6}, {5, 0, -5.75f}, kAuto) ==
+          Vec3{5, 0, -5.75f});
+    // A stopped step keeps its rise.
+    CHECK(opponents.resolveMovement(player, {0.6f, 0, -3}, {0.6f, 0.5f, -2.75f}, kAuto) ==
+          Vec3{0.6f, 0.5f, -3});
+    // A charge is not stopped by the grunt. The original runs it on into the grunt at three
+    // quarters of its pace (0x80082724-0x80082760, 0x80347C00); the port slides it round instead.
+    CHECK(opponents.resolveMovement(player, {0.6f, 0, -3}, {0.6f, 0, -2.75f}, kCharge) ==
+          Vec3{0.6f, 0, -2.75f});
+    CHECK(walk({0.6f, 0, -6}, north, kCharge).second < 3);
+    // The golem's part stops a step that would touch it, a charge's too, where the slide holds
+    // the player at its edge, 6.5.
+    CHECK(walk({-20, 0, 10.1f}, south, {}).first.z == Catch::Approx(6.5f).margin(1e-3));
+    for (const CreatureContact contact : {kAuto, kCharge}) {
+        CAPTURE(contact.charging);
+        const Vec3 stop = walk({-20, 0, 10.1f}, south, contact).first;
+        CHECK(stop.x == -20);
+        CHECK(stop.y == 0);
+        CHECK(stop.z == Catch::Approx(6.6f).margin(1e-4));
+    }
+    // A generator pushes a step out the same way whatever its contact.
+    const Vec3 from{10, 0, -12};
+    const Vec3 to{10, 0, 12};
+    const Vec3 pushed = opponents.resolveMovement(player, from, to);
+    CHECK(glm::distance(pushed, to) > player.radius());
+    CHECK(opponents.resolveMovement(player, from, to, kAuto) == pushed);
+    CHECK(opponents.resolveMovement(player, from, to, kCharge) == pushed);
+    // A grunt killed stops nothing.
+    EnemyHit hit;
+    hit.damage = 1000000;
+    enemies.hurt(*grunt, hit);
+    REQUIRE_FALSE(enemies.alive(*grunt));
+    CHECK(opponents.resolveMovement(player, {0.6f, 0, -3}, {0.6f, 0, -2.75f}, kAuto) ==
+          Vec3{0.6f, 0, -2.75f});
+    opponents.close();
+}
+
+TEST_CASE("an Auto Attack step into Death is not stopped, so a halo wearer still reaches its hold",
+          "[level-opponents][death][auto-attack-stop]") {
+    // The halo's hold wants the bodies within a thousandth of touching (deathContactSlot), where
+    // only the slide brings its wearer. The original stops the step dead at Death too, and
+    // drains him through the contact it still finds.
+    test::FakeRenderDevice device;
+    LevelOpponents opponents;
+    auto& enemies = opponents.enemies();
+    enemies.open(device, test::deathArchive(), nullptr, 1, {}, 1);
+    REQUIRE(enemies.loadKind(kDeathKind));
+    const auto death = enemies.spawn({.kind = kDeathKind, .tier = 1, .placed = true}, {});
+    REQUIRE(death);
+    const Vec3 at = enemies.positionOf(*death);
+    for (const bool halo : {true, false}) {
+        CAPTURE(halo);
+        CharacterSave save;
+        if (halo) {
+            save.progress().inventory.addPowerup(powerup::kArmor, armor::kAntiDeath, 0, -1);
+        }
+        PlayerActor player;
+        player.spawn(0, save, nullptr, at + Vec3{0, 0, -8}, 0);
+        Vec3 slid = player.position();
+        Vec3 stepped = slid;
+        for (s32 step = 0; step < 48; ++step) {
+            slid = opponents.resolveMovement(player, slid, slid + Vec3{0, 0, 0.25f});
+            stepped = opponents.resolveMovement(player, stepped, stepped + Vec3{0, 0, 0.25f},
+                                                {.autoAttack = true});
+            REQUIRE(stepped == slid);
+        }
+        const f32 touch = player.radius() + enemies.radiusOf(*death);
+        if (halo) {
+            CHECK(stepped.z - at.z == Catch::Approx(-touch).margin(1e-3));
+        } else {
+            CHECK(stepped.z > at.z + touch); // through him, as before
+        }
+    }
     opponents.close();
 }
 

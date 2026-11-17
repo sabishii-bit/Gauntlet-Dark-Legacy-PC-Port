@@ -31,6 +31,11 @@ public:
                         std::span<const ContactCylinder> cylinders);
     /** `volume` as a player `width` wide meets it (CritterMoveNodeCol, CritterExpNodeColSub). */
     static ContactCylinder critterContact(const MissileTarget& volume, f32 width);
+    /** Whether a step of the collision centre from `from` to `to` meets one of `cylinders` by
+     * LineCylinderCollide's directional test (0x8002FA70): from inside one, any step but one
+     * heading away from it meets it. */
+    static bool touches(const Vec3& from, const Vec3& to,
+                        std::span<const ContactCylinder> cylinders);
     /** Slide against authored item boxes, subdividing long steps to prevent tunnelling. */
     static Vec3 resolveItems(const Vec3& from, const Vec3& to, f32 radius, f32 height,
                              std::span<const Obstacle> items);

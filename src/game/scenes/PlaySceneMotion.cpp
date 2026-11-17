@@ -101,7 +101,11 @@ public:
                m_scene.m_services->config->combat.autoMelee;
     }
     Vec3 resolveMovement(usize i, const Vec3& from, const Vec3& to) const override {
-        return m_scene.m_opponents.resolveMovement(m_scene.m_players[i].actor, from, to);
+        const auto& player = m_scene.m_players[i];
+        return m_scene.m_opponents.resolveMovement(
+            player.actor, from, to,
+            {.autoAttack = autoAttacks(i),
+             .charging = player.figure != nullptr && player.figure->animator().shoving()});
     }
     std::optional<Vec3> startPoint() const override {
         if (const WorldLocator* start = m_scene.m_world->startPoint(0)) {
@@ -146,6 +150,13 @@ public:
     }
 
 private:
+    /** Whether a member plays with the original's Auto Attack: the room's Auto Melee and the
+     * character's own control, which together also force its swing. */
+    bool autoAttacks(usize i) const {
+        return m_scene.m_services->config != nullptr &&
+               m_scene.m_services->config->combat.autoMelee &&
+               m_scene.m_players[i].actor.save().autoAttack;
+    }
     /** Whether the level's legend rite restrains the party as the base game's does: always
      * outside an imported level, else as the level says. */
     bool riteRestrains() const {

@@ -170,6 +170,7 @@ add_executable(tests
     game/scenes/SceneDescriptionTests.cpp
     game/app/GameCursorTests.cpp
     game/scenes/PlaySceneRumbleTests.cpp
+    game/scenes/PlaySceneMotionTests.cpp
     game/scenes/HapticsTests.cpp
     game/scenes/ClassUnlocksTests.cpp
     game/scenes/PlaySceneSoundIdentityTests.cpp

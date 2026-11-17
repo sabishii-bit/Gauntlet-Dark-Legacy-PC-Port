@@ -323,15 +323,19 @@ void PlayerAttacks::ramBarrels(usize index, std::span<PlayerRuntime> players,
     }
     // A body run into is thrown down (PlayerMotion_DamageTarget, 0x20): swarm and great ones,
     // never a boss, each once a charge. Each is reached a margin past the width the charge's
-    // movement stops against it by.
+    // movement stops against it by, from where the body stands or where its step meant to end:
+    // a step Auto Attack stops dead can leave the body up to a step short of what it met.
     const f32 blow = PowerupEffects::of(actor.save().progress().inventory).grown() ? 2 * kChargeBlow
                                                                                    : kChargeBlow;
     const Vec3 facing = actor.facing();
+    const auto& step = players[index].attackStep;
     const auto ram = [&](const MissileTarget& target, TargetFamily family, f32 width,
                          const auto& strike) {
         const usize key = AttackTargetId::of(family, target.id).key();
+        const f32 reach = width + kRamReach;
         if (std::ranges::find(rammed, key) != rammed.end() ||
-            !target.touches(actor.followPoint(), width + kRamReach)) {
+            (!target.touches(actor.followPoint(), reach) &&
+             !(step && target.touches(step->to, reach)))) {
             return;
         }
         rammed.push_back(key);

@@ -527,8 +527,39 @@ void LevelOpponents::advanceDeathShots() {
     std::erase_if(m_sim.deathShots, [](const DeathShot& shot) { return shot.flying; });
 }
 
-Vec3 LevelOpponents::resolveMovement(const PlayerActor& player, const Vec3& from,
-                                     const Vec3& to) const {
+bool LevelOpponents::meetsCreature(const PlayerActor& player, const Vec3& from, const Vec3& to,
+                                   bool charging) const {
+    // The step's collision centre, met by col_radius, the class's whole width (pmotion.c
+    // 1357-1368).
+    const Vec3 lift{0.0f, player.followPoint().y - player.position().y, 0.0f};
+    const Vec3 start = from + lift;
+    const Vec3 end = to + lift;
+    // A charge runs on into the swarm (0x80082724-0x80082760). Death is left to the slide,
+    // which brings a halo wearer to the touch its hold wants.
+    if (!charging &&
+        m_enemies.playerContact(start, end, player.reach(), 0.5f * player.height(), nullptr, false)
+            .has_value()) {
+        return true;
+    }
+    // CritterMoveNodeCol meets a great one's solid parts or else its body; no boss part is
+    // solid, so a boss is met by its body.
+    std::vector<ContactCylinder> cylinders;
+    const auto meet = [&](std::span<const MissileTarget> volumes) {
+        for (const MissileTarget& volume : volumes) {
+            cylinders.push_back(BodyCollision::critterContact(volume, player.reach()));
+        }
+    };
+    meet(m_critters.targets(true));
+    meet(m_bosses.targets(true));
+    return BodyCollision::touches(start, end, cylinders);
+}
+
+Vec3 LevelOpponents::resolveMovement(const PlayerActor& player, const Vec3& from, const Vec3& to,
+                                     CreatureContact contact) const {
+    // Auto Attack stops the step dead and keeps only its rise (0x80082820-0x8008283C).
+    if (contact.autoAttack && meetsCreature(player, from, to, contact.charging)) {
+        return {from.x, to.y, from.z};
+    }
     auto bodies = m_enemies.targets();
     if ((PowerupEffects::of(player.save().progress().inventory).armor & DeathRules::kProtection) ==
         0) {

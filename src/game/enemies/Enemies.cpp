@@ -2443,12 +2443,13 @@ std::vector<MeleeGeometry::Target> Enemies::meleeGeometry() const {
 }
 
 std::optional<s32> Enemies::playerContact(const Vec3& from, const Vec3& to, f32 width,
-                                          f32 halfHeight, f32* endpointDistance) const {
+                                          f32 halfHeight, f32* endpointDistance,
+                                          bool withDeath) const {
     std::array<MeleeGeometry::Target, kMost> targets;
     usize count = 0;
     for (s32 i = 0; i < m_simulation.most; ++i) {
         const Enemy& enemy = m_simulation.enemies[static_cast<usize>(i)];
-        if (alive(i) && !intangible(enemy.kind)) {
+        if (alive(i) && !intangible(enemy.kind) && (withDeath || enemy.kind != kDeathKind)) {
             targets[count++] = meleeBody(i);
         }
     }
