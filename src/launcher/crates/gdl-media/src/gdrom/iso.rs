@@ -161,10 +161,12 @@ struct Record<'a> {
 }
 
 /// The ISO 9660 volume the disc's data tracks hold, read as the Dreamcast extractor reads it: the
-/// volume descriptor at [`PVD_LBA`] and its root record, then the tree from that root, with
-/// `cancel` looked at before each chunk read. Refused by the first rule the volume breaks.
+/// volume descriptor at [`PVD_LBA`] and its root record, then the tree from that root. The
+/// descriptor is one sector, read whole; `cancel` is looked at before each chunk a directory's
+/// read takes, since a disc decides how many directories there are and how long. Refused by the
+/// first rule the volume breaks.
 pub(super) fn read_volume(tracks: &mut Tracks, cancel: &Cancel) -> Result<Volume, MediaError> {
-    let (name, root) = read_descriptor(tracks, cancel)?;
+    let (name, root) = read_descriptor(tracks)?;
     let mut walk = Walk::new(tracks, cancel);
     walk.directory(root, None, 0)?;
     Ok(Volume {
@@ -177,8 +179,8 @@ pub(super) fn read_volume(tracks: &mut Tracks, cancel: &Cancel) -> Result<Volume
 /// gives them: refused unless the descriptor is a primary one of ISO 9660 whose blocks are a
 /// sector's user data, the volume's name ASCII, and its root record one the walk reads and a
 /// directory's. The name is judged before the root record, as the extractor judges them.
-fn read_descriptor(tracks: &mut Tracks, cancel: &Cancel) -> Result<(String, Extent), MediaError> {
-    let descriptor = tracks.read(PVD_LBA, DESCRIPTOR_EXTENT, cancel)?;
+fn read_descriptor(tracks: &mut Tracks) -> Result<(String, Extent), MediaError> {
+    let descriptor = tracks.read(PVD_LBA, DESCRIPTOR_EXTENT, &Cancel::default())?;
     if !descriptor.starts_with(STANDARD_ID) || both16(&descriptor, BLOCK_SIZE_AT)? != BLOCK_SIZE {
         return Err(MediaError::disc(
             DiscRule::VolumeDescriptor,
@@ -1095,8 +1097,8 @@ mod tests {
         // two more entries, are taken; with room for one, the folder is and its file is refused.
         let (_dir, sheet) = written(&DiscSet::one_file(b"F;1", &[b"D"], Edc::Zero));
         let cancel = Cancel::default();
-        let (_, mut tracks, _) = open_head(&sheet, &SCRIPT_RULES, &cancel).unwrap();
-        let (_, root) = read_descriptor(&mut tracks, &cancel).unwrap();
+        let (_, mut tracks, _) = open_head(&sheet, &SCRIPT_RULES).unwrap();
+        let (_, root) = read_descriptor(&mut tracks).unwrap();
         {
             let mut walk = Walk {
                 taken: SCRIPT_ENTRIES - 2,
@@ -1284,11 +1286,12 @@ mod tests {
         let going = Cancel::default();
         let stopped = Cancel::default();
         stopped.cancel();
-        let (_, mut tracks, _) = open_head(&sheet, &SCRIPT_RULES, &going).unwrap();
-        // Before the volume descriptor is read, and before each directory is.
+        let (_, mut tracks, _) = open_head(&sheet, &SCRIPT_RULES).unwrap();
+        // The volume's reads stop before the root directory's, once the descriptor's one sector
+        // is read, and a walk before the directory it is given.
         let volume = read_volume(&mut tracks, &stopped);
         assert!(matches!(volume, Err(MediaError::Cancelled)), "{volume:?}");
-        let (_, root) = read_descriptor(&mut tracks, &going).unwrap();
+        let (_, root) = read_descriptor(&mut tracks).unwrap();
         {
             let mut walk = Walk::new(&mut tracks, &stopped);
             let walked = walk.directory(root, None, 0);

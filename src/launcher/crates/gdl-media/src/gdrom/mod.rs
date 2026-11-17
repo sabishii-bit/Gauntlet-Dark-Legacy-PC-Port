@@ -160,7 +160,7 @@ pub struct DiscHead {
 /// [`BOOT_LBA`]; under any rules, one must hold that LBA. Refused by the first rule the disc
 /// breaks. The files are only ever read, and are closed before this returns.
 pub fn read_head(sheet: &Path, rules: &DiscRules) -> Result<DiscHead, MediaError> {
-    let (sheet, tracks, boot) = open_head(sheet, rules, &Cancel::default())?;
+    let (sheet, tracks, boot) = open_head(sheet, rules)?;
     Ok(DiscHead {
         sheet,
         tracks: tracks.placed,
@@ -204,10 +204,11 @@ impl GdRom {
     /// boot area, and the tree of directories from its root, each record's identifier judged as
     /// one name of the extracted tree, its version dropped, before it is joined to its folder's
     /// path, and each record's extent held to the data tracks. The data tracks' files stay open
-    /// for the reads that follow. The job's cancel is looked at before each chunk the opening
-    /// reads: the boot area's, the volume descriptor's and each directory's.
+    /// for the reads that follow. The head and the volume descriptor are reads of fixed, small
+    /// sizes, taken whole whatever the job asks; the job's cancel is looked at before each chunk
+    /// a directory's read takes, since a disc decides how many directories there are and how long.
     pub fn open(sheet: &Path, rules: &DiscRules, job: &Job<'_>) -> Result<GdRom, MediaError> {
-        let (sheet, mut tracks, boot) = open_head(sheet, rules, job.cancel)?;
+        let (sheet, mut tracks, boot) = open_head(sheet, rules)?;
         let volume = iso::read_volume(&mut tracks, job.cancel)?;
         Ok(GdRom {
             sheet,
@@ -407,13 +408,8 @@ impl TrackFile {
 }
 
 /// The disc's sheet, its data tracks placed and in LBA order with their files open, and its boot
-/// area, as [`read_head`] reads them, with `cancel` looked at before each chunk of the boot area
-/// is read.
-fn open_head(
-    path: &Path,
-    rules: &DiscRules,
-    cancel: &Cancel,
-) -> Result<(Sheet, Tracks, IpBin), MediaError> {
+/// area, as [`read_head`] reads them.
+fn open_head(path: &Path, rules: &DiscRules) -> Result<(Sheet, Tracks, IpBin), MediaError> {
     let sheet = read_sheet(path)?;
     let folder = path.parent().unwrap_or(Path::new(""));
     let mut placed = Vec::new();
@@ -460,7 +456,7 @@ fn open_head(
             format!("No data track holds LBA {BOOT_LBA}, where a GD-ROM's boot area begins");
         return Err(MediaError::disc(DiscRule::HighDensityStart, detail));
     }
-    let boot = tracks.read(BOOT_LBA, BOOT_EXTENT, cancel)?;
+    let boot = tracks.read(BOOT_LBA, BOOT_EXTENT, &Cancel::default())?;
     if !ipbin::names_gauntlet_legends(&boot) {
         return Err(MediaError::disc(
             DiscRule::NotGauntletLegends,
@@ -1585,11 +1581,28 @@ mod tests {
         );
         assert_eq!(error.rule(), "io");
         assert!(error.to_string().contains("LONG.BIN"), "{error}");
+    }
 
-        // Opening stops too, before the boot area is read, when its job is asked to.
-        let (_dir, sheet) = written(&set);
-        let error = GdRom::open(&sheet, &SCRIPT_RULES, &quiet(&cancel)).unwrap_err();
-        assert!(matches!(error, MediaError::Cancelled), "{error:?}");
+    #[test]
+    fn an_opening_stops_where_its_volume_is_read_once_its_job_is_asked_to() {
+        // Asked to stop before it starts, the opening reads the disc's head and its volume
+        // descriptor, reads of fixed sizes, and stops before the first chunk of the root
+        // directory, under either rules. Asked nothing, it opens.
+        let stopped = Cancel::default();
+        stopped.cancel();
+        let sets = [
+            (DiscSet::small(Edc::Zero), SCRIPT_RULES),
+            (
+                DiscSet::full(Edc::Computed).with_audio_files(),
+                INSTALL_RULES,
+            ),
+        ];
+        for (set, rules) in sets {
+            let (_dir, sheet) = written(&set);
+            let error = GdRom::open(&sheet, &rules, &quiet(&stopped)).unwrap_err();
+            assert!(matches!(error, MediaError::Cancelled), "{error:?}");
+            assert!(GdRom::open(&sheet, &rules, &quiet(&Cancel::default())).is_ok());
+        }
     }
 
     #[test]
