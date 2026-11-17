@@ -256,6 +256,8 @@ function(gdl_add_expansion_game_sources target)
         "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/shared/characters/LegendsVisit.h"
         "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/shared/enemies/LegendsActors.cpp"
         "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/shared/enemies/LegendsActors.h"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/shared/hud/LegendsBossMeters.cpp"
+        "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/shared/hud/LegendsBossMeters.h"
         "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/shared/hud/LegendsHudArt.cpp"
         "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/shared/hud/LegendsHudArt.h"
         "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/shared/hud/LegendsHudClock.cpp"

@@ -34,6 +34,7 @@
 #include "expansions/n64/hud/LegendsN64HudText.h"
 #include "expansions/n64/hud/LegendsN64Plaque.h"
 #include "expansions/n64/hud/LegendsN64Scroll.h"
+#include "expansions/shared/hud/LegendsBossMeters.h"
 #include "expansions/shared/hud/LegendsHudArt.h"
 #include "expansions/shared/hud/LegendsHudClock.h"
 #include "expansions/shared/hud/LegendsHudStyleIds.h"
@@ -1092,25 +1093,7 @@ void LegendsN64HudPainter::drawBossMeters(HudFrame& frame, const HudView& view) 
             // keeps Dark Legacy's crop.
             widths = meter.look().widths;
         }
-        const s32 pieces = std::min(layout.pieces, BossMeter::kMostPieces);
-        for (s32 piece = 0; piece < pieces; ++piece) {
-            const f32 x = static_cast<f32>(layout.left) + strip * static_cast<f32>(piece);
-            if (const Texture* back =
-                    meter.pieceTexture(frame.device, BossMeter::MeterPart::Background, piece)) {
-                frame.canvas.draw(*back, Rect{x, top, strip, static_cast<f32>(back->height())});
-            }
-            const f32 width =
-                std::clamp(static_cast<f32>(widths.at(static_cast<usize>(piece))), 0.0f, strip);
-            if (width <= 0) {
-                continue;
-            }
-            if (const Texture* fill =
-                    meter.pieceTexture(frame.device, BossMeter::MeterPart::Fill, piece)) {
-                // Cropped, not squeezed: the fill's left part.
-                frame.canvas.draw(*fill, Rect{x, top, width, static_cast<f32>(fill->height())},
-                                  Rect{0, 0, width / strip, 1}, Color::white());
-            }
-        }
+        drawLegendsBossMeter(frame.canvas, frame.device, meter, strip, top, widths, Color::white());
     }
 }
 

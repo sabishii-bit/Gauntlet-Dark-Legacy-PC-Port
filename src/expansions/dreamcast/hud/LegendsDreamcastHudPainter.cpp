@@ -32,6 +32,7 @@
 #include "expansions/dreamcast/formats/LegendsDreamcastTexture.h"
 #include "expansions/dreamcast/hud/LegendsDreamcastHudLayout.h"
 #include "expansions/shared/formats/LegendsMap.h"
+#include "expansions/shared/hud/LegendsBossMeters.h"
 #include "expansions/shared/hud/LegendsHudArt.h"
 #include "formats/FontFile.h"
 #include "game/characters/ClassData.h"
@@ -613,36 +614,14 @@ void LegendsDreamcastHudPainter::drawBossMeters(HudFrame& frame, const HudView& 
         return;
     }
     const BossMeters& meters = *view.bossMeters;
-    const Color shade = Color::white().withAlpha(Layout::kMeterOpacity);
-    const auto top = static_cast<f32>(Layout::kMeterTop);
-    const auto strip = static_cast<f32>(BossMeter::kPieceWidth);
     for (usize index = 0; index < meters.count(); ++index) {
         const BossMeter& meter = meters.meter(index);
-        if (!meter.showing()) {
-            continue;
-        }
-        const BossMeter::Layout layout = meter.layout();
-        const BossMeter::Look look = meter.look();
-        const s32 pieces = std::min(layout.pieces, BossMeter::kMostPieces);
-        for (s32 piece = 0; piece < pieces; ++piece) {
-            const f32 x = static_cast<f32>(layout.left) + (strip * static_cast<f32>(piece));
-            if (const Texture* back =
-                    meter.pieceTexture(frame.device, BossMeter::MeterPart::Background, piece)) {
-                frame.canvas.draw(*back, Rect{x, top, strip, static_cast<f32>(back->height())},
-                                  shade);
-            }
-            const s32 width =
-                std::clamp(look.widths.at(static_cast<usize>(piece)), 0, BossMeter::kPieceWidth);
-            if (width <= 0) {
-                continue;
-            }
-            if (const Texture* fill =
-                    meter.pieceTexture(frame.device, BossMeter::MeterPart::Fill, piece)) {
-                // Cropped, not squeezed: the fill's left part.
-                const auto across = static_cast<f32>(width);
-                frame.canvas.draw(*fill, Rect{x, top, across, static_cast<f32>(fill->height())},
-                                  Rect{0, 0, across / strip, 1}, shade);
-            }
+        if (meter.showing()) {
+            const BossMeter::Look look = meter.look();
+            drawLegendsBossMeter(frame.canvas, frame.device, meter,
+                                 static_cast<f32>(BossMeter::kPieceWidth),
+                                 static_cast<f32>(Layout::kMeterTop), look.widths,
+                                 Color::white().withAlpha(Layout::kMeterOpacity));
         }
     }
 }

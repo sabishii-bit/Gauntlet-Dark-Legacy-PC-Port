@@ -440,6 +440,7 @@ add_executable(tests
     expansions/n64/scenes/LegendsN64MusicTests.cpp
     expansions/shared/characters/LegendsProgressTests.cpp
     expansions/shared/characters/LegendsVisitTests.cpp
+    expansions/shared/hud/LegendsBossMetersTests.cpp
     expansions/shared/hud/LegendsHudArtTests.cpp
     expansions/shared/hud/LegendsHudClockTests.cpp
     expansions/shared/hud/LegendsHudStyleIdsTests.cpp
