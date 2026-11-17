@@ -6,6 +6,7 @@
 //! The disc's files are those of the ISO 9660 volume its high-density area holds, walked from
 //! the volume descriptor after the boot area.
 
+use std::fmt;
 use std::fs::{self, File};
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
@@ -182,7 +183,6 @@ pub struct DiscFile {
 /// A GD-ROM dump open for reading: its sheet, its data tracks placed by their sectors' headers,
 /// each with its file open, its boot area, the rules it is read by, and its ISO 9660 volume's
 /// name and files.
-#[derive(Debug)]
 pub struct GdRom {
     /// The sheet it was opened from.
     sheet: Sheet,
@@ -290,9 +290,29 @@ impl GdRom {
     }
 }
 
+impl fmt::Debug for GdRom {
+    /// The rules the disc is read by, where its data tracks lie, its boot area's fields, its
+    /// volume's name and how many files its tree holds: never a path of that tree or of the dump's
+    /// files, which say what the player keeps where, nor a byte of either.
+    fn fmt(&self, to: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let tracks: Vec<(i64, u64)> = self
+            .tracks
+            .placed
+            .iter()
+            .map(|track| (track.first_lba, track.sectors))
+            .collect();
+        to.debug_struct("GdRom")
+            .field("rules", &self.rules)
+            .field("data_tracks", &tracks)
+            .field("boot", &self.boot)
+            .field("volume", &self.volume)
+            .field("files", &self.files.len())
+            .finish_non_exhaustive()
+    }
+}
+
 /// A disc's data tracks in LBA order, each with its file open, and how each sector read from them
 /// is checked.
-#[derive(Debug)]
 struct Tracks {
     /// The tracks, in LBA order.
     placed: Vec<DataTrack>,
@@ -382,7 +402,6 @@ impl Tracks {
 }
 
 /// A track's file, open for reading, and the path it was opened at, which its failures name.
-#[derive(Debug)]
 struct TrackFile {
     /// Where it was opened.
     path: PathBuf,
@@ -1009,6 +1028,43 @@ mod tests {
                 assert_eq!(disc.read(file.lba, file.size).unwrap(), copied, "{path}");
             }
         }
+    }
+
+    #[test]
+    fn a_discs_debug_form_names_none_of_its_paths() {
+        let set = DiscSet::full(Edc::Zero);
+        let (dir, sheet) = written(&set);
+        let disc = GdRom::open(&sheet, &SCRIPT_RULES, &quiet(&Cancel::default())).unwrap();
+        let shown = format!("{disc:?}");
+        // What the disc is read by, where its data tracks lie, its boot area's fields, its
+        // volume's name and how many files its tree holds.
+        let tracks: Vec<(i64, u64)> = disc
+            .data_tracks()
+            .iter()
+            .map(|track| (track.first_lba, track.sectors))
+            .collect();
+        let told = [
+            format!("rules: {SCRIPT_RULES:?}"),
+            format!("data_tracks: {tracks:?}"),
+            format!("boot: {:?}", disc.boot()),
+            format!("volume: {:?}", disc.volume()),
+            format!("files: {}", disc.files().len()),
+        ];
+        for part in told {
+            assert!(shown.contains(&part), "{part} in {shown}");
+        }
+        // Never a name or a path of the disc's tree, of the dump's files or of where they lie.
+        assert_eq!(disc.files().len(), 4);
+        let names = disc
+            .files()
+            .iter()
+            .flat_map(|file| file.path.as_str().split('/'))
+            .chain(set.files.iter().map(|(name, _)| name.as_str()));
+        for name in names {
+            assert!(!shown.contains(name), "{name} in {shown}");
+        }
+        let folder = dir.path().to_string_lossy().into_owned();
+        assert!(!shown.contains(&folder), "{shown}");
     }
 
     #[test]
