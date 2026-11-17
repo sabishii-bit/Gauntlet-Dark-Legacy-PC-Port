@@ -1,9 +1,11 @@
 //! The launcher's modes without a window, for the release scripts, CI and developers at a console:
 //! `--version`, `--check-payload`, which checks the runtime the launcher file carries or a runtime
-//! zip it is given, and `--inspect`, which reports what a folder is to the launcher. They run
-//! before anything builds a window, and what they print is technical text for whoever runs them,
-//! never words for players. A run is handed its arguments, its build, its own file's sections and
-//! the streams to write to, so that every mode runs inside a test as it runs in the program.
+//! zip it is given, `--inspect`, which reports what a folder is to the launcher, and `--extract`,
+//! which extracts a Legends expansion's tree from a dump into a new folder outside every
+//! installation. They run before anything builds a window, and what they print is technical text
+//! for whoever runs them, never words for players. A run is handed its arguments, its build, its
+//! own file's sections and the streams to write to, so that every mode runs inside a test as it
+//! runs in the program.
 
 use std::ffi::{OsStr, OsString};
 use std::fmt;
@@ -11,6 +13,7 @@ use std::fs::File;
 use std::io::{self, Read, Seek, Write};
 use std::path::Path;
 
+use gdl_extract::{Expansion, Trust};
 use gdl_files::{Cancel, Job, NoProgress};
 use gdl_install::{
     Access, INSPECTION_SCHEMA, Inspection, InstallFolder, InstallationSummary, Payload,
@@ -20,6 +23,9 @@ use gdl_release::Version;
 use serde::Serialize;
 
 use crate::codes::{self, Report};
+use crate::extraction::{
+    Counts, ExtractRequest, ExtractSummary, StrictnessChoice, extract_to_new_folder, output_name,
+};
 
 /// The exit code of a mode that did what it was asked.
 pub const EXIT_OK: u8 = 0;
@@ -33,7 +39,8 @@ pub const EXIT_USAGE: u8 = 2;
 
 /// The line that answers arguments the program does not take.
 const USAGE: &str = "usage: gdl-launcher-headless --check-payload [--payload <zip>] | \
-                     --inspect <dir> [--json] | --version";
+                     --inspect <dir> [--json] | --extract <n64|dreamcast> <dump> --output <dir> \
+                     [--strict script] | --version";
 
 /// The mode that prints the program's version.
 const VERSION_OPTION: &str = "--version";
@@ -51,8 +58,26 @@ const PAYLOAD_OPTION: &str = "--payload";
 /// The option of `--inspect` that makes it report in JSON.
 const JSON_OPTION: &str = "--json";
 
+/// The mode that extracts a Legends expansion's tree: the expansion, then the dump, follow it.
+const EXTRACT_OPTION: &str = "--extract";
+
+/// The option of `--extract` that names the new folder the tree goes into.
+const OUTPUT_OPTION: &str = "--output";
+
+/// The option of `--extract` that chooses how strictly the dump is held.
+const STRICT_OPTION: &str = "--strict";
+
+/// The one value `--strict` takes: the dump held as the extraction scripts hold one, rather than
+/// as an installation does.
+const SCRIPT_STRICTNESS: &str = "script";
+
 /// The options that choose a mode: arguments with none of them are no headless run.
-const MODE_OPTIONS: [&str; 3] = [VERSION_OPTION, CHECK_PAYLOAD_OPTION, INSPECT_OPTION];
+const MODE_OPTIONS: [&str; 4] = [
+    VERSION_OPTION,
+    CHECK_PAYLOAD_OPTION,
+    INSPECT_OPTION,
+    EXTRACT_OPTION,
+];
 
 /// How every option begins, and so how no option's value may.
 const OPTION_PREFIX: &str = "--";
@@ -87,11 +112,11 @@ pub fn open_own_file() -> OwnFile {
 }
 
 /// Runs the headless mode that `args`, the program's arguments after its own name, ask for, and
-/// gives back its exit code; or `None` when no argument is `--check-payload`, `--inspect` or
-/// `--version`, which is no headless run. A mode writes its report to `out` and a refusal to
-/// `err`. Arguments that ask for a mode in a form it does not take get the usage line on `err`
-/// and [`EXIT_USAGE`]. An option's value is the argument after it, which must not be empty or
-/// begin with `--`; options may come in any order, each at most once.
+/// gives back its exit code; or `None` when no argument is `--check-payload`, `--inspect`,
+/// `--extract` or `--version`, which is no headless run. A mode writes its report to `out` and a
+/// refusal to `err`. Arguments that ask for a mode in a form it does not take get the usage line
+/// on `err` and [`EXIT_USAGE`]. An option's value is the argument after it, which must not be
+/// empty or begin with `--`; options may come in any order, each at most once.
 ///
 /// - `--version` writes the build's version.
 /// - `--check-payload` checks the runtime the launcher file carries, its sections as `own` holds
@@ -105,6 +130,13 @@ pub fn open_own_file() -> OwnFile {
 ///   [`InstallFolder::inspect`] finds it: a `name: value` line for each field that holds
 ///   something, a control character in a value written as its escape, or with `--json` every
 ///   field as JSON. Whatever the folder holds, an inspection exits [`EXIT_OK`].
+/// - `--extract <n64|dreamcast> <dump> --output <dir>` extracts that expansion's tree from the
+///   dump into the new folder `<dir>`, as [`extract_to_new_folder`] does, holding the dump as an
+///   installation holds one, to the trust the launcher carries, or with `--strict script` as the
+///   extraction scripts hold one. It writes `Extracted <expansion> (<strictness>) into <dir>: `
+///   and what the tree's manifests count, `<dir>` made absolute; a refusal is the line
+///   `error: <code> (<rule>): <detail>`, and [`EXIT_REFUSED`]. A word that names no expansion,
+///   and an output whose last name is none the launcher makes a folder with, are usage errors.
 ///
 /// A report that cannot be written to its stream gives [`EXIT_REFUSED`], since nobody saw it.
 ///
@@ -125,6 +157,12 @@ pub fn run(
         Mode::Version => reported(out, &format!("{}\n", build.version)),
         Mode::CheckPayload { zip } => check_payload(zip, build, own, out, err),
         Mode::Inspect { folder, json } => inspect(Path::new(folder), json, build, out),
+        Mode::Extract {
+            expansion,
+            dump,
+            output,
+            script,
+        } => extract_mode(expansion, dump, output, script, out, err),
     })
 }
 
@@ -145,6 +183,15 @@ enum Mode<'a> {
     CheckPayload { zip: Option<&'a OsStr> },
     /// `--inspect`, of `folder`, reported as JSON when `json` says so, else as text.
     Inspect { folder: &'a OsStr, json: bool },
+    /// `--extract`, of the expansion the word `expansion` names, from the dump at `dump` into the
+    /// new folder `output`, the dump held as the extraction scripts hold one when `script` says
+    /// so, else as an installation holds one.
+    Extract {
+        expansion: &'a OsStr,
+        dump: &'a OsStr,
+        output: &'a OsStr,
+        script: bool,
+    },
 }
 
 /// The mode option the arguments give, before the other options are held to it.
@@ -155,6 +202,8 @@ enum Chosen<'a> {
     CheckPayload,
     /// `--inspect`, with the folder after it.
     Inspect(&'a OsStr),
+    /// `--extract`, with the word that names the expansion and the dump after it.
+    Extract(&'a OsStr, &'a OsStr),
 }
 
 /// Arguments that ask for a mode in a form it does not take.
@@ -175,12 +224,15 @@ fn parse(args: &[OsString]) -> Result<Mode<'_>, Misused> {
     let mut chosen = None;
     let mut zip = None;
     let mut json = false;
+    let mut output = None;
+    let mut script = false;
     let mut rest = args.iter().map(OsString::as_os_str);
     while let Some(arg) = rest.next() {
         let mode = match arg.to_str() {
             Some(VERSION_OPTION) => Chosen::Version,
             Some(CHECK_PAYLOAD_OPTION) => Chosen::CheckPayload,
             Some(INSPECT_OPTION) => Chosen::Inspect(value(&mut rest)?),
+            Some(EXTRACT_OPTION) => Chosen::Extract(value(&mut rest)?, value(&mut rest)?),
             Some(PAYLOAD_OPTION) if zip.is_none() => {
                 zip = Some(value(&mut rest)?);
                 continue;
@@ -189,16 +241,38 @@ fn parse(args: &[OsString]) -> Result<Mode<'_>, Misused> {
                 json = true;
                 continue;
             }
+            Some(OUTPUT_OPTION) if output.is_none() => {
+                output = Some(value(&mut rest)?);
+                continue;
+            }
+            Some(STRICT_OPTION) if !script => {
+                if value(&mut rest)? != SCRIPT_STRICTNESS {
+                    return Err(Misused);
+                }
+                script = true;
+                continue;
+            }
             _ => return Err(Misused),
         };
         if chosen.replace(mode).is_some() {
             return Err(Misused);
         }
     }
-    match (chosen, zip, json) {
-        (Some(Chosen::Version), None, false) => Ok(Mode::Version),
-        (Some(Chosen::CheckPayload), zip, false) => Ok(Mode::CheckPayload { zip }),
-        (Some(Chosen::Inspect(folder)), None, json) => Ok(Mode::Inspect { folder, json }),
+    let extracting = (output, script);
+    match (chosen, zip, json, extracting) {
+        (Some(Chosen::Version), None, false, (None, false)) => Ok(Mode::Version),
+        (Some(Chosen::CheckPayload), zip, false, (None, false)) => Ok(Mode::CheckPayload { zip }),
+        (Some(Chosen::Inspect(folder)), None, json, (None, false)) => {
+            Ok(Mode::Inspect { folder, json })
+        }
+        (Some(Chosen::Extract(expansion, dump)), None, false, (Some(output), script)) => {
+            Ok(Mode::Extract {
+                expansion,
+                dump,
+                output,
+                script,
+            })
+        }
         _ => Err(Misused),
     }
 }
@@ -314,6 +388,73 @@ fn inspect(folder: &Path, json: bool, build: &Build<'_>, out: &mut dyn Write) ->
         view.text()
     };
     reported(out, &report)
+}
+
+/// `--extract`: extracts the expansion `word` names from the dump at `dump` into the new folder
+/// `output`, holding the dump as the extraction scripts hold one when `script` says so, else as an
+/// installation holds one, to the trust the launcher carries; and reports what it made to `out`,
+/// or why it refused to `err`. A word that names no expansion, and an output whose last name is
+/// none the launcher makes a folder with, get the usage line, before anything is looked at.
+fn extract_mode(
+    word: &OsStr,
+    dump: &OsStr,
+    output: &OsStr,
+    script: bool,
+    out: &mut dyn Write,
+    err: &mut dyn Write,
+) -> u8 {
+    let Some(expansion) = word.to_str().and_then(Expansion::parse) else {
+        return usage(err);
+    };
+    let output = Path::new(output);
+    if output_name(output).is_err() {
+        return usage(err);
+    }
+    let request = ExtractRequest {
+        expansion,
+        dump: Path::new(dump),
+        output,
+        strictness: if script {
+            StrictnessChoice::Script
+        } else {
+            StrictnessChoice::Install
+        },
+    };
+    // Nothing here asks the extraction to stop, and nobody follows its progress.
+    let cancel = Cancel::default();
+    let job = Job {
+        cancel: &cancel,
+        progress: &NoProgress,
+    };
+    match extract_to_new_folder(&request, &Trust::shipped(), &job) {
+        Ok(summary) => reported(out, &extracted(&summary)),
+        Err(error) => refuse(err, codes::extraction(&error), error.rule(), &error),
+    }
+}
+
+/// The line that reports `summary`: the expansion, how strictly its dump was held, the folder its
+/// tree went into, and what the tree's manifests count.
+fn extracted(summary: &ExtractSummary) -> String {
+    let counts = match summary.counts {
+        Counts::N64 {
+            files,
+            programs,
+            maps,
+        } => format!("{files} files, {programs} programs, {maps} maps"),
+        Counts::Dreamcast {
+            disc_files,
+            native_files,
+            external,
+        } => format!(
+            "{disc_files} disc files, {native_files} native files, {external} external records"
+        ),
+    };
+    format!(
+        "Extracted {} ({}) into {}: {counts}\n",
+        summary.expansion.as_str(),
+        summary.strictness,
+        summary.output.display()
+    )
 }
 
 /// Writes `report`, all that a mode tells whoever runs it, to `out`, and gives back the exit code
@@ -497,9 +638,10 @@ mod tests {
     use std::io::{self, Write};
     use std::path::{Path, PathBuf};
 
+    use gdl_extract::Expansion;
     use gdl_fixtures::{
-        InstallFixture, RawEntry, RuntimeFiles, append_sections, make_alpha_markers, pretty_json,
-        tiny_elf,
+        DiscSet, Edc, InstallFixture, RawEntry, RuntimeFiles, append_sections, make_alpha_markers,
+        pretty_json, tiny_elf,
     };
     use gdl_install::{
         DEFAULT_CONFIG, GUNE5D, InstallFolder, JOURNAL_DIR, RUNTIME_SECTION, STATE_DIR, Sections,
@@ -509,6 +651,9 @@ mod tests {
     use serde_json::{Value, json};
 
     use super::{Build, EXIT_OK, EXIT_REFUSED, EXIT_USAGE, OwnFile, USAGE, run, text_value, usage};
+    use crate::extraction::vectors::{
+        Folders, default_rom, default_tree, full_tree, tree_listing, with_bad_stream,
+    };
 
     /// The version the tests build the program as: the first launcher's.
     const VERSION: &str = "1.0.0-beta";
@@ -770,6 +915,133 @@ mod tests {
             ),
             (&["--inspect", "--json"], "--inspect followed by an option"),
             (&["--json", "--inspect"], "--inspect at the end"),
+            (&["--extract"], "--extract without its values"),
+            (&["--extract", "n64"], "--extract with one value"),
+            (
+                &["--extract", "n64", "--output", "out"],
+                "--extract followed by an option",
+            ),
+            (
+                &["--extract", "n64", "rom.z64"],
+                "--extract without --output",
+            ),
+            (
+                &["--extract", "gamecube", "game.iso", "--output", "out"],
+                "an expansion the launcher does not install",
+            ),
+            (
+                &["--extract", "N64", "rom.z64", "--output", "out"],
+                "an expansion's name in another letter case",
+            ),
+            (
+                &["--extract", "n64", "rom.z64", "--output"],
+                "--output without a value",
+            ),
+            (
+                &["--extract", "n64", "rom.z64", "--output", ""],
+                "--output with an empty value",
+            ),
+            (
+                &[
+                    "--extract",
+                    "n64",
+                    "rom.z64",
+                    "--output",
+                    "a",
+                    "--output",
+                    "b",
+                ],
+                "--output twice",
+            ),
+            (
+                &["--extract", "n64", "rom.z64", "--output", "out", "--strict"],
+                "--strict without a value",
+            ),
+            (
+                &[
+                    "--extract",
+                    "n64",
+                    "rom.z64",
+                    "--output",
+                    "out",
+                    "--strict",
+                    "install",
+                ],
+                "--strict install, which is what --extract does without it",
+            ),
+            (
+                &[
+                    "--extract",
+                    "n64",
+                    "rom.z64",
+                    "--output",
+                    "out",
+                    "--strict",
+                    "script",
+                    "--strict",
+                    "script",
+                ],
+                "--strict twice",
+            ),
+            (
+                &["--version", "--output", "out"],
+                "--output beside --version",
+            ),
+            (
+                &["--inspect", "folder", "--strict", "script"],
+                "--strict beside --inspect",
+            ),
+            (
+                &[
+                    "--extract",
+                    "n64",
+                    "rom.z64",
+                    "--output",
+                    "out",
+                    "--payload",
+                    "a.zip",
+                ],
+                "--payload beside --extract",
+            ),
+            (
+                &["--extract", "n64", "rom.z64", "--output", "out", "--json"],
+                "--json beside --extract",
+            ),
+            (
+                &[
+                    "--extract",
+                    "n64",
+                    "rom.z64",
+                    "--extract",
+                    "dreamcast",
+                    "disc.cue",
+                    "--output",
+                    "out",
+                ],
+                "two extractions",
+            ),
+            (
+                &["--extract", "n64", "rom.z64", "--output", "x."],
+                "an output ending in a dot",
+            ),
+            (
+                &["--extract", "n64", "rom.z64", "--output", "x "],
+                "an output ending in a space",
+            ),
+            (
+                &[
+                    "--extract",
+                    "dreamcast",
+                    "disc.cue",
+                    "--output",
+                    ".gdl-launcher",
+                ],
+                "an output named as the launcher's state folder",
+            ),
+            (
+                &["--extract", "n64", "rom.z64", "--output", "out/.."],
+                "an output that ends in no name",
+            ),
         ];
         for &(args, what) in cases {
             let ran = run_release(args);
@@ -784,7 +1056,8 @@ mod tests {
         assert_eq!(
             USAGE,
             "usage: gdl-launcher-headless --check-payload [--payload <zip>] | --inspect <dir> \
-             [--json] | --version"
+             [--json] | --extract <n64|dreamcast> <dump> --output <dir> [--strict script] | \
+             --version"
         );
     }
 
@@ -801,6 +1074,9 @@ mod tests {
             &["--version=1.0.0"],
             &["--inspect=folder"],
             &["--check-payload=runtime.zip"],
+            &["--output", "out"],
+            &["--strict", "script"],
+            &["--extract=n64"],
         ];
         for &args in cases {
             let ran = run_release(args);
@@ -1341,5 +1617,130 @@ mod tests {
             Some(EXIT_USAGE)
         );
         assert_eq!(usage(&mut Closed), EXIT_USAGE);
+        // An extraction that loses its report made its tree all the same, and fails the run.
+        let folders = Folders::new();
+        let (name, image) = default_rom();
+        let dump = folders.dump(&name, &image);
+        let output = folders.output("n64");
+        let extracting = extract_args("n64", &dump, &output, true);
+        assert_eq!(
+            run(&extracting, &RELEASE, &mut own, &mut Closed, &mut err),
+            Some(EXIT_REFUSED)
+        );
+        assert!(err.is_empty());
+        assert!(output.is_dir());
+    }
+
+    /// The arguments that extract the expansion `expansion` names from the dump at `dump` into
+    /// `output`, held as the extraction scripts hold a dump when `script` says so.
+    fn extract_args(expansion: &str, dump: &Path, output: &Path, script: bool) -> Vec<OsString> {
+        let mut args: Vec<OsString> = vec![
+            "--extract".into(),
+            expansion.into(),
+            dump.into(),
+            "--output".into(),
+            output.into(),
+        ];
+        if script {
+            args.extend(["--strict".into(), "script".into()]);
+        }
+        args
+    }
+
+    #[test]
+    fn extract_writes_a_new_folder_and_nothing_else() {
+        let folders = Folders::new();
+        let (name, image) = default_rom();
+        let dump = folders.dump(&name, &image);
+        let output = folders.output("n64");
+        let before = folders.before(Expansion::N64);
+        let ran = run_release(&extract_args("n64", &dump, &output, true));
+        assert_eq!(ran.code, Some(EXIT_OK), "{ran:?}");
+        assert_eq!(ran.err, "");
+        // The tree the N64 extractor writes, in a folder of its own; the folder it was made in is
+        // as it was outside it, and the dump as it was.
+        folders.assert_published(&before, "n64", &default_tree());
+    }
+
+    #[test]
+    fn extract_reports_its_counts() {
+        let folders = Folders::new();
+        let (name, image) = default_rom();
+        let rom = folders.dump(&name, &image);
+        let sheet = folders.disc(&DiscSet::full(Edc::Zero));
+
+        // The default image's two files, one of them a map's world, and no overlays, since its
+        // digest is no cartridge's whose boot table the launcher knows.
+        let output = folders.output("n64");
+        let ran = run_release(&extract_args("n64", &rom, &output, true));
+        assert_eq!((ran.code, ran.err.as_str()), (Some(EXIT_OK), ""), "{ran:?}");
+        assert_eq!(
+            ran.out,
+            format!(
+                "Extracted n64 (script) into {}: 2 files, 0 programs, 1 maps\n",
+                output.display()
+            )
+        );
+        assert_eq!(tree_listing(&output), default_tree());
+
+        // The full set's four disc files, and the two files SIZES.ROM places in DISK.ROM and the
+        // one it lists outside it.
+        let output = folders.output("dreamcast");
+        let ran = run_release(&extract_args("dreamcast", &sheet, &output, true));
+        assert_eq!((ran.code, ran.err.as_str()), (Some(EXIT_OK), ""), "{ran:?}");
+        assert_eq!(
+            ran.out,
+            format!(
+                "Extracted dreamcast (script) into {}: 4 disc files, 2 native files, 1 external \
+                 records\n",
+                output.display()
+            )
+        );
+        assert_eq!(tree_listing(&output), full_tree());
+    }
+
+    #[test]
+    fn install_is_the_default_and_refuses_a_synthetic_rom() {
+        // The default image names no cartridge of the game, and its digest is not the one the
+        // launcher's trust holds.
+        let folders = Folders::new();
+        let (name, image) = default_rom();
+        let dump = folders.dump(&name, &image);
+        let output = folders.output("n64");
+        let before = folders.before(Expansion::N64);
+        assert_refused(
+            &run_release(&extract_args("n64", &dump, &output, false)),
+            "error: source.otherGame (otherGame): the dump is refused for an installation: \
+             otherGame\n",
+        );
+        folders.assert_untouched(&before);
+    }
+
+    #[test]
+    fn a_refused_extraction_leaves_its_folder_as_it_was() {
+        // The N64 extractor's corrupt stream, and a disc without its native table: both refused
+        // as the dump is checked, before anything is made.
+        let folders = Folders::new();
+        let (name, image) = default_rom();
+        let rom = folders.dump(&name, &with_bad_stream(&image));
+        let sheet = folders.disc(&DiscSet::small(Edc::Zero));
+        for (expansion, word, dump, rule) in [
+            (Expansion::N64, "n64", &rom, "deflate"),
+            (
+                Expansion::Dreamcast,
+                "dreamcast",
+                &sheet,
+                "nativeTableMissing",
+            ),
+        ] {
+            let before = folders.before(expansion);
+            let ran = run_release(&extract_args(word, dump, &folders.output(word), true));
+            assert_eq!(ran.code, Some(EXIT_REFUSED), "{ran:?}");
+            let prefix = format!("error: source.damaged ({rule}): ");
+            assert!(ran.err.starts_with(&prefix), "{}", ran.err);
+            assert_eq!(ran.err.lines().count(), 1, "{}", ran.err);
+            assert_eq!(ran.out, "");
+            folders.assert_untouched(&before);
+        }
     }
 }

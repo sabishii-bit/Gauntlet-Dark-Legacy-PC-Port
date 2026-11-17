@@ -14,6 +14,7 @@ use gdl_install::{
 };
 use gdl_media::{DiscRule, DumpRefusal, MediaError, RomRule};
 
+use crate::extraction::ExtractionError;
 use crate::privilege::Refusal;
 
 /// A runtime zip, or the launcher file that carries one, breaks a rule the launcher holds it to,
@@ -43,6 +44,10 @@ const FOLDER_ALPHA_INSTALL: &str = "folder.alphaInstall";
 /// Something is already where the launcher was to put what it made, and the launcher never
 /// replaces what it did not make.
 const FOLDER_COLLISION: &str = "folder.collision";
+
+/// The folder chosen for an expansion's tree lies in an installation, or in a folder being made
+/// into one, where only the installation's own jobs write.
+const FOLDER_INSIDE_INSTALLATION: &str = "folder.insideInstallation";
 
 /// Another job holds the installation's lock.
 const LOCK_BUSY: &str = "lock.busy";
@@ -86,6 +91,10 @@ const SOURCE_OTHER_GAME: &str = "source.otherGame";
 /// from.
 const SOURCE_OTHER_REVISION: &str = "source.otherRevision";
 
+/// The dump is for another console than the expansion it was given for, such as a disc given as
+/// the N64 expansion's cartridge.
+const SOURCE_WRONG_SLOT: &str = "source.wrongSlot";
+
 /// The dump comes in a container the launcher does not read, such as a compressed disc image or a
 /// cue sheet that keeps the whole disc in one file.
 const SOURCE_UNSUPPORTED_CONTAINER: &str = "source.unsupportedContainer";
@@ -108,7 +117,7 @@ const DUMP_HASH_MISMATCH: &str = "dump.hashMismatch";
 
 /// Every code this module's functions give, each once: the codes the page's string table holds
 /// words for.
-pub const CODES: [&str; 27] = [
+pub const CODES: [&str; 29] = [
     PAYLOAD_DAMAGED,
     IO_FAILED,
     SPACE_RAN_OUT,
@@ -117,6 +126,7 @@ pub const CODES: [&str; 27] = [
     FOLDER_NOT_WRITABLE,
     FOLDER_ALPHA_INSTALL,
     FOLDER_COLLISION,
+    FOLDER_INSIDE_INSTALLATION,
     LOCK_BUSY,
     GAME_RUNNING,
     GAME_MISSING,
@@ -130,6 +140,7 @@ pub const CODES: [&str; 27] = [
     SOURCE_UNRECOGNIZED,
     SOURCE_OTHER_GAME,
     SOURCE_OTHER_REVISION,
+    SOURCE_WRONG_SLOT,
     SOURCE_UNSUPPORTED_CONTAINER,
     DUMP_DC_CDI,
     SOURCE_ARCHIVE,
@@ -375,6 +386,33 @@ pub fn extract(error: &ExtractError) -> Report {
     }
 }
 
+/// The code an extraction into a new folder reports. An output that ends in no folder name the
+/// launcher takes, or whose folder is not there or is no folder, is `folder.notDirectory`; one
+/// that is there already `folder.collision`; one with a link on its path `folder.links`; one in an
+/// installation, or in a folder being made into one, `folder.insideInstallation`, and one in an
+/// alpha installation `folder.alphaInstall`; and a failure to look at its path, or at what a
+/// folder above it holds, `io.failed`. A dump for another console than the expansion's is
+/// `source.wrongSlot`, and one refused for its container reports what [`dump_refusal`] gives the
+/// refusal. A reader's failure reports what [`media`] gives it, the extraction's what [`extract`]
+/// gives it, and the staging's what [`files`] gives it.
+pub fn extraction(error: &ExtractionError) -> Report {
+    match error {
+        ExtractionError::OutputName { .. } | ExtractionError::OutputParent { .. } => {
+            Report::Error(FOLDER_NOT_DIRECTORY)
+        }
+        ExtractionError::OutputExists { .. } => Report::Error(FOLDER_COLLISION),
+        ExtractionError::OutputLinks { .. } => Report::Error(FOLDER_LINKS),
+        ExtractionError::InsideInstallation { .. } => Report::Error(FOLDER_INSIDE_INSTALLATION),
+        ExtractionError::AlphaInstallation { .. } => Report::Error(FOLDER_ALPHA_INSTALL),
+        ExtractionError::Io { .. } => Report::Error(IO_FAILED),
+        ExtractionError::WrongSlot { .. } => Report::Error(SOURCE_WRONG_SLOT),
+        ExtractionError::Refused { refusal } => Report::Error(dump_refusal(*refusal)),
+        ExtractionError::Media(error) => media(error),
+        ExtractionError::Extract(error) => extract(error),
+        ExtractionError::Files(error) => Report::Error(files(error)),
+    }
+}
+
 /// The code of a rule of the N64 ROM's format: a ROM shorter than its header, or cut off within a
 /// word, is `source.incomplete`, and a file whose first word is that of no byte order a cartridge
 /// is kept in is no ROM the launcher knows, `source.unrecognized`. Every other rule is
@@ -486,21 +524,22 @@ fn written(error: &io::Error) -> &'static str {
 mod tests {
     use std::collections::BTreeSet;
     use std::io;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
 
-    use gdl_extract::{ExtractError, FingerprintRule, NativeRule, TreeRule};
+    use gdl_extract::{Expansion, ExtractError, FingerprintRule, NativeRule, TreeRule};
     use gdl_files::{DISC_NAMES, FilesError, RelPath};
     use gdl_install::{
         BuildInfo, FolderError, FolderState, GameStartError, GameUseError, LockError, PayloadError,
         ReceiptError, SectionsError,
     };
-    use gdl_media::{DiscRule, DumpRefusal, MediaError, RomRule};
+    use gdl_media::{Console, DiscRule, DumpRefusal, MediaError, RomRule};
     use gdl_release::Platform;
 
     use super::{
-        CODES, Report, dump_refusal, extract, files, folder, game_start, game_use, lock, media,
-        payload, receipt, refusal, sections, state,
+        CODES, Report, dump_refusal, extract, extraction, files, folder, game_start, game_use,
+        lock, media, payload, receipt, refusal, sections, state,
     };
+    use crate::extraction::{ExtractionError, output_name};
     use crate::privilege::Refusal;
 
     /// What a broken rule of a runtime, or of the launcher file that carries it, reports.
@@ -1060,6 +1099,75 @@ mod tests {
         refusals
     }
 
+    /// One refusal of every kind an extraction into a new folder meets, with what each reports: the
+    /// output's place by every rule, a dump of the wrong console or refused for its container, and
+    /// a reader's, the extraction's and the staging's failure once each.
+    fn extraction_refusals() -> Vec<(ExtractionError, Report)> {
+        let not_directory = Report::Error("folder.notDirectory");
+        let name = output_name(Path::new("n64.")).expect_err("a name ending in a dot");
+        vec![
+            (name, not_directory),
+            (
+                ExtractionError::OutputParent { path: path() },
+                not_directory,
+            ),
+            (
+                ExtractionError::OutputExists { path: path() },
+                Report::Error("folder.collision"),
+            ),
+            (
+                ExtractionError::OutputLinks { path: path() },
+                Report::Error("folder.links"),
+            ),
+            (
+                ExtractionError::InsideInstallation { path: path() },
+                Report::Error("folder.insideInstallation"),
+            ),
+            (
+                ExtractionError::AlphaInstallation {
+                    path: path(),
+                    name: "installation.json",
+                },
+                Report::Error("folder.alphaInstall"),
+            ),
+            (
+                ExtractionError::Io {
+                    path: path(),
+                    source: denied(),
+                },
+                FAILED,
+            ),
+            (
+                ExtractionError::WrongSlot {
+                    found: Some(Console::Dreamcast),
+                    wanted: Expansion::N64,
+                },
+                Report::Error("source.wrongSlot"),
+            ),
+            (
+                ExtractionError::Refused {
+                    refusal: DumpRefusal::Cdi,
+                },
+                Report::Error("dump.dc.cdi"),
+            ),
+            (
+                ExtractionError::Media(MediaError::Cancelled),
+                Report::Cancelled,
+            ),
+            (
+                ExtractionError::Extract(ExtractError::Native {
+                    rule: NativeRule::TableMissing,
+                    detail: detail(),
+                }),
+                Report::Error("source.damaged"),
+            ),
+            (
+                ExtractionError::Files(FilesError::Link { path: path() }),
+                FAILED,
+            ),
+        ]
+    }
+
     #[test]
     fn every_refusal_maps_to_its_code() {
         for (error, expected) in payload_refusals() {
@@ -1100,6 +1208,36 @@ mod tests {
         }
         for (error, expected) in extract_refusals() {
             assert_eq!(extract(&error), expected, "{}: {error}", error.rule());
+        }
+        for (error, expected) in extraction_refusals() {
+            assert_eq!(extraction(&error), expected, "{}: {error}", error.rule());
+        }
+    }
+
+    #[test]
+    fn an_extraction_into_a_folder_reports_what_its_parts_do() {
+        // A reader's failure, the extraction's and the staging's, and a dump refused for its
+        // container, are the extraction's into a folder, so each reports as it does where it is
+        // met.
+        for (error, _) in media_refusals() {
+            let expected = media(&error);
+            let error = ExtractionError::Media(error);
+            assert_eq!(extraction(&error), expected, "{}: {error}", error.rule());
+        }
+        for (error, _) in extract_refusals() {
+            let expected = extract(&error);
+            let error = ExtractionError::Extract(error);
+            assert_eq!(extraction(&error), expected, "{}: {error}", error.rule());
+        }
+        for (error, _) in files_refusals() {
+            let expected = Report::Error(files(&error));
+            let error = ExtractionError::Files(error);
+            assert_eq!(extraction(&error), expected, "{}: {error}", error.rule());
+        }
+        for (refused, _) in DUMP_REFUSALS {
+            let expected = Report::Error(dump_refusal(refused));
+            let error = ExtractionError::Refused { refusal: refused };
+            assert_eq!(extraction(&error), expected, "{}: {error}", error.rule());
         }
     }
 
@@ -1188,6 +1326,11 @@ mod tests {
             extract_refusals()
                 .iter()
                 .filter_map(|(error, _)| code_of(extract(error))),
+        );
+        returned.extend(
+            extraction_refusals()
+                .iter()
+                .filter_map(|(error, _)| code_of(extraction(error))),
         );
         assert_eq!(returned, listed);
     }
