@@ -48,12 +48,13 @@ constexpr std::string_view kLevelLabel = "BTMBK_LEVL";
 constexpr std::string_view kGoldLabel = "BTMBK_GOLD";
 constexpr std::string_view kHealthLabel = "BTMBK_HELTH";
 constexpr std::string_view kKeyIcon = "KEY_ICON";
+constexpr std::string_view kThirteenthRuneArt = "RUNE13";
 constexpr std::string_view kPanelPrefix = "BTMBK_";    ///< a costume's panel, by colour
 constexpr std::string_view kPlainStripPrefix = "S3_W"; ///< a kind-0 box's strip, by colour
 constexpr std::string_view kPlainPanelPrefix = "S4_W"; ///< and its panel
 constexpr std::string_view kBannerSuffix = "_NAME";    ///< a class's banner, after its code
-constexpr std::string_view kCostumeObjects = "objects.rom";
-constexpr std::string_view kCostumeTextures = "textures.rom";
+constexpr std::string_view kBankObjects = "objects.rom";
+constexpr std::string_view kBankTextures = "textures.rom";
 /** The fonts' sheets in the static set: font handles 1, 4 and 6. */
 constexpr std::string_view kSmallSheet = "8HI_FONTS5";
 constexpr std::string_view kScoreSheet = "SCORE";
@@ -92,12 +93,12 @@ std::string costumeFolder(std::string_view code, std::string_view colour) {
     return std::format("players/{}/{}", toLowerAscii(code), colour);
 }
 
-/** The decoded pictures of the costume bank in `folder`; none when it is not there, and none,
+/** The decoded pictures of the optional bank in `folder`; none when it is not there, and none,
  * with a warning, when it cannot be read. */
-std::optional<std::vector<formats::LegendsMapTexture>> costumeBank(const AssetLocator& files,
-                                                                   const std::string& folder) {
-    const auto objects = files.find(std::format("{}/{}", folder, kCostumeObjects));
-    const auto textures = files.find(std::format("{}/{}", folder, kCostumeTextures));
+std::optional<std::vector<formats::LegendsMapTexture>> optionalBank(const AssetLocator& files,
+                                                                    const std::string& folder) {
+    const auto objects = files.find(std::format("{}/{}", folder, kBankObjects));
+    const auto textures = files.find(std::format("{}/{}", folder, kBankTextures));
     if (!objects || !textures) {
         return std::nullopt;
     }
@@ -174,10 +175,39 @@ bool standing(const HudSeat& shown) {
     return shown.turbo.has_value();
 }
 
+/** The static set's picture of runestone `rune`, three of each colour (FUN_8c0ba060's
+ * SM_RUNE_%s_%02d). */
+std::string runeArt(usize rune) {
+    return std::format("SM_RUNE_{}_{:02}",
+                       StatusBoxPainter::kRelicColours.at(
+                           rune / static_cast<usize>(StatusBoxPainter::kRunesInColour)),
+                       rune % static_cast<usize>(StatusBoxPainter::kRunesInColour) + 1);
+}
+
+/** Whether `bits` holds bit `bit`. */
+bool held(u16 bits, usize bit) {
+    return (bits & (1U << static_cast<u32>(bit))) != 0;
+}
+
+/** `place`, a square of the box, taken in to `picture`'s shape about its middle: a picture of
+ * Dark Legacy's fitted into a place of the Dreamcast's. */
+Rect fittedInto(const Rect& place, const Texture& picture) {
+    const auto width = static_cast<f32>(picture.width());
+    const auto height = static_cast<f32>(picture.height());
+    if (width <= 0 || height <= 0) {
+        return place;
+    }
+    const f32 scale = std::min(place.width / width, place.height / height);
+    const f32 across = width * scale;
+    const f32 down = height * scale;
+    return {place.x + (place.width - across) / 2, place.y + (place.height - down) / 2, across,
+            down};
+}
+
 } // namespace
 
 bool LegendsDreamcastHudPainter::load(RenderDevice& device, const std::filesystem::path& root,
-                                      DarkLegacyHudArt& /*darkLegacy*/,
+                                      DarkLegacyHudArt& darkLegacy,
                                       std::span<const HudMember> party) {
     release();
     const AssetLocator files{root};
@@ -201,6 +231,7 @@ bool LegendsDreamcastHudPainter::load(RenderDevice& device, const std::filesyste
     for (const HudMember& member : party) {
         loadClass(device, files, member.classIndex, member.color);
     }
+    loadLegends(device, files, darkLegacy);
     return true;
 }
 
@@ -210,8 +241,12 @@ void LegendsDreamcastHudPainter::release() {
         font->glyphs = {};
     }
     m_strip = m_levelLabel = m_goldLabel = m_healthLabel = m_key = m_glow = nullptr;
+    m_thirteenthRune = nullptr;
     m_plainStrips = {};
     m_plainPanels = {};
+    m_runes = {};
+    m_keys = {};
+    m_legends = {};
     m_classes = {};
     m_clock = {};
     m_glowSteps = {};
@@ -259,6 +294,20 @@ void LegendsDreamcastHudPainter::loadStatic(RenderDevice& device,
     }
     take(Layout::kTurboFullArt);
     m_glow = take(Layout::kTurboGlowArt);
+    for (usize rune = 0; rune < m_runes.size(); ++rune) {
+        m_runes.at(rune) = take(runeArt(rune));
+    }
+    // FUN_8c0ba060's SM_KEY_%s: Dark Legacy's eight keys share the Dreamcast's four pictures, by
+    // the colours Dark Legacy gives them.
+    for (const std::string_view colour : StatusBoxPainter::kRelicColours) {
+        const Texture* picture = take(std::format("SM_KEY_{}", colour));
+        for (usize key = 0; key < m_keys.size(); ++key) {
+            if (StatusBoxPainter::kKeyColours.at(key) == colour) {
+                m_keys.at(key) = picture;
+            }
+        }
+    }
+    m_thirteenthRune = take(kThirteenthRuneArt);
     for (const std::string_view sheet : {kSmallSheet, kScoreSheet, kLargeSheet}) {
         take(sheet);
     }
@@ -304,22 +353,41 @@ void LegendsDreamcastHudPainter::loadClass(RenderDevice& device, const AssetLoca
     const auto code = dreamcastClassCode(classIndex);
     if (code) {
         const std::string folder = costumeFolder(*code, folderColour);
-        if (const auto pictures = costumeBank(files, folder)) {
-            art.panel = takeCostume(device, *pictures, folder, panel);
+        if (const auto pictures = optionalBank(files, folder)) {
+            art.panel = takePicture(device, *pictures, folder, panel);
             art.banner =
-                takeCostume(device, *pictures, folder, std::format("{}{}", *code, kBannerSuffix));
+                takePicture(device, *pictures, folder, std::format("{}{}", *code, kBannerSuffix));
         }
     }
     if (art.panel == nullptr && code != kStandInClass) {
         const std::string folder = costumeFolder(kStandInClass, folderColour);
-        if (const auto pictures = costumeBank(files, folder)) {
-            art.panel = takeCostume(device, *pictures, folder, panel);
+        if (const auto pictures = optionalBank(files, folder)) {
+            art.panel = takePicture(device, *pictures, folder, panel);
+        }
+    }
+}
+
+void LegendsDreamcastHudPainter::loadLegends(RenderDevice& device, const AssetLocator& files,
+                                             DarkLegacyHudArt& darkLegacy) {
+    // FUN_8c0c08a0 gives the Dreamcast's five legend items' places QUEST_ICON1..5, which the
+    // powerups bank holds. Dark Legacy's own picture stands in for an item the Dreamcast has none
+    // of, or one the bank does not hold.
+    const std::string folder{kPowerupsFolder};
+    const auto pictures = optionalBank(files, folder);
+    for (const LegendsDreamcastLegend& legend : Layout::kLegends) {
+        LegendArt& art = m_legends.at(static_cast<usize>(legend.realm));
+        if (pictures && !legend.icon.empty()) {
+            art.picture = takePicture(device, *pictures, folder, legend.icon);
+        }
+        if (art.picture == nullptr) {
+            art.picture = darkLegacy.selectArt(legend.picture);
+            art.fitted = true;
         }
     }
 }
 
 const Texture*
-LegendsDreamcastHudPainter::takeCostume(RenderDevice& device,
+LegendsDreamcastHudPainter::takePicture(RenderDevice& device,
                                         std::span<const formats::LegendsMapTexture> pictures,
                                         const std::string& folder, std::string_view name) {
     const std::string key = std::format("{}/{}", folder, name);
@@ -428,6 +496,11 @@ void LegendsDreamcastHudPainter::drawPanel(Canvas& canvas, usize seat, const Hud
     drawNumbers(canvas, seat, shown);
     drawCarried(canvas, seat, box);
     drawTurbo(canvas, seat, shown);
+    drawRelics(canvas, seat, box, view.relicsShown);
+    // FUN_8c0c16e0 shows the legend items only to a player playing or waiting at an exit.
+    if (standing(shown)) {
+        drawLegends(canvas, seat, shown.legends);
+    }
 }
 
 void LegendsDreamcastHudPainter::drawPlain(Canvas& canvas, usize seat, s32 color) const {
@@ -496,6 +569,55 @@ void LegendsDreamcastHudPainter::drawTurbo(Canvas& canvas, usize seat, const Hud
                          static_cast<f32>(Layout::kTurboTop), static_cast<f32>(m_glow->width()),
                          static_cast<f32>(m_glow->height())},
                     Rect{0, 0, 1, 1}, Color::white().withAlpha(kOpaque - transparency));
+    }
+}
+
+void LegendsDreamcastHudPainter::drawRelics(Canvas& canvas, usize seat, const StatusBoxView& box,
+                                            bool keysShown) const {
+    const s32 x = dreamcastSeatX(seat);
+    for (usize rune = 0; rune < m_runes.size(); ++rune) {
+        if (held(box.runes, rune)) {
+            const auto index = static_cast<s32>(rune);
+            const s32 trio = index / StatusBoxPainter::kRunesInColour;
+            const s32 left = x + Layout::kRuneLeft + (index * Layout::kRuneStep) + trio;
+            drawWhole(canvas, m_runes.at(rune), static_cast<f32>(left),
+                      static_cast<f32>(Layout::kRuneTop));
+        }
+    }
+    // Dark Legacy's showing of its relics stands for the Dreamcast's relic timer.
+    if (keysShown) {
+        for (usize key = 0; key < m_keys.size(); ++key) {
+            if (held(box.bossKeys, key)) {
+                drawWhole(canvas, m_keys.at(key),
+                          static_cast<f32>(x + Layout::kKeyLeft +
+                                           (static_cast<s32>(key) * Layout::kKeyStep)),
+                          static_cast<f32>(Layout::kKeyTop));
+            }
+        }
+    }
+    if ((box.runes & StatusBoxPainter::kThirteenthRune) != 0) {
+        drawWhole(canvas, m_thirteenthRune, static_cast<f32>(x + Layout::kThirteenthRune.x),
+                  static_cast<f32>(Layout::kThirteenthRune.y));
+    }
+}
+
+void LegendsDreamcastHudPainter::drawLegends(Canvas& canvas, usize seat, u16 legends) const {
+    const s32 x = dreamcastSeatX(seat);
+    const auto places = dreamcastQuestPlaces(legends);
+    for (usize place = 0; place < places.size(); ++place) {
+        const std::optional<s32>& realm = places.at(place);
+        if (!realm) {
+            continue;
+        }
+        const LegendArt& art = m_legends.at(static_cast<usize>(*realm));
+        if (art.picture == nullptr) {
+            continue;
+        }
+        const LegendsDreamcastPoint at = Layout::kQuestPlaces.at(place);
+        const Rect square{static_cast<f32>(x + at.x), static_cast<f32>(at.y),
+                          static_cast<f32>(Layout::kQuestIconSize),
+                          static_cast<f32>(Layout::kQuestIconSize)};
+        canvas.draw(*art.picture, art.fitted ? fittedInto(square, *art.picture) : square);
     }
 }
 

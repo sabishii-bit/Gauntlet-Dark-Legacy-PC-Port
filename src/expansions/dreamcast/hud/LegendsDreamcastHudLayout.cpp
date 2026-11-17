@@ -1,6 +1,7 @@
 #include "expansions/dreamcast/hud/LegendsDreamcastHudLayout.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <optional>
 #include <string_view>
@@ -15,6 +16,25 @@ namespace {
 
 using Layout = LegendsDreamcastHudLayout;
 
+/** Whether the legend items lead with the Dreamcast's own, place by place: realm n's in place
+ * n - 1, each with its icon, and none of the others with one. */
+constexpr bool ownItemsLead() {
+    for (usize index = 0; index < Layout::kLegends.size(); ++index) {
+        const bool own = index < Layout::kQuestPlaces.size();
+        const LegendsDreamcastLegend& legend = Layout::kLegends.at(index);
+        if (legend.icon.empty() == own || (own && legend.realm != static_cast<s32>(index) + 1)) {
+            return false;
+        }
+    }
+    return true;
+}
+static_assert(ownItemsLead());
+
+/** Whether `legends` holds realm `realm`'s item. */
+bool holds(u16 legends, s32 realm) {
+    return (legends & (1U << static_cast<u32>(realm))) != 0;
+}
+
 } // namespace
 
 s32 dreamcastSeatX(usize seat) {
@@ -23,6 +43,32 @@ s32 dreamcastSeatX(usize seat) {
 
 s32 dreamcastSeatCentre(usize seat) {
     return Layout::kSeatCentre.at(seat);
+}
+
+std::array<std::optional<s32>, LegendsDreamcastHudLayout::kQuestPlaces.size()>
+dreamcastQuestPlaces(u16 legends) {
+    std::array<std::optional<s32>, Layout::kQuestPlaces.size()> places;
+    for (usize place = 0; place < places.size(); ++place) {
+        const s32 realm = Layout::kLegends.at(place).realm;
+        if (holds(legends, realm)) {
+            places.at(place) = realm;
+        }
+    }
+    usize free = 0;
+    for (usize index = places.size(); index < Layout::kLegends.size(); ++index) {
+        const s32 realm = Layout::kLegends.at(index).realm;
+        if (!holds(legends, realm)) {
+            continue;
+        }
+        while (free < places.size() && places.at(free).has_value()) {
+            ++free;
+        }
+        if (free == places.size()) {
+            break;
+        }
+        places.at(free) = realm;
+    }
+    return places;
 }
 
 LegendsDreamcastTurboArch dreamcastTurbo(f32 shown, s32 seatX) {

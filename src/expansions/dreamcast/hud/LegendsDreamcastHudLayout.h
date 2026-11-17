@@ -8,6 +8,7 @@
 #include "engine/math/Math.h"
 
 #include "game/hud/HudView.h"
+#include "game/hud/StatusBox.h"
 
 namespace gdl::game {
 
@@ -16,6 +17,14 @@ namespace gdl::game {
 struct LegendsDreamcastPoint {
     s32 x = 0;
     s32 y = 0;
+};
+
+/** A legend item by the realm whose boss it is for: its icon in the Dreamcast's powerups bank,
+ * for the five the Dreamcast has, and Dark Legacy's SELECT picture of it. */
+struct LegendsDreamcastLegend {
+    s32 realm = 0;
+    std::string_view icon;    ///< QUEST_ICON<n>; empty for an item the Dreamcast has none of
+    std::string_view picture; ///< SELECT's, as the inventory panel shows the item
 };
 
 /** One zone of the turbo arch: its picture, where on the meter's 100 it starts and how far it
@@ -117,11 +126,53 @@ struct LegendsDreamcastHudLayout {
     static constexpr s32 kGlowTurn = 239;
     static constexpr s32 kGlowLeast = 11;
     static constexpr s32 kGlowPeriod = 40;
+
+    // FUN_8c0ba060: the runestones held, along a player's strip, three of each colour 8 apart
+    // and a unit more after each colour. FUN_8c0c08a0 shows them as it makes the box, and
+    // FUN_8c0c2120 only ever refreshes them: they stay while the box does.
+    static constexpr s32 kRuneLeft = -1;
+    static constexpr s32 kRuneStep = 8;
+    static constexpr s32 kRuneTop = 306;
+    // FUN_8c0ba060 stands the bosses' keys from X+8 at 300, and FUN_8c0c2120 shows them only
+    // while its relic timer runs. The Dreamcast's four stand 25 apart; Dark Legacy's eight keep
+    // Dark Legacy's own spacing.
+    static constexpr s32 kKeyLeft = 8;
+    static constexpr s32 kKeyStep = StatusBoxPainter::kKeyStep;
+    static constexpr s32 kKeyTop = 300;
+    /** The thirteenth rune, which no Dreamcast box shows, where Dark Legacy's box shows it: 8
+     * into the box's art, at 340. */
+    static constexpr LegendsDreamcastPoint kThirteenthRune{kArtLeft + StatusBoxPainter::kRune13X,
+                                                           StatusBoxPainter::kRune13Y};
+    // 8c14bbf4: the legend items' five places between the gold and the health, 16 square,
+    // crowded together; FUN_8c0c16e0 shows the Dreamcast's five items in them in turn.
+    static constexpr std::array<LegendsDreamcastPoint, 5> kQuestPlaces{
+        {{34, 362}, {42, 362}, {34, 370}, {42, 370}, {38, 367}}};
+    static constexpr s32 kQuestIconSize = 16;
+    /** Dark Legacy's legend items in realm order, the Dreamcast's five first, by their places
+     * (8c1255f8: QUEST_ICON%d). */
+    static constexpr std::array<LegendsDreamcastLegend, 9> kLegends{{
+        {.realm = 1, .icon = "QUEST_ICON1", .picture = "SCIMITAR"},
+        {.realm = 2, .icon = "QUEST_ICON2", .picture = "ICE_AX"},
+        {.realm = 3, .icon = "QUEST_ICON3", .picture = "LAMP"},
+        {.realm = 4, .icon = "QUEST_ICON4", .picture = "BILLOWS"},
+        {.realm = 5, .icon = "QUEST_ICON5", .picture = "SOUL_SAVIOR"},
+        {.realm = 7, .icon = {}, .picture = "BOOK"},
+        {.realm = 9, .icon = {}, .picture = "FIRE_SCROLL"},
+        {.realm = 10, .icon = {}, .picture = "LANTERN"},
+        {.realm = 11, .icon = {}, .picture = "JAVILIN"},
+    }};
 };
 
 /** Seat `seat`'s column, and its box's centre. */
 s32 dreamcastSeatX(usize seat);
 s32 dreamcastSeatCentre(usize seat);
+
+/** Which legend item, by realm, each of the box's five places shows for a player holding
+ * `legends`, a bit per realm; none for a place left empty. The Dreamcast's five stand in their
+ * own places (FUN_8c0c16e0); Dark Legacy's others take, in realm order, the places whose own item
+ * is not held, and one left without a place is not shown. */
+std::array<std::optional<s32>, LegendsDreamcastHudLayout::kQuestPlaces.size()>
+dreamcastQuestPlaces(u16 legends);
 
 /** The turbo arch a meter showing `shown` of 100 puts over the box in column `seatX`: its
  * picture, where it stands and the part of the picture across it. */

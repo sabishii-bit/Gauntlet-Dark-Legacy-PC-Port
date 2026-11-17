@@ -2,6 +2,7 @@
 #include <array>
 #include <cmath>
 #include <filesystem>
+#include <format>
 #include <initializer_list>
 #include <optional>
 #include <span>
@@ -33,6 +34,7 @@
 #include "expansions/shared/hud/LegendsHudStyleIds.h"
 #include "game/characters/CharacterSave.h"
 #include "game/characters/ClassData.h"
+#include "game/characters/Relics.h"
 #include "game/config/GameConfig.h"
 #include "game/hud/HudPainter.h"
 #include "game/hud/HudStyles.h"
@@ -198,17 +200,105 @@ HudSeat standing(s32 classIndex, s32 color, std::string name = "A", s32 health =
     return seat;
 }
 
-/** `seat` fallen, as PartyHud::status shows it: health gone and nothing carried; in the tower,
- * asked to wait there when `prompt`, or else still dying. */
+/** `seat` fallen, as PartyHud::status shows it: health gone and nothing carried, no relics
+ * held; in the tower, asked to wait there when `prompt`, or else still dying. The legend items
+ * held stay, as hudSeatOf reads them for every player. */
 HudSeat fallen(HudSeat seat, bool inTower, bool prompt = false) {
     seat.box.health = 0;
     seat.box.keys = 0;
     seat.box.potions = 0;
     seat.box.potionKind = 0;
+    seat.box.runes = 0;
+    seat.box.bossKeys = 0;
     seat.box.inTower = inTower;
     seat.box.towerPrompt = inTower && prompt;
     seat.turbo.reset();
     return seat;
+}
+
+/** The legend items of `realms`, a bit per realm, as Relics keeps them. */
+u16 legendsOf(std::initializer_list<s32> realms) {
+    u16 legends = 0;
+    for (const s32 realm : realms) {
+        legends = static_cast<u16>(legends | (1U << static_cast<u32>(realm)));
+    }
+    return legends;
+}
+
+/** A picture of Dark Legacy's art as the cases lend it: its set's name and its size. */
+struct LentPicture {
+    std::string_view name;
+    u32 width = 0;
+    u32 height = 0;
+};
+/** SELECT's pictures of the legend items, in realm order, each of its own shape, so that how one
+ * is fitted into a place of the box shows. */
+constexpr std::array<LentPicture, 9> kLentLegends{{
+    {.name = "SCIMITAR", .width = 32, .height = 16},
+    {.name = "ICE_AX", .width = 16, .height = 32},
+    {.name = "LAMP", .width = 24, .height = 24},
+    {.name = "BILLOWS", .width = 40, .height = 20},
+    {.name = "SOUL_SAVIOR", .width = 20, .height = 40},
+    {.name = "BOOK", .width = 32, .height = 24},
+    {.name = "FIRE_SCROLL", .width = 24, .height = 48},
+    {.name = "LANTERN", .width = 8, .height = 8},
+    {.name = "JAVILIN", .width = 64, .height = 16},
+}};
+
+/** Dark Legacy's art lending `kLentLegends`: each picture by its name. */
+struct LentLegends {
+    std::vector<std::pair<std::string_view, const Texture*>> pictures;
+
+    explicit LentLegends(test::FakeDarkLegacyArt& art) {
+        for (const LentPicture& legend : kLentLegends) {
+            pictures.emplace_back(legend.name, &art.give(test::DarkLegacyLookup::Set::Select,
+                                                         legend.name, legend.width, legend.height));
+        }
+    }
+    const Texture* operator()(std::string_view name) const {
+        for (const auto& [lentName, picture] : pictures) {
+            if (lentName == name) {
+                return picture;
+            }
+        }
+        return nullptr;
+    }
+    /** The quads of lent picture `name`. */
+    std::vector<Quad> drawn(std::span<const Quad> quads, std::string_view name) const {
+        std::vector<Quad> found;
+        for (const Quad& quad : quads) {
+            if (quad.texture == (*this)(name)) {
+                found.push_back(quad);
+            }
+        }
+        return found;
+    }
+    /** The name of lent picture `texture`; empty for none of these. */
+    std::string_view nameOf(const Texture* texture) const {
+        for (const auto& [name, picture] : pictures) {
+            if (picture == texture) {
+                return name;
+            }
+        }
+        return {};
+    }
+};
+
+/** The names of the pictures standing in `seat`, in the order drawn, the glyphs left out: the
+ * extraction's, and the legend items `lent` of Dark Legacy's. */
+Names boxOrder(std::span<const Quad> quads, usize seat, const LentLegends& lent) {
+    Names names;
+    for (const Quad& quad : quads) {
+        if (isText(quad) || seatOf(quad) != seat) {
+            continue;
+        }
+        const std::string_view own = Fixture::pictureOf(quad.texture).name;
+        const std::string_view name = own.empty() ? lent.nameOf(quad.texture) : own;
+        if (!name.empty()) {
+            names.push_back(name);
+        }
+    }
+    return names;
 }
 
 /** A player who quit the game from the prompt in seat `seat`: out of the party, its box left
@@ -233,11 +323,13 @@ struct Departed {
 };
 
 /** The Dreamcast look loaded from a synthetic extraction for `party`, with the device it uploads
- * to, Dark Legacy's art it may borrow and the words its boxes write. */
+ * to, Dark Legacy's art it may borrow, which lends the legend items' pictures, and the words its
+ * boxes write. */
 struct LoadedLook {
     Fixture files;
     test::FakeRenderDevice device;
     test::FakeDarkLegacyArt art;
+    LentLegends lent{art};
     StringTable strings;
     LegendsDreamcastHudPainter look;
 
@@ -746,6 +838,315 @@ TEST_CASE("the turbo arch stands over a standing player's box, cropped from its 
     CHECK(glowAt(3) == opaqueAt(12));
 }
 
+TEST_CASE("runestones line a Dreamcast box, and the bosses' eight keys show along it while the "
+          "relics are shown",
+          "[legends][dreamcast-hud]") {
+    LoadedLook dreamcast("dreamcast-hud-relics", kWarriorAndWizard);
+    // Seat 1, a blue wizard, holds runes 1, 5 and 12 and every boss's key; seat 0 holds none.
+    HudSeat wizard = standing(kWizardClass, 1);
+    wizard.box.runes = 0x0811;
+    wizard.box.bossKeys = 0xFF;
+    HudView view = dreamcast.viewOf({standing(kWarriorClass, 0), wizard, {}, {}});
+    view.relicsShown = true;
+    const std::vector<Quad> shown = dreamcast.boxes(view);
+
+    // FUN_8c0ba060: the runes, SM_RUNE_<colour>_0<n> of the static set, along the strip from X-1
+    // at 306, 8 a rune and a unit more after each colour's three: blue, red, yellow, green.
+    const auto only = [](std::span<const Quad> quads, std::string_view name) {
+        const std::vector<Quad> found = picturesIn(quads, name, 1);
+        REQUIRE(found.size() == 1);
+        CHECK(Fixture::pictureOf(found.front().texture).folder == Fixture::kStaticFolder);
+        return found.front().area;
+    };
+    checkRect(only(shown, "SM_RUNE_BLU_01"), {119, 306, 8, 8});
+    checkRect(only(shown, "SM_RUNE_RED_02"), {119 + 32 + 1, 306, 8, 8});
+    checkRect(only(shown, "SM_RUNE_GRE_03"), {119 + 88 + 3, 306, 8, 8});
+    // The bosses' eight keys in the Dreamcast's lightning art, from X+8 at 300 as its own four
+    // stand, but at Dark Legacy's twelve apart, in the GameCube's colours (0x801205F8).
+    CHECK(StatusBoxPainter::kKeyColours ==
+          std::array<std::string_view, 8>{"BLU", "RED", "YEL", "GRE", "GRE", "RED", "YEL", "BLU"});
+    std::vector<Quad> keys;
+    for (const Quad& quad : shown) {
+        if (Fixture::pictureOf(quad.texture).name.starts_with("SM_KEY_")) {
+            keys.push_back(quad);
+        }
+    }
+    REQUIRE(keys.size() == 8);
+    for (usize key = 0; key < keys.size(); ++key) {
+        CAPTURE(key);
+        CHECK(Fixture::pictureOf(keys[key].texture).name ==
+              std::format("SM_KEY_{}", StatusBoxPainter::kKeyColours.at(key)));
+        checkRect(keys[key].area, {static_cast<f32>(120 + 8 + (12 * key)), 300, 16, 16});
+    }
+    // The rows stand over the rest of the box, the runes before the keys, as FUN_8c0ba060 makes
+    // them.
+    const Names panel{"BK_RUNE_STONE_02", "BTMBK_BLUE", "WIZ_NAME",
+                      "BTMBK_LEVL",       "BTMBK_GOLD", "BTMBK_HELTH"};
+    Names withRelics = panel;
+    for (const std::string_view name :
+         {"SM_RUNE_BLU_01", "SM_RUNE_RED_02", "SM_RUNE_GRE_03", "SM_KEY_BLU", "SM_KEY_RED",
+          "SM_KEY_YEL", "SM_KEY_GRE", "SM_KEY_GRE", "SM_KEY_RED", "SM_KEY_YEL", "SM_KEY_BLU"}) {
+        withRelics.push_back(name);
+    }
+    CHECK(pictureOrder(shown, 1) == withRelics);
+    CHECK(pictureOrder(shown, 0) == Names{"BK_RUNE_STONE_02", "BTMBK_YELO", "WAR_NAME",
+                                          "BTMBK_LEVL", "BTMBK_GOLD", "BTMBK_HELTH"});
+
+    // While the relics are not shown, FUN_8c0c2120 hides the keys, but never the runes, which
+    // the box keeps from when it was made.
+    view.relicsShown = false;
+    Names runesAlone = panel;
+    for (const std::string_view name : {"SM_RUNE_BLU_01", "SM_RUNE_RED_02", "SM_RUNE_GRE_03"}) {
+        runesAlone.push_back(name);
+    }
+    CHECK(pictureOrder(dreamcast.boxes(view), 1) == runesAlone);
+    // None of it is borrowed: Dark Legacy lends only its legend items' pictures.
+    for (const test::DarkLegacyLookup& lookup : dreamcast.art.lookups) {
+        CAPTURE(lookup.name);
+        CHECK(lookup.set == test::DarkLegacyLookup::Set::Select);
+    }
+}
+
+TEST_CASE("the thirteenth rune sits at Dark Legacy's place in the Dreamcast box",
+          "[legends][dreamcast-hud]") {
+    const std::array<HudMember, 1> party{{{.seat = 2, .classIndex = kWarriorClass, .color = 2}}};
+    LoadedLook dreamcast("dreamcast-hud-rune13", party);
+    // Seat 2, a red warrior, holds the thirteenth rune beside the first, and the second boss's
+    // key.
+    HudSeat warrior = standing(kWarriorClass, 2);
+    warrior.box.runes = static_cast<u16>(StatusBoxPainter::kThirteenthRune | 0x1);
+    warrior.box.bossKeys = 0x2;
+    HudView view = dreamcast.viewOf({HudSeat{}, {}, warrior, {}});
+    // Dark Legacy's box shows it 8 in at 340 (hod_blit); the Dreamcast's box stands from 8 left
+    // of its column, so its own RUNE13, which no Dreamcast box shows, stands at the column.
+    CHECK(StatusBoxPainter::kRune13X == 8);
+    CHECK(StatusBoxPainter::kRune13Y == 340);
+    for (const bool relicsShown : {false, true}) {
+        CAPTURE(relicsShown);
+        view.relicsShown = relicsShown;
+        const std::vector<Quad> quads = dreamcast.boxes(view);
+        const std::vector<Quad> rune = picturesIn(quads, "RUNE13", 2);
+        REQUIRE(rune.size() == 1);
+        checkRect(rune.front().area, {296, 340, 16, 16});
+        CHECK(Fixture::pictureOf(rune.front().texture).folder == Fixture::kStaticFolder);
+        // It is none of the strip's runes, and it shows whether the relics do or not, after them.
+        Names expected{"BK_RUNE_STONE_02", "BTMBK_RED",   "WAR_NAME",      "BTMBK_LEVL",
+                       "BTMBK_GOLD",       "BTMBK_HELTH", "SM_RUNE_BLU_01"};
+        if (relicsShown) {
+            expected.emplace_back("SM_KEY_RED");
+        }
+        expected.emplace_back("RUNE13");
+        CHECK(pictureOrder(quads, 2) == expected);
+    }
+    // Twelve runes without it show no RUNE13.
+    view.seats[2].box.runes = 0x0FFF;
+    CHECK(picturesIn(dreamcast.boxes(view), "RUNE13").empty());
+}
+
+TEST_CASE("legend items take the Dreamcast's five places, Dark Legacy's own items the free ones",
+          "[legends][dreamcast-hud]") {
+    LoadedLook dreamcast("dreamcast-hud-legends", kWarriorAndWizard);
+    // Seat 0 holds the scimitar (realm 1), the lamp (3), the book (7), the fire scroll (9), the
+    // lantern (10) and the javelin (11); seat 1 the ice axe (2), the bellows (4) and the soul
+    // savior (5).
+    HudSeat warrior = standing(kWarriorClass, 0);
+    warrior.legends = legendsOf({1, 3, 7, 9, 10, 11});
+    HudSeat wizard = standing(kWizardClass, 1);
+    wizard.legends = legendsOf({2, 4, 5});
+    const std::vector<Quad> quads = dreamcast.boxes(dreamcast.viewOf({warrior, wizard, {}, {}}));
+
+    // 8c14bbf4 and FUN_8c0c16e0: the Dreamcast's own five, QUEST_ICON1..5 of its powerups bank,
+    // stand 16 square in their own places, realm 1's at (X+34, 362), 2's at (X+42, 362), 3's at
+    // (X+34, 370), 4's at (X+42, 370) and 5's at (X+38, 367).
+    const auto icon = [&](std::string_view name, usize seat) {
+        const std::vector<Quad> found = picturesIn(quads, name, seat);
+        REQUIRE(found.size() == 1);
+        CHECK(Fixture::pictureOf(found.front().texture).folder == Fixture::kPowerupsFolder);
+        return found.front().area;
+    };
+    checkRect(icon("QUEST_ICON1", 0), {8 + 34, 362, 16, 16});
+    checkRect(icon("QUEST_ICON3", 0), {8 + 34, 370, 16, 16});
+    checkRect(icon("QUEST_ICON2", 1), {120 + 42, 362, 16, 16});
+    checkRect(icon("QUEST_ICON4", 1), {120 + 42, 370, 16, 16});
+    checkRect(icon("QUEST_ICON5", 1), {120 + 38, 367, 16, 16});
+    // Dark Legacy's others take, in realm order, the places whose own item is not held, each in
+    // Dark Legacy's SELECT picture fitted into its place about its middle: the book, 32 by 24,
+    // the ice axe's place, the fire scroll, 24 by 48, the bellows', and the lantern, 8 square,
+    // the soul savior's. The javelin finds no place left.
+    const auto lent = [&](std::string_view name) {
+        const std::vector<Quad> found = dreamcast.lent.drawn(quads, name);
+        REQUIRE(found.size() == 1);
+        CHECK(seatOf(found.front()) == 0);
+        return found.front().area;
+    };
+    checkRect(lent("BOOK"), {8 + 42, 362 + 2, 16, 12});
+    checkRect(lent("FIRE_SCROLL"), {8 + 42 + 4, 370, 8, 16});
+    checkRect(lent("LANTERN"), {8 + 38, 367, 16, 16});
+    CHECK(dreamcast.lent.drawn(quads, "JAVILIN").empty());
+    // The Dreamcast's own five show its icons, never Dark Legacy's pictures of them.
+    for (const std::string_view name : {"SCIMITAR", "ICE_AX", "LAMP", "BILLOWS", "SOUL_SAVIOR"}) {
+        CAPTURE(name);
+        CHECK(dreamcast.lent.drawn(quads, name).empty());
+    }
+    // They stand last in the box, in their places' order.
+    const Names panel{"BK_RUNE_STONE_02", "BTMBK_YELO", "WAR_NAME",
+                      "BTMBK_LEVL",       "BTMBK_GOLD", "BTMBK_HELTH"};
+    Names placed = panel;
+    for (const std::string_view name :
+         {"QUEST_ICON1", "BOOK", "QUEST_ICON3", "FIRE_SCROLL", "LANTERN"}) {
+        placed.push_back(name);
+    }
+    CHECK(boxOrder(quads, 0, dreamcast.lent) == placed);
+    CHECK(boxOrder(quads, 1, dreamcast.lent) == Names{"BK_RUNE_STONE_02", "BTMBK_BLUE", "WIZ_NAME",
+                                                      "BTMBK_LEVL", "BTMBK_GOLD", "BTMBK_HELTH",
+                                                      "QUEST_ICON2", "QUEST_ICON4", "QUEST_ICON5"});
+    // Holding nothing shows nothing in them.
+    const std::vector<Quad> none =
+        dreamcast.boxes(dreamcast.viewOf({standing(kWarriorClass, 0), {}, {}, {}}));
+    CHECK(boxOrder(none, 0, dreamcast.lent) == panel);
+}
+
+TEST_CASE("a missing or truncated powerups bank gives the legend items Dark Legacy's pictures",
+          "[legends][dreamcast-hud]") {
+    using Set = test::DarkLegacyLookup::Set;
+    test::FakeRenderDevice device;
+    test::FakeDarkLegacyArt art;
+    const LentLegends lent(art);
+    StringTable strings;
+    REQUIRE(strings.load(test::dataDirectory() / "text", "en"));
+    const auto asked = [](std::initializer_list<std::string_view> names) {
+        std::vector<test::DarkLegacyLookup> lookups;
+        for (const std::string_view name : names) {
+            lookups.push_back({Set::Select, std::string{name}});
+        }
+        return lookups;
+    };
+    /** What a yellow warrior holding the scimitar, the soul savior and the book shows. */
+    const auto shownBy = [&](LegendsDreamcastHudPainter& look) {
+        test::FakeRenderDevice drawing;
+        Canvas canvas;
+        canvas.begin(drawing, Mat4{1.0f});
+        HudFrame frame{canvas, drawing, art};
+        HudView view;
+        view.seats[0] = standing(kWarriorClass, 0);
+        view.seats[0].legends = legendsOf({1, 5, 7});
+        view.strings = &strings;
+        look.drawStatus(frame, view);
+        canvas.end();
+        return quadsOf(drawing);
+    };
+    /** Checks the scimitar and the soul savior show in Dark Legacy's pictures in their own places,
+     * fitted, and the book in the ice axe's. */
+    const auto checkStandIns = [&](std::span<const Quad> quads) {
+        for (const std::string_view name : {"QUEST_ICON1", "QUEST_ICON5"}) {
+            CAPTURE(name);
+            CHECK(picturesIn(quads, name).empty());
+        }
+        const auto area = [&](std::string_view name) {
+            const std::vector<Quad> found = lent.drawn(quads, name);
+            REQUIRE(found.size() == 1);
+            return found.front().area;
+        };
+        checkRect(area("SCIMITAR"), {8 + 34, 362 + 4, 16, 8});
+        checkRect(area("SOUL_SAVIOR"), {8 + 38 + 4, 367, 8, 16});
+        checkRect(area("BOOK"), {8 + 42, 362 + 2, 16, 12});
+    };
+
+    SECTION("everything there") {
+        const Fixture files("dreamcast-hud-powerups-whole");
+        LegendsDreamcastHudPainter look;
+        CHECK(look.load(device, files.root(), art, kWarriorAndWizard));
+        CHECK(art.lookups == asked({"BOOK", "FIRE_SCROLL", "LANTERN", "JAVILIN"}));
+        const std::vector<Quad> quads = shownBy(look);
+        CHECK(picturesIn(quads, "QUEST_ICON1", 0).size() == 1);
+        CHECK(picturesIn(quads, "QUEST_ICON5", 0).size() == 1);
+        CHECK(lent.drawn(quads, "SCIMITAR").empty());
+        CHECK(lent.drawn(quads, "SOUL_SAVIOR").empty());
+    }
+    SECTION("the bank missing") {
+        const Fixture files("dreamcast-hud-powerups-missing");
+        REQUIRE(std::filesystem::remove(files.root() / "powerups/objects.rom"));
+        LegendsDreamcastHudPainter look;
+        bool loaded = false;
+        const auto run = test::logWhile(
+            [&] { loaded = look.load(device, files.root(), art, kWarriorAndWizard); });
+        REQUIRE_FALSE(run.failure);
+        CHECK(loaded);
+        CHECK(run.warnings.empty());
+        // Every legend item asks Dark Legacy for its picture, in realm order.
+        CHECK(art.lookups == asked({"SCIMITAR", "ICE_AX", "LAMP", "BILLOWS", "SOUL_SAVIOR", "BOOK",
+                                    "FIRE_SCROLL", "LANTERN", "JAVILIN"}));
+        checkStandIns(shownBy(look));
+    }
+    SECTION("the bank cut short") {
+        const Fixture files("dreamcast-hud-powerups-short");
+        files.truncate("powerups/objects.rom");
+        LegendsDreamcastHudPainter look;
+        bool loaded = false;
+        const auto run = test::logWhile(
+            [&] { loaded = look.load(device, files.root(), art, kWarriorAndWizard); });
+        REQUIRE_FALSE(run.failure);
+        CHECK(loaded);
+        REQUIRE(run.warnings.size() == 1);
+        CHECK(run.warnings.front().find("powerups") != std::string::npos);
+        checkStandIns(shownBy(look));
+    }
+    SECTION("an icon the bank lacks") {
+        const Fixture files("dreamcast-hud-powerups-lacking");
+        std::vector<test::DreamcastPicture> pictures;
+        for (const test::DreamcastPicture& picture : Fixture::kPowerupPictures) {
+            if (picture.name != "QUEST_ICON5") {
+                pictures.push_back(picture);
+            }
+        }
+        files.writeBank(Fixture::kPowerupsFolder, pictures);
+        LegendsDreamcastHudPainter look;
+        CHECK(look.load(device, files.root(), art, kWarriorAndWizard));
+        CHECK(art.lookups == asked({"SOUL_SAVIOR", "BOOK", "FIRE_SCROLL", "LANTERN", "JAVILIN"}));
+        const std::vector<Quad> quads = shownBy(look);
+        CHECK(picturesIn(quads, "QUEST_ICON1", 0).size() == 1);
+        CHECK(picturesIn(quads, "QUEST_ICON5").empty());
+        const std::vector<Quad> savior = lent.drawn(quads, "SOUL_SAVIOR");
+        REQUIRE(savior.size() == 1);
+        checkRect(savior.front().area, {8 + 38 + 4, 367, 8, 16});
+    }
+}
+
+TEST_CASE("a dying player's keys, potions, turbo and legend items go from the box",
+          "[legends][dreamcast-hud]") {
+    LoadedLook dreamcast("dreamcast-hud-dying", kWarriorAndWizard);
+    // A yellow warrior with all a box shows: keys, a yellow potion, a full meter, three runes,
+    // the first boss's key and two legend items, one the Dreamcast's own and one Dark Legacy's.
+    HudSeat warrior = standing(kWarriorClass, 0);
+    warrior.box.keys = 2;
+    warrior.box.potions = 1;
+    warrior.box.potionKind = 3;
+    warrior.box.runes = 0x7;
+    warrior.box.bossKeys = 0x1;
+    warrior.legends = legendsOf({2, 7});
+    warrior.turbo = 100.0f;
+    HudView view = dreamcast.viewOf({warrior, {}, {}, {}});
+    view.relicsShown = true;
+    prepareAt(dreamcast, view, 0);
+    CHECK(boxOrder(dreamcast.boxes(view), 0, dreamcast.lent) ==
+          Names{"BK_RUNE_STONE_02", "BTMBK_YELO", "WAR_NAME", "BTMBK_LEVL", "BTMBK_GOLD",
+                "BTMBK_HELTH", "KEY_ICON", "POTION_ICON_YEL", "TRBO_FULL", "TURBO_GLOW",
+                "SM_RUNE_BLU_01", "SM_RUNE_BLU_02", "SM_RUNE_BLU_03", "SM_KEY_BLU", "BOOK",
+                "QUEST_ICON2"});
+
+    // Dying, as PartyHud::status shows it, the player carries nothing, its meter is gone, and its
+    // box holds no relics. It still holds its legend items, but FUN_8c0c16e0 shows them only to
+    // a player playing or waiting at an exit (states 1 and 7).
+    view.seats[0] = fallen(warrior, false);
+    REQUIRE(view.seats[0].legends == legendsOf({2, 7}));
+    prepareAt(dreamcast, view, 1);
+    const std::vector<Quad> dying = dreamcast.boxes(view);
+    CHECK(boxOrder(dying, 0, dreamcast.lent) == Names{"BK_RUNE_STONE_02", "BTMBK_YELO", "WAR_NAME",
+                                                      "BTMBK_LEVL", "BTMBK_GOLD", "BTMBK_HELTH"});
+    CHECK(dreamcast.lent.drawn(dying, "BOOK").empty());
+    CHECK(picturesIn(dying, "QUEST_ICON2").empty());
+}
+
 TEST_CASE("the Dreamcast look takes every picture it borrows as it opens",
           "[legends][dreamcast-hud]") {
     using Set = test::DarkLegacyLookup::Set;
@@ -753,36 +1154,54 @@ TEST_CASE("the Dreamcast look takes every picture it borrows as it opens",
     test::FakeRenderDevice device;
     test::FakeDarkLegacyArt art;
     // Dark Legacy's art stands ready to lend what a look might ask of it.
-    std::vector<const Texture*> lent;
+    struct Lent {
+        test::DarkLegacyLookup lookup;
+        const Texture* picture = nullptr;
+    };
+    std::vector<Lent> lent;
     for (const Set set : {Set::Static, Set::Select, Set::Count, Set::Inventory}) {
-        for (const std::string_view name :
-             {"RUNE13", "SM_KEY_BLU", "LAMP", "GOLD", "SHP_XRAY_GLASSES"}) {
-            lent.push_back(&art.give(set, name));
+        for (const std::string_view name : {"RUNE13", "SM_KEY_BLU", "SM_RUNE_BLU_01", "SCIMITAR",
+                                            "BOOK", "GOLD", "SHP_XRAY_GLASSES"}) {
+            lent.push_back({{set, std::string{name}}, &art.give(set, name)});
         }
     }
     StringTable strings;
     REQUIRE(strings.load(test::dataDirectory() / "text", "en"));
     LegendsDreamcastHudPainter look;
     REQUIRE(look.load(device, files.root(), art, kWarriorAndWizard));
-    // The boxes draw the Dreamcast's own art alone: they borrow nothing of Dark Legacy's.
-    CHECK(art.lookups.empty());
-    // It uploads what the boxes draw of the static set, with the fonts' sheets, and the party's
-    // panels and banners: nothing else it reads.
-    CHECK(device.texturesCreated == Fixture::kStaticPictures.size() - 1 + 4);
+    // As it opens it takes SELECT's pictures of the legend items the Dreamcast has no icon of,
+    // and nothing else of Dark Legacy's: the boxes, the runestones, the keys, the thirteenth
+    // rune and the other legend items are the Dreamcast's own art.
+    std::vector<test::DarkLegacyLookup> borrowed;
+    for (const std::string_view name : {"BOOK", "FIRE_SCROLL", "LANTERN", "JAVILIN"}) {
+        borrowed.push_back({Set::Select, std::string{name}});
+    }
+    CHECK(art.lookups == borrowed);
+    art.lookups.clear();
+    // It uploads what the boxes draw of the static set, with the fonts' sheets, the party's
+    // panels and banners, and the legend items' icons of the powerups bank: nothing else it
+    // reads.
+    CHECK(device.texturesCreated ==
+          Fixture::kStaticPictures.size() - 1 + 4 + Fixture::kPowerupPictures.size() - 1);
     const u32 uploaded = device.texturesCreated;
 
     // Every seat state and every part of the HUD, over a few steps: nothing is looked up or
-    // uploaded while drawing.
+    // uploaded while drawing. Seat 0 carries everything a box shows, among it a legend item the
+    // Dreamcast has no icon of in the place of one it has.
     HudSeat carrying = standing(kWarriorClass, 0, "A", 250);
     carrying.box.keys = 2;
     carrying.box.potions = 1;
     carrying.box.potionKind = 3;
+    carrying.box.runes = Relics::kAllRunes;
+    carrying.box.bossKeys = 0xFF;
+    carrying.legends = legendsOf({2, 7});
     carrying.turbo = 100.0f;
     const Departed gone(3, kWizardClass, 3, "D");
     HudView view;
     view.seats = {carrying, fallen(standing(kWizardClass, 1), true, true),
                   fallen(standing(kWarriorClass, 0), true), gone.seat()};
     view.strings = &strings;
+    view.relicsShown = true;
     for (s32 step = 0; step < 3; ++step) {
         view.seconds = secondsAt(step);
         Canvas canvas;
@@ -800,10 +1219,22 @@ TEST_CASE("the Dreamcast look takes every picture it borrows as it opens",
     CHECK(art.lookups.empty());
     CHECK(device.texturesCreated == uploaded);
     REQUIRE_FALSE(device.draws.empty());
-    for (const test::RecordedDraw& draw : device.draws) {
-        CHECK(std::ranges::find(lent, draw.texture) == lent.end());
-        CHECK(Fixture::pictureOf(draw.texture).name != Fixture::kUndrawn);
+    // Of what Dark Legacy lends, only the book it borrowed is drawn; its own runestones, keys
+    // and thirteenth rune never are.
+    const test::DarkLegacyLookup book{Set::Select, "BOOK"};
+    usize books = 0;
+    for (const Quad& quad : quadsOf(device)) {
+        for (const Lent& given : lent) {
+            if (quad.texture == given.picture) {
+                CHECK(given.lookup == book);
+                ++books;
+            }
+        }
+        CHECK(Fixture::pictureOf(quad.texture).name != Fixture::kUndrawn);
+        CHECK(Fixture::pictureOf(quad.texture).name != Fixture::kUndrawnPowerup);
     }
+    // Once a frame, in its own place.
+    CHECK(books == 3);
 }
 
 TEST_CASE("the Dreamcast look draws the parts it has no art of its own for in Dark Legacy's look",

@@ -116,8 +116,8 @@ struct DreamcastCostume {
 
 /** A synthetic Dreamcast native extraction holding what the Dreamcast look draws from: the
  * static set's pictures and the fonts' sheets, beside one picture the boxes do not draw; the
- * three fonts; and the warrior's costume banks in every colour, the wizard's in blue and the
- * dwarf's in red. */
+ * three fonts; the warrior's costume banks in every colour, the wizard's in blue and the dwarf's
+ * in red; and the powerups bank's legend icons, beside one picture the boxes do not draw. */
 class LegendsDreamcastHudFixture {
 public:
     using Painter = game::LegendsDreamcastHudPainter;
@@ -148,7 +148,7 @@ public:
         .sheet = {.name = "FONT32", .width = 256, .height = 32, .mark = 62}};
     /** The static set: the boxes' pictures at the sizes the original's are, the fonts' sheets,
      * and IT, which the boxes do not draw. */
-    static constexpr std::array<DreamcastPicture, 26> kStaticPictures{{
+    static constexpr std::array<DreamcastPicture, 43> kStaticPictures{{
         {.name = "BK_RUNE_STONE_02", .width = 128, .height = 16, .mark = 10},
         {.name = "S3_WYELO", .width = 128, .height = 16, .mark = 11},
         {.name = "S3_WBLUE", .width = 128, .height = 16, .mark = 12},
@@ -171,6 +171,23 @@ public:
         {.name = "TRBO_GRADNT_RED", .width = 128, .height = 32, .mark = 29},
         {.name = "TRBO_FULL", .width = 128, .height = 32, .mark = 30},
         {.name = "TURBO_GLOW", .width = 128, .height = 32, .mark = 31},
+        {.name = "SM_RUNE_BLU_01", .width = 8, .height = 8, .mark = 64},
+        {.name = "SM_RUNE_BLU_02", .width = 8, .height = 8, .mark = 65},
+        {.name = "SM_RUNE_BLU_03", .width = 8, .height = 8, .mark = 66},
+        {.name = "SM_RUNE_RED_01", .width = 8, .height = 8, .mark = 67},
+        {.name = "SM_RUNE_RED_02", .width = 8, .height = 8, .mark = 68},
+        {.name = "SM_RUNE_RED_03", .width = 8, .height = 8, .mark = 69},
+        {.name = "SM_RUNE_YEL_01", .width = 8, .height = 8, .mark = 70},
+        {.name = "SM_RUNE_YEL_02", .width = 8, .height = 8, .mark = 71},
+        {.name = "SM_RUNE_YEL_03", .width = 8, .height = 8, .mark = 72},
+        {.name = "SM_RUNE_GRE_01", .width = 8, .height = 8, .mark = 73},
+        {.name = "SM_RUNE_GRE_02", .width = 8, .height = 8, .mark = 74},
+        {.name = "SM_RUNE_GRE_03", .width = 8, .height = 8, .mark = 75},
+        {.name = "SM_KEY_BLU", .width = 16, .height = 16, .mark = 76},
+        {.name = "SM_KEY_GRE", .width = 16, .height = 16, .mark = 77},
+        {.name = "SM_KEY_RED", .width = 16, .height = 16, .mark = 78},
+        {.name = "SM_KEY_YEL", .width = 16, .height = 16, .mark = 79},
+        {.name = "RUNE13", .width = 16, .height = 16, .mark = 80},
         kSmallFont.sheet,
         kScoreFont.sheet,
         kLargeFont.sheet,
@@ -179,6 +196,18 @@ public:
     /** The picture of the static set the boxes do not draw. */
     static constexpr std::string_view kUndrawn = "IT";
     static constexpr std::string_view kStaticFolder = "static";
+    /** The powerups bank: the legend items' icons, and HOURGLASS, which the boxes do not
+     * draw. */
+    static constexpr std::array<DreamcastPicture, 6> kPowerupPictures{{
+        {.name = "QUEST_ICON1", .width = 16, .height = 16, .mark = 81},
+        {.name = "QUEST_ICON2", .width = 16, .height = 16, .mark = 82},
+        {.name = "QUEST_ICON3", .width = 16, .height = 16, .mark = 83},
+        {.name = "QUEST_ICON4", .width = 16, .height = 16, .mark = 84},
+        {.name = "QUEST_ICON5", .width = 16, .height = 16, .mark = 85},
+        {.name = "HOURGLASS", .width = 16, .height = 16, .mark = 86},
+    }};
+    static constexpr std::string_view kUndrawnPowerup = "HOURGLASS";
+    static constexpr std::string_view kPowerupsFolder = Painter::kPowerupsFolder;
     static constexpr std::array<DreamcastCostume, 6> kCostumes{{
         {.folder = "players/war/yel",
          .pictures = {{{.name = "BTMBK_YELO", .width = 128, .height = 128, .mark = 40},
@@ -205,6 +234,7 @@ public:
         for (const DreamcastCostume& costume : kCostumes) {
             writeBank(costume.folder, costume.pictures);
         }
+        writeBank(kPowerupsFolder, kPowerupPictures);
         for (const DreamcastFont& font : {kSmallFont, kScoreFont, kLargeFont}) {
             write(font.file, dreamcastFontBytes(font));
         }
@@ -258,6 +288,11 @@ public:
                 if (matches(picture)) {
                     return {.folder = costume.folder, .name = picture.name};
                 }
+            }
+        }
+        for (const DreamcastPicture& picture : kPowerupPictures) {
+            if (matches(picture)) {
+                return {.folder = kPowerupsFolder, .name = picture.name};
             }
         }
         return {};

@@ -1,6 +1,9 @@
+#include <algorithm>
 #include <array>
+#include <format>
 #include <initializer_list>
 #include <limits>
+#include <optional>
 #include <string_view>
 #include <vector>
 
@@ -11,10 +14,13 @@
 
 #include "RecordedQuads.h"
 #include "expansions/dreamcast/hud/LegendsDreamcastHudLayout.h"
+#include "game/bosses/LegendItems.h"
 #include "game/characters/ClassData.h"
 #include "game/hud/HudView.h"
 #include "game/hud/StatusBox.h"
+#include "game/level/BossKinds.h"
 #include "game/party/PlayerRuntime.h"
+#include "game/shop/InventoryPanel.h"
 
 namespace {
 
@@ -25,6 +31,15 @@ using test::checkRect;
 
 /** Seat 1's column. */
 constexpr s32 kX = 120;
+
+/** The legend items of `realms`, a bit per realm, as Relics keeps them. */
+u16 legendsOf(std::initializer_list<s32> realms) {
+    u16 legends = 0;
+    for (const s32 realm : realms) {
+        legends = static_cast<u16>(legends | (1U << static_cast<u32>(realm)));
+    }
+    return legends;
+}
 
 } // namespace
 
@@ -194,5 +209,71 @@ TEST_CASE("the Dreamcast's colours and classes run in Dark Legacy's orders",
          {kOgreClass, kUnicornClass, kMedusaClass, kHyenaClass, kSumnerClass, -1, kClassCount}) {
         CAPTURE(classIndex);
         CHECK_FALSE(dreamcastClassCode(classIndex));
+    }
+}
+
+TEST_CASE("the Dreamcast's five legend places keep their own items and give Dark Legacy's the "
+          "rest",
+          "[legends][dreamcast-hud]") {
+    using Places = std::array<std::optional<s32>, 5>;
+    // FUN_8c0c16e0 shows realm n's item in place n - 1 while it is held.
+    CHECK(dreamcastQuestPlaces(0) == Places{});
+    CHECK(dreamcastQuestPlaces(legendsOf({1, 2, 3, 4, 5})) == Places{1, 2, 3, 4, 5});
+    CHECK(dreamcastQuestPlaces(legendsOf({3})) ==
+          Places{std::nullopt, std::nullopt, 3, std::nullopt, std::nullopt});
+    // Dark Legacy's others, which the Dreamcast has no place for, take the first places whose
+    // own item is not held, in realm order: the book, the fire scroll, the lantern, the javelin.
+    CHECK(dreamcastQuestPlaces(legendsOf({7})) == Places{7, {}, {}, {}, {}});
+    CHECK(dreamcastQuestPlaces(legendsOf({1, 7})) == Places{1, 7, {}, {}, {}});
+    CHECK(dreamcastQuestPlaces(legendsOf({5, 11})) == Places{11, {}, {}, {}, 5});
+    CHECK(dreamcastQuestPlaces(legendsOf({2, 4, 7, 9, 10, 11})) == Places{7, 2, 9, 4, 10});
+    CHECK(dreamcastQuestPlaces(legendsOf({1, 3, 7, 9, 10, 11})) == Places{1, 7, 3, 9, 10});
+    // With every place taken, one left over is not shown.
+    CHECK(dreamcastQuestPlaces(legendsOf({1, 2, 3, 4, 5, 7, 9, 10, 11})) == Places{1, 2, 3, 4, 5});
+    // The realms whose bosses have no legend item take no place.
+    CHECK(dreamcastQuestPlaces(legendsOf({0, 6, 8, 12, 13, 14, 15})) == Places{});
+}
+
+TEST_CASE("the Dreamcast box's legend items are Dark Legacy's, with its own icons for the five "
+          "it has",
+          "[legends][dreamcast-hud]") {
+    // Every boss's legend item, by its realm, and no other.
+    std::vector<s32> realms;
+    for (s32 kind = kFirstBossType; kind <= kLastBossType; ++kind) {
+        if (const s32 realm = legendRealmOf(kind); realm != 0) {
+            realms.push_back(realm);
+        }
+    }
+    std::ranges::sort(realms);
+    std::vector<s32> listed;
+    listed.reserve(Layout::kLegends.size());
+    for (const LegendsDreamcastLegend& legend : Layout::kLegends) {
+        listed.push_back(legend.realm);
+    }
+    CHECK(listed == realms);
+    // 8c1255f8: QUEST_ICON%d names the Dreamcast's own five, realms 1 to 5 in their places'
+    // order; the rest have none.
+    for (usize index = 0; index < Layout::kLegends.size(); ++index) {
+        CAPTURE(index);
+        const LegendsDreamcastLegend& legend = Layout::kLegends.at(index);
+        if (index < Layout::kQuestPlaces.size()) {
+            CHECK(legend.realm == static_cast<s32>(index) + 1);
+            CHECK(legend.icon == std::format("QUEST_ICON{}", index + 1));
+        } else {
+            CHECK(legend.icon.empty());
+        }
+    }
+    // Each item's stand-in is the picture of it that Dark Legacy's inventory panel shows while
+    // it is held.
+    for (const LegendsDreamcastLegend& legend : Layout::kLegends) {
+        CAPTURE(legend.realm);
+        InventoryContents contents;
+        contents.legends = legendsOf({legend.realm});
+        InventoryPanel panel;
+        panel.open(contents);
+        panel.step(InventoryPanel::kEnterTicks, false);
+        const std::vector<InventoryPiece> pieces = panel.pieces(0);
+        CHECK(std::ranges::any_of(
+            pieces, [&](const InventoryPiece& piece) { return piece.texture == legend.picture; }));
     }
 }
