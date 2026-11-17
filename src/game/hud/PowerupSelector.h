@@ -32,7 +32,10 @@ public:
     static constexpr f32 kLabelScale = 0.45f;
     /// Space between the frame's top hooks, less the glow on each end of an active label.
     static constexpr s32 kLabelBudget = 108;
-    static f32 labelScale(const TextPainter& text, std::string_view label);
+    /** The size `text` writes `label` at: `size`, else the largest under it at which the label
+     * keeps within `budget`. */
+    static f32 labelScale(const TextPainter& text, std::string_view label, f32 size = kLabelScale,
+                          s32 budget = kLabelBudget);
 
     SelectorCue step(const SelectorInput& input, Inventory& inventory, s32 ticks,
                      bool challenge = false);

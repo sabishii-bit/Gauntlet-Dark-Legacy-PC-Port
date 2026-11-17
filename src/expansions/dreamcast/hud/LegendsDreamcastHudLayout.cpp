@@ -13,6 +13,7 @@
 #include "engine/ui/TextPainter.h"
 
 #include "game/hud/HudView.h"
+#include "game/hud/PowerupSelector.h"
 #include "game/hud/RuneMeter.h"
 #include "game/hud/StatusBox.h"
 
@@ -21,9 +22,8 @@ namespace {
 
 using Layout = LegendsDreamcastHudLayout;
 
-/** How many times the search for a label's size halves its span: enough to settle it to a
- * 65536th. */
-constexpr s32 kLabelSearchSteps = 16;
+/** A selector's label is written in font 1 at its own size where it fits. */
+constexpr f32 kLabelSize = 1.0f;
 
 /** `value` kept within [0, most] in whole units, nought for no number: a point off the frame
  * stands a help scroll at the frame's edge all the same. */
@@ -201,22 +201,8 @@ RuneMeter::Column dreamcastThermometerColumn(f32 fill, f32 width) {
 }
 
 f32 dreamcastLabelScale(const TextPainter& font, std::string_view label) {
-    if (font.measure(label) <= Layout::kLabelWidest) {
-        return 1.0f;
-    }
-    // Each glyph's advance is cut to whole units as the line shrinks, so the largest size that
-    // fits is searched for, as Dark Legacy's own label's is.
-    f32 low = 0;
-    f32 high = 1;
-    for (s32 step = 0; step < kLabelSearchSteps; ++step) {
-        const f32 middle = (low + high) * 0.5f;
-        if (font.measure(label, middle) <= Layout::kLabelWidest) {
-            low = middle;
-        } else {
-            high = middle;
-        }
-    }
-    return low;
+    // Font 1 at its own size, fitted as Dark Legacy's own label is.
+    return PowerupSelector::labelScale(font, label, kLabelSize, Layout::kLabelWidest);
 }
 
 LegendsDreamcastHelpBox dreamcastHelpBox(std::span<const std::string> lines, Vec2 head,

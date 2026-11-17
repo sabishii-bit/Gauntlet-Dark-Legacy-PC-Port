@@ -63,6 +63,31 @@ TEST_CASE("inventory labels shrink only once they would leave the player's box",
     CHECK(text.measure(longer, further) <= kBudget);
 }
 
+TEST_CASE("a label can be fitted from another size into another width",
+          "[selector][inventory-label]") {
+    std::vector<BitmapGlyph> glyphs;
+    for (s32 code = 'A'; code <= 'Z'; ++code) {
+        glyphs.push_back(BitmapGlyph{code, 10, 0, 0});
+    }
+    const BitmapFont font = BitmapFont::fromGlyphs(32, 4, std::move(glyphs));
+    TextPainter text;
+    text.setFont(&font, nullptr);
+    const std::string ten(10, 'A');
+    // A label that fits at the size asked for keeps it.
+    CHECK(PowerupSelector::labelScale(text, ten, 1.0f, 100) == 1.0f);
+    CHECK(PowerupSelector::labelScale(text, ten, 0.3f, 45) == 0.3f);
+    // One that does not takes the largest size that keeps it within the width: cells advancing
+    // four fit 45, and a size a little larger advances them five.
+    const f32 fitted = PowerupSelector::labelScale(text, ten, 1.0f, 45);
+    CHECK(fitted < 0.5f);
+    CHECK(text.measure(ten, fitted) == 40);
+    CHECK(text.measure(ten, fitted + 0.001f) == 50);
+    // The selector's own size and width are the defaults.
+    CHECK(PowerupSelector::labelScale(text, std::string(28, 'A')) ==
+          PowerupSelector::labelScale(text, std::string(28, 'A'), PowerupSelector::kLabelScale,
+                                      PowerupSelector::kLabelBudget));
+}
+
 TEST_CASE("the challenge selector keeps Stop Time carried but refuses to activate it",
           "[selector][stop-time][secret]") {
     Inventory inventory;

@@ -11,19 +11,27 @@
 #include "game/players/PowerupEffects.h"
 
 namespace gdl::game {
+namespace {
 
-f32 PowerupSelector::labelScale(const TextPainter& text, std::string_view label) {
-    const s32 full = text.measure(label, kLabelScale);
-    if (full <= kLabelBudget) {
-        return kLabelScale;
+/** How many times the search for a label's size halves its span: enough to settle it to a
+ * 65536th of the size. */
+constexpr s32 kLabelSearchSteps = 16;
+
+} // namespace
+
+f32 PowerupSelector::labelScale(const TextPainter& text, std::string_view label, f32 size,
+                                s32 budget) {
+    const s32 full = text.measure(label, size);
+    if (full <= budget) {
+        return size;
     }
     // Glyph advances are truncated to whole pixels, so a single proportion can
     // still stick out. The lower bound of this search is always a size that fits.
     f32 low = 0;
-    f32 high = kLabelScale;
-    for (s32 attempt = 0; attempt < 16; ++attempt) {
+    f32 high = size;
+    for (s32 attempt = 0; attempt < kLabelSearchSteps; ++attempt) {
         const f32 mid = (low + high) * 0.5f;
-        if (text.measure(label, mid) <= kLabelBudget) {
+        if (text.measure(label, mid) <= budget) {
             low = mid;
         } else {
             high = mid;
