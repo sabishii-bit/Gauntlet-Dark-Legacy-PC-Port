@@ -14,11 +14,15 @@ use crate::{MediaError, Region, RomRule, Sha1Digest, Sha256Digest, SourceName};
 
 mod inflate;
 mod romdisk;
+mod wad;
 
 pub use inflate::{INFLATE_STEP, MAX_OVERLAY_PADDING, Trailer, inflate};
 pub use romdisk::{
     COMPRESSED, HEADER_WORDS_AT, RECORD_WORDS_LEN, ROMDISK_HEADER_LEN, ROMDISK_LIMITS,
     ROMDISK_MAGIC, Romdisk, RomdiskEntry, RomdiskLimits,
+};
+pub use wad::{
+    MAX_WAD_SECTIONS, MIN_WAD_DIRECTORY, WAD_ROW_LEN, WadByteOrder, WadSection, wad_sections,
 };
 
 /// The length of an N64 ROM's header, the least a ROM may hold.

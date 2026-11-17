@@ -26,7 +26,7 @@ pub enum MediaError {
     /// The job reading the dump was asked to stop before the read was done.
     #[error("cancelled")]
     Cancelled,
-    /// The N64 ROM breaks a rule of its format.
+    /// The N64 ROM, or a native file it holds, breaks a rule of its format.
     #[error("{detail}")]
     Rom {
         /// The rule it breaks.
@@ -80,7 +80,7 @@ impl From<Cancelled> for MediaError {
     }
 }
 
-/// The rules of the N64 ROM's format that a ROM is refused by.
+/// The rules of the N64 ROM's format, and of the native files it holds, that a ROM is refused by.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum RomRule {
     /// The ROM is shorter than its header, or does not end on a whole word.
@@ -132,6 +132,14 @@ pub enum RomRule {
     DeflateTrailer,
     /// An executable overlay's extent holds more bytes past the end of its stream than pad it.
     OverlayPadding,
+    /// A native WAD is shorter than its header.
+    WadHeader,
+    /// A native WAD's header describes a directory that ends where the WAD does in neither byte
+    /// order, or in both.
+    WadDirectory,
+    /// A row of a native WAD's directory tags its section with a byte other than printable ASCII
+    /// or NUL, or starts it before the header's end or past the directory's start.
+    WadSection,
 }
 
 impl RomRule {
@@ -160,6 +168,9 @@ impl RomRule {
             RomRule::DeflateEnd => "deflateEnd",
             RomRule::DeflateTrailer => "deflateTrailer",
             RomRule::OverlayPadding => "overlayPadding",
+            RomRule::WadHeader => "wadHeader",
+            RomRule::WadDirectory => "wadDirectory",
+            RomRule::WadSection => "wadSection",
         }
     }
 }
@@ -271,6 +282,9 @@ mod tests {
             (RomRule::DeflateEnd, "deflateEnd"),
             (RomRule::DeflateTrailer, "deflateTrailer"),
             (RomRule::OverlayPadding, "overlayPadding"),
+            (RomRule::WadHeader, "wadHeader"),
+            (RomRule::WadDirectory, "wadDirectory"),
+            (RomRule::WadSection, "wadSection"),
         ];
         for (rule, name) in rules {
             assert_eq!(rule.as_str(), name);

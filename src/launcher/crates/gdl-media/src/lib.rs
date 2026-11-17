@@ -13,8 +13,9 @@ pub use digest::{Sha1Digest, Sha256Digest};
 pub use error::{MediaError, RomRule};
 pub use identify::Region;
 pub use n64::{
-    ByteOrder, COMPRESSED, HEADER_WORDS_AT, INFLATE_STEP, MAX_OVERLAY_PADDING, MAX_ROM_LEN, N64Rom,
-    RECORD_WORDS_LEN, ROM_HEADER_LEN, ROMDISK_HEADER_LEN, ROMDISK_LIMITS, ROMDISK_MAGIC, RomHeader,
-    Romdisk, RomdiskEntry, RomdiskLimits, Trailer, US_SHA1, inflate,
+    ByteOrder, COMPRESSED, HEADER_WORDS_AT, INFLATE_STEP, MAX_OVERLAY_PADDING, MAX_ROM_LEN,
+    MAX_WAD_SECTIONS, MIN_WAD_DIRECTORY, N64Rom, RECORD_WORDS_LEN, ROM_HEADER_LEN,
+    ROMDISK_HEADER_LEN, ROMDISK_LIMITS, ROMDISK_MAGIC, RomHeader, Romdisk, RomdiskEntry,
+    RomdiskLimits, Trailer, US_SHA1, WAD_ROW_LEN, WadByteOrder, WadSection, inflate, wad_sections,
 };
 pub use source_name::SourceName;
