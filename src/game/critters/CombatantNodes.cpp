@@ -98,7 +98,7 @@ f32 Combatant::damageNode(s32 index, f32 amount, u32 flags) {
     amount = std::clamp(amount, 0.0f, state.health);
     state.health -= amount;
     if (overrun && (part.flags & CritterPart::kBreakable) != 0) {
-        const Vec3 origin{attachmentTransform(actor, part.node) * Vec4{part.position, 1}};
+        const Vec3 origin = partCentre(actor, part);
         state.broken = true;
         state.heldPose = actor.pose.poses()[*node];
         if (const AttackDefinition* damage = data()->damage(part.damageEffect)) {

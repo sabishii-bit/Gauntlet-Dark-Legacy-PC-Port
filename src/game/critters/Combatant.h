@@ -528,6 +528,11 @@ private:
     void strikeWith(Actor& critter, s32 id, const MoveDefinition& move, s32 damageIndex,
                     std::span<const EnemyView> players);
     static Vec3 partPosition(const Actor& critter, std::string_view node);
+    /** Where a part's volume is centred (CritterUpdateColnodes): GetWorldMat adds the part's
+     * offset to its node's own translation before composing the parents, so the offset lies in
+     * the parent's frame and the node's own turn and scale never move it. A root node's lies in
+     * the model's frame. Data whose rules keep the node's frame turns it with the node. */
+    static Vec3 partCentre(const Actor& critter, const CritterPart& part);
     static Mat4 partTransform(const Actor& critter, std::string_view node);
     static Mat4 attachmentTransform(const Actor& critter, std::string_view node);
     static Mat4 modelTransform(const Actor& critter);

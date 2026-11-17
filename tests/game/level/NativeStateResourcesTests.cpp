@@ -117,6 +117,28 @@ TEST_CASE("native critter resource identity includes decoded impact policies",
     }
 }
 
+TEST_CASE("native critter resource identity includes how its parts are placed",
+          "[native-digest][native-state-resources][critter-contact]") {
+    formats::CritterFile source;
+    source.descriptors.resize(1);
+    source.types.resize(1);
+    source.types[0].moveCount = 1;
+    source.moves.resize(1);
+    CritterRules rules;
+    const auto parentFrame = CritterData::fromDecoded("TEST", source, 0, rules);
+    rules.nodeFramePartOffsets = true;
+    const auto nodeFrame = CritterData::fromDecoded("TEST", source, 0, rules);
+    NativeStateResources first;
+    NativeStateResources second;
+    REQUIRE(first.registerCritter(parentFrame, "native/TEST", 0));
+    REQUIRE(second.registerCritter(nodeFrame, "native/TEST", 0));
+    const auto parentIdentity = resourceHash(first, &parentFrame);
+    const auto nodeIdentity = resourceHash(second, &nodeFrame);
+    REQUIRE(parentIdentity);
+    REQUIRE(nodeIdentity);
+    CHECK(parentIdentity != nodeIdentity);
+}
+
 TEST_CASE("native builtin white textures identify particle fallbacks without renderer writes",
           "[native-digest][native-state-resources][native-builtin-texture]") {
     const test::FakeRenderDevice first{};

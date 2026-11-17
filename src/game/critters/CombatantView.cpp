@@ -129,6 +129,25 @@ Vec3 Combatant::partPosition(const Actor& critter, std::string_view node) {
     return Vec3{partTransform(critter, node)[3]};
 }
 
+Vec3 Combatant::partCentre(const Actor& critter, const CritterPart& part) {
+    if (critter.definition->rules().nodeFramePartOffsets) {
+        return Vec3{attachmentTransform(critter, part.node) * Vec4{part.position, 1}};
+    }
+    const Mat4 model = modelTransform(critter);
+    const TreeInfo& tree = *critter.stock->tree;
+    const auto node = tree.findNode(part.node, kCombatantNodeNameLength);
+    const std::span<const Mat4> matrices = critter.pose.matrices();
+    if (!node.has_value() || *node >= matrices.size()) {
+        return Vec3{model * Vec4{part.position, 1}};
+    }
+    // The frame the pose composed the node in: its parent's, else the model's.
+    const s32 parent = tree.nodes[*node].parent;
+    const Vec3 offset = parent >= 0 && static_cast<u32>(parent) < *node
+                            ? Mat3{matrices[static_cast<usize>(parent)]} * part.position
+                            : part.position;
+    return Vec3{model * Vec4{Vec3{matrices[*node][3]} + offset, 1}};
+}
+
 Mat4 Combatant::partTransform(const Actor& critter, std::string_view node) {
     if (node.empty() ||
         !critter.stock->tree->findNode(node, kCombatantNodeNameLength).has_value()) {
@@ -213,7 +232,7 @@ std::vector<MissileTarget> Combatant::ownTargets(bool solidOnly) const {
             !nodeAvailable(actor, part.node) || actor.hitNodes[i].health <= 0) {
             continue;
         }
-        const Vec3 centre{attachmentTransform(actor, part.node) * Vec4{part.position, 1}};
+        const Vec3 centre = partCentre(actor, part);
         const f32 radius = part.radius * actor.scale;
         MissileTarget target{id(), centre - Vec3{0, radius, 0}, radius, 2 * radius};
         target.node = static_cast<s32>(i);

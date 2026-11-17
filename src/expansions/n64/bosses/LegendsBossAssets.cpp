@@ -353,7 +353,10 @@ std::unique_ptr<CombatantAssets> loadLegendsBossAssets(RenderDevice& device,
                        // e08819b8 targets feet+4 before e08882a0 subtracts four.
                        // A class-dependent midpoint would aim below the floor.
                        .projectileTargetHeight = 4,
-                       .restoreCaptureSupport = true};
+                       .restoreCaptureSupport = true,
+                       // How Boss.bin places hit nodes is unread, so part offsets stay
+                       // in their nodes' frames.
+                       .nodeFramePartOffsets = true};
     auto data = CritterData::fromDecoded(family.name, decoded, 0, rules);
     std::vector<CritterData> children;
     std::set<s32> visited{0};

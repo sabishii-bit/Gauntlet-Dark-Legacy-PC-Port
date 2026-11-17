@@ -51,6 +51,7 @@ TEST_CASE("Native boss assets bind six original skeletons and every authored mov
             CHECK(stock->data.rules().pressureReferenceDamage == pressure);
             CHECK(stock->data.rules().projectileTargetHeight == 4);
             CHECK(stock->data.rules().restoreCaptureSupport);
+            CHECK(stock->data.rules().nodeFramePartOffsets);
             CHECK(stock->tree->name == stock->data.tree());
             CHECK(stock->archive.models.loaded());
             CHECK(stock->archive.textures.loaded());

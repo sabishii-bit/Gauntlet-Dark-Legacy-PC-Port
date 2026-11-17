@@ -84,8 +84,10 @@ loadLegendsDreamcastBossAssets(RenderDevice& device, const std::filesystem::path
     // attack windows, damage, links, sounds and authored effect placement.
     // Capture support is deliberately enabled for imported arenas: a throw must
     // not leave the player falling forever outside the map's finite floor mesh.
+    // How 1ST_READ.BIN places hit nodes is unread, so part offsets stay in their nodes' frames.
     CritterRules rules{.pressureReferenceDamage = decoded.types.front().pressureReferenceDamage,
-                       .restoreCaptureSupport = true};
+                       .restoreCaptureSupport = true,
+                       .nodeFramePartOffsets = true};
     auto data = CritterData::fromDecoded(family.name, decoded, 0, rules);
     std::vector<CritterData> children;
     for (s32 child = data.childIndex(); child >= 0;) {

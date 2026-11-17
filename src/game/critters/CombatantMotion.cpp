@@ -243,7 +243,7 @@ bool Combatant::translate(Actor& critter, f32 seconds, const MoveDefinition* mov
                     !nodeAvailable(critter, part.node)) {
                     continue;
                 }
-                const Vec3 from{attachmentTransform(critter, part.node) * Vec4{part.position, 1}};
+                const Vec3 from = partCentre(critter, part);
                 if (movementTouchesBody(from, from + offset, centre, player.radius + part.radius,
                                         0.5f * player.height + part.radius)) {
                     const f32 distance = glm::length(
@@ -308,7 +308,7 @@ bool Combatant::translate(Actor& critter, f32 seconds, const MoveDefinition* mov
                 if (other.hitNodes[i].health <= 0 || !nodeAvailable(other, part.node)) {
                     continue;
                 }
-                const Vec3 centre{attachmentTransform(other, part.node) * Vec4{part.position, 1}};
+                const Vec3 centre = partCentre(other, part);
                 if (movementTouchesBody(from, peerDestination, centre, radius + part.radius,
                                         radius + part.radius)) {
                     return false;
@@ -378,8 +378,7 @@ bool Combatant::blockedBySwarm(Actor& critter, const Vec3& to) {
                     !nodeAvailable(critter, part.node)) {
                     continue;
                 }
-                hit = touch(Vec3{attachmentTransform(critter, part.node) * Vec4{part.position, 1}},
-                            radius + part.radius, height + part.radius);
+                hit = touch(partCentre(critter, part), radius + part.radius, height + part.radius);
                 if (hit) {
                     break;
                 }
@@ -452,7 +451,7 @@ bool Combatant::blockedByItems(Actor& critter, const Vec3& to) {
                     !nodeAvailable(critter, part.node)) {
                     continue;
                 }
-                const Vec3 centre{attachmentTransform(critter, part.node) * Vec4{part.position, 1}};
+                const Vec3 centre = partCentre(critter, part);
                 if (touches(centre, part.radius, part.radius)) {
                     contact = true;
                     break;

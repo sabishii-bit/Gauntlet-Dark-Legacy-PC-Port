@@ -35,6 +35,9 @@ struct CritterRules {
     /** Negative retains the class cylinder midpoint; otherwise measured from feet. */
     f32 projectileTargetHeight = -1;
     bool restoreCaptureSupport = false;
+    /** A part's offset turns with its node. GDL's GetWorldMat (0x800BB614) instead adds it in
+     * the frame of the node's parent, so the node's own turn and scale never move it. */
+    bool nodeFramePartOffsets = false;
 };
 
 struct CombatantAttachment {

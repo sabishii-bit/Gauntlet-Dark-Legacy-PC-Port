@@ -355,7 +355,7 @@ bool NativeStateResources::registerCritter(const CritterData& data, std::string_
     auto value = identity("critter");
     value.values(wadKey, typeIndex, data.childIndex(), data.parentIndex(), data.name(),
                  data.folder(), data.prefix(), data.tree(), data.rootNode(), data.kind());
-    value.fields<10>(data.rules());
+    value.fields<11>(data.rules());
     for (const auto& sound : data.sounds()) {
         value.fields<14>(sound);
     }

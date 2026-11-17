@@ -12,18 +12,22 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
+#include "engine/assets/AnimationSet.h"
 #include "engine/assets/WorldLayout.h"
 #include "engine/core/Types.h"
 #include "engine/io/File.h"
 #include "engine/math/ApproximateLength.h"
+#include "engine/world/TreePose.h"
 #include "engine/world/WorldCollision.h"
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "fixtures/NativeModelFixture.h"
+#include "formats/CritterWad.h"
 #include "game/bosses/Bosses.h"
 #include "game/critters/Combatant.h"
 #include "game/critters/CombatantFixture.h"
+#include "game/critters/CritterData.h"
 #include "game/critters/Critters.h"
 #include "game/critters/Gargoyle.h"
 #include "game/critters/General.h"
@@ -2407,6 +2411,183 @@ TEST_CASE("node-based critters use solid animated parts for player movement cont
     REQUIRE(pushes.size() == (blocked ? 1 : 0));
     if (blocked) {
         CHECK(pushes.front().velocity == Vec3{2, 0, 0});
+    }
+}
+
+/** A general whose ARM stands five along x from its ROOT and is turned a quarter about y
+ * through its stance (the ROOT too when `parentTurns`), its one solid part two along x from
+ * ARM, under `rules`. */
+void loadTurnedPart(test::FakeRenderDevice& device, CombatantAssets& assets, bool parentTurns,
+                    const CritterRules& rules = {}) {
+    const auto root = familyAssets();
+    auto archive = root / "MONSTERS" / General::definition().name;
+    if (General::definition().realmCostume) {
+        archive /= "LEVELG";
+    }
+    const std::string quarterTurn = R"("flags":2,"frames":[0],"values":[1.5707964])";
+    const std::string rootTrack = parentTurns ? R"({"node":0,)" + quarterTurn + "}," : "";
+    writeTextFile(archive / "animations.json", R"({"trees":[{"name":"BODY","nodes":[
+      {"name":"ROOT","object":"BODY","parent":-1,"position":[0,0,0]},
+      {"name":"ARM","object":"BODY","parent":0,"position":[5,0,0]}],
+      "sequences":[{"name":"STEP","frames":3,"tracks":[)" +
+                                                   rootTrack + R"({"node":1,)" + quarterTurn +
+                                                   "}]}]}]}");
+    REQUIRE(assets.load(device, root, General::definition(), 'G'));
+    formats::CritterFile source;
+    source.descriptors.push_back({"general", "BODY", static_cast<s16>(CombatantKind::General)});
+    auto& type = source.types.emplace_back();
+    type.typeFlags = CritterData::kSolidParts;
+    type.radius = 2;
+    type.wallRadius = 1;
+    type.maxHealth = 100;
+    type.moveCount = 1;
+    type.colCount = 1;
+    auto& ready = source.moves.emplace_back();
+    ready.name = "READY";
+    ready.anim = "STEP";
+    ready.type = MoveDefinition::kReady;
+    auto& arm = source.nodes.emplace_back();
+    arm.nodeName = "ARM";
+    arm.flags = static_cast<s16>(CritterPart::kSolid);
+    arm.position = {2, 0, 0};
+    arm.radius = 1;
+    assets.data = CritterData::fromDecoded("GENERAL", source, 0, rules);
+}
+
+TEST_CASE("a solid part's offset sits in its node's parent frame, as the original's GetWorldMat "
+          "places it",
+          "[combatant][critter-contact]") {
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    Combatant actor;
+    // Level with the part and 2.2 along x from where GetWorldMat (0x800BB614) puts it: within
+    // the general's knocked step there, out of reach of the part turned with ARM to (5, 0, -2).
+    EnemyView player;
+    player.player = 1;
+    player.position = {9.2f, -3, 0};
+    const auto knockedStep = [&] {
+        EnemyHit hit;
+        hit.damage = 1;
+        hit.flags = kKnockOver;
+        hit.direction = {1, 0, 0};
+        actor.hurt(hit);
+        actor.update(2, 1.0f / 30, std::span{&player, 1});
+    };
+    const auto solidCentre = [&] {
+        const auto targets = actor.bodyTargets(true);
+        REQUIRE(targets.size() == 2); // the part, then the body
+        REQUIRE(targets[0].node == 0);
+        return targets[0].base + Vec3{0, targets[0].radius, 0};
+    };
+    SECTION("the node's own turn leaves the offset where its parent holds it") {
+        loadTurnedPart(device, assets, false);
+        REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+        const auto node = actor.nodeTransform("ARM");
+        REQUIRE(node.has_value());
+        REQUIRE(glm::distance(Vec3{*node * Vec4{2, 0, 0, 1}}, Vec3{5, 0, -2}) < 1e-4f);
+        CHECK(glm::distance(solidCentre(), Vec3{7, 0, 0}) < 1e-4f);
+        knockedStep();
+        CHECK(actor.position().x == 0);
+        const auto pushes = actor.takePushes();
+        REQUIRE(pushes.size() == 1);
+        CHECK(pushes.front().player == 1);
+        CHECK(glm::distance(pushes.front().velocity, Vec3{2, 0, 0}) < 1e-4f);
+    }
+    SECTION("the parent's turn carries the offset with it") {
+        loadTurnedPart(device, assets, true);
+        REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+        CHECK(glm::distance(solidCentre(), Vec3{0, 0, -7}) < 1e-4f);
+    }
+    SECTION("data whose rules keep the node's frame turns the offset with the node") {
+        CritterRules rules;
+        rules.nodeFramePartOffsets = true;
+        loadTurnedPart(device, assets, false, rules);
+        REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+        CHECK(glm::distance(solidCentre(), Vec3{5, 0, -2}) < 1e-4f);
+        knockedStep();
+        CHECK(actor.position().x == Approx(10.0f / 30));
+        CHECK(actor.takePushes().empty());
+    }
+}
+
+TEST_CASE("great ones' parts stand where the original's GetWorldMat places them through every "
+          "move, the ice golem's far from where their own turns swing them",
+          "[combatant][critter-contact][assets]") {
+    struct Form {
+        std::string_view critter;   ///< its CRITTER wad
+        std::string_view animation; ///< its costume's animations
+        CombatantDefinition definition;
+        char realm = 'G';
+        bool swungFar = false; ///< whether its own turns swing a part units away
+    };
+    const std::array forms{
+        Form{"CRITTER/GOLEMI.WAD", "MONSTERS/GOLEM/LEVELI/ANIM.PS2", Golem::definition('I'), 'I',
+             true},
+        Form{"CRITTER/GOLEM.WAD", "MONSTERS/GOLEM/LEVELG/ANIM.PS2", Golem::definition('G'), 'G'},
+        Form{"CRITTER/GOLEM.WAD", "MONSTERS/GOLEM/LEVELA/ANIM.PS2", Golem::definition('A'), 'A'},
+        Form{"CRITTER/GOLEMF.WAD", "MONSTERS/GOLEM/LEVELF/ANIM.PS2", Golem::definition('F'), 'F'},
+        Form{"CRITTER/GAR_EAGL.WAD", "MONSTERS/GAR_EAGL/ANIM.PS2", Gargoyle::definition("EAGL")},
+        Form{"CRITTER/GAR_LION.WAD", "MONSTERS/GAR_LION/ANIM.PS2", Gargoyle::definition("LION")},
+        Form{"CRITTER/GAR_SERP.WAD", "MONSTERS/GAR_SERP/ANIM.PS2", Gargoyle::definition("SERP")}};
+    const auto& form = forms[static_cast<usize>(GENERATE(0, 1, 2, 3, 4, 5, 6))];
+    const auto root = test::assetOrSkip(form.critter).parent_path().parent_path();
+    test::assetOrSkip(form.animation);
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, form.definition, form.realm));
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, form.realm));
+    const TreeInfo& tree = *assets.tree;
+    f32 misplaced = 0; ///< the furthest a part's volume stands from GetWorldMat's place
+    f32 rise = 0;  ///< the furthest that place lies above or below the part turned with its node
+    f32 shift = 0; ///< and along the ground
+    usize poses = 0;
+    for (usize move = 0; move < assets.data.moves().size(); ++move) {
+        const auto sequence = tree.findSequence(assets.data.moves()[move].anim);
+        if (!sequence) {
+            continue;
+        }
+        for (s32 frame = 0; frame < std::max(1, tree.sequences[*sequence].frames); ++frame) {
+            Combatant::MovePoint point;
+            point.frame = static_cast<f32>(frame);
+            REQUIRE(actor.setMove(move, point));
+            const auto model = actor.nodeTransform({});
+            REQUIRE(model.has_value());
+            const TreePose pose = actor.presentedPose(-1);
+            for (const auto& volume : actor.bodyTargets()) {
+                if (volume.node < 0) {
+                    continue;
+                }
+                const auto& part = assets.data.parts()[static_cast<usize>(volume.node)];
+                const auto node = tree.findNode(part.node, kCombatantNodeNameLength);
+                REQUIRE(node.has_value());
+                // GetWorldMat copies the node's local matrix, adds the offset to its translation
+                // and then composes the parents.
+                Mat4 local = TreePose::localMatrix(pose.poses()[*node], tree.nodes[*node].position);
+                local[3] += Vec4{part.position, 0};
+                const s32 parent = tree.nodes[*node].parent;
+                const Mat4 above =
+                    parent >= 0 ? pose.matrices()[static_cast<usize>(parent)] : Mat4{1};
+                const Vec3 placed{(*model * above * local)[3]};
+                const Vec3 centre = volume.base + Vec3{0, 0.5f * volume.height, 0};
+                const Vec3 turned{*actor.nodeTransform(part.node) * Vec4{part.position, 1}};
+                misplaced = std::max(misplaced, glm::distance(centre, placed));
+                rise = std::max(rise, std::abs(placed.y - turned.y));
+                shift =
+                    std::max(shift, glm::length(Vec2{placed.x - turned.x, placed.z - turned.z}));
+                ++poses;
+            }
+        }
+    }
+    CAPTURE(form.critter, form.animation, poses, misplaced, rise, shift);
+    REQUIRE(poses > 0);
+    CHECK(misplaced < 1e-3f);
+    if (form.swungFar) {
+        CHECK(rise > 3.0f);
+        CHECK(shift > 3.0f);
+    } else {
+        CHECK(rise < 0.1f);
+        CHECK(shift < 0.1f);
     }
 }
 
