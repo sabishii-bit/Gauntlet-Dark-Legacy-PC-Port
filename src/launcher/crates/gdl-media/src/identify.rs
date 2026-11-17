@@ -308,29 +308,32 @@ pub struct Identity {
 }
 
 /// What the dump at `path` is, told from its content, never from its name. A folder is the disc
-/// whose one sheet [`find_sheet`] finds in it. A file is known by the first of these its content
-/// meets: an N64 ROM's first word, in any byte order, when the ROM is read whole and judged
-/// against the US cartridge; the marks of a GameCube disc image, whole or sparse, which is judged
-/// when it is read to install from; the marks of an archive, a CHD, an Alcohol 120% descriptor, a
-/// DiscJuggler image, a Nero image or a CloneCD control file, each refused; a sheet's text, the
-/// readers' refusal of it included; a sheet beside it that names it as a track's file; and an
-/// ISO 9660 image's volume descriptor in cooked sectors, refused. Anything else is unrecognized.
-/// A disc is read as the Dreamcast extractor reads its head, and judged by its boot area against
-/// the US disc, a boot area of another game telling only that. The verdict describes the dump and
-/// never decides an extraction, which holds the dump to values it is given.
+/// whose one sheet [`find_sheet`] finds in it, whatever the folder's path ends in, a drive's root
+/// or `..` included, since the disc is known by its sheet's name. A file is known by the first of
+/// these its content meets: an N64 ROM's first word, in any byte order, when the ROM is read whole
+/// and judged against the US cartridge; the marks of a GameCube disc image, whole or sparse, which
+/// is judged when it is read to install from; the marks of an archive, a CHD, an Alcohol 120%
+/// descriptor, a DiscJuggler image, a Nero image or a CloneCD control file, each refused; a
+/// sheet's text, the readers' refusal of it included; a sheet beside it that names it as a track's
+/// file; and an ISO 9660 image's volume descriptor in cooked sectors, refused. Anything else is
+/// unrecognized. A disc is read as the Dreamcast extractor reads its head, and judged by its boot
+/// area against the US disc, a boot area of another game telling only that. The verdict describes
+/// the dump and never decides an extraction, which holds the dump to values it is given.
 ///
-/// A path that names no file, such as a root, is refused before anything is read, and so is one
+/// A path that is no folder and names no file is refused before anything is read, and so is one
 /// where what is there is neither a folder nor a regular file. Fails when the dump cannot be read,
 /// or when the ROM or the disc breaks a rule of its format. Identification reads no more than a
 /// file's first [`MAX_SHEET_LEN`] bytes and its last 16, the small files beside it that may be
 /// sheets, a disc's sheet, its data tracks' first sectors and its boot area, and a ROM whole; it
 /// only ever reads.
 pub fn identify(path: &Path) -> Result<Identity, MediaError> {
-    let name = SourceName::of(path).ok_or_else(|| MediaError::names_no_file(path))?;
     let metadata = fs::metadata(path).map_err(|error| MediaError::io(path, error))?;
     if metadata.is_dir() {
         return found_sheet(&find_sheet(path)?);
     }
+    // A file's name goes into what is recorded of the dump, so a path that names none is refused
+    // before the file is read.
+    let name = SourceName::of(path).ok_or_else(|| MediaError::names_no_file(path))?;
     let ends = Ends::read(path)?;
     let first = ends.head.first_chunk().copied();
     if first.and_then(ByteOrder::of_first_word).is_some() {
@@ -725,9 +728,6 @@ mod tests {
 
     /// What the launcher answers for a folder given as a dump that holds no sheet.
     const NO_SHEET_IN_FOLDER: &str = "No sheet in the folder lists a disc's tracks";
-
-    /// What a reader answers for a dump path that names no file.
-    const NAMES_NO_FILE: &str = "the path names no file";
 
     /// What `path` is identified as, which must be told.
     fn identified(path: &Path) -> Identity {
@@ -1556,23 +1556,20 @@ mod tests {
     }
 
     #[test]
-    fn a_path_that_names_no_file_is_refused_before_anything_is_read() {
+    fn a_folder_is_known_by_its_sheet_whatever_its_path_ends_in() {
+        let vectors = dreamcast_vectors();
+        // The full set in a folder of its own, beside an empty one: the folder given by a path
+        // that ends in `..`, and so names no file, as a drive's root does, is the disc all the
+        // same, its sheet found there and named by its own name.
         let dir = tempfile::tempdir().unwrap();
-        DiscSet::full(Edc::Zero).write(dir.path()).unwrap();
-        // Each is a folder that is there, a folder holding the full set's sheet among them.
-        let root = dir.path().ancestors().last().unwrap().to_path_buf();
-        let inside = dir.path().join("track3.bin").join("..");
-        let unnamed = [dir.path().join(".."), inside, root, PathBuf::from("..")];
-        for path in unnamed {
-            let error = identify(&path).unwrap_err();
-            let MediaError::Io { path: at, source } = &error else {
-                panic!("{}: {error:?}", path.display());
-            };
-            assert_eq!(*at, path);
-            assert_eq!(source.kind(), ErrorKind::InvalidInput, "{error}");
-            assert_eq!(source.to_string(), NAMES_NO_FILE);
-            assert_eq!(error.rule(), "io");
-        }
+        let set = dir.path().join("set");
+        fs::create_dir_all(set.join("empty")).unwrap();
+        DiscSet::full(Edc::Zero).write(&set).unwrap();
+        let unnamed = set.join("empty").join("..");
+        assert_eq!(unnamed.file_name(), None);
+        let sheet = unnamed.join("full.cue");
+        let expected = us_disc(&sheet, SheetKind::Cue, full_tracks(&vectors, None));
+        assert_eq!(identified(&unnamed), expected);
     }
 
     #[test]
