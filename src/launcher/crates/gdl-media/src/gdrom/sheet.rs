@@ -10,7 +10,7 @@ use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 
 use super::{cue, gdi, is_number, lines, strip};
-use crate::dump_file::open_regular;
+use crate::dump_file::{open_regular, open_regular_within};
 use crate::{DiscRule, MediaError};
 
 /// The most bytes a sheet may hold: far more than any disc's list of tracks needs, so that a large
@@ -45,12 +45,15 @@ enum Search {
     Beside,
 }
 
-/// A sheet found in a folder, and the tracks it lists when the readers take it.
+/// A sheet found in a folder, and the files beside it that it names.
 struct FoundSheet {
     /// Its path in the folder.
     path: PathBuf,
-    /// Its tracks, or `None` for a sheet the readers refuse, which names none they can read.
-    tracks: Option<Vec<SheetTrack>>,
+    /// Whether the readers take it.
+    taken: bool,
+    /// The files it names: those of the tracks the readers read from it or, for a sheet they
+    /// refuse, those its text gives.
+    files: Vec<String>,
 }
 
 /// What kind of sheet lists a dump's tracks.
@@ -179,15 +182,19 @@ pub(crate) fn sheet_of(bytes: &[u8]) -> Option<Result<(SheetKind, Vec<SheetTrack
 /// file a sheet names: whatever the letter case on Windows, and exactly on Linux. A sheet is a
 /// regular file of at most [`MAX_SHEET_LEN`] bytes whose text [`parse_sheet`] reads, or refuses
 /// by a rule only a sheet's text breaks, as it refuses a cue sheet that keeps every track in one
-/// file; only a sheet it reads names a track's file. Refused when there is no such sheet, or more
-/// than one, and when what is at `path` is neither a folder nor a regular file.
-/// Every file is only ever read, and only once seen to be a regular file, so that no FIFO or
-/// device is opened.
+/// file, so that such a dump is told by its own refusal however it is given. A sheet the readers
+/// take names the files of the tracks they read from it, and one they refuse the files its text
+/// gives; one they refuse is found only where no sheet they take is, in the folder or naming the
+/// file, so that a stray file beside a dump's sheet never hides it. Refused when there is no such
+/// sheet, or more than one, and when what is at `path` is neither a folder nor a regular file, or
+/// when a file short enough to be a sheet cannot be read. Every file is only ever read, and only
+/// once seen to be a regular file no longer than a sheet may be, so that no FIFO or device is
+/// opened, nor a track's file, which another program may hold open.
 pub fn find_sheet(path: &Path) -> Result<PathBuf, MediaError> {
     let metadata = fs::metadata(path).map_err(|error| MediaError::io(path, error))?;
     if metadata.is_dir() {
-        let sheets = sheets_in(path)?.into_iter().map(|sheet| sheet.path);
-        return one_of(sheets.collect(), Search::Folder)?.ok_or_else(|| no_sheet(Search::Folder));
+        let sheets = preferred(sheets_in(path)?);
+        return one_of(sheets, Search::Folder)?.ok_or_else(|| no_sheet(Search::Folder));
     }
     if !metadata.is_file() {
         return Err(MediaError::names_no_regular_file(path));
@@ -198,9 +205,9 @@ pub fn find_sheet(path: &Path) -> Result<PathBuf, MediaError> {
     sheet_naming(path)?.ok_or_else(|| no_sheet(Search::Beside))
 }
 
-/// The one sheet beside the file at `path`, in its folder, that the readers take and that names
-/// the file as a track's, as [`find_sheet`] finds it, or `None` when no sheet there names it.
-/// Refused when more than one does.
+/// The one sheet beside the file at `path`, in its folder, that names the file as a track's, as
+/// [`find_sheet`] finds it, or `None` when no sheet there names it. Refused when more than one
+/// does.
 pub(crate) fn sheet_naming(path: &Path) -> Result<Option<PathBuf>, MediaError> {
     // A name that is no Unicode is none a sheet's text can give.
     let Some(name) = path.file_name().and_then(OsStr::to_str) else {
@@ -208,10 +215,19 @@ pub(crate) fn sheet_naming(path: &Path) -> Result<Option<PathBuf>, MediaError> {
     };
     let folder = path.parent().unwrap_or(Path::new(""));
     let naming = sheets_in(folder)?.into_iter().filter(|sheet| {
-        let mut tracks = sheet.tracks.iter().flatten();
-        tracks.any(|track| names_file(&track.file, name))
+        let mut files = sheet.files.iter();
+        files.any(|file| names_file(file, name))
     });
-    one_of(naming.map(|sheet| sheet.path).collect(), Search::Beside)
+    one_of(preferred(naming), Search::Beside)
+}
+
+/// The paths of `sheets`: of those the readers take, or of those they refuse when they take none,
+/// so that a sheet the readers refuse tells a dump only where no sheet they take does.
+fn preferred(sheets: impl IntoIterator<Item = FoundSheet>) -> Vec<PathBuf> {
+    let (taken, refused): (Vec<FoundSheet>, Vec<FoundSheet>) =
+        sheets.into_iter().partition(|sheet| sheet.taken);
+    let chosen = if taken.is_empty() { refused } else { taken };
+    chosen.into_iter().map(|sheet| sheet.path).collect()
 }
 
 /// Every sheet in `folder`, which is empty when a relative path names no folder before its file,
@@ -228,27 +244,51 @@ fn sheets_in(folder: &Path) -> Result<Vec<FoundSheet>, MediaError> {
     for entry in entries {
         let entry = entry.map_err(|error| MediaError::io(listed, error))?;
         let path = folder.join(entry.file_name());
-        if let Some(read) = sheet_bytes(&path)?.as_deref().and_then(sheet_of) {
-            let tracks = read.ok().map(|(_, tracks)| tracks);
-            sheets.push(FoundSheet { path, tracks });
-        }
+        let Some(bytes) = sheet_bytes(&path)? else {
+            continue;
+        };
+        let found = match sheet_of(&bytes) {
+            None => continue,
+            Some(Ok((_, tracks))) => FoundSheet {
+                path,
+                taken: true,
+                files: tracks.into_iter().map(|track| track.file).collect(),
+            },
+            Some(Err(_)) => FoundSheet {
+                path,
+                taken: false,
+                files: named_files(&bytes),
+            },
+        };
+        sheets.push(found);
     }
     Ok(sheets)
 }
 
+/// The files that `bytes`, a sheet the readers refuse by a rule only a sheet's text breaks, names
+/// beside it, whatever rule it breaks: those a GDI's track lines give, or a cue sheet's FILE
+/// lines.
+fn named_files(bytes: &[u8]) -> Vec<String> {
+    // Such a sheet is UTF-8 text, since text that is none is no sheet at all.
+    let text = str::from_utf8(without_mark(bytes)).unwrap_or_default();
+    if begins_with_count(text) {
+        gdi::named_files(text)
+    } else {
+        cue::named_files(text)
+    }
+}
+
 /// What the file at `path` holds, when it is a regular file of at most [`MAX_SHEET_LEN`] bytes,
-/// opened only once seen to be one. `None`, unread, when it is gone, is no regular file or is
-/// longer, and when it grows past the bound as it is read.
+/// opened only once seen to be one of that length at most. `None`, unread, when it is gone, is no
+/// regular file or is longer, neither of which is opened, and when it grows past the bound as it
+/// is read.
 fn sheet_bytes(path: &Path) -> Result<Option<Vec<u8>>, MediaError> {
-    let (file, len) = match open_regular(path) {
+    let (file, len) = match open_regular_within(path, MAX_SHEET_LEN) {
         Ok(Some(opened)) => opened,
         Ok(None) => return Ok(None),
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
         Err(error) => return Err(MediaError::io(path, error)),
     };
-    if len > MAX_SHEET_LEN {
-        return Ok(None);
-    }
     read_up_to_bound(file, path, len)
 }
 
@@ -327,7 +367,7 @@ mod tests {
     use std::io::{self, ErrorKind, Read};
     use std::path::{Path, PathBuf};
 
-    use gdl_fixtures::{DiscSet, Edc, snapshot};
+    use gdl_fixtures::{DiscSet, Edc, hold_closed, holds_bind, snapshot};
     use serde_json::{Value, json};
     use tempfile::TempDir;
 
@@ -543,26 +583,95 @@ mod tests {
 
     #[test]
     fn a_sheet_the_readers_refuse_is_still_a_sheet() {
-        // Alone in its folder, it is the folder's sheet, and given itself it is its own; reading
-        // it then refuses it by its own rule.
-        for (name, text) in [("disc.cue", ONE_FILE_DISC), ("disc.gdi", COOKED_GDI)] {
+        // Alone in its folder, it is the folder's sheet; given itself it is its own; and it names
+        // the file its text gives as a track's, which is told by it too. Reading it then refuses
+        // it by its own rule.
+        let sheets = [
+            ("disc.cue", ONE_FILE_DISC, "disc.bin"),
+            ("disc.gdi", COOKED_GDI, "track01.iso"),
+        ];
+        for (name, text, track) in sheets {
             let dir = tempfile::tempdir().unwrap();
             let path = dir.path().join(name);
             fs::write(&path, text).unwrap();
+            fs::write(dir.path().join(track), b"track").unwrap();
+            fs::write(dir.path().join("other.bin"), b"other").unwrap();
             assert_eq!(found(dir.path()), path);
             assert_eq!(found(&path), path);
+            assert_eq!(found(&dir.path().join(track)), path, "{name}");
+            // A file its text does not name is no track of it.
+            let other = dir.path().join("other.bin");
+            assert_eq!(refused(&other), said("noSheet", NO_SHEET_BESIDE));
             let rule = parse_sheet(text.as_bytes()).unwrap_err().rule();
             assert_eq!(read_sheet(&path).unwrap_err().rule(), rule, "{name}");
         }
-        // Beside a sheet the readers take, the folder holds two; yet it names no track's file,
-        // for the readers read no track from it, though its text names one.
+        // Two of them that name one file: the folder holds several, and so does the file.
+        let dir = tempfile::tempdir().unwrap();
+        for name in ["one.cue", "two.cue"] {
+            fs::write(dir.path().join(name), ONE_FILE_DISC).unwrap();
+        }
+        fs::write(dir.path().join("disc.bin"), b"track").unwrap();
+        let several = "2 sheets in the folder list a disc's tracks";
+        assert_eq!(refused(dir.path()), said("severalSheets", several));
+        let several = "2 sheets beside the file name it as a track's file";
+        let track = dir.path().join("disc.bin");
+        assert_eq!(refused(&track), said("severalSheets", several));
+
+        // Beside a sheet the readers take it is passed over, and so is a file of notes whose
+        // first line is a number, which reads as a GDI's count: the folder's sheet is the one the
+        // readers take, and so is the sheet of the track's file both name.
         let full = written(&DiscSet::full(Edc::Zero));
         let refused_sheet = ONE_FILE_DISC.replace("disc.bin", "track3.bin");
         fs::write(full.path().join("one-file.cue"), refused_sheet).unwrap();
-        let several = "2 sheets in the folder list a disc's tracks";
-        assert_eq!(refused(full.path()), said("severalSheets", several));
+        let notes = "2024\nDumped from my own disc\n";
+        assert_eq!(
+            parse_sheet(notes.as_bytes()).unwrap_err().rule(),
+            "gdiCount"
+        );
+        fs::write(full.path().join("notes.txt"), notes).unwrap();
         let sheet = full.path().join("full.cue");
+        assert_eq!(found(full.path()), sheet);
         assert_eq!(found(&full.path().join("track3.bin")), sheet);
+    }
+
+    #[test]
+    fn a_file_too_long_to_be_a_sheet_is_never_opened() {
+        // Asked apart from the holds, so that a hold which kept nothing out fails the test.
+        let probe = tempfile::tempdir().unwrap();
+        let binds = holds_bind(probe.path()).unwrap();
+        // Beside the full set's sheet, a file one byte longer than a sheet may be, which no open
+        // reaches while it is held, as a file another program holds open sharing nothing: the
+        // folder's sheet is found all the same, and so is a track's file's.
+        let full = written(&DiscSet::full(Edc::Zero));
+        let sheet = full.path().join("full.cue");
+        let long = full.path().join("dump.7z");
+        File::create(&long)
+            .unwrap()
+            .set_len(MAX_SHEET_LEN + 1)
+            .unwrap();
+        let held = hold_closed(&[&long]).unwrap();
+        assert_eq!(held.proven(), binds);
+        assert_eq!(found(full.path()), sheet);
+        assert_eq!(found(&full.path().join("track3.bin")), sheet);
+        drop(held);
+        if !binds {
+            eprintln!(
+                "only the search was checked: the proof that no long file is opened needs a user \
+                 other than root, who opens entries of mode 0o000"
+            );
+            return;
+        }
+        // A file short enough to be a sheet, which might be the dump's, fails the search when it
+        // cannot be read, naming it.
+        let short = full.path().join("other.cue");
+        fs::write(&short, ONE_TRACK).unwrap();
+        let held = hold_closed(&[&short]).unwrap();
+        let error = find_sheet(full.path()).unwrap_err();
+        assert!(
+            matches!(&error, MediaError::Io { path, .. } if *path == short),
+            "{error:?}"
+        );
+        drop(held);
     }
 
     #[test]

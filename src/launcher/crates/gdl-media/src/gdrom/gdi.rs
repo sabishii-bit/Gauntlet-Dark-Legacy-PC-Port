@@ -59,13 +59,7 @@ const TRACK_LBA: &str = "GDI track LBA";
 /// lines are passed over. The first gives the count of tracks, which is judged first, and each
 /// line after it is judged in turn before the count is held to the tracks listed.
 pub(super) fn read(text: &str) -> Result<Vec<SheetTrack>, MediaError> {
-    let mut lines = text
-        .split(LINE_FEED)
-        .map(|line| {
-            let ended = line.strip_suffix(CARRIAGE_RETURN).unwrap_or(line);
-            ended.trim_matches(BLANKS)
-        })
-        .filter(|line| !line.is_empty());
+    let mut lines = lines_of(text);
     let count = track_count(lines.next().unwrap_or_default())?;
     let mut tracks = Vec::new();
     let mut listed = 0;
@@ -82,6 +76,25 @@ pub(super) fn read(text: &str) -> Result<Vec<SheetTrack>, MediaError> {
         return Err(MediaError::disc(DiscRule::GdiCount, detail));
     }
     Ok(tracks)
+}
+
+/// The name every track's line of `text`, a GDI's text without its byte order mark, gives its
+/// file, in its order, whatever else the GDI breaks: the files beside it that a GDI the reader
+/// refuses still names. A line of another form than a track's six fields names none.
+pub(super) fn named_files(text: &str) -> Vec<String> {
+    let lines = lines_of(text).skip(1).filter_map(fields);
+    lines.map(|[_, _, _, _, file, _]| file.to_owned()).collect()
+}
+
+/// The lines of `text`, a GDI's text, that are not blank, each ended at its line feed, one
+/// carriage return before it dropped, and trimmed of blanks.
+fn lines_of(text: &str) -> impl Iterator<Item = &str> {
+    text.split(LINE_FEED)
+        .map(|line| {
+            let ended = line.strip_suffix(CARRIAGE_RETURN).unwrap_or(line);
+            ended.trim_matches(BLANKS)
+        })
+        .filter(|line| !line.is_empty())
 }
 
 /// The count of tracks `line`, a GDI's first, gives: a number in ASCII digits from 1 to
@@ -188,7 +201,7 @@ fn next_field(rest: &str) -> Option<(&str, &str)> {
 mod tests {
     use serde_json::{Value, json};
 
-    use super::{MAX_GDI_TRACKS, read};
+    use super::{MAX_GDI_TRACKS, named_files, read};
     use crate::error::MAX_QUOTED_CHARS;
     use crate::vectors::{dreamcast_vectors, placed, text};
     use crate::{MediaError, RAW_SECTOR, SECTOR, Sha1Digest, SheetKind, parse_sheet};
@@ -625,5 +638,24 @@ mod tests {
         let marked = format!("\u{feff}{gdi}");
         let said = format!("Unsupported GDI track count: {:?}", "\u{feff}1");
         assert_eq!(outcome(&marked), refused("gdiCount", &said));
+    }
+
+    #[test]
+    fn a_refused_gdi_still_names_its_files() {
+        // Every track's line names its file, in the GDI's order, whatever the GDI breaks: a
+        // count past what it lists, cooked sectors, an offset and a quoted name. A line of another
+        // form names none, and the count's line is no track's.
+        let gdi = concat!(
+            "5\r\n",
+            "1 0 4 2048 track01.iso 0\r\n",
+            "2 600 0 2352 \"Track 02.raw\" 0\r\n",
+            "3 45000 4 2352 track03.bin 4\r\n",
+            "4 0 4 2352 track04.bin\r\n",
+        );
+        assert_eq!(read(gdi).unwrap_err().rule(), "gdiSectorSize");
+        let named = ["track01.iso", "Track 02.raw", "track03.bin"];
+        assert_eq!(named_files(gdi), named);
+        assert!(named_files("1\n").is_empty());
+        assert!(named_files("").is_empty());
     }
 }

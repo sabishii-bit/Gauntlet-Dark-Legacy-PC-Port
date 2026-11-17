@@ -1491,24 +1491,36 @@ mod tests {
     #[test]
     fn a_sheet_the_readers_refuse_tells_the_dump_by_its_refusal() {
         // A cue sheet that keeps a whole disc in one file, a cue sheet of cooked sectors and a GDI
-        // of cooked sectors are sheets the readers refuse: given themselves, or as the folder that
-        // holds them, they refuse the dump by the rule they break, as reading them does.
+        // of cooked sectors are sheets the readers refuse: given themselves, as the folder that
+        // holds them, or as the track's file their text names, they refuse the dump by the rule
+        // they break, as reading them does.
         let sheets = [
-            ("disc.cue", ONE_FILE_DISC),
+            ("disc.cue", ONE_FILE_DISC, "disc.bin"),
             (
                 "cooked.cue",
                 "FILE \"t.iso\" BINARY\nTRACK 01 MODE1/2048\nINDEX 01 00:00:00\n",
+                "t.iso",
             ),
-            ("cooked.gdi", "1\r\n1 0 4 2048 track01.iso 0\r\n"),
-            ("offset.gdi", "1\r\n1 45000 4 2352 track01.bin 4\r\n"),
+            (
+                "cooked.gdi",
+                "1\r\n1 0 4 2048 track01.iso 0\r\n",
+                "track01.iso",
+            ),
+            (
+                "offset.gdi",
+                "1\r\n1 45000 4 2352 track01.bin 4\r\n",
+                "track01.bin",
+            ),
         ];
-        for (name, text) in sheets {
+        for (name, text, track) in sheets {
             let dir = tempfile::tempdir().unwrap();
             let path = file_in(dir.path(), name, text.as_bytes());
+            let track = file_in(dir.path(), track, &[0; FORMAT_RAW_SECTOR]);
             let parsed = parse_sheet(text.as_bytes()).unwrap_err();
             let expected = (parsed.rule(), parsed.to_string());
             assert_eq!(refusal(identify(&path)), expected, "{name}");
             assert_eq!(refusal(identify(dir.path())), expected, "{name}");
+            assert_eq!(refusal(identify(&track)), expected, "{name}");
         }
         // Text that is no sheet at all is nothing the launcher knows.
         let dir = tempfile::tempdir().unwrap();

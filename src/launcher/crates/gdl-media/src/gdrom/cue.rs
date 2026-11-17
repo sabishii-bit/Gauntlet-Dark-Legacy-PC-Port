@@ -116,6 +116,19 @@ pub(super) fn read(text: &str) -> Result<Vec<SheetTrack>, MediaError> {
     reader.finish()
 }
 
+/// The name every FILE line of `text`, a cue sheet's text without its byte order mark, gives, in
+/// its order, whatever else the sheet holds: the files beside it that a sheet the reader refuses
+/// still names.
+pub(super) fn named_files(text: &str) -> Vec<String> {
+    let named = lines(text)
+        .map(strip)
+        .filter_map(|line| match line_of(line) {
+            Line::File(name) => Some(name.to_owned()),
+            _ => None,
+        });
+    named.collect()
+}
+
 /// What a stripped line of a cue sheet is, by its form alone.
 enum Line<'a> {
     /// An empty line or a remark, which the reader passes over.
@@ -340,7 +353,7 @@ mod tests {
     use gdl_fixtures::unhex;
     use serde_json::{Value, json};
 
-    use super::{OTHER_MODES, read};
+    use super::{OTHER_MODES, named_files, read};
     use crate::error::MAX_QUOTED_CHARS;
     use crate::vectors::{dreamcast_vectors, listed, text};
     use crate::{MediaError, SheetKind, parse_sheet};
@@ -842,5 +855,27 @@ mod tests {
         let tracks = read(&one_track("t.bin")).unwrap();
         assert_eq!(listed(&tracks), json!([[3, "t.bin", "MODE1/2352", 0]]));
         assert_eq!(read("").unwrap_err().rule(), "incompleteSheet");
+    }
+
+    #[test]
+    fn a_refused_sheet_still_names_its_files() {
+        // Every FILE line's name, in the sheet's order, whatever the sheet breaks before or after
+        // it: a track of a mode the reader refuses, a second track in a file used already, and a
+        // line it does not read.
+        let sheet = concat!(
+            "REM ONE FILE\n",
+            "FILE \"disc.bin\" BINARY\n",
+            "TRACK 01 MODE1/2048\n",
+            "INDEX 01 00:00:00\n",
+            "  FILE \"Track (2).bin\" BINARY\r\n",
+            "PREGAP 00:02:00\n",
+            "FILE \"../outside.bin\" BINARY\n",
+        );
+        assert_eq!(read(sheet).unwrap_err().rule(), "trackMode");
+        let named = ["disc.bin", "Track (2).bin", "../outside.bin"];
+        assert_eq!(named_files(sheet), named);
+        // A FILE line in another spelling names nothing, as the reader reads none.
+        assert!(named_files("file \"disc.bin\" BINARY\nFILE \"a.bin\" WAVE\n").is_empty());
+        assert!(named_files("").is_empty());
     }
 }

@@ -12,12 +12,22 @@ use std::path::Path;
 /// is not read either; only a FIFO put there in between could still hold the open. Fails as the
 /// system answers, with [`io::ErrorKind::NotFound`] when nothing is there.
 pub(crate) fn open_regular(path: &Path) -> io::Result<Option<(File, u64)>> {
-    if !fs::metadata(path)?.is_file() {
+    open_regular_within(path, u64::MAX)
+}
+
+/// The file at `path` open to read, and its length, as [`open_regular`] opens it, when it is a
+/// regular file of at most `most` bytes, or `None`, unopened, when it is no regular file or is
+/// longer: a long file is passed over by its length alone, so that one another program holds
+/// open, sharing no read of it, fails nothing that only looks for short files.
+pub(crate) fn open_regular_within(path: &Path, most: u64) -> io::Result<Option<(File, u64)>> {
+    let metadata = fs::metadata(path)?;
+    if !metadata.is_file() || metadata.len() > most {
         return Ok(None);
     }
     let file = File::open(path)?;
     let metadata = file.metadata()?;
-    Ok(metadata.is_file().then_some((file, metadata.len())))
+    let within = metadata.is_file() && metadata.len() <= most;
+    Ok(within.then_some((file, metadata.len())))
 }
 
 /// What the readers' tests make and wait on to show that no read of a dump waits on a FIFO.
