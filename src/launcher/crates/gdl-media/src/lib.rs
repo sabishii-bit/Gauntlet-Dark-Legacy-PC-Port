@@ -15,10 +15,12 @@ mod vectors;
 pub use digest::{Sha1Digest, Sha256Digest};
 pub use error::{DiscRule, MediaError, RomRule};
 pub use gdrom::{
-    EDC_FIELD, EDC_POLYNOMIAL, EDC_SPAN, FRAMES_PER_SECOND, HEADER_LEN, LBA_BIAS,
-    MAX_CHUNK_SECTORS, MAX_SHEET_LEN, RAW_SECTOR, SECONDS_PER_MINUTE, SECTOR, SYNC, Sheet,
-    SheetKind, SheetTrack, TrackMode, USER_DATA, ascii_field, edc, lines, parse_sheet, read_sheet,
-    sector_lba, strip,
+    AREA, BOOT_LBA, BOOT_LEN, BOOT_SECTORS, DataTrack, DiscFile, DiscHead, DiscRules, EDC_FIELD,
+    EDC_POLYNOMIAL, EDC_SPAN, EXECUTABLE, FRAMES_PER_SECOND, GdRom, HARDWARE_ID, HEADER_LEN,
+    INSTALL_RULES, IpBin, LBA_BIAS, MAX_CHUNK_SECTORS, MAX_SHEET_LEN, PRODUCT, RAW_SECTOR,
+    SCRIPT_RULES, SECONDS_PER_MINUTE, SECTOR, SYNC, SectorCheck, Sheet, SheetKind, SheetTrack,
+    TITLE, TITLE_PREFIX, TrackMode, USER_DATA, VERSION, ascii_field, edc, lines, parse_sheet,
+    read_head, read_sheet, sector_lba, strip,
 };
 pub use identify::Region;
 pub use n64::{

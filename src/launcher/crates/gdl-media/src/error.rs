@@ -260,6 +260,35 @@ pub enum DiscRule {
     /// A GDI gives a track an offset other than 0, which the format's readers do not agree on
     /// the meaning of.
     GdiOffset,
+    /// A track's file is not there, or is no regular file, such as a folder: a data track's
+    /// always, and under an installation's rules an audio track's too.
+    MissingTrack,
+    /// A track's file ends partway through a raw sector, or a data track's file holds no sector
+    /// where its sheet places the track's first.
+    TruncatedTrack,
+    /// A GDI gives a data track an LBA other than the one its first sector's header gives.
+    GdiFirstSector,
+    /// Two data tracks, each placed by its first sector's header, hold sectors of one LBA.
+    OverlappingTracks,
+    /// No data track holds LBA 45000, where a GD-ROM's high-density area and its boot area begin,
+    /// or under an installation's rules, none starts there.
+    HighDensityStart,
+    /// An extent of the disc reaches a sector no data track holds, as one in the gap an audio
+    /// track leaves between two data tracks does.
+    ExtentOutside,
+    /// A data track's file ends before the sectors a read takes from it, as a file cut short
+    /// while it is read does.
+    ShortRead,
+    /// A raw sector's header gives another address than the place its track puts it at.
+    SectorAddress,
+    /// A raw sector's error detection code is not the one of the bytes it covers. Only an
+    /// installation's rules hold the sectors read to it.
+    SectorEdc,
+    /// The boot area is not Gauntlet Legends' on the Dreamcast: it does not begin with the
+    /// console's hardware ID, or its title does not begin with the game's name.
+    NotGauntletLegends,
+    /// A text field of the boot area that the extraction records holds a byte outside ASCII.
+    TextField,
 }
 
 impl DiscRule {
@@ -286,6 +315,17 @@ impl DiscRule {
             DiscRule::GdiTrackType => "gdiTrackType",
             DiscRule::GdiSectorSize => "gdiSectorSize",
             DiscRule::GdiOffset => "gdiOffset",
+            DiscRule::MissingTrack => "missingTrack",
+            DiscRule::TruncatedTrack => "truncatedTrack",
+            DiscRule::GdiFirstSector => "gdiFirstSector",
+            DiscRule::OverlappingTracks => "overlappingTracks",
+            DiscRule::HighDensityStart => "highDensityStart",
+            DiscRule::ExtentOutside => "extentOutside",
+            DiscRule::ShortRead => "shortRead",
+            DiscRule::SectorAddress => "sectorAddress",
+            DiscRule::SectorEdc => "sectorEdc",
+            DiscRule::NotGauntletLegends => "notGauntletLegends",
+            DiscRule::TextField => "textField",
         }
     }
 }
@@ -445,6 +485,17 @@ mod tests {
             (DiscRule::GdiTrackType, "gdiTrackType"),
             (DiscRule::GdiSectorSize, "gdiSectorSize"),
             (DiscRule::GdiOffset, "gdiOffset"),
+            (DiscRule::MissingTrack, "missingTrack"),
+            (DiscRule::TruncatedTrack, "truncatedTrack"),
+            (DiscRule::GdiFirstSector, "gdiFirstSector"),
+            (DiscRule::OverlappingTracks, "overlappingTracks"),
+            (DiscRule::HighDensityStart, "highDensityStart"),
+            (DiscRule::ExtentOutside, "extentOutside"),
+            (DiscRule::ShortRead, "shortRead"),
+            (DiscRule::SectorAddress, "sectorAddress"),
+            (DiscRule::SectorEdc, "sectorEdc"),
+            (DiscRule::NotGauntletLegends, "notGauntletLegends"),
+            (DiscRule::TextField, "textField"),
         ];
         for (rule, name) in rules {
             assert_eq!(rule.as_str(), name);
