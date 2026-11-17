@@ -46,4 +46,34 @@ TEST_CASE("approximateFlatLength orders some near ties unlike the Euclidean leng
     CHECK(approximateFlatLength(alongX) > approximateFlatLength(diagonal));
 }
 
+TEST_CASE("approximateLength measures along the ground first and then with the height", "[math]") {
+    // The ground length is 3 and the height a third of it, which the third band takes.
+    CHECK(approximateLength(Vec3{3.0f, 1.0f, 0.0f}) == banded(3.0, 0.181, 1.0));
+    CHECK(approximateLength(Vec3{0.0f, -1.0f, 0.0f}) == 1.0f);
+    CHECK(approximateLength(Vec3{}) == 0.0f);
+    CHECK(approximateLength(Vec3{4.0f, 0.00005f, 3.0f}) ==
+          approximateFlatLength(Vec3{4.0f, 0.0f, 3.0f}));
+    // Measuring x with the height first would give about 4.642 here.
+    CHECK(approximateLength(Vec3{1.0f, 2.0f, 4.0f}) ==
+          banded(approximateFlatLength(Vec3{1.0f, 0.0f, 4.0f}), 0.236, 2.0));
+}
+
+TEST_CASE("approximateUnit scales by the fast length's single-precision reciprocal and leaves "
+          "no length alone",
+          "[math]") {
+    CHECK(approximateUnit(Vec3{1.0f, 0.0f, 0.0f}) == Vec3{1.0f, 0.0f, 0.0f});
+    CHECK(approximateUnit(Vec3{}) == Vec3{0.0f});
+
+    const Vec3 slope{3.0f, 1.0f, 0.0f};
+    const f32 length = approximateLength(slope);
+    const auto scale = static_cast<f32>(1.0 / static_cast<f64>(length));
+    const Vec3 unit = approximateUnit(slope);
+    CHECK(unit == Vec3{3.0f * scale, scale, 0.0f});
+    // Dividing by the length in single precision rounds x differently.
+    CHECK(unit.x != slope.x / length);
+
+    // The fast length of the diagonal, 1.414, falls just short of the Euclidean one.
+    CHECK(glm::length(approximateUnit(Vec3{1.0f, 0.0f, 1.0f})) != 1.0f);
+}
+
 } // namespace

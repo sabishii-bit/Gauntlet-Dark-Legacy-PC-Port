@@ -12,6 +12,8 @@ constexpr f64 kNegligibleComponent = 0.0001;
 constexpr f64 kBandWidth = 0.125;
 /** The fraction of the shorter component each band adds (0x80348E08..0x80348E60). */
 constexpr std::array<f64, 8> kBandSlopes{0.064, 0.124, 0.181, 0.236, 0.287, 0.333, 0.376, 0.414};
+/** What a vector of no length is scaled by, which leaves it as it is (0x80348E90). */
+constexpr f32 kNoLengthScale = 1.0f;
 } // namespace
 
 f32 approximateFlatLength(const Vec3& v) {
@@ -33,6 +35,18 @@ f32 approximateFlatLength(const Vec3& v) {
         }
     }
     return static_cast<f32>(high + kBandSlopes.back() * low);
+}
+
+f32 approximateLength(const Vec3& v) {
+    return approximateFlatLength(Vec3{approximateFlatLength(v), 0.0f, v.y});
+}
+
+Vec3 approximateUnit(const Vec3& v) {
+    const f32 length = approximateLength(v);
+    // The original divides the double 1.0 (0x80348E78) and rounds the quotient once.
+    const f32 scale =
+        length <= 0.0f ? kNoLengthScale : static_cast<f32>(1.0 / static_cast<f64>(length));
+    return v * scale;
 }
 
 } // namespace gdl
