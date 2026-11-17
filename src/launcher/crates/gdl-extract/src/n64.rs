@@ -496,8 +496,8 @@ mod tests {
         extract_n64_with,
     };
     use crate::vectors::{
-        CancelAt, Folders, Listed, PanicAt, Recorded, STAGING_PREFIX, SWEEP, Told, array,
-        assert_injected_panic, frozen, listed, n64_golden, n64_vectors, phases_of, quiet, root,
+        CancelAt, Folders, Listed, N64_SWEEP, PanicAt, Recorded, STAGING_PREFIX, Told, array,
+        assert_injected_panic, frozen, listed, n64_golden, n64_root, n64_vectors, phases_of, quiet,
         stage_n64, text, tree_listing,
     };
     use crate::{CHECK, ExtractError, ExtractSettings, READ_CARTRIDGE, UNPACK, render};
@@ -575,8 +575,8 @@ mod tests {
         let rom = N64Rom::open(&dump, &job).unwrap();
         let checked = check_n64(&rom, &job).unwrap();
         let staging = Staging::create_in(&folders.parent, STAGING_PREFIX).unwrap();
-        let extraction = extract_n64(&checked, &staging, &root(), &job).unwrap();
-        let tree = root().path_under(staging.path());
+        let extraction = extract_n64(&checked, &staging, &n64_root(), &job).unwrap();
+        let tree = n64_root().path_under(staging.path());
         let written = Written {
             listing: tree_listing(&tree),
             manifest: fs::read(tree.join(N64_MANIFEST)).unwrap(),
@@ -1053,8 +1053,8 @@ mod tests {
             cancel: &cancel,
             progress: &progress,
         };
-        extract_n64_with(&checked, &staging, &root(), &settings, &job).unwrap();
-        let tree = root().path_under(staging.path());
+        extract_n64_with(&checked, &staging, &n64_root(), &settings, &job).unwrap();
+        let tree = n64_root().path_under(staging.path());
         for spec in &specs {
             let file = tree
                 .join(PROGRAM_FOLDER)
@@ -1172,7 +1172,7 @@ mod tests {
         let rom = N64Rom::from_bytes(named("source.z64"), image).unwrap();
         let folders = Folders::new();
         let cancel = Cancel::default();
-        for settings in [ExtractSettings::SHIPPED, SWEEP] {
+        for settings in [ExtractSettings::SHIPPED, N64_SWEEP] {
             let progress = Recorded::default();
             let job = Job {
                 cancel: &cancel,
@@ -1180,7 +1180,7 @@ mod tests {
             };
             let checked = check_n64_with(&rom, &settings, &job).unwrap();
             let staging = Staging::create_in(&folders.parent, STAGING_PREFIX).unwrap();
-            extract_n64_with(&checked, &staging, &root(), &settings, &job).unwrap();
+            extract_n64_with(&checked, &staging, &n64_root(), &settings, &job).unwrap();
             let phases = phases_of(progress.told());
             let names: Vec<&str> = phases.iter().map(|(name, _)| *name).collect();
             assert_eq!(names, [READ_CARTRIDGE.0, UNPACK.0, CHECK.0]);
@@ -1248,7 +1248,7 @@ mod tests {
             cancel: &cancel,
             progress: &counted,
         };
-        let (staging, _) = stage_n64(&dump, &folders.parent, &SWEEP, &job).unwrap();
+        let (staging, _) = stage_n64(&dump, &folders.parent, &N64_SWEEP, &job).unwrap();
         drop(staging);
         let steps = counted.told().len();
         assert!(steps > 3 * 4, "{steps} steps");
@@ -1262,7 +1262,7 @@ mod tests {
                 cancel: &cancel,
                 progress: &progress,
             };
-            assert_injected_panic(|| stage_n64(&dump, &folders.parent, &SWEEP, &job));
+            assert_injected_panic(|| stage_n64(&dump, &folders.parent, &N64_SWEEP, &job));
             folders.assert_staging_gone(&before);
         }
     }

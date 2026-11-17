@@ -303,9 +303,9 @@ mod tests {
     use crate::dreamcast::extract_dreamcast_with;
     use crate::n64::{check_n64_with, extract_n64_with};
     use crate::vectors::{
-        CancelAt, DISC_SWEEP, Folders, Listed, Recorded, STAGING_PREFIX, SWEEP, Told, bytes_under,
-        dreamcast_root, dreamcast_vectors, frozen, listed, n64_vectors, quiet, root, tree_listing,
-        written_after_each_advance,
+        CancelAt, DISC_SWEEP, Folders, Listed, N64_SWEEP, Recorded, STAGING_PREFIX, Told,
+        bytes_under, dreamcast_root, dreamcast_vectors, frozen, listed, n64_root, n64_vectors,
+        quiet, tree_listing, written_after_each_advance,
     };
     use crate::{CheckedRom, ExtractError, NativeRule, TreeRule, check_dreamcast};
 
@@ -348,7 +348,7 @@ mod tests {
         let name = SourceName::from_units("source.z64".encode_utf16().collect());
         let rom = N64Rom::from_bytes(name, frozen(&vectors, "default")).unwrap();
         let cancel = Cancel::default();
-        let checked = check_n64_with(&rom, &SWEEP, &quiet(&cancel)).unwrap();
+        let checked = check_n64_with(&rom, &N64_SWEEP, &quiet(&cancel)).unwrap();
         (checked, listed(&vectors["trees"]["default"]))
     }
 
@@ -553,7 +553,7 @@ mod tests {
             cancel: &cancel,
             progress: &recorded,
         };
-        extract_n64_with(&checked, &staging, &root(), &SWEEP, &job).unwrap();
+        extract_n64_with(&checked, &staging, &n64_root(), &N64_SWEEP, &job).unwrap();
         drop(staging);
         let written = written_after_each_advance(&recorded.told());
         let advances = written.len() - 1;
@@ -573,8 +573,8 @@ mod tests {
                 progress: &progress,
             };
             let staging = Staging::create_in(&folders.parent, STAGING_PREFIX).unwrap();
-            let extracted = extract_n64_with(&checked, &staging, &root(), &SWEEP, &job);
-            let tree = root().path_under(staging.path());
+            let extracted = extract_n64_with(&checked, &staging, &n64_root(), &N64_SWEEP, &job);
+            let tree = n64_root().path_under(staging.path());
             if at < advances {
                 assert!(
                     matches!(extracted, Err(ExtractError::Cancelled)),
@@ -602,8 +602,8 @@ mod tests {
         let (checked, golden) = checked_default();
         assert!(!golden.is_empty());
         for (path, _, _) in &golden {
-            assert_taken_name_fails(&folders, &root(), path, |staging| {
-                extract_n64_with(&checked, staging, &root(), &SWEEP, &job).map(drop)
+            assert_taken_name_fails(&folders, &n64_root(), path, |staging| {
+                extract_n64_with(&checked, staging, &n64_root(), &N64_SWEEP, &job).map(drop)
             });
         }
         let sheet = folders.disc(&DiscSet::full(Edc::Zero));
@@ -853,7 +853,7 @@ mod tests {
             let link = rel(planted).path_under(staging.path());
             fs::create_dir_all(link.parent().unwrap()).unwrap();
             link_folder(&link, &folders.kept).unwrap();
-            let extracted = extract_n64_with(&checked, &staging, &root(), &SWEEP, &job);
+            let extracted = extract_n64_with(&checked, &staging, &n64_root(), &N64_SWEEP, &job);
             match &extracted {
                 Err(error @ ExtractError::Files(FilesError::Link { path })) => {
                     assert_eq!(*path, link, "{planted}");

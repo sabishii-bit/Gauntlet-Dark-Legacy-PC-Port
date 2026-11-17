@@ -106,18 +106,18 @@ const DREAMCAST_GOLDENS: [(&str, &[u8]); 4] = [
 pub(crate) const STAGING_PREFIX: &str = "stage-";
 
 /// The root the N64 tests' trees lie under in their stagings.
-const TREE_ROOT: &str = "n64";
+const N64_ROOT: &str = "n64";
 
 /// The root the Dreamcast tests' trees lie under in their stagings.
 const DREAMCAST_ROOT: &str = "dreamcast";
 
 /// The blocks the N64 sweeps write in: so short that every file of a small tree spans several, and
 /// every block is a step a fault can come at.
-const SWEEP_BLOCK_LEN: usize = 16;
+const N64_SWEEP_BLOCK_LEN: usize = 16;
 
-/// The shipped settings, but for blocks of [`SWEEP_BLOCK_LEN`] bytes.
-pub(crate) const SWEEP: ExtractSettings = ExtractSettings {
-    block_len: SWEEP_BLOCK_LEN,
+/// The shipped settings, but for blocks of [`N64_SWEEP_BLOCK_LEN`] bytes.
+pub(crate) const N64_SWEEP: ExtractSettings = ExtractSettings {
+    block_len: N64_SWEEP_BLOCK_LEN,
     ..ExtractSettings::SHIPPED
 };
 
@@ -254,8 +254,8 @@ pub(crate) fn bytes_under(root: &Path) -> u64 {
 }
 
 /// The root the N64 tests' trees lie under in their stagings.
-pub(crate) fn root() -> RelPath {
-    RelPath::parse(TREE_ROOT, &DISC_NAMES).unwrap()
+pub(crate) fn n64_root() -> RelPath {
+    RelPath::parse(N64_ROOT, &DISC_NAMES).unwrap()
 }
 
 /// The root the Dreamcast tests' trees lie under in their stagings.
@@ -265,7 +265,7 @@ pub(crate) fn dreamcast_root() -> RelPath {
 
 /// Extracts the N64 dump at `dump` into a new staging in `parent` as the session does: the dump
 /// read and checked first, the staging made only once the check has passed, then the tree written
-/// under [`root`]. The staging comes back with the tree in it; on any failure it is gone.
+/// under [`n64_root`]. The staging comes back with the tree in it; on any failure it is gone.
 pub(crate) fn stage_n64(
     dump: &Path,
     parent: &Path,
@@ -275,7 +275,7 @@ pub(crate) fn stage_n64(
     let rom = N64Rom::open(dump, job)?;
     let checked = check_n64_with(&rom, settings, job)?;
     let staging = Staging::create_in(parent, STAGING_PREFIX)?;
-    let extraction = extract_n64_with(&checked, &staging, &root(), settings, job)?;
+    let extraction = extract_n64_with(&checked, &staging, &n64_root(), settings, job)?;
     Ok((staging, extraction))
 }
 
