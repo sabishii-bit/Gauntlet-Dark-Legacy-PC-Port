@@ -4,6 +4,7 @@
 //! installation's extraction of the vectors' disc is held to, and progress that writes down what a
 //! job tells it, stops the job partway or changes the dump under it.
 
+use std::array;
 use std::cell::Cell;
 use std::collections::BTreeMap;
 use std::ffi::OsStr;
@@ -17,9 +18,12 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use gdl_files::{
     Cancel, DISC_NAMES, Job, NoProgress, PhaseId, Progress, RelPath, Staging, retry_locked,
 };
-use gdl_fixtures::{DiscSet, Edc, EntryState, backdate, snapshot, snapshot_outside, unhex};
+use gdl_fixtures::{
+    DiscSet, Edc, EntryState, OverlaySpec, backdate, default_rom_files, rom_with_overlays,
+    snapshot, snapshot_outside, unhex,
+};
 pub(crate) use gdl_fixtures::{Listed, listed, tree_listing};
-use gdl_media::{N64Rom, Sha256Digest, US_DISC, US_SHA1};
+use gdl_media::{N64Rom, OverlayTable, Sha256Digest, SourceName, US_DISC, US_OVERLAYS, US_SHA1};
 use serde_json::Value;
 use tempfile::TempDir;
 
@@ -120,6 +124,9 @@ pub(crate) const STAGING_PREFIX: &str = "stage-";
 /// The name the refusal tests give the N64 dumps they write.
 const REFUSED_DUMP: &str = "refused.z64";
 
+/// The name the ROMs with a boot table of the tests' own are given.
+pub(crate) const OVERLAYS_DUMP: &str = "overlays.z64";
+
 /// The root the N64 tests' trees lie under in their stagings.
 const N64_ROOT: &str = "n64";
 
@@ -193,6 +200,42 @@ pub(crate) fn extraction_case<'a>(vectors: &'a Value, image: &str) -> &'a Value 
         .iter()
         .find(|case| case["image"] == image)
         .unwrap_or_else(|| panic!("no extraction of {image}"))
+}
+
+/// Four overlays for a boot table, named `names` in order: of different lengths, loaded at
+/// different addresses, with zeroed memory after them or none and every amount of padding a
+/// reader takes.
+pub(crate) fn overlay_specs(names: [&'static str; 4]) -> [OverlaySpec; 4] {
+    let lens = [300, 1, 2049, 64];
+    let load_addresses = [0x8000_0400, 0x8010_0000, 0xE000_0400, 0x8030_0000];
+    let bss_sizes = [0x40, 0, 0x1000, 4];
+    let paddings = [0, 3, 15, 8];
+    array::from_fn(|index| OverlaySpec {
+        name: names[index],
+        data: (0..lens[index])
+            .map(|at: usize| u8::try_from((at * 37 + index) % 253).unwrap())
+            .collect(),
+        load_address: load_addresses[index],
+        bss_size: bss_sizes[index],
+        padding: paddings[index],
+    })
+}
+
+/// A ROM of the default image's files with `specs` in its boot table, and the settings that
+/// read that table, as the US ROM's is read, for this ROM.
+pub(crate) fn rom_with_table(specs: &[OverlaySpec; 4]) -> (N64Rom, ExtractSettings) {
+    let built = rom_with_overlays(&default_rom_files(), specs.clone());
+    let name = SourceName::from_units(OVERLAYS_DUMP.encode_utf16().collect());
+    let rom = N64Rom::from_bytes(name, built.bytes).unwrap();
+    let table = OverlayTable {
+        canonical_sha1: rom.canonical_sha1(),
+        ..US_OVERLAYS
+    };
+    let settings = ExtractSettings {
+        overlays: table,
+        ..ExtractSettings::SHIPPED
+    };
+    (rom, settings)
 }
 
 /// The full set's disc manifest as the extractor wrote it, read: where its files and data tracks

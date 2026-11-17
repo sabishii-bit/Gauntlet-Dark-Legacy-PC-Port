@@ -1117,7 +1117,9 @@ mod tests {
         DiscSet, Edc, backdate, hold_closed, holds_bind, link_folder, sha256_hex, snapshot,
         symlink_file_where_allowed,
     };
-    use gdl_media::{BOOT_LEN, N64Rom, ROMDISK_LIMITS, Sha256Digest, SourceName};
+    use gdl_media::{
+        BOOT_LEN, N64Rom, PROGRAM_FOLDER, PROGRAM_SUFFIX, ROMDISK_LIMITS, Sha256Digest, SourceName,
+    };
     use serde_json::{Value, json};
 
     use super::{
@@ -1125,10 +1127,10 @@ mod tests {
         verify_tree, verify_tree_with,
     };
     use crate::vectors::{
-        CancelAt, DISC_SWEEP, FULL_FINGERPRINTS, Folders, Listed, Recorded, Told, array,
-        dreamcast_golden, dreamcast_root, dreamcast_vectors, extraction_case, fingerprint_files,
-        frozen, listed, n64_golden, n64_root, n64_vectors, quiet, stage_dreamcast, stage_n64, text,
-        tree_listing,
+        CancelAt, DISC_SWEEP, FULL_FINGERPRINTS, Folders, Listed, OVERLAYS_DUMP, Recorded, Told,
+        array, dreamcast_golden, dreamcast_root, dreamcast_vectors, extraction_case,
+        fingerprint_files, frozen, listed, n64_golden, n64_root, n64_vectors, overlay_specs, quiet,
+        rom_with_table, stage_dreamcast, stage_n64, text, tree_listing,
     };
     use crate::{
         DISC_FORMAT, DISC_MANIFEST, Expansion, ExtractSettings, Fingerprints, IP_BIN, N64_MANIFEST,
@@ -1522,6 +1524,58 @@ mod tests {
         assert_eq!(report.damage, expected);
         let [first, second] = research;
         assert_eq!(report.extra, [first, second, "notes".to_owned()]);
+    }
+
+    #[test]
+    fn a_folder_in_a_files_place_is_no_file() {
+        // DISK.ROM's place taken by a folder with a file in it: the folder is no file, and no
+        // extra, since a file is expected where it stands; what it holds is an extra.
+        let tree = dreamcast_tree();
+        let packed = at(&tree.root, PACKED);
+        remove(&packed);
+        fs::create_dir(&packed).unwrap();
+        fs::write(packed.join("inside.bin"), b"inside").unwrap();
+        let report = checked(&tree.root, Expansion::Dreamcast, None);
+        assert_eq!(report.damage, [damage(PACKED, DamageKind::NotAFile)]);
+        assert_eq!(report.extra, [format!("{PACKED}/inside.bin")]);
+    }
+
+    #[test]
+    fn overlays_are_held_to_their_rows_as_every_file_is() {
+        // An N64 tree whose ROM's boot table names four overlays, which the extraction writes
+        // under `_program`: whole, the check looks at each of them as it does at the ROMDISK's
+        // files.
+        let specs = overlay_specs(["game", "menu", "tower", "boss"]);
+        let (rom, settings) = rom_with_table(&specs);
+        let folders = Folders::new();
+        let dump = folders.dump(OsStr::new(OVERLAYS_DUMP), rom.canonical());
+        let cancel = Cancel::default();
+        let script = Strictness::Script;
+        let staged = stage_n64(&dump, &folders.parent, &script, &settings, &quiet(&cancel));
+        let (staging, extraction) = staged.unwrap();
+        let tree = Tree {
+            root: n64_root().path_under(staging.path()),
+            _staging: staging,
+            _folders: folders,
+        };
+        assert_eq!(extraction.manifest.programs.len(), specs.len());
+        let report = checked(&tree.root, Expansion::N64, None);
+        assert!(report.is_intact(), "{:?}", report.damage);
+        let expected = extraction.manifest.files.len() + specs.len() + 1;
+        assert_eq!(report.checked, expected as u64);
+        assert!(report.extra.is_empty(), "{:?}", report.extra);
+
+        // An overlay changed, and one gone, are damage as a file's change and loss are.
+        let program = |name: &str| format!("{PROGRAM_FOLDER}/{name}{PROGRAM_SUFFIX}");
+        let (changed, gone) = (program("menu"), program("boss"));
+        flip_first_byte(&at(&tree.root, &changed));
+        remove(&at(&tree.root, &gone));
+        let report = checked(&tree.root, Expansion::N64, None);
+        let expected = [
+            damage(&changed, DamageKind::Digest),
+            damage(&gone, DamageKind::Missing),
+        ];
+        assert_eq!(report.damage, expected);
     }
 
     #[test]

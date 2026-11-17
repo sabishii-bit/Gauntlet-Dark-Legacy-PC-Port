@@ -496,19 +496,15 @@ pub(crate) fn manifest_path() -> RelPath {
 
 #[cfg(test)]
 mod tests {
-    use std::array;
     use std::collections::BTreeSet;
     use std::ffi::{OsStr, OsString};
     use std::fs;
 
     use gdl_files::{Cancel, Job, ROMDISK_NAMES, Staging};
-    use gdl_fixtures::{
-        OverlaySpec, RomFile, WadOrder, default_rom_files, reorder, rom, rom_with_overlays,
-        set_word, sha256_hex, unhex, wad,
-    };
+    use gdl_fixtures::{RomFile, WadOrder, reorder, rom, set_word, sha256_hex, unhex, wad};
     use gdl_media::{
-        COMPRESSED, MediaError, N64Rom, OverlayTable, PROGRAM_FOLDER, PROGRAM_SUFFIX,
-        ROMDISK_LIMITS, RomdiskEntry, RomdiskLimits, Sha256Digest, SourceName, US_OVERLAYS,
+        COMPRESSED, MediaError, N64Rom, PROGRAM_FOLDER, PROGRAM_SUFFIX, ROMDISK_LIMITS,
+        RomdiskEntry, RomdiskLimits, Sha256Digest, SourceName,
     };
     use serde_json::Value;
 
@@ -519,7 +515,7 @@ mod tests {
     use crate::vectors::{
         CancelAt, Folders, Listed, N64_SWEEP, PanicAt, Recorded, STAGING_PREFIX, Told, array,
         assert_injected_panic, extraction_case, frozen, listed, n64_golden, n64_root, n64_vectors,
-        phases_of, quiet, stage_n64, text, tree_listing,
+        overlay_specs, phases_of, quiet, rom_with_table, stage_n64, text, tree_listing,
     };
     use crate::{CHECK, ExtractError, ExtractSettings, READ_CARTRIDGE, Strictness, UNPACK, render};
 
@@ -948,41 +944,6 @@ mod tests {
             assert_eq!(error.rule(), "treeFolderCase", "{paths:?}");
             assert_eq!(error.to_string(), detail);
         }
-    }
-
-    /// Four overlays for a boot table, named `names` in order: of different lengths, loaded at
-    /// different addresses, with zeroed memory after them or none and every amount of padding a
-    /// reader takes.
-    fn overlay_specs(names: [&'static str; 4]) -> [OverlaySpec; 4] {
-        let lens = [300, 1, 2049, 64];
-        let load_addresses = [0x8000_0400, 0x8010_0000, 0xE000_0400, 0x8030_0000];
-        let bss_sizes = [0x40, 0, 0x1000, 4];
-        let paddings = [0, 3, 15, 8];
-        array::from_fn(|index| OverlaySpec {
-            name: names[index],
-            data: (0..lens[index])
-                .map(|at: usize| u8::try_from((at * 37 + index) % 253).unwrap())
-                .collect(),
-            load_address: load_addresses[index],
-            bss_size: bss_sizes[index],
-            padding: paddings[index],
-        })
-    }
-
-    /// A ROM of the default image's files with `specs` in its boot table, and the settings that
-    /// read that table, as the US ROM's is read, for this ROM.
-    fn rom_with_table(specs: &[OverlaySpec; 4]) -> (N64Rom, ExtractSettings) {
-        let built = rom_with_overlays(&default_rom_files(), specs.clone());
-        let rom = N64Rom::from_bytes(named("overlays.z64"), built.bytes).unwrap();
-        let table = OverlayTable {
-            canonical_sha1: rom.canonical_sha1(),
-            ..US_OVERLAYS
-        };
-        let settings = ExtractSettings {
-            overlays: table,
-            ..ExtractSettings::SHIPPED
-        };
-        (rom, settings)
     }
 
     /// The text the manifest gives `row`, as one of its programs.
