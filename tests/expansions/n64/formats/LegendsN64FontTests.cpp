@@ -162,7 +162,7 @@ TEST_CASE("a glyph may reach below its atlas into its line, never past it", "[le
     // The atlas gains clear rows down to the lowest glyph's bottom, not to the line's.
     REQUIRE(font.atlas.width == 4U);
     REQUIRE(font.atlas.height == 3U);
-    REQUIRE(font.atlas.pixels.size() == usize{4 * 3 * 4});
+    REQUIRE(font.atlas.pixels.size() == usize{4} * 3 * 4);
     for (u32 x = 0; x < 4; ++x) {
         CAPTURE(x);
         CHECK(font.atlas.pixel(x, 0) == Color::white());
