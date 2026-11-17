@@ -10,6 +10,7 @@ use std::ops::RangeInclusive;
 
 use gdl_files::RelPath;
 
+use super::WORD_LEN;
 use crate::{MediaError, RomRule};
 
 /// The least place a WAD's directory may start: right past the header's two words. A section's
@@ -22,10 +23,6 @@ pub const WAD_ROW_LEN: u64 = 12;
 
 /// The most rows a WAD's directory may hold.
 pub const MAX_WAD_SECTIONS: u32 = 65_536;
-
-/// How many bytes a word of a WAD holds. Its header and its directory's rows are made of words, a
-/// section's tag among them.
-const WORD_LEN: usize = 4;
 
 /// How many words the header holds: where the directory starts, and how many rows it holds.
 const HEADER_WORDS: usize = 2;

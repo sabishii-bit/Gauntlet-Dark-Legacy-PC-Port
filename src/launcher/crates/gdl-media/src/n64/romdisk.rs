@@ -6,12 +6,12 @@
 //! A file's bytes are looked at only as it is decoded: as they are stored, or inflated when its
 //! record flags them compressed.
 
-use std::{array, fmt};
+use std::fmt;
 
 use gdl_files::{NameSet, ROMDISK_NAMES, RelPath};
 
 use super::inflate::{Trailer, inflate};
-use super::{MAX_ROM_LEN, too_large};
+use super::{MAX_ROM_LEN, WORD_PLACE_LEN, checked_end, too_large, word_at, words};
 use crate::{MediaError, RomRule};
 
 /// The magic a ROMDISK's header begins with, its NUL included, which a ROM holds exactly once.
@@ -114,10 +114,6 @@ impl fmt::Debug for Romdisk<'_> {
     }
 }
 
-/// How many bytes a word of the ROMDISK holds. Its pointers and its records' fields are words, and
-/// every record starts on one.
-const WORD_LEN: u64 = 4;
-
 /// The byte a record's path ends with.
 const PATH_END: u8 = 0;
 
@@ -185,7 +181,7 @@ pub(super) fn read<'a>(rom: &'a [u8], limits: &RomdiskLimits) -> Result<Romdisk<
     }
     let table = base + u64::from(table_offset);
     let end = checked_end(table, u64::from(directory_len), len, DIRECTORY_PART)?;
-    let pointers_len = WORD_LEN * u64::from(count);
+    let pointers_len = WORD_PLACE_LEN * u64::from(count);
     let records_start = checked_end(table, pointers_len, end, POINTER_TABLE_PART)?;
     if u64::from(table_offset) < ROMDISK_HEADER_LEN {
         return Err(MediaError::rom(RomRule::DirectoryOverlap, TABLE_IN_HEADER));
@@ -197,8 +193,8 @@ pub(super) fn read<'a>(rom: &'a [u8], limits: &RomdiskLimits) -> Result<Romdisk<
     // Where the record listed last ends: the next may not start before it.
     let mut floor = records_start;
     for pointer in 0..u64::from(count) {
-        let record = base + u64::from(word_at(rom, table + WORD_LEN * pointer));
-        if record < floor || !record.is_multiple_of(WORD_LEN) {
+        let record = base + u64::from(word_at(rom, table + WORD_PLACE_LEN * pointer));
+        if record < floor || !record.is_multiple_of(WORD_PLACE_LEN) {
             return Err(MediaError::rom(RomRule::RecordPlace, MISPLACED_RECORD));
         }
         let name_start = checked_end(record, RECORD_WORDS_LEN, end, ENTRY_PART)?;
@@ -208,7 +204,7 @@ pub(super) fn read<'a>(rom: &'a [u8], limits: &RomdiskLimits) -> Result<Romdisk<
             .position(|&byte| byte == PATH_END)
             .ok_or_else(|| MediaError::rom(RomRule::UnterminatedPath, UNTERMINATED_PATH))?;
         // The record ends past its path's end, padded to a word.
-        floor = (name_start + name_len as u64 + 1).next_multiple_of(WORD_LEN);
+        floor = (name_start + name_len as u64 + 1).next_multiple_of(WORD_PLACE_LEN);
         let path = checked_path(&name[..name_len])?;
         names.insert(path.clone()).map_err(|duplicate| {
             let detail = format!(
@@ -270,22 +266,6 @@ fn find_magic(rom: &[u8], from: usize) -> Option<usize> {
     Some(from + at)
 }
 
-/// Where the `size` bytes at `offset` end, refused unless they end by `limit`, the end of the data
-/// that holds the part `what` names: the ROM, the directory, or for a file's bytes the pointer
-/// table. The executable overlays' records and extents are held to the ROM's end the same way.
-pub(super) fn checked_end(
-    offset: u64,
-    size: u64,
-    limit: u64,
-    what: impl fmt::Display,
-) -> Result<u64, MediaError> {
-    if offset > limit || size > limit - offset {
-        let detail = format!("{what} extends outside its containing data");
-        return Err(MediaError::rom(RomRule::OutsideData, detail));
-    }
-    Ok(offset + size)
-}
-
 /// The path a record's name spells, without its leading `/`: ASCII, beginning with exactly one
 /// `/`, and a name the extracted tree may hold under the ROMDISK's rules.
 fn checked_path(name: &[u8]) -> Result<RelPath, MediaError> {
@@ -301,20 +281,6 @@ fn checked_path(name: &[u8]) -> Result<RelPath, MediaError> {
         let detail = format!("unsafe ROMDISK path: {native:?} ({})", refused.rule);
         MediaError::rom(RomRule::UnsafePath, detail)
     })
-}
-
-/// The big-endian word at `at`, which the checks before each read keep within the ROM.
-fn word_at(rom: &[u8], at: u64) -> u32 {
-    const LEN: usize = WORD_LEN as usize;
-    let mut word = [0; LEN];
-    word.copy_from_slice(&rom[at as usize..][..LEN]);
-    u32::from_be_bytes(word)
-}
-
-/// The `N` big-endian words that start at `at`, which the checks before each read keep within the
-/// ROM, as they keep an overlay's record.
-pub(super) fn words<const N: usize>(rom: &[u8], at: u64) -> [u32; N] {
-    array::from_fn(|index| word_at(rom, at + WORD_LEN * index as u64))
 }
 
 /// `at`, a place in a ROM no longer than the largest cartridge, as the word an entry keeps it in.

@@ -12,8 +12,7 @@ use std::fmt;
 use gdl_files::{DISC_NAMES, NameError, RelPath, check_component};
 
 use super::inflate::{Trailer, inflate};
-use super::romdisk::{checked_end, words};
-use super::{US_SHA1, WORD_LEN};
+use super::{US_SHA1, WORD_LEN, checked_end, words};
 use crate::{MediaError, RomRule, Sha1Digest};
 
 /// How many bytes an overlay's record gives its name, which NULs pad.
@@ -206,7 +205,7 @@ mod tests {
 
     use super::{
         OVERLAY_NAME_LEN, Overlay, OverlayTable, PROGRAM_FOLDER, PROGRAM_SUFFIX, RECORD_LEN,
-        US_OVERLAYS, read,
+        US_OVERLAYS, WORD_LEN, read,
     };
     use crate::vectors::named;
     use crate::{MAX_OVERLAY_PADDING, MediaError, N64Rom, Sha1Digest, US_SHA1};
@@ -232,9 +231,6 @@ mod tests {
 
     /// The two reserved words.
     const RESERVED: [usize; 2] = [6, 7];
-
-    /// How many bytes a word of a record holds.
-    const WORD_BYTES: usize = 4;
 
     /// What the N64 extractor answers for a record that disagrees with itself.
     const INCONSISTENT: &str = "inconsistent executable overlay metadata";
@@ -332,13 +328,13 @@ mod tests {
 
     /// Where the word `word` of the record `index` of the US table's layout lies.
     fn word_place(index: usize, word: usize) -> usize {
-        OVERLAY_TABLE_OFFSET + index * RECORD_LEN + OVERLAY_NAME_LEN + WORD_BYTES * word
+        OVERLAY_TABLE_OFFSET + index * RECORD_LEN + OVERLAY_NAME_LEN + WORD_LEN * word
     }
 
     /// The big-endian word `word` of the record `index`.
     fn word_of(bytes: &[u8], index: usize, word: usize) -> u32 {
         let at = word_place(index, word);
-        u32::from_be_bytes(bytes[at..at + WORD_BYTES].try_into().unwrap())
+        u32::from_be_bytes(bytes[at..at + WORD_LEN].try_into().unwrap())
     }
 
     /// `bytes` with words of the record `index` changed.
@@ -548,7 +544,7 @@ mod tests {
         let first = injected(&bytes).unwrap().remove(0);
         assert_eq!(read(&copied, &at_end(&copied)).unwrap(), [first]);
         // A word shorter, the record reaches past the ROM's end.
-        let cut = &copied[..copied.len() - WORD_BYTES];
+        let cut = &copied[..copied.len() - WORD_LEN];
         assert_refused(read(cut, &at_end(cut)), "outsideData", TABLE_OUTSIDE);
         // So does a record anywhere further, however far, with no place overflowing.
         let further: [(usize, usize, &'static [usize]); 3] = [

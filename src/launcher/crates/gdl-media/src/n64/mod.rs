@@ -4,10 +4,10 @@
 //! cartridge, the ROMDISK that holds the game's files, and the executable overlays the US ROM's
 //! boot table describes.
 
-use std::fmt;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
+use std::{array, fmt};
 
 use gdl_files::{BLOCK_LEN, Job};
 
@@ -41,8 +41,14 @@ pub const MAX_ROM_LEN: u64 = 64 << 20;
 pub const US_SHA1: Sha1Digest =
     Sha1Digest::from_hex_const("0489dcce749c6a5102681d288ed0616a4b94e99d");
 
-/// How many bytes a word of the ROM holds. A ROM is a whole number of words.
+/// How many bytes a word of the ROM holds, and of the native files it holds. A ROM is a whole
+/// number of words, and the ROMDISK's pointers and records, the overlays' records and a WAD's
+/// header and directory are made of them.
 const WORD_LEN: usize = 4;
+
+/// [`WORD_LEN`] as a length in the ROM, whose places are reckoned in 64 bits, so that no place a
+/// word gives, with a length added, can overflow.
+const WORD_PLACE_LEN: u64 = WORD_LEN as u64;
 
 /// How many bytes a byte-swapped dump swaps at a time.
 const PAIR_LEN: usize = 2;
@@ -347,6 +353,36 @@ impl fmt::Debug for N64Rom {
 fn too_large() -> MediaError {
     let detail = format!("ROM is longer than {MAX_ROM_LEN} bytes, the most an N64 cartridge holds");
     MediaError::rom(RomRule::RomTooLarge, detail)
+}
+
+/// Where the `size` bytes at `offset` end, refused unless they end by `limit`, the end of the data
+/// that holds the part `what` names: the ROM for the ROMDISK's header and directory and for an
+/// executable overlay's record and extent, the directory for its pointer table and records, and
+/// the pointer table for a file's bytes.
+fn checked_end(
+    offset: u64,
+    size: u64,
+    limit: u64,
+    what: impl fmt::Display,
+) -> Result<u64, MediaError> {
+    if offset > limit || size > limit - offset {
+        let detail = format!("{what} extends outside its containing data");
+        return Err(MediaError::rom(RomRule::OutsideData, detail));
+    }
+    Ok(offset + size)
+}
+
+/// The big-endian word at `at` in `rom`, which the checks before each read keep within the ROM.
+fn word_at(rom: &[u8], at: u64) -> u32 {
+    let mut word = [0; WORD_LEN];
+    word.copy_from_slice(&rom[at as usize..][..WORD_LEN]);
+    u32::from_be_bytes(word)
+}
+
+/// The `N` big-endian words that start at `at` in `rom`, which the checks before each read keep
+/// within the ROM.
+fn words<const N: usize>(rom: &[u8], at: u64) -> [u32; N] {
+    array::from_fn(|index| word_at(rom, at + WORD_PLACE_LEN * index as u64))
 }
 
 /// `bytes` without the title's padding at either end.
