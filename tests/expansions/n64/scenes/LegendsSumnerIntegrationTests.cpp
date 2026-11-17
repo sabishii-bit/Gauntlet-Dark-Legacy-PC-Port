@@ -28,6 +28,8 @@
 #include "expansions/n64/formats/LegendsN64Font.h"
 #include "expansions/n64/formats/LegendsN64Texture.h"
 #include "expansions/n64/formats/LegendsN64Tower.h"
+#include "expansions/n64/hud/LegendsN64Frame.h"
+#include "expansions/n64/menu/LegendsDialogue.h"
 #include "expansions/n64/scenes/LegendsSumnerText.h"
 #include "expansions/shared/scenes/LegendsLevel.h"
 #include "expansions/shared/scenes/LegendsTraversal.h"
@@ -259,18 +261,20 @@ struct SumnerScene {
 
         // The native header uses font8, not OptionMenu's font5 body painter.
         // Verify the actual visible "Sumner" glyphs, their UVs, size and colour,
-        // rather than accepting an empty generic title field as sufficient.
+        // rather than accepting an empty generic title field as sufficient. It
+        // stands the scroll's ten-row margin of the N64's frame under its top,
+        // its glyphs at the topic rows' one scale.
         test::FakeRenderDevice expected;
         test::FakeTexture sheet{heading.atlas.width, heading.atlas.height};
         TextPainter text;
         text.setFont(&heading.font, &sheet);
         Canvas canvas;
         canvas.begin(expected, Mat4{1});
-        constexpr f32 kNativeScale = 512.0f / 416.0f;
         const auto area = scene.hints().topics().backdropArea();
-        text.draw(canvas, -256, static_cast<s32>(area.y + 10 * kNativeScale),
-                  strings.get(legendsN64SumnerTextKey(441)),
-                  {.scale = 1.5f * kNativeScale, .color = Color::rgba(0, 0, 132)});
+        text.draw(
+            canvas, -256, static_cast<s32>(area.y + 10 * LegendsN64Frame::kRow),
+            strings.get(legendsN64SumnerTextKey(441)),
+            {.scale = 1.5f * LegendsDialogue::kTopicGlyphScale, .color = Color::rgba(0, 0, 132)});
         canvas.end();
         REQUIRE(expected.draws.size() == 1);
         CHECK(headingDraw->vertices == expected.draws.front().vertices);
@@ -486,7 +490,8 @@ TEST_CASE("Native Tower return presents new milestones once and restores the mat
             captions.push_back(*text);
         }
         if (!captionDrawn && ceremony->caption() == 541U && ceremony->captionOpacity() >= 1) {
-            // The level draws the scene's string table line, not the disc's bank.
+            // The level draws the scene's string table line, not the disc's bank, at
+            // e086098c's x208 and y30 of the N64's frame.
             captionDrawn = true;
             const auto* style = fixture.level->messagePresentation();
             REQUIRE(style);
@@ -496,15 +501,19 @@ TEST_CASE("Native Tower return presents new milestones once and restores the mat
             fixture.level->drawEntranceTitle(canvas, 512);
             canvas.end();
             REQUIRE(fixture.device.draws.size() == 1);
-            const auto drawn = fixture.device.draws.front().vertices;
+            const auto drawn = fixture.device.draws.front();
             fixture.device.draws.clear();
             canvas.begin(fixture.device, Mat4{1});
-            style->text().draw(canvas, -256, static_cast<s32>(30 * style->scale()),
-                               fixture.strings.get(legendsN64CeremonyCaptionKey(541)),
-                               {.scale = style->scale(), .color = Color::white()});
+            {
+                const CanvasFrame frame{canvas, LegendsN64Frame::transform()};
+                style->text().draw(canvas, -208, 30,
+                                   fixture.strings.get(legendsN64CeremonyCaptionKey(541)),
+                                   {.scale = style->scale(), .color = Color::white()});
+            }
             canvas.end();
             REQUIRE(fixture.device.draws.size() == 1);
-            CHECK(fixture.device.draws.front().vertices == drawn);
+            CHECK(fixture.device.draws.front().vertices == drawn.vertices);
+            CHECK(fixture.device.draws.front().transform == drawn.transform);
             fixture.device.draws.clear();
         }
         PlayScene::Inputs attemptedMovement{};

@@ -334,7 +334,7 @@ void LegendsLevel::drawEntranceTitle(Canvas& canvas, f32 width) const {
                 if (const auto key = legendsN64CeremonyCaptionKey(*caption);
                     !key.empty() && m_strings->has(key)) {
                     dialogue->drawCeremonyCaption(canvas, m_strings->get(key),
-                                                  ceremony->captionOpacity(), width);
+                                                  ceremony->captionOpacity());
                 }
             }
         }
