@@ -12,6 +12,7 @@ use gdl_files::{NameRule, NameSet, ROMDISK_NAMES, RelPath};
 
 use super::inflate::{Trailer, inflate};
 use super::{MAX_ROM_LEN, WORD_PLACE_LEN, checked_end, too_large, word_at, words};
+use crate::error::quoted;
 use crate::{MediaError, RomRule};
 
 /// The magic a ROMDISK's header begins with, its NUL included, which a ROM holds exactly once.
@@ -120,10 +121,8 @@ const PATH_END: u8 = 0;
 /// The one `/` every ROMDISK path begins with.
 const PATH_START: char = '/';
 
-/// The most characters of an unsafe path its refusal quotes: more than the longest path the tree
-/// may hold, so that a path refused for its length is shown whole well past that bound, while a
-/// name that runs on through the directory is shown by its start and its length alone.
-const MAX_QUOTED_PATH_CHARS: usize = 256;
+/// What the refusal of a path the tree may not hold begins with.
+const UNSAFE_PATH: &str = "unsafe ROMDISK path";
 
 /// What the header is called where it reaches past the ROM's end.
 const HEADER_PART: &str = "ROMDISK header";
@@ -288,15 +287,10 @@ fn checked_path(name: &[u8]) -> Result<RelPath, MediaError> {
 }
 
 /// What the refusal of `native`, an ASCII ROMDISK path that breaks the rule of names `rule`, says
-/// of it: the whole path, quoted, or past [`MAX_QUOTED_PATH_CHARS`] its length and its start.
+/// of it: the whole path, quoted, or past [`MAX_QUOTED_CHARS`](crate::error::MAX_QUOTED_CHARS)
+/// characters its length and its start.
 fn unsafe_path(native: &str, rule: NameRule) -> String {
-    match native.get(..MAX_QUOTED_PATH_CHARS) {
-        Some(start) if start.len() < native.len() => {
-            let len = native.len();
-            format!("unsafe ROMDISK path of {len} characters beginning {start:?} ({rule})")
-        }
-        _ => format!("unsafe ROMDISK path: {native:?} ({rule})"),
-    }
+    format!("{} ({rule})", quoted(UNSAFE_PATH, native))
 }
 
 /// `at`, a place in a ROM no longer than the largest cartridge, as the word an entry keeps it in.
@@ -310,9 +304,10 @@ mod tests {
     use gdl_fixtures::{BUILDER_UNKNOWN_WORD, RomFile, reorder, rom, set_word};
 
     use super::{
-        COMPRESSED, HEADER_WORDS_AT, MAX_QUOTED_PATH_CHARS, RECORD_WORDS_LEN, ROMDISK_HEADER_LEN,
-        ROMDISK_LIMITS, ROMDISK_MAGIC, Romdisk, RomdiskLimits, read,
+        COMPRESSED, HEADER_WORDS_AT, RECORD_WORDS_LEN, ROMDISK_HEADER_LEN, ROMDISK_LIMITS,
+        ROMDISK_MAGIC, Romdisk, RomdiskLimits, read,
     };
+    use crate::error::MAX_QUOTED_CHARS;
     use crate::vectors::{frozen, n64_golden, n64_vectors, named, number, text, word};
     use crate::{MAX_ROM_LEN, MediaError, N64Rom, Sha256Digest};
 
@@ -645,7 +640,7 @@ mod tests {
     #[test]
     fn a_long_unsafe_path_is_told_by_its_start_alone() {
         // A path as long as the most a refusal quotes is quoted whole, as every shared case is.
-        let whole = format!("/{}", "a".repeat(MAX_QUOTED_PATH_CHARS - 1));
+        let whole = format!("/{}", "a".repeat(MAX_QUOTED_CHARS - 1));
         let error = refusal(&paths_rom(&[&whole]));
         assert_eq!(error.rule(), "unsafePath");
         let said = format!("unsafe ROMDISK path: {whole:?} (pathTooLong)");
@@ -655,17 +650,17 @@ mod tests {
         // through the directory and however its characters are escaped, so that what a refusal
         // says stays short.
         for filler in ["a", "\u{7f}"] {
-            for len in [MAX_QUOTED_PATH_CHARS + 1, 100_000] {
+            for len in [MAX_QUOTED_CHARS + 1, 100_000] {
                 let path = format!("/{}", filler.repeat(len - 1));
                 let error = refusal(&paths_rom(&[&path]));
                 assert_eq!(error.rule(), "unsafePath", "{len}");
-                let start = &path[..MAX_QUOTED_PATH_CHARS];
+                let start = &path[..MAX_QUOTED_CHARS];
                 let said = format!(
                     "unsafe ROMDISK path of {len} characters beginning {start:?} (pathTooLong)"
                 );
                 let detail = error.to_string();
                 assert_eq!(detail, said, "{len}");
-                assert!(detail.len() < 8 * MAX_QUOTED_PATH_CHARS, "{}", detail.len());
+                assert!(detail.len() < 8 * MAX_QUOTED_CHARS, "{}", detail.len());
             }
         }
     }

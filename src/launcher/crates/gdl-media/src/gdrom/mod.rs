@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 use gdl_files::{Cancel, Job, NameRule, RelPath};
 use sha2::{Digest, Sha256};
 
+use crate::error::quoted;
 use crate::{DiscRule, MediaError, Sha256Digest};
 
 mod cue;
@@ -39,12 +40,6 @@ pub use sector::{
 };
 pub use sheet::{MAX_SHEET_LEN, Sheet, SheetKind, SheetTrack, TrackMode, parse_sheet, read_sheet};
 pub use sheet_text::{ascii_field, lines, strip};
-
-/// The most characters of a name or a line taken from a dump that its refusal quotes: more than
-/// the longest name the extracted tree may hold, so that a name refused for its length is shown
-/// whole well past that bound, while text that runs on is shown by its length and its start
-/// alone.
-const MAX_QUOTED_CHARS: usize = 256;
 
 /// What the Dreamcast extractor begins its answer with for a name the tree may not hold.
 const UNSAFE_NAME: &str = "Unsafe disc name";
@@ -605,27 +600,10 @@ fn ascii_text(bytes: &[u8], what: &str) -> Result<String, MediaError> {
 }
 
 /// The refusal by `rule` of `name`, a name taken from the dump that breaks the rule of names
-/// `broken`: the name quoted whole, or past [`MAX_QUOTED_CHARS`] characters its length and its
-/// start, and then the rule it breaks.
+/// `broken`: the name quoted whole, or past [`MAX_QUOTED_CHARS`](crate::error::MAX_QUOTED_CHARS)
+/// characters its length and its start, and then the rule it breaks.
 fn unsafe_name(rule: DiscRule, name: &str, broken: NameRule) -> MediaError {
     MediaError::disc(rule, format!("{} ({broken})", quoted(UNSAFE_NAME, name)))
-}
-
-/// `words`, then `text`, taken from the dump: quoted whole, or past [`MAX_QUOTED_CHARS`]
-/// characters by its length and its quoted start, so that a refusal never runs on with what it
-/// quotes.
-fn quoted(words: &str, text: &str) -> String {
-    match long_start(text) {
-        Some((len, start)) => format!("{words} of {len} characters beginning {start:?}"),
-        None => format!("{words}: {text:?}"),
-    }
-}
-
-/// The length of `text` in characters and its first [`MAX_QUOTED_CHARS`] characters, when it has
-/// more than that.
-fn long_start(text: &str) -> Option<(usize, &str)> {
-    let (end, _) = text.char_indices().nth(MAX_QUOTED_CHARS)?;
-    Some((text.chars().count(), &text[..end]))
 }
 
 /// Whether `text` is a number in ASCII digits: one or more of them, with no sign.

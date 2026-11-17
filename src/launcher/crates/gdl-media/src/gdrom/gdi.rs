@@ -8,7 +8,8 @@
 
 use gdl_files::{TRACK_NAMES, check_component};
 
-use super::{RAW_SECTOR, SheetTrack, TrackMode, is_number, quoted, too_large, unsafe_name};
+use super::{RAW_SECTOR, SheetTrack, TrackMode, is_number, too_large, unsafe_name};
+use crate::error::quoted;
 use crate::{DiscRule, MediaError};
 
 /// The most tracks a GDI may count: as many as a disc's table of contents can number.
@@ -188,7 +189,7 @@ mod tests {
     use serde_json::{Value, json};
 
     use super::{MAX_GDI_TRACKS, read};
-    use crate::gdrom::MAX_QUOTED_CHARS;
+    use crate::error::MAX_QUOTED_CHARS;
     use crate::vectors::{dreamcast_vectors, placed, text};
     use crate::{MediaError, RAW_SECTOR, SECTOR, Sha1Digest, SheetKind, parse_sheet};
 

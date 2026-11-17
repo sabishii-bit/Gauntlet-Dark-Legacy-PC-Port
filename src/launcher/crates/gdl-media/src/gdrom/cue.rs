@@ -11,9 +11,10 @@ use std::collections::BTreeSet;
 use gdl_files::{TRACK_NAMES, check_component};
 
 use super::{
-    FRAMES_PER_SECOND, SECONDS_PER_MINUTE, SheetTrack, TrackMode, is_number, lines, long_start,
-    strip, too_large, unsafe_name,
+    FRAMES_PER_SECOND, SECONDS_PER_MINUTE, SheetTrack, TrackMode, is_number, lines, strip,
+    too_large, unsafe_name,
 };
+use crate::error::long_start;
 use crate::{DiscRule, MediaError};
 
 /// What begins a remark, which the reader passes over: the word and one space.
@@ -321,8 +322,9 @@ fn index_fields(line: &str) -> Option<(&str, [&str; TIME_PARTS])> {
     whole.then_some((point, time))
 }
 
-/// The refusal of `line`, which the extractor does not read: the line after its words for one, or
-/// past [`MAX_QUOTED_CHARS`](super::MAX_QUOTED_CHARS) characters its length and its start, quoted.
+/// The refusal of `line`, which the extractor does not read: the line after its words for one,
+/// or past [`MAX_QUOTED_CHARS`](crate::error::MAX_QUOTED_CHARS) characters its length and its
+/// start, quoted.
 fn unsupported_line(line: &str) -> MediaError {
     let detail = match long_start(line) {
         Some((len, start)) => {
@@ -339,7 +341,7 @@ mod tests {
     use serde_json::{Value, json};
 
     use super::{OTHER_MODES, read};
-    use crate::gdrom::MAX_QUOTED_CHARS;
+    use crate::error::MAX_QUOTED_CHARS;
     use crate::vectors::{dreamcast_vectors, listed, text};
     use crate::{MediaError, SheetKind, parse_sheet};
 

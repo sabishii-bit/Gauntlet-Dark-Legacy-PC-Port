@@ -11,6 +11,12 @@ use gdl_files::Cancelled;
 /// What a reader answers for a dump path that names no file, such as a root.
 const NAMES_NO_FILE: &str = "the path names no file";
 
+/// The most characters of a name or a line taken from a dump that a refusal quotes, whichever
+/// reader refuses it: more than the longest path the extracted tree may hold, so that a name
+/// refused for its length is shown whole well past that bound, while text that runs on is shown
+/// by its length and its start alone.
+pub(crate) const MAX_QUOTED_CHARS: usize = 256;
+
 /// Why a dump could not be read or was refused.
 #[derive(Debug, thiserror::Error)]
 pub enum MediaError {
@@ -97,6 +103,23 @@ impl From<Cancelled> for MediaError {
     fn from(_: Cancelled) -> MediaError {
         MediaError::Cancelled
     }
+}
+
+/// `words`, then `text`, taken from the dump: quoted whole, or past [`MAX_QUOTED_CHARS`]
+/// characters by its length and its quoted start, so that a refusal never runs on with what it
+/// quotes.
+pub(crate) fn quoted(words: &str, text: &str) -> String {
+    match long_start(text) {
+        Some((len, start)) => format!("{words} of {len} characters beginning {start:?}"),
+        None => format!("{words}: {text:?}"),
+    }
+}
+
+/// The length of `text` in characters and its first [`MAX_QUOTED_CHARS`] characters, when it has
+/// more than that.
+pub(crate) fn long_start(text: &str) -> Option<(usize, &str)> {
+    let (end, _) = text.char_indices().nth(MAX_QUOTED_CHARS)?;
+    Some((text.chars().count(), &text[..end]))
 }
 
 /// The rules of the N64 ROM's format, and of the native files it holds, that a ROM is refused by.
@@ -376,12 +399,15 @@ mod tests {
     use std::io;
     use std::path::Path;
 
-    use gdl_files::Cancel;
+    use gdl_files::{Cancel, MAX_DISC_PATH_CHARS};
 
-    use super::{DiscRule, MediaError, RomRule};
+    use super::{DiscRule, MAX_QUOTED_CHARS, MediaError, RomRule, long_start, quoted};
 
     /// The most bytes an error may take, so that returning one by value stays cheap.
     const MOST_ERROR_BYTES: usize = 128;
+
+    /// The most characters a refusal quotes of what it takes from a dump.
+    const QUOTED_CHARS: usize = 256;
 
     /// Reads nothing, but stops as a reader does before each block when its job is asked to.
     fn read_until_cancelled(cancel: &Cancel) -> Result<(), MediaError> {
@@ -549,6 +575,28 @@ mod tests {
         for (rule, name) in rules {
             assert_eq!(rule.as_str(), name);
             assert_eq!(MediaError::disc(rule, "").rule(), name);
+        }
+    }
+
+    #[test]
+    fn text_from_a_dump_is_quoted_up_to_one_bound() {
+        // Every reader quotes up to one bound, past the longest path the tree may hold, so that a
+        // path refused for its length is quoted whole.
+        assert_eq!(MAX_QUOTED_CHARS, QUOTED_CHARS);
+        const { assert!(MAX_DISC_PATH_CHARS < MAX_QUOTED_CHARS) };
+        // Text as long as the bound is quoted whole after the words, escaped as Debug escapes it.
+        let whole = "\u{e9}".repeat(QUOTED_CHARS);
+        assert_eq!(long_start(&whole), None);
+        assert_eq!(quoted("Words", &whole), format!("Words: {whole:?}"));
+        assert_eq!(quoted("Words", "a\"b"), "Words: \"a\\\"b\"");
+        assert_eq!(quoted("Words", ""), "Words: \"\"");
+        // Longer text is told by its length and its start, counted in characters, not bytes.
+        for len in [QUOTED_CHARS + 1, 60_000] {
+            let text = "\u{e9}".repeat(len);
+            let start = "\u{e9}".repeat(QUOTED_CHARS);
+            assert_eq!(long_start(&text), Some((len, start.as_str())), "{len}");
+            let said = format!("Words of {len} characters beginning {start:?}");
+            assert_eq!(quoted("Words", &text), said, "{len}");
         }
     }
 
