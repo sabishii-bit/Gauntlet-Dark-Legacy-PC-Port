@@ -65,8 +65,9 @@ const STAGINGS: &str = ".gdl-extract-";
 /// What no raw DEFLATE stream begins with: a last block of the type the format reserves.
 const NO_STREAM: u8 = 0xFF;
 
-/// How long a program just written is tried again for while Linux finds it still open to write,
-/// as long as the launcher retries a file operation that something else holds up.
+/// How long something that another process holds up is tried again for, as long as the launcher
+/// retries a file operation that something else holds up: running a program just written, which
+/// Linux may find still open to write, and removing a staging a scanner holds on Windows.
 const BUSY_WINDOW: Duration = Duration::from_secs(8);
 
 /// How long to wait between those tries.
@@ -124,6 +125,20 @@ fn run_to_end(mut command: Command, program: &Path) -> Output {
             result => {
                 return result.unwrap_or_else(|error| panic!("{}: {error}", program.display()));
             }
+        }
+    }
+}
+
+/// Removes the folder at `path` and everything in it, trying again every [`BUSY_PAUSE`] for up to
+/// [`BUSY_WINDOW`] while it fails, as something that holds part of it lets go. A folder already
+/// gone counts as removed.
+fn remove_once_let_go(path: &Path) -> io::Result<()> {
+    let begun = Instant::now();
+    loop {
+        match fs::remove_dir_all(path) {
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+            Err(_) if begun.elapsed() < BUSY_WINDOW => thread::sleep(BUSY_PAUSE),
+            result => return result,
         }
     }
 }
@@ -472,13 +487,28 @@ impl Folders {
 
     /// Checks, after extractions into the outputs named `outputs`, that the parent holds no
     /// staging and is as [`outside`](Self::outside) found it outside the outputs, and that the
-    /// dump folder is as it was.
+    /// dump folder is as it was. A staging that a scanner held something of as the program
+    /// dropped it is removed once the hold ends, as that drop ignores a failed removal; only
+    /// Windows' scanners hold files so, so a staging left on another system fails the check.
     #[track_caller]
     fn assert_only_made(&self, outputs: &[&str], before: &Before) {
         for entry in fs::read_dir(&self.parent).unwrap() {
-            let name = entry.unwrap().file_name();
-            let staging = name.as_encoded_bytes().starts_with(STAGINGS.as_bytes());
-            assert!(!staging, "a staging was left: {name:?}");
+            let entry = entry.unwrap();
+            if !entry
+                .file_name()
+                .as_encoded_bytes()
+                .starts_with(STAGINGS.as_bytes())
+            {
+                continue;
+            }
+            let left = entry.path();
+            if cfg!(windows) {
+                if let Err(error) = remove_once_let_go(&left) {
+                    panic!("a staging was left: {}: {error}", left.display());
+                }
+            } else {
+                panic!("a staging was left: {}", left.display());
+            }
         }
         let mut outside = snapshot_outside(&self.parent, STAGINGS).unwrap();
         outside.retain(|path, _| !outputs.iter().any(|output| path.starts_with(output)));
@@ -656,20 +686,27 @@ fn an_output_inside_an_installation_is_refused() {
     let fixture = InstallFixture::write(&dir.path().join("install"), runtime).unwrap();
     backdate(&fixture.root).unwrap();
     let installed = snapshot(&fixture.root).unwrap();
-    // The dump is never looked for: the output's place is refused first.
+    // The dump is never looked for: the output's place is refused first. In the installation's
+    // own folder, where an expansion's folder goes, and in a folder of its game's.
     let dump = dir.path().join("missing.z64");
-    let made = fixture.root.join("Gauntlet").join("legends");
-    let output = run_program(&extract_args("n64", &dump, &made, true));
-    assert_eq!(output.status.code(), Some(1), "{output:?}");
-    assert_eq!(
-        text(&output.stderr),
-        format!(
-            "error: folder.insideInstallation (insideInstallation): the output lies in an \
-             installation, whose folder holds .gdl-launcher: {}\n",
-            fixture.root.display()
-        )
-    );
-    assert_eq!(text(&output.stdout), "");
+    for made in [
+        fixture.root.join("legends"),
+        fixture.root.join("Gauntlet").join("legends"),
+    ] {
+        let output = run_program(&extract_args("n64", &dump, &made, true));
+        let named = made.display();
+        assert_eq!(output.status.code(), Some(1), "{named}: {output:?}");
+        assert_eq!(
+            text(&output.stderr),
+            format!(
+                "error: folder.insideInstallation (insideInstallation): the output lies in an \
+                 installation, whose folder holds .gdl-launcher: {}\n",
+                fixture.root.display()
+            ),
+            "{named}"
+        );
+        assert_eq!(text(&output.stdout), "", "{named}");
+    }
     assert!(
         snapshot(&fixture.root).unwrap() == installed,
         "the installation changed"
