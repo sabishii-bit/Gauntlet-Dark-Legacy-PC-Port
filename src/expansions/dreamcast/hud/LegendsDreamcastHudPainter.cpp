@@ -36,6 +36,7 @@
 #include "formats/FontFile.h"
 #include "game/characters/ClassData.h"
 #include "game/characters/Inventory.h"
+#include "game/characters/Progression.h"
 #include "game/hud/BossMeter.h"
 #include "game/hud/ChallengeHud.h"
 #include "game/hud/HudView.h"
@@ -189,6 +190,23 @@ void write(Canvas& canvas, const TextPainter& font, s32 x, s32 y, std::string_vi
 /** Whether seat `shown`'s player stands, its turbo meter showing: not dying. */
 bool standing(const HudSeat& shown) {
     return shown.turbo.has_value();
+}
+
+/** What seat `shown`'s panel shows. A dying player's box, which Dark Legacy's look empties, goes
+ * on showing the keys and potions its player carries and the runestones it holds: FUN_8c0c16e0
+ * draws them in state 11, and FUN_8c0bc040 drops the keys only once the death has played out,
+ * as Dark Legacy does. The bosses' keys stay hidden, as FUN_8c0c2120 hides them then. */
+StatusBoxView panelOf(const HudSeat& shown) {
+    StatusBoxView box = shown.box;
+    if (standing(shown) || shown.runtime == nullptr) {
+        return box;
+    }
+    const ClassProgress& held = shown.runtime->actor.save().progress();
+    box.keys = held.inventory.keys;
+    box.potions = static_cast<s32>(held.inventory.potions.size());
+    box.potionKind = held.inventory.nextPotion();
+    box.runes = held.relics.runes;
+    return box;
 }
 
 /** Seat `shown`'s costume colour: a gone player's, which only its runtime still holds, else its
@@ -688,7 +706,7 @@ void LegendsDreamcastHudPainter::drawHelp(HudFrame& frame, const HudView& view) 
 
 void LegendsDreamcastHudPainter::drawPanel(Canvas& canvas, usize seat, const HudSeat& shown,
                                            const HudView& view) const {
-    const StatusBoxView& box = shown.box;
+    const StatusBoxView box = panelOf(shown);
     const auto left = static_cast<f32>(dreamcastSeatX(seat) + Layout::kArtLeft);
     // The strip, the costume's panel and the class's banner on it.
     drawWhole(canvas, m_strip, left, static_cast<f32>(Layout::kStripTop));
@@ -702,7 +720,7 @@ void LegendsDreamcastHudPainter::drawPanel(Canvas& canvas, usize seat, const Hud
         write(canvas, m_large.text, -dreamcastSeatCentre(seat), Layout::kBannerTop,
               classWords(view, box.classIndex), TextStyle{.scale = Layout::kBannerTextScale});
     }
-    drawNumbers(canvas, seat, shown);
+    drawNumbers(canvas, seat, box);
     drawCarried(canvas, seat, box);
     drawTurbo(canvas, seat, shown);
     drawRelics(canvas, seat, box, view.relicsShown);
@@ -720,8 +738,7 @@ void LegendsDreamcastHudPainter::drawPlain(Canvas& canvas, usize seat, s32 color
 }
 
 void LegendsDreamcastHudPainter::drawNumbers(Canvas& canvas, usize seat,
-                                             const HudSeat& shown) const {
-    const StatusBoxView& box = shown.box;
+                                             const StatusBoxView& box) const {
     const s32 x = dreamcastSeatX(seat);
     const TextStyle ink{.color = inkOf(box.color)};
     drawWhole(canvas, m_levelLabel, static_cast<f32>(x + Layout::kLevelLabel.x),
@@ -732,12 +749,11 @@ void LegendsDreamcastHudPainter::drawNumbers(Canvas& canvas, usize seat,
               static_cast<f32>(Layout::kHealthLabel.y));
     write(canvas, m_small.text, -dreamcastSeatCentre(seat), Layout::kLevelTop,
           std::format("{}", box.level), TextStyle{});
-    // FUN_8c0c0f40 writes no gold for a player whose death plays out (states 5 and 6).
-    if (standing(shown)) {
-        const std::string gold = std::format("{}", std::clamp(box.gold, 0, Layout::kMostGold));
-        write(canvas, m_score.text, dreamcastGoldLeft(m_score.text.measure(gold), x),
-              Layout::kNumbersTop, gold, ink);
-    }
+    // FUN_8c0c0f40 writes the gold for a dying player too (state 11); it leaves it out only in
+    // states 5 and 6, which state 3 leads to (8c0bf120..8c0bf16e), not a death.
+    const std::string gold = std::format("{}", std::clamp(box.gold, 0, Layout::kMostGold));
+    write(canvas, m_score.text, dreamcastGoldLeft(m_score.text.measure(gold), x),
+          Layout::kNumbersTop, gold, ink);
     const std::string health = std::format("{}", std::clamp(box.health, 0, Layout::kMostHealth));
     write(canvas, m_score.text, x + Layout::kHealthRight - m_score.text.measure(health),
           Layout::kNumbersTop, health, ink);

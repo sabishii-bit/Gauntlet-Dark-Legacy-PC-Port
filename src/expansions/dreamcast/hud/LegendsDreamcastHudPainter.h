@@ -145,7 +145,7 @@ private:
     const ClassArt* classArtOf(s32 classIndex, s32 color) const;
     void drawPanel(Canvas& canvas, usize seat, const HudSeat& shown, const HudView& view) const;
     void drawPlain(Canvas& canvas, usize seat, s32 color) const;
-    void drawNumbers(Canvas& canvas, usize seat, const HudSeat& shown) const;
+    void drawNumbers(Canvas& canvas, usize seat, const StatusBoxView& box) const;
     void drawCarried(Canvas& canvas, usize seat, const StatusBoxView& box) const;
     void drawTurbo(Canvas& canvas, usize seat, const HudSeat& shown) const;
     void drawRelics(Canvas& canvas, usize seat, const StatusBoxView& box, bool keysShown) const;

@@ -692,6 +692,14 @@ TEST_CASE("a Dreamcast box draws strip, panel, banner, labels and numbers where 
     const std::vector<Quad> strip = picturesIn(lone, "BK_RUNE_STONE_02");
     REQUIRE(strip.size() == 1);
     checkRect(strip.front().area, {288, 306, 128, 16});
+
+    // FUN_8c0c0f40 holds the gold to 99999 (8c0c1320) and FUN_8c0c16e0 the health to 9999
+    // (8c0c186c).
+    HudSeat rich = standing(kWarriorClass, 0, "C", 12345);
+    rich.box.gold = 123456;
+    CHECK(linesOf(dreamcast.boxes(dreamcast.viewOf({rich, {}, {}, {}})), Fixture::kScoreFont) ==
+          std::vector<Line>{lineAt(8 + 3, 365, "99999", kYellowInk),
+                            lineAt(8 + 92 - 32, 365, "9999", kYellowInk)});
 }
 
 TEST_CASE("keys and potions show only while carried", "[legends][dreamcast-hud]") {
@@ -826,13 +834,14 @@ TEST_CASE("a fallen player's Dreamcast box says IN TOWER on the kind-0 panel",
                           centredAt(Fixture::kSmallFont, 168, 368, "NO", kGreenInk),
                           centredAt(Fixture::kSmallFont, 344, 330, "12", Color::white())});
 
-    // Dying, the box is still the panel with its banner, labels, level and health, nothing
-    // carried and no arch; and FUN_8c0c0f40 writes no gold for a player whose death plays out
-    // (8c0c1298..8c0c12a4 leave it for a seat in state 5 or 6).
+    // Dying, the box is still the panel with its banner, labels, level, gold and health, and no
+    // arch: FUN_8c0bbe40 keeps the panel for the death (state 11), and FUN_8c0c0f40 writes the
+    // gold in it, leaving it out only in states 5 and 6, which follow state 3.
     CHECK(pictureOrder(quads, 2) == Names{"BK_RUNE_STONE_02", "BTMBK_RED", "WAR_NAME", "BTMBK_LEVL",
                                           "BTMBK_GOLD", "BTMBK_HELTH"});
     CHECK(linesOf(quads, Fixture::kScoreFont) ==
-          std::vector<Line>{lineAt(296 + 92 - 8, 365, "0", kRedInk)});
+          std::vector<Line>{lineAt(296 + 3, 365, "1250", kRedInk),
+                            lineAt(296 + 92 - 8, 365, "0", kRedInk)});
     CHECK(linesOf(quads, Fixture::kLargeFont, kHalf).empty());
 }
 
@@ -1309,12 +1318,22 @@ TEST_CASE("a missing or truncated powerups bank gives the legend items Dark Lega
     }
 }
 
-TEST_CASE("a dying player's keys, potions, turbo and legend items go from the box",
+TEST_CASE("a dying player's box keeps what it carries and its runestones, and loses its arch, its "
+          "bosses' keys and its legend items",
           "[legends][dreamcast-hud]") {
     LoadedLook dreamcast("dreamcast-hud-dying", kWarriorAndWizard);
-    // A yellow warrior with all a box shows: keys, a yellow potion, a full meter, three runes,
-    // the first boss's key and two legend items, one the Dreamcast's own and one Dark Legacy's.
-    HudSeat warrior = standing(kWarriorClass, 0);
+    // A yellow warrior with all a box shows: two keys, a yellow potion, a full meter, three runes,
+    // the first boss's key and two legend items, one the Dreamcast's own and one Dark Legacy's,
+    // its save holding them as its box shows them.
+    Inventory carried;
+    carried.keys = 2;
+    carried.potions = {3};
+    Holder holder(carried, 0, kWarriorClass, 0);
+    Relics& relics = holder.runtime.actor.save().progress().relics;
+    relics.runes = 0x7;
+    relics.shards = 0x1;
+    relics.legends = legendsOf({2, 7});
+    HudSeat warrior = holder.shown();
     warrior.box.keys = 2;
     warrior.box.potions = 1;
     warrior.box.potionKind = 3;
@@ -1331,17 +1350,31 @@ TEST_CASE("a dying player's keys, potions, turbo and legend items go from the bo
                 "SM_RUNE_BLU_01", "SM_RUNE_BLU_02", "SM_RUNE_BLU_03", "SM_KEY_BLU", "BOOK",
                 "QUEST_ICON2"});
 
-    // Dying, as PartyHud::status shows it, the player carries nothing, its meter is gone, and its
-    // box holds no relics. It still holds its legend items, but FUN_8c0c16e0 shows them only to
-    // a player playing or waiting at an exit (states 1 and 7).
+    // Dying, PartyHud::status empties the box, and PlayerHealth::fall the meter. FUN_8c0bbe40
+    // keeps the Dreamcast's panel through the death (state 11): FUN_8c0c16e0 goes on drawing the
+    // keys and the potion carried, and nothing hides the runestones until FUN_8c0bc040 makes the
+    // box anew. FUN_8c0c2120 hides the bosses' keys outside states 1, 5, 7 and 8, and
+    // FUN_8c0c16e0 shows the legend items, still held, only in states 1 and 7.
     view.seats[0] = fallen(warrior, false);
+    REQUIRE(view.seats[0].runtime == &holder.runtime);
     REQUIRE(view.seats[0].legends == legendsOf({2, 7}));
     prepareAt(dreamcast, view, 1);
     const std::vector<Quad> dying = dreamcast.boxes(view);
-    CHECK(boxOrder(dying, 0, dreamcast.lent) == Names{"BK_RUNE_STONE_02", "BTMBK_YELO", "WAR_NAME",
-                                                      "BTMBK_LEVL", "BTMBK_GOLD", "BTMBK_HELTH"});
+    CHECK(boxOrder(dying, 0, dreamcast.lent) ==
+          Names{"BK_RUNE_STONE_02", "BTMBK_YELO", "WAR_NAME", "BTMBK_LEVL", "BTMBK_GOLD",
+                "BTMBK_HELTH", "KEY_ICON", "POTION_ICON_YEL", "SM_RUNE_BLU_01", "SM_RUNE_BLU_02",
+                "SM_RUNE_BLU_03"});
+    // The gold, the health gone, and the counts of what is carried, in the seat's ink.
+    CHECK(linesOf(dying, Fixture::kScoreFont) ==
+          std::vector<Line>{
+              lineAt(8 + 3, 365, "1250", kYellowInk), lineAt(8 + 92 - 8, 365, "0", kYellowInk),
+              lineAt(8 + 18, 323, "2", kYellowInk), lineAt(8 + 82, 323, "1", kYellowInk)});
     CHECK(dreamcast.lent.drawn(dying, "BOOK").empty());
     CHECK(picturesIn(dying, "QUEST_ICON2").empty());
+    // Once the death has played out Dark Legacy drops the keys (PartyPickups::dropKeys), and the
+    // box shows none.
+    holder.runtime.actor.save().progress().inventory.keys = 0;
+    CHECK(picturesIn(dreamcast.boxes(view), "KEY_ICON").empty());
 }
 
 TEST_CASE("Dreamcast cards stand on the seat's strip, with Dark Legacy's art where the Dreamcast "
