@@ -4,6 +4,7 @@
 #include <bit>
 #include <format>
 #include <iterator>
+#include <optional>
 
 #include "engine/core/Types.h"
 
@@ -38,6 +39,8 @@ constexpr std::string_view kSecretCoinCard = "COINHUD";
 constexpr std::string_view kDroppedKey = "KEY"; ///< what a fallen player's keys lie as
 constexpr std::string_view kDroppedKeyRing = "KEYRING";
 const Vec3 kNowhere{0.0f, -1.0e6f, 0.0f};
+/** A staged judge's refusal of the whole offer, as when an event it publishes is turned down. */
+constexpr PickupDecision kRefused{.accepted = false, .left = std::nullopt};
 
 } // namespace
 
@@ -159,7 +162,7 @@ PickupDecision PartyPickups::takeCurrency(const Pickup& pickup, std::span<Player
     const auto kind = static_cast<ItemKind>(pickup.subtype);
     if (pickup.realm > 0 || pickup.collector >= players.size() || !publish ||
         (kind != ItemKind::Gold && kind != ItemKind::Keys)) {
-        return {.accepted = false};
+        return kRefused;
     }
     using Event = CurrencyEvent;
     const auto event = [&](Event::Kind type, std::string_view name = {}, s32 lesson = -1) {
@@ -172,7 +175,7 @@ PickupDecision PartyPickups::takeCurrency(const Pickup& pickup, std::span<Player
     const auto taking = judgePickup(actor.save(), pickup, world, classes, false, 0.0f);
     if (!taking.took()) {
         if (const auto lesson = refusalHelp(taking.outcome); lesson && !help(*lesson)) {
-            return {.accepted = false};
+            return kRefused;
         }
         return {};
     }
@@ -189,27 +192,27 @@ PickupDecision PartyPickups::takeCurrency(const Pickup& pickup, std::span<Player
         if (!event(Event::Kind::ChallengeCoin) ||
             (!world.ref().isSecret() && pickup.amount >= kGoldLessonAmount &&
              (!help(kGoldLesson) || !theft()))) {
-            return {.accepted = false};
+            return kRefused;
         }
     } else if (!help(fixtures.gates().size() > 0 ? kKeyLessonGates
                                                  : HelpMessages::kChestNeedsKey) ||
                (taking.left == 0 && !theft())) {
-        return {.accepted = false};
+        return kRefused;
     }
     if (!taking.card.empty() &&
         !event(Event::Kind::Card, secretCoin ? kSecretCoinCard : taking.card)) {
-        return {.accepted = false};
+        return kRefused;
     }
     if (taking.message >= 0 && !help(taking.message)) {
-        return {.accepted = false};
+        return kRefused;
     }
     if (secretCoin) {
         if (!event(Event::Kind::NamedSound,
                    PickupVoices::bonusGold(actor.player(), pickup.amount))) {
-            return {.accepted = false};
+            return kRefused;
         }
     } else if (!taking.sound.empty() && !event(Event::Kind::NamedSound, taking.sound)) {
-        return {.accepted = false};
+        return kRefused;
     }
     return {.left = taking.left};
 }
