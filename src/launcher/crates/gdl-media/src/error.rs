@@ -384,6 +384,12 @@ pub enum DiscRule {
     SizesExtent,
     /// A path SIZES.ROM gives is also the folder above another it gives.
     SizesConflict,
+    /// No sheet lies in the folder given as the dump, or none beside the file given names it as
+    /// a track's file, so there is no disc to read.
+    NoSheet,
+    /// More than one sheet lies in the folder given as the dump, or more than one beside the file
+    /// given names it as a track's file, so which disc to read cannot be told.
+    SeveralSheets,
 }
 
 impl DiscRule {
@@ -438,6 +444,8 @@ impl DiscRule {
             DiscRule::SizesDuplicate => "sizesDuplicate",
             DiscRule::SizesExtent => "sizesExtent",
             DiscRule::SizesConflict => "sizesConflict",
+            DiscRule::NoSheet => "noSheet",
+            DiscRule::SeveralSheets => "severalSheets",
         }
     }
 }
@@ -650,6 +658,8 @@ mod tests {
             (DiscRule::SizesDuplicate, "sizesDuplicate"),
             (DiscRule::SizesExtent, "sizesExtent"),
             (DiscRule::SizesConflict, "sizesConflict"),
+            (DiscRule::NoSheet, "noSheet"),
+            (DiscRule::SeveralSheets, "severalSheets"),
         ];
         for (rule, name) in rules {
             assert_eq!(rule.as_str(), name);

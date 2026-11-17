@@ -423,7 +423,7 @@ mod tests {
     use crate::gdrom::open_head;
     use crate::vectors::{dreamcast_golden, dreamcast_vectors, located, manifest_files, number};
     use crate::vectors::{text, word};
-    use crate::{DiscRules, GdRom, INSTALL_RULES, MediaError, SCRIPT_RULES};
+    use crate::{DiscRules, GdRom, INSTALL_RULES, MediaError, SCRIPT_RULES, read_sheet};
 
     /// The LBA the format gives the volume descriptor: the sector after the boot area's sixteen.
     /// The format's facts are given here apart from the reader's own constants, so that a reader
@@ -1097,7 +1097,7 @@ mod tests {
         // two more entries, are taken; with room for one, the folder is and its file is refused.
         let (_dir, sheet) = written(&DiscSet::one_file(b"F;1", &[b"D"], Edc::Zero));
         let cancel = Cancel::default();
-        let (_, mut tracks, _) = open_head(&sheet, &SCRIPT_RULES).unwrap();
+        let (_, mut tracks, _) = open_head(read_sheet(&sheet).unwrap(), &SCRIPT_RULES).unwrap();
         let (_, root) = read_descriptor(&mut tracks).unwrap();
         {
             let mut walk = Walk {
@@ -1298,7 +1298,7 @@ mod tests {
         let going = Cancel::default();
         let stopped = Cancel::default();
         stopped.cancel();
-        let (_, mut tracks, _) = open_head(&sheet, &SCRIPT_RULES).unwrap();
+        let (_, mut tracks, _) = open_head(read_sheet(&sheet).unwrap(), &SCRIPT_RULES).unwrap();
         // The volume's reads stop before the root directory's, once the descriptor's one sector
         // is read, and a walk before the directory it is given.
         let volume = read_volume(&mut tracks, &stopped);

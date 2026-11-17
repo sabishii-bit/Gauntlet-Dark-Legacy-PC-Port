@@ -23,10 +23,13 @@ pub use gdrom::{
     MAX_SIZES_ROM_LEN, MIN_RECORD_LEN, PRODUCT, PVD_LBA, PackedFile, PackedPlace, RAW_SECTOR,
     ROOT_RECORD_AT, SCRIPT_RULES, SECONDS_PER_MINUTE, SECTOR, SIZES_COMPONENTS, SIZES_ROW_LEN,
     STANDARD_ID, SYNC, SectorCheck, Sheet, SheetKind, SheetTrack, TITLE, TITLE_PREFIX, TrackMode,
-    USER_DATA, VERSION, VOLUME_ID, ascii_field, edc, lines, packed_files, parse_sheet, read_head,
-    read_sheet, sector_lba, strip,
+    USER_DATA, VERSION, VOLUME_ID, ascii_field, edc, find_sheet, lines, packed_files, parse_sheet,
+    read_head, read_sheet, sector_lba, strip,
 };
-pub use identify::Region;
+pub use identify::{
+    Console, Container, DiscIdentity, DumpRefusal, Identity, Region, Source, TrackFile, US_DISC,
+    Verdict, disc_verdict, identify, n64_verdict,
+};
 pub use n64::{
     ByteOrder, COMPRESSED, HEADER_WORDS_AT, INFLATE_STEP, MAX_OVERLAY_PADDING, MAX_ROM_LEN,
     MAX_WAD_SECTIONS, MIN_WAD_DIRECTORY, N64Rom, OVERLAY_NAME_LEN, Overlay, OverlayTable,

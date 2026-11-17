@@ -140,7 +140,7 @@ impl ByteOrder {
     }
 
     /// The order of a dump whose first word is `first`, or `None` when it is no order's.
-    fn of_first_word(first: [u8; WORD_LEN]) -> Option<ByteOrder> {
+    pub(crate) fn of_first_word(first: [u8; WORD_LEN]) -> Option<ByteOrder> {
         match first {
             BIG_ENDIAN_FIRST_WORD => Some(ByteOrder::BigEndian),
             BYTE_SWAPPED_FIRST_WORD => Some(ByteOrder::ByteSwapped),

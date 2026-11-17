@@ -30,6 +30,7 @@ mod sheet;
 mod sheet_text;
 
 pub use edc::{EDC_FIELD, EDC_POLYNOMIAL, EDC_SPAN, edc};
+pub(crate) use ipbin::names_gauntlet_legends;
 pub use ipbin::{
     AREA, BOOT_LBA, BOOT_LEN, BOOT_SECTORS, EXECUTABLE, HARDWARE_ID, IpBin, PRODUCT, TITLE,
     TITLE_PREFIX, VERSION,
@@ -45,7 +46,10 @@ pub use sector::{
     FRAMES_PER_SECOND, HEADER_LEN, LBA_BIAS, MAX_CHUNK_SECTORS, RAW_SECTOR, SECONDS_PER_MINUTE,
     SECTOR, SYNC, USER_DATA, sector_lba,
 };
-pub use sheet::{MAX_SHEET_LEN, Sheet, SheetKind, SheetTrack, TrackMode, parse_sheet, read_sheet};
+pub use sheet::{
+    MAX_SHEET_LEN, Sheet, SheetKind, SheetTrack, TrackMode, find_sheet, parse_sheet, read_sheet,
+};
+pub(crate) use sheet::{sheet_naming, sheet_of, without_mark};
 pub use sheet_text::{ascii_field, lines, strip};
 
 /// What the Dreamcast extractor begins its answer with for a name the tree may not hold.
@@ -166,6 +170,12 @@ pub struct DiscHead {
 /// [`BOOT_LBA`]; under any rules, one must hold that LBA. Refused by the first rule the disc
 /// breaks. The files are only ever read, and are closed before this returns.
 pub fn read_head(sheet: &Path, rules: &DiscRules) -> Result<DiscHead, MediaError> {
+    head_of(read_sheet(sheet)?, rules)
+}
+
+/// What [`read_head`] reads of the disc whose sheet, `sheet`, was read already, so that the disc
+/// is read by the very sheet its caller read.
+pub(crate) fn head_of(sheet: Sheet, rules: &DiscRules) -> Result<DiscHead, MediaError> {
     let (sheet, tracks, boot) = open_head(sheet, rules)?;
     Ok(DiscHead {
         sheet,
@@ -213,7 +223,7 @@ impl GdRom {
     /// sizes, taken whole whatever the job asks; the job's cancel is looked at before each chunk
     /// a directory's read takes, since a disc decides how many directories there are and how long.
     pub fn open(sheet: &Path, rules: &DiscRules, job: &Job<'_>) -> Result<GdRom, MediaError> {
-        let (sheet, mut tracks, boot) = open_head(sheet, rules)?;
+        let (sheet, mut tracks, boot) = open_head(read_sheet(sheet)?, rules)?;
         let volume = iso::read_volume(&mut tracks, job.cancel)?;
         Ok(GdRom {
             sheet,
@@ -431,11 +441,10 @@ impl TrackFile {
     }
 }
 
-/// The disc's sheet, its data tracks placed and in LBA order with their files open, and its boot
-/// area, as [`read_head`] reads them.
-fn open_head(path: &Path, rules: &DiscRules) -> Result<(Sheet, Tracks, IpBin), MediaError> {
-    let sheet = read_sheet(path)?;
-    let folder = path.parent().unwrap_or(Path::new(""));
+/// The disc's sheet, `sheet`, its data tracks placed and in LBA order with their files open, and
+/// its boot area, as [`read_head`] reads them.
+fn open_head(sheet: Sheet, rules: &DiscRules) -> Result<(Sheet, Tracks, IpBin), MediaError> {
+    let folder = sheet.path.parent().unwrap_or(Path::new(""));
     let mut placed = Vec::new();
     for track in &sheet.tracks {
         let at = folder.join(&track.file);

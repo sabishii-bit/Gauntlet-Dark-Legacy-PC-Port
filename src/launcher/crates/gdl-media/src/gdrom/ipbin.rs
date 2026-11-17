@@ -117,7 +117,7 @@ impl fmt::Debug for IpBin {
 /// Whether `boot`, a boot area as it was read, is Gauntlet Legends' on the Dreamcast, as the
 /// Dreamcast extractor knows it: the hardware ID first, and a title that begins with the game's
 /// name.
-pub(super) fn names_gauntlet_legends(boot: &[u8]) -> bool {
+pub(crate) fn names_gauntlet_legends(boot: &[u8]) -> bool {
     boot.starts_with(HARDWARE_ID)
         && boot
             .get(TITLE)
