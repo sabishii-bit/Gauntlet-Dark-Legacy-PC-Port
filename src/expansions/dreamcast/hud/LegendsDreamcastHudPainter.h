@@ -34,28 +34,10 @@ namespace gdl::game {
 
 /**
  * The Dreamcast's look of the play HUD, drawn from the player's own Dreamcast extraction on its
- * 512x384 frame, the canvas's own: a status box along the bottom in each joined seat's column,
- * the stone strip over the costume's panel with the class's banner on it, the level, gold and
- * health with their labels, the keys and the potion thrown next while any are carried, the
- * turbo meter's arch, which glows once full, the runestones held along the strip, with the
- * bosses' keys over it a while, the thirteenth rune, the legend items held in the box's five
- * places, the IT badge over the tagged player's box, and WAIT HERE... blinking over a box whose
- * player waits at an exit for the others. A player fallen to the tower, or gone from the game,
- * shows the coloured kind-0 box, saying IN TOWER while it waits there or asking whether to wait
- * there, or to return there when left alone, with YES marked, and NO while it may quit; a seat
- * nobody joined shows nothing. The pickup
- * cards rise over the boxes on the taker's coloured strip, and Dark Legacy's counts stand over
- * them in the Dreamcast's small font. The runestone finder stands at the top right, its column
- * rising straight with the closeness whose square Dark Legacy's finder shows; the hourglasses
- * stand in Dark Legacy's places in the Dreamcast's art; the boss meters hang from the top,
- * opaque, cropped as Dark Legacy's; a selector's powerup is named in the small font over its
- * box, in the seat's ink while worn; and Dark Legacy's help is written over its player's head,
- * or its box, on the scroll and in the ink of the player's colour. It shows Dark Legacy's
- * state, and never the typed name. A class with no Dreamcast banner is named in the Dreamcast's
- * large font in the banner's place; one with no costume bank takes the warrior's panel, as every
- * class's panel of a colour is the same picture; a legend item with no Dreamcast icon shows Dark
- * Legacy's picture of it, a pickup with no Dreamcast card Dark Legacy's card, a count Dark
- * Legacy's icon, and an hourglass the powerups bank has no art of Dark Legacy's look.
+ * 512x384 frame, the canvas's own: each joined seat's status box, the pickup cards and counts
+ * over the boxes, the runestone finder, the hourglass, the boss meters, the selectors' labels and
+ * the help. It shows Dark Legacy's state, never the typed name, and where the extraction has no
+ * art for a part it shows Dark Legacy's. LegendsDreamcastHudLayout says where each part stands.
  */
 class LegendsDreamcastHudPainter final : public HudPainter {
 public:
@@ -77,17 +59,11 @@ public:
     ~LegendsDreamcastHudPainter() override = default;
     GDL_NON_COPYABLE_NON_MOVABLE(LegendsDreamcastHudPainter);
 
-    /** Takes the HUD's pictures and the fonts from the Dreamcast extraction's native folder
-     * `root`, the panels and banners of `party`'s classes in their costumes' colours, and the
-     * powerups bank's legend items' icons and hourglass; false when the static set or a font is
-     * missing. One that is there but cannot be read, or a static set without a picture the look
-     * draws, throws, naming it. A costume bank that is missing or cannot be read gives way to the
-     * warrior's panel, and its banner to the class's name; a powerups bank that is missing or
-     * cannot be read, to Dark Legacy's pictures of the legend items and Dark Legacy's hourglass,
-     * as an icon it lacks does to Dark Legacy's picture of the item and a picture of the
-     * hourglass it lacks, with a warning, to Dark Legacy's hourglass. Of Dark Legacy's art it
-     * borrows SELECT's pictures of the legend items it has no icon for, STATIC's cards of the
-     * pickups it has no card for and every icon a pickup count shows, and nothing else. */
+    /** Takes all the look's art at once from the Dreamcast extraction's native folder `root`,
+     * `party`'s classes' panels and banners among it, and the pictures it borrows from Dark
+     * Legacy's art. False when a required file is missing; one that is there but cannot be
+     * read, or a static set without a picture the look draws, throws, naming it. A costume or
+     * powerups bank that is missing or unreadable gives way to its parts' stand-ins. */
     bool load(RenderDevice& device, const std::filesystem::path& root, DarkLegacyHudArt& darkLegacy,
               std::span<const HudMember> party);
 
