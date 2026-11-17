@@ -1,21 +1,29 @@
 #include <array>
 #include <filesystem>
+#include <string>
+#include <string_view>
+#include <utility>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/assets/BitmapFont.h"
 #include "engine/assets/MessageTable.h"
 #include "engine/assets/SoundSet.h"
 #include "engine/core/Types.h"
 #include "engine/io/File.h"
+#include "engine/math/Math.h"
+#include "engine/render/RenderTypes.h"
+#include "engine/ui/Canvas.h"
+#include "engine/ui/TextPainter.h"
 
+#include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "game/characters/CharacterSave.h"
 #include "game/characters/ClassData.h"
 #include "game/combat/PowerupFlags.h"
 #include "game/hud/HelpMessages.h"
 #include "game/party/PartyPickups.h"
-#include "game/party/PlayerRuntime.h"
 #include "game/players/PickupVoices.h"
 
 namespace {
@@ -453,6 +461,44 @@ TEST_CASE("a message naming a player fills in their colour and class, or Pojo ca
     // A class the list lacks leaves the colour alone.
     REQUIRE(help.post(HelpMessages::kNowIt, 1, party, -1, HelpSpeaker{12, false}) != nullptr);
     CHECK(help.lines().front() == "BLUE");
+}
+
+TEST_CASE("help scrolls show at the GameCube's opacity", "[game][screens][help]") {
+    // The capitals side by side on a sheet of their own, a cell each.
+    constexpr std::string_view kCapitals = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    constexpr s32 kCell = 8;
+    std::vector<BitmapGlyph> glyphs;
+    for (usize index = 0; index < kCapitals.size(); ++index) {
+        glyphs.push_back({.code = kCapitals[index],
+                          .width = kCell,
+                          .x = static_cast<s32>(index) * kCell,
+                          .y = 0});
+    }
+    const BitmapFont font = BitmapFont::fromGlyphs(kCell, kCell / 2, std::move(glyphs));
+    const test::FakeTexture sheet{static_cast<u32>(kCapitals.size()) * u32{kCell}, u32{kCell}};
+    TextPainter text;
+    text.setFont(&font, &sheet);
+    const test::FakeTexture scroll{256, 256};
+    test::FakeRenderDevice device;
+    Canvas canvas;
+    canvas.begin(device, Mat4{1});
+    const std::array<std::string, 2> lines{"USE KEY", "TO OPEN DOORS"};
+    HelpMessages::drawLines(canvas, text, &scroll, Vec2{256, 200}, lines, 2);
+    canvas.end();
+    // msgPost gives the scroll's blit an alpha of 0x40, which MBBlitSetAlpha keeps as 96 of
+    // 128: three quarters opaque. The words on it keep the player's ink whole.
+    REQUIRE(device.draws.size() == 2);
+    CHECK(device.draws[0].texture == &scroll);
+    REQUIRE_FALSE(device.draws[0].vertices.empty());
+    for (const ImmediateVertex& vertex : device.draws[0].vertices) {
+        CHECK(vertex.color.withAlpha(255) == Color::white());
+        CHECK(s32{vertex.color.a} == 191);
+    }
+    CHECK(device.draws[1].texture == &sheet);
+    REQUIRE_FALSE(device.draws[1].vertices.empty());
+    for (const ImmediateVertex& vertex : device.draws[1].vertices) {
+        CHECK(vertex.color == HelpMessages::inkOf(2));
+    }
 }
 
 } // namespace

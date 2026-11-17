@@ -142,7 +142,7 @@ TEST_CASE("a G1 scene's HUD overlay stays byte for byte what it was",
     // SHA-256 of the overlay's draws, which the scene keeps byte for byte while the HUD's
     // code moves: a literal moves only when what the HUD draws changes on purpose.
     CHECK(test::hexBytes(test::drawStreamDigest(overlay)) ==
-          "351217bcd0222847f528f4b7700b9f5dafa43564fa1b8b104fc80445fa515ced");
+          "e6eb253f65bbd287785fbd778292e7db00b07afe5a5cf466ac193a9715425235");
     scene.close();
 }
 
