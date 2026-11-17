@@ -228,6 +228,7 @@ public:
         f32 shotFrame = 0;
         bool entered = true;
         bool released = false;
+        bool attackBegan = false;
         bool quickPress = false;
         bool strongPress = false;
         bool quickHeld = false;
@@ -428,6 +429,12 @@ public:
     }
     /** Whether this tick's step ended a release: the moment the weapon flies. */
     bool released() const { return m_released; }
+    /** Whether this tick's step began a swing, a throw's wind-up, the special shot or a shooting
+     * strafe half. */
+    bool attackBegan() const { return m_attackBegan; }
+    /** Whether starting `action` begins an attack: the rows whose start the original marks in
+     * act_bits (DoPlayerAction). None outside the actions. */
+    static bool beginsAttack(Action action);
     bool meleeing() const { return isMelee(m_current); }
     /** One contact at the completed swing, never a projectile release. */
     bool meleeStruck() const { return m_meleeBlow != MeleeBlow::None; }
@@ -598,6 +605,7 @@ private:
     Foot m_footfall = Foot::None;
     bool m_entered = true; ///< the entrance has played (or was not asked for)
     bool m_released = false;
+    bool m_attackBegan = false;
     MeleeBlow m_meleeBlow = MeleeBlow::None;
     MeleeSense m_melee;
     s32 m_character = -1;

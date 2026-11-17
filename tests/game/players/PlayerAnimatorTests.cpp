@@ -1458,6 +1458,243 @@ TEST_CASE("a legend item is let go of with a potion's, the strong throw's or the
     REQUIRE_FALSE(other.canBegin(PlayerDeed::HurlLegend));
 }
 
+/** The class sequences, three quick swings and their recoveries (eight frames at a rate of
+ * thirty), strafing forward walking and shooting (ten frames at a rate of forty-five), the turbo
+ * moves, the strong throw and the special shot with its repeat. */
+TreeInfo attackTree() {
+    TreeInfo tree = classTree();
+    const auto add = [&tree](const char* name, s32 frames, s32 rate) {
+        TreeSequenceInfo sequence = tree.sequences.front();
+        sequence.name = name;
+        sequence.frames = frames;
+        sequence.frameRate = rate;
+        sequence.repeats = false;
+        tree.sequences.push_back(sequence);
+    };
+    for (const char* name : {"ATTQUICK1", "ATTQUICK2", "ATTQUICK3", "ATTQUICK2R", "ATTQUICK3R"}) {
+        add(name, 8, 30);
+    }
+    for (const char* name : {"STRAFE_WLKF1", "STRAFE_WLKF2", "STRAFE_ATKF1", "STRAFE_ATKF2"}) {
+        add(name, 10, 45);
+    }
+    add("ATTPWRB", 12, 30);
+    add("ATTPWRC", 12, 30);
+    add("ATTPWRATHROW", 10, 30);
+    add("ATTPWRATHROWR", 8, 30);
+    add("SSHOT1", 11, 30);
+    add("SSHOT2", 6, 30);
+    add("SSHOTR", 12, 30);
+    return tree;
+}
+
+/** Steps `animator` once at sixty a second; whether the update started a sequence. */
+bool startedBy(PlayerAnimator& animator, PlayerMotion motion, PlayerDeed deed) {
+    const u64 before = animator.player().generation();
+    animator.update(motion, 1, 1.0f / 60.0f, deed);
+    return animator.player().generation() != before;
+}
+
+TEST_CASE("an attack begins only as the original's action table begins one",
+          "[game][players][player-animation][attack-began]") {
+    const TreeInfo tree = attackTree();
+    PlayerAnimator animator;
+    REQUIRE(animator.bind(tree, Entrance::Skip));
+    animator.setMelee({MeleeRange::Swing, false, 0});
+
+    SECTION("the rows the original marks as an attack's start, and no others") {
+        // DoPlayerAction sets act_bits bit 0 as these rows start (jumptable_80127174's cases at
+        // 0x800AD56C, 0x800AD5A8, 0x800AD5F4 and 0x800AD720); no other row sets it.
+        constexpr std::array<u8, 38> kBeginRows{
+            32, 33, 39, 40, 41, 44, 45, 48,  49,  52,  53,  56, 57, 60, 62, 63, 64, 67, 69,
+            79, 80, 82, 91, 92, 93, 94, 101, 102, 107, 108, 71, 72, 73, 74, 75, 76, 77, 78};
+        s32 begins = 0;
+        for (usize i = 0; i < PlayerAnimator::kActionCount; ++i) {
+            CAPTURE(i, PlayerAnimator::kSequenceNames[i]);
+            const bool expected =
+                std::ranges::contains(kBeginRows, PlayerAnimator::kNativeActions[i]);
+            CHECK(PlayerAnimator::beginsAttack(static_cast<Action>(i)) == expected);
+            begins += expected ? 1 : 0;
+        }
+        // Rows 67, 91, 93, 101 and 102 are no action's here.
+        CHECK(begins == 33);
+        CHECK(PlayerAnimator::beginsAttack(Action::Spin));
+        for (const Action action :
+             {Action::PowerClose, Action::PowerMed, Action::PowerLow, Action::TurboStrong,
+              Action::TurboFull, Action::StrongThrow, Action::Breathe}) {
+            CAPTURE(action);
+            CHECK_FALSE(PlayerAnimator::beginsAttack(action));
+        }
+        CHECK_FALSE(
+            PlayerAnimator::beginsAttack(static_cast<Action>(PlayerAnimator::kActionCount)));
+    }
+
+    SECTION("a held chain begins one with each swing it enters, never with a recovery") {
+        constexpr std::array kSwings{Action::Quick1, Action::Quick2, Action::Quick3};
+        s32 swings = 0;
+        s32 recoveries = 0;
+        for (s32 tick = 0; tick < 150; ++tick) {
+            CAPTURE(tick);
+            // Let go of for a while, so that the swing under way recovers, then held again.
+            const bool held = tick < 70 || tick >= 110;
+            const bool started = startedBy(animator, PlayerMotion::Stand,
+                                           held ? PlayerDeed::Melee : PlayerDeed::None);
+            const bool swing = started && std::ranges::contains(kSwings, animator.action());
+            CHECK(animator.attackBegan() == swing);
+            swings += swing ? 1 : 0;
+            recoveries += started && (animator.action() == Action::Quick2Recover ||
+                                      animator.action() == Action::Quick3Recover)
+                              ? 1
+                              : 0;
+        }
+        CHECK(swings == 8);
+        CHECK(recoveries == 1);
+    }
+
+    SECTION("each throw's wind-up begins one; its release and its recovery do not") {
+        s32 windUps = 0;
+        s32 releases = 0;
+        s32 recoveries = 0;
+        for (s32 tick = 0; tick < 120; ++tick) {
+            CAPTURE(tick);
+            const bool started = startedBy(animator, PlayerMotion::Stand, PlayerDeed::Attack);
+            const Action action = animator.action();
+            CHECK(animator.attackBegan() == (started && action == Action::Throw));
+            windUps += started && action == Action::Throw ? 1 : 0;
+            releases += started && action == Action::ThrowRelease ? 1 : 0;
+            recoveries += started && action == Action::ThrowRecover ? 1 : 0;
+        }
+        CHECK(windUps >= 3);
+        CHECK(releases >= 3);
+        CHECK(recoveries >= 3);
+        // From a stride's first half the moving wind-up begins one as well.
+        PlayerAnimator walker;
+        REQUIRE(walker.bind(tree, Entrance::Skip));
+        REQUIRE(startedBy(walker, PlayerMotion::Walk, PlayerDeed::None));
+        REQUIRE(walker.action() == Action::Walk1);
+        CHECK_FALSE(walker.attackBegan());
+        REQUIRE(startedBy(walker, PlayerMotion::Walk, PlayerDeed::Attack));
+        REQUIRE(walker.action() == Action::ThrowMoving);
+        CHECK(walker.attackBegan());
+    }
+
+    SECTION("each shooting strafe half begins one; a walking half does not") {
+        animator.setStrafe(StrafeWay::Forward);
+        constexpr std::array kShots{Action::StrafeShootForward1, Action::StrafeShootForward2};
+        constexpr std::array kSteps{Action::StrafeForward1, Action::StrafeForward2};
+        s32 shots = 0;
+        s32 steps = 0;
+        for (s32 tick = 0; tick < 300; ++tick) {
+            CAPTURE(tick);
+            // Shooting through some halves and walking through others, by turns.
+            const PlayerDeed deed = tick % 150 < 75 ? PlayerDeed::Attack : PlayerDeed::None;
+            const bool started = startedBy(animator, PlayerMotion::Walk, deed);
+            const bool shot = started && std::ranges::contains(kShots, animator.action());
+            CHECK(animator.attackBegan() == shot);
+            shots += shot ? 1 : 0;
+            steps += started && std::ranges::contains(kSteps, animator.action()) ? 1 : 0;
+        }
+        CHECK(shots >= 4);
+        CHECK(steps >= 2);
+    }
+
+    SECTION("a held special shot begins one as it starts and as each repeat starts") {
+        s32 shots = 0;
+        s32 repeats = 0;
+        s32 recoveries = 0;
+        for (s32 tick = 0; tick < 120; ++tick) {
+            CAPTURE(tick);
+            const PlayerDeed deed = tick < 90 ? PlayerDeed::SuperShot : PlayerDeed::None;
+            const bool started = startedBy(animator, PlayerMotion::Stand, deed);
+            const Action action = animator.action();
+            CHECK(animator.attackBegan() == (started && (action == Action::SpecialShot ||
+                                                         action == Action::SpecialShotRepeat)));
+            shots += started && action == Action::SpecialShot ? 1 : 0;
+            repeats += started && action == Action::SpecialShotRepeat ? 1 : 0;
+            recoveries += started && action == Action::SpecialShotRecover ? 1 : 0;
+        }
+        CHECK(shots == 1);
+        CHECK(repeats >= 2);
+        CHECK(recoveries == 1);
+    }
+
+    SECTION("the turbo moves and the strong throw begin none") {
+        for (const PlayerDeed deed :
+             {PlayerDeed::TurboStrong, PlayerDeed::TurboFull, PlayerDeed::StrongAttack}) {
+            CAPTURE(deed);
+            PlayerAnimator turbo;
+            REQUIRE(turbo.bind(tree, Entrance::Skip));
+            REQUIRE(startedBy(turbo, PlayerMotion::Stand, deed));
+            REQUIRE(turbo.action() == PlayerAnimator::turboActionOf(deed));
+            CHECK_FALSE(turbo.attackBegan());
+            s32 starts = 0;
+            for (s32 tick = 0; tick < 90; ++tick) {
+                CAPTURE(tick);
+                starts += startedBy(turbo, PlayerMotion::Stand, tick < 60 ? deed : PlayerDeed::None)
+                              ? 1
+                              : 0;
+                CHECK_FALSE(turbo.attackBegan());
+            }
+            CHECK(starts >= 2);
+        }
+    }
+
+    SECTION("a blow the update after a swing begins none") {
+        REQUIRE(startedBy(animator, PlayerMotion::Stand, PlayerDeed::Melee));
+        REQUIRE(animator.action() == Action::Quick1);
+        REQUIRE(animator.attackBegan());
+        REQUIRE(startedBy(animator, PlayerMotion::Stand, PlayerDeed::Flinch));
+        REQUIRE(animator.action() == Action::HitReact);
+        CHECK_FALSE(animator.attackBegan());
+    }
+
+    SECTION("a checkpoint carries the edge, and a restore puts it back") {
+        REQUIRE(startedBy(animator, PlayerMotion::Stand, PlayerDeed::Melee));
+        REQUIRE(animator.attackBegan());
+        const auto began = animator.checkpoint();
+        CHECK(began.attackBegan);
+        PlayerAnimator restored;
+        REQUIRE(restored.bind(tree, Entrance::Skip));
+        REQUIRE(restored.restore(began));
+        CHECK(restored.attackBegan());
+        CHECK(restored.checkpoint() == began);
+        auto quiet = began;
+        quiet.attackBegan = false;
+        CHECK(quiet != began);
+        REQUIRE(restored.restore(quiet));
+        CHECK_FALSE(restored.attackBegan());
+    }
+
+    SECTION("a legend item's special shot begins none; the throw after its gesture does") {
+        REQUIRE(startedBy(animator, PlayerMotion::Stand, PlayerDeed::ShootLegend));
+        REQUIRE(animator.action() == Action::SpecialShot);
+        REQUIRE(animator.castingLegend());
+        CHECK_FALSE(animator.attackBegan());
+        s32 released = 0;
+        for (s32 tick = 0; tick < 240 && animator.action() != Action::Throw; ++tick) {
+            CAPTURE(tick);
+            animator.update(PlayerMotion::Stand, 1, 1.0f / 60.0f, PlayerDeed::Attack);
+            released += animator.legendReleased() ? 1 : 0;
+            if (animator.action() != Action::Throw) {
+                CHECK_FALSE(animator.attackBegan());
+            }
+        }
+        REQUIRE(animator.action() == Action::Throw);
+        CHECK(released == 1);
+        CHECK_FALSE(animator.castingLegend());
+        CHECK(animator.attackBegan());
+    }
+
+    SECTION("presentation alone and unbinding clear the edge") {
+        REQUIRE(startedBy(animator, PlayerMotion::Stand, PlayerDeed::Melee));
+        REQUIRE(animator.attackBegan());
+        PlayerAnimator departing = animator;
+        departing.advancePresentation(1.0f / 60.0f);
+        CHECK_FALSE(departing.attackBegan());
+        animator.unbind();
+        CHECK_FALSE(animator.attackBegan());
+    }
+}
+
 TEST_CASE("captured players loop GRABBED and hold their fall until released by physics",
           "[game][players][animation][yeti]") {
     TreeInfo tree = classTree();

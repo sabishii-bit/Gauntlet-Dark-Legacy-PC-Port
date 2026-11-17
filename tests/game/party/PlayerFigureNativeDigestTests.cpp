@@ -167,6 +167,50 @@ TEST_CASE("player native digest includes latent animator and glow controls",
     CHECK(nativeValue(weapon, resources) == unlit);
 }
 
+/** A stance and a throw's wind-up, each a still pose of one node. */
+TreeInfo windUpTree() {
+    TreeInfo tree;
+    tree.name = "WINDUP";
+    TreeNodeInfo root;
+    root.name = "ROOT";
+    root.type = 1;
+    tree.nodes.push_back(root);
+    for (const std::string_view name : {"READY", "THROW1S"}) {
+        TreeSequenceInfo sequence;
+        sequence.name = name;
+        sequence.frames = 6;
+        sequence.frameRate = 30;
+        sequence.repeats = name == "READY";
+        tree.sequences.push_back(sequence);
+    }
+    return tree;
+}
+
+TEST_CASE("player native digest includes the attack-began edge",
+          "[native-state-digest][player-figure-native-digest]") {
+    const auto tree = windUpTree();
+    NativeStateResources resources;
+    REQUIRE(resources.registerBuiltinTree(tree, "wind-up"));
+    PlayerAnimator animator;
+    REQUIRE(animator.bind(tree, Entrance::Skip));
+    animator.update(PlayerMotion::Stand, 1, kStep, PlayerDeed::Attack);
+    REQUIRE(animator.action() == PlayerAnimator::Action::Throw);
+    REQUIRE(animator.attackBegan());
+    // Restored, the pose and its presentation come from the checkpoint alone, so the edge is
+    // all that differs between the two.
+    const auto began = animator.checkpoint();
+    REQUIRE(animator.restore(began));
+    const auto beginning = nativeValue(animator, resources);
+    auto quiet = began;
+    quiet.attackBegan = false;
+    REQUIRE(animator.restore(quiet));
+    REQUIRE_FALSE(animator.attackBegan());
+    CHECK(nativeValue(animator, resources) != beginning);
+    REQUIRE(animator.restore(began));
+    REQUIRE(animator.attackBegan());
+    CHECK(nativeValue(animator, resources) == beginning);
+}
+
 TEST_CASE("independent player figures hash native values not render cadence or addresses",
           "[native-state-digest][player-figure-native-digest][assets]") {
     const auto root = test::assetOrSkip("WEAPONS/objects.ngc").parent_path().parent_path();
@@ -419,7 +463,7 @@ TEST_CASE("native animator digest bytes stay pinned for a released item",
     // SHA-256 of the native digest of the animator above, which netplay peers must hash alike: a
     // literal moves only when what is visited, or the number a deed is stored as, changes.
     constexpr std::string_view kDigest =
-        "3b0c267f81e724a5e09a4a831511b6598eef479b5d7b0c4cfd41fe97f1a134dc";
+        "0b36d0c4d660597c6b10f4c5a0b0ea77f09835176ac836009cf3854d1a6d2e8f";
     CHECK(test::hexBytes(nativeValue(animator, resources)) == kDigest);
 }
 
@@ -588,8 +632,8 @@ TEST_CASE("player figure native digest bytes stay pinned after a walk and a thro
     // alike: a literal moves only when what is visited changes on purpose.
     test::checkPinnedDigests("PlayerFigure", test::liveDigest(*figure, resources),
                              test::savedDigest(*figure, saved, resources),
-                             "e63c0a2d1137eddd35a0e61a2462a4952b180a678725d7b54e7775cda3d4ebd2",
-                             "1f2a7e0bdcb0b8f251f47a8638494ea33825bb65a843dff77ac3b82f48c84f57");
+                             "a787d82d11781678cf3619f552d96adfe0ebd1cf311112167a9de3efac6ff5ee",
+                             "0ce1afc3af507bdda208426b12a1a829a611816f7a17d4df0ad0e4d5df516701");
     test::checkPinnedDigests("PlayerFigure's PowerupCompanion",
                              test::liveDigest(figure->companion(), resources),
                              test::savedDigest(figure->companion(), companion, resources),

@@ -13,16 +13,16 @@
 namespace gdl::game {
 
 void visitNativeState(NativeStateDigest& digest, const PlayerAnimator& value) {
-    const auto& [tree, sequences, current, footfall, entered, released, meleeBlow, melee, character,
-                 chain, quickPress, strongPress, quickHeld, strongHeld, moved, shielded, pushed,
-                 potionUsed, potionThrown, potionThrowTicks, potionThrowReleased, dead, turboBegan,
-                 strongReleased, potionShielded, shieldAsked, legendAsked, legendReleased,
-                 superReleased, superHeld, itemReleased, rapid, speed, guardArmor, strafe,
-                 comboClass, comboRide, potionLatch, attackSeconds, phaseSeconds, shotFrame,
+    const auto& [tree, sequences, current, footfall, entered, released, attackBegan, meleeBlow,
+                 melee, character, chain, quickPress, strongPress, quickHeld, strongHeld, moved,
+                 shielded, pushed, potionUsed, potionThrown, potionThrowTicks, potionThrowReleased,
+                 dead, turboBegan, strongReleased, potionShielded, shieldAsked, legendAsked,
+                 legendReleased, superReleased, superHeld, itemReleased, rapid, speed, guardArmor,
+                 strafe, comboClass, comboRide, potionLatch, attackSeconds, phaseSeconds, shotFrame,
                  stillTicks, fidgetTicks, player, pose, previous, presentationPrevious,
                  presentationGeneration] = value;
     digest.resource(tree);
-    digest.values(sequences, current, footfall, entered, released, meleeBlow);
+    digest.values(sequences, current, footfall, entered, released, attackBegan, meleeBlow);
     digest.fields<3>(melee);
     digest.values(character, chain, quickPress, strongPress, quickHeld, strongHeld, moved, shielded,
                   pushed, potionUsed, potionThrown, potionThrowTicks, potionThrowReleased, dead,
@@ -123,6 +123,7 @@ constexpr u8 kBlendsToReady = 0x1; ///< eases back into the stance as it ends (r
 constexpr u8 kAutoMelee = 0x2;     ///< an unpressed contact swing may begin from it
 constexpr u8 kKeepsPress = 0x4;    ///< keeps a pending attack press for the next request
 constexpr u8 kShotBoundary = 0x8;  ///< what follows it waits for a nominal shot boundary
+constexpr u8 kBeginsAttack = 0x10; ///< starting it begins an attack (DoPlayerAction's act_bits 1)
 } // namespace action_trait
 
 /** Per class: whether the close and middle power moves root it, and at which rate it moves. */
@@ -186,6 +187,7 @@ struct PlayerAnimator::ActionInfo {
 
 const PlayerAnimator::ActionInfo& PlayerAnimator::info(Action action) {
     using action_trait::kAutoMelee;
+    using action_trait::kBeginsAttack;
     using action_trait::kBlendsToReady;
     using action_trait::kKeepsPress;
     using action_trait::kShotBoundary;
@@ -234,11 +236,13 @@ const PlayerAnimator::ActionInfo& PlayerAnimator::info(Action action) {
         {.action = Action::Throw,
          .family = ActionFamily::Throw,
          .attackType = AttackType::Throw,
-         .pace = 0.0f},
+         .pace = 0.0f,
+         .traits = kBeginsAttack},
         {.action = Action::ThrowMoving,
          .family = ActionFamily::Throw,
          .attackType = AttackType::Throw,
-         .pace = 0.0f},
+         .pace = 0.0f,
+         .traits = kBeginsAttack},
         {.action = Action::ThrowRelease,
          .family = ActionFamily::Throw,
          .attackType = AttackType::Throw,
@@ -379,56 +383,56 @@ const PlayerAnimator::ActionInfo& PlayerAnimator::info(Action action) {
          .pace = kStrafePace,
          .foot = Foot::First,
          .otherHalf = Action::StrafeShootForward2,
-         .traits = kBlendsToReady | kShotBoundary},
+         .traits = kBlendsToReady | kShotBoundary | kBeginsAttack},
         {.action = Action::StrafeShootForward2,
          .family = ActionFamily::StrafeShoot,
          .attackType = AttackType::StrafeShot,
          .pace = kStrafePace,
          .foot = Foot::Second,
          .otherHalf = Action::StrafeShootForward1,
-         .traits = kBlendsToReady | kShotBoundary},
+         .traits = kBlendsToReady | kShotBoundary | kBeginsAttack},
         {.action = Action::StrafeShootBack1,
          .family = ActionFamily::StrafeShoot,
          .attackType = AttackType::StrafeShot,
          .pace = kStrafePace,
          .foot = Foot::First,
          .otherHalf = Action::StrafeShootBack2,
-         .traits = kBlendsToReady | kShotBoundary},
+         .traits = kBlendsToReady | kShotBoundary | kBeginsAttack},
         {.action = Action::StrafeShootBack2,
          .family = ActionFamily::StrafeShoot,
          .attackType = AttackType::StrafeShot,
          .pace = kStrafePace,
          .foot = Foot::Second,
          .otherHalf = Action::StrafeShootBack1,
-         .traits = kBlendsToReady | kShotBoundary},
+         .traits = kBlendsToReady | kShotBoundary | kBeginsAttack},
         {.action = Action::StrafeShootLeft1,
          .family = ActionFamily::StrafeShoot,
          .attackType = AttackType::StrafeShot,
          .pace = kStrafePace,
          .foot = Foot::First,
          .otherHalf = Action::StrafeShootLeft2,
-         .traits = kBlendsToReady | kShotBoundary},
+         .traits = kBlendsToReady | kShotBoundary | kBeginsAttack},
         {.action = Action::StrafeShootLeft2,
          .family = ActionFamily::StrafeShoot,
          .attackType = AttackType::StrafeShot,
          .pace = kStrafePace,
          .foot = Foot::Second,
          .otherHalf = Action::StrafeShootLeft1,
-         .traits = kBlendsToReady | kShotBoundary},
+         .traits = kBlendsToReady | kShotBoundary | kBeginsAttack},
         {.action = Action::StrafeShootRight1,
          .family = ActionFamily::StrafeShoot,
          .attackType = AttackType::StrafeShot,
          .pace = kStrafePace,
          .foot = Foot::First,
          .otherHalf = Action::StrafeShootRight2,
-         .traits = kBlendsToReady | kShotBoundary},
+         .traits = kBlendsToReady | kShotBoundary | kBeginsAttack},
         {.action = Action::StrafeShootRight2,
          .family = ActionFamily::StrafeShoot,
          .attackType = AttackType::StrafeShot,
          .pace = kStrafePace,
          .foot = Foot::Second,
          .otherHalf = Action::StrafeShootRight1,
-         .traits = kBlendsToReady | kShotBoundary},
+         .traits = kBlendsToReady | kShotBoundary | kBeginsAttack},
         {.action = Action::FallBack,
          .family = ActionFamily::Floored,
          .pace = 0.0f,
@@ -450,7 +454,8 @@ const PlayerAnimator::ActionInfo& PlayerAnimator::info(Action action) {
         {.action = Action::SpecialShot,
          .family = ActionFamily::SpecialShot,
          .attackType = AttackType::Special,
-         .pace = 0.0f},
+         .pace = 0.0f,
+         .traits = kBeginsAttack},
         {.action = Action::SpecialShotRecover,
          .family = ActionFamily::SpecialShot,
          .attackType = AttackType::Special,
@@ -468,7 +473,7 @@ const PlayerAnimator::ActionInfo& PlayerAnimator::info(Action action) {
          .turn = 0.0f,
          .blow = MeleeBlow::Plain,
          .next = Action::Quick3Recover,
-         .traits = kBlendsToReady},
+         .traits = kBlendsToReady | kBeginsAttack},
         {.action = Action::Quick2,
          .family = ActionFamily::Melee,
          .attackType = AttackType::Quick,
@@ -476,7 +481,7 @@ const PlayerAnimator::ActionInfo& PlayerAnimator::info(Action action) {
          .turn = 0.0f,
          .blow = MeleeBlow::Plain,
          .next = Action::Quick2Recover,
-         .traits = kBlendsToReady},
+         .traits = kBlendsToReady | kBeginsAttack},
         {.action = Action::Quick3,
          .family = ActionFamily::Melee,
          .attackType = AttackType::Quick,
@@ -484,7 +489,7 @@ const PlayerAnimator::ActionInfo& PlayerAnimator::info(Action action) {
          .turn = 0.0f,
          .blow = MeleeBlow::Plain,
          .next = Action::Quick3Recover,
-         .traits = kBlendsToReady},
+         .traits = kBlendsToReady | kBeginsAttack},
         {.action = Action::Quick2Recover,
          .family = ActionFamily::Melee,
          .attackType = AttackType::Quick,
@@ -502,14 +507,14 @@ const PlayerAnimator::ActionInfo& PlayerAnimator::info(Action action) {
          .attackType = AttackType::Slow,
          .pace = 0.0f,
          .next = Action::SlowSwing,
-         .traits = kBlendsToReady | kAutoMelee},
+         .traits = kBlendsToReady | kAutoMelee | kBeginsAttack},
         {.action = Action::SlowSwing,
          .family = ActionFamily::Melee,
          .attackType = AttackType::Slow,
          .pace = 0.0f,
          .blow = MeleeBlow::Heavy,
          .next = Action::SlowRecover,
-         .traits = kBlendsToReady | kAutoMelee},
+         .traits = kBlendsToReady | kAutoMelee | kBeginsAttack},
         {.action = Action::SlowRecover,
          .family = ActionFamily::Melee,
          .attackType = AttackType::Slow,
@@ -521,7 +526,7 @@ const PlayerAnimator::ActionInfo& PlayerAnimator::info(Action action) {
          .attackType = AttackType::Low,
          .blow = MeleeBlow::Kick,
          .next = Action::LowKickRecover,
-         .traits = kBlendsToReady},
+         .traits = kBlendsToReady | kBeginsAttack},
         {.action = Action::LowKickRecover,
          .family = ActionFamily::Melee,
          .attackType = AttackType::Low,
@@ -531,13 +536,13 @@ const PlayerAnimator::ActionInfo& PlayerAnimator::info(Action action) {
          .attackType = AttackType::Low,
          .blow = MeleeBlow::Plain,
          .next = Action::LowRecover,
-         .traits = kBlendsToReady},
+         .traits = kBlendsToReady | kBeginsAttack},
         {.action = Action::Low2,
          .family = ActionFamily::Melee,
          .attackType = AttackType::Low,
          .blow = MeleeBlow::Plain,
          .next = Action::LowRecover,
-         .traits = kBlendsToReady},
+         .traits = kBlendsToReady | kBeginsAttack},
         {.action = Action::LowRecover,
          .family = ActionFamily::Melee,
          .attackType = AttackType::Low,
@@ -548,13 +553,13 @@ const PlayerAnimator::ActionInfo& PlayerAnimator::info(Action action) {
          .attackType = AttackType::Turned,
          .blow = MeleeBlow::Plain,
          .next = Action::RightRecover,
-         .traits = kBlendsToReady},
+         .traits = kBlendsToReady | kBeginsAttack},
         {.action = Action::Right2,
          .family = ActionFamily::Melee,
          .attackType = AttackType::Turned,
          .blow = MeleeBlow::Plain,
          .next = Action::Right2Recover,
-         .traits = kBlendsToReady},
+         .traits = kBlendsToReady | kBeginsAttack},
         {.action = Action::RightRecover,
          .family = ActionFamily::Melee,
          .attackType = AttackType::Turned,
@@ -570,13 +575,13 @@ const PlayerAnimator::ActionInfo& PlayerAnimator::info(Action action) {
          .attackType = AttackType::Turned,
          .blow = MeleeBlow::Plain,
          .next = Action::LeftRecover,
-         .traits = kBlendsToReady},
+         .traits = kBlendsToReady | kBeginsAttack},
         {.action = Action::Left2,
          .family = ActionFamily::Melee,
          .attackType = AttackType::Turned,
          .blow = MeleeBlow::Plain,
          .next = Action::Left2Recover,
-         .traits = kBlendsToReady},
+         .traits = kBlendsToReady | kBeginsAttack},
         {.action = Action::LeftRecover,
          .family = ActionFamily::Melee,
          .attackType = AttackType::Turned,
@@ -592,13 +597,13 @@ const PlayerAnimator::ActionInfo& PlayerAnimator::info(Action action) {
          .attackType = AttackType::Turned,
          .blow = MeleeBlow::Plain,
          .next = Action::TurnRecover,
-         .traits = kBlendsToReady},
+         .traits = kBlendsToReady | kBeginsAttack},
         {.action = Action::Turn2,
          .family = ActionFamily::Melee,
          .attackType = AttackType::Turned,
          .blow = MeleeBlow::Plain,
          .next = Action::Turn2Recover,
-         .traits = kBlendsToReady},
+         .traits = kBlendsToReady | kBeginsAttack},
         {.action = Action::TurnRecover,
          .family = ActionFamily::Melee,
          .attackType = AttackType::Turned,
@@ -614,13 +619,13 @@ const PlayerAnimator::ActionInfo& PlayerAnimator::info(Action action) {
          .attackType = AttackType::Turned,
          .blow = MeleeBlow::Plain,
          .next = Action::TurnLeftRecover,
-         .traits = kBlendsToReady},
+         .traits = kBlendsToReady | kBeginsAttack},
         {.action = Action::TurnLeft2,
          .family = ActionFamily::Melee,
          .attackType = AttackType::Turned,
          .blow = MeleeBlow::Plain,
          .next = Action::TurnLeft2Recover,
-         .traits = kBlendsToReady},
+         .traits = kBlendsToReady | kBeginsAttack},
         {.action = Action::TurnLeftRecover,
          .family = ActionFamily::Melee,
          .attackType = AttackType::Turned,
@@ -637,7 +642,7 @@ const PlayerAnimator::ActionInfo& PlayerAnimator::info(Action action) {
          .pace = kSpinPace,
          .blow = MeleeBlow::Plain,
          .next = Action::SpinRecover,
-         .traits = kBlendsToReady},
+         .traits = kBlendsToReady | kBeginsAttack},
         {.action = Action::SpinRecover,
          .family = ActionFamily::Melee,
          .attackType = AttackType::Spin,
@@ -651,7 +656,7 @@ const PlayerAnimator::ActionInfo& PlayerAnimator::info(Action action) {
          .motion = MotionRule::Step,
          .blow = MeleeBlow::Heavy,
          .next = Action::Step3Recover,
-         .traits = kBlendsToReady},
+         .traits = kBlendsToReady | kBeginsAttack},
         {.action = Action::Step2,
          .family = ActionFamily::Melee,
          .attackType = AttackType::Step,
@@ -659,7 +664,7 @@ const PlayerAnimator::ActionInfo& PlayerAnimator::info(Action action) {
          .motion = MotionRule::Step,
          .blow = MeleeBlow::Heavy,
          .next = Action::Step2Recover,
-         .traits = kBlendsToReady},
+         .traits = kBlendsToReady | kBeginsAttack},
         {.action = Action::Step3,
          .family = ActionFamily::Melee,
          .attackType = AttackType::Step,
@@ -667,7 +672,7 @@ const PlayerAnimator::ActionInfo& PlayerAnimator::info(Action action) {
          .motion = MotionRule::Step,
          .blow = MeleeBlow::Heavy,
          .next = Action::Step3Recover,
-         .traits = kBlendsToReady},
+         .traits = kBlendsToReady | kBeginsAttack},
         {.action = Action::Step2Recover,
          .family = ActionFamily::Melee,
          .attackType = AttackType::Step,
@@ -687,7 +692,7 @@ const PlayerAnimator::ActionInfo& PlayerAnimator::info(Action action) {
          .motion = MotionRule::Step,
          .blow = MeleeBlow::Heavy,
          .next = Action::WalkStrikeRecover,
-         .traits = kBlendsToReady},
+         .traits = kBlendsToReady | kBeginsAttack},
         {.action = Action::WalkStrikeRecover,
          .family = ActionFamily::Melee,
          .attackType = AttackType::Step,
@@ -737,7 +742,8 @@ const PlayerAnimator::ActionInfo& PlayerAnimator::info(Action action) {
         {.action = Action::SpecialShotRepeat,
          .family = ActionFamily::SpecialShot,
          .attackType = AttackType::Special,
-         .pace = 0.0f},
+         .pace = 0.0f,
+         .traits = kBeginsAttack},
         {.action = Action::Hammer,
          .family = ActionFamily::Item,
          .attackType = AttackType::Special,
@@ -906,6 +912,24 @@ const PlayerAnimator::ActionInfo& PlayerAnimator::info(Action action) {
                                                  other.foot != Foot::None && other.foot != row.foot;
                                       }),
                   "each half cycle's other half pairs back to it on the other foot");
+    // As one of these rows starts, DoPlayerAction sets act_bits bit 0 (jumptable_80127174's cases
+    // at 0x800AD56C, 0x800AD5A8, 0x800AD5F4 and 0x800AD720): the swings, the throw's wind-ups, the
+    // special shot and its repeat, and the shooting strafe halves. No other row sets that bit.
+    // Rows 67, 91, 93, 101 and 102 are no action's here.
+    static constexpr auto kNativeBegins = std::to_array<u8>(
+        {32, 33, 39, 40, 41, 44, 45, 48,  49,  52,  53,  56, 57, 60, 62, 63, 64, 67, 69,
+         79, 80, 82, 91, 92, 93, 94, 101, 102, 107, 108, 71, 72, 73, 74, 75, 76, 77, 78});
+    static_assert(
+        [] {
+            for (usize i = 0; i < kActions.size(); ++i) {
+                const bool begins = (kActions[i].traits & kBeginsAttack) != 0;
+                if (begins != std::ranges::contains(kNativeBegins, kNativeActions[i])) {
+                    return false;
+                }
+            }
+            return true;
+        }(),
+        "an attack begins at exactly the rows whose start the original marks");
     static_assert(
         std::ranges::none_of(kSequenceNames, [](std::string_view name) { return name.empty(); }),
         "every action names its sequence");
@@ -952,6 +976,7 @@ PlayerAnimator::Checkpoint PlayerAnimator::checkpoint() const {
     state.shotFrame = m_shotFrame;
     state.entered = m_entered;
     state.released = m_released;
+    state.attackBegan = m_attackBegan;
     state.quickPress = m_quickPress;
     state.strongPress = m_strongPress;
     state.quickHeld = m_quickHeld;
@@ -1007,6 +1032,7 @@ bool PlayerAnimator::restore(const Checkpoint& state) {
     m_shotFrame = state.shotFrame;
     m_entered = state.entered;
     m_released = state.released;
+    m_attackBegan = state.attackBegan;
     m_quickPress = state.quickPress;
     m_strongPress = state.strongPress;
     m_quickHeld = state.quickHeld;
@@ -1085,6 +1111,10 @@ bool PlayerAnimator::isThrow(Action action) {
 
 bool PlayerAnimator::isMelee(Action action) {
     return info(action).family == ActionFamily::Melee;
+}
+
+bool PlayerAnimator::beginsAttack(Action action) {
+    return (info(action).traits & action_trait::kBeginsAttack) != 0;
 }
 
 static_assert(std::ranges::all_of(PlayerAnimator::kNativeActions,
@@ -1200,6 +1230,7 @@ void PlayerAnimator::unbind() {
     m_stillTicks = 0;
     m_fidgetTicks = 0;
     m_released = false;
+    m_attackBegan = false;
     m_meleeBlow = MeleeBlow::None;
     m_chain = 0;
     m_quickPress = false;
@@ -1269,6 +1300,7 @@ void PlayerAnimator::advancePresentation(f32 seconds) {
     m_meleeBlow = MeleeBlow::None;
     m_footfall = Foot::None;
     m_released = false;
+    m_attackBegan = false;
     m_strongReleased = false;
     m_superReleased = false;
     m_legendReleased = false;
@@ -1417,6 +1449,7 @@ void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerD
     }
     m_footfall = Foot::None;
     m_released = false;
+    m_attackBegan = false;
     m_potionUsed = false;
     m_potionThrown = false;
     m_turboBegan = false;
@@ -2192,6 +2225,10 @@ void PlayerAnimator::play(const Decision& decision, f32 seconds) {
         decision.action != Action::SpecialShotRecover) {
         m_legendAsked = false; // the gesture is over
     }
+    // A legend item's gesture begins no attack: the rite PlayerMotion runs meanwhile
+    // (0x80083D74-0x800846D4) skips what reads DoPlayerAction's mark, and the release clears it.
+    // Asked once the gesture is over, so that an attack following it is marked.
+    m_attackBegan = m_attackBegan || (beginsAttack(decision.action) && !m_legendAsked);
     if (decision.action == Action::UsePotion || decision.action == Action::ThrowPotion) {
         m_potionLatch = true;
     }
