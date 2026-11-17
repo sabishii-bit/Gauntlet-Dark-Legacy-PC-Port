@@ -112,9 +112,10 @@ pub enum DamageKind {
     Digest,
     /// The file is not what the trusted disc holds: IP.BIN or one of the disc's files has no
     /// fingerprint, or its bytes do not have the digest its fingerprint records; a native file's
-    /// bytes are not those of the tree's DISK.ROM where the native manifest places it, or DISK.ROM
-    /// could not be read whole; or the native manifest does not record the table the tree's
-    /// SIZES.ROM gives against its DISK.ROM, or either could not be read whole.
+    /// bytes are not those of the tree's DISK.ROM where the native manifest places it, the
+    /// manifest places it nowhere, or DISK.ROM could not be read whole; or the native manifest
+    /// does not record the table the tree's SIZES.ROM gives against its DISK.ROM, or either could
+    /// not be read whole.
     Fingerprint,
     /// A fingerprint is of no file the manifests list.
     Unlisted,
@@ -259,7 +260,7 @@ pub(crate) fn verify_tree_with(
     let Expectations {
         manifests,
         files,
-        table,
+        native,
     } = match expansion {
         Expansion::N64 => n64_expected(root, &listing)?,
         Expansion::Dreamcast => dreamcast_expected(root, &listing)?,
@@ -267,11 +268,17 @@ pub(crate) fn verify_tree_with(
     let total = files
         .iter()
         .fold(0, |total: u64, file| total.saturating_add(file.size));
+    // The native files are held to the disc's only when the tree is held to fingerprints, so a
+    // check against the manifests alone never reads what the native manifest records of the
+    // table.
+    let restoring = native
+        .filter(|_| fingerprints.is_some())
+        .map(|native| Restoring::new(NativeTable::read(&native)));
     let mut check = Check {
         root,
         listing: &listing,
         fingerprints,
-        restoring: table.filter(|_| fingerprints.is_some()).map(Restoring::new),
+        restoring,
         job: *job,
         block: vec![0; settings.block_len],
         done: 0,
@@ -473,13 +480,14 @@ struct Expectations {
     /// Every file they list, and a Dreamcast tree's IP.BIN, in the order the extraction writes
     /// them.
     files: Vec<Expected>,
-    /// What a Dreamcast tree's native manifest records of the table its native files were
-    /// restored by; none for an N64 tree.
-    table: Option<NativeTable>,
+    /// A Dreamcast tree's native manifest, its bytes as they were read, whose record of the table
+    /// its native files were restored by is read when the tree is held to fingerprints; none for
+    /// an N64 tree.
+    native: Option<Vec<u8>>,
 }
 
-/// A file's row as a manifest records it: what a check holds the file to, and, for a native
-/// file, where in DISK.ROM it was restored from. The row's other keys are passed over.
+/// A file's row as a manifest records it: what a check holds the file to. The row's other keys
+/// are passed over.
 #[derive(Deserialize)]
 struct WrittenRow {
     /// The file's path, under the folder the manifest keeps its files in.
@@ -488,23 +496,31 @@ struct WrittenRow {
     size: u64,
     /// The SHA-256 digest of its bytes, in lowercase hexadecimal.
     sha256: String,
-    /// Where its bytes start in DISK.ROM, which the native manifest alone records of its files.
-    #[serde(default)]
-    offset: Option<u64>,
 }
 
-/// What a check reads of the native manifest: its files, and the rest of what it records of the
-/// table they were restored by.
+/// What the native manifest records of the table its files were restored by, which a check reads
+/// apart from its files' rows, and only to hold them to the disc's: each file's place in DISK.ROM,
+/// the files outside DISK.ROM, and SIZES.ROM's digest. The manifest's other keys are passed over.
 #[derive(Deserialize)]
-struct WrittenNative {
-    /// The format it is written in.
-    format: String,
+struct WrittenTable {
     /// The files DISK.ROM holds, in the table's order.
-    files: Vec<WrittenRow>,
+    files: Vec<TableRow>,
     /// The files the table lists outside DISK.ROM, in its order.
     external: Vec<WrittenExternal>,
     /// The SHA-256 digest of SIZES.ROM, in lowercase hexadecimal.
     sizes_sha256: String,
+}
+
+/// A file DISK.ROM holds, as its row of the native manifest places it. The row's other keys are
+/// passed over.
+#[derive(Deserialize)]
+struct TableRow {
+    /// Its path, as the table gives it.
+    path: String,
+    /// Where its bytes start in DISK.ROM.
+    offset: u64,
+    /// How many bytes it holds.
+    size: u64,
 }
 
 /// A file the native manifest records outside DISK.ROM, which the tree does not hold.
@@ -519,30 +535,26 @@ struct WrittenExternal {
 /// What the native manifest records of the table its files were restored by.
 struct NativeTable {
     /// Each file DISK.ROM holds, by its row, in the manifest's order: its path as the row gives
-    /// it, where the row says its bytes start in DISK.ROM, if it says, and how many there are.
-    files: Vec<(String, Option<u64>, u64)>,
+    /// it, where its bytes start in DISK.ROM and how many there are.
+    files: Vec<(String, u64, u64)>,
     /// Each file outside DISK.ROM, in the manifest's order: its path and its declared size.
     external: Vec<(String, u64)>,
-    /// SIZES.ROM's digest, as the manifest records it, in lowercase hexadecimal.
-    sizes_sha256: String,
+    /// SIZES.ROM's digest, as the manifest records it.
+    sizes_sha256: Sha256Digest,
 }
 
 impl NativeTable {
-    /// What `native` records of the table.
-    fn of(native: &WrittenNative) -> NativeTable {
-        NativeTable {
-            files: native
-                .files
-                .iter()
-                .map(|row| (row.path.clone(), row.offset, row.size))
-                .collect(),
-            external: native
-                .external
-                .iter()
-                .map(|row| (row.path.clone(), row.declared_size))
-                .collect(),
-            sizes_sha256: native.sizes_sha256.clone(),
-        }
+    /// What the native manifest whose bytes are `bytes` records of the table: none when it records
+    /// it in no shape the extraction writes.
+    fn read(bytes: &[u8]) -> Option<NativeTable> {
+        let written: WrittenTable = serde_json::from_slice(bytes).ok()?;
+        let files = written.files.into_iter();
+        let external = written.external.into_iter();
+        Some(NativeTable {
+            files: files.map(|row| (row.path, row.offset, row.size)).collect(),
+            external: external.map(|row| (row.path, row.declared_size)).collect(),
+            sizes_sha256: Sha256Digest::from_hex(&written.sizes_sha256)?,
+        })
     }
 
     /// Whether it is the table `packed` lists, of a SIZES.ROM whose digest is `sizes`: the same
@@ -554,13 +566,13 @@ impl NativeTable {
         for file in packed {
             let (path, size) = (file.path.as_str(), u64::from(file.size));
             match file.place {
-                PackedPlace::Disk { offset } => held.push((path, Some(offset), size)),
+                PackedPlace::Disk { offset } => held.push((path, offset, size)),
                 PackedPlace::External => outside.push((path, size)),
             }
         }
         let files = self.files.iter();
         let external = self.external.iter();
-        Sha256Digest::from_hex(&self.sizes_sha256) == Some(sizes)
+        self.sizes_sha256 == sizes
             && files
                 .map(|(path, offset, size)| (path.as_str(), *offset, *size))
                 .eq(held)
@@ -580,11 +592,12 @@ struct Restoring {
     disk_rom: RelPath,
     /// Where the tree holds SIZES.ROM.
     sizes_rom: RelPath,
-    /// What the native manifest records of the table.
-    table: NativeTable,
+    /// What the native manifest records of the table, when it records it in the shape the
+    /// extraction writes.
+    table: Option<NativeTable>,
     /// Each native file's part of DISK.ROM, by its row, once DISK.ROM was read whole: the digest
-    /// of its bytes, or none for a part its row gives no start or that does not lie within
-    /// DISK.ROM.
+    /// of its bytes, or none for a part that does not lie within DISK.ROM. A manifest that records
+    /// no table places no file.
     parts: Option<Vec<Option<Sha256Digest>>>,
     /// How many bytes DISK.ROM holds, once it was read whole.
     disk_len: Option<u64>,
@@ -594,8 +607,8 @@ struct Restoring {
 
 impl Restoring {
     /// The native files held to the DISK.ROM and SIZES.ROM of the tree, whose native manifest
-    /// records `table`, neither read yet.
-    fn new(table: NativeTable) -> Restoring {
+    /// records `table`, if any, neither read yet.
+    fn new(table: Option<NativeTable>) -> Restoring {
         let at_disc_top = |name| disc_path(&own_path(name));
         Restoring {
             disk_rom: at_disc_top(DISK_ROM),
@@ -615,32 +628,34 @@ impl Restoring {
     }
 
     /// Whether the native manifest records the table SIZES.ROM gives against DISK.ROM, both as
-    /// the tree holds them: never when either was not read whole, or SIZES.ROM gives no table.
+    /// the tree holds them: never when either was not read whole, SIZES.ROM gives no table, or the
+    /// manifest records none in the shape the extraction writes.
     fn table_follows(&self) -> bool {
-        let (Some(sizes), Some(disk_len)) = (&self.sizes, self.disk_len) else {
+        let (Some(table), Some(sizes), Some(disk_len)) = (&self.table, &self.sizes, self.disk_len)
+        else {
             return false;
         };
-        packed_files(sizes, disk_len)
-            .is_ok_and(|packed| self.table.is(&packed, Sha256Digest::of(sizes)))
+        packed_files(sizes, disk_len).is_ok_and(|packed| table.is(&packed, Sha256Digest::of(sizes)))
     }
 }
 
 /// The parts of DISK.ROM the native manifest's rows place the native files in, each hashed as
 /// DISK.ROM is read.
 struct Parts {
-    /// Each part's start and end in DISK.ROM, by its row, or none for a row that gives no start.
-    spans: Vec<Option<(u64, u64)>>,
+    /// Each part's start and end in DISK.ROM, by its row.
+    spans: Vec<(u64, u64)>,
     /// What each part's digest has taken of DISK.ROM's bytes so far.
     digests: Vec<Sha256>,
 }
 
 impl Parts {
-    /// The parts `table`'s rows place their files in, none of DISK.ROM read yet.
-    fn of(table: &NativeTable) -> Parts {
-        let spans: Vec<Option<(u64, u64)>> = table
-            .files
+    /// The parts `table`'s rows place their files in, none of DISK.ROM read yet: none at all
+    /// without a table.
+    fn of(table: Option<&NativeTable>) -> Parts {
+        let rows = table.map_or(&[][..], |table| &table.files);
+        let spans: Vec<(u64, u64)> = rows
             .iter()
-            .map(|(_, offset, size)| offset.map(|start| (start, start.saturating_add(*size))))
+            .map(|&(_, start, size)| (start, start.saturating_add(size)))
             .collect();
         let digests = spans.iter().map(|_| Sha256::new()).collect();
         Parts { spans, digests }
@@ -649,10 +664,7 @@ impl Parts {
     /// Takes `block`, DISK.ROM's bytes from `at`, into each part it overlaps.
     fn take(&mut self, at: u64, block: &[u8]) {
         let end = at.saturating_add(block.len() as u64);
-        for (span, digest) in self.spans.iter().zip(&mut self.digests) {
-            let Some((start, stop)) = *span else {
-                continue;
-            };
+        for (&(start, stop), digest) in self.spans.iter().zip(&mut self.digests) {
             let (from, to) = (start.max(at), stop.min(end));
             if from < to {
                 digest.update(&block[(from - at) as usize..(to - at) as usize]);
@@ -661,13 +673,12 @@ impl Parts {
     }
 
     /// Each part's digest, DISK.ROM read whole and `disk_len` bytes long: none for a part that
-    /// does not lie within it, or whose row gives no start.
+    /// does not lie within it.
     fn digests(self, disk_len: u64) -> Vec<Option<Sha256Digest>> {
         let parts = self.spans.into_iter().zip(self.digests);
         parts
-            .map(|(span, digest)| {
-                let within = span.is_some_and(|(_, stop)| stop <= disk_len);
-                within.then(|| Sha256Digest(digest.finalize().into()))
+            .map(|((_, stop), digest)| {
+                (stop <= disk_len).then(|| Sha256Digest(digest.finalize().into()))
             })
             .collect()
     }
@@ -733,11 +744,12 @@ impl ManifestFile {
     }
 
     /// Reads the manifest, as JSON of `T`'s shape, when `listing` holds a regular file at exactly
-    /// its name and it holds at most [`MAX_JSON_LEN`] bytes, and gives it with what was read.
+    /// its name and it holds at most [`MAX_JSON_LEN`] bytes, and gives it with what was read and
+    /// the bytes it was read from.
     fn read<T: DeserializeOwned>(
         &self,
         listing: &Listing,
-    ) -> Result<(T, ReadManifest), VerifyError> {
+    ) -> Result<(T, ReadManifest, Vec<u8>), VerifyError> {
         match listing.kind(self.name) {
             Some(EntryKind::File) => {}
             Some(EntryKind::Folder | EntryKind::Other) => {
@@ -764,7 +776,7 @@ impl ManifestFile {
             sha256: Sha256Digest::of(&bytes),
             len: bytes.len() as u64,
         };
-        Ok((written, read))
+        Ok((written, read, bytes))
     }
 
     /// Refuses the manifest unless `written`, the format it names, is `format`.
@@ -826,7 +838,7 @@ impl ManifestFile {
 /// extractor's format.
 fn n64_expected(root: &Path, listing: &Listing) -> Result<Expectations, VerifyError> {
     let manifest = ManifestFile::at(root, N64_MANIFEST);
-    let (written, read): (WrittenN64, _) = manifest.read(listing)?;
+    let (written, read, _): (WrittenN64, _, _) = manifest.read(listing)?;
     if written.format != N64_FORMAT || written.version != N64_VERSION {
         let detail =
             format!("the manifest is not version {N64_VERSION} of the format {N64_FORMAT}");
@@ -839,20 +851,21 @@ fn n64_expected(root: &Path, listing: &Listing) -> Result<Expectations, VerifyEr
     Ok(Expectations {
         manifests: vec![read],
         files,
-        table: None,
+        native: None,
     })
 }
 
 /// What the Dreamcast tree at `root`, whose walk is `listing`, is expected to hold: every file
 /// `disc-manifest.json` lists, under `disc`; IP.BIN, of a boot area's length; every file
 /// `native-manifest.json` lists, under `native`; and both manifests, each of its format of the
-/// Dreamcast extractor's, the native manifest recording the table its files were restored by.
+/// Dreamcast extractor's.
 fn dreamcast_expected(root: &Path, listing: &Listing) -> Result<Expectations, VerifyError> {
     let disc_manifest = ManifestFile::at(root, DISC_MANIFEST);
-    let (disc, disc_read): (WrittenFiles, _) = disc_manifest.read(listing)?;
+    let (disc, disc_read, _): (WrittenFiles, _, _) = disc_manifest.read(listing)?;
     disc_manifest.of_format(&disc.format, DISC_FORMAT)?;
     let native_manifest = ManifestFile::at(root, NATIVE_MANIFEST);
-    let (native, native_read): (WrittenNative, _) = native_manifest.read(listing)?;
+    let (native, native_read, native_bytes): (WrittenFiles, _, _) =
+        native_manifest.read(listing)?;
     native_manifest.of_format(&native.format, NATIVE_FORMAT)?;
     let mut plan = TreePlan::new();
     let mut files = disc_manifest.expected(&disc.files, &DISC_ROWS, &mut plan)?;
@@ -869,7 +882,7 @@ fn dreamcast_expected(root: &Path, listing: &Listing) -> Result<Expectations, Ve
     Ok(Expectations {
         manifests: vec![disc_read, native_read],
         files,
-        table: Some(NativeTable::of(&native)),
+        native: Some(native_bytes),
     })
 }
 
@@ -986,7 +999,7 @@ impl Check<'_> {
         let restoring = self.restoring.as_ref();
         let mut parts = restoring
             .filter(|restoring| restoring.disk_rom == file.path)
-            .map(|restoring| Parts::of(&restoring.table));
+            .map(|restoring| Parts::of(restoring.table.as_ref()));
         let is_table = restoring.is_some_and(|restoring| restoring.sizes_rom == file.path);
         let mut kept = (is_table && file.size <= u64::from(MAX_SIZES_ROM_LEN)).then(Vec::new);
         let mut reader = opened.take(file.size.saturating_add(1));
@@ -1734,10 +1747,12 @@ mod tests {
         assert_eq!(report.level, VerifyLevel::Fingerprints);
 
         // A native manifest that records another table than SIZES.ROM gives: whole against the
-        // manifests, and damage against the fingerprints. A row that gives its file no place in
-        // DISK.ROM leaves that file held to no part of it as well.
+        // manifests, which a check against them alone never reads the table of, and damage
+        // against the fingerprints. A row that places its file past DISK.ROM's end leaves that
+        // file held to no part of it as well, and a table recorded in no shape the extraction
+        // writes leaves every native file so.
         type Change = (&'static str, fn(&mut Value), &'static [&'static str]);
-        let changes: [Change; 7] = [
+        let changes: [Change; 9] = [
             (
                 "another digest of SIZES.ROM",
                 |manifest| manifest["sizes_sha256"] = json!(sha256_hex(b"other")),
@@ -1759,7 +1774,19 @@ mod tests {
                     let row = row_of(manifest, "levels/b.rom").as_object_mut().unwrap();
                     row.remove("offset");
                 },
-                &[RESTORED_EMPTY],
+                &[RESTORED, RESTORED_EMPTY],
+            ),
+            (
+                "no digest of SIZES.ROM",
+                |manifest| {
+                    manifest.as_object_mut().unwrap().remove("sizes_sha256");
+                },
+                &[RESTORED, RESTORED_EMPTY],
+            ),
+            (
+                "the files outside DISK.ROM in no list",
+                |manifest| manifest["external"] = json!(5),
+                &[RESTORED, RESTORED_EMPTY],
             ),
             (
                 "the files in another order",
