@@ -108,15 +108,15 @@ public:
         return index < m_dreamcastPortalPresentation.size() &&
                m_dreamcastPortalPresentation[index].enabled;
     }
-    /** Whether each Dreamcast exit takes the party, a byte an exit in dreamcastPortals()'s order:
-     * nought for one the tower keeps shut. */
-    std::vector<u8> dreamcastPortalsEnabled() const {
-        std::vector<u8> enabled;
-        enabled.reserve(m_dreamcastPortalPresentation.size());
+    /** dreamcastPortalUnlocked for every Dreamcast exit, a byte an exit in dreamcastPortals()'s
+     * order: nought for one the tower keeps shut. */
+    std::vector<u8> dreamcastPortalsUnlocked() const {
+        std::vector<u8> unlocked;
+        unlocked.reserve(m_dreamcastPortalPresentation.size());
         for (const DreamcastPortalPresentation& portal : m_dreamcastPortalPresentation) {
-            enabled.push_back(static_cast<u8>(portal.enabled));
+            unlocked.push_back(static_cast<u8>(portal.enabled));
         }
-        return enabled;
+        return unlocked;
     }
     const std::optional<formats::LegendsN64CameraData>& cameraConfig() const { return m_camera; }
     const std::optional<LevelCameraInfo>& dreamcastCameraConfig() const {

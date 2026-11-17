@@ -343,8 +343,8 @@ void LegendsLevel::drawEntranceTitle(Canvas& canvas, f32 width) const {
 
 std::optional<ImportedExit> LegendsLevel::exitUnder(s32 seat) const {
     if (platform() == LegendsPlatform::Dreamcast) {
-        return dreamcastExitUnder(adapter().dreamcastPortals(), adapter().dreamcastPortalsEnabled(),
-                                  m_visitors, seat);
+        return dreamcastExitUnder(adapter().dreamcastPortals(),
+                                  adapter().dreamcastPortalsUnlocked(), m_visitors, seat);
     }
     return legendsN64ExitUnder(adapter().portals(), m_visitors, seat);
 }

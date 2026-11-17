@@ -7,12 +7,15 @@
 #include <string_view>
 #include <vector>
 
+#include "engine/core/Types.h"
+
 #include "expansions/shared/characters/LegendsProgress.h"
 #include "expansions/shared/level/LegendsPortalVisitor.h"
 #include "formats/WorldFile.h"
-#include "game/level/ImportedLevel.h"
 
 namespace gdl::game {
+
+struct ImportedExit;
 
 struct LegendsDreamcastStage {
     std::string map;
@@ -53,12 +56,12 @@ bool touchesDreamcastPortal(const LegendsDreamcastPortal& portal, Vec3 feet, f32
                             usize partySize);
 
 /** The exit seat `seat` stands on, for the HUD, and whether it waits there: an exit open to the
- * party (its byte of `enabled`, in `portals`' order, not nought, and placed for a party of the
+ * party (its byte of `unlocked`, in `portals`' order, not nought, and placed for a party of the
  * living's size) that the seat's living visitor touches, as touchesDreamcastPortal counts
  * contact at that size, while another living visitor is not on it. No code: the Dreamcast's HUD
  * names no exit. None without the seat's living visitor or off every open exit. */
 std::optional<ImportedExit> dreamcastExitUnder(std::span<const LegendsDreamcastPortal> portals,
-                                               std::span<const u8> enabled,
+                                               std::span<const u8> unlocked,
                                                std::span<const LegendsPortalVisitor> visitors,
                                                s32 seat);
 

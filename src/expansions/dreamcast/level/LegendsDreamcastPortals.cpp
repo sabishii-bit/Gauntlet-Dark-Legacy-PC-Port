@@ -5,9 +5,9 @@
 #include <map>
 
 #include "engine/core/Error.h"
-#include "engine/core/Strings.h"
 #include "engine/io/ByteReader.h"
 
+#include "game/level/ImportedLevel.h"
 #include "game/level/ItemFigure.h"
 
 namespace gdl::game {
@@ -214,7 +214,7 @@ bool touchesDreamcastPortal(const LegendsDreamcastPortal& portal, Vec3 feet, f32
 }
 
 std::optional<ImportedExit> dreamcastExitUnder(std::span<const LegendsDreamcastPortal> portals,
-                                               std::span<const u8> enabled,
+                                               std::span<const u8> unlocked,
                                                std::span<const LegendsPortalVisitor> visitors,
                                                s32 seat) {
     const auto visitor = std::ranges::find_if(visitors, [seat](const LegendsPortalVisitor& body) {
@@ -230,7 +230,7 @@ std::optional<ImportedExit> dreamcastExitUnder(std::span<const LegendsDreamcastP
         visitors, [](const LegendsPortalVisitor& body) { return body.alive; }));
     for (usize index = 0; index < portals.size(); ++index) {
         const LegendsDreamcastPortal& portal = portals[index];
-        const bool open = index < enabled.size() && enabled[index] != 0 &&
+        const bool open = index < unlocked.size() && unlocked[index] != 0 &&
                           shownToParty(portal.minimumPlayers, static_cast<s32>(living));
         if (!open || !touchesDreamcastPortal(portal, visitor->position, visitor->radius, living)) {
             continue;
