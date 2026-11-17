@@ -26,7 +26,7 @@ using namespace gdl;
 using namespace gdl::game;
 using test::FakeHudPart;
 
-/** The seat whose presses a browse carries. */
+/** The seat whose presses a browse or a steer carries. */
 constexpr s32 kBrowsingSeat = 1;
 
 /** A catalog offering the looks `fake` and `other`, and `gone`, whose files have gone so that it
@@ -66,6 +66,7 @@ struct SlotFixture {
             case FakeHudPart::Browse:
                 look.browse(kBrowsingSeat, SelectorInput{.down = true});
                 break;
+            case FakeHudPart::Steer: look.steer(kBrowsingSeat, SelectorInput{.left = true}); break;
             }
         });
     }
@@ -191,9 +192,11 @@ TEST_CASE("a changed id waits for a settle; opening asks for nothing",
 
 TEST_CASE("a look that throws in play is retired for the scene, and Dark Legacy draws on",
           "[game][hud][hud-style-slot]") {
-    const FakeHudPart part = GENERATE(
-        FakeHudPart::Prepare, FakeHudPart::Status, FakeHudPart::RuneMeter, FakeHudPart::Hourglass,
-        FakeHudPart::BossMeters, FakeHudPart::Selectors, FakeHudPart::Help, FakeHudPart::Browse);
+    const FakeHudPart part =
+        GENERATE(FakeHudPart::Prepare, FakeHudPart::Status, FakeHudPart::RuneMeter,
+                 FakeHudPart::Hourglass, FakeHudPart::BossMeters, FakeHudPart::Selectors,
+                 FakeHudPart::Help, FakeHudPart::Browse, FakeHudPart::Steer);
+    const bool seated = part == FakeHudPart::Browse || part == FakeHudPart::Steer;
     CAPTURE(static_cast<s32>(part));
     SlotFixture fixture;
     fixture.styles.throwsIn = part;
@@ -206,9 +209,8 @@ TEST_CASE("a look that throws in play is retired for the scene, and Dark Legacy 
     CHECK(warnings == std::vector<std::string>{"HUD: the fake look failed (the fake look broke); "
                                                "drawing Dark Legacy's for the rest of the scene"});
     CHECK(fixture.styles.record.calls ==
-          std::vector{test::FakeHudCall{.look = "fake",
-                                        .part = part,
-                                        .seat = part == FakeHudPart::Browse ? kBrowsingSeat : -1}});
+          std::vector{test::FakeHudCall{
+              .look = "fake", .part = part, .seat = seated ? kBrowsingSeat : -1}});
     CHECK(slot.shown() == kDarkLegacyHudStyle);
     CHECK(&slot.painter(fixture.art) == &fixture.art.look());
     // It is kept until a step lets it go, since the frames in flight may still draw with it.
