@@ -430,7 +430,8 @@ public:
     /** Whether this tick's step ended a release: the moment the weapon flies. */
     bool released() const { return m_released; }
     /** Whether this tick's step began a swing, a throw's wind-up, the special shot or a shooting
-     * strafe half. */
+     * strafe half; never a legend item's gesture, its special shot included, through which the
+     * original's rite skips what reads the mark (0x80083D74-0x800846D4). */
     bool attackBegan() const { return m_attackBegan; }
     /** Whether starting `action` begins an attack: the rows whose start the original marks in
      * act_bits (DoPlayerAction). None outside the actions. */
