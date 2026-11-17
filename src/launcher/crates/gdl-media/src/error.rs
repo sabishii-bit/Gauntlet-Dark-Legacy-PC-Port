@@ -35,7 +35,8 @@ pub enum MediaError {
         /// for it.
         detail: Box<str>,
     },
-    /// The Dreamcast disc, as its track files keep it, breaks a rule of its format.
+    /// The Dreamcast disc, as its sheet lists its track files and they keep its sectors, breaks a
+    /// rule of its format.
     #[error("{detail}")]
     Disc {
         /// The rule it breaks.
@@ -202,8 +203,8 @@ impl RomRule {
     }
 }
 
-/// The rules of the Dreamcast GD-ROM's format, and of the track files that keep its raw sectors,
-/// that a disc is refused by.
+/// The rules of the Dreamcast GD-ROM's format, of the sheet that lists its track files, and of the
+/// raw sectors those files keep, that a disc is refused by.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum DiscRule {
     /// A raw sector's first bytes are not the sync and a header of mode 1: too few for a header,
@@ -214,6 +215,35 @@ pub enum DiscRule {
     SectorBcd,
     /// A raw sector's address gives a second past 59 or a frame past 74.
     SectorTime,
+    /// A sheet's bytes are not UTF-8 text, after the byte order mark they may begin with.
+    SheetText,
+    /// A sheet is longer than [`MAX_SHEET_LEN`](crate::MAX_SHEET_LEN), far more than any disc's
+    /// list of tracks needs.
+    SheetTooLarge,
+    /// A sheet names a track's file by a name the folder beside it may not hold: one that leaves
+    /// the folder, names a device, or breaks another rule of names.
+    TrackName,
+    /// A cue sheet names a file while the track it opened last has no INDEX 01 yet.
+    MissingIndex,
+    /// A cue sheet opens a track while another is open, before it names a file, or in a file a
+    /// track was read from already, whatever the letter case it names the file in: each track
+    /// must lie in a file of its own, so a dump that keeps the whole disc in one file is refused.
+    TrackPerFile,
+    /// A cue sheet's track number is past 32 bits, or a number of a time, or the frames the time
+    /// comes to, past 64.
+    NumberTooLarge,
+    /// A cue sheet gives a track a mode other than audio and raw mode 1 data, as a dump of cooked
+    /// or mode 2 sectors does.
+    TrackMode,
+    /// A cue sheet's time gives a second past 59 or a frame past 74.
+    CueTime,
+    /// A cue sheet holds a line its reader does not read: another command, another spelling of
+    /// one, a number in digits other than ASCII's, or an INDEX where no track is open.
+    CueLine,
+    /// A cue sheet lists no track, or ends with one still open.
+    IncompleteSheet,
+    /// A cue sheet lists two tracks of one number.
+    DuplicateTrack,
 }
 
 impl DiscRule {
@@ -223,6 +253,17 @@ impl DiscRule {
             DiscRule::SectorHeader => "sectorHeader",
             DiscRule::SectorBcd => "sectorBcd",
             DiscRule::SectorTime => "sectorTime",
+            DiscRule::SheetText => "sheetText",
+            DiscRule::SheetTooLarge => "sheetTooLarge",
+            DiscRule::TrackName => "trackName",
+            DiscRule::MissingIndex => "missingIndex",
+            DiscRule::TrackPerFile => "trackPerFile",
+            DiscRule::NumberTooLarge => "numberTooLarge",
+            DiscRule::TrackMode => "trackMode",
+            DiscRule::CueTime => "cueTime",
+            DiscRule::CueLine => "cueLine",
+            DiscRule::IncompleteSheet => "incompleteSheet",
+            DiscRule::DuplicateTrack => "duplicateTrack",
         }
     }
 }
@@ -365,6 +406,17 @@ mod tests {
             (DiscRule::SectorHeader, "sectorHeader"),
             (DiscRule::SectorBcd, "sectorBcd"),
             (DiscRule::SectorTime, "sectorTime"),
+            (DiscRule::SheetText, "sheetText"),
+            (DiscRule::SheetTooLarge, "sheetTooLarge"),
+            (DiscRule::TrackName, "trackName"),
+            (DiscRule::MissingIndex, "missingIndex"),
+            (DiscRule::TrackPerFile, "trackPerFile"),
+            (DiscRule::NumberTooLarge, "numberTooLarge"),
+            (DiscRule::TrackMode, "trackMode"),
+            (DiscRule::CueTime, "cueTime"),
+            (DiscRule::CueLine, "cueLine"),
+            (DiscRule::IncompleteSheet, "incompleteSheet"),
+            (DiscRule::DuplicateTrack, "duplicateTrack"),
         ];
         for (rule, name) in rules {
             assert_eq!(rule.as_str(), name);

@@ -1,11 +1,12 @@
 //! The shared vectors as the readers' tests read them: the N64 and Dreamcast cases that the
 //! extractors' tests and the launcher's read alike, the manifests the N64 extractor wrote for its
-//! dumps, and the names it was given those dumps under.
+//! dumps, the names it was given those dumps under, and the tracks a sheet lists as the cases
+//! write them.
 
 use gdl_fixtures::unhex;
-use serde_json::Value;
+use serde_json::{Value, json};
 
-use crate::SourceName;
+use crate::{SheetTrack, SourceName, TrackMode};
 
 /// The N64 cases.
 const N64_VECTORS: &str = include_str!(concat!(
@@ -101,4 +102,17 @@ pub(crate) fn word(value: &Value) -> u32 {
 /// The name of a dump's file called `text`.
 pub(crate) fn named(text: &str) -> SourceName {
     SourceName::from_units(text.encode_utf16().collect())
+}
+
+/// A sheet's tracks as the Dreamcast vectors list them: each one's number, file, mode as a cue
+/// sheet spells it, and index.
+pub(crate) fn listed(tracks: &[SheetTrack]) -> Value {
+    let rows = tracks.iter().map(|track| {
+        let mode = match track.mode {
+            TrackMode::Audio => "AUDIO",
+            TrackMode::Mode1Raw => "MODE1/2352",
+        };
+        json!([track.number, track.file, mode, track.index])
+    });
+    Value::Array(rows.collect())
 }
