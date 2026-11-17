@@ -1,5 +1,8 @@
+#include <algorithm>
 #include <array>
+#include <filesystem>
 #include <format>
+#include <memory>
 #include <numeric>
 
 #include <catch2/catch_approx.hpp>
@@ -211,36 +214,217 @@ TEST_CASE("Pojo feather atlas stays clamped at base level during the native fire
     }
 }
 
-TEST_CASE("Pojo restarts its displayed attack on every ranged release across character classes",
+/** What Pojo plays beside a figure: the sequence, which start of it and its whole frame. */
+struct PojoClock {
+    s32 sequence = -1;
+    u64 generation = 0;
+    f32 frame = 0;
+};
+
+PojoClock pojoOf(const PlayerFigure& figure) {
+    const auto clock = figure.companion().animationCheckpoint();
+    return {figure.companion().sequence(), clock.generation, clock.frame};
+}
+
+/** Whether a peck started between `before` and `after`. */
+bool pecked(const PojoClock& before, const PojoClock& after) {
+    return after.sequence == PowerupCompanion::kAttack &&
+           (before.sequence != PowerupCompanion::kAttack || after.generation != before.generation);
+}
+
+/** ATTACK's last frame of thirteen. */
+constexpr f32 kPeckLastFrame = 12.0f;
+constexpr f32 kTick = 1.0f / 60;
+
+/** An EGG911 character of `character`, carrying Pojo from the archive of powerups. */
+std::unique_ptr<PlayerFigure> pojoCarrier(test::FakeRenderDevice& device,
+                                          const std::filesystem::path& root, ItemArchive& powerups,
+                                          s32 character) {
+    CharacterSave save;
+    save.name = "EGG911";
+    save.character = character;
+    REQUIRE(applyNameCheats(save));
+    auto figure = PlayerFigure::load(device, root, save, Entrance::Skip);
+    REQUIRE(figure);
+    figure->setCompanionPowerups(device, powerups, save.progress().inventory, nullptr);
+    REQUIRE(figure->pojoActive());
+    REQUIRE(figure->companion().shown());
+    return figure;
+}
+
+TEST_CASE("Pojo pecks a step after each throw begins and never over a running peck, across "
+          "character classes",
           "[pojo][figure][animation][assets]") {
     const auto root = test::assetOrSkip("POWERUPS/ANIM.PS2").parent_path().parent_path();
     test::FakeRenderDevice device;
     ItemArchive powerups;
     REQUIRE(powerups.load(root / "POWERUPS"));
-    CharacterSave save;
-    save.name = "EGG911";
-    save.character = GENERATE(0, 1, 2, 3, 4, 5, 6, 7);
-    CAPTURE(save.character);
-    REQUIRE(applyNameCheats(save));
-    auto figure = PlayerFigure::load(device, root, save, Entrance::Skip);
-    REQUIRE(figure);
-    figure->setCompanionPowerups(device, powerups, save.progress().inventory, nullptr);
-    s32 releases = 0;
+    const s32 character = GENERATE(0, 1, 2, 3, 4, 5, 6, 7);
+    CAPTURE(character);
+    const auto figure = pojoCarrier(device, root, powerups, character);
+    s32 begins = 0;
+    s32 pecks = 0;
+    bool began = false; // the tick before began a throw's wind-up
     for (s32 tick = 0; tick < 240; ++tick) {
-        const auto previous = figure->companion().visual(Mat4{1}, 1);
-        REQUIRE(previous);
-        figure->animate(0, 1, 1.0f / 60, PlayerDeed::Attack);
-        if (!figure->animator().released()) {
-            continue;
+        CAPTURE(tick);
+        const auto before = pojoOf(*figure);
+        const u64 generation = figure->animator().player().generation();
+        figure->animate(0, 1, kTick, PlayerDeed::Attack);
+        const auto after = pojoOf(*figure);
+        const bool peck = pecked(before, after);
+        if (began) {
+            // The wind-up begun a tick before is answered: a peck, or the one still playing.
+            CHECK(after.sequence == PowerupCompanion::kAttack);
+            if (before.sequence != PowerupCompanion::kAttack) {
+                CHECK(peck);
+                CHECK(after.frame == 0);
+            } else if (before.frame < kPeckLastFrame) {
+                CHECK_FALSE(peck);
+            }
+        } else {
+            CHECK_FALSE(peck);
         }
-        ++releases;
-        const auto shot = figure->companion().visual(Mat4{1}, 1);
-        REQUIRE(shot);
-        CHECK(shot->sequence == PowerupCompanion::kAttack);
-        CHECK(shot->generation > previous->generation);
-        CHECK(shot->frame <= 1);
+        pecks += peck ? 1 : 0;
+        // A wind-up begins as the body's animation starts one.
+        const auto action = figure->animator().action();
+        began = figure->animator().player().generation() != generation &&
+                (action == PlayerAnimator::Action::Throw ||
+                 action == PlayerAnimator::Action::ThrowMoving);
+        CHECK(figure->animator().attackBegan() == began);
+        begins += began ? 1 : 0;
     }
-    CHECK(releases >= 3);
+    CHECK(begins >= 3);
+    CHECK(pecks >= 2);
+}
+
+TEST_CASE("Pojo pecks with every other swing of a held quick chain",
+          "[pojo][figure][animation][assets]") {
+    const auto root = test::assetOrSkip("POWERUPS/ANIM.PS2").parent_path().parent_path();
+    test::FakeRenderDevice device;
+    ItemArchive powerups;
+    REQUIRE(powerups.load(root / "POWERUPS"));
+    const auto figure = pojoCarrier(device, root, powerups, kJesterClass);
+    using Action = PlayerAnimator::Action;
+    constexpr std::array kSwings{Action::Quick1, Action::Quick2,   Action::Quick3,    Action::Right,
+                                 Action::Right2, Action::Left,     Action::Left2,     Action::Turn,
+                                 Action::Turn2,  Action::TurnLeft, Action::TurnLeft2, Action::Step1,
+                                 Action::Step2,  Action::Step3,    Action::WalkStrike};
+    s32 begins = 0;
+    s32 pecks = 0;
+    f32 highest = -1; // the furthest a peck got
+    bool began = false;
+    for (s32 tick = 0; tick < 240; ++tick) {
+        CAPTURE(tick);
+        const auto before = pojoOf(*figure);
+        const u64 generation = figure->animator().player().generation();
+        figure->setMelee({MeleeRange::Swing, false, 0});
+        figure->animate(0, 1, kTick, PlayerDeed::Melee);
+        const auto after = pojoOf(*figure);
+        const bool peck = pecked(before, after);
+        // Every peck answers a swing begun the tick before.
+        CHECK((!peck || began));
+        pecks += peck ? 1 : 0;
+        if (after.sequence == PowerupCompanion::kAttack) {
+            highest = std::max(highest, after.frame);
+        }
+        began = figure->animator().player().generation() != generation &&
+                std::ranges::contains(kSwings, figure->animator().action());
+        CHECK(figure->animator().attackBegan() == began);
+        begins += began ? 1 : 0;
+    }
+    // A peck lasts longer than a swing: each plays whole, and the swing begun meanwhile
+    // finds it still playing.
+    CHECK(begins >= 12);
+    CHECK(pecks == (begins + 1) / 2);
+    CHECK(highest == kPeckLastFrame);
+}
+
+TEST_CASE("Pojo still pecks for a swing a blow cuts short, then flinches",
+          "[pojo][figure][animation][assets]") {
+    const auto root = test::assetOrSkip("POWERUPS/ANIM.PS2").parent_path().parent_path();
+    test::FakeRenderDevice device;
+    ItemArchive powerups;
+    REQUIRE(powerups.load(root / "POWERUPS"));
+    const auto figure = pojoCarrier(device, root, powerups, kJesterClass);
+    figure->setMelee({MeleeRange::Swing, false, 0});
+    figure->animate(0, 1, kTick, PlayerDeed::Melee);
+    REQUIRE(figure->animator().action() == PlayerAnimator::Action::Quick1);
+    CHECK(figure->companion().sequence() == PowerupCompanion::kReady);
+    // Struck the tick after, the body reels while Pojo pecks for the swing it began.
+    figure->animate(0, 1, kTick, PlayerDeed::Flinch);
+    REQUIRE(figure->animator().action() == PlayerAnimator::Action::HitReact);
+    const auto peck = pojoOf(*figure);
+    CHECK(peck.sequence == PowerupCompanion::kAttack);
+    CHECK(peck.frame == 0);
+    // The hit cuts in as Pojo next answers the body.
+    figure->animate(0, 1, kTick);
+    CHECK(figure->companion().sequence() == PowerupCompanion::kHit);
+}
+
+TEST_CASE("only an attack begun while Pojo is carried pecks, and the peck waits for Pojo's next "
+          "update",
+          "[pojo][figure][animation][assets]") {
+    const auto root = test::assetOrSkip("POWERUPS/ANIM.PS2").parent_path().parent_path();
+    test::FakeRenderDevice device;
+    ItemArchive powerups;
+    REQUIRE(powerups.load(root / "POWERUPS"));
+    Inventory carried;
+    carried.addPowerup(powerup::kSpecial, powerup::kPojo, 0, 60);
+    const Inventory none;
+    CharacterSave save;
+    save.character = kWarriorClass;
+    const auto figure = PlayerFigure::load(device, root, save, Entrance::Skip);
+    REQUIRE(figure);
+
+    SECTION("a throw begun without Pojo is never his") {
+        figure->animate(0, 1, kTick, PlayerDeed::Attack);
+        REQUIRE(figure->animator().action() == PlayerAnimator::Action::Throw);
+        figure->setCompanionPowerups(device, powerups, carried);
+        REQUIRE(figure->pojoActive());
+        figure->animate(0, 1, kTick);
+        CHECK(figure->companion().sequence() == PowerupCompanion::kReady);
+    }
+
+    SECTION("a throw begun while carried waits through Pojo's absence") {
+        figure->setCompanionPowerups(device, powerups, carried);
+        REQUIRE(figure->pojoActive());
+        figure->animate(0, 1, kTick, PlayerDeed::Attack);
+        REQUIRE(figure->animator().action() == PlayerAnimator::Action::Throw);
+        CHECK(figure->companion().sequence() == PowerupCompanion::kReady);
+        figure->setCompanionPowerups(device, powerups, none);
+        REQUIRE_FALSE(figure->pojoActive());
+        figure->animate(0, 1, kTick);
+        figure->setCompanionPowerups(device, powerups, carried);
+        REQUIRE(figure->pojoActive());
+        figure->animate(0, 1, kTick);
+        const auto peck = pojoOf(*figure);
+        CHECK(peck.sequence == PowerupCompanion::kAttack);
+        CHECK(peck.frame == 0);
+    }
+}
+
+TEST_CASE("a Pojo carrier's legend shot gesture shows no peck",
+          "[pojo][figure][animation][assets]") {
+    const auto root = test::assetOrSkip("POWERUPS/ANIM.PS2").parent_path().parent_path();
+    test::FakeRenderDevice device;
+    ItemArchive powerups;
+    REQUIRE(powerups.load(root / "POWERUPS"));
+    const auto figure = pojoCarrier(device, root, powerups, kWarriorClass);
+    figure->animate(0, 1, kTick, PlayerDeed::ShootLegend);
+    REQUIRE(figure->animator().action() == PlayerAnimator::Action::SpecialShot);
+    REQUIRE(figure->animator().castingLegend());
+    s32 released = 0;
+    for (s32 tick = 0; tick < 240 && figure->animator().castingLegend(); ++tick) {
+        CAPTURE(tick);
+        figure->animate(0, 1, kTick);
+        released += figure->animator().legendReleased() ? 1 : 0;
+        CHECK(figure->companion().sequence() != PowerupCompanion::kAttack);
+    }
+    REQUIRE_FALSE(figure->animator().castingLegend());
+    CHECK(released == 1);
+    // Nor once the gesture is over.
+    figure->animate(0, 1, kTick);
+    CHECK(figure->companion().sequence() != PowerupCompanion::kAttack);
 }
 
 TEST_CASE("Pojo survives the figure replacement during a tower promotion",
@@ -532,7 +716,8 @@ TEST_CASE("Pojo breath uses its animated head and charges only the selected atta
     player.figure->animate(0, 2, 1.0f / 30, PartyMotion::turboDeed(player, input));
     player.pojoTurbo = !carriedBreath;
     REQUIRE(player.figure->animator().itemReleased() == PlayerDeed::Breathe);
-    CHECK(player.figure->companion().sequence() == PowerupCompanion::kPower);
+    // Pojo answers the breath on his next update, its flame riding his head from the start.
+    CHECK(player.figure->companion().sequence() == PowerupCompanion::kReady);
     const auto head =
         player.figure->companion().attachment(player.actor.transform(), "POJOBODY1_HE#1");
     REQUIRE(head);
@@ -550,6 +735,8 @@ TEST_CASE("Pojo breath uses its animated head and charges only the selected atta
     CHECK(effects.effect(0).name == "FIREBREATHE");
     CHECK(glm::distance(Vec3{effects.effect(0).transform()[3]}, Vec3{(*head)[3]}) ==
           Approx(0).margin(0.0001f));
+    player.figure->animate(0, 2, 1.0f / 30);
+    CHECK(player.figure->companion().sequence() == PowerupCompanion::kPower);
     const auto camera = CameraFrame::at({0, 15, 20});
     bool visible = false;
     for (s32 tick = 0; tick < 30; ++tick) {

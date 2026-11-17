@@ -109,9 +109,9 @@ public:
 
     /** Brings the companion `kind` up from its archive, when it changed. */
     void choose(RenderDevice& device, Kind kind, ItemArchive& powerups, ItemArchive* weapons);
-    /** Plays on by `seconds`: Pojo as the body asks (`swung`: a swing landed), the others
-     * idling, the phoenix's attack as `spat`. */
-    void update(f32 seconds, PlayerAnimator::Action action, bool swung, bool spat);
+    /** Plays on by `seconds`: Pojo as the body's `action` and `attackBegan` ask, both as
+     * PlayerMotion last left them; the others idling, the phoenix's attack as `spat`. */
+    void update(f32 seconds, PlayerAnimator::Action action, bool attackBegan, bool spat);
     void capturePresentation() {
         m_state.presentationAdvanced = false;
         m_state.textures.advance = 0;

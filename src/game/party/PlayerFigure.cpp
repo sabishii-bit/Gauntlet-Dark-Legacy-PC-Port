@@ -434,19 +434,29 @@ void PlayerFigure::animate(f32 stickMagnitude, s32 ticks, f32 seconds, PlayerDee
     if (!m_action.animator.bound()) {
         return;
     }
+    // PlayerProcessPowerups animates Pojo before PlayerMotion moves the body (0x800775A4,
+    // 0x800775FC), from what the last step left: its action, and a peck for an attack that step
+    // began, which only Pojo's own update takes (0x8007E10C-0x8007E128).
+    const auto lastAction = m_action.animator.action();
+    bool peck = false;
+    if (pojoActive() && m_companion.shown()) {
+        peck = m_action.pojoAttack;
+        m_action.pojoAttack = false;
+    }
     m_action.animator.update(PlayerAnimator::motionFor(stickMagnitude), ticks, seconds, deed,
                              chainHeldMelee, potionHeld);
+    // An attack begun while Pojo is carried is his to answer (0x80085060-0x80085074).
+    if (m_action.animator.attackBegan() && pojoActive()) {
+        m_action.pojoAttack = true;
+    }
     const bool phoenix = phoenixActive();
     m_action.familiarPending =
         (phoenix || familiarTier() > 0) &&
         (m_action.animator.released() || m_action.animator.strongReleased() ||
          m_action.animator.superReleased() ||
          deedHas(m_action.animator.itemReleased(), deed_trait::kGauntlet));
-    // Swings and throws animate Pojo; ranged releases animate both firing familiars.
-    const bool swung = m_action.animator.meleeStruck() || m_action.animator.released() ||
-                       m_action.animator.strongReleased() || m_action.animator.superReleased();
-    m_companion.update(seconds, m_action.animator.action(), swung,
-                       phoenix && m_action.familiarPending);
+    // Ranged releases animate both firing familiars.
+    m_companion.update(seconds, lastAction, peck, phoenix && m_action.familiarPending);
     m_familiar.update(seconds, m_action.familiarPending);
     m_action.transforms.resize(m_costume->nodes.size());
     for (usize n = 0; n < m_action.transforms.size(); ++n) {
@@ -1007,7 +1017,7 @@ bool PlayerFigure::appendState(NativeStateDigest& digest, const ActionState& act
         digest.value(m_levelSize);
     }
     m_costumeTextures.appendBindingDigest(digest);
-    digest.fields<5>(actions);
+    digest.fields<6>(actions);
     digest.fields<3>(textures);
     digest.value(companionAlpha);
     return digest.good();

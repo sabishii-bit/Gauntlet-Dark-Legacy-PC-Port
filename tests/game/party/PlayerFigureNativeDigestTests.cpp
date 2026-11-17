@@ -530,7 +530,7 @@ TEST_CASE("companion native digest bytes stay pinned after Pojo's script and its
     PowerupCompanion companion;
     companion.choose(device, PowerupCompanion::Kind::Pojo, powerups, nullptr);
     REQUIRE(companion.shown());
-    // Pojo runs with the body, swings as it strikes at frame 3, and recoils from frame 8.
+    // Pojo runs with the body, pecks for an attack begun at frame 3, and recoils from frame 8.
     const auto step = [&companion](s32 frame) {
         companion.capturePresentation();
         const auto action =
@@ -552,8 +552,8 @@ TEST_CASE("companion native digest bytes stay pinned after Pojo's script and its
     // on purpose.
     test::checkPinnedDigests("PowerupCompanion", test::liveDigest(companion, resources),
                              test::savedDigest(companion, saved, resources),
-                             "2919c85ee8633113e82165f715e8df2ad5a349e668b3fcf54eebc97ae2b9b315",
-                             "7aa37797e5f7e101eaebfc23b1f02a57fe8a6752d3949d067d14b3098828b24b");
+                             "28c818c96914fc06306bb5570fcfd7ad2baf3241f4f6af117c5f495fc3316bd9",
+                             "4a75e3763eda561bad58eb6c6b715244b8ae0a00c27712dceeb103f60adcd39a");
 }
 
 TEST_CASE("familiar native digest bytes stay pinned after its attack and its save",
@@ -604,7 +604,8 @@ TEST_CASE("player figure native digest bytes stay pinned after a walk and a thro
     figure->setCompanionPowerups(device, powerups, inventory);
     REQUIRE(figure->pojoActive());
     // The warrior walks for three frames, then throws from the walk while the attack is held
-    // from frame 3 to frame 13; its familiar and Pojo answer the release.
+    // from frame 3 to frame 13; its familiar answers the release, and Pojo, a frame later, the
+    // moving wind-up's beginning.
     bool familiarShot = false;
     const auto step = [&](s32 frame) {
         figure->capturePresentation();
@@ -632,12 +633,12 @@ TEST_CASE("player figure native digest bytes stay pinned after a walk and a thro
     // alike: a literal moves only when what is visited changes on purpose.
     test::checkPinnedDigests("PlayerFigure", test::liveDigest(*figure, resources),
                              test::savedDigest(*figure, saved, resources),
-                             "a787d82d11781678cf3619f552d96adfe0ebd1cf311112167a9de3efac6ff5ee",
-                             "0ce1afc3af507bdda208426b12a1a829a611816f7a17d4df0ad0e4d5df516701");
+                             "e6d1408a67b9516864ce9f9ed72d111e4bf5d531684ba889aaad64a80e1f900f",
+                             "e618d797e26da0403def2b92ddbd7a4e5a8facad818050a0573ac1c0aa0ea05d");
     test::checkPinnedDigests("PlayerFigure's PowerupCompanion",
                              test::liveDigest(figure->companion(), resources),
                              test::savedDigest(figure->companion(), companion, resources),
-                             "75ac45df1949812e014a0bef0a47d6ae392ed2173433dfaecba141a9dfb6e11c",
-                             "508b8a194da2a87985881b60943c2aee58f2542b35a96f174aae226c5f7e1179");
+                             "510c2810ef4a2f0e59959c8a3337ea77e6b744414562cf3dc8d2c7c9a6e67ff5",
+                             "097f87ca607cec890fbd150458b621b53d92954ca5ecbc2140b3719adc2e2b7a");
 }
 } // namespace

@@ -135,6 +135,7 @@ s32 PowerupCompanion::pojoSequenceOf(Action action) {
     case Action::Breathe: return kPower;
     case Action::HitReact:
     case Action::Stun:
+    case Action::SpikeHit:
     case Action::WebReact:
     case Action::FallBack:
     case Action::FallForward:
@@ -260,7 +261,7 @@ void PowerupCompanion::play(s32 sequence) {
                          static_cast<u32>(sequence));
 }
 
-void PowerupCompanion::update(f32 seconds, Action action, bool swung, bool spat) {
+void PowerupCompanion::update(f32 seconds, Action action, bool attackBegan, bool spat) {
     const auto* currentTree = tree();
     if (!currentTree) {
         return;
@@ -271,22 +272,32 @@ void PowerupCompanion::update(f32 seconds, Action action, bool swung, bool spat)
     m_state.previousFrame = player.presentationFrame();
     m_state.previousGeneration = player.generation();
     m_state.presentationAdvanced = seconds > 0;
-    s32 wanted = kReady;
     if (m_state.kind == Kind::Pojo) {
-        wanted = swung ? kAttack : pojoSequenceOf(action);
-    } else if (spat && currentTree->sequences.size() > 1) {
-        wanted = 1; // the attack its bearer's shot calls for
+        // AnimateTree (anim.c 129) steps what plays first. Mode 2 (the peck, the breath, a hit,
+        // death, and anything asked for from the stance: 0x8007E150) starts what is asked for
+        // when it differs or what plays is done; mode 0 only when both hold. A loop coming round
+        // plays on, and what starts shows its first frame now (InitAnim, then CalcAnimInfo).
+        player.advance(seconds, loops(current));
+        const s32 wanted = attackBegan ? kAttack : pojoSequenceOf(action);
+        const bool cutsIn = attackBegan || !loops(wanted) || current == kReady;
+        const bool done = player.finished();
+        const bool different = wanted != current;
+        if ((cutsIn ? done || different : done && different) && (different || !loops(current))) {
+            play(wanted);
+        }
+    } else {
+        s32 wanted = kReady;
+        if (spat && currentTree->sequences.size() > 1) {
+            wanted = 1; // the attack its bearer's shot calls for
+        }
+        // A loop gives way at once; a one-shot plays through before a loop takes over, another
+        // one-shot cutting in, and held at its end while it is still asked for.
+        const bool busy = !loops(current) && !player.finished();
+        if (wanted != current && (!busy || !loops(wanted))) {
+            play(wanted);
+        }
+        player.advance(seconds, loops(static_cast<s32>(player.sequence())));
     }
-    // A loop gives way at once; a one-shot plays through before a loop takes over, another
-    // one-shot cutting in, and held at its end while it is still asked for (Pojo's death).
-    const bool busy = !loops(current) && !player.finished();
-    // Releases are edges, not held actions. A second shot must restart ATTACK even
-    // while the previous shot's one-shot is playing; held HIT/DEATH must not restart.
-    const bool restart = m_state.kind == Kind::Pojo && swung;
-    if (restart || (wanted != current && (!busy || !loops(wanted)))) {
-        play(wanted);
-    }
-    player.advance(seconds, loops(static_cast<s32>(player.sequence())));
     const auto frame = static_cast<s32>(player.frame());
     m_state.pose.evaluate(*currentTree, player.sequence(), player.frame());
     m_state.poseTree = currentTree;

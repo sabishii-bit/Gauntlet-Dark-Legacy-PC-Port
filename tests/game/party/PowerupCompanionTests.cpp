@@ -242,7 +242,21 @@ TEST_CASE(
     CHECK_FALSE(figure->companionVisuals(body, 1)[1]);
 }
 
-TEST_CASE("successive Pojo shots restart their one-shot without restarting held actions",
+/** What Pojo plays: the sequence, which start of it (its generation) and its whole frame. */
+struct PojoClock {
+    s32 sequence = -1;
+    u64 generation = 0;
+    f32 frame = 0;
+};
+
+/** Pojo's clock after one update by `seconds` asking for `action`, an attack begun or not. */
+PojoClock stepPojo(PowerupCompanion& pojo, f32 seconds, Action action, bool attackBegan = false) {
+    pojo.update(seconds, action, attackBegan, false);
+    const auto clock = pojo.animationCheckpoint();
+    return {pojo.sequence(), clock.generation, clock.frame};
+}
+
+TEST_CASE("Pojo's peck plays through further attacks and starts again once it has ended",
           "[pojo][companion][animation][assets]") {
     const auto root = test::assetOrSkip("POWERUPS/ANIM.PS2").parent_path().parent_path();
     test::FakeRenderDevice device;
@@ -251,27 +265,147 @@ TEST_CASE("successive Pojo shots restart their one-shot without restarting held 
     PowerupCompanion pojo;
     pojo.choose(device, Kind::Pojo, powerups, nullptr);
     REQUIRE(pojo.shown());
-    pojo.update(1.0f / 60, Action::Ready, true, false);
-    const auto first = pojo.visual(Mat4{1}, 1);
-    REQUIRE(first);
-    REQUIRE(first->sequence == PowerupCompanion::kAttack);
-    pojo.update(3.0f / 60, Action::Ready, false, false);
-    const auto playing = pojo.visual(Mat4{1}, 1);
-    REQUIRE(playing);
-    CHECK(playing->generation == first->generation);
-    CHECK(playing->frame > first->frame);
-    pojo.update(1.0f / 60, Action::Ready, true, false);
-    const auto second = pojo.visual(Mat4{1}, 1);
-    REQUIRE(second);
-    CHECK(second->sequence == first->sequence);
-    CHECK(second->generation > first->generation);
-    CHECK(second->frame == Approx(first->frame));
-    pojo.update(1.0f / 60, Action::Death, false, false);
-    const auto death = pojo.visual(Mat4{1}, 1);
-    REQUIRE(death);
-    pojo.update(1.0f / 60, Action::Death, false, false);
-    CHECK(pojo.visual(Mat4{1}, 1)->generation == death->generation);
-    CHECK(pojo.visual(Mat4{1}, 1)->frame > death->frame);
+    // ATTACK is thirteen frames at a rate of thirty: a frame an update.
+    constexpr f32 kFrame = 1.0f / 30;
+    // An attack begun starts the peck on the update that asks for it, at its first frame.
+    auto clock = stepPojo(pojo, kFrame, Action::Ready, true);
+    CHECK(clock.sequence == PowerupCompanion::kAttack);
+    CHECK(clock.frame == 0);
+    const u64 peck = clock.generation;
+    for (s32 frame = 1; frame <= 5; ++frame) {
+        CAPTURE(frame);
+        clock = stepPojo(pojo, kFrame, Action::Ready);
+        CHECK(clock.sequence == PowerupCompanion::kAttack);
+        CHECK(clock.generation == peck);
+        CHECK(clock.frame == static_cast<f32>(frame));
+    }
+    // Another attack begun while the peck plays does not start it over.
+    clock = stepPojo(pojo, kFrame, Action::Ready, true);
+    CHECK(clock.sequence == PowerupCompanion::kAttack);
+    CHECK(clock.generation == peck);
+    CHECK(clock.frame == 6);
+    for (s32 frame = 7; frame <= 12; ++frame) {
+        CAPTURE(frame);
+        clock = stepPojo(pojo, kFrame, Action::Ready);
+        CHECK(clock.sequence == PowerupCompanion::kAttack);
+        CHECK(clock.generation == peck);
+        CHECK(clock.frame == static_cast<f32>(frame));
+    }
+    // The peck's thirteenth step ends it, and an attack begun then starts it again.
+    clock = stepPojo(pojo, kFrame, Action::Ready, true);
+    CHECK(clock.sequence == PowerupCompanion::kAttack);
+    CHECK(clock.generation != peck);
+    CHECK(clock.frame == 0);
+    const u64 again = clock.generation;
+    for (s32 frame = 1; frame <= 12; ++frame) {
+        CAPTURE(frame);
+        clock = stepPojo(pojo, kFrame, Action::Ready);
+        CHECK(clock.sequence == PowerupCompanion::kAttack);
+        CHECK(clock.generation == again);
+        CHECK(clock.frame == static_cast<f32>(frame));
+    }
+    // With nothing begun, the stance follows the peck's last frame.
+    clock = stepPojo(pojo, kFrame, Action::Ready);
+    CHECK(clock.sequence == PowerupCompanion::kReady);
+    CHECK(clock.frame == 0);
+    // Death asked for again plays on.
+    const auto death = stepPojo(pojo, kFrame, Action::Death);
+    CHECK(death.sequence == PowerupCompanion::kDeath);
+    clock = stepPojo(pojo, kFrame, Action::Death);
+    CHECK(clock.sequence == PowerupCompanion::kDeath);
+    CHECK(clock.generation == death.generation);
+    CHECK(clock.frame > death.frame);
+}
+
+TEST_CASE("Pojo's run finishes its stride before the stance, and leaves the stance at once",
+          "[pojo][companion][animation][assets]") {
+    const auto root = test::assetOrSkip("POWERUPS/ANIM.PS2").parent_path().parent_path();
+    test::FakeRenderDevice device;
+    ItemArchive powerups;
+    REQUIRE(powerups.load(root / "POWERUPS"));
+    PowerupCompanion pojo;
+    pojo.choose(device, Kind::Pojo, powerups, nullptr);
+    REQUIRE(pojo.shown());
+    // RUN is thirty frames at a rate of fifteen: a frame a tick, a stride of thirty ticks.
+    constexpr f32 kTick = 1.0f / 60;
+    constexpr s32 kStride = 30;
+    auto clock = stepPojo(pojo, kTick, Action::Run1);
+    CHECK(clock.sequence == PowerupCompanion::kRun);
+    CHECK(clock.frame == 0);
+    const u64 stride = clock.generation;
+    for (s32 tick = 1; tick < 10; ++tick) {
+        CAPTURE(tick);
+        clock = stepPojo(pojo, kTick, Action::Run1);
+        CHECK(clock.sequence == PowerupCompanion::kRun);
+        CHECK(clock.generation == stride);
+    }
+    // Asked for the stance mid-stride, the run plays its stride out.
+    for (s32 tick = 10; tick < kStride; ++tick) {
+        CAPTURE(tick);
+        clock = stepPojo(pojo, kTick, Action::Ready);
+        CHECK(clock.sequence == PowerupCompanion::kRun);
+        CHECK(clock.generation == stride);
+        CHECK(clock.frame == static_cast<f32>(tick));
+    }
+    clock = stepPojo(pojo, kTick, Action::Ready);
+    CHECK(clock.sequence == PowerupCompanion::kReady);
+    CHECK(clock.frame == 0);
+    // From the stance anything starts at once, and a hit cuts into the run.
+    clock = stepPojo(pojo, kTick, Action::Run1);
+    CHECK(clock.sequence == PowerupCompanion::kRun);
+    CHECK(clock.frame == 0);
+    for (s32 tick = 1; tick <= 5; ++tick) {
+        clock = stepPojo(pojo, kTick, Action::Run1);
+        CHECK(clock.sequence == PowerupCompanion::kRun);
+    }
+    clock = stepPojo(pojo, kTick, Action::HitReact);
+    CHECK(clock.sequence == PowerupCompanion::kHit);
+    CHECK(clock.frame == 0);
+}
+
+TEST_CASE("Pojo flinches again for as long as its carrier reels",
+          "[pojo][companion][animation][assets]") {
+    const auto root = test::assetOrSkip("POWERUPS/ANIM.PS2").parent_path().parent_path();
+    test::FakeRenderDevice device;
+    ItemArchive powerups;
+    REQUIRE(powerups.load(root / "POWERUPS"));
+    PowerupCompanion pojo;
+    pojo.choose(device, Kind::Pojo, powerups, nullptr);
+    REQUIRE(pojo.shown());
+    // HIT is twelve frames at a rate of thirty: a frame an update.
+    constexpr f32 kFrame = 1.0f / 30;
+    auto clock = stepPojo(pojo, kFrame, Action::Stun);
+    CHECK(clock.sequence == PowerupCompanion::kHit);
+    CHECK(clock.frame == 0);
+    const u64 flinch = clock.generation;
+    for (s32 frame = 1; frame <= 11; ++frame) {
+        CAPTURE(frame);
+        clock = stepPojo(pojo, kFrame, Action::Stun);
+        CHECK(clock.sequence == PowerupCompanion::kHit);
+        CHECK(clock.generation == flinch);
+        CHECK(clock.frame == static_cast<f32>(frame));
+    }
+    // The flinch over and the body still stunned, Pojo flinches again.
+    clock = stepPojo(pojo, kFrame, Action::Stun);
+    CHECK(clock.sequence == PowerupCompanion::kHit);
+    CHECK(clock.generation != flinch);
+    CHECK(clock.frame == 0);
+    const u64 again = clock.generation;
+    // Asked for the stance, the flinch plays out first.
+    for (s32 frame = 1; frame <= 11; ++frame) {
+        CAPTURE(frame);
+        clock = stepPojo(pojo, kFrame, Action::Ready);
+        CHECK(clock.sequence == PowerupCompanion::kHit);
+        CHECK(clock.generation == again);
+        CHECK(clock.frame == static_cast<f32>(frame));
+    }
+    clock = stepPojo(pojo, kFrame, Action::Ready);
+    CHECK(clock.sequence == PowerupCompanion::kReady);
+    CHECK(clock.frame == 0);
+    // A spike trap's blow is a hit like the others.
+    clock = stepPojo(pojo, kFrame, Action::SpikeHit);
+    CHECK(clock.sequence == PowerupCompanion::kHit);
+    CHECK(clock.frame == 0);
 }
 
 TEST_CASE("fire shield flames retain world depth testing without writing depth",
@@ -333,8 +467,9 @@ TEST_CASE("Pojo acts out what the body does", "[game][world][companion]") {
         CHECK(PowerupCompanion::pojoSequenceOf(moving) == PowerupCompanion::kRun);
     }
     CHECK(PowerupCompanion::pojoSequenceOf(Action::Breathe) == PowerupCompanion::kPower);
-    for (const Action hit : {Action::HitReact, Action::Stun, Action::WebReact, Action::FallBack,
-                             Action::FallForward, Action::Whirled, Action::Grabbed}) {
+    for (const Action hit :
+         {Action::HitReact, Action::Stun, Action::SpikeHit, Action::WebReact, Action::FallBack,
+          Action::FallForward, Action::Whirled, Action::Grabbed}) {
         CHECK(PowerupCompanion::pojoSequenceOf(hit) == PowerupCompanion::kHit);
     }
     CHECK(PowerupCompanion::pojoSequenceOf(Action::Death) == PowerupCompanion::kDeath);
@@ -394,7 +529,8 @@ TEST_CASE("the powerup companions come from their archives and play as asked",
     CHECK(blaze.kind() == Kind::FireShield);
     CHECK_FALSE(blaze.shown());
 
-    // Pojo runs with the body, swings with it, and plays its hit through before running on.
+    // Pojo runs with the body, pecks as it begins an attack, and plays its hit through before
+    // running on.
     PowerupCompanion pojo;
     pojo.choose(device, Kind::Pojo, powerups, &weapons);
     pojo.update(1.0f / 30.0f, Action::Run1, false, false);
@@ -409,11 +545,23 @@ TEST_CASE("the powerup companions come from their archives and play as asked",
         pojo.update(1.0f / 30.0f, Action::Run1, false, false);
     }
     CHECK(pojo.sequence() == PowerupCompanion::kRun);
-    // Dead, the death plays and holds.
-    for (s32 i = 0; i < 200; ++i) {
+    // Dead, the death plays through its 109 frames, and plays again while still asked for.
+    pojo.update(1.0f / 30.0f, Action::Death, false, false);
+    REQUIRE(pojo.sequence() == PowerupCompanion::kDeath);
+    u64 death = pojo.animationCheckpoint().generation;
+    std::vector<s32> restarts;
+    for (s32 i = 1; i < 200; ++i) {
+        CAPTURE(i);
         pojo.update(1.0f / 30.0f, Action::Death, false, false);
+        CHECK(pojo.sequence() == PowerupCompanion::kDeath);
+        const auto clock = pojo.animationCheckpoint();
+        if (clock.generation != death) {
+            restarts.push_back(i);
+            CHECK(clock.frame == 0);
+            death = clock.generation;
+        }
     }
-    CHECK(pojo.sequence() == PowerupCompanion::kDeath);
+    CHECK(restarts == std::vector<s32>{109});
 
     // The phoenix plays its attack as it spits, its body drawn as well as its glow.
     PowerupCompanion phoenix;

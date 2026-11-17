@@ -40,6 +40,7 @@ class PlayerFigure {
         std::vector<Mat4> transforms;
         bool familiarPending = false;
         bool familiarReleased = false;
+        bool pojoAttack = false; ///< Pojo's peck, due at his next update (act_bits 0x20000000)
     };
 
 public:
