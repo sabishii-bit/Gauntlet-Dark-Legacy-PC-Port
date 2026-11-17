@@ -1137,7 +1137,10 @@ mod tests {
             let mut checked = match check_dreamcast(&sheet, &job) {
                 Ok(checked) => checked,
                 Err(error) => {
-                    assert_eq!((at, error.rule()), (0, "cancelled"), "{error:?}");
+                    // The disc's reader heeds the cancel as it opens the disc, and its stop is
+                    // the extraction's own.
+                    let stopped = matches!(error, ExtractError::Cancelled);
+                    assert!(at == 0 && stopped, "{at}: {error:?}");
                     folders.assert_untouched(&before);
                     continue;
                 }
@@ -1149,7 +1152,7 @@ mod tests {
             let tree = root.path_under(staging.path());
             if at < advances {
                 let error = extracted.unwrap_err();
-                assert_eq!(error.rule(), "cancelled", "{at}: {error:?}");
+                assert!(matches!(error, ExtractError::Cancelled), "{at}: {error:?}");
                 assert_eq!(bytes_under(&tree), written_before, "{at}");
             } else {
                 extracted.unwrap();

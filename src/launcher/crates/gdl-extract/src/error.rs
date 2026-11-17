@@ -15,9 +15,9 @@ use gdl_media::MediaError;
 #[derive(Debug, thiserror::Error)]
 pub enum ExtractError {
     /// The dump could not be read, or it breaks a rule of its format or of the native files it
-    /// holds.
+    /// holds. A reader that stops because the job asked it to is [`ExtractError::Cancelled`].
     #[error(transparent)]
-    Media(#[from] MediaError),
+    Media(MediaError),
     /// The staging refused to make a file or a folder of the tree: its name was taken, a link
     /// stood on its way, or the system refused.
     #[error(transparent)]
@@ -100,6 +100,18 @@ impl From<Cancelled> for ExtractError {
     /// An extraction stops where its job's cancel tells it to, between two blocks of its work.
     fn from(_: Cancelled) -> ExtractError {
         ExtractError::Cancelled
+    }
+}
+
+impl From<MediaError> for ExtractError {
+    /// A reader's failure is the extraction's, but for a stop the job asked for, which is the
+    /// extraction's own whichever part of it heeded the job's cancel: a reader of the dump or the
+    /// writer of the tree.
+    fn from(error: MediaError) -> ExtractError {
+        match error {
+            MediaError::Cancelled => ExtractError::Cancelled,
+            error => ExtractError::Media(error),
+        }
     }
 }
 
@@ -258,10 +270,20 @@ mod tests {
         for (failure, rule) in failures {
             assert_eq!(failure.rule(), rule, "{failure:?}");
         }
-        // A job's cancel is the extraction's own stop, not the reader's.
+        // A job's cancel is the extraction's own stop, whichever part heeds it: the extraction's
+        // or a reader's.
         assert!(matches!(
             ExtractError::from(Cancelled),
             ExtractError::Cancelled
+        ));
+        assert!(matches!(
+            ExtractError::from(MediaError::Cancelled),
+            ExtractError::Cancelled
+        ));
+        // Every other failure of a reader's stays the reader's.
+        assert!(matches!(
+            ExtractError::from(refused_stream()),
+            ExtractError::Media(MediaError::Rom { .. })
         ));
     }
 
