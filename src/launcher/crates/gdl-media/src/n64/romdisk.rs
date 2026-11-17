@@ -3,11 +3,14 @@
 //! file, a record of five words (its flags, its stored and expanded sizes, where its bytes lie and
 //! a last word kept as it is found) followed by its path. Every path is checked before it is kept,
 //! and no two may share a name on a case-insensitive file system or be a file and a folder at once.
+//! A file's bytes are looked at only as it is decoded: as they are stored, or inflated when its
+//! record flags them compressed.
 
 use std::{array, fmt};
 
 use gdl_files::{NameSet, ROMDISK_NAMES, RelPath};
 
+use super::inflate::{Trailer, inflate};
 use super::{MAX_ROM_LEN, too_large};
 use crate::{MediaError, RomRule};
 
@@ -85,6 +88,19 @@ impl Romdisk<'_> {
     pub fn stored(&self, entry: &RomdiskEntry) -> &[u8] {
         let start = entry.rom_offset as usize;
         &self.rom[start..start + entry.stored_size as usize]
+    }
+
+    /// The bytes `entry`, one of this ROMDISK's entries, holds, as the extracted tree keeps them:
+    /// its stored bytes when it is kept as it is, or, when its record flags it [`COMPRESSED`], its
+    /// raw DEFLATE stream inflated to exactly the size its record gives, with nothing after the
+    /// stream's end, or the rule the stream breaks. Panics as [`stored`](Self::stored) does.
+    pub fn decode(&self, entry: &RomdiskEntry) -> Result<Vec<u8>, MediaError> {
+        let stored = self.stored(entry);
+        if entry.flags == COMPRESSED {
+            inflate(stored, entry.size as usize, Trailer::None)
+        } else {
+            Ok(stored.to_vec())
+        }
     }
 }
 
@@ -410,6 +426,9 @@ mod tests {
     /// is taken.
     type Expected<'a> = Option<(&'a str, &'a str)>;
 
+    /// What a file decodes to, or the rule and the words its decoding is refused with.
+    type Decoded = Result<Vec<u8>, (&'static str, String)>;
+
     /// Checks that `outcome` is the refusal `expected` gives, by its rule and its words, or that
     /// it is taken when `expected` is none.
     fn assert_outcome(outcome: Result<Romdisk<'_>, MediaError>, expected: Expected<'_>) {
@@ -524,8 +543,89 @@ mod tests {
                 assert_eq!(row["unknown_word"], entry.unknown_word, "{path}");
                 let stored = Sha256Digest::of(romdisk.stored(entry));
                 assert_eq!(row["stored_sha256"], stored.hex(), "{path}");
+                // Decoded, each file is the bytes the extractor wrote, compressed or not.
+                let decoded = romdisk.decode(entry).unwrap();
+                assert_eq!(row["size"], decoded.len(), "{path}");
+                let digest = Sha256Digest::of(&decoded);
+                assert_eq!(row["sha256"], digest.hex(), "{path}");
             }
         }
+    }
+
+    #[test]
+    fn a_file_decodes_to_exactly_the_size_its_record_gives() {
+        let vectors = vectors();
+        let image = frozen(&vectors, "default");
+        // Where the map's and the texture's records start, and where the map's stream does.
+        let (map, texture, stream) = (152, 196, 113);
+        let with = |changes: &[(usize, u32)]| {
+            let mut changed = image.clone();
+            for &(at, value) in changes {
+                set_word(&mut changed, at, value);
+            }
+            changed
+        };
+        // What each file decodes to. The directory is read whatever the streams hold: a file's
+        // bytes are looked at only as it is decoded.
+        let decoded = |changed: &[u8]| -> Vec<Decoded> {
+            let romdisk = read(changed, &ROMDISK_LIMITS).unwrap();
+            romdisk
+                .entries
+                .iter()
+                .map(|entry| {
+                    let outcome = romdisk.decode(entry);
+                    outcome.map_err(|error| (error.rule(), error.to_string()))
+                })
+                .collect()
+        };
+        let texture_bytes: Decoded = Ok(b"native".to_vec());
+
+        // The map inflates to its 24 bytes; the texture is kept as it is stored.
+        let outcomes = decoded(&image);
+        assert_eq!(outcomes[0].as_ref().map(Vec::len), Ok(24));
+        assert_eq!(outcomes[1], texture_bytes);
+
+        // A size short of what the stream holds or past it, a stream cut short of its end, and
+        // one followed by the texture's bytes are refused in the extractor's words.
+        let wrong_end = (
+            "deflateEnd",
+            "DEFLATE output size or end marker does not match its directory",
+        );
+        let after_end = (
+            "deflateTrailer",
+            "unexpected bytes after ROMDISK DEFLATE stream",
+        );
+        let cases = [
+            (map + 8, 23, wrong_end),
+            (map + 8, 25, wrong_end),
+            (map + 4, 22, wrong_end),
+            (map + 4, 24, after_end),
+            (map + 4, 30, after_end),
+        ];
+        for (at, value, (rule, detail)) in cases {
+            let outcomes = decoded(&with(&[(at, value)]));
+            assert_eq!(outcomes[0], Err((rule, detail.to_owned())), "{at} {value}");
+            assert_eq!(outcomes[1], texture_bytes);
+        }
+
+        // A stream whose first block is of no type is refused in the launcher's own words, which
+        // give the reason the decoder gives.
+        let no_type = "invalid raw DEFLATE stream: deflate decompression error: invalid block type";
+        let refused = Err(("deflate", no_type.to_owned()));
+        let mut damaged = image.clone();
+        damaged[stream] = 0xFF;
+        let outcomes = decoded(&damaged);
+        assert_eq!(outcomes[0], refused);
+        assert_eq!(outcomes[1], texture_bytes);
+        // The texture flagged compressed: its stored bytes are no stream.
+        let outcomes = decoded(&with(&[(texture, COMPRESSED)]));
+        assert_eq!(outcomes[0].as_ref().map(Vec::len), Ok(24));
+        assert_eq!(outcomes[1], refused);
+        // The map flagged plain, storing its size: its stream is kept as it is, with the texture's
+        // first byte after it.
+        let outcomes = decoded(&with(&[(map, 0), (map + 4, 24)]));
+        assert_eq!(outcomes[0], Ok(image[stream..stream + 24].to_vec()));
+        assert_eq!(outcomes[1], texture_bytes);
     }
 
     #[test]

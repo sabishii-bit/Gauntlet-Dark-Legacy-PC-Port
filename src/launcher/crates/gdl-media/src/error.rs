@@ -122,6 +122,16 @@ pub enum RomRule {
     FileOverlap,
     /// The ROMDISK's files together expand past the most they may.
     ExpandedSize,
+    /// A raw DEFLATE stream holds what the format does not allow, such as a block of no type or a
+    /// distance back past the start of its output.
+    Deflate,
+    /// A raw DEFLATE stream reaches no end marker within a byte past the size its record gives, or
+    /// decodes to other than exactly that size.
+    DeflateEnd,
+    /// A ROMDISK file's bytes go on past the end of its raw DEFLATE stream.
+    DeflateTrailer,
+    /// An executable overlay's extent holds more bytes past the end of its stream than pad it.
+    OverlayPadding,
 }
 
 impl RomRule {
@@ -146,6 +156,10 @@ impl RomRule {
             RomRule::FileSize => "fileSize",
             RomRule::FileOverlap => "fileOverlap",
             RomRule::ExpandedSize => "expandedSize",
+            RomRule::Deflate => "deflate",
+            RomRule::DeflateEnd => "deflateEnd",
+            RomRule::DeflateTrailer => "deflateTrailer",
+            RomRule::OverlayPadding => "overlayPadding",
         }
     }
 }
@@ -253,6 +267,10 @@ mod tests {
             (RomRule::FileSize, "fileSize"),
             (RomRule::FileOverlap, "fileOverlap"),
             (RomRule::ExpandedSize, "expandedSize"),
+            (RomRule::Deflate, "deflate"),
+            (RomRule::DeflateEnd, "deflateEnd"),
+            (RomRule::DeflateTrailer, "deflateTrailer"),
+            (RomRule::OverlayPadding, "overlayPadding"),
         ];
         for (rule, name) in rules {
             assert_eq!(rule.as_str(), name);

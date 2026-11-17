@@ -12,8 +12,10 @@ use gdl_files::{BLOCK_LEN, Job};
 
 use crate::{MediaError, Region, RomRule, Sha1Digest, Sha256Digest, SourceName};
 
+mod inflate;
 mod romdisk;
 
+pub use inflate::{INFLATE_STEP, MAX_OVERLAY_PADDING, Trailer, inflate};
 pub use romdisk::{
     COMPRESSED, HEADER_WORDS_AT, RECORD_WORDS_LEN, ROMDISK_HEADER_LEN, ROMDISK_LIMITS,
     ROMDISK_MAGIC, Romdisk, RomdiskEntry, RomdiskLimits,
