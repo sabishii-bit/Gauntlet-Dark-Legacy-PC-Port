@@ -117,10 +117,12 @@ fn begins_with_count(text: &str) -> bool {
 }
 
 /// What `sheet`, the file at `path`, holds: read into room for the `len` bytes its metadata gives,
-/// and refused once it runs past [`MAX_SHEET_LEN`], as a sheet that has grown since its length was
-/// read does, with no more than a byte past the bound held.
+/// but never for more than the bound and the byte past it, whatever `len` is, and refused once it
+/// runs past [`MAX_SHEET_LEN`], as a sheet that has grown since its length was read does, with no
+/// more than a byte past the bound held.
 fn read_within_bound(sheet: impl Read, path: &Path, len: u64) -> Result<Vec<u8>, MediaError> {
-    let mut bytes = Vec::with_capacity(usize::try_from(len).unwrap_or_default());
+    let room = len.min(MAX_SHEET_LEN + 1);
+    let mut bytes = Vec::with_capacity(usize::try_from(room).unwrap_or_default());
     // One byte past the bound, so that a sheet that has grown is refused with no more than that
     // held.
     sheet
@@ -330,7 +332,7 @@ mod tests {
         );
 
         // A byte more, a NUL that would end the sheet on a line the reader does not read, is
-        // refused by the file's length, before a byte of it is read.
+        // refused for the sheet's length.
         let file = File::options().write(true).open(&path).unwrap();
         file.set_len(MAX_SHEET_LEN + 1).unwrap();
         drop(file);
@@ -364,10 +366,13 @@ mod tests {
         let error = read_within_bound(io::repeat(b' '), path, MAX_SHEET_LEN).unwrap_err();
         assert_eq!(error.rule(), "sheetTooLarge");
         assert_eq!(error.to_string(), TOO_LARGE);
-        // As many bytes as the bound are taken, whatever length was read before.
+        // As many bytes as the bound are taken, whatever length was read before: none, or more
+        // than memory could hold, which no room is made for.
         let bound = vec![b' '; MAX_SHEET_LEN as usize];
-        let held = read_within_bound(&bound[..], path, 0).unwrap();
-        assert_eq!(held, bound);
+        for len in [0, u64::MAX] {
+            let held = read_within_bound(&bound[..], path, len).unwrap();
+            assert_eq!(held, bound, "{len}");
+        }
 
         // A read that fails is a failure to read the sheet, which names its path.
         let error = read_within_bound(FailingSheet, path, 0).unwrap_err();
