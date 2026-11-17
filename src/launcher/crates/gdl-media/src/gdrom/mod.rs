@@ -4,7 +4,8 @@
 //! data. A data track is placed by its first sector's header, never by where the sheet lists it,
 //! and every extent of the disc, its boot area first, is read by LBA from the tracks that hold it.
 //! The disc's files are those of the ISO 9660 volume its high-density area holds, walked from
-//! the volume descriptor after the boot area.
+//! the volume descriptor after the boot area; the native files its DISK.ROM packs are those the
+//! table SIZES.ROM lists beside it.
 
 use std::fmt;
 use std::fs::{self, File};
@@ -23,6 +24,7 @@ mod edc;
 mod gdi;
 mod ipbin;
 mod iso;
+mod packed;
 mod sector;
 mod sheet;
 mod sheet_text;
@@ -35,6 +37,9 @@ pub use ipbin::{
 pub use iso::{
     ALLOWED_FLAGS, BLOCK_SIZE_AT, FLAG_DIRECTORY, MAX_DIRECTORY_DEPTH, MAX_DIRECTORY_LEN,
     MAX_ENTRIES, MIN_RECORD_LEN, PVD_LBA, ROOT_RECORD_AT, STANDARD_ID, VOLUME_ID,
+};
+pub use packed::{
+    MAX_SIZES_ROM_LEN, PackedFile, PackedPlace, SIZES_COMPONENTS, SIZES_ROW_LEN, packed_files,
 };
 pub use sector::{
     FRAMES_PER_SECOND, HEADER_LEN, LBA_BIAS, MAX_CHUNK_SECTORS, RAW_SECTOR, SECONDS_PER_MINUTE,
@@ -643,8 +648,9 @@ mod tests {
 
     use super::{DiscFile, DiscRules, GdRom, INSTALL_RULES, SCRIPT_RULES, TrackFile, read_head};
     use crate::vectors::{dreamcast_golden, dreamcast_vectors, located, manifest_files};
-    use crate::vectors::{players_disc, recorded, text};
-    use crate::{AREA, MediaError, RAW_SECTOR, Sha256Digest, VERSION};
+    use crate::vectors::{manifest_restored, players_disc, recorded, restored, text};
+    use crate::{AREA, MAX_SIZES_ROM_LEN, MediaError, PackedPlace, RAW_SECTOR, Sha256Digest};
+    use crate::{VERSION, packed_files};
 
     /// How many bytes of user data the format gives a sector. The format's facts are given here
     /// apart from the reader's own constants, so that a reader that looks elsewhere is caught.
@@ -879,6 +885,15 @@ mod tests {
         text(&row[2])
     }
 
+    /// The file `disc`'s root lists by exactly the name `name`.
+    fn at_root(disc: &GdRom, name: &str) -> DiscFile {
+        let mut files = disc.files().iter();
+        files
+            .find(|file| file.path.as_str() == name)
+            .cloned()
+            .unwrap_or_else(|| panic!("the disc's root holds no {name}"))
+    }
+
     /// The disc file `path` the root lists, `size` bytes at `lba`.
     fn disc_file(path: &str, lba: u32, size: u32) -> DiscFile {
         DiscFile {
@@ -1027,6 +1042,43 @@ mod tests {
                 assert_eq!(Sha256Digest::of(&copied), given);
                 assert_eq!(disc.read(file.lba, file.size).unwrap(), copied, "{path}");
             }
+        }
+    }
+
+    #[test]
+    fn the_full_sets_table_lists_the_native_files_the_extractor_restored() {
+        let vectors = dreamcast_vectors();
+        let goldens = &vectors["sets"]["full"]["goldens"];
+        let golden = dreamcast_golden(&goldens["native-manifest.json"]);
+        let sets = [
+            (DiscSet::full(Edc::Zero), SCRIPT_RULES),
+            (
+                DiscSet::full(Edc::Computed).with_audio_files(),
+                INSTALL_RULES,
+            ),
+            (DiscSet::full_gdi(Edc::Zero), SCRIPT_RULES),
+            (
+                DiscSet::full_gdi(Edc::Computed).with_audio_files(),
+                INSTALL_RULES,
+            ),
+        ];
+        for (set, rules) in sets {
+            let (_dir, disc) = opened(&set, &rules);
+            let mut disc = disc.unwrap();
+            // SIZES.ROM and DISK.ROM lie at the root by those names. The table read from the disc
+            // is the one the extractor read, by its digest, and lists the files the extractor
+            // restored from DISK.ROM where it restored them, and the one outside it as it did.
+            let (sizes, disk) = (at_root(&disc, "SIZES.ROM"), at_root(&disc, "DISK.ROM"));
+            let table = disc.read(sizes.lba, sizes.size).unwrap();
+            let digest = Sha256Digest::of(&table).hex();
+            assert_eq!(digest, text(&golden["sizes_sha256"]), "{}", set.sheet);
+            let files = packed_files(&table, u64::from(disk.size)).unwrap();
+            assert_eq!(
+                restored(&files),
+                manifest_restored(&golden),
+                "{}",
+                set.sheet
+            );
         }
     }
 
@@ -1667,9 +1719,9 @@ mod tests {
         let sheet = players_disc();
         // Opened by an installation's rules: every track's file there, the high-density area's
         // first data track at 45000, and every sector read held to its code, the boot area's,
-        // the volume descriptor's and every directory's among them. A failure says which rule
-        // the disc breaks, never what it holds.
-        let disc = GdRom::open(&sheet, &INSTALL_RULES, &quiet(&Cancel::default()))
+        // the volume descriptor's, every directory's and SIZES.ROM's among them. A failure says
+        // which rule the disc breaks, never what it holds.
+        let mut disc = GdRom::open(&sheet, &INSTALL_RULES, &quiet(&Cancel::default()))
             .unwrap_or_else(|error| panic!("the disc is refused: {}", error.rule()));
         // Its three data tracks, each placed by its first sector's header: the single-density
         // area's, and the high-density area's two on either side of its audio track, the second
@@ -1695,5 +1747,21 @@ mod tests {
         assert_eq!(files.len(), 156);
         let bytes: u64 = files.iter().map(|file| u64::from(file.size)).sum();
         assert_eq!(bytes, 606_599_222);
+        // Its root holds SIZES.ROM, within the most the table may hold, and DISK.ROM, of
+        // 207,642,624 bytes. The table, read from the disc, lists 1,361 files DISK.ROM holds and
+        // 180 the disc keeps outside it.
+        let (sizes, disk) = (at_root(&disc, "SIZES.ROM"), at_root(&disc, "DISK.ROM"));
+        assert!(sizes.size <= MAX_SIZES_ROM_LEN, "SIZES.ROM is too long");
+        assert_eq!(disk.size, 207_642_624);
+        let table = disc
+            .read(sizes.lba, sizes.size)
+            .unwrap_or_else(|error| panic!("SIZES.ROM cannot be read: {}", error.rule()));
+        let packed = packed_files(&table, u64::from(disk.size))
+            .unwrap_or_else(|error| panic!("SIZES.ROM is refused: {}", error.rule()));
+        let outside = packed
+            .iter()
+            .filter(|file| file.place == PackedPlace::External)
+            .count();
+        assert_eq!((packed.len() - outside, outside), (1_361, 180));
     }
 }

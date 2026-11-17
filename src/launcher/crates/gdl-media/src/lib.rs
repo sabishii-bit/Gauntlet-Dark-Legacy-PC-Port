@@ -1,6 +1,6 @@
 //! Read-only readers of the player's dumps: the GameCube ISO and CISO with its file table, TPL
 //! icons, the N64 ROM with its ROMDISK and overlays, and the Dreamcast GD-ROM (CUE and GDI) with
-//! ISO 9660. A dump is only ever opened for reading.
+//! ISO 9660 and its packed file table. A dump is only ever opened for reading.
 #![forbid(unsafe_code)]
 
 mod digest;
@@ -20,9 +20,10 @@ pub use gdrom::{
     DiscHead, DiscRules, EDC_FIELD, EDC_POLYNOMIAL, EDC_SPAN, EXECUTABLE, FLAG_DIRECTORY,
     FRAMES_PER_SECOND, GdRom, HARDWARE_ID, HEADER_LEN, INSTALL_RULES, IpBin, LBA_BIAS,
     MAX_CHUNK_SECTORS, MAX_DIRECTORY_DEPTH, MAX_DIRECTORY_LEN, MAX_ENTRIES, MAX_SHEET_LEN,
-    MIN_RECORD_LEN, PRODUCT, PVD_LBA, RAW_SECTOR, ROOT_RECORD_AT, SCRIPT_RULES, SECONDS_PER_MINUTE,
-    SECTOR, STANDARD_ID, SYNC, SectorCheck, Sheet, SheetKind, SheetTrack, TITLE, TITLE_PREFIX,
-    TrackMode, USER_DATA, VERSION, VOLUME_ID, ascii_field, edc, lines, parse_sheet, read_head,
+    MAX_SIZES_ROM_LEN, MIN_RECORD_LEN, PRODUCT, PVD_LBA, PackedFile, PackedPlace, RAW_SECTOR,
+    ROOT_RECORD_AT, SCRIPT_RULES, SECONDS_PER_MINUTE, SECTOR, SIZES_COMPONENTS, SIZES_ROW_LEN,
+    STANDARD_ID, SYNC, SectorCheck, Sheet, SheetKind, SheetTrack, TITLE, TITLE_PREFIX, TrackMode,
+    USER_DATA, VERSION, VOLUME_ID, ascii_field, edc, lines, packed_files, parse_sheet, read_head,
     read_sheet, sector_lba, strip,
 };
 pub use identify::Region;

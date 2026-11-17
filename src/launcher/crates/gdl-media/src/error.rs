@@ -364,6 +364,26 @@ pub enum DiscRule {
     /// extracted tree may hold by itself, or makes with its folder's path a path longer than the
     /// tree may hold.
     EntryName,
+    /// SIZES.ROM, the table of the files DISK.ROM packs, is shorter than the count of rows it
+    /// begins with.
+    SizesHeader,
+    /// SIZES.ROM counts no row, or more rows than it holds after its count.
+    SizesTable,
+    /// A component of a path SIZES.ROM gives starts at or past the end of the pool of names after
+    /// its rows, has no NUL to end it within the pool, or holds a byte outside ASCII.
+    SizesName,
+    /// A row of SIZES.ROM gives its path no component: its first place in the pool is negative.
+    SizesNoName,
+    /// A component of a path SIZES.ROM gives is no name the extracted tree may hold by itself, or
+    /// the components together make a path longer than the tree may hold.
+    SizesNameUnsafe,
+    /// Two rows of SIZES.ROM give one path, in this or another letter case.
+    SizesDuplicate,
+    /// A row of SIZES.ROM places its file's bytes past DISK.ROM's end, or at a negative place
+    /// other than the one that marks a file kept outside DISK.ROM.
+    SizesExtent,
+    /// A path SIZES.ROM gives is also the folder above another it gives.
+    SizesConflict,
 }
 
 impl DiscRule {
@@ -410,6 +430,14 @@ impl DiscRule {
             DiscRule::DirectoryShape => "directoryShape",
             DiscRule::Entries => "entries",
             DiscRule::EntryName => "entryName",
+            DiscRule::SizesHeader => "sizesHeader",
+            DiscRule::SizesTable => "sizesTable",
+            DiscRule::SizesName => "sizesName",
+            DiscRule::SizesNoName => "sizesNoName",
+            DiscRule::SizesNameUnsafe => "sizesNameUnsafe",
+            DiscRule::SizesDuplicate => "sizesDuplicate",
+            DiscRule::SizesExtent => "sizesExtent",
+            DiscRule::SizesConflict => "sizesConflict",
         }
     }
 }
@@ -614,6 +642,14 @@ mod tests {
             (DiscRule::DirectoryShape, "directoryShape"),
             (DiscRule::Entries, "entries"),
             (DiscRule::EntryName, "entryName"),
+            (DiscRule::SizesHeader, "sizesHeader"),
+            (DiscRule::SizesTable, "sizesTable"),
+            (DiscRule::SizesName, "sizesName"),
+            (DiscRule::SizesNoName, "sizesNoName"),
+            (DiscRule::SizesNameUnsafe, "sizesNameUnsafe"),
+            (DiscRule::SizesDuplicate, "sizesDuplicate"),
+            (DiscRule::SizesExtent, "sizesExtent"),
+            (DiscRule::SizesConflict, "sizesConflict"),
         ];
         for (rule, name) in rules {
             assert_eq!(rule.as_str(), name);

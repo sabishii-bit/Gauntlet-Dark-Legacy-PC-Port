@@ -1,8 +1,9 @@
 //! The shared vectors as the readers' tests read them: the N64 and Dreamcast cases that the
 //! extractors' tests and the launcher's read alike, the manifests the extractors wrote for their
 //! dumps, the names the N64 extractor was given those dumps under, the tracks a sheet lists as the
-//! cases write them, with the LBA a GDI gives each, and a disc's data tracks and files as its
-//! manifest records them. Beside them, where the trusted machine keeps the player's own dumps.
+//! cases write them, with the LBA a GDI gives each, a disc's data tracks and files as its manifest
+//! records them, and the files a packed file table lists as the cases and the native manifests
+//! write them. Beside them, where the trusted machine keeps the player's own dumps.
 
 use std::env;
 use std::path::{Path, PathBuf};
@@ -10,7 +11,7 @@ use std::path::{Path, PathBuf};
 use gdl_fixtures::unhex;
 use serde_json::{Value, json};
 
-use crate::{DataTrack, DiscFile, SheetTrack, SourceName, TrackMode};
+use crate::{DataTrack, DiscFile, PackedFile, PackedPlace, SheetTrack, SourceName, TrackMode};
 
 /// The repository's root, from this crate's folder.
 const REPOSITORY_FROM_CRATE: &str = "../../../..";
@@ -75,9 +76,9 @@ const N64_GOLDENS: [(&str, &str); 4] = [
     ),
 ];
 
-/// The disc manifests the Dreamcast extractor wrote for the vectors' sets, by the names the
-/// vectors give them.
-const DREAMCAST_GOLDENS: [(&str, &str); 2] = [
+/// The manifests the Dreamcast extractor wrote for the vectors' sets and for the native files of
+/// the table its unpack test reads, by the names the vectors give them.
+const DREAMCAST_GOLDENS: [(&str, &str); 4] = [
     (
         "dreamcast-small-disc-manifest.json",
         include_str!(concat!(
@@ -92,7 +93,25 @@ const DREAMCAST_GOLDENS: [(&str, &str); 2] = [
             "/../../../../tests/scripts/data/legends/dreamcast-full-disc-manifest.json"
         )),
     ),
+    (
+        "dreamcast-full-native-manifest.json",
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../../tests/scripts/data/legends/dreamcast-full-native-manifest.json"
+        )),
+    ),
+    (
+        "dreamcast-unpack-native-manifest.json",
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../../tests/scripts/data/legends/dreamcast-unpack-native-manifest.json"
+        )),
+    ),
 ];
+
+/// The offset the Dreamcast vectors list a file at that SIZES.ROM keeps outside DISK.ROM, as the
+/// table gives it.
+const EXTERNAL_OFFSET: i64 = -1;
 
 /// The N64 cases, read.
 pub(crate) fn n64_vectors() -> Value {
@@ -214,6 +233,50 @@ pub(crate) fn manifest_files(manifest: &Value) -> Value {
         })
     });
     Value::Array(rows.collect())
+}
+
+/// The files SIZES.ROM lists as the Dreamcast vectors' table cases list them: each one's path, its
+/// offset in DISK.ROM, or -1 for one the disc keeps outside it, and its size.
+pub(crate) fn packed_rows(files: &[PackedFile]) -> Value {
+    let rows = files.iter().map(|file| {
+        let offset = match file.place {
+            PackedPlace::Disk { offset } => json!(offset),
+            PackedPlace::External => json!(EXTERNAL_OFFSET),
+        };
+        json!([file.path.as_str(), offset, file.size])
+    });
+    Value::Array(rows.collect())
+}
+
+/// The files SIZES.ROM lists as the Dreamcast extractor's native manifest records them, but for
+/// their digests: those DISK.ROM holds, each one's path, offset and size, and those the disc keeps
+/// outside it, each one's path and the size its row declares, by those names.
+pub(crate) fn restored(files: &[PackedFile]) -> Value {
+    let (mut held, mut external) = (Vec::new(), Vec::new());
+    for file in files {
+        let path = file.path.as_str();
+        match file.place {
+            PackedPlace::Disk { offset } => {
+                held.push(json!({"path": path, "offset": offset, "size": file.size}));
+            }
+            PackedPlace::External => {
+                external.push(json!({"path": path, "declared_size": file.size}));
+            }
+        }
+    }
+    json!({"files": held, "external": external})
+}
+
+/// The files a native manifest records, as [`restored`] gives a table's: without their digests.
+pub(crate) fn manifest_restored(manifest: &Value) -> Value {
+    let rows = manifest["files"]
+        .as_array()
+        .expect("a native manifest lists files");
+    let rows: Vec<Value> = rows
+        .iter()
+        .map(|row| json!({"path": row["path"], "offset": row["offset"], "size": row["size"]}))
+        .collect();
+    json!({"files": rows, "external": manifest["external"]})
 }
 
 /// The player's own N64 ROM, for the tests that run on the trusted machine, as [`players_dump`]
