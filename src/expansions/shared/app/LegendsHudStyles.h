@@ -39,14 +39,13 @@ std::span<const std::string_view> legendsHudRequiredFiles(std::string_view id);
  * its files cannot be looked for. */
 bool legendsHudFilesFound(std::string_view id, const LegendsHudRoots& roots);
 
-/** The Legends HUD looks this build has painters for, in the order the HUD page lists them, each
- * usable while its files are found; looked for afresh at each ask. One look's fault hides no
- * other. */
+/** Every Legends HUD look, in the order the HUD page lists them, each usable while its files are
+ * found; looked for afresh at each ask. One look's fault hides no other. */
 std::vector<HudStyleOffer> legendsHudStyles(const LegendsHudRoots& roots);
 
 /** Opens Legends look `id`'s painter for `party`, which takes its own art and the art it borrows
- * from Dark Legacy's now; null, with one warning saying why, when the look's files are not found,
- * this build has no painter for it, or its painter does not load. */
+ * from Dark Legacy's now; null, with one warning saying why, when no Legends look has that id,
+ * the look's files are not found, or its painter does not load. */
 std::unique_ptr<HudPainter> openLegendsHud(std::string_view id, RenderDevice& device,
                                            DarkLegacyHudArt& darkLegacy,
                                            std::span<const HudMember> party,

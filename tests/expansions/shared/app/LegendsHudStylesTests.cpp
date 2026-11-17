@@ -349,15 +349,14 @@ TEST_CASE("the HUD art is found beside the maps", "[legends][hud-style]") {
     CHECK(legendsHudFilesFound(kLegendsDreamcastHudStyle, roots));
 }
 
-TEST_CASE("every Legends look this build has a painter for is offered, in the HUD page's order",
-          "[legends][hud-style]") {
+TEST_CASE("every Legends look is offered, in the HUD page's order", "[legends][hud-style]") {
     const auto install = test::scratchDirectory("legends-hud-built");
     n64At(install / "n64/extracted");
     dreamcastAt(install / "dreamcast/extracted");
     const LegendsHudRoots roots = rootsOf(install);
     REQUIRE(legendsHudFilesFound(kLegendsN64HudStyle, roots));
     REQUIRE(legendsHudFilesFound(kLegendsDreamcastHudStyle, roots));
-    // Both looks' painters are built and their files are there: the N64's, then the Dreamcast's.
+    // Both looks' files are there: the N64's, then the Dreamcast's.
     CHECK(legendsHudStyles(roots) ==
           std::vector<HudStyleOffer>{n64Offer(true), dreamcastOffer(true)});
 

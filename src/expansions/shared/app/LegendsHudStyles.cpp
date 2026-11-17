@@ -32,23 +32,6 @@
 namespace gdl::game {
 namespace {
 
-/** A Legends HUD look: the campaign whose art it draws, and the files under that campaign's HUD
- * root it cannot be drawn without; any other art it reads is optional. */
-struct LegendsHudLook {
-    std::string_view id;
-    std::string_view label; ///< the text id of its name on the HUD page
-    LegendsPlatform platform;
-    std::span<const std::string_view> required;
-};
-
-/** Every Legends look, in the order the HUD page lists them. A look's painter names the files it
- * cannot be drawn without, so that the probe looks for what the painter needs. */
-constexpr std::array kLooks{
-    LegendsHudLook{kLegendsN64HudStyle, kLegendsN64HudLabel, LegendsPlatform::N64,
-                   LegendsN64HudPainter::kRequiredFiles},
-    LegendsHudLook{kLegendsDreamcastHudStyle, kLegendsDreamcastHudLabel, LegendsPlatform::Dreamcast,
-                   LegendsDreamcastHudPainter::kRequiredFiles}};
-
 /** Opens a look's painter from its campaign's HUD root, taking all its art at once; null when
  * that art does not load. */
 using PainterOpener = std::unique_ptr<HudPainter> (*)(RenderDevice& device,
@@ -56,9 +39,13 @@ using PainterOpener = std::unique_ptr<HudPainter> (*)(RenderDevice& device,
                                                       DarkLegacyHudArt& darkLegacy,
                                                       std::span<const HudMember> party);
 
-/** A look this build has a painter for. */
-struct BuiltLook {
+/** A Legends HUD look: the campaign whose art it draws, the files under that campaign's HUD root
+ * it cannot be drawn without, any other art it reads being optional, and its painter. */
+struct LegendsHudLook {
     std::string_view id;
+    std::string_view label; ///< the text id of its name on the HUD page
+    LegendsPlatform platform;
+    std::span<const std::string_view> required;
     PainterOpener open;
 };
 
@@ -74,23 +61,20 @@ std::unique_ptr<HudPainter> openLook(RenderDevice& device, const std::filesystem
     return look;
 }
 
-/** The looks this build has painters for; a look is offered only once it is listed here. */
-constexpr std::array kBuiltLooks{
-    BuiltLook{kLegendsN64HudStyle, &openLook<LegendsN64HudPainter>},
-    BuiltLook{kLegendsDreamcastHudStyle, &openLook<LegendsDreamcastHudPainter>}};
+/** Every Legends look, in the order the HUD page lists them. A look's painter names the files it
+ * cannot be drawn without, so that the probe looks for what the painter needs. */
+constexpr std::array kLooks{
+    LegendsHudLook{kLegendsN64HudStyle, kLegendsN64HudLabel, LegendsPlatform::N64,
+                   LegendsN64HudPainter::kRequiredFiles, &openLook<LegendsN64HudPainter>},
+    LegendsHudLook{kLegendsDreamcastHudStyle, kLegendsDreamcastHudLabel, LegendsPlatform::Dreamcast,
+                   LegendsDreamcastHudPainter::kRequiredFiles,
+                   &openLook<LegendsDreamcastHudPainter>}};
 
 const LegendsHudLook* lookOf(std::string_view id) {
     // MSVC's checked array iterator is not a pointer; keep the portable iterator type.
     // NOLINTNEXTLINE(readability-qualified-auto)
     const auto found = std::ranges::find(kLooks, id, &LegendsHudLook::id);
     return found == kLooks.end() ? nullptr : &*found;
-}
-
-const BuiltLook* builtLookOf(std::string_view id) {
-    // MSVC's checked array iterator is not a pointer; keep the portable iterator type.
-    // NOLINTNEXTLINE(readability-qualified-auto)
-    const auto found = std::ranges::find(kBuiltLooks, id, &BuiltLook::id);
-    return found == kBuiltLooks.end() ? nullptr : &*found;
 }
 
 /** Where `look`'s art is read from, when its campaign is installed with every file the look
@@ -124,11 +108,7 @@ openedLook(std::string_view id, RenderDevice& device, DarkLegacyHudArt& darkLega
     if (!root) {
         return gdl::Unexpected(root.error());
     }
-    const BuiltLook* built = builtLookOf(id);
-    if (built == nullptr) {
-        return gdl::Unexpected(std::string("this build has no painter for it"));
-    }
-    return built->open(device, *root, darkLegacy, party);
+    return look->open(device, *root, darkLegacy, party);
 }
 
 } // namespace
@@ -166,11 +146,9 @@ std::vector<HudStyleOffer> legendsHudStyles(const LegendsHudRoots& roots) {
     std::vector<HudStyleOffer> offers;
     offers.reserve(kLooks.size());
     for (const LegendsHudLook& look : kLooks) {
-        if (builtLookOf(look.id) != nullptr) {
-            offers.push_back({.id = std::string(look.id),
-                              .label = std::string(look.label),
-                              .usable = legendsHudFilesFound(look.id, roots)});
-        }
+        offers.push_back({.id = std::string(look.id),
+                          .label = std::string(look.label),
+                          .usable = legendsHudFilesFound(look.id, roots)});
     }
     return offers;
 }
