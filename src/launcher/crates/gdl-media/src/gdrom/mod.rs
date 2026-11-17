@@ -265,8 +265,9 @@ impl GdRom {
     /// past its track's end, each sector's header held to the place its track puts it at and,
     /// under the rules of an installation, its error detection code to the bytes it covers; each
     /// sector gives its user data, the last cut to the file's size. `cancel` is looked at before
-    /// each chunk, and each chunk is written as one. A write `to` refuses fails the copy, which
-    /// names the disc file it was copying.
+    /// each chunk, and each chunk is written as one. A write `to` refuses fails the copy as
+    /// [`MediaError::Write`], which names the disc file it was copying and keeps what `to`
+    /// answered, so that a caller can tell a full disk from a dump it could not read.
     pub fn copy(
         &mut self,
         file: &DiscFile,
@@ -276,8 +277,10 @@ impl GdRom {
         let mut hasher = Sha256::new();
         self.tracks
             .read_chunks(file.lba, file.size, cancel, |chunk| {
-                to.write_all(chunk)
-                    .map_err(|error| MediaError::io(Path::new(file.path.as_str()), error))?;
+                to.write_all(chunk).map_err(|source| MediaError::Write {
+                    file: file.path.clone(),
+                    source,
+                })?;
                 hasher.update(chunk);
                 Ok(())
             })?;
@@ -625,7 +628,7 @@ mod tests {
     use std::fmt;
     use std::fs::{self, File};
     use std::io::{self, Read, Write};
-    use std::path::{Path, PathBuf};
+    use std::path::PathBuf;
 
     use gdl_files::{Cancel, DISC_NAMES, Job, NoProgress, RelPath};
     use gdl_fixtures::{DiscSet, Edc, SparseFile, raw_sector, snapshot};
@@ -1548,14 +1551,17 @@ mod tests {
         assert_eq!(digest, Sha256Digest::of(&[]));
         assert!(idle.writes.is_empty());
 
-        // A write refused fails the copy, which names the disc file it was copying and keeps what
-        // the system answered.
+        // A write refused fails the copy as a write, never as a read of the dump: it names the disc
+        // file it was copying by its place in the disc's tree, and keeps what the writer answered,
+        // which tells a full disk.
         let error = disc.copy(&file, &mut Full, &Cancel::default()).unwrap_err();
         assert!(
-            matches!(&error, MediaError::Io { path, source }
-                if path == Path::new("LONG.BIN") && source.kind() == io::ErrorKind::StorageFull),
+            matches!(&error, MediaError::Write { file: copied, source }
+                if *copied == file.path && source.kind() == io::ErrorKind::StorageFull),
             "{error:?}"
         );
+        assert_eq!(error.rule(), "io");
+        assert!(error.to_string().contains("LONG.BIN"), "{error}");
 
         // Opening stops too, before the boot area is read, when its job is asked to.
         let (_dir, sheet) = written(&set);

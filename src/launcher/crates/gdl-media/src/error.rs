@@ -1,12 +1,12 @@
 //! What the readers report when a dump cannot be read or is refused: the path a read failed on and
-//! what the system answered, that the job reading the dump was asked to stop, or the rule of its
-//! format the dump breaks, as technical detail for logs. What a player reads is chosen from the
-//! failure elsewhere.
+//! what the system answered, the disc file whose copy its writer would not take, that the job
+//! reading the dump was asked to stop, or the rule of its format the dump breaks, as technical
+//! detail for logs. What a player reads is chosen from the failure elsewhere.
 
 use std::io;
 use std::path::{Path, PathBuf};
 
-use gdl_files::Cancelled;
+use gdl_files::{Cancelled, RelPath};
 
 /// What a reader answers for a dump path that names no file, such as a root.
 const NAMES_NO_FILE: &str = "the path names no file";
@@ -17,7 +17,7 @@ const NAMES_NO_FILE: &str = "the path names no file";
 /// by its length and its start alone.
 pub(crate) const MAX_QUOTED_CHARS: usize = 256;
 
-/// Why a dump could not be read or was refused.
+/// Why a dump could not be read, was refused, or could not be copied where a caller asked.
 #[derive(Debug, thiserror::Error)]
 pub enum MediaError {
     /// Reading `path` failed: the system refused it or could not give its bytes.
@@ -26,6 +26,16 @@ pub enum MediaError {
         /// The file or folder that was being read.
         path: PathBuf,
         /// What the system answered.
+        #[source]
+        source: io::Error,
+    },
+    /// The writer a disc file's copy was given refused its bytes, as one on a full disk does.
+    /// Nothing of the dump failed to read, and what the writer wrote to is the caller's to name.
+    #[error("writing the copy of the disc's {} failed: {source}", .file.as_str())]
+    Write {
+        /// The disc file whose copy was being written, by its path in the disc's tree.
+        file: RelPath,
+        /// What the writer answered.
         #[source]
         source: io::Error,
     },
@@ -59,7 +69,7 @@ impl MediaError {
         // Every variant is named, with no wildcard, so that a failure added later is given its
         // rule on purpose.
         match self {
-            MediaError::Io { .. } => "io",
+            MediaError::Io { .. } | MediaError::Write { .. } => "io",
             MediaError::Cancelled => "cancelled",
             MediaError::Rom { rule, .. } => rule.as_str(),
             MediaError::Disc { rule, .. } => rule.as_str(),
@@ -399,7 +409,7 @@ mod tests {
     use std::io;
     use std::path::Path;
 
-    use gdl_files::{Cancel, MAX_DISC_PATH_CHARS};
+    use gdl_files::{Cancel, DISC_NAMES, MAX_DISC_PATH_CHARS, RelPath};
 
     use super::{DiscRule, MAX_QUOTED_CHARS, MediaError, RomRule, long_start, quoted};
 
@@ -426,6 +436,16 @@ mod tests {
 
         assert_eq!(MediaError::Cancelled.to_string(), "cancelled");
         assert!(MediaError::Cancelled.source().is_none());
+
+        // A copy's writer that refuses its bytes names the disc file by its place in the disc's
+        // tree, never as a path that was read, and keeps what the writer answered.
+        let file = RelPath::parse("AUDIO/X.STR", &DISC_NAMES).unwrap();
+        let full = io::Error::new(io::ErrorKind::StorageFull, "the disk is full");
+        let error = MediaError::Write { file, source: full };
+        let said = "writing the copy of the disc's AUDIO/X.STR failed: the disk is full";
+        assert_eq!(error.to_string(), said);
+        assert_eq!(error.source().unwrap().to_string(), "the disk is full");
+        assert_eq!(error.rule(), "io");
 
         // A path that names no file is refused as an argument no file could answer, before the
         // system is asked anything.
