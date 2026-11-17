@@ -11,6 +11,10 @@ use gdl_files::{Cancelled, RelPath};
 /// What a reader answers for a dump path that names no file, such as a root.
 const NAMES_NO_FILE: &str = "the path names no file";
 
+/// What a reader answers for a dump path where what is there is no regular file, such as a folder
+/// or a FIFO.
+const NAMES_NO_REGULAR_FILE: &str = "the path names no regular file";
+
 /// The most characters of a name or a line taken from a dump that a refusal quotes, whichever
 /// reader refuses it: more than the longest path the extracted tree may hold, so that a name
 /// refused for its length is shown whole well past that bound, while text that runs on is shown
@@ -89,6 +93,13 @@ impl MediaError {
     pub(crate) fn names_no_file(path: &Path) -> MediaError {
         let unnamed = io::Error::new(io::ErrorKind::InvalidInput, NAMES_NO_FILE);
         MediaError::io(path, unnamed)
+    }
+
+    /// The refusal of a dump path where what is there is no regular file, such as a folder or a
+    /// FIFO, which a reader gives before it opens anything.
+    pub(crate) fn names_no_regular_file(path: &Path) -> MediaError {
+        let unopened = io::Error::new(io::ErrorKind::InvalidInput, NAMES_NO_REGULAR_FILE);
+        MediaError::io(path, unopened)
     }
 
     /// An N64 ROM refused by `rule`, for the reason `detail` gives.
@@ -459,6 +470,18 @@ mod tests {
             panic!("{error:?}");
         };
         assert_eq!(*at, unnamed);
+        assert_eq!(source.kind(), io::ErrorKind::InvalidInput);
+        assert_eq!(error.rule(), "io");
+        // So is a path where what is there is no regular file, before it is opened.
+        let error = MediaError::names_no_regular_file(&path);
+        assert_eq!(
+            error.to_string(),
+            format!("{}: the path names no regular file", path.display())
+        );
+        let MediaError::Io { path: at, source } = &error else {
+            panic!("{error:?}");
+        };
+        assert_eq!(*at, path);
         assert_eq!(source.kind(), io::ErrorKind::InvalidInput);
         assert_eq!(error.rule(), "io");
 

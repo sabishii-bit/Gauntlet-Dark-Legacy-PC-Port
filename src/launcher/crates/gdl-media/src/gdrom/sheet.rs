@@ -3,11 +3,11 @@
 //! what its sectors hold and where its first sector lies. It is a cue sheet, read as the Dreamcast
 //! extractor reads one, or a GDI, which begins with the count of its tracks.
 
-use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use super::{cue, gdi, is_number, lines, strip};
+use crate::dump_file::open_regular;
 use crate::{DiscRule, MediaError};
 
 /// The most bytes a sheet may hold: far more than any disc's list of tracks needs, so that a large
@@ -64,16 +64,15 @@ pub struct Sheet {
     pub tracks: Vec<SheetTrack>,
 }
 
-/// Reads the sheet at `path` whole, and then as [`parse_sheet`] reads its bytes. A file longer
-/// than [`MAX_SHEET_LEN`] is refused by its length before a byte of it is read, and one that
-/// grows past the bound as it is read is refused once it has, with no more than a byte past the
-/// bound held. The file is only ever read.
+/// Reads the sheet at `path` whole, and then as [`parse_sheet`] reads its bytes. What is no
+/// regular file, such as a folder or a FIFO, is refused before it is opened. A file longer than
+/// [`MAX_SHEET_LEN`] is refused by its length before a byte of it is read, and one that grows past
+/// the bound as it is read is refused once it has, with no more than a byte past the bound held.
+/// The file is only ever read.
 pub fn read_sheet(path: &Path) -> Result<Sheet, MediaError> {
-    let file = File::open(path).map_err(|error| MediaError::io(path, error))?;
-    let len = file
-        .metadata()
+    let (file, len) = open_regular(path)
         .map_err(|error| MediaError::io(path, error))?
-        .len();
+        .ok_or_else(|| MediaError::names_no_regular_file(path))?;
     if len > MAX_SHEET_LEN {
         return Err(too_large());
     }
@@ -433,12 +432,33 @@ mod tests {
             "{error:?}"
         );
         assert_eq!(error.rule(), "io");
-        // A folder is no file to read a sheet from, on either system, and is left as it was.
+        // A folder is no file to read a sheet from, and is refused alike on both systems before
+        // the system is asked to open it, and left as it was.
         let error = read_sheet(dir.path()).unwrap_err();
-        assert!(
-            matches!(&error, MediaError::Io { path, .. } if path == dir.path()),
-            "{error:?}"
-        );
+        assert!(names_no_regular_file(&error, dir.path()), "{error:?}");
+        assert_eq!(error.rule(), "io");
         assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 0);
+    }
+
+    /// Whether `error` is the refusal of `path`, where what is there is no regular file.
+    fn names_no_regular_file(error: &MediaError, path: &Path) -> bool {
+        matches!(error, MediaError::Io { path: at, source }
+            if at == path
+                && source.kind() == ErrorKind::InvalidInput
+                && source.to_string() == "the path names no regular file")
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_fifo_given_as_a_sheet_is_refused_without_waiting_for_a_writer() {
+        use crate::dump_file::fifo;
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("disc.cue");
+        fifo::make(&path);
+        let reading = path.clone();
+        let error =
+            fifo::without_waiting(&path, move || read_sheet(&reading).map(drop)).unwrap_err();
+        assert!(names_no_regular_file(&error, &path), "{error:?}");
     }
 }

@@ -4,13 +4,13 @@
 //! cartridge, the ROMDISK that holds the game's files, and the executable overlays the US ROM's
 //! boot table describes.
 
-use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 use std::{array, fmt};
 
 use gdl_files::{BLOCK_LEN, Cancel, Job};
 
+use crate::dump_file::open_regular;
 use crate::{MediaError, Region, RomRule, Sha1Digest, Sha256Digest, SourceName};
 
 mod inflate;
@@ -220,16 +220,15 @@ pub struct N64Rom {
 impl N64Rom {
     /// Reads the ROM at `path`, as [`from_bytes`](Self::from_bytes) reads the bytes, under the
     /// name `path` gives its file. A path that names no file is refused before anything is read,
-    /// and a file longer than [`MAX_ROM_LEN`] by its length, before a byte of it is read. The file
-    /// is read in blocks of at most [`BLOCK_LEN`] bytes, with the job's cancel looked at before
-    /// each, and is only ever read.
+    /// and so is one where what is there is no regular file, such as a folder or a FIFO, which is
+    /// never opened; a file longer than [`MAX_ROM_LEN`] is refused by its length, before a byte of
+    /// it is read. The file is read in blocks of at most [`BLOCK_LEN`] bytes, with the job's cancel
+    /// looked at before each, and is only ever read.
     pub fn open(path: &Path, job: &Job<'_>) -> Result<N64Rom, MediaError> {
         let name = SourceName::of(path).ok_or_else(|| MediaError::names_no_file(path))?;
-        let file = File::open(path).map_err(|error| MediaError::io(path, error))?;
-        let len = file
-            .metadata()
+        let (file, len) = open_regular(path)
             .map_err(|error| MediaError::io(path, error))?
-            .len();
+            .ok_or_else(|| MediaError::names_no_regular_file(path))?;
         if len > MAX_ROM_LEN {
             return Err(too_large());
         }
@@ -886,6 +885,43 @@ mod tests {
             assert_eq!(source.to_string(), "the path names no file");
             assert_eq!(error.rule(), "io");
         }
+    }
+
+    /// Whether `error` is the refusal of `path`, where what is there is no regular file.
+    fn names_no_regular_file(error: &MediaError, path: &Path) -> bool {
+        matches!(error, MediaError::Io { path: at, source }
+            if at == path
+                && source.kind() == io::ErrorKind::InvalidInput
+                && source.to_string() == "the path names no regular file")
+    }
+
+    #[test]
+    fn what_is_no_regular_file_is_refused_before_it_is_opened() {
+        // A folder that has a name of its own is refused alike on both systems, as no ROM, before
+        // the system is asked to open it.
+        let dir = tempfile::tempdir().unwrap();
+        let folder = dir.path().join("dump.z64");
+        fs::create_dir(&folder).unwrap();
+        let error = N64Rom::open(&folder, &quiet(&Cancel::default())).unwrap_err();
+        assert!(names_no_regular_file(&error, &folder), "{error:?}");
+        assert_eq!(error.rule(), "io");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_fifo_is_refused_without_waiting_for_a_writer() {
+        use crate::dump_file::fifo;
+
+        // A FIFO given as the ROM, which a plain open would wait on until a writer came.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("dump.z64");
+        fifo::make(&path);
+        let reading = path.clone();
+        let error = fifo::without_waiting(&path, move || {
+            N64Rom::open(&reading, &quiet(&Cancel::default())).map(drop)
+        })
+        .unwrap_err();
+        assert!(names_no_regular_file(&error, &path), "{error:?}");
     }
 
     #[test]

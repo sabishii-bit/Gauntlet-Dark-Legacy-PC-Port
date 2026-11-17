@@ -4,6 +4,7 @@
 #![forbid(unsafe_code)]
 
 mod digest;
+mod dump_file;
 mod error;
 mod gdrom;
 mod identify;

@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 use gdl_files::{Cancel, Job, NameRule, RelPath};
 use sha2::{Digest, Sha256};
 
+use crate::dump_file::open_regular;
 use crate::error::quoted;
 use crate::{DiscRule, MediaError, Sha256Digest};
 
@@ -517,19 +518,12 @@ fn place(
 }
 
 /// The file of a track at `path`, which the sheet names `name`, opened for reading, and its
-/// length: refused when it is not there or is no regular file.
+/// length: refused when it is not there or is no regular file, such as a folder or a FIFO, which
+/// is never opened.
 fn open_track(path: &Path, name: &str) -> Result<(File, u64), MediaError> {
-    let file = File::open(path).map_err(|error| unopened(path, name, error))?;
-    let metadata = file
-        .metadata()
-        .map_err(|error| MediaError::io(path, error))?;
-    if !metadata.is_file() {
-        return Err(MediaError::disc(
-            DiscRule::MissingTrack,
-            quoted(NOT_A_FILE, name),
-        ));
-    }
-    Ok((file, metadata.len()))
+    open_regular(path)
+        .map_err(|error| unopened(path, name, error))?
+        .ok_or_else(|| MediaError::disc(DiscRule::MissingTrack, quoted(NOT_A_FILE, name)))
 }
 
 /// Refused unless the file of an audio track at `path`, which the sheet names `name`, is a regular
@@ -551,15 +545,12 @@ fn check_audio(path: &Path, name: &str) -> Result<(), MediaError> {
     Ok(())
 }
 
-/// What `error`, the system's answer to opening or looking at the file of a track at `path`, which
-/// the sheet names `name`, makes of the track: missing when nothing is there, or when what is
-/// there is no file, as a folder Windows will not open as one is; any other answer is a failure to
-/// read.
+/// What `error`, the system's answer to looking at or opening the file of a track at `path`, which
+/// the sheet names `name`, makes of the track: missing when nothing is there, and any other
+/// answer a failure to read.
 fn unopened(path: &Path, name: &str, error: io::Error) -> MediaError {
     if error.kind() == io::ErrorKind::NotFound {
         MediaError::disc(DiscRule::MissingTrack, quoted(MISSING_TRACK, name))
-    } else if fs::metadata(path).is_ok_and(|found| !found.is_file()) {
-        MediaError::disc(DiscRule::MissingTrack, quoted(NOT_A_FILE, name))
     } else {
         MediaError::io(path, error)
     }
@@ -1418,6 +1409,38 @@ mod tests {
         assert!(opens(&gdi, &SCRIPT_RULES));
         assert_eq!(refused(&gdi, &INSTALL_RULES), missing("track04.raw"));
         assert!(opens(&gdi.with_audio_files(), &INSTALL_RULES));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_fifo_named_as_a_track_is_refused_without_waiting_for_a_writer() {
+        use crate::dump_file::fifo;
+
+        let not_a_file = |name: &str| {
+            let words = format!("Track file is not a regular file: {name:?}");
+            ("missingTrack", words)
+        };
+        // A FIFO where a data track's file should be, under either rules, which a plain open would
+        // wait on until a writer came, and where an audio track's should be, which an
+        // installation's rules look at without opening it.
+        let set = DiscSet::full(Edc::Computed).with_audio_files();
+        let cases = [
+            ("track5.bin", SCRIPT_RULES),
+            ("track5.bin", INSTALL_RULES),
+            ("track4.bin", INSTALL_RULES),
+        ];
+        for (name, rules) in cases {
+            let mut without = set.clone();
+            without.files.retain(|(held, _)| held != name);
+            let (dir, sheet) = written(&without);
+            let fifo_path = dir.path().join(name);
+            fifo::make(&fifo_path);
+            let opened = fifo::without_waiting(&fifo_path, move || {
+                let cancel = Cancel::default();
+                GdRom::open(&sheet, &rules, &quiet(&cancel)).map(drop)
+            });
+            assert_eq!(refusal(opened), not_a_file(name), "{name} {rules:?}");
+        }
     }
 
     #[test]
