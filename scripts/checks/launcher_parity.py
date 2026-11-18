@@ -22,7 +22,8 @@ is the one GDL_LEGENDS_N64_TREE or GDL_LEGENDS_DREAMCAST_TREE names, else
 assets/<platform>/extracted. The launcher's tests read all four whichever platforms --platform
 picks, so a missing one fails the run before it starts. The trees go into build/launcher-parity
 beside report.json: a passing run removes them unless --keep, and a failing one keeps them to be
-looked at.
+looked at. The report is always the latest run's: every run that ends writes it anew, one refused
+for what it lacks included, and a run stopped or interrupted before its end leaves none.
 """
 
 from __future__ import annotations
@@ -215,18 +216,17 @@ def resolved(given: Path | None, variable: str, default: Path,
 
 def missing_inputs(dumps: dict[str, Path], trees: dict[str, Path],
                    program: Path | None) -> list[str]:
-    """What the run needs and does not find, a line for each: any dump or reference tree, all of
-    which the launcher's tests read whichever platforms are compared, and the program --launcher
-    names."""
-    lines = [f"launcher parity: the {platform} dump is not at {dump}; pass "
-             f"{DUMP_OPTIONS[platform]} or set {DUMP_VARIABLES[platform]}"
-             for platform, dump in dumps.items() if not dump.is_file()]
-    lines += [f"launcher parity: the {platform} reference tree is not at {tree}; set "
-              f"{TREE_VARIABLES[platform]}"
-              for platform, tree in trees.items() if not tree.is_dir()]
+    """What the run needs and does not find, in words, one for each: any dump or reference tree,
+    all of which the launcher's tests read whichever platforms are compared, and the program
+    --launcher names."""
+    missing = [f"the {platform} dump is not at {dump}; pass {DUMP_OPTIONS[platform]} or set "
+               f"{DUMP_VARIABLES[platform]}"
+               for platform, dump in dumps.items() if not dump.is_file()]
+    missing += [f"the {platform} reference tree is not at {tree}; set {TREE_VARIABLES[platform]}"
+                for platform, tree in trees.items() if not tree.is_dir()]
     if program is not None and not program.is_file():
-        lines.append(f"launcher parity: there is no launcher at {program}")
-    return lines
+        missing.append(f"there is no launcher at {program}")
+    return missing
 
 
 def end_with_caller() -> None:
@@ -255,6 +255,15 @@ def remove(folder: Path) -> None:
         shutil.rmtree(folder)
 
 
+def clear_report(folders: Folders) -> None:
+    """Removes an earlier run's report, which would otherwise stand for this run should it be
+    stopped or interrupted before it writes its own."""
+    try:
+        remove(folders.report)
+    except OSError as error:
+        raise Failed(f"the last run's report could not be removed: {error}") from error
+
+
 def make_tree_folders(folders: Folders) -> None:
     """Makes the folders the trees go into anew and empty, parents included, removing what an
     earlier run kept: the launcher refuses an output whose parent is not there, though the
@@ -274,23 +283,24 @@ def cargo_failure(what: str, code: int, timeout: float) -> str:
     return f"{what} exited {code}"
 
 
-def run_child(command: list[str], what: str, timeout: float) -> str | None:
+def run_child(command: list[str], what: str, timeout: float) -> tuple[bool, str | None]:
     """Runs a child tethered to this run, so that it ends should this run end first, and stops it
-    once it outlasts `timeout` seconds; gives what went wrong, or None when it exited 0."""
+    once it outlasts `timeout` seconds: whether it ran to its end, and what went wrong, None when
+    it exited 0."""
     try:
         done = process_tree.run_tethered(command, timeout=timeout)
     except subprocess.TimeoutExpired:
-        return f"{what} ran longer than {timeout:g} s and was stopped"
+        return False, f"{what} ran longer than {timeout:g} s and was stopped"
     except OSError as error:
-        return f"{what} did not start: {error}"
-    return None if done.returncode == 0 else f"{what} exited {done.returncode}"
+        return False, f"{what} did not start: {error}"
+    return True, None if done.returncode == 0 else f"{what} exited {done.returncode}"
 
 
 def timed_run(command: list[str], what: str) -> tuple[str | None, float]:
     """Runs an extraction as run_child runs a child, within EXTRACTION_TIMEOUT: what went wrong,
     if anything, and how many seconds it took, to a tenth."""
     started = time.monotonic()
-    problem = run_child(command, what, EXTRACTION_TIMEOUT)
+    _, problem = run_child(command, what, EXTRACTION_TIMEOUT)
     return problem, round(time.monotonic() - started, 1)
 
 
@@ -543,17 +553,35 @@ def write_report(path: Path, report: dict) -> None:
     path.write_bytes((json.dumps(report, indent=2) + "\n").encode("ascii"))
 
 
+def saved(folders: Folders, report: dict) -> bool:
+    """Writes the report, saying so where it cannot: whether it was written."""
+    try:
+        write_report(folders.report, report)
+    except OSError as error:
+        print(f"launcher parity: the report could not be written: {error}", file=sys.stderr)
+        return False
+    return True
+
+
+def new_report(args: argparse.Namespace, program: Path) -> dict:
+    """The report of a run that has done nothing yet: the program it runs, and the strictness the
+    launcher holds the dumps to."""
+    return {"schema": REPORT_SCHEMA, "launcher": str(program),
+            "strictness": "script" if args.strict else "install", "ignoredTests": NOT_RUN,
+            "fingerprints": NOT_CHECKED, "platforms": {}}
+
+
 def verify(args: argparse.Namespace, dumps: dict[str, Path], trees: dict[str, Path],
            program: Path, folders: Folders) -> int:
-    """Runs the gate's steps in order, the first that fails ending the run, then writes the
-    report and prints each compared platform's summary."""
-    strictness = "script" if args.strict else "install"
+    """Runs the gate's steps in order, the first that fails ending the run, and removes a passing
+    run's trees unless --keep; then writes the report and prints each compared platform's
+    summary."""
+    report = new_report(args, program)
     strict = ["--strict", "script"] if args.strict else []
     chosen = args.platforms or launcher.PLATFORMS
     platforms = [platform for platform in launcher.PLATFORMS if platform in chosen]
-    report = {"schema": REPORT_SCHEMA, "launcher": str(program), "strictness": strictness,
-              "ignoredTests": NOT_RUN, "fingerprints": NOT_CHECKED, "platforms": {}}
     try:
+        clear_report(folders)
         make_tree_folders(folders)
         env = launcher.environment()
         env["CARGO_BUILD_JOBS"] = str(args.jobs)
@@ -584,34 +612,34 @@ def verify(args: argparse.Namespace, dumps: dict[str, Path], trees: dict[str, Pa
             announce("the Dreamcast fingerprints the launcher carries")
             check = [sys.executable, "-I", str(FINGERPRINTS), "--tree",
                      str(folders.python / "dreamcast"), "--check"]
-            problem = run_child(check, "the fingerprints' check", FINGERPRINTS_TIMEOUT)
+            finished, problem = run_child(check, "the fingerprints' check", FINGERPRINTS_TIMEOUT)
+            if not finished:
+                raise Failed("the Dreamcast fingerprints the launcher carries could not be "
+                             f"checked: {problem}")
             report["fingerprints"] = CURRENT if problem is None else NOT_CURRENT
             if problem is not None:
                 raise Failed("the Dreamcast fingerprints the launcher carries are not those of "
                              f"the scripts' tree: {problem}")
+        if not args.keep:
+            # Before the report is written, so that no report of a pass stands beside trees the
+            # run could not remove.
+            try:
+                remove(folders.python)
+                remove(folders.launcher)
+            except OSError as error:
+                raise Failed(f"the trees could not be removed: {error}") from error
     except Failed as failed:
         report["failure"] = str(failed)
-    try:
-        write_report(folders.report, report)
-    except OSError as error:
-        print(f"launcher parity: the report could not be written: {error}", file=sys.stderr)
+    if not saved(folders, report):
         return FAILED
     # Flushed, so that the summaries come before a failure's line wherever the two streams go.
     for platform, record in report["platforms"].items():
-        for line in summary(platform, record, strictness, folders.report):
+        for line in summary(platform, record, report["strictness"], folders.report):
             print(line, flush=True)
     if "failure" in report:
         print(f"launcher parity: {report['failure']}; the report is {folders.report}, and what "
               f"the run extracted stays in {folders.output}", file=sys.stderr)
         return FAILED
-    if not args.keep:
-        try:
-            remove(folders.python)
-            remove(folders.launcher)
-        except OSError as error:
-            print(f"launcher parity: the trees could not be removed: {error}; remove them from "
-                  f"{folders.output} by hand", file=sys.stderr)
-            return FAILED
     print(f"launcher parity: passed; the report is {folders.report}")
     return PASSED
 
@@ -628,10 +656,15 @@ def main(argv: list[str] | None = None, environment: Mapping[str, str] = os.envi
     trees = {platform: resolved(None, TREE_VARIABLES[platform], REFERENCE[platform], environment)
              for platform in launcher.PLATFORMS}
     program = BUILT_PROGRAM if args.launcher is None else Path(os.path.abspath(args.launcher))
-    refusals = missing_inputs(dumps, trees, None if args.launcher is None else program)
-    if refusals:
-        for line in refusals:
-            print(line, file=sys.stderr)
+    folders = Folders(output)
+    missing = missing_inputs(dumps, trees, None if args.launcher is None else program)
+    if missing:
+        for problem in missing:
+            print(f"launcher parity: {problem}", file=sys.stderr)
+        # Reported as every run that ends is, so that no earlier run's report stands for it.
+        report = new_report(args, program)
+        report["failure"] = "; ".join(missing)
+        saved(folders, report)
         return FAILED
     # Before any thread starts: on Linux the nice value is a thread's, which the threads started
     # later, and the children they start, take from this one.
@@ -640,7 +673,7 @@ def main(argv: list[str] | None = None, environment: Mapping[str, str] = os.envi
     # interrupt, it ends cargo's tree too.
     launcher.stop_on_signals()
     end_with_caller()
-    return verify(args, dumps, trees, program, Folders(output))
+    return verify(args, dumps, trees, program, folders)
 
 
 if __name__ == "__main__":

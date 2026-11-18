@@ -110,18 +110,29 @@ class Children:
     ready the run; cargo's runs, which launcher.run would start; and the extraction scripts, the
     launcher and the fingerprints' check, which run_tethered would. Each exits with what `codes`
     gives its step, else 0, and an extraction that exits 0 writes its platform's synthetic tree,
-    the launcher the one `made` gives in its place."""
+    the launcher the one `made` gives in its place. A step `raises` names raises what it gives
+    instead, once recorded, and so does the making of cargo's environment, as "cargo
+    environment"."""
 
     def __init__(self, test: unittest.TestCase, codes: dict[str, int] | None = None,
-                 made: dict[str, dict[str, bytes]] | None = None):
+                 made: dict[str, dict[str, bytes]] | None = None,
+                 raises: dict[str, BaseException] | None = None):
         self.test = test
         self.codes = codes or {}
         self.made = made or {}
+        self.raises = raises or {}
         self.started: list[tuple[str, list[str] | None, dict]] = []
 
     def record(self, step: str, command: list[str] | None = None, **keywords) -> int:
         self.started.append((step, command, keywords))
+        if step in self.raises:
+            raise self.raises[step]
         return self.codes.get(step, 0)
+
+    def environment(self) -> dict[str, str]:
+        if "cargo environment" in self.raises:
+            raise self.raises["cargo environment"]
+        return dict(CARGO_ENVIRONMENT)
 
     def steps(self) -> list[str]:
         return [step for step, _, _ in self.started]
@@ -360,8 +371,7 @@ class GateTests(unittest.TestCase):
                 mock.patch.object(processes, "stop_when_gone", side_effect=children.watch), \
                 mock.patch.object(processes, "run_tethered", side_effect=children.tethered), \
                 mock.patch.object(gate.launcher, "run", side_effect=children.cargo), \
-                mock.patch.object(gate.launcher, "environment",
-                                  side_effect=lambda: dict(CARGO_ENVIRONMENT)), \
+                mock.patch.object(gate.launcher, "environment", side_effect=children.environment), \
                 mock.patch.object(gate.launcher, "stop_on_signals",
                                   side_effect=children.stop_on_signals), \
                 contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
@@ -518,11 +528,27 @@ class GateTests(unittest.TestCase):
         ]
         for argv, environment, line in cases:
             with self.subTest(line=line):
+                # What an earlier run reported never stands for this one.
+                write(self.output, {"report.json": b'{"ignoredTests": "passed"}\n'})
                 children = Children(self)
                 code, out, err = self.run_gate(children, argv, environment)
                 self.assertEqual((code, out, err), (gate.FAILED, "", line + "\n"))
                 self.assertEqual(children.started, [])
-                self.assertFalse(self.output.exists())
+                # Nothing is made but the report, which names what the run lacks.
+                self.assertEqual(os.listdir(self.output), ["report.json"])
+                report = self.report()
+                self.assertEqual(report["failure"], line.replace("launcher parity: ", "", 1))
+                self.assertEqual((report["ignoredTests"], report["fingerprints"],
+                                  report["platforms"]), ("notRun", "notChecked", {}))
+        # Each input the run lacks has its line, and the report names them all.
+        lines = [line for _, _, line in cases[:2]]
+        code, out, err = self.run_gate(Children(self), ["--verify", "--n64-rom", str(missing)],
+                                       {**self.environment,
+                                        "GDL_LEGENDS_DREAMCAST_DISC": str(missing)})
+        self.assertEqual((code, out, err),
+                         (gate.FAILED, "", "".join(f"{line}\n" for line in lines)))
+        self.assertEqual(self.report()["failure"],
+                         "; ".join(line.replace("launcher parity: ", "", 1) for line in lines))
 
     def test_the_report_records_the_times(self):
         children = Children(self)
@@ -584,6 +610,57 @@ class GateTests(unittest.TestCase):
         self.assertEqual(err, "launcher parity: the dreamcast trees did not pass; the report is "
                               f"{self.output / 'report.json'}, and what the run extracted stays "
                               f"in {self.output}\n")
+
+    def test_trees_that_cannot_be_removed_fail_the_run(self):
+        # A scanner's brief hold on a file on Windows can stop the removal. The run then fails,
+        # and its report says why rather than stand as a pass beside the trees it kept.
+        with mock.patch.object(gate.shutil, "rmtree", side_effect=PermissionError("held")):
+            code, out, err = self.run_gate(Children(self))
+        self.assertEqual(code, gate.FAILED)
+        report = self.report()
+        self.assertEqual(report["failure"], "the trees could not be removed: held")
+        self.assertEqual((report["ignoredTests"], report["fingerprints"]), ("passed", "current"))
+        self.assertEqual([record["identical"] for record in report["platforms"].values()],
+                         [True, True])
+        for folder in ("python", "launcher"):
+            self.assertEqual(sorted(os.listdir(self.output / folder)), ["dreamcast", "n64"])
+        self.assertIn("dreamcast: identical (", out)
+        self.assertEqual(err, "launcher parity: the trees could not be removed: held; the report "
+                              f"is {self.output / 'report.json'}, and what the run extracted "
+                              f"stays in {self.output}\n")
+
+    def test_a_run_that_ends_before_its_report_leaves_none(self):
+        # An interrupt, as at the terminal or from a caller that is gone, and a developer
+        # environment that cannot be made, end the run before it writes its report; no earlier
+        # run's report is left to stand for it.
+        cases = [("cargo environment", SystemExit("VsDevCmd.bat failed")),
+                 ("cargo test", KeyboardInterrupt()),
+                 ("launcher dreamcast", KeyboardInterrupt())]
+        for step, error in cases:
+            with self.subTest(step=step):
+                code, _, err = self.run_gate(Children(self))
+                self.assertEqual(code, gate.PASSED, err)
+                self.assertTrue((self.output / "report.json").is_file())
+                with self.assertRaises(type(error)):
+                    self.run_gate(Children(self, raises={step: error}))
+                self.assertFalse(os.path.lexists(self.output / "report.json"))
+
+    def test_a_fingerprints_check_that_never_finishes_checks_nothing(self):
+        cases = [(subprocess.TimeoutExpired("check", gate.FINGERPRINTS_TIMEOUT),
+                  f"the fingerprints' check ran longer than {gate.FINGERPRINTS_TIMEOUT} s and was "
+                  "stopped"),
+                 (OSError("no such program"),
+                  "the fingerprints' check did not start: no such program")]
+        for error, problem in cases:
+            with self.subTest(problem=problem):
+                code, _, err = self.run_gate(Children(self, raises={"fingerprints": error}))
+                self.assertEqual(code, gate.FAILED)
+                report = self.report()
+                self.assertEqual(report["fingerprints"], "notChecked")
+                failure = ("the Dreamcast fingerprints the launcher carries could not be checked: "
+                           + problem)
+                self.assertEqual(report["failure"], failure)
+                self.assertTrue(err.startswith(f"launcher parity: {failure}; "), err)
 
     def test_a_failing_step_ends_the_run_and_the_report_names_it(self):
         cases = [
