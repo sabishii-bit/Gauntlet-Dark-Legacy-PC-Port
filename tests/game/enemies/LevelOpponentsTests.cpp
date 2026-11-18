@@ -48,6 +48,7 @@
 #include "game/critters/Combatant.h"
 #include "game/critters/CombatantKind.h"
 #include "game/critters/CritterStatues.h"
+#include "game/critters/HeadedBodyFixture.h"
 #include "game/enemies/BomberTestSupport.h"
 #include "game/enemies/DeathTestSupport.h"
 #include "game/enemies/EnemyKinds.h"
@@ -55,6 +56,7 @@
 #include "game/enemies/LevelOpponents.h"
 #include "game/enemies/ScriptedOpponents.h"
 #include "game/hud/HelpMessages.h"
+#include "game/level/BossKinds.h"
 #include "game/level/ImportedLevel.h"
 #include "game/level/LevelCatalog.h"
 #include "game/level/LevelFixtures.h"
@@ -1679,6 +1681,44 @@ TEST_CASE("an Auto Attack step into Death is not stopped, so a halo wearer still
             CHECK(stepped.z > at.z + touch); // through him, as before
         }
     }
+    opponents.close();
+}
+
+TEST_CASE("Auto Attack stops a player's step at a boss's body, and its charge too",
+          "[level-opponents][collision][auto-attack-stop]") {
+    // No boss part carries the solid flag, so CritterMoveNodeCol meets a boss by its body,
+    // col_radius past its radius across and its half height up or down (critter.c 5826-5848).
+    // The headed body stands three wide and eight high, its two heads two wide about it.
+    test::FakeRenderDevice device;
+    LevelOpponents opponents;
+    opponents.bosses().open(device, test::headedBodyAssets(), nullptr, {}, 'A');
+    REQUIRE(opponents.bosses().spawn(boss_type::kChimera, Vec3{0}, 0));
+    REQUIRE(opponents.bosses().targets(true).size() == 3);
+    PlayerActor player;
+    player.spawn(0, {}, nullptr, {}, 0);
+    REQUIRE(player.reach() == 1.5f);
+    constexpr CreatureContact kAuto{.autoAttack = true};
+    constexpr CreatureContact kCharge{.autoAttack = true, .charging = true};
+    // Where quarter-unit steps north from ten units south of it end.
+    const auto walk = [&](CreatureContact contact) {
+        Vec3 at{0, 0, -10};
+        for (s32 step = 0; step < 64; ++step) {
+            at = opponents.resolveMovement(player, at, at + Vec3{0, 0, 0.25f}, contact);
+        }
+        return at;
+    };
+    // The slide holds the feet a footprint off the body, 3.75; the stop holds where it began
+    // the step that would end at the whole width, 4.5.
+    CHECK(walk({}).z == Catch::Approx(-3.75f).margin(1e-3));
+    for (const CreatureContact contact : {kAuto, kCharge}) {
+        CAPTURE(contact.charging);
+        CHECK(walk(contact) == Vec3{0, 0, -4.75f});
+    }
+    // A stopped step keeps its rise; one passing clear of the whole width goes on.
+    CHECK(opponents.resolveMovement(player, {0, 0, -4.75f}, {0, 0.5f, -4.5f}, kAuto) ==
+          Vec3{0, 0.5f, -4.75f});
+    CHECK(opponents.resolveMovement(player, {4.6f, 0, -1}, {4.6f, 0, -0.75f}, kAuto) ==
+          Vec3{4.6f, 0, -0.75f});
     opponents.close();
 }
 
