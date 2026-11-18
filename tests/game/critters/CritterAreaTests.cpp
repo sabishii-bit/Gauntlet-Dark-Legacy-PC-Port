@@ -84,6 +84,27 @@ TEST_CASE("attached damage sectors use horizontal reach height and a directional
     REQUIRE_FALSE(area.touches(Mat4{1}, playerAt({0, 0, 5})));
 }
 
+TEST_CASE("an area reaches a player by the character's whole width, past its footprint",
+          "[game][boss-areas][critter-contact]") {
+    // ProcessEffects meets a player col_radius past the area's reach (0x80095620); a view
+    // without a contact width has only its footprint.
+    CritterArea area;
+    area.radius = 10;
+    area.minDot = -1;
+    area.secondsLeft = 1;
+    auto player = playerAt({0, 0, 11.2f});
+    player.radius = 0.75f;
+    player.collisionRadius = 1.5f;
+    CHECK(area.touches(Mat4{1}, player));
+    player.position.z = 11.6f;
+    CHECK_FALSE(area.touches(Mat4{1}, player));
+    player.collisionRadius.reset();
+    player.position.z = 11.2f;
+    CHECK_FALSE(area.touches(Mat4{1}, player));
+    player.position.z = 10.7f;
+    CHECK(area.touches(Mat4{1}, player));
+}
+
 TEST_CASE("attached areas rotate their cone independently of their translated origin",
           "[game][boss-areas]") {
     const f32 quarter = std::numbers::pi_v<f32> / 2;

@@ -2,6 +2,7 @@
 #include <array>
 #include <cmath>
 #include <filesystem>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -1309,9 +1310,9 @@ TEST_CASE("boss targets preserve raised hit nodes independently of their floor a
     CHECK(bosses.targets().empty());
 }
 
-TEST_CASE("boss contact windows skip protected attacks without spending their hit",
-          "[combatant][attack-invulnerability]") {
-    const auto root = familyAssets();
+/** A DJINN of `root` whose one attack strikes with a ring of ten over its first twenty frames,
+ * knocking down, with no effect of its own to carry an area. */
+void writeRingDjinn(const std::filesystem::path& root) {
     writeTextFile(root / "MONSTERS/DJINN/animations.json", R"({"trees":[{"name":"BODY",
       "nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
       "sequences":[{"name":"READY","frames":1},{"name":"ATTACK","frames":30}]}]})");
@@ -1324,6 +1325,12 @@ TEST_CASE("boss contact windows skip protected attacks without spending their hi
       "patterns":[{"moves":[1],"cooldown":100}],
       "damages":[{"type":3,"maxDistance":10,"damage":100,"flags":32}]
     })");
+}
+
+TEST_CASE("boss contact windows skip protected attacks without spending their hit",
+          "[combatant][attack-invulnerability]") {
+    const auto root = familyAssets();
+    writeRingDjinn(root);
     test::FakeRenderDevice device;
     Bosses bosses;
     bosses.open(device, root, nullptr, {}, 'C');
@@ -1350,6 +1357,39 @@ TEST_CASE("boss contact windows skip protected attacks without spending their hi
     CHECK(blows.front().player == 0);
     bosses.update(2, 1.0f / 30, players);
     CHECK(bosses.takeBlows().empty());
+}
+
+TEST_CASE("a ring that carries no area of its own reaches a player by the character's whole "
+          "width",
+          "[combatant][critter-contact]") {
+    // ProcessEffects meets a player col_radius past a ring's reach (0x80095620); the move's own
+    // strike, which a ring without an area falls back to, measures the same way.
+    const auto root = familyAssets();
+    writeRingDjinn(root);
+    test::FakeRenderDevice device;
+    Bosses bosses;
+    bosses.open(device, root, nullptr, {}, 'C');
+    REQUIRE(bosses.spawn(36, {}, 0, 100));
+    bosses.wake();
+    // Both stand 1.2 past the ring's ten on footprints of three quarters: only the one with a
+    // whole width of one and a half is reached.
+    std::array<EnemyView, 2> players;
+    players[0].player = 0;
+    players[0].position = {0, 0, 11.2f};
+    players[0].radius = 0.75f;
+    players[0].collisionRadius = 1.5f;
+    players[1].player = 1;
+    players[1].position = {0, 0, -11.2f};
+    players[1].radius = 0.75f;
+    std::vector<CombatBlow> blows;
+    for (s32 frame = 0; frame < 20; ++frame) {
+        bosses.update(2, 1.0f / 30, players);
+        const auto taken = bosses.takeBlows();
+        blows.insert(blows.end(), taken.begin(), taken.end());
+    }
+    REQUIRE(blows.size() == 1);
+    CHECK(blows.front().player == 0);
+    CHECK_FALSE(blows.front().area);
 }
 
 TEST_CASE("pattern bosses taunt between attacks without competing with ready priority",
@@ -2582,6 +2622,7 @@ TEST_CASE("ordinary critter movement sweeps player collision volumes in three di
     player.collisionHeight = 6.0f;
     f32 seconds = 1.0f / 30;
     bool blocked = true;
+    std::optional<f32> push;
     SECTION("same-floor inward movement stops") {}
     SECTION("a player on another floor does not obstruct it") {
         player.position.y = 20;
@@ -2604,6 +2645,14 @@ TEST_CASE("ordinary critter movement sweeps player collision volumes in three di
         player.position.x = 2.3f;
         player.radius = 0.75f;
         player.collisionRadius = 1.5f;
+    }
+    SECTION("the player's whole width deepens the push") {
+        // It pushes by twice the wall radius and col_radius past the separation, held to one
+        // to three: 1 + 1.5 - (1.2 - 1/3) once the step's third of a unit is taken.
+        player.position.x = 1.2f;
+        player.radius = 0.75f;
+        player.collisionRadius = 1.5f;
+        push = 2 * (1 + 1.5f - (1.2f - 10.0f / 30));
     }
     SECTION("native collision centre overrides visual height") {
         player.position.y = -12;
@@ -2629,6 +2678,9 @@ TEST_CASE("ordinary critter movement sweeps player collision volumes in three di
         CHECK(pushes.front().player == 3);
         CHECK(glm::length(pushes.front().velocity) >= 2.0f);
         CHECK(glm::length(pushes.front().velocity) <= 6.0f);
+        if (push) {
+            CHECK(glm::length(pushes.front().velocity) == Approx(*push));
+        }
     }
     CHECK(actor.takePushes().empty());
 }
@@ -2688,25 +2740,8 @@ TEST_CASE("node-based critters use solid animated parts for player movement cont
     }
 }
 
-/** A general whose ARM stands five along x from its ROOT and is turned a quarter about y
- * through its stance (the ROOT too when `parentTurns`), its one solid part two along x from
- * ARM, under `rules`. */
-void loadTurnedPart(test::FakeRenderDevice& device, CombatantAssets& assets, bool parentTurns,
-                    const CritterRules& rules = {}) {
-    const auto root = familyAssets();
-    auto archive = root / "MONSTERS" / General::definition().name;
-    if (General::definition().realmCostume) {
-        archive /= "LEVELG";
-    }
-    const std::string quarterTurn = R"("flags":2,"frames":[0],"values":[1.5707964])";
-    const std::string rootTrack = parentTurns ? R"({"node":0,)" + quarterTurn + "}," : "";
-    writeTextFile(archive / "animations.json", R"({"trees":[{"name":"BODY","nodes":[
-      {"name":"ROOT","object":"BODY","parent":-1,"position":[0,0,0]},
-      {"name":"ARM","object":"BODY","parent":0,"position":[5,0,0]}],
-      "sequences":[{"name":"STEP","frames":3,"tracks":[)" +
-                                                   rootTrack + R"({"node":1,)" + quarterTurn +
-                                                   "}]}]}]}");
-    REQUIRE(assets.load(device, root, General::definition(), 'G'));
+/** The turned-part general's own data: a stance, and one solid part two along x from ARM. */
+formats::CritterFile turnedPartCritter() {
     formats::CritterFile source;
     source.descriptors.push_back({"general", "BODY", static_cast<s16>(CombatantKind::General)});
     auto& type = source.types.emplace_back();
@@ -2725,6 +2760,28 @@ void loadTurnedPart(test::FakeRenderDevice& device, CombatantAssets& assets, boo
     arm.flags = static_cast<s16>(CritterPart::kSolid);
     arm.position = {2, 0, 0};
     arm.radius = 1;
+    return source;
+}
+
+/** A general whose ARM stands five along x from its ROOT and is turned a quarter about y
+ * through its stance (the ROOT too when `parentTurns`), of `source` under `rules`. */
+void loadTurnedPart(test::FakeRenderDevice& device, CombatantAssets& assets, bool parentTurns,
+                    const CritterRules& rules = {},
+                    const formats::CritterFile& source = turnedPartCritter()) {
+    const auto root = familyAssets();
+    auto archive = root / "MONSTERS" / General::definition().name;
+    if (General::definition().realmCostume) {
+        archive /= "LEVELG";
+    }
+    const std::string quarterTurn = R"("flags":2,"frames":[0],"values":[1.5707964])";
+    const std::string rootTrack = parentTurns ? R"({"node":0,)" + quarterTurn + "}," : "";
+    writeTextFile(archive / "animations.json", R"({"trees":[{"name":"BODY","nodes":[
+      {"name":"ROOT","object":"BODY","parent":-1,"position":[0,0,0]},
+      {"name":"ARM","object":"BODY","parent":0,"position":[5,0,0]}],
+      "sequences":[{"name":"STEP","frames":3,"tracks":[)" +
+                                                   rootTrack + R"({"node":1,)" + quarterTurn +
+                                                   "}]}]}]}");
+    REQUIRE(assets.load(device, root, General::definition(), 'G'));
     assets.data = CritterData::fromDecoded("GENERAL", source, 0, rules);
 }
 
@@ -2782,6 +2839,77 @@ TEST_CASE("a solid part's offset sits in its node's parent frame, as the origina
         CHECK(actor.position().x == Approx(10.0f / 30));
         CHECK(actor.takePushes().empty());
     }
+}
+
+TEST_CASE("a great one's step meets another's part, the swarm and the level's items where "
+          "GetWorldMat places the parts",
+          "[combatant][critter-contact]") {
+    // Each stands within reach of the knocked step's third of a unit along x where GetWorldMat
+    // (0x800BB614) puts the part, and out of reach of the part turned with ARM.
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    auto source = turnedPartCritter();
+    source.types.front().typeFlags |= CritterData::kByParts; // another's parts stop it
+    loadTurnedPart(device, assets, false, {}, source);
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+    Combatant peer;
+    std::span<const Combatant> peers;
+    std::vector<EnemyBody> swarm;
+    std::vector<CombatantObstacle> items;
+    SECTION("another great one's part") {
+        // Turned half about at (9.2, 0, 0), its part stands at (2.2, 0, 0), 1.87 from the step's
+        // end, within the wall radius and the part's; turned with ARM it would stand at (4.2, 0,
+        // 2).
+        REQUIRE(peer.spawn(assets, 1, {9.2f, 0, 0}, kPi, nullptr, {}, 'G'));
+        peers = std::span{&peer, 1};
+    }
+    SECTION("one of the swarm") {
+        // The part goes from (7, 0, 0) to 2.2 short of the body, within the two radii and the
+        // part's 2.5; turned it would go to (5.33, 0, -2), 4.65 off.
+        swarm.push_back({0, {7 + 10.0f / 30 + 2.2f, 0, 0}, 0.5f, 1});
+        actor.setSwarm(swarm);
+    }
+    SECTION("an item") {
+        // A box from 8.2 to 9.2 along x: the part's unit reaches it from (7.33, 0, 0), not from
+        // where it starts, nor turned from (5.33, 0, -2).
+        items.push_back(
+            {Obstacle{.centre = {8.7f, 0, 0}, .halfAcross = 0.5f, .halfAlong = 0.5f, .height = 4}});
+        actor.setObstacles(items);
+    }
+    EnemyHit hit;
+    hit.damage = 1;
+    hit.flags = kKnockOver;
+    hit.direction = {1, 0, 0};
+    actor.hurt(hit);
+    actor.update(2, 1.0f / 30, {}, peers);
+    CHECK(actor.position().x == 0);
+}
+
+TEST_CASE("a broken part's shot leaves where GetWorldMat places the part",
+          "[combatant][critter-contact]") {
+    // A part broken by an overrun lets its damage record go from the part's place, its offset
+    // in ARM's parent's frame (CritterUpdateColnodes), not turned with ARM to (5, 0, -2).
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    auto source = turnedPartCritter();
+    auto& part = source.nodes.front();
+    part.flags = static_cast<s16>(CritterPart::kSolid | CritterPart::kBreakable);
+    part.sfxIndex = 0;
+    part.healthScale = 0.1f;
+    auto& shot = source.damages.emplace_back();
+    shot.type = AttackDefinition::kProjectile;
+    shot.damage = 10;
+    loadTurnedPart(device, assets, false, {}, source);
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+    EnemyHit hit;
+    hit.damage = 50;
+    hit.node = 0;
+    actor.hurt(hit);
+    const auto shots = actor.takeShots();
+    REQUIRE(shots.size() == 1);
+    CHECK(glm::distance(shots.front().origin, Vec3{7, 0, 0}) < 1e-4f);
 }
 
 TEST_CASE("great ones' parts stand where the original's GetWorldMat places them through every "
