@@ -1,7 +1,5 @@
 #include <algorithm>
-#include <cmath>
 #include <format>
-#include <utility>
 
 #include "engine/core/Types.h"
 #include "engine/math/PortableMath.h"
