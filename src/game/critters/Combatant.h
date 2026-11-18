@@ -538,8 +538,8 @@ private:
     static Mat4 partTransform(const Actor& critter, std::string_view node);
     static Mat4 attachmentTransform(const Actor& critter, std::string_view node);
     static Mat4 modelTransform(const Actor& critter);
-    /** Notes where the node `move` strikes with, else the model's root, stands `seconds` on,
-     * as CritterMoveSetup does each native frame (0x8003B1CC). */
+    /** Notes where the node `move` strikes with, else the fighter's root node, stands `seconds`
+     * on, as CritterMoveSetup does each native frame (0x8003B1CC). */
     static void noteMoveNode(Actor& critter, const MoveDefinition& move, f32 seconds);
     void carry(Actor& critter, f32 seconds, const MoveDefinition* move,
                std::span<const EnemyView> players, std::span<const Combatant> peers);

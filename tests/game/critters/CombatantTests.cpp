@@ -1917,25 +1917,10 @@ TEST_CASE("a blow's offset turns with its node and reaches by its reach alone",
     CHECK(blows[0].origin.x == Approx(0.0f).margin(0.01f));
 }
 
-/** A general whose HAND, two along x from an ARM five along x from its ROOT, goes a unit further
- * along x each of SWING's first ten frames, shown `rate` apart (900 over the frames a second).
- * SWING strikes with HAND over frames four to eight: a blow of 30 that knocks down, reaching
- * three. Its body's origin stands four over its feet. */
-void loadSwing(test::FakeRenderDevice& device, CombatantAssets& assets, s32 rate = 30,
-               const CritterRules& rules = {}) {
-    const auto root = familyAssets();
-    auto archive = root / "MONSTERS" / General::definition().name;
-    if (General::definition().realmCostume) {
-        archive /= "LEVELG";
-    }
-    writeTextFile(archive / "animations.json", R"({"trees":[{"name":"BODY","nodes":[
-      {"name":"ROOT","object":"BODY","parent":-1,"position":[0,0,0]},
-      {"name":"ARM","object":"BODY","parent":0,"position":[5,0,0]},
-      {"name":"HAND","object":"BODY","parent":1,"position":[2,0,0]}],
-      "sequences":[{"name":"READY","frames":30},{"name":"SWING","frames":12,"frameRate":)" +
-                                                   std::to_string(rate) + R"(,
-        "tracks":[{"node":2,"flags":16,"frames":[0,10],"values":[0,10]}]}]}]})");
-    REQUIRE(assets.load(device, root, General::definition(), 'G'));
+/** The swinging general's own data: a READY without a node, and a SWING striking with HAND from
+ * `frameStart` to frame eight, a blow of 30 that knocks down, reaching three. Its body's origin
+ * stands four over its feet. */
+formats::CritterFile swingCritter(s32 frameStart) {
     formats::CritterFile source;
     source.descriptors.push_back({"general", "BODY", static_cast<s16>(CombatantKind::General)});
     auto& type = source.types.emplace_back();
@@ -1955,7 +1940,7 @@ void loadSwing(test::FakeRenderDevice& device, CombatantAssets& assets, s32 rate
     swing.type = MoveDefinition::kAttackFrom;
     swing.priority = 544;
     swing.colnode = "HAND";
-    swing.frameStart = 4;
+    swing.frameStart = frameStart;
     swing.frameEnd = 8;
     swing.damage0 = 0;
     auto& blow = source.damages.emplace_back();
@@ -1963,7 +1948,50 @@ void loadSwing(test::FakeRenderDevice& device, CombatantAssets& assets, s32 rate
     blow.damage = 30;
     blow.flags = damage::kKnockDown;
     blow.maxDistance = 3;
-    assets.data = CritterData::fromDecoded("GENERAL", source, 0, rules);
+    return source;
+}
+
+/** Writes the swinging general's tree under `root`: a ROOT standing `rootY` over its placement,
+ * an ARM five along x from it and a HAND two along x from that. `ready` and `swing` end its
+ * READY's and SWING's records. */
+void writeSwingTree(const std::filesystem::path& root, s32 rootY, const std::string& ready,
+                    const std::string& swing) {
+    auto archive = root / "MONSTERS" / General::definition().name;
+    if (General::definition().realmCostume) {
+        archive /= "LEVELG";
+    }
+    writeTextFile(archive / "animations.json", R"({"trees":[{"name":"BODY","nodes":[
+      {"name":"ROOT","object":"BODY","parent":-1,"position":[0,)" +
+                                                   std::to_string(rootY) +
+                                                   R"(,0]},
+      {"name":"ARM","object":"BODY","parent":0,"position":[5,0,0]},
+      {"name":"HAND","object":"BODY","parent":1,"position":[2,0,0]}],
+      "sequences":[{"name":"READY","frames":30)" + ready +
+                                                   R"(},
+                   {"name":"SWING","frames":12)" + swing +
+                                                   "}]}]}");
+}
+
+/** A general whose HAND goes a unit further along x each of SWING's first ten frames, shown
+ * `rate` apart (900 over the frames a second); SWING strikes with HAND over frames four to
+ * eight. */
+void loadSwing(test::FakeRenderDevice& device, CombatantAssets& assets, s32 rate = 30,
+               const CritterRules& rules = {}) {
+    const auto root = familyAssets();
+    writeSwingTree(root, 0, {}, R"(,"frameRate":)" + std::to_string(rate) + R"(,
+        "tracks":[{"node":2,"flags":16,"frames":[0,10],"values":[0,10]}])");
+    REQUIRE(assets.load(device, root, General::definition(), 'G'));
+    assets.data = CritterData::fromDecoded("GENERAL", swingCritter(4), 0, rules);
+}
+
+/** The swinging general with its ROOT three over its placement, rising a tenth a frame through
+ * its READY, and a SWING that strikes from its first frame. */
+void loadRaisedRoot(test::FakeRenderDevice& device, CombatantAssets& assets) {
+    const auto root = familyAssets();
+    writeSwingTree(root, 3, R"(,"tracks":[{"node":0,"flags":32,"frames":[0,29],"values":[0,2.9]}])",
+                   R"(,"tracks":[{"node":2,"flags":16,"frames":[0,10],"values":[0,10]}])");
+    REQUIRE(assets.load(device, root, General::definition(), 'G'));
+    assets.data = CritterData::fromDecoded("GENERAL", swingCritter(0), 0, {});
 }
 
 /** The swing's push on a player twelve along x from its feet: the hand's unit along x over a
@@ -2101,6 +2129,48 @@ TEST_CASE("a blow's push survives a rewind of its fighter",
     CHECK(test::liveDigest(actor, resources.resources()) ==
           test::savedDigest(actor, saved, resources.resources()));
     CHECK(push() == first);
+}
+
+TEST_CASE("a move without a node keeps the fighter's root node, which the next move's first "
+          "blow measures its jump from",
+          "[game][combatant][blow-push]") {
+    // CritterMoveSetup notes CritterGetNode's object, and for a move without a node that is
+    // c->anim, the tree's root object (critter.c 2011, 3760, 3772-3784), posed and placed.
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    loadRaisedRoot(device, assets);
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+    constexpr f32 kStep = 1.0f / 30;
+    for (s32 i = 0; i < 3; ++i) {
+        actor.update(2, kStep, {});
+    }
+    REQUIRE(actor.moveName() == "READY");
+    const auto root = actor.nodeTransform("ROOT");
+    REQUIRE(root);
+    const Vec3 ready{(*root)[3]};
+    REQUIRE(ready.y > 3.05f); // its stance has raised it over its rest
+    const auto swing = assets.data.moveNamed("SWING");
+    REQUIRE(swing);
+    Combatant::MovePoint start;
+    start.target = 0;
+    REQUIRE(actor.setMove(*swing, start));
+    EnemyView player;
+    player.player = 0;
+    player.position = {9, 0, 0};
+    actor.update(2, kStep, std::span{&player, 1});
+    const auto blows = actor.takeBlows();
+    REQUIRE(blows.size() == 1);
+    REQUIRE(actor.position() == Vec3{0});
+    REQUIRE(actor.yaw() == 0);
+    const auto hand = actor.nodeTransform("HAND");
+    REQUIRE(hand);
+    const Vec3 struck{(*hand)[3]};
+    const Vec3 away = approximateUnit(Vec3{9, 1, 0});
+    CHECK(glm::distance(blows[0].direction, 2.0f * (approximateUnit(struck - ready) + away)) <
+          1e-4f);
+    // Measured from the placement instead, the jump would lean up by the root's three units.
+    REQUIRE(glm::distance(approximateUnit(struck - ready), approximateUnit(struck)) > 0.1f);
 }
 
 TEST_CASE("a sleeping boss takes nothing, and awake takes less the more are in the game",

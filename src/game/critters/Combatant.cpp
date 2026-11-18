@@ -484,18 +484,21 @@ bool Combatant::holdRunsOut(const Actor& critter, f32 seconds) {
 }
 
 void Combatant::noteMoveNode(Actor& critter, const MoveDefinition& move, f32 seconds) {
-    // Without its node a move measures the model's root, standing for the root object the
-    // original falls back to (CritterGetNode).
-    Vec3 local{0.0f};
+    // Without its node a move notes CritterGetNode's fallback, the fighter's root object
+    // c->anim: the tree's root, or a head's own root node (critter.c 2011, 2164, 3772-3784).
+    usize node = critter.branch.value_or(0);
     if (!move.colnode.empty()) {
         if (const auto index =
-                critter.stock->tree->findNode(move.colnode, kCombatantNodeNameLength);
-            index.has_value() && *index < critter.pose.matrices().size()) {
-            local = Vec3{critter.pose.matrices()[*index][3]};
+                critter.stock->tree->findNode(move.colnode, kCombatantNodeNameLength)) {
+            node = *index;
         }
     }
-    critter.moveNode.step(seconds, Vec3{attachmentTransform(critter, move.colnode)[3]}, local,
-                          modelTransform(critter), critter.parent != nullptr);
+    const Mat4 model = modelTransform(critter);
+    const std::span<const Mat4> matrices = critter.pose.matrices();
+    const bool posed = node < matrices.size();
+    critter.moveNode.step(seconds, Vec3{(posed ? model * matrices[node] : model)[3]},
+                          posed ? Vec3{matrices[node][3]} : Vec3{0.0f}, model,
+                          critter.parent != nullptr);
 }
 
 bool Combatant::deathPlayed() const {

@@ -379,7 +379,7 @@ TEST_CASE("combatant native digest bytes stay pinned after the encounter script 
     // it saved twelve frames in, which netplay peers must hash alike: a literal moves only when
     // what is visited changes on purpose.
     test::checkPinnedDigests("Combatant", encounter->digest(), encounter->digest(saved),
-                             "5e307ef16d8a746f1b23153a07733ec0bca40cf33426c432c73bb9a391ed78af",
+                             "de965d3f477b05bddd659d988ebb97e20f78a3a79f9a0737e14c338d510b8107",
                              "98d6dc2d9020e92c5c318cdda0a9336b736d2e4264b92ad209ae84383d41fc7e");
 }
 
