@@ -248,20 +248,38 @@ class RunTests(unittest.TestCase):
         # developer's own folder are made absolute first. The program holds the dump as the
         # extraction scripts hold one unless --install asks for an installation's strictness.
         program = ["cargo", "run", "--locked", "--package", "gdl-launcher-headless"]
+        here = os.getcwd()
         rom = os.path.join("dumps", "Gauntlet Legends (USA).z64")
         disc = os.path.join("dumps", "Gauntlet Legends (USA)", "Gauntlet Legends (USA).cue")
         output = os.path.join("trees", "legends")
         result, steps = self.run_main(["extract", "n64", rom, "--output", output], [0])
         self.assertEqual(result, 0)
-        self.assertEqual(steps, [[*program, "--", "--extract", "n64", os.path.abspath(rom),
-                                  "--output", os.path.abspath(output), "--strict", "script"]])
+        self.assertEqual(steps, [[*program, "--", "--extract", "n64", os.path.join(here, rom),
+                                  "--output", os.path.join(here, output), "--strict", "script"]])
         result, steps = self.run_main(["extract", "dreamcast", disc, "--output", output,
                                        "--install", "--release"], [0])
         self.assertEqual(result, 0)
         self.assertEqual(steps, [[*program, "--release", "--", "--extract", "dreamcast",
-                                  os.path.abspath(disc), "--output", os.path.abspath(output)]])
+                                  os.path.join(here, disc), "--output",
+                                  os.path.join(here, output)]])
         self.assertTrue(os.path.isabs(steps[0][-3]))
         self.assertTrue(os.path.isabs(steps[0][-1]))
+        # A name that ends in a dot or a space reaches the program as it was typed, on every
+        # system, so that the program refuses it rather than make a folder of another name, the
+        # one Windows would give it as it made the path absolute.
+        for name in ("n64.", "n64 ", "n64. "):
+            with self.subTest(name=name):
+                typed = os.path.join("trees", name)
+                _, steps = self.run_main(["extract", "n64", rom, "--output", typed], [0])
+                given = steps[0][steps[0].index("--output") + 1]
+                self.assertEqual(given, os.path.join(here, typed))
+                self.assertTrue(given.endswith(name))
+                self.assertTrue(os.path.isabs(given))
+        if os.name == "nt":
+            # A drive's own relative path starts from that drive's folder, here this one.
+            drive = os.path.splitdrive(here)[0]
+            _, steps = self.run_main(["extract", "n64", drive + rom, "--output", output], [0])
+            self.assertEqual(steps[0][steps[0].index("--output") - 1], os.path.join(here, rom))
         # A refusal is the program's exit code.
         self.assertEqual(self.run_main(["extract", "n64", rom, "--output", output], [1])[0], 1)
         # Only an expansion the program extracts, and never without --output.

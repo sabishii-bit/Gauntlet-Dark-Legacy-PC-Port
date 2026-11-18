@@ -76,6 +76,15 @@ def plan(command: str, packages: Optional[Sequence[str]] = None, release: bool =
     raise ValueError(f"unknown launcher command: {command}")
 
 
+def absolute_as_typed(path: str) -> str:
+    """`path` made absolute from this process's folder, every name in it as it was typed:
+    os.path.abspath drops a trailing dot or space from a name on Windows, and would so hand the
+    program another folder than the one named, where the program refuses such a name on every
+    system. A drive's own relative path, such as C:dumps, starts from that drive's folder."""
+    drive, rest = os.path.splitdrive(path)
+    return os.path.join(os.path.abspath(drive) if drive else os.getcwd(), rest)
+
+
 def on_path(folder: pathlib.Path, path: str) -> bool:
     wanted = os.path.normcase(os.path.normpath(str(folder)))
     return any(os.path.normcase(os.path.normpath(entry)) == wanted
@@ -180,8 +189,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         # they still mean what was typed. Without --install the dump is held as the extraction
         # scripts hold one, as the program does only when asked.
         strictness = [] if args.install else ["--strict", "script"]
-        arguments = [args.platform, os.path.abspath(args.dump), "--output",
-                     os.path.abspath(args.output), *strictness]
+        arguments = [args.platform, absolute_as_typed(args.dump), "--output",
+                     absolute_as_typed(args.output), *strictness]
     # The gate runs from the folder this script was started in, where a relative path given to
     # it means what was typed.
     folder = None if args.command == "parity" else WORKSPACE
