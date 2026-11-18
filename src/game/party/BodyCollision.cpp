@@ -14,6 +14,10 @@ struct Circle {
     Vec2 centre{0};
     f32 reach = 0;
 };
+
+/** How far a step may head in toward a body's middle and still run along it, as a share of its
+ * length times its distance from the middle: what rounding leaves of a slide along the body. */
+constexpr f32 kAlongSlack = 1e-4f;
 } // namespace
 
 ContactCylinder BodyCollision::critterContact(const MissileTarget& volume, f32 width) {
@@ -114,8 +118,10 @@ Vec3 BodyCollision::resolve(const Vec3& from, const Vec3& to, f32 radius, f32 he
             const Vec2 delta = position - circle.centre;
             const f32 separation = glm::dot(delta, delta) - circle.reach * circle.reach;
             const f32 toward = glm::dot(delta, remaining);
-            // A spawn/animation may begin overlapping. Allow escape, not a deeper step.
-            if (toward >= 0) {
+            // A spawn/animation may begin overlapping. Allow escape, not a deeper step. A slide
+            // along a body it rests against is no deeper step either, though rounding leaves it
+            // heading in by a hair, which would meet the body again where it stands.
+            if (toward >= -kAlongSlack * std::sqrt(lengthSquared * glm::dot(delta, delta))) {
                 continue;
             }
             const f32 discriminant = toward * toward - lengthSquared * separation;

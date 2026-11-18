@@ -1596,10 +1596,11 @@ TEST_CASE("Auto Attack stops a player's step at the swarm and the great ones, a 
     const Vec3 north{0, 0, 0.25f};
     const Vec3 south{0, 0, -0.25f};
     // Without Auto Attack the player slides round the grunt's footprint, nearer than the
-    // original's col_radius would let it come.
+    // original's col_radius would let it come, and on past it.
     const auto [slid, slidNearest] = walk({0.6f, 0, -6}, north, {});
     CHECK(slidNearest == Catch::Approx(player.radius() + 1.5f).margin(1e-3));
     CHECK(slid.x > 1.1f);
+    CHECK(slid.z > player.radius() + 1.5f);
     // With it, the step from 3.06 off the grunt's middle that would end 2.81 off is the first
     // stopped, and so is every one after it; one ending 3.31 off goes on, as does a clear one.
     CHECK(walk({0.6f, 0, -6}, north, kAuto).first == Vec3{0.6f, 0, -3});

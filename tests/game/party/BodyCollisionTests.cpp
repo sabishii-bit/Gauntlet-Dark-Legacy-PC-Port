@@ -1,7 +1,10 @@
+#include <algorithm>
 #include <array>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+
+#include "engine/core/Types.h"
 
 #include "game/party/BodyCollision.h"
 
@@ -53,6 +56,23 @@ TEST_CASE("a creature slide cannot tunnel through a neighbouring creature", "[ga
     for (const auto& body : bodies) {
         CHECK(glm::distance(Vec2{stop.x, stop.z}, Vec2{body.base.x, body.base.z}) >= 3 - 1e-4f);
     }
+}
+
+TEST_CASE("a slide resting against a body goes on round it", "[game][collision]") {
+    // A warrior's footprint walking north in quarter steps past a grunt's: a step that ends a
+    // rounding inside the reach slides on along it, rather than meeting it again where it stands.
+    const std::array bodies{MissileTarget{0, {0, 0, 0}, 1.5f, 6}};
+    Vec3 at{0.6f, 0, -6};
+    f32 nearest = glm::length(Vec2{at.x, at.z});
+    for (s32 step = 0; step < 64; ++step) {
+        const Vec3 from = at;
+        at = BodyCollision::resolve(from, from + Vec3{0, 0, 0.25f}, 0.75f, 5, bodies);
+        nearest = std::min(nearest, glm::length(Vec2{at.x, at.z}));
+        CAPTURE(step, at.x, at.z);
+        REQUIRE(glm::distance(at, from) > 0.05f);
+    }
+    CHECK(nearest >= 2.25f - 1e-4f);
+    CHECK(at.z > 2.25f);
 }
 
 TEST_CASE("a contact cylinder holds the collision centre at its radius and only within its height",
