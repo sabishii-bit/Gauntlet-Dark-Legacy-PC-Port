@@ -554,19 +554,15 @@ TEST_CASE("a golem walks up to the player it sees, strikes when in reach, and is
     REQUIRE(blows[0].player == 0);
     REQUIRE(blows[0].critter == *id);
     REQUIRE(blows[0].damage >= 10.0f);
-    if (blows[0].area) {
-        // The stomp's ring pushes a quarter straight out (ProcessEffects).
-        CHECK(glm::length(blows[0].direction) == Approx(0.25f));
-        CHECK(blows[0].direction.y == 0.0f);
-    } else {
-        const Vec3 expected =
-            nodeBlowPush(noted, critters.dataOf(*id)->originOffset(), party[0].position);
-        CAPTURE(critters.moveOf(*id), blows[0].direction.x, blows[0].direction.z, expected.x,
-                expected.z);
-        CHECK(glm::distance(blows[0].direction, expected) < 1e-3f);
-        CHECK(std::abs(glm::length(Vec2{blows[0].direction.x, blows[0].direction.z}) - 1.0f) >
-              0.05f);
-    }
+    // The walk's first blow is a swing's, which pushes the player on away from the golem.
+    REQUIRE_FALSE(blows[0].area);
+    const Vec3 expected =
+        nodeBlowPush(noted, critters.dataOf(*id)->originOffset(), party[0].position);
+    CAPTURE(critters.moveOf(*id), blows[0].direction.x, blows[0].direction.z, expected.x,
+            expected.z);
+    CHECK(glm::distance(blows[0].direction, expected) < 1e-3f);
+    CHECK(std::abs(glm::length(Vec2{blows[0].direction.x, blows[0].direction.z}) - 1.0f) > 0.05f);
+    CHECK(blows[0].direction.z < 0.0f);
     REQUIRE(critters.positionOf(*id).z > -25.0f + 4.0f); // never onto the player
     // Its walk sounded its steps as it came (the fields' own, by the realm's letter), and
     // its attack its swish, or its stomp's ring where the heel came down; each once a move.

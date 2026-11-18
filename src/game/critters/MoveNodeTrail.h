@@ -11,8 +11,10 @@ namespace gdl::game {
  * moveMatrix and moveOrigin, the node's world origin a 30 Hz frame ago and now
  * (CritterMoveSetup, 0x8003B1CC), along which a blow pushes a player as well as away from the
  * body (CritterNodePlayerCollide, 0x80036424). Updates may come at any rate, so the trail keeps
- * its last few samples and measures from the newest one a native frame old: a blow carries the
- * swing of the frame it lands in, whichever tick it lands on.
+ * its last few samples and measures from the newest one a native frame old. Up to 120 updates a
+ * second that is a whole native frame, and a blow carries the swing of the frame it lands in
+ * whichever tick it lands on; faster, the trail measures over only as much of a frame as its
+ * samples span.
  */
 class MoveNodeTrail {
 public:
