@@ -528,10 +528,10 @@ void LevelOpponents::advanceDeathShots() {
 }
 
 bool LevelOpponents::meetsCreature(const PlayerActor& player, const Vec3& from, const Vec3& to,
-                                   bool charging) const {
+                                   bool charging, std::span<const MissileTarget> critters) const {
     // The step's collision centre, met by col_radius, the class's whole width (pmotion.c
     // 1357-1368).
-    const Vec3 lift{0.0f, player.followPoint().y - player.position().y, 0.0f};
+    const Vec3 lift{0.0f, BodyCollision::contactHeight(player), 0.0f};
     const Vec3 start = from + lift;
     const Vec3 end = to + lift;
     // A charge runs on into the swarm (0x80082724-0x80082760). Death is left to the slide,
@@ -544,20 +544,17 @@ bool LevelOpponents::meetsCreature(const PlayerActor& player, const Vec3& from, 
     // CritterMoveNodeCol meets a great one's solid parts or else its body; no boss part is
     // solid, so a boss is met by its body.
     std::vector<ContactCylinder> cylinders;
-    const auto meet = [&](std::span<const MissileTarget> volumes) {
-        for (const MissileTarget& volume : volumes) {
-            cylinders.push_back(BodyCollision::critterContact(volume, player.reach()));
-        }
-    };
-    meet(m_critters.targets(true));
-    meet(m_bosses.targets(true));
+    BodyCollision::addCritterContacts(cylinders, player, critters);
+    BodyCollision::addCritterContacts(cylinders, player, m_bosses.targets(true));
     return BodyCollision::touches(start, end, cylinders);
 }
 
 Vec3 LevelOpponents::resolveMovement(const PlayerActor& player, const Vec3& from, const Vec3& to,
                                      CreatureContact contact) const {
+    // The stop and the slide meet the same solid parts and bodies.
+    const auto critters = m_critters.targets(true);
     // Auto Attack stops the step dead and keeps only its rise (0x80082820-0x8008283C).
-    if (contact.autoAttack && meetsCreature(player, from, to, contact.charging)) {
+    if (contact.autoAttack && meetsCreature(player, from, to, contact.charging, critters)) {
         return {from.x, to.y, from.z};
     }
     auto bodies = m_enemies.targets();
@@ -574,7 +571,7 @@ Vec3 LevelOpponents::resolveMovement(const PlayerActor& player, const Vec3& from
     // would move back inside a creature, retain the already-safe pre-step position.
     return BodyCollision::resolveMovement(player, from, to, bodies, generators,
                                           m_resources ? &m_resources->world.collision() : nullptr,
-                                          m_critters.targets(true));
+                                          critters);
 }
 
 bool LevelOpponents::saveLocal(LocalSnapshot& saved) const {

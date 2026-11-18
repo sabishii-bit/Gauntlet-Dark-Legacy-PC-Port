@@ -1,6 +1,7 @@
 #pragma once
 
 #include <span>
+#include <vector>
 
 #include "engine/core/Types.h"
 #include "engine/math/Math.h"
@@ -31,6 +32,13 @@ public:
                         std::span<const ContactCylinder> cylinders);
     /** `volume` as a player `width` wide meets it (CritterMoveNodeCol, CritterExpNodeColSub). */
     static ContactCylinder critterContact(const MissileTarget& volume, f32 width);
+    /** Adds `volumes`, great ones' solid parts and bodies or a boss's, to `cylinders` as
+     * `player`'s collision centre meets them: each by the character's whole width. */
+    static void addCritterContacts(std::vector<ContactCylinder>& cylinders,
+                                   const PlayerActor& player,
+                                   std::span<const MissileTarget> volumes);
+    /** How high over its feet `player`'s collision centre stands. */
+    static f32 contactHeight(const PlayerActor& player);
     /** Whether a step of the collision centre from `from` to `to` meets one of `cylinders` by
      * LineCylinderCollide's directional test (0x8002FA70): from inside one, any step but one
      * heading away from it meets it. */

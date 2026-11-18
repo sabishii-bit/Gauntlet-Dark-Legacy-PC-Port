@@ -21,6 +21,20 @@ ContactCylinder BodyCollision::critterContact(const MissileTarget& volume, f32 w
     return {volume.base + Vec3{0, halfHeight, 0}, width + volume.radius, width + halfHeight};
 }
 
+void BodyCollision::addCritterContacts(std::vector<ContactCylinder>& cylinders,
+                                       const PlayerActor& player,
+                                       std::span<const MissileTarget> volumes) {
+    // PlayerCollideItems meets the great ones by col_radius, the class's whole width
+    // (CritterMoveNodeCol, 0x800374FC).
+    for (const MissileTarget& volume : volumes) {
+        cylinders.push_back(critterContact(volume, player.reach()));
+    }
+}
+
+f32 BodyCollision::contactHeight(const PlayerActor& player) {
+    return player.followPoint().y - player.position().y;
+}
+
 bool BodyCollision::touches(const Vec3& from, const Vec3& to,
                             std::span<const ContactCylinder> cylinders) {
     return std::ranges::any_of(cylinders, [&](const ContactCylinder& cylinder) {
@@ -137,14 +151,11 @@ Vec3 BodyCollision::resolveMovement(const PlayerActor& player, const Vec3& from,
                                     std::span<const Obstacle> generators,
                                     const WorldCollision* collision,
                                     std::span<const MissileTarget> critters) {
-    // PlayerCollideItems meets the great ones by col_radius, the class's whole width, about
-    // the collision centre (CritterMoveNodeCol, 0x800374FC).
+    // The great ones are met about the collision centre.
     std::vector<ContactCylinder> cylinders;
     cylinders.reserve(critters.size());
-    for (const auto& volume : critters) {
-        cylinders.push_back(critterContact(volume, player.reach()));
-    }
-    const f32 centreHeight = player.followPoint().y - player.position().y;
+    addCritterContacts(cylinders, player, critters);
+    const f32 centreHeight = contactHeight(player);
     Vec3 resolved =
         resolve(from, to, player.radius(), player.height(), bodies, centreHeight, cylinders);
     resolved = resolveItems(from, resolved, player.radius(), player.height(), generators);

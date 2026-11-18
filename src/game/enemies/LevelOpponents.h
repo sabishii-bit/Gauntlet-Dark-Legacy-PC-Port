@@ -257,10 +257,11 @@ public:
     static f32 attenuation(const Vec3& at, std::span<const Vec3> hearers);
 
 private:
-    /** Whether a player's step runs into one of the swarm (not while `charging`), a great one or
-     * the boss, as PlayerCollideItems finds them (pmotion.c 4101-4234). */
-    bool meetsCreature(const PlayerActor& player, const Vec3& from, const Vec3& to,
-                       bool charging) const;
+    /** Whether a player's step runs into one of the swarm (not while `charging`), one of the
+     * great ones' solid parts and bodies `critters`, or the boss, as PlayerCollideItems finds
+     * them (pmotion.c 4101-4234). */
+    bool meetsCreature(const PlayerActor& player, const Vec3& from, const Vec3& to, bool charging,
+                       std::span<const MissileTarget> critters) const;
     /** An imported level's own signal that its boss's floor moves it, sampled before the
      * update; true for a boss that does not wait for its floor, and on the base game, whose
      * triggers answer instead (supportTriggers). */
