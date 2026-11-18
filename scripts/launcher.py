@@ -21,7 +21,7 @@ build builds the whole workspace, or only the crates --package names. extract ru
 program's --extract, which writes a Legends expansion's tree from a dump into a new folder,
 holding the dump as the extraction scripts hold one unless --install asks for an installation's
 strictness. parity runs the parity gate, scripts/checks/launcher_parity.py, with this Python and
-every argument after the word, from the folder this script was started in.
+every argument after the word, from the folder and in the environment this script was started in.
 """
 
 import argparse
@@ -191,11 +191,15 @@ def main(argv: Optional[List[str]] = None) -> int:
         strictness = [] if args.install else ["--strict", "script"]
         arguments = [args.platform, absolute_as_typed(args.dump), "--output",
                      absolute_as_typed(args.output), *strictness]
-    # The gate runs from the folder this script was started in, where a relative path given to
-    # it means what was typed.
-    folder = None if args.command == "parity" else WORKSPACE
+    # The gate runs as it does when started by hand: from the folder this script was started in,
+    # where a relative path given to it means what was typed, and in this process's environment,
+    # from which it makes cargo's itself. Made again inside cargo's, that would lose rustup's
+    # folder for a shell older than rustup: the developer environment puts back the PATH it was
+    # first given, and CARGO_HOME then names the build's cargo home, not rustup's proxies' one.
+    gate = args.command == "parity"
+    folder = None if gate else WORKSPACE
     stop_on_signals()
-    env = environment()
+    env = dict(os.environ) if gate else environment()
     for step in plan(args.command, getattr(args, "packages", None),
                      getattr(args, "release", False), arguments):
         code = run(step, env, cwd=folder)

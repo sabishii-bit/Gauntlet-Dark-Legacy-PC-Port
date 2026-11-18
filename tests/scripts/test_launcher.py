@@ -226,7 +226,14 @@ class RunTests(unittest.TestCase):
                 mock.patch.object(launcher.process_tree, "start", return_value=started) as start, \
                 mock.patch.object(launcher.process_tree, "stop_when_gone"):
             self.assertEqual(launcher.run(["cargo", "build"], {"PATH": "x"}), 0)
-        self.assertEqual(start.call_args.kwargs["cwd"], WORKSPACE)
+            self.assertEqual(start.call_args.kwargs["cwd"], WORKSPACE)
+            # A command told to start elsewhere starts there, None being this process's folder,
+            # as the parity gate starts.
+            for folder in (None, ROOT / "scripts"):
+                with self.subTest(folder=folder):
+                    self.assertEqual(launcher.run(["cargo", "build"], {"PATH": "x"}, cwd=folder),
+                                     0)
+                    self.assertEqual(start.call_args.kwargs["cwd"], folder)
 
     def test_an_interrupt_while_cargo_runs_ends_its_tree(self):
         # A bare wait would hold the interrupt on Windows until cargo exits; the run waits in
@@ -318,6 +325,28 @@ class RunTests(unittest.TestCase):
         with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as refused:
             main_runs(["--verify", "parity"], [])
         self.assertEqual(refused.exception.code, 2)
+
+    def test_parity_runs_the_gate_in_this_process_environment(self):
+        # The gate makes cargo's environment itself, as it does when started by hand. Made again
+        # inside cargo's, the developer environment would put back the PATH it was first given,
+        # and rustup's folder, added for a shell older than rustup, would be gone.
+        with mock.patch.object(launcher, "environment",
+                               return_value={"PATH": "cargo's"}) as cargo, \
+                mock.patch.object(launcher, "stop_on_signals"), \
+                mock.patch.object(launcher, "run", return_value=0) as run, \
+                mock.patch.dict(os.environ, {"GDL_LAUNCHER_CALLER": "the caller's"}):
+            self.assertEqual(launcher.main(["parity", "--verify"]), 0)
+            given = run.call_args.args[1]
+            self.assertEqual(given, dict(os.environ))
+            self.assertIsNot(given, os.environ)
+        cargo.assert_not_called()
+        self.assertEqual(given["GDL_LAUNCHER_CALLER"], "the caller's")
+        # Cargo's own commands still run in cargo's environment.
+        for argv in (["build"], ["extract", "n64", "rom.z64", "--output", "n64"]):
+            with self.subTest(argv=argv):
+                result, calls = main_runs(argv, [0])
+                self.assertEqual(result, 0)
+                self.assertEqual(calls[0].args[1], {"PATH": ""})
 
     def test_a_run_past_its_timeout_ends_cargos_tree(self):
         # Cargo runs in a session of its own, so only the run that holds it can end its tree.
