@@ -304,13 +304,20 @@ class ParityTests(unittest.TestCase):
         return case.launcher
 
     def assert_refused_alike(self, platform: str, dump: Path, case: Case, rule: str,
-                             same_reason: bool = False) -> BaseException:
+                             same_reason: bool = False,
+                             script_writes: bool = False) -> BaseException:
         """Checks that the script's extraction of `dump` fails as its program reports a failed
         one, and that the launcher refuses the dump by `rule`, exiting 1 with its one line, and
-        writes nothing: not its output, nor anything else beside it. The two messages are each
+        writes nothing: not its output, nor anything else beside it. The script fails before it
+        writes anything, as it does on a fault it finds in the dump, unless `script_writes`, where
+        it fails only once it has written the disc's tree; so a script that let the case's fault
+        through and failed later, on another, fails the check. The two messages are each
         program's own; with `same_reason` they end in the same reason. Gives the script's error."""
         with self.assertRaises(SCRIPT_FAILURES[platform]) as failed:
             extract_with_script(platform, dump, case.script)
+        if not script_writes:
+            self.assertFalse(os.path.lexists(case.script),
+                             f"the script wrote before it failed: {failed.exception}")
         before = sorted(os.listdir(case.folder))
         done = self.launch(platform, dump, case.launcher)
         self.assertEqual(done.returncode, REFUSED, text(done.stdout + done.stderr))
@@ -413,7 +420,8 @@ class DreamcastParityTests(ParityTests):
         # writes anything. What the extractor wrote is the disc's tree alone.
         small = DREAMCAST_CASES["sets"]["small"]
         case = Case(self.scratch)
-        failed = self.assert_refused_alike("dreamcast", fixture(case.dumps()), case, small["rule"])
+        failed = self.assert_refused_alike("dreamcast", fixture(case.dumps()), case, small["rule"],
+                                           script_writes=True)
         self.assertIsInstance(failed, FileNotFoundError)
         self.assertEqual(self.listing(case.script), small["tree"])
 
@@ -462,19 +470,32 @@ class DreamcastParityTests(ParityTests):
         self.assertEqual(sizes["diskLen"], len(FULL_DISK_ROM))
         cases = [
             # The extractor's tests' discs: the small set with its file listed in its audio track,
-            # or flagged as going on in another record, or with its second track cut; each with
-            # the rule the launcher refuses it by.
-            ("an extent in the gap", partial(fixture, file_lba=GAP_LBA), "extentOutside"),
-            ("a multiextent record", partial(fixture, flags=MULTI_EXTENT), "recordUnsupported"),
-            ("a truncated track", truncated_small_set, "truncatedTrack"),
-            ("a bad SIZES.ROM", full_set_holding(bytes.fromhex(sizes["hex"])), sizes["rule"]),
+            # or flagged as going on in another record, or with its second track cut; and a disc
+            # whose one file has an identifier that holds a separator. Each comes with the rule
+            # the launcher refuses it by and, where the vectors hold the case, the words the
+            # extractor refuses it with. None holds a SIZES.ROM, which the extractor's program
+            # reads once the disc's tree is written, so each must fail before that.
+            ("an extent in the gap", partial(fixture, file_lba=GAP_LBA), "extentOutside", None),
+            ("a multiextent record", partial(fixture, flags=MULTI_EXTENT), "recordUnsupported",
+             None),
+            ("a truncated track", truncated_small_set, "truncatedTrack", None),
             ("an identifier A/B;1", partial(name_fixture, identifier=iso_identifier(BAD_NAME)),
-             names[0]["rule"]),
+             names[0]["rule"], names[0]["python"]),
         ]
-        for label, build, rule in cases:
+        for label, build, rule, words in cases:
             with self.subTest(dump=label):
                 case = Case(self.scratch)
-                self.assert_refused_alike("dreamcast", build(case.dumps()), case, rule)
+                failed = self.assert_refused_alike("dreamcast", build(case.dumps()), case, rule)
+                if words is not None:
+                    self.assertEqual(str(failed), words)
+        # The full set holding a table that counts more rows than it has: the extractor's program
+        # writes the disc's tree, then fails on the table, as the vectors give its words.
+        with self.subTest(dump="a bad SIZES.ROM"):
+            case = Case(self.scratch)
+            failed = self.assert_refused_alike(
+                "dreamcast", full_set_holding(bytes.fromhex(sizes["hex"]))(case.dumps()), case,
+                sizes["rule"], script_writes=True)
+            self.assertEqual(str(failed), sizes["python"])
 
 
 if __name__ == "__main__":
