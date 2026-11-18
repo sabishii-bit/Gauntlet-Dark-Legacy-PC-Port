@@ -11,6 +11,7 @@ import io
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -37,6 +38,10 @@ EXTRAS = {"n64": {"audio-catalog.json": b"{}\n"},
 
 # The environment launcher.environment gives cargo in these tests.
 CARGO_ENVIRONMENT = {"PATH": "where cargo is"}
+
+# The bytes the gate hashes at a time in these tests, so that every synthetic file spans several
+# blocks, as the files of the dumps' trees span many.
+TEST_HASH_BLOCK = 5
 
 # The variables that tell the launcher's ignored tests where the dumps and the reference trees are.
 VARIABLES = ("GDL_LEGENDS_N64_ROM", "GDL_LEGENDS_DREAMCAST_DISC", "GDL_LEGENDS_N64_TREE",
@@ -186,12 +191,16 @@ class CompareTests(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.scratch = Path(temporary.name)
-        counts = synthetic_counts()
-        counts.start()
-        self.addCleanup(counts.stop)
+        for patch in (synthetic_counts(), mock.patch.object(gate, "HASH_BLOCK", TEST_HASH_BLOCK)):
+            patch.start()
+            self.addCleanup(patch.stop)
 
     def folder(self) -> Path:
         return Path(tempfile.mkdtemp(dir=self.scratch))
+
+    def pair(self) -> tuple[Path, Path, Path]:
+        """The launcher's, the scripts' and the reference N64 trees, each the synthetic tree."""
+        return tuple(write(self.folder(), n64_tree()) for _ in range(3))
 
     def compare(self, platform: str, made=None, written=None, reference=None) -> dict:
         """Compares trees of `platform` as the gate does, `made` as the launcher's, `written` as
@@ -241,6 +250,64 @@ class CompareTests(unittest.TestCase):
             f"texture.bin: the launcher's tree holds {held(made['texture.bin'])}, the reference "
             f"tree {held(texture)}",
         ])
+
+    def test_every_block_of_a_file_is_hashed(self):
+        data = contents("texture.bin") * 3
+        self.assertGreater(len(data), 2 * gate.HASH_BLOCK)
+        path = write(self.folder(), {"texture.bin": data}) / "texture.bin"
+        self.assertEqual(gate.fingerprint(path), (len(data), hashlib.sha256(data).hexdigest()))
+        # Its last byte changed, past the first block, a file is a difference.
+        changed = data[:-1] + b"!"
+        tree = {**n64_tree(), "texture.bin": data}
+        result = self.compare("n64", made={**tree, "texture.bin": changed}, written=tree,
+                              reference=tree)
+        self.assertEqual(result["differences"], [
+            f"texture.bin: the launcher's tree holds {held(changed)}, the scripts' {held(data)}",
+            f"texture.bin: the launcher's tree holds {held(changed)}, the reference tree "
+            f"{held(data)}"])
+
+    def test_what_is_no_regular_file_differs_even_from_the_same(self):
+        # An extraction writes regular files alone, so the same empty folder in both trees is a
+        # difference too.
+        made, written, reference = self.pair()
+        for root in (made, written):
+            (root / "empty").mkdir()
+        self.assertEqual(gate.compare_trees("n64", made, written, reference)["differences"],
+                         ["empty/: the launcher's tree holds an empty folder, the scripts' an "
+                          "empty folder"])
+
+    def test_a_link_is_never_followed(self):
+        # A link in both trees, to a folder that holds the file a manifest names, is a link in
+        # each, not a file of the tree.
+        made, written, reference = self.pair()
+        target = write(self.folder(), {"worlds.wad": contents("levels/a/worlds.wad")})
+        for root in (made, written):
+            shutil.rmtree(root / "levels")
+            try:
+                os.symlink(target, root / "levels", target_is_directory=True)
+            except (OSError, NotImplementedError) as error:
+                self.skipTest(f"this system makes no symbolic link here: {error}")
+        self.assertEqual(gate.compare_trees("n64", made, written, reference)["differences"], [
+            "levels: the launcher's tree holds a link, the scripts' a link",
+            "levels/a/worlds.wad: the launcher's tree holds nothing, the reference tree "
+            f"{held(contents('levels/a/worlds.wad'))}"])
+
+    @unittest.skipUnless(os.name == "nt", "junctions are Windows' own links")
+    def test_a_junction_is_a_link(self):
+        import _winapi  # Windows' own API module, which makes junctions without privileges
+
+        made, written, reference = self.pair()
+        target = write(self.folder(), {"a/worlds.wad": contents("levels/a/worlds.wad")})
+        for root in (made, written):
+            shutil.rmtree(root / "levels")
+            _winapi.CreateJunction(str(target), str(root / "levels"))
+        self.assertEqual(gate.compare_trees("n64", made, written, reference)["differences"], [
+            "levels: the launcher's tree holds a link, the scripts' a link",
+            "levels/a/worlds.wad: the launcher's tree holds nothing, the reference tree "
+            f"{held(contents('levels/a/worlds.wad'))}"])
+        # Removing the trees removes the junction, never what it leads to.
+        shutil.rmtree(made)
+        self.assertTrue((target / "a" / "worlds.wad").is_file())
 
     def test_reference_extras_are_reported_and_do_not_fail(self):
         cases = (("n64", ["audio-catalog.json"], "audio-catalog.json"),
@@ -644,6 +711,28 @@ class GateTests(unittest.TestCase):
                 with self.assertRaises(type(error)):
                     self.run_gate(Children(self, raises={step: error}))
                 self.assertFalse(os.path.lexists(self.output / "report.json"))
+
+    def test_an_extraction_that_never_finishes_is_its_platforms_difference(self):
+        # One stopped at its timeout, as a hung extraction is, or one that cannot start fails its
+        # platform; the run still ends with its report, and nothing is compared.
+        cases = [("launcher dreamcast",
+                  subprocess.TimeoutExpired("headless", gate.EXTRACTION_TIMEOUT), "dreamcast",
+                  f"the launcher ran longer than {gate.EXTRACTION_TIMEOUT} s and was stopped"),
+                 ("script n64", OSError("no such program"), "n64",
+                  "the extraction script did not start: no such program")]
+        for step, error, platform, line in cases:
+            with self.subTest(step=step):
+                children = Children(self, raises={step: error})
+                code, out, _ = self.run_gate(children)
+                self.assertEqual(code, gate.FAILED)
+                self.assertEqual(children.steps(), STEPS[:STEPS.index(step) + 1])
+                report = self.report()
+                self.assertEqual(report["failure"], f"the {platform} trees did not pass")
+                record = report["platforms"][platform]
+                self.assertEqual((record["identical"], record["reference"], record["differences"]),
+                                 (False, "notCompared", [line]))
+                self.assertIn(f"{platform}: 1 difference; ", out)
+                self.assertIn(f"\n  {line}\n", out)
 
     def test_a_fingerprints_check_that_never_finishes_checks_nothing(self):
         cases = [(subprocess.TimeoutExpired("check", gate.FINGERPRINTS_TIMEOUT),
