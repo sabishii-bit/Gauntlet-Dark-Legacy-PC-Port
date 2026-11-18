@@ -35,6 +35,7 @@
 #include "game/critters/General.h"
 #include "game/critters/Golem.h"
 #include "game/enemies/LevelOpponents.h"
+#include "game/enemies/StandOffTestSupport.h"
 #include "game/level/BossKinds.h"
 #include "game/level/PlacedItems.h"
 #include "game/party/PlayerRuntime.h"
@@ -1147,16 +1148,10 @@ TEST_CASE("a golem's stomp knocks down a warrior held at the original's stand-of
     std::array<PlayerRuntime, 1> players;
     PlayerActor& warrior = players[0].actor;
     warrior.spawn(0, {}, classes.stats(0), {0, 0, 30}, kPi);
-    Vec3 stop = warrior.position();
-    bool cut = false;
-    for (s32 step = 0; step < 240 && !cut; ++step) {
-        const Vec3 wanted = stop + Vec3{0, 0, -0.25f};
-        stop = opponents.resolveMovement(warrior, stop, wanted);
-        cut = glm::distance(stop, wanted) > 1e-4f;
-    }
-    REQUIRE(cut);
-    warrior.place(stop);
-    CAPTURE(stop.z);
+    const auto stop = test::walkedInto(opponents, warrior);
+    REQUIRE(stop);
+    warrior.place(*stop);
+    CAPTURE(stop->z);
     const auto party = LevelOpponents::enemyViews(players);
     s32 stomps = 0;
     bool stomping = false;

@@ -55,6 +55,7 @@
 #include "game/enemies/EnemyMind.h"
 #include "game/enemies/LevelOpponents.h"
 #include "game/enemies/ScriptedOpponents.h"
+#include "game/enemies/StandOffTestSupport.h"
 #include "game/hud/HelpMessages.h"
 #include "game/level/BossKinds.h"
 #include "game/level/ImportedLevel.h"
@@ -1722,13 +1723,6 @@ TEST_CASE("Auto Attack stops a player's step at a boss's body, and its charge to
     opponents.close();
 }
 
-/** A great one as a level stands it: its family, the level's realm and the archive it needs. */
-struct StandingGreatOne {
-    CombatantKind kind = CombatantKind::Golem;
-    char realm = 'G';
-    const char* archive = "";
-};
-
 TEST_CASE("great ones hold a player at the original's stand-off",
           "[level-opponents][collision][critter-contact][assets]") {
     // Whatever part or body stops a step stands the player's collision centre a whole width
@@ -1736,6 +1730,7 @@ TEST_CASE("great ones hold a player at the original's stand-off",
     // fqdist reaches a little short of it off the axes). A castle or Underworld golem's head,
     // held higher than that width over the collision centre, no longer holds the player back.
     const auto root = test::assetOrSkip("CRITTER/GOLEM.WAD").parent_path().parent_path();
+    using test::StandingGreatOne;
     const auto one =
         GENERATE(StandingGreatOne{CombatantKind::Golem, 'A', "MONSTERS/GOLEM/LEVELA/ANIM.PS2"},
                  StandingGreatOne{CombatantKind::Golem, 'G', "MONSTERS/GOLEM/LEVELG/ANIM.PS2"},
@@ -1753,14 +1748,9 @@ TEST_CASE("great ones hold a player at the original's stand-off",
     REQUIRE(id);
     PlayerActor player;
     player.spawn(0, {}, nullptr, {0, 0, 30}, 0);
-    Vec3 stop = player.position();
-    bool cut = false;
-    for (s32 step = 0; step < 240 && !cut; ++step) {
-        const Vec3 wanted = stop + Vec3{0, 0, -0.25f};
-        stop = opponents.resolveMovement(player, stop, wanted);
-        cut = glm::distance(stop, wanted) > 1e-4f;
-    }
+    const auto cut = test::walkedInto(opponents, player);
     REQUIRE(cut);
+    const Vec3 stop = *cut;
     const Vec3& anchor = critters.positionOf(*id);
     CAPTURE(stop.x, stop.z, glm::length(Vec2{stop.x - anchor.x, stop.z - anchor.z}));
     const f32 centre = stop.y + player.followPoint().y - player.position().y;

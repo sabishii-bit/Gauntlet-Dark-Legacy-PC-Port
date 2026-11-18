@@ -33,6 +33,7 @@
 #include "game/enemies/DeathTestSupport.h"
 #include "game/enemies/EnemyMind.h"
 #include "game/enemies/ScriptedOpponents.h"
+#include "game/enemies/StandOffTestSupport.h"
 #include "game/hud/HelpMessages.h"
 #include "game/level/Chests.h"
 #include "game/level/SafeRocks.h"
@@ -4337,27 +4338,6 @@ TEST_CASE("fire shield uses the retail one-unit contact band rather than its fla
     }
 }
 
-/** Where a character walking down z from where it stands is first stopped by the level's
- * opponents, a quarter of a unit a step; nothing when nothing stops it. */
-std::optional<Vec3> walkedInto(const LevelOpponents& opponents, const PlayerActor& actor) {
-    Vec3 stop = actor.position();
-    for (s32 step = 0; step < 240; ++step) {
-        const Vec3 wanted = stop + Vec3{0, 0, -0.25f};
-        stop = opponents.resolveMovement(actor, stop, wanted);
-        if (glm::distance(stop, wanted) > 1e-4f) {
-            return stop;
-        }
-    }
-    return std::nullopt;
-}
-
-/** A great one as a level stands it: its family, the level's realm and the archive it needs. */
-struct StandingGreatOne {
-    CombatantKind kind = CombatantKind::Golem;
-    char realm = 'G';
-    const char* archive = "";
-};
-
 TEST_CASE("a charge throws down the golem it is stopped against",
           "[game][player-attacks][charge][critter-contact][assets]") {
     const auto root = test::assetOrSkip("CRITTER/GOLEM.WAD").parent_path().parent_path();
@@ -4371,7 +4351,7 @@ TEST_CASE("a charge throws down the golem it is stopped against",
     auto& actor = f.players[0].actor;
     actor.place({0, 0, 30});
     actor.turnTo(std::numbers::pi_v<f32>);
-    const auto stop = walkedInto(f.opponents, actor);
+    const auto stop = test::walkedInto(f.opponents, actor);
     REQUIRE(stop);
     actor.place(*stop);
     const f32 whole = critters.healthOf(*golem);
@@ -4387,11 +4367,11 @@ TEST_CASE("held and automatic melee reach a great one from the original's stand-
           "[game][player-attacks][critter-contact][assets]") {
     const auto root = test::assetOrSkip("CRITTER/GOLEM.WAD").parent_path().parent_path();
     test::assetOrSkip("PLAYERS/WAR/ANIM/ANIM.PS2");
-    const auto one =
-        GENERATE(StandingGreatOne{CombatantKind::Golem, 'G', "MONSTERS/GOLEM/LEVELG/ANIM.PS2"},
-                 StandingGreatOne{CombatantKind::Golem, 'F', "MONSTERS/GOLEM/LEVELF/ANIM.PS2"},
-                 StandingGreatOne{CombatantKind::Gargoyle, 'B', "MONSTERS/GAR_EAGL/ANIM.PS2"},
-                 StandingGreatOne{CombatantKind::General, 'G', "MONSTERS/GENERAL/LEVELG/ANIM.PS2"});
+    const auto one = GENERATE(
+        test::StandingGreatOne{CombatantKind::Golem, 'G', "MONSTERS/GOLEM/LEVELG/ANIM.PS2"},
+        test::StandingGreatOne{CombatantKind::Golem, 'F', "MONSTERS/GOLEM/LEVELF/ANIM.PS2"},
+        test::StandingGreatOne{CombatantKind::Gargoyle, 'B', "MONSTERS/GAR_EAGL/ANIM.PS2"},
+        test::StandingGreatOne{CombatantKind::General, 'G', "MONSTERS/GENERAL/LEVELG/ANIM.PS2"});
     test::assetOrSkip(one.archive);
     CAPTURE(static_cast<s32>(one.kind), one.realm);
     Fixture f;
@@ -4406,7 +4386,7 @@ TEST_CASE("held and automatic melee reach a great one from the original's stand-
     player.figure = PlayerFigure::load(f.device, root, player.actor.save(), Entrance::Skip);
     REQUIRE(player.figure);
     f.targets.players = f.players;
-    const auto stop = walkedInto(f.opponents, player.actor);
+    const auto stop = test::walkedInto(f.opponents, player.actor);
     REQUIRE(stop);
     player.actor.place(*stop);
     CAPTURE(stop->z);
@@ -4442,7 +4422,7 @@ TEST_CASE("a fire shield burns a standing gargoyle every frame from the original
     player.actor.spawn(3, {}, f.classes.stats(0), {0, 0, 30}, std::numbers::pi_v<f32>);
     player.figure = PlayerFigure::load(f.device, root, player.actor.save(), Entrance::Skip);
     REQUIRE(player.figure);
-    const auto stop = walkedInto(f.opponents, player.actor);
+    const auto stop = test::walkedInto(f.opponents, player.actor);
     REQUIRE(stop);
     player.actor.place(*stop);
     auto& inventory = player.actor.save().progress().inventory;
@@ -4782,15 +4762,9 @@ TEST_CASE("Auto Attack stops a strafe and a charge dead at a golem where without
         const f32 stride = player.actor.speed() * PlayerAnimator::kChargePace / 30;
         REQUIRE(stride > 0.6f);
         // Where a walk up z from the south first touches the golem.
-        std::optional<Vec3> contact;
-        for (Vec3 at = player.actor.position(); !contact && at.z < 0;) {
-            const Vec3 wanted = at + Vec3{0, 0, 0.25f};
-            at = f.opponents.resolveMovement(player.actor, at, wanted);
-            if (glm::distance(at, wanted) > 1e-4f) {
-                contact = at;
-            }
-        }
+        const auto contact = test::walkedInto(f.opponents, player.actor, {0, 0, 0.25f});
         REQUIRE(contact);
+        REQUIRE(contact->z < 0);
         constexpr s32 kStarts = 8;
         for (s32 start = 0; start < kStarts; ++start) {
             CAPTURE(start);
