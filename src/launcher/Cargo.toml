@@ -52,7 +52,28 @@ tauri-plugin-opener = "=2.7.2"
 tauri-plugin-single-instance = "=2.5.5"
 
 [profile.release]
+# Built for size, since every player downloads the launcher; the crates that read, hash and
+# inflate a dump and write its tree keep full optimisation, on which an extraction's speed rests.
+opt-level = "s"
 lto = "thin"
 codegen-units = 1
 strip = true
 panic = "unwind"
+
+[profile.release.package.sha1]
+opt-level = 3
+
+[profile.release.package.sha2]
+opt-level = 3
+
+[profile.release.package.flate2]
+opt-level = 3
+
+[profile.release.package.zlib-rs]
+opt-level = 3
+
+[profile.release.package.gdl-media]
+opt-level = 3
+
+[profile.release.package.gdl-extract]
+opt-level = 3
