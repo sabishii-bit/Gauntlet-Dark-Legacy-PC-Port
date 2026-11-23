@@ -6,6 +6,7 @@ is read."""
 from __future__ import annotations
 
 import contextlib
+import errno
 import hashlib
 import io
 import json
@@ -181,6 +182,44 @@ class Children:
         if code == 0:
             write(output, tree)
         return subprocess.CompletedProcess(command, code)
+
+
+class Clock:
+    """Stands in for the gate's clock, whose time moves only as the gate sleeps, and records each
+    sleep."""
+
+    START = 100.0  # the time the clock reads before the gate first sleeps
+
+    def __init__(self):
+        self.now = self.START
+        self.sleeps: list[float] = []
+
+    def monotonic(self) -> float:
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        self.sleeps.append(seconds)
+        self.now += seconds
+
+
+class Hold:
+    """Stands in for shutil.rmtree on folders that a passing hold on a file refuses: each folder's
+    first `refusals` removals raise `error`, and the next removes it. Records every removal tried,
+    with the time `clock` reads as it is tried."""
+
+    def __init__(self, error: OSError, refusals: int, clock: Clock):
+        self.error = error
+        self.refusals = refusals
+        self.clock = clock
+        self.remove = shutil.rmtree  # taken before the stand-in replaces it
+        self.attempts: list[tuple[Path, float]] = []
+
+    def __call__(self, path, *args, **keywords) -> None:
+        folder = Path(path)
+        self.attempts.append((folder, self.clock.monotonic()))
+        if sum(1 for tried, _ in self.attempts if tried == folder) <= self.refusals:
+            raise self.error
+        self.remove(path, *args, **keywords)
 
 
 class CompareTests(unittest.TestCase):
@@ -679,12 +718,68 @@ class GateTests(unittest.TestCase):
                               f"{self.output / 'report.json'}, and what the run extracted stays "
                               f"in {self.output}\n")
 
+    def test_a_removal_waits_out_a_passing_hold_on_windows(self):
+        # A virus scanner or an indexer that opens a file just written holds off its removal for
+        # a moment: the file's own, or its folder's while the file goes only once the hold lets
+        # go. The run tries again and passes.
+        python, made = self.output / "python", self.output / "launcher"
+        for error in (PermissionError("held"), OSError(errno.ENOTEMPTY, "not empty")):
+            with self.subTest(error=error):
+                clock = Clock()
+                hold = Hold(error, 1, clock)
+                with mock.patch.object(gate.process_tree, "WINDOWS", True), \
+                        mock.patch.object(gate, "time", clock), \
+                        mock.patch.object(gate.shutil, "rmtree", side_effect=hold):
+                    code, _, err = self.run_gate(Children(self))
+                self.assertEqual((code, err), (gate.PASSED, ""))
+                self.assertNotIn("failure", self.report())
+                self.assertFalse(os.path.lexists(python))
+                self.assertFalse(os.path.lexists(made))
+                # Each tree is refused once, then removed after a pause.
+                self.assertEqual([folder for folder, _ in hold.attempts],
+                                 [python, python, made, made])
+                self.assertEqual(clock.sleeps, [gate.REMOVAL_INTERVAL] * 2)
+
+    def test_a_removal_is_tried_again_only_for_a_hold_on_windows(self):
+        # Elsewhere no scanner holds a file, and on Windows another error is no hold: either
+        # fails the run at once, though trying again would have worked.
+        cases = [(False, PermissionError("held")), (True, OSError(errno.EIO, "a disk error"))]
+        for windows, error in cases:
+            with self.subTest(windows=windows, error=error):
+                clock = Clock()
+                hold = Hold(error, 1, clock)
+                with mock.patch.object(gate.process_tree, "WINDOWS", windows), \
+                        mock.patch.object(gate, "time", clock), \
+                        mock.patch.object(gate.shutil, "rmtree", side_effect=hold):
+                    code, _, _ = self.run_gate(Children(self))
+                self.assertEqual(code, gate.FAILED)
+                self.assertEqual(self.report()["failure"],
+                                 f"the trees could not be removed: {error}")
+                self.assertEqual(len(hold.attempts), 1)
+                self.assertEqual(clock.sleeps, [])
+                # What the run kept goes at the start of the next.
+                remove = Hold(error, 0, clock)
+                with mock.patch.object(gate.shutil, "rmtree", side_effect=remove):
+                    code, _, err = self.run_gate(Children(self))
+                self.assertEqual(code, gate.PASSED, err)
+
     def test_trees_that_cannot_be_removed_fail_the_run(self):
-        # A scanner's brief hold on a file on Windows can stop the removal. The run then fails,
-        # and its report says why rather than stand as a pass beside the trees it kept.
-        with mock.patch.object(gate.shutil, "rmtree", side_effect=PermissionError("held")):
+        # A hold that outlasts the time a removal is tried for fails the run, and its report says
+        # why rather than stand as a pass beside the trees it kept.
+        clock = Clock()
+        hold = Hold(PermissionError("held"), sys.maxsize, clock)
+        with mock.patch.object(gate.process_tree, "WINDOWS", True), \
+                mock.patch.object(gate, "time", clock), \
+                mock.patch.object(gate.shutil, "rmtree", side_effect=hold):
             code, out, err = self.run_gate(Children(self))
         self.assertEqual(code, gate.FAILED)
+        # Tried at once, then after every pause until the time is up, and not after it.
+        self.assertEqual({folder for folder, _ in hold.attempts}, {self.output / "python"})
+        times = [at for _, at in hold.attempts]
+        self.assertEqual(times[0], Clock.START)
+        self.assertLess(times[-2], Clock.START + gate.REMOVAL_WINDOW)
+        self.assertGreaterEqual(times[-1], Clock.START + gate.REMOVAL_WINDOW)
+        self.assertEqual(clock.sleeps, [gate.REMOVAL_INTERVAL] * (len(times) - 1))
         report = self.report()
         self.assertEqual(report["failure"], "the trees could not be removed: held")
         self.assertEqual((report["ignoredTests"], report["fingerprints"]), ("passed", "current"))

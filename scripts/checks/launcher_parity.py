@@ -31,6 +31,7 @@ from __future__ import annotations
 import _thread
 import argparse
 from collections.abc import Iterable, Mapping
+import errno
 import hashlib
 import json
 import os
@@ -124,6 +125,12 @@ REGULAR_FILE = "a regular file"
 LINK = "a link"
 EMPTY_FOLDER = "an empty folder"
 NOT_A_FILE = "neither a file nor a folder"
+
+# How long, in seconds, a removal that a passing hold on a file refuses is tried for after its
+# first refusal, and the pause between tries: on Windows a virus scanner or an indexer may open a
+# file the moment it is written, and the trees hold thousands of files written moments before.
+REMOVAL_WINDOW = 8.0
+REMOVAL_INTERVAL = 0.2
 
 SHOWN_DIFFERENCES = 10  # how many of a platform's differences its summary prints
 STOP_GRACE = 10  # seconds a run whose caller is gone gives the interrupt before it exits outright
@@ -247,12 +254,36 @@ def announce(step: str) -> None:
     print(f"launcher parity: {step}", flush=True)
 
 
+def held_for_now(error: OSError) -> bool:
+    """Whether a removal failed as a passing hold on a file fails one on Windows: refused, as
+    access denied, a sharing violation and a lock violation all are (PermissionError), or a folder
+    not yet empty, since a file deleted while a handle that shares deletion holds it goes only
+    once that handle closes."""
+    return isinstance(error, PermissionError) or error.errno == errno.ENOTEMPTY
+
+
 def remove(folder: Path) -> None:
-    """Removes a folder of trees and everything in it, where it is there."""
-    if folder.is_symlink() or folder.is_file():
-        folder.unlink()
-    elif folder.exists():
-        shutil.rmtree(folder)
+    """Removes a folder of trees and everything in it, where it is there. On Windows a removal
+    that a passing hold refuses is tried again every REMOVAL_INTERVAL seconds until REMOVAL_WINDOW
+    has passed since its first refusal; then, as at once for any other error and on other
+    systems, its error is raised. A removal that is not refused never reads the clock."""
+    deadline = None
+    while True:
+        try:
+            if folder.is_symlink() or folder.is_file():
+                folder.unlink()
+            elif folder.exists():
+                shutil.rmtree(folder)
+            return
+        except OSError as error:
+            if not (process_tree.WINDOWS and held_for_now(error)):
+                raise
+            now = time.monotonic()
+            if deadline is None:
+                deadline = now + REMOVAL_WINDOW
+            elif now >= deadline:
+                raise
+        time.sleep(REMOVAL_INTERVAL)
 
 
 def clear_report(folders: Folders) -> None:
