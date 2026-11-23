@@ -705,6 +705,53 @@ mod tests {
         assert!(folder_names(&install.state).unwrap().is_empty());
         assert_eq!(folder_names(&install.outside).unwrap(), ["kept.json"]);
         assert_eq!(fs::read(&kept).unwrap(), b"kept");
+
+        // A folder given relative to the working folder is taken from there by both, so that a
+        // staging taken back by its name is the one made, by an absolute path.
+        let Some(relative) = relative_to_working(&install.state) else {
+            eprintln!(
+                "skipped the relative folder: no relative path reaches {}",
+                install.state.display()
+            );
+            return;
+        };
+        let made = Staging::create_in(&relative, "install-").unwrap();
+        let reopened = Staging::reopen(&relative, "install-", made.name()).unwrap();
+        assert!(
+            reopened.path().is_absolute(),
+            "{}",
+            reopened.path().display()
+        );
+        assert_eq!(reopened.path(), made.path());
+        assert_eq!(folder_names(&install.state).unwrap(), [made.name()]);
+        reopened.remove().unwrap();
+        assert!(folder_names(&install.state).unwrap().is_empty());
+    }
+
+    /// `target`, an absolute path, as a path relative to the working folder, climbing out of it
+    /// with `..` where `target` lies elsewhere; `None` where no relative path reaches it, as on
+    /// another drive.
+    fn relative_to_working(target: &Path) -> Option<PathBuf> {
+        use std::path::Component;
+
+        let working = std::env::current_dir().ok()?;
+        let mut from = working.components().peekable();
+        let mut to = target.components().peekable();
+        while let (Some(here), Some(there)) = (from.peek(), to.peek()) {
+            if here != there {
+                break;
+            }
+            from.next();
+            to.next();
+        }
+        let named = |part: &Component<'_>| matches!(part, Component::Normal(_));
+        let (from, to): (Vec<_>, Vec<_>) = (from.collect(), to.collect());
+        if !from.iter().all(named) || !to.iter().all(named) {
+            return None;
+        }
+        let climbed = from.iter().map(|_| Component::ParentDir);
+        let relative: PathBuf = climbed.chain(to).collect();
+        (!relative.as_os_str().is_empty()).then_some(relative)
     }
 
     #[test]
@@ -853,13 +900,16 @@ mod tests {
         /// Reading and searching but no writing: no name in such a folder can be removed.
         const READ_AND_SEARCH: u32 = 0o555;
 
+        /// Its owner's whole access, and no one else's.
+        const OWNER_ALL: u32 = 0o700;
+
         /// Gives a folder back its owner's whole access when dropped, before the staging or the
         /// `TempDir` above it goes, which could not empty it otherwise.
         struct AccessRestored<'a>(&'a Path);
 
         impl Drop for AccessRestored<'_> {
             fn drop(&mut self) {
-                let _ = fs::set_permissions(self.0, fs::Permissions::from_mode(0o700));
+                let _ = fs::set_permissions(self.0, fs::Permissions::from_mode(OWNER_ALL));
             }
         }
 
