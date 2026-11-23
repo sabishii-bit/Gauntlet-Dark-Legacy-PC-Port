@@ -86,7 +86,7 @@ loadLegendsDreamcastBossAssets(RenderDevice& device, const std::filesystem::path
     // not leave the player falling forever outside the map's finite floor mesh.
     // How 1ST_READ.BIN places hit nodes is unread, so part offsets stay in their nodes' frames.
     // Its blow (8c08d4c0) pushes as GDL's does: along the node's travel since MoveSetup
-    // (8c08a2c0) last noted it and away from the body's origin, lifted to a unit.
+    // (8c08a2c0) last noted it and away from the body's origin, given a unit's height.
     CritterRules rules{.pressureReferenceDamage = decoded.types.front().pressureReferenceDamage,
                        .restoreCaptureSupport = true,
                        .nodeFramePartOffsets = true};
