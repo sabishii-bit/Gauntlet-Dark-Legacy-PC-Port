@@ -8,9 +8,7 @@ use std::fs::{self, File, OpenOptions};
 use std::io;
 use std::path::Path;
 
-use crate::{
-    FilesError, NameSet, PAYLOAD_NAMES, RelPath, check_component, no_links, rename_noreplace,
-};
+use crate::{FilesError, PAYLOAD_NAMES, RelPath, check_component, no_links, rename_noreplace};
 
 /// How many random ASCII letters and digits follow a staging folder's prefix, as in
 /// `install-AbC123xy`.
@@ -88,9 +86,11 @@ impl Staging {
     /// `into`, and has closed every file it made in the staging.
     ///
     /// Before anything moves, each root must be a single name that the staging holds, exactly as
-    /// it is written there, named once in any letter case, and neither the staged tree nor
-    /// `into`'s path may hold a link. The roots then move in byte order, and the first failure
-    /// stops the publish and is returned: a target that is there already is
+    /// it is written there, named once, exactly, and neither the staged tree nor `into`'s path may
+    /// hold a link. Roots that differ only in letter case are two roots: a file system that keeps
+    /// such names apart has staged both, and on one that folds letter case the staging holds only
+    /// one spelling, so the other is no staged name. The roots then move in byte order, and the
+    /// first failure stops the publish and is returned: a target that is there already is
     /// [`FilesError::Exists`]. The roots moved before it stay in place and recorded, and a root
     /// that moved but whose sync or record then failed stays in place unrecorded. Those not moved
     /// stay in the staging, for the caller's journal to decide whether they are moved too or what
@@ -103,10 +103,10 @@ impl Staging {
     ) -> Result<(), FilesError> {
         // A name the staging holds at its top has no separator, so a deeper name is never one.
         let staged = self.staged_names()?;
-        let mut named = NameSet::default();
+        let mut named = BTreeSet::new();
         for root in roots {
             let held = staged.contains(OsStr::new(root.as_str()));
-            if !held || named.insert(root.clone()).is_err() {
+            if !held || !named.insert(root.as_str()) {
                 return Err(FilesError::NotRoot {
                     name: root.as_str().into(),
                 });
@@ -687,8 +687,6 @@ mod tests {
             (&["VERSION", "data", "missing"][..], "missing"),
             (&["Data"][..], "Data"),
             (&["version"][..], "version"),
-            // Named twice.
-            (&["data", "VERSION", "data"][..], "data"),
         ] {
             let mut journal = Recorder::new(&staging, &install.root);
             match staging.publish_new(&rels(roots), &install.root, &mut journal) {
@@ -699,23 +697,73 @@ mod tests {
         }
     }
 
-    /// Two roots that differ only in letter case, which Linux can stage side by side, would be
-    /// one name on a file system that folds case, so the second is refused as named twice.
-    #[cfg(target_os = "linux")]
     #[test]
-    fn refuses_roots_that_differ_only_in_letter_case() {
+    fn a_root_named_twice_is_refused() {
         let install = install();
         let staging = Staging::create_in(&install.state, "install-").unwrap();
+        stage(&staging, "VERSION", b"1.0.0-beta\n");
         stage(&staging, "data/config.json", b"{}");
-        stage(&staging, "Data/config.json", b"{}");
-        let mut journal = Recorder::new(&staging, &install.root);
-        match staging.publish_new(&rels(&["data", "Data"]), &install.root, &mut journal) {
-            Err(FilesError::NotRoot { name }) => assert_eq!(&*name, "Data"),
-            other => panic!("{other:?}"),
+        let before = tree(staging.path());
+        for (roots, refused) in [
+            // The same name again, at once or after another root.
+            (&["data", "data"][..], "data"),
+            (&["data", "VERSION", "data"][..], "data"),
+            (&["VERSION", "data", "VERSION"][..], "VERSION"),
+            // Again in another letter case, which the staging does not hold as it was made with
+            // one spelling alone, on every system.
+            (&["data", "Data"][..], "Data"),
+            (&["version", "VERSION"][..], "version"),
+        ] {
+            let mut journal = Recorder::new(&staging, &install.root);
+            match staging.publish_new(&rels(roots), &install.root, &mut journal) {
+                Err(FilesError::NotRoot { name }) => assert_eq!(&*name, refused, "{roots:?}"),
+                other => panic!("{roots:?}: {other:?}"),
+            }
+            assert_unmoved(&install, &staging, &before, &journal);
         }
-        assert!(journal.roots.is_empty());
-        assert_eq!(folder_names(&install.root).unwrap(), [".gdl-launcher"]);
-        assert_eq!(folder_names(staging.path()).unwrap(), ["Data", "data"]);
+
+        // Named once each, the same roots publish.
+        let mut journal = Recorder::new(&staging, &install.root);
+        staging
+            .publish_new(&rels(&["data", "VERSION"]), &install.root, &mut journal)
+            .unwrap();
+        assert_eq!(journal.roots, ["VERSION", "data"]);
+        assert!(folder_names(staging.path()).unwrap().is_empty());
+    }
+
+    /// Two roots that differ only in letter case, which a file system that keeps such names apart
+    /// stages side by side, are two roots and both publish, as a Linux runtime's program
+    /// `gauntlet` does beside the disc's folder `Gauntlet`.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn roots_differing_only_in_case_publish_where_the_system_keeps_both() {
+        let install = install();
+        let staging = Staging::create_in(&install.state, "install-").unwrap();
+        stage(&staging, "gauntlet", b"program");
+        stage(&staging, "Gauntlet/PDATA/WAR.WAD", b"war");
+        assert_eq!(
+            folder_names(staging.path()).unwrap(),
+            ["Gauntlet", "gauntlet"]
+        );
+        let staged = tree(staging.path());
+
+        let mut journal = Recorder::new(&staging, &install.root);
+        staging
+            .publish_new(
+                &rels(&["gauntlet", "Gauntlet"]),
+                &install.root,
+                &mut journal,
+            )
+            .unwrap();
+        // In byte order, which puts capitals first.
+        assert_eq!(journal.roots, ["Gauntlet", "gauntlet"]);
+        let mut published = tree(&install.root);
+        assert_eq!(published.remove(".gdl-launcher"), Some(Entry::Folder));
+        let staging_name = staging.path().file_name().unwrap().to_str().unwrap();
+        let staging_entry = format!(".gdl-launcher/{staging_name}");
+        assert_eq!(published.remove(&staging_entry), Some(Entry::Folder));
+        assert_eq!(published, staged);
+        assert!(folder_names(staging.path()).unwrap().is_empty());
     }
 
     #[test]
