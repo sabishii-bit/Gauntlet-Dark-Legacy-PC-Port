@@ -5,7 +5,10 @@
 //! it lies in; what lies under the disc's `Gauntlet` and `carddemo` folders is kept, as the disc
 //! spells it.
 
-use gdl_files::{DISC_NAMES, NameRule, NameSet, RelPath, check_component};
+use std::collections::HashSet;
+use std::hash::{Hash, Hasher};
+
+use gdl_files::{DISC_NAMES, NameRule, RelPath, check_component};
 
 use super::DISC_SIZE;
 use crate::error::{long_start, quoted};
@@ -139,8 +142,8 @@ struct Row {
     size: u32,
 }
 
-/// A folder the walk is inside.
-struct OpenFolder {
+/// A folder the walk is inside, whose names are borrowed from the table `'t`.
+struct OpenFolder<'t> {
     /// The index of its row.
     index: usize,
     /// The index past its last entry.
@@ -149,8 +152,34 @@ struct OpenFolder {
     path: Option<RelPath>,
     /// The names its entries have taken. No two entries of one folder may share a name in any
     /// ASCII letter case, and no two folders share a path, so this keeps every path of the tree
-    /// apart from every other in any letter case while holding no more than one folder's names.
-    names: NameSet,
+    /// apart from every other in any letter case. Each name is the table's own bytes, so that a
+    /// folder of as many rows as the table can hold costs a few words a row, not a copy of each
+    /// name.
+    names: HashSet<FoldedName<'t>>,
+}
+
+/// A name of the table as a folder's names hold it: its bytes, borrowed from the table, equal to
+/// another's in any ASCII letter case, as the names of one file on a case-insensitive file system
+/// are. Only names held to the names the installed tree may hold, and so only ASCII, are kept.
+#[derive(Clone, Copy)]
+struct FoldedName<'t>(&'t [u8]);
+
+impl PartialEq for FoldedName<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.eq_ignore_ascii_case(other.0)
+    }
+}
+
+impl Eq for FoldedName<'_> {}
+
+impl Hash for FoldedName<'_> {
+    /// Hashes the name in ASCII lower case, so that names equal in any letter case hash alike.
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        state.write_usize(self.0.len());
+        for byte in self.0 {
+            state.write_u8(byte.to_ascii_lowercase());
+        }
+    }
 }
 
 /// The entries of the file table `table` of a disc of `disc_size` bytes, walked in the table's
@@ -177,7 +206,7 @@ pub(crate) fn walk(table: &[u8], disc_size: u64) -> Result<Walked, MediaError> {
         index: ROOT_INDEX,
         end: count,
         path: None,
-        names: NameSet::default(),
+        names: HashSet::new(),
     }];
     let mut entries = Vec::new();
     let mut files_len: u64 = 0;
@@ -210,7 +239,7 @@ pub(crate) fn walk(table: &[u8], disc_size: u64) -> Result<Walked, MediaError> {
                 index,
                 end,
                 path: Some(path.clone()),
-                names: NameSet::default(),
+                names: HashSet::new(),
             });
         } else if u64::from(row.offset) + u64::from(row.size) > disc_size {
             let detail = format!("{TRUNCATED_FILE}: {}", path.as_str());
@@ -269,21 +298,21 @@ pub(crate) fn walk(table: &[u8], disc_size: u64) -> Result<Walked, MediaError> {
     Ok(Walked { entries, files_len })
 }
 
-/// The path of the entry whose name is `name` in `folder`, the name taken into the folder's
-/// names: read as UTF-8, a byte that is no UTF-8 as U+FFFD, it must be a name the installed tree
-/// may hold by itself, ASCII alone; joined to the folder's path it must make a path of no more
-/// than [`MAX_DISC_PATH_CHARS`](gdl_files::MAX_DISC_PATH_CHARS) characters; and no other entry of
-/// the folder may have taken it in any ASCII letter case.
-fn take(folder: &mut OpenFolder, name: &[u8]) -> Result<RelPath, MediaError> {
-    let name = String::from_utf8_lossy(name);
+/// The path of the entry whose name is `name`, bytes of the table, in `folder`, the name taken
+/// into the folder's names: read as UTF-8, a byte that is no UTF-8 as U+FFFD, it must be a name
+/// the installed tree may hold by itself, ASCII alone; joined to the folder's path it must make a
+/// path of no more than [`MAX_DISC_PATH_CHARS`](gdl_files::MAX_DISC_PATH_CHARS) characters; and
+/// no other entry of the folder may have taken it in any ASCII letter case.
+fn take<'t>(folder: &mut OpenFolder<'t>, name: &'t [u8]) -> Result<RelPath, MediaError> {
+    let text = String::from_utf8_lossy(name);
     let unsafe_name = || {
-        let detail = quoted(UNSAFE_COMPONENT, &name);
+        let detail = quoted(UNSAFE_COMPONENT, &text);
         MediaError::gamecube(GameCubeRule::UnsafeName, detail)
     };
-    check_component(&name, &DISC_NAMES).map_err(|_| unsafe_name())?;
+    check_component(&text, &DISC_NAMES).map_err(|_| unsafe_name())?;
     let joined = match &folder.path {
-        Some(path) => format!("{}{SEPARATOR}{name}", path.as_str()),
-        None => name.as_ref().to_owned(),
+        Some(path) => format!("{}{SEPARATOR}{text}", path.as_str()),
+        None => text.as_ref().to_owned(),
     };
     let path = RelPath::parse(&joined, &DISC_NAMES).map_err(|refused| {
         if refused.rule == NameRule::PathTooLong {
@@ -293,11 +322,11 @@ fn take(folder: &mut OpenFolder, name: &[u8]) -> Result<RelPath, MediaError> {
             unsafe_name()
         }
     })?;
-    let own = RelPath::parse(&name, &DISC_NAMES).map_err(|_| unsafe_name())?;
-    folder.names.insert(own).map_err(|_| {
+    // The name passed the rules of one component, so it is ASCII, and its bytes are its text's.
+    if !folder.names.insert(FoldedName(name)) {
         let detail = taken_or_overlong(&joined);
-        MediaError::gamecube(GameCubeRule::DuplicatePath, detail)
-    })?;
+        return Err(MediaError::gamecube(GameCubeRule::DuplicatePath, detail));
+    }
     Ok(path)
 }
 
@@ -525,6 +554,21 @@ pub(super) mod tests {
         rows.push(FstEntry::file("OTHER", 0, 0));
         rows.push(FstEntry::file("other", 0, 0));
         let said = "Duplicate or overlong disc path: other".to_owned();
+        assert_eq!(refused(&fst(&rows)), ("duplicatePath", said));
+    }
+
+    #[test]
+    fn a_folder_of_many_rows_keeps_each_name_apart() {
+        // A hundred thousand names at the top of the disc beside the kept trees, each its own,
+        // are all walked and left out; one taken again in another letter case after them all is
+        // still told.
+        const MANY: usize = 100_000;
+        let mut rows = game_rows(&[]);
+        rows.extend((0..MANY).map(|index| FstEntry::file(&format!("F{index:06}"), 0, 0)));
+        let walked = walk(&fst(&rows), DISC_SIZE).unwrap_or_else(|error| panic!("{error}"));
+        assert_eq!(walked.entries.len(), GAME_ENTRIES);
+        rows.push(FstEntry::file("f012345", 0, 0));
+        let said = "Duplicate or overlong disc path: f012345".to_owned();
         assert_eq!(refused(&fst(&rows)), ("duplicatePath", said));
     }
 
