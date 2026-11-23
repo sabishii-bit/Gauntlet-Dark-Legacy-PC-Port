@@ -68,6 +68,16 @@ pub enum MediaError {
         /// words for it.
         detail: Box<str>,
     },
+    /// The GameCube disc image, its container or the header of the disc it holds, breaks a rule
+    /// of its format, or is not the disc the launcher installs from.
+    #[error("{detail}")]
+    GameCube {
+        /// The rule it breaks.
+        rule: GameCubeRule,
+        /// What is wrong, in English, in the installer's own words where it has fixed words for
+        /// it.
+        detail: Box<str>,
+    },
 }
 
 impl MediaError {
@@ -80,6 +90,7 @@ impl MediaError {
             MediaError::Cancelled => "cancelled",
             MediaError::Rom { rule, .. } => rule.as_str(),
             MediaError::Disc { rule, .. } => rule.as_str(),
+            MediaError::GameCube { rule, .. } => rule.as_str(),
         }
     }
 
@@ -116,6 +127,14 @@ impl MediaError {
     /// A Dreamcast disc refused by `rule`, for the reason `detail` gives.
     pub(crate) fn disc(rule: DiscRule, detail: impl Into<Box<str>>) -> MediaError {
         MediaError::Disc {
+            rule,
+            detail: detail.into(),
+        }
+    }
+
+    /// A GameCube disc image refused by `rule`, for the reason `detail` gives.
+    pub(crate) fn gamecube(rule: GameCubeRule, detail: impl Into<Box<str>>) -> MediaError {
+        MediaError::GameCube {
             rule,
             detail: detail.into(),
         }
@@ -453,6 +472,58 @@ impl DiscRule {
     }
 }
 
+/// The rules of a GameCube disc image's format, of the CISO container it may come in and of the
+/// header of the disc it holds, that an image is refused by.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum GameCubeRule {
+    /// The image begins as a CISO but is shorter than a CISO's header.
+    CisoHeader,
+    /// The CISO's block size is outside what a GameCube CISO keeps, as a PSP's CSO, which begins
+    /// with the same mark, gives.
+    CisoBlockSize,
+    /// The CISO's map flags a block with other than 0, left out, and 1, kept.
+    CisoMap,
+    /// The CISO ends before the blocks its map keeps, or before one of them as it is read.
+    CisoData,
+    /// A read reaches past the disc the image holds: its header, as in an image shorter than
+    /// that.
+    OutsideImage,
+    /// The ISO ends before a read it is asked for, as one cut short while it is read does.
+    TruncatedIso,
+    /// The disc's header carries no GameCube disc's mark.
+    NotGameCube,
+    /// The disc's game ID is another game's.
+    OtherGame,
+    /// The disc's game ID is the game's, of another region than North America.
+    OtherRegion,
+    /// The disc is another of the game's discs than its one.
+    DiscNumber,
+    /// The disc's revision is later than any the US disc was pressed as.
+    Revision,
+    /// The image is an NKit image, a disc rebuilt without its padding.
+    Nkit,
+}
+
+impl GameCubeRule {
+    /// The rule's stable machine name, in camelCase, for reports and logs.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            GameCubeRule::CisoHeader => "cisoHeader",
+            GameCubeRule::CisoBlockSize => "cisoBlockSize",
+            GameCubeRule::CisoMap => "cisoMap",
+            GameCubeRule::CisoData => "cisoData",
+            GameCubeRule::OutsideImage => "outsideImage",
+            GameCubeRule::TruncatedIso => "truncatedIso",
+            GameCubeRule::NotGameCube => "notGameCube",
+            GameCubeRule::OtherGame => "otherGame",
+            GameCubeRule::OtherRegion => "otherRegion",
+            GameCubeRule::DiscNumber => "discNumber",
+            GameCubeRule::Revision => "revision",
+            GameCubeRule::Nkit => "nkit",
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::error::Error;
@@ -461,7 +532,9 @@ mod tests {
 
     use gdl_files::{Cancel, DISC_NAMES, MAX_DISC_PATH_CHARS, RelPath};
 
-    use super::{DiscRule, MAX_QUOTED_CHARS, MediaError, RomRule, long_start, quoted};
+    use super::{
+        DiscRule, GameCubeRule, MAX_QUOTED_CHARS, MediaError, RomRule, long_start, quoted,
+    };
 
     /// The most bytes an error may take, so that returning one by value stays cheap.
     const MOST_ERROR_BYTES: usize = 128;
@@ -547,6 +620,18 @@ mod tests {
         ));
         let worded = MediaError::disc(DiscRule::SectorTime, format!("at LBA {}", -150));
         assert_eq!(worded.to_string(), "at LBA -150");
+
+        // So is a GameCube image's, by its own rules.
+        let detail = "Invalid CISO block map";
+        let refused = MediaError::gamecube(GameCubeRule::CisoMap, detail);
+        assert_eq!(refused.to_string(), detail);
+        assert!(refused.source().is_none());
+        assert!(matches!(
+            &refused,
+            MediaError::GameCube { rule: GameCubeRule::CisoMap, detail: said } if &**said == detail
+        ));
+        let worded = MediaError::gamecube(GameCubeRule::Revision, format!("revision: {}", 2));
+        assert_eq!(worded.to_string(), "revision: 2");
 
         assert!(size_of::<MediaError>() <= MOST_ERROR_BYTES);
     }
@@ -667,6 +752,25 @@ mod tests {
         for (rule, name) in rules {
             assert_eq!(rule.as_str(), name);
             assert_eq!(MediaError::disc(rule, "").rule(), name);
+        }
+        // Every rule of a GameCube image's format keeps the name the shared vectors give it.
+        let rules = [
+            (GameCubeRule::CisoHeader, "cisoHeader"),
+            (GameCubeRule::CisoBlockSize, "cisoBlockSize"),
+            (GameCubeRule::CisoMap, "cisoMap"),
+            (GameCubeRule::CisoData, "cisoData"),
+            (GameCubeRule::OutsideImage, "outsideImage"),
+            (GameCubeRule::TruncatedIso, "truncatedIso"),
+            (GameCubeRule::NotGameCube, "notGameCube"),
+            (GameCubeRule::OtherGame, "otherGame"),
+            (GameCubeRule::OtherRegion, "otherRegion"),
+            (GameCubeRule::DiscNumber, "discNumber"),
+            (GameCubeRule::Revision, "revision"),
+            (GameCubeRule::Nkit, "nkit"),
+        ];
+        for (rule, name) in rules {
+            assert_eq!(rule.as_str(), name);
+            assert_eq!(MediaError::gamecube(rule, "").rule(), name);
         }
     }
 

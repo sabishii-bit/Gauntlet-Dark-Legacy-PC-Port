@@ -1,8 +1,9 @@
 //! What a dump is, told from its content and never from its name, for the reports that describe
 //! it: the console it is for, the container it comes in, what it says of itself, and how it
-//! stands against the dumps the launcher installs the expansions from. An N64 ROM is known by its
-//! first word, a Dreamcast disc by its sheet, and every container the launcher does not read by a
-//! mark of its own; each is read no further than telling it takes.
+//! stands against the dumps the launcher installs the game and the expansions from. An N64 ROM is
+//! known by its first word, a GameCube disc image by its container's mark or its disc's, a
+//! Dreamcast disc by its sheet, and every container the launcher does not read by a mark of its
+//! own; each is read no further than telling it takes.
 
 use std::fs;
 use std::io::{Read, Seek, SeekFrom};
@@ -11,24 +12,34 @@ use std::path::{Path, PathBuf};
 use gdl_files::{Cancel, Job, NoProgress};
 
 use crate::dump_file::open_regular;
+use crate::gamecube::{CISO_MARK, GAMECUBE_MARK, GAMECUBE_MARK_AT, Layout, read_header};
 use crate::gdrom::{head_of, names_gauntlet_legends, sheet_naming, sheet_of, without_mark};
 use crate::{
-    AREA, ByteOrder, DiscRule, IpBin, MAX_SHEET_LEN, MediaError, N64Rom, PRODUCT, RomHeader,
-    SCRIPT_RULES, Sha1Digest, Sha256Digest, Sheet, SheetKind, SheetTrack, SourceName, TrackMode,
-    US_SHA1, VERSION, ascii_field, find_sheet, read_sheet,
+    AREA, ByteOrder, DiscHeader, DiscRule, IpBin, MAX_SHEET_LEN, MediaError, N64Rom, PRODUCT,
+    RomHeader, SCRIPT_RULES, Sha1Digest, Sha256Digest, Sheet, SheetKind, SheetTrack, SourceName,
+    TrackMode, US_SHA1, VERSION, ascii_field, find_sheet, gamecube_verdict, read_sheet,
 };
 
 /// How many bytes at a file's end identification reads: as many as the marks kept there take.
 const TAIL_LEN: u64 = 16;
 
-/// What a GameCube disc image kept sparse begins with.
-const CISO_MARK: &[u8] = b"CISO";
+/// What a disc image of the RVZ format, compressed in groups of blocks, begins with.
+const RVZ_MARK: &[u8] = b"RVZ\x01";
 
-/// Where a GameCube disc's header keeps the mark every GameCube disc carries.
-const GAMECUBE_MARK_AT: usize = 0x1C;
+/// What a disc image of the WIA format, the one RVZ grew from, begins with.
+const WIA_MARK: &[u8] = b"WIA\x01";
 
-/// That mark.
-const GAMECUBE_MARK: &[u8] = &[0xC2, 0x33, 0x9F, 0x3D];
+/// What a GCZ, a disc image compressed in blocks, begins with: its magic word, little-endian.
+const GCZ_MARK: &[u8] = &[0x01, 0xC0, 0x0B, 0xB1];
+
+/// What a WBFS, a Wii disc image kept as a partition of discs, begins with.
+const WBFS_MARK: &[u8] = b"WBFS";
+
+/// What a TGC, a GameCube disc image a game disc carries inside it, begins with.
+const TGC_MARK: &[u8] = &[0xAE, 0x0F, 0x38, 0xA2];
+
+/// What an NFS, a Wii U's image of a Wii disc, begins with.
+const NFS_MARK: &[u8] = b"EGGS";
 
 /// What a zip archive's first entry begins with.
 const ZIP_MARK: &[u8] = b"PK\x03\x04";
@@ -123,6 +134,18 @@ pub enum Container {
     GameCubeIso,
     /// A GameCube disc image kept sparse, as a CISO keeps one.
     GameCubeCiso,
+    /// A disc image of the RVZ format, which holds a GameCube or a Wii disc.
+    Rvz,
+    /// A disc image of the WIA format, which holds a GameCube or a Wii disc.
+    Wia,
+    /// A GCZ, which holds a GameCube or a Wii disc compressed in blocks.
+    Gcz,
+    /// A WBFS, which holds Wii discs.
+    Wbfs,
+    /// A TGC, a GameCube disc image carried inside another GameCube disc.
+    Tgc,
+    /// An NFS, a Wii U's image of a Wii disc.
+    Nfs,
     /// A zip archive.
     Zip,
     /// A 7-Zip archive.
@@ -152,6 +175,12 @@ impl Container {
             Container::Gdi => "gdi",
             Container::GameCubeIso => "gameCubeIso",
             Container::GameCubeCiso => "gameCubeCiso",
+            Container::Rvz => "rvz",
+            Container::Wia => "wia",
+            Container::Gcz => "gcz",
+            Container::Wbfs => "wbfs",
+            Container::Tgc => "tgc",
+            Container::Nfs => "nfs",
             Container::Zip => "zip",
             Container::SevenZip => "sevenZip",
             Container::Chd => "chd",
@@ -218,7 +247,8 @@ pub enum Verdict {
     Supported,
     /// It is refused, for the reason given.
     Refused(DumpRefusal),
-    /// It is for a console whose dumps are judged when they are read to install from, not here.
+    /// It is for a console whose dumps are judged only when they are read to install from. No
+    /// identification gives it: every console's dumps are judged as they are identified.
     Unchecked,
 }
 
@@ -271,6 +301,13 @@ pub enum Source {
         /// The SHA-256 digest of the ROM in that order.
         canonical_sha256: Sha256Digest,
     },
+    /// A GameCube disc image, of which its container and its disc's header were read.
+    GameCube {
+        /// The image's file name as the system gave it.
+        name: SourceName,
+        /// How many bytes the image holds.
+        size: u64,
+    },
     /// A Dreamcast disc, by its sheet and the files beside it that the sheet names.
     Dreamcast {
         /// Where the sheet lies, as it was given or found.
@@ -295,13 +332,14 @@ pub struct Identity {
     pub container: Container,
     /// The title it gives itself.
     pub title: Option<String>,
-    /// Its serial: an N64 cartridge's game code, or a disc's product number.
+    /// Its serial: an N64 cartridge's game code, a GameCube disc's game ID, or a Dreamcast disc's
+    /// product number.
     pub serial: Option<String>,
     /// Its revision: an N64 ROM's version, or a disc's.
     pub revision: Option<String>,
     /// The region of the world it was made for, when it names exactly one.
     pub region: Option<Region>,
-    /// How it stands against the dumps the launcher installs the expansions from.
+    /// How it stands against the dumps the launcher installs the game and the expansions from.
     pub verdict: Verdict,
     /// What was read of it.
     pub source: Source,
@@ -311,20 +349,23 @@ pub struct Identity {
 /// whose one sheet [`find_sheet`] finds in it, whatever the folder's path ends in, a drive's root
 /// or `..` included, since the disc is known by its sheet's name. A file is known by the first of
 /// these its content meets: an N64 ROM's first word, in any byte order, when the ROM is read whole
-/// and judged against the US cartridge; the marks of a GameCube disc image, whole or sparse, which
-/// is judged when it is read to install from; the marks an archive, a CHD, an Alcohol 120%
-/// descriptor or a CloneCD control file begins with, each refused; a sheet's text, the readers'
-/// refusal of it included; the marks a DiscJuggler image or a Nero image ends with, each refused;
-/// a sheet beside it that names it as a track's file; and an ISO 9660 image's volume descriptor
-/// in cooked sectors, refused. Anything else is unrecognized. A disc is read as the Dreamcast
-/// extractor reads its head, and judged by its boot area against the US disc, a boot area of
-/// another game telling only that. The verdict describes the dump and never decides an
-/// extraction, which holds the dump to values it is given.
+/// and judged against the US cartridge; the marks of a GameCube disc image, whole or sparse, when
+/// its container and the header of its disc are read as the installer reads them and the header
+/// judged against the US disc, its file table never read; the marks a disc image of another
+/// GameCube or Wii format, an archive, a CHD, an Alcohol 120% descriptor or a CloneCD control
+/// file begins with, each refused; a sheet's text, the readers' refusal of it included; the marks
+/// a DiscJuggler image or a Nero image ends with, each refused; a sheet beside it that names it as
+/// a track's file; and an ISO 9660 image's volume descriptor in cooked sectors, refused. Anything
+/// else is unrecognized. A Dreamcast disc is read as the Dreamcast extractor reads its head, and
+/// judged by its boot area against the US disc, a boot area of another game telling only that.
+/// The verdict describes the dump and never decides an extraction or an install, which hold the
+/// dump to rules of their own.
 ///
 /// A path that is no folder and names no file is refused before anything is read, and so is one
 /// where what is there is neither a folder nor a regular file. Fails when the dump cannot be read,
-/// or when the ROM or the disc breaks a rule of its format. Identification reads no more than a
-/// file's first [`MAX_SHEET_LEN`] bytes and its last 16, the small files beside it that may be
+/// or when the ROM, the GameCube image's container or the Dreamcast disc breaks a rule of its
+/// format. Identification reads no more than a file's first [`MAX_SHEET_LEN`] bytes and its last
+/// 16, a GameCube image's CISO header and its disc's header, the small files beside it that may be
 /// sheets, a disc's sheet, its data tracks' first sectors and its boot area, and a ROM whole; it
 /// only ever reads.
 pub fn identify(path: &Path) -> Result<Identity, MediaError> {
@@ -344,6 +385,9 @@ pub fn identify(path: &Path) -> Result<Identity, MediaError> {
             progress: &NoProgress,
         };
         return Ok(rom_identity(&N64Rom::open(path, &job)?));
+    }
+    if ends.marked_for_gamecube() {
+        return gamecube_identity(path, name);
     }
     if let Some((console, container, verdict)) = ends.marked_at_start() {
         return Ok(unread(console, container, verdict));
@@ -457,40 +501,49 @@ impl Ends {
         Ok(Ends { head, tail, len })
     }
 
+    /// Whether the file begins as a GameCube disc image does: as a CISO, or with a disc's header
+    /// that carries the GameCube's mark. No sheet begins so: no sheet's first line begins with the
+    /// CISO's mark, and the GameCube's is no UTF-8.
+    fn marked_for_gamecube(&self) -> bool {
+        let head = self.head.as_slice();
+        head.starts_with(&CISO_MARK)
+            || head
+                .get(GAMECUBE_MARK_AT..)
+                .is_some_and(|rest| rest.starts_with(&GAMECUBE_MARK))
+    }
+
     /// The console, container and verdict of a file that the marks its container's format puts in
     /// its first bytes tell, in the order the marks are looked for, or `None` when none is there.
-    /// No sheet holds one there: each is no UTF-8, or a first line no sheet begins with.
+    /// No sheet holds one there: each is no UTF-8, or a first line no sheet begins with. The
+    /// formats of GameCube and Wii disc images other than the ISO and the CISO hold Wii discs as
+    /// well as GameCube ones, but for the TGC, and their marks do not tell which.
     fn marked_at_start(&self) -> Option<(Option<Console>, Container, Verdict)> {
         let head = self.head.as_slice();
         let refused = Verdict::Refused;
-        let marked = if head.starts_with(CISO_MARK) {
-            (
-                Some(Console::GameCube),
-                Container::GameCubeCiso,
-                Verdict::Unchecked,
-            )
-        } else if head
-            .get(GAMECUBE_MARK_AT..)
-            .is_some_and(|rest| rest.starts_with(GAMECUBE_MARK))
-        {
-            (
-                Some(Console::GameCube),
-                Container::GameCubeIso,
-                Verdict::Unchecked,
-            )
+        let unsupported = refused(DumpRefusal::UnsupportedContainer);
+        let disc_images: [(&[u8], Option<Console>, Container); 6] = [
+            (RVZ_MARK, None, Container::Rvz),
+            (WIA_MARK, None, Container::Wia),
+            (GCZ_MARK, None, Container::Gcz),
+            (WBFS_MARK, None, Container::Wbfs),
+            (TGC_MARK, Some(Console::GameCube), Container::Tgc),
+            (NFS_MARK, None, Container::Nfs),
+        ];
+        let disc_image = disc_images
+            .into_iter()
+            .find(|(mark, _, _)| head.starts_with(mark));
+        let marked = if let Some((_, console, container)) = disc_image {
+            (console, container, unsupported)
         } else if head.starts_with(ZIP_MARK) {
             (None, Container::Zip, refused(DumpRefusal::Archive))
         } else if head.starts_with(SEVEN_ZIP_MARK) {
             (None, Container::SevenZip, refused(DumpRefusal::Archive))
         } else if head.starts_with(CHD_MARK) {
-            let refusal = refused(DumpRefusal::UnsupportedContainer);
-            (None, Container::Chd, refusal)
+            (None, Container::Chd, unsupported)
         } else if head.starts_with(MDS_MARK) {
-            let refusal = refused(DumpRefusal::UnsupportedContainer);
-            (None, Container::MdsMdf, refusal)
+            (None, Container::MdsMdf, unsupported)
         } else if self.len <= MAX_SHEET_LEN && without_mark(head).starts_with(CLONE_CD_MARK) {
-            let refusal = refused(DumpRefusal::UnsupportedContainer);
-            (None, Container::CloneCd, refusal)
+            (None, Container::CloneCd, unsupported)
         } else {
             return None;
         };
@@ -540,6 +593,46 @@ fn unread(console: Option<Console>, container: Container, verdict: Verdict) -> I
         verdict,
         source: Source::Unread,
     }
+}
+
+/// What the GameCube disc image at `path`, the file named `name`, is, its container and its disc's
+/// header read as the installer reads them, the image opened only once it is seen to be a regular
+/// file: the title, game ID, revision and region the header gives, judged against the US disc. A
+/// CISO whose disc's header carries no GameCube disc's mark is content the launcher does not
+/// know, and tells nothing more. Fails when the image cannot be read, or when its container breaks
+/// a rule of its format or holds less than a disc's header.
+fn gamecube_identity(path: &Path, name: SourceName) -> Result<Identity, MediaError> {
+    let (mut image, len) = open_regular(path)
+        .map_err(|error| MediaError::io(path, error))?
+        .ok_or_else(|| MediaError::names_no_regular_file(path))?;
+    let (layout, _, header) = read_header(&mut image, len, path)?;
+    let container = match layout {
+        Layout::Iso => Container::GameCubeIso,
+        Layout::Ciso(_) => Container::GameCubeCiso,
+    };
+    let verdict = gamecube_verdict(&header);
+    if !header.marked {
+        return Ok(unread(None, container, verdict));
+    }
+    Ok(Identity {
+        console: Some(Console::GameCube),
+        container,
+        title: header.title.clone(),
+        serial: game_id_text(&header),
+        revision: Some(header.revision.to_string()),
+        region: header.region(),
+        verdict,
+        source: Source::GameCube { name, size: len },
+    })
+}
+
+/// The game ID `header` gives, when each of its bytes is a letter, a digit or another printable
+/// character of ASCII but the space; any other byte would show as no character of the ID.
+fn game_id_text(header: &DiscHeader) -> Option<String> {
+    let id = &header.game_id;
+    id.iter()
+        .all(u8::is_ascii_graphic)
+        .then(|| String::from_utf8_lossy(id).into_owned())
 }
 
 /// What `rom` is: an N64 ROM, the title, game code, version and region its header gives, judged
@@ -668,8 +761,10 @@ mod tests {
     use std::path::{Path, PathBuf};
 
     use gdl_files::Cancel;
-    use gdl_fixtures::{DiscSet, Edc, raw_sector, reorder, snapshot};
-    use serde_json::Value;
+    use gdl_fixtures::{
+        DiscSet, Edc, edited, raw_sector, reorder, snapshot, synthetic_ciso, synthetic_iso,
+    };
+    use serde_json::{Value, json};
 
     use super::{
         Console, Container, DiscIdentity, DumpRefusal, Identity, Region, Source, TrackFile,
@@ -721,6 +816,45 @@ mod tests {
     /// Where it keeps the version.
     const FORMAT_ROM_VERSION: usize = 0x3F;
 
+    /// Where a GameCube disc's header keeps the mark every GameCube disc carries.
+    const FORMAT_GAMECUBE_MARK_AT: usize = 0x1C;
+
+    /// That mark.
+    const FORMAT_GAMECUBE_MARK: [u8; 4] = [0xC2, 0x33, 0x9F, 0x3D];
+
+    /// How many bytes of a disc's start its header takes.
+    const FORMAT_DISC_HEADER_LEN: usize = 0x440;
+
+    /// How many bytes a CISO's header takes, its mark, block size and map of blocks.
+    const FORMAT_CISO_HEADER_LEN: usize = 0x8000;
+
+    /// Where a CISO's header gives its block size.
+    const FORMAT_CISO_BLOCK_SIZE_AT: usize = 4;
+
+    /// Where a CISO's map of blocks starts.
+    const FORMAT_CISO_MAP_AT: usize = 8;
+
+    /// Where a CISO built of a disc keeps the disc's first block, after its header.
+    const FORMAT_CISO_FIRST_BLOCK_AT: usize = 0x8000;
+
+    /// Where a disc's header gives the region's letter of its game ID.
+    const FORMAT_REGION_AT: usize = 3;
+
+    /// Where it gives the disc's number.
+    const FORMAT_DISC_NUMBER_AT: usize = 6;
+
+    /// Where it gives the revision.
+    const FORMAT_REVISION_AT: usize = 7;
+
+    /// Where it keeps the title.
+    const FORMAT_DISC_TITLE_AT: usize = 0x20;
+
+    /// Where an NKit image keeps its mark.
+    const FORMAT_NKIT_AT: usize = 0x200;
+
+    /// Where the disc's header gives the place of its file table.
+    const FORMAT_FST_OFFSET_AT: usize = 0x424;
+
     /// The sectors of the full set's first data track.
     const FULL_FIRST_SECTORS: usize = 22;
 
@@ -752,10 +886,38 @@ mod tests {
     fn refusal(outcome: Result<Identity, MediaError>) -> (&'static str, String) {
         let error = outcome.unwrap_err();
         assert!(
-            matches!(error, MediaError::Rom { .. } | MediaError::Disc { .. }),
+            matches!(
+                error,
+                MediaError::Rom { .. } | MediaError::Disc { .. } | MediaError::GameCube { .. }
+            ),
             "{error:?}"
         );
         (error.rule(), error.to_string())
+    }
+
+    /// The installer tests' disc, a GameCube image of the US disc, revision 1, held in
+    /// `container`, from a file named `name` of `size` bytes.
+    fn us_gamecube(name: &str, container: Container, size: usize) -> Identity {
+        Identity {
+            console: Some(Console::GameCube),
+            container,
+            title: None,
+            serial: Some("GUNE5D".to_owned()),
+            revision: Some("1".to_owned()),
+            region: Some(Region::NorthAmerica),
+            verdict: Verdict::Supported,
+            source: Source::GameCube {
+                name: named(name),
+                size: size as u64,
+            },
+        }
+    }
+
+    /// `image` with `bytes` written over it from `at`.
+    fn with_bytes(image: &[u8], at: usize, bytes: &[u8]) -> Vec<u8> {
+        let mut changed = image.to_vec();
+        changed[at..at + bytes.len()].copy_from_slice(bytes);
+        changed
     }
 
     /// A dump known by its container's marks alone.
@@ -1020,12 +1182,6 @@ mod tests {
         };
         let mut plain_iso = vec![0; 17 * FORMAT_SECTOR];
         plain_iso[16 * FORMAT_SECTOR..16 * FORMAT_SECTOR + 7].copy_from_slice(b"\x01CD001\x01");
-        let mut gamecube = vec![0; 0x440];
-        gamecube[..6].copy_from_slice(b"GUNE5D");
-        gamecube[0x1C..0x20].copy_from_slice(&[0xC2, 0x33, 0x9F, 0x3D]);
-        let mut ciso = b"CISO".to_vec();
-        ciso.extend_from_slice(&0x8000_u32.to_le_bytes());
-        ciso.resize(0x8000, 1);
 
         let cases = [
             (
@@ -1100,41 +1256,9 @@ mod tests {
                 plain_iso.clone(),
                 marked(None, Container::PlainIso, unsupported),
             ),
-            (
-                "gamecube iso",
-                gamecube.clone(),
-                marked(
-                    Some(Console::GameCube),
-                    Container::GameCubeIso,
-                    Verdict::Unchecked,
-                ),
-            ),
-            (
-                "gamecube ciso",
-                ciso.clone(),
-                marked(
-                    Some(Console::GameCube),
-                    Container::GameCubeCiso,
-                    Verdict::Unchecked,
-                ),
-            ),
-            // The first mark looked for decides: a CISO's map that happens to hold a GameCube
-            // disc's mark, an archive that ends as a DiscJuggler image does, a plain image that
-            // ends so too, and a CloneCD control file that ends as a Nero image does, since a mark
-            // a file begins with is looked for before those at its end.
-            (
-                "ciso with a disc's mark",
-                {
-                    let mut both = ciso.clone();
-                    both[0x1C..0x20].copy_from_slice(&[0xC2, 0x33, 0x9F, 0x3D]);
-                    both
-                },
-                marked(
-                    Some(Console::GameCube),
-                    Container::GameCubeCiso,
-                    Verdict::Unchecked,
-                ),
-            ),
+            // The first mark looked for decides: an archive that ends as a DiscJuggler image does,
+            // a plain image that ends so too, and a CloneCD control file that ends as a Nero image
+            // does, since a mark a file begins with is looked for before those at its end.
             (
                 "zip ending as a cdi",
                 [b"PK\x03\x04".to_vec(), cdi(0x8000_0005)].concat(),
@@ -1187,6 +1311,28 @@ mod tests {
                 fs::remove_file(&path).unwrap();
             }
         }
+        // A GameCube disc image, whole and sparse, is told by its container and its disc's
+        // header, whatever its name.
+        let iso = synthetic_iso();
+        let ciso = synthetic_ciso(&iso);
+        let images = [
+            ("gamecube iso", &iso, Container::GameCubeIso),
+            ("gamecube ciso", &ciso, Container::GameCubeCiso),
+        ];
+        for (case, bytes, container) in images {
+            for name in ["dump.cue", "dump.z64"] {
+                let path = file_in(dir.path(), name, bytes);
+                let expected = us_gamecube(name, container, bytes.len());
+                assert_eq!(identified(&path), expected, "{case} as {name}");
+                fs::remove_file(&path).unwrap();
+            }
+        }
+        // The first mark looked for decides: a CISO whose map happens to hold a GameCube disc's
+        // mark is read as a CISO, and refused by its map.
+        let both = with_bytes(&ciso, FORMAT_GAMECUBE_MARK_AT, &FORMAT_GAMECUBE_MARK);
+        let path = file_in(dir.path(), "dump.iso", &both);
+        let map = ("cisoMap", "Invalid CISO block map".to_owned());
+        assert_eq!(refusal(identify(&path)), map);
         // An N64 ROM's first word decides before any other mark.
         let mut rom = frozen(&n64_vectors(), "default");
         rom[0x1C..0x20].copy_from_slice(&[0xC2, 0x33, 0x9F, 0x3D]);
@@ -1194,6 +1340,283 @@ mod tests {
         rom.extend_from_slice(&[0; 4]);
         let path = file_in(dir.path(), "dump.iso", &rom);
         assert_eq!(identified(&path).container, Container::N64Rom);
+    }
+
+    #[test]
+    fn gamecube_images_are_judged_by_their_header() {
+        let dir = tempfile::tempdir().unwrap();
+        let iso = synthetic_iso();
+        // The US disc, of either revision it was pressed as, whole and sparse.
+        let us = us_gamecube("game.iso", Container::GameCubeIso, iso.len());
+        let path = file_in(dir.path(), "game.iso", &iso);
+        assert_eq!(identified(&path), us);
+        let first = with_bytes(&iso, FORMAT_REVISION_AT, &[0]);
+        fs::write(&path, &first).unwrap();
+        let revision_0 = Identity {
+            revision: Some("0".to_owned()),
+            ..us.clone()
+        };
+        assert_eq!(identified(&path), revision_0);
+        let ciso = synthetic_ciso(&iso);
+        let path = file_in(dir.path(), "game.ciso", &ciso);
+        let sparse = us_gamecube("game.ciso", Container::GameCubeCiso, ciso.len());
+        assert_eq!(identified(&path), sparse);
+
+        // Another region, disc or revision of the game, another game, and NKit images, each with
+        // what its header gives: what the disc is decides before the form its image takes.
+        let other_revision = Verdict::Refused(DumpRefusal::OtherRevision);
+        let cases = [
+            (
+                "europe",
+                with_bytes(&iso, FORMAT_REGION_AT, b"P"),
+                "GUNP5D",
+                "1",
+                Some(Region::Europe),
+                other_revision,
+            ),
+            (
+                "japan",
+                with_bytes(&iso, FORMAT_REGION_AT, b"J"),
+                "GUNJ5D",
+                "1",
+                Some(Region::Japan),
+                other_revision,
+            ),
+            (
+                "no region told",
+                with_bytes(&iso, FORMAT_REGION_AT, b"X"),
+                "GUNX5D",
+                "1",
+                None,
+                other_revision,
+            ),
+            (
+                "second disc",
+                with_bytes(&iso, FORMAT_DISC_NUMBER_AT, &[1]),
+                "GUNE5D",
+                "1",
+                Some(Region::NorthAmerica),
+                other_revision,
+            ),
+            (
+                "revision 2",
+                with_bytes(&iso, FORMAT_REVISION_AT, &[2]),
+                "GUNE5D",
+                "2",
+                Some(Region::NorthAmerica),
+                other_revision,
+            ),
+            (
+                "another game",
+                with_bytes(&iso, 0, b"GALE01"),
+                "GALE01",
+                "1",
+                Some(Region::NorthAmerica),
+                Verdict::Refused(DumpRefusal::OtherGame),
+            ),
+            (
+                "nkit",
+                with_bytes(&iso, FORMAT_NKIT_AT, b"NKIT"),
+                "GUNE5D",
+                "1",
+                Some(Region::NorthAmerica),
+                Verdict::Refused(DumpRefusal::UnsupportedContainer),
+            ),
+            (
+                "european nkit",
+                with_bytes(
+                    &with_bytes(&iso, FORMAT_NKIT_AT, b"NKIT"),
+                    FORMAT_REGION_AT,
+                    b"P",
+                ),
+                "GUNP5D",
+                "1",
+                Some(Region::Europe),
+                other_revision,
+            ),
+            (
+                "another game's nkit",
+                with_bytes(&with_bytes(&iso, FORMAT_NKIT_AT, b"NKIT"), 0, b"GALE01"),
+                "GALE01",
+                "1",
+                Some(Region::NorthAmerica),
+                Verdict::Refused(DumpRefusal::OtherGame),
+            ),
+        ];
+        for (case, bytes, serial, revision, region, verdict) in cases {
+            let path = file_in(dir.path(), "dump.iso", &bytes);
+            let expected = Identity {
+                serial: Some(serial.to_owned()),
+                revision: Some(revision.to_owned()),
+                region,
+                verdict,
+                ..us_gamecube("dump.iso", Container::GameCubeIso, bytes.len())
+            };
+            assert_eq!(identified(&path), expected, "{case}");
+            // The same disc in a CISO is told the same way.
+            let path = file_in(dir.path(), "dump.ciso", &synthetic_ciso(&bytes));
+            let identity = identified(&path);
+            assert_eq!(identity.container, Container::GameCubeCiso, "{case}");
+            assert_eq!(identity.verdict, verdict, "{case}");
+            assert_eq!(identity.serial, expected.serial, "{case}");
+        }
+
+        // The title the header gives, and a game ID with a byte no ID holds, which is no serial.
+        let titled = with_bytes(&iso, FORMAT_DISC_TITLE_AT, b"Gauntlet Dark Legacy\0");
+        let path = file_in(dir.path(), "dump.iso", &titled);
+        let identity = identified(&path);
+        assert_eq!(identity.title.as_deref(), Some("Gauntlet Dark Legacy"));
+        assert_eq!(identity.verdict, Verdict::Supported);
+        let unprintable = with_bytes(&iso, 5, b"\0");
+        let path = file_in(dir.path(), "dump.iso", &unprintable);
+        let identity = identified(&path);
+        assert_eq!(identity.serial, None);
+        assert_eq!(identity.verdict, Verdict::Refused(DumpRefusal::OtherGame));
+
+        // A CISO whose disc's header carries no GameCube disc's mark is nothing the launcher
+        // knows, and tells nothing more.
+        let at = FORMAT_CISO_FIRST_BLOCK_AT + FORMAT_GAMECUBE_MARK_AT;
+        let markless = with_bytes(&ciso, at, &[0; 4]);
+        let path = file_in(dir.path(), "dump.ciso", &markless);
+        let expected = marked(
+            None,
+            Container::GameCubeCiso,
+            Verdict::Refused(DumpRefusal::Unrecognized),
+        );
+        assert_eq!(identified(&path), expected);
+
+        // A disc's header alone, with no file table, is the US disc: identification never reads
+        // the file table, so a disc whose table is broken is told by its header all the same.
+        let mut header = vec![0; FORMAT_DISC_HEADER_LEN];
+        header[..6].copy_from_slice(b"GUNE5D");
+        header[FORMAT_GAMECUBE_MARK_AT..FORMAT_GAMECUBE_MARK_AT + 4]
+            .copy_from_slice(&FORMAT_GAMECUBE_MARK);
+        let path = file_in(dir.path(), "game.iso", &header);
+        let expected = Identity {
+            revision: Some("0".to_owned()),
+            ..us_gamecube("game.iso", Container::GameCubeIso, header.len())
+        };
+        assert_eq!(identified(&path), expected);
+        let broken_table = edited(
+            &iso,
+            &json!([{"op": "u32be", "at": FORMAT_FST_OFFSET_AT, "value": 0xFFFF_FF00_u32}]),
+        );
+        let path = file_in(dir.path(), "game.iso", &broken_table);
+        assert_eq!(identified(&path), us);
+    }
+
+    #[test]
+    fn a_gamecube_image_whose_container_breaks_its_rules_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let iso = synthetic_iso();
+        let ciso = synthetic_ciso(&iso);
+        // A CISO's header with blocks of `size` bytes and the rest of its map left out.
+        let blocks_of = |size: u32| {
+            let mut header = vec![0; FORMAT_CISO_HEADER_LEN];
+            header[..4].copy_from_slice(b"CISO");
+            let at = FORMAT_CISO_BLOCK_SIZE_AT;
+            header[at..at + 4].copy_from_slice(&size.to_le_bytes());
+            header
+        };
+        let mut all_kept = blocks_of(0x8000);
+        all_kept[FORMAT_CISO_MAP_AT..].fill(1);
+        let mut marked_iso = vec![0; 0x20];
+        marked_iso[FORMAT_GAMECUBE_MARK_AT..].copy_from_slice(&FORMAT_GAMECUBE_MARK);
+        let truncated_header = ("cisoHeader", "Truncated CISO header");
+        let block_size = (
+            "cisoBlockSize",
+            "Unsupported GameCube CISO block size (not PSP CSO)",
+        );
+        let map = ("cisoMap", "Invalid CISO block map");
+        let truncated_data = ("cisoData", "Truncated CISO data");
+        let cases = [
+            ("the mark alone", b"CISO".to_vec(), truncated_header),
+            (
+                "a header cut short",
+                ciso[..FORMAT_CISO_HEADER_LEN - 1].to_vec(),
+                truncated_header,
+            ),
+            ("blocks of 0 bytes", blocks_of(0), block_size),
+            ("blocks of 511 bytes", blocks_of(511), block_size),
+            ("blocks past 16 MiB", blocks_of((16 << 20) + 1), block_size),
+            (
+                "a map flag of 2",
+                with_bytes(&ciso, FORMAT_CISO_MAP_AT + 1, &[2]),
+                map,
+            ),
+            (
+                "a block cut short",
+                ciso[..ciso.len() - 1].to_vec(),
+                truncated_data,
+            ),
+            ("every block kept, none there", all_kept, truncated_data),
+            (
+                "a disc shorter than its header",
+                marked_iso,
+                ("outsideImage", "Disc file extends beyond the image"),
+            ),
+        ];
+        for (case, bytes, (rule, words)) in cases {
+            let path = file_in(dir.path(), "dump.iso", &bytes);
+            assert_eq!(refusal(identify(&path)), (rule, words.to_owned()), "{case}");
+        }
+        // The smallest and largest blocks a GameCube CISO keeps are read.
+        for size in [512, 16 << 20] {
+            let path = file_in(dir.path(), "dump.ciso", &blocks_of(size));
+            let expected = marked(
+                None,
+                Container::GameCubeCiso,
+                Verdict::Refused(DumpRefusal::Unrecognized),
+            );
+            assert_eq!(identified(&path), expected, "{size}");
+        }
+    }
+
+    #[test]
+    fn compressed_disc_containers_are_refused_by_their_marks() {
+        let dir = tempfile::tempdir().unwrap();
+        let unsupported = Verdict::Refused(DumpRefusal::UnsupportedContainer);
+        // The formats that hold Wii discs as well as GameCube ones tell no console; a TGC holds a
+        // GameCube disc alone.
+        let marks: [(&[u8], Option<Console>, Container); 6] = [
+            (b"RVZ\x01", None, Container::Rvz),
+            (b"WIA\x01", None, Container::Wia),
+            (&[0x01, 0xC0, 0x0B, 0xB1], None, Container::Gcz),
+            (b"WBFS", None, Container::Wbfs),
+            (
+                &[0xAE, 0x0F, 0x38, 0xA2],
+                Some(Console::GameCube),
+                Container::Tgc,
+            ),
+            (b"EGGS", None, Container::Nfs),
+        ];
+        for (mark, console, container) in marks {
+            let mut bytes = mark.to_vec();
+            bytes.resize(0x100, 0);
+            for name in ["dump.iso", "dump.cue"] {
+                let path = file_in(dir.path(), name, &bytes);
+                let expected = marked(console, container, unsupported);
+                assert_eq!(
+                    identified(&path),
+                    expected,
+                    "{} as {name}",
+                    container.as_str()
+                );
+                fs::remove_file(&path).unwrap();
+            }
+            // A mark anywhere but at the start tells nothing.
+            let late = [&[0xFF][..], mark].concat();
+            let path = file_in(dir.path(), "dump.iso", &late);
+            assert_eq!(identified(&path), unrecognized(), "{}", container.as_str());
+        }
+        // A GameCube disc's mark is looked for first: an image whose header carries it is told
+        // by its header whatever it begins with.
+        let mut rvz_named = synthetic_iso();
+        rvz_named[..4].copy_from_slice(b"RVZ\x01");
+        let path = file_in(dir.path(), "dump.iso", &rvz_named);
+        let identity = identified(&path);
+        assert_eq!(identity.container, Container::GameCubeIso);
+        assert_eq!(identity.verdict, Verdict::Refused(DumpRefusal::OtherGame));
     }
 
     #[test]
@@ -1679,6 +2102,12 @@ mod tests {
             (Container::Gdi, "gdi"),
             (Container::GameCubeIso, "gameCubeIso"),
             (Container::GameCubeCiso, "gameCubeCiso"),
+            (Container::Rvz, "rvz"),
+            (Container::Wia, "wia"),
+            (Container::Gcz, "gcz"),
+            (Container::Wbfs, "wbfs"),
+            (Container::Tgc, "tgc"),
+            (Container::Nfs, "nfs"),
             (Container::Zip, "zip"),
             (Container::SevenZip, "sevenZip"),
             (Container::Chd, "chd"),

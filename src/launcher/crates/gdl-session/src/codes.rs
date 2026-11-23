@@ -12,7 +12,7 @@ use gdl_install::{
     FolderError, FolderState, GameStartError, GameUseError, LockError, PayloadError, ReceiptError,
     SectionsError,
 };
-use gdl_media::{DiscRule, DumpRefusal, MediaError, RomRule};
+use gdl_media::{DiscRule, DumpRefusal, GameCubeRule, MediaError, RomRule};
 
 use crate::extraction::ExtractionError;
 use crate::privilege::Refusal;
@@ -323,8 +323,9 @@ pub fn refusal(refusal: Refusal) -> &'static str {
 /// whose writer would not take its bytes is `space.ranOut` when the writer found no room, else
 /// `io.failed`. A dump that breaks a rule of its format reports that rule's code: one with a part
 /// that is not there is `source.incomplete`, one in a container the launcher does not read
-/// `source.unsupportedContainer`, a disc of another game `source.otherGame`, and a file that is no
-/// dump the launcher knows `source.unrecognized`. Any other broken rule is `source.damaged`.
+/// `source.unsupportedContainer`, a disc of another game `source.otherGame`, one of another region
+/// or revision of the game `source.otherRevision`, and a file that is no dump the launcher knows
+/// `source.unrecognized`. Any other broken rule is `source.damaged`.
 pub fn media(error: &MediaError) -> Report {
     match error {
         MediaError::Cancelled => Report::Cancelled,
@@ -332,6 +333,7 @@ pub fn media(error: &MediaError) -> Report {
         MediaError::Write { source, .. } => Report::Error(written(source)),
         MediaError::Rom { rule, .. } => Report::Error(rom_rule(*rule)),
         MediaError::Disc { rule, .. } => Report::Error(disc_rule(*rule)),
+        MediaError::GameCube { rule, .. } => Report::Error(gamecube_rule(*rule)),
     }
 }
 
@@ -510,6 +512,29 @@ fn disc_rule(rule: DiscRule) -> &'static str {
     }
 }
 
+/// The code of a rule of a GameCube disc image's format, of the CISO it may come in, or of its
+/// disc's header: an image that ends before what it must hold is `source.incomplete`; a block size
+/// no GameCube CISO keeps, as a PSP's CSO gives, and an NKit image, are containers the launcher
+/// does not read, `source.unsupportedContainer`; a header without a GameCube disc's mark is no
+/// dump the launcher knows, `source.unrecognized`; another game's disc is `source.otherGame`; and
+/// the game's disc of another region, another of its discs or a later revision is
+/// `source.otherRevision`. A CISO's broken map is `source.damaged`.
+fn gamecube_rule(rule: GameCubeRule) -> &'static str {
+    match rule {
+        GameCubeRule::CisoHeader
+        | GameCubeRule::CisoData
+        | GameCubeRule::OutsideImage
+        | GameCubeRule::TruncatedIso => SOURCE_INCOMPLETE,
+        GameCubeRule::CisoBlockSize | GameCubeRule::Nkit => SOURCE_UNSUPPORTED_CONTAINER,
+        GameCubeRule::NotGameCube => SOURCE_UNRECOGNIZED,
+        GameCubeRule::OtherGame => SOURCE_OTHER_GAME,
+        GameCubeRule::OtherRegion | GameCubeRule::DiscNumber | GameCubeRule::Revision => {
+            SOURCE_OTHER_REVISION
+        }
+        GameCubeRule::CisoMap => SOURCE_DAMAGED,
+    }
+}
+
 /// The code a failed write reports, by what the system answered: `space.ranOut` when the disk was
 /// full or the quota spent, else `io.failed`.
 fn written(error: &io::Error) -> &'static str {
@@ -529,11 +554,14 @@ mod tests {
 
     use gdl_extract::{Expansion, ExtractError, FingerprintRule, NativeRule, TreeRule};
     use gdl_files::{DISC_NAMES, FilesError, RelPath};
+    use gdl_fixtures::{synthetic_ciso, synthetic_iso};
     use gdl_install::{
         BuildInfo, FolderError, FolderState, GameStartError, GameUseError, LockError, PayloadError,
         ReceiptError, SectionsError,
     };
-    use gdl_media::{Console, DiscRule, DumpRefusal, MediaError, RomRule};
+    use gdl_media::{
+        Console, DiscRule, DumpRefusal, GameCubeRule, MediaError, RomRule, Verdict, identify,
+    };
     use gdl_release::Platform;
 
     use super::{
@@ -633,6 +661,22 @@ mod tests {
         (DiscRule::SizesConflict, "source.damaged"),
         (DiscRule::NoSheet, "source.incomplete"),
         (DiscRule::SeveralSheets, "source.unsupportedContainer"),
+    ];
+
+    /// Every rule of a GameCube image's format, its CISO's and its disc's header's, with its code.
+    const GAMECUBE_RULES: [(GameCubeRule, &str); 12] = [
+        (GameCubeRule::CisoHeader, "source.incomplete"),
+        (GameCubeRule::CisoBlockSize, "source.unsupportedContainer"),
+        (GameCubeRule::CisoMap, "source.damaged"),
+        (GameCubeRule::CisoData, "source.incomplete"),
+        (GameCubeRule::OutsideImage, "source.incomplete"),
+        (GameCubeRule::TruncatedIso, "source.incomplete"),
+        (GameCubeRule::NotGameCube, "source.unrecognized"),
+        (GameCubeRule::OtherGame, "source.otherGame"),
+        (GameCubeRule::OtherRegion, "source.otherRevision"),
+        (GameCubeRule::DiscNumber, "source.otherRevision"),
+        (GameCubeRule::Revision, "source.otherRevision"),
+        (GameCubeRule::Nkit, "source.unsupportedContainer"),
     ];
 
     /// Every reason a dump is refused for its container or its identity, with its code.
@@ -999,6 +1043,10 @@ mod tests {
             let detail = detail();
             (MediaError::Disc { rule, detail }, Report::Error(code))
         }));
+        refusals.extend(GAMECUBE_RULES.into_iter().map(|(rule, code)| {
+            let detail = detail();
+            (MediaError::GameCube { rule, detail }, Report::Error(code))
+        }));
         refusals
     }
 
@@ -1220,6 +1268,68 @@ mod tests {
         }
         for (error, expected) in extraction_refusals() {
             assert_eq!(extraction(&error), expected, "{}: {error}", error.rule());
+        }
+    }
+
+    #[test]
+    fn gamecube_rules_name_their_codes() {
+        for (rule, code) in GAMECUBE_RULES {
+            let error = MediaError::GameCube {
+                rule,
+                detail: detail(),
+            };
+            assert_eq!(media(&error), Report::Error(code), "{}", rule.as_str());
+        }
+        // What the reader refuses a GameCube image for, as it tells the image, reports so: an
+        // image cut short, a CISO's map broken, and a PSP's CSO, which begins with the same mark.
+        let dir = tempfile::tempdir().unwrap();
+        let iso = synthetic_iso();
+        let ciso = synthetic_ciso(&iso);
+        let mut broken_map = ciso.clone();
+        broken_map[9] = 2;
+        let mut psp_cso = ciso[..0x8000].to_vec();
+        psp_cso[4..8].copy_from_slice(&0x18_u32.to_le_bytes());
+        let refused = [
+            (
+                "cut short",
+                ciso[..ciso.len() - 1].to_vec(),
+                "source.incomplete",
+            ),
+            ("a header alone", iso[..0x43F].to_vec(), "source.incomplete"),
+            ("a broken map", broken_map, "source.damaged"),
+            ("a PSP's CSO", psp_cso, "source.unsupportedContainer"),
+        ];
+        for (case, bytes, code) in refused {
+            let path = dir.path().join("game.iso");
+            std::fs::write(&path, bytes).unwrap();
+            let error = identify(&path).unwrap_err();
+            assert!(
+                matches!(error, MediaError::GameCube { .. }),
+                "{case}: {error:?}"
+            );
+            assert_eq!(media(&error), Report::Error(code), "{case}: {error}");
+        }
+        // A disc the reader reads but whose header is not the US disc's is judged rather than
+        // refused, and its verdict reports what its header's rule does, in a CISO too, where a
+        // header without the mark is still read.
+        let judged: [(usize, &[u8], &str); 6] = [
+            (3, b"P", "source.otherRevision"),
+            (6, &[1], "source.otherRevision"),
+            (7, &[2], "source.otherRevision"),
+            (0, b"X", "source.otherGame"),
+            (0x200, b"NKIT", "source.unsupportedContainer"),
+            (0x1C, &[0; 4], "source.unrecognized"),
+        ];
+        for (at, bytes, code) in judged {
+            let mut changed = iso.clone();
+            changed[at..at + bytes.len()].copy_from_slice(bytes);
+            let path = dir.path().join("game.ciso");
+            std::fs::write(&path, synthetic_ciso(&changed)).unwrap();
+            let refusal = match identify(&path).unwrap().verdict {
+                Verdict::Refused(refusal) => refusal,
+                other => panic!("{at}: {other:?}"),
+            };
+            assert_eq!(dump_refusal(refusal), code, "{at}");
         }
     }
 

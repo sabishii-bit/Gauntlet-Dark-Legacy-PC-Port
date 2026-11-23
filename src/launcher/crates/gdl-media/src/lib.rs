@@ -6,6 +6,7 @@
 mod digest;
 mod dump_file;
 mod error;
+mod gamecube;
 mod gdrom;
 mod identify;
 mod n64;
@@ -14,7 +15,8 @@ mod source_name;
 mod vectors;
 
 pub use digest::{Sha1Digest, Sha256Digest};
-pub use error::{DiscRule, MediaError, RomRule};
+pub use error::{DiscRule, GameCubeRule, MediaError, RomRule};
+pub use gamecube::{DISC_SIZE, DiscHeader, MAX_REVISION, US_GAME_ID, gamecube_verdict};
 pub use gdrom::{
     ALLOWED_FLAGS, AREA, BLOCK_SIZE_AT, BOOT_LBA, BOOT_LEN, BOOT_SECTORS, DataTrack, DiscFile,
     DiscHead, DiscRules, EDC_FIELD, EDC_POLYNOMIAL, EDC_SPAN, EXECUTABLE, FLAG_DIRECTORY,
