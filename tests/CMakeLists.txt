@@ -431,6 +431,7 @@ add_executable(tests
     expansions/n64/bosses/LegendsChimeraTargetingTests.cpp
     expansions/n64/menu/LegendsDialogueTests.cpp
     expansions/n64/hud/LegendsN64FrameTests.cpp
+    expansions/n64/hud/LegendsN64HudAssetsTests.cpp
     expansions/n64/hud/LegendsN64HudIconsTests.cpp
     expansions/n64/hud/LegendsN64HudPainterTests.cpp
     expansions/n64/hud/LegendsN64HudTextTests.cpp
@@ -503,6 +504,7 @@ add_executable(tests
     expansions/dreamcast/menu/LegendsDreamcastDialogueTests.cpp
     expansions/dreamcast/menu/LegendsDreamcastEntranceTests.cpp
     expansions/dreamcast/menu/LegendsDreamcastPauseTests.cpp
+    expansions/dreamcast/hud/LegendsDreamcastHudAssetsTests.cpp
     expansions/dreamcast/hud/LegendsDreamcastHudLayoutTests.cpp
     expansions/dreamcast/hud/LegendsDreamcastHudPainterTests.cpp
     expansions/dreamcast/hud/LegendsDreamcastHudTextTests.cpp
