@@ -138,7 +138,10 @@ pub fn open_own_file() -> OwnFile {
 ///   `error: <code> (<rule>): <detail>`, and [`EXIT_REFUSED`]. A word that names no expansion,
 ///   and an output whose last name is none the launcher makes a folder with, are usage errors.
 ///
-/// A report that cannot be written to its stream gives [`EXIT_REFUSED`], since nobody saw it.
+/// A refusal's detail is written as a text report writes a value, each control character as its
+/// escape, so that the refusal stays one line whatever the names in its paths, or the text it
+/// quotes from a dump, hold. A report that cannot be written to its stream gives
+/// [`EXIT_REFUSED`], since nobody saw it.
 ///
 /// Panics when `--inspect` runs as a build whose version is not a semantic version, which no
 /// build script lets a build be.
@@ -362,11 +365,15 @@ fn features(build: &Build<'_>) -> String {
 }
 
 /// Writes the line that reports a refusal to `err`: the code `report` gives it, the rule it names
-/// and its `detail`; or, for a job asked to stop, only that it was cancelled. Gives back
-/// [`EXIT_REFUSED`], written or not.
+/// and its `detail`, written as [`text_value`] writes a value, since a path in it may name a folder
+/// or a file whose name holds a line end or a terminal's escape; or, for a job asked to stop, only
+/// that it was cancelled. Gives back [`EXIT_REFUSED`], written or not.
 fn refuse(err: &mut dyn Write, report: Report, rule: &str, detail: &dyn fmt::Display) -> u8 {
     let line = match report {
-        Report::Error(code) => format!("error: {code} ({rule}): {detail}\n"),
+        Report::Error(code) => {
+            let detail = text_value(&detail.to_string());
+            format!("error: {code} ({rule}): {detail}\n")
+        }
         Report::Cancelled => "error: cancelled\n".to_owned(),
     };
     let _ = written(err, &line);
@@ -650,7 +657,10 @@ mod tests {
     use gdl_release::{Platform, Version};
     use serde_json::{Value, json};
 
-    use super::{Build, EXIT_OK, EXIT_REFUSED, EXIT_USAGE, OwnFile, USAGE, run, text_value, usage};
+    use super::{
+        Build, EXIT_OK, EXIT_REFUSED, EXIT_USAGE, OwnFile, USAGE, refuse, run, text_value, usage,
+    };
+    use crate::codes::Report;
     use crate::extraction::vectors::{
         Folders, default_rom, default_tree, full_tree, tree_listing, with_bad_stream,
     };
@@ -1714,6 +1724,36 @@ mod tests {
              otherGame\n",
         );
         folders.assert_untouched(&before);
+    }
+
+    #[test]
+    fn a_refusal_is_one_line_whatever_its_detail_holds() {
+        // A detail holding a line end with a refusal of its own after it, then the commands that
+        // clear a terminal and colour its text; and how the refusal shows it.
+        const FORGED: &str = "a\nerror: forged (rule): b\u{1b}[2J\u{9b}31m\r";
+        const SHOWN: &str = r"a\nerror: forged (rule): b\u{1b}[2J\u{9b}31m\r";
+        let mut err = Vec::new();
+        let code = refuse(&mut err, Report::Error("io.failed"), "io", &FORGED);
+        assert_eq!(code, EXIT_REFUSED);
+        assert_eq!(
+            String::from_utf8(err).unwrap(),
+            format!("error: io.failed (io): {SHOWN}\n")
+        );
+
+        // An extraction into a folder whose path holds them, refused before the dump, which is not
+        // there, is looked for: the path is in the detail, and shown so.
+        let folders = Folders::new();
+        let dump = folders.root.join("missing.z64");
+        let output = folders.output("x\u{1b}[2J\nerror: forged").join("n64");
+        let ran = run_release(&extract_args("n64", &dump, &output, true));
+        assert_eq!(
+            (ran.code, ran.out.as_str()),
+            (Some(EXIT_REFUSED), ""),
+            "{ran:?}"
+        );
+        let line = ran.err.strip_suffix('\n').expect("a line");
+        assert!(!line.chars().any(char::is_control), "{line:?}");
+        assert!(line.contains(r"x\u{1b}[2J\nerror: forged"), "{line:?}");
     }
 
     #[test]
