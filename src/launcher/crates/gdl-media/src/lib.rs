@@ -16,7 +16,10 @@ mod vectors;
 
 pub use digest::{Sha1Digest, Sha256Digest};
 pub use error::{DiscRule, GameCubeRule, MediaError, RomRule};
-pub use gamecube::{DISC_SIZE, DiscHeader, MAX_REVISION, US_GAME_ID, gamecube_verdict};
+pub use gamecube::{
+    DISC_SIZE, DiscEntry, DiscEntryKind, DiscHeader, GameCubeImage, MAX_DISC_ENTRIES, MAX_FST_LEN,
+    MAX_REVISION, US_GAME_ID, gamecube_verdict,
+};
 pub use gdrom::{
     ALLOWED_FLAGS, AREA, BLOCK_SIZE_AT, BOOT_LBA, BOOT_LEN, BOOT_SECTORS, DataTrack, DiscFile,
     DiscHead, DiscRules, EDC_FIELD, EDC_POLYNOMIAL, EDC_SPAN, EXECUTABLE, FLAG_DIRECTORY,

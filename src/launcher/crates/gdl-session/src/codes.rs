@@ -512,26 +512,41 @@ fn disc_rule(rule: DiscRule) -> &'static str {
     }
 }
 
-/// The code of a rule of a GameCube disc image's format, of the CISO it may come in, or of its
-/// disc's header: an image that ends before what it must hold is `source.incomplete`; a block size
-/// no GameCube CISO keeps, as a PSP's CSO gives, and an NKit image, are containers the launcher
-/// does not read, `source.unsupportedContainer`; a header without a GameCube disc's mark is no
-/// dump the launcher knows, `source.unrecognized`; another game's disc is `source.otherGame`; and
-/// the game's disc of another region, another of its discs or a later revision is
-/// `source.otherRevision`. A CISO's broken map is `source.damaged`.
+/// The code of a rule of a GameCube disc image's format, of the CISO it may come in, of its
+/// disc's header or of its file table: an image that ends before what it must hold, a file of the
+/// disc's tree included, is `source.incomplete`; a block size no GameCube CISO keeps, as a PSP's
+/// CSO gives, and an NKit image, are containers the launcher does not read,
+/// `source.unsupportedContainer`; a header without a GameCube disc's mark is no dump the launcher
+/// knows, `source.unrecognized`; another game's disc is `source.otherGame`; and the game's disc of
+/// another region, another of its discs or a later revision is `source.otherRevision`. A CISO's
+/// broken map, and a file table broken, unsafe, too large or without what the game needs, are
+/// `source.damaged`.
 fn gamecube_rule(rule: GameCubeRule) -> &'static str {
     match rule {
         GameCubeRule::CisoHeader
         | GameCubeRule::CisoData
         | GameCubeRule::OutsideImage
-        | GameCubeRule::TruncatedIso => SOURCE_INCOMPLETE,
+        | GameCubeRule::TruncatedIso
+        | GameCubeRule::TruncatedFile => SOURCE_INCOMPLETE,
         GameCubeRule::CisoBlockSize | GameCubeRule::Nkit => SOURCE_UNSUPPORTED_CONTAINER,
         GameCubeRule::NotGameCube => SOURCE_UNRECOGNIZED,
         GameCubeRule::OtherGame => SOURCE_OTHER_GAME,
         GameCubeRule::OtherRegion | GameCubeRule::DiscNumber | GameCubeRule::Revision => {
             SOURCE_OTHER_REVISION
         }
-        GameCubeRule::CisoMap => SOURCE_DAMAGED,
+        GameCubeRule::CisoMap
+        | GameCubeRule::FstExtent
+        | GameCubeRule::FstRoot
+        | GameCubeRule::FstEntry
+        | GameCubeRule::UnsafeName
+        | GameCubeRule::DuplicatePath
+        | GameCubeRule::PathTooLong
+        | GameCubeRule::Nesting
+        | GameCubeRule::RootNotFolder
+        | GameCubeRule::TooManyEntries
+        | GameCubeRule::TotalSize
+        | GameCubeRule::MissingRoots
+        | GameCubeRule::MissingData => SOURCE_DAMAGED,
     }
 }
 
@@ -560,7 +575,8 @@ mod tests {
         ReceiptError, SectionsError,
     };
     use gdl_media::{
-        Console, DiscRule, DumpRefusal, GameCubeRule, MediaError, RomRule, Verdict, identify,
+        Console, DiscRule, DumpRefusal, GameCubeImage, GameCubeRule, MediaError, RomRule, Verdict,
+        identify,
     };
     use gdl_release::Platform;
 
@@ -663,8 +679,9 @@ mod tests {
         (DiscRule::SeveralSheets, "source.unsupportedContainer"),
     ];
 
-    /// Every rule of a GameCube image's format, its CISO's and its disc's header's, with its code.
-    const GAMECUBE_RULES: [(GameCubeRule, &str); 12] = [
+    /// Every rule of a GameCube image's format, its CISO's, its disc's header's and its file
+    /// table's, with its code.
+    const GAMECUBE_RULES: [(GameCubeRule, &str); 25] = [
         (GameCubeRule::CisoHeader, "source.incomplete"),
         (GameCubeRule::CisoBlockSize, "source.unsupportedContainer"),
         (GameCubeRule::CisoMap, "source.damaged"),
@@ -677,6 +694,19 @@ mod tests {
         (GameCubeRule::DiscNumber, "source.otherRevision"),
         (GameCubeRule::Revision, "source.otherRevision"),
         (GameCubeRule::Nkit, "source.unsupportedContainer"),
+        (GameCubeRule::FstExtent, "source.damaged"),
+        (GameCubeRule::FstRoot, "source.damaged"),
+        (GameCubeRule::FstEntry, "source.damaged"),
+        (GameCubeRule::UnsafeName, "source.damaged"),
+        (GameCubeRule::DuplicatePath, "source.damaged"),
+        (GameCubeRule::PathTooLong, "source.damaged"),
+        (GameCubeRule::Nesting, "source.damaged"),
+        (GameCubeRule::TruncatedFile, "source.incomplete"),
+        (GameCubeRule::RootNotFolder, "source.damaged"),
+        (GameCubeRule::TooManyEntries, "source.damaged"),
+        (GameCubeRule::TotalSize, "source.damaged"),
+        (GameCubeRule::MissingRoots, "source.damaged"),
+        (GameCubeRule::MissingData, "source.damaged"),
     ];
 
     /// Every reason a dump is refused for its container or its identity, with its code.
@@ -1331,6 +1361,37 @@ mod tests {
             };
             assert_eq!(dump_refusal(refusal), code, "{at}");
         }
+        // An image opened to install from is judged past its header too, and what its file table
+        // is refused for reports so: a table placed where none may lie, a name no tree may hold,
+        // a disc without a file the game needs, and a file of the disc's tree cut short.
+        let path = dir.path().join("game.iso");
+        std::fs::write(&path, &iso).unwrap();
+        GameCubeImage::open(&path).unwrap();
+        let tabled: [(&str, usize, &[u8], &str); 3] = [
+            (
+                "a table inside the header",
+                0x424,
+                &[0, 0, 4, 0x3F],
+                "source.damaged",
+            ),
+            ("a name holding a separator", 0x86D, b"/", "source.damaged"),
+            ("the tower's WAD missing", 0x892, b"X", "source.damaged"),
+        ];
+        for (case, at, bytes, code) in tabled {
+            let mut changed = iso.clone();
+            changed[at..at + bytes.len()].copy_from_slice(bytes);
+            std::fs::write(&path, changed).unwrap();
+            let error = GameCubeImage::open(&path).unwrap_err();
+            assert!(
+                matches!(error, MediaError::GameCube { .. }),
+                "{case}: {error:?}"
+            );
+            assert_eq!(media(&error), Report::Error(code), "{case}: {error}");
+        }
+        std::fs::write(&path, &iso[..0x2000]).unwrap();
+        let error = GameCubeImage::open(&path).unwrap_err();
+        assert_eq!(error.rule(), "truncatedFile", "{error}");
+        assert_eq!(media(&error), Report::Error("source.incomplete"));
     }
 
     #[test]

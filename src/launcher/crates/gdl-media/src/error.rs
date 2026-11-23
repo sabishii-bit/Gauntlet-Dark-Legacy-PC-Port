@@ -472,8 +472,8 @@ impl DiscRule {
     }
 }
 
-/// The rules of a GameCube disc image's format, of the CISO container it may come in and of the
-/// header of the disc it holds, that an image is refused by.
+/// The rules of a GameCube disc image's format, of the CISO container it may come in, of the
+/// header of the disc it holds and of the disc's file table, that an image is refused by.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum GameCubeRule {
     /// The image begins as a CISO but is shorter than a CISO's header.
@@ -502,6 +502,41 @@ pub enum GameCubeRule {
     Revision,
     /// The image is an NKit image, a disc rebuilt without its padding.
     Nkit,
+    /// The header places the file table inside the header, or gives it a length shorter than its
+    /// root's row or longer than [`MAX_FST_LEN`](crate::MAX_FST_LEN).
+    FstExtent,
+    /// The file table's first row is not a root folder's, or counts no row or more rows than the
+    /// table holds.
+    FstRoot,
+    /// A row of the file table is of a kind other than a file's and a folder's, or names its entry
+    /// from a place outside the table or with no NUL after it.
+    FstEntry,
+    /// An entry's name holds a byte outside ASCII or is no name the installed tree may hold by
+    /// itself.
+    UnsafeName,
+    /// Two entries have one path, in this or another ASCII letter case.
+    DuplicatePath,
+    /// An entry's path is longer than [`MAX_DISC_PATH_CHARS`](gdl_files::MAX_DISC_PATH_CHARS)
+    /// characters.
+    PathTooLong,
+    /// A folder's row names another folder as its parent than the one it lies in, or ends before
+    /// itself or past the end of that folder.
+    Nesting,
+    /// A file's bytes run past the end of the disc the image holds.
+    TruncatedFile,
+    /// The `Gauntlet` or `carddemo` at the top of the disc is a file, not a folder.
+    RootNotFolder,
+    /// The `Gauntlet` and `carddemo` folders hold more than
+    /// [`MAX_DISC_ENTRIES`](crate::MAX_DISC_ENTRIES) entries together.
+    TooManyEntries,
+    /// The files of the `Gauntlet` and `carddemo` folders hold more bytes together than a whole
+    /// disc does.
+    TotalSize,
+    /// The top of the disc has no `Gauntlet` folder or no `carddemo` folder.
+    MissingRoots,
+    /// One of the files the game cannot start without is not on the disc: the war's and the
+    /// tower's WADs and the disc's icon.
+    MissingData,
 }
 
 impl GameCubeRule {
@@ -520,6 +555,19 @@ impl GameCubeRule {
             GameCubeRule::DiscNumber => "discNumber",
             GameCubeRule::Revision => "revision",
             GameCubeRule::Nkit => "nkit",
+            GameCubeRule::FstExtent => "fstExtent",
+            GameCubeRule::FstRoot => "fstRoot",
+            GameCubeRule::FstEntry => "fstEntry",
+            GameCubeRule::UnsafeName => "unsafeName",
+            GameCubeRule::DuplicatePath => "duplicatePath",
+            GameCubeRule::PathTooLong => "pathTooLong",
+            GameCubeRule::Nesting => "nesting",
+            GameCubeRule::TruncatedFile => "truncatedFile",
+            GameCubeRule::RootNotFolder => "rootNotFolder",
+            GameCubeRule::TooManyEntries => "tooManyEntries",
+            GameCubeRule::TotalSize => "totalSize",
+            GameCubeRule::MissingRoots => "missingRoots",
+            GameCubeRule::MissingData => "missingData",
         }
     }
 }
@@ -767,6 +815,19 @@ mod tests {
             (GameCubeRule::DiscNumber, "discNumber"),
             (GameCubeRule::Revision, "revision"),
             (GameCubeRule::Nkit, "nkit"),
+            (GameCubeRule::FstExtent, "fstExtent"),
+            (GameCubeRule::FstRoot, "fstRoot"),
+            (GameCubeRule::FstEntry, "fstEntry"),
+            (GameCubeRule::UnsafeName, "unsafeName"),
+            (GameCubeRule::DuplicatePath, "duplicatePath"),
+            (GameCubeRule::PathTooLong, "pathTooLong"),
+            (GameCubeRule::Nesting, "nesting"),
+            (GameCubeRule::TruncatedFile, "truncatedFile"),
+            (GameCubeRule::RootNotFolder, "rootNotFolder"),
+            (GameCubeRule::TooManyEntries, "tooManyEntries"),
+            (GameCubeRule::TotalSize, "totalSize"),
+            (GameCubeRule::MissingRoots, "missingRoots"),
+            (GameCubeRule::MissingData, "missingData"),
         ];
         for (rule, name) in rules {
             assert_eq!(rule.as_str(), name);

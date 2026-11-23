@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use gdl_files::{Cancel, Job, NoProgress};
 
 use crate::dump_file::open_regular;
-use crate::gamecube::{CISO_MARK, GAMECUBE_MARK, GAMECUBE_MARK_AT, Layout, read_header};
+use crate::gamecube::{CISO_MARK, GAMECUBE_MARK, GAMECUBE_MARK_AT, read_header};
 use crate::gdrom::{head_of, names_gauntlet_legends, sheet_naming, sheet_of, without_mark};
 use crate::{
     AREA, ByteOrder, DiscHeader, DiscRule, IpBin, MAX_SHEET_LEN, MediaError, N64Rom, PRODUCT,
@@ -606,10 +606,7 @@ fn gamecube_identity(path: &Path, name: SourceName) -> Result<Identity, MediaErr
         .map_err(|error| MediaError::io(path, error))?
         .ok_or_else(|| MediaError::names_no_regular_file(path))?;
     let (layout, _, header) = read_header(&mut image, len, path)?;
-    let container = match layout {
-        Layout::Iso => Container::GameCubeIso,
-        Layout::Ciso(_) => Container::GameCubeCiso,
-    };
+    let container = layout.container();
     let verdict = gamecube_verdict(&header);
     if !header.marked {
         return Ok(unread(None, container, verdict));

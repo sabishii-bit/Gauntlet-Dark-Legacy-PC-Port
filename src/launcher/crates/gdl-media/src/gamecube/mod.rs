@@ -1,20 +1,34 @@
 //! A GameCube disc image as the installer reads one: whole, as an ISO, or sparse, as a CISO, with
 //! the header that tells the disc, held to the US disc of the game by one precedence of its rules,
-//! which identifying an image and reading it to install from share.
+//! which identifying an image and reading it to install from share, and the file table whose
+//! `Gauntlet` and `carddemo` trees are installed, judged whole before any file is copied.
 
-use std::io::{self, Read, Seek, SeekFrom};
-use std::path::Path;
+use std::fmt;
+use std::fs::File;
+use std::io::{self, Read, Seek, SeekFrom, Write};
+use std::path::{Path, PathBuf};
 
-use crate::{DumpRefusal, GameCubeRule, MediaError, Region, Verdict};
+use gdl_files::{BLOCK_LEN, Job};
+use sha2::{Digest, Sha256};
+
+use crate::dump_file::open_regular;
+use crate::{Container, DumpRefusal, GameCubeRule, MediaError, Region, Sha256Digest, Verdict};
 
 mod ciso;
+mod fst;
 
 pub(crate) use ciso::CISO_MARK;
 use ciso::Ciso;
+pub use fst::{DiscEntry, DiscEntryKind, MAX_DISC_ENTRIES};
+use fst::{FST_ROW_LEN, Walked};
 
 /// The most bytes a GameCube disc holds: a mini-DVD's. No image is read past it, and the files
 /// of its tree together hold no more.
 pub const DISC_SIZE: u64 = 1_459_978_240;
+
+/// The most bytes a disc's file table may take, as the installer reads one: far more than the
+/// game's needs, and the most any read of an image asks for at once.
+pub const MAX_FST_LEN: u32 = 16 << 20;
 
 /// The highest revision of the US disc: the game was pressed as revisions 0 and 1.
 pub const MAX_REVISION: u8 = 1;
@@ -63,6 +77,15 @@ const NKIT_AT: usize = 0x200;
 /// That mark.
 const NKIT_MARK: [u8; 4] = *b"NKIT";
 
+/// Where the header gives the file table's offset on the disc, a big-endian word.
+const FST_OFFSET_AT: usize = 0x424;
+
+/// Where the header gives the file table's length, a big-endian word.
+const FST_SIZE_AT: usize = 0x428;
+
+/// The fewest bytes a file table takes: its root's row.
+const MIN_FST_LEN: u32 = FST_ROW_LEN as u32;
+
 /// The region letters a game ID gives, each with its region.
 const REGION_LETTERS: [(u8, Region); 3] = [
     (b'E', Region::NorthAmerica),
@@ -75,6 +98,142 @@ const OUTSIDE_IMAGE: &str = "Disc file extends beyond the image";
 
 /// What it answers for an ISO that ends before a read it is asked for.
 const TRUNCATED_ISO: &str = "Truncated ISO data";
+
+/// What it answers for a file table placed inside the header, or of a length no table has.
+const INVALID_FST_EXTENT: &str = "Invalid GameCube filesystem extent";
+
+/// A GameCube disc image open for reading, judged whole as the installer judges one before it
+/// copies anything: its container, its disc's header held to the US disc, and the file table,
+/// every entry of it, with the `Gauntlet` and `carddemo` trees it keeps. The image is only ever
+/// read.
+pub struct GameCubeImage {
+    /// The image, opened only for reading.
+    file: File,
+    /// Where it was opened, which a failed read names.
+    path: PathBuf,
+    /// How it keeps the disc's bytes.
+    layout: Layout,
+    /// How many bytes of disc it holds.
+    size: u64,
+    /// Its disc's header.
+    header: DiscHeader,
+    /// The entries of the `Gauntlet` and `carddemo` trees, in the file table's order.
+    entries: Vec<DiscEntry>,
+    /// How many bytes their files hold together.
+    files_len: u64,
+}
+
+impl GameCubeImage {
+    /// Opens the image at `path` and judges it whole in the installer's order: its container, its
+    /// disc's header against the US disc, the file table's extent, then every entry of the table,
+    /// and the trees it keeps. The image is opened only once it is seen to be a regular file, so
+    /// that a folder, a FIFO or a device is refused unopened. The first rule it breaks is the
+    /// refusal, in the installer's words where it has words for it.
+    pub fn open(path: &Path) -> Result<GameCubeImage, MediaError> {
+        let (mut file, len) = open_regular(path)
+            .map_err(|error| MediaError::io(path, error))?
+            .ok_or_else(|| MediaError::names_no_regular_file(path))?;
+        let judged = judge(&mut file, len, path)?;
+        Ok(GameCubeImage {
+            file,
+            path: path.to_path_buf(),
+            layout: judged.layout,
+            size: judged.size,
+            header: judged.header,
+            entries: judged.walked.entries,
+            files_len: judged.walked.files_len,
+        })
+    }
+
+    /// The container the image keeps the disc in: an ISO or a CISO.
+    pub fn container(&self) -> Container {
+        self.layout.container()
+    }
+
+    /// The disc's header.
+    pub fn header(&self) -> &DiscHeader {
+        &self.header
+    }
+
+    /// The disc's revision.
+    pub fn revision(&self) -> u8 {
+        self.header.revision
+    }
+
+    /// The entries of the disc's `Gauntlet` and `carddemo` trees, the two folders included, in
+    /// the file table's order and spelt as the disc spells them.
+    pub fn entries(&self) -> &[DiscEntry] {
+        &self.entries
+    }
+
+    /// How many bytes the files of those trees hold together.
+    pub fn files_len(&self) -> u64 {
+        self.files_len
+    }
+
+    /// The bytes of the file `entry`, read whole when it holds no more than `most` bytes, and
+    /// otherwise its first `most` + 1, so that a caller can tell a file longer than it takes
+    /// without reading it all. A folder holds none.
+    pub fn read_entry(&mut self, entry: &DiscEntry, most: u64) -> Result<Vec<u8>, MediaError> {
+        let DiscEntryKind::File { offset, size } = entry.kind else {
+            return Ok(Vec::new());
+        };
+        let len = size.min(most.saturating_add(1));
+        self.layout
+            .read_vec(&mut self.file, &self.path, self.size, offset, len)
+    }
+
+    /// Writes the bytes of the file `entry` to `to` and gives the SHA-256 digest of what it wrote,
+    /// read at most [`BLOCK_LEN`] bytes at a time: the job's cancel is looked at before each block
+    /// and its progress told the bytes of the file done after each. A write `to` refuses fails
+    /// the copy as [`MediaError::Write`], which names the file and keeps what `to` answered, so
+    /// that a caller can tell a full disk from an image it could not read. A folder copies
+    /// nothing, and gives the digest of no bytes.
+    pub fn copy(
+        &mut self,
+        entry: &DiscEntry,
+        to: &mut dyn Write,
+        job: &Job<'_>,
+    ) -> Result<Sha256Digest, MediaError> {
+        let mut hasher = Sha256::new();
+        if let DiscEntryKind::File { offset, size } = entry.kind {
+            let room = usize::try_from(size).map_or(BLOCK_LEN, |size| size.min(BLOCK_LEN));
+            let mut block = vec![0; room];
+            let mut done = 0;
+            while done < size {
+                job.cancel.check()?;
+                let count = usize::try_from(size - done).map_or(room, |left| left.min(room));
+                let part = &mut block[..count];
+                let at = offset.saturating_add(done);
+                self.layout
+                    .read_at(&mut self.file, &self.path, self.size, at, part)?;
+                to.write_all(part).map_err(|source| MediaError::Write {
+                    file: entry.path.clone(),
+                    source,
+                })?;
+                hasher.update(&*part);
+                done += count as u64;
+                job.progress.advance(done, size, Some(&entry.path));
+            }
+        }
+        Ok(Sha256Digest(hasher.finalize().into()))
+    }
+}
+
+impl fmt::Debug for GameCubeImage {
+    /// How the image keeps the disc, how long the disc is, its header, and how many entries and
+    /// bytes its kept trees hold: never a path, the image's or one of the disc's tree, which say
+    /// what the player keeps where, nor a byte of a file.
+    fn fmt(&self, to: &mut fmt::Formatter<'_>) -> fmt::Result {
+        to.debug_struct("GameCubeImage")
+            .field("layout", &self.layout)
+            .field("size", &self.size)
+            .field("header", &self.header)
+            .field("entries", &self.entries.len())
+            .field("files_len", &self.files_len)
+            .finish_non_exhaustive()
+    }
+}
 
 /// What a GameCube disc's header says of the disc, as far as the launcher reads it.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -130,6 +289,33 @@ pub(crate) enum Layout {
 }
 
 impl Layout {
+    /// The container an image of the layout is.
+    pub(crate) fn container(&self) -> Container {
+        match self {
+            Layout::Iso => Container::GameCubeIso,
+            Layout::Ciso(_) => Container::GameCubeCiso,
+        }
+    }
+
+    /// The `len` bytes of the disc from `offset` on, read as [`Layout::read_at`] reads them: a
+    /// read that reaches past the disc is refused before room for it is made.
+    fn read_vec<R: Read + Seek>(
+        &self,
+        source: &mut R,
+        path: &Path,
+        size: u64,
+        offset: u64,
+        len: u64,
+    ) -> Result<Vec<u8>, MediaError> {
+        let end = offset.checked_add(len);
+        if end.is_none_or(|end| end > size) {
+            return Err(outside_image());
+        }
+        let mut bytes = vec![0; usize::try_from(len).map_err(|_| outside_image())?];
+        self.read_at(source, path, size, offset, &mut bytes)?;
+        Ok(bytes)
+    }
+
     /// Fills `buffer` with the bytes of the disc from `offset` on, read from `source`, the image
     /// at `path`, whose disc is `size` bytes long. A read that reaches past the disc is refused
     /// before anything is read, and one the image ends before is refused as cut short.
@@ -172,6 +358,72 @@ pub(crate) fn read_header<R: Read + Seek>(
     len: u64,
     path: &Path,
 ) -> Result<(Layout, u64, DiscHeader), MediaError> {
+    let (layout, size, start) = read_start(source, len, path)?;
+    Ok((layout, size, DiscHeader::of(&start)))
+}
+
+/// What judging an image finds: its layout, how many bytes of disc it holds, its disc's header,
+/// and what the walk of its file table keeps.
+pub(crate) struct Judged {
+    /// How the image keeps the disc's bytes.
+    pub(crate) layout: Layout,
+    /// How many bytes of disc it holds.
+    pub(crate) size: u64,
+    /// The disc's header.
+    pub(crate) header: DiscHeader,
+    /// The kept trees' entries and how many bytes their files hold.
+    pub(crate) walked: Walked,
+}
+
+/// The disc image `source`, the file at `path` of `len` bytes, judged whole in the installer's
+/// order: its container and its disc's header as [`read_header`] reads them, the header held to
+/// the US disc by [`header_rule`]; the file table's extent, after the header and of a length from
+/// its root's row to [`MAX_FST_LEN`]; then the table, read whole and walked, every entry judged
+/// and the `Gauntlet` and `carddemo` trees kept. The first rule broken is the refusal, in the
+/// installer's words where it has words for it. No read reaches past the disc the image holds, nor
+/// asks for more than [`MAX_FST_LEN`] bytes at once.
+pub(crate) fn judge<R: Read + Seek>(
+    source: &mut R,
+    len: u64,
+    path: &Path,
+) -> Result<Judged, MediaError> {
+    let (layout, size, start) = read_start(source, len, path)?;
+    let header = DiscHeader::of(&start);
+    if let Some(refusal) = header_refusal(&header) {
+        return Err(refusal);
+    }
+    let fst_offset = word_at(&start, FST_OFFSET_AT);
+    let fst_len = word_at(&start, FST_SIZE_AT);
+    if fst_offset < DISC_HEADER_LEN as u32 || !(MIN_FST_LEN..=MAX_FST_LEN).contains(&fst_len) {
+        return Err(MediaError::gamecube(
+            GameCubeRule::FstExtent,
+            INVALID_FST_EXTENT,
+        ));
+    }
+    let table = layout.read_vec(
+        source,
+        path,
+        size,
+        u64::from(fst_offset),
+        u64::from(fst_len),
+    )?;
+    let walked = fst::walk(&table, size)?;
+    Ok(Judged {
+        layout,
+        size,
+        header,
+        walked,
+    })
+}
+
+/// The layout of the disc image `source`, the file at `path` of `len` bytes, how many bytes of
+/// disc it holds, and the first [`DISC_HEADER_LEN`] bytes of that disc, read as [`read_header`]
+/// describes.
+fn read_start<R: Read + Seek>(
+    source: &mut R,
+    len: u64,
+    path: &Path,
+) -> Result<(Layout, u64, [u8; DISC_HEADER_LEN]), MediaError> {
     let failed = |error| MediaError::io(path, error);
     let mut mark = [0; CISO_MARK.len()];
     source.seek(SeekFrom::Start(0)).map_err(failed)?;
@@ -188,9 +440,17 @@ pub(crate) fn read_header<R: Read + Seek>(
     } else {
         (Layout::Iso, len.min(DISC_SIZE))
     };
-    let mut header = [0; DISC_HEADER_LEN];
-    layout.read_at(source, path, size, 0, &mut header)?;
-    Ok((layout, size, DiscHeader::of(&header)))
+    let mut start = [0; DISC_HEADER_LEN];
+    layout.read_at(source, path, size, 0, &mut start)?;
+    Ok((layout, size, start))
+}
+
+/// The big-endian word at `at` of a disc's header, `start`, which holds it.
+fn word_at(start: &[u8; DISC_HEADER_LEN], at: usize) -> u32 {
+    start
+        .get(at..)
+        .and_then(<[u8]>::first_chunk)
+        .map_or(0, |word| u32::from_be_bytes(*word))
 }
 
 /// How the disc whose header is `header` stands against the US disc, by the first rule of the
@@ -260,7 +520,6 @@ fn header_rule(header: &DiscHeader) -> Option<HeaderRule> {
 
 /// The refusal of the disc whose header is `header`, by the rule [`header_rule`] gives it and in
 /// the installer's words where it has words for it, or `None` for the US disc.
-#[cfg(test)]
 fn header_refusal(header: &DiscHeader) -> Option<MediaError> {
     /// What the installer answers for any disc but the US disc of the game.
     const SELECT_THE_US_DISC: &str = "Select a USA GameCube Gauntlet Dark Legacy disc (GUNE5D)";
@@ -332,17 +591,27 @@ fn fill<R: Read>(source: &mut R, buffer: &mut [u8]) -> io::Result<usize> {
 
 #[cfg(test)]
 mod tests {
-    use std::io::{self, Cursor, Read, Seek, SeekFrom};
+    use std::collections::BTreeSet;
+    use std::fmt;
+    use std::fs;
+    use std::io::{self, Cursor, Read, Seek, SeekFrom, Write};
     use std::path::Path;
+    use std::sync::Mutex;
 
-    use gdl_fixtures::{edited, icon_iso, synthetic_ciso, synthetic_iso, unhex};
-    use serde_json::Value;
-
-    use super::{
-        DiscHeader, Layout, MAX_REVISION, US_GAME_ID, gamecube_verdict, header_refusal,
-        header_rule, read_header,
+    use gdl_files::{BLOCK_LEN, Cancel, Job, NoProgress, PhaseId, Progress, RelPath};
+    use gdl_fixtures::{
+        FstEntry, SparseFile, edited, fst, icon_iso, iso_of, synthetic_ciso, synthetic_iso, tpl,
+        unhex,
     };
-    use crate::{DumpRefusal, MediaError, Region, Verdict};
+    use serde_json::Value;
+    use tempfile::TempDir;
+
+    use super::fst::tests::{EXTRAS_AT, GAME_ENTRIES, game_rows, game_table};
+    use super::{
+        DiscEntry, DiscEntryKind, DiscHeader, GameCubeImage, Judged, Layout, MAX_REVISION,
+        US_GAME_ID, gamecube_verdict, header_refusal, header_rule, judge, read_header,
+    };
+    use crate::{Container, DumpRefusal, MediaError, Region, Sha256Digest, Verdict};
 
     /// The installer's disc cases, which the reader is held to.
     const GAMECUBE_VECTORS: &str = include_str!(concat!(
@@ -356,32 +625,40 @@ mod tests {
     /// The path the tests' images are named by in the refusals of their reads.
     const IMAGE: &str = "disc.iso";
 
-    /// The cases the container's rules or the disc's header refuse, each by the rule and the words
-    /// the vectors give it: every other case passes both, and is refused further in, if at all.
-    const HEADER_CASES: [&str; 15] = [
-        "empty",
-        "cisoMagic",
-        "cisoZeros",
-        "notAGame",
-        "pspCso",
-        "id",
-        "europe",
-        "europeNkit",
-        "noMark",
-        "cisoNoMark",
-        "discNumber",
-        "revision2",
-        "nkit",
+    /// The cases the installer refused in words of its own that the launcher does not repeat: a
+    /// name it quoted as Python quotes one, and a name of a byte outside ASCII, which it refused
+    /// only as its decoder failed.
+    const OWN_WORDS: [&str; 2] = ["name", "nonAscii"];
+
+    /// The rules the vectors' cases refuse an image by: all but those whose images are too large
+    /// or too odd for the vectors, which tests of their own reach.
+    const VECTOR_RULES: [&str; 21] = [
+        "cisoHeader",
+        "cisoBlockSize",
         "cisoMap",
-        "cisoTruncated",
+        "cisoData",
+        "outsideImage",
+        "notGameCube",
+        "otherGame",
+        "otherRegion",
+        "discNumber",
+        "revision",
+        "nkit",
+        "fstExtent",
+        "fstRoot",
+        "fstEntry",
+        "unsafeName",
+        "duplicatePath",
+        "nesting",
+        "truncatedFile",
+        "rootNotFolder",
+        "missingRoots",
+        "missingData",
     ];
 
     /// How many bytes of a disc's start its header takes. The format's facts are given here apart
     /// from the reader's own constants, so that a reader that looks elsewhere is caught.
     const FORMAT_HEADER_LEN: usize = 0x440;
-
-    /// How many bytes a CISO's header takes.
-    const FORMAT_CISO_HEADER_LEN: usize = 0x8000;
 
     /// How many blocks a CISO's map flags.
     const FORMAT_CISO_BLOCKS: u64 = 32_760;
@@ -400,6 +677,24 @@ mod tests {
 
     /// Where an NKit image keeps its mark.
     const FORMAT_NKIT_AT: usize = 0x200;
+
+    /// Where the installer tests' disc keeps its file table.
+    const FORMAT_FST_AT: usize = 0x800;
+
+    /// How many bytes that table takes.
+    const FORMAT_FST_LEN: usize = 172;
+
+    /// The most bytes a file table may take, and so the most any read asks for at once.
+    const FORMAT_MAX_FST_LEN: usize = 16 << 20;
+
+    /// The most bytes a GameCube disc holds.
+    const FORMAT_DISC_SIZE: u64 = 1_459_978_240;
+
+    /// The most entries the kept trees may hold.
+    const FORMAT_MAX_ENTRIES: usize = 10_000;
+
+    /// Where the installer tests' disc's icon lies, and how long its four-byte stand-in is.
+    const FORMAT_ICON_AT: usize = 0x2900;
 
     /// The vectors, read, of their format and version and holding nothing but what the tests know.
     fn vectors() -> Value {
@@ -448,18 +743,48 @@ mod tests {
         )
     }
 
-    /// The rule and the words of the refusal of the image `bytes` by its container or its disc's
-    /// header, or `None` when it passes both.
-    fn header_judged(bytes: &[u8]) -> Option<(&'static str, String)> {
-        let refusal = match header_of(bytes) {
-            Ok((_, _, header)) => header_refusal(&header)?,
-            Err(error) => error,
-        };
-        assert!(
-            matches!(refusal, MediaError::GameCube { .. }),
-            "{refusal:?}"
-        );
-        Some((refusal.rule(), refusal.to_string()))
+    /// The image `bytes` judged whole in memory.
+    fn judged(bytes: &[u8]) -> Result<Judged, MediaError> {
+        judge(
+            &mut Cursor::new(bytes),
+            bytes.len() as u64,
+            Path::new(IMAGE),
+        )
+    }
+
+    /// The image `bytes` judged whole in memory, without what the judging keeps of it.
+    fn judged_unit(bytes: &[u8]) -> Result<(), MediaError> {
+        judged(bytes).map(|_| ())
+    }
+
+    /// The image `bytes` written to a file of a folder of its own, and opened from there.
+    fn opened(bytes: &[u8]) -> (TempDir, Result<GameCubeImage, MediaError>) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(IMAGE);
+        fs::write(&path, bytes).unwrap();
+        let opened = GameCubeImage::open(&path);
+        (dir, opened)
+    }
+
+    /// The image `bytes`, opened, which must open.
+    fn open(bytes: &[u8]) -> (TempDir, GameCubeImage) {
+        let (dir, opened) = opened(bytes);
+        (dir, opened.unwrap_or_else(|error| panic!("{error}")))
+    }
+
+    /// The rule and the words of `outcome`'s refusal, which must be one by a rule of the format.
+    fn refusal<T: fmt::Debug>(outcome: Result<T, MediaError>) -> (&'static str, String) {
+        let error = outcome.expect_err("a refusal");
+        assert!(matches!(error, MediaError::GameCube { .. }), "{error:?}");
+        (error.rule(), error.to_string())
+    }
+
+    /// The disc of the smallest tree the walk takes, with `extras` inside its `Gauntlet` folder,
+    /// every file empty: no longer than its header and its file table.
+    fn game_disc(extras: &[FstEntry]) -> Vec<u8> {
+        let table = game_table(extras);
+        let len = FORMAT_FST_AT + table.len();
+        iso_of(&table, &[], len)
     }
 
     /// `image` with `bytes` written over it from `at`.
@@ -487,62 +812,201 @@ mod tests {
         }
     }
 
-    /// A reader of `bytes` in memory that keeps how far any read it is asked for reaches and the
-    /// longest it is asked for.
-    struct Counting<'a> {
-        bytes: Cursor<&'a [u8]>,
+    /// The entry of `image` whose path is `path`.
+    fn entry(image: &GameCubeImage, path: &str) -> DiscEntry {
+        let found = image
+            .entries()
+            .iter()
+            .find(|entry| entry.path.as_str() == path);
+        found
+            .cloned()
+            .unwrap_or_else(|| panic!("the disc holds no {path}"))
+    }
+
+    /// A reader that keeps how far any read it is asked for reaches and the longest it is asked
+    /// for, of whatever it reads.
+    struct Counting<R> {
+        inner: R,
+        at: u64,
         furthest: u64,
         longest: usize,
     }
 
-    impl<'a> Counting<'a> {
-        fn new(bytes: &'a [u8]) -> Self {
+    impl<R> Counting<R> {
+        fn new(inner: R) -> Self {
             Counting {
-                bytes: Cursor::new(bytes),
+                inner,
+                at: 0,
                 furthest: 0,
                 longest: 0,
             }
         }
     }
 
-    impl Read for Counting<'_> {
+    impl<R: Read> Read for Counting<R> {
         fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
-            let end = self.bytes.position() + buffer.len() as u64;
-            self.furthest = self.furthest.max(end);
+            self.furthest = self.furthest.max(self.at + buffer.len() as u64);
             self.longest = self.longest.max(buffer.len());
-            self.bytes.read(buffer)
+            let read = self.inner.read(buffer)?;
+            self.at += read as u64;
+            Ok(read)
         }
     }
 
-    impl Seek for Counting<'_> {
+    impl<R: Seek> Seek for Counting<R> {
         fn seek(&mut self, to: SeekFrom) -> io::Result<u64> {
-            self.bytes.seek(to)
+            self.at = self.inner.seek(to)?;
+            Ok(self.at)
+        }
+    }
+
+    /// Progress that writes down every step told, and asks `cancel` to stop at the first when it
+    /// is given one.
+    #[derive(Default)]
+    struct Told<'a> {
+        steps: Mutex<Vec<(u64, u64, String)>>,
+        cancel: Option<&'a Cancel>,
+    }
+
+    impl Told<'_> {
+        fn steps(&self) -> Vec<(u64, u64, String)> {
+            self.steps.lock().unwrap().clone()
+        }
+    }
+
+    impl Progress for Told<'_> {
+        fn phase(&self, _: PhaseId) {}
+
+        fn advance(&self, done: u64, total: u64, item: Option<&RelPath>) {
+            let item = item.map_or_else(String::new, |item| item.as_str().to_owned());
+            self.steps.lock().unwrap().push((done, total, item));
+            if let Some(cancel) = self.cancel {
+                cancel.cancel();
+            }
+        }
+    }
+
+    /// A writer that takes nothing, as one on a full disk does.
+    struct Full;
+
+    impl Write for Full {
+        fn write(&mut self, _: &[u8]) -> io::Result<usize> {
+            Err(io::ErrorKind::StorageFull.into())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
         }
     }
 
     #[test]
-    fn header_cases_follow_the_shared_vectors() {
+    fn cases_follow_the_shared_vectors() {
         let vectors = vectors();
-        let cases = vectors["cases"].as_array().unwrap();
-        let names: Vec<&str> = cases.iter().map(|case| text(&case["name"])).collect();
-        for name in HEADER_CASES {
-            assert!(names.contains(&name), "the vectors hold no case {name}");
-        }
-        for case in cases {
+        let mut rules = BTreeSet::new();
+        for case in vectors["cases"].as_array().unwrap() {
             let name = text(&case["name"]);
-            let judged = header_judged(&case_image(case));
-            if HEADER_CASES.contains(&name) {
-                // Refused by its container or its disc's header, by the vectors' rule and in the
-                // vectors' words, the installer's own where it refused the image too.
-                let expected = (text(&case["rule"]), text(&case["detail"]).to_owned());
-                assert_eq!(judged, Some(expected), "{name}");
-                if case["python"] == "refused" {
+            let (_dir, opened) = opened(&case_image(case));
+            if case["rule"].is_null() {
+                // Taken by the installer and the launcher alike.
+                assert_eq!(case["python"], "accepted", "{name}");
+                assert!(case["detail"].is_null(), "{name}");
+                opened.unwrap_or_else(|error| panic!("{name}: {error}"));
+                continue;
+            }
+            // Refused by the vectors' rule and in the vectors' words, the installer's own where
+            // it refused the image too and said why in words of its format.
+            let expected = (text(&case["rule"]), text(&case["detail"]).to_owned());
+            assert_eq!(refusal(opened), expected, "{name}");
+            rules.insert(expected.0);
+            if case["python"] == "refused" {
+                if OWN_WORDS.contains(&name) {
+                    assert_ne!(case["message"], case["detail"], "{name}");
+                } else {
                     assert_eq!(case["message"], case["detail"], "{name}");
                 }
-            } else {
-                // The container and the header are the US disc's: what refuses it lies past them.
-                assert_eq!(judged, None, "{name}");
             }
+        }
+        assert_eq!(rules, BTreeSet::from(VECTOR_RULES));
+    }
+
+    #[test]
+    fn images_follow_the_shared_vectors() {
+        let vectors = vectors();
+        let images = &vectors["images"];
+        assert_eq!(images["iso"]["revision"], 1);
+        let icon = tpl(5, 8, 8);
+        for (name, container) in [
+            ("iso", Container::GameCubeIso),
+            ("ciso", Container::GameCubeCiso),
+            ("isoWithIcon", Container::GameCubeIso),
+        ] {
+            let bytes = image(name);
+            assert_eq!(bytes.len(), images[name]["length"], "{name}");
+            let (_dir, mut image) = open(&bytes);
+            assert_eq!(image.container(), container, "{name}");
+            assert_eq!(image.revision(), 1, "{name}");
+            assert_eq!(*image.header(), us_header(), "{name}");
+            let listed = vectors["entries"].as_array().unwrap();
+            let entries = image.entries().to_vec();
+            assert_eq!(entries.len(), listed.len(), "{name}");
+            let cancel = Cancel::default();
+            let job = Job {
+                cancel: &cancel,
+                progress: &NoProgress,
+            };
+            let mut files_len = 0;
+            for (entry, listed) in entries.iter().zip(listed) {
+                assert_eq!(entry.path.as_str(), text(&listed["path"]), "{name}");
+                let mut copied = Vec::new();
+                let digest = image.copy(entry, &mut copied, &job).unwrap();
+                if listed["folder"] == true {
+                    assert_eq!(entry.kind, DiscEntryKind::Folder, "{name}");
+                    assert!(copied.is_empty());
+                    assert_eq!(digest, Sha256Digest::of(&[]));
+                    continue;
+                }
+                // The disc with an icon keeps the icon tests' TPL where the stand-in was.
+                let (size, sha256) = if name == "isoWithIcon" && entry.path.first() == "carddemo" {
+                    (icon.len() as u64, Sha256Digest::of(&icon).hex())
+                } else {
+                    (number(&listed["size"]), text(&listed["sha256"]).to_owned())
+                };
+                let offset = number(&listed["offset"]);
+                assert_eq!(entry.kind, DiscEntryKind::File { offset, size }, "{name}");
+                assert_eq!(digest.hex(), sha256, "{name}: {}", entry.path.as_str());
+                assert_eq!(Sha256Digest::of(&copied), digest);
+                assert_eq!(copied.len() as u64, size);
+                files_len += size;
+            }
+            assert_eq!(image.files_len(), files_len, "{name}");
+        }
+    }
+
+    #[test]
+    fn an_iso_and_its_ciso_give_one_disc() {
+        for iso in [synthetic_iso(), icon_iso()] {
+            let (_iso_dir, mut whole) = open(&iso);
+            let (_ciso_dir, mut sparse) = open(&synthetic_ciso(&iso));
+            assert_eq!(whole.entries(), sparse.entries());
+            assert_eq!(whole.header(), sparse.header());
+            assert_eq!(whole.files_len(), sparse.files_len());
+            assert_eq!((whole.revision(), sparse.revision()), (1, 1));
+            let cancel = Cancel::default();
+            let job = Job {
+                cancel: &cancel,
+                progress: &NoProgress,
+            };
+            for entry in whole.entries().to_vec() {
+                let (mut from_whole, mut from_sparse) = (Vec::new(), Vec::new());
+                let whole_digest = whole.copy(&entry, &mut from_whole, &job).unwrap();
+                let sparse_digest = sparse.copy(&entry, &mut from_sparse, &job).unwrap();
+                assert_eq!(from_whole, from_sparse, "{}", entry.path.as_str());
+                assert_eq!(whole_digest, sparse_digest);
+            }
+            // The war's WAD runs from a block the CISO keeps into one it leaves out.
+            let war = entry(&sparse, "Gauntlet/PDATA/WAR.WAD");
+            let expected = [vec![b'A'; 16], vec![0; 16]].concat();
+            assert_eq!(sparse.read_entry(&war, u64::MAX).unwrap(), expected);
         }
     }
 
@@ -647,11 +1111,13 @@ mod tests {
     #[test]
     fn the_header_rule_and_the_verdict_agree() {
         // The verdict of each case whose container is read is what its header's rule tells of the
-        // disc; a case refused only past the header is the US disc's as far as it tells.
+        // disc, and the refusal the image is opened with is that rule's; a case refused only past
+        // the header is the US disc's as far as it tells.
         let vectors = vectors();
         for case in vectors["cases"].as_array().unwrap() {
             let name = text(&case["name"]);
-            let Ok((_, _, header)) = header_of(&case_image(case)) else {
+            let bytes = case_image(case);
+            let Ok((_, _, header)) = header_of(&bytes) else {
                 continue;
             };
             let rule = case["rule"].as_str();
@@ -669,9 +1135,10 @@ mod tests {
                 header_rule(&header).is_none(),
                 expected == Verdict::Supported
             );
-            let refused = header_refusal(&header).map(|refusal| refusal.rule());
             if expected != Verdict::Supported {
+                let refused = header_refusal(&header).map(|refusal| refusal.rule());
                 assert_eq!(refused, rule, "{name}");
+                assert_eq!(judged(&bytes).err().map(|error| error.rule()), rule);
             }
         }
     }
@@ -740,6 +1207,10 @@ mod tests {
         assert_eq!(title(&full), Some("A".repeat(64)));
         let cut = [vec![b' '; 10], vec![0xE9; FORMAT_TITLE_LEN - 10]].concat();
         assert_eq!(title(&cut), Some("\u{fffd}".repeat(64)));
+        // An image whose header gives a title opens with it.
+        let titled = with_bytes(&iso, FORMAT_TITLE_AT, b"Gauntlet\0");
+        let (_dir, image) = open(&titled);
+        assert_eq!(image.header().title.as_deref(), Some("Gauntlet"));
     }
 
     #[test]
@@ -766,50 +1237,385 @@ mod tests {
         let bare = iso[..FORMAT_HEADER_LEN].to_vec();
         assert_eq!(header(&bare), us_header());
         assert_eq!(
-            header_judged(&iso[..FORMAT_HEADER_LEN - 1]),
-            Some((
+            refusal(header_of(&iso[..FORMAT_HEADER_LEN - 1])),
+            (
                 "outsideImage",
                 "Disc file extends beyond the image".to_owned()
-            ))
+            )
         );
     }
 
     #[test]
-    fn every_cut_and_every_changed_header_byte_is_read_or_refused() {
-        // Each image is read or refused by a rule of its format, never with a panic, never reading
-        // past its length and never asking for more than a CISO's header in one read.
-        let check = |bytes: &[u8]| {
-            let mut source = Counting::new(bytes);
-            match read_header(&mut source, bytes.len() as u64, Path::new(IMAGE)) {
-                Ok((_, _, header)) => {
-                    let _ = gamecube_verdict(&header);
-                    let _ = header_refusal(&header);
-                }
-                Err(MediaError::GameCube { .. }) => {}
-                Err(other) => panic!("{} bytes: {other:?}", bytes.len()),
-            }
-            assert!(
-                source.furthest <= bytes.len() as u64,
-                "{} bytes",
-                bytes.len()
-            );
-            assert!(
-                source.longest <= FORMAT_CISO_HEADER_LEN,
-                "{} bytes",
-                bytes.len()
-            );
+    fn a_copy_stops_at_a_cancel_and_names_a_writers_failure() {
+        // A file of two whole blocks and three bytes more, each byte telling its place.
+        let len = 2 * BLOCK_LEN + 3;
+        let at = 0x1_0000;
+        let data: Vec<u8> = (0..len).map(|place| (place % 251) as u8).collect();
+        let big = FstEntry::file("BIG.BIN", at, u32::try_from(len).unwrap());
+        let table = game_table(&[big]);
+        let disc = iso_of(&table, &[(at as usize, &data)], at as usize + len);
+        let (_dir, mut image) = open(&disc);
+        let big = entry(&image, "Gauntlet/BIG.BIN");
+
+        // Copied whole, a block at a time, each block told as the file's bytes done.
+        let cancel = Cancel::default();
+        let told = Told::default();
+        let job = Job {
+            cancel: &cancel,
+            progress: &told,
         };
+        let mut copied = Vec::new();
+        let digest = image.copy(&big, &mut copied, &job).unwrap();
+        assert_eq!(copied, data);
+        assert_eq!(digest, Sha256Digest::of(&data));
+        let total = len as u64;
+        let item = "Gauntlet/BIG.BIN".to_owned();
+        let block = BLOCK_LEN as u64;
+        assert_eq!(
+            told.steps(),
+            [
+                (block, total, item.clone()),
+                (2 * block, total, item.clone()),
+                (total, total, item.clone()),
+            ]
+        );
+
+        // A cancel asked for before the copy writes nothing; one asked for after the first block
+        // stops it before the second.
+        let cancelled = Cancel::default();
+        cancelled.cancel();
+        let job = Job {
+            cancel: &cancelled,
+            progress: &told,
+        };
+        let mut written = Vec::new();
+        let error = image.copy(&big, &mut written, &job).unwrap_err();
+        assert!(matches!(error, MediaError::Cancelled), "{error:?}");
+        assert!(written.is_empty());
+        let cancel = Cancel::default();
+        let stopping = Told {
+            cancel: Some(&cancel),
+            ..Told::default()
+        };
+        let job = Job {
+            cancel: &cancel,
+            progress: &stopping,
+        };
+        let error = image.copy(&big, &mut written, &job).unwrap_err();
+        assert!(matches!(error, MediaError::Cancelled), "{error:?}");
+        assert_eq!(written, data[..BLOCK_LEN]);
+        assert_eq!(stopping.steps(), [(block, total, item)]);
+
+        // A writer that refuses the bytes fails the copy, naming the file in the disc's tree and
+        // keeping what the writer answered.
+        let cancel = Cancel::default();
+        let job = Job {
+            cancel: &cancel,
+            progress: &NoProgress,
+        };
+        let error = image.copy(&big, &mut Full, &job).unwrap_err();
+        let MediaError::Write { file, source } = &error else {
+            panic!("{error:?}");
+        };
+        assert_eq!(*file, big.path);
+        assert_eq!(source.kind(), io::ErrorKind::StorageFull);
+        assert_eq!(error.rule(), "io");
+        // An empty file copies nothing and tells nothing.
+        let war = entry(&image, "Gauntlet/PDATA/WAR.WAD");
+        let told = Told::default();
+        let job = Job {
+            cancel: &cancel,
+            progress: &told,
+        };
+        let digest = image.copy(&war, &mut Full, &job).unwrap();
+        assert_eq!(digest, Sha256Digest::of(&[]));
+        assert!(told.steps().is_empty());
+    }
+
+    #[test]
+    fn an_entry_is_read_up_to_a_bound() {
+        let (_dir, mut image) = open(&icon_iso());
+        let icon = entry(&image, "carddemo/icon.tpl");
+        let tpl = tpl(5, 8, 8);
+        // A file no longer than the bound is read whole; a longer one, a byte past the bound.
+        for (most, read) in [
+            (u64::MAX, tpl.len()),
+            (192, 192),
+            (191, 192),
+            (10, 11),
+            (0, 1),
+        ] {
+            let bytes = image.read_entry(&icon, most).unwrap();
+            assert_eq!(bytes, tpl[..read], "{most}");
+        }
+        // A folder holds no bytes.
+        let folder = entry(&image, "carddemo");
+        assert!(image.read_entry(&folder, u64::MAX).unwrap().is_empty());
+        // An entry that reaches past the disc, which no image of the walk gives, is refused.
+        let past = DiscEntry {
+            path: icon.path.clone(),
+            kind: DiscEntryKind::File {
+                offset: u64::MAX - 1,
+                size: 4,
+            },
+        };
+        assert_eq!(refusal(image.read_entry(&past, 8)).0, "outsideImage");
+        let cancel = Cancel::default();
+        let job = Job {
+            cancel: &cancel,
+            progress: &NoProgress,
+        };
+        assert_eq!(
+            refusal(image.copy(&past, &mut Vec::new(), &job)).0,
+            "outsideImage"
+        );
+    }
+
+    #[test]
+    fn the_entry_bound_holds_at_ten_thousand() {
+        let fillers = |count: usize| -> Vec<FstEntry> {
+            (0..count)
+                .map(|index| FstEntry::file(&format!("F{index:05}"), 0, 0))
+                .collect()
+        };
+        // The kept trees of ten thousand entries are taken whole.
+        let most = fillers(FORMAT_MAX_ENTRIES - GAME_ENTRIES);
+        let bound = judged(&game_disc(&most)).unwrap_or_else(|error| panic!("{error}"));
+        assert_eq!(bound.walked.entries.len(), FORMAT_MAX_ENTRIES);
+        // One more is refused, by the bound's own words.
+        let over = fillers(FORMAT_MAX_ENTRIES - GAME_ENTRIES + 1);
+        assert_eq!(
+            refusal(judged_unit(&game_disc(&over))),
+            (
+                "tooManyEntries",
+                "The disc's Gauntlet and carddemo folders hold more than 10000 entries".to_owned()
+            )
+        );
+        // Entries outside the kept trees count for nothing.
+        let mut rows = game_rows(&most);
+        rows.push(FstEntry::file("opening.bnr", 0, 0));
+        let table = fst(&rows);
+        let disc = iso_of(&table, &[], FORMAT_FST_AT + table.len());
+        judged_unit(&disc).unwrap_or_else(|error| panic!("{error}"));
+    }
+
+    #[test]
+    fn a_path_of_220_characters_passes_and_221_is_too_long() {
+        // `Gauntlet/`, a folder of 200 characters, `/` and a file: 210 characters and the file's.
+        let deep = |file: &str| {
+            game_disc(&[
+                FstEntry::folder(&"a".repeat(200), 1, EXTRAS_AT + 2),
+                FstEntry::file(file, 0, 0),
+            ])
+        };
+        let longest = "b".repeat(10);
+        let (_dir, image) = open(&deep(&longest));
+        let path = format!("Gauntlet/{}/{longest}", "a".repeat(200));
+        assert_eq!(path.len(), 220);
+        assert!(
+            image
+                .entries()
+                .iter()
+                .any(|entry| entry.path.as_str() == path)
+        );
+        let over = "b".repeat(11);
+        let path = format!("Gauntlet/{}/{over}", "a".repeat(200));
+        assert_eq!(path.len(), 221);
+        let said = format!("Duplicate or overlong disc path: {path}");
+        assert_eq!(refusal(opened(&deep(&over)).1), ("pathTooLong", said));
+    }
+
+    #[test]
+    fn refusals_quote_what_they_take_up_to_one_bound() {
+        // A path too long is said whole up to 256 characters; past that, by its length and its
+        // start, quoted.
+        let deep = game_disc(&[
+            FstEntry::folder(&"a".repeat(200), 1, EXTRAS_AT + 3),
+            FstEntry::folder(&"b".repeat(10), EXTRAS_AT, EXTRAS_AT + 3),
+            FstEntry::file(&"c".repeat(200), 0, 0),
+        ]);
+        let path = format!(
+            "Gauntlet/{}/{}/{}",
+            "a".repeat(200),
+            "b".repeat(10),
+            "c".repeat(200)
+        );
+        assert_eq!(path.len(), 421);
+        let said = format!(
+            "Duplicate or overlong disc path of 421 characters beginning {:?}",
+            &path[..256]
+        );
+        assert_eq!(refusal(judged_unit(&deep)), ("pathTooLong", said));
+        // A name is quoted whole up to 256 characters, a name too long for a component included,
+        // and past that by its length and its start.
+        for (len, said) in [
+            (
+                201,
+                format!("Unsafe disc path component: {:?}", "n".repeat(201)),
+            ),
+            (
+                256,
+                format!("Unsafe disc path component: {:?}", "n".repeat(256)),
+            ),
+            (
+                300,
+                format!(
+                    "Unsafe disc path component of 300 characters beginning {:?}",
+                    "n".repeat(256)
+                ),
+            ),
+        ] {
+            let disc = game_disc(&[FstEntry::file(&"n".repeat(len), 0, 0)]);
+            assert_eq!(refusal(judged_unit(&disc)), ("unsafeName", said), "{len}");
+        }
+    }
+
+    #[test]
+    fn the_total_is_bounded_by_the_disc_size() {
+        // Two files of a GiB each, both from the disc's start: each lies on a disc as long as a
+        // whole one, and together they hold more than it.
+        let gib = 0x4000_0000;
+        let table = game_table(&[
+            FstEntry::file("ONE.BIN", 0, gib),
+            FstEntry::file("TWO.BIN", 0, gib),
+        ]);
+        let start = iso_of(&table, &[], FORMAT_FST_AT + table.len());
+        let read = |table_end: usize, start: Vec<u8>| {
+            let sparse = SparseFile {
+                len: FORMAT_DISC_SIZE,
+                chunks: vec![(0, start)],
+                at: 0,
+            };
+            let mut source = Counting::new(sparse);
+            let outcome = judge(&mut source, FORMAT_DISC_SIZE, Path::new(IMAGE));
+            // Nothing past the header and the file table is read.
+            assert!(source.furthest <= table_end as u64, "{}", source.furthest);
+            outcome
+        };
+        let table_end = FORMAT_FST_AT + table.len();
+        assert_eq!(
+            refusal(read(table_end, start).map(|_| ())),
+            ("totalSize", "Implausible total extracted size".to_owned())
+        );
+        // One file as long as the disc is the most the trees may hold.
+        let whole = u32::try_from(FORMAT_DISC_SIZE).unwrap();
+        let table = game_table(&[FstEntry::file("ALL.BIN", 0, whole)]);
+        let table_end = FORMAT_FST_AT + table.len();
+        let start = iso_of(&table, &[], table_end);
+        let whole_disc = read(table_end, start).unwrap_or_else(|error| panic!("{error}"));
+        assert_eq!(whole_disc.walked.files_len, FORMAT_DISC_SIZE);
+        // A byte further and the file runs past the disc.
+        let table = game_table(&[FstEntry::file("ALL.BIN", 1, whole)]);
+        let table_end = FORMAT_FST_AT + table.len();
+        let start = iso_of(&table, &[], table_end);
+        assert_eq!(
+            refusal(read(table_end, start).map(|_| ())),
+            (
+                "truncatedFile",
+                "Truncated disc file: Gauntlet/ALL.BIN".to_owned()
+            )
+        );
+    }
+
+    #[test]
+    fn every_cut_and_every_changed_byte_is_refused_or_read() {
+        // Each image is judged whole or refused by a rule of its format, never with a panic,
+        // never reading past its length and never asking for more than a file table's most in one
+        // read.
+        let check = |bytes: &[u8]| -> bool {
+            let len = bytes.len() as u64;
+            let mut source = Counting::new(Cursor::new(bytes));
+            let opened = match judge(&mut source, len, Path::new(IMAGE)) {
+                Ok(judged) => {
+                    for entry in &judged.walked.entries {
+                        if let DiscEntryKind::File { offset, size } = entry.kind {
+                            assert!(offset + size <= judged.size, "{} bytes", bytes.len());
+                        }
+                    }
+                    true
+                }
+                Err(MediaError::GameCube { .. }) => false,
+                Err(other) => panic!("{} bytes: {other:?}", bytes.len()),
+            };
+            assert!(source.furthest <= len, "{} bytes", bytes.len());
+            assert!(
+                source.longest <= FORMAT_MAX_FST_LEN,
+                "{} bytes",
+                bytes.len()
+            );
+            opened
+        };
+        // A cut ISO is read once it holds every file its table lists, the icon last of them; a
+        // cut CISO, only whole.
         let iso = synthetic_iso();
         let ciso = synthetic_ciso(&iso);
-        for image in [&iso, &ciso] {
-            for cut in 0..=image.len() {
-                check(&image[..cut]);
-            }
+        for cut in 0..=iso.len() {
+            assert_eq!(check(&iso[..cut]), cut >= FORMAT_ICON_AT + 4, "{cut}");
         }
-        for at in 0..FORMAT_HEADER_LEN {
+        for cut in 0..=ciso.len() {
+            assert_eq!(check(&ciso[..cut]), cut == ciso.len(), "{cut}");
+        }
+        let changed = (0..FORMAT_HEADER_LEN).chain(FORMAT_FST_AT..FORMAT_FST_AT + FORMAT_FST_LEN);
+        for at in changed {
             for value in [0x00, 0xFF, iso[at].wrapping_add(1)] {
                 check(&with_bytes(&iso, at, &[value]));
             }
         }
+    }
+
+    #[test]
+    fn an_images_debug_form_names_none_of_its_paths() {
+        let (dir, image) = open(&synthetic_iso());
+        let shown = format!("{image:?}");
+        assert!(
+            shown.starts_with("GameCubeImage { layout: Iso, size: 16384,"),
+            "{shown}"
+        );
+        assert!(shown.contains("entries: 8, files_len: 41"), "{shown}");
+        for name in ["Gauntlet", "carddemo", "PDATA", "WAR", "icon", IMAGE] {
+            assert!(!shown.contains(name), "{shown}");
+        }
+        assert!(!shown.contains(&*dir.path().to_string_lossy()), "{shown}");
+        let (_dir, sparse) = open(&synthetic_ciso(&synthetic_iso()));
+        let shown = format!("{sparse:?}");
+        assert!(
+            shown.contains("layout: Ciso(Ciso { block: 512, kept: 5 })"),
+            "{shown}"
+        );
+    }
+
+    #[test]
+    fn what_is_no_regular_file_is_refused_unopened() {
+        let dir = tempfile::tempdir().unwrap();
+        let error = GameCubeImage::open(dir.path()).unwrap_err();
+        let MediaError::Io { path, source } = &error else {
+            panic!("{error:?}");
+        };
+        assert_eq!(path, dir.path());
+        assert_eq!(source.kind(), io::ErrorKind::InvalidInput);
+        let missing = dir.path().join("missing.iso");
+        let error = GameCubeImage::open(&missing).unwrap_err();
+        let MediaError::Io { source, .. } = &error else {
+            panic!("{error:?}");
+        };
+        assert_eq!(source.kind(), io::ErrorKind::NotFound);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_fifo_is_never_opened() {
+        use crate::dump_file::fifo;
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(IMAGE);
+        fifo::make(&path);
+        let opening = path.clone();
+        let error = fifo::without_waiting(&path, move || {
+            GameCubeImage::open(&opening)
+                .err()
+                .map(|error| error.to_string())
+        });
+        let said = format!("{}: the path names no regular file", path.display());
+        assert_eq!(error, Some(said));
     }
 }
