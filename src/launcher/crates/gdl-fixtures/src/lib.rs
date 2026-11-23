@@ -1,8 +1,9 @@
-//! Builders of synthetic discs, ROMs, GD-ROM sets, payloads, release feeds and installations, so the
-//! launcher's plain tests run without the player's own dumps.
+//! Builders of synthetic discs and disc icons, ROMs, GD-ROM sets, payloads, release feeds and
+//! installations, so the launcher's plain tests run without the player's own dumps.
 #![forbid(unsafe_code)]
 
 mod folder;
+mod gamecube;
 mod gdrom;
 mod n64;
 mod program;
@@ -19,6 +20,11 @@ pub use folder::{
 };
 #[cfg(windows)]
 pub use folder::{deny_new_files, make_junction};
+pub use gamecube::{
+    CISO_HEADER_LEN, FST_AT, FstEntry, ICON_DATA_AT, SYNTHETIC_CISO_BLOCK, SYNTHETIC_ISO_LEN,
+    edited, first_frame_only_tpl, fst, icon_iso, iso_of, iso_with_icon, synthetic_ciso,
+    synthetic_iso, tpl,
+};
 pub use gdrom::{
     BootFields, DiscSet, Edc, RAW_SECTOR, SECTOR, boot_sector, both16, both32, edc, pvd_sector,
     raw_sector, record, sizes_rom,
