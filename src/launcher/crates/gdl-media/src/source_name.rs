@@ -1,12 +1,16 @@
 //! A dump's file name as the system gave it, kept in UTF-16 code units, so that a name that is not
-//! Unicode keeps every unit and reaches a manifest as the extraction scripts write it.
+//! Unicode keeps every unit and reaches a manifest as the extraction scripts write it. Windows
+//! gives a name in UTF-16 units. A Unix system gives bytes, which are read here as UTF-8; the
+//! scripts read them so where Python reads names as UTF-8, under a UTF-8 or the C locale or in
+//! Python's UTF-8 mode, and under another locale they read a name outside ASCII in that locale's
+//! encoding instead.
 
 use std::ffi::OsStr;
 use std::path::Path;
 
 /// What a byte that is no part of UTF-8 is added to, to become a unit of its own: the bytes 0x80
 /// to 0xFF become the low surrogates U+DC80 to U+DCFF, as the extraction scripts read such a byte
-/// in a name.
+/// in a name where Python reads names as UTF-8.
 #[cfg(unix)]
 const ESCAPED_BYTE_BASE: u16 = 0xDC00;
 

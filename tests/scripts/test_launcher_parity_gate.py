@@ -167,7 +167,7 @@ class Children:
             return subprocess.CompletedProcess(command, code)
         if command[0] == sys.executable:
             platform = next(name for name, script in gate.SCRIPTS.items()
-                            if command[2] == str(script))
+                            if str(script) in command)
             step, tree = f"script {platform}", TREES[platform]()
         else:
             platform = command[2]
@@ -461,8 +461,8 @@ class GateTests(unittest.TestCase):
         for platform, dump in (("n64", self.rom), ("dreamcast", self.disc)):
             with self.subTest(platform=platform):
                 self.assertEqual(children.find(f"script {platform}"), (
-                    [sys.executable, "-I", str(gate.SCRIPTS[platform]), str(dump), "--output",
-                     str(python / platform)], {"timeout": gate.EXTRACTION_TIMEOUT}))
+                    [sys.executable, "-I", "-X", "utf8", str(gate.SCRIPTS[platform]), str(dump),
+                     "--output", str(python / platform)], {"timeout": gate.EXTRACTION_TIMEOUT}))
                 self.assertEqual(children.find(f"launcher {platform}"), (
                     [str(gate.BUILT_PROGRAM), "--extract", platform, str(dump), "--output",
                      str(made / platform)], {"timeout": gate.EXTRACTION_TIMEOUT}))
@@ -566,7 +566,8 @@ class GateTests(unittest.TestCase):
                 children = Children(self)
                 code, _, err = self.run_gate(children, argv, environment)
                 self.assertEqual(code, gate.PASSED, err)
-                self.assertEqual(children.find("script n64")[0][3], str(rom))
+                script = children.find("script n64")[0]
+                self.assertEqual(script[script.index(str(gate.SCRIPTS["n64"])) + 1], str(rom))
                 self.assertEqual(children.find("launcher n64")[0][3], str(rom))
                 self.assertEqual(children.find("launcher dreamcast")[0][3], str(self.disc))
                 tests = children.find("cargo test")[1]["env"]

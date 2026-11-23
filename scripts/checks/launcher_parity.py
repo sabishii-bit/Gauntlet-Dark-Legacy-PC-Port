@@ -476,8 +476,10 @@ def check_platform(platform: str, dump: Path, reference: Path, program: Path,
               **uncompared(platform)}
     announce(f"{platform}: the extraction script")
     # Isolated: the scripts need nothing but the standard library, and none of the caller's
-    # Python settings reach them.
-    script = [sys.executable, "-I", str(SCRIPTS[platform]), str(dump), "--output", str(written)]
+    # Python settings reach them. In UTF-8 mode, whatever the system's locale, they read the
+    # dump's name as the launcher does: as UTF-8, each byte that is none escaped.
+    script = [sys.executable, "-I", "-X", "utf8", str(SCRIPTS[platform]), str(dump), "--output",
+              str(written)]
     problem, record["scriptSeconds"] = timed_run(script, "the extraction script")
     if problem is None:
         announce(f"{platform}: the launcher")
