@@ -5,7 +5,7 @@
 //! mark of its own; each is read no further than telling it takes.
 
 use std::fs;
-use std::io::{self, Read, Seek, SeekFrom};
+use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
 use gdl_files::{Cancel, Job, NoProgress};
@@ -14,8 +14,8 @@ use crate::dump_file::open_regular;
 use crate::gdrom::{head_of, names_gauntlet_legends, sheet_naming, sheet_of, without_mark};
 use crate::{
     AREA, ByteOrder, DiscRule, IpBin, MAX_SHEET_LEN, MediaError, N64Rom, PRODUCT, RomHeader,
-    SCRIPT_RULES, Sha1Digest, Sha256Digest, Sheet, SheetKind, SourceName, TrackMode, US_SHA1,
-    VERSION, ascii_field, find_sheet, read_sheet,
+    SCRIPT_RULES, Sha1Digest, Sha256Digest, Sheet, SheetKind, SheetTrack, SourceName, TrackMode,
+    US_SHA1, VERSION, ascii_field, find_sheet, read_sheet,
 };
 
 /// How many bytes at a file's end identification reads: as many as the marks kept there take.
@@ -249,7 +249,7 @@ pub struct TrackFile {
     pub name: String,
     /// What the track's sectors hold.
     pub mode: TrackMode,
-    /// How many bytes the file holds, or `None` when no regular file is there.
+    /// How many bytes the file holds, or `None` when the system shows no regular file there.
     pub size: Option<u64>,
 }
 
@@ -590,7 +590,7 @@ fn disc_identity(sheet: Sheet, sheet_name: SourceName) -> Result<Identity, Media
         sheet: sheet.path.clone(),
         sheet_name,
         kind: sheet.kind,
-        tracks: track_files(&sheet)?,
+        tracks: track_files(&sheet),
     };
     let other_game = Identity {
         console: Some(Console::Dreamcast),
@@ -622,25 +622,22 @@ fn disc_identity(sheet: Sheet, sheet_name: SourceName) -> Result<Identity, Media
 }
 
 /// Every track `sheet` lists, in its order, with the length of the regular file beside the sheet
-/// that holds it, or none when no regular file is there. Fails when the system cannot say what is
-/// there.
-fn track_files(sheet: &Sheet) -> Result<Vec<TrackFile>, MediaError> {
+/// that holds it, or none when the system shows no regular file there: none is there, something
+/// else is, or the system cannot say what is, as for a name it cannot hold. This only describes
+/// the dump: the extractor never reads an audio track's file, and a data track's file that cannot
+/// be read is refused as its head is read.
+fn track_files(sheet: &Sheet) -> Vec<TrackFile> {
     let folder = sheet.path.parent().unwrap_or(Path::new(""));
-    let mut files = Vec::with_capacity(sheet.tracks.len());
-    for track in &sheet.tracks {
-        let path = folder.join(&track.file);
-        let size = match fs::metadata(&path) {
-            Ok(metadata) => metadata.is_file().then_some(metadata.len()),
-            Err(error) if error.kind() == io::ErrorKind::NotFound => None,
-            Err(error) => return Err(MediaError::io(&path, error)),
-        };
-        files.push(TrackFile {
-            name: track.file.clone(),
-            mode: track.mode,
-            size,
-        });
-    }
-    Ok(files)
+    let file_len = |track: &SheetTrack| {
+        let metadata = fs::metadata(folder.join(&track.file)).ok()?;
+        metadata.is_file().then_some(metadata.len())
+    };
+    let files = sheet.tracks.iter().map(|track| TrackFile {
+        name: track.file.clone(),
+        mode: track.mode,
+        size: file_len(track),
+    });
+    files.collect()
 }
 
 /// `text`, a field a dump gives of itself, without the spaces, other ASCII white space and NULs
@@ -1296,6 +1293,29 @@ mod tests {
         fs::create_dir(dir.path().join("track4.bin")).unwrap();
         let expected = us_disc(&sheet, SheetKind::Cue, full_tracks(&vectors, None));
         assert_eq!(identified(&sheet), expected);
+
+        // The audio track's file, which the set leaves out, under a name no file system holds: 130
+        // characters past the Basic Multilingual Plane, 260 UTF-16 units and 520 bytes of UTF-8,
+        // more than either kind of system takes in one name. The system cannot say what is there,
+        // and the extractor never looks, since it reads no audio track's file.
+        let dir = tempfile::tempdir().unwrap();
+        let sheet = DiscSet::full(Edc::Zero).write(dir.path()).unwrap();
+        let unheld = format!("{}.bin", "\u{1d11e}".repeat(130));
+        let text = fs::read_to_string(&sheet).unwrap();
+        let renamed = text.replace("\"track4.bin\"", &format!("\"{unheld}\""));
+        assert_ne!(renamed, text);
+        fs::write(&sheet, renamed).unwrap();
+        let mut tracks = full_tracks(&vectors, None);
+        tracks[1].name = unheld;
+        let expected = us_disc(&sheet, SheetKind::Cue, tracks);
+        let paths = [
+            sheet.clone(),
+            dir.path().to_path_buf(),
+            dir.path().join("track3.bin"),
+        ];
+        for path in paths {
+            assert_eq!(identified(&path), expected, "{}", path.display());
+        }
     }
 
     #[test]

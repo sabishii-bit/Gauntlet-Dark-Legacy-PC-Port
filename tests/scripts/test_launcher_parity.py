@@ -439,12 +439,22 @@ class DreamcastParityTests(ParityTests):
 
     def test_dreamcast_sheets_the_script_reads_trees_match(self):
         # The full set's cue sheet with a last line the extractor passes over, a remark, that ends
-        # the file as a Nero image's mark does, 8 or 12 bytes before its end.
-        for remark in (b"REM NERO 7\r\n", b"REM NER5 12345\r\n"):
-            with self.subTest(remark=remark):
+        # the file as a Nero image's mark does, 8 or 12 bytes before its end; and the sheet naming
+        # the audio track's file, which the set leaves out and the extractor never reads, by a name
+        # no file system holds: 130 characters past the Basic Multilingual Plane.
+        unheld = f'"{chr(0x1D11E) * 130}.bin"'.encode()
+        changes = {"a remark ending as NERO": lambda sheet: sheet + b"REM NERO 7\r\n",
+                   "a remark ending as NER5": lambda sheet: sheet + b"REM NER5 12345\r\n",
+                   "an audio file no system holds":
+                       lambda sheet: sheet.replace(b'"track4.bin"', unheld)}
+        for label, change in changes.items():
+            with self.subTest(sheet=label):
                 case = Case(self.scratch)
                 sheet = full_set(case.dumps())
-                sheet.write_bytes(sheet.read_bytes() + remark)
+                text = sheet.read_bytes()
+                changed = change(text)
+                self.assertNotEqual(changed, text)
+                sheet.write_bytes(changed)
                 self.assert_extracts_alike("dreamcast", sheet, case)
 
     def test_dreamcast_gdi_tree_matches_the_cue_tree(self):
