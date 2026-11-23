@@ -10,7 +10,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 #[cfg(unix)]
-use crate::rename::{SyncFolder, sync_folder};
+use crate::rename::{SyncFolder, folder_of, sync_folder};
 use crate::{
     FilesError, PAYLOAD_NAMES, RelPath, check_component, no_links, rename_noreplace, retry_locked,
 };
@@ -208,14 +208,16 @@ impl Staging {
     }
 
     /// Syncs every folder of the staged tree, the staging's own included, each after every folder
-    /// below it, so that a crash once the job has gone on cannot lose a name made in one: on Unix
-    /// a folder's entries reach the disk only when the folder itself is synced. A file system that
-    /// cannot sync folders counts its folders as synced, as [`rename_noreplace`] counts them. No
-    /// link is followed. On Windows this does nothing: NTFS journals its folders, and a folder
-    /// opened only to read cannot be flushed.
+    /// below it, and then the folder that holds the staging, so that a crash once the job has gone
+    /// on cannot lose a name made in one, nor the staging's own name: on Unix a folder's entries
+    /// reach the disk only when the folder itself is synced, and syncing a folder does not make
+    /// its entry in the folder above it durable. A file system that cannot sync folders counts
+    /// its folders as synced, as [`rename_noreplace`] counts them. No link is followed. On Windows
+    /// this does nothing: NTFS journals its folders, and a folder opened only to read cannot be
+    /// flushed.
     pub fn sync_folders(&self) -> Result<(), FilesError> {
         #[cfg(unix)]
-        return sync_tree(self.path(), &File::sync_all);
+        return sync_staged(self.path(), &File::sync_all);
         #[cfg(windows)]
         return Ok(());
     }
@@ -345,9 +347,18 @@ fn refuse_links_in(top: &Path) -> Result<(), FilesError> {
     Ok(())
 }
 
-/// Syncs `top` and every folder under it with `sync`, as [`Staging::sync_folders`] does: they are
-/// listed top down, each after the folder above it, then synced in the reverse order, deepest
-/// first. Only real folders are entered; a link is never followed. The first failure stops it.
+/// Syncs the staged tree under `staging` with `sync`, as [`sync_tree`] syncs it, and then the
+/// folder that holds the staging, as [`Staging::sync_folders`] does. The first failure stops it.
+#[cfg(unix)]
+fn sync_staged(staging: &Path, sync: SyncFolder<'_>) -> Result<(), FilesError> {
+    sync_tree(staging, sync)?;
+    let holder = folder_of(staging);
+    sync_folder(holder, sync).map_err(|source| FilesError::io(holder, source))
+}
+
+/// Syncs `top` and every folder under it with `sync`: they are listed top down, each after the
+/// folder above it, then synced in the reverse order, deepest first. Only real folders are
+/// entered; a link is never followed. The first failure stops it.
 #[cfg(unix)]
 fn sync_tree(top: &Path, sync: SyncFolder<'_>) -> Result<(), FilesError> {
     let mut folders = vec![top.to_path_buf()];
@@ -979,7 +990,7 @@ mod tests {
         use std::cell::RefCell;
         use std::os::unix::fs::MetadataExt;
 
-        use super::sync_tree;
+        use super::sync_staged;
 
         let install = install();
         let staging = Staging::create_in(&install.state, "install-").unwrap();
@@ -996,15 +1007,18 @@ mod tests {
             let folder = rel(name).path_under(staging.path());
             depths.insert(inode(&folder), rel(name).depth());
         }
+        // The folder that holds the staging, synced last, so that the staging's own name lasts.
+        let holder = inode(&install.state);
 
-        // Every folder once, each after every folder below it.
+        // Every folder of the tree once, each after every folder below it, then the holder.
         let synced = RefCell::new(Vec::new());
         let record = |folder: &fs::File| {
             synced.borrow_mut().push(folder.metadata()?.ino());
             folder.sync_all()
         };
-        sync_tree(staging.path(), &record).unwrap();
-        let synced = synced.into_inner();
+        sync_staged(staging.path(), &record).unwrap();
+        let mut synced = synced.into_inner();
+        assert_eq!(synced.pop(), Some(holder), "{synced:?}");
         let mut once = synced.clone();
         once.sort_unstable();
         assert!(once.iter().eq(depths.keys()), "{synced:?}");
@@ -1029,11 +1043,11 @@ mod tests {
                 tried.borrow_mut().push(folder.metadata()?.ino());
                 Err(io::Error::from_raw_os_error(code))
             };
-            let result = sync_tree(staging.path(), &answer);
+            let result = sync_staged(staging.path(), &answer);
             let tried = tried.into_inner();
             if !refused {
                 result.unwrap();
-                assert_eq!(tried.len(), depths.len(), "{code}");
+                assert_eq!(tried.len(), depths.len() + 1, "{code}");
                 continue;
             }
             match result {
@@ -1045,6 +1059,26 @@ mod tests {
                 other => panic!("{code}: {other:?}"),
             }
         }
+
+        // The system's own sync walks the staged tree too: a folder in it that cannot be opened
+        // stops it there.
+        let text = rel("data/text").path_under(staging.path());
+        let denied = gdl_fixtures::DeniedAccess::deny(&[&text]).unwrap();
+        if fs::read_dir(&text).is_ok() {
+            eprintln!(
+                "skipped the denied folder: this user opens folders of mode 0o000, as root does"
+            );
+        } else {
+            match staging.sync_folders() {
+                Err(FilesError::Io { path, source }) => {
+                    assert_eq!(path, text);
+                    assert_eq!(source.kind(), io::ErrorKind::PermissionDenied, "{source}");
+                }
+                other => panic!("{other:?}"),
+            }
+        }
+        drop(denied);
+        staging.sync_folders().unwrap();
     }
 
     /// A folder that the system will not let the launcher write in refuses a file for that
