@@ -667,7 +667,7 @@ mod tests {
     use std::ops::Range;
     use std::path::{Path, PathBuf};
 
-    use gdl_files::{Cancel, Job, NoProgress};
+    use gdl_files::Cancel;
     use gdl_fixtures::{DiscSet, Edc, raw_sector, reorder, snapshot};
     use serde_json::Value;
 
@@ -676,7 +676,7 @@ mod tests {
         US_DISC, Verdict, disc_verdict, identify, n64_verdict,
     };
     use crate::vectors::{
-        boot_of, dreamcast_vectors, frozen, n64_vectors, named, players_disc, players_rom,
+        boot_of, dreamcast_vectors, frozen, n64_vectors, named, players_disc, players_rom, quiet,
         with_boot_bytes,
     };
     use crate::{
@@ -1525,12 +1525,7 @@ mod tests {
         let expected = us_disc(&sheet, SheetKind::Cue, full_tracks(&vectors, None));
         assert_eq!(identified(&sheet), expected);
         // A reader that went on to the volume would refuse the disc.
-        let cancel = Cancel::default();
-        let job = Job {
-            cancel: &cancel,
-            progress: &NoProgress,
-        };
-        let opened = GdRom::open(&sheet, &SCRIPT_RULES, &job);
+        let opened = GdRom::open(&sheet, &SCRIPT_RULES, &quiet(&Cancel::default()));
         assert_eq!(opened.unwrap_err().rule(), "sectorHeader");
     }
 

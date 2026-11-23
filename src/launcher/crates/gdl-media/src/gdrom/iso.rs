@@ -413,7 +413,7 @@ mod tests {
     use std::ops::Range;
     use std::path::PathBuf;
 
-    use gdl_files::{Cancel, Job, NoProgress};
+    use gdl_files::Cancel;
     use gdl_fixtures::{DiscSet, Edc, RAW_SECTOR, pvd_sector, raw_sector, record, unhex};
     use serde_json::json;
     use tempfile::TempDir;
@@ -425,7 +425,7 @@ mod tests {
     };
     use crate::gdrom::open_head;
     use crate::vectors::{dreamcast_golden, dreamcast_vectors, located, manifest_files, number};
-    use crate::vectors::{text, word};
+    use crate::vectors::{quiet, text, word};
     use crate::{DiscRules, GdRom, INSTALL_RULES, MediaError, SCRIPT_RULES, read_sheet};
 
     /// The LBA the format gives the volume descriptor: the sector after the boot area's sixteen.
@@ -590,12 +590,7 @@ mod tests {
         look: impl FnOnce(&GdRom) -> T,
     ) -> Outcome<T> {
         let (_dir, sheet) = written(set);
-        let cancel = Cancel::default();
-        let job = Job {
-            cancel: &cancel,
-            progress: &NoProgress,
-        };
-        GdRom::open(&sheet, rules, &job)
+        GdRom::open(&sheet, rules, &quiet(&Cancel::default()))
             .map(|disc| look(&disc))
             .map_err(refusal)
     }

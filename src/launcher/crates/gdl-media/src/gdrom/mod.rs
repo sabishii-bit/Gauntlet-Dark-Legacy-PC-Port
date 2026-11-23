@@ -650,14 +650,14 @@ mod tests {
     use std::io::{self, Write};
     use std::path::PathBuf;
 
-    use gdl_files::{Cancel, DISC_NAMES, Job, NoProgress, RelPath};
+    use gdl_files::{Cancel, DISC_NAMES, RelPath};
     use gdl_fixtures::{DiscSet, Edc, SparseFile, raw_sector, snapshot};
     use serde_json::{Value, json};
     use tempfile::TempDir;
 
     use super::{DiscFile, DiscRules, GdRom, INSTALL_RULES, SCRIPT_RULES, TrackFile, read_head};
     use crate::vectors::{dreamcast_golden, dreamcast_vectors, located, manifest_files};
-    use crate::vectors::{manifest_restored, players_disc, recorded, restored, text};
+    use crate::vectors::{manifest_restored, players_disc, quiet, recorded, restored, text};
     use crate::{AREA, MAX_SIZES_ROM_LEN, MediaError, PackedPlace, RAW_SECTOR, Sha256Digest};
     use crate::{VERSION, packed_files};
 
@@ -747,14 +747,6 @@ mod tests {
 
         fn flush(&mut self) -> io::Result<()> {
             Ok(())
-        }
-    }
-
-    /// A job nobody follows, asked to stop only through `cancel`.
-    fn quiet(cancel: &Cancel) -> Job<'_> {
-        Job {
-            cancel,
-            progress: &NoProgress,
         }
     }
 

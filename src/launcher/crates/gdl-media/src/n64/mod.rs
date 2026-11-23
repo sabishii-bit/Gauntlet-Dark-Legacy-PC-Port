@@ -430,7 +430,7 @@ mod tests {
     use std::ops::Range;
     use std::path::Path;
 
-    use gdl_files::{BLOCK_LEN, Cancel, Job, NoProgress};
+    use gdl_files::{BLOCK_LEN, Cancel};
     use gdl_fixtures::{reorder, unhex};
     use serde_json::Value;
 
@@ -438,7 +438,9 @@ mod tests {
         BIG_ENDIAN_FIRST_WORD, BYTE_SWAPPED_FIRST_WORD, ByteOrder, LITTLE_ENDIAN_FIRST_WORD,
         MAX_ROM_LEN, N64Rom, ROM_HEADER_LEN, RomHeader, US_SHA1, WORD_LEN, read_in_blocks,
     };
-    use crate::vectors::{frozen, n64_golden, n64_vectors, named, number, players_rom, text};
+    use crate::vectors::{
+        frozen, n64_golden, n64_vectors, named, number, players_rom, quiet, text,
+    };
     use crate::{
         COMPRESSED, MediaError, ROMDISK_LIMITS, Region, RomRule, Sha1Digest, Sha256Digest,
         US_OVERLAYS, wad_sections,
@@ -497,14 +499,6 @@ mod tests {
                 self.cancel.cancel();
             }
             Ok(len)
-        }
-    }
-
-    /// A job nobody follows, asked to stop only through `cancel`.
-    fn quiet(cancel: &Cancel) -> Job<'_> {
-        Job {
-            cancel,
-            progress: &NoProgress,
         }
     }
 

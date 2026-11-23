@@ -3,12 +3,14 @@
 //! dumps, the names the N64 extractor was given those dumps under, the tracks a sheet lists as the
 //! cases write them, with the LBA a GDI gives each, a disc's data tracks and files as its manifest
 //! records them, and the files a packed file table lists as the cases and the native manifests
-//! write them. Beside them, where the trusted machine keeps the player's own dumps, and a disc
-//! set's boot area as its head reads it, changed where a test needs it.
+//! write them. Beside them, where the trusted machine keeps the player's own dumps, a disc set's
+//! boot area as its head reads it, changed where a test needs it, and the job a reader runs in
+//! when nobody follows it.
 
 use std::env;
 use std::path::{Path, PathBuf};
 
+use gdl_files::{Cancel, Job, NoProgress};
 use gdl_fixtures::{DiscSet, unhex};
 use serde_json::{Value, json};
 
@@ -189,6 +191,14 @@ pub(crate) fn word(value: &Value) -> u32 {
 /// The name of a dump's file called `text`.
 pub(crate) fn named(text: &str) -> SourceName {
     SourceName::from_units(text.encode_utf16().collect())
+}
+
+/// A job nobody follows, asked to stop only through `cancel`.
+pub(crate) fn quiet(cancel: &Cancel) -> Job<'_> {
+    Job {
+        cancel,
+        progress: &NoProgress,
+    }
 }
 
 /// A sheet's tracks as the Dreamcast vectors list them: each one's number, file, mode as a cue
