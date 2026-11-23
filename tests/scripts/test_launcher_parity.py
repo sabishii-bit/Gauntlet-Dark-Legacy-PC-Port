@@ -36,7 +36,7 @@ import launcher
 import legends_fixtures
 import n64_legends as n64
 import process_tree
-from launcher_parity import is_link
+from launcher_parity import BUILT_PROGRAM, is_link
 from legends_fixtures import (DREAMCAST_VECTORS, FULL_DISK_ROM, N64_VECTORS, extract_set, fixture,
                               full_gdi_set, full_set, iso_identifier, json_string, name_fixture,
                               paths_rom, reorder, rom, vectors)
@@ -45,9 +45,10 @@ from legends_fixtures import (DREAMCAST_VECTORS, FULL_DISK_ROM, N64_VECTORS, ext
 # The variable that names the headless program to run, as a path from the repository's root.
 LAUNCHER_VARIABLE = "GDL_LAUNCHER_BIN"
 
-# The headless program's file, and the folders cargo builds it into.
-PROGRAM = launcher.HEADLESS_PACKAGE + (".exe" if os.name == "nt" else "")
-BUILDS = (launcher.TARGET / "release", launcher.TARGET / "debug")
+# The headless program's file, and the folders cargo builds it into: the gate's release build
+# first, then the debug one.
+PROGRAM = BUILT_PROGRAM.name
+BUILDS = (BUILT_PROGRAM.parent, launcher.TARGET / "debug")
 
 # How long one extraction by the launcher may run, in seconds, before it is stopped.
 LAUNCHER_TIMEOUT = 120
