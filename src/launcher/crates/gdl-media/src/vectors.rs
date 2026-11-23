@@ -5,9 +5,11 @@
 //! records them, and the files a packed file table lists as the cases and the native manifests
 //! write them. Beside them, where the trusted machine keeps the player's own dumps and the icon
 //! of their extracted GameCube disc, a disc set's boot area as its head reads it, changed where a
-//! test needs it, and the job a reader runs in when nobody follows it.
+//! test needs it, the job a reader runs in when nobody follows it, and a writer that takes
+//! nothing, as a full disk does.
 
 use std::env;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 use gdl_files::{Cancel, Job, NoProgress};
@@ -209,6 +211,19 @@ pub(crate) fn quiet(cancel: &Cancel) -> Job<'_> {
     Job {
         cancel,
         progress: &NoProgress,
+    }
+}
+
+/// A writer whose every write the system refuses, as a full disk's.
+pub(crate) struct Full;
+
+impl Write for Full {
+    fn write(&mut self, _: &[u8]) -> io::Result<usize> {
+        Err(io::ErrorKind::StorageFull.into())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
     }
 }
 

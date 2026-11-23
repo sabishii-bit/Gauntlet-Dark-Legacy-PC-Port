@@ -603,11 +603,11 @@ mod tests {
     use std::collections::BTreeSet;
     use std::fmt;
     use std::fs;
-    use std::io::{self, Cursor, Read, Seek, SeekFrom, Write};
+    use std::io::{self, Cursor, Read, Seek, SeekFrom};
     use std::path::Path;
     use std::sync::Mutex;
 
-    use gdl_files::{BLOCK_LEN, Cancel, Job, NoProgress, PhaseId, Progress, RelPath};
+    use gdl_files::{BLOCK_LEN, Cancel, Job, PhaseId, Progress, RelPath};
     use gdl_fixtures::{
         FstEntry, SparseFile, edited, fst, icon_iso, iso_of, synthetic_ciso, synthetic_iso, tpl,
         unhex,
@@ -620,6 +620,7 @@ mod tests {
         DiscEntry, DiscEntryKind, DiscHeader, GameCubeImage, Judged, Layout, MAX_REVISION,
         US_GAME_ID, gamecube_verdict, header_refusal, header_rule, judge, read_header,
     };
+    use crate::vectors::{Full, number, quiet, text};
     use crate::{Container, DumpRefusal, MediaError, Region, Sha256Digest, Verdict};
 
     /// The installer's disc cases, which the reader is held to.
@@ -724,19 +725,14 @@ mod tests {
         assert_eq!(vectors["format"], "gdl-gamecube-vectors");
         assert_eq!(vectors["version"], 1);
         let object = vectors.as_object().expect("the vectors are an object");
-        let keys: Vec<&str> = object.keys().map(String::as_str).collect();
-        assert_eq!(keys, VECTOR_KEYS, "the vectors hold other keys");
+        // As a set, so that the keys' order, which the JSON map may or may not keep, never counts.
+        let keys: BTreeSet<&str> = object.keys().map(String::as_str).collect();
+        assert_eq!(
+            keys,
+            BTreeSet::from(VECTOR_KEYS),
+            "the vectors hold other keys"
+        );
         vectors
-    }
-
-    /// A string of the vectors.
-    fn text(value: &Value) -> &str {
-        value.as_str().expect("a string")
-    }
-
-    /// A number of the vectors.
-    fn number(value: &Value) -> u64 {
-        value.as_u64().expect("a number")
     }
 
     /// The image the vectors name `name`, as the installer's tests build it.
@@ -922,19 +918,6 @@ mod tests {
         }
     }
 
-    /// A writer that takes nothing, as one on a full disk does.
-    struct Full;
-
-    impl Write for Full {
-        fn write(&mut self, _: &[u8]) -> io::Result<usize> {
-            Err(io::ErrorKind::StorageFull.into())
-        }
-
-        fn flush(&mut self) -> io::Result<()> {
-            Ok(())
-        }
-    }
-
     #[test]
     fn cases_follow_the_shared_vectors() {
         let vectors = vectors();
@@ -986,10 +969,7 @@ mod tests {
             let entries = image.entries().to_vec();
             assert_eq!(entries.len(), listed.len(), "{name}");
             let cancel = Cancel::default();
-            let job = Job {
-                cancel: &cancel,
-                progress: &NoProgress,
-            };
+            let job = quiet(&cancel);
             let mut files_len = 0;
             for (entry, listed) in entries.iter().zip(listed) {
                 assert_eq!(entry.path.as_str(), text(&listed["path"]), "{name}");
@@ -1005,9 +985,12 @@ mod tests {
                 let (size, sha256) = if name == "isoWithIcon" && entry.path.first() == "carddemo" {
                     (icon.len() as u64, Sha256Digest::of(&icon).hex())
                 } else {
-                    (number(&listed["size"]), text(&listed["sha256"]).to_owned())
+                    (
+                        number(&listed["size"]) as u64,
+                        text(&listed["sha256"]).to_owned(),
+                    )
                 };
-                let offset = number(&listed["offset"]);
+                let offset = number(&listed["offset"]) as u64;
                 assert_eq!(entry.kind, DiscEntryKind::File { offset, size }, "{name}");
                 assert_eq!(digest.hex(), sha256, "{name}: {}", entry.path.as_str());
                 assert_eq!(Sha256Digest::of(&copied), digest);
@@ -1028,10 +1011,7 @@ mod tests {
             assert_eq!(whole.files_len(), sparse.files_len());
             assert_eq!((whole.revision(), sparse.revision()), (1, 1));
             let cancel = Cancel::default();
-            let job = Job {
-                cancel: &cancel,
-                progress: &NoProgress,
-            };
+            let job = quiet(&cancel);
             for entry in whole.entries().to_vec() {
                 let (mut from_whole, mut from_sparse) = (Vec::new(), Vec::new());
                 let whole_digest = whole.copy(&entry, &mut from_whole, &job).unwrap();
@@ -1052,9 +1032,9 @@ mod tests {
         for read in vectors["reads"].as_array().unwrap() {
             let bytes = image(text(&read["image"]));
             let (layout, size, _) = header_of(&bytes).unwrap();
-            let mut buffer = vec![0xEE; usize::try_from(number(&read["size"])).unwrap()];
+            let mut buffer = vec![0xEE; number(&read["size"])];
             let mut source = Cursor::new(bytes.as_slice());
-            let offset = number(&read["offset"]);
+            let offset = number(&read["offset"]) as u64;
             let path = Path::new(IMAGE);
             let outcome = layout.read_at(&mut source, path, size, offset, &mut buffer);
             if read["rule"].is_null() {
@@ -1345,10 +1325,7 @@ mod tests {
         // A writer that refuses the bytes fails the copy, naming the file in the disc's tree and
         // keeping what the writer answered.
         let cancel = Cancel::default();
-        let job = Job {
-            cancel: &cancel,
-            progress: &NoProgress,
-        };
+        let job = quiet(&cancel);
         let error = image.copy(&big, &mut Full, &job).unwrap_err();
         let MediaError::Write { file, source } = &error else {
             panic!("{error:?}");
@@ -1397,10 +1374,7 @@ mod tests {
         };
         assert_eq!(refusal(image.read_entry(&past, 8)).0, "outsideImage");
         let cancel = Cancel::default();
-        let job = Job {
-            cancel: &cancel,
-            progress: &NoProgress,
-        };
+        let job = quiet(&cancel);
         assert_eq!(
             refusal(image.copy(&past, &mut Vec::new(), &job)).0,
             "outsideImage"

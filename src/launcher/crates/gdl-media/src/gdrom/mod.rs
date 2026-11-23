@@ -656,8 +656,8 @@ mod tests {
     use tempfile::TempDir;
 
     use super::{DiscFile, DiscRules, GdRom, INSTALL_RULES, SCRIPT_RULES, TrackFile, read_head};
+    use crate::vectors::{Full, manifest_restored, players_disc, quiet, recorded, restored, text};
     use crate::vectors::{dreamcast_golden, dreamcast_vectors, located, manifest_files};
-    use crate::vectors::{manifest_restored, players_disc, quiet, recorded, restored, text};
     use crate::{AREA, MAX_SIZES_ROM_LEN, MediaError, PackedPlace, RAW_SECTOR, Sha256Digest};
     use crate::{VERSION, packed_files};
 
@@ -730,19 +730,6 @@ mod tests {
                 cancel.cancel();
             }
             Ok(bytes.len())
-        }
-
-        fn flush(&mut self) -> io::Result<()> {
-            Ok(())
-        }
-    }
-
-    /// A writer whose every write the system refuses, as a full disk's.
-    struct Full;
-
-    impl Write for Full {
-        fn write(&mut self, _: &[u8]) -> io::Result<usize> {
-            Err(io::ErrorKind::StorageFull.into())
         }
 
         fn flush(&mut self) -> io::Result<()> {

@@ -303,7 +303,7 @@ mod tests {
     use serde_json::Value;
 
     use super::{Frame, MAX_TPL_LEN, first_frame};
-    use crate::vectors::players_disc_icon;
+    use crate::vectors::{number, players_disc_icon, text};
     use crate::{MediaError, Sha256Digest};
 
     /// The installer's icon cases, which the decoder is held to.
@@ -391,19 +391,14 @@ mod tests {
         assert_eq!(vectors["format"], "gdl-icon-vectors");
         assert_eq!(vectors["version"], 1);
         let object = vectors.as_object().expect("the vectors are an object");
-        let keys: Vec<&str> = object.keys().map(String::as_str).collect();
-        assert_eq!(keys, VECTOR_KEYS, "the vectors hold other keys");
+        // As a set, so that the keys' order, which the JSON map may or may not keep, never counts.
+        let keys: BTreeSet<&str> = object.keys().map(String::as_str).collect();
+        assert_eq!(
+            keys,
+            BTreeSet::from(VECTOR_KEYS),
+            "the vectors hold other keys"
+        );
         vectors
-    }
-
-    /// A string of the vectors.
-    fn text(value: &Value) -> &str {
-        value.as_str().expect("a string")
-    }
-
-    /// A number of the vectors.
-    fn number(value: &Value) -> usize {
-        usize::try_from(value.as_u64().expect("a number")).unwrap()
     }
 
     /// The TPL the vectors name `name`, as the icon tests build it.
