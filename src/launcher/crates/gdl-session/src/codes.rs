@@ -12,7 +12,7 @@ use gdl_install::{
     FolderError, FolderState, GameStartError, GameUseError, LockError, PayloadError, ReceiptError,
     SectionsError,
 };
-use gdl_media::{DiscRule, DumpRefusal, GameCubeRule, MediaError, RomRule};
+use gdl_media::{DiscRule, DumpRefusal, GameCubeRule, MediaError, RomRule, TplRule};
 
 use crate::extraction::ExtractionError;
 use crate::privilege::Refusal;
@@ -325,7 +325,7 @@ pub fn refusal(refusal: Refusal) -> &'static str {
 /// that is not there is `source.incomplete`, one in a container the launcher does not read
 /// `source.unsupportedContainer`, a disc of another game `source.otherGame`, one of another region
 /// or revision of the game `source.otherRevision`, and a file that is no dump the launcher knows
-/// `source.unrecognized`. Any other broken rule is `source.damaged`.
+/// `source.unrecognized`. Any other broken rule is `source.damaged`, a disc icon's included.
 pub fn media(error: &MediaError) -> Report {
     match error {
         MediaError::Cancelled => Report::Cancelled,
@@ -334,6 +334,7 @@ pub fn media(error: &MediaError) -> Report {
         MediaError::Rom { rule, .. } => Report::Error(rom_rule(*rule)),
         MediaError::Disc { rule, .. } => Report::Error(disc_rule(*rule)),
         MediaError::GameCube { rule, .. } => Report::Error(gamecube_rule(*rule)),
+        MediaError::Tpl { rule, .. } => Report::Error(tpl_rule(*rule)),
     }
 }
 
@@ -550,6 +551,20 @@ fn gamecube_rule(rule: GameCubeRule) -> &'static str {
     }
 }
 
+/// The code of a rule of a disc icon's TPL: `source.damaged`, whichever rule it breaks, since the
+/// icon comes from a disc whose header and file table the reader took, and the US disc's icon
+/// breaks none.
+fn tpl_rule(rule: TplRule) -> &'static str {
+    match rule {
+        TplRule::Size
+        | TplRule::Directory
+        | TplRule::Header
+        | TplRule::Dimensions
+        | TplRule::Format
+        | TplRule::Pixels => SOURCE_DAMAGED,
+    }
+}
+
 /// The code a failed write reports, by what the system answered: `space.ranOut` when the disk was
 /// full or the quota spent, else `io.failed`.
 fn written(error: &io::Error) -> &'static str {
@@ -569,14 +584,14 @@ mod tests {
 
     use gdl_extract::{Expansion, ExtractError, FingerprintRule, NativeRule, TreeRule};
     use gdl_files::{DISC_NAMES, FilesError, RelPath};
-    use gdl_fixtures::{synthetic_ciso, synthetic_iso};
+    use gdl_fixtures::{synthetic_ciso, synthetic_iso, tpl};
     use gdl_install::{
         BuildInfo, FolderError, FolderState, GameStartError, GameUseError, LockError, PayloadError,
         ReceiptError, SectionsError,
     };
     use gdl_media::{
-        Console, DiscRule, DumpRefusal, GameCubeImage, GameCubeRule, MediaError, RomRule, Verdict,
-        identify,
+        Console, DiscRule, DumpRefusal, GameCubeImage, GameCubeRule, MediaError, RomRule, TplRule,
+        Verdict, first_frame, identify,
     };
     use gdl_release::Platform;
 
@@ -707,6 +722,16 @@ mod tests {
         (GameCubeRule::TotalSize, "source.damaged"),
         (GameCubeRule::MissingRoots, "source.damaged"),
         (GameCubeRule::MissingData, "source.damaged"),
+    ];
+
+    /// Every rule of a disc icon's TPL, with its code.
+    const TPL_RULES: [(TplRule, &str); 6] = [
+        (TplRule::Size, "source.damaged"),
+        (TplRule::Directory, "source.damaged"),
+        (TplRule::Header, "source.damaged"),
+        (TplRule::Dimensions, "source.damaged"),
+        (TplRule::Format, "source.damaged"),
+        (TplRule::Pixels, "source.damaged"),
     ];
 
     /// Every reason a dump is refused for its container or its identity, with its code.
@@ -1040,7 +1065,7 @@ mod tests {
 
     /// One failure of every kind a reader of a dump meets, with what each reports: a copy whose
     /// writer would not take it once for each of the system's answers, and a refusal by every
-    /// rule of both formats.
+    /// rule of each format, a disc icon's included.
     fn media_refusals() -> Vec<(MediaError, Report)> {
         let mut refusals = vec![
             (
@@ -1076,6 +1101,10 @@ mod tests {
         refusals.extend(GAMECUBE_RULES.into_iter().map(|(rule, code)| {
             let detail = detail();
             (MediaError::GameCube { rule, detail }, Report::Error(code))
+        }));
+        refusals.extend(TPL_RULES.into_iter().map(|(rule, code)| {
+            let detail = detail();
+            (MediaError::Tpl { rule, detail }, Report::Error(code))
         }));
         refusals
     }
@@ -1302,7 +1331,7 @@ mod tests {
     }
 
     #[test]
-    fn gamecube_rules_name_their_codes() {
+    fn gamecube_and_tpl_rules_name_their_codes() {
         for (rule, code) in GAMECUBE_RULES {
             let error = MediaError::GameCube {
                 rule,
@@ -1310,6 +1339,29 @@ mod tests {
             };
             assert_eq!(media(&error), Report::Error(code), "{}", rule.as_str());
         }
+        for (rule, code) in TPL_RULES {
+            let error = MediaError::Tpl {
+                rule,
+                detail: detail(),
+            };
+            assert_eq!(media(&error), Report::Error(code), "{}", rule.as_str());
+        }
+        // What the decoder refuses a disc's icon for, as it decodes one, reports so: an icon that
+        // ends before the table its directory names, one cut short in its pixels, and one of an
+        // encoding the launcher does not decode.
+        let icon = tpl(5, 8, 8);
+        let refused_icons = [
+            ("a directory alone", icon[..12].to_vec(), "directory"),
+            ("cut short", icon[..icon.len() - 1].to_vec(), "pixels"),
+            ("another encoding", tpl(9, 8, 8), "format"),
+        ];
+        for (case, bytes, rule) in refused_icons {
+            let error = first_frame(&bytes).unwrap_err();
+            assert!(matches!(error, MediaError::Tpl { .. }), "{case}: {error:?}");
+            assert_eq!(error.rule(), rule, "{case}: {error}");
+            assert_eq!(media(&error), Report::Error("source.damaged"), "{case}");
+        }
+        first_frame(&icon).unwrap();
         // What the reader refuses a GameCube image for, as it tells the image, reports so: an
         // image cut short, a CISO's map broken, and a PSP's CSO, which begins with the same mark.
         let dir = tempfile::tempdir().unwrap();

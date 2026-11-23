@@ -11,11 +11,12 @@ mod gdrom;
 mod identify;
 mod n64;
 mod source_name;
+mod tpl;
 #[cfg(test)]
 mod vectors;
 
 pub use digest::{Sha1Digest, Sha256Digest};
-pub use error::{DiscRule, GameCubeRule, MediaError, RomRule};
+pub use error::{DiscRule, GameCubeRule, MediaError, RomRule, TplRule};
 pub use gamecube::{
     DISC_SIZE, DiscEntry, DiscEntryKind, DiscHeader, GameCubeImage, MAX_DISC_ENTRIES, MAX_FST_LEN,
     MAX_REVISION, US_GAME_ID, gamecube_verdict,
@@ -43,3 +44,4 @@ pub use n64::{
     US_OVERLAYS, US_SHA1, WAD_ROW_LEN, WadByteOrder, WadSection, inflate, wad_sections,
 };
 pub use source_name::SourceName;
+pub use tpl::{Frame, MAX_TPL_LEN, first_frame};

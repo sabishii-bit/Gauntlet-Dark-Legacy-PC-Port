@@ -3,9 +3,9 @@
 //! dumps, the names the N64 extractor was given those dumps under, the tracks a sheet lists as the
 //! cases write them, with the LBA a GDI gives each, a disc's data tracks and files as its manifest
 //! records them, and the files a packed file table lists as the cases and the native manifests
-//! write them. Beside them, where the trusted machine keeps the player's own dumps, a disc set's
-//! boot area as its head reads it, changed where a test needs it, and the job a reader runs in
-//! when nobody follows it.
+//! write them. Beside them, where the trusted machine keeps the player's own dumps and the icon
+//! of their extracted GameCube disc, a disc set's boot area as its head reads it, changed where a
+//! test needs it, and the job a reader runs in when nobody follows it.
 
 use std::env;
 use std::path::{Path, PathBuf};
@@ -36,6 +36,17 @@ const DISC_VARIABLE: &str = "GDL_LEGENDS_DREAMCAST_DISC";
 /// Where the player's disc lies in the repository's assets, when the variable names no other
 /// place.
 const DISC_IN_ASSETS: &str = "assets/dreamcast/Gauntlet Legends (USA)/Gauntlet Legends (USA).cue";
+
+/// The variable that names the player's extracted GameCube disc for the tests that need it: the
+/// folder that holds its `Gauntlet` and `carddemo` trees.
+const TREE_VARIABLE: &str = "GDL_GAMECUBE_TREE";
+
+/// Where the player's extracted disc lies in the repository's assets, when the variable names no
+/// other place.
+const TREE_IN_ASSETS: &str = "assets/GUNE5D";
+
+/// Where the extracted disc keeps its icon.
+const DISC_ICON: &str = "carddemo/icon.tpl";
 
 /// The N64 cases.
 const N64_VECTORS: &str = include_str!(concat!(
@@ -340,23 +351,41 @@ pub(crate) fn players_disc() -> PathBuf {
     players_dump(DISC_VARIABLE, DISC_IN_ASSETS, "Dreamcast disc")
 }
 
+/// The icon of the player's extracted GameCube disc, for the tests that run on the trusted
+/// machine: in the tree the variable `GDL_GAMECUBE_TREE` names, else in the one in the
+/// repository's assets. Fails, naming the variable to set, when there is none.
+pub(crate) fn players_disc_icon() -> PathBuf {
+    let icon = players_place(TREE_VARIABLE, TREE_IN_ASSETS).join(DISC_ICON);
+    assert!(
+        icon.is_file(),
+        "no disc icon at {}: set {TREE_VARIABLE} to the player's extracted GameCube disc",
+        icon.display()
+    );
+    icon
+}
+
 /// The player's own dump, `what` it is: the file the variable `variable` names, else the one at
 /// `in_assets` in the repository. Fails, naming the variable to set, when there is none.
 fn players_dump(variable: &str, in_assets: &str, what: &str) -> PathBuf {
-    let path = env::var_os(variable).map_or_else(
-        || {
-            Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join(REPOSITORY_FROM_CRATE)
-                .join(in_assets)
-        },
-        PathBuf::from,
-    );
+    let path = players_place(variable, in_assets);
     assert!(
         path.is_file(),
         "no {what} at {}: set {variable} to the player's dump",
         path.display()
     );
     path
+}
+
+/// What the variable `variable` names, else `in_assets` in the repository.
+fn players_place(variable: &str, in_assets: &str) -> PathBuf {
+    env::var_os(variable).map_or_else(
+        || {
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join(REPOSITORY_FROM_CRATE)
+                .join(in_assets)
+        },
+        PathBuf::from,
+    )
 }
 
 /// A track's mode as a cue sheet spells it.

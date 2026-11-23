@@ -78,6 +78,15 @@ pub enum MediaError {
         /// it.
         detail: Box<str>,
     },
+    /// The disc's icon, a TPL texture, breaks a rule of its format, or keeps its first image in
+    /// an encoding the launcher does not decode.
+    #[error("{detail}")]
+    Tpl {
+        /// The rule it breaks.
+        rule: TplRule,
+        /// What is wrong, in English, in the installer's own words.
+        detail: Box<str>,
+    },
 }
 
 impl MediaError {
@@ -91,6 +100,7 @@ impl MediaError {
             MediaError::Rom { rule, .. } => rule.as_str(),
             MediaError::Disc { rule, .. } => rule.as_str(),
             MediaError::GameCube { rule, .. } => rule.as_str(),
+            MediaError::Tpl { rule, .. } => rule.as_str(),
         }
     }
 
@@ -135,6 +145,14 @@ impl MediaError {
     /// A GameCube disc image refused by `rule`, for the reason `detail` gives.
     pub(crate) fn gamecube(rule: GameCubeRule, detail: impl Into<Box<str>>) -> MediaError {
         MediaError::GameCube {
+            rule,
+            detail: detail.into(),
+        }
+    }
+
+    /// A disc's icon refused by `rule`, for the reason `detail` gives.
+    pub(crate) fn tpl(rule: TplRule, detail: impl Into<Box<str>>) -> MediaError {
+        MediaError::Tpl {
             rule,
             detail: detail.into(),
         }
@@ -572,6 +590,41 @@ impl GameCubeRule {
     }
 }
 
+/// The rules of a TPL texture's format, as the installer holds a disc's icon to them, that an
+/// icon is refused by.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum TplRule {
+    /// The TPL is shorter than its directory or longer than
+    /// [`MAX_TPL_LEN`](crate::MAX_TPL_LEN).
+    Size,
+    /// The directory does not begin with a TPL's magic, counts no image or more than a TPL may
+    /// list, or places the table of images inside itself or past the TPL's end.
+    Directory,
+    /// The first image's header runs past the TPL's end.
+    Header,
+    /// The first image has a side of no pixels or of more than 256.
+    Dimensions,
+    /// The first image keeps its pixels in another encoding than RGB565, RGB5A3 and RGBA8, or
+    /// with a palette.
+    Format,
+    /// The first image's pixels run past the TPL's end.
+    Pixels,
+}
+
+impl TplRule {
+    /// The rule's stable machine name, in camelCase, for reports and logs.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            TplRule::Size => "size",
+            TplRule::Directory => "directory",
+            TplRule::Header => "header",
+            TplRule::Dimensions => "dimensions",
+            TplRule::Format => "format",
+            TplRule::Pixels => "pixels",
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::error::Error;
@@ -581,7 +634,7 @@ mod tests {
     use gdl_files::{Cancel, DISC_NAMES, MAX_DISC_PATH_CHARS, RelPath};
 
     use super::{
-        DiscRule, GameCubeRule, MAX_QUOTED_CHARS, MediaError, RomRule, long_start, quoted,
+        DiscRule, GameCubeRule, MAX_QUOTED_CHARS, MediaError, RomRule, TplRule, long_start, quoted,
     };
 
     /// The most bytes an error may take, so that returning one by value stays cheap.
@@ -680,6 +733,16 @@ mod tests {
         ));
         let worded = MediaError::gamecube(GameCubeRule::Revision, format!("revision: {}", 2));
         assert_eq!(worded.to_string(), "revision: 2");
+
+        // And a disc icon's, by the rules of its TPL.
+        let detail = "Truncated disc icon TPL pixels";
+        let refused = MediaError::tpl(TplRule::Pixels, detail);
+        assert_eq!(refused.to_string(), detail);
+        assert!(refused.source().is_none());
+        assert!(matches!(
+            &refused,
+            MediaError::Tpl { rule: TplRule::Pixels, detail: said } if &**said == detail
+        ));
 
         assert!(size_of::<MediaError>() <= MOST_ERROR_BYTES);
     }
@@ -832,6 +895,19 @@ mod tests {
         for (rule, name) in rules {
             assert_eq!(rule.as_str(), name);
             assert_eq!(MediaError::gamecube(rule, "").rule(), name);
+        }
+        // Every rule of a disc icon's TPL keeps the name the shared vectors give it.
+        let rules = [
+            (TplRule::Size, "size"),
+            (TplRule::Directory, "directory"),
+            (TplRule::Header, "header"),
+            (TplRule::Dimensions, "dimensions"),
+            (TplRule::Format, "format"),
+            (TplRule::Pixels, "pixels"),
+        ];
+        for (rule, name) in rules {
+            assert_eq!(rule.as_str(), name);
+            assert_eq!(MediaError::tpl(rule, "").rule(), name);
         }
     }
 
