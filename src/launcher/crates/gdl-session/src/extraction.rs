@@ -4,6 +4,12 @@
 //! before anything is made; only then is a staging made beside the output, the tree written into
 //! it and put in place by one rename that never replaces anything. A refused, failed or cancelled
 //! extraction leaves the output's folder as it was, and the dump is only ever read.
+//!
+//! An installation is known by the names its folder holds, looked for in the folders above the
+//! output's path as it is given and above the path the system gives for the output's folder,
+//! which reaches past a drive letter mapped to a folder. Neither reaches above a shared folder's
+//! own place, on whichever machine shares it, nor above the folder a Linux bind mount maps: an
+//! output reached through one is not known to lie in an installation.
 
 use std::fs;
 use std::io;
@@ -16,7 +22,7 @@ use gdl_extract::{
 };
 use gdl_files::{
     FilesError, Job, Journal, MAX_COMPONENT_CHARS, NameError, NameRule, NameRules, RelPath,
-    Staging, absolute_lexical, is_absent, no_links,
+    Staging, absolute_lexical, is_absent, no_links, strip_verbatim,
 };
 use gdl_install::{STATE_DIR, alpha_markers};
 use gdl_media::{Console, DumpRefusal, MediaError, N64Rom, Source, Verdict, identify};
@@ -259,16 +265,17 @@ pub fn output_name(output: &Path) -> Result<RelPath, ExtractionError> {
 /// the dump has. The output's name must pass [`OUTPUT_NAMES`] as it was given and once the path is
 /// made absolute, since Windows drops a trailing dot or space from a name it makes absolute. Its
 /// folder must be a folder that is there, with no link on its path; nothing may be at the output;
-/// and no folder above it, from its own up to the volume's root, may hold the launcher's state
-/// folder or a name the alpha's installer leaves, since only an installation's own jobs write in
-/// one. The dump's path is then read by its names alone, as the extraction scripts read one: a
-/// separator, or a `.` and a separator, after a file's name leaves it that file's path, which the
-/// system would not open so, and a `..` stays as it was given. The dump is identified by its
-/// content: a container the launcher does not read, or content it does not know, is refused, and
-/// so is a dump for another console than the expansion's. Its identity is held to the trust by the
-/// check alone, which reads the dump and decides on it, writing nothing. Only then is a staging
-/// made beside the output and the tree written into it; unless the job has been asked to stop by
-/// then, the tree is put in place as the output by one rename that never replaces anything.
+/// and no folder above it, from its own up to the volume's root, on its path as given or on the
+/// path the system gives for its folder, may hold the launcher's state folder or a name the
+/// alpha's installer leaves, since only an installation's own jobs write in one. The dump's path
+/// is then read by its names alone, as the extraction scripts read one: a separator, or a `.` and
+/// a separator, after a file's name leaves it that file's path, which the system would not open
+/// so, and a `..` stays as it was given. The dump is identified by its content: a container the
+/// launcher does not read, or content it does not know, is refused, and so is a dump for another
+/// console than the expansion's. Its identity is held to the trust by the check alone, which reads
+/// the dump and decides on it, writing nothing. Only then is a staging made beside the output and
+/// the tree written into it; unless the job has been asked to stop by then, the tree is put in
+/// place as the output by one rename that never replaces anything.
 ///
 /// A refusal before the staging leaves the output's folder as it was. After it, a failure leaves
 /// nothing outside the staging, which goes when it is dropped, as it does once the tree has moved
@@ -428,7 +435,7 @@ impl OutputPlace {
             }
         }
         no_links(&parent).map_err(on_the_way)?;
-        outside_installations(&parent)?;
+        outside_installations(&parent, |path| fs::canonicalize(path))?;
         Ok(OutputPlace {
             output,
             parent,
@@ -457,30 +464,58 @@ impl OutputPlace {
 /// the launcher's state folder, as an installation or a folder being made into one does, or a
 /// name the alpha's installer leaves. The state folder is looked for by its name, and the alpha
 /// installer's names among the names each folder lists, so no file of either is ever read.
-fn outside_installations(parent: &Path) -> Result<(), ExtractionError> {
-    for folder in parent.ancestors() {
+///
+/// The folders above are those `parent` names, then those above the path `real` gives for it,
+/// the one the system finds by opening the folder: a drive letter mapped to a folder is no link,
+/// and the folders above the one it maps lie beyond its root, where only that path reaches. A
+/// folder whose path `real` cannot give is refused, since nothing then shows what lies above it.
+/// A refusal names the folder without the verbatim prefix that such a path has on Windows.
+fn outside_installations(
+    parent: &Path,
+    real: impl FnOnce(&Path) -> io::Result<PathBuf>,
+) -> Result<(), ExtractionError> {
+    nothing_installed_above(parent, Path::to_path_buf)?;
+    let real = real(parent).map_err(|source| ExtractionError::Io {
+        path: parent.to_path_buf(),
+        source,
+    })?;
+    // The same folders again, when the system gives the folder's path as it was given.
+    if strip_verbatim(&real) == parent {
+        return Ok(());
+    }
+    nothing_installed_above(&real, strip_verbatim)
+}
+
+/// Refuses a folder `path` that, or a folder above which, holds the launcher's state folder or a
+/// name the alpha's installer leaves, as [`outside_installations`] does, each folder a refusal
+/// names written as `shown` gives it.
+fn nothing_installed_above(
+    path: &Path,
+    shown: fn(&Path) -> PathBuf,
+) -> Result<(), ExtractionError> {
+    for folder in path.ancestors() {
         let state = folder.join(STATE_DIR);
         match fs::symlink_metadata(&state) {
             Ok(_) => {
                 return Err(ExtractionError::InsideInstallation {
-                    path: folder.to_path_buf(),
+                    path: shown(folder),
                 });
             }
             Err(error) if is_absent(&error) => {}
             Err(source) => {
                 return Err(ExtractionError::Io {
-                    path: state,
+                    path: shown(&state),
                     source,
                 });
             }
         }
         let markers = alpha_markers(folder).map_err(|source| ExtractionError::Io {
-            path: folder.to_path_buf(),
+            path: shown(folder),
             source,
         })?;
         if let Some(&name) = markers.first() {
             return Err(ExtractionError::AlphaInstallation {
-                path: folder.to_path_buf(),
+                path: shown(folder),
                 name,
             });
         }
@@ -809,6 +844,7 @@ pub(crate) mod vectors {
 mod tests {
     use std::ffi::OsString;
     use std::fs;
+    use std::io;
     use std::ops::Range;
     use std::path::{Path, PathBuf};
     use std::sync::Mutex;
@@ -820,6 +856,7 @@ mod tests {
     };
     use gdl_files::{
         Cancel, FilesError, Job, NameRule, PhaseId, Progress, RelPath, STAGING_RANDOM_CHARS,
+        strip_verbatim,
     };
     use gdl_fixtures::{
         DiscSet, Edc, InstallFixture, RuntimeFiles, backdate, link_folder, make_alpha_markers,
@@ -838,7 +875,7 @@ mod tests {
     };
     use super::{
         Counts, ExtractRequest, ExtractSummary, ExtractionError, StrictnessChoice,
-        extract_to_new_folder, output_name, placed, staging_prefix,
+        extract_to_new_folder, output_name, outside_installations, placed, staging_prefix,
     };
     use crate::codes::{self, Report};
 
@@ -1190,6 +1227,62 @@ mod tests {
             snapshot(&alpha).unwrap() == alpha_before,
             "the alpha installation changed"
         );
+    }
+
+    #[test]
+    fn the_folders_above_an_outputs_real_folder_are_looked_at_too() {
+        // A drive letter mapped to a folder is no link, and the folders above the one it maps lie
+        // beyond its root; the path the system gives for the output's folder shows them. A
+        // stand-in for that path tells here what the system would give for a folder reached so:
+        // an installation's game folder, and a folder in an alpha installation, each in the form
+        // the system gives, which on Windows is verbatim.
+        let Some(platform) = Platform::of_this_build() else {
+            eprintln!("skipped: no release is built for this system");
+            return;
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let runtime = RuntimeFiles::standard(platform.as_str(), VERSION);
+        let fixture = InstallFixture::write(&dir.path().join("install"), runtime).unwrap();
+        let alpha = dir.path().join("alpha");
+        fs::create_dir_all(alpha.join("sub")).unwrap();
+        make_alpha_markers(&alpha, &["installation.json"]).unwrap();
+        // The folder as it was given, above which nothing is installed.
+        let given = dir.path().join("mapped");
+        fs::create_dir(&given).unwrap();
+        outside_installations(&given, |path| fs::canonicalize(path)).unwrap();
+
+        // The refusal names the folder that holds the installation's mark as it is shown, without
+        // the verbatim prefix.
+        let install = fs::canonicalize(&fixture.root).unwrap();
+        let game = install.join("Gauntlet");
+        let error = outside_installations(&given, |_| Ok(game.clone())).unwrap_err();
+        match &error {
+            ExtractionError::InsideInstallation { path } => {
+                assert_eq!(path, &strip_verbatim(&install));
+            }
+            other => panic!("{other:?}"),
+        }
+        let alpha = fs::canonicalize(&alpha).unwrap();
+        let sub = alpha.join("sub");
+        let error = outside_installations(&given, |_| Ok(sub.clone())).unwrap_err();
+        match &error {
+            ExtractionError::AlphaInstallation { path, name } => {
+                assert_eq!(
+                    (path, *name),
+                    (&strip_verbatim(&alpha), "installation.json")
+                );
+            }
+            other => panic!("{other:?}"),
+        }
+        // A folder whose real path the system will not give is refused, since nothing then shows
+        // what lies above it.
+        let denied = |_: &Path| Err(io::Error::from(io::ErrorKind::PermissionDenied));
+        let error = outside_installations(&given, denied).unwrap_err();
+        match &error {
+            ExtractionError::Io { path, .. } => assert_eq!(path, &given),
+            other => panic!("{other:?}"),
+        }
+        assert_eq!(code_of(&error), Report::Error("io.failed"));
     }
 
     #[test]
