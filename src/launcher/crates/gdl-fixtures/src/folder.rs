@@ -1,10 +1,12 @@
 //! Install folders in the states the launcher's tests need: roots of an exact length, links to
-//! folders and files, the names the alpha installer leaves, entries only root may open and
-//! installations as the launcher leaves them; and the names a folder holds, what a tree holds, all
-//! of it or all but a job's staging, and a tree's files as the shared vectors list them, to
-//! compare.
+//! folders and files, the names the alpha installer leaves, entries only root may open, folders
+//! that take no new entries and installations as the launcher leaves them; and the names a folder
+//! holds, what a tree holds, all of it or all but a job's staging, and a tree's files as the
+//! shared vectors list them, to compare.
 
 use std::collections::BTreeMap;
+#[cfg(windows)]
+use std::ffi::OsStr;
 use std::fs;
 use std::io::{self, Write};
 use std::iter;
@@ -56,6 +58,38 @@ const HOLD_PROBE: &str = "hold-probe";
 /// The bits of a mode that hold its permissions, the set-id and sticky bits included.
 #[cfg(unix)]
 const PERMISSION_BITS: u32 = 0o7777;
+
+/// The mode of a folder that takes no new entries: its names can be listed and what it holds
+/// looked at and read, but nothing can be made, removed or renamed in it, by anyone but root.
+#[cfg(unix)]
+const NO_NEW_ENTRIES: u32 = 0o555;
+
+/// The name under which [`deny_writes`] tries a new file in the folder it has denied, to show
+/// whether the denial holds for this process.
+const WRITE_PROBE: &str = "write-probe";
+
+/// The variable that names the folder Windows is installed in, whose programs lie below it.
+#[cfg(windows)]
+const SYSTEM_ROOT: &str = "SystemRoot";
+
+/// Where the program that changes a folder's permissions lies, below [`SYSTEM_ROOT`].
+#[cfg(windows)]
+const ICACLS: [&str; 2] = ["System32", "icacls.exe"];
+
+/// Everyone, by the security identifier that every account's token holds, an administrator's
+/// full token included, so that an entry denying it binds them all.
+#[cfg(windows)]
+const EVERYONE: &str = "*S-1-1-0";
+
+/// What a deny entry takes from a folder: adding a file to it (WD) and adding a folder (AD), and
+/// nothing else, so that listing it, which also asks to synchronise with it, and reading what it
+/// holds still work.
+#[cfg(windows)]
+const ADD_ENTRIES: &str = "(WD,AD)";
+
+/// The creation flag that runs a console program without a window of its own.
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 /// How long after the Unix epoch the time lies that [`backdate`] gives an entry: September 2001,
 /// long before any test runs, and a time every file system the launcher meets can hold.
@@ -798,6 +832,192 @@ fn while_scanned(mut open: impl FnMut() -> io::Result<fs::File>) -> io::Result<f
     }
 }
 
+/// A folder that [`deny_writes`] keeps from taking new entries, until this is dropped.
+#[derive(Debug)]
+#[must_use = "dropping it lets the folder take new entries again at once"]
+pub struct WritesDenied {
+    /// The folder, by its absolute path.
+    folder: PathBuf,
+    /// The program that gives the folder its permissions back.
+    #[cfg(windows)]
+    icacls: PathBuf,
+    /// The folder's mode before, which the drop gives back.
+    #[cfg(unix)]
+    mode: u32,
+    /// Whether the folder refuses this process a new file too.
+    proven: bool,
+}
+
+impl WritesDenied {
+    /// Whether the folder refuses this process a new file too: always on Windows, where a denial
+    /// that did not is an error, and on Unix for every user but root, who makes entries in a
+    /// folder of any mode. A test that needs the refusal returns early, with its reason, when it
+    /// is not proven.
+    pub fn proven(&self) -> bool {
+        self.proven
+    }
+
+    /// Denies everyone the rights to add a file and a folder to `folder`, on the folder alone, so
+    /// that what it holds keeps its own. The guard is made first, so that a run of icacls that
+    /// fails part way is undone too.
+    #[cfg(windows)]
+    fn deny(folder: PathBuf) -> io::Result<WritesDenied> {
+        let denied = WritesDenied {
+            folder,
+            icacls: icacls_program()?,
+            proven: false,
+        };
+        let rule = format!("{EVERYONE}:{ADD_ENTRIES}");
+        let args = [
+            denied.folder.as_os_str(),
+            OsStr::new("/deny"),
+            OsStr::new(&rule),
+        ];
+        run_icacls(&denied.icacls, &args)?;
+        Ok(denied)
+    }
+
+    /// Sets `folder` to mode 0o555, keeping the mode it had for the drop.
+    #[cfg(unix)]
+    fn deny(folder: PathBuf) -> io::Result<WritesDenied> {
+        use std::os::unix::fs::PermissionsExt;
+
+        let mode = fs::symlink_metadata(&folder)?.permissions().mode() & PERMISSION_BITS;
+        fs::set_permissions(&folder, fs::Permissions::from_mode(NO_NEW_ENTRIES))?;
+        Ok(WritesDenied {
+            folder,
+            mode,
+            proven: false,
+        })
+    }
+}
+
+impl Drop for WritesDenied {
+    fn drop(&mut self) {
+        // A drop cannot report a failure; a test that writes into the folder again finds it.
+        #[cfg(windows)]
+        {
+            let args = [
+                self.folder.as_os_str(),
+                OsStr::new("/remove:d"),
+                OsStr::new(EVERYONE),
+            ];
+            let _ = run_icacls(&self.icacls, &args);
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+
+            let _ = fs::set_permissions(&self.folder, fs::Permissions::from_mode(self.mode));
+        }
+    }
+}
+
+/// Keeps `folder` from taking new entries until the result is dropped: a file made in it is
+/// refused, and so is a folder but for the case below, while its names can still be listed and it
+/// and what it holds looked at and read, so that a test can show what code does with a folder it
+/// may not write into.
+///
+/// On Windows an entry that denies everyone the rights to add a file and a folder is set on the
+/// folder alone, through the icacls of the system's own folder, and the drop removes every entry
+/// that denies everyone anything, of which a folder a test made holds none of its own. A process
+/// whose restore privilege is enabled, as one started from Git Bash may be, still makes a folder
+/// in it: the system makes a folder with backup intent, which that privilege lets past the entry,
+/// while a file made as std and tempfile make one asks for none. On Unix the folder's mode
+/// becomes 0o555, which root passes, and the drop gives its mode back; there, removing or
+/// renaming what the folder holds is refused too, which on Windows it is not.
+///
+/// A new file is then tried in it under a name that it must not hold, and removed again when
+/// made: one made is an error on Windows, and on Unix [`proven`](WritesDenied::proven) says
+/// whether it was refused. Anything but a folder, a link to one included, is refused before
+/// anything changes. Made after the `TempDir` that holds the folder, it is dropped before it.
+pub fn deny_writes(folder: &Path) -> io::Result<WritesDenied> {
+    let folder = std::path::absolute(folder)?;
+    if !fs::symlink_metadata(&folder)?.is_dir() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("{} is not a folder", folder.display()),
+        ));
+    }
+    let probe = folder.join(WRITE_PROBE);
+    match fs::symlink_metadata(&probe) {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error),
+        Ok(_) => {
+            return Err(io::Error::new(
+                io::ErrorKind::AlreadyExists,
+                format!("{} is there already", probe.display()),
+            ));
+        }
+    }
+    let mut denied = WritesDenied::deny(folder)?;
+    denied.proven = refuses_new_file(&probe)?;
+    if cfg!(windows) && !denied.proven {
+        return Err(io::Error::other(format!(
+            "{} took a new file while it was denied",
+            denied.folder.display()
+        )));
+    }
+    Ok(denied)
+}
+
+/// Whether this process is refused a new file at `probe` for want of permission. A file that was
+/// made is removed again, and any other failure is returned.
+fn refuses_new_file(probe: &Path) -> io::Result<bool> {
+    match fs::File::create_new(probe) {
+        Ok(file) => {
+            drop(file);
+            fs::remove_file(probe).map(|()| false)
+        }
+        Err(error) if error.kind() == io::ErrorKind::PermissionDenied => Ok(true),
+        Err(error) => Err(error),
+    }
+}
+
+/// The icacls of the system's own folder, by its absolute path, so that no program of that name
+/// elsewhere on the search path runs in its place.
+#[cfg(windows)]
+fn icacls_program() -> io::Result<PathBuf> {
+    let root = std::env::var_os(SYSTEM_ROOT)
+        .map(PathBuf::from)
+        .filter(|root| root.is_absolute())
+        .ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::NotFound,
+                format!("{SYSTEM_ROOT} names no absolute folder"),
+            )
+        })?;
+    Ok(ICACLS.iter().fold(root, |path, part| path.join(part)))
+}
+
+/// Runs `icacls` with `args`, without a window, and gives what it wrote out. A run that fails is
+/// an error that names what it said.
+#[cfg(windows)]
+fn run_icacls(icacls: &Path, args: &[&OsStr]) -> io::Result<Vec<u8>> {
+    use std::os::windows::process::CommandExt;
+    use std::process::Command;
+
+    let output = Command::new(icacls)
+        .args(args)
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()?;
+    if output.status.success() {
+        return Ok(output.stdout);
+    }
+    let shown: Vec<String> = args
+        .iter()
+        .map(|arg| arg.to_string_lossy().into_owned())
+        .collect();
+    let said = [output.stderr.as_slice(), output.stdout.as_slice()].concat();
+    Err(io::Error::other(format!(
+        "{} {} failed ({}): {}",
+        icacls.display(),
+        shown.join(" "),
+        output.status,
+        String::from_utf8_lossy(&said).trim()
+    )))
+}
+
 /// An installation as the launcher leaves one, for the tests that read or change one: a runtime's
 /// files, the disc's, the player's folders, the launcher copy and a receipt that describes them.
 #[derive(Clone, Debug)]
@@ -1535,6 +1755,214 @@ mod tests {
         let missing = dir.path().join("missing");
         let error = hold_closed(&[&missing]).unwrap_err();
         assert_eq!(error.kind(), io::ErrorKind::NotFound);
+    }
+
+    /// What a folder's own permissions are, to compare before and after a change: on Windows the
+    /// entries icacls lists for it.
+    #[cfg(windows)]
+    fn permissions_of(folder: &Path) -> String {
+        let icacls = super::icacls_program().unwrap();
+        let listed = super::run_icacls(&icacls, &[folder.as_os_str()]).unwrap();
+        String::from_utf8_lossy(&listed).into_owned()
+    }
+
+    /// What a folder's own permissions are, to compare before and after a change: on Unix its
+    /// mode, the set-id and sticky bits included.
+    #[cfg(unix)]
+    fn permissions_of(folder: &Path) -> u32 {
+        use std::os::unix::fs::PermissionsExt;
+
+        fs::symlink_metadata(folder).unwrap().permissions().mode() & 0o7777
+    }
+
+    /// The program beside icacls in the system's own folder that lists the privileges of the
+    /// token it runs with, a copy of this process's.
+    #[cfg(windows)]
+    const WHOAMI: &str = "whoami.exe";
+
+    /// Whether this process's restore privilege is enabled, as whoami lists it: in the state it
+    /// lists for bypassing traverse checking, which every token holds enabled, so that the
+    /// system's language does not matter.
+    #[cfg(windows)]
+    fn restore_privilege_enabled() -> bool {
+        use std::os::windows::process::CommandExt;
+        use std::process::Command;
+
+        let whoami = super::icacls_program().unwrap().with_file_name(WHOAMI);
+        let output = Command::new(whoami)
+            .args(["/priv", "/fo", "csv", "/nh"])
+            .creation_flags(super::CREATE_NO_WINDOW)
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        let listed = String::from_utf8_lossy(&output.stdout);
+        let state = |privilege: &str| {
+            let quoted = format!("\"{privilege}\",");
+            listed
+                .lines()
+                .find(|line| line.starts_with(&quoted))
+                .and_then(|line| line.rsplit(',').next())
+                .map(str::to_owned)
+        };
+        let bypass = state("SeChangeNotifyPrivilege");
+        assert!(bypass.is_some(), "{listed}");
+        state("SeRestorePrivilege") == bypass
+    }
+
+    #[test]
+    fn denied_writes_are_restored() {
+        use super::{WRITE_PROBE, deny_writes, folder_names, link_folder};
+
+        let dir = tempfile::tempdir().unwrap();
+        let folder = dir.path().join("folder");
+        let inner = folder.join("inner");
+        fs::create_dir_all(&inner).unwrap();
+        fs::write(folder.join("kept.txt"), b"kept").unwrap();
+        let gone = folder.join("gone.txt");
+        fs::write(&gone, b"gone").unwrap();
+        // The sticky bit shows that a mode comes back whole, not only its permissions.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+
+            fs::set_permissions(&folder, fs::Permissions::from_mode(0o1750)).unwrap();
+        }
+        let before = permissions_of(&folder);
+
+        let denied = deny_writes(&folder).unwrap();
+        assert_ne!(permissions_of(&folder), before);
+        // The deny entry binds every account on Windows; on Unix root alone passes the mode.
+        #[cfg(windows)]
+        assert!(denied.proven());
+        #[cfg(unix)]
+        assert_eq!(permissions_of(&folder), 0o555);
+        // Its names are still listed and what it holds read, and its own check left nothing.
+        assert_eq!(
+            folder_names(&folder).unwrap(),
+            ["gone.txt", "inner", "kept.txt"]
+        );
+        assert_eq!(fs::read(folder.join("kept.txt")).unwrap(), b"kept");
+        if denied.proven() {
+            // No file is made in it, nor on Unix a folder, which on Windows depends on this
+            // process's privileges, as the next test shows; ...
+            let error = fs::File::create_new(folder.join("new.txt")).unwrap_err();
+            assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
+            #[cfg(unix)]
+            {
+                let error = fs::create_dir(folder.join("new")).unwrap_err();
+                assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
+            }
+            // ... but what it holds keeps its own rights: a folder inside takes a new file, and a
+            // file inside is written again.
+            fs::write(inner.join("deeper.txt"), b"deeper").unwrap();
+            fs::write(folder.join("kept.txt"), b"kept again").unwrap();
+            // Removing what it holds is refused on Unix alone.
+            let removed = fs::remove_file(&gone);
+            if cfg!(windows) {
+                removed.unwrap();
+            } else {
+                assert_eq!(removed.unwrap_err().kind(), io::ErrorKind::PermissionDenied);
+            }
+        } else {
+            eprintln!(
+                "skipped the refusals: this user makes entries in a folder of mode 0o555, as root \
+                 does"
+            );
+        }
+
+        // Dropped, it gives the folder its permissions back, and the folder takes new entries.
+        drop(denied);
+        assert_eq!(permissions_of(&folder), before);
+        fs::write(folder.join("new.txt"), b"new").unwrap();
+        fs::create_dir(folder.join("new")).unwrap();
+        let names = folder_names(&folder).unwrap();
+        assert!(names.iter().any(|name| name == "new.txt"), "{names:?}");
+        assert!(names.iter().any(|name| name == "new"), "{names:?}");
+
+        // Anything but a folder is refused before anything changes: a file, a link to the folder,
+        // nothing at all, and a folder that holds the name its own check takes.
+        let file = folder.join("kept.txt");
+        let link = dir.path().join("link");
+        link_folder(&link, &folder).unwrap();
+        for path in [&file, &link] {
+            let error = deny_writes(path).unwrap_err();
+            assert_eq!(
+                error.kind(),
+                io::ErrorKind::InvalidInput,
+                "{}",
+                path.display()
+            );
+        }
+        let error = deny_writes(&dir.path().join("missing")).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::NotFound);
+        let taken = folder.join(WRITE_PROBE);
+        fs::write(&taken, b"taken").unwrap();
+        let error = deny_writes(&folder).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::AlreadyExists);
+        assert_eq!(fs::read(&taken).unwrap(), b"taken");
+        assert_eq!(permissions_of(&folder), before);
+        fs::remove_file(&taken).unwrap();
+
+        // With its permissions back, the folder is removed whole.
+        dir.close().unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_folder_denied_writes_still_lists() {
+        use super::{ERROR_ACCESS_DENIED, deny_writes};
+
+        let dir = tempfile::tempdir().unwrap();
+        let folder = dir.path().join("folder");
+        fs::create_dir_all(folder.join("inner")).unwrap();
+        fs::write(folder.join("kept.txt"), b"kept").unwrap();
+        let denied = deny_writes(&folder).unwrap();
+        // The deny entry binds every account, an administrator's full token included.
+        assert!(denied.proven());
+
+        // The folder and what it holds are listed and looked at, and its files read, as a folder
+        // is judged before anything is made in it.
+        let mut names: Vec<String> = fs::read_dir(&folder)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+            .collect();
+        names.sort();
+        assert_eq!(names, ["inner", "kept.txt"]);
+        assert!(fs::symlink_metadata(&folder).unwrap().is_dir());
+        assert!(fs::symlink_metadata(folder.join("inner")).unwrap().is_dir());
+        assert!(
+            fs::symlink_metadata(folder.join("kept.txt"))
+                .unwrap()
+                .is_file()
+        );
+        assert_eq!(fs::read(folder.join("kept.txt")).unwrap(), b"kept");
+
+        // A new file is refused with the system's own denial of access, as std makes one, and as
+        // tempfile makes one too, whose error keeps that kind.
+        let error = fs::File::create_new(folder.join("new.txt")).unwrap_err();
+        assert_eq!(error.raw_os_error(), Some(ERROR_ACCESS_DENIED), "{error}");
+        let error = tempfile::Builder::new()
+            .prefix("new-")
+            .tempfile_in(&folder)
+            .unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::PermissionDenied, "{error}");
+        // So is a new folder, but for a process whose restore privilege is enabled: the system
+        // makes a folder with backup intent, which that privilege lets past the entry.
+        let new = folder.join("new");
+        match fs::create_dir(&new) {
+            Err(error) => assert_eq!(error.raw_os_error(), Some(ERROR_ACCESS_DENIED), "{error}"),
+            Ok(()) => {
+                assert!(
+                    restore_privilege_enabled(),
+                    "a folder was made past the entry without the restore privilege"
+                );
+                fs::remove_dir(&new).unwrap();
+            }
+        }
+        assert_eq!(super::folder_names(&folder).unwrap(), ["inner", "kept.txt"]);
+
+        drop(denied);
+        fs::File::create_new(folder.join("new.txt")).unwrap();
     }
 
     #[test]
