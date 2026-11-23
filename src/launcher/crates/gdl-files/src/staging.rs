@@ -256,7 +256,7 @@ fn check_prefix(prefix: &str) -> io::Result<()> {
 /// Refuses `name` unless it is `prefix` followed by a staging's random part, as an
 /// [`io::ErrorKind::InvalidInput`] error.
 fn check_staging_name(prefix: &str, name: &str) -> io::Result<()> {
-    if name.strip_prefix(prefix).is_some_and(is_random_part) {
+    if is_staging_name(prefix, name) {
         return Ok(());
     }
     Err(io::Error::new(
@@ -268,6 +268,15 @@ fn check_staging_name(prefix: &str, name: &str) -> io::Result<()> {
 /// Whether `part` is a staging's random part: [`STAGING_RANDOM_CHARS`] ASCII letters and digits.
 fn is_random_part(part: &str) -> bool {
     part.len() == STAGING_RANDOM_CHARS && part.bytes().all(|byte| byte.is_ascii_alphanumeric())
+}
+
+/// Whether `name` is `prefix` followed by a staging's random part, [`STAGING_RANDOM_CHARS`]
+/// ASCII letters and digits, as [`Staging::create_in`] names a staging folder, and as a job names
+/// any other folder it makes with a random part. Taking a staging back by its name and telling
+/// the launcher's own names in its state folder go by this one rule, so that each takes the
+/// names the other does.
+pub fn is_staging_name(prefix: &str, name: &str) -> bool {
+    name.strip_prefix(prefix).is_some_and(is_random_part)
 }
 
 /// What a rename to `target` that the system refused reports: a target that is there already
@@ -392,7 +401,7 @@ mod tests {
 
     use gdl_fixtures::{folder_names, link_folder, symlink_file_where_allowed};
 
-    use super::{Journal, STAGING_RANDOM_CHARS, Staging};
+    use super::{Journal, STAGING_RANDOM_CHARS, Staging, is_staging_name};
     use crate::error::{assert_io, assert_link};
     use crate::{FilesError, PAYLOAD_NAMES, RelPath};
 
@@ -838,6 +847,30 @@ mod tests {
         // The staging's own name takes it back.
         let reopened = Staging::reopen(&install.state, "install-", staging.name()).unwrap();
         assert_eq!(reopened.path(), staging.path());
+    }
+
+    /// A staging's name is its prefix and a random part of ASCII letters and digits, the rule that
+    /// taking one back and telling the launcher's own names both go by.
+    #[test]
+    fn staging_names_are_a_prefix_and_a_random_part() {
+        let install = install();
+        let staging = Staging::create_in(&install.state, "stage-n64-").unwrap();
+        assert!(is_staging_name("stage-n64-", staging.name()));
+        assert!(!is_staging_name("install-", staging.name()));
+        for (prefix, name, staged) in [
+            ("install-", "install-AbC123xy", true),
+            ("install-", "install-00000000", true),
+            ("download-", "download-AbC123xy", true),
+            ("install-", "INSTALL-AbC123xy", false),
+            ("install-", "install-AbC123x", false),
+            ("install-", "install-AbC123xyz", false),
+            ("install-", "install-AbC123x-", false),
+            ("install-", "install-AbC12\u{e9}y", false),
+            ("install-", "install-", false),
+            ("stage-", "stage-n64-AbC123xy", false),
+        ] {
+            assert_eq!(is_staging_name(prefix, name), staged, "{prefix:?} {name:?}");
+        }
     }
 
     /// A removal that the system refuses is reported, for the staging, and what it could not

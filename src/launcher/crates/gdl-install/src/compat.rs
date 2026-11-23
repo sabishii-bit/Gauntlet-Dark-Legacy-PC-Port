@@ -4,7 +4,7 @@
 //! installation playable but closed to changes. Under `.gdl-launcher/` this launcher changes and
 //! removes only the names its own rules make, so whatever else is there stays as it was.
 
-use gdl_files::{PENDING_SUFFIX, STAGING_RANDOM_CHARS};
+use gdl_files::{PENDING_SUFFIX, is_staging_name};
 use gdl_release::Version;
 use serde_json::{Map, Value};
 
@@ -56,7 +56,8 @@ const FIXED_NAMES: [(&str, StateName); 8] = [
 ];
 
 /// The prefixes of the folders a job makes directly under `.gdl-launcher/`, each followed by a
-/// random part of [`STAGING_RANDOM_CHARS`] ASCII letters and digits, and what each holds.
+/// random part of [`STAGING_RANDOM_CHARS`](gdl_files::STAGING_RANDOM_CHARS) ASCII letters and
+/// digits, as [`is_staging_name`] tells, and what each holds.
 const RANDOM_PREFIXES: [(&str, StateName); 5] = [
     ("install-", StateName::Staging),
     ("stage-", StateName::Staging),
@@ -185,7 +186,7 @@ pub fn launcher_state_name(name: &str) -> Option<StateName> {
     }
     let random = RANDOM_PREFIXES
         .into_iter()
-        .find(|&(prefix, _)| name.strip_prefix(prefix).is_some_and(is_random_part));
+        .find(|&(prefix, _)| is_staging_name(prefix, name));
     if let Some((_, kind)) = random {
         return Some(kind);
     }
@@ -201,12 +202,6 @@ fn fixed_name(name: &str) -> Option<StateName> {
         .into_iter()
         .find(|&(fixed, _)| fixed == name)
         .map(|(_, kind)| kind)
-}
-
-/// Whether `part` is the random part of a name that a job makes: [`STAGING_RANDOM_CHARS`] ASCII
-/// letters and digits.
-fn is_random_part(part: &str) -> bool {
-    part.len() == STAGING_RANDOM_CHARS && part.bytes().all(|byte| byte.is_ascii_alphanumeric())
 }
 
 /// What a refusal keeps of `value`, the value a state file holds under one of its stamp's keys:

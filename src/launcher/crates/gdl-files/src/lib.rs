@@ -32,7 +32,7 @@ pub use names::{
 };
 pub use rename::{rename_noreplace, replace};
 pub use retry::{RETRIED_WINDOWS_ERRORS, RETRY_INTERVAL, RETRY_WINDOW, retry_locked};
-pub use staging::{Journal, STAGING_RANDOM_CHARS, Staging};
+pub use staging::{Journal, STAGING_RANDOM_CHARS, Staging, is_staging_name};
 pub use volume::{
     FolderProbe, PROBE_PREFIX, ProbedFolder, Volume, nearest_existing, probe_folder,
     refuses_writes, volume_of,
