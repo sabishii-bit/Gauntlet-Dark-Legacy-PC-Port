@@ -1131,7 +1131,7 @@ mod tests {
         symlink_file_where_allowed,
     };
     use gdl_media::{
-        BOOT_LEN, N64Rom, PROGRAM_FOLDER, PROGRAM_SUFFIX, ROMDISK_LIMITS, Sha256Digest, SourceName,
+        BOOT_LEN, N64Rom, PROGRAM_FOLDER, PROGRAM_SUFFIX, ROMDISK_LIMITS, Sha256Digest,
     };
     use serde_json::{Value, json};
 
@@ -1142,8 +1142,8 @@ mod tests {
     use crate::vectors::{
         CancelAt, DISC_SWEEP, FULL_FINGERPRINTS, Folders, Listed, OVERLAYS_DUMP, Recorded, Told,
         array, dreamcast_golden, dreamcast_root, dreamcast_vectors, extraction_case,
-        fingerprint_files, frozen, listed, n64_golden, n64_root, n64_vectors, overlay_specs, quiet,
-        rom_with_table, stage_dreamcast, stage_n64, text, tree_listing,
+        fingerprint_files, frozen, listed, n64_golden, n64_root, n64_vectors, named, overlay_specs,
+        quiet, rom_with_table, stage_dreamcast, stage_n64, text, tree_listing,
     };
     use crate::{
         DISC_FORMAT, DISC_MANIFEST, Expansion, ExtractSettings, Fingerprints, IP_BIN, N64_MANIFEST,
@@ -1867,8 +1867,7 @@ mod tests {
         for (image, golden) in cases {
             let dir = tempfile::tempdir().unwrap();
             let root = dir.path().join("extracted");
-            let name = SourceName::from_units("source.z64".encode_utf16().collect());
-            let rom = N64Rom::from_bytes(name, frozen(&vectors, image)).unwrap();
+            let rom = N64Rom::from_bytes(named("source.z64"), frozen(&vectors, image)).unwrap();
             let romdisk = rom.romdisk(&ROMDISK_LIMITS).unwrap();
             for entry in &romdisk.entries {
                 let place = entry.path.path_under(&root);

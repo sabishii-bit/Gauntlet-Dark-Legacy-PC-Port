@@ -504,7 +504,7 @@ mod tests {
     use gdl_fixtures::{RomFile, WadOrder, reorder, rom, set_word, sha256_hex, unhex, wad};
     use gdl_media::{
         COMPRESSED, MediaError, N64Rom, PROGRAM_FOLDER, PROGRAM_SUFFIX, ROMDISK_LIMITS,
-        RomdiskEntry, RomdiskLimits, Sha256Digest, SourceName,
+        RomdiskEntry, RomdiskLimits, Sha256Digest,
     };
     use serde_json::Value;
 
@@ -515,7 +515,8 @@ mod tests {
     use crate::vectors::{
         CancelAt, Folders, Listed, N64_SWEEP, PanicAt, Recorded, STAGING_PREFIX, Told, array,
         assert_injected_panic, extraction_case, frozen, listed, n64_golden, n64_root, n64_vectors,
-        overlay_specs, phases_of, quiet, rom_with_table, stage_n64, text, tree_listing,
+        named, number, overlay_specs, phases_of, quiet, rom_with_table, stage_n64, text,
+        tree_listing, word,
     };
     use crate::{CHECK, ExtractError, ExtractSettings, READ_CARTRIDGE, Strictness, UNPACK, render};
 
@@ -528,21 +529,6 @@ mod tests {
 
     /// The length of a word of the ROM.
     const WORD_LEN: usize = 4;
-
-    /// The name of a dump's file called `text`.
-    fn named(text: &str) -> SourceName {
-        SourceName::from_units(text.encode_utf16().collect())
-    }
-
-    /// A number of the vectors.
-    fn number(value: &Value) -> usize {
-        usize::try_from(value.as_u64().expect("a number")).unwrap()
-    }
-
-    /// A number of the vectors that fits a word.
-    fn word(value: &Value) -> u32 {
-        u32::try_from(value.as_u64().expect("a number")).unwrap()
-    }
 
     /// The files the ROMDISK of `image` lists.
     fn entries_of(image: &[u8]) -> Vec<RomdiskEntry> {

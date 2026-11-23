@@ -225,8 +225,7 @@ pub(crate) fn overlay_specs(names: [&'static str; 4]) -> [OverlaySpec; 4] {
 /// read that table, as the US ROM's is read, for this ROM.
 pub(crate) fn rom_with_table(specs: &[OverlaySpec; 4]) -> (N64Rom, ExtractSettings) {
     let built = rom_with_overlays(&default_rom_files(), specs.clone());
-    let name = SourceName::from_units(OVERLAYS_DUMP.encode_utf16().collect());
-    let rom = N64Rom::from_bytes(name, built.bytes).unwrap();
+    let rom = N64Rom::from_bytes(named(OVERLAYS_DUMP), built.bytes).unwrap();
     let table = OverlayTable {
         canonical_sha1: rom.canonical_sha1(),
         ..US_OVERLAYS
@@ -314,6 +313,21 @@ pub(crate) fn text(value: &Value) -> &str {
 /// The members of an array of the vectors.
 pub(crate) fn array(value: &Value) -> &[Value] {
     value.as_array().expect("an array")
+}
+
+/// A number of the vectors.
+pub(crate) fn number(value: &Value) -> usize {
+    usize::try_from(value.as_u64().expect("a number")).unwrap()
+}
+
+/// A number of the vectors that fits a word.
+pub(crate) fn word(value: &Value) -> u32 {
+    u32::try_from(value.as_u64().expect("a number")).unwrap()
+}
+
+/// The name of a dump's file called `text`.
+pub(crate) fn named(text: &str) -> SourceName {
+    SourceName::from_units(text.encode_utf16().collect())
 }
 
 /// A job nobody follows, asked to stop only through `cancel`.

@@ -90,7 +90,7 @@ mod tests {
     use gdl_fixtures::{DiscSet, Edc, raw_sector, sha256_hex};
     use gdl_media::{
         AREA, BOOT_LBA, DiscIdentity, DumpRefusal, INSTALL_RULES, N64Rom, PRODUCT, SCRIPT_RULES,
-        Sha1Digest, Sha256Digest, SourceName, US_DISC, US_SHA1, VERSION, Verdict,
+        Sha1Digest, Sha256Digest, US_DISC, US_SHA1, VERSION, Verdict,
     };
     use serde_json::Value;
 
@@ -98,8 +98,8 @@ mod tests {
     use crate::vectors::{
         ChangedAtUnpack, Folders, Listed, Recorded, STAGING_PREFIX, array, disc_file_lba,
         disc_trust, dreamcast_root, dreamcast_vectors, extraction_case, fingerprint_files, frozen,
-        full_golden, installable_disc, items_of, listed, n64_root, n64_vectors, phases_of, quiet,
-        sector_place, stage_dreamcast, stage_n64, text, tree_listing,
+        full_golden, installable_disc, items_of, listed, n64_root, n64_vectors, named, phases_of,
+        quiet, sector_place, stage_dreamcast, stage_n64, text, tree_listing,
     };
     use crate::{
         CHECK, DISC_FOLDER, ExtractError, ExtractSettings, Fingerprints, IP_BIN, READ_DISC, UNPACK,
@@ -119,11 +119,6 @@ mod tests {
     /// What the reader answers for a sector at `lba` that fails its error detection code.
     fn fails_its_code(lba: u64) -> String {
         format!("Raw sector at LBA {lba} fails its error detection code")
-    }
-
-    /// The name of a dump's file called `text`.
-    fn named(text: &str) -> SourceName {
-        SourceName::from_units(text.encode_utf16().collect())
     }
 
     /// The digest `listing` gives the file at `path`.

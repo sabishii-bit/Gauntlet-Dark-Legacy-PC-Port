@@ -296,7 +296,7 @@ mod tests {
 
     use gdl_files::{Cancel, DISC_NAMES, FilesError, Job, RelPath, Staging};
     use gdl_fixtures::{DiscSet, Edc, link_folder, sha256_hex};
-    use gdl_media::{MediaError, N64Rom, Sha256Digest, SourceName};
+    use gdl_media::{MediaError, N64Rom, Sha256Digest};
     use sha2::{Digest, Sha256};
 
     use super::{FAILED_WRITE, TreeFile, TreePlan, TreeWriter};
@@ -305,7 +305,7 @@ mod tests {
     use crate::vectors::{
         CancelAt, DISC_SWEEP, Folders, Listed, N64_SWEEP, Recorded, STAGING_PREFIX, Told,
         bytes_under, dreamcast_root, dreamcast_vectors, frozen, listed, n64_root, n64_vectors,
-        quiet, tree_listing, written_after_each_advance,
+        named, quiet, tree_listing, written_after_each_advance,
     };
     use crate::{CheckedRom, ExtractError, NativeRule, Strictness, TreeRule, check_dreamcast};
 
@@ -345,8 +345,7 @@ mod tests {
     /// extractor wrote from it.
     fn checked_default() -> (CheckedRom, Vec<Listed>) {
         let vectors = n64_vectors();
-        let name = SourceName::from_units("source.z64".encode_utf16().collect());
-        let rom = N64Rom::from_bytes(name, frozen(&vectors, "default")).unwrap();
+        let rom = N64Rom::from_bytes(named("source.z64"), frozen(&vectors, "default")).unwrap();
         let cancel = Cancel::default();
         let script = Strictness::Script;
         let checked = check_n64_with(&rom, &script, &N64_SWEEP, &quiet(&cancel)).unwrap();
