@@ -1,5 +1,4 @@
 #include <algorithm>
-#include <array>
 #include <cctype>
 #include <filesystem>
 #include <format>
@@ -19,7 +18,6 @@
 #include "engine/core/SpecialMembers.h"
 #include "engine/core/Types.h"
 #include "engine/io/File.h"
-#include "engine/io/NativeStateDigest.h"
 #include "engine/math/Math.h"
 #include "engine/render/Image.h"
 #include "engine/render/RenderDevice.h"
@@ -28,6 +26,7 @@
 #include "engine/ui/TextPainter.h"
 
 #include "FakeRenderDevice.h"
+#include "HudLookScene.h"
 #include "LogCapture.h"
 #include "RecordedDrawChecks.h"
 #include "RecordedQuads.h"
@@ -45,39 +44,21 @@
 #include "game/characters/ClassData.h"
 #include "game/characters/Inventory.h"
 #include "game/characters/Party.h"
-#include "game/combat/PowerupFlags.h"
 #include "game/config/GameConfig.h"
-#include "game/context/GameServices.h"
 #include "game/hud/DarkLegacyHudArt.h"
 #include "game/hud/HudPainter.h"
 #include "game/hud/HudStyles.h"
-#include "game/hud/PowerupSelector.h"
 #include "game/level/ExitPortals.h"
 #include "game/level/LevelCatalog.h"
-#include "game/level/LevelWorld.h"
-#include "game/party/PlayInput.h"
-#include "game/rollback/SessionInputs.h"
 #include "game/scenes/PlayScene.h"
 
 namespace {
 using namespace gdl;
 using namespace gdl::game;
 using Catch::Approx;
-using Digest = NativeStateDigest::Digest;
 using Layout = LegendsN64HudLayout;
+using test::HudPresses;
 
-constexpr f64 kStep = 1.0 / 60.0;
-constexpr u32 kPressEvery = 20; ///< ticks between the selectors' presses in the long runs
-constexpr u32 kOpenTick = 400;  ///< the tick the first seat opens its selector
-/** The tick it slides it away again, once its label has slid in: a selector still sliding in
- * heeds no down. */
-constexpr u32 kCloseTick = 440;
-static_assert(kCloseTick - kOpenTick > PowerupSelector::kSlide / PowerupSelector::kSlidePerTick);
-constexpr u32 kFirstAnchor = 32; ///< the digest tests' earlier anchor
-constexpr u32 kLastTick = 648;   ///< the long runs' last tick, the digest tests' later anchor
-/** A powerup that a selector can name, carried for good and not worn. */
-constexpr PowerupSlot kSpeedPowerup{
-    .strength = -1.0f, .kind = powerup::kSpeed, .charge = 5.0f, .flags = 0, .on = false};
 /** A plaque's transparency at rest (FUN_e0058620), as a seat long on its exit sees it. */
 constexpr u8 kRestingTransparency = 0x1f;
 constexpr u8 kOpaque = 255;
@@ -87,10 +68,6 @@ constexpr usize kAlphaByte = 3;
 /** The scene's ticks from a seat stepping on an exit to its plaque resting: the plaque's seven
  * steps of the look's clock, two ticks a step at this rate, and some over. */
 constexpr u32 kTicksToRest = 20;
-/** The size of the frames the cases draw. */
-constexpr f32 kFrameWidth = 640;
-constexpr f32 kFrameHeight = 448;
-
 /** Where the Legends looks' art is looked for: this checkout's own extracted data, and nowhere
  * else. */
 LegendsHudRoots checkoutRoots() {
@@ -130,155 +107,12 @@ private:
     std::vector<HudStyleOffer> m_offers;
 };
 
-/** One way a selector is pressed. */
-enum class Press : u8 { Up, Down, Left, Right };
-
-SelectorInput pressed(Press way) {
-    return {.up = way == Press::Up,
-            .down = way == Press::Down,
-            .left = way == Press::Left,
-            .right = way == Press::Right};
-}
-
-/** The native digest tests' inputs at `tick`: still through the entrance, then each seat
- * walking, attacking, swinging hard, guarding and drinking in turn. Each seat's selector is
- * pressed down, left or right every kPressEvery ticks, a seat a turn on from the one before,
- * and the first seat's is opened at kOpenTick and closed at kCloseTick. */
-PlayScene::Inputs inputsAt(u32 tick) {
-    constexpr std::array<Vec2, 4> kDirections{Vec2{0, 1}, Vec2{1, 0}, Vec2{0, -1}, Vec2{-1, 0}};
-    constexpr std::array kTurns{Press::Down, Press::Left, Press::Right};
-    PlayScene::Inputs inputs{};
-    for (u8 seat = 0; seat < PlayScene::kPlayerCount; ++seat) {
-        PlayInput input;
-        if (tick > 360) {
-            const u32 elapsed = tick - 361;
-            const u32 phase = (elapsed + seat * 30) % 240;
-            const auto direction = kDirections[(elapsed / 120 + seat) % 4];
-            input.move = {direction, 1};
-            input.aimDirection = {direction.x, 0, -direction.y};
-            input.attack = phase < 90;
-            input.attackPressed = phase == 0;
-            input.strongAttack = phase >= 120 && phase < 150;
-            input.turbo = phase >= 180 && phase < 190;
-            input.defendPressed = phase == 180;
-            input.usePotion = elapsed % 600 == 300;
-        }
-        if (seat == 0 && tick == kOpenTick) {
-            input.selector = pressed(Press::Up);
-        } else if (seat == 0 && tick == kCloseTick) {
-            input.selector = pressed(Press::Down);
-        } else if (tick % kPressEvery == 0) {
-            input.selector = pressed(kTurns[(tick / kPressEvery + seat) % kTurns.size()]);
-        }
-        inputs[seat] = SessionInputs::playInput(SessionInputs::command(input, 1, tick, 1, seat));
-    }
-    return inputs;
-}
-
-/** A level opened as the native digest tests open theirs, for `seats` players in seat order,
- * its HUD drawn in Dark Legacy's look or in a Legends look opened from this checkout's own
- * extractions. Skips without the game data. */
-struct LookedScene {
-    std::filesystem::path root =
-        test::assetOrSkip("LEVELS/LEVELL1/WORLDS.PS2").parent_path().parent_path().parent_path();
-    test::FakeRenderDevice device;
-    GameConfig config;
-    LevelCatalog catalog;
-    StringTable strings;
-    LevelWorld world;
-    GameServices context;
-    CheckoutHudStyles styles; ///< outlives the scene, whose look it opened
-    PlayScene scene;
-    std::vector<PartyMember> party;
-    PlayOptions options;
-    u32 tick = 0;
-
-    explicit LookedScene(std::string_view stage, s32 seats = 2) {
-        test::assetOrSkip(std::format("LEVELS/LEVEL{}/WORLDS.PS2", stage));
-        config.timing.tickRate = 60;
-        config.display.bloom = true; // where the bloom ran, the overlay begins
-        REQUIRE(catalog.load(root));
-        REQUIRE(strings.load(test::dataDirectory() / "text", "en"));
-        const auto level = stage == "L1" ? std::optional{LevelRef::tower()} : catalog.byName(stage);
-        REQUIRE(level);
-        REQUIRE(world.load(device, root, *level));
-        context.config = &config;
-        context.levels = &catalog;
-        context.strings = &strings;
-        context.unpackedRoot = root;
-        for (s32 seat = 0; seat < seats; ++seat) {
-            CharacterSave save;
-            save.name = "LOOKS";
-            save.character = seat;
-            save.color = seat;
-            save.progress().health = 4000;
-            save.progress().inventory.addKeys(9);
-            save.progress().inventory.addPotions(seat + 1, 9);
-            party.push_back({seat, save, static_cast<usize>(seat), false, 100});
-        }
-        options.welcome = false;
-    }
-
-    /** Opens the scene with the settings choosing Legends look `look`, or Dark Legacy's look,
-     * with no catalog, when none is named. */
-    void open(std::string_view look = {}) {
-        config.display.hudStyle =
-            look.empty() ? std::string{kDarkLegacyHudStyle} : std::string{look};
-        REQUIRE(scene.open(device, context, world, party, options,
-                           {.hudStyles = look.empty() ? nullptr : &styles}));
-        tick = 0;
-    }
-    void step(const PlayScene::Inputs& inputs) {
-        ++tick;
-        REQUIRE(scene.update(kStep, inputs) == PlayOutcome::Running);
-    }
-    bool entering() const {
-        if (scene.spawning()) {
-            return true;
-        }
-        for (s32 seat = 0; seat < PlayScene::kPlayerCount; ++seat) {
-            if (scene.animator(seat) != nullptr && scene.animator(seat)->entering()) {
-                return true;
-            }
-        }
-        return false;
-    }
-    /** Steps with nothing pressed until the party has come in and stands free to act. */
-    void settle() {
-        for (u32 guard = 0; guard < 600 && entering(); ++guard) {
-            step({});
-        }
-        REQUIRE_FALSE(entering());
-    }
-    Digest digest(const PlayScene::LocalSnapshot* saved = nullptr) {
-        const auto textures = device.texturesCreated;
-        const auto uploads = device.textureUpdates;
-        const auto draws = device.draws.size();
-        const auto value =
-            saved != nullptr ? scene.nativeLocalDigest(*saved) : scene.nativeAgreementDigest();
-        REQUIRE(value);
-        CHECK(device.texturesCreated == textures);
-        CHECK(device.textureUpdates == uploads);
-        CHECK(device.draws.size() == draws);
-        return *value;
-    }
-    void render(f32 blend = -1.0f) {
-        device.draws.clear();
-        device.bloomDrawOffsets.clear();
-        REQUIRE(device.beginFrame());
-        scene.render(device, makeScreenProjection(kFrameWidth, kFrameHeight), kFrameWidth,
-                     kFrameHeight, false, blend);
-        device.endFrame();
-    }
-    /** The vertices the last frame drew over the view: its HUD and the rest of its overlay. */
-    std::vector<ImmediateVertex> overlay() const {
-        REQUIRE(device.bloomDrawOffsets.size() == 1);
-        std::vector<ImmediateVertex> vertices;
-        for (const test::RecordedDraw& draw :
-             std::span{device.draws}.subspan(device.bloomDrawOffsets.front())) {
-            vertices.insert(vertices.end(), draw.vertices.begin(), draw.vertices.end());
-        }
-        return vertices;
+/** A level opened as the native digest tests open theirs, its HUD drawn in Dark Legacy's look
+ * or in a Legends look opened from this checkout's own extractions, with bloom on so that its
+ * overlay can be found. Skips without the game data. */
+struct LookedScene : test::HudLookScene<CheckoutHudStyles> {
+    explicit LookedScene(std::string_view stage, s32 seats = 2) : HudLookScene(stage, seats) {
+        config.display.bloom = true;
     }
 };
 
@@ -293,10 +127,11 @@ std::vector<std::string> hudWarnings(std::span<const std::string> warnings) {
 
 /** The canvas the scene draws its HUD on in those frames. */
 Mat4 hudCanvas() {
-    return makeVirtualScreenTransform(makeScreenProjection(kFrameWidth, kFrameHeight),
-                                      static_cast<f32>(GameConfig{}.display.virtualWidth),
-                                      static_cast<f32>(GameConfig{}.display.virtualHeight),
-                                      kFrameWidth, kFrameHeight);
+    return makeVirtualScreenTransform(
+        makeScreenProjection(LookedScene::kFrameWidth, LookedScene::kFrameHeight),
+        static_cast<f32>(GameConfig{}.display.virtualWidth),
+        static_cast<f32>(GameConfig{}.display.virtualHeight), LookedScene::kFrameWidth,
+        LookedScene::kFrameHeight);
 }
 
 /** Checks `actual` is `expected`, but for float rounding. */
@@ -415,7 +250,7 @@ TEST_CASE("the N64 and Dreamcast looks drawn from the player's own art change no
     auto darkLegacy = std::make_unique<LookedScene>("G2", seats);
     auto looked = std::make_unique<LookedScene>("G2", seats);
     for (LookedScene* fixture : {darkLegacy.get(), looked.get()}) {
-        fixture->party[0].save.progress().inventory.powerups[0] = kSpeedPowerup;
+        fixture->party[0].save.progress().inventory.powerups[0] = test::kSelectorPowerup;
     }
     darkLegacy->open();
 
@@ -429,9 +264,9 @@ TEST_CASE("the N64 and Dreamcast looks drawn from the player's own art change no
         CHECK(looked->device.texturesCreated > darkLegacy->device.texturesCreated);
         CHECK(darkLegacy->digest() == looked->digest());
 
-        for (const u32 anchor : {kFirstAnchor, kLastTick}) {
+        for (const u32 anchor : {HudPresses::kFirstAnchor, HudPresses::kLastTick}) {
             while (looked->tick < anchor) {
-                const PlayScene::Inputs inputs = inputsAt(looked->tick + 1);
+                const PlayScene::Inputs inputs = test::hudInputsAt(looked->tick + 1);
                 darkLegacy->step(inputs);
                 looked->step(inputs);
                 // Both draw every tick: the one Dark Legacy's boxes, the other the look.

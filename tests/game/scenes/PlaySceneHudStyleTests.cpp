@@ -1,8 +1,6 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <filesystem>
-#include <format>
 #include <memory>
 #include <optional>
 #include <span>
@@ -14,9 +12,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
-#include "engine/assets/StringTable.h"
 #include "engine/core/Types.h"
-#include "engine/io/NativeStateDigest.h"
 #include "engine/math/Math.h"
 #include "engine/render/RenderTypes.h"
 #include "engine/ui/Canvas.h"
@@ -24,15 +20,14 @@
 
 #include "FakeHudStyles.h"
 #include "FakeRenderDevice.h"
+#include "HudLookScene.h"
 #include "LogCapture.h"
 #include "TestSupport.h"
 #include "game/characters/CharacterSave.h"
 #include "game/characters/ClassData.h"
 #include "game/characters/Inventory.h"
 #include "game/characters/Party.h"
-#include "game/combat/PowerupFlags.h"
 #include "game/config/GameConfig.h"
-#include "game/context/GameServices.h"
 #include "game/hud/CompanionArrows.h"
 #include "game/hud/DarkLegacyHudPainter.h"
 #include "game/hud/HudPainter.h"
@@ -43,7 +38,6 @@
 #include "game/hud/StatusBox.h"
 #include "game/level/ExitPortals.h"
 #include "game/level/LevelCatalog.h"
-#include "game/level/LevelWorld.h"
 #include "game/party/PartyCombo.h"
 #include "game/party/PlayInput.h"
 #include "game/party/PlayerRuntime.h"
@@ -51,42 +45,22 @@
 #include "game/players/PlayerControls.h"
 #include "game/players/TurboMeter.h"
 #include "game/rollback/ConsoleAction.h"
-#include "game/rollback/SessionInputs.h"
 #include "game/scenes/PlayScene.h"
 
 namespace {
 using namespace gdl;
 using namespace gdl::game;
 using test::FakeHudPart;
-using Digest = NativeStateDigest::Digest;
+using test::HudPresses;
+using test::Press;
+using test::pressed;
 
-constexpr f64 kStep = 1.0 / 60.0;
 constexpr std::string_view kFakeLook = "fake";
 constexpr std::string_view kOtherLook = "other";
-constexpr u32 kPressEvery = 20; ///< ticks between the selectors' presses in the long runs
-constexpr u32 kOpenTick = 400;  ///< the tick the first seat opens its selector
-/** The tick it slides it away again, once its label has slid in: a selector still sliding in
- * heeds no down. */
-constexpr u32 kCloseTick = 440;
-static_assert(kCloseTick - kOpenTick > PowerupSelector::kSlide / PowerupSelector::kSlidePerTick);
-constexpr u32 kLastTick = 648; ///< the long runs' last tick, the digest tests' later anchor
 /** Where a party stands to be greeted by Sumner and handed his scroll. */
 constexpr Vec3 kSumnerSpot{3.3f, 2.1f, -49.0f};
 /** How far behind the eye a companion is stood, for an arrow to point to it down the view. */
 constexpr f32 kBehindEye = 4.0f;
-/** A powerup that a selector can name, carried for good and not worn. */
-constexpr PowerupSlot kSpeedPowerup{
-    .strength = -1.0f, .kind = powerup::kSpeed, .charge = 5.0f, .flags = 0, .on = false};
-
-/** One way a selector is pressed. */
-enum class Press : u8 { Up, Down, Left, Right };
-
-SelectorInput pressed(Press way) {
-    return {.up = way == Press::Up,
-            .down = way == Press::Down,
-            .left = way == Press::Left,
-            .right = way == Press::Right};
-}
 
 /** Every seat's selector pressed one way, and nothing else. */
 PlayScene::Inputs everyone(Press way) {
@@ -97,139 +71,15 @@ PlayScene::Inputs everyone(Press way) {
     return inputs;
 }
 
-/** The native digest tests' inputs at `tick`: still through the entrance, then each seat
- * walking, attacking, swinging hard, guarding and drinking in turn. Each seat's selector is
- * pressed down, left or right every kPressEvery ticks, a seat a turn on from the one before,
- * and the first seat's is opened at kOpenTick and closed at kCloseTick. */
-PlayScene::Inputs inputsAt(u32 tick) {
-    constexpr std::array<Vec2, 4> kDirections{Vec2{0, 1}, Vec2{1, 0}, Vec2{0, -1}, Vec2{-1, 0}};
-    constexpr std::array kTurns{Press::Down, Press::Left, Press::Right};
-    PlayScene::Inputs inputs{};
-    for (u8 seat = 0; seat < PlayScene::kPlayerCount; ++seat) {
-        PlayInput input;
-        if (tick > 360) {
-            const u32 elapsed = tick - 361;
-            const u32 phase = (elapsed + seat * 30) % 240;
-            const auto direction = kDirections[(elapsed / 120 + seat) % 4];
-            input.move = {direction, 1};
-            input.aimDirection = {direction.x, 0, -direction.y};
-            input.attack = phase < 90;
-            input.attackPressed = phase == 0;
-            input.strongAttack = phase >= 120 && phase < 150;
-            input.turbo = phase >= 180 && phase < 190;
-            input.defendPressed = phase == 180;
-            input.usePotion = elapsed % 600 == 300;
-        }
-        if (seat == 0 && tick == kOpenTick) {
-            input.selector = pressed(Press::Up);
-        } else if (seat == 0 && tick == kCloseTick) {
-            input.selector = pressed(Press::Down);
-        } else if (tick % kPressEvery == 0) {
-            input.selector = pressed(kTurns[(tick / kPressEvery + seat) % kTurns.size()]);
-        }
-        inputs[seat] = SessionInputs::playInput(SessionInputs::command(input, 1, tick, 1, seat));
-    }
-    return inputs;
-}
-
-/** A level opened as the native digest tests open theirs, for `seats` players in seat order,
- * with its HUD drawn in a look of the fake catalog, which offers `fake` and `other`, or in Dark
- * Legacy's alone. Skips without the game data. */
-struct HudScene {
-    std::filesystem::path root =
-        test::assetOrSkip("LEVELS/LEVELL1/WORLDS.PS2").parent_path().parent_path().parent_path();
-    test::FakeRenderDevice device;
-    GameConfig config;
-    LevelCatalog catalog;
-    StringTable strings;
-    LevelWorld world;
-    GameServices context;
-    test::FakeHudStyles styles; ///< outlives the scene, whose looks report to it
-    PlayScene scene;
-    std::vector<PartyMember> party;
-    PlayOptions options;
-    u32 tick = 0;
-
-    explicit HudScene(std::string_view stage, s32 seats = 2) {
-        test::assetOrSkip(std::format("LEVELS/LEVEL{}/WORLDS.PS2", stage));
-        config.timing.tickRate = 60;
-        REQUIRE(catalog.load(root));
-        REQUIRE(strings.load(test::dataDirectory() / "text", "en"));
-        const auto level = stage == "L1" ? std::optional{LevelRef::tower()} : catalog.byName(stage);
-        REQUIRE(level);
-        REQUIRE(world.load(device, root, *level));
-        context.config = &config;
-        context.levels = &catalog;
-        context.strings = &strings;
-        context.unpackedRoot = root;
-        for (s32 seat = 0; seat < seats; ++seat) {
-            CharacterSave save;
-            save.name = "LOOKS";
-            save.character = seat;
-            save.color = seat;
-            save.progress().health = 4000;
-            save.progress().inventory.addKeys(9);
-            save.progress().inventory.addPotions(seat + 1, 9);
-            party.push_back({seat, save, static_cast<usize>(seat), false, 100});
-        }
-        options.welcome = false;
+/** A level opened as the native digest tests open theirs, its HUD drawn in a look of the fake
+ * catalog, which offers `fake` and `other`, or in Dark Legacy's alone. Skips without the game
+ * data. */
+struct HudScene : test::HudLookScene<test::FakeHudStyles> {
+    explicit HudScene(std::string_view stage, s32 seats = 2) : HudLookScene(stage, seats) {
         styles.offered = {
             {.id = std::string{kFakeLook}, .label = "hud.style.fake", .usable = true},
             {.id = std::string{kOtherLook}, .label = "hud.style.other", .usable = true}};
         styles.idleWaits = &device.idleWaits;
-    }
-
-    /** Opens the scene with the settings choosing `look` of the fake catalog, or with Dark
-     * Legacy's look when none is named: then with no catalog, unless `linked`, as the game links
-     * its own whatever the settings choose. */
-    void open(std::string_view look = {}, bool linked = false) {
-        config.display.hudStyle =
-            look.empty() ? std::string{kDarkLegacyHudStyle} : std::string{look};
-        REQUIRE(scene.open(device, context, world, party, options,
-                           {.hudStyles = look.empty() && !linked ? nullptr : &styles}));
-        tick = 0;
-    }
-    void step(const PlayScene::Inputs& inputs) {
-        ++tick;
-        REQUIRE(scene.update(kStep, inputs) == PlayOutcome::Running);
-    }
-    bool entering() const {
-        if (scene.spawning()) {
-            return true;
-        }
-        for (s32 seat = 0; seat < PlayScene::kPlayerCount; ++seat) {
-            if (scene.animator(seat) != nullptr && scene.animator(seat)->entering()) {
-                return true;
-            }
-        }
-        return false;
-    }
-    /** Steps with nothing pressed until the party has come in and stands free to act. */
-    void settle() {
-        for (u32 guard = 0; guard < 600 && entering(); ++guard) {
-            step({});
-        }
-        REQUIRE_FALSE(entering());
-    }
-    Digest digest(const PlayScene::LocalSnapshot* saved = nullptr) {
-        const auto textures = device.texturesCreated;
-        const auto uploads = device.textureUpdates;
-        const auto draws = device.draws.size();
-        const auto value =
-            saved != nullptr ? scene.nativeLocalDigest(*saved) : scene.nativeAgreementDigest();
-        REQUIRE(value);
-        CHECK(device.texturesCreated == textures);
-        CHECK(device.textureUpdates == uploads);
-        CHECK(device.draws.size() == draws);
-        return *value;
-    }
-    /** Draws a frame, under the settings when `optionsOpen`. */
-    void render(f32 blend = -1.0f, bool optionsOpen = false) {
-        device.draws.clear();
-        device.bloomDrawOffsets.clear();
-        REQUIRE(device.beginFrame());
-        scene.render(device, makeScreenProjection(640, 448), 640, 448, optionsOpen, blend);
-        device.endFrame();
     }
 };
 
@@ -276,7 +126,7 @@ TEST_CASE("a HUD look's painter and its pages change no byte of the scene's dige
     auto darkLegacy = std::make_unique<HudScene>("G2", seats);
     auto paged = std::make_unique<HudScene>("G2", seats);
     for (HudScene* fixture : {darkLegacy.get(), paged.get()}) {
-        fixture->party[0].save.progress().inventory.powerups[0] = kSpeedPowerup;
+        fixture->party[0].save.progress().inventory.powerups[0] = test::kSelectorPowerup;
     }
     // The look borrows a picture of Dark Legacy's boxes as it opens, which uploads it then.
     paged->styles.borrowed = "SM_KEY_BLU";
@@ -287,9 +137,9 @@ TEST_CASE("a HUD look's painter and its pages change no byte of the scene's dige
     CHECK(darkLegacy->digest() == paged->digest());
 
     const PowerupSelector& first = paged->scene.selector(0);
-    for (const u32 anchor : {32U, kLastTick}) {
+    for (const u32 anchor : {HudPresses::kFirstAnchor, HudPresses::kLastTick}) {
         while (paged->tick < anchor) {
-            const PlayScene::Inputs inputs = inputsAt(paged->tick + 1);
+            const PlayScene::Inputs inputs = test::hudInputsAt(paged->tick + 1);
             darkLegacy->step(inputs);
             paged->step(inputs);
             // Both draw every tick: the one Dark Legacy's boxes, the other the look.
@@ -298,9 +148,9 @@ TEST_CASE("a HUD look's painter and its pages change no byte of the scene's dige
             CAPTURE(paged->tick);
             REQUIRE(darkLegacy->digest() == paged->digest());
             // The first seat's selector stands open from its up to its down.
-            if (paged->tick == kOpenTick + kPressEvery) {
+            if (paged->tick == HudPresses::kOpenTick + HudPresses::kEvery) {
                 CHECK(first.state() != PowerupSelector::State::Closed);
-            } else if (paged->tick == kCloseTick + 2 * kPressEvery) {
+            } else if (paged->tick == HudPresses::kCloseTick + 2 * HudPresses::kEvery) {
                 CHECK(first.state() == PowerupSelector::State::Closed);
             }
         }
@@ -312,7 +162,7 @@ TEST_CASE("a HUD look's painter and its pages change no byte of the scene's dige
     }
     // The look prepared every frame, and the closed selectors' presses turned its pages.
     const test::FakeHudRecord& record = paged->styles.record;
-    CHECK(record.count(kFakeLook, FakeHudPart::Prepare) == kLastTick);
+    CHECK(record.count(kFakeLook, FakeHudPart::Prepare) == HudPresses::kLastTick);
     CHECK(record.count(kFakeLook, FakeHudPart::Browse) > 0);
     REQUIRE(record.pages.size() == 1);
     CHECK(record.pages.front() != test::FakeHudPages{});
@@ -337,9 +187,9 @@ TEST_CASE("switching the HUD look mid-level changes no byte of the digests and s
     constexpr std::array kChoices{kOtherLook, kDarkLegacyHudStyle, kFakeLook};
     std::string_view shown = kFakeLook;
     u32 switches = 0;
-    while (switching->tick < kLastTick) {
+    while (switching->tick < HudPresses::kLastTick) {
         const u32 next = switching->tick + 1;
-        const PlayScene::Inputs inputs = inputsAt(next);
+        const PlayScene::Inputs inputs = test::hudInputsAt(next);
         if (next % kSwitchEvery == 0) {
             const std::string_view chosen =
                 kChoices.at((next / kSwitchEvery - 1) % kChoices.size());
@@ -395,7 +245,7 @@ TEST_CASE("switching the HUD look mid-level changes no byte of the digests and s
     }
     // Only the switches waited for the device, and the scene in Dark Legacy's look never asked
     // its catalog for a look as it opened or as it stepped.
-    CHECK(switches == kLastTick / kSwitchEvery);
+    CHECK(switches == HudPresses::kLastTick / kSwitchEvery);
     CHECK(switching->device.idleWaits == switches);
     CHECK(darkLegacy->device.idleWaits == 0);
     CHECK(darkLegacy->styles.asks == 0);
@@ -412,8 +262,8 @@ TEST_CASE("a closed selector's down, left and right reach the look's pages, an o
     auto darkLegacy = std::make_unique<HudScene>("G2", kSeats);
     auto paged = std::make_unique<HudScene>("G2", kSeats);
     for (HudScene* fixture : {darkLegacy.get(), paged.get()}) {
-        fixture->party[0].save.progress().inventory.powerups[0] = kSpeedPowerup;
-        fixture->party[2].save.progress().inventory.powerups[0] = kSpeedPowerup;
+        fixture->party[0].save.progress().inventory.powerups[0] = test::kSelectorPowerup;
+        fixture->party[2].save.progress().inventory.powerups[0] = test::kSelectorPowerup;
     }
     darkLegacy->open();
     paged->open(kFakeLook);
@@ -581,7 +431,7 @@ TEST_CASE("the selector's presses reach no page while the scene holds them",
     for (; leavingHeld < 600 && outcome == PlayOutcome::Running; ++leavingHeld) {
         PlayScene::Inputs inputs{};
         inputs[0].selector = pressed(kTurns.at(turn++ % kTurns.size()));
-        outcome = scene.update(kStep, inputs);
+        outcome = scene.update(HudScene::kStep, inputs);
     }
     CHECK(outcome == PlayOutcome::Travel);
     CHECK(leavingHeld > 1);
@@ -607,13 +457,13 @@ TEST_CASE("the selector's presses reach no page while the scene holds them",
     fixture->open(kFakeLook);
     fixture->settle();
     const std::array travel{ConsoleAction{.seat = 0, .line = "goto G1"}};
-    REQUIRE(scene.step(kStep, {}, travel).outcome == PlayOutcome::Travel);
+    REQUIRE(scene.step(HudScene::kStep, {}, travel).outcome == PlayOutcome::Travel);
     REQUIRE(scene.consoleTravelRequest().has_value());
     before = browses();
     for (s32 tick = 0; tick < 10; ++tick) {
         PlayScene::Inputs inputs{};
         inputs[0].selector = pressed(kTurns.at(turn++ % kTurns.size()));
-        CHECK(scene.step(kStep, inputs, {}).outcome == PlayOutcome::Travel);
+        CHECK(scene.step(HudScene::kStep, inputs, {}).outcome == PlayOutcome::Travel);
     }
     CHECK(browses() == before);
 }

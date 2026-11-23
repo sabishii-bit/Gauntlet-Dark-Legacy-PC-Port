@@ -234,6 +234,7 @@ add_executable(tests
     DrawStreamDigestTests.cpp
     FakeHudStyles.h
     FakeDarkLegacyArt.h
+    HudLookScene.h
     engine/core/TypesTests.cpp
     engine/core/LogTests.cpp
     engine/core/AssertTests.cpp
