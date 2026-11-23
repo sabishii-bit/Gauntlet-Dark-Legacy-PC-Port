@@ -65,6 +65,28 @@ impl Progress for NoProgress {
     fn advance(&self, _: u64, _: u64, _: Option<&RelPath>) {}
 }
 
+/// One part of a job's work told to the job's progress as part of the whole: the units of the
+/// parts before it and its own, out of the job's total.
+#[derive(Clone, Copy)]
+pub struct RunningTotal<'a> {
+    /// The job's own progress.
+    pub job: &'a dyn Progress,
+    /// The units of the parts done before this one.
+    pub before: u64,
+    /// The units of every part of the job.
+    pub total: u64,
+}
+
+impl Progress for RunningTotal<'_> {
+    fn phase(&self, phase: PhaseId) {
+        self.job.phase(phase);
+    }
+
+    fn advance(&self, done: u64, _: u64, item: Option<&RelPath>) {
+        self.job.advance(self.before + done, self.total, item);
+    }
+}
+
 /// The job a long file operation is part of: how it is asked to stop and where its progress goes.
 #[derive(Clone, Copy)]
 pub struct Job<'a> {
@@ -79,7 +101,7 @@ mod tests {
     use std::sync::Mutex;
     use std::thread;
 
-    use super::{BLOCK_LEN, Cancel, Cancelled, Job, NoProgress, PhaseId, Progress};
+    use super::{BLOCK_LEN, Cancel, Cancelled, Job, NoProgress, PhaseId, Progress, RunningTotal};
     use crate::{PAYLOAD_NAMES, RelPath};
 
     #[test]
@@ -179,5 +201,74 @@ mod tests {
         };
         work(unfollowed, block, &item).unwrap();
         NoProgress.advance(1, 1, None);
+    }
+
+    #[test]
+    fn a_running_total_adds_the_parts_before() {
+        let block = u64::try_from(BLOCK_LEN).unwrap();
+        let config = RelPath::parse("data/config.json", &PAYLOAD_NAMES).unwrap();
+        let shader = RelPath::parse("shaders/test.spv", &PAYLOAD_NAMES).unwrap();
+        // Three parts of one job, the middle one empty, each worked through as its own total.
+        let parts = [(block + 1, &config), (0, &config), (block, &shader)];
+        let total: u64 = parts.iter().map(|(len, _)| len).sum();
+        let cancel = Cancel::default();
+        let progress = Recorded::default();
+        let mut before = 0;
+        for (len, item) in parts {
+            let part = RunningTotal {
+                job: &progress,
+                before,
+                total,
+            };
+            let job = Job {
+                cancel: &cancel,
+                progress: &part,
+            };
+            work(job, len, item).unwrap();
+            before += len;
+        }
+        assert_eq!(before, total);
+        // The job is told each part's phase, and each step out of the whole, the parts before it
+        // counted in.
+        let told = progress.told.lock().unwrap().clone();
+        let expected = [
+            "phase staging".to_owned(),
+            format!("{block}/{total} data/config.json"),
+            format!("{}/{total} data/config.json", block + 1),
+            "phase staging".to_owned(),
+            "phase staging".to_owned(),
+            format!("{total}/{total} shaders/test.spv"),
+        ];
+        assert_eq!(told, expected);
+
+        // The part's own total is never told, only the job's; a copy tells the same, and a step
+        // naming nothing names nothing.
+        let alone = Recorded::default();
+        let part = RunningTotal {
+            job: &alone,
+            before: 7,
+            total: 20,
+        };
+        let copy = part;
+        part.advance(3, 5, None);
+        copy.advance(5, 5, Some(&shader));
+        // A part of a part counts the parts before both, and its phases reach the job.
+        let inner = RunningTotal {
+            job: &part,
+            before: 2,
+            total: 5,
+        };
+        inner.advance(1, 3, None);
+        inner.phase(PhaseId("publishing"));
+        let told = alone.told.lock().unwrap().clone();
+        assert_eq!(
+            told,
+            [
+                "10/20 -",
+                "12/20 shaders/test.spv",
+                "10/20 -",
+                "phase publishing"
+            ]
+        );
     }
 }

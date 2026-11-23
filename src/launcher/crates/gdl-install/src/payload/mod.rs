@@ -11,7 +11,7 @@ use std::collections::BTreeSet;
 use std::fmt;
 use std::io::{self, Read, Seek, Write};
 
-use gdl_files::{BLOCK_LEN, Cancelled, Job, NameError, NameSet, PhaseId, Progress, RelPath};
+use gdl_files::{BLOCK_LEN, Cancelled, Job, NameError, NameSet, RelPath, RunningTotal};
 use gdl_media::Sha256Digest;
 use gdl_release::Platform;
 use sha2::{Digest, Sha256};
@@ -231,7 +231,7 @@ impl<R: Read + Seek> Payload<R> {
         let total = listed.iter().map(|&index| self.entries[index].size).sum();
         let mut before = 0;
         for index in listed {
-            let progress = Running {
+            let progress = RunningTotal {
                 job: job.progress,
                 before,
                 total,
@@ -243,27 +243,6 @@ impl<R: Read + Seek> Payload<R> {
             before += self.copy_entry(index, &mut io::sink(), &part)?;
         }
         Ok(())
-    }
-}
-
-/// The progress of one file of a job over many, told to the job's own progress as part of the
-/// whole: the bytes of the files before it and its own, out of the job's total.
-struct Running<'a> {
-    /// The job's own progress.
-    job: &'a dyn Progress,
-    /// The bytes of the files done before this one.
-    before: u64,
-    /// The bytes of every file of the job.
-    total: u64,
-}
-
-impl Progress for Running<'_> {
-    fn phase(&self, phase: PhaseId) {
-        self.job.phase(phase);
-    }
-
-    fn advance(&self, done: u64, _: u64, item: Option<&RelPath>) {
-        self.job.advance(self.before + done, self.total, item);
     }
 }
 
