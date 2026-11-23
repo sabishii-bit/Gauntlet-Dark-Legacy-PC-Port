@@ -1,0 +1,644 @@
+{
+  "format": "gdl-gamecube-vectors",
+  "version": 1,
+  "images": {
+    "iso": {
+      "length": 16384,
+      "sha256": "6cc1f00826931d291b47a9087aeced80123fe8668c134bbeb654b22dad04d539",
+      "fstHex": "0100000000000000000000090100000100000000000000070100000a00000001000000040000001000001ff0000000200100001800000001000000060000001e00002800000000050100002800000001000000070100002e0000000000000009000000370000290000000004004761756e746c6574005044415441005741522e57414400574441544100544f5745522e57414400454d505459006361726464656d6f0069636f6e2e74706c00",
+      "revision": 1
+    },
+    "ciso": {
+      "length": 35328,
+      "sha256": "7a56463a67ccd90baf331e80934c608df3c22053ef3251b06653a07191b973ea",
+      "blockSize": 512,
+      "usedBlocks": [
+        0,
+        2,
+        4,
+        15,
+        20
+      ]
+    },
+    "isoWithIcon": {
+      "length": 16384,
+      "sha256": "6f7d1d5727df524597a3620ecc101a069a97d0b100a87102868db08650e42c20"
+    }
+  },
+  "entries": [
+    {
+      "path": "Gauntlet",
+      "folder": true
+    },
+    {
+      "path": "Gauntlet/PDATA",
+      "folder": true
+    },
+    {
+      "path": "Gauntlet/PDATA/WAR.WAD",
+      "folder": false,
+      "offset": 8176,
+      "size": 32,
+      "sha256": "c35e4f503d52e9d3477d1c0366e628ab3aaa4202ee48b06fb52a271fc7f1cc51"
+    },
+    {
+      "path": "Gauntlet/WDATA",
+      "folder": true
+    },
+    {
+      "path": "Gauntlet/WDATA/TOWER.WAD",
+      "folder": false,
+      "offset": 10240,
+      "size": 5,
+      "sha256": "ad2015263f339bff96818238148b790bd02be561472f4ea7db44498caa0b6558"
+    },
+    {
+      "path": "Gauntlet/EMPTY",
+      "folder": true
+    },
+    {
+      "path": "carddemo",
+      "folder": true
+    },
+    {
+      "path": "carddemo/icon.tpl",
+      "folder": false,
+      "offset": 10496,
+      "size": 4,
+      "sha256": "c2d4b446a44ce54fab8e01150e24dd24f3d850c7c14dcfe31f6321341dd86874"
+    }
+  ],
+  "reads": [
+    {
+      "image": "ciso",
+      "offset": 8176,
+      "size": 32,
+      "hex": "4141414141414141414141414141414100000000000000000000000000000000",
+      "python": "accepted",
+      "message": null,
+      "rule": null,
+      "detail": null
+    },
+    {
+      "image": "iso",
+      "offset": 16383,
+      "size": 2,
+      "hex": null,
+      "python": "refused",
+      "message": "Disc file extends beyond the image",
+      "rule": "outsideImage",
+      "detail": "Disc file extends beyond the image"
+    }
+  ],
+  "cases": [
+    {
+      "name": "empty",
+      "base": "empty",
+      "edits": [],
+      "rule": "outsideImage",
+      "python": "refused",
+      "message": "Disc file extends beyond the image",
+      "detail": "Disc file extends beyond the image"
+    },
+    {
+      "name": "cisoMagic",
+      "base": "empty",
+      "edits": [
+        {
+          "op": "append",
+          "hex": "4349534f"
+        }
+      ],
+      "rule": "cisoHeader",
+      "python": "refused",
+      "message": "Truncated CISO header",
+      "detail": "Truncated CISO header"
+    },
+    {
+      "name": "cisoZeros",
+      "base": "empty",
+      "edits": [
+        {
+          "op": "append",
+          "hex": "4349534f"
+        },
+        {
+          "op": "appendZeros",
+          "count": 32768
+        }
+      ],
+      "rule": "cisoBlockSize",
+      "python": "refused",
+      "message": "Unsupported GameCube CISO block size (not PSP CSO)",
+      "detail": "Unsupported GameCube CISO block size (not PSP CSO)"
+    },
+    {
+      "name": "notAGame",
+      "base": "empty",
+      "edits": [
+        {
+          "op": "append",
+          "hex": "6e6f7420612067616d65"
+        }
+      ],
+      "rule": "outsideImage",
+      "python": "refused",
+      "message": "Disc file extends beyond the image",
+      "detail": "Disc file extends beyond the image"
+    },
+    {
+      "name": "pspCso",
+      "base": "empty",
+      "edits": [
+        {
+          "op": "append",
+          "hex": "4349534f1800000000001000000000000008000001000000"
+        },
+        {
+          "op": "appendZeros",
+          "count": 32744
+        }
+      ],
+      "rule": "cisoBlockSize",
+      "python": "refused",
+      "message": "Unsupported GameCube CISO block size (not PSP CSO)",
+      "detail": "Unsupported GameCube CISO block size (not PSP CSO)"
+    },
+    {
+      "name": "id",
+      "base": "iso",
+      "edits": [
+        {
+          "op": "bytes",
+          "at": 0,
+          "hex": "47414c453031"
+        }
+      ],
+      "rule": "otherGame",
+      "python": "refused",
+      "message": "Select a USA GameCube Gauntlet Dark Legacy disc (GUNE5D)",
+      "detail": "Select a USA GameCube Gauntlet Dark Legacy disc (GUNE5D)"
+    },
+    {
+      "name": "europe",
+      "base": "iso",
+      "edits": [
+        {
+          "op": "byte",
+          "at": 3,
+          "value": 80
+        }
+      ],
+      "rule": "otherRegion",
+      "python": "refused",
+      "message": "Select a USA GameCube Gauntlet Dark Legacy disc (GUNE5D)",
+      "detail": "Select a USA GameCube Gauntlet Dark Legacy disc (GUNE5D)"
+    },
+    {
+      "name": "europeNkit",
+      "base": "iso",
+      "edits": [
+        {
+          "op": "byte",
+          "at": 3,
+          "value": 80
+        },
+        {
+          "op": "bytes",
+          "at": 512,
+          "hex": "4e4b4954"
+        }
+      ],
+      "rule": "otherRegion",
+      "python": "refused",
+      "message": "Select a USA GameCube Gauntlet Dark Legacy disc (GUNE5D)",
+      "detail": "Select a USA GameCube Gauntlet Dark Legacy disc (GUNE5D)"
+    },
+    {
+      "name": "noMark",
+      "base": "iso",
+      "edits": [
+        {
+          "op": "bytes",
+          "at": 28,
+          "hex": "00000000"
+        }
+      ],
+      "rule": "notGameCube",
+      "python": "refused",
+      "message": "Select a USA GameCube Gauntlet Dark Legacy disc (GUNE5D)",
+      "detail": "Select a USA GameCube Gauntlet Dark Legacy disc (GUNE5D)"
+    },
+    {
+      "name": "cisoNoMark",
+      "base": "ciso",
+      "edits": [
+        {
+          "op": "bytes",
+          "at": 32796,
+          "hex": "00000000"
+        }
+      ],
+      "rule": "notGameCube",
+      "python": "refused",
+      "message": "Select a USA GameCube Gauntlet Dark Legacy disc (GUNE5D)",
+      "detail": "Select a USA GameCube Gauntlet Dark Legacy disc (GUNE5D)"
+    },
+    {
+      "name": "discNumber",
+      "base": "iso",
+      "edits": [
+        {
+          "op": "byte",
+          "at": 6,
+          "value": 1
+        }
+      ],
+      "rule": "discNumber",
+      "python": "refused",
+      "message": "Unsupported disc number",
+      "detail": "Unsupported disc number"
+    },
+    {
+      "name": "revision0",
+      "base": "iso",
+      "edits": [
+        {
+          "op": "byte",
+          "at": 7,
+          "value": 0
+        }
+      ],
+      "rule": null,
+      "python": "accepted",
+      "message": null,
+      "detail": null
+    },
+    {
+      "name": "revision2",
+      "base": "iso",
+      "edits": [
+        {
+          "op": "byte",
+          "at": 7,
+          "value": 2
+        }
+      ],
+      "rule": "revision",
+      "python": "accepted",
+      "message": null,
+      "detail": "Unsupported disc revision: 2"
+    },
+    {
+      "name": "nkit",
+      "base": "iso",
+      "edits": [
+        {
+          "op": "bytes",
+          "at": 512,
+          "hex": "4e4b4954"
+        }
+      ],
+      "rule": "nkit",
+      "python": "accepted",
+      "message": null,
+      "detail": "NKit images are not read: use the disc's plain ISO or CISO dump"
+    },
+    {
+      "name": "fst",
+      "base": "iso",
+      "edits": [
+        {
+          "op": "u32be",
+          "at": 1060,
+          "value": 4294967040
+        }
+      ],
+      "rule": "outsideImage",
+      "python": "refused",
+      "message": "Disc file extends beyond the image",
+      "detail": "Disc file extends beyond the image"
+    },
+    {
+      "name": "fstLow",
+      "base": "iso",
+      "edits": [
+        {
+          "op": "u32be",
+          "at": 1060,
+          "value": 1087
+        }
+      ],
+      "rule": "fstExtent",
+      "python": "refused",
+      "message": "Invalid GameCube filesystem extent",
+      "detail": "Invalid GameCube filesystem extent"
+    },
+    {
+      "name": "fstSmall",
+      "base": "iso",
+      "edits": [
+        {
+          "op": "u32be",
+          "at": 1064,
+          "value": 11
+        }
+      ],
+      "rule": "fstExtent",
+      "python": "refused",
+      "message": "Invalid GameCube filesystem extent",
+      "detail": "Invalid GameCube filesystem extent"
+    },
+    {
+      "name": "count",
+      "base": "iso",
+      "edits": [
+        {
+          "op": "u32be",
+          "at": 2056,
+          "value": 268435456
+        }
+      ],
+      "rule": "fstRoot",
+      "python": "refused",
+      "message": "Invalid GameCube filesystem root",
+      "detail": "Invalid GameCube filesystem root"
+    },
+    {
+      "name": "kind",
+      "base": "iso",
+      "edits": [
+        {
+          "op": "byte",
+          "at": 2060,
+          "value": 2
+        }
+      ],
+      "rule": "fstEntry",
+      "python": "refused",
+      "message": "Invalid GameCube filesystem entry",
+      "detail": "Invalid GameCube filesystem entry"
+    },
+    {
+      "name": "parent",
+      "base": "iso",
+      "edits": [
+        {
+          "op": "u32be",
+          "at": 2064,
+          "value": 9
+        }
+      ],
+      "rule": "nesting",
+      "python": "refused",
+      "message": "Invalid filesystem directory nesting",
+      "detail": "Invalid filesystem directory nesting"
+    },
+    {
+      "name": "file",
+      "base": "iso",
+      "edits": [
+        {
+          "op": "u32be",
+          "at": 2092,
+          "value": 4294967295
+        }
+      ],
+      "rule": "truncatedFile",
+      "python": "refused",
+      "message": "Truncated disc file: Gauntlet/PDATA/WAR.WAD",
+      "detail": "Truncated disc file: Gauntlet/PDATA/WAR.WAD"
+    },
+    {
+      "name": "name",
+      "base": "iso",
+      "edits": [
+        {
+          "op": "byte",
+          "at": 2157,
+          "value": 47
+        }
+      ],
+      "rule": "unsafeName",
+      "python": "refused",
+      "message": "Unsafe disc path component: '/auntlet'",
+      "detail": "Unsafe disc path component: \"/auntlet\""
+    },
+    {
+      "name": "caseDuplicate",
+      "base": "iso",
+      "edits": [
+        {
+          "op": "bytes",
+          "at": 2180,
+          "hex": "5044415461"
+        }
+      ],
+      "rule": "duplicatePath",
+      "python": "refused",
+      "message": "Duplicate or overlong disc path: Gauntlet/PDATa",
+      "detail": "Duplicate or overlong disc path: Gauntlet/PDATa"
+    },
+    {
+      "name": "deleteInName",
+      "base": "iso",
+      "edits": [
+        {
+          "op": "byte",
+          "at": 2198,
+          "value": 127
+        }
+      ],
+      "rule": "unsafeName",
+      "python": "accepted",
+      "message": null,
+      "detail": "Unsafe disc path component: \"EM\\u{7f}TY\""
+    },
+    {
+      "name": "nonAscii",
+      "base": "iso",
+      "edits": [
+        {
+          "op": "byte",
+          "at": 2198,
+          "value": 233
+        }
+      ],
+      "rule": "unsafeName",
+      "python": "refused",
+      "message": "'ascii' codec can't decode byte 0xe9 in position 2: ordinal not in range(128)",
+      "detail": "Unsafe disc path component: \"EM\ufffdTY\""
+    },
+    {
+      "name": "deviceWithSpace",
+      "base": "iso",
+      "edits": [
+        {
+          "op": "bytes",
+          "at": 2211,
+          "hex": "434f4e202e74706c"
+        }
+      ],
+      "rule": "unsafeName",
+      "python": "accepted",
+      "message": null,
+      "detail": "Unsafe disc path component: \"CON .tpl\""
+    },
+    {
+      "name": "alphaName",
+      "base": "iso",
+      "edits": [
+        {
+          "op": "u32be",
+          "at": 2144,
+          "value": 64
+        },
+        {
+          "op": "bytes",
+          "at": 2220,
+          "hex": "696e7374616c6c6174696f6e2e6a736f6e00"
+        },
+        {
+          "op": "u32be",
+          "at": 1064,
+          "value": 190
+        }
+      ],
+      "rule": "unsafeName",
+      "python": "accepted",
+      "message": null,
+      "detail": "Unsafe disc path component: \"installation.json\""
+    },
+    {
+      "name": "rootFile",
+      "base": "iso",
+      "edits": [
+        {
+          "op": "byte",
+          "at": 2060,
+          "value": 0
+        }
+      ],
+      "rule": "rootNotFolder",
+      "python": "refused",
+      "message": "Asset root must be a directory",
+      "detail": "Asset root must be a directory"
+    },
+    {
+      "name": "missingCarddemo",
+      "base": "iso",
+      "edits": [
+        {
+          "op": "byte",
+          "at": 2209,
+          "value": 120
+        }
+      ],
+      "rule": "missingRoots",
+      "python": "refused",
+      "message": "Disc is missing Gauntlet or carddemo assets",
+      "detail": "Disc is missing Gauntlet or carddemo assets"
+    },
+    {
+      "name": "missingTower",
+      "base": "iso",
+      "edits": [
+        {
+          "op": "byte",
+          "at": 2194,
+          "value": 88
+        }
+      ],
+      "rule": "missingData",
+      "python": "refused",
+      "message": "Disc is missing required native game data",
+      "detail": "Disc is missing required native game data"
+    },
+    {
+      "name": "missingIcon",
+      "base": "iso",
+      "edits": [
+        {
+          "op": "byte",
+          "at": 2218,
+          "value": 120
+        }
+      ],
+      "rule": "missingData",
+      "python": "accepted",
+      "message": null,
+      "detail": "Disc is missing required native game data"
+    },
+    {
+      "name": "trimmedToLastByte",
+      "base": "iso",
+      "edits": [
+        {
+          "op": "truncate",
+          "to": 10500
+        }
+      ],
+      "rule": null,
+      "python": "accepted",
+      "message": null,
+      "detail": null
+    },
+    {
+      "name": "trimmedOneShort",
+      "base": "iso",
+      "edits": [
+        {
+          "op": "truncate",
+          "to": 10499
+        }
+      ],
+      "rule": "truncatedFile",
+      "python": "refused",
+      "message": "Truncated disc file: carddemo/icon.tpl",
+      "detail": "Truncated disc file: carddemo/icon.tpl"
+    },
+    {
+      "name": "cisoMap",
+      "base": "ciso",
+      "edits": [
+        {
+          "op": "byte",
+          "at": 8,
+          "value": 2
+        }
+      ],
+      "rule": "cisoMap",
+      "python": "refused",
+      "message": "Invalid CISO block map",
+      "detail": "Invalid CISO block map"
+    },
+    {
+      "name": "cisoTruncated",
+      "base": "ciso",
+      "edits": [
+        {
+          "op": "dropLast",
+          "count": 1
+        }
+      ],
+      "rule": "cisoData",
+      "python": "refused",
+      "message": "Truncated CISO data",
+      "detail": "Truncated CISO data"
+    },
+    {
+      "name": "cisoTrailing",
+      "base": "ciso",
+      "edits": [
+        {
+          "op": "append",
+          "hex": "00"
+        }
+      ],
+      "rule": null,
+      "python": "accepted",
+      "message": null,
+      "detail": null
+    }
+  ]
+}
