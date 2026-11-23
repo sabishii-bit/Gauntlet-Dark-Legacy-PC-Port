@@ -95,6 +95,8 @@ TEST_CASE("approximateFlatUnit lays a vector flat and scales it by the fast leng
 
     CHECK(approximateFlatUnit(Vec3{}) == Vec3{0.0f});
     CHECK(approximateFlatUnit(Vec3{0.0f, 7.0f, 0.0f}) == Vec3{0.0f});
+    // A negligible x beside no z is no length, so x is kept as it is.
+    CHECK(approximateFlatUnit(Vec3{0.00005f, 3.0f, 0.0f}) == Vec3{0.00005f, 0.0f, 0.0f});
 }
 
 } // namespace
