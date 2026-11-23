@@ -19,12 +19,16 @@ f32 flatDistance(const Vec3& a, const Vec3& b) {
     return std::sqrt(dx * dx + dz * dz);
 }
 
+/** `way` laid flat at a unit's length, or `otherwise` when it has next to no flat length. */
+Vec3 flatWayOr(const Vec3& way, const Vec3& otherwise) {
+    const f32 length = std::sqrt(way.x * way.x + way.z * way.z);
+    return length > kNoFlatWay ? Vec3{way.x / length, 0.0f, way.z / length} : otherwise;
+}
+
 /** `way` laid flat at a unit's length, or the way `yaw` faces when it has next to no flat
  * length. */
 Vec3 flatWay(const Vec3& way, f32 yaw) {
-    const f32 length = std::sqrt(way.x * way.x + way.z * way.z);
-    return length > kNoFlatWay ? Vec3{way.x / length, 0.0f, way.z / length}
-                               : Vec3{portable::sin(yaw), 0.0f, portable::cos(yaw)};
+    return flatWayOr(way, Vec3{portable::sin(yaw), 0.0f, portable::cos(yaw)});
 }
 } // namespace
 
@@ -123,8 +127,11 @@ void Combatant::strikeWith(Actor& critter, s32 id, const MoveDefinition& move, s
         blow.origin = centre;
         if (breath.has_value()) {
             // Flat along the beam, however steeply it falls (CritterFirePlayerCollide's
-            // NormalVector2D).
-            blow.direction = approximateFlatUnit(breath->end - breath->origin);
+            // NormalVector2D), or flat from where it starts where the fighter's rules say so.
+            const Vec3 alongBeam = approximateFlatUnit(breath->end - breath->origin);
+            blow.direction = critter.definition->rules().breathPushFromOrigin
+                                 ? flatWayOr(feet - breath->origin, alongBeam)
+                                 : alongBeam;
         } else if (swingPush) {
             blow.direction = critter.moveNode.blowPush(bodyOrigin, feet);
             if (critter.definition->rules().unitBlowPush) {

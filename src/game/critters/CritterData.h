@@ -42,6 +42,9 @@ struct CritterRules {
      * only its flat way, at a unit's length. GDL's CritterNodePlayerCollide (0x80036424) knocks a
      * player by the whole push, longest when the swing runs outward. */
     bool unitBlowPush = false;
+    /** A breath pushes a player flat away from where the breath starts, at a unit's length, or
+     * along its beam when the player stands next to no flat distance from that start. GDL's
+     * CritterFirePlayerCollide (0x80036138) pushes along the beam alone. */
     bool breathPushFromOrigin = false;
     /** Seconds by which its blow or breath sets a struck player's fxhittime ahead: the wait the
      * great ones' breaths and gated blows keep before striking that player again. GDL's

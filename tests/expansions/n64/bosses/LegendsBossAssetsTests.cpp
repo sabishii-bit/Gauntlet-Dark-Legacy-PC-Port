@@ -53,6 +53,7 @@ TEST_CASE("Native boss assets bind six original skeletons and every authored mov
             CHECK(stock->data.rules().restoreCaptureSupport);
             CHECK(stock->data.rules().nodeFramePartOffsets);
             CHECK(stock->data.rules().unitBlowPush);
+            CHECK(stock->data.rules().breathPushFromOrigin);
             CHECK(stock->tree->name == stock->data.tree());
             CHECK(stock->archive.models.loaded());
             CHECK(stock->archive.textures.loaded());
@@ -86,9 +87,11 @@ TEST_CASE("Native boss assets bind six original skeletons and every authored mov
             validate(stock->data);
             for (const auto& child : stock->children) {
                 CHECK(child.rules().pressureReferenceDamage == 1000);
-                // A head places its parts and pushes with its blows as the body does.
+                // A head places its parts and pushes with its blows and breaths as the body
+                // does.
                 CHECK(child.rules().nodeFramePartOffsets);
                 CHECK(child.rules().unitBlowPush);
+                CHECK(child.rules().breathPushFromOrigin);
                 validate(child);
             }
             for (const auto& cue : stock->data.sounds()) {

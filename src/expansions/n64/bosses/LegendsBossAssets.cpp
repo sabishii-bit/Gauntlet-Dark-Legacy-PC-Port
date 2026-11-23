@@ -360,7 +360,11 @@ std::unique_ptr<CombatantAssets> loadLegendsBossAssets(RenderDevice& device,
                        // Boss.bin's blow (e0887154) builds GDL's push, but e0886ed0 makes it a
                        // point and game.bin e004ba94 only turns the player toward it, so the
                        // push keeps its flat way at a unit's length.
-                       .unitBlowPush = true};
+                       .unitBlowPush = true,
+                       // Boss.bin's breath (e0887410) hands e0886ed0 the way from where it
+                       // starts to the player, and e004ba94 only turns the player to face that
+                       // start, so the push runs flat from it rather than along the beam.
+                       .breathPushFromOrigin = true};
     auto data = CritterData::fromDecoded(family.name, decoded, 0, rules);
     std::vector<CritterData> children;
     std::set<s32> visited{0};

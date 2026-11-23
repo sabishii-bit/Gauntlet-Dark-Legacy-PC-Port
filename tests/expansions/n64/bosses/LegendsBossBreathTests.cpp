@@ -10,6 +10,8 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/io/File.h"
+#include "engine/math/ApproximateLength.h"
+#include "engine/math/Math.h"
 #include "engine/math/PortableMath.h"
 
 #include "FakeRenderDevice.h"
@@ -18,6 +20,7 @@
 #include "expansions/n64/bosses/LegendsBosses.h"
 #include "expansions/shared/scenes/LegendsTraversal.h"
 #include "game/critters/Combatant.h"
+#include "game/critters/CombatantBreath.h"
 #include "game/players/PlayerImpact.h"
 
 namespace {
@@ -25,8 +28,11 @@ using namespace gdl;
 using namespace gdl::game;
 using Catch::Approx;
 
-TEST_CASE("Native Skorne eye beams damage grounded players and retain knockdown",
+TEST_CASE("Native Skorne eye beams damage grounded players, knock them down and push them flat "
+          "from where the beam starts",
           "[legends][bosses][native-boss-breath][assets]") {
+    // Far enough from the beam's own flat way that pushing along the beam would miss it.
+    constexpr f32 kBesideBeam = 0.05f;
     const auto nativeRoot = test::dataDirectory().parent_path() / "assets/n64/extracted";
     if (!std::filesystem::is_regular_file(nativeRoot / "sko1/moves.wad")) {
         SKIP("Native N64 boss extraction is not installed");
@@ -89,6 +95,7 @@ TEST_CASE("Native Skorne eye beams damage grounded players and retain knockdown"
             const Vec3 right{forward.z, 0, -forward.x};
             usize groundedProbes = 0;
             usize hits = 0;
+            usize besideHits = 0;
             // Deliberately choose walking positions on the native arena floor,
             // independently of the decoded beam. Placing a target at its sampled
             // head/beam point would conceal an attack that always fires overhead.
@@ -126,6 +133,16 @@ TEST_CASE("Native Skorne eye beams damage grounded players and retain knockdown"
                             CHECK(blows.empty());
                             continue;
                         }
+                        // Boss.bin's breath (e0887410) turns the player to face where the beam
+                        // starts, so the push runs flat from there, beside the beam's axis too.
+                        const auto node = actor.nodeTransform(move->colnode);
+                        REQUIRE(node);
+                        const auto beam = CombatantBreath::fromNode(*node, *damage, true);
+                        const Vec3 fromStart{feet.x - beam.origin.x, 0, feet.z - beam.origin.z};
+                        const Vec3 away = fromStart / std::hypot(fromStart.x, fromStart.z);
+                        const bool beside =
+                            glm::distance(away, approximateFlatUnit(beam.end - beam.origin)) >
+                            kBesideBeam;
                         for (const auto& blow : blows) {
                             REQUIRE(blow.player == 0);
                             CHECK(blow.breath);
@@ -136,13 +153,22 @@ TEST_CASE("Native Skorne eye beams damage grounded players and retain knockdown"
                                 blow.damage, yaw, false);
                             CHECK((reaction == PlayerDeed::FallBack ||
                                    reaction == PlayerDeed::FallForward));
+                            CAPTURE(blow.direction.x, blow.direction.y, blow.direction.z);
+                            CHECK(glm::distance(blow.origin, beam.origin) < 1e-4f);
+                            CHECK(blow.direction.y == 0.0f);
+                            CHECK(glm::length(blow.direction) == Approx(1.0f));
+                            CHECK(glm::distance(blow.direction, away) < 1e-5f);
                             ++hits;
+                            besideHits += beside ? 1 : 0;
                         }
                     }
                 }
             }
             CHECK(groundedProbes >= 6);
             CHECK(hits > 0);
+            // A player hit beside the beam's axis, where its flat way and the way from its start
+            // part.
+            CHECK(besideHits > 0);
         }
     }
 }
