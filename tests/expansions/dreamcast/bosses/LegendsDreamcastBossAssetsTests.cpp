@@ -84,7 +84,7 @@ TEST_CASE("Dreamcast six native bosses bind all authored attacks and collision n
             CHECK(stock->wakeDelay == 2);
             CHECK(stock->data.rules().restoreCaptureSupport);
             CHECK(stock->data.rules().nodeFramePartOffsets);
-            CHECK(stock->data.rules().flatBlowPush);
+            CHECK_FALSE(stock->data.rules().flatBlowPush);
             const auto validate = [&](const CritterData& part) {
                 for (const auto& move : part.moves()) {
                     CAPTURE(move.name, move.anim, move.colnode);

@@ -479,6 +479,7 @@ add_executable(tests
     expansions/dreamcast/level/LegendsDreamcastBossCeremonyTests.cpp
     expansions/dreamcast/formats/LegendsDreamcastCritterTests.cpp
     expansions/dreamcast/bosses/LegendsDreamcastBossAssetsTests.cpp
+    expansions/dreamcast/bosses/LegendsDreamcastBossMeleeTests.cpp
     expansions/dreamcast/bosses/LegendsDreamcastBossEntranceTests.cpp
     expansions/dreamcast/bosses/LegendsDreamcastBossesTests.cpp
     expansions/dreamcast/bosses/LegendsDreamcastBossVisitTests.cpp
