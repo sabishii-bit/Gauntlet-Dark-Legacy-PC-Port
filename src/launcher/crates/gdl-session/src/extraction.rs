@@ -191,11 +191,12 @@ pub enum ExtractionError {
         /// What identifying it found.
         refusal: DumpRefusal,
     },
-    /// The dump could not be read or identified, or breaks a rule of its format, or the job was
-    /// asked to stop as the dump was read.
+    /// The dump could not be read or identified, or breaks a rule of its format. A stop the job
+    /// asked for is never one, though a reader heeded it: it is the extraction's own.
     #[error(transparent)]
     Media(MediaError),
-    /// The check or the extraction refused the dump or failed, or the job was asked to stop.
+    /// The check or the extraction refused the dump or failed, or the job was asked to stop,
+    /// wherever that was heeded.
     #[error(transparent)]
     Extract(ExtractError),
     /// Making the staging, or putting the tree in place from it, failed.
@@ -275,7 +276,7 @@ pub fn extract_to_new_folder(
     job: &Job<'_>,
 ) -> Result<ExtractSummary, ExtractionError> {
     let place = OutputPlace::checked(request.output)?;
-    let identity = identify(request.dump).map_err(ExtractionError::Media)?;
+    let identity = identify(request.dump).map_err(read_failure)?;
     if let Verdict::Refused(refusal) = identity.verdict
         && refuses_container(refusal)
     {
@@ -318,6 +319,16 @@ fn refuses_container(refusal: DumpRefusal) -> bool {
     }
 }
 
+/// What a reader's failure to read the dump reports: the reader's own, but for a stop the job
+/// asked for, which is the extraction's whichever part of it heeded the job's cancel, as it is to
+/// the check and to the writer of the tree, so that no caller takes it for a failure.
+fn read_failure(error: MediaError) -> ExtractionError {
+    match error {
+        MediaError::Cancelled => ExtractionError::Extract(ExtractError::Cancelled),
+        error => ExtractionError::Media(error),
+    }
+}
+
 /// Extracts the N64 tree of the ROM at `dump` into `place`, the ROM held as `mode` says.
 fn extract_rom(
     dump: &Path,
@@ -327,7 +338,7 @@ fn extract_rom(
 ) -> Result<Counts, ExtractionError> {
     // The ROM is let go of once checked: the checked ROM holds what the tree is written from.
     let checked = {
-        let rom = N64Rom::open(dump, job).map_err(ExtractionError::Media)?;
+        let rom = N64Rom::open(dump, job).map_err(read_failure)?;
         check_n64(&rom, mode, job).map_err(ExtractionError::Extract)?
     };
     let staging = place.staging(Expansion::N64)?;
@@ -1439,6 +1450,10 @@ mod tests {
                 assert!(random.bytes().all(|byte| byte.is_ascii_alphanumeric()));
                 if stopped {
                     let error = extracted.unwrap_err();
+                    assert!(
+                        matches!(error, ExtractionError::Extract(ExtractError::Cancelled)),
+                        "{error:?}"
+                    );
                     assert_eq!(code_of(&error), Report::Cancelled, "{error:?}");
                     folders.assert_staging_gone(&before);
                     assert!(!output.exists());
@@ -1521,13 +1536,19 @@ mod tests {
         assert!(advances >= 5, "{advances}");
 
         // A stop at every one of them, the last included, which comes after the last block of
-        // the tree is written and before it is put in place.
+        // the tree is written and before it is put in place, and one before the run, which the
+        // ROM's read heeds first. Each is the extraction's own stop, wherever it was heeded, so
+        // that no caller takes one for a reader's failure.
         let output = folders.output("n64");
         for at in 0..=advances {
             let cancel = Cancel::default();
             let progress = CancelAt::new(&cancel, at);
             let before = folders.before(Expansion::N64);
             let error = run(&output, &progress).unwrap_err();
+            assert!(
+                matches!(error, ExtractionError::Extract(ExtractError::Cancelled)),
+                "at {at}: {error:?}"
+            );
             assert_eq!(code_of(&error), Report::Cancelled, "at {at}: {error:?}");
             assert_eq!(error.rule(), "cancelled", "at {at}");
             folders.assert_staging_gone(&before);
@@ -1648,7 +1669,6 @@ mod tests {
                 },
                 "archive",
             ),
-            (ExtractionError::Media(MediaError::Cancelled), "cancelled"),
             (
                 ExtractionError::Media(MediaError::Rom {
                     rule: RomRule::Header,

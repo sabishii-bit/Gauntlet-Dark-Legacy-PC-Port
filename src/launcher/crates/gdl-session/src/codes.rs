@@ -1101,8 +1101,9 @@ mod tests {
     }
 
     /// One refusal of every kind an extraction into a new folder meets, with what each reports: the
-    /// output's place by every rule, a dump of the wrong console or refused for its container, and
-    /// a reader's, the extraction's and the staging's failure once each.
+    /// output's place by every rule, a dump of the wrong console or refused for its container, a
+    /// reader's, the extraction's and the staging's failure once each, and a stop the job asked
+    /// for, which is the extraction's whichever part of it heeded it.
     fn extraction_refusals() -> Vec<(ExtractionError, Report)> {
         let not_directory = Report::Error("folder.notDirectory");
         let name = output_name(Path::new("n64.")).expect_err("a name ending in a dot");
@@ -1152,8 +1153,11 @@ mod tests {
                 Report::Error("dump.dc.cdi"),
             ),
             (
-                ExtractionError::Media(MediaError::Cancelled),
-                Report::Cancelled,
+                ExtractionError::Media(MediaError::Rom {
+                    rule: RomRule::Header,
+                    detail: detail(),
+                }),
+                Report::Error("source.incomplete"),
             ),
             (
                 ExtractionError::Extract(ExtractError::Native {
@@ -1165,6 +1169,10 @@ mod tests {
             (
                 ExtractionError::Files(FilesError::Link { path: path() }),
                 FAILED,
+            ),
+            (
+                ExtractionError::Extract(ExtractError::Cancelled),
+                Report::Cancelled,
             ),
         ]
     }
