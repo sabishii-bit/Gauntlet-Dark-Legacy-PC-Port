@@ -65,7 +65,8 @@ pub struct ExtractRequest<'a> {
     pub expansion: Expansion,
     /// The dump: for the N64 expansion the cartridge's ROM, in any byte order; for the Dreamcast
     /// expansion a cue sheet or a GDI, the folder that holds the one sheet, or the file of a
-    /// track that one sheet beside it names.
+    /// track that one sheet beside it names. The path is read by its names, as the extraction
+    /// scripts read it, so that a separator or a `.` after its last name leaves it that file's.
     pub dump: &'a Path,
     /// The new folder the tree goes into, in a folder that is there and lies outside every
     /// installation.
@@ -260,12 +261,14 @@ pub fn output_name(output: &Path) -> Result<RelPath, ExtractionError> {
 /// folder must be a folder that is there, with no link on its path; nothing may be at the output;
 /// and no folder above it, from its own up to the volume's root, may hold the launcher's state
 /// folder or a name the alpha's installer leaves, since only an installation's own jobs write in
-/// one. The dump is then identified by its content: a container the launcher does not read, or
-/// content it does not know, is refused, and so is a dump for another console than the
-/// expansion's. Its identity is held to the trust by the check alone, which reads the dump and
-/// decides on it, writing nothing. Only then is a staging made beside the output and the tree
-/// written into it; unless the job has been asked to stop by then, the tree is put in place as the
-/// output by one rename that never replaces anything.
+/// one. The dump's path is then read by its names alone, as the extraction scripts read one: a
+/// separator, or a `.` and a separator, after a file's name leaves it that file's path, which the
+/// system would not open so, and a `..` stays as it was given. The dump is identified by its
+/// content: a container the launcher does not read, or content it does not know, is refused, and
+/// so is a dump for another console than the expansion's. Its identity is held to the trust by the
+/// check alone, which reads the dump and decides on it, writing nothing. Only then is a staging
+/// made beside the output and the tree written into it; unless the job has been asked to stop by
+/// then, the tree is put in place as the output by one rename that never replaces anything.
 ///
 /// A refusal before the staging leaves the output's folder as it was. After it, a failure leaves
 /// nothing outside the staging, which goes when it is dropped, as it does once the tree has moved
@@ -276,7 +279,9 @@ pub fn extract_to_new_folder(
     job: &Job<'_>,
 ) -> Result<ExtractSummary, ExtractionError> {
     let place = OutputPlace::checked(request.output)?;
-    let identity = identify(request.dump).map_err(read_failure)?;
+    // Rebuilt from its components, which drop a trailing separator and every `.` but a leading one.
+    let dump: PathBuf = request.dump.components().collect();
+    let identity = identify(&dump).map_err(read_failure)?;
     if let Verdict::Refused(refusal) = identity.verdict
         && refuses_container(refusal)
     {
@@ -287,7 +292,7 @@ pub fn extract_to_new_folder(
         StrictnessChoice::Install => Strictness::Install(trust),
     };
     let counts = match (request.expansion, &identity.source) {
-        (Expansion::N64, Source::N64 { .. }) => extract_rom(request.dump, &place, &mode, job)?,
+        (Expansion::N64, Source::N64 { .. }) => extract_rom(&dump, &place, &mode, job)?,
         (Expansion::Dreamcast, Source::Dreamcast { sheet, .. }) => {
             extract_disc(sheet, &place, &mode, job)?
         }
@@ -1505,6 +1510,39 @@ mod tests {
         };
         assert_eq!((summary.counts, summary.strictness), (counts, "script"));
         folders.assert_published(&before, "dreamcast", &full_tree());
+    }
+
+    #[test]
+    fn a_dump_is_the_file_its_path_names_however_the_path_ends() {
+        // The extraction scripts take a dump's path by its names, so a separator typed after the
+        // file's name, or a `.` and a separator, leaves it the path of that file, which the
+        // system would not open so. The tree records the file's own name either way.
+        let folders = Folders::new();
+        let (name, image) = default_rom();
+        let rom = folders.dump(&name, &image);
+        let sheet = folders.disc(&DiscSet::full(Edc::Zero));
+        let mut endings = vec!["/", "//", "/.", "/./"];
+        if cfg!(windows) {
+            endings.extend([r"\", r"\\", r"\."]);
+        }
+        let mut made = 0;
+        for (expansion, dump, tree) in [
+            (Expansion::N64, &rom, default_tree()),
+            (Expansion::Dreamcast, &sheet, full_tree()),
+        ] {
+            for ending in &endings {
+                let mut typed = dump.clone().into_os_string();
+                typed.push(ending);
+                let typed = PathBuf::from(typed);
+                let output = format!("{}{made}", expansion.as_str());
+                made += 1;
+                let before = folders.before(expansion);
+                if let Err(error) = extract_as_script(expansion, &typed, &folders.output(&output)) {
+                    panic!("{}: {error:?}", typed.display());
+                }
+                folders.assert_published(&before, &output, &tree);
+            }
+        }
     }
 
     #[test]
