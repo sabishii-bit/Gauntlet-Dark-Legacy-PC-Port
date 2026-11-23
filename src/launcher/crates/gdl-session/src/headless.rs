@@ -662,7 +662,7 @@ mod tests {
     };
     use crate::codes::Report;
     use crate::extraction::vectors::{
-        Folders, default_rom, default_tree, full_tree, tree_listing, with_bad_stream,
+        Folders, default_rom, default_tree, full_tree, not_unicode, tree_listing, with_bad_stream,
     };
 
     /// The version the tests build the program as: the first launcher's.
@@ -791,20 +791,6 @@ mod tests {
     /// Writes the standard runtime of `platform` and `version` as `name` in `dir`.
     fn standard_zip(dir: &Path, name: &str, platform: &str, version: &str) -> PathBuf {
         zip_file(dir, name, &RuntimeFiles::standard(platform, version).zip())
-    }
-
-    /// An argument that is not Unicode, as a path may be.
-    #[cfg(unix)]
-    fn not_unicode() -> OsString {
-        use std::os::unix::ffi::OsStringExt;
-        OsString::from_vec(b"caf\xe9".to_vec())
-    }
-
-    /// An argument that is not Unicode, as a path may be.
-    #[cfg(windows)]
-    fn not_unicode() -> OsString {
-        use std::os::windows::ffi::OsStringExt;
-        OsString::from_wide(&[u16::from(b'c'), u16::from(b'a'), u16::from(b'f'), 0xD800])
     }
 
     /// Inspects the folder at `root` as the release build, as JSON when `json` says so, and gives

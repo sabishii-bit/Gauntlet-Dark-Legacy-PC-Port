@@ -556,13 +556,14 @@ impl Journal for Unrecorded {
     }
 }
 
-/// What the session's extraction tests share: the dumps and trees of the shared vectors, the
-/// folders an extraction is tried in, and the one way a test compares what an extraction left in
-/// them.
+/// What the session's extraction and headless tests share: the dumps and trees of the shared
+/// vectors, the folders an extraction is tried in, the one way a test compares what an extraction
+/// left in them, and a name that is not Unicode.
 #[cfg(test)]
 pub(crate) mod vectors {
     use std::cell::Cell;
     use std::collections::BTreeMap;
+    use std::ffi::OsString;
     use std::fs;
     use std::path::PathBuf;
 
@@ -678,6 +679,20 @@ pub(crate) mod vectors {
             cancel,
             progress: &NoProgress,
         }
+    }
+
+    /// A name that is not Unicode, as a path or an argument may hold.
+    #[cfg(unix)]
+    pub(crate) fn not_unicode() -> OsString {
+        use std::os::unix::ffi::OsStringExt;
+        OsString::from_vec(b"caf\xe9".to_vec())
+    }
+
+    /// A name that is not Unicode, as a path or an argument may hold.
+    #[cfg(windows)]
+    pub(crate) fn not_unicode() -> OsString {
+        use std::os::windows::ffi::OsStringExt;
+        OsString::from_wide(&[u16::from(b'c'), u16::from(b'a'), u16::from(b'f'), 0xD800])
     }
 
     /// The folders a test extracts in, apart: one the outputs are made in, which holds a folder
@@ -842,7 +857,6 @@ pub(crate) mod vectors {
 
 #[cfg(test)]
 mod tests {
-    use std::ffi::OsString;
     use std::fs;
     use std::io;
     use std::ops::Range;
@@ -870,8 +884,8 @@ mod tests {
     use serde_json::Value;
 
     use super::vectors::{
-        Folders, Listed, default_rom, default_tree, full_fingerprints, full_tree, quiet, trust_of,
-        with_bad_stream,
+        Folders, Listed, default_rom, default_tree, full_fingerprints, full_tree, not_unicode,
+        quiet, trust_of, with_bad_stream,
     };
     use super::{
         Counts, ExtractRequest, ExtractSummary, ExtractionError, StrictnessChoice,
@@ -1051,20 +1065,6 @@ mod tests {
         }
         let error = output_name(&Path::new("out").join(not_unicode())).unwrap_err();
         assert_name_refused(&error, NameRule::NonAscii);
-    }
-
-    /// A name that is not Unicode, as a path may hold.
-    #[cfg(unix)]
-    fn not_unicode() -> OsString {
-        use std::os::unix::ffi::OsStringExt;
-        OsString::from_vec(b"caf\xe9".to_vec())
-    }
-
-    /// A name that is not Unicode, as a path may hold.
-    #[cfg(windows)]
-    fn not_unicode() -> OsString {
-        use std::os::windows::ffi::OsStringExt;
-        OsString::from_wide(&[u16::from(b'c'), u16::from(b'a'), u16::from(b'f'), 0xD800])
     }
 
     #[test]
