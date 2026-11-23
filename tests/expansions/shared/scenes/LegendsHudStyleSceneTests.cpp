@@ -283,7 +283,9 @@ TEST_CASE("the N64 and Dreamcast looks drawn from the player's own art change no
             CHECK(darkLegacy->digest(&plain) == looked->digest(&shown));
         }
     });
-    CHECK(hudWarnings(warnings) == std::vector<std::string>{});
+    const std::vector<std::string> lookWarnings = hudWarnings(warnings);
+    CAPTURE(lookWarnings);
+    CHECK(lookWarnings.empty());
     // The look prepared every frame; the closed selectors' presses turned its pages, and the
     // first seat's right, while its selector stood open, steered it.
     const test::FakeHudRecord& record = looked->styles.record;
@@ -316,7 +318,9 @@ TEST_CASE("seat 1 standing on the tower's G1 portal sees that portal's plaque in
     fixture->party[1].save.color = kGreen;
     const std::vector<std::string> opening =
         test::warningsWhile([&] { fixture->open(kLegendsN64HudStyle); });
-    CHECK(hudWarnings(opening) == std::vector<std::string>{});
+    const std::vector<std::string> lookWarnings = hudWarnings(opening);
+    CAPTURE(lookWarnings);
+    CHECK(lookWarnings.empty());
     REQUIRE(fixture->styles.painters == 1);
     fixture->settle();
     PlayScene& scene = fixture->scene;

@@ -372,9 +372,10 @@ TEST_CASE("every Dark Legacy level title and realm name draws in the N64 fonts",
             plaque.step(kDarkLegacyPadIdentityBase, &*level, true);
             REQUIRE(plaque.shown().has_value());
             const std::string& written = plaque.shown()->title;
-            CAPTURE(name, written);
             CHECK_FALSE(written.empty());
-            CHECK(missingGlyphs(title.font, written) == std::string{});
+            const std::string lost = missingGlyphs(title.font, written);
+            CAPTURE(name, written, lost);
+            CHECK(lost.empty());
             ++titles;
         }
     }
@@ -385,8 +386,9 @@ TEST_CASE("every Dark Legacy level title and realm name draws in the N64 fonts",
         REQUIRE(key.has_value());
         REQUIRE(strings.has(*key));
         const std::string_view written = strings.get(*key);
-        CAPTURE(realm, written);
-        CHECK(missingGlyphs(small.font, written) == std::string{});
+        const std::string lost = missingGlyphs(small.font, written);
+        CAPTURE(realm, written, lost);
+        CHECK(lost.empty());
     }
 }
 
@@ -455,7 +457,8 @@ TEST_CASE("the N64 look opens on the player's own art, and the GameCube data hol
     });
     REQUIRE_FALSE(lending.failure);
     CHECK(lending.warnings.empty());
-    CHECK(missing == std::vector<std::string>{});
+    CAPTURE(missing);
+    CHECK(missing.empty());
 }
 
 TEST_CASE("every N64 tower exit names a plaque the N64 look can draw",

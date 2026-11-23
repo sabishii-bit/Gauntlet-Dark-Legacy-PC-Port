@@ -490,5 +490,6 @@ TEST_CASE("the Dreamcast look opens on the player's own art, and the GameCube da
     });
     REQUIRE_FALSE(lending.failure);
     CHECK(lending.warnings.empty());
-    CHECK(missing == std::vector<std::string>{});
+    CAPTURE(missing);
+    CHECK(missing.empty());
 }
