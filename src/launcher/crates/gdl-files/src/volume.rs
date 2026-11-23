@@ -7,6 +7,7 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
+use crate::links::walked;
 use crate::{FilesError, STAGING_RANDOM_CHARS, is_absent, retry_locked};
 
 /// The prefix of the entries a folder probe makes and removes: names of the launcher's own.
@@ -61,21 +62,19 @@ const NOT_WRITABLE: FolderProbe = FolderProbe {
 /// `path` itself when it is there, or else the nearest folder above it that is, looked at without
 /// following a link the path ends in: the first that is there is returned whatever it is, a file
 /// or a link included, for the caller to judge. Names that are not there, as [`is_absent`] tells,
-/// are passed over; any other failure to look at one is returned. A relative path is taken from
-/// the working folder. When nothing on the path is there, its root included, as on a drive that
-/// does not exist, the error is [`io::ErrorKind::NotFound`].
+/// are passed over, and so on Windows is a drive that holds no medium, such as an empty card
+/// reader, which the system answers as not ready; any other failure to look at one is returned. A
+/// relative path is taken from the working folder, as [`no_links`](crate::no_links) takes it.
+/// When nothing on the path is there, its root included, as on a drive that does not exist or is
+/// empty, the error is [`io::ErrorKind::NotFound`].
 pub fn nearest_existing(path: &Path) -> io::Result<PathBuf> {
-    let walked = if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        std::path::absolute(path)?
-    };
+    let walked = walked(path)?;
     // Without a trailing separator, which would have the system look through a link the path
     // ends in instead of at the link itself.
     for part in walked.components().as_path().ancestors() {
         match fs::symlink_metadata(part) {
             Ok(_) => return Ok(part.to_path_buf()),
-            Err(error) if is_absent(&error) => {}
+            Err(error) if nothing_there(&error) => {}
             Err(error) => return Err(error),
         }
     }
@@ -83,6 +82,22 @@ pub fn nearest_existing(path: &Path) -> io::Result<PathBuf> {
         io::ErrorKind::NotFound,
         format!("nothing on the path {} exists", walked.display()),
     ))
+}
+
+/// What Windows answers a look at a drive that holds no medium with: ERROR_NOT_READY, to which
+/// std gives no kind of its own.
+#[cfg(windows)]
+const ERROR_NOT_READY: i32 = 21;
+
+/// Whether an error looking at a name on a path says that nothing is there for
+/// [`nearest_existing`] to stop at: what [`is_absent`] calls absent, and on Windows a drive that
+/// holds no medium, on which nothing is there either.
+fn nothing_there(error: &io::Error) -> bool {
+    #[cfg(windows)]
+    if error.raw_os_error() == Some(ERROR_NOT_READY) {
+        return true;
+    }
+    is_absent(error)
 }
 
 /// What the volume that holds `folder` allows: the bytes this process may still write there and,
@@ -230,8 +245,8 @@ mod tests {
     use gdl_fixtures::{deny_writes, folder_names, link_folder};
 
     use super::{
-        FolderProbe, NOT_WRITABLE, ProbedFolder, nearest_existing, probe_folder, refuses_writes,
-        volume_of,
+        FolderProbe, NOT_WRITABLE, ProbedFolder, nearest_existing, nothing_there, probe_folder,
+        refuses_writes, volume_of,
     };
     use crate::error::assert_io;
 
@@ -314,6 +329,35 @@ mod tests {
             let error = nearest_existing(&root.join("game").join("deeper")).unwrap_err();
             assert_eq!(error.kind(), io::ErrorKind::NotFound, "{error}");
         }
+    }
+
+    /// What a walk up a path passes over: what the link checks call absent, and on Windows a
+    /// drive that holds no medium, whose not-ready answer std gives no kind, so that the walk
+    /// ends at nothing there rather than at an error. No test can empty a drive, so the rule is
+    /// shown on the errors themselves.
+    #[test]
+    fn a_drive_without_a_medium_holds_nothing() {
+        for kind in [io::ErrorKind::NotFound, io::ErrorKind::NotADirectory] {
+            assert!(nothing_there(&kind.into()), "{kind:?}");
+        }
+        for kind in [
+            io::ErrorKind::PermissionDenied,
+            io::ErrorKind::InvalidInput,
+            io::ErrorKind::Other,
+        ] {
+            assert!(!nothing_there(&kind.into()), "{kind:?}");
+        }
+        #[cfg(windows)]
+        {
+            let not_ready = io::Error::from_raw_os_error(super::ERROR_NOT_READY);
+            assert!(nothing_there(&not_ready), "{not_ready}");
+            // The link checks still report it, as a name they could not look at: std's kind for
+            // it is not one of absence.
+            assert!(!crate::is_absent(&not_ready), "{not_ready}");
+        }
+        // Elsewhere that number is another error, which stops the walk: Linux's EISDIR.
+        #[cfg(unix)]
+        assert!(!nothing_there(&io::Error::from_raw_os_error(libc::EISDIR)));
     }
 
     #[test]

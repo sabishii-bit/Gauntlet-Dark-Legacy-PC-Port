@@ -100,8 +100,9 @@ pub fn no_links(path: &Path) -> Result<(), FilesError> {
 
 /// The path a file call on `path` walks: `path` itself when it is absolute, else `path` under
 /// the working folder, made absolute as std makes it, which on Unix keeps each `..` for the
-/// system to resolve as it walks.
-fn walked(path: &Path) -> io::Result<Cow<'_, Path>> {
+/// system to resolve as it walks. [`no_links`] and [`nearest_existing`](crate::nearest_existing)
+/// both walk this one, so that they look at the same names.
+pub(crate) fn walked(path: &Path) -> io::Result<Cow<'_, Path>> {
     if path.is_absolute() {
         Ok(Cow::Borrowed(path))
     } else {
