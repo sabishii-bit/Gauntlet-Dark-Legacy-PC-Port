@@ -23,4 +23,10 @@ f32 approximateLength(const Vec3& v);
  * as it is. The fast length is approximate, so the result is only near unit length. */
 Vec3 approximateUnit(const Vec3& v);
 
+/** `v` laid flat and scaled by the reciprocal of its fast horizontal length, as the original's
+ * NormalVector2D (0x800BD938) scales it: the reciprocal is rounded as approximateUnit rounds
+ * it, and y becomes zero. A vector of no horizontal length keeps its x and z. The result is
+ * only near unit length. */
+Vec3 approximateFlatUnit(const Vec3& v);
+
 } // namespace gdl

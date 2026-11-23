@@ -16,13 +16,11 @@ f32 groundLength(const Vec3& v) {
     return portable::hypot(v.x, v.z);
 }
 
-/** `v` laid flat and scaled by the original's fast length (NormalVector2D, 0x800BD938): the
- * reciprocal of that length in single precision times each component, nothing scaled for a
- * vector of no length. Returns the length it had. */
+/** `v` laid flat and scaled by the original's fast length (NormalVector2D, 0x800BD938).
+ * Returns the length it had. */
 f32 flattenToUnit(Vec3& v) {
     const f32 length = approximateFlatLength(v);
-    const f32 scale = length <= 0.0f ? 1.0f : static_cast<f32>(1.0 / static_cast<f64>(length));
-    v = Vec3{v.x * scale, 0.0f, v.z * scale};
+    v = approximateFlatUnit(v);
     return length;
 }
 

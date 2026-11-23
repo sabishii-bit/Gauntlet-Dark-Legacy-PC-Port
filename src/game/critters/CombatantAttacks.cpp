@@ -3,6 +3,7 @@
 #include <utility>
 
 #include "engine/core/Types.h"
+#include "engine/math/ApproximateLength.h"
 #include "engine/math/PortableMath.h"
 
 #include "game/combat/EffectFlags.h"
@@ -121,9 +122,9 @@ void Combatant::strikeWith(Actor& critter, s32 id, const MoveDefinition& move, s
         blow.flags = damage->flags;
         blow.origin = centre;
         if (breath.has_value()) {
-            const Vec3 direction = breath->end - breath->origin;
-            const f32 size = glm::length(direction);
-            blow.direction = size > 0.0f ? direction / size : Vec3{0.0f};
+            // Flat along the beam, however steeply it falls (CritterFirePlayerCollide's
+            // NormalVector2D).
+            blow.direction = approximateFlatUnit(breath->end - breath->origin);
         } else if (swingPush) {
             blow.direction = critter.moveNode.blowPush(bodyOrigin, feet);
             if (critter.definition->rules().unitBlowPush) {

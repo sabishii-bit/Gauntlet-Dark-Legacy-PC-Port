@@ -1,20 +1,57 @@
+#include <array>
 #include <cmath>
+#include <filesystem>
 #include <numbers>
+#include <vector>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/core/Types.h"
 #include "engine/io/File.h"
+#include "engine/math/ApproximateLength.h"
+#include "engine/math/Math.h"
 
+#include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "fixtures/NativeModelFixture.h"
+#include "game/critters/Combatant.h"
 #include "game/critters/CombatantBreath.h"
 #include "game/critters/CritterData.h"
+#include "game/critters/Gargoyle.h"
 
 namespace {
 using namespace gdl;
 using namespace gdl::game;
 using Catch::Approx;
+
+/** A gargoyle whose one attack breathes from its body, from six up and thirty degrees below
+ * its facing, reaching twelve. */
+std::filesystem::path breathingGargoyle() {
+    const auto root = test::scratchDirectory("combatant-breath-push");
+    const auto archive = root / "MONSTERS/GAR_EAGL";
+    std::filesystem::create_directories(root / "critter");
+    std::filesystem::create_directories(archive);
+    writeTextFile(archive / "body.obj", "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n");
+    writeTextFile(archive / "objects.json", R"({"objects":[{"name":"BODY","file":"body.obj"}]})");
+    writeFile(archive / "skin.png", test::kTinyPng);
+    writeTextFile(archive / "textures.json", R"({"bitmaps":[
+      {"name":"SKIN","file":"skin.png","width":2,"height":2}]})");
+    test::convertModelFixture(archive);
+    writeTextFile(archive / "animations.json", R"({"trees":[{"name":"BODY",
+      "nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
+      "sequences":[{"name":"STEP","frames":3}]}]})");
+    writeTextFile(root / "critter/GAR_EAGL.json", R"({
+      "descriptors":[{"prefix":"BODY","name":"GAR_EAGL","type":7}],
+      "types":[{"moveCount":2,"maxHealth":100,"radius":3}],
+      "moves":[{"name":"READY","anim":"STEP","type":32,"interrupt":60},
+               {"name":"FIRE","anim":"STEP","type":128,"priority":20,
+                "colnode":"BODY","target":{"maxDistance":50},
+                "frameStart":0,"frameEnd":2,"damage0":0}],
+      "damages":[{"type":4,"radius":1,"maxDistance":12,"damage":1,"pitch":0.5235988,
+                  "offset":[0,6,0]}]})");
+    return root;
+}
 
 TEST_CASE("breath transforms the offset but normalizes the animated forward basis",
           "[game][enemies][breath]") {
@@ -114,6 +151,42 @@ TEST_CASE("imported world-axis breath pitch acts after the posed forward and aut
     posed[2] = Vec4{0};
     const auto zero = CombatantBreath::fromNode(posed, damage, true);
     CHECK(zero.end == zero.origin);
+}
+
+TEST_CASE("a breath pushes flat along its beam at the fast length's reciprocal (NormalVector2D)",
+          "[game][combatant][breath]") {
+    const auto root = breathingGargoyle();
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, Gargoyle::definition(), 'G'));
+    Combatant actor;
+    // Three tenths across for each unit ahead, where the fast length runs about a hundredth
+    // over the Euclidean one.
+    const f32 yaw = std::atan2(0.3f, 1.0f);
+    REQUIRE(actor.spawn(assets, 0, Vec3{0}, yaw, nullptr, {}, 'G'));
+    // Six ahead, where the falling beam passes through the body.
+    EnemyView player;
+    player.player = 0;
+    player.position = 6.0f * Vec3{std::sin(yaw), 0.0f, std::cos(yaw)};
+    const std::array players{player};
+    std::vector<CombatBlow> blows;
+    for (s32 i = 0; i < 10 && blows.empty(); ++i) {
+        actor.update(2, 1.0f / 30, players);
+        blows = actor.takeBlows();
+    }
+    REQUIRE_FALSE(blows.empty());
+    const auto node = actor.nodeTransform("BODY");
+    REQUIRE(node.has_value());
+    const auto beam = CombatantBreath::fromNode(*node, actor.data()->damages()[0]);
+    const Vec3 way = beam.end - beam.origin;
+    REQUIRE(way.y == Approx(-6.0f)); // half its reach down, at thirty degrees
+    for (const CombatBlow& blow : blows) {
+        REQUIRE(blow.breath);
+        CHECK(blow.direction.y == 0.0f);
+        CHECK(std::hypot(blow.direction.x, blow.direction.z) == Approx(1.0f).epsilon(0.03));
+        // Not the Euclidean flat unit, which lies a hundredth further out.
+        CHECK(glm::distance(blow.direction, approximateFlatUnit(way)) < 1e-4f);
+    }
 }
 
 TEST_CASE("critter damage loading preserves the breath's inner distance limit",

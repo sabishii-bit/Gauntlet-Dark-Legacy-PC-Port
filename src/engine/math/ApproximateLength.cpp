@@ -14,6 +14,12 @@ constexpr f64 kBandWidth = 0.125;
 constexpr std::array<f64, 8> kBandSlopes{0.064, 0.124, 0.181, 0.236, 0.287, 0.333, 0.376, 0.414};
 /** What a vector of no length is scaled by, which leaves it as it is (0x80348E90). */
 constexpr f32 kNoLengthScale = 1.0f;
+
+/** What a vector of fast length `length` is scaled by to near unit length. */
+f32 reciprocalScale(f32 length) {
+    // The original divides the double 1.0 (0x80348E78) and rounds the quotient once.
+    return length <= 0.0f ? kNoLengthScale : static_cast<f32>(1.0 / static_cast<f64>(length));
+}
 } // namespace
 
 f32 approximateFlatLength(const Vec3& v) {
@@ -42,11 +48,12 @@ f32 approximateLength(const Vec3& v) {
 }
 
 Vec3 approximateUnit(const Vec3& v) {
-    const f32 length = approximateLength(v);
-    // The original divides the double 1.0 (0x80348E78) and rounds the quotient once.
-    const f32 scale =
-        length <= 0.0f ? kNoLengthScale : static_cast<f32>(1.0 / static_cast<f64>(length));
-    return v * scale;
+    return v * reciprocalScale(approximateLength(v));
+}
+
+Vec3 approximateFlatUnit(const Vec3& v) {
+    const f32 scale = reciprocalScale(approximateFlatLength(v));
+    return Vec3{v.x * scale, 0.0f, v.z * scale};
 }
 
 } // namespace gdl

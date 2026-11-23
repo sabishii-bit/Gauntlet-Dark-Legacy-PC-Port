@@ -452,7 +452,8 @@ TEST_CASE("dragon breath starts its node effect before harm and keeps contacting
             REQUIRE(blow.breath);
             REQUIRE(clock.frame() >= static_cast<f32>(move->frameStart));
             REQUIRE(clock.frame() < static_cast<f32>(move->frameEnd + 1));
-            REQUIRE(glm::distance(blow.direction, glm::normalize(breath.end - breath.origin)) <
+            // Flat along the beam, by the fast length (NormalVector2D).
+            REQUIRE(glm::distance(blow.direction, approximateFlatUnit(breath.end - breath.origin)) <
                     0.001f);
             ++contacts;
         }

@@ -83,4 +83,18 @@ TEST_CASE("approximateUnit scales by the fast length's single-precision reciproc
     CHECK(glm::length(approximateUnit(Vec3{1.0f, 0.0f, 1.0f})) != 1.0f);
 }
 
+TEST_CASE("approximateFlatUnit lays a vector flat and scales it by the fast length's reciprocal",
+          "[math]") {
+    const Vec3 rising{3.0f, 5.0f, 4.0f};
+    const auto scale = static_cast<f32>(1.0 / static_cast<f64>(approximateFlatLength(rising)));
+    const Vec3 unit = approximateFlatUnit(rising);
+    CHECK(unit == Vec3{3.0f * scale, 0.0f, 4.0f * scale});
+    // The fast length of (3, 4), 4.999, is not the Euclidean 5, and the height takes no part.
+    CHECK(unit.x != 0.6f);
+    CHECK(unit != Vec3{approximateUnit(rising).x, 0.0f, approximateUnit(rising).z});
+
+    CHECK(approximateFlatUnit(Vec3{}) == Vec3{0.0f});
+    CHECK(approximateFlatUnit(Vec3{0.0f, 7.0f, 0.0f}) == Vec3{0.0f});
+}
+
 } // namespace
