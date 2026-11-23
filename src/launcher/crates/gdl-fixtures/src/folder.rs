@@ -1843,6 +1843,21 @@ mod tests {
         fs::symlink_metadata(folder).unwrap().permissions().mode() & 0o7777
     }
 
+    /// Makes `folder` for a test that compares its permissions before and after a denial. On
+    /// Windows its list is then reset to the entries it inherits, the form icacls writes a list
+    /// back in: where a parent's entries reach a new folder as entries of its own, as in the CI
+    /// runner's temp folder, the first write icacls makes adds them again beside those as
+    /// inherited ones, which no guard can undo.
+    fn make_settled_folder(folder: &Path) {
+        fs::create_dir(folder).unwrap();
+        #[cfg(windows)]
+        {
+            let icacls = super::icacls_program().unwrap();
+            let args = [folder.as_os_str(), std::ffi::OsStr::new("/reset")];
+            super::run_icacls(&icacls, &args).unwrap();
+        }
+    }
+
     /// The program beside icacls in the system's own folder that lists the privileges of the
     /// token it runs with, a copy of this process's.
     #[cfg(windows)]
@@ -1883,8 +1898,9 @@ mod tests {
 
         let dir = tempfile::tempdir().unwrap();
         let folder = dir.path().join("folder");
+        make_settled_folder(&folder);
         let inner = folder.join("inner");
-        fs::create_dir_all(&inner).unwrap();
+        fs::create_dir(&inner).unwrap();
         fs::write(folder.join("kept.txt"), b"kept").unwrap();
         let gone = folder.join("gone.txt");
         fs::write(&gone, b"gone").unwrap();
@@ -2052,7 +2068,7 @@ mod tests {
 
         let dir = tempfile::tempdir().unwrap();
         let folder = dir.path().join("folder");
-        fs::create_dir(&folder).unwrap();
+        make_settled_folder(&folder);
         fs::write(folder.join("kept.txt"), b"kept").unwrap();
         let before = permissions_of(&folder);
 
