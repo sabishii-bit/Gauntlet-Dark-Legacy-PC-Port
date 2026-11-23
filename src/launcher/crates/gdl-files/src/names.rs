@@ -482,6 +482,37 @@ mod tests {
     }
 
     #[test]
+    fn disc_names_refuse_what_the_installer_refuses() {
+        // The release scripts' disc reader refuses each of these, and so do the names a disc
+        // holds, each for the rule it breaks first here; past those, delete, a device name
+        // before spaces and the alpha installer's names, which that reader lets through.
+        for (name, rule) in [
+            ("..", NameRule::Dot),
+            (".", NameRule::Dot),
+            ("", NameRule::Empty),
+            ("a/b", NameRule::Forbidden),
+            ("a\\b", NameRule::Forbidden),
+            ("C:", NameRule::Forbidden),
+            ("CON.txt", NameRule::DeviceName),
+            ("LPT1", NameRule::DeviceName),
+            ("foo.", NameRule::TrailingDotOrSpace),
+            ("foo ", NameRule::TrailingDotOrSpace),
+            ("x\0y", NameRule::Control),
+            ("a\u{7f}b", NameRule::Control),
+            ("CON .txt", NameRule::DeviceName),
+            ("installation.json", NameRule::AlphaName),
+        ] {
+            assert_eq!(component_rule(name, &DISC_NAMES), Some(rule), "{name:?}");
+            // Below a folder of the disc a component is refused for the same rule, where it is
+            // one component there.
+            if !name.contains('/') {
+                let text = format!("Gauntlet/{name}");
+                assert_eq!(path_rule(&text, &DISC_NAMES), Some(rule), "{text:?}");
+            }
+        }
+    }
+
+    #[test]
     fn device_names_are_refused_in_every_spelling() {
         // The release scripts' list, then the ports' superscript digits one to three.
         let mut expected: Vec<String> = ["CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$"]
