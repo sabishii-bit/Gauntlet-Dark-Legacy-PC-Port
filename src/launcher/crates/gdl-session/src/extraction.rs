@@ -11,9 +11,10 @@
 //! own place, on whichever machine shares it, nor above the folder a Linux bind mount maps: an
 //! output reached through one is not known to lie in an installation.
 
+use std::ffi::OsString;
 use std::fs;
 use std::io;
-use std::path::{Path, PathBuf};
+use std::path::{Component, MAIN_SEPARATOR_STR, Path, PathBuf};
 use std::slice;
 
 use gdl_extract::{
@@ -270,8 +271,9 @@ pub fn output_name(output: &Path) -> Result<RelPath, ExtractionError> {
 /// alpha's installer leaves, since only an installation's own jobs write in one. The dump's path
 /// is then read by its names alone, as the extraction scripts read one: a separator, or a `.` and
 /// a separator, after a file's name leaves it that file's path, which the system would not open
-/// so, and a `..` stays as it was given. The dump is identified by its content: a container the
-/// launcher does not read, or content it does not know, is refused, and so is a dump for another
+/// so, and a `..` stays as it was given, as does a name that reads as a drive, such as the stream
+/// `x:rom.z64` of a file `x`. The dump is identified by its content: a container the launcher
+/// does not read, or content it does not know, is refused, and so is a dump for another
 /// console than the expansion's. Its identity is held to the trust by the check alone, which reads
 /// the dump and decides on it, writing nothing. Only then is a staging made beside the output and
 /// the tree written into it; unless the job has been asked to stop by then, the tree is put in
@@ -286,8 +288,7 @@ pub fn extract_to_new_folder(
     job: &Job<'_>,
 ) -> Result<ExtractSummary, ExtractionError> {
     let place = OutputPlace::checked(request.output)?;
-    // Rebuilt from its components, which drop a trailing separator and every `.` but a leading one.
-    let dump: PathBuf = request.dump.components().collect();
+    let dump = dump_path(request.dump);
     let identity = identify(&dump).map_err(read_failure)?;
     if let Verdict::Refused(refusal) = identity.verdict
         && refuses_container(refusal)
@@ -329,6 +330,38 @@ fn refuses_container(refusal: DumpRefusal) -> bool {
         | DumpRefusal::Unrecognized => true,
         DumpRefusal::OtherGame | DumpRefusal::OtherRevision | DumpRefusal::HashMismatch => false,
     }
+}
+
+/// The path of the dump at `path` as the extraction scripts read one, by its names: a separator
+/// doubled or after the last name goes, and so does every `.` but a leading one, while a `..`
+/// stays where it was given. The names are joined as text, not pushed: a push reads each name as a
+/// path again, so a name that reads as a drive, such as the stream `x:rom.z64`, would take the
+/// place of everything before it, and under a `\\?\` prefix a push folds a `..` that the system
+/// does not.
+fn dump_path(path: &Path) -> PathBuf {
+    let mut text = OsString::with_capacity(path.as_os_str().len());
+    // A name goes after a separator unless the text so far ends in a prefix or a root: a root ends
+    // in one already, and a drive's letter alone, such as `D:`, reads its first name in that
+    // drive's own working folder.
+    let mut after_name = false;
+    for (at, component) in path.components().enumerate() {
+        match component {
+            Component::Prefix(_) | Component::RootDir => {
+                text.push(component.as_os_str());
+                after_name = false;
+            }
+            // Only a verbatim path keeps a `.` past its start, where the system would not fold it.
+            Component::CurDir if at > 0 => {}
+            Component::CurDir | Component::ParentDir | Component::Normal(_) => {
+                if after_name {
+                    text.push(MAIN_SEPARATOR_STR);
+                }
+                text.push(component.as_os_str());
+                after_name = true;
+            }
+        }
+    }
+    PathBuf::from(text)
 }
 
 /// What a reader's failure to read the dump reports: the reader's own, but for a stop the job
@@ -860,7 +893,7 @@ mod tests {
     use std::fs;
     use std::io;
     use std::ops::Range;
-    use std::path::{Path, PathBuf};
+    use std::path::{MAIN_SEPARATOR_STR, Path, PathBuf};
     use std::sync::Mutex;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -888,7 +921,7 @@ mod tests {
         quiet, trust_of, with_bad_stream,
     };
     use super::{
-        Counts, ExtractRequest, ExtractSummary, ExtractionError, StrictnessChoice,
+        Counts, ExtractRequest, ExtractSummary, ExtractionError, StrictnessChoice, dump_path,
         extract_to_new_folder, output_name, outside_installations, placed, staging_prefix,
     };
     use crate::codes::{self, Report};
@@ -1636,6 +1669,125 @@ mod tests {
                 folders.assert_published(&before, &output, &tree);
             }
         }
+    }
+
+    #[test]
+    fn a_dump_path_keeps_each_name_as_it_was_given() {
+        // Compared as text, since paths compare by their components: a name that reads as a drive
+        // stays a name, and a `..` is never folded away.
+        let mut cases = vec![
+            ("rom.z64", "rom.z64"),
+            ("rom.z64/", "rom.z64"),
+            ("dumps//rom.z64/./", "dumps/rom.z64"),
+            ("./rom.z64/.", "./rom.z64"),
+            ("dumps/../rom.z64//", "dumps/../rom.z64"),
+            ("/dumps/rom.z64/", "/dumps/rom.z64"),
+        ];
+        if cfg!(windows) {
+            cases.extend([
+                (r"D:\dumps\q:rom.z64", r"D:\dumps\q:rom.z64"),
+                (r"D:\dumps\q:rom.z64\", r"D:\dumps\q:rom.z64"),
+                (r"dumps\q:rom.z64\.", r"dumps\q:rom.z64"),
+                (r".\q:rom.z64", r".\q:rom.z64"),
+                (r"D:dumps\rom.z64\", r"D:dumps\rom.z64"),
+                (
+                    r"\\?\D:\dumps\sub\..\rom.z64",
+                    r"\\?\D:\dumps\sub\..\rom.z64",
+                ),
+                (r"\\?\D:\dumps\rom.z64\.\", r"\\?\D:\dumps\rom.z64"),
+                (
+                    r"\\server\share\dumps\rom.z64\",
+                    r"\\server\share\dumps\rom.z64",
+                ),
+            ]);
+        }
+        for (given, read) in cases {
+            let read = read.replace('/', MAIN_SEPARATOR_STR);
+            assert_eq!(
+                dump_path(Path::new(given)).as_os_str(),
+                read.as_str(),
+                "{given}"
+            );
+        }
+    }
+
+    /// The path of `name` in `folder`, joined as text, since a join would read a name that reads
+    /// as a drive as a path of that drive.
+    #[cfg(windows)]
+    fn named_in(folder: &Path, name: &str) -> PathBuf {
+        let mut path = folder.as_os_str().to_owned();
+        path.push(r"\");
+        path.push(name);
+        PathBuf::from(path)
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_dump_in_a_files_stream_is_the_stream_its_path_names() {
+        // `q:<name>` beside a dump's folder is the stream `<name>` of the file `q` there, as the
+        // scripts read it, with a separator after it too, and never a file on drive Q. Only the
+        // N64 tree records its dump's name, the stream's here.
+        let folders = Folders::new();
+        let (name, image) = default_rom();
+        let plain = folders.dump(&name, &image);
+        let rom = named_in(plain.parent().unwrap(), &format!("q:{name}"));
+        fs::write(&rom, &image).unwrap();
+        let sheet = folders.disc(&DiscSet::full(Edc::Zero));
+        let sheet_name = sheet.file_name().unwrap().to_str().unwrap();
+        let disc = named_in(sheet.parent().unwrap(), &format!("q:{sheet_name}"));
+        fs::write(&disc, fs::read(&sheet).unwrap()).unwrap();
+        let recorded = format!("\"name\": \"q:{name}\"");
+        let default = format!("\"name\": \"{name}\"");
+        for (at, ending) in ["", r"\"].into_iter().enumerate() {
+            for (expansion, dump, tree) in [
+                (Expansion::N64, &rom, default_tree()),
+                (Expansion::Dreamcast, &disc, full_tree()),
+            ] {
+                let mut typed = dump.clone().into_os_string();
+                typed.push(ending);
+                let typed = PathBuf::from(typed);
+                let output = format!("{}{at}", expansion.as_str());
+                let before = folders.before(expansion);
+                if let Err(error) = extract_as_script(expansion, &typed, &folders.output(&output)) {
+                    panic!("{}: {error:?}", typed.display());
+                }
+                if expansion == Expansion::N64 {
+                    let manifest = folders.output(&output).join(N64_MANIFEST);
+                    let text = fs::read_to_string(&manifest).unwrap();
+                    assert!(text.contains(&recorded), "{text}");
+                    fs::write(&manifest, text.replacen(&recorded, &default, 1)).unwrap();
+                }
+                folders.assert_published(&before, &output, &tree);
+            }
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_verbatim_dump_path_that_steps_back_is_refused_as_the_scripts_refuse_it() {
+        // Under `\\?\` the system takes every name as given, a `..` too, and opens no file
+        // through one, so the scripts' open is refused; the launcher's is as well, rather than
+        // folding the step away to open the file it would have led to.
+        use std::ffi::OsString;
+
+        let folders = Folders::new();
+        let (name, image) = default_rom();
+        let plain = folders.dump(&name, &image);
+        let dumps = plain.parent().unwrap();
+        fs::create_dir(dumps.join("sub")).unwrap();
+        let mut typed = OsString::from(r"\\?\");
+        typed.push(dumps.as_os_str());
+        typed.push(r"\sub\..\");
+        typed.push(&name);
+        let before = folders.before(Expansion::N64);
+        let error = extract_as_script(Expansion::N64, Path::new(&typed), &folders.output("n64"))
+            .unwrap_err();
+        assert!(
+            matches!(error, ExtractionError::Media(MediaError::Io { .. })),
+            "{error:?}"
+        );
+        assert_eq!(code_of(&error), Report::Error("io.failed"));
+        folders.assert_untouched(&before);
     }
 
     #[test]
