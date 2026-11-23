@@ -44,4 +44,4 @@ pub use n64::{
     US_OVERLAYS, US_SHA1, WAD_ROW_LEN, WadByteOrder, WadSection, inflate, wad_sections,
 };
 pub use source_name::SourceName;
-pub use tpl::{Frame, MAX_TPL_LEN, first_frame};
+pub use tpl::{Frame, MAX_TPL_LEN, MAX_TPL_SIDE, first_frame};

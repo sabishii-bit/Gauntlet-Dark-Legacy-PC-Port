@@ -52,8 +52,9 @@ const ENCODING_AT: usize = 4;
 const PIXELS_AT: usize = 8;
 
 /// The longest side of an image the installer takes for an icon, in pixels, so that no decoded
-/// frame takes more than four bytes for each of 256 × 256 pixels.
-const MAX_TPL_SIDE: u16 = 256;
+/// frame takes more than four bytes for each of 256 × 256 pixels. Every frame the decoder gives
+/// has sides from 1 to this, which is what a caller holds a frame to when it is given one.
+pub const MAX_TPL_SIDE: u16 = 256;
 
 /// How many pixels a side of a tile holds: an image keeps its pixels in tiles of four by four,
 /// the tiles row by row and the pixels of each tile row by row.
@@ -302,7 +303,7 @@ mod tests {
     use gdl_fixtures::{edited, first_frame_only_tpl, tpl, unhex};
     use serde_json::Value;
 
-    use super::{Frame, MAX_TPL_LEN, first_frame};
+    use super::{Frame, MAX_TPL_LEN, MAX_TPL_SIDE, first_frame};
     use crate::vectors::{number, players_disc_icon, text};
     use crate::{MediaError, Sha256Digest};
 
@@ -638,6 +639,7 @@ mod tests {
         }
         // An image of the longest sides decodes in every encoding, to the largest frame; a side
         // longer is refused, either side.
+        assert_eq!(MAX_TPL_SIDE, FORMAT_MAX_SIDE);
         for encoding in [FORMAT_RGB565, FORMAT_RGB5A3, FORMAT_RGBA8] {
             let largest = decoded(&tpl(encoding, FORMAT_MAX_SIDE, FORMAT_MAX_SIDE));
             assert_eq!((largest.width, largest.height), (256, 256));
