@@ -360,6 +360,19 @@ mod tests {
     /// Where a TPL's directory gives how many images its table lists.
     const FORMAT_COUNT_AT: usize = 4;
 
+    /// Where the directory gives where that table lies.
+    const FORMAT_TABLE_AT: usize = 8;
+
+    /// How many bytes the directory takes: the magic, the count and the table's place.
+    const FORMAT_DIRECTORY_LEN: usize = 12;
+
+    /// Where the icon tests' TPLs keep their image's height, a big-endian half-word at the start
+    /// of its header.
+    const FORMAT_HEIGHT_AT: usize = 20;
+
+    /// Where they keep its width, the half-word after.
+    const FORMAT_WIDTH_AT: usize = 22;
+
     /// The longest side of an icon's image.
     const FORMAT_MAX_SIDE: u16 = 256;
 
@@ -428,6 +441,13 @@ mod tests {
     fn with_word(bytes: &[u8], at: usize, value: u32) -> Vec<u8> {
         let mut changed = bytes.to_vec();
         changed[at..at + 4].copy_from_slice(&value.to_be_bytes());
+        changed
+    }
+
+    /// `bytes` with the big-endian half-word at `at` set to `value`.
+    fn with_half(bytes: &[u8], at: usize, value: u16) -> Vec<u8> {
+        let mut changed = bytes.to_vec();
+        changed[at..at + 2].copy_from_slice(&value.to_be_bytes());
         changed
     }
 
@@ -603,9 +623,26 @@ mod tests {
         padded.push(0);
         let size = ("size", "Invalid disc icon TPL size".to_owned());
         assert_eq!(refusal(first_frame(&padded)), size);
+        // A TPL shorter than its directory is refused by its size; one of the directory alone
+        // gets past its size, to a table it does not hold.
+        let directory = ("directory", "Invalid disc icon TPL directory".to_owned());
+        let short = &small[..FORMAT_DIRECTORY_LEN - 1];
+        assert_eq!(refusal(first_frame(short)), size);
+        let bare = &small[..FORMAT_DIRECTORY_LEN];
+        assert_eq!(refusal(first_frame(bare)), directory);
+        // No table lies inside the directory, wherever in it.
+        for table_at in [0, 4, 8, FORMAT_DIRECTORY_LEN - 1] {
+            let inside = with_word(&small, FORMAT_TABLE_AT, u32::try_from(table_at).unwrap());
+            assert_eq!(refusal(first_frame(&inside)), directory, "{table_at}");
+        }
+        // An image of no pixels either way is refused, whichever side is nought.
+        let dimensions = ("dimensions", "Invalid disc icon dimensions".to_owned());
+        for at in [FORMAT_HEIGHT_AT, FORMAT_WIDTH_AT] {
+            let flat = with_half(&small, at, 0);
+            assert_eq!(refusal(first_frame(&flat)), dimensions, "{at}");
+        }
         // An image of the longest sides decodes in every encoding, to the largest frame; a side
         // longer is refused, either side.
-        let dimensions = ("dimensions", "Invalid disc icon dimensions".to_owned());
         for encoding in [FORMAT_RGB565, FORMAT_RGB5A3, FORMAT_RGBA8] {
             let largest = decoded(&tpl(encoding, FORMAT_MAX_SIDE, FORMAT_MAX_SIDE));
             assert_eq!((largest.width, largest.height), (256, 256));
@@ -624,7 +661,6 @@ mod tests {
         let most = with_word(&roomy, FORMAT_COUNT_AT, FORMAT_MAX_IMAGES);
         assert_eq!(decoded(&most), decoded(&roomy));
         let too_many = with_word(&roomy, FORMAT_COUNT_AT, FORMAT_MAX_IMAGES + 1);
-        let directory = ("directory", "Invalid disc icon TPL directory".to_owned());
         assert_eq!(refusal(first_frame(&too_many)), directory);
     }
 
