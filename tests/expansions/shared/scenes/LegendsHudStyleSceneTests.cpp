@@ -223,13 +223,6 @@ std::vector<const test::RecordedDraw*> linesWriting(const test::FakeRenderDevice
     return found;
 }
 
-/** Whether `quad` draws `picture`'s pixels, as the look uploaded them. */
-bool shows(const test::Quad& quad, const Image& picture) {
-    const auto* image = dynamic_cast<const test::FakeTexture*>(quad.texture);
-    return image != nullptr && image->width() == picture.width &&
-           image->height() == picture.height && image->pixels == picture.pixels;
-}
-
 /** The area `quads` cover together. */
 Rect covered(std::span<const test::Quad> quads) {
     REQUIRE_FALSE(quads.empty());
@@ -381,7 +374,7 @@ TEST_CASE("seat 1 standing on the tower's G1 portal sees that portal's plaque in
     const auto plaqueQuads = [&](const Image& picture, Color color) {
         std::vector<test::Quad> found;
         for (const test::Quad& quad : quads) {
-            if (quad.color.a == opacity && shows(quad, picture)) {
+            if (quad.color.a == opacity && test::showsPixels(quad, picture)) {
                 CHECK(quad.color == color);
                 checkTransform(quad.transform, native);
                 found.push_back(quad);

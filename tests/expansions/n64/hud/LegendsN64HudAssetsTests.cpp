@@ -173,29 +173,11 @@ std::string missingGlyphs(const BitmapFont& font, std::string_view text) {
     return missing;
 }
 
-/** What `art` lends for `lookup`. */
-const Texture* lentBy(DarkLegacyHudArt& art, const test::DarkLegacyLookup& lookup) {
-    switch (lookup.set) {
-    case Set::Static: return art.staticArt(lookup.name);
-    case Set::Select: return art.selectArt(lookup.name);
-    case Set::Count: return art.countArt(lookup.name);
-    case Set::Inventory: return art.inventoryArt(lookup.name);
-    }
-    return nullptr;
-}
-
 /** The N64 tower's exits, as its placements and the exits' template decode them. */
 std::vector<formats::LegendsN64Portal> towerExits(const std::filesystem::path& root) {
     return formats::decodeLegendsN64Portals(readFile(root / kTowerPlacements),
                                             readFile(root / kExitTemplates),
                                             readFile(root / kProgram));
-}
-
-/** Whether `quad` draws `picture`'s own pixels. */
-bool shows(const test::Quad& quad, const formats::LegendsN64Texture& picture) {
-    const auto* image = dynamic_cast<const test::FakeTexture*>(quad.texture);
-    return image != nullptr && image->width() == picture.image.width &&
-           image->height() == picture.image.height && image->pixels == picture.image.pixels;
 }
 
 /** `member` standing in its seat with nothing carried. */
@@ -466,7 +448,7 @@ TEST_CASE("the N64 look opens on the player's own art, and the GameCube data hol
     std::vector<std::string> missing;
     const test::LoggedRun lending = test::logWhile([&] {
         for (const test::DarkLegacyLookup& lookup : borrowed) {
-            if (lentBy(darkLegacy, lookup) == nullptr) {
+            if (test::lentBy(darkLegacy, lookup) == nullptr) {
                 missing.push_back(lookup.name);
             }
         }
@@ -555,8 +537,9 @@ TEST_CASE("every N64 tower exit names a plaque the N64 look can draw",
             const formats::LegendsN64Texture& picture = *pictureOf.at(first + seat);
             CAPTURE(seat, picture.name);
             std::vector<test::Quad> plaques;
-            std::ranges::copy_if(drawn, std::back_inserter(plaques),
-                                 [&](const test::Quad& quad) { return shows(quad, picture); });
+            std::ranges::copy_if(drawn, std::back_inserter(plaques), [&](const test::Quad& quad) {
+                return test::showsPixels(quad, picture.image);
+            });
             REQUIRE(plaques.size() == 1);
             const test::Quad& plaque = plaques.front();
             test::checkRect(plaque.area, {static_cast<f32>(Layout::kSlotX.at(seat)),
@@ -577,8 +560,9 @@ TEST_CASE("every N64 tower exit names a plaque the N64 look can draw",
         for (usize seat = 0; seat < kParty.size(); ++seat) {
             const formats::LegendsN64Texture& picture = *pictureOf.at(first + seat);
             CAPTURE(seat, picture.name);
-            CHECK(std::ranges::none_of(
-                after, [&](const test::Quad& quad) { return shows(quad, picture); }));
+            CHECK(std::ranges::none_of(after, [&](const test::Quad& quad) {
+                return test::showsPixels(quad, picture.image);
+            }));
         }
     }
 }

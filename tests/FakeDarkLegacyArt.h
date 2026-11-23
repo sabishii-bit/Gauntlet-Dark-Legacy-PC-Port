@@ -29,6 +29,17 @@ struct DarkLegacyLookup {
     bool operator==(const DarkLegacyLookup&) const = default;
 };
 
+/** What `art` lends for `lookup`. */
+inline const Texture* lentBy(game::DarkLegacyHudArt& art, const DarkLegacyLookup& lookup) {
+    switch (lookup.set) {
+    case DarkLegacyLookup::Set::Static: return art.staticArt(lookup.name);
+    case DarkLegacyLookup::Set::Select: return art.selectArt(lookup.name);
+    case DarkLegacyLookup::Set::Count: return art.countArt(lookup.name);
+    case DarkLegacyLookup::Set::Inventory: return art.inventoryArt(lookup.name);
+    }
+    return nullptr;
+}
+
 /** Dark Legacy's art as a test lends it: every lookup is kept, by set and name, and finds the
  * picture the test gave under that name, else none; the small capitals are a synthetic font of
  * the digits and capitals; its own look is a FakeHudPainter under Dark Legacy's id that reports

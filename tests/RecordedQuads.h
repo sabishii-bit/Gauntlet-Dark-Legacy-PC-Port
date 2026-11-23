@@ -7,6 +7,7 @@
 
 #include "engine/core/Types.h"
 #include "engine/math/Math.h"
+#include "engine/render/Image.h"
 #include "engine/render/RenderTypes.h"
 
 #include "FakeRenderDevice.h"
@@ -43,6 +44,13 @@ inline std::vector<Quad> quadsOf(const FakeRenderDevice& device) {
         }
     }
     return quads;
+}
+
+/** Whether `quad` draws `picture`'s pixels, as they were uploaded to the fake device. */
+inline bool showsPixels(const Quad& quad, const Image& picture) {
+    const auto* made = dynamic_cast<const FakeTexture*>(quad.texture);
+    return made != nullptr && made->width() == picture.width && made->height() == picture.height &&
+           made->pixels == picture.pixels;
 }
 
 /** Checks `actual` lies on `expected`, but for float rounding within `margin`. */

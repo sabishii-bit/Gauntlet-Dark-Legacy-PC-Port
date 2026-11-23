@@ -166,9 +166,7 @@ std::vector<test::Quad> showing(std::span<const test::Quad> quads,
                                 const formats::LegendsMapTexture& picture) {
     std::vector<test::Quad> found;
     for (const test::Quad& quad : quads) {
-        const auto* made = dynamic_cast<const test::FakeTexture*>(quad.texture);
-        if (made != nullptr && made->width() == picture.image.width &&
-            made->height() == picture.image.height && made->pixels == picture.image.pixels) {
+        if (test::showsPixels(quad, picture.image)) {
             found.push_back(quad);
         }
     }
@@ -210,17 +208,6 @@ s32 spaceWritten(std::span<const test::Quad> glyphs, std::string_view text,
     const f32 gap = glyphs[space].area.x - glyphs[space - 1].area.x;
     return static_cast<s32>(std::lround(gap)) -
            static_cast<s32>(static_cast<f32>(before->width) * scale);
-}
-
-/** What `art` lends for `lookup`. */
-const Texture* lentBy(DarkLegacyHudArt& art, const test::DarkLegacyLookup& lookup) {
-    switch (lookup.set) {
-    case Set::Static: return art.staticArt(lookup.name);
-    case Set::Select: return art.selectArt(lookup.name);
-    case Set::Count: return art.countArt(lookup.name);
-    case Set::Inventory: return art.inventoryArt(lookup.name);
-    }
-    return nullptr;
 }
 
 /** A standing player's seat of class `classIndex` in costume colour `color`. */
@@ -496,7 +483,7 @@ TEST_CASE("the Dreamcast look opens on the player's own art, and the GameCube da
     std::vector<std::string> missing;
     const test::LoggedRun lending = test::logWhile([&] {
         for (const test::DarkLegacyLookup& lookup : borrowed) {
-            if (lentBy(darkLegacy, lookup) == nullptr) {
+            if (test::lentBy(darkLegacy, lookup) == nullptr) {
                 missing.push_back(lookup.name);
             }
         }
