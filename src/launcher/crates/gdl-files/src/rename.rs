@@ -113,7 +113,7 @@ pub(crate) fn folder_of(path: &Path) -> &Path {
 
 /// How a folder, opened, is synced: with [`fs::File::sync_all`], unless a test stands in for it.
 #[cfg(unix)]
-type SyncFolder<'a> = &'a dyn Fn(&fs::File) -> io::Result<()>;
+pub(crate) type SyncFolder<'a> = &'a dyn Fn(&fs::File) -> io::Result<()>;
 
 /// Syncs the folders that a rename of `from` to `to` changed: the folder `to` is now in, then the
 /// one `from` left when that is another, so that neither the new name nor the old one's going is
@@ -134,7 +134,7 @@ fn sync_renamed(from: &Path, to: &Path, sync: SyncFolder<'_>) -> io::Result<()> 
 /// system has no sync of folders, as VirtualBox's shared folders have none, and some systems EBADF
 /// for a folder opened only to read.
 #[cfg(unix)]
-fn sync_folder(folder: &Path, sync: SyncFolder<'_>) -> io::Result<()> {
+pub(crate) fn sync_folder(folder: &Path, sync: SyncFolder<'_>) -> io::Result<()> {
     match sync(&fs::File::open(folder)?) {
         Err(error) if matches!(error.raw_os_error(), Some(libc::EINVAL | libc::EBADF)) => Ok(()),
         result => result,

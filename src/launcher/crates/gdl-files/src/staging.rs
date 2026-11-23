@@ -1,14 +1,19 @@
 //! Staging: a folder of the launcher's own, made new inside the folder it installs into, where a
 //! job makes everything it will put in place, and from which each finished root is put in place
-//! by a rename that never replaces anything. What a job leaves in it goes when it is dropped.
+//! by a rename that never replaces anything. What a job leaves in it goes when it is dropped,
+//! unless the job keeps it for the journal that names it, which takes it back by its name.
 
 use std::collections::BTreeSet;
 use std::ffi::{OsStr, OsString};
 use std::fs::{self, File, OpenOptions};
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use crate::{FilesError, PAYLOAD_NAMES, RelPath, check_component, no_links, rename_noreplace};
+#[cfg(unix)]
+use crate::rename::{SyncFolder, sync_folder};
+use crate::{
+    FilesError, PAYLOAD_NAMES, RelPath, check_component, no_links, rename_noreplace, retry_locked,
+};
 
 /// How many random ASCII letters and digits follow a staging folder's prefix, as in
 /// `install-AbC123xy`.
@@ -24,11 +29,15 @@ pub trait Journal {
 /// A folder made new inside the folder a job installs into, on the same volume, where the job
 /// makes what it will publish. Every name made in it has passed its kind's rules, every file is
 /// made new and no file or folder is made through a link. Dropping it removes the folder with
-/// whatever it still holds.
+/// whatever it still holds, unless it is kept: a job keeps the staging its journal names, so that
+/// whatever stops the job, a panic included, leaves the folder for the journal's recovery, and
+/// then removes it itself once the journal no longer needs it.
 #[derive(Debug)]
 pub struct Staging {
-    /// The folder, removed with what is left in it when the staging is dropped.
-    dir: tempfile::TempDir,
+    /// The folder, absolute.
+    path: PathBuf,
+    /// Whether the folder stays when the staging is dropped.
+    kept: bool,
 }
 
 impl Staging {
@@ -36,23 +45,75 @@ impl Staging {
     /// and then [`STAGING_RANDOM_CHARS`] random ASCII letters and digits. The prefix is one of the
     /// launcher's own, such as `install-`: one ASCII name that [`check_component`] passes, so that
     /// the staging lies in `dest` itself. Any other prefix is refused before anything is made, as
-    /// an [`io::ErrorKind::InvalidInput`] error at `dest`.
+    /// an [`io::ErrorKind::InvalidInput`] error at `dest`. The staging is not kept.
     pub fn create_in(dest: &Path, prefix: &str) -> Result<Staging, FilesError> {
-        check_component(prefix, &PAYLOAD_NAMES).map_err(|refused| {
-            FilesError::io(dest, io::Error::new(io::ErrorKind::InvalidInput, refused))
-        })?;
+        check_prefix(prefix).map_err(|refused| FilesError::io(dest, refused))?;
         no_links(dest)?;
-        let dir = tempfile::Builder::new()
+        let path = tempfile::Builder::new()
             .prefix(prefix)
             .rand_bytes(STAGING_RANDOM_CHARS)
             .tempdir_in(dest)
-            .map_err(|source| FilesError::io(dest, source))?;
-        Ok(Staging { dir })
+            .map_err(|source| FilesError::io(dest, source))?
+            .keep();
+        Ok(Staging { path, kept: false })
+    }
+
+    /// Takes back the staging folder `name` in `dest`, one that [`create_in`](Staging::create_in)
+    /// made there with `prefix` and that a journal names. The prefix must be one `create_in` takes,
+    /// and `name` that prefix followed by [`STAGING_RANDOM_CHARS`] ASCII letters and digits: any
+    /// other is refused before anything is looked at, as an [`io::ErrorKind::InvalidInput`] error
+    /// at `dest/name`. Neither the folder nor any folder above it may be a link, and the folder
+    /// must be there and be a real folder: nothing there is the system's
+    /// [`io::ErrorKind::NotFound`], which a job undoing what it made counts as a staging already
+    /// removed. The staging comes back kept, since a journal names it.
+    pub fn reopen(dest: &Path, prefix: &str, name: &str) -> Result<Staging, FilesError> {
+        // Made absolute as a staging made in `dest` is, so that both name one folder alike.
+        let path = if dest.is_absolute() {
+            dest.join(name)
+        } else {
+            std::env::current_dir()
+                .map_err(|source| FilesError::io(dest, source))?
+                .join(dest)
+                .join(name)
+        };
+        check_prefix(prefix)
+            .and_then(|()| check_staging_name(prefix, name))
+            .map_err(|refused| FilesError::io(&path, refused))?;
+        no_links(&path)?;
+        refuse_unless_folder(&path)?;
+        Ok(Staging { path, kept: true })
+    }
+
+    /// The staging folder's name, such as `install-AbC123xy`: what a journal records, to take the
+    /// staging back by with [`reopen`](Staging::reopen).
+    pub fn name(&self) -> &str {
+        self.path
+            .file_name()
+            .and_then(OsStr::to_str)
+            .expect("a staging's name is its ASCII prefix and random part")
     }
 
     /// The staging folder, absolute.
     pub fn path(&self) -> &Path {
-        self.dir.path()
+        &self.path
+    }
+
+    /// Keeps the folder when the staging is dropped. A job keeps its staging from the moment its
+    /// journal names it, so that whatever stops the job leaves the folder for the journal's
+    /// recovery; only [`remove`](Staging::remove) takes it away then.
+    pub fn keep(&mut self) {
+        self.kept = true;
+    }
+
+    /// Removes the staging folder with whatever it still holds, kept or not, and reports what
+    /// stopped the removal, which a drop passes over. A link in it goes as the link alone: what it
+    /// leads to is never followed. On Windows a removal that a scanner's hold on a file refuses is
+    /// tried again as [`retry_locked`] tries it. What a failed removal leaves stays where it is:
+    /// the staging is not removed again as it goes.
+    pub fn remove(mut self) -> Result<(), FilesError> {
+        self.kept = true;
+        retry_locked(|| fs::remove_dir_all(&self.path))
+            .map_err(|source| FilesError::io(&self.path, source))
     }
 
     /// Makes the folder `path` in the staging, and each folder above it, one at a time, where it
@@ -94,7 +155,7 @@ impl Staging {
     /// [`FilesError::Exists`]. The roots moved before it stay in place and recorded, and a root
     /// that moved but whose sync or record then failed stays in place unrecorded. Those not moved
     /// stay in the staging, for the caller's journal to decide whether they are moved too or what
-    /// moved is taken back, until the staging is dropped.
+    /// moved is taken back with [`unpublish`](Staging::unpublish), until the staging goes.
     pub fn publish_new(
         &self,
         roots: &[RelPath],
@@ -118,18 +179,45 @@ impl Staging {
         order.sort();
         for root in order {
             let target = root.path_under(into);
-            rename_noreplace(&root.path_under(self.path()), &target).map_err(|source| {
-                if source.kind() == io::ErrorKind::AlreadyExists {
-                    FilesError::Exists {
-                        path: target.clone(),
-                    }
-                } else {
-                    FilesError::io(&target, source)
-                }
-            })?;
+            rename_noreplace(&root.path_under(self.path()), &target)
+                .map_err(|source| moved_to(&target, source))?;
             journal.published(root)?;
         }
         Ok(())
+    }
+
+    /// Takes the root `root` back into the staging from the folder `from`, where
+    /// [`publish_new`](Staging::publish_new) put it, by a rename that never replaces what is there,
+    /// as a job undoes a publish it will not finish. The caller holds the lock of `from`.
+    ///
+    /// `root` must be a single name, else [`FilesError::NotRoot`], and neither `from`'s path nor
+    /// the staging's may hold a link. A name the staging holds again refuses the move as
+    /// [`FilesError::Exists`] at the staged path, and any other failure, a root not at `from`
+    /// included, is the system's, reported for the staged path too.
+    pub fn unpublish(&self, root: &RelPath, from: &Path) -> Result<(), FilesError> {
+        if root.depth() != 1 {
+            return Err(FilesError::NotRoot {
+                name: root.as_str().into(),
+            });
+        }
+        no_links(from)?;
+        no_links(self.path())?;
+        let staged = root.path_under(self.path());
+        rename_noreplace(&root.path_under(from), &staged)
+            .map_err(|source| moved_to(&staged, source))
+    }
+
+    /// Syncs every folder of the staged tree, the staging's own included, each after every folder
+    /// below it, so that a crash once the job has gone on cannot lose a name made in one: on Unix
+    /// a folder's entries reach the disk only when the folder itself is synced. A file system that
+    /// cannot sync folders counts its folders as synced, as [`rename_noreplace`] counts them. No
+    /// link is followed. On Windows this does nothing: NTFS journals its folders, and a folder
+    /// opened only to read cannot be flushed.
+    pub fn sync_folders(&self) -> Result<(), FilesError> {
+        #[cfg(unix)]
+        return sync_tree(self.path(), &File::sync_all);
+        #[cfg(windows)]
+        return Ok(());
     }
 
     /// The names at the top of the staging, as they are written there.
@@ -143,6 +231,52 @@ impl Staging {
                     .map_err(|source| FilesError::io(folder, source))
             })
             .collect()
+    }
+}
+
+impl Drop for Staging {
+    fn drop(&mut self) {
+        if !self.kept {
+            // A drop cannot report a failure: a job that must know removes the staging itself.
+            let _ = fs::remove_dir_all(&self.path);
+        }
+    }
+}
+
+/// Refuses a staging prefix that is not one safe name, as an [`io::ErrorKind::InvalidInput`]
+/// error, since it would put the staging beside the folder it is made in, under it or in its
+/// place.
+fn check_prefix(prefix: &str) -> io::Result<()> {
+    check_component(prefix, &PAYLOAD_NAMES)
+        .map_err(|refused| io::Error::new(io::ErrorKind::InvalidInput, refused))
+}
+
+/// Refuses `name` unless it is `prefix` followed by a staging's random part, as an
+/// [`io::ErrorKind::InvalidInput`] error.
+fn check_staging_name(prefix: &str, name: &str) -> io::Result<()> {
+    if name.strip_prefix(prefix).is_some_and(is_random_part) {
+        return Ok(());
+    }
+    Err(io::Error::new(
+        io::ErrorKind::InvalidInput,
+        format!("{name:?} is not {prefix:?} and {STAGING_RANDOM_CHARS} ASCII letters and digits"),
+    ))
+}
+
+/// Whether `part` is a staging's random part: [`STAGING_RANDOM_CHARS`] ASCII letters and digits.
+fn is_random_part(part: &str) -> bool {
+    part.len() == STAGING_RANDOM_CHARS && part.bytes().all(|byte| byte.is_ascii_alphanumeric())
+}
+
+/// What a rename to `target` that the system refused reports: a target that is there already
+/// as [`FilesError::Exists`], anything else as the system's error for `target`.
+fn moved_to(target: &Path, source: io::Error) -> FilesError {
+    if source.kind() == io::ErrorKind::AlreadyExists {
+        FilesError::Exists {
+            path: target.to_path_buf(),
+        }
+    } else {
+        FilesError::io(target, source)
     }
 }
 
@@ -168,6 +302,13 @@ fn make_folder(folder: &Path) -> Result<(), FilesError> {
         }
         _ => {}
     }
+    refuse_unless_folder(folder)
+}
+
+/// Refuses `folder` unless it is a real folder, looked at without following a link: a link is
+/// [`FilesError::Link`], a file [`io::ErrorKind::NotADirectory`], and nothing there the system's
+/// error.
+fn refuse_unless_folder(folder: &Path) -> Result<(), FilesError> {
     let metadata = fs::symlink_metadata(folder).map_err(|source| FilesError::io(folder, source))?;
     if metadata.file_type().is_symlink() {
         Err(FilesError::Link {
@@ -204,9 +345,36 @@ fn refuse_links_in(top: &Path) -> Result<(), FilesError> {
     Ok(())
 }
 
+/// Syncs `top` and every folder under it with `sync`, as [`Staging::sync_folders`] does: they are
+/// listed top down, each after the folder above it, then synced in the reverse order, deepest
+/// first. Only real folders are entered; a link is never followed. The first failure stops it.
+#[cfg(unix)]
+fn sync_tree(top: &Path, sync: SyncFolder<'_>) -> Result<(), FilesError> {
+    let mut folders = vec![top.to_path_buf()];
+    let mut listed = 0;
+    while let Some(folder) = folders.get(listed).cloned() {
+        listed += 1;
+        let entries = fs::read_dir(&folder).map_err(|source| FilesError::io(&folder, source))?;
+        for entry in entries {
+            let entry = entry.map_err(|source| FilesError::io(&folder, source))?;
+            let path = entry.path();
+            let kind = entry
+                .file_type()
+                .map_err(|source| FilesError::io(&path, source))?;
+            if kind.is_dir() {
+                folders.push(path);
+            }
+        }
+    }
+    folders.iter().rev().try_for_each(|folder| {
+        sync_folder(folder, sync).map_err(|source| FilesError::io(folder, source))
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
+    use std::ffi::OsStr;
     use std::fs;
     use std::io::{self, Write};
     use std::path::{Path, PathBuf};
@@ -361,7 +529,8 @@ mod tests {
             (&second, "install-"),
             (&n64, "stage-n64-"),
         ] {
-            let name = staging.path().file_name().unwrap().to_str().unwrap();
+            let name = staging.name();
+            assert_eq!(staging.path().file_name(), Some(OsStr::new(name)));
             let random = name.strip_prefix(prefix).unwrap();
             assert_eq!(random.len(), STAGING_RANDOM_CHARS, "{name}");
             assert!(
@@ -471,6 +640,411 @@ mod tests {
         drop(file);
         let flag = staging.path().join("portable.flag");
         assert_eq!(fs::read(flag).unwrap(), b"portable");
+    }
+
+    /// A staging taken back by its name is the folder that was made, and goes on as that one would
+    /// have: it makes files, publishes and is removed.
+    #[test]
+    fn a_reopened_staging_publishes_and_removes() {
+        let install = install();
+        let mut staging = Staging::create_in(&install.state, "install-").unwrap();
+        stage(&staging, "VERSION", b"1.0.0-beta\n");
+        stage(&staging, "data/config.json", b"{}");
+        staging.create_dir(&rel("saves")).unwrap();
+        let folder = staging.path().to_path_buf();
+        let name = staging.name().to_owned();
+        // A job keeps the staging its journal names, and may then stop at any moment.
+        staging.keep();
+        drop(staging);
+
+        let staging = Staging::reopen(&install.state, "install-", &name).unwrap();
+        assert_eq!(staging.path(), folder);
+        assert_eq!(staging.name(), name);
+        stage(&staging, "shaders/test.spv", b"shader");
+        staging.sync_folders().unwrap();
+        let staged = tree(staging.path());
+        let mut journal = Recorder::new(&staging, &install.root);
+        let roots = rels(&["VERSION", "data", "saves", "shaders"]);
+        staging
+            .publish_new(&roots, &install.root, &mut journal)
+            .unwrap();
+        assert_eq!(journal.roots, ["VERSION", "data", "saves", "shaders"]);
+        assert!(folder_names(staging.path()).unwrap().is_empty());
+
+        // Removed, it goes, and what it published stays. Once gone, its name finds nothing.
+        staging.remove().unwrap();
+        assert!(fs::symlink_metadata(&folder).is_err());
+        assert!(folder_names(&install.state).unwrap().is_empty());
+        let mut published = tree(&install.root);
+        assert_eq!(published.remove(".gdl-launcher"), Some(Entry::Folder));
+        assert_eq!(published, staged);
+        let source = assert_io(Staging::reopen(&install.state, "install-", &name), &folder);
+        assert_eq!(source.kind(), io::ErrorKind::NotFound);
+
+        // A staging that still holds a tree goes whole, a link in it as the link alone.
+        let staging = Staging::create_in(&install.state, "install-").unwrap();
+        stage(&staging, "Gauntlet/PDATA/WAR.WAD", b"war");
+        staging.create_dir(&rel("data/text")).unwrap();
+        let kept = install.outside.join("kept.json");
+        fs::write(&kept, b"kept").unwrap();
+        link_folder(&staging.path().join("linked"), &install.outside).unwrap();
+        let folder = staging.path().to_path_buf();
+        staging.remove().unwrap();
+        assert!(fs::symlink_metadata(&folder).is_err());
+        assert!(folder_names(&install.state).unwrap().is_empty());
+        assert_eq!(folder_names(&install.outside).unwrap(), ["kept.json"]);
+        assert_eq!(fs::read(&kept).unwrap(), b"kept");
+    }
+
+    #[test]
+    fn reopen_refuses_a_name_not_its_own() {
+        let install = install();
+        let staging = Staging::create_in(&install.state, "install-").unwrap();
+        // A folder stands at each name refused for what it is called, so that the name alone
+        // refuses it: another prefix, the prefix in another letter case, a random part of seven
+        // or nine, and eight bytes that are not all ASCII letters and digits.
+        let misnamed = [
+            "stage-AbC123xy",
+            "INSTALL-AbC123xy",
+            "install-AbC123x",
+            "install-AbC123xyz",
+            "install-AbC123x-",
+            "install-AbC12\u{e9}y",
+        ];
+        for name in misnamed {
+            fs::create_dir(install.state.join(name)).unwrap();
+        }
+        let folders = [
+            install.root.as_path(),
+            install.state.as_path(),
+            install.outside.as_path(),
+        ];
+        let lists = || folders.map(|folder| folder_names(folder).unwrap());
+        let before = lists();
+        for name in misnamed {
+            let at = install.state.join(name);
+            let source = assert_io(Staging::reopen(&install.state, "install-", name), &at);
+            assert_eq!(source.kind(), io::ErrorKind::InvalidInput, "{name:?}");
+        }
+        // A prefix that is not one safe name is refused, as a staging is never made with it, even
+        // for a name that it begins.
+        for (prefix, name) in [
+            ("../escaped-", "../escaped-AbC123xy"),
+            ("", "AbC123xy"),
+            ("a/b-", "a/b-AbC123xy"),
+            ("con", "conAbC123xy"),
+        ] {
+            let at = install.state.join(name);
+            let source = assert_io(Staging::reopen(&install.state, prefix, name), &at);
+            assert_eq!(source.kind(), io::ErrorKind::InvalidInput, "{prefix:?}");
+        }
+        assert_eq!(lists(), before);
+
+        // What stands at a staging's name must be a real folder: a link is refused, and so is a
+        // file, and both are left as they are.
+        let link = install.state.join("install-LinkLink");
+        link_folder(&link, &install.outside).unwrap();
+        let reopened = Staging::reopen(&install.state, "install-", "install-LinkLink");
+        assert_link(reopened, &link);
+        let file = install.state.join("install-FileFile");
+        fs::write(&file, b"file").unwrap();
+        let reopened = Staging::reopen(&install.state, "install-", "install-FileFile");
+        let source = assert_io(reopened, &file);
+        assert_eq!(source.kind(), io::ErrorKind::NotADirectory);
+        assert_eq!(fs::read(&file).unwrap(), b"file");
+        assert!(
+            fs::symlink_metadata(&link)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        assert!(folder_names(&install.outside).unwrap().is_empty());
+
+        // Nothing there is the system's answer, as for a staging already removed.
+        let missing = install.state.join("install-Missing1");
+        let source = assert_io(
+            Staging::reopen(&install.state, "install-", "install-Missing1"),
+            &missing,
+        );
+        assert_eq!(source.kind(), io::ErrorKind::NotFound);
+        assert!(fs::symlink_metadata(&missing).is_err());
+
+        // A link above the staging refuses it too.
+        let linked = install.root.join("linked state");
+        link_folder(&linked, &install.state).unwrap();
+        assert_link(
+            Staging::reopen(&linked, "install-", staging.name()),
+            &linked,
+        );
+
+        // The staging's own name takes it back.
+        let reopened = Staging::reopen(&install.state, "install-", staging.name()).unwrap();
+        assert_eq!(reopened.path(), staging.path());
+    }
+
+    /// A removal that the system refuses is reported, for the staging, and what it could not
+    /// remove stays.
+    #[cfg(windows)]
+    #[test]
+    fn remove_reports_what_it_could_not_remove() {
+        use std::thread;
+        use std::time::{Duration, Instant};
+
+        use gdl_fixtures::hold_closed;
+
+        use crate::{RETRIED_WINDOWS_ERRORS, RETRY_WINDOW};
+
+        /// How long a stand-in for a scanner holds a file when its hold passes: a few retries.
+        const HOLD: Duration = Duration::from_millis(300);
+
+        let install = install();
+        // A hold that passes is waited out, and the staging goes.
+        let staging = Staging::create_in(&install.state, "install-").unwrap();
+        stage(&staging, "data/config.json", b"{}");
+        let held = staging.path().join("data").join("config.json");
+        let hold = hold_closed(&[&held]).unwrap();
+        assert!(hold.proven());
+        let started = Instant::now();
+        let closer = thread::spawn(move || {
+            thread::sleep(HOLD);
+            drop(hold);
+        });
+        staging.remove().unwrap();
+        assert!(started.elapsed() >= HOLD);
+        closer.join().unwrap();
+        assert!(folder_names(&install.state).unwrap().is_empty());
+
+        // A hold that lasts, on a file shared with no one, is reported once the retries are over.
+        let staging = Staging::create_in(&install.state, "install-").unwrap();
+        stage(&staging, "data/config.json", b"{}");
+        let folder = staging.path().to_path_buf();
+        let name = staging.name().to_owned();
+        let held = folder.join("data").join("config.json");
+        let hold = hold_closed(&[&held]).unwrap();
+        let started = Instant::now();
+        let source = assert_io(staging.remove(), &folder);
+        assert!(started.elapsed() >= RETRY_WINDOW, "{source}");
+        let code = source.raw_os_error();
+        let retried = code.is_some_and(|code| RETRIED_WINDOWS_ERRORS.contains(&code));
+        assert!(retried, "{source}");
+        drop(hold);
+        assert_eq!(fs::read(&held).unwrap(), b"{}");
+        assert_eq!(folder_names(&install.state).unwrap(), [name]);
+    }
+
+    /// A removal that the system refuses is reported, for the staging, and what it could not
+    /// remove stays.
+    #[cfg(unix)]
+    #[test]
+    fn remove_reports_what_it_could_not_remove() {
+        use std::os::unix::fs::PermissionsExt;
+
+        /// Reading and searching but no writing: no name in such a folder can be removed.
+        const READ_AND_SEARCH: u32 = 0o555;
+
+        /// Gives a folder back its owner's whole access when dropped, before the staging or the
+        /// `TempDir` above it goes, which could not empty it otherwise.
+        struct AccessRestored<'a>(&'a Path);
+
+        impl Drop for AccessRestored<'_> {
+            fn drop(&mut self) {
+                let _ = fs::set_permissions(self.0, fs::Permissions::from_mode(0o700));
+            }
+        }
+
+        let install = install();
+        let staging = Staging::create_in(&install.state, "install-").unwrap();
+        stage(&staging, "data/config.json", b"{}");
+        let folder = staging.path().to_path_buf();
+        let name = staging.name().to_owned();
+        let locked = folder.join("data");
+        let _restored = AccessRestored(&locked);
+        fs::set_permissions(&locked, fs::Permissions::from_mode(READ_AND_SEARCH)).unwrap();
+        if fs::File::create_new(locked.join("probe")).is_ok() {
+            eprintln!("skipped: this user writes in folders of mode 0o555, as root does");
+            return;
+        }
+        let source = assert_io(staging.remove(), &folder);
+        assert_eq!(source.kind(), io::ErrorKind::PermissionDenied, "{source}");
+        assert_eq!(fs::read(locked.join("config.json")).unwrap(), b"{}");
+        assert_eq!(folder_names(&install.state).unwrap(), [name]);
+    }
+
+    #[test]
+    fn a_kept_staging_survives_its_drop() {
+        let install = install();
+        let mut staging = Staging::create_in(&install.state, "install-").unwrap();
+        stage(&staging, "VERSION", b"1.0.0-beta\n");
+        stage(&staging, "data/config.json", b"{}");
+        let folder = staging.path().to_path_buf();
+        let name = staging.name().to_owned();
+        let staged = tree(&folder);
+        staging.keep();
+        drop(staging);
+        assert_eq!(tree(&folder), staged);
+
+        // One taken back by its name comes back kept, since a journal names it.
+        let reopened = Staging::reopen(&install.state, "install-", &name).unwrap();
+        drop(reopened);
+        assert_eq!(tree(&folder), staged);
+        assert_eq!(folder_names(&install.state).unwrap(), [name.as_str()]);
+
+        // Only its removal takes it away.
+        let reopened = Staging::reopen(&install.state, "install-", &name).unwrap();
+        reopened.remove().unwrap();
+        assert!(folder_names(&install.state).unwrap().is_empty());
+    }
+
+    #[test]
+    fn unpublish_takes_a_root_back_and_never_replaces() {
+        let install = install();
+        let staging = Staging::create_in(&install.state, "install-").unwrap();
+        stage(&staging, "VERSION", b"1.0.0-beta\n");
+        stage(&staging, "data/config.json", b"{}");
+        stage(&staging, "data/text/en.json", b"{\"a\": 1}");
+        let staged = tree(staging.path());
+        let roots = rels(&["VERSION", "data"]);
+        let mut journal = Recorder::new(&staging, &install.root);
+        staging
+            .publish_new(&roots, &install.root, &mut journal)
+            .unwrap();
+
+        // Taken back last first, each root comes back whole and leaves its place.
+        for root in ["data", "VERSION"] {
+            staging.unpublish(&rel(root), &install.root).unwrap();
+        }
+        assert_eq!(tree(staging.path()), staged);
+        assert_eq!(folder_names(&install.root).unwrap(), [".gdl-launcher"]);
+
+        // Published again, a root whose name the staging holds once more, as a file or as a
+        // folder, is never put back over it, and both stay as they are.
+        let mut journal = Recorder::new(&staging, &install.root);
+        staging
+            .publish_new(&roots, &install.root, &mut journal)
+            .unwrap();
+        stage(&staging, "VERSION", b"another");
+        staging.create_dir(&rel("data")).unwrap();
+        let before = (tree(staging.path()), tree(&install.root));
+        for root in ["VERSION", "data"] {
+            match staging.unpublish(&rel(root), &install.root) {
+                Err(FilesError::Exists { path }) => assert_eq!(path, staging.path().join(root)),
+                other => panic!("{root}: {other:?}"),
+            }
+            assert_eq!(
+                (tree(staging.path()), tree(&install.root)),
+                before,
+                "{root}"
+            );
+        }
+
+        // A name deeper than a root is no root, and a root that is not there is the system's
+        // answer, for the staged path.
+        match staging.unpublish(&rel("data/config.json"), &install.root) {
+            Err(FilesError::NotRoot { name }) => assert_eq!(&*name, "data/config.json"),
+            other => panic!("{other:?}"),
+        }
+        let at = staging.path().join("shaders");
+        let source = assert_io(staging.unpublish(&rel("shaders"), &install.root), &at);
+        assert_eq!(source.kind(), io::ErrorKind::NotFound);
+        assert_eq!((tree(staging.path()), tree(&install.root)), before);
+
+        // A link on the way to the folder taken from, or to the staging, refuses the move before
+        // anything moves. The state folder holds files just written and read, which a scanner
+        // may still hold, so its moves wait as the launcher's own do.
+        fs::remove_file(staging.path().join("VERSION")).unwrap();
+        let linked_root = install.root.with_file_name("linked root");
+        link_folder(&linked_root, &install.root).unwrap();
+        let unpublished = staging.unpublish(&rel("VERSION"), &linked_root);
+        assert_link(unpublished, &linked_root);
+        let real_state = install.state.with_file_name(".gdl-launcher-real");
+        crate::retry_locked(|| fs::rename(&install.state, &real_state)).unwrap();
+        link_folder(&install.state, &real_state).unwrap();
+        let unpublished = staging.unpublish(&rel("VERSION"), &install.root);
+        assert_link(unpublished, &install.state);
+        clear(&install.state);
+        crate::retry_locked(|| fs::rename(&real_state, &install.state)).unwrap();
+        let version = install.root.join("VERSION");
+        assert_eq!(fs::read(&version).unwrap(), b"1.0.0-beta\n");
+
+        // With its name free and no link on the way, the root comes back.
+        staging.unpublish(&rel("VERSION"), &install.root).unwrap();
+        assert!(fs::symlink_metadata(&version).is_err());
+        let staged_version = staging.path().join("VERSION");
+        assert_eq!(fs::read(staged_version).unwrap(), b"1.0.0-beta\n");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn sync_folders_reaches_every_folder() {
+        use std::cell::RefCell;
+        use std::os::unix::fs::MetadataExt;
+
+        use super::sync_tree;
+
+        let install = install();
+        let staging = Staging::create_in(&install.state, "install-").unwrap();
+        stage(&staging, "VERSION", b"1.0.0-beta\n");
+        stage(&staging, "data/text/en.json", b"{}");
+        stage(&staging, "Gauntlet/PDATA/WAR.WAD", b"war");
+        staging.create_dir(&rel("saves")).unwrap();
+        // A link to a folder that holds a folder: neither is the staging's, and neither is synced.
+        fs::create_dir(install.outside.join("beyond")).unwrap();
+        link_folder(&staging.path().join("linked"), &install.outside).unwrap();
+        let inode = |path: &Path| fs::metadata(path).unwrap().ino();
+        let mut depths = BTreeMap::from([(inode(staging.path()), 0)]);
+        for name in ["Gauntlet", "Gauntlet/PDATA", "data", "data/text", "saves"] {
+            let folder = rel(name).path_under(staging.path());
+            depths.insert(inode(&folder), rel(name).depth());
+        }
+
+        // Every folder once, each after every folder below it.
+        let synced = RefCell::new(Vec::new());
+        let record = |folder: &fs::File| {
+            synced.borrow_mut().push(folder.metadata()?.ino());
+            folder.sync_all()
+        };
+        sync_tree(staging.path(), &record).unwrap();
+        let synced = synced.into_inner();
+        let mut once = synced.clone();
+        once.sort_unstable();
+        assert!(once.iter().eq(depths.keys()), "{synced:?}");
+        let order: Vec<usize> = synced.iter().map(|folder| depths[folder]).collect();
+        assert!(
+            order.is_sorted_by(|deeper, shallower| deeper >= shallower),
+            "{order:?}"
+        );
+        // The system's own sync does the same.
+        staging.sync_folders().unwrap();
+
+        // A file system that cannot sync folders answers EINVAL, or EBADF on some systems, and
+        // its folders count as synced. Any other answer is the answer, for the deepest folder,
+        // and stops the syncs.
+        for (code, refused) in [
+            (libc::EINVAL, false),
+            (libc::EBADF, false),
+            (libc::EIO, true),
+        ] {
+            let tried = RefCell::new(Vec::new());
+            let answer = |folder: &fs::File| {
+                tried.borrow_mut().push(folder.metadata()?.ino());
+                Err(io::Error::from_raw_os_error(code))
+            };
+            let result = sync_tree(staging.path(), &answer);
+            let tried = tried.into_inner();
+            if !refused {
+                result.unwrap();
+                assert_eq!(tried.len(), depths.len(), "{code}");
+                continue;
+            }
+            match result {
+                Err(FilesError::Io { path, source }) => {
+                    assert_eq!(source.raw_os_error(), Some(code));
+                    assert_eq!(tried, [inode(&path)]);
+                    assert_eq!(depths[&tried[0]], 2, "{}", path.display());
+                }
+                other => panic!("{code}: {other:?}"),
+            }
+        }
     }
 
     /// A folder that the system will not let the launcher write in refuses a file for that
