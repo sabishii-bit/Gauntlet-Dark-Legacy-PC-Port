@@ -8,6 +8,8 @@ mod folder;
 mod icon;
 mod inspect;
 mod payload;
+#[allow(unsafe_code)]
+mod platform;
 mod probe;
 mod receipt;
 mod sections;
@@ -20,7 +22,11 @@ pub use folder::{
     FolderError, InstallFolder, InstallLock, JOURNAL_DIR, LOCK_FILE, LockError, RECEIPT_FILE,
     STATE_DIR, alpha_markers, check_links,
 };
-pub use icon::{DISC_ICON, ICON_SIZES, IconError, IconResources, icon_resources};
+pub use icon::{
+    DISC_ICON, ICON_SIZES, IconError, IconResources, icon_resources, refresh_shell_icon,
+};
+#[cfg(windows)]
+pub use icon::{Personalised, personalise};
 pub use inspect::{FolderState, INSPECTION_SCHEMA, Inspection, InstallationSummary, Relation};
 pub use payload::{
     BUILD_INFO, BuildInfo, DATA_SUFFIX, DEFAULT_CONFIG, LIBRARY_SUFFIX, MAX_BUILD_INFO_LEN,

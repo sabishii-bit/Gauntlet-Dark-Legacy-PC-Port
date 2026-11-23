@@ -2,11 +2,28 @@
 //! icon resources that the game's Windows executable carries. The group names six square images,
 //! from 16 to 256 pixels a side; each is a 32-bit bitmap from its bottom row up, with its alpha and
 //! the mask that older parts of Windows draw by, sampled from the frame as the installer samples
-//! it, so that the resources are the installer's byte for byte.
+//! it, so that the resources are the installer's byte for byte. On Windows they are set into the
+//! staged executable, which is then hashed afresh, and the shell is told of the installed one so
+//! that Explorer shows the icon in place of the one it remembers.
 
 use std::fmt;
+use std::io;
+use std::path::{Path, PathBuf};
 
 use gdl_media::{Frame, MAX_TPL_SIDE, MediaError};
+
+#[cfg(windows)]
+use std::fs::OpenOptions;
+
+#[cfg(windows)]
+use gdl_files::{BLOCK_LEN, fill_from};
+#[cfg(windows)]
+use gdl_media::{Sha256Digest, first_frame};
+#[cfg(windows)]
+use sha2::{Digest, Sha256};
+
+#[cfg(windows)]
+use crate::platform::{self, Resource};
 
 /// The sides of the icon's square images, in pixels, smallest first.
 pub const ICON_SIZES: [u16; 6] = [16, 32, 48, 64, 128, 256];
@@ -16,6 +33,22 @@ pub const DISC_ICON: &str = "carddemo/icon.tpl";
 
 /// The resource id of the icon's first image; each image after it takes the next.
 pub(crate) const FIRST_ICON_ID: u16 = 1;
+
+/// The resource id of the icon's group, the icon a program is shown by.
+#[cfg(windows)]
+pub(crate) const ICON_GROUP_ID: u16 = 1;
+
+/// The language the icon's resources are kept under: the neutral one, as the installer keeps them.
+#[cfg(windows)]
+pub(crate) const RESOURCE_LANGUAGE: u16 = 0;
+
+/// The resource type of an icon's image (RT_ICON).
+#[cfg(windows)]
+pub(crate) const RT_ICON: u16 = 3;
+
+/// The resource type of an icon's group (RT_GROUP_ICON).
+#[cfg(windows)]
+pub(crate) const RT_GROUP_ICON: u16 = 14;
 
 /// How many bytes an image's bitmap header takes, as its first field says.
 pub(crate) const DIB_HEADER_LEN: u32 = 40;
@@ -98,6 +131,18 @@ impl fmt::Debug for IconResources {
     }
 }
 
+/// What setting the disc's icon into the game's Windows executable gives: the executable's digest
+/// with the icon in it, which the installation records in place of the release's, and the digest
+/// of the disc's icon it was made from.
+#[cfg(windows)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Personalised {
+    /// The SHA-256 digest of the executable, its icon set.
+    pub executable_sha256: Sha256Digest,
+    /// The SHA-256 digest of the disc's icon, the TPL.
+    pub icon_sha256: Sha256Digest,
+}
+
 /// Why the disc's icon could not be made into the icon of the game's executable.
 #[derive(Debug, thiserror::Error)]
 pub enum IconError {
@@ -109,17 +154,106 @@ pub enum IconError {
     /// its sides exactly, so no decoder gave it.
     #[error("Invalid decoded icon")]
     Decoded,
+    /// The system did not set the icon into the executable at `path`: the file is no program it
+    /// edits, or could not be read or rewritten.
+    #[error("{}: {source}", .path.display())]
+    Embed {
+        /// The executable.
+        path: PathBuf,
+        /// What the system answered.
+        #[source]
+        source: io::Error,
+    },
+    /// The executable at `path`, its icon set, could not be read back whole or written through to
+    /// its disk.
+    #[error("{}: {source}", .path.display())]
+    Rehash {
+        /// The executable.
+        path: PathBuf,
+        /// What the system answered.
+        #[source]
+        source: io::Error,
+    },
 }
 
 impl IconError {
     /// The failure's stable machine name, in camelCase, for reports and logs: the rule of its
-    /// format that the TPL breaks, or `decoded`.
+    /// format that the TPL breaks, `decoded`, `embed` or `rehash`.
     pub fn rule(&self) -> &'static str {
         match self {
             IconError::Tpl(error) => error.rule(),
             IconError::Decoded => "decoded",
+            IconError::Embed { .. } => "embed",
+            IconError::Rehash { .. } => "rehash",
         }
     }
+}
+
+/// Sets the disc's icon, the TPL `tpl`, into the game's Windows executable at `executable`, as
+/// the installer personalises the game it stages: the TPL's first frame made into its
+/// [`icon_resources`], set in as icon images 1 to 6 and their group 1 in the neutral language,
+/// beside every resource the program holds already, its manifest among them. The executable is
+/// then read back whole, hashed and written through to its disk, and its new digest given with
+/// the TPL's. A TPL that does not decode is refused before the executable is opened.
+#[cfg(windows)]
+pub fn personalise(executable: &Path, tpl: &[u8]) -> Result<Personalised, IconError> {
+    let frame = first_frame(tpl).map_err(IconError::Tpl)?;
+    let made = icon_resources(&frame)?;
+    let mut resources: Vec<Resource<'_>> = (FIRST_ICON_ID..)
+        .zip(&made.images)
+        .map(|(id, image)| Resource {
+            kind: RT_ICON,
+            id,
+            language: RESOURCE_LANGUAGE,
+            bytes: image,
+        })
+        .collect();
+    resources.push(Resource {
+        kind: RT_GROUP_ICON,
+        id: ICON_GROUP_ID,
+        language: RESOURCE_LANGUAGE,
+        bytes: &made.group,
+    });
+    platform::update_resources(executable, &resources).map_err(|source| IconError::Embed {
+        path: executable.to_path_buf(),
+        source,
+    })?;
+    let executable_sha256 = rehash(executable).map_err(|source| IconError::Rehash {
+        path: executable.to_path_buf(),
+        source,
+    })?;
+    Ok(Personalised {
+        executable_sha256,
+        icon_sha256: Sha256Digest::of(tpl),
+    })
+}
+
+/// The digest of the file at `executable`, read whole a block at a time through a handle that may
+/// also write, so that the file is then written through to its disk before it is closed.
+#[cfg(windows)]
+fn rehash(executable: &Path) -> io::Result<Sha256Digest> {
+    let mut file = OpenOptions::new().read(true).write(true).open(executable)?;
+    let mut block = vec![0; BLOCK_LEN];
+    let mut hasher = Sha256::new();
+    loop {
+        let read = fill_from(&mut file, &mut block)?;
+        hasher.update(&block[..read]);
+        if read < block.len() {
+            break;
+        }
+    }
+    file.sync_all()?;
+    Ok(Sha256Digest(hasher.finalize().into()))
+}
+
+/// Tells the shell that the program at `executable` carries a new icon, so that Explorer shows it
+/// in place of the one it remembers. Only Windows shows a program by an icon it carries, so
+/// elsewhere nothing is done.
+pub fn refresh_shell_icon(executable: &Path) {
+    #[cfg(windows)]
+    platform::notify_item_updated(executable);
+    #[cfg(not(windows))]
+    let _ = executable;
 }
 
 /// The icon resources of `frame`, the first frame of the disc's icon, as the installer makes them:
@@ -216,12 +350,27 @@ fn length_field(len: usize) -> [u8; 4] {
 mod tests {
     use std::collections::BTreeSet;
     use std::error::Error;
+    use std::fs;
+    use std::io;
+    use std::path::Path;
 
-    use gdl_fixtures::{edited, first_frame_only_tpl, tpl, unhex};
+    use gdl_fixtures::{edited, first_frame_only_tpl, snapshot, tpl, unhex};
     use gdl_media::{Frame, MediaError, Sha256Digest, first_frame};
     use serde_json::Value;
 
-    use super::{ICON_SIZES, IconError, IconResources, icon_resources};
+    use super::{ICON_SIZES, IconError, IconResources, icon_resources, refresh_shell_icon};
+
+    #[cfg(windows)]
+    use std::collections::BTreeMap;
+    #[cfg(windows)]
+    use std::ffi::OsString;
+    #[cfg(windows)]
+    use std::path::PathBuf;
+
+    #[cfg(windows)]
+    use super::{ICON_GROUP_ID, RESOURCE_LANGUAGE, RT_GROUP_ICON, RT_ICON, personalise};
+    #[cfg(windows)]
+    use crate::platform::{self, Resource};
 
     /// The installer's icon cases and the resources it made, which the encoder is held to.
     const ICON_VECTORS: &str = include_str!(concat!(
@@ -272,6 +421,95 @@ mod tests {
 
     /// The most bytes an error may take, so that returning one by value stays cheap.
     const MOST_ERROR_BYTES: usize = 128;
+
+    /// What a test's stand-in for a program holds: no program at all.
+    const NOT_A_PROGRAM: &[u8] = b"not a PE";
+
+    /// The resource type of an icon's image.
+    #[cfg(windows)]
+    const FORMAT_RT_ICON: u16 = 3;
+
+    /// The resource type of an icon's group.
+    #[cfg(windows)]
+    const FORMAT_RT_GROUP_ICON: u16 = 14;
+
+    /// The resource type of a program's manifest.
+    #[cfg(windows)]
+    const FORMAT_RT_MANIFEST: u16 = 24;
+
+    /// The id of the manifest Windows reads as it starts a program.
+    #[cfg(windows)]
+    const MANIFEST_ID: u16 = 1;
+
+    /// The neutral language, which the icon's resources are kept under.
+    #[cfg(windows)]
+    const NEUTRAL_LANGUAGE: u16 = 0;
+
+    /// The language US English, which a program's own manifest is often kept under.
+    #[cfg(windows)]
+    const ENGLISH_LANGUAGE: u16 = 1033;
+
+    /// The manifest a test program is given in the neutral language. The program is never run.
+    #[cfg(windows)]
+    const NEUTRAL_MANIFEST: &str = concat!(
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>"#,
+        r#"<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">"#,
+        r#"<trustInfo xmlns="urn:schemas-microsoft-com:asm.v3"><security><requestedPrivileges>"#,
+        r#"<requestedExecutionLevel level="asInvoker" uiAccess="false"/>"#,
+        r#"</requestedPrivileges></security></trustInfo></assembly>"#,
+    );
+
+    /// The manifest a test program is given in US English, another than the neutral one, so that
+    /// each is seen kept as its own.
+    #[cfg(windows)]
+    const ENGLISH_MANIFEST: &str = concat!(
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>"#,
+        r#"<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">"#,
+        r#"<application xmlns="urn:schemas-microsoft-com:asm.v3"><windowsSettings>"#,
+        r#"<dpiAware xmlns="http://schemas.microsoft.com/SMI/2005/WindowsSettings">true</dpiAware>"#,
+        r#"</windowsSettings></application></assembly>"#,
+    );
+
+    /// Where a program's first header keeps the offset of its PE signature.
+    #[cfg(windows)]
+    const PE_OFFSET_AT: usize = 0x3C;
+
+    /// Where, from the PE signature, the count of the program's sections is kept.
+    #[cfg(windows)]
+    const SECTION_COUNT_AT: usize = 6;
+
+    /// Where, from the PE signature, the length of the optional header is kept.
+    #[cfg(windows)]
+    const OPTIONAL_HEADER_LEN_AT: usize = 20;
+
+    /// Where, from the PE signature, the optional header begins: after the signature and the file
+    /// header. The section table follows it.
+    #[cfg(windows)]
+    const OPTIONAL_HEADER_AT: usize = 24;
+
+    /// How many bytes each row of the section table takes.
+    #[cfg(windows)]
+    const SECTION_ROW_LEN: usize = 40;
+
+    /// How many bytes a section's name takes at the start of its row, NUL-padded.
+    #[cfg(windows)]
+    const SECTION_NAME_LEN: usize = 8;
+
+    /// Where in a section's row the length of its bytes in the file is kept.
+    #[cfg(windows)]
+    const RAW_LEN_AT: usize = 16;
+
+    /// Where in a section's row the offset of its bytes in the file is kept.
+    #[cfg(windows)]
+    const RAW_START_AT: usize = 20;
+
+    /// Where in a section's row its flags are kept.
+    #[cfg(windows)]
+    const SECTION_FLAGS_AT: usize = 36;
+
+    /// The flag of a section that holds code (IMAGE_SCN_CNT_CODE).
+    #[cfg(windows)]
+    const CODE_SECTION: u32 = 0x20;
 
     /// The vectors, read, of their format and version.
     fn vectors() -> Value {
@@ -383,6 +621,60 @@ mod tests {
         image.extend(pixels);
         image.extend(mask);
         image
+    }
+
+    /// Every section of the program `bytes` that holds code, by its name: what a change to the
+    /// program's resources leaves as it was.
+    #[cfg(windows)]
+    fn code_sections(bytes: &[u8]) -> BTreeMap<Vec<u8>, Vec<u8>> {
+        let pe = usize::try_from(word(bytes, PE_OFFSET_AT)).unwrap();
+        let count = usize::from(half(bytes, pe + SECTION_COUNT_AT));
+        let optional_len = usize::from(half(bytes, pe + OPTIONAL_HEADER_LEN_AT));
+        let table = pe + OPTIONAL_HEADER_AT + optional_len;
+        let mut sections = BTreeMap::new();
+        for index in 0..count {
+            let row = &bytes[table + index * SECTION_ROW_LEN..][..SECTION_ROW_LEN];
+            if word(row, SECTION_FLAGS_AT) & CODE_SECTION == 0 {
+                continue;
+            }
+            let start = usize::try_from(word(row, RAW_START_AT)).unwrap();
+            let len = usize::try_from(word(row, RAW_LEN_AT)).unwrap();
+            let name = row[..SECTION_NAME_LEN].to_vec();
+            sections.insert(name, bytes[start..start + len].to_vec());
+        }
+        assert!(!sections.is_empty(), "the program holds no code");
+        sections
+    }
+
+    /// The resource of type `kind`, id `id` and language `language` that the program at `program`
+    /// holds, or `None` when it holds none such.
+    #[cfg(windows)]
+    fn resource(program: &Path, kind: u16, id: u16, language: u16) -> Option<Vec<u8>> {
+        platform::resource_bytes(program, kind, id, language)
+            .unwrap_or_else(|error| panic!("{}: {error}", program.display()))
+    }
+
+    /// `path` made absolute, in its verbatim form, as a path the launcher's own folders give may
+    /// come.
+    #[cfg(windows)]
+    fn verbatim_of(path: &Path) -> PathBuf {
+        let absolute = std::path::absolute(path).unwrap();
+        let plain = absolute
+            .to_str()
+            .is_some_and(|text| !text.starts_with('\\'));
+        assert!(plain, "{}", absolute.display());
+        let mut verbatim = OsString::from(r"\\?\");
+        verbatim.push(absolute);
+        PathBuf::from(verbatim)
+    }
+
+    /// Writes at `path` a copy of the program running these tests, a real linker's output with no
+    /// signature, and gives its bytes. No test runs a copy once it is changed.
+    #[cfg(windows)]
+    fn copy_of_this_program(path: &Path) -> Vec<u8> {
+        let original = fs::read(std::env::current_exe().unwrap()).unwrap();
+        fs::write(path, &original).unwrap();
+        original
     }
 
     #[test]
@@ -624,5 +916,185 @@ mod tests {
     #[test]
     fn errors_stay_small() {
         assert!(size_of::<IconError>() <= MOST_ERROR_BYTES);
+    }
+
+    #[test]
+    fn embed_and_rehash_failures_name_the_program_and_keep_the_systems_answer() {
+        let program = Path::new("staging").join("gauntlet.exe");
+        let refused = || io::Error::other("refused");
+        let failures = [
+            (
+                IconError::Embed {
+                    path: program.clone(),
+                    source: refused(),
+                },
+                "embed",
+            ),
+            (
+                IconError::Rehash {
+                    path: program.clone(),
+                    source: refused(),
+                },
+                "rehash",
+            ),
+        ];
+        for (error, rule) in failures {
+            assert_eq!(error.rule(), rule);
+            assert_eq!(
+                error.to_string(),
+                format!("{}: refused", program.display()),
+                "{rule}"
+            );
+            let source = error.source().expect("the system's answer");
+            assert_eq!(source.to_string(), "refused", "{rule}");
+        }
+    }
+
+    #[test]
+    fn telling_the_shell_changes_nothing() {
+        // The shell is told of a file the test made, and of a name no file can have, which is
+        // never named to it; nothing is made, changed or taken away.
+        let dir = tempfile::tempdir().unwrap();
+        let program = dir.path().join("gauntlet.exe");
+        fs::write(&program, NOT_A_PROGRAM).unwrap();
+        let before = snapshot(dir.path()).unwrap();
+        refresh_shell_icon(&program);
+        refresh_shell_icon(&dir.path().join("no\0name.exe"));
+        assert_eq!(snapshot(dir.path()).unwrap(), before);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn the_resource_types_are_the_systems() {
+        use windows_sys::Win32::UI::WindowsAndMessaging as system;
+
+        for (ours, format, systems) in [
+            (RT_ICON, FORMAT_RT_ICON, system::RT_ICON),
+            (RT_GROUP_ICON, FORMAT_RT_GROUP_ICON, system::RT_GROUP_ICON),
+        ] {
+            assert_eq!(ours, format);
+            assert_eq!(usize::from(ours), systems.addr());
+        }
+        assert_eq!(usize::from(FORMAT_RT_MANIFEST), system::RT_MANIFEST.addr());
+        assert_eq!(ICON_GROUP_ID, 1);
+        assert_eq!(RESOURCE_LANGUAGE, NEUTRAL_LANGUAGE);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn personalising_a_real_program_keeps_its_code_and_manifest() {
+        let dir = tempfile::tempdir().unwrap();
+        let program = dir.path().join("program.exe");
+        let original = copy_of_this_program(&program);
+        // The program is given a manifest in two languages first, as the game's executable carries
+        // one, and holds no icon of its own.
+        let manifests = [
+            (NEUTRAL_LANGUAGE, NEUTRAL_MANIFEST),
+            (ENGLISH_LANGUAGE, ENGLISH_MANIFEST),
+        ];
+        let given: Vec<Resource<'_>> = manifests
+            .iter()
+            .map(|&(language, manifest)| Resource {
+                kind: FORMAT_RT_MANIFEST,
+                id: MANIFEST_ID,
+                language,
+                bytes: manifest.as_bytes(),
+            })
+            .collect();
+        platform::update_resources(&program, &given).unwrap();
+        let manifests_kept = || {
+            for (language, manifest) in manifests {
+                let kept = resource(&program, FORMAT_RT_MANIFEST, MANIFEST_ID, language);
+                assert_eq!(kept.as_deref(), Some(manifest.as_bytes()), "{language}");
+            }
+        };
+        manifests_kept();
+        let no_group = resource(&program, FORMAT_RT_GROUP_ICON, 1, NEUTRAL_LANGUAGE);
+        assert_eq!(no_group, None);
+
+        // Through its verbatim path, the program is given the icon tests' RGB5A3 icon.
+        let icon = tpl(FORMAT_RGB5A3, 8, 8);
+        let verbatim = verbatim_of(&program);
+        let personalised = personalise(&verbatim, &icon).unwrap_or_else(|error| panic!("{error}"));
+
+        // The group and the six images it now holds are the golden vector's, and nothing past
+        // them.
+        let vectors = vectors();
+        let golden = &vectors["resources"]["rgb5a3"];
+        let group = resource(&program, FORMAT_RT_GROUP_ICON, 1, NEUTRAL_LANGUAGE);
+        let group = group.expect("the icon's group");
+        assert!(group == unhex(&golden["groupHex"]), "the group");
+        let listed = golden["images"].as_array().expect("a list of images");
+        assert_eq!(listed.len(), FORMAT_SIZES.len());
+        for (id, (golden_image, size)) in (1..).zip(listed.iter().zip(FORMAT_SIZES)) {
+            let image = resource(&program, FORMAT_RT_ICON, id, NEUTRAL_LANGUAGE);
+            let image = image.unwrap_or_else(|| panic!("the {size}-pixel image"));
+            assert_eq!(image.len(), number(&golden_image["length"]), "{size}");
+            assert_eq!(digest(&image), text(&golden_image["sha256"]), "{size}");
+        }
+        let past = u16::try_from(FORMAT_SIZES.len() + 1).unwrap();
+        assert_eq!(
+            resource(&program, FORMAT_RT_ICON, past, NEUTRAL_LANGUAGE),
+            None
+        );
+
+        // Its code is as the linker wrote it, and both manifests are as they were given.
+        let changed = fs::read(&program).unwrap();
+        assert!(changed != original);
+        assert!(
+            code_sections(&changed) == code_sections(&original),
+            "the program's code"
+        );
+        manifests_kept();
+
+        // The digests given are those of the program as it now is and of the icon.
+        assert_eq!(personalised.executable_sha256, Sha256Digest::of(&changed));
+        assert_eq!(personalised.icon_sha256, Sha256Digest::of(&icon));
+        let icon_digest = text(&vectors["tpls"]["rgb5a3"]["sha256"]);
+        assert_eq!(personalised.icon_sha256.hex(), icon_digest);
+
+        // Telling the shell of the program leaves it as it is.
+        refresh_shell_icon(&verbatim);
+        assert!(fs::read(&program).unwrap() == changed);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_file_that_is_no_program_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("invalid.exe");
+        fs::write(&file, NOT_A_PROGRAM).unwrap();
+        let error = personalise(&file, &tpl(FORMAT_RGB5A3, 8, 8)).unwrap_err();
+        let IconError::Embed { path, source } = &error else {
+            panic!("{error:?}");
+        };
+        // The system's own answer, whatever its code, naming the file, which is as it was.
+        assert_eq!(path, &file);
+        assert!(source.raw_os_error().is_some(), "{source:?}");
+        assert_eq!(error.rule(), "embed");
+        assert_eq!(error.to_string(), format!("{}: {source}", file.display()));
+        assert_eq!(fs::read(&file).unwrap(), NOT_A_PROGRAM);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_damaged_icon_is_refused_before_the_program_is_opened() {
+        // Every TPL the installer refuses is refused by the decoder's rule, and before the file
+        // is opened: one that is no program, which the edit would refuse, never gets that far.
+        let vectors = vectors();
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("invalid.exe");
+        fs::write(&file, NOT_A_PROGRAM).unwrap();
+        for case in vectors["cases"].as_array().unwrap() {
+            let name = text(&case["name"]);
+            let bytes = edited(&built(text(&case["base"])), &case["edits"]);
+            let error = personalise(&file, &bytes).unwrap_err();
+            assert!(
+                matches!(error, IconError::Tpl(MediaError::Tpl { .. })),
+                "{name}: {error:?}"
+            );
+            assert_eq!(error.rule(), text(&case["rule"]), "{name}");
+        }
+        assert_eq!(fs::read(&file).unwrap(), NOT_A_PROGRAM);
     }
 }
