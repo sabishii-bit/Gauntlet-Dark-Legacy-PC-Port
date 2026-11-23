@@ -10,10 +10,20 @@
 #include "game/critters/CombatantBreath.h"
 namespace gdl::game {
 namespace {
+constexpr f32 kNoFlatWay = 0.001f; ///< a flat length at or under which a way points nowhere
+
 f32 flatDistance(const Vec3& a, const Vec3& b) {
     const f32 dx = a.x - b.x;
     const f32 dz = a.z - b.z;
     return std::sqrt(dx * dx + dz * dz);
+}
+
+/** `way` laid flat at a unit's length, or the way `yaw` faces when it has next to no flat
+ * length. */
+Vec3 flatWay(const Vec3& way, f32 yaw) {
+    const f32 length = std::sqrt(way.x * way.x + way.z * way.z);
+    return length > kNoFlatWay ? Vec3{way.x / length, 0.0f, way.z / length}
+                               : Vec3{portable::sin(yaw), 0.0f, portable::cos(yaw)};
 }
 } // namespace
 
@@ -60,8 +70,7 @@ void Combatant::strikeWith(Actor& critter, s32 id, const MoveDefinition& move, s
                                 (breath.has_value() || damage->type == AttackDefinition::kBlow);
     // A blow pushes along its node's swing and away from the body's origin
     // (CritterNodePlayerCollide); the rest push straight out from where it stands.
-    const bool swingPush =
-        damage->type == AttackDefinition::kBlow && !critter.definition->rules().flatBlowPush;
+    const bool swingPush = damage->type == AttackDefinition::kBlow;
     const Vec3 bodyOrigin = swingPush ? targetingOrigin(critter) : Vec3{0.0f};
     for (const EnemyView& view : players) {
         if (view.hidden || (!view.damageable && !tracksPressure) ||
@@ -117,12 +126,11 @@ void Combatant::strikeWith(Actor& critter, s32 id, const MoveDefinition& move, s
             blow.direction = size > 0.0f ? direction / size : Vec3{0.0f};
         } else if (swingPush) {
             blow.direction = critter.moveNode.blowPush(bodyOrigin, feet);
+            if (critter.definition->rules().unitBlowPush) {
+                blow.direction = flatWay(blow.direction, critter.yaw);
+            }
         } else {
-            const Vec3 away = feet - critter.position;
-            const f32 length = flatDistance(feet, critter.position);
-            blow.direction = length > 0.001f ? Vec3{away.x / length, 0.0f, away.z / length}
-                                             : Vec3{portable::sin(critter.yaw), 0.0f,
-                                                    portable::cos(critter.yaw)};
+            blow.direction = flatWay(feet - critter.position, critter.yaw);
         }
         if (!gated) {
             critter.struckThisMove.push_back(view.player);

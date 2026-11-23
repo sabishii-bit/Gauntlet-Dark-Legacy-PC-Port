@@ -38,10 +38,10 @@ struct CritterRules {
     /** A part's offset turns with its node. GDL's GetWorldMat (0x800BB614) instead adds it in
      * the frame of the node's parent, so the node's own turn and scale never move it. */
     bool nodeFramePartOffsets = false;
-    /** A blow pushes a unit straight out from the floor anchor. GDL's CritterNodePlayerCollide
-     * (0x80036424) instead pushes along the striking node's last native frame of travel and
-     * away from the body's origin. */
-    bool flatBlowPush = false;
+    /** A blow's push, along the striking node's swing and away from the body's origin, keeps
+     * only its flat way, at a unit's length. GDL's CritterNodePlayerCollide (0x80036424) knocks a
+     * player by the whole push, longest when the swing runs outward. */
+    bool unitBlowPush = false;
 };
 
 struct CombatantAttachment {

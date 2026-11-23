@@ -2115,15 +2115,19 @@ TEST_CASE("a rate-60 swing's blow carries the swing of the frame it lands in, on
     CHECK(glm::distance(pushes[3], stillPush()) < 1e-4f);
 }
 
-TEST_CASE("a definition with flatBlowPush keeps the unit push", "[game][combatant][blow-push]") {
+TEST_CASE("a definition with unitBlowPush keeps the swing's flat way at a unit's length",
+          "[game][combatant][blow-push]") {
     test::FakeRenderDevice device;
     CombatantAssets assets;
     CritterRules rules;
-    rules.flatBlowPush = true;
+    rules.unitBlowPush = true;
     loadSwing(device, assets, 30, rules);
     Combatant actor;
     REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
-    const std::array players{swingTarget()};
+    // Off the x axis the hand's swing along x and the way out from the body differ.
+    EnemyView player = swingTarget();
+    player.position.z = 2;
+    const std::array players{player};
     std::vector<CombatBlow> blows;
     for (s32 i = 0; i < 30 && blows.empty(); ++i) {
         actor.update(2, 1.0f / 30, players);
@@ -2131,7 +2135,15 @@ TEST_CASE("a definition with flatBlowPush keeps the unit push", "[game][combatan
     }
     REQUIRE(blows.size() == 1);
     REQUIRE(actor.animation().frame() == 4.0f);
-    CHECK(blows[0].direction == Vec3{1, 0, 0});
+    const Vec3 push = 2.0f * (approximateUnit(Vec3{1, 0, 0}) + approximateUnit(Vec3{12, 1, 2}));
+    const Vec3 expected = Vec3{push.x, 0, push.z} / std::hypot(push.x, push.z);
+    const Vec3& direction = blows[0].direction;
+    CAPTURE(direction.x, direction.y, direction.z);
+    CHECK(direction.y == 0.0f);
+    CHECK(glm::length(direction) == Approx(1.0f));
+    CHECK(glm::distance(direction, expected) < 1e-5f);
+    // Not the way straight out from the body.
+    CHECK(glm::distance(direction, glm::normalize(Vec3{12, 0, 2})) > 0.05f);
 }
 
 TEST_CASE("a blow's push survives a rewind of its fighter",

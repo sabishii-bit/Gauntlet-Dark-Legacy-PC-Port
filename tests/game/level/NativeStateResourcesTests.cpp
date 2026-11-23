@@ -147,18 +147,18 @@ TEST_CASE("native critter resource identity includes how its blows push",
     source.types[0].moveCount = 1;
     source.moves.resize(1);
     CritterRules rules;
-    const auto swing = CritterData::fromDecoded("TEST", source, 0, rules);
-    rules.flatBlowPush = true;
-    const auto flat = CritterData::fromDecoded("TEST", source, 0, rules);
+    const auto whole = CritterData::fromDecoded("TEST", source, 0, rules);
+    rules.unitBlowPush = true;
+    const auto unit = CritterData::fromDecoded("TEST", source, 0, rules);
     NativeStateResources first;
     NativeStateResources second;
-    REQUIRE(first.registerCritter(swing, "native/TEST", 0));
-    REQUIRE(second.registerCritter(flat, "native/TEST", 0));
-    const auto swingIdentity = resourceHash(first, &swing);
-    const auto flatIdentity = resourceHash(second, &flat);
-    REQUIRE(swingIdentity);
-    REQUIRE(flatIdentity);
-    CHECK(swingIdentity != flatIdentity);
+    REQUIRE(first.registerCritter(whole, "native/TEST", 0));
+    REQUIRE(second.registerCritter(unit, "native/TEST", 0));
+    const auto wholeIdentity = resourceHash(first, &whole);
+    const auto unitIdentity = resourceHash(second, &unit);
+    REQUIRE(wholeIdentity);
+    REQUIRE(unitIdentity);
+    CHECK(wholeIdentity != unitIdentity);
 }
 
 TEST_CASE("native builtin white textures identify particle fallbacks without renderer writes",

@@ -2,25 +2,162 @@
 #include <array>
 #include <cmath>
 #include <filesystem>
+#include <optional>
+#include <span>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/core/Types.h"
 #include "engine/io/File.h"
+#include "engine/math/ApproximateLength.h"
+#include "engine/math/Math.h"
+#include "engine/math/PortableMath.h"
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "expansions/n64/bosses/LegendsBossAssets.h"
 #include "formats/CritterWad.h"
 #include "game/critters/Combatant.h"
+#include "game/critters/CombatantAssets.h"
 #include "game/critters/CombatantProjectile.h"
 
 namespace {
 using namespace gdl;
 using namespace gdl::game;
 using Catch::Approx;
+
+constexpr f32 kNativeFrame = 1.0f / 30; ///< the original's frame, over which a blow's swing runs
+constexpr s32 kTicksPerFrame = 2;
+constexpr s32 kMostFrames = 120;
+constexpr f32 kStill = 1e-3f;
+constexpr f32 kTolerance = 1e-3f;
+
+/** A blow's push as Boss.bin's CritterNodePlayerCollide (e0887154) builds it: twice the sum of
+ * the node's travel over the frame and the way from the body's origin to the feet, that given a
+ * unit's height, each scaled by the reciprocal of its fast length (game.bin e00145c4). */
+Vec3 swingPush(const Vec3& before, const Vec3& after, const Vec3& body, const Vec3& feet) {
+    return 2.0f * (approximateUnit(after - before) +
+                   approximateUnit(Vec3{feet.x - body.x, 1.0f, feet.z - body.z}));
+}
+
+/** `v` laid flat at a unit's length, or nought when it has no flat length. */
+Vec3 flatUnit(const Vec3& v) {
+    const f32 length = std::hypot(v.x, v.z);
+    return length > 0 ? Vec3{v.x / length, 0, v.z / length} : Vec3{0};
+}
+
+/** The body's origin a blow pushes away from: the model's root with the TYPE origin turned with
+ * it (c+0x4C, ProcessCritter e0884a9c). */
+Vec3 bodyOrigin(const Combatant& body) {
+    const Vec3 root = body.position() + Vec3{0, body.data()->floorOffset(), 0};
+    const Mat4 model =
+        glm::scale(portable::rotate(glm::translate(Mat4{1}, root), body.yaw(), Vec3{0, 1, 0}),
+                   Vec3{body.scale() * body.shrink()});
+    return Vec3{model * Vec4{body.data()->originOffset(), 1}};
+}
+
+/** Where move `index`'s node stands at `frame` from the body as `state` left it: what MoveSetup
+ * (e08839bc) notes each frame, after the animation and before the step and the turn. */
+Mat4 notedNode(Combatant& actor, const Combatant::LocalSnapshot& state, usize index, f32 frame) {
+    REQUIRE(actor.restoreLocal(state));
+    REQUIRE(actor.setMove(index, {.frame = frame, .target = 0}));
+    const auto node = actor.nodeTransform(actor.data()->moves()[index].colnode);
+    REQUIRE(node);
+    return *node;
+}
+
+/** What an update did: its blows, and where the move's setup noted the node and stood the body's
+ * origin. */
+struct Noted {
+    std::vector<CombatBlow> blows;
+    Vec3 node{0};
+    Vec3 body{0};
+};
+
+/** Lands move `index`'s blow from a body spawned at home on a player standing half its reach
+ * across the node's swing, and checks that the blow keeps only the flat way of the push Boss.bin
+ * builds, at a unit's length: e0886ed0 makes the push a point and game.bin e004ba94 turns the
+ * player to it, taking nothing else. */
+void checkSwingPush(CombatantAssets& assets, usize index) {
+    const MoveDefinition& move = assets.data.moves()[index];
+    const AttackDefinition* damage = assets.data.damage(move.damage0);
+    REQUIRE(damage);
+    // Standing at home, the territory's clamp never moves it.
+    const f32 floorOffset = assets.data.floorOffset();
+    const Vec3 home = assets.data.movement().home.value_or(Vec3{12, 3 + floorOffset, -9}) -
+                      Vec3{0, floorOffset, 0};
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, home, 0.4f, nullptr, {}, 'F'));
+    Combatant::LocalSnapshot spawned;
+    REQUIRE(actor.saveLocal(spawned));
+    const auto opening = static_cast<f32>(move.frameStart);
+    const Mat4 strikes = notedNode(actor, spawned, index, opening);
+    const Vec3 centre{strikes * Vec4{damage->offset, 1}};
+    const Vec3 swing = Vec3{notedNode(actor, spawned, index, opening + 1)[3]} - Vec3{strikes[3]};
+    REQUIRE(std::hypot(swing.x, swing.z) > kStill);
+    const Vec2 along = glm::normalize(Vec2{swing.x, swing.z});
+    REQUIRE(actor.restoreLocal(spawned));
+    const Vec2 across = 0.5f * damage->maxDistance * Vec2{-along.y, along.x};
+    constexpr f32 kContactHeight = 2.5f;
+    const std::array players{
+        EnemyView{.player = 0,
+                  .position = {centre.x + across.x, centre.y - kContactHeight, centre.z + across.y},
+                  .radius = 0.5f,
+                  .height = 5,
+                  .collisionHeight = kContactHeight,
+                  .collisionRadius = 1.5f}};
+
+    // The body turns after its strikes, so each update's noted node is taken from where it
+    // stood as the update began.
+    const auto advance = [&](s32 ticks, f32 seconds, std::span<const EnemyView> roster) {
+        Combatant::LocalSnapshot before;
+        REQUIRE(actor.saveLocal(before));
+        Noted out;
+        out.body = bodyOrigin(actor);
+        actor.update(ticks, seconds, roster);
+        out.blows = actor.takeBlows();
+        const f32 frame = actor.animation().frame();
+        Combatant::LocalSnapshot after;
+        REQUIRE(actor.saveLocal(after));
+        out.node = Vec3{notedNode(actor, before, index, frame)[3]};
+        REQUIRE(actor.restoreLocal(after));
+        return out;
+    };
+    REQUIRE(actor.setMove(index, {.frame = opening - 1, .target = 0}));
+    // An update of no time notes the node without moving it: the sample the first frame
+    // measures from.
+    const Noted primed = advance(1, 0.0f, {});
+    REQUIRE(primed.blows.empty());
+    Vec3 nodeBefore = primed.node;
+    std::optional<Noted> landing;
+    const auto last = static_cast<f32>(std::max(move.frameStart, move.frameEnd));
+    for (s32 frame = 0;
+         frame < kMostFrames && !landing && std::floor(actor.animation().frame()) <= last;
+         ++frame) {
+        Noted step = advance(kTicksPerFrame, kNativeFrame, players);
+        if (step.blows.empty()) {
+            nodeBefore = step.node;
+        } else {
+            landing = std::move(step);
+        }
+    }
+    REQUIRE(landing);
+    REQUIRE(landing->blows.size() == 1);
+    CHECK(landing->blows[0].player == 0);
+    const Vec3 expected =
+        flatUnit(swingPush(nodeBefore, landing->node, landing->body, players[0].position));
+    // The case tells the swing's way from the way straight out from the body.
+    REQUIRE(glm::distance(expected, flatUnit(players[0].position - landing->body)) > 0.01f);
+    const Vec3& direction = landing->blows[0].direction;
+    CAPTURE(direction.x, direction.y, direction.z, expected.x, expected.z);
+    CHECK(direction.y == 0);
+    CHECK(glm::length(direction) == Approx(1));
+    CHECK(glm::distance(direction, expected) < kTolerance);
+}
 
 TEST_CASE("Native Skorne melee uses its animated wrist and authored harmful frames",
           "[legends][bosses][native-boss-melee][assets]") {
@@ -130,6 +267,7 @@ TEST_CASE("Native Skorne melee uses its animated wrist and authored harmful fram
                     actor.update(1, 0, players);
                     CHECK(actor.takeBlows().empty());
                 }
+                checkSwingPush(*assets, index);
                 ++tested;
             }
             // Both native banks contain one type0 blow. GRAB is type7 and
