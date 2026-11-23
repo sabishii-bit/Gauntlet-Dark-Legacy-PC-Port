@@ -1,6 +1,7 @@
 //! The Windows calls: setting resources into a program with BeginUpdateResourceW, UpdateResourceW
-//! and EndUpdateResourceW, reading one back as data for the tests, and telling the shell with
-//! SHChangeNotify that a file it shows has changed.
+//! and EndUpdateResourceW, reading one back as data for the tests, telling the shell with
+//! SHChangeNotify that a file it shows has changed, asking with SetThreadExecutionState that the
+//! system stay awake, and asking IsWow64Process2 what machine the system is.
 
 use std::io;
 use std::marker::PhantomData;
@@ -12,10 +13,15 @@ use std::ptr;
 use gdl_files::{VerbatimPath, strip_verbatim};
 use windows_sys::Win32::Foundation::{FALSE, HANDLE, TRUE};
 use windows_sys::Win32::System::LibraryLoader::{
-    BeginUpdateResourceW, EndUpdateResourceW, UpdateResourceW,
+    BeginUpdateResourceW, EndUpdateResourceW, GetModuleHandleW, GetProcAddress, UpdateResourceW,
 };
+use windows_sys::Win32::System::Power::SetThreadExecutionState;
+use windows_sys::Win32::System::SystemInformation::{
+    IMAGE_FILE_MACHINE, IMAGE_FILE_MACHINE_UNKNOWN,
+};
+use windows_sys::Win32::System::Threading::GetCurrentProcess;
 use windows_sys::Win32::UI::Shell::{SHCNE_UPDATEITEM, SHCNF_PATHW, SHChangeNotify};
-use windows_sys::core::PCWSTR;
+use windows_sys::core::{BOOL, PCWSTR};
 
 #[cfg(test)]
 use windows_sys::Win32::Foundation::{
@@ -27,6 +33,13 @@ use windows_sys::Win32::System::LibraryLoader::{
     FindResourceExW, LOAD_LIBRARY_AS_DATAFILE, LOAD_LIBRARY_AS_IMAGE_RESOURCE, LoadLibraryExW,
     LoadResource, LockResource, SizeofResource,
 };
+#[cfg(test)]
+use windows_sys::Win32::System::Power::ES_CONTINUOUS;
+
+/// IsWow64Process2's signature. The call is looked up while running, since Windows 10 has it only
+/// from version 1511 on, and a program that imported it would not start on a system without it.
+type IsWow64Process2 =
+    unsafe extern "system" fn(HANDLE, *mut IMAGE_FILE_MACHINE, *mut IMAGE_FILE_MACHINE) -> BOOL;
 
 /// The errors FindResourceExW gives for a resource that a program does not hold: none of its
 /// type, none of its id among those of its type, or none in its language.
@@ -251,6 +264,51 @@ pub(crate) fn notify_item_updated(path: &Path) {
             ptr::null(),
         );
     }
+}
+
+/// Asks the system, for the calling thread, what `flags` asks as SetThreadExecutionState takes
+/// them, and gives back the thread's requests that were in force before; 0 when the system
+/// refused. With ES_CONTINUOUS the flags replace the thread's lasting requests, which hold until
+/// they are replaced again or the thread ends.
+pub(crate) fn set_execution_state(flags: u32) -> u32 {
+    // SAFETY: the call takes only flags, and changes nothing but the calling thread's requests.
+    unsafe { SetThreadExecutionState(flags) }
+}
+
+/// The calling thread's lasting requests that the system stay awake, read by replacing them with
+/// none and putting them straight back.
+#[cfg(test)]
+pub(crate) fn execution_state() -> u32 {
+    let state = set_execution_state(ES_CONTINUOUS);
+    set_execution_state(state | ES_CONTINUOUS);
+    state
+}
+
+/// The system's own machine, as a program's header names one, which IsWow64Process2 gives
+/// whatever machine this program was built for and the system runs it as: the processor's. `None`
+/// when the system lacks the call, as Windows 10 before version 1511 does, or the call fails.
+pub(crate) fn native_machine() -> Option<u16> {
+    // SAFETY: the name is a NUL-terminated UTF-16 string that the macro keeps for the whole run,
+    // and the call only reads it; kernel32 is loaded into every process, and the handle the call
+    // gives for it takes no reference that would need freeing.
+    let kernel32 = unsafe { GetModuleHandleW(windows_sys::core::w!("kernel32.dll")) };
+    if kernel32.is_null() {
+        return None;
+    }
+    // SAFETY: the handle names a module loaded for the whole run, and the name is a
+    // NUL-terminated string that the macro keeps for the whole run, which the call only reads.
+    let found = unsafe { GetProcAddress(kernel32, windows_sys::core::s!("IsWow64Process2")) }?;
+    // SAFETY: what GetProcAddress found under that name is IsWow64Process2, whose signature is
+    // the one it is given here; only the type of the pointer changes.
+    let is_wow64_process2 = unsafe {
+        std::mem::transmute::<unsafe extern "system" fn() -> isize, IsWow64Process2>(found)
+    };
+    let mut process = IMAGE_FILE_MACHINE_UNKNOWN;
+    let mut native = IMAGE_FILE_MACHINE_UNKNOWN;
+    // SAFETY: GetCurrentProcess gives a pseudo handle for this process, which needs no closing;
+    // the two machines are written through references to locals that outlive the call.
+    let answered = unsafe { is_wow64_process2(GetCurrentProcess(), &mut process, &mut native) };
+    (answered != 0).then_some(native)
 }
 
 #[cfg(test)]

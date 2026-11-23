@@ -3,8 +3,10 @@
 //! icon and launching. Only its `platform` module may call the OS directly.
 #![deny(unsafe_code)]
 
+mod awake;
 mod compat;
 mod folder;
+mod host;
 mod icon;
 mod inspect;
 mod payload;
@@ -14,6 +16,7 @@ mod probe;
 mod receipt;
 mod sections;
 
+pub use awake::{KeepAwake, keep_awake};
 pub use compat::{
     Access, JOURNAL_NAMES, JOURNAL_SCHEMA, MIN_LAUNCHER, Stamp, StampError, StateName, access,
     launcher_state_name, stamp_of,
@@ -22,6 +25,7 @@ pub use folder::{
     FolderError, InstallFolder, InstallLock, JOURNAL_DIR, LOCK_FILE, LockError, RECEIPT_FILE,
     STATE_DIR, alpha_markers, check_links,
 };
+pub use host::{Unsupported, host_supported};
 pub use icon::{
     DISC_ICON, ICON_SIZES, IconError, IconResources, icon_resources, refresh_shell_icon,
 };
