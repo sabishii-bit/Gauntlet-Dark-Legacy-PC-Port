@@ -221,6 +221,15 @@ class Hold:
             raise self.error
         self.remove(path, *args, **keywords)
 
+    @contextlib.contextmanager
+    def in_place(self, windows: bool = True):
+        """Stands in for the gate's removals, and its clock for the gate's, while the block runs,
+        as on Windows or on another system as `windows` says."""
+        with mock.patch.object(gate.process_tree, "WINDOWS", windows), \
+                mock.patch.object(gate, "time", self.clock), \
+                mock.patch.object(gate.shutil, "rmtree", side_effect=self):
+            yield
+
 
 class CompareTests(unittest.TestCase):
     """The launcher's tree against the scripts' and against the reference tree."""
@@ -727,9 +736,7 @@ class GateTests(unittest.TestCase):
             with self.subTest(error=error):
                 clock = Clock()
                 hold = Hold(error, 1, clock)
-                with mock.patch.object(gate.process_tree, "WINDOWS", True), \
-                        mock.patch.object(gate, "time", clock), \
-                        mock.patch.object(gate.shutil, "rmtree", side_effect=hold):
+                with hold.in_place():
                     code, _, err = self.run_gate(Children(self))
                 self.assertEqual((code, err), (gate.PASSED, ""))
                 self.assertNotIn("failure", self.report())
@@ -743,34 +750,34 @@ class GateTests(unittest.TestCase):
     def test_a_removal_is_tried_again_only_for_a_hold_on_windows(self):
         # Elsewhere no scanner holds a file, and on Windows another error is no hold: either
         # fails the run at once, though trying again would have worked.
+        python, made = self.output / "python", self.output / "launcher"
         cases = [(False, PermissionError("held")), (True, OSError(errno.EIO, "a disk error"))]
         for windows, error in cases:
             with self.subTest(windows=windows, error=error):
                 clock = Clock()
                 hold = Hold(error, 1, clock)
-                with mock.patch.object(gate.process_tree, "WINDOWS", windows), \
-                        mock.patch.object(gate, "time", clock), \
-                        mock.patch.object(gate.shutil, "rmtree", side_effect=hold):
+                with hold.in_place(windows):
                     code, _, _ = self.run_gate(Children(self))
                 self.assertEqual(code, gate.FAILED)
                 self.assertEqual(self.report()["failure"],
                                  f"the trees could not be removed: {error}")
                 self.assertEqual(len(hold.attempts), 1)
                 self.assertEqual(clock.sleeps, [])
-                # What the run kept goes at the start of the next.
+                # What the run kept goes at the start of the next, before that run's own trees
+                # are made and, once it passes, removed.
                 remove = Hold(error, 0, clock)
                 with mock.patch.object(gate.shutil, "rmtree", side_effect=remove):
                     code, _, err = self.run_gate(Children(self))
                 self.assertEqual(code, gate.PASSED, err)
+                self.assertEqual([folder for folder, _ in remove.attempts],
+                                 [python, made, python, made])
 
     def test_trees_that_cannot_be_removed_fail_the_run(self):
         # A hold that outlasts the time a removal is tried for fails the run, and its report says
         # why rather than stand as a pass beside the trees it kept.
         clock = Clock()
         hold = Hold(PermissionError("held"), sys.maxsize, clock)
-        with mock.patch.object(gate.process_tree, "WINDOWS", True), \
-                mock.patch.object(gate, "time", clock), \
-                mock.patch.object(gate.shutil, "rmtree", side_effect=hold):
+        with hold.in_place():
             code, out, err = self.run_gate(Children(self))
         self.assertEqual(code, gate.FAILED)
         # Tried at once, then after every pause until the time is up, and not after it.
