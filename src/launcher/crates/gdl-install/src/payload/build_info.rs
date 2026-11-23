@@ -6,12 +6,13 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 use gdl_files::{NameSet, PAYLOAD_NAMES, RelPath};
+use gdl_media::Sha256Digest;
 use gdl_release::{Platform, Version};
 use serde_json::{Map, Value};
 
 use super::{
-    BUILD_INFO, DEFAULT_CONFIG, MAX_PAYLOAD_ENTRIES, PORTABLE_FLAG, PayloadError, SHA256_LEN,
-    VERSION_FILE, check_platform_root, check_root,
+    BUILD_INFO, DEFAULT_CONFIG, MAX_PAYLOAD_ENTRIES, PORTABLE_FLAG, PayloadError, VERSION_FILE,
+    check_platform_root, check_root,
 };
 
 /// The record's key for the release's version.
@@ -43,7 +44,7 @@ pub struct BuildInfo {
     /// The game's executable: the platform's own.
     pub executable: String,
     /// The SHA-256 digest of every file of the runtime but the record itself, by name.
-    pub files: BTreeMap<String, [u8; SHA256_LEN]>,
+    pub files: BTreeMap<String, Sha256Digest>,
     /// The keys the record holds beyond its own, kept as they are for a later launcher.
     pub other: Map<String, Value>,
 }
@@ -92,10 +93,12 @@ impl BuildInfo {
         check_names(&files, platform)?;
         let files = files
             .into_iter()
-            .map(|(name, digest)| match digest.as_str().and_then(sha256_of) {
-                Some(digest) => Ok((name, digest)),
-                None => Err(PayloadError::Digest { name: name.into() }),
-            })
+            .map(
+                |(name, digest)| match digest.as_str().and_then(Sha256Digest::from_hex) {
+                    Some(digest) => Ok((name, digest)),
+                    None => Err(PayloadError::Digest { name: name.into() }),
+                },
+            )
             .collect::<Result<_, _>>()?;
         Ok(BuildInfo {
             version,
@@ -151,30 +154,6 @@ fn check_names(files: &Map<String, Value>, platform: Platform) -> Result<(), Pay
     }
 }
 
-/// A SHA-256 digest written as Python's `hexdigest` writes one: 64 lower-case hexadecimal digits.
-/// Anything else is no digest.
-pub(crate) fn sha256_of(digits: &str) -> Option<[u8; SHA256_LEN]> {
-    let digits = digits.as_bytes();
-    if digits.len() != 2 * SHA256_LEN {
-        return None;
-    }
-    let mut digest = [0; SHA256_LEN];
-    let (pairs, _) = digits.as_chunks::<2>();
-    for (byte, &[high, low]) in digest.iter_mut().zip(pairs) {
-        *byte = (hex_digit(high)? << 4) | hex_digit(low)?;
-    }
-    Some(digest)
-}
-
-/// The value of a lower-case hexadecimal digit.
-fn hex_digit(digit: u8) -> Option<u8> {
-    match digit {
-        b'0'..=b'9' => Some(digit - b'0'),
-        b'a'..=b'f' => Some(digit - b'a' + 10),
-        _ => None,
-    }
-}
-
 /// The refusal of a record that is not one a runtime could have, for the reason `detail` gives.
 fn invalid(detail: impl fmt::Display) -> PayloadError {
     PayloadError::BuildInfo {
@@ -188,9 +167,9 @@ mod tests {
 
     use gdl_files::NameRule;
     use gdl_fixtures::RuntimeFiles;
+    use gdl_media::Sha256Digest;
     use gdl_release::{Platform, Version};
     use serde_json::{Map, Value, json};
-    use sha2::{Digest, Sha256};
 
     use super::BuildInfo;
     use crate::payload::{MAX_PAYLOAD_ENTRIES, PayloadError};
@@ -258,10 +237,10 @@ mod tests {
             assert_eq!(info.commit, "test-commit");
             assert_eq!(info.platform, platform);
             assert_eq!(info.executable, platform.executable());
-            let digests: BTreeMap<String, [u8; 32]> = runtime
+            let digests: BTreeMap<String, Sha256Digest> = runtime
                 .files
                 .iter()
-                .map(|(name, data)| (name.clone(), Sha256::digest(data).into()))
+                .map(|(name, data)| (name.clone(), Sha256Digest::of(data)))
                 .collect();
             assert_eq!(info.files, digests, "{platform:?}");
             assert!(info.other.is_empty(), "{platform:?}");

@@ -20,10 +20,11 @@ use std::ops::{Range, RangeInclusive};
 use std::path::{Path, PathBuf};
 
 use gdl_files::{BLOCK_LEN, Cancelled, Job};
+use gdl_media::Sha256Digest;
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 
-use crate::payload::{Payload, PayloadError, SHA256_LEN, sha256_of};
+use crate::payload::{Payload, PayloadError};
 
 pub use view::SectionView;
 
@@ -86,7 +87,7 @@ pub struct Section {
     /// How many bytes it holds.
     pub size: u64,
     /// The SHA-256 digest of its bytes.
-    pub sha256: [u8; SHA256_LEN],
+    pub sha256: Sha256Digest,
 }
 
 /// The sections a launcher file carries, found and their table checked, read from the source they
@@ -213,7 +214,7 @@ impl<R: Read + Seek> Sections<R> {
                 done += len as u64;
                 job.progress.advance(done, total, None);
             }
-            if hasher.finalize()[..] != section.sha256 {
+            if Sha256Digest(hasher.finalize().into()) != section.sha256 {
                 return Err(SectionsError::SectionDigest {
                     name: section.name.as_str().into(),
                 });
@@ -304,7 +305,7 @@ fn place(
                 name: entry.name.into(),
             });
         }
-        let Some(sha256) = sha256_of(&entry.sha256) else {
+        let Some(sha256) = Sha256Digest::from_hex(&entry.sha256) else {
             return Err(SectionsError::SectionDigestText {
                 name: entry.name.into(),
             });
@@ -636,6 +637,7 @@ mod tests {
         FAKE_CERTIFICATE_LEN, RuntimeFiles, SparseFile, append_sections, append_sections_at,
         fake_sign, sha256_hex, table_and_trailer, tiny_elf, tiny_pe,
     };
+    use gdl_media::Sha256Digest;
     use gdl_release::Platform;
     use serde_json::{Value, json};
 
@@ -707,7 +709,7 @@ mod tests {
                 name,
                 offset,
                 size,
-                sha256,
+                sha256: Sha256Digest(sha256),
             })
             .collect()
     }

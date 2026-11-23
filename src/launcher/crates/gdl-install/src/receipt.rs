@@ -11,16 +11,16 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use gdl_files::{FilesError, is_absent, no_links, read_bounded, write_json_atomic};
+use gdl_media::Sha256Digest;
 use gdl_release::{Platform, Version};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
-use sha2::{Digest, Sha256};
 
 use crate::compat::{Access, Stamp, access, stamp_of};
 use crate::folder::{InstallFolder, RECEIPT_FILE, check_links};
 use crate::payload::{
-    BUILD_INFO, BuildInfo, MAX_BUILD_INFO_LEN, MAX_VERSION_FILE_LEN, SHA256_LEN, VERSION_FILE,
-    sha256_of, version_file_holds,
+    BUILD_INFO, BuildInfo, MAX_BUILD_INFO_LEN, MAX_VERSION_FILE_LEN, VERSION_FILE,
+    version_file_holds,
 };
 
 /// The schema of the receipts this launcher reads and writes.
@@ -134,7 +134,7 @@ impl Receipt {
         if let Some((key, _)) = self
             .digests()
             .into_iter()
-            .find(|(_, digest)| sha256_of(digest).is_none())
+            .find(|(_, digest)| Sha256Digest::from_hex(digest).is_none())
         {
             return Err(format!(
                 "its {key} is not a SHA-256 digest in lower-case hexadecimal"
@@ -185,8 +185,8 @@ impl Receipt {
         platform: Platform,
     ) -> Result<BuildInfo, ReceiptError> {
         let (bytes, build_info) = read_build_info(root)?;
-        let digest: [u8; SHA256_LEN] = Sha256::digest(&bytes).into();
-        let field = if sha256_of(&self.build_info_sha256) != Some(digest) {
+        let digest = Sha256Digest::of(&bytes);
+        let field = if Sha256Digest::from_hex(&self.build_info_sha256) != Some(digest) {
             Some("buildInfoSha256")
         } else if self.version != build_info.version {
             Some("version")
@@ -457,6 +457,7 @@ mod tests {
         InstallFixture, RuntimeFiles, backdate, folder_names, link_folder, pretty_json, sha256_hex,
         snapshot, symlink_file_where_allowed,
     };
+    use gdl_media::Sha256Digest;
     use gdl_release::{Platform, Version};
     use serde_json::{Value, json};
     use tempfile::TempDir;
@@ -468,7 +469,7 @@ mod tests {
     use crate::compat::{Access, MIN_LAUNCHER, Stamp, stamp_of};
     use crate::folder::{InstallFolder, RECEIPT_FILE, STATE_DIR};
     use crate::payload::{
-        BUILD_INFO, BuildInfo, MAX_BUILD_INFO_LEN, MAX_VERSION_FILE_LEN, SHA256_LEN, VERSION_FILE,
+        BUILD_INFO, BuildInfo, MAX_BUILD_INFO_LEN, MAX_VERSION_FILE_LEN, VERSION_FILE,
     };
 
     /// The most bytes an error may take, so that returning one by value stays cheap.
@@ -500,9 +501,9 @@ mod tests {
             .expect("releases are built for two platforms")
     }
 
-    /// A digest of the right form that is no file's.
+    /// A digest of the right form that is no file's: every byte nought.
     fn unmatched_digest() -> String {
-        "0".repeat(2 * SHA256_LEN)
+        Sha256Digest(Default::default()).hex()
     }
 
     /// An installation of the standard runtime of `version` for the platform this test program

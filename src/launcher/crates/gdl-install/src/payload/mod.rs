@@ -12,6 +12,7 @@ use std::fmt;
 use std::io::{self, Read, Seek, Write};
 
 use gdl_files::{BLOCK_LEN, Cancelled, Job, NameError, NameSet, PhaseId, Progress, RelPath};
+use gdl_media::Sha256Digest;
 use gdl_release::Platform;
 use sha2::{Digest, Sha256};
 use zip::ZipArchive;
@@ -19,7 +20,6 @@ use zip::ZipArchive;
 use crate::sections::SectionsError;
 
 pub use build_info::BuildInfo;
-pub(crate) use build_info::sha256_of;
 
 /// The most entries a runtime may have.
 pub const MAX_PAYLOAD_ENTRIES: usize = 20_000;
@@ -64,9 +64,6 @@ const DATA_FOLDER: &str = "data";
 /// its top.
 const LIB_FOLDER: &str = "lib";
 
-/// The bytes of a SHA-256 digest.
-pub(crate) const SHA256_LEN: usize = 32;
-
 /// One file of a runtime zip, as its row in the central directory declares it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PayloadEntry {
@@ -91,7 +88,7 @@ pub struct Payload<R> {
     build_info: BuildInfo,
     /// The SHA-256 digest of `build-info.json` as it was read and checked, which every copy of it
     /// must have.
-    build_info_sha256: [u8; SHA256_LEN],
+    build_info_sha256: Sha256Digest,
 }
 
 impl<R: Read + Seek> Payload<R> {
@@ -117,13 +114,19 @@ impl<R: Read + Seek> Payload<R> {
             archive,
             entries,
             build_info,
-            build_info_sha256: Sha256::digest(&bytes).into(),
+            build_info_sha256: Sha256Digest::of(&bytes),
         })
     }
 
     /// The release record the runtime carries.
     pub fn build_info(&self) -> &BuildInfo {
         &self.build_info
+    }
+
+    /// The SHA-256 digest of `build-info.json` as it was read and checked when the runtime was
+    /// opened: the digest an installation's receipt records for its copy.
+    pub fn build_info_sha256(&self) -> Sha256Digest {
+        self.build_info_sha256
     }
 
     /// The archive's entries, in the order of its central directory.
@@ -172,9 +175,9 @@ impl<R: Read + Seek> Payload<R> {
     ) -> Result<u64, PayloadError> {
         let entry = &self.entries[index];
         let expected = if entry.name.as_str() == BUILD_INFO {
-            &self.build_info_sha256
+            self.build_info_sha256
         } else {
-            &self.build_info.files[entry.name.as_str()]
+            self.build_info.files[entry.name.as_str()]
         };
         let file = self
             .archive
@@ -205,8 +208,7 @@ impl<R: Read + Seek> Payload<R> {
             }
         }
         check_len(entry, done)?;
-        let digest: [u8; SHA256_LEN] = hasher.finalize().into();
-        if digest != *expected {
+        if Sha256Digest(hasher.finalize().into()) != expected {
             return Err(damaged(
                 &entry.name,
                 "its SHA-256 digest is not the one its release record gives it",
@@ -786,9 +788,9 @@ mod tests {
         RelPath,
     };
     use gdl_fixtures::{RawEntry, RawZip, RuntimeFiles, sha256_hex};
+    use gdl_media::Sha256Digest;
     use gdl_release::Platform;
     use serde_json::{Map, Value, json};
-    use sha2::{Digest, Sha256};
     use zip::ZipArchive;
 
     use super::{
@@ -1366,10 +1368,10 @@ mod tests {
             assert_eq!(info.commit, "test-commit");
             assert_eq!(info.platform, platform);
             assert_eq!(info.executable, platform.executable());
-            let digests: BTreeMap<String, [u8; 32]> = runtime
+            let digests: BTreeMap<String, Sha256Digest> = runtime
                 .files
                 .iter()
-                .map(|(name, data)| (name.clone(), Sha256::digest(data).into()))
+                .map(|(name, data)| (name.clone(), Sha256Digest::of(data)))
                 .collect();
             assert_eq!(info.files, digests, "{platform:?}");
             assert!(info.other.is_empty(), "{platform:?}");
@@ -1405,6 +1407,44 @@ mod tests {
             }
             other => panic!("{other:?}"),
         }
+    }
+
+    #[test]
+    fn the_build_info_digest_is_given() {
+        let cancel = Cancel::default();
+        for platform in Platform::ALL {
+            let runtime = standard(platform.as_str());
+            let mut payload = open(runtime.zip()).unwrap();
+            let digest = payload.build_info_sha256();
+            assert_eq!(
+                digest,
+                Sha256Digest::of(&runtime.build_info_bytes()),
+                "{platform:?}"
+            );
+            // It is the digest a copy of the record has.
+            let mut copy = Vec::new();
+            let at = place(&payload, BUILD_INFO);
+            payload.copy_entry(at, &mut copy, &quiet(&cancel)).unwrap();
+            assert_eq!(Sha256Digest::of(&copy), digest, "{platform:?}");
+        }
+
+        // It is the digest of the record's bytes, not of what they say: the same record written
+        // without indentation reads the same and has a digest of its own.
+        let runtime = standard(LINUX);
+        let compact = serde_json::to_vec(&runtime.build_info()).unwrap();
+        let mut raw = runtime.raw();
+        *entry(&mut raw, BUILD_INFO) = RawEntry::deflated(BUILD_INFO, &compact);
+        let compact_payload = open(raw.to_bytes()).unwrap();
+        let pretty_payload = open(runtime.zip()).unwrap();
+        assert_eq!(compact_payload.build_info(), pretty_payload.build_info());
+        assert_eq!(
+            compact_payload.build_info_sha256(),
+            Sha256Digest::of(&compact)
+        );
+        assert_ne!(
+            compact_payload.build_info_sha256(),
+            pretty_payload.build_info_sha256()
+        );
     }
 
     #[test]
@@ -1589,12 +1629,12 @@ mod tests {
         // A copy of build-info.json must be the record that was read and checked when the
         // runtime was opened.
         let at = place(&payload, BUILD_INFO);
-        payload.build_info_sha256[0] ^= 1;
+        payload.build_info_sha256.0[0] ^= 1;
         match payload.copy_entry(at, &mut io::sink(), &quiet(&cancel)) {
             Err(PayloadError::Damaged { name, .. }) => assert_eq!(&*name, BUILD_INFO),
             other => panic!("{other:?}"),
         }
-        payload.build_info_sha256[0] ^= 1;
+        payload.build_info_sha256.0[0] ^= 1;
         let copied = payload.copy_entry(at, &mut io::sink(), &quiet(&cancel));
         assert_eq!(copied.unwrap(), record.len() as u64);
 
