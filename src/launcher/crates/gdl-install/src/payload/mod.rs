@@ -11,7 +11,7 @@ use std::collections::BTreeSet;
 use std::fmt;
 use std::io::{self, Read, Seek, Write};
 
-use gdl_files::{BLOCK_LEN, Cancelled, Job, NameError, NameSet, RelPath, RunningTotal};
+use gdl_files::{BLOCK_LEN, Cancelled, Job, NameError, NameSet, RelPath, RunningTotal, fill_from};
 use gdl_media::Sha256Digest;
 use gdl_release::Platform;
 use sha2::{Digest, Sha256};
@@ -193,7 +193,8 @@ impl<R: Read + Seek> Payload<R> {
             job.cancel
                 .check()
                 .map_err(|Cancelled| PayloadError::Cancelled)?;
-            let read = fill(&mut file, &mut block).map_err(|error| damaged(&entry.name, error))?;
+            let read =
+                fill_from(&mut file, &mut block).map_err(|error| damaged(&entry.name, error))?;
             if read > 0 {
                 let bytes = &block[..read];
                 hasher.update(bytes);
@@ -251,21 +252,6 @@ impl<R: Read + Seek> Payload<R> {
 fn block_for(size: u64) -> Vec<u8> {
     let len = usize::try_from(size).map_or(BLOCK_LEN, |size| size.clamp(1, BLOCK_LEN));
     vec![0; len]
-}
-
-/// Reads from `reader` until `block` is full or the reader ends, and gives back how many bytes it
-/// holds.
-fn fill(reader: &mut impl Read, block: &mut [u8]) -> io::Result<usize> {
-    let mut filled = 0;
-    while filled < block.len() {
-        match reader.read(&mut block[filled..]) {
-            Ok(0) => break,
-            Ok(read) => filled += read,
-            Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
-            Err(error) => return Err(error),
-        }
-    }
-    Ok(filled)
 }
 
 /// Reads the whole of `entry`, whose declared size is already held to its limit, through the zip

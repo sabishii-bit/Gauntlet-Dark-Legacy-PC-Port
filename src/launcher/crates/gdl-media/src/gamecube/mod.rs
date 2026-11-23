@@ -5,10 +5,10 @@
 
 use std::fmt;
 use std::fs::File;
-use std::io::{self, Read, Seek, SeekFrom, Write};
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
-use gdl_files::{BLOCK_LEN, Job};
+use gdl_files::{BLOCK_LEN, Job, fill_from};
 use sha2::{Digest, Sha256};
 
 use crate::dump_file::open_regular;
@@ -343,7 +343,7 @@ impl Layout {
                 let failed = |error| MediaError::io(path, error);
                 source.seek(SeekFrom::Start(offset)).map_err(failed)?;
                 for piece in buffer.chunks_mut(MOST_READ_LEN) {
-                    if fill(source, piece).map_err(failed)? != piece.len() {
+                    if fill_from(source, piece).map_err(failed)? != piece.len() {
                         return Err(MediaError::gamecube(
                             GameCubeRule::TruncatedIso,
                             TRUNCATED_ISO,
@@ -440,7 +440,7 @@ fn read_start<R: Read + Seek>(
     let read = if len < mark.len() as u64 {
         0
     } else {
-        fill(source, &mut mark).map_err(failed)?
+        fill_from(source, &mut mark).map_err(failed)?
     };
     let (layout, size) = if read == mark.len() && mark == CISO_MARK {
         let ciso = Ciso::read(source, len, path)?;
@@ -581,21 +581,6 @@ fn title_of(field: &[u8]) -> Option<String> {
 /// The refusal of a read that reaches past the disc an image holds.
 fn outside_image() -> MediaError {
     MediaError::gamecube(GameCubeRule::OutsideImage, OUTSIDE_IMAGE)
-}
-
-/// Fills `buffer` from `source`'s place on, as far as `source` reaches, and gives how many bytes
-/// it filled: fewer than `buffer` holds only where `source` ends.
-fn fill<R: Read>(source: &mut R, buffer: &mut [u8]) -> io::Result<usize> {
-    let mut filled = 0;
-    while filled < buffer.len() {
-        match source.read(&mut buffer[filled..]) {
-            Ok(0) => break,
-            Ok(read) => filled += read,
-            Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
-            Err(error) => return Err(error),
-        }
-    }
-    Ok(filled)
 }
 
 #[cfg(test)]

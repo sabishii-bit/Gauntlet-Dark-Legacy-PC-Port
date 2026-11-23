@@ -1,6 +1,8 @@
 //! What a long file operation takes from the job it is part of: a way to be told to stop, which it
-//! looks at between blocks of its work, and a place to tell how far it has come.
+//! looks at between blocks of its work, and a place to tell how far it has come; and how a block
+//! of that work is filled from what it reads.
 
+use std::io::{self, Read};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -9,6 +11,22 @@ use crate::RelPath;
 /// The most bytes a job reads or writes between two looks at its [`Cancel`], so that a request to
 /// stop is heeded within one block.
 pub const BLOCK_LEN: usize = 1 << 20;
+
+/// Reads from `reader` until `block` is full or the reader ends, reading again after a read the
+/// system interrupted, and gives how many bytes it filled: fewer than `block` holds only where the
+/// reader ends.
+pub fn fill_from<R: Read + ?Sized>(reader: &mut R, block: &mut [u8]) -> io::Result<usize> {
+    let mut filled = 0;
+    while filled < block.len() {
+        match reader.read(&mut block[filled..]) {
+            Ok(0) => break,
+            Ok(read) => filled += read,
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(filled)
+}
 
 /// A request to stop a job, shared by every clone: a request made through one is seen through all
 /// of them, on any thread.
@@ -98,11 +116,72 @@ pub struct Job<'a> {
 
 #[cfg(test)]
 mod tests {
+    use std::io::{self, Read};
     use std::sync::Mutex;
     use std::thread;
 
-    use super::{BLOCK_LEN, Cancel, Cancelled, Job, NoProgress, PhaseId, Progress, RunningTotal};
+    use super::{
+        BLOCK_LEN, Cancel, Cancelled, Job, NoProgress, PhaseId, Progress, RunningTotal, fill_from,
+    };
     use crate::{PAYLOAD_NAMES, RelPath};
+
+    /// A reader of `bytes` that gives at most three of them a read, and is interrupted before
+    /// every read that gives any, as a read a signal cuts short is; then fails with `last`, or
+    /// ends when there is none.
+    struct Halting {
+        bytes: Vec<u8>,
+        at: usize,
+        interrupted: bool,
+        last: Option<io::ErrorKind>,
+    }
+
+    impl Halting {
+        fn new(bytes: &[u8], last: Option<io::ErrorKind>) -> Halting {
+            Halting {
+                bytes: bytes.to_vec(),
+                at: 0,
+                interrupted: false,
+                last,
+            }
+        }
+    }
+
+    impl Read for Halting {
+        fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+            if self.at == self.bytes.len() {
+                return self.last.map_or(Ok(0), |kind| Err(kind.into()));
+            }
+            self.interrupted = !self.interrupted;
+            if self.interrupted {
+                return Err(io::ErrorKind::Interrupted.into());
+            }
+            let count = buffer.len().min(3).min(self.bytes.len() - self.at);
+            buffer[..count].copy_from_slice(&self.bytes[self.at..self.at + count]);
+            self.at += count;
+            Ok(count)
+        }
+    }
+
+    #[test]
+    fn a_block_is_filled_as_far_as_its_reader_reaches() {
+        let bytes: Vec<u8> = (1..=10).collect();
+        // A reader that holds more than the block fills it, read by read, past each interruption.
+        let mut block = [0; 8];
+        let filled = fill_from(&mut Halting::new(&bytes, None), &mut block).unwrap();
+        assert_eq!((filled, block), (8, [1, 2, 3, 4, 5, 6, 7, 8]));
+        // One that ends first fills as much as it holds.
+        let mut block = [0; 16];
+        let filled = fill_from(&mut Halting::new(&bytes, None), &mut block).unwrap();
+        assert_eq!((filled, &block[..10]), (10, bytes.as_slice()));
+        assert_eq!(block[10..], [0; 6]);
+        // Any other failure is the reader's, whatever it filled before.
+        let mut failing = Halting::new(&bytes, Some(io::ErrorKind::BrokenPipe));
+        let error = fill_from(&mut failing, &mut block).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::BrokenPipe);
+        // An empty block is filled without a read.
+        let mut none = Halting::new(&[], Some(io::ErrorKind::BrokenPipe));
+        assert_eq!(fill_from(&mut none, &mut []).unwrap(), 0);
+    }
 
     #[test]
     fn a_cancel_reaches_every_clone() {

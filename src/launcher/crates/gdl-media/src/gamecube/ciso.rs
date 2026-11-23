@@ -6,7 +6,9 @@ use std::fmt;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
-use super::{DISC_SIZE, fill, outside_image};
+use gdl_files::fill_from;
+
+use super::{DISC_SIZE, outside_image};
 use crate::{GameCubeRule, MediaError};
 
 /// What a CISO begins with.
@@ -74,7 +76,7 @@ impl Ciso {
         }
         let mut header = vec![0; CISO_HEADER_LEN];
         source.seek(SeekFrom::Start(0)).map_err(failed)?;
-        if fill(source, &mut header).map_err(failed)? != CISO_HEADER_LEN {
+        if fill_from(source, &mut header).map_err(failed)? != CISO_HEADER_LEN {
             return Err(MediaError::gamecube(
                 GameCubeRule::CisoHeader,
                 TRUNCATED_HEADER,
@@ -146,7 +148,8 @@ impl Ciso {
                     source
                         .seek(SeekFrom::Start(from))
                         .map_err(|error| MediaError::io(path, error))?;
-                    let read = fill(source, part).map_err(|error| MediaError::io(path, error))?;
+                    let read =
+                        fill_from(source, part).map_err(|error| MediaError::io(path, error))?;
                     if read != count {
                         return Err(MediaError::gamecube(GameCubeRule::CisoData, TRUNCATED_DATA));
                     }
