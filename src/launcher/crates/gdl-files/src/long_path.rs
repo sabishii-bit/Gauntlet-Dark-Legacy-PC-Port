@@ -126,10 +126,10 @@ fn utf16_len(path: &Path) -> io::Result<usize> {
 }
 
 /// A path in the form that raw Windows calls take past MAX_PATH: absolute and verbatim, as UTF-16
-/// that ends in a NUL. std's own file calls make this form themselves; the crate's raw calls take
-/// it from here.
+/// that ends in a NUL. std's own file calls make this form themselves; the launcher's raw calls,
+/// in this crate and in the others, take it from here.
 #[cfg(windows)]
-pub(crate) struct VerbatimPath(Vec<u16>);
+pub struct VerbatimPath(Vec<u16>);
 
 #[cfg(windows)]
 impl VerbatimPath {
@@ -137,7 +137,7 @@ impl VerbatimPath {
     /// gives it its prefix as std does: `\\?\` before a drive's path, `\\?\UNC\` in place of a
     /// share's `\\`, and `\\?\` in place of a device's `\\.\`. A path that begins with `\\?\` or
     /// `\??\` is taken as it is. A path holding a NUL is refused.
-    pub(crate) fn new(path: &Path) -> io::Result<VerbatimPath> {
+    pub fn new(path: &Path) -> io::Result<VerbatimPath> {
         use std::os::windows::ffi::OsStrExt;
 
         let units: Vec<u16> = path.as_os_str().encode_wide().collect();
@@ -171,7 +171,7 @@ impl VerbatimPath {
     }
 
     /// The path, for a call that only reads it while `self` lives.
-    pub(crate) fn as_ptr(&self) -> *const u16 {
+    pub fn as_ptr(&self) -> *const u16 {
         self.0.as_ptr()
     }
 }
@@ -253,6 +253,20 @@ mod tests {
             let error = VerbatimPath::new(Path::new(given)).err().unwrap();
             assert_eq!(error.kind(), io::ErrorKind::InvalidInput, "{given:?}");
         }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn verbatim_paths_are_public() {
+        // Reached from the crate's top, as the launcher's other crates reach it.
+        use crate::VerbatimPath;
+
+        let drive = VerbatimPath::new(Path::new(r"C:\a\b")).unwrap();
+        assert_eq!(text_of(&drive), r"\\?\C:\a\b");
+        let share = VerbatimPath::new(Path::new(r"\\srv\s\x")).unwrap();
+        assert_eq!(text_of(&share), r"\\?\UNC\srv\s\x");
+        let error = VerbatimPath::new(Path::new("C:\\a\0b")).err().unwrap();
+        assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
     }
 
     #[test]

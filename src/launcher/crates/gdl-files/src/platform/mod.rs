@@ -7,6 +7,6 @@ mod linux;
 mod windows;
 
 #[cfg(target_os = "linux")]
-pub(crate) use linux::renameat2_noreplace;
+pub(crate) use linux::{file_system_of, renameat2_noreplace};
 #[cfg(windows)]
-pub(crate) use windows::move_file;
+pub(crate) use windows::{available_to_caller, move_file};
