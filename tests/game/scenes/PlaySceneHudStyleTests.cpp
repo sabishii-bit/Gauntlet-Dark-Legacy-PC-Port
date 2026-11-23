@@ -160,10 +160,12 @@ TEST_CASE("a HUD look's painter and its pages change no byte of the scene's dige
         REQUIRE(paged->scene.saveLocal(looked));
         CHECK(darkLegacy->digest(&plain) == paged->digest(&looked));
     }
-    // The look prepared every frame, and the closed selectors' presses turned its pages.
+    // The look prepared every frame; the closed selectors' presses turned its pages, and the
+    // first seat's right, while its selector stood open, steered it.
     const test::FakeHudRecord& record = paged->styles.record;
     CHECK(record.count(kFakeLook, FakeHudPart::Prepare) == HudPresses::kLastTick);
     CHECK(record.count(kFakeLook, FakeHudPart::Browse) > 0);
+    CHECK(browsedFrom(record, 0, FakeHudPart::Steer) == std::vector{0});
     REQUIRE(record.pages.size() == 1);
     CHECK(record.pages.front() != test::FakeHudPages{});
 }

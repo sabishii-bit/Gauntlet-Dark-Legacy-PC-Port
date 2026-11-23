@@ -3,20 +3,24 @@
 #include <array>
 #include <filesystem>
 #include <format>
+#include <memory>
 #include <optional>
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/assets/StringTable.h"
+#include "engine/core/SpecialMembers.h"
 #include "engine/core/Types.h"
 #include "engine/io/NativeStateDigest.h"
 #include "engine/math/Math.h"
 #include "engine/render/RenderTypes.h"
 
+#include "FakeHudStyles.h"
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "game/characters/CharacterSave.h"
@@ -25,7 +29,9 @@
 #include "game/combat/PowerupFlags.h"
 #include "game/config/GameConfig.h"
 #include "game/context/GameServices.h"
+#include "game/hud/HudPainter.h"
 #include "game/hud/HudStyles.h"
+#include "game/hud/HudView.h"
 #include "game/hud/PowerupSelector.h"
 #include "game/level/LevelCatalog.h"
 #include "game/level/LevelWorld.h"
@@ -40,14 +46,17 @@ namespace gdl::test {
 struct HudPresses {
     static constexpr u32 kEvery = 20;     ///< ticks between every seat's presses
     static constexpr u32 kOpenTick = 400; ///< the tick the first seat opens its selector
-    /** The tick it slides it away again, once its label has slid in: a selector still sliding
-     * in heeds no down. */
+    /** The tick it moves its selection right, once its label has slid in: a selector still
+     * sliding in heeds no left or right. */
+    static constexpr u32 kSteerTick = 436;
+    /** The tick it slides it away again. */
     static constexpr u32 kCloseTick = 440;
     static constexpr u32 kFirstAnchor = 32; ///< the digest tests' earlier anchor
     static constexpr u32 kLastTick = 648;   ///< the runs' last tick, the digest tests' later anchor
 };
-static_assert(HudPresses::kCloseTick - HudPresses::kOpenTick >
+static_assert(HudPresses::kSteerTick - HudPresses::kOpenTick >
               game::PowerupSelector::kSlide / game::PowerupSelector::kSlidePerTick);
+static_assert(HudPresses::kSteerTick < HudPresses::kCloseTick);
 
 /** A powerup that a selector can name, carried for good and not worn. */
 constexpr game::PowerupSlot kSelectorPowerup{
@@ -66,7 +75,8 @@ inline game::SelectorInput pressed(Press way) {
 /** The native digest tests' inputs at `tick`: still through the entrance, then each seat
  * walking, attacking, swinging hard, guarding and drinking in turn. Each seat's selector is
  * pressed down, left or right every HudPresses::kEvery ticks, a seat a turn on from the one
- * before, and the first seat's is opened at kOpenTick and closed at kCloseTick. */
+ * before; the first seat's is opened at kOpenTick, moved right at kSteerTick and closed at
+ * kCloseTick. */
 inline game::PlayScene::Inputs hudInputsAt(u32 tick) {
     constexpr std::array<Vec2, 4> kDirections{Vec2{0, 1}, Vec2{1, 0}, Vec2{0, -1}, Vec2{-1, 0}};
     constexpr std::array kTurns{Press::Down, Press::Left, Press::Right};
@@ -101,6 +111,8 @@ inline game::PlayScene::Inputs hudInputsAt(u32 tick) {
         }
         if (seat == 0 && tick == HudPresses::kOpenTick) {
             input.selector = pressed(Press::Up);
+        } else if (seat == 0 && tick == HudPresses::kSteerTick) {
+            input.selector = pressed(Press::Right);
         } else if (seat == 0 && tick == HudPresses::kCloseTick) {
             input.selector = pressed(Press::Down);
         } else if (tick % HudPresses::kEvery == 0) {
@@ -111,6 +123,63 @@ inline game::PlayScene::Inputs hudInputsAt(u32 tick) {
     }
     return inputs;
 }
+
+/** A look drawn by `inner`, a real one, that tells `record` of every call it passes on, as a
+ * FakeHudPainter tells of its own. */
+class WatchedHudPainter final : public game::HudPainter {
+public:
+    WatchedHudPainter(std::unique_ptr<game::HudPainter> inner, FakeHudRecord& record)
+        : m_inner(std::move(inner)), m_record(record) {}
+    ~WatchedHudPainter() override = default;
+    GDL_NON_COPYABLE_NON_MOVABLE(WatchedHudPainter);
+
+    std::string_view id() const override { return m_inner->id(); }
+    f32 statusTop() const override { return m_inner->statusTop(); }
+    void prepare(game::HudFrame& frame, const game::HudView& view) override {
+        take(FakeHudPart::Prepare);
+        m_inner->prepare(frame, view);
+    }
+    void drawStatus(game::HudFrame& frame, const game::HudView& view) override {
+        take(FakeHudPart::Status);
+        m_inner->drawStatus(frame, view);
+    }
+    void drawRuneMeter(game::HudFrame& frame, const game::HudView& view) override {
+        take(FakeHudPart::RuneMeter);
+        m_inner->drawRuneMeter(frame, view);
+    }
+    void drawHourglass(game::HudFrame& frame, const game::HudView& view) override {
+        take(FakeHudPart::Hourglass);
+        m_inner->drawHourglass(frame, view);
+    }
+    void drawBossMeters(game::HudFrame& frame, const game::HudView& view) override {
+        take(FakeHudPart::BossMeters);
+        m_inner->drawBossMeters(frame, view);
+    }
+    void drawSelectors(game::HudFrame& frame, const game::HudView& view) override {
+        take(FakeHudPart::Selectors);
+        m_inner->drawSelectors(frame, view);
+    }
+    void drawHelp(game::HudFrame& frame, const game::HudView& view) override {
+        take(FakeHudPart::Help);
+        m_inner->drawHelp(frame, view);
+    }
+    void browse(s32 seat, const game::SelectorInput& presses) override {
+        take(FakeHudPart::Browse, seat);
+        m_inner->browse(seat, presses);
+    }
+    void steer(s32 seat, const game::SelectorInput& presses) override {
+        take(FakeHudPart::Steer, seat);
+        m_inner->steer(seat, presses);
+    }
+
+private:
+    void take(FakeHudPart part, s32 seat = -1) {
+        m_record.calls.push_back({std::string{m_inner->id()}, part, seat});
+    }
+
+    std::unique_ptr<game::HudPainter> m_inner;
+    FakeHudRecord& m_record;
+};
 
 /** A level opened as the native digest tests open theirs, for `seats` players in seat order,
  * its HUD drawn in a look of `styles`, or in Dark Legacy's alone. Skips without the game data.

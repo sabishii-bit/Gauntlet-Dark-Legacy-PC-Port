@@ -8,6 +8,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
@@ -25,6 +26,7 @@
 #include "engine/ui/Canvas.h"
 #include "engine/ui/TextPainter.h"
 
+#include "FakeHudStyles.h"
 #include "FakeRenderDevice.h"
 #include "HudLookScene.h"
 #include "LogCapture.h"
@@ -57,6 +59,7 @@ using namespace gdl;
 using namespace gdl::game;
 using Catch::Approx;
 using Layout = LegendsN64HudLayout;
+using test::FakeHudPart;
 using test::HudPresses;
 
 /** A plaque's transparency at rest (FUN_e0058620), as a seat long on its exit sees it. */
@@ -84,7 +87,8 @@ void needLook(std::string_view id) {
 }
 
 /** The Legends looks as the game offers and opens them, from this checkout's extractions. Each
- * id asked for is kept, and how many painters opened. */
+ * id asked for is kept, and how many painters opened; each painter tells `record` of the calls
+ * it takes. */
 class CheckoutHudStyles final : public HudStyles {
 public:
     std::span<const HudStyleOffer> offers() override {
@@ -96,12 +100,16 @@ public:
                                      std::span<const HudMember> party) override {
         auto painter = openLegendsHud(id, device, darkLegacy, party, checkoutRoots());
         opened.emplace_back(id);
-        painters += painter != nullptr ? 1 : 0;
-        return painter;
+        if (painter == nullptr) {
+            return nullptr;
+        }
+        ++painters;
+        return std::make_unique<test::WatchedHudPainter>(std::move(painter), record);
     }
 
     std::vector<std::string> opened; ///< each id asked for, in turn
     usize painters = 0;              ///< how many of them opened
+    test::FakeHudRecord record;      ///< the calls the looks opened took, together
 
 private:
     std::vector<HudStyleOffer> m_offers;
@@ -283,6 +291,12 @@ TEST_CASE("the N64 and Dreamcast looks drawn from the player's own art change no
         }
     });
     CHECK(hudWarnings(warnings) == std::vector<std::string>{});
+    // The look prepared every frame; the closed selectors' presses turned its pages, and the
+    // first seat's right, while its selector stood open, steered it.
+    const test::FakeHudRecord& record = looked->styles.record;
+    CHECK(record.count(look, FakeHudPart::Prepare) == HudPresses::kLastTick);
+    CHECK(record.count(look, FakeHudPart::Browse) > 0);
+    CHECK(record.count(look, FakeHudPart::Steer) == 1);
     // What the last frame drew over the view is the look's, not Dark Legacy's.
     const std::vector<ImmediateVertex> lookedOverlay = looked->overlay();
     const std::vector<ImmediateVertex> plainOverlay = darkLegacy->overlay();
