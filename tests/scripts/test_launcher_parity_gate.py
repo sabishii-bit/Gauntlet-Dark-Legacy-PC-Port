@@ -44,9 +44,10 @@ CARGO_ENVIRONMENT = {"PATH": "where cargo is"}
 # blocks, as the files of the dumps' trees span many.
 TEST_HASH_BLOCK = 5
 
-# The variables that tell the launcher's ignored tests where the dumps and the reference trees are.
+# The variables that tell the launcher's ignored tests where the dumps, the reference trees and the
+# extracted GameCube disc are.
 VARIABLES = ("GDL_LEGENDS_N64_ROM", "GDL_LEGENDS_DREAMCAST_DISC", "GDL_LEGENDS_N64_TREE",
-             "GDL_LEGENDS_DREAMCAST_TREE")
+             "GDL_LEGENDS_DREAMCAST_TREE", "GDL_GAMECUBE_TREE")
 
 # Every step of a run that passes, in its order.
 STEPS = ["lower priority", "stop on signals", "watch the caller", "cargo build", "cargo test",
@@ -469,8 +470,11 @@ class GateTests(unittest.TestCase):
         self.references = {platform: write(self.scratch / "reference" / platform,
                                            {**tree(), **EXTRAS[platform]})
                            for platform, tree in TREES.items()}
+        # The extracted disc's icon is a stand-in: the gate only looks that it is there.
+        self.disc_tree = write(self.scratch / "gamecube", {"carddemo/icon.tpl": b"an icon"})
         self.environment = {"GDL_LEGENDS_N64_TREE": str(self.references["n64"]),
-                            "GDL_LEGENDS_DREAMCAST_TREE": str(self.references["dreamcast"])}
+                            "GDL_LEGENDS_DREAMCAST_TREE": str(self.references["dreamcast"]),
+                            "GDL_GAMECUBE_TREE": str(self.disc_tree)}
         self.argv = ["--verify", "--n64-rom", str(self.rom), "--dreamcast-disc", str(self.disc)]
         counts = synthetic_counts()
         counts.start()
@@ -577,9 +581,11 @@ class GateTests(unittest.TestCase):
         self.assertEqual({name: keywords["env"].get(name) for name in VARIABLES}, {
             "GDL_LEGENDS_N64_ROM": str(self.rom), "GDL_LEGENDS_DREAMCAST_DISC": str(self.disc),
             "GDL_LEGENDS_N64_TREE": str(self.references["n64"]),
-            "GDL_LEGENDS_DREAMCAST_TREE": str(self.references["dreamcast"])})
+            "GDL_LEGENDS_DREAMCAST_TREE": str(self.references["dreamcast"]),
+            "GDL_GAMECUBE_TREE": str(self.disc_tree)})
         self.assertEqual(set(VARIABLES) & set(children.find("cargo build")[1]["env"]), set())
-        # The tests read both dumps and both trees, though only the N64 trees are compared.
+        # The tests read both dumps, both trees and the disc's icon, though only the N64 trees
+        # are compared.
         self.assertEqual(children.steps(), STEPS[:7])
         report = self.report()
         self.assertEqual(list(report["platforms"]), ["n64"])
@@ -594,6 +600,8 @@ class GateTests(unittest.TestCase):
                          / "Gauntlet Legends (USA).cue")
         self.assertEqual(gate.REFERENCE, {"n64": ROOT / "assets" / "n64" / "extracted",
                                           "dreamcast": ROOT / "assets" / "dreamcast" / "extracted"})
+        self.assertEqual((gate.GAMECUBE_TREE, gate.GAMECUBE_ICON),
+                         (ROOT / "assets" / "GUNE5D", Path("carddemo", "icon.tpl")))
         variable, default = "GDL_LEGENDS_N64_ROM", gate.DEFAULT_N64_ROM
         named = {variable: os.path.join("named", "rom.z64")}
         given = Path("given", "rom.z64")
@@ -639,6 +647,10 @@ class GateTests(unittest.TestCase):
             (self.argv, {**self.environment, "GDL_LEGENDS_N64_TREE": str(missing)},
              f"launcher parity: the n64 reference tree is not at {missing}; set "
              "GDL_LEGENDS_N64_TREE"),
+            # So do they the extracted disc's icon, which no platform's comparison needs.
+            (self.argv, {**self.environment, "GDL_GAMECUBE_TREE": str(missing)},
+             "launcher parity: the GameCube disc's icon is not at "
+             f"{missing / 'carddemo' / 'icon.tpl'}; set GDL_GAMECUBE_TREE"),
             ([*self.argv, "--launcher", str(missing)], self.environment,
              f"launcher parity: there is no launcher at {missing}"),
         ]

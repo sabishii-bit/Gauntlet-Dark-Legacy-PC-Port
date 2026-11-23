@@ -19,8 +19,10 @@ Dreamcast fingerprints the launcher carries must still be those of the scripts' 
 A dump is the one its option names, else the one GDL_LEGENDS_N64_ROM or
 GDL_LEGENDS_DREAMCAST_DISC names (the disc's cue sheet), else the one in assets/; a reference tree
 is the one GDL_LEGENDS_N64_TREE or GDL_LEGENDS_DREAMCAST_TREE names, else
-assets/<platform>/extracted. The launcher's tests read all four whichever platforms --platform
-picks, so a missing one fails the run before it starts. The trees go into build/launcher-parity
+assets/<platform>/extracted. The launcher's tests also decode the icon of the player's extracted
+GameCube disc, carddemo/icon.tpl in the tree GDL_GAMECUBE_TREE names, else in assets/GUNE5D. They
+read all five whichever platforms --platform picks, so a missing one fails the run before it
+starts. The trees go into build/launcher-parity
 beside report.json: a passing run removes them unless --keep, and a failing one keeps them to be
 looked at. The report is always the latest run's: every run that ends writes it anew, one refused
 for what it lacks included, and a run stopped or interrupted before its end leaves none.
@@ -67,6 +69,12 @@ DUMP_VARIABLES = {"n64": "GDL_LEGENDS_N64_ROM", "dreamcast": "GDL_LEGENDS_DREAMC
 REFERENCE = {"n64": ROOT / "assets" / "n64" / "extracted",
              "dreamcast": ROOT / "assets" / "dreamcast" / "extracted"}
 TREE_VARIABLES = {"n64": "GDL_LEGENDS_N64_TREE", "dreamcast": "GDL_LEGENDS_DREAMCAST_TREE"}
+
+# The player's extracted GameCube disc, whose icon the launcher's tests decode, the variable that
+# names another place, and where the tree keeps the icon.
+GAMECUBE_TREE = ROOT / "assets" / "GUNE5D"
+GAMECUBE_TREE_VARIABLE = "GDL_GAMECUBE_TREE"
+GAMECUBE_ICON = Path("carddemo", "icon.tpl")
 
 # The extraction scripts, and the script that checks the fingerprints the launcher carries.
 SCRIPTS = {"n64": ROOT / "scripts" / "assets" / "n64_legends.py",
@@ -221,16 +229,19 @@ def resolved(given: Path | None, variable: str, default: Path,
     return Path(os.path.abspath(given))
 
 
-def missing_inputs(dumps: dict[str, Path], trees: dict[str, Path],
+def missing_inputs(dumps: dict[str, Path], trees: dict[str, Path], disc_tree: Path,
                    program: Path | None) -> list[str]:
     """What the run needs and does not find, in words, one for each: any dump or reference tree,
-    all of which the launcher's tests read whichever platforms are compared, and the program
-    --launcher names."""
+    and the icon of the extracted GameCube disc in `disc_tree`, all of which the launcher's tests
+    read whichever platforms are compared, and the program --launcher names."""
     missing = [f"the {platform} dump is not at {dump}; pass {DUMP_OPTIONS[platform]} or set "
                f"{DUMP_VARIABLES[platform]}"
                for platform, dump in dumps.items() if not dump.is_file()]
     missing += [f"the {platform} reference tree is not at {tree}; set {TREE_VARIABLES[platform]}"
                 for platform, tree in trees.items() if not tree.is_dir()]
+    icon = disc_tree / GAMECUBE_ICON
+    if not icon.is_file():
+        missing.append(f"the GameCube disc's icon is not at {icon}; set {GAMECUBE_TREE_VARIABLE}")
     if program is not None and not program.is_file():
         missing.append(f"there is no launcher at {program}")
     return missing
@@ -528,11 +539,13 @@ def check_platform(platform: str, dump: Path, reference: Path, program: Path,
     return record
 
 
-def dump_variables(dumps: dict[str, Path], trees: dict[str, Path]) -> dict[str, str]:
-    """The variables that tell the launcher's ignored tests where the dumps and the reference
-    trees are."""
+def dump_variables(dumps: dict[str, Path], trees: dict[str, Path],
+                   disc_tree: Path) -> dict[str, str]:
+    """The variables that tell the launcher's ignored tests where the dumps, the reference trees
+    and the extracted GameCube disc are."""
     return {**{DUMP_VARIABLES[platform]: str(dump) for platform, dump in dumps.items()},
-            **{TREE_VARIABLES[platform]: str(tree) for platform, tree in trees.items()}}
+            **{TREE_VARIABLES[platform]: str(tree) for platform, tree in trees.items()},
+            GAMECUBE_TREE_VARIABLE: str(disc_tree)}
 
 
 def counted(count: int, noun: str) -> str:
@@ -605,7 +618,7 @@ def new_report(args: argparse.Namespace, program: Path) -> dict:
 
 
 def verify(args: argparse.Namespace, dumps: dict[str, Path], trees: dict[str, Path],
-           program: Path, folders: Folders) -> int:
+           disc_tree: Path, program: Path, folders: Folders) -> int:
     """Runs the gate's steps in order, the first that fails ending the run, and removes a passing
     run's trees unless --keep; then writes the report and prints each compared platform's
     summary."""
@@ -631,7 +644,8 @@ def verify(args: argparse.Namespace, dumps: dict[str, Path], trees: dict[str, Pa
         packages = [part for name in TEST_PACKAGES for part in ("--package", name)]
         tests = ["cargo", "test", "--locked", *packages, "--", "--ignored", "--test-threads",
                  str(TEST_THREADS)]
-        code = launcher.run(tests, {**env, **dump_variables(dumps, trees)}, timeout=TEST_TIMEOUT)
+        variables = dump_variables(dumps, trees, disc_tree)
+        code = launcher.run(tests, {**env, **variables}, timeout=TEST_TIMEOUT)
         report["ignoredTests"] = TESTS_PASSED if code == 0 else TESTS_FAILED
         if code != 0:
             raise Failed(cargo_failure("the launcher's tests on the dumps", code, TEST_TIMEOUT))
@@ -688,9 +702,10 @@ def main(argv: list[str] | None = None, environment: Mapping[str, str] = os.envi
              for platform in launcher.PLATFORMS}
     trees = {platform: resolved(None, TREE_VARIABLES[platform], REFERENCE[platform], environment)
              for platform in launcher.PLATFORMS}
+    disc_tree = resolved(None, GAMECUBE_TREE_VARIABLE, GAMECUBE_TREE, environment)
     program = BUILT_PROGRAM if args.launcher is None else Path(os.path.abspath(args.launcher))
     folders = Folders(output)
-    missing = missing_inputs(dumps, trees, None if args.launcher is None else program)
+    missing = missing_inputs(dumps, trees, disc_tree, None if args.launcher is None else program)
     if missing:
         for problem in missing:
             print(f"launcher parity: {problem}", file=sys.stderr)
@@ -706,7 +721,7 @@ def main(argv: list[str] | None = None, environment: Mapping[str, str] = os.envi
     # interrupt, it ends cargo's tree too.
     launcher.stop_on_signals()
     end_with_caller()
-    return verify(args, dumps, trees, program, folders)
+    return verify(args, dumps, trees, disc_tree, program, folders)
 
 
 if __name__ == "__main__":
