@@ -111,6 +111,9 @@ TEST_CASE("Dreamcast six native bosses bind all authored attacks and collision n
             };
             validate(stock->data);
             for (const auto& child : stock->children) {
+                // A head places its parts and pushes with its blows as the body does.
+                CHECK(child.rules().nodeFramePartOffsets);
+                CHECK_FALSE(child.rules().unitBlowPush);
                 validate(child);
             }
             CHECK(stock->children.size() == (kind == 35 ? 3 : 0));

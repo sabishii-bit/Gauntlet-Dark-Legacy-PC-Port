@@ -86,6 +86,9 @@ TEST_CASE("Native boss assets bind six original skeletons and every authored mov
             validate(stock->data);
             for (const auto& child : stock->children) {
                 CHECK(child.rules().pressureReferenceDamage == 1000);
+                // A head places its parts and pushes with its blows as the body does.
+                CHECK(child.rules().nodeFramePartOffsets);
+                CHECK(child.rules().unitBlowPush);
                 validate(child);
             }
             for (const auto& cue : stock->data.sounds()) {
