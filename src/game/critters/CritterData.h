@@ -42,6 +42,14 @@ struct CritterRules {
      * only its flat way, at a unit's length. GDL's CritterNodePlayerCollide (0x80036424) knocks a
      * player by the whole push, longest when the swing runs outward. */
     bool unitBlowPush = false;
+    bool breathPushFromOrigin = false;
+    /** Seconds by which its blow or breath sets a struck player's fxhittime ahead: the wait the
+     * great ones' breaths and gated blows keep before striking that player again. GDL's
+     * CritterDamagePlayer (0x800367CC) sets a quarter second. */
+    f32 playerHitGap = 0.25f;
+    /** Rules an adapter selects where its fighter is not Dark Legacy's, a bit each: the port's
+     * own where the fighter's binary is unread, or that binary's where it is read. */
+    u32 portRules = 0;
 };
 
 struct CombatantAttachment {

@@ -161,6 +161,36 @@ TEST_CASE("native critter resource identity includes how its blows push",
     CHECK(wholeIdentity != unitIdentity);
 }
 
+TEST_CASE("native critter resource identity includes its breath's push, hit gap and port rules",
+          "[native-digest][native-state-resources][critter-rules]") {
+    formats::CritterFile source;
+    source.descriptors.resize(1);
+    source.types.resize(1);
+    source.types[0].moveCount = 1;
+    source.moves.resize(1);
+    const auto plain = CritterData::fromDecoded("TEST", source, 0, {});
+    NativeStateResources first;
+    REQUIRE(first.registerCritter(plain, "native/TEST", 0));
+    const auto plainIdentity = resourceHash(first, &plain);
+    REQUIRE(plainIdentity);
+    for (u32 field = 0; field < 3; ++field) {
+        CAPTURE(field);
+        CritterRules rules;
+        switch (field) {
+        case 0: rules.breathPushFromOrigin = true; break;
+        case 1: rules.playerHitGap = 0.1f; break;
+        case 2: rules.portRules = 0x1; break;
+        default: FAIL("unexpected rule field");
+        }
+        const auto altered = CritterData::fromDecoded("TEST", source, 0, rules);
+        NativeStateResources registry;
+        REQUIRE(registry.registerCritter(altered, "native/TEST", 0));
+        const auto alteredIdentity = resourceHash(registry, &altered);
+        REQUIRE(alteredIdentity);
+        CHECK(plainIdentity != alteredIdentity);
+    }
+}
+
 TEST_CASE("native builtin white textures identify particle fallbacks without renderer writes",
           "[native-digest][native-state-resources][native-builtin-texture]") {
     const test::FakeRenderDevice first{};

@@ -367,8 +367,8 @@ TEST_CASE("native critter owner digest bytes stay pinned after three families' s
     // netplay peers must hash alike: a literal moves only when what is visited changes on purpose.
     test::checkPinnedDigests("Critters", test::liveDigest(critters, resources.resources()),
                              test::savedDigest(critters, saved, resources.resources()),
-                             "881e5685e9479e90501a2e2b04d84fea0e0d4cbd83a1775e140b7f909fef885d",
-                             "7ab397b5da0948d9e5b2a34b6648ddda9de08ae049363338a0b98777c42f1abb");
+                             "6f3cc08777ee9dfaaf85036061c697692505a78fcb36e330c83027e4b5d388ce",
+                             "7d7277fbd349a4fb93307877c7dda483794f01debe48c3a0e3b8937811a7eebe");
 }
 
 TEST_CASE("native boss owner digest bytes stay pinned after a headed boss wakes and its save",
@@ -400,7 +400,7 @@ TEST_CASE("native boss owner digest bytes stay pinned after a headed boss wakes 
     // what is visited changes on purpose.
     test::checkPinnedDigests("Bosses", test::liveDigest(boss, resources.resources()),
                              test::savedDigest(boss, saved, resources.resources()),
-                             "06b7b4c8e2b094263101c0c6529f1a7516d4a47794a6221774a49d2e3eac79ea",
-                             "499db93b8534872d800709b5815d7b65c01d90bd81272454f387665afdf44bd9");
+                             "fb8e63967648bb000311fc6963af9befcfb52b9b10b97e9da27e9ee155a820f5",
+                             "8df12a6abfb0bd0b9a7ee9931a0a23815f62986558cd0d1b07785648e34e9224");
 }
 } // namespace
