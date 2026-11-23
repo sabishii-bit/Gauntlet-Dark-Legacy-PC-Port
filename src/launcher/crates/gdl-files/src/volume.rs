@@ -1,7 +1,7 @@
 //! What a folder and its volume allow before anything is written there: the nearest folder on a
 //! path that exists, the room its volume still has for this process, whether its file system runs
-//! programs, and whether the folder takes a new file and tells letter case apart, which a file of
-//! the launcher's own, made there and removed at once, shows.
+//! programs, and whether the folder takes what a job will make in it and tells letter case apart,
+//! which entries of the launcher's own, made there and removed at once, show.
 
 use std::fs;
 use std::io;
@@ -9,8 +9,23 @@ use std::path::{Path, PathBuf};
 
 use crate::{FilesError, STAGING_RANDOM_CHARS, is_absent, retry_locked};
 
-/// The prefix of the file a folder probe makes and removes: a name of the launcher's own.
+/// The prefix of the entries a folder probe makes and removes: names of the launcher's own.
 pub const PROBE_PREFIX: &str = ".gdl-launcher-probe-";
+
+/// What a folder that a probe looks at is to the job that will write there, which tells the probe
+/// what to make in it: what the job makes there. Windows keeps the right to add a folder to a
+/// folder apart from the right to add a file, as at the top of its system drive, where any user
+/// may make a folder but no file, so a probe that made a file alone would refuse a folder a job
+/// could make its destination in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ProbedFolder {
+    /// The folder the job writes into, there already: the job makes a folder of its own in it,
+    /// and puts files and folders in place in it. The probe makes a folder and a file there.
+    Destination,
+    /// The nearest folder that is there above a destination that is not: the job makes only the
+    /// folders down to the destination in it. The probe makes a folder there.
+    AboveDestination,
+}
 
 /// What a folder's volume allows: the room it still has for this process, and whether programs
 /// run from it.
@@ -25,17 +40,23 @@ pub struct Volume {
     pub noexec: bool,
 }
 
-/// What making a file in a folder showed: whether the folder takes new files, and whether its
+/// What making a job's entries in a folder showed: whether the folder takes them, and whether its
 /// file system ignores letter case.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct FolderProbe {
-    /// Whether a new file could be made there. One refused for want of permission, or by a file
-    /// system that is read-only, is not.
+    /// Whether every entry the probe tried could be made there. One refused for want of
+    /// permission, or by a file system that is read-only, is not.
     pub writable: bool,
-    /// Whether the file made could also be found by its name in upper case, as a file system that
-    /// ignores letter case finds it. Always `false` when no file could be made.
+    /// Whether what was made could also be found by its name in upper case, as a file system that
+    /// ignores letter case finds it. Always `false` when the folder is not writable.
     pub ignores_case: bool,
 }
+
+/// What a probe finds in a folder that refuses what a job would make there.
+const NOT_WRITABLE: FolderProbe = FolderProbe {
+    writable: false,
+    ignores_case: false,
+};
 
 /// `path` itself when it is there, or else the nearest folder above it that is, looked at without
 /// following a link the path ends in: the first that is there is returned whatever it is, a file
@@ -99,44 +120,81 @@ pub fn refuses_writes(error: &io::Error) -> bool {
     )
 }
 
-/// Makes a new file in `folder`, named [`PROBE_PREFIX`] and then [`STAGING_RANDOM_CHARS`] random
-/// ASCII letters and digits, closes it, looks for it by its name in ASCII upper case, and removes
-/// it, so that a folder is judged before a job writes into it. A creation that
-/// [`refuses_writes`] tells is a refusal gives a folder that is not writable; any other failure
-/// is an error at `folder`.
+/// Makes in `folder` what a job that `probed` says it is to will make there, each entry new and
+/// named [`PROBE_PREFIX`] and then [`STAGING_RANDOM_CHARS`] random ASCII letters and digits, looks
+/// for the last made by its name in ASCII upper case, and removes them, so that a folder is
+/// judged before a job writes into it: a folder, and in a destination that is there a file beside
+/// it, closed at once. A creation that [`refuses_writes`] tells is a refusal gives a folder that
+/// is not writable; any other failure is an error at `folder`.
 ///
-/// The creation is tried once: a refusal is the folder's answer, not a passing hold. The removal
+/// Each creation is tried once: a refusal is the folder's answer, not a passing hold. Each removal
 /// is tried again as [`retry_locked`] tries, since a scanner may open a file the moment it is
-/// closed; a removal that still fails is an error naming the file, which is then left.
-pub fn probe_folder(folder: &Path) -> Result<FolderProbe, FilesError> {
-    // Made without cleanup, so that nothing removes the file but the removal below, which is
-    // retried: tempfile's own way of keeping a file it would remove hands Windows a plain path,
-    // which fails past MAX_PATH.
-    let made = tempfile::Builder::new()
+/// closed, and every one is tried; one that still fails is an error naming what it left, which
+/// is reported before anything the probe found.
+pub fn probe_folder(folder: &Path, probed: ProbedFolder) -> Result<FolderProbe, FilesError> {
+    let Some(made_folder) = make_probe_entry(folder, ProbeEntry::Folder)? else {
+        return Ok(NOT_WRITABLE);
+    };
+    let mut made = vec![(made_folder.clone(), ProbeEntry::Folder)];
+    let found = match probed {
+        ProbedFolder::AboveDestination => looked_for_in_upper_case(&made_folder),
+        ProbedFolder::Destination => match make_probe_entry(folder, ProbeEntry::File) {
+            Ok(Some(file)) => {
+                made.push((file.clone(), ProbeEntry::File));
+                looked_for_in_upper_case(&file)
+            }
+            Ok(None) => Ok(NOT_WRITABLE),
+            Err(error) => Err(error),
+        },
+    };
+    remove_probe_entries(&made)?;
+    found
+}
+
+/// What a probe makes in a folder: a folder, as a job makes its destination or its own folder
+/// there, or a file, as a job puts files in place there.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ProbeEntry {
+    /// A new folder.
+    Folder,
+    /// A new file, closed at once.
+    File,
+}
+
+/// Makes one new probe entry in `folder` and gives its path, or `None` when the system refuses it
+/// as [`refuses_writes`] tells. Any other failure is an error at `folder`.
+fn make_probe_entry(folder: &Path, entry: ProbeEntry) -> Result<Option<PathBuf>, FilesError> {
+    // Made without cleanup, so that nothing removes an entry but the probe's own removal, which
+    // is retried: tempfile's own way of keeping a file it would remove hands Windows a plain
+    // path, which fails past MAX_PATH.
+    let mut builder = tempfile::Builder::new();
+    builder
         .prefix(PROBE_PREFIX)
         .rand_bytes(STAGING_RANDOM_CHARS)
-        .disable_cleanup(true)
-        .tempfile_in(folder);
-    let probe = match made {
-        Ok(probe) => probe,
-        Err(error) if refuses_writes(&error) => {
-            return Ok(FolderProbe {
-                writable: false,
-                ignores_case: false,
-            });
-        }
-        Err(source) => return Err(FilesError::io(folder, source)),
+        .disable_cleanup(true);
+    let made = match entry {
+        ProbeEntry::Folder => builder.tempdir_in(folder).map(tempfile::TempDir::keep),
+        ProbeEntry::File => builder.tempfile_in(folder).map(|probe| {
+            // Closed at once, so that the removal takes the name away: Windows keeps the name of
+            // a file removed while a handle on it is open until the handle closes.
+            let (file, path) = probe.into_parts();
+            drop(file);
+            path.to_path_buf()
+        }),
     };
-    // Closed at once, so that the removal takes the name away: Windows keeps the name of a file
-    // removed while a handle on it is open until the handle closes.
-    let (file, path) = probe.into_parts();
-    drop(file);
-    let path = path.to_path_buf();
+    match made {
+        Ok(path) => Ok(Some(path)),
+        Err(error) if refuses_writes(&error) => Ok(None),
+        Err(source) => Err(FilesError::io(folder, source)),
+    }
+}
+
+/// What a probe found once `made`, a probe entry, could be made: a writable folder, which ignores
+/// letter case when the name of `made` in ASCII upper case finds it too.
+fn looked_for_in_upper_case(made: &Path) -> Result<FolderProbe, FilesError> {
     // The prefix holds lower-case letters, so the name in upper case is always another spelling.
-    let upper = path.with_file_name(path.file_name().unwrap_or_default().to_ascii_uppercase());
-    let looked = fs::symlink_metadata(&upper);
-    retry_locked(|| fs::remove_file(&path)).map_err(|source| FilesError::io(&path, source))?;
-    let ignores_case = match looked {
+    let upper = made.with_file_name(made.file_name().unwrap_or_default().to_ascii_uppercase());
+    let ignores_case = match fs::symlink_metadata(&upper) {
         Ok(_) => true,
         Err(error) if is_absent(&error) => false,
         Err(source) => return Err(FilesError::io(&upper, source)),
@@ -147,6 +205,22 @@ pub fn probe_folder(folder: &Path) -> Result<FolderProbe, FilesError> {
     })
 }
 
+/// Removes the entries a probe made, the last made first, each tried again as [`retry_locked`]
+/// tries; every one is tried, and the first that could not be removed is reported.
+fn remove_probe_entries(made: &[(PathBuf, ProbeEntry)]) -> Result<(), FilesError> {
+    let mut left = None;
+    for (path, entry) in made.iter().rev() {
+        let removed = match entry {
+            ProbeEntry::Folder => retry_locked(|| fs::remove_dir(path)),
+            ProbeEntry::File => retry_locked(|| fs::remove_file(path)),
+        };
+        if let Err(source) = removed {
+            left.get_or_insert_with(|| FilesError::io(path, source));
+        }
+    }
+    left.map_or(Ok(()), Err)
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
@@ -155,8 +229,21 @@ mod tests {
 
     use gdl_fixtures::{deny_writes, folder_names, link_folder};
 
-    use super::{FolderProbe, nearest_existing, probe_folder, refuses_writes, volume_of};
+    use super::{
+        FolderProbe, NOT_WRITABLE, ProbedFolder, nearest_existing, probe_folder, refuses_writes,
+        volume_of,
+    };
     use crate::error::assert_io;
+
+    /// Both things a probed folder may be to a job.
+    const PROBED: [ProbedFolder; 2] = [ProbedFolder::Destination, ProbedFolder::AboveDestination];
+
+    /// What a probe finds in a folder of the tests' own, which takes anything: Windows' file
+    /// systems ignore letter case, and the Linux tests' do not.
+    const WRITABLE: FolderProbe = FolderProbe {
+        writable: true,
+        ignores_case: cfg!(windows),
+    };
 
     #[test]
     fn the_nearest_existing_folder_is_found_and_a_missing_root_is_not_found() {
@@ -270,23 +357,20 @@ mod tests {
         fs::create_dir(top.join("folder")).unwrap();
         let before = folder_names(top).unwrap();
 
-        // Windows' file systems ignore letter case, and the Linux tests' do not.
-        let expected = FolderProbe {
-            writable: true,
-            ignores_case: cfg!(windows),
-        };
-        assert_eq!(probe_folder(top).unwrap(), expected);
-        assert_eq!(probe_folder(top).unwrap(), expected);
-        assert_eq!(folder_names(top).unwrap(), before);
+        for probed in PROBED {
+            assert_eq!(probe_folder(top, probed).unwrap(), WRITABLE, "{probed:?}");
+            assert_eq!(probe_folder(top, probed).unwrap(), WRITABLE, "{probed:?}");
+            assert_eq!(folder_names(top).unwrap(), before, "{probed:?}");
 
-        // A folder that is not there is an error at it, and so is a file in a folder's place:
-        // neither is a refusal to write.
-        let missing = top.join("missing");
-        let source = assert_io(probe_folder(&missing), &missing);
-        assert_eq!(source.kind(), io::ErrorKind::NotFound, "{source}");
-        assert_io(probe_folder(&file), &file);
-        assert_eq!(fs::read(&file).unwrap(), b"kept");
-        assert_eq!(folder_names(top).unwrap(), before);
+            // A folder that is not there is an error at it, and so is a file in a folder's
+            // place: neither is a refusal to write.
+            let missing = top.join("missing");
+            let source = assert_io(probe_folder(&missing, probed), &missing);
+            assert_eq!(source.kind(), io::ErrorKind::NotFound, "{source}");
+            assert_io(probe_folder(&file, probed), &file);
+            assert_eq!(fs::read(&file).unwrap(), b"kept");
+            assert_eq!(folder_names(top).unwrap(), before, "{probed:?}");
+        }
     }
 
     #[test]
@@ -299,16 +383,45 @@ mod tests {
             eprintln!("skipped: this user makes files in a folder denied writes, as root does");
             return;
         }
-        let probe = probe_folder(&folder).unwrap();
-        assert_eq!(
-            probe,
-            FolderProbe {
-                writable: false,
-                ignores_case: false,
-            }
-        );
+        // A destination there takes no file, whatever else it takes; what its probe made before
+        // the refusal is gone again.
+        let probe = probe_folder(&folder, ProbedFolder::Destination).unwrap();
+        assert_eq!(probe, NOT_WRITABLE);
+        assert!(folder_names(&folder).unwrap().is_empty());
+        // A destination below it is made as a new folder is made there, which on Windows a
+        // process whose restore privilege is enabled still does, as the guard's check found.
+        let expected = if denied.refuses_folders() {
+            NOT_WRITABLE
+        } else {
+            WRITABLE
+        };
+        let probe = probe_folder(&folder, ProbedFolder::AboveDestination).unwrap();
+        assert_eq!(probe, expected);
+        assert!(folder_names(&folder).unwrap().is_empty());
         drop(denied);
         assert!(folder_names(&folder).unwrap().is_empty());
+    }
+
+    /// A folder that takes new folders but no new file, as the top of a Windows system drive is
+    /// for any user, takes a destination below it, made as a new folder, but is no destination
+    /// itself, whatever this process's privileges.
+    #[cfg(windows)]
+    #[test]
+    fn a_folder_taking_only_folders_takes_a_destination_below_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let folder = dir.path().join("drive top");
+        fs::create_dir(&folder).unwrap();
+        let denied = gdl_fixtures::deny_new_files(&folder).unwrap();
+        assert!(!denied.refuses_folders());
+
+        let probe = probe_folder(&folder, ProbedFolder::AboveDestination).unwrap();
+        assert_eq!(probe, WRITABLE);
+        assert!(folder_names(&folder).unwrap().is_empty());
+        // As a destination it would take its own folder, then refuse the files put in place.
+        let probe = probe_folder(&folder, ProbedFolder::Destination).unwrap();
+        assert_eq!(probe, NOT_WRITABLE);
+        assert!(folder_names(&folder).unwrap().is_empty());
+        drop(denied);
     }
 
     #[test]
@@ -388,13 +501,13 @@ mod tests {
         let folder = gdl_fixtures::long_root(base.path(), PAST_MAX_PATH_UNITS).unwrap();
         assert!(volume_of(&folder).unwrap().available > 0);
         assert_eq!(nearest_existing(&folder.join("game")).unwrap(), folder);
-        assert_eq!(
-            probe_folder(&folder).unwrap(),
-            FolderProbe {
-                writable: true,
-                ignores_case: true,
-            }
-        );
-        assert!(folder_names(&folder).unwrap().is_empty());
+        for probed in PROBED {
+            assert_eq!(
+                probe_folder(&folder, probed).unwrap(),
+                WRITABLE,
+                "{probed:?}"
+            );
+            assert!(folder_names(&folder).unwrap().is_empty(), "{probed:?}");
+        }
     }
 }
