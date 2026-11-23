@@ -312,13 +312,14 @@ pub struct Identity {
 /// or `..` included, since the disc is known by its sheet's name. A file is known by the first of
 /// these its content meets: an N64 ROM's first word, in any byte order, when the ROM is read whole
 /// and judged against the US cartridge; the marks of a GameCube disc image, whole or sparse, which
-/// is judged when it is read to install from; the marks of an archive, a CHD, an Alcohol 120%
-/// descriptor, a DiscJuggler image, a Nero image or a CloneCD control file, each refused; a
-/// sheet's text, the readers' refusal of it included; a sheet beside it that names it as a track's
-/// file; and an ISO 9660 image's volume descriptor in cooked sectors, refused. Anything else is
-/// unrecognized. A disc is read as the Dreamcast extractor reads its head, and judged by its boot
-/// area against the US disc, a boot area of another game telling only that. The verdict describes
-/// the dump and never decides an extraction, which holds the dump to values it is given.
+/// is judged when it is read to install from; the marks an archive, a CHD, an Alcohol 120%
+/// descriptor or a CloneCD control file begins with, each refused; a sheet's text, the readers'
+/// refusal of it included; the marks a DiscJuggler image or a Nero image ends with, each refused;
+/// a sheet beside it that names it as a track's file; and an ISO 9660 image's volume descriptor
+/// in cooked sectors, refused. Anything else is unrecognized. A disc is read as the Dreamcast
+/// extractor reads its head, and judged by its boot area against the US disc, a boot area of
+/// another game telling only that. The verdict describes the dump and never decides an
+/// extraction, which holds the dump to values it is given.
 ///
 /// A path that is no folder and names no file is refused before anything is read, and so is one
 /// where what is there is neither a folder nor a regular file. Fails when the dump cannot be read,
@@ -344,9 +345,11 @@ pub fn identify(path: &Path) -> Result<Identity, MediaError> {
         };
         return Ok(rom_identity(&N64Rom::open(path, &job)?));
     }
-    if let Some((console, container, verdict)) = ends.marked() {
+    if let Some((console, container, verdict)) = ends.marked_at_start() {
         return Ok(unread(console, container, verdict));
     }
+    // The marks at a file's end are looked for only once its text is no sheet, since a sheet's
+    // last line, a remark the extractor passes over, may end as one of them does.
     if ends.len <= MAX_SHEET_LEN
         && let Some(read) = sheet_of(&ends.head)
     {
@@ -357,6 +360,9 @@ pub fn identify(path: &Path) -> Result<Identity, MediaError> {
             tracks,
         };
         return disc_identity(sheet, name);
+    }
+    if let Some((console, container, verdict)) = ends.marked_at_end() {
+        return Ok(unread(console, container, verdict));
     }
     if let Some(sheet) = sheet_naming(path)? {
         return found_sheet(&sheet);
@@ -451,9 +457,10 @@ impl Ends {
         Ok(Ends { head, tail, len })
     }
 
-    /// The console, container and verdict of a file its container's marks tell, in the order the
-    /// marks are looked for, or `None` when none is there.
-    fn marked(&self) -> Option<(Option<Console>, Container, Verdict)> {
+    /// The console, container and verdict of a file that the marks its container's format puts in
+    /// its first bytes tell, in the order the marks are looked for, or `None` when none is there.
+    /// No sheet holds one there: each is no UTF-8, or a first line no sheet begins with.
+    fn marked_at_start(&self) -> Option<(Option<Console>, Container, Verdict)> {
         let head = self.head.as_slice();
         let refused = Verdict::Refused;
         let marked = if head.starts_with(CISO_MARK) {
@@ -481,23 +488,32 @@ impl Ends {
         } else if head.starts_with(MDS_MARK) {
             let refusal = refused(DumpRefusal::UnsupportedContainer);
             (None, Container::MdsMdf, refusal)
-        } else if self
+        } else if self.len <= MAX_SHEET_LEN && without_mark(head).starts_with(CLONE_CD_MARK) {
+            let refusal = refused(DumpRefusal::UnsupportedContainer);
+            (None, Container::CloneCd, refusal)
+        } else {
+            return None;
+        };
+        Some(marked)
+    }
+
+    /// The console, container and verdict of a file that the marks its container's format puts
+    /// at its end tell, in the order the marks are looked for, or `None` when none is there.
+    fn marked_at_end(&self) -> Option<(Option<Console>, Container, Verdict)> {
+        let marked = if self
             .word_before_end(CDI_VERSION_FROM_END)
             .is_some_and(|version| CDI_VERSIONS.contains(&u32::from_le_bytes(version)))
         {
             (
                 Some(Console::Dreamcast),
                 Container::Cdi,
-                refused(DumpRefusal::Cdi),
+                Verdict::Refused(DumpRefusal::Cdi),
             )
         } else if self.word_before_end(NRG_MARK_FROM_END) == Some(NRG_MARK)
             || self.word_before_end(NRG_FIRST_MARK_FROM_END) == Some(NRG_FIRST_MARK)
         {
-            let refusal = refused(DumpRefusal::UnsupportedContainer);
+            let refusal = Verdict::Refused(DumpRefusal::UnsupportedContainer);
             (None, Container::Nrg, refusal)
-        } else if self.len <= MAX_SHEET_LEN && without_mark(head).starts_with(CLONE_CD_MARK) {
-            let refusal = refused(DumpRefusal::UnsupportedContainer);
-            (None, Container::CloneCd, refusal)
         } else {
             return None;
         };
@@ -1106,8 +1122,9 @@ mod tests {
                 ),
             ),
             // The first mark looked for decides: a CISO's map that happens to hold a GameCube
-            // disc's mark, an archive that ends as a DiscJuggler image does, and a plain image
-            // that ends so too.
+            // disc's mark, an archive that ends as a DiscJuggler image does, a plain image that
+            // ends so too, and a CloneCD control file that ends as a Nero image does, since a mark
+            // a file begins with is looked for before those at its end.
             (
                 "ciso with a disc's mark",
                 {
@@ -1134,6 +1151,11 @@ mod tests {
                     Container::Cdi,
                     refused(DumpRefusal::Cdi),
                 ),
+            ),
+            (
+                "ccd ending as an nrg",
+                [b"[CloneCD]\r\nVersion=3\r\n".to_vec(), nrg(b"NERO", 4)].concat(),
+                marked(None, Container::CloneCd, unsupported),
             ),
             // Anything else is nothing the launcher knows: no bytes, text, zeros past the most a
             // sheet holds, a CloneCD file's mark past that length, and marks out of place.
@@ -1274,6 +1296,37 @@ mod tests {
         fs::create_dir(dir.path().join("track4.bin")).unwrap();
         let expected = us_disc(&sheet, SheetKind::Cue, full_tracks(&vectors, None));
         assert_eq!(identified(&sheet), expected);
+    }
+
+    #[test]
+    fn a_sheet_is_read_before_the_marks_at_a_files_end() {
+        let vectors = dreamcast_vectors();
+        // The full set's cue sheet with a last line the readers pass over, a remark, that ends the
+        // file as one of a Nero image's two marks does: four bytes before the place of its chunks,
+        // 32 bits wide in the format's first version and 64 in its second. The disc is told by its
+        // sheet, as the extractor reads it, whether it is given as the sheet, as its folder or as
+        // a data track's file.
+        let remarks: [(&str, &[u8], usize); 2] = [
+            ("REM NERO 7\r\n", b"NERO", 8),
+            ("REM NER5 12345\r\n", b"NER5", 12),
+        ];
+        for (remark, mark, from_end) in remarks {
+            let dir = tempfile::tempdir().unwrap();
+            let sheet = DiscSet::full(Edc::Zero).write(dir.path()).unwrap();
+            let mut text = fs::read(&sheet).unwrap();
+            text.extend_from_slice(remark.as_bytes());
+            assert_eq!(&text[text.len() - from_end..][..mark.len()], mark);
+            fs::write(&sheet, &text).unwrap();
+            let expected = us_disc(&sheet, SheetKind::Cue, full_tracks(&vectors, None));
+            let paths = [
+                sheet.clone(),
+                dir.path().to_path_buf(),
+                dir.path().join("track3.bin"),
+            ];
+            for path in paths {
+                assert_eq!(identified(&path), expected, "{remark:?} {}", path.display());
+            }
+        }
     }
 
     #[test]

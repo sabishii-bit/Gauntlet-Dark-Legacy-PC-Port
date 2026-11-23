@@ -437,6 +437,16 @@ class DreamcastParityTests(ParityTests):
                 self.assert_extracted("dreamcast", dump, made)
                 self.assert_same_tree(made, case.script)
 
+    def test_dreamcast_sheets_the_script_reads_trees_match(self):
+        # The full set's cue sheet with a last line the extractor passes over, a remark, that ends
+        # the file as a Nero image's mark does, 8 or 12 bytes before its end.
+        for remark in (b"REM NERO 7\r\n", b"REM NER5 12345\r\n"):
+            with self.subTest(remark=remark):
+                case = Case(self.scratch)
+                sheet = full_set(case.dumps())
+                sheet.write_bytes(sheet.read_bytes() + remark)
+                self.assert_extracts_alike("dreamcast", sheet, case)
+
     def test_dreamcast_gdi_tree_matches_the_cue_tree(self):
         # The full set's sectors behind its cue sheet for the script, and behind a GDI for the
         # launcher: every file the same but the disc manifest, whose data tracks are the GDI's.
