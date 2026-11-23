@@ -30,6 +30,10 @@ pub const DISC_SIZE: u64 = 1_459_978_240;
 /// game's needs, and the most any read of an image asks for at once.
 pub const MAX_FST_LEN: u32 = 16 << 20;
 
+/// The most bytes one read of an image asks for: a whole file table's. A longer read is made in
+/// pieces of this length.
+const MOST_READ_LEN: usize = MAX_FST_LEN as usize;
+
 /// The highest revision of the US disc: the game was pressed as revisions 0 and 1.
 pub const MAX_REVISION: u8 = 1;
 
@@ -173,7 +177,9 @@ impl GameCubeImage {
 
     /// The bytes of the file `entry`, read whole when it holds no more than `most` bytes, and
     /// otherwise its first `most` + 1, so that a caller can tell a file longer than it takes
-    /// without reading it all. A folder holds none.
+    /// without reading it all. `most` bounds what is read and the room made for it, so a caller
+    /// passes the most it means to take, such as [`MAX_TPL_LEN`](crate::MAX_TPL_LEN) for an
+    /// icon. A folder holds none.
     pub fn read_entry(&mut self, entry: &DiscEntry, most: u64) -> Result<Vec<u8>, MediaError> {
         let DiscEntryKind::File { offset, size } = entry.kind else {
             return Ok(Vec::new());
@@ -317,8 +323,9 @@ impl Layout {
     }
 
     /// Fills `buffer` with the bytes of the disc from `offset` on, read from `source`, the image
-    /// at `path`, whose disc is `size` bytes long. A read that reaches past the disc is refused
-    /// before anything is read, and one the image ends before is refused as cut short.
+    /// at `path`, whose disc is `size` bytes long, asking `source` for no more than
+    /// [`MAX_FST_LEN`] bytes at once. A read that reaches past the disc is refused before
+    /// anything is read, and one the image ends before is refused as cut short.
     pub(crate) fn read_at<R: Read + Seek>(
         &self,
         source: &mut R,
@@ -335,11 +342,13 @@ impl Layout {
             Layout::Iso => {
                 let failed = |error| MediaError::io(path, error);
                 source.seek(SeekFrom::Start(offset)).map_err(failed)?;
-                if fill(source, buffer).map_err(failed)? != buffer.len() {
-                    return Err(MediaError::gamecube(
-                        GameCubeRule::TruncatedIso,
-                        TRUNCATED_ISO,
-                    ));
+                for piece in buffer.chunks_mut(MOST_READ_LEN) {
+                    if fill(source, piece).map_err(failed)? != piece.len() {
+                        return Err(MediaError::gamecube(
+                            GameCubeRule::TruncatedIso,
+                            TRUNCATED_ISO,
+                        ));
+                    }
                 }
                 Ok(())
             }
@@ -678,6 +687,18 @@ mod tests {
     /// Where an NKit image keeps its mark.
     const FORMAT_NKIT_AT: usize = 0x200;
 
+    /// Where the header gives the file table's offset, a big-endian word.
+    const FORMAT_FST_OFFSET_AT: usize = 0x424;
+
+    /// Where it gives the file table's length, a big-endian word.
+    const FORMAT_FST_SIZE_AT: usize = 0x428;
+
+    /// How many bytes a row of the file table takes, the root's included.
+    const FORMAT_FST_ROW_LEN: usize = 12;
+
+    /// Where the root's row gives how many rows the table holds.
+    const FORMAT_ROOT_COUNT_AT: usize = 8;
+
     /// Where the installer tests' disc keeps its file table.
     const FORMAT_FST_AT: usize = 0x800;
 
@@ -792,6 +813,21 @@ mod tests {
         let mut changed = image.to_vec();
         changed[at..at + bytes.len()].copy_from_slice(bytes);
         changed
+    }
+
+    /// `image` with the big-endian word `value` written at `at`.
+    fn with_word(image: &[u8], at: usize, value: usize) -> Vec<u8> {
+        with_bytes(image, at, &u32::try_from(value).unwrap().to_be_bytes())
+    }
+
+    /// An image of `len` bytes held in memory, `start` from its first byte and noughts after,
+    /// read through a reader that keeps how far and how much it is asked to read.
+    fn held(start: Vec<u8>, len: u64) -> Counting<SparseFile> {
+        Counting::new(SparseFile {
+            len,
+            chunks: vec![(0, start)],
+            at: 0,
+        })
     }
 
     /// The header of the image `bytes`, which must have one.
@@ -1480,21 +1516,16 @@ mod tests {
             FstEntry::file("TWO.BIN", 0, gib),
         ]);
         let start = iso_of(&table, &[], FORMAT_FST_AT + table.len());
-        let read = |table_end: usize, start: Vec<u8>| {
-            let sparse = SparseFile {
-                len: FORMAT_DISC_SIZE,
-                chunks: vec![(0, start)],
-                at: 0,
-            };
-            let mut source = Counting::new(sparse);
-            let outcome = judge(&mut source, FORMAT_DISC_SIZE, Path::new(IMAGE));
+        let read = |table_end: usize, start: Vec<u8>, len: u64| {
+            let mut source = held(start, len);
+            let outcome = judge(&mut source, len, Path::new(IMAGE));
             // Nothing past the header and the file table is read.
             assert!(source.furthest <= table_end as u64, "{}", source.furthest);
             outcome
         };
         let table_end = FORMAT_FST_AT + table.len();
         assert_eq!(
-            refusal(read(table_end, start).map(|_| ())),
+            refusal(read(table_end, start, FORMAT_DISC_SIZE).map(|_| ())),
             ("totalSize", "Implausible total extracted size".to_owned())
         );
         // One file as long as the disc is the most the trees may hold.
@@ -1502,19 +1533,108 @@ mod tests {
         let table = game_table(&[FstEntry::file("ALL.BIN", 0, whole)]);
         let table_end = FORMAT_FST_AT + table.len();
         let start = iso_of(&table, &[], table_end);
-        let whole_disc = read(table_end, start).unwrap_or_else(|error| panic!("{error}"));
+        let whole_disc =
+            read(table_end, start, FORMAT_DISC_SIZE).unwrap_or_else(|error| panic!("{error}"));
         assert_eq!(whole_disc.walked.files_len, FORMAT_DISC_SIZE);
-        // A byte further and the file runs past the disc.
+        // A byte further and the file runs past the disc, even in an image a byte longer: an ISO
+        // holds no more than a whole disc, whatever follows it.
         let table = game_table(&[FstEntry::file("ALL.BIN", 1, whole)]);
         let table_end = FORMAT_FST_AT + table.len();
         let start = iso_of(&table, &[], table_end);
-        assert_eq!(
-            refusal(read(table_end, start).map(|_| ())),
-            (
-                "truncatedFile",
-                "Truncated disc file: Gauntlet/ALL.BIN".to_owned()
-            )
+        let past = (
+            "truncatedFile",
+            "Truncated disc file: Gauntlet/ALL.BIN".to_owned(),
         );
+        for len in [FORMAT_DISC_SIZE, FORMAT_DISC_SIZE + 1] {
+            let outcome = read(table_end, start.clone(), len);
+            assert_eq!(refusal(outcome.map(|_| ())), past, "{len}");
+        }
+        let table = game_table(&[]);
+        let table_end = FORMAT_FST_AT + table.len();
+        let longer = read(
+            table_end,
+            iso_of(&table, &[], table_end),
+            FORMAT_DISC_SIZE + 1,
+        );
+        let longer = longer.unwrap_or_else(|error| panic!("{error}"));
+        assert_eq!(longer.size, FORMAT_DISC_SIZE);
+    }
+
+    #[test]
+    fn the_file_tables_extent_is_taken_up_to_its_edges() {
+        // Each image is as long as a whole disc and held in memory: what the judging finds, how
+        // far it read and the most it read at once.
+        let judged_whole = |start: Vec<u8>| {
+            let mut source = held(start, FORMAT_DISC_SIZE);
+            let outcome = judge(&mut source, FORMAT_DISC_SIZE, Path::new(IMAGE)).map(|_| ());
+            (outcome, source.furthest, source.longest)
+        };
+        let table = game_table(&[]);
+        let disc = iso_of(&table, &[], FORMAT_FST_AT + table.len());
+        // A table right after the header is read.
+        let after = [&disc[..FORMAT_HEADER_LEN], table.as_slice()].concat();
+        let after = with_word(&after, FORMAT_FST_OFFSET_AT, FORMAT_HEADER_LEN);
+        let (outcome, furthest, _) = judged_whole(after);
+        outcome.unwrap_or_else(|error| panic!("{error}"));
+        assert_eq!(furthest, (FORMAT_HEADER_LEN + table.len()) as u64);
+        // A table of its root's row alone, the shortest, is walked, and holds nothing the game
+        // needs.
+        let root_only = with_word(&disc, FORMAT_FST_SIZE_AT, FORMAT_FST_ROW_LEN);
+        let root_only = with_word(&root_only, FORMAT_FST_AT + FORMAT_ROOT_COUNT_AT, 1);
+        let (outcome, ..) = judged_whole(root_only);
+        assert_eq!(refusal(outcome).0, "missingRoots");
+        // A table of the most bytes a table may take is read in one read of that many, and the
+        // noughts after its names are no rows of it.
+        let most = with_word(&disc, FORMAT_FST_SIZE_AT, FORMAT_MAX_FST_LEN);
+        let (outcome, furthest, longest) = judged_whole(most);
+        outcome.unwrap_or_else(|error| panic!("{error}"));
+        assert_eq!(longest, FORMAT_MAX_FST_LEN);
+        assert_eq!(furthest, (FORMAT_FST_AT + FORMAT_MAX_FST_LEN) as u64);
+        // A byte more is refused by the extent before anything past the header is read.
+        let over = with_word(&disc, FORMAT_FST_SIZE_AT, FORMAT_MAX_FST_LEN + 1);
+        let (outcome, furthest, _) = judged_whole(over);
+        assert_eq!(
+            refusal(outcome),
+            ("fstExtent", "Invalid GameCube filesystem extent".to_owned())
+        );
+        assert_eq!(furthest, FORMAT_HEADER_LEN as u64);
+    }
+
+    #[test]
+    fn a_long_read_is_made_in_pieces_of_a_file_tables_most() {
+        // A file longer than the most a file table takes, read whole as an entry is read, is asked
+        // of the image in pieces no longer than that, and given whole.
+        let len = FORMAT_MAX_FST_LEN + 3;
+        let at = 5;
+        let marks = [
+            (0, [1, 2]),
+            (FORMAT_MAX_FST_LEN - 1, [3, 4]),
+            (len - 2, [5, 6]),
+        ];
+        let sparse = SparseFile {
+            len: FORMAT_DISC_SIZE,
+            chunks: marks
+                .iter()
+                .map(|(place, mark)| ((at + place) as u64, mark.to_vec()))
+                .collect(),
+            at: 0,
+        };
+        let mut source = Counting::new(sparse);
+        let bytes = Layout::Iso
+            .read_vec(
+                &mut source,
+                Path::new(IMAGE),
+                FORMAT_DISC_SIZE,
+                at as u64,
+                len as u64,
+            )
+            .unwrap();
+        assert_eq!(bytes.len(), len);
+        for (place, mark) in marks {
+            assert_eq!(bytes[place..place + 2], mark, "{place}");
+        }
+        assert_eq!(source.longest, FORMAT_MAX_FST_LEN);
+        assert_eq!(source.furthest, (at + len) as u64);
     }
 
     #[test]
