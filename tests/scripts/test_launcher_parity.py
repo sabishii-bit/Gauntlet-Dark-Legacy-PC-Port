@@ -19,7 +19,6 @@ import json
 import os
 from pathlib import Path
 import re
-import stat
 import struct
 import subprocess
 import sys
@@ -31,10 +30,13 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
 sys.path.insert(0, str(ROOT / "scripts" / "assets"))
+sys.path.insert(0, str(ROOT / "scripts" / "checks"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import launcher
 import legends_fixtures
 import n64_legends as n64
 import process_tree
+from launcher_parity import is_link
 from legends_fixtures import (DREAMCAST_VECTORS, FULL_DISK_ROM, N64_VECTORS, extract_set, fixture,
                               full_gdi_set, full_set, iso_identifier, json_string, name_fixture,
                               paths_rom, reorder, rom, vectors)
@@ -44,8 +46,8 @@ from legends_fixtures import (DREAMCAST_VECTORS, FULL_DISK_ROM, N64_VECTORS, ext
 LAUNCHER_VARIABLE = "GDL_LAUNCHER_BIN"
 
 # The headless program's file, and the folders cargo builds it into.
-PROGRAM = "gdl-launcher-headless" + (".exe" if os.name == "nt" else "")
-BUILDS = (ROOT / "build" / "launcher" / "release", ROOT / "build" / "launcher" / "debug")
+PROGRAM = launcher.HEADLESS_PACKAGE + (".exe" if os.name == "nt" else "")
+BUILDS = (launcher.TARGET / "release", launcher.TARGET / "debug")
 
 # How long one extraction by the launcher may run, in seconds, before it is stopped.
 LAUNCHER_TIMEOUT = 120
@@ -126,13 +128,6 @@ def text(stream: bytes) -> str:
     """What the launcher wrote to one of its streams, as text, a byte that is no UTF-8 shown as its
     escape."""
     return stream.decode("utf-8", "backslashreplace")
-
-
-def is_link(entry: os.DirEntry) -> bool:
-    """Whether a folder's entry is a link of any kind: a symbolic link, or on Windows a junction or
-    another reparse point."""
-    attributes = getattr(entry.stat(follow_symlinks=False), "st_file_attributes", 0)
-    return entry.is_symlink() or bool(attributes & stat.FILE_ATTRIBUTE_REPARSE_POINT)
 
 
 def extract_with_script(platform: str, dump: Path, output: Path) -> None:
