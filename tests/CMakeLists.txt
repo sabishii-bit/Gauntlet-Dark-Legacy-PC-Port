@@ -382,6 +382,7 @@ add_executable(tests
     expansions/shared/scenes/LegendsPlayableTests.cpp
     expansions/shared/scenes/LegendsLevelTests.cpp
     expansions/shared/scenes/LegendsLevelBossTests.cpp
+    expansions/shared/scenes/LegendsHudStyleSceneTests.cpp
     expansions/shared/scenes/LegendsTraversalTests.cpp
     expansions/dreamcast/scenes/LegendsMusicTests.cpp
     expansions/shared/scenes/LegendsFilesTests.cpp

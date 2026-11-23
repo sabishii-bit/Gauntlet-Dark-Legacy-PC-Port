@@ -2,9 +2,11 @@
 #include <array>
 #include <filesystem>
 #include <format>
+#include <iterator>
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -16,24 +18,33 @@
 #include "engine/io/File.h"
 #include "engine/math/Math.h"
 #include "engine/render/RenderTypes.h"
+#include "engine/ui/Canvas.h"
 
 #include "FakeDarkLegacyArt.h"
 #include "FakeRenderDevice.h"
 #include "LogCapture.h"
+#include "RecordedQuads.h"
 #include "TestSupport.h"
 #include "expansions/n64/formats/LegendsN64Font.h"
 #include "expansions/n64/formats/LegendsN64IntensityAlpha.h"
+#include "expansions/n64/formats/LegendsN64Portal.h"
 #include "expansions/n64/formats/LegendsN64Texture.h"
+#include "expansions/n64/hud/LegendsN64Frame.h"
 #include "expansions/n64/hud/LegendsN64HudIcons.h"
 #include "expansions/n64/hud/LegendsN64HudLayout.h"
 #include "expansions/n64/hud/LegendsN64HudPainter.h"
 #include "expansions/n64/hud/LegendsN64Plaque.h"
+#include "expansions/n64/level/LegendsPortals.h"
+#include "expansions/shared/hud/LegendsHudClock.h"
+#include "expansions/shared/level/LegendsPortalVisitor.h"
 #include "game/characters/ClassData.h"
 #include "game/hud/DarkLegacyHudArt.h"
 #include "game/hud/DarkLegacyHudPainter.h"
+#include "game/hud/HudPainter.h"
 #include "game/hud/HudStyles.h"
 #include "game/hud/HudView.h"
 #include "game/hud/StatusBox.h"
+#include "game/level/ImportedLevel.h"
 #include "game/level/LevelCatalog.h"
 
 namespace {
@@ -89,6 +100,21 @@ constexpr u8 kOpaque = 255;
 
 /** The realms Dark Legacy's scrolls name, from one, which the port's plaques write. */
 constexpr s32 kNamedRealms = 11;
+
+/** The program, the exits' template and the tower's placements, from which its exits decode. */
+constexpr std::string_view kProgram = "_program/game.bin";
+constexpr std::string_view kExitTemplates = "items/generic/ptrap.rom";
+constexpr std::string_view kTowerPlacements = "levels/tower2/ipr.rom";
+/** The tower's exits to the five realms' levels, each named by a level-name picture. */
+constexpr usize kTowerExits = 24;
+/** A plaque's steps from its seat stepping on: made, then six steps clearer, to rest. */
+constexpr s32 kStepsToRest = 7;
+/** Its steps from its seat stepping off: clouding over three, letting its exit go, then gone. */
+constexpr s32 kStepsToGo = 5;
+/** A plaque's transparency at rest (FUN_e0058620). */
+constexpr u8 kRestingTransparency = 0x1f;
+/** A point high over the tower, off every exit. */
+constexpr Vec3 kOverTheTower{0, 1000, 0};
 
 /** A party of the first four classes, each in its seat's colour: each has its portraits. */
 constexpr std::array<HudMember, 4> kParty{{
@@ -156,6 +182,32 @@ const Texture* lentBy(DarkLegacyHudArt& art, const test::DarkLegacyLookup& looku
     case Set::Inventory: return art.inventoryArt(lookup.name);
     }
     return nullptr;
+}
+
+/** The N64 tower's exits, as its placements and the exits' template decode them. */
+std::vector<formats::LegendsN64Portal> towerExits(const std::filesystem::path& root) {
+    return formats::decodeLegendsN64Portals(readFile(root / kTowerPlacements),
+                                            readFile(root / kExitTemplates),
+                                            readFile(root / kProgram));
+}
+
+/** Whether `quad` draws `picture`'s own pixels. */
+bool shows(const test::Quad& quad, const formats::LegendsN64Texture& picture) {
+    const auto* image = dynamic_cast<const test::FakeTexture*>(quad.texture);
+    return image != nullptr && image->width() == picture.image.width &&
+           image->height() == picture.image.height && image->pixels == picture.image.pixels;
+}
+
+/** `member` standing in its seat with nothing carried. */
+HudSeat standingAs(const HudMember& member) {
+    HudSeat seat;
+    seat.box.mode = StatusBoxView::Mode::Status;
+    seat.box.active = true;
+    seat.box.classIndex = member.classIndex;
+    seat.box.color = member.color;
+    seat.box.name = "A";
+    seat.turbo = 0.0f;
+    return seat;
 }
 
 } // namespace
@@ -422,4 +474,146 @@ TEST_CASE("the N64 look opens on the player's own art, and the GameCube data hol
     REQUIRE_FALSE(lending.failure);
     CHECK(lending.warnings.empty());
     CHECK(missing == std::vector<std::string>{});
+}
+
+TEST_CASE("every N64 tower exit names a plaque the N64 look can draw",
+          "[legends][n64-hud][assets]") {
+    const std::filesystem::path root = n64Root();
+    const std::vector<formats::LegendsN64Portal> exits = towerExits(root);
+    REQUIRE(exits.size() == kTowerExits);
+    // Each exit leads to a level of its own.
+    std::vector<u32> codes;
+    for (const formats::LegendsN64Portal& exit : exits) {
+        CAPTURE(exit.nativeIndex, exit.map);
+        CHECK(exit.destination != 0);
+        codes.push_back(exit.destination);
+    }
+    std::ranges::sort(codes);
+    CHECK(std::ranges::adjacent_find(codes) == codes.end());
+
+    // The level-name banks hold a picture for each exit, and none besides.
+    std::vector<formats::LegendsN64Texture> pictures;
+    for (const std::string_view name : LegendsN64HudPainter::kPlaqueBanks) {
+        for (formats::LegendsN64Texture& picture : bankOf(root, name)) {
+            if (picture.name.starts_with(kLegendsN64PlaquePrefix)) {
+                pictures.push_back(std::move(picture));
+            }
+        }
+    }
+    CHECK(pictures.size() == kTowerExits);
+    std::vector<const formats::LegendsN64Texture*> pictureOf; // each exit's picture, in turn
+    for (const formats::LegendsN64Portal& exit : exits) {
+        const std::string name = legendsN64PlaqueArt(exit.destination);
+        CAPTURE(exit.map, name);
+        const auto found = std::ranges::find(pictures, name, &formats::LegendsN64Texture::name);
+        REQUIRE(found != pictures.end());
+        pictureOf.push_back(&*found);
+    }
+
+    // The look opened on the player's art draws each one over the panel of the seat standing on
+    // its exit, four seats at a time, and lets it go once the seat steps off.
+    test::FakeRenderDevice device;
+    test::FakeDarkLegacyArt art;
+    LegendsN64HudPainter look;
+    REQUIRE(look.load(device, root, art, kParty));
+    HudView view;
+    for (const HudMember& member : kParty) {
+        view.seats.at(static_cast<usize>(member.seat)) = standingAs(member);
+    }
+    s32 step = 0;
+    const auto prepare = [&] {
+        view.seconds = (static_cast<f32>(step) + 0.5f) / LegendsHudClock::kStepsPerSecond;
+        Canvas canvas;
+        canvas.begin(device, Mat4{1.0f});
+        HudFrame frame{.canvas = canvas, .device = device, .darkLegacy = art};
+        look.prepare(frame, view);
+        canvas.end();
+        ++step;
+    };
+    const auto panels = [&] {
+        device.draws.clear();
+        Canvas canvas;
+        canvas.begin(device, Mat4{1.0f});
+        HudFrame frame{.canvas = canvas, .device = device, .darkLegacy = art};
+        look.drawStatus(frame, view);
+        canvas.end();
+        return test::quadsOf(device);
+    };
+    const auto opacity = static_cast<u8>(kOpaque - kRestingTransparency);
+    prepare(); // the look's first sight of the seats only sets its clock going
+    for (usize first = 0; first < exits.size(); first += kParty.size()) {
+        for (usize seat = 0; seat < kParty.size(); ++seat) {
+            const u32 code = exits.at(first + seat).destination;
+            view.seats.at(seat).pad =
+                HudPad{.identity = code, .nativeCode = code, .destination = nullptr};
+        }
+        for (s32 rest = 0; rest < kStepsToRest; ++rest) {
+            prepare();
+        }
+        const std::vector<test::Quad> drawn = panels();
+        for (usize seat = 0; seat < kParty.size(); ++seat) {
+            const formats::LegendsN64Texture& picture = *pictureOf.at(first + seat);
+            CAPTURE(seat, picture.name);
+            std::vector<test::Quad> plaques;
+            std::ranges::copy_if(drawn, std::back_inserter(plaques),
+                                 [&](const test::Quad& quad) { return shows(quad, picture); });
+            REQUIRE(plaques.size() == 1);
+            const test::Quad& plaque = plaques.front();
+            test::checkRect(plaque.area, {static_cast<f32>(Layout::kSlotX.at(seat)),
+                                          static_cast<f32>(Layout::kStripTop),
+                                          static_cast<f32>(Layout::kPanelWidth),
+                                          static_cast<f32>(Layout::kPanelHeight)});
+            test::checkRect(plaque.uv, {0, 0, 1, 1});
+            CHECK(plaque.color == Color::white().withAlpha(opacity));
+            CHECK(plaque.transform == LegendsN64Frame::transform());
+        }
+        for (HudSeat& seat : view.seats) {
+            seat.pad.reset();
+        }
+        for (s32 gone = 0; gone < kStepsToGo; ++gone) {
+            prepare();
+        }
+        const std::vector<test::Quad> after = panels();
+        for (usize seat = 0; seat < kParty.size(); ++seat) {
+            const formats::LegendsN64Texture& picture = *pictureOf.at(first + seat);
+            CAPTURE(seat, picture.name);
+            CHECK(std::ranges::none_of(
+                after, [&](const test::Quad& quad) { return shows(quad, picture); }));
+        }
+    }
+}
+
+TEST_CASE("standing on each N64 tower exit tells the HUD its destination",
+          "[legends][n64-hud][assets]") {
+    const std::filesystem::path root = n64Root();
+    const std::vector<formats::LegendsN64Portal> exits = towerExits(root);
+    REQUIRE(exits.size() == kTowerExits);
+    for (usize index = 0; index < exits.size(); ++index) {
+        const formats::LegendsN64Portal& exit = exits[index];
+        CAPTURE(index, exit.map);
+        // A seat on the exit and another high over the tower, the seats a turn on each exit.
+        const auto seat = static_cast<u8>(index % kParty.size());
+        const auto other = static_cast<u8>((seat + 1) % kParty.size());
+        std::array<LegendsPortalVisitor, 2> visitors{
+            {{.player = seat, .position = exit.position},
+             {.player = other, .position = kOverTheTower}}};
+        // The seat on it hears its own exit's code, and waits there for the other.
+        const auto under = legendsN64ExitUnder(exits, visitors, seat);
+        REQUIRE(under.has_value());
+        CHECK(under->code == exit.destination);
+        CHECK(under->waiting);
+        CHECK_FALSE(legendsN64ExitUnder(exits, visitors, other).has_value());
+        const auto absent = static_cast<s32>((seat + 2) % kParty.size());
+        CHECK_FALSE(legendsN64ExitUnder(exits, visitors, absent).has_value());
+        // With both on it, both hear it and neither waits.
+        visitors[1].position = exit.position;
+        for (const LegendsPortalVisitor& visitor : visitors) {
+            const s32 player = visitor.player;
+            CAPTURE(player);
+            const auto shared = legendsN64ExitUnder(exits, visitors, player);
+            REQUIRE(shared.has_value());
+            CHECK(shared->code == exit.destination);
+            CHECK_FALSE(shared->waiting);
+        }
+    }
 }
