@@ -22,7 +22,6 @@
 #include "FakeRenderDevice.h"
 #include "HudLookScene.h"
 #include "LogCapture.h"
-#include "TestSupport.h"
 #include "game/characters/CharacterSave.h"
 #include "game/characters/ClassData.h"
 #include "game/characters/Inventory.h"

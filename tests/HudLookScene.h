@@ -59,7 +59,7 @@ static_assert(HudPresses::kSteerTick - HudPresses::kOpenTick >
 static_assert(HudPresses::kSteerTick < HudPresses::kCloseTick);
 
 /** A powerup that a selector can name, carried for good and not worn. */
-constexpr game::PowerupSlot kSelectorPowerup{
+inline constexpr game::PowerupSlot kSelectorPowerup{
     .strength = -1.0f, .kind = game::powerup::kSpeed, .charge = 5.0f, .flags = 0, .on = false};
 
 /** One way a selector is pressed. */

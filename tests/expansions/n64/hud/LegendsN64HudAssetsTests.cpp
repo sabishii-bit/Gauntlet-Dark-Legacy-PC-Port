@@ -17,7 +17,6 @@
 #include "engine/io/ByteReader.h"
 #include "engine/io/File.h"
 #include "engine/math/Math.h"
-#include "engine/render/RenderTypes.h"
 #include "engine/ui/Canvas.h"
 
 #include "FakeDarkLegacyArt.h"
@@ -38,7 +37,6 @@
 #include "expansions/shared/hud/LegendsHudClock.h"
 #include "expansions/shared/level/LegendsPortalVisitor.h"
 #include "game/characters/ClassData.h"
-#include "game/hud/DarkLegacyHudArt.h"
 #include "game/hud/DarkLegacyHudPainter.h"
 #include "game/hud/HudPainter.h"
 #include "game/hud/HudStyles.h"
