@@ -317,13 +317,14 @@ pub fn refusal(refusal: Refusal) -> &'static str {
     }
 }
 
-/// The code a failure to read a dump reports. A cancel has none, and the system's failure to read
-/// the dump is `io.failed`. A disc file's copy whose writer would not take its bytes is
-/// `space.ranOut` when the writer found no room, else `io.failed`. A dump that breaks a rule of
-/// its format reports that rule's code: one with a part that is not there is `source.incomplete`,
-/// one in a container the launcher does not read `source.unsupportedContainer`, a disc of another
-/// game `source.otherGame`, and a file that is no dump the launcher knows `source.unrecognized`.
-/// Any other broken rule is `source.damaged`.
+/// The code a failure to read a dump reports. A cancel has none. The system's failure to read the
+/// dump is `io.failed`, and so is a reader's refusal of a dump path before it opens anything
+/// there, one that names no file or where what is there is no regular file. A disc file's copy
+/// whose writer would not take its bytes is `space.ranOut` when the writer found no room, else
+/// `io.failed`. A dump that breaks a rule of its format reports that rule's code: one with a part
+/// that is not there is `source.incomplete`, one in a container the launcher does not read
+/// `source.unsupportedContainer`, a disc of another game `source.otherGame`, and a file that is no
+/// dump the launcher knows `source.unrecognized`. Any other broken rule is `source.damaged`.
 pub fn media(error: &MediaError) -> Report {
     match error {
         MediaError::Cancelled => Report::Cancelled,

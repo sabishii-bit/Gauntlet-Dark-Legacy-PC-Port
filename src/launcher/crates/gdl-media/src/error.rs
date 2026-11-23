@@ -1,7 +1,8 @@
-//! What the readers report when a dump cannot be read or is refused: the path a read failed on and
-//! what the system answered, the disc file whose copy its writer would not take, that the job
-//! reading the dump was asked to stop, or the rule of its format the dump breaks, as technical
-//! detail for logs. What a player reads is chosen from the failure elsewhere.
+//! What the readers report when a dump cannot be read or is refused: the path a read failed on,
+//! with what the system answered or why a reader refused the path before reading it; the disc
+//! file whose copy its writer would not take; that the job reading the dump was asked to stop; or
+//! the rule of its format the dump breaks; as technical detail for logs. What a player reads is
+//! chosen from the failure elsewhere.
 
 use std::io;
 use std::path::{Path, PathBuf};
@@ -24,12 +25,14 @@ pub(crate) const MAX_QUOTED_CHARS: usize = 256;
 /// Why a dump could not be read, was refused, or could not be copied where a caller asked.
 #[derive(Debug, thiserror::Error)]
 pub enum MediaError {
-    /// Reading `path` failed: the system refused it or could not give its bytes.
+    /// Reading `path` failed: the system refused it or could not give its bytes, or the reader
+    /// refused the path before opening anything there, since it names no file, as a root does, or
+    /// what is there is no regular file, such as a folder, a FIFO or a device.
     #[error("{}: {source}", .path.display())]
     Io {
         /// The file or folder that was being read.
         path: PathBuf,
-        /// What the system answered.
+        /// What the system answered, or the reader's own refusal of the path.
         #[source]
         source: io::Error,
     },
