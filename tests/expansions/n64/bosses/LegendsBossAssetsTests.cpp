@@ -20,6 +20,7 @@
 #include "game/bosses/Bosses.h"
 #include "game/critters/CombatantAssets.h"
 #include "game/critters/CombatantProjectiles.h"
+#include "game/critters/CritterData.h"
 #include "game/effects/CritterCueEmission.h"
 
 namespace {
@@ -54,6 +55,8 @@ TEST_CASE("Native boss assets bind six original skeletons and every authored mov
             CHECK(stock->data.rules().nodeFramePartOffsets);
             CHECK(stock->data.rules().unitBlowPush);
             CHECK(stock->data.rules().breathPushFromOrigin);
+            // How the boss composes its nodes is unread, so their scale keys move its contacts.
+            CHECK((stock->data.rules().portRules & CritterRules::kScaledNodes) != 0);
             CHECK(stock->tree->name == stock->data.tree());
             CHECK(stock->archive.models.loaded());
             CHECK(stock->archive.textures.loaded());
@@ -92,6 +95,7 @@ TEST_CASE("Native boss assets bind six original skeletons and every authored mov
                 CHECK(child.rules().nodeFramePartOffsets);
                 CHECK(child.rules().unitBlowPush);
                 CHECK(child.rules().breathPushFromOrigin);
+                CHECK((child.rules().portRules & CritterRules::kScaledNodes) != 0);
                 validate(child);
             }
             for (const auto& cue : stock->data.sounds()) {

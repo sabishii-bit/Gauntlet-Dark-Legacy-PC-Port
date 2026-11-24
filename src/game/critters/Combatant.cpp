@@ -493,12 +493,11 @@ void Combatant::noteMoveNode(Actor& critter, const MoveDefinition& move, f32 sec
             node = *index;
         }
     }
-    const Mat4 model = modelTransform(critter);
-    const std::span<const Mat4> matrices = critter.pose.matrices();
-    const bool posed = node < matrices.size();
-    critter.moveNode.step(seconds, Vec3{(posed ? model * matrices[node] : model)[3]},
-                          posed ? Vec3{matrices[node][3]} : Vec3{0.0f}, model,
-                          critter.parent != nullptr);
+    const Mat4 model = simulationModel(critter);
+    const bool posed = node < critter.pose.size();
+    const Mat4 placed = posed ? simulationNode(critter, node) : Mat4{1.0f};
+    critter.moveNode.step(seconds, Vec3{(posed ? model * placed : model)[3]},
+                          posed ? Vec3{placed[3]} : Vec3{0.0f}, model, critter.parent != nullptr);
 }
 
 bool Combatant::deathPlayed() const {
@@ -770,7 +769,7 @@ void Combatant::updateActor(s32 ticks, f32 seconds, std::span<const EnemyView> p
                 if (harm->type == AttackDefinition::kBreath) {
                     if ((critter.soundsGiven & bit) == 0) {
                         critter.soundsGiven |= bit;
-                        cue(critter, i, harm->sound, partPosition(critter, move->colnode),
+                        cue(critter, i, harm->sound, cuePosition(critter, move->colnode),
                             move->colnode, harm);
                     }
                     strikeWith(critter, i, *move, index, players);
@@ -778,7 +777,7 @@ void Combatant::updateActor(s32 ticks, f32 seconds, std::span<const EnemyView> p
                 }
                 const Vec3 where = targeted ? *critter.attackTarget + Vec3{modelTransform(critter) *
                                                                            Vec4{harm->offset, 0.0f}}
-                                            : partPosition(critter, move->colnode) + harm->offset;
+                                            : cuePosition(critter, move->colnode) + harm->offset;
                 giveOnce(bit, harm->sound, where);
                 strikeWith(critter, i, *move, index, players);
             };
@@ -960,7 +959,7 @@ f32 Combatant::hurtActor(const EnemyHit& hit) {
     // the struck node accepts damage. Concurrent hits contribute to the same shove.
     critter.hurtDirection += hit.direction;
     critter.sinceHurt = 0.0f;
-    const Vec3 where = hit.where.value_or(partPosition(critter, {}));
+    const Vec3 where = hit.where.value_or(cuePosition(critter, {}));
     const u32 element = damage::element(flags);
     if (damage::marks(flags) && element != 0) {
         CombatCue burst;

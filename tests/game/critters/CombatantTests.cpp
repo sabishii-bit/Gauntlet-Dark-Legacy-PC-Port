@@ -2154,6 +2154,50 @@ TEST_CASE("a definition with unitBlowPush keeps the swing's flat way at a unit's
     CHECK(glm::distance(direction, glm::normalize(Vec3{12, 0, 2})) > 0.05f);
 }
 
+TEST_CASE("a blow's offset turns with its node but is not stretched by the node's scale key",
+          "[game][combatant][node-scale]") {
+    // ARM, five along x, keys four times its length along x through SWING, as the Yeti's hands
+    // do through its swipes. GetWorldMat (0x800BB614) composes it without that key, which only
+    // the draw applies, so the blow's offset ten back along ARM stays ten back
+    // (CritterNodePlayerCollide). Data whose rules keep the scale keys stretch it forty back.
+    const bool scaled = GENERATE(false, true);
+    CAPTURE(scaled);
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    const auto root = familyAssets();
+    writeSwingTree(root, 0, {}, R"(,"tracks":[{"node":1,"flags":256,"frames":[0],"values":[4]}])");
+    REQUIRE(assets.load(device, root, General::definition(), 'G'));
+    auto source = swingCritter(0);
+    source.moves[1].colnode = "ARM";
+    source.damages[0].offset = {-10, 0, 0};
+    source.damages[0].maxDistance = 1;
+    CritterRules rules;
+    rules.portRules = scaled ? CritterRules::kScaledNodes : 0;
+    assets.data = CritterData::fromDecoded("GENERAL", source, 0, rules);
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+    const auto swing = assets.data.moveNamed("SWING");
+    REQUIRE(swing);
+    Combatant::MovePoint start;
+    start.target = 0;
+    REQUIRE(actor.setMove(*swing, start));
+    // One ten back from ARM, and one forty back, where the stretched arm would put the blow.
+    std::array<EnemyView, 2> players{};
+    players[0].player = 0;
+    players[0].position = {-5, 0, 0};
+    players[1].player = 1;
+    players[1].position = {-35, 0, 0};
+    actor.update(2, 1.0f / 30, players);
+    REQUIRE(actor.moveName() == "SWING");
+    const auto arm = actor.nodeTransform("ARM");
+    REQUIRE(arm);
+    REQUIRE(glm::length(Vec3{(*arm)[0]}) == Approx(4)); // drawn four times as long
+    const auto blows = actor.takeBlows();
+    REQUIRE(blows.size() == 1);
+    CHECK(blows[0].player == (scaled ? 1 : 0));
+    CHECK(glm::distance(blows[0].origin, Vec3{scaled ? -35.0f : -5.0f, 0, 0}) < 1e-4f);
+}
+
 TEST_CASE("a blow's push survives a rewind of its fighter",
           "[game][combatant][blow-push][native-state-digest]") {
     test::FakeRenderDevice device;
@@ -2850,9 +2894,17 @@ formats::CritterFile turnedPartCritter() {
     return source;
 }
 
+/** How the turned-part general's ROOT stands through its stance. */
+enum class TurnedRoot : u8 {
+    Still,
+    Turned,    ///< a quarter about y
+    Scaled,    ///< keyed twice its length along x
+    PlaceOnly, ///< turned, and flagged to hand its children its place alone
+};
+
 /** A general whose ARM stands five along x from its ROOT and is turned a quarter about y
- * through its stance (the ROOT too when `parentTurns`), of `source` under `rules`. */
-void loadTurnedPart(test::FakeRenderDevice& device, CombatantAssets& assets, bool parentTurns,
+ * through its stance, its ROOT standing as `stance` says, of `source` under `rules`. */
+void loadTurnedPart(test::FakeRenderDevice& device, CombatantAssets& assets, TurnedRoot stance,
                     const CritterRules& rules = {},
                     const formats::CritterFile& source = turnedPartCritter()) {
     const auto root = familyAssets();
@@ -2861,9 +2913,19 @@ void loadTurnedPart(test::FakeRenderDevice& device, CombatantAssets& assets, boo
         archive /= "LEVELG";
     }
     const std::string quarterTurn = R"("flags":2,"frames":[0],"values":[1.5707964])";
-    const std::string rootTrack = parentTurns ? R"({"node":0,)" + quarterTurn + "}," : "";
+    std::string rootTrack;
+    if (stance == TurnedRoot::Turned || stance == TurnedRoot::PlaceOnly) {
+        rootTrack = R"({"node":0,)" + quarterTurn + "},";
+    } else if (stance == TurnedRoot::Scaled) {
+        rootTrack = R"({"node":0,"flags":256,"frames":[0],"values":[2]},)";
+    }
+    const std::string rootFlags =
+        stance == TurnedRoot::PlaceOnly
+            ? R"(,"objectFlags":)" + std::to_string(TreePose::kTranslationOnlyParent)
+            : "";
     writeTextFile(archive / "animations.json", R"({"trees":[{"name":"BODY","nodes":[
-      {"name":"ROOT","object":"BODY","parent":-1,"position":[0,0,0]},
+      {"name":"ROOT","object":"BODY","parent":-1,"position":[0,0,0])" +
+                                                   rootFlags + R"(},
       {"name":"ARM","object":"BODY","parent":0,"position":[5,0,0]}],
       "sequences":[{"name":"STEP","frames":3,"tracks":[)" +
                                                    rootTrack + R"({"node":1,)" + quarterTurn +
@@ -2898,7 +2960,7 @@ TEST_CASE("a solid part's offset sits in its node's parent frame, as the origina
         return targets[0].base + Vec3{0, targets[0].radius, 0};
     };
     SECTION("the node's own turn leaves the offset where its parent holds it") {
-        loadTurnedPart(device, assets, false);
+        loadTurnedPart(device, assets, TurnedRoot::Still);
         REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
         const auto node = actor.nodeTransform("ARM");
         REQUIRE(node.has_value());
@@ -2912,14 +2974,36 @@ TEST_CASE("a solid part's offset sits in its node's parent frame, as the origina
         CHECK(glm::distance(pushes.front().velocity, Vec3{2, 0, 0}) < 1e-4f);
     }
     SECTION("the parent's turn carries the offset with it") {
-        loadTurnedPart(device, assets, true);
+        loadTurnedPart(device, assets, TurnedRoot::Turned);
         REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
         CHECK(glm::distance(solidCentre(), Vec3{0, 0, -7}) < 1e-4f);
+    }
+    SECTION("the parent's scale key neither carries the node out nor stretches the offset") {
+        // Only the draw applies a scale key; GetWorldMat composes the nodes without it.
+        loadTurnedPart(device, assets, TurnedRoot::Scaled);
+        REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+        const auto node = actor.nodeTransform("ARM");
+        REQUIRE(node.has_value());
+        REQUIRE(glm::distance(Vec3{(*node)[3]}, Vec3{10, 0, 0}) < 1e-4f); // drawn there
+        CHECK(glm::distance(solidCentre(), Vec3{7, 0, 0}) < 1e-4f);
+    }
+    SECTION("data whose rules keep the scale keys carry the node out and stretch the offset") {
+        CritterRules rules;
+        rules.portRules = CritterRules::kScaledNodes;
+        loadTurnedPart(device, assets, TurnedRoot::Scaled, rules);
+        REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+        CHECK(glm::distance(solidCentre(), Vec3{14, 0, 0}) < 1e-4f);
+    }
+    SECTION("a parent that hands its place alone leaves the offset in the frame above it") {
+        // GetWorldMat adds such a parent's translation without its turn (0x800BB690-0x800BB6E0).
+        loadTurnedPart(device, assets, TurnedRoot::PlaceOnly);
+        REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+        CHECK(glm::distance(solidCentre(), Vec3{7, 0, 0}) < 1e-4f);
     }
     SECTION("data whose rules keep the node's frame turns the offset with the node") {
         CritterRules rules;
         rules.nodeFramePartOffsets = true;
-        loadTurnedPart(device, assets, false, rules);
+        loadTurnedPart(device, assets, TurnedRoot::Still, rules);
         REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
         CHECK(glm::distance(solidCentre(), Vec3{5, 0, -2}) < 1e-4f);
         knockedStep();
@@ -2937,7 +3021,7 @@ TEST_CASE("a great one's step meets another's part, the swarm and the level's it
     CombatantAssets assets;
     auto source = turnedPartCritter();
     source.types.front().typeFlags |= CritterData::kByParts; // another's parts stop it
-    loadTurnedPart(device, assets, false, {}, source);
+    loadTurnedPart(device, assets, TurnedRoot::Still, {}, source);
     Combatant actor;
     REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
     Combatant peer;
@@ -2987,7 +3071,7 @@ TEST_CASE("a broken part's shot leaves where GetWorldMat places the part",
     auto& shot = source.damages.emplace_back();
     shot.type = AttackDefinition::kProjectile;
     shot.damage = 10;
-    loadTurnedPart(device, assets, false, {}, source);
+    loadTurnedPart(device, assets, TurnedRoot::Still, {}, source);
     Combatant actor;
     REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
     EnemyHit hit;
@@ -2997,6 +3081,31 @@ TEST_CASE("a broken part's shot leaves where GetWorldMat places the part",
     const auto shots = actor.takeShots();
     REQUIRE(shots.size() == 1);
     CHECK(glm::distance(shots.front().origin, Vec3{7, 0, 0}) < 1e-4f);
+}
+
+/** Where the original's GetWorldMat (0x800BB614) puts `offset` at node `node` of `pose`, in the
+ * model's space: the node's local matrix without its scale key, the offset added to its
+ * translation, then each parent's matrix, also without its scale key, composed over it, one
+ * flagged to hand its place alone adding its translation. */
+Vec3 worldMatPlace(const TreeInfo& tree, const TreePose& pose, usize node, const Vec3& offset) {
+    const auto unscaled = [&](usize at) {
+        NodePose local = pose.poses()[at];
+        local.scale = Vec3{1.0f};
+        return TreePose::localMatrix(local, tree.nodes[at].position);
+    };
+    Mat4 placed = unscaled(node);
+    placed[3] += Vec4{offset, 0};
+    for (s32 parent = tree.nodes[node].parent; parent >= 0;
+         parent = tree.nodes[static_cast<usize>(parent)].parent) {
+        const Mat4 above = unscaled(static_cast<usize>(parent));
+        if ((tree.nodes[static_cast<usize>(parent)].objectFlags &
+             TreePose::kTranslationOnlyParent) != 0) {
+            placed[3] += Vec4{Vec3{above[3]}, 0};
+        } else {
+            placed = above * placed;
+        }
+    }
+    return Vec3{placed[3]};
 }
 
 TEST_CASE("great ones' parts stand where the original's GetWorldMat places them through every "
@@ -3050,14 +3159,8 @@ TEST_CASE("great ones' parts stand where the original's GetWorldMat places them 
                 const auto& part = assets.data.parts()[static_cast<usize>(volume.node)];
                 const auto node = tree.findNode(part.node, kCombatantNodeNameLength);
                 REQUIRE(node.has_value());
-                // GetWorldMat copies the node's local matrix, adds the offset to its translation
-                // and then composes the parents.
-                Mat4 local = TreePose::localMatrix(pose.poses()[*node], tree.nodes[*node].position);
-                local[3] += Vec4{part.position, 0};
-                const s32 parent = tree.nodes[*node].parent;
-                const Mat4 above =
-                    parent >= 0 ? pose.matrices()[static_cast<usize>(parent)] : Mat4{1};
-                const Vec3 placed{(*model * above * local)[3]};
+                const Vec3 placed{*model *
+                                  Vec4{worldMatPlace(tree, pose, *node, part.position), 1}};
                 const Vec3 centre = volume.base + Vec3{0, 0.5f * volume.height, 0};
                 const Vec3 turned{*actor.nodeTransform(part.node) * Vec4{part.position, 1}};
                 misplaced = std::max(misplaced, glm::distance(centre, placed));
@@ -3078,6 +3181,121 @@ TEST_CASE("great ones' parts stand where the original's GetWorldMat places them 
         CHECK(rise < 0.1f);
         CHECK(shift < 0.1f);
     }
+}
+
+TEST_CASE("the Yeti's swipe strikes ten back along the hand that swings it, which its scale key "
+          "draws four times as long",
+          "[game][combatant][yeti][node-scale][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/YETI.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/YETI/ANIM.PS2");
+    test::FakeRenderDevice device;
+    test::CombatantFixture f;
+    f.open(device, root, nullptr, {}, 'I');
+    REQUIRE(f.spawn("YETI", Vec3{0}, 0));
+    Combatant& actor = f.actor;
+    const auto swipe = actor.data()->moveNamed("SWIPEL");
+    REQUIRE(swipe.has_value());
+    const MoveDefinition& move = actor.data()->moves()[*swipe];
+    REQUIRE(move.colnode == "JOINT_4");
+    REQUIRE(move.frameStart == 20);
+    REQUIRE(move.frameEnd == 24);
+    const AttackDefinition* blow = actor.data()->damage(move.damage0);
+    REQUIRE(blow != nullptr);
+    REQUIRE(blow->type == AttackDefinition::kBlow);
+    REQUIRE(blow->offset == Vec3{-10, 0, 0});
+    REQUIRE(blow->maxDistance == 13);
+    // The hand where frame 21 puts it, drawn four times as long along its x.
+    constexpr f32 kStruck = 21;
+    Combatant::MovePoint point;
+    point.frame = kStruck;
+    point.target = 0;
+    REQUIRE(actor.setMove(*swipe, point));
+    const auto hand = actor.nodeTransform(move.colnode);
+    REQUIRE(hand.has_value());
+    const Vec3 origin{(*hand)[3]};
+    const f32 drawn = glm::length(Vec3{(*hand)[0]});
+    CAPTURE(origin.x, origin.y, origin.z, drawn);
+    REQUIRE(drawn > 3.9f);
+    // A player centred on the hand stands within the reach of thirteen of the blow ten back
+    // along it, as CritterNodePlayerCollide measures it through GetWorldMat (0x800BB614), and
+    // out of reach of one forty back.
+    std::array<EnemyView, 1> players{};
+    players[0].player = 0;
+    players[0].position = origin - Vec3{0, 3, 0};
+    point.frame = kStruck - 1;
+    REQUIRE(actor.setMove(*swipe, point));
+    f.update(2, 1.0f / 30, players);
+    REQUIRE(actor.animation().frame() == Approx(kStruck));
+    const auto blows = actor.takeBlows();
+    REQUIRE(blows.size() == 1);
+    CHECK(glm::distance(blows[0].origin, origin) == Approx(10).margin(0.01f));
+}
+
+TEST_CASE("the Plague Fiend's parts stand where GetWorldMat places them as his body's scale keys "
+          "swell it through his splash, fin and spout",
+          "[game][combatant][plague][node-scale][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/PBOSS.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/PBOSS/ANIM.PS2");
+    test::FakeRenderDevice device;
+    test::CombatantFixture f;
+    f.open(device, root, nullptr, {}, 'K');
+    REQUIRE(f.spawn("PBOSS", Vec3{0}, 0));
+    Combatant& actor = f.actor;
+    REQUIRE(actor.childCount() == 0); // every part is the body's own
+    const CritterData& data = *actor.data();
+    const TreeInfo& tree = *f.assets.tree;
+    // BODY1 keys its scale over every hit part through ATCK4 and ATCK10B, BODY1_TORSO01
+    // through ATCK10.
+    const std::string_view anim = GENERATE("ATCK4", "ATCK10B", "ATCK10");
+    std::optional<usize> move;
+    for (usize i = 0; i < data.moves().size() && !move; ++i) {
+        if (data.moves()[i].anim == anim) {
+            move = i;
+        }
+    }
+    REQUIRE(move.has_value());
+    const auto sequence = tree.findSequence(anim);
+    REQUIRE(sequence.has_value());
+    f32 misplaced = 0; ///< the furthest a part's volume stands from GetWorldMat's place
+    f32 swell = 0;     ///< the furthest the scale keys would have carried a part from it
+    usize necks = 0;   ///< poses NECK_HEAD's volume was seen in
+    Vec3 nearest{1e9f};
+    Vec3 furthest{0};
+    for (s32 frame = 0; frame < tree.sequences[*sequence].frames; ++frame) {
+        Combatant::MovePoint point;
+        point.frame = static_cast<f32>(frame);
+        REQUIRE(actor.setMove(*move, point));
+        const auto model = actor.nodeTransform({});
+        REQUIRE(model.has_value());
+        const TreePose pose = actor.presentedPose(-1);
+        for (const auto& volume : actor.bodyTargets()) {
+            if (volume.node < 0) {
+                continue;
+            }
+            const auto& part = data.parts()[static_cast<usize>(volume.node)];
+            const auto node = tree.findNode(part.node, kCombatantNodeNameLength);
+            REQUIRE(node.has_value());
+            const Vec3 placed{*model * Vec4{worldMatPlace(tree, pose, *node, part.position), 1}};
+            const Vec3 centre = volume.base + Vec3{0, 0.5f * volume.height, 0};
+            const s32 parent = tree.nodes[*node].parent;
+            const Vec3 offset =
+                parent >= 0 ? Mat3{pose.matrices()[static_cast<usize>(parent)]} * part.position
+                            : part.position;
+            const Vec3 scaled{*model * Vec4{Vec3{pose.matrices()[*node][3]} + offset, 1}};
+            misplaced = std::max(misplaced, glm::distance(centre, placed));
+            swell = std::max(swell, glm::distance(scaled, placed));
+            if (part.node == "NECK_HEAD") {
+                ++necks;
+                nearest = glm::length(centre) < glm::length(nearest) ? centre : nearest;
+                furthest = glm::length(centre) > glm::length(furthest) ? centre : furthest;
+            }
+        }
+    }
+    CAPTURE(anim, misplaced, swell, nearest.x, nearest.y, nearest.z, furthest.x, furthest.y,
+            furthest.z);
+    REQUIRE(necks > 0);
+    CHECK(misplaced < 1e-3f);
+    CHECK(swell > 1.0f);
 }
 
 TEST_CASE("critter crowd contact respects height sweep and directional overlap escape",

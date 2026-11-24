@@ -21,6 +21,23 @@ constexpr s32 kThawBlinkTicks = 180;
 constexpr s32 kThawBlinkBit = 8;
 constexpr f32 kShadowReach = 1.0f; ///< its shadow finds the floor within this of the anchor
 constexpr u32 kMeterFacing = 2;    ///< MBTreeSetFlags 0x02000000: turned about the upright
+
+/** The body's root at the floor offset over `position`, turned by `yaw` and scaled by `size`.
+ * The original places the root at floor Y + floorOffset, then transforms originOffset and the
+ * animated nodes from that root. Our floor probes keep to the ground anchor: the Dragon's root
+ * is 18.5 units above it, outside the probe's vertical search range. */
+Mat4 bodyPlacement(const Vec3& position, f32 floorOffset, f32 yaw, f32 size) {
+    const Vec3 root = position + Vec3{0.0f, floorOffset, 0.0f};
+    const Mat4 model =
+        portable::rotate(glm::translate(Mat4{1.0f}, root), yaw, Vec3{0.0f, 1.0f, 0.0f});
+    return glm::scale(model, Vec3{size});
+}
+
+/** Node `node`'s parent, when the tree lists it before the node; -1 otherwise. */
+s32 parentOf(const TreeInfo& tree, usize node) {
+    const s32 parent = tree.nodes[node].parent;
+    return parent >= 0 && static_cast<usize>(parent) < node ? parent : -1;
+}
 } // namespace
 TreePose Combatant::smoothPose(const Actor& actor) {
     if (actor.stock == nullptr || !actor.player.playing()) {
@@ -116,44 +133,89 @@ Mat4 Combatant::presentationModel(const Actor& actor, f32 alpha) {
 }
 
 Mat4 Combatant::modelTransform(const Actor& critter) {
-    // The original places the root at floor Y + floorOffset, then transforms originOffset
-    // and the animated nodes from that root. Keep our floor probes at the ground anchor:
-    // the Dragon's root is 18.5 units above it, outside the probe's vertical search range.
-    const Vec3 root = critter.position + Vec3{0.0f, critter.definition->floorOffset(), 0.0f};
-    const Mat4 model =
-        portable::rotate(glm::translate(Mat4{1.0f}, root), critter.yaw, Vec3{0.0f, 1.0f, 0.0f});
-    return glm::scale(model, Vec3{critter.scale * critter.shrink});
+    return bodyPlacement(critter.position, critter.definition->floorOffset(), critter.yaw,
+                         critter.scale * critter.shrink);
+}
+
+Mat4 Combatant::simulationModel(const Actor& critter) {
+    return bodyPlacement(critter.position, critter.definition->floorOffset(), critter.yaw,
+                         critter.scale * critter.shrink);
+}
+
+bool Combatant::scaledNodes(const Actor& critter) {
+    return (critter.definition->rules().portRules & CritterRules::kScaledNodes) != 0;
+}
+
+Mat4 Combatant::simulationNode(const Actor& critter, usize node) {
+    return scaledNodes(critter) ? critter.pose.matrices()[node] : critter.pose.rigidMatrix(node);
+}
+
+std::vector<Mat4> Combatant::simulationNodes(const Actor& critter) {
+    if (scaledNodes(critter)) {
+        const std::span<const Mat4> matrices = critter.pose.matrices();
+        return {matrices.begin(), matrices.end()};
+    }
+    return critter.pose.rigidMatrices();
+}
+
+Mat4 Combatant::simulationTransform(const Actor& critter, std::string_view node) {
+    const Mat4 model = simulationModel(critter);
+    if (!node.empty()) {
+        if (const auto index = critter.stock->tree->findNode(node, kCombatantNodeNameLength);
+            index.has_value() && *index < critter.pose.size()) {
+            return model * simulationNode(critter, *index);
+        }
+    }
+    return model;
 }
 
 Vec3 Combatant::partPosition(const Actor& critter, std::string_view node) {
     return Vec3{partTransform(critter, node)[3]};
 }
 
-Vec3 Combatant::partCentre(const Actor& critter, const CritterPart& part) {
-    if (critter.definition->rules().nodeFramePartOffsets) {
-        return Vec3{attachmentTransform(critter, part.node) * Vec4{part.position, 1}};
+Vec3 Combatant::cuePosition(const Actor& critter, std::string_view node) {
+    if (node.empty() ||
+        !critter.stock->tree->findNode(node, kCombatantNodeNameLength).has_value()) {
+        return Vec3{glm::translate(modelTransform(critter), critter.definition->originOffset())[3]};
     }
-    const Mat4 model = modelTransform(critter);
+    return Vec3{attachmentTransform(critter, node)[3]};
+}
+
+Vec3 Combatant::partCentre(const Actor& critter, const CritterPart& part,
+                           std::span<const Mat4> nodes) {
+    const Mat4 model = simulationModel(critter);
     const TreeInfo& tree = *critter.stock->tree;
     const auto node = tree.findNode(part.node, kCombatantNodeNameLength);
-    const std::span<const Mat4> matrices = critter.pose.matrices();
-    if (!node.has_value() || *node >= matrices.size()) {
+    const bool posed = node.has_value() && *node < nodes.size();
+    if (critter.definition->rules().nodeFramePartOffsets) {
+        return Vec3{(posed ? model * nodes[*node] : model) * Vec4{part.position, 1}};
+    }
+    if (!posed) {
         return Vec3{model * Vec4{part.position, 1}};
     }
-    // The frame the pose composed the node in: its parent's, else the model's.
-    const s32 parent = tree.nodes[*node].parent;
-    const Vec3 offset = parent >= 0 && static_cast<u32>(parent) < *node
-                            ? Mat3{matrices[static_cast<usize>(parent)]} * part.position
-                            : part.position;
-    return Vec3{model * Vec4{Vec3{matrices[*node][3]} + offset, 1}};
+    // The frame the node's parent hands it: the parent's own, or past parents that hand their
+    // place alone (GetWorldMat 0x800BB690-0x800BB6E0), the first above them that hands its turn;
+    // else the model's. Where its rules keep the scale keys, the pose's own matrices know no such
+    // parent.
+    const auto placeAlone = [&](s32 at) {
+        return !scaledNodes(critter) && (tree.nodes[static_cast<usize>(at)].objectFlags &
+                                         TreePose::kTranslationOnlyParent) != 0;
+    };
+    s32 frame = parentOf(tree, *node);
+    while (frame >= 0 && placeAlone(frame)) {
+        frame = parentOf(tree, static_cast<usize>(frame));
+    }
+    const Vec3 offset =
+        frame >= 0 ? Mat3{nodes[static_cast<usize>(frame)]} * part.position : part.position;
+    return Vec3{model * Vec4{Vec3{nodes[*node][3]} + offset, 1}};
 }
 
 Mat4 Combatant::partTransform(const Actor& critter, std::string_view node) {
     if (node.empty() ||
         !critter.stock->tree->findNode(node, kCombatantNodeNameLength).has_value()) {
-        return glm::translate(modelTransform(critter), critter.definition->originOffset());
+        return glm::translate(simulationModel(critter), critter.definition->originOffset());
     }
-    return attachmentTransform(critter, node);
+    return simulationTransform(critter, node);
 }
 
 Mat4 Combatant::attachmentTransform(const Actor& critter, std::string_view node) {
@@ -226,13 +288,15 @@ std::vector<MissileTarget> Combatant::ownTargets(bool solidOnly) const {
         return out;
     }
     const auto& actor = m_sim.actor;
+    const std::vector<Mat4> nodes =
+        data()->parts().empty() ? std::vector<Mat4>{} : simulationNodes(actor);
     for (usize i = 0; i < data()->parts().size(); ++i) {
         const auto& part = data()->parts()[i];
         if (part.radius <= 0 || (solidOnly && (part.flags & CritterPart::kSolid) == 0) ||
             !nodeAvailable(actor, part.node) || actor.hitNodes[i].health <= 0) {
             continue;
         }
-        const Vec3 centre = partCentre(actor, part);
+        const Vec3 centre = partCentre(actor, part, nodes);
         const f32 radius = part.radius * actor.scale;
         MissileTarget target{id(), centre - Vec3{0, radius, 0}, radius, 2 * radius};
         target.node = static_cast<s32>(i);

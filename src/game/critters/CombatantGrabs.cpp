@@ -81,7 +81,7 @@ void Combatant::carryGrab(Actor& actor, std::span<const EnemyView> players) {
     }
     m_sim.grabs.push_back(
         {actor.grabbed, m_sim.id,
-         glm::translate(attachmentTransform(actor, actor.grabNode), actor.grabOffset), Vec3{0}, 0,
+         glm::translate(simulationTransform(actor, actor.grabNode), actor.grabOffset), Vec3{0}, 0,
          actor.definition->rules().restoreCaptureSupport});
 }
 } // namespace gdl::game

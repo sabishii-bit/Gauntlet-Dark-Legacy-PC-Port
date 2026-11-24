@@ -67,8 +67,8 @@ void Combatant::aimGaze(Actor& critter, f32 seconds, std::span<const EnemyView> 
             target = view->position + Vec3{0.0f, 0.5f * view->height, 0.0f};
         }
     }
-    critter.gaze.aim(critter.pose, *critter.stock->tree, modelTransform(critter), data.looks(),
-                     target, seconds);
+    critter.gaze.aim(critter.pose, *critter.stock->tree, simulationModel(critter), data.looks(),
+                     target, seconds, !scaledNodes(critter));
 }
 
 void Combatant::collectChildEvents(Combatant& part) {

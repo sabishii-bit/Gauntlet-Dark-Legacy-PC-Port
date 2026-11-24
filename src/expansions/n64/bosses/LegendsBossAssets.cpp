@@ -364,7 +364,12 @@ std::unique_ptr<CombatantAssets> loadLegendsBossAssets(RenderDevice& device,
                        // Boss.bin's breath (e0887410) hands e0886ed0 the way from where it
                        // starts to the player, and e004ba94 only turns the player to face that
                        // start, so the push runs flat from it rather than along the beam.
-                       .breathPushFromOrigin = true};
+                       .breathPushFromOrigin = true,
+                       // game.bin's GetWorldMat (e00286cc) composes the matrices nodes keep and
+                       // reads no scale beside them, but whether its animation keeps the scale
+                       // keys in those matrices is unread, so they move the boss's contacts as
+                       // they move its draw.
+                       .portRules = CritterRules::kScaledNodes};
     auto data = CritterData::fromDecoded(family.name, decoded, 0, rules);
     std::vector<CritterData> children;
     std::set<s32> visited{0};

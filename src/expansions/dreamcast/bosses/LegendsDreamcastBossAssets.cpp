@@ -84,7 +84,9 @@ loadLegendsDreamcastBossAssets(RenderDevice& device, const std::filesystem::path
     // attack windows, damage, links, sounds and authored effect placement.
     // Capture support is deliberately enabled for imported arenas: a throw must
     // not leave the player falling forever outside the map's finite floor mesh.
-    // How 1ST_READ.BIN places hit nodes is unread, so part offsets stay in their nodes' frames.
+    // How 1ST_READ.BIN places hit nodes is unread, so part offsets stay in their nodes' frames,
+    // and how it composes node matrices is too, so its nodes' scale keys move its contacts as
+    // they move its draw.
     // Its blow (8c08d4c0) pushes as GDL's does: along the node's travel since MoveSetup
     // (8c08a2c0) last noted it and away from the body's origin, given a unit's height.
     // Its blow and breath (8c08d800) strike through 8c08d380, which sets the player's hit
@@ -93,7 +95,8 @@ loadLegendsDreamcastBossAssets(RenderDevice& device, const std::filesystem::path
     CritterRules rules{.pressureReferenceDamage = decoded.types.front().pressureReferenceDamage,
                        .restoreCaptureSupport = true,
                        .nodeFramePartOffsets = true,
-                       .playerBreathGap = 0.1f};
+                       .playerBreathGap = 0.1f,
+                       .portRules = CritterRules::kScaledNodes};
     auto data = CritterData::fromDecoded(family.name, decoded, 0, rules);
     std::vector<CritterData> children;
     for (s32 child = data.childIndex(); child >= 0;) {

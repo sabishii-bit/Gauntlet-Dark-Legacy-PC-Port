@@ -231,6 +231,10 @@ bool Combatant::translate(Actor& critter, f32 seconds, const MoveDefinition* mov
     // col_radius, the class's whole width. An overlapping body may move outward; players on
     // another floor do not block it.
     const Vec3 offset = to - critter.position;
+    // Its nodes, composed once for every player its parts may meet.
+    const std::vector<Mat4> nodes = (critter.definition->typeFlags() & kNodeMovement) != 0
+                                        ? simulationNodes(critter)
+                                        : std::vector<Mat4>{};
     const auto playerSeparation = [&](const EnemyView& player) -> std::optional<Vec3> {
         const Vec3 centre =
             player.position + Vec3{0, player.collisionHeight.value_or(0.5f * player.height), 0};
@@ -245,7 +249,7 @@ bool Combatant::translate(Actor& critter, f32 seconds, const MoveDefinition* mov
                     !nodeAvailable(critter, part.node)) {
                     continue;
                 }
-                const Vec3 from = partCentre(critter, part);
+                const Vec3 from = partCentre(critter, part, nodes);
                 if (movementTouchesBody(from, from + offset, centre, width + part.radius,
                                         0.5f * player.height + part.radius)) {
                     const f32 distance = glm::length(
@@ -305,13 +309,14 @@ bool Combatant::translate(Actor& critter, f32 seconds, const MoveDefinition* mov
         // CritterMoveNodeCol mode 1 checks active nodes, then the body's fallback.
         // Dying critters keep that body until their instance is removed.
         if ((other.definition->typeFlags() & CritterData::kByParts) != 0) {
+            const std::vector<Mat4> otherNodes = simulationNodes(other);
             const auto parts = other.definition->parts();
             for (usize i = 0; i < parts.size(); ++i) {
                 const auto& part = parts[i];
                 if (other.hitNodes[i].health <= 0 || !nodeAvailable(other, part.node)) {
                     continue;
                 }
-                const Vec3 centre = partCentre(other, part);
+                const Vec3 centre = partCentre(other, part, otherNodes);
                 if (movementTouchesBody(from, peerDestination, centre, radius + part.radius,
                                         radius + part.radius)) {
                     return false;
@@ -356,6 +361,9 @@ bool Combatant::blockedBySwarm(Actor& critter, const Vec3& to) {
     // trample enemies whose half-height is at most two; other contacts stop it.
     const Vec3 from = partPosition(critter, {});
     const Vec3 delta = to - critter.position;
+    const std::vector<Mat4> nodes =
+        (critter.definition->typeFlags() & CritterData::kSolidParts) != 0 ? simulationNodes(critter)
+                                                                          : std::vector<Mat4>{};
     const EnemyBody* nearest = nullptr;
     Vec3 contact{0};
     f32 nearestDistance = 0;
@@ -381,7 +389,8 @@ bool Combatant::blockedBySwarm(Actor& critter, const Vec3& to) {
                     !nodeAvailable(critter, part.node)) {
                     continue;
                 }
-                hit = touch(partCentre(critter, part), radius + part.radius, height + part.radius);
+                hit = touch(partCentre(critter, part, nodes), radius + part.radius,
+                            height + part.radius);
                 if (hit) {
                     break;
                 }
@@ -418,6 +427,9 @@ bool Combatant::blockedByItems(Actor& critter, const Vec3& to) {
     const bool breaks = critter.stock->definition.breaksItems;
     const f32 blow = critter.definition->itemDamage() * m_sim.scales.damage;
     const Vec3 delta = to - critter.position;
+    const std::vector<Mat4> nodes = (critter.definition->typeFlags() & kNodeMovement) != 0
+                                        ? simulationNodes(critter)
+                                        : std::vector<Mat4>{};
     return std::ranges::any_of(m_obstacles, [&](const CombatantObstacle& item) {
         // fn_8005D5C8: low generators may be crushed by golems/gargoyles,
         // but a general simply steps over them rather than ramming or stopping.
@@ -454,7 +466,7 @@ bool Combatant::blockedByItems(Actor& critter, const Vec3& to) {
                     !nodeAvailable(critter, part.node)) {
                     continue;
                 }
-                const Vec3 centre = partCentre(critter, part);
+                const Vec3 centre = partCentre(critter, part, nodes);
                 if (touches(centre, part.radius, part.radius)) {
                     contact = true;
                     break;

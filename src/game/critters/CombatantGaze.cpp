@@ -26,7 +26,7 @@ Vec2 CombatantGaze::tracked(usize index) const {
 
 void CombatantGaze::aim(TreePose& pose, const TreeInfo& tree, const Mat4& model,
                         std::span<const LookDefinition> looks, const std::optional<Vec3>& target,
-                        f32 seconds) {
+                        f32 seconds, bool rigid) {
     const f32 chase = kChaseRate * seconds;
     for (usize i = 0; i < std::min(looks.size(), m_tracked.size()); ++i) {
         const LookDefinition& look = looks[i];
@@ -44,7 +44,7 @@ void CombatantGaze::aim(TreePose& pose, const TreeInfo& tree, const Mat4& model,
         // without one.
         Vec2 wanted{0.0f, 0.0f};
         if (target.has_value()) {
-            const Mat4 world = model * pose.matrices()[*node];
+            const Mat4 world = model * (rigid ? pose.rigidMatrix(*node) : pose.matrices()[*node]);
             const Vec2 facing = bearingOf(Vec3{world[2]});
             wanted = bearingOf(*target - Vec3{world[3]}) - facing + Vec2{0.0f, look.pitchBias};
         }

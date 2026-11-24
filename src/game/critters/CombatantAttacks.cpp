@@ -43,8 +43,8 @@ void Combatant::strikeWith(Actor& critter, s32 id, const MoveDefinition& move, s
     std::optional<CombatantBreath> breath;
     switch (damage->type) {
     case AttackDefinition::kBlow:
-        // The part's offset turns with the part; the player's cylinder grows by the reach
-        // alone (CritterNodePlayerCollide).
+        // The part's offset turns with the part, unstretched by its scale key; the player's
+        // cylinder grows by the reach alone (CritterNodePlayerCollide).
         centre = Vec3{partTransform(critter, move.colnode) * Vec4{damage->offset, 1.0f}};
         reach = damage->maxDistance;
         break;
@@ -62,7 +62,7 @@ void Combatant::strikeWith(Actor& critter, s32 id, const MoveDefinition& move, s
     case AttackDefinition::kBreath:
         // CritterFirePlayerCollide uses the selected animation node, falling
         // back to the model root, not the actor's collision/attention offset.
-        breath = CombatantBreath::fromNode(attachmentTransform(critter, move.colnode), *damage,
+        breath = CombatantBreath::fromNode(simulationTransform(critter, move.colnode), *damage,
                                            critter.definition->rules().worldAxisBreathPitch);
         centre = breath->origin;
         break;
@@ -160,7 +160,7 @@ void Combatant::shoot(const Actor& critter, s32 id, const MoveDefinition& move, 
     shot.damageIndex = damageIndex;
     // The launch point follows the active node, but the offset and facing use the body.
     const Mat4 body = modelTransform(critter);
-    shot.origin = Vec3{attachmentTransform(critter, move.colnode)[3]} +
+    shot.origin = Vec3{simulationTransform(critter, move.colnode)[3]} +
                   Vec3{body * Vec4{damage->offset, 0.0f}};
     shot.forward = Vec3{portable::sin(critter.yaw), 0.0f, portable::cos(critter.yaw)};
     if (const EnemyView* target = viewOf(players, critter.moveTarget); target != nullptr) {

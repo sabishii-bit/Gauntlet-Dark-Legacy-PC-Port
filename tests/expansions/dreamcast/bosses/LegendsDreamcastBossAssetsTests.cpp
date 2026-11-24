@@ -22,6 +22,7 @@
 #include "game/bosses/Bosses.h"
 #include "game/critters/Combatant.h"
 #include "game/critters/CombatantAssets.h"
+#include "game/critters/CritterData.h"
 #include "game/level/BossKinds.h"
 
 namespace {
@@ -87,6 +88,8 @@ TEST_CASE("Dreamcast six native bosses bind all authored attacks and collision n
             CHECK_FALSE(stock->data.rules().unitBlowPush);
             // Its blows and breaths hold a struck player off for a tenth of a second.
             CHECK(stock->data.rules().playerBreathGap == Approx(0.1f));
+            // How the boss composes its nodes is unread, so their scale keys move its contacts.
+            CHECK((stock->data.rules().portRules & CritterRules::kScaledNodes) != 0);
             const auto validate = [&](const CritterData& part) {
                 for (const auto& move : part.moves()) {
                     CAPTURE(move.name, move.anim, move.colnode);
@@ -118,6 +121,7 @@ TEST_CASE("Dreamcast six native bosses bind all authored attacks and collision n
                 CHECK(child.rules().nodeFramePartOffsets);
                 CHECK_FALSE(child.rules().unitBlowPush);
                 CHECK(child.rules().playerBreathGap == Approx(0.1f));
+                CHECK((child.rules().portRules & CritterRules::kScaledNodes) != 0);
                 validate(child);
             }
             CHECK(stock->children.size() == (kind == 35 ? 3 : 0));

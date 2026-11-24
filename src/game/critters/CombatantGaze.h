@@ -25,9 +25,12 @@ public:
     bool equalLocal(const CombatantGaze& other) const { return *this == other; }
 
     /** Turns `pose`'s look nodes (of `tree`, placed in the world by `model`) toward `target`,
-     * or back to the animation without one, `seconds` on from the last call. */
+     * or back to the animation without one, `seconds` on from the last call. `rigid` measures
+     * where a node stands and faces as GetWorldMat places it, without the nodes' scale keys
+     * (NodeLookAtPos); otherwise as the pose's matrices carry them. */
     void aim(TreePose& pose, const TreeInfo& tree, const Mat4& model,
-             std::span<const LookDefinition> looks, const std::optional<Vec3>& target, f32 seconds);
+             std::span<const LookDefinition> looks, const std::optional<Vec3>& target, f32 seconds,
+             bool rigid);
     void reset() { m_tracked = {}; }
     /** The bearing tracked for look node `index`: yaw about the upright, then pitch. */
     Vec2 tracked(usize index) const;

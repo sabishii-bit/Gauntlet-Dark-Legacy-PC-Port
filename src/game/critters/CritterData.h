@@ -54,6 +54,10 @@ struct CritterRules {
     /** Rules an adapter selects where its fighter is not Dark Legacy's, a bit each: the port's
      * own where the fighter's binary is unread, or that binary's where it is read. */
     u32 portRules = 0;
+    /** portRules: its nodes' scale keys carry and stretch where it strikes, is struck and holds
+     * a player, as they do its draw. GDL's GetWorldMat (0x800BB614) composes the nodes without
+     * them, which only the draw applies. */
+    static constexpr u32 kScaledNodes = 0x1;
 };
 
 struct CombatantAttachment {

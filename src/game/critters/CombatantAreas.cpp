@@ -64,7 +64,7 @@ std::optional<f32> Combatant::startArea(Actor& critter, s32 id, const AttackDefi
     if ((sound->flags & effect_flags::kDetached) != 0 && !worldParent.has_value()) {
         // Detached damage effects snapshot the hit node's world position. The
         // slam's hand can lift again without dragging the ground wave with it.
-        const Vec3 position = Vec3{attachmentTransform(critter, node) * Vec4{sound->offset, 1}} +
+        const Vec3 position = Vec3{simulationTransform(critter, node) * Vec4{sound->offset, 1}} +
                               Vec3{modelTransform(critter) * Vec4{damage.offset, 0}};
         // SfxSetMat copies the body's orientation, not the animated hand's.
         worldParent =
@@ -73,7 +73,7 @@ std::optional<f32> Combatant::startArea(Actor& critter, s32 id, const AttackDefi
     }
     if ((sound->flags & effect_flags::kOnFloor) != 0 && damage.hitSound < 0 &&
         m_sim.collision != nullptr) {
-        const Mat4 parent = worldParent.value_or(attachmentTransform(critter, node));
+        const Mat4 parent = worldParent.value_or(simulationTransform(critter, node));
         const Vec3 position{parent * Vec4{offset, 1}};
         const f32 radius = damage.radius * critter.scale;
         if (const auto floor =
@@ -203,7 +203,8 @@ void Combatant::eruptArena(Actor& critter, s32 id, const AttackDefinition& damag
 
 void Combatant::updateAreas(Actor& critter, s32 id, std::span<const EnemyView> players) {
     for (const CritterArea& area : critter.areas) {
-        const Mat4 parent = area.worldParent.value_or(attachmentTransform(critter, area.node));
+        // Measured where GetWorldMat places the node; the cue rides it as drawn.
+        const Mat4 parent = area.worldParent.value_or(simulationTransform(critter, area.node));
         for (const EnemyView& player : players) {
             if (!area.touches(parent, player)) {
                 continue;

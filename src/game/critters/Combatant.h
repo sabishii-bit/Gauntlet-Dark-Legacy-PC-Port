@@ -203,6 +203,8 @@ public:
     std::string form() const;
     const CritterData* data() const;
     ItemArchive* archive();
+    /** Node `node`'s world matrix as the body is drawn, its scale keys included, from the part
+     * whose branch holds it: for what rides the node, not for what meets the body. */
     std::optional<Mat4> nodeTransform(std::string_view node) const;
     /** Render-only attachment sampled from the same composed root/child pose
      * as draw(). Never use this fractional pose for simulation contacts. */
@@ -530,16 +532,40 @@ private:
     void strikeWith(Actor& critter, s32 id, const MoveDefinition& move, s32 damageIndex,
                     std::span<const EnemyView> players);
     static Vec3 partPosition(const Actor& critter, std::string_view node);
-    /** Where a part's volume is centred (CritterUpdateColnodes): GetWorldMat adds the part's
-     * offset to its node's own translation before composing the parents, so the offset lies in
-     * the parent's frame and the node's own turn and scale never move it. A root node's lies in
-     * the model's frame. Data whose rules keep the node's frame turns it with the node. */
-    static Vec3 partCentre(const Actor& critter, const CritterPart& part);
+    /** Where a cue set off at node `node` starts: the drawn node's origin, else the drawn
+     * body's offset origin. */
+    static Vec3 cuePosition(const Actor& critter, std::string_view node);
+    /** Where a part's volume is centred (CritterUpdateColnodes), among `nodes`
+     * (simulationNodes): GetWorldMat adds the part's offset to its node's own translation before
+     * composing the parents, so the offset lies in the frame the node's parent hands it and the
+     * node's own turn never moves it. A root node's lies in the model's frame. Data whose rules
+     * keep the node's frame turns it with the node. */
+    static Vec3 partCentre(const Actor& critter, const CritterPart& part,
+                           std::span<const Mat4> nodes);
+    /** Where its simulation places node `node`; without the node, the body's offset origin. */
     static Mat4 partTransform(const Actor& critter, std::string_view node);
+    /** Node `node`'s world matrix as drawn, its scale keys included, or the drawn model's
+     * without such a node: for what only places a drawn thing or a sound. */
     static Mat4 attachmentTransform(const Actor& critter, std::string_view node);
+    /** Where the body is drawn: its root at the floor offset over its anchor, turned by its yaw
+     * and sized. */
     static Mat4 modelTransform(const Actor& critter);
+    /** Where its simulation places the body: its root at the floor offset over its anchor,
+     * turned by its yaw and sized as drawn. */
+    static Mat4 simulationModel(const Actor& critter);
+    /** Whether its rules keep its nodes' scale keys in its simulation (kScaledNodes). */
+    static bool scaledNodes(const Actor& critter);
+    /** Node `node`'s matrix in the model's space as its simulation composes it: as GetWorldMat
+     * (0x800BB614) does, without the nodes' scale keys, which only the draw applies, unless its
+     * rules keep them. */
+    static Mat4 simulationNode(const Actor& critter, usize node);
+    /** Every node's simulationNode, composed in one pass. */
+    static std::vector<Mat4> simulationNodes(const Actor& critter);
+    /** Node `node`'s world matrix in its simulation, or the simulation's model without such a
+     * node: what decides contact, reach, where harm lands and where a player is held. */
+    static Mat4 simulationTransform(const Actor& critter, std::string_view node);
     /** Notes where the node `move` strikes with, else the fighter's root node, stands `seconds`
-     * on, as CritterMoveSetup does each native frame (0x8003B1CC). */
+     * on, as CritterMoveSetup does each native frame through GetWorldMat (0x8003B1CC). */
     static void noteMoveNode(Actor& critter, const MoveDefinition& move, f32 seconds);
     void carry(Actor& critter, f32 seconds, const MoveDefinition* move,
                std::span<const EnemyView> players, std::span<const Combatant> peers);

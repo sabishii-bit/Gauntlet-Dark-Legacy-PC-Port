@@ -65,7 +65,7 @@ TEST_CASE("a look node chases its target a quarter turn a second, no further fro
     // The animation places the head afresh every frame; the gaze turns it on top.
     const auto frame = [&](const std::optional<Vec3>& target) {
         pose.evaluate(tree, 0, 0.0f);
-        gaze.aim(pose, tree, Mat4{1.0f}, looks, target, kFrame);
+        gaze.aim(pose, tree, Mat4{1.0f}, looks, target, kFrame, true);
     };
     const Vec3 beside{100.0f, 6.0f, 0.0f}; // level with the head, square to its right
     frame(beside);
@@ -138,6 +138,37 @@ TEST_CASE("a look node chases its target a quarter turn a second, no further fro
     looks[0].node = "TAIL";
     frame(beside);
     REQUIRE(yawOf(pose.matrices()[2]) == Approx(0.0f).margin(1e-6f));
+}
+
+TEST_CASE("a look measures from its node as GetWorldMat places it, without its body's scale key",
+          "[game][combatant][gaze][node-scale]") {
+    // The body keys twice its size, which carries the drawn head from six up to twelve; the
+    // original's NodeLookAtPos measures through GetWorldMat (0x800BB614), which leaves it at six.
+    TreeInfo tree = neckedTree();
+    TrackInfo grown;
+    grown.node = 0;
+    grown.flags = static_cast<u16>(TrackInfo::channelBit(6) | TrackInfo::channelBit(7) |
+                                   TrackInfo::channelBit(8));
+    grown.frames = {0};
+    grown.values = {2.0f, 2.0f, 2.0f};
+    tree.sequences[0].tracks = {grown};
+    tree.sequences[0].trackOfNode = {0, -1, -1};
+    std::array<LookDefinition, 1> looks;
+    looks[0].node = "HEAD";
+    looks[0].yawRate = 0.3f;
+    looks[0].pitchRate = 0.2f;
+    const Vec3 ahead{0.0f, 6.0f, 100.0f}; // level with the head where GetWorldMat places it
+    const auto pitched = [&](bool rigid) {
+        CombatantGaze gaze;
+        TreePose pose;
+        pose.evaluate(tree, 0, 0.0f);
+        REQUIRE(pose.matrices()[2][3].y == Approx(12.0f));
+        gaze.aim(pose, tree, Mat4{1.0f}, looks, ahead, kFrame, rigid);
+        return gaze.tracked(0).y;
+    };
+    CHECK(pitched(true) == Approx(0.0f).margin(1e-5f));
+    // Measured from where the draw puts it, the head would look down at the same player.
+    CHECK(pitched(false) == Approx(-kHalfPi * kFrame));
 }
 
 TEST_CASE("a fighter's head follows its target through its moves: not through the entrance, "
