@@ -47,7 +47,9 @@ use crate::host::{Unsupported, host_supported};
 use crate::icon::IconError;
 #[cfg(windows)]
 use crate::icon::{DISC_ICON, icon_resources};
-use crate::payload::{LIB_FOLDER, PayloadError, ROOT_FILES, ROOT_FOLDERS};
+use crate::payload::{
+    LIB_FOLDER, LIBRARY_SUFFIX, PayloadError, ROOT_FILES, ROOT_FOLDERS, ends_with_ignoring_case,
+};
 use crate::receipt::{Receipt, installed_launcher_name};
 use crate::sections::{Sections, SectionsError};
 
@@ -480,6 +482,23 @@ pub fn install_names(platform: Option<Platform>) -> Vec<RelPath> {
     names.into_iter().map(install_name).collect()
 }
 
+/// Whether `name` is one an install of any disc and runtime may put at a folder's top: one of the
+/// disc's two folders, in any ASCII letter case as a disc may spell them, the folders for the
+/// player's saves and settings, either platform's launcher copy or executable, a file or folder a
+/// runtime may have at its top, or a library a Windows runtime keeps there.
+fn is_install_root(name: &str) -> bool {
+    DISC_ROOTS
+        .iter()
+        .any(|root| root.eq_ignore_ascii_case(name))
+        || [SAVES_FOLDER, CONFIG_FOLDER].contains(&name)
+        || Platform::ALL.into_iter().any(|platform| {
+            installed_launcher_name(platform) == name || platform.executable() == name
+        })
+        || ROOT_FILES.contains(&name)
+        || ROOT_FOLDERS.contains(&name)
+        || ends_with_ignoring_case(name, LIBRARY_SUFFIX)
+}
+
 /// The runtime `launcher` carries, held to the one a launcher of `launcher_version` installs, as a
 /// plan records it, with the first names of its files. The runtime is let go of before anything
 /// else is read.
@@ -618,7 +637,7 @@ mod tests {
         DiscSummary, FolderRecord, GET_RUNTIME, INSTALL_JOURNAL, INSTALL_STAGING_PREFIX,
         InstallError, InstallFailure, InstallNotice, InstallPlan, Installed, PREPARE, PUBLISH,
         RecoveryError, RecoveryOutcome, RuntimeSummary, SAVES_FOLDER, SPACE_MARGIN, Unrecorded,
-        install_game_with, install_names, plan_install, plan_with,
+        install_game_with, install_names, is_install_root, plan_install, plan_with,
     };
     use crate::destination::{Blocker, DestinationError, FolderChecks};
     use crate::folder::{
@@ -627,7 +646,9 @@ mod tests {
     use crate::host::Unsupported;
     use crate::icon::IconError;
     use crate::inspect::FolderState;
-    use crate::payload::{BUILD_INFO, DEFAULT_CONFIG, LIB_FOLDER, PayloadError, ROOT_FOLDERS};
+    use crate::payload::{
+        BUILD_INFO, DEFAULT_CONFIG, LIB_FOLDER, PayloadError, ROOT_FILES, ROOT_FOLDERS,
+    };
     use crate::probe::{GameStartError, VersionProbe, probe_game_version_with};
     use crate::receipt::installed_launcher_name;
     use crate::sections::{RUNTIME_SECTION, Sections, SectionsError, WINDOW_SECTION};
@@ -1155,10 +1176,41 @@ mod tests {
         let checked = install_names(Some(platform));
         for root in &plan.roots {
             assert!(checked.contains(root), "{root:?} of {checked:?}");
+            assert!(is_install_root(root.as_str()), "{root:?}");
         }
         let state = RelPath::parse(STATE_DIR, &PAYLOAD_NAMES).unwrap();
         assert!(checked.contains(&state));
         assert!(!plan.roots.contains(&state));
+    }
+
+    #[test]
+    fn an_install_root_is_a_name_an_install_puts_at_a_folders_top() {
+        let mut roots = vec![
+            "Gauntlet", "GAUNTLET", "carddemo", "CardDemo", "saves", "config",
+        ];
+        for platform in Platform::ALL {
+            roots.extend([installed_launcher_name(platform), platform.executable()]);
+        }
+        roots.extend(ROOT_FILES);
+        roots.extend(ROOT_FOLDERS);
+        roots.extend(["SDL2.dll", "zlib1.DLL"]);
+        for root in roots {
+            assert!(is_install_root(root), "{root}");
+        }
+        // The player's own names, the launcher's state folder, and the install's own names in
+        // another letter case, which no install writes.
+        for name in [
+            "user.txt",
+            "setup.exe",
+            STATE_DIR,
+            "Saves",
+            "CONFIG",
+            "Data",
+            "VERSION.txt",
+            "dll",
+        ] {
+            assert!(!is_install_root(name), "{name}");
+        }
     }
 
     #[test]

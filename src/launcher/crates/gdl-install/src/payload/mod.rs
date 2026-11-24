@@ -354,7 +354,7 @@ fn check_platform_root(name: &RelPath, platform: Platform) -> Result<(), Payload
 }
 
 /// Whether `name` ends with `suffix` in any ASCII letter case.
-fn ends_with_ignoring_case(name: &str, suffix: &str) -> bool {
+pub(crate) fn ends_with_ignoring_case(name: &str, suffix: &str) -> bool {
     name.len()
         .checked_sub(suffix.len())
         .and_then(|start| name.as_bytes().get(start..))

@@ -23,7 +23,7 @@ use super::disc_files::DISC_FILES;
 use super::journal::{INSTALL_JOURNAL, InstallJournal, InstallPhase, JournalFile};
 use super::rollback::{Begun, Rollback, clean_up, is_there, stranded_roots};
 use super::settings::InstallSettings;
-use super::{FolderRecord, INSTALL_STAGING_PREFIX};
+use super::{FolderRecord, INSTALL_STAGING_PREFIX, is_install_root};
 use crate::awake::keep_awake;
 use crate::compat::{Access, JOURNAL_NAMES, JOURNAL_SCHEMA, abandoned_install, access, stamp_of};
 use crate::folder::{
@@ -199,7 +199,7 @@ pub(crate) fn recover_install_with(
     let Some(found) = Found::at(&state)?.filter(Found::calls_for_work) else {
         return Ok(RecoveryOutcome::Nothing);
     };
-    let journal = judge_stamps(&state, &found, running)?;
+    let journal = judge_stamps(&folder, &found, running)?;
     let recovery = Recovery {
         folder: &folder,
         state: &state,
@@ -315,17 +315,19 @@ fn listing(path: &Path) -> Result<Option<Vec<OsString>>, RecoveryError> {
     }
 }
 
-/// Judges the stamps of the journals in the state folder `state` that `found` lists, and of its
-/// receipt, for the launcher of version `running`, and reads the install's journal when there is
-/// one. A journal of a kind this launcher reads that cannot be read refuses the recovery first;
-/// then a journal of a kind it does not know, or one a later launcher stamped, and a receipt a
-/// later launcher stamped. An install journal that does not hold what an install's does, or names
-/// what an install never makes, cannot be read either.
+/// Judges the stamps of the journals in the state folder of the installation's folder `folder`
+/// that `found` lists, and of its receipt, for the launcher of version `running`, and reads the
+/// install's journal when there is one. A journal of a kind this launcher reads that cannot be
+/// read refuses the recovery first; then a journal of a kind it does not know, or one a later
+/// launcher stamped, and a receipt a later launcher stamped. An install journal that does not
+/// hold what an install's does, or names what an install never makes, cannot be read either.
 fn judge_stamps(
-    state: &Path,
+    folder: &InstallFolder,
     found: &Found,
     running: &Version,
 ) -> Result<Option<InstallJournal>, RecoveryError> {
+    let state = folder.state_dir();
+    let root = folder.root();
     let folder = state.join(JOURNAL_DIR);
     let mut refusal = None;
     let mut later = false;
@@ -365,11 +367,11 @@ fn judge_stamps(
     if let Some(refused) = refusal {
         return Err(refused);
     }
-    if later || later_receipt(state, running) {
+    if later || later_receipt(&state, running) {
         return Err(RecoveryError::NewerLauncher);
     }
     install
-        .map(|(path, object)| install_journal(&path, object))
+        .map(|(path, object)| install_journal(&path, root, object))
         .transpose()
 }
 
@@ -402,12 +404,15 @@ fn unread(error: FilesError, path: &Path) -> Option<RecoveryError> {
     }
 }
 
-/// The install's journal at `path`, whose stamp lets this launcher change it, read from `object`:
-/// it must hold what an install's journal holds, name a staging by an install's staging name and
-/// list as roots single names, each once, that are not the state folder's, with every root it
-/// records in place among them.
+/// The install's journal at `path`, in the installation's folder `folder`, whose stamp lets this
+/// launcher change it, read from `object`: it must hold what an install's journal holds, name a
+/// staging by an install's staging name, count no more folders made than lie on `folder`'s path
+/// below its top, which no install makes, and list as roots, each once, names an install puts at
+/// a folder's top, with every root it records in place among them. So a journal a hand or a fault
+/// changed never has a recovery move or remove anything an install never makes.
 fn install_journal(
     path: &Path,
+    folder: &Path,
     object: Map<String, Value>,
 ) -> Result<InstallJournal, RecoveryError> {
     let refused =
@@ -420,9 +425,16 @@ fn install_journal(
             journal.staging
         )));
     }
+    let most_made = folder.ancestors().count().saturating_sub(1);
+    if !usize::try_from(journal.made_folders).is_ok_and(|made| made <= most_made) {
+        return Err(refused(format!(
+            "it counts {} folders made, more than lie on the folder's path",
+            journal.made_folders
+        )));
+    }
     for (at, root) in journal.roots.iter().enumerate() {
         let single = RelPath::parse(root, &PAYLOAD_NAMES).is_ok_and(|name| name.depth() == 1);
-        if !single || root.eq_ignore_ascii_case(STATE_DIR) || journal.roots[..at].contains(root) {
+        if !single || !is_install_root(root) || journal.roots[..at].contains(root) {
             return Err(refused(format!(
                 "its root {root:?} is no root an install puts in place"
             )));
@@ -1098,6 +1110,27 @@ mod tests {
             let error = assert_left_alone(&left, "inconsistent", &context("a root nowhere"));
             assert!(error.to_string().contains("VERSION"), "{error}");
 
+            // Publishing, a root recorded in place that is not there, still in the staging:
+            // nothing is done, so no receipt stands for an installation without it.
+            let left = Left::staged(holds_a_file);
+            left.put_in_place("Gauntlet");
+            left.journal("publishing", &["Gauntlet", "VERSION"]);
+            let error = assert_left_alone(&left, "inconsistent", &context("a recorded root gone"));
+            assert!(
+                error
+                    .to_string()
+                    .contains("VERSION is recorded in place and is not there"),
+                "{error}"
+            );
+
+            // Publishing, a journal that carries no receipt to write: nothing is moved.
+            let left = Left::staged(holds_a_file);
+            let mut journal = left.journal_value("publishing", &[]);
+            journal.as_object_mut().unwrap().remove("receipt");
+            left.write_journal(&journal);
+            let error = assert_left_alone(&left, "inconsistent", &context("no receipt"));
+            assert!(error.to_string().contains("carries no receipt"), "{error}");
+
             // Rolling back: what the publish put in place goes back, then everything goes.
             let left = Left::staged(holds_a_file);
             left.put_in_place("Gauntlet");
@@ -1401,7 +1434,7 @@ mod tests {
 
     #[test]
     fn an_unreadable_journal_is_left() {
-        let cases: [Case; 9] = [
+        let cases: [Case; 12] = [
             ("a journal that is not JSON", |left| {
                 fs::write(left.journals().join(INSTALL_JOURNAL), b"not JSON\n").unwrap();
             }),
@@ -1427,6 +1460,21 @@ mod tests {
                 journal["roots"] = json!([".GDL-LAUNCHER"]);
                 left.write_journal(&journal);
             }),
+            ("a root below the folder's top", |left| {
+                let mut journal = left.journal_value("publishing", &[]);
+                journal["roots"] = json!(["Gauntlet/PDATA"]);
+                left.write_journal(&journal);
+            }),
+            ("a root no install puts in place", |left| {
+                let mut journal = left.journal_value("publishing", &[]);
+                journal["roots"] = json!(["Gauntlet", "notes.txt"]);
+                left.write_journal(&journal);
+            }),
+            ("more folders made than lie on the folder's path", |left| {
+                let mut journal = left.journal_value("staging", &[]);
+                journal["madeFolders"] = json!(1000);
+                left.write_journal(&journal);
+            }),
             ("a root named twice", |left| {
                 let mut journal = left.journal_value("publishing", &[]);
                 journal["roots"] = json!(["Gauntlet", "Gauntlet"]);
@@ -1450,6 +1498,14 @@ mod tests {
             made(&left);
             assert_left_alone(&left, "journalUnreadable", what);
         }
+        // A journal taking back the player's own file as though the publish had put it in place:
+        // the file stays where it is.
+        let left = Left::staged(true);
+        let mut journal = left.journal_value("rollingBack", &[]);
+        journal["roots"] = json!([USER_FILE]);
+        left.write_journal(&journal);
+        assert_left_alone(&left, "journalUnreadable", "the player's file as a root");
+        assert_eq!(fs::read(left.root.join(USER_FILE)).unwrap(), USER_BYTES);
         // A file in the journal folder's place.
         let left = Left::staged(false);
         retry_locked(|| fs::remove_dir(left.journals())).unwrap();
