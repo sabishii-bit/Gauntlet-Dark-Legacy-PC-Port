@@ -77,6 +77,40 @@ TEST_CASE("a player's step is held a whole width off a generator's box",
     }
 }
 
+TEST_CASE("a step is trimmed toward a point out of what it met, axis by axis, as "
+          "PlayerCollideWalls trims it",
+          "[game][collision][party-spacing]") {
+    // pmotion.c 3262-3302: an axis on which the point lies back against the step gives up that
+    // much of it, at most all; any other axis of the step goes, and what the point asks of it
+    // is added to the push velocity over the frame (gClockFrameReciprocal).
+    constexpr f32 kFrame = 1.0f / 30.0f;
+    // Out ahead along the step: the step goes, and the way out is pushed.
+    auto trim = BodyCollision::trimToward({0, 0, -3.2f}, {0, 0, -2.9f}, {0, 0, -2.5f}, kFrame);
+    CHECK(trim.to == Vec3{0, 0, -3.2f});
+    CHECK(trim.push.x == 0.0f);
+    CHECK(trim.push.z == Approx(0.4f / kFrame));
+    // Back against it: the step gives up that much.
+    trim = BodyCollision::trimToward({0, 0, -2.6f}, {0, 0, -2.3f}, {0, 0, -2.5f}, kFrame);
+    CHECK(trim.to.x == 0.0f);
+    CHECK(trim.to.z == Approx(-2.5f));
+    CHECK(trim.push == Vec3{0});
+    // Each axis on its own: the way out sideways is pushed, the way back trimmed.
+    trim = BodyCollision::trimToward({0.5f, 0, -2.6f}, {0.5f, 0, -2.2f}, {0.55261f, 0, -2.43148f},
+                                     kFrame);
+    CHECK(trim.to.x == 0.5f);
+    CHECK(trim.to.z == Approx(-2.43148f));
+    CHECK(trim.push.x == Approx(0.05261f / kFrame).epsilon(1e-4));
+    CHECK(trim.push.z == 0.0f);
+    // Never more than all of the step.
+    trim = BodyCollision::trimToward({0, 0, 0}, {0, 0, 0.3f}, {0, 0, -0.5f}, kFrame);
+    CHECK(trim.to == Vec3{0});
+    CHECK(trim.push == Vec3{0});
+    // The step keeps its height, and a frame of no time pushes nothing.
+    trim = BodyCollision::trimToward({0, 1, -3.2f}, {0, 1.5f, -2.9f}, {0, 7, -2.5f}, 0.0f);
+    CHECK(trim.to == Vec3{0, 1.5f, -3.2f});
+    CHECK(trim.push == Vec3{0});
+}
+
 TEST_CASE("body movement slides and lets an overlapping spawn escape", "[game][collision]") {
     const std::array bodies{MissileTarget{0, {0, 0, 5}, 2, 6}};
     const Vec3 slide = BodyCollision::resolve({0, 0, 0}, {4, 0, 10}, 1, 6, bodies);

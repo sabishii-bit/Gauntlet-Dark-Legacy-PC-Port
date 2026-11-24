@@ -26,6 +26,7 @@
 #include "game/enemies/LevelOpponents.h"
 #include "game/enemies/ScriptedOpponents.h"
 #include "game/hud/PowerupSelector.h"
+#include "game/party/PartyCollision.h"
 #include "game/party/PartyCombo.h"
 #include "game/party/PartyMotion.h"
 #include "game/party/PlayerAttacksFixture.h"
@@ -1807,7 +1808,7 @@ TEST_CASE("it transfers on the resolved body contact even when the recipient is 
             tagged.push_back(i);
         }
     };
-    const f32 reach = f.players[0].actor.radius() + f.players[1].actor.radius();
+    const f32 reach = f.players[0].actor.reach() + f.players[1].actor.reach();
     f.players[1].actor.place(Vec3{0, 0, reach + 0.1f});
     f.players[0].itTicks = PartyMotion::kItHold + 1;
     f.inputs[3].move = MoveInput{Vec2{0, 1}, 1};
@@ -1902,7 +1903,7 @@ TEST_CASE("a member walking into another is stopped and shoves them along",
           "[game][screens][party-motion][party-collision]") {
     Fixture f;
     f.players[1].actor.place(Vec3{0, 0, 3});
-    const f32 reach = f.players[0].actor.radius() + f.players[1].actor.radius();
+    const f32 reach = f.players[0].actor.reach() + f.players[1].actor.reach();
     f.inputs[3].move = MoveInput{Vec2{0, 1}, 1};
     for (s32 i = 0; i < 30; ++i) {
         f.step();
@@ -1949,7 +1950,7 @@ Knockback shovedBy(const Vec3& displacement, const PlayerActor& body) {
 /** Stands the fixture's second player half a stride beyond where the first, walking ahead
  * along +z, would touch it, and sets the first walking. */
 void standInTheWay(Fixture& f) {
-    const f32 apart = f.players[0].actor.radius() + f.players[1].actor.radius();
+    const f32 apart = f.players[0].actor.reach() + f.players[1].actor.reach();
     f.players[1].actor.place(Vec3{0, 0, apart + 0.5f * strideOf(f.players[0].actor)});
     f.inputs[3].move = MoveInput{Vec2{0, 1}, 1};
 }
@@ -1976,7 +1977,7 @@ TEST_CASE("a creature's slide does not bend the shove",
           "[game][party-motion][party-collision][motion-order]") {
     Fixture f;
     // Close enough that the step as a creature turns it still meets the member.
-    const f32 apart = f.players[0].actor.radius() + f.players[1].actor.radius();
+    const f32 apart = f.players[0].actor.reach() + f.players[1].actor.reach();
     f.players[1].actor.place(Vec3{0, 0, apart + 0.02f});
     f.inputs[3].move = MoveInput{Vec2{0, 1}, 1};
     // Round a creature: half the step, turned a twelfth of a turn.
@@ -2050,9 +2051,82 @@ TEST_CASE("a member waiting on an exit is not shoved but still holds the step ou
     f.step();
     CHECK_FALSE(f.players[1].knockback.pushed());
     CHECK(f.players[1].actor.position().z == Approx(waiting.z));
-    const f32 apart = f.players[0].actor.radius() + f.players[1].actor.radius();
+    const f32 apart = f.players[0].actor.reach() + f.players[1].actor.reach();
     CHECK(f.players[0].actor.position().z == Approx(waiting.z - apart));
     CHECK(tagged == std::vector<usize>{1});
+}
+
+TEST_CASE("two members walked into each other rest a whole width apart, and IT passes between "
+          "them there",
+          "[game][party-motion][party-collision][party-spacing][it]") {
+    // PlayerCollidePlayers puts each step out to the mover's col_radius and the other's, the
+    // classes' whole widths (pmotion.c 1155-1157, 4082-4097).
+    Fixture f;
+    std::vector<usize> tagged;
+    f.events.perform = [&](usize i, PartyMotion::Action action) {
+        if (action == PartyMotion::Action::Tagged) {
+            tagged.push_back(i);
+        }
+    };
+    const f32 apart = f.players[0].actor.reach() + f.players[1].actor.reach();
+    REQUIRE(apart == Approx(3.0f));
+    f.players[1].actor.place(Vec3{0, 0, 5});
+    f.inputs[3].move = MoveInput{Vec2{0, 1}, 1};
+    f.inputs[1].move = MoveInput{Vec2{0, -1}, 1};
+    const auto distance = [&f] {
+        return glm::distance(f.players[0].actor.position(), f.players[1].actor.position());
+    };
+    for (s32 frame = 0; frame < 30; ++frame) {
+        f.step();
+    }
+    CHECK(distance() == Approx(apart).margin(1e-4f));
+    f.players[0].itTicks = PartyMotion::kItHold + 1;
+    f.step();
+    CHECK(tagged == std::vector<usize>{1});
+    CHECK(distance() == Approx(apart).margin(1e-4f));
+}
+
+TEST_CASE("a step left within nine tenths of a width of a member it did not run into first is "
+          "trimmed back toward it",
+          "[game][party-motion][party-collision][party-spacing]") {
+    // After the walls and the floor PlayerCollidePlayers meets the members again at 0.9 of the
+    // mover's col_radius (0x80347BF0), and PlayerCollideWalls trims the step toward the point
+    // out of the first it meets (pmotion.c 1320-1353, 3262-3302).
+    Fixture f;
+    std::array<PlayerRuntime, 3> players;
+    players[0].actor.spawn(3, {}, nullptr, Vec3{0}, 0);
+    players[1].actor.spawn(1, {}, nullptr, Vec3{0, 0, 3.1f}, 0);
+    players[2].actor.spawn(2, {}, nullptr, Vec3{0, 0, 2.9f}, 0);
+    f.inputs[3].move = MoveInput{Vec2{0, 1}, 1};
+    test::ScriptedMotion level;
+    PartyMotion::step(players, f.inputs, false, 0, 2, kMotionFrame, f.collision, level);
+    // The first pass puts the step out of the member at 3.1 alone, the first in seat order of
+    // the two its end lies equally near; the blocking pass then holds it nine tenths of its
+    // width and all of the other's off the one at 2.9.
+    const f32 held =
+        PartyCollision::kBlockShare * players[0].actor.reach() + players[2].actor.reach();
+    CHECK(players[0].actor.position().x == 0.0f);
+    CHECK(players[0].actor.position().z == Approx(2.9f - held));
+}
+
+TEST_CASE("the shared view's recheck meets the members at nine tenths of a width, trimming the "
+          "step and shoving nobody",
+          "[game][party-motion][party-collision][party-spacing][camera-limit]") {
+    // The original limits the step to the view before its blocking pass (0x8008228C, then
+    // pmotion.c 1320-1353).
+    Fixture f;
+    f.players[1].actor.place(Vec3{0, 0, 3.05f});
+    f.inputs[3].move = MoveInput{Vec2{1, 0}, 1};
+    // An edge of the view that sends the walk along +x on along +z instead.
+    f.events.limitMovement = [](usize i, const Vec3& before, const Vec3& after) {
+        return i == 0 ? Vec3{before.x, after.y, before.z + 0.3f} : after;
+    };
+    f.step();
+    const f32 held =
+        PartyCollision::kBlockShare * f.players[0].actor.reach() + f.players[1].actor.reach();
+    CHECK(f.players[0].actor.position().x == 0.0f);
+    CHECK(f.players[0].actor.position().z == Approx(3.05f - held));
+    CHECK_FALSE(f.players[1].knockback.pushed());
 }
 
 TEST_CASE("a levitating body walks without a footfall", "[game][screens][party-motion][assets]") {

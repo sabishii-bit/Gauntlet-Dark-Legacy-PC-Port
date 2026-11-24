@@ -529,6 +529,17 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
         if (!down) {
             players[i].attackStep = PlayerRuntime::AttackStep{attackFrom, actor.followPoint()};
         }
+        // The members' blocking pass, after the walls and the floor and before the creatures
+        // (pmotion.c 1320-1353): it trims the step toward the point out of a member at nine
+        // tenths of the body's width and all of theirs, and leaves the rest of the way out to
+        // the push velocity, added once the step is settled.
+        const auto block = [&] {
+            Vec3 to = actor.position();
+            const Vec3 push = PartyCollision::block(players, i, before, to, seconds);
+            actor.slide(to - actor.position(), &collision);
+            return push;
+        };
+        Vec3 blockPush{0.0f};
         if (!down && !flying) {
             // A member in the way meets the step as the stick and the knock meant it, put out
             // of the level's items, and is shoved by that before walls, floors or creatures
@@ -536,27 +547,28 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
             // pmotion.c 1124-1175).
             const Vec3 meant = level.itemStep(i, before, actor.stepAim());
             contacts[i] = PartyCollision::step(players, i, before, meant, seconds, &collision);
+            blockPush = block();
             // A body/fixture push is still movement, not a teleport. Sweep the
             // correction through the same walls and floor edges as the step.
             actor.slide(level.resolveMovement(i, before, actor.position()) - actor.position(),
                         &collision);
             FloorRiding::land(players, i, before, collision);
         }
-        // The shared view's limit holds the step, which is then rechecked against world and
-        // creature collision.
+        // The shared view's limit holds the step, which then meets the members' blocking pass
+        // and the creatures again, in the original's order (the limit comes first there,
+        // 0x8008228C); the recheck's blocking pass stands for the first's.
         if (!down && !flying) {
             const Vec3 limited = level.limitMovement(i, before, actor.position());
             if (glm::distance(limited, actor.position()) > 1.0e-5f) {
                 actor.place(before);
                 actor.slide(limited - before, &collision);
                 players[i].attackStep = PlayerRuntime::AttackStep{attackFrom, actor.followPoint()};
+                blockPush = block();
                 actor.slide(level.resolveMovement(i, before, actor.position()) - actor.position(),
                             &collision);
-                Vec3 position = actor.position();
-                PartyCollision::resolve(players, i, before, position);
-                actor.slide(position - actor.position(), &collision);
                 FloorRiding::land(players, i, before, collision);
             }
+            players[i].knockback.pushOut(blockPush);
         }
         // A floor gone from under it lets it sink; lost under the world, it stands again
         // beside another, or at the start.

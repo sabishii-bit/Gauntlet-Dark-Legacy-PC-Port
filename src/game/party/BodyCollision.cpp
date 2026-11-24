@@ -46,6 +46,27 @@ bool BodyCollision::touches(const Vec3& from, const Vec3& to,
     });
 }
 
+BodyCollision::Trim BodyCollision::trimToward(const Vec3& from, const Vec3& to, const Vec3& hit,
+                                              f32 seconds) {
+    // gClockFrameReciprocal is nought for a frame of no time.
+    const f32 perSecond = seconds > 0.0f ? 1.0f / seconds : 0.0f;
+    const auto axis = [perSecond](f32 step, f32 out, f32& push) {
+        if (out > 0.0f && step < 0.0f) {
+            return std::min(step + out, 0.0f);
+        }
+        if (out < 0.0f && step > 0.0f) {
+            return std::max(step + out, 0.0f);
+        }
+        push += perSecond * out;
+        return 0.0f;
+    };
+    Trim trim;
+    const f32 x = axis(to.x - from.x, hit.x - to.x, trim.push.x);
+    const f32 z = axis(to.z - from.z, hit.z - to.z, trim.push.z);
+    trim.to = Vec3{from.x + x, to.y, from.z + z};
+    return trim;
+}
+
 Vec3 BodyCollision::resolveItems(const Vec3& from, const Vec3& to, f32 radius, f32 height,
                                  std::span<const Obstacle> items) {
     if (items.empty() || radius <= 0 || height <= 0) {

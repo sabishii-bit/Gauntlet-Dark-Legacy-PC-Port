@@ -121,6 +121,10 @@ void Knockback::shove(const Vec3& displacement, f32 seconds) {
     m_shoved = true;
 }
 
+void Knockback::pushOut(const Vec3& velocity) {
+    m_shove += Vec3{velocity.x, 0.0f, velocity.z};
+}
+
 void Knockback::endFrame() {
     m_pushed = m_shoved;
     m_shoved = false;

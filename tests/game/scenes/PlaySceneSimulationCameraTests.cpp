@@ -251,8 +251,16 @@ TEST_CASE("the shared view holds every seat of a party inside it, except under n
     for (usize generator = 0; generator < scene.generators().count(); ++generator) {
         (void)scene.generators().strike(static_cast<s32>(generator), kFatal, -1);
     }
-    for (u32 tick = 0; tick < 120; ++tick) {
-        REQUIRE(scene.update(1.0 / 60, {}) == PlayOutcome::Running);
+    // The other two first walk back from the way out for half a second, so that the party is
+    // spread enough for the run, unheld, to leave the view it would be held in.
+    constexpr u32 kBackTicks = 30;
+    for (u32 tick = 0; tick < kBackTicks + 120; ++tick) {
+        PlayScene::Inputs inputs;
+        if (tick < kBackTicks) {
+            inputs[1].move = {-wayOut, 1};
+            inputs[2].move = {-wayOut, 1};
+        }
+        REQUIRE(scene.update(1.0 / 60, inputs) == PlayOutcome::Running);
     }
     // One seat runs off along the way out for five seconds while the others stand.
     const Vec3 start = scene.actor(0)->position();

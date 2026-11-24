@@ -23,10 +23,10 @@ std::array<PlayerRuntime, 3> party() {
     return players;
 }
 
-TEST_CASE("a step into another member ends pushed out to their radii's sum",
+TEST_CASE("a step into another member ends pushed out to their whole widths' sum",
           "[game][screens][party-collision]") {
     auto players = party();
-    const f32 reach = players[0].actor.radius() + players[1].actor.radius();
+    const f32 reach = players[0].actor.reach() + players[1].actor.reach();
     // Straight at them, it stops short of them.
     Vec3 to{0, 0, 9.5f};
     REQUIRE(PartyCollision::resolve(players, 0, Vec3{0, 0, 7}, to) == std::optional<usize>{1});
@@ -73,7 +73,7 @@ TEST_CASE("the one run into is shoved by the step as it was meant",
 TEST_CASE("the step as meant meets the member, and the mover is put out from where it stands",
           "[game][screens][party-collision]") {
     auto players = party();
-    const f32 reach = players[0].actor.radius() + players[1].actor.radius();
+    const f32 reach = players[0].actor.reach() + players[1].actor.reach();
     // Something held the body where it stood, at 8, but the step it meant ran on to 9.5, into
     // the member at 10: the member is met and shoved by that step, and the body is carried by
     // the push out of the member from where it stands.
@@ -92,6 +92,92 @@ TEST_CASE("the step as meant meets the member, and the mover is put out from whe
             std::optional<usize>{1});
     CHECK(waiting[1].knockback == Knockback{});
     CHECK(waiting[0].actor.position().z == Approx(10.0f - reach));
+}
+
+TEST_CASE("members keep a whole width apart, meeting only within half a height of their middles",
+          "[game][party-collision][party-spacing]") {
+    // PlayerCollidePlayers meets a member within the mover's col_radius and theirs, the classes'
+    // whole widths, and within the mover's col_height, half its height, of their collision
+    // centre, and puts the step out to the widths (LineCylinderCollide; pmotion.c 4062-4097,
+    // 1155-1157; player.c 4028-4029).
+    auto players = party();
+    Vec3 to{0, 0, 9.5f};
+    REQUIRE(PartyCollision::resolve(players, 0, Vec3{0, 0, 7}, to) == std::optional<usize>{1});
+    CHECK(to.z == Approx(7.0f));
+    CHECK(to.x == 0.0f);
+    // On a ledge three above or four below, a member is passed under or over; two and a half
+    // above or two below, it is met.
+    struct Ledge {
+        f32 height = 0;
+        bool meets = false;
+    };
+    for (const Ledge ledge :
+         {Ledge{3.0f, false}, Ledge{-4.0f, false}, Ledge{2.5f, true}, Ledge{-2.0f, true}}) {
+        CAPTURE(ledge.height);
+        players[1].actor.place(Vec3{0, ledge.height, 10});
+        to = Vec3{0, 0, 9.5f};
+        CHECK(PartyCollision::resolve(players, 0, Vec3{0, 0, 7}, to).has_value() == ledge.meets);
+    }
+}
+
+/** A 30 Hz frame. */
+constexpr f32 kFrame = 1.0f / 30.0f;
+
+TEST_CASE("the blocking pass trims a step toward nine tenths of the mover's width and shoves "
+          "nobody",
+          "[game][party-collision][party-spacing]") {
+    // The second PlayerCollidePlayers, after the walls, the floor and the items, meets at 0.9 of
+    // the mover's col_radius (0x80347BF0) and answers through PlayerCollideWalls' per-axis trim
+    // (pmotion.c 1320-1353, 3262-3302).
+    std::array<PlayerRuntime, 2> players;
+    players[0].actor.spawn(0, {}, nullptr, Vec3{0, 0, 3.1f}, 0);
+    players[1].actor.spawn(1, {}, nullptr, Vec3{0}, 0);
+    const f32 held =
+        PartyCollision::kBlockShare * players[0].actor.reach() + players[1].actor.reach();
+    REQUIRE(held == Approx(2.85f));
+    // A step in to 2.7 gives up what lies inside, and nothing is left to push.
+    const Vec3 from{0, 0, 3.1f};
+    Vec3 to{0, 0, 2.7f};
+    CHECK(PartyCollision::block(players, 0, from, to, kFrame) == Vec3{0});
+    CHECK(to.x == 0.0f);
+    CHECK(to.z == Approx(held));
+    CHECK(players[1].knockback == Knockback{});
+    // One ending outside it goes on.
+    to = Vec3{0, 0, 2.9f};
+    CHECK(PartyCollision::block(players, 0, from, to, kFrame) == Vec3{0});
+    CHECK(to == Vec3{0, 0, 2.9f});
+    // Standing inside it, the body stays where it is, and the way out is pushed over the frame.
+    to = Vec3{0, 0, 2.5f};
+    const Vec3 push = PartyCollision::block(players, 0, to, to, kFrame);
+    CHECK(to == Vec3{0, 0, 2.5f});
+    CHECK(push.x == 0.0f);
+    CHECK(push.z == Approx((held - 2.5f) / kFrame));
+    // The first pass at the same share puts the step's end out to it.
+    to = Vec3{0, 0, 2.7f};
+    REQUIRE(PartyCollision::resolve(players, 0, from, to, PartyCollision::kBlockShare) ==
+            std::optional<usize>{1});
+    CHECK(to.z == Approx(held));
+}
+
+TEST_CASE("the blocking pass takes the first member in seat order it meets, not the nearest",
+          "[game][party-collision][party-spacing]") {
+    // The second PlayerCollidePlayers stops at the first member it meets (stopFirst,
+    // pmotion.c 4072-4078, 1336-1337).
+    std::array<PlayerRuntime, 3> players;
+    const Vec3 from{0, 0, 3.1f};
+    players[0].actor.spawn(0, {}, nullptr, from, 0);
+    players[1].actor.spawn(1, {}, nullptr, Vec3{2.8f, 0, 3.0f}, 0); // beside the step
+    players[2].actor.spawn(2, {}, nullptr, Vec3{0}, 0);             // ahead, nearer its end
+    Vec3 to{0, 0, 2.7f};
+    CHECK(PartyCollision::resolve(players, 0, from, to, PartyCollision::kBlockShare) ==
+          std::optional<usize>{2});
+    // Put out sideways and back along the step by the one beside it, the step goes on neither
+    // axis and that way out is pushed.
+    to = Vec3{0, 0, 2.7f};
+    const Vec3 push = PartyCollision::block(players, 0, from, to, kFrame);
+    CHECK(to == from);
+    CHECK(push.x < 0.0f);
+    CHECK(push.z < 0.0f);
 }
 
 } // namespace

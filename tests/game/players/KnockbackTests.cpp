@@ -257,6 +257,35 @@ TEST_CASE("a shove carries the body at most half its pace and fades by a third a
     CHECK(knock.step(kFrame, 10.0f) == Vec3{0.0f});
 }
 
+TEST_CASE("a push out goes with the shove, held to half the pace, but shows no push and gives "
+          "way to a first shove",
+          "[game][players][knockback][party-spacing]") {
+    // PlayerCollideWalls adds what it does not trim to light_vel and sets no hud_flags 4
+    // (pmotion.c 3262-3302), so the next shove still zeroes the push velocity first (pmotion.c
+    // 1166-1170).
+    Knockback knock;
+    knock.pushOut(Vec3{0.0f, 4.0f, 3.0f}); // along the ground only
+    knock.endFrame();
+    CHECK_FALSE(knock.pushed());
+    const Vec3 moved = knock.step(kFrame, kPace);
+    CHECK(moved.x == 0.0f);
+    CHECK(moved.y == 0.0f);
+    CHECK(moved.z == Approx(3.0f * kFrame));
+    // Over half the pace, it is held to it.
+    Knockback hard;
+    hard.pushOut(Vec3{12.0f, 0.0f, 0.0f});
+    CHECK(hard.step(kFrame, kPace).x == Approx(Knockback::kShoveLimit * kPace * kFrame));
+    // It adds to a shove the frame has made, and a first shove after it starts afresh.
+    Knockback joined;
+    joined.shove(Vec3{0.1f, 0.0f, 0.0f}, kFrame);
+    joined.pushOut(Vec3{0.2f, 0.0f, 0.0f});
+    CHECK(joined.step(kFrame, kPace).x == Approx(0.3f * kFrame));
+    Knockback replaced;
+    replaced.pushOut(Vec3{0.2f, 0.0f, 0.0f});
+    replaced.shove(Vec3{0.1f, 0.0f, 0.0f}, kFrame);
+    CHECK(replaced.step(kFrame, kPace).x == Approx(0.1f * kFrame));
+}
+
 TEST_CASE("a push over half the pace is held to it, by the fast length, before it decays",
           "[game][players][knockback]") {
     // do_players (player.c 2309-2323) measures the push velocity by NormalVector2D's fast

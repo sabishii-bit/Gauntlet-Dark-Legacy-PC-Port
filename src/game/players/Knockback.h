@@ -25,7 +25,9 @@ namespace gdl::game {
  * Apart from the slide, another member walking into the character shoves it by the step it
  * meant (the push velocity, player +0x864): what a frame's shoves add up to carries the body
  * on at most half its pace, decaying by a third a frame, and the frame after one the
- * character shows it is being pushed (hud_flags 4, then 8; do_players, player.c 2300).
+ * character shows it is being pushed (hud_flags 4, then 8; do_players, player.c 2300). A step
+ * trimmed short of something leaves the rest of its way out to the same velocity, without
+ * showing a push.
  *
  * The slide and the shove go with the step's walk, and the three together are held along each
  * axis to the step's limit (PlayerMotion's moveLimit): forty a second through the native frame
@@ -81,6 +83,11 @@ public:
     /** Another member's step of `seconds` ran into the character: it is shoved by it, as
      * by the step a 30 Hz frame would have made. */
     void shove(const Vec3& displacement, f32 seconds);
+    /** What a trimmed step leaves of the way out of something, `velocity` units a second
+     * along the ground: it joins the push velocity as PlayerCollideWalls adds it (pmotion.c
+     * 3262-3302), held and decaying with the shove, but shows no push (no hud_flags 4), so a
+     * first shove of the frame after it still starts afresh. */
+    void pushOut(const Vec3& velocity);
     /** Direct contact velocity, independent of damage, reaction flags and party shoves. */
     void addVelocity(const Vec3& velocity) { m_velocity += velocity; }
     /** The frame is over: what shoved the character this frame shows it next. */
