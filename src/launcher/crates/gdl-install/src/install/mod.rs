@@ -13,6 +13,8 @@
 
 mod disc_files;
 mod journal;
+#[cfg(test)]
+mod kill;
 mod recover;
 mod rollback;
 mod settings;
@@ -1322,17 +1324,17 @@ mod tests {
 
     /// The disc and the launcher file an install test installs from: the disc written as the
     /// player's image is, and a launcher file of this system's kind carrying the standard runtime.
-    struct Inputs {
+    pub(super) struct Inputs {
         /// The folder the image is written into.
         source: TempDir,
         /// The runtime the launcher file carries.
         runtime: RuntimeFiles,
         /// The launcher file.
-        launcher: Vec<u8>,
+        pub(super) launcher: Vec<u8>,
     }
 
     impl Inputs {
-        fn of(disc: &[u8]) -> Inputs {
+        pub(super) fn of(disc: &[u8]) -> Inputs {
             let source = tempfile::tempdir().unwrap();
             fs::write(source.path().join("game.iso"), disc).unwrap();
             let runtime = standard_runtime(this_platform());
@@ -2590,7 +2592,7 @@ mod tests {
 
     /// The names an install of the icon disc and the standard runtime puts at a folder's top on
     /// this system, in byte order: the order the publish moves them in.
-    fn roots() -> [&'static str; 11] {
+    pub(super) fn roots() -> [&'static str; 11] {
         match this_platform() {
             Platform::WindowsX64 => WINDOWS_ROOTS,
             Platform::LinuxX64 => LINUX_ROOTS,
@@ -2707,7 +2709,7 @@ mod tests {
     }
 
     /// The tree an install of `inputs` that nothing stops leaves in a folder it makes.
-    fn uninterrupted(inputs: &Inputs) -> BTreeMap<String, Option<String>> {
+    pub(super) fn uninterrupted(inputs: &Inputs) -> BTreeMap<String, Option<String>> {
         let top = tempfile::tempdir().unwrap();
         let destination = top.path().join("game");
         inputs.install_into(&destination).unwrap();
@@ -2715,7 +2717,7 @@ mod tests {
     }
 
     /// The journal of the install in `destination`, when there is one.
-    fn journal_of(destination: &Path) -> Option<Value> {
+    pub(super) fn journal_of(destination: &Path) -> Option<Value> {
         let journal = destination
             .join(STATE_DIR)
             .join(JOURNAL_DIR)

@@ -32,6 +32,34 @@ pub(crate) enum FaultPoint {
     Rollback,
 }
 
+#[cfg(test)]
+impl FaultPoint {
+    /// Every point an install passes.
+    pub(crate) const ALL: [FaultPoint; 5] = [
+        FaultPoint::Prepare,
+        FaultPoint::Stage,
+        FaultPoint::Publish,
+        FaultPoint::Cleanup,
+        FaultPoint::Rollback,
+    ];
+
+    /// The point's name, as a test names the point it stops a job at.
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            FaultPoint::Prepare => "install.prepare",
+            FaultPoint::Stage => "install.stage",
+            FaultPoint::Publish => "install.publish",
+            FaultPoint::Cleanup => "install.cleanup",
+            FaultPoint::Rollback => "install.rollback",
+        }
+    }
+}
+
+/// The exit code of a test program that [`KillAt`] ended: none that a run that passed, a test that
+/// failed or a name that matched no test gives.
+#[cfg(test)]
+pub(crate) const KILLED_EXIT_CODE: i32 = 71;
+
 /// Where an install passes its [`FaultPoint`]s: an error from a pass fails the job there, as the
 /// step after it would have failed.
 pub(crate) trait FaultPoints {
@@ -157,6 +185,29 @@ impl FaultPoints for PanicAt {
     }
 }
 
+/// Ends the process with [`KILLED_EXIT_CODE`] at the `at`-th pass of a point, as a crash or a kill
+/// stops the job there: nothing is unwound, and what the job holds, its lock among it, is closed
+/// and let go only as the system lets go of what a program that ended held.
+#[cfg(test)]
+pub(crate) struct KillAt(Passes);
+
+#[cfg(test)]
+impl KillAt {
+    pub(crate) fn new(point: FaultPoint, at: u32) -> KillAt {
+        KillAt(Passes::new(point, at))
+    }
+}
+
+#[cfg(test)]
+impl FaultPoints for KillAt {
+    fn pass(&self, point: FaultPoint) -> io::Result<()> {
+        if self.0.reached(point) {
+            std::process::exit(KILLED_EXIT_CODE);
+        }
+        Ok(())
+    }
+}
+
 /// Several stand-ins at once: every pass is told to each, in order, so that each counts it, and
 /// the first failure among them is the pass's.
 #[cfg(test)]
@@ -216,21 +267,46 @@ mod tests {
     use std::io;
     use std::panic::{AssertUnwindSafe, catch_unwind};
 
-    use super::{FailAt, FaultPoint, FaultPoints, Faults, INJECTED, NoFaults, OnPass, PanicAt};
+    use super::{
+        FailAt, FaultPoint, FaultPoints, Faults, INJECTED, KillAt, NoFaults, OnPass, PanicAt,
+    };
 
-    /// Every point an install passes.
-    const POINTS: [FaultPoint; 5] = [
-        FaultPoint::Prepare,
-        FaultPoint::Stage,
-        FaultPoint::Publish,
-        FaultPoint::Cleanup,
-        FaultPoint::Rollback,
-    ];
+    #[test]
+    fn every_point_is_named_once() {
+        let names = FaultPoint::ALL.map(FaultPoint::as_str);
+        assert_eq!(
+            names,
+            [
+                "install.prepare",
+                "install.stage",
+                "install.publish",
+                "install.cleanup",
+                "install.rollback",
+            ]
+        );
+    }
 
     #[test]
     fn a_job_nothing_stops_passes_every_point() {
-        for point in POINTS {
+        for point in FaultPoint::ALL {
             assert!(NoFaults.pass(point).is_ok(), "{point:?}");
+        }
+    }
+
+    #[test]
+    fn a_kill_waits_for_its_pass_of_its_point() {
+        // The process ends at the kill's pass, which a test of its own cannot outlive: the kill
+        // tests run it in a child. Every pass before it, and every other point's, goes on.
+        let kill = KillAt::new(FaultPoint::Cleanup, 3);
+        for _ in 0..2 {
+            for point in FaultPoint::ALL {
+                assert!(kill.pass(point).is_ok(), "{point:?}");
+            }
+        }
+        for point in FaultPoint::ALL {
+            if point != FaultPoint::Cleanup {
+                assert!(kill.pass(point).is_ok(), "{point:?}");
+            }
         }
     }
 
@@ -238,7 +314,7 @@ mod tests {
     fn a_failure_comes_at_its_pass_of_its_point_alone() {
         let fail = FailAt::new(FaultPoint::Publish, 2);
         // The other points' passes are not counted.
-        for point in POINTS {
+        for point in FaultPoint::ALL {
             if point != FaultPoint::Publish {
                 assert!(fail.pass(point).is_ok(), "{point:?}");
             }
