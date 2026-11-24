@@ -12,16 +12,15 @@ use std::sync::Mutex;
 
 use gdl_files::{Cancel, Job, NoProgress, PhaseId, Progress, RelPath, STAGING_RANDOM_CHARS};
 use gdl_fixtures::{
-    ICON_DISC_FILES, RuntimeFiles, append_sections, folder_names, icon_iso, pretty_json,
-    sha256_hex, tpl, tree_entries,
+    ICON_DISC_FILES, RuntimeFiles, append_sections, folder_names, icon_disc_receipt, icon_iso,
+    pretty_json, tpl, tree_entries,
 };
 use gdl_install::{
     CHECK_DISC, CHECK_GAME, COPY_DISC_FILES, COPY_LAUNCHER, DISC_FILES, DISC_ICON, FolderRecord,
     GET_RUNTIME, GUNE5D, INSTALL_JOURNAL, INSTALL_STAGING_PREFIX, InstallPlan, Installed,
     JOURNAL_DIR, JOURNAL_SCHEMA, LOCK_FILE, MIN_LAUNCHER, PERSONALISE, PREPARE, PUBLISH,
-    RECEIPT_FILE, RECEIPT_SCHEMA, RUNTIME_SECTION, RecoveryOutcome, STATE_DIR, Sections,
-    Unrecorded, install_game, installed_launcher_name, plan_install, probe_game_version,
-    recover_install,
+    RECEIPT_FILE, RUNTIME_SECTION, RecoveryOutcome, STATE_DIR, Sections, Unrecorded, install_game,
+    installed_launcher_name, plan_install, probe_game_version, recover_install,
 };
 use gdl_media::GameCubeImage;
 use gdl_release::{Platform, Version};
@@ -184,34 +183,6 @@ fn assert_inspected_installed(folder: &Path, platform: Platform) {
     assert_eq!(installation["access"], "writable", "{report}");
 }
 
-/// The receipt an install of `inputs` for `platform` writes, as its file holds it: `executable`
-/// is the digest of the installed executable, which on Windows carries the disc's icon.
-fn receipt_text(inputs: &Inputs, platform: Platform, executable: &str) -> String {
-    let icon = if platform == Platform::WindowsX64 {
-        format!(
-            "  \"installedDigests\": {{\n    \"{}\": \"{executable}\"\n  }},\n  \
-             \"discIcon\": {{\n    \"path\": \"{DISC_ICON}\",\n    \"sha256\": \"{}\",\n    \
-             \"releaseExecutableSha256\": \"{}\"\n  }},\n",
-            platform.executable(),
-            sha256_hex(&tpl(5, 8, 8)),
-            sha256_hex(&inputs.program)
-        )
-    } else {
-        "  \"installedDigests\": {},\n".to_owned()
-    };
-    format!(
-        "{{\n  \"schema\": {RECEIPT_SCHEMA},\n  \"minLauncher\": \"{MIN_LAUNCHER}\",\n  \
-         \"version\": \"{VERSION}\",\n  \"commit\": \"{}\",\n  \"platform\": \"{}\",\n  \
-         \"disc\": \"{GUNE5D}\",\n  \"discRevision\": 1,\n  \"buildInfoSha256\": \"{}\",\n\
-         {icon}  \"launcher\": {{\n    \"name\": \"{}\",\n    \"sha256\": \"{}\"\n  }}\n}}\n",
-        inputs.runtime.commit,
-        platform.as_str(),
-        sha256_hex(&inputs.runtime.build_info_bytes()),
-        installed_launcher_name(platform),
-        sha256_hex(&inputs.launcher)
-    )
-}
-
 #[test]
 fn a_synthetic_disc_installs_end_to_end() {
     let Some(platform) = this_platform() else {
@@ -309,7 +280,7 @@ fn a_synthetic_disc_installs_end_to_end() {
             "the executable is not as it was shipped"
         );
     }
-    let receipt = receipt_text(&inputs, platform, &sha256_hex(&installed_program));
+    let receipt = icon_disc_receipt(&inputs.runtime, &inputs.launcher, &installed_program);
     drop(installed_program);
     assert_eq!(
         fs::read_to_string(state.join(RECEIPT_FILE)).unwrap(),

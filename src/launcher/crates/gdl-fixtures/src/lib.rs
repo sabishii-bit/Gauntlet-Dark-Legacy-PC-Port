@@ -14,8 +14,8 @@ mod zip;
 pub use folder::DeniedAccess;
 pub use folder::{
     EntryState, HeldClosed, InstallFixture, Listed, WritesDenied, backdate, deny_writes,
-    folder_names, hold_closed, holds_bind, link_folder, listed, long_root, make_alpha_markers,
-    snapshot, snapshot_outside, symlink_file, symlink_file_where_allowed,
+    folder_names, hold_closed, holds_bind, icon_disc_receipt, link_folder, listed, long_root,
+    make_alpha_markers, snapshot, snapshot_outside, symlink_file, symlink_file_where_allowed,
     symlink_folder_where_allowed, tree_entries, tree_listing,
 };
 #[cfg(windows)]

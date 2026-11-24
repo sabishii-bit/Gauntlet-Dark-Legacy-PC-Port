@@ -333,7 +333,12 @@ pub fn iso_with_icon(icon: &[u8]) -> Vec<u8> {
 /// The disc the install tests copy: [`synthetic_iso`] with the 8×8 RGB5A3 icon of the icon tests,
 /// [`tpl`]`(5, 8, 8)`, so that its icon decodes.
 pub fn icon_iso() -> Vec<u8> {
-    iso_with_icon(&tpl(RGB5A3, ICON_SIDE, ICON_SIDE))
+    iso_with_icon(&icon_disc_tpl())
+}
+
+/// The icon [`icon_iso`] carries: the icon tests' 8×8 RGB5A3 TPL.
+pub(crate) fn icon_disc_tpl() -> Vec<u8> {
+    tpl(RGB5A3, ICON_SIDE, ICON_SIDE)
 }
 
 /// The icon tests' TPL of one `width` by `height` image in `encoding`: the magic, a count of 1 and

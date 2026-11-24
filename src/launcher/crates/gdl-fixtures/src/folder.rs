@@ -20,6 +20,7 @@ use std::time::{Duration, SystemTime};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 
+use crate::gamecube::icon_disc_tpl;
 use crate::runtime::{BUILD_INFO, RuntimeFiles, WINDOWS_PLATFORM, pretty_json, sha256_hex};
 
 /// The most characters a padding folder of a long root takes, well under the 255 that NTFS and
@@ -1269,17 +1270,68 @@ impl InstallFixture {
 
     /// The name of the launcher copy at the installation's top.
     fn launcher_name(&self) -> &'static str {
-        if self.is_windows() {
-            WINDOWS_LAUNCHER
-        } else {
-            LAUNCHER
-        }
+        launcher_copy_name(&self.runtime.platform)
     }
 
     /// Where the installation keeps its receipt.
     fn receipt_path(&self) -> PathBuf {
         self.root.join(STATE_DIR).join(RECEIPT_FILE)
     }
+}
+
+/// The name of the launcher copy an installation for `platform` keeps at its top.
+fn launcher_copy_name(platform: &str) -> &'static str {
+    if platform == WINDOWS_PLATFORM {
+        WINDOWS_LAUNCHER
+    } else {
+        LAUNCHER
+    }
+}
+
+/// The receipt an install of [`icon_iso`](crate::icon_iso) writes, as its file holds it, from a
+/// launcher file of the bytes `launcher` carrying `runtime`: the stamp of the first schema; the
+/// release's version, commit and platform; the disc and its revision; the SHA-256 digest of
+/// `build-info.json`; on windows-x64, where the disc's icon is set into the game's executable,
+/// the digest of `installed_executable`, the executable as the install leaves it, then where the
+/// icon came from, its digest and the digest the release record lists for the executable, while
+/// every other platform installs the executable as shipped and records none of this; and the
+/// launcher copy's name and the launcher file's digest. JSON indented by two spaces, with a line
+/// end after it, its keys in the order the launcher writes them. Panics when the release record
+/// lists no digest for the executable on windows-x64.
+pub fn icon_disc_receipt(
+    runtime: &RuntimeFiles,
+    launcher: &[u8],
+    installed_executable: &[u8],
+) -> String {
+    let personalised = if runtime.platform == WINDOWS_PLATFORM {
+        let info = runtime.build_info();
+        let release = info["files"][&runtime.executable]
+            .as_str()
+            .expect("the release record lists the executable");
+        format!(
+            "  \"installedDigests\": {{\n    \"{executable}\": \"{installed}\"\n  }},\n  \
+             \"discIcon\": {{\n    \"path\": \"{DISC_ICON}\",\n    \"sha256\": \"{icon}\",\n    \
+             \"releaseExecutableSha256\": \"{release}\"\n  }},\n",
+            executable = runtime.executable,
+            installed = sha256_hex(installed_executable),
+            icon = sha256_hex(&icon_disc_tpl()),
+        )
+    } else {
+        "  \"installedDigests\": {},\n".to_owned()
+    };
+    format!(
+        "{{\n  \"schema\": {RECEIPT_SCHEMA},\n  \"minLauncher\": \"{MIN_LAUNCHER}\",\n  \
+         \"version\": \"{version}\",\n  \"commit\": \"{commit}\",\n  \"platform\": \
+         \"{platform}\",\n  \"disc\": \"{DISC}\",\n  \"discRevision\": {DISC_REVISION},\n  \
+         \"buildInfoSha256\": \"{build_info}\",\n{personalised}  \"launcher\": {{\n    \
+         \"name\": \"{name}\",\n    \"sha256\": \"{launcher}\"\n  }}\n}}\n",
+        version = runtime.version,
+        commit = runtime.commit,
+        platform = runtime.platform,
+        build_info = sha256_hex(&runtime.build_info_bytes()),
+        name = launcher_copy_name(&runtime.platform),
+        launcher = sha256_hex(launcher),
+    )
 }
 
 /// The path of `name`, a name of `/`-separated parts as a runtime and a disc give them, under
@@ -1687,6 +1739,77 @@ mod tests {
         fs::create_dir(&file_linked).unwrap();
         if symlink_file_where_allowed(&file_linked.join("a.json"), &tree.join("a.json")) {
             assert!(panic::catch_unwind(|| tree_entries(&file_linked)).is_err());
+        }
+    }
+
+    #[test]
+    fn the_icon_discs_receipt_is_laid_out_as_the_launcher_writes_one() {
+        use serde_json::{Value, json};
+
+        use super::icon_disc_receipt;
+        use crate::{RuntimeFiles, sha256_hex, tpl};
+
+        let launcher = b"a launcher file";
+        let installed = b"the executable with the disc's icon";
+        for (platform, windows) in [("windows-x64", true), ("linux-x64", false)] {
+            let mut runtime = RuntimeFiles::standard(platform, "1.2.3");
+            runtime.commit = "abc123".to_owned();
+            let text = icon_disc_receipt(&runtime, launcher, installed);
+            let mut expected = json!({
+                "schema": 1,
+                "minLauncher": "1.0.0-beta",
+                "version": "1.2.3",
+                "commit": "abc123",
+                "platform": platform,
+                "disc": "GUNE5D",
+                "discRevision": 1,
+                "buildInfoSha256": sha256_hex(&runtime.build_info_bytes()),
+                "installedDigests": {},
+                "launcher": {
+                    "name": "GauntletDarkLegacy-Launcher",
+                    "sha256": sha256_hex(launcher),
+                },
+            });
+            // Only Windows records the executable it set the disc's icon into, against the one
+            // the release shipped, and names its launcher copy with the system's suffix.
+            if windows {
+                expected["installedDigests"] = json!({"gauntlet.exe": sha256_hex(installed)});
+                expected["discIcon"] = json!({
+                    "path": "carddemo/icon.tpl",
+                    "sha256": sha256_hex(&tpl(5, 8, 8)),
+                    "releaseExecutableSha256": sha256_hex(b"not a real executable"),
+                });
+                expected["launcher"]["name"] = json!("GauntletDarkLegacy-Launcher.exe");
+            }
+            let read: Value = serde_json::from_str(&text).unwrap();
+            assert_eq!(read, expected, "{platform}");
+
+            // Indented by two spaces, a line end after it, and its keys in the launcher's order.
+            assert!(text.ends_with("}\n") && !text.contains('\r'), "{text}");
+            assert!(text.starts_with("{\n  \"schema\": 1,\n"), "{text}");
+            let mut keys = vec![
+                "schema",
+                "minLauncher",
+                "version",
+                "commit",
+                "platform",
+                "disc",
+                "discRevision",
+                "buildInfoSha256",
+                "installedDigests",
+            ];
+            if windows {
+                keys.push("discIcon");
+            }
+            keys.push("launcher");
+            let places: Vec<usize> = keys
+                .iter()
+                .map(|key| {
+                    text.find(&format!("\n  \"{key}\": "))
+                        .unwrap_or_else(|| panic!("{key}: {text}"))
+                })
+                .collect();
+            assert!(places.is_sorted(), "{text}");
         }
     }
 

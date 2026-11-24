@@ -630,7 +630,7 @@ mod tests {
     use gdl_fixtures::{
         EntryState, FstEntry, ICON_DATA_AT, ICON_DISC_FILES, RawEntry, RawZip, RuntimeFiles,
         SYNTHETIC_ISO_LEN, WritesDenied, append_sections, backdate, deny_writes, folder_names, fst,
-        icon_iso, iso_of, sha256_hex, snapshot, snapshot_outside, symlink_file,
+        icon_disc_receipt, icon_iso, iso_of, sha256_hex, snapshot, snapshot_outside, symlink_file,
         symlink_file_where_allowed, synthetic_ciso, synthetic_iso, tiny_elf, tiny_pe, tpl,
         tree_entries,
     };
@@ -2397,34 +2397,14 @@ mod tests {
         let destination = top.path().join("game");
         let inputs = Inputs::of(&icon_iso());
         let installed = inputs.install_into(&destination).unwrap();
-        let platform = this_platform();
-        let build_info = sha256_hex(&inputs.runtime.build_info_bytes());
+        // The executable as the install leaves it: on Windows, where the stand-in personaliser
+        // marks it, with the mark after the runtime's bytes.
+        let shipped = b"not a real executable";
         #[cfg(windows)]
-        let icon = {
-            let shipped = b"not a real executable";
-            let mut marked = shipped.to_vec();
-            marked.extend_from_slice(ICON_MARK);
-            format!(
-                "  \"installedDigests\": {{\n    \"gauntlet.exe\": \"{}\"\n  }},\n  \
-                 \"discIcon\": {{\n    \"path\": \"carddemo/icon.tpl\",\n    \"sha256\": \
-                 \"{}\",\n    \"releaseExecutableSha256\": \"{}\"\n  }},\n",
-                sha256_hex(&marked),
-                sha256_hex(&tpl(5, 8, 8)),
-                sha256_hex(shipped)
-            )
-        };
+        let executable = [shipped.as_slice(), ICON_MARK].concat();
         #[cfg(not(windows))]
-        let icon = "  \"installedDigests\": {},\n".to_owned();
-        let expected = format!(
-            "{{\n  \"schema\": 1,\n  \"minLauncher\": \"1.0.0-beta\",\n  \"version\": \
-             \"1.0.0-beta\",\n  \"commit\": \"test-commit\",\n  \"platform\": \"{}\",\n  \
-             \"disc\": \"GUNE5D\",\n  \"discRevision\": 1,\n  \"buildInfoSha256\": \
-             \"{build_info}\",\n{icon}  \"launcher\": {{\n    \"name\": \"{}\",\n    \
-             \"sha256\": \"{}\"\n  }}\n}}\n",
-            platform.as_str(),
-            installed_launcher_name(platform),
-            sha256_hex(&inputs.launcher)
-        );
+        let executable = shipped.to_vec();
+        let expected = icon_disc_receipt(&inputs.runtime, &inputs.launcher, &executable);
         let receipt = destination.join(STATE_DIR).join(RECEIPT_FILE);
         assert_eq!(fs::read_to_string(&receipt).unwrap(), expected);
         // The receipt the job gives back is the one it wrote, and reads back as the installation.
