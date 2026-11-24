@@ -52,6 +52,11 @@ const NO_ACCESS: u32 = 0o000;
 #[cfg(unix)]
 const LISTING_ONLY: u32 = 0o400;
 
+/// The mode of a folder whose names cannot be listed: what it names can still be looked up, and
+/// entries made, removed and renamed in it, by its owner.
+#[cfg(unix)]
+const WRITE_AND_SEARCH: u32 = 0o300;
+
 /// The name of the file that [`holds_bind`] makes, denies and removes again.
 #[cfg(unix)]
 const HOLD_PROBE: &str = "hold-probe";
@@ -664,9 +669,9 @@ pub fn make_alpha_markers(root: &Path, names: &[&str]) -> io::Result<()> {
     Ok(())
 }
 
-/// Entries whose permissions a test has taken away, every one of them or all but the listing of
-/// a folder's names, so that opening them, or looking at what a folder holds, fails for anyone but
-/// root. Dropping it gives each its mode back, which a `TempDir` needs before it can remove them;
+/// Entries whose permissions a test has taken away, every one of them, all but the listing of a
+/// folder's names, or that listing alone, so that opening them, looking at what a folder holds or
+/// listing it fails for anyone but root. Dropping it gives each its mode back, which a `TempDir` needs before it can remove them;
 /// made after the `TempDir`, it is dropped before it.
 #[cfg(unix)]
 #[derive(Debug)]
@@ -691,6 +696,14 @@ impl DeniedAccess {
     /// found it by the names alone.
     pub fn listing_only(folders: &[&Path]) -> io::Result<DeniedAccess> {
         DeniedAccess::set(folders, LISTING_ONLY)
+    }
+
+    /// Sets each of `folders` to mode 0o300, in order, as [`deny`](DeniedAccess::deny) sets its
+    /// entries: its owner can no longer list the names in each, but can still look up what they
+    /// name and make, remove and rename entries there, so that code which must not rest on a
+    /// folder's listing is shown to do without one.
+    pub fn unlisted(folders: &[&Path]) -> io::Result<DeniedAccess> {
+        DeniedAccess::set(folders, WRITE_AND_SEARCH)
     }
 
     /// Sets each of `paths` to `mode`, in order, keeping the mode it had for the drop.
@@ -1938,6 +1951,24 @@ mod tests {
         drop(listed);
         assert_eq!(mode(&folder), 0o1750);
         assert_eq!(fs::read(&inner).unwrap(), b"inside");
+
+        // A folder left all but its listing cannot be listed by anyone but root, but what it
+        // names can be read, and entries made and removed in it.
+        let unlisted = DeniedAccess::unlisted(&[&folder]).unwrap();
+        assert_eq!(mode(&folder), 0o300);
+        if super::holds_bind(dir.path()).unwrap() {
+            let error = fs::read_dir(&folder).unwrap_err();
+            assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
+        } else {
+            eprintln!("skipped the listing check: this user lists folders it may not list");
+        }
+        assert_eq!(fs::read(&inner).unwrap(), b"inside");
+        let made = folder.join("made");
+        fs::write(&made, b"made").unwrap();
+        fs::remove_file(&made).unwrap();
+        drop(unlisted);
+        assert_eq!(mode(&folder), 0o1750);
+        assert_eq!(super::folder_names(&folder).unwrap(), ["inner"]);
 
         // With every mode back, the folder is removed whole.
         dir.close().unwrap();

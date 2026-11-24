@@ -594,40 +594,18 @@ mod tests {
         assert_eq!(folder_names(target.path()).unwrap(), ["target.txt"]);
     }
 
-    /// Puts a folder's permissions back to the owner's whole access when dropped, so that a test
-    /// that took some away leaves a folder its temporary folder's cleanup can remove.
-    #[cfg(unix)]
-    struct OwnerAccess<'a>(&'a Path);
-
-    #[cfg(unix)]
-    impl Drop for OwnerAccess<'_> {
-        fn drop(&mut self) {
-            use std::os::unix::fs::PermissionsExt;
-
-            /// The owner's whole access to a folder.
-            const OWNER_ALL: u32 = 0o700;
-            let _ = fs::set_permissions(self.0, fs::Permissions::from_mode(OWNER_ALL));
-        }
-    }
-
     /// A folder this process may make entries in but not list is probed all the same, and what an
     /// earlier probe left there stays, unseen.
     #[cfg(unix)]
     #[test]
     fn a_folder_that_may_not_be_listed_is_still_probed() {
-        use std::os::unix::fs::PermissionsExt;
-
-        /// Writing and looking up names for the owner, without listing.
-        const WRITE_AND_SEARCH: u32 = 0o300;
-
         let dir = tempfile::tempdir().unwrap();
         let folder = dir.path().join("unlisted");
         fs::create_dir(&folder).unwrap();
         let left = probe_name("Ab12Cd34");
         fs::write(folder.join(&left), b"").unwrap();
         backdate(&folder).unwrap();
-        fs::set_permissions(&folder, fs::Permissions::from_mode(WRITE_AND_SEARCH)).unwrap();
-        let access = OwnerAccess(&folder);
+        let access = gdl_fixtures::DeniedAccess::unlisted(&[&folder]).unwrap();
         if fs::read_dir(&folder).is_ok() {
             eprintln!("skipped: this user lists a folder denied listing, as root does");
             return;
