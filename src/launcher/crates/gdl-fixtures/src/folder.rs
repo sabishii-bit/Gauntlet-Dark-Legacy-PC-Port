@@ -468,6 +468,32 @@ pub fn tree_listing(root: &Path) -> Vec<Listed> {
     files
 }
 
+/// Every entry of the tree at `root`, by its path under it with `/` between its names: a folder,
+/// an empty one included, as `None` and a regular file as the SHA-256 digest of its bytes in
+/// lowercase hexadecimal, as the install tests compare what two installs left. Panics on what is
+/// neither a folder nor a regular file, such as a link, which is never followed, and on a tree
+/// that cannot be read, or a name in it that is not Unicode.
+#[track_caller]
+pub fn tree_entries(root: &Path) -> BTreeMap<String, Option<String>> {
+    let mut entries = BTreeMap::new();
+    let mut folders = vec![(root.to_path_buf(), String::new())];
+    while let Some((folder, above)) = folders.pop() {
+        for entry in fs::read_dir(&folder).unwrap() {
+            let entry = entry.unwrap();
+            let path = format!("{above}{}", entry.file_name().into_string().unwrap());
+            let kind = fs::symlink_metadata(entry.path()).unwrap().file_type();
+            if kind.is_dir() {
+                folders.push((entry.path(), format!("{path}/")));
+                entries.insert(path, None);
+            } else {
+                assert!(kind.is_file(), "{path} is no file");
+                entries.insert(path, Some(sha256_hex(&fs::read(entry.path()).unwrap())));
+            }
+        }
+    }
+    entries
+}
+
 /// What [`snapshot`] keeps of an entry: enough to tell that it was changed, replaced or made anew.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct EntryState {
@@ -1616,6 +1642,52 @@ mod tests {
         fs::write(linked.join("a.bin"), b"a").unwrap();
         link_folder(&linked.join("b"), &tree).unwrap();
         assert!(panic::catch_unwind(|| tree_listing(&linked)).is_err());
+    }
+
+    #[test]
+    fn trees_give_their_entries_as_the_install_tests_compare_them() {
+        use std::collections::BTreeMap;
+        use std::panic;
+
+        use super::{link_folder, symlink_file_where_allowed, tree_entries};
+        use crate::sha256_hex;
+
+        let dir = tempfile::tempdir().unwrap();
+        // Every folder is an entry, one that holds nothing too, and every file its digest, each
+        // by its path's text with `/` between its names.
+        let tree = dir.path().join("tree");
+        fs::create_dir_all(tree.join("b").join("c")).unwrap();
+        fs::create_dir(tree.join("empty")).unwrap();
+        fs::write(tree.join("b").join("c").join("x.bin"), b"deep").unwrap();
+        fs::write(tree.join("a.json"), b"{}").unwrap();
+        fs::write(tree.join("B.txt"), b"").unwrap();
+        let expected: BTreeMap<String, Option<String>> = [
+            ("B.txt", Some(sha256_hex(b""))),
+            ("a.json", Some(sha256_hex(b"{}"))),
+            ("b", None),
+            ("b/c", None),
+            ("b/c/x.bin", Some(sha256_hex(b"deep"))),
+            ("empty", None),
+        ]
+        .into_iter()
+        .map(|(path, digest)| (path.to_owned(), digest))
+        .collect();
+        assert_eq!(tree_entries(&tree), expected);
+        // A folder that holds nothing gives nothing, and the tree's own folder is no entry.
+        let bare = dir.path().join("bare");
+        fs::create_dir(&bare).unwrap();
+        assert!(tree_entries(&bare).is_empty());
+
+        // A link is never followed, to a folder or to a file.
+        let linked = dir.path().join("linked");
+        fs::create_dir(&linked).unwrap();
+        link_folder(&linked.join("b"), &tree).unwrap();
+        assert!(panic::catch_unwind(|| tree_entries(&linked)).is_err());
+        let file_linked = dir.path().join("file-linked");
+        fs::create_dir(&file_linked).unwrap();
+        if symlink_file_where_allowed(&file_linked.join("a.json"), &tree.join("a.json")) {
+            assert!(panic::catch_unwind(|| tree_entries(&file_linked)).is_err());
+        }
     }
 
     #[test]

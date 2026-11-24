@@ -176,7 +176,7 @@ mod tests {
     use gdl_files::MAX_INSTALL_ROOT_UTF16;
     #[cfg(windows)]
     use gdl_fixtures::long_root;
-    use gdl_fixtures::{folder_names, icon_iso};
+    use gdl_fixtures::{folder_names, icon_iso, tree_entries};
     use serde_json::Value;
     use tempfile::TempDir;
 
@@ -187,7 +187,7 @@ mod tests {
     use crate::install::settings::{FaultPoint, InstallSettings, KILLED_EXIT_CODE, NoFaults};
     use crate::install::tests::{
         AsItWas, Heard, Inputs, answering, assert_no_alpha_name, destination_in, heard_of,
-        journal_of, roots, standing_in, tree, uninterrupted,
+        journal_of, roots, standing_in, uninterrupted,
     };
     use crate::install::{INSTALL_STAGING_PREFIX, RecoveryOutcome};
 
@@ -509,7 +509,7 @@ mod tests {
                 matches!(outcome, RecoveryOutcome::Finished { .. }),
                 "{context}: {outcome:?}"
             );
-            assert_eq!(tree(&killed.destination), whole, "{context}");
+            assert_eq!(tree_entries(&killed.destination), whole, "{context}");
             assert_eq!(
                 heard,
                 heard_of(&killed.destination, &["installed"]),
@@ -535,7 +535,7 @@ mod tests {
             // The killed job never told the record or the shell: the recovery does.
             let (outcome, heard, told) = killed.recover(&context);
             assert_eq!(outcome, RecoveryOutcome::CleanedUp, "{context}");
-            assert_eq!(tree(&killed.destination), whole, "{context}");
+            assert_eq!(tree_entries(&killed.destination), whole, "{context}");
             assert_eq!(
                 heard,
                 heard_of(&killed.destination, &["installed"]),
@@ -654,7 +654,7 @@ mod tests {
             matches!(outcome, RecoveryOutcome::Finished { .. }),
             "{outcome:?}"
         );
-        assert_eq!(tree(&killed.destination), whole);
+        assert_eq!(tree_entries(&killed.destination), whole);
         assert_eq!(heard, heard_of(&killed.destination, &["installed"]));
         assert_eq!(told, 1);
     }
@@ -674,7 +674,7 @@ mod tests {
             matches!(outcome, RecoveryOutcome::Finished { .. }),
             "{outcome:?}"
         );
-        assert_eq!(tree(&killed.destination), whole);
+        assert_eq!(tree_entries(&killed.destination), whole);
         assert_eq!(heard, heard_of(&killed.destination, &["installed"]));
         assert_eq!(told, 1);
     }

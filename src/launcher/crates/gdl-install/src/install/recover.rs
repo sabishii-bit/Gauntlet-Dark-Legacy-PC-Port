@@ -751,7 +751,9 @@ mod tests {
     use std::path::{Path, PathBuf};
 
     use gdl_files::{Cancel, FilesError, Job, NoProgress, retry_locked};
-    use gdl_fixtures::{folder_names, link_folder, pretty_json, sha256_hex, snapshot};
+    use gdl_fixtures::{
+        folder_names, link_folder, pretty_json, sha256_hex, snapshot, tree_entries,
+    };
     use gdl_release::{Platform, Version};
     use serde_json::{Map, Value, json};
     use tempfile::TempDir;
@@ -767,7 +769,6 @@ mod tests {
     use crate::install::settings::{InstallSettings, NoFaults};
     use crate::install::tests::{
         AsItWas, Heard, USER_BYTES, USER_FILE, answering, destination_in, heard_of, standing_in,
-        tree,
     };
     use crate::receipt::{InstalledLauncher, Receipt, installed_launcher_name};
 
@@ -956,7 +957,7 @@ mod tests {
             recover_at(&self.root)
         }
 
-        /// What the folder holds once the install stands, by [`tree`]'s paths.
+        /// What the folder holds once the install stands, by [`tree_entries`]'s paths.
         fn installed_tree(&self) -> BTreeMap<String, Option<String>> {
             let file = |bytes: &[u8]| Some(sha256_hex(bytes));
             let mut entries = vec![
@@ -983,7 +984,7 @@ mod tests {
 
         #[track_caller]
         fn assert_installed(&self, context: &str) {
-            assert_eq!(tree(&self.root), self.installed_tree(), "{context}");
+            assert_eq!(tree_entries(&self.root), self.installed_tree(), "{context}");
         }
 
         /// The names the folder holds once everything of the install's but `kept` went.
@@ -1802,7 +1803,7 @@ mod tests {
             );
             let mut installed = left.installed_tree();
             installed.remove("config");
-            assert_eq!(tree(&left.root), installed, "{context}");
+            assert_eq!(tree_entries(&left.root), installed, "{context}");
             assert_eq!(recovered.heard, heard_of(&left.root, &["installed"]));
             assert_eq!(recovered.shell, left.shell_told());
         }

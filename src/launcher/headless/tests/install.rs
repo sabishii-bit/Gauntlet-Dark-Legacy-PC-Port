@@ -5,7 +5,6 @@
 
 mod common;
 
-use std::collections::BTreeMap;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -14,6 +13,7 @@ use std::sync::Mutex;
 use gdl_files::{Cancel, Job, NoProgress, PhaseId, Progress, RelPath, STAGING_RANDOM_CHARS};
 use gdl_fixtures::{
     RuntimeFiles, append_sections, folder_names, icon_iso, pretty_json, sha256_hex, tpl,
+    tree_entries,
 };
 use gdl_install::{
     CHECK_DISC, CHECK_GAME, COPY_DISC_FILES, COPY_LAUNCHER, DISC_FILES, DISC_ICON, FolderRecord,
@@ -196,28 +196,6 @@ impl Progress for Told {
     }
 }
 
-/// Every entry of the tree at `root`, by its path under it with `/` between its names: a folder as
-/// `None` and a file as the digest of its bytes. Anything but a folder or a file is refused.
-fn tree(root: &Path) -> BTreeMap<String, Option<String>> {
-    let mut entries = BTreeMap::new();
-    let mut folders = vec![(root.to_path_buf(), String::new())];
-    while let Some((folder, above)) = folders.pop() {
-        for entry in fs::read_dir(&folder).unwrap() {
-            let entry = entry.unwrap();
-            let path = format!("{above}{}", entry.file_name().into_string().unwrap());
-            let kind = fs::symlink_metadata(entry.path()).unwrap().file_type();
-            if kind.is_dir() {
-                folders.push((entry.path(), format!("{path}/")));
-                entries.insert(path, None);
-            } else {
-                assert!(kind.is_file(), "{path} is no file");
-                entries.insert(path, Some(sha256_hex(&fs::read(entry.path()).unwrap())));
-            }
-        }
-    }
-    entries
-}
-
 /// Checks that the headless program inspects the folder at `folder` as the installation of the
 /// release the tests install, for `platform`, that this program may change.
 #[track_caller]
@@ -388,7 +366,7 @@ fn a_killed_install_reopens_as_pending_and_recovers() {
     let top = tempfile::tempdir().unwrap();
     let destination = top.path().join("game");
     let (plan, installed) = inputs.install(&destination, &mut Unrecorded, &NoProgress);
-    let whole = tree(&destination);
+    let whole = tree_entries(&destination);
 
     // What a kill in the publish leaves, a journal written as the install writes it: the first
     // roots recorded in place, the next in place but not yet recorded, the rest still in the
@@ -441,7 +419,10 @@ fn a_killed_install_reopens_as_pending_and_recovers() {
         }
     );
     assert_eq!(record.calls, [("installed", destination.clone())]);
-    assert!(tree(&destination) == whole, "the recovered tree differs");
+    assert!(
+        tree_entries(&destination) == whole,
+        "the recovered tree differs"
+    );
     assert_inspected_installed(&destination, platform);
 
     // A state folder an install left before its first journal, holding only its lock: given up,

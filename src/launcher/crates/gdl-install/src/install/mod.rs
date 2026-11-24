@@ -631,7 +631,7 @@ mod tests {
         EntryState, FstEntry, ICON_DATA_AT, RawEntry, RawZip, RuntimeFiles, SYNTHETIC_ISO_LEN,
         WritesDenied, append_sections, backdate, deny_writes, folder_names, fst, icon_iso, iso_of,
         sha256_hex, snapshot, snapshot_outside, symlink_file, symlink_file_where_allowed,
-        synthetic_ciso, synthetic_iso, tiny_elf, tiny_pe, tpl,
+        synthetic_ciso, synthetic_iso, tiny_elf, tiny_pe, tpl, tree_entries,
     };
     #[cfg(windows)]
     use gdl_fixtures::{deny_writes_below, fake_sign, long_root};
@@ -1649,28 +1649,6 @@ mod tests {
         }
     }
 
-    /// Every entry of the tree at `root`, by its path under it with `/` between its names: a folder
-    /// as `None` and a file as the digest of its bytes. A link is refused.
-    pub(super) fn tree(root: &Path) -> BTreeMap<String, Option<String>> {
-        let mut entries = BTreeMap::new();
-        let mut folders = vec![(root.to_path_buf(), String::new())];
-        while let Some((folder, above)) = folders.pop() {
-            for entry in fs::read_dir(&folder).unwrap() {
-                let entry = entry.unwrap();
-                let path = format!("{above}{}", entry.file_name().into_string().unwrap());
-                let kind = fs::symlink_metadata(entry.path()).unwrap().file_type();
-                if kind.is_dir() {
-                    folders.push((entry.path(), format!("{path}/")));
-                    entries.insert(path, None);
-                } else {
-                    assert!(kind.is_file(), "{path} is no file");
-                    entries.insert(path, Some(sha256_hex(&fs::read(entry.path()).unwrap())));
-                }
-            }
-        }
-        entries
-    }
-
     /// Every entry under `top`, at any depth, by its path below `top`, with the alpha installer's
     /// name that the path holds, when it holds one, as the judging finds one on a destination's
     /// path: in any ASCII letter case and in the form Windows would make of each name. A link is
@@ -1836,7 +1814,7 @@ mod tests {
             fs::read(from_ciso.join("Gauntlet/WDATA/TOWER.WAD")).unwrap(),
             b"tower"
         );
-        assert_eq!(tree(&from_ciso), tree(&from_iso));
+        assert_eq!(tree_entries(&from_ciso), tree_entries(&from_iso));
     }
 
     #[test]
@@ -3527,7 +3505,7 @@ mod tests {
         let top = tempfile::tempdir().unwrap();
         let destination = top.path().join("game");
         inputs.install_into(&destination).unwrap();
-        tree(&destination)
+        tree_entries(&destination)
     }
 
     /// The journal of the install in `destination`, when there is one.
@@ -3997,7 +3975,7 @@ mod tests {
                     matches!(outcome, RecoveryOutcome::Finished { .. }),
                     "{outcome:?}"
                 );
-                assert_eq!(tree(&destination), whole);
+                assert_eq!(tree_entries(&destination), whole);
                 assert_eq!(record.calls, heard_of(&destination, &["installed"]));
             }
         }
@@ -4144,7 +4122,7 @@ mod tests {
                 RecoveryOutcome::CleanedUp
             };
             assert_eq!(outcome, expected, "{context}");
-            assert_eq!(tree(&destination), whole, "{context}");
+            assert_eq!(tree_entries(&destination), whole, "{context}");
             assert_eq!(
                 record.calls,
                 heard_of(&destination, &["installed"]),
@@ -4192,7 +4170,7 @@ mod tests {
             matches!(outcome, RecoveryOutcome::Finished { .. }),
             "{outcome:?}"
         );
-        assert_eq!(tree(&destination), whole);
+        assert_eq!(tree_entries(&destination), whole);
         assert_eq!(record.calls, heard_of(&destination, &["installed"]));
     }
 
@@ -4318,7 +4296,7 @@ mod tests {
                 let top = tempfile::tempdir().unwrap();
                 let destination = destination_in(top.path(), holds_a_file);
                 inputs.install_into(&destination).unwrap();
-                tree(&destination)
+                tree_entries(&destination)
             };
             let mut reached = BTreeSet::new();
             for at in 1.. {
@@ -4372,7 +4350,7 @@ mod tests {
                     // The publish never looks at the cancel.
                     let installed = result.unwrap();
                     assert!(installed.notices.is_empty(), "{context}");
-                    assert_eq!(tree(&destination), whole, "{context}");
+                    assert_eq!(tree_entries(&destination), whole, "{context}");
                     reached.insert(PUBLISH.0);
                 } else {
                     // Once the install has made something, until the publish: all of it taken
