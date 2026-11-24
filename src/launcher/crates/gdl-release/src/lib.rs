@@ -3,8 +3,13 @@
 //! against.
 #![forbid(unsafe_code)]
 
+mod names;
 mod platform;
 mod version;
 
+pub use names::{
+    ASSET_STEM, GITHUB_API_HOST, GITHUB_HOST, RELEASE_HOSTS, REPOSITORY, SIGNATURE_SUFFIX,
+    checksums_asset, launcher_asset, licences_asset, linux_member, signature_asset,
+};
 pub use platform::Platform;
 pub use version::{Version, VersionError};
