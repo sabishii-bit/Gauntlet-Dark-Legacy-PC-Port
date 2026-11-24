@@ -3,6 +3,7 @@
 //! digest the list gives it as well as to GitHub's, and a list in any other form is refused rather
 //! than read as far as it goes.
 
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
 
@@ -30,9 +31,6 @@ const LINE_FEED: u8 = b'\n';
 
 /// What may stand before a line's line feed: a list written on Windows ends its lines so.
 const CARRIAGE_RETURN: u8 = b'\r';
-
-/// Why a line that does not begin with a digest is refused.
-const NOT_A_DIGEST: &str = "does not begin with 64 lowercase hexadecimal digits";
 
 /// A release's checksum list, as the release scripts write it (`scripts/release/release.py`): a
 /// line for each file, its SHA-256 digest in lowercase hexadecimal, two spaces and its name.
@@ -69,7 +67,7 @@ impl ChecksumList {
                 Ok(line) if line.is_ascii() => line,
                 _ => return Err(refused("holds a byte that is not ASCII")),
             };
-            let (digest, name) = entry(line).map_err(refused)?;
+            let (digest, name) = entry(line).map_err(|why| refused(&why))?;
             match entries.entry(name.to_owned()) {
                 Entry::Vacant(slot) => {
                     slot.insert(digest);
@@ -90,26 +88,33 @@ impl ChecksumList {
 }
 
 /// The digest and name one line of a list gives, or why the line gives none.
-fn entry(line: &str) -> Result<(Sha256Digest, &str), &'static str> {
+fn entry(line: &str) -> Result<(Sha256Digest, &str), Cow<'static, str>> {
     if line.is_empty() {
-        return Err("is empty");
+        return Err("is empty".into());
     }
-    let (digits, rest) = line.split_at_checked(DIGEST_DIGITS).ok_or(NOT_A_DIGEST)?;
-    let digest = Sha256Digest::from_hex(digits).ok_or(NOT_A_DIGEST)?;
+    let not_a_digest = || {
+        Cow::Owned(format!(
+            "does not begin with {DIGEST_DIGITS} lowercase hexadecimal digits"
+        ))
+    };
+    let (digits, rest) = line
+        .split_at_checked(DIGEST_DIGITS)
+        .ok_or_else(not_a_digest)?;
+    let digest = Sha256Digest::from_hex(digits).ok_or_else(not_a_digest)?;
     let name = rest
         .strip_prefix(SEPARATOR)
         .ok_or("does not part its digest from its name by two spaces")?;
     if name.is_empty() {
-        return Err("names no file");
+        return Err("names no file".into());
     }
     if name.len() > MAX_NAME_LEN {
-        return Err("names a file of more than 255 characters");
+        return Err(format!("names a file of more than {MAX_NAME_LEN} characters").into());
     }
     let named_as_an_asset = name
         .bytes()
         .all(|byte| byte.is_ascii_alphanumeric() || NAME_PUNCTUATION.contains(&byte));
     if !named_as_an_asset {
-        return Err("names a file with a character no asset name holds");
+        return Err("names a file with a character no asset name holds".into());
     }
     Ok((digest, name))
 }
@@ -125,14 +130,14 @@ fn malformed(detail: String) -> ReleaseError {
 mod tests {
     use gdl_media::Sha256Digest;
 
-    use super::{ChecksumList, MAX_LIST_LEN};
+    use super::{ChecksumList, DIGEST_DIGITS, MAX_LIST_LEN, MAX_NAME_LEN, SEPARATOR};
     use crate::{Platform, ReleaseError, Version, launcher_asset, licences_asset};
 
     /// What a line holds besides its name: the digest, the two spaces and the line feed.
-    const LINE_OVERHEAD: usize = 64 + 2 + 1;
+    const LINE_OVERHEAD: usize = DIGEST_DIGITS + SEPARATOR.len() + 1;
 
-    /// The longest line a list may hold: a name of 255 characters.
-    const LONGEST_LINE: usize = LINE_OVERHEAD + 255;
+    /// The longest line a list may hold: a name of the most characters one may hold.
+    const LONGEST_LINE: usize = LINE_OVERHEAD + MAX_NAME_LEN;
 
     /// The shortest line a list may hold: a name of one character.
     const SHORTEST_LINE: usize = LINE_OVERHEAD + 1;
@@ -251,7 +256,7 @@ mod tests {
         assert_eq!(list.digest_of("abc"), Some(Sha256Digest::of(b"abc")));
 
         // A name of the most characters a file name may hold, and a list of the most bytes.
-        let longest = "n".repeat(255);
+        let longest = "n".repeat(MAX_NAME_LEN);
         let list =
             ChecksumList::parse(&list_of(&[(&longest, b"long")], "\n")).expect("the longest name");
         assert_eq!(list.digest_of(&longest), Some(Sha256Digest::of(b"long")));
@@ -293,12 +298,12 @@ mod tests {
                 "line 1 does not begin with 64 lowercase hexadecimal digits".to_owned(),
             ),
             (
-                "63 digits",
-                format!("{good}{}  second.zip\n", &digest[..63]).into_bytes(),
+                "a digit short",
+                format!("{good}{}  second.zip\n", &digest[..DIGEST_DIGITS - 1]).into_bytes(),
                 "line 2 does not begin with 64 lowercase hexadecimal digits".to_owned(),
             ),
             (
-                "65 digits",
+                "a digit more",
                 format!("{digest}0  second.zip\n").into_bytes(),
                 "line 1 does not part its digest from its name by two spaces".to_owned(),
             ),
@@ -349,7 +354,7 @@ mod tests {
             ),
             (
                 "a name longer than a file name",
-                format!("{digest}  {}\n", "n".repeat(256)).into_bytes(),
+                format!("{digest}  {}\n", "n".repeat(MAX_NAME_LEN + 1)).into_bytes(),
                 "line 1 names a file of more than 255 characters".to_owned(),
             ),
             (
