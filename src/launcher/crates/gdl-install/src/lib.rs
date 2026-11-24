@@ -5,6 +5,7 @@
 
 mod awake;
 mod compat;
+mod destination;
 mod folder;
 #[cfg(test)]
 mod full_disk;
@@ -22,6 +23,10 @@ pub use awake::{KeepAwake, keep_awake};
 pub use compat::{
     Access, JOURNAL_NAMES, JOURNAL_SCHEMA, MIN_LAUNCHER, Stamp, StampError, StateName, access,
     launcher_state_name, stamp_of,
+};
+pub use destination::{
+    Blocker, ComponentAttributes, DestinationError, DestinationReport, KnownFolder, Warning,
+    judge_destination,
 };
 pub use folder::{
     FolderError, InstallFolder, InstallLock, JOURNAL_DIR, LOCK_FILE, LockError, RECEIPT_FILE,
