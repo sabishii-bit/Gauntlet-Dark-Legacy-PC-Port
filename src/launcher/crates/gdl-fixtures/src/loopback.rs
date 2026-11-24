@@ -155,12 +155,21 @@ pub struct LoopbackServer {
 /// What a server and its thread share.
 #[derive(Default)]
 struct Shared {
-    /// The answers by request target, each target's in the order it is to give them.
-    routes: Mutex<BTreeMap<String, VecDeque<Reply>>>,
+    /// The answers by request target.
+    routes: Mutex<BTreeMap<String, Route>>,
     /// Every request read, in the order the server read them.
     requests: Mutex<Vec<Request>>,
     /// Set as the server is dropped, so its thread stops at its next connection.
     stopping: AtomicBool,
+}
+
+/// What one request target answers.
+#[derive(Default)]
+struct Route {
+    /// The replies routed and not yet given, in the order they were routed.
+    waiting: VecDeque<Reply>,
+    /// The reply given last, which answers again while none is waiting.
+    last: Option<Reply>,
 }
 
 impl LoopbackServer {
@@ -186,12 +195,15 @@ impl LoopbackServer {
     }
 
     /// Answers requests for `target`, its query included as a request line gives it, with
-    /// `reply`. A target given several replies answers with each in turn, the last for every
-    /// request after it, so a test can serve a broken transfer and then a whole one.
+    /// `reply`. The replies routed to a target answer one request each, in the order they were
+    /// routed, and while none is waiting the one given last answers every request: so a test can
+    /// serve a broken transfer and then a whole one, and route a target again to change what it
+    /// answers from the next request on.
     pub fn route(&self, target: &str, reply: Reply) {
         locked(&self.shared.routes)
             .entry(target.to_owned())
             .or_default()
+            .waiting
             .push_back(reply);
     }
 
@@ -322,17 +334,19 @@ fn parse_head(head: &[u8]) -> Option<Request> {
     })
 }
 
-/// The table's next answer for `target`, which stays the answer once it is the last.
+/// The table's answer for `target`: its next waiting reply, else the one it gave last.
 fn answer(shared: &Shared, target: &str) -> Reply {
     let mut routes = locked(&shared.routes);
-    match routes.get_mut(target) {
-        Some(replies) if replies.len() > 1 => replies.pop_front().expect("more than one reply"),
-        Some(replies) => replies
-            .front()
-            .cloned()
-            .unwrap_or_else(|| Reply::status(NOT_FOUND)),
-        None => Reply::status(NOT_FOUND),
+    let Some(route) = routes.get_mut(target) else {
+        return Reply::status(NOT_FOUND);
+    };
+    if let Some(reply) = route.waiting.pop_front() {
+        route.last = Some(reply);
     }
+    route
+        .last
+        .clone()
+        .unwrap_or_else(|| Reply::status(NOT_FOUND))
 }
 
 /// Writes `reply` whole: its status line, its headers, `Connection: close`, a blank line, then
@@ -539,6 +553,42 @@ mod tests {
             assert_eq!(whole.body, b"payload");
         }
         assert_eq!(server.requests().len(), 4);
+    }
+
+    #[test]
+    fn a_target_routed_again_answers_with_its_new_reply() {
+        let server = LoopbackServer::start().unwrap();
+        server.route("/feed", Reply::ok(&b"first"[..]));
+        for _ in 0..2 {
+            assert_eq!(send(&server, &get("/feed")).body, b"first");
+        }
+        // Routed again once its reply was given, it answers with the new one from the next
+        // request on, and keeps to it.
+        server.route("/feed", Reply::status(500));
+        for _ in 0..2 {
+            assert_eq!(
+                send(&server, &get("/feed")).status_line,
+                "HTTP/1.1 500 Internal Server Error"
+            );
+        }
+        // Replies routed together still come in turn, the last staying.
+        server.route("/feed", Reply::status(503));
+        server.route("/feed", Reply::ok(&b"whole"[..]));
+        assert_eq!(
+            send(&server, &get("/feed")).status_line,
+            "HTTP/1.1 503 Service Unavailable"
+        );
+        for _ in 0..2 {
+            assert_eq!(send(&server, &get("/feed")).body, b"whole");
+        }
+        // A reply routed while another still waits comes after it.
+        server.route("/feed", Reply::ok(&b"third"[..]));
+        server.route("/feed", Reply::ok(&b"fourth"[..]));
+        assert_eq!(send(&server, &get("/feed")).body, b"third");
+        server.route("/feed", Reply::ok(&b"fifth"[..]));
+        assert_eq!(send(&server, &get("/feed")).body, b"fourth");
+        assert_eq!(send(&server, &get("/feed")).body, b"fifth");
+        assert_eq!(server.requests().len(), 10);
     }
 
     #[test]
