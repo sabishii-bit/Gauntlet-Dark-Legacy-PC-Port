@@ -18,7 +18,7 @@ mod volume;
 
 pub use error::FilesError;
 pub use job::{
-    BLOCK_LEN, Cancel, Cancelled, Job, NoProgress, PhaseId, Progress, RunningTotal, fill_from,
+    BLOCK_LEN, Cancel, Cancelled, Hold, Job, NoProgress, PhaseId, Progress, RunningTotal, fill_from,
 };
 pub use json::{
     MAX_JSON_LEN, PENDING_SUFFIX, pending_path, read_bounded, read_json_bounded, write_json_atomic,

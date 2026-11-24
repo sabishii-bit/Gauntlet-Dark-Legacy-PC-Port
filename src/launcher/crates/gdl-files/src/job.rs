@@ -1,6 +1,6 @@
 //! What a long file operation takes from the job it is part of: a way to be told to stop, which it
-//! looks at between blocks of its work, and a place to tell how far it has come; and how a block
-//! of that work is filled from what it reads.
+//! looks at between blocks of its work, and a place to tell how far it has come and what it waits
+//! on; and how a block of that work is filled from what it reads.
 
 use std::io::{self, Read};
 use std::sync::Arc;
@@ -64,13 +64,36 @@ pub struct Cancelled;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PhaseId(pub &'static str);
 
-/// Where a job tells how far it has come, from whichever thread it runs on.
+/// A condition a job waits on that the player can end, rather than fail for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Hold {
+    /// The game runs from the installation.
+    GameRunning,
+    /// Another job holds the installation's lock.
+    LockBusy,
+}
+
+impl Hold {
+    /// What ends the hold, as a job's events name it to the window: `gameClosed` or `lockFree`.
+    pub fn resumes_when(self) -> &'static str {
+        match self {
+            Hold::GameRunning => "gameClosed",
+            Hold::LockBusy => "lockFree",
+        }
+    }
+}
+
+/// Where a job tells how far it has come and what it waits on, from whichever thread it runs on.
 pub trait Progress: Send + Sync {
     /// The job has begun `phase`.
     fn phase(&self, phase: PhaseId);
     /// `done` of the `total` bytes, or other units, of the job's phase are done; `item` names
     /// what the last of them belonged to, when they belonged to a name.
     fn advance(&self, done: u64, total: u64, item: Option<&RelPath>);
+    /// The job waits for `hold` to end, keeping what it made.
+    fn hold(&self, _hold: Hold) {}
+    /// The hold the job waited on ended, and the job goes on.
+    fn resumed(&self) {}
 }
 
 /// Progress that goes nowhere, for a job nobody follows.
@@ -103,6 +126,14 @@ impl Progress for RunningTotal<'_> {
     fn advance(&self, done: u64, _: u64, item: Option<&RelPath>) {
         self.job.advance(self.before + done, self.total, item);
     }
+
+    fn hold(&self, hold: Hold) {
+        self.job.hold(hold);
+    }
+
+    fn resumed(&self) {
+        self.job.resumed();
+    }
 }
 
 /// The job a long file operation is part of: how it is asked to stop and where its progress goes.
@@ -121,7 +152,8 @@ mod tests {
     use std::thread;
 
     use super::{
-        BLOCK_LEN, Cancel, Cancelled, Job, NoProgress, PhaseId, Progress, RunningTotal, fill_from,
+        BLOCK_LEN, Cancel, Cancelled, Hold, Job, NoProgress, PhaseId, Progress, RunningTotal,
+        fill_from,
     };
     use crate::{PAYLOAD_NAMES, RelPath};
 
@@ -215,7 +247,7 @@ mod tests {
     /// Progress that writes down everything it is told.
     #[derive(Default)]
     struct Recorded {
-        /// The phases begun and the steps told, in order.
+        /// The phases begun, the steps, the holds and their ends told, in order.
         told: Mutex<Vec<String>>,
     }
 
@@ -228,6 +260,31 @@ mod tests {
             let item = item.map_or("-", RelPath::as_str);
             let step = format!("{done}/{total} {item}");
             self.told.lock().unwrap().push(step);
+        }
+
+        fn hold(&self, hold: Hold) {
+            self.told.lock().unwrap().push(format!("hold {hold:?}"));
+        }
+
+        fn resumed(&self) {
+            self.told.lock().unwrap().push("resumed".to_owned());
+        }
+    }
+
+    /// Progress that writes down only its phases and steps, leaving holds to the defaults.
+    #[derive(Default)]
+    struct StepsOnly {
+        /// The phases begun and the steps told, in order.
+        told: Mutex<Vec<String>>,
+    }
+
+    impl Progress for StepsOnly {
+        fn phase(&self, phase: PhaseId) {
+            self.told.lock().unwrap().push(format!("phase {}", phase.0));
+        }
+
+        fn advance(&self, done: u64, total: u64, _: Option<&RelPath>) {
+            self.told.lock().unwrap().push(format!("{done}/{total}"));
         }
     }
 
@@ -349,5 +406,79 @@ mod tests {
                 "phase publishing"
             ]
         );
+    }
+
+    #[test]
+    fn a_running_total_passes_holds_through() {
+        // A part's holds and their ends reach the job as they were told, in turn with its steps,
+        // and so do those of a part of a part.
+        let progress = Recorded::default();
+        let part = RunningTotal {
+            job: &progress,
+            before: 4,
+            total: 10,
+        };
+        let inner = RunningTotal {
+            job: &part,
+            before: 1,
+            total: 6,
+        };
+        part.hold(Hold::GameRunning);
+        part.resumed();
+        part.advance(2, 3, None);
+        inner.hold(Hold::LockBusy);
+        inner.resumed();
+        inner.advance(1, 2, None);
+        let told = progress.told.lock().unwrap().clone();
+        assert_eq!(
+            told,
+            [
+                "hold GameRunning",
+                "resumed",
+                "6/10 -",
+                "hold LockBusy",
+                "resumed",
+                "6/10 -"
+            ]
+        );
+
+        // Progress that does not follow holds is told them for nothing, its steps unchanged, and
+        // so is a part over it.
+        let steps = StepsOnly::default();
+        let job: &dyn Progress = &steps;
+        job.phase(PhaseId("staging"));
+        job.hold(Hold::GameRunning);
+        job.resumed();
+        let over = RunningTotal {
+            job,
+            before: 1,
+            total: 3,
+        };
+        over.hold(Hold::LockBusy);
+        over.resumed();
+        over.advance(2, 2, None);
+        assert_eq!(*steps.told.lock().unwrap(), ["phase staging", "3/3"]);
+
+        // Progress that goes nowhere is told a hold and its end like everything else.
+        NoProgress.hold(Hold::GameRunning);
+        NoProgress.resumed();
+        let unfollowed = RunningTotal {
+            job: &NoProgress,
+            before: 0,
+            total: 1,
+        };
+        unfollowed.hold(Hold::LockBusy);
+        unfollowed.resumed();
+    }
+
+    #[test]
+    fn a_hold_names_what_ends_it() {
+        assert_eq!(Hold::GameRunning.resumes_when(), "gameClosed");
+        assert_eq!(Hold::LockBusy.resumes_when(), "lockFree");
+        // Each hold is its own: a copy is the same hold, and the two are told apart.
+        let held = Hold::GameRunning;
+        let copy = held;
+        assert_eq!(copy, held);
+        assert_ne!(Hold::GameRunning, Hold::LockBusy);
     }
 }
