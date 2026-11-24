@@ -65,6 +65,9 @@ const CLOUD_TAG_VARIANT: u32 = 0x0000_F000;
 #[cfg(any(windows, test))]
 const FIRST_UTF8_BUILD: u32 = 18_362;
 
+/// The last character of the Basic Multilingual Plane, beyond which NTFS folds no letter case.
+const LAST_PLANE_ZERO: u32 = 0xFFFF;
+
 /// The variables that name a OneDrive folder. They outlive a sign-out, so they warn of nothing,
 /// and are only reported.
 #[cfg(windows)]
@@ -153,10 +156,11 @@ pub enum Blocker {
         /// The names it holds, as [`alpha_markers`](crate::alpha_markers) gives them.
         markers: Vec<&'static str>,
     },
-    /// The destination holds entries that the install would make, in some letter case.
+    /// The destination holds entries that the install would make, in some letter case, or an
+    /// installation's state folder, whether or not the install was to make one.
     Collision {
-        /// The names the install would make that are taken, spelled as the install would make
-        /// them, in byte order.
+        /// The names the install would make that are taken, and the state folder's when one is
+        /// there, spelled as the install would make them, in byte order.
         names: Vec<String>,
     },
     /// The destination's path is longer than the game can reach files below, on Windows.
@@ -579,11 +583,23 @@ fn judge_into(
             return Ok(());
         }
         let held: Vec<String> = held.iter().map(|name| upper_case(name)).collect();
-        let taken = collisions(names, &held);
+        let mut taken = collisions(names, &held);
+        // A state folder is another installation's, or one being made, whatever names the
+        // caller asked of: it refuses the folder even when they leave it out.
+        let state = upper_case(OsStr::new(STATE_DIR));
+        let holds_state = held.contains(&state);
+        if holds_state
+            && !taken
+                .iter()
+                .any(|name| upper_case(OsStr::new(name)) == state)
+        {
+            taken.push(STATE_DIR.to_owned());
+            taken.sort();
+        }
         if !taken.is_empty() {
             report.blockers.push(Blocker::Collision { names: taken });
         }
-        if held.contains(&upper_case(OsStr::new(STATE_DIR))) {
+        if holds_state {
             return Ok(());
         }
     }
@@ -662,10 +678,28 @@ fn installation_above(path: &Path) -> Result<Option<PathBuf>, DestinationError> 
     Ok(None)
 }
 
-/// A name in Unicode upper case, the form in which NTFS compares names: two names that share it
-/// cannot both be in a folder there.
+/// A name in upper case as NTFS compares names, as near as Unicode's tables give it: NTFS maps each
+/// character of the Basic Multilingual Plane to one character, so here each such character takes
+/// its simple upper case, and one whose upper case is longer, such as ß or the ligature ﬁ, keeps
+/// its form, as does a character beyond that plane.
 fn upper_case(name: &OsStr) -> String {
-    name.to_string_lossy().to_uppercase()
+    name.to_string_lossy()
+        .chars()
+        .map(simple_upper_case)
+        .collect()
+}
+
+/// `character` in upper case when that is one character of the Basic Multilingual Plane, as
+/// `character` is, and otherwise `character` itself.
+fn simple_upper_case(character: char) -> char {
+    if u32::from(character) > LAST_PLANE_ZERO {
+        return character;
+    }
+    let mut upper = character.to_uppercase();
+    match (upper.next(), upper.next()) {
+        (Some(one), None) if u32::from(one) <= LAST_PLANE_ZERO => one,
+        _ => character,
+    }
 }
 
 /// The names of `names` that a folder holding names of the upper-case forms `held` holds already,
@@ -807,6 +841,7 @@ fn lies_within(path: &Path, folder: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use std::cell::RefCell;
+    use std::ffi::OsStr;
     use std::fs;
     use std::io;
     use std::path::{Path, PathBuf};
@@ -1323,7 +1358,10 @@ mod tests {
         fs::create_dir(destination.join("\u{17f}aves")).unwrap();
         // A Kelvin sign, which is upper case already and so never meets a plain k.
         fs::write(destination.join("\u{212a}ept"), b"mine").unwrap();
-        let names = names_of(&["data", "saves", "kept", "Gauntlet"]);
+        // The ligature fi, whose upper case is two letters, which NTFS's table of one character
+        // for each never gives it, so that it never meets a plain fi.
+        fs::write(destination.join("con\u{fb01}g"), b"mine").unwrap();
+        let names = names_of(&["data", "saves", "kept", "config", "Gauntlet"]);
         let report = judge_destination(&destination, &names, 0).unwrap();
         assert_eq!(
             report.blockers,
@@ -1334,7 +1372,51 @@ mod tests {
         // Taken names leave the judging going on.
         assert_eq!(report.probe, Some(WRITABLE));
         assert_eq!(fs::read(destination.join("DATA")).unwrap(), b"mine");
-        assert_eq!(folder_names(&destination).unwrap().len(), 3);
+        assert_eq!(folder_names(&destination).unwrap().len(), 4);
+
+        // Each character of the first plane in its one-character upper case, and the rest as
+        // they are.
+        for (name, upper) in [
+            ("saves", "SAVES"),
+            ("\u{17f}aves", "SAVES"),
+            ("\u{212a}ept", "\u{212a}EPT"),
+            ("con\u{fb01}g", "CON\u{fb01}G"),
+            ("stra\u{df}e", "STRA\u{df}E"),
+            ("\u{e9}t\u{e9}", "\u{c9}T\u{c9}"),
+            ("\u{10428}x", "\u{10428}X"),
+        ] {
+            assert_eq!(super::upper_case(OsStr::new(name)), upper, "{name}");
+        }
+    }
+
+    #[test]
+    fn a_state_folder_refuses_whatever_names_are_asked() {
+        // A folder whose state folder is another installation's, or one being made, and which
+        // holds a name that some installs make.
+        let dir = tempfile::tempdir().unwrap();
+        let destination = dir.path().join("game");
+        fs::create_dir_all(destination.join(STATE_DIR)).unwrap();
+        fs::write(destination.join("DATA"), b"mine").unwrap();
+        backdate(dir.path()).unwrap();
+        let before = snapshot(dir.path()).unwrap();
+        let cases: [(&[&str], &[&str]); 4] = [
+            (&[], &[STATE_DIR]),
+            (&["saves"], &[STATE_DIR]),
+            (&["data"], &[STATE_DIR, "data"]),
+            (&NAMES, &[STATE_DIR, "data"]),
+        ];
+        for (names, taken) in cases {
+            let report = judge_destination(&destination, &names_of(names), 0).unwrap();
+            let taken: Vec<String> = taken.iter().map(|name| (*name).to_owned()).collect();
+            assert_eq!(
+                report.blockers,
+                [Blocker::Collision { names: taken }],
+                "{names:?}"
+            );
+            // The judging ended there.
+            assert_unasked(&report);
+            assert_eq!(snapshot(dir.path()).unwrap(), before, "{names:?}");
+        }
     }
 
     #[cfg(windows)]
