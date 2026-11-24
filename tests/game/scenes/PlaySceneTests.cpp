@@ -1811,11 +1811,12 @@ TEST_CASE("in the fields runestones and gargoyle pieces belong to everyone, and 
     PlayOptions options;
     options.welcome = false;
     options.position = Vec3{10.7f, 10.2f, -60.5f}; // open ground
-    options.items.push_back(DroppedItem{"RUNEC2", *options.position});
-    options.items.push_back(DroppedItem{"GARGEAGL", *options.position});
     PlayScene scene;
     const std::vector<PartyMember> party{PartyMember{0, first}, PartyMember{1, second}};
     REQUIRE(scene.open(device, context, world, party, options));
+    // Dropped where the first stands, for it to take.
+    REQUIRE(world.placeItem(device, "RUNEC2", scene.actor(0)->position()));
+    REQUIRE(world.placeItem(device, "GARGEAGL", scene.actor(0)->position()));
     const PlayScene::Inputs still{};
     const Relics& mine = scene.actor(0)->save().progress().relics;
     const Relics& theirs = scene.actor(1)->save().progress().relics;

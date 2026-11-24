@@ -1748,14 +1748,16 @@ TEST_CASE("a body lost under the world stands again beside another, or at the st
     f.players[0].actor.place(Vec3{0, 2, 0});
     f.step();
     CHECK(f.players[0].actor.position().y == Approx(2.0f - 16.0f / 30.0f));
-    // Out past the floor's edge, lost under it: stood again round the other player.
+    // Out past the floor's edge, lost under it: stood again round the other player, on the
+    // first of the original's spots, two spread steps back on each axis (0x80120C30).
     f.players[1].actor.place(Vec3{500, -10, 0});
     f.players[0].actor.place(Vec3{0, 0, 0});
     f.step();
     const Vec3 rescued = f.players[1].actor.position();
+    const f32 unit = PartyMotion::kSpreadMargin + f.players[0].actor.reach();
     CHECK(rescued.y == 0.0f);
-    CHECK(glm::distance(rescued, Vec3{0, 0, 0}) ==
-          Approx(PartyMotion::kRescueGap + 2 * f.players[0].actor.radius()));
+    CHECK(rescued.x == Approx(-2 * unit));
+    CHECK(rescued.z == Approx(-2 * unit));
     // With nobody to stand beside, the level's start.
     f.players[0].life = PlayerLife::InTower;
     f.players[1].actor.place(Vec3{500, -10, 0});
@@ -1764,6 +1766,48 @@ TEST_CASE("a body lost under the world stands again beside another, or at the st
     CHECK(f.players[1].actor.position() == Vec3{7, 0, 7});
     CHECK_FALSE(PartyMotion::rescueSpot(f.players, 1, f.collision).has_value());
 }
+TEST_CASE("a lost body is not stood again within another member's width, but on the next spot",
+          "[game][screens][party-motion][falling][party-spacing]") {
+    // try_location refuses a spot inside another member (PlayerCollidePlayers at col_radius,
+    // pmotion.c 803), and get_player_pos tries the next of its sixteen (pmotion.c 611-625).
+    Fixture f;
+    std::array<PlayerRuntime, 3> players;
+    players[0].actor.spawn(0, {}, nullptr, Vec3{0}, 0);
+    players[1].actor.spawn(1, {}, nullptr, Vec3{500, -10, 0}, 0);
+    const f32 unit = PartyMotion::kSpreadMargin + players[0].actor.reach();
+    players[2].actor.spawn(2, {}, nullptr, Vec3{-2 * unit, 0, -2 * unit}, 0);
+    const auto spot = PartyMotion::rescueSpot(players, 1, f.collision);
+    REQUIRE(spot.has_value());
+    CHECK(spot->x == Approx(-2 * unit));
+    CHECK(spot->z == Approx(0.0f).margin(1e-5f));
+    CHECK(glm::distance(*spot, players[2].actor.position()) >
+          players[1].actor.reach() + players[2].actor.reach());
+}
+
+TEST_CASE("a party put down side by side stands still on its first update, nobody within "
+          "another's widths",
+          "[game][party-motion][party-collision][party-spacing]") {
+    // The original sets its players two spread steps apart at the round's start (the spread at
+    // 0x80120C10 times 0.5 + col_radius, pmotion.c 549-563), outside the whole widths the
+    // members keep between them (pmotion.c 1155-1157).
+    Fixture f;
+    std::array<PlayerRuntime, 4> players;
+    for (usize i = 0; i < players.size(); ++i) {
+        players[i].actor.spawn(static_cast<s32>(i), {}, nullptr,
+                               Vec3{static_cast<f32>(i) * PartyMotion::kStartSpacing, 0, 0}, 0);
+    }
+    REQUIRE(PartyMotion::kStartSpacing > players[0].actor.reach() + players[1].actor.reach());
+    test::ScriptedMotion level;
+    const std::array<PlayInput, 4> still{};
+    PartyMotion::step(players, still, true, 0, 2, 1.0f / 30.0f, f.collision, level);
+    for (usize i = 0; i < players.size(); ++i) {
+        CAPTURE(i);
+        CHECK(players[i].actor.position() ==
+              Vec3{static_cast<f32>(i) * PartyMotion::kStartSpacing, 0, 0});
+        CHECK(players[i].knockback == Knockback{});
+    }
+}
+
 TEST_CASE("it passes to a player touched once it has been held a second, and not past a fall",
           "[game][screens][party-motion][it]") {
     Fixture f;

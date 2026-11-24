@@ -617,8 +617,7 @@ void PlayScene::restat(s32 player) {
 }
 
 bool PlayScene::relocate(const Vec3& position) {
-    constexpr f32 kSpacing = 2.0f; ///< between those put down, so nobody stands in another
-    constexpr f32 kLift = 1.0f;    ///< put down from just above, to settle onto the floor
+    constexpr f32 kLift = 1.0f; ///< put down from just above, to settle onto the floor
     if (m_world == nullptr) {
         return false;
     }
@@ -627,7 +626,8 @@ bool PlayScene::relocate(const Vec3& position) {
         if (runtime.life != PlayerLife::Standing) {
             continue;
         }
-        const auto apart = static_cast<f32>(subjects.size()) * kSpacing;
+        // Spaced so nobody stands within another's whole width.
+        const auto apart = static_cast<f32>(subjects.size()) * kSpawnSpacing;
         runtime.actor.place(position + Vec3{apart, kLift, 0.0f});
         runtime.actor.settle(m_world->collision());
         runtime.fixtureSpot.reset();

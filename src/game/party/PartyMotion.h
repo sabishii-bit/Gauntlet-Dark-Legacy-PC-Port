@@ -10,6 +10,7 @@
 #include "game/party/PartyCombo.h"
 #include "game/party/PlayInput.h"
 #include "game/party/PlayerRuntime.h"
+#include "game/players/PlayerActor.h"
 #include "game/players/PlayerAnimator.h"
 
 namespace gdl::game {
@@ -106,11 +107,20 @@ public:
     static constexpr f32 kTurnFrames = 30.0f; ///< the rate a partial turn is taken at, a second
     static constexpr s32 kItHold = 60; ///< ticks it stays with a player before a touch passes it
     static constexpr s32 kRescueSpots = 16;
-    static constexpr f32 kRescueGap = 0.5f;  ///< how far from the rescuer's side it stands
+    /** How far past a character's whole width the original's spread unit reaches: its spots
+     * are steps of 0.5 + col_radius (the double at 0x80347B00; get_player_pos, pmotion.c 549
+     * and 611). */
+    static constexpr f32 kSpreadMargin = 0.5f;
+    /** Between members put down side by side as a level opens: the two spread steps between
+     * neighbouring corners of the square the original's round start sets its players on (the
+     * spread at 0x80120C10, pmotion.c 549-563), so that nobody starts within the whole widths
+     * the members keep between them. */
+    static constexpr f32 kStartSpacing = 2.0f * (kSpreadMargin + PlayerActor::kDefaultWidth);
     static constexpr f32 kRescueRise = 6.0f; ///< how far above or below the rescuer's floor
-    /** Where a body lost out of the world stands again (get_player_pos): on one of sixteen
-     * spots round another standing player, just clear of them, where there is floor near
-     * theirs and no wall; nullopt with none. */
+    /** Where a body lost out of the world stands again (get_player_pos, pmotion.c 600-625): on
+     * the first of sixteen spots round another standing player, a spread step of
+     * kSpreadMargin past the rescuer's whole width apart, where there is floor near theirs, no
+     * wall and no other member within the widths they keep; nullopt with none. */
     static std::optional<Vec3> rescueSpot(std::span<const PlayerRuntime> players, usize lost,
                                           const WorldCollision& collision);
     /** Moves the party for the tick. `cameraYaws` holds, per player in `players`, the yaw

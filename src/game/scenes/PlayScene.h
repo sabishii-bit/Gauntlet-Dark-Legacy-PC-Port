@@ -249,7 +249,9 @@ private:
     };
 
 public:
-    static constexpr f32 kSpawnSpacing = 2.0f; ///< between party members at the entrance
+    /** Between party members put down side by side, at the entrance and wherever the party
+     * is put down together. */
+    static constexpr f32 kSpawnSpacing = PartyMotion::kStartSpacing;
     static constexpr s32 kSpawnTicks = LevelArrivalPresentation::kSpawnTicks;
     static constexpr s32 kCrystalTicks = TowerWelcome::kCrystalTicks;
     static constexpr f32 kGreetingSeconds = SumnerVisit::kGreetingSeconds;

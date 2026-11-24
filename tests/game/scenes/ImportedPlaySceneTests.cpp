@@ -351,17 +351,12 @@ TEST_CASE("Imported maps retain ordinary gameplay while supplying native camera 
         // Keep the second body's collision on the blocked side, leaving the
         // recovery direction clear instead of walking into the other player.
         REQUIRE(scene.relocate({0, 0, 0}));
-        // Put down two apart, the two stand inside the whole widths they keep between them: the
-        // first walks a little toward the attention first, out of the second's way.
-        PlayScene::Inputs inputs{};
-        inputs[0].move = {{0, -1}, 1};
-        for (s32 tick = 0; tick < 10; ++tick) {
-            REQUIRE(scene.update(1.0 / 30, inputs) == PlayOutcome::Running);
-        }
+        // Put down clear of the whole widths they keep between them.
         const Vec3 before = scene.actor(0)->position();
         REQUIRE(glm::dot(before - imported->native.position, imported->native.forward()) < 0);
         REQUIRE(scene.actor(1)->position().x - before.x >
                 scene.actor(0)->reach() + scene.actor(1)->reach());
+        PlayScene::Inputs inputs{};
         inputs[0].move = {{0, 1}, 1};
         for (s32 tick = 0; tick < 10; ++tick) {
             REQUIRE(scene.update(1.0 / 30, inputs) == PlayOutcome::Running);

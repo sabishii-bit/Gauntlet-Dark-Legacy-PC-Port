@@ -122,10 +122,13 @@ TEST_CASE("a G1 scene's HUD overlay stays byte for byte what it was",
     }
     REQUIRE(scene.pickups().cards().size() == 1);
     play(20, still);
-    // Seat 2 reaches for a potion it has not got, and is told so over its head.
+    // Seat 2 reaches for a potion it has not got, and is told so over its head, once the pause
+    // after a lesson it was given meanwhile is over.
     PlayScene::Inputs reach{};
     reach[2].usePotion = true;
-    play(1, reach);
+    for (s32 tick = 0; tick < 600 && !scene.help().showing(); ++tick) {
+        play(1, reach);
+    }
     play(5, still);
     REQUIRE(scene.help().showing());
     REQUIRE(scene.help().player() == 2);
@@ -141,10 +144,10 @@ TEST_CASE("a G1 scene's HUD overlay stays byte for byte what it was",
     REQUIRE_FALSE(overlay.empty());
     // SHA-256 of the overlay's draws, which the scene keeps byte for byte while the HUD's
     // code moves: a literal moves only when what the HUD draws changes on purpose. The seats
-    // stand their whole widths apart, and seat 2 a whole width off the chest beside the start,
-    // where its help is drawn over it.
+    // are put down clear of the whole widths they keep apart, and seat 2's help is drawn over
+    // where it stands.
     CHECK(test::hexBytes(test::drawStreamDigest(overlay)) ==
-          "6bef64e7e33aac1d9a88a29059bd194cfde643d9b0361bf946187700fe33478e");
+          "8e304f9e087ab9906bce7cfcd0275873e184a646002bd318c81f4946decf43f2");
     scene.close();
 }
 

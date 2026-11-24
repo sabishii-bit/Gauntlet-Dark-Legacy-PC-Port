@@ -122,19 +122,19 @@ TEST_CASE("a thing selected in a level is described by its kind", "[dev-console]
     CHECK(describe(Kind::Object, 1360) == Lines{"object#1360 names no object of G1"});
 
     CHECK(describe(Kind::Enemy, 0) ==
-          Lines{"enemy#0 GRU: tier 1, health 7", "at 21.0 0.0 -2.6; radius 1.5, height 6.0"});
+          Lines{"enemy#0 GRU: tier 1, health 7", "at 21.7 0.0 -3.3; radius 1.5, height 6.0"});
     CHECK(describe(Kind::Enemy, 64) == Lines{"enemy#64 is no longer there"});
 
     CHECK(describe(Kind::Critter, 0) ==
-          Lines{"critter#0 golem: health 300", "at 21.0 0.0 -2.6; radius 4.0"});
+          Lines{"critter#0 golem: health 300", "at 21.7 0.0 -3.3; radius 4.0"});
     CHECK(describe(Kind::Critter, 1) ==
-          Lines{"critter#1 gargoyle LION: health 450", "at 21.0 0.0 -2.6; radius 3.0"});
+          Lines{"critter#1 gargoyle LION: health 450", "at 21.7 0.0 -3.3; radius 3.0"});
     CHECK(describe(Kind::Critter, 2) == Lines{"critter#2 is no longer there"});
 
     CHECK(describe(Kind::Generator, 0) ==
           Lines{"generator#0 ZOM: tier 2, state 2 of 3, health 15", "at 111.2 10.1 -72.5"});
     CHECK(describe(Kind::Generator, 117) ==
-          Lines{"generator#117 RAT: tier 2, state 2 of 3, health 15", "at 21.0 0.1 -2.6"});
+          Lines{"generator#117 RAT: tier 2, state 2 of 3, health 15", "at 21.7 0.1 -3.3"});
     CHECK(describe(Kind::Generator, 118) == Lines{"generator#118 is no longer there"});
 
     CHECK(describe(Kind::Pickup, 0) ==
@@ -142,19 +142,19 @@ TEST_CASE("a thing selected in a level is described by its kind", "[dev-console]
                 "at 5.5 9.5 -112.2; radius 0.5, height 2.0; instance 239 of record 44"});
     CHECK(describe(Kind::Pickup, 141) ==
           Lines{"pickup#141 BANANNA: food, worth 50",
-                "at 21.0 0.1 -2.6; radius 0.5, height 2.0; instance -1 of record 44"});
+                "at 21.7 0.1 -3.3; radius 0.5, height 2.0; instance -1 of record 44"});
     CHECK(describe(Kind::Pickup, 142) == Lines{"pickup#142 is no longer there"});
 
     CHECK(describe(Kind::Player, 0) ==
           Lines{"player#0 TESTER: WAR of level 1, health 4000",
-                "at 25.1 0.0 1.8; facing -137 degrees; radius 0.8, height 5.0"});
+                "at 25.8 0.0 1.1; facing -137 degrees; radius 0.8, height 5.0"});
     CHECK(describe(Kind::Player, 1) ==
           Lines{"player#1 TESTER: VAL of level 1, health 4000",
-                "at 23.6 0.0 3.2; facing -137 degrees; radius 0.8, height 5.0"});
+                "at 22.9 0.0 3.9; facing -137 degrees; radius 0.8, height 5.0"});
     CHECK(describe(Kind::Player, 2) == Lines{"player#2 is no longer there"});
 
     CHECK(describe(Kind::Spawned, 0) ==
-          Lines{"spawned#0 G1POLYSET#0: stood by the console", "at 21.0 0.0 -2.6; radius 8.5"});
+          Lines{"spawned#0 G1POLYSET#0: stood by the console", "at 21.7 0.0 -3.2; radius 8.5"});
     CHECK(describe(Kind::Spawned, 1) == Lines{"spawned#1 is no longer there"});
 }
 

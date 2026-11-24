@@ -335,7 +335,7 @@ TEST_CASE("every shared verb answers with its words today", "[native-console][as
     CHECK(fixture->say("goto 1 2 3") == "Moved the party.");
     CHECK(scene.actor(0)->position().x == Catch::Approx(1.0f));
     CHECK(scene.actor(0)->position().z == Catch::Approx(3.0f));
-    CHECK(scene.actor(1)->position().x == Catch::Approx(3.0f));
+    CHECK(scene.actor(1)->position().x == Catch::Approx(1.0f + PlayScene::kSpawnSpacing));
     CHECK(scene.actor(1)->position().z == Catch::Approx(3.0f));
     CHECK(fixture->say("goto nan 0 0") == "Coordinates must be finite and within +/-1000000.");
     CHECK(fixture->say("goto 0 1e7 0") == "Coordinates must be finite and within +/-1000000.");
@@ -608,7 +608,7 @@ TEST_CASE("every shared verb answers offline in offline play's words", "[native-
     CHECK(fixture->offlineSay("goto 1 2 3") == "Moved to 1.0 2.0 3.0");
     CHECK(scene.actor(0)->position().x == Catch::Approx(1.0f));
     CHECK(scene.actor(0)->position().z == Catch::Approx(3.0f));
-    CHECK(scene.actor(1)->position().x == Catch::Approx(3.0f));
+    CHECK(scene.actor(1)->position().x == Catch::Approx(1.0f + PlayScene::kSpawnSpacing));
     CHECK(fixture->offlineSay("goto Z9") == "No map named Z9; list maps names them");
     CHECK_FALSE(scene.consoleTravelRequest());
     const auto g1 = fixture->catalog.byName("G1");

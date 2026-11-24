@@ -1,6 +1,7 @@
 #include "game/party/PartyMotion.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <numbers>
 
@@ -21,6 +22,11 @@
 namespace gdl::game {
 namespace {
 constexpr f32 kChargeStick = 0.25f;
+/** The sixteen spots round a rescuer, x then z in spread steps, in the order they are tried
+ * (the spread at 0x80120C30). */
+constexpr std::array<f32, 2 * PartyMotion::kRescueSpots> kRescueSpread{
+    -2, -2, -2, 0, -2, 2,  0,  -2, 0, 2,  2, -2, 2, 0,  2, 2,
+    -2, -1, -2, 1, -1, -2, -1, 2,  1, -2, 1, 2,  2, -1, 2, 1};
 /** A shoved body moving less than this a second shows no push (0.01 a 30 Hz frame,
  * pmotion.c 2042). */
 constexpr f32 kPushedStep = 0.3f;
@@ -85,7 +91,6 @@ MoveInput PartyMotion::chargeInput(const PlayerActor& actor, const MoveInput& st
 
 std::optional<Vec3> PartyMotion::rescueSpot(std::span<const PlayerRuntime> players, usize lost,
                                             const WorldCollision& collision) {
-    constexpr f32 kTurn = 6.2831853f;
     if (lost >= players.size()) {
         return std::nullopt;
     }
@@ -98,11 +103,10 @@ std::optional<Vec3> PartyMotion::rescueSpot(std::span<const PlayerRuntime> playe
         if (rescuer.position().y <= collision.lowest() - kLostDepth) {
             continue; // lost too
         }
-        const f32 out = kRescueGap + rescuer.radius() + body.radius();
-        for (s32 k = 0; k < kRescueSpots; ++k) {
-            const f32 angle = kTurn * static_cast<f32>(k) / static_cast<f32>(kRescueSpots);
+        const f32 unit = kSpreadMargin + rescuer.reach();
+        for (usize k = 0; k < kRescueSpread.size(); k += 2) {
             Vec3 spot =
-                rescuer.position() + Vec3{portable::sin(angle), 0.0f, portable::cos(angle)} * out;
+                rescuer.position() + Vec3{kRescueSpread[k], 0.0f, kRescueSpread[k + 1]} * unit;
             const auto floor = collision.floorAt(spot, kRescueRise, kRescueRise);
             if (!floor.has_value()) {
                 continue;
@@ -111,7 +115,12 @@ std::optional<Vec3> PartyMotion::rescueSpot(std::span<const PlayerRuntime> playe
             const Vec3 clear =
                 collision.resolveWalls(spot, body.radius(), spot.y + PlayerActor::kFootClearance,
                                        spot.y + body.height() - PlayerActor::kFootClearance);
-            if (glm::distance(clear, spot) < 1e-3f) {
+            if (glm::distance(clear, spot) >= 1e-3f) {
+                continue;
+            }
+            // try_location refuses a spot inside another member (pmotion.c 803).
+            Vec3 standing = spot;
+            if (!PartyCollision::resolve(players, lost, spot, standing).has_value()) {
                 return spot;
             }
         }
