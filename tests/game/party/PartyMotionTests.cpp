@@ -1770,7 +1770,7 @@ TEST_CASE("a lost body is not stood again within another member's width, but on 
           "[game][screens][party-motion][falling][party-spacing]") {
     // try_location refuses a spot inside another member (PlayerCollidePlayers at col_radius,
     // pmotion.c 803), and get_player_pos tries the next of its sixteen (pmotion.c 611-625).
-    Fixture f;
+    const Fixture f;
     std::array<PlayerRuntime, 3> players;
     players[0].actor.spawn(0, {}, nullptr, Vec3{0}, 0);
     players[1].actor.spawn(1, {}, nullptr, Vec3{500, -10, 0}, 0);
@@ -1790,7 +1790,7 @@ TEST_CASE("a party put down side by side stands still on its first update, nobod
     // The original sets its players two spread steps apart at the round's start (the spread at
     // 0x80120C10 times 0.5 + col_radius, pmotion.c 549-563), outside the whole widths the
     // members keep between them (pmotion.c 1155-1157).
-    Fixture f;
+    const Fixture f;
     std::array<PlayerRuntime, 4> players;
     for (usize i = 0; i < players.size(); ++i) {
         players[i].actor.spawn(static_cast<s32>(i), {}, nullptr,
@@ -2173,8 +2173,9 @@ TEST_CASE("the blocking pass leaves a still member the way out to its push veloc
     constexpr f32 kUpdate = 1.0f / 60.0f;
     auto players = crowd();
     std::array<PlayInput, 4> inputs{};
-    Fixture floor; // for its flat floor
-    test::MotionScript script{.flying = [](usize i) { return i != 1; }};
+    const Fixture floor; // for its flat floor
+    test::MotionScript script;
+    script.flying = [](usize i) { return i != 1; };
     test::ScriptedMotion level{script};
     // Where the first pass leaves it, out of the one behind it, the blocking pass meets the one
     // beside it and gives up the step on both axes, the way out sideways left over.
@@ -2205,14 +2206,14 @@ TEST_CASE("the shared view's recheck takes the place of the first blocking pass,
     constexpr f32 kUpdate = 1.0f / 60.0f;
     auto players = crowd();
     std::array<PlayInput, 4> inputs{};
-    Fixture floor; // for its flat floor
+    const Fixture floor; // for its flat floor
     // An edge of the view that holds the still member half a unit on from where it stood: the
     // recheck's blocking pass finds nobody within nine tenths of its width there.
-    test::MotionScript script{.limitMovement =
-                                  [](usize i, const Vec3& before, const Vec3& after) {
-                                      return i == 1 ? before + Vec3{0, 0, 0.5f} : after;
-                                  },
-                              .flying = [](usize i) { return i != 1; }};
+    test::MotionScript script;
+    script.limitMovement = [](usize i, const Vec3& before, const Vec3& after) {
+        return i == 1 ? before + Vec3{0, 0, 0.5f} : after;
+    };
+    script.flying = [](usize i) { return i != 1; };
     test::ScriptedMotion level{script};
     Knockback expected;
     (void)expected.step(kUpdate, players[1].actor.speed());

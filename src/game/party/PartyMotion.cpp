@@ -24,7 +24,7 @@ namespace {
 constexpr f32 kChargeStick = 0.25f;
 /** The sixteen spots round a rescuer, x then z in spread steps, in the order they are tried
  * (the spread at 0x80120C30). */
-constexpr std::array<f32, 2 * PartyMotion::kRescueSpots> kRescueSpread{
+constexpr std::array<f32, 2 * static_cast<usize>(PartyMotion::kRescueSpots)> kRescueSpread{
     -2, -2, -2, 0, -2, 2,  0,  -2, 0, 2,  2, -2, 2, 0,  2, 2,
     -2, -1, -2, 1, -1, -2, -1, 2,  1, -2, 1, 2,  2, -1, 2, 1};
 /** A shoved body moving less than this a second shows no push (0.01 a 30 Hz frame,
