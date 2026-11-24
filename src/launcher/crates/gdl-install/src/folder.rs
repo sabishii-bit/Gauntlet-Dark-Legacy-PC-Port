@@ -8,7 +8,7 @@ use std::fs::{self, File, OpenOptions, TryLockError};
 use std::io;
 use std::path::{Path, PathBuf};
 
-use gdl_files::{ALPHA_NAMES, FilesError, absolute_lexical, is_absent, no_links};
+use gdl_files::{ALPHA_NAMES, FilesError, absolute_lexical, is_absent, no_links, retry_locked};
 
 /// The folder at an installation's top that holds the launcher's own state.
 pub const STATE_DIR: &str = ".gdl-launcher";
@@ -33,11 +33,11 @@ const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
 const LOCK_FILE_REPLACED: &str = "the lock file was replaced while the lock was taken";
 
 /// Refuses `root`, an installation's folder, when it or a folder above it is a link: the rule that
-/// [`InstallFolder::at`], [`InstallFolder::installed`] and [`InstallFolder::inspect`] hold an
-/// installation's folder to. gdl-files' readers and writers hold each whole path they take to the
-/// same rule through [`no_links`], the folders above the installation included, so a change to
-/// what this refuses above the folder must reach them too; otherwise a folder accepted here would
-/// be refused once something in it is read or written.
+/// [`InstallFolder::at`], [`InstallFolder::lock`], [`InstallFolder::installed`] and
+/// [`InstallFolder::inspect`] hold an installation's folder to. gdl-files' readers and writers
+/// hold each whole path they take to the same rule through [`no_links`], the folders above the
+/// installation included, so a change to what this refuses above the folder must reach them too;
+/// otherwise a folder accepted here would be refused once something in it is read or written.
 pub fn check_links(root: &Path) -> Result<(), FilesError> {
     no_links(root)
 }
@@ -87,25 +87,32 @@ impl InstallFolder {
     /// [`LOCK_FILE`], so a launcher that crashes never leaves it held.
     ///
     /// The state folder must exist already, as a real folder. The lock file is opened without
-    /// following a link at its name, made when it is missing, never emptied, and never removed:
-    /// were one job to remove it while another held its lock, a third could lock a new file of the
-    /// same name. Once the lock is taken, the state folder and the lock file are looked at again,
-    /// and on Unix the file locked must be the one at the lock file's name, so that a lock taken
-    /// through a link that took either name meanwhile is let go and refused.
+    /// following a link at its name, made when it is missing and never emptied. It is removed only
+    /// by [`InstallLock::give_up`], while its lock is held: were one job to remove it while another
+    /// held its lock, a third could lock a new file of the same name. An open the system refuses
+    /// for a moment is tried again, as a system that keeps a removed file's name until its last
+    /// handle closes refuses opens of a lock file being given up meanwhile.
+    ///
+    /// Once the lock is taken, the state folder and the lock file are looked at again, and on Unix
+    /// the file locked must be the one at the lock file's name, so that a lock taken through a link
+    /// that took either name meanwhile, or on a lock file given up meanwhile, is let go and
+    /// refused. The installation's folder is then held to [`check_links`] again, since a link may
+    /// have taken its name, or a name above it, after the folder was given.
     pub fn lock(&self) -> Result<InstallLock, LockError> {
         let state = self.state_dir();
         check_state_folder(&state)?;
         let path = state.join(LOCK_FILE);
-        let file = open_lock_file(&path)?;
+        let file = open_lock_file(&state, &path)?;
         match file.try_lock() {
             Ok(()) => {}
             Err(TryLockError::WouldBlock) => return Err(LockError::Busy),
             Err(TryLockError::Error(source)) => return Err(LockError::Io { path, source }),
         }
         // Dropped, and so let go, when a second look refuses it.
-        let lock = InstallLock { file };
-        check_state_folder(&state)?;
+        let lock = InstallLock { file, state };
+        check_state_folder(&lock.state)?;
         check_lock_file(&path, &lock.file)?;
+        check_links(&self.root).map_err(|error| LockError::of_links_check(error, &self.root))?;
         Ok(lock)
     }
 }
@@ -126,11 +133,12 @@ fn check_state_folder(state: &Path) -> Result<(), LockError> {
     }
 }
 
-/// Opens the lock file at `path` to read and to write, since whether a file open only to read can
-/// be locked differs between systems, making it when it is missing and keeping what it holds. The
-/// open never follows a link at the name: Unix refuses to open one, and Windows opens the link
-/// itself, so that a link there is refused as one rather than locked through.
-fn open_lock_file(path: &Path) -> Result<File, LockError> {
+/// Opens the lock file at `path`, in the state folder `state`, to read and to write, since whether
+/// a file open only to read can be locked differs between systems, making it when it is missing
+/// and keeping what it holds. The open never follows a link at the name: Unix refuses to open one,
+/// and Windows opens the link itself, so that a link there is refused as one rather than locked
+/// through. An open the system refuses for a moment is tried again, as [`retry_locked`] tries one.
+fn open_lock_file(state: &Path, path: &Path) -> Result<File, LockError> {
     let mut options = OpenOptions::new();
     options.read(true).write(true).create(true).truncate(false);
     #[cfg(unix)]
@@ -143,12 +151,17 @@ fn open_lock_file(path: &Path) -> Result<File, LockError> {
         use std::os::windows::fs::OpenOptionsExt;
         options.custom_flags(FILE_FLAG_OPEN_REPARSE_POINT);
     }
-    let file = options.open(path).map_err(|source| {
+    let file = retry_locked(|| options.open(path)).map_err(|source| {
         // A link refused by Unix, or a junction that Windows will not open as a file, is told
-        // from any other refusal by what is at the name.
+        // from any other refusal by what is at the name. Nothing above the name is a state
+        // folder that went once it was looked at, as one given up meanwhile goes.
         if is_link(path) {
             LockError::Links {
                 path: path.to_path_buf(),
+            }
+        } else if is_absent(&source) {
+            LockError::NoStateFolder {
+                path: state.to_path_buf(),
             }
         } else {
             LockError::Io {
@@ -216,12 +229,135 @@ fn is_link(path: &Path) -> bool {
     fs::symlink_metadata(path).is_ok_and(|metadata| metadata.file_type().is_symlink())
 }
 
-/// An installation's lock, held until this is dropped.
+/// An installation's lock, held until this is dropped or given up.
 #[derive(Debug)]
 #[must_use = "dropping it releases the lock at once"]
 pub struct InstallLock {
     /// The lock file, open, which holds the lock.
     file: File,
+    /// The state folder that holds the lock file. The lock keeps it, rather than being told it
+    /// again, so that it can give up no state folder but its own.
+    state: PathBuf,
+}
+
+impl InstallLock {
+    /// Gives the installation's state folder up with its lock when the folder holds nothing but
+    /// the lock file and an empty journal folder: how a job that made the state folder takes it
+    /// away again. Gives `true` when the state folder is gone. Anything else in it is not the
+    /// launcher's to remove, and keeps it whole, as does a lock file that another job made again
+    /// meanwhile, whose folder is left to that job: both give `false`. Either way the lock is let
+    /// go.
+    ///
+    /// When a first listing finds nothing else, the journal folder goes, only when it is a real
+    /// folder and empty. The state folder is then listed again, and the lock file, alone in it, is
+    /// removed while its lock is still held, so that no job ever removes a lock file whose lock it
+    /// does not hold; then the lock is let go and the state folder removed, which fails, and keeps
+    /// it, when another job made the lock file again in between. A name already gone counts as
+    /// removed, so that a give-up cut short is finished by the next. Nothing is removed through a
+    /// link: the state folder and every folder above it are held to [`no_links`] first, and the
+    /// lock file must be no link and, on Unix, the file locked.
+    pub fn give_up(self) -> Result<bool, FilesError> {
+        let state = self.state.clone();
+        no_links(&state)?;
+        let Some(names) = state_names(&state)? else {
+            return Ok(true);
+        };
+        if names
+            .iter()
+            .any(|name| name.as_os_str() != LOCK_FILE && name.as_os_str() != JOURNAL_DIR)
+        {
+            return Ok(false);
+        }
+        if names.iter().any(|name| name.as_os_str() == JOURNAL_DIR)
+            && !remove_empty_folder(&state.join(JOURNAL_DIR))?
+        {
+            return Ok(false);
+        }
+        let Some(names) = state_names(&state)? else {
+            return Ok(true);
+        };
+        if names.iter().any(|name| name.as_os_str() != LOCK_FILE) {
+            return Ok(false);
+        }
+        if !names.is_empty() {
+            let lock_file = state.join(LOCK_FILE);
+            match check_lock_file(&lock_file, &self.file) {
+                Ok(()) => match retry_locked(|| fs::remove_file(&lock_file)) {
+                    Ok(()) => {}
+                    Err(error) if is_absent(&error) => {}
+                    Err(source) => {
+                        return Err(FilesError::Io {
+                            path: lock_file,
+                            source,
+                        });
+                    }
+                },
+                Err(LockError::Io { source, .. }) if is_absent(&source) => {}
+                Err(error) => return Err(give_up_error(error, &lock_file)),
+            }
+        }
+        // Let go only once its file has no name, so that whoever opens the name from now on opens
+        // another file, and whoever opened this one before finds its name gone.
+        drop(self);
+        match retry_locked(|| fs::remove_dir(&state)) {
+            Ok(()) => Ok(true),
+            Err(error) if is_absent(&error) => Ok(true),
+            Err(error) if error.kind() == io::ErrorKind::DirectoryNotEmpty => Ok(false),
+            Err(source) => Err(FilesError::Io {
+                path: state,
+                source,
+            }),
+        }
+    }
+}
+
+/// The names the state folder `state` holds, as [`names_in`] lists them, or `None` when it is
+/// gone.
+fn state_names(state: &Path) -> Result<Option<Vec<OsString>>, FilesError> {
+    match names_in(state) {
+        Ok(names) => Ok(Some(names)),
+        Err(error) if is_absent(&error) => Ok(None),
+        Err(source) => Err(FilesError::Io {
+            path: state.to_path_buf(),
+            source,
+        }),
+    }
+}
+
+/// Removes the folder at `path` when it is a real folder and holds nothing, and says whether it is
+/// gone: `false` when it holds something, or when a file or a link has its name, which is left as
+/// it is.
+fn remove_empty_folder(path: &Path) -> Result<bool, FilesError> {
+    let io = |source| FilesError::Io {
+        path: path.to_path_buf(),
+        source,
+    };
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.is_dir() => {}
+        Ok(_) => return Ok(false),
+        Err(error) if is_absent(&error) => return Ok(true),
+        Err(source) => return Err(io(source)),
+    }
+    match retry_locked(|| fs::remove_dir(path)) {
+        Ok(()) => Ok(true),
+        Err(error) if is_absent(&error) => Ok(true),
+        Err(error) if error.kind() == io::ErrorKind::DirectoryNotEmpty => Ok(false),
+        Err(source) => Err(io(source)),
+    }
+}
+
+/// The failure of a give-up for what the second look at the lock file `lock_file` refused: a link
+/// and the system's refusals keep their kinds, and anything else it came to report would count as
+/// the system's refusal of the lock file.
+fn give_up_error(error: LockError, lock_file: &Path) -> FilesError {
+    match error {
+        LockError::Links { path } => FilesError::Link { path },
+        LockError::Io { path, source } => FilesError::Io { path, source },
+        other => FilesError::Io {
+            path: lock_file.to_path_buf(),
+            source: io::Error::other(other),
+        },
+    }
 }
 
 impl Drop for InstallLock {
@@ -327,7 +463,8 @@ pub enum LockError {
     /// Another job holds the lock, in this launcher or another.
     #[error("Another job is using this installation")]
     Busy,
-    /// `path`, the state folder or the lock file, is a link.
+    /// `path` is a link: the installation's folder, a folder above it, the state folder or the
+    /// lock file.
     #[error("Choose a directory without links or junctions: {}", .path.display())]
     Links {
         /// The link.
@@ -351,23 +488,43 @@ pub enum LockError {
     },
 }
 
+impl LockError {
+    /// The refusal of the lock of the installation at `root` for what its link check reported. A
+    /// link check reports links and the system's refusals; anything else it reported would count
+    /// as the latter.
+    fn of_links_check(error: FilesError, root: &Path) -> LockError {
+        match error {
+            FilesError::Link { path } => LockError::Links { path },
+            FilesError::Io { path, source } => LockError::Io { path, source },
+            other => LockError::Io {
+                path: root.to_path_buf(),
+                source: io::Error::other(other),
+            },
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::error::Error;
     use std::fs;
     use std::io;
     use std::path::{Path, PathBuf};
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use std::thread::{self, ScopedJoinHandle};
+    use std::time::{Duration, Instant};
 
     use gdl_files::{ALPHA_NAMES, FilesError};
     use gdl_fixtures::{
-        folder_names, hold_closed, holds_bind, link_folder, make_alpha_markers, symlink_file,
-        symlink_file_where_allowed,
+        backdate, folder_names, hold_closed, holds_bind, link_folder, make_alpha_markers, snapshot,
+        symlink_file, symlink_file_where_allowed,
     };
     use tempfile::TempDir;
 
     use super::{
-        FolderError, InstallFolder, InstallLock, LOCK_FILE, LockError, STATE_DIR, alpha_markers,
-        check_links, check_lock_file, check_state_folder,
+        FolderError, InstallFolder, InstallLock, JOURNAL_DIR, LOCK_FILE, LockError, RECEIPT_FILE,
+        STATE_DIR, alpha_markers, check_links, check_lock_file, check_state_folder, give_up_error,
+        open_lock_file,
     };
 
     /// The most bytes an error may take, so that returning one by value stays cheap.
@@ -375,6 +532,20 @@ mod tests {
 
     /// How many times a test takes the lock again the moment it is released.
     const TAKES_IN_A_ROW: usize = 100;
+
+    /// How many state folders a test gives up while another thread tries their locks throughout.
+    const GIVE_UP_ROUNDS: usize = 25;
+
+    /// How many attempts the other thread makes after a give-up returns before it stops, so that
+    /// it tries the lock both during the give-up and once it is over.
+    const ATTEMPTS_AFTER: usize = 3;
+
+    /// The longest a test waits for the other thread's next attempt.
+    const ATTEMPT_WAIT: Duration = Duration::from_secs(30);
+
+    /// ERROR_LOCK_VIOLATION: what another handle's read of a locked file gives on Windows.
+    #[cfg(windows)]
+    const LOCK_VIOLATION: i32 = 33;
 
     /// A new installation folder, holding nothing yet, in a folder of the test's own.
     fn bare_installation() -> (TempDir, InstallFolder) {
@@ -407,6 +578,46 @@ mod tests {
         match result {
             Err(LockError::NoStateFolder { path }) => assert_eq!(path, state),
             other => panic!("{other:?}"),
+        }
+    }
+
+    /// Checks that `lock`, just taken, is on the file at the lock file's name `lock_file`, and that
+    /// the state folder `state` that holds it is there.
+    #[track_caller]
+    fn assert_held_at_its_name(lock: &InstallLock, state: &Path, lock_file: &Path) {
+        assert!(fs::symlink_metadata(state).unwrap().is_dir());
+        // On Unix the file at the name is the one locked, by device and inode.
+        check_lock_file(lock_file, &lock.file).unwrap();
+        // Windows gives no identity to compare, but refuses another handle's read of a locked
+        // file. Once this lock is taken, the only other lock is the one given up, on a file that
+        // the name no longer leads to, so a refused read shows that the name leads to this one.
+        #[cfg(windows)]
+        {
+            let error = fs::read(lock_file).unwrap_err();
+            assert_eq!(error.raw_os_error(), Some(LOCK_VIOLATION), "{error}");
+        }
+    }
+
+    /// Sets a flag when dropped, so that a thread told to stop by it stops however the test ends.
+    struct StopOnDrop<'a>(&'a AtomicBool);
+
+    impl Drop for StopOnDrop<'_> {
+        fn drop(&mut self) {
+            self.0.store(true, Ordering::SeqCst);
+        }
+    }
+
+    /// Waits until `attempts` reaches `least`, or until `other` has ended, as it ends only by
+    /// failing, whose failure joining it then reports.
+    #[track_caller]
+    fn wait_for_attempts(attempts: &AtomicUsize, least: usize, other: &ScopedJoinHandle<'_, ()>) {
+        let deadline = Instant::now() + ATTEMPT_WAIT;
+        while attempts.load(Ordering::SeqCst) < least && !other.is_finished() {
+            assert!(
+                Instant::now() < deadline,
+                "the other thread made no attempt in time"
+            );
+            thread::yield_now();
         }
     }
 
@@ -618,6 +829,16 @@ mod tests {
         fs::remove_dir(folder.root()).unwrap();
         assert_no_state_folder(folder.lock(), &folder.state_dir());
         assert!(folder_names(dir.path()).unwrap().is_empty());
+
+        // Nor when the state folder goes once it was looked at, as one given up meanwhile does:
+        // the lock file's open finds nothing above its name.
+        let (_dir, folder) = bare_installation();
+        let state = folder.state_dir();
+        match open_lock_file(&state, &state.join(LOCK_FILE)) {
+            Err(LockError::NoStateFolder { path }) => assert_eq!(path, state),
+            other => panic!("{other:?}"),
+        }
+        assert!(folder_names(folder.root()).unwrap().is_empty());
     }
 
     #[test]
@@ -677,6 +898,231 @@ mod tests {
         drop(held);
         // Nothing was made by looking.
         assert_eq!(folder_names(&state).unwrap(), [LOCK_FILE]);
+    }
+
+    #[test]
+    fn a_lock_taken_through_a_linked_root_is_refused() {
+        // The installation's folder, and the folder above it, each moved away once the folder was
+        // taken, and a link to where it went put in its place: on Windows a junction.
+        for linked_above in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let above = dir.path().join("above");
+            let root = above.join("install");
+            fs::create_dir_all(root.join(STATE_DIR)).unwrap();
+            let folder = InstallFolder::at(&root).unwrap();
+            let link = if linked_above { above } else { root };
+            let moved = dir.path().join("moved");
+            fs::rename(&link, &moved).unwrap();
+            link_folder(&link, &moved).unwrap();
+            assert_lock_links(folder.lock(), &link);
+
+            // The lock taken through the link was let go: the installation where the link leads
+            // is locked at once, and holds nothing new but the lock file.
+            let real = if linked_above {
+                moved.join("install")
+            } else {
+                moved
+            };
+            let real = InstallFolder::at(&real).unwrap();
+            drop(real.lock().unwrap());
+            assert_eq!(folder_names(&real.state_dir()).unwrap(), [LOCK_FILE]);
+        }
+    }
+
+    #[test]
+    fn give_up_removes_only_a_state_folder_of_a_lock_alone() {
+        // The lock file alone, and beside an empty journal folder: the state folder goes, and the
+        // installation's folder is left, holding nothing.
+        for with_journal in [false, true] {
+            let (_dir, folder) = installation();
+            let state = folder.state_dir();
+            if with_journal {
+                fs::create_dir(state.join(JOURNAL_DIR)).unwrap();
+            }
+            assert!(folder.lock().unwrap().give_up().unwrap(), "{with_journal}");
+            assert!(folder_names(folder.root()).unwrap().is_empty());
+            // No lock is taken where the state folder was, and nothing is made in its place.
+            assert_no_state_folder(folder.lock(), &state);
+            assert!(folder_names(folder.root()).unwrap().is_empty());
+        }
+
+        // Anything else keeps the state folder whole, the lock file and an empty journal folder
+        // included: the installation's receipt, a file of the player's, a staging, a journal
+        // folder holding a journal, and a file or a link in the journal folder's place.
+        type Make = fn(&Path, &Path);
+        let cases: [(&str, Make); 7] = [
+            ("a receipt", |state, _| {
+                fs::write(state.join(RECEIPT_FILE), b"{}").unwrap();
+            }),
+            ("a note", |state, _| {
+                fs::write(state.join("notes.txt"), b"mine").unwrap();
+            }),
+            ("a note beside an empty journal folder", |state, _| {
+                fs::create_dir(state.join(JOURNAL_DIR)).unwrap();
+                fs::write(state.join("notes.txt"), b"mine").unwrap();
+            }),
+            ("a staging", |state, _| {
+                fs::create_dir(state.join("install-AbC123xy")).unwrap();
+            }),
+            ("a journal", |state, _| {
+                fs::create_dir(state.join(JOURNAL_DIR)).unwrap();
+                fs::write(state.join(JOURNAL_DIR).join("install.json"), b"{}").unwrap();
+            }),
+            ("a file in the journal folder's place", |state, _| {
+                fs::write(state.join(JOURNAL_DIR), b"").unwrap();
+            }),
+            (
+                "a link in the journal folder's place",
+                |state, elsewhere| {
+                    link_folder(&state.join(JOURNAL_DIR), elsewhere).unwrap();
+                },
+            ),
+        ];
+        for (case, make) in cases {
+            let (dir, folder) = installation();
+            let elsewhere = dir.path().join("elsewhere");
+            fs::create_dir(&elsewhere).unwrap();
+            drop(folder.lock().unwrap());
+            make(&folder.state_dir(), &elsewhere);
+            // Backdated, so that a name made and removed again would show.
+            backdate(dir.path()).unwrap();
+            let before = snapshot(dir.path()).unwrap();
+            assert!(!folder.lock().unwrap().give_up().unwrap(), "{case}");
+            // Nothing was removed, made or written, and the lock was let go.
+            assert_eq!(snapshot(dir.path()).unwrap(), before, "{case}");
+            drop(folder.lock().unwrap());
+        }
+    }
+
+    #[test]
+    fn give_up_removes_nothing_through_a_link_or_at_another_file() {
+        // A link in the lock file's place, the file locked having been moved out of the state
+        // folder: refused, the link left, and nothing made where it leads.
+        let (dir, folder) = installation();
+        let state = folder.state_dir();
+        let lock_file = state.join(LOCK_FILE);
+        let held = folder.lock().unwrap();
+        fs::rename(&lock_file, dir.path().join("moved")).unwrap();
+        let elsewhere = dir.path().join("elsewhere");
+        fs::create_dir(&elsewhere).unwrap();
+        link_folder(&lock_file, &elsewhere).unwrap();
+        match held.give_up() {
+            Err(FilesError::Link { path }) => assert_eq!(path, lock_file),
+            other => panic!("{other:?}"),
+        }
+        assert!(
+            fs::symlink_metadata(&lock_file)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        assert!(folder_names(&elsewhere).unwrap().is_empty());
+        assert_eq!(folder_names(&state).unwrap(), [LOCK_FILE]);
+
+        // On Unix, the installation's folder moved away while the lock was held, and a link put in
+        // its place: refused before anything is listed or removed through the link. Windows
+        // refuses to rename a folder while a file in it is open, so no link can take the folder's
+        // name while its lock is held.
+        #[cfg(unix)]
+        {
+            let (dir, folder) = installation();
+            let held = folder.lock().unwrap();
+            let moved = dir.path().join("moved");
+            fs::rename(folder.root(), &moved).unwrap();
+            link_folder(folder.root(), &moved).unwrap();
+            match held.give_up() {
+                Err(FilesError::Link { path }) => assert_eq!(path, folder.root()),
+                other => panic!("{other:?}"),
+            }
+            assert_eq!(folder_names(&moved.join(STATE_DIR)).unwrap(), [LOCK_FILE]);
+        }
+        #[cfg(windows)]
+        {
+            let (dir, folder) = installation();
+            let held = folder.lock().unwrap();
+            let error = fs::rename(folder.root(), dir.path().join("moved")).unwrap_err();
+            assert_eq!(error.kind(), io::ErrorKind::PermissionDenied, "{error}");
+            assert!(held.give_up().unwrap());
+        }
+
+        // On Unix, another file at the lock file's name than the one locked is refused and left,
+        // as it may hold another job's lock. Windows gives no identity to compare.
+        #[cfg(unix)]
+        {
+            let (dir, folder) = installation();
+            let lock_file = folder.state_dir().join(LOCK_FILE);
+            let held = folder.lock().unwrap();
+            fs::rename(&lock_file, dir.path().join("moved")).unwrap();
+            fs::write(&lock_file, b"another").unwrap();
+            match held.give_up() {
+                Err(FilesError::Io { path, source }) => {
+                    assert_eq!(path, lock_file);
+                    assert_eq!(
+                        source.to_string(),
+                        "the lock file was replaced while the lock was taken"
+                    );
+                }
+                other => panic!("{other:?}"),
+            }
+            assert_eq!(fs::read(&lock_file).unwrap(), b"another");
+        }
+    }
+
+    #[test]
+    fn give_up_never_leaves_a_lock_another_holds() {
+        let mut kept = 0;
+        for round in 0..GIVE_UP_ROUNDS {
+            let (_dir, folder) = installation();
+            let state = folder.state_dir();
+            let lock_file = state.join(LOCK_FILE);
+            let other = InstallFolder::at(folder.root()).unwrap();
+            let held = folder.lock().unwrap();
+            let attempts = AtomicUsize::new(0);
+            let stop = AtomicBool::new(false);
+            let given_up = thread::scope(|scope| {
+                // Stops the other thread however this one leaves the scope, which waits for it.
+                let _stop = StopOnDrop(&stop);
+                // Another job's attempts, each letting go at once of a lock it took.
+                let taker = scope.spawn(|| {
+                    while !stop.load(Ordering::SeqCst) {
+                        if let Ok(lock) = other.lock() {
+                            assert_held_at_its_name(&lock, &state, &lock_file);
+                            drop(lock);
+                        }
+                        attempts.fetch_add(1, Ordering::SeqCst);
+                    }
+                });
+                wait_for_attempts(&attempts, 1, &taker);
+                let given_up = held.give_up();
+                let after = attempts.load(Ordering::SeqCst);
+                wait_for_attempts(&attempts, after + ATTEMPTS_AFTER, &taker);
+                stop.store(true, Ordering::SeqCst);
+                if let Err(failure) = taker.join() {
+                    std::panic::resume_unwind(failure);
+                }
+                given_up
+            });
+            let given_up = given_up.unwrap_or_else(|error| panic!("round {round}: {error}"));
+            if given_up {
+                assert!(fs::symlink_metadata(&state).is_err(), "round {round}");
+            } else {
+                // Kept only for a lock file the other made again, now free: the folder holds it
+                // alone, or nothing where the system kept the given-up file's name until the
+                // other's handle on it closed, and is given up once nobody else tries it.
+                kept += 1;
+                let names = folder_names(&state).unwrap();
+                assert!(
+                    names.is_empty() || names == [LOCK_FILE],
+                    "round {round}: {names:?}"
+                );
+                assert!(folder.lock().unwrap().give_up().unwrap(), "round {round}");
+            }
+            assert!(
+                folder_names(folder.root()).unwrap().is_empty(),
+                "round {round}"
+            );
+        }
+        eprintln!("{kept} of {GIVE_UP_ROUNDS} state folders kept for a lock file made again");
     }
 
     #[test]
@@ -903,6 +1349,69 @@ mod tests {
                 assert_eq!(source.to_string(), r#""x" is not a single staged root"#);
             }
             unexpected => panic!("{unexpected:?}"),
+        }
+
+        // A lock refused by the link check of its installation's folder keeps the same kinds.
+        match LockError::of_links_check(FilesError::Link { path: link.into() }, &path) {
+            LockError::Links { path: found } => assert_eq!(found, link),
+            other => panic!("{other:?}"),
+        }
+        let refused = FilesError::Io {
+            path: link.into(),
+            source: denied(),
+        };
+        match LockError::of_links_check(refused, &path) {
+            LockError::Io {
+                path: found,
+                source,
+            } => {
+                assert_eq!(found, link);
+                assert_eq!(source.kind(), io::ErrorKind::PermissionDenied);
+            }
+            other => panic!("{other:?}"),
+        }
+        let unstaged = FilesError::NotRoot { name: "x".into() };
+        match LockError::of_links_check(unstaged, &path) {
+            LockError::Io {
+                path: found,
+                source,
+            } => {
+                assert_eq!(found, path);
+                assert_eq!(source.to_string(), r#""x" is not a single staged root"#);
+            }
+            unexpected => panic!("{unexpected:?}"),
+        }
+
+        // A give-up refused by the second look at its lock file keeps a link and the system's
+        // refusal as they were, and would keep anything else whole as the system's refusal.
+        let lock_file = path.join(LOCK_FILE);
+        match give_up_error(LockError::Links { path: link.into() }, &lock_file) {
+            FilesError::Link { path: found } => assert_eq!(found, link),
+            other => panic!("{other:?}"),
+        }
+        let refused = LockError::Io {
+            path: link.into(),
+            source: denied(),
+        };
+        match give_up_error(refused, &lock_file) {
+            FilesError::Io {
+                path: found,
+                source,
+            } => {
+                assert_eq!(found, link);
+                assert_eq!(source.kind(), io::ErrorKind::PermissionDenied);
+            }
+            other => panic!("{other:?}"),
+        }
+        match give_up_error(LockError::Busy, &lock_file) {
+            FilesError::Io {
+                path: found,
+                source,
+            } => {
+                assert_eq!(found, lock_file);
+                assert_eq!(source.to_string(), "Another job is using this installation");
+            }
+            other => panic!("{other:?}"),
         }
 
         assert!(size_of::<FolderError>() <= MOST_ERROR_BYTES);
