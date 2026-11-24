@@ -5,10 +5,11 @@
 //! that the system fail a call rather than show a dialog, and what a folder chosen to install into
 //! is to the system: its build from RtlGetVersion, the user's known folders from
 //! SHGetKnownFolderPath, an entry's reparse tag from GetFileInformationByHandleEx, and the folders
-//! of the OneDrive accounts signed in from the registry.
+//! of the OneDrive accounts signed in from the registry; and whether an open file is the one at a
+//! name, by the identities GetFileInformationByHandleEx and GetFileInformationByHandle give files.
 
 use std::ffi::OsString;
-use std::fs::OpenOptions;
+use std::fs::{File, OpenOptions};
 use std::io;
 use std::marker::PhantomData;
 use std::mem::ManuallyDrop;
@@ -24,8 +25,9 @@ use windows_sys::Win32::Foundation::{
     ERROR_NO_MORE_ITEMS, ERROR_SUCCESS, FALSE, HANDLE, STATUS_SUCCESS, TRUE,
 };
 use windows_sys::Win32::Storage::FileSystem::{
-    FILE_ATTRIBUTE_REPARSE_POINT, FILE_ATTRIBUTE_TAG_INFO, FILE_FLAG_BACKUP_SEMANTICS,
-    FILE_FLAG_OPEN_REPARSE_POINT, FileAttributeTagInfo, GetFileInformationByHandleEx,
+    BY_HANDLE_FILE_INFORMATION, FILE_ATTRIBUTE_REPARSE_POINT, FILE_ATTRIBUTE_TAG_INFO,
+    FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_ID_INFO, FileAttributeTagInfo,
+    FileIdInfo, GetFileInformationByHandle, GetFileInformationByHandleEx,
 };
 use windows_sys::Win32::System::Com::CoTaskMemFree;
 use windows_sys::Win32::System::Diagnostics::Debug::{
@@ -479,6 +481,59 @@ pub(crate) fn reparse_tag(path: &Path) -> io::Result<Option<u32>> {
     Ok((info.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT != 0).then_some(info.ReparseTag))
 }
 
+/// Whether the entry at `path`, the entry itself and not what a link there leads to, is the file
+/// that `file` has open: the same file of the same volume, by the 128-bit ids that
+/// GetFileInformationByHandleEx gives, or, where a file system gives none, by the volume serial
+/// numbers and file indexes that GetFileInformationByHandle gives. Both are asked the same way, so
+/// that ids of two kinds are never compared. The entry is opened to read nothing of what it holds,
+/// as std opens one to look at it.
+pub(crate) fn is_same_file(file: &File, path: &Path) -> io::Result<bool> {
+    let entry = OpenOptions::new()
+        .access_mode(0)
+        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS)
+        .open(path)?;
+    if let (Ok(held), Ok(found)) = (file_id(file), file_id(&entry)) {
+        return Ok(held == found);
+    }
+    Ok(file_index(file)? == file_index(&entry)?)
+}
+
+/// The volume serial number and the 128-bit file id of the file that `file` has open.
+fn file_id(file: &File) -> io::Result<(u64, [u8; 16])> {
+    let mut info = FILE_ID_INFO::default();
+    // SAFETY: the handle is the open file's, which lives through the call; the call writes a
+    // FILE_ID_INFO, of the size it is given, through a pointer to a local that outlives it.
+    let read = unsafe {
+        GetFileInformationByHandleEx(
+            file.as_raw_handle(),
+            FileIdInfo,
+            (&raw mut info).cast(),
+            size_of::<FILE_ID_INFO>() as u32,
+        )
+    };
+    if read == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok((info.VolumeSerialNumber, info.FileId.Identifier))
+}
+
+/// The volume serial number and the file index, its high half first, of the file that `file` has
+/// open.
+fn file_index(file: &File) -> io::Result<(u32, u32, u32)> {
+    let mut info = BY_HANDLE_FILE_INFORMATION::default();
+    // SAFETY: the handle is the open file's, which lives through the call; the call fills the
+    // BY_HANDLE_FILE_INFORMATION it is given, a local that outlives it.
+    let read = unsafe { GetFileInformationByHandle(file.as_raw_handle(), &mut info) };
+    if read == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok((
+        info.dwVolumeSerialNumber,
+        info.nFileIndexHigh,
+        info.nFileIndexLow,
+    ))
+}
+
 /// The folders that the OneDrive accounts signed in keep in sync, as the registry names them under
 /// the user's own key: none when OneDrive has no account there. An account whose folder cannot be
 /// read, or names none, gives none.
@@ -610,10 +665,11 @@ impl Drop for RegistryKey {
 mod tests {
     use std::fs;
     use std::io;
+    use std::os::windows::fs::OpenOptionsExt;
 
     use super::{
-        numbered, onedrive_account_folders, reparse_tag, resource_bytes, update_resources,
-        wide_string, windows_build,
+        file_id, file_index, is_same_file, numbered, onedrive_account_folders, reparse_tag,
+        resource_bytes, update_resources, wide_string, windows_build,
     };
 
     /// The first build of Windows 10, the oldest system the launcher runs on.
@@ -677,6 +733,50 @@ mod tests {
         assert_eq!(error.kind(), io::ErrorKind::NotFound, "{error}");
         assert_eq!(fs::read(&file).unwrap(), b"kept");
         assert!(fs::read_dir(&real).unwrap().next().is_none());
+    }
+
+    #[test]
+    fn an_open_file_is_told_from_another_at_its_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let name = dir.path().join("lock");
+        fs::write(&name, b"").unwrap();
+        let file = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&name)
+            .unwrap();
+        let other = dir.path().join("other");
+        fs::write(&other, b"").unwrap();
+        // The file at its own name, by either identity, and not at another file's name.
+        assert!(is_same_file(&file, &name).unwrap());
+        assert!(!is_same_file(&file, &other).unwrap());
+        let reopened = fs::File::open(&name).unwrap();
+        assert_eq!(file_id(&file).unwrap(), file_id(&reopened).unwrap());
+        assert_eq!(file_index(&file).unwrap(), file_index(&reopened).unwrap());
+        let elsewhere = fs::File::open(&other).unwrap();
+        assert_ne!(file_id(&file).unwrap(), file_id(&elsewhere).unwrap());
+        assert_ne!(file_index(&file).unwrap(), file_index(&elsewhere).unwrap());
+        drop((reopened, elsewhere));
+
+        // Moved away while open, and another file made at its name: the name leads elsewhere.
+        fs::rename(&name, dir.path().join("moved")).unwrap();
+        fs::write(&name, b"another").unwrap();
+        assert!(!is_same_file(&file, &name).unwrap());
+        // A junction at the name is itself, not the folder it leads to, nor the file.
+        let real = dir.path().join("real");
+        fs::create_dir(&real).unwrap();
+        let junction = dir.path().join("junction");
+        gdl_fixtures::make_junction(&junction, &real).unwrap();
+        let folder = fs::OpenOptions::new()
+            .access_mode(0)
+            .custom_flags(super::FILE_FLAG_BACKUP_SEMANTICS)
+            .open(&real)
+            .unwrap();
+        assert!(!is_same_file(&folder, &junction).unwrap());
+        assert!(!is_same_file(&file, &junction).unwrap());
+        // Nothing at the name is the system's own error.
+        let error = is_same_file(&file, &dir.path().join("missing")).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::NotFound, "{error}");
     }
 
     #[test]

@@ -10,6 +10,9 @@ use std::path::{Path, PathBuf};
 
 use gdl_files::{ALPHA_NAMES, FilesError, absolute_lexical, is_absent, no_links, retry_locked};
 
+#[cfg(windows)]
+use crate::platform;
+
 /// The folder at an installation's top that holds the launcher's own state.
 pub const STATE_DIR: &str = ".gdl-launcher";
 
@@ -29,7 +32,6 @@ pub const JOURNAL_DIR: &str = "journal";
 const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
 
 /// Why a lock is refused when the file it locked is no longer the one at the lock file's name.
-#[cfg(unix)]
 const LOCK_FILE_REPLACED: &str = "the lock file was replaced while the lock was taken";
 
 /// Refuses `root`, an installation's folder, when it or a folder above it is a link: the rule that
@@ -93,11 +95,13 @@ impl InstallFolder {
     /// for a moment is tried again, as a system that keeps a removed file's name until its last
     /// handle closes refuses opens of a lock file being given up meanwhile.
     ///
-    /// Once the lock is taken, the state folder and the lock file are looked at again, and on Unix
-    /// the file locked must be the one at the lock file's name, so that a lock taken through a link
-    /// that took either name meanwhile, or on a lock file given up meanwhile, is let go and
-    /// refused. The installation's folder is then held to [`check_links`] again, since a link may
-    /// have taken its name, or a name above it, after the folder was given.
+    /// Once the lock is taken, the state folder and the lock file are looked at again, and the
+    /// file locked must be the one at the lock file's name, by the identity the system gives a
+    /// file, so that a lock taken through a link that took either name meanwhile, or on a lock file
+    /// given up meanwhile, is let go and refused: a system may give a removed file's name to a new
+    /// file at once, while a job that opened the old one before can still lock it. The
+    /// installation's folder is then held to [`check_links`] again, since a link may have taken its
+    /// name, or a name above it, after the folder was given.
     pub fn lock(&self) -> Result<InstallLock, LockError> {
         let state = self.state_dir();
         check_state_folder(&state)?;
@@ -182,8 +186,8 @@ fn open_lock_file(state: &Path, path: &Path) -> Result<File, LockError> {
     }
 }
 
-/// Refuses the lock that `file` holds unless what is at the lock file's name `path` is no link
-/// and, on Unix, is the file that `file` has open.
+/// Refuses the lock that `file` holds unless what is at the lock file's name `path` is no link and
+/// is the file that `file` has open.
 fn check_lock_file(path: &Path, file: &File) -> Result<(), LockError> {
     let entry = fs::symlink_metadata(path).map_err(|source| LockError::Io {
         path: path.to_path_buf(),
@@ -210,18 +214,31 @@ fn check_same_file(path: &Path, file: &File, entry: &fs::Metadata) -> Result<(),
     if (held.dev(), held.ino()) == (entry.dev(), entry.ino()) {
         Ok(())
     } else {
-        Err(LockError::Io {
-            path: path.to_path_buf(),
-            source: io::Error::other(LOCK_FILE_REPLACED),
-        })
+        Err(replaced(path))
     }
 }
 
-/// Windows gives an open file no identity that std lets a program compare with what is at a name,
-/// so there only the links are looked at.
-#[cfg(not(unix))]
-fn check_same_file(_: &Path, _: &File, _: &fs::Metadata) -> Result<(), LockError> {
-    Ok(())
+/// Refuses the lock that `file` holds unless the entry at the lock file's name `path` is the file
+/// it has open, by volume and file id, the entry opened anew as itself: std gives no identity of
+/// a file on Windows to compare.
+#[cfg(windows)]
+fn check_same_file(path: &Path, file: &File, _: &fs::Metadata) -> Result<(), LockError> {
+    match platform::is_same_file(file, path) {
+        Ok(true) => Ok(()),
+        Ok(false) => Err(replaced(path)),
+        Err(source) => Err(LockError::Io {
+            path: path.to_path_buf(),
+            source,
+        }),
+    }
+}
+
+/// The refusal of a lock whose file is no longer the one at the lock file's name `path`.
+fn replaced(path: &Path) -> LockError {
+    LockError::Io {
+        path: path.to_path_buf(),
+        source: io::Error::other(LOCK_FILE_REPLACED),
+    }
 }
 
 /// Whether a link is at `path`, looked at without following it.
@@ -255,7 +272,8 @@ impl InstallLock {
     /// it, when another job made the lock file again in between. A name already gone counts as
     /// removed, so that a give-up cut short is finished by the next. Nothing is removed through a
     /// link: the state folder and every folder above it are held to [`no_links`] first, and the
-    /// lock file must be no link and, on Unix, the file locked.
+    /// lock file must be no link and must be the file locked, so that a job that locked a file
+    /// given up before it never removes, in its place, a lock file another job holds.
     pub fn give_up(self) -> Result<bool, FilesError> {
         let state = self.state.clone();
         no_links(&state)?;
@@ -476,8 +494,8 @@ pub enum LockError {
         /// Where the state folder belongs.
         path: PathBuf,
     },
-    /// The system refused to look at, open or lock `path`; or, on Unix, the file locked was no
-    /// longer the one at the lock file's name, and the lock was let go.
+    /// The system refused to look at, open or lock `path`; or the file locked was no longer the
+    /// one at the lock file's name, and the lock was let go.
     #[error("{}: {source}", .path.display())]
     Io {
         /// The state folder or the lock file.
@@ -586,11 +604,11 @@ mod tests {
     #[track_caller]
     fn assert_held_at_its_name(lock: &InstallLock, state: &Path, lock_file: &Path) {
         assert!(fs::symlink_metadata(state).unwrap().is_dir());
-        // On Unix the file at the name is the one locked, by device and inode.
+        // The file at the name is the one locked, by the identity the system gives a file.
         check_lock_file(lock_file, &lock.file).unwrap();
-        // Windows gives no identity to compare, but refuses another handle's read of a locked
-        // file. Once this lock is taken, the only other lock is the one given up, on a file that
-        // the name no longer leads to, so a refused read shows that the name leads to this one.
+        // Windows also refuses another handle's read of a locked file. Once this lock is taken,
+        // the only other lock is the one given up, on a file that the name no longer leads to,
+        // so a refused read shows that the name leads to this one.
         #[cfg(windows)]
         {
             let error = fs::read(lock_file).unwrap_err();
@@ -877,23 +895,20 @@ mod tests {
             other => panic!("{other:?}"),
         }
 
-        // On Unix, so does another file at the lock file's name than the one locked, as a lock
-        // taken through a link that took the state folder's name and left it again would hold.
-        #[cfg(unix)]
-        {
-            let other = dir.path().join("other");
-            fs::write(&other, b"").unwrap();
-            let opened = fs::File::open(&other).unwrap();
-            match check_lock_file(&lock_file, &opened) {
-                Err(LockError::Io { path, source }) => {
-                    assert_eq!(path, lock_file);
-                    assert_eq!(
-                        source.to_string(),
-                        "the lock file was replaced while the lock was taken"
-                    );
-                }
-                other => panic!("{other:?}"),
+        // So does another file at the lock file's name than the one locked, as a lock taken
+        // through a link that took the state folder's name and left it again would hold.
+        let other = dir.path().join("other");
+        fs::write(&other, b"").unwrap();
+        let opened = fs::File::open(&other).unwrap();
+        match check_lock_file(&lock_file, &opened) {
+            Err(LockError::Io { path, source }) => {
+                assert_eq!(path, lock_file);
+                assert_eq!(
+                    source.to_string(),
+                    "the lock file was replaced while the lock was taken"
+                );
             }
+            other => panic!("{other:?}"),
         }
         drop(held);
         // Nothing was made by looking.
@@ -1045,27 +1060,82 @@ mod tests {
             assert!(held.give_up().unwrap());
         }
 
-        // On Unix, another file at the lock file's name than the one locked is refused and left,
-        // as it may hold another job's lock. Windows gives no identity to compare.
-        #[cfg(unix)]
-        {
-            let (dir, folder) = installation();
-            let lock_file = folder.state_dir().join(LOCK_FILE);
-            let held = folder.lock().unwrap();
-            fs::rename(&lock_file, dir.path().join("moved")).unwrap();
-            fs::write(&lock_file, b"another").unwrap();
-            match held.give_up() {
-                Err(FilesError::Io { path, source }) => {
-                    assert_eq!(path, lock_file);
-                    assert_eq!(
-                        source.to_string(),
-                        "the lock file was replaced while the lock was taken"
-                    );
-                }
-                other => panic!("{other:?}"),
+        // Another file at the lock file's name than the one locked is refused and left, as it may
+        // hold another job's lock; the file locked was moved away while held, which both systems
+        // allow.
+        let (dir, folder) = installation();
+        let lock_file = folder.state_dir().join(LOCK_FILE);
+        let held = folder.lock().unwrap();
+        fs::rename(&lock_file, dir.path().join("moved")).unwrap();
+        fs::write(&lock_file, b"another").unwrap();
+        match held.give_up() {
+            Err(FilesError::Io { path, source }) => {
+                assert_eq!(path, lock_file);
+                assert_eq!(
+                    source.to_string(),
+                    "the lock file was replaced while the lock was taken"
+                );
             }
-            assert_eq!(fs::read(&lock_file).unwrap(), b"another");
+            other => panic!("{other:?}"),
         }
+        assert_eq!(fs::read(&lock_file).unwrap(), b"another");
+        assert_eq!(folder_names(&folder.state_dir()).unwrap(), [LOCK_FILE]);
+    }
+
+    #[test]
+    fn a_lock_on_a_file_given_up_meanwhile_is_let_go() {
+        let (_dir, folder) = installation();
+        let state = folder.state_dir();
+        let lock_file = state.join(LOCK_FILE);
+        let third = InstallFolder::at(folder.root()).unwrap();
+        let held = folder.lock().unwrap();
+        // A second launcher opens the lock file, as a lock begins, just before the holder gives
+        // it up and removes its name while holding its lock.
+        let opened = open_lock_file(&state, &lock_file).unwrap();
+        fs::remove_file(&lock_file).unwrap();
+        if fs::symlink_metadata(&lock_file).is_ok() {
+            // There the name stays until the last handle closes, and every newcomer's open of it
+            // is refused until then.
+            eprintln!("skipped: this file system keeps a removed file's name while it is open");
+            return;
+        }
+        // A third launcher makes the lock file again and takes the lock on it, and the holder
+        // lets go of the file whose name is gone.
+        let taken = third.lock().unwrap();
+        drop(held);
+        // The second launcher locks the file it opened, which nobody holds now, but its second
+        // look finds another file at the name and lets it go.
+        opened.try_lock().unwrap();
+        match check_lock_file(&lock_file, &opened) {
+            Err(LockError::Io { path, source }) => {
+                assert_eq!(path, lock_file);
+                assert_eq!(
+                    source.to_string(),
+                    "the lock file was replaced while the lock was taken"
+                );
+            }
+            other => panic!("{other:?}"),
+        }
+        // Were it to give the state folder up regardless, the third launcher's lock file, which
+        // it holds, would be left where it is.
+        let orphan = InstallLock {
+            file: opened,
+            state: state.clone(),
+        };
+        match orphan.give_up() {
+            Err(FilesError::Io { path, source }) => {
+                assert_eq!(path, lock_file);
+                assert_eq!(
+                    source.to_string(),
+                    "the lock file was replaced while the lock was taken"
+                );
+            }
+            other => panic!("{other:?}"),
+        }
+        assert_held_at_its_name(&taken, &state, &lock_file);
+        assert!(matches!(folder.lock(), Err(LockError::Busy)));
+        assert_eq!(folder_names(&state).unwrap(), [LOCK_FILE]);
+        drop(taken);
     }
 
     #[test]
