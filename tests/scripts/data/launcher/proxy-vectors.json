@@ -27,6 +27,8 @@
     {"name": "oneServerForAll", "enabled": true, "server": "proxy.corp:8080", "bypass": null, "url": "https://api.github.com/", "proxy": "http://proxy.corp:8080"},
     {"name": "perProtocol", "enabled": true, "server": "http=h:1;https=s:2", "bypass": null, "url": "https://api.github.com/", "proxy": "http://s:2"},
     {"name": "perProtocolWithScheme", "enabled": true, "server": "https=https://s:2", "bypass": null, "url": "https://api.github.com/", "proxy": "http://s:2", "urllib": "https://s:2"},
+    {"name": "aProtocolInCapitals", "enabled": true, "server": "HTTPS=s:2", "bypass": null, "url": "https://api.github.com/", "proxy": "http://s:2", "urllib": "s:2"},
+    {"name": "theLaterOfTwoSpellingsServes", "enabled": true, "server": "https=a:1;HTTPS=b:2", "bypass": null, "url": "https://api.github.com/", "proxy": "http://b:2", "urllib": "b:2"},
     {"name": "socksAlone", "enabled": true, "server": "socks=s:1080", "bypass": null, "url": "https://api.github.com/", "refused": "socks", "urllib": "socks4://s:1080"},
     {"name": "socksFillsOnlyWhatIsMissing", "enabled": true, "server": "http=h:1;socks=s:1080", "bypass": null, "url": "http://example.test/", "proxy": "http://h:1"},
     {"name": "disabled", "enabled": false, "server": "proxy.corp:8080", "bypass": null, "url": "https://api.github.com/", "proxy": null},

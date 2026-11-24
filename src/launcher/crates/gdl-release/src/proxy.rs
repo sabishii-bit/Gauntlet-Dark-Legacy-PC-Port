@@ -1250,23 +1250,8 @@ mod tests {
     }
 
     #[test]
-    fn the_internet_settings_name_protocols_as_urllibs_handlers_take_them() {
+    fn switched_off_or_serverless_internet_settings_name_no_proxy() {
         let url = "https://api.github.com/";
-        // A protocol in upper case still serves its scheme, its address without a scheme an
-        // HTTP proxy's.
-        assert_eq!(
-            internet("HTTPS=s:2", None)
-                .choice_for(url)
-                .expect("no failure"),
-            Some("http://s:2".to_owned())
-        );
-        // Of two entries that serve one scheme, the later one serves it.
-        assert_eq!(
-            internet("https=a:1;HTTPS=b:2", None)
-                .choice_for(url)
-                .expect("no failure"),
-            Some("http://b:2".to_owned())
-        );
         // A switched-off proxy bypasses nothing either, and a missing server names none.
         let off = ProxySettings::new(
             Vec::new(),

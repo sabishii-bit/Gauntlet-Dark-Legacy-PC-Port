@@ -149,11 +149,17 @@ def urllib_reads(case: dict, registry: bool):
         yield
 
 
+def handled(proxies: dict) -> dict:
+    """The proxies as urllib's ProxyHandler takes them: each under its protocol's lower-case
+    name, a later entry taking the place of an earlier one of the same name."""
+    return {protocol.lower(): address for protocol, address in proxies.items()}
+
+
 def chosen(proxies: dict, bypassed, url: str) -> str | None:
     """The proxy urllib's ProxyHandler sends a request for `url` through: its scheme's entry,
     unless the host is bypassed."""
     request = urllib.request.Request(url)
-    entry = proxies.get(request.type)
+    entry = handled(proxies).get(request.type)
     if entry is None or (request.host and bypassed(request.host)):
         return None
     return entry
@@ -257,7 +263,7 @@ class ProxyVectorTests(unittest.TestCase):
                 with self.subTest(case=name, part="server"):
                     if not WINDOWS:
                         self.skipTest(REGISTRY_ON_WINDOWS)
-                    entry = urllib.request.getproxies_registry().get(request.type)
+                    entry = handled(urllib.request.getproxies_registry()).get(request.type)
                     if bypass_in_force:
                         # The bypass decides such a case only when the server proxies its URL, so
                         # its answer alone gives the bypass's verdict on every system.
