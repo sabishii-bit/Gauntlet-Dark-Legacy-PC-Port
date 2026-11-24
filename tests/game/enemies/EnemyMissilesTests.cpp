@@ -202,6 +202,15 @@ EnemyView playerAt(const Vec3& position, s32 player = 0) {
     return view;
 }
 
+/** A Dark Legacy character as the level shows it to the swarm: walls stop half its width, and
+ * what meets it meets the whole of it (col_radius). */
+EnemyView characterAt(const Vec3& position, s32 player = 0) {
+    EnemyView view = playerAt(position, player);
+    view.radius = 0.75f;
+    view.collisionRadius = 1.5f;
+    return view;
+}
+
 CollisionTriangle triangle(const Vec3& a, const Vec3& b, const Vec3& c, const Vec3& normal) {
     CollisionTriangle out;
     out.vertices = {a, b, c};
@@ -941,6 +950,55 @@ TEST_CASE("a lob's burst grows as its harm fades, reaching each player once and 
     missiles.update(kStep, nullptr, std::array{playerAt({0.5f, -3, 0}, 3)});
     for (const EnemyMissileHit& hit : missiles.takeHits()) {
         CHECK((hit.flags & EnemyMissileKind::kKnockBack) == 0);
+    }
+}
+
+TEST_CASE("the swarm's shots and bursts meet a character by its whole width",
+          "[game][enemies][enemy-burst][player-width]") {
+    SECTION("a shot passing beside it") {
+        // MissileCollidePlayer widens the shot's 0.5 by col_radius: 1.8 aside is struck, 2.1
+        // is not.
+        const f32 aside = GENERATE(1.8f, 2.1f);
+        CAPTURE(aside);
+        EnemyMissiles missiles;
+        const std::array party{characterAt({aside, 0, 20})};
+        missiles.launch(EnemyMissileKind::arrow(), {0, 4, 0}, {0, 3, 20}, 1, nullptr, 2);
+        std::vector<EnemyMissileHit> hits;
+        for (s32 frame = 0; frame < 60 && hits.empty(); ++frame) {
+            missiles.update(kStep, nullptr, party);
+            hits = missiles.takeHits();
+        }
+        if (aside < 2.0f) {
+            REQUIRE(hits.size() == 1);
+            CHECK(hits[0].player == 0);
+            CHECK(hits[0].shooter == 2);
+        } else {
+            CHECK(hits.empty());
+        }
+    }
+    SECTION("a lob's burst") {
+        // The burst's ring reaches its whole 3 and then col_radius more: 4.2 across is
+        // reached, 4.6 is not.
+        const f32 across = GENERATE(4.2f, 4.6f);
+        CAPTURE(across);
+        EnemyMissiles missiles;
+        const std::array party{characterAt({across, -3, 0})};
+        missiles.burst({0, 0, 0}, 3.0f, 10.0f, EnemyMissileKind::kKnockBack, 1.0f, -1);
+        s32 reached = 0;
+        for (s32 frame = 0; frame < 40; ++frame) {
+            missiles.update(kStep, nullptr, party);
+            for (const EnemyMissileHit& hit : missiles.takeHits()) {
+                CHECK(hit.player == 0);
+                ++reached;
+            }
+        }
+        CHECK(missiles.burstCount() == 0);
+        // So faint at its edge that it holds nobody off, it may reach a player more than once.
+        if (across < 4.5f) {
+            CHECK(reached > 0);
+        } else {
+            CHECK(reached == 0);
+        }
     }
 }
 

@@ -4255,8 +4255,10 @@ TEST_CASE("a suicide struck down goes up in a burning blast that reaches the par
     players[0].actor.spawn(0, {}, nullptr, Vec3{0, 0, 3}, 0);
     players[1].actor.spawn(1, {}, nullptr, Vec3{0}, 0);
     players[2].actor.spawn(2, {}, nullptr, Vec3{0}, 0);
-    players[1].actor.place(Vec3{0, 0, 5.5f + players[1].actor.radius()});
-    players[2].actor.place(Vec3{0, 0, 6.1f + players[2].actor.radius()});
+    // The ring meets a player's whole width (col_radius): with that width aside, one 5.5 out is
+    // reached as the ring grows, one 6.1 out, past the ring's 6, never.
+    players[1].actor.place(Vec3{0, 0, 5.5f + players[1].actor.reach()});
+    players[2].actor.place(Vec3{0, 0, 6.1f + players[2].actor.reach()});
     players[0].actor.save().progress().health = 1000;
     LevelOpponents opponents;
     opponents.open({device, world, weapons, effects, audio, root, 1}, players);

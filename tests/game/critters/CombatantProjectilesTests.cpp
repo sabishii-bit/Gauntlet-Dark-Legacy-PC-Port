@@ -1499,8 +1499,12 @@ void checkWebEscape(s32 fps, bool animated) {
     s32 hits = 0;
     s32 healthAfterEscape = 0;
     for (s32 frame = 0; frame < fps * 5; ++frame) {
-        const std::array<EnemyView, 1> views{
-            {{0, player.actor.position(), player.actor.radius(), player.actor.height()}}};
+        // As the level shows the character, so that the web meets its whole width.
+        const std::array<EnemyView, 1> views{{{.player = 0,
+                                               .position = player.actor.position(),
+                                               .radius = player.actor.radius(),
+                                               .height = player.actor.height(),
+                                               .collisionRadius = player.actor.reach()}}};
         f.step(dt, views, &world);
         for (const auto& hit : f.projectiles.takeHits()) {
             ++hits;
@@ -1650,6 +1654,84 @@ TEST_CASE("critter projectiles choose the nearest visible victim regardless of p
     REQUIRE(f.projectiles.takeHits().empty());
     f.projectiles.clear(f.effects);
     REQUIRE(f.effects.count() == 0); // an impact is owned after its projectile is removed
+}
+
+TEST_CASE("critter shots, webs and hand traps meet a character by its whole width",
+          "[game][boss-projectiles][player-width]") {
+    // A Dark Legacy character: walls stop half its width, what meets it meets the whole of it.
+    const auto character = [](s32 player, const Vec3& feet) {
+        return EnemyView{.player = player,
+                         .position = feet,
+                         .radius = 0.75f,
+                         .height = 6,
+                         .collisionRadius = 1.5f};
+    };
+    Fixture f;
+    SECTION("a shot passing beside it") {
+        // MissileCollidePlayer widens the shot's 0.5 by col_radius: 1.7 aside is struck, 2.1
+        // is not.
+        const f32 aside = GENERATE(1.7f, 2.1f);
+        CAPTURE(aside);
+        f.launch();
+        const std::array players{character(4, {aside, 0, 5})};
+        f.step(0.2f, players);
+        const auto hits = f.projectiles.takeHits();
+        if (aside < 2.0f) {
+            REQUIRE(hits.size() == 1);
+            CHECK(hits[0].player == 4);
+        } else {
+            CHECK(hits.empty());
+        }
+    }
+    SECTION("a web landed on the floor") {
+        WorldCollision world;
+        CollisionTriangle floor;
+        floor.vertices = {Vec3{-100, 0, -100}, Vec3{100, 0, -100}, Vec3{100, 0, 100}};
+        CollisionTriangle other = floor;
+        other.vertices = {Vec3{-100, 0, -100}, Vec3{100, 0, 100}, Vec3{-100, 0, 100}};
+        world.build({floor, other});
+        CombatShot shot;
+        shot.data = &f.data;
+        shot.damageIndex = 3;
+        shot.origin = {0, 2, 0};
+        shot.target = Vec3{0, 0, 10};
+        f.projectiles.launch(shot, f.archive, f.device, f.effects, f.sound);
+        for (s32 i = 0; i < 120 && f.effects.effect(0).name != "HIT"; ++i) {
+            f.step(1.0f / 120, {}, &world);
+        }
+        REQUIRE(f.effects.effect(0).name == "HIT");
+        // Its reach of 2 and col_radius more: 3.2 out is caught, 3.6 is not.
+        const Vec3 at = f.effects.effect(0).position;
+        const std::array players{character(3, {at.x + 3.2f, 0, at.z}),
+                                 character(8, {at.x - 3.6f, 0, at.z})};
+        for (s32 i = 0; i < 30; ++i) {
+            f.step(1.0f / 30, players, &world);
+        }
+        const auto hits = f.projectiles.takeHits();
+        CHECK(hits.size() == 30);
+        for (const auto& hit : hits) {
+            CHECK(hit.player == 3);
+        }
+    }
+    SECTION("a hand trap planted where it is cast") {
+        CombatShot shot;
+        shot.data = &f.data;
+        shot.damageIndex = 6;
+        shot.origin = {0, 3, 0};
+        shot.target = Vec3{80, 3, 80};
+        f.projectiles.launch(shot, f.archive, f.device, f.effects, f.sound);
+        REQUIRE(f.projectiles.count() == 1);
+        // Its reach of 3 and col_radius more: 4.2 out is caught, 4.6 is not.
+        const std::array players{character(3, {4.2f, 0, 0}), character(8, {-4.6f, 0, 0})};
+        for (s32 i = 0; i < 30; ++i) {
+            f.step(1.0f / 30, players);
+        }
+        const auto hits = f.projectiles.takeHits();
+        CHECK(hits.size() >= 29);
+        for (const auto& hit : hits) {
+            CHECK(hit.player == 3);
+        }
+    }
 }
 
 TEST_CASE("critter projectiles cannot damage players through a world wall",

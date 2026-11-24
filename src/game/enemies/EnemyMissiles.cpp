@@ -513,7 +513,9 @@ void EnemyMissiles::stepBursts(f32 seconds, const WorldCollision* collision,
             const Vec3 middle = view.position + Vec3{0.0f, 0.5f * view.height, 0.0f};
             const Vec3 away = middle - blast.position;
             const f32 across = portable::hypot(away.x, away.z);
-            if (std::abs(away.y) > 0.5f * view.height + radius || across > radius + view.radius) {
+            // The ring reaches the player's whole width (col_radius), not the half walls stop.
+            if (std::abs(away.y) > 0.5f * view.height + radius ||
+                across > radius + view.collisionRadius.value_or(view.radius)) {
                 continue;
             }
             if (across > kSightFrom && collision != nullptr &&
@@ -675,8 +677,10 @@ void EnemyMissiles::update(f32 seconds, const WorldCollision* collision,
                     if (view.hidden) {
                         continue;
                     }
+                    // MissileCollidePlayer widens the shot by the player's whole width.
                     const auto contact = CombatantProjectile::contact(
-                        from, to, radius, view.position, view.radius, view.height);
+                        from, to, radius, view.position, view.collisionRadius.value_or(view.radius),
+                        view.height);
                     if (contact && (*contact < first || (victim == nullptr && *contact == first))) {
                         first = *contact;
                         victim = &view;

@@ -50,9 +50,10 @@ void Combatant::grab(Actor& actor, const MoveDefinition& move, const AttackDefin
         const f32 bodyDistance = glm::length(Vec2{toBody.x, toBody.z});
         const bool closer =
             bodyDistance < nearest || (bodyDistance == nearest && player.player < actor.grabbed);
-        // CritterNodePlayerCollide scans slots 0..3, regardless of the view's order.
+        // CritterNodePlayerCollide scans slots 0..3, regardless of the view's order, and widens
+        // the reach by the player's whole width (col_radius).
         if (!player.hidden && player.damageable && !player.captured && closer &&
-            distance <= player.radius + damage.maxDistance &&
+            distance <= player.collisionRadius.value_or(player.radius) + damage.maxDistance &&
             std::abs(delta.y) <= player.height * 0.5f + damage.maxDistance) {
             nearest = bodyDistance;
             actor.grabbed = player.player;

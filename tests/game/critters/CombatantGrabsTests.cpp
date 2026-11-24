@@ -196,6 +196,30 @@ TEST_CASE("missed grabs do not throw and death frees a held player without damag
     }
 }
 
+TEST_CASE("a grab catches a character by its whole width",
+          "[game][yeti][combatant-grab][player-width]") {
+    // CritterNodePlayerCollide widens the grab's 9 by col_radius: from the hand's point at
+    // (2, 7, 1), 1.2 beyond the 9 is caught and 1.6 beyond it is not.
+    const f32 beyond = GENERATE(1.2f, 1.6f);
+    CAPTURE(beyond);
+    Fixture f;
+    f.players[0].position = {2 + 9 + beyond, 0, 1};
+    f.players[0].radius = 0.75f;
+    f.players[0].collisionRadius = 1.5f;
+    f.players[1].hidden = true;
+    f.fighter.update(2, 24.0f / 30, f.players);
+    REQUIRE(f.fighter.actor.moveName() == "GRAB");
+    f.fighter.update(2, 1.0f / 30, f.players);
+    const auto grabs = f.fighter.actor.takeGrabs();
+    if (beyond < 1.5f) {
+        REQUIRE(grabs.size() == 1);
+        CHECK(grabs[0].player == 3);
+        CHECK(grabs[0].attachment.has_value());
+    } else {
+        CHECK(grabs.empty());
+    }
+}
+
 TEST_CASE("a grab's release carries its fighter's breath gap",
           "[game][yeti][combatant-grab][hit-gap]") {
     // A Dreamcast boss's tenth of a second, and Dark Legacy's quarter.
