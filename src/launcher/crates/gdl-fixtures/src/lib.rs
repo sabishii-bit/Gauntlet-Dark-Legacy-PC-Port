@@ -1,6 +1,6 @@
 //! Builders of synthetic discs and disc icons, ROMs, GD-ROM sets, payloads, release feeds, a test
-//! key's signatures and installations, so the launcher's plain tests run without the player's own
-//! dumps.
+//! key's signatures, Linux launcher archives and installations, so the launcher's plain tests run
+//! without the player's own dumps.
 #![forbid(unsafe_code)]
 
 mod feed;
@@ -12,6 +12,7 @@ mod minisign;
 mod n64;
 mod program;
 mod runtime;
+mod ustar;
 mod zip;
 
 pub use feed::{AssetRow, ReleaseRow, page};
@@ -46,4 +47,5 @@ pub use program::{
     fake_sign, table_and_trailer, tiny_elf, tiny_pe,
 };
 pub use runtime::{RuntimeFiles, pretty_json, sha256_hex, unhex};
+pub use ustar::{TarEntry, tar_gz};
 pub use zip::{RawEntry, RawZip, crc32};
