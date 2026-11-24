@@ -634,7 +634,7 @@ mod tests {
         synthetic_ciso, synthetic_iso, tiny_elf, tiny_pe, tpl,
     };
     #[cfg(windows)]
-    use gdl_fixtures::{fake_sign, long_root};
+    use gdl_fixtures::{deny_writes_below, fake_sign, long_root};
     use gdl_media::{Container, DiscEntryKind, GameCubeImage, MediaError, Sha256Digest};
     use gdl_release::{Platform, Version};
     use serde_json::{Value, json};
@@ -2153,34 +2153,47 @@ mod tests {
         assert!(folder_names(top.path()).unwrap().is_empty());
     }
 
+    /// A record of installations that, as it is told of the pending folder, after the folder was
+    /// judged again, has `deny` keep `at` from taking new entries until it is dropped, and keeps
+    /// what it hears.
+    struct Denying {
+        at: PathBuf,
+        deny: fn(&Path) -> io::Result<WritesDenied>,
+        denied: Option<WritesDenied>,
+        calls: Vec<(&'static str, PathBuf)>,
+    }
+
+    impl Denying {
+        fn new(at: &Path, deny: fn(&Path) -> io::Result<WritesDenied>) -> Denying {
+            Denying {
+                at: at.to_path_buf(),
+                deny,
+                denied: None,
+                calls: Vec::new(),
+            }
+        }
+    }
+
+    impl FolderRecord for Denying {
+        fn pending(&mut self, destination: &Path) -> io::Result<()> {
+            self.calls.push(("pending", destination.to_path_buf()));
+            self.denied = Some((self.deny)(&self.at)?);
+            Ok(())
+        }
+
+        fn installed(&mut self, destination: &Path) -> io::Result<()> {
+            self.calls.push(("installed", destination.to_path_buf()));
+            Ok(())
+        }
+
+        fn forget(&mut self, destination: &Path) -> io::Result<()> {
+            self.calls.push(("forget", destination.to_path_buf()));
+            Ok(())
+        }
+    }
+
     #[test]
     fn a_folder_that_takes_no_new_folder_once_judged_is_not_writable() {
-        /// A record of installations that, as it is told of the pending folder, after the folder
-        /// was judged again, has `at` take no new entry until it is dropped.
-        struct Denying {
-            at: PathBuf,
-            denied: Option<WritesDenied>,
-            calls: Vec<(&'static str, PathBuf)>,
-        }
-
-        impl FolderRecord for Denying {
-            fn pending(&mut self, destination: &Path) -> io::Result<()> {
-                self.calls.push(("pending", destination.to_path_buf()));
-                self.denied = Some(deny_writes(&self.at)?);
-                Ok(())
-            }
-
-            fn installed(&mut self, destination: &Path) -> io::Result<()> {
-                self.calls.push(("installed", destination.to_path_buf()));
-                Ok(())
-            }
-
-            fn forget(&mut self, destination: &Path) -> io::Result<()> {
-                self.calls.push(("forget", destination.to_path_buf()));
-                Ok(())
-            }
-        }
-
         // Whether this process is refused a new folder in a folder denied writes: root makes one
         // in any, and on Windows so does a process whose restore privilege is enabled.
         let looked = tempfile::tempdir().unwrap();
@@ -2205,11 +2218,7 @@ mod tests {
                 // The folder above the first the install makes, `Games`.
                 plan.destination.ancestors().nth(2).unwrap().to_path_buf()
             };
-            let mut record = Denying {
-                at: refusing.clone(),
-                denied: None,
-                calls: Vec::new(),
-            };
+            let mut record = Denying::new(&refusing, deny_writes);
             let cancel = Cancel::default();
             let job = Job {
                 cancel: &cancel,
@@ -2246,6 +2255,60 @@ mod tests {
                 assert!(folder_names(top.path()).unwrap().is_empty());
             }
         }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_path_refused_part_way_takes_back_the_folders_made_on_it() {
+        // Whether this process is refused a new folder in a folder made in one denied writes
+        // below it: a process whose restore privilege is enabled makes one.
+        let looked = tempfile::tempdir().unwrap();
+        let denied = deny_writes_below(looked.path()).unwrap();
+        if !denied.refuses_folders() {
+            eprintln!("skipped: this process makes a folder in a folder denied writes");
+            return;
+        }
+        drop(denied);
+
+        let inputs = Inputs::of(&icon_iso());
+        let top = tempfile::tempdir().unwrap();
+        // Two folders to make, once the folder was judged: `Games` in a folder whose new folders
+        // take nothing new, which it makes, then the destination in it, which it cannot.
+        let destination = destination_in(top.path(), false);
+        let plan = inputs.plan(&destination);
+        assert!(plan.is_ready(), "{plan:?}");
+        let games = plan.destination.parent().unwrap().to_path_buf();
+        let mut record = Denying::new(top.path(), deny_writes_below);
+        let cancel = Cancel::default();
+        let job = Job {
+            cancel: &cancel,
+            progress: &NoProgress,
+        };
+        let failure = inputs
+            .install(
+                &plan,
+                &mut record,
+                &job,
+                &standing_in(&NoFaults, &answering),
+            )
+            .unwrap_err();
+        let denied = record.denied.take();
+        assert!(denied.is_some(), "the folders below were denied writes");
+        drop(denied);
+        assert!(
+            matches!(
+                &failure.error,
+                InstallError::Blocked(Blocker::NotWritable { path }) if *path == games
+            ),
+            "{failure:?}"
+        );
+        // The folder it made went, as the failure says, and the record forgets the destination.
+        assert_eq!(failure.changes, Changes::RolledBack);
+        assert!(folder_names(top.path()).unwrap().is_empty());
+        assert_eq!(
+            record.calls,
+            heard_of(&plan.destination, &["pending", "forget"])
+        );
     }
 
     #[test]

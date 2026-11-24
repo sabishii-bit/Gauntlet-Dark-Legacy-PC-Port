@@ -133,6 +133,10 @@ pub(super) struct Install<'a> {
     settings: &'a InstallSettings<'a>,
     /// How many folders the install made: the destination and the missing folders above it.
     made_folders: u32,
+    /// The innermost folder the install made, from which the folders it made go up one by one:
+    /// the destination once it is made, else the last folder above it that was made before the
+    /// next could not be; `None` while none is made.
+    innermost_made: Option<PathBuf>,
 }
 
 impl<'a> Install<'a> {
@@ -147,6 +151,7 @@ impl<'a> Install<'a> {
             job,
             settings,
             made_folders: 0,
+            innermost_made: None,
         }
     }
 
@@ -247,13 +252,22 @@ impl<'a> Install<'a> {
         InstallFailure { error, changes }
     }
 
+    /// Removes the folders the install made on the way to its folder while they hold nothing,
+    /// innermost first: the destination and those above it once it is made, else those above it
+    /// that were made before the next could not be.
+    fn remove_made(&self) {
+        if let Some(innermost) = &self.innermost_made {
+            remove_made_folders(innermost, self.made_folders);
+        }
+    }
+
     /// The install's failure for `error` before its state folder was made: the folders it made
     /// are removed while they hold nothing, and `record`, when given, forgets the folder, a
     /// failure to forget passed over. Nothing is left of its own, and nothing was made when it
     /// made no folder.
     fn unmade(&self, error: InstallError, record: Option<&mut dyn FolderRecord>) -> InstallFailure {
         let destination = &self.plan.destination;
-        remove_made_folders(destination, self.made_folders);
+        self.remove_made();
         if let Some(record) = record {
             let _ = record.forget(destination);
         }
@@ -284,9 +298,8 @@ impl<'a> Install<'a> {
                 changes: Changes::Kept,
             };
         }
-        let destination = &self.plan.destination;
-        remove_made_folders(destination, self.made_folders);
-        let _ = record.forget(destination);
+        self.remove_made();
+        let _ = record.forget(&self.plan.destination);
         InstallFailure {
             error,
             changes: Changes::RolledBack,
@@ -480,8 +493,9 @@ impl<'a> Install<'a> {
     }
 
     /// Makes the destination and each missing folder above it, outermost first, counting those
-    /// made. A folder that another made meanwhile is not the install's, and neither is any above
-    /// it, so the count starts again below it.
+    /// made and keeping the innermost, from which they go up should the install fail. A folder
+    /// that another made meanwhile is not the install's, and neither is any above it, so the count
+    /// starts again below it.
     fn make_destination(&mut self) -> Result<(), InstallError> {
         let plan = self.plan;
         let mut missing = Vec::new();
@@ -499,9 +513,13 @@ impl<'a> Install<'a> {
         }
         for folder in missing.into_iter().rev() {
             match fs::create_dir(folder) {
-                Ok(()) => self.made_folders += 1,
+                Ok(()) => {
+                    self.made_folders += 1;
+                    self.innermost_made = Some(folder.to_path_buf());
+                }
                 Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
                     self.made_folders = 0;
+                    self.innermost_made = None;
                 }
                 Err(error) if refuses_writes(&error) => {
                     return Err(InstallError::Blocked(Blocker::NotWritable {

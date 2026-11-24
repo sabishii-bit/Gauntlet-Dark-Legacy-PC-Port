@@ -93,6 +93,12 @@ const ADD_ENTRIES: &str = "(WD,AD)";
 #[cfg(windows)]
 const ADD_FILES: &str = "(WD)";
 
+/// What a deny entry that keeps out new entries below a folder takes: the rights of
+/// [`ADD_ENTRIES`], in an entry that every folder made in it and below inherits (CI) and that does
+/// not apply to the folder itself (IO).
+#[cfg(windows)]
+const ADD_ENTRIES_BELOW: &str = "(CI)(IO)(WD,AD)";
+
 /// The creation flag that runs a console program without a window of its own.
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
@@ -839,7 +845,8 @@ fn while_scanned(mut open: impl FnMut() -> io::Result<fs::File>) -> io::Result<f
 }
 
 /// A folder that [`deny_writes`] keeps from taking new entries, or on Windows that
-/// [`deny_new_files`] keeps from taking new files, until this is dropped.
+/// [`deny_new_files`] keeps from taking new files or whose new folders [`deny_writes_below`] keeps
+/// from taking new entries, until this is dropped.
 #[derive(Debug)]
 #[must_use = "dropping it lets the folder take new entries again at once"]
 pub struct WritesDenied {
@@ -868,9 +875,10 @@ impl WritesDenied {
 
     /// Whether the folder refuses this process a new folder too, as the guard's own check showed:
     /// on Unix whenever it refuses a file; on Windows, for a folder that [`deny_writes`] denied,
-    /// unless this process's restore privilege is enabled, and never for one that
-    /// [`deny_new_files`] denied. A test of what code makes in such a folder expects what this
-    /// tells, so that it holds whatever shell started it.
+    /// and for the folders made in one that [`deny_writes_below`] denied, unless this process's
+    /// restore privilege is enabled, and never for one that [`deny_new_files`] denied. A test of
+    /// what code makes in such a folder expects what this tells, so that it holds whatever shell
+    /// started it.
     pub fn refuses_folders(&self) -> bool {
         self.folders_refused
     }
@@ -919,7 +927,7 @@ impl WritesDenied {
         if cfg!(windows) && !self.proven {
             return Err(io::Error::other(format!(
                 "{} took a new file while it was denied",
-                self.folder.display()
+                probe.parent().unwrap_or(&self.folder).display()
             )));
         }
         self.folders_refused = refuses_new_folder(probe)?;
@@ -995,6 +1003,39 @@ pub fn deny_new_files(folder: &Path) -> io::Result<WritesDenied> {
             denied.folder.display()
         )));
     }
+    Ok(denied)
+}
+
+/// Keeps every folder made in `folder` from then on from taking new entries until the result is
+/// dropped, while `folder` itself still takes them, so that a test can show what code does when it
+/// makes a path of folders and is refused part way: it makes the first and not the next. An entry
+/// that denies everyone the rights to add a file and a folder is set on `folder`, inherited by
+/// every folder made in it and below and not applying to `folder` itself; the drop removes every
+/// entry that denies everyone anything, from `folder` and from what inherited it. Windows alone
+/// hands a folder's entries down to the folders made in it; on Unix a new folder's mode comes from
+/// the process that makes it.
+///
+/// A folder is then made in `folder`, which must be, and in that folder a new file and a new folder
+/// are tried as [`deny_writes`] tries them in the folder it denies: a file made is an error, and
+/// [`refuses_folders`](WritesDenied::refuses_folders) says whether the folder was refused, as it is
+/// unless this process's restore privilege is enabled. The folder made is removed again.
+#[cfg(windows)]
+pub fn deny_writes_below(folder: &Path) -> io::Result<WritesDenied> {
+    let (folder, probe) = denial_target(folder)?;
+    let mut denied = WritesDenied::deny(folder, ADD_ENTRIES_BELOW)?;
+    fs::create_dir(&probe).map_err(|error| {
+        io::Error::new(
+            error.kind(),
+            format!(
+                "{} refused a folder while only the folders made in it were denied: {error}",
+                denied.folder.display()
+            ),
+        )
+    })?;
+    let checked = denied.check(&probe.join(WRITE_PROBE));
+    let removed = fs::remove_dir(&probe);
+    checked?;
+    removed?;
     Ok(denied)
 }
 
@@ -2106,6 +2147,65 @@ mod tests {
 
         // Anything but a folder is refused before anything changes, as by deny_writes.
         let error = deny_new_files(&folder.join("kept.txt")).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
+        assert_eq!(permissions_of(&folder), before);
+    }
+
+    /// A folder denied writes below it takes new entries itself, while a folder made in it, and
+    /// one made in that, takes none, but a new folder where this process's restore privilege lets
+    /// one past; dropped, the guard gives both their permissions back.
+    #[cfg(windows)]
+    #[test]
+    fn a_folder_made_in_a_folder_denied_writes_below_takes_nothing_new() {
+        use super::{ERROR_ACCESS_DENIED, deny_writes_below, folder_names};
+
+        let dir = tempfile::tempdir().unwrap();
+        let folder = dir.path().join("folder");
+        make_settled_folder(&folder);
+        let before = permissions_of(&folder);
+
+        let denied = deny_writes_below(&folder).unwrap();
+        assert_ne!(permissions_of(&folder), before);
+        assert!(denied.proven());
+        let privileged = restore_privilege_enabled();
+        assert_eq!(denied.refuses_folders(), !privileged);
+        // Its own check left nothing.
+        assert!(folder_names(&folder).unwrap().is_empty());
+
+        // The folder itself takes a new file and a new folder, ...
+        fs::write(folder.join("own.txt"), b"own").unwrap();
+        let made = folder.join("made");
+        fs::create_dir(&made).unwrap();
+        // ... but the folder made in it takes no new file, ...
+        let error = fs::File::create_new(made.join("new.txt")).unwrap_err();
+        assert_eq!(error.raw_os_error(), Some(ERROR_ACCESS_DENIED), "{error}");
+        // ... nor a new folder, but where the restore privilege lets one past, whose own folders
+        // inherit the entry again.
+        let deeper = made.join("deeper");
+        match fs::create_dir(&deeper) {
+            Err(error) => assert_eq!(error.raw_os_error(), Some(ERROR_ACCESS_DENIED), "{error}"),
+            Ok(()) => {
+                assert!(
+                    privileged,
+                    "a folder was made past the entry without the restore privilege"
+                );
+                let error = fs::File::create_new(deeper.join("new.txt")).unwrap_err();
+                assert_eq!(error.raw_os_error(), Some(ERROR_ACCESS_DENIED), "{error}");
+                fs::remove_dir(&deeper).unwrap();
+            }
+        }
+        // What a folder made there holds nothing of can still be removed.
+        fs::remove_dir(&made).unwrap();
+        assert_eq!(folder_names(&folder).unwrap(), ["own.txt"]);
+
+        // Dropped, it gives the folder its permissions back, and a folder made in it takes a file.
+        drop(denied);
+        assert_eq!(permissions_of(&folder), before);
+        fs::create_dir(&made).unwrap();
+        fs::write(made.join("new.txt"), b"new").unwrap();
+
+        // Anything but a folder is refused before anything changes, as by deny_writes.
+        let error = deny_writes_below(&folder.join("own.txt")).unwrap_err();
         assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
         assert_eq!(permissions_of(&folder), before);
     }

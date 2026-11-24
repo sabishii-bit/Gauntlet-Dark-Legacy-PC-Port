@@ -19,7 +19,7 @@ pub use folder::{
     symlink_folder_where_allowed, tree_listing,
 };
 #[cfg(windows)]
-pub use folder::{deny_new_files, make_junction};
+pub use folder::{deny_new_files, deny_writes_below, make_junction};
 pub use gamecube::{
     CISO_HEADER_LEN, FST_AT, FstEntry, ICON_DATA_AT, SYNTHETIC_CISO_BLOCK, SYNTHETIC_ISO_LEN,
     edited, first_frame_only_tpl, fst, icon_iso, iso_of, iso_with_icon, synthetic_ciso,
