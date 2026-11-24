@@ -16,9 +16,9 @@ void Knockback::queue(const Vec3& push, u32 flags, f32 damage) {
 }
 
 std::optional<f32> Knockback::kick(f32 facing, bool pojo) {
-    m_force.y = std::min(m_force.y, 0.0f); // nothing is pushed up
+    m_force.y = std::min(m_force.y, 0.0f); // nothing is pushed up; a fall is kept
     const u32 flags = m_flags;
-    const Vec3 force{m_force.x, 0.0f, m_force.z};
+    const Vec3 force = m_force;
     const f32 damage = m_damage;
     m_force = Vec3{0.0f};
     m_flags = 0;
@@ -40,7 +40,8 @@ std::optional<f32> Knockback::kick(f32 facing, bool pojo) {
     }
     m_fastSeconds = (flags & kFastSlide) != 0 ? 1.0f / kFrameRate : 0;
     m_velocity += force * strength;
-    if (glm::length(force) <= 0.0f) {
+    // The turn goes by the push along the ground; a fall alone gives none.
+    if (portable::hypot(force.x, force.z) <= 0.0f) {
         return std::nullopt;
     }
     // Facing along the push, or against it: whichever is the nearer turn.

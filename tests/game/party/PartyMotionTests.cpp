@@ -1497,6 +1497,29 @@ TEST_CASE("a step's knock, shove and walk go together, held along each axis to o
     }
 }
 
+TEST_CASE("a falling push stops a walk against it and leaves the body's height alone",
+          "[game][screens][party-motion][knockback][move-limit]") {
+    // A blow from above keeps its fall in the slide, and the walk-stop test measures all of it
+    // (pmotion.c 1021-1031), but the step never goes down for it (1059-1061).
+    Fixture f;
+    // Along the ground alone the knock, 0.8 a second back, is too slow to stop a walk.
+    f.players[0].knockback.queue(Vec3{0, -1, -0.05f}, Knockback::kKnockBack, 10.0f);
+    f.step(); // the kick, which only turns the body
+    f.inputs[3].move = MoveInput{Vec2{0, 1}, 1};
+    s32 held = 0;
+    while (held < 30 && Knockback::opposes(f.players[0].knockback.velocity(), 0.0f)) {
+        CAPTURE(held);
+        const f32 back = f.players[0].knockback.velocity().z / 30.0f;
+        CHECK(steppedBy(f).z == Approx(back)); // the slide alone, nothing of the walk
+        CHECK(f.players[0].actor.position().y == 0.0f);
+        ++held;
+    }
+    CHECK(held > 1);
+    // Once the slide has slowed the walk goes on, the body still on the ground.
+    CHECK(steppedBy(f).z > 0.0f);
+    CHECK(f.players[0].actor.position().y == 0.0f);
+}
+
 TEST_CASE("a body in a turbo move goes by its walk alone: a push or a shove carries it nowhere, "
           "though the slide dies away all the same",
           "[game][screens][party-motion][knockback][assets]") {

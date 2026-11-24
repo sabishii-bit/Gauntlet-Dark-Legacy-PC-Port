@@ -118,6 +118,32 @@ TEST_CASE("a frame's pushes add up, never lift, and turn the body along or again
     CHECK(up.velocity() == Vec3{0.0f});
 }
 
+TEST_CASE("a kick keeps a push's fall in the slide, where only the walk's stop counts it",
+          "[game][players][knockback][move-limit]") {
+    // PlayerKnockback drops only a rise and adds the rest of hit_force to the velocity
+    // (0x80086630), which the walk-stop test measures whole (pmotion.c 1021-1031).
+    constexpr f32 kWest = -std::numbers::pi_v<f32> / 2.0f;
+    Knockback knock;
+    knock.queue(Vec3{0.05f, -1.0f, 0.0f}, Knockback::kKnockBack, 10.0f);
+    const auto heading = knock.kick(0.5f, false);
+    CHECK(knock.velocity().x == Approx(0.05f * Knockback::kKnockKick));
+    CHECK(knock.velocity().y == Approx(-Knockback::kKnockKick));
+    CHECK(knock.velocity().z == 0.0f);
+    // The body turns by the push along the ground alone.
+    REQUIRE(heading.has_value());
+    CHECK(*heading == Approx(std::numbers::pi_v<f32> / 2.0f));
+    // Along the ground the push is too slow to stop a walk against it; with its fall it does.
+    CHECK(Knockback::opposes(knock.velocity(), kWest));
+    CHECK_FALSE(Knockback::opposes(Vec3{knock.velocity().x, 0.0f, knock.velocity().z}, kWest));
+    // The step carries the fall for the walk to drop: dpos[1] is never under nought (1059-1061).
+    CHECK(knock.step(kFrame, kPace).y == Approx(-Knockback::kKnockKick * kFrame));
+    // Straight down there is no way along the ground to turn by, but the fall still slides.
+    Knockback down;
+    down.queue(Vec3{0.0f, -1.0f, 0.0f}, Knockback::kKnockDown, 10.0f);
+    CHECK_FALSE(down.kick(0.0f, false).has_value());
+    CHECK(down.velocity().y == Approx(-Knockback::kFallKick));
+}
+
 TEST_CASE("a slide decays by a third a frame, and the step it goes with is held to one and a "
           "half times the pace, or forty a second the frame after a fall's kick",
           "[game][players][knockback]") {

@@ -18,7 +18,9 @@ namespace gdl::game {
  * push adds up with their flags; the next frame turns it, when more than a point of harm came
  * with it, into a kick by the heaviest flag among them, and turns the body to face along the
  * push or against it, whichever is nearer. The slide then decays by a third of itself a
- * frame. A kick never lifts; only a direct contact velocity may carry a rise.
+ * frame. A kick never lifts, but a push's fall stays in the slide (0x80086630), where only the
+ * walk's stop counts it (pmotion.c 1021-1031) and the step never goes down for it (1059-1061).
+ * Only a direct contact velocity may carry a rise, and a fall in the slide takes from it.
  *
  * Apart from the slide, another member walking into the character shoves it by the step it
  * meant (the push velocity, player +0x864): what a frame's shoves add up to carries the body
@@ -69,8 +71,8 @@ public:
      * the body now faces, or nullopt when nothing kicked. */
     std::optional<f32> kick(f32 facing, bool pojo);
     /** Where the slide carries the body over `seconds` at a character's `pace`, the slide
-     * decaying after: the velocity, and the shove at most half the pace, before the step's
-     * limit holds the step they go with. */
+     * decaying after: the velocity, its fall too for the step to drop, and the shove at most
+     * half the pace, before the step's limit holds the step they go with. */
     Vec3 step(f32 seconds, f32 pace);
     /** The most a step of `seconds` at `pace` may carry the body along each axis, walk, slide
      * and shove together (PlayerMotion 0x80081ac8-0x80081afc), asked before step(). */
