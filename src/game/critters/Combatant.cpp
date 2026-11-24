@@ -24,6 +24,7 @@ constexpr f32 kBossDeathFade = 0.5f;
 constexpr f32 kPushDecay = 0.8f;
 constexpr f32 kPushFrameRate = 30.0f; ///< knock-back decays once per game frame
 constexpr f32 kGravity = 100.0f;
+constexpr usize kShortestNodeName = 2; ///< a shorter colnode names no node (critter.c 1214-1216)
 } // namespace
 void Combatant::clear() {
     m_checkpointBinding = std::make_shared<const u8>(0);
@@ -483,21 +484,31 @@ bool Combatant::holdRunsOut(const Actor& critter, f32 seconds) {
     return hold > 0.0f && critter.finishedSeconds + seconds >= hold;
 }
 
-void Combatant::noteMoveNode(Actor& critter, const MoveDefinition& move, f32 seconds) {
-    // Without its node a move notes CritterGetNode's fallback, the fighter's root object
-    // c->anim: the tree's root, or a head's own root node (critter.c 2011, 2164, 3772-3784).
-    usize node = critter.branch.value_or(0);
-    if (!move.colnode.empty()) {
-        if (const auto index =
-                critter.stock->tree->findNode(move.colnode, kCombatantNodeNameLength)) {
-            node = *index;
-        }
+std::optional<usize> Combatant::moveNode(const Actor& critter, std::string_view colnode) {
+    std::optional<usize> node;
+    if (colnode.size() >= kShortestNodeName) {
+        node = critter.stock->tree->findNode(colnode, kCombatantNodeNameLength);
     }
+    // Without its node a move takes CritterGetNode's fallback, the fighter's root object c->anim.
+    if (!node.has_value() && (critter.branch.has_value() || (critter.definition->rules().portRules &
+                                                             CritterRules::kModelFallback) == 0)) {
+        node = critter.branch.value_or(0);
+    }
+    return node.has_value() && *node < critter.pose.size() ? node : std::nullopt;
+}
+
+Mat4 Combatant::moveNodeTransform(const Actor& critter, std::string_view colnode) {
     const Mat4 model = simulationModel(critter);
-    const bool posed = node < critter.pose.size();
-    const Mat4 placed = posed ? simulationNode(critter, node) : Mat4{1.0f};
-    critter.moveNode.step(seconds, Vec3{(posed ? model * placed : model)[3]},
-                          posed ? Vec3{placed[3]} : Vec3{0.0f}, model, critter.parent != nullptr);
+    const auto node = moveNode(critter, colnode);
+    return node.has_value() ? model * simulationNode(critter, *node) : model;
+}
+
+void Combatant::noteMoveNode(Actor& critter, const MoveDefinition& move, f32 seconds) {
+    const Mat4 model = simulationModel(critter);
+    const auto node = moveNode(critter, move.colnode);
+    const Mat4 placed = node.has_value() ? simulationNode(critter, *node) : Mat4{1.0f};
+    critter.moveNode.step(seconds, Vec3{(model * placed)[3]}, Vec3{placed[3]}, model,
+                          critter.parent != nullptr);
 }
 
 bool Combatant::deathPlayed() const {
@@ -794,10 +805,11 @@ void Combatant::updateActor(s32 ticks, f32 seconds, std::span<const EnemyView> p
             if (const AttackDefinition* harm = data.damage(move->damage0);
                 harm != nullptr && harm->type == AttackDefinition::kSpew) {
                 critter.soundsGiven |= 32U;
-                // CritterDoDamage passes the active move node's world origin, not the floor.
-                m_sim.spews.push_back(CombatSpew{i, partPosition(critter, move->colnode),
-                                                 harm->spewVelocity(critter.yaw),
-                                                 harm->spewHalfAngle()});
+                // CritterDoDamage passes the move node's world origin, c->moveOrigin, not the
+                // floor or the body's offset origin.
+                m_sim.spews.push_back(
+                    CombatSpew{i, Vec3{moveNodeTransform(critter, move->colnode)[3]},
+                               harm->spewVelocity(critter.yaw), harm->spewHalfAngle()});
             }
         }
         critter.shotFrame = frame;

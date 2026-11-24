@@ -572,8 +572,17 @@ private:
     /** Node `node`'s world matrix in its simulation, or the simulation's model without such a
      * node: what decides contact, reach, where harm lands and where a player is held. */
     static Mat4 simulationTransform(const Actor& critter, std::string_view node);
-    /** Notes where the node `move` strikes with, else the fighter's root node, stands `seconds`
-     * on, as CritterMoveSetup does each native frame through GetWorldMat (0x8003B1CC). */
+    /** The node a move with `colnode` strikes from, as CritterMoveSetup picks obj_d0: the node
+     * a colnode of two characters or more names, else the fighter's root node c->anim, its
+     * tree's root or a head's own (critter.c 1211-1222, 2011, 2164, 3772-3784). None where its
+     * rules strike from the model (kModelFallback) or the node is not posed. */
+    static std::optional<usize> moveNode(const Actor& critter, std::string_view colnode);
+    /** moveNode's world matrix in its simulation, or the simulation's model without one, as
+     * GetWorldMat gives worldMoveMatrix (0x8003B1CC): where a move's blow, breath, shot, grab,
+     * spew and the area laid on its node measure from. */
+    static Mat4 moveNodeTransform(const Actor& critter, std::string_view colnode);
+    /** Notes where `move`'s moveNode stands `seconds` on, as CritterMoveSetup does each native
+     * frame through GetWorldMat (0x8003B1CC). */
     static void noteMoveNode(Actor& critter, const MoveDefinition& move, f32 seconds);
     void carry(Actor& critter, f32 seconds, const MoveDefinition* move,
                std::span<const EnemyView> players, std::span<const Combatant> peers);

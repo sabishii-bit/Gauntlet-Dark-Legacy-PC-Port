@@ -46,9 +46,9 @@ void Combatant::strikeWith(Actor& critter, s32 id, const MoveDefinition& move, s
     const f32 effectScale = drawnShrink(critter);
     switch (damage->type) {
     case AttackDefinition::kBlow:
-        // The part's offset turns with the part, unstretched by its scale key or the drawn
+        // The offset turns with the move's node, unstretched by its scale key or the drawn
         // shrink; the player's cylinder grows by the reach alone (CritterNodePlayerCollide).
-        centre = Vec3{partTransform(critter, move.colnode) * Vec4{damage->offset, 1.0f}};
+        centre = Vec3{moveNodeTransform(critter, move.colnode) * Vec4{damage->offset, 1.0f}};
         reach = damage->maxDistance;
         break;
     case AttackDefinition::kRing:
@@ -63,9 +63,9 @@ void Combatant::strikeWith(Actor& critter, s32 id, const MoveDefinition& move, s
         reach = damage->maxDistance * effectScale;
         break;
     case AttackDefinition::kBreath:
-        // CritterFirePlayerCollide uses the selected animation node, falling
-        // back to the model root, not the actor's collision/attention offset.
-        breath = CombatantBreath::fromNode(simulationTransform(critter, move.colnode), *damage,
+        // CritterFirePlayerCollide uses the move's node, not the actor's collision/attention
+        // offset.
+        breath = CombatantBreath::fromNode(moveNodeTransform(critter, move.colnode), *damage,
                                            critter.definition->rules().worldAxisBreathPitch);
         centre = breath->origin;
         break;
@@ -161,9 +161,9 @@ void Combatant::shoot(const Actor& critter, s32 id, const MoveDefinition& move, 
     shot.data = critter.definition;
     shot.critter = id;
     shot.damageIndex = damageIndex;
-    // The launch point follows the active node, but the offset and facing use the body.
+    // The launch point follows the move's node, but the offset and facing use the body.
     shot.origin =
-        Vec3{simulationTransform(critter, move.colnode)[3]} + damageOffset(critter, damage->offset);
+        Vec3{moveNodeTransform(critter, move.colnode)[3]} + damageOffset(critter, damage->offset);
     shot.forward = Vec3{portable::sin(critter.yaw), 0.0f, portable::cos(critter.yaw)};
     if (const EnemyView* target = viewOf(players, critter.moveTarget); target != nullptr) {
         const f32 height = critter.definition->rules().projectileTargetHeight;

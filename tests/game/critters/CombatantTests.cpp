@@ -2251,13 +2251,14 @@ TEST_CASE("a great one's breath, shot, area and hold leave from its node as GetW
     REQUIRE(actor.setMove(*swing, start));
     const Vec3 hand{scaled ? 13.0f : 7.0f, 0, 0};
     // A player where each meets it from that HAND: ten along the breath, inside the area, or at
-    // the grab's reach.
+    // the grab's reach, whose offset turns with HAND as the hold's does (worldMoveMatrix), and
+    // so stretches with it only where the rules keep the key.
     EnemyView player;
     player.player = 0;
     if (kind == AttackDefinition::kBreath) {
         player.position = hand + Vec3{0, -3, 10};
     } else if (kind == AttackDefinition::kGrab) {
-        player.position = hand + Vec3{2, -3, 0};
+        player.position = hand + Vec3{scaled ? 8.0f : 2.0f, -3, 0};
     } else {
         player.position = hand + Vec3{0, 2, 0};
     }
@@ -2474,6 +2475,253 @@ TEST_CASE("a move without a node keeps the fighter's root node, which the next m
           1e-4f);
     // Measured from the placement instead, the jump would lean up by the root's three units.
     REQUIRE(glm::distance(approximateUnit(struck - ready), approximateUnit(struck)) > 0.1f);
+}
+
+/** The swinging general of `source`, its SWING and DEATH named no node and its body's origin
+ * three up and five ahead, over a ROOT two over its placement and turned a quarter about y
+ * through every sequence, under `rules`: spawned and stood ready a frame. */
+void loadNodelessSwing(test::FakeRenderDevice& device, CombatantAssets& assets, Combatant& actor,
+                       formats::CritterFile source, const CritterRules& rules) {
+    const auto root = familyAssets();
+    const std::string turned =
+        R"(,"tracks":[{"node":0,"flags":2,"frames":[0],"values":[1.5707964]}])";
+    writeSwingTree(root, 2, turned, turned);
+    REQUIRE(assets.load(device, root, General::definition(), 'G'));
+    source.types[0].originOffset = {0, 3, 5};
+    for (auto& move : source.moves) {
+        move.colnode.clear();
+    }
+    assets.data = CritterData::fromDecoded("GENERAL", source, 0, rules);
+    REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+    actor.update(2, 1.0f / 30, {});
+    REQUIRE(actor.moveName() == "READY");
+}
+
+TEST_CASE("a move without a node strikes, breathes, shoots, holds and lays its area from the "
+          "fighter's root node, turned with it, as CritterMoveSetup falls back to c->anim",
+          "[game][combatant][move-node]") {
+    // CritterMoveSetup's obj_d0 for a move whose colnode names no node is c->anim, the tree's
+    // root object (critter.c 1211-1222, 2010-2012, 3772-3784). The blow (6444-6451), the breath
+    // (6523-6534), the shot (2796-2800, 2515-2519), the grab (2853-2872) and an area laid on it
+    // (CritterDoSfxSub, 2287-2297) all measure from its world matrix, turning their offsets with
+    // it, the shot's excepted. The body's offset origin plays no part. Data whose body hangs its
+    // tree from a node of its own (kModelFallback) measures them from the model instead.
+    const s16 kind =
+        GENERATE(AttackDefinition::kBlow, AttackDefinition::kProjectile, AttackDefinition::kBreath,
+                 AttackDefinition::kGrab, AttackDefinition::kAttachedArea);
+    const bool modelFallback = GENERATE(false, true);
+    CAPTURE(kind, modelFallback);
+    const Vec3 offset{0, 1, 4};
+    auto source = swingCritter(0);
+    auto& harm = source.damages[0];
+    harm.type = kind;
+    harm.damage = 10;
+    harm.flags = 0;
+    harm.offset = {offset.x, offset.y, offset.z};
+    if (kind == AttackDefinition::kBreath) {
+        harm.maxDistance = 20;
+        harm.radius = 1;
+    } else if (kind == AttackDefinition::kAttachedArea) {
+        harm.maxDistance = 10;
+        harm.minDot = -1;
+        harm.sfxIndex = 0;
+        auto& sound = source.sounds.emplace_back();
+        sound.name = "NULLFX";
+        sound.life = 0.5f;
+    } else if (kind == AttackDefinition::kGrab) {
+        harm.maxDistance = 1;
+    }
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    Combatant actor;
+    CritterRules rules;
+    rules.portRules = modelFallback ? CritterRules::kModelFallback : 0;
+    loadNodelessSwing(device, assets, actor, source, rules);
+    const auto turnedRoot = actor.nodeTransform("ROOT");
+    const auto model = actor.nodeTransform({});
+    REQUIRE(turnedRoot);
+    REQUIRE(model);
+    REQUIRE(glm::distance(Vec3{(*turnedRoot)[3]}, Vec3{0, 2, 0}) < 1e-4f);
+    REQUIRE(glm::distance(Vec3{*turnedRoot * Vec4{offset, 1}}, Vec3{0, 2, 0} + offset) > 1.0f);
+    REQUIRE(*model == Mat4{1});
+    const Mat4& root = modelFallback ? *model : *turnedRoot;
+    const Vec3 struck{root * Vec4{offset, 1}};
+    EnemyView player;
+    player.player = 0;
+    player.position = struck - Vec3{0, 3, 0}; // centred on where it strikes
+    if (kind == AttackDefinition::kBreath) {
+        // Ten along its forward from where the breath starts.
+        player.position += 10.0f * glm::normalize(Vec3{root[2]});
+    }
+    const auto swing = assets.data.moveNamed("SWING");
+    REQUIRE(swing);
+    Combatant::MovePoint start;
+    start.target = 0;
+    REQUIRE(actor.setMove(*swing, start));
+    actor.update(2, 1.0f / 30, std::array{player});
+    REQUIRE(actor.moveName() == "SWING");
+    if (kind == AttackDefinition::kProjectile) {
+        const auto shots = actor.takeShots();
+        REQUIRE(shots.size() == 1);
+        // It leaves the node's origin, its offset turned with the body (CritterDoTexmodNode).
+        CHECK(glm::distance(shots[0].origin, Vec3{root[3]} + offset) < 1e-4f);
+    } else if (kind == AttackDefinition::kGrab) {
+        const auto grabs = actor.takeGrabs();
+        REQUIRE(grabs.size() == 1);
+        REQUIRE(grabs[0].attachment.has_value());
+        CHECK(glm::distance(Vec3{(*grabs[0].attachment)[3]}, struck) < 1e-4f);
+    } else {
+        const auto blows = actor.takeBlows();
+        REQUIRE(blows.size() == 1);
+        CHECK(blows[0].breath == (kind == AttackDefinition::kBreath));
+        CHECK(blows[0].area == (kind == AttackDefinition::kAttachedArea));
+        CHECK(glm::distance(blows[0].origin, struck) < 1e-4f);
+    }
+}
+
+TEST_CASE("a death without a node spews from the fighter's root node, as BossSpewCoins is handed "
+          "c->moveOrigin",
+          "[game][combatant][move-node]") {
+    // CritterDoDamage's type 9 throws from c->moveOrigin (critter.c 2826-2840), the world origin
+    // of CritterMoveSetup's obj_d0, which for a death naming no node is c->anim; under
+    // kModelFallback, the model's.
+    const bool modelFallback = GENERATE(false, true);
+    CAPTURE(modelFallback);
+    auto source = swingCritter(0);
+    source.types[0].moveCount = 3;
+    auto& death = source.moves.emplace_back();
+    death.name = "DEATH";
+    death.anim = "READY";
+    death.type = MoveDefinition::kDeath;
+    death.priority = 4095;
+    death.frameStart = 0;
+    death.frameEnd = 0;
+    death.damage0 = 1;
+    auto& spew = source.damages.emplace_back();
+    spew.type = AttackDefinition::kSpew;
+    spew.minSpeed = 10;
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    Combatant actor;
+    CritterRules rules;
+    rules.portRules = modelFallback ? CritterRules::kModelFallback : 0;
+    loadNodelessSwing(device, assets, actor, source, rules);
+    EnemyHit kill;
+    kill.player = 0;
+    kill.damage = 100000;
+    actor.hurt(kill);
+    std::vector<CombatSpew> spews;
+    for (s32 update = 0; update < 10 && spews.empty(); ++update) {
+        actor.update(2, 1.0f / 30, {});
+        spews = actor.takeSpews();
+    }
+    REQUIRE(spews.size() == 1);
+    REQUIRE(actor.moveName() == "DEATH");
+    // Thrown before the killing blow's shove carries the body on: ROOT two over its placement,
+    // or the placement itself.
+    CHECK(glm::distance(spews[0].origin, Vec3{0, modelFallback ? 0.0f : 2.0f, 0}) < 1e-4f);
+}
+
+TEST_CASE("the Plague Fiend's acid balls leave from his root node, as CritterMoveSetup falls "
+          "back to c->anim for a move naming none",
+          "[game][combatant][plague][move-node][assets]") {
+    // ACIDBALL1 names no node, so its shots leave TOP, the tree's root, 2.36 over his feet and
+    // unkeyed, with the DAMG offset turned with the body (CritterDoTexmodNode with
+    // c->moveOrigin, critter.c 2796-2800, 2515-2519).
+    const auto root = test::assetOrSkip("CRITTER/PBOSS.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/PBOSS/ANIM.PS2");
+    test::FakeRenderDevice device;
+    test::CombatantFixture f;
+    f.open(device, root, nullptr, {}, 'K');
+    REQUIRE(f.spawn("PBOSS", Vec3{0}, 0));
+    Combatant& actor = f.actor;
+    const TreeInfo& tree = *f.assets.tree;
+    REQUIRE(tree.nodes[0].name == "TOP");
+    CHECK(tree.nodes[0].position.y == Approx(2.3616f).margin(1e-4f));
+    const auto acid = actor.data()->moveNamed("ACIDBALL1");
+    REQUIRE(acid.has_value());
+    const MoveDefinition& move = actor.data()->moves()[*acid];
+    REQUIRE(move.colnode.empty());
+    Combatant::MovePoint point;
+    point.target = 0;
+    REQUIRE(actor.setMove(*acid, point));
+    const std::array<EnemyView, 1> players{EnemyView{.player = 0, .position = {0, 0, 40}}};
+    std::vector<CombatShot> shots;
+    for (s32 update = 0; update < 300 && shots.empty(); ++update) {
+        f.update(2, 1.0f / 30, players);
+        shots = actor.takeShots();
+        actor.takeBlows();
+        actor.takeCues();
+    }
+    REQUIRE_FALSE(shots.empty());
+    const auto model = actor.nodeTransform({});
+    const auto top = actor.nodeTransform("TOP");
+    REQUIRE(model.has_value());
+    REQUIRE(top.has_value());
+    CHECK((*top)[3].y == Approx((*model)[3].y + 2.3616f).margin(1e-3f));
+    for (const CombatShot& shot : shots) {
+        const AttackDefinition* damage = actor.data()->damage(shot.damageIndex);
+        REQUIRE(damage != nullptr);
+        REQUIRE(damage->offset.y == 14);
+        CHECK(shot.origin.y == Approx((*top)[3].y + 14).margin(1e-3f));
+    }
+}
+
+TEST_CASE("the Chimera's and the Plague Fiend's rings ride their root nodes, as CritterDoSfxSub "
+          "parents an area naming no node to c->anim",
+          "[game][combatant][chimera][plague][move-node][assets]") {
+    // SUPER and SPLASH name no node, and their NULLFX rings carry no parenting flag, so
+    // CritterDoSfxSub hangs them from obj_d0, c->anim: the Chimera's BODY1, 7.67 over its feet
+    // and keyed through SUPER, and the Plague Fiend's TOP, 2.36 over his (critter.c 2287-2297).
+    const auto* boss = GENERATE("CHIMERA", "PBOSS");
+    CAPTURE(boss);
+    const bool chimera = std::string_view{boss} == "CHIMERA";
+    const auto root = test::assetOrSkip(chimera ? "CRITTER/CHIMERA.WAD" : "CRITTER/PBOSS.WAD")
+                          .parent_path()
+                          .parent_path();
+    test::assetOrSkip(chimera ? "MONSTERS/CHIMERA/ANIM.PS2" : "MONSTERS/PBOSS/ANIM.PS2");
+    test::FakeRenderDevice device;
+    test::CombatantFixture f;
+    f.open(device, root, nullptr, {}, chimera ? 'A' : 'K');
+    REQUIRE(f.spawn(boss, Vec3{0}, 0));
+    Combatant& actor = f.actor;
+    const TreeInfo& tree = *f.assets.tree;
+    const std::string_view rootNode = chimera ? "BODY1" : "TOP";
+    REQUIRE(tree.nodes[0].name == rootNode);
+    CHECK(tree.nodes[0].position.y == Approx(chimera ? 7.67f : 2.3616f).margin(0.01f));
+    const auto ring = actor.data()->moveNamed(chimera ? "SUPER" : "SPLASH");
+    REQUIRE(ring.has_value());
+    REQUIRE(actor.data()->moves()[*ring].colnode.empty());
+    Combatant::MovePoint point;
+    point.target = 0;
+    REQUIRE(actor.setMove(*ring, point));
+    // One on each side, so that whichever way the root turns the ring's half circle, one is in it.
+    const std::array<EnemyView, 4> players{EnemyView{.player = 0, .position = {0, 0, 20}},
+                                           EnemyView{.player = 1, .position = {20, 0, 0}},
+                                           EnemyView{.player = 2, .position = {0, 0, -20}},
+                                           EnemyView{.player = 3, .position = {-20, 0, 0}}};
+    std::optional<CombatBlow> hit;
+    for (s32 update = 0; update < 300 && !hit; ++update) {
+        f.update(2, 1.0f / 30, players);
+        for (const CombatBlow& blow : actor.takeBlows()) {
+            if (blow.area) {
+                hit = blow;
+            }
+        }
+        actor.takeShots();
+        actor.takeCues();
+    }
+    REQUIRE(hit.has_value());
+    const auto node = actor.nodeTransform(rootNode);
+    REQUIRE(node.has_value());
+    if (chimera) {
+        CHECK(glm::distance(hit->origin, Vec3{(*node)[3]}) < 1e-3f);
+    } else {
+        // The Plague Fiend's carrier travels out from TOP, sinking half a unit for each unit
+        // ahead (CombatantProjectile::velocity), so it has fallen a little from TOP's height.
+        CHECK(hit->origin.y <= (*node)[3].y + 1e-3f);
+        CHECK(hit->origin.y > (*node)[3].y - 0.5f);
+    }
 }
 
 TEST_CASE("a sleeping boss takes nothing, and awake takes less the more are in the game",

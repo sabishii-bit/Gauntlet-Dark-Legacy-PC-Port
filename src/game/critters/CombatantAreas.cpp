@@ -67,7 +67,7 @@ std::optional<f32> Combatant::startArea(Actor& critter, s32 id, const AttackDefi
         // Detached damage effects snapshot the hit node's world position. The
         // slam's hand can lift again without dragging the ground wave with it.
         const Vec3 position =
-            Vec3{simulationTransform(critter, node) * Vec4{sound->offset * shrink, 1}} +
+            Vec3{moveNodeTransform(critter, node) * Vec4{sound->offset * shrink, 1}} +
             damageOffset(critter, damage.offset);
         // SfxSetMat copies the body's orientation, not the animated hand's.
         worldParent =
@@ -76,7 +76,8 @@ std::optional<f32> Combatant::startArea(Actor& critter, s32 id, const AttackDefi
     }
     if ((sound->flags & effect_flags::kOnFloor) != 0 && damage.hitSound < 0 &&
         m_sim.collision != nullptr) {
-        const Mat4 parent = worldParent.value_or(simulationTransform(critter, node));
+        const Mat4 parent = worldParent.value_or(rootParent ? simulationTransform(critter, node)
+                                                            : moveNodeTransform(critter, node));
         const Vec3 position{parent * Vec4{worldParent.has_value() ? offset : offset * shrink, 1}};
         const f32 radius = damage.radius * critter.scale;
         if (const auto floor =
@@ -96,17 +97,27 @@ std::optional<f32> Combatant::startArea(Actor& critter, s32 id, const AttackDefi
     const Vec2 angles{damage.pitch, damage.yaw};
     CritterArea area;
     area.worldParent = worldParent;
+    const auto& nodes = critter.stock->tree->nodes;
     if (!rootParent) {
         area.node = node;
     } else {
         const usize root = critter.branch.value_or(0);
-        const auto& nodes = critter.stock->tree->nodes;
         const s32 attachment = (sound->flags & effect_flags::kRootParent) != 0
                                    ? nodes[root].parent
                                    : static_cast<s32>(root);
         if (attachment >= 0) {
             area.node = nodes[static_cast<usize>(attachment)].name;
         }
+    }
+    // Its cue rides the node the move names, else the fighter's drawn root transform.
+    const std::string drawnNode = area.node;
+    const auto named = critter.stock->tree->findNode(node, kCombatantNodeNameLength);
+    if (const auto ridden = moveNode(critter, node); !rootParent && !worldParent.has_value() &&
+                                                     ridden.has_value() &&
+                                                     (!named.has_value() || *named != *ridden)) {
+        // CritterDoSfxSub hangs it from obj_d0 (critter.c 2287-2297), which for a move naming no
+        // node is the root node it strikes from.
+        area.node = nodes[*ridden].name;
     }
     if (damage.speed > 0) {
         CombatShot motion;
@@ -153,7 +164,7 @@ std::optional<f32> Combatant::startArea(Actor& critter, s32 id, const AttackDefi
     cue.tree = sound->shows() ? sound->tree : std::string{};
     cue.sound = sound->soundFor(m_sim.realm);
     cue.soundPosition = Vec3{modelTransform(critter)[3]};
-    const Mat4 parent = worldParent.value_or(attachmentTransform(critter, area.node));
+    const Mat4 parent = worldParent.value_or(attachmentTransform(critter, drawnNode));
     cue.position = Vec3{(parent * drawnLocal)[3]};
     // Laid out in the world it is drawn at the body's drawn size (CritterDoSfxSub,
     // 0x8003DE1C-0x8003DE4C); on a node, the drawn node carries that size.
@@ -161,9 +172,9 @@ std::optional<f32> Combatant::startArea(Actor& critter, s32 id, const AttackDefi
     cue.life = life;
     cue.follows = !worldParent.has_value();
     cue.shakes = (sound->flags & effect_flags::kShakes) != 0;
-    cue.rootAttachment = area.node.empty();
-    if (!area.node.empty()) {
-        cue.node = area.node;
+    cue.rootAttachment = drawnNode.empty();
+    if (!drawnNode.empty()) {
+        cue.node = drawnNode;
     }
     cue.nodeOffset = offset;
     cue.pitchYaw = angles;

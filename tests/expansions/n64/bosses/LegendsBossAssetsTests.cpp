@@ -57,6 +57,8 @@ TEST_CASE("Native boss assets bind six original skeletons and every authored mov
             CHECK(stock->data.rules().breathPushFromOrigin);
             // How the boss composes its nodes is unread, so their scale keys move its contacts.
             CHECK((stock->data.rules().portRules & CritterRules::kScaledNodes) != 0);
+            // Its tree hangs from a node of its own, which a move naming no node strikes from.
+            CHECK((stock->data.rules().portRules & CritterRules::kModelFallback) != 0);
             CHECK(stock->tree->name == stock->data.tree());
             CHECK(stock->archive.models.loaded());
             CHECK(stock->archive.textures.loaded());
@@ -96,6 +98,7 @@ TEST_CASE("Native boss assets bind six original skeletons and every authored mov
                 CHECK(child.rules().unitBlowPush);
                 CHECK(child.rules().breathPushFromOrigin);
                 CHECK((child.rules().portRules & CritterRules::kScaledNodes) != 0);
+                CHECK((child.rules().portRules & CritterRules::kModelFallback) != 0);
                 validate(child);
             }
             for (const auto& cue : stock->data.sounds()) {

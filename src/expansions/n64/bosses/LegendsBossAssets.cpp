@@ -368,8 +368,11 @@ std::unique_ptr<CombatantAssets> loadLegendsBossAssets(RenderDevice& device,
                        // game.bin's GetWorldMat (e00286cc) composes the matrices nodes keep and
                        // reads no scale beside them, but whether its animation keeps the scale
                        // keys in those matrices is unread, so they move the boss's contacts as
-                       // they move its draw.
-                       .portRules = CritterRules::kScaledNodes};
+                       // they move its draw. Its c->anim (+0x7c) is a node of its own between
+                       // the body and its tree (e0881474), which MoveSetup (e08839bc) falls back
+                       // to for a move naming no node (e0880474), so such a move strikes from
+                       // the model; a head's is its own root node (e0881708).
+                       .portRules = CritterRules::kScaledNodes | CritterRules::kModelFallback};
     auto data = CritterData::fromDecoded(family.name, decoded, 0, rules);
     std::vector<CritterData> children;
     std::set<s32> visited{0};

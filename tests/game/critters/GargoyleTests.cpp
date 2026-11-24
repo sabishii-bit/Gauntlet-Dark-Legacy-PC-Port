@@ -104,9 +104,10 @@ TEST_CASE("a strong hit drives an advancing native gargoyle back without inventi
     CHECK(actor.equalLocal(after, replayed));
 }
 
-/** The one blow of a `form` gargoyle's close bite, the gargoyle held at the enemy shrinkers'
- * `shrink`, on a player four ahead of its feet: between them and its origin, within reach. */
-CombatBlow closeBite(const char* form, f32 shrink) {
+/** The blows of a `form` gargoyle's close bite, the gargoyle held at the enemy shrinkers'
+ * `shrink`, on a player `ahead` in front of its feet, from two frames before its window opens
+ * until the first lands or the window has closed. */
+std::vector<CombatBlow> closeBiteBlows(const char* form, f32 shrink, f32 ahead) {
     const auto root = test::assetOrSkip("CRITTER/GAR_EAGL.WAD").parent_path().parent_path();
     test::FakeRenderDevice device;
     CombatantAssets assets;
@@ -114,14 +115,15 @@ CombatBlow closeBite(const char* form, f32 shrink) {
     const auto bite = assets.data.moveNamed("BITECLOSE");
     REQUIRE(bite.has_value());
     const MoveDefinition& move = assets.data.moves()[*bite];
-    // These forms lack the torso it names, so it strikes from the body's origin, five ahead of
-    // its feet and three up, and the node it pushes along is the model's own still root.
+    // These forms lack the torso it names, so it strikes from its tree's root node, which rests
+    // at its feet, and its swing is that still root's: the body's origin, five ahead and three
+    // up, is only where it pushes away from.
     REQUIRE_FALSE(assets.tree->findNode(move.colnode, kCombatantNodeNameLength).has_value());
     REQUIRE(assets.data.originOffset() == Vec3{0, 3, 5});
     Combatant actor;
     REQUIRE(actor.spawn(assets, 0, Vec3{0}, 0, nullptr, {}, 'B'));
     actor.setShrink(shrink);
-    EnemyView player = playerAt({0, 0, 4});
+    EnemyView player = playerAt({0, 0, ahead});
     player.radius = 0.75f;
     player.collisionRadius = 1.5f;
     const std::array players{player};
@@ -130,14 +132,41 @@ CombatBlow closeBite(const char* form, f32 shrink) {
     point.target = 0;
     REQUIRE(actor.setMove(*bite, point));
     std::vector<CombatBlow> blows;
-    for (s32 update = 0; update < 8 && blows.empty(); ++update) {
+    bool closed = false; ///< the window has opened and shut again
+    for (s32 update = 0; update < 30 && blows.empty() && !closed; ++update) {
         actor.update(kTicks, kStep, players);
         blows = actor.takeBlows();
+        closed =
+            actor.moveName() != "BITECLOSE" ||
+            actor.animation().frame() > static_cast<f32>(std::max(move.frameEnd, move.frameStart));
     }
-    REQUIRE(blows.size() == 1);
+    REQUIRE((!blows.empty() || closed));
     REQUIRE(actor.position() == Vec3{0});
     REQUIRE(actor.yaw() == 0.0f);
+    return blows;
+}
+
+/** The one blow of a `form` gargoyle's close bite, the gargoyle held at the enemy shrinkers'
+ * `shrink`, on a player four ahead of its feet: between them and its origin, within reach. */
+CombatBlow closeBite(const char* form, f32 shrink) {
+    const auto blows = closeBiteBlows(form, shrink, 4);
+    REQUIRE(blows.size() == 1);
     return blows[0];
+}
+
+TEST_CASE("an eagle or lion gargoyle's close bite strikes from its root node, four ahead of its "
+          "feet",
+          "[game][enemies][gargoyle][move-node][assets]") {
+    // Its colnode names no node of these trees, so CritterMoveSetup strikes from c->anim, the
+    // tree's root, resting at the feet (critter.c 1211-1222, 3772-3784), and the DAMG offset
+    // lays the bite four ahead (CritterNodePlayerCollide, 6444-6451): it reaches a player at its
+    // front and none twelve out.
+    const auto* form = GENERATE("GAR_EAGL", "GAR_LION");
+    CAPTURE(form);
+    const auto near = closeBiteBlows(form, 1.0f, 1);
+    REQUIRE(near.size() == 1);
+    CHECK(glm::distance(near[0].origin, Vec3{0, 0, 4}) < 1e-3f);
+    CHECK(closeBiteBlows(form, 1.0f, 12).empty());
 }
 
 TEST_CASE("a gargoyle's close bite pushes a player in front of its origin back toward it",

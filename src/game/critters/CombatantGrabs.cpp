@@ -36,11 +36,10 @@ void Combatant::grab(Actor& actor, const MoveDefinition& move, const AttackDefin
     if (actor.grabbed >= 0) {
         return;
     }
-    // Collision uses the active node's world origin plus a BODY-rotated offset, whole however
-    // the body is drawn (CritterNodePlayerCollide). Once attached, the offset is local to the
-    // animated node instead.
-    const Vec3 centre =
-        partPosition(actor, move.colnode) + Vec3{simulationModel(actor) * Vec4{damage.offset, 0}};
+    // Collision is a blow's: the offset turned with the move's node, whole however the body is
+    // drawn (CritterGrabPlayer through CritterNodePlayerCollide's worldMoveMatrix). Once
+    // attached, the player is held at the offset on that node (PlayerSetParent to obj_d0).
+    const Vec3 centre{moveNodeTransform(actor, move.colnode) * Vec4{damage.offset, 1}};
     f32 nearest = std::numeric_limits<f32>::max();
     for (const EnemyView& player : players) {
         if (player.player < 0 || static_cast<usize>(player.player) >= kPlayerSlots) {
@@ -82,7 +81,7 @@ void Combatant::carryGrab(Actor& actor, std::span<const EnemyView> players) {
     }
     m_sim.grabs.push_back(
         {actor.grabbed, m_sim.id,
-         glm::translate(simulationTransform(actor, actor.grabNode), actor.grabOffset), Vec3{0}, 0,
+         glm::translate(moveNodeTransform(actor, actor.grabNode), actor.grabOffset), Vec3{0}, 0,
          actor.definition->rules().restoreCaptureSupport});
 }
 } // namespace gdl::game
