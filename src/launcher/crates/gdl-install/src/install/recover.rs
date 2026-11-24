@@ -161,7 +161,9 @@ impl RecoveryError {
 ///   a failure back, but never beside a receipt that stands;
 /// - a journal of a publish puts every root left in the staging in place and writes the receipt
 ///   the journal carries, then cleans up; a root whose target something else took meanwhile
-///   takes the install back instead, unless the receipt stands, which nothing takes back;
+///   takes the install back instead, unless the receipt stands, which nothing takes back; beside
+///   a receipt that stands, a root the journal records in place that has gone since is left for a
+///   repair, as in an installation whose install ended;
 /// - a journal of a committed install cleans up.
 ///
 /// Once the installation stands, the record is told of it and the shell of its executable. What
@@ -559,7 +561,10 @@ impl<'r> Recovery<'r> {
     /// the journal carries is written, the journal committed and the install cleaned up. A root in
     /// the staging whose target something else took meanwhile takes the install back instead,
     /// unless `receipted`, the receipt standing already, which nothing takes back. Nothing is
-    /// changed when a root is in neither place, or one recorded in place is not there.
+    /// changed when a root not recorded in place is in neither place, or one recorded in place is
+    /// not there while no receipt stands, or is back in the staging, which the cleanup would
+    /// remove. Beside a receipt that stands, a root recorded in place that has gone since is the
+    /// installation's to repair, as it is once the journal is committed.
     fn finish(
         &self,
         lock: InstallLock,
@@ -569,26 +574,26 @@ impl<'r> Recovery<'r> {
         record: &mut dyn FolderRecord,
     ) -> Result<RecoveryOutcome, RecoveryError> {
         let root = self.folder.root();
+        let in_staging = |name: &str| match &staging {
+            Some(staging) => is_there(&staging.path().join(name)).map_err(RecoveryError::Files),
+            None => Ok(false),
+        };
         let mut moved = Vec::new();
         let mut staged = Vec::new();
         let mut taken = None;
         for name in journal.roots() {
             let in_place = is_there(&root.join(name)).map_err(RecoveryError::Files)?;
             if journal.published_roots().contains(name) {
-                if !in_place {
+                // The receipt is written only once every root is in place and recorded, so beside
+                // one that stands the installation passed its commit point with this root.
+                if !in_place && (!receipted || in_staging(name)?) {
                     return Err(RecoveryError::inconsistent(format_args!(
                         "{name} is recorded in place and is not there"
                     )));
                 }
                 continue;
             }
-            let in_staging = match &staging {
-                Some(staging) => {
-                    is_there(&staging.path().join(name)).map_err(RecoveryError::Files)?
-                }
-                None => false,
-            };
-            match (in_place, in_staging) {
+            match (in_place, in_staging(name)?) {
                 (true, false) => moved.push(root_name(name)),
                 (false, true) => staged.push(root_name(name)),
                 (true, true) => {
@@ -1765,6 +1770,60 @@ mod tests {
             recovered.outcome
         );
         left.assert_installed("the receipt there");
+    }
+
+    #[test]
+    fn a_publish_past_its_receipt_finishes_without_a_root_gone_since() {
+        // Stopped once the receipt was written and before the journal recorded it, every root in
+        // place and recorded, as a failed write of the committed journal leaves it too; the empty
+        // config folder has gone since. The installation passed its commit point, so the recovery
+        // finishes it, with its staging still there or gone, and leaves the root to a repair.
+        for (holds_a_file, staging_gone) in [(false, false), (false, true), (true, false)] {
+            let context = format!(
+                "the folder holding a file: {holds_a_file}, the staging gone: {staging_gone}"
+            );
+            let left = Left::staged(holds_a_file);
+            for root in ROOTS {
+                left.put_in_place(root);
+            }
+            left.journal("publishing", &ROOTS);
+            left.write_receipt();
+            if staging_gone {
+                left.remove_staging();
+            }
+            retry_locked(|| fs::remove_dir(left.root.join("config"))).unwrap();
+            let recovered = left.recover();
+            assert_eq!(
+                recovered.outcome.unwrap(),
+                RecoveryOutcome::Finished {
+                    receipt: Box::new(receipt())
+                },
+                "{context}"
+            );
+            let mut installed = left.installed_tree();
+            installed.remove("config");
+            assert_eq!(tree(&left.root), installed, "{context}");
+            assert_eq!(recovered.heard, heard_of(&left.root, &["installed"]));
+            assert_eq!(recovered.shell, left.shell_told());
+        }
+
+        // A root recorded in place that is back in the staging beside the receipt: nothing is
+        // done, so the cleanup never removes it with the staging.
+        let left = Left::staged(false);
+        for root in ROOTS {
+            left.put_in_place(root);
+        }
+        left.journal("publishing", &ROOTS);
+        left.write_receipt();
+        retry_locked(|| fs::rename(left.root.join("config"), left.staging().join("config")))
+            .unwrap();
+        let error = assert_left_alone(&left, "inconsistent", "a recorded root staged again");
+        assert!(
+            error
+                .to_string()
+                .contains("config is recorded in place and is not there"),
+            "{error}"
+        );
     }
 
     #[test]
