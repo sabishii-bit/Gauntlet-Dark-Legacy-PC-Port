@@ -1,7 +1,8 @@
 //! The Windows calls: setting resources into a program with BeginUpdateResourceW, UpdateResourceW
 //! and EndUpdateResourceW, reading one back as data for the tests, telling the shell with
 //! SHChangeNotify that a file it shows has changed, asking with SetThreadExecutionState that the
-//! system stay awake, and asking IsWow64Process2 what machine the system is.
+//! system stay awake, asking IsWow64Process2 what machine the system is, and asking with
+//! SetErrorMode that the system fail a call rather than show a dialog.
 
 use std::io;
 use std::marker::PhantomData;
@@ -12,6 +13,9 @@ use std::ptr;
 
 use gdl_files::{VerbatimPath, strip_verbatim};
 use windows_sys::Win32::Foundation::{FALSE, HANDLE, TRUE};
+use windows_sys::Win32::System::Diagnostics::Debug::{
+    GetErrorMode, SEM_FAILCRITICALERRORS, SetErrorMode,
+};
 use windows_sys::Win32::System::LibraryLoader::{
     BeginUpdateResourceW, EndUpdateResourceW, GetModuleHandleW, GetProcAddress, UpdateResourceW,
 };
@@ -309,6 +313,25 @@ pub(crate) fn native_machine() -> Option<u16> {
     // the two machines are written through references to locals that outlive the call.
     let answered = unsafe { is_wow64_process2(GetCurrentProcess(), &mut process, &mut native) };
     (answered != 0).then_some(native)
+}
+
+/// Adds SEM_FAILCRITICALERRORS to the process's error mode, keeping the rest of it, and leaves it
+/// there: the system then fails a call that meets a critical error, such as a drive with no medium
+/// in it, or a program that names a library it cannot find, rather than show a dialog and wait
+/// for someone to close it. Every program the process starts inherits the mode, so a probed
+/// program that cannot load ends at once with an error status. The mode is the whole process's,
+/// so it is never put back, which would take it from another thread that relies on it.
+pub(crate) fn fail_critical_errors() {
+    // SAFETY: both calls take and give only flags, and change nothing but the process's error
+    // mode.
+    unsafe { SetErrorMode(GetErrorMode() | SEM_FAILCRITICALERRORS) };
+}
+
+/// The process's error mode.
+#[cfg(test)]
+pub(crate) fn error_mode() -> u32 {
+    // SAFETY: the call takes nothing and only reads the process's error mode.
+    unsafe { GetErrorMode() }
 }
 
 #[cfg(test)]

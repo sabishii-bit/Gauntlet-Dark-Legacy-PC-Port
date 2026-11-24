@@ -278,13 +278,15 @@ pub fn game_use(error: &GameUseError) -> &'static str {
     }
 }
 
-/// The code a failed version probe of the game reports, whatever stopped it.
-pub fn game_start(error: &GameStartError) -> &'static str {
+/// What a version probe of the game that did not answer reports: a probe asked to stop ends its
+/// job as cancelled, and every other failure, whatever stopped it, is `game.probeFailed`.
+pub fn game_start(error: &GameStartError) -> Report {
     match error {
+        GameStartError::Cancelled => Report::Cancelled,
         GameStartError::NotAbsolute
         | GameStartError::Start(_)
         | GameStartError::TimedOut
-        | GameStartError::Io(_) => GAME_PROBE_FAILED,
+        | GameStartError::Io(_) => Report::Error(GAME_PROBE_FAILED),
     }
 }
 
@@ -1033,13 +1035,15 @@ mod tests {
         ]
     }
 
-    /// One failure of every kind the game's version probe meets, with its code.
-    fn game_start_refusals() -> Vec<(GameStartError, &'static str)> {
+    /// One failure of every kind the game's version probe meets, with what each reports.
+    fn game_start_refusals() -> Vec<(GameStartError, Report)> {
+        let failed = Report::Error("game.probeFailed");
         vec![
-            (GameStartError::NotAbsolute, "game.probeFailed"),
-            (GameStartError::Start(denied()), "game.probeFailed"),
-            (GameStartError::TimedOut, "game.probeFailed"),
-            (GameStartError::Io(denied()), "game.probeFailed"),
+            (GameStartError::NotAbsolute, failed),
+            (GameStartError::Start(denied()), failed),
+            (GameStartError::TimedOut, failed),
+            (GameStartError::Cancelled, Report::Cancelled),
+            (GameStartError::Io(denied()), failed),
         ]
     }
 
@@ -1305,7 +1309,7 @@ mod tests {
             assert_eq!(game_use(&error), expected, "{error:?}");
         }
         for (error, expected) in game_start_refusals() {
-            assert_eq!(game_start(&error), expected, "{error:?}");
+            assert_eq!(game_start(&error), expected, "{}: {error}", error.rule());
         }
         for (folder_state, expected) in STATES {
             assert_eq!(state(folder_state), expected, "{}", folder_state.as_str());
@@ -1495,6 +1499,16 @@ mod tests {
     }
 
     #[test]
+    fn a_cancelled_probe_reports_cancelled() {
+        // A probe asked to stop is no failure of the game's, so it is never shown as one.
+        assert_eq!(game_start(&GameStartError::Cancelled), Report::Cancelled);
+        assert_eq!(
+            game_start(&GameStartError::TimedOut),
+            Report::Error("game.probeFailed")
+        );
+    }
+
+    #[test]
     fn a_runtime_refused_for_its_sections_reports_what_the_sections_do() {
         // The runtime is read from the launcher file's sections, so a cancel or a failed read
         // there reports as the sections report it, never as a damaged payload.
@@ -1535,7 +1549,7 @@ mod tests {
         returned.extend(
             game_start_refusals()
                 .iter()
-                .map(|(error, _)| game_start(error)),
+                .filter_map(|(error, _)| code_of(game_start(error))),
         );
         returned.extend(
             STATES

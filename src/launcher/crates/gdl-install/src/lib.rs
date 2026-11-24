@@ -39,7 +39,7 @@ pub use payload::{
 };
 pub use probe::{
     GAME_PROBE_LIMIT, GameStartError, GameUseError, MAX_PROBE_OUTPUT, VersionProbe,
-    probe_game_version, require_game_closed,
+    probe_game_version, probe_game_version_with, require_game_closed,
 };
 pub use receipt::{
     DiscIcon, GUNE5D, InstalledGame, InstalledLauncher, MAX_RECEIPT_LEN, RECEIPT_SCHEMA, Receipt,
