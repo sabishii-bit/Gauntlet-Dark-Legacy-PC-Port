@@ -171,7 +171,9 @@ pub enum Blocker {
     },
     /// The folder that the install would make its entries in refuses them.
     NotWritable {
-        /// The folder probed: the destination, or the nearest folder above it that is there.
+        /// The folder that refused them: as the destination is judged, the folder probed, the
+        /// destination or the nearest folder above it that is there; as an install prepares, the
+        /// folder in which it could not make a folder, which may be one it made itself.
         path: PathBuf,
     },
     /// The file system that would hold the install ignores letter case, which on Linux keeps the
