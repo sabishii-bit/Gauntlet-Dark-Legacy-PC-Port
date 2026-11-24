@@ -119,7 +119,7 @@ inline LandedBlow landBlow(game::Combatant& actor, s32 part, usize index) {
     // the animation, before the step and the turn. A head's own update stands it on the body.
     const auto noted = [&](const game::Combatant::LocalSnapshot& state, f32 frame) {
         REQUIRE(actor.restoreLocal(state));
-        REQUIRE(fighter().setMove(index, {.frame = frame, .target = 0}));
+        REQUIRE(fighter().setMove(index, {.frame = frame, .target = 0, .yaw = std::nullopt}));
         if (part != 0) {
             fighter().update(1, 0.0f, {});
         }
@@ -153,8 +153,9 @@ inline LandedBlow landBlow(game::Combatant& actor, s32 part, usize index) {
         REQUIRE(actor.restoreLocal(after));
         return out;
     };
-    REQUIRE(fighter().setMove(
-        index, {.frame = static_cast<f32>(std::max(move.frameStart - 1, 0)), .target = 0}));
+    REQUIRE(fighter().setMove(index, {.frame = static_cast<f32>(std::max(move.frameStart - 1, 0)),
+                                      .target = 0,
+                                      .yaw = std::nullopt}));
     // An update of no time notes the node without moving it: the sample the first native frame
     // measures from.
     const Update primed = advance(1, 0.0f, {});

@@ -25,6 +25,7 @@ void Combatant::grab(Actor& actor, const MoveDefinition& move, const AttackDefin
             const Vec3 direction{portable::sin(actor.yaw), -0.1f, portable::cos(actor.yaw)};
             m_sim.grabs.push_back({.player = actor.grabbed,
                                    .critter = m_sim.id,
+                                   .attachment = std::nullopt,
                                    .velocity = glm::normalize(direction) * damage.speed,
                                    .damage = damage.damage * m_sim.scales.damage,
                                    .breathGap = actor.definition->rules().playerBreathGap});

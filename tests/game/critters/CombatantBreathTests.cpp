@@ -2,6 +2,7 @@
 #include <cmath>
 #include <filesystem>
 #include <numbers>
+#include <optional>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
@@ -250,7 +251,7 @@ TEST_CASE("a breath under breathPushFromOrigin pushes flat from where it starts,
     REQUIRE(actor.spawn(assets, 0, Vec3{0}, 0, nullptr, {}, 'G'));
     const auto fire = assets.data.moveNamed("FIRE");
     REQUIRE(fire);
-    REQUIRE(actor.setMove(*fire, {.frame = 0, .target = 0}));
+    REQUIRE(actor.setMove(*fire, {.frame = 0, .target = 0, .yaw = std::nullopt}));
     // Six ahead and one and a half aside of the beam: inside it, off the line of its way.
     EnemyView player;
     player.player = 0;
@@ -292,7 +293,7 @@ TEST_CASE("a breath holds the player it strikes off by its fighter's breath gap"
     REQUIRE(actor.spawn(assets, 0, Vec3{0}, 0, nullptr, {}, 'G'));
     const auto fire = assets.data.moveNamed("FIRE");
     REQUIRE(fire);
-    REQUIRE(actor.setMove(*fire, {.frame = 0, .target = 0}));
+    REQUIRE(actor.setMove(*fire, {.frame = 0, .target = 0, .yaw = std::nullopt}));
     // Six ahead, where the falling beam passes through the body.
     std::array<PlayerRuntime, 1> players;
     players[0].actor.spawn(0, {}, nullptr, Vec3{0, 0, 6}, 0);
