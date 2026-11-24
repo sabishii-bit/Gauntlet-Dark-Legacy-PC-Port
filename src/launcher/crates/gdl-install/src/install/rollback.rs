@@ -2,7 +2,8 @@
 //! the receipt is written takes back what the install made, under the installation's lock: the
 //! roots the publish put in place go back into the staging, last first; then the staging goes,
 //! the install's state files, its journal and the state folder with its lock; then the folders it
-//! made, and the record of installations forgets the folder. Once the receipt is written, only the
+//! made, and the record of installations forgets the folder. The receipt in place is the commit
+//! point: from then on the folder is an installation, which no rollback touches, and only the
 //! staging and the journal go. Each step counts a name already gone as removed, and the journal
 //! goes after everything it names, so that whatever cuts a step short, the next start finishes the
 //! work from the journal, or finds nothing left to do.
@@ -19,7 +20,8 @@ use super::disc_files::DISC_FILES;
 use super::journal::{INSTALL_JOURNAL, InstallPhase, JournalFile, remove_if_there};
 use super::settings::{FaultPoint, FaultPoints};
 use super::{CONFIG_FOLDER, FolderRecord, SAVES_FOLDER};
-use crate::folder::{InstallLock, JOURNAL_DIR, RECEIPT_FILE, STATE_DIR, names_in};
+use crate::folder::{InstallFolder, InstallLock, JOURNAL_DIR, RECEIPT_FILE, STATE_DIR, names_in};
+use crate::receipt::Receipt;
 
 /// What an install made in its folder once it held the installation's lock, for a rollback to
 /// take back.
@@ -65,6 +67,22 @@ impl TakenBack {
     }
 }
 
+/// Why a rollback stopped before it took the install back.
+#[derive(Debug)]
+pub(super) enum RollbackError {
+    /// The receipt stands: the folder is an installation, which nothing takes back, and the
+    /// rollback touched nothing.
+    Receipted,
+    /// A file operation failed where the rollback had come to.
+    Files(FilesError),
+}
+
+impl From<FilesError> for RollbackError {
+    fn from(error: FilesError) -> RollbackError {
+        RollbackError::Files(error)
+    }
+}
+
 impl Rollback<'_> {
     /// Takes the install back, in this order, passing [`FaultPoint::Rollback`] after each root
     /// moved back and after each of the next four steps:
@@ -81,9 +99,13 @@ impl Rollback<'_> {
     /// 7. once it went and no root stayed, the record forgets the folder, a failure to forget
     ///    passed over.
     ///
+    /// Anything at the receipt's name stops it before it touches anything, as
+    /// [`RollbackError::Receipted`]: past the commit point nothing is taken back, and the journal
+    /// is left for the next start to finish the install from. A failure to look stops it there too.
+    ///
     /// A failure stops the rollback where it is, and is returned: what is left, its journal among
     /// it until the fourth step, is the next start's to take back, and the record keeps the folder.
-    pub(super) fn run(self, record: &mut dyn FolderRecord) -> Result<TakenBack, FilesError> {
+    pub(super) fn run(self, record: &mut dyn FolderRecord) -> Result<TakenBack, RollbackError> {
         let Rollback {
             folder,
             made_folders,
@@ -92,6 +114,9 @@ impl Rollback<'_> {
             faults,
         } = self;
         let state = folder.join(STATE_DIR);
+        if is_there(&state.join(RECEIPT_FILE))? {
+            return Err(RollbackError::Receipted);
+        }
         let journal_file = state.join(JOURNAL_DIR).join(INSTALL_JOURNAL);
         let mut kept = Vec::new();
         let mut staging_path = None;
@@ -217,6 +242,27 @@ pub(super) fn is_there(path: &Path) -> Result<bool, FilesError> {
     }
 }
 
+/// Writes `receipt` as the fresh install's in `folder`, where none stood before it or the same one
+/// did, and succeeds whenever it is then in place: the commit point, past which the folder is an
+/// installation that nothing takes back. A write that succeeded renamed it there; one that failed
+/// may have, in putting the rename on disk after it was made, as a file at its name then shows. A
+/// write that failed with no receipt in place is its failure.
+pub(super) fn commit_receipt(receipt: &Receipt, folder: &InstallFolder) -> Result<(), FilesError> {
+    let written = receipt.write(folder);
+    if in_place(&written, &folder.state_dir().join(RECEIPT_FILE)) {
+        Ok(())
+    } else {
+        written
+    }
+}
+
+/// Whether a receipt whose write at `path` gave `written` is in place: after a write that
+/// succeeded always, with no look, which could fail where the write did not; after one that
+/// failed, when a file is at `path`.
+fn in_place(written: &Result<(), FilesError>, path: &Path) -> bool {
+    written.is_ok() || fs::symlink_metadata(path).is_ok_and(|metadata| metadata.is_file())
+}
+
 /// Removes `staging` with whatever it holds, counting a staging already gone as removed.
 fn remove_staging(staging: Staging) -> Result<(), FilesError> {
     match staging.remove() {
@@ -307,10 +353,35 @@ pub(super) fn clean_up(
 #[cfg(test)]
 mod tests {
     use std::fs;
+    use std::io;
 
+    use gdl_files::FilesError;
     use gdl_fixtures::folder_names;
 
-    use super::{TakenBack, remove_made_folders, remove_unlocked_state, stranded_roots};
+    use super::{TakenBack, in_place, remove_made_folders, remove_unlocked_state, stranded_roots};
+    use crate::folder::RECEIPT_FILE;
+
+    #[test]
+    fn a_receipt_is_in_place_once_written_or_left_by_a_write_that_failed() {
+        let state = tempfile::tempdir().unwrap();
+        let path = state.path().join(RECEIPT_FILE);
+        let failed = || {
+            Err(FilesError::Io {
+                path: path.clone(),
+                source: io::Error::other("the folder's sync failed"),
+            })
+        };
+        // A write that succeeded renamed the receipt into place, which is the commit point,
+        // whatever a look at its name would find: here nothing.
+        assert!(in_place(&Ok(()), &path));
+        // A write that failed put it in place only when a file stands at its name.
+        assert!(!in_place(&failed(), &path));
+        fs::create_dir(&path).unwrap();
+        assert!(!in_place(&failed(), &path));
+        fs::remove_dir(&path).unwrap();
+        fs::write(&path, b"{}\n").unwrap();
+        assert!(in_place(&failed(), &path));
+    }
 
     #[test]
     fn made_folders_go_innermost_first_while_they_hold_nothing() {

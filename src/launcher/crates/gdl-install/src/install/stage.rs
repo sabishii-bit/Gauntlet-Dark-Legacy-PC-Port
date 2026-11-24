@@ -24,7 +24,9 @@ use serde_json::Map;
 
 use super::disc_files::{CopiedFile, DISC_FILES, DiscFiles};
 use super::journal::{InstallJournal, JournalFile};
-use super::rollback::{Begun, Rollback, clean_up, remove_made_folders, remove_unlocked_state};
+use super::rollback::{
+    Begun, Rollback, clean_up, commit_receipt, remove_made_folders, remove_unlocked_state,
+};
 use super::settings::{FaultPoint, InstallSettings};
 use super::{
     CHECK_DISC, CHECK_GAME, CONFIG_FOLDER, COPY_DISC_FILES, COPY_LAUNCHER, Changes, FolderRecord,
@@ -36,8 +38,7 @@ use super::{PERSONALISE, icon_entry};
 use crate::compat::MIN_LAUNCHER;
 use crate::destination::{Blocker, DestinationError, judge_with};
 use crate::folder::{
-    FolderError, InstallFolder, InstallLock, JOURNAL_DIR, LOCK_FILE, LockError, RECEIPT_FILE,
-    STATE_DIR,
+    FolderError, InstallFolder, InstallLock, JOURNAL_DIR, LOCK_FILE, LockError, STATE_DIR,
 };
 #[cfg(windows)]
 use crate::icon::{DISC_ICON, Personalised};
@@ -772,10 +773,12 @@ impl<'a> Install<'a> {
         self.pass(FaultPoint::Stage, &executable)
     }
 
-    /// Puts every root in place and writes the receipt, never cancelled. The receipt on disk is the
-    /// commit point: a failure before it takes the install back, and from it on the installation
-    /// stands, so that a failure to clean up is only a notice, which the next start finishes. The
-    /// record of installations is then told, and the shell, and the progress reaches its total.
+    /// Puts every root in place and writes the receipt, never cancelled. The receipt in place is
+    /// the commit point: a failure before it takes the install back, and from it on the
+    /// installation stands, so that a failure to clean up is only a notice, which the next start
+    /// finishes; a rollback beside a receipt that stands takes nothing back, and leaves the journal
+    /// of the publish for the next start to finish from. The record of installations is then
+    /// told, and the shell, and the progress reaches its total.
     fn publish(
         &self,
         prepared: Prepared<'a>,
@@ -832,9 +835,9 @@ impl<'a> Install<'a> {
 
     /// Puts every root of the staging in place and writes the receipt: the staged tree synced
     /// first and the journal moved to publishing with the roots and the receipt, so that the moves
-    /// can be finished from it, each root recorded as it moves, then the receipt written. Whether
-    /// the receipt is in place is read from the disc: a write can fail after its rename, in putting
-    /// the rename on disk, with the receipt there, which is the commit point passed all the same.
+    /// can be finished from it, each root recorded as it moves, then the receipt written. A write
+    /// that succeeded is the commit point; one that failed is too when it left the receipt in
+    /// place, as one can after its rename, in putting the rename on disk.
     fn put_in_place(
         &self,
         folder: &InstallFolder,
@@ -854,18 +857,7 @@ impl<'a> Install<'a> {
             .publish_new(&plan.roots, &plan.destination, journal)
             .map_err(|error| self.files_error(error))?;
         self.pass(FaultPoint::Publish, journal.path())?;
-        let written = receipt.write(folder);
-        let receipt_path = folder.state_dir().join(RECEIPT_FILE);
-        if fs::symlink_metadata(&receipt_path).is_ok_and(|metadata| metadata.is_file()) {
-            return Ok(());
-        }
-        Err(match written {
-            Err(error) => self.files_error(error),
-            Ok(()) => InstallError::Io {
-                path: receipt_path,
-                source: io::Error::from(io::ErrorKind::NotFound),
-            },
-        })
+        commit_receipt(receipt, folder).map_err(|error| self.files_error(error))
     }
 }
 

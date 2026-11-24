@@ -423,8 +423,11 @@ pub(crate) fn plan_with<R: Read + Seek>(
 /// at its total. The cancel is looked at as each phase but the publish begins, and before every
 /// block and every entry within one.
 ///
-/// The receipt in place is the point from which the installation stands: what fails after it, in
-/// cleaning up, is a notice for the next start to finish. A failure or a cancel before it is the
+/// The receipt in place is the point from which the installation stands: a write of it that
+/// succeeded, or one that failed and left it there. What fails after it, in cleaning up, is a
+/// notice for the next start to finish, and nothing takes back an install whose receipt stands:
+/// a failure found beside one keeps everything, with the journal of the publish for the next start
+/// to finish the install from ([`Changes::Kept`]). A failure or a cancel before it is the
 /// install's, and takes back what the install made, under its lock: what the publish put in
 /// place goes back into the staging, then the staging goes with the install's state files, its
 /// journal and its state folder, then the folders it made, while they hold nothing, and the record
@@ -4086,6 +4089,48 @@ mod tests {
             );
             assert_eq!(told.get(), 1, "{context}");
         }
+    }
+
+    #[test]
+    fn nothing_takes_back_an_install_whose_receipt_stands() {
+        let inputs = Inputs::of(&icon_iso());
+        let whole = uninterrupted(&inputs);
+        let top = tempfile::tempdir().unwrap();
+        let destination = top.path().join("game");
+        // Every root in place and recorded, then the receipt in place and a failure that the job
+        // takes for one before it, as a write that put the receipt there and was then read as
+        // having put none would be.
+        let before_receipt = moved_pass(roots()[roots().len() - 1]) + 1;
+        let receipt = destination.join(STATE_DIR).join(RECEIPT_FILE);
+        let stand = || {
+            fs::write(&receipt, b"{}\n")?;
+            Err(io::Error::other(INJECTED))
+        };
+        let on = OnPass::new(FaultPoint::Publish, before_receipt, &stand);
+        let (result, heard) = install_heard(&inputs, &destination, &standing_in(&on, &answering));
+        let failure = result.unwrap_err();
+        assert!(failure.to_string().contains(INJECTED), "{failure:?}");
+        // Nothing is taken back: every root stays in place with the staging, the journal of the
+        // publish is left for the next start, and the record keeps the folder.
+        assert_eq!(failure.changes, Changes::Kept);
+        assert_eq!(heard, heard_of(&destination, &["pending"]));
+        for root in roots() {
+            assert!(destination.join(root).exists(), "{root}");
+        }
+        let journal = journal_of(&destination).unwrap();
+        assert_eq!(journal["phase"], "publishing");
+        assert_eq!(journal["published"], json!(roots()));
+        assert!(staging_of(&destination).is_dir());
+
+        // The next start finishes the install from its journal.
+        let mut record = Heard::default();
+        let outcome = recover_heard(&destination, &mut record, &unheard).unwrap();
+        assert!(
+            matches!(outcome, RecoveryOutcome::Finished { .. }),
+            "{outcome:?}"
+        );
+        assert_eq!(tree(&destination), whole);
+        assert_eq!(record.calls, heard_of(&destination, &["installed"]));
     }
 
     #[test]

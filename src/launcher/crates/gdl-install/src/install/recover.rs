@@ -21,7 +21,9 @@ use serde_json::{Map, Value};
 
 use super::disc_files::DISC_FILES;
 use super::journal::{INSTALL_JOURNAL, InstallJournal, InstallPhase, JournalFile, remove_if_there};
-use super::rollback::{Begun, Rollback, clean_up, is_there, stranded_roots};
+use super::rollback::{
+    Begun, Rollback, RollbackError, clean_up, commit_receipt, is_there, stranded_roots,
+};
 use super::settings::InstallSettings;
 use super::{FolderRecord, INSTALL_STAGING_PREFIX, is_install_root};
 use crate::awake::keep_awake;
@@ -144,7 +146,7 @@ impl RecoveryError {
 ///   what an install makes before its first journal is given up with its lock, and the record
 ///   forgets the folder;
 /// - a journal of a staging install, or of a rollback, takes the install back as the job takes
-///   a failure back;
+///   a failure back, but never beside a receipt that stands;
 /// - a journal of a publish puts every root left in the staging in place and writes the receipt
 ///   the journal carries, then cleans up; a root whose target something else took meanwhile
 ///   takes the install back instead, unless the receipt stands, which nothing takes back;
@@ -527,11 +529,7 @@ impl<'r> Recovery<'r> {
                 Ok(RecoveryOutcome::CleanedUp)
             }
             InstallPhase::Publishing => self.finish(lock, staging, journal, receipted, record),
-            InstallPhase::Staging | InstallPhase::RollingBack if receipted => {
-                Err(RecoveryError::inconsistent(
-                    "the journal says the install is taken back, beside a receipt that stands",
-                ))
-            }
+            // Beside a receipt that stands, the rollback refuses before it changes anything.
             InstallPhase::Staging => self.roll_back(lock, staging, journal, record),
             InstallPhase::RollingBack => {
                 if staging.is_none() {
@@ -624,7 +622,7 @@ impl<'r> Recovery<'r> {
             }
             Err(error) => return Err(RecoveryError::Files(error)),
         }
-        self.write_receipt(&receipt)?;
+        commit_receipt(&receipt, self.folder).map_err(RecoveryError::Files)?;
         journal.committed().map_err(RecoveryError::Files)?;
         clean_up(staging, &journal, self.settings.faults).map_err(RecoveryError::Files)?;
         self.tell_installed(Some(&receipt), record);
@@ -635,7 +633,8 @@ impl<'r> Recovery<'r> {
     }
 
     /// Takes the install `journal` records back under `lock`, as the job takes a failure back,
-    /// with the staging when it is still there.
+    /// with the staging when it is still there. Beside a receipt that stands nothing is taken
+    /// back, and nothing changed.
     fn roll_back(
         &self,
         lock: InstallLock,
@@ -653,29 +652,17 @@ impl<'r> Recovery<'r> {
             }),
             faults: self.settings.faults,
         };
-        let taken = rollback.run(record).map_err(RecoveryError::Files)?;
+        let taken = rollback.run(record).map_err(|error| match error {
+            RollbackError::Receipted => RecoveryError::inconsistent(
+                "the journal says the install is taken back, beside a receipt that stands",
+            ),
+            RollbackError::Files(error) => RecoveryError::Files(error),
+        })?;
         let mut kept = taken.kept;
         if !taken.given_up {
             kept.push(STATE_DIR.to_owned());
         }
         Ok(RecoveryOutcome::RolledBack { kept })
-    }
-
-    /// Writes `receipt` as the installation's, and makes sure it is in place: a write can fail
-    /// after its rename, with the receipt there all the same.
-    fn write_receipt(&self, receipt: &Receipt) -> Result<(), RecoveryError> {
-        let written = receipt.write(self.folder);
-        let path = self.state.join(RECEIPT_FILE);
-        if fs::symlink_metadata(&path).is_ok_and(|metadata| metadata.is_file()) {
-            return Ok(());
-        }
-        Err(match written {
-            Err(error) => RecoveryError::Files(error),
-            Ok(()) => RecoveryError::Io {
-                path,
-                source: io::Error::from(io::ErrorKind::NotFound),
-            },
-        })
     }
 
     /// Tells the record that the installation stands, a refusal passed over, as the start that
