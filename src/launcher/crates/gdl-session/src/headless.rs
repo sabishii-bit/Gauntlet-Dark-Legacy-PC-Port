@@ -14,11 +14,11 @@ use std::io::{self, Read, Seek, Write};
 use std::path::Path;
 
 use gdl_extract::{Expansion, Trust};
-use gdl_files::{Cancel, Job, NoProgress, PAYLOAD_NAMES, RelPath, strip_verbatim};
+use gdl_files::{Cancel, Job, NoProgress, RelPath, strip_verbatim};
 use gdl_install::{
     Access, ComponentAttributes, DestinationReport, INSPECTION_SCHEMA, Inspection, InstallFolder,
-    InstallationSummary, Payload, PayloadError, ROOT_FILES, ROOT_FOLDERS, Relation, STATE_DIR,
-    Sections, SectionsError, installed_launcher_name, judge_destination,
+    InstallationSummary, Payload, PayloadError, Relation, SPACE_MARGIN, Sections, SectionsError,
+    judge_destination,
 };
 use gdl_release::{Platform, Version};
 use serde::Serialize;
@@ -96,17 +96,6 @@ const LIST_SEPARATOR: &str = ", ";
 
 /// The schema of the report `--check-folder` writes.
 const CHECK_FOLDER_SCHEMA: u32 = 1;
-
-/// The folders an install makes at a folder's top beside the runtime's: the disc's two, spelled
-/// as the game's disc spells them, and the two the game keeps the player's settings and saves in.
-const INSTALL_FOLDERS: [&str; 4] = ["Gauntlet", "carddemo", "saves", "config"];
-
-/// The runtime's folder that only a Linux runtime has, of [`ROOT_FOLDERS`].
-const LINUX_LIBRARIES: &str = "lib";
-
-/// The room an install keeps free on its volume beyond what it writes, as the release scripts'
-/// installer keeps it: all that `--check-folder` asks of a volume, since it installs nothing.
-const SPACE_MARGIN: u64 = 64 << 20;
 
 /// How a text report writes a question that the judging answered yes.
 const YES: &str = "yes";
@@ -448,8 +437,9 @@ fn inspect(folder: &Path, json: bool, build: &Build<'_>, out: &mut dyn Write) ->
 }
 
 /// `--check-folder`: judges the folder at `folder` as one to install into, holding it to the names
-/// an install on this system makes at its top and to the room an install keeps free, and reports
-/// what the judging found to `out`, as JSON when `json` says so, or why it failed to `err`.
+/// an install on this system makes at its top and to the room an install keeps free, all that it
+/// asks of a volume since it installs nothing, and reports what the judging found to `out`, as
+/// JSON when `json` says so, or why it failed to `err`.
 fn check_folder(folder: &Path, json: bool, out: &mut dyn Write, err: &mut dyn Write) -> u8 {
     let report = match judge_destination(folder, &install_names(), SPACE_MARGIN) {
         Ok(report) => report,
@@ -467,29 +457,10 @@ fn check_folder(folder: &Path, json: bool, out: &mut dyn Write, err: &mut dyn Wr
     reported(out, &report)
 }
 
-/// The names an install on this system makes at a folder's top: the disc's folders and the
-/// player's, the launcher's state folder and, on a system a release is built for, its copy and
-/// the game's executable, then the runtime's files and folders, Linux's libraries only on Linux.
+/// The names an install on this system makes at a folder's top, as the install crate gives them
+/// for this build's platform.
 fn install_names() -> Vec<RelPath> {
-    let platform = Platform::of_this_build();
-    let mut names = INSTALL_FOLDERS.to_vec();
-    names.push(STATE_DIR);
-    if let Some(platform) = platform {
-        names.extend([installed_launcher_name(platform), platform.executable()]);
-    }
-    names.extend(ROOT_FILES);
-    names.extend(
-        ROOT_FOLDERS
-            .into_iter()
-            .filter(|&folder| folder != LINUX_LIBRARIES || platform == Some(Platform::LinuxX64)),
-    );
-    names
-        .into_iter()
-        .map(|name| {
-            RelPath::parse(name, &PAYLOAD_NAMES)
-                .expect("an install's names keep the payload's rules")
-        })
-        .collect()
+    gdl_install::install_names(Platform::of_this_build())
 }
 
 /// `view` as a JSON report writes it: pretty, and ending in a line end.
@@ -982,15 +953,15 @@ mod tests {
     };
     use gdl_install::{
         Blocker, ComponentAttributes, DEFAULT_CONFIG, DestinationReport, GUNE5D, InstallFolder,
-        JOURNAL_DIR, KnownFolder, LOCK_FILE, ROOT_FOLDERS, RUNTIME_SECTION, STATE_DIR, Sections,
-        SectionsError, Warning,
+        JOURNAL_DIR, KnownFolder, LOCK_FILE, RUNTIME_SECTION, STATE_DIR, Sections, SectionsError,
+        Warning,
     };
     use gdl_release::{Platform, Version};
     use serde_json::{Value, json};
 
     use super::{
-        Build, EXIT_OK, EXIT_REFUSED, EXIT_USAGE, FolderView, LINUX_LIBRARIES, OwnFile,
-        SPACE_MARGIN, USAGE, install_names, json_report, refuse, run, text_value, usage,
+        Build, EXIT_OK, EXIT_REFUSED, EXIT_USAGE, FolderView, OwnFile, SPACE_MARGIN, USAGE,
+        install_names, json_report, refuse, run, text_value, usage,
     };
     use crate::codes::Report;
     use crate::extraction::vectors::{
@@ -2781,8 +2752,6 @@ mod tests {
             expected.push("lib");
         }
         assert_eq!(names, expected);
-        assert!(ROOT_FOLDERS.contains(&LINUX_LIBRARIES));
-        assert_eq!(SPACE_MARGIN, 64 << 20);
 
         // A folder holding each of them in upper case, but the state folder, which would end the
         // judging: every one of them collides, named as the install spells it.

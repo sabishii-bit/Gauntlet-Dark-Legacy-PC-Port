@@ -62,7 +62,7 @@ const DATA_FOLDER: &str = "data";
 
 /// The folder of the libraries a Linux runtime carries, where a Windows runtime keeps its own at
 /// its top.
-const LIB_FOLDER: &str = "lib";
+pub(crate) const LIB_FOLDER: &str = "lib";
 
 /// One file of a runtime zip, as its row in the central directory declares it.
 #[derive(Clone, Debug, PartialEq, Eq)]

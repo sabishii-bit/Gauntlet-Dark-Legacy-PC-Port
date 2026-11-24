@@ -12,6 +12,7 @@ mod full_disk;
 mod host;
 mod icon;
 mod inspect;
+mod install;
 mod payload;
 #[allow(unsafe_code)]
 mod platform;
@@ -39,6 +40,10 @@ pub use icon::{
 #[cfg(windows)]
 pub use icon::{Personalised, personalise};
 pub use inspect::{FolderState, INSPECTION_SCHEMA, Inspection, InstallationSummary, Relation};
+pub use install::{
+    CONFIG_FOLDER, DiscSummary, InstallError, InstallPlan, RuntimeSummary, SAVES_FOLDER,
+    SPACE_MARGIN, install_names, plan_install,
+};
 pub use payload::{
     BUILD_INFO, BuildInfo, DATA_SUFFIX, DEFAULT_CONFIG, LIBRARY_SUFFIX, MAX_BUILD_INFO_LEN,
     MAX_PAYLOAD_BYTES, MAX_PAYLOAD_ENTRIES, MAX_VERSION_FILE_LEN, PORTABLE_FLAG, Payload,
