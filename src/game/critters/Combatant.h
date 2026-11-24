@@ -542,7 +542,7 @@ private:
      * node's own turn never moves it. A root node's lies in the model's frame. Data whose rules
      * keep the node's frame turns it with the node. */
     static Vec3 partCentre(const Actor& critter, const CritterPart& part,
-                           std::span<const Mat4> nodes);
+                           const TreePose::RigidNodes& nodes);
     /** Where its simulation places node `node`; without the node, the body's offset origin. */
     static Mat4 partTransform(const Actor& critter, std::string_view node);
     /** Node `node`'s world matrix as drawn, its scale keys included, or the drawn model's
@@ -566,8 +566,9 @@ private:
      * (0x800BB614) does, without the nodes' scale keys, which only the draw applies, unless its
      * rules keep them. */
     static Mat4 simulationNode(const Actor& critter, usize node);
-    /** Every node's simulationNode, composed in one pass. */
-    static std::vector<Mat4> simulationNodes(const Actor& critter);
+    /** Every node's simulationNode, and the frame each hands its children, composed in one
+     * pass. */
+    static TreePose::RigidNodes simulationNodes(const Actor& critter);
     /** Node `node`'s world matrix in its simulation, or the simulation's model without such a
      * node: what decides contact, reach, where harm lands and where a player is held. */
     static Mat4 simulationTransform(const Actor& critter, std::string_view node);
@@ -594,8 +595,9 @@ private:
     static f32 inverseAnger(const Actor& critter, usize player);
     static f32 targetClock(const Actor& critter);
     static void rememberDamage(f32& total, f32& lastTime, f32 now, f32 amount);
-    bool blockedByItems(Actor& critter, const Vec3& to);
-    bool blockedBySwarm(Actor& critter, const Vec3& to);
+    /** `nodes` are its simulationNodes where its type meets them by its parts. */
+    bool blockedByItems(Actor& critter, const Vec3& to, const TreePose::RigidNodes& nodes);
+    bool blockedBySwarm(Actor& critter, const Vec3& to, const TreePose::RigidNodes& nodes);
     static const EnemyView* viewOf(std::span<const EnemyView> players, s32 player);
 
     Simulation m_sim;

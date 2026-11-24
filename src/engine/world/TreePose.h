@@ -101,13 +101,21 @@ public:
     /** Per node, its local transform composed with every ancestor's. */
     std::span<const Mat4> matrices() const { return m_matrices; }
     /** Node `node`'s matrix as the original's GetWorldMat (0x800BB614) composes it: the
-     * angles and places of the node and its ancestors without their scale keys, a mirror's
-     * flip included, and a parent flagged kTranslationOnlyParent adding only its place.
-     * Exactly matrices()[node] where every scale is one and no parent is so flagged.
-     * Computed on demand, so it is no part of the pose's state. */
+     * angles and places of the node and its ancestors, a mirror's flips of them included,
+     * without their scale keys (a mirror's flip of the scale goes with them), and a parent
+     * flagged kTranslationOnlyParent adding only its place. Exactly matrices()[node] where
+     * every scale is one and no node is so flagged. Computed on demand, so it is no part of
+     * the pose's state. */
     Mat4 rigidMatrix(usize node) const;
-    /** Every node's rigidMatrix, composed in one pass. */
-    std::vector<Mat4> rigidMatrices() const;
+    /** Every node composed as rigidMatrix composes it, and the frame each hands its children:
+     * its own matrix, or for a node flagged kTranslationOnlyParent the frame above it moved to
+     * the node's place. GetWorldMat lays an offset added to a node's place in the frame the
+     * node's parent hands it. */
+    struct RigidNodes {
+        std::vector<Mat4> matrices;
+        std::vector<Mat4> frames;
+    };
+    RigidNodes rigidNodes() const;
     /** World-space draw matrices: facing is applied at each node before its
      * children, including meshless parents. Physics keeps the unfaced pose. */
     std::vector<Mat4> drawMatrices(const Mat4& model, const CameraFrame& camera) const;
@@ -138,6 +146,9 @@ public:
 private:
     friend void visitNativeState(NativeStateDigest& /*digest*/, const TreePose& /*state*/);
     void compose();
+    /** Whether matrices() already composes every node as rigidMatrix does: no node keys a
+     * scale and none hands its place alone. */
+    bool composesRigid() const;
 
     const TreeInfo* m_tree = nullptr;
     std::vector<NodePose> m_poses;

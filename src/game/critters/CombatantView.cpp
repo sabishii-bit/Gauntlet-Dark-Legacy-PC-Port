@@ -32,12 +32,6 @@ Mat4 bodyPlacement(const Vec3& position, f32 floorOffset, f32 yaw, f32 size) {
         portable::rotate(glm::translate(Mat4{1.0f}, root), yaw, Vec3{0.0f, 1.0f, 0.0f});
     return glm::scale(model, Vec3{size});
 }
-
-/** Node `node`'s parent, when the tree lists it before the node; -1 otherwise. */
-s32 parentOf(const TreeInfo& tree, usize node) {
-    const s32 parent = tree.nodes[node].parent;
-    return parent >= 0 && static_cast<usize>(parent) < node ? parent : -1;
-}
 } // namespace
 TreePose Combatant::smoothPose(const Actor& actor) {
     if (actor.stock == nullptr || !actor.player.playing()) {
@@ -158,12 +152,14 @@ Mat4 Combatant::simulationNode(const Actor& critter, usize node) {
     return scaledNodes(critter) ? critter.pose.matrices()[node] : critter.pose.rigidMatrix(node);
 }
 
-std::vector<Mat4> Combatant::simulationNodes(const Actor& critter) {
+TreePose::RigidNodes Combatant::simulationNodes(const Actor& critter) {
     if (scaledNodes(critter)) {
+        // The pose's own matrices know no parent that hands its place alone.
         const std::span<const Mat4> matrices = critter.pose.matrices();
-        return {matrices.begin(), matrices.end()};
+        std::vector<Mat4> nodes{matrices.begin(), matrices.end()};
+        return {nodes, nodes};
     }
-    return critter.pose.rigidMatrices();
+    return critter.pose.rigidNodes();
 }
 
 Mat4 Combatant::simulationTransform(const Actor& critter, std::string_view node) {
@@ -194,32 +190,23 @@ Vec3 Combatant::cuePosition(const Actor& critter, std::string_view node) {
 }
 
 Vec3 Combatant::partCentre(const Actor& critter, const CritterPart& part,
-                           std::span<const Mat4> nodes) {
+                           const TreePose::RigidNodes& nodes) {
     const Mat4 model = simulationModel(critter);
     const TreeInfo& tree = *critter.stock->tree;
     const auto node = tree.findNode(part.node, kCombatantNodeNameLength);
-    const bool posed = node.has_value() && *node < nodes.size();
+    const bool posed = node.has_value() && *node < nodes.matrices.size();
     if (critter.definition->rules().nodeFramePartOffsets) {
-        return Vec3{(posed ? model * nodes[*node] : model) * Vec4{part.position, 1}};
+        return Vec3{(posed ? model * nodes.matrices[*node] : model) * Vec4{part.position, 1}};
     }
     if (!posed) {
         return Vec3{model * Vec4{part.position, 1}};
     }
-    // The frame the node's parent hands it: the parent's own, or past parents that hand their
-    // place alone (GetWorldMat 0x800BB690-0x800BB6E0), the first above them that hands its turn;
-    // else the model's. Where its rules keep the scale keys, the pose's own matrices know no such
-    // parent.
-    const auto placeAlone = [&](s32 at) {
-        return !scaledNodes(critter) && (tree.nodes[static_cast<usize>(at)].objectFlags &
-                                         TreePose::kTranslationOnlyParent) != 0;
-    };
-    s32 frame = parentOf(tree, *node);
-    while (frame >= 0 && placeAlone(frame)) {
-        frame = parentOf(tree, static_cast<usize>(frame));
-    }
-    const Vec3 offset =
-        frame >= 0 ? Mat3{nodes[static_cast<usize>(frame)]} * part.position : part.position;
-    return Vec3{model * Vec4{Vec3{nodes[*node][3]} + offset, 1}};
+    // The frame the node's parent hands it, else the model's.
+    const s32 parent = tree.nodes[*node].parent;
+    const Vec3 offset = parent >= 0 && static_cast<usize>(parent) < *node
+                            ? Mat3{nodes.frames[static_cast<usize>(parent)]} * part.position
+                            : part.position;
+    return Vec3{model * Vec4{Vec3{nodes.matrices[*node][3]} + offset, 1}};
 }
 
 Mat4 Combatant::partTransform(const Actor& critter, std::string_view node) {
@@ -300,8 +287,8 @@ std::vector<MissileTarget> Combatant::ownTargets(bool solidOnly) const {
         return out;
     }
     const auto& actor = m_sim.actor;
-    const std::vector<Mat4> nodes =
-        data()->parts().empty() ? std::vector<Mat4>{} : simulationNodes(actor);
+    const TreePose::RigidNodes nodes =
+        data()->parts().empty() ? TreePose::RigidNodes{} : simulationNodes(actor);
     for (usize i = 0; i < data()->parts().size(); ++i) {
         const auto& part = data()->parts()[i];
         if (part.radius <= 0 || (solidOnly && (part.flags & CritterPart::kSolid) == 0) ||

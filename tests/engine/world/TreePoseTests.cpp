@@ -342,10 +342,12 @@ TEST_CASE("a node's place ignores its ancestors' scale keys, as GetWorldMat does
     const Mat4 rigidRoot = TreePose::localMatrix(turned, Vec3{0.0f});
     CHECK(near(pose.rigidMatrix(0), rigidRoot));
     CHECK(near(pose.rigidMatrix(1), rigidRoot * glm::translate(Mat4{1.0f}, child.position)));
-    const auto rigid = pose.rigidMatrices();
-    REQUIRE(rigid.size() == 2);
-    CHECK(rigid[0] == pose.rigidMatrix(0));
-    CHECK(rigid[1] == pose.rigidMatrix(1));
+    const auto rigid = pose.rigidNodes();
+    REQUIRE(rigid.matrices.size() == 2);
+    CHECK(rigid.matrices[0] == pose.rigidMatrix(0));
+    CHECK(rigid.matrices[1] == pose.rigidMatrix(1));
+    // No node hands its place alone: each hands its children its own matrix.
+    CHECK(rigid.frames == rigid.matrices);
 
     // Mirrored, the turn and the place flip as before; the scale's flip goes with the scale.
     pose.evaluate(tree, 0, 0.0f, TreePose::Sampling::Snapped, TreePose::Mirror::AcrossX);
@@ -360,7 +362,7 @@ TEST_CASE("a node's place ignores its ancestors' scale keys, as GetWorldMat does
 TEST_CASE("a translation-only parent adds its place but not its turn, as GetWorldMat does",
           "[world][pose][tree-pose]") {
     // MID, two above the root and flagged translation-only, turns a quarter about the
-    // upright; CHILD stands three along x from it.
+    // upright and keys a unit's place along x; CHILD stands three along x from it.
     TreeInfo tree;
     tree.name = "HINGE";
     TreeNodeInfo root;
@@ -379,32 +381,44 @@ TEST_CASE("a translation-only parent adds its place but not its turn, as GetWorl
     sequence.name = "TURN";
     sequence.frames = 1;
     sequence.frameRate = 30;
-    sequence.tracks.push_back(track(1, 1, {0}, {kHalfPi}));
+    TrackInfo hinge;
+    hinge.node = 1;
+    hinge.flags = static_cast<u16>(TrackInfo::channelBit(1) | TrackInfo::channelBit(3));
+    hinge.frames = {0};
+    hinge.values = {kHalfPi, 1.0f};
+    sequence.tracks.push_back(hinge);
     sequence.trackOfNode = {-1, 0, -1};
     tree.sequences.push_back(sequence);
 
     TreePose pose;
     pose.evaluate(tree, 0, 0.0f);
     // Composed whole, the parent's turn swings the child round behind it.
-    REQUIRE(near(Vec3{pose.matrices()[2][3]}, Vec3{0.0f, 2.0f, -3.0f}));
-    // The original adds only the flagged parent's place: the child stands unturned.
-    CHECK(near(pose.rigidMatrix(2), glm::translate(Mat4{1.0f}, Vec3{3.0f, 2.0f, 0.0f})));
+    REQUIRE(near(Vec3{pose.matrices()[2][3]}, Vec3{1.0f, 2.0f, -3.0f}));
+    // The original adds only the flagged parent's place, its key included (its matrix's
+    // translation): the child stands unturned.
+    CHECK(near(pose.rigidMatrix(2), glm::translate(Mat4{1.0f}, Vec3{4.0f, 2.0f, 0.0f})));
     // The flag is for the children: the parent keeps its own turn.
     CHECK(pose.rigidMatrix(1) == pose.matrices()[1]);
+    // It hands them the frame above it moved to its place.
+    const auto hinged = pose.rigidNodes();
+    CHECK(hinged.frames[0] == hinged.matrices[0]);
+    CHECK(near(hinged.frames[1], glm::translate(Mat4{1.0f}, Vec3{1.0f, 2.0f, 0.0f})));
 
     // A turn above the flagged parent still carries everything under it.
     tree.sequences[0].tracks.push_back(track(0, 1, {0}, {kHalfPi}));
     tree.sequences[0].trackOfNode = {1, 0, -1};
     pose.evaluate(tree, 0, 0.0f);
-    REQUIRE(near(Vec3{pose.matrices()[2][3]}, Vec3{-3.0f, 2.0f, 0.0f}));
+    REQUIRE(near(Vec3{pose.matrices()[2][3]}, Vec3{-3.0f, 2.0f, -1.0f}));
     CHECK(near(pose.rigidMatrix(2),
-               pose.matrices()[0] * glm::translate(Mat4{1.0f}, Vec3{3.0f, 2.0f, 0.0f})));
-    CHECK(near(Vec3{pose.rigidMatrix(2)[3]}, Vec3{0.0f, 2.0f, -3.0f}));
-    const auto rigid = pose.rigidMatrices();
-    REQUIRE(rigid.size() == 3);
-    for (usize node = 0; node < rigid.size(); ++node) {
-        CHECK(rigid[node] == pose.rigidMatrix(node));
+               pose.matrices()[0] * glm::translate(Mat4{1.0f}, Vec3{4.0f, 2.0f, 0.0f})));
+    CHECK(near(Vec3{pose.rigidMatrix(2)[3]}, Vec3{0.0f, 2.0f, -4.0f}));
+    const auto rigid = pose.rigidNodes();
+    REQUIRE(rigid.matrices.size() == 3);
+    for (usize node = 0; node < rigid.matrices.size(); ++node) {
+        CHECK(rigid.matrices[node] == pose.rigidMatrix(node));
     }
+    CHECK(near(rigid.frames[1],
+               pose.matrices()[0] * glm::translate(Mat4{1.0f}, Vec3{1.0f, 2.0f, 0.0f})));
 }
 
 TEST_CASE("a pose keying no scale under no translation-only parent has its own matrices as its "
@@ -417,11 +431,23 @@ TEST_CASE("a pose keying no scale under no translation-only parent has its own m
     TreePose pose;
     pose.evaluate(tree, 0, 2.0f);
     REQUIRE(pose.poses()[1].rotation.y != 0.0f);
-    CHECK(std::ranges::equal(pose.rigidMatrices(), pose.matrices()));
+    const auto rigid = pose.rigidNodes();
+    CHECK(std::ranges::equal(rigid.matrices, pose.matrices()));
+    CHECK(rigid.frames == rigid.matrices);
     for (usize node = 0; node < pose.size(); ++node) {
         CHECK(pose.rigidMatrix(node) == pose.matrices()[node]);
     }
-    CHECK(TreePose{}.rigidMatrices().empty());
+    CHECK(TreePose{}.rigidNodes().matrices.empty());
+    // Composed afresh, as a flag hands it, a leaf so flagged hands nothing and every node's
+    // matrix is still the pose's own, bit for bit.
+    tree.nodes[1].objectFlags = TreePose::kTranslationOnlyParent;
+    pose.evaluate(tree, 0, 2.0f);
+    const auto leafFlagged = pose.rigidNodes();
+    CHECK(std::ranges::equal(leafFlagged.matrices, pose.matrices()));
+    CHECK(leafFlagged.frames[0] == pose.matrices()[0]);
+    for (usize node = 0; node < pose.size(); ++node) {
+        CHECK(pose.rigidMatrix(node) == pose.matrices()[node]);
+    }
 }
 
 TEST_CASE("the angles read off a node's rotation are those of the yaw-pitch-roll order, and "
