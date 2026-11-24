@@ -26,8 +26,9 @@ to install the game into and reports what would refuse the install, what to warn
 found of the folder and its volume, as JSON with --json. All it writes are the folder probe's
 entries, each named .gdl-launcher-probe- and eight random letters and digits, and removed at
 once: a folder and a file in the folder when it exists, or else a folder in the nearest folder
-above it that exists. It writes nothing in a folder the launcher must not write into, such as the
-alpha installer's or another installation's. parity runs the parity gate,
+above it that exists. The probe also removes such entries that an earlier probe left in that
+folder, a minute old or more. It writes nothing in a folder the launcher must not write into,
+such as the alpha installer's or another installation's. parity runs the parity gate,
 scripts/checks/launcher_parity.py, with this Python and every argument after the word, from the
 folder and in the environment this script was started in.
 """

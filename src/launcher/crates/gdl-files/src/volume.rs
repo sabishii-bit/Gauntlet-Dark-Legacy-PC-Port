@@ -6,12 +6,26 @@
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, SystemTime};
 
 use crate::links::walked;
-use crate::{FilesError, STAGING_RANDOM_CHARS, is_absent, retry_locked};
+use crate::{
+    FilesError, RETRY_WINDOW, STAGING_RANDOM_CHARS, is_absent, is_staging_name, retry_locked,
+};
 
 /// The prefix of the entries a folder probe makes and removes: names of the launcher's own.
 pub const PROBE_PREFIX: &str = ".gdl-launcher-probe-";
+
+/// How long before a probe begins an entry of a probe's must have last changed for the probe to
+/// take it for one that an earlier probe left, and not one that a probe still running made: a
+/// probe removes what it made once it has looked, trying each entry for at most [`RETRY_WINDOW`],
+/// so a running probe's entries are seconds old. The rest of the minute leaves room for a file
+/// system that keeps times to the even second, and for the clock of another machine that sets
+/// them in a shared folder.
+const LEFT_PROBE_AGE: Duration = Duration::from_secs(60);
+
+// A probe removes at most two entries, each tried for the retry window.
+const _: () = assert!(LEFT_PROBE_AGE.as_secs() > 2 * RETRY_WINDOW.as_secs());
 
 /// What a folder that a probe looks at is to the job that will write there, which tells the probe
 /// what to make in it: what the job makes there. Windows keeps the right to add a folder to a
@@ -146,7 +160,15 @@ pub fn refuses_writes(error: &io::Error) -> bool {
 /// is tried again as [`retry_locked`] tries, since a scanner may open a file the moment it is
 /// closed, and every one is tried; one that still fails is an error naming what it left, which
 /// is reported before anything the probe found.
+///
+/// Before it makes anything, the probe removes what an earlier probe left in `folder`, cut short
+/// before it removed its entries or refused their removal, so that a folder probed again, as an
+/// install probes its destination again before it writes there, keeps none of it: each entry of
+/// such a name that is an empty folder or an empty file, never a link, and last changed a minute
+/// or more before, which no probe still running made. Each is tried once, and one that cannot be
+/// removed stays for a later probe.
 pub fn probe_folder(folder: &Path, probed: ProbedFolder) -> Result<FolderProbe, FilesError> {
+    remove_left_probe_entries(folder, SystemTime::now())?;
     let Some(made_folder) = make_probe_entry(folder, ProbeEntry::Folder)? else {
         return Ok(NOT_WRITABLE);
     };
@@ -236,17 +258,67 @@ fn remove_probe_entries(made: &[(PathBuf, ProbeEntry)]) -> Result<(), FilesError
     left.map_or(Ok(()), Err)
 }
 
+/// Removes from `folder` the entries that earlier probes made there and left: each named as a
+/// probe names what it makes, an empty folder or an empty file, never a link, last changed
+/// [`LEFT_PROBE_AGE`] or more before `now`, so that what a probe still running made is never taken
+/// from it. Each is tried once, and one that cannot be removed stays for a later probe: it is not
+/// this probe's to answer for, and nothing this probe finds rests on it. A folder this process may
+/// not list is left as it is, since the probe may still make entries there; any other failure to
+/// list it is an error at `folder`.
+fn remove_left_probe_entries(folder: &Path, now: SystemTime) -> Result<(), FilesError> {
+    let entries = match fs::read_dir(folder) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == io::ErrorKind::PermissionDenied => return Ok(()),
+        Err(source) => return Err(FilesError::io(folder, source)),
+    };
+    for entry in entries {
+        let entry = entry.map_err(|source| FilesError::io(folder, source))?;
+        let named = entry
+            .file_name()
+            .to_str()
+            .is_some_and(|name| is_staging_name(PROBE_PREFIX, name));
+        if !named {
+            continue;
+        }
+        let path = entry.path();
+        // Looked at without following a link: a link is no probe's entry, and what it leads to is
+        // never touched.
+        let Ok(found) = fs::symlink_metadata(&path) else {
+            continue;
+        };
+        let left = found
+            .modified()
+            .ok()
+            .and_then(|modified| now.duration_since(modified).ok())
+            .is_some_and(|age| age >= LEFT_PROBE_AGE);
+        if !left {
+            continue;
+        }
+        // A failure is passed over, as said above; a folder that holds anything is no probe's
+        // and stays, since only an empty one is removed.
+        let _ = if found.is_dir() {
+            fs::remove_dir(&path)
+        } else if found.is_file() && found.len() == 0 {
+            fs::remove_file(&path)
+        } else {
+            continue;
+        };
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
     use std::io;
     use std::path::{Path, PathBuf};
+    use std::time::{Duration, SystemTime};
 
-    use gdl_fixtures::{deny_writes, folder_names, link_folder};
+    use gdl_fixtures::{backdate, deny_writes, folder_names, link_folder};
 
     use super::{
-        FolderProbe, NOT_WRITABLE, ProbedFolder, nearest_existing, nothing_there, probe_folder,
-        refuses_writes, volume_of,
+        FolderProbe, LEFT_PROBE_AGE, NOT_WRITABLE, PROBE_PREFIX, ProbedFolder, nearest_existing,
+        nothing_there, probe_folder, refuses_writes, remove_left_probe_entries, volume_of,
     };
     use crate::error::assert_io;
 
@@ -417,6 +489,161 @@ mod tests {
         }
     }
 
+    /// A name a probe gives what it makes, with `random` for its random part.
+    fn probe_name(random: &str) -> String {
+        format!("{PROBE_PREFIX}{random}")
+    }
+
+    /// What an earlier probe left in a folder, cut short before it removed its entries or refused
+    /// their removal, is gone once the folder is probed again: its folder and its file, old enough
+    /// to be no running probe's. What a running probe may have made a moment ago stays, and so
+    /// does the rest.
+    #[test]
+    fn a_probe_removes_what_an_earlier_probe_left() {
+        let dir = tempfile::tempdir().unwrap();
+        let top = dir.path();
+        fs::create_dir(top.join(probe_name("Ab12Cd34"))).unwrap();
+        fs::write(top.join(probe_name("Ef56Gh78")), b"").unwrap();
+        fs::write(top.join("kept.txt"), b"kept").unwrap();
+        backdate(top).unwrap();
+        let fresh = [probe_name("Uv12Wx34"), probe_name("Yz56Ab78")];
+        fs::create_dir(top.join(&fresh[0])).unwrap();
+        fs::write(top.join(&fresh[1]), b"").unwrap();
+
+        for probed in PROBED {
+            assert_eq!(probe_folder(top, probed).unwrap(), WRITABLE, "{probed:?}");
+            let mut expected = vec!["kept.txt".to_owned(), fresh[0].clone(), fresh[1].clone()];
+            expected.sort();
+            assert_eq!(folder_names(top).unwrap(), expected, "{probed:?}");
+        }
+        assert_eq!(fs::read(top.join("kept.txt")).unwrap(), b"kept");
+    }
+
+    /// An entry of a probe's is taken for one an earlier probe left once it last changed the
+    /// probe age before the probe began, and not a moment sooner; nor while it seems to have
+    /// changed after that, as a shared folder whose times another machine's clock sets may show.
+    #[test]
+    fn a_left_entry_is_told_by_its_age() {
+        let dir = tempfile::tempdir().unwrap();
+        let top = dir.path();
+        let folder = top.join(probe_name("Ab12Cd34"));
+        let file = top.join(probe_name("Ef56Gh78"));
+        fs::create_dir(&folder).unwrap();
+        fs::write(&file, b"").unwrap();
+        let changed = |path: &Path| fs::symlink_metadata(path).unwrap().modified().unwrap();
+        let (earliest, latest) = {
+            let (folder, file) = (changed(&folder), changed(&file));
+            (folder.min(file), folder.max(file))
+        };
+
+        let held = [
+            earliest + LEFT_PROBE_AGE - Duration::from_millis(1),
+            earliest - Duration::from_secs(1),
+        ];
+        for now in held {
+            remove_left_probe_entries(top, now).unwrap();
+            assert_eq!(folder_names(top).unwrap().len(), 2, "{now:?}");
+        }
+        remove_left_probe_entries(top, latest + LEFT_PROBE_AGE).unwrap();
+        assert!(folder_names(top).unwrap().is_empty());
+    }
+
+    /// What a probe never leaves stays, however old: names that only begin as a probe's do, and a
+    /// probe's name on a file that holds something, on a folder that holds something and on a
+    /// link, whose target is never touched.
+    #[test]
+    fn only_a_probe_s_own_entries_are_taken_for_left() {
+        let dir = tempfile::tempdir().unwrap();
+        let top = dir.path();
+        let target = tempfile::tempdir().unwrap();
+        fs::write(target.path().join("target.txt"), b"").unwrap();
+        let mut kept = vec![
+            format!("{PROBE_PREFIX}notes.txt"),
+            probe_name("Ab12Cd3"),
+            probe_name("Ab12Cd345"),
+            probe_name("Ef56Gh78"),
+            probe_name("Ij90Kl12"),
+            probe_name("Mn34Op56"),
+        ];
+        fs::write(top.join(&kept[0]), b"").unwrap();
+        fs::create_dir(top.join(&kept[1])).unwrap();
+        fs::write(top.join(&kept[2]), b"").unwrap();
+        fs::write(top.join(&kept[3]), b"kept").unwrap();
+        fs::create_dir(top.join(&kept[4])).unwrap();
+        fs::write(top.join(&kept[4]).join("inside"), b"").unwrap();
+        link_folder(&top.join(&kept[5]), target.path()).unwrap();
+        let file_link = probe_name("Qr78St90");
+        if gdl_fixtures::symlink_file_where_allowed(
+            &top.join(&file_link),
+            &target.path().join("target.txt"),
+        ) {
+            kept.push(file_link);
+        } else {
+            eprintln!("skipped the link to a file: this account may not make one");
+        }
+
+        let long_after = SystemTime::now() + 2 * LEFT_PROBE_AGE;
+        remove_left_probe_entries(top, long_after).unwrap();
+        kept.sort();
+        assert_eq!(folder_names(top).unwrap(), kept);
+        assert_eq!(fs::read(top.join(probe_name("Ef56Gh78"))).unwrap(), b"kept");
+        assert_eq!(
+            folder_names(&top.join(probe_name("Ij90Kl12"))).unwrap(),
+            ["inside"]
+        );
+        assert_eq!(folder_names(target.path()).unwrap(), ["target.txt"]);
+    }
+
+    /// Puts a folder's permissions back to the owner's whole access when dropped, so that a test
+    /// that took some away leaves a folder its temporary folder's cleanup can remove.
+    #[cfg(unix)]
+    struct OwnerAccess<'a>(&'a Path);
+
+    #[cfg(unix)]
+    impl Drop for OwnerAccess<'_> {
+        fn drop(&mut self) {
+            use std::os::unix::fs::PermissionsExt;
+
+            /// The owner's whole access to a folder.
+            const OWNER_ALL: u32 = 0o700;
+            let _ = fs::set_permissions(self.0, fs::Permissions::from_mode(OWNER_ALL));
+        }
+    }
+
+    /// A folder this process may make entries in but not list is probed all the same, and what an
+    /// earlier probe left there stays, unseen.
+    #[cfg(unix)]
+    #[test]
+    fn a_folder_that_may_not_be_listed_is_still_probed() {
+        use std::os::unix::fs::PermissionsExt;
+
+        /// Writing and looking up names for the owner, without listing.
+        const WRITE_AND_SEARCH: u32 = 0o300;
+
+        let dir = tempfile::tempdir().unwrap();
+        let folder = dir.path().join("unlisted");
+        fs::create_dir(&folder).unwrap();
+        let left = probe_name("Ab12Cd34");
+        fs::write(folder.join(&left), b"").unwrap();
+        backdate(&folder).unwrap();
+        fs::set_permissions(&folder, fs::Permissions::from_mode(WRITE_AND_SEARCH)).unwrap();
+        let access = OwnerAccess(&folder);
+        if fs::read_dir(&folder).is_ok() {
+            eprintln!("skipped: this user lists a folder denied listing, as root does");
+            return;
+        }
+
+        for probed in PROBED {
+            assert_eq!(
+                probe_folder(&folder, probed).unwrap(),
+                WRITABLE,
+                "{probed:?}"
+            );
+        }
+        drop(access);
+        assert_eq!(folder_names(&folder).unwrap(), [left]);
+    }
+
     #[test]
     fn a_folder_without_writes_is_not_writable() {
         let dir = tempfile::tempdir().unwrap();
@@ -532,7 +759,6 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn a_folder_past_max_path_is_measured_and_probed() {
-        use super::PROBE_PREFIX;
         use crate::STAGING_RANDOM_CHARS;
 
         /// MAX_PATH: the most UTF-16 units a plain Windows path may hold, its NUL included.

@@ -1,8 +1,9 @@
 //! Judging a folder chosen to install into, before anything is written there: what refuses an
 //! install there, what a player should be warned of, and what the judging found, for an install's
 //! plan and for a report of the folder. Nothing is written but the entries a folder probe makes
-//! and removes at once, and nothing at all in a folder the launcher must not write into: once such
-//! a folder is found, the judging ends.
+//! and removes at once, and the removal of those an earlier probe left in the folder it probes,
+//! and nothing at all in a folder the launcher must not write into: once such a folder is found,
+//! the judging ends.
 
 use std::ffi::OsStr;
 use std::fmt;

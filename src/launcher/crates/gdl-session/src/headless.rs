@@ -161,7 +161,8 @@ pub fn open_own_file() -> OwnFile {
 ///   ask: a `name: value` line each, a control character in a value written as its escape, or
 ///   with `--json` every field as JSON. It writes nothing but the entries the folder probe makes
 ///   and removes at once, a folder and a file in the folder when it is there, or else a folder in
-///   the nearest folder above it that is, and none in a folder the launcher must not write into.
+///   the nearest folder above it that is, and the removal of those an earlier probe left in the
+///   folder it probes; and none in a folder the launcher must not write into.
 ///   Whatever the folder holds, a judging exits [`EXIT_OK`]; one that fails is refused with the
 ///   line `error: <code> (<rule>): <detail>`, and [`EXIT_REFUSED`].
 /// - `--extract <n64|dreamcast> <dump> --output <dir>` extracts that expansion's tree from the

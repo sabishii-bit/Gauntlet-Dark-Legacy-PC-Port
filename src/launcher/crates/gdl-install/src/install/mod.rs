@@ -344,7 +344,8 @@ impl InstallFailure {
 /// needs. A runtime refused, an icon that cannot be made, an image that cannot be read or a folder
 /// that cannot be judged is an error; what the judging finds is listed in the plan.
 ///
-/// Nothing is written but the entries the folder's probe makes and removes at once.
+/// Nothing is written but the entries the folder's probe makes and removes at once, and the
+/// removal of those an earlier probe left in the folder it probes.
 pub fn plan_install<R: Read + Seek>(
     image: &mut GameCubeImage,
     launcher: &mut Sections<R>,
