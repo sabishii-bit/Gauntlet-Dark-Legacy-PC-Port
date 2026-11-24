@@ -263,4 +263,40 @@ TEST_CASE("visited chests refuse open pay gold blow up and keep their opened pos
     CHECK(host.chests.equalLocal(restored, before));
 }
 
+TEST_CASE("a character touches a chest from its whole width off, and no further",
+          "[game][level][chests][item-width]") {
+    // PlayerCollideEnemies touches every item it meets (pmotion.c 3989-3997), and it meets a
+    // chest's box within the character's whole width (items.c 1903-1913). A visitor is as
+    // wide as a character unless it says otherwise.
+    KeyedChests pool("chests-whole-width");
+    REQUIRE(pool.chests.chest(0).box.halfAcross == 1.0f);
+    REQUIRE(pool.chests.chest(1).box.halfAcross == 1.0f);
+    const auto keyed = [](f32 x) {
+        return std::array{ChestVisitor{.position = Vec3{x, 0, 0}, .keys = 1}};
+    };
+    // The chest at the origin, its side at x 1.
+    CHECK(pool.chests.update(0, keyed(2.6f)).empty());
+    CHECK(pool.chests.chest(0).state == Chests::kShut);
+    auto events = pool.chests.update(0, keyed(2.4f));
+    REQUIRE(events.size() == 1);
+    CHECK(events[0].kind == ChestEvent::Kind::Unlocked);
+    CHECK(events[0].chest == 0);
+    (void)pool.chests.update(1, keyed(2.4f));
+    REQUIRE(pool.chests.chest(0).state == Chests::kOpen);
+    pool.chests.hold(0, 7);
+    CHECK(pool.chests.holdingTouchedBy(keyed(2.4f)[0]) == 0);
+    CHECK(pool.chests.holdingTouchedBy(keyed(2.6f)[0]) == -1);
+    // The chest of gold at x 20, its side at x 21, pays from as far.
+    events = pool.chests.update(0, keyed(22.4f));
+    REQUIRE(events.size() == 1);
+    CHECK(events[0].kind == ChestEvent::Kind::Unlocked);
+    CHECK(events[0].chest == 1);
+    (void)pool.chests.update(1, keyed(22.4f));
+    REQUIRE(pool.chests.chest(1).state == Chests::kOpen);
+    CHECK(pool.chests.update(0, keyed(22.6f)).empty());
+    events = pool.chests.update(0, keyed(22.4f));
+    REQUIRE(events.size() == 1);
+    CHECK(events[0].kind == ChestEvent::Kind::Collected);
+}
+
 } // namespace

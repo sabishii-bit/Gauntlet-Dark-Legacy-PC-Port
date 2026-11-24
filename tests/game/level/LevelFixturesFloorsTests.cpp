@@ -836,8 +836,9 @@ TEST_CASE("a gate bars the way until a key is spent on it", "[game][world][fixtu
     REQUIRE(gates.size() == 1);
     gates.setPlayerCount(1);
     REQUIRE(gates.obstacles().size() == 1);
-    // Turned a quarter, it lies along z: someone beside it on x is against it.
-    std::array<ChestVisitor, 1> party{ChestVisitor{Vec3{81.8f, 0.0f, 2.0f}, 0.75f, 0}};
+    // Turned a quarter, it lies along z: a character beside it on x, within its whole width
+    // of the side at x 81, is against it.
+    std::array<ChestVisitor, 1> party{ChestVisitor{.position = Vec3{82.4f, 0.0f, 2.0f}}};
     std::vector<GateEvent> events = gates.update(2, 1.0f / 30.0f, party);
     REQUIRE(events.size() == 1);
     REQUIRE(events[0].kind == GateEvent::Kind::Refused);

@@ -140,9 +140,10 @@ TEST_CASE("a G1 scene's HUD overlay stays byte for byte what it was",
     const auto overlay = std::span{device.draws}.subspan(device.bloomDrawOffsets.front());
     REQUIRE_FALSE(overlay.empty());
     // SHA-256 of the overlay's draws, which the scene keeps byte for byte while the HUD's
-    // code moves: a literal moves only when what the HUD draws changes on purpose.
+    // code moves: a literal moves only when what the HUD draws changes on purpose. Seat 2
+    // stands a whole width off the chest beside the start, where its help is drawn over it.
     CHECK(test::hexBytes(test::drawStreamDigest(overlay)) ==
-          "e45f5b534e998846e3be4ea4f2615d2bf06deaab48603b9eae50a281d459a71d");
+          "444d05eaf54f1396e3223f051ea71e4ef22cd4f39dd42fedeba4c602a54f36d4");
     scene.close();
 }
 

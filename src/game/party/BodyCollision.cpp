@@ -164,7 +164,8 @@ Vec3 BodyCollision::resolveMovement(const PlayerActor& player, const Vec3& from,
     const f32 centreHeight = contactHeight(player);
     Vec3 resolved =
         resolve(from, to, player.radius(), player.height(), bodies, centreHeight, cylinders);
-    resolved = resolveItems(from, resolved, player.radius(), player.height(), generators);
+    // The generators hold the body its whole width off, as the level's other items do.
+    resolved = resolveItems(from, resolved, player.reach(), player.height(), generators);
     if (collision != nullptr) {
         // A body's push can leave the player in a wall: put PlayerWallCollide's sphere
         // back out of the still faces it is in front of. Animated contacts have already
@@ -178,7 +179,7 @@ Vec3 BodyCollision::resolveMovement(const PlayerActor& player, const Vec3& from,
             return {from.x, to.y, from.z};
         }
         const Vec3 itemChecked =
-            resolveItems(resolved, resolved, player.radius(), player.height(), generators);
+            resolveItems(resolved, resolved, player.reach(), player.height(), generators);
         if (glm::distance(itemChecked, resolved) > 1e-4f) {
             return {from.x, to.y, from.z};
         }

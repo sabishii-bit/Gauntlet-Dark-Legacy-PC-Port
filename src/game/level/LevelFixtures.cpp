@@ -8,6 +8,7 @@
 #include <limits>
 #include <optional>
 #include <ranges>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -591,9 +592,9 @@ void LevelFixtures::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> play
     boxes.insert(boxes.end(), cover.begin(), cover.end());
     const auto scenery = m_scenery.obstacles();
     boxes.insert(boxes.end(), scenery.begin(), scenery.end());
+    std::vector<Obstacle> native;
     if (const auto* imported = m_resources->world.imported()) {
-        const auto native = imported->obstacles();
-        boxes.insert(boxes.end(), native.begin(), native.end());
+        native = imported->obstacles();
     }
     std::vector<ChestVisitor> visitors;
     std::vector<TrapVictim> victims;
@@ -603,22 +604,29 @@ void LevelFixtures::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> play
         PlayerActor& actor = player.actor;
         if (player.life != PlayerLife::Standing || player.capture.held() || player.ghost) {
             player.fixtureSpot.reset();
-            visitors.push_back(ChestVisitor{kNowhere, actor.radius(), 0});
+            visitors.push_back(ChestVisitor{kNowhere, actor.reach(), 0});
             victims.push_back(TrapVictim{kNowhere, actor.radius()});
             continue;
         }
         Vec3 position = actor.position();
-        for (const Obstacle& box : boxes) {
-            const Vec3 resolved = box.pushOut(position, actor.radius());
-            actor.slide(resolved - position, &m_resources->world.collision());
-            position = actor.position();
-        }
+        const auto holdOff = [&](std::span<const Obstacle> items, f32 width) {
+            for (const Obstacle& box : items) {
+                const Vec3 resolved = box.pushOut(position, width);
+                actor.slide(resolved - position, &m_resources->world.collision());
+                position = actor.position();
+            }
+        };
+        // The level's items hold a body its whole width off, PlayerCollideEnemies' first pass
+        // at col_radius (pmotion.c 1124-1135), which is where they are touched. A Legends
+        // level's own fixtures keep the footprint, the width its gates and Deaths are touched by.
+        holdOff(boxes, actor.reach());
+        holdOff(native, actor.radius());
         // The rocks and leaves that give way to a body brushing them (fn_8005D730's case 10).
-        const auto falling = m_resources->world.fallingScenery().touch(position, actor.radius());
+        const auto falling = m_resources->world.fallingScenery().touch(position, actor.reach());
         playFallingCues(falling);
         const PowerupEffects worn = PowerupEffects::of(actor.save().progress().inventory);
         const Vec3 step = observePlayer(player, position);
-        visitors.push_back(ChestVisitor{position, actor.radius(),
+        visitors.push_back(ChestVisitor{position, actor.reach(),
                                         actor.save().progress().inventory.keys, worn.xray(), step,
                                         goldCapacity(actor.save())});
         // Traps pass under a levitating body (ItemTouch's trap case).

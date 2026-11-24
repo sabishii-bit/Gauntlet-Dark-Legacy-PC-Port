@@ -50,7 +50,8 @@ public:
     /** Native opponent/generator response, including static-world rechecks. The
      * ordered geometry is observational; this never changes any contacted body. The great
      * ones' solid parts and bodies, `critters`, meet the player's collision centre by its
-     * whole width; the other bodies meet its footprint. */
+     * whole width; the other bodies meet its footprint, and the `generators` hold it its
+     * whole width off their boxes. */
     static Vec3 resolveMovement(const PlayerActor& player, const Vec3& from, const Vec3& to,
                                 std::span<const MissileTarget> bodies,
                                 std::span<const Obstacle> generators,

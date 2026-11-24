@@ -89,4 +89,22 @@ TEST_CASE("gates refuse and open in visitor order and bar nobody while they swin
     CHECK(opened);
     CHECK(fixture.device.texturesCreated == uploads);
 }
+
+TEST_CASE("a key opens a gate from a character's whole width off, and no further",
+          "[game][level][locked-gates][item-width]") {
+    // PlayerCollideEnemies touches every item it meets (pmotion.c 3989-3997), a shut gate
+    // within the character's whole width of its box (items.c 1903-1913), where it rests.
+    Fixture fixture("gate-whole-width");
+    REQUIRE(fixture.gates.gate(0).box.halfAcross == 1.0f);
+    const auto keyed = [](f32 x) {
+        return std::array{ChestVisitor{.position = Vec3{x, 0, 0}, .keys = 1}};
+    };
+    // The gate at the origin, its side at x 1.
+    CHECK(fixture.gates.update(1, 1.0f / 60, keyed(2.6f)).empty());
+    CHECK(fixture.gates.gate(0).state == LockedGates::kShut);
+    const auto events = fixture.gates.update(1, 1.0f / 60, keyed(2.4f));
+    REQUIRE(events.size() == 1);
+    CHECK(events[0].kind == GateEvent::Kind::Unlocked);
+    CHECK(events[0].gate == 0);
+}
 } // namespace

@@ -112,9 +112,29 @@ constexpr std::string_view kKeyBarrel =
 constexpr std::string_view kGasBarrel =
     R"({"type":10,"subtype":45,"name":"BARREL","radius":1,"height":3,"hitPoints":1})";
 
-/** A level whose one barrel, of the record `barrel`, stands at `at`; its directory. */
-std::filesystem::path writeBarrelLevel(std::string_view name, const Vec3& at,
-                                       std::string_view barrel = kKeyBarrel) {
+/** A locked chest two across and two along, holding the level's key. */
+constexpr std::string_view kLockedChest =
+    R"({"type":2,"subtype":46,"name":"CHEST","radius":1,"height":2,"activeType":16})";
+/** The figures: a barrel resting, struck and breaking; a chest shut, opening and open. */
+constexpr std::string_view kBarrelTree = R"({"name":"BARREL","nodes":[
+      {"name":"ROOT","object":"TRI","parent":-1,"position":[0,0,0]}],
+      "sequences":[{"name":"REST","frames":4,"frameRate":30},
+        {"name":"HIT","frames":6,"frameRate":30},
+        {"name":"BREAK","frames":5,"frameRate":30}]})";
+constexpr std::string_view kChestTree = R"({"name":"CHEST","nodes":[
+      {"name":"ROOT","object":"TRI","parent":-1,"position":[0,0,0]}],
+      "sequences":[{"name":"OFF","frames":2,"frameRate":30},
+        {"name":"ACTIVE","frames":8,"frameRate":30},
+        {"name":"OPEN","frames":0}]})";
+/** A level's collision of flat ground a hundred units every way about the origin. */
+constexpr std::string_view kOpenGround = R"({"objects":[
+      {"object":0,"normals":[0,1,0,0,1,0],
+       "vertices":[-100,0,-100,100,0,100,100,0,-100,-100,0,-100,-100,0,100,100,0,100]}]})";
+
+/** A level whose one item, of the record `item` and the figure `tree`, stands at `at` holding
+ * the level's key, the second record; its directory. */
+std::filesystem::path writeItemLevel(std::string_view name, const Vec3& at, std::string_view item,
+                                     std::string_view tree) {
     const auto directory = test::scratchDirectory(name);
     writeTextFile(directory / "tri.obj", "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n");
     writeTextFile(directory / "objects.json", R"({"objects":[{"name":"TRI","file":"tri.obj"}]})");
@@ -128,14 +148,16 @@ std::filesystem::path writeBarrelLevel(std::string_view name, const Vec3& at,
         {{"type":1,"subtype":2,"name":"KEY","radius":1,"value":1}}],
       "itemInstances":[
         {{"info":0,"position":[{},{},{}],"params":[1,0,0,0,1,0,0,0,0,0,0,0]}}]}})",
-                                                        barrel, at.x, at.y, at.z));
-    writeTextFile(directory / "animations.json", R"({"trees":[{"name":"BARREL","nodes":[
-      {"name":"ROOT","object":"TRI","parent":-1,"position":[0,0,0]}],
-      "sequences":[{"name":"REST","frames":4,"frameRate":30},
-        {"name":"HIT","frames":6,"frameRate":30},
-        {"name":"BREAK","frames":5,"frameRate":30}]}]})");
+                                                        item, at.x, at.y, at.z));
+    writeTextFile(directory / "animations.json", std::format(R"({{"trees":[{}]}})", tree));
     test::convertModelFixture(directory);
     return directory;
+}
+
+/** A level whose one barrel, of the record `barrel`, stands at `at`; its directory. */
+std::filesystem::path writeBarrelLevel(std::string_view name, const Vec3& at,
+                                       std::string_view barrel = kKeyBarrel) {
+    return writeItemLevel(name, at, barrel, kBarrelTree);
 }
 
 TEST_CASE("a blast reaches players, then scenery, then opponents",
@@ -364,6 +386,58 @@ TEST_CASE("a poison cloud gasses a player by its whole width",
     }
     CHECK(std::ranges::count(gassed, usize{0}) > 1);
     CHECK(std::ranges::count(gassed, usize{1}) == 0);
+    f.fixtures.clear();
+}
+
+TEST_CASE("a character walking into a chest stops a whole width short of it, and a key opens it "
+          "from there",
+          "[game][screens][level-fixtures][item-width]") {
+    // PlayerCollideEnemies meets an item's box within col_radius, the class's whole width, puts
+    // the step out to it and touches what it meets there (items.c 1903-1913, 2036-2060;
+    // pmotion.c 1124-1135, 3989-3997).
+    const auto directory =
+        writeItemLevel("fixtures-chest-width", Vec3{0, 0, 10}, kLockedChest, kChestTree);
+    // Ground to stand on, which the walk and the push out of the chest take the body along.
+    writeTextFile(directory / "collision.json", kOpenGround);
+    Fixture f;
+    f.fixtures.clear();
+    REQUIRE(f.world.load(f.device, directory, LevelRef{"TEST", 0, "TEST", "", "", "", "", 0}));
+    f.fixtures.bind({f.device, f.world, f.weapons, f.effects, f.audio, 1});
+    f.fixtures.setPlayerCount(1);
+    REQUIRE(f.fixtures.chests().size() == 1);
+    const auto& chest = f.fixtures.chests().chest(0);
+    REQUIRE(chest.locked);
+    REQUIRE(chest.box.halfAlong == 1.0f);
+    const f32 side = chest.box.centre.z - chest.box.halfAlong;
+    std::vector<s32> lessons;
+    test::FixtureScript events = f.events;
+    test::ScriptedFixtures host{events};
+    events.help = [&](s32 id, usize) {
+        lessons.push_back(id);
+        return true;
+    };
+    auto& actor = f.players[0].actor;
+    REQUIRE(actor.reach() == 1.5f);
+    const auto party = std::span{f.players}.first(1);
+    // A quarter of a unit a step up z from four short of the chest's side, for longer than
+    // the way takes.
+    const auto walk = [&](s32 steps) {
+        constexpr f32 kStride = 0.25f;
+        for (s32 step = 0; step < steps; ++step) {
+            actor.slide(Vec3{0, 0, kStride}, &f.world.collision());
+            f.fixtures.update(2, 1.0f / 30, party, host);
+        }
+    };
+    actor.place(Vec3{0, 0, side - 4});
+    walk(24);
+    CHECK(actor.position().z == Catch::Approx(side - actor.reach()));
+    CHECK(actor.position().x == Catch::Approx(0.0f).margin(1e-5f));
+    CHECK(chest.state == Chests::kShut);
+    CHECK(lessons == std::vector<s32>{HelpMessages::kChestNeedsKey}); // against it, keyless
+    actor.save().progress().inventory.keys = 1;
+    walk(1);
+    CHECK(chest.state == Chests::kOpening);
+    CHECK(actor.save().progress().inventory.keys == 0);
     f.fixtures.clear();
 }
 

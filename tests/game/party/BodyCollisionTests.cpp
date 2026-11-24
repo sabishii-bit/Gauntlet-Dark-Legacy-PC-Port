@@ -5,8 +5,12 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/core/Types.h"
+#include "engine/math/Math.h"
+#include "engine/world/WorldCollision.h"
 
+#include "game/level/ItemFigure.h"
 #include "game/party/BodyCollision.h"
+#include "game/players/PlayerActor.h"
 
 namespace {
 using namespace gdl;
@@ -37,6 +41,40 @@ TEST_CASE("item movement keeps box corners and height instead of substituting a 
     CHECK(BodyCollision::resolveItems(stop, {0, 0, 0}, 1, 6, items) == Vec3{0, 0, 0});
     items[0].solid = false;
     CHECK(BodyCollision::resolveItems({0, 0, 0}, {0, 0, 20}, 1, 6, items) == Vec3{0, 0, 20});
+}
+
+TEST_CASE("a player's step is held a whole width off a generator's box",
+          "[game][collision][generator-collision][item-width]") {
+    // PlayerCollideEnemies meets an item's box within col_radius, the class's whole width, and
+    // puts the step out to it (items.c 1903-1913, 2036-2060; pmotion.c 1124-1135).
+    PlayerActor player;
+    player.spawn(0, {}, nullptr, Vec3{0}, 0);
+    REQUIRE(player.reach() == 1.5f);
+    const std::array generators{
+        Obstacle{.centre = {0, 0, 5}, .halfAcross = 2, .halfAlong = 1, .height = 6}};
+    // With a world under the step too, which runs the recheck of its walls and the boxes.
+    WorldCollision floor;
+    CollisionTriangle first;
+    first.vertices = {Vec3{-100, 0, -100}, Vec3{100, 0, -100}, Vec3{100, 0, 100}};
+    first.normal = {0, 1, 0};
+    CollisionTriangle second = first;
+    second.vertices = {Vec3{-100, 0, -100}, Vec3{100, 0, 100}, Vec3{-100, 0, 100}};
+    floor.build({first, second});
+    for (const WorldCollision* world : std::array<const WorldCollision*, 2>{nullptr, &floor}) {
+        CAPTURE(world != nullptr);
+        const Vec3 stop =
+            BodyCollision::resolveMovement(player, {0, 0, 0}, {0, 0, 4}, {}, generators, world);
+        CHECK(stop.x == 0);
+        CHECK(stop.z == Approx(4 - player.reach()));
+        // Held there, a step along the box goes on, and one back off it goes freely.
+        const Vec3 along = BodyCollision::resolveMovement(player, stop, stop + Vec3{0.5f, 0, 0}, {},
+                                                          generators, world);
+        CHECK(along.x == Approx(0.5f));
+        CHECK(along.z == Approx(stop.z));
+        const Vec3 back =
+            BodyCollision::resolveMovement(player, stop, Vec3{0, 0, 0}, {}, generators, world);
+        CHECK(glm::length(back) < 1e-5f);
+    }
 }
 
 TEST_CASE("body movement slides and lets an overlapping spawn escape", "[game][collision]") {

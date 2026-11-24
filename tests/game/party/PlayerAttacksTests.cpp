@@ -1620,6 +1620,87 @@ TEST_CASE("a charger and a pinball throw down the bodies they run into and pass 
     f.opponents.close();
 }
 
+TEST_CASE("a charge and a pinball still break what they are held off at a whole width",
+          "[game][player-attacks][charge][combo][item-width]") {
+    // The level's items hold a body its whole width off (PlayerCollideEnemies at col_radius,
+    // pmotion.c 1124-1135), so the charge's ram and the combo's flier reach what they break a
+    // margin past that width, not past the footprint.
+    Fixture f;
+    const auto root = turboAssets();
+    auto& actor = f.players[0].actor;
+    REQUIRE(actor.reach() == 1.5f);
+    SECTION("a charge at 60 Hz from rest breaks the barrel it runs into") {
+        writeTextFile(root / "PLAYERS/WAR/YEL/world.json", R"({"objects":[
+          {"name":"BODY","position":[-100,0,0],"flags":4100}],"itemInfos":[
+          {"type":10,"subtype":43,"name":"BARREL","radius":0.5,"height":3,
+           "hitPoints":1,"armor":0}],
+          "itemInstances":[{"info":0,"position":[0,0,4]}]})");
+        // Ground to stand on (a floor's flags), which the charge and the fixtures' push take
+        // the body along.
+        writeTextFile(root / "PLAYERS/WAR/YEL/collision.json", R"({"objects":[
+          {"object":0,"normals":[0,1,0,0,1,0],
+           "vertices":[-100,0,-100,100,0,100,100,0,-100,-100,0,-100,-100,0,100,100,0,100]}]})");
+        LevelRef level;
+        level.directory = "PLAYERS/WAR/YEL";
+        REQUIRE(f.world.load(f.device, root, level));
+        f.fixtures.bind({f.device, f.world, f.weapons, f.effects, f.audio});
+        REQUIRE(f.fixtures.barrels().size() == 1);
+        const Obstacle box = f.fixtures.barrels().barrel(0).box;
+        const f32 side = box.centre.z - box.halfAlong;
+        // A 60 Hz step of the charge falls short of the margin, so a ram measured from the
+        // footprint would never meet a barrel the body is held a whole width off.
+        constexpr f32 kStep = 1.0f / 60;
+        const f32 stride = actor.speed() * PlayerAnimator::kChargePace * kStep;
+        REQUIRE(stride < actor.reach() - actor.radius() - PlayerAttacks::kRamReach);
+        // Each step the charge goes on along its facing, rams, then the fixtures hold the body
+        // off, PartyMotion's order (the ram inside motion, LevelFixtures::update after it).
+        f32 nearest = side - actor.position().z;
+        for (s32 tick = 0; tick < 60 && f.fixtures.barrels().standing(0); ++tick) {
+            actor.update(MoveInput{{0, 1}, 1}, 0, kStep, &f.world.collision(),
+                         PlayerAnimator::kChargePace);
+            f.attacks.ramBarrels(0, f.players, f.targets);
+            f.fixtures.update(1, kStep, f.players, f.fixtureHost);
+            if (f.fixtures.barrels().standing(0)) {
+                nearest = std::min(nearest, side - actor.position().z);
+            }
+        }
+        CHECK_FALSE(f.fixtures.barrels().standing(0));
+        CHECK(nearest >= actor.reach() - 1e-4f);
+        f.fixtures.clear();
+    }
+    SECTION("a pinball strikes a generator a whole width and the margin off") {
+        f.opponents.open({f.device, f.world, f.weapons, f.effects, f.audio, root, 1}, f.players);
+        auto& enemies = f.opponents.enemies();
+        enemies.open(f.device, root, nullptr, 8, EnemyScales{.health = 100}, 1);
+        REQUIRE(enemies.loadKind(kGruntKind));
+        ItemInfo info;
+        info.type = ItemInfo::kGenerator;
+        info.name = "BOSSGEN";
+        info.hitPoints = 500;
+        info.height = 6;
+        info.xSize = 2;
+        info.zSize = 2;
+        Mat4 placement{1};
+        placement[3] = Vec4{0, 0, 10, 1};
+        auto& generators = f.opponents.generators();
+        REQUIRE(generators.placeBoss(f.device, info, f.weapons, enemies, kGruntKind, placement,
+                                     nullptr));
+        const f32 side = generators.positionOf(0).z - generators.boxOf(0).halfAlong;
+        ComboState& combo = f.players[0].combo;
+        combo.role = ComboRole::Thrown;
+        combo.partner = 1;
+        combo.grabberClass = ComboMove::kWarrior;
+        const f32 whole = generators.healthOf(0);
+        actor.place(Vec3{0, 0, side - 1.9f});
+        CHECK_FALSE(f.attacks.comboImpact(0, 1, ComboMove::kWarriorBlow, f.players, f.targets));
+        CHECK(generators.healthOf(0) == whole);
+        actor.place(Vec3{0, 0, side - 1.7f});
+        CHECK(f.attacks.comboImpact(0, 1, ComboMove::kWarriorBlow, f.players, f.targets));
+        CHECK(generators.healthOf(0) < whole);
+        f.opponents.close();
+    }
+}
+
 TEST_CASE("flying turbo strikes reach short enemies without dealing damage every frame",
           "[game][screens][player-attacks][turbo-contacts][alpha-area-height]") {
     const auto root = turboAssets();

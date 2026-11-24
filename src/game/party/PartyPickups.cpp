@@ -135,7 +135,7 @@ std::vector<Collector> PartyPickups::collectors(std::span<const PlayerRuntime> p
         const bool canCollect = runtime.life == PlayerLife::Standing && !runtime.departed &&
                                 !runtime.ghost && !runtime.combo.riding;
         const Vec3 here = canCollect ? actor.position() : kNowhere;
-        const s32 chest = chests.holdingTouchedBy(ChestVisitor{here, actor.radius()});
+        const s32 chest = chests.holdingTouchedBy(ChestVisitor{here, actor.reach()});
         // PlayerMotion's first sItems sweep (8008760C) uses effectpos + dpos
         // before walls clip the step. effectpos is feet + PDAT coly, not the
         // floor position. Both offsets matter for crystals along a wall/ledge.

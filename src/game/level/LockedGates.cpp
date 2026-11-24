@@ -138,7 +138,8 @@ std::vector<GateEvent> LockedGates::update(s32 ticks, f32 seconds,
         gate.refusalLeft = std::max(gate.refusalLeft - seconds, 0.0f);
         if (gate.state == kShut) {
             for (usize v = 0; v < party.size(); ++v) {
-                if (!gate.box.touchedBy(party[v].position, party[v].radius)) {
+                if (!gate.box.touchedBy(party[v].position, party[v].radius,
+                                        ChestVisitor::kContactSlack)) {
                     continue;
                 }
                 // Backing away from it neither spends a key nor is refused (ItemTouch).

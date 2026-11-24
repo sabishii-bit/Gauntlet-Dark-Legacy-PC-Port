@@ -10,6 +10,9 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "game/combat/MissileTarget.h"
+#include "game/enemies/Enemies.h"
+#include "game/enemies/Generators.h"
 #include "game/rollback/SessionInputs.h"
 #include "game/scenes/NativeDigestProfileSupport.h"
 #include "game/scenes/PlayScene.h"
@@ -226,8 +229,9 @@ TEST_CASE("the shared view holds every seat of a party inside it, except under n
     const bool solo = GENERATE(false, true);
     CAPTURE(solo);
     constexpr usize kSeats = 3;
-    // G1's start is walled in close on every side but its way out, ahead and to the right.
-    const Vec2 wayOut = glm::normalize(Vec2{1, 1});
+    // G1's start is walled in close on every side but its way out, ahead and to the right; the
+    // run keeps a little more ahead than across, clear of the box that stands by the way.
+    const Vec2 wayOut = glm::normalize(Vec2{1, 0.8f});
     constexpr u32 kRunTicks = 300;
     auto fixture = std::make_unique<CameraFixture>(false, kSeats);
     PlayScene& scene = fixture->scene;
@@ -236,6 +240,20 @@ TEST_CASE("the shared view holds every seat of a party inside it, except under n
         REQUIRE(scene.update(1.0 / 60, {}) == PlayOutcome::Running);
     }
     REQUIRE_FALSE(scene.spawning());
+    // The swarm and its generators go first, so that the run meets only the level itself: a
+    // grunt of the generator by the way out would otherwise stop it short.
+    constexpr f32 kFatal = 1000000;
+    for (const MissileTarget& enemy : scene.enemies().targets()) {
+        EnemyHit fatal{};
+        fatal.damage = kFatal;
+        scene.enemies().hurt(enemy.id, fatal);
+    }
+    for (usize generator = 0; generator < scene.generators().count(); ++generator) {
+        (void)scene.generators().strike(static_cast<s32>(generator), kFatal, -1);
+    }
+    for (u32 tick = 0; tick < 120; ++tick) {
+        REQUIRE(scene.update(1.0 / 60, {}) == PlayOutcome::Running);
+    }
     // One seat runs off along the way out for five seconds while the others stand.
     const Vec3 start = scene.actor(0)->position();
     // The furthest any seat got outside the view the party is held in, and outside the shared

@@ -217,7 +217,8 @@ std::vector<ChestEvent> Chests::update(f32 seconds, std::span<const ChestVisitor
         }
         if (chest.state == kShut) {
             for (usize v = 0; v < party.size(); ++v) {
-                if (!chest.box.touchedBy(party[v].position, party[v].radius)) {
+                if (!chest.box.touchedBy(party[v].position, party[v].radius,
+                                         ChestVisitor::kContactSlack)) {
                     continue;
                 }
                 ChestEvent event;
@@ -266,7 +267,8 @@ std::vector<ChestEvent> Chests::update(f32 seconds, std::span<const ChestVisitor
             // the opener, then retires the container eight ticks later.
             for (usize visitor = 0; visitor < party.size(); ++visitor) {
                 if (goldCapacity[visitor] > 0 &&
-                    chest.box.touchedBy(party[visitor].position, party[visitor].radius)) {
+                    chest.box.touchedBy(party[visitor].position, party[visitor].radius,
+                                        ChestVisitor::kContactSlack)) {
                     ChestEvent event;
                     event.kind = ChestEvent::Kind::Collected;
                     event.chest = index;
@@ -424,7 +426,7 @@ s32 Chests::holdingTouchedBy(const ChestVisitor& visitor) const {
     for (usize index = 0; index < m_sim.chests.size(); ++index) {
         const Chest& chest = m_sim.chests[index];
         if (chest.shown && !chest.gone && chest.state == kOpen && chest.held >= 0 &&
-            chest.box.touchedBy(visitor.position, visitor.radius)) {
+            chest.box.touchedBy(visitor.position, visitor.radius, ChestVisitor::kContactSlack)) {
             return static_cast<s32>(index);
         }
     }

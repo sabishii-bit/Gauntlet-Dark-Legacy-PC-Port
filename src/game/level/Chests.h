@@ -19,14 +19,20 @@
 #include "engine/world/WorldLighting.h"
 
 #include "game/level/ItemFigure.h"
+#include "game/players/PlayerActor.h"
 
 namespace gdl::game {
 
-/** Someone who can open a chest: where they stand, how wide they are, and the keys they have
- * to spend. */
+/** Someone who can open a chest: where they stand, how wide they are (a character's whole
+ * width, by which the items block and are touched), and the keys they have to spend. */
 struct ChestVisitor {
+    /** How far past its width a visitor still touches a chest or a gate. The original touches
+     * one at the step's intended end by the width that blocks it (PlayerCollideEnemies,
+     * pmotion.c 3989-3997); the fixtures rest a body at exactly that width, which leaves only
+     * rounding to allow for. */
+    static constexpr f32 kContactSlack = 0.001f;
     Vec3 position{0.0f, 0.0f, 0.0f};
-    f32 radius = 0.75f;
+    f32 radius = PlayerActor::kDefaultWidth;
     s32 keys = 0;
     bool xray = false;
     Vec3 step{0.0f, 0.0f, 0.0f};                        ///< how far it moved since the last update

@@ -288,7 +288,7 @@ void PlayerAttacks::ramBarrels(usize index, std::span<PlayerRuntime> players,
         if (!targets.fixtures.barrels().standing(barrel) ||
             std::ranges::find(rammed, key) != rammed.end() ||
             !targets.fixtures.barrels().barrel(barrel).box.touchedBy(actor.position(),
-                                                                     actor.radius(), kRamReach)) {
+                                                                     actor.reach(), kRamReach)) {
             continue;
         }
         rammed.push_back(key);
@@ -316,7 +316,7 @@ void PlayerAttacks::ramBarrels(usize index, std::span<PlayerRuntime> players,
         if (targets.fixtures.safeRocks().standing(rock) &&
             std::ranges::find(rammed, key) == rammed.end() &&
             targets.fixtures.safeRocks().rock(rock).obstacle.touchedBy(actor.position(),
-                                                                       actor.radius(), kRamReach)) {
+                                                                       actor.reach(), kRamReach)) {
             rammed.push_back(key);
             targets.fixtures.strikeSafeRock(rock, kRamDamage);
         }
@@ -420,8 +420,8 @@ bool PlayerAttacks::comboImpact(usize flier, usize thrower, f32 blow,
     }
     for (usize barrel = 0; barrel < targets.fixtures.barrels().size(); ++barrel) {
         if (targets.fixtures.barrels().standing(barrel) &&
-            targets.fixtures.barrels().barrel(barrel).box.touchedBy(actor.position(),
-                                                                    actor.radius(), kRamReach)) {
+            targets.fixtures.barrels().barrel(barrel).box.touchedBy(actor.position(), actor.reach(),
+                                                                    kRamReach)) {
             once(AttackTargetId::of(TargetFamily::Barrel, static_cast<s32>(barrel)).key(), true,
                  [&] {
                      targets.fixtures.strikeBarrel(barrel, blow, actor.player(), players,
@@ -447,7 +447,7 @@ bool PlayerAttacks::comboImpact(usize flier, usize thrower, f32 blow,
     for (usize rock = 0; rock < targets.fixtures.safeRocks().size(); ++rock) {
         if (targets.fixtures.safeRocks().standing(rock) &&
             targets.fixtures.safeRocks().rock(rock).obstacle.touchedBy(actor.position(),
-                                                                       actor.radius(), kRamReach)) {
+                                                                       actor.reach(), kRamReach)) {
             once(AttackTargetId::of(TargetFamily::SafeRock, static_cast<s32>(rock)).key(), true,
                  [&] { targets.fixtures.strikeSafeRock(rock, blow); });
         }
@@ -456,7 +456,7 @@ bool PlayerAttacks::comboImpact(usize flier, usize thrower, f32 blow,
     for (usize g = 0; g < generators.count(); ++g) {
         const auto id = static_cast<s32>(g);
         if (generators.standing(id) &&
-            generators.boxOf(id).touchedBy(actor.position(), actor.radius(), kRamReach)) {
+            generators.boxOf(id).touchedBy(actor.position(), actor.reach(), kRamReach)) {
             once(AttackTargetId::of(TargetFamily::Generator, id).key(), true, [&] {
                 if (blowRulesOf(targets).generatorTakes(BlowSource::Charge)) {
                     targets.opponents.strikeGenerator(id, blow, actor.player(), players);

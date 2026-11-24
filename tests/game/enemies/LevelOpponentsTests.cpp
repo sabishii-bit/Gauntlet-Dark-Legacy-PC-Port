@@ -1364,15 +1364,16 @@ TEST_CASE("standing generators block player movement and release it when destroy
     const Vec3 from{0, 0, -12};
     const Vec3 to{0, 0, 12};
     player.spawn(0, {}, nullptr, from, 0);
+    // The box holds the body its whole width off, as the level's other items do.
     Vec3 stopped = from;
     for (s32 step = 0; step < 40; ++step) {
         stopped = opponents.resolveMovement(player, stopped, stopped + Vec3{0, 0, 0.25f});
-        CHECK(glm::distance(box.pushOut(stopped, player.radius()), stopped) < 1e-4f);
+        CHECK(glm::distance(box.pushOut(stopped, player.reach()), stopped) < 1e-4f);
     }
-    CHECK(box.touchedBy(stopped, player.radius()));
+    CHECK(box.touchedBy(stopped, player.reach(), 1e-3f));
     const Vec3 swept = opponents.resolveMovement(player, from, to);
     CHECK(glm::distance(swept, to) > player.radius()); // The rotated box deflects the step.
-    CHECK(glm::distance(box.pushOut(swept, player.radius()), swept) < 1e-4f);
+    CHECK(glm::distance(box.pushOut(swept, player.reach()), swept) < 1e-4f);
     const Vec3 above{0, box.height + 1, -12};
     CHECK(opponents.resolveMovement(player, above, above + Vec3{0, 0, 24}) ==
           above + Vec3{0, 0, 24});
