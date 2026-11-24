@@ -401,6 +401,24 @@ fn report_lines(report: &str) -> Vec<(String, String)> {
         .collect()
 }
 
+/// The codes of the warnings that a folder of the test's own may call for on Windows, where the
+/// machine's temporary folder may lie in a known folder or a cloud provider's, or have a name that
+/// is not ASCII. Elsewhere no folder is warned of.
+const WARNING_CODES: [&str; 3] = [
+    "folder.cloudSynced",
+    "folder.protected",
+    "folder.nonAsciiOldWindows",
+];
+
+/// Whether `value`, a text report's line, is a warning that a folder of the test's own may call
+/// for, as [`WARNING_CODES`] lists them.
+fn is_the_machines_warning(value: &str) -> bool {
+    cfg!(windows)
+        && value
+            .split_once(' ')
+            .is_some_and(|(code, _)| WARNING_CODES.contains(&code))
+}
+
 /// The value of the field `name` of a text report, which must give it once.
 #[track_caller]
 fn field<'a>(lines: &'a [(String, String)], name: &str) -> &'a str {
@@ -435,8 +453,12 @@ fn check_folder_reports_a_fresh_folder() {
     let ignores_case = if cfg!(windows) { "yes" } else { "no" };
     assert_eq!(field(&lines, "ignoresCase"), ignores_case);
     assert_eq!(field(&lines, "noexec"), "no");
-    for (name, _) in &lines {
-        assert!(name != "blocker" && name != "warning", "{report}");
+    for (name, value) in &lines {
+        assert!(name != "blocker", "{report}");
+        assert!(
+            name != "warning" || is_the_machines_warning(value),
+            "{report}"
+        );
     }
 
     let parsed: Value = serde_json::from_str(&check_folder(&fresh, true)).unwrap();
@@ -450,7 +472,15 @@ fn check_folder_reports_a_fresh_folder() {
     assert_eq!(parsed["ignoresCase"], cfg!(windows));
     assert_eq!(parsed["noexec"], false);
     assert_eq!(parsed["blockers"], json!([]));
-    assert_eq!(parsed["warnings"], json!([]));
+    let warnings = parsed["warnings"].as_array().unwrap();
+    if cfg!(windows) {
+        for warning in warnings {
+            let code = warning["code"].as_str().unwrap_or_default();
+            assert!(WARNING_CODES.contains(&code), "{warning}");
+        }
+    } else {
+        assert!(warnings.is_empty(), "{parsed}");
+    }
     // What Windows shows of each entry on the path that is there, the nearest first.
     let shown: Vec<Value> = parsed["components"]
         .as_array()

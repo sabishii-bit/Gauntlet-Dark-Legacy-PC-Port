@@ -2168,6 +2168,39 @@ mod tests {
     /// case, and the Linux tests' do not.
     const IGNORES_CASE: &str = if cfg!(windows) { "yes" } else { "no" };
 
+    /// The codes of the warnings that a folder of the tests' own may call for on Windows, where
+    /// the machine's temporary folder may lie in a known folder or a cloud provider's, or have a
+    /// name that is not ASCII. Elsewhere no folder is warned of.
+    const WARNING_CODES: [&str; 3] = [
+        "folder.cloudSynced",
+        "folder.protected",
+        "folder.nonAsciiOldWindows",
+    ];
+
+    /// Whether `line`, a text report's value, is a warning that a folder of the tests' own may
+    /// call for, as [`WARNING_CODES`] lists them.
+    fn is_the_machines_warning(line: &str) -> bool {
+        cfg!(windows)
+            && line
+                .split_once(' ')
+                .is_some_and(|(code, _)| WARNING_CODES.contains(&code))
+    }
+
+    /// Checks that `warnings`, a JSON report's, holds no warning but those a folder of the tests'
+    /// own may call for: on Windows only those [`WARNING_CODES`] lists, and elsewhere none.
+    #[track_caller]
+    fn assert_only_the_machines_warnings(warnings: &Value) {
+        let warnings = warnings.as_array().expect("a list of warnings");
+        if cfg!(windows) {
+            for warning in warnings {
+                let code = warning["code"].as_str().unwrap_or_default();
+                assert!(WARNING_CODES.contains(&code), "{warning}");
+            }
+        } else {
+            assert!(warnings.is_empty(), "{warnings:?}");
+        }
+    }
+
     /// Checks the folder at `folder` as the release build, as JSON when `json` says so, and gives
     /// back the report, which a judging writes whatever the folder holds.
     #[track_caller]
@@ -2194,8 +2227,9 @@ mod tests {
     }
 
     /// Checks that `text`, a real folder's text report, opens with exactly `head`, the fields
-    /// every judging writes, then gives the blockers `blockers` and no warning, and after them
-    /// only the lines that tell what Windows shows, and those only on Windows.
+    /// every judging writes, then gives the blockers `blockers`, and after them only the
+    /// warnings a folder of the tests' own may call for and the lines that tell what Windows
+    /// shows, and those only on Windows.
     #[track_caller]
     fn assert_folder_text(text: &str, head: &[(&str, String)], blockers: &[String]) {
         let lines = lines_of(text);
@@ -2212,8 +2246,10 @@ mod tests {
             .collect();
         assert!(found.len() >= expected.len(), "{text}");
         assert_eq!(found[..expected.len()], expected, "{text}");
-        for (name, _) in &found[expected.len()..] {
-            assert!(cfg!(windows) && WINDOWS_FIELDS.contains(name), "{text}");
+        for (name, value) in &found[expected.len()..] {
+            let shown = cfg!(windows) && WINDOWS_FIELDS.contains(name);
+            let warned = *name == "warning" && is_the_machines_warning(value);
+            assert!(shown || warned, "{text}");
         }
     }
 
@@ -2574,7 +2610,7 @@ mod tests {
         assert_eq!(parsed["ignoresCase"], cfg!(windows));
         assert_eq!(parsed["noexec"], false);
         assert_eq!(parsed["blockers"], json!([]));
-        assert_eq!(parsed["warnings"], json!([]));
+        assert_only_the_machines_warnings(&parsed["warnings"]);
         // What Windows shows of each entry on the path that is there, the nearest first.
         let components: Vec<Value> = if cfg!(windows) {
             top.ancestors()
@@ -2698,6 +2734,28 @@ mod tests {
             } else {
                 eprintln!("skipped the verbatim path: the test's folder is on no drive");
             }
+        }
+    }
+
+    #[test]
+    fn check_folder_names_the_folder_as_the_system_makes_it() {
+        // A last name that ends in a dot or a space: Windows drops them from a name it makes, and
+        // the judging, which makes the path absolute as Windows does, judges and names the folder
+        // without them; elsewhere the name is the folder's own.
+        let dir = tempfile::tempdir().unwrap();
+        let top = dir.path();
+        for name in ["game.", "game ", "game. "] {
+            let typed = top.join(name);
+            let judged = if cfg!(windows) {
+                top.join("game")
+            } else {
+                typed.clone()
+            };
+            let parsed: Value = serde_json::from_str(&checked(&typed, true)).unwrap();
+            assert_eq!(parsed["path"], judged.display().to_string(), "{name:?}");
+            assert_eq!(parsed["exists"], false, "{name:?}");
+            assert_eq!(parsed["blockers"], json!([]), "{name:?}");
+            assert_eq!(fs::read_dir(top).unwrap().count(), 0, "{name:?}");
         }
     }
 
