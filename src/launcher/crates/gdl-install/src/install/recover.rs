@@ -34,6 +34,8 @@ use crate::folder::{
     FolderError, InstallFolder, InstallLock, JOURNAL_DIR, LockError, RECEIPT_FILE, STATE_DIR,
     names_in,
 };
+#[cfg(windows)]
+use crate::platform;
 use crate::receipt::{MAX_RECEIPT_LEN, RECEIPT_SCHEMA, Receipt};
 
 /// The phase in which the launcher recovers a fresh install that was stopped before it finished.
@@ -138,7 +140,10 @@ impl RecoveryError {
 /// Recovers the fresh install that was stopped in the folder at `root`, for the launcher of
 /// version `running`, telling `record` of the folder as [`install_game`](super::install_game)
 /// tells it, in the phase [`RECOVER_INSTALL`], which `job`'s progress is told. The recovery is
-/// never cancelled, and the system is kept out of idle sleep while it runs.
+/// never cancelled, and the system is kept out of idle sleep while it runs. Before anything on the
+/// path is looked at, the system is set to fail a call that meets a critical error, as on a drive
+/// that holds no medium, rather than show a dialog: a recorded folder may lie on a card or a disk
+/// taken out since.
 ///
 /// Nothing is done, and the lock is not taken, when the folder holds no state folder, or holds
 /// nothing of a fresh install's to finish or remove. A link on the folder's path, at its state
@@ -180,6 +185,8 @@ pub(crate) fn recover_install_with(
     job: &Job<'_>,
     settings: &InstallSettings<'_>,
 ) -> Result<RecoveryOutcome, RecoveryError> {
+    #[cfg(windows)]
+    platform::fail_critical_errors();
     let _awake = keep_awake();
     job.progress.phase(RECOVER_INSTALL);
     let folder = match InstallFolder::at(root) {
@@ -1422,6 +1429,109 @@ mod tests {
             Some(ES_CONTINUOUS | ES_SYSTEM_REQUIRED)
         );
         assert_eq!(platform::execution_state(), before);
+    }
+
+    /// The variable that makes a run of this test program recover a folder from the system's
+    /// default error mode, in `a_recovery_fails_critical_errors_rather_than_showing_them`. Unset,
+    /// as in a run of the tests, that part does nothing.
+    #[cfg(windows)]
+    const ERROR_MODE_CHILD: &str = "GDL_RECOVERY_ERROR_MODE_CHILD";
+
+    /// The test that a child run of this program, started in the default error mode, runs alone.
+    #[cfg(windows)]
+    const RECOVERING_TEST: &str = "install::recover::tests::recovering_from_the_default_error_mode";
+
+    /// The exit code of a child run whose every check of the error mode held.
+    #[cfg(windows)]
+    const ERROR_MODE_CHECKED: i32 = 75;
+
+    #[cfg(windows)]
+    #[test]
+    fn a_recovery_fails_critical_errors_rather_than_showing_them() {
+        use std::os::windows::process::CommandExt;
+        use std::process::{Command, Stdio};
+        use windows_sys::Win32::System::Threading::{CREATE_DEFAULT_ERROR_MODE, CREATE_NO_WINDOW};
+
+        // A program inherits its error mode from what starts it, and the shells and runners the
+        // tests run under fail critical errors already, so the recovery is made in a child of this
+        // program started in the system's default mode, which shows them, as a launcher started
+        // from Explorer is.
+        let output = Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", RECOVERING_TEST, "--test-threads", "1"])
+            .env(ERROR_MODE_CHILD, "1")
+            .creation_flags(CREATE_DEFAULT_ERROR_MODE | CREATE_NO_WINDOW)
+            .stdin(Stdio::null())
+            .output()
+            .unwrap();
+        assert_eq!(
+            output.status.code(),
+            Some(ERROR_MODE_CHECKED),
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    /// The child's part of `a_recovery_fails_critical_errors_rather_than_showing_them`.
+    #[cfg(windows)]
+    #[test]
+    fn recovering_from_the_default_error_mode() {
+        use std::sync::Mutex;
+
+        use gdl_files::{PhaseId, Progress, RelPath};
+        use windows_sys::Win32::System::Diagnostics::Debug::SEM_FAILCRITICALERRORS;
+
+        use super::RECOVER_INSTALL;
+        use crate::platform::{error_mode, refuse_fault_dialogs};
+
+        /// A progress that reads the process's error mode as the recovery's phase begins, before
+        /// the recovery looks at the folder.
+        #[derive(Default)]
+        struct Mode {
+            at_phase: Mutex<Option<u32>>,
+        }
+
+        impl Progress for Mode {
+            fn phase(&self, phase: PhaseId) {
+                if phase == RECOVER_INSTALL {
+                    *self.at_phase.lock().unwrap() = Some(error_mode());
+                }
+            }
+
+            fn advance(&self, _: u64, _: u64, _: Option<&RelPath>) {}
+        }
+
+        if std::env::var_os(ERROR_MODE_CHILD).is_none() {
+            return;
+        }
+        refuse_fault_dialogs();
+        let started = error_mode();
+        assert_eq!(started & SEM_FAILCRITICALERRORS, 0, "{started:#x}");
+        let left = Left::in_phase("staging", false);
+        let mode = Mode::default();
+        let cancel = Cancel::default();
+        let job = Job {
+            cancel: &cancel,
+            progress: &mode,
+        };
+        let running = Version::parse(VERSION).unwrap();
+        let outcome = recover_install_with(
+            &left.root,
+            &running,
+            &mut Heard::default(),
+            &job,
+            &standing_in(&NoFaults, &answering),
+        )
+        .unwrap();
+        assert_eq!(outcome, rolled_back(&[]));
+        // Critical errors fail calls from before the recovery's first look on, and the rest of the
+        // mode is as it was.
+        let failing = started | SEM_FAILCRITICALERRORS;
+        assert_eq!(*mode.at_phase.lock().unwrap(), Some(failing));
+        assert_eq!(error_mode(), failing);
+        // Removed before the exit, which runs no destructor.
+        left.top.close().unwrap();
+        std::process::exit(ERROR_MODE_CHECKED);
     }
 
     #[test]

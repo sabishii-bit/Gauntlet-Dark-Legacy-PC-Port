@@ -24,6 +24,8 @@ use crate::compat::{
 use crate::folder::{
     FolderError, InstallFolder, JOURNAL_DIR, RECEIPT_FILE, markers_among, names_in,
 };
+#[cfg(windows)]
+use crate::platform;
 use crate::receipt::{InstalledGame, ReceiptError};
 
 /// The schema of the report an inspection gives the programs that read it.
@@ -165,8 +167,12 @@ impl InstallFolder {
     ///
     /// Nothing is made or changed, the installation's lock is not taken, so the inspection runs
     /// beside a job, and no entry the alpha installer named is opened. A failure is the folder's
-    /// state, never an error.
+    /// state, never an error. Before anything on the path is looked at, the system is set to fail
+    /// a call that meets a critical error, as on a drive that holds no medium, rather than show a
+    /// dialog: a recorded folder may lie on a card or a disk taken out since.
     pub fn inspect(root: &Path, running: &Version) -> Inspection {
+        #[cfg(windows)]
+        platform::fail_critical_errors();
         let root = match absolute_lexical(root) {
             Ok(absolute) => absolute,
             Err(error) => return Inspection::decided(root, Verdict::refused(root, error)),
@@ -1666,5 +1672,70 @@ mod tests {
             }
             inspector.join().unwrap();
         }
+    }
+
+    /// The variable that makes a run of this test program inspect a folder from the system's
+    /// default error mode, in `an_inspection_fails_critical_errors_rather_than_showing_them`.
+    /// Unset, as in a run of the tests, that part does nothing.
+    #[cfg(windows)]
+    const ERROR_MODE_CHILD: &str = "GDL_INSPECTION_ERROR_MODE_CHILD";
+
+    /// The test that a child run of this program, started in the default error mode, runs alone.
+    #[cfg(windows)]
+    const INSPECTING_TEST: &str = "inspect::tests::inspecting_from_the_default_error_mode";
+
+    /// The exit code of a child run whose every check of the error mode held.
+    #[cfg(windows)]
+    const ERROR_MODE_CHECKED: i32 = 75;
+
+    #[cfg(windows)]
+    #[test]
+    fn an_inspection_fails_critical_errors_rather_than_showing_them() {
+        use std::os::windows::process::CommandExt;
+        use std::process::{Command, Stdio};
+        use windows_sys::Win32::System::Threading::{CREATE_DEFAULT_ERROR_MODE, CREATE_NO_WINDOW};
+
+        // A program inherits its error mode from what starts it, and the shells and runners the
+        // tests run under fail critical errors already, so the inspection is made in a child of
+        // this program started in the system's default mode, which shows them, as a launcher
+        // started from Explorer is.
+        let output = Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", INSPECTING_TEST, "--test-threads", "1"])
+            .env(ERROR_MODE_CHILD, "1")
+            .creation_flags(CREATE_DEFAULT_ERROR_MODE | CREATE_NO_WINDOW)
+            .stdin(Stdio::null())
+            .output()
+            .unwrap();
+        assert_eq!(
+            output.status.code(),
+            Some(ERROR_MODE_CHECKED),
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    /// The child's part of `an_inspection_fails_critical_errors_rather_than_showing_them`.
+    #[cfg(windows)]
+    #[test]
+    fn inspecting_from_the_default_error_mode() {
+        use crate::platform::{error_mode, refuse_fault_dialogs};
+        use windows_sys::Win32::System::Diagnostics::Debug::SEM_FAILCRITICALERRORS;
+
+        if std::env::var_os(ERROR_MODE_CHILD).is_none() {
+            return;
+        }
+        refuse_fault_dialogs();
+        let started = error_mode();
+        assert_eq!(started & SEM_FAILCRITICALERRORS, 0, "{started:#x}");
+        let (dir, fixture) = installation();
+        let inspection = inspect(&fixture.root);
+        assert_state(&inspection, FolderState::Installed, "an installation");
+        // Critical errors fail calls from the inspection on, and the rest of the mode is as it
+        // was.
+        assert_eq!(error_mode(), started | SEM_FAILCRITICALERRORS);
+        // Removed before the exit, which runs no destructor.
+        dir.close().unwrap();
+        std::process::exit(ERROR_MODE_CHECKED);
     }
 }
