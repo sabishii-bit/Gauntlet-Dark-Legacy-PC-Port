@@ -4,6 +4,7 @@
 #include <cmath>
 #include <numbers>
 
+#include "engine/math/ApproximateLength.h"
 #include "engine/math/PortableMath.h"
 
 namespace gdl::game {
@@ -71,14 +72,18 @@ Vec3 Knockback::step(f32 seconds, f32 pace) {
         return Vec3{0.0f};
     }
     Vec3 travel{0};
+    // The shove is measured by the fast length, as do_players' NormalVector2D measures the
+    // push velocity (player.c 2309-2323): held to half the pace for the carry, and what
+    // decays is the held push.
+    const f32 most = kShoveLimit * pace;
     // Velocity is held for each native frame, then damped once. Interpolating
     // the damping per call shortens travel when one frame is split into two.
     while (seconds > 0) {
         const f32 frameLeft = 1.0f / kFrameRate - m_frameSeconds;
         const f32 dt = std::min({seconds, frameLeft, m_fastSeconds > 0 ? m_fastSeconds : seconds});
         travel += m_velocity * dt;
-        if (const f32 shove = glm::length(m_shove); shove > 0) {
-            travel += m_shove / shove * std::min(shove, kShoveLimit * pace) * dt;
+        if (const f32 shove = approximateFlatLength(m_shove); shove > 0) {
+            travel += m_shove * (std::min(shove, most) / shove) * dt;
         }
         seconds -= dt;
         m_fastSeconds = std::max(0.0f, m_fastSeconds - dt);
@@ -86,11 +91,14 @@ Vec3 Knockback::step(f32 seconds, f32 pace) {
         if (dt == frameLeft) {
             m_frameSeconds = 0;
             m_velocity *= kDecay;
+            if (const f32 shove = approximateFlatLength(m_shove); shove > most) {
+                m_shove *= most / shove;
+            }
             m_shove *= kDecay;
             if (!sliding()) {
                 m_velocity = Vec3{0};
             }
-            if (glm::length(m_shove) < kStill) {
+            if (approximateFlatLength(m_shove) < kStill) {
                 m_shove = Vec3{0};
             }
         }

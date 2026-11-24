@@ -7,6 +7,8 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/core/Types.h"
+#include "engine/math/ApproximateLength.h"
+#include "engine/math/Math.h"
 
 #include "game/players/Knockback.h"
 
@@ -226,6 +228,48 @@ TEST_CASE("a shove carries the body at most half its pace and fades by a third a
         knock.step(kFrame, 10.0f);
     }
     CHECK(knock.step(kFrame, 10.0f) == Vec3{0.0f});
+}
+
+TEST_CASE("a push over half the pace is held to it, by the fast length, before it decays",
+          "[game][players][knockback]") {
+    // do_players (player.c 2309-2323) measures the push velocity by NormalVector2D's fast
+    // length, holds it to half the pace for the frame's carry and keeps a third less of that.
+    constexpr f32 kSlowPace = 5.0f;
+    constexpr f32 kMost = Knockback::kShoveLimit * kSlowPace;
+    Knockback knock;
+    knock.shove(Vec3{10.0f, 0.0f, 0.0f}, kFrame);
+    CHECK(knock.step(kFrame, kSlowPace).x == Approx(kMost * kFrame));
+    CHECK(knock.step(kFrame, kSlowPace).x == Approx(kMost * Knockback::kDecay * kFrame));
+    // Off the axes the fast length, not the Euclidean one, measures what is held: it is slightly
+    // shorter at {6, 0, 8} and about 2% longer at {4.1, 0, 8}.
+    for (const Vec3& push : {Vec3{6.0f, 0.0f, 8.0f}, Vec3{4.1f, 0.0f, 8.0f}}) {
+        CAPTURE(push.x, push.z);
+        Knockback off;
+        off.shove(push, kFrame);
+        const Vec3 unit = push / approximateFlatLength(push);
+        const Vec3 first = off.step(kFrame, kSlowPace);
+        CHECK(first.x == Approx(unit.x * kMost * kFrame));
+        CHECK(first.y == 0.0f);
+        CHECK(first.z == Approx(unit.z * kMost * kFrame));
+        const Vec3 second = off.step(kFrame, kSlowPace);
+        CHECK(second.x == Approx(unit.x * kMost * Knockback::kDecay * kFrame));
+        CHECK(second.z == Approx(unit.z * kMost * Knockback::kDecay * kFrame));
+    }
+    // A decayed push stops once its fast length is under kStill: one whose Euclidean length is
+    // already under it carries on a frame more.
+    const Vec3 faint{0.006765f, 0.0f, 0.0132f};
+    Vec3 kept = faint * Knockback::kDecay;
+    REQUIRE(glm::length(kept) < Knockback::kStill);
+    REQUIRE(approximateFlatLength(kept) >= Knockback::kStill);
+    Knockback fading;
+    fading.shove(faint, kFrame);
+    CHECK(fading.step(kFrame, kPace).z == Approx(faint.z * kFrame));
+    const Vec3 last = fading.step(kFrame, kPace);
+    CHECK(last.x == Approx(kept.x * kFrame));
+    CHECK(last.z == Approx(kept.z * kFrame));
+    kept *= Knockback::kDecay;
+    REQUIRE(approximateFlatLength(kept) < Knockback::kStill);
+    CHECK(fading.step(kFrame, kPace) == Vec3{0.0f});
 }
 
 TEST_CASE("knockback travel retains native frames across split update cadences",
