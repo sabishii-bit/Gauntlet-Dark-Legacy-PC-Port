@@ -105,8 +105,16 @@ TEST_CASE("fixture explosions resolve live nearby players before opponents and d
     REQUIRE(f.calls.size() == 2);
 }
 
-/** A level whose one barrel, at `at`, holds the level's key; its directory. */
-std::filesystem::path writeBarrelLevel(std::string_view name, const Vec3& at) {
+/** A barrel holding the level's key, the second record. */
+constexpr std::string_view kKeyBarrel =
+    R"({"type":2,"subtype":43,"name":"BARREL","radius":1,"height":3,"hitPoints":1})";
+/** A barrel that lets out a poison cloud when it breaks. */
+constexpr std::string_view kGasBarrel =
+    R"({"type":10,"subtype":45,"name":"BARREL","radius":1,"height":3,"hitPoints":1})";
+
+/** A level whose one barrel, of the record `barrel`, stands at `at`; its directory. */
+std::filesystem::path writeBarrelLevel(std::string_view name, const Vec3& at,
+                                       std::string_view barrel = kKeyBarrel) {
     const auto directory = test::scratchDirectory(name);
     writeTextFile(directory / "tri.obj", "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n");
     writeTextFile(directory / "objects.json", R"({"objects":[{"name":"TRI","file":"tri.obj"}]})");
@@ -116,11 +124,11 @@ std::filesystem::path writeBarrelLevel(std::string_view name, const Vec3& at) {
     writeTextFile(directory / "world.json", std::format(R"({{
       "objects":[{{"name":"TRI","position":[0,0,0],"flags":4100}}],
       "itemInfos":[
-        {{"type":2,"subtype":43,"name":"BARREL","radius":1,"height":3,"hitPoints":1}},
+        {},
         {{"type":1,"subtype":2,"name":"KEY","radius":1,"value":1}}],
       "itemInstances":[
         {{"info":0,"position":[{},{},{}],"params":[1,0,0,0,1,0,0,0,0,0,0,0]}}]}})",
-                                                        at.x, at.y, at.z));
+                                                        barrel, at.x, at.y, at.z));
     writeTextFile(directory / "animations.json", R"({"trees":[{"name":"BARREL","nodes":[
       {"name":"ROOT","object":"TRI","parent":-1,"position":[0,0,0]}],
       "sequences":[{"name":"REST","frames":4,"frameRate":30},
@@ -287,6 +295,76 @@ TEST_CASE("a blast's ring reaches the further out later and for less, each of th
     CHECK(std::ranges::is_sorted(reaches));
     CHECK(reaches.back() <= 12.0f);
     CHECK(reaches.size() < 25);
+}
+
+TEST_CASE("a blast reaches a player by its whole width, from its first step to its last",
+          "[game][screens][level-fixtures][blast-width]") {
+    // An expanding effect meets a player within its radius and the class's whole width
+    // (ProcessEffects: radius + col_radius), not the half that walls stop.
+    Fixture f;
+    REQUIRE(f.players[0].actor.radius() == 0.75f);
+    REQUIRE(f.players[0].actor.reach() == 1.5f);
+    constexpr f32 kRadius = 12.0f;
+    std::vector<usize> hurt;
+    test::FixtureScript events = f.events;
+    test::ScriptedFixtures host{events};
+    events.hurt = [&](usize i, f32, HurtKind, bool, const PlayerImpact&) { hurt.push_back(i); };
+    events.opponents = [](const Vec3&, f32, f32, std::vector<s32>&, u32) {};
+    SECTION("its first step, a third of the way out") {
+        constexpr f32 kFirst = kRadius * kFirstReach;
+        f.players[0].actor.place(Vec3{kFirst + 1.2f, 0, 0});
+        f.players[1].actor.place(Vec3{0, 0, -(kFirst + 1.6f)});
+        f.fixtures.blast(Vec3{0}, kRadius, 30, f.players, host, 1.0f);
+        CHECK(hurt == std::vector<usize>{0});
+    }
+    SECTION("its last step, all but the whole way out") {
+        f.players[0].actor.place(Vec3{kRadius + 1.2f, 0, 0});
+        f.players[1].actor.place(Vec3{0, 0, -(kRadius + 1.6f)});
+        f.fixtures.blast(Vec3{0}, kRadius, 30, f.players, host, 1.0f);
+        CHECK(hurt.empty());
+        for (s32 frame = 0; frame < 40; ++frame) {
+            f.fixtures.update(2, 1.0f / 30, f.players, host);
+        }
+        CHECK(f.fixtures.blasts().empty());
+        CHECK(hurt == std::vector<usize>{0});
+    }
+}
+
+TEST_CASE("a poison cloud gasses a player by its whole width",
+          "[game][screens][level-fixtures][blast-width]") {
+    // The broken barrel's cloud is an expanding effect too (StartExplosion), meeting a player
+    // within 6.5 and the class's whole width.
+    const auto directory = writeBarrelLevel("fixtures-gas-width", Vec3{0}, kGasBarrel);
+    Fixture f;
+    f.fixtures.clear();
+    REQUIRE(f.world.load(f.device, directory, LevelRef{"TEST", 0, "TEST", "", "", "", "", 0}));
+    f.fixtures.bind({f.device, f.world, f.weapons, f.effects, f.audio, 1});
+    f.fixtures.setPlayerCount(2);
+    REQUIRE(f.fixtures.barrels().size() == 1);
+    REQUIRE(f.fixtures.barrels().barrel(0).kind == BreakableStrike::Kind::Poison);
+    REQUIRE(f.players[0].actor.reach() == 1.5f);
+    const Vec3 cloud = f.fixtures.barrels().barrel(0).figure.position();
+    f.players[0].actor.place(cloud + Vec3{7.8f, 0, 0});
+    f.players[1].actor.place(cloud + Vec3{0, 0, -8.2f});
+    std::vector<usize> gassed;
+    test::FixtureScript events = f.events;
+    test::ScriptedFixtures host{events};
+    events.hurt = [&](usize i, f32 damage, HurtKind kind, bool, const PlayerImpact&) {
+        CHECK(kind == HurtKind::Gas);
+        CHECK(damage == Catch::Approx(10));
+        gassed.push_back(i);
+    };
+    events.help = [](s32, usize) { return true; }; // shoot green barrels from afar
+    f.fixtures.strikeBarrel(0, 10000, -1, {}, host);
+    f.fixtures.update(2, 1.0f / 30, f.players, host);
+    CHECK(gassed == std::vector<usize>{0});
+    // Every half second for as long as it hangs, and never past the whole width.
+    for (s32 frame = 0; frame < 150; ++frame) {
+        f.fixtures.update(2, 1.0f / 30, f.players, host);
+    }
+    CHECK(std::ranges::count(gassed, usize{0}) > 1);
+    CHECK(std::ranges::count(gassed, usize{1}) == 0);
+    f.fixtures.clear();
 }
 
 TEST_CASE("fixture blasts damage pickups within the reduced item radius and emit retail cues",

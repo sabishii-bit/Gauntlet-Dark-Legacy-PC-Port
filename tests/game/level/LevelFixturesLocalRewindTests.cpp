@@ -26,6 +26,7 @@
 #include "game/level/NativeStateResources.h"
 #include "game/level/ScriptedFixtures.h"
 #include "game/level/StageRegistry.h"
+#include "game/players/PlayerActor.h"
 
 namespace {
 using namespace gdl;
@@ -529,10 +530,11 @@ TEST_CASE("fixture poison cooldown replay preserves expiry order and repeated na
     const LevelRef level{"TEST", kGasRealm, "TEST", "", "", "", "", 0};
     Fixture first;
     Fixture second;
-    // Player 1 stands where the growing ring first reaches it about 0.4 s in: inside the
-    // measured second and before player 0's first contact expires, so the two contacts
-    // expire and come back in turn.
-    constexpr f32 kLaterContact = 3.5f;
+    // Player 1 stands where the growing ring first reaches it about 0.4 s in, the ring 2.75
+    // out by then and meeting the player's whole width: inside the measured second and
+    // before player 0's first contact expires, so the two contacts expire and come back in
+    // turn.
+    constexpr f32 kLaterContact = 2.75f + PlayerActor::kDefaultWidth;
     // The production explosion, not a test-side ring, starts the poison; its first step
     // reaches player 0 and opponent 17, whose next contacts wait half a second.
     for (Fixture* fixture : {&first, &second}) {

@@ -1163,7 +1163,8 @@ void LevelFixtures::feel(Blast& ring, std::span<PlayerRuntime> players, FixtureH
         const PlayerActor& actor = players[i].actor;
         const Vec3 offset = actor.followPoint() - felt.position;
         const f32 across = portable::hypot(offset.x, offset.z);
-        if (across <= felt.radius + actor.radius() &&
+        // The ring meets the class's whole width (col_radius), not the walls' half of it.
+        if (across <= felt.radius + actor.reach() &&
             std::abs(offset.y) <= actor.height() * 0.5f + felt.radius) {
             // Far enough out, a wall between shelters them from it.
             if (across > kShelterFrom &&
@@ -1362,7 +1363,7 @@ void LevelFixtures::updateClouds(f32 seconds, std::span<PlayerRuntime> players, 
                 continue;
             }
             const Vec3 offset = players[i].actor.followPoint() - cloud.position;
-            if (portable::hypot(offset.x, offset.z) <= kGasRadius + players[i].actor.radius() &&
+            if (portable::hypot(offset.x, offset.z) <= kGasRadius + players[i].actor.reach() &&
                 std::abs(offset.y) <= players[i].actor.height() * 0.5f + kGasRadius) {
                 players[i].cloudGap = kGasGapSeconds;
                 host.hurtMember(i, cloud.damage, HurtKind::Gas, true, {});
