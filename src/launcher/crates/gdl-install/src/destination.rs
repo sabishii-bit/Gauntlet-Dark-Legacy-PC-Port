@@ -505,17 +505,18 @@ fn known_folders() -> Vec<(KnownFolder, PathBuf)> {
 ///
 /// In order, each finding listed as it is found: a folder on the path with one of the alpha
 /// installer's names, as Windows would make it, without the dots and spaces it drops from a name's
-/// end or the stream a colon names; nothing on the path there; the nearest entry there no folder;
-/// a link on the path; on Windows, a folder there whose full name is one of the alpha installer's,
-/// where the path gives it by a short alias; an installation in a folder above; the alpha
-/// installer's names in the destination, then names it holds that the install would make,
-/// compared in upper case as NTFS compares them; on Windows a path too long; the nearest folder,
-/// probed as a destination when it is one, refusing new entries or, on Linux, ignoring letter
-/// case; its file system, on Linux, running no program; and its volume too small. Each of the
-/// first seven ends the judging, and so does a destination that holds a state folder, another
-/// installation's or one being made, so that nothing in such a folder is made, opened or asked of
-/// its volume. A judging that goes on to the end warns, on Windows, of a destination that a cloud
-/// provider keeps, that lies in a known folder, or whose path is not ASCII on a build before 1903.
+/// end or the stream a colon names; nothing on the path there; a link on the path, the nearest
+/// entry there included; that entry no folder; on Windows, a folder there whose full name is one
+/// of the alpha installer's, where the path gives it by a short alias; an installation in a folder
+/// above; the alpha installer's names in the destination, then names it holds that the install
+/// would make, compared in upper case as NTFS compares them; on Windows a path too long; the
+/// nearest folder, probed as a destination when it is one, refusing new entries or, on Linux,
+/// ignoring letter case; its file system, on Linux, running no program; and its volume too small.
+/// Each of the first seven ends the judging, and so does a destination that holds a state folder,
+/// another installation's or one being made, so that nothing in such a folder is made, opened or
+/// asked of its volume. A judging that goes on to the end warns, on Windows, of a destination that
+/// a cloud provider keeps, that lies in a known folder, or whose path is not ASCII on a build
+/// before 1903.
 ///
 /// Before anything on the path is looked at, the system is set to fail a call that meets a
 /// critical error, as on a drive that holds no medium, rather than show a dialog.
@@ -568,15 +569,9 @@ fn judge_into(
     let exists = nearest == path;
     report.exists = Some(exists);
     report.nearest_existing = Some(nearest.clone());
-    let found =
-        fs::symlink_metadata(&nearest).map_err(|source| DestinationError::io(&nearest, source))?;
-    // A link is left to the link check, which names it as one.
-    if !found.is_dir() && !found.file_type().is_symlink() {
-        report
-            .blockers
-            .push(Blocker::NotDirectory { path: nearest });
-        return Ok(());
-    }
+    // Links first, as the installer refuses them before it looks at what the path leads to: a
+    // file reached through a linked folder is refused for the link. The check passes over the
+    // names below a file, which are not there, and looks at the nearest entry itself.
     match check_links(&path) {
         Ok(()) => {}
         Err(FilesError::Link { path: link }) => {
@@ -584,6 +579,14 @@ fn judge_into(
             return Ok(());
         }
         Err(error) => return Err(DestinationError::Files(error)),
+    }
+    let found =
+        fs::symlink_metadata(&nearest).map_err(|source| DestinationError::io(&nearest, source))?;
+    if !found.is_dir() {
+        report
+            .blockers
+            .push(Blocker::NotDirectory { path: nearest });
+        return Ok(());
     }
     // A short alias names the folder of the name it stands for, which only its full name shows.
     #[cfg(windows)]
@@ -1100,9 +1103,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let real = dir.path().join("real");
         fs::create_dir_all(real.join("sub")).unwrap();
+        fs::write(real.join("file.txt"), b"kept").unwrap();
 
         // A link to a folder, which any account can make on either system: on Windows a
-        // junction. At the destination, and above it whether what lies below is there or not.
+        // junction. At the destination, and above it whether what lies below is there or not,
+        // a folder or a file: what is reached through a link is refused for the link, before
+        // what it is.
         let link = dir.path().join("link");
         link_folder(&link, &real).unwrap();
         let mut links = vec![link];
@@ -1119,6 +1125,8 @@ mod tests {
                 link.join("game"),
                 link.join("sub"),
                 link.join("sub").join("game"),
+                link.join("file.txt"),
+                link.join("file.txt").join("game"),
             ] {
                 let report = judge(&destination);
                 assert_eq!(
@@ -1130,9 +1138,10 @@ mod tests {
                 assert_unasked(&report);
             }
         }
-        // Nothing was made where the links lead.
-        assert_eq!(folder_names(&real).unwrap(), ["sub"]);
+        // Nothing was made or changed where the links lead.
+        assert_eq!(folder_names(&real).unwrap(), ["file.txt", "sub"]);
         assert!(folder_names(&real.join("sub")).unwrap().is_empty());
+        assert_eq!(fs::read(real.join("file.txt")).unwrap(), b"kept");
     }
 
     #[test]
