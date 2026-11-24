@@ -21,9 +21,9 @@ pub use folder::{
 #[cfg(windows)]
 pub use folder::{deny_new_files, deny_writes_below, make_junction};
 pub use gamecube::{
-    CISO_HEADER_LEN, FST_AT, FstEntry, ICON_DATA_AT, SYNTHETIC_CISO_BLOCK, SYNTHETIC_ISO_LEN,
-    edited, first_frame_only_tpl, fst, icon_iso, iso_of, iso_with_icon, synthetic_ciso,
-    synthetic_iso, tpl,
+    CISO_HEADER_LEN, FST_AT, FstEntry, ICON_DATA_AT, ICON_DISC_FILES, ICON_STAND_IN,
+    SYNTHETIC_CISO_BLOCK, SYNTHETIC_ISO_LEN, edited, first_frame_only_tpl, fst, icon_iso, iso_of,
+    iso_with_icon, synthetic_ciso, synthetic_iso, tpl,
 };
 pub use gdrom::{
     BootFields, DiscSet, Edc, RAW_SECTOR, SECTOR, boot_sector, both16, both32, edc, pvd_sector,

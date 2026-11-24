@@ -24,6 +24,43 @@ pub const SYNTHETIC_CISO_BLOCK: u32 = 512;
 /// Where [`synthetic_iso`] keeps its icon's bytes, and [`iso_with_icon`] writes a TPL.
 pub const ICON_DATA_AT: usize = 0x2900;
 
+/// What [`synthetic_iso`]'s icon holds: four bytes, too few for any TPL.
+pub const ICON_STAND_IN: &[u8] = b"icon";
+
+/// The list of what an install of [`icon_iso`] copied, `.gdl-launcher/disc-files.json`, as the
+/// install writes it on every system: its schema and the lowest launcher that may change it, the
+/// disc's folders, then its files, each in the disc's order, a file by its path, its size and the
+/// SHA-256 digest of its bytes; JSON indented by two spaces, with a line end after it.
+pub const ICON_DISC_FILES: &str = r#"{
+  "schema": 1,
+  "minLauncher": "1.0.0-beta",
+  "folders": [
+    "Gauntlet",
+    "Gauntlet/PDATA",
+    "Gauntlet/WDATA",
+    "Gauntlet/EMPTY",
+    "carddemo"
+  ],
+  "files": [
+    {
+      "path": "Gauntlet/PDATA/WAR.WAD",
+      "size": 32,
+      "sha256": "c35e4f503d52e9d3477d1c0366e628ab3aaa4202ee48b06fb52a271fc7f1cc51"
+    },
+    {
+      "path": "Gauntlet/WDATA/TOWER.WAD",
+      "size": 5,
+      "sha256": "ad2015263f339bff96818238148b790bd02be561472f4ea7db44498caa0b6558"
+    },
+    {
+      "path": "carddemo/icon.tpl",
+      "size": 192,
+      "sha256": "b8d54eaff3a13e8a1a22f4823b9c54a0471c3cfb3396ca1580642449b3af0103"
+    }
+  ]
+}
+"#;
+
 /// The game ID a disc's header begins with: the US release of the game.
 const GAME_ID: &[u8; 6] = b"GUNE5D";
 
@@ -66,9 +103,6 @@ const TOWER_WAD_AT: usize = 0x2800;
 
 /// What the tower's WAD holds.
 const TOWER_WAD_DATA: &[u8] = b"tower";
-
-/// What [`synthetic_iso`]'s icon holds: four bytes, too few for any TPL.
-const ICON_STAND_IN: &[u8] = b"icon";
 
 /// Where the size of [`synthetic_iso`]'s icon lies: the last word of its file table's ninth row.
 const ICON_SIZE_FIELD: usize = FST_AT + 8 * FST_ROW_LEN + 8;
@@ -434,9 +468,9 @@ mod tests {
     use serde_json::{Value, json};
 
     use super::{
-        CISO_HEADER_LEN, FST_AT, FstEntry, ICON_DATA_AT, ICON_SIZE_FIELD, SYNTHETIC_CISO_BLOCK,
-        SYNTHETIC_ISO_LEN, edited, first_frame_only_tpl, fst, icon_iso, iso_of, iso_with_icon,
-        synthetic_ciso, synthetic_iso, tpl,
+        CISO_HEADER_LEN, FST_AT, FstEntry, ICON_DATA_AT, ICON_DISC_FILES, ICON_SIZE_FIELD,
+        ICON_STAND_IN, SYNTHETIC_CISO_BLOCK, SYNTHETIC_ISO_LEN, edited, first_frame_only_tpl, fst,
+        icon_iso, iso_of, iso_with_icon, synthetic_ciso, synthetic_iso, tpl,
     };
     use crate::runtime::{hex, sha256_hex, unhex};
 
@@ -544,6 +578,67 @@ mod tests {
         assert_eq!(disc, iso_with_icon(&tpl(5, 8, 8)));
         assert_eq!(word_at(&disc, ICON_SIZE_FIELD), 192);
         assert_eq!(&disc[ICON_DATA_AT..ICON_DATA_AT + 192], tpl(5, 8, 8));
+        assert_eq!(
+            &iso[ICON_DATA_AT..ICON_DATA_AT + ICON_STAND_IN.len()],
+            ICON_STAND_IN
+        );
+    }
+
+    #[test]
+    fn the_icon_discs_list_names_what_the_disc_holds() {
+        let vectors = gamecube_vectors();
+        let disc = icon_iso();
+        let icon = tpl(5, 8, 8);
+        assert!(ICON_DISC_FILES.ends_with("}\n") && !ICON_DISC_FILES.contains('\r'));
+        let list: Value = serde_json::from_str(ICON_DISC_FILES).expect("the list is JSON");
+        let keys: Vec<&str> = list
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(keys.len(), 4);
+        for key in ["schema", "minLauncher", "folders", "files"] {
+            assert!(keys.contains(&key), "{key}");
+        }
+        assert_eq!(list["schema"], 1);
+        assert_eq!(list["minLauncher"], "1.0.0-beta");
+
+        // The folders and the files are the installer's entries of the disc, each in their order.
+        let entries = vectors["entries"].as_array().unwrap();
+        let folders: Vec<&Value> = entries
+            .iter()
+            .filter(|entry| entry["folder"] == true)
+            .map(|entry| &entry["path"])
+            .collect();
+        let listed: Vec<&Value> = list["folders"].as_array().unwrap().iter().collect();
+        assert_eq!(listed, folders);
+        let files: Vec<&Value> = entries
+            .iter()
+            .filter(|entry| entry["folder"] == false)
+            .collect();
+        let rows = list["files"].as_array().unwrap();
+        assert_eq!(rows.len(), files.len());
+        let mut icons = 0;
+        for (row, entry) in rows.iter().zip(files) {
+            assert_eq!(row.as_object().unwrap().len(), 3, "{row}");
+            assert_eq!(row["path"], entry["path"], "{row}");
+            // Each file's digest is of the bytes the icon disc holds where its row says.
+            let at = index(&entry["offset"]);
+            let size = index(&row["size"]);
+            assert_eq!(row["sha256"], sha256_hex(&disc[at..at + size]), "{row}");
+            // The icon disc holds the icon tests' TPL where the installer's disc holds its
+            // stand-in, and the rest as that disc holds them.
+            if at == ICON_DATA_AT {
+                icons += 1;
+                assert_eq!(size, icon.len(), "{row}");
+                assert_eq!(row["sha256"], sha256_hex(&icon), "{row}");
+            } else {
+                assert_eq!(row["size"], entry["size"], "{row}");
+                assert_eq!(row["sha256"], entry["sha256"], "{row}");
+            }
+        }
+        assert_eq!(icons, 1);
     }
 
     #[test]

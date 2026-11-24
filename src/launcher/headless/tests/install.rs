@@ -12,8 +12,8 @@ use std::sync::Mutex;
 
 use gdl_files::{Cancel, Job, NoProgress, PhaseId, Progress, RelPath, STAGING_RANDOM_CHARS};
 use gdl_fixtures::{
-    RuntimeFiles, append_sections, folder_names, icon_iso, pretty_json, sha256_hex, tpl,
-    tree_entries,
+    ICON_DISC_FILES, RuntimeFiles, append_sections, folder_names, icon_iso, pretty_json,
+    sha256_hex, tpl, tree_entries,
 };
 use gdl_install::{
     CHECK_DISC, CHECK_GAME, COPY_DISC_FILES, COPY_LAUNCHER, DISC_FILES, DISC_ICON, FolderRecord,
@@ -39,37 +39,6 @@ const RECORDED_ROOTS: usize = 4;
 
 /// How many folders the install cut short made: the folder it installed into.
 const MADE_FOLDERS: u32 = 1;
-
-/// The list of what an install of the icon disc copied, as the install writes it on every system.
-const ICON_DISC_FILES: &str = r#"{
-  "schema": 1,
-  "minLauncher": "1.0.0-beta",
-  "folders": [
-    "Gauntlet",
-    "Gauntlet/PDATA",
-    "Gauntlet/WDATA",
-    "Gauntlet/EMPTY",
-    "carddemo"
-  ],
-  "files": [
-    {
-      "path": "Gauntlet/PDATA/WAR.WAD",
-      "size": 32,
-      "sha256": "c35e4f503d52e9d3477d1c0366e628ab3aaa4202ee48b06fb52a271fc7f1cc51"
-    },
-    {
-      "path": "Gauntlet/WDATA/TOWER.WAD",
-      "size": 5,
-      "sha256": "ad2015263f339bff96818238148b790bd02be561472f4ea7db44498caa0b6558"
-    },
-    {
-      "path": "carddemo/icon.tpl",
-      "size": 192,
-      "sha256": "b8d54eaff3a13e8a1a22f4823b9c54a0471c3cfb3396ca1580642449b3af0103"
-    }
-  ]
-}
-"#;
 
 /// The platform this program was built for, whose runtime the tests install; `None`, the reason
 /// printed, on a system no release is built for.

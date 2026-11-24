@@ -628,10 +628,11 @@ mod tests {
     #[cfg(windows)]
     use gdl_files::{MAX_INSTALL_ROOT_UTF16, root_utf16_len};
     use gdl_fixtures::{
-        EntryState, FstEntry, ICON_DATA_AT, RawEntry, RawZip, RuntimeFiles, SYNTHETIC_ISO_LEN,
-        WritesDenied, append_sections, backdate, deny_writes, folder_names, fst, icon_iso, iso_of,
-        sha256_hex, snapshot, snapshot_outside, symlink_file, symlink_file_where_allowed,
-        synthetic_ciso, synthetic_iso, tiny_elf, tiny_pe, tpl, tree_entries,
+        EntryState, FstEntry, ICON_DATA_AT, ICON_DISC_FILES, RawEntry, RawZip, RuntimeFiles,
+        SYNTHETIC_ISO_LEN, WritesDenied, append_sections, backdate, deny_writes, folder_names, fst,
+        icon_iso, iso_of, sha256_hex, snapshot, snapshot_outside, symlink_file,
+        symlink_file_where_allowed, synthetic_ciso, synthetic_iso, tiny_elf, tiny_pe, tpl,
+        tree_entries,
     };
     #[cfg(windows)]
     use gdl_fixtures::{deny_writes_below, fake_sign, long_root};
@@ -1355,38 +1356,6 @@ mod tests {
         assert!(size_of::<IconError>() <= MOST_ERROR_BYTES);
         assert!(size_of::<RecoveryError>() <= MOST_ERROR_BYTES);
     }
-
-    /// The list of what an install of the icon disc copied, as the install writes it on every
-    /// system.
-    const ICON_DISC_FILES: &str = r#"{
-  "schema": 1,
-  "minLauncher": "1.0.0-beta",
-  "folders": [
-    "Gauntlet",
-    "Gauntlet/PDATA",
-    "Gauntlet/WDATA",
-    "Gauntlet/EMPTY",
-    "carddemo"
-  ],
-  "files": [
-    {
-      "path": "Gauntlet/PDATA/WAR.WAD",
-      "size": 32,
-      "sha256": "c35e4f503d52e9d3477d1c0366e628ab3aaa4202ee48b06fb52a271fc7f1cc51"
-    },
-    {
-      "path": "Gauntlet/WDATA/TOWER.WAD",
-      "size": 5,
-      "sha256": "ad2015263f339bff96818238148b790bd02be561472f4ea7db44498caa0b6558"
-    },
-    {
-      "path": "carddemo/icon.tpl",
-      "size": 192,
-      "sha256": "b8d54eaff3a13e8a1a22f4823b9c54a0471c3cfb3396ca1580642449b3af0103"
-    }
-  ]
-}
-"#;
 
     /// The SHA-256 digest of no bytes.
     const EMPTY_SHA256: &str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
@@ -2872,6 +2841,8 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn a_linux_install_does_not_read_the_icon() {
+        use gdl_fixtures::ICON_STAND_IN;
+
         // The installer tests' disc, whose icon is four bytes of text, which no Linux install
         // decodes.
         let top = tempfile::tempdir().unwrap();
@@ -2881,7 +2852,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             fs::read(destination.join("carddemo/icon.tpl")).unwrap(),
-            b"icon"
+            ICON_STAND_IN
         );
         let listed: Value = serde_json::from_slice(
             &fs::read(destination.join(STATE_DIR).join(DISC_FILES)).unwrap(),
@@ -2891,8 +2862,8 @@ mod tests {
             listed["files"][2],
             json!({
                 "path": "carddemo/icon.tpl",
-                "size": 4,
-                "sha256": "c2d4b446a44ce54fab8e01150e24dd24f3d850c7c14dcfe31f6321341dd86874",
+                "size": ICON_STAND_IN.len(),
+                "sha256": sha256_hex(ICON_STAND_IN),
             })
         );
     }
