@@ -398,8 +398,9 @@ pub fn game_start(error: &GameStartError) -> Report {
 /// as the install's own writes do: `space.ranOut` when the disk was full or the quota spent, else
 /// `io.failed`. A disc icon that is no TPL the launcher decodes reports what [`media`] gives it, a
 /// frame that is no icon's is `source.damaged`, and the system's refusal to set the icon into the
-/// game's executable, or to read the executable back, is `io.failed`, as is a record of
-/// installations that would not take the folder.
+/// game's executable, which rewrites it, or to read it back and write it through to its disk,
+/// reports what the system answered as the install's own writes do. A record of installations
+/// that would not take the folder is `io.failed`.
 pub fn install(error: &InstallError) -> Report {
     match error {
         InstallError::Cancelled => Report::Cancelled,
@@ -408,8 +409,8 @@ pub fn install(error: &InstallError) -> Report {
         InstallError::Image(error) => media(error),
         InstallError::Icon(IconError::Tpl(error)) => media(error),
         InstallError::Icon(IconError::Decoded) => Report::Error(SOURCE_DAMAGED),
-        InstallError::Icon(IconError::Embed { .. } | IconError::Rehash { .. }) => {
-            Report::Error(IO_FAILED)
+        InstallError::Icon(IconError::Embed { source, .. } | IconError::Rehash { source, .. }) => {
+            Report::Error(written(source))
         }
         InstallError::Runtime(PayloadError::Io(source)) => Report::Error(written(source)),
         InstallError::Runtime(error) => payload(error),
@@ -1380,20 +1381,20 @@ mod tests {
             InstallError::Icon(IconError::Decoded),
             Report::Error("source.damaged"),
         ));
-        // Setting the icon in, or reading the executable back, is the system's failure whatever it
-        // answered.
-        failures.extend(write_failures().into_iter().map(|(source, _)| {
+        // Setting the icon in rewrites the executable, and reading it back writes it through to
+        // its disk: each reports what the system answered, as the install's writes do.
+        failures.extend(write_failures().into_iter().map(|(source, code)| {
             let path = path();
             (
                 InstallError::Icon(IconError::Embed { path, source }),
-                FAILED,
+                Report::Error(code),
             )
         }));
-        failures.extend(write_failures().into_iter().map(|(source, _)| {
+        failures.extend(write_failures().into_iter().map(|(source, code)| {
             let path = path();
             (
                 InstallError::Icon(IconError::Rehash { path, source }),
-                FAILED,
+                Report::Error(code),
             )
         }));
         failures.extend(
@@ -2094,7 +2095,8 @@ mod tests {
         let inside = InstallError::Files(FilesError::Link { path: staged });
         assert_eq!(install(&inside), FAILED);
         // A write that found the disk full is told as one wherever the install made it: a file of
-        // its own, the runtime's, the launcher's copy or the disc's.
+        // its own, the runtime's, the launcher's copy, the disc's or the executable the disc's
+        // icon is set into.
         let full = || io::Error::from(io::ErrorKind::StorageFull);
         let writes = [
             InstallError::Io {
@@ -2109,6 +2111,14 @@ mod tests {
             InstallError::Launcher(SectionsError::Write(full())),
             InstallError::Image(MediaError::Write {
                 file: disc_file(),
+                source: full(),
+            }),
+            InstallError::Icon(IconError::Embed {
+                path: path(),
+                source: full(),
+            }),
+            InstallError::Icon(IconError::Rehash {
+                path: path(),
                 source: full(),
             }),
         ];
