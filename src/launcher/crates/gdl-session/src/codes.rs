@@ -32,11 +32,17 @@ const SPACE_RAN_OUT: &str = "space.ranOut";
 /// measured before anything is written.
 const SPACE_INSUFFICIENT: &str = "space.insufficient";
 
-/// The installation's folder, a folder above it, or an entry in it that the launcher reads or
-/// changes is a link or a junction.
+/// A link or a junction stands where the launcher reads or writes: the installation's folder, a
+/// folder above it, or an entry in it that the launcher reads or changes; the folder chosen to
+/// install into, or a folder above it; or the folder chosen for an expansion's tree, or a folder
+/// above it.
 const FOLDER_LINKS: &str = "folder.links";
 
-/// Nothing, or something other than a folder, is at the installation's path.
+/// A folder the launcher is to use is not one: nothing, or something other than a folder, is at
+/// the installation's path; nothing on the path of the folder chosen to install into is there, its
+/// drive included, or the nearest entry on it that is there is no folder; or the folder chosen for
+/// an expansion's tree ends in no name the launcher makes a folder with, or the folder it is to be
+/// made in is not there or is no folder.
 const FOLDER_NOT_DIRECTORY: &str = "folder.notDirectory";
 
 /// The launcher may not write where it must, such as the game's executable or the folder chosen
