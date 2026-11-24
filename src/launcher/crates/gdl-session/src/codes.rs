@@ -424,10 +424,12 @@ pub fn install(error: &InstallError) -> Report {
 /// What a failure to recover an unfinished install reports: always a problem, since a recovery is
 /// never cancelled, and whatever stopped it, its journal is left for the next start. The lock's
 /// refusal reports what [`lock`] gives it, `lock.busy` among it, a hold: the recovery can wait for
-/// the job that holds the lock. A later launcher's state is `state.newerLauncher`, a journal that
-/// cannot be read `journal.unreadable`, and a journal that does not match what the folder holds
-/// `recover.failed`. A file operation's failure reports what [`files`] gives it, and the system's
-/// refusal to look at the folder is `io.failed` whatever it answered, since a look writes nothing.
+/// the job that holds the lock; a link on the folder's path is `folder.links` however the recovery
+/// met it, as the lock refuses one. A later launcher's state is `state.newerLauncher`, a journal
+/// that cannot be read `journal.unreadable`, and a journal that does not match what the folder
+/// holds `recover.failed`. A file operation's failure reports what [`files`] gives it, and the
+/// system's refusal to look at the folder is `io.failed` whatever it answered, since a look writes
+/// nothing.
 pub fn recovery(error: &RecoveryError) -> Report {
     Report::Error(match error {
         RecoveryError::Lock(error) => lock(error),
@@ -2194,6 +2196,17 @@ mod tests {
             "{error:?}"
         );
         assert_eq!(recovery(&error), Report::Error("recover.failed"));
+        // The same folder reached through a link is refused for the link, as its lock refuses
+        // one, before anything in it is looked at.
+        let elsewhere = tempfile::tempdir().unwrap();
+        let link = elsewhere.path().join("link");
+        link_folder(&link, root).unwrap();
+        let error = recovery_failure(&link);
+        assert!(
+            matches!(error, RecoveryError::Lock(LockError::Links { .. })),
+            "{error:?}"
+        );
+        assert_eq!(recovery(&error), Report::Error("folder.links"));
     }
 
     #[test]

@@ -66,8 +66,9 @@ pub enum RecoveryOutcome {
 /// is chosen from it elsewhere. Whatever stopped the recovery, the journal is left for the next.
 #[derive(Debug, thiserror::Error)]
 pub enum RecoveryError {
-    /// The installation's lock was not taken. [`LockError::Busy`], another job holding it, is a
-    /// reason to wait rather than a failure.
+    /// The installation's lock was not taken, or would be refused: a link on the folder's path is
+    /// [`LockError::Links`] before the lock is tried. [`LockError::Busy`], another job holding it,
+    /// is a reason to wait rather than a failure.
     #[error(transparent)]
     Lock(LockError),
     /// A later launcher's receipt or journal stands in the installation.
@@ -178,8 +179,10 @@ pub(crate) fn recover_install_with(
         Err(FolderError::Absent { .. } | FolderError::NotDirectory { .. }) => {
             return Ok(RecoveryOutcome::Nothing);
         }
+        // Refused as taking the lock refuses a link on the folder's path, so that the same link
+        // reports the same wherever it is met.
         Err(FolderError::Links { path }) => {
-            return Err(RecoveryError::Files(FilesError::Link { path }));
+            return Err(RecoveryError::Lock(LockError::Links { path }));
         }
         Err(FolderError::Io { path, source }) => return Err(RecoveryError::Io { path, source }),
     };
@@ -1637,14 +1640,15 @@ mod tests {
         }
         assert_eq!(snapshot(top.path()).unwrap(), before);
 
-        // A folder reached through a link is refused as the link.
+        // A folder reached through a link is refused as the link, as taking its lock refuses it.
         let link = top.path().join("link");
         link_folder(&link, &installed).unwrap();
         let error = recover_at(&link).outcome.unwrap_err();
         assert!(
-            matches!(&error, RecoveryError::Files(FilesError::Link { path }) if *path == link),
+            matches!(&error, RecoveryError::Lock(LockError::Links { path }) if *path == link),
             "{error:?}"
         );
+        assert_eq!(error.rule(), "links");
     }
 
     #[test]
