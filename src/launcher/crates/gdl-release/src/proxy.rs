@@ -6,6 +6,7 @@
 //! handed the one proxy chosen, or none.
 
 use std::borrow::Cow;
+use std::fmt;
 
 use ureq::http::Uri;
 
@@ -69,8 +70,9 @@ const ONLY_HTTP_PROXIES: &str = "only HTTP and HTTPS proxies are supported";
 /// Why a proxy address that no proxy URL can be made of is refused.
 const UNREADABLE_ADDRESS: &str = "the proxy's address cannot be read";
 
-/// The Windows per-user Internet Settings, as they stand in the registry.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+/// The Windows per-user Internet Settings, as they stand in the registry. Its debug output
+/// withholds the server and the bypass list, since a proxy's address may hold a password.
+#[derive(Clone, Default, PartialEq, Eq)]
 pub struct InternetSettings {
     /// Whether the proxy is switched on (`ProxyEnable`).
     pub enabled: bool,
@@ -83,14 +85,51 @@ pub struct InternetSettings {
 }
 
 /// The system's proxy settings, taken once: the process's environment and, on Windows, the
-/// Internet Settings.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+/// Internet Settings. Its debug output names the variables and withholds their values, as
+/// [`InternetSettings`]' withholds the server's.
+#[derive(Clone, Default, PartialEq, Eq)]
 pub struct ProxySettings {
     /// The variables a proxy is chosen by, in the order the system lists them; the others are
     /// not kept.
     environment: Vec<(String, String)>,
     internet: Option<InternetSettings>,
     case_blind_names: bool,
+}
+
+/// A setting's value as debug output shows it: its length alone.
+struct Withheld<'a>(&'a str);
+
+impl fmt::Debug for Withheld<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "<{} bytes>", self.0.len())
+    }
+}
+
+impl fmt::Debug for InternetSettings {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("InternetSettings")
+            .field("enabled", &self.enabled)
+            .field("server", &self.server.as_deref().map(Withheld))
+            .field("bypass", &self.bypass.as_deref().map(Withheld))
+            .finish()
+    }
+}
+
+impl fmt::Debug for ProxySettings {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let environment: Vec<_> = self
+            .environment
+            .iter()
+            .map(|(name, value)| (name, Withheld(value)))
+            .collect();
+        formatter
+            .debug_struct("ProxySettings")
+            .field("environment", &environment)
+            .field("internet", &self.internet)
+            .field("case_blind_names", &self.case_blind_names)
+            .finish()
+    }
 }
 
 impl ProxySettings {
@@ -1275,6 +1314,50 @@ mod tests {
         assert_eq!(
             ProxySettings::of_process(None),
             ProxySettings::new(unicode(), None, cfg!(windows))
+        );
+    }
+
+    #[test]
+    fn debug_output_withholds_every_value() {
+        const SECRET: &str = "s3cret";
+        let internet = InternetSettings {
+            enabled: true,
+            server: Some(format!("https=user:{SECRET}@proxy.corp:8080")),
+            bypass: Some(format!("{SECRET}.example")),
+        };
+        let settings = ProxySettings::new(
+            variables(&[
+                (
+                    "https_proxy",
+                    &format!("http://user:{SECRET}@proxy.test:3128"),
+                ),
+                ("REQUEST_METHOD", SECRET),
+            ]),
+            Some(internet.clone()),
+            false,
+        );
+        for shown in [
+            format!("{settings:?}"),
+            format!("{settings:#?}"),
+            format!("{internet:?}"),
+            format!("{:?}", Some(&settings)),
+        ] {
+            assert!(
+                !shown.contains(SECRET),
+                "{}",
+                shown.replace(SECRET, "<the secret>")
+            );
+        }
+        // What is shown is each variable's name, the values' lengths and the flags.
+        assert_eq!(
+            format!("{settings:?}"),
+            "ProxySettings { environment: [(\"https_proxy\", <34 bytes>), (\"REQUEST_METHOD\", \
+             <6 bytes>)], internet: Some(InternetSettings { enabled: true, server: \
+             Some(<33 bytes>), bypass: Some(<14 bytes>) }), case_blind_names: false }"
+        );
+        assert_eq!(
+            format!("{:?}", ProxySettings::none()),
+            "ProxySettings { environment: [], internet: None, case_blind_names: false }"
         );
     }
 
