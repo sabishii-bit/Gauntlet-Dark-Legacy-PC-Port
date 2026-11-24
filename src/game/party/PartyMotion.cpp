@@ -535,11 +535,11 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
         // the push velocity, added once the step is settled.
         const auto block = [&] {
             Vec3 to = actor.position();
-            const Vec3 push = PartyCollision::block(players, i, before, to, seconds);
+            const Vec3 away = PartyCollision::block(players, i, before, to);
             actor.slide(to - actor.position(), &collision);
-            return push;
+            return away;
         };
-        Vec3 blockPush{0.0f};
+        Vec3 blockAway{0.0f};
         if (!down && !flying) {
             // A member in the way meets the step as the stick and the knock meant it, put out
             // of the level's items, and is shoved by that before walls, floors or creatures
@@ -547,7 +547,7 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
             // pmotion.c 1124-1175).
             const Vec3 meant = level.itemStep(i, before, actor.stepAim());
             contacts[i] = PartyCollision::step(players, i, before, meant, seconds, &collision);
-            blockPush = block();
+            blockAway = block();
             // A body/fixture push is still movement, not a teleport. Sweep the
             // correction through the same walls and floor edges as the step.
             actor.slide(level.resolveMovement(i, before, actor.position()) - actor.position(),
@@ -563,12 +563,12 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
                 actor.place(before);
                 actor.slide(limited - before, &collision);
                 players[i].attackStep = PlayerRuntime::AttackStep{attackFrom, actor.followPoint()};
-                blockPush = block();
+                blockAway = block();
                 actor.slide(level.resolveMovement(i, before, actor.position()) - actor.position(),
                             &collision);
                 FloorRiding::land(players, i, before, collision);
             }
-            players[i].knockback.pushOut(blockPush);
+            players[i].knockback.pushOut(blockAway);
         }
         // A floor gone from under it lets it sink; lost under the world, it stands again
         // beside another, or at the start.

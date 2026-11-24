@@ -24,17 +24,17 @@ public:
     static constexpr f32 kCoincident = 0.001f; ///< too near to push out from: the step is undone
     static constexpr f32 kBlockShare = 0.9f;   ///< of the mover's width, the blocking pass's
 
-    /** Keeps `mover`'s step from `from` to `to` out of the others by `share` of its width and
-     * the whole of theirs, the nearest of those it runs into deciding; returns who that was,
-     * `to` resolved. */
+    /** Keeps `mover`'s step from `from` to `to` out of the others by its whole width and
+     * theirs, the nearest of those it runs into deciding; returns who that was, `to`
+     * resolved. */
     static std::optional<usize> resolve(std::span<const PlayerRuntime> players, usize mover,
-                                        const Vec3& from, Vec3& to, f32 share = 1.0f);
-    /** The blocking pass over `mover`'s step of `seconds` from `from` to `to`: the first in
-     * seat order it runs into at kBlockShare of its width trims `to` toward the point out of
-     * them, per axis as PlayerCollideWalls trims (pmotion.c 3262-3302). Returns the push
-     * velocity, units a second, that the trim leaves the mover; nobody is shoved. */
+                                        const Vec3& from, Vec3& to);
+    /** The blocking pass over `mover`'s step from `from` to `to`: the first in seat order it
+     * runs into at kBlockShare of its width trims `to` toward the point out of them, per axis
+     * as PlayerCollideWalls trims (pmotion.c 3262-3302). Returns the way out the trim leaves
+     * for the mover's push velocity (Knockback::pushOut); nobody is shoved. */
     static Vec3 block(std::span<const PlayerRuntime> players, usize mover, const Vec3& from,
-                      Vec3& to, f32 seconds);
+                      Vec3& to);
     /** Meets `mover`'s step of `seconds` from `from` to `meant`, as it was meant: whoever it
      * runs into is shoved by it (shove), and the mover goes from where its walls left it to
      * the point out of them, as the original puts the step's end out before its walls run.

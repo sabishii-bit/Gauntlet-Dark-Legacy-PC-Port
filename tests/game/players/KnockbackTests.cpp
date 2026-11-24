@@ -263,27 +263,39 @@ TEST_CASE("a push out goes with the shove, held to half the pace, but shows no p
     // PlayerCollideWalls adds what it does not trim to light_vel and sets no hud_flags 4
     // (pmotion.c 3262-3302), so the next shove still zeroes the push velocity first (pmotion.c
     // 1166-1170).
+    // What is left of the way out joins it times gClockFrameReciprocal, the native frame's 30,
+    // so that the next native frame carries the body the whole way.
     Knockback knock;
-    knock.pushOut(Vec3{0.0f, 4.0f, 3.0f}); // along the ground only
+    knock.pushOut(Vec3{0.0f, 4.0f, 0.1f}); // along the ground only
     knock.endFrame();
     CHECK_FALSE(knock.pushed());
     const Vec3 moved = knock.step(kFrame, kPace);
     CHECK(moved.x == 0.0f);
     CHECK(moved.y == 0.0f);
-    CHECK(moved.z == Approx(3.0f * kFrame));
+    CHECK(moved.z == Approx(0.1f));
     // Over half the pace, it is held to it.
     Knockback hard;
-    hard.pushOut(Vec3{12.0f, 0.0f, 0.0f});
+    hard.pushOut(Vec3{0.4f, 0.0f, 0.0f});
     CHECK(hard.step(kFrame, kPace).x == Approx(Knockback::kShoveLimit * kPace * kFrame));
     // It adds to a shove the frame has made, and a first shove after it starts afresh.
     Knockback joined;
     joined.shove(Vec3{0.1f, 0.0f, 0.0f}, kFrame);
-    joined.pushOut(Vec3{0.2f, 0.0f, 0.0f});
+    joined.pushOut(Vec3{0.2f / Knockback::kFrameRate, 0.0f, 0.0f});
     CHECK(joined.step(kFrame, kPace).x == Approx(0.3f * kFrame));
     Knockback replaced;
-    replaced.pushOut(Vec3{0.2f, 0.0f, 0.0f});
+    replaced.pushOut(Vec3{0.2f / Knockback::kFrameRate, 0.0f, 0.0f});
     replaced.shove(Vec3{0.1f, 0.0f, 0.0f}, kFrame);
     CHECK(replaced.step(kFrame, kPace).x == Approx(0.1f * kFrame));
+    // An update half a native frame long adds what its own trim leaves at the same rate: two
+    // such updates, each leaving half the way, carry the body as one native frame does.
+    Knockback halves;
+    for (s32 half = 0; half < 2; ++half) {
+        halves.pushOut(Vec3{0.05f, 0.0f, 0.0f});
+        halves.endFrame();
+    }
+    Knockback whole;
+    whole.pushOut(Vec3{0.1f, 0.0f, 0.0f});
+    CHECK(halves.step(kFrame, kPace).x == Approx(whole.step(kFrame, kPace).x));
 }
 
 TEST_CASE("a push over half the pace is held to it, by the fast length, before it decays",

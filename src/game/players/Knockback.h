@@ -83,11 +83,13 @@ public:
     /** Another member's step of `seconds` ran into the character: it is shoved by it, as
      * by the step a 30 Hz frame would have made. */
     void shove(const Vec3& displacement, f32 seconds);
-    /** What a trimmed step leaves of the way out of something, `velocity` units a second
-     * along the ground: it joins the push velocity as PlayerCollideWalls adds it (pmotion.c
-     * 3262-3302), held and decaying with the shove, but shows no push (no hud_flags 4), so a
-     * first shove of the frame after it still starts afresh. */
-    void pushOut(const Vec3& velocity);
+    /** What a trimmed step leaves of the way out of something, `away` along the ground: it
+     * joins the push velocity as PlayerCollideWalls adds it (pmotion.c 3262-3302), times
+     * gClockFrameReciprocal, the native frame's 30 (clock.c 107-121), so that a native frame
+     * would carry the body the whole way; an update's step, however long, adds what its own
+     * trim leaves. It is held and decays with the shove, but shows no push (no hud_flags 4),
+     * so a first shove of the frame after it still starts afresh. */
+    void pushOut(const Vec3& away);
     /** Direct contact velocity, independent of damage, reaction flags and party shoves. */
     void addVelocity(const Vec3& velocity) { m_velocity += velocity; }
     /** The frame is over: what shoved the character this frame shows it next. */

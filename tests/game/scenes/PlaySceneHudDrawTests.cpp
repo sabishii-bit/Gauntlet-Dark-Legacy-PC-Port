@@ -144,7 +144,7 @@ TEST_CASE("a G1 scene's HUD overlay stays byte for byte what it was",
     // stand their whole widths apart, and seat 2 a whole width off the chest beside the start,
     // where its help is drawn over it.
     CHECK(test::hexBytes(test::drawStreamDigest(overlay)) ==
-          "861ce8c0b41c538dea9fd714397b1b39184e15cdfeae011bec617fe8dc64b36d");
+          "6bef64e7e33aac1d9a88a29059bd194cfde643d9b0361bf946187700fe33478e");
     scene.close();
 }
 

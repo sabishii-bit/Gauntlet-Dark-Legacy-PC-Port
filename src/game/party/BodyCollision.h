@@ -23,10 +23,10 @@ struct ContactCylinder {
  * Does not move the obstacles or retain the supplied view. */
 class BodyCollision {
 public:
-    /** A step trimmed toward a point out of what it ran into, and the push left over. */
+    /** A step trimmed toward a point out of what it ran into, and the way out left over. */
     struct Trim {
         Vec3 to{0};   ///< where the step ends
-        Vec3 push{0}; ///< units a second, for the push velocity
+        Vec3 away{0}; ///< the rest of the way out, for the push velocity (Knockback::pushOut)
     };
 
     static Vec3 resolve(const Vec3& from, const Vec3& to, f32 radius, f32 height,
@@ -50,12 +50,12 @@ public:
      * heading away from it meets it. */
     static bool touches(const Vec3& from, const Vec3& to,
                         std::span<const ContactCylinder> cylinders);
-    /** The step of `seconds` from `from` to `to` trimmed toward `hit`, the point out of what
-     * it ran into, along each ground axis as PlayerCollideWalls trims it (pmotion.c
-     * 3262-3302): where `hit` lies back against the step, the step gives up that much and no
-     * more than all of itself; anywhere else that axis of the step goes and what `hit` asks
-     * of it is pushed over `seconds`. The height is the step's. */
-    static Trim trimToward(const Vec3& from, const Vec3& to, const Vec3& hit, f32 seconds);
+    /** The step from `from` to `to` trimmed toward `hit`, the point out of what it ran into,
+     * along each ground axis as PlayerCollideWalls trims it (pmotion.c 3262-3302): where `hit`
+     * lies back against the step, the step gives up that much and no more than all of itself;
+     * anywhere else that axis of the step goes, and the way to `hit` along it is left over for
+     * the push velocity. The height is the step's. */
+    static Trim trimToward(const Vec3& from, const Vec3& to, const Vec3& hit);
     /** Slide against authored item boxes, subdividing long steps to prevent tunnelling. */
     static Vec3 resolveItems(const Vec3& from, const Vec3& to, f32 radius, f32 height,
                              std::span<const Obstacle> items);

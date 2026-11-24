@@ -91,19 +91,19 @@ std::optional<usize> meet(std::span<const PlayerRuntime> players, usize mover, c
 } // namespace
 
 std::optional<usize> PartyCollision::resolve(std::span<const PlayerRuntime> players, usize mover,
-                                             const Vec3& from, Vec3& to, f32 share) {
-    return meet(players, mover, from, to, share, Decider::Nearest);
+                                             const Vec3& from, Vec3& to) {
+    return meet(players, mover, from, to, 1.0f, Decider::Nearest);
 }
 
 Vec3 PartyCollision::block(std::span<const PlayerRuntime> players, usize mover, const Vec3& from,
-                           Vec3& to, f32 seconds) {
+                           Vec3& to) {
     Vec3 out = to;
     if (!meet(players, mover, from, out, kBlockShare, Decider::First).has_value()) {
         return Vec3{0.0f};
     }
-    const BodyCollision::Trim trim = BodyCollision::trimToward(from, to, out, seconds);
+    const BodyCollision::Trim trim = BodyCollision::trimToward(from, to, out);
     to = trim.to;
-    return trim.push;
+    return trim.away;
 }
 
 std::optional<usize> PartyCollision::step(std::span<PlayerRuntime> players, usize mover,

@@ -2109,6 +2109,76 @@ TEST_CASE("a step left within nine tenths of a width of a member it did not run 
     CHECK(players[0].actor.position().z == Approx(2.9f - held));
 }
 
+/** A still member between two others held aloft, so that only it steps: put out of the one
+ * behind it by the first pass, it is left inside nine tenths of a width of the one beside it,
+ * whom it did not run into first. */
+std::array<PlayerRuntime, 3> crowd() {
+    std::array<PlayerRuntime, 3> players;
+    players[0].actor.spawn(0, {}, nullptr, Vec3{0, 0, -2}, 0);
+    players[1].actor.spawn(1, {}, nullptr, Vec3{0}, 0);
+    players[2].actor.spawn(2, {}, nullptr, Vec3{2.84f, 0, 1}, 0);
+    return players;
+}
+
+TEST_CASE("the blocking pass leaves a still member the way out to its push velocity, as a native "
+          "frame would carry it, at 60 Hz too",
+          "[game][party-motion][party-collision][party-spacing][knockback]") {
+    // PlayerCollideWalls adds what the trim does not take to light_vel times
+    // gClockFrameReciprocal, the native frame's 30 (pmotion.c 3262-3302; clock.c 107-121), and
+    // sets no hud_flags 4.
+    constexpr f32 kUpdate = 1.0f / 60.0f;
+    auto players = crowd();
+    std::array<PlayInput, 4> inputs{};
+    Fixture floor; // for its flat floor
+    test::MotionScript script{.flying = [](usize i) { return i != 1; }};
+    test::ScriptedMotion level{script};
+    // Where the first pass leaves it, out of the one behind it, the blocking pass meets the one
+    // beside it and gives up the step on both axes, the way out sideways left over.
+    const auto probe = crowd();
+    Vec3 out{0, 0, 1};
+    const Vec3 away = PartyCollision::block(probe, 1, Vec3{0}, out);
+    REQUIRE(out == Vec3{0});
+    REQUIRE(away.x == Approx(-0.01f).margin(1e-4f));
+    REQUIRE(away.z == 0.0f);
+    Knockback expected;
+    (void)expected.step(kUpdate, players[1].actor.speed());
+    (void)expected.kick(players[1].actor.yaw(), false);
+    expected.pushOut(away);
+    expected.endFrame();
+    PartyMotion::step(players, inputs, false, 0, 1, kUpdate, floor.collision, level);
+    CHECK(players[1].knockback == expected);
+    CHECK_FALSE(players[1].knockback.pushed());
+    CHECK(glm::length(players[1].actor.position()) == Approx(0.0f).margin(1e-5f));
+    // Once, at the native frame's rate: the push carries it the way out over a native frame,
+    // not over the update.
+    const Vec3 carried = players[1].knockback.step(kUpdate, players[1].actor.speed());
+    CHECK(carried.x == Approx(away.x * Knockback::kFrameRate * kUpdate));
+}
+
+TEST_CASE("the shared view's recheck takes the place of the first blocking pass, so a step "
+          "pushes once",
+          "[game][party-motion][party-collision][party-spacing][camera-limit]") {
+    constexpr f32 kUpdate = 1.0f / 60.0f;
+    auto players = crowd();
+    std::array<PlayInput, 4> inputs{};
+    Fixture floor; // for its flat floor
+    // An edge of the view that holds the still member half a unit on from where it stood: the
+    // recheck's blocking pass finds nobody within nine tenths of its width there.
+    test::MotionScript script{.limitMovement =
+                                  [](usize i, const Vec3& before, const Vec3& after) {
+                                      return i == 1 ? before + Vec3{0, 0, 0.5f} : after;
+                                  },
+                              .flying = [](usize i) { return i != 1; }};
+    test::ScriptedMotion level{script};
+    Knockback expected;
+    (void)expected.step(kUpdate, players[1].actor.speed());
+    (void)expected.kick(players[1].actor.yaw(), false);
+    expected.endFrame();
+    PartyMotion::step(players, inputs, false, 0, 1, kUpdate, floor.collision, level);
+    CHECK(players[1].actor.position().z == Approx(0.5f));
+    CHECK(players[1].knockback == expected);
+}
+
 TEST_CASE("the shared view's recheck meets the members at nine tenths of a width, trimming the "
           "step and shoving nobody",
           "[game][party-motion][party-collision][party-spacing][camera-limit]") {

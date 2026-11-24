@@ -158,9 +158,6 @@ TEST_CASE("members keep a whole width apart, meeting only within half a height o
     }
 }
 
-/** A 30 Hz frame. */
-constexpr f32 kFrame = 1.0f / 30.0f;
-
 TEST_CASE("the blocking pass trims a step toward nine tenths of the mover's width and shoves "
           "nobody",
           "[game][party-collision][party-spacing]") {
@@ -176,25 +173,20 @@ TEST_CASE("the blocking pass trims a step toward nine tenths of the mover's widt
     // A step in to 2.7 gives up what lies inside, and nothing is left to push.
     const Vec3 from{0, 0, 3.1f};
     Vec3 to{0, 0, 2.7f};
-    CHECK(PartyCollision::block(players, 0, from, to, kFrame) == Vec3{0});
+    CHECK(PartyCollision::block(players, 0, from, to) == Vec3{0});
     CHECK(to.x == 0.0f);
     CHECK(to.z == Approx(held));
     CHECK(players[1].knockback == Knockback{});
     // One ending outside it goes on.
     to = Vec3{0, 0, 2.9f};
-    CHECK(PartyCollision::block(players, 0, from, to, kFrame) == Vec3{0});
+    CHECK(PartyCollision::block(players, 0, from, to) == Vec3{0});
     CHECK(to == Vec3{0, 0, 2.9f});
-    // Standing inside it, the body stays where it is, and the way out is pushed over the frame.
+    // Standing inside it, the body stays where it is, and the way out is left for the push.
     to = Vec3{0, 0, 2.5f};
-    const Vec3 push = PartyCollision::block(players, 0, to, to, kFrame);
+    const Vec3 away = PartyCollision::block(players, 0, to, to);
     CHECK(to == Vec3{0, 0, 2.5f});
-    CHECK(push.x == 0.0f);
-    CHECK(push.z == Approx((held - 2.5f) / kFrame));
-    // The first pass at the same share puts the step's end out to it.
-    to = Vec3{0, 0, 2.7f};
-    REQUIRE(PartyCollision::resolve(players, 0, from, to, PartyCollision::kBlockShare) ==
-            std::optional<usize>{1});
-    CHECK(to.z == Approx(held));
+    CHECK(away.x == 0.0f);
+    CHECK(away.z == Approx(held - 2.5f));
 }
 
 TEST_CASE("the blocking pass takes the first member in seat order it meets, not the nearest",
@@ -207,15 +199,14 @@ TEST_CASE("the blocking pass takes the first member in seat order it meets, not 
     players[1].actor.spawn(1, {}, nullptr, Vec3{2.8f, 0, 3.0f}, 0); // beside the step
     players[2].actor.spawn(2, {}, nullptr, Vec3{0}, 0);             // ahead, nearer its end
     Vec3 to{0, 0, 2.7f};
-    CHECK(PartyCollision::resolve(players, 0, from, to, PartyCollision::kBlockShare) ==
-          std::optional<usize>{2});
+    CHECK(PartyCollision::resolve(players, 0, from, to) == std::optional<usize>{2});
     // Put out sideways and back along the step by the one beside it, the step goes on neither
-    // axis and that way out is pushed.
+    // axis and that way out is left for the push.
     to = Vec3{0, 0, 2.7f};
-    const Vec3 push = PartyCollision::block(players, 0, from, to, kFrame);
+    const Vec3 away = PartyCollision::block(players, 0, from, to);
     CHECK(to == from);
-    CHECK(push.x < 0.0f);
-    CHECK(push.z < 0.0f);
+    CHECK(away.x < 0.0f);
+    CHECK(away.z < 0.0f);
 }
 
 } // namespace
