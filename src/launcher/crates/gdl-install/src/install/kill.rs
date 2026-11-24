@@ -16,11 +16,12 @@ use gdl_media::GameCubeImage;
 use gdl_release::Version;
 
 use super::recover::recover_install_with;
-use super::settings::{FailAt, FaultPoint, FaultPoints, Faults, InstallSettings, KillAt};
+use super::settings::InstallSettings;
 use super::tests::{answering, standing_in};
 use super::{
     FolderRecord, RecoveryError, RecoveryOutcome, Unrecorded, install_game_with, plan_install,
 };
+use crate::faults::{FailAt, FaultPoint, FaultPoints, Faults, KillAt};
 use crate::folder::LockError;
 use crate::sections::Sections;
 
@@ -183,8 +184,9 @@ mod tests {
     use super::{
         FAIL, IMAGE, KILL, KILL_DESTINATION, KILL_ROOT, LAUNCHER, RECOVER, pass_name, recovered,
     };
+    use crate::faults::{FaultPoint, KILLED_EXIT_CODE, NoFaults};
     use crate::folder::{LOCK_FILE, RECEIPT_FILE, STATE_DIR};
-    use crate::install::settings::{FaultPoint, InstallSettings, KILLED_EXIT_CODE, NoFaults};
+    use crate::install::settings::InstallSettings;
     use crate::install::tests::{
         AsItWas, Heard, Inputs, answering, assert_no_alpha_name, destination_in, heard_of,
         journal_of, roots, standing_in, uninterrupted,

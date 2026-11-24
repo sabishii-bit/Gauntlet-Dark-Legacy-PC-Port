@@ -8,6 +8,7 @@ mod compat;
 #[cfg(all(test, windows))]
 mod default_error_mode;
 mod destination;
+mod faults;
 mod folder;
 #[cfg(test)]
 mod full_disk;

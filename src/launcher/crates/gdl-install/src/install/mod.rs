@@ -646,10 +646,7 @@ mod tests {
     use tempfile::TempDir;
 
     use super::recover::recover_install_with;
-    use super::settings::{
-        FailAt, FaultPoint, FaultPoints, Faults, INJECTED, InstallSettings, NoFaults, OnPass,
-        PanicAt, ProbeFn,
-    };
+    use super::settings::{InstallSettings, ProbeFn};
     use super::{
         CHECK_DISC, CHECK_GAME, CONFIG_FOLDER, COPY_DISC_FILES, COPY_LAUNCHER, Changes, CopiedFile,
         DISC_FILES, DISC_ROOTS, DiscFiles, DiscSummary, FolderRecord, GET_RUNTIME, INSTALL_JOURNAL,
@@ -660,6 +657,9 @@ mod tests {
     };
     use crate::compat::{FIXED_NAMES, JOURNAL_NAMES, RANDOM_PREFIXES, RETIRED_PREFIX};
     use crate::destination::{Blocker, DestinationError, FolderChecks, alpha_name_in};
+    use crate::faults::{
+        FailAt, FaultPoint, FaultPoints, Faults, INJECTED, NoFaults, OnPass, PanicAt,
+    };
     use crate::folder::{
         InstallFolder, JOURNAL_DIR, LOCK_FILE, LockError, RECEIPT_FILE, STATE_DIR,
     };

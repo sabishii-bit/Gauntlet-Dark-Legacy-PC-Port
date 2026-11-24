@@ -15,8 +15,8 @@ use gdl_files::{
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-use super::settings::{FaultPoint, FaultPoints};
 use crate::compat::{JOURNAL_SCHEMA, MIN_LAUNCHER};
+use crate::faults::{FaultPoint, FaultPoints};
 use crate::receipt::Receipt;
 
 /// The install's journal, in `.gdl-launcher/journal/`.
@@ -244,7 +244,7 @@ mod tests {
     use serde_json::{Map, Value, json};
 
     use super::{INSTALL_JOURNAL, InstallJournal, InstallPhase, JournalFile};
-    use crate::install::settings::{FaultPoint, FaultPoints, NoFaults};
+    use crate::faults::{FaultPoint, FaultPoints, NoFaults};
     use crate::receipt::{InstalledLauncher, Receipt};
 
     /// The journal of an install that made its destination and the staging `install-AbC123xy`,

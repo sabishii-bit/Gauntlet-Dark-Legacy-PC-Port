@@ -27,7 +27,7 @@ use super::journal::{InstallJournal, JournalFile};
 use super::rollback::{
     Begun, Rollback, clean_up, commit_receipt, remove_made_folders, remove_unlocked_state,
 };
-use super::settings::{FaultPoint, InstallSettings};
+use super::settings::InstallSettings;
 use super::{
     CHECK_DISC, CHECK_GAME, CONFIG_FOLDER, COPY_DISC_FILES, COPY_LAUNCHER, Changes, FolderRecord,
     GET_RUNTIME, INSTALL_STAGING_PREFIX, InstallError, InstallFailure, InstallNotice, InstallPlan,
@@ -37,6 +37,7 @@ use super::{
 use super::{PERSONALISE, icon_entry};
 use crate::compat::MIN_LAUNCHER;
 use crate::destination::{Blocker, DestinationError, judge_with};
+use crate::faults::FaultPoint;
 use crate::folder::{
     FolderError, InstallFolder, InstallLock, JOURNAL_DIR, LOCK_FILE, LockError, STATE_DIR,
 };

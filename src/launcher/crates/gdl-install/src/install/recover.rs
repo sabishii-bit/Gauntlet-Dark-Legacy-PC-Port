@@ -761,12 +761,13 @@ mod tests {
     use super::{RecoveryError, RecoveryOutcome, recover_install_with};
     use crate::compat::tests::{journal_names, state_names};
     use crate::compat::{StateName, abandoned_install, launcher_state_name};
+    use crate::faults::NoFaults;
     use crate::folder::{
         InstallFolder, JOURNAL_DIR, LOCK_FILE, LockError, RECEIPT_FILE, STATE_DIR, names_in,
     };
     use crate::install::disc_files::DISC_FILES;
     use crate::install::journal::INSTALL_JOURNAL;
-    use crate::install::settings::{InstallSettings, NoFaults};
+    use crate::install::settings::InstallSettings;
     use crate::install::tests::{
         AsItWas, Heard, USER_BYTES, USER_FILE, answering, destination_in, heard_of, standing_in,
     };
