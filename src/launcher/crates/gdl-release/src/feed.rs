@@ -630,9 +630,11 @@ mod tests {
         )
     }
 
-    /// The feed `server` serves, read as the running launcher.
+    /// The feed `server` serves, read as the running launcher and trusting no key, whichever
+    /// keys the build trusts: the tests of a keyring with a key build their own.
     fn feed(server: &LoopbackServer) -> Feed {
-        Feed::new(FeedConfig::loopback(&server.base(), RUNNING).expect("a loopback base"))
+        let config = FeedConfig::loopback(&server.base(), RUNNING).expect("a loopback base");
+        Feed::with_keyring(config, Keyring::empty())
     }
 
     /// Serves `rows` as page `page` of the list.
@@ -885,7 +887,14 @@ mod tests {
     fn unverified_assets_are_refused() {
         let server = LoopbackServer::start().unwrap();
         let feed = feed(&server);
-        let sound = row(&server, "1.0.0-beta.1", WINDOWS);
+        // Signed, so that the signature is held to the rules too, though no key asks for it.
+        let sound = ReleaseRow::new_line(
+            &server.base(),
+            "1.0.0-beta.1",
+            WINDOWS,
+            LAUNCHER,
+            Some(SIGNATURE),
+        );
         let base = server.base();
         let port = base
             .trim_end_matches('/')
@@ -990,8 +999,9 @@ mod tests {
                 }),
             ),
         ];
-        // The launcher file and the checksum list are each held to every rule.
-        for (index, most) in [(0, MAX_ASSET_LEN), (1, MAX_LIST_LEN)] {
+        // The launcher file, the checksum list and the signature are each held to every rule.
+        let bounds = [(0, MAX_ASSET_LEN), (1, MAX_LIST_LEN), (2, MAX_LIST_LEN)];
+        for (index, most) in bounds {
             let name = sound.assets[index].name.clone();
             for (what, edit) in &edits {
                 let mut edited = sound.clone();
@@ -1003,7 +1013,7 @@ mod tests {
         }
 
         // A size at the bound, and a path whose escapes decode to the asset's own, are taken.
-        for (index, most) in [(0, MAX_ASSET_LEN), (1, MAX_LIST_LEN)] {
+        for (index, most) in bounds {
             let mut edited = sound.clone();
             edited.assets[index].size = json!(most);
             let url = edited.assets[index]
@@ -1017,10 +1027,10 @@ mod tests {
                 .unwrap()
                 .candidate
                 .expect("an asset at its bounds");
-            let asset = if index == 0 {
-                release.launcher
-            } else {
-                release.checksums
+            let asset = match index {
+                0 => release.launcher,
+                1 => release.checksums,
+                _ => release.signature.expect("the release's signature"),
             };
             assert_eq!(asset.size, most);
             assert_eq!(asset.url, url);
@@ -1274,7 +1284,7 @@ mod tests {
         let keyed = Feed::with_keyring(config, keyring);
         let plain = feed(&server);
         assert!(!keyed.keyring().is_empty());
-        assert!(plain.keyring().is_empty(), "no release key is built in yet");
+        assert!(plain.keyring().is_empty());
 
         let release = version("1.0.0-beta.1");
         let unsigned = row(&server, "1.0.0-beta.1", WINDOWS);
@@ -1310,6 +1320,15 @@ mod tests {
             assert_eq!(signature.name, signed.assets[2].name);
             assert_eq!(signature.size, SIGNATURE.len() as u64);
             assert_eq!(signature.url, signed.assets[2].url);
+        }
+    }
+
+    #[test]
+    fn a_new_feed_trusts_the_keys_built_in() {
+        let loopback = FeedConfig::loopback("http://127.0.0.1:8080/", RUNNING).unwrap();
+        let github = FeedConfig::github(RUNNING, ProxySettings::none());
+        for config in [loopback, github] {
+            assert_eq!(Feed::new(config).keyring(), &Keyring::release());
         }
     }
 
@@ -1460,8 +1479,9 @@ mod tests {
         );
         assert_eq!(config.origins, Origins::GitHub);
         assert_eq!(config.launcher_version, RUNNING);
-        // Nothing is asked of GitHub here: the rows are judged as a page of its list would be.
-        let github = Feed::new(config);
+        // Nothing is asked of GitHub here: the rows are judged as a page of its list would be,
+        // by a feed that needs no signature whichever keys the build trusts.
+        let github = Feed::with_keyring(config, Keyring::empty());
         let floor = version(RUNNING);
         let judged = |base: &str| -> Result<Option<Release>, ReleaseError> {
             let row = ReleaseRow::new_line(base, "1.0.0-beta.1", WINDOWS, LAUNCHER, None).to_json();
