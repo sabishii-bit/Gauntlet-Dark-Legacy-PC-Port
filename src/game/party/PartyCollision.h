@@ -36,12 +36,16 @@ public:
     static Vec3 block(std::span<const PlayerRuntime> players, usize mover, const Vec3& from,
                       Vec3& to, f32 seconds);
     /** Meets `mover`'s step of `seconds` from `from` to `meant`, as it was meant: whoever it
-     * runs into is shoved by it, unless they stand waiting on an exit (pmotion.c 1166), and
-     * the mover is carried from where it stands by the push out of them. Returns the
-     * contacted party index. */
+     * runs into is shoved by it (shove), and the mover goes from where its walls left it to
+     * the point out of them, as the original puts the step's end out before its walls run.
+     * Returns the contacted party index. */
     static std::optional<usize> step(std::span<PlayerRuntime> players, usize mover,
                                      const Vec3& from, const Vec3& meant, f32 seconds,
                                      const WorldCollision* collision = nullptr);
+    /** A member run into by a step that moved `displacement` over `seconds` is shoved by it,
+     * unless it stands on an exit waiting for the rest of the party (idle_timer, +0x950,
+     * pmotion.c 1166), which guards a walker's step and a pinball's alike. */
+    static void shove(PlayerRuntime& other, const Vec3& displacement, f32 seconds);
 };
 
 } // namespace gdl::game

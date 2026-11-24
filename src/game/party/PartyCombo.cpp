@@ -227,7 +227,7 @@ void PartyCombo::fly(std::span<PlayerRuntime> players, usize flier, s32 ticks, f
         other.reset();
     }
     if (other.has_value()) {
-        players[*other].knockback.shove(meant - before, seconds);
+        PartyCollision::shove(players[*other], meant - before, seconds);
     }
     // Its step is a walking body's (PlayerMotion runs the pinball through the same floor
     // rules, PlayerCollideFloor 4367): no floor under the end, or one too far up or down,

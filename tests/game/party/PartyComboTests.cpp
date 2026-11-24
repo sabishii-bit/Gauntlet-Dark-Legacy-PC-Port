@@ -16,6 +16,8 @@
 #include "game/party/PartyCombo.h"
 #include "game/party/PlayerHealth.h"
 #include "game/party/ScriptedMotion.h"
+#include "game/players/ExitWait.h"
+#include "game/players/Knockback.h"
 
 namespace {
 
@@ -252,6 +254,26 @@ TEST_CASE("a pinball passes through its thrower for a while and then bounces off
     REQUIRE(f.players[1].actor.yaw() == Approx(ComboMove::kBounceTurn));
     f.players[0].knockback.endFrame();
     CHECK(f.players[0].knockback.pushed());
+}
+
+TEST_CASE("a pinball bounces off a member waiting on an exit without shoving it",
+          "[game][screens][combo][party-collision]") {
+    // The exit wait guards the push velocity in PlayerMotion's member pass for every anim, the
+    // pinball's (137) too (pmotion.c 1152-1176).
+    Fixture f;
+    PartyCombo::begin(f.players, 0, 1);
+    f.players[1].combo.role = ComboRole::Thrown;
+    f.players[1].combo.graceSeconds = 0.0f;
+    f.players[0].actor.place(Vec3{0, 0, 2});
+    REQUIRE_FALSE(f.players[0].exitWait.step(true, kTicks));
+    REQUIRE(f.players[0].exitWait.ticks() > 0);
+    f.players[1].actor.place(Vec3{0, 0, 0});
+    f.players[1].actor.turnTo(0.0f);
+    PartyCombo::fly(f.players, 1, kTicks, kStep, f.collision, f.level);
+    CHECK(f.players[1].actor.yaw() == Approx(ComboMove::kBounceTurn));
+    CHECK(f.players[0].knockback == Knockback{});
+    f.players[0].knockback.endFrame();
+    CHECK_FALSE(f.players[0].knockback.pushed());
 }
 
 TEST_CASE("a pinball stops at the floor's edge instead of flying off it",

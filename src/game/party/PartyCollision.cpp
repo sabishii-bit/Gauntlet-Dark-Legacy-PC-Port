@@ -118,17 +118,22 @@ std::optional<usize> PartyCollision::step(std::span<PlayerRuntime> players, usiz
     if (!other.has_value()) {
         return std::nullopt;
     }
-    // One standing on an exit for the rest of the party holds its ground (idle_timer, +0x950).
-    if (players[*other].exitWait.ticks() == 0) {
-        players[*other].knockback.shove(meant - from, seconds);
-    }
-    const Vec3 out = to - meant;
+    shove(players[*other], meant - from, seconds);
+    // The original puts the step's end out of the member and only then runs its walls, so a
+    // wall that cut the step short leaves the body no further back than the member asks.
     if (collision != nullptr) {
-        actor.slide(out, collision);
+        actor.slide(to - actor.position(), collision);
     } else {
-        actor.place(actor.position() + out);
+        actor.place(Vec3{to.x, actor.position().y, to.z});
     }
     return other;
+}
+
+void PartyCollision::shove(PlayerRuntime& other, const Vec3& displacement, f32 seconds) {
+    // One standing on an exit for the rest of the party holds its ground.
+    if (other.exitWait.ticks() == 0) {
+        other.knockback.shove(displacement, seconds);
+    }
 }
 
 } // namespace gdl::game

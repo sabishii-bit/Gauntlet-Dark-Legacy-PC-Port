@@ -1,10 +1,13 @@
 #include <array>
 #include <optional>
+#include <vector>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/core/Types.h"
+#include "engine/math/Math.h"
+#include "engine/world/WorldCollision.h"
 
 #include "game/party/PartyCollision.h"
 #include "game/players/ExitWait.h"
@@ -75,15 +78,15 @@ TEST_CASE("the step as meant meets the member, and the mover is put out from whe
     auto players = party();
     const f32 reach = players[0].actor.reach() + players[1].actor.reach();
     // Something held the body where it stood, at 8, but the step it meant ran on to 9.5, into
-    // the member at 10: the member is met and shoved by that step, and the body is carried by
-    // the push out of the member from where it stands.
+    // the member at 10: the member is met and shoved by that step, and the body goes to the
+    // point out of the member, as the original's walls see the step only once it is put out.
     players[0].actor.place(Vec3{0, 0, 8});
     Knockback shoved;
     shoved.shove(Vec3{0, 0, 1.5f}, 1.0f / 30.0f);
     REQUIRE(PartyCollision::step(players, 0, Vec3{0, 0, 8}, Vec3{0, 0, 9.5f}, 1.0f / 30.0f) ==
             std::optional<usize>{1});
     CHECK(players[1].knockback == shoved);
-    CHECK(players[0].actor.position().z == Approx(8.0f - (9.5f - (10.0f - reach))));
+    CHECK(players[0].actor.position().z == Approx(10.0f - reach));
     // One standing on an exit for the others is not shoved, but still holds the step out.
     auto waiting = party();
     REQUIRE_FALSE(waiting[1].exitWait.step(true, 2));
@@ -92,6 +95,41 @@ TEST_CASE("the step as meant meets the member, and the mover is put out from whe
             std::optional<usize>{1});
     CHECK(waiting[1].knockback == Knockback{});
     CHECK(waiting[0].actor.position().z == Approx(10.0f - reach));
+}
+
+TEST_CASE("a step a wall cuts short is put out of a member no further back than the member asks",
+          "[game][screens][party-collision]") {
+    // A flat floor, a wall across the way at z = 8.8 and a member past it, at 10.2.
+    std::vector<CollisionTriangle> triangles;
+    const auto add = [&](Vec3 a, Vec3 b, Vec3 c, Vec3 normal) {
+        CollisionTriangle triangle;
+        triangle.vertices = {a, b, c};
+        triangle.normal = normal;
+        triangles.push_back(triangle);
+    };
+    add(Vec3{-50, 0, -50}, Vec3{50, 0, -50}, Vec3{50, 0, 50}, Vec3{0, 1, 0});
+    add(Vec3{-50, 0, -50}, Vec3{50, 0, 50}, Vec3{-50, 0, 50}, Vec3{0, 1, 0});
+    add(Vec3{-50, 0, 8.8f}, Vec3{50, 0, 8.8f}, Vec3{50, 20, 8.8f}, Vec3{0, 0, -1});
+    add(Vec3{-50, 0, 8.8f}, Vec3{50, 20, 8.8f}, Vec3{-50, 20, 8.8f}, Vec3{0, 0, -1});
+    WorldCollision collision;
+    collision.build(triangles);
+    auto players = party();
+    players[1].actor.place(Vec3{0, 0, 10.2f});
+    const f32 reach = players[0].actor.reach() + players[1].actor.reach();
+    // The step meant from 7 to 7.6 is held by the wall where the body's width meets it.
+    const Vec3 from{0, 0, 7};
+    const Vec3 meant{0, 0, 7.6f};
+    players[0].actor.place(from);
+    players[0].actor.slide(meant - from, &collision);
+    const f32 walled = players[0].actor.position().z;
+    REQUIRE(walled < meant.z - 0.2f);
+    REQUIRE(walled > 10.2f - reach);
+    // The member asks the step's end back to 10.2 - 3 = 7.2: the body goes there, not as far
+    // again back as the wall had already taken off.
+    REQUIRE(PartyCollision::step(players, 0, from, meant, 1.0f / 30.0f, &collision) ==
+            std::optional<usize>{1});
+    CHECK(players[0].actor.position().z == Approx(10.2f - reach).margin(1e-4));
+    CHECK(players[0].actor.position().x == Approx(0.0f).margin(1e-4));
 }
 
 TEST_CASE("members keep a whole width apart, meeting only within half a height of their middles",
