@@ -678,7 +678,7 @@ impl SectionsError {
 mod tests {
     use std::error::Error;
     use std::fs::{self, File};
-    use std::io::{self, Cursor, Read, Seek, SeekFrom, Write};
+    use std::io::{self, Cursor, Read, Seek, SeekFrom};
     use std::ops::Range;
     use std::panic;
     use std::sync::Mutex;
@@ -699,6 +699,7 @@ mod tests {
         SectionsError, WINDOW_SECTION,
     };
     use crate::PayloadError;
+    use crate::full_disk::Full;
 
     /// The platforms a release is built for, as the release scripts name them.
     const WINDOWS: &str = "windows-x64";
@@ -1664,11 +1665,6 @@ mod tests {
         }
     }
 
-    /// The SHA-256 digest of `bytes`, as a copy gives it.
-    fn digest_of(bytes: &[u8]) -> Sha256Digest {
-        Sha256Digest::from_hex(&sha256_hex(bytes)).unwrap()
-    }
-
     /// The cancel of a job nobody asks to stop, and progress that writes down each step of it.
     fn recorded() -> (Cancel, Recorded) {
         (Cancel::default(), Recorded::default())
@@ -1706,7 +1702,11 @@ mod tests {
                         copy.len(),
                         file.len()
                     );
-                    assert_eq!(digest, digest_of(&file), "{case}, copy {copy_number}");
+                    assert_eq!(
+                        digest,
+                        Sha256Digest::of(&file),
+                        "{case}, copy {copy_number}"
+                    );
                     found.verify(&quiet(&Cancel::default())).unwrap();
                 }
             }
@@ -1799,7 +1799,7 @@ mod tests {
         let digest = held.copy_file(&mut to, &quiet(&Cancel::default())).unwrap();
         drop(to);
         assert_eq!(held.file_len(), original.len() as u64);
-        assert_eq!(digest, digest_of(&original));
+        assert_eq!(digest, Sha256Digest::of(&original));
         assert!(fs::read(&copied).unwrap() == original);
         assert!(fs::read(&aside).unwrap() == original);
         // A handle opened on the path now copies the file that took it.
@@ -1808,30 +1808,8 @@ mod tests {
         let digest = fresh
             .copy_file(&mut copy, &quiet(&Cancel::default()))
             .unwrap();
-        assert_eq!(digest, digest_of(&newer));
+        assert_eq!(digest, Sha256Digest::of(&newer));
         assert!(copy == newer);
-    }
-
-    /// A writer that takes `room` bytes, then refuses every write, as a full disk refuses one.
-    struct Full {
-        written: Vec<u8>,
-        room: usize,
-    }
-
-    impl Write for Full {
-        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-            let room = self.room - self.written.len();
-            if room == 0 {
-                return Err(io::ErrorKind::StorageFull.into());
-            }
-            let count = bytes.len().min(room);
-            self.written.extend_from_slice(&bytes[..count]);
-            Ok(count)
-        }
-
-        fn flush(&mut self) -> io::Result<()> {
-            Ok(())
-        }
     }
 
     #[test]

@@ -6,6 +6,8 @@
 mod awake;
 mod compat;
 mod folder;
+#[cfg(test)]
+mod full_disk;
 mod host;
 mod icon;
 mod inspect;

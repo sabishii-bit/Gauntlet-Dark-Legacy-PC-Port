@@ -743,7 +743,7 @@ impl PayloadError {
 mod tests {
     use std::collections::BTreeMap;
     use std::error::Error;
-    use std::io::{self, Cursor, Read, Seek, SeekFrom, Write};
+    use std::io::{self, Cursor, Read, Seek, SeekFrom};
     use std::panic;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{Arc, Mutex};
@@ -763,6 +763,7 @@ mod tests {
         MAX_VERSION_FILE_LEN, Payload, PayloadEntry, PayloadError, VERSION_FILE, check_with_zip,
     };
     use crate::SectionsError;
+    use crate::full_disk::Full;
 
     /// The platforms a release is built for, as the release scripts name them.
     pub(super) const WINDOWS: &str = "windows-x64";
@@ -1513,28 +1514,6 @@ mod tests {
                 Err(PayloadError::UnknownRoot { name }) => assert_eq!(&*name, saves),
                 other => panic!("{:?}", other.map(|payload| payload.entries().len())),
             }
-        }
-    }
-
-    /// A destination with room for `room` bytes, which then fails as a full disk does.
-    struct Full {
-        room: usize,
-        written: Vec<u8>,
-    }
-
-    impl Write for Full {
-        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-            if self.room == 0 {
-                return Err(io::Error::new(io::ErrorKind::StorageFull, "no room left"));
-            }
-            let taken = bytes.len().min(self.room);
-            self.room -= taken;
-            self.written.extend_from_slice(&bytes[..taken]);
-            Ok(taken)
-        }
-
-        fn flush(&mut self) -> io::Result<()> {
-            Ok(())
         }
     }
 
