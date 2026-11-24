@@ -171,8 +171,15 @@ impl InstallFolder {
     /// a call that meets a critical error, as on a drive that holds no medium, rather than show a
     /// dialog: a recorded folder may lie on a card or a disk taken out since.
     pub fn inspect(root: &Path, running: &Version) -> Inspection {
+        InstallFolder::inspect_with(root, running, &|| {})
+    }
+
+    /// Inspects the folder at `root` as [`InstallFolder::inspect`] does, calling `looking` once
+    /// the system fails critical errors and before anything on the path is looked at.
+    pub(crate) fn inspect_with(root: &Path, running: &Version, looking: &dyn Fn()) -> Inspection {
         #[cfg(windows)]
         platform::fail_critical_errors();
+        looking();
         let root = match absolute_lexical(root) {
             Ok(absolute) => absolute,
             Err(error) => return Inspection::decided(root, Verdict::refused(root, error)),
@@ -1701,11 +1708,16 @@ mod tests {
             return;
         };
         let (dir, fixture) = installation();
-        let inspection = inspect(&fixture.root);
+        let at_first_look = std::cell::Cell::new(None);
+        let inspection = InstallFolder::inspect_with(&fixture.root, &running(), &|| {
+            at_first_look.set(Some(error_mode()));
+        });
         assert_state(&inspection, FolderState::Installed, "an installation");
-        // Critical errors fail calls from the inspection on, and the rest of the mode is as it
-        // was.
-        assert_eq!(error_mode(), started | SEM_FAILCRITICALERRORS);
+        // Critical errors fail calls from before the inspection's first look on, and the rest of
+        // the mode is as it was.
+        let failing = started | SEM_FAILCRITICALERRORS;
+        assert_eq!(at_first_look.get(), Some(failing));
+        assert_eq!(error_mode(), failing);
         // Removed before the exit, which runs no destructor.
         dir.close().unwrap();
         std::process::exit(ERROR_MODE_CHECKED);
