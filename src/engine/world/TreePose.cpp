@@ -436,6 +436,63 @@ std::vector<Mat4> TreePose::drawMatrices(const Mat4& model, const CameraFrame& c
     return matrices;
 }
 
+namespace {
+
+bool parented(const TreeNodeInfo& node, usize index) {
+    return node.parent >= 0 && static_cast<usize>(node.parent) < index;
+}
+
+/** A node's rigid matrix, and the frame it hands its children. */
+struct RigidPlace {
+    Mat4 matrix{1.0f};
+    Mat4 frame{1.0f};
+};
+
+/** One node placed under `above`, the frame its parent handed it (none for a root). The
+ * original keeps a scale key beside the node's matrix, for the draw alone; a parent flagged
+ * translation-only hands its children only its place. */
+RigidPlace placeRigid(const TreeNodeInfo& node, const NodePose& pose, const Mat4* above) {
+    NodePose unscaled = pose;
+    unscaled.scale = Vec3{1.0f, 1.0f, 1.0f};
+    const Mat4 local = TreePose::localMatrix(unscaled, node.position);
+    const Mat4 matrix = above != nullptr ? *above * local : local;
+    if ((node.objectFlags & TreePose::kTranslationOnlyParent) == 0) {
+        return {matrix, matrix};
+    }
+    return {matrix,
+            glm::translate(above != nullptr ? *above : Mat4{1.0f}, node.position + pose.position)};
+}
+
+/** Node `index` placed down its line from the root, composing as rigidMatrices does. */
+RigidPlace placeRigidFromRoot(const TreeInfo& tree, std::span<const NodePose> poses, usize index) {
+    const TreeNodeInfo& node = tree.nodes[index];
+    if (!parented(node, index)) {
+        return placeRigid(node, poses[index], nullptr);
+    }
+    const Mat4 above = placeRigidFromRoot(tree, poses, static_cast<usize>(node.parent)).frame;
+    return placeRigid(node, poses[index], &above);
+}
+
+} // namespace
+
+Mat4 TreePose::rigidMatrix(usize node) const {
+    GDL_VERIFY(node < m_poses.size(), "node out of range");
+    return placeRigidFromRoot(*m_tree, m_poses, node).matrix;
+}
+
+std::vector<Mat4> TreePose::rigidMatrices() const {
+    std::vector<Mat4> matrices(m_poses.size());
+    std::vector<Mat4> frames(m_poses.size());
+    for (usize n = 0; n < m_poses.size(); ++n) {
+        const TreeNodeInfo& node = m_tree->nodes[n];
+        const Mat4* above = parented(node, n) ? &frames[static_cast<usize>(node.parent)] : nullptr;
+        const RigidPlace placed = placeRigid(node, m_poses[n], above);
+        matrices[n] = placed.matrix;
+        frames[n] = placed.frame;
+    }
+    return matrices;
+}
+
 void TreePose::compose() {
     m_matrices.resize(m_poses.size());
     for (usize n = 0; n < m_poses.size(); ++n) {

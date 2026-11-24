@@ -37,6 +37,9 @@ public:
     bool operator==(const TreePose&) const = default;
     static constexpr f32 kHoldAngle = kHalfPi; ///< angle steps this large are not interpolated
     static constexpr f32 kKeyWindow = 0.125f;  ///< nearer a key than this shows the key itself
+    /** A node flag (`TreeNodeInfo::objectFlags`): the node's children take its place but not
+     * its turn (GetWorldMat 0x800BB690-0x800BB6E0). */
+    static constexpr u32 kTranslationOnlyParent = 0x4;
 
     /** How a track is read between its keys: Snapped, as gameplay reads it, shows the next
      * key itself within kKeyWindow of it; Smooth, for presentation only, interpolates right up
@@ -97,6 +100,14 @@ public:
     std::span<const NodePose> poses() const { return m_poses; }
     /** Per node, its local transform composed with every ancestor's. */
     std::span<const Mat4> matrices() const { return m_matrices; }
+    /** Node `node`'s matrix as the original's GetWorldMat (0x800BB614) composes it: the
+     * angles and places of the node and its ancestors without their scale keys, a mirror's
+     * flip included, and a parent flagged kTranslationOnlyParent adding only its place.
+     * Exactly matrices()[node] where every scale is one and no parent is so flagged.
+     * Computed on demand, so it is no part of the pose's state. */
+    Mat4 rigidMatrix(usize node) const;
+    /** Every node's rigidMatrix, composed in one pass. */
+    std::vector<Mat4> rigidMatrices() const;
     /** World-space draw matrices: facing is applied at each node before its
      * children, including meshless parents. Physics keeps the unfaced pose. */
     std::vector<Mat4> drawMatrices(const Mat4& model, const CameraFrame& camera) const;
