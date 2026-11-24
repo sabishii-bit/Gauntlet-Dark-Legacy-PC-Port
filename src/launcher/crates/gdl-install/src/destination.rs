@@ -2252,50 +2252,26 @@ mod tests {
     #[cfg(windows)]
     const JUDGING_TEST: &str = "destination::tests::judging_from_the_default_error_mode";
 
-    /// The exit code of a child run whose every check of the error mode held.
-    #[cfg(windows)]
-    const ERROR_MODE_CHECKED: i32 = 75;
-
+    /// The judging is made in a child started in the system's default error mode, which shows
+    /// critical errors, as a launcher started from Explorer is.
     #[cfg(windows)]
     #[test]
     fn a_judging_fails_critical_errors_rather_than_showing_them() {
-        use std::os::windows::process::CommandExt;
-        use std::process::{Command, Stdio};
-        use windows_sys::Win32::System::Threading::{CREATE_DEFAULT_ERROR_MODE, CREATE_NO_WINDOW};
-
-        // A program inherits its error mode from what starts it, and the shells and runners the
-        // tests run under fail critical errors already, so the judging is made in a child of this
-        // program started in the system's default mode, which shows them, as a launcher started
-        // from Explorer is.
-        let output = Command::new(std::env::current_exe().unwrap())
-            .args(["--exact", JUDGING_TEST, "--test-threads", "1"])
-            .env(ERROR_MODE_CHILD, "1")
-            .creation_flags(CREATE_DEFAULT_ERROR_MODE | CREATE_NO_WINDOW)
-            .stdin(Stdio::null())
-            .output()
-            .unwrap();
-        assert_eq!(
-            output.status.code(),
-            Some(ERROR_MODE_CHECKED),
-            "{}{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
+        crate::default_error_mode::run_in_default_error_mode(JUDGING_TEST, ERROR_MODE_CHILD);
     }
 
     /// The child's part of `a_judging_fails_critical_errors_rather_than_showing_them`.
     #[cfg(windows)]
     #[test]
     fn judging_from_the_default_error_mode() {
-        use crate::platform::{error_mode, refuse_fault_dialogs};
         use windows_sys::Win32::System::Diagnostics::Debug::SEM_FAILCRITICALERRORS;
 
-        if std::env::var_os(ERROR_MODE_CHILD).is_none() {
+        use crate::default_error_mode::{ERROR_MODE_CHECKED, started_in_default_error_mode};
+        use crate::platform::error_mode;
+
+        let Some(started) = started_in_default_error_mode(ERROR_MODE_CHILD) else {
             return;
-        }
-        refuse_fault_dialogs();
-        let started = error_mode();
-        assert_eq!(started & SEM_FAILCRITICALERRORS, 0, "{started:#x}");
+        };
         let dir = tempfile::tempdir().unwrap();
         let report = judge(&dir.path().join("game"));
         assert!(report.blockers.is_empty(), "{report:?}");

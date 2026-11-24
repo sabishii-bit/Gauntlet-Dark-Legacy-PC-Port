@@ -5,6 +5,8 @@
 
 mod awake;
 mod compat;
+#[cfg(all(test, windows))]
+mod default_error_mode;
 mod destination;
 mod folder;
 #[cfg(test)]

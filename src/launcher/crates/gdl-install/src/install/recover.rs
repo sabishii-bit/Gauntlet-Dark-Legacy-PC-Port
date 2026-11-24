@@ -1443,35 +1443,12 @@ mod tests {
     #[cfg(windows)]
     const RECOVERING_TEST: &str = "install::recover::tests::recovering_from_the_default_error_mode";
 
-    /// The exit code of a child run whose every check of the error mode held.
-    #[cfg(windows)]
-    const ERROR_MODE_CHECKED: i32 = 75;
-
+    /// The recovery is made in a child started in the system's default error mode, which shows
+    /// critical errors, as a launcher started from Explorer is.
     #[cfg(windows)]
     #[test]
     fn a_recovery_fails_critical_errors_rather_than_showing_them() {
-        use std::os::windows::process::CommandExt;
-        use std::process::{Command, Stdio};
-        use windows_sys::Win32::System::Threading::{CREATE_DEFAULT_ERROR_MODE, CREATE_NO_WINDOW};
-
-        // A program inherits its error mode from what starts it, and the shells and runners the
-        // tests run under fail critical errors already, so the recovery is made in a child of this
-        // program started in the system's default mode, which shows them, as a launcher started
-        // from Explorer is.
-        let output = Command::new(std::env::current_exe().unwrap())
-            .args(["--exact", RECOVERING_TEST, "--test-threads", "1"])
-            .env(ERROR_MODE_CHILD, "1")
-            .creation_flags(CREATE_DEFAULT_ERROR_MODE | CREATE_NO_WINDOW)
-            .stdin(Stdio::null())
-            .output()
-            .unwrap();
-        assert_eq!(
-            output.status.code(),
-            Some(ERROR_MODE_CHECKED),
-            "{}{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
+        crate::default_error_mode::run_in_default_error_mode(RECOVERING_TEST, ERROR_MODE_CHILD);
     }
 
     /// The child's part of `a_recovery_fails_critical_errors_rather_than_showing_them`.
@@ -1484,7 +1461,8 @@ mod tests {
         use windows_sys::Win32::System::Diagnostics::Debug::SEM_FAILCRITICALERRORS;
 
         use super::RECOVER_INSTALL;
-        use crate::platform::{error_mode, refuse_fault_dialogs};
+        use crate::default_error_mode::{ERROR_MODE_CHECKED, started_in_default_error_mode};
+        use crate::platform::error_mode;
 
         /// A progress that reads the process's error mode as the recovery's phase begins, before
         /// the recovery looks at the folder.
@@ -1503,12 +1481,9 @@ mod tests {
             fn advance(&self, _: u64, _: u64, _: Option<&RelPath>) {}
         }
 
-        if std::env::var_os(ERROR_MODE_CHILD).is_none() {
+        let Some(started) = started_in_default_error_mode(ERROR_MODE_CHILD) else {
             return;
-        }
-        refuse_fault_dialogs();
-        let started = error_mode();
-        assert_eq!(started & SEM_FAILCRITICALERRORS, 0, "{started:#x}");
+        };
         let left = Left::in_phase("staging", false);
         let mode = Mode::default();
         let cancel = Cancel::default();
