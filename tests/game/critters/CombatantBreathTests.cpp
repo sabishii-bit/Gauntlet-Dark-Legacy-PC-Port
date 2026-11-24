@@ -17,11 +17,17 @@
 #include "TestSupport.h"
 #include "fixtures/NativeModelFixture.h"
 #include "formats/CritterWad.h"
+#include "game/combat/HurtKind.h"
+#include "game/critters/CombatEvents.h"
 #include "game/critters/Combatant.h"
 #include "game/critters/CombatantBreath.h"
 #include "game/critters/CombatantKind.h"
 #include "game/critters/CritterData.h"
 #include "game/critters/Gargoyle.h"
+#include "game/enemies/LevelOpponents.h"
+#include "game/enemies/ScriptedOpponents.h"
+#include "game/party/PlayerRuntime.h"
+#include "game/players/PlayerImpact.h"
 
 namespace {
 using namespace gdl;
@@ -192,8 +198,9 @@ TEST_CASE("a breath pushes flat along its beam at the fast length's reciprocal (
     }
 }
 
-/** The breathing gargoyle's own data, as breathingGargoyle writes it, under `rules`. */
-CritterData breathingGargoyleData(const CritterRules& rules) {
+/** The breathing gargoyle's own data, as breathingGargoyle writes it, under `rules`, its breath
+ * starting at `start` from the body. */
+CritterData breathingGargoyleData(const CritterRules& rules, const Vec3& start = {0, 6, 0}) {
     formats::CritterFile source;
     source.descriptors.push_back({"GAR_EAGL", "BODY", static_cast<s16>(CombatantKind::Gargoyle)});
     auto& type = source.types.emplace_back();
@@ -221,7 +228,7 @@ CritterData breathingGargoyleData(const CritterRules& rules) {
     breath.maxDistance = 12;
     breath.damage = 1;
     breath.pitch = 0.5235988f;
-    breath.offset = {0, 6, 0};
+    breath.offset = {start.x, start.y, start.z};
     return CritterData::fromDecoded("GAR_EAGL", source, 0, rules);
 }
 
@@ -236,16 +243,18 @@ TEST_CASE("a breath under breathPushFromOrigin pushes flat from where it starts,
     REQUIRE(assets.load(device, root, Gargoyle::definition(), 'G'));
     CritterRules rules;
     rules.breathPushFromOrigin = fromOrigin;
-    assets.data = breathingGargoyleData(rules);
+    // The breath starts a unit aside of the body, so that the way from where it starts and the
+    // way from the fighter part.
+    assets.data = breathingGargoyleData(rules, {1, 6, 0});
     Combatant actor;
     REQUIRE(actor.spawn(assets, 0, Vec3{0}, 0, nullptr, {}, 'G'));
     const auto fire = assets.data.moveNamed("FIRE");
     REQUIRE(fire);
     REQUIRE(actor.setMove(*fire, {.frame = 0, .target = 0}));
-    // Six ahead and one and a half aside: inside the falling beam, off the line of its way.
+    // Six ahead and one and a half aside of the beam: inside it, off the line of its way.
     EnemyView player;
     player.player = 0;
-    player.position = {1.5f, 0, 6};
+    player.position = {2.5f, 0, 6};
     const std::array players{player};
     actor.update(1, 0, players);
     const auto blows = actor.takeBlows();
@@ -257,11 +266,57 @@ TEST_CASE("a breath under breathPushFromOrigin pushes flat from where it starts,
     const Vec3 away = fromStart / std::hypot(fromStart.x, fromStart.z);
     const Vec3 alongBeam = approximateFlatUnit(beam.end - beam.origin);
     REQUIRE(glm::distance(away, alongBeam) > 0.2f);
+    const Vec3 fromBody{player.position.x - actor.position().x, 0,
+                        player.position.z - actor.position().z};
+    REQUIRE(glm::distance(away, fromBody / std::hypot(fromBody.x, fromBody.z)) > 0.05f);
     const Vec3& direction = blows[0].direction;
     CAPTURE(direction.x, direction.y, direction.z);
     REQUIRE(blows[0].breath);
     CHECK(direction.y == 0.0f);
     CHECK(glm::distance(direction, fromOrigin ? away : alongBeam) < 1e-5f);
+}
+
+TEST_CASE("a breath holds the player it strikes off by its fighter's breath gap",
+          "[game][combatant][breath][hit-gap]") {
+    // A Dreamcast boss's tenth of a second, and Dark Legacy's quarter.
+    const f32 gap = GENERATE(0.1f, 0.25f);
+    CAPTURE(gap);
+    const auto root = breathingGargoyle();
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, Gargoyle::definition(), 'G'));
+    CritterRules rules;
+    rules.playerBreathGap = gap;
+    assets.data = breathingGargoyleData(rules);
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, Vec3{0}, 0, nullptr, {}, 'G'));
+    const auto fire = assets.data.moveNamed("FIRE");
+    REQUIRE(fire);
+    REQUIRE(actor.setMove(*fire, {.frame = 0, .target = 0}));
+    // Six ahead, where the falling beam passes through the body.
+    std::array<PlayerRuntime, 1> players;
+    players[0].actor.spawn(0, {}, nullptr, Vec3{0, 0, 6}, 0);
+    EnemyView view;
+    view.player = 0;
+    view.position = players[0].actor.position();
+    const std::array views{view};
+    actor.update(1, 0, views);
+    const auto blows = actor.takeBlows();
+    REQUIRE(blows.size() == 1);
+    REQUIRE(blows[0].breath);
+    CHECK(blows[0].breathGap == Approx(gap));
+
+    // The level burns the player and holds it off by the gap the breath carries.
+    std::vector<HurtKind> hurts;
+    test::OpponentScript events;
+    events.hurt = [&](usize, f32, HurtKind kind, bool, const PlayerImpact&) {
+        hurts.push_back(kind);
+    };
+    test::ScriptedOpponents host{events};
+    CHECK(LevelOpponents::applyCritterBlow(blows[0], players, host, host));
+    CHECK(hurts == std::vector{HurtKind::Burn});
+    CHECK(players[0].breathGap == Approx(gap));
+    CHECK_FALSE(LevelOpponents::applyCritterBlow(blows[0], players, host, host));
 }
 
 TEST_CASE("critter damage loading preserves the breath's inner distance limit",
