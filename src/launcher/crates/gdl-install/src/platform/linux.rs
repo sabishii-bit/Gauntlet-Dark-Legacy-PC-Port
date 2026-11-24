@@ -40,8 +40,11 @@ enum Marking {
 /// no program to `/bin/sh` to run as a script; with execv such a file is refused.
 ///
 /// The program and its arguments are taken as they stand: call this once they are set. The
-/// program runs with this process's environment, so a command whose environment was changed
-/// through it is refused, as is a program or argument that holds a NUL.
+/// program runs with this process's environment and names itself by its path: a command whose
+/// environment was changed through `env`, `envs` or `env_remove` is refused, while `env_clear`
+/// and `CommandExt::arg0`, which a command does not show, are not honoured, so a caller must not
+/// use them. A program or argument that holds a NUL never reaches the hook: std refuses such a
+/// command as it starts it.
 pub(crate) fn exec_directly(command: &mut Command) -> io::Result<()> {
     install_hook(command, Marking::Range)
 }
@@ -94,7 +97,8 @@ unsafe impl Send for Program {}
 unsafe impl Sync for Program {}
 
 impl Program {
-    /// `command`'s program and arguments, refused when one holds a NUL.
+    /// `command`'s program and arguments, refused when one holds a NUL, which std's command,
+    /// keeping a stand-in for such a string, never gives.
     fn of(command: &Command) -> io::Result<Program> {
         let c_string = |text: &std::ffi::OsStr| {
             CString::new(text.as_bytes()).map_err(|_| {
@@ -195,4 +199,38 @@ pub(crate) fn leak_descriptor(file: &std::fs::File) -> io::Result<OwnedFd> {
     }
     // SAFETY: `copy` is a descriptor just made, which nothing else owns or closes.
     Ok(unsafe { OwnedFd::from_raw_fd(copy) })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io;
+    use std::process::{Command, Stdio};
+
+    use super::exec_directly;
+
+    /// A program of the system's own that does nothing and succeeds.
+    const DOES_NOTHING: &str = "/bin/true";
+
+    /// A variable the test changes for a command, which nothing reads.
+    const VARIABLE: &str = "GDL_EXEC_DIRECTLY_TEST";
+
+    #[test]
+    fn a_changed_environment_is_refused() {
+        // The program would run with this process's environment, not the one asked for, so a
+        // command that sets or removes a variable is refused rather than started without it.
+        let mut set = Command::new(DOES_NOTHING);
+        set.env(VARIABLE, "1");
+        let mut removed = Command::new(DOES_NOTHING);
+        removed.env_remove(VARIABLE);
+        for (what, mut command) in [("set", set), ("removed", removed)] {
+            let error = exec_directly(&mut command).unwrap_err();
+            assert_eq!(error.kind(), io::ErrorKind::InvalidInput, "{what}: {error}");
+        }
+        // A command that leaves the environment alone is started.
+        let mut command = Command::new(DOES_NOTHING);
+        command.stdin(Stdio::null());
+        exec_directly(&mut command).unwrap();
+        let status = command.status().unwrap();
+        assert!(status.success(), "{status:?}");
+    }
 }

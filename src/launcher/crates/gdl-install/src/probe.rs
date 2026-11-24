@@ -45,7 +45,7 @@ const READ_LEN: usize = 8 << 10;
 const CHUNKS_IN_FLIGHT: usize = 16;
 
 /// The most descriptors a probed program's start marks one at a time, where the kernel cannot
-/// mark them all in one call: the bound on how far past the soft limit on open files it looks.
+/// mark them all in one call: it follows the soft limit on open files up to this many.
 #[cfg(target_os = "linux")]
 pub(crate) const MAX_MARKED_DESCRIPTORS: u64 = 65_536;
 
@@ -1270,11 +1270,25 @@ mod tests {
     #[test]
     fn a_cancelled_probe_starts_nothing() {
         let dir = tempfile::tempdir().unwrap();
+        // The cancel is looked at before the system is asked to start anything: a file it would
+        // refuse to start is never offered to it.
+        let garbage = dir.path().join(EXECUTABLE);
+        write_program(&garbage, GAME_BYTES);
+        let cancel = Cancel::default();
+        cancel.cancel();
+        for result in [
+            run_probe(&garbage, &[], GAME_PROBE_LIMIT, &cancel),
+            probe_game_version_with(&garbage, &cancel),
+        ] {
+            match result {
+                Err(GameStartError::Cancelled) => {}
+                other => panic!("{other:?}"),
+            }
+        }
+        // Nor is a program that would run.
         let marker = dir.path().join("ran.txt");
         let (program, args) = marker_writer(&marker);
         let args: Vec<&str> = args.iter().map(String::as_str).collect();
-        let cancel = Cancel::default();
-        cancel.cancel();
         match run_probe(&program, &args, GAME_PROBE_LIMIT, &cancel) {
             Err(GameStartError::Cancelled) => {}
             other => panic!("{other:?}"),
@@ -1284,6 +1298,30 @@ mod tests {
         let answer = probe(&program, &args, GAME_PROBE_LIMIT).unwrap();
         assert!(answer.succeeded(), "{answer:?}");
         assert!(marker.exists());
+    }
+
+    #[test]
+    fn a_nul_in_the_program_or_an_argument_starts_nothing() {
+        // A program or argument that holds a NUL could only be cut short by the system, and so
+        // name another: the command is refused as it starts, before anything runs.
+        let dir = tempfile::tempdir().unwrap();
+        let marker = dir.path().join("ran.txt");
+        let (program, args) = marker_writer(&marker);
+        let mut args: Vec<&str> = args.iter().map(String::as_str).collect();
+        args.push("a\0b");
+        let named = dir.path().join("gaunt\0let");
+        for (what, result) in [
+            ("an argument", probe(&program, &args, GAME_PROBE_LIMIT)),
+            ("the program", probe_game_version(&named)),
+        ] {
+            match result {
+                Err(GameStartError::Start(error)) => {
+                    assert_eq!(error.kind(), io::ErrorKind::InvalidInput, "{what}: {error}");
+                }
+                other => panic!("{what}: {other:?}"),
+            }
+        }
+        assert!(!marker.exists());
     }
 
     #[cfg(target_os = "linux")]
