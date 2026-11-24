@@ -11,6 +11,7 @@
 #include "engine/core/Types.h"
 #include "engine/math/Math.h"
 
+#include "game/critters/CombatEvents.h"
 #include "game/critters/CombatantKind.h"
 #include "game/critters/CritterMovement.h"
 #include "game/critters/MoveDefinition.h" // IWYU pragma: export
@@ -49,7 +50,7 @@ struct CritterRules {
     /** Seconds by which its blow or breath sets a struck player's fxhittime ahead: the wait the
      * great ones' breaths and gated blows keep before striking that player again. GDL's
      * CritterDamagePlayer (0x800367CC) sets a quarter second. */
-    f32 playerHitGap = 0.25f;
+    f32 playerBreathGap = kPlayerBreathGap;
     /** Rules an adapter selects where its fighter is not Dark Legacy's, a bit each: the port's
      * own where the fighter's binary is unread, or that binary's where it is read. */
     u32 portRules = 0;

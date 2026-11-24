@@ -178,7 +178,7 @@ TEST_CASE("native critter resource identity includes its breath's push, hit gap 
         CritterRules rules;
         switch (field) {
         case 0: rules.breathPushFromOrigin = true; break;
-        case 1: rules.playerHitGap = 0.1f; break;
+        case 1: rules.playerBreathGap = 0.1f; break;
         case 2: rules.portRules = 0x1; break;
         default: FAIL("unexpected rule field");
         }

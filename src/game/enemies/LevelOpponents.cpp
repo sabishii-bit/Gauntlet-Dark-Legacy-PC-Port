@@ -1250,7 +1250,7 @@ bool LevelOpponents::applyCritterBlow(const CombatBlow& blow, std::span<PlayerRu
             }
         }
         if (blow.breath || blow.gated) {
-            player.breathGap = blow.hitGap;
+            player.breathGap = blow.breathGap;
         }
         if (blow.area) {
             const Vec3 centre = player.actor.position() + Vec3{0, player.actor.height() * 0.5f, 0};

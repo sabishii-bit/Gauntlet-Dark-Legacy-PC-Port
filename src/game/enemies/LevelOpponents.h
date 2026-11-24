@@ -199,7 +199,8 @@ public:
     const LevelInfo* levelNow() const;
     Vec3 resolveMovement(const PlayerActor& player, const Vec3& from, const Vec3& to,
                          CreatureContact contact = {}) const;
-    /** Routes a contact by player identity; breath uses a shared quarter-second gate. */
+    /** Routes a contact by player identity; a breath or gated blow then holds its player off
+     * for the blow's own breath gap, which every great one's breath and gated blow honours. */
     static bool applyCritterBlow(const CombatBlow& blow, std::span<PlayerRuntime> players,
                                  OpponentHost& host, const CombatCover& cover);
     static void applyGrab(const CombatGrab& grab, bool boss, std::span<PlayerRuntime> players);

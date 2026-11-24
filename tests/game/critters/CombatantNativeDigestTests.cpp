@@ -258,11 +258,11 @@ TEST_CASE("a pending blow's visitor keeps every field, the gap it holds its play
     const CombatBlow blow;
     const auto baseline = hash(blow);
     const std::array<std::function<void(CombatBlow&)>, 11> mutations{
-        [](auto& v) { v.player = 2; },      [](auto& v) { v.critter = 5; },
-        [](auto& v) { v.damage = 7; },      [](auto& v) { v.direction.x += 1; },
-        [](auto& v) { v.breath = true; },   [](auto& v) { v.gated = true; },
-        [](auto& v) { v.hitGap = 0.1f; },   [](auto& v) { v.flags = 4; },
-        [](auto& v) { v.origin.y += 1; },   [](auto& v) { v.area = true; },
+        [](auto& v) { v.player = 2; },       [](auto& v) { v.critter = 5; },
+        [](auto& v) { v.damage = 7; },       [](auto& v) { v.direction.x += 1; },
+        [](auto& v) { v.breath = true; },    [](auto& v) { v.gated = true; },
+        [](auto& v) { v.breathGap = 0.1f; }, [](auto& v) { v.flags = 4; },
+        [](auto& v) { v.origin.y += 1; },    [](auto& v) { v.area = true; },
         [](auto& v) { v.repeatGap = 0.5f; }};
     for (usize i = 0; i < mutations.size(); ++i) {
         CAPTURE(i);

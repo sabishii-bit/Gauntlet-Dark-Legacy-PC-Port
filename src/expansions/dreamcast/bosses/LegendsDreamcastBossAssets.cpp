@@ -93,7 +93,7 @@ loadLegendsDreamcastBossAssets(RenderDevice& device, const std::filesystem::path
     CritterRules rules{.pressureReferenceDamage = decoded.types.front().pressureReferenceDamage,
                        .restoreCaptureSupport = true,
                        .nodeFramePartOffsets = true,
-                       .playerHitGap = 0.1f};
+                       .playerBreathGap = 0.1f};
     auto data = CritterData::fromDecoded(family.name, decoded, 0, rules);
     std::vector<CritterData> children;
     for (s32 child = data.childIndex(); child >= 0;) {

@@ -8,6 +8,10 @@
 
 #include "game/critters/CombatantKind.h"
 namespace gdl::game {
+/** Seconds by which GDL's CritterDamagePlayer (0x800367CC) sets a struck player's fxhittime
+ * ahead: how long the great ones' breaths and blows then leave that player be. */
+inline constexpr f32 kPlayerBreathGap = 0.25f;
+
 /** Physical contact adds velocity without dealing damage or selecting a hit reaction. */
 struct CombatPush {
     s32 player = -1;
@@ -47,10 +51,10 @@ struct CombatBlow {
     f32 damage = 0.0f;
     Vec3 direction{0.0f, 0.0f, 1.0f};
     bool breath = false;
-    bool gated = false; ///< held off by the player's shared hit gap (fxhittime)
-    f32 hitGap = 0.25f; ///< seconds a breath or gated blow sets that gap to when it strikes
-    u32 flags = 0;      ///< authored player damage modifiers, not the attack's behavior flags
-    Vec3 origin{0.0f};  ///< emitted segment origin, used for breath cover queries
+    bool gated = false;               ///< held off by the player's breath gap (fxhittime)
+    f32 breathGap = kPlayerBreathGap; ///< seconds a breath or gated blow sets that gap to
+    u32 flags = 0;     ///< authored player damage modifiers, not the attack's behavior flags
+    Vec3 origin{0.0f}; ///< emitted segment origin, used for breath cover queries
     bool area = false;
     f32 repeatGap = 0.0f; ///< area-effect immunity requested on contact
     bool operator==(const CombatBlow&) const = default;

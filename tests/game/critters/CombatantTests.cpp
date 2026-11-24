@@ -2206,7 +2206,7 @@ TEST_CASE("a fighter's hit gap decides when its held blow strikes again",
     auto source = swingCritter(0);
     source.moves[1].frameEnd = 11;
     CritterRules rules;
-    rules.playerHitGap = gap;
+    rules.playerBreathGap = gap;
     assets.data = CritterData::fromDecoded("GENERAL", source, 0, rules);
     Combatant actor;
     REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
