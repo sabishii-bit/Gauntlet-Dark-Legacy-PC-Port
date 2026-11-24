@@ -65,7 +65,9 @@ impl TakenBack {
     }
 }
 
-/// Why a rollback stopped before it took the install back.
+/// Why a rollback stopped before it took the install back. It is never reported as it is, and so
+/// has no rule of its own: the job reports its own failure and what the rollback kept, and a
+/// recovery maps it to a [`RecoveryError`](super::RecoveryError).
 #[derive(Debug)]
 pub(super) enum RollbackError {
     /// The receipt stands: the folder is an installation, which nothing takes back, and the

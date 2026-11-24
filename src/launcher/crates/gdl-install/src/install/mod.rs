@@ -1346,6 +1346,7 @@ mod tests {
         assert!(size_of::<DestinationError>() <= MOST_ERROR_BYTES);
         assert!(size_of::<IconError>() <= MOST_ERROR_BYTES);
         assert!(size_of::<RecoveryError>() <= MOST_ERROR_BYTES);
+        assert!(size_of::<super::rollback::RollbackError>() <= MOST_ERROR_BYTES);
     }
 
     /// The SHA-256 digest of no bytes.
