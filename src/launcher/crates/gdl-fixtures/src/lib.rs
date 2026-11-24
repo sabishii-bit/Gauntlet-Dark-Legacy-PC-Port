@@ -2,14 +2,17 @@
 //! installations, so the launcher's plain tests run without the player's own dumps.
 #![forbid(unsafe_code)]
 
+mod feed;
 mod folder;
 mod gamecube;
 mod gdrom;
+mod loopback;
 mod n64;
 mod program;
 mod runtime;
 mod zip;
 
+pub use feed::{AssetRow, ReleaseRow, page};
 #[cfg(unix)]
 pub use folder::DeniedAccess;
 pub use folder::{
@@ -29,6 +32,7 @@ pub use gdrom::{
     BootFields, DiscSet, Edc, RAW_SECTOR, SECTOR, boot_sector, both16, both32, edc, pvd_sector,
     raw_sector, record, sizes_rom,
 };
+pub use loopback::{LoopbackServer, Reply, Request};
 pub use n64::{
     BIG_ENDIAN_FIRST_WORD, BUILDER_UNKNOWN_WORD, BuiltRom, OVERLAY_TABLE_OFFSET, OverlaySpec,
     ROM_HEADER_LEN, RomFile, WadOrder, default_rom_files, raw_deflate, reorder, rom,
