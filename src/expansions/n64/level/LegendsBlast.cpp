@@ -91,4 +91,13 @@ std::optional<f32> LegendsBlast::touch(const LegendsPortalVisitor& visitor) {
     return damageAt(visitor.position + Vec3{0, visitor.height * .5f, 0});
 }
 
+Vec3 LegendsBlast::push(const LegendsPortalVisitor& visitor) const {
+    // The centre stands above or below the feet it reaches, but the push is laid flat, as Dark
+    // Legacy's explosions lay theirs (ProcessEffects, sfx.c 2890): a fall in it would stay in
+    // the knock and hold the player's walk.
+    Vec3 away = visitor.position - m_event.position;
+    away.y = 0;
+    return away;
+}
+
 } // namespace gdl::game

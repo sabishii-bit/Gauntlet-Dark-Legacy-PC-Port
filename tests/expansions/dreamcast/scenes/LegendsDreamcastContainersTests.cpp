@@ -257,6 +257,8 @@ TEST_CASE("Dreamcast poison barrels damage grounded and levitating players throu
     const auto contact = [&] {
         level.affectArea({});
         for (const auto& hit : level.takeHazardHits()) {
+            // The gas stands 1 under the barrel's foot; its push still carries no height.
+            CHECK(hit.impact.direction.y == 0.0f);
             if (!hit.poison) {
                 continue;
             }

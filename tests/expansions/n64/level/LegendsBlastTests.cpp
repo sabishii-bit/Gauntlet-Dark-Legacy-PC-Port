@@ -4,7 +4,10 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/math/Math.h"
+
 #include "expansions/n64/level/LegendsBlast.h"
+#include "game/players/Knockback.h"
 
 namespace {
 using namespace gdl;
@@ -56,6 +59,26 @@ TEST_CASE("Native barrel hits each player once and can reach late arrivals", "[l
     REQUIRE(state.step(.2f));
     CHECK(state.reachedOpponents() == std::vector<s32>{10});
     CHECK(state.reachedFixtures() == std::vector<s32>{20});
+}
+
+TEST_CASE("Native barrel pushes a player out along the ground, so its knock carries no fall",
+          "[legends][blasts][knockback]") {
+    // The fire stands 2 over the feet it reaches. A knock keeps a push's fall, so the push is
+    // laid flat, as the original's explosions lay theirs (sfx.c 2890).
+    LegendsBlast state{blast()};
+    REQUIRE(state.step(.2f));
+    const LegendsPortalVisitor visitor{0, {3, 0, 4}, true, .75f, 4};
+    REQUIRE(state.touch(visitor));
+    const Vec3 push = state.push(visitor);
+    CHECK(push == Vec3{3, 0, 4});
+    Knockback knock;
+    knock.queue(push, Knockback::kKnockDown, 30);
+    REQUIRE(knock.kick(0, false).has_value());
+    CHECK(knock.velocity().x == Catch::Approx(3 * Knockback::kFallKick));
+    CHECK(knock.velocity().y == 0.0f);
+    CHECK(knock.velocity().z == Catch::Approx(4 * Knockback::kFallKick));
+    // Right under the fire there is nothing to push along.
+    CHECK(state.push({1, {0, 0, 0}, true, .75f, 4}) == Vec3{0});
 }
 
 TEST_CASE("Native fire damage attenuates its physical portion but poison does not",

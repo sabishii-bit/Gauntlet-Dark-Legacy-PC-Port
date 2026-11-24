@@ -104,6 +104,8 @@ TEST_CASE("Imported barrel events reach normal opponent callbacks and standing p
             CHECK(hit.damage > 0);
             CHECK((hit.impact.flags & damage::kLow) != 0);
             CHECK((hit.impact.flags & damage::kElementMask) == (hit.poison ? 0U : damage::kFire));
+            // The blast stands 2 over the barrel's foot; its push still carries no fall.
+            CHECK(hit.impact.direction.y == 0.0f);
             if (!hit.poison) {
                 CHECK(Damage::modify(hit.damage, hit.impact.flags, 0x100U, 0, false).amount == 0);
             }

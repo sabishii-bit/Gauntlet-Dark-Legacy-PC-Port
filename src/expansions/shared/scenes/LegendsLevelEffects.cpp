@@ -37,7 +37,7 @@ void LegendsLevel::affectArea(const ImportedAreaDamage& apply) {
         if (area && area->radius > 0) {
             for (const auto& visitor : m_visitors) {
                 if (const auto damage = blast.touch(visitor)) {
-                    const Vec3 direction = visitor.position - event.position;
+                    const Vec3 direction = blast.push(visitor);
                     // Dreamcast StartExplosion 8c0d6e00 passes DMG_POISONGAS
                     // (0x800), not DMG_LOW. Adding the latter made Levitation
                     // discard a cloud that still overlaps the player's body.

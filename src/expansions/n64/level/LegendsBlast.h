@@ -20,6 +20,8 @@ public:
     explicit LegendsBlast(LegendsFixtureEvent event, f32 damageScale = 1);
     std::optional<Area> step(f32 seconds);
     std::optional<f32> touch(const LegendsPortalVisitor& visitor);
+    /** The way the blast pushes a visitor it reaches: out from its centre, along the ground. */
+    Vec3 push(const LegendsPortalVisitor& visitor) const;
     f32 damageAt(const Vec3& position) const;
     /** Native barrel thresholds ignore the elemental half of a packed hit. */
     f32 physicalDamageAt(const Vec3& position) const;
