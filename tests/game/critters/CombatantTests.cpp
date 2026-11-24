@@ -2198,6 +2198,137 @@ TEST_CASE("a blow's offset turns with its node but is not stretched by the node'
     CHECK(glm::distance(blows[0].origin, Vec3{scaled ? -35.0f : -5.0f, 0, 0}) < 1e-4f);
 }
 
+TEST_CASE("a great one's breath, shot, area and hold leave from its node as GetWorldMat places "
+          "it, not where its scale keys stretch it",
+          "[game][combatant][node-scale]") {
+    // ARM, five along x, keys four times its length along x through SWING, which carries the
+    // drawn HAND from seven to thirteen along x. GetWorldMat (0x800BB614) composes the nodes
+    // without that key, which only the draw applies, so the breath (CritterFirePlayerCollide),
+    // the shot's launch node, the area started at HAND and the player it holds all leave HAND
+    // at seven. Data whose rules keep the scale keys leave it at thirteen, stretched.
+    const bool scaled = GENERATE(false, true);
+    const s16 kind = GENERATE(AttackDefinition::kBreath, AttackDefinition::kProjectile,
+                              AttackDefinition::kAttachedArea, AttackDefinition::kGrab);
+    CAPTURE(scaled, kind);
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    const auto root = familyAssets();
+    writeSwingTree(root, 0, {}, R"(,"tracks":[{"node":1,"flags":256,"frames":[0],"values":[4]}])");
+    REQUIRE(assets.load(device, root, General::definition(), 'G'));
+    auto source = swingCritter(0);
+    auto& harm = source.damages[0];
+    harm.type = kind;
+    harm.damage = 10;
+    harm.flags = 0;
+    if (kind == AttackDefinition::kBreath) {
+        harm.maxDistance = 20;
+        harm.radius = 1;
+    } else if (kind == AttackDefinition::kAttachedArea) {
+        harm.maxDistance = 10;
+        harm.minDot = -1;
+        harm.offset = {0, 3, 0};
+        harm.sfxIndex = 0;
+        auto& sound = source.sounds.emplace_back();
+        sound.name = "NULLFX";
+        sound.life = 0.5f;
+        sound.offset = {0, 2, 0};
+    } else if (kind == AttackDefinition::kGrab) {
+        harm.maxDistance = 1;
+        harm.offset = {2, 0, 0};
+    } else {
+        harm.offset = {0, 3, 0};
+    }
+    CritterRules rules;
+    rules.portRules = scaled ? CritterRules::kScaledNodes : 0;
+    assets.data = CritterData::fromDecoded("GENERAL", source, 0, rules);
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+    const auto swing = assets.data.moveNamed("SWING");
+    REQUIRE(swing);
+    Combatant::MovePoint start;
+    start.target = 0;
+    REQUIRE(actor.setMove(*swing, start));
+    const Vec3 hand{scaled ? 13.0f : 7.0f, 0, 0};
+    // A player where each meets it from that HAND: ten along the breath, inside the area, or at
+    // the grab's reach.
+    EnemyView player;
+    player.player = 0;
+    if (kind == AttackDefinition::kBreath) {
+        player.position = hand + Vec3{0, -3, 10};
+    } else if (kind == AttackDefinition::kGrab) {
+        player.position = hand + Vec3{2, -3, 0};
+    } else {
+        player.position = hand + Vec3{0, 2, 0};
+    }
+    actor.update(2, 1.0f / 30, std::array{player});
+    REQUIRE(actor.moveName() == "SWING");
+    const auto drawn = actor.nodeTransform("HAND");
+    REQUIRE(drawn);
+    REQUIRE(glm::distance(Vec3{(*drawn)[3]}, Vec3{13, 0, 0}) < 1e-4f); // drawn there either way
+    if (kind == AttackDefinition::kBreath) {
+        const auto blows = actor.takeBlows();
+        REQUIRE(blows.size() == 1);
+        REQUIRE(blows[0].breath);
+        CHECK(glm::distance(blows[0].origin, hand) < 1e-4f);
+    } else if (kind == AttackDefinition::kProjectile) {
+        const auto shots = actor.takeShots();
+        REQUIRE(shots.size() == 1);
+        CHECK(glm::distance(shots[0].origin, hand + Vec3{0, 3, 0}) < 1e-4f);
+    } else if (kind == AttackDefinition::kAttachedArea) {
+        const auto blows = actor.takeBlows();
+        REQUIRE(blows.size() == 1);
+        REQUIRE(blows[0].area);
+        // The key stretches HAND along x alone, so the offsets above it stand as laid.
+        CHECK(glm::distance(blows[0].origin, hand + Vec3{0, 5, 0}) < 1e-4f);
+    } else {
+        const auto grabs = actor.takeGrabs();
+        REQUIRE(grabs.size() == 1);
+        REQUIRE(grabs[0].attachment.has_value());
+        // The hold's offset, two along HAND's x, stretches with HAND only where the rules keep
+        // the key.
+        const Mat4& held = *grabs[0].attachment;
+        CHECK(glm::length(Vec3{held[0]}) == Approx(scaled ? 4.0f : 1.0f));
+        CHECK(glm::distance(Vec3{held[3]}, hand + Vec3{scaled ? 8.0f : 2.0f, 0, 0}) < 1e-4f);
+    }
+}
+
+TEST_CASE("a blow's swing push follows its node as GetWorldMat places it, not as its scale key "
+          "stretches it",
+          "[game][combatant][node-scale][blow-push]") {
+    // ARM keys its length along x from one to four over SWING's first ten frames, which carries
+    // the drawn HAND outward 0.6 a frame. GetWorldMat leaves HAND at seven, so the move node
+    // CritterMoveSetup notes (0x8003B1CC) stands still and the blow pushes the player straight
+    // away from the body; data whose rules keep the scale keys push along that stretch too.
+    const bool scaled = GENERATE(false, true);
+    CAPTURE(scaled);
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    const auto root = familyAssets();
+    writeSwingTree(root, 0, {},
+                   R"(,"tracks":[{"node":1,"flags":256,"frames":[0,10],"values":[1,4]}])");
+    REQUIRE(assets.load(device, root, General::definition(), 'G'));
+    CritterRules rules;
+    rules.portRules = scaled ? CritterRules::kScaledNodes : 0;
+    assets.data = CritterData::fromDecoded("GENERAL", swingCritter(4), 0, rules);
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+    EnemyView player;
+    player.player = 0;
+    player.position = {8, 0, 0};
+    const std::array players{player};
+    std::vector<CombatBlow> blows;
+    for (s32 i = 0; i < 30 && blows.empty(); ++i) {
+        actor.update(2, 1.0f / 30, players);
+        blows = actor.takeBlows();
+    }
+    REQUIRE(blows.size() == 1);
+    // Away from the body's origin, four over its feet, given a unit's height.
+    const Vec3 away{8, 1, 0};
+    const Vec3 expected = scaled ? 2.0f * (approximateUnit(Vec3{1, 0, 0}) + approximateUnit(away))
+                                 : 2.0f * approximateUnit(away);
+    CHECK(glm::distance(blows[0].direction, expected) < 1e-3f);
+}
+
 TEST_CASE("a blow's push survives a rewind of its fighter",
           "[game][combatant][blow-push][native-state-digest]") {
     test::FakeRenderDevice device;
@@ -3058,9 +3189,13 @@ TEST_CASE("a great one's step meets another's part, the swarm and the level's it
 }
 
 TEST_CASE("a broken part's shot leaves where GetWorldMat places the part",
-          "[combatant][critter-contact]") {
+          "[combatant][critter-contact][shrink]") {
     // A part broken by an overrun lets its damage record go from the part's place, its offset
-    // in ARM's parent's frame (CritterUpdateColnodes), not turned with ARM to (5, 0, -2).
+    // in ARM's parent's frame (CritterUpdateColnodes), not turned with ARM to (5, 0, -2). Shrunk,
+    // the part stands whole and the record's own offset shrinks with the drawn body, as
+    // CritterDoTexmodNode shrinks it (0x8003D10C-0x8003D154).
+    const f32 shrink = GENERATE(1.0f, 0.667f);
+    CAPTURE(shrink);
     test::FakeRenderDevice device;
     CombatantAssets assets;
     auto source = turnedPartCritter();
@@ -3071,16 +3206,18 @@ TEST_CASE("a broken part's shot leaves where GetWorldMat places the part",
     auto& shot = source.damages.emplace_back();
     shot.type = AttackDefinition::kProjectile;
     shot.damage = 10;
+    shot.offset = {0, 3, 0};
     loadTurnedPart(device, assets, TurnedRoot::Still, {}, source);
     Combatant actor;
     REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+    actor.setShrink(shrink);
     EnemyHit hit;
     hit.damage = 50;
     hit.node = 0;
     actor.hurt(hit);
     const auto shots = actor.takeShots();
     REQUIRE(shots.size() == 1);
-    CHECK(glm::distance(shots.front().origin, Vec3{7, 0, 0}) < 1e-4f);
+    CHECK(glm::distance(shots.front().origin, Vec3{7, 3 * shrink, 0}) < 1e-4f);
 }
 
 /** Where the original's GetWorldMat (0x800BB614) puts `offset` at node `node` of `pose`, in the
@@ -3183,31 +3320,44 @@ TEST_CASE("great ones' parts stand where the original's GetWorldMat places them 
     }
 }
 
-TEST_CASE("the Yeti's swipe strikes ten back along the hand that swings it, which its scale key "
-          "draws four times as long",
+TEST_CASE("the Yeti's swipes strike ten along the hand that swings them, which its scale keys "
+          "draw about four times as long",
           "[game][combatant][yeti][node-scale][assets]") {
     const auto root = test::assetOrSkip("CRITTER/YETI.WAD").parent_path().parent_path();
     test::assetOrSkip("MONSTERS/YETI/ANIM.PS2");
+    /** A swipe's move, the hand it strikes with, its window and its blow's offset along x. */
+    struct Swipe {
+        const char* name;
+        const char* hand;
+        s32 start;
+        s32 end;
+        f32 along;
+    };
+    constexpr std::array kSwipes{Swipe{"SWIPEL", "JOINT_4", 20, 24, -10},
+                                 Swipe{"SWIPER", "JOINT_13", 24, 29, 10}};
+    const Swipe& swiped = kSwipes[GENERATE(0U, 1U)];
+    CAPTURE(swiped.name);
     test::FakeRenderDevice device;
     test::CombatantFixture f;
     f.open(device, root, nullptr, {}, 'I');
     REQUIRE(f.spawn("YETI", Vec3{0}, 0));
     Combatant& actor = f.actor;
-    const auto swipe = actor.data()->moveNamed("SWIPEL");
+    const auto swipe = actor.data()->moveNamed(swiped.name);
     REQUIRE(swipe.has_value());
     const MoveDefinition& move = actor.data()->moves()[*swipe];
-    REQUIRE(move.colnode == "JOINT_4");
-    REQUIRE(move.frameStart == 20);
-    REQUIRE(move.frameEnd == 24);
+    REQUIRE(move.colnode == swiped.hand);
+    REQUIRE(move.frameStart == swiped.start);
+    REQUIRE(move.frameEnd == swiped.end);
     const AttackDefinition* blow = actor.data()->damage(move.damage0);
     REQUIRE(blow != nullptr);
     REQUIRE(blow->type == AttackDefinition::kBlow);
-    REQUIRE(blow->offset == Vec3{-10, 0, 0});
+    REQUIRE(blow->offset == Vec3{swiped.along, 0, 0});
     REQUIRE(blow->maxDistance == 13);
-    // The hand where frame 21 puts it, drawn four times as long along its x.
-    constexpr f32 kStruck = 21;
+    // The hand where the window's second frame puts it, drawn about four times as long along
+    // its x.
+    const auto struck = static_cast<f32>(swiped.start + 1);
     Combatant::MovePoint point;
-    point.frame = kStruck;
+    point.frame = struck;
     point.target = 0;
     REQUIRE(actor.setMove(*swipe, point));
     const auto hand = actor.nodeTransform(move.colnode);
@@ -3215,17 +3365,17 @@ TEST_CASE("the Yeti's swipe strikes ten back along the hand that swings it, whic
     const Vec3 origin{(*hand)[3]};
     const f32 drawn = glm::length(Vec3{(*hand)[0]});
     CAPTURE(origin.x, origin.y, origin.z, drawn);
-    REQUIRE(drawn > 3.9f);
-    // A player centred on the hand stands within the reach of thirteen of the blow ten back
-    // along it, as CritterNodePlayerCollide measures it through GetWorldMat (0x800BB614), and
-    // out of reach of one forty back.
+    REQUIRE(drawn > 3.5f);
+    // A player centred on the hand stands within the reach of thirteen of the blow ten along
+    // it, as CritterNodePlayerCollide measures it through GetWorldMat (0x800BB614), and out of
+    // reach of one forty along.
     std::array<EnemyView, 1> players{};
     players[0].player = 0;
     players[0].position = origin - Vec3{0, 3, 0};
-    point.frame = kStruck - 1;
+    point.frame = struck - 1;
     REQUIRE(actor.setMove(*swipe, point));
     f.update(2, 1.0f / 30, players);
-    REQUIRE(actor.animation().frame() == Approx(kStruck));
+    REQUIRE(actor.animation().frame() == Approx(struck));
     const auto blows = actor.takeBlows();
     REQUIRE(blows.size() == 1);
     CHECK(glm::distance(blows[0].origin, origin) == Approx(10).margin(0.01f));
@@ -4440,6 +4590,170 @@ TEST_CASE("a shrunk great one's area starts at its whole node, the offsets laid 
         CHECK(glm::distance(origin, Vec3{0, 5 * 0.667f, 6}) < 1e-5f);
     }
 }
+TEST_CASE("a shrunk great one breathes, shoots and plants from its whole node, the offsets of "
+          "what it starts shrunk as CritterDoTexmodNode shrinks them",
+          "[game][combatant][shrink]") {
+    // CritterFirePlayerCollide measures the breath through GetWorldMat (0x800BB614), its offset
+    // whole; a shot leaves the move node's whole origin and a plant the target's place, their
+    // DAMG offset shrunk with the drawn body (0x8003D10C-0x8003D154).
+    const f32 shrink = GENERATE(1.0f, 0.667f);
+    const std::string kind = GENERATE("breath", "shot", "plant");
+    CAPTURE(shrink, kind);
+    const auto root = familyAssets();
+    writeTextFile(root / "MONSTERS/GOLEM/LEVELG/animations.json", R"({"trees":[{"name":"BODY",
+      "nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]},
+               {"name":"HAND","object":"BODY","parent":0,"position":[0,0,6]}],
+      "sequences":[{"name":"STEP","frames":3}]}]})");
+    std::string harm = R"({"type":1,"damage":10,"offset":[0,3,0]})";
+    s32 moveType = MoveDefinition::kAttackFrom;
+    if (kind == "breath") {
+        harm = R"({"type":4,"damage":10,"radius":1,"maxDistance":20,"offset":[0,1,0]})";
+    } else if (kind == "plant") {
+        harm = R"({"type":8,"damage":10,"flags":)" + std::to_string(damage::kSticky) +
+               R"(,"offset":[0,3,0]})";
+        moveType = MoveDefinition::kTargetArea;
+    }
+    writeTextFile(root / "critter/GOLEM.json", R"({
+      "descriptors":[{"prefix":"BODY","name":"GOLEM","type":3}],
+      "types":[{"moveCount":2,"maxHealth":100,"radius":1}],
+      "moves":[{"name":"READY","anim":"STEP","type":32,"interrupt":60},
+               {"name":"SWEEP","anim":"STEP","type":)" +
+                                                   std::to_string(moveType) + R"(,"priority":20,
+                "colnode":"HAND","target":{"maxDistance":50},
+                "frameStart":0,"frameEnd":2,"damage0":0}],
+      "damages":[)" + harm + "]}");
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, Golem::definition(), 'G'));
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+    actor.setShrink(shrink);
+    // Ten along the breath from where it leaves the whole HAND, its middle three up.
+    EnemyView player;
+    player.player = 0;
+    player.position = {0, -2, 16};
+    const std::array players{player};
+    std::vector<CombatBlow> blows;
+    std::vector<CombatShot> shots;
+    for (s32 i = 0; i < 10 && blows.empty() && shots.empty(); ++i) {
+        actor.update(2, 1.0f / 30, players);
+        blows = actor.takeBlows();
+        shots = actor.takeShots();
+    }
+    if (kind == "breath") {
+        REQUIRE(blows.size() == 1);
+        REQUIRE(blows[0].breath);
+        CHECK(glm::distance(blows[0].origin, Vec3{0, 1, 6}) < 1e-5f);
+    } else if (kind == "shot") {
+        REQUIRE(shots.size() == 1);
+        CHECK(glm::distance(shots[0].origin, Vec3{0, 3 * shrink, 6}) < 1e-5f);
+    } else {
+        REQUIRE(shots.size() == 1);
+        CHECK(glm::distance(shots[0].origin, Vec3{0, 1 + 3 * shrink, 16}) < 1e-5f);
+    }
+}
+
+TEST_CASE("a great one's look measures from its whole head as GetWorldMat places it, shrunk or "
+          "keyed to grow",
+          "[game][combatant][gaze][shrink][node-scale]") {
+    // HEAD stands eight over the body. NodeLookAtPos measures through GetWorldMat (0x800BB614),
+    // which reads neither the shrinkers' draw scale nor the body's scale key, so the head looks
+    // down at a player ten ahead from eight up whichever it is; data whose rules keep the scale
+    // keys look from where the key draws the head, sixteen up.
+    enum class Body : u8 { Whole, Shrunk, Keyed, KeyedKept };
+    const Body body = GENERATE(Body::Whole, Body::Shrunk, Body::Keyed, Body::KeyedKept);
+    CAPTURE(static_cast<s32>(body));
+    const bool keyed = body == Body::Keyed || body == Body::KeyedKept;
+    const auto root = familyAssets();
+    auto archive = root / "MONSTERS" / General::definition().name;
+    if (General::definition().realmCostume) {
+        archive /= "LEVELG";
+    }
+    const std::string grows =
+        keyed ? R"(,"tracks":[{"node":0,"flags":1792,"frames":[0],"values":[2,2,2]}])" : "";
+    writeTextFile(archive / "animations.json", R"({"trees":[{"name":"BODY","nodes":[
+      {"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]},
+      {"name":"HEAD","object":"BODY","parent":0,"position":[0,8,0]}],
+      "sequences":[{"name":"STEP","frames":3)" + grows +
+                                                   "}]}]}");
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, General::definition(), 'G'));
+    formats::CritterFile source;
+    source.descriptors.push_back({"general", "BODY", static_cast<s16>(CombatantKind::General)});
+    auto& type = source.types.emplace_back();
+    type.radius = 1;
+    type.wallRadius = 1;
+    type.maxHealth = 100;
+    type.moveCount = 1;
+    type.lookNode0 = "HEAD";
+    type.lookYawRate0 = 1.0f;
+    type.lookPitchRate0 = 1.5f;
+    auto& ready = source.moves.emplace_back();
+    ready.name = "READY";
+    ready.anim = "STEP";
+    ready.type = MoveDefinition::kReady;
+    ready.target.maxDistance = 50;
+    CritterRules rules;
+    rules.portRules = body == Body::KeyedKept ? CritterRules::kScaledNodes : 0;
+    assets.data = CritterData::fromDecoded("GENERAL", source, 0, rules);
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+    if (body == Body::Shrunk) {
+        actor.setShrink(0.667f);
+    }
+    EnemyView player;
+    player.player = 0;
+    player.position = {0, 0, 10};
+    const std::array players{player};
+    for (s32 i = 0; i < 60; ++i) {
+        actor.update(2, 1.0f / 30, players);
+    }
+    const auto head = actor.nodeTransform("HEAD");
+    REQUIRE(head.has_value());
+    const Vec3 facing = glm::normalize(Vec3{(*head)[2]});
+    const f32 pitch = std::atan2(-facing.y, std::hypot(facing.x, facing.z));
+    // Down to the player's middle, three up: five below the head at eight, thirteen at sixteen.
+    CHECK(pitch == Approx(std::atan2(body == Body::KeyedKept ? 13.0f : 5.0f, 10.0f)).margin(1e-3f));
+}
+
+TEST_CASE("a shrunk great one's swing pushes as a whole one's, its move node's travel measured "
+          "whole",
+          "[game][combatant][shrink][blow-push]") {
+    // The general walks half a unit a frame ahead through SWING as its HAND goes a unit a frame
+    // along x. CritterMoveSetup notes the move node through GetWorldMat (0x8003B1CC), which never
+    // reads the shrinkers' draw scale, so a shrunk one's node swings as far out for each step.
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    const auto root = familyAssets();
+    writeSwingTree(root, 0, {},
+                   R"(,"tracks":[{"node":2,"flags":16,"frames":[0,10],"values":[0,10]}])");
+    REQUIRE(assets.load(device, root, General::definition(), 'G'));
+    auto source = swingCritter(4);
+    source.moves[1].speed = 15;
+    assets.data = CritterData::fromDecoded("GENERAL", source, 0, {});
+    EnemyView player;
+    player.player = 0;
+    player.position = {12, 0, 2};
+    const std::array players{player};
+    std::array<Combatant, 2> actors;
+    std::array<std::vector<CombatBlow>, 2> blows;
+    for (usize a = 0; a < actors.size(); ++a) {
+        CAPTURE(a);
+        REQUIRE(actors[a].spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+        actors[a].setShrink(a == 0 ? 1.0f : 0.667f);
+        for (s32 i = 0; i < 30 && blows[a].empty(); ++i) {
+            actors[a].update(2, 1.0f / 30, players);
+            blows[a] = actors[a].takeBlows();
+        }
+        REQUIRE(blows[a].size() == 1);
+    }
+    CHECK(glm::distance(blows[1][0].origin, blows[0][0].origin) < 1e-5f);
+    CHECK(glm::distance(blows[1][0].direction, blows[0][0].direction) < 1e-5f);
+    // The step ahead swings the push that way as well as along the hand's travel.
+    CHECK(blows[0][0].direction.z > 0.5f);
+}
+
 // Long sequences let these tests distinguish an interrupt from ordinary end-of-move selection.
 std::filesystem::path reactionAssets(s32 interrupt = 60, s32 link = -1) {
     const auto root = familyAssets();
