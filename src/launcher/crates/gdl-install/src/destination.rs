@@ -672,7 +672,7 @@ fn judge_into(
 /// would make a folder of it, without what follows a colon, which names a stream of the entry
 /// before it, and without the dots and spaces at its end, which Windows drops from a name it
 /// makes. Every system compares so, since elsewhere it only refuses more.
-fn alpha_name_in(path: &Path) -> Option<&'static str> {
+pub(crate) fn alpha_name_in(path: &Path) -> Option<&'static str> {
     path.components().find_map(|component| match component {
         Component::Normal(name) => {
             let bytes = name.as_encoded_bytes();
@@ -872,17 +872,21 @@ mod tests {
     use std::fs;
     use std::io;
     use std::path::{Path, PathBuf};
+    use std::slice;
 
     #[cfg(windows)]
     use gdl_files::MAX_INSTALL_ROOT_UTF16;
     use gdl_files::{
-        ALPHA_NAMES, FilesError, FolderProbe, PAYLOAD_NAMES, ProbedFolder, RelPath, Volume,
+        ALPHA_NAMES, Cancel, FilesError, FolderProbe, Job, NoProgress, PAYLOAD_NAMES, ProbedFolder,
+        RelPath, Volume,
     };
     use gdl_fixtures::{
-        InstallFixture, RuntimeFiles, backdate, deny_writes, folder_names, hold_closed, holds_bind,
-        link_folder, make_alpha_markers, snapshot, symlink_folder_where_allowed,
+        InstallFixture, RuntimeFiles, append_sections, backdate, deny_writes, folder_names,
+        hold_closed, holds_bind, icon_iso, link_folder, make_alpha_markers, snapshot,
+        symlink_folder_where_allowed, tiny_elf, tiny_pe,
     };
-    use gdl_release::Platform;
+    use gdl_media::GameCubeImage;
+    use gdl_release::{Platform, Version};
 
     use super::{
         Blocker, CLOUD_ATTRIBUTES, DestinationError, DestinationReport, FIRST_UTF8_BUILD,
@@ -893,6 +897,11 @@ mod tests {
     use crate::MIN_LAUNCHER;
     use crate::folder::STATE_DIR;
     use crate::host::Unsupported;
+    use crate::install::{
+        Changes, FolderRecord, InstallError, RecoveryOutcome, install_game, plan_install,
+        recover_install,
+    };
+    use crate::sections::{RUNTIME_SECTION, Sections};
 
     /// The most bytes an error may take, so that returning one by value stays cheap.
     const MOST_ERROR_BYTES: usize = 128;
@@ -1158,11 +1167,55 @@ mod tests {
         assert!(report.blockers.is_empty(), "{report:?}");
     }
 
+    /// A record of installations that keeps what it is told, by the call's name.
+    #[derive(Default)]
+    struct Told(Vec<&'static str>);
+
+    impl FolderRecord for Told {
+        fn pending(&mut self, _: &Path) -> io::Result<()> {
+            self.0.push("pending");
+            Ok(())
+        }
+
+        fn installed(&mut self, _: &Path) -> io::Result<()> {
+            self.0.push("installed");
+            Ok(())
+        }
+
+        fn forget(&mut self, _: &Path) -> io::Result<()> {
+            self.0.push("forget");
+            Ok(())
+        }
+    }
+
+    /// What an install is planned and made from, kept in `dir`, apart from the folder it goes
+    /// into: the icon disc's image, opened as the player's image is, and a launcher file of this
+    /// system's kind carrying the standard runtime, its sections found.
+    fn install_sources(dir: &Path) -> (GameCubeImage, Sections<io::Cursor<Vec<u8>>>) {
+        let image = dir.join("game.iso");
+        fs::write(&image, icon_iso()).unwrap();
+        let runtime = RuntimeFiles::standard(this_platform().as_str(), MIN_LAUNCHER);
+        let mut file = if cfg!(windows) { tiny_pe() } else { tiny_elf() };
+        append_sections(&mut file, &[(RUNTIME_SECTION, &runtime.zip())], 0);
+        let launcher = Sections::find(io::Cursor::new(file))
+            .unwrap()
+            .expect("the launcher file carries sections");
+        (GameCubeImage::open(&image).unwrap(), launcher)
+    }
+
     #[test]
     fn every_alpha_marker_refuses_unopened() {
         // Asked apart from the holds, so that a hold which kept nothing out fails the test.
         let probe = tempfile::tempdir().unwrap();
         let binds = holds_bind(probe.path()).unwrap();
+        let source = tempfile::tempdir().unwrap();
+        let (mut image, mut launcher) = install_sources(source.path());
+        let running = Version::parse(MIN_LAUNCHER).unwrap();
+        let cancel = Cancel::default();
+        let job = Job {
+            cancel: &cancel,
+            progress: &NoProgress,
+        };
         for name in ALPHA_NAMES {
             let odd = odd_case(name);
             assert_ne!(odd, name);
@@ -1178,16 +1231,32 @@ mod tests {
             let marker = destination.join(&odd);
             let held = hold_closed(&[marker.as_path()]).unwrap();
             assert_eq!(held.proven(), binds, "{odd}");
+            // The folder judged, an install into it planned and then made as planned, and the
+            // folder recovered as a start recovers one, all while the marker is held.
             let report = judge(&destination);
+            let plan = plan_install(&mut image, &mut launcher, &destination, MIN_LAUNCHER).unwrap();
+            let mut told = Told::default();
+            let refused =
+                install_game(&plan, &mut image, &mut launcher, &mut told, &job).unwrap_err();
+            let recovered = recover_install(&destination, &running, &mut told, &job).unwrap();
             drop(held);
-            assert_eq!(
-                report.blockers,
-                [Blocker::AlphaInstall {
-                    markers: vec![name]
-                }],
-                "{odd}"
-            );
+            let blocker = Blocker::AlphaInstall {
+                markers: vec![name],
+            };
+            assert_eq!(report.blockers, slice::from_ref(&blocker), "{odd}");
             assert_unasked(&report);
+            // The plan lists the marker, and the job refuses the folder before it tells the
+            // record of it or makes anything there; a recovery finds nothing of its own.
+            assert!(!plan.is_ready(), "{odd}");
+            assert_eq!(plan.blockers, slice::from_ref(&blocker), "{odd}");
+            assert_unasked(&plan.destination_report);
+            assert_eq!(refused.changes, Changes::None, "{odd}");
+            assert!(
+                matches!(&refused.error, InstallError::Blocked(found) if *found == blocker),
+                "{odd}: {refused:?}"
+            );
+            assert_eq!(recovered, RecoveryOutcome::Nothing, "{odd}");
+            assert!(told.0.is_empty(), "{odd}: {:?}", told.0);
             assert_eq!(snapshot(dir.path()).unwrap(), before, "{odd}");
         }
         if !binds {

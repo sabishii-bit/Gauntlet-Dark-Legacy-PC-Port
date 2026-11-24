@@ -607,19 +607,20 @@ mod tests {
     use std::panic::{AssertUnwindSafe, catch_unwind};
     use std::path::{Path, PathBuf};
     use std::process::ExitStatus;
+    use std::slice;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{Arc, Mutex};
     use std::time::{Duration, Instant};
 
     use gdl_files::{
-        BLOCK_LEN, Cancel, FilesError, FolderProbe, Job, NoProgress, PAYLOAD_NAMES, PhaseId,
-        ProbedFolder, Progress, RelPath, Volume, fill_from,
+        ALPHA_NAMES, BLOCK_LEN, Cancel, FilesError, FolderProbe, Job, NoProgress, PAYLOAD_NAMES,
+        PENDING_SUFFIX, PROBE_PREFIX, PhaseId, ProbedFolder, Progress, RelPath, Volume, fill_from,
     };
     #[cfg(windows)]
     use gdl_files::{MAX_INSTALL_ROOT_UTF16, root_utf16_len};
     use gdl_fixtures::{
         EntryState, FstEntry, ICON_DATA_AT, RawEntry, RawZip, RuntimeFiles, SYNTHETIC_ISO_LEN,
-        WritesDenied, append_sections, deny_writes, folder_names, fst, icon_iso, iso_of,
+        WritesDenied, append_sections, backdate, deny_writes, folder_names, fst, icon_iso, iso_of,
         sha256_hex, snapshot, snapshot_outside, symlink_file, symlink_file_where_allowed,
         synthetic_ciso, synthetic_iso, tiny_elf, tiny_pe, tpl,
     };
@@ -638,13 +639,14 @@ mod tests {
     };
     use super::{
         CHECK_DISC, CHECK_GAME, CONFIG_FOLDER, COPY_DISC_FILES, COPY_LAUNCHER, Changes, CopiedFile,
-        DISC_FILES, DiscFiles, DiscSummary, FolderRecord, GET_RUNTIME, INSTALL_JOURNAL,
+        DISC_FILES, DISC_ROOTS, DiscFiles, DiscSummary, FolderRecord, GET_RUNTIME, INSTALL_JOURNAL,
         INSTALL_STAGING_PREFIX, InstallError, InstallFailure, InstallNotice, InstallPlan,
         Installed, PREPARE, PUBLISH, RecoveryError, RecoveryOutcome, RuntimeSummary, SAVES_FOLDER,
         SPACE_MARGIN, Unrecorded, install_game_with, install_names, is_install_root, plan_install,
         plan_with,
     };
-    use crate::destination::{Blocker, DestinationError, FolderChecks};
+    use crate::compat::{FIXED_NAMES, JOURNAL_NAMES, RANDOM_PREFIXES, RETIRED_PREFIX};
+    use crate::destination::{Blocker, DestinationError, FolderChecks, alpha_name_in};
     use crate::folder::{
         InstallFolder, JOURNAL_DIR, LOCK_FILE, LockError, RECEIPT_FILE, STATE_DIR,
     };
@@ -1657,6 +1659,39 @@ mod tests {
             }
         }
         entries
+    }
+
+    /// Every entry under `top`, at any depth, by its path below `top`, with the alpha installer's
+    /// name that the path holds, when it holds one, as the judging finds one on a destination's
+    /// path: in any ASCII letter case and in the form Windows would make of each name. A link is
+    /// listed and never followed.
+    fn alpha_names_below(top: &Path) -> Vec<(PathBuf, Option<&'static str>)> {
+        let mut entries = Vec::new();
+        let mut folders = vec![top.to_path_buf()];
+        while let Some(folder) = folders.pop() {
+            for entry in fs::read_dir(&folder).unwrap() {
+                let entry = entry.unwrap();
+                let path = entry.path();
+                let below = path.strip_prefix(top).unwrap().to_path_buf();
+                if entry.file_type().unwrap().is_dir() {
+                    folders.push(path);
+                }
+                let name = alpha_name_in(&below);
+                entries.push((below, name));
+            }
+        }
+        entries
+    }
+
+    /// Asserts that no entry under `top`, at any depth, has one of the alpha installer's names, as
+    /// [`alpha_names_below`] finds them, and gives every entry's path below `top`.
+    #[track_caller]
+    pub(super) fn assert_no_alpha_name(top: &Path, context: &str) -> Vec<PathBuf> {
+        let entries = alpha_names_below(top);
+        let named: Vec<&(PathBuf, Option<&str>)> =
+            entries.iter().filter(|(_, name)| name.is_some()).collect();
+        assert!(named.is_empty(), "{context}: {named:?}");
+        entries.into_iter().map(|(path, _)| path).collect()
     }
 
     /// The names at the top of `folder` that the launcher's state or its probes take.
@@ -4153,6 +4188,245 @@ mod tests {
                 BTreeSet::from([PREPARE.0, GET_RUNTIME.0, PUBLISH.0]),
                 "{holds_a_file}"
             );
+        }
+    }
+
+    /// Fault points that hold every entry under a folder to having none of the alpha installer's
+    /// names as each is passed, and keep the points passed and every name met.
+    struct AlphaWatch {
+        top: PathBuf,
+        passed: RefCell<Vec<FaultPoint>>,
+        met: RefCell<BTreeSet<String>>,
+    }
+
+    impl AlphaWatch {
+        fn of(top: &Path) -> AlphaWatch {
+            AlphaWatch {
+                top: top.to_path_buf(),
+                passed: RefCell::new(Vec::new()),
+                met: RefCell::new(BTreeSet::new()),
+            }
+        }
+    }
+
+    impl FaultPoints for AlphaWatch {
+        fn pass(&self, point: FaultPoint) -> io::Result<()> {
+            let mut passed = self.passed.borrow_mut();
+            passed.push(point);
+            let context = format!("pass {} of the job, at {point:?}", passed.len());
+            let walked = assert_no_alpha_name(&self.top, &context);
+            let names = walked
+                .iter()
+                .filter_map(|path| path.file_name())
+                .map(|name| name.to_string_lossy().into_owned());
+            self.met.borrow_mut().extend(names);
+            Ok(())
+        }
+    }
+
+    /// `path` with the suffix after it that a state file's next contents are written under.
+    fn pending_of(path: &Path) -> PathBuf {
+        let mut pending = path.as_os_str().to_owned();
+        pending.push(PENDING_SUFFIX);
+        PathBuf::from(pending)
+    }
+
+    #[test]
+    fn no_path_made_holds_an_alpha_name() {
+        let platform = this_platform();
+
+        // Every name the launcher writes by its own rules, with its path below the folder it
+        // installs into, compared as the judging compares a destination's names; and each with
+        // the suffix that writing a state file in place puts after it.
+        let state = Path::new(STATE_DIR);
+        let mut written: Vec<PathBuf> = [STATE_DIR, SAVES_FOLDER, CONFIG_FOLDER, DEFAULT_CONFIG]
+            .into_iter()
+            .chain([crate::icon::DISC_ICON])
+            .chain(DISC_ROOTS)
+            .chain(ROOT_FILES)
+            .chain(ROOT_FOLDERS)
+            .map(PathBuf::from)
+            .collect();
+        for platform in Platform::ALL {
+            written.push(PathBuf::from(installed_launcher_name(platform)));
+            written.push(PathBuf::from(platform.executable()));
+        }
+        let platforms = Platform::ALL.map(Some);
+        for platform in platforms.into_iter().chain([None]) {
+            written.extend(
+                install_names(platform)
+                    .iter()
+                    .map(|name| PathBuf::from(name.as_str())),
+            );
+        }
+        written.extend(
+            [LOCK_FILE, RECEIPT_FILE, JOURNAL_DIR, DISC_FILES]
+                .into_iter()
+                .chain(FIXED_NAMES.map(|(name, _)| name))
+                .map(|name| state.join(name)),
+        );
+        written.extend(
+            JOURNAL_NAMES
+                .into_iter()
+                .map(|name| state.join(JOURNAL_DIR).join(name)),
+        );
+        let pending: Vec<PathBuf> = written.iter().map(|path| pending_of(path)).collect();
+        for path in written.iter().chain(&pending) {
+            assert_eq!(alpha_name_in(path), None, "{}", path.display());
+        }
+
+        // A name the launcher makes of a prefix and more after it keeps the whole prefix in the
+        // form Windows would make of it, since no prefix holds a colon or ends in a dot or a
+        // space; so it is one of the alpha installer's only where that one begins with the
+        // prefix in some letter case, and none does.
+        let prefixes = RANDOM_PREFIXES
+            .map(|(prefix, _)| prefix)
+            .into_iter()
+            .chain([INSTALL_STAGING_PREFIX, PROBE_PREFIX, RETIRED_PREFIX]);
+        for prefix in prefixes {
+            assert!(
+                !prefix.contains(':') && !prefix.ends_with(['.', ' ']),
+                "{prefix:?}"
+            );
+            for alpha in ALPHA_NAMES {
+                let begins = alpha
+                    .get(..prefix.len())
+                    .is_some_and(|head| head.eq_ignore_ascii_case(prefix));
+                assert!(!begins, "{prefix:?} begins {alpha:?}");
+            }
+        }
+
+        // The walk below finds an alpha installer's name at any depth, in any letter case.
+        let walked = tempfile::tempdir().unwrap();
+        let deeper = Path::new("a").join("b");
+        fs::create_dir_all(walked.path().join(&deeper)).unwrap();
+        fs::create_dir(walked.path().join("a").join(".GDL-UPDATE")).unwrap();
+        fs::write(walked.path().join(deeper.join("Installation.Json")), b"").unwrap();
+        fs::write(walked.path().join(deeper.join("kept")), b"").unwrap();
+        let found: BTreeMap<PathBuf, Option<&str>> =
+            alpha_names_below(walked.path()).into_iter().collect();
+        assert_eq!(
+            found,
+            BTreeMap::from([
+                (PathBuf::from("a"), None),
+                (Path::new("a").join(".GDL-UPDATE"), Some(".gdl-update")),
+                (deeper.clone(), None),
+                (deeper.join("Installation.Json"), Some("installation.json")),
+                (deeper.join("kept"), None),
+            ])
+        );
+
+        // Every entry an install makes, as it passes each point and once it stands, in a folder
+        // it makes and in one that holds a file of the player's; and the walks met the launcher's
+        // own names, its staging's among them.
+        let inputs = Inputs::of(&icon_iso());
+        let cancel = Cancel::default();
+        let job = Job {
+            cancel: &cancel,
+            progress: &NoProgress,
+        };
+        for holds_a_file in [false, true] {
+            let context = format!("the folder holding a file: {holds_a_file}");
+            let top = tempfile::tempdir().unwrap();
+            let destination = destination_in(top.path(), holds_a_file);
+            let plan = inputs.plan(&destination);
+            let watch = AlphaWatch::of(top.path());
+            inputs
+                .install(
+                    &plan,
+                    &mut Unrecorded,
+                    &job,
+                    &standing_in(&watch, &answering),
+                )
+                .unwrap();
+            assert_no_alpha_name(top.path(), &context);
+            let met = watch.met.into_inner();
+            for name in [
+                STATE_DIR,
+                LOCK_FILE,
+                JOURNAL_DIR,
+                INSTALL_JOURNAL,
+                DISC_FILES,
+                RECEIPT_FILE,
+                SAVES_FOLDER,
+                CONFIG_FOLDER,
+                installed_launcher_name(platform),
+                platform.executable(),
+            ] {
+                assert!(met.contains(name), "{context}: {name}");
+            }
+            assert!(
+                met.iter()
+                    .any(|name| name.starts_with(INSTALL_STAGING_PREFIX)),
+                "{context}: {met:?}"
+            );
+        }
+
+        // Every entry a job that fails with four roots in place leaves as it takes itself back,
+        // and once it has.
+        let top = tempfile::tempdir().unwrap();
+        let destination = destination_in(top.path(), false);
+        let plan = inputs.plan(&destination);
+        let watch = AlphaWatch::of(top.path());
+        let fail = FailAt::new(FaultPoint::Publish, moved_pass(roots()[3]));
+        let faults = Faults(&[&watch, &fail]);
+        let failure = inputs
+            .install(
+                &plan,
+                &mut Unrecorded,
+                &job,
+                &standing_in(&faults, &answering),
+            )
+            .unwrap_err();
+        assert_eq!(failure.changes, Changes::RolledBack, "{failure:?}");
+        assert!(watch.passed.borrow().contains(&FaultPoint::Rollback));
+        assert_no_alpha_name(top.path(), "the job taken back");
+
+        // A folder whose path holds one of the alpha installer's names, which making the folders
+        // down to it would write, is refused before anything is made there or told of it.
+        let top = tempfile::tempdir().unwrap();
+        backdate(top.path()).unwrap();
+        let before = snapshot(top.path()).unwrap();
+        for (destination, name) in [
+            (top.path().join(".gdl-update"), ".gdl-update"),
+            (
+                top.path().join("Installation.JSON. ").join("game"),
+                "installation.json",
+            ),
+            (
+                top.path()
+                    .join("Games")
+                    .join(".GDL-INSTALL.LOCK::$INDEX_ALLOCATION")
+                    .join("game"),
+                ".gdl-install.lock",
+            ),
+            (
+                top.path()
+                    .join("Games")
+                    .join("gauntletdarklegacy-update.exe"),
+                "GauntletDarkLegacy-Update.exe",
+            ),
+        ] {
+            let context = destination.display().to_string();
+            let blocker = Blocker::AlphaName { name };
+            let plan = inputs.plan(&destination);
+            assert_eq!(plan.blockers, slice::from_ref(&blocker), "{context}");
+            let mut record = Heard::default();
+            let failure = inputs
+                .install(
+                    &plan,
+                    &mut record,
+                    &job,
+                    &standing_in(&NoFaults, &answering),
+                )
+                .unwrap_err();
+            assert_eq!(failure.changes, Changes::None, "{context}");
+            assert!(
+                matches!(&failure.error, InstallError::Blocked(found) if *found == blocker),
+                "{context}: {failure:?}"
+            );
+            assert!(record.calls.is_empty(), "{context}: {:?}", record.calls);
+            assert_eq!(snapshot(top.path()).unwrap(), before, "{context}");
         }
     }
 }

@@ -3,7 +3,8 @@
 //! point the test names, as a crash or a kill stops a job: nothing is unwound, and what the job
 //! held, its lock among it, is let go only as the system lets go of what a program that ended
 //! held. The test then recovers the folder as the next start does, and holds it to what that
-//! recovery must leave. The children run one at a time.
+//! recovery must leave. What each kill and each recovery leaves is held apart from the alpha
+//! installer's names at any depth. The children run one at a time.
 
 use std::env;
 use std::path::{Path, PathBuf};
@@ -185,8 +186,8 @@ mod tests {
     use crate::folder::{LOCK_FILE, RECEIPT_FILE, STATE_DIR};
     use crate::install::settings::{FaultPoint, InstallSettings, KILLED_EXIT_CODE, NoFaults};
     use crate::install::tests::{
-        AsItWas, Heard, Inputs, answering, destination_in, heard_of, journal_of, roots,
-        standing_in, tree, uninterrupted,
+        AsItWas, Heard, Inputs, answering, assert_no_alpha_name, destination_in, heard_of,
+        journal_of, roots, standing_in, tree, uninterrupted,
     };
     use crate::install::{INSTALL_STAGING_PREFIX, RecoveryOutcome};
 
@@ -275,7 +276,7 @@ mod tests {
 
         /// Runs the job of a child of this test program, killed at `kill`, failing first at
         /// `fail` when it is given, and recovering the folder rather than installing into it when
-        /// `recover`; and asserts that the kill ended the child.
+        /// `recover`; and asserts that the kill ended the child, leaving no alpha installer's name.
         fn kill(&self, context: &str, kill: Pass, fail: Option<Pass>, recover: bool) {
             let mut child = Command::new(std::env::current_exe().unwrap());
             child
@@ -310,11 +311,12 @@ mod tests {
                 String::from_utf8_lossy(&output.stdout),
                 String::from_utf8_lossy(&output.stderr)
             );
+            self.holds_no_alpha_name(&format!("{context}, killed"));
         }
 
         /// Recovers the folder as the next start does, with the stand-ins, and gives what the
         /// recovery did, what the record heard and how many times the shell was told of the
-        /// installed executable.
+        /// installed executable; and asserts that the recovery left no alpha installer's name.
         fn recover(&self, context: &str) -> (RecoveryOutcome, Vec<(&'static str, PathBuf)>, u32) {
             let mut record = Heard::default();
             let told = Cell::new(0);
@@ -325,7 +327,24 @@ mod tests {
             };
             let outcome = recovered(&self.destination, &mut record, &settings)
                 .unwrap_or_else(|error| panic!("{context}: {error}"));
+            self.holds_no_alpha_name(&format!("{context}, recovered"));
             (outcome, record.calls, told.get())
+        }
+
+        /// Asserts that no entry under the folder of the test's own, the folder installed into and
+        /// the folders above it that the install made included, has one of the alpha installer's
+        /// names, at any depth.
+        #[track_caller]
+        fn holds_no_alpha_name(&self, context: &str) {
+            let walked = assert_no_alpha_name(self.root.path(), context);
+            // The image and the launcher file are always there, so that a walk that met nothing
+            // cannot pass.
+            for source in [IMAGE, LAUNCHER] {
+                assert!(
+                    walked.contains(&PathBuf::from(source)),
+                    "{context}: {walked:?}"
+                );
+            }
         }
 
         /// Asserts that the folder holds what it held before the install, outside the launcher's

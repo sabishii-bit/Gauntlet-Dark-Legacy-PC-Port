@@ -48,7 +48,7 @@ const MAX_SHOWN_CHARS: usize = 64;
 /// with a random part, and what each holds. The receipt's, the lock's and the journals' are the
 /// folder module's constants, and the disc's list the install's, so that each name has one
 /// spelling.
-const FIXED_NAMES: [(&str, StateName); 8] = [
+pub(crate) const FIXED_NAMES: [(&str, StateName); 8] = [
     (RECEIPT_FILE, StateName::Receipt),
     (LOCK_FILE, StateName::Lock),
     (JOURNAL_DIR, StateName::Journal),
@@ -62,7 +62,7 @@ const FIXED_NAMES: [(&str, StateName); 8] = [
 /// The prefixes of the folders a job makes directly under `.gdl-launcher/`, each followed by a
 /// random part of [`STAGING_RANDOM_CHARS`](gdl_files::STAGING_RANDOM_CHARS) ASCII letters and
 /// digits, as [`is_staging_name`] tells, and what each holds.
-const RANDOM_PREFIXES: [(&str, StateName); 5] = [
+pub(crate) const RANDOM_PREFIXES: [(&str, StateName); 5] = [
     (INSTALL_STAGING_PREFIX, StateName::Staging),
     ("stage-", StateName::Staging),
     ("stage-n64-", StateName::Staging),
@@ -72,7 +72,7 @@ const RANDOM_PREFIXES: [(&str, StateName); 5] = [
 
 /// The prefix of what an update or an expansion change puts aside under `.gdl-launcher/`, which
 /// more of the name always follows.
-const RETIRED_PREFIX: &str = "retired-";
+pub(crate) const RETIRED_PREFIX: &str = "retired-";
 
 /// The names a fresh install makes directly under `.gdl-launcher/`, beside its staging, before
 /// its first journal is written or once the journal is removed: the lock, the journal folder and
