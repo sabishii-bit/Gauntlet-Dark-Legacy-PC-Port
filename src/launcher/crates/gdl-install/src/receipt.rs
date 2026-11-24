@@ -1124,10 +1124,10 @@ mod tests {
     fn linux_receipts_carry_no_disc_icon() {
         // The receipt each platform's installation gets, which takes no files to give.
         for platform in Platform::ALL {
-            let fixture = InstallFixture {
-                root: PathBuf::from("install"),
-                runtime: RuntimeFiles::standard(platform.as_str(), MIN_LAUNCHER),
-            };
+            let fixture = InstallFixture::new(
+                Path::new("install"),
+                RuntimeFiles::standard(platform.as_str(), MIN_LAUNCHER),
+            );
             let value = fixture.receipt();
             let receipt: Receipt = serde_json::from_value(value.clone()).unwrap();
             // Read and written again, a receipt is what it was, with no icon record where it had

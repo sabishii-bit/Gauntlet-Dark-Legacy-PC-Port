@@ -156,15 +156,12 @@ const RECEIPT_FILE: &str = "receipt.json";
 /// The memory card's icon on the disc, which the launcher sets into the Windows executable.
 const DISC_ICON: &str = "carddemo/icon.tpl";
 
-/// What an installation fixture holds as the icon: no real one.
+/// What an installation fixture holds as the icon unless a test gives one: no real one.
 const ICON_BYTES: &[u8] = b"not a real icon";
 
-/// What an installation fixture holds of the disc, by name under its top: one of the game's data
-/// files, which is no real one either, and the icon.
-const DISC_FILES: [(&str, &[u8]); 2] = [
-    ("Gauntlet/PDATA/WAR.WAD", b"not a real class file"),
-    (DISC_ICON, ICON_BYTES),
-];
+/// What an installation fixture holds of the disc's game data, by name under its top: one of the
+/// game's data files, which is no real one either.
+const DISC_DATA: (&str, &[u8]) = ("Gauntlet/PDATA/WAR.WAD", b"not a real class file");
 
 /// The folders an installation keeps for the player's own files, which a new one has empty.
 const PLAYER_FOLDERS: [&str; 2] = ["saves", "config"];
@@ -175,7 +172,7 @@ const WINDOWS_LAUNCHER: &str = "GauntletDarkLegacy-Launcher.exe";
 /// The launcher copy an installation keeps at its top on every other platform.
 const LAUNCHER: &str = "GauntletDarkLegacy-Launcher";
 
-/// What an installation fixture's launcher copy holds: no real program.
+/// What an installation fixture's launcher copy holds unless a test gives one: no real program.
 const LAUNCHER_BYTES: &[u8] = b"not a real launcher";
 
 /// What an installation fixture adds to the Windows executable in place of the disc's icon, so
@@ -1167,6 +1164,18 @@ fn run_icacls(icacls: &Path, args: &[&OsStr]) -> io::Result<Vec<u8>> {
     )))
 }
 
+/// What an installation fixture lays out beside its runtime when a test asks for more than
+/// stand-ins: the disc's icon, such as a TPL the launcher can set into the Windows executable,
+/// and the launcher copy, such as a launcher file carrying a runtime. A part not given is the
+/// stand-in [`InstallFixture::write`] lays out.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct FixtureParts<'a> {
+    /// What `carddemo/icon.tpl` holds.
+    pub icon: Option<&'a [u8]>,
+    /// What the launcher copy at the installation's top holds.
+    pub launcher: Option<&'a [u8]>,
+}
+
 /// An installation as the launcher leaves one, for the tests that read or change one: a runtime's
 /// files, the disc's, the player's folders, the launcher copy and a receipt that describes them.
 #[derive(Clone, Debug)]
@@ -1175,35 +1184,64 @@ pub struct InstallFixture {
     pub root: PathBuf,
     /// The runtime installed in it, as the release shipped it.
     pub runtime: RuntimeFiles,
+    /// What the disc's icon, `carddemo/icon.tpl`, holds.
+    pub icon: Vec<u8>,
+    /// What the launcher copy at the installation's top holds.
+    pub launcher: Vec<u8>,
 }
 
 impl InstallFixture {
-    /// Lays out an installation of `runtime` in `root`, which is made when missing: the runtime's
-    /// files and its `build-info.json`, the Windows executable carrying the disc's icon as the
-    /// launcher sets it in; `Gauntlet/PDATA/WAR.WAD` and `carddemo/icon.tpl` from the disc; empty
-    /// `saves` and `config` folders; the launcher copy, `GauntletDarkLegacy-Launcher.exe` on
-    /// windows-x64 and `GauntletDarkLegacy-Launcher` elsewhere; and `.gdl-launcher/receipt.json`
-    /// holding [`receipt`](Self::receipt). Every file and folder is made new, so a name that
-    /// exists already is refused. A Linux installation holds both the executable `gauntlet` and
-    /// the disc's `Gauntlet`, which a file system that ignores letter case, as Windows' does, takes
-    /// for one name, so there it is refused the same way.
-    pub fn write(root: &Path, runtime: RuntimeFiles) -> io::Result<Self> {
-        let fixture = InstallFixture {
+    /// The installation [`write`](Self::write) lays out of `runtime` in `root`, with the stand-in
+    /// icon and launcher copy, but not laid out: for the tests that need only what it records.
+    pub fn new(root: &Path, runtime: RuntimeFiles) -> Self {
+        InstallFixture {
             root: root.to_path_buf(),
             runtime,
-        };
+            icon: ICON_BYTES.to_vec(),
+            launcher: LAUNCHER_BYTES.to_vec(),
+        }
+    }
+
+    /// Lays out an installation of `runtime` in `root`, which is made when missing: the runtime's
+    /// files and its `build-info.json`, the Windows executable carrying the disc's icon as the
+    /// launcher sets it in; `Gauntlet/PDATA/WAR.WAD` and `carddemo/icon.tpl` from the disc, both
+    /// stand-ins; empty `saves` and `config` folders; the launcher copy, a stand-in too, as
+    /// `GauntletDarkLegacy-Launcher.exe` on windows-x64 and `GauntletDarkLegacy-Launcher`
+    /// elsewhere; and `.gdl-launcher/receipt.json` holding [`receipt`](Self::receipt). Every file
+    /// and folder is made new, so a name that exists already is refused. A Linux installation
+    /// holds both the executable `gauntlet` and the disc's `Gauntlet`, which a file system that
+    /// ignores letter case, as Windows' does, takes for one name, so there it is refused the same
+    /// way.
+    pub fn write(root: &Path, runtime: RuntimeFiles) -> io::Result<Self> {
+        Self::write_with(root, runtime, FixtureParts::default())
+    }
+
+    /// As [`write`](Self::write), with the disc's icon and the launcher copy holding `parts`'
+    /// bytes where given, and the receipt recording their digests.
+    pub fn write_with(
+        root: &Path,
+        runtime: RuntimeFiles,
+        parts: FixtureParts<'_>,
+    ) -> io::Result<Self> {
+        let mut fixture = InstallFixture::new(root, runtime);
+        if let Some(icon) = parts.icon {
+            fixture.icon = icon.to_vec();
+        }
+        if let Some(launcher) = parts.launcher {
+            fixture.launcher = launcher.to_vec();
+        }
         fs::create_dir_all(root)?;
         for (name, data) in fixture.installed_files() {
             write_new(&path_under(root, name), &data)?;
         }
         write_new(&root.join(BUILD_INFO), &fixture.runtime.build_info_bytes())?;
-        for (name, data) in DISC_FILES {
-            write_new(&path_under(root, name), data)?;
-        }
+        let (data_name, data) = DISC_DATA;
+        write_new(&path_under(root, data_name), data)?;
+        write_new(&path_under(root, DISC_ICON), &fixture.icon)?;
         for folder in PLAYER_FOLDERS {
             fs::create_dir(root.join(folder))?;
         }
-        write_new(&root.join(fixture.launcher_name()), LAUNCHER_BYTES)?;
+        write_new(&root.join(fixture.launcher_name()), &fixture.launcher)?;
         fs::create_dir(root.join(STATE_DIR))?;
         write_new(&fixture.receipt_path(), &pretty_json(&fixture.receipt()))?;
         Ok(fixture)
@@ -1213,8 +1251,9 @@ impl InstallFixture {
     /// what the fixture lays out beside it: the stamp of the first schema; the release's version,
     /// commit and platform; the disc and its revision; the SHA-256 digest of `build-info.json`;
     /// the installed digest of each file installed with other bytes than the runtime's, which is
-    /// the Windows executable alone; on windows-x64 where its icon came from and the digest the
-    /// runtime gives the executable; and the launcher copy's name and digest.
+    /// the Windows executable alone; on windows-x64 where its icon came from, the
+    /// [`icon`](Self::icon)'s digest and the digest the runtime gives the executable; and the
+    /// launcher copy's name and the [`launcher`](Self::launcher)'s digest.
     pub fn receipt(&self) -> Value {
         let installed_digests: Map<String, Value> = self
             .installed_files()
@@ -1232,7 +1271,7 @@ impl InstallFixture {
             "discRevision": DISC_REVISION,
             "buildInfoSha256": sha256_hex(&self.runtime.build_info_bytes()),
             "installedDigests": installed_digests,
-            "launcher": {"name": self.launcher_name(), "sha256": sha256_hex(LAUNCHER_BYTES)},
+            "launcher": {"name": self.launcher_name(), "sha256": sha256_hex(&self.launcher)},
         });
         if self.is_windows() {
             // The digest the release record lists, whatever the runtime holds: nothing when it
@@ -1240,7 +1279,7 @@ impl InstallFixture {
             let release = self.runtime.build_info()["files"][&self.runtime.executable].clone();
             receipt["discIcon"] = json!({
                 "path": DISC_ICON,
-                "sha256": sha256_hex(ICON_BYTES),
+                "sha256": sha256_hex(&self.icon),
                 "releaseExecutableSha256": release,
             });
         }
@@ -2792,5 +2831,122 @@ mod tests {
             fixture.receipt()["discIcon"]["releaseExecutableSha256"],
             Value::Null
         );
+    }
+
+    #[test]
+    fn a_fixture_takes_a_real_icon_and_launcher() {
+        use serde_json::Value;
+
+        use super::{FixtureParts, InstallFixture, tree_entries};
+        use crate::gamecube::icon_disc_tpl;
+        use crate::program::{append_sections, tiny_elf, tiny_pe};
+        use crate::runtime::{RuntimeFiles, sha256_hex};
+
+        /// The section of a launcher file that carries the runtime it installs.
+        const RUNTIME_SECTION: &str = "runtime.zip";
+        /// Where the disc's icon and the receipt lie under an installation's top.
+        const ICON: &str = "carddemo/icon.tpl";
+        const RECEIPT: &str = ".gdl-launcher/receipt.json";
+
+        let dir = tempfile::tempdir().unwrap();
+        let folds_case = names_fold_case(dir.path());
+        // A TPL the launcher can set into the Windows executable.
+        let icon = icon_disc_tpl();
+        for (platform, launcher_name) in [
+            ("windows-x64", "GauntletDarkLegacy-Launcher.exe"),
+            ("linux-x64", "GauntletDarkLegacy-Launcher"),
+        ] {
+            let windows = platform == "windows-x64";
+            if folds_case && !windows {
+                eprintln!(
+                    "the {platform} layout was not checked: this file system takes gauntlet and \
+                     Gauntlet for one name"
+                );
+                continue;
+            }
+            let runtime = RuntimeFiles::standard(platform, "1.0.0-beta");
+            // A launcher file for this platform carrying the runtime.
+            let mut launcher = if windows { tiny_pe() } else { tiny_elf() };
+            append_sections(&mut launcher, &[(RUNTIME_SECTION, &runtime.zip())], 0);
+            let base = dir.path().join(platform);
+
+            // Given no parts it lays out what `write` does, and `new` gives that unwritten.
+            let plain = InstallFixture::write(&base.join("plain"), runtime.clone()).unwrap();
+            let stand_ins = tree_entries(&plain.root);
+            let none = InstallFixture::write_with(
+                &base.join("none"),
+                runtime.clone(),
+                FixtureParts::default(),
+            )
+            .unwrap();
+            assert_eq!(tree_entries(&none.root), stand_ins, "{platform}");
+            assert_eq!(none.receipt(), plain.receipt(), "{platform}");
+            let unwritten = InstallFixture::new(&base.join("unwritten"), runtime.clone());
+            assert_eq!(unwritten.root, base.join("unwritten"));
+            assert_eq!(unwritten.receipt(), plain.receipt(), "{platform}");
+            assert_eq!(unwritten.icon, plain.icon, "{platform}");
+            assert_eq!(unwritten.launcher, plain.launcher, "{platform}");
+            assert!(!base.join("unwritten").exists(), "{platform}");
+
+            for (case, parts) in [
+                (
+                    "both",
+                    FixtureParts {
+                        icon: Some(&icon),
+                        launcher: Some(&launcher),
+                    },
+                ),
+                (
+                    "icon",
+                    FixtureParts {
+                        icon: Some(&icon),
+                        ..FixtureParts::default()
+                    },
+                ),
+                (
+                    "launcher",
+                    FixtureParts {
+                        launcher: Some(&launcher),
+                        ..FixtureParts::default()
+                    },
+                ),
+            ] {
+                let fixture =
+                    InstallFixture::write_with(&base.join(case), runtime.clone(), parts).unwrap();
+                // A part not given is the stand-in.
+                let laid_icon = parts.icon.unwrap_or(&plain.icon);
+                let laid_launcher = parts.launcher.unwrap_or(&plain.launcher);
+                assert!(fixture.icon == laid_icon, "{platform} {case}");
+                assert!(fixture.launcher == laid_launcher, "{platform} {case}");
+                let read = |name: &str| {
+                    let path = name
+                        .split('/')
+                        .fold(fixture.root.clone(), |path, part| path.join(part));
+                    fs::read(path).unwrap()
+                };
+                assert!(read(ICON) == laid_icon, "{platform} {case}");
+                assert!(read(launcher_name) == laid_launcher, "{platform} {case}");
+
+                // The receipt it wrote is the one it gives, recording the bytes laid out: the
+                // launcher copy's digest, and on Windows the icon's.
+                let receipt: Value = serde_json::from_slice(&read(RECEIPT)).unwrap();
+                assert_eq!(receipt, fixture.receipt(), "{platform} {case}");
+                let mut expected = plain.receipt();
+                expected["launcher"]["sha256"] = Value::String(sha256_hex(laid_launcher));
+                if windows {
+                    expected["discIcon"]["sha256"] = Value::String(sha256_hex(laid_icon));
+                }
+                assert_eq!(receipt, expected, "{platform} {case}");
+
+                // Everything else is as `write` lays it out.
+                let mut entries = tree_entries(&fixture.root);
+                let mut others = stand_ins.clone();
+                for part in [ICON, launcher_name, RECEIPT] {
+                    assert!(entries.remove(part).is_some(), "{platform} {case} {part}");
+                    assert!(others.remove(part).is_some(), "{platform} {case} {part}");
+                }
+                assert_eq!(entries, others, "{platform} {case}");
+            }
+        }
     }
 }

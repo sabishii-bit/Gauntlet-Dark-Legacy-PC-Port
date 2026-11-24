@@ -2,7 +2,7 @@
 //! lays them out: the runtime's files deflated in name order, then `build-info.json`, the record
 //! of the release that lists each file by its SHA-256 digest.
 
-use serde_json::{Map, Value};
+use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 
 use crate::zip::{RawEntry, RawZip};
@@ -22,6 +22,36 @@ const EXECUTABLE: &str = "gauntlet";
 
 /// The commit a standard runtime says it was built from.
 const STANDARD_COMMIT: &str = "test-commit";
+
+/// The commit the runtime [`RuntimeFiles::next`] gives says it was built from.
+const NEXT_COMMIT: &str = "next-commit";
+
+/// The commit the runtime [`RuntimeFiles::newer`] gives says it was built from.
+const NEWER_COMMIT: &str = "new-commit";
+
+/// The file at a runtime's top that names its version, followed by a line end.
+const VERSION_FILE: &str = "VERSION";
+
+/// The game's English text table, which [`RuntimeFiles::next`] changes.
+const TEXT_FILE: &str = "data/text/en.json";
+
+/// The shader a standard runtime holds, which the runtimes after it no longer ship.
+const OLD_SHADER: &str = "shaders/test.spv";
+
+/// The shader [`RuntimeFiles::next`] adds.
+const NEXT_SHADER: &str = "shaders/next.spv";
+
+/// What [`RuntimeFiles::next`]'s shader holds.
+const NEXT_SHADER_BYTES: &[u8] = b"next-shader";
+
+/// The shader [`RuntimeFiles::newer`] adds.
+const NEWER_SHADER: &str = "shaders/new.spv";
+
+/// What [`RuntimeFiles::newer`]'s shader holds.
+const NEWER_SHADER_BYTES: &[u8] = b"new-shader";
+
+/// What every file but `VERSION` and the new shader holds in [`RuntimeFiles::newer`]'s runtime.
+const NEWER_BYTES: &[u8] = b"new-runtime";
 
 /// The digits a SHA-256 digest is written in, in lower case, as Python's `hexdigest` writes it.
 const HEX_DIGITS: &[u8; 16] = b"0123456789abcdef";
@@ -57,7 +87,7 @@ impl RuntimeFiles {
         };
         let files = [
             (executable, b"not a real executable".to_vec()),
-            ("VERSION", format!("{version}\n").into_bytes()),
+            (VERSION_FILE, version_file(version)),
             ("portable.flag", Vec::new()),
             ("data/config.json", b"{}".to_vec()),
             ("data/text/en.json", b"{}".to_vec()),
@@ -72,6 +102,67 @@ impl RuntimeFiles {
             commit: STANDARD_COMMIT.to_owned(),
             platform: platform.to_owned(),
             executable: executable.to_owned(),
+            extra: Map::new(),
+        }
+    }
+
+    /// The runtime after `self`, of `version`, as a release changes one: `VERSION` naming
+    /// `version`, `data/text/en.json` naming it too, `shaders/test.spv` gone and
+    /// `shaders/next.spv` new, every other file as it was; built from `next-commit` for the same
+    /// platform and executable, its record holding the record's own keys alone, as release.py
+    /// writes one. After a standard runtime, the executable, `portable.flag` and
+    /// `data/config.json` are what stays the same.
+    pub fn next(&self, version: &str) -> RuntimeFiles {
+        let text = json!({ "version": version }).to_string().into_bytes();
+        let files = self
+            .files
+            .iter()
+            .filter(|(name, _)| name != OLD_SHADER && name != NEXT_SHADER)
+            .map(|(name, data)| {
+                let data = match name.as_str() {
+                    VERSION_FILE => version_file(version),
+                    TEXT_FILE => text.clone(),
+                    _ => data.clone(),
+                };
+                (name.clone(), data)
+            })
+            .chain([(NEXT_SHADER.to_owned(), NEXT_SHADER_BYTES.to_vec())])
+            .collect();
+        self.followed_by(version, NEXT_COMMIT, files)
+    }
+
+    /// The runtime the alpha installer's update tests install over `self`, of `version`: every
+    /// file of `self` holding `new-runtime` but `VERSION`, which names `version`, with
+    /// `shaders/test.spv` gone and `shaders/new.spv` new, holding `new-shader`; built from
+    /// `new-commit` for the same platform and executable, its record holding the record's own keys
+    /// alone, as release.py writes one.
+    pub fn newer(&self, version: &str) -> RuntimeFiles {
+        let files = self
+            .files
+            .iter()
+            .filter(|(name, _)| name != OLD_SHADER && name != NEWER_SHADER)
+            .map(|(name, _)| {
+                let data = if name == VERSION_FILE {
+                    version_file(version)
+                } else {
+                    NEWER_BYTES.to_vec()
+                };
+                (name.clone(), data)
+            })
+            .chain([(NEWER_SHADER.to_owned(), NEWER_SHADER_BYTES.to_vec())])
+            .collect();
+        self.followed_by(version, NEWER_COMMIT, files)
+    }
+
+    /// A release after `self` of `version`, built from `commit` for `self`'s platform and
+    /// executable, holding `files`.
+    fn followed_by(&self, version: &str, commit: &str, files: Vec<(String, Vec<u8>)>) -> Self {
+        RuntimeFiles {
+            files,
+            version: version.to_owned(),
+            commit: commit.to_owned(),
+            platform: self.platform.clone(),
+            executable: self.executable.clone(),
             extra: Map::new(),
         }
     }
@@ -153,6 +244,11 @@ impl RuntimeFiles {
     }
 }
 
+/// What a runtime's `VERSION` holds for `version`: the version, then a line end.
+fn version_file(version: &str) -> Vec<u8> {
+    format!("{version}\n").into_bytes()
+}
+
 /// `value` as the release scripts and the launcher write JSON files: indented by two spaces, with
 /// LF line ends and a line end after it.
 pub fn pretty_json(value: &Value) -> Vec<u8> {
@@ -190,7 +286,7 @@ pub fn unhex(text: &Value) -> Vec<u8> {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, BTreeSet};
     use std::io::{Cursor, Read};
 
     use ::zip::{CompressionMethod, ZipArchive};
@@ -208,9 +304,72 @@ mod tests {
     const BRACES_SHA256: &str = "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a";
     const SHADER_SHA256: &str = "e137e75a5e0e7a623ca39de480667a55b43e0eedec58767634ebaef07c33383a";
 
+    // The digests of what the runtimes after it change or add, as hashlib gives them too: `VERSION`
+    // naming 1.0.0-beta.1, the next runtime's text table and shader, and the newer runtime's files
+    // and shader.
+    const NEXT_VERSION_SHA256: &str =
+        "5703a2f830f2a6e2ce9be19e37c5309e39b6566d071f641cf11c5dc2c1c6331d";
+    const NEXT_TEXT_SHA256: &str =
+        "dbdc022278a4f9283aa4fb24a33ed531f8e37fff661747b36d144e7dab35ee36";
+    const NEXT_SHADER_SHA256: &str =
+        "f474a5d956baa0e921e3b59359f90e1411ada9beaf1c143e130efada52b0e761";
+    const NEW_RUNTIME_SHA256: &str =
+        "3aefc37377c5a7743ed0c1fa1d6fe9bb511fb1732466091be46d64ef17193787";
+    const NEW_SHADER_SHA256: &str =
+        "617d64c50324e303d00208a9d2f129990cfd9f17b1f5d7b93027e77c5a5ef70b";
+
     /// The platforms a release is built for, and each one's executable.
     const PLATFORMS: [(&str, &str); 2] =
         [("windows-x64", "gauntlet.exe"), ("linux-x64", "gauntlet")];
+
+    /// The names an update from one runtime to another moves, told by the digests their records
+    /// list, `build-info.json` aside.
+    #[derive(Debug, Default, PartialEq, Eq)]
+    struct Moved {
+        replaced: BTreeSet<String>,
+        added: BTreeSet<String>,
+        removed: BTreeSet<String>,
+        unchanged: BTreeSet<String>,
+    }
+
+    fn moved(before: &RuntimeFiles, after: &RuntimeFiles) -> Moved {
+        let listed = |runtime: &RuntimeFiles| -> BTreeMap<String, Value> {
+            let info = runtime.build_info();
+            info["files"]
+                .as_object()
+                .unwrap()
+                .clone()
+                .into_iter()
+                .collect()
+        };
+        let (old, new) = (listed(before), listed(after));
+        let mut changes = Moved::default();
+        for (name, digest) in &new {
+            let kind = match old.get(name) {
+                None => &mut changes.added,
+                Some(old) if old == digest => &mut changes.unchanged,
+                Some(_) => &mut changes.replaced,
+            };
+            kind.insert(name.clone());
+        }
+        changes.removed = old
+            .into_keys()
+            .filter(|name| !new.contains_key(name))
+            .collect();
+        changes
+    }
+
+    fn names(names: &[&str]) -> BTreeSet<String> {
+        names.iter().map(|name| (*name).to_owned()).collect()
+    }
+
+    fn contents(runtime: &RuntimeFiles) -> BTreeMap<&str, &[u8]> {
+        runtime
+            .files
+            .iter()
+            .map(|(name, data)| (name.as_str(), data.as_slice()))
+            .collect()
+    }
 
     #[test]
     fn the_standard_runtime_is_the_installer_tests_own() {
@@ -244,6 +403,148 @@ mod tests {
         assert_eq!(other.platform, "another-os");
         assert_eq!(other.executable, "gauntlet");
         assert!(other.files.iter().any(|(name, _)| name == "gauntlet"));
+    }
+
+    #[test]
+    fn the_next_runtime_changes_two_files_and_swaps_a_shader() {
+        for (platform, executable) in PLATFORMS {
+            let standard = RuntimeFiles::standard(platform, "1.0.0-beta");
+            let next = standard.next("1.0.0-beta.1");
+            assert_eq!(next.version, "1.0.0-beta.1");
+            assert_eq!(next.commit, "next-commit");
+            assert_eq!(next.platform, platform);
+            assert_eq!(next.executable, executable);
+            assert!(next.extra.is_empty());
+            let expected: BTreeMap<&str, &[u8]> = [
+                (executable, &b"not a real executable"[..]),
+                ("VERSION", &b"1.0.0-beta.1\n"[..]),
+                ("portable.flag", &b""[..]),
+                ("data/config.json", &b"{}"[..]),
+                ("data/text/en.json", &br#"{"version":"1.0.0-beta.1"}"#[..]),
+                ("shaders/next.spv", &b"next-shader"[..]),
+            ]
+            .into_iter()
+            .collect();
+            assert_eq!(contents(&next), expected, "{platform}");
+            assert_eq!(next.files.len(), expected.len(), "{platform}");
+
+            // An update to it replaces two files, adds one shader and removes the other.
+            assert_eq!(
+                moved(&standard, &next),
+                Moved {
+                    replaced: names(&["VERSION", "data/text/en.json"]),
+                    added: names(&["shaders/next.spv"]),
+                    removed: names(&["shaders/test.spv"]),
+                    unchanged: names(&[executable, "portable.flag", "data/config.json"]),
+                },
+                "{platform}"
+            );
+            // Its record lists the new files by the digests Python's hashlib gives them.
+            let info = next.build_info();
+            assert_eq!(info["files"]["VERSION"], NEXT_VERSION_SHA256);
+            assert_eq!(info["files"]["data/text/en.json"], NEXT_TEXT_SHA256);
+            assert_eq!(info["files"]["shaders/next.spv"], NEXT_SHADER_SHA256);
+            assert_eq!(info["files"][executable], EXECUTABLE_SHA256);
+            assert_eq!(info["commit"], "next-commit");
+            // The runtime it follows is as it was.
+            assert_eq!(
+                contents(&standard),
+                contents(&RuntimeFiles::standard(platform, "1.0.0-beta"))
+            );
+
+            // Followed again, it names each file once and changes the version's two files alone.
+            let again = next.next("1.0.0-beta.2");
+            assert_eq!(again.files.len(), expected.len(), "{platform}");
+            assert_eq!(
+                moved(&next, &again),
+                Moved {
+                    replaced: names(&["VERSION", "data/text/en.json"]),
+                    unchanged: names(&[
+                        executable,
+                        "portable.flag",
+                        "data/config.json",
+                        "shaders/next.spv",
+                    ]),
+                    ..Moved::default()
+                },
+                "{platform}"
+            );
+        }
+
+        // Its record holds the release's own keys alone, whatever the runtime before it held.
+        let mut changed = RuntimeFiles::standard("linux-x64", "1.0.0-beta");
+        changed.extra.insert("commit".to_owned(), json!(5));
+        let next = changed.next("1.0.0-beta.1");
+        assert!(next.extra.is_empty());
+        assert_eq!(next.build_info()["commit"], "next-commit");
+    }
+
+    /// The newer runtime is the one the alpha installer's update tests install over theirs.
+    #[test]
+    fn the_newer_runtime_is_tus() {
+        for (platform, executable) in PLATFORMS {
+            let standard = RuntimeFiles::standard(platform, "1.0.0-beta");
+            let newer = standard.newer("1.0.0-beta.1");
+            assert_eq!(newer.version, "1.0.0-beta.1");
+            assert_eq!(newer.commit, "new-commit");
+            assert_eq!(newer.platform, platform);
+            assert_eq!(newer.executable, executable);
+            assert!(newer.extra.is_empty());
+            let expected: BTreeMap<&str, &[u8]> = [
+                (executable, &b"new-runtime"[..]),
+                ("VERSION", &b"1.0.0-beta.1\n"[..]),
+                ("portable.flag", &b"new-runtime"[..]),
+                ("data/config.json", &b"new-runtime"[..]),
+                ("data/text/en.json", &b"new-runtime"[..]),
+                ("shaders/new.spv", &b"new-shader"[..]),
+            ]
+            .into_iter()
+            .collect();
+            assert_eq!(contents(&newer), expected, "{platform}");
+            assert_eq!(newer.files.len(), expected.len(), "{platform}");
+            assert_eq!(
+                newer.build_info()["files"],
+                json!({
+                    executable: NEW_RUNTIME_SHA256,
+                    "VERSION": NEXT_VERSION_SHA256,
+                    "portable.flag": NEW_RUNTIME_SHA256,
+                    "data/config.json": NEW_RUNTIME_SHA256,
+                    "data/text/en.json": NEW_RUNTIME_SHA256,
+                    "shaders/new.spv": NEW_SHADER_SHA256,
+                }),
+                "{platform}"
+            );
+
+            // An update to it replaces every file, adds one shader and removes the other, so with
+            // `build-info.json` it backs up seven names and puts seven in place.
+            let changes = moved(&standard, &newer);
+            assert_eq!(
+                changes,
+                Moved {
+                    replaced: names(&[
+                        executable,
+                        "VERSION",
+                        "portable.flag",
+                        "data/config.json",
+                        "data/text/en.json",
+                    ]),
+                    added: names(&["shaders/new.spv"]),
+                    removed: names(&["shaders/test.spv"]),
+                    unchanged: BTreeSet::new(),
+                },
+                "{platform}"
+            );
+            let backup = changes.replaced.len() + changes.removed.len() + 1;
+            let publish = changes.replaced.len() + changes.added.len() + 1;
+            assert_eq!((backup, publish), (7, 7), "{platform}");
+
+            // Taken further, it names each file once, the new shader as it was.
+            let again = newer.newer("1.0.0-beta.2");
+            assert_eq!(contents(&again).len(), expected.len(), "{platform}");
+            assert_eq!(again.files.len(), expected.len(), "{platform}");
+            assert_eq!(contents(&again)["shaders/new.spv"], b"new-shader");
+            assert_eq!(contents(&again)["VERSION"], b"1.0.0-beta.2\n");
+        }
     }
 
     #[test]
