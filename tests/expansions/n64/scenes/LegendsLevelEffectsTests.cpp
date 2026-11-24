@@ -65,7 +65,7 @@ struct Fixture {
 
 TEST_CASE("Imported barrel events reach normal opponent callbacks and standing party members once",
           "[legends][level-effects][blasts][assets]") {
-    Fixture fixture;
+    const Fixture fixture;
     bool poison = false;
     SECTION("red fire barrel") {}
     SECTION("green poison barrel") {
@@ -123,7 +123,7 @@ TEST_CASE("Imported barrel events reach normal opponent callbacks and standing p
 
 TEST_CASE("Native poison barrel chains detonate a nearby explosive through physical damage",
           "[legends][level-effects][blasts][assets]") {
-    Fixture fixture;
+    const Fixture fixture;
     // IPR quarter-unit coordinates put green35 and red36 only 4.265 units
     // apart. Green31/red33 are 8.434 apart, outside this native blast.
     const auto green = fixture.barrel(35);
@@ -164,7 +164,7 @@ TEST_CASE("Imported barrel sounds obey effects volume and stop without replaying
     }
     AudioMixer mixer(48000);
     SoundPlayer output(mixer);
-    Fixture fixture;
+    const Fixture fixture;
     const auto red = fixture.barrel(21);
     output.setCategoryVolume(SoundCategory::Effects, 0);
     REQUIRE(fixture.level->strike(red.id, 1, 0, 0));
