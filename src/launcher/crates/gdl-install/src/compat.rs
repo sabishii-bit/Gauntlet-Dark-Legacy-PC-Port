@@ -4,6 +4,8 @@
 //! installation playable but closed to changes. Under `.gdl-launcher/` this launcher changes and
 //! removes only the names its own rules make, so whatever else is there stays as it was.
 
+use std::ffi::OsString;
+
 use gdl_files::{PENDING_SUFFIX, is_staging_name};
 use gdl_release::Version;
 use serde_json::{Map, Value};
@@ -71,6 +73,15 @@ const RANDOM_PREFIXES: [(&str, StateName); 5] = [
 /// The prefix of what an update or an expansion change puts aside under `.gdl-launcher/`, which
 /// more of the name always follows.
 const RETIRED_PREFIX: &str = "retired-";
+
+/// The names a fresh install makes directly under `.gdl-launcher/`, beside its staging, before
+/// its first journal is written or once the journal is removed: the lock, the journal folder and
+/// the list of the disc's files.
+const BEFORE_JOURNAL: [&str; 3] = [LOCK_FILE, JOURNAL_DIR, DISC_FILES];
+
+/// The state files whose pending files a fresh install leaves directly under `.gdl-launcher/`
+/// when a write of one is cut short, with no journal to say so.
+const PENDING_BEFORE_JOURNAL: [&str; 2] = [DISC_FILES, RECEIPT_FILE];
 
 /// What a JSON state file records of who may change it.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -197,6 +208,32 @@ pub fn launcher_state_name(name: &str) -> Option<StateName> {
         .map(|_| StateName::Retired)
 }
 
+/// Whether a state folder holding `names`, whose journal folder holds `journal` (`None` when there
+/// is none), is one a fresh install left before its first journal: one that holds nothing but what
+/// an install makes before one, an empty state folder included. Each of `names` must be the lock,
+/// the journal folder, the list of the disc's files, the pending file of that list or of the
+/// receipt, or an install's staging, by the name its rules give it; and each name in the journal
+/// folder the pending file of the install's journal. A receipt, a journal, or any other name, a
+/// later launcher's or the player's, makes it no such folder.
+pub(crate) fn abandoned_install(names: &[OsString], journal: Option<&[OsString]>) -> bool {
+    let before_journal = |name: &OsString| {
+        name.to_str().is_some_and(|name| {
+            BEFORE_JOURNAL.contains(&name)
+                || name
+                    .strip_suffix(PENDING_SUFFIX)
+                    .is_some_and(|file| PENDING_BEFORE_JOURNAL.contains(&file))
+                || is_staging_name(INSTALL_STAGING_PREFIX, name)
+        })
+    };
+    let pending_journal = |name: &OsString| {
+        name.to_str()
+            .and_then(|name| name.strip_suffix(PENDING_SUFFIX))
+            .is_some_and(|file| file == INSTALL_JOURNAL)
+    };
+    names.iter().all(before_journal)
+        && journal.is_none_or(|names| names.iter().all(pending_journal))
+}
+
 /// What `name` holds when it is one of the names this launcher gives its state without a random
 /// part.
 fn fixed_name(name: &str) -> Option<StateName> {
@@ -248,7 +285,7 @@ pub enum StampError {
 
 #[cfg(test)]
 mod tests {
-    use std::ffi::OsStr;
+    use std::ffi::{OsStr, OsString};
     use std::path::Path;
 
     use gdl_files::{ALPHA_NAMES, Staging, pending_path};
@@ -257,7 +294,7 @@ mod tests {
 
     use super::{
         Access, JOURNAL_NAMES, JOURNAL_SCHEMA, MAX_SHOWN_CHARS, MIN_LAUNCHER, RANDOM_PREFIXES,
-        StampError, StateName, access, launcher_state_name, stamp_of,
+        StampError, StateName, abandoned_install, access, launcher_state_name, stamp_of,
     };
 
     fn version(text: &str) -> Version {
@@ -674,6 +711,104 @@ mod tests {
                 Some(StateName::Pending),
                 "{pending:?}"
             );
+        }
+    }
+
+    /// `names`, as a folder's listing gives them.
+    fn listed(names: &[&str]) -> Vec<OsString> {
+        names.iter().map(OsString::from).collect()
+    }
+
+    #[test]
+    fn a_state_folder_left_before_its_journal_holds_only_what_an_install_makes_before_one() {
+        let pending_journal = listed(&["install.json.pending"]);
+        let empty = listed(&[]);
+        let journal = listed(&["install.json"]);
+        let other_pending = listed(&["update.json.pending"]);
+        for (what, names, journals, abandoned) in [
+            ("an empty state folder", vec![], None, true),
+            ("the lock", vec!["lock"], None, true),
+            (
+                "the lock and an empty journal folder",
+                vec!["journal", "lock"],
+                Some(&empty),
+                true,
+            ),
+            (
+                "the journal's pending file",
+                vec!["journal", "lock"],
+                Some(&pending_journal),
+                true,
+            ),
+            (
+                "a staging no journal names",
+                vec!["install-AbC123xy", "lock"],
+                None,
+                true,
+            ),
+            (
+                "the list of the disc's files and the pending files",
+                vec![
+                    "disc-files.json",
+                    "disc-files.json.pending",
+                    "lock",
+                    "receipt.json.pending",
+                ],
+                None,
+                true,
+            ),
+            ("a receipt", vec!["lock", "receipt.json"], None, false),
+            ("a journal", vec!["journal", "lock"], Some(&journal), false),
+            (
+                "another job's pending journal",
+                vec!["journal", "lock"],
+                Some(&other_pending),
+                false,
+            ),
+            (
+                "a name of the player's",
+                vec!["lock", "notes.txt"],
+                None,
+                false,
+            ),
+            (
+                "an update's backup",
+                vec!["lock", "update-backup"],
+                None,
+                false,
+            ),
+            (
+                "another job's staging",
+                vec!["lock", "stage-AbC123xy"],
+                None,
+                false,
+            ),
+            (
+                "a name that is no staging's",
+                vec!["install-AbC12", "lock"],
+                None,
+                false,
+            ),
+            (
+                "a pending file of no state file of the install's",
+                vec!["lock", "state.json.pending"],
+                None,
+                false,
+            ),
+            ("a name in another letter case", vec!["Lock"], None, false),
+        ] {
+            let names = listed(&names);
+            let journals = journals.map(Vec::as_slice);
+            assert_eq!(abandoned_install(&names, journals), abandoned, "{what}");
+        }
+        // A name that is not text is none of the launcher's.
+        #[cfg(unix)]
+        {
+            use std::os::unix::ffi::OsStringExt;
+
+            let odd = OsString::from_vec(vec![b'l', 0xFF]);
+            assert!(!abandoned_install(std::slice::from_ref(&odd), None));
+            assert!(!abandoned_install(&listed(&["journal"]), Some(&[odd])));
         }
     }
 }

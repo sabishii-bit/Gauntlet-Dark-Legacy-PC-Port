@@ -170,7 +170,7 @@ impl<'a> Install<'a> {
                     ..
                 } = prepared;
                 let begun = Begun {
-                    staging,
+                    staging: Some(staging),
                     journal: Some(journal),
                 };
                 Err(self.roll_back(error, self.rollback(lock, Some(begun)), record))
@@ -407,7 +407,7 @@ impl<'a> Install<'a> {
             Ok(journal) => journal,
             Err(error) => {
                 let begun = Begun {
-                    staging,
+                    staging: Some(staging),
                     journal: None,
                 };
                 let rollback = self.rollback(lock, Some(begun));
@@ -417,7 +417,7 @@ impl<'a> Install<'a> {
         staging.keep();
         if let Err(error) = self.pass(FaultPoint::Prepare, journal.path()) {
             let begun = Begun {
-                staging,
+                staging: Some(staging),
                 journal: Some(journal),
             };
             return Err(self.roll_back(error, self.rollback(lock, Some(begun)), record));
@@ -784,7 +784,7 @@ impl<'a> Install<'a> {
         } = staged;
         if let Err(error) = self.put_in_place(&folder, &staging, &mut journal, &receipt) {
             let begun = Begun {
-                staging,
+                staging: Some(staging),
                 journal: Some(journal),
             };
             return Err(self.roll_back(error, self.rollback(lock, Some(begun)), record));
@@ -793,7 +793,7 @@ impl<'a> Install<'a> {
             .pass(FaultPoint::Publish, journal.path())
             .and_then(|()| journal.committed().map_err(|error| self.files_error(error)))
             .and_then(|()| {
-                clean_up(staging, &journal, self.settings.faults)
+                clean_up(Some(staging), &journal, self.settings.faults)
                     .map_err(|error| self.files_error(error))
             });
         if let Err(error) = cleaned {

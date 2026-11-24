@@ -2,7 +2,8 @@
 //! come, the folders it made, its staging and the roots it publishes, written whole at every step,
 //! so that whatever stops the job, the next start knows what to finish or take back. From the
 //! publish on, it carries the receipt the install writes, so that the receipt a recovery writes is
-//! the one the job would have written.
+//! the one the job would have written. The next start reads it back to finish the install or take
+//! it back.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -111,6 +112,20 @@ impl<'a> JournalFile<'a> {
         Ok(file)
     }
 
+    /// The journal `journal`, as an install left it in the journal folder `folder`, given back to
+    /// be changed as the install's recovery goes on. Nothing is written until it changes.
+    pub(crate) fn resume(
+        folder: &Path,
+        journal: InstallJournal,
+        faults: &'a dyn FaultPoints,
+    ) -> JournalFile<'a> {
+        JournalFile {
+            path: folder.join(INSTALL_JOURNAL),
+            journal,
+            faults,
+        }
+    }
+
     /// The journal file.
     pub(crate) fn path(&self) -> &Path {
         &self.path
@@ -121,9 +136,30 @@ impl<'a> JournalFile<'a> {
         self.journal.phase
     }
 
+    /// How many folders the install made: the destination, when it was not there, and each
+    /// missing folder above it.
+    pub(crate) fn made_folders(&self) -> u32 {
+        self.journal.made_folders
+    }
+
+    /// The name of the install's staging, in the state folder.
+    pub(crate) fn staging_name(&self) -> &str {
+        &self.journal.staging
+    }
+
     /// Every root the publish puts in place, in byte order: none before the publish.
     pub(crate) fn roots(&self) -> &[String] {
         &self.journal.roots
+    }
+
+    /// The roots the publish has recorded in place, in the order they moved.
+    pub(crate) fn published_roots(&self) -> &[String] {
+        &self.journal.published
+    }
+
+    /// The receipt the install writes once every root is in place, from the publish on.
+    pub(crate) fn receipt(&self) -> Option<&Receipt> {
+        self.journal.receipt.as_ref()
     }
 
     /// Moves the journal to publishing, with every root of `roots` the publish puts in place, in
@@ -367,6 +403,39 @@ mod tests {
         let refused = file.published(&root("data")).unwrap_err();
         assert_eq!(refused.rule(), "io", "{refused:?}");
         assert_eq!(read(folder.path())["published"], json!([]));
+    }
+
+    #[test]
+    fn a_journal_taken_back_is_changed_where_the_install_left_it() {
+        let folder = tempfile::tempdir().unwrap();
+        let mut journal = InstallJournal::staging(2, "install-AbC123xy");
+        journal.phase = InstallPhase::Publishing;
+        journal.roots = vec!["Gauntlet".to_owned(), "data".to_owned()];
+        journal.published = vec!["Gauntlet".to_owned()];
+        journal.receipt = Some(receipt());
+        journal.other.insert("future".to_owned(), json!({"x": 1}));
+        let mut file = JournalFile::resume(folder.path(), journal, &NoFaults);
+        // Nothing is written until the journal changes.
+        assert!(
+            gdl_fixtures::folder_names(folder.path())
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(file.path(), folder.path().join(INSTALL_JOURNAL));
+        assert_eq!(file.phase(), InstallPhase::Publishing);
+        assert_eq!(file.made_folders(), 2);
+        assert_eq!(file.staging_name(), "install-AbC123xy");
+        assert_eq!(file.roots(), ["Gauntlet", "data"]);
+        assert_eq!(file.published_roots(), ["Gauntlet"]);
+        assert_eq!(file.receipt(), Some(&receipt()));
+
+        // The next move is recorded after those before it, and what a later launcher added stays.
+        file.published(&root("data")).unwrap();
+        let written = read(folder.path());
+        assert_eq!(written["published"], json!(["Gauntlet", "data"]));
+        assert_eq!(written["madeFolders"], 2);
+        assert_eq!(written["future"], json!({"x": 1}));
+        assert_eq!(written["receipt"], serde_json::to_value(receipt()).unwrap());
     }
 
     #[test]

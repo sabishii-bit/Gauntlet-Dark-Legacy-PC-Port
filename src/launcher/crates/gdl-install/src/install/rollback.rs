@@ -39,8 +39,9 @@ pub(super) struct Rollback<'a> {
 
 /// The staging an install made, and the journal that names it once that was written.
 pub(super) struct Begun<'a> {
-    /// The staging.
-    pub(super) staging: Staging,
+    /// The staging; `None` when the journal names one that is gone, as a rollback a crash cut
+    /// short leaves it.
+    pub(super) staging: Option<Staging>,
     /// The journal, once written: when it records the publish, what was put in place goes back
     /// into the staging first.
     pub(super) journal: Option<JournalFile<'a>>,
@@ -98,10 +99,12 @@ impl Rollback<'_> {
             if let Some(mut journal) = journal
                 && journal.phase() != InstallPhase::Staging
             {
-                kept = take_back_published(folder, &staging, &mut journal, faults)?;
+                kept = take_back_published(folder, staging.as_ref(), &mut journal, faults)?;
             }
-            staging_path = Some(staging.path().to_path_buf());
-            remove_staging(staging)?;
+            if let Some(staging) = staging {
+                staging_path = Some(staging.path().to_path_buf());
+                remove_staging(staging)?;
+            }
         }
         pass(faults, staging_path.as_deref().unwrap_or(&state))?;
         for file in [
@@ -131,10 +134,11 @@ impl Rollback<'_> {
 /// back from `folder` into `staging`, last first, passing [`FaultPoint::Rollback`] after each: a
 /// root in place and gone from the staging moved, whether its move was recorded or not. A root
 /// still in the staging, or in neither place, is passed over, and so is a `saves` or `config`
-/// folder in place that is not empty, which is given back as kept. Gives the roots kept.
+/// folder in place that is not empty, which is given back as kept. Without the staging nothing in
+/// place can go back, so every root in place is kept. Gives the roots kept.
 fn take_back_published(
     folder: &Path,
-    staging: &Staging,
+    staging: Option<&Staging>,
     journal: &mut JournalFile<'_>,
     faults: &dyn FaultPoints,
 ) -> Result<Vec<String>, FilesError> {
@@ -144,8 +148,15 @@ fn take_back_published(
     let mut kept = Vec::new();
     for name in journal.roots().iter().rev() {
         let target = folder.join(name);
+        if !is_there(&target)? {
+            continue;
+        }
+        let Some(staging) = staging else {
+            kept.push(name.clone());
+            continue;
+        };
         let staged = staging.path().join(name);
-        if !is_there(&target)? || is_there(&staged)? {
+        if is_there(&staged)? {
             continue;
         }
         if holds_players_files(name, &target)? {
@@ -180,8 +191,22 @@ fn holds_players_files(name: &str, target: &Path) -> Result<bool, FilesError> {
     Ok(!names_in(target).map_err(io)?.is_empty())
 }
 
+/// The roots of `roots` in place in `folder` that a rollback without the staging they came from
+/// could not take back: every one but a `saves` or `config` folder that holds the player's files,
+/// which stays in place whatever the rollback has to take back.
+pub(super) fn stranded_roots(folder: &Path, roots: &[String]) -> Result<Vec<String>, FilesError> {
+    let mut stranded = Vec::new();
+    for name in roots {
+        let target = folder.join(name);
+        if is_there(&target)? && !holds_players_files(name, &target)? {
+            stranded.push(name.clone());
+        }
+    }
+    Ok(stranded)
+}
+
 /// Whether anything is at `path`, looked at without following a link.
-fn is_there(path: &Path) -> Result<bool, FilesError> {
+pub(super) fn is_there(path: &Path) -> Result<bool, FilesError> {
     match fs::symlink_metadata(path) {
         Ok(_) => Ok(true),
         Err(error) if is_absent(&error) => Ok(false),
@@ -251,9 +276,10 @@ pub(super) fn remove_unlocked_state(state: &Path) -> bool {
 /// Cleans up once the journal records the install committed, passing [`FaultPoint::Cleanup`]
 /// before each step: the staging goes, then the journal, last, so that whichever step a crash
 /// cuts short, the journal is left for the next start to finish from, or nothing is. A staging or
-/// a journal already gone counts as removed.
+/// a journal already gone counts as removed, and so does a staging given as `None`, one the
+/// journal names that a cleanup cut short has removed already.
 pub(super) fn clean_up(
-    staging: Staging,
+    staging: Option<Staging>,
     journal: &JournalFile<'_>,
     faults: &dyn FaultPoints,
 ) -> Result<(), FilesError> {
@@ -265,9 +291,15 @@ pub(super) fn clean_up(
                 source,
             })
     };
-    let removed = staging.path().to_path_buf();
     cleaned(journal.path())?;
-    remove_staging(staging)?;
+    let removed = match staging {
+        Some(staging) => {
+            let removed = staging.path().to_path_buf();
+            remove_staging(staging)?;
+            removed
+        }
+        None => journal.path().to_path_buf(),
+    };
     cleaned(&removed)?;
     journal.remove()
 }
@@ -278,7 +310,7 @@ mod tests {
 
     use gdl_fixtures::folder_names;
 
-    use super::{TakenBack, remove_made_folders, remove_unlocked_state};
+    use super::{TakenBack, remove_made_folders, remove_unlocked_state, stranded_roots};
 
     #[test]
     fn made_folders_go_innermost_first_while_they_hold_nothing() {
@@ -317,6 +349,30 @@ mod tests {
         assert!(!state.exists());
         // Already gone.
         assert!(remove_unlocked_state(&state));
+    }
+
+    #[test]
+    fn roots_in_place_are_stranded_but_the_players_folders() {
+        let folder = tempfile::tempdir().unwrap();
+        let roots: Vec<String> = ["Gauntlet", "VERSION", "config", "data", "saves"]
+            .map(str::to_owned)
+            .to_vec();
+        assert!(stranded_roots(folder.path(), &roots).unwrap().is_empty());
+        fs::create_dir(folder.path().join("Gauntlet")).unwrap();
+        fs::write(folder.path().join("VERSION"), b"1.0.0-beta").unwrap();
+        // An empty saves folder is the install's; one the player saved into, and a file in the
+        // settings folder's place, are the player's.
+        fs::create_dir(folder.path().join("saves")).unwrap();
+        fs::write(folder.path().join("config"), b"the player's").unwrap();
+        assert_eq!(
+            stranded_roots(folder.path(), &roots).unwrap(),
+            ["Gauntlet", "VERSION", "saves"]
+        );
+        fs::write(folder.path().join("saves").join("slot1.json"), b"{}").unwrap();
+        assert_eq!(
+            stranded_roots(folder.path(), &roots).unwrap(),
+            ["Gauntlet", "VERSION"]
+        );
     }
 
     #[test]

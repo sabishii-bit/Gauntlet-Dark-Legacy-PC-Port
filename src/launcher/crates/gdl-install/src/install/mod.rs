@@ -8,10 +8,12 @@
 //! own inside the launcher's state folder, under a journal that records how far it has come, and
 //! puts each finished root in place by a rename; its receipt, written once every root is in place,
 //! is the point from which the installation stands. A failure or a cancel before it takes back
-//! what the install made.
+//! what the install made, and the next start finishes or takes back what a crash or a power cut
+//! left of one.
 
 mod disc_files;
 mod journal;
+mod recover;
 mod rollback;
 mod settings;
 mod stage;
@@ -30,6 +32,7 @@ use gdl_release::Platform;
 
 pub use disc_files::{CopiedFile, DISC_FILES, DISC_FILES_SCHEMA, DiscFiles};
 pub use journal::{INSTALL_JOURNAL, InstallPhase};
+pub use recover::{RECOVER_INSTALL, RecoveryError, RecoveryOutcome, recover_install};
 
 use self::settings::InstallSettings;
 use self::stage::Install;
@@ -603,6 +606,7 @@ mod tests {
     use serde_json::{Value, json};
     use tempfile::TempDir;
 
+    use super::recover::recover_install_with;
     use super::settings::{
         FailAt, FaultPoint, FaultPoints, Faults, INJECTED, InstallSettings, NoFaults, OnPass,
         PanicAt, ProbeFn,
@@ -611,8 +615,8 @@ mod tests {
         CHECK_DISC, CHECK_GAME, CONFIG_FOLDER, COPY_DISC_FILES, COPY_LAUNCHER, Changes, DISC_FILES,
         DiscSummary, FolderRecord, GET_RUNTIME, INSTALL_JOURNAL, INSTALL_STAGING_PREFIX,
         InstallError, InstallFailure, InstallNotice, InstallPlan, Installed, PREPARE, PUBLISH,
-        RuntimeSummary, SAVES_FOLDER, SPACE_MARGIN, Unrecorded, install_game_with, install_names,
-        plan_install, plan_with,
+        RecoveryError, RecoveryOutcome, RuntimeSummary, SAVES_FOLDER, SPACE_MARGIN, Unrecorded,
+        install_game_with, install_names, plan_install, plan_with,
     };
     use crate::destination::{Blocker, DestinationError, FolderChecks};
     use crate::folder::{
@@ -1271,6 +1275,7 @@ mod tests {
         assert!(size_of::<InstallFailure>() <= MOST_ERROR_BYTES);
         assert!(size_of::<DestinationError>() <= MOST_ERROR_BYTES);
         assert!(size_of::<IconError>() <= MOST_ERROR_BYTES);
+        assert!(size_of::<RecoveryError>() <= MOST_ERROR_BYTES);
     }
 
     /// The list of what an install of the icon disc copied, as the install writes it on every
@@ -1398,7 +1403,10 @@ mod tests {
     /// The world beyond the folder as the install tests give it: `faults`, the probe `probe`, on
     /// Windows a personaliser that marks the executable rather than edit it, and a shell nobody
     /// tells.
-    fn standing_in<'a>(faults: &'a dyn FaultPoints, probe: &'a ProbeFn) -> InstallSettings<'a> {
+    pub(super) fn standing_in<'a>(
+        faults: &'a dyn FaultPoints,
+        probe: &'a ProbeFn,
+    ) -> InstallSettings<'a> {
         InstallSettings {
             faults,
             probe,
@@ -1426,7 +1434,7 @@ mod tests {
     }
 
     /// A probe that finds the game answering with the launcher's version.
-    fn answering(_: &Path, _: &Cancel) -> Result<VersionProbe, GameStartError> {
+    pub(super) fn answering(_: &Path, _: &Cancel) -> Result<VersionProbe, GameStartError> {
         Ok(VersionProbe {
             status: exit_status(0),
             first_line: Some(VERSION.to_owned()),
@@ -1462,9 +1470,9 @@ mod tests {
     /// A record of installations that keeps what it is told, and refuses a pending folder when
     /// asked to; a stand-in for another launcher may act as the pending folder is told.
     #[derive(Default)]
-    struct Heard {
+    pub(super) struct Heard {
         /// What it was told, by the call's name, in order.
-        calls: Vec<(&'static str, PathBuf)>,
+        pub(super) calls: Vec<(&'static str, PathBuf)>,
         /// Whether it refuses a pending folder.
         refuse_pending: bool,
         /// What happens as it is told of a pending folder.
@@ -1558,7 +1566,7 @@ mod tests {
 
     /// Every entry of the tree at `root`, by its path under it with `/` between its names: a folder
     /// as `None` and a file as the digest of its bytes. A link is refused.
-    fn tree(root: &Path) -> BTreeMap<String, Option<String>> {
+    pub(super) fn tree(root: &Path) -> BTreeMap<String, Option<String>> {
         let mut entries = BTreeMap::new();
         let mut folders = vec![(root.to_path_buf(), String::new())];
         while let Some((folder, above)) = folders.pop() {
@@ -2575,10 +2583,10 @@ mod tests {
     }
 
     /// The file of the player's that a folder an install test installs into may hold.
-    const USER_FILE: &str = "user.txt";
+    pub(super) const USER_FILE: &str = "user.txt";
 
     /// What that file holds.
-    const USER_BYTES: &[u8] = b"the player's own";
+    pub(super) const USER_BYTES: &[u8] = b"the player's own";
 
     /// The names an install of the icon disc and the standard runtime puts at a folder's top on
     /// this system, in byte order: the order the publish moves them in.
@@ -2599,7 +2607,7 @@ mod tests {
     /// Where an install test installs under `top`: a folder two below `top`, which the install
     /// makes with the folder above it, or, when `holds_a_file`, a folder that is there and holds
     /// a file of the player's.
-    fn destination_in(top: &Path, holds_a_file: bool) -> PathBuf {
+    pub(super) fn destination_in(top: &Path, holds_a_file: bool) -> PathBuf {
         if !holds_a_file {
             return top.join("Games").join("game");
         }
@@ -2612,7 +2620,7 @@ mod tests {
     /// What a folder an install test installs into held before the install, outside the
     /// launcher's names: the destination's entries when it was there, else those of the folder
     /// under which the install makes it, so that the folders the install made are seen to go too.
-    struct AsItWas {
+    pub(super) struct AsItWas {
         /// The folder looked at.
         at: PathBuf,
         /// What it held.
@@ -2620,7 +2628,7 @@ mod tests {
     }
 
     impl AsItWas {
-        fn of(top: &Path, destination: &Path) -> AsItWas {
+        pub(super) fn of(top: &Path, destination: &Path) -> AsItWas {
             let at = if destination.exists() {
                 destination
             } else {
@@ -2634,7 +2642,7 @@ mod tests {
 
         /// Asserts that the folder holds what it held, and none of the launcher's names.
         #[track_caller]
-        fn holds(&self, context: &str) {
+        pub(super) fn holds(&self, context: &str) {
             assert_eq!(
                 snapshot_outside(&self.at, STATE_DIR).unwrap(),
                 self.held,
@@ -2646,7 +2654,10 @@ mod tests {
     }
 
     /// What a record told of `destination` by the calls `calls`, in order, heard.
-    fn heard_of(destination: &Path, calls: &[&'static str]) -> Vec<(&'static str, PathBuf)> {
+    pub(super) fn heard_of(
+        destination: &Path,
+        calls: &[&'static str],
+    ) -> Vec<(&'static str, PathBuf)> {
         calls
             .iter()
             .map(|&call| (call, destination.to_path_buf()))
@@ -2673,6 +2684,34 @@ mod tests {
         };
         let result = inputs.install(&plan, &mut record, &job, settings);
         (result, record.calls)
+    }
+
+    /// Recovers the install in `destination` as the next start does, with the stand-ins, the shell
+    /// told through `notify_shell`, telling `record`.
+    fn recover_heard(
+        destination: &Path,
+        record: &mut Heard,
+        notify_shell: &dyn Fn(&Path),
+    ) -> Result<RecoveryOutcome, RecoveryError> {
+        let running = Version::parse(VERSION).unwrap();
+        let cancel = Cancel::default();
+        let job = Job {
+            cancel: &cancel,
+            progress: &NoProgress,
+        };
+        let settings = InstallSettings {
+            notify_shell,
+            ..standing_in(&NoFaults, &answering)
+        };
+        recover_install_with(destination, &running, record, &job, &settings)
+    }
+
+    /// The tree an install of `inputs` that nothing stops leaves in a folder it makes.
+    fn uninterrupted(inputs: &Inputs) -> BTreeMap<String, Option<String>> {
+        let top = tempfile::tempdir().unwrap();
+        let destination = top.path().join("game");
+        inputs.install_into(&destination).unwrap();
+        tree(&destination)
     }
 
     /// The journal of the install in `destination`, when there is one.
@@ -3069,6 +3108,15 @@ mod tests {
             folder_names(&destination.join(STATE_DIR)).unwrap(),
             [LOCK_FILE]
         );
+
+        // The next start gives the state folder up under its lock, and the record forgets the
+        // folder. The folder the install made is left, empty: nothing says who made it.
+        let mut record = Heard::default();
+        let outcome = recover_heard(&destination, &mut record, &unheard).unwrap();
+        assert_eq!(outcome, RecoveryOutcome::AbandonedRemoved);
+        assert_eq!(record.calls, heard_of(&destination, &["forget"]));
+        assert!(folder_names(&destination).unwrap().is_empty());
+        assert_eq!(folder_names(top.path()).unwrap(), ["game"]);
     }
 
     #[test]
@@ -3097,6 +3145,7 @@ mod tests {
     #[test]
     fn a_panic_while_staging_or_publishing_keeps_the_staging_for_recovery() {
         let inputs = Inputs::of(&icon_iso());
+        let whole = uninterrupted(&inputs);
         for (point, at, phase) in [
             (FaultPoint::Stage, 1, "staging"),
             (FaultPoint::Publish, moved_pass(roots()[0]), "publishing"),
@@ -3119,6 +3168,22 @@ mod tests {
             }
             // The lock was let go as the job unwound.
             drop(InstallFolder::at(&destination).unwrap().lock().unwrap());
+
+            // The next start takes back what was staged, and finishes what was being published.
+            let mut record = Heard::default();
+            let outcome = recover_heard(&destination, &mut record, &unheard).unwrap();
+            if point == FaultPoint::Stage {
+                assert_eq!(outcome, RecoveryOutcome::RolledBack { kept: Vec::new() });
+                assert!(folder_names(top.path()).unwrap().is_empty());
+                assert_eq!(record.calls, heard_of(&destination, &["forget"]));
+            } else {
+                assert!(
+                    matches!(outcome, RecoveryOutcome::Finished { .. }),
+                    "{outcome:?}"
+                );
+                assert_eq!(tree(&destination), whole);
+                assert_eq!(record.calls, heard_of(&destination, &["installed"]));
+            }
         }
     }
 
@@ -3190,6 +3255,7 @@ mod tests {
     #[test]
     fn a_failure_after_the_receipt_leaves_the_installation_standing() {
         let inputs = Inputs::of(&icon_iso());
+        let whole = uninterrupted(&inputs);
         let receipted = moved_pass(roots()[roots().len() - 1]) + 2;
         // The receipt in place; the journal committed; the staging gone.
         for (point, at, phase, staging_left) in [
@@ -3246,6 +3312,29 @@ mod tests {
                 .into_iter()
                 .any(|name| name.starts_with(INSTALL_STAGING_PREFIX));
             assert_eq!(staging, staging_left, "{context}");
+
+            // The next start finishes what is left: the receipt is written again from the
+            // journal of the publish, or only the cleanup is left; the record and the shell are
+            // told again.
+            let mut record = Heard::default();
+            let told = Cell::new(0);
+            let notify = |_: &Path| told.set(told.get() + 1);
+            let outcome = recover_heard(&destination, &mut record, &notify).unwrap();
+            let expected = if point == FaultPoint::Publish {
+                RecoveryOutcome::Finished {
+                    receipt: Box::new(installed.receipt.clone()),
+                }
+            } else {
+                RecoveryOutcome::CleanedUp
+            };
+            assert_eq!(outcome, expected, "{context}");
+            assert_eq!(tree(&destination), whole, "{context}");
+            assert_eq!(
+                record.calls,
+                heard_of(&destination, &["installed"]),
+                "{context}"
+            );
+            assert_eq!(told.get(), 1, "{context}");
         }
     }
 

@@ -18,7 +18,9 @@ use gdl_files::{
 use gdl_release::{Platform, Version};
 use serde_json::{Map, Value};
 
-use crate::compat::{Access, JOURNAL_NAMES, JOURNAL_SCHEMA, access, launcher_state_name, stamp_of};
+use crate::compat::{
+    Access, JOURNAL_NAMES, JOURNAL_SCHEMA, abandoned_install, access, launcher_state_name, stamp_of,
+};
 use crate::folder::{
     FolderError, InstallFolder, JOURNAL_DIR, RECEIPT_FILE, markers_among, names_in,
 };
@@ -156,6 +158,8 @@ impl InstallFolder {
     ///   state of a link or of the system's refusal when that is why; else one that a later
     ///   launcher wrote, or of a kind this launcher does not know, gives
     ///   [`FolderState::NewerLauncher`]; else any gives [`FolderState::Pending`];
+    /// - a state folder a fresh install left before its first journal, with no receipt, holding
+    ///   nothing but what an install makes before one, gives [`FolderState::Pending`];
     /// - a receipt, read through [`InstallFolder::installed`];
     /// - the alpha installer's names, then nothing in the folder, then anything else.
     ///
@@ -368,9 +372,9 @@ impl StateFolder {
             .map(|name| shown_name(name))
             .collect();
         let dir = state.join(JOURNAL_DIR);
-        let names = match names_at(&dir) {
-            Ok(Names::Listed(names)) => names,
-            Ok(Names::Missing) => return found,
+        let journal_names = match names_at(&dir) {
+            Ok(Names::Listed(journal_names)) => Some(journal_names),
+            Ok(Names::Missing) => None,
             Ok(Names::NotFolder) => {
                 let not_folder = io::Error::from(io::ErrorKind::NotADirectory);
                 let detail = format!("{}: {not_folder}", dir.display());
@@ -381,7 +385,8 @@ impl StateFolder {
         let mut refusal = None;
         let mut later = false;
         let mut unfinished = false;
-        for name in names.iter().filter(|name| !is_pending(name)) {
+        let journals = journal_names.iter().flatten();
+        for name in journals.filter(|name| !is_pending(name)) {
             match Journal::judge(&dir, name, running) {
                 Journal::Gone => continue,
                 Journal::Unfinished => unfinished = true,
@@ -392,9 +397,13 @@ impl StateFolder {
             }
             found.journals.push(shown_name(name));
         }
+        // What an install leaves before its first journal is a job to finish too: no journal says
+        // so, but its recovery gives the state folder up.
+        let abandoned = abandoned_install(&names, journal_names.as_deref());
         found.verdict = refusal
             .or_else(|| later.then(|| Verdict::of(FolderState::NewerLauncher)))
-            .or_else(|| unfinished.then(|| Verdict::of(FolderState::Pending)));
+            .or_else(|| unfinished.then(|| Verdict::of(FolderState::Pending)))
+            .or_else(|| abandoned.then(|| Verdict::of(FolderState::Pending)));
         found
     }
 
@@ -1241,6 +1250,62 @@ mod tests {
         assert_state(&inspection, FolderState::Links, "a linked receipt");
         assert_eq!(inspection.detail, Some(link_refusal(&receipt)));
         assert_eq!(inspection.installation, None);
+    }
+
+    #[test]
+    fn a_state_folder_an_install_left_before_its_journal_is_pending() {
+        /// Makes `names` in the state folder of the folder at `root`: a name ending in `/` a
+        /// folder, any other a file of no bytes.
+        fn make(root: &Path, names: &[&str]) {
+            let state = root.join(STATE_DIR);
+            fs::create_dir_all(&state).unwrap();
+            for name in names {
+                match name.strip_suffix('/') {
+                    Some(folder) => fs::create_dir_all(state.join(folder)).unwrap(),
+                    None => fs::write(state.join(name), b"").unwrap(),
+                }
+            }
+        }
+
+        let left = [
+            vec![],
+            vec![LOCK_FILE],
+            vec![LOCK_FILE, "journal/"],
+            vec![LOCK_FILE, "journal/", "journal/install.json.pending"],
+            vec![LOCK_FILE, "install-AbC123xy/"],
+            vec![LOCK_FILE, "disc-files.json.pending"],
+        ];
+        for names in &left {
+            let what = format!("{names:?}");
+            let (_dir, root) = bare_folder();
+            make(&root, names);
+            let inspection = inspect(&root);
+            assert_state(&inspection, FolderState::Pending, &what);
+            assert!(inspection.journals.is_empty(), "{what}");
+            assert_eq!(inspection.detail, None, "{what}");
+            // A name the launcher's rules do not make, or one they make that no install makes
+            // before its journal, is no such folder.
+            for other in ["notes.txt", "update-backup/"] {
+                let (_dir, root) = bare_folder();
+                make(&root, names);
+                make(&root, &[other]);
+                let inspection = inspect(&root);
+                assert_state(
+                    &inspection,
+                    FolderState::NotInstalled,
+                    &format!("{what} and {other}"),
+                );
+            }
+        }
+        // Beside a receipt, the receipt decides.
+        let (_dir, fixture) = installation();
+        make(
+            &fixture.root,
+            &[LOCK_FILE, "install-AbC123xy/", "disc-files.json.pending"],
+        );
+        let inspection = inspect(&fixture.root);
+        assert_state(&inspection, FolderState::Installed, "beside a receipt");
+        assert!(inspection.installation.is_some());
     }
 
     #[test]
