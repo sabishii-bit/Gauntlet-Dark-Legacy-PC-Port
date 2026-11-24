@@ -14,12 +14,11 @@ use std::path::{Path, PathBuf};
 
 use gdl_files::{
     FilesError, Job, Journal, MAX_JSON_LEN, PAYLOAD_NAMES, PENDING_SUFFIX, PhaseId, RelPath,
-    Staging, is_absent, is_staging_name, pending_path, read_json_bounded,
+    Staging, is_absent, is_staging_name, read_json_bounded,
 };
 use gdl_release::{Platform, Version};
 use serde_json::{Map, Value};
 
-use super::disc_files::DISC_FILES;
 use super::journal::{INSTALL_JOURNAL, InstallJournal, InstallPhase, JournalFile, remove_if_there};
 use super::rollback::{
     Begun, Rollback, RollbackError, clean_up, commit_receipt, is_there, stranded_roots,
@@ -27,7 +26,10 @@ use super::rollback::{
 use super::settings::InstallSettings;
 use super::{FolderRecord, INSTALL_STAGING_PREFIX, is_install_root};
 use crate::awake::keep_awake;
-use crate::compat::{Access, JOURNAL_NAMES, JOURNAL_SCHEMA, abandoned_install, access, stamp_of};
+use crate::compat::{
+    Access, JOURNAL_NAMES, JOURNAL_SCHEMA, abandoned_install, access, install_leftover_files,
+    is_install_journal_leftover, is_install_leftover, stamp_of,
+};
 use crate::folder::{
     FolderError, InstallFolder, InstallLock, JOURNAL_DIR, LockError, RECEIPT_FILE, STATE_DIR,
     names_in,
@@ -264,29 +266,23 @@ impl Found {
         self.names.iter().any(|name| name == RECEIPT_FILE)
     }
 
-    /// Whether a recovery has anything to finish or remove: the install's journal, a staging or
-    /// a pending file of the install's that no journal names, the list of the disc's files with no
-    /// receipt beside it, or a state folder an install left before its first journal.
+    /// Whether a recovery has anything to finish or remove: the install's journal, anything an
+    /// install leaves that no job goes on with, the list of the disc's files among it while no
+    /// receipt stands beside it, or a state folder an install left before its first journal.
     fn calls_for_work(&self) -> bool {
-        let stale = self.names.iter().any(|name| {
-            name.to_str().is_some_and(|name| {
-                is_staging_name(INSTALL_STAGING_PREFIX, name)
-                    || name
-                        .strip_suffix(PENDING_SUFFIX)
-                        .is_some_and(|file| file == DISC_FILES || file == RECEIPT_FILE)
-            })
-        });
-        let stale_journal = self.journals.iter().flatten().any(|name| {
+        let claimed = self.has_receipt();
+        let left = self.names.iter().any(|name| {
             name.to_str()
-                .and_then(|name| name.strip_suffix(PENDING_SUFFIX))
-                .is_some_and(|file| file == INSTALL_JOURNAL)
+                .is_some_and(|name| is_install_leftover(name, claimed))
         });
-        let unclaimed_list =
-            self.names.iter().any(|name| name == DISC_FILES) && !self.has_receipt();
+        let left_in_journal = self
+            .journals
+            .iter()
+            .flatten()
+            .any(|name| name.to_str().is_some_and(is_install_journal_leftover));
         self.has_install_journal()
-            || stale
-            || stale_journal
-            || unclaimed_list
+            || left
+            || left_in_journal
             || abandoned_install(&self.names, self.journals.as_deref())
     }
 }
@@ -480,15 +476,7 @@ impl<'r> Recovery<'r> {
     ) -> Result<RecoveryOutcome, RecoveryError> {
         let state = self.state;
         let mut went = remove_stagings(state, &found.names, None)?;
-        let mut stale = vec![
-            pending_path(&state.join(JOURNAL_DIR).join(INSTALL_JOURNAL)),
-            pending_path(&state.join(DISC_FILES)),
-            pending_path(&state.join(RECEIPT_FILE)),
-        ];
-        if !found.has_receipt() {
-            stale.push(state.join(DISC_FILES));
-        }
-        for file in stale {
+        for file in install_leftover_files(state, found.has_receipt()) {
             went |= remove_if_there(&file).map_err(RecoveryError::Files)?;
         }
         let left = Found::at(state)?;
@@ -718,11 +706,13 @@ fn remove_stagings(
     Ok(went)
 }
 
-/// Removes the pending files that interrupted writes of the list of the disc's files and of the
-/// receipt left in the state folder `state`, each counted removed when it is already gone.
+/// Removes the pending files that interrupted writes of the install's state files and of its
+/// journal left in the state folder `state`, each counted removed when it is already gone, beside
+/// the journal of a publish or of a committed install, whose installation the list of the disc's
+/// files is: that list stays.
 fn remove_state_pending(state: &Path) -> Result<(), RecoveryError> {
-    for file in [DISC_FILES, RECEIPT_FILE] {
-        remove_if_there(&pending_path(&state.join(file))).map_err(RecoveryError::Files)?;
+    for file in install_leftover_files(state, true) {
+        remove_if_there(&file).map_err(RecoveryError::Files)?;
     }
     Ok(())
 }
@@ -742,8 +732,10 @@ mod tests {
     use tempfile::TempDir;
 
     use super::{RecoveryError, RecoveryOutcome, recover_install_with};
+    use crate::compat::tests::{journal_names, state_names};
+    use crate::compat::{StateName, abandoned_install, launcher_state_name};
     use crate::folder::{
-        InstallFolder, JOURNAL_DIR, LOCK_FILE, LockError, RECEIPT_FILE, STATE_DIR,
+        InstallFolder, JOURNAL_DIR, LOCK_FILE, LockError, RECEIPT_FILE, STATE_DIR, names_in,
     };
     use crate::install::disc_files::DISC_FILES;
     use crate::install::journal::INSTALL_JOURNAL;
@@ -1282,6 +1274,71 @@ mod tests {
             );
             assert!(folder_names(&root).unwrap().is_empty(), "{names:?}");
             assert_eq!(recovered.heard, heard_of(&root, &["forget"]), "{names:?}");
+        }
+    }
+
+    #[test]
+    fn whatever_an_install_leaves_before_its_journal_goes_with_the_state_folder() {
+        // Each name the launcher's rules make, beside the lock, in the state folder or in its
+        // journal folder: one recovery gives the state folder up exactly when it holds only what
+        // an install leaves before its first journal, and a name an install does not leave stays.
+        let in_state = state_names()
+            .into_iter()
+            .filter(|name| name != LOCK_FILE)
+            .map(|name| (name, false));
+        let in_journals = journal_names().into_iter().map(|name| (name, true));
+        for (name, in_journal) in in_state.chain(in_journals) {
+            let top = tempfile::tempdir().unwrap();
+            let root = top.path().join("game");
+            let state = root.join(STATE_DIR);
+            let journals = state.join(JOURNAL_DIR);
+            fs::create_dir_all(&state).unwrap();
+            fs::write(state.join(LOCK_FILE), b"").unwrap();
+            let path = if in_journal {
+                fs::create_dir(&journals).unwrap();
+                journals.join(&name)
+            } else {
+                state.join(&name)
+            };
+            // A folder where the launcher makes one, and a file anywhere else.
+            let kind = (!in_journal).then(|| launcher_state_name(&name)).flatten();
+            if matches!(
+                kind,
+                Some(
+                    StateName::Journal
+                        | StateName::Staging
+                        | StateName::Download
+                        | StateName::UpdateBackup
+                        | StateName::Retired
+                        | StateName::Bin
+                        | StateName::Logs
+                )
+            ) {
+                fs::create_dir(&path).unwrap();
+            } else {
+                fs::write(&path, b"").unwrap();
+            }
+            let names = names_in(&state).unwrap();
+            let journal_names = journals.is_dir().then(|| names_in(&journals).unwrap());
+            let abandoned = abandoned_install(&names, journal_names.as_deref());
+
+            let recovered = recover_at(&root);
+            if abandoned {
+                assert_eq!(
+                    recovered.outcome.unwrap(),
+                    RecoveryOutcome::AbandonedRemoved,
+                    "{name}"
+                );
+                assert!(folder_names(&root).unwrap().is_empty(), "{name}");
+                assert_eq!(recovered.heard, heard_of(&root, &["forget"]), "{name}");
+            } else {
+                assert!(
+                    fs::symlink_metadata(&path).is_ok(),
+                    "{name}: {:?}",
+                    recovered.outcome
+                );
+                assert!(recovered.heard.is_empty(), "{name}");
+            }
         }
     }
 

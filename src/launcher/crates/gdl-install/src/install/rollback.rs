@@ -12,14 +12,12 @@ use std::fs;
 use std::io;
 use std::path::Path;
 
-use gdl_files::{
-    FilesError, PAYLOAD_NAMES, RelPath, Staging, is_absent, no_links, pending_path, retry_locked,
-};
+use gdl_files::{FilesError, PAYLOAD_NAMES, RelPath, Staging, is_absent, no_links, retry_locked};
 
-use super::disc_files::DISC_FILES;
 use super::journal::{INSTALL_JOURNAL, InstallPhase, JournalFile, remove_if_there};
 use super::settings::{FaultPoint, FaultPoints};
 use super::{CONFIG_FOLDER, FolderRecord, SAVES_FOLDER};
+use crate::compat::install_leftover_files;
 use crate::folder::{InstallFolder, InstallLock, JOURNAL_DIR, RECEIPT_FILE, STATE_DIR, names_in};
 use crate::receipt::Receipt;
 
@@ -132,12 +130,8 @@ impl Rollback<'_> {
             }
         }
         pass(faults, staging_path.as_deref().unwrap_or(&state))?;
-        for file in [
-            state.join(DISC_FILES),
-            pending_path(&state.join(DISC_FILES)),
-            pending_path(&state.join(RECEIPT_FILE)),
-            pending_path(&journal_file),
-        ] {
+        // No receipt stands, so the list of the disc's files is no installation's.
+        for file in install_leftover_files(&state, false) {
             remove_if_there(&file)?;
         }
         pass(faults, &state)?;

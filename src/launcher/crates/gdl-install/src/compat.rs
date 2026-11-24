@@ -5,8 +5,9 @@
 //! removes only the names its own rules make, so whatever else is there stays as it was.
 
 use std::ffi::OsString;
+use std::path::{Path, PathBuf};
 
-use gdl_files::{PENDING_SUFFIX, is_staging_name};
+use gdl_files::{PENDING_SUFFIX, is_staging_name, pending_path};
 use gdl_release::Version;
 use serde_json::{Map, Value};
 
@@ -74,14 +75,13 @@ pub(crate) const RANDOM_PREFIXES: [(&str, StateName); 5] = [
 /// more of the name always follows.
 pub(crate) const RETIRED_PREFIX: &str = "retired-";
 
-/// The names a fresh install makes directly under `.gdl-launcher/`, beside its staging, before
-/// its first journal is written or once the journal is removed: the lock, the journal folder and
-/// the list of the disc's files.
-const BEFORE_JOURNAL: [&str; 3] = [LOCK_FILE, JOURNAL_DIR, DISC_FILES];
+/// The names a fresh install makes directly under `.gdl-launcher/` before its first journal that
+/// go with the state folder itself, as its lock gives it up: the lock and the journal folder.
+const GIVEN_UP_WITH_STATE: [&str; 2] = [LOCK_FILE, JOURNAL_DIR];
 
-/// The state files whose pending files a fresh install leaves directly under `.gdl-launcher/`
-/// when a write of one is cut short, with no journal to say so.
-const PENDING_BEFORE_JOURNAL: [&str; 2] = [DISC_FILES, RECEIPT_FILE];
+/// The state files a fresh install writes directly under `.gdl-launcher/`, each through a pending
+/// file beside it: the list of the disc's files and the receipt.
+const INSTALL_STATE_FILES: [&str; 2] = [DISC_FILES, RECEIPT_FILE];
 
 /// What a JSON state file records of who may change it.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -208,30 +208,54 @@ pub fn launcher_state_name(name: &str) -> Option<StateName> {
         .map(|_| StateName::Retired)
 }
 
+/// Whether `name`, directly under `.gdl-launcher/`, is what a fresh install leaves there that no
+/// job goes on with, which a rollback or a recovery removes: one of its stagings, by the name its
+/// rules give one, the pending file of a state file it writes there, or the list of the disc's
+/// files unless `claimed`, the installation's, as it is beside a receipt or under the journal of a
+/// publish.
+pub(crate) fn is_install_leftover(name: &str, claimed: bool) -> bool {
+    is_staging_name(INSTALL_STAGING_PREFIX, name)
+        || (name == DISC_FILES && !claimed)
+        || name
+            .strip_suffix(PENDING_SUFFIX)
+            .is_some_and(|file| INSTALL_STATE_FILES.contains(&file))
+}
+
+/// Whether `name`, in `.gdl-launcher/journal/`, is what a fresh install leaves there that no job
+/// goes on with: the pending file of its journal.
+pub(crate) fn is_install_journal_leftover(name: &str) -> bool {
+    name.strip_suffix(PENDING_SUFFIX) == Some(INSTALL_JOURNAL)
+}
+
+/// The files among what [`is_install_leftover`] and [`is_install_journal_leftover`] tell, by their
+/// paths in the state folder `state`, in the order they are removed: the list of the disc's files
+/// unless `claimed`, then the pending file of each state file the install writes there and of its
+/// journal. Its stagings, named in part at random, are found by listing the state folder.
+pub(crate) fn install_leftover_files(state: &Path, claimed: bool) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    if !claimed {
+        files.push(state.join(DISC_FILES));
+    }
+    files.extend(INSTALL_STATE_FILES.map(|file| pending_path(&state.join(file))));
+    files.push(pending_path(&state.join(JOURNAL_DIR).join(INSTALL_JOURNAL)));
+    files
+}
+
 /// Whether a state folder holding `names`, whose journal folder holds `journal` (`None` when there
 /// is none), is one a fresh install left before its first journal: one that holds nothing but what
 /// an install makes before one, an empty state folder included. Each of `names` must be the lock,
-/// the journal folder, the list of the disc's files, the pending file of that list or of the
-/// receipt, or an install's staging, by the name its rules give it; and each name in the journal
-/// folder the pending file of the install's journal. A receipt, a journal, or any other name, a
-/// later launcher's or the player's, makes it no such folder.
+/// the journal folder or what [`is_install_leftover`] tells, the list of the disc's files among it,
+/// and each name in the journal folder what [`is_install_journal_leftover`] tells. A receipt, a
+/// journal, or any other name, a later launcher's or the player's, makes it no such folder.
 pub(crate) fn abandoned_install(names: &[OsString], journal: Option<&[OsString]>) -> bool {
     let before_journal = |name: &OsString| {
         name.to_str().is_some_and(|name| {
-            BEFORE_JOURNAL.contains(&name)
-                || name
-                    .strip_suffix(PENDING_SUFFIX)
-                    .is_some_and(|file| PENDING_BEFORE_JOURNAL.contains(&file))
-                || is_staging_name(INSTALL_STAGING_PREFIX, name)
+            GIVEN_UP_WITH_STATE.contains(&name) || is_install_leftover(name, false)
         })
     };
-    let pending_journal = |name: &OsString| {
-        name.to_str()
-            .and_then(|name| name.strip_suffix(PENDING_SUFFIX))
-            .is_some_and(|file| file == INSTALL_JOURNAL)
-    };
+    let left_in_journal = |name: &OsString| name.to_str().is_some_and(is_install_journal_leftover);
     names.iter().all(before_journal)
-        && journal.is_none_or(|names| names.iter().all(pending_journal))
+        && journal.is_none_or(|names| names.iter().all(left_in_journal))
 }
 
 /// What `name` holds when it is one of the names this launcher gives its state without a random
@@ -284,18 +308,22 @@ pub enum StampError {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use std::ffi::{OsStr, OsString};
     use std::path::Path;
 
-    use gdl_files::{ALPHA_NAMES, Staging, pending_path};
+    use gdl_files::{ALPHA_NAMES, PENDING_SUFFIX, Staging, is_staging_name, pending_path};
     use gdl_release::Version;
     use serde_json::{Map, Value, json};
 
     use super::{
-        Access, JOURNAL_NAMES, JOURNAL_SCHEMA, MAX_SHOWN_CHARS, MIN_LAUNCHER, RANDOM_PREFIXES,
-        StampError, StateName, abandoned_install, access, launcher_state_name, stamp_of,
+        Access, FIXED_NAMES, JOURNAL_NAMES, JOURNAL_SCHEMA, MAX_SHOWN_CHARS, MIN_LAUNCHER,
+        RANDOM_PREFIXES, RETIRED_PREFIX, StampError, StateName, abandoned_install, access,
+        install_leftover_files, is_install_journal_leftover, is_install_leftover,
+        launcher_state_name, stamp_of,
     };
+    use crate::folder::JOURNAL_DIR;
+    use crate::install::{DISC_FILES, INSTALL_STAGING_PREFIX};
 
     fn version(text: &str) -> Version {
         Version::parse(text).unwrap_or_else(|error| panic!("{error}"))
@@ -809,6 +837,76 @@ mod tests {
             let odd = OsString::from_vec(vec![b'l', 0xFF]);
             assert!(!abandoned_install(std::slice::from_ref(&odd), None));
             assert!(!abandoned_install(&listed(&["journal"]), Some(&[odd])));
+        }
+    }
+
+    /// Every name the launcher's rules make directly under `.gdl-launcher/`, a random part filled
+    /// in where one goes, the pending file of each fixed one, and a name of the player's.
+    pub(crate) fn state_names() -> Vec<String> {
+        let mut names: Vec<String> = FIXED_NAMES
+            .iter()
+            .map(|&(name, _)| name.to_owned())
+            .collect();
+        names.extend(
+            FIXED_NAMES
+                .iter()
+                .map(|&(name, _)| format!("{name}{PENDING_SUFFIX}")),
+        );
+        names.extend(
+            RANDOM_PREFIXES
+                .iter()
+                .map(|&(prefix, _)| format!("{prefix}AbC123xy")),
+        );
+        names.push(format!("{RETIRED_PREFIX}AbC123xy"));
+        names.push("notes.txt".to_owned());
+        names
+    }
+
+    /// Every journal this launcher keeps under `.gdl-launcher/journal/`, and the pending file of
+    /// each.
+    pub(crate) fn journal_names() -> Vec<String> {
+        let mut names: Vec<String> = JOURNAL_NAMES.map(str::to_owned).to_vec();
+        names.extend(JOURNAL_NAMES.map(|name| format!("{name}{PENDING_SUFFIX}")));
+        names
+    }
+
+    #[test]
+    fn what_an_install_leaves_is_named_once() {
+        let state = Path::new("state");
+        let journals = state.join(JOURNAL_DIR);
+        for claimed in [false, true] {
+            // The files listed are leftovers by the names they have where they lie, ...
+            let mut in_state = Vec::new();
+            let mut in_journals = Vec::new();
+            for file in install_leftover_files(state, claimed) {
+                let name = file.file_name().and_then(OsStr::to_str).unwrap().to_owned();
+                if file.parent() == Some(state) {
+                    in_state.push(name);
+                } else {
+                    assert_eq!(file.parent(), Some(journals.as_path()), "{file:?}");
+                    in_journals.push(name);
+                }
+            }
+            // ... and among every name the launcher's rules make, the leftovers are those and the
+            // stagings of an install's, which a listing finds.
+            for name in state_names() {
+                let listed =
+                    in_state.contains(&name) || is_staging_name(INSTALL_STAGING_PREFIX, &name);
+                assert_eq!(
+                    is_install_leftover(&name, claimed),
+                    listed,
+                    "{name}, claimed: {claimed}"
+                );
+            }
+            for name in journal_names() {
+                assert_eq!(
+                    is_install_journal_leftover(&name),
+                    in_journals.contains(&name),
+                    "{name}"
+                );
+            }
+            // The list of the disc's files is among them only while no installation claims it.
+            assert_eq!(in_state.iter().any(|name| name == DISC_FILES), !claimed);
         }
     }
 }
