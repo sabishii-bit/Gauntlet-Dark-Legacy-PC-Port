@@ -310,7 +310,9 @@ pub enum Changes {
     None,
     /// What it made was taken back, and the folder is as it was.
     RolledBack,
-    /// Some of what it made is left, with what the next start needs to finish or take it back.
+    /// Some of what it made is left, with what the next start needs to finish or take it back; or,
+    /// before it made anything else, an entry the folder's probe made and could not remove, which
+    /// the error names and the next probe of that folder removes.
     Kept,
 }
 
@@ -430,7 +432,9 @@ pub(crate) fn plan_with<R: Read + Seek>(
 /// does a state folder that holds a name not the launcher's. The failure says what is left:
 /// nothing made ([`Changes::None`]), all of it taken back ([`Changes::RolledBack`]), or some of it
 /// kept, with the journal while it names anything, for the next start to take back
-/// ([`Changes::Kept`]), the record still holding the folder.
+/// ([`Changes::Kept`]), the record still holding the folder. An entry that the folder's probe made
+/// as the job judged the folder again, and could not remove, is kept too, before the record is
+/// told of the folder: the error names it, and the next probe of that folder removes it.
 pub fn install_game<R: Read + Seek>(
     plan: &InstallPlan,
     image: &mut GameCubeImage,
@@ -1477,15 +1481,16 @@ mod tests {
         }
     }
 
-    /// The world beyond the folder as the install tests give it: `faults`, the probe `probe`, on
-    /// Windows a personaliser that marks the executable rather than edit it, and a shell nobody
-    /// tells.
+    /// The world beyond the folder as the install tests give it: `faults`, the folder judged as the
+    /// launcher judges it, the probe `probe`, on Windows a personaliser that marks the executable
+    /// rather than edit it, and a shell nobody tells.
     pub(super) fn standing_in<'a>(
         faults: &'a dyn FaultPoints,
         probe: &'a ProbeFn,
     ) -> InstallSettings<'a> {
         InstallSettings {
             faults,
+            folders: &FolderChecks::SHIPPED,
             probe,
             #[cfg(windows)]
             personalise: &marking,
@@ -1878,6 +1883,97 @@ mod tests {
             fs::read(destination.join("DATA")).unwrap(),
             b"the player's own"
         );
+    }
+
+    /// What installing `inputs` into `destination` fails with when the job, judging the folder
+    /// again, probes it with `probe`, the plan judged as the launcher judges it; the record must
+    /// have been told nothing.
+    #[track_caller]
+    fn judged_again_with(
+        inputs: &Inputs,
+        destination: &Path,
+        probe: &dyn Fn(&Path, ProbedFolder) -> Result<FolderProbe, FilesError>,
+    ) -> InstallFailure {
+        let folders = FolderChecks {
+            probe,
+            ..FolderChecks::SHIPPED
+        };
+        let settings = InstallSettings {
+            folders: &folders,
+            ..standing_in(&NoFaults, &answering)
+        };
+        let (result, heard) = install_heard(inputs, destination, &settings);
+        assert!(heard.is_empty(), "{heard:?}");
+        result.unwrap_err()
+    }
+
+    /// A folder probe that could not remove what it made, as the job judged the folder again
+    /// before it made anything, leaves that entry, and the failure says that some is left: in the
+    /// destination when it is there, else in the folder above it, nothing else made. A probe that
+    /// failed before it made anything leaves nothing, and so does an error that names a probe's
+    /// name no probe of the folder made: one elsewhere, or a folder on the destination's path.
+    #[test]
+    fn a_probe_entry_the_job_could_not_remove_is_kept() {
+        let inputs = Inputs::of(&icon_iso());
+        let left_name = format!("{PROBE_PREFIX}Ab12Cd34");
+        // As a scanner holding the file past the retry window would leave it.
+        let leaving = |folder: &Path, _: ProbedFolder| -> Result<FolderProbe, FilesError> {
+            let path = folder.join(&left_name);
+            fs::write(&path, b"").unwrap();
+            Err(FilesError::Io {
+                path,
+                source: io::Error::other("held"),
+            })
+        };
+        let there = tempfile::tempdir().unwrap();
+        let above = tempfile::tempdir().unwrap();
+        let missing = above.path().join("game");
+        for (destination, probed) in [
+            (there.path(), there.path()),
+            (missing.as_path(), above.path()),
+        ] {
+            let failure = judged_again_with(&inputs, destination, &leaving);
+            assert!(
+                matches!(
+                    &failure.error,
+                    InstallError::Destination(DestinationError::Files(FilesError::Io {
+                        path, ..
+                    })) if *path == probed.join(&left_name)
+                ),
+                "{failure:?}"
+            );
+            assert_eq!(failure.changes, Changes::Kept, "{}", destination.display());
+            assert_eq!(folder_names(probed).unwrap(), [left_name.as_str()]);
+        }
+
+        let elsewhere = tempfile::tempdir().unwrap();
+        let on_the_path = tempfile::tempdir().unwrap();
+        let probe_named = on_the_path.path().join(&left_name);
+        fs::create_dir(&probe_named).unwrap();
+        let refusing = |at: PathBuf| {
+            move |_: &Path, _: ProbedFolder| -> Result<FolderProbe, FilesError> {
+                Err(FilesError::Io {
+                    path: at.clone(),
+                    source: io::Error::other("refused"),
+                })
+            }
+        };
+        let fresh = tempfile::tempdir().unwrap();
+        let cases = [
+            (fresh.path().to_path_buf(), fresh.path().to_path_buf()),
+            (
+                fresh.path().to_path_buf(),
+                elsewhere.path().join(&left_name),
+            ),
+            (probe_named.join("game"), probe_named.clone()),
+        ];
+        for (destination, named) in cases {
+            let failure = judged_again_with(&inputs, &destination, &refusing(named.clone()));
+            assert_eq!(failure.changes, Changes::None, "{}", named.display());
+        }
+        assert!(folder_names(fresh.path()).unwrap().is_empty());
+        assert!(folder_names(elsewhere.path()).unwrap().is_empty());
+        assert!(folder_names(&probe_named).unwrap().is_empty());
     }
 
     #[test]

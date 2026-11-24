@@ -13,8 +13,8 @@ use std::path::{Path, PathBuf};
 #[cfg(windows)]
 use gdl_files::read_bounded;
 use gdl_files::{
-    Cancelled, FilesError, Job, PhaseId, Progress, RelPath, RunningTotal, Staging, is_absent,
-    no_links, refuses_writes,
+    Cancelled, FilesError, Job, PROBE_PREFIX, PhaseId, Progress, RelPath, RunningTotal, Staging,
+    is_absent, is_staging_name, no_links, refuses_writes,
 };
 #[cfg(windows)]
 use gdl_media::MAX_TPL_LEN;
@@ -34,7 +34,7 @@ use super::{
 #[cfg(windows)]
 use super::{PERSONALISE, icon_entry};
 use crate::compat::MIN_LAUNCHER;
-use crate::destination::{Blocker, judge_destination};
+use crate::destination::{Blocker, DestinationError, judge_with};
 use crate::folder::{
     FolderError, InstallFolder, InstallLock, JOURNAL_DIR, LOCK_FILE, LockError, RECEIPT_FILE,
     STATE_DIR,
@@ -158,7 +158,8 @@ impl<'a> Install<'a> {
         launcher: &mut Sections<R>,
         record: &mut dyn FolderRecord,
     ) -> Result<Installed, InstallFailure> {
-        self.check_disc().map_err(nothing_made)?;
+        self.check_disc()
+            .map_err(|error| judging_failed(error, &self.plan.destination))?;
         let prepared = self.prepare(record)?;
         match self.stage(image, launcher, &prepared) {
             Ok(staged) => self.publish(prepared, staged, record),
@@ -348,8 +349,13 @@ impl<'a> Install<'a> {
         let plan = self.plan;
         let mut names = plan.roots.clone();
         names.push(install_name(STATE_DIR));
-        let report = judge_destination(&plan.destination, &names, plan.needed_bytes)
-            .map_err(InstallError::Destination)?;
+        let report = judge_with(
+            &plan.destination,
+            &names,
+            plan.needed_bytes,
+            self.settings.folders,
+        )
+        .map_err(InstallError::Destination)?;
         let host = plan
             .blockers
             .iter()
@@ -517,7 +523,7 @@ impl<'a> Install<'a> {
     /// has just made is left out.
     fn judge_again(&self) -> Result<(), InstallError> {
         let plan = self.plan;
-        let report = judge_destination(&plan.destination, &plan.roots, 0)
+        let report = judge_with(&plan.destination, &plan.roots, 0, self.settings.folders)
             .map_err(InstallError::Destination)?;
         for blocker in report.blockers {
             match blocker {
@@ -869,6 +875,36 @@ fn nothing_made(error: InstallError) -> InstallFailure {
         error,
         changes: Changes::None,
     }
+}
+
+/// The install's failure for `error`, met as it judged `destination` again before it made
+/// anything there: nothing is made, unless the folder's probe could not remove an entry it made,
+/// which the error names and which is left, for the next probe of that folder to remove.
+fn judging_failed(error: InstallError, destination: &Path) -> InstallFailure {
+    let left = matches!(
+        &error,
+        InstallError::Destination(DestinationError::Files(FilesError::Io { path, .. }))
+            if made_by_probe(path, destination)
+    );
+    InstallFailure {
+        error,
+        changes: if left { Changes::Kept } else { Changes::None },
+    }
+}
+
+/// Whether `path`, named by a failed judging of `destination`, is an entry the folder's probe
+/// made: one of a probe's names, in the destination or a folder above it, where the probe makes
+/// its entries, and itself no folder on the destination's path, which is the judging's to look at.
+fn made_by_probe(path: &Path, destination: &Path) -> bool {
+    let named = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| is_staging_name(PROBE_PREFIX, name));
+    named
+        && path
+            .parent()
+            .is_some_and(|folder| destination.starts_with(folder))
+        && !destination.starts_with(path)
 }
 
 /// What the receipt records of the icon set into the game's executable: the executable's digest

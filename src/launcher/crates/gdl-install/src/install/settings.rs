@@ -1,6 +1,7 @@
 //! What an install asks of the world beyond its folder, gathered so that its tests can stand in for
-//! each: the game's version probe, the setting of the disc's icon into the Windows executable, the
-//! shell's notice of a new icon, and the named points where a test may stop the job.
+//! each: what judging the folder again asks of the system, the game's version probe, the setting of
+//! the disc's icon into the Windows executable, the shell's notice of a new icon, and the named
+//! points where a test may stop the job.
 
 #[cfg(test)]
 use std::cell::Cell;
@@ -9,6 +10,7 @@ use std::path::Path;
 
 use gdl_files::Cancel;
 
+use crate::destination::FolderChecks;
 use crate::icon::refresh_shell_icon;
 #[cfg(windows)]
 use crate::icon::{IconError, Personalised, personalise};
@@ -240,6 +242,9 @@ pub(crate) type PersonaliseFn = dyn Fn(&Path, &[u8]) -> Result<Personalised, Ico
 pub(crate) struct InstallSettings<'a> {
     /// Where the job passes its fault points.
     pub(crate) faults: &'a dyn FaultPoints,
+    /// What judging the folder again asks of the system: its probe and its volume's measure among
+    /// it.
+    pub(crate) folders: &'a FolderChecks<'a>,
     /// How the staged game is probed.
     pub(crate) probe: &'a ProbeFn,
     /// How the disc's icon is set into the staged executable.
@@ -250,10 +255,11 @@ pub(crate) struct InstallSettings<'a> {
 }
 
 impl InstallSettings<'static> {
-    /// What the launcher asks: no faults, the game's own probe, the icon set into the executable
-    /// itself and the shell told.
+    /// What the launcher asks: no faults, the folder judged as a plan judges it, the game's own
+    /// probe, the icon set into the executable itself and the shell told.
     pub(crate) const SHIPPED: InstallSettings<'static> = InstallSettings {
         faults: &NoFaults,
+        folders: &FolderChecks::SHIPPED,
         probe: &probe_game_version_with,
         #[cfg(windows)]
         personalise: &personalise,
