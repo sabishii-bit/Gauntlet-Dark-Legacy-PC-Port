@@ -295,6 +295,15 @@ class RunTests(unittest.TestCase):
             drive = os.path.splitdrive(here)[0]
             _, steps = self.run_main(["extract", "n64", drive + rom, "--output", output], [0])
             self.assertEqual(steps[0][steps[0].index("--output") - 1], os.path.join(here, rom))
+        # An empty name names no file or folder: the program is handed it empty, and refuses it
+        # with its usage line, rather than being handed this folder as the dump or the output.
+        result, steps = self.run_main(["extract", "dreamcast", "", "--output", output], [2])
+        self.assertEqual(result, 2)
+        self.assertEqual(steps, [[*program, "--", "--extract", "dreamcast", "", "--output",
+                                  os.path.join(here, output), "--strict", "script"]])
+        _, steps = self.run_main(["extract", "n64", rom, "--output", ""], [2])
+        self.assertEqual(steps[0][steps[0].index("--output") + 1], "")
+        self.assertEqual(launcher.absolute_as_typed(""), "")
         # A refusal is the program's exit code.
         self.assertEqual(self.run_main(["extract", "n64", rom, "--output", output], [1])[0], 1)
         # Only an expansion the program extracts, and never without --output.
@@ -324,8 +333,9 @@ class RunTests(unittest.TestCase):
         absolute = os.path.abspath(os.path.join("Legends trees", "game"))
         _, steps = self.run_main(["check-folder", absolute], [0])
         self.assertEqual(steps[0][-1], absolute)
-        # A name that ends in a dot or a space reaches the program as it was typed, so that the
-        # program judges the folder named rather than the one Windows would make of it.
+        # A name that ends in a dot or a space reaches the program as it was typed, which
+        # os.path.abspath would not keep on Windows; the program then names the folder as the
+        # system makes it, on Windows without them.
         for name in ("game.", "game ", "game. "):
             with self.subTest(name=name):
                 typed = os.path.join("Games", name)

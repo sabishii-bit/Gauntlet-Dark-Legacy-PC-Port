@@ -88,8 +88,13 @@ def plan(command: str, packages: Optional[Sequence[str]] = None, release: bool =
 def absolute_as_typed(path: str) -> str:
     """`path` made absolute from this process's folder, every name in it as it was typed:
     os.path.abspath drops a trailing dot or space from a name on Windows, and would so hand the
-    program another folder than the one named, where the program refuses such a name on every
-    system. A drive's own relative path, such as C:dumps, starts from that drive's folder."""
+    program another name than the one given, which the program judges itself: --extract refuses
+    such an output's name on every system, and --check-folder names the folder as the system makes
+    it. A drive's own relative path, such as C:dumps, starts from that drive's folder. An empty
+    name stays empty, since it names no folder: the program refuses it, where made absolute it
+    would name this process's folder."""
+    if not path:
+        return path
     drive, rest = os.path.splitdrive(path)
     return os.path.join(os.path.abspath(drive) if drive else os.getcwd(), rest)
 
@@ -206,11 +211,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         arguments = [args.platform, absolute_as_typed(args.dump), "--output",
                      absolute_as_typed(args.output), *strictness]
     if args.command == "check-folder":
-        # Made absolute here for the same reason. An empty name names no folder: it reaches the
-        # program as it is, to be refused there, rather than become this process's folder, which
-        # the check would then probe.
-        judged = absolute_as_typed(args.folder) if args.folder else args.folder
-        arguments = [judged, *(["--json"] if args.json else [])]
+        # Made absolute here for the same reason; an empty name reaches the program as it is, to
+        # be refused there, rather than become this process's folder, which the check would probe.
+        arguments = [absolute_as_typed(args.folder), *(["--json"] if args.json else [])]
     # The gate runs as it does when started by hand: from the folder this script was started in,
     # where a relative path given to it means what was typed, and in this process's environment,
     # from which it makes cargo's itself. Made again inside cargo's, that would lose rustup's
