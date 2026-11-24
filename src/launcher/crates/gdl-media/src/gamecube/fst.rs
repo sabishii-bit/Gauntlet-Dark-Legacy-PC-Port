@@ -8,10 +8,10 @@
 use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
 
-use gdl_files::{DISC_NAMES, NameRule, RelPath, check_component};
+use gdl_files::{DISC_NAMES, MAX_COMPONENT_CHARS, NameRule, RelPath, check_component};
 
 use super::DISC_SIZE;
-use crate::error::{long_start, quoted};
+use crate::error::{long_start, quoted_lossy};
 use crate::{GameCubeRule, MediaError};
 
 /// The most entries the disc's `Gauntlet` and `carddemo` folders may hold together, themselves
@@ -304,11 +304,19 @@ pub(crate) fn walk(table: &[u8], disc_size: u64) -> Result<Walked, MediaError> {
 /// path of no more than [`MAX_DISC_PATH_CHARS`](gdl_files::MAX_DISC_PATH_CHARS) characters; and
 /// no other entry of the folder may have taken it in any ASCII letter case.
 fn take<'t>(folder: &mut OpenFolder<'t>, name: &'t [u8]) -> Result<RelPath, MediaError> {
-    let text = String::from_utf8_lossy(name);
     let unsafe_name = || {
-        let detail = quoted(UNSAFE_COMPONENT, &text);
+        let detail = quoted_lossy(UNSAFE_COMPONENT, name);
         MediaError::gamecube(GameCubeRule::UnsafeName, detail)
     };
+    // More bytes than a component may hold characters break one of its rules whatever they are:
+    // ASCII, they are too many characters, and otherwise they are no ASCII. So a name that long,
+    // which may run to the end of the table, is refused before it is read as text, which would
+    // take some three times its bytes, and the rule's refusal a copy of that.
+    const { assert!(DISC_NAMES.ascii_only) };
+    if name.len() > MAX_COMPONENT_CHARS {
+        return Err(unsafe_name());
+    }
+    let text = String::from_utf8_lossy(name);
     check_component(&text, &DISC_NAMES).map_err(|_| unsafe_name())?;
     let joined = match &folder.path {
         Some(path) => format!("{}{SEPARATOR}{text}", path.as_str()),
@@ -372,10 +380,12 @@ fn taken_or_overlong(path: &str) -> String {
 
 #[cfg(test)]
 pub(super) mod tests {
+    use gdl_files::MAX_COMPONENT_CHARS;
     use gdl_fixtures::{FstEntry, fst};
 
     use super::{DiscEntryKind, walk};
-    use crate::{DISC_SIZE, MediaError};
+    use crate::error::MAX_QUOTED_CHARS;
+    use crate::{DISC_SIZE, MAX_FST_LEN, MediaError};
 
     /// The index of the first row [`game_rows`] gives the entries it is asked for, inside the
     /// `Gauntlet` folder at index 1.
@@ -555,6 +565,47 @@ pub(super) mod tests {
         rows.push(FstEntry::file("other", 0, 0));
         let said = "Duplicate or overlong disc path: other".to_owned();
         assert_eq!(refused(&fst(&rows)), ("duplicatePath", said));
+    }
+
+    #[test]
+    fn a_name_of_more_bytes_than_a_component_holds_is_refused_by_its_start() {
+        // At the top of the disc a name of as many bytes as a component holds characters is
+        // walked, and one of a byte more is refused, quoted whole. So is a name of characters of
+        // two bytes, fewer characters than the bound but no ASCII, of as many bytes or one more.
+        let at_top = |name: &[u8]| {
+            let mut rows = game_rows(&[]);
+            rows.push(FstEntry::file("?", 0, 0));
+            let mut table = fst(&rows);
+            let question = table.len() - 2;
+            table.splice(question..=question, name.iter().copied());
+            table
+        };
+        let longest = "n".repeat(MAX_COMPONENT_CHARS);
+        assert_eq!(kept(&at_top(longest.as_bytes())).len(), GAME_ENTRIES);
+        let wide = "\u{e9}".repeat(MAX_COMPONENT_CHARS / 2);
+        for name in [format!("{longest}n"), wide.clone(), format!("{wide}n")] {
+            let said = format!("Unsafe disc path component: {name:?}");
+            let refusal = refused(&at_top(name.as_bytes()));
+            assert_eq!(refusal, ("unsafeName", said), "{}", name.len());
+        }
+        // A name that runs to the end of a table of the most bytes, of letters or of bytes that
+        // are no UTF-8, is told by its length and its start, each such byte one U+FFFD.
+        for (filler, shown) in [(b'n', 'n'), (0x80, char::REPLACEMENT_CHARACTER)] {
+            let mut table = at_top(b"x");
+            let name_at = table.len() - 2;
+            table.pop();
+            table.resize(MAX_FST_LEN as usize - 1, filler);
+            table.push(0);
+            assert_eq!(table.len(), MAX_FST_LEN as usize);
+            let len = table.len() - 1 - name_at;
+            let start: String = ['x']
+                .into_iter()
+                .chain([shown; MAX_QUOTED_CHARS - 1])
+                .collect();
+            let said =
+                format!("Unsafe disc path component of {len} characters beginning {start:?}");
+            assert_eq!(refused(&table), ("unsafeName", said), "{filler}");
+        }
     }
 
     #[test]

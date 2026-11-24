@@ -171,9 +171,37 @@ impl From<Cancelled> for MediaError {
 /// quotes.
 pub(crate) fn quoted(words: &str, text: &str) -> String {
     match long_start(text) {
-        Some((len, start)) => format!("{words} of {len} characters beginning {start:?}"),
+        Some((len, start)) => quoted_start(words, len, start),
         None => format!("{words}: {text:?}"),
     }
+}
+
+/// `words`, then `bytes`, taken from the dump and read as UTF-8, each run of them that is no
+/// UTF-8 as one U+FFFD, as [`quoted`] says that text; but past [`MAX_QUOTED_CHARS`] characters the
+/// rest is only counted, so that bytes running on, as a name up to the end of a file table may,
+/// are never copied whole.
+pub(crate) fn quoted_lossy(words: &str, bytes: &[u8]) -> String {
+    let mut start = String::new();
+    let mut len = 0;
+    for chunk in bytes.utf8_chunks() {
+        let replaced = (!chunk.invalid().is_empty()).then_some(char::REPLACEMENT_CHARACTER);
+        let chars = chunk.valid().chars().chain(replaced);
+        if len < MAX_QUOTED_CHARS {
+            start.extend(chars.clone().take(MAX_QUOTED_CHARS - len));
+        }
+        len += chars.count();
+    }
+    if len > MAX_QUOTED_CHARS {
+        quoted_start(words, len, &start)
+    } else {
+        quoted(words, &start)
+    }
+}
+
+/// `words`, then the length in characters of text from the dump too long to quote whole, and its
+/// quoted `start`.
+fn quoted_start(words: &str, len: usize, start: &str) -> String {
+    format!("{words} of {len} characters beginning {start:?}")
 }
 
 /// The length of `text` in characters and its first [`MAX_QUOTED_CHARS`] characters, when it has
@@ -635,6 +663,7 @@ mod tests {
 
     use super::{
         DiscRule, GameCubeRule, MAX_QUOTED_CHARS, MediaError, RomRule, TplRule, long_start, quoted,
+        quoted_lossy,
     };
 
     /// The most bytes an error may take, so that returning one by value stays cheap.
@@ -930,6 +959,40 @@ mod tests {
             assert_eq!(long_start(&text), Some((len, start.as_str())), "{len}");
             let said = format!("Words of {len} characters beginning {start:?}");
             assert_eq!(quoted("Words", &text), said, "{len}");
+        }
+    }
+
+    #[test]
+    fn bytes_from_a_dump_are_quoted_as_their_text_read_lossily() {
+        // What is said of bytes is what is said of their text read as UTF-8, each run that is no
+        // UTF-8 one U+FFFD: none, ASCII, a byte of no character, a character cut short at the end
+        // or before an ASCII byte, and two bytes that each begin nothing.
+        let mut cases = vec![
+            Vec::new(),
+            b"a\"b".to_vec(),
+            b"EM\xE9TY".to_vec(),
+            b"\xE2\x82".to_vec(),
+            b"\xF0\x9D\x84x".to_vec(),
+            b"\xFF\xFE".to_vec(),
+        ];
+        // Each of those, and a character of four bytes, across the bound: ending at it, starting
+        // at it and starting past it.
+        let odd: [&[u8]; 4] = [b"\xF0\x9D\x84\x9E", b"\x80", b"\xE2\x82", b"\xFF\xFE"];
+        for before in [QUOTED_CHARS - 1, QUOTED_CHARS, QUOTED_CHARS + 1] {
+            for piece in odd {
+                let mut bytes = b"a".repeat(before);
+                bytes.extend_from_slice(piece);
+                bytes.extend_from_slice(b"tail");
+                cases.push(bytes);
+            }
+        }
+        // Text that runs on, valid or not.
+        cases.push("\u{e9}".repeat(QUOTED_CHARS + 1).into_bytes());
+        cases.push(vec![0x80; 60_000]);
+        for bytes in cases {
+            let text = String::from_utf8_lossy(&bytes);
+            let said = quoted("Words", &text);
+            assert_eq!(quoted_lossy("Words", &bytes), said, "{} bytes", bytes.len());
         }
     }
 
