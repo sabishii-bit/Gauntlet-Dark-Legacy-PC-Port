@@ -105,7 +105,7 @@ f32 Combatant::damageNode(s32 index, f32 amount, u32 flags) {
                 shot.data = data();
                 shot.critter = id();
                 shot.damageIndex = part.damageEffect;
-                shot.origin = origin + Vec3{modelTransform(actor) * Vec4{damage->offset, 0}};
+                shot.origin = origin + damageOffset(actor, damage->offset);
                 shot.forward = {portable::sin(actor.yaw), 0, portable::cos(actor.yaw)};
                 shot.rate = attackRate(actor);
                 shot.scale = actor.scale;

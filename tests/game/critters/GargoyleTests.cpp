@@ -104,10 +104,9 @@ TEST_CASE("a strong hit drives an advancing native gargoyle back without inventi
     CHECK(actor.equalLocal(after, replayed));
 }
 
-TEST_CASE("a gargoyle's close bite pushes a player in front of its origin back toward it",
-          "[game][enemies][gargoyle][blow-push][assets]") {
-    const auto* form = GENERATE("GAR_EAGL", "GAR_LION");
-    CAPTURE(form);
+/** The one blow of a `form` gargoyle's close bite, the gargoyle held at the enemy shrinkers'
+ * `shrink`, on a player four ahead of its feet: between them and its origin, within reach. */
+CombatBlow closeBite(const char* form, f32 shrink) {
     const auto root = test::assetOrSkip("CRITTER/GAR_EAGL.WAD").parent_path().parent_path();
     test::FakeRenderDevice device;
     CombatantAssets assets;
@@ -121,7 +120,7 @@ TEST_CASE("a gargoyle's close bite pushes a player in front of its origin back t
     REQUIRE(assets.data.originOffset() == Vec3{0, 3, 5});
     Combatant actor;
     REQUIRE(actor.spawn(assets, 0, Vec3{0}, 0, nullptr, {}, 'B'));
-    // Four ahead of its feet: between them and its origin, within the bite's reach.
+    actor.setShrink(shrink);
     EnemyView player = playerAt({0, 0, 4});
     player.radius = 0.75f;
     player.collisionRadius = 1.5f;
@@ -138,10 +137,29 @@ TEST_CASE("a gargoyle's close bite pushes a player in front of its origin back t
     REQUIRE(blows.size() == 1);
     REQUIRE(actor.position() == Vec3{0});
     REQUIRE(actor.yaw() == 0.0f);
+    return blows[0];
+}
+
+TEST_CASE("a gargoyle's close bite pushes a player in front of its origin back toward it",
+          "[game][enemies][gargoyle][blow-push][assets]") {
+    const auto* form = GENERATE("GAR_EAGL", "GAR_LION");
+    CAPTURE(form);
+    const CombatBlow blow = closeBite(form, 1.0f);
     // Twice the lifted way from its origin, where CritterNodePlayerCollide measures it from,
     // which points back at its feet: the player is pushed toward the gargoyle, not away.
-    CHECK(glm::distance(blows[0].direction, 2.0f * approximateUnit(Vec3{0, 1, -1})) < 1e-4f);
-    CHECK(blows[0].direction.z < -1.0f);
+    CHECK(glm::distance(blow.direction, 2.0f * approximateUnit(Vec3{0, 1, -1})) < 1e-4f);
+    CHECK(blow.direction.z < -1.0f);
+}
+
+TEST_CASE("a shrunk gargoyle's close bite still pulls a player in front of its origin toward it",
+          "[game][enemies][gargoyle][blow-push][shrink][assets]") {
+    const auto* form = GENERATE("GAR_EAGL", "GAR_LION");
+    CAPTURE(form);
+    // The shrinkers only draw it smaller (CritterGolemAI's MBTreeSetScale): c->pos stays five
+    // ahead and three up (GetWorldMat), so the player four ahead is still pulled in.
+    const CombatBlow blow = closeBite(form, 0.667f);
+    CHECK(blow.direction.z < 0.0f);
+    CHECK(glm::distance(blow.direction, 2.0f * approximateUnit(Vec3{0, 1, -1})) < 1e-4f);
 }
 
 TEST_CASE("gargoyle death skins follow the death cue and the sack waits for the final pose",

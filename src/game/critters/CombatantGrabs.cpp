@@ -36,10 +36,11 @@ void Combatant::grab(Actor& actor, const MoveDefinition& move, const AttackDefin
     if (actor.grabbed >= 0) {
         return;
     }
-    // Collision uses the active node's world origin plus a BODY-rotated offset.
-    // Once attached, the offset is local to the animated node instead.
+    // Collision uses the active node's world origin plus a BODY-rotated offset, whole however
+    // the body is drawn (CritterNodePlayerCollide). Once attached, the offset is local to the
+    // animated node instead.
     const Vec3 centre =
-        partPosition(actor, move.colnode) + Vec3{modelTransform(actor) * Vec4{damage.offset, 0}};
+        partPosition(actor, move.colnode) + Vec3{simulationModel(actor) * Vec4{damage.offset, 0}};
     f32 nearest = std::numeric_limits<f32>::max();
     for (const EnemyView& player : players) {
         if (player.player < 0 || static_cast<usize>(player.player) >= kPlayerSlots) {

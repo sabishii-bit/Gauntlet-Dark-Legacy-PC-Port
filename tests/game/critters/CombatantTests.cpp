@@ -3585,9 +3585,10 @@ TEST_CASE("a family's own policies and not its kind decide how shared combat tre
             hit.damage = 12;
             actor.hurt(hit);
             CHECK(actor.health() == Approx(given ? 88.0f : 76.0f));
+            // Shrunk or not, it strikes from where its whole body puts the claw.
             EnemyView player;
             player.player = 0;
-            player.position = {0, 0, -8 * 0.667f};
+            player.position = {0, 0, -8};
             player.radius = 0.75f;
             player.height = 5.0f;
             const std::array players{player};
@@ -4154,17 +4155,55 @@ TEST_CASE("Stop Time holds living ordinary combatants but damage and death still
 }
 
 TEST_CASE("shrunk, a great one is drawn at the shrinkers' scale, takes double and deals half; a "
-          "boss takes and deals as it is",
+          "boss is drawn, takes and deals as it is",
           "[game][combatant][shrink]") {
     const auto root = familyAssets();
     test::FakeRenderDevice device;
     for (const auto& definition : {Golem::definition(), bossDefinition("LICH")}) {
         CAPTURE(definition.name);
         const bool boss = definition.kind == CombatantKind::Boss;
+        // Beside the one-triangle body, a unit along x, a shadow as long, which its type lays.
+        auto archive = root / "MONSTERS" / definition.name;
+        if (definition.realmCostume) {
+            archive /= "LEVELG";
+        }
+        writeTextFile(archive / "models/flat.obj",
+                      "v 0 0 0\nv 1 0 0\nv 0 0 1\nvn 0 -1 0\nusemtl tex0\nf 1//1 2//1 3//1\n");
+        writeTextFile(archive / "objects.json", R"({"objects":[
+          {"index":0,"name":"BODY","file":"models/body.obj","meshTriangles":1},
+          {"index":1,"name":"SHADOW1L1","file":"models/flat.obj","meshTriangles":1}]})");
+        test::convertModelFixture(archive);
+        writeTextFile(root / "critter" / (definition.name + ".json"),
+                      R"({"descriptors":[{"prefix":"BODY","name":")" + definition.name +
+                          R"(","type":)" + std::to_string(static_cast<s32>(definition.kind)) +
+                          R"(}],
+          "types":[{"moveCount":1,"maxHealth":100,"radius":1,"typeFlags":1}],
+          "moves":[{"name":"READY","anim":"STEP","type":32}]})");
         CombatantAssets assets;
         REQUIRE(assets.load(device, root, definition, 'G'));
         Combatant actor;
         REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+        const auto reach = [](const std::vector<test::RecordedDraw>& draws) {
+            f32 longest = 0.0f;
+            for (const auto& draw : draws) {
+                for (const auto& vertex : draw.vertices) {
+                    longest = std::max(longest, vertex.position.x);
+                }
+            }
+            return longest;
+        };
+        const auto drawnLength = [&] {
+            device.draws.clear();
+            actor.draw(device, Mat4{1.0f}, {});
+            REQUIRE_FALSE(device.draws.empty());
+            return reach(device.draws);
+        };
+        const auto shadowLength = [&] {
+            device.draws.clear();
+            actor.drawShadow(device, Mat4{1.0f}, Vec3{0, 60, 0}, {});
+            REQUIRE(device.draws.size() == 1);
+            return reach(device.draws);
+        };
         CHECK(actor.shrink() == 1.0f);
         actor.setShrink(0.5f);
         CHECK(actor.shrink() == 0.5f);
@@ -4174,29 +4213,16 @@ TEST_CASE("shrunk, a great one is drawn at the shrinkers' scale, takes double an
         hit.damage = 12;
         actor.hurt(hit);
         CHECK(actor.health() == Approx(boss ? 88.0f : 76.0f));
-        // The one-triangle body, a unit along x, is drawn half a unit long.
-        device.draws.clear();
-        actor.draw(device, Mat4{1.0f}, {});
-        REQUIRE_FALSE(device.draws.empty());
-        f32 longest = 0.0f;
-        for (const auto& draw : device.draws) {
-            for (const auto& vertex : draw.vertices) {
-                longest = std::max(longest, vertex.position.x);
-            }
-        }
-        CHECK(longest == Approx(0.5f));
+        // CritterGolemAI sizes the body and its shadow by the shrinkers' scale (0x80039A4C);
+        // CritterBossAI never does, so a boss is drawn whole. The shadow, pulled toward the eye,
+        // is measured against its whole length.
+        CHECK(drawnLength() == Approx(boss ? 1.0f : 0.5f));
+        const f32 shrunkShadow = shadowLength();
         actor.setShrink(1.0f);
-        device.draws.clear();
-        actor.draw(device, Mat4{1.0f}, {});
-        longest = 0.0f;
-        for (const auto& draw : device.draws) {
-            for (const auto& vertex : draw.vertices) {
-                longest = std::max(longest, vertex.position.x);
-            }
-        }
-        CHECK(longest == Approx(1.0f));
+        CHECK(drawnLength() == Approx(1.0f));
+        CHECK(shrunkShadow == Approx((boss ? 1.0f : 0.5f) * shadowLength()));
     }
-    // The gargoyle's claw of ten lands for five, from where its shrunken body puts it.
+    // The gargoyle's claw of ten lands for five, from where its whole body puts it.
     writeTextFile(root / "critter/GAR_EAGL.json", R"({
       "descriptors":[{"prefix":"BODY","name":"GAR_EAGL","type":7}],
       "types":[{"moveCount":2,"maxHealth":100,"radius":3}],
@@ -4212,7 +4238,7 @@ TEST_CASE("shrunk, a great one is drawn at the shrinkers' scale, takes double an
     actor.setShrink(0.667f);
     EnemyView player;
     player.player = 0;
-    player.position = {0, 0, -8 * 0.667f};
+    player.position = {0, 0, -8};
     player.radius = 0.75f;
     player.height = 5.0f;
     const std::array players{player};
@@ -4223,7 +4249,184 @@ TEST_CASE("shrunk, a great one is drawn at the shrinkers' scale, takes double an
     }
     REQUIRE(blows.size() == 1);
     CHECK(blows[0].damage == Approx(5.0f));
-    CHECK(blows[0].origin.z == Approx(-8 * 0.667f).margin(0.01f));
+    CHECK(blows[0].origin.z == Approx(-8).margin(0.01f));
+}
+
+TEST_CASE("a shrunk great one is struck, blocks and strikes where it stands whole, as GetWorldMat "
+          "ignores the draw scale",
+          "[game][combatant][shrink]") {
+    // CritterGolemAI's MBTreeSetScale sizes the drawn body alone (0x80039A4C); its parts, c->pos
+    // and its blows' place are measured through GetWorldMat (0x800BB614), which never reads it.
+    const auto root = familyAssets();
+    writeTextFile(root / "critter/GOLEM.json", R"({
+      "descriptors":[{"prefix":"BODY","name":"GOLEM","type":3}],
+      "types":[{"moveCount":2,"maxHealth":100,"radius":1,"wallRadius":1,"colCount":2,
+                "originOffset":[0,3,5],"target":{"maxDistance":10,"minDot":0.5}}],
+      "moves":[{"name":"READY","anim":"STEP","type":32,"interrupt":60},
+               {"name":"CLAW","anim":"STEP","type":128,"priority":20,
+                "colnode":"BODY","target":{"maxDistance":50},
+                "frameStart":0,"frameEnd":2,"damage0":0}],
+      "nodes":[{"nodeName":"BODY","position":[5,3,0],"radius":2,"flags":8},
+               {"nodeName":"BODY","position":[0,8,0],"radius":1,"flags":0}],
+      "damages":[{"type":0,"radius":3,"maxDistance":1,"damage":10,"offset":[0,0,8]}]})");
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, Golem::definition(), 'G'));
+    constexpr f32 kQuarterTurn = 1.5707963267948966f;
+    // A whole golem and one shrunk to two thirds, both at (10, 0, 0) facing +x.
+    const auto spawned = [&](std::array<Combatant, 2>& actors) {
+        for (auto& actor : actors) {
+            REQUIRE(actor.spawn(assets, 7, {10, 0, 0}, kQuarterTurn, nullptr, {}, 'G'));
+        }
+        actors[1].setShrink(0.667f);
+    };
+    SECTION("its parts and its body stand where the whole one's do") {
+        std::array<Combatant, 2> actors;
+        spawned(actors);
+        for (const bool solidOnly : {false, true}) {
+            CAPTURE(solidOnly);
+            const auto whole = actors[0].bodyTargets(solidOnly);
+            const auto shrunk = actors[1].bodyTargets(solidOnly);
+            REQUIRE(whole.size() == (solidOnly ? 2U : 3U)); // the parts it lists, then the body
+            REQUIRE(shrunk.size() == whole.size());
+            for (usize i = 0; i < whole.size(); ++i) {
+                CAPTURE(i);
+                CHECK(shrunk[i].base == whole[i].base);
+                CHECK(shrunk[i].radius == whole[i].radius);
+                CHECK(shrunk[i].height == whole[i].height);
+            }
+        }
+        // The solid part at its whole offset (5, 3, 0) turned with the body, based its radius
+        // of two below that.
+        const auto solid = actors[1].bodyTargets(true);
+        CHECK(solid[0].base.x == Approx(10));
+        CHECK(solid[0].base.y == Approx(1));
+        CHECK(solid[0].base.z == Approx(-5));
+    }
+    SECTION("it sees from its whole origin, five ahead") {
+        std::array<Combatant, 2> actors;
+        spawned(actors);
+        // Within ten of the whole origin at x 15, past ten of a shrunk one's at x 13.3.
+        EnemyView player;
+        player.player = 2;
+        player.position = {24.9f, 0, 0};
+        for (auto& actor : actors) {
+            actor.update(2, 1.0f / 30, std::array{player});
+            CHECK(actor.target() == 2);
+        }
+    }
+    SECTION("its claw lands eight ahead of the node and pushes away from its whole origin") {
+        std::array<Combatant, 2> actors;
+        spawned(actors);
+        EnemyView player;
+        player.player = 0;
+        player.position = {18, 0, 0};
+        player.radius = 0.75f;
+        player.height = 5.0f;
+        const std::array players{player};
+        std::array<std::vector<CombatBlow>, 2> blows;
+        for (usize a = 0; a < actors.size(); ++a) {
+            CAPTURE(a);
+            for (s32 i = 0; i < 10 && blows[a].empty(); ++i) {
+                actors[a].update(2, 1.0f / 30, players);
+                blows[a] = actors[a].takeBlows();
+            }
+            REQUIRE(blows[a].size() == 1);
+        }
+        CHECK(blows[0][0].origin.x == Approx(18));
+        CHECK(blows[1][0].origin == blows[0][0].origin);
+        CHECK(blows[1][0].direction == blows[0][0].direction);
+        CHECK(blows[1][0].damage == Approx(0.5f * blows[0][0].damage));
+    }
+}
+
+TEST_CASE("a shrunk great one grabs and holds a player where its whole body reaches, as "
+          "CritterNodePlayerCollide measures it",
+          "[game][combatant][shrink][combatant-grab]") {
+    const auto root = familyAssets();
+    writeTextFile(root / "critter/GOLEM.json", R"({
+      "descriptors":[{"prefix":"BODY","name":"GOLEM","type":3}],
+      "types":[{"moveCount":2,"maxHealth":100,"radius":1}],
+      "moves":[{"name":"READY","anim":"STEP","type":32,"interrupt":60},
+               {"name":"GRAB","anim":"STEP","type":129,"priority":20,
+                "colnode":"BODY","target":{"maxDistance":50},
+                "frameStart":0,"frameEnd":2,"damage0":0}],
+      "damages":[{"type":7,"radius":3,"maxDistance":1,"damage":10,"offset":[0,0,8]}]})");
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, Golem::definition(), 'G'));
+    const f32 shrink = GENERATE(1.0f, 0.667f);
+    CAPTURE(shrink);
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+    actor.setShrink(shrink);
+    // Eight ahead, where the offset reaches from the whole body; a shrunk one's would fall 2.7
+    // short, past the reach of one and the player's width of one.
+    EnemyView player;
+    player.player = 0;
+    player.position = {0, 0, 8};
+    player.radius = 1.0f;
+    player.height = 6.0f;
+    const std::array players{player};
+    std::vector<CombatGrab> grabs;
+    for (s32 i = 0; i < 10 && grabs.empty(); ++i) {
+        actor.update(2, 1.0f / 30, players);
+        grabs = actor.takeGrabs();
+    }
+    REQUIRE(grabs.size() == 1);
+    CHECK(grabs[0].player == 0);
+    REQUIRE(grabs[0].attachment.has_value());
+    CHECK(glm::distance(Vec3{(*grabs[0].attachment)[3]}, Vec3{0, 0, 8}) < 1e-5f);
+}
+
+TEST_CASE("a shrunk great one's area starts at its whole node, the offsets laid in it shrunk as "
+          "CritterDoTexmodNode and CritterDoSfx shrink them",
+          "[game][combatant][shrink]") {
+    // Attached to the node, or placed once where the node stands (SFXX 0x40).
+    const u32 soundFlags = GENERATE(0U, 64U);
+    CAPTURE(soundFlags);
+    const auto root = familyAssets();
+    writeTextFile(root / "MONSTERS/GOLEM/LEVELG/animations.json", R"({"trees":[{"name":"BODY",
+      "nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]},
+               {"name":"HAND","object":"BODY","parent":0,"position":[0,0,6]}],
+      "sequences":[{"name":"STEP","frames":3}]}]})");
+    writeTextFile(root / "critter/GOLEM.json", R"({
+      "descriptors":[{"prefix":"BODY","name":"GOLEM","type":3}],
+      "types":[{"moveCount":2,"maxHealth":100,"radius":1}],
+      "moves":[{"name":"READY","anim":"STEP","type":32,"interrupt":60},
+               {"name":"SWEEP","anim":"STEP","type":128,"priority":20,
+                "colnode":"HAND","target":{"maxDistance":50},
+                "frameStart":0,"frameEnd":2,"damage0":0}],
+      "damages":[{"type":2,"damage":40,"flags":32,"radius":0.1,"maxDistance":10,"minDot":-1,
+                  "offset":[0,3,0],"sfxIndex":0}],
+      "sounds":[{"name":"NULLFX","flags":)" + std::to_string(soundFlags) +
+                                                   R"(,"life":0.5,"offset":[0,2,0]}]})");
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, Golem::definition(), 'G'));
+    EnemyView player;
+    player.player = 0;
+    player.position = {0, 0, 8};
+    player.radius = 1.0f;
+    player.height = 6.0f;
+    const std::array players{player};
+    const auto areaOrigin = [&](f32 shrink) {
+        Combatant actor;
+        REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+        actor.setShrink(shrink);
+        std::vector<CombatBlow> blows;
+        for (s32 i = 0; i < 10 && blows.empty(); ++i) {
+            actor.update(2, 1.0f / 30, players);
+            blows = actor.takeBlows();
+        }
+        REQUIRE(blows.size() == 1);
+        REQUIRE(blows[0].area);
+        return blows[0].origin;
+    };
+    // HAND stands six ahead whole or shrunk; the DAMG offset of three and the SFXX offset of two
+    // above it shrink with the drawn body.
+    CHECK(glm::distance(areaOrigin(1.0f), Vec3{0, 5, 6}) < 1e-5f);
+    CHECK(glm::distance(areaOrigin(0.667f), Vec3{0, 5 * 0.667f, 6}) < 1e-5f);
 }
 // Long sequences let these tests distinguish an interrupt from ordinary end-of-move selection.
 std::filesystem::path reactionAssets(s32 interrupt = 60, s32 link = -1) {

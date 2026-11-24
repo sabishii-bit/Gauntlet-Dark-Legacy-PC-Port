@@ -129,17 +129,25 @@ Mat4 Combatant::presentationModel(const Actor& actor, f32 alpha) {
         actor.presentation.yaw + TreePose::wrapAngle(actor.yaw - actor.presentation.yaw) * blend;
     const Vec3 root = position + Vec3{0, actor.definition->floorOffset(), 0};
     return glm::scale(portable::rotate(glm::translate(Mat4{1}, root), yaw, Vec3{0, 1, 0}),
-                      Vec3{actor.scale * actor.shrink});
+                      Vec3{actor.scale * drawnShrink(actor)});
+}
+
+f32 Combatant::drawnShrink(const Actor& critter) {
+    return critter.stock != nullptr && !critter.stock->definition.shrinks ? 1.0f : critter.shrink;
 }
 
 Mat4 Combatant::modelTransform(const Actor& critter) {
     return bodyPlacement(critter.position, critter.definition->floorOffset(), critter.yaw,
-                         critter.scale * critter.shrink);
+                         critter.scale * drawnShrink(critter));
 }
 
 Mat4 Combatant::simulationModel(const Actor& critter) {
     return bodyPlacement(critter.position, critter.definition->floorOffset(), critter.yaw,
-                         critter.scale * critter.shrink);
+                         critter.scale);
+}
+
+Vec3 Combatant::damageOffset(const Actor& critter, const Vec3& offset) {
+    return Vec3{modelTransform(critter) * Vec4{offset, 0.0f}};
 }
 
 bool Combatant::scaledNodes(const Actor& critter) {
@@ -167,6 +175,10 @@ Mat4 Combatant::simulationTransform(const Actor& critter, std::string_view node)
         }
     }
     return model;
+}
+
+Mat4 Combatant::effectFrame(const Actor& critter, std::string_view node) {
+    return glm::scale(simulationTransform(critter, node), Vec3{drawnShrink(critter)});
 }
 
 Vec3 Combatant::partPosition(const Actor& critter, std::string_view node) {
@@ -334,7 +346,7 @@ void Combatant::drawShadow(RenderDevice& device, const Mat4& clip, const Vec3& e
         }
     }
     critter.stock->shadow.draw(device, clip, eye, ground, normal, lighting, critter.alpha,
-                               critter.scale * critter.shrink);
+                               critter.scale * drawnShrink(critter));
 }
 
 /** The bar hangs from the body's node at the type's offset, turned to the camera about the

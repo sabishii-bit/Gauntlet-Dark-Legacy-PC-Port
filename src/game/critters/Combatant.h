@@ -125,8 +125,9 @@ public:
     bool replaceNodeModel(RenderDevice& device, std::string_view node, std::string_view object);
     void curb(f32 seconds);
     void resize(f32 scale);
-    /** The scale the party's enemy shrinkers hold it at (`EnemyShrink`): drawn and shadowed
-     * at it over its own size; a great one, never a boss, then takes double and deals half. */
+    /** The scale the party's enemy shrinkers hold it at (`EnemyShrink`): a great one, never a
+     * boss, is then drawn and shadowed at it over its own size, takes double and deals half,
+     * yet is met and strikes where its whole body stands. */
     void setShrink(f32 scale);
     f32 shrink() const { return m_sim.actor.shrink; }
     void tint(Color color) { m_sim.actor.tint = color; }
@@ -547,12 +548,18 @@ private:
     /** Node `node`'s world matrix as drawn, its scale keys included, or the drawn model's
      * without such a node: for what only places a drawn thing or a sound. */
     static Mat4 attachmentTransform(const Actor& critter, std::string_view node);
+    /** The shrinkers' scale its body is drawn at: CritterGolemAI's MBTreeSetScale (0x80039A4C)
+     * sizes the families that shrink; a boss is drawn whole. */
+    static f32 drawnShrink(const Actor& critter);
     /** Where the body is drawn: its root at the floor offset over its anchor, turned by its yaw
-     * and sized. */
+     * and sized, its drawn shrink included. */
     static Mat4 modelTransform(const Actor& critter);
     /** Where its simulation places the body: its root at the floor offset over its anchor,
-     * turned by its yaw and sized as drawn. */
+     * turned by its yaw and sized, but whole, as GetWorldMat never reads the draw's scale. */
     static Mat4 simulationModel(const Actor& critter);
+    /** DAMG `offset` turned with the body and sized as it is drawn, shrink included, as
+     * CritterDoTexmodNode sizes the offsets of what it starts (0x8003D10C-0x8003D154). */
+    static Vec3 damageOffset(const Actor& critter, const Vec3& offset);
     /** Whether its rules keep its nodes' scale keys in its simulation (kScaledNodes). */
     static bool scaledNodes(const Actor& critter);
     /** Node `node`'s matrix in the model's space as its simulation composes it: as GetWorldMat
@@ -564,6 +571,10 @@ private:
     /** Node `node`'s world matrix in its simulation, or the simulation's model without such a
      * node: what decides contact, reach, where harm lands and where a player is held. */
     static Mat4 simulationTransform(const Actor& critter, std::string_view node);
+    /** The frame an effect started at node `node` is measured in: the node where its simulation
+     * places it, the offsets laid in it shrunk with the drawn body, as CritterDoTexmodNode and
+     * CritterDoSfx shrink them. */
+    static Mat4 effectFrame(const Actor& critter, std::string_view node);
     /** Notes where the node `move` strikes with, else the fighter's root node, stands `seconds`
      * on, as CritterMoveSetup does each native frame through GetWorldMat (0x8003B1CC). */
     static void noteMoveNode(Actor& critter, const MoveDefinition& move, f32 seconds);

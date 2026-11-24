@@ -43,8 +43,8 @@ void Combatant::strikeWith(Actor& critter, s32 id, const MoveDefinition& move, s
     std::optional<CombatantBreath> breath;
     switch (damage->type) {
     case AttackDefinition::kBlow:
-        // The part's offset turns with the part, unstretched by its scale key; the player's
-        // cylinder grows by the reach alone (CritterNodePlayerCollide).
+        // The part's offset turns with the part, unstretched by its scale key or the drawn
+        // shrink; the player's cylinder grows by the reach alone (CritterNodePlayerCollide).
         centre = Vec3{partTransform(critter, move.colnode) * Vec4{damage->offset, 1.0f}};
         reach = damage->maxDistance;
         break;
@@ -56,7 +56,7 @@ void Combatant::strikeWith(Actor& critter, s32 id, const MoveDefinition& move, s
         if (!critter.attackTarget.has_value()) {
             return;
         }
-        centre = *critter.attackTarget + Vec3{modelTransform(critter) * Vec4{damage->offset, 0.0f}};
+        centre = *critter.attackTarget + damageOffset(critter, damage->offset);
         reach = damage->maxDistance;
         break;
     case AttackDefinition::kBreath:
@@ -159,9 +159,8 @@ void Combatant::shoot(const Actor& critter, s32 id, const MoveDefinition& move, 
     shot.critter = id;
     shot.damageIndex = damageIndex;
     // The launch point follows the active node, but the offset and facing use the body.
-    const Mat4 body = modelTransform(critter);
-    shot.origin = Vec3{simulationTransform(critter, move.colnode)[3]} +
-                  Vec3{body * Vec4{damage->offset, 0.0f}};
+    shot.origin =
+        Vec3{simulationTransform(critter, move.colnode)[3]} + damageOffset(critter, damage->offset);
     shot.forward = Vec3{portable::sin(critter.yaw), 0.0f, portable::cos(critter.yaw)};
     if (const EnemyView* target = viewOf(players, critter.moveTarget); target != nullptr) {
         const f32 height = critter.definition->rules().projectileTargetHeight;
@@ -196,8 +195,7 @@ void Combatant::plant(const Actor& critter, s32 id, s32 damageIndex) {
     shot.data = critter.definition;
     shot.critter = id;
     shot.damageIndex = damageIndex;
-    shot.origin =
-        *critter.attackTarget + Vec3{modelTransform(critter) * Vec4{damage->offset, 0.0f}};
+    shot.origin = *critter.attackTarget + damageOffset(critter, damage->offset);
     shot.forward = Vec3{portable::sin(critter.yaw), 0.0f, portable::cos(critter.yaw)};
     shot.rate = attackRate(critter);
     shot.scale = critter.scale;
