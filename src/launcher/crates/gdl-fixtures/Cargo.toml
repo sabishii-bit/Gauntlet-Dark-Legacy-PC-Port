@@ -1,6 +1,6 @@
 [package]
 name = "gdl-fixtures"
-description = "Synthetic discs, ROMs, GD-ROM sets, payloads, feeds and installations for the launcher's tests"
+description = "Synthetic discs, ROMs, GD-ROM sets, payloads, feeds, test signatures and installations for the launcher's tests"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -9,6 +9,7 @@ publish.workspace = true
 
 [dependencies]
 flate2.workspace = true
+ring.workspace = true
 serde_json.workspace = true
 sha1.workspace = true
 sha2.workspace = true

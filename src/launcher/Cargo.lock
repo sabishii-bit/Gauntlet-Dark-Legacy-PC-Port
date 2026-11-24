@@ -1315,6 +1315,7 @@ name = "gdl-fixtures"
 version = "0.0.0"
 dependencies = [
  "flate2",
+ "ring",
  "serde_json",
  "sha1",
  "sha2 0.11.1",

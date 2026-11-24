@@ -1,5 +1,6 @@
-//! Builders of synthetic discs and disc icons, ROMs, GD-ROM sets, payloads, release feeds and
-//! installations, so the launcher's plain tests run without the player's own dumps.
+//! Builders of synthetic discs and disc icons, ROMs, GD-ROM sets, payloads, release feeds, a test
+//! key's signatures and installations, so the launcher's plain tests run without the player's own
+//! dumps.
 #![forbid(unsafe_code)]
 
 mod feed;
@@ -7,6 +8,7 @@ mod folder;
 mod gamecube;
 mod gdrom;
 mod loopback;
+mod minisign;
 mod n64;
 mod program;
 mod runtime;
@@ -33,6 +35,7 @@ pub use gdrom::{
     raw_sector, record, sizes_rom,
 };
 pub use loopback::{LoopbackServer, Reply, Request};
+pub use minisign::{TEST_KEY_ID, TEST_KEY_SEED, blake2b_512, sign_with_test_key, test_public_key};
 pub use n64::{
     BIG_ENDIAN_FIRST_WORD, BUILDER_UNKNOWN_WORD, BuiltRom, OVERLAY_TABLE_OFFSET, OverlaySpec,
     ROM_HEADER_LEN, RomFile, WadOrder, default_rom_files, raw_deflate, reorder, rom,
