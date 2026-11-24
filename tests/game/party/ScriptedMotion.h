@@ -75,6 +75,9 @@ struct MotionScript {
     /** Where the Death a halo wearer holds stands, when one is held this step (ticks, and
      * whether a hold may be made at all). Applied once, after resolved movement. */
     std::function<std::optional<Vec3>(usize, s32, bool)> grabDeath;
+    /** Where a step ends once the level's items hold it off, before walls or creatures: the
+     * step a member it runs into is shoved by. */
+    std::function<Vec3(usize, const Vec3&, const Vec3&)> itemStep;
     /** Dynamic creature collision, before the camera limit and action events. */
     std::function<Vec3(usize, const Vec3&, const Vec3&)> resolveMovement;
     /** Where a body fallen out of the world with nobody to stand beside goes. */
@@ -154,6 +157,9 @@ public:
         return m_script.grabDeath ? m_script.grabDeath(index, ticks, allowed) : std::nullopt;
     }
     bool chainsHeldMelee() const override { return m_script.chainHeldMelee; }
+    Vec3 itemStep(usize index, const Vec3& from, const Vec3& to) const override {
+        return m_script.itemStep ? m_script.itemStep(index, from, to) : to;
+    }
     Vec3 resolveMovement(usize index, const Vec3& from, const Vec3& to) const override {
         return m_script.resolveMovement ? m_script.resolveMovement(index, from, to) : to;
     }

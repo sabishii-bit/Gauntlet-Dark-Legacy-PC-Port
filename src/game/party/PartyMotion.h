@@ -80,6 +80,13 @@ public:
         virtual std::optional<Vec3> grabDeath(usize index, s32 ticks, bool allowed) = 0;
         /** Whether automatic melee counts held close swings toward heavy finishers. */
         virtual bool chainsHeldMelee() const = 0;
+        /** Where member `index`'s step from `from` to `to`, as the stick and the knock meant it,
+         * ends once the level's items hold the body off them, before walls or creatures do
+         * (PlayerCollideEnemies' first pass, pmotion.c 1124-1135): the step a member it runs
+         * into is shoved by. A level with no items leaves it as it was. */
+        virtual Vec3 itemStep(usize /*index*/, const Vec3& /*from*/, const Vec3& to) const {
+            return to;
+        }
         /** Dynamic creature collision, before the camera limit and action events. */
         virtual Vec3 resolveMovement(usize index, const Vec3& from, const Vec3& to) const = 0;
         /** Where a body fallen out of the world with nobody to stand beside goes: the

@@ -7,6 +7,8 @@
 #include "engine/core/Types.h"
 
 #include "game/party/PartyCollision.h"
+#include "game/players/ExitWait.h"
+#include "game/players/Knockback.h"
 
 namespace {
 using namespace gdl;
@@ -56,7 +58,8 @@ TEST_CASE("the one run into is shoved by the step as it was meant",
           "[game][screens][party-collision]") {
     auto players = party();
     players[0].actor.place(Vec3{0, 0, 9.5f});
-    PartyCollision::step(players, 0, Vec3{0, 0, 9}, 1.0f / 30.0f);
+    REQUIRE(PartyCollision::step(players, 0, Vec3{0, 0, 9}, Vec3{0, 0, 9.5f}, 1.0f / 30.0f) ==
+            std::optional<usize>{1});
     CHECK(players[0].actor.position().z < 9.0f);
     players[1].knockback.endFrame();
     CHECK(players[1].knockback.pushed());
@@ -65,6 +68,30 @@ TEST_CASE("the one run into is shoved by the step as it was meant",
     const Vec3 moved = players[1].knockback.step(1.0f / 30.0f, 10.0f);
     CHECK(moved.z > 0.0f);
     CHECK(moved.x == 0.0f);
+}
+
+TEST_CASE("the step as meant meets the member, and the mover is put out from where it stands",
+          "[game][screens][party-collision]") {
+    auto players = party();
+    const f32 reach = players[0].actor.radius() + players[1].actor.radius();
+    // Something held the body where it stood, at 8, but the step it meant ran on to 9.5, into
+    // the member at 10: the member is met and shoved by that step, and the body is carried by
+    // the push out of the member from where it stands.
+    players[0].actor.place(Vec3{0, 0, 8});
+    Knockback shoved;
+    shoved.shove(Vec3{0, 0, 1.5f}, 1.0f / 30.0f);
+    REQUIRE(PartyCollision::step(players, 0, Vec3{0, 0, 8}, Vec3{0, 0, 9.5f}, 1.0f / 30.0f) ==
+            std::optional<usize>{1});
+    CHECK(players[1].knockback == shoved);
+    CHECK(players[0].actor.position().z == Approx(8.0f - (9.5f - (10.0f - reach))));
+    // One standing on an exit for the others is not shoved, but still holds the step out.
+    auto waiting = party();
+    REQUIRE_FALSE(waiting[1].exitWait.step(true, 2));
+    waiting[0].actor.place(Vec3{0, 0, 9.5f});
+    REQUIRE(PartyCollision::step(waiting, 0, Vec3{0, 0, 9}, Vec3{0, 0, 9.5f}, 1.0f / 30.0f) ==
+            std::optional<usize>{1});
+    CHECK(waiting[1].knockback == Knockback{});
+    CHECK(waiting[0].actor.position().z == Approx(10.0f - reach));
 }
 
 } // namespace

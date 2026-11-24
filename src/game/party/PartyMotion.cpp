@@ -530,13 +530,16 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
             players[i].attackStep = PlayerRuntime::AttackStep{attackFrom, actor.followPoint()};
         }
         if (!down && !flying) {
+            // A member in the way meets the step as the stick and the knock meant it, put out
+            // of the level's items, and is shoved by that before walls, floors or creatures
+            // stop or turn it (PlayerCollideEnemies' first pass, then PlayerCollidePlayers,
+            // pmotion.c 1124-1175).
+            const Vec3 meant = level.itemStep(i, before, actor.stepAim());
+            contacts[i] = PartyCollision::step(players, i, before, meant, seconds, &collision);
             // A body/fixture push is still movement, not a teleport. Sweep the
             // correction through the same walls and floor edges as the step.
             actor.slide(level.resolveMovement(i, before, actor.position()) - actor.position(),
                         &collision);
-        }
-        if (!down && !flying) {
-            contacts[i] = PartyCollision::step(players, i, before, seconds, &collision);
             FloorRiding::land(players, i, before, collision);
         }
         // The shared view's limit holds the step, which is then rechecked against world and

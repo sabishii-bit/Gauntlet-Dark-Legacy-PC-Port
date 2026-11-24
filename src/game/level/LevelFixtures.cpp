@@ -216,17 +216,36 @@ void LevelFixtures::setPlayerCount(s32 count) {
     m_safeRocks.setPlayerCount(count);
     m_scenery.setPlayerCount(count);
 }
-std::vector<Obstacle> LevelFixtures::obstacles() const {
+std::vector<Obstacle> LevelFixtures::itemBoxes() const {
     std::vector<Obstacle> result = m_chests.obstacles();
     for (const auto& group : {m_gates.obstacles(), m_barrels.obstacles(), m_safeRocks.obstacles(),
                               m_scenery.obstacles()}) {
         result.insert(result.end(), group.begin(), group.end());
     }
+    return result;
+}
+std::vector<Obstacle> LevelFixtures::obstacles() const {
+    std::vector<Obstacle> result = itemBoxes();
     if (m_resources && m_resources->world.imported()) {
         const auto native = m_resources->world.imported()->obstacles();
         result.insert(result.end(), native.begin(), native.end());
     }
     return result;
+}
+Vec3 LevelFixtures::pushOut(const PlayerActor& actor, const Vec3& position) const {
+    if (!m_resources.has_value()) {
+        return position;
+    }
+    Vec3 held = position;
+    for (const Obstacle& box : itemBoxes()) {
+        held = box.pushOut(held, actor.reach());
+    }
+    if (const auto* imported = m_resources->world.imported()) {
+        for (const Obstacle& box : imported->obstacles()) {
+            held = box.pushOut(held, actor.radius());
+        }
+    }
+    return held;
 }
 std::vector<Obstacle> LevelFixtures::inertStops() const {
     std::vector<Obstacle> stops = m_chests.obstacles();
@@ -565,11 +584,6 @@ void LevelFixtures::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> play
         worldExplosion(position, players, host);
     }
     syncFloors();
-    std::vector<Obstacle> boxes = m_chests.obstacles();
-    const std::vector<Obstacle> barred = m_gates.obstacles();
-    boxes.insert(boxes.end(), barred.begin(), barred.end());
-    const std::vector<Obstacle> casks = m_barrels.obstacles();
-    boxes.insert(boxes.end(), casks.begin(), casks.end());
     // A barrel that blew up or gassed is gone once it has broken; a player near where it stood
     // is told to shoot such barrels from afar (items.c's action 2).
     for (const usize spent : m_barrels.update(seconds)) {
@@ -588,10 +602,8 @@ void LevelFixtures::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> play
     }
     m_safeRocks.update(seconds);
     m_scenery.update(seconds);
-    const auto cover = m_safeRocks.obstacles();
-    boxes.insert(boxes.end(), cover.begin(), cover.end());
-    const auto scenery = m_scenery.obstacles();
-    boxes.insert(boxes.end(), scenery.begin(), scenery.end());
+    // The items as they now stand hold the body off, by the list pushOut holds a step off.
+    const std::vector<Obstacle> boxes = itemBoxes();
     std::vector<Obstacle> native;
     if (const auto* imported = m_resources->world.imported()) {
         native = imported->obstacles();

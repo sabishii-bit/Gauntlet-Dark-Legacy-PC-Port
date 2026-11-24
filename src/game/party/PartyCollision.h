@@ -13,8 +13,9 @@ namespace gdl::game {
 /**
  * The party's members keep out of one another (PlayerCollidePlayers, pmotion.c 4035): a step
  * that runs into another standing member ends pushed out to their radii's sum from them, and
- * the one run into is shoved by the step as it was meant (pmotion.c 1157), which it yields
- * to slowly and shows by being pushed.
+ * the one run into is shoved by the step as it was meant, once the level's items have held it
+ * off but before walls or creatures stop or turn it (pmotion.c 1124-1175); it yields to the
+ * shove slowly and shows being pushed.
  */
 class PartyCollision {
 public:
@@ -24,10 +25,12 @@ public:
      * runs into deciding; returns who that was, `to` resolved. */
     static std::optional<usize> resolve(std::span<const PlayerRuntime> players, usize mover,
                                         const Vec3& from, Vec3& to);
-    /** Resolves `mover`'s step of `seconds` and shoves whoever it ran into by the step it
-     * meant, returning the contacted party index. */
+    /** Meets `mover`'s step of `seconds` from `from` to `meant`, as it was meant: whoever it
+     * runs into is shoved by it, unless they stand waiting on an exit (pmotion.c 1166), and
+     * the mover is carried from where it stands by the push out of them. Returns the
+     * contacted party index. */
     static std::optional<usize> step(std::span<PlayerRuntime> players, usize mover,
-                                     const Vec3& from, f32 seconds,
+                                     const Vec3& from, const Vec3& meant, f32 seconds,
                                      const WorldCollision* collision = nullptr);
 };
 

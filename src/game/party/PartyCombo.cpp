@@ -285,7 +285,7 @@ void PartyCombo::ride(std::span<PlayerRuntime> players, usize charger, const Mov
     }
     actor.update(steer, cameraYaw, seconds, collision.loaded() ? &collision : nullptr,
                  ComboMove::kRidePace);
-    PartyCollision::step(players, charger, before, seconds);
+    PartyCollision::step(players, charger, before, actor.position(), seconds);
     // The shared view's edge holds it like everyone.
     if (const Vec3 limited = level.limitMovement(charger, before, actor.position());
         glm::distance(limited, actor.position()) > 1.0e-5f) {

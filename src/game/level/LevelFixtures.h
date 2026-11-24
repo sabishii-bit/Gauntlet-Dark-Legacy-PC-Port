@@ -49,6 +49,11 @@ public:
     void clear();
     void setPlayerCount(s32 count);
     std::vector<Obstacle> obstacles() const;
+    /** Where `actor` standing at `position` is put out of what stands in its way, as update
+     * holds a standing body off it but without the walls: the level's items by its whole
+     * width (PlayerCollideEnemies' first pass, pmotion.c 1124-1135), a Legends level's own
+     * fixtures by its footprint, each in turn. */
+    Vec3 pushOut(const PlayerActor& actor, const Vec3& position) const;
     /** What stops the swarm's missiles (fn_8005ED44's candidates): the solid obstacles, the
      * standing safe rocks as the rocks they are, the bottles lying about, the triggers that
      * are shot and the tent walls while raised. */
@@ -162,6 +167,9 @@ public:
     bool registerNativeResources(NativeStateResources& resources) const;
 
 private:
+    /** The level's items that hold a body its whole width off, in the order they hold it: the
+     * chests, the gates, the barrels, the safe rocks and the scenery. */
+    std::vector<Obstacle> itemBoxes() const;
     /** Answers a chest event: a key spent and the opening heard, its enemy let out before
      * any pickup is placed in it (none when the pickup's art is missing), gold taken, or the
      * lessons of a refusal. */

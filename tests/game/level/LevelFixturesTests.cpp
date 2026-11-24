@@ -6,6 +6,7 @@
 #include <format>
 #include <optional>
 #include <ranges>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -131,27 +132,51 @@ constexpr std::string_view kOpenGround = R"({"objects":[
       {"object":0,"normals":[0,1,0,0,1,0],
        "vertices":[-100,0,-100,100,0,100,100,0,-100,-100,0,-100,-100,0,100,100,0,100]}]})";
 
-/** A level whose one item, of the record `item` and the figure `tree`, stands at `at` holding
- * the level's key, the second record; its directory. */
-std::filesystem::path writeItemLevel(std::string_view name, const Vec3& at, std::string_view item,
-                                     std::string_view tree) {
+/** One of a test level's items: its record and where it stands. */
+struct TestItem {
+    std::string_view record;
+    Vec3 at{0};
+};
+
+/** A level whose items, of the figures `trees`, stand where they say, each holding the level's
+ * key, the second record; its directory. */
+std::filesystem::path writeItemsLevel(std::string_view name, std::span<const TestItem> items,
+                                      std::string_view trees) {
     const auto directory = test::scratchDirectory(name);
     writeTextFile(directory / "tri.obj", "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n");
     writeTextFile(directory / "objects.json", R"({"objects":[{"name":"TRI","file":"tri.obj"}]})");
     writeFile(directory / "white.png", test::kTinyPng);
     writeTextFile(directory / "textures.json", R"({"bitmaps":[
       {"name":"WHITE","file":"white.png","width":2,"height":2}]})");
+    // The key is the second record: the first item's comes before it, the rest after.
+    std::string infos;
+    std::string instances;
+    for (usize i = 0; i < items.size(); ++i) {
+        const usize info = i == 0 ? 0 : i + 1;
+        infos += std::format("{}{}", i == 0 ? "" : ",", items[i].record);
+        if (i == 0) {
+            infos += R"(,{"type":1,"subtype":2,"name":"KEY","radius":1,"value":1})";
+        }
+        instances += std::format(
+            R"({}{{"info":{},"position":[{},{},{}],"params":[1,0,0,0,1,0,0,0,0,0,0,0]}})",
+            i == 0 ? "" : ",", info, items[i].at.x, items[i].at.y, items[i].at.z);
+    }
     writeTextFile(directory / "world.json", std::format(R"({{
       "objects":[{{"name":"TRI","position":[0,0,0],"flags":4100}}],
-      "itemInfos":[
-        {},
-        {{"type":1,"subtype":2,"name":"KEY","radius":1,"value":1}}],
-      "itemInstances":[
-        {{"info":0,"position":[{},{},{}],"params":[1,0,0,0,1,0,0,0,0,0,0,0]}}]}})",
-                                                        item, at.x, at.y, at.z));
-    writeTextFile(directory / "animations.json", std::format(R"({{"trees":[{}]}})", tree));
+      "itemInfos":[{}],
+      "itemInstances":[{}]}})",
+                                                        infos, instances));
+    writeTextFile(directory / "animations.json", std::format(R"({{"trees":[{}]}})", trees));
     test::convertModelFixture(directory);
     return directory;
+}
+
+/** A level whose one item, of the record `item` and the figure `tree`, stands at `at` holding
+ * the level's key, the second record; its directory. */
+std::filesystem::path writeItemLevel(std::string_view name, const Vec3& at, std::string_view item,
+                                     std::string_view tree) {
+    const std::array items{TestItem{item, at}};
+    return writeItemsLevel(name, items, tree);
 }
 
 /** A level whose one barrel, of the record `barrel`, stands at `at`; its directory. */
@@ -439,6 +464,43 @@ TEST_CASE("a character walking into a chest stops a whole width short of it, and
     CHECK(chest.state == Chests::kOpening);
     CHECK(actor.save().progress().inventory.keys == 0);
     f.fixtures.clear();
+}
+
+TEST_CASE("a step's end is put out of the items as the update holds a body off them",
+          "[game][screens][level-fixtures][item-width]") {
+    // PlayerCollideEnemies' first pass puts a step's end out of every item it meets, at the
+    // class's whole width (pmotion.c 1124-1135): the end a member in the way is shoved by. The
+    // body itself is held off them after its move, and the two agree.
+    const std::array items{TestItem{kLockedChest, Vec3{0, 0, 10}},
+                           TestItem{kKeyBarrel, Vec3{3, 0, 10}}};
+    const auto directory =
+        writeItemsLevel("fixtures-push-out", items, std::format("{},{}", kChestTree, kBarrelTree));
+    writeTextFile(directory / "collision.json", kOpenGround);
+    Fixture f;
+    f.fixtures.clear();
+    REQUIRE(f.world.load(f.device, directory, LevelRef{"TEST", 0, "TEST", "", "", "", "", 0}));
+    f.fixtures.bind({f.device, f.world, f.weapons, f.effects, f.audio, 1});
+    f.fixtures.setPlayerCount(1);
+    REQUIRE(f.fixtures.chests().size() == 1);
+    REQUIRE(f.fixtures.barrels().size() == 1);
+    auto& actor = f.players[0].actor;
+    REQUIRE(actor.reach() == 1.5f);
+    // Into the chest's corner, beside the barrel.
+    const Vec3 start{1.5f, 0, 8.2f};
+    const Vec3 held = f.fixtures.pushOut(actor, start);
+    // The chest puts it out into the barrel's reach, and the barrel out again.
+    const Vec3 chestAlone = f.fixtures.chests().chest(0).box.pushOut(start, actor.reach());
+    REQUIRE(glm::distance(chestAlone, start) > 0.1f);
+    CHECK(glm::distance(held, chestAlone) > 0.1f);
+    CHECK(held.y == start.y);
+    actor.place(start);
+    f.fixtures.update(2, 1.0f / 30, std::span{f.players}.first(1), f.host);
+    CHECK(actor.position().x == Catch::Approx(held.x));
+    CHECK(actor.position().z == Catch::Approx(held.z));
+    // Clear of them, a step's end stands as it was; with nothing bound, too.
+    CHECK(f.fixtures.pushOut(actor, Vec3{-20, 0, 0}) == Vec3{-20, 0, 0});
+    f.fixtures.clear();
+    CHECK(f.fixtures.pushOut(actor, start) == start);
 }
 
 TEST_CASE("fixture blasts damage pickups within the reduced item radius and emit retail cues",

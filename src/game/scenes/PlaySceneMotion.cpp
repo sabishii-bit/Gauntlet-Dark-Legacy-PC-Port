@@ -12,8 +12,11 @@
 #include "game/bosses/LegendItems.h"
 #include "game/camera/CameraMovementLimit.h"
 #include "game/combat/HurtKind.h"
+#include "game/enemies/Generators.h"
 #include "game/hud/HelpMessages.h"
 #include "game/level/ImportedLevel.h"
+#include "game/level/LevelFixtures.h"
+#include "game/party/BodyCollision.h"
 #include "game/party/PartyMotion.h"
 #include "game/players/PlayerAnimator.h"
 #include "game/players/PlayerControls.h"
@@ -31,8 +34,9 @@ constexpr f32 kTaggedVolume = 180.0f / 255.0f; ///< fn_8009DCB4
 } // namespace
 
 /** The scene's answers to what the party's movement asks as it steps: its cues, each seat's
- * selector and turbo move under that seat's sound scope, the attacks' queries, the opponents'
- * bodies, the shared view's hold, the level's start and the console's noclip. */
+ * selector and turbo move under that seat's sound scope, the attacks' queries, the items and
+ * the opponents' bodies in a step's way, the shared view's hold, the level's start and the
+ * console's noclip. */
 class PlayScene::MotionRouting final : public PartyMotion::Level {
 public:
     explicit MotionRouting(PlayScene& scene) : m_scene(scene) {}
@@ -99,6 +103,14 @@ public:
     bool chainsHeldMelee() const override {
         return m_scene.m_services->config != nullptr &&
                m_scene.m_services->config->combat.autoMelee;
+    }
+    /** The generators sweep the step as the body's own resolution sweeps it, then the
+     * fixtures put its end out as their update holds the body. */
+    Vec3 itemStep(usize i, const Vec3& from, const Vec3& to) const override {
+        const PlayerActor& actor = m_scene.m_players[i].actor;
+        const Vec3 clear = BodyCollision::resolveItems(
+            from, to, actor.reach(), actor.height(), m_scene.m_opponents.generators().obstacles());
+        return m_scene.m_fixtures.pushOut(actor, clear);
     }
     Vec3 resolveMovement(usize i, const Vec3& from, const Vec3& to) const override {
         const auto& player = m_scene.m_players[i];

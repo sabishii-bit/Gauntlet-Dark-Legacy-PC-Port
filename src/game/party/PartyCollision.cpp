@@ -4,6 +4,8 @@
 
 #include "engine/core/Types.h"
 
+#include "game/players/ExitWait.h"
+
 namespace gdl::game {
 
 namespace {
@@ -75,24 +77,28 @@ std::optional<usize> PartyCollision::resolve(std::span<const PlayerRuntime> play
 }
 
 std::optional<usize> PartyCollision::step(std::span<PlayerRuntime> players, usize mover,
-                                          const Vec3& from, f32 seconds,
+                                          const Vec3& from, const Vec3& meant, f32 seconds,
                                           const WorldCollision* collision) {
     if (mover >= players.size()) {
         return std::nullopt;
     }
     PlayerActor& actor = players[mover].actor;
-    const Vec3 meant = actor.position();
     Vec3 to = meant;
-    if (const auto other = resolve(players, mover, from, to)) {
-        players[*other].knockback.shove(meant - from, seconds);
-        if (collision != nullptr) {
-            actor.slide(to - actor.position(), collision);
-        } else {
-            actor.place(to);
-        }
-        return other;
+    const auto other = resolve(players, mover, from, to);
+    if (!other.has_value()) {
+        return std::nullopt;
     }
-    return std::nullopt;
+    // One standing on an exit for the rest of the party holds its ground (idle_timer, +0x950).
+    if (players[*other].exitWait.ticks() == 0) {
+        players[*other].knockback.shove(meant - from, seconds);
+    }
+    const Vec3 out = to - meant;
+    if (collision != nullptr) {
+        actor.slide(out, collision);
+    } else {
+        actor.place(actor.position() + out);
+    }
+    return other;
 }
 
 } // namespace gdl::game
