@@ -594,8 +594,8 @@ mod tests {
 
     use gdl_files::{BLOCK_LEN, Cancel, Job, PhaseId, Progress, RelPath};
     use gdl_fixtures::{
-        FstEntry, SparseFile, edited, fst, icon_iso, iso_of, synthetic_ciso, synthetic_iso, tpl,
-        unhex,
+        FST_AT, FstEntry, ICON_DATA_AT, ICON_STAND_IN, SparseFile, edited, fst, icon_iso, iso_of,
+        synthetic_ciso, synthetic_iso, tpl, unhex,
     };
     use serde_json::Value;
     use tempfile::TempDir;
@@ -685,12 +685,6 @@ mod tests {
     /// Where the root's row gives how many rows the table holds.
     const FORMAT_ROOT_COUNT_AT: usize = 8;
 
-    /// Where the installer tests' disc keeps its file table.
-    const FORMAT_FST_AT: usize = 0x800;
-
-    /// How many bytes that table takes.
-    const FORMAT_FST_LEN: usize = 172;
-
     /// The most bytes a file table may take, and so the most any read asks for at once.
     const FORMAT_MAX_FST_LEN: usize = 16 << 20;
 
@@ -699,9 +693,6 @@ mod tests {
 
     /// The most entries the kept trees may hold.
     const FORMAT_MAX_ENTRIES: usize = 10_000;
-
-    /// Where the installer tests' disc's icon lies, and how long its four-byte stand-in is.
-    const FORMAT_ICON_AT: usize = 0x2900;
 
     /// The vectors, read, of their format and version and holding nothing but what the tests know.
     fn vectors() -> Value {
@@ -785,7 +776,7 @@ mod tests {
     /// every file empty: no longer than its header and its file table.
     fn game_disc(extras: &[FstEntry]) -> Vec<u8> {
         let table = game_table(extras);
-        let len = FORMAT_FST_AT + table.len();
+        let len = FST_AT + table.len();
         iso_of(&table, &[], len)
     }
 
@@ -1390,7 +1381,7 @@ mod tests {
         let mut rows = game_rows(&most);
         rows.push(FstEntry::file("opening.bnr", 0, 0));
         let table = fst(&rows);
-        let disc = iso_of(&table, &[], FORMAT_FST_AT + table.len());
+        let disc = iso_of(&table, &[], FST_AT + table.len());
         judged_unit(&disc).unwrap_or_else(|error| panic!("{error}"));
     }
 
@@ -1474,7 +1465,7 @@ mod tests {
             FstEntry::file("ONE.BIN", 0, gib),
             FstEntry::file("TWO.BIN", 0, gib),
         ]);
-        let start = iso_of(&table, &[], FORMAT_FST_AT + table.len());
+        let start = iso_of(&table, &[], FST_AT + table.len());
         let read = |table_end: usize, start: Vec<u8>, len: u64| {
             let mut source = held(start, len);
             let outcome = judge(&mut source, len, Path::new(IMAGE));
@@ -1482,7 +1473,7 @@ mod tests {
             assert!(source.furthest <= table_end as u64, "{}", source.furthest);
             outcome
         };
-        let table_end = FORMAT_FST_AT + table.len();
+        let table_end = FST_AT + table.len();
         assert_eq!(
             refusal(read(table_end, start, FORMAT_DISC_SIZE).map(|_| ())),
             ("totalSize", "Implausible total extracted size".to_owned())
@@ -1490,7 +1481,7 @@ mod tests {
         // One file as long as the disc is the most the trees may hold.
         let whole = u32::try_from(FORMAT_DISC_SIZE).unwrap();
         let table = game_table(&[FstEntry::file("ALL.BIN", 0, whole)]);
-        let table_end = FORMAT_FST_AT + table.len();
+        let table_end = FST_AT + table.len();
         let start = iso_of(&table, &[], table_end);
         let whole_disc =
             read(table_end, start, FORMAT_DISC_SIZE).unwrap_or_else(|error| panic!("{error}"));
@@ -1498,7 +1489,7 @@ mod tests {
         // A byte further and the file runs past the disc, even in an image a byte longer: an ISO
         // holds no more than a whole disc, whatever follows it.
         let table = game_table(&[FstEntry::file("ALL.BIN", 1, whole)]);
-        let table_end = FORMAT_FST_AT + table.len();
+        let table_end = FST_AT + table.len();
         let start = iso_of(&table, &[], table_end);
         let past = (
             "truncatedFile",
@@ -1509,7 +1500,7 @@ mod tests {
             assert_eq!(refusal(outcome.map(|_| ())), past, "{len}");
         }
         let table = game_table(&[]);
-        let table_end = FORMAT_FST_AT + table.len();
+        let table_end = FST_AT + table.len();
         let longer = read(
             table_end,
             iso_of(&table, &[], table_end),
@@ -1529,7 +1520,7 @@ mod tests {
             (outcome, source.furthest, source.longest)
         };
         let table = game_table(&[]);
-        let disc = iso_of(&table, &[], FORMAT_FST_AT + table.len());
+        let disc = iso_of(&table, &[], FST_AT + table.len());
         // A table right after the header is read.
         let after = [&disc[..FORMAT_HEADER_LEN], table.as_slice()].concat();
         let after = with_word(&after, FORMAT_FST_OFFSET_AT, FORMAT_HEADER_LEN);
@@ -1539,7 +1530,7 @@ mod tests {
         // A table of its root's row alone, the shortest, is walked, and holds nothing the game
         // needs.
         let root_only = with_word(&disc, FORMAT_FST_SIZE_AT, FORMAT_FST_ROW_LEN);
-        let root_only = with_word(&root_only, FORMAT_FST_AT + FORMAT_ROOT_COUNT_AT, 1);
+        let root_only = with_word(&root_only, FST_AT + FORMAT_ROOT_COUNT_AT, 1);
         let (outcome, ..) = judged_whole(root_only);
         assert_eq!(refusal(outcome).0, "missingRoots");
         // A table of the most bytes a table may take is read in one read of that many, and the
@@ -1548,7 +1539,7 @@ mod tests {
         let (outcome, furthest, longest) = judged_whole(most);
         outcome.unwrap_or_else(|error| panic!("{error}"));
         assert_eq!(longest, FORMAT_MAX_FST_LEN);
-        assert_eq!(furthest, (FORMAT_FST_AT + FORMAT_MAX_FST_LEN) as u64);
+        assert_eq!(furthest, (FST_AT + FORMAT_MAX_FST_LEN) as u64);
         // A byte more is refused by the extent before anything past the header is read.
         let over = with_word(&disc, FORMAT_FST_SIZE_AT, FORMAT_MAX_FST_LEN + 1);
         let (outcome, furthest, _) = judged_whole(over);
@@ -1629,12 +1620,18 @@ mod tests {
         let iso = synthetic_iso();
         let ciso = synthetic_ciso(&iso);
         for cut in 0..=iso.len() {
-            assert_eq!(check(&iso[..cut]), cut >= FORMAT_ICON_AT + 4, "{cut}");
+            assert_eq!(
+                check(&iso[..cut]),
+                cut >= ICON_DATA_AT + ICON_STAND_IN.len(),
+                "{cut}"
+            );
         }
         for cut in 0..=ciso.len() {
             assert_eq!(check(&ciso[..cut]), cut == ciso.len(), "{cut}");
         }
-        let changed = (0..FORMAT_HEADER_LEN).chain(FORMAT_FST_AT..FORMAT_FST_AT + FORMAT_FST_LEN);
+        // Every byte of the header and of the file table, which is as long as the installer's.
+        let table_len = unhex(&vectors()["images"]["iso"]["fstHex"]).len();
+        let changed = (0..FORMAT_HEADER_LEN).chain(FST_AT..FST_AT + table_len);
         for at in changed {
             for value in [0x00, 0xFF, iso[at].wrapping_add(1)] {
                 check(&with_bytes(&iso, at, &[value]));
