@@ -33,6 +33,8 @@ use windows_sys::Win32::Foundation::{
     FreeLibrary, HMODULE, WIN32_ERROR,
 };
 #[cfg(test)]
+use windows_sys::Win32::System::Diagnostics::Debug::SEM_NOGPFAULTERRORBOX;
+#[cfg(test)]
 use windows_sys::Win32::System::LibraryLoader::{
     FindResourceExW, LOAD_LIBRARY_AS_DATAFILE, LOAD_LIBRARY_AS_IMAGE_RESOURCE, LoadLibraryExW,
     LoadResource, LockResource, SizeofResource,
@@ -332,6 +334,16 @@ pub(crate) fn fail_critical_errors() {
 pub(crate) fn error_mode() -> u32 {
     // SAFETY: the call takes nothing and only reads the process's error mode.
     unsafe { GetErrorMode() }
+}
+
+/// Adds SEM_NOGPFAULTERRORBOX to the process's error mode, keeping the rest of it, so that a test
+/// program started in the system's default mode, where critical errors show a dialog, still never
+/// shows one should it fault.
+#[cfg(test)]
+pub(crate) fn refuse_fault_dialogs() {
+    // SAFETY: both calls take and give only flags, and change nothing but the process's error
+    // mode.
+    unsafe { SetErrorMode(GetErrorMode() | SEM_NOGPFAULTERRORBOX) };
 }
 
 #[cfg(test)]

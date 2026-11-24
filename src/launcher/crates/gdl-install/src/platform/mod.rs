@@ -16,4 +16,4 @@ pub(crate) use windows::{
     update_resources,
 };
 #[cfg(all(windows, test))]
-pub(crate) use windows::{error_mode, execution_state, resource_bytes};
+pub(crate) use windows::{error_mode, execution_state, refuse_fault_dialogs, resource_bytes};

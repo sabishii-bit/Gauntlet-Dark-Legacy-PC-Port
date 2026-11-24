@@ -631,7 +631,7 @@ mod tests {
         probe_game_version, probe_game_version_with, require_game_closed, run_probe,
     };
     #[cfg(windows)]
-    use crate::platform::{error_mode, fail_critical_errors};
+    use crate::platform::{error_mode, refuse_fault_dialogs};
     #[cfg(target_os = "linux")]
     use crate::platform::{exec_directly_marking_each, leak_descriptor};
 
@@ -741,6 +741,33 @@ mod tests {
     /// FILE_SHARE_READ, FILE_SHARE_WRITE and FILE_SHARE_DELETE.
     #[cfg(windows)]
     const SHARING_EVERYTHING: u32 = 0x7;
+
+    /// The variable that makes a run of this test program play its part in
+    /// `critical_errors_reach_the_process`: the probe made from the system's default error mode,
+    /// or the program it probes. Unset, as in a run of the tests, neither part does anything.
+    #[cfg(windows)]
+    const ERROR_MODE_CHILD: &str = "GDL_PROBE_ERROR_MODE_CHILD";
+
+    /// The test that a child run of this program, started in the default error mode, runs alone.
+    #[cfg(windows)]
+    const PROBING_TEST: &str = "probe::tests::probing_from_the_default_error_mode";
+
+    /// The test that a run of this program started by that child runs alone, to tell the error
+    /// mode it started in.
+    #[cfg(windows)]
+    const REPORTING_TEST: &str = "probe::tests::reporting_the_error_mode";
+
+    /// The exit code of a run that started with critical errors failing calls.
+    #[cfg(windows)]
+    const FAILS_CRITICAL_ERRORS: i32 = 72;
+
+    /// The exit code of a run that started with critical errors shown as dialogs.
+    #[cfg(windows)]
+    const SHOWS_CRITICAL_ERRORS: i32 = 73;
+
+    /// The exit code of a child run whose every check of the error mode held.
+    #[cfg(windows)]
+    const ERROR_MODE_CHECKED: i32 = 74;
 
     /// A program of the system's own, by its name in the folder that holds them.
     #[cfg(windows)]
@@ -1362,16 +1389,88 @@ mod tests {
         assert!(marker.exists());
     }
 
+    /// The arguments that make this test program run the test `name` alone.
+    #[cfg(windows)]
+    fn only_test(name: &str) -> [&str; 4] {
+        ["--exact", name, "--test-threads", "1"]
+    }
+
     #[cfg(windows)]
     #[test]
     fn critical_errors_reach_the_process() {
-        let before = error_mode();
-        fail_critical_errors();
-        assert_eq!(error_mode(), before | SEM_FAILCRITICALERRORS);
-        // A probe leaves it set, and the rest of the mode as it was.
-        let answer = shell_answer(&["exit", "0"]);
-        assert!(answer.succeeded(), "{answer:?}");
-        assert_eq!(error_mode(), before | SEM_FAILCRITICALERRORS);
+        use std::os::windows::process::CommandExt;
+        use windows_sys::Win32::System::Threading::{CREATE_DEFAULT_ERROR_MODE, CREATE_NO_WINDOW};
+
+        // A program inherits its error mode from what starts it, and the shells and runners the
+        // tests run under fail critical errors already, so the probe is made in a child of this
+        // program started in the system's default mode, which shows them, as a launcher started
+        // from Explorer is.
+        let output = Command::new(std::env::current_exe().unwrap())
+            .args(only_test(PROBING_TEST))
+            .env(ERROR_MODE_CHILD, "1")
+            .creation_flags(CREATE_DEFAULT_ERROR_MODE | CREATE_NO_WINDOW)
+            .stdin(Stdio::null())
+            .output()
+            .unwrap();
+        assert_eq!(
+            output.status.code(),
+            Some(ERROR_MODE_CHECKED),
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    /// The child's part of `critical_errors_reach_the_process`.
+    #[cfg(windows)]
+    #[test]
+    fn probing_from_the_default_error_mode() {
+        use std::os::windows::process::CommandExt;
+        use windows_sys::Win32::System::Threading::CREATE_NO_WINDOW;
+
+        if std::env::var_os(ERROR_MODE_CHILD).is_none() {
+            return;
+        }
+        refuse_fault_dialogs();
+        let started = error_mode();
+        assert_eq!(started & SEM_FAILCRITICALERRORS, 0, "{started:#x}");
+        // A program this one starts as std starts one inherits that mode.
+        let this = std::env::current_exe().unwrap();
+        let plain = Command::new(&this)
+            .args(only_test(REPORTING_TEST))
+            .creation_flags(CREATE_NO_WINDOW)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .unwrap();
+        assert_eq!(plain.code(), Some(SHOWS_CRITICAL_ERRORS), "{plain:?}");
+        // A probed program starts with critical errors failing, and the probe leaves the rest of
+        // the process's mode as it was.
+        let answer = probe(&this, &only_test(REPORTING_TEST), GAME_PROBE_LIMIT).unwrap();
+        assert_eq!(
+            answer.status.code(),
+            Some(FAILS_CRITICAL_ERRORS),
+            "{answer:?}"
+        );
+        assert_eq!(error_mode(), started | SEM_FAILCRITICALERRORS);
+        std::process::exit(ERROR_MODE_CHECKED);
+    }
+
+    /// The probed program's part of `critical_errors_reach_the_process`, which tells by its exit
+    /// code the error mode it started in.
+    #[cfg(windows)]
+    #[test]
+    fn reporting_the_error_mode() {
+        if std::env::var_os(ERROR_MODE_CHILD).is_none() {
+            return;
+        }
+        let fails = error_mode() & SEM_FAILCRITICALERRORS != 0;
+        std::process::exit(if fails {
+            FAILS_CRITICAL_ERRORS
+        } else {
+            SHOWS_CRITICAL_ERRORS
+        });
     }
 
     #[test]
