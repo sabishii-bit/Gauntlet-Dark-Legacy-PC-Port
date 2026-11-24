@@ -7,10 +7,12 @@
 //! refused before a file is made. The install then makes everything in a staging folder of its
 //! own inside the launcher's state folder, under a journal that records how far it has come, and
 //! puts each finished root in place by a rename; its receipt, written once every root is in place,
-//! is the point from which the installation stands.
+//! is the point from which the installation stands. A failure or a cancel before it takes back
+//! what the install made.
 
 mod disc_files;
 mod journal;
+mod rollback;
 mod settings;
 mod stage;
 
@@ -412,8 +414,15 @@ pub(crate) fn plan_with<R: Read + Seek>(
 /// block and every entry within one.
 ///
 /// The receipt in place is the point from which the installation stands: what fails after it, in
-/// cleaning up, is a notice for the next start to finish. A failure before it is the install's,
-/// with what it left: nothing when it failed before it made anything.
+/// cleaning up, is a notice for the next start to finish. A failure or a cancel before it is the
+/// install's, and takes back what the install made, under its lock: what the publish put in
+/// place goes back into the staging, then the staging goes with the install's state files, its
+/// journal and its state folder, then the folders it made, while they hold nothing, and the record
+/// forgets the folder. A published `saves` or `config` folder that holds anything stays, and so
+/// does a state folder that holds a name not the launcher's. The failure says what is left:
+/// nothing made ([`Changes::None`]), all of it taken back ([`Changes::RolledBack`]), or some of it
+/// kept, with the journal while it names anything, for the next start to take back
+/// ([`Changes::Kept`]), the record still holding the folder.
 pub fn install_game<R: Read + Seek>(
     plan: &InstallPlan,
     image: &mut GameCubeImage,
@@ -442,14 +451,7 @@ pub(crate) fn install_game_with<R: Read + Seek>(
     settings: &InstallSettings<'_>,
 ) -> Result<Installed, InstallFailure> {
     let _awake = keep_awake();
-    let mut install = Install::new(plan, *job, settings);
-    match install.run(image, launcher, record) {
-        Ok(installed) => Ok(installed),
-        Err(error) => Err(InstallFailure {
-            error,
-            changes: install.left(record),
-        }),
-    }
+    Install::new(plan, *job, settings).run(image, launcher, record)
 }
 
 /// The names an install for `platform` may make at a folder's top, whatever disc and runtime it
@@ -573,13 +575,15 @@ fn install_name(name: &str) -> RelPath {
 
 #[cfg(test)]
 mod tests {
-    use std::cell::RefCell;
-    use std::collections::BTreeMap;
+    use std::cell::{Cell, RefCell};
+    use std::collections::{BTreeMap, BTreeSet};
     use std::fs;
     use std::io::{self, Cursor, Read, Seek};
+    use std::panic::{AssertUnwindSafe, catch_unwind};
     use std::path::{Path, PathBuf};
     use std::process::ExitStatus;
-    use std::sync::Mutex;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{Arc, Mutex};
     use std::time::{Duration, Instant};
 
     use gdl_files::{
@@ -589,21 +593,26 @@ mod tests {
     #[cfg(windows)]
     use gdl_fixtures::fake_sign;
     use gdl_fixtures::{
-        FstEntry, ICON_DATA_AT, RuntimeFiles, SYNTHETIC_ISO_LEN, append_sections, folder_names,
-        fst, icon_iso, iso_of, sha256_hex, snapshot, snapshot_outside, synthetic_ciso,
-        synthetic_iso, tiny_elf, tiny_pe, tpl,
+        EntryState, FstEntry, ICON_DATA_AT, RawEntry, RawZip, RuntimeFiles, SYNTHETIC_ISO_LEN,
+        append_sections, folder_names, fst, icon_iso, iso_of, sha256_hex, snapshot,
+        snapshot_outside, symlink_file, symlink_file_where_allowed, synthetic_ciso, synthetic_iso,
+        tiny_elf, tiny_pe, tpl,
     };
     use gdl_media::{Container, GameCubeImage, MediaError};
     use gdl_release::{Platform, Version};
     use serde_json::{Value, json};
     use tempfile::TempDir;
 
-    use super::settings::{FaultPoint, FaultPoints, InstallSettings, NoFaults, ProbeFn};
+    use super::settings::{
+        FailAt, FaultPoint, FaultPoints, Faults, INJECTED, InstallSettings, NoFaults, OnPass,
+        PanicAt, ProbeFn,
+    };
     use super::{
         CHECK_DISC, CHECK_GAME, CONFIG_FOLDER, COPY_DISC_FILES, COPY_LAUNCHER, Changes, DISC_FILES,
-        DiscSummary, FolderRecord, GET_RUNTIME, INSTALL_JOURNAL, InstallError, InstallFailure,
-        InstallNotice, InstallPlan, Installed, PREPARE, PUBLISH, RuntimeSummary, SAVES_FOLDER,
-        SPACE_MARGIN, Unrecorded, install_game_with, install_names, plan_install, plan_with,
+        DiscSummary, FolderRecord, GET_RUNTIME, INSTALL_JOURNAL, INSTALL_STAGING_PREFIX,
+        InstallError, InstallFailure, InstallNotice, InstallPlan, Installed, PREPARE, PUBLISH,
+        RuntimeSummary, SAVES_FOLDER, SPACE_MARGIN, Unrecorded, install_game_with, install_names,
+        plan_install, plan_with,
     };
     use crate::destination::{Blocker, DestinationError, FolderChecks};
     use crate::folder::{
@@ -612,7 +621,7 @@ mod tests {
     use crate::host::Unsupported;
     use crate::icon::IconError;
     use crate::inspect::FolderState;
-    use crate::payload::{LIB_FOLDER, PayloadError, ROOT_FOLDERS};
+    use crate::payload::{BUILD_INFO, DEFAULT_CONFIG, LIB_FOLDER, PayloadError, ROOT_FOLDERS};
     use crate::probe::{GameStartError, VersionProbe, probe_game_version_with};
     use crate::receipt::installed_launcher_name;
     use crate::sections::{RUNTIME_SECTION, Sections, SectionsError, WINDOW_SECTION};
@@ -2277,10 +2286,7 @@ mod tests {
         assert_eq!(journal["phase"], "staging");
         assert_eq!(journal["madeFolders"], 1);
         let staging = journal["staging"].as_str().unwrap();
-        assert!(
-            staging.starts_with(super::INSTALL_STAGING_PREFIX),
-            "{staging}"
-        );
+        assert!(staging.starts_with(INSTALL_STAGING_PREFIX), "{staging}");
         assert_eq!(*names, [staging, JOURNAL_DIR, LOCK_FILE]);
         // Staging under that journal, the disc's list written once the disc is copied.
         for (at, (_, journal, names)) in seen[3..3 + staged].iter().enumerate() {
@@ -2439,8 +2445,9 @@ mod tests {
             matches!(failure.error, InstallError::Cancelled),
             "{failure:?}"
         );
-        // What the install made is left for the next start, which finds its journal.
-        assert_eq!(failure.changes, Changes::Kept);
+        // What the install made was taken back.
+        assert_eq!(failure.changes, Changes::RolledBack);
+        assert!(!destination.exists());
         let said = told.said();
         assert_eq!(
             said.last(),
@@ -2516,8 +2523,6 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn the_system_is_kept_awake_while_installing() {
-        use std::sync::atomic::{AtomicBool, Ordering};
-
         use windows_sys::Win32::System::Power::{ES_CONTINUOUS, ES_SYSTEM_REQUIRED};
 
         use crate::platform;
@@ -2567,5 +2572,884 @@ mod tests {
             Some(ES_CONTINUOUS | ES_SYSTEM_REQUIRED)
         );
         assert_eq!(platform::execution_state(), before);
+    }
+
+    /// The file of the player's that a folder an install test installs into may hold.
+    const USER_FILE: &str = "user.txt";
+
+    /// What that file holds.
+    const USER_BYTES: &[u8] = b"the player's own";
+
+    /// The names an install of the icon disc and the standard runtime puts at a folder's top on
+    /// this system, in byte order: the order the publish moves them in.
+    fn roots() -> [&'static str; 11] {
+        match this_platform() {
+            Platform::WindowsX64 => WINDOWS_ROOTS,
+            Platform::LinuxX64 => LINUX_ROOTS,
+        }
+    }
+
+    /// The pass of [`FaultPoint::Publish`] once the root `name` has moved, before its move is
+    /// recorded: the first pass is the journal's move to publishing.
+    fn moved_pass(name: &str) -> u32 {
+        let at = roots().iter().position(|&root| root == name).unwrap();
+        u32::try_from(at).unwrap() + 2
+    }
+
+    /// Where an install test installs under `top`: a folder two below `top`, which the install
+    /// makes with the folder above it, or, when `holds_a_file`, a folder that is there and holds
+    /// a file of the player's.
+    fn destination_in(top: &Path, holds_a_file: bool) -> PathBuf {
+        if !holds_a_file {
+            return top.join("Games").join("game");
+        }
+        let destination = top.join("game");
+        fs::create_dir(&destination).unwrap();
+        fs::write(destination.join(USER_FILE), USER_BYTES).unwrap();
+        destination
+    }
+
+    /// What a folder an install test installs into held before the install, outside the
+    /// launcher's names: the destination's entries when it was there, else those of the folder
+    /// under which the install makes it, so that the folders the install made are seen to go too.
+    struct AsItWas {
+        /// The folder looked at.
+        at: PathBuf,
+        /// What it held.
+        held: BTreeMap<PathBuf, EntryState>,
+    }
+
+    impl AsItWas {
+        fn of(top: &Path, destination: &Path) -> AsItWas {
+            let at = if destination.exists() {
+                destination
+            } else {
+                top
+            };
+            AsItWas {
+                at: at.to_path_buf(),
+                held: snapshot_outside(at, STATE_DIR).unwrap(),
+            }
+        }
+
+        /// Asserts that the folder holds what it held, and none of the launcher's names.
+        #[track_caller]
+        fn holds(&self, context: &str) {
+            assert_eq!(
+                snapshot_outside(&self.at, STATE_DIR).unwrap(),
+                self.held,
+                "{context}"
+            );
+            let left = launcher_names(&self.at);
+            assert!(left.is_empty(), "{context}: {left:?}");
+        }
+    }
+
+    /// What a record told of `destination` by the calls `calls`, in order, heard.
+    fn heard_of(destination: &Path, calls: &[&'static str]) -> Vec<(&'static str, PathBuf)> {
+        calls
+            .iter()
+            .map(|&call| (call, destination.to_path_buf()))
+            .collect()
+    }
+
+    /// Plans and installs the inputs into `destination` as `settings` gives the world beyond the
+    /// folder, telling a record that keeps what it hears, and gives what the install gave and
+    /// what the record heard.
+    fn install_heard(
+        inputs: &Inputs,
+        destination: &Path,
+        settings: &InstallSettings<'_>,
+    ) -> (
+        Result<Installed, InstallFailure>,
+        Vec<(&'static str, PathBuf)>,
+    ) {
+        let plan = inputs.plan(destination);
+        let mut record = Heard::default();
+        let cancel = Cancel::default();
+        let job = Job {
+            cancel: &cancel,
+            progress: &NoProgress,
+        };
+        let result = inputs.install(&plan, &mut record, &job, settings);
+        (result, record.calls)
+    }
+
+    /// The journal of the install in `destination`, when there is one.
+    fn journal_of(destination: &Path) -> Option<Value> {
+        let journal = destination
+            .join(STATE_DIR)
+            .join(JOURNAL_DIR)
+            .join(INSTALL_JOURNAL);
+        let bytes = fs::read(journal).ok()?;
+        Some(serde_json::from_slice(&bytes).unwrap())
+    }
+
+    /// The staging the journal of the install in `destination` names.
+    fn staging_of(destination: &Path) -> PathBuf {
+        let journal = journal_of(destination).expect("the install has a journal");
+        let name = journal["staging"]
+            .as_str()
+            .expect("a journal names its staging");
+        destination.join(STATE_DIR).join(name)
+    }
+
+    #[test]
+    fn a_cancel_at_the_first_advance_leaves_only_what_was_there() {
+        /// A progress that asks the job to stop at its first advance, the launcher file's first
+        /// block read, and keeps what the state folder held then.
+        struct FirstAdvance {
+            cancel: Cancel,
+            state: PathBuf,
+            held: Mutex<Option<Vec<String>>>,
+        }
+
+        impl Progress for FirstAdvance {
+            fn phase(&self, _: PhaseId) {}
+
+            fn advance(&self, _: u64, _: u64, _: Option<&RelPath>) {
+                let mut held = self.held.lock().unwrap();
+                if held.is_none() {
+                    *held = Some(folder_names(&self.state).unwrap());
+                    self.cancel.cancel();
+                }
+            }
+        }
+
+        let top = tempfile::tempdir().unwrap();
+        let destination = destination_in(top.path(), true);
+        let inputs = Inputs::of(&icon_iso());
+        let plan = inputs.plan(&destination);
+        let cancel = Cancel::default();
+        let progress = FirstAdvance {
+            cancel: cancel.clone(),
+            state: destination.join(STATE_DIR),
+            held: Mutex::new(None),
+        };
+        let job = Job {
+            cancel: &cancel,
+            progress: &progress,
+        };
+        let failure = inputs
+            .install(
+                &plan,
+                &mut Unrecorded,
+                &job,
+                &standing_in(&NoFaults, &answering),
+            )
+            .unwrap_err();
+        assert!(
+            matches!(failure.error, InstallError::Cancelled),
+            "{failure:?}"
+        );
+        assert_eq!(failure.changes, Changes::RolledBack);
+        // The lock and the staging were there when the job was asked to stop, and only what the
+        // folder held before is left.
+        let held = progress.held.into_inner().unwrap().unwrap();
+        assert!(held.iter().any(|name| name == LOCK_FILE), "{held:?}");
+        assert!(
+            held.iter()
+                .any(|name| name.starts_with(INSTALL_STAGING_PREFIX)),
+            "{held:?}"
+        );
+        assert_eq!(folder_names(&destination).unwrap(), [USER_FILE]);
+        assert_eq!(fs::read(destination.join(USER_FILE)).unwrap(), USER_BYTES);
+    }
+
+    #[test]
+    fn a_failure_at_the_second_move_takes_everything_back() {
+        let top = tempfile::tempdir().unwrap();
+        let destination = top.path().join("game");
+        let inputs = Inputs::of(&icon_iso());
+        // The second root moved, its move not yet recorded; the first moved and recorded.
+        let second = moved_pass(roots()[1]);
+        let both_moved = Cell::new(false);
+        let look = || {
+            let moved = roots()[..2]
+                .iter()
+                .all(|root| destination.join(root).exists());
+            both_moved.set(moved);
+            Ok(())
+        };
+        let on = OnPass::new(FaultPoint::Publish, second, &look);
+        let fail = FailAt::new(FaultPoint::Publish, second);
+        let faults = Faults(&[&on, &fail]);
+        let (result, heard) =
+            install_heard(&inputs, &destination, &standing_in(&faults, &answering));
+        let failure = result.unwrap_err();
+        assert!(both_moved.get());
+        assert_eq!(failure.rule(), "io", "{failure:?}");
+        assert!(failure.to_string().contains(INJECTED), "{failure}");
+        assert_eq!(failure.changes, Changes::RolledBack);
+        // The folder the install made went too.
+        assert!(folder_names(top.path()).unwrap().is_empty());
+        assert_eq!(heard, heard_of(&destination, &["pending", "forget"]));
+    }
+
+    #[test]
+    fn a_damaged_runtime_file_takes_everything_back() {
+        // The runtime's files held as they are, but data/config.json's bytes changed under the
+        // release record that lists the old ones, in a launcher file whose sections are whole.
+        let runtime = standard_runtime(this_platform());
+        let mut files = runtime.files.clone();
+        files.sort();
+        let mut entries: Vec<RawEntry> = files
+            .iter()
+            .map(|(name, data)| match name.as_str() {
+                DEFAULT_CONFIG => RawEntry::stored(name, b"damaged"),
+                _ => RawEntry::stored(name, data),
+            })
+            .collect();
+        entries.push(RawEntry::stored(BUILD_INFO, &runtime.build_info_bytes()));
+        let zip = RawZip {
+            entries,
+            ..RawZip::default()
+        }
+        .to_bytes();
+        let inputs = Inputs {
+            launcher: launcher_file(&[(RUNTIME_SECTION, &zip)]),
+            ..Inputs::of(&icon_iso())
+        };
+        let top = tempfile::tempdir().unwrap();
+        let destination = top.path().join("game");
+        let (result, heard) =
+            install_heard(&inputs, &destination, &standing_in(&NoFaults, &answering));
+        let failure = result.unwrap_err();
+        assert!(
+            matches!(
+                &failure.error,
+                InstallError::Runtime(PayloadError::Damaged { name, .. }) if &**name == DEFAULT_CONFIG
+            ),
+            "{failure:?}"
+        );
+        assert_eq!(failure.rule(), "damaged");
+        assert_eq!(failure.changes, Changes::RolledBack);
+        assert!(folder_names(top.path()).unwrap().is_empty());
+        assert_eq!(heard, heard_of(&destination, &["pending", "forget"]));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn an_icon_failure_takes_everything_back() {
+        /// A personaliser whose resource update the system refuses.
+        fn refusing(executable: &Path, _: &[u8]) -> Result<crate::icon::Personalised, IconError> {
+            Err(IconError::Embed {
+                path: executable.to_path_buf(),
+                source: io::Error::other("the resources refuse"),
+            })
+        }
+
+        let top = tempfile::tempdir().unwrap();
+        let destination = top.path().join("game");
+        let inputs = Inputs::of(&icon_iso());
+        let settings = InstallSettings {
+            personalise: &refusing,
+            ..standing_in(&NoFaults, &answering)
+        };
+        let (result, heard) = install_heard(&inputs, &destination, &settings);
+        let failure = result.unwrap_err();
+        assert!(
+            matches!(failure.error, InstallError::Icon(IconError::Embed { .. })),
+            "{failure:?}"
+        );
+        assert_eq!(failure.rule(), "embed");
+        assert_eq!(failure.changes, Changes::RolledBack);
+        assert!(folder_names(top.path()).unwrap().is_empty());
+        assert_eq!(heard, heard_of(&destination, &["pending", "forget"]));
+    }
+
+    #[test]
+    fn a_cancel_during_the_probe_takes_everything_back() {
+        /// A game the player stops waiting for, stopped as the launcher's probe stops one.
+        fn cancelled_while_running(
+            _: &Path,
+            cancel: &Cancel,
+        ) -> Result<VersionProbe, GameStartError> {
+            cancel.cancel();
+            Err(GameStartError::Cancelled)
+        }
+
+        let top = tempfile::tempdir().unwrap();
+        let destination = top.path().join("game");
+        let inputs = Inputs::of(&icon_iso());
+        let (result, heard) = install_heard(
+            &inputs,
+            &destination,
+            &standing_in(&NoFaults, &cancelled_while_running),
+        );
+        let failure = result.unwrap_err();
+        assert!(
+            matches!(failure.error, InstallError::Cancelled),
+            "{failure:?}"
+        );
+        assert_eq!(failure.changes, Changes::RolledBack);
+        assert!(folder_names(top.path()).unwrap().is_empty());
+        assert_eq!(heard, heard_of(&destination, &["pending", "forget"]));
+    }
+
+    #[test]
+    fn a_link_at_the_staged_executable_is_refused_unrun() {
+        // The file a link would have the probe run instead of the game.
+        let elsewhere = tempfile::tempdir().unwrap();
+        let target = elsewhere.path().join("elsewhere");
+        fs::write(&target, b"not the game").unwrap();
+        if !symlink_file_where_allowed(&elsewhere.path().join("link"), &target) {
+            eprintln!("skipped: this account may not make symbolic links");
+            return;
+        }
+        let top = tempfile::tempdir().unwrap();
+        let destination = top.path().join("game");
+        let inputs = Inputs::of(&icon_iso());
+        let plant = || {
+            let executable = staging_of(&destination).join(this_platform().executable());
+            fs::remove_file(&executable)?;
+            symlink_file(&executable, &target)
+        };
+        // The pass once the launcher's copy is staged, the last before the probe.
+        let copied = if cfg!(windows) { 4 } else { 3 };
+        let on = OnPass::new(FaultPoint::Stage, copied, &plant);
+        // A probe owns what it keeps, as the settings hold probes that borrow nothing.
+        let probed = Arc::new(AtomicBool::new(false));
+        let seen = Arc::clone(&probed);
+        let probe = move |executable: &Path, cancel: &Cancel| {
+            seen.store(true, Ordering::SeqCst);
+            answering(executable, cancel)
+        };
+        let (result, heard) = install_heard(&inputs, &destination, &standing_in(&on, &probe));
+        let failure = result.unwrap_err();
+        assert!(
+            matches!(
+                &failure.error,
+                InstallError::Files(FilesError::Link { path })
+                    if path.ends_with(this_platform().executable())
+            ),
+            "{failure:?}"
+        );
+        assert_eq!(failure.changes, Changes::RolledBack);
+        assert!(!probed.load(Ordering::SeqCst));
+        assert!(folder_names(top.path()).unwrap().is_empty());
+        // The link went as a link: what it led to is as it was.
+        assert_eq!(fs::read(&target).unwrap(), b"not the game");
+        assert_eq!(heard, heard_of(&destination, &["pending", "forget"]));
+    }
+
+    #[test]
+    fn a_rollback_forgets_the_pending_destination() {
+        let top = tempfile::tempdir().unwrap();
+        let destination = destination_in(top.path(), true);
+        let inputs = Inputs::of(&icon_iso());
+        let plan = inputs.plan(&destination);
+        // Asked to stop as the disc's last file is copied, which the next phase heeds.
+        let cancel = Cancel::default();
+        let told = Told {
+            cancel_at: Some((cancel.clone(), "carddemo/icon.tpl".to_owned())),
+            ..Told::default()
+        };
+        let job = Job {
+            cancel: &cancel,
+            progress: &told,
+        };
+        let mut record = Heard::default();
+        let failure = inputs
+            .install(
+                &plan,
+                &mut record,
+                &job,
+                &standing_in(&NoFaults, &answering),
+            )
+            .unwrap_err();
+        assert!(
+            matches!(failure.error, InstallError::Cancelled),
+            "{failure:?}"
+        );
+        assert_eq!(failure.changes, Changes::RolledBack);
+        let next = if cfg!(windows) {
+            super::PERSONALISE
+        } else {
+            COPY_LAUNCHER
+        };
+        assert_eq!(told.phases().last(), Some(&next.0));
+        assert_eq!(record.calls, heard_of(&destination, &["pending", "forget"]));
+        assert_eq!(folder_names(&destination).unwrap(), [USER_FILE]);
+    }
+
+    #[test]
+    fn made_ancestors_go_with_a_rollback() {
+        let top = tempfile::tempdir().unwrap();
+        let destination = destination_in(top.path(), false);
+        let inputs = Inputs::of(&icon_iso());
+        let plan = inputs.plan(&destination);
+        // The journal counts the destination and the folder above it as made.
+        let made = Cell::new(None);
+        let look = || {
+            let journal = journal_of(&destination).unwrap();
+            made.set(journal["madeFolders"].as_u64());
+            Ok(())
+        };
+        let on = OnPass::new(FaultPoint::Prepare, 3, &look);
+        let cancel = Cancel::default();
+        let told = Told {
+            cancel_at: Some((cancel.clone(), "Gauntlet/PDATA/WAR.WAD".to_owned())),
+            ..Told::default()
+        };
+        let job = Job {
+            cancel: &cancel,
+            progress: &told,
+        };
+        let failure = inputs
+            .install(&plan, &mut Unrecorded, &job, &standing_in(&on, &answering))
+            .unwrap_err();
+        assert!(
+            matches!(failure.error, InstallError::Cancelled),
+            "{failure:?}"
+        );
+        assert_eq!(made.get(), Some(2));
+        assert_eq!(failure.changes, Changes::RolledBack);
+        assert!(folder_names(top.path()).unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_failure_at_every_prepare_and_stage_pass_leaves_the_folder_as_it_was() {
+        let inputs = Inputs::of(&icon_iso());
+        let staged = if cfg!(windows) { 5 } else { 4 };
+        let points = (1..=3)
+            .map(|at| (FaultPoint::Prepare, at))
+            .chain((1..=staged).map(|at| (FaultPoint::Stage, at)));
+        for (point, at) in points {
+            for holds_a_file in [false, true] {
+                let context = format!("{point:?} {at}, the folder holding a file: {holds_a_file}");
+                let top = tempfile::tempdir().unwrap();
+                let destination = destination_in(top.path(), holds_a_file);
+                let as_it_was = AsItWas::of(top.path(), &destination);
+                let fail = FailAt::new(point, at);
+                let (result, heard) =
+                    install_heard(&inputs, &destination, &standing_in(&fail, &answering));
+                let failure = result.unwrap_err();
+                assert!(
+                    failure.to_string().contains(INJECTED),
+                    "{context}: {failure:?}"
+                );
+                assert_eq!(failure.changes, Changes::RolledBack, "{context}");
+                as_it_was.holds(&context);
+                assert_eq!(
+                    heard,
+                    heard_of(&destination, &["pending", "forget"]),
+                    "{context}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_refused_lock_keeps_the_state_folder_for_recovery() {
+        let top = tempfile::tempdir().unwrap();
+        let destination = top.path().join("game");
+        let inputs = Inputs::of(&icon_iso());
+        // Another job takes the lock once the state folder is made, before this one can.
+        let held = RefCell::new(None);
+        let take = || {
+            let folder = InstallFolder::at(&destination).map_err(io::Error::other)?;
+            *held.borrow_mut() = Some(folder.lock().map_err(io::Error::other)?);
+            Ok(())
+        };
+        let on = OnPass::new(FaultPoint::Prepare, 1, &take);
+        let (result, heard) = install_heard(&inputs, &destination, &standing_in(&on, &answering));
+        let failure = result.unwrap_err();
+        assert!(
+            matches!(failure.error, InstallError::Lock(LockError::Busy)),
+            "{failure:?}"
+        );
+        // The lock file is no job's to remove without its lock: the state folder stays for the
+        // next start, whose recovery gives it up, and the record keeps the folder.
+        assert_eq!(failure.changes, Changes::Kept);
+        assert_eq!(heard, heard_of(&destination, &["pending"]));
+        drop(held.into_inner());
+        assert_eq!(folder_names(&destination).unwrap(), [STATE_DIR]);
+        assert_eq!(
+            folder_names(&destination.join(STATE_DIR)).unwrap(),
+            [LOCK_FILE]
+        );
+    }
+
+    #[test]
+    fn a_collision_found_under_the_lock_takes_back_what_was_made() {
+        let top = tempfile::tempdir().unwrap();
+        let destination = top.path().join("game");
+        let inputs = Inputs::of(&icon_iso());
+        // A root taken once the lock is held, which the judging under the lock finds.
+        let take = || fs::create_dir(destination.join(SAVES_FOLDER));
+        let on = OnPass::new(FaultPoint::Prepare, 2, &take);
+        let (result, heard) = install_heard(&inputs, &destination, &standing_in(&on, &answering));
+        let failure = result.unwrap_err();
+        assert!(
+            matches!(
+                &failure.error,
+                InstallError::Blocked(Blocker::Collision { names }) if *names == [SAVES_FOLDER]
+            ),
+            "{failure:?}"
+        );
+        // Everything of the install's went; the folder it made holds what another made there.
+        assert_eq!(failure.changes, Changes::RolledBack);
+        assert_eq!(folder_names(&destination).unwrap(), [SAVES_FOLDER]);
+        assert_eq!(heard, heard_of(&destination, &["pending", "forget"]));
+    }
+
+    #[test]
+    fn a_panic_while_staging_or_publishing_keeps_the_staging_for_recovery() {
+        let inputs = Inputs::of(&icon_iso());
+        for (point, at, phase) in [
+            (FaultPoint::Stage, 1, "staging"),
+            (FaultPoint::Publish, moved_pass(roots()[0]), "publishing"),
+        ] {
+            let top = tempfile::tempdir().unwrap();
+            let destination = top.path().join("game");
+            let panic = PanicAt::new(point, at);
+            let unwound = catch_unwind(AssertUnwindSafe(|| {
+                install_heard(&inputs, &destination, &standing_in(&panic, &answering))
+            }));
+            assert!(unwound.is_err(), "{point:?} {at}");
+            // The journal and the staging it names are left for the next start.
+            let journal = journal_of(&destination).unwrap();
+            assert_eq!(journal["phase"], phase, "{point:?} {at}");
+            assert!(staging_of(&destination).is_dir(), "{point:?} {at}");
+            if point == FaultPoint::Publish {
+                // The first root is in place, its move not yet recorded.
+                assert!(destination.join(roots()[0]).exists());
+                assert_eq!(journal["published"], json!([]));
+            }
+            // The lock was let go as the job unwound.
+            drop(InstallFolder::at(&destination).unwrap().lock().unwrap());
+        }
+    }
+
+    #[test]
+    fn a_published_saves_folder_that_holds_a_file_stays() {
+        let top = tempfile::tempdir().unwrap();
+        let destination = top.path().join("game");
+        let inputs = Inputs::of(&icon_iso());
+        // The player saves into the folder once it is in place, and the move after it fails.
+        let saved = moved_pass(SAVES_FOLDER);
+        assert!(saved < moved_pass(roots()[roots().len() - 1]));
+        let save = || fs::write(destination.join(SAVES_FOLDER).join("slot1.json"), b"{}");
+        let on = OnPass::new(FaultPoint::Publish, saved, &save);
+        let fail = FailAt::new(FaultPoint::Publish, saved + 1);
+        let faults = Faults(&[&on, &fail]);
+        let (result, heard) =
+            install_heard(&inputs, &destination, &standing_in(&faults, &answering));
+        let failure = result.unwrap_err();
+        assert!(failure.to_string().contains(INJECTED), "{failure:?}");
+        // The saves stay where the player put them; everything else of the install's went.
+        assert_eq!(failure.changes, Changes::Kept);
+        assert_eq!(folder_names(&destination).unwrap(), [SAVES_FOLDER]);
+        assert_eq!(
+            fs::read(destination.join(SAVES_FOLDER).join("slot1.json")).unwrap(),
+            b"{}"
+        );
+        assert_eq!(heard, heard_of(&destination, &["pending"]));
+    }
+
+    #[test]
+    fn a_target_that_appears_during_publish_takes_everything_back() {
+        const SHADERS: &str = "shaders";
+        let top = tempfile::tempdir().unwrap();
+        let destination = top.path().join("game");
+        let inputs = Inputs::of(&icon_iso());
+        // A stranger's folder takes the root's name before the root moves.
+        let before_it = moved_pass(SHADERS) - 1;
+        let intrude = || {
+            fs::create_dir(destination.join(SHADERS))?;
+            fs::write(
+                destination.join(SHADERS).join("theirs.txt"),
+                b"a stranger's",
+            )
+        };
+        let on = OnPass::new(FaultPoint::Publish, before_it, &intrude);
+        let (result, heard) = install_heard(&inputs, &destination, &standing_in(&on, &answering));
+        let failure = result.unwrap_err();
+        assert!(
+            matches!(
+                &failure.error,
+                InstallError::Files(FilesError::Exists { path }) if *path == destination.join(SHADERS)
+            ),
+            "{failure:?}"
+        );
+        assert_eq!(failure.changes, Changes::RolledBack);
+        // The stranger's folder is as they left it, and nothing of the install's is left.
+        assert_eq!(folder_names(&destination).unwrap(), [SHADERS]);
+        assert_eq!(
+            folder_names(&destination.join(SHADERS)).unwrap(),
+            ["theirs.txt"]
+        );
+        assert_eq!(
+            fs::read(destination.join(SHADERS).join("theirs.txt")).unwrap(),
+            b"a stranger's"
+        );
+        assert_eq!(heard, heard_of(&destination, &["pending", "forget"]));
+    }
+
+    #[test]
+    fn a_failure_after_the_receipt_leaves_the_installation_standing() {
+        let inputs = Inputs::of(&icon_iso());
+        let receipted = moved_pass(roots()[roots().len() - 1]) + 2;
+        // The receipt in place; the journal committed; the staging gone.
+        for (point, at, phase, staging_left) in [
+            (FaultPoint::Publish, receipted, "publishing", true),
+            (FaultPoint::Cleanup, 1, "committed", true),
+            (FaultPoint::Cleanup, 2, "committed", false),
+        ] {
+            let context = format!("{point:?} {at}");
+            let top = tempfile::tempdir().unwrap();
+            let destination = top.path().join("game");
+            let fail = FailAt::new(point, at);
+            let told = Cell::new(0);
+            let notify = |_: &Path| told.set(told.get() + 1);
+            let settings = InstallSettings {
+                notify_shell: &notify,
+                ..standing_in(&fail, &answering)
+            };
+            let (result, heard) = install_heard(&inputs, &destination, &settings);
+            let installed = result.unwrap();
+            assert!(
+                matches!(
+                    &installed.notices[..],
+                    [InstallNotice::CleanupLeft { detail }] if detail.contains(INJECTED)
+                ),
+                "{context}: {:?}",
+                installed.notices
+            );
+            let state = destination.join(STATE_DIR);
+            let written: Value =
+                serde_json::from_slice(&fs::read(state.join(RECEIPT_FILE)).unwrap()).unwrap();
+            assert_eq!(
+                written,
+                serde_json::to_value(&installed.receipt).unwrap(),
+                "{context}"
+            );
+            assert_eq!(
+                heard,
+                heard_of(&destination, &["pending", "installed"]),
+                "{context}"
+            );
+            assert_eq!(told.get(), 1, "{context}");
+            for root in roots() {
+                assert!(destination.join(root).exists(), "{context}: {root}");
+            }
+            // The journal is left for the next start to finish the cleanup from, with the staging
+            // while the cleanup had not removed it.
+            assert_eq!(
+                journal_of(&destination).unwrap()["phase"],
+                phase,
+                "{context}"
+            );
+            let staging = folder_names(&state)
+                .unwrap()
+                .into_iter()
+                .any(|name| name.starts_with(INSTALL_STAGING_PREFIX));
+            assert_eq!(staging, staging_left, "{context}");
+        }
+    }
+
+    #[test]
+    fn a_rollback_cut_short_keeps_its_journal_and_the_pending_record() {
+        let inputs = Inputs::of(&icon_iso());
+
+        // While staging: the staging goes, then the rollback stops before the journal does.
+        let top = tempfile::tempdir().unwrap();
+        let destination = top.path().join("game");
+        let fail = FailAt::new(FaultPoint::Stage, 2);
+        let stop = FailAt::new(FaultPoint::Rollback, 1);
+        let faults = Faults(&[&fail, &stop]);
+        let (result, heard) =
+            install_heard(&inputs, &destination, &standing_in(&faults, &answering));
+        let failure = result.unwrap_err();
+        assert!(failure.to_string().contains(INJECTED), "{failure:?}");
+        assert_eq!(failure.changes, Changes::Kept);
+        assert_eq!(heard, heard_of(&destination, &["pending"]));
+        let journal = journal_of(&destination).unwrap();
+        assert_eq!(journal["phase"], "staging");
+        let state = destination.join(STATE_DIR);
+        assert_eq!(
+            folder_names(&state).unwrap(),
+            [DISC_FILES, JOURNAL_DIR, LOCK_FILE]
+        );
+
+        // While publishing: the second root goes back into the staging, then the rollback stops
+        // with the first still in place, under a journal that says the publish is taken back.
+        let top = tempfile::tempdir().unwrap();
+        let destination = top.path().join("game");
+        let fail = FailAt::new(FaultPoint::Publish, moved_pass(roots()[1]));
+        let stop = FailAt::new(FaultPoint::Rollback, 1);
+        let faults = Faults(&[&fail, &stop]);
+        let (result, heard) =
+            install_heard(&inputs, &destination, &standing_in(&faults, &answering));
+        let failure = result.unwrap_err();
+        assert_eq!(failure.changes, Changes::Kept, "{failure:?}");
+        assert_eq!(heard, heard_of(&destination, &["pending"]));
+        let journal = journal_of(&destination).unwrap();
+        assert_eq!(journal["phase"], "rollingBack");
+        assert_eq!(journal["roots"], json!(roots()));
+        let staging = staging_of(&destination);
+        assert!(destination.join(roots()[0]).exists());
+        assert!(!staging.join(roots()[0]).exists());
+        assert!(!destination.join(roots()[1]).exists());
+        assert!(staging.join(roots()[1]).exists());
+    }
+
+    #[test]
+    fn a_state_folder_holding_another_name_is_kept() {
+        let top = tempfile::tempdir().unwrap();
+        let destination = top.path().join("game");
+        let inputs = Inputs::of(&icon_iso());
+        // A name the launcher does not know joins the state folder while the install stages.
+        let note = || fs::write(destination.join(STATE_DIR).join("notes.txt"), b"not ours");
+        let on = OnPass::new(FaultPoint::Stage, 1, &note);
+        let fail = FailAt::new(FaultPoint::Stage, 2);
+        let faults = Faults(&[&on, &fail]);
+        let (result, heard) =
+            install_heard(&inputs, &destination, &standing_in(&faults, &answering));
+        let failure = result.unwrap_err();
+        // Everything the install made in it went, but the state folder stays with its lock and
+        // the name, and the record keeps the folder.
+        assert_eq!(failure.changes, Changes::Kept, "{failure:?}");
+        assert_eq!(heard, heard_of(&destination, &["pending"]));
+        assert_eq!(folder_names(&destination).unwrap(), [STATE_DIR]);
+        let state = destination.join(STATE_DIR);
+        assert_eq!(
+            folder_names(&state).unwrap(),
+            [JOURNAL_DIR, LOCK_FILE, "notes.txt"]
+        );
+        assert!(folder_names(&state.join(JOURNAL_DIR)).unwrap().is_empty());
+    }
+
+    /// What [`CancelAt`] has been told: how many calls, the phase last begun, and the phase in
+    /// which the call it cancels at came.
+    #[derive(Default)]
+    struct Calls {
+        count: usize,
+        phase: Option<&'static str>,
+        cancelled_in: Option<&'static str>,
+    }
+
+    /// A progress that asks the job to stop at its `at`-th call, phases and advances counted
+    /// together.
+    struct CancelAt {
+        cancel: Cancel,
+        at: usize,
+        calls: Mutex<Calls>,
+    }
+
+    impl CancelAt {
+        fn call(&self, phase: Option<&'static str>) {
+            let mut calls = self.calls.lock().unwrap();
+            if phase.is_some() {
+                calls.phase = phase;
+            }
+            calls.count += 1;
+            if calls.count == self.at {
+                calls.cancelled_in = calls.phase;
+                self.cancel.cancel();
+            }
+        }
+    }
+
+    impl Progress for CancelAt {
+        fn phase(&self, phase: PhaseId) {
+            self.call(Some(phase.0));
+        }
+
+        fn advance(&self, _: u64, _: u64, _: Option<&RelPath>) {
+            self.call(None);
+        }
+    }
+
+    #[test]
+    fn a_cancel_at_any_step_leaves_nothing() {
+        let inputs = Inputs::of(&icon_iso());
+        for holds_a_file in [false, true] {
+            // What an install that nothing stops leaves.
+            let whole = {
+                let top = tempfile::tempdir().unwrap();
+                let destination = destination_in(top.path(), holds_a_file);
+                inputs.install_into(&destination).unwrap();
+                tree(&destination)
+            };
+            let mut reached = BTreeSet::new();
+            for at in 1.. {
+                let context = format!("call {at}, the folder holding a file: {holds_a_file}");
+                let top = tempfile::tempdir().unwrap();
+                let destination = destination_in(top.path(), holds_a_file);
+                let plan = inputs.plan(&destination);
+                let untouched = snapshot(top.path()).unwrap();
+                let as_it_was = AsItWas::of(top.path(), &destination);
+                let cancel = Cancel::default();
+                let progress = CancelAt {
+                    cancel: cancel.clone(),
+                    at,
+                    calls: Mutex::default(),
+                };
+                let job = Job {
+                    cancel: &cancel,
+                    progress: &progress,
+                };
+                let mut record = Heard::default();
+                let result = inputs.install(
+                    &plan,
+                    &mut record,
+                    &job,
+                    &standing_in(&NoFaults, &answering),
+                );
+                let calls = progress.calls.into_inner().unwrap();
+                let Some(phase) = calls.cancelled_in else {
+                    // The install told fewer calls than that, so nothing asked it to stop.
+                    assert_eq!(calls.count, at - 1, "{context}");
+                    result.unwrap();
+                    break;
+                };
+                if phase == CHECK_DISC.0 || phase == PREPARE.0 {
+                    // Before the install made anything: nothing to take back, nothing recorded.
+                    let failure = result.unwrap_err();
+                    assert!(
+                        matches!(failure.error, InstallError::Cancelled),
+                        "{context}: {failure:?}"
+                    );
+                    assert_eq!(failure.changes, Changes::None, "{context}");
+                    assert!(record.calls.is_empty(), "{context}: {:?}", record.calls);
+                    if phase == CHECK_DISC.0 {
+                        // Asked before the folder was judged again, whose probe makes a file in
+                        // it and removes it: nothing at all was touched.
+                        assert_eq!(snapshot(top.path()).unwrap(), untouched, "{context}");
+                    }
+                    as_it_was.holds(&context);
+                    reached.insert(PREPARE.0);
+                } else if phase == PUBLISH.0 {
+                    // The publish never looks at the cancel.
+                    let installed = result.unwrap();
+                    assert!(installed.notices.is_empty(), "{context}");
+                    assert_eq!(tree(&destination), whole, "{context}");
+                    reached.insert(PUBLISH.0);
+                } else {
+                    // Once the install has made something, until the publish: all of it taken
+                    // back, and the record forgets the folder.
+                    let failure = result.unwrap_err();
+                    assert!(
+                        matches!(failure.error, InstallError::Cancelled),
+                        "{context}: {failure:?}"
+                    );
+                    assert_eq!(failure.changes, Changes::RolledBack, "{context}");
+                    as_it_was.holds(&context);
+                    assert_eq!(
+                        record.calls,
+                        heard_of(&destination, &["pending", "forget"]),
+                        "{context}"
+                    );
+                    reached.insert(GET_RUNTIME.0);
+                }
+            }
+            assert_eq!(
+                reached,
+                BTreeSet::from([PREPARE.0, GET_RUNTIME.0, PUBLISH.0]),
+                "{holds_a_file}"
+            );
+        }
     }
 }

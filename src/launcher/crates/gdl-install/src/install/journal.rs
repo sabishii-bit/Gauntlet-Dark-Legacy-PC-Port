@@ -116,6 +116,16 @@ impl<'a> JournalFile<'a> {
         &self.path
     }
 
+    /// How far the install has come, as the journal records it.
+    pub(crate) fn phase(&self) -> InstallPhase {
+        self.journal.phase
+    }
+
+    /// Every root the publish puts in place, in byte order: none before the publish.
+    pub(crate) fn roots(&self) -> &[String] {
+        &self.journal.roots
+    }
+
     /// Moves the journal to publishing, with every root of `roots` the publish puts in place, in
     /// byte order, and the receipt it writes once they all are.
     pub(crate) fn publishing(
@@ -129,6 +139,14 @@ impl<'a> JournalFile<'a> {
         self.journal.roots = roots;
         self.journal.published.clear();
         self.journal.receipt = Some(receipt.clone());
+        self.write()
+    }
+
+    /// Moves the journal to rolling back: what the publish put in place goes back into the
+    /// staging, which then goes, before the receipt is written. The roots and the receipt stay, so
+    /// that whoever finishes the rollback knows every root to look for.
+    pub(crate) fn rolling_back(&mut self) -> Result<(), FilesError> {
+        self.journal.phase = InstallPhase::RollingBack;
         self.write()
     }
 
@@ -166,8 +184,9 @@ impl Journal for JournalFile<'_> {
     }
 }
 
-/// Removes the file at `path`, counting one already gone as removed.
-fn remove_if_there(path: &Path) -> Result<(), FilesError> {
+/// Removes the file at `path`, counting one already gone as removed. A file a scanner holds for a
+/// moment is waited for.
+pub(super) fn remove_if_there(path: &Path) -> Result<(), FilesError> {
     match retry_locked(|| fs::remove_file(path)) {
         Ok(()) => Ok(()),
         Err(error) if is_absent(&error) => Ok(()),
@@ -313,6 +332,30 @@ mod tests {
                 .is_empty()
         );
         file.remove().unwrap();
+    }
+
+    #[test]
+    fn a_rollback_keeps_the_roots_and_the_receipt() {
+        let folder = tempfile::tempdir().unwrap();
+        let journal = InstallJournal::staging(2, "install-AbC123xy");
+        let mut file = JournalFile::begin(folder.path(), journal, &NoFaults).unwrap();
+        assert_eq!(file.phase(), InstallPhase::Staging);
+        assert!(file.roots().is_empty());
+        let receipt = receipt();
+        file.publishing(&[root("saves"), root("Gauntlet")], &receipt)
+            .unwrap();
+        file.published(&root("Gauntlet")).unwrap();
+        assert_eq!(file.phase(), InstallPhase::Publishing);
+        assert_eq!(file.roots(), ["Gauntlet", "saves"]);
+
+        file.rolling_back().unwrap();
+        assert_eq!(file.phase(), InstallPhase::RollingBack);
+        let written = read(folder.path());
+        assert_eq!(written["phase"], "rollingBack");
+        assert_eq!(written["madeFolders"], 2);
+        assert_eq!(written["roots"], json!(["Gauntlet", "saves"]));
+        assert_eq!(written["published"], json!(["Gauntlet"]));
+        assert_eq!(written["receipt"], serde_json::to_value(&receipt).unwrap());
     }
 
     #[test]

@@ -2,12 +2,13 @@
 //! the launcher's state folder, locked, its staging made and its journal begun; the runtime, the
 //! disc's trees and the launcher's copy staged, each file synced and closed before the next is
 //! made; the staged game probed; then every root put in place and the receipt written, the point
-//! past which the installation stands and nothing is taken back.
+//! past which the installation stands and nothing is taken back. A failure or a cancel before it
+//! takes back what the install made, as far as it got.
 
 use std::collections::BTreeMap;
 use std::fs::{self, File};
 use std::io::{self, Read, Seek};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 #[cfg(windows)]
 use gdl_files::read_bounded;
@@ -23,11 +24,12 @@ use serde_json::Map;
 
 use super::disc_files::{CopiedFile, DISC_FILES, DiscFiles};
 use super::journal::{InstallJournal, JournalFile};
+use super::rollback::{Begun, Rollback, clean_up, remove_made_folders, remove_unlocked_state};
 use super::settings::{FaultPoint, InstallSettings};
 use super::{
     CHECK_DISC, CHECK_GAME, CONFIG_FOLDER, COPY_DISC_FILES, COPY_LAUNCHER, Changes, FolderRecord,
-    GET_RUNTIME, INSTALL_STAGING_PREFIX, InstallError, InstallNotice, InstallPlan, Installed,
-    PREPARE, PUBLISH, SAVES_FOLDER, install_name,
+    GET_RUNTIME, INSTALL_STAGING_PREFIX, InstallError, InstallFailure, InstallNotice, InstallPlan,
+    Installed, PREPARE, PUBLISH, SAVES_FOLDER, install_name,
 };
 #[cfg(windows)]
 use super::{PERSONALISE, icon_entry};
@@ -53,17 +55,6 @@ const PROGRAM_MODE: u32 = 0o755;
 /// The mode of every other file of the runtime.
 #[cfg(unix)]
 const FILE_MODE: u32 = 0o644;
-
-/// What an install has made of its own so far, which tells what a failure leaves.
-#[derive(Clone, Copy, Debug, Default)]
-struct Footprint {
-    /// Whether the record of installations was told of the destination.
-    recorded: bool,
-    /// How many folders the install made: the destination and the missing folders above it.
-    made_folders: u32,
-    /// Whether the install made its state folder.
-    made_state: bool,
-}
 
 /// How far an install's work has come, in bytes: the sections read, then the runtime, the disc
 /// and the launcher's copy written.
@@ -111,11 +102,24 @@ struct Prepared<'a> {
     /// The installation's folder.
     folder: InstallFolder,
     /// Its lock, held until the job ends.
-    _lock: InstallLock,
+    lock: InstallLock,
     /// Where the install makes what it will publish, kept for the journal that names it.
     staging: Staging,
     /// The install's journal.
     journal: JournalFile<'a>,
+}
+
+/// What the install has staged, ready to put in place: what it keeps of the runtime, the receipt
+/// it will write, what went wrong without stopping it, and how far its progress has come.
+struct Staged {
+    /// What the install kept of the runtime.
+    runtime: RuntimeRecord,
+    /// The receipt the publish writes.
+    receipt: Receipt,
+    /// What went wrong without stopping the install.
+    notices: Vec<InstallNotice>,
+    /// How far the install's progress has come.
+    tally: Tally,
 }
 
 /// A fresh install of a plan, as it runs.
@@ -126,8 +130,8 @@ pub(super) struct Install<'a> {
     job: Job<'a>,
     /// What the install asks of the world beyond its folder.
     settings: &'a InstallSettings<'a>,
-    /// What it has made so far.
-    footprint: Footprint,
+    /// How many folders the install made: the destination and the missing folders above it.
+    made_folders: u32,
 }
 
 impl<'a> Install<'a> {
@@ -141,36 +145,48 @@ impl<'a> Install<'a> {
             plan,
             job,
             settings,
-            footprint: Footprint::default(),
+            made_folders: 0,
         }
-    }
-
-    /// What a failure of the install leaves: nothing, when it failed before the record of
-    /// installations was told of the folder, or when nothing was made since, in which case the
-    /// record forgets the folder again, a failure to forget it passed over; otherwise what it
-    /// made, kept for the next start.
-    pub(super) fn left(&self, record: &mut dyn FolderRecord) -> Changes {
-        let footprint = self.footprint;
-        if !footprint.recorded {
-            return Changes::None;
-        }
-        if footprint.made_folders == 0 && !footprint.made_state {
-            let _ = record.forget(&self.plan.destination);
-            return Changes::None;
-        }
-        Changes::Kept
     }
 
     /// Runs the install, phase by phase, telling each phase first and then looking at the cancel,
-    /// but for the publish, which is never cancelled.
+    /// but for the publish, which is never cancelled. A failure or a cancel before the receipt is
+    /// written takes back what the install made, and says what it left.
     pub(super) fn run<R: Read + Seek>(
         &mut self,
         image: &mut GameCubeImage,
         launcher: &mut Sections<R>,
         record: &mut dyn FolderRecord,
-    ) -> Result<Installed, InstallError> {
-        self.check_disc()?;
+    ) -> Result<Installed, InstallFailure> {
+        self.check_disc().map_err(nothing_made)?;
         let prepared = self.prepare(record)?;
+        match self.stage(image, launcher, &prepared) {
+            Ok(staged) => self.publish(prepared, staged, record),
+            Err(error) => {
+                let Prepared {
+                    lock,
+                    staging,
+                    journal,
+                    ..
+                } = prepared;
+                let begun = Begun {
+                    staging,
+                    journal: Some(journal),
+                };
+                Err(self.roll_back(error, self.rollback(lock, Some(begun)), record))
+            }
+        }
+    }
+
+    /// Stages everything the install puts in place: the runtime, the disc's trees, on Windows the
+    /// disc's icon in the game's executable, and the launcher's copy; then probes the staged game
+    /// and builds the receipt.
+    fn stage<R: Read + Seek>(
+        &self,
+        image: &mut GameCubeImage,
+        launcher: &mut Sections<R>,
+        prepared: &Prepared<'_>,
+    ) -> Result<Staged, InstallError> {
         let sections: u64 = launcher.sections().iter().map(|section| section.size).sum();
         let mut tally = Tally {
             done: 0,
@@ -180,7 +196,7 @@ impl<'a> Install<'a> {
                 .saturating_add(launcher.file_len()),
         };
         let runtime = self.get_runtime(launcher, &prepared.staging, sections, &mut tally)?;
-        self.copy_disc_files(image, &prepared, &mut tally)?;
+        self.copy_disc_files(image, prepared, &mut tally)?;
         #[cfg(windows)]
         let icon = self.personalise(image, &prepared.staging, &runtime)?;
         // Only Windows shows a program by an icon it carries.
@@ -191,7 +207,86 @@ impl<'a> Install<'a> {
         let mut notices = Vec::new();
         self.check_game(&prepared.staging, &runtime, &mut notices)?;
         let receipt = receipt_of(image, &runtime, launcher_sha256, icon);
-        self.publish(prepared, receipt, &runtime, record, notices, tally)
+        Ok(Staged {
+            runtime,
+            receipt,
+            notices,
+            tally,
+        })
+    }
+
+    /// What a rollback takes back of the install, under its `lock`, with what it `begun` of its
+    /// staging and journal.
+    fn rollback(&self, lock: InstallLock, begun: Option<Begun<'a>>) -> Rollback<'a> {
+        let plan = self.plan;
+        Rollback {
+            folder: &plan.destination,
+            made_folders: self.made_folders,
+            lock,
+            begun,
+            faults: self.settings.faults,
+        }
+    }
+
+    /// The install's failure for `error` once `rollback` has taken back what the install made:
+    /// all of it, or some, which the next start takes back, the journal kept with it.
+    fn roll_back(
+        &self,
+        error: InstallError,
+        rollback: Rollback<'_>,
+        record: &mut dyn FolderRecord,
+    ) -> InstallFailure {
+        let changes = match rollback.run(record) {
+            Ok(taken) if taken.is_whole() => Changes::RolledBack,
+            // What the rollback left, and its journal while it names anything, is for the next
+            // start: the failure reported is the install's own.
+            Ok(_) | Err(_) => Changes::Kept,
+        };
+        InstallFailure { error, changes }
+    }
+
+    /// The install's failure for `error` before its state folder was made: the folders it made
+    /// are removed while they hold nothing, and the record of installations forgets the folder, a
+    /// failure to forget passed over. Nothing is left of its own, and nothing was made when it
+    /// made no folder.
+    fn unmade(&self, error: InstallError, record: &mut dyn FolderRecord) -> InstallFailure {
+        let destination = &self.plan.destination;
+        remove_made_folders(destination, self.made_folders);
+        let _ = record.forget(destination);
+        let changes = if self.made_folders == 0 {
+            Changes::None
+        } else {
+            Changes::RolledBack
+        };
+        InstallFailure { error, changes }
+    }
+
+    /// The install's failure for `error` once its state folder `state` was made but before its
+    /// lock was held: the state folder goes while it holds nothing, then as [`unmade`] says. A
+    /// lock file in it, another job's or one this job made but holds no lock on, is no job's to
+    /// remove without its lock, so everything stays for the next start, whose recovery gives the
+    /// state folder up under the lock, and the record keeps the folder.
+    ///
+    /// [`unmade`]: Install::unmade
+    fn unlocked(
+        &self,
+        error: InstallError,
+        state: &Path,
+        record: &mut dyn FolderRecord,
+    ) -> InstallFailure {
+        if !remove_unlocked_state(state) {
+            return InstallFailure {
+                error,
+                changes: Changes::Kept,
+            };
+        }
+        let destination = &self.plan.destination;
+        remove_made_folders(destination, self.made_folders);
+        let _ = record.forget(destination);
+        InstallFailure {
+            error,
+            changes: Changes::RolledBack,
+        }
     }
 
     /// Tells `phase` and looks at the cancel.
@@ -268,59 +363,105 @@ impl<'a> Install<'a> {
     /// job may have made, takes the installation's lock, judges the folder again under the lock,
     /// then makes the journal folder and the staging, and writes the journal, which names the
     /// staging, kept from then on for the journal's sake.
-    fn prepare(&mut self, record: &mut dyn FolderRecord) -> Result<Prepared<'a>, InstallError> {
-        self.begin(PREPARE)?;
+    ///
+    /// A failure takes back what was made by then: before the state folder, the folders made;
+    /// before the lock, the state folder while it holds nothing, then those folders; under the
+    /// lock, as a rollback takes an install back.
+    fn prepare(&mut self, record: &mut dyn FolderRecord) -> Result<Prepared<'a>, InstallFailure> {
+        self.begin(PREPARE).map_err(nothing_made)?;
         let plan = self.plan;
         let destination = &plan.destination;
         record
             .pending(destination)
-            .map_err(|source| InstallError::Record { source })?;
-        self.footprint.recorded = true;
-        self.make_destination()?;
-        let state = destination.join(STATE_DIR);
-        match fs::create_dir(&state) {
-            Ok(()) => self.footprint.made_state = true,
-            // Another launcher installs into the folder, or did before this job began.
-            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
-                return Err(InstallError::Blocked(Blocker::Collision {
-                    names: vec![STATE_DIR.to_owned()],
-                }));
-            }
-            Err(error) if refuses_writes(&error) => {
-                return Err(InstallError::Blocked(Blocker::NotWritable {
-                    path: destination.clone(),
-                }));
-            }
-            Err(source) => {
-                return Err(InstallError::Io {
-                    path: state,
-                    source,
-                });
-            }
+            .map_err(|source| nothing_made(InstallError::Record { source }))?;
+        let state = match self.make_state() {
+            Ok(state) => state,
+            Err(error) => return Err(self.unmade(error, record)),
+        };
+        let (folder, lock) = match self.lock(&state) {
+            Ok(locked) => locked,
+            Err(error) => return Err(self.unlocked(error, &state, record)),
+        };
+        if let Err(error) = self
+            .pass(FaultPoint::Prepare, &state.join(LOCK_FILE))
+            .and_then(|()| self.judge_again())
+        {
+            return Err(self.roll_back(error, self.rollback(lock, None), record));
         }
-        self.pass(FaultPoint::Prepare, &state)?;
-        let folder = InstallFolder::at(destination).map_err(folder_error)?;
-        let lock = folder.lock().map_err(|error| self.lock_error(error))?;
-        self.pass(FaultPoint::Prepare, &state.join(LOCK_FILE))?;
-        self.judge_again()?;
         let journals = state.join(JOURNAL_DIR);
-        fs::create_dir(&journals).map_err(|source| InstallError::Io {
-            path: journals.clone(),
-            source,
-        })?;
-        let mut staging = Staging::create_in(&state, INSTALL_STAGING_PREFIX)
-            .map_err(|error| self.files_error(error))?;
-        let journal = InstallJournal::staging(self.footprint.made_folders, staging.name());
-        let journal = JournalFile::begin(&journals, journal, self.settings.faults)
-            .map_err(|error| self.files_error(error))?;
+        let made = fs::create_dir(&journals)
+            .map_err(|source| InstallError::Io {
+                path: journals.clone(),
+                source,
+            })
+            .and_then(|()| {
+                Staging::create_in(&state, INSTALL_STAGING_PREFIX)
+                    .map_err(|error| self.files_error(error))
+            });
+        let mut staging = match made {
+            Ok(staging) => staging,
+            Err(error) => return Err(self.roll_back(error, self.rollback(lock, None), record)),
+        };
+        let journal = InstallJournal::staging(self.made_folders, staging.name());
+        let journal = match JournalFile::begin(&journals, journal, self.settings.faults) {
+            Ok(journal) => journal,
+            Err(error) => {
+                let begun = Begun {
+                    staging,
+                    journal: None,
+                };
+                let rollback = self.rollback(lock, Some(begun));
+                return Err(self.roll_back(self.files_error(error), rollback, record));
+            }
+        };
         staging.keep();
-        self.pass(FaultPoint::Prepare, journal.path())?;
+        if let Err(error) = self.pass(FaultPoint::Prepare, journal.path()) {
+            let begun = Begun {
+                staging,
+                journal: Some(journal),
+            };
+            return Err(self.roll_back(error, self.rollback(lock, Some(begun)), record));
+        }
         Ok(Prepared {
             folder,
-            _lock: lock,
+            lock,
             staging,
             journal,
         })
+    }
+
+    /// Makes the destination and the missing folders above it, then the launcher's state folder in
+    /// it, and gives the state folder. A state folder there already is another launcher's, which
+    /// installs into the folder or did before this job began: a collision.
+    fn make_state(&mut self) -> Result<PathBuf, InstallError> {
+        self.make_destination()?;
+        let destination = &self.plan.destination;
+        let state = destination.join(STATE_DIR);
+        match fs::create_dir(&state) {
+            Ok(()) => Ok(state),
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+                Err(InstallError::Blocked(Blocker::Collision {
+                    names: vec![STATE_DIR.to_owned()],
+                }))
+            }
+            Err(error) if refuses_writes(&error) => {
+                Err(InstallError::Blocked(Blocker::NotWritable {
+                    path: destination.clone(),
+                }))
+            }
+            Err(source) => Err(InstallError::Io {
+                path: state,
+                source,
+            }),
+        }
+    }
+
+    /// Passes the state folder `state` just made, then takes the installation's lock.
+    fn lock(&self, state: &Path) -> Result<(InstallFolder, InstallLock), InstallError> {
+        self.pass(FaultPoint::Prepare, state)?;
+        let folder = InstallFolder::at(&self.plan.destination).map_err(folder_error)?;
+        let lock = folder.lock().map_err(|error| self.lock_error(error))?;
+        Ok((folder, lock))
     }
 
     /// Makes the destination and each missing folder above it, outermost first, counting those
@@ -343,9 +484,9 @@ impl<'a> Install<'a> {
         }
         for folder in missing.into_iter().rev() {
             match fs::create_dir(folder) {
-                Ok(()) => self.footprint.made_folders += 1,
+                Ok(()) => self.made_folders += 1,
                 Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
-                    self.footprint.made_folders = 0;
+                    self.made_folders = 0;
                 }
                 Err(error) if refuses_writes(&error) => {
                     return Err(InstallError::Blocked(Blocker::NotWritable {
@@ -617,54 +758,45 @@ impl<'a> Install<'a> {
         self.pass(FaultPoint::Stage, &executable)
     }
 
-    /// Puts every root in place and writes the receipt, never cancelled. The staged tree is synced
-    /// first and the journal moved to publishing with the roots and the receipt, so that the moves
-    /// can be finished from it; each root is then recorded as it moves. The receipt on disk is the
-    /// commit point: a failure before it is the install's, and from it on the installation stands,
-    /// so that a failure to clean up is only a notice, which the next start finishes. The record
-    /// of installations is then told, and the shell, and the progress reaches its total.
+    /// Puts every root in place and writes the receipt, never cancelled. The receipt on disk is the
+    /// commit point: a failure before it takes the install back, and from it on the installation
+    /// stands, so that a failure to clean up is only a notice, which the next start finishes. The
+    /// record of installations is then told, and the shell, and the progress reaches its total.
     fn publish(
         &self,
         prepared: Prepared<'a>,
-        receipt: Receipt,
-        runtime: &RuntimeRecord,
+        staged: Staged,
         record: &mut dyn FolderRecord,
-        mut notices: Vec<InstallNotice>,
-        tally: Tally,
-    ) -> Result<Installed, InstallError> {
+    ) -> Result<Installed, InstallFailure> {
         self.job.progress.phase(PUBLISH);
         let plan = self.plan;
         let Prepared {
             folder,
-            _lock,
+            lock,
             staging,
             mut journal,
         } = prepared;
-        staging
-            .sync_folders()
-            .map_err(|error| self.files_error(error))?;
-        journal
-            .publishing(&plan.roots, &receipt)
-            .map_err(|error| self.files_error(error))?;
-        self.pass(FaultPoint::Publish, journal.path())?;
-        staging
-            .publish_new(&plan.roots, &plan.destination, &mut journal)
-            .map_err(|error| self.files_error(error))?;
-        self.pass(FaultPoint::Publish, journal.path())?;
-        let written = receipt.write(&folder);
-        // Whether the receipt is in place is read from the disc: a write can fail after its
-        // rename, in putting the rename on disk, with the receipt there.
-        let receipt_path = folder.state_dir().join(RECEIPT_FILE);
-        if !fs::symlink_metadata(&receipt_path).is_ok_and(|metadata| metadata.is_file()) {
-            return Err(match written {
-                Err(error) => self.files_error(error),
-                Ok(()) => InstallError::Io {
-                    path: receipt_path,
-                    source: io::Error::from(io::ErrorKind::NotFound),
-                },
-            });
+        let Staged {
+            runtime,
+            receipt,
+            mut notices,
+            tally,
+        } = staged;
+        if let Err(error) = self.put_in_place(&folder, &staging, &mut journal, &receipt) {
+            let begun = Begun {
+                staging,
+                journal: Some(journal),
+            };
+            return Err(self.roll_back(error, self.rollback(lock, Some(begun)), record));
         }
-        if let Err(error) = self.clean_up(staging, &mut journal) {
+        let cleaned = self
+            .pass(FaultPoint::Publish, journal.path())
+            .and_then(|()| journal.committed().map_err(|error| self.files_error(error)))
+            .and_then(|()| {
+                clean_up(staging, &journal, self.settings.faults)
+                    .map_err(|error| self.files_error(error))
+            });
+        if let Err(error) = cleaned {
             notices.push(InstallNotice::CleanupLeft {
                 detail: error.to_string().into(),
             });
@@ -676,6 +808,7 @@ impl<'a> Install<'a> {
         }
         (self.settings.notify_shell)(&plan.destination.join(&runtime.executable));
         self.job.progress.advance(tally.total, tally.total, None);
+        drop(lock);
         Ok(Installed {
             folder,
             receipt,
@@ -683,28 +816,50 @@ impl<'a> Install<'a> {
         })
     }
 
-    /// Cleans up once the receipt is in place: the journal moved to committed, then the staging
-    /// removed, then the journal, last, so that whichever step a crash cuts short, the journal is
-    /// left for the next start to finish from, or nothing is. A staging or a journal already gone
-    /// counts as removed.
-    fn clean_up(
+    /// Puts every root of the staging in place and writes the receipt: the staged tree synced
+    /// first and the journal moved to publishing with the roots and the receipt, so that the moves
+    /// can be finished from it, each root recorded as it moves, then the receipt written. Whether
+    /// the receipt is in place is read from the disc: a write can fail after its rename, in putting
+    /// the rename on disk, with the receipt there, which is the commit point passed all the same.
+    fn put_in_place(
         &self,
-        staging: Staging,
+        folder: &InstallFolder,
+        staging: &Staging,
         journal: &mut JournalFile<'_>,
+        receipt: &Receipt,
     ) -> Result<(), InstallError> {
-        self.pass(FaultPoint::Publish, journal.path())?;
-        journal
-            .committed()
+        let plan = self.plan;
+        staging
+            .sync_folders()
             .map_err(|error| self.files_error(error))?;
-        self.pass(FaultPoint::Cleanup, staging.path())?;
-        let removed = staging.path().to_path_buf();
-        match staging.remove() {
-            Ok(()) => {}
-            Err(FilesError::Io { source, .. }) if is_absent(&source) => {}
-            Err(error) => return Err(self.files_error(error)),
+        journal
+            .publishing(&plan.roots, receipt)
+            .map_err(|error| self.files_error(error))?;
+        self.pass(FaultPoint::Publish, journal.path())?;
+        staging
+            .publish_new(&plan.roots, &plan.destination, journal)
+            .map_err(|error| self.files_error(error))?;
+        self.pass(FaultPoint::Publish, journal.path())?;
+        let written = receipt.write(folder);
+        let receipt_path = folder.state_dir().join(RECEIPT_FILE);
+        if fs::symlink_metadata(&receipt_path).is_ok_and(|metadata| metadata.is_file()) {
+            return Ok(());
         }
-        self.pass(FaultPoint::Cleanup, &removed)?;
-        journal.remove().map_err(|error| self.files_error(error))
+        Err(match written {
+            Err(error) => self.files_error(error),
+            Ok(()) => InstallError::Io {
+                path: receipt_path,
+                source: io::Error::from(io::ErrorKind::NotFound),
+            },
+        })
+    }
+}
+
+/// The install's failure for `error` before it made anything in the folder.
+fn nothing_made(error: InstallError) -> InstallFailure {
+    InstallFailure {
+        error,
+        changes: Changes::None,
     }
 }
 
