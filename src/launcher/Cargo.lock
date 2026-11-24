@@ -1361,9 +1361,12 @@ dependencies = [
 name = "gdl-launcher-headless"
 version = "0.0.0"
 dependencies = [
+ "gdl-files",
  "gdl-fixtures",
  "gdl-install",
+ "gdl-media",
  "gdl-native",
+ "gdl-release",
  "gdl-session",
  "libc",
  "semver",

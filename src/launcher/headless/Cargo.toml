@@ -19,7 +19,10 @@ semver.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]
+gdl-files.workspace = true
 gdl-fixtures.workspace = true
 gdl-install.workspace = true
+gdl-media.workspace = true
+gdl-release.workspace = true
 serde_json.workspace = true
 tempfile.workspace = true
