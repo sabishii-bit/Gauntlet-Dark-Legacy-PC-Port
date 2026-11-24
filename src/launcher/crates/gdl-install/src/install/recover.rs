@@ -754,7 +754,7 @@ mod tests {
     use gdl_fixtures::{
         folder_names, link_folder, pretty_json, sha256_hex, snapshot, tree_entries,
     };
-    use gdl_release::{Platform, Version};
+    use gdl_release::Version;
     use serde_json::{Map, Value, json};
     use tempfile::TempDir;
 
@@ -771,6 +771,7 @@ mod tests {
         AsItWas, Heard, USER_BYTES, USER_FILE, answering, destination_in, heard_of, standing_in,
     };
     use crate::receipt::{InstalledLauncher, Receipt, installed_launcher_name};
+    use crate::test_platform::this_platform;
 
     /// The launcher's version, which the tests recover as and the hand-written state carries.
     const VERSION: &str = "1.0.0-beta";
@@ -796,11 +797,6 @@ mod tests {
 
     /// The most bytes an error may take, so that returning one by value stays cheap.
     const MOST_ERROR_BYTES: usize = 128;
-
-    /// The platform this test program was built for.
-    fn this_platform() -> Platform {
-        Platform::of_this_build().expect("a release is built for the system the tests run on")
-    }
 
     /// The receipt the hand-written journals of a publish carry, for this platform.
     fn receipt() -> Receipt {

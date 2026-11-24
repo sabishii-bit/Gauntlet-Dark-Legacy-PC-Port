@@ -19,6 +19,8 @@ mod platform;
 mod probe;
 mod receipt;
 mod sections;
+#[cfg(test)]
+mod test_platform;
 
 pub use awake::{KeepAwake, keep_awake};
 pub use compat::{

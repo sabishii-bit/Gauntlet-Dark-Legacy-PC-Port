@@ -673,6 +673,7 @@ mod tests {
     use crate::probe::{GameStartError, VersionProbe, probe_game_version_with};
     use crate::receipt::installed_launcher_name;
     use crate::sections::{RUNTIME_SECTION, Sections, SectionsError, WINDOW_SECTION};
+    use crate::test_platform::{other_platform, this_platform};
 
     /// The version the tests' launcher and runtimes are of.
     const VERSION: &str = "1.0.0-beta";
@@ -725,19 +726,6 @@ mod tests {
         "saves",
         "shaders",
     ];
-
-    /// The platform this test program was built for, whose runtime it installs.
-    fn this_platform() -> Platform {
-        Platform::of_this_build().expect("a release is built for the system the tests run on")
-    }
-
-    /// The platform a release is built for that the tests do not run on.
-    fn other_platform() -> Platform {
-        Platform::ALL
-            .into_iter()
-            .find(|&platform| platform != this_platform())
-            .expect("a release is built for two platforms")
-    }
 
     /// The runtime of the installer's own tests, for `platform`, of the launcher's version.
     fn standard_runtime(platform: Platform) -> RuntimeFiles {

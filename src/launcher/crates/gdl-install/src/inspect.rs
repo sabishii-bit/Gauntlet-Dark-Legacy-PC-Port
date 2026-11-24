@@ -582,6 +582,7 @@ mod tests {
     use crate::folder::{InstallFolder, JOURNAL_DIR, LOCK_FILE, RECEIPT_FILE, STATE_DIR};
     use crate::payload::BUILD_INFO;
     use crate::receipt::GUNE5D;
+    use crate::test_platform::this_platform;
 
     /// Every state, by the name the launcher's reports give it.
     const STATES: [(FolderState, &str); 14] = [
@@ -614,11 +615,6 @@ mod tests {
     /// The version the tests run the launcher as: the first launcher's.
     fn running() -> Version {
         version(MIN_LAUNCHER)
-    }
-
-    /// The platform this test program was built for, whose installations it reads.
-    fn this_platform() -> Platform {
-        Platform::of_this_build().expect("a release is built for the system the tests run on")
     }
 
     /// Inspects the folder at `root` as the first launcher does.

@@ -471,6 +471,7 @@ mod tests {
     use crate::payload::{
         BUILD_INFO, BuildInfo, MAX_BUILD_INFO_LEN, MAX_VERSION_FILE_LEN, VERSION_FILE,
     };
+    use crate::test_platform::{other_platform, this_platform};
 
     /// The most bytes an error may take, so that returning one by value stays cheap.
     const MOST_ERROR_BYTES: usize = 128;
@@ -485,20 +486,6 @@ mod tests {
     /// The version the tests run the launcher as: the first launcher's.
     fn running() -> Version {
         version(MIN_LAUNCHER)
-    }
-
-    /// The platform this test program was built for, whose installations it reads.
-    fn this_platform() -> Platform {
-        Platform::of_this_build().expect("a release is built for the system the tests run on")
-    }
-
-    /// The platform a release is built for that this test program was not built for.
-    fn other_platform() -> Platform {
-        let this = this_platform();
-        Platform::ALL
-            .into_iter()
-            .find(|&platform| platform != this)
-            .expect("releases are built for two platforms")
     }
 
     /// A digest of the right form that is no file's: every byte nought.

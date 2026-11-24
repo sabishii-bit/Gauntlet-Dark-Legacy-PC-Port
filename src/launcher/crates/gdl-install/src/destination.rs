@@ -890,7 +890,7 @@ mod tests {
         symlink_folder_where_allowed, tiny_elf, tiny_pe,
     };
     use gdl_media::GameCubeImage;
-    use gdl_release::{Platform, Version};
+    use gdl_release::Version;
 
     use super::{
         Blocker, CLOUD_ATTRIBUTES, DestinationError, DestinationReport, FIRST_UTF8_BUILD,
@@ -906,6 +906,7 @@ mod tests {
         recover_install,
     };
     use crate::sections::{RUNTIME_SECTION, Sections};
+    use crate::test_platform::this_platform;
 
     /// The most bytes an error may take, so that returning one by value stays cheap.
     const MOST_ERROR_BYTES: usize = 128;
@@ -969,11 +970,6 @@ mod tests {
         assert_eq!(report.root_utf16, None, "{report:?}");
         assert!(report.warnings.is_empty(), "{report:?}");
         assert!(report.components.is_empty(), "{report:?}");
-    }
-
-    /// The platform this test program was built for, whose installations it judges.
-    fn this_platform() -> Platform {
-        Platform::of_this_build().expect("a release is built for the system the tests run on")
     }
 
     /// `name` with its letters in alternating case, upper first, so that it is spelled in a case
