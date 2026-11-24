@@ -32,10 +32,11 @@ const SPACE_RAN_OUT: &str = "space.ranOut";
 /// measured before anything is written.
 const SPACE_INSUFFICIENT: &str = "space.insufficient";
 
-/// A link or a junction stands where the launcher reads or writes: the installation's folder, a
-/// folder above it, or an entry in it that the launcher reads or changes; the folder chosen to
-/// install into, or a folder above it; or the folder chosen for an expansion's tree, or a folder
-/// above it.
+/// A link or a junction stands where the launcher looks before it changes anything: the
+/// installation's folder, a folder above it, or what the launcher reads of the installation's own,
+/// its state folder, the lock file, the journal folder and the journals, the receipt and the files
+/// the receipt pins; the folder chosen to install into, or a folder above it; or the folder chosen
+/// for an expansion's tree, or a folder above it.
 const FOLDER_LINKS: &str = "folder.links";
 
 /// A folder the launcher is to use is not one: nothing, or something other than a folder, is at
@@ -431,12 +432,13 @@ pub fn install(error: &InstallError) -> Report {
 /// What a failure to recover an unfinished install reports: always a problem, since a recovery is
 /// never cancelled, and whatever stopped it, its journal is left for the next start. The lock's
 /// refusal reports what [`lock`] gives it, `lock.busy` among it, a hold: the recovery can wait for
-/// the job that holds the lock; a link on the folder's path is `folder.links` however the recovery
-/// met it, as the lock refuses one. A later launcher's state is `state.newerLauncher`, a journal
-/// that cannot be read `journal.unreadable`, and a journal that does not match what the folder
-/// holds `recover.failed`. A file operation's failure reports what [`files`] gives it, and the
-/// system's refusal to look at the folder is `io.failed` whatever it answered, since a look writes
-/// nothing.
+/// the job that holds the lock; a link its look finds before it changes anything, on the folder's
+/// path, at the state folder, the journal folder, a journal or the receipt, is `folder.links`
+/// however the recovery met it, as the lock and an inspection report one there. A later
+/// launcher's state is `state.newerLauncher`, a journal that cannot be read `journal.unreadable`,
+/// and a journal that does not match what the folder holds `recover.failed`. A file operation's
+/// failure reports what [`files`] gives it, a link in the staging among it, and the system's
+/// refusal to look at the folder is `io.failed` whatever it answered, since a look writes nothing.
 pub fn recovery(error: &RecoveryError) -> Report {
     Report::Error(match error {
         RecoveryError::Lock(error) => lock(error),
@@ -524,10 +526,11 @@ pub fn dump_refusal(refusal: DumpRefusal) -> &'static str {
 
 /// The code a refusal of one of the launcher's file operations reports, such as making a staging
 /// and writing into it. A name taken where a staged root was to go is `folder.collision`, and a
-/// write that found the disk full or the quota spent is `space.ranOut`. A link is `io.failed`:
-/// one found among what the launcher made was put there by something else, and a job that checks
-/// a path the player or a developer chose reports a link on it as `folder.links` itself. Any other
-/// refusal is `io.failed`.
+/// write that found the disk full or the quota spent is `space.ranOut`. A link is `io.failed`: a
+/// file operation meets one in what a job makes or writes once it has looked, in its staging or
+/// at a file it writes, so something else put it there since; a link the job's own look finds, on
+/// a path the player or a developer chose or in what the launcher reads of an installation, is
+/// `folder.links`, which that job reports itself. Any other refusal is `io.failed`.
 pub fn files(error: &FilesError) -> &'static str {
     match error {
         FilesError::Io { source, .. } => written(source),
@@ -2223,6 +2226,40 @@ mod tests {
             "{error:?}"
         );
         assert_eq!(recovery(&error), Report::Error("folder.links"));
+        // A link at the state folder, at its journal folder or at the install's journal, each to a
+        // folder that holds what was there, reports as an inspection of the folder reports it. A
+        // folder holding the journal stands in for the journal, so that a junction can lead there.
+        let running = Version::parse(VERSION).unwrap();
+        for at in [STATE_DIR, JOURNAL_DIR, INSTALL_JOURNAL] {
+            let dir = tempfile::tempdir().unwrap();
+            let root = dir.path().join("game");
+            let journals = root.join(STATE_DIR).join(JOURNAL_DIR);
+            let moved = dir.path().join("moved");
+            // What is at the link's place, and where it is made instead.
+            let (link, target, made) = match at {
+                STATE_DIR => {
+                    let held = moved.join(STATE_DIR);
+                    (root.join(STATE_DIR), held.clone(), held.join(JOURNAL_DIR))
+                }
+                JOURNAL_DIR => {
+                    let held = moved.join(JOURNAL_DIR);
+                    (journals.clone(), held.clone(), held)
+                }
+                _ => (journals.join(INSTALL_JOURNAL), moved.clone(), moved),
+            };
+            std::fs::create_dir_all(&made).unwrap();
+            std::fs::write(made.join(INSTALL_JOURNAL), pretty_json(&staging)).unwrap();
+            std::fs::create_dir_all(link.parent().unwrap()).unwrap();
+            link_folder(&link, &target).unwrap();
+            let error = recovery_failure(&root);
+            assert!(
+                matches!(&error, RecoveryError::Lock(LockError::Links { path }) if *path == link),
+                "{at}: {error:?}"
+            );
+            assert_eq!(recovery(&error), Report::Error("folder.links"), "{at}");
+            let inspected = InstallFolder::inspect(&root, &running);
+            assert_eq!(super::state(inspected.state), Some("folder.links"), "{at}");
+        }
     }
 
     #[test]

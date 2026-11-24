@@ -70,9 +70,11 @@ pub enum RecoveryOutcome {
 /// is chosen from it elsewhere. Whatever stopped the recovery, the journal is left for the next.
 #[derive(Debug, thiserror::Error)]
 pub enum RecoveryError {
-    /// The installation's lock was not taken, or would be refused: a link on the folder's path is
-    /// [`LockError::Links`] before the lock is tried. [`LockError::Busy`], another job holding it,
-    /// is a reason to wait rather than a failure.
+    /// The installation's lock was not taken, or would be refused: a link that the recovery's look
+    /// finds before it changes anything, on the folder's path or in the state the lock guards, the
+    /// state folder, its journal folder, a journal or the receipt, is [`LockError::Links`] before
+    /// the lock is tried or under it, as the lock and an inspection refuse one there.
+    /// [`LockError::Busy`], another job holding it, is a reason to wait rather than a failure.
     #[error(transparent)]
     Lock(LockError),
     /// A later launcher's receipt or journal stands in the installation.
@@ -139,9 +141,12 @@ impl RecoveryError {
 /// never cancelled, and the system is kept out of idle sleep while it runs.
 ///
 /// Nothing is done, and the lock is not taken, when the folder holds no state folder, or holds
-/// nothing of a fresh install's to finish or remove. Otherwise, under the installation's lock, of
-/// which another job's hold is [`RecoveryError::Lock`]: a receipt or a journal a later launcher
-/// stamped refuses the recovery, as does a journal that cannot be read; then
+/// nothing of a fresh install's to finish or remove. A link on the folder's path, at its state
+/// folder or at its journal folder refuses the recovery before the lock is tried, as
+/// [`LockError::Links`]. Otherwise, under the installation's lock, of which another job's hold is
+/// [`RecoveryError::Lock`]: a link at a journal or at the receipt refuses the recovery as one, a
+/// receipt or a journal a later launcher stamped refuses it, as does a journal that cannot be
+/// read; then
 ///
 /// - without the install's journal, the install's stagings and its pending files go, and the list
 ///   of the disc's files when no receipt stands beside it; a state folder that then holds only
@@ -183,11 +188,7 @@ pub(crate) fn recover_install_with(
         Err(FolderError::Absent { .. } | FolderError::NotDirectory { .. }) => {
             return Ok(RecoveryOutcome::Nothing);
         }
-        // Refused as taking the lock refuses a link on the folder's path, so that the same link
-        // reports the same wherever it is met.
-        Err(FolderError::Links { path }) => {
-            return Err(RecoveryError::Lock(LockError::Links { path }));
-        }
+        Err(FolderError::Links { path }) => return Err(linked(path)),
         Err(FolderError::Io { path, source }) => return Err(RecoveryError::Io { path, source }),
     };
     let state = folder.state_dir();
@@ -287,14 +288,20 @@ impl Found {
     }
 }
 
+/// The refusal of a link at `path`, which the recovery's look found on the installation's folder's
+/// path or in the state the lock guards, before anything was changed: refused as taking the lock
+/// refuses a link on the folder's path or at the state folder, and as an inspection refuses one at
+/// any of them, so that the same link reports the same wherever it is met.
+fn linked(path: PathBuf) -> RecoveryError {
+    RecoveryError::Lock(LockError::Links { path })
+}
+
 /// The names the folder of the launcher's state at `path` holds; `None` when nothing, or no
 /// folder, is there. A link there is refused.
 fn listing(path: &Path) -> Result<Option<Vec<OsString>>, RecoveryError> {
     match fs::symlink_metadata(path) {
         Ok(metadata) if metadata.file_type().is_symlink() => {
-            return Err(RecoveryError::Files(FilesError::Link {
-                path: path.to_path_buf(),
-            }));
+            return Err(linked(path.to_path_buf()));
         }
         Ok(metadata) if !metadata.is_dir() => return Ok(None),
         Ok(_) => {}
@@ -319,9 +326,10 @@ fn listing(path: &Path) -> Result<Option<Vec<OsString>>, RecoveryError> {
 /// Judges the stamps of the journals in the state folder of the installation's folder `folder`
 /// that `found` lists, and of its receipt, for the launcher of version `running`, and reads the
 /// install's journal when there is one. A journal of a kind this launcher reads that cannot be
-/// read refuses the recovery first; then a journal of a kind it does not know, or one a later
-/// launcher stamped, and a receipt a later launcher stamped. An install journal that does not
-/// hold what an install's does, or names what an install never makes, cannot be read either.
+/// read refuses the recovery first, as does a link at one; then a journal of a kind it does not
+/// know, or one a later launcher stamped, and a link at the receipt or a receipt a later launcher
+/// stamped. An install journal that does not hold what an install's does, or names what an install
+/// never makes, cannot be read either.
 fn judge_stamps(
     folder: &InstallFolder,
     found: &Found,
@@ -368,7 +376,7 @@ fn judge_stamps(
     if let Some(refused) = refusal {
         return Err(refused);
     }
-    if later || later_receipt(&state, running) {
+    if later || later_receipt(&state, running)? {
         return Err(RecoveryError::NewerLauncher);
     }
     install
@@ -377,22 +385,27 @@ fn judge_stamps(
 }
 
 /// Whether the receipt in the state folder `state` carries a stamp that leaves the installation
-/// closed to the launcher of version `running`. A receipt that cannot be read, or carries no
-/// stamp, closes nothing: the recovery never reads it for anything else.
-fn later_receipt(state: &Path, running: &Version) -> bool {
+/// closed to the launcher of version `running`. A link at the receipt, or on its path, is refused
+/// as one. A receipt that cannot be read otherwise, or carries no stamp, closes nothing: the
+/// recovery never reads it for anything else.
+fn later_receipt(state: &Path, running: &Version) -> Result<bool, RecoveryError> {
     let receipt = state.join(RECEIPT_FILE);
-    let Ok(object) = read_json_bounded::<Map<String, Value>>(&receipt, MAX_RECEIPT_LEN) else {
-        return false;
+    let object = match read_json_bounded::<Map<String, Value>>(&receipt, MAX_RECEIPT_LEN) {
+        Ok(object) => object,
+        Err(FilesError::Link { path }) => return Err(linked(path)),
+        Err(_) => return Ok(false),
     };
-    stamp_of(&object).is_ok_and(|stamp| access(&stamp, RECEIPT_SCHEMA, running) == Access::ReadOnly)
+    Ok(stamp_of(&object)
+        .is_ok_and(|stamp| access(&stamp, RECEIPT_SCHEMA, running) == Access::ReadOnly))
 }
 
 /// What a journal at `path` that could not be read for `error` is to the recovery: a refusal, or
-/// `None` when the journal is gone. A link is refused as one, something there that is no regular
-/// file and what holds no stamped JSON object are journals this launcher cannot read, and a
-/// refusal to read a file that is there is the system's.
+/// `None` when the journal is gone. A link at the journal, or on its path, is refused as one;
+/// something there that is no regular file and what holds no stamped JSON object are journals
+/// this launcher cannot read, and a refusal to read a file that is there is the system's.
 fn unread(error: FilesError, path: &Path) -> Option<RecoveryError> {
     match error {
+        FilesError::Link { path } => Some(linked(path)),
         error @ (FilesError::TooLarge { .. } | FilesError::Json { .. }) => {
             Some(RecoveryError::unreadable(error))
         }
@@ -1680,6 +1693,67 @@ mod tests {
             "{error:?}"
         );
         assert_eq!(error.rule(), "links");
+    }
+
+    #[test]
+    fn a_link_in_the_state_is_refused_as_the_lock_refuses_one() {
+        // A link at the state folder or at its journal folder, to a folder of the test's own that
+        // holds what was there, is refused by the first look, before the lock is tried, so that
+        // another job's hold of the lock it leads to changes nothing.
+        for at in [STATE_DIR, JOURNAL_DIR] {
+            let left = Left::in_phase("staging", false);
+            let elsewhere = left.top.path().join("elsewhere");
+            fs::create_dir(&elsewhere).unwrap();
+            let (link, locked) = if at == STATE_DIR {
+                (left.state(), elsewhere.clone())
+            } else {
+                (left.journals(), left.root.clone())
+            };
+            let moved = elsewhere.join(at);
+            retry_locked(|| fs::rename(&link, &moved)).unwrap();
+            link_folder(&link, &moved).unwrap();
+            let before = snapshot(left.top.path()).unwrap();
+            let held = InstallFolder::at(&locked).unwrap().lock().unwrap();
+            let recovered = left.recover();
+            drop(held);
+            let error = recovered.outcome.unwrap_err();
+            assert!(
+                matches!(&error, RecoveryError::Lock(LockError::Links { path }) if *path == link),
+                "{at}: {error:?}"
+            );
+            assert_eq!(error.rule(), "links", "{at}");
+            assert!(recovered.heard.is_empty(), "{at}");
+            assert!(recovered.shell.is_empty(), "{at}");
+            assert_eq!(snapshot(left.top.path()).unwrap(), before, "{at}");
+        }
+
+        // The install's journal, a link to a folder holding it: refused under the lock, as an
+        // inspection refuses it, before anything is changed.
+        let left = Left::in_phase("staging", false);
+        let elsewhere = left.top.path().join("elsewhere");
+        fs::create_dir(&elsewhere).unwrap();
+        let journal = left.journals().join(INSTALL_JOURNAL);
+        retry_locked(|| fs::rename(&journal, elsewhere.join(INSTALL_JOURNAL))).unwrap();
+        link_folder(&journal, &elsewhere).unwrap();
+        let error = assert_left_alone(&left, "links", "a linked journal");
+        assert!(
+            matches!(&error, RecoveryError::Lock(LockError::Links { path }) if *path == journal),
+            "{error:?}"
+        );
+
+        // The receipt, a link to a folder holding one, beside the journal of a publish whose
+        // recovery would otherwise put the staged roots in place first.
+        let left = Left::in_phase("publishing", false);
+        let elsewhere = left.top.path().join("elsewhere");
+        fs::create_dir(&elsewhere).unwrap();
+        fs::write(elsewhere.join(RECEIPT_FILE), receipt_bytes()).unwrap();
+        let receipt = left.state().join(RECEIPT_FILE);
+        link_folder(&receipt, &elsewhere).unwrap();
+        let error = assert_left_alone(&left, "links", "a linked receipt");
+        assert!(
+            matches!(&error, RecoveryError::Lock(LockError::Links { path }) if *path == receipt),
+            "{error:?}"
+        );
     }
 
     #[test]
