@@ -137,7 +137,8 @@ TEST_CASE("a kick keeps a push's fall in the slide, where only the walk's stop c
     CHECK_FALSE(Knockback::opposes(Vec3{knock.velocity().x, 0.0f, knock.velocity().z}, kWest));
     // The step carries the fall for the walk to drop: dpos[1] is never under nought (1059-1061).
     CHECK(knock.step(kFrame, kPace).y == Approx(-Knockback::kKnockKick * kFrame));
-    // Straight down there is no way along the ground to turn by, but the fall still slides.
+    // Straight down, the port keeps the body's facing, where the original turns it by
+    // atan2(0, 0) (0x800866bc-0x800866cc); the fall still slides.
     Knockback down;
     down.queue(Vec3{0.0f, -1.0f, 0.0f}, Knockback::kKnockDown, 10.0f);
     CHECK_FALSE(down.kick(0.0f, false).has_value());

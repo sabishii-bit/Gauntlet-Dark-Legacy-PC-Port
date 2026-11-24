@@ -68,7 +68,8 @@ public:
     /** A hit's push (the way it travels, as long as its maker gave it) and its flags. */
     void queue(const Vec3& push, u32 flags, f32 damage);
     /** Turns what the last frame's hits pushed into a kick, the heaviest flag's; the heading
-     * the body now faces, or nullopt when nothing kicked. */
+     * the body now faces, or nullopt when it keeps its facing: nothing kicked, or nothing of
+     * the kick lay along the ground. */
     std::optional<f32> kick(f32 facing, bool pojo);
     /** Where the slide carries the body over `seconds` at a character's `pace`, the slide
      * decaying after: the velocity, its fall too for the step to drop, and the shove at most

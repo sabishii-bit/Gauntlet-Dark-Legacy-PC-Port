@@ -40,7 +40,8 @@ std::optional<f32> Knockback::kick(f32 facing, bool pojo) {
     }
     m_fastSeconds = (flags & kFastSlide) != 0 ? 1.0f / kFrameRate : 0;
     m_velocity += force * strength;
-    // The turn goes by the push along the ground; a fall alone gives none.
+    // Only a push along the ground turns the body here; the original turns it on a fall alone
+    // too, by atan2(0, 0) (0x800866bc-0x800866cc).
     if (portable::hypot(force.x, force.z) <= 0.0f) {
         return std::nullopt;
     }
