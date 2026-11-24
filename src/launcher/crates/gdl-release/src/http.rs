@@ -216,7 +216,6 @@ pub(crate) enum Wanted {
     /// A page of the releases list.
     Api,
     /// A release asset's bytes.
-    #[cfg(test)]
     File,
 }
 
@@ -328,7 +327,6 @@ impl Transport {
     fn headers_for(&self, uri: &Uri, wanted: Wanted) -> (&'static str, Option<&'static str>) {
         let accept = match wanted {
             Wanted::Api => API_ACCEPT,
-            #[cfg(test)]
             Wanted::File => DOWNLOAD_ACCEPT,
         };
         let to_the_api = match &self.origins {
@@ -412,11 +410,18 @@ pub(crate) fn read_bounded(
     body.as_reader()
         .take(limit.saturating_add(1))
         .read_to_end(&mut bytes)
-        .map_err(|error| failure_of(ureq::Error::from(error)))?;
+        .map_err(read_failure)?;
     if bytes.len() as u64 > limit {
         return Err(too_long);
     }
     Ok(bytes)
+}
+
+/// The feed's failure for `error`, a read of an answer's body that failed, named as
+/// [`failure_of`] names the transport's own failures: a transfer broken part way is
+/// [`ReleaseError::Failed`] or [`ReleaseError::Offline`].
+pub(crate) fn read_failure(error: io::Error) -> ReleaseError {
+    failure_of(ureq::Error::from(error))
 }
 
 /// The feed's failure for the transport's `error`: an unreachable host or network, or a step that

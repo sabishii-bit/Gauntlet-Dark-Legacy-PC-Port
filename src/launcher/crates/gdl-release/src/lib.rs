@@ -4,6 +4,7 @@
 #![forbid(unsafe_code)]
 
 mod checksums;
+mod download;
 mod error;
 mod feed;
 mod http;
@@ -14,6 +15,7 @@ mod proxy;
 mod version;
 
 pub use checksums::{ChecksumList, MAX_LIST_LEN};
+pub use download::{DOWNLOAD_ATTEMPTS, Downloaded};
 pub use error::ReleaseError;
 #[cfg(test)]
 pub use feed::LoopbackError;

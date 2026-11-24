@@ -219,7 +219,8 @@ pub struct Scan {
 /// release's checksum list must be signed by.
 pub struct Feed {
     config: FeedConfig,
-    transport: Transport,
+    /// The transport every request of the feed and its downloads goes through.
+    pub(crate) transport: Transport,
     keyring: Keyring,
 }
 
