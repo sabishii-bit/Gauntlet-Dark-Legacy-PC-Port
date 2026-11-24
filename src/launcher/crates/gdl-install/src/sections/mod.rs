@@ -15,7 +15,7 @@ mod view;
 
 use std::fmt;
 use std::fs::File;
-use std::io::{self, Read, Seek, SeekFrom};
+use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::ops::{Range, RangeInclusive};
 use std::path::{Path, PathBuf};
 
@@ -96,6 +96,8 @@ pub struct Section {
 pub struct Sections<R> {
     /// The launcher file.
     source: R,
+    /// How many bytes the launcher file held when its sections were found.
+    file_len: u64,
     /// Where the program ends and the first section begins.
     program_length: u64,
     /// The sections, in the order of the file.
@@ -138,6 +140,12 @@ impl<R> Sections<R> {
     /// table records.
     pub fn program_length(&self) -> u64 {
         self.program_length
+    }
+
+    /// How many bytes the launcher file held when its sections were found: its program, sections,
+    /// table and trailer, and any padding or certificate table after them.
+    pub fn file_len(&self) -> u64 {
+        self.file_len
     }
 }
 
@@ -185,6 +193,7 @@ impl<R: Read + Seek> Sections<R> {
         let sections = place(table.sections, program.end, table_start)?;
         Ok(Some(Sections {
             source,
+            file_len,
             program_length: program.end,
             sections,
         }))
@@ -221,6 +230,45 @@ impl<R: Read + Seek> Sections<R> {
             }
         }
         Ok(())
+    }
+
+    /// Writes the whole launcher file to `to`, its program, sections, table, trailer and any
+    /// padding or certificate table after them, and gives the SHA-256 digest of what it wrote. It
+    /// reads from the handle the sections were found on, which still reads the file once another
+    /// has taken its path, and copies the file's bytes alone, none of the other streams a file
+    /// can carry on Windows, such as the mark of where it was downloaded from.
+    ///
+    /// It copies the [`file_len`](Self::file_len) bytes from the file's start, at most
+    /// [`BLOCK_LEN`] at a time: before each block it looks at the job's cancel, and after it tells
+    /// the job's progress how many of the file's bytes are done. A file that ends sooner is
+    /// refused as [`SectionsError::Io`], and a write `to` refuses fails the copy as
+    /// [`SectionsError::Write`], which keeps what `to` answered.
+    pub fn copy_file(
+        &mut self,
+        to: &mut dyn Write,
+        job: &Job<'_>,
+    ) -> Result<Sha256Digest, SectionsError> {
+        let total = self.file_len;
+        let mut block =
+            vec![0; usize::try_from(total).map_or(BLOCK_LEN, |total| total.min(BLOCK_LEN))];
+        self.source.seek(SeekFrom::Start(0))?;
+        let mut hasher = Sha256::new();
+        let mut done = 0;
+        while done < total {
+            job.cancel
+                .check()
+                .map_err(|Cancelled| SectionsError::Cancelled)?;
+            let len = block
+                .len()
+                .min(usize::try_from(total - done).unwrap_or(usize::MAX));
+            let part = &mut block[..len];
+            self.source.read_exact(part)?;
+            to.write_all(part).map_err(SectionsError::Write)?;
+            hasher.update(&*part);
+            done += len as u64;
+            job.progress.advance(done, total, None);
+        }
+        Ok(Sha256Digest(hasher.finalize().into()))
     }
 
     /// The section named `name`, to be read as a file of its own. Its bytes are not checked here;
@@ -484,6 +532,10 @@ pub enum SectionsError {
     /// The file could not be read.
     #[error("the launcher file cannot be read: {0}")]
     Io(#[from] io::Error),
+    /// The copy of the file could not be written: what the writer answered, so that a full disk
+    /// can be told from a file that could not be read.
+    #[error("writing the launcher file's copy failed: {0}")]
+    Write(#[source] io::Error),
     /// The file is neither a PE nor an x86-64 ELF64 little-endian program.
     #[error("not a PE or ELF program")]
     UnknownProgram,
@@ -587,7 +639,7 @@ pub enum SectionsError {
     /// The file carries no sections at all.
     #[error("the file carries no sections")]
     NoSections,
-    /// The job was asked to stop before every section was read.
+    /// The job was asked to stop before every section was read, or the whole file copied.
     #[error("cancelled")]
     Cancelled,
 }
@@ -597,6 +649,7 @@ impl SectionsError {
     pub fn rule(&self) -> &'static str {
         match self {
             SectionsError::Io(_) => "io",
+            SectionsError::Write(_) => "write",
             SectionsError::UnknownProgram => "unknownProgram",
             SectionsError::PeHeaders { .. } => "peHeaders",
             SectionsError::ElfHeaders { .. } => "elfHeaders",
@@ -625,7 +678,7 @@ impl SectionsError {
 mod tests {
     use std::error::Error;
     use std::fs::{self, File};
-    use std::io::{self, Cursor, Read, Seek, SeekFrom};
+    use std::io::{self, Cursor, Read, Seek, SeekFrom, Write};
     use std::ops::Range;
     use std::panic;
     use std::sync::Mutex;
@@ -1611,6 +1664,275 @@ mod tests {
         }
     }
 
+    /// The SHA-256 digest of `bytes`, as a copy gives it.
+    fn digest_of(bytes: &[u8]) -> Sha256Digest {
+        Sha256Digest::from_hex(&sha256_hex(bytes)).unwrap()
+    }
+
+    /// The cancel of a job nobody asks to stop, and progress that writes down each step of it.
+    fn recorded() -> (Cancel, Recorded) {
+        (Cancel::default(), Recorded::default())
+    }
+
+    #[test]
+    fn a_whole_launcher_file_copies_through_its_handle() {
+        for residue in 0..8 {
+            let (unsigned, _) = launcher(tiny_pe(), WINDOWS, residue);
+            let mut signed = unsigned.clone();
+            fake_sign(&mut signed);
+            let (elf, _) = launcher(tiny_elf(), LINUX, residue);
+            let mut padded = elf.clone();
+            padded.resize(elf.len() + 7, 0);
+            for (kind, file) in [
+                ("an unsigned PE", unsigned),
+                ("a signed PE", signed),
+                ("an ELF program", elf),
+                ("an ELF program and the zeros a signature leaves", padded),
+            ] {
+                let case = format!("{kind}, residue {residue}");
+                let mut found =
+                    open(file.clone()).unwrap_or_else(|error| panic!("{case}: {error}"));
+                assert_eq!(found.file_len(), file.len() as u64, "{case}");
+                // Copied twice, its sections read in between: each copy starts at the file's
+                // start, wherever the last read left the handle, and takes every byte to its end.
+                for copy_number in 1..=2 {
+                    let mut copy = Vec::new();
+                    let digest = found
+                        .copy_file(&mut copy, &quiet(&Cancel::default()))
+                        .unwrap_or_else(|error| panic!("{case}, copy {copy_number}: {error}"));
+                    assert!(
+                        copy == file,
+                        "{case}, copy {copy_number}: {} bytes of {}",
+                        copy.len(),
+                        file.len()
+                    );
+                    assert_eq!(digest, digest_of(&file), "{case}, copy {copy_number}");
+                    found.verify(&quiet(&Cancel::default())).unwrap();
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_copy_advances_in_blocks_and_stops_when_cancelled() {
+        let file = with_large_section();
+        let total = file.len() as u64;
+        let block = BLOCK_LEN as u64;
+        assert!((3 * block..4 * block).contains(&total), "{total}");
+        let mut found = open(file.clone()).unwrap();
+
+        // A whole block at a time, then what is left of the file, each step out of the file's
+        // bytes, naming no item.
+        let (cancel, progress) = recorded();
+        let job = Job {
+            cancel: &cancel,
+            progress: &progress,
+        };
+        let mut copy = Vec::new();
+        found.copy_file(&mut copy, &job).unwrap();
+        assert!(copy == file);
+        let expected: Vec<(u64, u64, bool)> = [block, 2 * block, 3 * block, total]
+            .into_iter()
+            .map(|done| (done, total, false))
+            .collect();
+        assert_eq!(progress.steps(), expected);
+
+        // Asked to stop as it told its first block, it wrote no other.
+        let cancel = Cancel::default();
+        let progress = Recorded {
+            stopping: Some(cancel.clone()),
+            ..Recorded::default()
+        };
+        let job = Job {
+            cancel: &cancel,
+            progress: &progress,
+        };
+        let mut copy = Vec::new();
+        match found.copy_file(&mut copy, &job) {
+            Err(error @ SectionsError::Cancelled) => assert_eq!(error.rule(), "cancelled"),
+            other => panic!("{other:?}"),
+        }
+        assert_eq!(progress.steps(), [(block, total, false)]);
+        assert!(copy == file[..BLOCK_LEN], "{} bytes", copy.len());
+        // Asked before it began, it writes and tells nothing.
+        let mut copy = Vec::new();
+        match found.copy_file(&mut copy, &job) {
+            Err(SectionsError::Cancelled) => {}
+            other => panic!("{other:?}"),
+        }
+        assert!(copy.is_empty(), "{} bytes", copy.len());
+        assert_eq!(progress.steps().len(), 1);
+        // The file is as it was: a job nobody stops copies it whole.
+        let mut copy = Vec::new();
+        found
+            .copy_file(&mut copy, &quiet(&Cancel::default()))
+            .unwrap();
+        assert!(copy == file);
+    }
+
+    #[test]
+    fn a_copy_through_a_renamed_file_still_reads_it() {
+        let (program, platform) = if cfg!(windows) {
+            (tiny_pe(), WINDOWS)
+        } else {
+            (tiny_elf(), LINUX)
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("GauntletDarkLegacy-Launcher.exe");
+        let aside = dir.path().join("retired-launcher.exe");
+        let (original, _) = launcher(program.clone(), platform, 0);
+        fs::write(&path, &original).unwrap();
+        let mut held = Sections::of_path(&path).unwrap().unwrap();
+
+        // Renamed aside while its sections are held, as an update renames the running launcher,
+        // and another launcher file written in its place.
+        rename_noreplace(&path, &aside).unwrap();
+        let mut newer = program;
+        let runtime = RuntimeFiles::standard(platform, NEWER).zip();
+        append_sections(&mut newer, &[(RUNTIME_SECTION, &runtime)], 0);
+        fs::write(&path, &newer).unwrap();
+
+        // The copy, written to a file as an install writes it, is of the file the handle was
+        // opened on, which the path no longer names.
+        let copied = dir.path().join("copy");
+        let mut to = File::create(&copied).unwrap();
+        let digest = held.copy_file(&mut to, &quiet(&Cancel::default())).unwrap();
+        drop(to);
+        assert_eq!(held.file_len(), original.len() as u64);
+        assert_eq!(digest, digest_of(&original));
+        assert!(fs::read(&copied).unwrap() == original);
+        assert!(fs::read(&aside).unwrap() == original);
+        // A handle opened on the path now copies the file that took it.
+        let mut fresh = Sections::of_path(&path).unwrap().unwrap();
+        let mut copy = Vec::new();
+        let digest = fresh
+            .copy_file(&mut copy, &quiet(&Cancel::default()))
+            .unwrap();
+        assert_eq!(digest, digest_of(&newer));
+        assert!(copy == newer);
+    }
+
+    /// A writer that takes `room` bytes, then refuses every write, as a full disk refuses one.
+    struct Full {
+        written: Vec<u8>,
+        room: usize,
+    }
+
+    impl Write for Full {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            let room = self.room - self.written.len();
+            if room == 0 {
+                return Err(io::ErrorKind::StorageFull.into());
+            }
+            let count = bytes.len().min(room);
+            self.written.extend_from_slice(&bytes[..count]);
+            Ok(count)
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn a_writers_failure_is_named() {
+        let file = with_large_section();
+        let total = file.len() as u64;
+        let block = BLOCK_LEN as u64;
+        let mut found = open(file.clone()).unwrap();
+        // A disk full from the start, and one that fills up inside the second block: what was
+        // written is the file's start, and only the blocks written whole were told.
+        for (room, told) in [
+            (0, Vec::new()),
+            (BLOCK_LEN + 3, vec![(block, total, false)]),
+        ] {
+            let (cancel, progress) = recorded();
+            let job = Job {
+                cancel: &cancel,
+                progress: &progress,
+            };
+            let mut to = Full {
+                written: Vec::new(),
+                room,
+            };
+            match found.copy_file(&mut to, &job) {
+                Err(error @ SectionsError::Write(_)) => {
+                    assert_eq!(error.rule(), "write", "{room}");
+                    let source = error.source().unwrap().downcast_ref::<io::Error>().unwrap();
+                    assert_eq!(source.kind(), io::ErrorKind::StorageFull, "{room}");
+                    assert_eq!(
+                        error.to_string(),
+                        format!("writing the launcher file's copy failed: {source}")
+                    );
+                }
+                other => panic!("{room}: {other:?}"),
+            }
+            assert!(
+                to.written == file[..room],
+                "{room}: {} bytes",
+                to.written.len()
+            );
+            assert_eq!(progress.steps(), told, "{room}");
+        }
+        // The file itself was never at fault: a writer with room takes it whole.
+        let mut copy = Vec::new();
+        found
+            .copy_file(&mut copy, &quiet(&Cancel::default()))
+            .unwrap();
+        assert!(copy == file);
+    }
+
+    #[test]
+    fn a_copy_that_cannot_read_the_file_is_an_io_error() {
+        // A sector of the file that cannot be read fails the copy as the file's failure, not the
+        // writer's, after the blocks before it were written and told.
+        let file = with_large_section();
+        let total = file.len() as u64;
+        let bad = BLOCK_LEN as u64;
+        let mut found = Sections::find(Unreadable {
+            file: Cursor::new(file.clone()),
+            bad: bad..bad + 1,
+        })
+        .unwrap()
+        .unwrap();
+        let (cancel, progress) = recorded();
+        let job = Job {
+            cancel: &cancel,
+            progress: &progress,
+        };
+        let mut copy = Vec::new();
+        match found.copy_file(&mut copy, &job) {
+            Err(error @ SectionsError::Io(_)) => {
+                assert_eq!(error.rule(), "io");
+                assert_eq!(error.source().unwrap().to_string(), "unreadable sector");
+            }
+            other => panic!("{other:?}"),
+        }
+        assert!(copy == file[..BLOCK_LEN], "{} bytes", copy.len());
+        assert_eq!(progress.steps(), [(bad, total, false)]);
+
+        // A file cut short after its sections were found ends before the length they were found
+        // in, which is a read that came up short.
+        let (file, _) = launcher(tiny_elf(), LINUX, 0);
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("GauntletDarkLegacy-Launcher");
+        fs::write(&path, &file).unwrap();
+        let mut found = Sections::of_path(&path).unwrap().unwrap();
+        fs::OpenOptions::new()
+            .write(true)
+            .open(&path)
+            .and_then(|shortened| shortened.set_len(file.len() as u64 - 1))
+            .unwrap();
+        let mut copy = Vec::new();
+        match found.copy_file(&mut copy, &quiet(&Cancel::default())) {
+            Err(SectionsError::Io(source)) => {
+                assert_eq!(source.kind(), io::ErrorKind::UnexpectedEof, "{source}");
+            }
+            other => panic!("{other:?}"),
+        }
+        assert_eq!(found.file_len(), file.len() as u64);
+    }
+
     #[test]
     fn the_first_rule_broken_is_reported() {
         let (mut signed, _) = launcher(tiny_pe(), WINDOWS, 0);
@@ -1855,6 +2177,11 @@ mod tests {
                 "the launcher file cannot be read: unreadable sector",
             ),
             (
+                SectionsError::Write(io::Error::other("no room left")),
+                "write",
+                "writing the launcher file's copy failed: no room left",
+            ),
+            (
                 SectionsError::UnknownProgram,
                 "unknownProgram",
                 "not a PE or ELF program",
@@ -1970,6 +2297,9 @@ mod tests {
             match &error {
                 SectionsError::Io(_) => {
                     assert_eq!(error.source().unwrap().to_string(), "unreadable sector");
+                }
+                SectionsError::Write(_) => {
+                    assert_eq!(error.source().unwrap().to_string(), "no room left");
                 }
                 _ => assert!(error.source().is_none(), "{rule}"),
             }

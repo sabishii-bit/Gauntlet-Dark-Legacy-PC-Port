@@ -206,12 +206,14 @@ pub fn payload(error: &PayloadError) -> Report {
 }
 
 /// The code a refusal of the launcher file's sections reports. A cancel has none, and the system's
-/// failure to read the file is `io.failed`. A file that breaks the sections' rules is
+/// failure to read the file is `io.failed`; a copy of the file that could not be written reports
+/// what the system answered the write. A file that breaks the sections' rules is
 /// `payload.damaged`, since the runtime it carries is then damaged too.
 pub fn sections(error: &SectionsError) -> Report {
     match error {
         SectionsError::Cancelled => Report::Cancelled,
         SectionsError::Io(_) => Report::Error(IO_FAILED),
+        SectionsError::Write(source) => Report::Error(written(source)),
         SectionsError::UnknownProgram
         | SectionsError::PeHeaders { .. }
         | SectionsError::ElfHeaders { .. }
@@ -894,10 +896,15 @@ mod tests {
         ]
     }
 
-    /// One refusal of every kind the launcher file's sections get, with what each reports.
+    /// One refusal of every kind the launcher file's sections get, with what each reports: a copy
+    /// of the file whose writer would not take it once for each of the system's answers.
     fn sections_refusals() -> Vec<(SectionsError, Report)> {
         let section = || -> Box<str> { "runtime.zip".into() };
-        vec![
+        let mut refusals: Vec<(SectionsError, Report)> = write_failures()
+            .into_iter()
+            .map(|(source, code)| (SectionsError::Write(source), Report::Error(code)))
+            .collect();
+        refusals.extend([
             (SectionsError::Io(denied()), FAILED),
             (SectionsError::UnknownProgram, DAMAGED),
             (
@@ -946,7 +953,8 @@ mod tests {
             (SectionsError::MissingSection { name: section() }, DAMAGED),
             (SectionsError::NoSections, DAMAGED),
             (SectionsError::Cancelled, Report::Cancelled),
-        ]
+        ]);
+        refusals
     }
 
     /// One refusal of every kind an installation's receipt gets, with its code.
