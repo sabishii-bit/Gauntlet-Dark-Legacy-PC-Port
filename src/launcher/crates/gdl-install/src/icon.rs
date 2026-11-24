@@ -355,7 +355,7 @@ fn length_field(len: usize) -> [u8; 4] {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use std::collections::BTreeSet;
     use std::error::Error;
     use std::fs;
@@ -728,6 +728,40 @@ mod tests {
         original
     }
 
+    /// Asserts that the program at `program` carries the icon the vectors hold of the icon tests'
+    /// TPL `name`: its group in the neutral language, and the six images it names under ids 1 to
+    /// 6, each of the golden length and digest, with none past them.
+    #[cfg(windows)]
+    pub(crate) fn assert_carries_the_golden_icon(program: &Path, name: &str) {
+        let vectors = vectors();
+        let golden = &vectors["resources"][name];
+        let group = resource(program, FORMAT_RT_GROUP_ICON, 1, NEUTRAL_LANGUAGE);
+        let group = group.expect("the icon's group");
+        assert!(group == unhex(&golden["groupHex"]), "{name}: the group");
+        let listed = golden["images"].as_array().expect("a list of images");
+        assert_eq!(listed.len(), FORMAT_SIZES.len(), "{name}");
+        for (id, (golden_image, size)) in (1..).zip(listed.iter().zip(FORMAT_SIZES)) {
+            let image = resource(program, FORMAT_RT_ICON, id, NEUTRAL_LANGUAGE);
+            let image = image.unwrap_or_else(|| panic!("{name}: the {size}-pixel image"));
+            assert_eq!(
+                image.len(),
+                number(&golden_image["length"]),
+                "{name}: {size}"
+            );
+            assert_eq!(
+                digest(&image),
+                text(&golden_image["sha256"]),
+                "{name}: {size}"
+            );
+        }
+        let past = u16::try_from(FORMAT_SIZES.len() + 1).unwrap();
+        assert_eq!(
+            resource(program, FORMAT_RT_ICON, past, NEUTRAL_LANGUAGE),
+            None,
+            "{name}"
+        );
+    }
+
     #[test]
     fn resources_equal_the_golden_vector() {
         let vectors = vectors();
@@ -1075,24 +1109,7 @@ mod tests {
 
         // The group and the six images it now holds are the golden vector's, and nothing past
         // them.
-        let vectors = vectors();
-        let golden = &vectors["resources"]["rgb5a3"];
-        let group = resource(&program, FORMAT_RT_GROUP_ICON, 1, NEUTRAL_LANGUAGE);
-        let group = group.expect("the icon's group");
-        assert!(group == unhex(&golden["groupHex"]), "the group");
-        let listed = golden["images"].as_array().expect("a list of images");
-        assert_eq!(listed.len(), FORMAT_SIZES.len());
-        for (id, (golden_image, size)) in (1..).zip(listed.iter().zip(FORMAT_SIZES)) {
-            let image = resource(&program, FORMAT_RT_ICON, id, NEUTRAL_LANGUAGE);
-            let image = image.unwrap_or_else(|| panic!("the {size}-pixel image"));
-            assert_eq!(image.len(), number(&golden_image["length"]), "{size}");
-            assert_eq!(digest(&image), text(&golden_image["sha256"]), "{size}");
-        }
-        let past = u16::try_from(FORMAT_SIZES.len() + 1).unwrap();
-        assert_eq!(
-            resource(&program, FORMAT_RT_ICON, past, NEUTRAL_LANGUAGE),
-            None
-        );
+        assert_carries_the_golden_icon(&program, "rgb5a3");
 
         // Its code is as the linker wrote it, and both manifests are as they were given.
         let changed = fs::read(&program).unwrap();
@@ -1106,7 +1123,7 @@ mod tests {
         // The digests given are those of the program as it now is and of the icon.
         assert_eq!(personalised.executable_sha256, Sha256Digest::of(&changed));
         assert_eq!(personalised.icon_sha256, Sha256Digest::of(&icon));
-        let icon_digest = text(&vectors["tpls"]["rgb5a3"]["sha256"]);
+        let icon_digest = text(&vectors()["tpls"]["rgb5a3"]["sha256"]).to_owned();
         assert_eq!(personalised.icon_sha256.hex(), icon_digest);
 
         // Telling the shell of the program leaves it as it is.

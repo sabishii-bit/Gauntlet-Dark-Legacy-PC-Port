@@ -601,6 +601,7 @@ fn install_name(name: &str) -> RelPath {
 mod tests {
     use std::cell::{Cell, RefCell};
     use std::collections::{BTreeMap, BTreeSet};
+    use std::env;
     use std::fs;
     use std::io::{self, Cursor, Read, Seek};
     use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -611,20 +612,23 @@ mod tests {
     use std::time::{Duration, Instant};
 
     use gdl_files::{
-        Cancel, FilesError, FolderProbe, Job, NoProgress, PAYLOAD_NAMES, PhaseId, ProbedFolder,
-        Progress, RelPath, Volume,
+        BLOCK_LEN, Cancel, FilesError, FolderProbe, Job, NoProgress, PAYLOAD_NAMES, PhaseId,
+        ProbedFolder, Progress, RelPath, Volume, fill_from,
     };
     #[cfg(windows)]
-    use gdl_fixtures::fake_sign;
+    use gdl_files::{MAX_INSTALL_ROOT_UTF16, root_utf16_len};
     use gdl_fixtures::{
         EntryState, FstEntry, ICON_DATA_AT, RawEntry, RawZip, RuntimeFiles, SYNTHETIC_ISO_LEN,
         WritesDenied, append_sections, deny_writes, folder_names, fst, icon_iso, iso_of,
         sha256_hex, snapshot, snapshot_outside, symlink_file, symlink_file_where_allowed,
         synthetic_ciso, synthetic_iso, tiny_elf, tiny_pe, tpl,
     };
-    use gdl_media::{Container, GameCubeImage, MediaError};
+    #[cfg(windows)]
+    use gdl_fixtures::{fake_sign, long_root};
+    use gdl_media::{Container, DiscEntryKind, GameCubeImage, MediaError, Sha256Digest};
     use gdl_release::{Platform, Version};
     use serde_json::{Value, json};
+    use sha2::{Digest, Sha256};
     use tempfile::TempDir;
 
     use super::recover::recover_install_with;
@@ -633,11 +637,12 @@ mod tests {
         PanicAt, ProbeFn,
     };
     use super::{
-        CHECK_DISC, CHECK_GAME, CONFIG_FOLDER, COPY_DISC_FILES, COPY_LAUNCHER, Changes, DISC_FILES,
-        DiscSummary, FolderRecord, GET_RUNTIME, INSTALL_JOURNAL, INSTALL_STAGING_PREFIX,
-        InstallError, InstallFailure, InstallNotice, InstallPlan, Installed, PREPARE, PUBLISH,
-        RecoveryError, RecoveryOutcome, RuntimeSummary, SAVES_FOLDER, SPACE_MARGIN, Unrecorded,
-        install_game_with, install_names, is_install_root, plan_install, plan_with,
+        CHECK_DISC, CHECK_GAME, CONFIG_FOLDER, COPY_DISC_FILES, COPY_LAUNCHER, Changes, CopiedFile,
+        DISC_FILES, DiscFiles, DiscSummary, FolderRecord, GET_RUNTIME, INSTALL_JOURNAL,
+        INSTALL_STAGING_PREFIX, InstallError, InstallFailure, InstallNotice, InstallPlan,
+        Installed, PREPARE, PUBLISH, RecoveryError, RecoveryOutcome, RuntimeSummary, SAVES_FOLDER,
+        SPACE_MARGIN, Unrecorded, install_game_with, install_names, is_install_root, plan_install,
+        plan_with,
     };
     use crate::destination::{Blocker, DestinationError, FolderChecks};
     use crate::folder::{
@@ -645,6 +650,10 @@ mod tests {
     };
     use crate::host::Unsupported;
     use crate::icon::IconError;
+    #[cfg(windows)]
+    use crate::icon::tests::assert_carries_the_golden_icon;
+    #[cfg(windows)]
+    use crate::icon::{DISC_ICON, personalise};
     use crate::inspect::FolderState;
     use crate::payload::{
         BUILD_INFO, DEFAULT_CONFIG, LIB_FOLDER, PayloadError, ROOT_FILES, ROOT_FOLDERS,
@@ -1391,10 +1400,16 @@ mod tests {
 
     impl Inputs {
         pub(super) fn of(disc: &[u8]) -> Inputs {
+            let runtime = standard_runtime(this_platform());
+            let zip = runtime.zip();
+            Inputs::carrying(disc, runtime, &zip)
+        }
+
+        /// The disc `disc` and a launcher file carrying `zip`, the archive of `runtime`.
+        fn carrying(disc: &[u8], runtime: RuntimeFiles, zip: &[u8]) -> Inputs {
             let source = tempfile::tempdir().unwrap();
             fs::write(source.path().join("game.iso"), disc).unwrap();
-            let runtime = standard_runtime(this_platform());
-            let launcher = launcher_file(&[(RUNTIME_SECTION, &runtime.zip())]);
+            let launcher = launcher_file(&[(RUNTIME_SECTION, zip)]);
             Inputs {
                 source,
                 runtime,
@@ -2790,6 +2805,395 @@ mod tests {
             Some(ES_CONTINUOUS | ES_SYSTEM_REQUIRED)
         );
         assert_eq!(platform::execution_state(), before);
+    }
+
+    /// The icon tests' name, in the icon vectors, of the icon disc's TPL.
+    #[cfg(windows)]
+    const ICON_DISC_TPL: &str = "rgb5a3";
+
+    /// The icon disc and a launcher file whose runtime's executable is a copy of the program
+    /// running these tests, a real linker's output with no signature, which the runtime holds as
+    /// it is rather than deflated, so that its megabytes build fast; and the program's bytes.
+    #[cfg(windows)]
+    fn carrying_this_program() -> (Inputs, Vec<u8>) {
+        let program = fs::read(env::current_exe().unwrap()).unwrap();
+        let mut runtime = standard_runtime(Platform::WindowsX64);
+        let mut raw = runtime.raw();
+        let executable = runtime.executable.clone();
+        let shipped = runtime
+            .files
+            .iter_mut()
+            .find(|(name, _)| *name == executable)
+            .expect("the runtime holds its executable");
+        shipped.1.clone_from(&program);
+        let build_info = runtime.build_info_bytes();
+        for entry in &mut raw.entries {
+            if entry.name == executable.as_bytes() {
+                *entry = RawEntry::stored(&executable, &program);
+            } else if entry.name == BUILD_INFO.as_bytes() {
+                *entry = RawEntry::deflated(BUILD_INFO, &build_info);
+            }
+        }
+        let zip = raw.to_bytes();
+        (Inputs::carrying(&icon_iso(), runtime, &zip), program)
+    }
+
+    /// Installs the icon disc into `destination` from a launcher file on disk whose runtime's
+    /// executable is a copy of this program, with the system's own personaliser, the probe
+    /// `probe` and a shell that keeps what it is told; asserts what the install made of the
+    /// executable, the disc's icon and the launcher file, and gives what it gave.
+    #[cfg(windows)]
+    fn install_this_program(destination: &Path, probe: &ProbeFn) -> Installed {
+        let (inputs, shipped) = carrying_this_program();
+        let file = inputs.source.path().join("launcher.exe");
+        fs::write(&file, &inputs.launcher).unwrap();
+        let mut launcher = Sections::of_path(&file).unwrap().unwrap();
+        let mut image = inputs.image();
+        let plan = plan_install(&mut image, &mut launcher, destination, VERSION).unwrap();
+        assert!(plan.is_ready(), "{:?}", plan.blockers);
+        let receipt = destination.join(STATE_DIR).join(RECEIPT_FILE);
+        let told = RefCell::new(Vec::new());
+        let notify = |executable: &Path| {
+            told.borrow_mut()
+                .push((executable.to_path_buf(), receipt.is_file()));
+        };
+        let settings = InstallSettings {
+            personalise: &personalise,
+            notify_shell: &notify,
+            ..standing_in(&NoFaults, probe)
+        };
+        let cancel = Cancel::default();
+        let job = Job {
+            cancel: &cancel,
+            progress: &NoProgress,
+        };
+        let installed = install_game_with(
+            &plan,
+            &mut image,
+            &mut launcher,
+            &mut Unrecorded,
+            &job,
+            &settings,
+        )
+        .unwrap_or_else(|failure| panic!("{failure:?}"));
+        drop(launcher);
+
+        // The installed executable is the shipped program with the disc's icon set into it, which
+        // the receipt records by its digest beside the shipped one's.
+        let name = Platform::WindowsX64.executable();
+        let executable = destination.join(name);
+        let personalised = fs::read(&executable).unwrap();
+        assert!(
+            personalised != shipped,
+            "the executable is as it was shipped"
+        );
+        assert_carries_the_golden_icon(&executable, ICON_DISC_TPL);
+        assert_eq!(
+            installed.receipt.installed_digests,
+            BTreeMap::from([(name.to_owned(), sha256_hex(&personalised))])
+        );
+        let icon = tpl(5, 8, 8);
+        let recorded = installed
+            .receipt
+            .disc_icon
+            .as_ref()
+            .expect("the receipt records the disc's icon");
+        assert_eq!(recorded.path, DISC_ICON);
+        assert_eq!(recorded.sha256, sha256_hex(&icon));
+        assert_eq!(recorded.release_executable_sha256, sha256_hex(&shipped));
+        assert!(recorded.other.is_empty(), "{:?}", recorded.other);
+        assert_eq!(fs::read(destination.join(DISC_ICON)).unwrap(), icon);
+
+        // The receipt on disk is the one the job gave back.
+        let version = Version::parse(VERSION).unwrap();
+        let game = installed.folder.installed(&version).unwrap();
+        assert_eq!(game.receipt.as_ref(), Some(&installed.receipt));
+
+        // The launcher file is as it was, and the shell was told of the installed executable
+        // once, with the installation standing.
+        assert!(
+            fs::read(&file).unwrap() == inputs.launcher,
+            "the launcher file changed"
+        );
+        assert_eq!(told.into_inner(), [(executable, true)]);
+        installed
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_windows_install_records_its_personalised_executable() {
+        let top = tempfile::tempdir().unwrap();
+        let destination = top.path().join("game");
+        let installed = install_this_program(&destination, &answering);
+        assert!(installed.notices.is_empty(), "{:?}", installed.notices);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_long_root_install_sets_the_icon_and_runs_the_probe() {
+        // The longest folder an install takes, so that the icon's edit and the probe's start both
+        // run on paths under it.
+        let base = tempfile::tempdir().unwrap();
+        let destination = long_root(base.path(), MAX_INSTALL_ROOT_UTF16).unwrap();
+        assert_eq!(
+            root_utf16_len(&destination).unwrap(),
+            MAX_INSTALL_ROOT_UTF16
+        );
+        let installed = install_this_program(&destination, &probe_game_version_with);
+        // The copy of this program started and ended: its test harness takes no `--version`,
+        // and ends with a status of its own.
+        match installed.notices.as_slice() {
+            [
+                InstallNotice::ProbeFailed {
+                    status: Some(status),
+                    ..
+                },
+            ] => assert_ne!(*status, 0),
+            other => panic!("{other:?}"),
+        }
+    }
+
+    /// The variable that names the player's own GameCube disc image, an ISO or a CISO, for the
+    /// tests that run on the trusted machine. It has no default, since the repository's assets
+    /// hold no image.
+    const IMAGE_VARIABLE: &str = "GDL_GAMECUBE_IMAGE";
+
+    /// The variable that names the player's extracted GameCube disc: the folder that holds its
+    /// `Gauntlet` and `carddemo` trees.
+    const TREE_VARIABLE: &str = "GDL_GAMECUBE_TREE";
+
+    /// Where the player's extracted disc lies in the repository's assets, when the variable names
+    /// no other place.
+    const TREE_IN_ASSETS: &str = "assets/GUNE5D";
+
+    /// The repository's top, from this crate's folder.
+    const REPOSITORY_FROM_CRATE: &str = "../../../..";
+
+    /// Where in the repository the install of the player's disc is made, and taken away once it
+    /// is checked.
+    const PLAYERS_INSTALL: &str = "build/launcher-disc-install";
+
+    /// How many files the player's disc keeps in its `Gauntlet` and `carddemo` trees.
+    const PLAYERS_DISC_FILES: usize = 2_483;
+
+    /// How many folders it keeps in them, counted as the image counts them: the two among them.
+    const PLAYERS_DISC_FOLDERS: usize = 766;
+
+    /// `path` under the repository's top.
+    fn in_repository(path: &str) -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join(REPOSITORY_FROM_CRATE)
+            .join(path)
+    }
+
+    /// The player's own disc image, which the variable [`IMAGE_VARIABLE`] names. Fails, naming the
+    /// variable, when it names no file.
+    fn players_image() -> PathBuf {
+        let image = env::var_os(IMAGE_VARIABLE)
+            .map(PathBuf::from)
+            .unwrap_or_else(|| panic!("set {IMAGE_VARIABLE} to the player's GameCube disc image"));
+        assert!(
+            image.is_file(),
+            "no disc image at {}: set {IMAGE_VARIABLE} to the player's GameCube disc image",
+            image.display()
+        );
+        image
+    }
+
+    /// The player's extracted disc: the folder the variable [`TREE_VARIABLE`] names, else the one
+    /// in the repository's assets. Fails, naming the variable, when it is no folder.
+    fn players_tree() -> PathBuf {
+        let tree =
+            env::var_os(TREE_VARIABLE).map_or_else(|| in_repository(TREE_IN_ASSETS), PathBuf::from);
+        assert!(
+            tree.is_dir(),
+            "no extracted disc at {}: set {TREE_VARIABLE} to the player's extracted GameCube disc",
+            tree.display()
+        );
+        tree
+    }
+
+    /// The player's disc image, opened and judged whole as an install opens it. A refusal names
+    /// only the rule the image breaks.
+    fn players_disc() -> GameCubeImage {
+        GameCubeImage::open(&players_image())
+            .unwrap_or_else(|error| panic!("the image is refused: {}", error.rule()))
+    }
+
+    /// What the extracted disc `tree` holds under the folders `roots` at its top: every folder,
+    /// the roots among them, and every file with its size, each by its path under the tree with
+    /// `/` between its names, as the disc spells them. Anything but a folder or a file is refused.
+    fn extracted(tree: &Path, roots: &[&str]) -> (BTreeSet<String>, BTreeMap<String, u64>) {
+        let mut folders = BTreeSet::new();
+        let mut files = BTreeMap::new();
+        let mut walking: Vec<(PathBuf, String)> = roots
+            .iter()
+            .map(|&root| (tree.join(root), root.to_owned()))
+            .collect();
+        while let Some((folder, path)) = walking.pop() {
+            for entry in fs::read_dir(&folder).unwrap() {
+                let entry = entry.unwrap();
+                let name = entry.file_name().into_string().unwrap();
+                let below = format!("{path}/{name}");
+                let metadata = fs::symlink_metadata(entry.path()).unwrap();
+                if metadata.is_dir() {
+                    walking.push((entry.path(), below));
+                } else {
+                    assert!(metadata.is_file(), "{below} is neither a folder nor a file");
+                    files.insert(below, metadata.len());
+                }
+            }
+            folders.insert(path);
+        }
+        (folders, files)
+    }
+
+    /// The folders at the top of the disc's kept trees, as the disc spells them.
+    fn kept_roots(image: &GameCubeImage) -> Vec<&str> {
+        image
+            .entries()
+            .iter()
+            .map(|entry| entry.path.as_str())
+            .filter(|path| !path.contains('/'))
+            .collect()
+    }
+
+    /// The SHA-256 digest of the file at `path`, read a block at a time, in lower-case
+    /// hexadecimal.
+    fn file_sha256(path: &Path) -> String {
+        let read = || -> io::Result<Sha256Digest> {
+            let mut file = fs::File::open(path)?;
+            let mut block = vec![0; BLOCK_LEN];
+            let mut hasher = Sha256::new();
+            loop {
+                let filled = fill_from(&mut file, &mut block)?;
+                hasher.update(&block[..filled]);
+                if filled < block.len() {
+                    return Ok(Sha256Digest(hasher.finalize().into()));
+                }
+            }
+        };
+        read()
+            .unwrap_or_else(|error| panic!("{}: {}", path.display(), error.kind()))
+            .hex()
+    }
+
+    #[test]
+    #[ignore = "needs the player's disc image"]
+    fn the_players_disc_matches_its_extracted_tree() {
+        // The player's disc opens, of a revision the launcher installs, and its kept trees are
+        // the extracted tree's, folder for folder and file for file, each file of its size. A
+        // failure names paths and counts, never what a file holds.
+        let image = players_disc();
+        assert!(image.revision() <= 1, "revision {}", image.revision());
+        let mut folders = BTreeSet::new();
+        let mut files = BTreeMap::new();
+        for entry in image.entries() {
+            let path = entry.path.as_str().to_owned();
+            match entry.kind {
+                DiscEntryKind::Folder => assert!(folders.insert(path), "a folder listed twice"),
+                DiscEntryKind::File { size, .. } => {
+                    assert!(files.insert(path, size).is_none(), "a file listed twice");
+                }
+            }
+        }
+        let (tree_folders, tree_files) = extracted(&players_tree(), &kept_roots(&image));
+        for (path, size) in &files {
+            match tree_files.get(path) {
+                Some(found) if found == size => {}
+                Some(_) => panic!("{path}: another size in the extracted tree"),
+                None => panic!("{path}: not in the extracted tree"),
+            }
+        }
+        let unlisted: Vec<&String> = tree_files
+            .keys()
+            .filter(|path| !files.contains_key(*path))
+            .collect();
+        assert!(
+            unlisted.is_empty(),
+            "the extracted tree holds files the disc does not: {unlisted:?}"
+        );
+        let missing: Vec<&String> = folders.symmetric_difference(&tree_folders).collect();
+        assert!(
+            missing.is_empty(),
+            "folders the disc and its extracted tree do not share: {missing:?}"
+        );
+        assert_eq!(files.len(), PLAYERS_DISC_FILES);
+        assert_eq!(files.len() + folders.len(), image.entries().len());
+        assert_eq!(
+            folders.len(),
+            PLAYERS_DISC_FOLDERS,
+            "the disc and its extracted tree agree on {} folders, the two at the top among them",
+            folders.len()
+        );
+    }
+
+    #[test]
+    #[ignore = "needs the player's disc image"]
+    fn the_players_disc_installs() {
+        // A whole install of the player's disc into a folder of the repository's build folder,
+        // with the tests' launcher file and stand-ins: the disc's list of what it copied names
+        // every file of the extracted tree, of its size and digest, and every folder. The folder
+        // is taken away afterwards, as it is first when an earlier run left it.
+        let destination = in_repository(PLAYERS_INSTALL);
+        if fs::symlink_metadata(&destination).is_ok() {
+            fs::remove_dir_all(&destination).unwrap();
+        }
+        let removed = RemovedAfter(destination.clone());
+        let mut image = players_disc();
+        let tree = players_tree();
+        let (tree_folders, tree_files) = extracted(&tree, &kept_roots(&image));
+        let mut launcher = launcher_carrying(&standard_runtime(this_platform()));
+        let plan = plan_install(&mut image, &mut launcher, &destination, VERSION)
+            .unwrap_or_else(|error| panic!("the install is refused: {}", error.rule()));
+        assert!(plan.is_ready(), "{:?}", plan.blockers);
+        let installed = install_with(&plan, &mut image, &mut launcher)
+            .unwrap_or_else(|failure| panic!("the install failed: {}", failure.rule()));
+        assert!(installed.notices.is_empty(), "{:?}", installed.notices);
+        assert_eq!(installed.receipt.disc_revision, image.revision());
+
+        let listed = destination.join(STATE_DIR).join(DISC_FILES);
+        let listed: DiscFiles = serde_json::from_slice(&fs::read(listed).unwrap()).unwrap();
+        assert_eq!(listed.files.len(), PLAYERS_DISC_FILES);
+        let rows: BTreeMap<&str, &CopiedFile> = listed
+            .files
+            .iter()
+            .map(|row| (row.path.as_str(), row))
+            .collect();
+        assert_eq!(rows.len(), listed.files.len(), "a file listed twice");
+        for (path, size) in &tree_files {
+            let row = rows
+                .get(path.as_str())
+                .unwrap_or_else(|| panic!("{path}: not listed"));
+            assert_eq!(row.size, *size, "{path}");
+            assert!(
+                row.sha256 == file_sha256(&tree.join(path)),
+                "{path}: another digest"
+            );
+        }
+        assert_eq!(
+            rows.len(),
+            tree_files.len(),
+            "files listed that the extracted tree lacks"
+        );
+        let listed_folders: BTreeSet<String> = listed.folders.iter().cloned().collect();
+        assert!(
+            listed_folders == tree_folders,
+            "the folders listed are not the extracted tree's"
+        );
+
+        drop(removed);
+        assert!(fs::symlink_metadata(&destination).is_err());
+    }
+
+    /// A folder the test made, taken away with everything in it when this goes, even when the
+    /// test fails.
+    struct RemovedAfter(PathBuf);
+
+    impl Drop for RemovedAfter {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
     }
 
     /// The file of the player's that a folder an install test installs into may hold.
