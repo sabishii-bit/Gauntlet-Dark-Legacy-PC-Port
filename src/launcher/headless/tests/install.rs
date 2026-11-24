@@ -3,12 +3,12 @@
 //! game's version probe as the game does and on Windows takes the disc's icon; and the recovery of
 //! installs cut short, each folder judged by the headless program's inspection.
 
+mod common;
+
 use std::collections::BTreeMap;
-use std::ffi::OsStr;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
 use std::sync::Mutex;
 
 use gdl_files::{Cancel, Job, NoProgress, PhaseId, Progress, RelPath, STAGING_RANDOM_CHARS};
@@ -28,12 +28,7 @@ use gdl_release::{Platform, Version};
 use serde_json::{Value, json};
 use tempfile::TempDir;
 
-/// The headless program, as cargo built it for these tests.
-const PROGRAM: &str = env!("CARGO_BIN_EXE_gdl-launcher-headless");
-
-/// The version its build gave it, which the launcher installs and the program answers the probe
-/// with.
-const VERSION: &str = env!("GDL_VERSION");
+use common::{PROGRAM, VERSION, inspect_json};
 
 /// The random part of the staging that the journal of an install cut short names.
 const STAGING_RANDOM_PART: &str = "AbC123xy";
@@ -44,11 +39,6 @@ const RECORDED_ROOTS: usize = 4;
 
 /// How many folders the install cut short made: the folder it installed into.
 const MADE_FOLDERS: u32 = 1;
-
-/// The creation flag that runs a console program without a console window of its own, so that a
-/// test never opens one.
-#[cfg(windows)]
-const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 /// The list of what an install of the icon disc copied, as the install writes it on every system.
 const ICON_DISC_FILES: &str = r#"{
@@ -226,29 +216,6 @@ fn tree(root: &Path) -> BTreeMap<String, Option<String>> {
         }
     }
     entries
-}
-
-/// Inspects the folder at `folder` through the headless program, as JSON, which it reports
-/// whatever the folder holds: with nothing to read and without a console window, to its end.
-#[track_caller]
-fn inspect_json(folder: &Path) -> Value {
-    let mut command = Command::new(PROGRAM);
-    command
-        .args([
-            OsStr::new("--inspect"),
-            folder.as_os_str(),
-            OsStr::new("--json"),
-        ])
-        .stdin(Stdio::null());
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        command.creation_flags(CREATE_NO_WINDOW);
-    }
-    let output = command.output().unwrap();
-    assert_eq!(output.status.code(), Some(0), "{output:?}");
-    assert!(output.stderr.is_empty(), "{output:?}");
-    serde_json::from_slice(&output.stdout).unwrap()
 }
 
 /// Checks that the headless program inspects the folder at `folder` as the installation of the
