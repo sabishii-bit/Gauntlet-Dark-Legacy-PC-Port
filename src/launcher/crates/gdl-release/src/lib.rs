@@ -5,6 +5,8 @@
 
 mod checksums;
 mod error;
+mod feed;
+mod http;
 mod keyring;
 mod names;
 mod platform;
@@ -13,6 +15,16 @@ mod version;
 
 pub use checksums::{ChecksumList, MAX_LIST_LEN};
 pub use error::ReleaseError;
+#[cfg(test)]
+pub use feed::LoopbackError;
+pub use feed::{
+    Asset, Feed, FeedConfig, MAX_ASSET_LEN, MAX_NOTES_LEN, MAX_PAGE_BYTES, MAX_PAGES, PAGE_LEN,
+    Release, Scan,
+};
+pub use http::{
+    API_ACCEPT, API_VERSION, DOWNLOAD_ACCEPT, MAX_REDIRECTS, READ_TIMEOUT, SECONDARY_LIMIT_WAIT,
+    USER_AGENT_PRODUCT,
+};
 pub use keyring::Keyring;
 pub use names::{
     ASSET_STEM, GITHUB_API_HOST, GITHUB_HOST, RELEASE_HOSTS, REPOSITORY, SIGNATURE_SUFFIX,

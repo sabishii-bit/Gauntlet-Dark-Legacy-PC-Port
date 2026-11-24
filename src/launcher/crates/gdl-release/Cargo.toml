@@ -12,10 +12,10 @@ gdl-files.workspace = true
 gdl-media.workspace = true
 minisign-verify.workspace = true
 semver.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
 ureq.workspace = true
 
 [dev-dependencies]
 gdl-fixtures.workspace = true
 serde.workspace = true
-serde_json.workspace = true

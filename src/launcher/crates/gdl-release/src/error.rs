@@ -6,6 +6,8 @@
 use std::io;
 use std::path::PathBuf;
 
+use gdl_files::Cancelled;
+
 /// Why reading the release feed, checking a release or downloading one of its files failed.
 #[derive(Debug, thiserror::Error)]
 pub enum ReleaseError {
@@ -171,12 +173,22 @@ impl ReleaseError {
     }
 }
 
+impl From<Cancelled> for ReleaseError {
+    /// A read of the feed or a download stops where its job's cancel tells it to, between two
+    /// requests or two blocks of a file.
+    fn from(_: Cancelled) -> ReleaseError {
+        ReleaseError::Cancelled
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
     use std::error::Error;
     use std::io;
     use std::path::Path;
+
+    use gdl_files::Cancelled;
 
     use super::ReleaseError;
     use crate::VersionError;
@@ -393,6 +405,13 @@ mod tests {
         ];
         assert_eq!(rules, BTreeSet::from(expected));
         assert_eq!(rules.len(), expected.len());
+    }
+
+    #[test]
+    fn a_cancelled_job_is_the_feeds_cancel() {
+        let error = ReleaseError::from(Cancelled);
+        assert!(matches!(error, ReleaseError::Cancelled));
+        assert_eq!(error.rule(), "cancelled");
     }
 
     #[test]
