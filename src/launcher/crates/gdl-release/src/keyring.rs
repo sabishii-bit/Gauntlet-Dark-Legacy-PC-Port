@@ -38,7 +38,8 @@ const VERSION_FIELD: &str = "version";
 const NO_TRUSTED_KEY: &str = "signed by no key this launcher trusts";
 
 /// The public keys a launcher trusts to sign its releases' checksum lists, tried in turn.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
+#[cfg_attr(test, derive(PartialEq, Eq))]
 pub struct Keyring {
     /// The keys, in the order a signature is checked against them.
     keys: Vec<PublicKey>,
@@ -204,7 +205,7 @@ fn refused(detail: impl Into<Box<str>>) -> ReleaseError {
 
 #[cfg(test)]
 mod tests {
-    use gdl_fixtures::{sign_with_test_key, test_public_key};
+    use gdl_fixtures::{TEST_KEY_ID, sign_with_test_key, test_public_key};
     use gdl_media::Sha256Digest;
     use minisign_verify::PublicKey;
 
@@ -246,6 +247,21 @@ mod tests {
         asSSbXxwA=\n\
         trusted comment: timestamp:1555779966\tfile:test\n\
         QtKMXWyYcwdpZAlPF7tE2ENJkRd1ujvKjlj1m9RtHTBnZPa5WKU5uWRs5GoP5M/VqE81QFuMKI5k/SfNQUaOAA==";
+
+    /// The letters of base64, in the order of the values they stand for.
+    const BASE64_ALPHABET: &[u8; 64] =
+        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+    /// How many bytes a minisign public key's line holds: its algorithm tag, its id and its
+    /// Ed25519 key.
+    const PUBLIC_KEY_LEN: usize = 42;
+
+    /// Where the Ed25519 key begins in those bytes, after the two of the tag and the eight of
+    /// the id.
+    const KEY_START: usize = 10;
+
+    /// The algorithm tag minisign writes in a public key.
+    const PUBLIC_KEY_TAG: &[u8; 2] = b"Ed";
 
     /// The published key's prehashed signature of `test`, whose trusted comment names no version.
     const PUBLISHED_PREHASHED_SIGNATURE: &str = "untrusted comment: signature from minisign \
@@ -340,18 +356,95 @@ mod tests {
         lines.iter().map(|line| format!("{line}\n")).collect()
     }
 
+    /// The bytes of a minisign public key's base64 line: its algorithm tag, its id, then its
+    /// Ed25519 key.
+    fn public_key_bytes(line: &str) -> Vec<u8> {
+        let mut bytes = Vec::with_capacity(PUBLIC_KEY_LEN);
+        // The bits read and not yet made into a byte, the newest lowest, and how many they are.
+        let (mut bits, mut held) = (0u32, 0u32);
+        for letter in line.trim_end_matches('=').bytes() {
+            let value = BASE64_ALPHABET
+                .iter()
+                .position(|&each| each == letter)
+                .unwrap_or_else(|| panic!("{line:?} is not base64"));
+            bits = (bits << 6) | u32::try_from(value).expect("a letter stands for six bits");
+            held += 6;
+            if held >= 8 {
+                held -= 8;
+                bytes.push(u8::try_from(bits >> held).expect("eight bits"));
+                bits &= (1 << held) - 1;
+            }
+        }
+        assert_eq!(bytes.len(), PUBLIC_KEY_LEN, "{line:?}");
+        bytes
+    }
+
+    /// Whether any of `lines` holds the test key's Ed25519 key, under whatever id and algorithm
+    /// tag: its secret seed is in the fixtures, so anyone can sign with it.
+    fn holds_the_test_key(lines: &[&str]) -> bool {
+        let test_key = public_key_bytes(TEST_PUBLIC_KEY);
+        lines
+            .iter()
+            .any(|line| public_key_bytes(line)[KEY_START..] == test_key[KEY_START..])
+    }
+
+    /// `line` with its letters from `at` replaced by `letters`.
+    fn with_letters(line: &str, at: usize, letters: &str) -> String {
+        format!("{}{letters}{}", &line[..at], &line[at + letters.len()..])
+    }
+
     #[test]
     fn the_production_keyring_is_empty_and_never_holds_the_test_key() {
         assert!(RELEASE_KEYS.is_empty(), "{RELEASE_KEYS:?}");
-        assert!(!RELEASE_KEYS.contains(&TEST_PUBLIC_KEY));
-        let test_key = keyring(&[TEST_PUBLIC_KEY]);
-        let release_keys = keyring(RELEASE_KEYS);
-        assert!(
-            release_keys
-                .keys
-                .iter()
-                .all(|key| !test_key.keys.contains(key))
+        assert!(!holds_the_test_key(RELEASE_KEYS), "{RELEASE_KEYS:?}");
+        // Nor do the release keys verify a list the test key signed.
+        let release = ReleaseList::of(RELEASE, Platform::WindowsX64);
+        assert_eq!(
+            refusal(release.verify(&keyring(RELEASE_KEYS), &release.signature())),
+            NO_TRUSTED_KEY
         );
+    }
+
+    #[test]
+    fn the_test_key_is_known_under_any_id_or_tag() {
+        // The test key's line is its tag, its id and its key.
+        let bytes = public_key_bytes(TEST_PUBLIC_KEY);
+        assert_eq!(
+            bytes[..KEY_START],
+            [PUBLIC_KEY_TAG.as_slice(), TEST_KEY_ID.as_slice()].concat()
+        );
+        assert!(!holds_the_test_key(&[PUBLISHED_KEY]));
+
+        let release = ReleaseList::of(RELEASE, Platform::WindowsX64);
+        let signature = release.signature();
+        // The first four letters spell the tag and the id's first byte; the next four, three
+        // more bytes of the id, in a key's line and a signature's alike.
+        let tagged = with_letters(TEST_PUBLIC_KEY, 0, "RURH");
+        let renamed = with_letters(TEST_PUBLIC_KEY, 4, "AAAA");
+        let lines: Vec<String> = signature.lines().map(str::to_owned).collect();
+        let renamed_signature: String = [
+            lines[0].clone(),
+            with_letters(&lines[1], 4, "AAAA"),
+            lines[2].clone(),
+            lines[3].clone(),
+        ]
+        .iter()
+        .map(|line| format!("{line}\n"))
+        .collect();
+        // Under the prehashed tag the key is no equal of the test key, yet verifies what it
+        // signs; under another id it verifies the same signature naming that id, which the
+        // signature does not cover.
+        assert_ne!(keyring(&[tagged.as_str()]), keyring(&[TEST_PUBLIC_KEY]));
+        for (line, signature) in [
+            (TEST_PUBLIC_KEY, signature.as_str()),
+            (tagged.as_str(), signature.as_str()),
+            (renamed.as_str(), renamed_signature.as_str()),
+        ] {
+            release
+                .verify(&keyring(&[line]), signature)
+                .unwrap_or_else(|error| panic!("{line}: {error}"));
+            assert!(holds_the_test_key(&[PUBLISHED_KEY, line]), "{line}");
+        }
     }
 
     #[test]
