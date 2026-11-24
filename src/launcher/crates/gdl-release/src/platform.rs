@@ -1,6 +1,8 @@
 //! The platforms a release is built for, under the names the release scripts give them, so that
 //! the launcher and the publisher agree on which runtime and which executable serve which system.
 
+use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
+
 /// A system and processor that a release carries a runtime for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Platform {
@@ -51,9 +53,27 @@ impl Platform {
     }
 }
 
+/// Written as its name in a release's metadata.
+impl Serialize for Platform {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+/// Read from its name as [`Platform::parse`] reads one: any other text names no platform.
+impl<'de> Deserialize<'de> for Platform {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Platform, D::Error> {
+        let text = String::deserialize(deserializer)?;
+        Platform::parse(&text)
+            .ok_or_else(|| de::Error::custom(format_args!("No release is built for {text:?}")))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::env::consts::{ARCH, EXE_SUFFIX, OS};
+
+    use serde_json::json;
 
     use super::Platform;
 
@@ -96,6 +116,30 @@ mod tests {
             "macos-x64",
         ] {
             assert_eq!(Platform::parse(text), None, "{text:?}");
+        }
+    }
+
+    #[test]
+    fn platforms_are_written_and_read_by_name() {
+        for (name, platform) in NAMES {
+            let written = serde_json::to_value(platform).expect("a platform has a JSON form");
+            assert_eq!(written, json!(name));
+            let read: Platform = serde_json::from_value(written).expect("its own name reads");
+            assert_eq!(read, platform);
+        }
+        for given in [
+            json!("Windows-x64"),
+            json!("linux-x64 "),
+            json!("macos-x64"),
+            json!(""),
+            json!(0),
+            json!(null),
+            json!(["windows-x64"]),
+        ] {
+            assert!(
+                serde_json::from_value::<Platform>(given.clone()).is_err(),
+                "{given} names no platform"
+            );
         }
     }
 

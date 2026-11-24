@@ -10,6 +10,7 @@ use std::path::Path;
 
 use gdl_files::{Cancel, Job};
 use gdl_media::Sha256Digest;
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use crate::http::{Origins, Transport, Wanted, percent_decoded, read_bounded};
@@ -174,8 +175,10 @@ pub struct LoopbackError {
     pub given: Box<str>,
 }
 
-/// A release asset, as the feed lists it and the rules accept it.
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// A release asset, as the feed lists it and the rules accept it. Its JSON form, which an update
+/// check's kept answer holds, gives the digest as its lowercase hexadecimal text.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Asset {
     /// The asset's file name.
     pub name: String,
@@ -184,12 +187,15 @@ pub struct Asset {
     /// Its length in bytes.
     pub size: u64,
     /// GitHub's SHA-256 digest of it.
+    #[serde(with = "crate::cache::digest_text")]
     pub sha256: Sha256Digest,
 }
 
 /// A release of the launcher's new line for one platform: its launcher file, with the game inside,
-/// its checksum list and, when it carries one, the list's signature.
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// its checksum list and, when it carries one, the list's signature. Its JSON form, which an
+/// update check's kept answer holds, leaves out the signature and the notes when there are none.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Release {
     /// The release's version, its tag without the `v`.
     pub version: Version,
@@ -202,8 +208,10 @@ pub struct Release {
     /// The checksum list of the release's files.
     pub checksums: Asset,
     /// The checksum list's signature, when the release carries one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub signature: Option<Asset>,
     /// The release's notes, when they are text within [`MAX_NOTES_LEN`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub notes: Option<String>,
 }
 

@@ -6,6 +6,8 @@ use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::str::FromStr;
 
+use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
+
 /// A release's semantic version, ordered by precedence: versions that differ only in build
 /// metadata compare equal, hash alike and neither is newer than the other. Equal versions can
 /// still be different builds, so whether two records name the same release is a comparison of
@@ -84,6 +86,21 @@ impl Hash for Version {
     }
 }
 
+/// Written as its text, build metadata included, as the launcher's state files record a version.
+impl Serialize for Version {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
+/// Read from a text as [`Version::parse`] reads one: a tag's `v` or any whitespace refuses it.
+impl<'de> Deserialize<'de> for Version {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Version, D::Error> {
+        let text = String::deserialize(deserializer)?;
+        Version::parse(&text).map_err(de::Error::custom)
+    }
+}
+
 /// A text that is not a semantic version, or not a tag that names one.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("Invalid semantic version: {text:?}")]
@@ -98,6 +115,7 @@ mod tests {
     use std::hash::{BuildHasher, RandomState};
 
     use serde::Deserialize;
+    use serde_json::json;
 
     use super::Version;
 
@@ -288,6 +306,32 @@ mod tests {
         assert_eq!(version(largest).to_string(), largest);
         // Prerelease numbers compare digit by digit, so they have no such bound.
         assert!(version("1.0.0-18446744073709551615") < version("1.0.0-18446744073709551616"));
+    }
+
+    #[test]
+    fn versions_are_written_and_read_as_their_text() {
+        let vectors = vectors();
+        for text in cases(&vectors.strict.valid, "strict.valid") {
+            let written = serde_json::to_value(version(text)).expect("a version has a JSON form");
+            assert_eq!(written, json!(text));
+            let read: Version = serde_json::from_value(written).expect("its own text reads");
+            assert_eq!(read.semver(), version(text).semver(), "{text:?}");
+        }
+        let unparsed = cases(&vectors.strict.invalid, "strict.invalid")
+            .iter()
+            .map(|text| json!(text));
+        let other_forms = [
+            json!(1),
+            json!(null),
+            json!(["1.0.0"]),
+            json!({"version": "1.0.0"}),
+        ];
+        for given in unparsed.chain(other_forms) {
+            assert!(
+                serde_json::from_value::<Version>(given.clone()).is_err(),
+                "{given} is no version"
+            );
+        }
     }
 
     #[test]

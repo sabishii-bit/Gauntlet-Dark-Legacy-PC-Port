@@ -1,8 +1,9 @@
 //! Versions and their order, the platforms a release is built for, the release feed, downloads
-//! through the system's proxies and trust store, and the checksum lists and signatures every
-//! update is checked against.
+//! through the system's proxies and trust store, the checksum lists and signatures every update
+//! is checked against, and an update check's answer, kept for an hour.
 #![forbid(unsafe_code)]
 
+mod cache;
 mod checksums;
 mod download;
 mod error;
@@ -14,6 +15,7 @@ mod platform;
 mod proxy;
 mod version;
 
+pub use cache::{Answer, MAX_CLOCK_SKEW, UPDATE_CHECK_LIFETIME, UPDATE_CHECK_SCHEMA, UpdateCheck};
 pub use checksums::{ChecksumList, MAX_LIST_LEN};
 pub use download::{DOWNLOAD_ATTEMPTS, Downloaded};
 pub use error::ReleaseError;
