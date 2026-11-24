@@ -1851,8 +1851,10 @@ mod tests {
     /// A folder probe that could not remove what it made, as the job judged the folder again
     /// before it made anything, leaves that entry, and the failure says that some is left: in the
     /// destination when it is there, else in the folder above it, nothing else made. A probe that
-    /// failed before it made anything leaves nothing, and so does an error that names a probe's
-    /// name no probe of the folder made: one elsewhere, or a folder on the destination's path.
+    /// failed before it made anything leaves nothing, and so does an error that names an entry no
+    /// probe of the folder made: one there by another name, such as the name in upper case that
+    /// the probe looks for its own entry by, one by a probe's name elsewhere, or a folder on the
+    /// destination's path.
     #[test]
     fn a_probe_entry_the_job_could_not_remove_is_kept() {
         let inputs = Inputs::of(&icon_iso());
@@ -1900,8 +1902,17 @@ mod tests {
             }
         };
         let fresh = tempfile::tempdir().unwrap();
+        let fresh_above = tempfile::tempdir().unwrap();
         let cases = [
             (fresh.path().to_path_buf(), fresh.path().to_path_buf()),
+            (
+                fresh.path().to_path_buf(),
+                fresh.path().join(left_name.to_ascii_uppercase()),
+            ),
+            (
+                fresh_above.path().join("game"),
+                fresh_above.path().join("notes.txt"),
+            ),
             (
                 fresh.path().to_path_buf(),
                 elsewhere.path().join(&left_name),
@@ -1913,6 +1924,7 @@ mod tests {
             assert_eq!(failure.changes, Changes::None, "{}", named.display());
         }
         assert!(folder_names(fresh.path()).unwrap().is_empty());
+        assert!(folder_names(fresh_above.path()).unwrap().is_empty());
         assert!(folder_names(elsewhere.path()).unwrap().is_empty());
         assert!(folder_names(&probe_named).unwrap().is_empty());
     }
