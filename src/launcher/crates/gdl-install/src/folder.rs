@@ -507,6 +507,16 @@ pub enum LockError {
 }
 
 impl LockError {
+    /// The failure's stable machine name, in camelCase, for reports and logs.
+    pub fn rule(&self) -> &'static str {
+        match self {
+            LockError::Busy => "busy",
+            LockError::Links { .. } => "links",
+            LockError::NoStateFolder { .. } => "noStateFolder",
+            LockError::Io { .. } => "io",
+        }
+    }
+
     /// The refusal of the lock of the installation at `root` for what its link check reported. A
     /// link check reports links and the system's refusals; anything else it reported would count
     /// as the latter.
@@ -1360,17 +1370,20 @@ mod tests {
             }
         }
 
-        for (error, text) in [
+        for (error, rule, text) in [
             (
                 LockError::Busy,
+                "busy",
                 "Another job is using this installation".to_owned(),
             ),
             (
                 LockError::Links { path: path.clone() },
+                "links",
                 format!("Choose a directory without links or junctions: {shown}"),
             ),
             (
                 LockError::NoStateFolder { path: path.clone() },
+                "noStateFolder",
                 format!("The installation has no launcher state folder: {shown}"),
             ),
             (
@@ -1378,10 +1391,12 @@ mod tests {
                     path: path.clone(),
                     source: denied(),
                 },
+                "io",
                 format!("{shown}: denied"),
             ),
         ] {
             assert_eq!(error.to_string(), text);
+            assert_eq!(error.rule(), rule, "{text}");
             match &error {
                 LockError::Io { .. } => assert_eq!(error.source().unwrap().to_string(), "denied"),
                 _ => assert!(error.source().is_none(), "{text}"),

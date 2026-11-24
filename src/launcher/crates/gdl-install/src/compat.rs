@@ -9,6 +9,7 @@ use gdl_release::Version;
 use serde_json::{Map, Value};
 
 use crate::folder::{JOURNAL_DIR, LOCK_FILE, RECEIPT_FILE};
+use crate::install::{DISC_FILES, INSTALL_JOURNAL, INSTALL_STAGING_PREFIX};
 
 /// The lowest launcher version allowed to change a state file of schema 1, which every such file
 /// records. It is the first launcher's version, not the writer's own: a file that a later
@@ -21,7 +22,7 @@ pub const JOURNAL_SCHEMA: u64 = 1;
 /// The journals this launcher keeps under `.gdl-launcher/journal/`, one for each kind of job it
 /// runs: an install, an update and a change to either expansion.
 pub const JOURNAL_NAMES: [&str; 4] = [
-    "install.json",
+    INSTALL_JOURNAL,
     "update.json",
     "expansion-n64.json",
     "expansion-dreamcast.json",
@@ -43,13 +44,14 @@ const MAX_SHOWN_CHARS: usize = 64;
 
 /// The names this launcher gives its state directly under `.gdl-launcher/`, beside those it makes
 /// with a random part, and what each holds. The receipt's, the lock's and the journals' are the
-/// folder module's constants, so that each name has one spelling.
+/// folder module's constants, and the disc's list the install's, so that each name has one
+/// spelling.
 const FIXED_NAMES: [(&str, StateName); 8] = [
     (RECEIPT_FILE, StateName::Receipt),
     (LOCK_FILE, StateName::Lock),
     (JOURNAL_DIR, StateName::Journal),
     ("state.json", StateName::State),
-    ("disc-files.json", StateName::DiscFiles),
+    (DISC_FILES, StateName::DiscFiles),
     ("update-backup", StateName::UpdateBackup),
     ("bin", StateName::Bin),
     ("logs", StateName::Logs),
@@ -59,7 +61,7 @@ const FIXED_NAMES: [(&str, StateName); 8] = [
 /// random part of [`STAGING_RANDOM_CHARS`](gdl_files::STAGING_RANDOM_CHARS) ASCII letters and
 /// digits, as [`is_staging_name`] tells, and what each holds.
 const RANDOM_PREFIXES: [(&str, StateName); 5] = [
-    ("install-", StateName::Staging),
+    (INSTALL_STAGING_PREFIX, StateName::Staging),
     ("stage-", StateName::Staging),
     ("stage-n64-", StateName::Staging),
     ("stage-dreamcast-", StateName::Staging),
@@ -640,6 +642,15 @@ mod tests {
         for name in JOURNAL_NAMES.into_iter().chain(ALPHA_NAMES) {
             assert_eq!(launcher_state_name(name), None, "{name:?}");
         }
+        assert_eq!(
+            JOURNAL_NAMES,
+            [
+                "install.json",
+                "update.json",
+                "expansion-n64.json",
+                "expansion-dreamcast.json"
+            ]
+        );
     }
 
     #[test]

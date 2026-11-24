@@ -41,8 +41,11 @@ pub use icon::{
 pub use icon::{Personalised, personalise};
 pub use inspect::{FolderState, INSPECTION_SCHEMA, Inspection, InstallationSummary, Relation};
 pub use install::{
-    CONFIG_FOLDER, DiscSummary, InstallError, InstallPlan, RuntimeSummary, SAVES_FOLDER,
-    SPACE_MARGIN, install_names, plan_install,
+    CHECK_DISC, CHECK_GAME, CONFIG_FOLDER, COPY_DISC_FILES, COPY_LAUNCHER, Changes, CopiedFile,
+    DISC_FILES, DISC_FILES_SCHEMA, DiscFiles, DiscSummary, FolderRecord, GET_RUNTIME,
+    INSTALL_JOURNAL, INSTALL_STAGING_PREFIX, InstallError, InstallFailure, InstallNotice,
+    InstallPhase, InstallPlan, Installed, PERSONALISE, PREPARE, PUBLISH, RuntimeSummary,
+    SAVES_FOLDER, SPACE_MARGIN, Unrecorded, install_game, install_names, plan_install,
 };
 pub use payload::{
     BUILD_INFO, BuildInfo, DATA_SUFFIX, DEFAULT_CONFIG, LIBRARY_SUFFIX, MAX_BUILD_INFO_LEN,
