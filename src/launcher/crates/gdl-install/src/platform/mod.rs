@@ -12,9 +12,11 @@ pub(crate) use linux::exec_directly;
 pub(crate) use linux::{exec_directly_marking_each, leak_descriptor};
 #[cfg(windows)]
 pub(crate) use windows::{
-    Resource, fail_critical_errors, is_same_file, known_folder, native_machine,
+    Resource, fail_critical_errors, is_same_file, known_folder, long_path, native_machine,
     notify_item_updated, onedrive_account_folders, reparse_tag, set_execution_state,
     update_resources, windows_build,
 };
 #[cfg(all(windows, test))]
-pub(crate) use windows::{error_mode, execution_state, refuse_fault_dialogs, resource_bytes};
+pub(crate) use windows::{
+    error_mode, execution_state, refuse_fault_dialogs, resource_bytes, set_short_name, short_path,
+};

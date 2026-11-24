@@ -119,7 +119,9 @@ pub enum Blocker {
         native_machine: u16,
     },
     /// A folder on the destination's path has one of the alpha installer's names, which the
-    /// launcher would write in making the folders down to the destination or the files below.
+    /// launcher would write in making the folders down to the destination or the files below: in
+    /// any ASCII letter case, as Windows would make the folder, and, for a folder that is there,
+    /// by its full name where the path names it by a short alias.
     AlphaName {
         /// The name, as the alpha installer spells it.
         name: &'static str,
@@ -472,16 +474,18 @@ impl FolderChecks<'static> {
 /// each one name, and needs `needed_bytes` of room.
 ///
 /// In order, each finding listed as it is found: a folder on the path with one of the alpha
-/// installer's names; nothing on the path there; the nearest entry there no folder; a link on the
-/// path; an installation in a folder above; the alpha installer's names in the destination, then
-/// names it holds that the install would make, compared in Unicode upper case as NTFS compares
-/// them; on Windows a path too long; the nearest folder, probed as a destination when it is one,
-/// refusing new entries or, on Linux, ignoring letter case; its file system, on Linux, running no
-/// program; and its volume too small. Each of the first six ends the judging, and so does a
-/// destination that holds a state folder, another installation's or one being made, so that
-/// nothing in such a folder is made, opened or asked of its volume. A judging that goes on to the
-/// end warns, on Windows, of a destination that a cloud provider keeps, that lies in a known
-/// folder, or whose path is not ASCII on a build before 1903.
+/// installer's names, as Windows would make it, without the dots and spaces it drops from a name's
+/// end or the stream a colon names; nothing on the path there; the nearest entry there no folder;
+/// a link on the path; on Windows, a folder there whose full name is one of the alpha installer's,
+/// where the path gives it by a short alias; an installation in a folder above; the alpha
+/// installer's names in the destination, then names it holds that the install would make,
+/// compared in upper case as NTFS compares them; on Windows a path too long; the nearest folder,
+/// probed as a destination when it is one, refusing new entries or, on Linux, ignoring letter
+/// case; its file system, on Linux, running no program; and its volume too small. Each of the
+/// first seven ends the judging, and so does a destination that holds a state folder, another
+/// installation's or one being made, so that nothing in such a folder is made, opened or asked of
+/// its volume. A judging that goes on to the end warns, on Windows, of a destination that a cloud
+/// provider keeps, that lies in a known folder, or whose path is not ASCII on a build before 1903.
 ///
 /// Before anything on the path is looked at, the system is set to fail a call that meets a
 /// critical error, as on a drive that holds no medium, rather than show a dialog.
@@ -551,6 +555,16 @@ fn judge_into(
         }
         Err(error) => return Err(DestinationError::Files(error)),
     }
+    // A short alias names the folder of the name it stands for, which only its full name shows.
+    #[cfg(windows)]
+    {
+        let full = platform::long_path(&nearest)
+            .map_err(|source| DestinationError::io(&nearest, source))?;
+        if let Some(name) = alpha_name_in(&full) {
+            report.blockers.push(Blocker::AlphaName { name });
+            return Ok(());
+        }
+    }
     if let Some(installation) = installation_above(&path)? {
         report
             .blockers
@@ -611,13 +625,25 @@ fn judge_into(
     Ok(())
 }
 
-/// The first of the alpha installer's names, in any ASCII letter case, that a folder on `path`
-/// has, spelled as the alpha installer spells it.
+/// The first of the alpha installer's names that a folder on `path` has, spelled as the alpha
+/// installer spells it: each name of the path compared in any ASCII letter case, and as Windows
+/// would make a folder of it, without what follows a colon, which names a stream of the entry
+/// before it, and without the dots and spaces at its end, which Windows drops from a name it
+/// makes. Every system compares so, since elsewhere it only refuses more.
 fn alpha_name_in(path: &Path) -> Option<&'static str> {
     path.components().find_map(|component| match component {
-        Component::Normal(name) => ALPHA_NAMES
-            .into_iter()
-            .find(|alpha| name.eq_ignore_ascii_case(alpha)),
+        Component::Normal(name) => {
+            let bytes = name.as_encoded_bytes();
+            let entry = bytes.split(|&byte| byte == b':').next().unwrap_or_default();
+            let kept = entry
+                .iter()
+                .rposition(|&byte| byte != b'.' && byte != b' ')
+                .map_or(0, |last| last + 1);
+            let made = &entry[..kept];
+            ALPHA_NAMES
+                .into_iter()
+                .find(|alpha| made.eq_ignore_ascii_case(alpha.as_bytes()))
+        }
         _ => None,
     })
 }
@@ -1167,6 +1193,31 @@ mod tests {
                 top.join("GauntletDarkLegacy-Update.EXE").join("game"),
                 "GauntletDarkLegacy-Update.exe",
             ),
+            // Names that Windows makes into an alpha name: it drops the dots and spaces at a
+            // name's end as it makes the folder, and takes a colon's stream of a folder's index
+            // for the folder itself, whatever making the path absolute kept of them.
+            (top.join(".gdl-update ").join("game"), ".gdl-update"),
+            (
+                top.join("installation.json..").join("game"),
+                "installation.json",
+            ),
+            (
+                top.join(".gdl-install.lock. .").join("game"),
+                ".gdl-install.lock",
+            ),
+            (
+                top.join("installation.json::$INDEX_ALLOCATION")
+                    .join("game"),
+                "installation.json",
+            ),
+            (
+                top.join(".GDL-INSTALLER-UPDATE :$I30:$INDEX_ALLOCATION"),
+                ".gdl-installer-update",
+            ),
+            (
+                top.join("GauntletDarkLegacy-Update. "),
+                "GauntletDarkLegacy-Update",
+            ),
         ] {
             let report = judge(&destination);
             assert_eq!(
@@ -1180,6 +1231,85 @@ mod tests {
             assert_eq!(report.nearest_existing, None);
             assert_unasked(&report);
             assert_eq!(snapshot(top).unwrap(), before);
+        }
+
+        // Names that only look like the alpha's are none: a name begun with a space or a dot
+        // keeps it, and a stream is of the entry before its colon.
+        for name in [
+            "installation.json.bak",
+            " .gdl-update",
+            "..gdl-update",
+            "x.gdl-update",
+            ".gdl-updat",
+            "installation",
+            "data:installation.json",
+            "...",
+        ] {
+            let path = top.join(name).join("game");
+            assert_eq!(super::alpha_name_in(&path), None, "{name:?}");
+        }
+    }
+
+    /// The short alias of the folder at `folder`: `alias`, where this process may give it one, or
+    /// else the one its file system gave it, or `None` where it has none.
+    #[cfg(windows)]
+    fn short_alias_of(folder: &Path, alias: &str) -> Option<String> {
+        use crate::platform::{set_short_name, short_path};
+
+        if set_short_name(folder, alias).is_ok() {
+            return Some(alias.to_owned());
+        }
+        let short = short_path(folder).ok()?;
+        let alias = short.file_name()?.to_str()?.to_owned();
+        (Some(alias.as_str()) != folder.file_name().and_then(|name| name.to_str())).then_some(alias)
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_short_alias_of_an_alpha_name_refuses_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let top = dir.path();
+        let alpha = top.join(".gdl-update");
+        fs::create_dir(&alpha).unwrap();
+        let Some(alias) = short_alias_of(&alpha, "GDLUPD~1") else {
+            eprintln!(
+                "skipped: this process may give no folder a short alias, and the file system gave \
+                 none"
+            );
+            return;
+        };
+        let aliased = top.join(&alias);
+        assert!(fs::symlink_metadata(&aliased).unwrap().is_dir(), "{alias}");
+        backdate(top).unwrap();
+        let before = snapshot(top).unwrap();
+        // The alias is the destination, a folder above it, and one above a folder not there yet:
+        // the folder of the alpha's name is never probed nor written below.
+        for destination in [
+            aliased.clone(),
+            aliased.join("game"),
+            aliased.join("game").join("deeper"),
+        ] {
+            let report = judge(&destination);
+            assert_eq!(
+                report.blockers,
+                [Blocker::AlphaName {
+                    name: ".gdl-update"
+                }],
+                "{}",
+                destination.display()
+            );
+            assert_unasked(&report);
+            assert_eq!(snapshot(top).unwrap(), before, "{}", destination.display());
+        }
+        assert!(folder_names(&alpha).unwrap().is_empty());
+
+        // A short alias of any other name is judged as that folder.
+        let other = top.join("a folder of a long name");
+        fs::create_dir(&other).unwrap();
+        if let Some(alias) = short_alias_of(&other, "AFOLDE~1") {
+            let report = judge(&top.join(alias).join("game"));
+            assert!(report.blockers.is_empty(), "{report:?}");
+            assert!(folder_names(&other).unwrap().is_empty());
         }
     }
 

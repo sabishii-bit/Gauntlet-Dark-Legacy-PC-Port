@@ -5,8 +5,9 @@
 //! that the system fail a call rather than show a dialog, and what a folder chosen to install into
 //! is to the system: its build from RtlGetVersion, the user's known folders from
 //! SHGetKnownFolderPath, an entry's reparse tag from GetFileInformationByHandleEx, and the folders
-//! of the OneDrive accounts signed in from the registry; and whether an open file is the one at a
-//! name, by the identities GetFileInformationByHandleEx and GetFileInformationByHandle give files.
+//! of the OneDrive accounts signed in from the registry, and a path's names in full, short aliases
+//! replaced, from GetLongPathNameW; and whether an open file is the one at a name, by the
+//! identities GetFileInformationByHandleEx and GetFileInformationByHandle give files.
 
 use std::ffi::OsString;
 use std::fs::{File, OpenOptions};
@@ -27,7 +28,7 @@ use windows_sys::Win32::Foundation::{
 use windows_sys::Win32::Storage::FileSystem::{
     BY_HANDLE_FILE_INFORMATION, FILE_ATTRIBUTE_REPARSE_POINT, FILE_ATTRIBUTE_TAG_INFO,
     FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_ID_INFO, FileAttributeTagInfo,
-    FileIdInfo, GetFileInformationByHandle, GetFileInformationByHandleEx,
+    FileIdInfo, GetFileInformationByHandle, GetFileInformationByHandleEx, GetLongPathNameW,
 };
 use windows_sys::Win32::System::Com::CoTaskMemFree;
 use windows_sys::Win32::System::Diagnostics::Debug::{
@@ -54,10 +55,14 @@ use windows_sys::core::{BOOL, GUID, PCWSTR, PWSTR, w};
 use crate::destination::KnownFolder;
 
 #[cfg(test)]
+use windows_sys::Win32::Foundation::GENERIC_WRITE;
+#[cfg(test)]
 use windows_sys::Win32::Foundation::{
     ERROR_RESOURCE_LANG_NOT_FOUND, ERROR_RESOURCE_NAME_NOT_FOUND, ERROR_RESOURCE_TYPE_NOT_FOUND,
     FreeLibrary, HMODULE, WIN32_ERROR,
 };
+#[cfg(test)]
+use windows_sys::Win32::Storage::FileSystem::{DELETE, GetShortPathNameW, SetFileShortNameW};
 #[cfg(test)]
 use windows_sys::Win32::System::Diagnostics::Debug::SEM_NOGPFAULTERRORBOX;
 #[cfg(test)]
@@ -86,8 +91,12 @@ const MAX_ONEDRIVE_ACCOUNTS: u32 = 64;
 /// The UTF-16 units a registry key's name may hold, with room for the NUL after it.
 const MAX_KEY_NAME_UNITS: usize = 256;
 
+/// The most UTF-16 units a path may hold, the NUL after it included: a verbatim path of Windows'
+/// greatest length.
+const MAX_PATH_UNITS: usize = 32_768;
+
 /// The most bytes an account's folder is read in: a verbatim path of Windows' greatest length.
-const MAX_USER_FOLDER_BYTES: u32 = 2 * 32_768;
+const MAX_USER_FOLDER_BYTES: u32 = 2 * MAX_PATH_UNITS as u32;
 
 /// The errors FindResourceExW gives for a resource that a program does not hold: none of its
 /// type, none of its id among those of its type, or none in its language.
@@ -534,6 +543,69 @@ fn file_index(file: &File) -> io::Result<(u32, u32, u32)> {
     ))
 }
 
+/// The path of the entry at `path`, which must be there, each name on it as the folder above it
+/// holds it in full, as GetLongPathNameW gives it: a short alias, such as PROGRA~1, gives way to
+/// the name it stands for. The path goes to the call in its verbatim form, so that it is not held
+/// to MAX_PATH, and comes back in it.
+pub(crate) fn long_path(path: &Path) -> io::Result<PathBuf> {
+    let path = VerbatimPath::new(path)?;
+    let mut units = vec![0_u16; MAX_PATH_UNITS];
+    // SAFETY: the path is a NUL-terminated UTF-16 string that `path` owns and keeps alive until
+    // the call returns, which only reads it; the buffer holds `units.len()` units, which the call
+    // is told and writes no more than.
+    let len = unsafe { GetLongPathNameW(path.as_ptr(), units.as_mut_ptr(), units.len() as u32) };
+    let len = len as usize;
+    if len == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    if len >= units.len() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "a path's full form is longer than any path",
+        ));
+    }
+    units.truncate(len);
+    Ok(PathBuf::from(OsString::from_wide(&units)))
+}
+
+/// The path of the entry at `path`, which must be there, each name on it as its short alias where
+/// it has one, as GetShortPathNameW gives it.
+#[cfg(test)]
+pub(crate) fn short_path(path: &Path) -> io::Result<PathBuf> {
+    let path = VerbatimPath::new(path)?;
+    let mut units = vec![0_u16; MAX_PATH_UNITS];
+    // SAFETY: as in `long_path`.
+    let len = unsafe { GetShortPathNameW(path.as_ptr(), units.as_mut_ptr(), units.len() as u32) };
+    let len = len as usize;
+    if len == 0 || len >= units.len() {
+        return Err(io::Error::last_os_error());
+    }
+    units.truncate(len);
+    Ok(PathBuf::from(OsString::from_wide(&units)))
+}
+
+/// Gives the folder at `path` the short alias `alias`, as SetFileShortNameW does, which a process
+/// may ask only with the restore privilege enabled, and only of a file system that keeps such
+/// aliases.
+#[cfg(test)]
+pub(crate) fn set_short_name(path: &Path, alias: &str) -> io::Result<()> {
+    let folder = OpenOptions::new()
+        .access_mode(GENERIC_WRITE | DELETE)
+        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+        .open(path)?;
+    let mut name: Vec<u16> = alias.encode_utf16().collect();
+    name.push(0);
+    // SAFETY: the handle is the open folder's, which lives through the call; the alias is a
+    // NUL-terminated UTF-16 string that `name` owns and keeps alive until the call returns, which
+    // only reads it.
+    let set = unsafe { SetFileShortNameW(folder.as_raw_handle(), name.as_ptr()) };
+    if set == 0 {
+        Err(io::Error::last_os_error())
+    } else {
+        Ok(())
+    }
+}
+
 /// The folders that the OneDrive accounts signed in keep in sync, as the registry names them under
 /// the user's own key: none when OneDrive has no account there. An account whose folder cannot be
 /// read, or names none, gives none.
@@ -668,8 +740,9 @@ mod tests {
     use std::os::windows::fs::OpenOptionsExt;
 
     use super::{
-        file_id, file_index, is_same_file, numbered, onedrive_account_folders, reparse_tag,
-        resource_bytes, update_resources, wide_string, windows_build,
+        file_id, file_index, is_same_file, long_path, numbered, onedrive_account_folders,
+        reparse_tag, resource_bytes, set_short_name, short_path, update_resources, wide_string,
+        windows_build,
     };
 
     /// The first build of Windows 10, the oldest system the launcher runs on.
@@ -776,6 +849,34 @@ mod tests {
         assert!(!is_same_file(&file, &junction).unwrap());
         // Nothing at the name is the system's own error.
         let error = is_same_file(&file, &dir.path().join("missing")).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::NotFound, "{error}");
+    }
+
+    #[test]
+    fn a_path_is_given_by_its_full_names() {
+        let dir = tempfile::tempdir().unwrap();
+        let folder = dir.path().join("a folder of a long name");
+        fs::create_dir(&folder).unwrap();
+        // In its verbatim form, its own name kept.
+        let full = long_path(&folder).unwrap();
+        assert!(full.as_os_str().to_string_lossy().starts_with(r"\\?\"));
+        assert_eq!(full.file_name(), folder.file_name());
+        // A short alias gives way to the name it stands for, where this process may give one.
+        if set_short_name(&folder, "AFOLDE~1").is_ok() {
+            assert_eq!(
+                short_path(&folder).unwrap().file_name().unwrap(),
+                "AFOLDE~1"
+            );
+            let full = long_path(&dir.path().join("AFOLDE~1")).unwrap();
+            assert_eq!(full.file_name(), folder.file_name());
+        } else {
+            eprintln!("skipped the alias: this process may give no folder one");
+        }
+        // A path past MAX_PATH is given too.
+        let long = gdl_fixtures::long_root(&dir.path().join("long"), 280).unwrap();
+        assert_eq!(long_path(&long).unwrap().file_name(), long.file_name());
+        // Nothing there is the system's own error.
+        let error = long_path(&dir.path().join("missing")).unwrap_err();
         assert_eq!(error.kind(), io::ErrorKind::NotFound, "{error}");
     }
 
