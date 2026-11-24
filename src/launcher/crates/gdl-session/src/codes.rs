@@ -9,8 +9,9 @@ use std::io;
 use gdl_extract::ExtractError;
 use gdl_files::FilesError;
 use gdl_install::{
-    Blocker, DestinationError, FolderError, FolderState, GameStartError, GameUseError, LockError,
-    PayloadError, ReceiptError, SectionsError, Warning,
+    Blocker, DestinationError, FolderError, FolderState, GameStartError, GameUseError, IconError,
+    InstallError, InstallNotice, LockError, PayloadError, ReceiptError, RecoveryError,
+    SectionsError, Warning,
 };
 use gdl_media::{DiscRule, DumpRefusal, GameCubeRule, MediaError, RomRule, TplRule};
 
@@ -105,6 +106,10 @@ const STATE_NEWER_LAUNCHER: &str = "state.newerLauncher";
 /// A journal of a job left unfinished cannot be read, so that job is left as it is.
 const JOURNAL_UNREADABLE: &str = "journal.unreadable";
 
+/// A job left unfinished can be neither finished nor taken back, since what its journal records
+/// does not match what the folder holds: the folder is left as it is, the journal with it.
+const RECOVER_FAILED: &str = "recover.failed";
+
 /// The system runs the launcher and the game, which are x64 programs, only by emulating them, as
 /// Windows on ARM64 does.
 const SYSTEM_UNSUPPORTED: &str = "system.unsupported";
@@ -152,7 +157,7 @@ const DUMP_HASH_MISMATCH: &str = "dump.hashMismatch";
 
 /// Every code this module's functions give, each once: the codes the page's string table holds
 /// words for.
-pub const CODES: [&str; 37] = [
+pub const CODES: [&str; 38] = [
     PAYLOAD_DAMAGED,
     IO_FAILED,
     SPACE_RAN_OUT,
@@ -177,6 +182,7 @@ pub const CODES: [&str; 37] = [
     INSTALL_OTHER_PLATFORM,
     STATE_NEWER_LAUNCHER,
     JOURNAL_UNREADABLE,
+    RECOVER_FAILED,
     SYSTEM_UNSUPPORTED,
     ELEVATED_REFUSED,
     ROOT_REFUSED,
@@ -378,6 +384,69 @@ pub fn game_start(error: &GameStartError) -> Report {
         | GameStartError::Start(_)
         | GameStartError::TimedOut
         | GameStartError::Io(_) => Report::Error(GAME_PROBE_FAILED),
+    }
+}
+
+/// What a fresh install's failure reports, whether planning or the job met it. A cancel has none.
+/// A finding that refuses the install reports what [`blocker`] gives it, so that a link on the
+/// folder chosen, or on a folder above it, is `folder.links` wherever the install met it. A failure
+/// to judge the folder reports what [`destination`] gives it, a reader's what [`media`] gives it,
+/// the launcher file's what [`sections`] gives it, the lock's what [`lock`] gives it, and a file
+/// operation's what [`files`] gives it, so that a link among what the install made, in its staging,
+/// is `io.failed`. A refused runtime reports what [`payload`] gives it, but for a staged copy of
+/// one of its files that could not be written, which reports what the system answered the write,
+/// as the install's own writes do: `space.ranOut` when the disk was full or the quota spent, else
+/// `io.failed`. A disc icon that is no TPL the launcher decodes reports what [`media`] gives it, a
+/// frame that is no icon's is `source.damaged`, and the system's refusal to set the icon into the
+/// game's executable, or to read the executable back, is `io.failed`, as is a record of
+/// installations that would not take the folder.
+pub fn install(error: &InstallError) -> Report {
+    match error {
+        InstallError::Cancelled => Report::Cancelled,
+        InstallError::Blocked(finding) => Report::Error(blocker(finding)),
+        InstallError::Destination(error) => Report::Error(destination(error)),
+        InstallError::Image(error) => media(error),
+        InstallError::Icon(IconError::Tpl(error)) => media(error),
+        InstallError::Icon(IconError::Decoded) => Report::Error(SOURCE_DAMAGED),
+        InstallError::Icon(IconError::Embed { .. } | IconError::Rehash { .. }) => {
+            Report::Error(IO_FAILED)
+        }
+        InstallError::Runtime(PayloadError::Io(source)) => Report::Error(written(source)),
+        InstallError::Runtime(error) => payload(error),
+        InstallError::Launcher(error) => sections(error),
+        InstallError::Lock(error) => Report::Error(lock(error)),
+        InstallError::Files(error) => Report::Error(files(error)),
+        InstallError::Io { source, .. } => Report::Error(written(source)),
+        InstallError::Record { .. } => Report::Error(IO_FAILED),
+    }
+}
+
+/// What a failure to recover an unfinished install reports: always a problem, since a recovery is
+/// never cancelled, and whatever stopped it, its journal is left for the next start. The lock's
+/// refusal reports what [`lock`] gives it, `lock.busy` among it, a hold: the recovery can wait for
+/// the job that holds the lock. A later launcher's state is `state.newerLauncher`, a journal that
+/// cannot be read `journal.unreadable`, and a journal that does not match what the folder holds
+/// `recover.failed`. A file operation's failure reports what [`files`] gives it, and the system's
+/// refusal to look at the folder is `io.failed` whatever it answered, since a look writes nothing.
+pub fn recovery(error: &RecoveryError) -> Report {
+    Report::Error(match error {
+        RecoveryError::Lock(error) => lock(error),
+        RecoveryError::NewerLauncher => STATE_NEWER_LAUNCHER,
+        RecoveryError::JournalUnreadable { .. } => JOURNAL_UNREADABLE,
+        RecoveryError::Inconsistent { .. } => RECOVER_FAILED,
+        RecoveryError::Files(error) => files(error),
+        RecoveryError::Io { .. } => IO_FAILED,
+    })
+}
+
+/// The code of what went wrong in an install that stands: a staged game that did not answer when
+/// asked for its version is `game.probeFailed`, and a record of installations that would not take
+/// the installation, like a cleanup that stopped part-way, which the next start finishes, is
+/// `io.failed`.
+pub fn notice(notice: &InstallNotice) -> &'static str {
+    match notice {
+        InstallNotice::ProbeFailed { .. } => GAME_PROBE_FAILED,
+        InstallNotice::NotRecorded { .. } | InstallNotice::CleanupLeft { .. } => IO_FAILED,
     }
 }
 
@@ -677,25 +746,34 @@ mod tests {
 
     use gdl_extract::{Expansion, ExtractError, FingerprintRule, NativeRule, TreeRule};
     use gdl_files::{
-        ALPHA_NAMES, DISC_NAMES, FilesError, MAX_INSTALL_ROOT_UTF16, PAYLOAD_NAMES, RelPath,
+        ALPHA_NAMES, Cancel, DISC_NAMES, FilesError, Job, MAX_INSTALL_ROOT_UTF16, NoProgress,
+        PAYLOAD_NAMES, RelPath,
     };
     #[cfg(windows)]
     use gdl_fixtures::long_root;
-    use gdl_fixtures::{link_folder, make_alpha_markers, synthetic_ciso, synthetic_iso, tpl};
+    use gdl_fixtures::{
+        RuntimeFiles, append_sections, icon_iso, link_folder, make_alpha_markers, pretty_json,
+        synthetic_ciso, synthetic_iso, tiny_elf, tpl,
+    };
     use gdl_install::{
-        Blocker, BuildInfo, DestinationError, FolderError, FolderState, GameStartError,
-        GameUseError, KnownFolder, LockError, PayloadError, ReceiptError, STATE_DIR, SectionsError,
-        Unsupported, Warning, judge_destination,
+        Blocker, BuildInfo, Changes, DestinationError, FolderError, FolderState, GameStartError,
+        GameUseError, INSTALL_JOURNAL, INSTALL_STAGING_PREFIX, IconError, InstallError,
+        InstallFailure, InstallFolder, InstallNotice, JOURNAL_DIR, JOURNAL_SCHEMA, KnownFolder,
+        LockError, MIN_LAUNCHER, PayloadError, RECEIPT_FILE, RUNTIME_SECTION, ReceiptError,
+        RecoveryError, STATE_DIR, Sections, SectionsError, Unrecorded, Unsupported, Warning,
+        install_game, judge_destination, plan_install, recover_install,
     };
     use gdl_media::{
         Console, DiscRule, DumpRefusal, GameCubeImage, GameCubeRule, MediaError, RomRule, TplRule,
         Verdict, first_frame, identify,
     };
-    use gdl_release::Platform;
+    use gdl_release::{Platform, Version};
+    use serde_json::json;
 
     use super::{
         CODES, Report, blocker, destination, dump_refusal, extract, extraction, files, folder,
-        game_start, game_use, lock, media, payload, receipt, refusal, sections, state, warning,
+        game_start, game_use, install, lock, media, notice, payload, receipt, recovery, refusal,
+        sections, state, warning,
     };
     use crate::extraction::{ExtractionError, output_name};
     use crate::privilege::Refusal;
@@ -705,6 +783,9 @@ mod tests {
 
     /// What a failure to read or copy a runtime, or to read the launcher file, reports.
     const FAILED: Report = Report::Error("io.failed");
+
+    /// The version of the launcher that installs and recovers in the tests, and of its runtime.
+    const VERSION: &str = "1.0.0-beta";
 
     /// Every rule of the N64 ROM's format, with its code: only a ROM cut short and a file of no
     /// byte order are told apart from damage.
@@ -1261,6 +1342,198 @@ mod tests {
         failures
     }
 
+    /// One failure of every kind a fresh install meets, with what each reports: every finding,
+    /// failure to judge the folder, reader's refusal, refused runtime, refusal of the launcher
+    /// file's sections, of the lock and of a file operation; a staged copy of a runtime's file
+    /// whose writer would not take it once for each of the system's answers; a disc icon refused
+    /// by every rule of its format, for its frame, and, once for each of the system's answers, for
+    /// the executable it was to be set into; the install's own write once for each of the
+    /// system's answers; a refused record; and a cancel.
+    fn install_failures() -> Vec<(InstallError, Report)> {
+        let mut failures: Vec<(InstallError, Report)> = blockers()
+            .into_iter()
+            .map(|(finding, code)| (InstallError::Blocked(finding), Report::Error(code)))
+            .collect();
+        failures.extend(
+            destination_failures()
+                .into_iter()
+                .map(|(error, code)| (InstallError::Destination(error), Report::Error(code))),
+        );
+        failures.extend(
+            media_refusals()
+                .into_iter()
+                .map(|(error, report)| (InstallError::Image(error), report)),
+        );
+        failures.extend(TPL_RULES.into_iter().map(|(rule, code)| {
+            let error = MediaError::Tpl {
+                rule,
+                detail: detail(),
+            };
+            (
+                InstallError::Icon(IconError::Tpl(error)),
+                Report::Error(code),
+            )
+        }));
+        failures.push((
+            InstallError::Icon(IconError::Decoded),
+            Report::Error("source.damaged"),
+        ));
+        // Setting the icon in, or reading the executable back, is the system's failure whatever it
+        // answered.
+        failures.extend(write_failures().into_iter().map(|(source, _)| {
+            let path = path();
+            (
+                InstallError::Icon(IconError::Embed { path, source }),
+                FAILED,
+            )
+        }));
+        failures.extend(write_failures().into_iter().map(|(source, _)| {
+            let path = path();
+            (
+                InstallError::Icon(IconError::Rehash { path, source }),
+                FAILED,
+            )
+        }));
+        failures.extend(
+            payload_refusals()
+                .into_iter()
+                .map(|(error, report)| (InstallError::Runtime(error), report)),
+        );
+        failures.extend(write_failures().into_iter().map(|(source, code)| {
+            let error = InstallError::Runtime(PayloadError::Io(source));
+            (error, Report::Error(code))
+        }));
+        failures.extend(
+            sections_refusals()
+                .into_iter()
+                .map(|(error, report)| (InstallError::Launcher(error), report)),
+        );
+        failures.extend(
+            lock_refusals()
+                .into_iter()
+                .map(|(error, code)| (InstallError::Lock(error), Report::Error(code))),
+        );
+        failures.extend(
+            files_refusals()
+                .into_iter()
+                .map(|(error, code)| (InstallError::Files(error), Report::Error(code))),
+        );
+        failures.extend(write_failures().into_iter().map(|(source, code)| {
+            let path = path();
+            (InstallError::Io { path, source }, Report::Error(code))
+        }));
+        failures.push((InstallError::Record { source: denied() }, FAILED));
+        failures.push((InstallError::Cancelled, Report::Cancelled));
+        failures
+    }
+
+    /// One failure of every kind a recovery meets, with its code: every refusal of the lock and of
+    /// a file operation, a later launcher's state, a journal that cannot be read and one that does
+    /// not match the folder, and the system's refusal to look once for each of its answers to a
+    /// write.
+    fn recovery_failures() -> Vec<(RecoveryError, &'static str)> {
+        let mut failures: Vec<(RecoveryError, &'static str)> = lock_refusals()
+            .into_iter()
+            .map(|(error, code)| (RecoveryError::Lock(error), code))
+            .collect();
+        failures.extend([
+            (RecoveryError::NewerLauncher, "state.newerLauncher"),
+            (
+                RecoveryError::JournalUnreadable { detail: detail() },
+                "journal.unreadable",
+            ),
+            (
+                RecoveryError::Inconsistent { detail: detail() },
+                "recover.failed",
+            ),
+        ]);
+        failures.extend(
+            files_refusals()
+                .into_iter()
+                .map(|(error, code)| (RecoveryError::Files(error), code)),
+        );
+        failures.extend(write_failures().into_iter().map(|(source, _)| {
+            let path = path();
+            (RecoveryError::Io { path, source }, "io.failed")
+        }));
+        failures
+    }
+
+    /// Every kind of thing that goes wrong in an install that stands, with its code: a probe of a
+    /// game that ended with a status, and of one that gave none.
+    fn notices() -> Vec<(InstallNotice, &'static str)> {
+        vec![
+            (
+                InstallNotice::ProbeFailed {
+                    status: Some(2),
+                    first_line: Some("usage".into()),
+                    stderr_tail: "unknown option".into(),
+                },
+                "game.probeFailed",
+            ),
+            (
+                InstallNotice::ProbeFailed {
+                    status: None,
+                    first_line: None,
+                    stderr_tail: String::new(),
+                },
+                "game.probeFailed",
+            ),
+            (InstallNotice::NotRecorded { detail: detail() }, "io.failed"),
+            (InstallNotice::CleanupLeft { detail: detail() }, "io.failed"),
+        ]
+    }
+
+    /// The name of a staging an install made.
+    fn staging_name() -> String {
+        format!("{INSTALL_STAGING_PREFIX}AbC123xy")
+    }
+
+    /// The sections of a launcher file of the launcher's version that carries the standard
+    /// runtime of the system the tests run on.
+    fn launcher() -> Sections<io::Cursor<Vec<u8>>> {
+        let platform =
+            Platform::of_this_build().expect("a release is built for the system the tests run on");
+        let runtime = RuntimeFiles::standard(platform.as_str(), VERSION).zip();
+        let mut file = tiny_elf();
+        append_sections(&mut file, &[(RUNTIME_SECTION, &runtime)], 0);
+        Sections::find(io::Cursor::new(file))
+            .expect("the tests' launcher file keeps the sections' rules")
+            .expect("the tests' launcher file carries sections")
+    }
+
+    /// What installing the disc with an icon, kept in `source`, and the standard runtime into
+    /// `destination` fails with, the job asked to stop before it begins when `cancelled`.
+    #[track_caller]
+    fn install_failure(source: &Path, destination: &Path, cancelled: bool) -> InstallFailure {
+        let path = source.join("game.iso");
+        std::fs::write(&path, icon_iso()).unwrap();
+        let mut image = GameCubeImage::open(&path).unwrap();
+        let mut launcher = launcher();
+        let plan = plan_install(&mut image, &mut launcher, destination, VERSION).unwrap();
+        let cancel = Cancel::default();
+        if cancelled {
+            cancel.cancel();
+        }
+        let job = Job {
+            cancel: &cancel,
+            progress: &NoProgress,
+        };
+        install_game(&plan, &mut image, &mut launcher, &mut Unrecorded, &job).unwrap_err()
+    }
+
+    /// What recovering the folder `root` for the launcher of the tests' version fails with.
+    #[track_caller]
+    fn recovery_failure(root: &Path) -> RecoveryError {
+        let running = Version::parse(VERSION).unwrap();
+        let cancel = Cancel::default();
+        let job = Job {
+            cancel: &cancel,
+            progress: &NoProgress,
+        };
+        recover_install(root, &running, &mut Unrecorded, &job).unwrap_err()
+    }
+
     /// The codes of what judging `chosen` finds refusing an install of `names` that needs `needed`
     /// bytes there, in the order found.
     #[track_caller]
@@ -1806,6 +2079,131 @@ mod tests {
     }
 
     #[test]
+    fn install_failures_name_their_codes() {
+        for (error, expected) in install_failures() {
+            assert_eq!(install(&error), expected, "{}: {error}", error.rule());
+        }
+        // A link is told by where it is: one on the folder chosen, or on a folder above it, the
+        // install refuses as the judging does, while one among what the install made, in its
+        // staging, was put there by something else.
+        let chosen = InstallError::Blocked(Blocker::Links { path: path() });
+        assert_eq!(install(&chosen), Report::Error("folder.links"));
+        let staged = path().join(STATE_DIR).join(staging_name()).join("Gauntlet");
+        let inside = InstallError::Files(FilesError::Link { path: staged });
+        assert_eq!(install(&inside), FAILED);
+        // A write that found the disk full is told as one wherever the install made it: a file of
+        // its own, the runtime's, the launcher's copy or the disc's.
+        let full = || io::Error::from(io::ErrorKind::StorageFull);
+        let writes = [
+            InstallError::Io {
+                path: path(),
+                source: full(),
+            },
+            InstallError::Files(FilesError::Io {
+                path: path(),
+                source: full(),
+            }),
+            InstallError::Runtime(PayloadError::Io(full())),
+            InstallError::Launcher(SectionsError::Write(full())),
+            InstallError::Image(MediaError::Write {
+                file: disc_file(),
+                source: full(),
+            }),
+        ];
+        for error in writes {
+            let expected = Report::Error("space.ranOut");
+            assert_eq!(install(&error), expected, "{}: {error}", error.rule());
+        }
+        // What an install into a folder a link leads to, and one asked to stop, fail with as they
+        // run reports so, before either makes anything.
+        let source = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let top = dir.path();
+        let real = top.join("real");
+        std::fs::create_dir(&real).unwrap();
+        let link = top.join("link");
+        link_folder(&link, &real).unwrap();
+        let failure = install_failure(source.path(), &link.join("game"), false);
+        assert!(
+            matches!(failure.error, InstallError::Blocked(Blocker::Links { .. })),
+            "{failure:?}"
+        );
+        assert_eq!(install(&failure.error), Report::Error("folder.links"));
+        assert_eq!(failure.changes, Changes::None);
+        let fresh = top.join("fresh");
+        let failure = install_failure(source.path(), &fresh.join("game"), true);
+        assert!(
+            matches!(failure.error, InstallError::Cancelled),
+            "{failure:?}"
+        );
+        assert_eq!(install(&failure.error), Report::Cancelled);
+        assert_eq!(failure.changes, Changes::None);
+        assert!(!fresh.exists());
+    }
+
+    #[test]
+    fn recovery_failures_name_their_codes() {
+        for (error, code) in recovery_failures() {
+            let expected = Report::Error(code);
+            assert_eq!(recovery(&error), expected, "{}: {error}", error.rule());
+        }
+        // What recovering a folder fails with reports so: an install's journal whose lock another
+        // job holds, one that cannot be read, one a later launcher wrote, and one that says the
+        // install is to be taken back beside a receipt that stands.
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let state = root.join(STATE_DIR);
+        let journals = state.join(JOURNAL_DIR);
+        std::fs::create_dir_all(&journals).unwrap();
+        let journal = journals.join(INSTALL_JOURNAL);
+        std::fs::write(&journal, b"{").unwrap();
+        let held = InstallFolder::at(root).unwrap().lock().unwrap();
+        let error = recovery_failure(root);
+        drop(held);
+        assert!(
+            matches!(error, RecoveryError::Lock(LockError::Busy)),
+            "{error:?}"
+        );
+        assert_eq!(recovery(&error), Report::Error("lock.busy"));
+        let error = recovery_failure(root);
+        assert!(
+            matches!(error, RecoveryError::JournalUnreadable { .. }),
+            "{error:?}"
+        );
+        assert_eq!(recovery(&error), Report::Error("journal.unreadable"));
+        let staging = json!({
+            "schema": JOURNAL_SCHEMA,
+            "minLauncher": MIN_LAUNCHER,
+            "phase": "staging",
+            "madeFolders": 0,
+            "staging": staging_name(),
+            "roots": [],
+            "published": [],
+        });
+        let mut later = staging.clone();
+        later["minLauncher"] = json!("9.0.0");
+        std::fs::write(&journal, pretty_json(&later)).unwrap();
+        let error = recovery_failure(root);
+        assert!(matches!(error, RecoveryError::NewerLauncher), "{error:?}");
+        assert_eq!(recovery(&error), Report::Error("state.newerLauncher"));
+        std::fs::write(&journal, pretty_json(&staging)).unwrap();
+        std::fs::write(state.join(RECEIPT_FILE), b"{}").unwrap();
+        let error = recovery_failure(root);
+        assert!(
+            matches!(error, RecoveryError::Inconsistent { .. }),
+            "{error:?}"
+        );
+        assert_eq!(recovery(&error), Report::Error("recover.failed"));
+    }
+
+    #[test]
+    fn notices_name_their_codes() {
+        for (told, code) in notices() {
+            assert_eq!(notice(&told), code, "{told:?}");
+        }
+    }
+
+    #[test]
     fn a_runtime_refused_for_its_sections_reports_what_the_sections_do() {
         // The runtime is read from the launcher file's sections, so a cancel or a failed read
         // there reports as the sections report it, never as a damaged payload.
@@ -1882,6 +2280,17 @@ mod tests {
                 .iter()
                 .filter_map(|(error, _)| code_of(extraction(error))),
         );
+        returned.extend(
+            install_failures()
+                .iter()
+                .filter_map(|(error, _)| code_of(install(error))),
+        );
+        returned.extend(
+            recovery_failures()
+                .iter()
+                .filter_map(|(error, _)| code_of(recovery(error))),
+        );
+        returned.extend(notices().iter().map(|(told, _)| notice(told)));
         assert_eq!(returned, listed);
     }
 }
