@@ -123,6 +123,7 @@ void Combatant::strikeWith(Actor& critter, s32 id, const MoveDefinition& move, s
         blow.damage = dealt(damage->damage * m_sim.scales.damage);
         blow.breath = breath.has_value();
         blow.gated = gated;
+        blow.hitGap = critter.definition->rules().playerHitGap;
         blow.flags = damage->flags;
         blow.origin = centre;
         if (breath.has_value()) {

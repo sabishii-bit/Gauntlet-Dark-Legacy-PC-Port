@@ -85,6 +85,8 @@ TEST_CASE("Dreamcast six native bosses bind all authored attacks and collision n
             CHECK(stock->data.rules().restoreCaptureSupport);
             CHECK(stock->data.rules().nodeFramePartOffsets);
             CHECK_FALSE(stock->data.rules().unitBlowPush);
+            // Its blows and breaths hold a struck player off for a tenth of a second.
+            CHECK(stock->data.rules().playerHitGap == Approx(0.1f));
             const auto validate = [&](const CritterData& part) {
                 for (const auto& move : part.moves()) {
                     CAPTURE(move.name, move.anim, move.colnode);
@@ -111,9 +113,11 @@ TEST_CASE("Dreamcast six native bosses bind all authored attacks and collision n
             };
             validate(stock->data);
             for (const auto& child : stock->children) {
-                // A head places its parts and pushes with its blows as the body does.
+                // A head places its parts, pushes with its blows and holds a struck player
+                // off as the body does.
                 CHECK(child.rules().nodeFramePartOffsets);
                 CHECK_FALSE(child.rules().unitBlowPush);
+                CHECK(child.rules().playerHitGap == Approx(0.1f));
                 validate(child);
             }
             CHECK(stock->children.size() == (kind == 35 ? 3 : 0));

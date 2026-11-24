@@ -2,6 +2,7 @@
 #include <array>
 #include <cstddef>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -9,10 +10,14 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
+#include "engine/core/Types.h"
+#include "engine/io/NativeStateDigest.h"
+
 #include "FakeRenderDevice.h"
 #include "NativeStateSupport.h"
 #include "TestSupport.h"
 #include "game/bosses/BossDefinition.h"
+#include "game/critters/CombatEvents.h"
 #include "game/critters/Combatant.h"
 #include "game/critters/General.h"
 #include "game/critters/Golem.h"
@@ -241,6 +246,30 @@ TEST_CASE("combatant native digest includes child-only damage memory and pending
     CHECK(encounter->digest(dying) == withOutputs);
     REQUIRE(actor.restoreLocal(dying));
     CHECK(encounter->digest() == withOutputs);
+}
+
+TEST_CASE("a pending blow's visitor keeps every field, the gap it holds its player off by too",
+          "[native-state-digest][combatant-native-digest]") {
+    const auto hash = [](const CombatBlow& blow) {
+        NativeStateDigest digest;
+        digest.value(blow);
+        return checked(digest);
+    };
+    const CombatBlow blow;
+    const auto baseline = hash(blow);
+    const std::array<std::function<void(CombatBlow&)>, 11> mutations{
+        [](auto& v) { v.player = 2; },      [](auto& v) { v.critter = 5; },
+        [](auto& v) { v.damage = 7; },      [](auto& v) { v.direction.x += 1; },
+        [](auto& v) { v.breath = true; },   [](auto& v) { v.gated = true; },
+        [](auto& v) { v.hitGap = 0.1f; },   [](auto& v) { v.flags = 4; },
+        [](auto& v) { v.origin.y += 1; },   [](auto& v) { v.area = true; },
+        [](auto& v) { v.repeatGap = 0.5f; }};
+    for (usize i = 0; i < mutations.size(); ++i) {
+        CAPTURE(i);
+        auto changed = blow;
+        mutations[i](changed);
+        CHECK(hash(changed) != baseline);
+    }
 }
 
 TEST_CASE("combatant native patrol bindings use owner identity without reading live routes",

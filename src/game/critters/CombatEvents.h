@@ -47,7 +47,8 @@ struct CombatBlow {
     f32 damage = 0.0f;
     Vec3 direction{0.0f, 0.0f, 1.0f};
     bool breath = false;
-    bool gated = false; ///< held off by the player's shared quarter-second hit gap (fxhittime)
+    bool gated = false; ///< held off by the player's shared hit gap (fxhittime)
+    f32 hitGap = 0.25f; ///< seconds a breath or gated blow sets that gap to when it strikes
     u32 flags = 0;      ///< authored player damage modifiers, not the attack's behavior flags
     Vec3 origin{0.0f};  ///< emitted segment origin, used for breath cover queries
     bool area = false;
@@ -122,7 +123,7 @@ inline void visitNativeState(NativeStateDigest& digest, const CombatArenaActivat
     digest.fields<2>(state);
 }
 inline void visitNativeState(NativeStateDigest& digest, const CombatBlow& state) {
-    digest.fields<10>(state);
+    digest.fields<11>(state);
 }
 inline void visitNativeState(NativeStateDigest& digest, const CombatCue& state) {
     digest.fields<21>(state);

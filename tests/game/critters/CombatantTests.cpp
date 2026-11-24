@@ -14,6 +14,7 @@
 #include <catch2/generators/catch_generators.hpp>
 
 #include "engine/assets/AnimationSet.h"
+#include "engine/assets/ItemArchive.h"
 #include "engine/assets/WorldLayout.h"
 #include "engine/core/Types.h"
 #include "engine/io/File.h"
@@ -26,7 +27,9 @@
 #include "TestSupport.h"
 #include "fixtures/NativeModelFixture.h"
 #include "formats/CritterWad.h"
+#include "game/audio/LevelSoundscape.h"
 #include "game/bosses/Bosses.h"
+#include "game/combat/HurtKind.h"
 #include "game/critters/Combatant.h"
 #include "game/critters/CombatantFixture.h"
 #include "game/critters/CritterData.h"
@@ -35,10 +38,15 @@
 #include "game/critters/General.h"
 #include "game/critters/Golem.h"
 #include "game/critters/HeadedBodyFixture.h"
+#include "game/effects/EffectTrees.h"
+#include "game/enemies/LevelOpponents.h"
+#include "game/enemies/ScriptedOpponents.h"
 #include "game/level/CombatantObstacle.h"
 #include "game/level/HazardSurfaces.h"
 #include "game/level/LevelWorld.h"
 #include "game/level/NativeStateResources.h"
+#include "game/party/PlayerRuntime.h"
+#include "game/players/PlayerImpact.h"
 
 namespace {
 using namespace gdl;
@@ -2181,6 +2189,73 @@ TEST_CASE("a blow's push survives a rewind of its fighter",
     CHECK(test::liveDigest(actor, resources.resources()) ==
           test::savedDigest(actor, saved, resources.resources()));
     CHECK(push() == first);
+}
+
+TEST_CASE("a fighter's hit gap decides when its held blow strikes again",
+          "[game][combatant][hit-gap]") {
+    // A Dreamcast boss's tenth of a second, and Dark Legacy's quarter.
+    const f32 gap = GENERATE(0.1f, 0.25f);
+    CAPTURE(gap);
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    const auto root = familyAssets();
+    // A still hand seven along x, through a SWING of twelve frames shown fifteen a second that
+    // strikes in every one of them.
+    writeSwingTree(root, 0, {}, R"(,"frameRate":60)");
+    REQUIRE(assets.load(device, root, General::definition(), 'G'));
+    auto source = swingCritter(0);
+    source.moves[1].frameEnd = 11;
+    CritterRules rules;
+    rules.playerHitGap = gap;
+    assets.data = CritterData::fromDecoded("GENERAL", source, 0, rules);
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+    const auto swing = assets.data.moveNamed("SWING");
+    REQUIRE(swing);
+    Combatant::MovePoint start;
+    start.target = 0;
+    REQUIRE(actor.setMove(*swing, start));
+
+    // The player stands by the hand throughout; the level holds it off by its hit gap.
+    std::array<PlayerRuntime, 1> players;
+    players[0].actor.spawn(0, {}, nullptr, Vec3{8, 0, 0}, 0);
+    EnemyView view;
+    view.player = 0;
+    view.position = players[0].actor.position();
+    const std::array views{view};
+    s32 tick = 0;
+    std::vector<s32> struck;
+    test::OpponentScript events;
+    events.hurt = [&](usize, f32, HurtKind, bool, const PlayerImpact&) { struck.push_back(tick); };
+    test::ScriptedOpponents host{events};
+    LevelWorld world;
+    ItemArchive weapons;
+    EffectTrees effects;
+    LevelSoundscape audio;
+    LevelOpponents level;
+    level.open({device, world, weapons, effects, audio, test::scratchDirectory("hit-gap-level"), 1},
+               {});
+    constexpr f32 kTick = 1.0f / 60;
+    f32 held = 0.0f;
+    for (; tick < 40 && struck.size() < 2; ++tick) {
+        level.update(1, kTick, players, {}, host, host, host); // runs the gap down
+        actor.update(1, kTick, views);
+        for (const CombatBlow& blow : actor.takeBlows()) {
+            LevelOpponents::applyCritterBlow(blow, players, host, host);
+        }
+        if (struck.size() == 1 && struck[0] == tick) {
+            held = players[0].breathGap;
+        }
+    }
+    REQUIRE(actor.moveName() == "SWING");
+    REQUIRE(struck.size() == 2);
+    CHECK(held == Approx(gap));
+    // Not again until the gap has run out, so not at half of it, and again on the update it
+    // runs out or the one after, as the clock's rounding falls.
+    const s32 gapTicks = static_cast<s32>(std::lround(gap / kTick));
+    CAPTURE(struck[0], struck[1]);
+    CHECK(struck[1] - struck[0] >= gapTicks);
+    CHECK(struck[1] - struck[0] <= gapTicks + 1);
 }
 
 TEST_CASE("a move without a node keeps the fighter's root node, which the next move's first "

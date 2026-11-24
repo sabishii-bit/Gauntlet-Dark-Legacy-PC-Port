@@ -87,9 +87,13 @@ loadLegendsDreamcastBossAssets(RenderDevice& device, const std::filesystem::path
     // How 1ST_READ.BIN places hit nodes is unread, so part offsets stay in their nodes' frames.
     // Its blow (8c08d4c0) pushes as GDL's does: along the node's travel since MoveSetup
     // (8c08a2c0) last noted it and away from the body's origin, given a unit's height.
+    // Its blow and breath (8c08d800) strike through 8c08d380, which sets the player's hit
+    // wait (+0x894) a tenth of a second ahead whatever they pass it (8c08d3ea-8c08d3f8, the
+    // 0.1f at 8c08d428), where GDL's CritterDamagePlayer sets a quarter.
     CritterRules rules{.pressureReferenceDamage = decoded.types.front().pressureReferenceDamage,
                        .restoreCaptureSupport = true,
-                       .nodeFramePartOffsets = true};
+                       .nodeFramePartOffsets = true,
+                       .playerHitGap = 0.1f};
     auto data = CritterData::fromDecoded(family.name, decoded, 0, rules);
     std::vector<CritterData> children;
     for (s32 child = data.childIndex(); child >= 0;) {
