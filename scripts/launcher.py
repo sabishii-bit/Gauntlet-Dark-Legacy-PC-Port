@@ -23,11 +23,13 @@ program's --extract, which writes a Legends expansion's tree from a dump into a 
 holding the dump as the extraction scripts hold one unless --install asks for an installation's
 strictness. check-folder runs the headless program's --check-folder, which judges a folder as one
 to install the game into and reports what would refuse the install, what to warn of, and what it
-found of the folder and its volume, as JSON with --json. The one file it writes is a probe file,
-in the folder or the nearest one that exists, removed at once, and none in a folder the launcher
-must not write into, such as the alpha installer's or another installation's. parity runs the
-parity gate, scripts/checks/launcher_parity.py, with this Python and every argument after the
-word, from the folder and in the environment this script was started in.
+found of the folder and its volume, as JSON with --json. All it writes are the folder probe's
+entries, each named .gdl-launcher-probe- and eight random letters and digits, and removed at
+once: a folder and a file in the folder when it exists, or else a folder in the nearest folder
+above it that exists. It writes nothing in a folder the launcher must not write into, such as the
+alpha installer's or another installation's. parity runs the parity gate,
+scripts/checks/launcher_parity.py, with this Python and every argument after the word, from the
+folder and in the environment this script was started in.
 """
 
 import argparse

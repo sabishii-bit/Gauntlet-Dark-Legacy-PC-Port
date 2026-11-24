@@ -159,10 +159,11 @@ pub fn open_own_file() -> OwnFile {
 ///   install there and what to warn of, each with its code, rule and detail, and what the judging
 ///   asked of the folder and its volume, `unknown` for what a judging that ended early did not
 ///   ask: a `name: value` line each, a control character in a value written as its escape, or
-///   with `--json` every field as JSON. It writes nothing but the entry the folder probe makes and
-///   removes at once, and none in a folder the launcher must not write into. Whatever the folder
-///   holds, a judging exits [`EXIT_OK`]; one that fails is refused with the line
-///   `error: <code> (<rule>): <detail>`, and [`EXIT_REFUSED`].
+///   with `--json` every field as JSON. It writes nothing but the entries the folder probe makes
+///   and removes at once, a folder and a file in the folder when it is there, or else a folder in
+///   the nearest folder above it that is, and none in a folder the launcher must not write into.
+///   Whatever the folder holds, a judging exits [`EXIT_OK`]; one that fails is refused with the
+///   line `error: <code> (<rule>): <detail>`, and [`EXIT_REFUSED`].
 /// - `--extract <n64|dreamcast> <dump> --output <dir>` extracts that expansion's tree from the
 ///   dump into the new folder `<dir>`, as [`extract_to_new_folder`] does, holding the dump as an
 ///   installation holds one, to the trust the launcher carries, or with `--strict script` as the
