@@ -172,10 +172,6 @@ Mat4 Combatant::simulationTransform(const Actor& critter, std::string_view node)
     return model;
 }
 
-Mat4 Combatant::effectFrame(const Actor& critter, std::string_view node) {
-    return glm::scale(simulationTransform(critter, node), Vec3{drawnShrink(critter)});
-}
-
 Vec3 Combatant::partPosition(const Actor& critter, std::string_view node) {
     return Vec3{partTransform(critter, node)[3]};
 }

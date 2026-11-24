@@ -572,10 +572,6 @@ private:
     /** Node `node`'s world matrix in its simulation, or the simulation's model without such a
      * node: what decides contact, reach, where harm lands and where a player is held. */
     static Mat4 simulationTransform(const Actor& critter, std::string_view node);
-    /** The frame an effect started at node `node` is measured in: the node where its simulation
-     * places it, the offsets laid in it shrunk with the drawn body, as CritterDoTexmodNode and
-     * CritterDoSfx shrink them. */
-    static Mat4 effectFrame(const Actor& critter, std::string_view node);
     /** Notes where the node `move` strikes with, else the fighter's root node, stands `seconds`
      * on, as CritterMoveSetup does each native frame through GetWorldMat (0x8003B1CC). */
     static void noteMoveNode(Actor& critter, const MoveDefinition& move, f32 seconds);

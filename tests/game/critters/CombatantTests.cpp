@@ -4379,8 +4379,8 @@ TEST_CASE("a shrunk great one grabs and holds a player where its whole body reac
     CHECK(glm::distance(Vec3{(*grabs[0].attachment)[3]}, Vec3{0, 0, 8}) < 1e-5f);
 }
 
-TEST_CASE("a shrunk great one's area starts at its whole node, the offsets laid in it shrunk as "
-          "CritterDoTexmodNode and CritterDoSfx shrink them",
+TEST_CASE("a shrunk great one's area starts at its whole node, the offsets laid in it shrunk "
+          "once as CritterDoTexmodNode and CritterDoSfx shrink them",
           "[game][combatant][shrink]") {
     // Attached to the node, or placed once where the node stands (SFXX 0x40).
     const u32 soundFlags = GENERATE(0U, 64U);
@@ -4410,7 +4410,9 @@ TEST_CASE("a shrunk great one's area starts at its whole node, the offsets laid 
     player.radius = 1.0f;
     player.height = 6.0f;
     const std::array players{player};
-    const auto areaOrigin = [&](f32 shrink) {
+    // Where the area stands as it starts with the shrinkers' scale at `shrink`, and an update
+    // after that scale turns to `then`.
+    const auto areaOrigins = [&](f32 shrink, f32 then) {
         Combatant actor;
         REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
         actor.setShrink(shrink);
@@ -4421,12 +4423,22 @@ TEST_CASE("a shrunk great one's area starts at its whole node, the offsets laid 
         }
         REQUIRE(blows.size() == 1);
         REQUIRE(blows[0].area);
-        return blows[0].origin;
+        actor.setShrink(then);
+        actor.update(2, 1.0f / 30, players);
+        const auto later = actor.takeBlows();
+        REQUIRE_FALSE(later.empty());
+        REQUIRE(later.front().area);
+        return std::array{blows[0].origin, later.front().origin};
     };
     // HAND stands six ahead whole or shrunk; the DAMG offset of three and the SFXX offset of two
-    // above it shrink with the drawn body.
-    CHECK(glm::distance(areaOrigin(1.0f), Vec3{0, 5, 6}) < 1e-5f);
-    CHECK(glm::distance(areaOrigin(0.667f), Vec3{0, 5 * 0.667f, 6}) < 1e-5f);
+    // above it shrink with the drawn body as the area starts, and stay so as shrinkers come and
+    // go, as the original multiplies them into the effect once.
+    for (const Vec3& origin : areaOrigins(1.0f, 0.667f)) {
+        CHECK(glm::distance(origin, Vec3{0, 5, 6}) < 1e-5f);
+    }
+    for (const Vec3& origin : areaOrigins(0.667f, 1.0f)) {
+        CHECK(glm::distance(origin, Vec3{0, 5 * 0.667f, 6}) < 1e-5f);
+    }
 }
 // Long sequences let these tests distinguish an interrupt from ordinary end-of-move selection.
 std::filesystem::path reactionAssets(s32 interrupt = 60, s32 link = -1) {

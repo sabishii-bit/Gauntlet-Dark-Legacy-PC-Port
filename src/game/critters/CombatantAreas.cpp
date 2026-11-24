@@ -60,11 +60,15 @@ std::optional<f32> Combatant::startArea(Actor& critter, s32 id, const AttackDefi
     if (worldParent.has_value()) {
         offset = damageOffset(critter, damage.offset) + sound->offset * critter.scale;
     }
+    // CritterDoTexmodNode and CritterDoSfx shrink the offsets with the drawn body once, as the
+    // effect starts (0x8003D10C-0x8003D154, 0x8003D8A8-0x8003D8D4); the node stays whole.
+    const f32 shrink = drawnShrink(critter);
     if ((sound->flags & effect_flags::kDetached) != 0 && !worldParent.has_value()) {
         // Detached damage effects snapshot the hit node's world position. The
         // slam's hand can lift again without dragging the ground wave with it.
-        const Vec3 position = Vec3{effectFrame(critter, node) * Vec4{sound->offset, 1}} +
-                              damageOffset(critter, damage.offset);
+        const Vec3 position =
+            Vec3{simulationTransform(critter, node) * Vec4{sound->offset * shrink, 1}} +
+            damageOffset(critter, damage.offset);
         // SfxSetMat copies the body's orientation, not the animated hand's.
         worldParent =
             portable::rotate(glm::translate(Mat4{1}, position), critter.yaw, Vec3{0, 1, 0});
@@ -72,8 +76,8 @@ std::optional<f32> Combatant::startArea(Actor& critter, s32 id, const AttackDefi
     }
     if ((sound->flags & effect_flags::kOnFloor) != 0 && damage.hitSound < 0 &&
         m_sim.collision != nullptr) {
-        const Mat4 parent = worldParent.value_or(effectFrame(critter, node));
-        const Vec3 position{parent * Vec4{offset, 1}};
+        const Mat4 parent = worldParent.value_or(simulationTransform(critter, node));
+        const Vec3 position{parent * Vec4{worldParent.has_value() ? offset : offset * shrink, 1}};
         const f32 radius = damage.radius * critter.scale;
         if (const auto floor =
                 m_sim.collision->floorAt(position, 1 + radius * 0.5f, 5 + radius * 0.5f)) {
@@ -104,7 +108,6 @@ std::optional<f32> Combatant::startArea(Actor& critter, s32 id, const AttackDefi
             area.node = nodes[static_cast<usize>(attachment)].name;
         }
     }
-    area.local = CritterArea::placement(Mat4{1}, offset, angles);
     if (damage.speed > 0) {
         CombatShot motion;
         motion.forward = Vec3{portable::sin(critter.yaw), 0, portable::cos(critter.yaw)};
@@ -113,10 +116,19 @@ std::optional<f32> Combatant::startArea(Actor& critter, s32 id, const AttackDefi
         // DAMG pitch/yaw rotate the area basis, not its non-projectile velocity.
         physics.pitch = physics.yaw = physics.yawSpread = 0;
         area.velocity = CombatantProjectile::velocity(physics, motion, 0);
-        // SfxSetPhysics applies launch yaw to the effect's local basis.
-        area.local = portable::rotate(area.local, portable::atan2(area.velocity.x, area.velocity.z),
-                                      Vec3{0, 1, 0});
     }
+    const auto laidAt = [&](const Vec3& at) {
+        const Mat4 local = CritterArea::placement(Mat4{1}, at, angles);
+        // SfxSetPhysics applies launch yaw to the effect's local basis.
+        return damage.speed > 0
+                   ? portable::rotate(local, portable::atan2(area.velocity.x, area.velocity.z),
+                                      Vec3{0, 1, 0})
+                   : local;
+    };
+    // Measured at the whole node with its offset shrunk as it starts; its cue rides the drawn
+    // node, which the draw shrinks, with the offset as authored.
+    area.local = laidAt(worldParent.has_value() ? offset : offset * shrink);
+    const Mat4 drawnLocal = laidAt(offset);
     area.radius = damage.maxDistance * critter.scale;
     area.minDot = damage.minDot;
     area.damage = damage.damage * m_sim.scales.damage;
@@ -140,7 +152,7 @@ std::optional<f32> Combatant::startArea(Actor& critter, s32 id, const AttackDefi
     cue.sound = sound->soundFor(m_sim.realm);
     cue.soundPosition = Vec3{modelTransform(critter)[3]};
     const Mat4 parent = worldParent.value_or(attachmentTransform(critter, area.node));
-    cue.position = Vec3{(parent * area.local)[3]};
+    cue.position = Vec3{(parent * drawnLocal)[3]};
     cue.scale = sound->scale * (worldParent.has_value() ? critter.scale : 1.0f);
     cue.life = life;
     cue.follows = !worldParent.has_value();
@@ -153,7 +165,7 @@ std::optional<f32> Combatant::startArea(Actor& critter, s32 id, const AttackDefi
     cue.pitchYaw = angles;
     cue.loop = false;
     if (worldParent.has_value()) {
-        cue.placement = parent * area.local;
+        cue.placement = parent * drawnLocal;
         cue.rootAttachment = false;
         cue.node.reset();
     }
@@ -202,9 +214,9 @@ void Combatant::eruptArena(Actor& critter, s32 id, const AttackDefinition& damag
 
 void Combatant::updateAreas(Actor& critter, s32 id, std::span<const EnemyView> players) {
     for (const CritterArea& area : critter.areas) {
-        // Measured where GetWorldMat places the node, its offset shrunk with the drawn body; the
-        // cue rides it as drawn.
-        const Mat4 parent = area.worldParent.value_or(effectFrame(critter, area.node));
+        // Measured where GetWorldMat places the node, the offset shrunk as it started; the cue
+        // rides it as drawn.
+        const Mat4 parent = area.worldParent.value_or(simulationTransform(critter, area.node));
         for (const EnemyView& player : players) {
             if (!area.touches(parent, player)) {
                 continue;
