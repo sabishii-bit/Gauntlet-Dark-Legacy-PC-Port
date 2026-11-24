@@ -615,6 +615,7 @@ mod tests {
     use gdl_files::{
         ALPHA_NAMES, BLOCK_LEN, Cancel, FilesError, FolderProbe, Job, NoProgress, PAYLOAD_NAMES,
         PENDING_SUFFIX, PROBE_PREFIX, PhaseId, ProbedFolder, Progress, RelPath, Volume, fill_from,
+        retry_locked,
     };
     #[cfg(windows)]
     use gdl_files::{MAX_INSTALL_ROOT_UTF16, root_utf16_len};
@@ -3011,7 +3012,8 @@ mod tests {
     /// How many files the player's disc keeps in its `Gauntlet` and `carddemo` trees.
     const PLAYERS_DISC_FILES: usize = 2_483;
 
-    /// How many folders it keeps in them, counted as the image counts them: the two among them.
+    /// How many folders it keeps in them, the two at their top, `Gauntlet` and `carddemo`,
+    /// included, as the image lists its entries.
     const PLAYERS_DISC_FOLDERS: usize = 766;
 
     /// `path` under the repository's top.
@@ -3057,7 +3059,8 @@ mod tests {
 
     /// What the extracted disc `tree` holds under the folders `roots` at its top: every folder,
     /// the roots among them, and every file with its size, each by its path under the tree with
-    /// `/` between its names, as the disc spells them. Anything but a folder or a file is refused.
+    /// `/` between its names, as the disc spells them. Anything but a folder or a file is refused,
+    /// and a folder that cannot be read fails naming its path.
     fn extracted(tree: &Path, roots: &[&str]) -> (BTreeSet<String>, BTreeMap<String, u64>) {
         let mut folders = BTreeSet::new();
         let mut files = BTreeMap::new();
@@ -3066,11 +3069,17 @@ mod tests {
             .map(|&root| (tree.join(root), root.to_owned()))
             .collect();
         while let Some((folder, path)) = walking.pop() {
-            for entry in fs::read_dir(&folder).unwrap() {
-                let entry = entry.unwrap();
-                let name = entry.file_name().into_string().unwrap();
+            let listed = fs::read_dir(&folder)
+                .unwrap_or_else(|error| panic!("{}: {}", folder.display(), error.kind()));
+            for entry in listed {
+                let entry =
+                    entry.unwrap_or_else(|error| panic!("{}: {}", folder.display(), error.kind()));
+                let name = entry.file_name().into_string().unwrap_or_else(|name| {
+                    panic!("{path}/{}: a name the disc cannot spell", name.display())
+                });
                 let below = format!("{path}/{name}");
-                let metadata = fs::symlink_metadata(entry.path()).unwrap();
+                let metadata = fs::symlink_metadata(entry.path())
+                    .unwrap_or_else(|error| panic!("{below}: {}", error.kind()));
                 if metadata.is_dir() {
                     walking.push((entry.path(), below));
                 } else {
@@ -3171,9 +3180,7 @@ mod tests {
         // every file of the extracted tree, of its size and digest, and every folder. The folder
         // is taken away afterwards, as it is first when an earlier run left it.
         let destination = in_repository(PLAYERS_INSTALL);
-        if fs::symlink_metadata(&destination).is_ok() {
-            fs::remove_dir_all(&destination).unwrap();
-        }
+        remove_folder(&destination);
         let removed = RemovedAfter(destination.clone());
         let mut image = players_disc();
         let tree = players_tree();
@@ -3217,17 +3224,30 @@ mod tests {
             "the folders listed are not the extracted tree's"
         );
 
+        remove_folder(&destination);
         drop(removed);
         assert!(fs::symlink_metadata(&destination).is_err());
     }
 
-    /// A folder the test made, taken away with everything in it when this goes, even when the
-    /// test fails.
+    /// Takes the folder at `path` away with everything in it, when it is there, trying again
+    /// while something such as a scanner holds a file just written in it, as the launcher's own
+    /// removals do; fails naming the folder and the error's kind when it cannot.
+    fn remove_folder(path: &Path) {
+        if fs::symlink_metadata(path).is_ok() {
+            retry_locked(|| fs::remove_dir_all(path))
+                .unwrap_or_else(|error| panic!("{}: {}", path.display(), error.kind()));
+        }
+    }
+
+    /// A folder the test made, taken away with everything in it when this goes, so that a test
+    /// that fails leaves nothing in the repository's build folder.
     struct RemovedAfter(PathBuf);
 
     impl Drop for RemovedAfter {
         fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.0);
+            // Its error is dropped: it comes after the failure that matters, or after the
+            // folder's removal was checked.
+            let _ = retry_locked(|| fs::remove_dir_all(&self.0));
         }
     }
 
