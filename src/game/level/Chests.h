@@ -27,11 +27,11 @@ namespace gdl::game {
  * width, by which the items block and are touched), and the keys they have to spend. */
 struct ChestVisitor {
     /** How far past its width a visitor still touches a chest or a gate. The original touches
-     * one at the step's intended end by the width that blocks it (PlayerCollideEnemies,
-     * pmotion.c 3989-3997); the fixtures rest a body at exactly that width, which leaves only
-     * rounding to allow for. */
+     * one at the step's intended end, before any item holds the body off, by the width that
+     * blocks it (PlayerCollideEnemies, pmotion.c 3989-3997); a body resting against one stands
+     * at exactly that width, which leaves only rounding to allow for. */
     static constexpr f32 kContactSlack = 0.001f;
-    Vec3 position{0.0f, 0.0f, 0.0f};
+    Vec3 position{0.0f, 0.0f, 0.0f}; ///< where its step ended, before the items held it off
     f32 radius = PlayerActor::kDefaultWidth;
     s32 keys = 0;
     bool xray = false;

@@ -493,14 +493,60 @@ TEST_CASE("a step's end is put out of the items as the update holds a body off t
     REQUIRE(glm::distance(chestAlone, start) > 0.1f);
     CHECK(glm::distance(held, chestAlone) > 0.1f);
     CHECK(held.y == start.y);
+    // The step into the corner meets the locked chest, which refuses the keyless body.
+    std::vector<s32> lessons;
+    test::FixtureScript events = f.events;
+    events.help = [&](s32 id, usize) {
+        lessons.push_back(id);
+        return true;
+    };
+    test::ScriptedFixtures host{events};
     actor.place(start);
-    f.fixtures.update(2, 1.0f / 30, std::span{f.players}.first(1), f.host);
+    f.fixtures.update(2, 1.0f / 30, std::span{f.players}.first(1), host);
+    CHECK(lessons == std::vector<s32>{HelpMessages::kChestNeedsKey});
     CHECK(actor.position().x == Catch::Approx(held.x));
     CHECK(actor.position().z == Catch::Approx(held.z));
     // Clear of them, a step's end stands as it was; with nothing bound, too.
     CHECK(f.fixtures.pushOut(actor, Vec3{-20, 0, 0}) == Vec3{-20, 0, 0});
     f.fixtures.clear();
     CHECK(f.fixtures.pushOut(actor, start) == start);
+}
+
+TEST_CASE("a keyed character stepping into a chest beside a barrel opens it, though the barrel "
+          "holds it further off",
+          "[game][screens][level-fixtures][item-width]") {
+    // PlayerCollideEnemies touches every item its step meets at the step's intended end, before
+    // any of them puts the step out (pmotion.c 3989-3997): the chest puts the step out into the
+    // barrel's reach, and the barrel holds the body further off the chest than its width, yet
+    // the step met the chest.
+    const std::array items{TestItem{kLockedChest, Vec3{0, 0, 10}},
+                           TestItem{kKeyBarrel, Vec3{3, 0, 10}}};
+    const auto directory = writeItemsLevel("fixtures-chest-beside-barrel", items,
+                                           std::format("{},{}", kChestTree, kBarrelTree));
+    writeTextFile(directory / "collision.json", kOpenGround);
+    Fixture f;
+    f.fixtures.clear();
+    REQUIRE(f.world.load(f.device, directory, LevelRef{"TEST", 0, "TEST", "", "", "", "", 0}));
+    f.fixtures.bind({f.device, f.world, f.weapons, f.effects, f.audio, 1});
+    f.fixtures.setPlayerCount(1);
+    REQUIRE(f.fixtures.chests().size() == 1);
+    REQUIRE(f.fixtures.barrels().size() == 1);
+    const auto& chest = f.fixtures.chests().chest(0);
+    REQUIRE(chest.locked);
+    auto& actor = f.players[0].actor;
+    REQUIRE(actor.reach() == 1.5f);
+    actor.save().progress().inventory.keys = 1;
+    // A quarter of a unit up z, into the chest's corner beside the barrel.
+    actor.place(Vec3{1.5f, 0, 8.2f});
+    actor.slide(Vec3{0, 0, 0.25f}, &f.world.collision());
+    REQUIRE(chest.box.touchedBy(actor.position(), actor.reach(), ChestVisitor::kContactSlack));
+    f.fixtures.update(2, 1.0f / 30, std::span{f.players}.first(1), f.host);
+    CAPTURE(actor.position().x, actor.position().z);
+    REQUIRE_FALSE(
+        chest.box.touchedBy(actor.position(), actor.reach(), ChestVisitor::kContactSlack));
+    CHECK(chest.state == Chests::kOpening);
+    CHECK(actor.save().progress().inventory.keys == 0);
+    f.fixtures.clear();
 }
 
 TEST_CASE("fixture blasts damage pickups within the reduced item radius and emit retail cues",

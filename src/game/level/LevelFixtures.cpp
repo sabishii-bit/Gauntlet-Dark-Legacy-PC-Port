@@ -620,7 +620,11 @@ void LevelFixtures::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> play
             victims.push_back(TrapVictim{kNowhere, actor.radius()});
             continue;
         }
-        Vec3 position = actor.position();
+        // The original touches what a step meets where the step meant to end, before any item
+        // holds the body off it (pmotion.c 3989-3997), so a chest is still touched when the
+        // barrel beside it holds the body off it further.
+        const Vec3 meant = actor.position();
+        Vec3 position = meant;
         const auto holdOff = [&](std::span<const Obstacle> items, f32 width) {
             for (const Obstacle& box : items) {
                 const Vec3 resolved = box.pushOut(position, width);
@@ -638,7 +642,7 @@ void LevelFixtures::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> play
         playFallingCues(falling);
         const PowerupEffects worn = PowerupEffects::of(actor.save().progress().inventory);
         const Vec3 step = observePlayer(player, position);
-        visitors.push_back(ChestVisitor{position, actor.reach(),
+        visitors.push_back(ChestVisitor{meant, actor.reach(),
                                         actor.save().progress().inventory.keys, worn.xray(), step,
                                         goldCapacity(actor.save())});
         // Traps pass under a levitating body (ItemTouch's trap case).
