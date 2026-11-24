@@ -618,9 +618,9 @@ mod tests {
     use gdl_fixtures::fake_sign;
     use gdl_fixtures::{
         EntryState, FstEntry, ICON_DATA_AT, RawEntry, RawZip, RuntimeFiles, SYNTHETIC_ISO_LEN,
-        append_sections, folder_names, fst, icon_iso, iso_of, sha256_hex, snapshot,
-        snapshot_outside, symlink_file, symlink_file_where_allowed, synthetic_ciso, synthetic_iso,
-        tiny_elf, tiny_pe, tpl,
+        WritesDenied, append_sections, deny_writes, folder_names, fst, icon_iso, iso_of,
+        sha256_hex, snapshot, snapshot_outside, symlink_file, symlink_file_where_allowed,
+        synthetic_ciso, synthetic_iso, tiny_elf, tiny_pe, tpl,
     };
     use gdl_media::{Container, GameCubeImage, MediaError};
     use gdl_release::{Platform, Version};
@@ -1154,8 +1154,12 @@ mod tests {
         ] {
             let path = source.path().join("game.iso");
             fs::write(&path, &bytes).unwrap();
+            let before = snapshot(source.path()).unwrap();
             let refused = GameCubeImage::open(&path).unwrap_err();
             assert_eq!(refused.rule(), rule, "{refused:?}");
+            // The image is only read: its folder holds what it held, the image as it was.
+            assert_eq!(snapshot(source.path()).unwrap(), before, "{rule}");
+            assert_eq!(fs::read(&path).unwrap(), bytes, "{rule}");
         }
     }
 
@@ -1953,6 +1957,147 @@ mod tests {
     }
 
     #[test]
+    fn a_plan_refused_for_its_system_stops_the_job_before_anything_is_made() {
+        // Judging the folder again never asks of the system, so the job holds the plan's finding
+        // of it, before the folder's.
+        let top = tempfile::tempdir().unwrap();
+        let destination = top.path().join("game");
+        let inputs = Inputs::of(&icon_iso());
+        let unsupported = Blocker::Unsupported {
+            native_machine: ARM64_MACHINE,
+        };
+        let plan = plan_standing_in(
+            &icon_iso(),
+            &inputs.runtime,
+            &destination,
+            Err(Unsupported {
+                native_machine: ARM64_MACHINE,
+            }),
+            WRITABLE,
+            u64::MAX,
+        )
+        .unwrap();
+        assert_eq!(plan.blockers, std::slice::from_ref(&unsupported));
+        let mut record = Heard::default();
+        let cancel = Cancel::default();
+        let job = Job {
+            cancel: &cancel,
+            progress: &NoProgress,
+        };
+        let failure = inputs
+            .install(
+                &plan,
+                &mut record,
+                &job,
+                &standing_in(&NoFaults, &answering),
+            )
+            .unwrap_err();
+        assert!(
+            matches!(&failure.error, InstallError::Blocked(blocker) if *blocker == unsupported),
+            "{failure:?}"
+        );
+        assert_eq!(failure.rule(), "unsupported");
+        assert_eq!(failure.changes, Changes::None);
+        assert!(record.calls.is_empty(), "{:?}", record.calls);
+        assert!(folder_names(top.path()).unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_folder_that_takes_no_new_folder_once_judged_is_not_writable() {
+        /// A record of installations that, as it is told of the pending folder, after the folder
+        /// was judged again, has `at` take no new entry until it is dropped.
+        struct Denying {
+            at: PathBuf,
+            denied: Option<WritesDenied>,
+            calls: Vec<(&'static str, PathBuf)>,
+        }
+
+        impl FolderRecord for Denying {
+            fn pending(&mut self, destination: &Path) -> io::Result<()> {
+                self.calls.push(("pending", destination.to_path_buf()));
+                self.denied = Some(deny_writes(&self.at)?);
+                Ok(())
+            }
+
+            fn installed(&mut self, destination: &Path) -> io::Result<()> {
+                self.calls.push(("installed", destination.to_path_buf()));
+                Ok(())
+            }
+
+            fn forget(&mut self, destination: &Path) -> io::Result<()> {
+                self.calls.push(("forget", destination.to_path_buf()));
+                Ok(())
+            }
+        }
+
+        // Whether this process is refused a new folder in a folder denied writes: root makes one
+        // in any, and on Windows so does a process whose restore privilege is enabled.
+        let looked = tempfile::tempdir().unwrap();
+        let denied = deny_writes(looked.path()).unwrap();
+        if !denied.proven() || !denied.refuses_folders() {
+            eprintln!("skipped: this process makes a folder in a folder denied writes");
+            return;
+        }
+        drop(denied);
+
+        let inputs = Inputs::of(&icon_iso());
+        // A missing folder to make under one that takes nothing new, and a state folder to make in
+        // a folder that is there and takes nothing new.
+        for holds_a_file in [false, true] {
+            let top = tempfile::tempdir().unwrap();
+            let destination = destination_in(top.path(), holds_a_file);
+            let plan = inputs.plan(&destination);
+            assert!(plan.is_ready(), "{plan:?}");
+            let refusing = if holds_a_file {
+                plan.destination.clone()
+            } else {
+                // The folder above the first the install makes, `Games`.
+                plan.destination.ancestors().nth(2).unwrap().to_path_buf()
+            };
+            let mut record = Denying {
+                at: refusing.clone(),
+                denied: None,
+                calls: Vec::new(),
+            };
+            let cancel = Cancel::default();
+            let job = Job {
+                cancel: &cancel,
+                progress: &NoProgress,
+            };
+            let failure = inputs
+                .install(
+                    &plan,
+                    &mut record,
+                    &job,
+                    &standing_in(&NoFaults, &answering),
+                )
+                .unwrap_err();
+            let denied = record.denied.take();
+            assert!(denied.is_some(), "the folder was denied writes");
+            drop(denied);
+            assert!(
+                matches!(
+                    &failure.error,
+                    InstallError::Blocked(Blocker::NotWritable { path }) if *path == refusing
+                ),
+                "{failure:?}"
+            );
+            assert_eq!(failure.rule(), "notWritable");
+            assert_eq!(failure.changes, Changes::None);
+            assert_eq!(
+                record.calls,
+                heard_of(&plan.destination, &["pending", "forget"])
+            );
+            if holds_a_file {
+                assert_eq!(folder_names(&destination).unwrap(), [USER_FILE]);
+                assert_eq!(fs::read(destination.join(USER_FILE)).unwrap(), USER_BYTES);
+            } else {
+                assert!(folder_names(top.path()).unwrap().is_empty());
+            }
+        }
+    }
+
+    #[test]
     fn the_record_hears_pending_then_installed() {
         let top = tempfile::tempdir().unwrap();
         let destination = top.path().join("game");
@@ -2239,7 +2384,7 @@ mod tests {
         let inputs = Inputs::of(&icon_iso());
         // A game that answers with another status than 0, and the runtime's executable, which is
         // no program, probed as the launcher probes it.
-        let probes: [(&ProbeFn, InstallNotice); 2] = [
+        let probes: [(&'static ProbeFn, InstallNotice); 2] = [
             (
                 &failing,
                 InstallNotice::ProbeFailed {
@@ -2266,11 +2411,27 @@ mod tests {
                 cancel: &cancel,
                 progress: &NoProgress,
             };
-            let started = Instant::now();
+            // The probe alone is timed, not the install around it, whose copies and syncs a busy
+            // machine may slow. A probe owns what it keeps, as the settings hold probes that
+            // borrow nothing.
+            let took = Arc::new(Mutex::new(None));
+            let seen = Arc::clone(&took);
+            let timed = move |executable: &Path, cancel: &Cancel| {
+                let started = Instant::now();
+                let probed = probe(executable, cancel);
+                *seen.lock().unwrap() = Some(started.elapsed());
+                probed
+            };
             let installed = inputs
-                .install(&plan, &mut Unrecorded, &job, &standing_in(&NoFaults, probe))
+                .install(
+                    &plan,
+                    &mut Unrecorded,
+                    &job,
+                    &standing_in(&NoFaults, &timed),
+                )
                 .unwrap();
-            assert!(started.elapsed() < PROBE_FAILS_WITHIN);
+            let took = took.lock().unwrap().expect("the staged game was probed");
+            assert!(took < PROBE_FAILS_WITHIN, "{took:?}");
             assert_eq!(installed.notices, [notice]);
             let receipt = destination.join(STATE_DIR).join(RECEIPT_FILE);
             assert!(fs::symlink_metadata(receipt).unwrap().is_file());
