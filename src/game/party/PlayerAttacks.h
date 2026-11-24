@@ -30,8 +30,10 @@ namespace gdl::game {
 class PlayerAttacks {
 public:
     /** A charge's contact margin past the width its movement meets a body by: the footprint
-     * for the swarm, the breakable walls and a Legends level's own fixtures, the whole width
-     * for the level's other items and the great ones. */
+     * for the swarm and a Legends level's own fixtures, the whole width for the level's other
+     * items and the great ones. The breakable walls are touched this margin past the
+     * footprint too, though the walls hold the body its whole width off (PlayerActor::travel's
+     * wall sphere); how near the original's charge meets them is unread. */
     static constexpr f32 kRamReach = 0.3f;
     struct Resources {
         RenderDevice& device;

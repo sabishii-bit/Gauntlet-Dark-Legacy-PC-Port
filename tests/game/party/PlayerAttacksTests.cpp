@@ -1668,6 +1668,79 @@ TEST_CASE("a charge and a pinball still break what they are held off at a whole 
         CHECK(nearest >= actor.reach() - 1e-4f);
         f.fixtures.clear();
     }
+    SECTION("a charge at 60 Hz from rest strikes the safe rock it runs into") {
+        writeTextFile(root / "PLAYERS/WAR/YEL/world.json", R"({"objects":[
+          {"name":"BODY","position":[-100,0,0],"flags":4100}],"itemInfos":[
+          {"type":10,"subtype":41,"name":"ROCK","collisionType":1,
+           "radius":2.3,"height":5,"hitPoints":40,"armor":10}],
+          "itemInstances":[{"info":0,"position":[0,0,6],
+           "params":[41,0,3,0,0,0,0,0,0,0,0,0]}]})");
+        writeTextFile(root / "PLAYERS/WAR/YEL/collision.json", R"({"objects":[
+          {"object":0,"normals":[0,1,0,0,1,0],
+           "vertices":[-100,0,-100,100,0,100,100,0,-100,-100,0,-100,-100,0,100,100,0,100]}]})");
+        LevelRef level;
+        level.directory = "PLAYERS/WAR/YEL";
+        REQUIRE(f.world.load(f.device, root, level));
+        f.fixtures.bind({f.device, f.world, f.weapons, f.effects, f.audio});
+        const SafeRocks& rocks = f.fixtures.safeRocks();
+        REQUIRE(rocks.size() == 1);
+        REQUIRE(rocks.standing(0));
+        const s32 whole = rocks.rock(0).health;
+        constexpr f32 kStep = 1.0f / 60;
+        bool struck = false;
+        for (s32 tick = 0; tick < 90 && !struck; ++tick) {
+            actor.update(MoveInput{{0, 1}, 1}, 0, kStep, &f.world.collision(),
+                         PlayerAnimator::kChargePace);
+            f.attacks.ramBarrels(0, f.players, f.targets);
+            f.fixtures.update(1, kStep, f.players, f.fixtureHost);
+            struck = rocks.rock(0).health < whole;
+        }
+        CHECK(struck);
+        // Held off it by the whole width, never within the footprint's reach of it.
+        CHECK_FALSE(rocks.rock(0).obstacle.touchedBy(actor.position(), actor.radius(),
+                                                     PlayerAttacks::kRamReach));
+        f.fixtures.clear();
+    }
+    SECTION("a pinball strikes a barrel and a safe rock a whole width and the margin off") {
+        writeTextFile(root / "PLAYERS/WAR/YEL/world.json", R"({"objects":[
+          {"name":"BODY","position":[-100,0,0],"flags":4100}],"itemInfos":[
+          {"type":10,"subtype":43,"name":"BARREL","radius":0.5,"height":3,
+           "hitPoints":1,"armor":0},
+          {"type":10,"subtype":41,"name":"ROCK","collisionType":1,
+           "radius":2.3,"height":5,"hitPoints":40,"armor":10}],
+          "itemInstances":[{"info":0,"position":[0,0,4]},
+           {"info":1,"position":[20,0,6],"params":[41,0,3,0,0,0,0,0,0,0,0,0]}]})");
+        LevelRef level;
+        level.directory = "PLAYERS/WAR/YEL";
+        REQUIRE(f.world.load(f.device, root, level));
+        f.fixtures.bind({f.device, f.world, f.weapons, f.effects, f.audio});
+        REQUIRE(f.fixtures.barrels().size() == 1);
+        const SafeRocks& rocks = f.fixtures.safeRocks();
+        REQUIRE(rocks.size() == 1);
+        ComboState& combo = f.players[0].combo;
+        combo.role = ComboRole::Thrown;
+        combo.partner = 1;
+        combo.grabberClass = ComboMove::kWarrior;
+        const Obstacle barrel = f.fixtures.barrels().barrel(0).box;
+        const f32 barrelSide = barrel.centre.z - barrel.halfAlong;
+        actor.place(Vec3{0, 0, barrelSide - 1.9f});
+        f.attacks.comboImpact(0, 1, ComboMove::kWarriorBlow, f.players, f.targets);
+        CHECK(f.fixtures.barrels().standing(0));
+        actor.place(Vec3{0, 0, barrelSide - 1.7f});
+        CHECK(f.attacks.comboImpact(0, 1, ComboMove::kWarriorBlow, f.players, f.targets));
+        CHECK_FALSE(f.fixtures.barrels().standing(0));
+        const s32 whole = rocks.rock(0).health;
+        const Obstacle& rock = rocks.rock(0).obstacle;
+        const f32 rockSide =
+            rock.centre.z - (rock.cylinderRadius > 0 ? rock.cylinderRadius : rock.halfAlong);
+        actor.place(Vec3{20, 0, rockSide - 1.9f});
+        f.attacks.comboImpact(0, 1, ComboMove::kWarriorBlow, f.players, f.targets);
+        CHECK(rocks.rock(0).health == whole);
+        actor.place(Vec3{20, 0, rockSide - 1.7f});
+        CHECK(f.attacks.comboImpact(0, 1, ComboMove::kWarriorBlow, f.players, f.targets));
+        CHECK(rocks.rock(0).health < whole);
+        f.fixtures.clear();
+    }
     SECTION("a pinball strikes a generator a whole width and the margin off") {
         f.opponents.open({f.device, f.world, f.weapons, f.effects, f.audio, root, 1}, f.players);
         auto& enemies = f.opponents.enemies();

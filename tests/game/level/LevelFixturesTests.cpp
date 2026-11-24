@@ -19,6 +19,7 @@
 #include "engine/audio/SoundPlayer.h"
 #include "engine/core/Types.h"
 #include "engine/io/File.h"
+#include "engine/world/SampleLevel.h"
 #include "engine/world/WorldAnimator.h"
 
 #include "FakeRenderDevice.h"
@@ -42,6 +43,7 @@
 #include "game/level/SafeRocks.h"
 #include "game/level/ScriptedFixtures.h"
 #include "game/level/Traps.h"
+#include "game/party/PartyPickups.h"
 #include "game/party/PlayerHealth.h"
 #include "game/players/ItemPickup.h"
 #include "game/players/PlayerAnimator.h"
@@ -546,6 +548,38 @@ TEST_CASE("a keyed character stepping into a chest beside a barrel opens it, tho
         chest.box.touchedBy(actor.position(), actor.reach(), ChestVisitor::kContactSlack));
     CHECK(chest.state == Chests::kOpening);
     CHECK(actor.save().progress().inventory.keys == 0);
+    f.fixtures.clear();
+}
+
+TEST_CASE("a body brushes falling scenery down by its whole width",
+          "[game][screens][level-fixtures][item-width]") {
+    // fn_8005D730's case 10 runs for every item PlayerCollideEnemies' first pass meets, at
+    // col_radius, the class's whole width (pmotion.c 1124-1135, 3989-3997).
+    const auto root = test::sampleLevel("fixtures-falling-brush");
+    writeTextFile(root / "world.json", R"({"objects":[
+      {"name":"FLOOR","position":[0,0,0],"next":1,"flags":4100},
+      {"name":"WALL","position":[30,0,0],"next":-1}],
+      "itemInfos":[{"type":10,"subtype":40,"name":"WALL","radius":2,"height":3}],
+      "itemInstances":[{"info":0,"name":"WALL","position":[30,0,0]}]})");
+    Fixture f;
+    f.fixtures.clear();
+    REQUIRE(f.world.load(f.device, root, LevelRef{"TEST", 0, "TEST", "", "", "", "", 0}));
+    f.world.setPlayerCount(1);
+    f.fixtures.bind({f.device, f.world, f.weapons, f.effects, f.audio, 1});
+    f.fixtures.setPlayerCount(1);
+    REQUIRE(f.world.fallingScenery().size() == 1);
+    const auto& piece = f.world.fallingScenery().piece(0);
+    REQUIRE_FALSE(piece.started);
+    const Vec3 centre = piece.motion.position + piece.centre;
+    auto& actor = f.players[0].actor;
+    REQUIRE(actor.reach() == 1.5f);
+    const auto party = std::span{f.players}.first(1);
+    actor.place(centre + Vec3{piece.radius + 1.6f, 0, 0});
+    f.fixtures.update(2, 1.0f / 30, party, f.host);
+    CHECK_FALSE(f.world.fallingScenery().piece(0).started);
+    actor.place(centre + Vec3{piece.radius + 1.4f, 0, 0});
+    f.fixtures.update(2, 1.0f / 30, party, f.host);
+    CHECK(f.world.fallingScenery().piece(0).started);
     f.fixtures.clear();
 }
 
@@ -1834,6 +1868,28 @@ TEST_CASE("chest pickups follow NULL1 while opening and cannot be collected earl
     const Vec3 openedPosition = f.world.placedItems().item(held).position;
     f.fixtures.update(60, 1, std::span{f.players}.first(1), f.host);
     CHECK(f.world.placedItems().item(held).position == openedPosition);
+    // What it holds is offered to a body that touches it by its whole width (fn_8005D730's
+    // chest case, at col_radius): the point out along x that far from its box, and no further.
+    const auto outFromBox = [&](f32 gap) {
+        Vec3 point = chest.box.centre;
+        while (chest.box.touchedBy(point, gap, 0.0f)) {
+            point.x += 0.005f;
+        }
+        point.x -= 0.005f;
+        return point;
+    };
+    auto& actor = f.players[0].actor;
+    const Vec3 within = outFromBox(1.2f);
+    REQUIRE(chest.box.touchedBy(within, actor.reach(), ChestVisitor::kContactSlack));
+    REQUIRE_FALSE(chest.box.touchedBy(within, actor.radius()));
+    actor.place(within);
+    CHECK(PartyPickups::collectors(std::span{f.players}.first(1), f.world, f.fixtures.chests())[0]
+              .position == f.world.placedItems().item(held).position);
+    const Vec3 beyond = outFromBox(1.6f);
+    REQUIRE_FALSE(chest.box.touchedBy(beyond, actor.reach(), ChestVisitor::kContactSlack));
+    actor.place(beyond);
+    CHECK(PartyPickups::collectors(std::span{f.players}.first(1), f.world, f.fixtures.chests())[0]
+              .position != f.world.placedItems().item(held).position);
     f.fixtures.clear();
 }
 
