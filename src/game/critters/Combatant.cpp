@@ -775,9 +775,9 @@ void Combatant::updateActor(s32 ticks, f32 seconds, std::span<const EnemyView> p
                     strikeWith(critter, i, *move, index, players);
                     return;
                 }
-                const Vec3 where = targeted ? *critter.attackTarget + Vec3{modelTransform(critter) *
-                                                                           Vec4{harm->offset, 0.0f}}
-                                            : cuePosition(critter, move->colnode) + harm->offset;
+                const Vec3 where = targeted
+                                       ? *critter.attackTarget + damageOffset(critter, harm->offset)
+                                       : cuePosition(critter, move->colnode) + harm->offset;
                 giveOnce(bit, harm->sound, where);
                 strikeWith(critter, i, *move, index, players);
             };

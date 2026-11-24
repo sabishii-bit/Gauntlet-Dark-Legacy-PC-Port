@@ -121,9 +121,8 @@ Mat4 Combatant::presentationModel(const Actor& actor, f32 alpha) {
     const Vec3 position = glm::mix(actor.presentation.position, actor.position, blend);
     const f32 yaw =
         actor.presentation.yaw + TreePose::wrapAngle(actor.yaw - actor.presentation.yaw) * blend;
-    const Vec3 root = position + Vec3{0, actor.definition->floorOffset(), 0};
-    return glm::scale(portable::rotate(glm::translate(Mat4{1}, root), yaw, Vec3{0, 1, 0}),
-                      Vec3{actor.scale * drawnShrink(actor)});
+    return bodyPlacement(position, actor.definition->floorOffset(), yaw,
+                         actor.scale * drawnShrink(actor));
 }
 
 f32 Combatant::drawnShrink(const Actor& critter) {
