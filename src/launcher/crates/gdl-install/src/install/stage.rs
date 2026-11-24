@@ -246,13 +246,15 @@ impl<'a> Install<'a> {
     }
 
     /// The install's failure for `error` before its state folder was made: the folders it made
-    /// are removed while they hold nothing, and the record of installations forgets the folder, a
+    /// are removed while they hold nothing, and `record`, when given, forgets the folder, a
     /// failure to forget passed over. Nothing is left of its own, and nothing was made when it
     /// made no folder.
-    fn unmade(&self, error: InstallError, record: &mut dyn FolderRecord) -> InstallFailure {
+    fn unmade(&self, error: InstallError, record: Option<&mut dyn FolderRecord>) -> InstallFailure {
         let destination = &self.plan.destination;
         remove_made_folders(destination, self.made_folders);
-        let _ = record.forget(destination);
+        if let Some(record) = record {
+            let _ = record.forget(destination);
+        }
         let changes = if self.made_folders == 0 {
             Changes::None
         } else {
@@ -376,7 +378,13 @@ impl<'a> Install<'a> {
             .map_err(|source| nothing_made(InstallError::Record { source }))?;
         let state = match self.make_state() {
             Ok(state) => state,
-            Err(error) => return Err(self.unmade(error, record)),
+            // Another job made the state folder since the folder was judged, and the record holds
+            // one entry for each folder: the one this install would forget is that job's now, by
+            // which the next start finds the folder should the job be cut short.
+            Err(error @ InstallError::Blocked(Blocker::Collision { .. })) => {
+                return Err(self.unmade(error, None));
+            }
+            Err(error) => return Err(self.unmade(error, Some(record))),
         };
         let (folder, lock) = match self.lock(&state) {
             Ok(locked) => locked,

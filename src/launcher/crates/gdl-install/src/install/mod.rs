@@ -1900,16 +1900,11 @@ mod tests {
             ),
             "{failure:?}"
         );
-        // The install made nothing, and the record forgets the folder again.
+        // The install made nothing, and the record keeps the folder, whose entry is the other
+        // launcher's now: forgetting it would hide that launcher's install from the next start.
         assert_eq!(failure.changes, Changes::None);
         let destination = destination.to_path_buf();
-        assert_eq!(
-            record.calls,
-            [
-                ("pending", destination.clone()),
-                ("forget", destination.clone())
-            ]
-        );
+        assert_eq!(record.calls, [("pending", destination.clone())]);
         assert_eq!(folder_names(&destination).unwrap(), [STATE_DIR]);
         let state = destination.join(STATE_DIR);
         assert_eq!(folder_names(&state).unwrap(), [LOCK_FILE]);
