@@ -20,8 +20,8 @@ pub use error::ReleaseError;
 #[cfg(test)]
 pub use feed::LoopbackError;
 pub use feed::{
-    Asset, Feed, FeedConfig, MAX_ASSET_LEN, MAX_NOTES_LEN, MAX_PAGE_BYTES, MAX_PAGES, PAGE_LEN,
-    Release, Scan,
+    Asset, CheckedList, Feed, FeedConfig, MAX_ASSET_LEN, MAX_NOTES_LEN, MAX_PAGE_BYTES, MAX_PAGES,
+    PAGE_LEN, Release, ReleaseFiles, Scan,
 };
 pub use http::{
     API_ACCEPT, API_VERSION, DOWNLOAD_ACCEPT, MAX_REDIRECTS, READ_TIMEOUT, SECONDARY_LIMIT_WAIT,

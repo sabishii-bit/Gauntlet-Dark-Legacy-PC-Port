@@ -1,18 +1,22 @@
 //! GitHub's releases list read as the launcher's feed: every page of it, each release held to the
 //! new line's names and its assets to the rules a download needs, and this platform's newest
 //! release chosen by semantic version, whatever order the list gives. A release that carries no
-//! launcher file of the new line, as every alpha release, is passed over without an error.
+//! launcher file of the new line, as every alpha release, is passed over without an error. A
+//! release's checksum list is fetched and checked, against its signature when the launcher trusts
+//! a key, before anything else of the release is downloaded.
 
 use std::cmp::Ordering;
+use std::path::Path;
 
-use gdl_files::Cancel;
+use gdl_files::{Cancel, Job};
 use gdl_media::Sha256Digest;
 use serde_json::{Map, Value};
 
 use crate::http::{Origins, Transport, Wanted, percent_decoded, read_bounded};
 use crate::{
-    GITHUB_API_HOST, GITHUB_HOST, Keyring, MAX_LIST_LEN, Platform, ProxySettings, REPOSITORY,
-    ReleaseError, Version, checksums_asset, launcher_asset, signature_asset,
+    ChecksumList, Downloaded, GITHUB_API_HOST, GITHUB_HOST, Keyring, MAX_LIST_LEN, Platform,
+    ProxySettings, REPOSITORY, ReleaseError, Version, checksums_asset, launcher_asset,
+    signature_asset,
 };
 
 /// How many releases a page of the list holds, asked for and counted: a page of fewer is the
@@ -215,6 +219,56 @@ pub struct Scan {
     pub passed_over: usize,
 }
 
+/// A release's checksum list, fetched and checked: what an update downloads before the release's
+/// launcher file, and holds that file to.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CheckedList {
+    /// The list, read.
+    pub list: ChecksumList,
+    /// The list's bytes, as the release carries them.
+    pub bytes: Vec<u8>,
+    /// The list's signature, as the release carries it, when it was checked against the keyring;
+    /// `None` when the keyring holds no key, and so no signature was fetched.
+    pub signature: Option<Vec<u8>>,
+}
+
+impl CheckedList {
+    /// Whether the list's signature was checked: whether the keyring held a key.
+    pub fn signed(&self) -> bool {
+        self.signature.is_some()
+    }
+}
+
+/// Where an update fetches a release's checksum list and launcher file from: the feed, or a
+/// test's stand-in that holds the files itself.
+pub trait ReleaseFiles {
+    /// `release`'s checksum list, fetched and checked as [`Feed::check_list`] checks it.
+    fn check_list(&self, release: &Release, cancel: &Cancel) -> Result<CheckedList, ReleaseError>;
+
+    /// `asset` downloaded into `folder`, as [`Feed::download`] downloads it.
+    fn download(
+        &self,
+        asset: &Asset,
+        folder: &Path,
+        job: &Job<'_>,
+    ) -> Result<Downloaded, ReleaseError>;
+}
+
+impl ReleaseFiles for Feed {
+    fn check_list(&self, release: &Release, cancel: &Cancel) -> Result<CheckedList, ReleaseError> {
+        Feed::check_list(self, release, cancel)
+    }
+
+    fn download(
+        &self,
+        asset: &Asset,
+        folder: &Path,
+        job: &Job<'_>,
+    ) -> Result<Downloaded, ReleaseError> {
+        Feed::download(self, asset, folder, job)
+    }
+}
+
 /// The release feed: GitHub's releases list, or a loopback feed of a test build, and the keys a
 /// release's checksum list must be signed by.
 pub struct Feed {
@@ -294,6 +348,55 @@ impl Feed {
         cancel: &Cancel,
     ) -> Result<Option<Release>, ReleaseError> {
         Ok(self.scan(Some(installed), platform, cancel)?.candidate)
+    }
+
+    /// Fetches `release`'s checksum list and, when the keyring holds a key, the list's signature,
+    /// each held to the size and digest the feed published for it; checks the signature against
+    /// the keyring, for the list's own name and the release's version; then reads the list, which
+    /// must give the launcher file GitHub's digest, so that the launcher file downloaded after it
+    /// is held to both. Nothing of the launcher file is fetched here. With a key, a release that
+    /// carries no signature is [`ReleaseError::Incomplete`] before anything is asked; without
+    /// one, a signature the release carries is not fetched.
+    pub fn check_list(
+        &self,
+        release: &Release,
+        cancel: &Cancel,
+    ) -> Result<CheckedList, ReleaseError> {
+        let signature = if self.keyring.is_empty() {
+            None
+        } else {
+            let asset = release
+                .signature
+                .as_ref()
+                .ok_or_else(|| ReleaseError::Incomplete {
+                    asset: signature_asset(&release.version, release.platform).into(),
+                })?;
+            Some(asset)
+        };
+        let bytes = self.fetch_small(&release.checksums, cancel)?;
+        let signature = signature
+            .map(|asset| self.fetch_small(asset, cancel))
+            .transpose()?;
+        if let Some(signature) = &signature {
+            // The list is read only once a trusted key has vouched for its bytes.
+            self.keyring.verify_list(
+                &bytes,
+                &release.checksums.name,
+                &release.version,
+                signature,
+            )?;
+        }
+        let list = ChecksumList::parse(&bytes)?;
+        if list.digest_of(&release.launcher.name) != Some(release.launcher.sha256) {
+            return Err(ReleaseError::ChecksumMismatch {
+                asset: release.launcher.name.as_str().into(),
+            });
+        }
+        Ok(CheckedList {
+            list,
+            bytes,
+            signature,
+        })
     }
 
     /// Judges one row of the list: a published release above `floor` whose assets include
@@ -451,17 +554,22 @@ fn is_newer(version: &Version, kept: &Version) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use gdl_files::Cancel;
-    use gdl_fixtures::{AssetRow, LoopbackServer, ReleaseRow, Reply, test_public_key};
+    use std::fs;
+
+    use gdl_files::{Cancel, Job, NoProgress};
+    use gdl_fixtures::{
+        AssetRow, LoopbackServer, ReleaseRow, Reply, sign_with_test_key, test_public_key,
+    };
+    use gdl_media::Sha256Digest;
     use serde_json::{Value, json};
 
     use super::{
-        Feed, FeedConfig, MAX_ASSET_LEN, MAX_NOTES_LEN, MAX_PAGE_BYTES, MAX_PAGES, Origins,
-        PAGE_LEN, Release, Scan,
+        Asset, Feed, FeedConfig, MAX_ASSET_LEN, MAX_NOTES_LEN, MAX_PAGE_BYTES, MAX_PAGES, Origins,
+        PAGE_LEN, Release, ReleaseFiles, Scan,
     };
     use crate::{
-        Keyring, MAX_LIST_LEN, Platform, ProxySettings, ReleaseError, Version, checksums_asset,
-        launcher_asset, signature_asset,
+        DOWNLOAD_ATTEMPTS, Keyring, MAX_LIST_LEN, Platform, ProxySettings, ReleaseError, Version,
+        checksums_asset, launcher_asset, licences_asset, signature_asset,
     };
 
     /// The launcher version the tests' feeds are read as.
@@ -476,8 +584,18 @@ mod tests {
     /// What every test release's launcher file holds.
     const LAUNCHER: &[u8] = b"a launcher file";
 
-    /// What every test release's signature holds; the feed does not read it.
+    /// What a test release's signature holds where no key checks it: no minisign signature at
+    /// all, which a scan takes as it takes any asset.
     const SIGNATURE: &[u8] = b"untrusted comment: a signature\n";
+
+    /// The release whose checksum list the tests check.
+    const RELEASE: &str = "1.0.0-beta.1";
+
+    /// What the release's licences hold, as its checksum list gives their digest.
+    const LICENCES: &[u8] = b"the licences";
+
+    /// When the tests' signatures say they were made, as the release signing writes it.
+    const SIGNED_AT: &str = "timestamp:1764003600";
 
     /// The ten newest alpha releases, as GitHub's first page of the list gives them.
     const ALPHA_VERSIONS: [&str; 10] = [
@@ -539,6 +657,99 @@ mod tests {
         match result {
             Err(ReleaseError::Incomplete { asset }) => asset.into(),
             other => panic!("not refused as incomplete: {other:?}"),
+        }
+    }
+
+    /// The feed `server` serves, read as the running launcher and trusting the test key alone.
+    fn keyed_feed(server: &LoopbackServer) -> Feed {
+        let config = FeedConfig::loopback(&server.base(), RUNNING).expect("a loopback base");
+        let keyring = Keyring::of(&[&test_public_key()]).expect("the test key is a key");
+        Feed::with_keyring(config, keyring)
+    }
+
+    /// A line of a checksum list giving `name` the digest of `bytes`, as release.py writes one.
+    fn line(bytes: &[u8], name: &str) -> String {
+        format!("{}  {name}\n", Sha256Digest::of(bytes))
+    }
+
+    /// The checksum list release.py writes of [`RELEASE`]'s Windows files: its launcher file's
+    /// digest and its licences'.
+    fn sound_list() -> Vec<u8> {
+        let release = version(RELEASE);
+        [
+            line(LAUNCHER, &launcher_asset(&release, Platform::WindowsX64)),
+            line(LICENCES, &licences_asset(&release, Platform::WindowsX64)),
+        ]
+        .concat()
+        .into_bytes()
+    }
+
+    /// `list` with its first line's two spaces made one, a form release.py never writes.
+    fn malformed(list: &[u8]) -> Vec<u8> {
+        let text = std::str::from_utf8(list).expect("a test list is text");
+        text.replacen("  ", " ", 1).into_bytes()
+    }
+
+    /// The test key's signature of `list`, whose trusted comment names the file `name` and the
+    /// release `release`, as the release signing writes one.
+    fn signed(list: &[u8], name: &str, release: &str) -> Vec<u8> {
+        let comment = format!("{SIGNED_AT}\tfile:{name}\tversion:{release}");
+        sign_with_test_key(list, &comment).into_bytes()
+    }
+
+    /// The request target that `url`, a URL of `server`'s, names.
+    fn target_of(server: &LoopbackServer, url: &str) -> String {
+        let base = server.base();
+        url.strip_prefix(base.trim_end_matches('/'))
+            .unwrap_or_else(|| panic!("{url} is not served from {base}"))
+            .to_owned()
+    }
+
+    /// Serves `bytes` as `asset` at the target its URL names.
+    fn serve_asset(server: &LoopbackServer, asset: &Asset, bytes: &[u8]) {
+        server.route(&target_of(server, &asset.url), Reply::ok(bytes));
+    }
+
+    /// The targets of the requests `server` read after the first `skipped`.
+    fn targets_after(server: &LoopbackServer, skipped: usize) -> Vec<String> {
+        server.requests()[skipped..]
+            .iter()
+            .map(|request| request.target.clone())
+            .collect()
+    }
+
+    /// The Windows release [`RELEASE`] as `server`'s list gives it, read by a feed that trusts no
+    /// key: its launcher file [`LAUNCHER`], its checksum list published as holding `list` and,
+    /// given one, the list's signature published as holding `signature`. Only the launcher file
+    /// is served.
+    fn published(server: &LoopbackServer, list: &[u8], signature: Option<&[u8]>) -> Release {
+        let mut row = ReleaseRow::new_line(&server.base(), RELEASE, WINDOWS, LAUNCHER, signature);
+        row.assets[1].size = json!(list.len());
+        row.assets[1].digest = json!(format!("sha256:{}", Sha256Digest::of(list)));
+        serve(server, 1, vec![row.to_json()]);
+        let release = scan(&feed(server), Some(RUNNING), Platform::WindowsX64)
+            .unwrap_or_else(|error| panic!("{error}"))
+            .candidate
+            .expect("the release published");
+        serve_asset(server, &release.launcher, LAUNCHER);
+        release
+    }
+
+    /// [`published`]'s release, its checksum list and signature served as they were published.
+    fn served(server: &LoopbackServer, list: &[u8], signature: Option<&[u8]>) -> Release {
+        let release = published(server, list, signature);
+        serve_asset(server, &release.checksums, list);
+        if let (Some(asset), Some(bytes)) = (&release.signature, signature) {
+            serve_asset(server, asset, bytes);
+        }
+        release
+    }
+
+    /// Why `feed` refused `release`'s checksum list, or a panic naming `what` was taken.
+    fn refused_list(feed: &Feed, release: &Release, what: &str) -> ReleaseError {
+        match feed.check_list(release, &Cancel::default()) {
+            Err(error) => error,
+            Ok(checked) => panic!("{what} was taken: {checked:?}"),
         }
     }
 
@@ -1331,5 +1542,325 @@ mod tests {
                 Ok(config) => panic!("{base:?} was taken as {config:?}"),
             }
         }
+    }
+
+    #[test]
+    fn a_list_without_the_launcher_or_with_another_digest_is_refused() {
+        let release_version = version(RELEASE);
+        let launcher = launcher_asset(&release_version, Platform::WindowsX64);
+        let licences_name = licences_asset(&release_version, Platform::WindowsX64);
+        let licences = line(LICENCES, &licences_name);
+
+        // A list that gives the launcher file GitHub's digest is taken whole, and nothing but the
+        // list is asked for: the launcher file comes after it.
+        let server = LoopbackServer::start().unwrap();
+        let list = sound_list();
+        let release = served(&server, &list, None);
+        let asked = server.requests().len();
+        let checked = feed(&server)
+            .check_list(&release, &Cancel::default())
+            .unwrap_or_else(|error| panic!("{error}"));
+        assert_eq!(
+            checked.list.digest_of(&launcher),
+            Some(Sha256Digest::of(LAUNCHER))
+        );
+        assert_eq!(
+            checked.list.digest_of(&licences_name),
+            Some(Sha256Digest::of(LICENCES))
+        );
+        assert_eq!(checked.bytes, list);
+        assert_eq!(checked.signature, None);
+        assert_eq!(
+            targets_after(&server, asked),
+            [target_of(&server, &release.checksums.url)]
+        );
+
+        let other_release = version("1.0.0-beta.2");
+        let lists = [
+            ("the licences alone", licences.clone()),
+            (
+                "another release's launcher file",
+                line(
+                    LAUNCHER,
+                    &launcher_asset(&other_release, Platform::WindowsX64),
+                ) + &licences,
+            ),
+            (
+                "the other platform's launcher file",
+                line(
+                    LAUNCHER,
+                    &launcher_asset(&release_version, Platform::LinuxX64),
+                ) + &licences,
+            ),
+            (
+                "the launcher file in other letters",
+                line(LAUNCHER, &launcher.to_lowercase()) + &licences,
+            ),
+            (
+                "another digest of the launcher file",
+                line(b"another launcher file", &launcher) + &licences,
+            ),
+        ];
+        for (what, list) in lists {
+            let server = LoopbackServer::start().unwrap();
+            let release = served(&server, list.as_bytes(), None);
+            let error = refused_list(&feed(&server), &release, what);
+            assert!(
+                matches!(error, ReleaseError::ChecksumMismatch { .. }),
+                "{what}: {error}"
+            );
+            assert_eq!(
+                error.to_string(),
+                format!("The release's checksum list does not give {launcher} GitHub's digest"),
+                "{what}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_list_that_breaks_its_form_or_its_digest_is_refused() {
+        let list = sound_list();
+        let release_version = version(RELEASE);
+
+        // A list that matches GitHub's digest but not release.py's form is refused as it is read.
+        let server = LoopbackServer::start().unwrap();
+        let release = served(&server, &malformed(&list), None);
+        let error = refused_list(&feed(&server), &release, "a list of one space");
+        assert!(
+            matches!(error, ReleaseError::ChecksumList { .. }),
+            "{error}"
+        );
+        assert_eq!(
+            error.to_string(),
+            "The release's checksum list is malformed: line 1 does not part its digest from its \
+             name by two spaces"
+        );
+
+        // A list served other than it was published is refused after a second try.
+        let server = LoopbackServer::start().unwrap();
+        let release = published(&server, &list, None);
+        let mut other = list.clone();
+        other[0] ^= 1;
+        serve_asset(&server, &release.checksums, &other);
+        let asked = server.requests().len();
+        let error = refused_list(&feed(&server), &release, "another list");
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "Update download is incomplete or failed its SHA-256 check: {}",
+                release.checksums.name
+            )
+        );
+        assert_eq!(
+            targets_after(&server, asked),
+            vec![target_of(&server, &release.checksums.url); DOWNLOAD_ATTEMPTS as usize]
+        );
+
+        // A list that is not there is the status the feed answered.
+        let server = LoopbackServer::start().unwrap();
+        let release = published(&server, &list, None);
+        let error = refused_list(&feed(&server), &release, "no list");
+        assert!(
+            matches!(error, ReleaseError::Status { status: 404, .. }),
+            "{error}"
+        );
+
+        // So is a signature served other than it was published, when it is checked.
+        let server = LoopbackServer::start().unwrap();
+        let name = checksums_asset(&release_version, Platform::WindowsX64);
+        let signature = signed(&list, &name, RELEASE);
+        let release = published(&server, &list, Some(&signature));
+        serve_asset(&server, &release.checksums, &list);
+        let mut other = signature.clone();
+        other[0] ^= 1;
+        let signature_file = release.signature.as_ref().expect("the release's signature");
+        serve_asset(&server, signature_file, &other);
+        let error = refused_list(&keyed_feed(&server), &release, "another signature");
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "Update download is incomplete or failed its SHA-256 check: {}",
+                signature_file.name
+            )
+        );
+    }
+
+    #[test]
+    fn an_unsigned_release_is_refused_by_a_keyring_with_a_key() {
+        let list = sound_list();
+        let release_version = version(RELEASE);
+
+        // Without a signature to check, nothing is asked.
+        let server = LoopbackServer::start().unwrap();
+        let release = served(&server, &list, None);
+        assert_eq!(release.signature, None);
+        let asked = server.requests().len();
+        match refused_list(&keyed_feed(&server), &release, "an unsigned list") {
+            ReleaseError::Incomplete { asset } => assert_eq!(
+                &*asset,
+                signature_asset(&release_version, Platform::WindowsX64)
+            ),
+            other => panic!("an unsigned list: {other}"),
+        }
+        assert_eq!(server.requests().len(), asked);
+
+        // Signed by the test key for its own name and release, the list is taken, and its
+        // signature is fetched after it.
+        let server = LoopbackServer::start().unwrap();
+        let name = checksums_asset(&release_version, Platform::WindowsX64);
+        let signature = signed(&list, &name, RELEASE);
+        let release = served(&server, &list, Some(&signature));
+        let asked = server.requests().len();
+        let checked = keyed_feed(&server)
+            .check_list(&release, &Cancel::default())
+            .unwrap_or_else(|error| panic!("{error}"));
+        assert!(checked.signed());
+        assert_eq!(checked.signature.as_deref(), Some(signature.as_slice()));
+        assert_eq!(checked.bytes, list);
+        assert_eq!(
+            checked.list.digest_of(&release.launcher.name),
+            Some(release.launcher.sha256)
+        );
+        let signature_url = &release.signature.as_ref().expect("the signature").url;
+        assert_eq!(
+            targets_after(&server, asked),
+            [
+                target_of(&server, &release.checksums.url),
+                target_of(&server, signature_url)
+            ]
+        );
+    }
+
+    #[test]
+    fn a_list_is_held_to_its_signature_before_it_is_read() {
+        let list = sound_list();
+        let release_version = version(RELEASE);
+        let name = checksums_asset(&release_version, Platform::WindowsX64);
+        let linux_name = checksums_asset(&release_version, Platform::LinuxX64);
+        let changed = [
+            line(
+                LAUNCHER,
+                &launcher_asset(&release_version, Platform::WindowsX64),
+            ),
+            line(
+                b"other licences",
+                &licences_asset(&release_version, Platform::WindowsX64),
+            ),
+        ]
+        .concat()
+        .into_bytes();
+        let malformed = malformed(&list);
+        let another_release =
+            "its trusted comment gives the version \"1.0.0-beta.2\", not 1.0.0-beta.1";
+        let cases = [
+            (
+                "a list signed for another release",
+                list.clone(),
+                signed(&list, &name, "1.0.0-beta.2"),
+                another_release.to_owned(),
+            ),
+            (
+                "a list signed as the other platform's",
+                list.clone(),
+                signed(&list, &linux_name, RELEASE),
+                format!("its trusted comment gives the file {linux_name:?}, not {name}"),
+            ),
+            (
+                "a list changed after it was signed",
+                changed,
+                signed(&list, &name, RELEASE),
+                "it does not verify over this list and its trusted comment".to_owned(),
+            ),
+            (
+                "a malformed list signed for another release",
+                malformed.clone(),
+                signed(&malformed, &name, "1.0.0-beta.2"),
+                another_release.to_owned(),
+            ),
+        ];
+        for (what, served_list, signature, why) in cases {
+            let server = LoopbackServer::start().unwrap();
+            let release = served(&server, &served_list, Some(&signature));
+            let error = refused_list(&keyed_feed(&server), &release, what);
+            assert!(
+                matches!(error, ReleaseError::Signature { .. }),
+                "{what}: {error}"
+            );
+            assert!(error.to_string().ends_with(&why), "{what}: {error}");
+        }
+
+        // A malformed list its signature vouches for is read, and refused as it is read.
+        let server = LoopbackServer::start().unwrap();
+        let signature = signed(&malformed, &name, RELEASE);
+        let release = served(&server, &malformed, Some(&signature));
+        let error = refused_list(&keyed_feed(&server), &release, "a signed malformed list");
+        assert!(
+            matches!(error, ReleaseError::ChecksumList { .. }),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn an_empty_keyring_checks_no_signature() {
+        let server = LoopbackServer::start().unwrap();
+        let list = sound_list();
+        // The release carries a signature that is no minisign signature at all.
+        let release = served(&server, &list, Some(SIGNATURE));
+        assert!(release.signature.is_some());
+        let plain = feed(&server);
+        assert!(plain.keyring().is_empty());
+        let asked = server.requests().len();
+        let checked = plain
+            .check_list(&release, &Cancel::default())
+            .unwrap_or_else(|error| panic!("{error}"));
+        assert!(!checked.signed());
+        assert_eq!(checked.signature, None);
+        assert_eq!(checked.bytes, list);
+        assert_eq!(
+            targets_after(&server, asked),
+            [target_of(&server, &release.checksums.url)]
+        );
+
+        // A keyring with a key fetches the same signature and refuses it.
+        let error = refused_list(&keyed_feed(&server), &release, "no minisign signature");
+        assert!(matches!(error, ReleaseError::Signature { .. }), "{error}");
+    }
+
+    #[test]
+    fn an_update_fetches_a_releases_files_through_the_feed() {
+        let server = LoopbackServer::start().unwrap();
+        let list = sound_list();
+        let release = served(&server, &list, None);
+        let feed = feed(&server);
+        let files: &dyn ReleaseFiles = &feed;
+        let cancel = Cancel::default();
+        let checked = files
+            .check_list(&release, &cancel)
+            .unwrap_or_else(|error| panic!("{error}"));
+        assert_eq!(checked, feed.check_list(&release, &cancel).unwrap());
+
+        let folder = tempfile::tempdir().unwrap();
+        let job = Job {
+            cancel: &cancel,
+            progress: &NoProgress,
+        };
+        let downloaded = files
+            .download(&release.launcher, folder.path(), &job)
+            .unwrap_or_else(|error| panic!("{error}"));
+        assert_eq!(downloaded.path, folder.path().join(&release.launcher.name));
+        assert_eq!(fs::read(&downloaded.path).unwrap(), LAUNCHER);
+        assert_eq!(
+            checked.list.digest_of(&release.launcher.name),
+            Some(downloaded.sha256)
+        );
+
+        // A cancelled job asks nothing.
+        cancel.cancel();
+        let asked = server.requests().len();
+        assert!(matches!(
+            files.check_list(&release, &cancel),
+            Err(ReleaseError::Cancelled)
+        ));
+        assert_eq!(server.requests().len(), asked);
     }
 }
