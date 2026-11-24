@@ -461,17 +461,43 @@ pub(crate) struct FolderChecks<'a> {
     pub(crate) refuse_folded_case: bool,
     /// Whether a file system that runs no program refuses the folder, as it does on Linux.
     pub(crate) refuse_noexec: bool,
+    /// The user's known folders that the judging warns of, each with where it is, as the shell
+    /// names them.
+    #[cfg(windows)]
+    pub(crate) known_folders: &'a dyn Fn() -> Vec<(KnownFolder, PathBuf)>,
+    /// The folders that the OneDrive accounts signed in keep in sync.
+    #[cfg(windows)]
+    pub(crate) cloud_roots: &'a dyn Fn() -> Vec<PathBuf>,
+    /// The system's build.
+    #[cfg(windows)]
+    pub(crate) windows_build: &'a dyn Fn() -> u32,
 }
 
 impl FolderChecks<'static> {
-    /// What the launcher asks: the folder probe and the volume's measure themselves, and Linux's
-    /// two rules on Linux alone.
+    /// What the launcher asks: the folder probe and the volume's measure themselves, Linux's two
+    /// rules on Linux alone, and on Windows the system's own known folders, OneDrive accounts and
+    /// build.
     pub(crate) const SHIPPED: FolderChecks<'static> = FolderChecks {
         probe: &probe_folder,
         volume: &volume_of,
         refuse_folded_case: cfg!(target_os = "linux"),
         refuse_noexec: cfg!(target_os = "linux"),
+        #[cfg(windows)]
+        known_folders: &known_folders,
+        #[cfg(windows)]
+        cloud_roots: &platform::onedrive_account_folders,
+        #[cfg(windows)]
+        windows_build: &platform::windows_build,
     };
+}
+
+/// The user's known folders that the shell names, each with where it is.
+#[cfg(windows)]
+fn known_folders() -> Vec<(KnownFolder, PathBuf)> {
+    KNOWN_FOLDERS
+        .into_iter()
+        .filter_map(|folder| platform::known_folder(folder).map(|path| (folder, path)))
+        .collect()
 }
 
 /// Judges `destination` as a folder to install into, for an install that makes `names` at its top,
@@ -637,7 +663,7 @@ fn judge_into(
         });
     }
     #[cfg(windows)]
-    warn(report, &nearest)?;
+    warn(report, &nearest, checks)?;
     Ok(())
 }
 
@@ -736,9 +762,14 @@ fn judge_length(report: &mut DestinationReport) -> Result<(), DestinationError> 
 }
 
 /// Adds to `report` what Windows shows of each entry on its destination's path, from `nearest`
-/// up, the OneDrive folders it knows of, and the warnings these call for.
+/// up, the OneDrive folders it knows of, and the warnings these call for, with the known folders,
+/// the OneDrive accounts' folders and the system's build that `checks` gives.
 #[cfg(windows)]
-fn warn(report: &mut DestinationReport, nearest: &Path) -> Result<(), DestinationError> {
+fn warn(
+    report: &mut DestinationReport,
+    nearest: &Path,
+    checks: &FolderChecks<'_>,
+) -> Result<(), DestinationError> {
     use std::os::windows::fs::MetadataExt;
 
     /// The attribute of an entry that is a reparse point, FILE_ATTRIBUTE_REPARSE_POINT.
@@ -763,7 +794,7 @@ fn warn(report: &mut DestinationReport, nearest: &Path) -> Result<(), Destinatio
         .into_iter()
         .filter_map(|name| std::env::var_os(name).map(|value| (name.to_owned(), value.into())))
         .collect();
-    report.cloud_roots = platform::onedrive_account_folders();
+    report.cloud_roots = (checks.cloud_roots)();
 
     let marked = report
         .components
@@ -773,14 +804,10 @@ fn warn(report: &mut DestinationReport, nearest: &Path) -> Result<(), Destinatio
     if let Some(path) = marked.or_else(|| under_cloud_roots(&report.path, &report.cloud_roots)) {
         report.warnings.push(Warning::CloudSynced { path });
     }
-    let known: Vec<(KnownFolder, PathBuf)> = KNOWN_FOLDERS
-        .into_iter()
-        .filter_map(|folder| platform::known_folder(folder).map(|path| (folder, path)))
-        .collect();
-    if let Some((folder, path)) = protection_of(&report.path, &known) {
+    if let Some((folder, path)) = protection_of(&report.path, &(checks.known_folders)()) {
         report.warnings.push(Warning::Protected { folder, path });
     }
-    if let Some(warning) = non_ascii_warning(platform::windows_build(), &report.path) {
+    if let Some(warning) = non_ascii_warning((checks.windows_build)(), &report.path) {
         report.warnings.push(warning);
     }
     Ok(())
@@ -904,6 +931,19 @@ mod tests {
     #[track_caller]
     fn judge(destination: &Path) -> DestinationReport {
         judge_destination(destination, &names_of(&NAMES), 0).unwrap()
+    }
+
+    /// What the launcher asks of the system, but for the folder probe and the volume's measure,
+    /// which `probe` and `volume` stand in for.
+    fn standing_in<'a>(
+        probe: &'a dyn Fn(&Path, ProbedFolder) -> Result<FolderProbe, FilesError>,
+        volume: &'a dyn Fn(&Path) -> io::Result<Volume>,
+    ) -> FolderChecks<'a> {
+        FolderChecks {
+            probe,
+            volume,
+            ..FolderChecks::SHIPPED
+        }
     }
 
     /// Checks that the judging that gave `report` ended before it probed the folder or asked its
@@ -1583,10 +1623,9 @@ mod tests {
             (false, vec![not_writable.clone(), space.clone()]),
         ] {
             let checks = FolderChecks {
-                probe: &probe,
-                volume: &volume,
                 refuse_folded_case: linux_rules,
                 refuse_noexec: linux_rules,
+                ..standing_in(&probe, &volume)
             };
             let report = judge_with(&destination, &names_of(&NAMES), 1, &checks).unwrap();
             assert_eq!(report.blockers, expected, "{linux_rules}");
@@ -1596,10 +1635,9 @@ mod tests {
         // that is there as itself.
         fs::create_dir(&destination).unwrap();
         let checks = FolderChecks {
-            probe: &probe,
-            volume: &volume,
             refuse_folded_case: false,
             refuse_noexec: false,
+            ..standing_in(&probe, &volume)
         };
         judge_with(&destination, &names_of(&NAMES), 0, &checks).unwrap();
         assert_eq!(
@@ -1620,10 +1658,9 @@ mod tests {
         };
         let failing_volume = |_: &Path| -> io::Result<Volume> { Err(io::Error::other("volume")) };
         let checks = FolderChecks {
-            probe: &failing_probe,
-            volume: &volume,
             refuse_folded_case: false,
             refuse_noexec: false,
+            ..standing_in(&failing_probe, &volume)
         };
         match judge_with(&destination, &[], 0, &checks) {
             Err(DestinationError::Files(FilesError::Io { path, .. })) => {
@@ -1632,10 +1669,9 @@ mod tests {
             other => panic!("{other:?}"),
         }
         let checks = FolderChecks {
-            probe: &probe,
-            volume: &failing_volume,
             refuse_folded_case: false,
             refuse_noexec: false,
+            ..standing_in(&probe, &failing_volume)
         };
         match judge_with(&destination, &[], 0, &checks) {
             Err(DestinationError::Io { path, source }) => {
@@ -1643,6 +1679,109 @@ mod tests {
                 assert_eq!(source.to_string(), "volume");
             }
             other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn the_launcher_holds_a_linux_folder_to_linux_rules_alone() {
+        // A folder that ignores letter case on a volume that runs no program, as the launcher
+        // judges it: refused on Linux, where the game's executable stands beside its disc's
+        // folder of the same name, and taken on Windows.
+        let dir = tempfile::tempdir().unwrap();
+        let top = dir.path();
+        let probe = |_: &Path, _: ProbedFolder| -> Result<FolderProbe, FilesError> {
+            Ok(FolderProbe {
+                writable: true,
+                ignores_case: true,
+            })
+        };
+        let volume = |_: &Path| -> io::Result<Volume> {
+            Ok(Volume {
+                available: u64::MAX,
+                noexec: true,
+            })
+        };
+        let report = judge_with(
+            &top.join("game"),
+            &names_of(&NAMES),
+            0,
+            &standing_in(&probe, &volume),
+        )
+        .unwrap();
+        let expected = if cfg!(target_os = "linux") {
+            vec![
+                Blocker::IgnoresCase {
+                    path: top.to_path_buf(),
+                },
+                Blocker::Noexec {
+                    path: top.to_path_buf(),
+                },
+            ]
+        } else {
+            Vec::new()
+        };
+        assert_eq!(report.blockers, expected);
+        assert_eq!(report.noexec, Some(true));
+        assert!(folder_names(top).unwrap().is_empty());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn the_warnings_hold_the_destinations_own_path() {
+        // A known folder and a cloud account's folder not there yet, below the folder that is,
+        // on a build before 1903, with a name that is not ASCII below them: only the destination's
+        // own path, never the nearest folder's, lies in them or is not ASCII.
+        let dir = tempfile::tempdir().unwrap();
+        let top = dir.path();
+        let documents = top.join("Documents");
+        let destination = documents.join("Spiele \u{fc}ber alles").join("game");
+        let known = || vec![(KnownFolder::Documents, documents.clone())];
+        let roots = || vec![documents.clone()];
+        let old_build = || 17_763_u32;
+        let checks = FolderChecks {
+            known_folders: &known,
+            cloud_roots: &roots,
+            windows_build: &old_build,
+            ..FolderChecks::SHIPPED
+        };
+        let report = judge_with(&destination, &names_of(&NAMES), 0, &checks).unwrap();
+        assert!(report.blockers.is_empty(), "{report:?}");
+        // An entry of the test's own path that a cloud provider keeps would be named first.
+        let synced = report
+            .components
+            .iter()
+            .find(|entry| is_cloud_marked(entry.attributes, entry.reparse_tag))
+            .map_or_else(|| documents.clone(), |entry| entry.path.clone());
+        assert_eq!(
+            report.warnings,
+            [
+                Warning::CloudSynced { path: synced },
+                Warning::Protected {
+                    folder: KnownFolder::Documents,
+                    path: documents.clone(),
+                },
+                Warning::NonAsciiOldWindows { build: 17_763 },
+            ]
+        );
+        assert_eq!(report.cloud_roots, std::slice::from_ref(&documents));
+        assert!(folder_names(top).unwrap().is_empty());
+
+        // Outside both folders, on a build that keeps the game's code page, nothing is warned of.
+        let new_build = || FIRST_UTF8_BUILD;
+        let checks = FolderChecks {
+            known_folders: &known,
+            cloud_roots: &roots,
+            windows_build: &new_build,
+            ..FolderChecks::SHIPPED
+        };
+        let beside = top.join("Spiele \u{fc}ber alles").join("game");
+        let report = judge_with(&beside, &names_of(&NAMES), 0, &checks).unwrap();
+        let marked = report
+            .components
+            .iter()
+            .any(|entry| is_cloud_marked(entry.attributes, entry.reparse_tag));
+        if !marked {
+            assert!(report.warnings.is_empty(), "{report:?}");
         }
     }
 
