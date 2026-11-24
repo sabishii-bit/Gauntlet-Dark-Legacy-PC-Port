@@ -1,11 +1,11 @@
 //! The launcher's modes without a window, for the release scripts, CI and developers at a console:
 //! `--version`, `--check-payload`, which checks the runtime the launcher file carries or a runtime
-//! zip it is given, `--inspect`, which reports what a folder is to the launcher, and `--extract`,
-//! which extracts a Legends expansion's tree from a dump into a new folder outside every
-//! installation. They run before anything builds a window, and what they print is technical text
-//! for whoever runs them, never words for players. A run is handed its arguments, its build, its
-//! own file's sections and the streams to write to, so that every mode runs inside a test as it
-//! runs in the program.
+//! zip it is given, `--inspect`, which reports what a folder is to the launcher, `--check-folder`,
+//! which reports what a folder is to an install, and `--extract`, which extracts a Legends
+//! expansion's tree from a dump into a new folder outside every installation. They run before
+//! anything builds a window, and what they print is technical text for whoever runs them, never
+//! words for players. A run is handed its arguments, its build, its own file's sections and the
+//! streams to write to, so that every mode runs inside a test as it runs in the program.
 
 use std::ffi::{OsStr, OsString};
 use std::fmt;
@@ -14,12 +14,13 @@ use std::io::{self, Read, Seek, Write};
 use std::path::Path;
 
 use gdl_extract::{Expansion, Trust};
-use gdl_files::{Cancel, Job, NoProgress};
+use gdl_files::{Cancel, Job, NoProgress, PAYLOAD_NAMES, RelPath, strip_verbatim};
 use gdl_install::{
-    Access, INSPECTION_SCHEMA, Inspection, InstallFolder, InstallationSummary, Payload,
-    PayloadError, Relation, Sections, SectionsError,
+    Access, ComponentAttributes, DestinationReport, INSPECTION_SCHEMA, Inspection, InstallFolder,
+    InstallationSummary, Payload, PayloadError, ROOT_FILES, ROOT_FOLDERS, Relation, STATE_DIR,
+    Sections, SectionsError, installed_launcher_name, judge_destination,
 };
-use gdl_release::Version;
+use gdl_release::{Platform, Version};
 use serde::Serialize;
 
 use crate::codes::{self, Report};
@@ -39,8 +40,9 @@ pub const EXIT_USAGE: u8 = 2;
 
 /// The line that answers arguments the program does not take.
 const USAGE: &str = "usage: gdl-launcher-headless --check-payload [--payload <zip>] | \
-                     --inspect <dir> [--json] | --extract <n64|dreamcast> <dump> --output <dir> \
-                     [--strict script] | --version";
+                     --inspect <dir> [--json] | --check-folder <dir> [--json] | \
+                     --extract <n64|dreamcast> <dump> --output <dir> [--strict script] | \
+                     --version";
 
 /// The mode that prints the program's version.
 const VERSION_OPTION: &str = "--version";
@@ -51,11 +53,14 @@ const CHECK_PAYLOAD_OPTION: &str = "--check-payload";
 /// The mode that reports what the folder after it is to the launcher.
 const INSPECT_OPTION: &str = "--inspect";
 
+/// The mode that reports what the folder after it is to an install into it.
+const CHECK_FOLDER_OPTION: &str = "--check-folder";
+
 /// The option of `--check-payload` that names a runtime zip to check in place of the launcher
 /// file's own.
 const PAYLOAD_OPTION: &str = "--payload";
 
-/// The option of `--inspect` that makes it report in JSON.
+/// The option of `--inspect` and `--check-folder` that makes them report in JSON.
 const JSON_OPTION: &str = "--json";
 
 /// The mode that extracts a Legends expansion's tree: the expansion, then the dump, follow it.
@@ -72,10 +77,11 @@ const STRICT_OPTION: &str = "--strict";
 const SCRIPT_STRICTNESS: &str = "script";
 
 /// The options that choose a mode: arguments with none of them are no headless run.
-const MODE_OPTIONS: [&str; 4] = [
+const MODE_OPTIONS: [&str; 5] = [
     VERSION_OPTION,
     CHECK_PAYLOAD_OPTION,
     INSPECT_OPTION,
+    CHECK_FOLDER_OPTION,
     EXTRACT_OPTION,
 ];
 
@@ -87,6 +93,33 @@ const NO_FEATURES: &str = "none";
 
 /// What joins the names of a list that a report gives on one line.
 const LIST_SEPARATOR: &str = ", ";
+
+/// The schema of the report `--check-folder` writes.
+const CHECK_FOLDER_SCHEMA: u32 = 1;
+
+/// The folders an install makes at a folder's top beside the runtime's: the disc's two, spelled
+/// as the game's disc spells them, and the two the game keeps the player's settings and saves in.
+const INSTALL_FOLDERS: [&str; 4] = ["Gauntlet", "carddemo", "saves", "config"];
+
+/// The runtime's folder that only a Linux runtime has, of [`ROOT_FOLDERS`].
+const LINUX_LIBRARIES: &str = "lib";
+
+/// The room an install keeps free on its volume beyond what it writes, as the release scripts'
+/// installer keeps it: all that `--check-folder` asks of a volume, since it installs nothing.
+const SPACE_MARGIN: u64 = 64 << 20;
+
+/// How a text report writes a question that the judging answered yes.
+const YES: &str = "yes";
+
+/// How a text report writes a question that the judging answered no.
+const NO: &str = "no";
+
+/// How a text report writes what a judging that ended early did not ask.
+const UNKNOWN: &str = "unknown";
+
+/// How a text report writes an entry that the judging looked for and found nowhere, and a reparse
+/// tag that an entry does not have.
+const NOWHERE: &str = "none";
 
 /// The build of the program that runs a mode.
 #[derive(Clone, Copy, Debug)]
@@ -113,10 +146,11 @@ pub fn open_own_file() -> OwnFile {
 
 /// Runs the headless mode that `args`, the program's arguments after its own name, ask for, and
 /// gives back its exit code; or `None` when no argument is `--check-payload`, `--inspect`,
-/// `--extract` or `--version`, which is no headless run. A mode writes its report to `out` and a
-/// refusal to `err`. Arguments that ask for a mode in a form it does not take get the usage line
-/// on `err` and [`EXIT_USAGE`]. An option's value is the argument after it, which must not be
-/// empty or begin with `--`; options may come in any order, each at most once.
+/// `--check-folder`, `--extract` or `--version`, which is no headless run. A mode writes its
+/// report to `out` and a refusal to `err`. Arguments that ask for a mode in a form it does not
+/// take get the usage line on `err` and [`EXIT_USAGE`]. An option's value is the argument after
+/// it, which must not be empty or begin with `--`; options may come in any order, each at most
+/// once.
 ///
 /// - `--version` writes the build's version.
 /// - `--check-payload` checks the runtime the launcher file carries, its sections as `own` holds
@@ -130,6 +164,16 @@ pub fn open_own_file() -> OwnFile {
 ///   [`InstallFolder::inspect`] finds it: a `name: value` line for each field that holds
 ///   something, a control character in a value written as its escape, or with `--json` every
 ///   field as JSON. Whatever the folder holds, an inspection exits [`EXIT_OK`].
+/// - `--check-folder <dir>` judges the folder as one to install into, as [`judge_destination`]
+///   judges it for an install's plan: held to the names an install on this system makes at its
+///   top, and to the room an install keeps free beyond what it writes. It reports what refuses an
+///   install there and what to warn of, each with its code, rule and detail, and what the judging
+///   asked of the folder and its volume, `unknown` for what a judging that ended early did not
+///   ask: a `name: value` line each, a control character in a value written as its escape, or
+///   with `--json` every field as JSON. It writes nothing but the entry the folder probe makes and
+///   removes at once, and none in a folder the launcher must not write into. Whatever the folder
+///   holds, a judging exits [`EXIT_OK`]; one that fails is refused with the line
+///   `error: <code> (<rule>): <detail>`, and [`EXIT_REFUSED`].
 /// - `--extract <n64|dreamcast> <dump> --output <dir>` extracts that expansion's tree from the
 ///   dump into the new folder `<dir>`, as [`extract_to_new_folder`] does, holding the dump as an
 ///   installation holds one, to the trust the launcher carries, or with `--strict script` as the
@@ -160,6 +204,7 @@ pub fn run(
         Mode::Version => reported(out, &format!("{}\n", build.version)),
         Mode::CheckPayload { zip } => check_payload(zip, build, own, out, err),
         Mode::Inspect { folder, json } => inspect(Path::new(folder), json, build, out),
+        Mode::CheckFolder { folder, json } => check_folder(Path::new(folder), json, out, err),
         Mode::Extract {
             expansion,
             dump,
@@ -186,6 +231,8 @@ enum Mode<'a> {
     CheckPayload { zip: Option<&'a OsStr> },
     /// `--inspect`, of `folder`, reported as JSON when `json` says so, else as text.
     Inspect { folder: &'a OsStr, json: bool },
+    /// `--check-folder`, of `folder`, reported as JSON when `json` says so, else as text.
+    CheckFolder { folder: &'a OsStr, json: bool },
     /// `--extract`, of the expansion the word `expansion` names, from the dump at `dump` into the
     /// new folder `output`, the dump held as the extraction scripts hold one when `script` says
     /// so, else as an installation holds one.
@@ -205,6 +252,8 @@ enum Chosen<'a> {
     CheckPayload,
     /// `--inspect`, with the folder after it.
     Inspect(&'a OsStr),
+    /// `--check-folder`, with the folder after it.
+    CheckFolder(&'a OsStr),
     /// `--extract`, with the word that names the expansion and the dump after it.
     Extract(&'a OsStr, &'a OsStr),
 }
@@ -235,6 +284,7 @@ fn parse(args: &[OsString]) -> Result<Mode<'_>, Misused> {
             Some(VERSION_OPTION) => Chosen::Version,
             Some(CHECK_PAYLOAD_OPTION) => Chosen::CheckPayload,
             Some(INSPECT_OPTION) => Chosen::Inspect(value(&mut rest)?),
+            Some(CHECK_FOLDER_OPTION) => Chosen::CheckFolder(value(&mut rest)?),
             Some(EXTRACT_OPTION) => Chosen::Extract(value(&mut rest)?, value(&mut rest)?),
             Some(PAYLOAD_OPTION) if zip.is_none() => {
                 zip = Some(value(&mut rest)?);
@@ -267,6 +317,9 @@ fn parse(args: &[OsString]) -> Result<Mode<'_>, Misused> {
         (Some(Chosen::CheckPayload), zip, false, (None, false)) => Ok(Mode::CheckPayload { zip }),
         (Some(Chosen::Inspect(folder)), None, json, (None, false)) => {
             Ok(Mode::Inspect { folder, json })
+        }
+        (Some(Chosen::CheckFolder(folder)), None, json, (None, false)) => {
+            Ok(Mode::CheckFolder { folder, json })
         }
         (Some(Chosen::Extract(expansion, dump)), None, false, (Some(output), script)) => {
             Ok(Mode::Extract {
@@ -387,14 +440,63 @@ fn inspect(folder: &Path, json: bool, build: &Build<'_>, out: &mut dyn Write) ->
     let inspection = InstallFolder::inspect(folder, &running);
     let view = InspectionView::of(&inspection);
     let report = if json {
-        let mut text =
-            serde_json::to_string_pretty(&view).expect("an inspection's fields are all JSON");
-        text.push('\n');
-        text
+        json_report(&view)
     } else {
         view.text()
     };
     reported(out, &report)
+}
+
+/// `--check-folder`: judges the folder at `folder` as one to install into, holding it to the names
+/// an install on this system makes at its top and to the room an install keeps free, and reports
+/// what the judging found to `out`, as JSON when `json` says so, or why it failed to `err`.
+fn check_folder(folder: &Path, json: bool, out: &mut dyn Write, err: &mut dyn Write) -> u8 {
+    let report = match judge_destination(folder, &install_names(), SPACE_MARGIN) {
+        Ok(report) => report,
+        Err(error) => {
+            let code = Report::Error(codes::destination(&error));
+            return refuse(err, code, error.rule(), &error);
+        }
+    };
+    let view = FolderView::of(&report);
+    let report = if json {
+        json_report(&view)
+    } else {
+        view.text()
+    };
+    reported(out, &report)
+}
+
+/// The names an install on this system makes at a folder's top: the disc's folders and the
+/// player's, the launcher's state folder and, on a system a release is built for, its copy and
+/// the game's executable, then the runtime's files and folders, Linux's libraries only on Linux.
+fn install_names() -> Vec<RelPath> {
+    let platform = Platform::of_this_build();
+    let mut names = INSTALL_FOLDERS.to_vec();
+    names.push(STATE_DIR);
+    if let Some(platform) = platform {
+        names.extend([installed_launcher_name(platform), platform.executable()]);
+    }
+    names.extend(ROOT_FILES);
+    names.extend(
+        ROOT_FOLDERS
+            .into_iter()
+            .filter(|&folder| folder != LINUX_LIBRARIES || platform == Some(Platform::LinuxX64)),
+    );
+    names
+        .into_iter()
+        .map(|name| {
+            RelPath::parse(name, &PAYLOAD_NAMES)
+                .expect("an install's names keep the payload's rules")
+        })
+        .collect()
+}
+
+/// `view` as a JSON report writes it: pretty, and ending in a line end.
+fn json_report(view: &impl Serialize) -> String {
+    let mut text = serde_json::to_string_pretty(view).expect("a report's fields are all JSON");
+    text.push('\n');
+    text
 }
 
 /// `--extract`: extracts the expansion `word` names from the dump at `dump` into the new folder
@@ -568,11 +670,17 @@ impl<'a> InspectionView<'a> {
         if let Some(installation) = &self.installation {
             installation.lines(&mut lines);
         }
-        lines
-            .into_iter()
-            .map(|(name, value)| format!("{name}: {}\n", text_value(&value)))
-            .collect()
+        text_report(lines)
     }
+}
+
+/// A text report of `lines`, each name and value pair a `name: value` line, the value written as
+/// [`text_value`] writes it, since a folder's names and records may hold any character.
+fn text_report(lines: Vec<(&str, String)>) -> String {
+    lines
+        .into_iter()
+        .map(|(name, value)| format!("{name}: {}\n", text_value(&value)))
+        .collect()
 }
 
 /// `value` as a text report writes it: each control character, such as a line end, which would
@@ -638,27 +746,251 @@ fn access_name(access: Access) -> &'static str {
     }
 }
 
+/// What `--check-folder` reports of a folder, field by field in the order of the report, each
+/// under its camelCase name in JSON and in text alike, where a list gives a line to each of its
+/// entries under its name in the singular. What the judging did not ask, because it ended before,
+/// is `None`.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FolderView {
+    /// The report's schema.
+    schema: u32,
+    /// The folder, absolute and without a verbatim prefix.
+    path: String,
+    /// Whether the folder is there, a file or a link included.
+    exists: Option<bool>,
+    /// The folder when it is there, else the nearest entry above it that is, shown as `path` is;
+    /// `None` as well when nothing on its path is there.
+    nearest_existing: Option<String>,
+    /// The bytes this process may still write to that folder's volume.
+    available_bytes: Option<u64>,
+    /// The folder's length in UTF-16 units, as Windows' path limits count it.
+    root_utf16: Option<usize>,
+    /// Whether the folder probe could make its entries there.
+    writable: Option<bool>,
+    /// Whether the folder probe found its entries by their names in upper case.
+    ignores_case: Option<bool>,
+    /// Whether the folder's file system runs no program.
+    noexec: Option<bool>,
+    /// What refuses an install there, in the order the judging found them.
+    blockers: Vec<FindingView>,
+    /// What to warn of, on Windows.
+    warnings: Vec<FindingView>,
+    /// What Windows shows of each entry on the path that is there, the nearest first.
+    components: Vec<ComponentView>,
+    /// The variables that name a OneDrive folder, as they are set, on Windows.
+    one_drive_variables: Vec<VariableView>,
+    /// The folders that the OneDrive accounts signed in keep in sync, on Windows.
+    cloud_roots: Vec<String>,
+}
+
+/// What `--check-folder` reports of one finding: what refuses an install, or what to warn of.
+#[derive(Serialize)]
+struct FindingView {
+    /// The code the page turns into words.
+    code: &'static str,
+    /// The finding's stable machine name.
+    rule: &'static str,
+    /// The finding's technical text.
+    detail: String,
+}
+
+/// What `--check-folder` reports of an entry on the folder's path that is there.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ComponentView {
+    /// The entry, as shown as the report's `path`.
+    path: String,
+    /// Its attributes, as the system gives them.
+    attributes: u32,
+    /// Its reparse tag, when it is a reparse point.
+    reparse_tag: Option<u32>,
+}
+
+/// What `--check-folder` reports of a variable that names a OneDrive folder.
+#[derive(Serialize)]
+struct VariableView {
+    /// The variable.
+    name: String,
+    /// The folder it names, as it is set.
+    path: String,
+}
+
+impl FolderView {
+    /// The report of `report`.
+    fn of(report: &DestinationReport) -> FolderView {
+        FolderView {
+            schema: CHECK_FOLDER_SCHEMA,
+            path: shown(&report.path),
+            exists: report.exists,
+            nearest_existing: report.nearest_existing.as_deref().map(shown),
+            available_bytes: report.available_bytes,
+            root_utf16: report.root_utf16,
+            writable: report.probe.map(|probe| probe.writable),
+            ignores_case: report.probe.map(|probe| probe.ignores_case),
+            noexec: report.noexec,
+            blockers: report
+                .blockers
+                .iter()
+                .map(|blocker| FindingView {
+                    code: codes::blocker(blocker),
+                    rule: blocker.rule(),
+                    detail: blocker.to_string(),
+                })
+                .collect(),
+            warnings: report
+                .warnings
+                .iter()
+                .map(|warning| FindingView {
+                    code: codes::warning(warning),
+                    rule: warning.rule(),
+                    detail: warning.to_string(),
+                })
+                .collect(),
+            components: report.components.iter().map(ComponentView::of).collect(),
+            one_drive_variables: report
+                .onedrive_variables
+                .iter()
+                .map(|(name, path)| VariableView {
+                    name: name.clone(),
+                    path: path.display().to_string(),
+                })
+                .collect(),
+            cloud_roots: report
+                .cloud_roots
+                .iter()
+                .map(|root| root.display().to_string())
+                .collect(),
+        }
+    }
+
+    /// The report as text: a `name: value` line for each field, in the report's order, leaving
+    /// out the schema, with a line of its own for each entry of a list. A value the judging did
+    /// not ask is `unknown`, and so is the nearest entry when the judging ended before it looked;
+    /// one it looked for and found nowhere is `none`.
+    fn text(&self) -> String {
+        let known = |value: Option<String>| value.unwrap_or_else(|| UNKNOWN.to_owned());
+        let nearest = match (&self.nearest_existing, self.exists) {
+            (Some(path), _) => path.clone(),
+            (None, Some(_)) => NOWHERE.to_owned(),
+            (None, None) => UNKNOWN.to_owned(),
+        };
+        let mut lines = vec![
+            ("path", self.path.clone()),
+            ("exists", answer(self.exists)),
+            ("nearestExisting", nearest),
+            (
+                "availableBytes",
+                known(self.available_bytes.map(|bytes| bytes.to_string())),
+            ),
+            (
+                "rootUtf16",
+                known(self.root_utf16.map(|units| units.to_string())),
+            ),
+            ("writable", answer(self.writable)),
+            ("ignoresCase", answer(self.ignores_case)),
+            ("noexec", answer(self.noexec)),
+        ];
+        lines.extend(
+            self.blockers
+                .iter()
+                .map(|blocker| ("blocker", blocker.line())),
+        );
+        lines.extend(
+            self.warnings
+                .iter()
+                .map(|warning| ("warning", warning.line())),
+        );
+        lines.extend(
+            self.components
+                .iter()
+                .map(|component| ("component", component.line())),
+        );
+        lines.extend(self.one_drive_variables.iter().map(|variable| {
+            let line = format!("{} {}", variable.name, variable.path);
+            ("oneDriveVariable", line)
+        }));
+        lines.extend(
+            self.cloud_roots
+                .iter()
+                .map(|root| ("cloudRoot", root.clone())),
+        );
+        text_report(lines)
+    }
+}
+
+impl FindingView {
+    /// The finding as a text report's line gives it: `<code> (<rule>): <detail>`.
+    fn line(&self) -> String {
+        format!("{} ({}): {}", self.code, self.rule, self.detail)
+    }
+}
+
+impl ComponentView {
+    /// The report of `component`.
+    fn of(component: &ComponentAttributes) -> ComponentView {
+        ComponentView {
+            path: shown(&component.path),
+            attributes: component.attributes,
+            reparse_tag: component.reparse_tag,
+        }
+    }
+
+    /// The entry as a text report's line gives it: its path, then its attributes and its reparse
+    /// tag, or `none`, each as eight hexadecimal digits.
+    fn line(&self) -> String {
+        let tag = self
+            .reparse_tag
+            .map_or_else(|| NOWHERE.to_owned(), |tag| format!("0x{tag:08X}"));
+        format!(
+            "{} attributes 0x{:08X} tag {tag}",
+            self.path, self.attributes
+        )
+    }
+}
+
+/// How a text report writes the answer to a question: `yes`, `no`, or `unknown` when the judging
+/// did not ask it.
+fn answer(value: Option<bool>) -> String {
+    match value {
+        Some(true) => YES,
+        Some(false) => NO,
+        None => UNKNOWN,
+    }
+    .to_owned()
+}
+
+/// `path` as a report shows it: without a verbatim prefix, and with a name that is not Unicode
+/// shown as near as it can be.
+fn shown(path: &Path) -> String {
+    strip_verbatim(path).display().to_string()
+}
+
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
     use std::ffi::{OsStr, OsString};
     use std::fs;
     use std::io::{self, Write};
     use std::path::{Path, PathBuf};
 
     use gdl_extract::Expansion;
+    use gdl_files::{FolderProbe, root_utf16_len};
     use gdl_fixtures::{
-        DiscSet, Edc, InstallFixture, RawEntry, RuntimeFiles, append_sections, make_alpha_markers,
-        pretty_json, tiny_elf,
+        DiscSet, Edc, InstallFixture, RawEntry, RuntimeFiles, append_sections, backdate,
+        make_alpha_markers, pretty_json, snapshot, tiny_elf,
     };
     use gdl_install::{
-        DEFAULT_CONFIG, GUNE5D, InstallFolder, JOURNAL_DIR, RUNTIME_SECTION, STATE_DIR, Sections,
-        SectionsError,
+        Blocker, ComponentAttributes, DEFAULT_CONFIG, DestinationReport, GUNE5D, InstallFolder,
+        JOURNAL_DIR, KnownFolder, LOCK_FILE, ROOT_FOLDERS, RUNTIME_SECTION, STATE_DIR, Sections,
+        SectionsError, Warning,
     };
     use gdl_release::{Platform, Version};
     use serde_json::{Value, json};
 
     use super::{
-        Build, EXIT_OK, EXIT_REFUSED, EXIT_USAGE, OwnFile, USAGE, refuse, run, text_value, usage,
+        Build, EXIT_OK, EXIT_REFUSED, EXIT_USAGE, FolderView, LINUX_LIBRARIES, OwnFile,
+        SPACE_MARGIN, USAGE, install_names, json_report, refuse, run, text_value, usage,
     };
     use crate::codes::Report;
     use crate::extraction::vectors::{
@@ -1052,8 +1384,8 @@ mod tests {
         assert_eq!(
             USAGE,
             "usage: gdl-launcher-headless --check-payload [--payload <zip>] | --inspect <dir> \
-             [--json] | --extract <n64|dreamcast> <dump> --output <dir> [--strict script] | \
-             --version"
+             [--json] | --check-folder <dir> [--json] | --extract <n64|dreamcast> <dump> \
+             --output <dir> [--strict script] | --version"
         );
     }
 
@@ -1070,6 +1402,8 @@ mod tests {
             &["--version=1.0.0"],
             &["--inspect=folder"],
             &["--check-payload=runtime.zip"],
+            &["--check-folder=folder"],
+            &["--Check-Folder", "folder"],
             &["--output", "out"],
             &["--strict", "script"],
             &["--extract=n64"],
@@ -1586,6 +1920,21 @@ mod tests {
             run(&inspecting, &RELEASE, &mut own, &mut Closed, &mut err),
             Some(EXIT_REFUSED)
         );
+        // A folder judged whole, in text and in JSON, whose report is lost.
+        let checking = [OsString::from("--check-folder"), dir.path().into()];
+        assert_eq!(
+            run(&checking, &RELEASE, &mut own, &mut Closed, &mut err),
+            Some(EXIT_REFUSED)
+        );
+        let checking_json = [
+            OsString::from("--check-folder"),
+            dir.path().into(),
+            OsString::from("--json"),
+        ];
+        assert_eq!(
+            run(&checking_json, &RELEASE, &mut own, &mut Closed, &mut err),
+            Some(EXIT_REFUSED)
+        );
         // A runtime that verifies and loses its report, as the release scripts' check could. No
         // refusal reaches the error stream, so the runtime did verify.
         if let Some(platform) = this_platform() {
@@ -1768,5 +2117,739 @@ mod tests {
             assert_eq!(ran.out, "");
             folders.assert_untouched(&before);
         }
+    }
+
+    /// The keys of a folder check's JSON report, in the order it writes them.
+    const FOLDER_KEYS: [&str; 14] = [
+        "schema",
+        "path",
+        "exists",
+        "nearestExisting",
+        "availableBytes",
+        "rootUtf16",
+        "writable",
+        "ignoresCase",
+        "noexec",
+        "blockers",
+        "warnings",
+        "components",
+        "oneDriveVariables",
+        "cloudRoots",
+    ];
+
+    /// The keys of a finding in a folder check's JSON report, in the order it writes them.
+    const FINDING_KEYS: [&str; 3] = ["code", "rule", "detail"];
+
+    /// The keys of an entry on the path in a folder check's JSON report, in the order it writes
+    /// them.
+    const COMPONENT_KEYS: [&str; 3] = ["path", "attributes", "reparseTag"];
+
+    /// The keys of a OneDrive variable in a folder check's JSON report, in the order it writes
+    /// them.
+    const VARIABLE_KEYS: [&str; 2] = ["name", "path"];
+
+    /// The fields of a folder check's text report that every judging writes, in its order.
+    const FOLDER_FIELDS: [&str; 8] = [
+        "path",
+        "exists",
+        "nearestExisting",
+        "availableBytes",
+        "rootUtf16",
+        "writable",
+        "ignoresCase",
+        "noexec",
+    ];
+
+    /// The fields a folder check's text report repeats for a list's entries, which on Windows
+    /// alone tell what the system shows of the path and of OneDrive.
+    const WINDOWS_FIELDS: [&str; 3] = ["component", "oneDriveVariable", "cloudRoot"];
+
+    /// What the probe finds in a folder of the tests' own: Windows' file systems ignore letter
+    /// case, and the Linux tests' do not.
+    const IGNORES_CASE: &str = if cfg!(windows) { "yes" } else { "no" };
+
+    /// Checks the folder at `folder` as the release build, as JSON when `json` says so, and gives
+    /// back the report, which a judging writes whatever the folder holds.
+    #[track_caller]
+    fn checked(folder: &Path, json: bool) -> String {
+        let mut args = vec![OsStr::new("--check-folder"), folder.as_os_str()];
+        if json {
+            args.push(OsStr::new("--json"));
+        }
+        let ran = run_release(args.as_slice());
+        assert_eq!(ran.code, Some(EXIT_OK), "{ran:?}");
+        assert_eq!(ran.err, "");
+        ran.out
+    }
+
+    /// The `name: value` lines of a text report, split at their first `: `.
+    fn lines_of(text: &str) -> Vec<(String, String)> {
+        assert!(text.ends_with('\n'), "{text:?}");
+        text.lines()
+            .map(|line| {
+                let (name, value) = line.split_once(": ").expect("a name and a value");
+                (name.to_owned(), value.to_owned())
+            })
+            .collect()
+    }
+
+    /// Checks that `text`, a real folder's text report, opens with exactly `head`, the fields
+    /// every judging writes, then gives the blockers `blockers` and no warning, and after them
+    /// only the lines that tell what Windows shows, and those only on Windows.
+    #[track_caller]
+    fn assert_folder_text(text: &str, head: &[(&str, String)], blockers: &[String]) {
+        let lines = lines_of(text);
+        let names: Vec<&str> = head.iter().map(|(name, _)| *name).collect();
+        assert_eq!(names, FOLDER_FIELDS, "the test's own head");
+        let found: Vec<(&str, &str)> = lines
+            .iter()
+            .map(|(name, value)| (name.as_str(), value.as_str()))
+            .collect();
+        let expected: Vec<(&str, &str)> = head
+            .iter()
+            .map(|(name, value)| (*name, value.as_str()))
+            .chain(blockers.iter().map(|line| ("blocker", line.as_str())))
+            .collect();
+        assert!(found.len() >= expected.len(), "{text}");
+        assert_eq!(found[..expected.len()], expected, "{text}");
+        for (name, _) in &found[expected.len()..] {
+            assert!(cfg!(windows) && WINDOWS_FIELDS.contains(name), "{text}");
+        }
+    }
+
+    /// The head of `text`, the text report of a folder that the judging measured whole: the
+    /// folder at `path`, there when `exists` says so, its nearest entry `nearest`, which takes
+    /// entries, on a volume that has room and runs programs.
+    fn measured_head(
+        path: &Path,
+        exists: bool,
+        nearest: &Path,
+        text: &str,
+    ) -> Vec<(&'static str, String)> {
+        let available = lines_of(text)
+            .into_iter()
+            .find(|(name, _)| name == "availableBytes")
+            .map(|(_, value)| value)
+            .expect("the volume's room");
+        assert!(available.parse::<u64>().unwrap() >= SPACE_MARGIN, "{text}");
+        vec![
+            ("path", path.display().to_string()),
+            ("exists", (if exists { "yes" } else { "no" }).to_owned()),
+            ("nearestExisting", nearest.display().to_string()),
+            ("availableBytes", available),
+            ("rootUtf16", root_utf16_len(path).unwrap().to_string()),
+            ("writable", "yes".to_owned()),
+            ("ignoresCase", IGNORES_CASE.to_owned()),
+            ("noexec", "no".to_owned()),
+        ]
+    }
+
+    /// The head of a text report for a judging of the folder at `path` that ended before it
+    /// probed the folder, which tells whether the folder is there as `exists` and its nearest
+    /// entry as `nearest`.
+    fn unprobed_head(path: &Path, exists: &str, nearest: String) -> Vec<(&'static str, String)> {
+        let unknown = || "unknown".to_owned();
+        vec![
+            ("path", path.display().to_string()),
+            ("exists", exists.to_owned()),
+            ("nearestExisting", nearest),
+            ("availableBytes", unknown()),
+            ("rootUtf16", unknown()),
+            ("writable", unknown()),
+            ("ignoresCase", unknown()),
+            ("noexec", unknown()),
+        ]
+    }
+
+    /// The text report's lines `head`, then a blocker line for each of `blockers`.
+    fn report_lines(head: &[(&str, String)], blockers: &[&str]) -> String {
+        head.iter()
+            .map(|(name, value)| format!("{name}: {value}\n"))
+            .chain(
+                blockers
+                    .iter()
+                    .map(|blocker| format!("blocker: {blocker}\n")),
+            )
+            .collect()
+    }
+
+    /// A report of the judging of `path` that found nothing and asked nothing.
+    fn blank_report(path: PathBuf) -> DestinationReport {
+        DestinationReport {
+            path,
+            exists: None,
+            nearest_existing: None,
+            available_bytes: None,
+            root_utf16: None,
+            probe: None,
+            noexec: None,
+            blockers: Vec::new(),
+            warnings: Vec::new(),
+            components: Vec::new(),
+            onedrive_variables: Vec::new(),
+            cloud_roots: Vec::new(),
+        }
+    }
+
+    /// A folder this system's paths can name, though no test makes it.
+    fn games_folder() -> PathBuf {
+        PathBuf::from(if cfg!(windows) { r"C:\Games" } else { "/games" })
+    }
+
+    #[test]
+    fn check_folder_reports_text_and_json() {
+        // Every field a report has, as a judging that went to the end on Windows would give it.
+        let games = games_folder();
+        let root = games.parent().unwrap().to_path_buf();
+        let destination = games.join("Gauntlet Dark Legacy");
+        let onedrive = root.join("Users").join("player").join("OneDrive");
+        let report = DestinationReport {
+            exists: Some(false),
+            nearest_existing: Some(games.clone()),
+            available_bytes: Some(7),
+            root_utf16: Some(25),
+            probe: Some(FolderProbe {
+                writable: false,
+                ignores_case: false,
+            }),
+            noexec: Some(true),
+            blockers: vec![
+                Blocker::NotWritable {
+                    path: games.clone(),
+                },
+                Blocker::Noexec {
+                    path: games.clone(),
+                },
+                Blocker::Space {
+                    needed: SPACE_MARGIN,
+                    available: 7,
+                },
+            ],
+            warnings: vec![
+                Warning::CloudSynced {
+                    path: onedrive.clone(),
+                },
+                Warning::Protected {
+                    folder: KnownFolder::Documents,
+                    path: games.clone(),
+                },
+                Warning::NonAsciiOldWindows { build: 17_763 },
+            ],
+            components: vec![
+                ComponentAttributes {
+                    path: games.clone(),
+                    attributes: 0x10,
+                    reparse_tag: None,
+                },
+                ComponentAttributes {
+                    path: root.clone(),
+                    attributes: 0x0416,
+                    reparse_tag: Some(0x9000_001A),
+                },
+            ],
+            onedrive_variables: vec![("OneDrive".to_owned(), onedrive.clone())],
+            cloud_roots: vec![onedrive.clone()],
+            ..blank_report(destination.clone())
+        };
+        let view = FolderView::of(&report);
+        let (games_shown, root_shown) = (games.display(), root.display());
+        let onedrive_shown = onedrive.display();
+        assert_eq!(
+            view.text(),
+            format!(
+                "path: {}\n\
+                 exists: no\n\
+                 nearestExisting: {games_shown}\n\
+                 availableBytes: 7\n\
+                 rootUtf16: 25\n\
+                 writable: no\n\
+                 ignoresCase: no\n\
+                 noexec: yes\n\
+                 blocker: folder.notWritable (notWritable): The launcher may not make files in \
+                 {games_shown}\n\
+                 blocker: folder.noexec (noexec): The file system at {games_shown} does not run \
+                 programs (noexec)\n\
+                 blocker: space.insufficient (space): Not enough free disk space for the \
+                 installation\n\
+                 warning: folder.cloudSynced (cloudSynced): The destination is kept in sync with \
+                 the cloud: {onedrive_shown}\n\
+                 warning: folder.protected (protected): The destination lies in the documents \
+                 folder, which Controlled Folder Access may guard: {games_shown}\n\
+                 warning: folder.nonAsciiOldWindows (nonAsciiOldWindows): This Windows build \
+                 (17763) predates 1903, and the destination's path is not ASCII\n\
+                 component: {games_shown} attributes 0x00000010 tag none\n\
+                 component: {root_shown} attributes 0x00000416 tag 0x9000001A\n\
+                 oneDriveVariable: OneDrive {onedrive_shown}\n\
+                 cloudRoot: {onedrive_shown}\n",
+                destination.display()
+            )
+        );
+        let text = json_report(&view);
+        let parsed: Value = serde_json::from_str(&text).unwrap();
+        let finding = |code: &str, rule: &str, detail: String| json!({"code": code, "rule": rule, "detail": detail});
+        assert_eq!(
+            parsed,
+            json!({
+                "schema": 1,
+                "path": destination.display().to_string(),
+                "exists": false,
+                "nearestExisting": games_shown.to_string(),
+                "availableBytes": 7,
+                "rootUtf16": 25,
+                "writable": false,
+                "ignoresCase": false,
+                "noexec": true,
+                "blockers": [
+                    finding(
+                        "folder.notWritable",
+                        "notWritable",
+                        format!("The launcher may not make files in {games_shown}"),
+                    ),
+                    finding(
+                        "folder.noexec",
+                        "noexec",
+                        format!("The file system at {games_shown} does not run programs (noexec)"),
+                    ),
+                    finding(
+                        "space.insufficient",
+                        "space",
+                        "Not enough free disk space for the installation".to_owned(),
+                    ),
+                ],
+                "warnings": [
+                    finding(
+                        "folder.cloudSynced",
+                        "cloudSynced",
+                        format!("The destination is kept in sync with the cloud: {onedrive_shown}"),
+                    ),
+                    finding(
+                        "folder.protected",
+                        "protected",
+                        format!(
+                            "The destination lies in the documents folder, which Controlled \
+                             Folder Access may guard: {games_shown}"
+                        ),
+                    ),
+                    finding(
+                        "folder.nonAsciiOldWindows",
+                        "nonAsciiOldWindows",
+                        "This Windows build (17763) predates 1903, and the destination's path is \
+                         not ASCII"
+                            .to_owned(),
+                    ),
+                ],
+                "components": [
+                    {"path": games_shown.to_string(), "attributes": 16, "reparseTag": null},
+                    {"path": root_shown.to_string(), "attributes": 1046, "reparseTag": 0x9000_001A_u32},
+                ],
+                "oneDriveVariables": [{"name": "OneDrive", "path": onedrive_shown.to_string()}],
+                "cloudRoots": [onedrive_shown.to_string()],
+            })
+        );
+        assert_eq!(keys_at(&text, 2), FOLDER_KEYS);
+        let mut item_keys = FINDING_KEYS.repeat(6);
+        item_keys.extend(COMPONENT_KEYS.repeat(2));
+        item_keys.extend(VARIABLE_KEYS);
+        assert_eq!(keys_at(&text, 6), item_keys);
+        assert!(text.ends_with("}\n"), "{text}");
+
+        // A judging that ended at an alpha installer's name on the path asked nothing, the
+        // nearest entry included; one that found nothing on the path looked for that entry.
+        let alpha = games.join(".gdl-update").join("game");
+        let ended = DestinationReport {
+            blockers: vec![Blocker::AlphaName {
+                name: ".gdl-update",
+            }],
+            ..blank_report(alpha.clone())
+        };
+        assert_eq!(
+            FolderView::of(&ended).text(),
+            report_lines(
+                &unprobed_head(&alpha, "unknown", "unknown".to_owned()),
+                &[
+                    "folder.alphaInstall (alphaName): The destination's path holds the alpha \
+                   installer's name .gdl-update, which the launcher never writes"
+                ]
+            )
+        );
+        let parsed: Value = serde_json::from_str(&json_report(&FolderView::of(&ended))).unwrap();
+        for key in &FOLDER_KEYS[2..9] {
+            assert_eq!(parsed[key], Value::Null, "{key}");
+        }
+        let unreachable = DestinationReport {
+            exists: Some(false),
+            blockers: vec![Blocker::Unreachable {
+                path: destination.clone(),
+            }],
+            ..blank_report(destination.clone())
+        };
+        assert_eq!(
+            FolderView::of(&unreachable).text(),
+            report_lines(
+                &unprobed_head(&destination, "no", "none".to_owned()),
+                &[&format!(
+                    "folder.notDirectory (unreachable): No folder on the destination's path \
+                     exists: {}",
+                    destination.display()
+                )]
+            )
+        );
+        let parsed: Value =
+            serde_json::from_str(&json_report(&FolderView::of(&unreachable))).unwrap();
+        assert_eq!(parsed["exists"], false);
+        assert_eq!(parsed["nearestExisting"], Value::Null);
+
+        // Names that hold a line end with a field of their own after it, then the commands that
+        // clear a terminal and colour its text: escaped in text, given back exactly in JSON.
+        const FORGED: &str = "x\nwritable: yes\u{1b}[2J\u{9b}31m\r";
+        const SHOWN: &str = r"x\nwritable: yes\u{1b}[2J\u{9b}31m\r";
+        let forged = games.join(FORGED);
+        let report = DestinationReport {
+            exists: Some(true),
+            nearest_existing: Some(forged.clone()),
+            blockers: vec![Blocker::Links {
+                path: forged.clone(),
+            }],
+            components: vec![ComponentAttributes {
+                path: forged.clone(),
+                attributes: 0x10,
+                reparse_tag: None,
+            }],
+            onedrive_variables: vec![("OneDrive".to_owned(), forged.clone())],
+            cloud_roots: vec![forged.clone()],
+            ..blank_report(forged.clone())
+        };
+        let text = FolderView::of(&report).text();
+        assert!(
+            !text.chars().any(|c| c.is_control() && c != '\n'),
+            "{text:?}"
+        );
+        let shown = games.join(SHOWN).display().to_string();
+        let names: Vec<String> = lines_of(&text).into_iter().map(|(name, _)| name).collect();
+        let mut expected = FOLDER_FIELDS.to_vec();
+        expected.extend(["blocker", "component", "oneDriveVariable", "cloudRoot"]);
+        assert_eq!(names, expected, "{text}");
+        for line in [
+            format!("path: {shown}\n"),
+            format!("nearestExisting: {shown}\n"),
+            format!(
+                "blocker: folder.links (links): Choose a directory without links or junctions: \
+                 {shown}\n"
+            ),
+            format!("component: {shown} attributes 0x00000010 tag none\n"),
+            format!("oneDriveVariable: OneDrive {shown}\n"),
+            format!("cloudRoot: {shown}\n"),
+        ] {
+            assert!(text.contains(&line), "{line:?} in {text}");
+        }
+        let parsed: Value = serde_json::from_str(&json_report(&FolderView::of(&report))).unwrap();
+        let exactly = forged.display().to_string();
+        assert_eq!(parsed["path"], exactly);
+        assert_eq!(parsed["components"][0]["path"], exactly);
+        assert_eq!(parsed["cloudRoots"][0], exactly);
+    }
+
+    #[test]
+    fn check_folder_reports_real_folders() {
+        let dir = tempfile::tempdir().unwrap();
+        let top = dir.path();
+
+        // A new folder, made in a folder that takes entries: judged whole, its probe made and
+        // removed in the folder above it.
+        let fresh = top.join("game");
+        let text = checked(&fresh, false);
+        assert_folder_text(&text, &measured_head(&fresh, false, top, &text), &[]);
+        assert!(!fresh.exists());
+        assert_eq!(fs::read_dir(top).unwrap().count(), 0, "the probe was left");
+        let report = checked(&fresh, true);
+        assert_eq!(keys_at(&report, 2), FOLDER_KEYS[..14]);
+        let parsed: Value = serde_json::from_str(&report).unwrap();
+        assert_eq!(parsed["schema"], 1);
+        assert_eq!(parsed["path"], fresh.display().to_string());
+        assert_eq!(parsed["exists"], false);
+        assert_eq!(parsed["nearestExisting"], top.display().to_string());
+        assert!(parsed["availableBytes"].is_u64(), "{report}");
+        assert_eq!(parsed["rootUtf16"], root_utf16_len(&fresh).unwrap());
+        assert_eq!(parsed["writable"], true);
+        assert_eq!(parsed["ignoresCase"], cfg!(windows));
+        assert_eq!(parsed["noexec"], false);
+        assert_eq!(parsed["blockers"], json!([]));
+        assert_eq!(parsed["warnings"], json!([]));
+        // What Windows shows of each entry on the path that is there, the nearest first.
+        let components: Vec<Value> = if cfg!(windows) {
+            top.ancestors()
+                .map(|entry| Value::from(entry.display().to_string()))
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let shown: Vec<Value> = parsed["components"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|component| component["path"].clone())
+            .collect();
+        assert_eq!(shown, components);
+        if cfg!(not(windows)) {
+            assert_eq!(parsed["oneDriveVariables"], json!([]));
+            assert_eq!(parsed["cloudRoots"], json!([]));
+        }
+
+        // An empty folder, probed as the destination itself; and one holding names the install
+        // makes, in another letter case too, which goes on to be probed.
+        let empty = top.join("empty");
+        fs::create_dir(&empty).unwrap();
+        let text = checked(&empty, false);
+        assert_folder_text(&text, &measured_head(&empty, true, &empty, &text), &[]);
+        assert_eq!(
+            fs::read_dir(&empty).unwrap().count(),
+            0,
+            "the probe was left"
+        );
+        // Names are compared in upper case, so on Linux the disc's folder takes the
+        // executable's name too.
+        let taken = top.join("taken");
+        fs::create_dir_all(taken.join("Gauntlet")).unwrap();
+        fs::write(taken.join("DATA"), b"the player's").unwrap();
+        let colliding = if Platform::of_this_build() == Some(Platform::LinuxX64) {
+            "Gauntlet, data, gauntlet"
+        } else {
+            "Gauntlet, data"
+        };
+        let text = checked(&taken, false);
+        assert_folder_text(
+            &text,
+            &measured_head(&taken, true, &taken, &text),
+            &[format!(
+                "folder.collision (collision): Existing installation/files would be overwritten: \
+                 {colliding}. Choose a fresh directory."
+            )],
+        );
+
+        // Folders the launcher must not write into: the judging ends before it probes them or
+        // asks their volume, and leaves them as they were, their own entries included.
+        let state = top.join("another");
+        fs::create_dir_all(state.join(STATE_DIR)).unwrap();
+        fs::write(state.join(STATE_DIR).join(LOCK_FILE), b"other process").unwrap();
+        let alpha = top.join("alpha");
+        fs::create_dir(&alpha).unwrap();
+        make_alpha_markers(&alpha, &[".gdl-update", "installation.json"]).unwrap();
+        let file = top.join("file.txt");
+        fs::write(&file, b"not a folder").unwrap();
+        let named = top.join(".GDL-UPDATE").join("game");
+        backdate(top).unwrap();
+        let before = snapshot(top).unwrap();
+        let there = |path: &Path| unprobed_head(path, "yes", path.display().to_string());
+        let cases = [
+            (
+                &state,
+                there(&state),
+                "folder.collision (collision): Existing installation/files would be overwritten: \
+                 .gdl-launcher. Choose a fresh directory.",
+            ),
+            (
+                &alpha,
+                there(&alpha),
+                "folder.alphaInstall (alphaInstall): The folder holds an alpha installation: \
+                 installation.json, .gdl-update",
+            ),
+            (
+                &file,
+                there(&file),
+                "folder.notDirectory (notDirectory): Install destination is not a directory",
+            ),
+            (
+                &named,
+                unprobed_head(&named, "unknown", "unknown".to_owned()),
+                "folder.alphaInstall (alphaName): The destination's path holds the alpha \
+                 installer's name .gdl-update, which the launcher never writes",
+            ),
+        ];
+        for (folder, head, blocker) in &cases {
+            assert_eq!(checked(folder, false), report_lines(head, &[blocker]));
+            let parsed: Value = serde_json::from_str(&checked(folder, true)).unwrap();
+            assert_eq!(parsed["writable"], Value::Null, "{}", folder.display());
+            assert_eq!(
+                parsed["availableBytes"],
+                Value::Null,
+                "{}",
+                folder.display()
+            );
+            assert_eq!(parsed["components"], json!([]), "{}", folder.display());
+        }
+        assert!(snapshot(top).unwrap() == before, "a folder changed");
+
+        // Given with a verbatim prefix, the folder and the entries on its path are shown without
+        // it.
+        #[cfg(windows)]
+        {
+            use std::path::{Component, Prefix};
+
+            let on_a_drive = matches!(
+                empty.components().next(),
+                Some(Component::Prefix(prefix)) if matches!(prefix.kind(), Prefix::Disk(_))
+            );
+            if on_a_drive {
+                let verbatim = PathBuf::from(format!(r"\\?\{}", empty.display()));
+                let text = checked(&verbatim, false);
+                assert_folder_text(&text, &measured_head(&empty, true, &empty, &text), &[]);
+                let parsed: Value = serde_json::from_str(&checked(&verbatim, true)).unwrap();
+                assert_eq!(parsed["components"][0]["path"], empty.display().to_string());
+            } else {
+                eprintln!("skipped the verbatim path: the test's folder is on no drive");
+            }
+        }
+    }
+
+    #[test]
+    fn the_check_holds_a_folder_to_every_name_an_install_makes() {
+        let names: Vec<String> = install_names()
+            .iter()
+            .map(|name| name.as_str().to_owned())
+            .collect();
+        let mut expected = vec!["Gauntlet", "carddemo", "saves", "config", STATE_DIR];
+        match Platform::of_this_build() {
+            Some(Platform::WindowsX64) => {
+                expected.extend(["GauntletDarkLegacy-Launcher.exe", "gauntlet.exe"]);
+            }
+            Some(Platform::LinuxX64) => {
+                expected.extend(["GauntletDarkLegacy-Launcher", "gauntlet"]);
+            }
+            None => {}
+        }
+        expected.extend(["VERSION", "build-info.json", "portable.flag"]);
+        expected.extend(["shaders", "data", "licenses"]);
+        if Platform::of_this_build() == Some(Platform::LinuxX64) {
+            expected.push("lib");
+        }
+        assert_eq!(names, expected);
+        assert!(ROOT_FOLDERS.contains(&LINUX_LIBRARIES));
+        assert_eq!(SPACE_MARGIN, 64 << 20);
+
+        // A folder holding each of them in upper case, but the state folder, which would end the
+        // judging: every one of them collides, named as the install spells it.
+        let dir = tempfile::tempdir().unwrap();
+        let folder = dir.path().join("taken");
+        fs::create_dir(&folder).unwrap();
+        let upper: BTreeSet<String> = names
+            .iter()
+            .filter(|name| *name != STATE_DIR)
+            .map(|name| name.to_uppercase())
+            .collect();
+        for name in &upper {
+            fs::write(folder.join(name), b"").unwrap();
+        }
+        let mut colliding: Vec<&str> = names
+            .iter()
+            .map(String::as_str)
+            .filter(|&name| name != STATE_DIR)
+            .collect();
+        colliding.sort_unstable();
+        let text = checked(&folder, false);
+        assert_folder_text(
+            &text,
+            &measured_head(&folder, true, &folder, &text),
+            &[format!(
+                "folder.collision (collision): Existing installation/files would be overwritten: \
+                 {}. Choose a fresh directory.",
+                colliding.join(", ")
+            )],
+        );
+    }
+
+    #[test]
+    fn check_folder_misuse_is_a_usage_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let folder = dir.path().to_str().expect("the test's folder is Unicode");
+        let cases: &[(&[&str], &str)] = &[
+            (&["--check-folder"], "--check-folder without a folder"),
+            (
+                &["--check-folder", ""],
+                "--check-folder with an empty folder",
+            ),
+            (
+                &["--check-folder", "", "--json"],
+                "--check-folder with an empty folder",
+            ),
+            (
+                &["--check-folder", "--json"],
+                "--check-folder followed by an option",
+            ),
+            (&["--json", "--check-folder"], "--check-folder at the end"),
+            (&["--check-folder", folder, "other"], "a second folder"),
+            (
+                &["--check-folder", folder, "--json", "--json"],
+                "--json twice",
+            ),
+            (
+                &["--check-folder", folder, "--check-folder", folder],
+                "the mode twice",
+            ),
+            (
+                &["--check-folder", folder, "--inspect", folder],
+                "two modes",
+            ),
+            (&["--version", "--check-folder", folder], "two modes"),
+            (&["--check-folder", folder, "--check-payload"], "two modes"),
+            (
+                &["--check-folder", folder, "--payload", "a.zip"],
+                "--payload beside --check-folder",
+            ),
+            (
+                &["--check-folder", folder, "--output", "out"],
+                "--output beside --check-folder",
+            ),
+            (
+                &["--check-folder", folder, "--strict", "script"],
+                "--strict beside --check-folder",
+            ),
+            (&["--check-folder", folder, "-j"], "an unknown short option"),
+            (
+                &["--check-folder", folder, "--verbose"],
+                "an unknown option beside the mode",
+            ),
+        ];
+        // Not one of them looks at the folder, so none probes it.
+        backdate(dir.path()).unwrap();
+        let before = snapshot(dir.path()).unwrap();
+        for &(args, what) in cases {
+            let ran = run_release(args);
+            assert_eq!(ran.code, Some(EXIT_USAGE), "{what}: {args:?}");
+            assert_eq!(ran.err, format!("{USAGE}\n"), "{what}: {args:?}");
+            assert_eq!(ran.out, "", "{what}: {args:?}");
+        }
+        assert!(
+            snapshot(dir.path()).unwrap() == before,
+            "the folder changed"
+        );
+    }
+
+    #[test]
+    fn a_failed_judging_is_a_refusal_line() {
+        // A name longer than any file system takes, which the system refuses to look at, holding
+        // a line end with a refusal of its own after it and the commands that clear a terminal.
+        let dir = tempfile::tempdir().unwrap();
+        let name = format!("x\u{1b}[2J\nerror: forged{}", "a".repeat(300));
+        let folder = dir.path().join(&name);
+        let refused = fs::symlink_metadata(&folder).unwrap_err();
+        let line = format!(
+            "error: io.failed (io): {}\n",
+            text_value(&format!("{}: {refused}", folder.display()))
+        );
+        for json in [false, true] {
+            let mut args = vec![OsStr::new("--check-folder"), folder.as_os_str()];
+            if json {
+                args.push(OsStr::new("--json"));
+            }
+            let ran = run_release(args.as_slice());
+            assert_refused(&ran, &line);
+            assert!(
+                ran.err.contains(r"x\u{1b}[2J\nerror: forged"),
+                "{}",
+                ran.err
+            );
+            assert_eq!(ran.err.lines().count(), 1, "{}", ran.err);
+        }
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 0);
     }
 }

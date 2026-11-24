@@ -1,6 +1,6 @@
 //! The headless program as the release scripts and developers run it: the version it reports, its
-//! check of the runtime its file carries, its report of a folder, and its extraction of a Legends
-//! expansion's tree into a new folder.
+//! check of the runtime its file carries, its reports of what a folder is to the launcher and to
+//! an install, and its extraction of a Legends expansion's tree into a new folder.
 
 use std::collections::BTreeMap;
 use std::env::consts::EXE_SUFFIX;
@@ -31,8 +31,9 @@ const OTHER_VERSION: &str = "0.0.1";
 
 /// The line that answers arguments the program does not take.
 const USAGE: &str = "usage: gdl-launcher-headless --check-payload [--payload <zip>] | \
-                     --inspect <dir> [--json] | --extract <n64|dreamcast> <dump> --output <dir> \
-                     [--strict script] | --version\n";
+                     --inspect <dir> [--json] | --check-folder <dir> [--json] | \
+                     --extract <n64|dreamcast> <dump> --output <dir> [--strict script] | \
+                     --version\n";
 
 /// The N64 cases, which hold the image the tests extract and the tree the N64 extractor writes
 /// for it.
@@ -298,6 +299,11 @@ fn usage_errors_exit_2() {
         &["--check-payload", "--payload", "--json"],
         &["--inspect"],
         &["--inspect", ""],
+        &["--check-folder"],
+        &["--check-folder", ""],
+        &["--check-folder", "folder", "--json", "--json"],
+        &["--check-folder", "folder", "--payload", "a.zip"],
+        &["--check-folder", "folder", "--inspect", "folder"],
         &["--extract"],
         &["--extract", "n64", "rom.z64"],
         &["--extract", "gamecube", "game.iso", "--output", "out"],
@@ -367,6 +373,165 @@ fn inspect_reports_json() {
         report["alphaMarkers"],
         json!(["installation.json", ".gdl-update.lock"])
     );
+}
+
+/// Judges the folder at `folder` through the headless program as one to install into, as JSON
+/// when `json` says so, and gives back the report, which it writes whatever the folder holds.
+#[track_caller]
+fn check_folder(folder: &Path, json: bool) -> String {
+    let mut args = vec![OsStr::new("--check-folder"), folder.as_os_str()];
+    if json {
+        args.push(OsStr::new("--json"));
+    }
+    let output = run_program(&args);
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert_eq!(text(&output.stderr), "");
+    text(&output.stdout).to_owned()
+}
+
+/// The `name: value` lines of a text report, split at their first `: `.
+fn report_lines(report: &str) -> Vec<(String, String)> {
+    assert!(report.ends_with('\n'), "{report:?}");
+    report
+        .lines()
+        .map(|line| {
+            let (name, value) = line.split_once(": ").expect("a name and a value");
+            (name.to_owned(), value.to_owned())
+        })
+        .collect()
+}
+
+/// The value of the field `name` of a text report, which must give it once.
+#[track_caller]
+fn field<'a>(lines: &'a [(String, String)], name: &str) -> &'a str {
+    let mut values = lines.iter().filter(|(field, _)| field == name);
+    let (_, value) = values.next().expect("the field");
+    assert!(values.next().is_none(), "{name} twice");
+    value
+}
+
+#[test]
+fn check_folder_reports_a_fresh_folder() {
+    let dir = tempfile::tempdir().unwrap();
+    let top = dir.path();
+    let fresh = top.join("game");
+
+    // Judged whole: probed in the folder above it, which takes entries, and measured there.
+    let report = check_folder(&fresh, false);
+    let lines = report_lines(&report);
+    assert_eq!(field(&lines, "path"), fresh.display().to_string());
+    assert_eq!(field(&lines, "exists"), "no");
+    assert_eq!(field(&lines, "nearestExisting"), top.display().to_string());
+    assert!(
+        field(&lines, "availableBytes").parse::<u64>().is_ok(),
+        "{report}"
+    );
+    assert!(
+        field(&lines, "rootUtf16").parse::<usize>().is_ok(),
+        "{report}"
+    );
+    assert_eq!(field(&lines, "writable"), "yes");
+    // Windows' file systems ignore letter case, and the Linux tests' do not.
+    let ignores_case = if cfg!(windows) { "yes" } else { "no" };
+    assert_eq!(field(&lines, "ignoresCase"), ignores_case);
+    assert_eq!(field(&lines, "noexec"), "no");
+    for (name, _) in &lines {
+        assert!(name != "blocker" && name != "warning", "{report}");
+    }
+
+    let parsed: Value = serde_json::from_str(&check_folder(&fresh, true)).unwrap();
+    assert_eq!(parsed["schema"], 1);
+    assert_eq!(parsed["path"], fresh.display().to_string());
+    assert_eq!(parsed["exists"], false);
+    assert_eq!(parsed["nearestExisting"], top.display().to_string());
+    assert!(parsed["availableBytes"].is_u64(), "{parsed}");
+    assert!(parsed["rootUtf16"].is_u64(), "{parsed}");
+    assert_eq!(parsed["writable"], true);
+    assert_eq!(parsed["ignoresCase"], cfg!(windows));
+    assert_eq!(parsed["noexec"], false);
+    assert_eq!(parsed["blockers"], json!([]));
+    assert_eq!(parsed["warnings"], json!([]));
+    // What Windows shows of each entry on the path that is there, the nearest first.
+    let shown: Vec<Value> = parsed["components"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|component| component["path"].clone())
+        .collect();
+    let ancestors: Vec<Value> = if cfg!(windows) {
+        top.ancestors()
+            .map(|entry| Value::from(entry.display().to_string()))
+            .collect()
+    } else {
+        Vec::new()
+    };
+    assert_eq!(shown, ancestors);
+
+    // The probe's entries are gone, and nothing was made.
+    assert_eq!(fs::read_dir(top).unwrap().count(), 0, "the probe was left");
+}
+
+#[test]
+fn check_folder_reports_an_alpha_folder_and_a_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let top = dir.path();
+    let alpha = top.join("alpha");
+    fs::create_dir(&alpha).unwrap();
+    make_alpha_markers(&alpha, &["installation.json", ".gdl-update.lock"]).unwrap();
+    let file = top.join("file.txt");
+    fs::write(&file, b"not a folder").unwrap();
+    backdate(top).unwrap();
+    let before = snapshot(top).unwrap();
+
+    // Each is judged, then the judging ends before it probes the folder or asks its volume.
+    for (folder, code, rule, detail) in [
+        (
+            &alpha,
+            "folder.alphaInstall",
+            "alphaInstall",
+            "The folder holds an alpha installation: installation.json, .gdl-update.lock",
+        ),
+        (
+            &file,
+            "folder.notDirectory",
+            "notDirectory",
+            "Install destination is not a directory",
+        ),
+    ] {
+        let named = folder.display();
+        let report = check_folder(folder, false);
+        let lines = report_lines(&report);
+        assert_eq!(field(&lines, "path"), named.to_string());
+        assert_eq!(field(&lines, "exists"), "yes", "{named}");
+        assert_eq!(field(&lines, "nearestExisting"), named.to_string());
+        for unasked in [
+            "availableBytes",
+            "rootUtf16",
+            "writable",
+            "ignoresCase",
+            "noexec",
+        ] {
+            assert_eq!(field(&lines, unasked), "unknown", "{named}: {unasked}");
+        }
+        assert_eq!(
+            field(&lines, "blocker"),
+            format!("{code} ({rule}): {detail}"),
+            "{named}"
+        );
+
+        let parsed: Value = serde_json::from_str(&check_folder(folder, true)).unwrap();
+        assert_eq!(parsed["exists"], true, "{named}");
+        assert_eq!(parsed["writable"], Value::Null, "{named}");
+        assert_eq!(parsed["availableBytes"], Value::Null, "{named}");
+        assert_eq!(
+            parsed["blockers"],
+            json!([{"code": code, "rule": rule, "detail": detail}]),
+            "{named}"
+        );
+        assert_eq!(parsed["components"], json!([]), "{named}");
+    }
+    // Neither was written into, nor the folder that holds them.
+    assert!(snapshot(top).unwrap() == before, "a folder changed");
 }
 
 /// The cases of `text`, a file of the shared vectors, read.
