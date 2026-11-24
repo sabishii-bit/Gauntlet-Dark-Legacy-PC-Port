@@ -52,11 +52,19 @@ const SOCKS_SCHEMES: [&str; 5] = ["socks", "socks4", "socks4a", "socks5", "socks
 /// What separates a scheme from the rest of a URL.
 const SCHEME_SEPARATOR: &str = "://";
 
-/// The characters that end a URL's authority.
-const AUTHORITY_ENDS: [char; 3] = ['/', '?', '#'];
+/// The port a proxy that names none is reached at for a plain HTTP request: urllib opens its
+/// connection to the proxy as it would open one to the host, on the default port of the
+/// request's scheme.
+const HTTP_PORT: u16 = 80;
+
+/// The port a proxy that names none is reached at for an HTTPS request, as for [`HTTP_PORT`].
+const HTTPS_PORT: u16 = 443;
 
 /// Why a SOCKS proxy is refused.
 const SOCKS_REFUSED: &str = "SOCKS proxies are not supported";
+
+/// Why a proxy of another scheme than HTTP, HTTPS or SOCKS is refused.
+const ONLY_HTTP_PROXIES: &str = "only HTTP and HTTPS proxies are supported";
 
 /// Why a proxy address that no proxy URL can be made of is refused.
 const UNREADABLE_ADDRESS: &str = "the proxy's address cannot be read";
@@ -121,24 +129,24 @@ impl ProxySettings {
     /// The proxy a request to `url` goes through, or `None` to go direct.
     pub fn proxy_for(&self, url: &Uri) -> Result<Option<ureq::Proxy>, ReleaseError> {
         self.choose(url)?
-            .as_deref()
-            .map(transport_proxy)
+            .map(|proxy| proxy.transport(default_port(url)))
             .transpose()
     }
 
-    /// What `proxy_for` decides, as text, for the vectors: the proxy's URL or `None`.
+    /// What `proxy_for` decides, as text, for the vectors: the proxy's URL, its address as the
+    /// setting gives it after an `http://`, or `None`.
     #[cfg(test)]
     fn choice_for(&self, url: &str) -> Result<Option<String>, ReleaseError> {
         let url: Uri = url.parse().expect("a test URL parses");
         let choice = self.choose(&url)?;
         if let Some(proxy) = &choice {
-            transport_proxy(proxy)?;
+            proxy.transport(default_port(&url))?;
         }
-        Ok(choice)
+        Ok(choice.map(|proxy| proxy.url()))
     }
 
-    /// The URL of the proxy a request to `url` goes through, as the transport is to reach it.
-    fn choose(&self, url: &Uri) -> Result<Option<String>, ReleaseError> {
+    /// The proxy a request to `url` goes through, as the transport is to reach it.
+    fn choose(&self, url: &Uri) -> Result<Option<HttpProxy>, ReleaseError> {
         let scheme = url.scheme_str().unwrap_or_default().to_ascii_lowercase();
         // The host is the URL's authority as written, its port included, as urllib's request
         // gives it to the bypass rules.
@@ -155,7 +163,7 @@ impl ProxySettings {
                 if !host.is_empty() && bypassed_by_internet(internet, host) {
                     return Ok(None);
                 }
-                proxy_url(address)?
+                http_proxy(address)?
             }
             _ => {
                 let Some(address) = environment.serving(&scheme) else {
@@ -164,7 +172,7 @@ impl ProxySettings {
                 if !host.is_empty() && bypassed_by_environment(&environment, host) {
                     return Ok(None);
                 }
-                proxy_url(address)?
+                http_proxy(address)?
             }
         };
         Ok(Some(address))
@@ -392,22 +400,147 @@ fn split_port(host: &str) -> (&str, Option<&str>) {
     }
 }
 
-/// The URL the transport reaches the proxy `address` at: a proxy URL, or an address without a
-/// scheme, which is an HTTP proxy. An HTTPS proxy is reached as urllib reaches one for an HTTPS
-/// request, by a plain `CONNECT`, so it is an HTTP proxy at the same address; a SOCKS proxy is
-/// refused.
-fn proxy_url(address: &str) -> Result<String, ReleaseError> {
+/// A proxy the transport reaches by plain HTTP, at the authority its address gives: its user
+/// information, host and port, as urllib cuts them out of the address.
+struct HttpProxy {
+    authority: String,
+}
+
+impl HttpProxy {
+    /// The proxy's URL as the vectors give it: its authority as the address wrote it.
+    #[cfg(test)]
+    fn url(&self) -> String {
+        format!("{HTTP}{SCHEME_SEPARATOR}{}", self.authority)
+    }
+
+    /// The transport's proxy, at the host, port and credentials urllib reads out of the
+    /// authority, `default_port` where it names no port: the user information is everything
+    /// before the last `@`, the user name everything of that before its first `:`, and each part
+    /// is percent-decoded once. Credentials are kept only where both the name and the password
+    /// are given, since urllib sends none otherwise.
+    fn transport(&self, default_port: u16) -> Result<ureq::Proxy, ReleaseError> {
+        let (user_information, host_and_port) = match self.authority.rsplit_once('@') {
+            Some((user_information, host_and_port)) => (Some(user_information), host_and_port),
+            None => (None, self.authority.as_str()),
+        };
+        let host_and_port = unquoted(host_and_port);
+        let (host, port) = split_host_and_port(&host_and_port, default_port)?;
+        let credentials = user_information
+            .and_then(|information| information.split_once(':'))
+            .filter(|(user, password)| !user.is_empty() && !password.is_empty())
+            .map(|(user, password)| (unquoted(user), unquoted(password)));
+
+        let mut builder = ureq::Proxy::builder(ureq::ProxyProtocol::Http)
+            .host(host)
+            .port(port);
+        if let Some((user, password)) = &credentials {
+            builder = builder.username(user).password(password);
+        }
+        // The values are not repeated in the failure, since the address may hold a password.
+        let proxy = builder.build().map_err(|_| refused(UNREADABLE_ADDRESS))?;
+        // The builder writes the parts into a URL and reads them back, so a host holding a
+        // character that ends a URL's authority there would be read as another host.
+        let read = (
+            host,
+            port,
+            credentials.as_ref().map(|(user, _)| user.as_str()),
+            credentials.as_ref().map(|(_, password)| password.as_str()),
+        );
+        if (
+            proxy.host(),
+            proxy.port(),
+            proxy.username(),
+            proxy.password(),
+        ) != read
+        {
+            return Err(refused(UNREADABLE_ADDRESS));
+        }
+        Ok(proxy)
+    }
+}
+
+/// The port a proxy that names none is reached at for a request to `url`: its scheme's default.
+fn default_port(url: &Uri) -> u16 {
+    match url.scheme_str() {
+        Some(scheme) if scheme.eq_ignore_ascii_case(HTTPS) => HTTPS_PORT,
+        _ => HTTP_PORT,
+    }
+}
+
+/// The proxy at `address`: a proxy URL, or an address without a scheme, which is an HTTP proxy.
+/// An HTTPS proxy is reached as urllib reaches one for an HTTPS request, by a plain `CONNECT`,
+/// so it is an HTTP proxy at the same address; a SOCKS proxy is refused.
+fn http_proxy(address: &str) -> Result<HttpProxy, ReleaseError> {
     let (scheme, authority) = split_proxy(address)?;
-    // A URL's authority would end at any of these, so the transport would read another host
-    // out of the proxy's URL than urllib reads out of the address.
-    if authority.contains(AUTHORITY_ENDS) {
+    match scheme.as_deref() {
+        None | Some(HTTP | HTTPS) => Ok(HttpProxy {
+            authority: authority.to_owned(),
+        }),
+        Some(scheme) if SOCKS_SCHEMES.contains(&scheme) => Err(refused(SOCKS_REFUSED)),
+        Some(_) => Err(refused(ONLY_HTTP_PROXIES)),
+    }
+}
+
+/// A proxy's host and port, read out of `host[:port]` as urllib's connection reads them: the
+/// port is the digits after the last colon that follows any `]` of an IPv6 address, and
+/// `default_port` where there is no such colon or nothing follows it. No host, or anything but
+/// digits after the colon, is refused.
+fn split_host_and_port(
+    host_and_port: &str,
+    default_port: u16,
+) -> Result<(&str, u16), ReleaseError> {
+    let after_brackets = host_and_port.rfind(']').map_or(0, |bracket| bracket + 1);
+    let (host, port) = match host_and_port[after_brackets..].rfind(':') {
+        Some(colon) => {
+            let (host, port) = host_and_port.split_at(after_brackets + colon);
+            (host, &port[1..])
+        }
+        None => (host_and_port, ""),
+    };
+    let port = if port.is_empty() {
+        default_port
+    } else if port.bytes().all(|byte| byte.is_ascii_digit()) {
+        port.parse().map_err(|_| refused(UNREADABLE_ADDRESS))?
+    } else {
+        return Err(refused(UNREADABLE_ADDRESS));
+    };
+    if host.is_empty() {
         return Err(refused(UNREADABLE_ADDRESS));
     }
-    match scheme.as_deref() {
-        None | Some(HTTP | HTTPS) => Ok(format!("{HTTP}{SCHEME_SEPARATOR}{authority}")),
-        Some(scheme) if SOCKS_SCHEMES.contains(&scheme) => Err(refused(SOCKS_REFUSED)),
-        Some(_) => Err(refused("only HTTP and HTTPS proxies are supported")),
+    Ok((host, port))
+}
+
+/// `text` with each `%` and two hexadecimal digits decoded to the byte they name, as urllib's
+/// `unquote` decodes it: any other `%` stands for itself, and bytes that are not UTF-8 become
+/// the replacement character.
+fn unquoted(text: &str) -> String {
+    let bytes = text.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut at = 0;
+    while let Some(&byte) = bytes.get(at) {
+        let escaped = match bytes.get(at + 1..at + 3) {
+            Some(&[high, low]) if byte == b'%' => hex_value(high).zip(hex_value(low)),
+            _ => None,
+        };
+        match escaped {
+            Some((high, low)) => {
+                decoded.push((high << 4) | low);
+                at += 3;
+            }
+            None => {
+                decoded.push(byte);
+                at += 1;
+            }
+        }
     }
+    String::from_utf8_lossy(&decoded).into_owned()
+}
+
+/// The value of the hexadecimal digit `digit`, in either case.
+fn hex_value(digit: u8) -> Option<u8> {
+    char::from(digit)
+        .to_digit(16)
+        .and_then(|value| u8::try_from(value).ok())
 }
 
 /// A proxy address's scheme, in lower case, and its authority (its user information, host and
@@ -432,12 +565,6 @@ fn split_proxy(address: &str) -> Result<(Option<String>, &str), ReleaseError> {
         None => rest[2..].find('/').map(|slash| 2 + slash),
     };
     Ok((scheme, &rest[2..end.unwrap_or(rest.len())]))
-}
-
-/// The transport's proxy at `url`, credentials in it decoded.
-fn transport_proxy(url: &str) -> Result<ureq::Proxy, ReleaseError> {
-    // The URL is not repeated in the failure, since it may hold a password.
-    ureq::Proxy::new(url).map_err(|_| refused(UNREADABLE_ADDRESS))
 }
 
 /// The refusal of a proxy setting the transport cannot use, for `detail`.
@@ -589,7 +716,8 @@ mod tests {
     use serde::Deserialize;
 
     use super::{
-        InternetSettings, ProxySettings, SOCKS_REFUSED, UNREADABLE_ADDRESS, shell_pattern_matches,
+        InternetSettings, ONLY_HTTP_PROXIES, ProxySettings, SOCKS_REFUSED, UNREADABLE_ADDRESS,
+        shell_pattern_matches,
     };
     use crate::ReleaseError;
 
@@ -860,22 +988,155 @@ mod tests {
         }
         let refused = [
             ("http:/proxy.test:8080", "the proxy's URL names no host"),
-            (
-                "ftp://proxy.test:21",
-                "only HTTP and HTTPS proxies are supported",
-            ),
+            ("ftp://proxy.test:21", ONLY_HTTP_PROXIES),
             ("http://", UNREADABLE_ADDRESS),
             ("http://proxy test:8080", UNREADABLE_ADDRESS),
-            // urllib reads the host after the user information; a URL would end the authority
-            // inside it and name another host.
-            ("http://us/er:pw@proxy.test:3128", UNREADABLE_ADDRESS),
-            ("http://us?er:pw@proxy.test:3128", UNREADABLE_ADDRESS),
-            ("us#er:pw@proxy.test:3128", UNREADABLE_ADDRESS),
         ];
         for (address, why) in refused {
             let settings = environment(&[("https_proxy", address)]);
             match settings.choice_for(url) {
                 Err(ReleaseError::Proxy { detail }) => assert_eq!(&*detail, why, "{address}"),
+                other => panic!("{address}: {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn the_proxy_is_reached_as_urllib_reaches_it() {
+        // Each answer is the host, port and credentials urllib's handler connects with for an
+        // HTTPS request through the address.
+        type Reached = (
+            &'static str,
+            u16,
+            Option<&'static str>,
+            Option<&'static str>,
+        );
+        let url = "https://api.github.com/repos";
+        let reached: [(&str, Reached); 23] = [
+            // The user information is everything before the last `@`, the user name everything
+            // of that before its first `:`, whatever characters they hold.
+            (
+                "http://user:p/ss@proxy.corp:3128",
+                ("proxy.corp", 3128, Some("user"), Some("p/ss")),
+            ),
+            (
+                "http://user:pa?ss@proxy.corp:3128",
+                ("proxy.corp", 3128, Some("user"), Some("pa?ss")),
+            ),
+            (
+                "http://user:pa#ss@proxy.corp:3128",
+                ("proxy.corp", 3128, Some("user"), Some("pa#ss")),
+            ),
+            (
+                "http://user:p ss@proxy.corp:3128",
+                ("proxy.corp", 3128, Some("user"), Some("p ss")),
+            ),
+            (
+                "http://us/er:pw@proxy.test:3128",
+                ("proxy.test", 3128, Some("us/er"), Some("pw")),
+            ),
+            (
+                "us#er:pw@proxy.test:3128",
+                ("proxy.test", 3128, Some("us#er"), Some("pw")),
+            ),
+            (
+                "http://us@er:p:w@proxy.test:3128",
+                ("proxy.test", 3128, Some("us@er"), Some("p:w")),
+            ),
+            // Each part is percent-decoded once; a `%` of no two hexadecimal digits stays, and
+            // bytes that are not UTF-8 become the replacement character.
+            (
+                "http://us%65r:p%2Fss@pro%78y.test:3128",
+                ("proxy.test", 3128, Some("user"), Some("p/ss")),
+            ),
+            (
+                "http://user:100%@proxy.test:3128",
+                ("proxy.test", 3128, Some("user"), Some("100%")),
+            ),
+            (
+                "http://user:pa%zzss%4@proxy.test:3128",
+                ("proxy.test", 3128, Some("user"), Some("pa%zzss%4")),
+            ),
+            (
+                "http://user:%C3%A9t%c3%a9@proxy.test:3128",
+                ("proxy.test", 3128, Some("user"), Some("\u{e9}t\u{e9}")),
+            ),
+            (
+                "http://user:%FF@proxy.test:3128",
+                ("proxy.test", 3128, Some("user"), Some("\u{fffd}")),
+            ),
+            // No credentials unless both the name and the password are given.
+            (
+                "http://user@proxy.test:3128",
+                ("proxy.test", 3128, None, None),
+            ),
+            (
+                "http://user:@proxy.test:3128",
+                ("proxy.test", 3128, None, None),
+            ),
+            (
+                "http://:pw@proxy.test:3128",
+                ("proxy.test", 3128, None, None),
+            ),
+            // No port, or nothing after the colon, is the request's own.
+            ("http://proxy.test", ("proxy.test", 443, None, None)),
+            ("http://proxy.test:/", ("proxy.test", 443, None, None)),
+            ("proxy.test", ("proxy.test", 443, None, None)),
+            ("http://[::1]", ("[::1]", 443, None, None)),
+            ("http://[::1]:3128", ("[::1]", 3128, None, None)),
+            ("http://proxy.test:03128", ("proxy.test", 3128, None, None)),
+            ("HTTP://Proxy.Test:8080", ("Proxy.Test", 8080, None, None)),
+            (
+                "https://user:pw@proxy.test",
+                ("proxy.test", 443, Some("user"), Some("pw")),
+            ),
+        ];
+        for (address, expected) in reached {
+            let proxy = proxy_of(&environment(&[("https_proxy", address)]), url);
+            assert_eq!(proxy.protocol(), ureq::ProxyProtocol::Http, "{address}");
+            assert_eq!(
+                (
+                    proxy.host(),
+                    proxy.port(),
+                    proxy.username(),
+                    proxy.password()
+                ),
+                expected,
+                "{address}"
+            );
+        }
+        // A plain HTTP request's proxy that names no port is reached on HTTP's.
+        let plain = proxy_of(
+            &environment(&[("http_proxy", "http://proxy.test")]),
+            "http://example.test/",
+        );
+        assert_eq!((plain.host(), plain.port()), ("proxy.test", 80));
+
+        // A host and port that urllib cannot connect to, or that a URL would read as another
+        // host: a port that is not digits or too great, no host, or a character that ends a URL's
+        // authority, written or percent-encoded.
+        for address in [
+            "http://proxy.test:3128?x",
+            "http://proxy.test?x",
+            "http://proxy.test#x",
+            "user:pw@proxy.test:3128/path",
+            "http://user:pw@/",
+            "http://:3128",
+            "http://proxy.test:80x",
+            "http://proxy.test:+80",
+            "http://proxy.test:65536",
+            "http://pro%2Fxy.test:3128",
+            "http://pro%3Fxy.test:3128",
+            "http://pro%23xy.test:3128",
+            "http://pro%40xy.test:3128",
+            "http://user:pw@pro%40xy.test:3128",
+        ] {
+            let settings = environment(&[("https_proxy", address)]);
+            let parsed = url.parse().expect("the URL parses");
+            match settings.proxy_for(&parsed) {
+                Err(ReleaseError::Proxy { detail }) => {
+                    assert_eq!(&*detail, UNREADABLE_ADDRESS, "{address}");
+                }
                 other => panic!("{address}: {other:?}"),
             }
         }
