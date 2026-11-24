@@ -481,7 +481,7 @@ mod tests {
 
     /// The newer runtime is the one the alpha installer's update tests install over theirs.
     #[test]
-    fn the_newer_runtime_is_tus() {
+    fn the_newer_runtime_is_the_updater_tests_own() {
         for (platform, executable) in PLATFORMS {
             let standard = RuntimeFiles::standard(platform, "1.0.0-beta");
             let newer = standard.newer("1.0.0-beta.1");

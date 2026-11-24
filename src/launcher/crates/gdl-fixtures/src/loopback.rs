@@ -385,15 +385,15 @@ fn drain(stream: &mut TcpStream) {
 /// one for the rest.
 fn reason(status: u16) -> &'static str {
     match status {
-        200 => "OK",
+        OK => "OK",
         301 => "Moved Permanently",
         302 => "Found",
         303 => "See Other",
         307 => "Temporary Redirect",
         308 => "Permanent Redirect",
-        400 => "Bad Request",
+        BAD_REQUEST => "Bad Request",
         403 => "Forbidden",
-        404 => "Not Found",
+        NOT_FOUND => "Not Found",
         429 => "Too Many Requests",
         500 => "Internal Server Error",
         503 => "Service Unavailable",

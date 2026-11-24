@@ -46,11 +46,21 @@ const LIST_SEPARATOR: &str = "  ";
 /// The platforms each alpha release was built for.
 const ALPHA_PLATFORMS: [&str; 2] = ["linux-x64", WINDOWS_PLATFORM];
 
+/// What the names of an alpha's installer, its licences and its checksum list put after the
+/// version and platform.
+const ALPHA_SETUP: &str = "-setup";
+
 /// The alpha installer of Windows, after its version, platform and `-setup`.
 const ALPHA_WINDOWS_SETUP: &str = ".exe";
 
 /// The alpha installer of every other platform, an archive.
 const ALPHA_ARCHIVE_SETUP: &str = ".tar.gz";
+
+/// The alpha installer's licences, after its version, platform and `-setup`.
+const ALPHA_LICENCES_SUFFIX: &str = "-licenses.zip";
+
+/// An alpha's runtime zip, after its version and platform.
+const ALPHA_RUNTIME_SUFFIX: &str = "-runtime.zip";
 
 /// A release row as GitHub's list gives one, for the feed's tests. Every field may be changed to
 /// make the row a test needs, a malformed one included.
@@ -135,15 +145,15 @@ impl ReleaseRow {
                 ALPHA_ARCHIVE_SETUP
             };
             let files: Vec<AssetRow> = [
-                format!("{stem}-setup{setup}"),
-                format!("{stem}-setup-licenses.zip"),
-                format!("{stem}-runtime.zip"),
+                format!("{stem}{ALPHA_SETUP}{setup}"),
+                format!("{stem}{ALPHA_SETUP}{ALPHA_LICENCES_SUFFIX}"),
+                format!("{stem}{ALPHA_RUNTIME_SUFFIX}"),
             ]
             .iter()
             .map(|name| AssetRow::holding(GITHUB_BASE, &tag, name, &stand_in(name)))
             .collect();
             let list = checksum_lines(&files);
-            let list_name = format!("{stem}-setup{CHECKSUMS_SUFFIX}");
+            let list_name = format!("{stem}{ALPHA_SETUP}{CHECKSUMS_SUFFIX}");
             assets.push(AssetRow::holding(GITHUB_BASE, &tag, &list_name, &list));
             assets.extend(files);
         }
