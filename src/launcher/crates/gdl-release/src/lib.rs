@@ -3,10 +3,12 @@
 //! against.
 #![forbid(unsafe_code)]
 
+mod error;
 mod names;
 mod platform;
 mod version;
 
+pub use error::ReleaseError;
 pub use names::{
     ASSET_STEM, GITHUB_API_HOST, GITHUB_HOST, RELEASE_HOSTS, REPOSITORY, SIGNATURE_SUFFIX,
     checksums_asset, launcher_asset, licences_asset, linux_member, signature_asset,
