@@ -6,6 +6,7 @@
 mod error;
 mod names;
 mod platform;
+mod proxy;
 mod version;
 
 pub use error::ReleaseError;
@@ -14,4 +15,5 @@ pub use names::{
     checksums_asset, launcher_asset, licences_asset, linux_member, signature_asset,
 };
 pub use platform::Platform;
+pub use proxy::{InternetSettings, ProxySettings};
 pub use version::{Version, VersionError};
