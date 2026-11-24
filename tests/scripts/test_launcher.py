@@ -101,6 +101,14 @@ class PlanTests(unittest.TestCase):
         self.assertEqual([call.args[0] for call in calls],
                          [["cargo", "build", "--locked", *headless, "--release"]])
 
+    def test_check_folder_runs_the_headless_program(self):
+        program = ["cargo", "run", "--locked", "--package", "gdl-launcher-headless"]
+        folder = os.path.abspath(os.path.join("Games", "Gauntlet Dark Legacy"))
+        self.assertEqual(launcher.plan("check-folder", arguments=[folder]),
+                         [[*program, "--", "--check-folder", folder]])
+        self.assertEqual(launcher.plan("check-folder", release=True, arguments=[folder, "--json"]),
+                         [[*program, "--release", "--", "--check-folder", folder, "--json"]])
+
     def test_parity_runs_the_gate_with_this_python(self):
         gate = ROOT / "scripts" / "checks" / "launcher_parity.py"
         self.assertEqual(launcher.PARITY_GATE, gate)
@@ -291,6 +299,56 @@ class RunTests(unittest.TestCase):
         self.assertEqual(self.run_main(["extract", "n64", rom, "--output", output], [1])[0], 1)
         # Only an expansion the program extracts, and never without --output.
         for argv in (["extract", "gamecube", rom, "--output", output], ["extract", "n64", rom]):
+            with self.subTest(argv=argv), contextlib.redirect_stderr(io.StringIO()):
+                with self.assertRaises(SystemExit) as refused:
+                    self.run_main(argv, [])
+                self.assertEqual(refused.exception.code, 2)
+
+    def test_check_folder_judges_the_folder_named_from_here(self):
+        # Cargo starts the program in the workspace, so a folder named from the developer's own
+        # folder is made absolute first; --json goes to the program, --release to cargo.
+        program = ["cargo", "run", "--locked", "--package", "gdl-launcher-headless"]
+        here = os.getcwd()
+        folder = os.path.join("Games", "Gauntlet Dark Legacy")
+        result, steps = self.run_main(["check-folder", folder], [0])
+        self.assertEqual(result, 0)
+        self.assertEqual(steps, [[*program, "--", "--check-folder", os.path.join(here, folder)]])
+        result, calls = main_runs(["check-folder", "--json", folder, "--release"], [0])
+        self.assertEqual(result, 0)
+        self.assertEqual([call.args[0] for call in calls],
+                         [[*program, "--release", "--", "--check-folder",
+                           os.path.join(here, folder), "--json"]])
+        self.assertEqual(calls[0].kwargs["cwd"], launcher.WORKSPACE)
+        self.assertTrue(os.path.isabs(calls[0].args[0][-2]))
+        # A folder named absolutely already reaches the program as it was given, spaces and all.
+        absolute = os.path.abspath(os.path.join("Legends trees", "game"))
+        _, steps = self.run_main(["check-folder", absolute], [0])
+        self.assertEqual(steps[0][-1], absolute)
+        # A name that ends in a dot or a space reaches the program as it was typed, so that the
+        # program judges the folder named rather than the one Windows would make of it.
+        for name in ("game.", "game ", "game. "):
+            with self.subTest(name=name):
+                typed = os.path.join("Games", name)
+                _, steps = self.run_main(["check-folder", typed], [0])
+                self.assertEqual(steps[0][-1], os.path.join(here, typed))
+                self.assertTrue(steps[0][-1].endswith(name))
+        if os.name == "nt":
+            # A drive's own relative path starts from that drive's folder, here this one.
+            drive = os.path.splitdrive(here)[0]
+            _, steps = self.run_main(["check-folder", drive + folder], [0])
+            self.assertEqual(steps[0][-1], os.path.join(here, folder))
+        # An empty name names no folder: the program is handed it empty, and refuses it, rather
+        # than being handed this folder to probe.
+        _, steps = self.run_main(["check-folder", ""], [2])
+        self.assertEqual(steps, [[*program, "--", "--check-folder", ""]])
+        # The program's exit code is the run's: 1 for a judging that failed, 2 for its usage line.
+        for code in (1, 2):
+            with self.subTest(code=code):
+                self.assertEqual(self.run_main(["check-folder", folder], [code])[0], code)
+        # A folder, once, and none of the other commands' options.
+        for argv in (["check-folder"], ["check-folder", folder, "elsewhere"],
+                     ["check-folder", folder, "--output", "elsewhere"],
+                     ["check-folder", folder, "--package", "gdl-files"]):
             with self.subTest(argv=argv), contextlib.redirect_stderr(io.StringIO()):
                 with self.assertRaises(SystemExit) as refused:
                     self.run_main(argv, [])

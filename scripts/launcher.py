@@ -6,6 +6,7 @@
     python scripts/launcher.py build [--release] [--package <crate> ...]   # into build/launcher
     python scripts/launcher.py run [--release] [-- args]   # the launcher's window, for development
     python scripts/launcher.py extract <n64|dreamcast> <dump> --output <new folder> [--install] [--release]
+    python scripts/launcher.py check-folder <folder> [--json] [--release]   # judged for an install
     python scripts/launcher.py parity <arguments for launcher_parity.py, such as --verify>
 
 Cargo runs from src/launcher, so its rust-toolchain.toml and .cargo/config.toml apply, with its
@@ -20,8 +21,13 @@ compiler under it, and so does one that outlasts the timeout a caller in this pr
 build builds the whole workspace, or only the crates --package names. extract runs the headless
 program's --extract, which writes a Legends expansion's tree from a dump into a new folder,
 holding the dump as the extraction scripts hold one unless --install asks for an installation's
-strictness. parity runs the parity gate, scripts/checks/launcher_parity.py, with this Python and
-every argument after the word, from the folder and in the environment this script was started in.
+strictness. check-folder runs the headless program's --check-folder, which judges a folder as one
+to install the game into and reports what would refuse the install, what to warn of, and what it
+found of the folder and its volume, as JSON with --json. The one file it writes is a probe file,
+in the folder or the nearest one that exists, removed at once, and none in a folder the launcher
+must not write into, such as the alpha installer's or another installation's. parity runs the
+parity gate, scripts/checks/launcher_parity.py, with this Python and every argument after the
+word, from the folder and in the environment this script was started in.
 """
 
 import argparse
@@ -71,6 +77,9 @@ def plan(command: str, packages: Optional[Sequence[str]] = None, release: bool =
     if command == "extract":
         return [["cargo", "run", "--locked", "--package", HEADLESS_PACKAGE, *profile, "--",
                  "--extract", *(arguments or [])]]
+    if command == "check-folder":
+        return [["cargo", "run", "--locked", "--package", HEADLESS_PACKAGE, *profile, "--",
+                 "--check-folder", *(arguments or [])]]
     if command == "parity":
         return [[sys.executable, str(PARITY_GATE), *(arguments or [])]]
     raise ValueError(f"unknown launcher command: {command}")
@@ -172,6 +181,11 @@ def main(argv: Optional[List[str]] = None) -> int:
                          help="hold the dump as an installation does, to the trust the launcher "
                               "carries, rather than as the extraction scripts do")
     extract.add_argument("--release", action="store_true", help="the optimised profile")
+    check_folder = commands.add_parser("check-folder", help="report what a folder is to an "
+                                                            "install of the game into it")
+    check_folder.add_argument("folder", help="the folder to judge, which need not exist yet")
+    check_folder.add_argument("--json", action="store_true", help="the report as JSON")
+    check_folder.add_argument("--release", action="store_true", help="the optimised profile")
     # Listed for --help alone: every argument after the word goes to the gate unread, since
     # argparse would refuse the gate's options as ones it does not know.
     commands.add_parser("parity", add_help=False,
@@ -191,6 +205,12 @@ def main(argv: Optional[List[str]] = None) -> int:
         strictness = [] if args.install else ["--strict", "script"]
         arguments = [args.platform, absolute_as_typed(args.dump), "--output",
                      absolute_as_typed(args.output), *strictness]
+    if args.command == "check-folder":
+        # Made absolute here for the same reason. An empty name names no folder: it reaches the
+        # program as it is, to be refused there, rather than become this process's folder, which
+        # the check would then probe.
+        judged = absolute_as_typed(args.folder) if args.folder else args.folder
+        arguments = [judged, *(["--json"] if args.json else [])]
     # The gate runs as it does when started by hand: from the folder this script was started in,
     # where a relative path given to it means what was typed, and in this process's environment,
     # from which it makes cargo's itself. Made again inside cargo's, that would lose rustup's
