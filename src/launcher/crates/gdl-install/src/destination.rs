@@ -271,7 +271,7 @@ impl fmt::Display for Blocker {
             ),
             Blocker::NotWritable { path } => write!(
                 formatter,
-                "The launcher may not make files in {}",
+                "The launcher may not make entries in {}",
                 path.display()
             ),
             Blocker::IgnoresCase { path } => write!(
@@ -2168,7 +2168,7 @@ mod tests {
             (
                 Blocker::NotWritable { path: path.clone() },
                 "notWritable",
-                format!("The launcher may not make files in {shown}"),
+                format!("The launcher may not make entries in {shown}"),
             ),
             (
                 Blocker::IgnoresCase { path: path.clone() },

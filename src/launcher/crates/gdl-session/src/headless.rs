@@ -2372,7 +2372,7 @@ mod tests {
                  writable: no\n\
                  ignoresCase: no\n\
                  noexec: yes\n\
-                 blocker: folder.notWritable (notWritable): The launcher may not make files in \
+                 blocker: folder.notWritable (notWritable): The launcher may not make entries in \
                  {games_shown}\n\
                  blocker: folder.noexec (noexec): The file system at {games_shown} does not run \
                  programs (noexec)\n\
@@ -2410,7 +2410,7 @@ mod tests {
                     finding(
                         "folder.notWritable",
                         "notWritable",
-                        format!("The launcher may not make files in {games_shown}"),
+                        format!("The launcher may not make entries in {games_shown}"),
                     ),
                     finding(
                         "folder.noexec",
