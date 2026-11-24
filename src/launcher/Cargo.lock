@@ -1404,6 +1404,7 @@ name = "gdl-release"
 version = "0.0.0"
 dependencies = [
  "gdl-files",
+ "gdl-fixtures",
  "gdl-media",
  "minisign-verify",
  "semver",

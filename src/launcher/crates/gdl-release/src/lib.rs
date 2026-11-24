@@ -5,6 +5,7 @@
 
 mod checksums;
 mod error;
+mod keyring;
 mod names;
 mod platform;
 mod proxy;
@@ -12,6 +13,7 @@ mod version;
 
 pub use checksums::{ChecksumList, MAX_LIST_LEN};
 pub use error::ReleaseError;
+pub use keyring::Keyring;
 pub use names::{
     ASSET_STEM, GITHUB_API_HOST, GITHUB_HOST, RELEASE_HOSTS, REPOSITORY, SIGNATURE_SUFFIX,
     checksums_asset, launcher_asset, licences_asset, linux_member, signature_asset,
