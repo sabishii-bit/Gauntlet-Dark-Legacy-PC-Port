@@ -14,6 +14,7 @@ use gdl_install::{
     SectionsError, Warning,
 };
 use gdl_media::{DiscRule, DumpRefusal, GameCubeRule, MediaError, RomRule, TplRule};
+use gdl_release::ReleaseError;
 
 use crate::extraction::ExtractionError;
 use crate::privilege::Refusal;
@@ -162,9 +163,44 @@ const SOURCE_DAMAGED: &str = "source.damaged";
 /// dump changed while it was read.
 const DUMP_HASH_MISMATCH: &str = "dump.hashMismatch";
 
+/// The release feed, or a file of a release, could not be reached: the host's name did not
+/// resolve, the connection was refused, reset or broken off, the network or the host could not be
+/// reached, or the host did not answer in time.
+const NET_OFFLINE: &str = "net.offline";
+
+/// A request to the release feed, or for a file of a release, failed in another way than an
+/// unreachable host, a spent limit or a host the launcher never fetches from: a secure connection
+/// that could not be made, an answer that was neither success, a redirect nor a rate limit, too
+/// many redirects, a releases list that is too large, is not in the form GitHub writes or runs
+/// past the pages the launcher reads, or a proxy setting the request cannot go through.
+const NET_FAILED: &str = "net.failed";
+
+/// GitHub refused the request because its limit on requests made without an account is spent. It
+/// is a refusal rather than a hold, since the limit can last up to an hour; the failure carries
+/// when the feed may be asked again.
+const NET_RATE_LIMITED: &str = "net.rateLimited";
+
+/// A request, or a redirect it was sent on, would have reached a place the launcher never fetches
+/// from: a host other than GitHub's release hosts, or one of them by a URL that is not HTTPS,
+/// names a user or names another port than HTTPS's own.
+const NET_UNTRUSTED_HOST: &str = "net.untrustedHost";
+
+/// A release lacks a file it must carry, lists one twice, or gives one no sound state, size,
+/// digest or download address; or its checksum list is not one the release scripts write, or does
+/// not give the launcher's file GitHub's digest.
+const RELEASE_INCOMPLETE: &str = "release.incomplete";
+
+/// A release's checksum list carries no signature the launcher accepts: it is malformed, made by
+/// no key the launcher trusts, or names another file or release than the one it came with.
+const RELEASE_SIGNATURE_INVALID: &str = "release.signatureInvalid";
+
+/// A file downloaded from a release ran past the size the release publishes for it, ended short of
+/// it, or does not have the digest the release gives it.
+const DOWNLOAD_CORRUPT: &str = "download.corrupt";
+
 /// Every code this module's functions give, each once: the codes the page's string table holds
 /// words for.
-pub const CODES: [&str; 38] = [
+pub const CODES: [&str; 45] = [
     PAYLOAD_DAMAGED,
     IO_FAILED,
     SPACE_RAN_OUT,
@@ -203,6 +239,13 @@ pub const CODES: [&str; 38] = [
     SOURCE_INCOMPLETE,
     SOURCE_DAMAGED,
     DUMP_HASH_MISMATCH,
+    NET_OFFLINE,
+    NET_FAILED,
+    NET_RATE_LIMITED,
+    NET_UNTRUSTED_HOST,
+    RELEASE_INCOMPLETE,
+    RELEASE_SIGNATURE_INVALID,
+    DOWNLOAD_CORRUPT,
 ];
 
 /// What a refusal a job meets reports: that the job was asked to stop, or the problem it fails
@@ -591,6 +634,44 @@ pub fn extraction(error: &ExtractionError) -> Report {
     }
 }
 
+/// The code a failure to read the release feed, check a release or download one of its files
+/// reports. A cancel has none. A host that could not be reached is `net.offline`; GitHub's spent
+/// limit on unauthenticated requests `net.rateLimited`, a refusal rather than a hold; a request or
+/// redirect that would leave GitHub's release hosts `net.untrustedHost`; and any other failure of a
+/// request, an answer that is no success, too many redirects or a releases list the launcher does
+/// not read among them, `net.failed`, as is a proxy setting the request cannot go through. A
+/// release that lacks what it must carry, lists an asset twice, or whose checksum list is
+/// malformed or disagrees with GitHub's digest is `release.incomplete`; a checksum list's signature
+/// the launcher does not accept `release.signatureInvalid`; and a download that ran past its
+/// published size, ended short of it or has another digest `download.corrupt`. A downloaded file
+/// that could not be written or read reports what the system answered, as the launcher's own
+/// writes do: `space.ranOut` when the disk was full or the quota spent, else `io.failed`.
+pub fn release(error: &ReleaseError) -> Report {
+    match error {
+        ReleaseError::Cancelled => Report::Cancelled,
+        ReleaseError::Offline { .. } => Report::Error(NET_OFFLINE),
+        ReleaseError::Failed { .. }
+        | ReleaseError::Status { .. }
+        | ReleaseError::Redirects { .. }
+        | ReleaseError::ResponseTooLarge
+        | ReleaseError::InvalidResponse { .. }
+        | ReleaseError::AssetList { .. }
+        | ReleaseError::TooManyReleases
+        | ReleaseError::Proxy { .. } => Report::Error(NET_FAILED),
+        ReleaseError::RateLimited { .. } => Report::Error(NET_RATE_LIMITED),
+        ReleaseError::UntrustedHost { .. } => Report::Error(NET_UNTRUSTED_HOST),
+        ReleaseError::Incomplete { .. }
+        | ReleaseError::Ambiguous { .. }
+        | ReleaseError::ChecksumList { .. }
+        | ReleaseError::ChecksumMismatch { .. } => Report::Error(RELEASE_INCOMPLETE),
+        ReleaseError::Signature { .. } => Report::Error(RELEASE_SIGNATURE_INVALID),
+        ReleaseError::Oversize { .. } | ReleaseError::Corrupt { .. } => {
+            Report::Error(DOWNLOAD_CORRUPT)
+        }
+        ReleaseError::Io { source, .. } => Report::Error(written(source)),
+    }
+}
+
 /// The code of a rule of the N64 ROM's format: a ROM shorter than its header, or cut off within a
 /// word, is `source.incomplete`, and a file whose first word is that of no byte order a cartridge
 /// is kept in is no ROM the launcher knows, `source.unrecognized`. Every other rule is
@@ -765,7 +846,7 @@ mod tests {
     use gdl_fixtures::long_root;
     use gdl_fixtures::{
         RuntimeFiles, append_sections, icon_iso, link_folder, make_alpha_markers, pretty_json,
-        synthetic_ciso, synthetic_iso, tiny_elf, tpl,
+        sign_with_test_key, synthetic_ciso, synthetic_iso, test_public_key, tiny_elf, tpl,
     };
     use gdl_install::{
         Blocker, BuildInfo, Changes, DestinationError, FolderError, FolderState, GameStartError,
@@ -779,13 +860,16 @@ mod tests {
         Console, DiscRule, DumpRefusal, GameCubeImage, GameCubeRule, MediaError, RomRule, TplRule,
         Verdict, first_frame, identify,
     };
-    use gdl_release::{Platform, Version};
+    use gdl_release::{
+        ChecksumList, Keyring, Platform, ProxySettings, ReleaseError, Version, checksums_asset,
+        launcher_asset,
+    };
     use serde_json::json;
 
     use super::{
         CODES, Report, blocker, destination, dump_refusal, extract, extraction, files, folder,
         game_start, game_use, install, lock, media, notice, payload, receipt, recovery, refusal,
-        sections, state, warning,
+        release, sections, state, warning,
     };
     use crate::extraction::{ExtractionError, output_name};
     use crate::privilege::Refusal;
@@ -970,6 +1054,9 @@ mod tests {
     /// A Windows build before 1903: 1809's.
     const OLD_WINDOWS_BUILD: u32 = 17_763;
 
+    /// When a spent limit on the feed's requests ends, in seconds since the Unix epoch.
+    const RATE_LIMIT_RESET: u64 = 1_764_003_600;
+
     /// Room no volume has.
     const MORE_THAN_ANY_VOLUME: u64 = u64::MAX;
 
@@ -995,6 +1082,17 @@ mod tests {
     /// What a refusal says is wrong.
     fn detail() -> Box<str> {
         "what was found".into()
+    }
+
+    /// A release's asset that a failure of the feed or of a download names.
+    fn asset() -> Box<str> {
+        "GauntletDarkLegacy-1.0.0-beta-windows-x64-launcher.exe".into()
+    }
+
+    /// A request to the release feed that a failure names.
+    fn feed_url() -> Box<str> {
+        "https://api.github.com/repos/sabishii-bit/Gauntlet-Dark-Legacy-PC-Port/releases?page=1"
+            .into()
     }
 
     /// The system's refusal to let a path be looked at or read.
@@ -1795,6 +1893,74 @@ mod tests {
         ]
     }
 
+    /// One failure of every kind that reading the release feed, checking a release or downloading
+    /// one of its files meets, with what each reports: a spent limit with and without its end, a
+    /// downloaded file that could not be written once for each of the system's answers, and a
+    /// cancel.
+    fn release_failures() -> Vec<(ReleaseError, Report)> {
+        let failed = Report::Error("net.failed");
+        let limited = Report::Error("net.rateLimited");
+        let incomplete = Report::Error("release.incomplete");
+        let corrupt = Report::Error("download.corrupt");
+        let mut failures = vec![
+            (
+                ReleaseError::Offline { detail: detail() },
+                Report::Error("net.offline"),
+            ),
+            (ReleaseError::Failed { detail: detail() }, failed),
+            (
+                ReleaseError::Status {
+                    status: 404,
+                    url: feed_url(),
+                },
+                failed,
+            ),
+            (
+                ReleaseError::RateLimited {
+                    reset_at: Some(RATE_LIMIT_RESET),
+                },
+                limited,
+            ),
+            (ReleaseError::RateLimited { reset_at: None }, limited),
+            (
+                ReleaseError::UntrustedHost {
+                    url: "http://github.com/file".into(),
+                },
+                Report::Error("net.untrustedHost"),
+            ),
+            (ReleaseError::Redirects { url: feed_url() }, failed),
+            (ReleaseError::ResponseTooLarge, failed),
+            (ReleaseError::InvalidResponse { detail: detail() }, failed),
+            (
+                ReleaseError::AssetList {
+                    tag: "v1.0.0-beta".into(),
+                },
+                failed,
+            ),
+            (ReleaseError::TooManyReleases, failed),
+            (ReleaseError::Incomplete { asset: asset() }, incomplete),
+            (ReleaseError::Ambiguous { asset: asset() }, incomplete),
+            (ReleaseError::Oversize { asset: asset() }, corrupt),
+            (ReleaseError::Corrupt { asset: asset() }, corrupt),
+            (ReleaseError::ChecksumList { detail: detail() }, incomplete),
+            (
+                ReleaseError::ChecksumMismatch { asset: asset() },
+                incomplete,
+            ),
+            (
+                ReleaseError::Signature { detail: detail() },
+                Report::Error("release.signatureInvalid"),
+            ),
+            (ReleaseError::Proxy { detail: detail() }, failed),
+            (ReleaseError::Cancelled, Report::Cancelled),
+        ];
+        failures.extend(write_failures().into_iter().map(|(source, code)| {
+            let path = path();
+            (ReleaseError::Io { path, source }, Report::Error(code))
+        }));
+        failures
+    }
+
     #[test]
     fn every_refusal_maps_to_its_code() {
         for (error, expected) in payload_refusals() {
@@ -2270,6 +2436,68 @@ mod tests {
     }
 
     #[test]
+    fn every_release_failure_has_its_code() {
+        for (error, expected) in release_failures() {
+            assert_eq!(release(&error), expected, "{}: {error}", error.rule());
+        }
+        // What reading a checksum list, checking its signature and choosing a request's proxy
+        // refuse as they run reports so: a list in no form the release scripts write, a list
+        // signed for another release, one signed by no key the keyring holds, and a SOCKS proxy,
+        // which no request goes through.
+        let version = Version::parse(VERSION).unwrap();
+        let list_name = checksums_asset(&version, Platform::WindowsX64);
+        let launcher = launcher_asset(&version, Platform::WindowsX64);
+        let list = format!("{}  {launcher}\n", "0".repeat(64));
+        ChecksumList::parse(list.as_bytes()).unwrap();
+        let error = ChecksumList::parse(b"not a digest and a name\n").unwrap_err();
+        assert!(
+            matches!(error, ReleaseError::ChecksumList { .. }),
+            "{error:?}"
+        );
+        assert_eq!(
+            release(&error),
+            Report::Error("release.incomplete"),
+            "{error}"
+        );
+        let signed_for = |signed: &str| {
+            let comment = format!("timestamp:0\tfile:{list_name}\tversion:{signed}");
+            sign_with_test_key(list.as_bytes(), &comment)
+        };
+        let verify = |keyring: &Keyring, signature: &str| {
+            keyring.verify_list(list.as_bytes(), &list_name, &version, signature.as_bytes())
+        };
+        let key = test_public_key();
+        let test_key = Keyring::of(&[key.as_str()]).unwrap();
+        verify(&test_key, &signed_for(VERSION)).unwrap();
+        let refused = [
+            ("another release's", &test_key, signed_for("1.0.0-beta.1")),
+            ("by no key it holds", &Keyring::empty(), signed_for(VERSION)),
+        ];
+        for (case, keyring, signature) in refused {
+            let error = verify(keyring, &signature).unwrap_err();
+            assert!(
+                matches!(error, ReleaseError::Signature { .. }),
+                "{case}: {error:?}"
+            );
+            let expected = Report::Error("release.signatureInvalid");
+            assert_eq!(release(&error), expected, "{case}: {error}");
+        }
+        let socks = ProxySettings::new(
+            vec![(
+                "https_proxy".to_owned(),
+                "socks5://proxy.test:1080".to_owned(),
+            )],
+            None,
+            false,
+        );
+        let error = socks
+            .proxy_for(&"https://api.github.com/".parse().unwrap())
+            .unwrap_err();
+        assert!(matches!(error, ReleaseError::Proxy { .. }), "{error:?}");
+        assert_eq!(release(&error), Report::Error("net.failed"), "{error}");
+    }
+
+    #[test]
     fn a_runtime_refused_for_its_sections_reports_what_the_sections_do() {
         // The runtime is read from the launcher file's sections, so a cancel or a failed read
         // there reports as the sections report it, never as a damaged payload.
@@ -2357,6 +2585,11 @@ mod tests {
                 .filter_map(|(error, _)| code_of(recovery(error))),
         );
         returned.extend(notices().iter().map(|(told, _)| notice(told)));
+        returned.extend(
+            release_failures()
+                .iter()
+                .filter_map(|(error, _)| code_of(release(error))),
+        );
         assert_eq!(returned, listed);
     }
 }
