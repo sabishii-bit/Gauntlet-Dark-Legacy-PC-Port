@@ -105,22 +105,51 @@ impl RuntimeFiles {
     /// The runtime's archive, field by field: each file deflated, in byte order of the names, then
     /// `build-info.json`, deflated too.
     pub fn raw(&self) -> RawZip {
+        self.archive(None)
+    }
+
+    /// The runtime's archive, as the bytes of a zip file.
+    pub fn zip(&self) -> Vec<u8> {
+        self.raw().to_bytes()
+    }
+
+    /// Makes `program`, a real program of some megabytes, the game's executable, and gives the
+    /// runtime's archive as [`zip`](Self::zip) lays it out, but with the executable held as it is
+    /// rather than deflated, so that the archive builds fast; `build-info.json` names the
+    /// program's bytes.
+    pub fn zip_with_program(&mut self, program: &[u8]) -> Vec<u8> {
+        let executable = self.executable.clone();
+        let shipped = &mut self
+            .files
+            .iter_mut()
+            .find(|(name, _)| *name == executable)
+            .expect("the runtime holds its executable")
+            .1;
+        shipped.clear();
+        shipped.extend_from_slice(program);
+        self.archive(Some(&executable)).to_bytes()
+    }
+
+    /// The runtime's archive as [`raw`](Self::raw) lays it out, with the file named `stored`, when
+    /// one is, held as it is rather than deflated.
+    fn archive(&self, stored: Option<&str>) -> RawZip {
         let mut files: Vec<_> = self.files.iter().collect();
         files.sort_by(|(one, _), (other, _)| one.cmp(other));
         let mut entries: Vec<RawEntry> = files
             .into_iter()
-            .map(|(name, data)| RawEntry::deflated(name, data))
+            .map(|(name, data)| {
+                if stored == Some(name.as_str()) {
+                    RawEntry::stored(name, data)
+                } else {
+                    RawEntry::deflated(name, data)
+                }
+            })
             .collect();
         entries.push(RawEntry::deflated(BUILD_INFO, &self.build_info_bytes()));
         RawZip {
             entries,
             ..RawZip::default()
         }
-    }
-
-    /// The runtime's archive, as the bytes of a zip file.
-    pub fn zip(&self) -> Vec<u8> {
-        self.raw().to_bytes()
     }
 }
 
@@ -164,7 +193,7 @@ mod tests {
     use std::collections::BTreeMap;
     use std::io::{Cursor, Read};
 
-    use ::zip::ZipArchive;
+    use ::zip::{CompressionMethod, ZipArchive};
     use flate2::read::DeflateDecoder;
     use serde_json::{Value, json};
 
@@ -387,6 +416,64 @@ mod tests {
             assert_eq!(files.len(), read.len() - 1, "{platform}");
             for (name, digest) in files {
                 assert_eq!(*digest, sha256_hex(&read[name]), "{platform} {name}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_runtime_carrying_a_program_holds_it_as_it_is() {
+        let program = b"a real program's bytes ".repeat(1024);
+        for (platform, executable) in PLATFORMS {
+            let mut runtime = RuntimeFiles::standard(platform, "1.0.0-beta");
+            let laid_out: Vec<String> = runtime
+                .raw()
+                .entries
+                .iter()
+                .map(|entry| String::from_utf8(entry.name.clone()).unwrap())
+                .collect();
+            let zip = runtime.zip_with_program(&program);
+
+            // The runtime's executable is the program now, and its record names the program.
+            let (_, shipped) = runtime
+                .files
+                .iter()
+                .find(|(name, _)| name == executable)
+                .unwrap();
+            assert!(*shipped == program, "{platform}");
+            assert_eq!(
+                runtime.build_info()["files"][executable],
+                sha256_hex(&program),
+                "{platform}"
+            );
+
+            // The archive lays its files out as every runtime's, the record last; the executable
+            // is held as it is, and the rest deflated.
+            let mut archive = ZipArchive::new(Cursor::new(zip)).unwrap();
+            archive.validate_header_consistency().unwrap();
+            let names: Vec<String> = archive
+                .file_names()
+                .map(|name| name.unwrap().into_owned())
+                .collect();
+            assert_eq!(names, laid_out, "{platform}");
+            let contents: BTreeMap<&str, &[u8]> = runtime
+                .files
+                .iter()
+                .map(|(name, data)| (name.as_str(), data.as_slice()))
+                .collect();
+            let build_info = runtime.build_info_bytes();
+            for index in 0..archive.len() {
+                let mut file = archive.by_index(index).unwrap();
+                let name = file.name().unwrap().into_owned();
+                let method = if name == executable {
+                    CompressionMethod::Stored
+                } else {
+                    CompressionMethod::Deflated
+                };
+                assert_eq!(file.compression(), method, "{platform} {name}");
+                let mut data = Vec::new();
+                file.read_to_end(&mut data).unwrap();
+                let held = contents.get(name.as_str()).copied().unwrap_or(&build_info);
+                assert!(data == held, "{platform} {name}");
             }
         }
     }

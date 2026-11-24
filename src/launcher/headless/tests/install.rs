@@ -13,12 +13,12 @@ use std::sync::Mutex;
 
 use gdl_files::{Cancel, Job, NoProgress, PhaseId, Progress, RelPath, STAGING_RANDOM_CHARS};
 use gdl_fixtures::{
-    RawEntry, RuntimeFiles, append_sections, folder_names, icon_iso, pretty_json, sha256_hex, tpl,
+    RuntimeFiles, append_sections, folder_names, icon_iso, pretty_json, sha256_hex, tpl,
 };
 use gdl_install::{
-    BUILD_INFO, CHECK_DISC, CHECK_GAME, COPY_DISC_FILES, COPY_LAUNCHER, DISC_FILES, DISC_ICON,
-    FolderRecord, GET_RUNTIME, GUNE5D, INSTALL_JOURNAL, INSTALL_STAGING_PREFIX, InstallPlan,
-    Installed, JOURNAL_DIR, JOURNAL_SCHEMA, LOCK_FILE, MIN_LAUNCHER, PERSONALISE, PREPARE, PUBLISH,
+    CHECK_DISC, CHECK_GAME, COPY_DISC_FILES, COPY_LAUNCHER, DISC_FILES, DISC_ICON, FolderRecord,
+    GET_RUNTIME, GUNE5D, INSTALL_JOURNAL, INSTALL_STAGING_PREFIX, InstallPlan, Installed,
+    JOURNAL_DIR, JOURNAL_SCHEMA, LOCK_FILE, MIN_LAUNCHER, PERSONALISE, PREPARE, PUBLISH,
     RECEIPT_FILE, RECEIPT_SCHEMA, RUNTIME_SECTION, RecoveryOutcome, STATE_DIR, Sections,
     Unrecorded, install_game, installed_launcher_name, plan_install, probe_game_version,
     recover_install,
@@ -117,25 +117,10 @@ impl Inputs {
     fn new(platform: Platform) -> Inputs {
         let program = fs::read(PROGRAM).unwrap();
         let mut runtime = RuntimeFiles::standard(platform.as_str(), VERSION);
-        let mut raw = runtime.raw();
-        let executable = runtime.executable.clone();
-        let shipped = runtime
-            .files
-            .iter_mut()
-            .find(|(name, _)| *name == executable)
-            .expect("the runtime holds its executable");
-        shipped.1.clone_from(&program);
-        let build_info = runtime.build_info_bytes();
-        for entry in &mut raw.entries {
-            if entry.name == executable.as_bytes() {
-                *entry = RawEntry::stored(&executable, &program);
-            } else if entry.name == BUILD_INFO.as_bytes() {
-                *entry = RawEntry::deflated(BUILD_INFO, &build_info);
-            }
-        }
+        let zip = runtime.zip_with_program(&program);
         // The sections follow the program as a release appends them to the launcher file.
         let mut launcher = program.clone();
-        append_sections(&mut launcher, &[(RUNTIME_SECTION, &raw.to_bytes())], 0);
+        append_sections(&mut launcher, &[(RUNTIME_SECTION, &zip)], 0);
         let source = tempfile::tempdir().unwrap();
         fs::write(source.path().join(Self::IMAGE), icon_iso()).unwrap();
         fs::write(source.path().join(Self::LAUNCHER), &launcher).unwrap();

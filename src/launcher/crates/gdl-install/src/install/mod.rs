@@ -2854,23 +2854,7 @@ mod tests {
     fn carrying_this_program() -> (Inputs, Vec<u8>) {
         let program = fs::read(env::current_exe().unwrap()).unwrap();
         let mut runtime = standard_runtime(Platform::WindowsX64);
-        let mut raw = runtime.raw();
-        let executable = runtime.executable.clone();
-        let shipped = runtime
-            .files
-            .iter_mut()
-            .find(|(name, _)| *name == executable)
-            .expect("the runtime holds its executable");
-        shipped.1.clone_from(&program);
-        let build_info = runtime.build_info_bytes();
-        for entry in &mut raw.entries {
-            if entry.name == executable.as_bytes() {
-                *entry = RawEntry::stored(&executable, &program);
-            } else if entry.name == BUILD_INFO.as_bytes() {
-                *entry = RawEntry::deflated(BUILD_INFO, &build_info);
-            }
-        }
-        let zip = raw.to_bytes();
+        let zip = runtime.zip_with_program(&program);
         (Inputs::carrying(&icon_iso(), runtime, &zip), program)
     }
 
