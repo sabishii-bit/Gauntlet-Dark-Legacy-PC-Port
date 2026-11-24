@@ -12,6 +12,7 @@
 
 #include "engine/core/Types.h"
 #include "engine/io/NativeStateDigest.h"
+#include "engine/math/Math.h"
 
 #include "FakeRenderDevice.h"
 #include "NativeStateSupport.h"
@@ -267,6 +268,29 @@ TEST_CASE("a pending blow's visitor keeps every field, the gap it holds its play
     for (usize i = 0; i < mutations.size(); ++i) {
         CAPTURE(i);
         auto changed = blow;
+        mutations[i](changed);
+        CHECK(hash(changed) != baseline);
+    }
+}
+
+TEST_CASE("a pending grab's visitor keeps every field, the gap its release holds its player off "
+          "by too",
+          "[native-state-digest][combatant-native-digest]") {
+    const auto hash = [](const CombatGrab& grab) {
+        NativeStateDigest digest;
+        digest.value(grab);
+        return checked(digest);
+    };
+    const CombatGrab grab;
+    const auto baseline = hash(grab);
+    const std::array<std::function<void(CombatGrab&)>, 7> mutations{
+        [](auto& v) { v.player = 2; },           [](auto& v) { v.critter = 5; },
+        [](auto& v) { v.attachment = Mat4{1}; }, [](auto& v) { v.velocity.x += 1; },
+        [](auto& v) { v.damage = 7; },           [](auto& v) { v.restoreSupport = true; },
+        [](auto& v) { v.breathGap = 0.1f; }};
+    for (usize i = 0; i < mutations.size(); ++i) {
+        CAPTURE(i);
+        auto changed = grab;
         mutations[i](changed);
         CHECK(hash(changed) != baseline);
     }

@@ -1,8 +1,10 @@
 #include <array>
 #include <filesystem>
+#include <optional>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include "engine/core/Types.h"
 #include "engine/io/File.h"
@@ -11,18 +13,64 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "fixtures/NativeModelFixture.h"
+#include "formats/CritterWad.h"
+#include "game/bosses/BossDefinition.h"
+#include "game/critters/CombatEvents.h"
 #include "game/critters/CombatantFixture.h"
+#include "game/critters/CombatantKind.h"
+#include "game/critters/CritterData.h"
 
 namespace {
 using namespace gdl;
 using namespace gdl::game;
 using Catch::Approx;
 
+/** The grabbing YETI's records, as the fixture's JSON writes them, under `rules`. */
+CritterData grabbingYeti(const CritterRules& rules) {
+    formats::CritterFile source;
+    source.descriptors.push_back({"", "YETI", static_cast<s16>(CombatantKind::Boss)});
+    auto& type = source.types.emplace_back();
+    type.moveCount = 3;
+    type.maxHealth = 100;
+    type.roamRadius = 5;
+    auto& ready = source.moves.emplace_back();
+    ready.name = "READY";
+    ready.anim = "IDLE";
+    ready.type = MoveDefinition::kReady;
+    auto& grab = source.moves.emplace_back();
+    grab.name = "GRAB";
+    grab.anim = "GRAB";
+    grab.type = MoveDefinition::kGrab;
+    grab.colnode = "HAND";
+    grab.priority = 10;
+    grab.cooldown = 10;
+    grab.frameStart = 25;
+    grab.frameEnd = 30;
+    grab.frameStart2 = 100;
+    grab.frameEnd2 = -1;
+    grab.damage0 = 0;
+    grab.damage1 = 0;
+    auto& death = source.moves.emplace_back();
+    death.name = "DEATH";
+    death.anim = "GRAB";
+    death.type = MoveDefinition::kDeath;
+    death.priority = 4096;
+    auto& hold = source.damages.emplace_back();
+    hold.type = AttackDefinition::kGrab;
+    hold.radius = 3;
+    hold.maxDistance = 9;
+    hold.offset = {2, -3, 1};
+    hold.damage = 100;
+    hold.minSpeed = 1000;
+    return CritterData::fromDecoded("YETI", source, 0, rules);
+}
+
 struct Fixture {
     test::FakeRenderDevice device;
     test::CombatantFixture fighter;
     std::array<EnemyView, 2> players{};
-    Fixture(bool step = false) {
+    /** The YETI of the JSON below, or of its records under `rules` when they are given. */
+    Fixture(bool step = false, const std::optional<CritterRules>& rules = std::nullopt) {
         const auto root = test::scratchDirectory("yeti-grab");
         const auto archive = root / "MONSTERS/YETI";
         std::filesystem::create_directories(root / "critter");
@@ -53,7 +101,13 @@ struct Fixture {
             "damage":100,"minSpeed":1000,"sfx":0}],
           "sounds":[{"name":"GRIP","offset":[0,4,0]}]})");
         fighter.open(device, root, nullptr, {}, 'I');
-        REQUIRE(fighter.spawn("YETI", Vec3{0}, 0));
+        if (rules.has_value()) {
+            REQUIRE(fighter.assets.load(device, root, bossDefinition("YETI"), 'I'));
+            fighter.assets.data = grabbingYeti(*rules);
+            REQUIRE(fighter.actor.spawn(fighter.assets, 0, Vec3{0}, 0, nullptr, {}, 'I'));
+        } else {
+            REQUIRE(fighter.spawn("YETI", Vec3{0}, 0));
+        }
         players[0].player = 3;
         players[0].position = {2, 0, 1};
         players[1].player = 1;
@@ -74,6 +128,7 @@ TEST_CASE("grab catches one nearest player then releases only at the second dama
     REQUIRE(events[0].player == 3);
     REQUIRE(events[0].attachment.has_value());
     REQUIRE(Vec3{(*events[0].attachment)[3]} == Vec3{2, 7, 1});
+    CHECK(events[0].breathGap == 0);              // holding strikes nobody
     REQUIRE(f.fighter.actor.takeBlows().empty()); // holding does not do ordinary melee damage
     const auto cues = f.fighter.actor.takeCues();
     REQUIRE(cues.size() == 1);
@@ -95,6 +150,8 @@ TEST_CASE("grab catches one nearest player then releases only at the second dama
     REQUIRE(events.back().damage == 100);
     REQUIRE(glm::length(events.back().velocity) == Approx(1000));
     REQUIRE(events.back().velocity.y < 0);
+    // The throw strikes the player as a blow does, holding it off for the quarter second.
+    CHECK(events.back().breathGap == Approx(kPlayerBreathGap));
     f.fighter.update(2, 1.0f / 30, f.players);
     REQUIRE(f.fighter.actor.takeGrabs().empty());
     REQUIRE(f.fighter.actor.takeCues().empty()); // grip is created once, not every held frame
@@ -135,7 +192,33 @@ TEST_CASE("missed grabs do not throw and death frees a held player without damag
         REQUIRE(events.size() == 1);
         REQUIRE_FALSE(events.front().attachment.has_value());
         REQUIRE(events.front().damage == 0);
+        CHECK(events.front().breathGap == 0);
     }
+}
+
+TEST_CASE("a grab's release carries its fighter's breath gap",
+          "[game][yeti][combatant-grab][hit-gap]") {
+    // A Dreamcast boss's tenth of a second, and Dark Legacy's quarter.
+    const f32 gap = GENERATE(0.1f, 0.25f);
+    CAPTURE(gap);
+    CritterRules rules;
+    rules.playerBreathGap = gap;
+    Fixture f{false, rules};
+    f.fighter.update(2, 24.0f / 30, f.players);
+    REQUIRE(f.fighter.actor.moveName() == "GRAB");
+    f.fighter.update(2, 1.0f / 30, f.players);
+    auto events = f.fighter.actor.takeGrabs();
+    REQUIRE(events.size() == 1);
+    REQUIRE(events[0].attachment.has_value());
+    CHECK(events[0].breathGap == 0);
+    f.fighter.update(2, 74.0f / 30, f.players);
+    f.fighter.actor.takeGrabs();
+    f.fighter.update(2, 2.0f / 30, f.players);
+    events = f.fighter.actor.takeGrabs();
+    REQUIRE_FALSE(events.empty());
+    REQUIRE_FALSE(events.back().attachment.has_value());
+    REQUIRE(events.back().damage == 100);
+    CHECK(events.back().breathGap == Approx(gap));
 }
 
 TEST_CASE("grab collision resolves equal distances by player slot rather than view order",
@@ -179,6 +262,7 @@ TEST_CASE("a missing or hidden grabbed player is released without throwing anoth
     CHECK_FALSE(events.front().attachment.has_value());
     CHECK(events.front().damage == 0);
     CHECK(events.front().velocity == Vec3{0});
+    CHECK(events.front().breathGap == 0);
     f.fighter.update(2, 65.0f / 30, f.players);
     CHECK(f.fighter.actor.takeGrabs().empty());
 }

@@ -1285,8 +1285,11 @@ void LevelOpponents::applyGrab(const CombatGrab& grab, bool boss,
             capture.attach(grab.critter, boss, *grab.attachment, player.actor, grab.restoreSupport);
             player.reaction = PlayerDeed::None;
             player.rammed.clear();
-        } else {
+        } else if (capture.held()) {
             capture.release(grab.velocity, grab.damage);
+            if (grab.breathGap > 0.0f) {
+                player.breathGap = grab.breathGap;
+            }
         }
     }
 }

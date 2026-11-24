@@ -34,6 +34,9 @@ struct CombatGrab {
     Vec3 velocity{0};
     f32 damage = 0;
     bool restoreSupport = false; ///< release returns to the pre-parent support footprint
+    /** Seconds an authored release holds the thrown player off breaths and gated blows, as a
+     * blow that strikes it does; nothing for a hold or a cancelled one. */
+    f32 breathGap = 0;
     bool operator==(const CombatGrab&) const = default;
 };
 /** A successful eruption makes its obstacle solid after the visual wind-up. */
@@ -121,7 +124,7 @@ inline void visitNativeState(NativeStateDigest& digest, const CombatTrample& sta
     digest.fields<3>(state);
 }
 inline void visitNativeState(NativeStateDigest& digest, const CombatGrab& state) {
-    digest.fields<6>(state);
+    digest.fields<7>(state);
 }
 inline void visitNativeState(NativeStateDigest& digest, const CombatArenaActivation& state) {
     digest.fields<2>(state);

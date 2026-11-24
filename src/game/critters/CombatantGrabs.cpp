@@ -20,11 +20,14 @@ void Combatant::grab(Actor& actor, const MoveDefinition& move, const AttackDefin
                 // node strike, before the player applies immunity or armor.
                 m_sim.pressure.note(actor.grabbed, damage.damage);
             }
-            // CritterReleasePlayer uses the body's forward, with Y replaced by -0.1.
+            // CritterReleasePlayer uses the body's forward, with Y replaced by -0.1, and strikes
+            // the player through CritterDamagePlayer, which sets its fxhittime as a blow's does.
             const Vec3 direction{portable::sin(actor.yaw), -0.1f, portable::cos(actor.yaw)};
-            m_sim.grabs.push_back({actor.grabbed, m_sim.id, std::nullopt,
-                                   glm::normalize(direction) * damage.speed,
-                                   damage.damage * m_sim.scales.damage});
+            m_sim.grabs.push_back({.player = actor.grabbed,
+                                   .critter = m_sim.id,
+                                   .velocity = glm::normalize(direction) * damage.speed,
+                                   .damage = damage.damage * m_sim.scales.damage,
+                                   .breathGap = actor.definition->rules().playerBreathGap});
             actor.grabbed = -1;
         }
         return;

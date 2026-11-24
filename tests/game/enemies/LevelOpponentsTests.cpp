@@ -3799,6 +3799,58 @@ TEST_CASE("breath blocked by arena cover neither damages nor consumes the breath
     REQUIRE(players[0].breathGap == 0.25f);
 }
 
+TEST_CASE("a grab's release holds the thrown player off breaths and gated blows",
+          "[game][screens][level-opponents][combatant-grab][hit-gap]") {
+    std::array<PlayerRuntime, 2> players;
+    players[0].actor.spawn(3, {}, nullptr, {}, 0);
+    players[1].actor.spawn(1, {}, nullptr, {}, 0);
+    test::OpponentScript events;
+    test::ScriptedOpponents host{events};
+    s32 hits = 0;
+    events.hurt = [&](usize, f32, HurtKind, bool, const PlayerImpact&) { ++hits; };
+    CombatGrab hold;
+    hold.player = 3;
+    hold.critter = 4000;
+    hold.attachment = glm::translate(Mat4{1}, Vec3{0, 5, 0});
+    LevelOpponents::applyGrab(hold, true, players);
+    REQUIRE(players[0].capture.held());
+    CombatBlow blow;
+    blow.player = 3;
+    blow.damage = 10;
+    blow.gated = true;
+    SECTION("thrown, it is left alone for the release's gap") {
+        CombatGrab release;
+        release.player = 3;
+        release.critter = 4000;
+        release.velocity = {0, -100, 995};
+        release.damage = 100;
+        release.breathGap = 0.1f;
+        // A release for a player nobody holds strikes nobody.
+        CombatGrab stray = release;
+        stray.player = 1;
+        LevelOpponents::applyGrab(stray, true, players);
+        CHECK(players[1].breathGap == 0);
+        LevelOpponents::applyGrab(release, true, players);
+        CHECK(players[0].capture.flying());
+        CHECK(players[0].breathGap == Catch::Approx(0.1f));
+        CHECK_FALSE(LevelOpponents::applyCritterBlow(blow, players, host, host));
+        blow.gated = false;
+        blow.breath = true;
+        CHECK_FALSE(LevelOpponents::applyCritterBlow(blow, players, host, host));
+        CHECK(hits == 0);
+    }
+    SECTION("a cancelled hold strikes nobody") {
+        CombatGrab cancel;
+        cancel.player = 3;
+        cancel.critter = 4000;
+        LevelOpponents::applyGrab(cancel, true, players);
+        CHECK_FALSE(players[0].capture.held());
+        CHECK(players[0].breathGap == 0);
+        CHECK(LevelOpponents::applyCritterBlow(blow, players, host, host));
+        CHECK(hits == 1);
+    }
+}
+
 TEST_CASE("the level keeps boss effects on their animated node or full model root",
           "[game][screens][level-opponents][breath][boss-effects][stop-time][assets]") {
     const auto root = test::assetOrSkip("CRITTER/DRAGON.WAD").parent_path().parent_path();
