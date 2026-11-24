@@ -83,7 +83,19 @@ mod tests {
         assert_eq!(X86_MACHINE, system::IMAGE_FILE_MACHINE_I386);
         assert_eq!(ARM_MACHINE, system::IMAGE_FILE_MACHINE_ARMNT);
         assert_eq!(UNKNOWN_MACHINE, system::IMAGE_FILE_MACHINE_UNKNOWN);
-        // Every Windows the tests run on has IsWow64Process2, and names a machine through it.
-        assert!(crate::platform::native_machine().is_some());
+        // Every Windows the tests run on has IsWow64Process2, and names the system's machine
+        // through it, which is never the unknown one; this program's own machine, which the call
+        // also gives, is the unknown one for a program the system runs as it was built.
+        let native = crate::platform::native_machine();
+        assert!(
+            native.is_some_and(|machine| machine != UNKNOWN_MACHINE),
+            "{native:x?}"
+        );
+        // An x64 build runs on an x64 system, or on an ARM64 one that emulates it.
+        #[cfg(target_arch = "x86_64")]
+        assert!(
+            matches!(native, Some(X64_MACHINE | ARM64_MACHINE)),
+            "{native:x?}"
+        );
     }
 }
