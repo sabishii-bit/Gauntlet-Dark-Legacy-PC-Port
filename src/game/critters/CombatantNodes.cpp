@@ -108,7 +108,7 @@ f32 Combatant::damageNode(s32 index, f32 amount, u32 flags) {
                 shot.origin = origin + damageOffset(actor, damage->offset);
                 shot.forward = {portable::sin(actor.yaw), 0, portable::cos(actor.yaw)};
                 shot.rate = attackRate(actor);
-                shot.scale = actor.scale;
+                shot.scale = actor.scale * drawnShrink(actor);
                 shot.damageScale = m_sim.scales.damage;
                 shot.realm = m_sim.realm;
                 m_sim.shots.push_back(shot);

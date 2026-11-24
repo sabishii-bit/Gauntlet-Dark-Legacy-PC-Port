@@ -29,6 +29,7 @@
 #include "formats/CritterWad.h"
 #include "game/audio/LevelSoundscape.h"
 #include "game/bosses/Bosses.h"
+#include "game/combat/EffectFlags.h"
 #include "game/combat/HurtKind.h"
 #include "game/critters/Combatant.h"
 #include "game/critters/CombatantFixture.h"
@@ -3193,7 +3194,8 @@ TEST_CASE("a broken part's shot leaves where GetWorldMat places the part",
     // A part broken by an overrun lets its damage record go from the part's place, its offset
     // in ARM's parent's frame (CritterUpdateColnodes), not turned with ARM to (5, 0, -2). Shrunk,
     // the part stands whole and the record's own offset shrinks with the drawn body, as
-    // CritterDoTexmodNode shrinks it (0x8003D10C-0x8003D154).
+    // CritterDoTexmodNode shrinks it (0x8003D10C-0x8003D154), and so does the shot's reach
+    // (0x8003D410-0x8003D424).
     const f32 shrink = GENERATE(1.0f, 0.667f);
     CAPTURE(shrink);
     test::FakeRenderDevice device;
@@ -3218,6 +3220,7 @@ TEST_CASE("a broken part's shot leaves where GetWorldMat places the part",
     const auto shots = actor.takeShots();
     REQUIRE(shots.size() == 1);
     CHECK(glm::distance(shots.front().origin, Vec3{7, 3 * shrink, 0}) < 1e-4f);
+    CHECK(shots.front().scale == shrink);
 }
 
 /** Where the original's GetWorldMat (0x800BB614) puts `offset` at node `node` of `pose`, in the
@@ -4640,6 +4643,8 @@ TEST_CASE("a shrunk great one breathes, shoots and plants from its whole node, t
         blows = actor.takeBlows();
         shots = actor.takeShots();
     }
+    // What it starts is sized with the drawn body too, its reach as well as its art
+    // (0x8003D410-0x8003D424).
     if (kind == "breath") {
         REQUIRE(blows.size() == 1);
         REQUIRE(blows[0].breath);
@@ -4647,10 +4652,147 @@ TEST_CASE("a shrunk great one breathes, shoots and plants from its whole node, t
     } else if (kind == "shot") {
         REQUIRE(shots.size() == 1);
         CHECK(glm::distance(shots[0].origin, Vec3{0, 3 * shrink, 6}) < 1e-5f);
+        CHECK(shots[0].scale == shrink);
     } else {
         REQUIRE(shots.size() == 1);
         CHECK(glm::distance(shots[0].origin, Vec3{0, 1 + 3 * shrink, 16}) < 1e-5f);
+        CHECK(shots[0].scale == shrink);
     }
+}
+
+TEST_CASE("a shrunk great one's rings and targeted areas reach two thirds as far, as "
+          "CritterDoTexmodNode sizes the reach of what it starts by the drawn body",
+          "[game][combatant][shrink]") {
+    // CritterDoTexmodNode multiplies an effect's damage radius and hit radius by the drawn
+    // body's scale, mbnode->scale[1] under flag 8 (0x8003D410-0x8003D424), and ProcessEffects
+    // reaches by them. A ring or targeted area with no effect of its own to carry it, which the
+    // move's strike measures instead, reaches as such an effect would.
+    enum class Harm : u8 { CarriedRing, Ring, TargetedArea };
+    const Harm harm = GENERATE(Harm::CarriedRing, Harm::Ring, Harm::TargetedArea);
+    const f32 shrink = GENERATE(1.0f, 0.667f);
+    CAPTURE(static_cast<s32>(harm), shrink);
+    const bool targeted = harm == Harm::TargetedArea;
+    const auto root = familyAssets();
+    const std::string record =
+        R"({"type":)" +
+        std::to_string(targeted ? AttackDefinition::kTargetArea : AttackDefinition::kRing) +
+        R"(,"damage":40,"flags":32,"radius":3,"maxDistance":10,"minDot":-1)" +
+        (harm == Harm::CarriedRing ? R"(,"sfxIndex":0})" : "}");
+    writeTextFile(
+        root / "critter/GOLEM.json", R"({
+      "descriptors":[{"prefix":"BODY","name":"GOLEM","type":3}],
+      "types":[{"moveCount":2,"maxHealth":100,"radius":1}],
+      "moves":[{"name":"READY","anim":"STEP","type":32,"interrupt":60},
+               {"name":"STOMP","anim":"STEP","type":)" +
+                                         std::to_string(targeted ? MoveDefinition::kTargetArea
+                                                                 : MoveDefinition::kAttackFrom) +
+                                         R"(,"priority":20,
+                "colnode":"BODY","target":{"maxDistance":50},
+                "frameStart":0,"frameEnd":2,"damage0":0}],
+      "damages":[)" + record + R"(],
+      "sounds":[{"name":"NULLFX","life":1}]})");
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, Golem::definition(), 'G'));
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+    actor.setShrink(shrink);
+    // A ring spreads from the golem's feet; the targeted area from the middle of player 0, the
+    // nearest, four ahead. Player 1 stands eight out from that centre, past the shrunk reach of
+    // 6.67 and the player's half a unit of width, player 2 six and a half out, within it, and
+    // player 3 a unit out with its middle 5.5 over the centre, past the shrunk hit radius of two
+    // over half the player's height.
+    const Vec3 centre = targeted ? Vec3{0, 3, 4} : Vec3{0};
+    const std::array<Vec3, 4> feet{Vec3{0, 0, 4}, Vec3{centre.x + 8, 0, centre.z},
+                                   Vec3{centre.x - 6.5f, 0, centre.z},
+                                   Vec3{centre.x + 1, centre.y + 2.5f, centre.z}};
+    // An area's own height grows with its reach, so the raised player is the strike's alone.
+    const usize count = harm == Harm::CarriedRing ? 3 : 4;
+    std::vector<EnemyView> players;
+    for (usize p = 0; p < count; ++p) {
+        EnemyView& player = players.emplace_back();
+        player.player = static_cast<s32>(p);
+        player.position = feet[p];
+        player.radius = 0.5f;
+        player.collisionRadius = 0.5f;
+        player.height = 6.0f;
+    }
+    std::array<bool, 4> struck{};
+    for (s32 i = 0; i < 45; ++i) {
+        actor.update(2, 1.0f / 30, players);
+        for (const CombatBlow& blow : actor.takeBlows()) {
+            struck[static_cast<usize>(blow.player)] = true;
+        }
+    }
+    const bool whole = shrink == 1.0f;
+    CHECK(struck[0]);
+    CHECK(struck[1] == whole);
+    CHECK(struck[2]);
+    if (count > 3) {
+        CHECK(struck[3] == whole);
+    }
+}
+
+TEST_CASE("a shrunk great one lays the offset of an effect it places in the world shrunk and "
+          "draws the effect shrunk, as CritterDoSfx sizes both",
+          "[game][combatant][shrink]") {
+    // CritterDoSfx multiplies the SFXX offset by the drawn body's scale (0x8003D8A8-0x8003D8D4)
+    // and CritterDoSfxSub the effect's own scale (0x8003DE1C-0x8003DE4C). An area laid out where
+    // its node stands or where its target stood is drawn on its own, so its cue carries that
+    // scale itself.
+    const bool targeted = GENERATE(false, true);
+    const f32 shrink = GENERATE(1.0f, 0.667f);
+    CAPTURE(targeted, shrink);
+    const auto root = familyAssets();
+    writeTextFile(
+        root / "critter/GOLEM.json",
+        R"({
+      "descriptors":[{"prefix":"BODY","name":"GOLEM","type":3}],
+      "types":[{"moveCount":2,"maxHealth":100,"radius":1}],
+      "moves":[{"name":"READY","anim":"STEP","type":32,"interrupt":60},
+               {"name":"STOMP","anim":"STEP","type":)" +
+            std::to_string(targeted ? MoveDefinition::kTargetArea : MoveDefinition::kAttackFrom) +
+            R"(,"priority":20,
+                "colnode":"BODY","target":{"maxDistance":50},
+                "frameStart":0,"frameEnd":2,"damage0":0}],
+      "damages":[{"type":)" +
+            std::to_string(targeted ? AttackDefinition::kTargetArea : AttackDefinition::kRing) +
+            R"(,"damage":40,"flags":32,"radius":3,
+                  "maxDistance":10,"minDot":-1,"offset":[0,3,0],"sfxIndex":0}],
+      "sounds":[{"name":"RING","life":1,"scale":2,"offset":[0,2,0],"flags":)" +
+            std::to_string(targeted ? 0U : effect_flags::kDetached) + "}]}");
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, Golem::definition(), 'G'));
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+    actor.setShrink(shrink);
+    // Close enough for the first update's ring to reach.
+    EnemyView player;
+    player.player = 0;
+    player.position = {0, 0, 2};
+    const std::array players{player};
+    std::vector<CombatBlow> blows;
+    std::vector<CombatCue> cues;
+    for (s32 i = 0; i < 10 && blows.empty(); ++i) {
+        actor.update(2, 1.0f / 30, players);
+        blows = actor.takeBlows();
+        for (CombatCue& cue : actor.takeCues()) {
+            if (cue.tree == "RING") {
+                cues.push_back(std::move(cue));
+            }
+        }
+    }
+    REQUIRE(blows.size() == 1);
+    REQUIRE(blows[0].area);
+    REQUIRE(cues.size() == 1);
+    CHECK_FALSE(cues[0].follows);
+    CHECK(cues[0].scale == Approx(2 * shrink));
+    // Placed once over the golem's feet, or over the middle of the target, three up, the DAMG
+    // offset of three and the SFXX offset of two shrunk.
+    const Vec3 origin = targeted ? Vec3{0, 3 + 5 * shrink, 2} : Vec3{0, 5 * shrink, 0};
+    CHECK(glm::distance(blows[0].origin, origin) < 1e-5f);
+    CHECK(glm::distance(cues[0].position, origin) < 1e-5f);
 }
 
 TEST_CASE("a great one's look measures from its whole head as GetWorldMat places it, shrunk or "

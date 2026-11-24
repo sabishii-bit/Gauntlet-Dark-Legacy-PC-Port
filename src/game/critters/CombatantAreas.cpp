@@ -53,16 +53,16 @@ std::optional<f32> Combatant::startArea(Actor& critter, s32 id, const AttackDefi
             life = tree->second;
         }
     }
+    // CritterDoTexmodNode and CritterDoSfx shrink the offsets with the drawn body once, as the
+    // effect starts (0x8003D10C-0x8003D154, 0x8003D8A8-0x8003D8D4); the node stays whole.
+    const f32 shrink = drawnShrink(critter);
     // Root-parent SFXX policies replace the supplied DAMG position outright.
     // World-mode damage rotates its offset before reparenting to the stage node.
     const bool rootParent = sound->follows();
     Vec3 offset = rootParent ? sound->offset : damage.offset + sound->offset;
     if (worldParent.has_value()) {
-        offset = damageOffset(critter, damage.offset) + sound->offset * critter.scale;
+        offset = damageOffset(critter, damage.offset) + sound->offset * (critter.scale * shrink);
     }
-    // CritterDoTexmodNode and CritterDoSfx shrink the offsets with the drawn body once, as the
-    // effect starts (0x8003D10C-0x8003D154, 0x8003D8A8-0x8003D8D4); the node stays whole.
-    const f32 shrink = drawnShrink(critter);
     if ((sound->flags & effect_flags::kDetached) != 0 && !worldParent.has_value()) {
         // Detached damage effects snapshot the hit node's world position. The
         // slam's hand can lift again without dragging the ground wave with it.
@@ -129,7 +129,9 @@ std::optional<f32> Combatant::startArea(Actor& critter, s32 id, const AttackDefi
     // node, which the draw shrinks, with the offset as authored.
     area.local = laidAt(worldParent.has_value() ? offset : offset * shrink);
     const Mat4 drawnLocal = laidAt(offset);
-    area.radius = damage.maxDistance * critter.scale;
+    // It reaches as far as CritterDoTexmodNode sizes the effect, the drawn shrink included
+    // (0x8003D410-0x8003D424).
+    area.radius = damage.maxDistance * critter.scale * shrink;
     area.minDot = damage.minDot;
     area.damage = damage.damage * m_sim.scales.damage;
     area.flags = damage.flags;
@@ -153,7 +155,9 @@ std::optional<f32> Combatant::startArea(Actor& critter, s32 id, const AttackDefi
     cue.soundPosition = Vec3{modelTransform(critter)[3]};
     const Mat4 parent = worldParent.value_or(attachmentTransform(critter, area.node));
     cue.position = Vec3{(parent * drawnLocal)[3]};
-    cue.scale = sound->scale * (worldParent.has_value() ? critter.scale : 1.0f);
+    // Laid out in the world it is drawn at the body's drawn size (CritterDoSfxSub,
+    // 0x8003DE1C-0x8003DE4C); on a node, the drawn node carries that size.
+    cue.scale = sound->scale * (worldParent.has_value() ? critter.scale * shrink : 1.0f);
     cue.life = life;
     cue.follows = !worldParent.has_value();
     cue.shakes = (sound->flags & effect_flags::kShakes) != 0;

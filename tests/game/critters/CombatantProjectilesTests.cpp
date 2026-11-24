@@ -21,9 +21,11 @@
 #include "formats/CritterWad.h"
 #include "game/bosses/BossDefinition.h"
 #include "game/combat/DamageTypes.h"
+#include "game/critters/Combatant.h"
 #include "game/critters/CombatantFixture.h"
 #include "game/critters/CombatantProjectile.h"
 #include "game/critters/CombatantProjectiles.h"
+#include "game/critters/Golem.h"
 #include "game/level/BossKinds.h"
 #include "game/level/LevelWorld.h"
 #include "game/level/SafeRocks.h"
@@ -758,6 +760,75 @@ TEST_CASE("timed-out explosive shots enter their impact phase without a collisio
     CHECK(f.effects.effect(0).name == "HIT");
     f.projectiles.clear(f.effects);
     CHECK(f.effects.count() == 0);
+}
+
+TEST_CASE("a shrunk great one's shot bursts two thirds as far, as CritterDoTexmodNode sizes its "
+          "damage radius by the drawn body",
+          "[game][boss-projectiles][projectile-impact][shrink]") {
+    // CritterDoTexmodNode multiplies the damage radius of what it starts by mbnode->scale[1]
+    // under flag 8 (0x8003D410-0x8003D424), which only the shrinkers set, and ProcessEffects
+    // reaches by it: a burst of ten reaches 6.67 from a shrunk golem's shot.
+    const f32 shrink = GENERATE(1.0f, 0.667f);
+    CAPTURE(shrink);
+    Fixture f;
+    const auto root = test::scratchDirectory("shrunk-shot");
+    const auto archive = root / "MONSTERS/GOLEM/LEVELG";
+    std::filesystem::create_directories(archive / "models");
+    std::filesystem::create_directories(archive / "textures");
+    std::filesystem::create_directories(root / "critter");
+    writeTextFile(archive / "models/body.obj",
+                  "v 0 0 0\nv 1 0 0\nv 0 1 0\nvn 0 0 1\nusemtl tex0\nf 1//1 2//1 3//1\n");
+    writeTextFile(archive / "objects.json", R"({"objects":[
+      {"index":0,"name":"BODY","file":"models/body.obj","meshTriangles":1}]})");
+    writeFile(archive / "textures/skin.png", test::kTinyPng);
+    writeTextFile(archive / "textures.json", R"({"bitmaps":[
+      {"index":0,"name":"SKIN","file":"textures/skin.png","width":2,"height":2,"flags":0}]})");
+    test::convertModelFixture(archive);
+    writeTextFile(archive / "animations.json", R"({"trees":[{"name":"BODY",
+      "nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
+      "sequences":[{"name":"STEP","frames":3}]}]})");
+    // A shot that stays where it leaves and bursts as its flight's effect runs out.
+    writeTextFile(root / "critter/GOLEM.json", R"({
+      "descriptors":[{"prefix":"BODY","name":"GOLEM","type":3}],
+      "types":[{"moveCount":2,"maxHealth":100,"radius":1}],
+      "moves":[{"name":"READY","anim":"STEP","type":32,"interrupt":60},
+               {"name":"THROW","anim":"STEP","type":128,"priority":20,
+                "colnode":"BODY","target":{"maxDistance":50},
+                "frameStart":0,"frameEnd":2,"damage0":0}],
+      "damages":[{"type":1,"radius":0.5,"maxDistance":10,"minDot":-1,"damage":50,
+                  "sfxIndex":0,"sfx":1}],
+      "sounds":[{"name":"LOOP","life":0.1},{"name":"HIT","life":1}]})");
+    CombatantAssets assets;
+    REQUIRE(assets.load(f.device, root, Golem::definition(), 'G'));
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+    actor.setShrink(shrink);
+    const std::array target{EnemyView{0, {0, 0, 16}, 1, 6}};
+    std::vector<CombatShot> shots;
+    for (s32 i = 0; i < 10 && shots.empty(); ++i) {
+        actor.update(2, 1.0f / 30, target);
+        shots = actor.takeShots();
+    }
+    REQUIRE(shots.size() == 1);
+    CHECK(shots[0].scale == shrink);
+    f.projectiles.launch(shots[0], f.archive, f.device, f.effects, f.sound);
+    f.step(0.11f);
+    REQUIRE(f.projectiles.count() == 1);
+    REQUIRE(f.effects.count() == 1);
+    REQUIRE(f.effects.effect(0).name == "HIT");
+    // Eight out, past the shrunk burst and the bystander's half a unit; six out, within it.
+    const Vec3 landed = f.effects.effect(0).position;
+    const std::array bystanders{EnemyView{1, landed + Vec3{8, -3, 0}, 0.5f, 6},
+                                EnemyView{2, landed + Vec3{0, -3, 6}, 0.5f, 6}};
+    std::array<bool, 3> struck{};
+    for (s32 i = 0; i < 30; ++i) {
+        f.step(1.0f / 30, bystanders);
+        for (const auto& hit : f.projectiles.takeHits()) {
+            struck[static_cast<usize>(hit.player)] = true;
+        }
+    }
+    CHECK(struck[1] == (shrink == 1.0f));
+    CHECK(struck[2]);
 }
 
 TEST_CASE("native impacts use fixed radius element and envelope without changing default blasts",
