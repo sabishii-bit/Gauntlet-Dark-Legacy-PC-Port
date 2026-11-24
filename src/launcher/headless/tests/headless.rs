@@ -14,6 +14,7 @@ use std::process::{Command, Output};
 use std::thread;
 use std::time::Instant;
 
+use gdl_files::{RETRY_INTERVAL, RETRY_WINDOW};
 use gdl_fixtures::{
     DiscSet, Edc, EntryState, InstallFixture, Listed, RuntimeFiles, append_sections_at, backdate,
     listed, make_alpha_markers, snapshot, snapshot_outside, tree_listing, unhex,
@@ -22,7 +23,7 @@ use gdl_install::{RUNTIME_SECTION, probe_game_version};
 use serde_json::{Value, json};
 use tempfile::TempDir;
 
-use common::{BUSY_PAUSE, BUSY_WINDOW, PROGRAM, VERSION, inspect_json, run_to_end};
+use common::{PROGRAM, VERSION, inspect_json, run_to_end};
 
 /// A version that no launcher is: older than the first.
 const OTHER_VERSION: &str = "0.0.1";
@@ -88,15 +89,15 @@ fn run<A: AsRef<OsStr>>(program: &Path, args: &[A]) -> Output {
     run_to_end(command, program)
 }
 
-/// Removes the folder at `path` and everything in it, trying again every [`BUSY_PAUSE`] for up to
-/// [`BUSY_WINDOW`] while it fails, as something that holds part of it lets go. A folder already
-/// gone counts as removed.
+/// Removes the folder at `path` and everything in it, trying again every [`RETRY_INTERVAL`] for
+/// up to [`RETRY_WINDOW`], as long as the launcher waits out a scanner's hold, while it fails, as
+/// something that holds part of it lets go. A folder already gone counts as removed.
 fn remove_once_let_go(path: &Path) -> io::Result<()> {
     let begun = Instant::now();
     loop {
         match fs::remove_dir_all(path) {
             Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
-            Err(_) if begun.elapsed() < BUSY_WINDOW => thread::sleep(BUSY_PAUSE),
+            Err(_) if begun.elapsed() < RETRY_WINDOW => thread::sleep(RETRY_INTERVAL),
             result => return result,
         }
     }

@@ -6,8 +6,9 @@ use std::io;
 use std::path::Path;
 use std::process::{Command, Output, Stdio};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
+use gdl_files::{RETRY_INTERVAL, RETRY_WINDOW};
 use serde_json::Value;
 
 /// The headless program, as cargo built it for these tests.
@@ -15,14 +16,6 @@ pub const PROGRAM: &str = env!("CARGO_BIN_EXE_gdl-launcher-headless");
 
 /// The version its build gave it.
 pub const VERSION: &str = env!("GDL_VERSION");
-
-/// How long something that another process holds up is tried again for, as long as the launcher
-/// retries a file operation that something else holds up: running a program just written, which
-/// Linux may find still open to write, and removing a staging a scanner holds on Windows.
-pub const BUSY_WINDOW: Duration = Duration::from_secs(8);
-
-/// How long to wait between those tries.
-pub const BUSY_PAUSE: Duration = Duration::from_millis(200);
 
 /// The creation flag that runs a console program without a console window of its own, so that a
 /// test never opens one.
@@ -32,7 +25,8 @@ const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 /// Runs `command`, which starts `program`, with nothing to read and without a console window, to
 /// its end, and gives back what it wrote and how it ended. A program another test starts holds
 /// every file this process has open for a moment, so on Linux a program just written may be
-/// refused as busy, and is run again then.
+/// refused as busy, and is run again then, every [`RETRY_INTERVAL`] for up to [`RETRY_WINDOW`],
+/// as the launcher's probe runs one again.
 pub fn run_to_end(mut command: Command, program: &Path) -> Output {
     command.stdin(Stdio::null());
     #[cfg(windows)]
@@ -45,9 +39,9 @@ pub fn run_to_end(mut command: Command, program: &Path) -> Output {
         match command.output() {
             Err(error)
                 if error.kind() == io::ErrorKind::ExecutableFileBusy
-                    && begun.elapsed() < BUSY_WINDOW =>
+                    && begun.elapsed() < RETRY_WINDOW =>
             {
-                thread::sleep(BUSY_PAUSE);
+                thread::sleep(RETRY_INTERVAL);
             }
             result => {
                 return result.unwrap_or_else(|error| panic!("{}: {error}", program.display()));
