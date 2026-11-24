@@ -16,7 +16,7 @@ use gdl_media::{Frame, MAX_TPL_SIDE, MediaError};
 use std::fs::OpenOptions;
 
 #[cfg(windows)]
-use gdl_files::{BLOCK_LEN, fill_from};
+use gdl_files::{BLOCK_LEN, fill_from, retry_locked};
 #[cfg(windows)]
 use gdl_media::{Sha256Digest, first_frame};
 #[cfg(windows)]
@@ -194,7 +194,10 @@ impl IconError {
 /// [`icon_resources`], set in as icon images 1 to 6 and their group 1 in the neutral language,
 /// beside every resource the program holds already, its manifest among them. The executable is
 /// then read back whole, hashed and written through to its disk, and its new digest given with
-/// the TPL's. A TPL that does not decode is refused before the executable is opened.
+/// the TPL's. A TPL that does not decode is refused before the executable is opened. A program
+/// that another holds for a moment, as a virus scanner may hold one just written, is waited for
+/// as the launcher waits for any file held so: the edit, which leaves the executable as it was
+/// when it fails, is begun afresh, and so is the reading back.
 #[cfg(windows)]
 pub fn personalise(executable: &Path, tpl: &[u8]) -> Result<Personalised, IconError> {
     let frame = first_frame(tpl).map_err(IconError::Tpl)?;
@@ -214,9 +217,11 @@ pub fn personalise(executable: &Path, tpl: &[u8]) -> Result<Personalised, IconEr
         language: RESOURCE_LANGUAGE,
         bytes: &made.group,
     });
-    platform::update_resources(executable, &resources).map_err(|source| IconError::Embed {
-        path: executable.to_path_buf(),
-        source,
+    retry_locked(|| platform::update_resources(executable, &resources)).map_err(|source| {
+        IconError::Embed {
+            path: executable.to_path_buf(),
+            source,
+        }
     })?;
     let executable_sha256 = rehash(executable).map_err(|source| IconError::Rehash {
         path: executable.to_path_buf(),
@@ -229,10 +234,13 @@ pub fn personalise(executable: &Path, tpl: &[u8]) -> Result<Personalised, IconEr
 }
 
 /// The digest of the file at `executable`, read whole a block at a time through a handle that may
-/// also write, so that the file is then written through to its disk before it is closed.
+/// also write, so that the file is then written through to its disk before it is closed. A file
+/// another holds for a moment is waited for.
 #[cfg(windows)]
 fn rehash(executable: &Path) -> io::Result<Sha256Digest> {
-    let mut file = OpenOptions::new().read(true).write(true).open(executable)?;
+    let mut options = OpenOptions::new();
+    options.read(true).write(true);
+    let mut file = retry_locked(|| options.open(executable))?;
     let mut block = vec![0; BLOCK_LEN];
     let mut hasher = Sha256::new();
     loop {
@@ -366,9 +374,18 @@ mod tests {
     use std::ffi::OsString;
     #[cfg(windows)]
     use std::path::PathBuf;
+    #[cfg(windows)]
+    use std::sync::mpsc;
+    #[cfg(windows)]
+    use std::thread;
+    #[cfg(windows)]
+    use std::time::{Duration, Instant};
 
     #[cfg(windows)]
-    use super::{ICON_GROUP_ID, RESOURCE_LANGUAGE, RT_GROUP_ICON, RT_ICON, personalise};
+    use gdl_files::{RETRY_INTERVAL, RETRY_WINDOW, retry_locked};
+
+    #[cfg(windows)]
+    use super::{ICON_GROUP_ID, RESOURCE_LANGUAGE, RT_GROUP_ICON, RT_ICON, personalise, rehash};
     #[cfg(windows)]
     use crate::platform::{self, Resource};
 
@@ -510,6 +527,40 @@ mod tests {
     /// The flag of a section that holds code (IMAGE_SCN_CNT_CODE).
     #[cfg(windows)]
     const CODE_SECTION: u32 = 0x20;
+
+    /// The share mode of an open that lets no other handle on the file exist beside it.
+    #[cfg(windows)]
+    const NO_SHARING: u32 = 0;
+
+    /// How long a test holds a program, as a scanner may hold one just written, while the
+    /// launcher works on it.
+    #[cfg(windows)]
+    const HELD_FOR: Duration = Duration::from_millis(300);
+
+    /// Runs `during` while another thread holds the file at `path` open, sharing nothing, and lets
+    /// it go [`HELD_FOR`] after the hold was taken; gives what `during` gave and how long it ran.
+    #[cfg(windows)]
+    fn while_held<T>(path: &Path, during: impl FnOnce() -> T) -> (T, Duration) {
+        use std::os::windows::fs::OpenOptionsExt;
+
+        let (taken, held) = mpsc::channel();
+        thread::scope(|scope| {
+            scope.spawn(move || {
+                let mut options = fs::OpenOptions::new();
+                options.read(true).share_mode(NO_SHARING);
+                // Taken once nothing else holds the file, as a scanner may for a moment.
+                let hold = retry_locked(|| options.open(path))
+                    .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+                taken.send(()).unwrap();
+                thread::sleep(HELD_FOR);
+                drop(hold);
+            });
+            held.recv().expect("the hold was taken");
+            let begun = Instant::now();
+            let given = during();
+            (given, begun.elapsed())
+        })
+    }
 
     /// The vectors, read, of their format and version.
     fn vectors() -> Value {
@@ -1012,10 +1063,15 @@ mod tests {
         let no_group = resource(&program, FORMAT_RT_GROUP_ICON, 1, NEUTRAL_LANGUAGE);
         assert_eq!(no_group, None);
 
-        // Through its verbatim path, the program is given the icon tests' RGB5A3 icon.
+        // Through its verbatim path, the program is given the icon tests' RGB5A3 icon, while
+        // another holds it for a moment, as a scanner may hold a program just written: the edit
+        // waits until it is let go.
         let icon = tpl(FORMAT_RGB5A3, 8, 8);
         let verbatim = verbatim_of(&program);
-        let personalised = personalise(&verbatim, &icon).unwrap_or_else(|error| panic!("{error}"));
+        let (personalised, waited) = while_held(&program, || personalise(&verbatim, &icon));
+        let personalised = personalised.unwrap_or_else(|error| panic!("{error}"));
+        assert!(waited >= RETRY_INTERVAL, "{waited:?}");
+        assert!(waited < RETRY_WINDOW, "{waited:?}");
 
         // The group and the six images it now holds are the golden vector's, and nothing past
         // them.
@@ -1056,6 +1112,22 @@ mod tests {
         // Telling the shell of the program leaves it as it is.
         refresh_shell_icon(&verbatim);
         assert!(fs::read(&program).unwrap() == changed);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_program_held_for_a_moment_is_read_back_once_let_go() {
+        // The program as the edit left it is read back whole for its digest, once another that
+        // holds it for a moment lets it go.
+        let dir = tempfile::tempdir().unwrap();
+        let program = dir.path().join("gauntlet.exe");
+        fs::write(&program, NOT_A_PROGRAM).unwrap();
+        let (digest, waited) = while_held(&program, || rehash(&program));
+        let digest = digest.unwrap_or_else(|error| panic!("{error}"));
+        assert_eq!(digest, Sha256Digest::of(NOT_A_PROGRAM));
+        assert!(waited >= RETRY_INTERVAL, "{waited:?}");
+        assert!(waited < RETRY_WINDOW, "{waited:?}");
+        assert_eq!(fs::read(&program).unwrap(), NOT_A_PROGRAM);
     }
 
     #[cfg(windows)]
