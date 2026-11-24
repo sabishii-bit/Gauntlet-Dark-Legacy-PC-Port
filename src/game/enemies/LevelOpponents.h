@@ -197,6 +197,10 @@ public:
     /** Feedback-only view of the roster; imported worlds have no GDL level record,
      * so their borrowed voices use an otherwise empty non-boss view. */
     const LevelInfo* levelNow() const;
+    /** Where `player`'s step from `from` to `to` ends once the standing generators hold it off
+     * by its whole width, as resolveMovement sweeps them: their share of PlayerCollideEnemies'
+     * first pass (pmotion.c 1124-1135), the step a member in the way is shoved by. */
+    Vec3 itemStep(const PlayerActor& player, const Vec3& from, const Vec3& to) const;
     Vec3 resolveMovement(const PlayerActor& player, const Vec3& from, const Vec3& to,
                          CreatureContact contact = {}) const;
     /** Routes a contact by player identity; a breath or gated blow then holds its player off

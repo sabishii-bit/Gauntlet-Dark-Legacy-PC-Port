@@ -64,6 +64,11 @@ BodyCollision::Trim BodyCollision::trimToward(const Vec3& from, const Vec3& to, 
     return trim;
 }
 
+Vec3 BodyCollision::holdOff(const PlayerActor& player, const Vec3& from, const Vec3& to,
+                            std::span<const Obstacle> items) {
+    return resolveItems(from, to, player.reach(), player.height(), items);
+}
+
 Vec3 BodyCollision::resolveItems(const Vec3& from, const Vec3& to, f32 radius, f32 height,
                                  std::span<const Obstacle> items) {
     if (items.empty() || radius <= 0 || height <= 0) {
@@ -183,7 +188,7 @@ Vec3 BodyCollision::resolveMovement(const PlayerActor& player, const Vec3& from,
     Vec3 resolved =
         resolve(from, to, player.radius(), player.height(), bodies, centreHeight, cylinders);
     // The generators hold the body its whole width off, as the level's other items do.
-    resolved = resolveItems(from, resolved, player.reach(), player.height(), generators);
+    resolved = holdOff(player, from, resolved, generators);
     if (collision != nullptr) {
         // A body's push can leave the player in a wall: put PlayerWallCollide's sphere
         // back out of the still faces it is in front of. Animated contacts have already
@@ -196,8 +201,7 @@ Vec3 BodyCollision::resolveMovement(const PlayerActor& player, const Vec3& from,
         if (glm::distance(checked, resolved) > 1e-4f) {
             return {from.x, to.y, from.z};
         }
-        const Vec3 itemChecked =
-            resolveItems(resolved, resolved, player.reach(), player.height(), generators);
+        const Vec3 itemChecked = holdOff(player, resolved, resolved, generators);
         if (glm::distance(itemChecked, resolved) > 1e-4f) {
             return {from.x, to.y, from.z};
         }

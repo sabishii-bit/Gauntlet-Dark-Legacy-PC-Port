@@ -56,6 +56,10 @@ public:
      * anywhere else that axis of the step goes, and the way to `hit` along it is left over for
      * the push velocity. The height is the step's. */
     static Trim trimToward(const Vec3& from, const Vec3& to, const Vec3& hit);
+    /** `player`'s step from `from` to `to` swept through item boxes as they hold a body off: by
+     * its whole width (PlayerCollideEnemies' first pass at col_radius, pmotion.c 1124-1135). */
+    static Vec3 holdOff(const PlayerActor& player, const Vec3& from, const Vec3& to,
+                        std::span<const Obstacle> items);
     /** Slide against authored item boxes, subdividing long steps to prevent tunnelling. */
     static Vec3 resolveItems(const Vec3& from, const Vec3& to, f32 radius, f32 height,
                              std::span<const Obstacle> items);

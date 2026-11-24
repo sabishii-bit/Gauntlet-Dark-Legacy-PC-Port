@@ -12,11 +12,9 @@
 #include "game/bosses/LegendItems.h"
 #include "game/camera/CameraMovementLimit.h"
 #include "game/combat/HurtKind.h"
-#include "game/enemies/Generators.h"
 #include "game/hud/HelpMessages.h"
 #include "game/level/ImportedLevel.h"
 #include "game/level/LevelFixtures.h"
-#include "game/party/BodyCollision.h"
 #include "game/party/PartyMotion.h"
 #include "game/players/PlayerAnimator.h"
 #include "game/players/PlayerControls.h"
@@ -108,9 +106,7 @@ public:
      * fixtures put its end out as their update holds the body. */
     Vec3 itemStep(usize i, const Vec3& from, const Vec3& to) const override {
         const PlayerActor& actor = m_scene.m_players[i].actor;
-        const Vec3 clear = BodyCollision::resolveItems(
-            from, to, actor.reach(), actor.height(), m_scene.m_opponents.generators().obstacles());
-        return m_scene.m_fixtures.pushOut(actor, clear);
+        return m_scene.m_fixtures.pushOut(actor, m_scene.m_opponents.itemStep(actor, from, to));
     }
     Vec3 resolveMovement(usize i, const Vec3& from, const Vec3& to) const override {
         const auto& player = m_scene.m_players[i];

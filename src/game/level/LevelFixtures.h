@@ -1,4 +1,5 @@
 #pragma once
+#include <array>
 #include <optional>
 #include <span>
 #include <string_view>
@@ -28,6 +29,7 @@
 #include "game/level/Traps.h"
 #include "game/party/PlayerRuntime.h"
 #include "game/players/MagicPerks.h"
+#include "game/players/PlayerActor.h"
 namespace gdl::game {
 /** Owns interactive scenery and its hazard chains. Scene services are borrowed while bound.
  * Reports go to the caller's FixtureHost at once, so health, help and opponent damage keep
@@ -167,9 +169,22 @@ public:
     bool registerNativeResources(NativeStateResources& resources) const;
 
 private:
+    /** Boxes that hold a standing body off, and whether by its whole width or its footprint. */
+    struct HoldOff {
+        std::vector<Obstacle> boxes;
+        bool wholeWidth = true;
+        f32 width(const PlayerActor& actor) const {
+            return wholeWidth ? actor.reach() : actor.radius();
+        }
+    };
     /** The level's items that hold a body its whole width off, in the order they hold it: the
      * chests, the gates, the barrels, the safe rocks and the scenery. */
     std::vector<Obstacle> itemBoxes() const;
+    /** What holds a standing body off, in the order it does: the level's items by its whole
+     * width (PlayerCollideEnemies' first pass at col_radius, pmotion.c 1124-1135), then a
+     * Legends level's own fixtures by its footprint, the width their gates and Deaths are
+     * touched by. */
+    std::array<HoldOff, 2> holdOffs() const;
     /** Answers a chest event: a key spent and the opening heard, its enemy let out before
      * any pickup is placed in it (none when the pickup's art is missing), gold taken, or the
      * lessons of a refusal. */

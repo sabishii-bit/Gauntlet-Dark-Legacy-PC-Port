@@ -232,17 +232,23 @@ std::vector<Obstacle> LevelFixtures::obstacles() const {
     }
     return result;
 }
+std::array<LevelFixtures::HoldOff, 2> LevelFixtures::holdOffs() const {
+    std::array<HoldOff, 2> sets{HoldOff{itemBoxes(), true}, HoldOff{{}, false}};
+    if (m_resources.has_value()) {
+        if (const auto* imported = m_resources->world.imported()) {
+            sets[1].boxes = imported->obstacles();
+        }
+    }
+    return sets;
+}
 Vec3 LevelFixtures::pushOut(const PlayerActor& actor, const Vec3& position) const {
     if (!m_resources.has_value()) {
         return position;
     }
     Vec3 held = position;
-    for (const Obstacle& box : itemBoxes()) {
-        held = box.pushOut(held, actor.reach());
-    }
-    if (const auto* imported = m_resources->world.imported()) {
-        for (const Obstacle& box : imported->obstacles()) {
-            held = box.pushOut(held, actor.radius());
+    for (const HoldOff& set : holdOffs()) {
+        for (const Obstacle& box : set.boxes) {
+            held = box.pushOut(held, set.width(actor));
         }
     }
     return held;
@@ -602,12 +608,8 @@ void LevelFixtures::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> play
     }
     m_safeRocks.update(seconds);
     m_scenery.update(seconds);
-    // The items as they now stand hold the body off, by the list pushOut holds a step off.
-    const std::vector<Obstacle> boxes = itemBoxes();
-    std::vector<Obstacle> native;
-    if (const auto* imported = m_resources->world.imported()) {
-        native = imported->obstacles();
-    }
+    // The items as they now stand hold the body off, as pushOut holds a step off.
+    const std::array<HoldOff, 2> holding = holdOffs();
     std::vector<ChestVisitor> visitors;
     std::vector<TrapVictim> victims;
     visitors.reserve(players.size());
@@ -625,18 +627,13 @@ void LevelFixtures::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> play
         // barrel beside it holds the body off it further.
         const Vec3 meant = actor.position();
         Vec3 position = meant;
-        const auto holdOff = [&](std::span<const Obstacle> items, f32 width) {
-            for (const Obstacle& box : items) {
-                const Vec3 resolved = box.pushOut(position, width);
+        for (const HoldOff& set : holding) {
+            for (const Obstacle& box : set.boxes) {
+                const Vec3 resolved = box.pushOut(position, set.width(actor));
                 actor.slide(resolved - position, &m_resources->world.collision());
                 position = actor.position();
             }
-        };
-        // The level's items hold a body its whole width off, PlayerCollideEnemies' first pass
-        // at col_radius (pmotion.c 1124-1135), which is where they are touched. A Legends
-        // level's own fixtures keep the footprint, the width its gates and Deaths are touched by.
-        holdOff(boxes, actor.reach());
-        holdOff(native, actor.radius());
+        }
         // The rocks and leaves that give way to a body brushing them (fn_8005D730's case 10).
         const auto falling = m_resources->world.fallingScenery().touch(position, actor.reach());
         playFallingCues(falling);

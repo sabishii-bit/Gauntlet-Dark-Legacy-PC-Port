@@ -66,6 +66,7 @@
 #include "game/level/ScriptedFixtures.h"
 #include "game/mechanics/MechanicCatalog.h"
 #include "game/mechanics/MechanicsFacade.h"
+#include "game/party/BodyCollision.h"
 #include "game/party/PlayerAttacks.h"
 #include "game/party/PlayerHealth.h"
 #include "game/party/ScriptedAttacks.h"
@@ -1374,12 +1375,19 @@ TEST_CASE("standing generators block player movement and release it when destroy
     const Vec3 swept = opponents.resolveMovement(player, from, to);
     CHECK(glm::distance(swept, to) > player.radius()); // The rotated box deflects the step.
     CHECK(glm::distance(box.pushOut(swept, player.reach()), swept) < 1e-4f);
+    // The step a member in the way is shoved by meets the generators by the same width.
+    const Vec3 itemEnd = opponents.itemStep(player, from, to);
+    CHECK(itemEnd == swept);
+    CHECK(glm::distance(itemEnd,
+                        BodyCollision::resolveItems(from, to, player.radius(), player.height(),
+                                                    opponents.generators().obstacles())) > 1e-3f);
     const Vec3 above{0, box.height + 1, -12};
     CHECK(opponents.resolveMovement(player, above, above + Vec3{0, 0, 24}) ==
           above + Vec3{0, 0, 24});
     opponents.generators().strike(0, 1000000, 0);
     REQUIRE_FALSE(opponents.generators().standing(0));
     CHECK(opponents.resolveMovement(player, from, to) == to);
+    CHECK(opponents.itemStep(player, from, to) == to);
     opponents.close();
 }
 

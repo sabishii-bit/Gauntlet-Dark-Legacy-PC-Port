@@ -549,6 +549,10 @@ bool LevelOpponents::meetsCreature(const PlayerActor& player, const Vec3& from, 
     return BodyCollision::touches(start, end, cylinders);
 }
 
+Vec3 LevelOpponents::itemStep(const PlayerActor& player, const Vec3& from, const Vec3& to) const {
+    return BodyCollision::holdOff(player, from, to, m_generators.obstacles());
+}
+
 Vec3 LevelOpponents::resolveMovement(const PlayerActor& player, const Vec3& from, const Vec3& to,
                                      CreatureContact contact) const {
     // The stop and the slide meet the same solid parts and bodies.
