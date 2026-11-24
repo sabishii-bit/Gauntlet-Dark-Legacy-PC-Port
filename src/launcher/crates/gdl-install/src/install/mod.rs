@@ -312,7 +312,8 @@ pub enum Changes {
     RolledBack,
     /// Some of what it made is left, with what the next start needs to finish or take it back; or,
     /// before it made anything else, an entry the folder's probe made and could not remove, which
-    /// the error names and the next probe of that folder removes.
+    /// the error names and which a probe of that folder a minute or more later removes, when it
+    /// can.
     Kept,
 }
 
@@ -437,7 +438,9 @@ pub(crate) fn plan_with<R: Read + Seek>(
 /// kept, with the journal while it names anything, for the next start to take back
 /// ([`Changes::Kept`]), the record still holding the folder. An entry that the folder's probe made
 /// as the job judged the folder again, and could not remove, is kept too, before the record is
-/// told of the folder: the error names it, and the next probe of that folder removes it.
+/// told of the folder: the error names it, and a probe of that folder a minute or more later
+/// removes it, when it can; until then it stays, whatever an install made there meanwhile puts
+/// beside it.
 pub fn install_game<R: Read + Seek>(
     plan: &InstallPlan,
     image: &mut GameCubeImage,

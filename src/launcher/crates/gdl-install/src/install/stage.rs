@@ -889,7 +889,8 @@ fn nothing_made(error: InstallError) -> InstallFailure {
 
 /// The install's failure for `error`, met as it judged `destination` again before it made
 /// anything there: nothing is made, unless the folder's probe could not remove an entry it made,
-/// which the error names and which is left, for the next probe of that folder to remove.
+/// which the error names and which is left, for a probe of that folder a minute or more later to
+/// remove when it can.
 fn judging_failed(error: InstallError, destination: &Path) -> InstallFailure {
     let left = matches!(
         &error,
