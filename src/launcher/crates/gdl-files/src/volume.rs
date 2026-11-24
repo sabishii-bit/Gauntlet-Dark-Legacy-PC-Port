@@ -166,9 +166,10 @@ pub fn refuses_writes(error: &io::Error) -> bool {
 /// install probes its destination again before it writes there, keeps none of it: each entry of
 /// such a name that is an empty folder or an empty file, never a link, and last changed a minute
 /// or more before, which no probe still running made. Each is tried once, and one that cannot be
-/// removed stays for a later probe.
+/// removed stays for a later probe, as does all of it in a folder that cannot be listed: what the
+/// probe finds never rests on that removal.
 pub fn probe_folder(folder: &Path, probed: ProbedFolder) -> Result<FolderProbe, FilesError> {
-    remove_left_probe_entries(folder, SystemTime::now())?;
+    remove_left_probe_entries(folder, SystemTime::now());
     let Some(made_folder) = make_probe_entry(folder, ProbeEntry::Folder)? else {
         return Ok(NOT_WRITABLE);
     };
@@ -258,29 +259,32 @@ fn remove_probe_entries(made: &[(PathBuf, ProbeEntry)]) -> Result<(), FilesError
     left.map_or(Ok(()), Err)
 }
 
-/// Removes from `folder` the entries that earlier probes made there and left: each named as a
-/// probe names what it makes, an empty folder or an empty file, never a link, last changed
-/// [`LEFT_PROBE_AGE`] or more before `now`, so that what a probe still running made is never taken
-/// from it. Each is tried once, and one that cannot be removed stays for a later probe: it is not
-/// this probe's to answer for, and nothing this probe finds rests on it. A folder this process may
-/// not list is left as it is, since the probe may still make entries there; any other failure to
-/// list it is an error at `folder`.
-fn remove_left_probe_entries(folder: &Path, now: SystemTime) -> Result<(), FilesError> {
-    let entries = match fs::read_dir(folder) {
-        Ok(entries) => entries,
-        Err(error) if error.kind() == io::ErrorKind::PermissionDenied => return Ok(()),
-        Err(source) => return Err(FilesError::io(folder, source)),
+/// Removes from `folder` the entries that earlier probes made there and left, as
+/// [`remove_left_entries`] removes them from its listing. Nothing the probe finds rests on them,
+/// so a folder that cannot be listed, for want of permission or any other reason, is left as it
+/// is: what the probe then makes there tells what the folder takes.
+fn remove_left_probe_entries(folder: &Path, now: SystemTime) {
+    let Ok(entries) = fs::read_dir(folder) else {
+        return;
     };
-    for entry in entries {
-        let entry = entry.map_err(|source| FilesError::io(folder, source))?;
-        let named = entry
+    remove_left_entries(entries.map(|entry| entry.map(|entry| entry.path())), now);
+}
+
+/// Removes, of the entries `listing` gives by their paths, those that earlier probes made and
+/// left: each named as a probe names what it makes, an empty folder or an empty file, never a
+/// link, last changed [`LEFT_PROBE_AGE`] or more before `now`, so that what a probe still running
+/// made is never taken from it. Each is tried once, and one that cannot be removed stays for a
+/// later probe: it is not this probe's to answer for. A listing that breaks off ends the removal
+/// where it broke, since the system may give the same failure for every entry after it.
+fn remove_left_entries(listing: impl Iterator<Item = io::Result<PathBuf>>, now: SystemTime) {
+    for path in listing.map_while(Result::ok) {
+        let named = path
             .file_name()
-            .to_str()
+            .and_then(|name| name.to_str())
             .is_some_and(|name| is_staging_name(PROBE_PREFIX, name));
         if !named {
             continue;
         }
-        let path = entry.path();
         // Looked at without following a link: a link is no probe's entry, and what it leads to is
         // never touched.
         let Ok(found) = fs::symlink_metadata(&path) else {
@@ -304,7 +308,6 @@ fn remove_left_probe_entries(folder: &Path, now: SystemTime) -> Result<(), Files
             continue;
         };
     }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -318,7 +321,8 @@ mod tests {
 
     use super::{
         FolderProbe, LEFT_PROBE_AGE, NOT_WRITABLE, PROBE_PREFIX, ProbedFolder, nearest_existing,
-        nothing_there, probe_folder, refuses_writes, remove_left_probe_entries, volume_of,
+        nothing_there, probe_folder, refuses_writes, remove_left_entries,
+        remove_left_probe_entries, volume_of,
     };
     use crate::error::assert_io;
 
@@ -541,11 +545,47 @@ mod tests {
             earliest - Duration::from_secs(1),
         ];
         for now in held {
-            remove_left_probe_entries(top, now).unwrap();
+            remove_left_probe_entries(top, now);
             assert_eq!(folder_names(top).unwrap().len(), 2, "{now:?}");
         }
-        remove_left_probe_entries(top, latest + LEFT_PROBE_AGE).unwrap();
+        remove_left_probe_entries(top, latest + LEFT_PROBE_AGE);
         assert!(folder_names(top).unwrap().is_empty());
+    }
+
+    /// What earlier probes left is removed where it can be, and no failure to list a folder stops
+    /// a probe: one that cannot be listed, whatever the reason, is left as it is, and a listing
+    /// that breaks off ends the removal where it broke, what came before removed.
+    #[test]
+    fn a_listing_that_fails_is_passed_over() {
+        let dir = tempfile::tempdir().unwrap();
+        let top = dir.path();
+        let left = [
+            probe_name("Ab12Cd34"),
+            probe_name("Ef56Gh78"),
+            probe_name("Ij90Kl12"),
+        ];
+        for name in &left {
+            fs::create_dir(top.join(name)).unwrap();
+        }
+        let file = top.join("file");
+        fs::write(&file, b"file").unwrap();
+        let long_after = SystemTime::now() + 2 * LEFT_PROBE_AGE;
+
+        // Neither a file nor a name that is not there can be listed, and nothing is touched.
+        remove_left_probe_entries(&file, long_after);
+        remove_left_probe_entries(&top.join("missing"), long_after);
+        assert_eq!(fs::read(&file).unwrap(), b"file");
+        assert_eq!(folder_names(top).unwrap().len(), 4);
+
+        let listing = [
+            Ok(top.join(&left[0])),
+            Err(io::Error::other("the listing broke off")),
+            Ok(top.join(&left[1])),
+        ];
+        remove_left_entries(listing.into_iter(), long_after);
+        let mut expected = vec!["file".to_owned(), left[1].clone(), left[2].clone()];
+        expected.sort();
+        assert_eq!(folder_names(top).unwrap(), expected);
     }
 
     /// What a probe never leaves stays, however old: names that only begin as a probe's do, and a
@@ -583,7 +623,7 @@ mod tests {
         }
 
         let long_after = SystemTime::now() + 2 * LEFT_PROBE_AGE;
-        remove_left_probe_entries(top, long_after).unwrap();
+        remove_left_probe_entries(top, long_after);
         kept.sort();
         assert_eq!(folder_names(top).unwrap(), kept);
         assert_eq!(fs::read(top.join(probe_name("Ef56Gh78"))).unwrap(), b"kept");
