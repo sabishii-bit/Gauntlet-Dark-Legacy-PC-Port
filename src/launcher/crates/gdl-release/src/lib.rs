@@ -1,14 +1,16 @@
 //! Versions and their order, the platforms a release is built for, the release feed, downloads
-//! through the system's proxies and trust store, and the signatures every update is checked
-//! against.
+//! through the system's proxies and trust store, and the checksum lists and signatures every
+//! update is checked against.
 #![forbid(unsafe_code)]
 
+mod checksums;
 mod error;
 mod names;
 mod platform;
 mod proxy;
 mod version;
 
+pub use checksums::{ChecksumList, MAX_LIST_LEN};
 pub use error::ReleaseError;
 pub use names::{
     ASSET_STEM, GITHUB_API_HOST, GITHUB_HOST, RELEASE_HOSTS, REPOSITORY, SIGNATURE_SUFFIX,

@@ -9,6 +9,7 @@ publish.workspace = true
 
 [dependencies]
 gdl-files.workspace = true
+gdl-media.workspace = true
 minisign-verify.workspace = true
 semver.workspace = true
 thiserror.workspace = true
