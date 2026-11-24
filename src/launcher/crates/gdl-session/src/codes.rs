@@ -9,8 +9,8 @@ use std::io;
 use gdl_extract::ExtractError;
 use gdl_files::FilesError;
 use gdl_install::{
-    FolderError, FolderState, GameStartError, GameUseError, LockError, PayloadError, ReceiptError,
-    SectionsError,
+    Blocker, DestinationError, FolderError, FolderState, GameStartError, GameUseError, LockError,
+    PayloadError, ReceiptError, SectionsError, Warning,
 };
 use gdl_media::{DiscRule, DumpRefusal, GameCubeRule, MediaError, RomRule, TplRule};
 
@@ -27,6 +27,10 @@ const IO_FAILED: &str = "io.failed";
 /// Writing a file found the disk full or the quota spent.
 const SPACE_RAN_OUT: &str = "space.ranOut";
 
+/// The volume of the folder chosen to install into has less room than the install needs, as
+/// measured before anything is written.
+const SPACE_INSUFFICIENT: &str = "space.insufficient";
+
 /// The installation's folder, a folder above it, or an entry in it that the launcher reads or
 /// changes is a link or a junction.
 const FOLDER_LINKS: &str = "folder.links";
@@ -34,20 +38,47 @@ const FOLDER_LINKS: &str = "folder.links";
 /// Nothing, or something other than a folder, is at the installation's path.
 const FOLDER_NOT_DIRECTORY: &str = "folder.notDirectory";
 
-/// The launcher may not write where it must, such as the game's executable.
+/// The launcher may not write where it must, such as the game's executable or the folder chosen
+/// to install into.
 const FOLDER_NOT_WRITABLE: &str = "folder.notWritable";
 
+/// The file system of the folder chosen to install into ignores letter case, which on Linux keeps
+/// the game's executable from standing beside the disc's folder of the same name.
+const FOLDER_IGNORES_CASE: &str = "folder.ignoresCase";
+
+/// The file system of the folder chosen to install into runs no program, as a Linux `noexec`
+/// mount does.
+const FOLDER_NOEXEC: &str = "folder.noexec";
+
 /// The folder holds an installation that the alpha's installer made, which the launcher leaves as
-/// it is.
+/// it is, or the path chosen holds one of the names by which the launcher knows such an
+/// installation, which it never writes.
 const FOLDER_ALPHA_INSTALL: &str = "folder.alphaInstall";
 
 /// Something is already where the launcher was to put what it made, and the launcher never
 /// replaces what it did not make.
 const FOLDER_COLLISION: &str = "folder.collision";
 
-/// The folder chosen for an expansion's tree lies in an installation, or in a folder being made
-/// into one, where only the installation's own jobs write.
+/// The folder chosen for an expansion's tree, or to install into, lies in an installation, or in a
+/// folder being made into one, where only the installation's own jobs write.
 const FOLDER_INSIDE_INSTALLATION: &str = "folder.insideInstallation";
+
+/// The path of the folder chosen to install into is longer than the game can reach its files
+/// below, on Windows.
+const PATH_TOO_LONG: &str = "path.tooLong";
+
+/// A cloud provider keeps the folder chosen to install into in sync, and may take the game's
+/// files off the device: a warning, which refuses nothing.
+const FOLDER_CLOUD_SYNCED: &str = "folder.cloudSynced";
+
+/// The folder chosen to install into lies in one of the user's known folders, such as Documents,
+/// where Controlled Folder Access, when it is on, keeps the game from saving beside itself: a
+/// warning, which refuses nothing.
+const FOLDER_PROTECTED: &str = "folder.protected";
+
+/// The path of the folder chosen to install into is not ASCII, on a Windows build before 1903,
+/// which ignores the game's UTF-8 code page: a warning, which refuses nothing.
+const FOLDER_NON_ASCII_OLD_WINDOWS: &str = "folder.nonAsciiOldWindows";
 
 /// Another job holds the installation's lock.
 const LOCK_BUSY: &str = "lock.busy";
@@ -73,6 +104,10 @@ const STATE_NEWER_LAUNCHER: &str = "state.newerLauncher";
 
 /// A journal of a job left unfinished cannot be read, so that job is left as it is.
 const JOURNAL_UNREADABLE: &str = "journal.unreadable";
+
+/// The system runs the launcher and the game, which are x64 programs, only by emulating them, as
+/// Windows on ARM64 does.
+const SYSTEM_UNSUPPORTED: &str = "system.unsupported";
 
 /// The window does not start with an administrator's elevated token.
 const ELEVATED_REFUSED: &str = "elevated.refused";
@@ -117,16 +152,23 @@ const DUMP_HASH_MISMATCH: &str = "dump.hashMismatch";
 
 /// Every code this module's functions give, each once: the codes the page's string table holds
 /// words for.
-pub const CODES: [&str; 29] = [
+pub const CODES: [&str; 37] = [
     PAYLOAD_DAMAGED,
     IO_FAILED,
     SPACE_RAN_OUT,
+    SPACE_INSUFFICIENT,
     FOLDER_LINKS,
     FOLDER_NOT_DIRECTORY,
     FOLDER_NOT_WRITABLE,
+    FOLDER_IGNORES_CASE,
+    FOLDER_NOEXEC,
     FOLDER_ALPHA_INSTALL,
     FOLDER_COLLISION,
     FOLDER_INSIDE_INSTALLATION,
+    PATH_TOO_LONG,
+    FOLDER_CLOUD_SYNCED,
+    FOLDER_PROTECTED,
+    FOLDER_NON_ASCII_OLD_WINDOWS,
     LOCK_BUSY,
     GAME_RUNNING,
     GAME_MISSING,
@@ -135,6 +177,7 @@ pub const CODES: [&str; 29] = [
     INSTALL_OTHER_PLATFORM,
     STATE_NEWER_LAUNCHER,
     JOURNAL_UNREADABLE,
+    SYSTEM_UNSUPPORTED,
     ELEVATED_REFUSED,
     ROOT_REFUSED,
     SOURCE_UNRECOGNIZED,
@@ -255,6 +298,52 @@ pub fn folder(error: &FolderError) -> &'static str {
         FolderError::Links { .. } => FOLDER_LINKS,
         FolderError::NotDirectory { .. } | FolderError::Absent { .. } => FOLDER_NOT_DIRECTORY,
         FolderError::Io { .. } => IO_FAILED,
+    }
+}
+
+/// The code of what refuses an install into a folder. A path that holds one of the names by which
+/// the launcher knows an alpha installation is `folder.alphaInstall`, as a folder that holds such
+/// an installation is, since the launcher writes none of those names; a path with nothing on it
+/// there, its drive included, is `folder.notDirectory`, as one that leads to a file is; and a
+/// volume found too small before anything is written is `space.insufficient`, where a write that
+/// found no room is `space.ranOut`. A system that runs the launcher only by emulating it, which a
+/// plan lists among the folder's findings, is `system.unsupported`.
+pub fn blocker(blocker: &Blocker) -> &'static str {
+    match blocker {
+        Blocker::Unsupported { .. } => SYSTEM_UNSUPPORTED,
+        Blocker::AlphaName { .. } | Blocker::AlphaInstall { .. } => FOLDER_ALPHA_INSTALL,
+        Blocker::Unreachable { .. } | Blocker::NotDirectory { .. } => FOLDER_NOT_DIRECTORY,
+        Blocker::Links { .. } => FOLDER_LINKS,
+        Blocker::InsideInstallation { .. } => FOLDER_INSIDE_INSTALLATION,
+        Blocker::Collision { .. } => FOLDER_COLLISION,
+        Blocker::TooLong { .. } => PATH_TOO_LONG,
+        Blocker::NotWritable { .. } => FOLDER_NOT_WRITABLE,
+        Blocker::IgnoresCase { .. } => FOLDER_IGNORES_CASE,
+        Blocker::Noexec { .. } => FOLDER_NOEXEC,
+        Blocker::Space { .. } => SPACE_INSUFFICIENT,
+    }
+}
+
+/// The code of what a player is warned of in a folder an install may still go into: one that a
+/// cloud provider keeps in sync, one in a known folder that Controlled Folder Access may guard,
+/// and a path that is not ASCII on a Windows build before 1903.
+pub fn warning(warning: &Warning) -> &'static str {
+    match warning {
+        Warning::CloudSynced { .. } => FOLDER_CLOUD_SYNCED,
+        Warning::Protected { .. } => FOLDER_PROTECTED,
+        Warning::NonAsciiOldWindows { .. } => FOLDER_NON_ASCII_OLD_WINDOWS,
+    }
+}
+
+/// The code a failure to judge a folder reports. The system's refusal to look at the folder, at
+/// an entry on its path or in it, or at its volume is `io.failed` whatever it answered, since a
+/// look writes nothing. A failure of the folder probe, or of a look at the path through the
+/// launcher's file operations, reports what [`files`] gives it, so a probe that found no room
+/// for its entry is `space.ranOut`.
+pub fn destination(error: &DestinationError) -> &'static str {
+    match error {
+        DestinationError::Io { .. } => IO_FAILED,
+        DestinationError::Files(error) => files(error),
     }
 }
 
@@ -587,11 +676,16 @@ mod tests {
     use std::path::{Path, PathBuf};
 
     use gdl_extract::{Expansion, ExtractError, FingerprintRule, NativeRule, TreeRule};
-    use gdl_files::{DISC_NAMES, FilesError, RelPath};
-    use gdl_fixtures::{synthetic_ciso, synthetic_iso, tpl};
+    use gdl_files::{
+        ALPHA_NAMES, DISC_NAMES, FilesError, MAX_INSTALL_ROOT_UTF16, PAYLOAD_NAMES, RelPath,
+    };
+    #[cfg(windows)]
+    use gdl_fixtures::long_root;
+    use gdl_fixtures::{link_folder, make_alpha_markers, synthetic_ciso, synthetic_iso, tpl};
     use gdl_install::{
-        BuildInfo, FolderError, FolderState, GameStartError, GameUseError, LockError, PayloadError,
-        ReceiptError, SectionsError,
+        Blocker, BuildInfo, DestinationError, FolderError, FolderState, GameStartError,
+        GameUseError, KnownFolder, LockError, PayloadError, ReceiptError, STATE_DIR, SectionsError,
+        Unsupported, Warning, judge_destination,
     };
     use gdl_media::{
         Console, DiscRule, DumpRefusal, GameCubeImage, GameCubeRule, MediaError, RomRule, TplRule,
@@ -600,8 +694,8 @@ mod tests {
     use gdl_release::Platform;
 
     use super::{
-        CODES, Report, dump_refusal, extract, extraction, files, folder, game_start, game_use,
-        lock, media, payload, receipt, refusal, sections, state,
+        CODES, Report, blocker, destination, dump_refusal, extract, extraction, files, folder,
+        game_start, game_use, lock, media, payload, receipt, refusal, sections, state, warning,
     };
     use crate::extraction::{ExtractionError, output_name};
     use crate::privilege::Refusal;
@@ -774,6 +868,25 @@ mod tests {
     const REFUSALS: [(Refusal, &str); 2] = [
         (Refusal::Elevated, "elevated.refused"),
         (Refusal::Root, "root.refused"),
+    ];
+
+    /// The machine a program's header names for ARM64, a system that runs x64 programs only by
+    /// emulating them.
+    const ARM64_MACHINE: u16 = 0xAA64;
+
+    /// A Windows build before 1903: 1809's.
+    const OLD_WINDOWS_BUILD: u32 = 17_763;
+
+    /// Room no volume has.
+    const MORE_THAN_ANY_VOLUME: u64 = u64::MAX;
+
+    /// Every known folder a destination may lie in.
+    const KNOWN_FOLDERS: [KnownFolder; 5] = [
+        KnownFolder::Documents,
+        KnownFolder::Desktop,
+        KnownFolder::Pictures,
+        KnownFolder::Videos,
+        KnownFolder::Music,
     ];
 
     /// A path that a refusal names.
@@ -1053,6 +1166,107 @@ mod tests {
             (GameStartError::Cancelled, Report::Cancelled),
             (GameStartError::Io(denied()), failed),
         ]
+    }
+
+    /// One finding of every kind that refuses an install into a folder, with its code: the host
+    /// check's as a plan lists it among the folder's.
+    fn blockers() -> Vec<(Blocker, &'static str)> {
+        let unsupported = Unsupported {
+            native_machine: ARM64_MACHINE,
+        };
+        vec![
+            (Blocker::from(unsupported), "system.unsupported"),
+            (
+                Blocker::AlphaName {
+                    name: ALPHA_NAMES[0],
+                },
+                "folder.alphaInstall",
+            ),
+            (Blocker::Unreachable { path: path() }, "folder.notDirectory"),
+            (
+                Blocker::NotDirectory { path: path() },
+                "folder.notDirectory",
+            ),
+            (Blocker::Links { path: path() }, "folder.links"),
+            (
+                Blocker::InsideInstallation { path: path() },
+                "folder.insideInstallation",
+            ),
+            (
+                Blocker::AlphaInstall {
+                    markers: vec![ALPHA_NAMES[0]],
+                },
+                "folder.alphaInstall",
+            ),
+            (
+                Blocker::Collision {
+                    names: vec!["Gauntlet".into()],
+                },
+                "folder.collision",
+            ),
+            (
+                Blocker::TooLong {
+                    units: MAX_INSTALL_ROOT_UTF16 + 1,
+                },
+                "path.tooLong",
+            ),
+            (Blocker::NotWritable { path: path() }, "folder.notWritable"),
+            (Blocker::IgnoresCase { path: path() }, "folder.ignoresCase"),
+            (Blocker::Noexec { path: path() }, "folder.noexec"),
+            (
+                Blocker::Space {
+                    needed: 2,
+                    available: 1,
+                },
+                "space.insufficient",
+            ),
+        ]
+    }
+
+    /// One warning of every kind of a folder an install may still go into, with its code: a
+    /// destination in each known folder.
+    fn warnings() -> Vec<(Warning, &'static str)> {
+        let mut warnings = vec![
+            (Warning::CloudSynced { path: path() }, "folder.cloudSynced"),
+            (
+                Warning::NonAsciiOldWindows {
+                    build: OLD_WINDOWS_BUILD,
+                },
+                "folder.nonAsciiOldWindows",
+            ),
+        ];
+        warnings.extend(KNOWN_FOLDERS.map(|folder| {
+            let path = path();
+            (Warning::Protected { folder, path }, "folder.protected")
+        }));
+        warnings
+    }
+
+    /// One failure of every kind that judging a folder meets, with its code: the system's refusal
+    /// to look once for each of its answers to a write, and a refusal of the launcher's file
+    /// operations once for each of theirs.
+    fn destination_failures() -> Vec<(DestinationError, &'static str)> {
+        let mut failures: Vec<(DestinationError, &'static str)> = write_failures()
+            .into_iter()
+            .map(|(source, _)| {
+                let path = path();
+                (DestinationError::Io { path, source }, "io.failed")
+            })
+            .collect();
+        failures.extend(
+            files_refusals()
+                .into_iter()
+                .map(|(error, code)| (DestinationError::Files(error), code)),
+        );
+        failures
+    }
+
+    /// The codes of what judging `chosen` finds refusing an install of `names` that needs `needed`
+    /// bytes there, in the order found.
+    #[track_caller]
+    fn blocker_codes(chosen: &Path, names: &[RelPath], needed: u64) -> Vec<&'static str> {
+        let report = judge_destination(chosen, names, needed).unwrap();
+        report.blockers.iter().map(blocker).collect()
     }
 
     /// What the system answers a write that found the disk full or the quota spent, or that it
@@ -1517,6 +1731,81 @@ mod tests {
     }
 
     #[test]
+    fn blockers_and_warnings_name_their_codes() {
+        for (finding, code) in blockers() {
+            assert_eq!(blocker(&finding), code, "{}: {finding}", finding.rule());
+        }
+        for (finding, code) in warnings() {
+            assert_eq!(warning(&finding), code, "{}: {finding}", finding.rule());
+        }
+        // What judging a folder refuses an install for reports so: a path that holds an alpha
+        // installer's name, a folder that holds an alpha installation, a file, a path through a
+        // link, a folder inside an installation, one that holds a name the install would make,
+        // and a volume with less room than the install needs.
+        let dir = tempfile::tempdir().unwrap();
+        let top = dir.path();
+        let alpha = top.join("alpha");
+        std::fs::create_dir(&alpha).unwrap();
+        make_alpha_markers(&alpha, &[ALPHA_NAMES[0]]).unwrap();
+        let file = top.join("file.txt");
+        std::fs::write(&file, b"kept").unwrap();
+        let real = top.join("real");
+        std::fs::create_dir(&real).unwrap();
+        let link = top.join("link");
+        link_folder(&link, &real).unwrap();
+        let installation = top.join("installation");
+        std::fs::create_dir_all(installation.join(STATE_DIR)).unwrap();
+        let taken = top.join("taken");
+        std::fs::create_dir_all(taken.join("DATA")).unwrap();
+        let names = [RelPath::parse("data", &PAYLOAD_NAMES).unwrap()];
+        let judged = [
+            (
+                "an alpha installer's name",
+                top.join(ALPHA_NAMES[2]).join("game"),
+                0,
+                "folder.alphaInstall",
+            ),
+            ("an alpha installation", alpha, 0, "folder.alphaInstall"),
+            ("a file", file, 0, "folder.notDirectory"),
+            ("a link", link.join("game"), 0, "folder.links"),
+            (
+                "inside an installation",
+                installation.join("game"),
+                0,
+                "folder.insideInstallation",
+            ),
+            ("a name the install makes", taken, 0, "folder.collision"),
+            (
+                "too little room",
+                top.join("fresh"),
+                MORE_THAN_ANY_VOLUME,
+                "space.insufficient",
+            ),
+        ];
+        for (case, chosen, needed, code) in judged {
+            assert_eq!(blocker_codes(&chosen, &names, needed), [code], "{case}");
+        }
+        // On Windows, a path longer than the game reaches files below.
+        #[cfg(windows)]
+        {
+            let long = long_root(&top.join("long"), MAX_INSTALL_ROOT_UTF16 + 1).unwrap();
+            assert_eq!(blocker_codes(&long, &names, 0), ["path.tooLong"]);
+        }
+    }
+
+    #[test]
+    fn destination_failures_name_their_codes() {
+        for (error, code) in destination_failures() {
+            assert_eq!(destination(&error), code, "{}: {error}", error.rule());
+        }
+        // A destination that cannot even be made absolute, such as no path at all, could not be
+        // looked at.
+        let error = judge_destination(Path::new(""), &[], 0).unwrap_err();
+        assert!(matches!(error, DestinationError::Io { .. }), "{error:?}");
+        assert_eq!(destination(&error), "io.failed", "{error}");
+    }
+
+    #[test]
     fn a_runtime_refused_for_its_sections_reports_what_the_sections_do() {
         // The runtime is read from the launcher file's sections, so a cancel or a failed read
         // there reports as the sections report it, never as a damaged payload.
@@ -1552,6 +1841,13 @@ mod tests {
         );
         returned.extend(receipt_refusals().iter().map(|(error, _)| receipt(error)));
         returned.extend(folder_refusals().iter().map(|(error, _)| folder(error)));
+        returned.extend(blockers().iter().map(|(finding, _)| blocker(finding)));
+        returned.extend(warnings().iter().map(|(finding, _)| warning(finding)));
+        returned.extend(
+            destination_failures()
+                .iter()
+                .map(|(error, _)| destination(error)),
+        );
         returned.extend(lock_refusals().iter().map(|(error, _)| lock(error)));
         returned.extend(game_use_refusals().iter().map(|(error, _)| game_use(error)));
         returned.extend(
