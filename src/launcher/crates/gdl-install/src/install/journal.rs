@@ -197,7 +197,8 @@ impl<'a> JournalFile<'a> {
     /// scanner holds for a moment is waited for.
     pub(crate) fn remove(&self) -> Result<(), FilesError> {
         remove_if_there(&self.path)?;
-        remove_if_there(&pending_path(&self.path))
+        remove_if_there(&pending_path(&self.path))?;
+        Ok(())
     }
 
     /// Writes the journal whole, to the bound its readers read journals to.
@@ -220,12 +221,12 @@ impl Journal for JournalFile<'_> {
     }
 }
 
-/// Removes the file at `path`, counting one already gone as removed. A file a scanner holds for a
-/// moment is waited for.
-pub(super) fn remove_if_there(path: &Path) -> Result<(), FilesError> {
+/// Removes the file at `path`, counting one already gone as removed, and says whether it was
+/// there. A file a scanner holds for a moment is waited for.
+pub(super) fn remove_if_there(path: &Path) -> Result<bool, FilesError> {
     match retry_locked(|| fs::remove_file(path)) {
-        Ok(()) => Ok(()),
-        Err(error) if is_absent(&error) => Ok(()),
+        Ok(()) => Ok(true),
+        Err(error) if is_absent(&error) => Ok(false),
         Err(source) => Err(FilesError::Io {
             path: path.to_path_buf(),
             source,

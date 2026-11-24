@@ -14,13 +14,13 @@ use std::path::{Path, PathBuf};
 
 use gdl_files::{
     FilesError, Job, Journal, MAX_JSON_LEN, PAYLOAD_NAMES, PENDING_SUFFIX, PhaseId, RelPath,
-    Staging, is_absent, is_staging_name, pending_path, read_json_bounded, retry_locked,
+    Staging, is_absent, is_staging_name, pending_path, read_json_bounded,
 };
 use gdl_release::{Platform, Version};
 use serde_json::{Map, Value};
 
 use super::disc_files::DISC_FILES;
-use super::journal::{INSTALL_JOURNAL, InstallJournal, InstallPhase, JournalFile};
+use super::journal::{INSTALL_JOURNAL, InstallJournal, InstallPhase, JournalFile, remove_if_there};
 use super::rollback::{Begun, Rollback, clean_up, is_there, stranded_roots};
 use super::settings::InstallSettings;
 use super::{FolderRecord, INSTALL_STAGING_PREFIX, is_install_root};
@@ -487,7 +487,7 @@ impl<'r> Recovery<'r> {
             stale.push(state.join(DISC_FILES));
         }
         for file in stale {
-            went |= remove_file(&file)?;
+            went |= remove_if_there(&file).map_err(RecoveryError::Files)?;
         }
         let left = Found::at(state)?;
         let abandoned =
@@ -735,22 +735,9 @@ fn remove_stagings(
 /// receipt left in the state folder `state`, each counted removed when it is already gone.
 fn remove_state_pending(state: &Path) -> Result<(), RecoveryError> {
     for file in [DISC_FILES, RECEIPT_FILE] {
-        remove_file(&pending_path(&state.join(file)))?;
+        remove_if_there(&pending_path(&state.join(file))).map_err(RecoveryError::Files)?;
     }
     Ok(())
-}
-
-/// Removes the file at `path`, and says whether it was there. A file a scanner holds for a moment
-/// is waited for.
-fn remove_file(path: &Path) -> Result<bool, RecoveryError> {
-    match retry_locked(|| fs::remove_file(path)) {
-        Ok(()) => Ok(true),
-        Err(error) if is_absent(&error) => Ok(false),
-        Err(source) => Err(RecoveryError::Files(FilesError::Io {
-            path: path.to_path_buf(),
-            source,
-        })),
-    }
 }
 
 #[cfg(test)]
