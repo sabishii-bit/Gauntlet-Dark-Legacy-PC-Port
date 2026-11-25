@@ -4384,6 +4384,179 @@ TEST_CASE("a great one a solid item stops is still hurt by the harmful ground un
     CHECK(before - actor.health() == Approx(15));
 }
 
+TEST_CASE("a still great one shoves a player inside it and holds its turn",
+          "[combatant][critter-contact]") {
+    // CritterTranslate returns early only for a TYPE speed (+0xAC) of zero or less
+    // (0x8003AA08-0x8003AA1C), never for a step that goes nowhere: CritterCollidePlayers
+    // (0x800351B0) meets a player within it by that step and pushes it out (critter.c 7231-7247),
+    // and CritterTranslate returns 1 (0x8003AF24-0x8003AF28), on which CritterGolemAI skips the
+    // turn (0x80039A28-0x80039A2C).
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    loadStanceGeneral(device, assets);
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+    EnemyView player;
+    player.player = 0;
+    player.collisionHeight = 6.0f;
+    player.collisionRadius = 1.5f;
+    // A unit from its body's middle, inside the 2.5 its wall radius and the player's width reach.
+    player.position = {1, 0, 0};
+    bool met = true;
+    SECTION("a player inside it is shoved out, and it does not turn") {}
+    SECTION("a player just beyond its reach is left alone, and it turns toward them") {
+        player.position.x = 2.6f;
+        met = false;
+    }
+    constexpr f32 kSeconds = 1.0f / 30;
+    actor.update(2, kSeconds, std::span{&player, 1});
+    CHECK(actor.position() == Vec3{0});
+    const auto pushes = actor.takePushes();
+    REQUIRE(pushes.size() == (met ? 1 : 0));
+    if (met) {
+        // Out along the unit between them, twice the 1.5 it is in by.
+        CHECK(pushes.front().player == 0);
+        CHECK(pushes.front().velocity.x == Approx(3));
+        CHECK(pushes.front().velocity.y == Approx(0).margin(1e-5f));
+        CHECK(pushes.front().velocity.z == Approx(0).margin(1e-5f));
+    }
+    // Its stance turns it three radians a second toward the player unless it met them.
+    CHECK(actor.yaw() == Approx(met ? 0.0f : 3 * kSeconds));
+}
+
+TEST_CASE("a still great one is hurt by the harmful ground it stands on",
+          "[combatant][critter-contact][hazards]") {
+    // CritterCollideWorld's floor probe runs on a step that goes nowhere too and harms it from
+    // the ground under it (CritterWorldDamage, critter.c 7085-7098, 6959-7000).
+    bool harmful = true;
+    SECTION("on felling ground it is hurt where it stands") {}
+    SECTION("on plain ground it is not") {
+        harmful = false;
+    }
+    const auto root = familyAssets();
+    writeTextFile(root / "critter/GOLEM.json", R"({
+      "descriptors":[{"prefix":"BODY","name":"GOLEM","type":3}],
+      "types":[{"moveCount":1,"maxHealth":1000,"radius":1,"wallRadius":1}],
+      "moves":[{"name":"READY","anim":"STEP","type":32,"interrupt":0}]})");
+    const auto dir = test::scratchDirectory("critter-still-hazard-floor");
+    // Felling ground (0x30000): fifteen a step.
+    writeTextFile(dir / "world.json", R"({
+  "objects": [{"name": "EMBERS", "position": [0, 0, 0], "flags": )" +
+                                          std::to_string(harmful ? 0x30004 : 0x4) + R"(,
+               "next": -1, "child": -1}],
+  "animations": [], "particles": [], "locators": [], "itemInfos": [], "itemInstances": []
+})");
+    WorldLayout layout;
+    REQUIRE(layout.load(dir));
+    HazardSurfaces hazards;
+    hazards.bind(layout);
+    std::vector<CollisionTriangle> triangles;
+    addGround(triangles, -20, 20);
+    for (CollisionTriangle& triangle : triangles) {
+        triangle.object = 0;
+    }
+    WorldCollision collision;
+    collision.build(triangles);
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, Golem::definition(), 'G'));
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, {}, 0, &collision, {}, 'G'));
+    actor.setHazards(&hazards);
+    const f32 before = actor.health();
+    actor.update(2, 1.0f / 30, {});
+    CHECK(actor.position() == Vec3{0});
+    CHECK(before - actor.health() == Approx(harmful ? 15 : 0));
+}
+
+TEST_CASE("a still golem tramples the small enemy it stands over",
+          "[combatant][critter-contact][critter-trample]") {
+    // CritterCollideEnemies (0x80034CFC) meets a swarm body the critter overlaps by a step that
+    // goes nowhere, and a golem tramples one no more than two high (critter.c 7402-7428).
+    const auto root = familyAssets();
+    const auto& golem = Golem::definition();
+    writeTextFile(root / "critter" / (golem.name + ".json"),
+                  R"({"descriptors":[{"prefix":"BODY","name":")" + golem.name + R"(","type":)" +
+                      std::to_string(static_cast<s32>(golem.kind)) + R"(}],
+      "types":[{"moveCount":1,"maxHealth":100,"radius":2,"wallRadius":1,"damageScale":7}],
+      "moves":[{"name":"READY","anim":"STEP","type":32,"interrupt":0}]})");
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, golem, 'G'));
+    Combatant actor;
+    EnemyScales scales;
+    scales.damage = 2;
+    REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, scales, 'G'));
+    // Half a unit from its middle, within its wall radius and the enemy's.
+    std::array swarm{EnemyBody{5, {0.5f, 0, 0}, 1, 2}};
+    bool trampled = true;
+    SECTION("one no more than two high is trampled") {}
+    SECTION("one taller than two is not") {
+        swarm[0].halfHeight = 2.5f;
+        trampled = false;
+    }
+    actor.setSwarm(swarm);
+    actor.update(2, 1.0f / 30, {});
+    CHECK(actor.position() == Vec3{0});
+    const auto tramples = actor.takeTramples();
+    REQUIRE(tramples.size() == (trampled ? 1 : 0));
+    if (trampled) {
+        CHECK(tramples[0].enemy == 5);
+        CHECK(tramples[0].damage == 14);
+    }
+}
+
+TEST_CASE("a still golem strikes the breakable item it stands against every step",
+          "[combatant][critter-contact][critter-rams]") {
+    // CritterCollideItems (0x80034F60) meets an item the critter overlaps by a step that goes
+    // nowhere: fn_8005F0F4 lets a step out of an overlap only when it points away from the item
+    // (a dot below zero, 0x8005F7A0-0x8005F7A4), and a still step points nowhere. A golem strikes
+    // what is breakable each time (fn_8005C1DC, critter.c 7323-7330).
+    const auto root = familyAssets();
+    const auto& golem = Golem::definition();
+    writeTextFile(root / "critter" / (golem.name + ".json"),
+                  R"({"descriptors":[{"prefix":"BODY","name":")" + golem.name + R"(","type":)" +
+                      std::to_string(static_cast<s32>(golem.kind)) + R"(}],
+      "types":[{"moveCount":1,"maxHealth":100,"radius":2,"wallRadius":1,"damageScale":7}],
+      "moves":[{"name":"READY","anim":"STEP","type":32,"interrupt":0}]})");
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, golem, 'G'));
+    Combatant actor;
+    EnemyScales scales;
+    scales.damage = 2;
+    REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, scales, 'G'));
+    // A barrel from 0.7 to 1.7 along x, three tenths inside its wall radius.
+    std::array items{CombatantObstacle{
+        .box = Obstacle{.centre = {1.2f, 0, 0}, .halfAcross = 0.5f, .halfAlong = 0.5f, .height = 8},
+        .kind = CombatantObstacle::Kind::Breakable,
+        .id = 7,
+        .health = 50,
+        .armor = 1}};
+    bool struck = true;
+    SECTION("a barrel it stands against is struck every step") {}
+    SECTION("a barrel beyond its wall radius is not") {
+        items[0].box.centre.x = 2.6f;
+        struck = false;
+    }
+    SECTION("a chest it stands in is not") {
+        items[0].kind = CombatantObstacle::Kind::Chest;
+        struck = false;
+    }
+    actor.setObstacles(items);
+    std::vector<CombatantRam> rams;
+    for (s32 step = 0; step < 2; ++step) {
+        actor.update(2, 1.0f / 30, {});
+        const auto taken = actor.takeRams();
+        rams.insert(rams.end(), taken.begin(), taken.end());
+    }
+    CHECK(actor.position() == Vec3{0});
+    const std::vector<CombatantRam> expected =
+        struck ? std::vector{CombatantRam{7, 14.0f}, CombatantRam{7, 14.0f}}
+               : std::vector<CombatantRam>{};
+    CHECK(rams == expected);
+}
+
 /** The turned-part general's own data: a stance, and one solid part two along x from ARM. */
 formats::CritterFile turnedPartCritter() {
     formats::CritterFile source;

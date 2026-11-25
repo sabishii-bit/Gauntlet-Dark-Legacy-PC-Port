@@ -225,13 +225,13 @@ bool Combatant::translate(Actor& critter, f32 seconds, const MoveDefinition* mov
         }
         return false;
     }
-    if (glm::length(translation) <= 0.0f) {
-        return false;
-    }
     Vec3 to = critter.position + translation;
     // CritterTranslate hands one step to CritterCollideWorld, CritterCollideItems,
     // CritterCollidePlayers, CritterCollideEnemies and CritterMoveNodeCol in turn
-    // (0x8003AE38-0x8003AED8): each meets what the passes before it leave of the step.
+    // (0x8003AE38-0x8003AED8): each meets what the passes before it leave of the step. A step
+    // that goes nowhere takes this path too, the only early return being for a TYPE speed of
+    // zero (0x8003AA08-0x8003AA1C): so a still great one shoves a player inside it and holds its
+    // turn, tramples, rams and is hurt by the ground under it.
     if (m_sim.collision != nullptr) {
         to = travelWorld(*m_sim.collision, critter.position, to, critter.definition->wallRadius());
     }
@@ -351,8 +351,8 @@ bool Combatant::translate(Actor& critter, f32 seconds, const MoveDefinition* mov
         }
     }
     critter.position = to;
-    // A wall it walks against or a floor it walks onto may hurt it: the swarm's harms, burns
-    // and knocks at five and the felling kinds at fifteen (CritterWorldDamage). The port
+    // A wall it walks against or a floor it walks or stands on may hurt it: the swarm's harms,
+    // burns and knocks at five and the felling kinds at fifteen (CritterWorldDamage). The port
     // deliberately limits burning-floor hits to once per quarter second.
     if (m_sim.hazards != nullptr && m_sim.collision != nullptr && critter.state != State::Dying) {
         const auto touch = m_sim.hazards->touching(
