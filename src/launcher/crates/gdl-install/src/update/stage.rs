@@ -26,10 +26,10 @@ use serde_json::Map;
 use sha2::{Digest, Sha256};
 
 use super::journal::{
-    JournalFile, PLANNED_STAGING, Planned, UPDATE_STAGING_PREFIX, check_journal_len,
+    JournalFile, PLANNED_STAGING, Planned, UPDATE_STAGING_PREFIX, UpdatePhase, check_journal_len,
 };
 use super::source::verified_runtime;
-use super::swap::discard;
+use super::swap::{discard, folders_to_make};
 use super::{
     FileChanges, Probed, STAGE, Update, UpdateError, UpdateFailure, UpdateNotice, VERIFY_DOWNLOAD,
     files_error, judge_names, payload_error, probe_copies, sections_error, stages_executable,
@@ -166,8 +166,13 @@ impl Update<'_> {
             receipt,
         };
         let receipt = self.planned_receipt(&judged, moves_executable);
+        // The journal is judged as it is at its largest: rolling back, with the folders the new
+        // names need, which the swap records.
+        let mut largest = planned(PLANNED_STAGING, &receipt).staged();
+        largest.phase = UpdatePhase::RollingBack;
+        largest.made_folders = folders_to_make(self.folder.root(), &publish).map_err(unchanged)?;
         self.check_receipt_len(&receipt)
-            .and_then(|()| check_journal_len(&planned(PLANNED_STAGING, &receipt).staged()))
+            .and_then(|()| check_journal_len(&largest))
             .map_err(unchanged)?;
         let mut tally = Tally {
             done: 0,

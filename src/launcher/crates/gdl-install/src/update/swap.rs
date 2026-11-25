@@ -783,7 +783,10 @@ fn moved_aside(from: &Path, to: &Path, name: &str) -> Result<(), UpdateError> {
 
 /// The folders under the installation's top `root` that the names of `publish` need and that are
 /// not there, each once, outermost first.
-fn folders_to_make(root: &Path, publish: &[RelPath]) -> Result<Vec<String>, UpdateError> {
+pub(super) fn folders_to_make(
+    root: &Path,
+    publish: &[RelPath],
+) -> Result<Vec<String>, UpdateError> {
     let mut made: Vec<String> = Vec::new();
     for name in publish {
         let components: Vec<&str> = name.components().collect();

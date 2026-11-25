@@ -832,8 +832,8 @@ mod tests {
     use std::time::Duration;
 
     use gdl_files::{
-        Cancel, FilesError, Hold, Job, NoProgress, PAYLOAD_NAMES, PhaseId, Progress, RelPath,
-        Volume, retry_locked,
+        Cancel, FilesError, Hold, Job, MAX_COMPONENT_CHARS, MAX_JSON_LEN, NoProgress,
+        PAYLOAD_NAMES, PhaseId, Progress, RelPath, Volume, retry_locked,
     };
     #[cfg(windows)]
     use gdl_fixtures::fake_sign;
@@ -3046,6 +3046,36 @@ mod tests {
             UpdateError::Files(FilesError::TooLarge { limit, .. }) => {
                 assert_eq!(*limit, MAX_RECEIPT_LEN);
             }
+            other => panic!("{other:?}"),
+        }
+        // Refused before a file was staged.
+        assert_eq!(failure.changes, Changes::None);
+        assert_eq!(as_it_is(&fixture.root), before);
+    }
+
+    #[test]
+    fn a_journal_past_its_bound_is_refused_before_staging() {
+        // New names each under folders of their own, six deep and every one of them new: the
+        // journal lists each folder beside the name, which takes it past its bound, though the
+        // names alone fill a quarter of it.
+        let (dir, fixture) = players_installation();
+        let mut next = fixture.runtime.next(NEXT);
+        let part = |letter: &str| letter.repeat(MAX_COMPONENT_CHARS);
+        let deep = ["a", "b", "c", "d", "e"].map(part).join("/");
+        for index in 0..1_100 {
+            next.files
+                .push((format!("licenses/x{index:04}/{deep}/f"), Vec::new()));
+        }
+        let mut source = bundled(dir.path(), &next);
+        let before = as_it_is(&fixture.root);
+        let failure = failed(update_simply(
+            &fixture,
+            &mut source,
+            NEXT,
+            &standing_in(&NoFaults, &answering),
+        ));
+        match &failure.error {
+            UpdateError::JournalTooLarge { limit } => assert_eq!(*limit, MAX_JSON_LEN),
             other => panic!("{other:?}"),
         }
         // Refused before a file was staged.
