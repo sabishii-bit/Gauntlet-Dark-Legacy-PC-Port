@@ -1,6 +1,8 @@
 #include <algorithm>
 #include <cmath>
+#include <numeric>
 #include <optional>
+#include <vector>
 
 #include "engine/core/Types.h"
 #include "engine/math/ApproximateLength.h"
@@ -270,13 +272,24 @@ bool Combatant::translate(Actor& critter, f32 seconds, const MoveDefinition* mov
         }
         return std::nullopt;
     };
-    bool playerContact = false;
-    for (const EnemyView& other : players) {
+    // CritterCollidePlayers walks gPlayers in seat order and pushes every standing player it
+    // meets, but each standing player overwrites whether the step stops (0x80035290,
+    // 0x800352F4), tested once after the walk (0x800353D4): only the last seat stops it. Any
+    // player met holds the turn (CritterTranslate, 0x8003AF24).
+    std::vector<usize> seats(players.size());
+    std::iota(seats.begin(), seats.end(), usize{0});
+    std::ranges::stable_sort(seats, {}, [&](usize view) { return players[view].player; });
+    bool touched = false;
+    bool stops = false;
+    for (const usize seat : seats) {
+        const EnemyView& other = players[seat];
         if (other.hidden) {
             continue;
         }
-        if (const auto separation = playerSeparation(other)) {
-            playerContact = true;
+        const auto separation = playerSeparation(other);
+        stops = separation.has_value();
+        if (separation) {
+            touched = true;
             const f32 length = glm::length(*separation);
             if (length > 0) {
                 const f32 width = other.collisionRadius.value_or(other.radius);
@@ -286,17 +299,19 @@ bool Combatant::translate(Actor& critter, f32 seconds, const MoveDefinition* mov
             }
         }
     }
-    if (playerContact) {
-        return true;
+    if (stops) {
+        // Only along the ground (critter.c 7249-7252): the rest of the step still runs, so a
+        // golem tramples what it stands over.
+        to = {critter.position.x, to.y, critter.position.z};
     }
     if (m_sim.collision != nullptr) {
         to = travelWorld(*m_sim.collision, critter.position, to, critter.definition->wallRadius());
     }
     if (blockedByItems(critter, to, nodes)) {
-        return false;
+        return touched;
     }
     if (blockedBySwarm(critter, to, nodes)) {
-        return false;
+        return touched;
     }
     for (const Combatant& peer : peers) {
         const Actor& other = peer.m_sim.actor;
@@ -319,14 +334,14 @@ bool Combatant::translate(Actor& critter, f32 seconds, const MoveDefinition* mov
                 const Vec3 centre = partCentre(other, part, otherNodes);
                 if (movementTouchesBody(from, peerDestination, centre, radius + part.radius,
                                         radius + part.radius)) {
-                    return false;
+                    return touched;
                 }
             }
         }
         if (movementTouchesBody(from, peerDestination, bodyOrigin(other),
                                 radius + other.definition->wallRadius(),
                                 radius + other.definition->radius())) {
-            return false;
+            return touched;
         }
     }
     critter.position = to;
@@ -342,7 +357,7 @@ bool Combatant::translate(Actor& critter, f32 seconds, const MoveDefinition* mov
             EnemyHit hit;
             if (HazardSurfaces::burning(m_sim.hazards->flagsOf(touch->object))) {
                 if (critter.burnGap > 0) {
-                    return false;
+                    return touched;
                 }
                 critter.burnGap = HazardSurfaces::kEnemyBurnGap;
             }
@@ -353,7 +368,7 @@ bool Combatant::translate(Actor& critter, f32 seconds, const MoveDefinition* mov
             hurt(hit);
         }
     }
-    return false;
+    return touched;
 }
 
 bool Combatant::blockedBySwarm(Actor& critter, const Vec3& to, const TreePose::RigidNodes& nodes) {

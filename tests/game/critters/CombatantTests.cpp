@@ -3929,6 +3929,128 @@ TEST_CASE("node-based critters use solid animated parts for player movement cont
     }
 }
 
+TEST_CASE("a great one's step stops only at the last standing player in seat order",
+          "[combatant][critter-contact]") {
+    // CritterCollidePlayers (0x800351B0) walks gPlayers in seat order and pushes every standing
+    // player it meets, but each standing player overwrites whether the step stops (0x80035290,
+    // 0x800352F4), which is tested once after the walk (0x800353D4); CritterTranslate skips the
+    // turn on any player met (0x8003AF24).
+    const auto root = familyAssets();
+    writeTextFile(root / "critter/GENERAL.json", R"({
+      "descriptors":[{"prefix":"BODY","name":"GENERAL","type":8}],
+      "types":[{"moveCount":1,"maxHealth":100,"radius":2,"wallRadius":1,
+                "floorOffset":2,"originOffset":[0,4,0]}],
+      "moves":[{"name":"READY","anim":"STEP","type":32,"interrupt":0,"turnRate":3}]})");
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, General::definition(), 'G'));
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+    const auto seat = [](s32 player, f32 x) {
+        EnemyView view;
+        view.player = player;
+        view.position = {x, 0, 0};
+        view.collisionHeight = 6.0f;
+        return view;
+    };
+    // One stands within the knocked step's reach, the other far along it.
+    std::array players{seat(0, 1), seat(1, 40)};
+    bool blocked = false;
+    std::vector<s32> pushed{0};
+    SECTION("an earlier seat met walks on while a later one stands clear") {}
+    SECTION("the seats decide, not the order the views come in") {
+        std::swap(players[0], players[1]);
+    }
+    SECTION("the last seat met stops it") {
+        players = {seat(0, 40), seat(1, 1)};
+        blocked = true;
+        pushed = {1};
+    }
+    SECTION("the last seat met stops it whatever order the views come in") {
+        players = {seat(1, 1), seat(0, 40)};
+        blocked = true;
+        pushed = {1};
+    }
+    SECTION("both seats met stop it, and both are pushed") {
+        players[1].position = {1, 0, 1};
+        blocked = true;
+        pushed = {0, 1};
+    }
+    SECTION("a hidden later seat is passed over") {
+        players[1].position.x = 1;
+        players[1].hidden = true;
+        blocked = true;
+    }
+    SECTION("nobody met, it walks on and turns toward its target") {
+        players[0].position.x = 40;
+        pushed.clear();
+    }
+    EnemyHit hit;
+    hit.damage = 1;
+    hit.flags = kKnockOver;
+    hit.direction = {1, 0, 0};
+    actor.hurt(hit);
+    constexpr f32 kSeconds = 1.0f / 30;
+    actor.update(2, kSeconds, players);
+    CHECK(actor.position().x == Approx(blocked ? 0.0f : 10.0f * kSeconds));
+    std::vector<s32> seats;
+    for (const auto& push : actor.takePushes()) {
+        seats.push_back(push.player);
+    }
+    CHECK(seats == pushed);
+    // Its stance turns it three radians a second toward its target, off along +x, unless it
+    // met someone.
+    CHECK(actor.yaw() == Approx(pushed.empty() ? 3 * kSeconds : 0.0f));
+}
+
+TEST_CASE("a golem a player stops still tramples the small enemy it stands over",
+          "[combatant][critter-contact][critter-trample]") {
+    // CritterTranslate goes on after CritterCollidePlayers takes the step's x and z away
+    // (critter.c 4016-4035, 7249-7252): CritterCollideEnemies meets what the still body stands
+    // over, and a golem tramples one no more than two high (7402-7428).
+    const auto root = familyAssets();
+    const auto& golem = Golem::definition();
+    writeTextFile(root / "critter" / (golem.name + ".json"),
+                  R"({"descriptors":[{"prefix":"BODY","name":")" + golem.name + R"(","type":)" +
+                      std::to_string(static_cast<s32>(golem.kind)) + R"(}],
+      "types":[{"moveCount":1,"maxHealth":100,"radius":2,"wallRadius":1,"damageScale":7}],
+      "moves":[{"name":"READY","anim":"STEP","type":32,"interrupt":0}]})");
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, golem, 'G'));
+    Combatant actor;
+    EnemyScales scales;
+    scales.damage = 2;
+    REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, scales, 'G'));
+    // Half a unit behind it, within its wall radius and the enemy's: the knocked step toward +x
+    // leaves it, and only a step held still meets it.
+    const std::array swarm{EnemyBody{5, {-0.5f, 0, 0}, 1, 2}};
+    actor.setSwarm(swarm);
+    EnemyView player;
+    player.player = 0;
+    player.position = {1, 0, 0};
+    bool stopped = true;
+    SECTION("stopped by a player, it tramples what it stands over") {}
+    SECTION("walking on, its step leaves the enemy behind it untouched") {
+        player.position.x = 40;
+        stopped = false;
+    }
+    EnemyHit hit;
+    hit.damage = 1;
+    hit.flags = kKnockOver;
+    hit.direction = {1, 0, 0};
+    actor.hurt(hit);
+    actor.update(2, 1.0f / 30, std::span{&player, 1});
+    CHECK(actor.position().x == Approx(stopped ? 0 : (10 - golem.knockbackReduction) / 30));
+    CHECK(actor.takePushes().size() == (stopped ? 1 : 0));
+    const auto tramples = actor.takeTramples();
+    REQUIRE(tramples.size() == (stopped ? 1 : 0));
+    if (stopped) {
+        CHECK(tramples[0].enemy == 5);
+        CHECK(tramples[0].damage == 14);
+    }
+}
+
 /** The turned-part general's own data: a stance, and one solid part two along x from ARM. */
 formats::CritterFile turnedPartCritter() {
     formats::CritterFile source;

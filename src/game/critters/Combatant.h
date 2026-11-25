@@ -599,7 +599,7 @@ private:
     static void noteMoveNode(Actor& critter, const MoveDefinition& move, f32 seconds);
     void carry(Actor& critter, f32 seconds, const MoveDefinition* move,
                std::span<const EnemyView> players, std::span<const Combatant> peers);
-    /** Integrates translation, returning whether a player stopped the step. */
+    /** Integrates translation, returning whether it met a player, which holds its turn. */
     bool translate(Actor& critter, f32 seconds, const MoveDefinition* move,
                    std::span<const EnemyView> players, std::span<const Combatant> peers);
     /** Takes `critter` back into its territory from where its step left it, noting how far
