@@ -7,11 +7,11 @@
 use std::io;
 
 use gdl_extract::ExtractError;
-use gdl_files::FilesError;
+use gdl_files::{FilesError, Hold};
 use gdl_install::{
     Blocker, DestinationError, FolderError, FolderState, GameStartError, GameUseError, IconError,
-    InstallError, InstallNotice, LockError, PayloadError, ReceiptError, RecoveryError,
-    SectionsError, Warning,
+    InstallError, InstallNotice, LockError, PayloadError, ReceiptError, RecoverError,
+    RecoveryError, SectionsError, UpdateError, UpdateNotice, Warning,
 };
 use gdl_media::{DiscRule, DumpRefusal, GameCubeRule, MediaError, RomRule, TplRule};
 use gdl_release::ReleaseError;
@@ -20,7 +20,8 @@ use crate::extraction::ExtractionError;
 use crate::privilege::Refusal;
 
 /// A runtime zip, or the launcher file that carries one, breaks a rule the launcher holds it to,
-/// or does not hold the bytes its records give.
+/// or does not hold the bytes its records give; or a runtime changes more names than an update's
+/// journal can list.
 const PAYLOAD_DAMAGED: &str = "payload.damaged";
 
 /// Looking at, reading or writing a file or folder failed.
@@ -30,14 +31,16 @@ const IO_FAILED: &str = "io.failed";
 const SPACE_RAN_OUT: &str = "space.ranOut";
 
 /// The volume of the folder chosen to install into has less room than the install needs, as
-/// measured before anything is written.
+/// measured before anything is written; or the volume of an installation's state has less room
+/// than an update needs for what it downloads or for what it stages, as measured before each.
 const SPACE_INSUFFICIENT: &str = "space.insufficient";
 
 /// A link or a junction stands where the launcher looks before it changes anything: the
 /// installation's folder, a folder above it, or what the launcher reads of the installation's own,
 /// its state folder, the lock file, the journal folder and the journals, the receipt and the files
-/// the receipt pins; the folder chosen to install into, or a folder above it; or the folder chosen
-/// for an expansion's tree, or a folder above it.
+/// the receipt pins; a name of the runtime an update moves, or a folder on the way to one, which
+/// the update looks at again before each move; the folder chosen to install into, or a folder
+/// above it; or the folder chosen for an expansion's tree, or a folder above it.
 const FOLDER_LINKS: &str = "folder.links";
 
 /// A folder the launcher is to use is not one: nothing, or something other than a folder, is at
@@ -101,7 +104,8 @@ const GAME_MISSING: &str = "game.missing";
 /// The game did not start and print its version.
 const GAME_PROBE_FAILED: &str = "game.probeFailed";
 
-/// The launcher's receipt cannot be read, or disagrees with the files it pins.
+/// The launcher's receipt cannot be read, or disagrees with the files it pins, or the release
+/// record it pins names a file no runtime holds.
 const INSTALL_RECEIPT_INVALID: &str = "install.receiptInvalid";
 
 /// The installation is for another platform than the one the launcher was built for.
@@ -115,7 +119,9 @@ const STATE_NEWER_LAUNCHER: &str = "state.newerLauncher";
 const JOURNAL_UNREADABLE: &str = "journal.unreadable";
 
 /// A job left unfinished can be neither finished nor taken back, since what its journal records
-/// does not match what the folder holds: the folder is left as it is, the journal with it.
+/// does not match what the folder holds, or since it is of a kind this launcher does not recover:
+/// the folder is left as it is, the journal with it. An update taken back because something was
+/// put in a place it was moving a file into reports it too.
 const RECOVER_FAILED: &str = "recover.failed";
 
 /// The system runs the launcher and the game, which are x64 programs, only by emulating them, as
@@ -186,8 +192,10 @@ const NET_RATE_LIMITED: &str = "net.rateLimited";
 const NET_UNTRUSTED_HOST: &str = "net.untrustedHost";
 
 /// A release lacks a file it must carry, lists one twice, or gives one no sound state, size,
-/// digest or download address; or its checksum list is not one the release scripts write, or does
-/// not give the launcher's file GitHub's digest.
+/// digest or download address; its checksum list is not one the release scripts write, or does
+/// not give the launcher's file GitHub's digest; or its launcher file, which matched both digests,
+/// carries another release than its own, or on Linux comes in an archive that holds anything but
+/// the launcher program alone.
 const RELEASE_INCOMPLETE: &str = "release.incomplete";
 
 /// A release's checksum list carries no signature the launcher accepts: it is malformed, made by
@@ -198,9 +206,31 @@ const RELEASE_SIGNATURE_INVALID: &str = "release.signatureInvalid";
 /// it, or does not have the digest the release gives it.
 const DOWNLOAD_CORRUPT: &str = "download.corrupt";
 
+/// A file of the installed game's runtime was changed or removed since it was installed, or the
+/// launcher copy at the installation's top was changed, so the update changes nothing.
+const UPDATE_OWNED_FILE_CHANGED: &str = "update.ownedFileChanged";
+
+/// Something the launcher did not put there stands where the new release puts a file, or at a
+/// folder on the way to one, and the launcher never replaces what it did not make.
+const UPDATE_UNOWNED_FILE: &str = "update.unownedFile";
+
+/// The new release names a file that differs from an installed one in letter case alone, which a
+/// file system that ignores letter case takes for the same name.
+const UPDATE_CASE_CHANGE: &str = "update.caseChange";
+
+/// The previous update stands, but what it staged or moved aside could not all be removed yet, as
+/// another program may still hold one of those files: the next start, or the next update, tries
+/// again, and no update is made until that cleanup has finished.
+const UPDATE_CLEANUP_PENDING: &str = "update.cleanupPending";
+
+/// The launcher file that runs is older than the installation: the game stays playable, and this
+/// launcher changes nothing, an unfinished job's recovery included, since the installation's jobs
+/// may follow newer rules than its own.
+const LAUNCHER_OLDER: &str = "launcher.older";
+
 /// Every code this module's functions give, each once: the codes the page's string table holds
 /// words for.
-pub const CODES: [&str; 45] = [
+pub const CODES: [&str; 50] = [
     PAYLOAD_DAMAGED,
     IO_FAILED,
     SPACE_RAN_OUT,
@@ -246,6 +276,11 @@ pub const CODES: [&str; 45] = [
     RELEASE_INCOMPLETE,
     RELEASE_SIGNATURE_INVALID,
     DOWNLOAD_CORRUPT,
+    UPDATE_OWNED_FILE_CHANGED,
+    UPDATE_UNOWNED_FILE,
+    UPDATE_CASE_CHANGE,
+    UPDATE_CLEANUP_PENDING,
+    LAUNCHER_OLDER,
 ];
 
 /// What a refusal a job meets reports: that the job was asked to stop, or the problem it fails
@@ -457,11 +492,7 @@ pub fn install(error: &InstallError) -> Report {
         InstallError::Blocked(finding) => Report::Error(blocker(finding)),
         InstallError::Destination(error) => Report::Error(destination(error)),
         InstallError::Image(error) => media(error),
-        InstallError::Icon(IconError::Tpl(error)) => media(error),
-        InstallError::Icon(IconError::Decoded) => Report::Error(SOURCE_DAMAGED),
-        InstallError::Icon(IconError::Embed { source, .. } | IconError::Rehash { source, .. }) => {
-            Report::Error(written(source))
-        }
+        InstallError::Icon(error) => icon(error),
         InstallError::Runtime(PayloadError::Io(source)) => Report::Error(written(source)),
         InstallError::Runtime(error) => payload(error),
         InstallError::Launcher(error) => sections(error),
@@ -493,6 +524,35 @@ pub fn recovery(error: &RecoveryError) -> Report {
     })
 }
 
+/// What a failure to recover the jobs left in a folder reports, an update's as well as a fresh
+/// install's. A recovery asked to stop, which only a hold lets it be, has none, and whatever
+/// stopped it, every journal it did not finish with is left for the next start. The lock's refusal
+/// reports what [`lock`] gives it, and a look at whether the game runs what [`game_use`] gives it,
+/// `game.running` among it, a hold: the recovery can wait for the game to close. A later
+/// launcher's state is `state.newerLauncher`, and a launcher older than the installation
+/// `launcher.older`. The fresh install's part reports what [`recovery`] gives it. An update's
+/// journal that cannot be read is `journal.unreadable`, and one that does not match what the
+/// folder holds `recover.failed`, as is a journal of another kind of job, which this launcher does
+/// not recover. A file operation's failure reports what [`files`] gives it, and the system's
+/// refusal to look at the folder, or to move what the update moved, is `io.failed` whatever it
+/// answered.
+pub fn recover(error: &RecoverError) -> Report {
+    match error {
+        RecoverError::Cancelled => Report::Cancelled,
+        RecoverError::Lock(error) => Report::Error(lock(error)),
+        RecoverError::Game(error) => Report::Error(game_use(error)),
+        RecoverError::NewerLauncher => Report::Error(STATE_NEWER_LAUNCHER),
+        RecoverError::OlderLauncher { .. } => Report::Error(LAUNCHER_OLDER),
+        RecoverError::Install(error) => recovery(error),
+        RecoverError::UpdateJournalUnreadable { .. } => Report::Error(JOURNAL_UNREADABLE),
+        RecoverError::UpdateInconsistent { .. } | RecoverError::OtherJob { .. } => {
+            Report::Error(RECOVER_FAILED)
+        }
+        RecoverError::Files(error) => Report::Error(files(error)),
+        RecoverError::Io { .. } => Report::Error(IO_FAILED),
+    }
+}
+
 /// The code of what went wrong in an install that stands: a staged game that did not answer when
 /// asked for its version is `game.probeFailed`, and a record of installations that would not take
 /// the installation, like a cleanup that stopped part-way, which the next start finishes, is
@@ -501,6 +561,16 @@ pub fn notice(notice: &InstallNotice) -> &'static str {
     match notice {
         InstallNotice::ProbeFailed { .. } => GAME_PROBE_FAILED,
         InstallNotice::NotRecorded { .. } | InstallNotice::CleanupLeft { .. } => IO_FAILED,
+    }
+}
+
+/// The code of what went wrong in an update that stands: a staged game that did not answer when
+/// asked for its version, as the installed one did not either, is `game.probeFailed`, and a
+/// cleanup that stopped part-way, which the next start finishes, is `io.failed`.
+pub fn update_notice(notice: &UpdateNotice) -> &'static str {
+    match notice {
+        UpdateNotice::ProbeFailed { .. } => GAME_PROBE_FAILED,
+        UpdateNotice::CleanupLeft { .. } => IO_FAILED,
     }
 }
 
@@ -672,6 +742,74 @@ pub fn release(error: &ReleaseError) -> Report {
     }
 }
 
+/// What an update's failure reports, whether planning or the job met it. A cancel has none. The
+/// lock's refusal reports what [`lock`] gives it, the recovery the update makes first what
+/// [`recover`] gives it, and the installation's receipt what [`receipt`] gives it. A later
+/// launcher's state is `state.newerLauncher`, a launcher file older than the installation
+/// `launcher.older`, and a previous update whose cleanup still cannot finish
+/// `update.cleanupPending`. The launcher file's sections report what [`sections`] gives them, and
+/// a release's files what [`release`] gives them; a refused runtime reports what [`payload`] gives
+/// it, but for a staged copy of one of its files that could not be written, which reports what
+/// the system answered the write. A downloaded launcher file that carries another release than its
+/// own, and a Linux archive that holds anything but the launcher program alone, are
+/// `release.incomplete`: they matched the release's digests, so the release itself is at fault. A
+/// release record that names a file no runtime holds is `install.receiptInvalid`, a new name that
+/// differs from an installed one in letter case alone `update.caseChange`, something the launcher
+/// did not put where a new name goes `update.unownedFile`, a link on the installation's path or on
+/// the way of what the update moves `folder.links`, an installed file or the launcher copy changed
+/// `update.ownedFileChanged`, and a volume found too small for what the update downloads or
+/// stages, before it does, `space.insufficient`. A look at whether the game runs reports what
+/// [`game_use`] gives it, `game.running` among it, a hold; a staged game that does not answer
+/// where the installed one does is `game.probeFailed`; and the disc's icon reports as an
+/// install's does. A runtime that changes more names than the update's journal can list is
+/// `payload.damaged`. Something put in a place the update was moving a file into, and moves that
+/// can be neither finished nor taken back, are `recover.failed`. A file operation reports what
+/// [`files`] gives it, and the update's own writes what the system answered: `space.ranOut` when
+/// the disk was full or the quota spent, else `io.failed`.
+pub fn update(error: &UpdateError) -> Report {
+    match error {
+        UpdateError::Cancelled => Report::Cancelled,
+        UpdateError::Lock(error) => Report::Error(lock(error)),
+        UpdateError::Recover(error) => recover(error),
+        UpdateError::Receipt(error) => Report::Error(receipt(error)),
+        UpdateError::NewerLauncher => Report::Error(STATE_NEWER_LAUNCHER),
+        UpdateError::OlderLauncher { .. } => Report::Error(LAUNCHER_OLDER),
+        UpdateError::CleanupPending => Report::Error(UPDATE_CLEANUP_PENDING),
+        UpdateError::Source(error) => sections(error),
+        UpdateError::Runtime(PayloadError::Io(source)) => Report::Error(written(source)),
+        UpdateError::Runtime(error) => payload(error),
+        UpdateError::Release(error) => release(error),
+        UpdateError::SourceMismatch { .. } | UpdateError::Archive { .. } => {
+            Report::Error(RELEASE_INCOMPLETE)
+        }
+        UpdateError::InstalledNames { .. } => Report::Error(INSTALL_RECEIPT_INVALID),
+        UpdateError::CaseChange { .. } => Report::Error(UPDATE_CASE_CHANGE),
+        UpdateError::Unowned { .. } => Report::Error(UPDATE_UNOWNED_FILE),
+        UpdateError::Links { .. } => Report::Error(FOLDER_LINKS),
+        UpdateError::OwnedFileChanged { .. } => Report::Error(UPDATE_OWNED_FILE_CHANGED),
+        UpdateError::Space { .. } => Report::Error(SPACE_INSUFFICIENT),
+        UpdateError::Game(error) => Report::Error(game_use(error)),
+        UpdateError::ProbeRefused { .. } => Report::Error(GAME_PROBE_FAILED),
+        UpdateError::Icon(error) => icon(error),
+        UpdateError::JournalTooLarge { .. } => Report::Error(PAYLOAD_DAMAGED),
+        UpdateError::Changed { .. } | UpdateError::Inconsistent { .. } => {
+            Report::Error(RECOVER_FAILED)
+        }
+        UpdateError::Files(error) => Report::Error(files(error)),
+        UpdateError::Io { source, .. } => Report::Error(written(source)),
+    }
+}
+
+/// The code of what a job waits for to end, which the page shows while the job holds: the game
+/// running from the installation is `game.running`, and another job holding the installation's
+/// lock `lock.busy`, as the refusals the holds are made from report them.
+pub fn hold(hold: Hold) -> &'static str {
+    match hold {
+        Hold::GameRunning => GAME_RUNNING,
+        Hold::LockBusy => LOCK_BUSY,
+    }
+}
+
 /// The code of a rule of the N64 ROM's format: a ROM shorter than its header, or cut off within a
 /// word, is `source.incomplete`, and a file whose first word is that of no byte order a cartridge
 /// is kept in is no ROM the launcher knows, `source.unrecognized`. Every other rule is
@@ -820,6 +958,21 @@ fn tpl_rule(rule: TplRule) -> &'static str {
     }
 }
 
+/// What a failure to set the disc's icon into the game's executable reports, for an install and an
+/// update alike: an icon that is no TPL the launcher decodes reports what [`media`] gives it, a
+/// frame that is no icon's is `source.damaged`, and the system's refusal to set the icon in, which
+/// rewrites the executable, or to read it back and write it through to its disk, reports what the
+/// system answered, as the launcher's own writes do.
+fn icon(error: &IconError) -> Report {
+    match error {
+        IconError::Tpl(error) => media(error),
+        IconError::Decoded => Report::Error(SOURCE_DAMAGED),
+        IconError::Embed { source, .. } | IconError::Rehash { source, .. } => {
+            Report::Error(written(source))
+        }
+    }
+}
+
 /// The code a failed write reports, by what the system answered: `space.ranOut` when the disk was
 /// full or the quota spent, else `io.failed`.
 fn written(error: &io::Error) -> &'static str {
@@ -834,27 +987,31 @@ fn written(error: &io::Error) -> &'static str {
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
+    use std::fs::File;
     use std::io;
     use std::path::{Path, PathBuf};
 
     use gdl_extract::{Expansion, ExtractError, FingerprintRule, NativeRule, TreeRule};
     use gdl_files::{
-        ALPHA_NAMES, Cancel, DISC_NAMES, FilesError, Job, MAX_INSTALL_ROOT_UTF16, NoProgress,
-        PAYLOAD_NAMES, RelPath,
+        ALPHA_NAMES, Cancel, DISC_NAMES, FilesError, Hold, Job, MAX_INSTALL_ROOT_UTF16,
+        MAX_JSON_LEN, NoProgress, PAYLOAD_NAMES, RelPath,
+    };
+    use gdl_fixtures::{
+        InstallFixture, RuntimeFiles, append_sections, icon_iso, link_folder, make_alpha_markers,
+        pretty_json, sign_with_test_key, synthetic_ciso, synthetic_iso, test_public_key, tiny_elf,
+        tiny_pe, tpl,
     };
     #[cfg(windows)]
-    use gdl_fixtures::long_root;
-    use gdl_fixtures::{
-        RuntimeFiles, append_sections, icon_iso, link_folder, make_alpha_markers, pretty_json,
-        sign_with_test_key, synthetic_ciso, synthetic_iso, test_public_key, tiny_elf, tpl,
-    };
+    use gdl_fixtures::{fake_sign, long_root};
     use gdl_install::{
         Blocker, BuildInfo, Changes, DestinationError, FolderError, FolderState, GameStartError,
         GameUseError, INSTALL_JOURNAL, INSTALL_STAGING_PREFIX, IconError, InstallError,
-        InstallFailure, InstallFolder, InstallNotice, JOURNAL_DIR, JOURNAL_SCHEMA, KnownFolder,
-        LockError, MIN_LAUNCHER, PayloadError, RECEIPT_FILE, RUNTIME_SECTION, ReceiptError,
-        RecoveryError, STATE_DIR, Sections, SectionsError, Unrecorded, Unsupported, Warning,
-        install_game, judge_destination, plan_install, recover_install,
+        InstallFailure, InstallFolder, InstallNotice, JOURNAL_DIR, JOURNAL_NAMES, JOURNAL_SCHEMA,
+        KnownFolder, LockError, MIN_LAUNCHER, PayloadError, RECEIPT_FILE, RUNTIME_SECTION,
+        ReceiptError, RecoverError, RecoveryError, STATE_DIR, Sections, SectionsError,
+        UPDATE_JOURNAL, UPDATE_STAGING_PREFIX, Unrecorded, Unsupported, UpdateError, UpdateFailure,
+        UpdateNotice, UpdateRequest, UpdateSource, Warning, install_game, judge_destination,
+        plan_install, recover_install,
     };
     use gdl_media::{
         Console, DiscRule, DumpRefusal, GameCubeImage, GameCubeRule, MediaError, RomRule, TplRule,
@@ -868,8 +1025,8 @@ mod tests {
 
     use super::{
         CODES, Report, blocker, destination, dump_refusal, extract, extraction, files, folder,
-        game_start, game_use, install, lock, media, notice, payload, receipt, recovery, refusal,
-        release, sections, state, warning,
+        game_start, game_use, hold, install, lock, media, notice, payload, receipt, recover,
+        recovery, refusal, release, sections, state, update, update_notice, warning,
     };
     use crate::extraction::{ExtractionError, output_name};
     use crate::privilege::Refusal;
@@ -882,6 +1039,10 @@ mod tests {
 
     /// The version of the launcher that installs and recovers in the tests, and of its runtime.
     const VERSION: &str = "1.0.0-beta";
+
+    /// The version of the release, and of the launcher that carries it, that the tests update an
+    /// installation of [`VERSION`] to.
+    const NEXT: &str = "1.0.0-beta.1";
 
     /// Every rule of the N64 ROM's format, with its code: only a ROM cut short and a file of no
     /// byte order are told apart from damage.
@@ -1045,6 +1206,12 @@ mod tests {
     const REFUSALS: [(Refusal, &str); 2] = [
         (Refusal::Elevated, "elevated.refused"),
         (Refusal::Root, "root.refused"),
+    ];
+
+    /// Every condition a job holds for, with its code.
+    const HOLDS: [(Hold, &str); 2] = [
+        (Hold::GameRunning, "game.running"),
+        (Hold::LockBusy, "lock.busy"),
     ];
 
     /// The machine a program's header names for ARM64, a system that runs x64 programs only by
@@ -1594,6 +1761,30 @@ mod tests {
         ]
     }
 
+    /// Every kind of thing that goes wrong in an update that stands, with its code: a probe of a
+    /// staged game that ended with a status, and of one that gave none.
+    fn update_notices() -> Vec<(UpdateNotice, &'static str)> {
+        vec![
+            (
+                UpdateNotice::ProbeFailed {
+                    status: Some(2),
+                    first_line: Some("usage".into()),
+                    stderr_tail: "unknown option".into(),
+                },
+                "game.probeFailed",
+            ),
+            (
+                UpdateNotice::ProbeFailed {
+                    status: None,
+                    first_line: None,
+                    stderr_tail: String::new(),
+                },
+                "game.probeFailed",
+            ),
+            (UpdateNotice::CleanupLeft { detail: detail() }, "io.failed"),
+        ]
+    }
+
     /// The name of a staging an install made.
     fn staging_name() -> String {
         format!("{INSTALL_STAGING_PREFIX}AbC123xy")
@@ -1959,6 +2150,283 @@ mod tests {
             (ReleaseError::Io { path, source }, Report::Error(code))
         }));
         failures
+    }
+
+    /// One failure of every kind that recovering the jobs left in a folder meets, with what each
+    /// reports: every refusal of the lock, of the look at whether the game runs and of a file
+    /// operation, every failure of the fresh install's part, a later and an older launcher, an
+    /// update's journal that cannot be read and one that does not match the folder, another kind
+    /// of job's journal, the system's refusal to look once for each of its answers to a write, and
+    /// a cancel during a hold.
+    fn recover_failures() -> Vec<(RecoverError, Report)> {
+        let mut failures: Vec<(RecoverError, Report)> = lock_refusals()
+            .into_iter()
+            .map(|(error, code)| (RecoverError::Lock(error), Report::Error(code)))
+            .collect();
+        failures.extend(
+            game_use_refusals()
+                .into_iter()
+                .map(|(error, code)| (RecoverError::Game(error), Report::Error(code))),
+        );
+        failures.extend(
+            recovery_failures()
+                .into_iter()
+                .map(|(error, code)| (RecoverError::Install(error), Report::Error(code))),
+        );
+        failures.extend(
+            files_refusals()
+                .into_iter()
+                .map(|(error, code)| (RecoverError::Files(error), Report::Error(code))),
+        );
+        failures.extend([
+            (RecoverError::Cancelled, Report::Cancelled),
+            (
+                RecoverError::NewerLauncher,
+                Report::Error("state.newerLauncher"),
+            ),
+            (
+                RecoverError::OlderLauncher {
+                    running: VERSION.into(),
+                    installed: NEXT.into(),
+                },
+                Report::Error("launcher.older"),
+            ),
+            (
+                RecoverError::UpdateJournalUnreadable { detail: detail() },
+                Report::Error("journal.unreadable"),
+            ),
+            (
+                RecoverError::UpdateInconsistent { detail: detail() },
+                Report::Error("recover.failed"),
+            ),
+            (
+                RecoverError::OtherJob {
+                    journal: JOURNAL_NAMES[2].into(),
+                },
+                Report::Error("recover.failed"),
+            ),
+        ]);
+        failures.extend(write_failures().into_iter().map(|(source, _)| {
+            let path = path();
+            (RecoverError::Io { path, source }, FAILED)
+        }));
+        failures
+    }
+
+    /// One failure of every kind that planning or making an update meets, with what each reports:
+    /// every refusal of the lock, of the recovery made first, of the receipt, of the launcher
+    /// file's sections, of the runtime, of a release's files, of the look at whether the game runs
+    /// and of a file operation; a staged copy of a runtime's file whose writer would not take it,
+    /// the disc's icon refused for the executable it was to be set into, and the update's own
+    /// write, each once for each of the system's answers; the icon refused by every rule of its
+    /// format and for its frame; every refusal of the update's own; and a cancel.
+    fn update_failures() -> Vec<(UpdateError, Report)> {
+        let mut failures: Vec<(UpdateError, Report)> = lock_refusals()
+            .into_iter()
+            .map(|(error, code)| (UpdateError::Lock(error), Report::Error(code)))
+            .collect();
+        failures.extend(
+            recover_failures()
+                .into_iter()
+                .map(|(error, report)| (UpdateError::Recover(error), report)),
+        );
+        failures.extend(
+            receipt_refusals()
+                .into_iter()
+                .map(|(error, code)| (UpdateError::Receipt(error), Report::Error(code))),
+        );
+        failures.extend(
+            sections_refusals()
+                .into_iter()
+                .map(|(error, report)| (UpdateError::Source(error), report)),
+        );
+        failures.extend(
+            payload_refusals()
+                .into_iter()
+                .map(|(error, report)| (UpdateError::Runtime(error), report)),
+        );
+        failures.extend(write_failures().into_iter().map(|(source, code)| {
+            let error = UpdateError::Runtime(PayloadError::Io(source));
+            (error, Report::Error(code))
+        }));
+        failures.extend(
+            release_failures()
+                .into_iter()
+                .map(|(error, report)| (UpdateError::Release(error), report)),
+        );
+        failures.extend(
+            game_use_refusals()
+                .into_iter()
+                .map(|(error, code)| (UpdateError::Game(error), Report::Error(code))),
+        );
+        failures.extend(TPL_RULES.into_iter().map(|(rule, code)| {
+            let error = MediaError::Tpl {
+                rule,
+                detail: detail(),
+            };
+            (
+                UpdateError::Icon(IconError::Tpl(error)),
+                Report::Error(code),
+            )
+        }));
+        failures.push((
+            UpdateError::Icon(IconError::Decoded),
+            Report::Error("source.damaged"),
+        ));
+        failures.extend(write_failures().into_iter().map(|(source, code)| {
+            let path = path();
+            (
+                UpdateError::Icon(IconError::Embed { path, source }),
+                Report::Error(code),
+            )
+        }));
+        failures.extend(write_failures().into_iter().map(|(source, code)| {
+            let path = path();
+            (
+                UpdateError::Icon(IconError::Rehash { path, source }),
+                Report::Error(code),
+            )
+        }));
+        failures.extend(
+            files_refusals()
+                .into_iter()
+                .map(|(error, code)| (UpdateError::Files(error), Report::Error(code))),
+        );
+        failures.extend(write_failures().into_iter().map(|(source, code)| {
+            let path = path();
+            (UpdateError::Io { path, source }, Report::Error(code))
+        }));
+        let refused = [
+            (UpdateError::NewerLauncher, "state.newerLauncher"),
+            (
+                UpdateError::OlderLauncher {
+                    running: VERSION.into(),
+                    installed: NEXT.into(),
+                },
+                "launcher.older",
+            ),
+            (UpdateError::CleanupPending, "update.cleanupPending"),
+            (
+                UpdateError::SourceMismatch { detail: detail() },
+                "release.incomplete",
+            ),
+            (
+                UpdateError::Archive { detail: detail() },
+                "release.incomplete",
+            ),
+            (
+                UpdateError::InstalledNames { name: name() },
+                "install.receiptInvalid",
+            ),
+            (
+                UpdateError::CaseChange {
+                    old: "data/config.json".into(),
+                    new: "data/Config.json".into(),
+                },
+                "update.caseChange",
+            ),
+            (UpdateError::Unowned { name: name() }, "update.unownedFile"),
+            (UpdateError::Links { path: path() }, "folder.links"),
+            (
+                UpdateError::OwnedFileChanged { name: name() },
+                "update.ownedFileChanged",
+            ),
+            (
+                UpdateError::Space {
+                    needed: 2,
+                    available: 1,
+                },
+                "space.insufficient",
+            ),
+            (
+                UpdateError::ProbeRefused { detail: detail() },
+                "game.probeFailed",
+            ),
+            (
+                UpdateError::JournalTooLarge {
+                    limit: MAX_JSON_LEN,
+                },
+                "payload.damaged",
+            ),
+            (UpdateError::Changed { name: name() }, "recover.failed"),
+            (
+                UpdateError::Inconsistent { detail: detail() },
+                "recover.failed",
+            ),
+        ];
+        failures.extend(
+            refused
+                .into_iter()
+                .map(|(error, code)| (error, Report::Error(code))),
+        );
+        failures.push((UpdateError::Cancelled, Report::Cancelled));
+        failures
+    }
+
+    /// A launcher file of this system's kind carrying `runtime`, written into `dir` outside the
+    /// installation, signed on Windows as a release is, with its sections found as the launcher
+    /// finds its own.
+    fn bundled(dir: &Path, runtime: &RuntimeFiles) -> Sections<File> {
+        let mut file = if cfg!(windows) { tiny_pe() } else { tiny_elf() };
+        append_sections(&mut file, &[(RUNTIME_SECTION, &runtime.zip())], 0);
+        #[cfg(windows)]
+        fake_sign(&mut file);
+        let path = dir.join("launcher");
+        std::fs::write(&path, file).unwrap();
+        Sections::of_path(&path)
+            .expect("the tests' launcher file keeps the sections' rules")
+            .expect("the tests' launcher file carries sections")
+    }
+
+    /// An installation of the standard runtime of `version` for the system the tests run on, in
+    /// `dir`, as the launcher leaves one.
+    fn installation(dir: &Path, version: &str) -> InstallFixture {
+        let platform =
+            Platform::of_this_build().expect("a release is built for the system the tests run on");
+        let runtime = RuntimeFiles::standard(platform.as_str(), version);
+        InstallFixture::write(&dir.join("game"), runtime).unwrap()
+    }
+
+    /// What updating the installation `fixture` from the launcher file carrying `runtime`, written
+    /// into `dir`, by the launcher of version `running` fails with, the job asked to stop before
+    /// it begins when `cancelled`.
+    #[track_caller]
+    fn update_failure(
+        dir: &Path,
+        fixture: &InstallFixture,
+        runtime: &RuntimeFiles,
+        running: &str,
+        cancelled: bool,
+    ) -> UpdateFailure {
+        let mut source = bundled(dir, runtime);
+        let running = Version::parse(running).unwrap();
+        let cancel = Cancel::default();
+        if cancelled {
+            cancel.cancel();
+        }
+        let job = Job {
+            cancel: &cancel,
+            progress: &NoProgress,
+        };
+        let request = UpdateRequest {
+            root: &fixture.root,
+            running: &running,
+            source: UpdateSource::Bundled(&mut source),
+        };
+        gdl_install::update(request, &job).unwrap_err()
+    }
+
+    /// What recovering the jobs left in the folder `root` for the launcher of version `running`
+    /// fails with.
+    #[track_caller]
+    fn recover_failure(root: &Path, running: &str) -> RecoverError {
+        let running = Version::parse(running).unwrap();
+        let cancel = Cancel::default();
+        let job = Job {
+            cancel: &cancel,
+            progress: &NoProgress,
+        };
+        gdl_install::recover(root, &running, &mut Unrecorded, &job).unwrap_err()
     }
 
     #[test]
@@ -2433,6 +2901,147 @@ mod tests {
         for (told, code) in notices() {
             assert_eq!(notice(&told), code, "{told:?}");
         }
+        for (told, code) in update_notices() {
+            assert_eq!(update_notice(&told), code, "{told:?}");
+        }
+    }
+
+    #[test]
+    fn holds_name_the_codes_of_what_they_wait_for() {
+        for (held, code) in HOLDS {
+            assert_eq!(hold(held), code, "{held:?}");
+        }
+        // A hold is what a refusal would have been, waited out: the page names both alike.
+        assert_eq!(hold(Hold::GameRunning), game_use(&GameUseError::Running));
+        assert_eq!(hold(Hold::LockBusy), lock(&LockError::Busy));
+    }
+
+    #[test]
+    fn every_update_failure_has_its_code() {
+        for (error, expected) in update_failures() {
+            assert_eq!(update(&error), expected, "{}: {error}", error.rule());
+        }
+        // What the update refuses for itself when the recovery it makes first meets it, a lock
+        // refused, a look at the game that failed, a later or an older launcher and a cancel
+        // during a hold, reports the same code whichever of the two gives it.
+        let mut shared: Vec<(UpdateError, RecoverError)> = lock_refusals()
+            .into_iter()
+            .zip(lock_refusals())
+            .map(|((own, _), (met, _))| (UpdateError::Lock(own), RecoverError::Lock(met)))
+            .collect();
+        shared.extend(
+            game_use_refusals()
+                .into_iter()
+                .zip(game_use_refusals())
+                .map(|((own, _), (met, _))| (UpdateError::Game(own), RecoverError::Game(met))),
+        );
+        shared.extend([
+            (UpdateError::NewerLauncher, RecoverError::NewerLauncher),
+            (
+                UpdateError::OlderLauncher {
+                    running: VERSION.into(),
+                    installed: NEXT.into(),
+                },
+                RecoverError::OlderLauncher {
+                    running: VERSION.into(),
+                    installed: NEXT.into(),
+                },
+            ),
+            (UpdateError::Cancelled, RecoverError::Cancelled),
+        ]);
+        for (own, met) in shared {
+            assert_eq!(update(&own), recover(&met), "{}: {own}", own.rule());
+        }
+        // What an update fails with as it runs reports so, each before it changes anything: an
+        // update by a launcher older than the installation, one that finds an installed file
+        // changed, and one asked to stop.
+        let dir = tempfile::tempdir().unwrap();
+        let newer = installation(&dir.path().join("newer"), NEXT);
+        let own = newer.runtime.next(VERSION);
+        let failure = update_failure(dir.path(), &newer, &own, VERSION, false);
+        assert!(
+            matches!(failure.error, UpdateError::OlderLauncher { .. }),
+            "{failure:?}"
+        );
+        assert_eq!(update(&failure.error), Report::Error("launcher.older"));
+        assert_eq!(failure.changes, Changes::None);
+        let changed = installation(&dir.path().join("changed"), VERSION);
+        let config = changed.root.join("data").join("config.json");
+        std::fs::write(&config, b"{\"changed\": true}").unwrap();
+        let next = changed.runtime.next(NEXT);
+        let failure = update_failure(dir.path(), &changed, &next, NEXT, false);
+        match &failure.error {
+            UpdateError::OwnedFileChanged { name } => assert_eq!(&**name, "data/config.json"),
+            other => panic!("{other:?}"),
+        }
+        assert_eq!(
+            update(&failure.error),
+            Report::Error("update.ownedFileChanged")
+        );
+        assert_eq!(failure.changes, Changes::None);
+        let stopped = installation(&dir.path().join("stopped"), VERSION);
+        let next = stopped.runtime.next(NEXT);
+        let failure = update_failure(dir.path(), &stopped, &next, NEXT, true);
+        assert!(
+            matches!(failure.error, UpdateError::Cancelled),
+            "{failure:?}"
+        );
+        assert_eq!(update(&failure.error), Report::Cancelled);
+        assert_eq!(failure.changes, Changes::None);
+    }
+
+    #[test]
+    fn every_recovery_failure_has_its_code() {
+        for (error, expected) in recover_failures() {
+            assert_eq!(recover(&error), expected, "{}: {error}", error.rule());
+        }
+        // What recovering a folder fails with as it runs reports so, each before it changes
+        // anything: an update's journal that cannot be read, one a later launcher wrote, an
+        // expansion's journal, which this launcher does not recover, and an installation newer
+        // than the launcher that recovers it, with a staging an update left.
+        let dir = tempfile::tempdir().unwrap();
+        let stamp = json!({ "schema": JOURNAL_SCHEMA, "minLauncher": MIN_LAUNCHER });
+        let mut later = stamp.clone();
+        later["minLauncher"] = json!("9.0.0");
+        let expansion = JOURNAL_NAMES[2];
+        let journals: [(&str, Vec<u8>, &str, &str); 3] = [
+            (
+                UPDATE_JOURNAL,
+                b"{".to_vec(),
+                "journalUnreadable",
+                "journal.unreadable",
+            ),
+            (
+                UPDATE_JOURNAL,
+                pretty_json(&later),
+                "newerLauncher",
+                "state.newerLauncher",
+            ),
+            (expansion, pretty_json(&stamp), "otherJob", "recover.failed"),
+        ];
+        for (case, (name, bytes, rule, code)) in journals.into_iter().enumerate() {
+            let root = dir.path().join(case.to_string());
+            let journals = root.join(STATE_DIR).join(JOURNAL_DIR);
+            std::fs::create_dir_all(&journals).unwrap();
+            std::fs::write(journals.join(name), &bytes).unwrap();
+            let error = recover_failure(&root, VERSION);
+            assert_eq!(error.rule(), rule, "{name}: {error}");
+            assert_eq!(recover(&error), Report::Error(code), "{name}: {error}");
+            assert_eq!(std::fs::read(journals.join(name)).unwrap(), bytes, "{name}");
+        }
+        let newer = installation(&dir.path().join("newer"), NEXT);
+        let staging = newer
+            .root
+            .join(STATE_DIR)
+            .join(format!("{UPDATE_STAGING_PREFIX}AbC123xy"));
+        std::fs::create_dir(&staging).unwrap();
+        let error = recover_failure(&newer.root, VERSION);
+        assert!(
+            matches!(error, RecoverError::OlderLauncher { .. }),
+            "{error:?}"
+        );
+        assert_eq!(recover(&error), Report::Error("launcher.older"));
+        assert!(staging.is_dir());
     }
 
     #[test]
@@ -2590,6 +3199,18 @@ mod tests {
                 .iter()
                 .filter_map(|(error, _)| code_of(release(error))),
         );
+        returned.extend(
+            recover_failures()
+                .iter()
+                .filter_map(|(error, _)| code_of(recover(error))),
+        );
+        returned.extend(
+            update_failures()
+                .iter()
+                .filter_map(|(error, _)| code_of(update(error))),
+        );
+        returned.extend(update_notices().iter().map(|(told, _)| update_notice(told)));
+        returned.extend(HOLDS.into_iter().map(|(held, _)| hold(held)));
         assert_eq!(returned, listed);
     }
 }
