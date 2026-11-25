@@ -273,6 +273,27 @@ TEST_CASE("a pending blow's visitor keeps every field, the gap it holds its play
     }
 }
 
+TEST_CASE("a pending trample's visitor keeps every field, an effect's damage type and fade too",
+          "[native-state-digest][combatant-native-digest]") {
+    const auto hash = [](const CombatTrample& trample) {
+        NativeStateDigest digest;
+        digest.value(trample);
+        return checked(digest);
+    };
+    const CombatTrample trample;
+    const auto baseline = hash(trample);
+    const std::array<std::function<void(CombatTrample&)>, 6> mutations{
+        [](auto& v) { v.enemy = 2; },       [](auto& v) { v.damage = 7; },
+        [](auto& v) { v.position.y += 1; }, [](auto& v) { v.direction.x += 1; },
+        [](auto& v) { v.flags = 0x20; },    [](auto& v) { v.hold = 1.0f; }};
+    for (usize i = 0; i < mutations.size(); ++i) {
+        CAPTURE(i);
+        auto changed = trample;
+        mutations[i](changed);
+        CHECK(hash(changed) != baseline);
+    }
+}
+
 TEST_CASE("a pending grab's visitor keeps every field, the gap its release holds its player off "
           "by too",
           "[native-state-digest][combatant-native-digest]") {

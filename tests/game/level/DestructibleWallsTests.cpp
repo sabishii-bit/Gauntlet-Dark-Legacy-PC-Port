@@ -59,6 +59,22 @@ struct SampleWalls {
     }
 };
 
+TEST_CASE("a wall's bounds and targets carry no world wait, which is the swarm's alone",
+          "[walls][hit-wait]") {
+    // The world's effects share fxhittime[0] on the swarm alone (ProcessEffects' enemy pass); the
+    // walls' digest refuses bounds that carry it, and binding never gives a wall one.
+    SampleWalls fixture("walls-no-world-wait");
+    fixture.walls.setPlayerCount(2, fixture.collision);
+    for (usize i = 0; i < fixture.walls.size(); ++i) {
+        CAPTURE(i);
+        CHECK_FALSE(fixture.walls.wall(i).bounds.sharesWorldWait);
+        CHECK_FALSE(fixture.walls.wall(i).bounds.worldHeld);
+        const MissileTarget target = fixture.walls.target(i, 7);
+        CHECK_FALSE(target.sharesWorldWait);
+        CHECK_FALSE(target.worldHeld);
+    }
+}
+
 TEST_CASE("Shootable walls own removable geometry, health and party visibility",
           "[walls][alpha-wall-fx]") {
     const auto directory = test::scratchDirectory("destructible-walls");

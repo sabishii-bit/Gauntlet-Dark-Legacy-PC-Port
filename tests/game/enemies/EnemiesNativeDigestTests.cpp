@@ -1,5 +1,6 @@
 #include <array>
 #include <filesystem>
+#include <functional>
 #include <string_view>
 #include <tuple>
 #include <vector>
@@ -337,6 +338,29 @@ TEST_CASE(
     NativeStateDigest missingRetainedPose;
     missingRetainedPose.value(animator);
     CHECK_FALSE(missingRetainedPose.checkedFinish());
+}
+
+TEST_CASE("a kept great one's or boss's body digests its four fields and refuses a world wait, "
+          "which it is only ever lent",
+          "[native-state-digest][enemies-native-digest][hit-wait]") {
+    // The swarm keeps the great ones' and bosses' bodies, and lends its own to them with each
+    // update's world wait; a kept body carrying one would be a lent one kept.
+    const EnemyBody body{3, {1, 2, 3}, 1.5f, 2.0f};
+    const auto baseline = valueHash(body);
+    const std::array<std::function<void(EnemyBody&)>, 4> mutations{
+        [](auto& v) { v.id = 4; }, [](auto& v) { v.centre.y += 1; },
+        [](auto& v) { v.radius = 2.5f; }, [](auto& v) { v.halfHeight = 3.0f; }};
+    for (usize i = 0; i < mutations.size(); ++i) {
+        CAPTURE(i);
+        auto changed = body;
+        mutations[i](changed);
+        CHECK(valueHash(changed) != baseline);
+    }
+    auto lent = body;
+    lent.worldHeld = true;
+    NativeStateDigest digest;
+    digest.value(lent);
+    CHECK_FALSE(digest.checkedFinish());
 }
 
 TEST_CASE("enemy native digest bytes stay pinned for a seeded placed roster",
