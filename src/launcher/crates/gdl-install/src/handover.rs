@@ -1963,9 +1963,11 @@ mod tests {
         // As a standard user's session runs it: the old copy, and the new one it starts, which
         // inherits its token, hold the Administrators group only to deny and run at Medium
         // integrity, as UAC filters an administrator's token; the running copy's rename, the wait
-        // for it and the removal of its retired file go through all the same. They run on a
-        // window station and desktop made for them that grant their token's user, as a standard
-        // user's desktop grants that user's logon, since the ones this test runs on need not.
+        // for it and the removal of its retired file go through all the same. Their token's
+        // default DACL grants its user, as a standard user's does, whatever this test's own
+        // grants. They run on a window station and desktop made for them that grant their token's
+        // user, as a standard user's desktop grants that user's logon, since the ones this test
+        // runs on need not.
         let _one = crate::one_test_child();
         let dir = installation();
         let root = dir.path();

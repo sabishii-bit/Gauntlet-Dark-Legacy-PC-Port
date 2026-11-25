@@ -86,14 +86,16 @@ use windows_sys::Win32::Foundation::{
 use windows_sys::Win32::Foundation::{GENERIC_ALL, GENERIC_WRITE};
 #[cfg(test)]
 use windows_sys::Win32::Security::{
-    ACCESS_ALLOWED_ACE, ACL, ACL_REVISION, AddAccessAllowedAce, CheckTokenMembership,
-    CreateRestrictedToken, CreateWellKnownSid, DISABLE_MAX_PRIVILEGE, GetLengthSid,
+    ACCESS_ALLOWED_ACE, ACE_HEADER, ACL, ACL_REVISION, AddAccessAllowedAce, CheckTokenMembership,
+    CreateRestrictedToken, CreateWellKnownSid, DISABLE_MAX_PRIVILEGE, GetAce, GetLengthSid,
     GetSidSubAuthority, GetSidSubAuthorityCount, GetTokenInformation, InitializeAcl,
     InitializeSecurityDescriptor, PSID, SECURITY_ATTRIBUTES, SECURITY_DESCRIPTOR,
     SECURITY_MAX_SID_SIZE, SID_AND_ATTRIBUTES, SetSecurityDescriptorDacl, SetTokenInformation,
-    TOKEN_ACCESS_MASK, TOKEN_ADJUST_DEFAULT, TOKEN_ASSIGN_PRIMARY, TOKEN_DUPLICATE,
-    TOKEN_INFORMATION_CLASS, TOKEN_MANDATORY_LABEL, TOKEN_QUERY, TOKEN_USER, TokenIntegrityLevel,
-    TokenSessionId, TokenUser, WELL_KNOWN_SID_TYPE, WinBuiltinAdministratorsSid, WinMediumLabelSid,
+    TOKEN_ACCESS_MASK, TOKEN_ADJUST_DEFAULT, TOKEN_ASSIGN_PRIMARY, TOKEN_DEFAULT_DACL,
+    TOKEN_DUPLICATE, TOKEN_INFORMATION_CLASS, TOKEN_MANDATORY_LABEL, TOKEN_QUERY, TOKEN_USER,
+    TokenDefaultDacl, TokenElevationType, TokenElevationTypeDefault, TokenElevationTypeFull,
+    TokenElevationTypeLimited, TokenIntegrityLevel, TokenSessionId, TokenUser, WELL_KNOWN_SID_TYPE,
+    WinBuiltinAdministratorsSid, WinLocalSystemSid, WinMediumLabelSid,
 };
 #[cfg(test)]
 use windows_sys::Win32::Storage::FileSystem::{DELETE, GetShortPathNameW, SetFileShortNameW};
@@ -219,6 +221,10 @@ const MAX_USER_OBJECT_NAME_UNITS: usize = 260;
 /// SECURITY_DESCRIPTOR_REVISION: the revision a security descriptor is made in.
 #[cfg(test)]
 const SECURITY_DESCRIPTOR_REVISION: u32 = 1;
+
+/// ACCESS_ALLOWED_ACE_TYPE: the type of an ACL's entry that grants rights.
+#[cfg(test)]
+const ACCESS_ALLOWED_ENTRY: u8 = 0;
 
 /// The errors FindResourceExW gives for a resource that a program does not hold: none of its
 /// type, none of its id among those of its type, or none in its language.
@@ -875,9 +881,9 @@ pub(crate) struct FilteredChild {
 
 #[cfg(test)]
 impl FilteredChild {
-    /// The session the program was started in, and by name the window station and desktop this
-    /// process runs on and those the program was given, for a test to tell when the program
-    /// fails.
+    /// The session the program was started in, the elevation type of this process's token, and by
+    /// name the window station and desktop this process runs on and those the program was given,
+    /// for a test to tell when the program fails.
     pub(crate) fn place(&self) -> &str {
         &self.place
     }
@@ -914,12 +920,17 @@ impl Drop for FilteredChild {
 
 /// Starts `program` with `args` under a filtered copy of this process's token, as a standard
 /// user's token is filtered from an administrator's: every privilege but the one to pass through
-/// folders taken away, the Administrators group kept only to deny, and the integrity level lowered
-/// to Medium. The program runs with this process's environment, `env` set over it, without a
-/// console window, and with both its output streams on `output`, which is the one handle it
-/// inherits. The system refuses a caller that may not start a program under another token with
-/// ERROR_PRIVILEGE_NOT_HELD. The arguments are taken only when none is empty or holds a space, a
-/// tab or a quote, which need no quoting.
+/// folders taken away, the Administrators group kept only to deny, the integrity level lowered to
+/// Medium, and the default DACL, which whatever the program makes without a descriptor of its own
+/// takes, granting the token's user and SYSTEM, as a standard user's does. Kept from an
+/// administrator's token, whose default DACL may grant Administrators and SYSTEM alone, it would
+/// leave the program unable to open what it makes for itself as it starts: kernel32 fails to
+/// initialise, and the program dies with STATUS_DLL_INIT_FAILED before its main. The programs it
+/// starts inherit the token, and with it the DACL. The program runs with this process's
+/// environment, `env` set over it, without a console window, and with both its output streams on
+/// `output`, which is the one handle it inherits. The system refuses a caller that may not start a
+/// program under another token with ERROR_PRIVILEGE_NOT_HELD. The arguments are taken only when
+/// none is empty or holds a space, a tab or a quote, which need no quoting.
 ///
 /// When this process is an administrator, the program starts on a window station and desktop
 /// made for it, which grant the filtered token's user, and the programs it starts inherit them.
@@ -959,8 +970,9 @@ pub(crate) fn spawn_filtered(
         .as_ref()
         .map_or_else(|| own.clone(), FilteredDesktop::name);
     let place = format!(
-        "session {}, this process on {own}, the program on {given}",
-        described(own_session())
+        "session {}, elevation {}, this process on {own}, the program on {given}",
+        described(own_session()),
+        described(own_elevation())
     );
     let desktop_name = desktop
         .as_ref()
@@ -1142,12 +1154,58 @@ impl Drop for FilteredDesktop {
     }
 }
 
+/// A DACL that grants each of a few SIDs GENERIC_ALL, which an object made with it maps to every
+/// right it has, and nobody else anything; in words, so that it is aligned as an ACL wants.
+#[cfg(test)]
+struct FullAccessDacl(Vec<u32>);
+
+#[cfg(test)]
+impl FullAccessDacl {
+    /// The DACL granting `sids`, each of which must be a valid SID; it holds a copy of each.
+    fn granting(sids: &[PSID]) -> io::Result<FullAccessDacl> {
+        // An access-allowed entry ends with its SID, whose first word is the entry's last field.
+        let entries: usize = sids
+            .iter()
+            .map(|&sid| {
+                // SAFETY: the SID is a valid one, which the call only reads.
+                let sid_len = unsafe { GetLengthSid(sid) } as usize;
+                size_of::<ACCESS_ALLOWED_ACE>() - size_of::<u32>() + sid_len
+            })
+            .sum();
+        let len = size_of::<ACL>() + entries;
+        let mut dacl = vec![0_u32; len.div_ceil(size_of::<u32>())];
+        let dacl_len = (dacl.len() * size_of::<u32>()) as u32;
+        // SAFETY: the storage, aligned for an ACL, holds `dacl_len` bytes, which the call is told
+        // and writes no more than.
+        if unsafe { InitializeAcl(dacl.as_mut_ptr().cast(), dacl_len, ACL_REVISION) } == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        for &sid in sids {
+            // SAFETY: the ACL was initialized with room for an entry for each SID; the SID is
+            // valid and lives through the call, which copies it into the entry.
+            if unsafe {
+                AddAccessAllowedAce(dacl.as_mut_ptr().cast(), ACL_REVISION, GENERIC_ALL, sid)
+            } == 0
+            {
+                return Err(io::Error::last_os_error());
+            }
+        }
+        Ok(FullAccessDacl(dacl))
+    }
+
+    /// The DACL, as the calls take one; it lies in the vector's heap storage, which does not move
+    /// while the value is kept.
+    fn as_ptr(&mut self) -> *mut ACL {
+        self.0.as_mut_ptr().cast()
+    }
+}
+
 /// A security descriptor whose DACL grants one SID GENERIC_ALL, which a window station or desktop
 /// made with it maps to every right it has, and nobody else anything.
 #[cfg(test)]
 struct GrantedToOne {
-    /// The DACL, in words so that it is aligned as an ACL wants; the descriptor points at it.
-    dacl: Vec<u32>,
+    /// The DACL; the descriptor points at it.
+    dacl: FullAccessDacl,
     /// The descriptor, in absolute form.
     descriptor: SECURITY_DESCRIPTOR,
 }
@@ -1156,26 +1214,8 @@ struct GrantedToOne {
 impl GrantedToOne {
     /// The descriptor granting `sid`, which must be a valid SID; the DACL holds a copy of it.
     fn new(sid: PSID) -> io::Result<GrantedToOne> {
-        // SAFETY: the SID is a valid one, which the call only reads.
-        let sid_len = unsafe { GetLengthSid(sid) } as usize;
-        // An access-allowed entry ends with the SID, whose first word is its own last field.
-        let len = size_of::<ACL>() + size_of::<ACCESS_ALLOWED_ACE>() - size_of::<u32>() + sid_len;
-        let mut dacl = vec![0_u32; len.div_ceil(size_of::<u32>())];
-        let dacl_len = (dacl.len() * size_of::<u32>()) as u32;
-        // SAFETY: the storage, aligned for an ACL, holds `dacl_len` bytes, which the call is told
-        // and writes no more than.
-        if unsafe { InitializeAcl(dacl.as_mut_ptr().cast(), dacl_len, ACL_REVISION) } == 0 {
-            return Err(io::Error::last_os_error());
-        }
-        // SAFETY: the ACL was initialized with room for this one entry; the SID is valid and
-        // lives through the call, which copies it into the entry.
-        if unsafe { AddAccessAllowedAce(dacl.as_mut_ptr().cast(), ACL_REVISION, GENERIC_ALL, sid) }
-            == 0
-        {
-            return Err(io::Error::last_os_error());
-        }
         let mut granted = GrantedToOne {
-            dacl,
+            dacl: FullAccessDacl::granting(&[sid])?,
             descriptor: SECURITY_DESCRIPTOR::default(),
         };
         // SAFETY: the descriptor is storage of the structure's size, which the call initializes.
@@ -1185,8 +1225,8 @@ impl GrantedToOne {
         {
             return Err(io::Error::last_os_error());
         }
-        let dacl = granted.dacl.as_mut_ptr().cast::<ACL>();
-        // SAFETY: the descriptor was initialized; the DACL it is given lies in the vector's heap
+        let dacl = granted.dacl.as_ptr();
+        // SAFETY: the descriptor was initialized; the DACL it is given lies in the DACL's heap
         // storage, which does not move while the descriptor that points at it is kept beside it.
         if unsafe { SetSecurityDescriptorDacl(granted.descriptor(), TRUE, dacl, FALSE) } == 0 {
             return Err(io::Error::last_os_error());
@@ -1253,17 +1293,40 @@ fn user_object_name(object: HANDLE) -> io::Result<String> {
 /// The id of the session this process runs in, from its token.
 #[cfg(test)]
 fn own_session() -> io::Result<u32> {
+    own_token_number(TokenSessionId)
+}
+
+/// The elevation type of this process's token: "full" for an elevated administrator's, "limited"
+/// for the filtered half of an administrator's, "default" for a token that has no other half, as
+/// with UAC off or for a standard user.
+#[cfg(test)]
+fn own_elevation() -> io::Result<&'static str> {
+    let kind = own_token_number(TokenElevationType)?.cast_signed();
+    let named = [
+        (TokenElevationTypeFull, "full"),
+        (TokenElevationTypeLimited, "limited"),
+        (TokenElevationTypeDefault, "default"),
+    ];
+    Ok(named
+        .iter()
+        .find(|(known, _)| *known == kind)
+        .map_or("unknown", |(_, name)| name))
+}
+
+/// What this process's token holds of `class`, which must be a 32-bit number, as the session's id
+/// and the elevation type are.
+#[cfg(test)]
+fn own_token_number(class: TOKEN_INFORMATION_CLASS) -> io::Result<u32> {
     let token = own_token(TOKEN_QUERY)?;
-    let mut session = 0_u32;
+    let mut number = 0_u32;
     let mut len = 0;
-    // SAFETY: the token is open to be queried; the call writes the session's id, a 32-bit number,
-    // into a local of that size, which it is told, and the bytes it wrote through a reference to
-    // a local.
+    // SAFETY: the token is open to be queried; the call writes a 32-bit number into a local of
+    // that size, which it is told, and the bytes it wrote through a reference to a local.
     let read = unsafe {
         GetTokenInformation(
             token.as_raw_handle(),
-            TokenSessionId,
-            ptr::from_mut(&mut session).cast(),
+            class,
+            ptr::from_mut(&mut number).cast(),
             size_of::<u32>() as u32,
             &mut len,
         )
@@ -1271,7 +1334,7 @@ fn own_session() -> io::Result<u32> {
     if read == 0 {
         return Err(io::Error::last_os_error());
     }
-    Ok(session)
+    Ok(number)
 }
 
 /// `answer` as a test reports it: the value, or "unknown" and the reason.
@@ -1313,6 +1376,65 @@ fn token_information<T>(
         return Err(io::Error::last_os_error());
     }
     Ok(buffer)
+}
+
+/// The bytes of `sid`, which must be a valid SID.
+#[cfg(test)]
+fn sid_bytes(sid: PSID) -> Vec<u8> {
+    // SAFETY: the SID is a valid one, which the call only reads and which holds as many bytes as
+    // the call gives; they are copied while it lives.
+    unsafe { std::slice::from_raw_parts(sid.cast::<u8>(), GetLengthSid(sid) as usize) }.to_vec()
+}
+
+/// The SID of the user `token` names, by its bytes.
+#[cfg(test)]
+fn token_user_bytes(token: &OwnedHandle) -> io::Result<Vec<u8>> {
+    let user_info = token_information::<TOKEN_USER>(token, TokenUser)?;
+    // SAFETY: the call wrote a TOKEN_USER at the buffer's start, whose SID lies in the buffer,
+    // which lives while the SID is copied.
+    let user = unsafe { user_info.as_ptr().cast::<TOKEN_USER>().read() }
+        .User
+        .Sid;
+    Ok(sid_bytes(user))
+}
+
+/// Each entry of `token`'s default DACL, by the bytes of the SID it names and the rights it
+/// grants: none when the token has no default DACL, and an error for an entry that does not
+/// grant, such as one that denies.
+#[cfg(test)]
+fn default_dacl_grants(token: &OwnedHandle) -> io::Result<Vec<(Vec<u8>, u32)>> {
+    let buffer = token_information::<TOKEN_DEFAULT_DACL>(token, TokenDefaultDacl)?;
+    // SAFETY: the call wrote a TOKEN_DEFAULT_DACL at the buffer's start, whose DACL, when the
+    // token has one, lies in the buffer, which lives while the DACL is read.
+    let dacl = unsafe { buffer.as_ptr().cast::<TOKEN_DEFAULT_DACL>().read() }.DefaultDacl;
+    if dacl.is_null() {
+        return Ok(Vec::new());
+    }
+    // SAFETY: the DACL is a valid one, whose header is read.
+    let count = unsafe { dacl.read() }.AceCount;
+    let mut grants = Vec::new();
+    for index in 0..u32::from(count) {
+        let mut entry: *mut core::ffi::c_void = ptr::null_mut();
+        // SAFETY: the DACL is a valid one holding `count` entries; the call writes a pointer to
+        // the entry, which lies in the DACL, through a reference to a local.
+        if unsafe { GetAce(dacl, index, &mut entry) } == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        // SAFETY: every entry begins with its header, which lies in the DACL.
+        let kind = unsafe { entry.cast::<ACE_HEADER>().read() }.AceType;
+        if kind != ACCESS_ALLOWED_ENTRY {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("the default DACL's entry {index} is of type {kind}, which grants nothing"),
+            ));
+        }
+        let allowed = entry.cast::<ACCESS_ALLOWED_ACE>();
+        // SAFETY: an access-allowed entry is laid out as ACCESS_ALLOWED_ACE, its SID beginning at
+        // the field that ends it and lying in the entry, which lies in the DACL.
+        let (mask, sid) = unsafe { ((*allowed).Mask, (&raw mut (*allowed).SidStart).cast()) };
+        grants.push((sid_bytes(sid), mask));
+    }
+    Ok(grants)
 }
 
 /// A filtered copy of this process's token, as [`spawn_filtered`] describes it: a primary token
@@ -1366,6 +1488,33 @@ fn filtered_token() -> io::Result<OwnedHandle> {
             TokenIntegrityLevel,
             ptr::from_ref(&label).cast(),
             len,
+        )
+    };
+    if set == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    // The new token keeps the default DACL of the one it was made from, which an administrator's
+    // may grant to Administrators and SYSTEM alone: this token holds Administrators only to deny,
+    // so the DACL is made to grant the token's own user, and SYSTEM, instead.
+    let user_info = token_information::<TOKEN_USER>(&restricted, TokenUser)?;
+    // SAFETY: the call wrote a TOKEN_USER at the buffer's start, whose SID lies in the buffer,
+    // which lives while the DACL is made.
+    let user = unsafe { user_info.as_ptr().cast::<TOKEN_USER>().read() }
+        .User
+        .Sid;
+    let system = WellKnownSid::of(WinLocalSystemSid)?;
+    let mut dacl = FullAccessDacl::granting(&[user, system.sid()])?;
+    let default = TOKEN_DEFAULT_DACL {
+        DefaultDacl: dacl.as_ptr(),
+    };
+    // SAFETY: the new token's handle carries the right to change its defaults; the structure and
+    // the DACL it points at live through the call, which copies the DACL into the token.
+    let set = unsafe {
+        SetTokenInformation(
+            restricted.as_raw_handle(),
+            TokenDefaultDacl,
+            ptr::from_ref(&default).cast(),
+            size_of::<TOKEN_DEFAULT_DACL>() as u32,
         )
     };
     if set == 0 {
@@ -1849,9 +1998,11 @@ mod tests {
     use windows_sys::core::{PCWSTR, w};
 
     use super::{
-        HKEY_LOCAL_MACHINE, MAX_PROXY_VALUE_BYTES, ProxyEnable, RegistryKey, file_id, file_index,
+        GENERIC_ALL, HKEY_LOCAL_MACHINE, MAX_PROXY_VALUE_BYTES, ProxyEnable, RegistryKey,
+        WellKnownSid, WinLocalSystemSid, default_dacl_grants, file_id, file_index, filtered_token,
         is_same_file, long_path, numbered, onedrive_account_folders, reparse_tag, resource_bytes,
-        set_short_name, short_path, update_resources, wide_string, windows_build,
+        set_short_name, short_path, sid_bytes, token_user_bytes, update_resources, wide_string,
+        windows_build,
     };
 
     /// The first build of Windows 10, the oldest system the launcher runs on.
@@ -2072,5 +2223,21 @@ mod tests {
         let empty = [0_u16];
         // SAFETY: the same.
         assert!(unsafe { wide_string(empty.as_ptr()) }.is_empty());
+    }
+
+    #[test]
+    fn a_filtered_token_grants_what_its_program_makes_to_its_user_and_system() {
+        // As a standard user's token does, whatever this process's own default DACL grants: an
+        // administrator's may grant only Administrators, which the filtered token holds only to
+        // deny, and SYSTEM.
+        let token = filtered_token().unwrap();
+        let system = WellKnownSid::of(WinLocalSystemSid).unwrap();
+        assert_eq!(
+            default_dacl_grants(&token).unwrap(),
+            [
+                (token_user_bytes(&token).unwrap(), GENERIC_ALL),
+                (sid_bytes(system.sid()), GENERIC_ALL),
+            ]
+        );
     }
 }
