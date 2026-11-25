@@ -4,6 +4,8 @@
     python scripts/launcher.py check                   # formatting, clippy and every crate's tests
     python scripts/launcher.py check --package gdl-files [--package ...]   # the same for those crates
     python scripts/launcher.py build [--release] [--package <crate> ...]   # into build/launcher
+    python scripts/launcher.py build --test-hooks      # the headless program with its test hooks
+    python scripts/launcher.py rehearsal-build         # the update rehearsal's two programs
     python scripts/launcher.py run [--release] [-- args]   # the launcher's window, for development
     python scripts/launcher.py extract <n64|dreamcast> <dump> --output <new folder> [--install] [--release]
     python scripts/launcher.py check-folder <folder> [--json] [--release]   # judged for an install
@@ -18,7 +20,22 @@ developer environment. rustup's folder joins PATH when a fresh install has not r
 yet. A run that is interrupted, told to stop, or whose caller is gone ends cargo and every
 compiler under it, and so does one that outlasts the timeout a caller in this process gives it.
 
-build builds the whole workspace, or only the crates --package names. extract runs the headless
+check then runs clippy and the tests once more over the crates that carry the test hooks
+(gdl-release, gdl-install, gdl-session and the headless program), with the hooks on, whose code
+the plain pass never compiles: with --package, over those of them it names, and not at all when
+it names none.
+
+build builds the whole workspace, or only the crates --package names. build --test-hooks builds
+the headless program with its test hooks (faults by name, a loopback feed, an install without the
+window and the tests' own signing key) in a profile of its own that inherits the release profile,
+into build/launcher/test-hooks, so that it never takes the place of the program a release ships.
+It builds that program alone: cargo gives every crate of one build the same features.
+rehearsal-build builds it twice, at VERSION's version and at the next, the one an update
+rehearsal updates an installation of VERSION's to, and copies each program into
+build/launcher/rehearsal/<version>/, made afresh, printing both paths. The next version gives a
+prerelease one more identifier, 1 (1.0.0-beta becomes 1.0.0-beta.1), and makes a release a
+prerelease of its next patch (1.0.0 becomes 1.0.1-rehearsal), dropping build metadata, so that
+it ranks above VERSION's and is never a release's own. extract runs the headless
 program's --extract, which writes a Legends expansion's tree from a dump into a new folder,
 holding the dump as the extraction scripts hold one unless --install asks for an installation's
 strictness. check-folder runs the headless program's --check-folder, which judges a folder as one
@@ -34,8 +51,10 @@ folder and in the environment this script was started in.
 """
 
 import argparse
+import json
 import os
 import pathlib
+import re
 import shutil
 import signal
 import subprocess
@@ -58,21 +77,59 @@ PLATFORMS = ("n64", "dreamcast")  # the expansions the headless program's --extr
 TIMED_OUT = 124  # the exit code of a run stopped at its timeout
 WAIT_SLICE = 0.5  # seconds; on Windows a bare Popen.wait() holds a Ctrl+C until cargo exits
 STOP_SIGNALS = ("SIGTERM", "SIGHUP", "SIGQUIT", "SIGBREAK")  # those the platform has
+VERSION_FILE = ROOT / "VERSION"  # the version the launcher's programs carry
+TEST_HOOKS_FEATURE = "test-hooks"  # each crate's own name for its test hooks
+TEST_HOOKS_PROFILE = "test-hooks"  # the cargo profile, and so the folder, of a test-hooks build
+# The crates that carry the test hooks, each turning on those of the crates below it.
+TEST_HOOK_PACKAGES = ("gdl-release", "gdl-install", "gdl-session", HEADLESS_PACKAGE)
+HEADLESS_PROGRAM = HEADLESS_PACKAGE + (".exe" if devenv.WINDOWS else "")
+REHEARSAL = TARGET / "rehearsal"  # the update rehearsal's programs, a folder for each version
+VERSION_OVERRIDE = "TAURI_CONFIG"  # the variable whose "version" the programs carry instead
+REHEARSAL_IDENTIFIER = "rehearsal"  # the prerelease a release's next rehearsal version takes
+
+# A semantic version as semver.org gives it, build metadata included; ASCII digits alone.
+_NUMBER = r"(?:0|[1-9][0-9]*)"
+_IDENTIFIER = rf"(?:{_NUMBER}|[0-9]*[A-Za-z-][0-9A-Za-z-]*)"
+SEMANTIC_VERSION = re.compile(
+    rf"(?P<major>{_NUMBER})\.(?P<minor>{_NUMBER})\.(?P<patch>{_NUMBER})"
+    rf"(?:-(?P<prerelease>{_IDENTIFIER}(?:\.{_IDENTIFIER})*))?"
+    r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?")
 
 
 def plan(command: str, packages: Optional[Sequence[str]] = None, release: bool = False,
-         arguments: Optional[List[str]] = None) -> List[List[str]]:
+         arguments: Optional[List[str]] = None, test_hooks: bool = False) -> List[List[str]]:
     """The commands a launcher command runs, in order: cargo's, or the parity gate's."""
     profile = ["--release"] if release else []
     chosen = [part for name in packages or () for part in ("--package", name)]
+    if test_hooks and (command != "build" or packages or release):
+        raise ValueError("a test-hooks build builds the headless program alone, in its own "
+                         "profile")
     if command == "check":
-        return [
+        steps = [
             ["cargo", "fmt", *(chosen or ["--all"]), "--check"],
             ["cargo", "clippy", "--locked", *(chosen or ["--workspace"]), "--all-targets", "--",
              "-D", "warnings"],
             ["cargo", "test", "--locked", *(chosen or ["--workspace"])],
         ]
+        # The crates that carry the hooks are checked once more with them on, in commands of their
+        # own: cargo gives a crate the same features throughout one command, so the plain pass
+        # would otherwise build them with the hooks too. Each names its own feature, which turns
+        # on those of the crates below it, as the program's test-hooks build does.
+        hooked = list(dict.fromkeys(name for name in packages if name in TEST_HOOK_PACKAGES)
+                      if packages else TEST_HOOK_PACKAGES)
+        if hooked:
+            selected = [part for name in hooked for part in ("--package", name)]
+            features = ",".join(f"{name}/{TEST_HOOKS_FEATURE}" for name in hooked)
+            steps += [
+                ["cargo", "clippy", "--locked", *selected, "--features", features,
+                 "--all-targets", "--", "-D", "warnings"],
+                ["cargo", "test", "--locked", *selected, "--features", features],
+            ]
+        return steps
     if command == "build":
+        if test_hooks:
+            return [["cargo", "build", "--locked", "--profile", TEST_HOOKS_PROFILE, "--package",
+                     HEADLESS_PACKAGE, "--features", TEST_HOOKS_FEATURE]]
         return [["cargo", "build", "--locked", *(chosen or ["--workspace"]), *profile]]
     if command == "run":
         return [["cargo", "run", "--locked", "--package", WINDOW_PACKAGE, *profile, "--",
@@ -162,6 +219,63 @@ def run(command: List[str], env: Dict[str, str], timeout: Optional[float] = None
         raise
 
 
+def next_rehearsal_version(version: str) -> str:
+    """The version an update rehearsal updates an installation of `version` to: a prerelease gains
+    the identifier 1, since a longer list of identifiers ranks higher, and a release becomes the
+    rehearsal prerelease of its next patch, which ranks above it and is no release's own. Build
+    metadata, which ranks nothing, is dropped."""
+    match = SEMANTIC_VERSION.fullmatch(version)
+    if match is None:
+        raise ValueError(f"not a semantic version: {version!r}")
+    core = f"{match['major']}.{match['minor']}"
+    if match["prerelease"] is not None:
+        return f"{core}.{match['patch']}-{match['prerelease']}.1"
+    return f"{core}.{int(match['patch']) + 1}-{REHEARSAL_IDENTIFIER}"
+
+
+def without_version_override(env: Dict[str, str]) -> Dict[str, str]:
+    """`env` without the variable that gives the programs a version in place of VERSION's, in any
+    letter case, since Windows reads its variables' names so."""
+    return {name: value for name, value in env.items() if name.upper() != VERSION_OVERRIDE}
+
+
+def fresh_folder(folder: pathlib.Path) -> None:
+    """Makes `folder` anew, empty: what an earlier build left in it is removed first."""
+    if folder.exists():
+        shutil.rmtree(folder)
+    folder.mkdir(parents=True)
+
+
+def rehearsal_build() -> int:
+    """Builds the headless program with its test hooks at VERSION's version and at the next, and
+    copies each into the rehearsal's folder of its version. Both folders are made afresh before the
+    first build, so a build that fails leaves no program of an earlier one to rehearse with."""
+    candidate = VERSION_FILE.read_text(encoding="utf-8").strip()
+    try:
+        following = next_rehearsal_version(candidate)
+    except ValueError as error:
+        print(f"VERSION: {error}", file=sys.stderr)
+        return 1
+    built = TARGET / TEST_HOOKS_PROFILE / HEADLESS_PROGRAM
+    env = without_version_override(environment())
+    builds = ((candidate, env),
+              (following, {**env, VERSION_OVERRIDE: json.dumps({"version": following})}))
+    for version, _ in builds:
+        fresh_folder(REHEARSAL / version)
+    (command,) = plan("build", test_hooks=True)
+    copies = []
+    for version, build_env in builds:
+        code = run(command, build_env)
+        if code != 0:
+            return code
+        copy = REHEARSAL / version / HEADLESS_PROGRAM
+        shutil.copy2(built, copy)
+        copies.append(copy)
+    for copy in copies:
+        print(copy)
+    return 0
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     argv = sys.argv[1:] if argv is None else list(argv)
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
@@ -170,10 +284,17 @@ def main(argv: Optional[List[str]] = None) -> int:
     check.add_argument("--package", action="append", dest="packages", metavar="CRATE",
                        help="a crate of the workspace, such as gdl-files; repeat for more")
     build = commands.add_parser("build", help="build the launcher's programs, or the crates named")
-    build.add_argument("--release", action="store_true", help="the optimised profile")
+    profiles = build.add_mutually_exclusive_group()
+    profiles.add_argument("--release", action="store_true", help="the optimised profile")
+    profiles.add_argument("--test-hooks", action="store_true",
+                          help="the headless program alone, with its test hooks, in a profile of "
+                               "its own that inherits the optimised one; never a release's")
     build.add_argument("--package", action="append", dest="packages", metavar="CRATE",
                        help="only this crate of the workspace, such as gdl-launcher-headless; "
                             "repeat for more")
+    commands.add_parser("rehearsal-build",
+                        help="build the update rehearsal's two programs with their test hooks, "
+                             "at VERSION's version and the next, into build/launcher/rehearsal")
     window = commands.add_parser("run", help="run the launcher's window")
     window.add_argument("--release", action="store_true", help="the optimised profile")
     window.add_argument("arguments", nargs=argparse.REMAINDER,
@@ -206,6 +327,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         arguments = list(getattr(args, "arguments", None) or [])
         if arguments[:1] == ["--"]:
             arguments = arguments[1:]
+    test_hooks = getattr(args, "test_hooks", False)
+    if test_hooks and args.packages:
+        build.error(f"--test-hooks builds {HEADLESS_PACKAGE} alone, so it takes no --package")
     if args.command == "extract":
         # Cargo starts the program in the workspace, so the paths are made absolute here, where
         # they still mean what was typed. Without --install the dump is held as the extraction
@@ -225,9 +349,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     gate = args.command == "parity"
     folder = None if gate else WORKSPACE
     stop_on_signals()
+    if args.command == "rehearsal-build":
+        return rehearsal_build()
     env = dict(os.environ) if gate else environment()
     for step in plan(args.command, getattr(args, "packages", None),
-                     getattr(args, "release", False), arguments):
+                     getattr(args, "release", False), arguments, test_hooks):
         code = run(step, env, cwd=folder)
         if code != 0:
             return code

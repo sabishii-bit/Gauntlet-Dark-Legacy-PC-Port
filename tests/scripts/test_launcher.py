@@ -18,6 +18,9 @@ sys.path.insert(0, str(SCRIPTS))
 import launcher  # noqa: E402
 import process_tree  # noqa: E402
 
+sys.path.insert(0, str(SCRIPTS / "release"))
+from installer.versions import version_order  # noqa: E402
+
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 WORKSPACE = ROOT / "src" / "launcher"
 
@@ -58,27 +61,95 @@ def locked_dependencies(package):
 
 class PlanTests(unittest.TestCase):
     def test_check_formats_lints_and_tests_the_whole_workspace(self):
+        # Then the crates that carry the test hooks once more, with them on, each crate's own
+        # feature named.
+        hooked = ["--package", "gdl-release", "--package", "gdl-install", "--package",
+                  "gdl-session", "--package", "gdl-launcher-headless"]
+        features = ("gdl-release/test-hooks,gdl-install/test-hooks,gdl-session/test-hooks,"
+                    "gdl-launcher-headless/test-hooks")
         self.assertEqual(launcher.plan("check"), [
             ["cargo", "fmt", "--all", "--check"],
             ["cargo", "clippy", "--locked", "--workspace", "--all-targets", "--", "-D", "warnings"],
             ["cargo", "test", "--locked", "--workspace"],
+            ["cargo", "clippy", "--locked", *hooked, "--features", features, "--all-targets",
+             "--", "-D", "warnings"],
+            ["cargo", "test", "--locked", *hooked, "--features", features],
         ])
 
     def test_check_of_one_crate_stays_within_it(self):
+        self.assertEqual(launcher.plan("check", packages=["gdl-install"]), [
+            ["cargo", "fmt", "--package", "gdl-install", "--check"],
+            ["cargo", "clippy", "--locked", "--package", "gdl-install", "--all-targets", "--",
+             "-D", "warnings"],
+            ["cargo", "test", "--locked", "--package", "gdl-install"],
+            ["cargo", "clippy", "--locked", "--package", "gdl-install", "--features",
+             "gdl-install/test-hooks", "--all-targets", "--", "-D", "warnings"],
+            ["cargo", "test", "--locked", "--package", "gdl-install", "--features",
+             "gdl-install/test-hooks"],
+        ])
+
+    def test_check_of_several_crates_names_each(self):
+        # The test-hooks commands take, in the order named, those of the crates that carry the
+        # hooks, each once.
+        named = ["--package", "gdl-files", "--package", "gdl-session", "--package", "gdl-release",
+                 "--package", "gdl-session"]
+        hooked = ["--package", "gdl-session", "--package", "gdl-release"]
+        features = "gdl-session/test-hooks,gdl-release/test-hooks"
+        packages = ["gdl-files", "gdl-session", "gdl-release", "gdl-session"]
+        self.assertEqual(launcher.plan("check", packages=packages), [
+            ["cargo", "fmt", *named, "--check"],
+            ["cargo", "clippy", "--locked", *named, "--all-targets", "--", "-D", "warnings"],
+            ["cargo", "test", "--locked", *named],
+            ["cargo", "clippy", "--locked", *hooked, "--features", features, "--all-targets",
+             "--", "-D", "warnings"],
+            ["cargo", "test", "--locked", *hooked, "--features", features],
+        ])
+
+    def test_check_of_a_crate_without_test_hooks_runs_no_feature_pass(self):
         self.assertEqual(launcher.plan("check", packages=["gdl-files"]), [
             ["cargo", "fmt", "--package", "gdl-files", "--check"],
             ["cargo", "clippy", "--locked", "--package", "gdl-files", "--all-targets", "--",
              "-D", "warnings"],
             ["cargo", "test", "--locked", "--package", "gdl-files"],
         ])
-
-    def test_check_of_several_crates_names_each(self):
-        named = ["--package", "gdl-files", "--package", "gdl-media"]
-        self.assertEqual(launcher.plan("check", packages=["gdl-files", "gdl-media"]), [
+        named = ["--package", "gdl-media", "--package", "gdl-fixtures", "--package", "gdl-launcher"]
+        self.assertEqual(launcher.plan("check",
+                                       packages=["gdl-media", "gdl-fixtures", "gdl-launcher"]), [
             ["cargo", "fmt", *named, "--check"],
             ["cargo", "clippy", "--locked", *named, "--all-targets", "--", "-D", "warnings"],
             ["cargo", "test", "--locked", *named],
         ])
+
+    def test_build_with_test_hooks_uses_its_own_profile(self):
+        # The headless program alone, since cargo would give the hooks to every crate a build
+        # selects, in the profile that builds into a folder of its own.
+        command = ["cargo", "build", "--locked", "--profile", "test-hooks", "--package",
+                   "gdl-launcher-headless", "--features", "test-hooks"]
+        self.assertEqual(launcher.plan("build", test_hooks=True), [command])
+        result, calls = main_runs(["build", "--test-hooks"], [0])
+        self.assertEqual(result, 0)
+        self.assertEqual([call.args[0] for call in calls], [command])
+        self.assertEqual(calls[0].kwargs["cwd"], launcher.WORKSPACE)
+        self.assertEqual(launcher.TARGET / launcher.TEST_HOOKS_PROFILE,
+                         ROOT / "build" / "launcher" / "test-hooks")
+        # The build's exit code is the run's.
+        self.assertEqual(main_runs(["build", "--test-hooks"], [101])[0], 101)
+        # Neither another profile nor another crate, and only a build takes the hooks.
+        for argv in (["build", "--test-hooks", "--release"],
+                     ["build", "--release", "--test-hooks"],
+                     ["build", "--test-hooks", "--package", "gdl-launcher-headless"],
+                     ["build", "--test-hooks", "--package", "gdl-install"],
+                     ["check", "--test-hooks"], ["rehearsal-build", "--test-hooks"]):
+            with self.subTest(argv=argv), contextlib.redirect_stderr(io.StringIO()):
+                with self.assertRaises(SystemExit) as refused:
+                    main_runs(argv, [])
+                self.assertEqual(refused.exception.code, 2)
+        for command, packages, release in (("build", ["gdl-launcher-headless"], False),
+                                           ("build", None, True), ("check", None, False),
+                                           ("run", None, False)):
+            with self.subTest(command=command, packages=packages, release=release):
+                with self.assertRaises(ValueError):
+                    launcher.plan(command, packages=packages, release=release, test_hooks=True)
 
     def test_build_and_run_take_the_lock_as_it_is(self):
         self.assertEqual(launcher.plan("build", release=True),
@@ -198,6 +269,29 @@ class WorkspaceTests(unittest.TestCase):
             self.assertIn("tauri", names)
             self.assertNotIn("semver", names)
 
+    def test_the_test_hooks_are_the_crates_and_profile_the_script_names(self):
+        # The check's test-hooks commands reach every crate that declares the feature, and a
+        # test-hooks build's profile builds as a release does, into a folder of its own.
+        declaring = []
+        for manifest in sorted(WORKSPACE.glob("**/Cargo.toml")):
+            if "gen" in manifest.relative_to(WORKSPACE).parts:
+                continue
+            text = manifest.read_text(encoding="utf-8")
+            package = re.search(r'^\[package\]$.*?^name = "([^"]+)"$', text,
+                                re.MULTILINE | re.DOTALL)
+            features = re.search(r"^\[features\]$(.*?)(?=^\[|\Z)", text,
+                                 re.MULTILINE | re.DOTALL)
+            if package and features and re.search(r"^test-hooks\s*=", features.group(1),
+                                                  re.MULTILINE):
+                declaring.append(package.group(1))
+        self.assertEqual(sorted(declaring), sorted(launcher.TEST_HOOK_PACKAGES))
+        self.assertEqual(launcher.TEST_HOOK_PACKAGES[-1], launcher.HEADLESS_PACKAGE)
+        workspace = (WORKSPACE / "Cargo.toml").read_text(encoding="utf-8")
+        profile = re.search(r"^\[profile\.test-hooks\]$(.*?)(?=^\[|\Z)", workspace,
+                            re.MULTILINE | re.DOTALL)
+        self.assertIsNotNone(profile)
+        self.assertRegex(profile.group(1), r'(?m)^inherits = "release"$')
+
 
 class RunTests(unittest.TestCase):
     def run_main(self, argv, codes):
@@ -208,6 +302,14 @@ class RunTests(unittest.TestCase):
         result, steps = self.run_main(["check"], [0, 3, 0])
         self.assertEqual(result, 3)
         self.assertEqual([step[1] for step in steps], ["fmt", "clippy"])
+        # The test-hooks commands run after the plain ones, and stop the check the same way.
+        result, steps = self.run_main(["check"], [0, 0, 0, 4, 0])
+        self.assertEqual(result, 4)
+        self.assertEqual([step[1] for step in steps], ["fmt", "clippy", "test", "clippy"])
+        self.assertIn("--features", steps[-1])
+        result, steps = self.run_main(["check", "--package", "gdl-session"], [0, 0, 0, 0, 0])
+        self.assertEqual(result, 0)
+        self.assertEqual([step[1] for step in steps], ["fmt", "clippy", "test", "clippy", "test"])
 
     def test_every_named_crate_is_checked(self):
         result, steps = self.run_main(["check", "--package", "gdl-files", "--package", "gdl-media"],
@@ -466,6 +568,139 @@ class RunTests(unittest.TestCase):
         for stop in registered.values():
             with self.assertRaises(KeyboardInterrupt):
                 stop(signal.SIGTERM, None)
+
+
+class RehearsalTests(unittest.TestCase):
+    BUILD = ["cargo", "build", "--locked", "--profile", "test-hooks", "--package",
+             "gdl-launcher-headless", "--features", "test-hooks"]
+
+    def test_next_rehearsal_version(self):
+        for candidate, following in (("1.0.0-beta", "1.0.0-beta.1"),
+                                     ("1.0.0-rc.1", "1.0.0-rc.1.1"),
+                                     ("1.0.0", "1.0.1-rehearsal"),
+                                     ("1.2.3+build.4", "1.2.4-rehearsal"),
+                                     ("1.0.0-beta+exp.sha.5114f85", "1.0.0-beta.1"),
+                                     ("0.9.99", "0.9.100-rehearsal")):
+            with self.subTest(candidate=candidate):
+                self.assertEqual(launcher.next_rehearsal_version(candidate), following)
+                self.assertGreater(version_order(following), version_order(candidate))
+        # Every version the shared vectors hold valid has a next one, itself a version, that
+        # ranks above it; every one they hold invalid is refused.
+        vectors = json.loads((ROOT / "tests" / "scripts" / "data" / "semver-vectors.json")
+                             .read_text(encoding="utf-8"))
+        project = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
+        for candidate in (*vectors["strict"]["valid"], project):
+            with self.subTest(candidate=candidate):
+                following = launcher.next_rehearsal_version(candidate)
+                self.assertIsNotNone(launcher.SEMANTIC_VERSION.fullmatch(following))
+                self.assertNotIn("+", following)
+                self.assertGreater(version_order(following), version_order(candidate))
+        for candidate in (*vectors["strict"]["invalid"], "1.0.0-beta\r", "١.0.0"):
+            with self.subTest(candidate=candidate), self.assertRaises(ValueError):
+                launcher.next_rehearsal_version(candidate)
+
+    def rehearse(self, root, codes, version="1.0.0-beta\r\n", env=None):
+        """The rehearsal build's exit code, output and builds in a stand-in build folder under
+        `root`, each build standing in for cargo's: it exits with the next of `codes`, writing
+        the program it made, which holds the version it carries, unless it fails."""
+        target = root / "launcher"
+        version_file = root / "VERSION"
+        version_file.write_text(version, encoding="utf-8")
+        built = target / "test-hooks" / launcher.HEADLESS_PROGRAM
+        builds = []
+        remaining = list(codes)
+
+        def build(command, build_env, timeout=None, cwd=launcher.WORKSPACE):
+            rehearsal = target / "rehearsal"
+            builds.append({"command": command, "env": build_env, "cwd": cwd, "timeout": timeout,
+                           "rehearsal": sorted(path.relative_to(rehearsal).as_posix()
+                                               for path in rehearsal.rglob("*"))})
+            code = remaining.pop(0)
+            if code == 0:
+                override = build_env.get("TAURI_CONFIG")
+                built.parent.mkdir(parents=True, exist_ok=True)
+                built.write_text(json.loads(override)["version"] if override else "VERSION's",
+                                 encoding="utf-8")
+            return code
+
+        given = {"PATH": "x", "Tauri_Config": json.dumps({"version": "9.9.9"})}
+        with mock.patch.object(launcher, "TARGET", target), \
+                mock.patch.object(launcher, "REHEARSAL", target / "rehearsal"), \
+                mock.patch.object(launcher, "VERSION_FILE", version_file), \
+                mock.patch.object(launcher, "environment", return_value=env or given), \
+                mock.patch.object(launcher, "stop_on_signals"), \
+                mock.patch.object(launcher, "run", side_effect=build), \
+                contextlib.redirect_stdout(io.StringIO()) as out, \
+                contextlib.redirect_stderr(io.StringIO()) as err:
+            result = launcher.main(["rehearsal-build"])
+        return result, out.getvalue(), err.getvalue(), builds
+
+    def test_the_rehearsal_builds_both_versions_apart(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = pathlib.Path(folder)
+            rehearsal = root / "launcher" / "rehearsal"
+            program = launcher.HEADLESS_PROGRAM
+            # What an earlier build left in the two version folders goes; another version's
+            # folder stays as it was.
+            for leftover in ("1.0.0-beta/stale.txt", "1.0.0-beta.1/" + program,
+                             "0.9.0/" + program):
+                (rehearsal / leftover).parent.mkdir(parents=True, exist_ok=True)
+                (rehearsal / leftover).write_text("earlier", encoding="utf-8")
+            result, out, err, builds = self.rehearse(root, [0, 0])
+            self.assertEqual((result, err), (0, ""))
+            # The same test-hooks build twice, from the workspace, both folders made afresh first.
+            self.assertEqual([build["command"] for build in builds], [self.BUILD, self.BUILD])
+            self.assertEqual([build["cwd"] for build in builds], [launcher.WORKSPACE] * 2)
+            self.assertEqual([build["timeout"] for build in builds], [None, None])
+            self.assertEqual(builds[0]["rehearsal"],
+                             sorted(["0.9.0", "0.9.0/" + program, "1.0.0-beta", "1.0.0-beta.1"]))
+            # The first at VERSION's version, whatever version the caller's environment gave,
+            # in any letter case; the second at the next.
+            self.assertNotIn("TAURI_CONFIG", {name.upper() for name in builds[0]["env"]})
+            self.assertEqual(builds[0]["env"], {"PATH": "x"})
+            self.assertEqual(json.loads(builds[1]["env"]["TAURI_CONFIG"]),
+                             {"version": "1.0.0-beta.1"})
+            self.assertEqual({name: value for name, value in builds[1]["env"].items()
+                              if name != "TAURI_CONFIG"}, {"PATH": "x"})
+            # Each version's program in its folder, alone, and both named, the candidate first.
+            candidate = rehearsal / "1.0.0-beta" / program
+            following = rehearsal / "1.0.0-beta.1" / program
+            self.assertEqual(candidate.read_text(encoding="utf-8"), "VERSION's")
+            self.assertEqual(following.read_text(encoding="utf-8"), "1.0.0-beta.1")
+            self.assertEqual(sorted(path.relative_to(rehearsal).as_posix()
+                                    for path in rehearsal.rglob("*")),
+                             sorted(["0.9.0", "0.9.0/" + program, "1.0.0-beta",
+                                     "1.0.0-beta/" + program, "1.0.0-beta.1",
+                                     "1.0.0-beta.1/" + program]))
+            self.assertEqual((rehearsal / "0.9.0" / program).read_text(encoding="utf-8"),
+                             "earlier")
+            self.assertEqual(out.splitlines(), [str(candidate), str(following)])
+
+    def test_a_failed_rehearsal_build_leaves_no_program_to_rehearse_with(self):
+        program = launcher.HEADLESS_PROGRAM
+        for codes, left in (([101], []), ([0, 101], ["1.0.0-beta/" + program])):
+            with self.subTest(codes=codes), tempfile.TemporaryDirectory() as folder:
+                root = pathlib.Path(folder)
+                rehearsal = root / "launcher" / "rehearsal"
+                for leftover in ("1.0.0-beta/" + program, "1.0.0-beta.1/" + program):
+                    (rehearsal / leftover).parent.mkdir(parents=True, exist_ok=True)
+                    (rehearsal / leftover).write_text("earlier", encoding="utf-8")
+                result, out, _, builds = self.rehearse(root, codes)
+                # The failed build's code, nothing built after it, and nothing printed.
+                self.assertEqual(result, 101)
+                self.assertEqual(len(builds), len(codes))
+                self.assertEqual(out, "")
+                self.assertEqual(sorted(path.relative_to(rehearsal).as_posix()
+                                        for path in rehearsal.rglob("*")),
+                                 sorted(["1.0.0-beta", "1.0.0-beta.1", *left]))
+
+    def test_a_version_file_that_holds_no_version_builds_nothing(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = pathlib.Path(folder)
+            result, out, err, builds = self.rehearse(root, [], version="1.0\n")
+            self.assertEqual((result, out, builds), (1, "", []))
+            self.assertEqual(err, "VERSION: not a semantic version: '1.0'\n")
+            self.assertFalse((root / "launcher").exists())
 
 
 @unittest.skipIf(sys.platform == "win32", "POSIX signals and sessions")
