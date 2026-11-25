@@ -101,7 +101,9 @@ pub struct UpdatePlan {
     /// Whether a job of this launcher's was left unfinished in the folder, which the update would
     /// finish or take back first.
     pub recovery_pending: bool,
-    /// Whether an earlier update's cleanup is still to be finished.
+    /// Whether an earlier update stands with its cleanup still to be finished, as an inspection
+    /// finds its journal committed: the update would try the cleanup first, and be refused while
+    /// it still cannot finish.
     pub cleanup_pending: bool,
 }
 
@@ -138,7 +140,8 @@ pub enum PlanSource<'a> {
 /// refusal is [`UpdateError::Receipt`]. A receipt or a journal that a later launcher stamped is
 /// [`UpdateError::NewerLauncher`], and a launcher older than the installed release
 /// [`UpdateError::OlderLauncher`]: neither may change the installation. A job left unfinished, as
-/// [`InstallFolder::inspect`] finds one, is planned as pending.
+/// [`InstallFolder::inspect`] finds one, is planned as pending, and an earlier update whose
+/// cleanup is still to be finished, as it finds one too, as cleanup pending.
 ///
 /// From the launcher file that runs, its runtime is read no further than its release record and
 /// held to the one this launcher installs, of its platform and version, and its names are judged
@@ -163,7 +166,8 @@ pub fn plan_update(
             installed: from.to_string().into(),
         });
     }
-    let recovery_pending = match InstallFolder::inspect(folder.root(), running).state {
+    let inspection = InstallFolder::inspect(folder.root(), running);
+    let recovery_pending = match inspection.state {
         FolderState::Pending => true,
         FolderState::NewerLauncher => return Err(UpdateError::NewerLauncher),
         _ => false,
@@ -222,7 +226,7 @@ pub fn plan_update(
         changes,
         needed_bytes,
         recovery_pending,
-        cleanup_pending: false,
+        cleanup_pending: inspection.cleanup_pending,
     })
 }
 
@@ -818,6 +822,7 @@ mod tests {
         InstallFolder, JOURNAL_DIR, LOCK_FILE, LockError, RECEIPT_FILE, STATE_DIR,
     };
     use crate::hold::SCANNER_GRACE;
+    use crate::inspect::FolderState;
     use crate::install::{Changes, INSTALL_JOURNAL, RecoveryOutcome, SPACE_MARGIN, Unrecorded};
     use crate::payload::{BUILD_INFO, PayloadError};
     use crate::probe::{GameStartError, GameUseError, VersionProbe};
@@ -1069,6 +1074,59 @@ mod tests {
         assert!(plan.recovery_pending);
         assert!(!plan.cleanup_pending);
         assert_eq!(snapshot(dir.path()).unwrap(), before);
+    }
+
+    #[test]
+    fn a_cleanup_left_installation_plans_its_cleanup() {
+        let (dir, fixture) = players_installation();
+        let next = fixture.runtime.next(NEXT);
+        let (_, mut source) = bundled_as(dir.path(), "next-launcher", &next);
+        // The cleanup stops once the staging went, what was moved aside still there.
+        let fail = FailAt::new(FaultPoint::UpdateCleanup, 1);
+        let done = updated(update_simply(
+            &fixture,
+            &mut source,
+            NEXT,
+            &standing_in(&fail, &answering),
+        ));
+        assert!(
+            matches!(done.notices.as_slice(), [UpdateNotice::CleanupLeft { .. }]),
+            "{:?}",
+            done.notices
+        );
+        assert_eq!(journal_phase(&fixture.root).as_deref(), Some("committed"));
+
+        // The folder is the new release's installation with its cleanup left, as the journal the
+        // update left says, and an update of it is planned so, changing nothing.
+        let later = version(LATER);
+        let inspection = InstallFolder::inspect(&fixture.root, &later);
+        assert_eq!(inspection.state, FolderState::Installed, "{inspection:?}");
+        assert!(inspection.cleanup_pending, "{inspection:?}");
+        assert_eq!(inspection.journals, [UPDATE_JOURNAL]);
+        let (_, mut later_source) = bundled_as(dir.path(), "later-launcher", &next.next(LATER));
+        let before = snapshot(dir.path()).unwrap();
+        let plan = plan_update(
+            &fixture.root,
+            &later,
+            PlanSource::Bundled(&mut later_source),
+        )
+        .unwrap();
+        assert_eq!((&plan.from, &plan.to), (&version(NEXT), &later));
+        assert!(plan.cleanup_pending, "{plan:?}");
+        assert!(!plan.recovery_pending, "{plan:?}");
+        assert_eq!(snapshot(dir.path()).unwrap(), before);
+
+        // Once the next start has finished the cleanup, none is left to plan.
+        let recovered = recover_simply(&fixture.root, NEXT, &standing_in(&NoFaults, &answering));
+        assert_eq!(recovered.unwrap().update, UpdateRecovery::CleanedUp);
+        let plan = plan_update(
+            &fixture.root,
+            &later,
+            PlanSource::Bundled(&mut later_source),
+        )
+        .unwrap();
+        assert!(!plan.cleanup_pending, "{plan:?}");
+        assert!(!plan.recovery_pending, "{plan:?}");
     }
 
     #[test]

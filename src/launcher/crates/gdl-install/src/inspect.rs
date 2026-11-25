@@ -16,6 +16,7 @@ use gdl_files::{
     strip_verbatim,
 };
 use gdl_release::{Platform, Version};
+use serde::Deserialize;
 use serde_json::{Map, Value};
 
 use crate::compat::{
@@ -27,9 +28,13 @@ use crate::folder::{
 #[cfg(windows)]
 use crate::platform;
 use crate::receipt::{InstalledGame, ReceiptError};
+use crate::update::{UPDATE_JOURNAL, UpdateJournal, UpdatePhase};
 
 /// The schema of the report an inspection gives the programs that read it.
 pub const INSPECTION_SCHEMA: u32 = 1;
+
+/// The key under which an update's journal records how far the update has come.
+const PHASE_KEY: &str = "phase";
 
 /// What an inspection found at a folder.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -48,6 +53,11 @@ pub struct Inspection {
     /// The journals found in `.gdl-launcher/journal/`, by name, sorted, without the pending files
     /// that interrupted writes leave.
     pub journals: Vec<String>,
+    /// Whether an update's journal stands committed and holding to what an update writes: the
+    /// update stands, and only cleaning up after it is left, which the next start, or the next
+    /// update before it changes anything, tries again. Such a journal is listed among `journals`
+    /// but decides no state, so that the installation is told as its receipt decides.
+    pub cleanup_pending: bool,
     /// The names directly under `.gdl-launcher/` that this launcher's rules do not make, sorted: a
     /// later launcher's or the player's, which this launcher leaves alone.
     pub unknown_names: Vec<String>,
@@ -159,7 +169,10 @@ impl InstallFolder {
     ///   launcher's kinds that cannot be read gives [`FolderState::JournalUnreadable`], or the
     ///   state of a link or of the system's refusal when that is why; else one that a later
     ///   launcher wrote, or of a kind this launcher does not know, gives
-    ///   [`FolderState::NewerLauncher`]; else any gives [`FolderState::Pending`];
+    ///   [`FolderState::NewerLauncher`]; else any gives [`FolderState::Pending`], but for an
+    ///   update's journal committed, which decides nothing and is told as
+    ///   [`Inspection::cleanup_pending`] once it holds to what an update writes, and cannot be read
+    ///   when it does not;
     /// - a state folder a fresh install left before its first journal, with no receipt, holding
     ///   nothing but what an install makes before one, gives [`FolderState::Pending`];
     /// - a receipt, read through [`InstallFolder::installed`];
@@ -207,6 +220,7 @@ impl InstallFolder {
             detail: verdict.detail,
             alpha_markers: markers,
             journals: state.journals,
+            cleanup_pending: state.cleanup_pending,
             unknown_names: state.unknown_names,
             installation,
         }
@@ -223,6 +237,7 @@ impl Inspection {
             detail: verdict.detail,
             alpha_markers: Vec::new(),
             journals: Vec::new(),
+            cleanup_pending: false,
             unknown_names: Vec::new(),
             installation: None,
         }
@@ -363,6 +378,8 @@ struct StateFolder {
     unknown_names: Vec<String>,
     /// The journals found, sorted.
     journals: Vec<String>,
+    /// Whether an update's journal among them stands committed, its cleanup left to finish.
+    cleanup_pending: bool,
     /// The state the journals decide.
     verdict: Option<Verdict>,
 }
@@ -403,6 +420,7 @@ impl StateFolder {
             match Journal::judge(&dir, name, running) {
                 Journal::Gone => continue,
                 Journal::Unfinished => unfinished = true,
+                Journal::CleanupPending => found.cleanup_pending = true,
                 Journal::Later => later = true,
                 Journal::Refused(verdict) => {
                     refusal.get_or_insert(verdict);
@@ -432,6 +450,9 @@ impl StateFolder {
 enum Journal {
     /// One it reads and may change: of one of its kinds, with a stamp that lets it.
     Unfinished,
+    /// An update's that it may change, committed and holding to what an update writes: the update
+    /// stands, and only cleaning up after it is left.
+    CleanupPending,
     /// A later launcher's: of a later schema, asking for a later launcher, or of a kind this
     /// launcher does not know, which it does not read.
     Later,
@@ -455,12 +476,33 @@ impl Journal {
         };
         match stamp_of(&object) {
             Ok(stamp) => match access(&stamp, JOURNAL_SCHEMA, running) {
+                Access::Writable if name == UPDATE_JOURNAL => Journal::of_update(&object, &path),
                 Access::Writable => Journal::Unfinished,
                 Access::ReadOnly => Journal::Later,
             },
             Err(error) => Journal::Refused(Verdict::by(
                 FolderState::JournalUnreadable,
                 format_args!("{}: {error}", path.display()),
+            )),
+        }
+    }
+
+    /// What the update's journal `object`, read from `path` with a stamp that lets this launcher
+    /// change it, is: one committed is the update's cleanup left to finish once it holds to what
+    /// an update writes, as its recovery holds it, and one this launcher cannot read otherwise;
+    /// one of any other phase is a job to finish or take back, which its recovery reads whole.
+    fn of_update(object: &Map<String, Value>, path: &Path) -> Journal {
+        let phase = object
+            .get(PHASE_KEY)
+            .and_then(|phase| UpdatePhase::deserialize(phase).ok());
+        if phase != Some(UpdatePhase::Committed) {
+            return Journal::Unfinished;
+        }
+        match UpdateJournal::from_object(object) {
+            Ok(_) => Journal::CleanupPending,
+            Err(detail) => Journal::Refused(Verdict::by(
+                FolderState::JournalUnreadable,
+                format_args!("{}: {detail}", path.display()),
             )),
         }
     }
@@ -588,8 +630,14 @@ mod tests {
     use crate::compat::{Access, JOURNAL_NAMES, MIN_LAUNCHER};
     use crate::folder::{InstallFolder, JOURNAL_DIR, LOCK_FILE, RECEIPT_FILE, STATE_DIR};
     use crate::payload::BUILD_INFO;
-    use crate::receipt::GUNE5D;
-    use crate::test_platform::this_platform;
+    use crate::receipt::{GUNE5D, installed_launcher_name};
+    use crate::test_platform::{other_platform, this_platform};
+    use crate::update::{
+        RETIRED_LAUNCHER_PREFIX, UPDATE_BACKUP, UPDATE_JOURNAL, UPDATE_STAGING_PREFIX,
+    };
+
+    /// A change a test makes to a sound journal.
+    type Change<'a> = dyn Fn(&mut Value) + 'a;
 
     /// Every state, by the name the launcher's reports give it.
     const STATES: [(FolderState, &str); 14] = [
@@ -614,6 +662,12 @@ mod tests {
 
     /// The disc revision an installation fixture's receipt records.
     const DISC_REVISION: u8 = 1;
+
+    /// The version the tests' updated installations are of.
+    const NEXT: &str = "1.0.0-beta.1";
+
+    /// The staging the tests' update journals name.
+    const UPDATE_STAGING: &str = "stage-AbC123xy";
 
     fn version(text: &str) -> Version {
         Version::parse(text).unwrap_or_else(|error| panic!("{error}"))
@@ -672,6 +726,38 @@ mod tests {
     /// A journal as the first launcher writes one.
     fn own_journal() -> Vec<u8> {
         journal(json!(1), json!(MIN_LAUNCHER))
+    }
+
+    /// The journal, at `phase`, of an update of the first launcher's release to the one `fixture`
+    /// holds, as the update writes one for this platform: its receipt the one in place, as it is
+    /// once the update is committed.
+    fn update_journal(fixture: &InstallFixture, phase: &str) -> Value {
+        let platform = this_platform();
+        let suffix = match platform {
+            Platform::WindowsX64 => ".exe",
+            Platform::LinuxX64 => "",
+        };
+        let random = UPDATE_STAGING.strip_prefix(UPDATE_STAGING_PREFIX).unwrap();
+        let moved = json!(["VERSION", BUILD_INFO, "data/text/en.json"]);
+        json!({
+            "schema": 1,
+            "minLauncher": MIN_LAUNCHER,
+            "phase": phase,
+            "from": MIN_LAUNCHER,
+            "to": fixture.runtime.version,
+            "staging": UPDATE_STAGING,
+            "backup": moved,
+            "publish": moved,
+            "madeFolders": [],
+            "launcher": installed_launcher_name(platform),
+            "retired": format!("{RETIRED_LAUNCHER_PREFIX}{MIN_LAUNCHER}-{random}{suffix}"),
+            "receipt": fixture.receipt(),
+        })
+    }
+
+    /// Writes `journal` as the update's journal of the installation `fixture`.
+    fn write_update_journal(fixture: &InstallFixture, journal: &Value) {
+        write_journal(&fixture.root, UPDATE_JOURNAL, &pretty_json(journal));
     }
 
     /// Removes the file at `path`, waiting out a scanner that still looks at a new one, as one may
@@ -1128,6 +1214,196 @@ mod tests {
         padded.resize(bound, b' ');
         write_journal(&root, "install.json", &padded);
         assert_state(&inspect(&root), FolderState::Pending, "at the bound");
+    }
+
+    #[test]
+    fn a_committed_update_journal_is_an_installation_with_its_cleanup_pending() {
+        let (dir, fixture) = installation_of(NEXT);
+        let running = version(NEXT);
+        let installed = Some(summary(NEXT, NEXT, Relation::Same));
+        // As a cleanup that stopped leaves it: the journal committed, and an installed file of the
+        // release before still moved aside.
+        write_update_journal(&fixture, &update_journal(&fixture, "committed"));
+        let aside = fixture.root.join(STATE_DIR).join(UPDATE_BACKUP);
+        fs::create_dir(&aside).unwrap();
+        fs::write(aside.join("VERSION"), b"1.0.0-beta\n").unwrap();
+        backdate(dir.path()).unwrap();
+        let before = snapshot(dir.path()).unwrap();
+        let inspection = InstallFolder::inspect(&fixture.root, &running);
+        assert_eq!(snapshot(dir.path()).unwrap(), before);
+        assert_state(&inspection, FolderState::Installed, "a committed update");
+        assert!(inspection.cleanup_pending, "{inspection:?}");
+        assert_eq!(inspection.journals, [UPDATE_JOURNAL]);
+        assert_eq!(inspection.detail, None);
+        assert!(inspection.unknown_names.is_empty(), "{inspection:?}");
+        assert_eq!(inspection.installation, installed);
+        // No lock was taken.
+        assert!(!fixture.root.join(STATE_DIR).join(LOCK_FILE).exists());
+
+        // Keys a later launcher added beside its own are kept by its rewrite, and decide nothing.
+        let mut later_keys = update_journal(&fixture, "committed");
+        later_keys["later"] = json!({"kept": [1, 2]});
+        later_keys["receipt"]["laterReceipt"] = json!("kept too");
+        write_update_journal(&fixture, &later_keys);
+        let inspection = InstallFolder::inspect(&fixture.root, &running);
+        assert_state(&inspection, FolderState::Installed, "keys of a later one");
+        assert!(inspection.cleanup_pending, "{inspection:?}");
+
+        // Beside a job left unfinished, the job decides, and the cleanup is still told of.
+        write_journal(&fixture.root, "install.json", &own_journal());
+        let inspection = InstallFolder::inspect(&fixture.root, &running);
+        assert_state(&inspection, FolderState::Pending, "beside a job");
+        assert!(inspection.cleanup_pending, "{inspection:?}");
+        assert_eq!(inspection.journals, ["install.json", UPDATE_JOURNAL]);
+        assert_eq!(inspection.installation, installed);
+        remove_file(&journal_dir(&fixture.root).join("install.json"));
+
+        // Beside a later launcher's receipt, the receipt decides.
+        let mut receipt = fixture.receipt();
+        receipt["minLauncher"] = json!("9.0.0");
+        fixture.write_receipt(&receipt).unwrap();
+        let inspection = InstallFolder::inspect(&fixture.root, &running);
+        assert_state(&inspection, FolderState::NewerLauncher, "a later receipt");
+        assert!(inspection.cleanup_pending, "{inspection:?}");
+
+        // Gone, as the next start's cleanup removes it, nothing is pending.
+        fixture.write_receipt(&fixture.receipt()).unwrap();
+        remove_file(&journal_dir(&fixture.root).join(UPDATE_JOURNAL));
+        let inspection = InstallFolder::inspect(&fixture.root, &running);
+        assert_state(&inspection, FolderState::Installed, "cleaned up");
+        assert!(!inspection.cleanup_pending, "{inspection:?}");
+        assert!(inspection.journals.is_empty(), "{inspection:?}");
+    }
+
+    #[test]
+    fn an_uncommitted_update_journal_is_pending() {
+        let (_dir, fixture) = installation_of(NEXT);
+        let running = version(NEXT);
+        // Each phase before the commit, and a phase an update does not write, the commit's in
+        // another letter case among them, is a job to finish or take back.
+        for phase in ["staged", "swapping", "rollingBack", "Committed", "cleanup"] {
+            write_update_journal(&fixture, &update_journal(&fixture, phase));
+            let inspection = InstallFolder::inspect(&fixture.root, &running);
+            assert_state(&inspection, FolderState::Pending, phase);
+            assert!(!inspection.cleanup_pending, "{phase}");
+            assert_eq!(inspection.journals, [UPDATE_JOURNAL], "{phase}");
+            assert_eq!(inspection.detail, None, "{phase}");
+        }
+        for (what, phase) in [("no phase", None), ("a phase of no text", Some(json!(4)))] {
+            let mut journal = update_journal(&fixture, "committed");
+            match phase {
+                Some(phase) => journal["phase"] = phase,
+                None => {
+                    journal.as_object_mut().unwrap().remove("phase");
+                }
+            }
+            write_update_journal(&fixture, &journal);
+            let inspection = InstallFolder::inspect(&fixture.root, &running);
+            assert_state(&inspection, FolderState::Pending, what);
+            assert!(!inspection.cleanup_pending, "{what}");
+        }
+        // Only an update's journal is read for its phase: an install's that says committed is a
+        // job to finish all the same.
+        remove_file(&journal_dir(&fixture.root).join(UPDATE_JOURNAL));
+        let committed = json!({"schema": 1, "minLauncher": MIN_LAUNCHER, "phase": "committed"});
+        write_journal(&fixture.root, "install.json", &pretty_json(&committed));
+        let inspection = InstallFolder::inspect(&fixture.root, &running);
+        assert_state(&inspection, FolderState::Pending, "an install's");
+        assert!(!inspection.cleanup_pending, "{inspection:?}");
+    }
+
+    #[test]
+    fn a_committed_journal_that_breaks_its_rules_is_unreadable() {
+        let (_dir, fixture) = installation_of(NEXT);
+        let running = version(NEXT);
+        let path = journal_dir(&fixture.root).join(UPDATE_JOURNAL);
+        let platform = this_platform();
+        let other = other_platform();
+        let claims = |key: &'static str, name: &'static str| {
+            move |journal: &mut Value| journal[key] = json!([name])
+        };
+        let in_backup = [
+            claims("backup", "saves/hero.json"),
+            claims("backup", "../outside"),
+            claims("backup", "Gauntlet/PDATA/WAR.WAD"),
+            claims("backup", "carddemo/icon.tpl"),
+        ];
+        let in_publish = [
+            claims("publish", "installation.json"),
+            claims("publish", "GauntletDarkLegacy-Update.exe"),
+            claims("publish", "/abs"),
+        ];
+        let refusals: [(&str, &Change<'_>); 15] = [
+            ("a player's file aside", &in_backup[0]),
+            ("a name outside the installation aside", &in_backup[1]),
+            ("the game's disc files aside", &in_backup[2]),
+            ("the disc's icon aside", &in_backup[3]),
+            ("the alpha installer's record in place", &in_publish[0]),
+            ("the alpha updater in place", &in_publish[1]),
+            ("an absolute name in place", &in_publish[2]),
+            ("a list that is no list", &|journal| {
+                journal["backup"] = json!("VERSION");
+            }),
+            ("a staging of another job", &|journal| {
+                journal["staging"] = json!("install-AbC123xy");
+            }),
+            ("the game as its retired copy", &|journal| {
+                journal["retired"] = json!(platform.executable());
+            }),
+            ("the game as its launcher copy", &|journal| {
+                journal["launcher"] = json!(platform.executable());
+            }),
+            ("a version that is none", &|journal| {
+                journal["to"] = json!("next");
+            }),
+            ("a made folder above no name in place", &|journal| {
+                journal["madeFolders"] = json!(["saves"]);
+            }),
+            ("a receipt of another platform", &|journal| {
+                journal["receipt"]["platform"] = json!(other.as_str());
+                journal["receipt"]["launcher"]["name"] = json!(installed_launcher_name(other));
+            }),
+            ("no receipt", &|journal| {
+                journal.as_object_mut().unwrap().remove("receipt");
+            }),
+        ];
+        let sound = update_journal(&fixture, "committed");
+        for (what, change) in refusals {
+            let mut journal = sound.clone();
+            change(&mut journal);
+            write_update_journal(&fixture, &journal);
+            let inspection = InstallFolder::inspect(&fixture.root, &running);
+            assert_state(&inspection, FolderState::JournalUnreadable, what);
+            assert!(!inspection.cleanup_pending, "{what}");
+            assert_eq!(inspection.journals, [UPDATE_JOURNAL], "{what}");
+            let detail = inspection.detail.unwrap_or_default();
+            let shown = format!("{}: ", path.display());
+            assert!(detail.starts_with(&shown), "{what}: {detail}");
+            // The installation beside it is still told of.
+            assert_eq!(
+                inspection.installation,
+                Some(summary(NEXT, NEXT, Relation::Same)),
+                "{what}"
+            );
+
+            // Before the commit the same journal is a job, which its recovery refuses as it reads
+            // it.
+            journal["phase"] = json!("swapping");
+            write_update_journal(&fixture, &journal);
+            let inspection = InstallFolder::inspect(&fixture.root, &running);
+            assert_state(&inspection, FolderState::Pending, what);
+        }
+        // The refusal says what is wrong.
+        let mut journal = sound.clone();
+        journal["staging"] = json!("install-AbC123xy");
+        write_update_journal(&fixture, &journal);
+        assert_eq!(
+            InstallFolder::inspect(&fixture.root, &running).detail,
+            Some(format!(
+                "{}: its staging \"install-AbC123xy\" is no update's",
+                path.display()
+            ))
+        );
     }
 
     #[test]

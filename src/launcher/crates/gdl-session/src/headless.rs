@@ -574,6 +574,9 @@ struct InspectionView<'a> {
     alpha_markers: &'a [&'static str],
     /// The journals of the jobs left unfinished in the folder.
     journals: &'a [String],
+    /// Whether an update stands with its cleanup still to be finished, which the next start tries
+    /// again: an installation all the same, not a job to recover.
+    cleanup_pending: bool,
     /// The names in the launcher's state folder that its rules do not make.
     unknown_names: &'a [String],
     /// The installation, when its receipt and files read as one.
@@ -613,15 +616,16 @@ impl<'a> InspectionView<'a> {
             detail: inspection.detail.as_deref(),
             alpha_markers: &inspection.alpha_markers,
             journals: &inspection.journals,
+            cleanup_pending: inspection.cleanup_pending,
             unknown_names: &inspection.unknown_names,
             installation: inspection.installation.as_ref().map(InstallationView::of),
         }
     }
 
     /// The report as text: a `name: value` line for each field, in the report's order, leaving
-    /// out the schema and every field that holds nothing, with a list's names on one line. A value
-    /// is written as [`text_value`] writes it, since the folder's own names and records may hold
-    /// any character.
+    /// out the schema and every field that holds nothing, with a list's names on one line, and
+    /// whether a cleanup is pending always told, `yes` or `no`. A value is written as
+    /// [`text_value`] writes it, since the folder's own names and records may hold any character.
     fn text(&self) -> String {
         let mut lines = vec![
             ("state", self.state.to_owned()),
@@ -632,13 +636,12 @@ impl<'a> InspectionView<'a> {
         if !self.alpha_markers.is_empty() {
             lines.push(("alphaMarkers", self.alpha_markers.join(LIST_SEPARATOR)));
         }
-        for (name, list) in [
-            ("journals", self.journals),
-            ("unknownNames", self.unknown_names),
-        ] {
-            if !list.is_empty() {
-                lines.push((name, list.join(LIST_SEPARATOR)));
-            }
+        if !self.journals.is_empty() {
+            lines.push(("journals", self.journals.join(LIST_SEPARATOR)));
+        }
+        lines.push(("cleanupPending", answer(Some(self.cleanup_pending))));
+        if !self.unknown_names.is_empty() {
+            lines.push(("unknownNames", self.unknown_names.join(LIST_SEPARATOR)));
         }
         if let Some(installation) = &self.installation {
             installation.lines(&mut lines);
@@ -955,8 +958,9 @@ mod tests {
     };
     use gdl_install::{
         Blocker, ComponentAttributes, DEFAULT_CONFIG, DestinationReport, GUNE5D, InstallFolder,
-        JOURNAL_DIR, KnownFolder, LOCK_FILE, RUNTIME_SECTION, STATE_DIR, Sections, SectionsError,
-        Warning,
+        JOURNAL_DIR, KnownFolder, LOCK_FILE, RETIRED_LAUNCHER_PREFIX, RUNTIME_SECTION, STATE_DIR,
+        Sections, SectionsError, UPDATE_JOURNAL, UPDATE_STAGING_PREFIX, Warning,
+        installed_launcher_name,
     };
     use gdl_release::{Platform, Version};
     use serde_json::{Value, json};
@@ -985,8 +989,15 @@ mod tests {
     /// The disc revision an installation fixture's receipt records.
     const DISC_REVISION: u8 = 1;
 
+    /// The version of the release after the build's, which a later launcher updated an
+    /// installation to.
+    const NEXT: &str = "1.0.0-beta.1";
+
+    /// The random part of the staging the tests' update journals name.
+    const STAGING_RANDOM: &str = "AbC123xy";
+
     /// The keys of an inspection's JSON report, in the order it writes them.
-    const REPORT_KEYS: [&str; 9] = [
+    const REPORT_KEYS: [&str; 10] = [
         "schema",
         "path",
         "state",
@@ -994,6 +1005,7 @@ mod tests {
         "detail",
         "alphaMarkers",
         "journals",
+        "cleanupPending",
         "unknownNames",
         "installation",
     ];
@@ -1618,7 +1630,7 @@ mod tests {
         assert_eq!(
             inspected(&fixture.root, false),
             format!(
-                "state: installed\npath: {shown}\n{}",
+                "state: installed\npath: {shown}\ncleanupPending: no\n{}",
                 installation_lines(VERSION, platform, "same", "writable", true)
             )
         );
@@ -1634,6 +1646,7 @@ mod tests {
                 "detail": null,
                 "alphaMarkers": [],
                 "journals": [],
+                "cleanupPending": false,
                 "unknownNames": [],
                 "installation": {
                     "version": VERSION,
@@ -1657,7 +1670,7 @@ mod tests {
         assert_eq!(
             inspected(&fixture.root, false),
             format!(
-                "state: installed\npath: {}\n{}",
+                "state: installed\npath: {}\ncleanupPending: no\n{}",
                 fixture.root.display(),
                 installation_lines("0.9.0", platform, "newer", "writable", true)
             )
@@ -1674,7 +1687,8 @@ mod tests {
         assert_eq!(
             inspected(&fixture.root, false),
             format!(
-                "state: newerLauncher\npath: {shown}\ncode: state.newerLauncher\n{}",
+                "state: newerLauncher\npath: {shown}\ncode: state.newerLauncher\n\
+                 cleanupPending: no\n{}",
                 installation_lines("1.0.1", platform, "older", "readOnly", false)
             )
         );
@@ -1701,7 +1715,7 @@ mod tests {
         assert_eq!(
             inspected(&fixture.root, false),
             format!(
-                "state: pending\npath: {}\njournals: install.json\n\
+                "state: pending\npath: {}\njournals: install.json\ncleanupPending: no\n\
                  unknownNames: later-state, notes.txt\n{}",
                 fixture.root.display(),
                 installation_lines(VERSION, platform, "same", "writable", true)
@@ -1709,7 +1723,47 @@ mod tests {
         );
         let parsed: Value = serde_json::from_str(&inspected(&fixture.root, true)).unwrap();
         assert_eq!(parsed["journals"], json!(["install.json"]));
+        assert_eq!(parsed["cleanupPending"], false);
         assert_eq!(parsed["unknownNames"], json!(["later-state", "notes.txt"]));
+
+        // An update that stands with its cleanup left, its journal committed as a cleanup that
+        // stopped leaves it: an installation, with the journal told of, not a job to recover.
+        let runtime = RuntimeFiles::standard(platform.as_str(), NEXT);
+        let fixture = InstallFixture::write(&dir.path().join("updated"), runtime).unwrap();
+        let suffix = match platform {
+            Platform::WindowsX64 => ".exe",
+            Platform::LinuxX64 => "",
+        };
+        let journal = json!({
+            "schema": 1,
+            "minLauncher": VERSION,
+            "phase": "committed",
+            "from": VERSION,
+            "to": NEXT,
+            "staging": format!("{UPDATE_STAGING_PREFIX}{STAGING_RANDOM}"),
+            "backup": ["VERSION", "build-info.json"],
+            "publish": ["VERSION", "build-info.json"],
+            "madeFolders": [],
+            "launcher": installed_launcher_name(platform),
+            "retired": format!("{RETIRED_LAUNCHER_PREFIX}{VERSION}-{STAGING_RANDOM}{suffix}"),
+            "receipt": fixture.receipt(),
+        });
+        let journals = fixture.root.join(STATE_DIR).join(JOURNAL_DIR);
+        fs::create_dir(&journals).unwrap();
+        fs::write(journals.join(UPDATE_JOURNAL), pretty_json(&journal)).unwrap();
+        assert_eq!(
+            inspected(&fixture.root, false),
+            format!(
+                "state: installed\npath: {}\njournals: {UPDATE_JOURNAL}\ncleanupPending: yes\n{}",
+                fixture.root.display(),
+                installation_lines(NEXT, platform, "older", "writable", true)
+            )
+        );
+        let parsed: Value = serde_json::from_str(&inspected(&fixture.root, true)).unwrap();
+        assert_eq!(parsed["state"], "installed");
+        assert_eq!(parsed["code"], Value::Null);
+        assert_eq!(parsed["journals"], json!([UPDATE_JOURNAL]));
+        assert_eq!(parsed["cleanupPending"], true);
 
         // An alpha installation's folder, its names in the order the launcher knows them by.
         let alpha = dir.path().join("alpha");
@@ -1719,7 +1773,7 @@ mod tests {
             inspected(&alpha, false),
             format!(
                 "state: alphaInstall\npath: {}\ncode: folder.alphaInstall\n\
-                 alphaMarkers: installation.json, .gdl-update\n",
+                 alphaMarkers: installation.json, .gdl-update\ncleanupPending: no\n",
                 alpha.display()
             )
         );
@@ -1737,7 +1791,10 @@ mod tests {
         fs::create_dir(&empty).unwrap();
         assert_eq!(
             inspected(&empty, false),
-            format!("state: empty\npath: {}\n", empty.display())
+            format!(
+                "state: empty\npath: {}\ncleanupPending: no\n",
+                empty.display()
+            )
         );
 
         // A file, refused with the text the inspection gives the refusal, unchanged in both
@@ -1749,7 +1806,8 @@ mod tests {
         assert_eq!(
             inspected(&file, false),
             format!(
-                "state: notDirectory\npath: {}\ncode: folder.notDirectory\ndetail: {detail}\n",
+                "state: notDirectory\npath: {}\ncode: folder.notDirectory\ndetail: {detail}\n\
+                 cleanupPending: no\n",
                 file.display()
             )
         );
@@ -1774,7 +1832,7 @@ mod tests {
                     inspected(&verbatim, false),
                     format!(
                         "state: notDirectory\npath: {}\ncode: folder.notDirectory\n\
-                         detail: {detail}\n",
+                         detail: {detail}\ncleanupPending: no\n",
                         file.display()
                     )
                 );
@@ -1787,7 +1845,10 @@ mod tests {
         let strange = dir.path().join(not_unicode());
         assert_eq!(
             inspected(&strange, false),
-            format!("state: absent\npath: {}\n", strange.display())
+            format!(
+                "state: absent\npath: {}\ncleanupPending: no\n",
+                strange.display()
+            )
         );
     }
 
@@ -1800,10 +1861,13 @@ mod tests {
         // clear a terminal and colour its text; and how the text report shows it.
         const FORGED: &str = "abc\nstate: empty\u{1b}[2J\u{9b}31m\r";
         const SHOWN: &str = r"abc\nstate: empty\u{1b}[2J\u{9b}31m\r";
-        // What a report shows of an installation, after the fields of `before`.
-        let fields = |before: &[&'static str]| {
+        // What a report shows of an installation, with the fields of `before` ahead of whether a
+        // cleanup is pending and those of `after` behind it.
+        let fields = |before: &[&'static str], after: &[&'static str]| {
             let mut fields = vec!["state", "path"];
             fields.extend_from_slice(before);
+            fields.push("cleanupPending");
+            fields.extend_from_slice(after);
             fields.extend_from_slice(&INSTALLATION_KEYS);
             fields
         };
@@ -1829,7 +1893,7 @@ mod tests {
         runtime.commit = FORGED.to_owned();
         let fixture = InstallFixture::write(&dir.path().join("forged"), runtime).unwrap();
         let text = inspected(&fixture.root, false);
-        assert_eq!(fields_of(&text), fields(&[]), "{text}");
+        assert_eq!(fields_of(&text), fields(&[], &[]), "{text}");
         assert!(text.contains(&format!("\ncommit: {SHOWN}\n")), "{text}");
         // The JSON report escapes as JSON does, and gives the commit back exactly.
         let parsed: Value = serde_json::from_str(&inspected(&fixture.root, true)).unwrap();
@@ -1846,7 +1910,7 @@ mod tests {
             fs::create_dir(state.join(JOURNAL_DIR)).unwrap();
             fs::write(state.join(JOURNAL_DIR).join(JOURNAL), b"").unwrap();
             let text = inspected(&fixture.root, false);
-            let listed = fields(&["code", "journals", "unknownNames"]);
+            let listed = fields(&["code", "journals"], &["unknownNames"]);
             assert_eq!(fields_of(&text), listed, "{text}");
             assert!(text.contains(r"journals: x\u{1b}]0;title\u{7}"), "{text}");
             assert!(
