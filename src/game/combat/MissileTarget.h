@@ -34,6 +34,10 @@ struct MissileTarget {
     f32 maxTargetDistance = 0.0f;
     bool potionBottle = false;
     std::optional<Acquisition> acquisition = std::nullopt;
+    /** One of the swarm: the world's effects share one wait on it (fxhittime[0]) rather than
+     * each keeping its own. */
+    bool sharesWorldWait = false;
+    bool worldHeld = false; ///< that wait runs this frame
     Vec3 pointNear(const Vec3& point) const;
     bool touches(const Vec3& point, f32 reach) const;
     bool reachedBy(const StrikeHit& strike) const;

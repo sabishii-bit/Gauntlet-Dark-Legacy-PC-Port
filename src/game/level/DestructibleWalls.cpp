@@ -30,8 +30,13 @@ bool DestructibleWalls::appendDigest(NativeStateDigest& digest, const LocalSnaps
         for (const auto& triangle : wall.surface) {
             digest.fields<4>(triangle);
         }
-        const auto& [id, base, radius, height, surface, node, score, reach, potion, acquisition] =
-            wall.bounds;
+        const auto& [id, base, radius, height, surface, node, score, reach, potion, acquisition,
+                     sharesWorldWait, worldHeld] = wall.bounds;
+        // The world wait is the swarm's, offered with each frame's targets: no wall keeps one.
+        if (sharesWorldWait || worldHeld) {
+            digest.invalidate();
+            return false;
+        }
         digest.values(id, base, radius, height, node, score, reach, potion);
         digest.wide(surface.size());
         for (const auto& triangle : surface) {

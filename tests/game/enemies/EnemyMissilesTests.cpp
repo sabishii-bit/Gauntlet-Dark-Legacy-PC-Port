@@ -1162,6 +1162,89 @@ TEST_CASE("reflecting armour sends a missile back, harmless to its wearer, onto 
     CHECK(rings == 0);
 }
 
+TEST_CASE("a blast passes one of the swarm its world wait holds and carries its fade for one it "
+          "strikes",
+          "[game][enemies][enemy-burst][hit-wait]") {
+    // ProcessEffects' enemy pass (0x80095BB4-0x80095CCC): the scan passes a body while its
+    // fxhittime[0] runs, and on a hit over two the body's owner sets it to the blast's fade,
+    // max(1, left + 1/15). A great one keeps the blast's own key (fn_80037ED0) instead.
+    EnemyMissiles missiles;
+    missiles.burst({0, 0, 0}, 3.0f, 10.0f, 0, 1.0f, -1);
+    MissileTarget free{7, {1, 0, 0}, 0.5f, 4.0f};
+    free.sharesWorldWait = true;
+    MissileTarget held = free;
+    held.id = 8;
+    held.base = {-1, 0, 0};
+    held.worldHeld = true;
+    const MissileTarget great{3009, {0, 0, 1}, 0.5f, 4.0f};
+    const std::array swarm{free, held, great};
+    std::vector<f32> holds;
+    s32 greatHits = 0;
+    for (s32 frame = 0; frame < 40; ++frame) {
+        missiles.update(kStep, nullptr, {}, swarm);
+        for (const EnemyMissileHit& hit : missiles.takeHits()) {
+            CHECK(hit.target != held.id);
+            if (hit.target == free.id) {
+                holds.push_back(hit.hold);
+            } else if (hit.target == great.id) {
+                ++greatHits;
+                CHECK(hit.hold == 0.0f);
+            }
+        }
+        if (frame == 0) {
+            REQUIRE(missiles.bursts().size() == 1);
+            REQUIRE(missiles.bursts()[0].creatures.size() == 1);
+            CHECK(missiles.bursts()[0].creatures[0].id == great.id);
+        }
+    }
+    CHECK(greatHits == 1);
+    // The swarm's wait is its own to keep: offered free, it is reached on every update the ring
+    // harms, each hit carrying what is left of the blast and a fifteenth, a second at least.
+    REQUIRE(holds.size() > 1);
+    CHECK(holds.front() == Approx(1.0f + EnemyMissiles::kBlastSlack));
+    for (const f32 hold : holds) {
+        CHECK(hold >= EnemyMissiles::kSwarmGap);
+    }
+}
+
+TEST_CASE("a missile sent back strikes one of the swarm through its world wait and holds it a "
+          "quarter second",
+          "[game][enemies][enemy-reflect][hit-wait]") {
+    // StartMissile ORs 0x01000000 into every missile (0x80030988) and turning it back keeps it
+    // (0x800957C8-0x800957D4), so its enemy test ignores fxhittime (0x80095D94-0x80095DCC);
+    // its fade is a quarter second, three more through what it pierces (0x80095160-0x800951B0).
+    const bool pierces = GENERATE(false, true);
+    const bool swarmBody = GENERATE(true, false);
+    CAPTURE(pierces, swarmBody);
+    EnemyMissiles missiles;
+    auto shielded = playerAt({0, 0, 10});
+    shielded.reflects = true;
+    const std::array party{shielded};
+    MissileTarget thrower{4, {0, 0, -5}, 1.0f, 6.0f};
+    thrower.sharesWorldWait = swarmBody;
+    thrower.worldHeld = swarmBody;
+    const std::array swarm{thrower};
+    const EnemyMissileKind kind = pierces ? *enemyMissileOf(kGarmBroodKind, EnemyMissileKind::kBolt)
+                                          : EnemyMissileKind::bolt(20, 25, 0.3f);
+    REQUIRE(kind.pierces() == pierces);
+    missiles.launch(kind, {0, 3, 0}, {0, 3, 20}, 1, nullptr, 2);
+    std::vector<EnemyMissileHit> struck;
+    for (s32 frame = 0; frame < 120 && missiles.count() > 0; ++frame) {
+        missiles.update(kStep, nullptr, party, swarm);
+        for (const EnemyMissileHit& hit : missiles.takeHits()) {
+            if (hit.target >= 0) {
+                struck.push_back(hit);
+            }
+        }
+    }
+    REQUIRE(struck.size() == 1);
+    CHECK(struck[0].target == thrower.id);
+    CHECK_FALSE(struck[0].fromBurst);
+    const f32 fade =
+        pierces ? EnemyMissiles::kPierceFade + EnemyMissiles::kShotFade : EnemyMissiles::kShotFade;
+    CHECK(struck[0].hold == (swarmBody ? fade : 0.0f));
+}
+
 TEST_CASE("the garm's bolt pierces the players it hurts and the items in its way, growing as it "
           "leaves",
           "[game][enemies][enemy-pierce]") {

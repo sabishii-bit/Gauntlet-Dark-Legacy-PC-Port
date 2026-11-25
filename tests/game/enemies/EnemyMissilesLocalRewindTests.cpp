@@ -121,7 +121,7 @@ TEST_CASE("whole enemy missile replay retains held flight reflection piercing bu
     CHECK(battle.pool.missile(1).continuity > 1);
     REQUIRE(battle.pool.bursts().size() == 1);
     CHECK(battle.pool.bursts()[0].players[0].secondsLeft == std::numeric_limits<f32>::infinity());
-    CHECK_FALSE(battle.pool.bursts()[0].swarm.empty());
+    CHECK_FALSE(battle.pool.bursts()[0].creatures.empty());
     CHECK(battle.pool.bursts()[0].scenery == std::vector<s32>{42});
     CHECK_FALSE(battle.pool.takeHits().empty());
     CHECK_FALSE(battle.pool.takePickupBlasts().empty());

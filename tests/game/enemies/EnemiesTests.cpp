@@ -4439,4 +4439,73 @@ TEST_CASE("IT is out of every body test the swarm offers, and a grunt beside it 
     CHECK(enemies.alive(*it));
 }
 
+TEST_CASE("one of the swarm keeps a wait for the world's effects that a hit over two sets",
+          "[game][enemies][hit-wait]") {
+    // ProcessEffects' enemy pass (0x80095BB4-0x80095CCC) and damage_enemy (enemy.c 5963-5970):
+    // fxhittime[0] holds a body from every uncredited effect that waits on it, until game
+    // time passes it.
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, routingAssets(), nullptr, 2, EnemyScales{.health = 10.0f}, 1);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    const auto id = enemies.spawn({.kind = kGruntKind, .placed = true}, {});
+    REQUIRE(id);
+    const auto worldHeld = [&] {
+        const auto targets = enemies.targets();
+        REQUIRE(targets.size() == 1);
+        CHECK(targets[0].sharesWorldWait);
+        return targets[0].worldHeld;
+    };
+    CHECK_FALSE(enemies.hitWaiting(*id, Enemies::kWorldWait));
+    CHECK_FALSE(worldHeld());
+    EnemyHit blow;
+    blow.damage = 5.0f;
+    const f32 full = enemies.healthOf(*id);
+    REQUIRE(enemies.hurtByWorld(*id, blow, 1.0f, true));
+    const f32 once = enemies.healthOf(*id);
+    CHECK(once == Approx(full - 5.0f));
+    CHECK(enemies.hitWaiting(*id, Enemies::kWorldWait));
+    CHECK(worldHeld());
+    // Another that waits passes it; a missile sent back strikes through, its quarter second
+    // in place of the hold.
+    CHECK_FALSE(enemies.hurtByWorld(*id, blow, 1.0f, true));
+    CHECK(enemies.healthOf(*id) == once);
+    REQUIRE(enemies.hurtByWorld(*id, blow, 0.25f, false));
+    CHECK(enemies.healthOf(*id) == Approx(once - 5.0f));
+    for (usize seat = 1; seat < Enemies::kHitOwners; ++seat) {
+        CHECK_FALSE(enemies.hitWaiting(*id, seat)); // the players' waits are their own
+    }
+    // Game time runs it out, whatever the swarm's two-tick step.
+    enemies.update(1, 0.2f, {});
+    CHECK(enemies.hitWaiting(*id, Enemies::kWorldWait));
+    enemies.update(1, 0.1f, {});
+    CHECK_FALSE(enemies.hitWaiting(*id, Enemies::kWorldWait));
+    CHECK_FALSE(worldHeld());
+    // Two or less holds nothing, and neither does a fade of nought.
+    blow.damage = 2.0f;
+    REQUIRE(enemies.hurtByWorld(*id, blow, 1.0f, true));
+    CHECK_FALSE(enemies.hitWaiting(*id, Enemies::kWorldWait));
+    blow.damage = 5.0f;
+    REQUIRE(enemies.hurtByWorld(*id, blow, 0.0f, true));
+    CHECK_FALSE(enemies.hitWaiting(*id, Enemies::kWorldWait));
+    // A player's wait leaves the world's alone.
+    enemies.holdHits(*id, 2, 0.5f);
+    CHECK(enemies.hitWaiting(*id, 2));
+    CHECK_FALSE(enemies.hitWaiting(*id, Enemies::kWorldWait));
+    // Struck down it takes no more, and a body born into its slot waits on nothing.
+    blow.damage = 1000.0f;
+    REQUIRE(enemies.hurtByWorld(*id, blow, 1.0f, false));
+    CHECK_FALSE(enemies.alive(*id));
+    CHECK_FALSE(enemies.hurtByWorld(*id, blow, 1.0f, false));
+    for (s32 frame = 0; frame < 300 && enemies.count() > 0; ++frame) {
+        enemies.update(kTicks, kStep, {});
+    }
+    REQUIRE(enemies.count() == 0);
+    const auto reborn = enemies.spawn({.kind = kGruntKind, .placed = true}, {});
+    REQUIRE(reborn == id);
+    for (usize owner = 0; owner < Enemies::kHitOwners; ++owner) {
+        CHECK_FALSE(enemies.hitWaiting(*reborn, owner));
+    }
+}
+
 } // namespace

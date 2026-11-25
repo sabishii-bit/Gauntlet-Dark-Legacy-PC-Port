@@ -521,8 +521,8 @@ TEST_CASE("native opponent digest bytes stay pinned after the replay script and 
     // them, so that a moved digest names the child that moved it.
     test::checkPinnedDigests("LevelOpponents", test::liveDigest(opponents, resources),
                              test::savedDigest(opponents, *saved, resources),
-                             "e90ace6cbb80abfc3448f174209c9094f71f78596743ef9539b229ff6a6b7c2c",
-                             "0fbcb06f061673962a0ab232e7b9b3251a9d31a01c9fa834b0982e3ad8a375c7");
+                             "7573eebb3d09bb298dbe702022b786eb6955cbf40e51bb8cfe0bdd6745cd6644",
+                             "f0e5adcc68f531fe8f24fb94a497f147bd1060d49f6b68ab96a6acc8a0b7ae81");
     test::checkPinnedDigests("LevelOpponents' follow-up", followupDigest(opponents),
                              followupDigest(opponents, *saved),
                              "f1769a112bec90a097c6912cccd388f9babe8ef28853f7d3685c53d4c634017f",
@@ -533,8 +533,8 @@ TEST_CASE("native opponent digest bytes stay pinned after the replay script and 
                              "7a4d103ae4a34a8b4b912050b9728b0d39aa0ec71614be24c277729f103333a6");
     test::checkPinnedDigests("Enemies", test::liveDigest(opponents.enemies(), resources),
                              test::savedDigest(opponents.enemies(), *enemies, resources),
-                             "02d3e24feb0e18188de1c33beb5f96d6c60d34bac615a704ea1ec5430af8dfba",
-                             "01ab1d8cf4029499cda73239813ed2cfdbba9ba45258f5dbf677ba12b2977297");
+                             "543cf5641222ba4c1dc164cbc14ba2b708b712b9d0f156ab05477de23218250f",
+                             "70e7b278d5b4283c9aaa3b7f295db4c59e4e1743563ad4af936675bd1bee16e9");
     test::checkPinnedDigests("PlacedEnemies", test::liveDigest(opponents.placements(), resources),
                              test::savedDigest(opponents.placements(), placements, resources),
                              "8056e05755aa6a463453a173150cc2ae7e2d855d0ee262daf0e7f541487b3f98",

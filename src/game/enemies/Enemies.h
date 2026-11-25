@@ -256,6 +256,11 @@ public:
     static constexpr f32 kSuicideDamage = 50.0f;  ///< at the level's enemy damage
     static constexpr s32 kTicksPerSecond = 60;
     static constexpr s32 kPlacedStun = 30; ///< ticks a placement of ordinary strength stands still
+    /** A body's hit waits (fxhittime), one an owner: the world's uncredited effects share the
+     * first, and each player has the one after it by seat. */
+    static constexpr usize kWorldWait = 0;
+    static constexpr usize kHitOwners = 5;
+    static constexpr f32 kWorldHoldFrom = 2.0f; ///< a world effect's hit over this holds the body
 
     Enemies() = default;
     Enemies(const Enemies&) = delete;
@@ -355,7 +360,17 @@ public:
     /** Deals a hit, queues its reward as a loss, and returns healing credit before level/armor
      * scaling; zero for rejected hits or Death, whose magic healing is a separate event. */
     f32 hurt(s32 id, const EnemyHit& hit);
-    /** The enemies a missile can strike. */
+    /** Whether the effects of `owner` (`kWorldWait`, or 1 + a player's seat) still wait before
+     * striking `id` again. */
+    bool hitWaiting(s32 id, usize owner) const;
+    /** Holds `id` from the effects of `owner` for `seconds`, in place of any wait it had. */
+    void holdHits(s32 id, usize owner, f32 seconds);
+    /** A hit from one of the world's effects, credited to nobody (ProcessEffects' enemy pass,
+     * owner 0). One that `waits` passes a body whose world wait runs; a hit over two that the
+     * body takes holds it for `hold` seconds, a fade of nought holding nothing. False when
+     * passed or refused. */
+    bool hurtByWorld(s32 id, const EnemyHit& hit, f32 hold, bool waits);
+    /** The enemies a missile can strike, each with its world wait. */
     std::vector<MissileTarget> targets() const;
     /** Native acquisition order, lifetime identity and dynamic-grid contact tie
      * keys. IDs remain pool-local until a scene composes its target roster. */
@@ -563,6 +578,7 @@ public:
         s32 veilClock = 0; ///< ticks it stays seen (above nought) or unseen (below)
         f32 flashSeconds = 0;
         f32 burnGap = 0;
+        std::array<f32, kHitOwners> hitWaits{}; ///< seconds each owner's effects still wait
         f32 deathSeconds = 0;
         s32 deathSkinFrames = 0;
         std::string deathSkin;

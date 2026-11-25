@@ -331,8 +331,21 @@ bool LevelOpponents::dispatchEnemyMissileHit(const EnemyMissileHit& hit,
     if (hit.worldObject >= 0) {
         m_resources->world.explodeObject(hit.worldObject, hit.position);
     }
+    bool heldSwarm = false;
     if (!hit.ricochet && hit.target >= 0) {
-        strikeSwarm(hit.target, hit.damage, hit.flags, hit.direction, players);
+        if (hit.target < OpponentSimulation::kCritterIds) {
+            // One of the swarm keeps one wait for the world's effects (fxhittime[0]): a blast
+            // passes it while that runs, a missile sent back strikes through it, and a hit over
+            // two holds it for the effect's fade.
+            EnemyHit struck;
+            struck.damage = hit.damage;
+            struck.flags = hit.flags;
+            struck.direction = hit.direction;
+            heldSwarm = m_enemies.hurtByWorld(hit.target, struck, hit.hold, hit.fromBurst) &&
+                        hit.damage > Enemies::kWorldHoldFrom;
+        } else {
+            strikeSwarm(hit.target, hit.damage, hit.flags, hit.direction, players);
+        }
     }
     const auto emission = EnemyMissileEmission::resolve(hit, m_resources->weapons);
     u32 effect = 0;
@@ -356,8 +369,15 @@ bool LevelOpponents::dispatchEnemyMissileHit(const EnemyMissileHit& hit,
     }
     if (hit.burstRadius > 0.0f) {
         const f32 life = m_resources->effects.remaining(effect).value_or(kUnseenBurst);
-        m_enemyMissiles.burst(hit.position, hit.burstRadius, hit.damage, hit.flags,
-                              life > 0.0f ? life : kUnseenBurst, hit.player);
+        const f32 seconds = life > 0.0f ? life : kUnseenBurst;
+        if (heldSwarm) {
+            // A lob's fade is its hit effect's length (0x800950F0-0x8009515C): one of the
+            // swarm it struck sent back is held through the burst it leaves.
+            m_enemies.holdHits(hit.target, Enemies::kWorldWait,
+                               std::max(EnemyMissiles::kLeastFade, seconds));
+        }
+        m_enemyMissiles.burst(hit.position, hit.burstRadius, hit.damage, hit.flags, seconds,
+                              hit.player);
     }
     return true;
 }

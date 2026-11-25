@@ -142,11 +142,15 @@ struct EnemyMissileHit {
     s32 worldObject = -1; ///< actual collision owner, never an item or creature id
     bool liquid = false;  ///< replaces impact audio with the water cue
     u64 instance = 0;     ///< originating flight or lingering blast, retained after retirement
+    /** On one of the swarm, the effect's fade: how long a hit over two holds it from the
+     * world's other effects (fxhittime[0]). A blast waits on that hold; a missile sent back
+     * keeps StartMissile's 0x01000000 and strikes through it. */
+    f32 hold = 0.0f;
     std::string_view effect() const;
     std::string_view sound() const;
     bool operator==(const EnemyMissileHit&) const = default;
     friend void visitNativeState(NativeStateDigest& digest, const EnemyMissileHit& state) {
-        digest.fields<14>(state);
+        digest.fields<15>(state);
     }
 };
 
@@ -218,14 +222,17 @@ public:
     static constexpr f32 kBurstPush = 0.25f;
     static constexpr f32 kGasGap = 0.5f;             ///< a gas blast hurts a player this often
     static constexpr f32 kBlastSlack = 1.0f / 15.0f; ///< past a stage a hit is held off
-    static constexpr f32 kSwarmGap = 1.0f;       ///< at least this before one of the swarm again
-    static constexpr f32 kSightFrom = 10.0f;     ///< past this a wall between shelters a player
-    static constexpr f32 kReflectedMost = 15.0f; ///< what a missile armour sent back can harm
-    static constexpr f32 kReflectedLife = 10.0f; ///< and the longest it then has left
-    static constexpr f32 kRicochetGap = 1.0f;    ///< one ricochet heard a second
-    static constexpr f32 kPierceGap = 0.25f;     ///< a player pierced is hurt again after this
-    static constexpr f32 kGrowth = 1.0f / 3.0f;  ///< a piercing missile grows to size over this
-    static constexpr f32 kSmallest = 0.01f;      ///< from this
+    static constexpr f32 kSwarmGap = 1.0f;           ///< the least of a blast's fade
+    static constexpr f32 kShotFade = 0.25f;          ///< a missile's fade (ProcessEffects mode 0)
+    static constexpr f32 kPierceFade = 3.0f;         ///< and a piercing one's more
+    static constexpr f32 kLeastFade = 0.2f;          ///< no effect's fade is shorter
+    static constexpr f32 kSightFrom = 10.0f;         ///< past this a wall between shelters a player
+    static constexpr f32 kReflectedMost = 15.0f;     ///< what a missile armour sent back can harm
+    static constexpr f32 kReflectedLife = 10.0f;     ///< and the longest it then has left
+    static constexpr f32 kRicochetGap = 1.0f;        ///< one ricochet heard a second
+    static constexpr f32 kPierceGap = 0.25f;         ///< a player pierced is hurt again after this
+    static constexpr f32 kGrowth = 1.0f / 3.0f;      ///< a piercing missile grows to size over this
+    static constexpr f32 kSmallest = 0.01f;          ///< from this
 
     explicit EnemyMissiles(u32 seed = 0x4D15u) : m_sim{.random = Mt19937{seed}} {}
     EnemyMissiles(const EnemyMissiles&) = delete;
@@ -260,7 +267,8 @@ public:
     /** Moves everything in flight and grows the blasts over `seconds`. Missiles stop at the
      * world and at the level's `items` (`MissileStop`), a piercing one going through the
      * players it hurts; armour that reflects sends one back, after which it strikes the
-     * `swarm`, as the blasts do (each by the id it is offered under). */
+     * `swarm`, as the blasts do (each by the id it is offered under). A blast passes one of
+     * the swarm its world wait holds. */
     void update(f32 seconds, const WorldCollision* collision, std::span<const EnemyView> players,
                 std::span<const MissileTarget> swarm = {}, std::span<const MissileStop> items = {},
                 const SceneryBlast& scenery = {});
@@ -301,7 +309,9 @@ public:
         usize stage = 0;
         f32 stageLeft = 0.0f;
         std::vector<Held> players;
-        std::vector<Held> swarm;
+        /** The great ones and bosses it has reached, each keyed by the effect itself (fn_80037ED0
+         * in ProcessEffects' critter pass); the swarm keeps one world wait instead. */
+        std::vector<Held> creatures;
         std::vector<s32> scenery;
         u64 instance = 0;
         bool operator==(const Burst&) const = default;

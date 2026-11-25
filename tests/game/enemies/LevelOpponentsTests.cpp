@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <filesystem>
 #include <format>
 #include <map>
@@ -4418,6 +4419,188 @@ TEST_CASE("a suicide struck down goes up in a burning blast that reaches the par
     CHECK(opponents.missiles().burstCount() == 0);
     CHECK(scenerySteps > 1);
     CHECK(pickupSteps == scenerySteps);
+    opponents.close();
+}
+
+/** Suicide bombers going up beside a grunt that outlasts many of their blasts, which reach it
+ * as they begin. */
+class WorldWaitField {
+public:
+    explicit WorldWaitField(f32 damageScale, s32 rate) : m_rate(rate) {
+        const auto root = test::scratchDirectory("swarm-world-wait");
+        writeMeleeEnemy(root, kGruntKind);
+        m_players[0].actor.spawn(0, {}, nullptr, Vec3{0, 0, 60}, 0); // far out of every reach
+        m_opponents.open({m_device, m_world, m_weapons, m_effects, m_audio, root, 1}, m_players);
+        m_opponents.enemies().open(m_device, root, nullptr, 8,
+                                   EnemyScales{.health = 10.0f, .damage = damageScale}, 1);
+        REQUIRE(m_opponents.enemies().loadKind(kGruntKind));
+        const auto neighbour = m_opponents.enemies().spawn(
+            EnemySpawn{.kind = kGruntKind, .tier = 1, .position = Vec3{2, 0, 0}, .placed = true},
+            {});
+        REQUIRE(neighbour.has_value());
+        m_neighbour = *neighbour;
+        m_events.settleBlasts = [] {};
+        m_events.advanceLegend = [](f32) {};
+        m_events.advanceVictory = [](s32, f32) {};
+        m_events.levels = [] {};
+        m_events.award = [](s32, s32, bool) {};
+        m_events.blastScenery = [](const PickupBlastReach&, std::vector<s32>&) {};
+        m_events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
+    }
+    WorldWaitField(const WorldWaitField&) = delete;
+    WorldWaitField& operator=(const WorldWaitField&) = delete;
+    WorldWaitField(WorldWaitField&&) = delete;
+    WorldWaitField& operator=(WorldWaitField&&) = delete;
+    ~WorldWaitField() { m_opponents.close(); }
+
+    /** A bomber struck down by nobody `offset` from the grunt, which wanders: its blast begins
+     * with the next update. */
+    void detonate(const Vec3& offset) {
+        const Vec3 at = m_opponents.enemies().positionOf(m_neighbour) + offset;
+        const auto bomber = m_opponents.enemies().spawn(EnemySpawn{.kind = kGruntKind,
+                                                                   .tier = 1,
+                                                                   .algorithm = kSuicideWay,
+                                                                   .position = at,
+                                                                   .placed = true},
+                                                        {});
+        REQUIRE(bomber.has_value());
+        m_opponents.strikeEnemy(*bomber, 1000.0f, 0, Vec3{0, 0, 1}, -1, m_players);
+    }
+    /** One update; what the grunt lost in it. */
+    f32 step() {
+        const f32 before = m_opponents.enemies().healthOf(m_neighbour);
+        m_opponents.update(60 / m_rate, 1.0f / static_cast<f32>(m_rate), m_players, {}, m_host,
+                           m_host, m_host);
+        return before - m_opponents.enemies().healthOf(m_neighbour);
+    }
+    /** Updates for `seconds`; how many of them hurt the grunt and what it lost over them. */
+    std::pair<s32, f32> run(f32 seconds) {
+        s32 hurts = 0;
+        f32 lost = 0;
+        for (s32 frame = 0;
+             frame < static_cast<s32>(std::lround(seconds * static_cast<f32>(m_rate))); ++frame) {
+            const f32 loss = step();
+            hurts += loss > 0.0f ? 1 : 0;
+            lost += loss;
+        }
+        return {hurts, lost};
+    }
+
+private:
+    s32 m_rate;
+    test::FakeRenderDevice m_device;
+    LevelWorld m_world;
+    ItemArchive m_weapons;
+    EffectTrees m_effects;
+    LevelSoundscape m_audio;
+    std::array<PlayerRuntime, 1> m_players;
+    LevelOpponents m_opponents;
+    test::OpponentScript m_events;
+    test::ScriptedOpponents m_host{m_events};
+    s32 m_neighbour = -1;
+};
+
+TEST_CASE("one of the swarm struck over two by a blast is held from the world's other effects for "
+          "the blast's fade",
+          "[level-opponents][enemies][hit-wait]") {
+    // ProcessEffects' enemy pass (0x80095BB4-0x80095CCC): a blast passes a body while its
+    // fxhittime[0] runs, and a hit over two sets it to the blast's fade, max(1, left + 1/15).
+    const s32 rate = GENERATE(30, 60);
+    CAPTURE(rate);
+    // Blasts of four and a half (fifty at 0.09): over two, yet under the five that throws.
+    constexpr f32 kSlight = 0.09f;
+    SECTION("two blasts together harm it as one does") {
+        WorldWaitField alone{kSlight, rate};
+        alone.detonate({-2, 0, 0});
+        const auto [hurtsAlone, lostAlone] = alone.run(2.0f);
+        REQUIRE(hurtsAlone == 1);
+        REQUIRE(lostAlone > 2.0f);
+        WorldWaitField together{kSlight, rate};
+        together.detonate({-2, 0, 0});
+        together.detonate({-2, 0, -1});
+        const auto [hurts, lost] = together.run(2.0f);
+        CHECK(hurts == 1);
+        CHECK(lost == Catch::Approx(lostAlone));
+    }
+    SECTION("a blast over it while an earlier one holds it passes it, one after the hold strikes") {
+        WorldWaitField field{kSlight, rate};
+        field.detonate({-2, 0, 0});
+        const auto [first, lostFirst] = field.run(0.25f);
+        REQUIRE(first == 1);
+        field.detonate({-2, 0, -1});
+        const auto [held, lostHeld] = field.run(0.5f);
+        CHECK(held == 0);
+        CHECK(lostHeld == 0.0f);
+        // The first blast's second, and its fifteenth more, are out by 1.2 seconds in.
+        (void)field.run(0.5f);
+        field.detonate({-2, 0, 1});
+        const auto [after, lostAfter] = field.run(0.5f);
+        CHECK(after == 1);
+        CHECK(lostAfter == Catch::Approx(lostFirst));
+    }
+    SECTION("a hit of two or less holds nothing") {
+        // A blast of one (fifty at a fiftieth) strikes it again on every update it harms.
+        WorldWaitField field{0.02f, rate};
+        field.detonate({-2, 0, 0});
+        const auto [hurts, lost] = field.run(2.0f);
+        CHECK(hurts > 1);
+        CHECK(lost > 0.0f);
+    }
+}
+
+TEST_CASE("a lob sent back onto its thrower holds it from the world's effects through its burst",
+          "[level-opponents][enemies][hit-wait][enemy-reflect][assets]") {
+    // A missile's fade is its hit effect's length when it has one (0x800950F0-0x8009515C): a
+    // zombie's lob turned back by armour retraces its arc onto the zombie, whose fxhittime[0]
+    // then keeps the burst it leaves off it.
+    const auto root =
+        test::assetOrSkip("MONSTERS/ZOM/ANIM.PS2").parent_path().parent_path().parent_path();
+    const s32 rate = GENERATE(30, 60);
+    CAPTURE(rate);
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    ItemArchive weapons;
+    EffectTrees effects;
+    LevelSoundscape audio;
+    std::array<PlayerRuntime, 1> players;
+    players[0].actor.spawn(0, {}, nullptr, Vec3{0, 0, 20}, 0);
+    players[0].actor.save().progress().inventory.addPowerup(powerup::kArmor, armor::kReflect, 0, 1);
+    LevelOpponents opponents;
+    opponents.open({device, world, weapons, effects, audio, root, 1}, players);
+    constexpr s32 kZombie = 13;
+    opponents.enemies().open(device, root, nullptr, 4, EnemyScales{.health = 10.0f}, 1);
+    REQUIRE(opponents.enemies().loadKind(kZombie));
+    // Placed with no way, its strength makes it a lobber that stands and throws.
+    const auto bomber = opponents.enemies().spawn(
+        EnemySpawn{.kind = kZombie, .tier = kBomberStrength, .algorithm = 0, .placed = true}, {});
+    REQUIRE(bomber.has_value());
+    test::OpponentScript events;
+    test::ScriptedOpponents host{events};
+    events.settleBlasts = [] {};
+    events.advanceLegend = [](f32) {};
+    events.advanceVictory = [](s32, f32) {};
+    events.levels = [] {};
+    events.award = [](s32, s32, bool) {};
+    events.blastScenery = [](const PickupBlastReach&, std::vector<s32>&) {};
+    events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
+    // Struck by its own lob, then the burst's harm is spent before the hold runs out.
+    constexpr f32 kWatch = 0.85f;
+    std::vector<f32> falls;
+    f32 health = opponents.enemies().healthOf(*bomber);
+    for (s32 frame = 1; frame <= rate * 8; ++frame) {
+        opponents.update(60 / rate, 1.0f / static_cast<f32>(rate), players, {}, host, host, host);
+        const f32 now = opponents.enemies().healthOf(*bomber);
+        const f32 elapsed = static_cast<f32>(frame) / static_cast<f32>(rate);
+        if (now < health) {
+            falls.push_back(elapsed);
+        }
+        health = now;
+        if (!falls.empty() && elapsed > falls.front() + kWatch) {
+            break;
+        }
+    }
+    REQUIRE_FALSE(falls.empty());
+    CHECK(falls.size() == 1);
     opponents.close();
 }
 

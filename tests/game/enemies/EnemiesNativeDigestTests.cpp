@@ -289,6 +289,8 @@ TEST_CASE(
     changed([](auto& slot) { slot.hurtPending = 4; });
     changed([](auto& slot) { slot.contact = 1; });
     changed([](auto& slot) { slot.burnGap = 0.25f; });
+    changed([](auto& slot) { slot.hitWaits[Enemies::kWorldWait] = 0.25f; });
+    changed([](auto& slot) { slot.hitWaits[Enemies::kHitOwners - 1] = 1.0f; });
     changed([](auto& slot) { slot.affinity = 2; });
     changed([](auto& slot) { slot.floor = Enemies::BodyState::Floor{2, {1, 3, 4}}; });
     changed([](auto& slot) { slot.deathSkin = "DEATHALT"; });
@@ -345,7 +347,7 @@ TEST_CASE("enemy native digest bytes stay pinned for a seeded placed roster",
     // SHA-256 of the native digest of the swarm above, which netplay peers must hash alike: a
     // literal moves only when what is visited changes on purpose.
     constexpr std::string_view kDigest =
-        "87ecd5277c25aa14ad099d11be49e144b576a3a07c1ad7cd91a8c462d82c94fa";
+        "3830c7b01e153c1fbca44cecf4c407b42f89c5955f94f59ff91d68186f0c9c67";
     CHECK(test::hexBytes(pool.digest()) == kDigest);
 }
 
@@ -364,7 +366,7 @@ TEST_CASE("enemy native digest bytes stay pinned after the chase script and what
     // which netplay peers must hash alike: a literal moves only when what is visited changes on
     // purpose.
     test::checkPinnedDigests("Enemies", pool.digest(), pool.digest(saved),
-                             "85f487e81fb92c246117fceb826b572155a4488a3b642aedf6f5198da7ca6dfc",
-                             "3fd78c74d1f37fd7be07c17a191de9bdc63bedca1ad924156987564f580f8fb9");
+                             "73bc6f4a88474bc8e9e1c6caac13f4966ad5452ca302341e6d23b6a7a5dddacc",
+                             "4c0641b47c87ba9a75a7bcfc423dc225078f082540cb8e56eecbca0e2d69e70e");
 }
 } // namespace

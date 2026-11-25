@@ -464,7 +464,9 @@ void EnemyMissiles::blast(EnemyBlast blast) {
 /** Each stage the blast grows to its radius as its harm fades, and is harmless over its last
  * third (ProcessEffects' mode 1). A player it reaches is pushed a little away and left alone
  * until the stage is out (gas every half second); past ten, a wall between shelters them.
- * One of the swarm is left alone for the rest of the stage, and a second at least. */
+ * Its fade is the rest of the stage and a fifteenth, a second at least: a great one or boss
+ * it reaches it leaves alone that long, and one of the swarm it passes while that one's world
+ * wait runs (0x80095BB4-0x80095BD0), its hit carrying the fade for that wait. */
 void EnemyMissiles::stepBursts(f32 seconds, const WorldCollision* collision,
                                std::span<const EnemyView> players,
                                std::span<const MissileTarget> swarm, const SceneryBlast& scenery) {
@@ -472,7 +474,7 @@ void EnemyMissiles::stepBursts(f32 seconds, const WorldCollision* collision,
         return std::ranges::any_of(holds, [id](const Held& hold) { return hold.id == id; });
     };
     for (Burst& burst : m_sim.bursts) {
-        for (std::vector<Held>* holds : {&burst.players, &burst.swarm}) {
+        for (std::vector<Held>* holds : {&burst.players, &burst.creatures}) {
             for (Held& hold : *holds) {
                 hold.secondsLeft -= seconds;
             }
@@ -540,14 +542,18 @@ void EnemyMissiles::stepBursts(f32 seconds, const WorldCollision* collision,
             hit.direction = push(away) * kBurstPush;
             m_sim.hits.push_back(hit);
         }
+        const f32 fade = std::max(kSwarmGap, remaining + kBlastSlack);
         for (const MissileTarget& body : swarm) {
             const Vec3 away = body.base - blast.position;
-            if (held(burst.swarm, body.id) ||
+            if ((body.sharesWorldWait ? body.worldHeld : held(burst.creatures, body.id)) ||
                 portable::hypot(away.x, away.z) > radius + std::max(body.radius, 0.0f)) {
                 continue;
             }
-            burst.swarm.push_back({body.id, std::max(kSwarmGap, remaining + kBlastSlack)});
+            if (!body.sharesWorldWait) {
+                burst.creatures.push_back({body.id, fade});
+            }
             EnemyMissileHit hit;
+            hit.hold = body.sharesWorldWait ? fade : 0.0f;
             hit.fromBurst = true;
             hit.instance = burst.instance;
             hit.target = body.id;
@@ -763,6 +769,11 @@ void EnemyMissiles::update(f32 seconds, const WorldCollision* collision,
                 hit.liquid = liquid;
                 hit.player = victim != nullptr ? victim->player : -1;
                 hit.target = body != nullptr ? body->id : -1;
+                if (body != nullptr && body->sharesWorldWait) {
+                    // A missile's fade, three seconds more through what it pierces (0x80095160-
+                    // 0x800951B0); a lob's landing holds it through its burst instead.
+                    hit.hold = pierces ? kPierceFade + kShotFade : kShotFade;
+                }
                 hit.shooter = missile.shooter;
                 hit.damage = missile.kind.damage;
                 hit.flags = missile.kind.hitFlags();

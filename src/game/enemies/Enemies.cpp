@@ -70,7 +70,7 @@ void visitNativeState(NativeStateDigest& digest, const Enemies::BodyState::Floor
     digest.fields<2>(value);
 }
 void visitNativeState(NativeStateDigest& digest, const Enemies::BodyState& value) {
-    digest.fields<58>(value);
+    digest.fields<59>(value);
 }
 
 namespace {
@@ -1093,6 +1093,12 @@ void Enemies::update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
         stock->textures.advance(timeStopped ? 0.0f : seconds);
     }
     syncFloors();
+    // fxhittime is game time: the waits run out with it, whatever the swarm's own step.
+    for (Enemy& enemy : m_simulation.enemies) {
+        for (f32& wait : enemy.hitWaits) {
+            wait = std::max(0.0f, wait - seconds);
+        }
+    }
     if (timeStopped) {
         for (Enemy& enemy : m_simulation.enemies) {
             if (enemy.state == State::Active) {
@@ -2372,6 +2378,31 @@ std::vector<EnemyLoss> Enemies::takeLosses() {
     return std::exchange(m_simulation.losses, {});
 }
 
+bool Enemies::hitWaiting(s32 id, usize owner) const {
+    return id >= 0 && id < m_simulation.most && owner < kHitOwners &&
+           m_simulation.enemies[static_cast<usize>(id)].hitWaits[owner] > 0.0f;
+}
+
+void Enemies::holdHits(s32 id, usize owner, f32 seconds) {
+    if (id >= 0 && id < m_simulation.most && owner < kHitOwners) {
+        m_simulation.enemies[static_cast<usize>(id)].hitWaits[owner] = std::max(0.0f, seconds);
+    }
+}
+
+bool Enemies::hurtByWorld(s32 id, const EnemyHit& hit, f32 hold, bool waits) {
+    if (id < 0 || id >= m_simulation.most || (waits && hitWaiting(id, kWorldWait))) {
+        return false;
+    }
+    // damage_enemy refuses only decorations, the dying and IT (enemy.c 5963-5970), and the
+    // effect then holds what it struck over two (ProcessEffects 0x80095CA4-0x80095CCC).
+    const bool takes = alive(id) && !intangible(m_simulation.enemies[static_cast<usize>(id)].kind);
+    hurt(id, hit);
+    if (takes && hit.damage > kWorldHoldFrom && hold > 0.0f) {
+        holdHits(id, kWorldWait, hold);
+    }
+    return takes;
+}
+
 std::vector<MissileTarget> Enemies::targets() const {
     std::vector<MissileTarget> out;
     for (s32 i = 0; i < m_simulation.most; ++i) {
@@ -2381,6 +2412,8 @@ std::vector<MissileTarget> Enemies::targets() const {
             continue;
         }
         MissileTarget target{i, enemy.position, enemy.radius, enemy.height};
+        target.sharesWorldWait = true;
+        target.worldHeld = enemy.hitWaits[kWorldWait] > 0.0f;
         constexpr f32 kAimHeightLimit = 10;
         target.acquisition = MissileTarget::Acquisition{
             enemy.position + Vec3{0, enemyKind(enemy.kind).collisionHeight, 0}, enemy.radius, 1,

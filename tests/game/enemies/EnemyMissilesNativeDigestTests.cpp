@@ -92,7 +92,7 @@ TEST_CASE("enemy native digest sees every lingering burst field",
     base.blast = {{4, 3, 2}, 7, 12, EnemyBlast::kGas, {0.2f, 0.4f}, 1, true};
     base.stageLeft = 0.15f;
     base.players = {{1, std::numeric_limits<f32>::infinity()}, {2, 0.3f}};
-    base.swarm = {{17, 0.6f}};
+    base.creatures = {{17, 0.6f}};
     base.scenery = {51};
     base.instance = 81;
     const auto baseline = valueHash(base);
@@ -110,11 +110,50 @@ TEST_CASE("enemy native digest sees every lingering burst field",
         [](auto& v) { ++v.players[0].id; },
         [](auto& v) { v.players[1].secondsLeft += 0.01f; },
         [](auto& v) { v.players.push_back({9, 1}); },
-        [](auto& v) { ++v.swarm[0].id; },
-        [](auto& v) { v.swarm[0].secondsLeft += 0.01f; },
+        [](auto& v) { ++v.creatures[0].id; },
+        [](auto& v) { v.creatures[0].secondsLeft += 0.01f; },
         [](auto& v) { ++v.scenery[0]; },
         [](auto& v) { v.scenery.push_back(82); },
         [](auto& v) { ++v.instance; }};
+    for (usize i = 0; i < mutations.size(); ++i) {
+        CAPTURE(i);
+        auto changed = base;
+        mutations[i](changed);
+        CHECK(valueHash(changed) != baseline);
+    }
+}
+
+TEST_CASE("enemy native digest sees every pending hit field",
+          "[native-digest][enemy-missiles-native-digest]") {
+    EnemyMissileHit base;
+    base.player = 1;
+    base.shooter = 4;
+    base.damage = 7;
+    base.flags = EnemyMissileKind::kKnockBack;
+    base.burstRadius = 3;
+    base.position = {1, 2, 3};
+    base.direction = {0, 0, 1};
+    base.target = 6;
+    base.worldObject = 2;
+    base.instance = 81;
+    base.hold = EnemyMissiles::kShotFade;
+    const auto baseline = valueHash(base);
+    const std::array<std::function<void(EnemyMissileHit&)>, 15> mutations{
+        [](auto& v) { ++v.player; },
+        [](auto& v) { ++v.shooter; },
+        [](auto& v) { v.damage += 1; },
+        [](auto& v) { v.flags ^= 1; },
+        [](auto& v) { v.burstRadius += 1; },
+        [](auto& v) { v.position.y += 1; },
+        [](auto& v) { v.direction.x += 1; },
+        [](auto& v) { v.worldContact = !v.worldContact; },
+        [](auto& v) { v.fromBurst = !v.fromBurst; },
+        [](auto& v) { v.ricochet = !v.ricochet; },
+        [](auto& v) { ++v.target; },
+        [](auto& v) { ++v.worldObject; },
+        [](auto& v) { v.liquid = !v.liquid; },
+        [](auto& v) { ++v.instance; },
+        [](auto& v) { v.hold += 0.01f; }};
     for (usize i = 0; i < mutations.size(); ++i) {
         CAPTURE(i);
         auto changed = base;
@@ -273,7 +312,7 @@ TEST_CASE("enemy native digest bytes stay pinned after a held shot and a gas bla
     // literal moves only when what is visited changes on purpose.
     test::checkPinnedDigests("EnemyMissiles", test::liveDigest(pool),
                              test::savedDigest(pool, saved),
-                             "fb754d24c79746748daee68c82656dad73fa3798ad1669cc326c0d1845448f7e",
-                             "9baa6f24abba5fc0ff05a5aecbd72ee3a51726f34c5e71625bcd459a38eea35f");
+                             "3ee65d71c6e0acc944cc163f6b44ce7af31216a59c2255ef74f720381baa2029",
+                             "bfe956025c2883cd9e37b1f57c2abc85fbf6fbc2c9fd590e8d26e2fc19ee8710");
 }
 } // namespace
