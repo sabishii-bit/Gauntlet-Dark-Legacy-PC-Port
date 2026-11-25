@@ -4372,6 +4372,51 @@ TEST_CASE("a great one a solid item stops is still hurt by the harmful ground un
     CHECK(before - actor.health() == Approx(15));
 }
 
+TEST_CASE("a great one is hurt by the harmful ground under it whatever then stops its step",
+          "[combatant][critter-contact][hazards]") {
+    // CritterCollideWorld harms it from the ground its step finds (CritterWorldDamage, critter.c
+    // 7098) before CritterTranslate hands that step to CritterCollidePlayers,
+    // CritterCollideEnemies and CritterMoveNodeCol (0x8003AE60-0x8003AED8), whichever of them
+    // then stops it.
+    FlaggedGround ground{0x30000};
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    std::array<Combatant, 2> actors;
+    Combatant& actor = actors[0];
+    spawnOnGround(device, assets, actor, ground);
+    std::vector<EnemyView> players;
+    std::vector<EnemyBody> swarm;
+    std::span<const Combatant> peers;
+    bool knocked = false;
+    SECTION("knocked into a player") {
+        EnemyView player;
+        player.player = 0;
+        player.position = {1, 0, 0};
+        players.push_back(player);
+        knocked = true;
+    }
+    SECTION("standing in a swarm body too tall to trample") {
+        swarm.push_back(EnemyBody{5, {0.5f, 0, 0}, 1, 2.5f});
+    }
+    SECTION("standing in another great one") {
+        REQUIRE(actors[1].spawn(assets, 1, {0.5f, 0, 0}, 0, &ground.collision, {}, 'G'));
+        peers = actors;
+    }
+    actor.setSwarm(swarm);
+    if (knocked) {
+        EnemyHit hit;
+        hit.damage = 1;
+        hit.flags = kKnockOver;
+        hit.direction = {1, 0, 0};
+        actor.hurt(hit);
+    }
+    const f32 before = actor.health();
+    actor.update(2, 1.0f / 30, players, peers);
+    CHECK(actor.position() == Vec3{0});
+    CHECK(actor.takePushes().size() == players.size());
+    CHECK(before - actor.health() == Approx(15));
+}
+
 TEST_CASE("a great one held back keeps its walk's rise and stands on the ground under it again",
           "[combatant][critter-contact]") {
     // CritterCollidePlayers and CritterCollideItems take only x and z from the step (critter.c

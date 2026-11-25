@@ -242,6 +242,29 @@ bool Combatant::translate(Actor& critter, f32 seconds, const MoveDefinition* mov
     // turn, tramples, rams and is hurt by the ground under it.
     if (m_sim.collision != nullptr) {
         to = travelWorld(*m_sim.collision, critter.position, to, critter.definition->wallRadius());
+        // A wall it walks against or the floor its step finds may hurt it, before any later pass
+        // can stop the step (CritterWorldDamage, critter.c 7071, 7098): the swarm's harms, burns
+        // and knocks at five and the felling kinds at fifteen. The port deliberately limits
+        // burning-floor hits to once per quarter second.
+        if (m_sim.hazards != nullptr && critter.state != State::Dying) {
+            if (const auto touch = m_sim.hazards->touching(
+                    *m_sim.collision, to, critter.definition->wallRadius(), kWallProbeHeight)) {
+                const u32 flags = m_sim.hazards->flagsOf(touch->object);
+                const bool burning = HazardSurfaces::burning(flags);
+                if (const auto harm = HazardSurfaces::enemyHarmOf(flags);
+                    harm && (!burning || critter.burnGap <= 0)) {
+                    if (burning) {
+                        critter.burnGap = HazardSurfaces::kEnemyBurnGap;
+                    }
+                    EnemyHit hit;
+                    hit.damage = harm->damage;
+                    hit.flags = harm->impact;
+                    hit.direction = touch->away;
+                    hit.where = to;
+                    hurt(hit);
+                }
+            }
+        }
     }
     // Its nodes, composed once for every item, player and enemy its parts may meet.
     const TreePose::RigidNodes nodes = (critter.definition->typeFlags() & kNodeMovement) != 0
@@ -360,29 +383,6 @@ bool Combatant::translate(Actor& critter, f32 seconds, const MoveDefinition* mov
         }
     }
     critter.position = to;
-    // A wall it walks against or a floor it walks or stands on may hurt it: the swarm's harms,
-    // burns and knocks at five and the felling kinds at fifteen (CritterWorldDamage). The port
-    // deliberately limits burning-floor hits to once per quarter second.
-    if (m_sim.hazards != nullptr && m_sim.collision != nullptr && critter.state != State::Dying) {
-        const auto touch = m_sim.hazards->touching(
-            *m_sim.collision, to, critter.definition->wallRadius(), kWallProbeHeight);
-        if (const auto harm = touch.has_value() ? HazardSurfaces::enemyHarmOf(
-                                                      m_sim.hazards->flagsOf(touch->object))
-                                                : std::nullopt) {
-            EnemyHit hit;
-            if (HazardSurfaces::burning(m_sim.hazards->flagsOf(touch->object))) {
-                if (critter.burnGap > 0) {
-                    return touched;
-                }
-                critter.burnGap = HazardSurfaces::kEnemyBurnGap;
-            }
-            hit.damage = harm->damage;
-            hit.flags = harm->impact;
-            hit.direction = touch->away;
-            hit.where = to;
-            hurt(hit);
-        }
-    }
     return touched;
 }
 
