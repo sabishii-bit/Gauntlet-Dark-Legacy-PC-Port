@@ -800,10 +800,11 @@ pub enum UpdateError {
     /// A file operation in the folder failed.
     #[error(transparent)]
     Files(FilesError),
-    /// The system refused to look at `path`, or nothing is there to hold an installation.
+    /// The system refused to look at, write, sync or move `path`, or nothing is there to hold an
+    /// installation.
     #[error("{}: {source}", .path.display())]
     Io {
-        /// What was looked at.
+        /// What was looked at, written or moved.
         path: PathBuf,
         /// What the system answered.
         #[source]
@@ -2446,6 +2447,29 @@ mod tests {
         }
         assert_eq!(failure.rule(), "sourceMismatch");
         assert_eq!(failure.changes, Changes::None);
+        assert_eq!(as_it_is(&fixture.root), before);
+
+        // The release of this platform whose launcher file carries another platform's runtime of
+        // the release's own version, as a file uploaded under the wrong name would.
+        let elsewhere = RuntimeFiles::standard(other_platform().as_str(), NEXT);
+        let file_of_elsewhere = launcher_file(dir.path(), "other-launcher", &elsewhere);
+        let (release, held) = release_of(NEXT, &file_of_elsewhere);
+        let failure = failed(update_from_release(
+            &fixture,
+            &held,
+            &release,
+            INSTALLED,
+            &standing_in(&NoFaults, &answering),
+        ));
+        match &failure.error {
+            UpdateError::SourceMismatch { detail } => {
+                assert!(detail.contains(other_platform().as_str()), "{detail}");
+            }
+            other => panic!("{other:?}"),
+        }
+        assert_eq!(failure.rule(), "sourceMismatch");
+        assert_eq!(failure.changes, Changes::None);
+        assert!(downloads(&fixture.root).is_empty());
         assert_eq!(as_it_is(&fixture.root), before);
 
         // A release of another platform is refused before anything of it is asked for.
