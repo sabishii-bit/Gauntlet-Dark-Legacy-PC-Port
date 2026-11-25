@@ -1973,6 +1973,33 @@ mod tests {
         // The launcher copy is the file that ran, which is as it was.
         assert_eq!(fs::read(root.join(launcher_copy())).unwrap(), source_bytes);
         assert_eq!(fs::read(&source_path).unwrap(), source_bytes);
+        // The game and the launcher copy are programs, and every other file the update put in
+        // place is readable by all, as an install leaves them.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+
+            let mode = |name: &str| {
+                fs::metadata(under(&root, name))
+                    .unwrap()
+                    .permissions()
+                    .mode()
+                    & 0o777
+            };
+            for name in [executable(), launcher_copy()] {
+                assert_eq!(mode(name), 0o755, "{name}");
+            }
+            for name in [
+                "VERSION",
+                BUILD_INFO,
+                "data/config.json",
+                "data/text/en.json",
+                "portable.flag",
+                "shaders/new.spv",
+            ] {
+                assert_eq!(mode(name), 0o644, "{name}");
+            }
+        }
 
         // The receipt records all of it, and keeps what it does not know.
         let written = receipt_at(&root);
@@ -3154,7 +3181,7 @@ mod tests {
             fs::rename(&shaders, &outside).unwrap();
             link_folder(&shaders, &outside).unwrap();
         };
-        let faults = OnceJournalled {
+        let planted = OnceJournalled {
             point: FaultPoint::UpdateStage,
             journal: fixture
                 .root
@@ -3164,17 +3191,28 @@ mod tests {
             act: &plant,
             done: Cell::new(false),
         };
+        // Whether the journal recorded the swap, or a move was made.
+        let swapped = Cell::new(false);
+        let swap = || {
+            swapped.set(true);
+            Ok(())
+        };
+        let recorded = OnPass::new(FaultPoint::UpdateCommit, 1, &swap);
+        let moved = OnPass::new(FaultPoint::UpdateMove, 1, &swap);
+        let faults = Faults(&[&planted, &recorded, &moved]);
         let failure = failed(update_simply(
             &fixture,
             &mut source,
             NEXT,
             &standing_in(&faults, &answering),
         ));
-        assert!(faults.done.get());
+        assert!(planted.done.get());
         match &failure.error {
             UpdateError::Links { path } => assert_eq!(path, &shaders),
             other => panic!("{other:?}"),
         }
+        // Refused before the swap began: nothing moved, and the journal never recorded a swap.
+        assert!(!swapped.get());
         assert_eq!(failure.changes, Changes::RolledBack);
         // Nothing reached the folder the link leads to, and nothing of the update's is left.
         assert_eq!(tree_entries(&outside), shaders_before);
@@ -3221,6 +3259,119 @@ mod tests {
             fixture.runtime.build_info_bytes()
         );
         assert_eq!(state_names(&fixture.root), [RECEIPT_FILE]);
+    }
+
+    #[test]
+    fn a_file_made_where_a_new_name_goes_stops_the_swap_and_stays() {
+        let (dir, fixture) = players_installation();
+        let mut source = bundled(dir.path(), &fixture.runtime.newer(NEXT));
+        let before = contents_of(&fixture.root);
+        let shader = fixture.root.join("shaders").join("new.spv");
+        // As the last installed file goes aside, the player makes a file where the release adds
+        // its shader, which the swap puts in place last.
+        let make = || fs::write(&shader, PLAYERS_BYTES);
+        let made = OnPass::new(FaultPoint::UpdateMove, 7, &make);
+        let failure = failed(update_simply(
+            &fixture,
+            &mut source,
+            NEXT,
+            &standing_in(&made, &answering),
+        ));
+        match &failure.error {
+            UpdateError::Changed { name } => assert_eq!(&**name, "shaders/new.spv"),
+            other => panic!("{other:?}"),
+        }
+        assert_eq!(failure.rule(), "changed");
+        // The player's file stays as it is, and everything else is as it was.
+        assert_eq!(failure.changes, Changes::RolledBack);
+        assert_eq!(fs::read(&shader).unwrap(), PLAYERS_BYTES);
+        retry_locked(|| fs::remove_file(&shader)).unwrap();
+        assert_eq!(contents_of(&fixture.root), before);
+    }
+
+    /// A new shader of [`next_in_new_folders`]' release, two folders below any the installation
+    /// has.
+    pub(super) const DEEP_SHADER: &str = "shaders/extra/deep/next.spv";
+
+    /// The release after `fixture`'s, of [`NEXT`], as [`RuntimeFiles::next`] gives it with
+    /// [`DEEP_SHADER`] beside: nine moves, the shader's the eighth, the folders it needs made
+    /// before the first new name is put in place.
+    pub(super) fn next_in_new_folders(fixture: &InstallFixture) -> RuntimeFiles {
+        let mut next = fixture.runtime.next(NEXT);
+        next.files
+            .push((DEEP_SHADER.to_owned(), b"deep-shader".to_vec()));
+        next
+    }
+
+    #[test]
+    fn an_update_makes_the_folders_its_new_names_need() {
+        let (dir, fixture) = players_installation();
+        let mut source = bundled(dir.path(), &next_in_new_folders(&fixture));
+        let root = fixture.root.clone();
+        // The journal as the swap records it, before the first move.
+        let seen = Mutex::new(None);
+        let look = || -> io::Result<()> {
+            let path = root.join(STATE_DIR).join(JOURNAL_DIR).join(UPDATE_JOURNAL);
+            let journal: Value = serde_json::from_slice(&fs::read(path)?).unwrap();
+            *seen.lock().unwrap() = Some(journal["madeFolders"].clone());
+            Ok(())
+        };
+        let recorded = OnPass::new(FaultPoint::UpdateCommit, 1, &look);
+        updated(update_simply(
+            &fixture,
+            &mut source,
+            NEXT,
+            &standing_in(&recorded, &answering),
+        ));
+        assert_eq!(
+            seen.into_inner().unwrap(),
+            Some(json!(["shaders/extra", "shaders/extra/deep"]))
+        );
+        assert_eq!(fs::read(under(&root, DEEP_SHADER)).unwrap(), b"deep-shader");
+        assert_eq!(state_names(&root), [RECEIPT_FILE]);
+    }
+
+    #[test]
+    fn the_folders_an_update_made_go_with_it_unless_they_hold_a_players_file() {
+        // Taken back as its last move fails: the folders it made go with the names in them.
+        let (dir, fixture) = players_installation();
+        let mut source = bundled(dir.path(), &next_in_new_folders(&fixture));
+        let before = contents_of(&fixture.root);
+        let fail = FailAt::new(FaultPoint::UpdateMove, 9);
+        let failure = failed(update_simply(
+            &fixture,
+            &mut source,
+            NEXT,
+            &standing_in(&fail, &answering),
+        ));
+        assert_eq!(failure.changes, Changes::RolledBack);
+        assert_eq!(contents_of(&fixture.root), before);
+        assert!(!fixture.root.join("shaders").join("extra").exists());
+
+        // A file the player put in one of them meanwhile keeps it, and is kept as it is.
+        let (dir, fixture) = players_installation();
+        let mut source = bundled(dir.path(), &next_in_new_folders(&fixture));
+        let before = contents_of(&fixture.root);
+        let note = under(&fixture.root, "shaders/extra/notes.txt");
+        let leave = || {
+            fs::write(&note, PLAYERS_BYTES)?;
+            Err(io::Error::other("the volume went away"))
+        };
+        let left = OnPass::new(FaultPoint::UpdateMove, 9, &leave);
+        let failure = failed(update_simply(
+            &fixture,
+            &mut source,
+            NEXT,
+            &standing_in(&left, &answering),
+        ));
+        assert_eq!(failure.changes, Changes::Kept);
+        assert_eq!(fs::read(&note).unwrap(), PLAYERS_BYTES);
+        assert!(!under(&fixture.root, "shaders/extra/deep").exists());
+        assert_eq!(journal_phase(&fixture.root), None);
+        // Nothing else of the update's is left.
+        retry_locked(|| fs::remove_file(&note)).unwrap();
+        fs::remove_dir(note.parent().unwrap()).unwrap();
+        assert_eq!(contents_of(&fixture.root), before);
     }
 
     #[test]

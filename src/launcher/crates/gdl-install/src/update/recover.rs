@@ -237,9 +237,9 @@ mod tests {
     use super::super::tests::{
         Contents, Heard, INSTALLED, NEXT, OnceJournalled, StartedLater, Told, answering, as_it_is,
         bundled, bundled_as, contents_of, executable, failed, journal_phase, launcher_copy,
-        nothing_recovered, players_installation, receipt_at, recover_by, recover_simply,
-        retired_copies, rolled_back, stagings, standing_in, state_names, update_by, update_simply,
-        updated, version,
+        next_in_new_folders, nothing_recovered, players_installation, receipt_at, recover_by,
+        recover_simply, retired_copies, rolled_back, stagings, standing_in, state_names, update_by,
+        update_simply, updated, version,
     };
     use super::super::{
         CHECK_INSTALLED, FINISH_CLEANUP, PlanSource, RECOVER_UPDATE, SourceSummary, UPDATE_BACKUP,
@@ -469,6 +469,59 @@ mod tests {
         assert_eq!(recovered.unwrap(), rolled_back(true, &[]));
         assert_eq!(contents_of(&fixture.root), before);
         assert_eq!(fs::read(&removed).unwrap(), bytes);
+
+        // The same file copied back in its place, kept in the backup too: the update is not whole
+        // either, and taking it back finds that file in both places, so it stops there.
+        let (_dir, fixture, _) = left_swapped();
+        let held = fixture
+            .root
+            .join(STATE_DIR)
+            .join(UPDATE_BACKUP)
+            .join("shaders")
+            .join("test.spv");
+        let removed = fixture.root.join("shaders").join("test.spv");
+        fs::copy(&held, &removed).unwrap();
+        let recovered = recover_simply(&fixture.root, NEXT, &standing_in(&NoFaults, &answering));
+        match recovered {
+            Err(RecoverError::UpdateInconsistent { detail }) => {
+                assert!(detail.contains("shaders/test.spv"), "{detail}");
+            }
+            other => panic!("{other:?}"),
+        }
+        assert_eq!(journal_phase(&fixture.root).as_deref(), Some("rollingBack"));
+        assert!(held.is_file() && removed.is_file());
+    }
+
+    #[test]
+    fn a_folder_the_update_made_that_holds_a_players_file_stays() {
+        // Stopped as its last new name was put in place, a file of the player's put since in a
+        // folder it made: taken back at the next start, the folder stays with that file.
+        let (dir, fixture) = players_installation();
+        let mut source = bundled(dir.path(), &next_in_new_folders(&fixture));
+        let before = contents_of(&fixture.root);
+        panicked(
+            &fixture,
+            &mut source,
+            &PanicAt::new(FaultPoint::UpdateMove, 9),
+        );
+        let note = fixture.root.join("shaders").join("extra").join("notes.txt");
+        fs::write(&note, b"the player's").unwrap();
+        let recovered = recover_simply(&fixture.root, NEXT, &standing_in(&NoFaults, &answering));
+        assert_eq!(
+            recovered.unwrap(),
+            Recovered {
+                update: UpdateRecovery::RolledBack {
+                    kept: vec!["shaders/extra".to_owned()],
+                    launcher_restored: false,
+                },
+                ..nothing_recovered()
+            }
+        );
+        assert_eq!(fs::read(&note).unwrap(), b"the player's");
+        assert!(!note.with_file_name("deep").exists());
+        retry_locked(|| fs::remove_file(&note)).unwrap();
+        fs::remove_dir(note.parent().unwrap()).unwrap();
+        assert_eq!(contents_of(&fixture.root), before);
     }
 
     #[test]
