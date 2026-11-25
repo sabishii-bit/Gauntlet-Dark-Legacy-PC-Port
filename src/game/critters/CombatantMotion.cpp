@@ -229,14 +229,24 @@ bool Combatant::translate(Actor& critter, f32 seconds, const MoveDefinition* mov
         return false;
     }
     Vec3 to = critter.position + translation;
+    // CritterTranslate hands one step to CritterCollideWorld, CritterCollideItems,
+    // CritterCollidePlayers, CritterCollideEnemies and CritterMoveNodeCol in turn
+    // (0x8003AE38-0x8003AED8): each meets what the passes before it leave of the step.
+    if (m_sim.collision != nullptr) {
+        to = travelWorld(*m_sim.collision, critter.position, to, critter.definition->wallRadius());
+    }
+    // Its nodes, composed once for every item, player and enemy its parts may meet.
+    const TreePose::RigidNodes nodes = (critter.definition->typeFlags() & kNodeMovement) != 0
+                                           ? simulationNodes(critter)
+                                           : TreePose::RigidNodes{};
+    if (blockedByItems(critter, to, nodes)) {
+        // Only along the ground, the floor's rise kept (critter.c 7336-7339).
+        to = {critter.position.x, to.y, critter.position.z};
+    }
     // CritterCollidePlayers sweeps collision centres, not floor positions, widened by
     // col_radius, the class's whole width. An overlapping body may move outward; players on
     // another floor do not block it.
     const Vec3 offset = to - critter.position;
-    // Its nodes, composed once for every player, item and enemy its parts may meet.
-    const TreePose::RigidNodes nodes = (critter.definition->typeFlags() & kNodeMovement) != 0
-                                           ? simulationNodes(critter)
-                                           : TreePose::RigidNodes{};
     const auto playerSeparation = [&](const EnemyView& player) -> std::optional<Vec3> {
         const Vec3 centre =
             player.position + Vec3{0, player.collisionHeight.value_or(0.5f * player.height), 0};
@@ -305,12 +315,6 @@ bool Combatant::translate(Actor& critter, f32 seconds, const MoveDefinition* mov
         // Only along the ground (critter.c 7249-7252): the rest of the step still runs, so a
         // golem tramples what it stands over.
         to = {critter.position.x, to.y, critter.position.z};
-    }
-    if (m_sim.collision != nullptr) {
-        to = travelWorld(*m_sim.collision, critter.position, to, critter.definition->wallRadius());
-    }
-    if (blockedByItems(critter, to, nodes)) {
-        return touched;
     }
     if (blockedBySwarm(critter, to, nodes)) {
         return touched;

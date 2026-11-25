@@ -4125,6 +4125,265 @@ TEST_CASE("a great one's step passes a player held by another", "[combatant][cri
     CHECK(actor.yaw() == Approx(pushed.empty() ? 3 * kSeconds : 0.0f));
 }
 
+/** A general a unit wide whose stance turns it three radians a second, its body centre as
+ * high as a player's. */
+void loadStanceGeneral(test::FakeRenderDevice& device, CombatantAssets& assets) {
+    const auto root = familyAssets();
+    writeTextFile(root / "critter/GENERAL.json", R"({
+      "descriptors":[{"prefix":"BODY","name":"GENERAL","type":8}],
+      "types":[{"moveCount":1,"maxHealth":100,"radius":2,"wallRadius":1,
+                "floorOffset":2,"originOffset":[0,4,0]}],
+      "moves":[{"name":"READY","anim":"STEP","type":32,"interrupt":0,"turnRate":3}]})");
+    REQUIRE(assets.load(device, root, General::definition(), 'G'));
+}
+
+/** Level ground from `nearX` to `farX` along x, forty across. */
+void addGround(std::vector<CollisionTriangle>& triangles, f32 nearX, f32 farX) {
+    CollisionTriangle first;
+    first.vertices = {Vec3{nearX, 0, -20}, Vec3{farX, 0, 20}, Vec3{farX, 0, -20}};
+    CollisionTriangle second;
+    second.vertices = {Vec3{nearX, 0, -20}, Vec3{nearX, 0, 20}, Vec3{farX, 0, 20}};
+    triangles.push_back(first);
+    triangles.push_back(second);
+}
+
+TEST_CASE("a great one meets players along the step its walls leave",
+          "[combatant][critter-contact]") {
+    // CritterTranslate hands its step to CritterCollideWorld (0x80035408), which slides it along
+    // a wall or takes its x and z away short of a ledge (critter.c 7070-7149), before
+    // CritterCollidePlayers (0x800351B0) meets the players along what is left (0x8003AE38,
+    // 0x8003AE60).
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    loadStanceGeneral(device, assets);
+    std::vector<CollisionTriangle> triangles;
+    EnemyView player;
+    player.player = 0;
+    player.collisionHeight = 6.0f;
+    // Knocked a unit along (0.6, 0, 0.8) a frame, it meets a wall 0.05 past its wall radius
+    // and slides on along it to (0.05, 0, 0.8).
+    const auto wall = [&] {
+        addGround(triangles, -20, 20);
+        for (const auto& corners :
+             {std::array{Vec3{1.05f, -1, -20}, Vec3{1.05f, 20, -20}, Vec3{1.05f, 20, 20}},
+              std::array{Vec3{1.05f, -1, -20}, Vec3{1.05f, 20, 20}, Vec3{1.05f, -1, 20}}}) {
+            CollisionTriangle face;
+            face.normal = {-1, 0, 0};
+            face.vertices = corners;
+            triangles.push_back(face);
+        }
+        return Vec3{1.8f, 0, 2.4f};
+    };
+    // Knocked a third of a unit along x, it finds no ground a wall radius past the step, which
+    // takes the step's x and z away.
+    const auto ledge = [&] {
+        addGround(triangles, -20, 1);
+        return Vec3{1, 0, 0};
+    };
+    Vec3 knock{0};
+    Vec3 walked{0};
+    bool met = false;
+    SECTION("sliding along a wall, it passes a player beyond it whom its whole step meets") {
+        // 1.8 from the whole step's end, within the two widths of 2, and 2.35 from the slide's.
+        knock = wall();
+        player.position = {2.4f, 0, 0.8f};
+        walked = {0.05f, 0, 0.8f};
+    }
+    SECTION("sliding along a wall, it meets a player its slide reaches and its whole step "
+            "passes") {
+        // 1.83 from the slide's end and 2.19 from the whole step's.
+        knock = wall();
+        player.position = {-1, 0, 2.3f};
+        met = true;
+    }
+    SECTION("at a ledge, a player it stands against is met by the step the ledge leaves it") {
+        // Inside the two widths behind it, where the whole step leaves it.
+        knock = ledge();
+        player.position = {-1, 0, 0};
+        met = true;
+    }
+    SECTION("at a ledge, it passes a player only its whole step reaches") {
+        // 1.87 from the whole step's end, 2.2 from where it stands.
+        knock = ledge();
+        player.position = {2.2f, 0, 0};
+    }
+    WorldCollision collision;
+    collision.build(triangles);
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, {}, 0, &collision, {}, 'G'));
+    EnemyHit hit;
+    hit.damage = 1;
+    hit.flags = kKnockOver;
+    hit.direction = knock;
+    actor.hurt(hit);
+    constexpr f32 kSeconds = 1.0f / 30;
+    actor.update(2, kSeconds, std::span{&player, 1});
+    CHECK(actor.position().x == Approx(walked.x).margin(0.001f));
+    CHECK(actor.position().z == Approx(walked.z).margin(0.001f));
+    const auto pushes = actor.takePushes();
+    REQUIRE(pushes.size() == (met ? 1 : 0));
+    if (met) {
+        // Held to a push of one past the separation, twice over.
+        CHECK(pushes.front().player == 0);
+        CHECK(glm::length(pushes.front().velocity) == Approx(2));
+    }
+    // Its stance turns it toward the player unless it met the player.
+    CHECK(std::abs(actor.yaw()) == Approx(met ? 0.0f : 3 * kSeconds));
+}
+
+TEST_CASE("a great one meets players by the step a solid item leaves it",
+          "[combatant][critter-contact]") {
+    // CritterCollideItems (0x80034F60) takes the step's x and z away at a solid item (critter.c
+    // 7336-7339), and CritterTranslate goes on to CritterCollidePlayers with what is left
+    // (0x8003AE4C, 0x8003AE60).
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    loadStanceGeneral(device, assets);
+    // From 1.2 to 2.2 along x: the third of a unit it is knocked along x reaches it.
+    std::array items{CombatantObstacle{
+        .box =
+            Obstacle{.centre = {1.7f, 0, 0}, .halfAcross = 0.5f, .halfAlong = 0.5f, .height = 8}}};
+    EnemyView player;
+    player.player = 0;
+    player.collisionHeight = 6.0f;
+    // Against the item's far side: 1.87 from the whole step's end, 2.2 from where it stands.
+    player.position = {2.2f, 0, 0};
+    bool met = false;
+    SECTION("it passes a player beyond the item whom its whole step meets") {}
+    SECTION("it meets a player it stands against by the step the item leaves it") {
+        player.position = {-1, 0, 0};
+        met = true;
+    }
+    SECTION("with the item gone, its step meets the player beyond where it stood") {
+        items[0].box.solid = false;
+        met = true;
+    }
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+    actor.setObstacles(items);
+    EnemyHit hit;
+    hit.damage = 1;
+    hit.flags = kKnockOver;
+    hit.direction = {1, 0, 0};
+    actor.hurt(hit);
+    constexpr f32 kSeconds = 1.0f / 30;
+    actor.update(2, kSeconds, std::span{&player, 1});
+    CHECK(actor.position().x == 0);
+    const auto pushes = actor.takePushes();
+    REQUIRE(pushes.size() == (met ? 1 : 0));
+    if (met) {
+        CHECK(pushes.front().player == 0);
+        CHECK(glm::length(pushes.front().velocity) == Approx(2));
+    }
+    CHECK(std::abs(actor.yaw()) == Approx(met ? 0.0f : 3 * kSeconds));
+}
+
+TEST_CASE("a golem a solid item stops still tramples the small enemy it stands over",
+          "[combatant][critter-contact][critter-trample]") {
+    // CritterTranslate goes on after CritterCollideItems takes the step's x and z away
+    // (critter.c 4016-4035, 7336-7339): CritterCollideEnemies meets what the still body stands
+    // over, and a golem tramples one no more than two high (7402-7428).
+    const auto root = familyAssets();
+    const auto& golem = Golem::definition();
+    writeTextFile(root / "critter" / (golem.name + ".json"),
+                  R"({"descriptors":[{"prefix":"BODY","name":")" + golem.name + R"(","type":)" +
+                      std::to_string(static_cast<s32>(golem.kind)) + R"(}],
+      "types":[{"moveCount":1,"maxHealth":100,"radius":2,"wallRadius":1,"damageScale":7}],
+      "moves":[{"name":"READY","anim":"STEP","type":32,"interrupt":0}]})");
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, golem, 'G'));
+    Combatant actor;
+    EnemyScales scales;
+    scales.damage = 2;
+    REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, scales, 'G'));
+    // Half a unit behind it: the knocked step toward +x leaves it, and only a step held still
+    // meets it.
+    const std::array swarm{EnemyBody{5, {-0.5f, 0, 0}, 1, 2}};
+    actor.setSwarm(swarm);
+    // A gate from 1.1 to 2.1 along x, which the knocked step's sixth of a unit reaches.
+    std::array items{CombatantObstacle{
+        .box =
+            Obstacle{.centre = {1.6f, 0, 0}, .halfAcross = 0.5f, .halfAlong = 0.5f, .height = 8}}};
+    bool stopped = true;
+    SECTION("stopped by a solid item, it tramples what it stands over") {}
+    SECTION("with the item gone, its step leaves the enemy behind it untouched") {
+        items[0].box.solid = false;
+        stopped = false;
+    }
+    actor.setObstacles(items);
+    EnemyHit hit;
+    hit.damage = 1;
+    hit.flags = kKnockOver;
+    hit.direction = {1, 0, 0};
+    actor.hurt(hit);
+    actor.update(2, 1.0f / 30, {});
+    CHECK(actor.position().x == Approx(stopped ? 0 : (10 - golem.knockbackReduction) / 30));
+    const auto tramples = actor.takeTramples();
+    REQUIRE(tramples.size() == (stopped ? 1 : 0));
+    if (stopped) {
+        CHECK(tramples[0].enemy == 5);
+        CHECK(tramples[0].damage == 14);
+    }
+}
+
+TEST_CASE("a great one a solid item stops is still hurt by the harmful ground under it",
+          "[combatant][critter-contact][hazards]") {
+    // CritterCollideWorld harms it from the ground its step finds (CritterWorldDamage, critter.c
+    // 7098) whatever CritterCollideItems then leaves of that step.
+    const auto root = familyAssets();
+    writeTextFile(root / "critter/GOLEM.json", R"({
+      "descriptors":[{"prefix":"BODY","name":"GOLEM","type":3}],
+      "types":[{"moveCount":1,"maxHealth":1000,"radius":1,"wallRadius":1}],
+      "moves":[{"name":"READY","anim":"STEP","type":32,"interrupt":0}]})");
+    const auto dir = test::scratchDirectory("critter-item-hazard-floor");
+    // Felling ground (0x30000): fifteen a step.
+    writeTextFile(dir / "world.json", R"({
+  "objects": [{"name": "EMBERS", "position": [0, 0, 0], "flags": )" +
+                                          std::to_string(0x30004) + R"(, "next": -1,
+               "child": -1}],
+  "animations": [], "particles": [], "locators": [], "itemInfos": [], "itemInstances": []
+})");
+    WorldLayout layout;
+    REQUIRE(layout.load(dir));
+    HazardSurfaces hazards;
+    hazards.bind(layout);
+    std::vector<CollisionTriangle> triangles;
+    addGround(triangles, -20, 20);
+    for (CollisionTriangle& triangle : triangles) {
+        triangle.object = 0;
+    }
+    WorldCollision collision;
+    collision.build(triangles);
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, Golem::definition(), 'G'));
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, {}, 0, &collision, {}, 'G'));
+    actor.setHazards(&hazards);
+    // A gate from 1.1 to 2.1 along x, which the knocked step's sixth of a unit reaches.
+    std::array items{CombatantObstacle{
+        .box =
+            Obstacle{.centre = {1.6f, 0, 0}, .halfAcross = 0.5f, .halfAlong = 0.5f, .height = 8}}};
+    bool stopped = true;
+    SECTION("stopped by a solid item") {}
+    SECTION("walking on with the item gone") {
+        items[0].box.solid = false;
+        stopped = false;
+    }
+    actor.setObstacles(items);
+    EnemyHit hit;
+    hit.damage = 1;
+    hit.flags = kKnockOver;
+    hit.direction = {1, 0, 0};
+    actor.hurt(hit);
+    const f32 before = actor.health();
+    actor.update(2, 1.0f / 30, {});
+    CHECK(actor.position().x ==
+          Approx(stopped ? 0 : (10 - Golem::definition().knockbackReduction) / 30));
+    CHECK(before - actor.health() == Approx(15));
+}
+
 /** The turned-part general's own data: a stance, and one solid part two along x from ARM. */
 formats::CritterFile turnedPartCritter() {
     formats::CritterFile source;
