@@ -169,7 +169,6 @@ mod tests {
     use std::fs;
     use std::path::{Path, PathBuf};
     use std::process::{Command, Stdio};
-    use std::sync::PoisonError;
 
     #[cfg(windows)]
     use gdl_files::MAX_INSTALL_ROOT_UTF16;
@@ -182,7 +181,7 @@ mod tests {
     use super::{
         FAIL, IMAGE, KILL, KILL_DESTINATION, KILL_ROOT, LAUNCHER, RECOVER, pass_name, recovered,
     };
-    use crate::faults::{FaultPoint, KILLED_EXIT_CODE, NoFaults, ONE_KILLED_CHILD};
+    use crate::faults::{FaultPoint, KILLED_EXIT_CODE, NoFaults};
     use crate::folder::{LOCK_FILE, RECEIPT_FILE, STATE_DIR};
     use crate::install::settings::InstallSettings;
     use crate::install::tests::{
@@ -298,9 +297,7 @@ mod tests {
                 child.creation_flags(CREATE_NO_WINDOW);
             }
             let output = {
-                let _one = ONE_KILLED_CHILD
-                    .lock()
-                    .unwrap_or_else(PoisonError::into_inner);
+                let _one = crate::one_test_child();
                 child.output().unwrap()
             };
             assert_eq!(

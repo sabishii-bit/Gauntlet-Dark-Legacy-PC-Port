@@ -91,3 +91,17 @@ pub use update::{
     UpdateOutcome, UpdatePhase, UpdatePlan, UpdateRequest, UpdateSource, Updated, VERIFY_DOWNLOAD,
     plan_update, update,
 };
+
+/// Held while children of this test program run that must not run beside one another: a job a kill
+/// may end, an install's or an update's, and a hand-over test's children.
+#[cfg(test)]
+static ONE_TEST_CHILD: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Waits until no other test runs such children, whatever the last that ran them did, and holds the
+/// others off until what it gives is dropped.
+#[cfg(test)]
+fn one_test_child() -> std::sync::MutexGuard<'static, ()> {
+    ONE_TEST_CHILD
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}

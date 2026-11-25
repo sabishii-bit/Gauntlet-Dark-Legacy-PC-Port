@@ -5,8 +5,6 @@
 #[cfg(test)]
 use std::cell::Cell;
 use std::io;
-#[cfg(test)]
-use std::sync::Mutex;
 
 /// A point a job passes each time it has made a step that must survive its end: where a test
 /// fails, stops or kills the job to see what it leaves.
@@ -89,11 +87,6 @@ impl FaultPoint {
 /// failed or a name that matched no test gives.
 #[cfg(test)]
 pub(crate) const KILLED_EXIT_CODE: i32 = 71;
-
-/// Held while a child of the test program runs a job that [`KillAt`] may end, so that the kill
-/// tests' children, an install's and an update's alike, run one at a time.
-#[cfg(test)]
-pub(crate) static ONE_KILLED_CHILD: Mutex<()> = Mutex::new(());
 
 /// Where a job passes its [`FaultPoint`]s: an error from a pass fails the job there, as the
 /// step after it would have failed.

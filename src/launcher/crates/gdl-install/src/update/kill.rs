@@ -175,7 +175,6 @@ mod tests {
     use std::fs;
     use std::path::{Path, PathBuf};
     use std::process::{Command, Stdio};
-    use std::sync::PoisonError;
     use std::thread;
     use std::time::{Duration, Instant};
 
@@ -191,7 +190,7 @@ mod tests {
         FAIL, FINISHED_EXIT_CODE, KILL, KILL_DESTINATION, KILL_ROOT, OUTCOME, RECOVER, RELEASE,
         SOURCE, UPDATED, pass_name,
     };
-    use crate::faults::{FaultPoint, KILLED_EXIT_CODE, NoFaults, ONE_KILLED_CHILD};
+    use crate::faults::{FaultPoint, KILLED_EXIT_CODE, NoFaults};
     use crate::folder::{InstallFolder, JOURNAL_DIR, LockError, STATE_DIR};
     use crate::install::Changes;
     use crate::install::tests::assert_no_alpha_name;
@@ -378,9 +377,7 @@ mod tests {
                 child.creation_flags(CREATE_NO_WINDOW);
             }
             let output = {
-                let _one = ONE_KILLED_CHILD
-                    .lock()
-                    .unwrap_or_else(PoisonError::into_inner);
+                let _one = crate::one_test_child();
                 child.output().unwrap()
             };
             let stdout = String::from_utf8_lossy(&output.stdout);

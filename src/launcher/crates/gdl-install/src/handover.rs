@@ -654,7 +654,6 @@ mod tests {
     use std::path::{Path, PathBuf};
     use std::process::{Child, Command, ExitStatus, Stdio};
     use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
-    use std::sync::{Mutex, PoisonError};
     use std::thread;
     use std::time::{Duration, Instant};
 
@@ -826,10 +825,6 @@ mod tests {
 
     /// The staging the hand-written update journals name.
     const STAGING: &str = "stage-AbC123xy";
-
-    /// Held while a test's children run, so that the hand-over tests' children run one test at a
-    /// time.
-    static ONE_HANDOVER: Mutex<()> = Mutex::new(());
 
     /// Writes `line` on a line of its own, past the test harness's capture of what a test prints
     /// and after the test's name the harness has begun a line with.
@@ -1167,11 +1162,6 @@ mod tests {
         }
     }
 
-    /// The hand-over tests' children, one test's at a time.
-    fn one_test_at_a_time() -> std::sync::MutexGuard<'static, ()> {
-        ONE_HANDOVER.lock().unwrap_or_else(PoisonError::into_inner)
-    }
-
     /// An installation's folder of the test's own, with its state folder.
     fn installation() -> TempDir {
         let dir = tempfile::tempdir().unwrap();
@@ -1390,7 +1380,7 @@ mod tests {
 
     #[test]
     fn the_previous_launcher_is_waited_for() {
-        let _one = one_test_at_a_time();
+        let _one = crate::one_test_child();
         let dir = installation();
         let mut sleeper = Started::sleeper(BRIEF_SLEEP);
         let answer = Started::wait_for(&sleeper, super::PREVIOUS_WAIT_LIMIT, dir.path());
@@ -1410,7 +1400,7 @@ mod tests {
     fn a_process_started_after_the_waiter_is_not_waited_for() {
         // The test process waits for a child of its own, which started after it, as a process
         // that took the id of a launcher that exited would have: it is not waited for.
-        let _one = one_test_at_a_time();
+        let _one = crate::one_test_child();
         let dir = installation();
         let mut sleeper = Started::sleeper(LONG_SLEEP);
         let begun = Instant::now();
@@ -1426,7 +1416,7 @@ mod tests {
 
     #[test]
     fn a_gone_process_is_gone() {
-        let _one = one_test_at_a_time();
+        let _one = crate::one_test_child();
         let dir = installation();
         let mut child = Started::sleeper(Duration::ZERO);
         let pid = child.pid();
@@ -1449,7 +1439,7 @@ mod tests {
 
     #[test]
     fn a_lingering_previous_launcher_is_ended_at_the_limit() {
-        let _one = one_test_at_a_time();
+        let _one = crate::one_test_child();
         let dir = installation();
         let copy = launcher_copy_in(dir.path());
         let mut sleeper = Started::sleeper_at(&copy, LONG_SLEEP);
@@ -1463,7 +1453,7 @@ mod tests {
     fn a_renamed_previous_launcher_is_still_a_launcher() {
         // An update renames the running copy aside; whichever name the system gives, the one it
         // started from or the one the rename left, the process is a launcher.
-        let _one = one_test_at_a_time();
+        let _one = crate::one_test_child();
         let dir = installation();
         let copy = launcher_copy_in(dir.path());
         let mut sleeper = Started::sleeper_at(&copy, LONG_SLEEP);
@@ -1482,7 +1472,7 @@ mod tests {
     fn a_lingering_process_of_another_image_is_left_running() {
         // The test program under its own name is no launcher: a stray wait never ends a program of
         // the player's.
-        let _one = one_test_at_a_time();
+        let _one = crate::one_test_child();
         let dir = installation();
         let mut sleeper = Started::sleeper(LONG_SLEEP);
         let answer = Started::wait_for(&sleeper, SHORT_LIMIT, dir.path());
@@ -1845,7 +1835,7 @@ mod tests {
         // inherits its token, hold the Administrators group only to deny and run at Medium
         // integrity, as UAC filters an administrator's token; the running copy's rename, the wait
         // for it and the removal of its retired file go through all the same.
-        let _one = one_test_at_a_time();
+        let _one = crate::one_test_child();
         let dir = installation();
         let root = dir.path();
         let copy = launcher_copy_in(root);
@@ -1987,7 +1977,7 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn a_handed_over_child_sees_only_its_standard_descriptors_and_runs_in_the_root() {
-        let _one = one_test_at_a_time();
+        let _one = crate::one_test_child();
         let dir = installation();
         let root = dir.path();
         // A descriptor this process holds without close-on-exec, as a library may leave one, which
