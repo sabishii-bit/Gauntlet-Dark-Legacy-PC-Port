@@ -71,10 +71,8 @@ fn named_pass(name: &str) -> (FaultPoint, u32) {
     let (point, at) = name
         .rsplit_once(':')
         .unwrap_or_else(|| panic!("{name:?} names no pass"));
-    let point = FaultPoint::ALL
-        .into_iter()
-        .find(|known| known.as_str() == point)
-        .unwrap_or_else(|| panic!("{point:?} is no point an install passes"));
+    let point =
+        FaultPoint::named(point).unwrap_or_else(|| panic!("{point:?} is no point a job passes"));
     let at = at
         .parse()
         .unwrap_or_else(|_| panic!("{name:?} counts no pass"));
@@ -171,7 +169,7 @@ mod tests {
     use std::fs;
     use std::path::{Path, PathBuf};
     use std::process::{Command, Stdio};
-    use std::sync::{Mutex, PoisonError};
+    use std::sync::PoisonError;
 
     #[cfg(windows)]
     use gdl_files::MAX_INSTALL_ROOT_UTF16;
@@ -184,7 +182,7 @@ mod tests {
     use super::{
         FAIL, IMAGE, KILL, KILL_DESTINATION, KILL_ROOT, LAUNCHER, RECOVER, pass_name, recovered,
     };
-    use crate::faults::{FaultPoint, KILLED_EXIT_CODE, NoFaults};
+    use crate::faults::{FaultPoint, KILLED_EXIT_CODE, NoFaults, ONE_KILLED_CHILD};
     use crate::folder::{LOCK_FILE, RECEIPT_FILE, STATE_DIR};
     use crate::install::settings::InstallSettings;
     use crate::install::tests::{
@@ -195,9 +193,6 @@ mod tests {
 
     /// The test a child of this program runs alone.
     const KILLED_INSTALL: &str = "install::kill::killed_install";
-
-    /// Held while a child runs, so that the kill tests' children run one at a time.
-    static ONE_CHILD: Mutex<()> = Mutex::new(());
 
     /// A pass of a fault point: the point and the pass, counted from 1.
     type Pass = (FaultPoint, u32);
@@ -303,7 +298,9 @@ mod tests {
                 child.creation_flags(CREATE_NO_WINDOW);
             }
             let output = {
-                let _one = ONE_CHILD.lock().unwrap_or_else(PoisonError::into_inner);
+                let _one = ONE_KILLED_CHILD
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner);
                 child.output().unwrap()
             };
             assert_eq!(

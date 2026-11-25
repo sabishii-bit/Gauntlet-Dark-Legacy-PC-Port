@@ -8,6 +8,8 @@
 //! stands.
 
 mod journal;
+#[cfg(test)]
+mod kill;
 mod names;
 mod recover;
 mod settings;
@@ -1558,7 +1560,7 @@ mod tests {
     }
 
     /// Lays the player's files out in the installation at `root`.
-    fn add_players_files(root: &Path) {
+    pub(super) fn add_players_files(root: &Path) {
         for name in PLAYERS_FILES {
             let path = under(root, name);
             fs::create_dir_all(path.parent().unwrap()).unwrap();
