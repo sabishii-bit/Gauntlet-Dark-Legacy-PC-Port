@@ -302,7 +302,7 @@ fn total_size(entries: &[PayloadEntry]) -> u64 {
 /// platform's executable at the top, a file under one of [`ROOT_FOLDERS`], or a library at the
 /// top, each root in its exact case, and under `data` only JSON. Which platform may have which of
 /// these is judged once the release record names the platform.
-fn check_root(name: &RelPath) -> Result<(), PayloadError> {
+pub(crate) fn check_root(name: &RelPath) -> Result<(), PayloadError> {
     let root = name.first();
     let whole = || -> Box<str> { name.as_str().into() };
     let is_file = ROOT_FILES.contains(&root)

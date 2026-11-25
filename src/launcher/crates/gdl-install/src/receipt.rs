@@ -445,6 +445,20 @@ pub enum ReceiptError {
     },
 }
 
+impl ReceiptError {
+    /// The refusal's stable machine name, in camelCase, for reports and logs.
+    pub fn rule(&self) -> &'static str {
+        match self {
+            ReceiptError::Links { .. } => "links",
+            ReceiptError::Unreadable { .. } => "unreadable",
+            ReceiptError::Disagrees { .. } => "disagrees",
+            ReceiptError::OtherPlatform { .. } => "otherPlatform",
+            ReceiptError::GameMissing { .. } => "gameMissing",
+            ReceiptError::Io { .. } => "io",
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::error::Error;
@@ -1579,6 +1593,41 @@ mod tests {
         }
 
         assert!(size_of::<ReceiptError>() <= MOST_ERROR_BYTES);
+    }
+
+    #[test]
+    fn receipt_refusals_name_their_rules() {
+        let path = || PathBuf::from("install");
+        let cases = [
+            (ReceiptError::Links { path: path() }, "links"),
+            (
+                ReceiptError::Unreadable {
+                    detail: "not JSON".into(),
+                },
+                "unreadable",
+            ),
+            (ReceiptError::Disagrees { field: "version" }, "disagrees"),
+            (
+                ReceiptError::OtherPlatform {
+                    platform: other_platform(),
+                },
+                "otherPlatform",
+            ),
+            (
+                ReceiptError::GameMissing { executable: path() },
+                "gameMissing",
+            ),
+            (
+                ReceiptError::Io {
+                    path: path(),
+                    source: io::Error::other("refused"),
+                },
+                "io",
+            ),
+        ];
+        for (error, rule) in cases {
+            assert_eq!(error.rule(), rule, "{error:?}");
+        }
     }
 
     #[test]

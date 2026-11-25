@@ -26,6 +26,7 @@ mod sections;
 mod system_proxy;
 #[cfg(test)]
 mod test_platform;
+mod update;
 
 pub use awake::{KeepAwake, keep_awake};
 pub use compat::{
@@ -73,3 +74,4 @@ pub use sections::{
     Sections, SectionsError, WINDOW_SECTION,
 };
 pub use system_proxy::internet_settings;
+pub use update::{FileChanges, PlanSource, SourceSummary, UpdateError, UpdatePlan, plan_update};
