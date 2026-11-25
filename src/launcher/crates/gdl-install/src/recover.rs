@@ -15,7 +15,6 @@ use std::path::{Path, PathBuf};
 
 use gdl_files::{
     FilesError, Job, PENDING_SUFFIX, is_absent, is_staging_name, pending_path, read_json_bounded,
-    retry_locked,
 };
 use gdl_release::{Platform, Version};
 
@@ -26,7 +25,7 @@ use crate::folder::{
 use crate::hold::{HeldGame, HeldLock, game_closed_holding, lock_holding};
 use crate::install::{
     FolderRecord, Found, InstallJournal, RECOVER_INSTALL, RecoveryError, RecoveryOutcome,
-    judge_stamps, recover_install_held,
+    judge_stamps, recover_install_held, remove_if_there,
 };
 #[cfg(windows)]
 use crate::platform;
@@ -540,9 +539,9 @@ fn leftover(name: &str, platform: Option<Platform>) -> Option<Leftover> {
 /// Sweeps the state folder `state`, which no journal names anything in, of what jobs left there,
 /// for a launcher built for `platform`, as [`leftover`] tells it, and of the update journal's
 /// pending file: each removed only when it is what the launcher makes there, a real folder or
-/// file and no link, a folder with what it holds. Gives the names removed; those that could not be
-/// removed yet are added to `left`. A retired launcher copy is tried once, since on Windows a
-/// launcher still running from it holds it until it ends.
+/// file and no link, a folder with what it holds. Gives the names removed, which `left` then no
+/// longer holds; those that could not be removed yet are added to `left`. A retired launcher copy
+/// is tried once, since on Windows a launcher still running from it holds it until it ends.
 fn sweep(
     state: &Path,
     platform: Option<Platform>,
@@ -573,7 +572,10 @@ fn sweep(
             // What the launcher never makes at its name is not the launcher's to remove.
             _ => continue,
         };
+        // A retired copy that a cleanup before the sweep left, and that the sweep removes, as the
+        // launcher running from it ended in between, is told swept alone.
         if removed.is_ok() {
+            left.remove(&name);
             swept.insert(name);
         } else {
             left.insert(name);
@@ -582,7 +584,7 @@ fn sweep(
     let journal_pending = pending_path(&state.join(JOURNAL_DIR).join(UPDATE_JOURNAL));
     if fs::symlink_metadata(&journal_pending).is_ok_and(|entry| entry.is_file()) {
         let name = format!("{JOURNAL_DIR}/{UPDATE_JOURNAL}{PENDING_SUFFIX}");
-        if remove_file(&journal_pending).is_ok() {
+        if remove_if_there(&journal_pending).is_ok() {
             swept.insert(name);
         } else {
             left.insert(name);
@@ -591,22 +593,10 @@ fn sweep(
     Ok(swept)
 }
 
-/// Removes the file at `path`, counting one already gone as removed. A file a scanner holds for a
-/// moment is waited for.
-fn remove_file(path: &Path) -> Result<(), FilesError> {
-    match retry_locked(|| fs::remove_file(path)) {
-        Ok(()) => Ok(()),
-        Err(error) if is_absent(&error) => Ok(()),
-        Err(source) => Err(FilesError::Io {
-            path: path.to_path_buf(),
-            source,
-        }),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::cell::Cell;
+    use std::collections::BTreeSet;
     use std::fs;
     use std::io;
     use std::path::{Path, PathBuf};
@@ -620,7 +610,7 @@ mod tests {
     use serde_json::json;
     use tempfile::TempDir;
 
-    use super::{RecoverError, Recovered, UpdateRecovery, leftover, recover_with};
+    use super::{RecoverError, Recovered, UpdateRecovery, leftover, recover_with, sweep};
     use crate::destination::FolderChecks;
     use crate::faults::NoFaults;
     use crate::folder::{
@@ -1065,6 +1055,22 @@ mod tests {
         assert_eq!(fs::read(elsewhere.join("kept")).unwrap(), b"kept");
         assert!(fs::symlink_metadata(state.join("stage-L1nk0000")).is_ok());
         assert!(state.join(RECEIPT_FILE).is_file());
+    }
+
+    #[test]
+    fn a_retired_copy_a_cleanup_left_and_the_sweep_removes_is_told_swept_alone() {
+        // The cleanup before the sweep could not remove the copy, as a launcher ran from it;
+        // by the sweep that launcher has ended.
+        let (_dir, fixture) = installation();
+        let state = state_of(&fixture.root);
+        let platform = this_platform();
+        let name = retired_name(VERSION, platform);
+        fs::write(state.join(&name), b"a launcher that ran").unwrap();
+        let mut left = BTreeSet::from([name.clone()]);
+        let swept = sweep(&state, Some(platform), &mut left).unwrap();
+        assert_eq!(swept, BTreeSet::from([name.clone()]));
+        assert!(left.is_empty(), "{left:?}");
+        assert!(!state.join(&name).exists());
     }
 
     #[test]

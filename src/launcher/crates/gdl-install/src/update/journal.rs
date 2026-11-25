@@ -10,8 +10,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use gdl_files::{
-    FilesError, MAX_JSON_LEN, PAYLOAD_NAMES, RelPath, is_absent, is_staging_name, retry_locked,
-    write_json_atomic,
+    FilesError, MAX_JSON_LEN, PAYLOAD_NAMES, RelPath, is_staging_name, write_json_atomic,
 };
 use gdl_release::{Platform, Version};
 use serde::{Deserialize, Serialize};
@@ -19,6 +18,7 @@ use serde_json::{Map, Value};
 
 use super::UpdateError;
 use crate::compat::{JOURNAL_SCHEMA, MIN_LAUNCHER};
+use crate::install::remove_if_there;
 use crate::payload::{MAX_PAYLOAD_ENTRIES, check_root};
 use crate::receipt::{Receipt, installed_launcher_name};
 
@@ -322,7 +322,7 @@ impl JournalFile {
     /// interrupted write of it left is the caller's, in the order its step removes them. A file a
     /// scanner holds for a moment is waited for.
     pub(super) fn remove(&self) -> Result<(), FilesError> {
-        remove_if_there(&self.path)
+        remove_if_there(&self.path).map(drop)
     }
 
     /// Writes the journal whole, to the bound its readers read journals to: a journal that would
@@ -332,19 +332,6 @@ impl JournalFile {
             FilesError::TooLarge { limit, .. } => UpdateError::JournalTooLarge { limit },
             other => UpdateError::Files(other),
         })
-    }
-}
-
-/// Removes the file at `path`, counting one already gone as removed. A file a scanner holds for a
-/// moment is waited for.
-pub(super) fn remove_if_there(path: &Path) -> Result<(), FilesError> {
-    match retry_locked(|| fs::remove_file(path)) {
-        Ok(()) => Ok(()),
-        Err(error) if is_absent(&error) => Ok(()),
-        Err(source) => Err(FilesError::Io {
-            path: path.to_path_buf(),
-            source,
-        }),
     }
 }
 

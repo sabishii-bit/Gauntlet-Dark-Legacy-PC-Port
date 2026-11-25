@@ -33,10 +33,11 @@ use gdl_media::{MAX_TPL_LEN, first_frame};
 use gdl_release::Platform;
 
 pub use disc_files::{CopiedFile, DISC_FILES, DISC_FILES_SCHEMA, DiscFiles};
-pub(crate) use journal::InstallJournal;
 pub use journal::{INSTALL_JOURNAL, InstallPhase};
+pub(crate) use journal::{InstallJournal, remove_if_there};
 pub(crate) use recover::{Found, judge_stamps, recover_install_held};
 pub use recover::{RECOVER_INSTALL, RecoveryError, RecoveryOutcome, recover_install};
+pub(crate) use rollback::remove_staging;
 
 use self::settings::InstallSettings;
 use self::stage::Install;

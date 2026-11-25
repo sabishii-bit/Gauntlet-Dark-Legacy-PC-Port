@@ -260,7 +260,7 @@ fn in_place(written: &Result<(), FilesError>, path: &Path) -> bool {
 }
 
 /// Removes `staging` with whatever it holds, counting a staging already gone as removed.
-fn remove_staging(staging: Staging) -> Result<(), FilesError> {
+pub(crate) fn remove_staging(staging: Staging) -> Result<(), FilesError> {
     match staging.remove() {
         Err(FilesError::Io { source, .. }) if is_absent(&source) => Ok(()),
         removed => removed,

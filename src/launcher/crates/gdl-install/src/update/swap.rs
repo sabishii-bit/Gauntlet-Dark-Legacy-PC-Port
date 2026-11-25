@@ -25,8 +25,7 @@ use gdl_files::{
 use gdl_release::Platform;
 
 use super::journal::{
-    DOWNLOAD_PREFIX, JournalFile, UPDATE_BACKUP, UPDATE_STAGING_PREFIX, UpdatePhase,
-    remove_if_there, retired_name,
+    DOWNLOAD_PREFIX, JournalFile, UPDATE_BACKUP, UPDATE_STAGING_PREFIX, UpdatePhase, retired_name,
 };
 use super::settings::WriteReceiptFn;
 use super::stage::Staged;
@@ -36,7 +35,7 @@ use super::{
 };
 use crate::faults::{FaultPoint, FaultPoints};
 use crate::folder::{InstallFolder, InstallLock, RECEIPT_FILE};
-use crate::install::Changes;
+use crate::install::{Changes, remove_if_there, remove_staging};
 use crate::receipt::{MAX_RECEIPT_LEN, Receipt, installed_launcher_name};
 use crate::recover::Recovered;
 
@@ -277,7 +276,8 @@ pub(super) fn clean_up(
         journal
             .remove()
             .and_then(|()| remove_if_there(&pending_path(journal.path())))
-            .and_then(|()| remove_if_there(&pending_path(&state.join(RECEIPT_FILE))))
+            .and_then(|_| remove_if_there(&pending_path(&state.join(RECEIPT_FILE))))
+            .map(drop)
             .map_err(files_error)
     });
     (retired, finished)
@@ -720,14 +720,6 @@ fn pass_rollback(faults: &dyn FaultPoints, at: &Path) -> Result<(), FilesError> 
             path: at.to_path_buf(),
             source,
         })
-}
-
-/// Removes `staging` with whatever it holds, counting a staging already gone as removed.
-fn remove_staging(staging: Staging) -> Result<(), FilesError> {
-    match staging.remove() {
-        Err(FilesError::Io { source, .. }) if is_absent(&source) => Ok(()),
-        removed => removed,
-    }
 }
 
 /// Removes the folder `path` with whatever it holds, a link in it as the link alone, counting one
