@@ -240,7 +240,7 @@ bool Combatant::translate(Actor& critter, f32 seconds, const MoveDefinition* mov
     const auto playerSeparation = [&](const EnemyView& player) -> std::optional<Vec3> {
         const Vec3 centre =
             player.position + Vec3{0, player.collisionHeight.value_or(0.5f * player.height), 0};
-        const f32 width = player.collisionRadius.value_or(player.radius);
+        const f32 width = player.width();
         if ((critter.definition->typeFlags() & kNodeMovement) != 0) {
             std::optional<Vec3> separation;
             f32 nearest = 0;
@@ -283,7 +283,9 @@ bool Combatant::translate(Actor& critter, f32 seconds, const MoveDefinition* mov
     bool stops = false;
     for (const usize seat : seats) {
         const EnemyView& other = players[seat];
-        if (other.hidden) {
+        // One hung on another's node (hud_flags 0x20), carried off by a creature or hung on its
+        // partner in a combo, is passed over before it can touch the stop (0x8003524C-0x80035254).
+        if (other.hidden || other.captured || other.comboRiding) {
             continue;
         }
         const auto separation = playerSeparation(other);
@@ -292,7 +294,7 @@ bool Combatant::translate(Actor& critter, f32 seconds, const MoveDefinition* mov
             touched = true;
             const f32 length = glm::length(*separation);
             if (length > 0) {
-                const f32 width = other.collisionRadius.value_or(other.radius);
+                const f32 width = other.width();
                 const f32 depth =
                     std::clamp(critter.definition->wallRadius() + width - length, 1.0f, 3.0f);
                 m_sim.pushes.push_back({other.player, *separation * (2.0f * depth / length)});

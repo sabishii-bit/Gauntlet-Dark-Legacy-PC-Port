@@ -56,7 +56,7 @@ void Combatant::grab(Actor& actor, const MoveDefinition& move, const Mat4& moveF
         // CritterNodePlayerCollide scans slots 0..3, regardless of the view's order, and widens
         // the reach by the player's whole width (col_radius).
         if (!player.hidden && player.damageable && !player.captured && closer &&
-            distance <= player.collisionRadius.value_or(player.radius) + damage.maxDistance &&
+            distance <= player.width() + damage.maxDistance &&
             std::abs(delta.y) <= player.height * 0.5f + damage.maxDistance) {
             nearest = bodyDistance;
             actor.grabbed = player.player;

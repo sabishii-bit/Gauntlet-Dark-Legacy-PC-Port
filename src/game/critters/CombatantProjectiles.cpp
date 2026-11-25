@@ -381,9 +381,8 @@ void CombatantProjectiles::update(f32 seconds, const WorldCollision* collision,
                         continue;
                     }
                     // MissileCollidePlayer widens the shot by the player's whole width.
-                    const auto at = CombatantProjectile::contact(
-                        from, to, radius, player.position,
-                        player.collisionRadius.value_or(player.radius), player.height);
+                    const auto at = CombatantProjectile::contact(from, to, radius, player.position,
+                                                                 player.width(), player.height);
                     if (at.has_value() &&
                         (*at < nearest || (victim == nullptr && *at == nearest))) {
                         nearest = *at;
@@ -680,9 +679,8 @@ void CombatantProjectiles::stickyContacts(Flying& flying, f32 seconds,
         for (const EnemyView& player : players) {
             // Its reach meets the player's whole width (col_radius), as a spreading area does.
             if (!player.hidden &&
-                CombatantProjectile::contact(
-                    flying.position, flying.position, reach, player.position,
-                    player.collisionRadius.value_or(player.radius), player.height)) {
+                CombatantProjectile::contact(flying.position, flying.position, reach,
+                                             player.position, player.width(), player.height)) {
                 m_sim.hits.push_back({player.player,
                                       damage.damage * flying.shot.damageScale,
                                       damage.flags,

@@ -65,9 +65,10 @@ struct EnemyView {
     f32 radius = 1.0f;
     f32 height = 6.0f;
     s32 level = 1;
-    bool hidden = false;    ///< not to be seen or sought
-    bool captured = false;  ///< already parented to another combatant, not a new grab candidate
-    bool invisible = false; ///< not a sight target, but still vulnerable to contact and hazards
+    bool hidden = false;      ///< not to be seen or sought
+    bool captured = false;    ///< already parented to another combatant, not a new grab candidate
+    bool comboRiding = false; ///< hung on its partner in a combo (ComboState::riding)
+    bool invisible = false;   ///< not a sight target, but still vulnerable to contact and hazards
     EnemyMeleeWard meleeWard = EnemyMeleeWard::None;
     bool antiDeath = false;
     bool reflects = false;    ///< its armour turns the swarm's missiles back
@@ -79,6 +80,9 @@ struct EnemyView {
     std::optional<Vec3> decoy = std::nullopt; ///< swarm range/bearing, never a collision body
     std::optional<f32> collisionRadius = std::nullopt; ///< native contact radius, else radius
     s32 heldDeath = -1; ///< current Anti-Death contact, refreshed with the player's state
+
+    /** Its whole width, which contacts meet: the native contact radius, else its radius. */
+    f32 width() const { return collisionRadius.value_or(radius); }
 };
 
 /** A blow an enemy has landed on a player. */

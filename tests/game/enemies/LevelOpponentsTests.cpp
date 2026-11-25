@@ -410,8 +410,7 @@ TEST_CASE("courtyard grunts approach the entrance player", "[courtyard-grunt][as
         INFO("grunt " << id);
         CHECK(enemies.targetOf(id) == 0);
         const Vec3 separation = enemies.positionOf(id) - views[0].position;
-        const f32 contactRadius =
-            views[0].collisionRadius.value_or(views[0].radius) + enemies.radiusOf(id) + 0.5f;
+        const f32 contactRadius = views[0].width() + enemies.radiusOf(id) + 0.5f;
         // Contact cancels the approaching step. The feet may stop one native
         // movement step outside the cylinder, not at an arbitrary 3D distance.
         const f32 step = 2 * enemies.paceOf(kGruntKind);
@@ -3345,7 +3344,21 @@ TEST_CASE("opponent views preserve player identity and hide fallen participants"
     for (const auto& view : protectedViews) {
         CHECK_FALSE(view.hidden); // immunity is not invisibility or untargetability
         CHECK_FALSE(view.damageable);
+        CHECK_FALSE(view.comboRiding);
     }
+    // Only the body hung on the other's node rides (hud_flags 0x20): the partner a warrior
+    // lifts, and a valkyrie on the partner it took hold of, who carries it.
+    ComboMove::advance(players[0].combo, players[1].combo, {.act1 = true}, 1);
+    REQUIRE(players[1].combo.riding);
+    const auto liftedViews = LevelOpponents::enemyViews(players);
+    CHECK_FALSE(liftedViews[0].comboRiding);
+    CHECK(liftedViews[1].comboRiding);
+    ComboMove::link(players[0].combo, 0, players[1].combo, 1, ComboMove::kValkyrie);
+    ComboMove::advance(players[0].combo, players[1].combo, {.act1 = true}, 1);
+    REQUIRE(players[0].combo.riding);
+    const auto carriedViews = LevelOpponents::enemyViews(players);
+    CHECK(carriedViews[0].comboRiding);
+    CHECK_FALSE(carriedViews[1].comboRiding);
 }
 
 TEST_CASE("opponent phases interleave legend victory and progression in order",

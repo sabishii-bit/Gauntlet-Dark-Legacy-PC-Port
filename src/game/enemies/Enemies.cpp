@@ -797,7 +797,7 @@ bool Enemies::birthPathClear(const Enemy& enemy, const Vec3& from, const Vec3& t
         // party member's last position must not obstruct the generator's exits.
         const Vec3 centre =
             view.position + Vec3{0, view.collisionHeight.value_or(0.5f * view.height), 0};
-        const f32 radius = view.collisionRadius.value_or(view.radius);
+        const f32 radius = view.width();
         if (!view.hidden && movementTouchesBody(from, to, centre, radius + enemy.radius,
                                                 0.5f * view.height + enemy.reach)) {
             return false;
@@ -1946,7 +1946,7 @@ void Enemies::move(Enemy& enemy, s32 slot, s32 ticks, f32 seconds, const Vec3& s
             view.position + Vec3{0, view.collisionHeight.value_or(0.5f * view.height), 0};
         // fn_80046680 adds Player::col_radius (the authored width), not
         // the smaller radius used when moving the player against walls.
-        const f32 radius = view.collisionRadius.value_or(view.radius);
+        const f32 radius = view.width();
         if (movementTouchesBody(from + collisionOffset, to + collisionOffset, centre,
                                 radius + enemy.radius + 0.5f, enemy.reach + 0.5f * view.height)) {
             enemy.contact = view.player;

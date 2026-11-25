@@ -1039,6 +1039,7 @@ std::vector<EnemyView> LevelOpponents::enemyViews(std::span<const PlayerRuntime>
             view.meleeWard = EnemyMeleeWard::HandOfDeath;
         }
         view.captured = player.capture.held();
+        view.comboRiding = player.combo.riding;
         view.it = player.itTicks > 0;
         views.push_back(view);
     }

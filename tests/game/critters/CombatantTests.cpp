@@ -4051,6 +4051,80 @@ TEST_CASE("a golem a player stops still tramples the small enemy it stands over"
     }
 }
 
+TEST_CASE("a great one's step passes a player held by another", "[combatant][critter-contact]") {
+    // CritterCollidePlayers passes over a player hung on another's node (hud_flags 0x20,
+    // critter.c 7203-7205; 0x8003524C-0x80035254): one a critter carries (PlayerSetParent) or
+    // one a combo lifts or seats (PlayerSetGrabbed). It is not pushed, leaves the stop as the
+    // seats before it set it (0x800353C4) and does not hold the turn.
+    const auto root = familyAssets();
+    writeTextFile(root / "critter/GENERAL.json", R"({
+      "descriptors":[{"prefix":"BODY","name":"GENERAL","type":8}],
+      "types":[{"moveCount":1,"maxHealth":100,"radius":2,"wallRadius":1,
+                "floorOffset":2,"originOffset":[0,4,0]}],
+      "moves":[{"name":"READY","anim":"STEP","type":32,"interrupt":0,"turnRate":3}]})");
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, General::definition(), 'G'));
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+    const auto seat = [](s32 player, f32 x) {
+        EnemyView view;
+        view.player = player;
+        view.position = {x, 0, 0};
+        view.collisionHeight = 6.0f;
+        return view;
+    };
+    // Within the knocked step's reach.
+    std::vector players{seat(0, 1)};
+    bool blocked = false;
+    std::vector<s32> pushed;
+    SECTION("one standing on its own stops it") {
+        blocked = true;
+        pushed = {0};
+    }
+    SECTION("one a creature carries is passed") {
+        players[0].captured = true;
+    }
+    SECTION("one lifted by or riding on its partner in a combo is passed") {
+        players[0].comboRiding = true;
+    }
+    SECTION("a carried later seat leaves the stop an earlier seat met") {
+        players.push_back(seat(1, 40));
+        players[1].captured = true;
+        blocked = true;
+        pushed = {0};
+    }
+    SECTION("a later seat riding in a combo leaves the stop an earlier seat met") {
+        players.push_back(seat(1, 40));
+        players[1].comboRiding = true;
+        blocked = true;
+        pushed = {0};
+    }
+    SECTION("an earlier seat riding in a combo is passed while a later one stops it") {
+        players[0].comboRiding = true;
+        players.push_back(seat(1, 1));
+        players[1].position.z = 1;
+        blocked = true;
+        pushed = {1};
+    }
+    EnemyHit hit;
+    hit.damage = 1;
+    hit.flags = kKnockOver;
+    hit.direction = {1, 0, 0};
+    actor.hurt(hit);
+    constexpr f32 kSeconds = 1.0f / 30;
+    actor.update(2, kSeconds, players);
+    CHECK(actor.position().x == Approx(blocked ? 0.0f : 10.0f * kSeconds));
+    std::vector<s32> seats;
+    for (const auto& push : actor.takePushes()) {
+        seats.push_back(push.player);
+    }
+    CHECK(seats == pushed);
+    // Its stance turns it three radians a second toward its target, off along +x, unless it
+    // met someone.
+    CHECK(actor.yaw() == Approx(pushed.empty() ? 3 * kSeconds : 0.0f));
+}
+
 /** The turned-part general's own data: a stance, and one solid part two along x from ARM. */
 formats::CritterFile turnedPartCritter() {
     formats::CritterFile source;
