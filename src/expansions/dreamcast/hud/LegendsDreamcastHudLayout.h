@@ -87,6 +87,14 @@ struct LegendsDreamcastHudLayout {
     static constexpr LegendsDreamcastPoint kGoldLabel{5, 357};
     static constexpr LegendsDreamcastPoint kHealthLabel{53, 357};
 
+    // FUN_8c0ba600 (8c0ba652..8c0ba66c) stands two pieces of art between the second and third
+    // seats' boxes, belonging to neither and shown through all of play: S3_MID over S4_MID, each
+    // whole, from x 224 (8c0ba712), at the frame's 384 less the 80 and 64 it gives them
+    // (FUN_8c0ee200, 8c0ee3d2), the rows of a kind-0 box's strip and panel.
+    static constexpr s32 kMiddleLeft = 224;
+    static constexpr s32 kMiddleStripTop = 304;
+    static constexpr s32 kMiddlePanelTop = 320;
+
     // FUN_8c0c0f40 and FUN_8c0c16e0: the level in font 1, white, centred on the box; gold and
     // health in font 4, in the seat's ink, gold from kGoldLeft unless it is narrower than
     // kGoldNarrow, when it ends at kGoldRight, and health ending at kHealthRight.

@@ -51,9 +51,10 @@ using Set = test::DarkLegacyLookup::Set;
 constexpr usize kStaticSlots = 105;
 /** The pictures of the boxes' art the look takes from the static set by these names; the rest
  * are named by the layout and by Dark Legacy's boxes. */
-constexpr std::array<std::string_view, 13> kStaticArt{
-    "BK_RUNE_STONE_02", "BTMBK_LEVL", "BTMBK_GOLD", "BTMBK_HELTH", "KEY_ICON", "RUNE13", "IT",
-    "TEXTSCROLL",       "THERMBASE",  "THERMCOL",   "8HI_FONTS5",  "SCORE",    "FONT32"};
+constexpr std::array<std::string_view, 15> kStaticArt{
+    "BK_RUNE_STONE_02", "BTMBK_LEVL", "BTMBK_GOLD", "BTMBK_HELTH", "KEY_ICON",
+    "RUNE13",           "IT",         "TEXTSCROLL", "THERMBASE",   "THERMCOL",
+    "S3_MID",           "S4_MID",     "8HI_FONTS5", "SCORE",       "FONT32"};
 /** A kind-0 box's strip and panel, by costume colour after these. */
 constexpr std::array<std::string_view, 2> kPlainBoxArt{"S3_W", "S4_W"};
 /** Each class's panel in each colour and its banner, twelve classes in four colours. */
@@ -70,6 +71,12 @@ constexpr u32 kFontNames = 0x8c148624;
 constexpr u32 kFontSpaces = 0x8c14864c;
 constexpr usize kWordBytes = 4;
 constexpr usize kLongestName = 32;
+// FUN_8c0ba600's middle pieces: their names, the word that holds their x, and FUN_8c0ee200's
+// word that holds the frame's height, from which it stands a picture given a y.
+constexpr u32 kMiddleStripName = 0x8c1251cc;
+constexpr u32 kMiddlePanelName = 0x8c1251d4;
+constexpr u32 kMiddleLeftWord = 0x8c0ba712;
+constexpr u32 kFrameHeightWord = 0x8c0ee3d2;
 
 /** A font the boxes write in: its handle, its file and the width the executable gives its
  * spaces. */
@@ -434,7 +441,7 @@ TEST_CASE("the Dreamcast look opens on the player's own art and draws each box f
 }
 
 TEST_CASE("on the player's own art a lone player's Dreamcast look fills the other seats with their "
-          "kind-0 boxes",
+          "kind-0 boxes, and the middle with its pieces",
           "[legends][dreamcast-hud][assets]") {
     const std::filesystem::path root = dreamcastRoot();
     // A green knight alone in the first seat.
@@ -458,6 +465,37 @@ TEST_CASE("on the player's own art a lone player's Dreamcast look fills the othe
         CHECK(standsAt(showing(boxes, wholeIn(statics, std::format("S4_W{}", colour))), left,
                        Layout::kPanelTop));
     }
+    // S3_MID over S4_MID between the second and third seats.
+    CHECK(standsAt(showing(boxes, wholeIn(statics, "S3_MID")), Layout::kMiddleLeft,
+                   Layout::kMiddleStripTop));
+    CHECK(standsAt(showing(boxes, wholeIn(statics, "S4_MID")), Layout::kMiddleLeft,
+                   Layout::kMiddlePanelTop));
+}
+
+TEST_CASE("the Dreamcast executable names the middle pieces and stands them where the look does",
+          "[legends][dreamcast-hud][assets]") {
+    const std::filesystem::path root = dreamcastRoot();
+    const std::filesystem::path executable = root.parent_path() / "disc/1ST_READ.BIN";
+    if (!std::filesystem::is_regular_file(executable)) {
+        SKIP("optional Dreamcast executable is not installed");
+    }
+    const std::vector<u8> image = readFile(executable);
+    CHECK(textAt(image, kMiddleStripName) == "S3_MID");
+    CHECK(textAt(image, kMiddlePanelName) == "S4_MID");
+    CHECK(readU16LE(image, kMiddleLeftWord - kExecutableBase) == Layout::kMiddleLeft);
+    CHECK(readU16LE(image, kFrameHeightWord - kExecutableBase) == Layout::kFrameHeight);
+    // Both are whole pictures of the static set, 64 across: a strip as tall as a box's, and a
+    // panel as tall as the rows of a box's panel the frame shows, which reach its bottom.
+    constexpr u32 kMiddleWidth = 64;
+    constexpr u32 kStripRows = 16;
+    const Pictures statics = bankOf(root, "static");
+    const formats::LegendsMapTexture& strip = wholeIn(statics, "S3_MID");
+    CHECK(strip.width == kMiddleWidth);
+    CHECK(strip.height == kStripRows);
+    const formats::LegendsMapTexture& panel = wholeIn(statics, "S4_MID");
+    CHECK(panel.width == kMiddleWidth);
+    CHECK(panel.height == static_cast<u32>(Layout::kPanelRows));
+    CHECK(Layout::kMiddlePanelTop + Layout::kPanelRows == Layout::kFrameHeight);
 }
 
 TEST_CASE("the Dreamcast look opens on the player's own art, and the GameCube data holds every "

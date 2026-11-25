@@ -63,6 +63,9 @@ constexpr std::string_view kItArt = "IT";
 constexpr std::string_view kWaitScrollArt = "TEXTSCROLL";
 constexpr std::string_view kThermometerBase = "THERMBASE";
 constexpr std::string_view kThermometerColumn = "THERMCOL";
+/** The pieces between the second and third seats' boxes (FUN_8c0ba600, 8c1251cc and 8c1251d4). */
+constexpr std::string_view kMiddleStrip = "S3_MID";
+constexpr std::string_view kMiddlePanel = "S4_MID";
 /** The powerups bank's hourglass: its glass, its sand, and its falling grains' frames, by
  * number after this. */
 constexpr std::string_view kTimerArt = "TIMER";
@@ -293,7 +296,7 @@ void LegendsDreamcastHudPainter::release() {
         font->glyphs = {};
     }
     m_strip = m_levelLabel = m_goldLabel = m_healthLabel = m_key = m_glow = nullptr;
-    m_thirteenthRune = m_it = m_waitScroll = nullptr;
+    m_thirteenthRune = m_it = m_waitScroll = m_middleStrip = m_middlePanel = nullptr;
     m_thermometerBase = m_thermometerColumn = m_timer = m_timerSand = nullptr;
     m_grains = {};
     m_helpScrolls = {};
@@ -340,6 +343,8 @@ void LegendsDreamcastHudPainter::loadStatic(RenderDevice& device,
         m_plainStrips.at(color) = take(std::format("{}{}", kPlainStripPrefix, colour));
         m_plainPanels.at(color) = take(std::format("{}{}", kPlainPanelPrefix, colour));
     }
+    m_middleStrip = take(kMiddleStrip);
+    m_middlePanel = take(kMiddlePanel);
     // Dark Legacy's potion icons are the Dreamcast's, by the same kinds (8c14bd20).
     for (const std::string_view icon : StatusBoxPainter::kPotionIcons) {
         if (m_art.find(icon) == nullptr) {
@@ -567,6 +572,13 @@ void LegendsDreamcastHudPainter::drawStatus(HudFrame& frame, const HudView& view
             drawFallen(canvas, seat, shown, view);
         }
     }
+    // FUN_8c0ba600 makes the middle pieces after every seat's blits, at FUN_8c0ee200's depth of
+    // 1.0 against the 1.01 FUN_8c0ba060 gives the seats' strips and panels (8c0ba288): they
+    // stand over the second seat's last 16 columns. FUN_8c0b7bc0 hides them with the boxes.
+    drawWhole(canvas, m_middleStrip, static_cast<f32>(Layout::kMiddleLeft),
+              static_cast<f32>(Layout::kMiddleStripTop));
+    drawWhole(canvas, m_middlePanel, static_cast<f32>(Layout::kMiddleLeft),
+              static_cast<f32>(Layout::kMiddlePanelTop));
     // FUN_8c0b76a0's cards rise over every box, and Dark Legacy's counts stand over them.
     drawCards(canvas, view);
     drawCounts(canvas, view);

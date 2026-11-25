@@ -327,6 +327,23 @@ TEST_CASE("each Dreamcast seat state picks its box", "[legends][dreamcast-hud]")
     CHECK(dreamcastBoxKind(HudSeat{}) == LegendsDreamcastBoxKind::Plain);
 }
 
+TEST_CASE("the Dreamcast's middle pieces fill the gap between the second and third seats' boxes",
+          "[legends][dreamcast-hud]") {
+    // FUN_8c0ba600 stands S3_MID and S4_MID from x 224 (8c0ba712) at the frame's 384 less 80 and
+    // 64 (FUN_8c0ee200): a kind-0 box's strip and panel rows.
+    CHECK(Layout::kMiddleLeft == 224);
+    CHECK(Layout::kMiddleStripTop == 304);
+    CHECK(Layout::kMiddlePanelTop == 320);
+    CHECK(Layout::kMiddleStripTop == Layout::kPlainStripTop);
+    CHECK(Layout::kMiddlePanelTop == Layout::kPanelTop);
+    // Sixty-four across, they end where the third seat's art starts, and start 16 into the
+    // second's, 128 across.
+    constexpr s32 kMiddleWidth = 64;
+    constexpr s32 kBoxWidth = 128;
+    CHECK(Layout::kMiddleLeft + kMiddleWidth == dreamcastSeatX(2) + Layout::kArtLeft);
+    CHECK(dreamcastSeatX(1) + Layout::kArtLeft + kBoxWidth - Layout::kMiddleLeft == 16);
+}
+
 TEST_CASE("the Dreamcast's colours and classes run in Dark Legacy's orders",
           "[legends][dreamcast-hud]") {
     // 8c14bb98's inks are Dark Legacy's player colours, and 8c14bb04's names and the costume

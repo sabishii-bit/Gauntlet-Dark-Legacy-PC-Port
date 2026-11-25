@@ -150,7 +150,7 @@ public:
         .sheet = {.name = "FONT32", .width = 256, .height = 32, .mark = 62}};
     /** The static set: the look's pictures at the sizes the original's are, the fonts' sheets,
      * and RUNE_COUNT, which the look does not draw. */
-    static constexpr std::array<DreamcastPicture, 57> kStaticPictures{{
+    static constexpr std::array<DreamcastPicture, 59> kStaticPictures{{
         {.name = "BK_RUNE_STONE_02", .width = 128, .height = 16, .mark = 10},
         {.name = "S3_WYELO", .width = 128, .height = 16, .mark = 11},
         {.name = "S3_WBLUE", .width = 128, .height = 16, .mark = 12},
@@ -160,6 +160,8 @@ public:
         {.name = "S4_WBLUE", .width = 128, .height = 128, .mark = 16},
         {.name = "S4_WRED", .width = 128, .height = 128, .mark = 17},
         {.name = "S4_WGREEN", .width = 128, .height = 128, .mark = 18},
+        {.name = "S3_MID", .width = 64, .height = 16, .mark = 53},
+        {.name = "S4_MID", .width = 64, .height = 64, .mark = 54},
         {.name = "BTMBK_GOLD", .width = 32, .height = 8, .mark = 19},
         {.name = "BTMBK_HELTH", .width = 64, .height = 8, .mark = 20},
         {.name = "BTMBK_LEVL", .width = 32, .height = 8, .mark = 21},

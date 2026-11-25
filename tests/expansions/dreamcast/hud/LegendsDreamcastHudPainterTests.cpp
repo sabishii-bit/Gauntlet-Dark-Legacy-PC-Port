@@ -105,13 +105,29 @@ bool isText(const Quad& quad) {
            Fixture::sheetOf(quad.texture, Fixture::kLargeFont);
 }
 
+/** The middle pieces, which stand between the second and third seats' boxes and belong to no
+ * seat. */
+constexpr std::array<std::string_view, 2> kMiddlePieces{"S3_MID", "S4_MID"};
+
+/** Whether a quad is one of the middle pieces. */
+bool isMiddle(const Quad& quad) {
+    const Fixture::Found found = Fixture::pictureOf(quad.texture);
+    return found.folder == Fixture::kStaticFolder &&
+           std::ranges::find(kMiddlePieces, found.name) != kMiddlePieces.end();
+}
+
+/** Whether a quad stands in `seat`'s box: in its column, and none of the middle pieces. */
+bool inSeat(const Quad& quad, usize seat) {
+    return !isMiddle(quad) && seatOf(quad) == seat;
+}
+
 /** The quads of picture `name` in `seat`, in turn; any seat's when none is named. */
 std::vector<Quad> picturesIn(std::span<const Quad> quads, std::string_view name,
                              std::optional<usize> seat = std::nullopt) {
     std::vector<Quad> found;
     for (const Quad& quad : quads) {
         if (!isText(quad) && Fixture::pictureOf(quad.texture).name == name &&
-            (!seat || seatOf(quad) == *seat)) {
+            (!seat || inSeat(quad, *seat))) {
             found.push_back(quad);
         }
     }
@@ -123,7 +139,7 @@ Names pictureOrder(std::span<const Quad> quads, usize seat) {
     Names names;
     for (const Quad& quad : quads) {
         const std::string_view name = Fixture::pictureOf(quad.texture).name;
-        if (!name.empty() && !isText(quad) && seatOf(quad) == seat) {
+        if (!name.empty() && !isText(quad) && inSeat(quad, seat)) {
             names.push_back(name);
         }
     }
@@ -314,7 +330,7 @@ struct LentLegends {
 Names boxOrder(std::span<const Quad> quads, usize seat, const LentLegends& lent) {
     Names names;
     for (const Quad& quad : quads) {
-        if (isText(quad) || seatOf(quad) != seat) {
+        if (isText(quad) || !inSeat(quad, seat)) {
             continue;
         }
         const std::string_view own = Fixture::pictureOf(quad.texture).name;
@@ -434,7 +450,7 @@ constexpr std::array<HudMember, 2> kWarriorAndWizard{{
 std::vector<Quad> quadsIn(std::span<const Quad> quads, usize seat) {
     std::vector<Quad> found;
     for (const Quad& quad : quads) {
-        if (seatOf(quad) == seat) {
+        if (inSeat(quad, seat)) {
             found.push_back(quad);
         }
     }
@@ -624,6 +640,9 @@ TEST_CASE("a Dreamcast box draws strip, panel, banner, labels and numbers where 
     CHECK(pictureOrder(lone, 3) == Names{"S3_WGREEN", "S4_WGREEN"});
     for (const Quad& quad : lone) {
         const std::string_view name = Fixture::pictureOf(quad.texture).name;
+        if (isMiddle(quad)) {
+            continue;
+        }
         if (isText(quad) || !(name.starts_with("S3_W") || name.starts_with("S4_W"))) {
             CHECK(seatOf(quad) == 2);
         }
@@ -747,13 +766,14 @@ TEST_CASE("a seat nobody joined shows the kind-0 box in its own seat's colour; a
         }
     }
     CHECK(std::ranges::none_of(quads, isText));
-    // With nobody in the game every seat shows its own colour, in seat order.
+    // With nobody in the game every seat shows its own colour, in seat order, and the middle
+    // pieces stand after them.
     Names empty;
     for (const Quad& quad : dreamcast.boxes(dreamcast.viewOf({}))) {
         empty.push_back(Fixture::pictureOf(quad.texture).name);
     }
     CHECK(empty == Names{"S3_WYELO", "S4_WYELO", "S3_WBLUE", "S4_WBLUE", "S3_WRED", "S4_WRED",
-                         "S3_WGREEN", "S4_WGREEN"});
+                         "S3_WGREEN", "S4_WGREEN", "S3_MID", "S4_MID"});
 }
 
 TEST_CASE("a lone player in the tower stands beside three kind-0 boxes, each in its own seat's "
@@ -793,6 +813,56 @@ TEST_CASE("a lone player in the tower stands beside three kind-0 boxes, each in 
         }
     }
     CHECK(boxOrder(quads, 1, dreamcast.lent) == Names{"S3_WBLUE", "S4_WBLUE"});
+}
+
+TEST_CASE("the middle pieces stand between the second and third seats' boxes whatever the party",
+          "[legends][dreamcast-hud]") {
+    const std::array<HudMember, 4> party{{
+        {.seat = 0, .classIndex = kWarriorClass, .color = 0},
+        {.seat = 1, .classIndex = kWizardClass, .color = 1},
+        {.seat = 2, .classIndex = kWarriorClass, .color = 2},
+        {.seat = 3, .classIndex = kWarriorClass, .color = 3},
+    }};
+    LoadedLook dreamcast("dreamcast-hud-middle", party);
+    // FUN_8c0ba600 makes S3_MID and S4_MID shown, through FUN_8c0ee540(name, 224, 80 and 64),
+    // which FUN_8c0ee200 stands from the frame's 384 less that: each whole, white, at (224, 304)
+    // and (224, 320), over the second seat's last 16 columns, as every scene of play opens,
+    // whoever plays. They are made after every seat's blits.
+    const std::array<std::array<HudSeat, HudView::kSeats>, 3> parties{{
+        {},
+        {standing(kWarriorClass, 0), {}, {}, {}},
+        {standing(kWarriorClass, 0), standing(kWizardClass, 1), standing(kWarriorClass, 2),
+         standing(kWarriorClass, 3)},
+    }};
+    for (usize players = 0; players < parties.size(); ++players) {
+        CAPTURE(players);
+        const std::vector<Quad> quads = dreamcast.boxes(dreamcast.viewOf(parties.at(players)));
+        REQUIRE(quads.size() > kMiddlePieces.size());
+        const std::span<const Quad> last = std::span{quads}.last(kMiddlePieces.size());
+        CHECK(Fixture::pictureOf(last[0].texture).name == "S3_MID");
+        checkRect(last[0].area, {224, 304, 64, 16});
+        checkRect(last[0].uv, {0, 0, 1, 1});
+        CHECK(Fixture::pictureOf(last[1].texture).name == "S4_MID");
+        checkRect(last[1].area, {224, 320, 64, 64});
+        checkRect(last[1].uv, {0, 0, 1, 1});
+        for (const Quad& piece : last) {
+            CHECK(Fixture::pictureOf(piece.texture).folder == Fixture::kStaticFolder);
+            CHECK(piece.color == Color::white());
+        }
+        CHECK(std::ranges::count_if(quads, isMiddle) == 2);
+    }
+    // A card rises over them, as over every box.
+    PickupHud pickups;
+    pickups.addCard(1, "GOLD");
+    HudView view = dreamcast.viewOf(parties.back());
+    view.pickups = &pickups;
+    const std::vector<Quad> carded = dreamcast.boxes(view);
+    REQUIRE(carded.size() > 4);
+    const std::span<const Quad> tail = std::span{carded}.last(4);
+    CHECK(Names{Fixture::pictureOf(tail[0].texture).name, Fixture::pictureOf(tail[1].texture).name,
+                Fixture::pictureOf(tail[2].texture).name,
+                Fixture::pictureOf(tail[3].texture).name} ==
+          Names{"S3_MID", "S4_MID", "S3_WBLUE", "GOLD"});
 }
 
 TEST_CASE("a fallen player's Dreamcast box says IN TOWER on the kind-0 panel",
@@ -1801,10 +1871,11 @@ TEST_CASE("the Dreamcast look takes every picture it borrows as it opens",
     }
     // Once a frame, in its own place.
     CHECK(books == static_cast<usize>(kSteps));
-    // The badge, the blinking scroll, the Dreamcast's card, the finder, the hourglass and the
-    // help's scroll were all drawn, and so was the meter.
-    for (const std::string_view name : {"IT", "TEXTSCROLL", "GOLD", "THERMBASE", "THERMCOL",
-                                        "TIMER", "TIMER_SAND", "SAND_ANIM02", "YEL_TEXTSCROLL"}) {
+    // The badge, the blinking scroll, the middle pieces, the Dreamcast's card, the finder, the
+    // hourglass and the help's scroll were all drawn, and so was the meter.
+    for (const std::string_view name :
+         {"IT", "TEXTSCROLL", "S3_MID", "S4_MID", "GOLD", "THERMBASE", "THERMCOL", "TIMER",
+          "TIMER_SAND", "SAND_ANIM02", "YEL_TEXTSCROLL"}) {
         CAPTURE(name);
         CHECK(std::ranges::find(drawn, name) != drawn.end());
     }

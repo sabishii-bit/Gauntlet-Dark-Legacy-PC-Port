@@ -35,10 +35,11 @@ namespace gdl::game {
 /**
  * The Dreamcast's look of the play HUD, drawn from the player's own Dreamcast extraction on its
  * 512x384 frame, the canvas's own: each seat's status box, a seat nobody joined showing the
- * coloured kind-0 box, the pickup cards and counts
- * over the boxes, the runestone finder, the hourglass, the boss meters, the selectors' labels and
- * the help. It shows Dark Legacy's state, never the typed name, and where the extraction has no
- * art for a part it shows Dark Legacy's. LegendsDreamcastHudLayout says where each part stands.
+ * coloured kind-0 box, with the middle pieces between the second and third, the pickup cards
+ * and counts over the boxes, the runestone finder, the hourglass, the boss meters, the
+ * selectors' labels and the help. It shows Dark Legacy's state, never the typed name, and where
+ * the extraction has no art for a part it shows Dark Legacy's. LegendsDreamcastHudLayout says
+ * where each part stands.
  */
 class LegendsDreamcastHudPainter final : public HudPainter {
 public:
@@ -145,6 +146,8 @@ private:
     const Texture* m_thirteenthRune = nullptr;    ///< RUNE13
     const Texture* m_it = nullptr;                ///< IT
     const Texture* m_waitScroll = nullptr;        ///< TEXTSCROLL
+    const Texture* m_middleStrip = nullptr;       ///< S3_MID
+    const Texture* m_middlePanel = nullptr;       ///< S4_MID
     const Texture* m_thermometerBase = nullptr;   ///< THERMBASE
     const Texture* m_thermometerColumn = nullptr; ///< THERMCOL
     const Texture* m_timer = nullptr;             ///< TIMER; none: the hourglass is Dark Legacy's
