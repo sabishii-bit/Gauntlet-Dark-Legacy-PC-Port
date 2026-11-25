@@ -6,6 +6,10 @@
 //! journal records the receipt in place, only the cleanup is left; and a state folder left before
 //! the first journal is given up with its lock. Every removal counts a name already gone as
 //! removed, so that a recovery a second crash cuts short is finished by the next.
+//!
+//! The install's journal is judged on its own: another job's journal that cannot be read is that
+//! job's recovery's to refuse, and stops nothing here, while a journal of any kind that a later
+//! launcher stamped still leaves the whole installation to that launcher.
 
 use std::ffi::OsString;
 use std::fs;
@@ -30,6 +34,7 @@ use crate::compat::{
     Access, JOURNAL_NAMES, JOURNAL_SCHEMA, abandoned_install, access, install_leftover_files,
     is_install_journal_leftover, is_install_leftover, stamp_of,
 };
+use crate::faults::FaultPoints;
 use crate::folder::{
     FolderError, InstallFolder, InstallLock, JOURNAL_DIR, LockError, RECEIPT_FILE, STATE_DIR,
     names_in,
@@ -150,8 +155,9 @@ impl RecoveryError {
 /// folder or at its journal folder refuses the recovery before the lock is tried, as
 /// [`LockError::Links`]. Otherwise, under the installation's lock, of which another job's hold is
 /// [`RecoveryError::Lock`]: a link at a journal or at the receipt refuses the recovery as one, a
-/// receipt or a journal a later launcher stamped refuses it, as does a journal that cannot be
-/// read; then
+/// receipt or a journal a later launcher stamped refuses it, as does an install journal that
+/// cannot be read; another job's journal that cannot be read is that job's recovery's to judge,
+/// and is left as it is; then
 ///
 /// - without the install's journal, the install's stagings and its pending files go, and the list
 ///   of the disc's files when no receipt stands beside it; a state folder that then holds only
@@ -169,6 +175,9 @@ impl RecoveryError {
 /// Once the installation stands, the record is told of it and the shell of its executable. What
 /// the journal records and the folder holds must agree; when they do not, nothing more is done
 /// and [`RecoveryError::Inconsistent`] says why.
+///
+/// This recovers the install alone. [`recover`](fn@crate::recover) recovers every job a folder
+/// was left with, this one among them, and holds while the game runs from the installation.
 pub fn recover_install(
     root: &Path,
     running: &Version,
@@ -216,31 +225,61 @@ pub(crate) fn recover_install_with(
     let Some(found) = Found::at(&state)?.filter(Found::calls_for_work) else {
         return Ok(RecoveryOutcome::Nothing);
     };
-    let journal = judge_stamps(&folder, &found, running)?;
+    let journal = judge_stamps(&folder, &found, running)?
+        .install
+        .transpose()?;
+    let (outcome, _lock) = recover_install_held(
+        &folder,
+        lock,
+        &found,
+        journal,
+        record,
+        settings.faults,
+        settings.notify_shell,
+    )?;
+    Ok(outcome)
+}
+
+/// Recovers the fresh install of the installation's folder `folder`, whose state `found` lists,
+/// under its `lock`, from its `journal`, or from what it left without one, once the stamps are
+/// judged: as [`recover_install`] does past its lock, passing `faults` and telling `notify_shell`
+/// of an installation that stands. Gives what was done, and the lock while it is still held: a
+/// rollback, and a state folder given up, let it go with the state folder.
+pub(crate) fn recover_install_held(
+    folder: &InstallFolder,
+    lock: InstallLock,
+    found: &Found,
+    journal: Option<InstallJournal>,
+    record: &mut dyn FolderRecord,
+    faults: &dyn FaultPoints,
+    notify_shell: &dyn Fn(&Path),
+) -> Result<(RecoveryOutcome, Option<InstallLock>), RecoveryError> {
+    let state = folder.state_dir();
     let recovery = Recovery {
-        folder: &folder,
+        folder,
         state: &state,
-        settings,
+        faults,
+        notify_shell,
     };
     match journal {
-        None => recovery.without_journal(lock, &found, record),
-        Some(journal) => recovery.with_journal(lock, &found, journal, record),
+        None => recovery.without_journal(lock, found, record),
+        Some(journal) => recovery.with_journal(lock, found, journal, record),
     }
 }
 
 /// What a state folder holds, listed without opening any entry.
-struct Found {
+pub(crate) struct Found {
     /// The names directly in it.
-    names: Vec<OsString>,
+    pub(crate) names: Vec<OsString>,
     /// The names in its journal folder; `None` when it has none.
-    journals: Option<Vec<OsString>>,
+    pub(crate) journals: Option<Vec<OsString>>,
 }
 
 impl Found {
     /// Lists the state folder `state` and its journal folder; `None` when no state folder is
     /// there. A link at either is refused, and a journal folder that is no folder is a journal
     /// this launcher cannot read.
-    fn at(state: &Path) -> Result<Option<Found>, RecoveryError> {
+    pub(crate) fn at(state: &Path) -> Result<Option<Found>, RecoveryError> {
         let Some(names) = listing(state)? else {
             return Ok(None);
         };
@@ -276,10 +315,11 @@ impl Found {
         self.names.iter().any(|name| name == RECEIPT_FILE)
     }
 
-    /// Whether a recovery has anything to finish or remove: the install's journal, anything an
-    /// install leaves that no job goes on with, the list of the disc's files among it while no
-    /// receipt stands beside it, or a state folder an install left before its first journal.
-    fn calls_for_work(&self) -> bool {
+    /// Whether a recovery of the install has anything to finish or remove: the install's journal,
+    /// anything an install leaves that no job goes on with, the list of the disc's files among it
+    /// while no receipt stands beside it, or a state folder an install left before its first
+    /// journal.
+    pub(crate) fn calls_for_work(&self) -> bool {
         let claimed = self.has_receipt();
         let left = self.names.iter().any(|name| {
             name.to_str()
@@ -332,54 +372,78 @@ fn listing(path: &Path) -> Result<Option<Vec<OsString>>, RecoveryError> {
     }
 }
 
+/// What the stamps of an installation's state let its recovery do, each job's journal judged on
+/// its own: the install's journal as read, and each other journal of this launcher's kinds whose
+/// stamp lets it change it, as read, for that job's own recovery to judge.
+pub(crate) struct Stamps {
+    /// The install's journal: `None` when there is none; otherwise the journal, or why it cannot
+    /// be read.
+    pub(crate) install: Option<Result<InstallJournal, RecoveryError>>,
+    /// Each other journal of this launcher's kinds, by name, in the order its folder lists them,
+    /// as read.
+    pub(crate) others: Vec<(&'static str, ReadJournal)>,
+}
+
+/// A journal as read: its top-level object, or why it cannot be read as a journal, its path in
+/// the detail.
+pub(crate) type ReadJournal = Result<Map<String, Value>, Box<str>>;
+
 /// Judges the stamps of the journals in the state folder of the installation's folder `folder`
-/// that `found` lists, and of its receipt, for the launcher of version `running`, and reads the
-/// install's journal when there is one. A journal of a kind this launcher reads that cannot be
-/// read refuses the recovery first, as does a link at one; then a journal of a kind it does not
-/// know, or one a later launcher stamped, and a link at the receipt or a receipt a later launcher
-/// stamped. An install journal that does not hold what an install's does, or names what an install
-/// never makes, cannot be read either.
-fn judge_stamps(
+/// that `found` lists, and of its receipt, for the launcher of version `running`, and reads each
+/// journal of this launcher's kinds. A link at a journal, or a journal the system will not let be
+/// read, refuses the recovery first; then a journal of a kind this launcher does not know, or one
+/// a later launcher stamped, and a link at the receipt or a receipt a later launcher stamped. A
+/// journal that otherwise cannot be read refuses nothing here: it is given as such, for its own
+/// job's recovery to refuse. An install journal that does not hold what an install's does, or
+/// names what an install never makes, cannot be read either.
+pub(crate) fn judge_stamps(
     folder: &InstallFolder,
     found: &Found,
     running: &Version,
-) -> Result<Option<InstallJournal>, RecoveryError> {
+) -> Result<Stamps, RecoveryError> {
     let state = folder.state_dir();
     let root = folder.root();
     let folder = state.join(JOURNAL_DIR);
     let mut refusal = None;
     let mut later = false;
-    let mut install = None;
+    let mut stamps = Stamps {
+        install: None,
+        others: Vec::new(),
+    };
     let journals = found.journals.iter().flatten();
     for name in
         journals.filter(|name| !name.as_encoded_bytes().ends_with(PENDING_SUFFIX.as_bytes()))
     {
-        let Some(name) = name.to_str().filter(|name| JOURNAL_NAMES.contains(name)) else {
+        let Some(name) = JOURNAL_NAMES.into_iter().find(|known| name == *known) else {
             later = true;
             continue;
         };
         let path = folder.join(name);
-        let object = match read_json_bounded::<Map<String, Value>>(&path, MAX_JSON_LEN) {
-            Ok(object) => object,
-            Err(error) => {
-                if let Some(refused) = unread(error, &path) {
-                    refusal.get_or_insert(refused);
+        let read = match read_json_bounded::<Map<String, Value>>(&path, MAX_JSON_LEN) {
+            Ok(object) => match stamp_of(&object) {
+                Ok(stamp) if access(&stamp, JOURNAL_SCHEMA, running) == Access::ReadOnly => {
+                    later = true;
+                    continue;
                 }
-                continue;
-            }
+                Ok(_) => Ok(object),
+                Err(error) => Err(format!("{}: {error}", path.display()).into()),
+            },
+            Err(error) => match unread(error, &path) {
+                Unread::Gone => continue,
+                Unread::Unreadable(detail) => Err(detail),
+                Unread::Refused(refused) => {
+                    refusal.get_or_insert(refused);
+                    continue;
+                }
+            },
         };
-        match stamp_of(&object) {
-            Ok(stamp) if access(&stamp, JOURNAL_SCHEMA, running) == Access::ReadOnly => {
-                later = true;
-            }
-            Ok(_) if name == INSTALL_JOURNAL => install = Some((path, object)),
-            Ok(_) => {}
-            Err(error) => {
-                refusal.get_or_insert(RecoveryError::unreadable(format_args!(
-                    "{}: {error}",
-                    path.display()
-                )));
-            }
+        if name == INSTALL_JOURNAL {
+            let journal = read
+                .map_err(RecoveryError::unreadable)
+                .and_then(|object| install_journal(&path, root, object));
+            stamps.install = Some(journal);
+        } else {
+            stamps.others.push((name, read));
         }
     }
     if let Some(refused) = refusal {
@@ -388,9 +452,7 @@ fn judge_stamps(
     if later || later_receipt(&state, running)? {
         return Err(RecoveryError::NewerLauncher);
     }
-    install
-        .map(|(path, object)| install_journal(&path, root, object))
-        .transpose()
+    Ok(stamps)
 }
 
 /// Whether the receipt in the state folder `state` carries a stamp that leaves the installation
@@ -408,22 +470,32 @@ fn later_receipt(state: &Path, running: &Version) -> Result<bool, RecoveryError>
         .is_ok_and(|stamp| access(&stamp, RECEIPT_SCHEMA, running) == Access::ReadOnly))
 }
 
-/// What a journal at `path` that could not be read for `error` is to the recovery: a refusal, or
-/// `None` when the journal is gone. A link at the journal, or on its path, is refused as one;
-/// something there that is no regular file and what holds no stamped JSON object are journals
-/// this launcher cannot read, and a refusal to read a file that is there is the system's.
-fn unread(error: FilesError, path: &Path) -> Option<RecoveryError> {
+/// What a journal that could not be read is to the recovery.
+enum Unread {
+    /// It is gone since its folder was listed, as a job that ends removes its journal.
+    Gone,
+    /// It is no journal this launcher can read, for the reason given.
+    Unreadable(Box<str>),
+    /// It refuses the recovery: a link, or the system's refusal to read it.
+    Refused(RecoveryError),
+}
+
+/// What a journal at `path` that could not be read for `error` is to the recovery. A link at the
+/// journal, or on its path, is refused as one; something there that is no regular file and what
+/// holds no stamped JSON object are journals this launcher cannot read, and a refusal to read a
+/// file that is there is the system's.
+fn unread(error: FilesError, path: &Path) -> Unread {
     match error {
-        FilesError::Link { path } => Some(linked(path)),
+        FilesError::Link { path } => Unread::Refused(linked(path)),
         error @ (FilesError::TooLarge { .. } | FilesError::Json { .. }) => {
-            Some(RecoveryError::unreadable(error))
+            Unread::Unreadable(error.to_string().into())
         }
         error @ FilesError::Io { .. } => match fs::symlink_metadata(path) {
-            Err(looked) if is_absent(&looked) => None,
-            Ok(metadata) if !metadata.is_file() => Some(RecoveryError::unreadable(error)),
-            _ => Some(RecoveryError::Files(error)),
+            Err(looked) if is_absent(&looked) => Unread::Gone,
+            Ok(metadata) if !metadata.is_file() => Unread::Unreadable(error.to_string().into()),
+            _ => Unread::Refused(RecoveryError::Files(error)),
         },
-        error => Some(RecoveryError::Files(error)),
+        error => Unread::Refused(RecoveryError::Files(error)),
     }
 }
 
@@ -475,14 +547,19 @@ fn install_journal(
     Ok(journal)
 }
 
+/// What a recovery did, and the installation's lock while it still holds it.
+type Done = (RecoveryOutcome, Option<InstallLock>);
+
 /// A recovery under way in an installation's folder, its lock held.
 struct Recovery<'r> {
     /// The installation's folder.
     folder: &'r InstallFolder,
     /// Its state folder.
     state: &'r Path,
-    /// What the recovery asks of the world beyond the folder.
-    settings: &'r InstallSettings<'r>,
+    /// Where the recovery passes its fault points.
+    faults: &'r dyn FaultPoints,
+    /// How the shell is told of an installation's executable once the installation stands.
+    notify_shell: &'r dyn Fn(&Path),
 }
 
 impl<'r> Recovery<'r> {
@@ -495,7 +572,7 @@ impl<'r> Recovery<'r> {
         lock: InstallLock,
         found: &Found,
         record: &mut dyn FolderRecord,
-    ) -> Result<RecoveryOutcome, RecoveryError> {
+    ) -> Result<Done, RecoveryError> {
         let state = self.state;
         let mut went = remove_stagings(state, &found.names, None)?;
         for file in install_leftover_files(state, found.has_receipt()) {
@@ -504,15 +581,20 @@ impl<'r> Recovery<'r> {
         let left = Found::at(state)?;
         let abandoned =
             left.is_some_and(|left| abandoned_install(&left.names, left.journals.as_deref()));
-        if abandoned && lock.give_up().map_err(RecoveryError::Files)? {
-            let _ = record.forget(self.folder.root());
-            return Ok(RecoveryOutcome::AbandonedRemoved);
-        }
-        Ok(if went {
+        let outcome = if went {
             RecoveryOutcome::CleanedUp
         } else {
             RecoveryOutcome::Nothing
-        })
+        };
+        if !abandoned {
+            return Ok((outcome, Some(lock)));
+        }
+        // Giving the state folder up lets the lock go, whether or not the folder goes.
+        if lock.give_up().map_err(RecoveryError::Files)? {
+            let _ = record.forget(self.folder.root());
+            return Ok((RecoveryOutcome::AbandonedRemoved, None));
+        }
+        Ok((outcome, None))
     }
 
     /// Recovers the install `journal` records, under `lock`: the stagings it does not name go
@@ -523,9 +605,9 @@ impl<'r> Recovery<'r> {
         found: &Found,
         journal: InstallJournal,
         record: &mut dyn FolderRecord,
-    ) -> Result<RecoveryOutcome, RecoveryError> {
+    ) -> Result<Done, RecoveryError> {
         let state = self.state;
-        let faults = self.settings.faults;
+        let faults = self.faults;
         let journal = JournalFile::resume(&state.join(JOURNAL_DIR), journal, faults);
         remove_stagings(state, &found.names, Some(journal.staging_name()))?;
         let staging = reopen_staging(state, journal.staging_name())?;
@@ -535,8 +617,7 @@ impl<'r> Recovery<'r> {
                 remove_state_pending(state)?;
                 clean_up(staging, &journal, faults).map_err(RecoveryError::Files)?;
                 self.tell_installed(journal.receipt(), record);
-                drop(lock);
-                Ok(RecoveryOutcome::CleanedUp)
+                Ok((RecoveryOutcome::CleanedUp, Some(lock)))
             }
             InstallPhase::Publishing => self.finish(lock, staging, journal, receipted, record),
             // Beside a receipt that stands, the rollback refuses before it changes anything.
@@ -572,7 +653,7 @@ impl<'r> Recovery<'r> {
         mut journal: JournalFile<'r>,
         receipted: bool,
         record: &mut dyn FolderRecord,
-    ) -> Result<RecoveryOutcome, RecoveryError> {
+    ) -> Result<Done, RecoveryError> {
         let root = self.folder.root();
         let in_staging = |name: &str| match &staging {
             Some(staging) => is_there(&staging.path().join(name)).map_err(RecoveryError::Files),
@@ -637,24 +718,25 @@ impl<'r> Recovery<'r> {
         }
         commit_receipt(&receipt, self.folder).map_err(RecoveryError::Files)?;
         journal.committed().map_err(RecoveryError::Files)?;
-        clean_up(staging, &journal, self.settings.faults).map_err(RecoveryError::Files)?;
+        clean_up(staging, &journal, self.faults).map_err(RecoveryError::Files)?;
         self.tell_installed(Some(&receipt), record);
-        drop(lock);
-        Ok(RecoveryOutcome::Finished {
+        let finished = RecoveryOutcome::Finished {
             receipt: Box::new(receipt),
-        })
+        };
+        Ok((finished, Some(lock)))
     }
 
     /// Takes the install `journal` records back under `lock`, as the job takes a failure back,
-    /// with the staging when it is still there. Beside a receipt that stands nothing is taken
-    /// back, and nothing changed.
+    /// with the staging when it is still there, and lets the lock go with the state folder, which
+    /// goes too when it holds nothing else. Beside a receipt that stands nothing is taken back,
+    /// and nothing changed.
     fn roll_back(
         &self,
         lock: InstallLock,
         staging: Option<Staging>,
         journal: JournalFile<'_>,
         record: &mut dyn FolderRecord,
-    ) -> Result<RecoveryOutcome, RecoveryError> {
+    ) -> Result<Done, RecoveryError> {
         let rollback = Rollback {
             folder: self.folder.root(),
             made_folders: journal.made_folders(),
@@ -663,7 +745,7 @@ impl<'r> Recovery<'r> {
                 staging,
                 journal: Some(journal),
             }),
-            faults: self.settings.faults,
+            faults: self.faults,
         };
         let taken = rollback.run(record).map_err(|error| match error {
             RollbackError::Receipted => RecoveryError::inconsistent(
@@ -675,7 +757,7 @@ impl<'r> Recovery<'r> {
         if !taken.given_up {
             kept.push(STATE_DIR.to_owned());
         }
-        Ok(RecoveryOutcome::RolledBack { kept })
+        Ok((RecoveryOutcome::RolledBack { kept }, None))
     }
 
     /// Tells the record that the installation stands, a refusal passed over, as the start that
@@ -688,7 +770,7 @@ impl<'r> Recovery<'r> {
             .and_then(|receipt| Platform::parse(&receipt.platform))
             .or_else(Platform::of_this_build);
         if let Some(platform) = platform {
-            (self.settings.notify_shell)(&root.join(platform.executable()));
+            (self.notify_shell)(&root.join(platform.executable()));
         }
     }
 }
@@ -1569,7 +1651,7 @@ mod tests {
 
     #[test]
     fn an_unreadable_journal_is_left() {
-        let cases: [Case; 12] = [
+        let cases: [Case; 11] = [
             ("a journal that is not JSON", |left| {
                 fs::write(left.journals().join(INSTALL_JOURNAL), b"not JSON\n").unwrap();
             }),
@@ -1623,15 +1705,25 @@ mod tests {
                     left.write_journal(&journal);
                 },
             ),
-            ("another job's journal that is not JSON", |left| {
-                left.journal("staging", &[]);
-                fs::write(left.journals().join("update.json"), b"not JSON\n").unwrap();
-            }),
         ];
         for (what, made) in cases {
             let left = Left::staged(false);
             made(&left);
             assert_left_alone(&left, "journalUnreadable", what);
+        }
+        // Another job's journal that cannot be read is that job's recovery's to refuse: the
+        // install is taken back beside it, and it stays as it was, keeping the state folder.
+        for unreadable in [
+            &b"not JSON\n"[..],
+            b"{\"schema\": 1, \"minLauncher\": \"1.0.0-beta\"}",
+        ] {
+            let left = Left::in_phase("staging", false);
+            let other = left.journals().join("update.json");
+            fs::write(&other, unreadable).unwrap();
+            assert_eq!(left.recover().outcome.unwrap(), rolled_back(&[STATE_DIR]));
+            assert_eq!(fs::read(&other).unwrap(), unreadable);
+            assert_eq!(folder_names(&left.journals()).unwrap(), ["update.json"]);
+            assert!(!left.staging().exists());
         }
         // A journal taking back the player's own file as though the publish had put it in place:
         // the file stays where it is.

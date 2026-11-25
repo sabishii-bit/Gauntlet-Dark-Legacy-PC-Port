@@ -2,12 +2,14 @@
 //! installation's top together, from a release the feed found or from the launcher file that runs.
 //! An update is planned first, without the lock and without changing anything: what it would take
 //! the new release from, which runtime names it would move, and the room it would need. It then
-//! runs under the installation's lock: it checks the installation, stages what changes beside it,
-//! moves the installed files aside and the new ones into place under one journal, and writes the
-//! receipt, the point from which the new release stands.
+//! runs under the installation's lock: it recovers whatever jobs left in the folder first, checks
+//! the installation, stages what changes beside it, moves the installed files aside and the new
+//! ones into place under one journal, and writes the receipt, the point from which the new release
+//! stands.
 
 mod journal;
 mod names;
+mod recover;
 mod settings;
 mod source;
 mod stage;
@@ -18,12 +20,8 @@ use std::fs::File;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use gdl_files::{
-    Cancelled, FilesError, Job, MAX_JSON_LEN, PENDING_SUFFIX, PhaseId, RelPath, is_absent,
-    read_json_bounded,
-};
+use gdl_files::{Cancelled, FilesError, Job, PhaseId, RelPath};
 use gdl_release::{Platform, Release, Version};
-use serde_json::{Map, Value};
 
 pub use journal::{
     DOWNLOAD_PREFIX, RETIRED_LAUNCHER_PREFIX, UPDATE_BACKUP, UPDATE_JOURNAL, UPDATE_STAGING_PREFIX,
@@ -32,16 +30,18 @@ pub use journal::{
 pub use names::FileChanges;
 pub use source::UpdateSource;
 
-use self::journal::UpdateJournal;
+pub(crate) use self::journal::{UpdateJournal, is_retired_launcher_name};
 use self::names::judge_names;
+pub(crate) use self::recover::recover_update;
 pub(crate) use self::settings::UpdateSettings;
+pub(crate) use self::swap::{remove_folder, remove_named};
 use crate::awake::keep_awake;
-use crate::compat::{Access, JOURNAL_NAMES, JOURNAL_SCHEMA, access, stamp_of};
-use crate::folder::{FolderError, InstallFolder, JOURNAL_DIR, LockError, names_in};
+use crate::compat::Access;
+use crate::folder::{FolderError, InstallFolder, LockError};
 use crate::hold::{HeldLock, lock_holding};
 use crate::icon::IconError;
 use crate::inspect::FolderState;
-use crate::install::{Changes, SPACE_MARGIN};
+use crate::install::{Changes, SPACE_MARGIN, Unrecorded};
 use crate::payload::{
     BuildInfo, LIB_FOLDER, LIBRARY_SUFFIX, PayloadError, ends_with_ignoring_case,
 };
@@ -49,6 +49,7 @@ use crate::payload::{
 use crate::platform;
 use crate::probe::GameUseError;
 use crate::receipt::{Receipt, ReceiptError};
+use crate::recover::{RecoverError, Recovered, UpdateRecovery, recover_held};
 use crate::sections::{Sections, SectionsError};
 
 /// The phase in which an update takes the installation's lock and reads the installation through
@@ -69,6 +70,14 @@ pub const SWAP: PhaseId = PhaseId("swap");
 /// The phase in which an update that stands removes what it staged and moved aside. It is never
 /// cancelled.
 pub const CLEANUP: PhaseId = PhaseId("cleanup");
+
+/// The phase in which a recovery finishes or takes back an update that was stopped before it
+/// ended.
+pub const RECOVER_UPDATE: PhaseId = PhaseId("recoverUpdate");
+
+/// The phase in which a recovery removes what jobs left in the launcher's state folder that no
+/// journal names.
+pub const FINISH_CLEANUP: PhaseId = PhaseId("finishCleanup");
 
 /// What an update would do, read without a lock and without changing anything.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -271,15 +280,19 @@ pub enum UpdateOutcome {
     /// The new release stands.
     Updated(Box<Updated>),
     /// The installation is of the source's release already, or of a newer one at the same
-    /// precedence, as another launcher may have left it: nothing was changed.
+    /// precedence, as another launcher may have left it: nothing was changed but what the
+    /// recovery before it did.
     AlreadyCurrent {
         /// The installed release's version.
         version: Version,
+        /// What recovering the jobs the folder was left with did first.
+        recovered: Recovered,
     },
 }
 
-/// An update that stands: its folder, the receipt it wrote, what it moved, what became of the
-/// retired launcher copy, whether the game was probed, and what the player should be told of it.
+/// An update that stands: its folder, the receipt it wrote, what it moved, what its recovery of
+/// the jobs left before it did, what became of the retired launcher copy, whether the game was
+/// probed, and what the player should be told of it.
 #[derive(Debug)]
 pub struct Updated {
     /// The installation's folder.
@@ -292,6 +305,8 @@ pub struct Updated {
     pub receipt: Receipt,
     /// The runtime names the update moved.
     pub changes: FileChanges,
+    /// What recovering the jobs the folder was left with did first.
+    pub recovered: Recovered,
     /// What became of the launcher copy that was installed before.
     pub retired: RetiredCopy,
     /// Whether the update ran the game's probe.
@@ -372,12 +387,14 @@ impl UpdateFailure {
 ///
 /// In phases, each told before it begins:
 ///
-/// 1. [`CHECK_INSTALLED`]: the installation's lock taken, held for while another job has it; an
-///    update refused while a job's journal stands in the installation, a committed update's as
+/// 1. [`CHECK_INSTALLED`]: the installation's lock taken, held for while another job has it; under
+///    it, whatever jobs left in the folder recovered as [`recover`](fn@crate::recover) does,
+///    held for while the game runs where a journal stands, a refusal there refusing the update; an
+///    update refused while a committed update's cleanup still cannot finish, as
 ///    [`UpdateError::CleanupPending`]; then the installation read through its receipt, a later
 ///    launcher's being [`UpdateError::NewerLauncher`] and a launcher older than the installed
 ///    release [`UpdateError::OlderLauncher`]. A source of the installed release, by precedence, is
-///    [`UpdateOutcome::AlreadyCurrent`], and nothing changes.
+///    [`UpdateOutcome::AlreadyCurrent`], and nothing more changes.
 /// 2. [`VERIFY_DOWNLOAD`]: the launcher file's sections read against their table, its runtime held
 ///    to the one this launcher installs, and the names the update moves judged.
 /// 3. [`STAGE`]: every installed file and the launcher copy hashed again against what the receipt
@@ -428,13 +445,29 @@ pub(crate) fn update_with(
     let folder = InstallFolder::at(root)
         .map_err(folder_error)
         .map_err(unchanged)?;
-    let lock = lock_holding(&folder, job, settings.hold_poll).map_err(|held| {
-        unchanged(match held {
-            HeldLock::Lock(error) => UpdateError::Lock(error),
-            HeldLock::Cancelled => UpdateError::Cancelled,
-        })
-    })?;
-    check_no_job_left(&folder, running).map_err(unchanged)?;
+    let lock = lock_holding(&folder, job, settings.hold_poll)
+        .map_err(|held| unchanged(held_lock(held)))?;
+    // An update keeps no list of installations: what its recovery would tell one is passed over.
+    let (recovered, lock) = recover_held(
+        &folder,
+        lock,
+        running,
+        &mut Unrecorded,
+        job,
+        settings,
+        false,
+    )
+    .map_err(|error| unchanged(recovery_refusal(error)))?;
+    let lock = match lock {
+        Some(lock) => lock,
+        // An install its recovery took back gave its state folder up with the lock: taken again,
+        // what is left is read as any other folder is.
+        None => lock_holding(&folder, job, settings.hold_poll)
+            .map_err(|held| unchanged(held_lock(held)))?,
+    };
+    if matches!(recovered.update, UpdateRecovery::CleanupLeft { .. }) {
+        return Err(unchanged(UpdateError::CleanupPending));
+    }
     let installed = folder
         .installed(running)
         .map_err(|error| unchanged(UpdateError::Receipt(error)))?;
@@ -451,7 +484,10 @@ pub(crate) fn update_with(
     // The launcher file that runs carries the runtime of its own version alone.
     if *running == from {
         drop(lock);
-        return Ok(UpdateOutcome::AlreadyCurrent { version: from });
+        return Ok(UpdateOutcome::AlreadyCurrent {
+            version: from,
+            recovered,
+        });
     }
     let update = Update {
         platform: installed.build_info.platform,
@@ -463,7 +499,31 @@ pub(crate) fn update_with(
         receipt,
     };
     let staged = update.stage(source.launcher_file())?;
-    update.swap(staged, lock)
+    update.swap(staged, lock, recovered)
+}
+
+/// The update's failure for a lock it held for and did not take.
+fn held_lock(held: HeldLock) -> UpdateError {
+    match held {
+        HeldLock::Lock(error) => UpdateError::Lock(error),
+        HeldLock::Cancelled => UpdateError::Cancelled,
+    }
+}
+
+/// The update's failure for what refused the recovery it makes first. What an update refuses for
+/// itself too is the update's own: a lock refused, a cancel while held, a game that could not be
+/// found closed, and a later or an older launcher; anything else is the recovery's.
+fn recovery_refusal(error: RecoverError) -> UpdateError {
+    match error {
+        RecoverError::Lock(error) => UpdateError::Lock(error),
+        RecoverError::Game(error) => UpdateError::Game(error),
+        RecoverError::Cancelled => UpdateError::Cancelled,
+        RecoverError::NewerLauncher => UpdateError::NewerLauncher,
+        RecoverError::OlderLauncher { running, installed } => {
+            UpdateError::OlderLauncher { running, installed }
+        }
+        other => UpdateError::Recover(other),
+    }
 }
 
 /// An update as it runs, once its lock is held and the installation read through its receipt.
@@ -482,69 +542,6 @@ struct Update<'a> {
     receipt: Receipt,
     /// The platform the installation is for, which is this program's.
     platform: Platform,
-}
-
-/// Refuses an update while a job's journal stands in the installation `folder`, for the launcher
-/// of version `running`: this launcher does not finish or take back a job before an update, and
-/// an update beside one would lose what the journal needs. A journal a later launcher stamped, or
-/// of a kind this launcher does not know, is [`UpdateError::NewerLauncher`]; a committed update's,
-/// whose cleanup is all that is left, [`UpdateError::CleanupPending`]; any other
-/// [`UpdateError::UnfinishedJob`]. A link at a journal is refused as one, and the pending files
-/// that interrupted writes leave are no journals.
-fn check_no_job_left(folder: &InstallFolder, running: &Version) -> Result<(), UpdateError> {
-    let journals = folder.state_dir().join(JOURNAL_DIR);
-    let mut names = match names_in(&journals) {
-        Ok(names) => names,
-        Err(error) if is_absent(&error) => return Ok(()),
-        Err(source) => {
-            return Err(UpdateError::Io {
-                path: journals,
-                source,
-            });
-        }
-    };
-    names.retain(|name| !name.as_encoded_bytes().ends_with(PENDING_SUFFIX.as_bytes()));
-    names.sort();
-    let mut unfinished = None;
-    let mut cleanup = false;
-    for name in &names {
-        let Some(text) = name.to_str().filter(|text| JOURNAL_NAMES.contains(text)) else {
-            return Err(UpdateError::NewerLauncher);
-        };
-        let path = journals.join(text);
-        let object = match read_json_bounded::<Map<String, Value>>(&path, MAX_JSON_LEN) {
-            Ok(object) => object,
-            Err(FilesError::Link { path }) => return Err(UpdateError::Links { path }),
-            // Gone since the folder was listed, as a job that ends removes its journal.
-            Err(FilesError::Io { source, .. }) if is_absent(&source) => continue,
-            Err(_) => {
-                unfinished.get_or_insert(text);
-                continue;
-            }
-        };
-        match stamp_of(&object) {
-            Ok(stamp) if access(&stamp, JOURNAL_SCHEMA, running) == Access::ReadOnly => {
-                return Err(UpdateError::NewerLauncher);
-            }
-            Ok(_)
-                if text == UPDATE_JOURNAL
-                    && UpdateJournal::from_object(&object)
-                        .is_ok_and(|journal| journal.phase == UpdatePhase::Committed) =>
-            {
-                cleanup = true;
-            }
-            _ => {
-                unfinished.get_or_insert(text);
-            }
-        }
-    }
-    match unfinished {
-        Some(journal) => Err(UpdateError::UnfinishedJob {
-            journal: journal.into(),
-        }),
-        None if cleanup => Err(UpdateError::CleanupPending),
-        None => Ok(()),
-    }
 }
 
 /// The update's failure for `error`, before it changed anything.
@@ -613,6 +610,9 @@ pub enum UpdateError {
     /// waited out.
     #[error(transparent)]
     Lock(LockError),
+    /// What jobs left in the folder could not be recovered first, so the update changes nothing.
+    #[error(transparent)]
+    Recover(RecoverError),
     /// The installation cannot be read through its receipt.
     #[error(transparent)]
     Receipt(ReceiptError),
@@ -627,19 +627,12 @@ pub enum UpdateError {
         /// The installed release's version.
         installed: Box<str>,
     },
-    /// The previous update stands, but its cleanup is still to be finished.
+    /// The previous update stands, but its cleanup could not be finished yet.
     #[error(
         "The previous update is installed. Close and reopen the launcher to release its old \
          runtime files before updating again."
     )]
     CleanupPending,
-    /// A job's journal stands in the installation, which the launcher's next start is to finish
-    /// or take back before anything else changes the installation.
-    #[error("A job left unfinished in this installation is to be recovered first: {journal}")]
-    UnfinishedJob {
-        /// The journal's name.
-        journal: Box<str>,
-    },
     /// The launcher file's sections do not hold what their table says, or its copy could not be
     /// made.
     #[error(transparent)]
@@ -744,18 +737,18 @@ pub enum UpdateError {
 
 impl UpdateError {
     /// The failure's stable machine name, in camelCase, for reports and logs: the lock's, the
-    /// receipt's, the sections', the runtime's, the game's, the icon's or the file operation's
-    /// rule, or `newerLauncher`, `olderLauncher`, `cleanupPending`, `unfinishedJob`,
-    /// `installedNames`, `caseChange`, `unowned`, `links`, `ownedFileChanged`, `space`,
-    /// `probeRefused`, `journalTooLarge`, `changed`, `inconsistent`, `io` or `cancelled`.
+    /// recovery's, the receipt's, the sections', the runtime's, the game's, the icon's or the file
+    /// operation's rule, or `newerLauncher`, `olderLauncher`, `cleanupPending`, `installedNames`,
+    /// `caseChange`, `unowned`, `links`, `ownedFileChanged`, `space`, `probeRefused`,
+    /// `journalTooLarge`, `changed`, `inconsistent`, `io` or `cancelled`.
     pub fn rule(&self) -> &'static str {
         match self {
             UpdateError::Lock(error) => error.rule(),
+            UpdateError::Recover(error) => error.rule(),
             UpdateError::Receipt(error) => error.rule(),
             UpdateError::NewerLauncher => "newerLauncher",
             UpdateError::OlderLauncher { .. } => "olderLauncher",
             UpdateError::CleanupPending => "cleanupPending",
-            UpdateError::UnfinishedJob { .. } => "unfinishedJob",
             UpdateError::Source(error) => error.rule(),
             UpdateError::Runtime(error) => error.rule(),
             UpdateError::InstalledNames { .. } => "installedNames",
@@ -778,7 +771,7 @@ impl UpdateError {
 }
 
 /// The stable machine name of why the game counts as in use, or could not be checked.
-fn game_rule(error: &GameUseError) -> &'static str {
+pub(crate) fn game_rule(error: &GameUseError) -> &'static str {
     match error {
         GameUseError::Running => "running",
         GameUseError::Missing => "missing",
@@ -825,29 +818,30 @@ mod tests {
         InstallFolder, JOURNAL_DIR, LOCK_FILE, LockError, RECEIPT_FILE, STATE_DIR,
     };
     use crate::hold::SCANNER_GRACE;
-    use crate::install::{Changes, INSTALL_JOURNAL, SPACE_MARGIN};
+    use crate::install::{Changes, INSTALL_JOURNAL, RecoveryOutcome, SPACE_MARGIN, Unrecorded};
     use crate::payload::{BUILD_INFO, PayloadError};
     use crate::probe::{GameStartError, GameUseError, VersionProbe};
     use crate::receipt::{MAX_RECEIPT_LEN, Receipt, ReceiptError, installed_launcher_name};
+    use crate::recover::{RecoverError, Recovered, UpdateRecovery, recover_with};
     use crate::sections::{RUNTIME_SECTION, Sections, SectionsError};
     use crate::test_platform::{other_platform, this_platform};
 
     /// The version the tests' installations are of.
-    const INSTALLED: &str = "1.0.0-beta";
+    pub(super) const INSTALLED: &str = "1.0.0-beta";
 
     /// The version of the release the tests update them to.
-    const NEXT: &str = "1.0.0-beta.1";
+    pub(super) const NEXT: &str = "1.0.0-beta.1";
 
     /// The most bytes an error may take, so that returning one by value stays cheap.
     const MOST_ERROR_BYTES: usize = 128;
 
-    fn version(text: &str) -> Version {
+    pub(super) fn version(text: &str) -> Version {
         Version::parse(text).unwrap_or_else(|error| panic!("{error}"))
     }
 
     /// An installation of the standard runtime of `version` for the platform this test program was
     /// built for, as the launcher leaves one, in a folder of the test's own.
-    fn installation_of(version: &str) -> (TempDir, InstallFixture) {
+    pub(super) fn installation_of(version: &str) -> (TempDir, InstallFixture) {
         let dir = tempfile::tempdir().unwrap();
         let runtime = RuntimeFiles::standard(this_platform().as_str(), version);
         let fixture = InstallFixture::write(&dir.path().join("install"), runtime).unwrap();
@@ -857,12 +851,16 @@ mod tests {
     /// A launcher file of this system's kind carrying `runtime`, written into `dir` outside the
     /// installation, signed on Windows as a release is, with its sections found as the launcher
     /// finds its own.
-    fn bundled(dir: &Path, runtime: &RuntimeFiles) -> Sections<File> {
+    pub(super) fn bundled(dir: &Path, runtime: &RuntimeFiles) -> Sections<File> {
         bundled_as(dir, "launcher", runtime).1
     }
 
     /// A launcher file as [`bundled`] writes one, named `name` in `dir`, and its path.
-    fn bundled_as(dir: &Path, name: &str, runtime: &RuntimeFiles) -> (PathBuf, Sections<File>) {
+    pub(super) fn bundled_as(
+        dir: &Path,
+        name: &str,
+        runtime: &RuntimeFiles,
+    ) -> (PathBuf, Sections<File>) {
         carrying(dir, name, &runtime.zip())
     }
 
@@ -1250,13 +1248,18 @@ mod tests {
                     .to_owned(),
             ),
             (
-                UpdateError::UnfinishedJob {
-                    journal: INSTALL_JOURNAL.into(),
-                },
-                "unfinishedJob",
-                "A job left unfinished in this installation is to be recovered first: \
-                 install.json"
-                    .to_owned(),
+                UpdateError::Recover(RecoverError::OtherJob {
+                    journal: "expansion-n64.json".into(),
+                }),
+                "otherJob",
+                "Another job's journal stands in this installation: expansion-n64.json".to_owned(),
+            ),
+            (
+                UpdateError::Recover(RecoverError::UpdateJournalUnreadable {
+                    detail: "the reason".into(),
+                }),
+                "journalUnreadable",
+                "Unreadable update journal: the reason".to_owned(),
             ),
             (
                 UpdateError::Source(SectionsError::NoSections),
@@ -1370,14 +1373,14 @@ mod tests {
     }
 
     /// How often the tests' holds look again: far more often than a job's, so that they run fast.
-    const POLL: Duration = Duration::from_millis(20);
+    pub(super) const POLL: Duration = Duration::from_millis(20);
 
     /// What each of the player's files holds.
-    const PLAYERS_BYTES: &[u8] = b"user-owned";
+    pub(super) const PLAYERS_BYTES: &[u8] = b"user-owned";
 
     /// The player's files a test lays out beside an installation: a save, the settings, a file of
     /// the player's among the runtime's data, and a note at the top.
-    const PLAYERS_FILES: [&str; 4] = [
+    pub(super) const PLAYERS_FILES: [&str; 4] = [
         "saves/hero.json",
         "config/settings.json",
         "data/local.json",
@@ -1389,7 +1392,7 @@ mod tests {
     const ICON_MARK: &[u8] = b" with the disc's icon";
 
     /// The version of a release after [`NEXT`].
-    const LATER: &str = "1.0.0-beta.2";
+    pub(super) const LATER: &str = "1.0.0-beta.2";
 
     /// The library the probe tests' runtimes carry beside the game.
     const LIBRARY: &str = if cfg!(windows) {
@@ -1399,13 +1402,13 @@ mod tests {
     };
 
     /// `name`, a name with `/` between its parts, under `root`.
-    fn under(root: &Path, name: &str) -> PathBuf {
+    pub(super) fn under(root: &Path, name: &str) -> PathBuf {
         name.split('/')
             .fold(root.to_path_buf(), |path, part| path.join(part))
     }
 
     /// An installation of the standard runtime of [`INSTALLED`] with the player's files beside it.
-    fn players_installation() -> (TempDir, InstallFixture) {
+    pub(super) fn players_installation() -> (TempDir, InstallFixture) {
         let (dir, fixture) = installation_of(INSTALLED);
         add_players_files(&fixture.root);
         (dir, fixture)
@@ -1444,17 +1447,17 @@ mod tests {
     }
 
     /// The game's executable in the tests' runtimes.
-    fn executable() -> &'static str {
+    pub(super) fn executable() -> &'static str {
         this_platform().executable()
     }
 
     /// The launcher copy at the tests' installations' top.
-    fn launcher_copy() -> &'static str {
+    pub(super) fn launcher_copy() -> &'static str {
         installed_launcher_name(this_platform())
     }
 
     /// A closed-game probe that finds the game closed.
-    fn closed(_: &Path) -> Result<(), GameUseError> {
+    pub(super) fn closed(_: &Path) -> Result<(), GameUseError> {
         Ok(())
     }
 
@@ -1490,7 +1493,7 @@ mod tests {
     }
 
     /// A probe that finds the game answering.
-    fn answering(_: &Path, _: &Cancel) -> Result<VersionProbe, GameStartError> {
+    pub(super) fn answering(_: &Path, _: &Cancel) -> Result<VersionProbe, GameStartError> {
         answered(0)
     }
 
@@ -1514,7 +1517,10 @@ mod tests {
     /// the system measures it, the probe `probe`, a game that is closed, on Windows a personaliser
     /// that marks the executable rather than edit it, a shell nobody tells, the receipt written as
     /// the launcher writes it, and holds that look again every [`POLL`].
-    fn standing_in<'a>(faults: &'a dyn FaultPoints, probe: &'a ProbeFn<'a>) -> UpdateSettings<'a> {
+    pub(super) fn standing_in<'a>(
+        faults: &'a dyn FaultPoints,
+        probe: &'a ProbeFn<'a>,
+    ) -> UpdateSettings<'a> {
         UpdateSettings {
             faults,
             folders: &FolderChecks::SHIPPED,
@@ -1530,7 +1536,7 @@ mod tests {
 
     /// Updates the installation `fixture` from the launcher file `source` by the launcher of
     /// version `running`, with `job`'s cancel and progress and the world `settings` gives.
-    fn update_by(
+    pub(super) fn update_by(
         fixture: &InstallFixture,
         source: &mut Sections<File>,
         running: &str,
@@ -1547,7 +1553,7 @@ mod tests {
     }
 
     /// Updates as [`update_by`] does, with a cancel nobody makes and a progress nobody follows.
-    fn update_simply(
+    pub(super) fn update_simply(
         fixture: &InstallFixture,
         source: &mut Sections<File>,
         running: &str,
@@ -1563,7 +1569,7 @@ mod tests {
 
     /// The update that `result` says stands.
     #[track_caller]
-    fn updated(result: Result<UpdateOutcome, UpdateFailure>) -> Updated {
+    pub(super) fn updated(result: Result<UpdateOutcome, UpdateFailure>) -> Updated {
         match result {
             Ok(UpdateOutcome::Updated(updated)) => *updated,
             other => panic!("{other:?}"),
@@ -1572,10 +1578,59 @@ mod tests {
 
     /// The failure that `result` says the update ended in.
     #[track_caller]
-    fn failed(result: Result<UpdateOutcome, UpdateFailure>) -> UpdateFailure {
+    pub(super) fn failed(result: Result<UpdateOutcome, UpdateFailure>) -> UpdateFailure {
         match result {
             Err(failure) => failure,
             Ok(outcome) => panic!("{outcome:?}"),
+        }
+    }
+
+    /// Recovers the installation at `root` as the launcher of version `running` does as it
+    /// starts, with `job`'s cancel and progress and the world `settings` gives, for no list of
+    /// installations.
+    pub(super) fn recover_by(
+        root: &Path,
+        running: &str,
+        job: &Job<'_>,
+        settings: &UpdateSettings<'_>,
+    ) -> Result<Recovered, RecoverError> {
+        recover_with(root, &version(running), &mut Unrecorded, job, settings)
+    }
+
+    /// Recovers as [`recover_by`] does, with a cancel nobody makes and a progress nobody follows.
+    pub(super) fn recover_simply(
+        root: &Path,
+        running: &str,
+        settings: &UpdateSettings<'_>,
+    ) -> Result<Recovered, RecoverError> {
+        let cancel = Cancel::default();
+        let job = Job {
+            cancel: &cancel,
+            progress: &NoProgress,
+        };
+        recover_by(root, running, &job, settings)
+    }
+
+    /// What a recovery that found nothing to do gives.
+    pub(super) fn nothing_recovered() -> Recovered {
+        Recovered {
+            install: RecoveryOutcome::Nothing,
+            update: UpdateRecovery::Nothing,
+            swept: Vec::new(),
+            left: Vec::new(),
+        }
+    }
+
+    /// What a recovery that took an update back, restoring the launcher copy when
+    /// `launcher_restored`, and swept `swept` gives.
+    pub(super) fn rolled_back(launcher_restored: bool, swept: &[&str]) -> Recovered {
+        Recovered {
+            update: UpdateRecovery::RolledBack {
+                kept: Vec::new(),
+                launcher_restored,
+            },
+            swept: swept.iter().map(|&name| name.to_owned()).collect(),
+            ..nothing_recovered()
         }
     }
 
@@ -1583,14 +1638,14 @@ mod tests {
     /// the receipt's bytes, and the names in the state folder but the lock and an empty journal
     /// folder.
     #[derive(Debug, PartialEq, Eq)]
-    struct AsItWas {
+    pub(super) struct AsItWas {
         outside: BTreeMap<PathBuf, EntryState>,
         receipt: Vec<u8>,
         state: Vec<String>,
     }
 
     /// What the installation at `root` holds, as [`AsItWas`] keeps it.
-    fn as_it_is(root: &Path) -> AsItWas {
+    pub(super) fn as_it_is(root: &Path) -> AsItWas {
         AsItWas {
             outside: snapshot_outside(root, STATE_DIR).unwrap(),
             receipt: fs::read(root.join(STATE_DIR).join(RECEIPT_FILE)).unwrap(),
@@ -1603,14 +1658,14 @@ mod tests {
     /// folder's: every path outside the state folder with its kind and a file's bytes, the
     /// receipt's bytes, and the names in the state folder but the lock and an empty journal folder.
     #[derive(Debug, PartialEq, Eq)]
-    struct Contents {
+    pub(super) struct Contents {
         outside: BTreeMap<PathBuf, (fs::FileType, Option<[u8; 32]>)>,
         receipt: Vec<u8>,
         state: Vec<String>,
     }
 
     /// What the installation at `root` holds, as [`Contents`] keeps it.
-    fn contents_of(root: &Path) -> Contents {
+    pub(super) fn contents_of(root: &Path) -> Contents {
         let AsItWas {
             outside,
             receipt,
@@ -1628,7 +1683,7 @@ mod tests {
 
     /// The names in the state folder of the installation at `root`, but the lock and an empty
     /// journal folder, sorted.
-    fn state_names(root: &Path) -> Vec<String> {
+    pub(super) fn state_names(root: &Path) -> Vec<String> {
         let state = root.join(STATE_DIR);
         let journals_empty =
             fs::read_dir(state.join(JOURNAL_DIR)).is_ok_and(|mut names| names.next().is_none());
@@ -1642,7 +1697,7 @@ mod tests {
     }
 
     /// The update's staging folders in the state folder of the installation at `root`.
-    fn stagings(root: &Path) -> Vec<String> {
+    pub(super) fn stagings(root: &Path) -> Vec<String> {
         state_names(root)
             .into_iter()
             .filter(|name| name.starts_with("stage-"))
@@ -1651,7 +1706,7 @@ mod tests {
 
     /// The phase the update's journal in the installation at `root` records; `None` when there is
     /// no journal.
-    fn journal_phase(root: &Path) -> Option<String> {
+    pub(super) fn journal_phase(root: &Path) -> Option<String> {
         let path = root.join(STATE_DIR).join(JOURNAL_DIR).join(UPDATE_JOURNAL);
         let bytes = fs::read(path).ok()?;
         let journal: Value = serde_json::from_slice(&bytes).unwrap();
@@ -1659,7 +1714,7 @@ mod tests {
     }
 
     /// The receipt of the installation at `root`, as its file holds it.
-    fn receipt_at(root: &Path) -> Value {
+    pub(super) fn receipt_at(root: &Path) -> Value {
         let bytes = fs::read(root.join(STATE_DIR).join(RECEIPT_FILE)).unwrap();
         serde_json::from_slice(&bytes).unwrap()
     }
@@ -1676,7 +1731,7 @@ mod tests {
 
     /// How long a stand-in game runs once started, past the time a hold for it begins: on Windows
     /// past the scanner's grace.
-    fn running_for() -> Duration {
+    pub(super) fn running_for() -> Duration {
         let past_hold = Duration::from_millis(300);
         if cfg!(windows) {
             SCANNER_GRACE + past_hold
@@ -1687,7 +1742,7 @@ mod tests {
 
     /// A closed-game probe that finds the game closed for its first `closed_for` calls, then
     /// running for `running` from the first call that finds it so, then closed again.
-    struct StartedLater {
+    pub(super) struct StartedLater {
         closed_for: u32,
         running: Duration,
         calls: Cell<u32>,
@@ -1695,7 +1750,7 @@ mod tests {
     }
 
     impl StartedLater {
-        fn new(closed_for: u32, running: Duration) -> StartedLater {
+        pub(super) fn new(closed_for: u32, running: Duration) -> StartedLater {
             StartedLater {
                 closed_for,
                 running,
@@ -1704,7 +1759,7 @@ mod tests {
             }
         }
 
-        fn closed(&self, _: &Path) -> Result<(), GameUseError> {
+        pub(super) fn closed(&self, _: &Path) -> Result<(), GameUseError> {
             let call = self.calls.get() + 1;
             self.calls.set(call);
             if call <= self.closed_for {
@@ -1725,20 +1780,20 @@ mod tests {
 
     /// What an update told its progress of its phases and holds.
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-    enum Told {
+    pub(super) enum Told {
         Phase(&'static str),
         Held(Hold),
         Resumed,
     }
 
     /// A progress that keeps the phases and holds it is told, and runs `on_hold` as a hold begins.
-    struct Heard<'a> {
+    pub(super) struct Heard<'a> {
         told: Mutex<Vec<Told>>,
         on_hold: &'a (dyn Fn(Hold) + Sync),
     }
 
     impl<'a> Heard<'a> {
-        fn new(on_hold: &'a (dyn Fn(Hold) + Sync)) -> Heard<'a> {
+        pub(super) fn new(on_hold: &'a (dyn Fn(Hold) + Sync)) -> Heard<'a> {
             Heard {
                 told: Mutex::default(),
                 on_hold,
@@ -1746,7 +1801,7 @@ mod tests {
         }
 
         /// The holds and their ends told, in order.
-        fn holds(&self) -> Vec<Told> {
+        pub(super) fn holds(&self) -> Vec<Told> {
             let told = self.told.lock().unwrap();
             told.iter()
                 .copied()
@@ -1755,7 +1810,7 @@ mod tests {
         }
 
         /// Everything told, in order.
-        fn told(&self) -> Vec<Told> {
+        pub(super) fn told(&self) -> Vec<Told> {
             self.told.lock().unwrap().clone()
         }
     }
@@ -1823,6 +1878,8 @@ mod tests {
         assert_eq!(done.retired, RetiredCopy::Removed);
         assert_eq!(done.probed, Probed::Staged);
         assert!(done.notices.is_empty(), "{:?}", done.notices);
+        // Nothing was left to recover first.
+        assert_eq!(done.recovered, nothing_recovered());
 
         // The disc's and the player's files are as they were.
         assert_eq!(
@@ -1969,8 +2026,12 @@ mod tests {
             INSTALLED,
             &standing_in(&NoFaults, &answering),
         ) {
-            Ok(UpdateOutcome::AlreadyCurrent { version: current }) => {
+            Ok(UpdateOutcome::AlreadyCurrent {
+                version: current,
+                recovered,
+            }) => {
                 assert_eq!(current, version(INSTALLED));
+                assert_eq!(recovered, nothing_recovered());
             }
             other => panic!("{other:?}"),
         }
@@ -2253,21 +2314,24 @@ mod tests {
     }
 
     #[test]
-    fn a_job_left_unfinished_refuses_the_update() {
+    fn a_journal_that_cannot_be_recovered_refuses_the_update() {
         let (dir, fixture) = players_installation();
         let mut source = bundled(dir.path(), &fixture.runtime.next(NEXT));
         let journals = fixture.root.join(STATE_DIR).join(JOURNAL_DIR);
         fs::create_dir(&journals).unwrap();
+        // Each journal is recovered first, and refuses the update when its recovery is refused:
+        // an install's or an update's that holds no journal of its kind, a later launcher's, one of
+        // a kind this launcher does not know, and an expansion's, which it does not recover.
         let journals_of = [
             (
                 INSTALL_JOURNAL,
                 json!({"schema": 1, "minLauncher": INSTALLED}),
-                "unfinishedJob",
+                "journalUnreadable",
             ),
             (
                 UPDATE_JOURNAL,
                 json!({"schema": 1, "minLauncher": INSTALLED, "phase": "staged"}),
-                "unfinishedJob",
+                "journalUnreadable",
             ),
             (
                 UPDATE_JOURNAL,
@@ -2278,6 +2342,11 @@ mod tests {
                 "later.json",
                 json!({"schema": 1, "minLauncher": INSTALLED}),
                 "newerLauncher",
+            ),
+            (
+                "expansion-n64.json",
+                json!({"schema": 1, "minLauncher": INSTALLED}),
+                "otherJob",
             ),
         ];
         for (name, journal, rule) in journals_of {
@@ -2291,15 +2360,13 @@ mod tests {
                 &standing_in(&NoFaults, &answering),
             ));
             assert_eq!(failure.rule(), rule, "{name}: {failure:?}");
-            if let UpdateError::UnfinishedJob { journal } = &failure.error {
-                assert_eq!(&**journal, name);
-            }
             assert_eq!(failure.changes, Changes::None);
             assert_eq!(as_it_is(&fixture.root), before);
             retry_locked(|| fs::remove_file(&path)).unwrap();
         }
 
-        // What an interrupted write of a journal left is no journal, and goes with the update.
+        // What an interrupted write of a journal left is no journal: the recovery sweeps it away,
+        // and the update goes on.
         let pending = journals.join("update.json.pending");
         fs::write(&pending, b"{").unwrap();
         let done = updated(update_simply(
@@ -2309,7 +2376,46 @@ mod tests {
             &standing_in(&NoFaults, &answering),
         ));
         assert_eq!(done.to, version(NEXT));
+        assert_eq!(done.recovered.swept, ["journal/update.json.pending"]);
         assert!(!pending.exists());
+    }
+
+    #[test]
+    fn an_update_of_a_folder_whose_install_is_taken_back_finds_no_installation() {
+        // A fresh install's staging journal beside the state of an installation: the recovery the
+        // update makes first takes the install back, as the install's own rules say, and gives the
+        // lock up with it; what is left holds no installation to update.
+        let (dir, fixture) = players_installation();
+        let mut source = bundled(dir.path(), &fixture.runtime.next(NEXT));
+        let state = fixture.root.join(STATE_DIR);
+        retry_locked(|| fs::remove_file(state.join(RECEIPT_FILE))).unwrap();
+        fs::create_dir(state.join(JOURNAL_DIR)).unwrap();
+        fs::create_dir(state.join("install-AbC123xy")).unwrap();
+        let journal = json!({
+            "schema": 1,
+            "minLauncher": INSTALLED,
+            "phase": "staging",
+            "madeFolders": 0,
+            "staging": "install-AbC123xy",
+            "roots": [],
+            "published": [],
+        });
+        fs::write(
+            state.join(JOURNAL_DIR).join(INSTALL_JOURNAL),
+            pretty_json(&journal),
+        )
+        .unwrap();
+        let failure = failed(update_simply(
+            &fixture,
+            &mut source,
+            NEXT,
+            &standing_in(&NoFaults, &answering),
+        ));
+        // The state folder went with the install, so no lock can be taken again.
+        assert_eq!(failure.rule(), "noStateFolder", "{failure:?}");
+        assert_eq!(failure.changes, Changes::None);
+        assert!(!state.exists());
+        assert!(fixture.root.join(executable()).is_file());
     }
 
     #[test]
@@ -2810,11 +2916,11 @@ mod tests {
 
     /// Runs `act` once, at the first pass of `point` that finds the update's journal at
     /// `journal`.
-    struct OnceJournalled<'a> {
-        point: FaultPoint,
-        journal: PathBuf,
-        act: &'a dyn Fn(),
-        done: Cell<bool>,
+    pub(super) struct OnceJournalled<'a> {
+        pub(super) point: FaultPoint,
+        pub(super) journal: PathBuf,
+        pub(super) act: &'a dyn Fn(),
+        pub(super) done: Cell<bool>,
     }
 
     impl FaultPoints for OnceJournalled<'_> {
@@ -3008,7 +3114,7 @@ mod tests {
 
     /// The names in the state folder of the installation at `root` that a launcher copy of
     /// `version` was retired to.
-    fn retired_copies(root: &Path, version: &str) -> Vec<String> {
+    pub(super) fn retired_copies(root: &Path, version: &str) -> Vec<String> {
         let prefix = format!("{RETIRED_LAUNCHER_PREFIX}{version}-");
         state_names(root)
             .into_iter()
@@ -3111,10 +3217,35 @@ mod tests {
         assert_eq!(state_names(&fixture.root), [RECEIPT_FILE, name.as_str()]);
         let path = fixture.root.join(STATE_DIR).join(name);
         assert_eq!(fs::read(&path).unwrap(), new);
-        // The mapping alone holds it: refused while mapped, removed once let go.
-        assert!(fs::remove_file(&path).is_err());
+        // While mapped, a recovery sweeps it once and leaves it; once let go, the next one
+        // removes it. A scanner may look at the file a moment after the mapping goes, so a
+        // recovery that leaves it then is tried again.
+        let settings = standing_in(&NoFaults, &answering);
+        let left = Recovered {
+            left: vec![name.clone()],
+            ..nothing_recovered()
+        };
+        assert_eq!(
+            recover_simply(&fixture.root, INSTALLED, &settings).unwrap(),
+            left
+        );
+        assert!(path.is_file());
         drop(mapped.take());
-        retry_locked(|| fs::remove_file(&path)).unwrap();
+        let swept = Recovered {
+            swept: vec![name.clone()],
+            ..nothing_recovered()
+        };
+        let deadline = Instant::now() + gdl_files::RETRY_WINDOW;
+        loop {
+            let recovered = recover_simply(&fixture.root, INSTALLED, &settings).unwrap();
+            if recovered == swept || Instant::now() > deadline {
+                assert_eq!(recovered, swept);
+                break;
+            }
+            assert_eq!(recovered, left);
+            std::thread::sleep(gdl_files::RETRY_INTERVAL);
+        }
+        assert_eq!(state_names(&fixture.root), [RECEIPT_FILE]);
     }
 
     #[test]
@@ -3122,6 +3253,7 @@ mod tests {
         let (dir, fixture) = players_installation();
         let root = fixture.root.clone();
         let mut source = bundled(dir.path(), &fixture.runtime.newer(NEXT));
+        let before = contents_of(&root);
         let old_launcher = fs::read(root.join(launcher_copy())).unwrap();
         let replace = FailAt::new(FaultPoint::LauncherReplace, 2);
         // The rollback's third pass: the new launcher copy gone aside, the installed one back,
@@ -3158,6 +3290,12 @@ mod tests {
         assert_eq!(stagings(&root).len(), 1);
         assert_eq!(fs::read(root.join(launcher_copy())).unwrap(), old_launcher);
         assert_eq!(receipt_at(&root)["version"], json!(INSTALLED));
+
+        // The next start goes on taking it back from where it stopped, the installed launcher
+        // copy back in place already.
+        let recovered = recover_simply(&root, NEXT, &standing_in(&NoFaults, &answering));
+        assert_eq!(recovered.unwrap(), rolled_back(false, &[]));
+        assert_eq!(contents_of(&root), before);
     }
 
     #[test]
@@ -3187,6 +3325,18 @@ mod tests {
         assert_eq!(fs::read(root.join("VERSION")).unwrap(), b"1.0.0-beta\n");
         assert!(stagings(&root).is_empty());
         assert_eq!(receipt_at(&root)["version"], json!(INSTALLED));
+
+        // The next start finds the same, and keeps the file and the journal for whoever looks.
+        let before = as_it_is(&root);
+        let recovered = recover_simply(&root, NEXT, &standing_in(&NoFaults, &answering));
+        match recovered {
+            Err(RecoverError::UpdateInconsistent { detail }) => {
+                assert!(detail.contains("do-not-delete"), "{detail}");
+            }
+            other => panic!("{other:?}"),
+        }
+        assert_eq!(as_it_is(&root), before);
+        assert_eq!(fs::read(&stray).unwrap(), b"kept for whoever looks");
     }
 
     #[test]
@@ -3204,6 +3354,7 @@ mod tests {
             let (dir, fixture) = players_installation();
             let root = fixture.root.clone();
             let mut source = bundled(dir.path(), &fixture.runtime.newer(NEXT));
+            let before = contents_of(&root);
             let journalled = OnceJournalled {
                 point: FaultPoint::UpdateStage,
                 journal: root.join(STATE_DIR).join(JOURNAL_DIR).join(UPDATE_JOURNAL),
@@ -3245,6 +3396,16 @@ mod tests {
                 usize::from(at == "launcher")
             );
             drop(InstallFolder::at(&root).unwrap().lock().unwrap());
+
+            // The next start takes the update back from what was left: as the launcher copy went
+            // aside, it comes back in place.
+            let recovered = recover_simply(&root, NEXT, &standing_in(&NoFaults, &answering));
+            assert_eq!(
+                recovered.unwrap(),
+                rolled_back(at == "launcher", &[]),
+                "{at}"
+            );
+            assert_eq!(contents_of(&root), before, "{at}");
         }
     }
 
@@ -3356,7 +3517,7 @@ mod tests {
     }
 
     #[test]
-    fn a_cleanup_that_stops_keeps_the_journal_for_the_next_start() {
+    fn a_partial_cleanup_keeps_the_journal_until_the_backup_is_gone() {
         let (dir, fixture) = players_installation();
         let next = fixture.runtime.next(NEXT);
         let (_, mut source) = bundled_as(dir.path(), "next-launcher", &next);
@@ -3388,14 +3549,78 @@ mod tests {
             .unwrap();
         assert_eq!(installed.build_info.version(), version(NEXT));
 
-        // Another update waits for that cleanup.
+        // The next start finishes the cleanup the journal records, the journal last.
+        let recovered = recover_simply(&fixture.root, NEXT, &standing_in(&NoFaults, &answering));
+        assert_eq!(
+            recovered.unwrap(),
+            Recovered {
+                update: UpdateRecovery::CleanedUp,
+                ..nothing_recovered()
+            }
+        );
+        assert_eq!(state_names(&fixture.root), [RECEIPT_FILE]);
+
+        // Without a journal, a pending file of it and an empty backup are only leftovers, which a
+        // recovery sweeps.
+        fs::create_dir(state.join(UPDATE_BACKUP)).unwrap();
+        fs::write(
+            state.join(JOURNAL_DIR).join("update.json.pending"),
+            b"{\"phase\": \"committed\"",
+        )
+        .unwrap();
+        let recovered = recover_simply(&fixture.root, NEXT, &standing_in(&NoFaults, &answering));
+        assert_eq!(
+            recovered.unwrap(),
+            Recovered {
+                swept: vec![
+                    "journal/update.json.pending".to_owned(),
+                    UPDATE_BACKUP.to_owned()
+                ],
+                ..nothing_recovered()
+            }
+        );
+        assert_eq!(state_names(&fixture.root), [RECEIPT_FILE]);
+    }
+
+    #[test]
+    fn a_backup_that_cannot_go_yet_is_a_success_cleaned_later() {
+        let (dir, fixture) = players_installation();
+        let next = fixture.runtime.next(NEXT);
+        let (_, mut source) = bundled_as(dir.path(), "next-launcher", &next);
+        // The cleanup stops once the staging went, the backup still there, in the update and in
+        // the first recovery after it.
+        let fail = FailAt::new(FaultPoint::UpdateCleanup, 1);
+        let done = updated(update_simply(
+            &fixture,
+            &mut source,
+            NEXT,
+            &standing_in(&fail, &answering),
+        ));
+        assert!(
+            matches!(done.notices.as_slice(), [UpdateNotice::CleanupLeft { .. }]),
+            "{:?}",
+            done.notices
+        );
+        let fail = FailAt::new(FaultPoint::UpdateCleanup, 1);
+        let recovered = recover_simply(&fixture.root, NEXT, &standing_in(&fail, &answering));
+        let recovered = recovered.unwrap();
+        assert!(
+            matches!(recovered.update, UpdateRecovery::CleanupLeft { .. }),
+            "{recovered:?}"
+        );
+        assert!(recovered.swept.is_empty(), "{recovered:?}");
+        assert_eq!(journal_phase(&fixture.root).as_deref(), Some("committed"));
+        assert!(fixture.root.join(STATE_DIR).join(UPDATE_BACKUP).is_dir());
+
+        // Another update finds the cleanup still left, and changes nothing.
         let (_, mut later) = bundled_as(dir.path(), "later-launcher", &next.next(LATER));
         let before = as_it_is(&fixture.root);
+        let fail = FailAt::new(FaultPoint::UpdateCleanup, 1);
         let failure = failed(update_simply(
             &fixture,
             &mut later,
             LATER,
-            &standing_in(&NoFaults, &answering),
+            &standing_in(&fail, &answering),
         ));
         assert!(
             matches!(failure.error, UpdateError::CleanupPending),
@@ -3403,12 +3628,25 @@ mod tests {
         );
         assert_eq!(failure.changes, Changes::None);
         assert_eq!(as_it_is(&fixture.root), before);
+
+        // Once nothing holds the backup, the next start removes it, and the player's files stay.
+        let recovered = recover_simply(&fixture.root, NEXT, &standing_in(&NoFaults, &answering));
+        assert_eq!(recovered.unwrap().update, UpdateRecovery::CleanedUp);
+        assert_eq!(state_names(&fixture.root), [RECEIPT_FILE]);
+        for name in PLAYERS_FILES {
+            assert_eq!(
+                fs::read(under(&fixture.root, name)).unwrap(),
+                PLAYERS_BYTES,
+                "{name}"
+            );
+        }
+        assert_eq!(receipt_at(&fixture.root)["version"], json!(NEXT));
     }
 
     #[test]
-    fn a_failure_past_the_receipt_is_still_an_update() {
+    fn a_cleanup_failure_after_the_commit_keeps_the_new_version() {
         let (dir, fixture) = players_installation();
-        let mut source = bundled(dir.path(), &fixture.runtime.next(NEXT));
+        let mut source = bundled(dir.path(), &fixture.runtime.newer(NEXT));
         // The pass after the receipt is written.
         let fail = FailAt::new(FaultPoint::UpdateCommit, 2);
         let done = updated(update_simply(
@@ -3428,14 +3666,30 @@ mod tests {
             done.retired
         );
         assert_eq!(journal_phase(&fixture.root).as_deref(), Some("swapping"));
-        assert_eq!(
-            receipt_at(&fixture.root),
-            serde_json::to_value(&done.receipt).unwrap()
-        );
+        let written = serde_json::to_value(&done.receipt).unwrap();
+        assert_eq!(receipt_at(&fixture.root), written);
         assert_eq!(
             fs::read(fixture.root.join("VERSION")).unwrap(),
             b"1.0.0-beta.1\n"
         );
+
+        // The receipt stands, so the next start finishes the update rather than take it back.
+        let recovered = recover_simply(&fixture.root, NEXT, &standing_in(&NoFaults, &answering));
+        assert_eq!(
+            recovered.unwrap(),
+            Recovered {
+                update: UpdateRecovery::Finished,
+                ..nothing_recovered()
+            }
+        );
+        assert_eq!(receipt_at(&fixture.root), written);
+        assert_eq!(
+            fs::read(fixture.root.join("VERSION")).unwrap(),
+            b"1.0.0-beta.1\n"
+        );
+        let game = fs::read(fixture.root.join(executable())).unwrap();
+        assert!(game.starts_with(b"new-runtime"), "{game:?}");
+        assert_eq!(state_names(&fixture.root), [RECEIPT_FILE]);
     }
 
     #[test]

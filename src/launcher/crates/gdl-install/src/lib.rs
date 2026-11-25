@@ -23,6 +23,7 @@ mod payload;
 mod platform;
 mod probe;
 mod receipt;
+mod recover;
 mod sections;
 mod system_proxy;
 #[cfg(test)]
@@ -71,15 +72,16 @@ pub use receipt::{
     DiscIcon, GUNE5D, InstalledGame, InstalledLauncher, MAX_RECEIPT_LEN, RECEIPT_SCHEMA, Receipt,
     ReceiptError, installed_launcher_name,
 };
+pub use recover::{RecoverError, Recovered, UpdateRecovery, recover};
 pub use sections::{
     MAX_SECTION_LEN, MAX_SECTION_NAME, MAX_TABLE_LEN, RUNTIME_SECTION, Section, SectionView,
     Sections, SectionsError, WINDOW_SECTION,
 };
 pub use system_proxy::internet_settings;
 pub use update::{
-    CHECK_INSTALLED, CLEANUP, DOWNLOAD_PREFIX, FileChanges, PlanSource, Probed,
-    RETIRED_LAUNCHER_PREFIX, RetiredCopy, STAGE, SWAP, SourceSummary, UPDATE_BACKUP,
-    UPDATE_JOURNAL, UPDATE_STAGING_PREFIX, UpdateError, UpdateFailure, UpdateNotice, UpdateOutcome,
-    UpdatePhase, UpdatePlan, UpdateRequest, UpdateSource, Updated, VERIFY_DOWNLOAD, plan_update,
-    update,
+    CHECK_INSTALLED, CLEANUP, DOWNLOAD_PREFIX, FINISH_CLEANUP, FileChanges, PlanSource, Probed,
+    RECOVER_UPDATE, RETIRED_LAUNCHER_PREFIX, RetiredCopy, STAGE, SWAP, SourceSummary,
+    UPDATE_BACKUP, UPDATE_JOURNAL, UPDATE_STAGING_PREFIX, UpdateError, UpdateFailure, UpdateNotice,
+    UpdateOutcome, UpdatePhase, UpdatePlan, UpdateRequest, UpdateSource, Updated, VERIFY_DOWNLOAD,
+    plan_update, update,
 };

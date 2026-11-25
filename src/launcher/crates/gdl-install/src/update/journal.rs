@@ -202,6 +202,26 @@ pub(crate) fn retired_name(from: &str, staging: &str, platform: Platform) -> Opt
     Some(format!("{RETIRED_LAUNCHER_PREFIX}{from}-{random}{suffix}"))
 }
 
+/// Whether `name`, in the state folder, is one an update gives a launcher copy for `platform` it
+/// moves aside, as [`retired_name`] makes one: the prefix, a semantic version, a dash and a
+/// staging's random part, with Windows' suffix on Windows and none on Linux.
+pub(crate) fn is_retired_launcher_name(name: &str, platform: Platform) -> bool {
+    let suffix = match platform {
+        Platform::WindowsX64 => ".exe",
+        Platform::LinuxX64 => "",
+    };
+    let Some(rest) = name
+        .strip_prefix(RETIRED_LAUNCHER_PREFIX)
+        .and_then(|rest| rest.strip_suffix(suffix))
+    else {
+        return false;
+    };
+    // A staging's random part alone is a staging's name of no prefix.
+    rest.rsplit_once('-').is_some_and(|(version, random)| {
+        is_staging_name("", random) && Version::parse(version).is_ok()
+    })
+}
+
 /// A staging's name of the length an update's has, which stands for the one an update makes
 /// while the journal it would write is judged by its size, before anything is staged.
 pub(super) const PLANNED_STAGING: &str = "stage-00000000";
@@ -257,6 +277,15 @@ impl JournalFile {
         };
         file.write()?;
         Ok(file)
+    }
+
+    /// The journal `journal`, as a recovery read it from the journal folder `folder`, to be
+    /// changed as the recovery goes on. Nothing is written.
+    pub(super) fn resume(folder: &Path, journal: UpdateJournal) -> JournalFile {
+        JournalFile {
+            path: folder.join(UPDATE_JOURNAL),
+            journal,
+        }
     }
 
     /// The journal file.

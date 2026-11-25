@@ -10,7 +10,8 @@
 //! From the swap on, until the receipt stands, it is taken back from its journal alone, from
 //! wherever it stopped: the journal moved to rolling back, every move undone in the reverse order,
 //! each name's place telling whether its move was made, then what the update left in the state
-//! folder removed, the journal last.
+//! folder removed, the journal last. The next start's recovery takes an update back, and cleans
+//! one up, the same way.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -27,6 +28,7 @@ use super::journal::{
     DOWNLOAD_PREFIX, JournalFile, UPDATE_BACKUP, UPDATE_STAGING_PREFIX, UpdatePhase,
     remove_if_there, retired_name,
 };
+use super::settings::WriteReceiptFn;
 use super::stage::Staged;
 use super::{
     CLEANUP, RetiredCopy, SWAP, Update, UpdateError, UpdateFailure, UpdateNotice, UpdateOutcome,
@@ -36,16 +38,19 @@ use crate::faults::{FaultPoint, FaultPoints};
 use crate::folder::{InstallFolder, InstallLock, RECEIPT_FILE};
 use crate::install::Changes;
 use crate::receipt::{MAX_RECEIPT_LEN, Receipt, installed_launcher_name};
+use crate::recover::Recovered;
 
 impl Update<'_> {
     /// Swaps the staged release in, writes its receipt and cleans up, as the module says, and
-    /// gives what the update did. A failure before the journal records the swap takes back what
-    /// was staged; from then on until the receipt stands, every move made is taken back from the
-    /// journal; and past the receipt a failure is a notice.
+    /// gives what the update did, with what its recovery did first, `recovered`. A failure before
+    /// the journal records the swap takes back what was staged; from then on until the receipt
+    /// stands, every move made is taken back from the journal; and past the receipt a failure is a
+    /// notice.
     pub(super) fn swap(
         &self,
         staged: Staged,
         lock: InstallLock,
+        recovered: Recovered,
     ) -> Result<UpdateOutcome, UpdateFailure> {
         let Staged {
             staging,
@@ -92,11 +97,12 @@ impl Update<'_> {
             .pass(FaultPoint::UpdateCommit, journal.path())
             .and_then(|()| journal.committed())
             .and_then(|()| self.pass(FaultPoint::UpdateCommit, journal.path()));
+        // Kept: the cleanup removes it by the name the journal gives.
+        drop(staging);
         let retired = match committed {
             Ok(()) => {
                 self.job.progress.phase(CLEANUP);
-                let (retired, cleaned) =
-                    self.clean_up(staging, &journal, launcher_missing, &retired_name);
+                let (retired, cleaned) = clean_up(&self.folder, &journal, self.settings.faults);
                 if let Err(error) = cleaned {
                     notices.push(cleanup_left(&error));
                 }
@@ -118,6 +124,7 @@ impl Update<'_> {
             to,
             receipt,
             changes,
+            recovered,
             retired,
             probed,
             notices,
@@ -201,15 +208,10 @@ impl Update<'_> {
         self.pass(FaultPoint::LauncherReplace, &installed)
     }
 
-    /// Writes `receipt` as the installation's own: the commit point. A write that failed is the
-    /// commit too when it left the new receipt in place, as one can after its rename, in putting
-    /// the rename on disk; otherwise it is the update's failure.
+    /// Writes `receipt` as the installation's own: the commit point, as [`commit_receipt`] writes
+    /// it.
     fn commit(&self, receipt: &Receipt) -> Result<(), UpdateError> {
-        match (self.settings.write_receipt)(receipt, &self.folder) {
-            Ok(()) => Ok(()),
-            Err(_) if receipt_committed(receipt, &self.folder) => Ok(()),
-            Err(error) => Err(files_error(error)),
-        }
+        commit_receipt(receipt, &self.folder, self.settings.write_receipt)
     }
 
     /// The update's failure for `error` once the journal recorded the swap and before the
@@ -224,57 +226,87 @@ impl Update<'_> {
         };
         UpdateFailure { error, changes }
     }
+}
 
-    /// Cleans up once the journal records the update committed, passing
-    /// [`FaultPoint::UpdateCleanup`] after each step: the staging goes, then the backup, then the
-    /// retired launcher copy is tried once, outside the retries a scanner's hold gets, since on
-    /// Windows a launcher still running from it holds it; then the journal, its pending file and
-    /// the receipt's. A failure among the first two stops the cleanup with the journal kept for the
-    /// next start; a retired copy that stays is only told.
-    fn clean_up(
-        &self,
-        staging: Staging,
-        journal: &JournalFile,
-        launcher_missing: bool,
-        retired_name: &str,
-    ) -> (RetiredCopy, Result<(), UpdateError>) {
-        let state = self.folder.state_dir();
-        let aside = state.join(UPDATE_BACKUP);
-        let staging_path = staging.path().to_path_buf();
-        let removed = remove_staging(staging)
-            .map_err(files_error)
-            .and_then(|()| self.pass(FaultPoint::UpdateCleanup, &staging_path))
-            .and_then(|()| remove_folder(&aside).map_err(files_error))
-            .and_then(|()| self.pass(FaultPoint::UpdateCleanup, &aside));
-        if let Err(error) = removed {
-            return (
-                left_retired(launcher_missing, retired_name.to_owned()),
-                Err(error),
-            );
-        }
-        let retired_path = state.join(retired_name);
-        let retired = if launcher_missing {
-            RetiredCopy::NotMoved
-        } else {
-            match fs::remove_file(&retired_path) {
-                Ok(()) => RetiredCopy::Removed,
-                Err(error) if is_absent(&error) => RetiredCopy::Removed,
-                Err(_) => RetiredCopy::Left {
-                    name: retired_name.to_owned(),
-                },
-            }
-        };
-        let finished = self
-            .pass(FaultPoint::UpdateCleanup, &retired_path)
-            .and_then(|()| {
-                journal
-                    .remove()
-                    .and_then(|()| remove_if_there(&pending_path(journal.path())))
-                    .and_then(|()| remove_if_there(&pending_path(&state.join(RECEIPT_FILE))))
-                    .map_err(files_error)
-            });
-        (retired, finished)
+/// Cleans up the update of the installation `folder` whose journal `journal` records it
+/// committed, passing [`FaultPoint::UpdateCleanup`] at `faults` after each step: the staging the
+/// journal names goes, then the backup, then the download folder when it names one, then the
+/// retired launcher copy is tried once, outside the retries a scanner's hold gets, since on
+/// Windows a launcher still running from it holds it; then the journal, its pending file and the
+/// receipt's. A failure among the first three stops the cleanup with the journal kept for the
+/// next start; a retired copy that stays is only told. Gives what became of the retired copy, and
+/// how the cleanup ended.
+pub(super) fn clean_up(
+    folder: &InstallFolder,
+    journal: &JournalFile,
+    faults: &dyn FaultPoints,
+) -> (RetiredCopy, Result<(), UpdateError>) {
+    let written = journal.journal();
+    let state = folder.state_dir();
+    let aside = state.join(UPDATE_BACKUP);
+    let pass = |at: &Path| pass_cleanup(faults, at);
+    let mut removed = remove_named(&state, UPDATE_STAGING_PREFIX, &written.staging)
+        .map_err(files_error)
+        .and_then(|()| pass(&state.join(&written.staging)))
+        .and_then(|()| remove_folder(&aside).map_err(files_error))
+        .and_then(|()| pass(&aside));
+    if let Some(download) = &written.download {
+        removed = removed
+            .and_then(|()| remove_named(&state, DOWNLOAD_PREFIX, download).map_err(files_error))
+            .and_then(|()| pass(&state.join(download)));
     }
+    if let Err(error) = removed {
+        return (
+            left_retired(written.launcher_missing, written.retired.clone()),
+            Err(error),
+        );
+    }
+    let retired_path = state.join(&written.retired);
+    let retired = if written.launcher_missing {
+        RetiredCopy::NotMoved
+    } else {
+        match fs::remove_file(&retired_path) {
+            Ok(()) => RetiredCopy::Removed,
+            Err(error) if is_absent(&error) => RetiredCopy::Removed,
+            Err(_) => RetiredCopy::Left {
+                name: written.retired.clone(),
+            },
+        }
+    };
+    let finished = pass(&retired_path).and_then(|()| {
+        journal
+            .remove()
+            .and_then(|()| remove_if_there(&pending_path(journal.path())))
+            .and_then(|()| remove_if_there(&pending_path(&state.join(RECEIPT_FILE))))
+            .map_err(files_error)
+    });
+    (retired, finished)
+}
+
+/// Writes `receipt` as the installation `folder`'s own, by `write`: the commit point. A write
+/// that failed is the commit too when it left the new receipt in place, as one can after its
+/// rename, in putting the rename on disk; otherwise it is the update's failure.
+pub(super) fn commit_receipt(
+    receipt: &Receipt,
+    folder: &InstallFolder,
+    write: &WriteReceiptFn<'_>,
+) -> Result<(), UpdateError> {
+    match write(receipt, folder) {
+        Ok(()) => Ok(()),
+        Err(_) if receipt_committed(receipt, folder) => Ok(()),
+        Err(error) => Err(files_error(error)),
+    }
+}
+
+/// Passes [`FaultPoint::UpdateCleanup`] at `faults`, a failure there reported as one at `at`, what
+/// the step before it removed.
+fn pass_cleanup(faults: &dyn FaultPoints, at: &Path) -> Result<(), UpdateError> {
+    faults
+        .pass(FaultPoint::UpdateCleanup)
+        .map_err(|source| UpdateError::Io {
+            path: at.to_path_buf(),
+            source,
+        })
 }
 
 /// Takes back an update whose journal, when it was written, still records it staged: nothing has
@@ -297,12 +329,18 @@ pub(super) fn discard(
     pass_rollback(faults, journal.path())
 }
 
-/// What taking an update back left of it in the installation.
+/// What taking an update back did, and left of it in the installation.
 #[derive(Debug)]
 pub(super) struct TakenBack {
     /// The folders the swap made for new names that stay where they are, as something was put in
     /// them since, or something other than a folder stands in their place.
     pub(super) kept: Vec<String>,
+    /// Whether the installed launcher copy was put back in place from its retired name, so that
+    /// the file at the installation's top is another than before the rollback.
+    pub(super) launcher_restored: bool,
+    /// The new launcher copy's retired name, in the state folder, when it was moved aside and its
+    /// one removal failed, as a launcher running from it holds it on Windows.
+    pub(super) left: Option<String>,
 }
 
 /// Takes back the update whose journal is `journal`, in the installation `folder` for
@@ -341,12 +379,16 @@ pub(super) fn roll_back(
         journal.rolling_back()?;
     }
     let taking = TakingBack::of(folder, journal, platform, faults)?;
-    taking.launcher()?;
+    let launcher_restored = taking.launcher()?;
     taking.published()?;
     let kept = taking.made_folders()?;
     taking.backed_up()?;
-    taking.leftovers()?;
-    Ok(TakenBack { kept })
+    let left = taking.leftovers()?;
+    Ok(TakenBack {
+        kept,
+        launcher_restored,
+        left,
+    })
 }
 
 /// What a rollback works from: where the installation, its state, the update's staging and its
@@ -392,8 +434,9 @@ impl<'a> TakingBack<'a> {
         })
     }
 
-    /// Puts the installed launcher copy back in its place, as [`roll_back`]'s first step says.
-    fn launcher(&self) -> Result<(), UpdateError> {
+    /// Puts the installed launcher copy back in its place, as [`roll_back`]'s first step says, and
+    /// says whether it moved it there from its retired name.
+    fn launcher(&self) -> Result<bool, UpdateError> {
         let written = self.journal.journal();
         let installed = self.root.join(&written.launcher);
         let in_place = is_there(&installed)?;
@@ -402,13 +445,13 @@ impl<'a> TakingBack<'a> {
             if in_place && !staged {
                 self.move_back(&installed, &self.new_copy)?;
             }
-            return Ok(());
+            return Ok(false);
         }
         let retired = self.state.join(&written.retired);
         if !is_there(&retired)? {
             // Never moved aside, or back already.
             return if in_place {
-                Ok(())
+                Ok(false)
             } else {
                 Err(inconsistent(format!(
                     "the launcher copy {} is neither in place nor retired",
@@ -426,7 +469,8 @@ impl<'a> TakingBack<'a> {
             }
             self.move_back(&installed, &self.new_copy)?;
         }
-        self.move_back(&retired, &installed)
+        self.move_back(&retired, &installed)?;
+        Ok(true)
     }
 
     /// Moves each new name the swap put in place back into the staging, as [`roll_back`]'s
@@ -520,8 +564,9 @@ impl<'a> TakingBack<'a> {
         Ok(())
     }
 
-    /// Removes what the update left in the state folder, as [`roll_back`]'s last step says.
-    fn leftovers(&self) -> Result<(), UpdateError> {
+    /// Removes what the update left in the state folder, as [`roll_back`]'s last step says, and
+    /// gives the new launcher copy's retired name when it stays.
+    fn leftovers(&self) -> Result<Option<String>, UpdateError> {
         let written = self.journal.journal();
         remove_made_by_update(&self.state, UPDATE_STAGING_PREFIX, &written.staging)?;
         self.pass(&self.staging)?;
@@ -533,12 +578,20 @@ impl<'a> TakingBack<'a> {
         }
         // Tried once: a copy that stays, as a launcher running from it holds it, is left for the
         // next start, and no journal needs to name it.
-        let _ = fs::remove_file(&self.new_copy);
+        let left = match fs::remove_file(&self.new_copy) {
+            Err(error) if !is_absent(&error) => self
+                .new_copy
+                .file_name()
+                .and_then(|name| name.to_str())
+                .map(str::to_owned),
+            _ => None,
+        };
         self.pass(&self.new_copy)?;
         remove_if_there(&pending_path(self.journal.path())).map_err(rollback_files)?;
         remove_if_there(&pending_path(&self.state.join(RECEIPT_FILE))).map_err(rollback_files)?;
         self.journal.remove().map_err(rollback_files)?;
-        self.pass(self.journal.path())
+        self.pass(self.journal.path())?;
+        Ok(left)
     }
 
     /// Moves `from` back to `to`, by a rename that never replaces anything, once neither `from`,
@@ -589,7 +642,7 @@ fn rollback_files(error: FilesError) -> UpdateError {
 }
 
 /// Whether anything is at `path`, looked at without following a link.
-fn is_there(path: &Path) -> Result<bool, UpdateError> {
+pub(super) fn is_there(path: &Path) -> Result<bool, UpdateError> {
     match fs::symlink_metadata(path) {
         Ok(_) => Ok(true),
         Err(error) if is_absent(&error) => Ok(false),
@@ -613,12 +666,20 @@ fn make_folders_above(path: &Path) -> Result<(), UpdateError> {
 }
 
 /// Removes the folder `name` that an update made in the state folder `state` with `prefix`, with
-/// whatever it holds, counting one already gone as removed.
+/// whatever it holds, counting one already gone as removed; a link on the way is a rollback's
+/// [`UpdateError::Inconsistent`].
 fn remove_made_by_update(state: &Path, prefix: &str, name: &str) -> Result<(), UpdateError> {
+    remove_named(state, prefix, name).map_err(rollback_files)
+}
+
+/// Removes the folder `name` that a job made in the state folder `state` with `prefix`, with
+/// whatever it holds, once neither it nor a folder above it is a link, counting one already gone
+/// as removed.
+pub(crate) fn remove_named(state: &Path, prefix: &str, name: &str) -> Result<(), FilesError> {
     match Staging::reopen(state, prefix, name) {
-        Ok(staging) => remove_staging(staging).map_err(rollback_files),
+        Ok(staging) => remove_staging(staging),
         Err(FilesError::Io { source, .. }) if is_absent(&source) => Ok(()),
-        Err(error) => Err(rollback_files(error)),
+        Err(error) => Err(error),
     }
 }
 
@@ -673,7 +734,7 @@ fn remove_staging(staging: Staging) -> Result<(), FilesError> {
 
 /// Removes the folder `path` with whatever it holds, a link in it as the link alone, counting one
 /// already gone as removed. A removal a scanner's hold refuses for a moment is tried again.
-fn remove_folder(path: &Path) -> Result<(), FilesError> {
+pub(crate) fn remove_folder(path: &Path) -> Result<(), FilesError> {
     match retry_locked(|| fs::remove_dir_all(path)) {
         Ok(()) => Ok(()),
         Err(error) if is_absent(&error) => Ok(()),
@@ -754,9 +815,10 @@ fn cleanup_left(error: &UpdateError) -> UpdateNotice {
     }
 }
 
-/// Whether the receipt `new`, whose write failed, is in place as `folder`'s receipt: read back,
-/// once a file is seen at its name, as the installation's receipt is read, and the same receipt.
-fn receipt_committed(new: &Receipt, folder: &InstallFolder) -> bool {
+/// Whether the receipt `new` is in place as `folder`'s receipt, as after a write of it that
+/// failed: read back, once a file is seen at its name, as the installation's receipt is read, and
+/// the same receipt.
+pub(super) fn receipt_committed(new: &Receipt, folder: &InstallFolder) -> bool {
     let path = folder.state_dir().join(RECEIPT_FILE);
     if !fs::symlink_metadata(&path).is_ok_and(|entry| entry.is_file()) {
         return false;
