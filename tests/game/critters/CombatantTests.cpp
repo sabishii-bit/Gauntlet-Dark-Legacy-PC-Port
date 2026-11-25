@@ -3929,32 +3929,98 @@ TEST_CASE("node-based critters use solid animated parts for player movement cont
     }
 }
 
-TEST_CASE("a great one's step stops only at the last standing player in seat order",
-          "[combatant][critter-contact]") {
-    // CritterCollidePlayers (0x800351B0) walks gPlayers in seat order and pushes every standing
-    // player it meets, but each standing player overwrites whether the step stops (0x80035290,
-    // 0x800352F4), which is tested once after the walk (0x800353D4); CritterTranslate skips the
-    // turn on any player met (0x8003AF24).
+/** A general a unit wide whose stance turns it three radians a second, its body centre as
+ * high as a player's. */
+void loadStanceGeneral(test::FakeRenderDevice& device, CombatantAssets& assets) {
     const auto root = familyAssets();
     writeTextFile(root / "critter/GENERAL.json", R"({
       "descriptors":[{"prefix":"BODY","name":"GENERAL","type":8}],
       "types":[{"moveCount":1,"maxHealth":100,"radius":2,"wallRadius":1,
                 "floorOffset":2,"originOffset":[0,4,0]}],
       "moves":[{"name":"READY","anim":"STEP","type":32,"interrupt":0,"turnRate":3}]})");
+    REQUIRE(assets.load(device, root, General::definition(), 'G'));
+}
+
+/** The player in `player`'s seat standing at `x` along the x axis, its middle as high as a
+ * stance general's. */
+EnemyView seatAt(s32 player, f32 x) {
+    EnemyView view;
+    view.player = player;
+    view.position = {x, 0, 0};
+    view.collisionHeight = 6.0f;
+    return view;
+}
+
+/** A golem a unit wide, without collision, whose rams and tramples do its seven times the
+ * level's damage of two: fourteen. */
+void spawnTramplingGolem(test::FakeRenderDevice& device, CombatantAssets& assets,
+                         Combatant& actor) {
+    const auto root = familyAssets();
+    const auto& golem = Golem::definition();
+    writeTextFile(root / "critter" / (golem.name + ".json"),
+                  R"({"descriptors":[{"prefix":"BODY","name":")" + golem.name + R"(","type":)" +
+                      std::to_string(static_cast<s32>(golem.kind)) + R"(}],
+      "types":[{"moveCount":1,"maxHealth":100,"radius":2,"wallRadius":1,"damageScale":7}],
+      "moves":[{"name":"READY","anim":"STEP","type":32,"interrupt":0}]})");
+    REQUIRE(assets.load(device, root, golem, 'G'));
+    EnemyScales scales;
+    scales.damage = 2;
+    REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, scales, 'G'));
+}
+
+/** Level ground from `nearX` to `farX` along x, forty across. */
+void addGround(std::vector<CollisionTriangle>& triangles, f32 nearX, f32 farX) {
+    CollisionTriangle first;
+    first.vertices = {Vec3{nearX, 0, -20}, Vec3{farX, 0, 20}, Vec3{farX, 0, -20}};
+    CollisionTriangle second;
+    second.vertices = {Vec3{nearX, 0, -20}, Vec3{nearX, 0, 20}, Vec3{farX, 0, 20}};
+    triangles.push_back(first);
+    triangles.push_back(second);
+}
+
+/** Level ground forty by forty, one object with `flags`: felling ground (0x30000) does fifteen
+ * a step. */
+struct FlaggedGround {
+    explicit FlaggedGround(u32 flags) {
+        std::vector<CollisionTriangle> triangles;
+        addGround(triangles, -20, 20);
+        for (CollisionTriangle& triangle : triangles) {
+            triangle.object = 0;
+        }
+        collision.build(triangles);
+        const std::array objectFlags{flags};
+        hazards.bindFlags(objectFlags);
+    }
+    HazardSurfaces hazards;
+    WorldCollision collision;
+};
+
+/** A golem a unit wide with a thousand health standing on `ground`, which may hurt it. */
+void spawnOnGround(test::FakeRenderDevice& device, CombatantAssets& assets, Combatant& actor,
+                   FlaggedGround& ground) {
+    const auto root = familyAssets();
+    writeTextFile(root / "critter/GOLEM.json", R"({
+      "descriptors":[{"prefix":"BODY","name":"GOLEM","type":3}],
+      "types":[{"moveCount":1,"maxHealth":1000,"radius":1,"wallRadius":1}],
+      "moves":[{"name":"READY","anim":"STEP","type":32,"interrupt":0}]})");
+    REQUIRE(assets.load(device, root, Golem::definition(), 'G'));
+    REQUIRE(actor.spawn(assets, 0, {}, 0, &ground.collision, {}, 'G'));
+    actor.setHazards(&ground.hazards);
+}
+
+TEST_CASE("a great one's step stops only at the last standing player in seat order",
+          "[combatant][critter-contact]") {
+    // CritterCollidePlayers (0x800351B0) walks gPlayers in seat order and pushes every standing
+    // player it meets, but each standing player overwrites whether the step stops (0x80035290,
+    // 0x800352F4), which is tested once after the walk (0x800353D4); CritterTranslate skips the
+    // turn on any player met (0x8003AF24).
     test::FakeRenderDevice device;
     CombatantAssets assets;
-    REQUIRE(assets.load(device, root, General::definition(), 'G'));
+    loadStanceGeneral(device, assets);
     Combatant actor;
     REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
-    const auto seat = [](s32 player, f32 x) {
-        EnemyView view;
-        view.player = player;
-        view.position = {x, 0, 0};
-        view.collisionHeight = 6.0f;
-        return view;
-    };
     // One stands within the knocked step's reach, the other far along it.
-    std::array players{seat(0, 1), seat(1, 40)};
+    std::array players{seatAt(0, 1), seatAt(1, 40)};
     bool blocked = false;
     std::vector<s32> pushed{0};
     SECTION("an earlier seat met walks on while a later one stands clear") {}
@@ -3962,12 +4028,12 @@ TEST_CASE("a great one's step stops only at the last standing player in seat ord
         std::swap(players[0], players[1]);
     }
     SECTION("the last seat met stops it") {
-        players = {seat(0, 40), seat(1, 1)};
+        players = {seatAt(0, 40), seatAt(1, 1)};
         blocked = true;
         pushed = {1};
     }
     SECTION("the last seat met stops it whatever order the views come in") {
-        players = {seat(1, 1), seat(0, 40)};
+        players = {seatAt(1, 1), seatAt(0, 40)};
         blocked = true;
         pushed = {1};
     }
@@ -4008,20 +4074,11 @@ TEST_CASE("a golem a player stops still tramples the small enemy it stands over"
     // CritterTranslate goes on after CritterCollidePlayers takes the step's x and z away
     // (critter.c 4016-4035, 7249-7252): CritterCollideEnemies meets what the still body stands
     // over, and a golem tramples one no more than two high (7402-7428).
-    const auto root = familyAssets();
-    const auto& golem = Golem::definition();
-    writeTextFile(root / "critter" / (golem.name + ".json"),
-                  R"({"descriptors":[{"prefix":"BODY","name":")" + golem.name + R"(","type":)" +
-                      std::to_string(static_cast<s32>(golem.kind)) + R"(}],
-      "types":[{"moveCount":1,"maxHealth":100,"radius":2,"wallRadius":1,"damageScale":7}],
-      "moves":[{"name":"READY","anim":"STEP","type":32,"interrupt":0}]})");
     test::FakeRenderDevice device;
     CombatantAssets assets;
-    REQUIRE(assets.load(device, root, golem, 'G'));
     Combatant actor;
-    EnemyScales scales;
-    scales.damage = 2;
-    REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, scales, 'G'));
+    spawnTramplingGolem(device, assets, actor);
+    const auto& golem = Golem::definition();
     // Half a unit behind it, within its wall radius and the enemy's: the knocked step toward +x
     // leaves it, and only a step held still meets it.
     const std::array swarm{EnemyBody{5, {-0.5f, 0, 0}, 1, 2}};
@@ -4056,26 +4113,13 @@ TEST_CASE("a great one's step passes a player held by another", "[combatant][cri
     // critter.c 7203-7205; 0x8003524C-0x80035254): one a critter carries (PlayerSetParent) or
     // one a combo lifts or seats (PlayerSetGrabbed). It is not pushed, leaves the stop as the
     // seats before it set it (0x800353C4) and does not hold the turn.
-    const auto root = familyAssets();
-    writeTextFile(root / "critter/GENERAL.json", R"({
-      "descriptors":[{"prefix":"BODY","name":"GENERAL","type":8}],
-      "types":[{"moveCount":1,"maxHealth":100,"radius":2,"wallRadius":1,
-                "floorOffset":2,"originOffset":[0,4,0]}],
-      "moves":[{"name":"READY","anim":"STEP","type":32,"interrupt":0,"turnRate":3}]})");
     test::FakeRenderDevice device;
     CombatantAssets assets;
-    REQUIRE(assets.load(device, root, General::definition(), 'G'));
+    loadStanceGeneral(device, assets);
     Combatant actor;
     REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
-    const auto seat = [](s32 player, f32 x) {
-        EnemyView view;
-        view.player = player;
-        view.position = {x, 0, 0};
-        view.collisionHeight = 6.0f;
-        return view;
-    };
     // Within the knocked step's reach.
-    std::vector players{seat(0, 1)};
+    std::vector players{seatAt(0, 1)};
     bool blocked = false;
     std::vector<s32> pushed;
     SECTION("one standing on its own stops it") {
@@ -4089,20 +4133,20 @@ TEST_CASE("a great one's step passes a player held by another", "[combatant][cri
         players[0].comboRiding = true;
     }
     SECTION("a carried later seat leaves the stop an earlier seat met") {
-        players.push_back(seat(1, 40));
+        players.push_back(seatAt(1, 40));
         players[1].captured = true;
         blocked = true;
         pushed = {0};
     }
     SECTION("a later seat riding in a combo leaves the stop an earlier seat met") {
-        players.push_back(seat(1, 40));
+        players.push_back(seatAt(1, 40));
         players[1].comboRiding = true;
         blocked = true;
         pushed = {0};
     }
     SECTION("an earlier seat riding in a combo is passed while a later one stops it") {
         players[0].comboRiding = true;
-        players.push_back(seat(1, 1));
+        players.push_back(seatAt(1, 1));
         players[1].position.z = 1;
         blocked = true;
         pushed = {1};
@@ -4123,28 +4167,6 @@ TEST_CASE("a great one's step passes a player held by another", "[combatant][cri
     // Its stance turns it three radians a second toward its target, off along +x, unless it
     // met someone.
     CHECK(actor.yaw() == Approx(pushed.empty() ? 3 * kSeconds : 0.0f));
-}
-
-/** A general a unit wide whose stance turns it three radians a second, its body centre as
- * high as a player's. */
-void loadStanceGeneral(test::FakeRenderDevice& device, CombatantAssets& assets) {
-    const auto root = familyAssets();
-    writeTextFile(root / "critter/GENERAL.json", R"({
-      "descriptors":[{"prefix":"BODY","name":"GENERAL","type":8}],
-      "types":[{"moveCount":1,"maxHealth":100,"radius":2,"wallRadius":1,
-                "floorOffset":2,"originOffset":[0,4,0]}],
-      "moves":[{"name":"READY","anim":"STEP","type":32,"interrupt":0,"turnRate":3}]})");
-    REQUIRE(assets.load(device, root, General::definition(), 'G'));
-}
-
-/** Level ground from `nearX` to `farX` along x, forty across. */
-void addGround(std::vector<CollisionTriangle>& triangles, f32 nearX, f32 farX) {
-    CollisionTriangle first;
-    first.vertices = {Vec3{nearX, 0, -20}, Vec3{farX, 0, 20}, Vec3{farX, 0, -20}};
-    CollisionTriangle second;
-    second.vertices = {Vec3{nearX, 0, -20}, Vec3{nearX, 0, 20}, Vec3{farX, 0, 20}};
-    triangles.push_back(first);
-    triangles.push_back(second);
 }
 
 TEST_CASE("a great one meets players along the step its walls leave",
@@ -4283,20 +4305,11 @@ TEST_CASE("a golem a solid item stops still tramples the small enemy it stands o
     // CritterTranslate goes on after CritterCollideItems takes the step's x and z away
     // (critter.c 4016-4035, 7336-7339): CritterCollideEnemies meets what the still body stands
     // over, and a golem tramples one no more than two high (7402-7428).
-    const auto root = familyAssets();
-    const auto& golem = Golem::definition();
-    writeTextFile(root / "critter" / (golem.name + ".json"),
-                  R"({"descriptors":[{"prefix":"BODY","name":")" + golem.name + R"(","type":)" +
-                      std::to_string(static_cast<s32>(golem.kind)) + R"(}],
-      "types":[{"moveCount":1,"maxHealth":100,"radius":2,"wallRadius":1,"damageScale":7}],
-      "moves":[{"name":"READY","anim":"STEP","type":32,"interrupt":0}]})");
     test::FakeRenderDevice device;
     CombatantAssets assets;
-    REQUIRE(assets.load(device, root, golem, 'G'));
     Combatant actor;
-    EnemyScales scales;
-    scales.damage = 2;
-    REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, scales, 'G'));
+    spawnTramplingGolem(device, assets, actor);
+    const auto& golem = Golem::definition();
     // Half a unit behind it: the knocked step toward +x leaves it, and only a step held still
     // meets it.
     const std::array swarm{EnemyBody{5, {-0.5f, 0, 0}, 1, 2}};
@@ -4331,36 +4344,11 @@ TEST_CASE("a great one a solid item stops is still hurt by the harmful ground un
           "[combatant][critter-contact][hazards]") {
     // CritterCollideWorld harms it from the ground its step finds (CritterWorldDamage, critter.c
     // 7098) whatever CritterCollideItems then leaves of that step.
-    const auto root = familyAssets();
-    writeTextFile(root / "critter/GOLEM.json", R"({
-      "descriptors":[{"prefix":"BODY","name":"GOLEM","type":3}],
-      "types":[{"moveCount":1,"maxHealth":1000,"radius":1,"wallRadius":1}],
-      "moves":[{"name":"READY","anim":"STEP","type":32,"interrupt":0}]})");
-    const auto dir = test::scratchDirectory("critter-item-hazard-floor");
-    // Felling ground (0x30000): fifteen a step.
-    writeTextFile(dir / "world.json", R"({
-  "objects": [{"name": "EMBERS", "position": [0, 0, 0], "flags": )" +
-                                          std::to_string(0x30004) + R"(, "next": -1,
-               "child": -1}],
-  "animations": [], "particles": [], "locators": [], "itemInfos": [], "itemInstances": []
-})");
-    WorldLayout layout;
-    REQUIRE(layout.load(dir));
-    HazardSurfaces hazards;
-    hazards.bind(layout);
-    std::vector<CollisionTriangle> triangles;
-    addGround(triangles, -20, 20);
-    for (CollisionTriangle& triangle : triangles) {
-        triangle.object = 0;
-    }
-    WorldCollision collision;
-    collision.build(triangles);
+    FlaggedGround ground{0x30000};
     test::FakeRenderDevice device;
     CombatantAssets assets;
-    REQUIRE(assets.load(device, root, Golem::definition(), 'G'));
     Combatant actor;
-    REQUIRE(actor.spawn(assets, 0, {}, 0, &collision, {}, 'G'));
-    actor.setHazards(&hazards);
+    spawnOnGround(device, assets, actor, ground);
     // A gate from 1.1 to 2.1 along x, which the knocked step's sixth of a unit reaches.
     std::array items{CombatantObstacle{
         .box =
@@ -4433,36 +4421,11 @@ TEST_CASE("a still great one is hurt by the harmful ground it stands on",
     SECTION("on plain ground it is not") {
         harmful = false;
     }
-    const auto root = familyAssets();
-    writeTextFile(root / "critter/GOLEM.json", R"({
-      "descriptors":[{"prefix":"BODY","name":"GOLEM","type":3}],
-      "types":[{"moveCount":1,"maxHealth":1000,"radius":1,"wallRadius":1}],
-      "moves":[{"name":"READY","anim":"STEP","type":32,"interrupt":0}]})");
-    const auto dir = test::scratchDirectory("critter-still-hazard-floor");
-    // Felling ground (0x30000): fifteen a step.
-    writeTextFile(dir / "world.json", R"({
-  "objects": [{"name": "EMBERS", "position": [0, 0, 0], "flags": )" +
-                                          std::to_string(harmful ? 0x30004 : 0x4) + R"(,
-               "next": -1, "child": -1}],
-  "animations": [], "particles": [], "locators": [], "itemInfos": [], "itemInstances": []
-})");
-    WorldLayout layout;
-    REQUIRE(layout.load(dir));
-    HazardSurfaces hazards;
-    hazards.bind(layout);
-    std::vector<CollisionTriangle> triangles;
-    addGround(triangles, -20, 20);
-    for (CollisionTriangle& triangle : triangles) {
-        triangle.object = 0;
-    }
-    WorldCollision collision;
-    collision.build(triangles);
+    FlaggedGround ground{harmful ? 0x30000U : 0U};
     test::FakeRenderDevice device;
     CombatantAssets assets;
-    REQUIRE(assets.load(device, root, Golem::definition(), 'G'));
     Combatant actor;
-    REQUIRE(actor.spawn(assets, 0, {}, 0, &collision, {}, 'G'));
-    actor.setHazards(&hazards);
+    spawnOnGround(device, assets, actor, ground);
     const f32 before = actor.health();
     actor.update(2, 1.0f / 30, {});
     CHECK(actor.position() == Vec3{0});
@@ -4473,20 +4436,10 @@ TEST_CASE("a still golem tramples the small enemy it stands over",
           "[combatant][critter-contact][critter-trample]") {
     // CritterCollideEnemies (0x80034CFC) meets a swarm body the critter overlaps by a step that
     // goes nowhere, and a golem tramples one no more than two high (critter.c 7402-7428).
-    const auto root = familyAssets();
-    const auto& golem = Golem::definition();
-    writeTextFile(root / "critter" / (golem.name + ".json"),
-                  R"({"descriptors":[{"prefix":"BODY","name":")" + golem.name + R"(","type":)" +
-                      std::to_string(static_cast<s32>(golem.kind)) + R"(}],
-      "types":[{"moveCount":1,"maxHealth":100,"radius":2,"wallRadius":1,"damageScale":7}],
-      "moves":[{"name":"READY","anim":"STEP","type":32,"interrupt":0}]})");
     test::FakeRenderDevice device;
     CombatantAssets assets;
-    REQUIRE(assets.load(device, root, golem, 'G'));
     Combatant actor;
-    EnemyScales scales;
-    scales.damage = 2;
-    REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, scales, 'G'));
+    spawnTramplingGolem(device, assets, actor);
     // Half a unit from its middle, within its wall radius and the enemy's.
     std::array swarm{EnemyBody{5, {0.5f, 0, 0}, 1, 2}};
     bool trampled = true;
@@ -4512,20 +4465,10 @@ TEST_CASE("a still golem strikes the breakable item it stands against every step
     // nowhere: fn_8005F0F4 lets a step out of an overlap only when it points away from the item
     // (a dot below zero, 0x8005F7A0-0x8005F7A4), and a still step points nowhere. A golem strikes
     // what is breakable each time (fn_8005C1DC, critter.c 7323-7330).
-    const auto root = familyAssets();
-    const auto& golem = Golem::definition();
-    writeTextFile(root / "critter" / (golem.name + ".json"),
-                  R"({"descriptors":[{"prefix":"BODY","name":")" + golem.name + R"(","type":)" +
-                      std::to_string(static_cast<s32>(golem.kind)) + R"(}],
-      "types":[{"moveCount":1,"maxHealth":100,"radius":2,"wallRadius":1,"damageScale":7}],
-      "moves":[{"name":"READY","anim":"STEP","type":32,"interrupt":0}]})");
     test::FakeRenderDevice device;
     CombatantAssets assets;
-    REQUIRE(assets.load(device, root, golem, 'G'));
     Combatant actor;
-    EnemyScales scales;
-    scales.damage = 2;
-    REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, scales, 'G'));
+    spawnTramplingGolem(device, assets, actor);
     // A barrel from 0.7 to 1.7 along x, three tenths inside its wall radius.
     std::array items{CombatantObstacle{
         .box = Obstacle{.centre = {1.2f, 0, 0}, .halfAcross = 0.5f, .halfAlong = 0.5f, .height = 8},
