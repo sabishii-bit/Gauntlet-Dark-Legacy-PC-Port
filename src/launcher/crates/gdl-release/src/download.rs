@@ -2,7 +2,8 @@
 //! size and the SHA-256 digest the feed published for it, the job's cancel looked at between
 //! blocks, and tried once more when the transfer itself failed, since a download link may expire
 //! or a connection break part way. A file downloaded is made new and removed again on any failure,
-//! so that a failed download leaves nothing behind.
+//! so that a failed download leaves nothing behind but a file the system would not let go of,
+//! which goes with the folder it was downloaded into.
 
 use std::fs::{self, OpenOptions};
 use std::io::{Read, Write};
@@ -38,8 +39,11 @@ impl Feed {
     /// digest ([`ReleaseError::Corrupt`]), synced and closed once whole, and removed on any
     /// failure. A failed transfer, [`ReleaseError::Oversize`], [`ReleaseError::Corrupt`],
     /// [`ReleaseError::Offline`] or [`ReleaseError::Failed`], is tried once more from the asset's
-    /// own URL. An asset whose name is no plain file name, or whose size is out of its bounds, is
-    /// refused as [`ReleaseError::Incomplete`] before anything is asked or made.
+    /// own URL. A file the system will not let go of within [`retry_locked`]'s wait is left in
+    /// `folder`, for the folder's own removal, and the download ends with the failure of the try
+    /// that wrote it, tried no more. An asset whose name is no plain file name, or whose size is
+    /// out of its bounds, is refused as [`ReleaseError::Incomplete`] before anything is asked or
+    /// made.
     pub fn download(
         &self,
         asset: &Asset,
