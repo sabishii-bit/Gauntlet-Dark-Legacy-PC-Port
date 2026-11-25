@@ -95,11 +95,14 @@ loadLegendsDreamcastBossAssets(RenderDevice& device, const std::filesystem::path
     // Its blow and breath read the matrix MoveSetup leaves at +0x1b4 before its look (8c08e060)
     // turns the look nodes, as GDL's do (8c08abc0), but whether its animation sets a turned look
     // node back before the next MoveSetup is unread, so its strikes follow the turned pose.
+    // Which of its moves raise a blow through its window rather than once is unread, so every
+    // blow strikes through its window.
     CritterRules rules{.pressureReferenceDamage = decoded.types.front().pressureReferenceDamage,
                        .restoreCaptureSupport = true,
                        .nodeFramePartOffsets = true,
                        .playerBreathGap = 0.1f,
-                       .portRules = CritterRules::kScaledNodes | CritterRules::kStrikesAfterGaze};
+                       .portRules = CritterRules::kScaledNodes | CritterRules::kStrikesAfterGaze |
+                                    CritterRules::kBlowsEveryFrame};
     auto data = CritterData::fromDecoded(family.name, decoded, 0, rules);
     std::vector<CritterData> children;
     for (s32 child = data.childIndex(); child >= 0;) {

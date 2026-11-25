@@ -96,9 +96,16 @@ TEST_CASE("Dreamcast six native bosses bind all authored attacks and collision n
             // Whether its animation sets a turned look node back before the next MoveSetup is
             // unread, so its strikes follow the turned pose.
             CHECK((stock->data.rules().portRules & CritterRules::kStrikesAfterGaze) != 0);
+            // Which moves raise a blow once rather than through its window is unread, so every
+            // blow strikes through its window.
+            CHECK((stock->data.rules().portRules & CritterRules::kBlowsEveryFrame) != 0);
             const auto validate = [&](const CritterData& part) {
                 for (const auto& move : part.moves()) {
                     CAPTURE(move.name, move.anim, move.colnode);
+                    // No move harms from its second slot while its first never starts, so Dark
+                    // Legacy's gate on the first start (CritterActivate, 0x8003B300), unread in
+                    // the boss's own binary, changes none of its moves.
+                    CHECK((move.frameStart >= 0 || move.damage1 < 0 || move.frameStart2 < 0));
                     const auto index = stock->tree->findSequence(move.anim);
                     REQUIRE(index);
                     if (!move.colnode.empty()) {
@@ -130,6 +137,7 @@ TEST_CASE("Dreamcast six native bosses bind all authored attacks and collision n
                 CHECK((child.rules().portRules & CritterRules::kScaledNodes) != 0);
                 CHECK((child.rules().portRules & CritterRules::kModelFallback) == 0);
                 CHECK((child.rules().portRules & CritterRules::kStrikesAfterGaze) != 0);
+                CHECK((child.rules().portRules & CritterRules::kBlowsEveryFrame) != 0);
                 validate(child);
             }
             CHECK(stock->children.size() == (kind == 35 ? 3 : 0));

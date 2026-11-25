@@ -2003,9 +2003,9 @@ formats::CritterFile swingCritter(s32 frameStart) {
 
 /** Writes the swinging general's tree under `root`: a ROOT standing `rootY` over its placement,
  * an ARM five along x from it and a HAND two along x from that. `ready` and `swing` end its
- * READY's and SWING's records. */
+ * READY's and SWING's records; its SWING runs `swingFrames` frames. */
 void writeSwingTree(const std::filesystem::path& root, s32 rootY, const std::string& ready,
-                    const std::string& swing) {
+                    const std::string& swing, s32 swingFrames = 12) {
     auto archive = root / "MONSTERS" / General::definition().name;
     if (General::definition().realmCostume) {
         archive /= "LEVELG";
@@ -2018,8 +2018,8 @@ void writeSwingTree(const std::filesystem::path& root, s32 rootY, const std::str
       {"name":"HAND","object":"BODY","parent":1,"position":[2,0,0]}],
       "sequences":[{"name":"READY","frames":30)" + ready +
                                                    R"(},
-                   {"name":"SWING","frames":12)" + swing +
-                                                   "}]}]}");
+                   {"name":"SWING","frames":)" + std::to_string(swingFrames) +
+                                                   swing + "}]}]}");
 }
 
 /** A general whose HAND goes a unit further along x each of SWING's first ten frames, shown
@@ -2434,6 +2434,126 @@ TEST_CASE("a fighter's hit gap decides when its held blow strikes again",
     CAPTURE(struck[0], struck[1]);
     CHECK(struck[1] - struck[0] >= gapTicks);
     CHECK(struck[1] - struck[0] <= gapTicks + 1);
+}
+
+constexpr s32 kStompMove = 130; ///< MOVE_STOMP
+constexpr s32 kShootMove = 132; ///< MOVE_SHOOT
+
+/** The swinging general's data with a SWING whose move is of `type`, striking with HAND from
+ * frame `start` to `end` in slot `slot` (0 or 1); with the blow in the second slot, the first
+ * slot starts at `firstStart` and holds nothing. */
+formats::CritterFile cadenceCritter(s32 type, s32 slot, s32 start, s32 end, s32 firstStart = -1) {
+    auto source = swingCritter(start);
+    auto& swing = source.moves[1];
+    swing.type = type;
+    swing.frameEnd = static_cast<s16>(end);
+    if (slot == 1) {
+        swing.frameStart = firstStart;
+        swing.damage0 = -1;
+        swing.frameStart2 = start;
+        swing.frameEnd2 = static_cast<s16>(end);
+        swing.damage1 = 0;
+    }
+    return source;
+}
+
+/** The updates, counted from the move's start, in which the swinging general playing `source`'s
+ * SWING of seventy frames by `rules` strikes a player standing by its still HAND: the first
+ * update steps `opening` native frames, each of the `updates` - 1 after it one. */
+std::vector<s32> strikingUpdates(const formats::CritterFile& source, s32 updates, s32 opening = 1,
+                                 const CritterRules& rules = {}) {
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    const auto root = familyAssets();
+    writeSwingTree(root, 0, {}, {}, 70);
+    REQUIRE(assets.load(device, root, General::definition(), 'G'));
+    assets.data = CritterData::fromDecoded("GENERAL", source, 0, rules);
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+    const auto swing = assets.data.moveNamed("SWING");
+    REQUIRE(swing);
+    REQUIRE(actor.setMove(*swing, {.frame = 0, .target = 0, .yaw = std::nullopt}));
+    EnemyView player;
+    player.player = 0;
+    player.position = {8, 0, 0};
+    const std::array players{player};
+    constexpr f32 kNativeFrame = 1.0f / 30;
+    std::vector<s32> struck;
+    for (s32 update = 0; update < updates; ++update) {
+        const s32 frames = update == 0 ? opening : 1;
+        actor.update(2 * frames, kNativeFrame * static_cast<f32>(frames), players);
+        REQUIRE(actor.moveName() == "SWING");
+        for (const CombatBlow& blow : actor.takeBlows()) {
+            CHECK(blow.player == 0);
+            struck.push_back(update);
+        }
+    }
+    return struck;
+}
+
+std::vector<s32> everyUpdate(s32 updates) {
+    std::vector<s32> all(static_cast<usize>(updates));
+    for (s32 update = 0; update < updates; ++update) {
+        all[static_cast<usize>(update)] = update;
+    }
+    return all;
+}
+
+TEST_CASE("a blow under a step or stomp move strikes once a move, at its first frame",
+          "[game][combatant][blow-cadence]") {
+    // CritterCopyAnim's default case raises the slot on the first frame at or past its start
+    // while the move's bit is clear, with no end test (0x8003C11C, critter.c 3236-3247).
+    const s32 type = GENERATE(MoveDefinition::kStepLeft, kStompMove);
+    CAPTURE(type);
+    CHECK(strikingUpdates(cadenceCritter(type, 0, 0, 60), 30) == std::vector<s32>{0});
+}
+
+TEST_CASE("a blow in a grab's or a shot's second slot strikes once a move",
+          "[game][combatant][blow-cadence]") {
+    // Only a grab's first slot is raised through its window (critter.c 3174-3185); a shot's
+    // slots are raised once (3186-3197).
+    const s32 type = GENERATE(MoveDefinition::kGrab, kShootMove);
+    CAPTURE(type);
+    CHECK(strikingUpdates(cadenceCritter(type, 1, 10, 60, 0), 30) == std::vector<s32>{9});
+}
+
+TEST_CASE("a blow under a claw, breath or charge, or in a grab's first slot, strikes in every "
+          "update of its window",
+          "[game][combatant][blow-cadence]") {
+    // A spray, which the original raises every framePeriod frames, keeps the port's window.
+    const s32 type =
+        GENERATE(MoveDefinition::kClaw, MoveDefinition::kGrab, MoveDefinition::kBreathMove,
+                 MoveDefinition::kChargeMove, MoveDefinition::kSpray);
+    CAPTURE(type);
+    CHECK(strikingUpdates(cadenceCritter(type, 0, 0, 60), 30) == everyUpdate(30));
+}
+
+TEST_CASE("a move whose first slot never starts strikes with neither slot",
+          "[game][combatant][blow-cadence]") {
+    // CritterActivate tests no slot of a move whose first frameStart is negative (0x8003B300,
+    // critter.c 3690).
+    const s32 type = GENERATE(MoveDefinition::kStepLeft, MoveDefinition::kClaw);
+    CAPTURE(type);
+    CHECK(strikingUpdates(cadenceCritter(type, 0, -1, 60), 30).empty());
+    CHECK(strikingUpdates(cadenceCritter(type, 1, 10, 60), 30).empty());
+}
+
+TEST_CASE("a blow whose window a move's first update steps past strikes once",
+          "[game][combatant][blow-cadence]") {
+    // Tested once a move, it has no end; through its window, a step across it counts.
+    const s32 type = GENERATE(MoveDefinition::kStepLeft, MoveDefinition::kClaw);
+    CAPTURE(type);
+    CHECK(strikingUpdates(cadenceCritter(type, 0, 41, 48), 10, 50) == std::vector<s32>{0});
+}
+
+TEST_CASE("a fighter whose rules keep every blow to its window strikes through it under any "
+          "move",
+          "[game][combatant][blow-cadence]") {
+    const s32 type = GENERATE(MoveDefinition::kStepLeft, kStompMove, kShootMove);
+    CAPTURE(type);
+    CritterRules rules;
+    rules.portRules = CritterRules::kBlowsEveryFrame;
+    CHECK(strikingUpdates(cadenceCritter(type, 0, 0, 60), 30, 1, rules) == everyUpdate(30));
 }
 
 TEST_CASE("a move without a node keeps the fighter's root node, which the next move's first "

@@ -46,6 +46,7 @@
 #include "game/combat/EffectFlags.h"
 #include "game/combat/PowerupFlags.h"
 #include "game/critters/Combatant.h"
+#include "game/critters/CombatantFixture.h"
 #include "game/critters/CombatantKind.h"
 #include "game/critters/CritterStatues.h"
 #include "game/critters/HeadedBodyFixture.h"
@@ -3721,6 +3722,79 @@ TEST_CASE("a great one's blows land every quarter second through the shared hit 
     blow.gated = false;
     LevelOpponents::applyCritterBlow(blow, players, host, host);
     REQUIRE(contacts == 3);
+}
+
+TEST_CASE("the Lich's spear poke, axe sweep and chain spin test their blow once a swing, so each "
+          "lands at most once",
+          "[game][level-opponents][lich][blow-cadence][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/LICH.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/LICH/ANIM.PS2");
+    const std::string name = GENERATE("POKE_L", "AXEF_L", "CHAIN");
+    CAPTURE(name);
+    test::FakeRenderDevice device;
+    test::CombatantFixture fixture;
+    fixture.open(device, root, nullptr, {}, 'G');
+    REQUIRE(fixture.spawn("LICH", {}, 0));
+    const CritterData& data = *fixture.actor.data();
+    const auto index = data.moveNamed(name);
+    REQUIRE(index);
+    const MoveDefinition& move = data.moves()[*index];
+    // A sidestep's blow, or a stomp's in its second slot, which CritterCopyAnim's default case
+    // raises once a move.
+    constexpr s32 kStomp = 130;
+    REQUIRE((move.type == MoveDefinition::kStepLeft || move.type == kStomp));
+    const AttackDefinition* first = data.damage(move.damage0);
+    const AttackDefinition* harm = first != nullptr && first->type == AttackDefinition::kBlow
+                                       ? first
+                                       : data.damage(move.damage1);
+    REQUIRE(harm);
+    REQUIRE(harm->type == AttackDefinition::kBlow);
+    REQUIRE(harm->damage > 0);
+    REQUIRE(fixture.actor.setMove(*index, {.frame = 0, .target = 0, .yaw = std::nullopt}));
+
+    std::array<PlayerRuntime, 1> players;
+    players[0].actor.spawn(0, {}, nullptr, fixture.actor.position(), 0);
+    // A player standing so wide about the Lich that the weapon's reach takes it in the whole
+    // swing long, held off only by its hit gap.
+    std::array<EnemyView, 1> views;
+    views[0].player = 0;
+    views[0].radius = 60;
+    views[0].height = 160;
+    s32 hits = 0;
+    test::OpponentScript events;
+    events.hurt = [&](usize, f32, HurtKind, bool, const PlayerImpact&) { ++hits; };
+    test::ScriptedOpponents host{events};
+    LevelWorld world;
+    ItemArchive weapons;
+    EffectTrees effects;
+    LevelSoundscape audio;
+    LevelOpponents level;
+    level.open(
+        {device, world, weapons, effects, audio, test::scratchDirectory("lich-blow-cadence"), 1},
+        {});
+    constexpr f32 kTick = 1.0f / 60;
+    s32 lastFrame = -1;
+    for (s32 update = 0; update < 1200; ++update) {
+        level.update(1, kTick, players, {}, host, host, host); // runs the hit gap down
+        views[0].position = fixture.actor.position() - Vec3{0, 40, 0};
+        fixture.update(1, kTick, views);
+        if (fixture.actor.moveName() != name) {
+            break; // what this update struck, the next move struck
+        }
+        lastFrame = static_cast<s32>(fixture.actor.animation().frame());
+        for (const CombatBlow& blow : fixture.actor.takeBlows()) {
+            if (!blow.area) { // the chain spin's ring is an area of its own
+                LevelOpponents::applyCritterBlow(blow, players, host, host);
+            }
+        }
+        fixture.actor.takeCues();
+        fixture.actor.takeShots();
+    }
+    level.close();
+    // The swing played its whole window, in which the gap alone would let it land again.
+    CAPTURE(lastFrame);
+    REQUIRE(lastFrame >= move.frameEnd);
+    CHECK(hits == 1);
 }
 
 TEST_CASE("breath contacts share a player's quarter-second gate across creatures",

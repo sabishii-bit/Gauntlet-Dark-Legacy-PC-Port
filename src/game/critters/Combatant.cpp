@@ -730,17 +730,29 @@ void Combatant::updateActor(s32 ticks, f32 seconds, std::span<const EnemyView> p
                 }
                 return true;
             };
-            const bool shot0 = projectile(move->damage0, false);
-            const bool shot1 = projectile(move->damage1, true);
-            const auto contact = [&](s32 index, s32 start, s32 end, u32 bit) {
+            // CritterCopyAnim raises a blow's slot on every frame of its window only for a claw, a
+            // breath, a charge and a grab's first slot, and every other once a move, on its first
+            // frame at or past the slot's start (0x8003C11C, critter.c 3159-3247). A spray's,
+            // raised every framePeriod frames there, strikes on every update of its window here.
+            const bool blowsEveryFrame =
+                (data.rules().portRules & CritterRules::kBlowsEveryFrame) != 0 ||
+                move->type == MoveDefinition::kClaw || move->type == MoveDefinition::kBreathMove ||
+                move->type == MoveDefinition::kChargeMove || move->type == MoveDefinition::kSpray;
+            const auto contact = [&](s32 index, s32 start, s32 end, u32 bit, u32 tested,
+                                     bool windowed) {
                 const AttackDefinition* harm = data.damage(index);
                 if (harm == nullptr) {
                     return;
                 }
                 const bool targeted = harm->type == AttackDefinition::kTargetArea;
                 const bool crossed = start >= 0 && critter.shotFrame < start && frame >= start;
-                if ((!active(start, end) && !(targeted && crossed)) ||
-                    (targeted && !critter.attackTarget.has_value())) {
+                if (harm->type == AttackDefinition::kBlow && !windowed) {
+                    if (start < 0 || frame < start || (critter.soundsGiven & tested) != 0) {
+                        return;
+                    }
+                    critter.soundsGiven |= tested;
+                } else if ((!active(start, end) && !(targeted && crossed)) ||
+                           (targeted && !critter.attackTarget.has_value())) {
                     return;
                 }
                 if (harm->type == AttackDefinition::kArenaEruption) {
@@ -805,11 +817,21 @@ void Combatant::updateActor(s32 ticks, f32 seconds, std::span<const EnemyView> p
                 giveOnce(bit, harm->sound, where);
                 strikeWith(critter, i, moveFrame, index, players);
             };
-            if (!shot0) {
-                contact(move->damage0, move->frameStart, move->frameEnd, 4U);
-            }
-            if (!shot1) {
-                contact(move->damage1, move->frameStart2, move->frameEnd2, 8U);
+            // CritterActivate tests neither slot of a move whose first window never starts,
+            // whatever the second's start (0x8003B300, critter.c 3690).
+            if (move->frameStart >= 0) {
+                constexpr u32 kFirstBlowTested = 64U;
+                constexpr u32 kSecondBlowTested = 128U;
+                const bool shot0 = projectile(move->damage0, false);
+                const bool shot1 = projectile(move->damage1, true);
+                if (!shot0) {
+                    contact(move->damage0, move->frameStart, move->frameEnd, 4U, kFirstBlowTested,
+                            blowsEveryFrame || move->type == MoveDefinition::kGrab);
+                }
+                if (!shot1) {
+                    contact(move->damage1, move->frameStart2, move->frameEnd2, 8U,
+                            kSecondBlowTested, blowsEveryFrame);
+                }
             }
         } else if (critter.state == State::Dying && active(move->frameStart, move->frameEnd) &&
                    (critter.soundsGiven & 32U) == 0) {

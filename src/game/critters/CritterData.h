@@ -63,6 +63,11 @@ struct CritterRules {
      * (0x8003B1CC) for CritterActivate's strikes before CritterLookAtPlayer turns them
      * (CritterGolemAI 0x80039A08-0x80039A44, CritterBossAI 0x8003A1FC-0x8003A2A8). */
     static constexpr u32 kStrikesAfterGaze = 0x2;
+    /** portRules: its blows strike in every update of their windows, whatever the move. GDL's
+     * CritterCopyAnim (0x8003C11C) does so only for a claw, a breath, a charge and a grab's
+     * first slot, and tests every other blow once a move, on its first frame at or past the
+     * blow's start. */
+    static constexpr u32 kBlowsEveryFrame = 0x4;
     /** portRules: a body's move naming no node strikes from the model, the node its tree hangs
      * from; a head's still strikes from its own root node. GDL's CritterNewInst makes the
      * tree's root node the body's c->anim (critter.c 2010-2012), which CritterMoveSetup falls

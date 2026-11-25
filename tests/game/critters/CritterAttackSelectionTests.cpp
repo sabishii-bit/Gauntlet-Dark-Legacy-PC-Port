@@ -338,7 +338,7 @@ TEST_CASE("held players carry into the first other eligible grab despite cooldow
         {"name":"DISABLED_GRAB","anim":"STEP","type":129,"flags":4},
         {"name":"MISSING_NODE_GRAB","anim":"STEP","type":129,"flags":16,"colnode":"MISSING"},
         {"name":"GRABAGAIN","anim":"STEP","type":129,"priority":10,"cooldown":100,
-         "colnode":"BODY","frameStart2":2,"frameEnd2":2,"damage1":0,
+         "colnode":"BODY","frameStart":0,"frameStart2":2,"frameEnd2":2,"damage1":0,
          "target":{"minDistance":1000,"minRateScale":4}}],
       "damages":[{"type":7,"maxDistance":5,"damage":50,"minSpeed":5}]})");
     test::FakeRenderDevice device;

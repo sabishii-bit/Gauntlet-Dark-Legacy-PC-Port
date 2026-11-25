@@ -135,7 +135,11 @@ struct MoveDefinition {
     static constexpr s32 kKnockBack = 65;
     static constexpr s32 kKnockDown = 66;
     static constexpr s32 kAttackFrom = 128; ///< attacks are this and over
+    static constexpr s32 kClaw = 128;
     static constexpr s32 kGrab = 129;
+    static constexpr s32 kBreathMove = 131;
+    static constexpr s32 kSpray = 133; ///< its shots repeat every framePeriod frames of a window
+    static constexpr s32 kChargeMove = 134;
     static constexpr s32 kTargetArea = 136; ///< snapshots the target before emitting its effects
     static constexpr s32 kCutsIn = 0xF00; ///< bypasses priority comparison, not interrupt immunity
 
@@ -149,7 +153,7 @@ struct MoveDefinition {
     s32 frameEnd = -1;
     s32 frameStart2 = -1;
     s32 frameEnd2 = -1;
-    f32 framePeriod = 0.0f; ///< repeat spacing for move type 133
+    f32 framePeriod = 0.0f; ///< repeat spacing for a spray
     s32 damage0 = -1;
     s32 damage1 = -1;
     s32 link = -1;

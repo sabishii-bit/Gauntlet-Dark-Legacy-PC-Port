@@ -168,7 +168,7 @@ public:
     /** The animation of the move it plays: its sequence, frame and clock. */
     const AnimationPlayer& animation() const { return m_sim.actor.player; }
     /** Which of the move's sounds it has given: bit 0 the move's own, bit 1 its second, then
-     * each strike's. */
+     * each strike's; bits 6 and 7 whether each slot's blow that strikes once a move is spent. */
     u32 soundsGiven() const { return m_sim.actor.soundsGiven; }
     /** The attack pattern it works through, -1 for none. */
     s32 pattern() const { return m_sim.actor.pattern; }
@@ -359,7 +359,7 @@ private:
         bool roarWanted = false; ///< roars as soon as it may
         bool moveEffect = false; ///< an emitted effect needs cancellation on the next move
         bool moveDone = false;
-        u32 soundsGiven = 0; ///< bits: the move's sound, its second, each strike's
+        u32 soundsGiven = 0; ///< bits: the move's sound, its second, each strike's, the blows spent
         bool arenaCollected = false;
         s32 shotFrame = -1;
         std::optional<Vec3> attackTarget; ///< captured by a targeted-area move, not a homing point

@@ -63,8 +63,7 @@ s32 MoveDefinition::projectileTriggers(s32 previous, s32 current, bool second) c
     if (first < 0 || current < first || current <= previous) {
         return 0;
     }
-    constexpr s32 kRepeatedProjectile = 133;
-    if (type != kRepeatedProjectile) {
+    if (type != kSpray) {
         return previous < first ? 1 : 0;
     }
     const s32 last = second ? frameEnd2 : frameEnd;

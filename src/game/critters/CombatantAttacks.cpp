@@ -71,8 +71,8 @@ void Combatant::strikeWith(Actor& critter, s32 id, const Mat4& moveFrame, s32 da
         break;
     default: return;
     }
-    // A blow lands every update of its window, held off by the player's hit gap; a ring or
-    // a targeted area once a move.
+    // A blow lands on each update its move tests it, held off by the player's hit gap; a ring
+    // or a targeted area once a move.
     const bool gated = breath.has_value() || damage->type == AttackDefinition::kBlow;
     const bool tracksPressure = critter.definition->rules().pressureReferenceDamage > 0 &&
                                 (breath.has_value() || damage->type == AttackDefinition::kBlow);
