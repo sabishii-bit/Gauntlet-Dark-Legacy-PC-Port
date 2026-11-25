@@ -555,26 +555,19 @@ void LegendsDreamcastHudPainter::prepare(HudFrame& frame, const HudView& view) {
 void LegendsDreamcastHudPainter::drawStatus(HudFrame& frame, const HudView& view) {
     static_assert(HudView::kSeats == Layout::kSeatX.size());
     Canvas& canvas = frame.canvas;
+    // FUN_8c0ba060 gives each seat's strip and panel a depth of 1.01 (8c0ba288), where every
+    // other blit of the HUD keeps FUN_8c0ee200's 1.0, and the renderer hands the PowerVR
+    // 1 / (0.5 x depth) for a blit's corners (8c0edb8c..8c0edbec), the nearer the larger: every
+    // seat's strip and panel lie behind every seat's other parts, a neighbour's too, in the 16
+    // columns two boxes share.
     for (usize seat = 0; seat < view.seats.size(); ++seat) {
-        const HudSeat& shown = view.seats.at(seat);
-        const bool panel = dreamcastBoxKind(shown) == LegendsDreamcastBoxKind::Panel;
-        if (panel) {
-            drawPanel(canvas, seat, shown, view);
-        } else {
-            drawPlain(canvas, seat, seatColour(shown, seat));
-        }
-        if (shown.it) {
-            drawIt(canvas, seat);
-        }
-        if (panel) {
-            drawWaitHere(canvas, seat, shown, view);
-        } else {
-            drawFallen(canvas, seat, shown, view);
-        }
+        drawBack(canvas, seat, view.seats.at(seat));
     }
-    // FUN_8c0ba600 makes the middle pieces after every seat's blits, at FUN_8c0ee200's depth of
-    // 1.0 against the 1.01 FUN_8c0ba060 gives the seats' strips and panels (8c0ba288): they
-    // stand over the second seat's last 16 columns. FUN_8c0b7bc0 hides them with the boxes.
+    for (usize seat = 0; seat < view.seats.size(); ++seat) {
+        drawFront(canvas, seat, view.seats.at(seat), view);
+    }
+    // FUN_8c0ba600 makes the middle pieces at 1.0 after every seat's blits: they stand over the
+    // second seat's last 16 columns. FUN_8c0b7bc0 hides them with the boxes.
     drawWhole(canvas, m_middleStrip, static_cast<f32>(Layout::kMiddleLeft),
               static_cast<f32>(Layout::kMiddleStripTop));
     drawWhole(canvas, m_middlePanel, static_cast<f32>(Layout::kMiddleLeft),
@@ -690,16 +683,41 @@ void LegendsDreamcastHudPainter::drawHelp(HudFrame& frame, const HudView& view) 
     }
 }
 
+void LegendsDreamcastHudPainter::drawBack(Canvas& canvas, usize seat, const HudSeat& shown) const {
+    if (dreamcastBoxKind(shown) != LegendsDreamcastBoxKind::Panel) {
+        drawPlain(canvas, seat, seatColour(shown, seat));
+        return;
+    }
+    // The stone strip over the costume's panel.
+    const auto left = static_cast<f32>(dreamcastSeatX(seat) + Layout::kArtLeft);
+    drawWhole(canvas, m_strip, left, static_cast<f32>(Layout::kStripTop));
+    if (const ClassArt* art = classArtOf(shown.box.classIndex, shown.box.color)) {
+        drawPanelArt(canvas, art->panel, left);
+    }
+}
+
+void LegendsDreamcastHudPainter::drawFront(Canvas& canvas, usize seat, const HudSeat& shown,
+                                           const HudView& view) const {
+    const bool panel = dreamcastBoxKind(shown) == LegendsDreamcastBoxKind::Panel;
+    if (panel) {
+        drawPanel(canvas, seat, shown, view);
+    }
+    if (shown.it) {
+        drawIt(canvas, seat);
+    }
+    if (panel) {
+        drawWaitHere(canvas, seat, shown, view);
+    } else {
+        drawFallen(canvas, seat, shown, view);
+    }
+}
+
 void LegendsDreamcastHudPainter::drawPanel(Canvas& canvas, usize seat, const HudSeat& shown,
                                            const HudView& view) const {
     const StatusBoxView box = panelOf(shown);
     const auto left = static_cast<f32>(dreamcastSeatX(seat) + Layout::kArtLeft);
-    // The strip, the costume's panel and the class's banner on it.
-    drawWhole(canvas, m_strip, left, static_cast<f32>(Layout::kStripTop));
+    // The class's banner on the panel.
     const ClassArt* art = classArtOf(box.classIndex, box.color);
-    if (art != nullptr) {
-        drawPanelArt(canvas, art->panel, left);
-    }
     if (art != nullptr && art->banner != nullptr) {
         drawWhole(canvas, art->banner, left, static_cast<f32>(Layout::kBannerTop));
     } else {

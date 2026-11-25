@@ -815,6 +815,94 @@ TEST_CASE("a lone player in the tower stands beside three kind-0 boxes, each in 
     CHECK(boxOrder(quads, 1, dreamcast.lent) == Names{"S3_WBLUE", "S4_WBLUE"});
 }
 
+TEST_CASE("every seat's strip and panel stand behind every seat's other parts, a neighbour's too",
+          "[legends][dreamcast-hud]") {
+    const std::array<HudMember, 3> party{{
+        {.seat = 0, .classIndex = kWarriorClass, .color = 3},
+        {.seat = 2, .classIndex = kWarriorClass, .color = 2},
+        {.seat = 3, .classIndex = kWizardClass, .color = 1},
+    }};
+    LoadedLook dreamcast("dreamcast-hud-depths", party);
+    // FUN_8c0ba060 gives the strip and the panel a depth of 1.01 (8c0ba288), every other blit
+    // keeping FUN_8c0ee200's 1.0, and the renderer hands the PowerVR 1 / (0.5 x depth), the
+    // nearer the larger (8c0edb8c..8c0edbec): the strips and panels lie deepest of all.
+    const auto deepest = [](const Quad& quad) {
+        const Fixture::Found found = Fixture::pictureOf(quad.texture);
+        return !isText(quad) &&
+               (found.name == "BK_RUNE_STONE_02" || found.name.starts_with("S3_W") ||
+                found.name.starts_with("S4_W") ||
+                (found.folder.starts_with("players/") && found.name.starts_with("BTMBK_")));
+    };
+    /** Checks every strip and panel of `quads` comes before everything else drawn. */
+    const auto checkDeepestFirst = [&](std::span<const Quad> quads) {
+        const auto firstOther = std::ranges::find_if_not(quads, deepest);
+        REQUIRE(firstOther != quads.end());
+        CHECK(std::ranges::none_of(firstOther, quads.end(), deepest));
+    };
+    /** Where each quad of picture `name` in `seat` was drawn, in turn. */
+    const auto drawnAll = [](std::span<const Quad> quads, std::string_view name, usize seat) {
+        std::vector<usize> found;
+        for (usize index = 0; index < quads.size(); ++index) {
+            if (!isText(quads[index]) && Fixture::pictureOf(quads[index].texture).name == name &&
+                inSeat(quads[index], seat)) {
+                found.push_back(index);
+            }
+        }
+        return found;
+    };
+    /** Where the one quad of picture `name` in `seat` was drawn. */
+    const auto drawnAt = [&](std::span<const Quad> quads, std::string_view name, usize seat) {
+        const std::vector<usize> found = drawnAll(quads, name, seat);
+        REQUIRE(found.size() == 1);
+        return found.front();
+    };
+
+    // The user's tower: a green warrior alone in the first seat, its meter full and every boss's
+    // key showing. Its banner and arch run to 128 and its eighth key to 116, over the 16 columns
+    // from 112 where the second seat's kind-0 box stands.
+    HudSeat alone = standing(kWarriorClass, 3);
+    alone.turbo = 100.0f;
+    alone.box.runes = 0x0FFF;
+    alone.box.bossKeys = 0xFF;
+    HudView view = dreamcast.viewOf({alone, {}, {}, {}});
+    view.relicsShown = true;
+    view.joined = 1;
+    prepareAt(dreamcast, view, 0);
+    const std::vector<Quad> lone = dreamcast.boxes(view);
+    checkRect(picturesIn(lone, "WAR_NAME", 0).at(0).area, {0, 338, 128, 16});
+    checkRect(picturesIn(lone, "TRBO_FULL", 0).at(0).area, {0, 306, 128, 32});
+    checkRect(picturesIn(lone, "SM_KEY_BLU", 0).at(1).area, {8 + 8 + (7 * 12), 300, 16, 16});
+    for (const std::string_view behind : {"S3_WBLUE", "S4_WBLUE"}) {
+        CAPTURE(behind);
+        for (const std::string_view over : {"WAR_NAME", "TRBO_FULL", "TURBO_GLOW"}) {
+            CAPTURE(over);
+            CHECK(drawnAt(lone, behind, 1) < drawnAt(lone, over, 0));
+        }
+        for (const usize key : drawnAll(lone, "SM_KEY_BLU", 0)) {
+            CHECK(drawnAt(lone, behind, 1) < key);
+        }
+    }
+    checkDeepestFirst(lone);
+
+    // Two players side by side: the fourth seat's strip and panel, from 400, lie behind the third
+    // seat's full arch and banner, which run to 416.
+    HudSeat third = standing(kWarriorClass, 2);
+    third.turbo = 100.0f;
+    const HudView pair =
+        dreamcast.viewOf({standing(kWarriorClass, 3), {}, third, standing(kWizardClass, 1)});
+    const std::vector<Quad> neighbours = dreamcast.boxes(pair);
+    for (const std::string_view behind : {"BK_RUNE_STONE_02", "BTMBK_BLUE"}) {
+        CAPTURE(behind);
+        CHECK(drawnAt(neighbours, behind, 3) < drawnAt(neighbours, "TRBO_FULL", 2));
+        CHECK(drawnAt(neighbours, behind, 3) < drawnAt(neighbours, "WAR_NAME", 2));
+    }
+    checkDeepestFirst(neighbours);
+    // Each box still stacks its own blits in the order FUN_8c0ba060 and FUN_8c0c08a0 make them.
+    CHECK(pictureOrder(neighbours, 2) == Names{"BK_RUNE_STONE_02", "BTMBK_RED", "WAR_NAME",
+                                               "BTMBK_LEVL", "BTMBK_GOLD", "BTMBK_HELTH",
+                                               "TRBO_FULL", "TURBO_GLOW"});
+}
+
 TEST_CASE("the middle pieces stand between the second and third seats' boxes whatever the party",
           "[legends][dreamcast-hud]") {
     const std::array<HudMember, 4> party{{

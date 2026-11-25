@@ -122,6 +122,13 @@ private:
                                const std::string& folder, std::string_view name);
     /** The art of class `classIndex` in costume colour `color`; null for none the look took. */
     const ClassArt* classArtOf(s32 classIndex, s32 color) const;
+    /** Seat `seat`'s strip and panel, the deepest of its box: the stone strip and the costume's
+     * panel of a player's box, or a kind-0 box's coloured pair. */
+    void drawBack(Canvas& canvas, usize seat, const HudSeat& shown) const;
+    /** The rest of seat `seat`'s box, over every seat's strip and panel. */
+    void drawFront(Canvas& canvas, usize seat, const HudSeat& shown, const HudView& view) const;
+    /** What a player's box shows over its strip and panel: the banner, the numbers, what is
+     * carried, the arch, the relics and the legend items. */
     void drawPanel(Canvas& canvas, usize seat, const HudSeat& shown, const HudView& view) const;
     void drawPlain(Canvas& canvas, usize seat, s32 color) const;
     void drawNumbers(Canvas& canvas, usize seat, const StatusBoxView& box) const;
