@@ -46,14 +46,16 @@ const USAGE: &str = "usage: gdl-launcher-headless --check-payload [--payload <zi
                      --after-update <pid> | --version\n";
 
 /// The line that answers arguments the program does not take, in a build with the test hooks,
-/// whose feed modes also read a loopback feed and which also installs.
+/// whose feed modes also read a loopback feed and which also installs and signs with the tests'
+/// own key.
 #[cfg(feature = "test-hooks")]
 const USAGE: &str = "usage: gdl-launcher-headless --check-payload [--payload <zip>] | \
                      --inspect <dir> [--json] | --check-folder <dir> [--json] | \
                      --extract <n64|dreamcast> <dump> --output <dir> [--strict script] | \
                      --check-feed [--feed <url>] | \
                      --update <dir> [--yes] [--offline | --feed <url>] | --recover <dir> | \
-                     --after-update <pid> | --install <image> <dir> | --version\n";
+                     --after-update <pid> | --install <image> <dir> | \
+                     --sign-test <file> <version> | --version\n";
 
 /// The features `--check-payload` lists for this build: none, as a release is built.
 #[cfg(not(feature = "test-hooks"))]

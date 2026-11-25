@@ -12,7 +12,9 @@
 //! test hooks also reads a loopback feed in place of GitHub's, holds the variable that names the
 //! fault point it kills itself at to naming one, and has `--install`, which installs the game from
 //! a GameCube disc's image as the window installs it, so that a rehearsal of an update makes its
-//! installation without one.
+//! installation without one, and `--sign-test`, which signs a checksum list with the tests' own
+//! key as the release signing signs one, so that the rehearsal's release is checked as a signed
+//! release is.
 //! They run before anything builds a window, and what they print is technical text for whoever
 //! runs them, never words for players. A run is handed its arguments, its build, its own file's
 //! sections and the streams to write to, so that every mode runs inside a test as it runs in the
@@ -24,9 +26,13 @@ use std::fs::File;
 use std::io::{self, Read, Seek, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, PoisonError, mpsc};
+#[cfg(feature = "test-hooks")]
+use std::time::{SystemTime, UNIX_EPOCH};
 use std::{env, panic, process, thread};
 
 use gdl_extract::{Expansion, Trust};
+#[cfg(feature = "test-hooks")]
+use gdl_files::FilesError;
 use gdl_files::{
     Cancel, Hold, Job, NoProgress, PhaseId, Progress, RelPath, absolute_lexical, strip_verbatim,
 };
@@ -48,6 +54,8 @@ use gdl_install::{
 #[cfg(feature = "test-hooks")]
 use gdl_media::GameCubeImage;
 use gdl_release::{Asset, Feed, FeedConfig, Platform, Release, ReleaseError, Scan, Version};
+#[cfg(feature = "test-hooks")]
+use gdl_release::{MAX_LIST_LEN, SIGNATURE_SUFFIX};
 use serde::Serialize;
 
 use crate::codes::{self, Report};
@@ -75,14 +83,16 @@ const USAGE: &str = "usage: gdl-launcher-headless --check-payload [--payload <zi
                      --after-update <pid> | --version";
 
 /// The line that answers arguments the program does not take, in a build with the test hooks,
-/// whose feed modes also read a loopback feed and which also installs.
+/// whose feed modes also read a loopback feed and which also installs and signs with the tests'
+/// own key.
 #[cfg(feature = "test-hooks")]
 const USAGE: &str = "usage: gdl-launcher-headless --check-payload [--payload <zip>] | \
                      --inspect <dir> [--json] | --check-folder <dir> [--json] | \
                      --extract <n64|dreamcast> <dump> --output <dir> [--strict script] | \
                      --check-feed [--feed <url>] | \
                      --update <dir> [--yes] [--offline | --feed <url>] | --recover <dir> | \
-                     --after-update <pid> | --install <image> <dir> | --version";
+                     --after-update <pid> | --install <image> <dir> | \
+                     --sign-test <file> <version> | --version";
 
 /// Whether this build carries the test hooks, whose feed modes take [`FEED_OPTION`].
 const TEST_HOOKS: bool = cfg!(feature = "test-hooks");
@@ -145,6 +155,11 @@ const FEED_OPTION: &str = "--feed";
 #[cfg(feature = "test-hooks")]
 const INSTALL_OPTION: &str = "--install";
 
+/// The mode of a build with the test hooks that signs the checksum list after it, for the release
+/// whose version follows, with the tests' own key.
+#[cfg(feature = "test-hooks")]
+const SIGN_TEST_OPTION: &str = "--sign-test";
+
 /// The options that choose a mode: arguments with none of them are no headless run. The last is
 /// the mode a hand-over starts the launcher copy an update put in place with, the id of the
 /// process that ran the update after it.
@@ -162,7 +177,7 @@ const MODE_OPTIONS: [&str; 9] = [
 
 /// The options that choose a mode only a build with the test hooks has, which a release never is.
 #[cfg(feature = "test-hooks")]
-const TEST_HOOK_MODE_OPTIONS: &[&str] = &[INSTALL_OPTION];
+const TEST_HOOK_MODE_OPTIONS: &[&str] = &[INSTALL_OPTION, SIGN_TEST_OPTION];
 
 /// The options that choose a mode only a build with the test hooks has: a release has none.
 #[cfg(not(feature = "test-hooks"))]
@@ -233,11 +248,11 @@ pub fn open_own_file() -> OwnFile {
 /// Runs the headless mode that `args`, the program's arguments after its own name, ask for, and
 /// gives back its exit code; or `None` when no argument is `--check-payload`, `--inspect`,
 /// `--check-folder`, `--extract`, `--check-feed`, `--update`, `--recover`, `--after-update` or
-/// `--version`, nor in a build with the test hooks `--install`, which is no headless run. A mode
-/// writes its report to `out` and a refusal to `err`. Arguments that ask for a mode in a form it
-/// does not take get the usage line on `err` and [`EXIT_USAGE`]. An option's value is the argument
-/// after it, which must not be empty or begin with `--`; options may come in any order, each at
-/// most once.
+/// `--version`, nor in a build with the test hooks `--install` or `--sign-test`, which is no
+/// headless run. A mode writes its report to `out` and a refusal to `err`. Arguments that ask for
+/// a mode in a form it does not take get the usage line on `err` and [`EXIT_USAGE`]. An option's
+/// value is the argument after it, which must not be empty or begin with `--`; options may come in
+/// any order, each at most once.
 ///
 /// - `--version` writes the build's version.
 /// - `--check-payload` checks the runtime the launcher file carries, its sections as `own` holds
@@ -360,11 +375,19 @@ pub fn open_own_file() -> OwnFile {
 /// installations. As it goes it writes its progress as `--recover` writes a recovery's; then
 /// `installed: <version> into <dir>`, `<dir>` made absolute, and a
 /// `notice: <code> (<rule>): <detail>` line for each notice, in the order the install met them. A
-/// refusal is the line `error: <code> (<rule>): <detail>`, and [`EXIT_REFUSED`]. Before any mode
-/// runs, such a build holds the variable `GDL_LAUNCHER_FAULT` to naming the fault point and pass
-/// every job it runs kills itself at, `<point>:<pass>`, or to nothing; a value that names neither
-/// is refused with the line `error: GDL_LAUNCHER_FAULT names no fault point and pass: <value>`,
-/// and [`EXIT_USAGE`].
+/// refusal is the line `error: <code> (<rule>): <detail>`, and [`EXIT_REFUSED`]. Such a build also
+/// has the mode `--sign-test <file> <version>`: it signs the checksum list at `<file>`, of at most
+/// [`MAX_LIST_LEN`](gdl_release::MAX_LIST_LEN) bytes, for the release `<version>` with the tests'
+/// own key, the one key such a build trusts, as the release signing signs a release's list; writes
+/// the signature beside the list into a new file, the list's name with `.sig` after it; and writes
+/// `signed: <path>`, that file's path made absolute. The signature's trusted comment is
+/// `timestamp:<seconds since the Unix epoch>\tfile:<the list's name>\tversion:<version>`. A
+/// version that is no semantic version, and a path whose last name holds what that comment cannot
+/// carry, a control character or no Unicode text, are usage errors. A refusal is the line
+/// `error: <code> (<rule>): <detail>`, and [`EXIT_REFUSED`]. Before any mode runs, such a build
+/// holds the variable `GDL_LAUNCHER_FAULT` to naming the fault point and pass every job it runs
+/// kills itself at, `<point>:<pass>`, or to nothing; a value that names neither is refused with the
+/// line `error: GDL_LAUNCHER_FAULT names no fault point and pass: <value>`, and [`EXIT_USAGE`].
 ///
 /// A refusal's detail is written as a text report writes a value, each control character as its
 /// escape, so that the refusal stays one line whatever the names in its paths, or the text it
@@ -429,6 +452,8 @@ pub fn run(
         Mode::Install { image, folder } => {
             install_mode(Path::new(image), Path::new(folder), build, own, out, err)
         }
+        #[cfg(feature = "test-hooks")]
+        Mode::SignTest { file, version } => sign_test_mode(Path::new(file), version, out, err),
     })
 }
 
@@ -530,6 +555,9 @@ enum Mode<'a> {
     /// `--install`, from the GameCube disc image at `image` into `folder`.
     #[cfg(feature = "test-hooks")]
     Install { image: &'a OsStr, folder: &'a OsStr },
+    /// `--sign-test`, of the checksum list at `file` for the release `version`, as it was given.
+    #[cfg(feature = "test-hooks")]
+    SignTest { file: &'a OsStr, version: &'a OsStr },
 }
 
 /// The mode option the arguments give, before the other options are held to it.
@@ -555,6 +583,9 @@ enum Chosen<'a> {
     /// `--install`, with the image and the folder after it.
     #[cfg(feature = "test-hooks")]
     Install(&'a OsStr, &'a OsStr),
+    /// `--sign-test`, with the file and the version after it.
+    #[cfg(feature = "test-hooks")]
+    SignTest(&'a OsStr, &'a OsStr),
 }
 
 /// Arguments that ask for a mode in a form it does not take.
@@ -597,6 +628,8 @@ fn parse(args: &[OsString]) -> Result<Mode<'_>, Misused> {
             Some(AFTER_UPDATE_OPTION) => Chosen::AfterUpdate(value(&mut rest)?),
             #[cfg(feature = "test-hooks")]
             Some(INSTALL_OPTION) => Chosen::Install(value(&mut rest)?, value(&mut rest)?),
+            #[cfg(feature = "test-hooks")]
+            Some(SIGN_TEST_OPTION) => Chosen::SignTest(value(&mut rest)?, value(&mut rest)?),
             Some(YES_OPTION) if !yes => {
                 yes = true;
                 continue;
@@ -690,6 +723,14 @@ fn parse(args: &[OsString]) -> Result<Mode<'_>, Misused> {
             (None, false),
             (false, false, None),
         ) => Ok(Mode::Install { image, folder }),
+        #[cfg(feature = "test-hooks")]
+        (
+            Some(Chosen::SignTest(file, version)),
+            None,
+            false,
+            (None, false),
+            (false, false, None),
+        ) => Ok(Mode::SignTest { file, version }),
         _ => Err(Misused),
     }
 }
@@ -2001,6 +2042,124 @@ fn install_notice_line(notice: &InstallNotice) -> String {
     format!("{} ({rule}): {detail}", codes::notice(notice))
 }
 
+/// `--sign-test`, in a build with the test hooks: signs the checksum list at `file` for the
+/// release `version` with the tests' own key, as the release signing signs a release's list, and
+/// writes the signature beside the list into a new file, the list's name with `.sig` after it;
+/// reports that file's path to `out`, or why it was refused to `err`.
+///
+/// The signature's trusted comment, which an update's check holds it to, names when it was made,
+/// the list's name and the release, as [`trusted_comment`] writes it. A version that is no
+/// semantic version, and a path whose last name is no Unicode text or holds a control character,
+/// which the comment cannot carry as the name it gives, are usage errors, refused before anything
+/// is read. The path is made absolute first, as every mode makes the paths it is given; the list
+/// is read whole, as [`read_list`] reads it, and the signature is written as [`write_new`] writes
+/// a file, never in place of one that is there.
+#[cfg(feature = "test-hooks")]
+fn sign_test_mode(file: &Path, version: &OsStr, out: &mut dyn Write, err: &mut dyn Write) -> u8 {
+    let Some(version) = version.to_str().and_then(|text| Version::parse(text).ok()) else {
+        return usage(err);
+    };
+    let list = match absolute_lexical(file) {
+        Ok(list) => list,
+        Err(source) => {
+            let path = file.to_path_buf();
+            return refuse_files(err, &FilesError::Io { path, source });
+        }
+    };
+    let name = list
+        .file_name()
+        .and_then(OsStr::to_str)
+        .filter(|name| !name.chars().any(char::is_control));
+    let Some(name) = name else {
+        return usage(err);
+    };
+    let bytes = match read_list(&list) {
+        Ok(bytes) => bytes,
+        Err(error) => return refuse_files(err, &error),
+    };
+    let comment = trusted_comment(signed_at(), name, &version);
+    let signature = gdl_fixtures::sign_with_test_key(&bytes, &comment);
+    let path = list.with_file_name(format!("{name}{SIGNATURE_SUFFIX}"));
+    match write_new(&path, &signature) {
+        Ok(()) => reported(out, &text_report(vec![("signed", shown(&path))])),
+        Err(error) => refuse_files(err, &error),
+    }
+}
+
+/// Writes to `err` the line that refuses a file operation that failed with `error`, its code as
+/// [`codes::files`] gives it, and gives back [`EXIT_REFUSED`].
+#[cfg(feature = "test-hooks")]
+fn refuse_files(err: &mut dyn Write, error: &FilesError) -> u8 {
+    refuse(err, Report::Error(codes::files(error)), error.rule(), error)
+}
+
+/// The trusted comment the release signing gives a checksum list's signature, which an update's
+/// check holds the signature to: when it was made, `signed_at` in whole seconds since the Unix
+/// epoch, the list's file name `name`, and the release `version`, as tab-separated `key:value`
+/// fields.
+#[cfg(feature = "test-hooks")]
+fn trusted_comment(signed_at: u64, name: &str, version: &Version) -> String {
+    format!("timestamp:{signed_at}\tfile:{name}\tversion:{version}")
+}
+
+/// When a signature is made, in whole seconds since the Unix epoch; nought on a clock set before
+/// it, since nothing checks when a list was signed.
+#[cfg(feature = "test-hooks")]
+fn signed_at() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
+
+/// The checksum list at `path`, read whole: a file of more than [`MAX_LIST_LEN`] bytes is no
+/// release's list, since the feed reads none longer, and is refused as [`FilesError::TooLarge`]
+/// once one byte past that is read; what the system refused is [`FilesError::Io`].
+#[cfg(feature = "test-hooks")]
+fn read_list(path: &Path) -> Result<Vec<u8>, FilesError> {
+    let mut bytes = Vec::new();
+    File::open(path)
+        .and_then(|file| {
+            file.take(MAX_LIST_LEN.saturating_add(1))
+                .read_to_end(&mut bytes)
+        })
+        .map_err(|source| FilesError::Io {
+            path: path.to_path_buf(),
+            source,
+        })?;
+    if u64::try_from(bytes.len()).is_ok_and(|read| read <= MAX_LIST_LEN) {
+        Ok(bytes)
+    } else {
+        Err(FilesError::TooLarge {
+            path: path.to_path_buf(),
+            limit: MAX_LIST_LEN,
+        })
+    }
+}
+
+/// Writes `text` into a new file at `path`, made new so that nothing already there is replaced,
+/// and through to its disk. A write that fails after the file was made takes that file away again,
+/// so that no signature cut short is left to be read as one; what the system refused is
+/// [`FilesError::Io`].
+#[cfg(feature = "test-hooks")]
+fn write_new(path: &Path, text: &str) -> Result<(), FilesError> {
+    let refused = |source| FilesError::Io {
+        path: path.to_path_buf(),
+        source,
+    };
+    let mut file = File::create_new(path).map_err(refused)?;
+    let written = file
+        .write_all(text.as_bytes())
+        .and_then(|()| file.sync_all());
+    // Closed before it is taken away, which Windows refuses for a file still open.
+    drop(file);
+    written.map_err(|source| {
+        // The name was free when the file was made, so what is there is this run's own.
+        let _ = std::fs::remove_file(path);
+        refused(source)
+    })
+}
+
 /// Runs `job` on a thread of its own, handing it a progress that prints, and writes each line that
 /// progress gives to `out` as it comes, so that whoever runs the program sees a hold while the job
 /// waits in it. Gives back what the job gave, and whether every line was written: a line that
@@ -3081,7 +3240,8 @@ mod tests {
              --output <dir> [--strict script] | --check-feed | --update <dir> [--yes] \
              [--offline] | --recover <dir> | --after-update <pid> | --version"
         );
-        // A build with the test hooks reads a loopback feed too, and installs.
+        // A build with the test hooks reads a loopback feed too, installs, and signs with the
+        // tests' own key.
         #[cfg(feature = "test-hooks")]
         assert_eq!(
             USAGE,
@@ -3089,7 +3249,7 @@ mod tests {
              [--json] | --check-folder <dir> [--json] | --extract <n64|dreamcast> <dump> \
              --output <dir> [--strict script] | --check-feed [--feed <url>] | --update <dir> \
              [--yes] [--offline | --feed <url>] | --recover <dir> | --after-update <pid> | \
-             --install <image> <dir> | --version"
+             --install <image> <dir> | --sign-test <file> <version> | --version"
         );
     }
 
@@ -3392,6 +3552,252 @@ mod tests {
         assert_eq!(fs::read(&destination).unwrap(), b"a file of the player's");
     }
 
+    #[cfg(not(feature = "test-hooks"))]
+    #[test]
+    fn a_release_has_no_sign_test_mode() {
+        // A release signs nothing with the tests' key: `--sign-test` chooses no mode of its own,
+        // and beside a mode it is an option that mode does not take.
+        let ran = run_release(&["--sign-test", "list.txt", NEXT]);
+        assert_eq!(ran.code, None, "{ran:?}");
+        assert_eq!((ran.out.as_str(), ran.err.as_str()), ("", ""));
+        let cases: &[&[&str]] = &[
+            &["--version", "--sign-test", "list.txt", NEXT],
+            &["--sign-test", "list.txt", NEXT, "--check-payload"],
+        ];
+        for &args in cases {
+            let ran = run_release(args);
+            assert_eq!(ran.code, Some(EXIT_USAGE), "{args:?}: {ran:?}");
+            assert_eq!(ran.err, format!("{USAGE}\n"), "{args:?}");
+            assert_eq!(ran.out, "", "{args:?}");
+        }
+    }
+
+    #[cfg(feature = "test-hooks")]
+    #[test]
+    fn a_sign_test_takes_a_file_and_a_version() {
+        // Read as a mode and never run.
+        let args: Vec<OsString> = ["--sign-test", "list.txt", NEXT]
+            .iter()
+            .map(OsString::from)
+            .collect();
+        let mode = mode_of(&args);
+        assert!(
+            matches!(
+                mode,
+                Some(Ok(Mode::SignTest { file, version })) if file == "list.txt" && version == NEXT
+            ),
+            "{mode:?}"
+        );
+
+        // Refused before anything is read: without its two values, with one that is empty or an
+        // option, twice, with an argument it does not take, beside any other option and beside
+        // every other mode; a version that is no semantic version; and a file, not even there,
+        // whose name would give the trusted comment a field or a line of its own, or that has no
+        // name.
+        let cases: &[&[&str]] = &[
+            &["--sign-test"],
+            &["--sign-test", "list.txt"],
+            &["--sign-test", "", NEXT],
+            &["--sign-test", "list.txt", ""],
+            &["--sign-test", "--json", NEXT],
+            &["--sign-test", "list.txt", "--yes"],
+            &["--sign-test", "list.txt", NEXT, "extra"],
+            &["--sign-test", "a.txt", NEXT, "--sign-test", "b.txt", NEXT],
+            &["--sign-test", "list.txt", NEXT, "--json"],
+            &["--sign-test", "list.txt", NEXT, "--yes"],
+            &["--sign-test", "list.txt", NEXT, "--offline"],
+            &["--sign-test", "list.txt", NEXT, "--feed", LOOPBACK_BASE],
+            &["--sign-test", "list.txt", NEXT, "--payload", "a.zip"],
+            &["--sign-test", "list.txt", NEXT, "--output", "out"],
+            &["--sign-test", "list.txt", NEXT, "--strict", "script"],
+            &["--sign-test", "list.txt", NEXT, "--version"],
+            &["--check-payload", "--sign-test", "list.txt", NEXT],
+            &[
+                "--install",
+                "game.iso",
+                "dir",
+                "--sign-test",
+                "list.txt",
+                NEXT,
+            ],
+            &["--sign-test", "list.txt", NEXT, "--after-update", "1"],
+            &["--sign-test", "list.txt", "1.0"],
+            &["--sign-test", "list.txt", "v1.0.0-beta.1"],
+            &["--sign-test", "list.txt", " 1.0.0-beta.1"],
+            &["--sign-test", "list.txt", "1.0.0-beta.1\n"],
+            &["--sign-test", "list\tversion:9.9.9", NEXT],
+            &["--sign-test", "list.txt\ntrusted comment: none", NEXT],
+            &["--sign-test", "/", NEXT],
+        ];
+        for &args in cases {
+            let ran = run_release(args);
+            assert_eq!(ran.code, Some(EXIT_USAGE), "{args:?}: {ran:?}");
+            assert_eq!(ran.err, format!("{USAGE}\n"), "{args:?}");
+            assert_eq!(ran.out, "", "{args:?}");
+        }
+        // A name that is not Unicode, which the comment cannot carry either.
+        let args = [OsString::from("--sign-test"), not_unicode(), NEXT.into()];
+        let ran = run_release(&args);
+        assert_eq!(ran.code, Some(EXIT_USAGE), "{ran:?}");
+        assert_eq!(ran.err, format!("{USAGE}\n"));
+    }
+
+    /// The time now, in whole seconds since the Unix epoch.
+    #[cfg(feature = "test-hooks")]
+    fn now_seconds() -> u64 {
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+    }
+
+    #[cfg(feature = "test-hooks")]
+    #[test]
+    fn a_list_is_signed_beside_itself_with_the_tests_key() {
+        use gdl_fixtures::sign_with_test_key;
+        use gdl_release::{Keyring, MAX_LIST_LEN};
+
+        let dir = tempfile::tempdir().unwrap();
+        let next = Version::parse(NEXT).unwrap();
+        let name = checksums_asset(&next, Platform::LinuxX64);
+        let path = dir.path().join(&name);
+        let launcher = launcher_asset(&next, Platform::LinuxX64);
+        let list = format!("{}  {launcher}\n", "ab".repeat(32));
+        fs::write(&path, &list).unwrap();
+        let args = [
+            OsStr::new("--sign-test"),
+            path.as_os_str(),
+            OsStr::new(NEXT),
+        ];
+
+        // The signature goes into a new file beside the list, named as the release names it.
+        let before = now_seconds();
+        let ran = run_release(&args);
+        let after = now_seconds();
+        assert_eq!(ran.code, Some(EXIT_OK), "{ran:?}");
+        assert_eq!(ran.err, "");
+        let signature_name = signature_asset(&next, Platform::LinuxX64);
+        let signature_path = dir.path().join(&signature_name);
+        assert_eq!(ran.out, format!("signed: {}\n", signature_path.display()));
+        let mut names = vec![name.clone(), signature_name];
+        names.sort();
+        assert_eq!(folder_names(dir.path()).unwrap(), names);
+        assert_eq!(fs::read_to_string(&path).unwrap(), list);
+
+        // The test key's signature, which the key this build trusts verifies for the list's own
+        // name and the release; its trusted comment says when it was made, and what it was made
+        // for, as the release signing writes it.
+        let signature = fs::read(&signature_path).unwrap();
+        Keyring::release()
+            .verify_list(list.as_bytes(), &name, &next, &signature)
+            .unwrap();
+        let text = String::from_utf8(signature).unwrap();
+        let lines: Vec<&str> = text.lines().collect();
+        assert_eq!(lines.len(), 4, "{text}");
+        let comment = lines[2].strip_prefix("trusted comment: ").unwrap();
+        let fields: Vec<&str> = comment.split('\t').collect();
+        let [timestamp, file, version] = fields[..] else {
+            panic!("{comment:?}");
+        };
+        let timestamp: u64 = timestamp
+            .strip_prefix("timestamp:")
+            .and_then(|seconds| seconds.parse().ok())
+            .unwrap_or_else(|| panic!("{comment:?}"));
+        assert!((before..=after).contains(&timestamp), "{comment:?}");
+        assert_eq!(file, format!("file:{name}"));
+        assert_eq!(version, format!("version:{NEXT}"));
+        assert_eq!(text, sign_with_test_key(list.as_bytes(), comment));
+
+        // Another release, another list: neither verifies by this signature.
+        let other = Version::parse(VERSION).unwrap();
+        let signature = text.as_bytes();
+        let keyring = Keyring::release();
+        assert!(
+            keyring
+                .verify_list(list.as_bytes(), &name, &other, signature)
+                .is_err()
+        );
+        let changed = list.replace("ab", "cd");
+        assert!(
+            keyring
+                .verify_list(changed.as_bytes(), &name, &next, signature)
+                .is_err()
+        );
+
+        // A list as long as a list may be is signed too.
+        let longest = dir.path().join("longest.txt");
+        fs::write(&longest, vec![b'a'; usize::try_from(MAX_LIST_LEN).unwrap()]).unwrap();
+        let args = [
+            OsStr::new("--sign-test"),
+            longest.as_os_str(),
+            OsStr::new(NEXT),
+        ];
+        let ran = run_release(&args);
+        assert_eq!(ran.code, Some(EXIT_OK), "{ran:?}");
+        let signed = dir.path().join("longest.txt.sig");
+        assert_eq!(ran.out, format!("signed: {}\n", signed.display()));
+    }
+
+    #[cfg(feature = "test-hooks")]
+    #[test]
+    fn a_refused_signing_is_one_line_and_replaces_nothing() {
+        use gdl_release::MAX_LIST_LEN;
+
+        let dir = tempfile::tempdir().unwrap();
+        let sign = |path: &Path| {
+            let args = [
+                OsStr::new("--sign-test"),
+                path.as_os_str(),
+                OsStr::new(NEXT),
+            ];
+            run_release(&args)
+        };
+
+        // A list that is not there.
+        let missing = dir.path().join("missing.txt");
+        let error = fs::File::open(&missing).unwrap_err();
+        assert_refused(
+            &sign(&missing),
+            &format!("error: io.failed (io): {}: {error}\n", missing.display()),
+        );
+
+        // A list longer than any release's, of which no more than a byte past the most is read.
+        let long = dir.path().join("long.txt");
+        fs::write(
+            &long,
+            vec![b'a'; usize::try_from(MAX_LIST_LEN).unwrap() + 1],
+        )
+        .unwrap();
+        assert_refused(
+            &sign(&long),
+            &format!(
+                "error: io.failed (tooLarge): Metadata is too large: {}\n",
+                long.display()
+            ),
+        );
+        assert_eq!(
+            folder_names(dir.path()).unwrap(),
+            [String::from("long.txt")]
+        );
+
+        // A signature already there is never replaced, whatever it holds.
+        let list = dir.path().join("list.txt");
+        fs::write(&list, b"a list").unwrap();
+        let signature = dir.path().join("list.txt.sig");
+        fs::write(&signature, b"a signature of the player's").unwrap();
+        let taken = fs::File::create_new(&signature).unwrap_err();
+        assert_refused(
+            &sign(&list),
+            &format!("error: io.failed (io): {}: {taken}\n", signature.display()),
+        );
+        assert_eq!(
+            fs::read(&signature).unwrap(),
+            b"a signature of the player's"
+        );
+    }
+
     #[test]
     fn other_arguments_are_not_headless() {
         let cases: &[&[&str]] = &[
@@ -3423,6 +3829,8 @@ mod tests {
             &["--After-Update", "1"],
             &["--install=game.iso", "dir"],
             &["--Install", "game.iso", "dir"],
+            &["--sign-test=list.txt", "1.0.0"],
+            &["--Sign-Test", "list.txt", "1.0.0"],
             &["1234"],
         ];
         for &args in cases {

@@ -4,9 +4,10 @@
 //! server in place of GitHub's, trusting the tests' own key alone; and updates from such a feed's
 //! release, by the installation's launcher copy and by a downloaded launcher outside it, each
 //! handing over to the copy it put in place, beside a plan that takes the program's own file when
-//! the feed cannot be read; and a fresh install of a GameCube disc's image without a window, from
+//! the feed cannot be read; a fresh install of a GameCube disc's image without a window, from
 //! the runtime the program's own file carries, killed at each of the install's points and
-//! recovered as the next start recovers it.
+//! recovered as the next start recovers it; and a checksum list signed with the tests' own key,
+//! whose signature the feed then takes as a release's.
 #![cfg(feature = "test-hooks")]
 
 mod common;
@@ -18,6 +19,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
+use gdl_files::Cancel;
 use gdl_fixtures::{
     LoopbackServer, ReleaseRow, Reply, Request, RuntimeFiles, TarEntry, append_sections,
     folder_names, icon_disc_receipt, icon_iso, page, sha256_hex, sign_with_test_key, tar_gz,
@@ -30,7 +32,8 @@ use gdl_install::{
     installed_launcher_name, probe_game_version,
 };
 use gdl_release::{
-    Platform, REPOSITORY, Version, checksums_asset, launcher_asset, linux_member, signature_asset,
+    CheckedList, Feed, FeedConfig, Platform, REPOSITORY, ReleaseError, Version, checksums_asset,
+    launcher_asset, linux_member, signature_asset,
 };
 use serde_json::Value;
 
@@ -1052,4 +1055,126 @@ fn an_install_killed_at_each_install_point_recovers() {
     // At least the journal, a root, the roots recorded and the receipt.
     assert!(at > 4, "the publish passed {} times", at - 1);
     inputs.assert_untouched();
+}
+
+/// Runs the program's signing of the checksum list at `list` for the release `release`, to its end.
+fn sign_test(list: &Path, release: &str) -> Output {
+    let args = [
+        OsStr::new("--sign-test"),
+        list.as_os_str(),
+        OsStr::new(release),
+    ];
+    run_program(Path::new(PROGRAM), None, &args)
+}
+
+/// The checksum list of `platform`'s newest release on the loopback feed at `base`, fetched and
+/// checked as an update fetches and checks one, by a launcher of the program's version trusting
+/// the keys a build with the test hooks trusts.
+fn checked_list(base: &str, platform: Platform) -> Result<CheckedList, ReleaseError> {
+    let config = FeedConfig::loopback(base, VERSION).unwrap_or_else(|error| panic!("{error}"));
+    let feed = Feed::new(config);
+    let cancel = Cancel::default();
+    let scan = feed.scan(None, platform, &cancel)?;
+    let release = scan.candidate.expect("the feed holds a release");
+    feed.check_list(&release, &cancel)
+}
+
+#[test]
+fn sign_test_writes_a_signature_the_feed_accepts() {
+    let Some(platform) = this_platform() else {
+        return;
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let feed = LoopbackFeed::start();
+    let base = feed.base();
+    let later = version(LATER);
+    // A release's checksum list, as the release writes it, under the name the release gives it.
+    let list = ReleaseRow::new_line(&base, LATER, platform.as_str(), UNREAD_LAUNCHER, None)
+        .checksum_list();
+    let list_name = checksums_asset(&later, platform);
+    let list_path = dir.path().join(&list_name);
+    fs::write(&list_path, &list).unwrap();
+
+    // The program signs it into a new file beside it, under the name the release gives the
+    // signature, and leaves the list as it was.
+    let output = sign_test(&list_path, LATER);
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert_eq!(text(&output.stderr), "", "{output:?}");
+    let signature_path = dir.path().join(signature_asset(&later, platform));
+    assert_eq!(
+        text(&output.stdout),
+        format!("signed: {}\n", signature_path.display())
+    );
+    assert!(fs::read(&list_path).unwrap() == list, "the list changed");
+    let signature = fs::read(&signature_path).unwrap();
+
+    // The feed takes a release that carries the list and that signature: it fetches both, the
+    // list then its signature, each through the redirect a download answers, and nothing of the
+    // launcher file; the signature verifies by the key this build trusts, and the list gives the
+    // launcher file the digest GitHub gives it.
+    let row = ReleaseRow::new_line(
+        &base,
+        LATER,
+        platform.as_str(),
+        UNREAD_LAUNCHER,
+        Some(&signature),
+    );
+    let signed = Published {
+        row,
+        files: vec![UNREAD_LAUNCHER.to_vec(), list.clone(), signature.clone()],
+    };
+    feed.publish(&[&signed]);
+    let checked = checked_list(&base, platform).unwrap_or_else(|error| panic!("{error}"));
+    assert!(checked.signed());
+    assert!(
+        checked.bytes == list,
+        "the list checked is not the list signed"
+    );
+    assert!(
+        checked.signature.as_deref() == Some(signature.as_slice()),
+        "the signature checked is not the one the program wrote"
+    );
+    let targets: Vec<String> = feed
+        .requests()
+        .into_iter()
+        .map(|request| request.target)
+        .collect();
+    let mut expected = vec![page_target()];
+    for asset in &signed.row.assets[1..] {
+        let url = asset.url.as_str().expect("a download URL");
+        let target = url.strip_prefix(base.trim_end_matches('/')).unwrap();
+        expected.extend([target.to_owned(), format!("/{STORAGE}{}", asset.name)]);
+    }
+    assert_eq!(targets, expected);
+    assert_sent_as_the_launcher_sends(&feed);
+
+    // A signature the program made of the same list for another release is refused for this
+    // one, since what it was made for is part of what is signed.
+    let elsewhere = dir.path().join("elsewhere");
+    fs::create_dir(&elsewhere).unwrap();
+    let other_list = elsewhere.join(&list_name);
+    fs::write(&other_list, &list).unwrap();
+    let output = sign_test(&other_list, VERSION);
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    let other_signature = fs::read(elsewhere.join(signature_asset(&later, platform))).unwrap();
+    let row = ReleaseRow::new_line(
+        &base,
+        LATER,
+        platform.as_str(),
+        UNREAD_LAUNCHER,
+        Some(&other_signature),
+    );
+    feed.publish(&[&Published {
+        row,
+        files: vec![UNREAD_LAUNCHER.to_vec(), list, other_signature],
+    }]);
+    let refused = checked_list(&base, platform).unwrap_err();
+    assert_eq!(refused.rule(), "signature", "{refused:?}");
+    assert_eq!(
+        refused.to_string(),
+        format!(
+            "The release's checksum list is not signed as this launcher requires: its trusted \
+             comment gives the version \"{VERSION}\", not {LATER}"
+        )
+    );
 }
