@@ -4,7 +4,9 @@
 //! server in place of GitHub's, trusting the tests' own key alone; and updates from such a feed's
 //! release, by the installation's launcher copy and by a downloaded launcher outside it, each
 //! handing over to the copy it put in place, beside a plan that takes the program's own file when
-//! the feed cannot be read.
+//! the feed cannot be read; and a fresh install of a GameCube disc's image without a window, from
+//! the runtime the program's own file carries, killed at each of the install's points and
+//! recovered as the next start recovers it.
 #![cfg(feature = "test-hooks")]
 
 mod common;
@@ -13,16 +15,19 @@ mod launchers;
 use std::collections::BTreeMap;
 use std::ffi::OsStr;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 use gdl_fixtures::{
     LoopbackServer, ReleaseRow, Reply, Request, RuntimeFiles, TarEntry, append_sections,
-    folder_names, page, sha256_hex, sign_with_test_key, tar_gz, tree_entries,
+    folder_names, icon_disc_receipt, icon_iso, page, sha256_hex, sign_with_test_key, tar_gz,
+    tree_entries,
 };
 use gdl_install::{
-    BUILD_INFO, FAULT_VARIABLE, JOURNAL_DIR, LOCK_FILE, RECEIPT_FILE, RUNTIME_SECTION, STATE_DIR,
-    UPDATE_JOURNAL, VERSION_FILE, WINDOW_SECTION, installed_launcher_name,
+    BUILD_INFO, CHECK_DISC, CHECK_GAME, COPY_DISC_FILES, COPY_LAUNCHER, DISC_FILES, FAULT_VARIABLE,
+    GET_RUNTIME, JOURNAL_DIR, LOCK_FILE, PERSONALISE, PREPARE, PUBLISH, RECEIPT_FILE,
+    RUNTIME_SECTION, STATE_DIR, UPDATE_JOURNAL, VERSION_FILE, WINDOW_SECTION,
+    installed_launcher_name, probe_game_version,
 };
 use gdl_release::{
     Platform, REPOSITORY, Version, checksums_asset, launcher_asset, linux_member, signature_asset,
@@ -99,6 +104,24 @@ const SWAP_BEGUN: &str = "update.commit:1";
 /// What starts the lines a hold writes as it begins and ends: a killed program's lock may stay
 /// held for a moment after it ended, which a run that follows waits out.
 const HOLD_LINES: [&str; 2] = ["hold: ", "resumed"];
+
+/// The exit code of a program the fault variable ended at the pass it names.
+const KILLED: i32 = 71;
+
+/// The disc image an install installs from, in the folder a test lays out the install's inputs in.
+const IMAGE: &str = "game.iso";
+
+/// The folder beside it that holds the launcher file an install runs, outside every installation.
+const SOURCE: &str = "source";
+
+/// The folder a test installs into, which the install makes, in the folder it lays the inputs out
+/// in.
+const GAME: &str = "game";
+
+/// How many passes of the install's publish the kill test tries at most: more than an install of
+/// the tests' runtime passes, so that an install still killed past them fails the test rather than
+/// keep it going.
+const MOST_PUBLISH_PASSES: u32 = 64;
 
 /// What a program wrote to one of its streams, as text.
 fn text(bytes: &[u8]) -> &str {
@@ -410,7 +433,7 @@ fn a_named_fault_kills_an_update_there_and_a_recovery_takes_it_back() {
         OsStr::new("--offline"),
     ];
     let killed = run_program(&launcher, Some(SWAP_BEGUN), &args);
-    assert_eq!(killed.status.code(), Some(71), "{killed:?}");
+    assert_eq!(killed.status.code(), Some(KILLED), "{killed:?}");
     assert_eq!(
         phases_of(text(&killed.stdout)).last(),
         Some(&"swap"),
@@ -752,4 +775,281 @@ fn a_plan_whose_feed_cannot_be_read_comes_from_the_programs_own_file() {
         .map(|request| request.target)
         .collect();
     assert_eq!(targets, [page_target()]);
+}
+
+/// What an install without a window installs from, in a folder of the test's outside every
+/// installation: the icon disc's image, and a launcher file of the program's own carrying the
+/// standard runtime of the program's release, with a game that answers the game's version probe.
+struct InstallInputs {
+    /// The disc image.
+    image: PathBuf,
+    /// The launcher file, which the install runs.
+    launcher: PathBuf,
+    /// The runtime it carries.
+    runtime: RuntimeFiles,
+    /// Its bytes.
+    bytes: Vec<u8>,
+}
+
+impl InstallInputs {
+    /// The inputs of an install for `platform`, written into `dir`, the runtime's executable
+    /// holding `game`. The executable is stored in the runtime's archive rather than deflated, so
+    /// that a program's megabytes build fast; the release record names its bytes.
+    fn new(dir: &Path, platform: Platform, game: &[u8]) -> InstallInputs {
+        let image = dir.join(IMAGE);
+        fs::write(&image, icon_iso()).unwrap();
+        let mut runtime = RuntimeFiles::standard(platform.as_str(), VERSION);
+        let zip = runtime.zip_with_program(game);
+        let mut bytes = fs::read(PROGRAM).unwrap();
+        append_sections(&mut bytes, &[(RUNTIME_SECTION, &zip)], 0);
+        let launcher = dir.join(SOURCE).join(installed_launcher_name(platform));
+        write_launcher(&launcher, &bytes);
+        InstallInputs {
+            image,
+            launcher,
+            runtime,
+            bytes,
+        }
+    }
+
+    /// Runs the launcher file's install of the image into `destination`, killed at the pass
+    /// `fault` names when one is given, to its end.
+    fn install(&self, destination: &Path, fault: Option<&str>) -> Output {
+        let args = [
+            OsStr::new("--install"),
+            self.image.as_os_str(),
+            destination.as_os_str(),
+        ];
+        run_program(&self.launcher, fault, &args)
+    }
+
+    /// Runs the launcher file's recovery of the folder `destination`, as the next start runs one,
+    /// to its end.
+    fn recover(&self, destination: &Path) -> Output {
+        let args = [OsStr::new("--recover"), destination.as_os_str()];
+        run_program(&self.launcher, None, &args)
+    }
+
+    /// Checks that the image and the launcher file are as the test wrote them: an install only
+    /// reads them.
+    #[track_caller]
+    fn assert_untouched(&self) {
+        assert!(
+            fs::read(&self.image).unwrap() == icon_iso(),
+            "the image changed"
+        );
+        assert!(
+            fs::read(&self.launcher).unwrap() == self.bytes,
+            "the launcher file changed"
+        );
+    }
+}
+
+/// The phases an install for `platform` goes through, in turn: on Windows the disc's icon is set
+/// into the executable, a phase of its own.
+fn install_phases(platform: Platform) -> Vec<&'static str> {
+    let mut phases = vec![CHECK_DISC, PREPARE, GET_RUNTIME, COPY_DISC_FILES];
+    if platform == Platform::WindowsX64 {
+        phases.push(PERSONALISE);
+    }
+    phases.extend([COPY_LAUNCHER, CHECK_GAME, PUBLISH]);
+    phases.iter().map(|phase| phase.0).collect()
+}
+
+/// The line an install into `destination` that stands ends with.
+fn installed_line(destination: &Path) -> String {
+    format!("installed: {VERSION} into {}", destination.display())
+}
+
+/// The game the kill test's installs carry for `platform`: on Windows the program, since an install
+/// sets the disc's icon into the executable, which only a program takes; on Linux a script that
+/// answers the game's version probe as the program does, so that each of the test's many installs
+/// copies and hashes a few bytes for the game rather than the program's megabytes.
+fn kill_test_game(platform: Platform) -> Vec<u8> {
+    match platform {
+        Platform::WindowsX64 => fs::read(PROGRAM).unwrap(),
+        Platform::LinuxX64 => format!("#!/bin/sh\necho {VERSION}\n").into_bytes(),
+    }
+}
+
+/// What a recovery of an install a kill cut short leaves of the folder the install made.
+#[derive(Clone, Copy, Debug)]
+enum Left {
+    /// The folder, empty: the state folder was given up before a journal said who made the folder.
+    Empty,
+    /// Nothing: the install was taken back with the folder it made.
+    Nothing,
+    /// The installation an install nothing stops leaves.
+    Whole,
+}
+
+/// Checks that the install of `inputs` into the new folder `destination`, which the pass `fault`
+/// names ended as `killed` tells, was killed there and left a job to recover; then recovers the
+/// folder as the next start does, and checks that the recovery reports `outcome` for the install
+/// and nothing for an update, and leaves `left`, `whole` being what an install nothing stops
+/// leaves.
+#[track_caller]
+fn assert_killed_and_recovered(
+    inputs: &InstallInputs,
+    destination: &Path,
+    (fault, killed): (&str, &Output),
+    (outcome, left): (&str, Left),
+    whole: &BTreeMap<String, Option<String>>,
+) {
+    assert_eq!(killed.status.code(), Some(KILLED), "{fault}: {killed:?}");
+    assert_eq!(text(&killed.stderr), "", "{fault}: {killed:?}");
+    assert!(
+        !text(&killed.stdout).contains("installed: "),
+        "{fault}: {killed:?}"
+    );
+    let report = inspect_json(destination);
+    assert_eq!(report["state"], "pending", "{fault}: {report}");
+
+    let recovered = inputs.recover(destination);
+    assert_eq!(recovered.status.code(), Some(0), "{fault}: {recovered:?}");
+    assert_eq!(text(&recovered.stderr), "", "{fault}: {recovered:?}");
+    let lines: Vec<&str> = past_progress(text(&recovered.stdout))
+        .into_iter()
+        .filter(|line| !HOLD_LINES.iter().any(|start| line.starts_with(start)))
+        .collect();
+    assert_eq!(
+        lines,
+        [format!("install: {outcome}").as_str(), "update: nothing"],
+        "{fault}: {recovered:?}"
+    );
+    match left {
+        Left::Empty => {
+            let names = folder_names(destination).unwrap();
+            assert!(names.is_empty(), "{fault}: {names:?}");
+        }
+        Left::Nothing => assert!(!destination.exists(), "{fault}: the folder is left"),
+        Left::Whole => {
+            assert!(
+                tree_entries(destination) == *whole,
+                "{fault}: the tree is not an install's"
+            );
+            let report = inspect_json(destination);
+            assert_eq!(report["state"], "installed", "{fault}: {report}");
+        }
+    }
+}
+
+#[test]
+fn install_installs_the_image_with_this_file() {
+    let Some(platform) = this_platform() else {
+        return;
+    };
+    let _one = one_run_at_a_time();
+    let dir = tempfile::tempdir().unwrap();
+    let inputs = InstallInputs::new(dir.path(), platform, &fs::read(PROGRAM).unwrap());
+    let destination = dir.path().join(GAME);
+
+    // The install's phases in turn, then the release it installed and where.
+    let output = inputs.install(&destination, None);
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert_eq!(text(&output.stderr), "", "{output:?}");
+    let out = text(&output.stdout);
+    assert_eq!(phases_of(out), install_phases(platform), "{output:?}");
+    assert_eq!(past_progress(out), [installed_line(&destination)]);
+
+    // The installation stands, of the program's release, its launcher copy this file and its
+    // receipt the one an install of the disc writes; the state folder holds what an installation
+    // keeps once its jobs are done.
+    let report = inspect_json(&destination);
+    assert_eq!(report["state"], "installed", "{report}");
+    assert_eq!(report["journals"], Value::Array(Vec::new()), "{report}");
+    assert_eq!(report["installation"]["version"], VERSION, "{report}");
+    assert_eq!(report["installation"]["relation"], "same", "{report}");
+    let copy = fs::read(destination.join(installed_launcher_name(platform))).unwrap();
+    assert!(copy == inputs.bytes, "the launcher copy is not this file");
+    drop(copy);
+    let executable = destination.join(platform.executable());
+    let state = destination.join(STATE_DIR);
+    assert_eq!(
+        fs::read_to_string(state.join(RECEIPT_FILE)).unwrap(),
+        icon_disc_receipt(
+            &inputs.runtime,
+            &inputs.bytes,
+            &fs::read(&executable).unwrap()
+        )
+    );
+    assert_eq!(
+        folder_names(&state).unwrap(),
+        [DISC_FILES, JOURNAL_DIR, LOCK_FILE, RECEIPT_FILE]
+    );
+    assert!(folder_names(&state.join(JOURNAL_DIR)).unwrap().is_empty());
+
+    // The installed game answers with the release's version, and the inputs are as they were.
+    let probe = probe_game_version(&executable).unwrap();
+    assert!(probe.succeeded(), "{probe:?}");
+    assert_eq!(probe.first_line.as_deref(), Some(VERSION), "{probe:?}");
+    inputs.assert_untouched();
+}
+
+#[test]
+fn an_install_killed_at_each_install_point_recovers() {
+    let Some(platform) = this_platform() else {
+        return;
+    };
+    let _one = one_run_at_a_time();
+    let dir = tempfile::tempdir().unwrap();
+    let inputs = InstallInputs::new(dir.path(), platform, &kill_test_game(platform));
+    // What an install nothing stops leaves, which a finished recovery must leave too: its game
+    // answered the probe, so the install met nothing to tell.
+    let reference = dir.path().join(GAME);
+    let output = inputs.install(&reference, None);
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    let out = text(&output.stdout);
+    assert_eq!(
+        past_progress(out),
+        [installed_line(&reference)],
+        "{output:?}"
+    );
+    let whole = tree_entries(&reference);
+
+    // The first pass of each point: the state folder made, given up and left empty with nothing
+    // to say who made the folder; the runtime staged, taken back; the journal committed before the
+    // staging went, cleaned up.
+    for (fault, recovered) in [
+        ("install.prepare:1", ("abandonedRemoved", Left::Empty)),
+        ("install.stage:1", ("rolledBack", Left::Nothing)),
+        ("install.cleanup:1", ("cleanedUp", Left::Whole)),
+    ] {
+        let destination = dir.path().join(fault.replace([':', '.'], "-"));
+        let killed = inputs.install(&destination, Some(fault));
+        assert_killed_and_recovered(&inputs, &destination, (fault, &killed), recovered, &whole);
+    }
+
+    // Every pass of the publish, until the install runs past the last: the journal moved to
+    // publishing, each root put in place, every root recorded and the receipt written, each
+    // finished by the recovery.
+    let mut at = 1;
+    loop {
+        let fault = format!("install.publish:{at}");
+        let destination = dir.path().join(format!("publish-{at}"));
+        let ran = inputs.install(&destination, Some(&fault));
+        if ran.status.code() == Some(0) {
+            let out = text(&ran.stdout);
+            assert_eq!(
+                past_progress(out),
+                [installed_line(&destination)],
+                "{fault}"
+            );
+            assert!(
+                tree_entries(&destination) == whole,
+                "{fault}: the tree is not an install's"
+            );
+            break;
+        }
+        let finished = ("finished", Left::Whole);
+        assert_killed_and_recovered(&inputs, &destination, (&fault, &ran), finished, &whole);
+        at += 1;
+        assert!(
+            at <= MOST_PUBLISH_PASSES,
+            "the publish never ran to its end"
+        );
+    }
+    // At least the journal, a root, the roots recorded and the receipt.
+    assert!(at > 4, "the publish passed {} times", at - 1);
+    inputs.assert_untouched();
 }

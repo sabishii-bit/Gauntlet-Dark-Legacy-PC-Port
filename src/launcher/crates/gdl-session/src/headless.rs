@@ -9,8 +9,10 @@
 //! recovers whatever jobs a crash or a kill left unfinished in an installation's folder, and
 //! `--after-update`, which a launcher copy that an update put in place runs first, to wait for
 //! the launcher that ran the update to exit and to remove the copy it ran from. A build with the
-//! test hooks also reads a loopback feed in place of GitHub's, and holds the variable that names
-//! the fault point it kills itself at to naming one.
+//! test hooks also reads a loopback feed in place of GitHub's, holds the variable that names the
+//! fault point it kills itself at to naming one, and has `--install`, which installs the game from
+//! a GameCube disc's image as the window installs it, so that a rehearsal of an update makes its
+//! installation without one.
 //! They run before anything builds a window, and what they print is technical text for whoever
 //! runs them, never words for players. A run is handed its arguments, its build, its own file's
 //! sections and the streams to write to, so that every mode runs inside a test as it runs in the
@@ -40,7 +42,11 @@ use gdl_install::{
     recover, sweep_retired, update, wait_for_previous,
 };
 #[cfg(feature = "test-hooks")]
-use gdl_install::{FAULT_VARIABLE, check_fault_variable};
+use gdl_install::{
+    FAULT_VARIABLE, InstallNotice, check_fault_variable, install_game, plan_install,
+};
+#[cfg(feature = "test-hooks")]
+use gdl_media::GameCubeImage;
 use gdl_release::{Asset, Feed, FeedConfig, Platform, Release, ReleaseError, Scan, Version};
 use serde::Serialize;
 
@@ -69,14 +75,14 @@ const USAGE: &str = "usage: gdl-launcher-headless --check-payload [--payload <zi
                      --after-update <pid> | --version";
 
 /// The line that answers arguments the program does not take, in a build with the test hooks,
-/// whose feed modes also read a loopback feed.
+/// whose feed modes also read a loopback feed and which also installs.
 #[cfg(feature = "test-hooks")]
 const USAGE: &str = "usage: gdl-launcher-headless --check-payload [--payload <zip>] | \
                      --inspect <dir> [--json] | --check-folder <dir> [--json] | \
                      --extract <n64|dreamcast> <dump> --output <dir> [--strict script] | \
                      --check-feed [--feed <url>] | \
                      --update <dir> [--yes] [--offline | --feed <url>] | --recover <dir> | \
-                     --after-update <pid> | --version";
+                     --after-update <pid> | --install <image> <dir> | --version";
 
 /// Whether this build carries the test hooks, whose feed modes take [`FEED_OPTION`].
 const TEST_HOOKS: bool = cfg!(feature = "test-hooks");
@@ -134,6 +140,11 @@ const RECOVER_OPTION: &str = "--recover";
 /// loopback feed at the URL after it in place of GitHub's.
 const FEED_OPTION: &str = "--feed";
 
+/// The mode of a build with the test hooks that installs the game from the GameCube disc image
+/// after it into the folder after that.
+#[cfg(feature = "test-hooks")]
+const INSTALL_OPTION: &str = "--install";
+
 /// The options that choose a mode: arguments with none of them are no headless run. The last is
 /// the mode a hand-over starts the launcher copy an update put in place with, the id of the
 /// process that ran the update after it.
@@ -148,6 +159,14 @@ const MODE_OPTIONS: [&str; 9] = [
     RECOVER_OPTION,
     AFTER_UPDATE_OPTION,
 ];
+
+/// The options that choose a mode only a build with the test hooks has, which a release never is.
+#[cfg(feature = "test-hooks")]
+const TEST_HOOK_MODE_OPTIONS: &[&str] = &[INSTALL_OPTION];
+
+/// The options that choose a mode only a build with the test hooks has: a release has none.
+#[cfg(not(feature = "test-hooks"))]
+const TEST_HOOK_MODE_OPTIONS: &[&str] = &[];
 
 /// How a refusal names a process the system was asked about, before its id: a process has no path
 /// of its own.
@@ -214,10 +233,11 @@ pub fn open_own_file() -> OwnFile {
 /// Runs the headless mode that `args`, the program's arguments after its own name, ask for, and
 /// gives back its exit code; or `None` when no argument is `--check-payload`, `--inspect`,
 /// `--check-folder`, `--extract`, `--check-feed`, `--update`, `--recover`, `--after-update` or
-/// `--version`, which is no headless run. A mode writes its report to `out` and a refusal to
-/// `err`. Arguments that ask for a mode in a form it does not take get the usage line on `err` and
-/// [`EXIT_USAGE`]. An option's value is the argument after it, which must not be empty or begin
-/// with `--`; options may come in any order, each at most once.
+/// `--version`, nor in a build with the test hooks `--install`, which is no headless run. A mode
+/// writes its report to `out` and a refusal to `err`. Arguments that ask for a mode in a form it
+/// does not take get the usage line on `err` and [`EXIT_USAGE`]. An option's value is the argument
+/// after it, which must not be empty or begin with `--`; options may come in any order, each at
+/// most once.
 ///
 /// - `--version` writes the build's version.
 /// - `--check-payload` checks the runtime the launcher file carries, its sections as `own` holds
@@ -331,10 +351,20 @@ pub fn open_own_file() -> OwnFile {
 /// `--check-feed`, and beside `--update` without `--offline`: the mode then reads the loopback feed
 /// at `<url>`, `http://127.0.0.1:<port>/` or `http://[::1]:<port>/`, in place of GitHub's, through
 /// no proxy and trusting the tests' own key alone; any other URL is a usage error, and so is
-/// `--feed` in a build without the hooks. Before any mode runs, such a build holds the variable
-/// `GDL_LAUNCHER_FAULT` to naming the fault point and pass every job it runs kills itself at,
-/// `<point>:<pass>`, or to nothing; a value that names neither is refused with the line
-/// `error: GDL_LAUNCHER_FAULT names no fault point and pass: <value>`, and [`EXIT_USAGE`].
+/// `--feed` in a build without the hooks. Such a build also has the mode `--install <image> <dir>`,
+/// which a build without the hooks does not know: it installs the game from the GameCube disc
+/// image at `<image>` into the folder `<dir>`, from the runtime the program's own file carries, as
+/// [`plan_install`](gdl_install::plan_install) plans and
+/// [`install_game`](gdl_install::install_game) makes an install for a launcher of the build's
+/// version, refusing what the plan finds that refuses it and recorded in no list of
+/// installations. As it goes it writes its progress as `--recover` writes a recovery's; then
+/// `installed: <version> into <dir>`, `<dir>` made absolute, and a
+/// `notice: <code> (<rule>): <detail>` line for each notice, in the order the install met them. A
+/// refusal is the line `error: <code> (<rule>): <detail>`, and [`EXIT_REFUSED`]. Before any mode
+/// runs, such a build holds the variable `GDL_LAUNCHER_FAULT` to naming the fault point and pass
+/// every job it runs kills itself at, `<point>:<pass>`, or to nothing; a value that names neither
+/// is refused with the line `error: GDL_LAUNCHER_FAULT names no fault point and pass: <value>`,
+/// and [`EXIT_USAGE`].
 ///
 /// A refusal's detail is written as a text report writes a value, each control character as its
 /// escape, so that the refusal stays one line whatever the names in its paths, or the text it
@@ -395,6 +425,10 @@ pub fn run(
         // A process never waits for itself: its own id names no launcher an update replaced.
         Mode::AfterUpdate { pid } if pid == process::id() => usage(err),
         Mode::AfterUpdate { pid } => after_update_mode(pid, build, out, err),
+        #[cfg(feature = "test-hooks")]
+        Mode::Install { image, folder } => {
+            install_mode(Path::new(image), Path::new(folder), build, own, out, err)
+        }
     })
 }
 
@@ -493,6 +527,9 @@ enum Mode<'a> {
     Recover { folder: &'a OsStr },
     /// `--after-update`, for the launcher process whose id is `pid`.
     AfterUpdate { pid: u32 },
+    /// `--install`, from the GameCube disc image at `image` into `folder`.
+    #[cfg(feature = "test-hooks")]
+    Install { image: &'a OsStr, folder: &'a OsStr },
 }
 
 /// The mode option the arguments give, before the other options are held to it.
@@ -515,6 +552,9 @@ enum Chosen<'a> {
     Recover(&'a OsStr),
     /// `--after-update`, with the process id after it, as it was given.
     AfterUpdate(&'a OsStr),
+    /// `--install`, with the image and the folder after it.
+    #[cfg(feature = "test-hooks")]
+    Install(&'a OsStr, &'a OsStr),
 }
 
 /// Arguments that ask for a mode in a form it does not take.
@@ -523,9 +563,12 @@ struct Misused;
 
 /// The mode `args` ask for, or `None` when none of them is an option that chooses a mode.
 fn mode_of(args: &[OsString]) -> Option<Result<Mode<'_>, Misused>> {
-    let headless = args
-        .iter()
-        .any(|arg| MODE_OPTIONS.iter().any(|option| arg == option));
+    let headless = args.iter().any(|arg| {
+        MODE_OPTIONS
+            .iter()
+            .chain(TEST_HOOK_MODE_OPTIONS)
+            .any(|option| arg == option)
+    });
     headless.then(|| parse(args))
 }
 
@@ -552,6 +595,8 @@ fn parse(args: &[OsString]) -> Result<Mode<'_>, Misused> {
             Some(UPDATE_OPTION) => Chosen::Update(value(&mut rest)?),
             Some(RECOVER_OPTION) => Chosen::Recover(value(&mut rest)?),
             Some(AFTER_UPDATE_OPTION) => Chosen::AfterUpdate(value(&mut rest)?),
+            #[cfg(feature = "test-hooks")]
+            Some(INSTALL_OPTION) => Chosen::Install(value(&mut rest)?, value(&mut rest)?),
             Some(YES_OPTION) if !yes => {
                 yes = true;
                 continue;
@@ -637,6 +682,14 @@ fn parse(args: &[OsString]) -> Result<Mode<'_>, Misused> {
         (Some(Chosen::AfterUpdate(pid)), None, false, (None, false), (false, false, None)) => {
             process_id(pid).map(|pid| Mode::AfterUpdate { pid })
         }
+        #[cfg(feature = "test-hooks")]
+        (
+            Some(Chosen::Install(image, folder)),
+            None,
+            false,
+            (None, false),
+            (false, false, None),
+        ) => Ok(Mode::Install { image, folder }),
         _ => Err(Misused),
     }
 }
@@ -1686,16 +1739,7 @@ fn notice_line(notice: &UpdateNotice) -> String {
             status,
             first_line,
             stderr_tail,
-        } => {
-            let status = status.map_or_else(|| NOWHERE.to_owned(), |status| status.to_string());
-            let first_line = first_line.as_deref().unwrap_or(NOWHERE);
-            let stderr = if stderr_tail.is_empty() {
-                NOWHERE
-            } else {
-                stderr_tail.as_str()
-            };
-            format!("status {status}; first line {first_line}; stderr {stderr}")
-        }
+        } => probe_failed(*status, first_line.as_deref(), stderr_tail),
         UpdateNotice::CleanupLeft { detail } => detail.to_string(),
     };
     format!(
@@ -1703,6 +1747,19 @@ fn notice_line(notice: &UpdateNotice) -> String {
         codes::update_notice(notice),
         notice.rule()
     )
+}
+
+/// What a notice of a game that failed its version probe tells: its exit status, the first line it
+/// wrote and the end of its error stream, each `none` when there is none.
+fn probe_failed(status: Option<i32>, first_line: Option<&str>, stderr_tail: &str) -> String {
+    let status = status.map_or_else(|| NOWHERE.to_owned(), |status| status.to_string());
+    let first_line = first_line.unwrap_or(NOWHERE);
+    let stderr = if stderr_tail.is_empty() {
+        NOWHERE
+    } else {
+        stderr_tail
+    };
+    format!("status {status}; first line {first_line}; stderr {stderr}")
 }
 
 /// `--after-update`: finishes the hand-over of the installation the program runs in, the folder of
@@ -1828,6 +1885,120 @@ fn print_retired(swept: &RetiredSweep, out: &mut dyn Write) -> io::Result<()> {
         format!("removed {}, kept {}", swept.removed.len(), swept.kept.len())
     };
     written(out, &text_report(vec![("retired", what)]))
+}
+
+/// `--install`, in a build with the test hooks: installs the game from the GameCube disc image at
+/// `image` into the folder at `folder`, from the runtime the program's own file, `own`, carries, as
+/// a launcher of the build's version plans and makes an install, recording the folder in no list
+/// of installations; writes the install's progress to `out` as it goes and what it installed once
+/// it stands, as [`print_installed`] writes it, or why it was refused to `err`.
+///
+/// The program's own file is looked at first, since it is already open: one whose sections could
+/// not be found, or that carries none, is refused before the image is read. The image is judged
+/// whole as it is opened, and the plan reads the runtime, the disc and the folder before anything
+/// is written; the first of what refuses the install there refuses it, as the window refuses to
+/// start one. What a plan only warns of goes unsaid, since nobody here is asked whether to go on.
+#[cfg(feature = "test-hooks")]
+fn install_mode(
+    image: &Path,
+    folder: &Path,
+    build: &Build<'_>,
+    own: &mut OwnFile,
+    out: &mut dyn Write,
+    err: &mut dyn Write,
+) -> u8 {
+    let launcher = match own {
+        Ok(Some(sections)) => sections,
+        Ok(None) => {
+            let error = SectionsError::NoSections;
+            return refuse(err, codes::sections(&error), error.rule(), &error);
+        }
+        Err(error) => {
+            let error: &SectionsError = error;
+            return refuse(err, codes::sections(error), error.rule(), error);
+        }
+    };
+    let mut image = match GameCubeImage::open(image) {
+        Ok(image) => image,
+        Err(error) => return refuse(err, codes::media(&error), error.rule(), &error),
+    };
+    let plan = match plan_install(&mut image, launcher, folder, build.version) {
+        Ok(plan) => plan,
+        Err(error) => return refuse(err, codes::install(&error), error.rule(), &error),
+    };
+    if let Some(blocker) = plan.blockers.first() {
+        let code = Report::Error(codes::blocker(blocker));
+        return refuse(err, code, blocker.rule(), blocker);
+    }
+    let (installed, shown) = printing(out, |progress| {
+        // Nothing here asks the install to stop.
+        let cancel = Cancel::default();
+        let job = Job {
+            cancel: &cancel,
+            progress,
+        };
+        install_game(&plan, &mut image, launcher, &mut Unrecorded, &job)
+    });
+    let installed = match installed {
+        Ok(installed) => installed,
+        Err(failure) => {
+            return refuse(
+                err,
+                codes::install(&failure.error),
+                failure.rule(),
+                &failure,
+            );
+        }
+    };
+    let report = shown.and_then(|()| {
+        let root = installed.folder.root();
+        print_installed(&installed.receipt.version, root, &installed.notices, out)
+    });
+    match report {
+        Ok(()) => EXIT_OK,
+        Err(_) => EXIT_REFUSED,
+    }
+}
+
+/// Writes to `out` what an install that stands put in place, each a `name: value` line:
+/// `installed: <version> into <root>`, the release of `version` installed into the folder at
+/// `root`, then a `notice: <code> (<rule>): <detail>` line for each of `notices`, in their order,
+/// as [`install_notice_line`] gives it. Each value is written as a text report writes a value.
+#[cfg(feature = "test-hooks")]
+fn print_installed(
+    version: &str,
+    root: &Path,
+    notices: &[InstallNotice],
+    out: &mut dyn Write,
+) -> io::Result<()> {
+    let mut lines = vec![("installed", format!("{version} into {}", shown(root)))];
+    lines.extend(
+        notices
+            .iter()
+            .map(|notice| ("notice", install_notice_line(notice))),
+    );
+    written(out, &text_report(lines))
+}
+
+/// A notice of an install that stands as its report's line gives it: `<code> (<rule>): <detail>`,
+/// the code as [`codes::notice`] gives it and the rule, in camelCase, the notice's kind:
+/// `probeFailed`, with what [`probe_failed`] tells of the staged game; `notRecorded`, with what
+/// the record of installations answered; or `cleanupLeft`, with what stopped the cleanup.
+#[cfg(feature = "test-hooks")]
+fn install_notice_line(notice: &InstallNotice) -> String {
+    let (rule, detail) = match notice {
+        InstallNotice::ProbeFailed {
+            status,
+            first_line,
+            stderr_tail,
+        } => (
+            "probeFailed",
+            probe_failed(*status, first_line.as_deref(), stderr_tail),
+        ),
+        InstallNotice::NotRecorded { detail } => ("notRecorded", detail.to_string()),
+        InstallNotice::CleanupLeft { detail } => ("cleanupLeft", detail.to_string()),
+    };
+    format!("{} ({rule}): {detail}", codes::notice(notice))
 }
 
 /// Runs `job` on a thread of its own, handing it a progress that prints, and writes each line that
@@ -2910,7 +3081,7 @@ mod tests {
              --output <dir> [--strict script] | --check-feed | --update <dir> [--yes] \
              [--offline] | --recover <dir> | --after-update <pid> | --version"
         );
-        // A build with the test hooks reads a loopback feed too.
+        // A build with the test hooks reads a loopback feed too, and installs.
         #[cfg(feature = "test-hooks")]
         assert_eq!(
             USAGE,
@@ -2918,7 +3089,7 @@ mod tests {
              [--json] | --check-folder <dir> [--json] | --extract <n64|dreamcast> <dump> \
              --output <dir> [--strict script] | --check-feed [--feed <url>] | --update <dir> \
              [--yes] [--offline | --feed <url>] | --recover <dir> | --after-update <pid> | \
-             --version"
+             --install <image> <dir> | --version"
         );
     }
 
@@ -3022,6 +3193,205 @@ mod tests {
         }
     }
 
+    #[cfg(not(feature = "test-hooks"))]
+    #[test]
+    fn a_release_has_no_install_mode() {
+        // A release installs only through its window: `--install` chooses no mode of its own, and
+        // beside a mode it is an option that mode does not take.
+        let ran = run_release(&["--install", "game.iso", "dir"]);
+        assert_eq!(ran.code, None, "{ran:?}");
+        assert_eq!((ran.out.as_str(), ran.err.as_str()), ("", ""));
+        let cases: &[&[&str]] = &[
+            &["--version", "--install", "game.iso", "dir"],
+            &["--install", "game.iso", "dir", "--recover", "dir"],
+        ];
+        for &args in cases {
+            let ran = run_release(args);
+            assert_eq!(ran.code, Some(EXIT_USAGE), "{args:?}: {ran:?}");
+            assert_eq!(ran.err, format!("{USAGE}\n"), "{args:?}");
+            assert_eq!(ran.out, "", "{args:?}");
+        }
+    }
+
+    #[cfg(feature = "test-hooks")]
+    #[test]
+    fn an_install_takes_an_image_and_a_folder() {
+        // Read as a mode and never run.
+        let args: Vec<OsString> = ["--install", "game.iso", "dir"]
+            .iter()
+            .map(OsString::from)
+            .collect();
+        let mode = mode_of(&args);
+        assert!(
+            matches!(
+                mode,
+                Some(Ok(Mode::Install { image, folder })) if image == "game.iso" && folder == "dir"
+            ),
+            "{mode:?}"
+        );
+
+        // Refused before anything is read: without its two values, with one that is empty or an
+        // option, twice, with an argument it does not take, beside any other option, and beside
+        // every other mode.
+        let cases: &[&[&str]] = &[
+            &["--install"],
+            &["--install", "game.iso"],
+            &["--install", "", "dir"],
+            &["--install", "game.iso", ""],
+            &["--install", "--json", "dir"],
+            &["--install", "game.iso", "--yes"],
+            &["--yes", "--install", "game.iso"],
+            &["--install", "game.iso", "dir", "extra"],
+            &["--install", "a.iso", "a", "--install", "b.iso", "b"],
+            &["--install", "game.iso", "dir", "--json"],
+            &["--install", "game.iso", "dir", "--yes"],
+            &["--install", "game.iso", "dir", "--offline"],
+            &["--install", "game.iso", "dir", "--feed", LOOPBACK_BASE],
+            &["--install", "game.iso", "dir", "--payload", "a.zip"],
+            &["--install", "game.iso", "dir", "--output", "out"],
+            &["--install", "game.iso", "dir", "--strict", "script"],
+            &["--install", "game.iso", "dir", "--version"],
+            &["--check-payload", "--install", "game.iso", "dir"],
+            &["--update", "dir", "--install", "game.iso", "dir"],
+            &["--install", "game.iso", "dir", "--after-update", "1"],
+        ];
+        for &args in cases {
+            let ran = run_release(args);
+            assert_eq!(ran.code, Some(EXIT_USAGE), "{args:?}: {ran:?}");
+            assert_eq!(ran.err, format!("{USAGE}\n"), "{args:?}");
+            assert_eq!(ran.out, "", "{args:?}");
+        }
+    }
+
+    /// What `print_installed` writes of an install of `version` into `root` that met `notices`.
+    #[cfg(feature = "test-hooks")]
+    fn printed_install(
+        version: &str,
+        root: &Path,
+        notices: &[gdl_install::InstallNotice],
+    ) -> String {
+        let mut out = Vec::new();
+        super::print_installed(version, root, notices, &mut out).unwrap();
+        String::from_utf8(out).unwrap()
+    }
+
+    #[cfg(feature = "test-hooks")]
+    #[test]
+    fn an_install_is_printed_line_by_line() {
+        use gdl_install::InstallNotice;
+
+        let root = Path::new("games").join("gauntlet");
+        assert_eq!(
+            printed_install(VERSION, &root, &[]),
+            format!("installed: 1.0.0-beta into {}\n", root.display())
+        );
+
+        // Each notice in turn, a value that would begin a line of its own escaped.
+        let notices = [
+            InstallNotice::ProbeFailed {
+                status: Some(3),
+                first_line: Some("Gauntlet 1.0.0-beta".to_owned()),
+                stderr_tail: "failed\ninstalled: 1.0.0-beta".to_owned(),
+            },
+            InstallNotice::NotRecorded {
+                detail: "the record is full".into(),
+            },
+            InstallNotice::CleanupLeft {
+                detail: "install-AbC123xy: in use".into(),
+            },
+            InstallNotice::ProbeFailed {
+                status: None,
+                first_line: None,
+                stderr_tail: String::new(),
+            },
+        ];
+        assert_eq!(
+            printed_install(VERSION, &root, &notices),
+            format!(
+                "installed: 1.0.0-beta into {}\n\
+                 notice: game.probeFailed (probeFailed): status 3; first line Gauntlet \
+                 1.0.0-beta; stderr failed\\ninstalled: 1.0.0-beta\n\
+                 notice: io.failed (notRecorded): the record is full\n\
+                 notice: io.failed (cleanupLeft): install-AbC123xy: in use\n\
+                 notice: game.probeFailed (probeFailed): status none; first line none; stderr \
+                 none\n",
+                root.display()
+            )
+        );
+
+        // A folder whose name would begin a line of its own.
+        let forged = Path::new("games\nnotice: none");
+        assert_eq!(
+            printed_install(VERSION, forged, &[]),
+            "installed: 1.0.0-beta into games\\nnotice: none\n"
+        );
+        assert!(super::print_installed(VERSION, &root, &[], &mut Closed).is_err());
+    }
+
+    #[cfg(feature = "test-hooks")]
+    #[test]
+    fn an_install_refused_before_it_begins_is_one_line() {
+        let Some(platform) = this_platform() else {
+            return;
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let image = dir.path().join("game.iso");
+        let destination = dir.path().join("game");
+        let args = [
+            OsStr::new("--install"),
+            image.as_os_str(),
+            destination.as_os_str(),
+        ];
+
+        // The program's own file is looked at before the image, which is not even there.
+        assert_refused(
+            &run_as(&args, &RELEASE, &mut Ok(None)),
+            "error: payload.damaged (noSections): the file carries no sections\n",
+        );
+        assert_refused(
+            &run_as(&args, &RELEASE, &mut Err(SectionsError::UnknownProgram)),
+            "error: payload.damaged (unknownProgram): not a PE or ELF program\n",
+        );
+
+        // A launcher file carrying the standard runtime of `version`, written as `name`.
+        let launcher = |name: &str, version: &str| {
+            let mut file = tiny_elf();
+            let runtime = RuntimeFiles::standard(platform.as_str(), version).zip();
+            append_sections(&mut file, &[(RUNTIME_SECTION, &runtime)], 0);
+            let path = dir.path().join(name);
+            fs::write(&path, &file).unwrap();
+            path
+        };
+        let own = launcher("launcher", VERSION);
+
+        // An image that is not there.
+        let missing = gdl_media::GameCubeImage::open(&image).unwrap_err();
+        assert_refused(
+            &run_as(&args, &RELEASE, &mut Sections::of_path(&own)),
+            &format!("error: io.failed (io): {missing}\n"),
+        );
+
+        // A runtime of another version than the launcher's, refused as the plan reads it.
+        fs::write(&image, gdl_fixtures::icon_iso()).unwrap();
+        let newer = launcher("newer", "1.0.1");
+        assert_refused(
+            &run_as(&args, &RELEASE, &mut Sections::of_path(&newer)),
+            "error: payload.damaged (otherVersion): The runtime's version \"1.0.1\" is not the \
+             launcher's version \"1.0.0-beta\"\n",
+        );
+
+        // A folder the plan finds a file at: what refuses the install there refuses it, and
+        // nothing is made.
+        fs::write(&destination, b"a file of the player's").unwrap();
+        let before = folder_names(dir.path()).unwrap();
+        assert_refused(
+            &run_as(&args, &RELEASE, &mut Sections::of_path(&own)),
+            "error: folder.notDirectory (notDirectory): Install destination is not a directory\n",
+        );
+        assert_eq!(folder_names(dir.path()).unwrap(), before);
+        assert_eq!(fs::read(&destination).unwrap(), b"a file of the player's");
+    }
+
     #[test]
     fn other_arguments_are_not_headless() {
         let cases: &[&[&str]] = &[
@@ -3051,6 +3421,8 @@ mod tests {
             &["--yes", "--offline", "folder"],
             &["--after-update=1"],
             &["--After-Update", "1"],
+            &["--install=game.iso", "dir"],
+            &["--Install", "game.iso", "dir"],
             &["1234"],
         ];
         for &args in cases {
