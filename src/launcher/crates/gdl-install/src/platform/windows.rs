@@ -955,7 +955,8 @@ pub(crate) fn spawn_filtered(
             .User
             .Sid;
         // Said apart, so that a refusal here is never taken for the start's own.
-        let made = FilteredDesktop::granting(sid).map_err(|error| {
+        // SAFETY: the SID is a valid one, lying in the buffer, which lives through the call.
+        let made = unsafe { FilteredDesktop::granting(sid) }.map_err(|error| {
             io::Error::new(
                 error.kind(),
                 format!("making the program's window station and desktop: {error}"),
@@ -1062,10 +1063,14 @@ struct FilteredDesktop {
 
 #[cfg(test)]
 impl FilteredDesktop {
-    /// A new window station and desktop whose DACLs grant `user`, which must be a valid SID,
-    /// every right and nobody else any.
-    fn granting(user: PSID) -> io::Result<FilteredDesktop> {
-        let mut granted = GrantedToOne::new(user)?;
+    /// A new window station and desktop whose DACLs grant `user` every right and nobody else any.
+    ///
+    /// # Safety
+    ///
+    /// `user` must point at a valid SID that stays allocated through the call.
+    unsafe fn granting(user: PSID) -> io::Result<FilteredDesktop> {
+        // SAFETY: the SID is a valid one that lives through the call, as the caller promises.
+        let mut granted = unsafe { GrantedToOne::new(user) }?;
         let attributes = SECURITY_ATTRIBUTES {
             nLength: size_of::<SECURITY_ATTRIBUTES>() as u32,
             lpSecurityDescriptor: granted.descriptor(),
@@ -1161,13 +1166,18 @@ struct FullAccessDacl(Vec<u32>);
 
 #[cfg(test)]
 impl FullAccessDacl {
-    /// The DACL granting `sids`, each of which must be a valid SID; it holds a copy of each.
-    fn granting(sids: &[PSID]) -> io::Result<FullAccessDacl> {
+    /// The DACL granting `sids`; it holds a copy of each.
+    ///
+    /// # Safety
+    ///
+    /// Each of `sids` must point at a valid SID that stays allocated through the call.
+    unsafe fn granting(sids: &[PSID]) -> io::Result<FullAccessDacl> {
         // An access-allowed entry ends with its SID, whose first word is the entry's last field.
         let entries: usize = sids
             .iter()
             .map(|&sid| {
-                // SAFETY: the SID is a valid one, which the call only reads.
+                // SAFETY: the SID is a valid one, as the caller promises, which the call only
+                // reads.
                 let sid_len = unsafe { GetLengthSid(sid) } as usize;
                 size_of::<ACCESS_ALLOWED_ACE>() - size_of::<u32>() + sid_len
             })
@@ -1182,7 +1192,8 @@ impl FullAccessDacl {
         }
         for &sid in sids {
             // SAFETY: the ACL was initialized with room for an entry for each SID; the SID is
-            // valid and lives through the call, which copies it into the entry.
+            // valid and lives through the call, as the caller promises, and the call copies it
+            // into the entry.
             if unsafe {
                 AddAccessAllowedAce(dacl.as_mut_ptr().cast(), ACL_REVISION, GENERIC_ALL, sid)
             } == 0
@@ -1212,10 +1223,15 @@ struct GrantedToOne {
 
 #[cfg(test)]
 impl GrantedToOne {
-    /// The descriptor granting `sid`, which must be a valid SID; the DACL holds a copy of it.
-    fn new(sid: PSID) -> io::Result<GrantedToOne> {
+    /// The descriptor granting `sid`; the DACL holds a copy of it.
+    ///
+    /// # Safety
+    ///
+    /// `sid` must point at a valid SID that stays allocated through the call.
+    unsafe fn new(sid: PSID) -> io::Result<GrantedToOne> {
         let mut granted = GrantedToOne {
-            dacl: FullAccessDacl::granting(&[sid])?,
+            // SAFETY: the SID is a valid one that lives through the call, as the caller promises.
+            dacl: unsafe { FullAccessDacl::granting(&[sid]) }?,
             descriptor: SECURITY_DESCRIPTOR::default(),
         };
         // SAFETY: the descriptor is storage of the structure's size, which the call initializes.
@@ -1378,11 +1394,15 @@ fn token_information<T>(
     Ok(buffer)
 }
 
-/// The bytes of `sid`, which must be a valid SID.
+/// The bytes of the SID at `sid`.
+///
+/// # Safety
+///
+/// `sid` must point at a valid SID that stays allocated through the call.
 #[cfg(test)]
-fn sid_bytes(sid: PSID) -> Vec<u8> {
-    // SAFETY: the SID is a valid one, which the call only reads and which holds as many bytes as
-    // the call gives; they are copied while it lives.
+unsafe fn sid_bytes(sid: PSID) -> Vec<u8> {
+    // SAFETY: the SID is a valid one that lives through the call, as the caller promises; the
+    // call only reads it, and it holds as many bytes as the call gives, which are copied here.
     unsafe { std::slice::from_raw_parts(sid.cast::<u8>(), GetLengthSid(sid) as usize) }.to_vec()
 }
 
@@ -1395,7 +1415,8 @@ fn token_user_bytes(token: &OwnedHandle) -> io::Result<Vec<u8>> {
     let user = unsafe { user_info.as_ptr().cast::<TOKEN_USER>().read() }
         .User
         .Sid;
-    Ok(sid_bytes(user))
+    // SAFETY: the SID is a valid one, lying in the buffer, which lives through the call.
+    Ok(unsafe { sid_bytes(user) })
 }
 
 /// Each entry of `token`'s default DACL, by the bytes of the SID it names and the rights it
@@ -1432,7 +1453,9 @@ fn default_dacl_grants(token: &OwnedHandle) -> io::Result<Vec<(Vec<u8>, u32)>> {
         // SAFETY: an access-allowed entry is laid out as ACCESS_ALLOWED_ACE, its SID beginning at
         // the field that ends it and lying in the entry, which lies in the DACL.
         let (mask, sid) = unsafe { ((*allowed).Mask, (&raw mut (*allowed).SidStart).cast()) };
-        grants.push((sid_bytes(sid), mask));
+        // SAFETY: the entry's SID is a valid one, lying in the DACL, which lies in the buffer,
+        // which lives through the call.
+        grants.push((unsafe { sid_bytes(sid) }, mask));
     }
     Ok(grants)
 }
@@ -1503,7 +1526,9 @@ fn filtered_token() -> io::Result<OwnedHandle> {
         .User
         .Sid;
     let system = WellKnownSid::of(WinLocalSystemSid)?;
-    let mut dacl = FullAccessDacl::granting(&[user, system.sid()])?;
+    // SAFETY: both SIDs are valid ones, the user's lying in its buffer and SYSTEM's in its value,
+    // which both live through the call.
+    let mut dacl = unsafe { FullAccessDacl::granting(&[user, system.sid()]) }?;
     let default = TOKEN_DEFAULT_DACL {
         DefaultDacl: dacl.as_ptr(),
     };
@@ -1600,6 +1625,12 @@ impl WellKnownSid {
     /// The SID, as the calls that only read one take it.
     fn sid(&self) -> PSID {
         self.0.as_ptr().cast_mut().cast()
+    }
+
+    /// The SID's bytes.
+    fn bytes(&self) -> Vec<u8> {
+        // SAFETY: the value holds a valid SID, which lives while it is copied.
+        unsafe { sid_bytes(self.sid()) }
     }
 }
 
@@ -2001,8 +2032,7 @@ mod tests {
         GENERIC_ALL, HKEY_LOCAL_MACHINE, MAX_PROXY_VALUE_BYTES, ProxyEnable, RegistryKey,
         WellKnownSid, WinLocalSystemSid, default_dacl_grants, file_id, file_index, filtered_token,
         is_same_file, long_path, numbered, onedrive_account_folders, reparse_tag, resource_bytes,
-        set_short_name, short_path, sid_bytes, token_user_bytes, update_resources, wide_string,
-        windows_build,
+        set_short_name, short_path, token_user_bytes, update_resources, wide_string, windows_build,
     };
 
     /// The first build of Windows 10, the oldest system the launcher runs on.
@@ -2236,7 +2266,7 @@ mod tests {
             default_dacl_grants(&token).unwrap(),
             [
                 (token_user_bytes(&token).unwrap(), GENERIC_ALL),
-                (sid_bytes(system.sid()), GENERIC_ALL),
+                (system.bytes(), GENERIC_ALL),
             ]
         );
     }
