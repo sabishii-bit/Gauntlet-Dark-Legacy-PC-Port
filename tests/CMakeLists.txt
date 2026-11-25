@@ -190,6 +190,7 @@ add_executable(tests
     game/combat/DamageTests.cpp
     game/combat/BodyContactTests.cpp
     game/combat/DamageTypesTests.cpp
+    game/combat/EffectFadeTests.cpp
     game/combat/EffectFlagsTests.cpp
     game/combat/PowerupFlagsTests.cpp
     game/combat/StrikeHitTests.cpp

@@ -38,11 +38,11 @@ struct CritterArea {
     static Mat4 placement(const Mat4& parent, const Vec3& offset, const Vec2& pitchYaw);
     Mat4 transform(const Mat4& parent) const;
     bool touches(const Mat4& parent, const EnemyView& player) const;
-    /** Whether one of the swarm `bodyRadius` wide, standing upright through `feet`, is within its
-     * reach as ProcessEffects' enemy pass measures it (sfx.c 3025-3063): the fast flat length
-     * from its centre against its spread and the body's radius, at any height, and within its
-     * cone, relaxed to 85% inside a fifth of that sum. */
-    bool meetsEnemy(const Mat4& parent, const Vec3& feet, f32 bodyRadius) const;
+    /** Whether one of the swarm `bodyRadius` wide, upright through `upright` (any point of it,
+     * the test being flat), is within its reach as ProcessEffects' enemy pass measures it (sfx.c
+     * 3025-3063): the fast flat length from its centre against its spread and the body's radius,
+     * at any height, and within its cone, relaxed to 85% inside a fifth of that sum. */
+    bool meetsEnemy(const Mat4& parent, const Vec3& upright, f32 bodyRadius) const;
     f32 currentRadius() const;
     f32 currentDamage() const;
     f32 hitGap() const;
@@ -52,5 +52,8 @@ struct CritterArea {
 
 private:
     f32 phase() const;
+    /** ProcessEffects' age of it: what is left of it and a fifteenth, or a steady one's left up
+     * to a second (sfx.c 2679-2686). */
+    f32 age() const;
 };
 } // namespace gdl::game

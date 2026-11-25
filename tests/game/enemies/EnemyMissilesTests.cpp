@@ -17,6 +17,7 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "fixtures/NativeModelFixture.h"
+#include "game/combat/EffectFade.h"
 #include "game/enemies/Enemies.h"
 #include "game/enemies/EnemyMind.h"
 #include "game/enemies/EnemyMissiles.h"
@@ -1057,7 +1058,7 @@ TEST_CASE("a gas blast hangs over its stages, hurting players every half second 
     CHECK(playerHits <= 5);
     // The swarm once in each stage, a second apart at least.
     REQUIRE(swarmHits == 2);
-    CHECK(swarmTimes[1] - swarmTimes[0] >= EnemyMissiles::kSwarmGap - kStep);
+    CHECK(swarmTimes[1] - swarmTimes[0] >= effect_fade::kSpreadLeast - kStep);
 }
 
 TEST_CASE("a blast does not reach a player sheltered by a wall past ten units",
@@ -1203,7 +1204,7 @@ TEST_CASE("a blast passes one of the swarm its world wait holds and carries its 
     REQUIRE(holds.size() > 1);
     CHECK(holds.front() == Approx(1.0f + EnemyMissiles::kBlastSlack));
     for (const f32 hold : holds) {
-        CHECK(hold >= EnemyMissiles::kSwarmGap);
+        CHECK(hold >= effect_fade::kSpreadLeast);
     }
 }
 
@@ -1240,8 +1241,7 @@ TEST_CASE("a missile sent back strikes one of the swarm through its world wait a
     REQUIRE(struck.size() == 1);
     CHECK(struck[0].target == thrower.id);
     CHECK_FALSE(struck[0].fromBurst);
-    const f32 fade =
-        pierces ? EnemyMissiles::kPierceFade + EnemyMissiles::kShotFade : EnemyMissiles::kShotFade;
+    const f32 fade = pierces ? effect_fade::kPierce + effect_fade::kShot : effect_fade::kShot;
     CHECK(struck[0].hold == (swarmBody ? fade : 0.0f));
 }
 

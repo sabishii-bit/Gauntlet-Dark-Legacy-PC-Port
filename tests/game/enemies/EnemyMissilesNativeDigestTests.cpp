@@ -13,6 +13,7 @@
 
 #include "NativeStateSupport.h"
 #include "TestSupport.h"
+#include "game/combat/EffectFade.h"
 #include "game/enemies/EnemyMissiles.h"
 #include "game/level/MissileStop.h"
 
@@ -136,7 +137,7 @@ TEST_CASE("enemy native digest sees every pending hit field",
     base.target = 6;
     base.worldObject = 2;
     base.instance = 81;
-    base.hold = EnemyMissiles::kShotFade;
+    base.hold = effect_fade::kShot;
     const auto baseline = valueHash(base);
     const std::array<std::function<void(EnemyMissileHit&)>, 15> mutations{
         [](auto& v) { ++v.player; },

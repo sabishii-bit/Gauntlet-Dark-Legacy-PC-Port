@@ -2404,10 +2404,11 @@ bool Enemies::hurtByWorld(s32 id, const EnemyHit& hit, f32 hold, bool waits) {
     // effect then holds what it struck over two (ProcessEffects 0x80095CA4-0x80095CCC).
     const bool takes = alive(id) && !intangible(m_simulation.enemies[static_cast<usize>(id)].kind);
     hurt(id, hit);
-    if (takes && hit.damage > kWorldHoldFrom && hold > 0.0f) {
-        holdHits(id, kWorldWait, hold);
+    if (!takes || hit.damage <= kWorldHoldFrom || hold <= 0.0f) {
+        return false;
     }
-    return takes;
+    holdHits(id, kWorldWait, hold);
+    return true;
 }
 
 std::vector<MissileTarget> Enemies::targets() const {

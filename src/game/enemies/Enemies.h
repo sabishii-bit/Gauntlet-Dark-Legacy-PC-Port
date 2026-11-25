@@ -368,8 +368,8 @@ public:
     void holdHits(s32 id, usize owner, f32 seconds);
     /** A hit from one of the world's effects, credited to nobody (ProcessEffects' enemy pass,
      * owner 0). One that `waits` passes a body whose world wait runs; a hit over two that the
-     * body takes holds it for `hold` seconds, a fade of nought holding nothing. False when
-     * passed or refused. */
+     * body takes holds it for `hold` seconds, a fade of nought holding nothing. True when it
+     * holds the body so. */
     bool hurtByWorld(s32 id, const EnemyHit& hit, f32 hold, bool waits);
     /** The enemies a missile can strike, each with its world wait. */
     std::vector<MissileTarget> targets() const;

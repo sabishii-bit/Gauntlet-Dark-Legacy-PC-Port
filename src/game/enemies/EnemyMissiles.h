@@ -222,10 +222,6 @@ public:
     static constexpr f32 kBurstPush = 0.25f;
     static constexpr f32 kGasGap = 0.5f;             ///< a gas blast hurts a player this often
     static constexpr f32 kBlastSlack = 1.0f / 15.0f; ///< past a stage a hit is held off
-    static constexpr f32 kSwarmGap = 1.0f;           ///< the least of a blast's fade
-    static constexpr f32 kShotFade = 0.25f;          ///< a missile's fade (ProcessEffects mode 0)
-    static constexpr f32 kPierceFade = 3.0f;         ///< and a piercing one's more
-    static constexpr f32 kLeastFade = 0.2f;          ///< no effect's fade is shorter
     static constexpr f32 kSightFrom = 10.0f;         ///< past this a wall between shelters a player
     static constexpr f32 kReflectedMost = 15.0f;     ///< what a missile armour sent back can harm
     static constexpr f32 kReflectedLife = 10.0f;     ///< and the longest it then has left

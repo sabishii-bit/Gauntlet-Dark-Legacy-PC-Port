@@ -17,6 +17,7 @@
 #include "game/characters/Vitality.h"
 #include "game/combat/ArmorFlags.h"
 #include "game/combat/DamageTypes.h"
+#include "game/combat/EffectFade.h"
 #include "game/combat/PowerupFlags.h"
 #include "game/effects/CritterCueEmission.h"
 #include "game/effects/DynamicLights.h"
@@ -341,8 +342,7 @@ bool LevelOpponents::dispatchEnemyMissileHit(const EnemyMissileHit& hit,
             struck.damage = hit.damage;
             struck.flags = hit.flags;
             struck.direction = hit.direction;
-            heldSwarm = m_enemies.hurtByWorld(hit.target, struck, hit.hold, hit.fromBurst) &&
-                        hit.damage > Enemies::kWorldHoldFrom;
+            heldSwarm = m_enemies.hurtByWorld(hit.target, struck, hit.hold, hit.fromBurst);
         } else {
             strikeSwarm(hit.target, hit.damage, hit.flags, hit.direction, players);
         }
@@ -374,7 +374,7 @@ bool LevelOpponents::dispatchEnemyMissileHit(const EnemyMissileHit& hit,
             // A lob's fade is its hit effect's length (0x800950F0-0x8009515C): one of the
             // swarm it struck sent back is held through the burst it leaves.
             m_enemies.holdHits(hit.target, Enemies::kWorldWait,
-                               std::max(EnemyMissiles::kLeastFade, seconds));
+                               effect_fade::flying(seconds, false));
         }
         m_enemyMissiles.burst(hit.position, hit.burstRadius, hit.damage, hit.flags, seconds,
                               hit.player);

@@ -11,6 +11,7 @@
 #include "engine/math/PortableMath.h"
 
 #include "game/combat/DamageTypes.h"
+#include "game/combat/EffectFade.h"
 #include "game/critters/CombatantProjectile.h"
 #include "game/effects/DynamicLights.h"
 #include "game/enemies/EnemyKinds.h"
@@ -542,7 +543,7 @@ void EnemyMissiles::stepBursts(f32 seconds, const WorldCollision* collision,
             hit.direction = push(away) * kBurstPush;
             m_sim.hits.push_back(hit);
         }
-        const f32 fade = std::max(kSwarmGap, remaining + kBlastSlack);
+        const f32 fade = effect_fade::spreading(remaining + kBlastSlack, false);
         for (const MissileTarget& body : swarm) {
             const Vec3 away = body.base - blast.position;
             if ((body.sharesWorldWait ? body.worldHeld : held(burst.creatures, body.id)) ||
@@ -772,7 +773,7 @@ void EnemyMissiles::update(f32 seconds, const WorldCollision* collision,
                 if (body != nullptr && body->sharesWorldWait) {
                     // A missile's fade, three seconds more through what it pierces (0x80095160-
                     // 0x800951B0); a lob's landing holds it through its burst instead.
-                    hit.hold = pierces ? kPierceFade + kShotFade : kShotFade;
+                    hit.hold = effect_fade::flying(effect_fade::kShot, pierces);
                 }
                 hit.shooter = missile.shooter;
                 hit.damage = missile.kind.damage;

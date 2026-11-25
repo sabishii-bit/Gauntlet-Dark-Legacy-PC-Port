@@ -12,6 +12,7 @@
 #include "engine/world/ParticleSystem.h"
 
 #include "game/combat/DamageTypes.h"
+#include "game/combat/EffectFade.h"
 #include "game/combat/EffectFlags.h"
 
 namespace gdl::game {
@@ -45,12 +46,10 @@ f32 projectileHitGap(const ItemArchive& archive, const CombatEffectDefinition* i
 }
 
 /** How long a shot's hit over two holds one of the swarm from the world's effects, a critter's
- * shot keeping to its world wait (ProcessEffects' fade for a flying effect, sfx.c 2694-2716): its
- * impact's frames over thirty, a quarter second without, a fifth at least, three seconds more
- * through what it pierces. */
+ * shot keeping to its world wait: its fade as a flying effect, aged by its impact's frames over
+ * thirty, a quarter second without. */
 f32 swarmFade(const ItemArchive& archive, const CombatEffectDefinition* impact, bool pierces) {
-    return pierces ? EnemyMissiles::kPierceFade + kProjectileHitGap
-                   : std::max(EnemyMissiles::kLeastFade, projectileHitGap(archive, impact, false));
+    return effect_fade::flying(projectileHitGap(archive, impact, false), pierces);
 }
 
 /** Where along a step a shot of `radius` meets one of the swarm: the cylinder about its coll_pos,

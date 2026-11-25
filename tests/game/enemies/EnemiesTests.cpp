@@ -4512,12 +4512,15 @@ TEST_CASE("one of the swarm keeps a wait for the world's effects that a hit over
     enemies.update(1, 0.1f, {});
     CHECK_FALSE(enemies.hitWaiting(*id, Enemies::kWorldWait));
     CHECK_FALSE(worldHeld());
-    // Two or less holds nothing, and neither does a fade of nought.
+    // Two or less holds nothing, and neither does a fade of nought, though both strike.
+    const f32 unheld = enemies.healthOf(*id);
     blow.damage = 2.0f;
-    REQUIRE(enemies.hurtByWorld(*id, blow, 1.0f, true));
+    CHECK_FALSE(enemies.hurtByWorld(*id, blow, 1.0f, true));
+    CHECK(enemies.healthOf(*id) == Approx(unheld - 2.0f));
     CHECK_FALSE(enemies.hitWaiting(*id, Enemies::kWorldWait));
     blow.damage = 5.0f;
-    REQUIRE(enemies.hurtByWorld(*id, blow, 0.0f, true));
+    CHECK_FALSE(enemies.hurtByWorld(*id, blow, 0.0f, true));
+    CHECK(enemies.healthOf(*id) == Approx(unheld - 7.0f));
     CHECK_FALSE(enemies.hitWaiting(*id, Enemies::kWorldWait));
     // A player's wait leaves the world's alone.
     enemies.holdHits(*id, 2, 0.5f);
