@@ -45,8 +45,9 @@ pub use folder::{
     STATE_DIR, alpha_markers, check_links,
 };
 pub use handover::{
-    ENDED_WAIT_LIMIT, Linger, PREVIOUS_WAIT_LIMIT, Previous, RETIRED_DELETE_INTERVAL,
-    RETIRED_DELETE_WINDOW, RetiredSweep, sweep_retired, wait_for_previous,
+    AFTER_UPDATE_OPTION, ENDED_WAIT_LIMIT, Linger, PREVIOUS_WAIT_LIMIT, Previous,
+    RETIRED_DELETE_INTERVAL, RETIRED_DELETE_WINDOW, RetiredSweep, hand_over, hand_over_needed,
+    is_installed_copy, sweep_retired, wait_for_previous,
 };
 pub use hold::HOLD_POLL;
 pub use host::{Unsupported, host_supported};

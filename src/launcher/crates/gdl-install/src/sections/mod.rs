@@ -147,6 +147,14 @@ impl<R> Sections<R> {
     pub fn file_len(&self) -> u64 {
         self.file_len
     }
+
+    /// The launcher file the sections were found in, as it was handed in: for a running launcher,
+    /// the handle it opened as it started, which names its own file whatever that file's path is
+    /// now, so that whether the file is an installation's launcher copy can be told by the file and
+    /// not by a name an update may since have given another.
+    pub fn file(&self) -> &R {
+        &self.source
+    }
 }
 
 impl<R: Read + Seek> Sections<R> {
@@ -1227,6 +1235,29 @@ mod tests {
             }
             other => panic!("{:?}", other.map(|found| found.is_some())),
         }
+    }
+
+    #[test]
+    fn the_sections_give_back_the_file_they_were_found_in() {
+        let (file, listed) = launcher(tiny_pe(), WINDOWS, 0);
+        let found = open(file.clone()).unwrap();
+        assert_eq!(found.file().get_ref(), &file);
+        // A file on disk is given back as the handle it was opened through, even once its name is
+        // another file's.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("launcher");
+        fs::write(&path, &file).unwrap();
+        let found = Sections::of_path(&path).unwrap().unwrap();
+        let moved = dir.path().join("moved");
+        rename_noreplace(&path, &moved).unwrap();
+        fs::write(&path, b"another file").unwrap();
+        assert_eq!(found.sections(), listed);
+        assert_eq!(found.file().metadata().unwrap().len(), file.len() as u64);
+        let mut held = Vec::new();
+        let mut handle = found.file();
+        handle.seek(SeekFrom::Start(0)).unwrap();
+        handle.read_to_end(&mut held).unwrap();
+        assert_eq!(held, file);
     }
 
     #[test]

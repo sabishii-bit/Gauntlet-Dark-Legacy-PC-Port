@@ -12,7 +12,7 @@
 //! Internet Settings name, from the registry; and another process, opened by its id with
 //! OpenProcess, to be waited for with WaitForSingleObject, asked when it started with
 //! GetProcessTimes and which file it runs with QueryFullProcessImageNameW, and ended with
-//! TerminateProcess.
+//! TerminateProcess; and whether this process has a console, from GetConsoleWindow.
 
 use std::ffi::OsString;
 use std::fs::{File, OpenOptions};
@@ -38,6 +38,7 @@ use windows_sys::Win32::Storage::FileSystem::{
     FileIdInfo, GetFileInformationByHandle, GetFileInformationByHandleEx, GetLongPathNameW,
 };
 use windows_sys::Win32::System::Com::CoTaskMemFree;
+use windows_sys::Win32::System::Console::GetConsoleWindow;
 use windows_sys::Win32::System::Diagnostics::Debug::{
     GetErrorMode, SEM_FAILCRITICALERRORS, SetErrorMode,
 };
@@ -768,6 +769,15 @@ pub(crate) fn end_process(process: &ProcessHandle, code: u32) -> io::Result<()> 
     } else {
         Ok(())
     }
+}
+
+/// Whether this process has a console, as GetConsoleWindow tells: a program it starts that is a
+/// console program shares it when it has one, and is given one of its own otherwise unless it is
+/// started without.
+pub(crate) fn has_console() -> bool {
+    // SAFETY: the call takes nothing and only reads which console, if any, this process is
+    // attached to; the window it names is not used.
+    !unsafe { GetConsoleWindow() }.is_null()
 }
 
 /// The path of the entry at `path`, which must be there, each name on it as the folder above it

@@ -1,18 +1,23 @@
-//! The hand-over after an update that replaced the installed launcher, as the new copy makes it
-//! before anything else: it waits for the launcher process the update replaced to exit, so that it
-//! never takes that process for a running launcher of its own, ending it at the limit only when it
-//! is a launcher; and it removes the installation's retired launcher copies that no journal names,
-//! which a launcher still running from one keeps on Windows.
+//! The hand-over after an update that replaced the installed launcher. The launcher that ran the
+//! update tells, by the file it runs and not by its name, whether it was the installed copy, and
+//! whether to hand over: then it starts the copy now installed and leaves it the rest, never
+//! waiting for it. The new copy, before anything else, waits for the launcher process the update
+//! replaced to exit, so that it never takes that process for a running launcher of its own, ending
+//! it at the limit only when it is a launcher; and it removes the installation's retired launcher
+//! copies that no journal names, which a launcher still running from one keeps on Windows.
 
 use std::collections::BTreeSet;
-use std::ffi::OsStr;
-use std::fs;
+use std::ffi::{OsStr, OsString};
+use std::fs::{self, File};
 use std::io;
 use std::path::{Component, Path, PathBuf};
+use std::process::{self, Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use gdl_files::{MAX_JSON_LEN, PENDING_SUFFIX, is_absent, read_json_bounded, strip_verbatim};
+use gdl_files::{
+    MAX_JSON_LEN, PENDING_SUFFIX, absolute_lexical, is_absent, read_json_bounded, strip_verbatim,
+};
 use gdl_release::{Platform, Version, launcher_asset, linux_member};
 use serde_json::{Map, Value};
 
@@ -38,6 +43,10 @@ pub const RETIRED_DELETE_WINDOW: Duration = Duration::from_secs(2);
 /// How often, within [`RETIRED_DELETE_WINDOW`], a retired copy that could not be removed is tried
 /// again.
 pub const RETIRED_DELETE_INTERVAL: Duration = Duration::from_millis(50);
+
+/// The option that starts a launcher as the new copy of a hand-over, followed by the id of the
+/// process it waits for.
+pub const AFTER_UPDATE_OPTION: &str = "--after-update";
 
 /// The exit code a launcher ended at the limit is given on Windows.
 #[cfg(windows)]
@@ -538,10 +547,109 @@ fn update_claims(path: &Path, platform: Platform) -> Option<[String; 2]> {
     Some([journal.retired, new_copy])
 }
 
+/// Whether `own`, the running launcher's file, is the installation's launcher copy at `root`, for
+/// a launcher built for `platform`: told by the file, not its name, so that a file opened as the
+/// launcher started is still told apart once an update has put another at that name. The entry
+/// at the copy's name is looked at itself, never through a link there; an installation without a
+/// launcher copy has none for the file to be.
+pub fn is_installed_copy(own: &File, root: &Path, platform: Platform) -> io::Result<bool> {
+    let copy = root.join(installed_launcher_name(platform));
+    match is_same_file(own, &copy) {
+        Err(error) if is_absent(&error) => Ok(false),
+        answer => answer,
+    }
+}
+
+/// Whether the entry at `path`, itself and not what a link there leads to, is the file `file` has
+/// open, by the volume and file ids Windows gives.
+#[cfg(windows)]
+fn is_same_file(file: &File, path: &Path) -> io::Result<bool> {
+    platform::is_same_file(file, path)
+}
+
+/// Whether the entry at `path`, itself and not what a link there leads to, is the file `file` has
+/// open, by device and inode.
+#[cfg(unix)]
+fn is_same_file(file: &File, path: &Path) -> io::Result<bool> {
+    use std::os::unix::fs::MetadataExt;
+
+    let held = file.metadata()?;
+    let entry = fs::symlink_metadata(path)?;
+    Ok((held.dev(), held.ino()) == (entry.dev(), entry.ino()))
+}
+
+/// Whether a run that updated the installation to `installed` hands over to the launcher copy now
+/// installed: when the running launcher was that copy before the update, since the copy at its
+/// name is now another file, whatever its version; or when the running launcher is older than
+/// what it installed, as a downloaded file that updated the installation from a newer release is.
+pub fn hand_over_needed(was_installed_copy: bool, running: &Version, installed: &Version) -> bool {
+    was_installed_copy || running < installed
+}
+
+/// Starts the launcher copy installed in the installation at `root`, for a launcher built for
+/// `platform`, as the new copy of a hand-over: `<root>/<installed launcher> --after-update <the id
+/// of this process>`, in `root`, as [`handover_command`] starts it; and gives the id of the process
+/// it started. It is never waited for: the caller goes on to exit, and the new copy waits for it.
+pub fn hand_over(root: &Path, platform: Platform) -> io::Result<u32> {
+    let root = absolute_lexical(root)?;
+    let program = root.join(installed_launcher_name(platform));
+    let args = [
+        OsString::from(AFTER_UPDATE_OPTION),
+        OsString::from(process::id().to_string()),
+    ];
+    let started = handover_command(&program, &root, &args)?.spawn()?;
+    Ok(started.id())
+}
+
+/// The command [`hand_over`] runs, for `program` and `args`: by the program's absolute path, never
+/// through a shell, in `root`, with nothing to read and both output streams this process's own, and
+/// with this process's environment as it is; on Linux with no descriptor past the standard three,
+/// and on Windows with no console window made, as [`handover_flags`] says. A program given by a
+/// relative path is refused, since which folder it would be found from is not certain.
+pub(crate) fn handover_command(
+    program: &Path,
+    root: &Path,
+    args: &[OsString],
+) -> io::Result<Command> {
+    if !program.is_absolute() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "a launcher handed over to is started by its absolute path",
+        ));
+    }
+    let mut command = Command::new(program);
+    command
+        .args(args)
+        .current_dir(root)
+        .stdin(Stdio::null())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+
+        command.creation_flags(handover_flags(platform::has_console()));
+    }
+    #[cfg(target_os = "linux")]
+    platform::exec_directly(&mut command)?;
+    Ok(command)
+}
+
+/// The creation flags of a hand-over's child, when this process `has_console` or not: none when it
+/// has one, which the child, a console program, then shares; CREATE_NO_WINDOW when it has none, as
+/// a test's child or a window program has none, so that the child makes no console window.
+#[cfg(windows)]
+pub(crate) fn handover_flags(has_console: bool) -> u32 {
+    use windows_sys::Win32::System::Threading::CREATE_NO_WINDOW;
+
+    if has_console { 0 } else { CREATE_NO_WINDOW }
+}
+
 #[cfg(test)]
 mod tests {
     use std::env;
-    use std::fs;
+    use std::ffi::OsString;
+    use std::fs::{self, File};
     use std::io::{self, BufRead, BufReader, Read, Write};
     use std::path::{Path, PathBuf};
     use std::process::{Child, Command, ExitStatus, Stdio};
@@ -551,19 +659,24 @@ mod tests {
     use std::time::{Duration, Instant};
 
     use gdl_files::{RETRY_INTERVAL, RETRY_WINDOW, retry_locked};
-    use gdl_fixtures::{InstallFixture, RuntimeFiles, pretty_json};
+    use gdl_fixtures::{
+        InstallFixture, RuntimeFiles, append_sections, pretty_json, symlink_file_where_allowed,
+        tiny_elf, tiny_pe,
+    };
     use gdl_release::{Platform, Version, launcher_asset, linux_member};
     use serde_json::{Value, json};
     use tempfile::TempDir;
 
     use super::{
-        Linger, Previous, RetiredSweep, at_the_limit, is_launcher_image, started_before,
-        sweep_retired, wait_for_previous,
+        AFTER_UPDATE_OPTION, Linger, Previous, RetiredSweep, at_the_limit, hand_over_needed,
+        handover_command, is_installed_copy, is_launcher_image, started_before, sweep_retired,
+        wait_for_previous,
     };
     use crate::compat::MIN_LAUNCHER;
     use crate::folder::{InstallFolder, JOURNAL_DIR, STATE_DIR};
     use crate::probe::is_text_busy;
     use crate::receipt::installed_launcher_name;
+    use crate::sections::{RUNTIME_SECTION, Sections};
     use crate::test_platform::{other_platform, this_platform};
     use crate::update::{UPDATE_JOURNAL, UPDATE_STAGING_PREFIX};
 
@@ -587,6 +700,41 @@ mod tests {
 
     /// What starts the line a waiting child prints its answer on.
     const ANSWER: &str = "previous: ";
+
+    /// The test a reporting child runs alone, whose name among the child's arguments is also what
+    /// makes it report: a hand-over's command runs its program with this process's environment as
+    /// it is, so no variable can be set for that child alone. Run without it, as in a run of the
+    /// tests, [`handover_reporter`] does nothing.
+    #[cfg(target_os = "linux")]
+    const REPORTER: &str = "handover::tests::handover_reporter";
+
+    /// What starts the line a reporting child lists its open descriptors on.
+    #[cfg(target_os = "linux")]
+    const DESCRIPTORS: &str = "descriptors: ";
+
+    /// What starts the line a reporting child names what its standard input reads on.
+    #[cfg(target_os = "linux")]
+    const INPUT: &str = "input: ";
+
+    /// What starts the line a reporting child names the folder it runs in on.
+    #[cfg(target_os = "linux")]
+    const FOLDER: &str = "folder: ";
+
+    /// Where Linux lists the descriptors a process has open, as links to what each is open on.
+    #[cfg(target_os = "linux")]
+    const OWN_DESCRIPTORS: &str = "/proc/self/fd";
+
+    /// What a standard input that reads nothing is open on.
+    #[cfg(target_os = "linux")]
+    const NOTHING_TO_READ: &str = "/dev/null";
+
+    /// The descriptor of standard input.
+    #[cfg(target_os = "linux")]
+    const STANDARD_INPUT: u32 = 0;
+
+    /// The descriptors a program a hand-over started may hold: standard input, output and error.
+    #[cfg(target_os = "linux")]
+    const STANDARD_DESCRIPTORS: &str = "0 1 2";
 
     /// How long a waiter is started after the process it waits for printed that it runs: more than
     /// two clock ticks of either system, so that the two never share a creation time.
@@ -684,6 +832,37 @@ mod tests {
         }
     }
 
+    /// A reporting child's part of the hand-over tests, which does nothing unless the child was
+    /// started to run it alone, by its name as [`REPORTER`] gives it: prints the descriptors the
+    /// child has open, the listing's own left out, what its standard input reads, and the folder
+    /// it runs in, as a launcher a hand-over started finds them.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn handover_reporter() {
+        if !env::args().skip(1).any(|argument| argument == REPORTER) {
+            return;
+        }
+        let listing = Path::new(OWN_DESCRIPTORS);
+        // The descriptor the listing reads through is open on the listed folder itself.
+        let listed = fs::canonicalize(listing).unwrap();
+        let mut descriptors = Vec::new();
+        for entry in fs::read_dir(listing).unwrap() {
+            let name = entry.unwrap().file_name();
+            if fs::read_link(listing.join(&name)).is_ok_and(|target| target == listed) {
+                continue;
+            }
+            let descriptor: u32 = name.to_str().unwrap().parse().unwrap();
+            descriptors.push(descriptor);
+        }
+        descriptors.sort_unstable();
+        let descriptors: Vec<String> = descriptors.iter().map(u32::to_string).collect();
+        write_line(&format!("{DESCRIPTORS}{}", descriptors.join(" ")));
+        let input = fs::read_link(listing.join(STANDARD_INPUT.to_string())).unwrap();
+        write_line(&format!("{INPUT}{}", input.display()));
+        let folder = env::current_dir().unwrap();
+        write_line(&format!("{FOLDER}{}", folder.display()));
+    }
+
     /// A child of this test program, or of a copy of it, whose output is read as it comes; ended
     /// when dropped, unless it has ended by itself, so that none outlives its test.
     struct Started {
@@ -697,8 +876,8 @@ mod tests {
 
     impl Started {
         /// Starts `program` running the test `test` alone, with the variable `variable` set to
-        /// `value` and the other child's unset, nothing to read and on Windows without a window;
-        /// tried again while Linux refuses a copy just written for [`is_text_busy`].
+        /// `value` and the other child's unset, nothing to read and on Windows without a window,
+        /// as [`spawn`](Self::spawn) starts it.
         fn start(program: &Path, test: &str, variable: &str, value: &str) -> Started {
             let mut command = Command::new(program);
             command
@@ -706,9 +885,7 @@ mod tests {
                 .env_remove(SLEEP)
                 .env_remove(WAIT)
                 .env(variable, value)
-                .stdin(Stdio::null())
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped());
+                .stdin(Stdio::null());
             #[cfg(windows)]
             {
                 use std::os::windows::process::CommandExt;
@@ -716,6 +893,13 @@ mod tests {
 
                 command.creation_flags(CREATE_NO_WINDOW);
             }
+            Started::spawn(command)
+        }
+
+        /// Starts `command` with both its output streams read as they come; tried again while
+        /// Linux refuses a copy just written for [`is_text_busy`].
+        fn spawn(mut command: Command) -> Started {
+            command.stdout(Stdio::piped()).stderr(Stdio::piped());
             let begun = Instant::now();
             let mut child = loop {
                 match command.spawn() {
@@ -723,7 +907,9 @@ mod tests {
                     Err(error) if is_text_busy(&error) && begun.elapsed() < RETRY_WINDOW => {
                         thread::sleep(RETRY_INTERVAL);
                     }
-                    Err(error) => panic!("{}: {error}", program.display()),
+                    Err(error) => {
+                        panic!("{}: {error}", Path::new(command.get_program()).display())
+                    }
                 }
             };
             let (sender, lines) = mpsc::channel();
@@ -1388,5 +1574,152 @@ mod tests {
         let sweep = sweep_retired(&folder, HELD_WINDOW, super::RETIRED_DELETE_INTERVAL).unwrap();
         assert_eq!(sweep, swept(&[], &[]));
         assert!(!dir.path().join(STATE_DIR).exists());
+    }
+
+    /// A launcher file for this platform: a tiny program of its kind, carrying a runtime.
+    fn launcher_file() -> Vec<u8> {
+        let platform = this_platform();
+        let mut file = match platform {
+            Platform::WindowsX64 => tiny_pe(),
+            Platform::LinuxX64 => tiny_elf(),
+        };
+        let runtime = RuntimeFiles::standard(platform.as_str(), INSTALLED).zip();
+        append_sections(&mut file, &[(RUNTIME_SECTION, &runtime)], 0);
+        file
+    }
+
+    #[test]
+    fn the_installed_copy_is_known_by_its_file_not_its_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("Gauntlet Dark Legacy");
+        let elsewhere = dir.path().join("Downloads");
+        fs::create_dir(&root).unwrap();
+        fs::create_dir(&elsewhere).unwrap();
+        let platform = this_platform();
+        let copy = root.join(installed_launcher_name(platform));
+        fs::write(&copy, launcher_file()).unwrap();
+
+        // The installed copy, its sections found as a launcher finds its own as it starts.
+        let sections = Sections::of_path(&copy).unwrap().unwrap();
+        assert!(is_installed_copy(sections.file(), &root, platform).unwrap());
+        // The same file asked about through another spelling of its path: in upper case, which
+        // Windows' file systems take for the same names; through a hard link's path on Linux.
+        #[cfg(windows)]
+        {
+            let upper = PathBuf::from(root.to_string_lossy().to_uppercase());
+            assert!(is_installed_copy(sections.file(), &upper, platform).unwrap());
+        }
+        #[cfg(unix)]
+        {
+            let linked = elsewhere.join("linked");
+            fs::hard_link(&copy, &linked).unwrap();
+            let own = File::open(&linked).unwrap();
+            assert!(is_installed_copy(&own, &root, platform).unwrap());
+        }
+        // A copy of the same bytes elsewhere, as a downloaded launcher is, is another file.
+        let version = Version::parse(INSTALLED).unwrap();
+        let downloaded = elsewhere.join(launcher_asset(&version, platform));
+        fs::copy(&copy, &downloaded).unwrap();
+        let own = File::open(&downloaded).unwrap();
+        assert!(!is_installed_copy(&own, &root, platform).unwrap());
+        // An installation without a launcher copy has none for the file to be.
+        assert!(!is_installed_copy(sections.file(), &elsewhere, platform).unwrap());
+        // Once an update has put another file at the copy's name, the file opened before is no
+        // longer the installed copy, though it is still the same file.
+        let retired_copy = dir.path().join("retired");
+        fs::rename(&copy, &retired_copy).unwrap();
+        fs::copy(&downloaded, &copy).unwrap();
+        assert!(!is_installed_copy(sections.file(), &root, platform).unwrap());
+        drop(sections);
+
+        // A link at the copy's name is not the file it leads to.
+        let linked_root = dir.path().join("Linked");
+        fs::create_dir(&linked_root).unwrap();
+        let link = linked_root.join(installed_launcher_name(platform));
+        if !symlink_file_where_allowed(&link, &retired_copy) {
+            eprintln!("skipped: this account may not make a symbolic link to a file");
+            return;
+        }
+        let own = File::open(&retired_copy).unwrap();
+        assert!(!is_installed_copy(&own, &linked_root, platform).unwrap());
+    }
+
+    #[test]
+    fn a_hand_over_is_needed_by_the_installed_copy_or_an_older_file() {
+        let older = Version::parse(INSTALLED).unwrap();
+        let installed = Version::parse(NEXT).unwrap();
+        // The installed copy hands over, older or not: the copy at its name is another file now.
+        assert!(hand_over_needed(true, &installed, &installed));
+        assert!(hand_over_needed(true, &older, &installed));
+        // Another file hands over when it is older than what it installed, and not otherwise.
+        assert!(hand_over_needed(false, &older, &installed));
+        assert!(!hand_over_needed(false, &installed, &installed));
+    }
+
+    #[test]
+    fn the_hand_over_command_starts_its_program_by_its_path_in_the_root() {
+        let dir = installation();
+        let root = dir.path();
+        let program = root.join(installed_launcher_name(this_platform()));
+        let args = [OsString::from(AFTER_UPDATE_OPTION), OsString::from("4242")];
+        let command = handover_command(&program, root, &args).unwrap();
+        assert_eq!(command.get_program(), program.as_os_str());
+        let given: Vec<_> = command.get_args().collect();
+        assert_eq!(
+            given,
+            args.iter().map(OsString::as_os_str).collect::<Vec<_>>()
+        );
+        assert_eq!(command.get_current_dir(), Some(root));
+        assert_eq!(command.get_envs().count(), 0);
+        // Which folder a relative path would be found from is not certain.
+        let relative = Path::new(installed_launcher_name(this_platform()));
+        let error = handover_command(relative, root, &args).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::InvalidInput, "{error}");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_hand_over_without_a_console_makes_no_window() {
+        use windows_sys::Win32::System::Threading::CREATE_NO_WINDOW;
+
+        // The command takes `handover_flags(platform::has_console())`; std's command gives no way
+        // to read its flags back, so the rule is held here.
+        assert_eq!(
+            super::handover_flags(false) & CREATE_NO_WINDOW,
+            CREATE_NO_WINDOW
+        );
+        assert_eq!(super::handover_flags(true) & CREATE_NO_WINDOW, 0);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_handed_over_child_sees_only_its_standard_descriptors_and_runs_in_the_root() {
+        let _one = one_test_at_a_time();
+        let dir = installation();
+        let root = dir.path();
+        // A descriptor this process holds without close-on-exec, as a library may leave one, which
+        // a program started from here would otherwise inherit.
+        let held = tempfile::tempfile().unwrap();
+        let leaked = crate::platform::leak_descriptor(&held).unwrap();
+        let args = ["--exact", REPORTER, "--test-threads", "1"].map(OsString::from);
+        let command = handover_command(&env::current_exe().unwrap(), root, &args).unwrap();
+        let mut child = Started::spawn(command);
+        let descriptors = child.line_starting(DESCRIPTORS);
+        assert_eq!(
+            &descriptors[DESCRIPTORS.len()..],
+            STANDARD_DESCRIPTORS,
+            "{:?}",
+            child.seen
+        );
+        let input = child.line_starting(INPUT);
+        assert_eq!(&input[INPUT.len()..], NOTHING_TO_READ);
+        let folder = child.line_starting(FOLDER);
+        assert_eq!(
+            Path::new(&folder[FOLDER.len()..]),
+            fs::canonicalize(root).unwrap()
+        );
+        let status = child.ended();
+        assert!(status.success(), "{status}: {:?}", child.seen);
+        drop(leaked);
     }
 }
