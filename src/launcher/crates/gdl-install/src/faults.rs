@@ -22,8 +22,9 @@ pub(crate) enum FaultPoint {
     /// A root went back into the staging, or a step of taking the install back was done: the
     /// staging, the state files, the journal or the state folder went.
     Rollback,
-    /// A step of an update's staging was done: its source verified, the installed files hashed
-    /// again, the new files, the launcher copy or the icon staged, or its journal written.
+    /// A step of an update's staging was done: a release's files downloaded, its source
+    /// verified, the installed files hashed again, the new files, the launcher copy or the icon
+    /// staged, or its journal written.
     UpdateStage,
     /// An installed file moved aside into the update's backup, or a new one into place.
     UpdateMove,

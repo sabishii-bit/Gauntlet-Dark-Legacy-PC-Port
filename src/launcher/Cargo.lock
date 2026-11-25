@@ -1327,6 +1327,7 @@ dependencies = [
 name = "gdl-install"
 version = "0.0.0"
 dependencies = [
+ "flate2",
  "gdl-extract",
  "gdl-files",
  "gdl-fixtures",

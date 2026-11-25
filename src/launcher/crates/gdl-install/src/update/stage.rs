@@ -28,7 +28,7 @@ use sha2::{Digest, Sha256};
 use super::journal::{
     JournalFile, PLANNED_STAGING, Planned, UPDATE_STAGING_PREFIX, UpdatePhase, check_journal_len,
 };
-use super::source::verified_runtime;
+use super::source::LauncherFile;
 use super::swap::{discard, folders_to_make};
 use super::{
     FileChanges, Probed, STAGE, Update, UpdateError, UpdateFailure, UpdateNotice, VERIFY_DOWNLOAD,
@@ -50,7 +50,7 @@ use crate::sections::{SectionView, Sections};
 
 /// The mode of the game's executable and the launcher copy, which run as programs.
 #[cfg(unix)]
-const PROGRAM_MODE: u32 = 0o755;
+pub(super) const PROGRAM_MODE: u32 = 0o755;
 
 /// The mode of every other file of the runtime.
 #[cfg(unix)]
@@ -129,13 +129,26 @@ struct Judged {
 }
 
 impl Update<'_> {
-    /// Reads the source and judges the names it moves, hashes the installed files again, measures
-    /// the room, waits for the game to close, stages what the update puts in place and writes the
-    /// journal, then probes the staged game. Whatever stops it takes back what it staged.
-    pub(super) fn stage(&self, sections: &mut Sections<File>) -> Result<Staged, UpdateFailure> {
-        let file_len = sections.file_len();
+    /// Reads the launcher file `source` and judges the names it moves, hashes the installed files
+    /// again, measures the room, waits for the game to close, stages what the update puts in place
+    /// and writes the journal, which names a release's download folder too, then probes the staged
+    /// game. Whatever stops it takes back what it staged.
+    pub(super) fn stage(&self, source: LauncherFile<'_>) -> Result<Staged, UpdateFailure> {
         self.begin(VERIFY_DOWNLOAD).map_err(unchanged)?;
-        let mut payload = verified_runtime(sections, self.running, &self.job).map_err(unchanged)?;
+        let mut opened;
+        let (sections, download) = match source {
+            LauncherFile::Own(sections) => (sections, None),
+            LauncherFile::Downloaded(download) => {
+                opened = download.sections().map_err(unchanged)?;
+                (&mut opened, Some(download))
+            }
+        };
+        let file_len = sections.file_len();
+        let release = download.map(|download| download.release);
+        let download = download.map(|download| download.folder.name());
+        let mut payload = self
+            .verified_runtime(sections, release)
+            .map_err(unchanged)?;
         let judged = self.judge(&payload).map_err(unchanged)?;
         self.pass(FaultPoint::UpdateStage, self.folder.root())
             .map_err(unchanged)?;
@@ -159,6 +172,7 @@ impl Update<'_> {
             from: &from,
             to: &to_text,
             staging,
+            download,
             backup: &backup,
             publish: &publish,
             platform: self.platform,
@@ -275,15 +289,16 @@ impl Update<'_> {
     }
 
     /// The update's failure for `error` once its staging was made: the staging goes, with the
-    /// journal when it was written, and the installation is as it was; when that fails, what is
-    /// left stays for the next start.
+    /// journal when it was written and the download folder it names, and the installation is as
+    /// it was; when that fails, what is left stays for the next start.
     pub(super) fn taken_back(
         &self,
         error: UpdateError,
         staging: Staging,
         journal: Option<JournalFile>,
     ) -> UpdateFailure {
-        let changes = match discard(staging, journal.as_ref(), self.settings.faults) {
+        let state = self.folder.state_dir();
+        let changes = match discard(staging, journal.as_ref(), &state, self.settings.faults) {
             Ok(()) => Changes::RolledBack,
             Err(_) => Changes::Kept,
         };
@@ -409,7 +424,7 @@ impl Update<'_> {
 
     /// Refuses the update unless the volume of the launcher's state has room for `staged` bytes
     /// and [`SPACE_MARGIN`].
-    fn check_space(&self, staged: u64) -> Result<(), UpdateError> {
+    pub(super) fn check_space(&self, staged: u64) -> Result<(), UpdateError> {
         let state = self.folder.state_dir();
         let volume = (self.settings.folders.volume)(&state).map_err(|source| UpdateError::Io {
             path: state,
@@ -782,7 +797,7 @@ fn file_len(path: &Path, name: &str) -> Result<Option<u64>, UpdateError> {
 
 /// Writes the staged file `file`, at `path`, through to its disk, then closes it, before the next
 /// is made.
-fn close_synced(file: File, path: &Path) -> Result<(), UpdateError> {
+pub(super) fn close_synced(file: File, path: &Path) -> Result<(), UpdateError> {
     file.sync_all().map_err(|source| UpdateError::Io {
         path: path.to_path_buf(),
         source,
@@ -791,7 +806,7 @@ fn close_synced(file: File, path: &Path) -> Result<(), UpdateError> {
 
 /// Gives the open file `file` the mode `mode`.
 #[cfg(unix)]
-fn set_mode(file: &File, mode: u32) -> io::Result<()> {
+pub(super) fn set_mode(file: &File, mode: u32) -> io::Result<()> {
     use std::os::unix::fs::PermissionsExt;
 
     file.set_permissions(fs::Permissions::from_mode(mode))

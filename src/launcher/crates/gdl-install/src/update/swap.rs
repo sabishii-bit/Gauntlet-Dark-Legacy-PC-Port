@@ -310,12 +310,14 @@ fn pass_cleanup(faults: &dyn FaultPoints, at: &Path) -> Result<(), UpdateError> 
 }
 
 /// Takes back an update whose journal, when it was written, still records it staged: nothing has
-/// moved, so the staging goes with what it holds, then the journal's pending file and the journal
-/// itself, last, passing [`FaultPoint::UpdateRollback`] after each step once the journal was
-/// written. A staging or a journal already gone counts as removed.
+/// moved, so the staging goes with what it holds, then the download folder the journal names in
+/// the state folder `state`, then the journal's pending file and the journal itself, last,
+/// passing [`FaultPoint::UpdateRollback`] after each step once the journal was written. A
+/// staging, a download folder or a journal already gone counts as removed.
 pub(super) fn discard(
     staging: Staging,
     journal: Option<&JournalFile>,
+    state: &Path,
     faults: &dyn FaultPoints,
 ) -> Result<(), FilesError> {
     let path = staging.path().to_path_buf();
@@ -324,6 +326,10 @@ pub(super) fn discard(
         return Ok(());
     };
     pass_rollback(faults, &path)?;
+    if let Some(download) = &journal.journal().download {
+        remove_named(state, DOWNLOAD_PREFIX, download)?;
+        pass_rollback(faults, &state.join(download))?;
+    }
     remove_if_there(&pending_path(journal.path()))?;
     journal.remove()?;
     pass_rollback(faults, journal.path())

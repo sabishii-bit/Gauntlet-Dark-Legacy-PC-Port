@@ -336,8 +336,9 @@ impl JournalFile {
 }
 
 /// The journal an update of the release `from` to `to`, staged in `staging`, writes once it is
-/// staged: the names it moves aside and puts in place, the launcher copy for `platform`, whether
-/// none was there to move aside, and the receipt it writes.
+/// staged: the download folder of a release's files, the names it moves aside and puts in place,
+/// the launcher copy for `platform`, whether none was there to move aside, and the receipt it
+/// writes.
 pub(super) struct Planned<'a> {
     /// The installed release's version, as its receipt writes it.
     pub(super) from: &'a str,
@@ -345,6 +346,8 @@ pub(super) struct Planned<'a> {
     pub(super) to: &'a str,
     /// The staging's name.
     pub(super) staging: &'a str,
+    /// The download folder's name, for an update from a release.
+    pub(super) download: Option<&'a str>,
     /// The installed names moved aside, in byte order.
     pub(super) backup: &'a [RelPath],
     /// The new names put in place, in byte order.
@@ -370,7 +373,7 @@ impl Planned<'_> {
             from: self.from.to_owned(),
             to: self.to.to_owned(),
             staging: self.staging.to_owned(),
-            download: None,
+            download: self.download.map(str::to_owned),
             backup: texts(self.backup),
             publish: texts(self.publish),
             made_folders: Vec::new(),
@@ -459,6 +462,12 @@ mod tests {
     /// The journal at staged of an update of the standard runtime to its next for `platform`,
     /// staged in [`STAGING`].
     fn staged_for(platform: Platform) -> UpdateJournal {
+        staged_with(platform, None)
+    }
+
+    /// The journal [`staged_for`] gives, of an update whose release was downloaded into the
+    /// folder `download` when it names one.
+    fn staged_with(platform: Platform, download: Option<&str>) -> UpdateJournal {
         let receipt = receipt_for(platform);
         let backup = names(&[
             "VERSION",
@@ -476,6 +485,7 @@ mod tests {
             from: "1.0.0-beta",
             to: "1.0.0-beta.1",
             staging: STAGING,
+            download,
             backup: &backup,
             publish: &publish,
             platform,
@@ -550,6 +560,18 @@ mod tests {
         let expected = expected_linux_journal(
             &sha256_hex(&next.build_info_bytes()),
             &sha256_hex(LAUNCHER_BYTES),
+        );
+        assert_eq!(
+            String::from_utf8(fs::read(file.path()).unwrap()).unwrap(),
+            expected
+        );
+
+        // An update from a release names its download folder after its staging.
+        let journal = staged_with(Platform::LinuxX64, Some("download-Qw3rTy12"));
+        let file = JournalFile::begin(&journals, journal).unwrap();
+        let expected = expected.replace(
+            "  \"staging\": \"stage-AbC123xy\",\n",
+            "  \"staging\": \"stage-AbC123xy\",\n  \"download\": \"download-Qw3rTy12\",\n",
         );
         assert_eq!(
             String::from_utf8(fs::read(file.path()).unwrap()).unwrap(),

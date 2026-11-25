@@ -21,7 +21,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use gdl_files::{Cancelled, FilesError, Job, PhaseId, RelPath, read_json_bounded};
-use gdl_release::{Platform, Release, Version};
+use gdl_release::{Platform, Release, ReleaseError, Version};
 
 pub use journal::{
     DOWNLOAD_PREFIX, RETIRED_LAUNCHER_PREFIX, UPDATE_BACKUP, UPDATE_JOURNAL, UPDATE_STAGING_PREFIX,
@@ -34,6 +34,7 @@ pub(crate) use self::journal::{UpdateJournal, is_retired_launcher_name};
 use self::names::judge_names;
 pub(crate) use self::recover::recover_update;
 pub(crate) use self::settings::UpdateSettings;
+use self::source::LauncherFile;
 pub(crate) use self::swap::{remove_folder, remove_named};
 use crate::awake::keep_awake;
 use crate::compat::Access;
@@ -55,6 +56,10 @@ use crate::sections::{Sections, SectionsError};
 /// The phase in which an update takes the installation's lock and reads the installation through
 /// its receipt.
 pub const CHECK_INSTALLED: PhaseId = PhaseId("checkInstalled");
+
+/// The phase in which an update from a release downloads the release's checksum list, checked
+/// against its signature, and its launcher file.
+pub const DOWNLOAD: PhaseId = PhaseId("download");
 
 /// The phase in which an update reads its source's sections against their table and judges the
 /// names the new release moves.
@@ -318,9 +323,9 @@ pub struct UpdateRequest<'a> {
 pub enum UpdateOutcome {
     /// The new release stands.
     Updated(Box<Updated>),
-    /// The installation is of the source's release already, or of a newer one at the same
-    /// precedence, as another launcher may have left it: nothing was changed but what the
-    /// recovery before it did.
+    /// The installation is of the source's release already, or of a newer one, as another
+    /// launcher may have left it: nothing was changed but what the recovery before it did, and
+    /// nothing of a release was downloaded.
     AlreadyCurrent {
         /// The installed release's version.
         version: Version,
@@ -432,35 +437,43 @@ impl UpdateFailure {
 ///    update refused while a committed update's cleanup still cannot finish, as
 ///    [`UpdateError::CleanupPending`]; then the installation read through its receipt, a later
 ///    launcher's being [`UpdateError::NewerLauncher`] and a launcher older than the installed
-///    release [`UpdateError::OlderLauncher`]. A source of the installed release, by precedence, is
-///    [`UpdateOutcome::AlreadyCurrent`], and nothing more changes.
-/// 2. [`VERIFY_DOWNLOAD`]: the launcher file's sections read against their table, its runtime held
-///    to the one this launcher installs, and the names the update moves judged.
-/// 3. [`STAGE`]: every installed file and the launcher copy hashed again against what the receipt
+///    release [`UpdateError::OlderLauncher`]. A source of no newer release than the installed
+///    one, by precedence, is [`UpdateOutcome::AlreadyCurrent`], and nothing more changes: nothing
+///    of a release is downloaded then.
+/// 2. [`DOWNLOAD`], for a release: the room its launcher file needs measured, then, in a download
+///    folder of the state folder's, its checksum list fetched and checked against its signature
+///    when the launcher trusts a key, and its launcher file, held to the list's digest and
+///    GitHub's; on Linux the archive's one member read out beside it.
+/// 3. [`VERIFY_DOWNLOAD`]: the launcher file's sections read against their table, its runtime held
+///    to the one this launcher installs, or to the release's own version and the installed game,
+///    a downloaded file of another release being [`UpdateError::SourceMismatch`], and the names
+///    the update moves judged.
+/// 4. [`STAGE`]: every installed file and the launcher copy hashed again against what the receipt
 ///    and the installed release record give, a file that changed refusing the update; the room
 ///    the staging needs measured; the game found closed, held for while it runs; then, in a
 ///    staging folder of the state folder's, each new or changed file, the files the game's probe
 ///    runs beside them, on Windows the disc's icon set into a staged executable, the launcher
-///    copy and the journal.
-/// 4. [`CHECK_GAME`](crate::CHECK_GAME): the game found closed again, held for; a staged
+///    copy and the journal, which names the download folder too.
+/// 5. [`CHECK_GAME`](crate::CHECK_GAME): the game found closed again, held for; a staged
 ///    executable probed in the staging, and the installed one when it fails, an update whose
 ///    staged game fails where the installed one answers being refused.
-/// 5. [`SWAP`], never cancelled once told: the links checked again, the journal moved to
+/// 6. [`SWAP`], never cancelled once told: the links checked again, the journal moved to
 ///    swapping, the installed files moved aside, the new ones into place, the launcher copy
 ///    retired and the new one put in place, then the receipt written: the commit point.
-/// 6. [`CLEANUP`]: the staging and what was moved aside removed, the retired launcher copy tried
-///    once, then the journal.
+/// 7. [`CLEANUP`]: the staging, what was moved aside and the download folder removed, the retired
+///    launcher copy tried once, then the journal.
 ///
 /// The cancel is looked at as each phase but the last two begins, and before every block and
 /// every file within one, for the last time just before the swap. A failure or a cancel before the
-/// receipt is written takes back what the update made, [`Changes::RolledBack`], and the
-/// installation is as it was: before the swap the staging goes; from the swap on the journal moves
-/// to rolling back and every move is undone, the new launcher copy, once in place, going aside
-/// under a retired name of its own rather than into the staging, since on Windows a launcher that
-/// runs from it would keep the staging from going. A rollback that stops leaves what it has not
-/// taken back, with the journal, for the next start, [`Changes::Kept`]. Past the receipt nothing
-/// is taken back: what fails in cleaning up is a notice, [`UpdateNotice::CleanupLeft`], with the
-/// journal kept for the next start to finish.
+/// staging is made removes the download folder, and changes nothing else. One before the receipt
+/// is written takes back what the update made, [`Changes::RolledBack`], and the installation is as
+/// it was: before the swap the staging and the download folder go; from the swap on the journal
+/// moves to rolling back and every move is undone, the new launcher copy, once in place, going
+/// aside under a retired name of its own rather than into the staging, since on Windows a launcher
+/// that runs from it would keep the staging from going. A rollback that stops leaves what it has
+/// not taken back, with the journal, for the next start, [`Changes::Kept`]. Past the receipt
+/// nothing is taken back: what fails in cleaning up is a notice, [`UpdateNotice::CleanupLeft`],
+/// with the journal kept for the next start to finish.
 pub fn update(request: UpdateRequest<'_>, job: &Job<'_>) -> Result<UpdateOutcome, UpdateFailure> {
     update_with(request, job, &UpdateSettings::shipped())
 }
@@ -478,7 +491,7 @@ pub(crate) fn update_with(
     let UpdateRequest {
         root,
         running,
-        mut source,
+        source,
     } = request;
     job.progress.phase(CHECK_INSTALLED);
     let folder = InstallFolder::at(root)
@@ -520,8 +533,9 @@ pub(crate) fn update_with(
             installed: from.to_string().into(),
         }));
     }
-    // The launcher file that runs carries the runtime of its own version alone.
-    if *running == from {
+    // Another launcher may have updated the folder since the source was chosen. A release's
+    // version is known before anything of it is downloaded.
+    if *source.version(running) <= from {
         drop(lock);
         return Ok(UpdateOutcome::AlreadyCurrent {
             version: from,
@@ -537,8 +551,15 @@ pub(crate) fn update_with(
         installed: installed.build_info,
         receipt,
     };
-    let staged = update.stage(source.launcher_file())?;
-    update.swap(staged, lock, recovered)
+    match source {
+        UpdateSource::Bundled(sections) => {
+            let staged = update.stage(LauncherFile::Own(sections))?;
+            update.swap(staged, lock, recovered)
+        }
+        UpdateSource::Release { files, release } => {
+            update.apply_release(files, release, lock, recovered)
+        }
+    }
 }
 
 /// The update's failure for a lock it held for and did not take.
@@ -679,6 +700,23 @@ pub enum UpdateError {
     /// The new runtime is refused, or is not the one this launcher brings.
     #[error(transparent)]
     Runtime(PayloadError),
+    /// A release's checksum list or launcher file could not be fetched, or is not what the feed
+    /// published for it.
+    #[error(transparent)]
+    Release(ReleaseError),
+    /// A release's launcher file carries another release than its own: another version, another
+    /// platform or another game.
+    #[error("Downloaded runtime does not match the selected version and platform: {detail}")]
+    SourceMismatch {
+        /// What it carries instead.
+        detail: Box<str>,
+    },
+    /// A release's Linux launcher archive is not the release's launcher program alone.
+    #[error("{detail}")]
+    Archive {
+        /// What is wrong with it, naming the entry and its kind.
+        detail: Box<str>,
+    },
     /// The installed release record names a file that no runtime may hold.
     #[error("The installed release record names a file no runtime holds: {name}")]
     InstalledNames {
@@ -776,10 +814,11 @@ pub enum UpdateError {
 
 impl UpdateError {
     /// The failure's stable machine name, in camelCase, for reports and logs: the lock's, the
-    /// recovery's, the receipt's, the sections', the runtime's, the game's, the icon's or the file
-    /// operation's rule, or `newerLauncher`, `olderLauncher`, `cleanupPending`, `installedNames`,
-    /// `caseChange`, `unowned`, `links`, `ownedFileChanged`, `space`, `probeRefused`,
-    /// `journalTooLarge`, `changed`, `inconsistent`, `io` or `cancelled`.
+    /// recovery's, the receipt's, the sections', the runtime's, the release's, the game's, the
+    /// icon's or the file operation's rule, or `newerLauncher`, `olderLauncher`, `cleanupPending`,
+    /// `sourceMismatch`, `archive`, `installedNames`, `caseChange`, `unowned`, `links`,
+    /// `ownedFileChanged`, `space`, `probeRefused`, `journalTooLarge`, `changed`, `inconsistent`,
+    /// `io` or `cancelled`.
     pub fn rule(&self) -> &'static str {
         match self {
             UpdateError::Lock(error) => error.rule(),
@@ -790,6 +829,9 @@ impl UpdateError {
             UpdateError::CleanupPending => "cleanupPending",
             UpdateError::Source(error) => error.rule(),
             UpdateError::Runtime(error) => error.rule(),
+            UpdateError::Release(error) => error.rule(),
+            UpdateError::SourceMismatch { .. } => "sourceMismatch",
+            UpdateError::Archive { .. } => "archive",
             UpdateError::InstalledNames { .. } => "installedNames",
             UpdateError::CaseChange { .. } => "caseChange",
             UpdateError::Unowned { .. } => "unowned",
@@ -821,7 +863,7 @@ pub(crate) fn game_rule(error: &GameUseError) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use std::cell::Cell;
+    use std::cell::{Cell, RefCell};
     use std::collections::{BTreeMap, BTreeSet};
     use std::fs::{self, File};
     use std::io;
@@ -838,11 +880,15 @@ mod tests {
     #[cfg(windows)]
     use gdl_fixtures::fake_sign;
     use gdl_fixtures::{
-        EntryState, InstallFixture, RawEntry, RuntimeFiles, append_sections, link_folder,
-        pretty_json, sha256_hex, snapshot, snapshot_outside, tiny_elf, tiny_pe, tree_entries,
+        EntryState, InstallFixture, RawEntry, RuntimeFiles, TarEntry, append_sections, link_folder,
+        pretty_json, sha256_hex, snapshot, snapshot_outside, tar_gz, tiny_elf, tiny_pe,
+        tree_entries,
     };
     use gdl_media::Sha256Digest;
-    use gdl_release::{Asset, Release, Version, checksums_asset, launcher_asset};
+    use gdl_release::{
+        Asset, CheckedList, ChecksumList, Downloaded, Platform, REPOSITORY, Release, ReleaseError,
+        ReleaseFiles, Version, checksums_asset, launcher_asset, linux_member, signature_asset,
+    };
     use serde_json::{Value, json};
     use tempfile::TempDir;
 
@@ -1266,6 +1312,30 @@ mod tests {
                 UpdateError::Runtime(PayloadError::Sections(SectionsError::NoSections)),
                 "noSections",
                 SectionsError::NoSections.to_string(),
+            ),
+            (
+                UpdateError::Release(ReleaseError::Corrupt {
+                    asset: "launcher.exe".into(),
+                }),
+                "corrupt",
+                "Update download is incomplete or failed its SHA-256 check: launcher.exe"
+                    .to_owned(),
+            ),
+            (
+                UpdateError::SourceMismatch {
+                    detail: "the release is for linux-x64, not windows-x64".into(),
+                },
+                "sourceMismatch",
+                "Downloaded runtime does not match the selected version and platform: the \
+                 release is for linux-x64, not windows-x64"
+                    .to_owned(),
+            ),
+            (
+                UpdateError::Archive {
+                    detail: "Truncated launcher archive: 512 of the member's 1537 bytes".into(),
+                },
+                "archive",
+                "Truncated launcher archive: 512 of the member's 1537 bytes".to_owned(),
             ),
             (
                 UpdateError::InstalledNames {
@@ -2066,6 +2136,462 @@ mod tests {
         );
     }
 
+    /// A stand-in for the feed that holds a release's files itself: its checksum list, the list's
+    /// signature when it has one and its launcher asset; or, when told to, the failure its
+    /// download meets instead. It counts what it is asked for.
+    pub(super) struct HeldRelease {
+        list: Vec<u8>,
+        signature: Option<Vec<u8>>,
+        asset: Vec<u8>,
+        refusal: Option<fn(&Asset) -> ReleaseError>,
+        asked: Cell<u32>,
+    }
+
+    impl ReleaseFiles for HeldRelease {
+        fn check_list(&self, _: &Release, cancel: &Cancel) -> Result<CheckedList, ReleaseError> {
+            self.asked.set(self.asked.get() + 1);
+            cancel.check()?;
+            Ok(CheckedList {
+                list: ChecksumList::parse(&self.list)?,
+                bytes: self.list.clone(),
+                signature: self.signature.clone(),
+            })
+        }
+
+        fn download(
+            &self,
+            asset: &Asset,
+            folder: &Path,
+            job: &Job<'_>,
+        ) -> Result<Downloaded, ReleaseError> {
+            self.asked.set(self.asked.get() + 1);
+            job.cancel.check()?;
+            if let Some(refusal) = self.refusal {
+                return Err(refusal(asset));
+            }
+            let path = folder.join(&asset.name);
+            fs::write(&path, &self.asset).map_err(|source| ReleaseError::Io {
+                path: path.clone(),
+                source,
+            })?;
+            job.progress.advance(asset.size, asset.size, None);
+            Ok(Downloaded {
+                path,
+                size: asset.size,
+                sha256: Sha256Digest::of(&self.asset),
+            })
+        }
+    }
+
+    /// The asset named `name` of the release of `to` that holds `bytes`, as the feed lists one.
+    fn asset_of(to: &Version, name: String, bytes: &[u8]) -> Asset {
+        Asset {
+            url: format!("https://github.com/{REPOSITORY}/releases/download/v{to}/{name}"),
+            name,
+            size: bytes.len() as u64,
+            sha256: Sha256Digest::of(bytes),
+        }
+    }
+
+    /// The release of `to` for this system whose launcher asset holds `asset`, as the feed gives
+    /// one, with a stand-in for the feed that holds its files and a checksum list that gives the
+    /// asset its digest.
+    pub(super) fn release_carrying(to: &str, asset: Vec<u8>) -> (Release, HeldRelease) {
+        let to = version(to);
+        let platform = this_platform();
+        let name = launcher_asset(&to, platform);
+        let list = format!("{}  {name}\n", sha256_hex(&asset)).into_bytes();
+        let release = Release {
+            version: to.clone(),
+            tag: format!("v{to}"),
+            platform,
+            launcher: asset_of(&to, name, &asset),
+            checksums: asset_of(&to, checksums_asset(&to, platform), &list),
+            signature: None,
+            notes: None,
+        };
+        let held = HeldRelease {
+            list,
+            signature: None,
+            asset,
+            refusal: None,
+            asked: Cell::new(0),
+        };
+        (release, held)
+    }
+
+    /// The launcher asset of the release of `to` for this system whose launcher file holds `file`:
+    /// the file itself on Windows, and on Linux an archive of it alone, as a release's is.
+    pub(super) fn launcher_asset_of(to: &str, file: &[u8]) -> Vec<u8> {
+        match this_platform() {
+            Platform::WindowsX64 => file.to_vec(),
+            Platform::LinuxX64 => tar_gz(&[TarEntry::File {
+                name: &linux_member(&version(to)),
+                data: file,
+            }]),
+        }
+    }
+
+    /// The release of `to` for this system whose launcher file holds `file`, as
+    /// [`release_carrying`] gives one.
+    pub(super) fn release_of(to: &str, file: &[u8]) -> (Release, HeldRelease) {
+        release_carrying(to, launcher_asset_of(to, file))
+    }
+
+    /// The launcher file of this system's kind carrying `runtime`, written into `dir` as `name`,
+    /// as its bytes.
+    fn launcher_file(dir: &Path, name: &str, runtime: &RuntimeFiles) -> Vec<u8> {
+        let (path, _) = bundled_as(dir, name, runtime);
+        fs::read(path).unwrap()
+    }
+
+    /// Updates the installation `fixture` from `release`, its files fetched from `files`, by the
+    /// launcher of version `running`, with a cancel nobody makes, a progress nobody follows and
+    /// the world `settings` gives.
+    pub(super) fn update_from_release(
+        fixture: &InstallFixture,
+        files: &dyn ReleaseFiles,
+        release: &Release,
+        running: &str,
+        settings: &UpdateSettings<'_>,
+    ) -> Result<UpdateOutcome, UpdateFailure> {
+        let cancel = Cancel::default();
+        let job = Job {
+            cancel: &cancel,
+            progress: &NoProgress,
+        };
+        let running = version(running);
+        let request = UpdateRequest {
+            root: &fixture.root,
+            running: &running,
+            source: UpdateSource::Release { files, release },
+        };
+        update_with(request, &job, settings)
+    }
+
+    /// The update's download folders in the state folder of the installation at `root`.
+    pub(super) fn downloads(root: &Path) -> Vec<String> {
+        state_names(root)
+            .into_iter()
+            .filter(|name| name.starts_with("download-"))
+            .collect()
+    }
+
+    /// The names in the folder `folder`, sorted.
+    fn names_in(folder: &Path) -> Vec<String> {
+        let mut names: Vec<String> = fs::read_dir(folder)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+            .collect();
+        names.sort();
+        names
+    }
+
+    #[test]
+    fn an_update_from_a_release_brings_the_selected_version() {
+        let (dir, fixture) = players_installation();
+        let root = fixture.root.clone();
+        let newer = fixture.runtime.newer(NEXT);
+        let file = launcher_file(dir.path(), "next-launcher", &newer);
+        let (mut release, mut held) = release_of(NEXT, &file);
+        let signature = b"the list's signature".to_vec();
+        release.signature = Some(asset_of(
+            &release.version,
+            signature_asset(&release.version, release.platform),
+            &signature,
+        ));
+        held.signature = Some(signature.clone());
+
+        // What the download folder holds once the release's files are fetched, and the download
+        // folder the journal names once it is written.
+        let fetched = RefCell::new(Vec::new());
+        let look = || {
+            let [folder] = <[String; 1]>::try_from(downloads(&root)).unwrap();
+            let names = names_in(&root.join(STATE_DIR).join(&folder));
+            fetched.replace([folder].into_iter().chain(names).collect());
+            Ok(())
+        };
+        let journal = root.join(STATE_DIR).join(JOURNAL_DIR).join(UPDATE_JOURNAL);
+        let named = RefCell::new(Value::Null);
+        let read_journal = || {
+            let written: Value = serde_json::from_slice(&fs::read(&journal).unwrap()).unwrap();
+            named.replace(written["download"].clone());
+        };
+        let looked = OnPass::new(FaultPoint::UpdateStage, 1, &look);
+        let journalled = OnceJournalled {
+            point: FaultPoint::UpdateStage,
+            journal: journal.clone(),
+            act: &read_journal,
+            done: Cell::new(false),
+        };
+        let faults = Faults(&[&looked, &journalled]);
+
+        let done = updated(update_from_release(
+            &fixture,
+            &held,
+            &release,
+            INSTALLED,
+            &standing_in(&faults, &answering),
+        ));
+        assert_eq!(
+            (done.from.clone(), done.to.clone()),
+            (version(INSTALLED), version(NEXT))
+        );
+        assert_eq!(done.retired, RetiredCopy::Removed);
+        assert_eq!(done.probed, Probed::Staged);
+        assert!(done.notices.is_empty(), "{:?}", done.notices);
+        assert_eq!(held.asked.get(), 2);
+
+        // The download folder held the list, its signature and the launcher asset, with the
+        // archive's member beside it on Linux; and the journal named it.
+        let fetched = fetched.into_inner();
+        let mut expected = vec![
+            release.checksums.name.clone(),
+            release.signature.as_ref().unwrap().name.clone(),
+            release.launcher.name.clone(),
+        ];
+        if this_platform() == Platform::LinuxX64 {
+            expected.push(linux_member(&release.version));
+        }
+        expected.sort();
+        assert_eq!(fetched[1..], expected);
+        assert_eq!(named.into_inner(), json!(fetched[0]));
+
+        // The launcher copy is the release's launcher file, the runtime the release's, the
+        // player's files as they were, and nothing of the update's is left.
+        assert_eq!(fs::read(root.join(launcher_copy())).unwrap(), file);
+        let written = receipt_at(&root);
+        assert_eq!(written["version"], json!(NEXT));
+        assert_eq!(written["launcher"]["sha256"], json!(sha256_hex(&file)));
+        assert_eq!(
+            fs::read(root.join(BUILD_INFO)).unwrap(),
+            newer.build_info_bytes()
+        );
+        for name in PLAYERS_FILES {
+            assert_eq!(
+                fs::read(under(&root, name)).unwrap(),
+                PLAYERS_BYTES,
+                "{name}"
+            );
+        }
+        assert_eq!(state_names(&root), [RECEIPT_FILE]);
+
+        // The installation is the one an update from that launcher file itself leaves.
+        let (other_dir, other) = players_installation();
+        let mut source = bundled(other_dir.path(), &newer);
+        updated(update_simply(
+            &other,
+            &mut source,
+            NEXT,
+            &standing_in(&NoFaults, &answering),
+        ));
+        assert_eq!(contents_of(&root), contents_of(&other.root));
+    }
+
+    #[test]
+    fn a_release_no_newer_than_the_installation_is_already_current() {
+        let (dir, fixture) = players_installation();
+        let before = as_it_is(&fixture.root);
+        let older = RuntimeFiles::standard(this_platform().as_str(), "1.0.0-alpha.9");
+        for (to, runtime) in [(INSTALLED, &fixture.runtime), ("1.0.0-alpha.9", &older)] {
+            let file = launcher_file(dir.path(), &format!("launcher-{to}"), runtime);
+            let (release, held) = release_of(to, &file);
+            match update_from_release(
+                &fixture,
+                &held,
+                &release,
+                INSTALLED,
+                &standing_in(&NoFaults, &answering),
+            ) {
+                Ok(UpdateOutcome::AlreadyCurrent {
+                    version: current,
+                    recovered,
+                }) => {
+                    assert_eq!(current, version(INSTALLED), "{to}");
+                    assert_eq!(recovered, nothing_recovered(), "{to}");
+                }
+                other => panic!("{to}: {other:?}"),
+            }
+            // Nothing of the release was asked for.
+            assert_eq!(held.asked.get(), 0, "{to}");
+            assert_eq!(as_it_is(&fixture.root), before, "{to}");
+        }
+    }
+
+    #[test]
+    fn a_mismatched_release_changes_nothing() {
+        let (dir, fixture) = players_installation();
+        let before = as_it_is(&fixture.root);
+        // The release of 1.0.0-beta.3 whose launcher file carries 1.0.0-beta.2.
+        let file = launcher_file(dir.path(), "later-launcher", &fixture.runtime.next(LATER));
+        let (release, held) = release_of("1.0.0-beta.3", &file);
+        let failure = failed(update_from_release(
+            &fixture,
+            &held,
+            &release,
+            INSTALLED,
+            &standing_in(&NoFaults, &answering),
+        ));
+        match &failure.error {
+            UpdateError::SourceMismatch { detail } => {
+                assert!(detail.contains(LATER), "{detail}");
+                assert!(detail.contains("1.0.0-beta.3"), "{detail}");
+            }
+            other => panic!("{other:?}"),
+        }
+        assert_eq!(failure.rule(), "sourceMismatch");
+        assert_eq!(failure.changes, Changes::None);
+        assert_eq!(as_it_is(&fixture.root), before);
+
+        // A release of another platform is refused before anything of it is asked for.
+        let (mut release, held) = release_of(NEXT, &file);
+        release.platform = other_platform();
+        let failure = failed(update_from_release(
+            &fixture,
+            &held,
+            &release,
+            INSTALLED,
+            &standing_in(&NoFaults, &answering),
+        ));
+        assert!(
+            matches!(failure.error, UpdateError::SourceMismatch { .. }),
+            "{failure:?}"
+        );
+        assert_eq!(failure.changes, Changes::None);
+        assert_eq!(held.asked.get(), 0);
+        assert_eq!(as_it_is(&fixture.root), before);
+    }
+
+    #[test]
+    fn a_bad_download_changes_neither_the_game_nor_the_launcher() {
+        let (dir, fixture) = players_installation();
+        let before = as_it_is(&fixture.root);
+        let file = launcher_file(dir.path(), "next-launcher", &fixture.runtime.newer(NEXT));
+        let check =
+            |what: &str, release: &Release, held: &HeldRelease, faults: &dyn FaultPoints| {
+                let failure = failed(update_from_release(
+                    &fixture,
+                    held,
+                    release,
+                    INSTALLED,
+                    &standing_in(faults, &answering),
+                ));
+                assert_eq!(as_it_is(&fixture.root), before, "{what}");
+                assert!(downloads(&fixture.root).is_empty(), "{what}");
+                failure
+            };
+
+        // A download that fails its digest.
+        let (release, mut held) = release_of(NEXT, &file);
+        held.refusal = Some(|asset| ReleaseError::Corrupt {
+            asset: asset.name.as_str().into(),
+        });
+        let failure = check("corrupt", &release, &held, &NoFaults);
+        match &failure.error {
+            UpdateError::Release(ReleaseError::Corrupt { asset }) => {
+                assert_eq!(&**asset, release.launcher.name);
+            }
+            other => panic!("{other:?}"),
+        }
+        assert_eq!(failure.changes, Changes::None);
+
+        // A checksum list that gives the launcher file another digest.
+        let (release, mut held) = release_of(NEXT, &file);
+        held.list = format!("{}  {}\n", sha256_hex(b"another"), release.launcher.name).into_bytes();
+        let failure = check("another digest", &release, &held, &NoFaults);
+        assert!(
+            matches!(
+                failure.error,
+                UpdateError::Release(ReleaseError::ChecksumMismatch { .. })
+            ),
+            "{failure:?}"
+        );
+        assert_eq!(failure.changes, Changes::None);
+
+        // A step of the download that fails once the files are fetched.
+        let (release, held) = release_of(NEXT, &file);
+        let fail = FailAt::new(FaultPoint::UpdateStage, 1);
+        let failure = check("a failed step", &release, &held, &fail);
+        assert!(
+            matches!(failure.error, UpdateError::Io { .. }),
+            "{failure:?}"
+        );
+        assert_eq!(failure.changes, Changes::None);
+
+        // A launcher file whose runtime is damaged, its sections consistent.
+        let mut raw = fixture.runtime.newer(NEXT).raw();
+        let entry = raw
+            .entries
+            .iter_mut()
+            .find(|entry| entry.name == b"data/config.json")
+            .unwrap();
+        *entry = RawEntry::deflated("data/config.json", b"bad");
+        let (damaged_path, _) = carrying(dir.path(), "damaged", &raw.to_bytes());
+        let (release, held) = release_of(NEXT, &fs::read(damaged_path).unwrap());
+        let failure = check("a damaged runtime", &release, &held, &NoFaults);
+        match &failure.error {
+            UpdateError::Runtime(PayloadError::Damaged { name, .. }) => {
+                assert_eq!(&**name, "data/config.json");
+            }
+            other => panic!("{other:?}"),
+        }
+        assert_eq!(failure.changes, Changes::RolledBack);
+
+        // A Linux archive that holds more than the launcher program.
+        if this_platform() == Platform::LinuxX64 {
+            let member = linux_member(&version(NEXT));
+            let archive = tar_gz(&[
+                TarEntry::File {
+                    name: &member,
+                    data: &file,
+                },
+                TarEntry::File {
+                    name: "unexpected",
+                    data: b"more",
+                },
+            ]);
+            let (release, held) = release_carrying(NEXT, archive);
+            let failure = check("an extra entry", &release, &held, &NoFaults);
+            match &failure.error {
+                UpdateError::Archive { detail } => assert!(
+                    detail.starts_with("Unexpected extra launcher archive entry: "),
+                    "{detail}"
+                ),
+                other => panic!("{other:?}"),
+            }
+            assert_eq!(failure.rule(), "archive");
+            assert_eq!(failure.changes, Changes::None);
+        }
+    }
+
+    #[test]
+    fn a_release_taken_back_from_its_journal_leaves_no_download() {
+        let (dir, fixture) = players_installation();
+        let root = fixture.root.clone();
+        let file = launcher_file(dir.path(), "next-launcher", &fixture.runtime.newer(NEXT));
+        let before = contents_of(&root);
+        let state = root.join(STATE_DIR);
+        let refusing =
+            |path: &Path, _: &Cancel| answered(if path.starts_with(&state) { 3 } else { 0 });
+        let failed_move = FailAt::new(FaultPoint::UpdateMove, 1);
+        // Once the journal names the download folder: a staged game that fails where the
+        // installed one answers, which discards what was staged, and a move that fails, which
+        // takes the swap back; each takes the download folder with it.
+        for (what, settings) in [
+            ("a refused probe", standing_in(&NoFaults, &refusing)),
+            ("a failed move", standing_in(&failed_move, &answering)),
+        ] {
+            let (release, held) = release_of(NEXT, &file);
+            let failure = failed(update_from_release(
+                &fixture, &held, &release, INSTALLED, &settings,
+            ));
+            assert_eq!(failure.changes, Changes::RolledBack, "{what}: {failure:?}");
+            assert!(downloads(&root).is_empty(), "{what}");
+            assert_eq!(journal_phase(&root), None, "{what}");
+            assert_eq!(contents_of(&root), before, "{what}");
+        }
+    }
+
     #[test]
     fn only_the_installed_launcher_copy_changes_outside_the_state_folder() {
         let (dir, fixture) = players_installation();
@@ -2430,6 +2956,28 @@ mod tests {
             other => panic!("{other:?}"),
         }
         assert_eq!(failure.changes, Changes::None);
+        assert_eq!(as_it_is(&fixture.root), before);
+
+        // A release needs room for its launcher file before anything of it is asked for: twice
+        // on Linux, for the archive and its member.
+        let file = launcher_file(dir.path(), "next-launcher", &fixture.runtime.next(NEXT));
+        let (release, held) = release_of(NEXT, &file);
+        let failure = failed(update_from_release(
+            &fixture, &held, &release, INSTALLED, &settings,
+        ));
+        let copies = match this_platform() {
+            Platform::WindowsX64 => 1,
+            Platform::LinuxX64 => 2,
+        };
+        match &failure.error {
+            UpdateError::Space { needed, available } => {
+                assert_eq!(*available, 0);
+                assert_eq!(*needed, release.launcher.size * copies + SPACE_MARGIN);
+            }
+            other => panic!("{other:?}"),
+        }
+        assert_eq!(failure.changes, Changes::None);
+        assert_eq!(held.asked.get(), 0);
         assert_eq!(as_it_is(&fixture.root), before);
     }
 
@@ -3769,6 +4317,38 @@ mod tests {
             );
             assert_eq!(contents_of(&root), before, "{at}");
         }
+
+        // At the pass once a release's files are downloaded: the download folder stays, with no
+        // staging and no journal yet, and the next start sweeps it.
+        let (dir, fixture) = players_installation();
+        let root = fixture.root.clone();
+        let file = launcher_file(dir.path(), "next-launcher", &fixture.runtime.newer(NEXT));
+        let (release, held) = release_of(NEXT, &file);
+        let before = contents_of(&root);
+        let fetched = PanicAt::new(FaultPoint::UpdateStage, 1);
+        let unwound = catch_unwind(AssertUnwindSafe(|| {
+            update_from_release(
+                &fixture,
+                &held,
+                &release,
+                INSTALLED,
+                &standing_in(&fetched, &answering),
+            )
+        }));
+        assert!(unwound.is_err());
+        let left = downloads(&root);
+        assert_eq!(left.len(), 1, "{left:?}");
+        assert!(stagings(&root).is_empty());
+        assert_eq!(journal_phase(&root), None);
+        let recovered = recover_simply(&root, INSTALLED, &standing_in(&NoFaults, &answering));
+        assert_eq!(
+            recovered.unwrap(),
+            Recovered {
+                swept: left,
+                ..nothing_recovered()
+            }
+        );
+        assert_eq!(contents_of(&root), before);
     }
 
     /// What [`CancelAt`] has been told: how many calls, the phase last begun, and, at the call it
