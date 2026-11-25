@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <string_view>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -592,33 +593,41 @@ TEST_CASE("a saved look that can no longer be drawn stays saved while Dark Legac
     }
 }
 
-TEST_CASE("choosing a look saves its id and a refused save leaves the setting",
-          "[settings][hud-settings]") {
-    Fixture f;
-    // The capitals are enough to draw the notice, the only text below the rows.
+/** Gives the fixture's font only the letters in `letters`, so a page draws only what is written
+ * with them. */
+void writeOnly(Fixture& f, std::string_view letters) {
     std::vector<BitmapGlyph> glyphs;
-    for (s32 c = 'A'; c <= 'Z'; ++c) {
-        glyphs.push_back({c, 16, 0, 0});
+    for (const char letter : letters) {
+        glyphs.push_back({static_cast<u8>(letter), 16, 0, 0});
     }
     f.font = BitmapFont::fromGlyphs(32, 16, std::move(glyphs));
     f.painter.setFont(&f.font, &f.texture);
-    const auto noticeShown = [&] {
-        test::FakeRenderDevice device;
-        Canvas canvas;
-        canvas.begin(device, Mat4{1});
-        f.menu.draw(canvas, f.painter, {});
-        canvas.end();
-        return std::ranges::any_of(device.draws, [](const auto& draw) {
-            return std::ranges::any_of(draw.vertices,
-                                       [](const auto& vertex) { return vertex.position.y >= 276; });
-        });
-    };
+}
+
+/** Whether the page shown draws anything as low as its notice. */
+bool noticeShown(Fixture& f) {
+    test::FakeRenderDevice device;
+    Canvas canvas;
+    canvas.begin(device, Mat4{1});
+    f.menu.draw(canvas, f.painter, {});
+    canvas.end();
+    return std::ranges::any_of(device.draws, [](const auto& draw) {
+        return std::ranges::any_of(draw.vertices,
+                                   [](const auto& vertex) { return vertex.position.y >= 276; });
+    });
+}
+
+TEST_CASE("choosing a look saves its id and a refused save leaves the setting",
+          "[settings][hud-settings]") {
+    Fixture f;
+    // The capitals are enough to draw the notice, the only text below the HUD page's rows.
+    writeOnly(f, "ABCDEFGHIJKLMNOPQRSTUVWXYZ");
     offerHudLooks(f);
     enterHudPage(f);
-    CHECK_FALSE(noticeShown());
+    CHECK_FALSE(noticeShown(f));
     f.settings.fail = true;
     f.choose(2);
-    CHECK(noticeShown()); // the settings could not be saved
+    CHECK(noticeShown(f)); // the settings could not be saved
     CHECK(f.config.display.hudStyle == kDarkLegacyHudStyle);
     CHECK(f.menu.config().display.hudStyle == kDarkLegacyHudStyle);
     CHECK(rowMarks(f.menu) == std::vector<s32>{1, 0, 0});
@@ -628,7 +637,7 @@ TEST_CASE("choosing a look saves its id and a refused save leaves the setting",
     CHECK(f.config.display.hudStyle == "other");
     CHECK(f.menu.config().display.hudStyle == "other");
     CHECK(rowMarks(f.menu) == std::vector<s32>{0, 0, 1});
-    CHECK_FALSE(noticeShown());
+    CHECK_FALSE(noticeShown(f));
     f.choose(0);
     CHECK(f.config.display.hudStyle == kDarkLegacyHudStyle);
     CHECK(rowMarks(f.menu) == std::vector<s32>{1, 0, 0});
@@ -673,6 +682,37 @@ TEST_CASE("each of Game Options' own pages lies a step deeper than Game Options"
     f.back();
     REQUIRE(f.menu.page() == SettingsMenu::Page::Root);
     CHECK(f.menu.depth() == 0);
+}
+
+TEST_CASE("each of Game Options' own pages opens without Game Options' notice",
+          "[settings][hud-settings]") {
+    Fixture f;
+    // The notice's V is a letter no row of these pages writes, so it alone is drawn.
+    writeOnly(f, "V");
+    offerHudLooks(f);
+    f.choose(kGameOptionsCode);
+    REQUIRE(f.menu.page() == SettingsMenu::Page::Game);
+    // Difficulty, Multiplayer, Combat and HUD, each opened as it is and then just after a switch
+    // on Game Options could not be saved.
+    for (const s32 code : {0, 1, 2, kHudCode}) {
+        CAPTURE(code);
+        f.choose(code);
+        REQUIRE(f.menu.page() != SettingsMenu::Page::Game);
+        CHECK_FALSE(noticeShown(f));
+        f.back();
+        REQUIRE(f.menu.page() == SettingsMenu::Page::Game);
+        f.settings.fail = true;
+        f.choose(3);                             // Expanded Shop
+        CHECK_FALSE(f.config.game.expandedShop); // the settings could not be saved
+        f.settings.fail = false;
+        f.release();
+        f.choose(code);
+        REQUIRE(f.menu.page() != SettingsMenu::Page::Game);
+        CHECK_FALSE(noticeShown(f)); // nothing on this page has failed
+        f.back();
+        REQUIRE(f.menu.page() == SettingsMenu::Page::Game);
+    }
+    CHECK(f.settings.writes == 0);
 }
 
 TEST_CASE("the HUD page keeps each look's name and its mark on the parchment",

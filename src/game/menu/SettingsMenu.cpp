@@ -1011,6 +1011,7 @@ MenuEvent SettingsMenu::update(const MenuInput& input, s32 ticks) {
             if (m_page == Page::Hud) {
                 refreshHudStyles();
             }
+            m_notice.clear();
             rebuild(currentChoice());
         } else if (m_page == Page::Audio) {
             if (event.code == kStereoCode && event.part != 0 &&
