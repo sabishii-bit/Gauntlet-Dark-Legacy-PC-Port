@@ -2597,6 +2597,75 @@ mod tests {
         }
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn a_release_given_up_before_its_journal_is_taken_back_under_the_lock() {
+        use std::os::windows::fs::OpenOptionsExt;
+        use std::thread;
+
+        /// FILE_SHARE_READ: what a handle that lets others only read beside it shares, as a
+        /// scanner's look at a downloaded file may.
+        const SHARE_READ: u32 = 0x1;
+        /// How long the download folder's removal is held up: well inside the retries a held file
+        /// gets, and long enough for the update to be removing the folder by then.
+        const HELD_UP: Duration = Duration::from_secs(1);
+
+        // Until the journal names the download folder, only the update itself removes it, and it
+        // holds the installation's lock until the folder is gone, so that no other launcher's
+        // sweep takes the folder from under it. A file of the folder held open without sharing
+        // its deletion holds the removal up while the lock is looked at.
+        let (dir, fixture) = players_installation();
+        let root = fixture.root.clone();
+        let before = as_it_is(&root);
+        let file = launcher_file(dir.path(), "next-launcher", &fixture.runtime.newer(NEXT));
+        let (release, held) = release_of(NEXT, &file);
+        let looker = RefCell::new(None);
+        let give_up = || {
+            let [download] = <[String; 1]>::try_from(downloads(&root)).unwrap();
+            let list = root
+                .join(STATE_DIR)
+                .join(download)
+                .join(&release.checksums.name);
+            let holding = fs::OpenOptions::new()
+                .read(true)
+                .share_mode(SHARE_READ)
+                .open(list)?;
+            let folder = InstallFolder::at(&root).unwrap();
+            looker.replace(Some(thread::spawn(move || {
+                thread::sleep(HELD_UP);
+                let lock = folder.lock();
+                drop(holding);
+                lock.map(drop)
+            })));
+            Err(io::Error::other(crate::faults::INJECTED))
+        };
+        // Once the launcher file is read and its names judged, before anything is staged.
+        let stopped = OnPass::new(FaultPoint::UpdateStage, 2, &give_up);
+        let failure = failed(update_from_release(
+            &fixture,
+            &held,
+            &release,
+            INSTALLED,
+            &standing_in(&stopped, &answering),
+        ));
+        assert!(
+            matches!(failure.error, UpdateError::Io { .. }),
+            "{failure:?}"
+        );
+        assert_eq!(failure.changes, Changes::None);
+        let looked = looker
+            .into_inner()
+            .expect("the update gave up once its launcher file was read")
+            .join()
+            .unwrap();
+        assert!(
+            matches!(looked, Err(LockError::Busy)),
+            "the lock while the download folder went: {looked:?}"
+        );
+        assert!(downloads(&root).is_empty());
+        assert_eq!(as_it_is(&root), before);
+    }
+
     #[test]
     fn only_the_installed_launcher_copy_changes_outside_the_state_folder() {
         let (dir, fixture) = players_installation();

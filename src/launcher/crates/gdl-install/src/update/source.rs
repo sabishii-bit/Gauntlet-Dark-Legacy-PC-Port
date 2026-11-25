@@ -114,8 +114,9 @@ impl Update<'_> {
     /// Updates the installation from `release`, its files fetched through `files`: downloaded and
     /// checked, then staged and swapped in as the launcher file that runs is. The download folder
     /// goes with the update's cleanup, or with whatever stops it: the journal's rollback removes
-    /// it once the journal names it, and before that the update itself; what is left for the next
-    /// start stays for it.
+    /// it once the journal names it, and before that the update itself, with `lock` still held, so
+    /// that no other launcher's sweep takes the folder meanwhile; what is left for the next start
+    /// stays for it.
     pub(super) fn apply_release(
         &self,
         files: &dyn ReleaseFiles,
@@ -124,10 +125,14 @@ impl Update<'_> {
         recovered: Recovered,
     ) -> Result<UpdateOutcome, UpdateFailure> {
         let download = self.download(files, release)?;
-        let swapped = self
-            .stage(LauncherFile::Downloaded(&download))
-            .and_then(|staged| self.swap(staged, lock, recovered));
-        swapped.map_err(|failure| self.download_taken_back(failure, download.folder))
+        let staged = match self.stage(LauncherFile::Downloaded(&download)) {
+            Ok(staged) => staged,
+            // The lock is let go only once the folder is taken back.
+            Err(failure) => return Err(self.download_taken_back(failure, download.folder)),
+        };
+        // From here the journal names the download folder, and whatever stops the swap takes it
+        // back from the journal before the lock is let go.
+        self.swap(staged, lock, recovered)
     }
 
     /// Downloads `release`'s files through `files` into a download folder made in the state
