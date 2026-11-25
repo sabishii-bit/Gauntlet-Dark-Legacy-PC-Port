@@ -2559,17 +2559,20 @@ TEST_CASE("a fighter whose rules keep every blow to its window strikes through i
 /** The swarm's bodies the swinging general playing `source`'s SWING of seventy frames by `rules`
  * strikes over a second of updates `rate` a second, at a target standing out of the blow's
  * reach: each trample with the update it came in. Its HAND stands seven along x, still, or
- * `swung` a unit further along x each of the swing's first ten frames. */
+ * `swung` a unit further along x each of the swing's first ten frames; SWING is shown
+ * `frameRate` apart (900 over the frames a second). */
 std::vector<std::pair<s32, CombatTrample>> swarmStrikes(const formats::CritterFile& source,
                                                         std::span<const EnemyBody> swarm, s32 rate,
                                                         const CritterRules& rules = {},
-                                                        bool swung = false) {
+                                                        bool swung = false, s32 frameRate = 30) {
     test::FakeRenderDevice device;
     CombatantAssets assets;
     const auto root = familyAssets();
     writeSwingTree(root, 0, {},
-                   swung ? R"(,"tracks":[{"node":2,"flags":16,"frames":[0,10],"values":[0,10]}])"
-                         : std::string{},
+                   R"(,"frameRate":)" + std::to_string(frameRate) +
+                       (swung
+                            ? R"(,"tracks":[{"node":2,"flags":16,"frames":[0,10],"values":[0,10]}])"
+                            : std::string{}),
                    70);
     REQUIRE(assets.load(device, root, General::definition(), 'G'));
     assets.data = CritterData::fromDecoded("GENERAL", source, 0, rules);
@@ -2636,6 +2639,29 @@ TEST_CASE("a great one's blow strikes the swarm in its reach once each native fr
         const auto updates = updatesOf(enemy);
         CHECK(updates.size() == frames);
         CHECK(std::ranges::adjacent_find(updates) == updates.end());
+    }
+}
+
+TEST_CASE("a claw strikes the swarm once each native frame that shows its window, however fast "
+          "its swing plays",
+          "[game][combatant][swarm-blow]") {
+    // CritterGolemAI tests the move once a native frame, at the whole frame its animation shows
+    // then (critter.c 4537-4567), and CritterCopyAnim raises a claw's slot whenever that lies in
+    // its window (3159-3170). A swing at fifteen frames a second, as the golems' and gargoyles'
+    // are, shows each frame of its window on two native frames; one at sixty, as the Lich's axe
+    // sweeps are, shows every other frame.
+    const s32 rate = GENERATE(30, 60);
+    const s32 frameRate = GENERATE(60, 30, 15);
+    CAPTURE(rate, frameRate);
+    const usize strikes = frameRate == 60 ? 10 : frameRate == 30 ? 5 : 3;
+    const std::array swarm{EnemyBody{1, {9, 0, 0}, 1.5f, 1.5f}};
+    const auto struck = swarmStrikes(cadenceCritter(MoveDefinition::kClaw, 0, 4, 8), swarm, rate,
+                                     {}, false, frameRate);
+    CHECK(struck.size() == strikes);
+    // Once a native frame: never twice in an update, nor at sixty in two updates running.
+    for (usize i = 1; i < struck.size(); ++i) {
+        CAPTURE(i);
+        CHECK(struck[i].first - struck[i - 1].first >= rate / 30);
     }
 }
 
@@ -2752,12 +2778,13 @@ TEST_CASE("a head's blow strikes the swarm, and its body hands on what it struck
     CHECK(actor.saveLocal(saved));
 }
 
-TEST_CASE("a golem's fist strikes one of the swarm two from it on each frame of its swing's "
-          "window, and one five off never, at either rate",
+TEST_CASE("a golem's fist strikes one of the swarm two from it on each native frame of its "
+          "swing's window, and one five off never, at either rate",
           "[game][combatant][swarm-blow][assets]") {
-    // GOLEM's ATTACK2 is a claw of 30 reaching three from BALL over frames 10 and 11, on each of
-    // which CritterCopyAnim raises its slot (critter.c 3152-3170) and CritterNodeEnemyCollide
-    // strikes the swarm (0x800359F0).
+    // GOLEM's ATTACK2 is a claw of 30 reaching three from BALL over frames 10 and 11, shown at
+    // fifteen frames a second: each shows on two native frames, on each of which CritterCopyAnim
+    // raises its slot (critter.c 3152-3170) and CritterNodeEnemyCollide strikes the swarm
+    // (0x800359F0).
     const auto root = test::assetOrSkip("CRITTER/GOLEM.WAD").parent_path().parent_path();
     test::assetOrSkip("MONSTERS/GOLEM/LEVELG/ANIM.PS2");
     const s32 rate = GENERATE(30, 60);
@@ -2805,14 +2832,19 @@ TEST_CASE("a golem's fist strikes one of the swarm two from it on each frame of 
     // One wide and tall enough to stay in reach shows where the fist strikes; too tall to tread
     // on, as the rest are.
     const auto probed = swing(std::array{EnemyBody{1, {0, 0, 0}, 1000.0f, 1000.0f}});
-    REQUIRE(probed.size() == 2);
-    CHECK(probed[0].first == 10);
-    CHECK(probed[1].first == 11);
+    const auto framesOf = [](const std::vector<std::pair<s32, CombatTrample>>& struck) {
+        std::vector<s32> frames;
+        for (const auto& [frame, trample] : struck) {
+            frames.push_back(frame);
+        }
+        return frames;
+    };
+    REQUIRE(framesOf(probed) == std::vector<s32>{10, 10, 11, 11});
     for (const auto& [frame, trample] : probed) {
         CHECK(trample.damage == 30);
     }
     const Vec3 first = probed[0].second.position;
-    const Vec3 second = probed[1].second.position;
+    const Vec3 second = probed[2].second.position;
     // Off along the ground away from where the fist goes next.
     const Vec2 apart{first.x - second.x, first.z - second.z};
     const Vec2 away = glm::length(apart) > 1e-3f ? glm::normalize(apart) : Vec2{1, 0};
@@ -2822,10 +2854,7 @@ TEST_CASE("a golem's fist strikes one of the swarm two from it on each frame of 
     // The fist moves a fifth of a unit between the two, so two from it is in reach on both.
     CAPTURE(glm::length(apart));
     REQUIRE(glm::length(apart) < 0.5f);
-    const auto near = swing(beside(2));
-    REQUIRE(near.size() == 2);
-    CHECK(near[0].first == 10);
-    CHECK(near[1].first == 11);
+    CHECK(framesOf(swing(beside(2))) == std::vector<s32>{10, 10, 11, 11});
     CHECK(swing(beside(5)).empty());
 }
 

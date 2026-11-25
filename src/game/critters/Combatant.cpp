@@ -25,7 +25,9 @@ constexpr f32 kBossDeathFade = 0.5f;
 constexpr f32 kPushDecay = 0.8f;
 constexpr f32 kPushFrameRate = 30.0f; ///< knock-back decays once per game frame
 constexpr f32 kGravity = 100.0f;
-constexpr usize kShortestNodeName = 2; ///< a shorter colnode names no node (critter.c 1214-1216)
+constexpr usize kShortestNodeName = 2;   ///< a shorter colnode names no node (critter.c 1214-1216)
+constexpr f64 kNativeFrame = 1.0 / 30.0; ///< CritterGolemAI and CritterBossAI run once a frame
+constexpr f64 kTickSlack = 0.001; ///< of a native frame, so the clock's float steps miss no tick
 } // namespace
 void Combatant::clear() {
     m_checkpointBinding = std::make_shared<const u8>(0);
@@ -637,6 +639,10 @@ void Combatant::updateActor(s32 ticks, f32 seconds, std::span<const EnemyView> p
     // The move plays; over its harmful frames its part strikes.
     critter.skinAge += seconds;
     if (move != nullptr && critter.player.playing()) {
+        // Where the move's clock and frame stood before it moved on, which tell the native
+        // frames this update stands for.
+        const f64 clockBefore = critter.player.checkpoint().time;
+        const auto frameBefore = static_cast<s32>(std::floor(critter.player.frame()));
         critter.player.advance(seconds, false);
         for (usize j = 0; j < critter.attachments.size(); ++j) {
             auto& attachment = critter.attachments[j];
@@ -692,10 +698,41 @@ void Combatant::updateActor(s32 ticks, f32 seconds, std::span<const EnemyView> p
             const s32 last = end < start ? start : end;
             return start >= 0 && frame >= start && (frame <= last || critter.shotFrame < start);
         };
-        // The native frames of a window the animation came to on this update.
-        const auto framesReached = [&](s32 start, s32 end) {
+        // CritterGolemAI and CritterBossAI test the move once a native frame, at the whole frame
+        // its animation shows then (critter.c 4357, 4567): this update stands for the 30 Hz
+        // ticks of the move's clock it crossed, and for the move's first when it began, each at
+        // the frame shown then. How many of them show a frame of the window from `start`. A
+        // tick at which the animation has run out shows none: CritterAnimate has begun the next
+        // move by then (CalcAnimInfo, 0x8000EF18).
+        const f64 clockAfter = critter.player.checkpoint().time;
+        const auto tickAt = [](f64 clock) {
+            return static_cast<s64>(std::floor(clock / kNativeFrame + kTickSlack));
+        };
+        const s64 lastTick = tickAt(clockAfter);
+        const s64 firstTick = critter.shotFrame < 0 ? tickAt(clockBefore) : tickAt(clockBefore) + 1;
+        const auto frameOfTick = [&](s64 tick) {
+            const f64 at = static_cast<f64>(tick) * kNativeFrame;
+            if (std::abs(at - clockAfter) <= kTickSlack * kNativeFrame) {
+                return critter.player.finished() ? -1 : frame;
+            }
+            if (at <= clockBefore + kTickSlack * kNativeFrame) {
+                return frameBefore;
+            }
+            // A tick inside a longer update shows the frame CalcAnimInfo rounds it to.
+            const f64 shown = at / static_cast<f64>(critter.player.secondsPerFrame());
+            if (shown + 0.5 >= static_cast<f64>(critter.player.frameCount())) {
+                return -1;
+            }
+            return static_cast<s32>(std::floor(0.5 + shown));
+        };
+        const auto ticksIn = [&](s32 start, s32 end) {
             const s32 last = end < start ? start : end;
-            return std::max(0, std::min(frame, last) - std::max(critter.shotFrame + 1, start) + 1);
+            s32 count = 0;
+            for (s64 tick = firstTick; tick <= lastTick; ++tick) {
+                const s32 shown = frameOfTick(tick);
+                count += shown >= start && shown <= last ? 1 : 0;
+            }
+            return count;
         };
         // SFXX frames start sound and visuals together. The effect's own sequence
         // contains its wind-up; delaying it until the damage frame delays that twice.
@@ -820,11 +857,13 @@ void Combatant::updateActor(s32 ticks, f32 seconds, std::span<const EnemyView> p
                                        ? *critter.attackTarget + damageOffset(critter, harm->offset)
                                        : cuePosition(critter, move->colnode) + harm->offset;
                 giveOnce(bit, harm->sound, where);
-                // The swarm takes a blow each time its slot is raised, on each native frame of
-                // its window or the once a move tests it: CritterNodeEnemyCollide sets no wait.
-                const s32 swarmFrames = harm->type != AttackDefinition::kBlow ? 0
-                                        : windowed ? framesReached(start, end)
-                                                   : 1;
+                // The swarm takes a blow each time its slot is raised, on each native frame that
+                // shows a frame of its window or the once a move tests it: CritterNodeEnemyCollide
+                // sets no wait.
+                s32 swarmFrames = 0;
+                if (harm->type == AttackDefinition::kBlow) {
+                    swarmFrames = windowed ? ticksIn(start, end) : 1;
+                }
                 strikeWith(critter, i, moveFrame, index, players, swarmFrames);
             };
             // CritterActivate tests neither slot of a move whose first window never starts,
