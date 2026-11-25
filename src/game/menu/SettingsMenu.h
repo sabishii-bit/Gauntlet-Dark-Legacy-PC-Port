@@ -70,6 +70,8 @@ public:
 
 private:
     void rebuild(s32 selection = 0);
+    /** Writes the page shown again with the row of `code` selected, else its first. */
+    void rebuildOn(s32 code);
     /** The row a list page opens on: its current choice, else the first. */
     s32 currentChoice() const;
     /** The code of the row a choice page (Difficulty, Multiplayer, Compass, HUD) marks: none
@@ -100,7 +102,7 @@ private:
     LiveSettings* m_settings = nullptr;
     DisplayOptions m_display;
     /** The looks besides Dark Legacy's that the HUD page lists, as they stood when last asked:
-     * only those this installation can draw. */
+     * only those this installation can draw. The Game page offers the HUD page while any is. */
     std::vector<HudStyleOffer> m_hudOffers;
     std::vector<Extent2D> resolutions() const;
     /** The display the Video page shows: the one chosen, else the one the window is on. */

@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <vector>
 
@@ -398,7 +399,15 @@ std::vector<s32> rowMarks(const SettingsMenu& menu) {
     return marks;
 }
 
-constexpr s32 kHudCode = 5; ///< the code of the root's row that opens the HUD page
+constexpr s32 kGameOptionsCode = 1; ///< the code of the root's row that opens Game Options
+constexpr s32 kHudCode = 6;         ///< the code of the Game Options row that opens the HUD page
+constexpr std::array kScopes{SettingsMenu::Scope::Title, SettingsMenu::Scope::Tower,
+                             SettingsMenu::Scope::Level};
+/** Game Options' codes without the HUD row: Difficulty, Multiplayer and Combat, then the Expanded
+ * Shop and Auto Save switches and Language. */
+const std::vector<s32> kGameCodes{0, 1, 2, 3, 4, 5};
+/** Game Options' codes with the HUD row, after Combat and before the switches. */
+const std::vector<s32> kGameCodesWithHud{0, 1, 2, kHudCode, 3, 4, 5};
 
 /** Offers the fixture's settings three looks besides Dark Legacy's, each named by text of its
  * own, the second of which this installation cannot draw, and opens the settings over them. */
@@ -414,32 +423,96 @@ void offerHudLooks(Fixture& f, SettingsMenu::Scope scope = SettingsMenu::Scope::
     f.menu.open(f.config, &f.strings, &f.settings, f.painter, {}, {}, scope);
 }
 
-TEST_CASE("the HUD page is offered in title tower and level settings while another look can be "
-          "drawn",
+/** Opens the HUD page as a player does from the root: Game Options, then its HUD row. */
+void enterHudPage(Fixture& f) {
+    f.choose(kGameOptionsCode);
+    REQUIRE(f.menu.page() == SettingsMenu::Page::Game);
+    f.choose(kHudCode);
+    REQUIRE(f.menu.page() == SettingsMenu::Page::Hud);
+}
+
+/** The code of the row selected on the page shown. */
+s32 selectedCode(const SettingsMenu& menu) {
+    return menu.menu().definition().items[static_cast<usize>(menu.menu().selection())].code;
+}
+
+TEST_CASE("the settings' root has no HUD row in any scope whatever looks can be drawn",
           "[settings][hud-settings]") {
     Fixture f;
     const auto rootCodes = [&](SettingsMenu::Scope scope) {
         f.menu.open(f.config, &f.strings, &f.settings, f.painter, {}, {}, scope);
         return rowCodes(f.menu);
     };
-    // With no look but Dark Legacy's to offer, the root is as it always was.
-    CHECK(rootCodes(SettingsMenu::Scope::Title) == std::vector<s32>{0, 1, 2, 4, 3});
-    CHECK(rootCodes(SettingsMenu::Scope::Tower) == std::vector<s32>{0, 1, 2, 4, 3});
-    CHECK(rootCodes(SettingsMenu::Scope::Level) == std::vector<s32>{0, 1, 4, 3});
-    // A look this installation cannot draw is hidden, not greyed, and with it the page.
+    // Audio, Game Options, Compass, Graphics and Controls; a level's has no compass.
+    const auto checkRoot = [&] {
+        CHECK(rootCodes(SettingsMenu::Scope::Title) == std::vector<s32>{0, 1, 2, 4, 3});
+        CHECK(rootCodes(SettingsMenu::Scope::Tower) == std::vector<s32>{0, 1, 2, 4, 3});
+        CHECK(rootCodes(SettingsMenu::Scope::Level) == std::vector<s32>{0, 1, 4, 3});
+        CHECK(std::ranges::none_of(f.menu.menu().definition().items,
+                                   [](const MenuItem& row) { return row.text == "HUD"; }));
+    };
+    checkRoot(); // no look but Dark Legacy's
     f.settings.hudOffers = {{.id = "gone", .label = "hud.style.gone", .usable = false}};
-    CHECK(rootCodes(SettingsMenu::Scope::Title) == std::vector<s32>{0, 1, 2, 4, 3});
-    CHECK(rootCodes(SettingsMenu::Scope::Level) == std::vector<s32>{0, 1, 4, 3});
-    // One it can draw opens the page from every scope, a level's too, where the compass is not.
+    checkRoot(); // a look this installation cannot draw
     f.settings.hudOffers.push_back({.id = "fake", .label = "hud.style.fake", .usable = true});
-    CHECK(rootCodes(SettingsMenu::Scope::Title) == std::vector<s32>{0, 1, 2, kHudCode, 4, 3});
-    CHECK(rootCodes(SettingsMenu::Scope::Tower) == std::vector<s32>{0, 1, 2, kHudCode, 4, 3});
-    CHECK(rootCodes(SettingsMenu::Scope::Level) == std::vector<s32>{0, 1, kHudCode, 4, 3});
-    const auto& items = f.menu.menu().definition().items;
-    const auto row = std::ranges::find(items, kHudCode, &MenuItem::code);
-    REQUIRE(row != items.end());
-    CHECK(row->text == "HUD");
-    CHECK(row->enabled);
+    checkRoot(); // and one it can
+}
+
+TEST_CASE("Game Options lists the HUD page after Combat in title tower and level settings while "
+          "another look can be drawn",
+          "[settings][hud-settings]") {
+    Fixture f;
+    const auto gameCodes = [&](SettingsMenu::Scope scope) {
+        f.menu.open(f.config, &f.strings, &f.settings, f.painter, {}, {}, scope);
+        f.choose(kGameOptionsCode);
+        REQUIRE(f.menu.page() == SettingsMenu::Page::Game);
+        return rowCodes(f.menu);
+    };
+    for (const auto scope : kScopes) {
+        CAPTURE(static_cast<s32>(scope));
+        // With no look but Dark Legacy's to offer, the page is as it always was.
+        f.settings.hudOffers.clear();
+        CHECK(gameCodes(scope) == kGameCodes);
+        // A look this installation cannot draw is hidden, not greyed, and with it the row.
+        f.settings.hudOffers = {{.id = "gone", .label = "hud.style.gone", .usable = false}};
+        CHECK(gameCodes(scope) == kGameCodes);
+        // One it can draw lists the row in every scope, a level's too, where the compass is not.
+        f.settings.hudOffers.push_back({.id = "fake", .label = "hud.style.fake", .usable = true});
+        CHECK(gameCodes(scope) == kGameCodesWithHud);
+        const MenuItem& row = f.menu.menu().definition().items[3];
+        CHECK(row.text == "HUD");
+        CHECK(row.enabled);
+    }
+}
+
+TEST_CASE("Game Options asks for the looks again each time it is shown afresh",
+          "[settings][hud-settings]") {
+    Fixture f;
+    f.settings.hudOffers = {{.id = "fake", .label = "hud.style.fake", .usable = false}};
+    f.menu.open(f.config, &f.strings, &f.settings, f.painter, {}, {});
+    f.choose(kGameOptionsCode);
+    REQUIRE(f.menu.page() == SettingsMenu::Page::Game);
+    CHECK(rowCodes(f.menu) == kGameCodes);
+    // The look's files came while the page was up: entered again from the root, it lists the row.
+    f.settings.hudOffers[0].usable = true;
+    f.back();
+    REQUIRE(f.menu.page() == SettingsMenu::Page::Root);
+    f.choose(kGameOptionsCode);
+    CHECK(rowCodes(f.menu) == kGameCodesWithHud);
+    // While the page stays up its rows stand still, so a switch flipped keeps its cursor.
+    f.settings.hudOffers[0].usable = false;
+    f.choose(3);
+    CHECK(f.config.game.expandedShop);
+    CHECK(rowCodes(f.menu) == kGameCodesWithHud);
+    CHECK(selectedCode(f.menu) == 3);
+    // Back from one of its own pages it asks again: the files went, and with them the row.
+    f.release();
+    f.choose(0);
+    REQUIRE(f.menu.page() == SettingsMenu::Page::Difficulty);
+    f.back();
+    REQUIRE(f.menu.page() == SettingsMenu::Page::Game);
+    CHECK(rowCodes(f.menu) == kGameCodes);
+    CHECK(selectedCode(f.menu) == 0); // Difficulty's row
 }
 
 TEST_CASE("the HUD page lists Dark Legacy's look and each that can be drawn with the saved one "
@@ -447,8 +520,7 @@ TEST_CASE("the HUD page lists Dark Legacy's look and each that can be drawn with
           "[settings][hud-settings]") {
     Fixture f;
     offerHudLooks(f);
-    f.choose(kHudCode);
-    REQUIRE(f.menu.page() == SettingsMenu::Page::Hud);
+    enterHudPage(f);
     {
         const auto& definition = f.menu.menu().definition();
         CHECK(definition.title == "HUD");
@@ -467,8 +539,7 @@ TEST_CASE("the HUD page lists Dark Legacy's look and each that can be drawn with
     const auto savedPage = [&](const char* saved) {
         f.config.display.hudStyle = saved;
         f.menu.open(f.config, &f.strings, &f.settings, f.painter, {}, {});
-        f.choose(kHudCode);
-        REQUIRE(f.menu.page() == SettingsMenu::Page::Hud);
+        enterHudPage(f);
         return rowMarks(f.menu);
     };
     CHECK(savedPage("fake") == std::vector<s32>{0, 1, 0});
@@ -482,7 +553,9 @@ TEST_CASE("the HUD page lists the looks as they stand when it is entered",
           "[settings][hud-settings]") {
     Fixture f;
     offerHudLooks(f);
-    // Since the settings opened, one look's files went and another's came.
+    f.choose(kGameOptionsCode);
+    REQUIRE(f.menu.page() == SettingsMenu::Page::Game);
+    // Since Game Options was shown, one look's files went and another's came.
     f.settings.hudOffers[0].usable = false;
     f.settings.hudOffers[1].usable = true;
     f.choose(kHudCode);
@@ -503,10 +576,11 @@ TEST_CASE("a saved look that can no longer be drawn stays saved while Dark Legac
         Fixture f;
         f.config.display.hudStyle = saved;
         offerHudLooks(f);
-        f.choose(kHudCode);
-        REQUIRE(f.menu.page() == SettingsMenu::Page::Hud);
+        enterHudPage(f);
         CHECK(rowMarks(f.menu) == std::vector<s32>{1, 0, 0});
         CHECK(f.menu.menu().selection() == 0);
+        f.back();
+        REQUIRE(f.menu.page() == SettingsMenu::Page::Game);
         f.back();
         REQUIRE(f.menu.page() == SettingsMenu::Page::Root);
         MenuInput back;
@@ -540,8 +614,7 @@ TEST_CASE("choosing a look saves its id and a refused save leaves the setting",
         });
     };
     offerHudLooks(f);
-    f.choose(kHudCode);
-    REQUIRE(f.menu.page() == SettingsMenu::Page::Hud);
+    enterHudPage(f);
     CHECK_FALSE(noticeShown());
     f.settings.fail = true;
     f.choose(2);
@@ -562,17 +635,20 @@ TEST_CASE("choosing a look saves its id and a refused save leaves the setting",
     CHECK(f.settings.writes == 2);
 }
 
-TEST_CASE("Back from the HUD page lands on its row", "[settings][hud-settings]") {
-    for (const auto scope :
-         {SettingsMenu::Scope::Title, SettingsMenu::Scope::Tower, SettingsMenu::Scope::Level}) {
+TEST_CASE("Back from the HUD page lands on its row in Game Options", "[settings][hud-settings]") {
+    for (const auto scope : kScopes) {
+        CAPTURE(static_cast<s32>(scope));
         Fixture f;
         offerHudLooks(f, scope);
-        f.choose(kHudCode);
-        REQUIRE(f.menu.page() == SettingsMenu::Page::Hud);
+        enterHudPage(f);
+        f.back();
+        REQUIRE(f.menu.page() == SettingsMenu::Page::Game);
+        CHECK(rowCodes(f.menu) == kGameCodesWithHud);
+        CHECK(selectedCode(f.menu) == kHudCode);
+        // Back again leaves Game Options for the root, on the row that opened it.
         f.back();
         REQUIRE(f.menu.page() == SettingsMenu::Page::Root);
-        const auto& items = f.menu.menu().definition().items;
-        CHECK(items[static_cast<usize>(f.menu.menu().selection())].code == kHudCode);
+        CHECK(selectedCode(f.menu) == kGameOptionsCode);
     }
 }
 
@@ -592,8 +668,7 @@ TEST_CASE("the HUD page keeps each look's name and its mark on the parchment",
     const auto hudPage = [&](const char* label) {
         f.settings.hudOffers = {{.id = "fake", .label = label, .usable = true}};
         f.menu.open(f.config, &f.strings, &f.settings, f.painter, {}, MenuDefinition::parchment());
-        f.choose(kHudCode);
-        REQUIRE(f.menu.page() == SettingsMenu::Page::Hud);
+        enterHudPage(f);
         return f.menu.menu().definition();
     };
     // Names that fit keep the size the other choice pages read at.

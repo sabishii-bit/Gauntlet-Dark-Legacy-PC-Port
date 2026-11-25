@@ -17,8 +17,8 @@
 namespace gdl::game {
 namespace {
 constexpr s32 kGraphicsCode = 4;
-constexpr s32 kHudCode = 5; ///< the root's row that opens the HUD page
 constexpr s32 kLanguageCode = 5;
+constexpr s32 kHudCode = 6;            ///< the Game page's row that opens the HUD page
 constexpr s32 kFirstMechanicCode = 16; ///< the Game page's mechanics, one code each in order
 constexpr s32 kDisplayCode = 13;
 constexpr s32 kRendererCode = 14;
@@ -89,22 +89,22 @@ struct PageLink {
     std::string_view label;
     Page page = Page::Root;
 };
-/** The root's pages, in the order listed; the compass is not offered in a level, nor the HUD
- * page while no look but Dark Legacy's can be drawn. */
-constexpr std::array<PageLink, 6> kRootLinks{{{0, "menu.audio", Page::Audio},
+/** The root's pages, in the order listed; the compass is not offered in a level. */
+constexpr std::array<PageLink, 5> kRootLinks{{{0, "menu.audio", Page::Audio},
                                               {1, "menu.gameOptions", Page::Game},
                                               {2, "menu.compass", Page::Compass},
-                                              {kHudCode, "menu.hud", Page::Hud},
                                               {kGraphicsCode, "menu.graphics", Page::Graphics},
                                               {3, "menu.controls", Page::Controls}}};
 /** The HUD page's code for the look offered at `offer`. */
 s32 hudCodeOf(usize offer) {
     return kDarkLegacyHudCode + 1 + static_cast<s32>(offer);
 }
-/** The Game page's own pages: its first rows, each code its place. */
-constexpr std::array<PageLink, 3> kGameLinks{{{0, "settings.difficulty", Page::Difficulty},
+/** The Game page's own pages, its first rows in the order listed; the HUD page is not offered
+ * while no look but Dark Legacy's can be drawn. */
+constexpr std::array<PageLink, 4> kGameLinks{{{0, "settings.difficulty", Page::Difficulty},
                                               {1, "settings.multiplayer", Page::Multiplayer},
-                                              {2, "settings.combat", Page::Combat}}};
+                                              {2, "settings.combat", Page::Combat},
+                                              {kHudCode, "menu.hud", Page::Hud}}};
 
 const PageLink* linkOf(std::span<const PageLink> links, s32 code) {
     for (const PageLink& link : links) {
@@ -468,7 +468,7 @@ void SettingsMenu::open(const GameConfig& config, const StringTable* strings,
     m_backdrop = std::move(backdrop);
     m_page = Page::Root;
     m_notice.clear();
-    refreshHudStyles();
+    m_hudOffers.clear(); // asked for as the pages that list them are shown
     rebuild();
 }
 void SettingsMenu::close() {
@@ -523,9 +523,7 @@ void SettingsMenu::rebuild(s32 selection) {
         break;
     case Page::Root: {
         for (const PageLink& link : kRootLinks) {
-            const bool hidden = (link.page == Page::Compass && m_scope == Scope::Level) ||
-                                (link.page == Page::Hud && m_hudOffers.empty());
-            if (!hidden) {
+            if (link.page != Page::Compass || m_scope != Scope::Level) {
                 add(text(link.label), link.code);
             }
         }
@@ -651,7 +649,9 @@ void SettingsMenu::rebuild(s32 selection) {
         rows.column();
         rows.switches();
         for (const PageLink& link : kGameLinks) {
-            add(text(link.label), link.code);
+            if (link.page != Page::Hud || !m_hudOffers.empty()) {
+                add(text(link.label), link.code);
+            }
         }
         for (const auto& entry : kGameSwitches) {
             rows.toggle(text(entry.label), entry.code, m_config.game.*entry.field);
@@ -714,6 +714,12 @@ void SettingsMenu::rebuild(s32 selection) {
     const s32 scroll = m_menu.isOpen() && windowKey == m_windowKey ? m_menu.scroll() : 0;
     m_windowKey = windowKey;
     m_menu.open(definition, *m_painter, m_screen, selection, scroll);
+}
+void SettingsMenu::rebuildOn(s32 code) {
+    rebuild();
+    const auto& items = m_menu.definition().items;
+    const auto row = std::ranges::find(items, code, &MenuItem::code);
+    rebuild(row != items.end() ? static_cast<s32>(row - items.begin()) : 0);
 }
 bool SettingsMenu::flushAudio() {
     if (!m_audioDirty) {
@@ -953,21 +959,19 @@ MenuEvent SettingsMenu::update(const MenuInput& input, s32 ticks) {
         if (m_page == Page::Root) {
             return {MenuAction::Back, 0};
         }
-        // Back from one of the Game page's own pages lands on the row that opened it.
+        // Back from one of the Game page's own pages lands on the row that opened it, the
+        // page shown afresh with the HUD looks as they stand now.
         if (const PageLink* link = linkTo(kGameLinks, m_page)) {
             m_page = Page::Game;
             m_notice.clear();
-            rebuild(link->code);
+            refreshHudStyles();
+            rebuildOn(link->code);
             return {};
         }
         const PageLink* link = linkTo(kRootLinks, m_page);
-        const s32 previousCode = link != nullptr ? link->code : 0;
         m_page = Page::Root;
         m_notice.clear();
-        rebuild();
-        const auto& items = m_menu.definition().items;
-        const auto previous = std::ranges::find(items, previousCode, &MenuItem::code);
-        rebuild(static_cast<s32>(previous - items.begin()));
+        rebuildOn(link != nullptr ? link->code : 0);
         return {};
     }
     if (event.action == MenuAction::Choice) {
@@ -986,7 +990,7 @@ MenuEvent SettingsMenu::update(const MenuInput& input, s32 ticks) {
             if (m_page == Page::Audio) {
                 m_audioSampleTicks = 0;
             }
-            if (m_page == Page::Hud) {
+            if (m_page == Page::Game) {
                 refreshHudStyles();
             }
             if (m_page == Page::Graphics) {
@@ -1004,6 +1008,9 @@ MenuEvent SettingsMenu::update(const MenuInput& input, s32 ticks) {
         } else if (const PageLink* link =
                        m_page == Page::Game ? linkOf(kGameLinks, event.code) : nullptr) {
             m_page = link->page;
+            if (m_page == Page::Hud) {
+                refreshHudStyles();
+            }
             rebuild(currentChoice());
         } else if (m_page == Page::Audio) {
             if (event.code == kStereoCode && event.part != 0 &&
