@@ -230,7 +230,7 @@ mod tests {
     use std::sync::Mutex;
 
     use gdl_files::{Cancel, FilesError, Hold, Job, retry_locked};
-    use gdl_fixtures::{InstallFixture, pretty_json};
+    use gdl_fixtures::{InstallFixture, pretty_json, snapshot};
     use serde_json::{Value, json};
     use tempfile::TempDir;
 
@@ -242,8 +242,8 @@ mod tests {
         updated, version,
     };
     use super::super::{
-        CHECK_INSTALLED, FINISH_CLEANUP, RECOVER_UPDATE, UPDATE_BACKUP, UPDATE_JOURNAL,
-        UpdateError, UpdateSettings, VERIFY_DOWNLOAD,
+        CHECK_INSTALLED, FINISH_CLEANUP, PlanSource, RECOVER_UPDATE, SourceSummary, UPDATE_BACKUP,
+        UPDATE_JOURNAL, UpdateError, UpdatePlan, UpdateSettings, VERIFY_DOWNLOAD, plan_update,
     };
     use super::recovery_error;
     use crate::faults::{FailAt, FaultPoint, FaultPoints, Faults, NoFaults, PanicAt};
@@ -516,6 +516,71 @@ mod tests {
         assert!(stagings(&fixture.root).is_empty());
         assert!(retired_copies(&fixture.root, NEXT).is_empty());
         assert!(retired_copies(&fixture.root, INSTALLED).is_empty());
+    }
+
+    #[test]
+    fn a_job_left_unfinished_is_planned_as_pending() {
+        // Left staged, nothing moved: the plan reads the installation as it is and tells what the
+        // update would move once it has taken that job back.
+        let (dir, fixture, _) = left_staged();
+        let (_, mut source) = bundled_as(dir.path(), "next-launcher", &fixture.runtime.newer(NEXT));
+        let before = snapshot(dir.path()).unwrap();
+        let plan = plan_update(
+            &fixture.root,
+            &version(NEXT),
+            PlanSource::Bundled(&mut source),
+        )
+        .unwrap();
+        assert!(plan.recovery_pending, "{plan:?}");
+        assert!(!plan.cleanup_pending, "{plan:?}");
+        assert_eq!(plan.from, version(INSTALLED));
+        assert!(
+            plan.changes.is_some() && plan.needed_bytes.is_some(),
+            "{plan:?}"
+        );
+        assert_eq!(snapshot(dir.path()).unwrap(), before);
+
+        // Stopped with installed files moved aside, which agree with the receipt again only once
+        // the job is taken back: the plan tells the receipt's version, and what the update moves
+        // is known once it has recovered the job.
+        let (dir, fixture) = players_installation();
+        let (_, mut source) = bundled_as(dir.path(), "next-launcher", &fixture.runtime.newer(NEXT));
+        panicked(
+            &fixture,
+            &mut source,
+            &PanicAt::new(FaultPoint::UpdateMove, 3),
+        );
+        let file_len = source.file_len();
+        let before = snapshot(dir.path()).unwrap();
+        let plan = plan_update(
+            &fixture.root,
+            &version(NEXT),
+            PlanSource::Bundled(&mut source),
+        )
+        .unwrap();
+        assert_eq!(
+            plan,
+            UpdatePlan {
+                root: fixture.root.clone(),
+                from: version(INSTALLED),
+                to: version(NEXT),
+                source: SourceSummary::Bundled { file_len },
+                changes: None,
+                needed_bytes: None,
+                recovery_pending: true,
+                cleanup_pending: false,
+            }
+        );
+        assert_eq!(snapshot(dir.path()).unwrap(), before);
+        // The update takes the job back first, and goes on as planned.
+        let done = updated(update_simply(
+            &fixture,
+            &mut source,
+            NEXT,
+            &standing_in(&NoFaults, &answering),
+        ));
+        assert_eq!(done.recovered, rolled_back(false, &[]));
+        assert_eq!(done.to, version(NEXT));
     }
 
     #[test]

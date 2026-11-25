@@ -25,8 +25,8 @@ use crate::folder::{
 };
 use crate::hold::{HeldGame, HeldLock, game_closed_holding, lock_holding};
 use crate::install::{
-    FolderRecord, Found, RECOVER_INSTALL, RecoveryError, RecoveryOutcome, judge_stamps,
-    recover_install_held,
+    FolderRecord, Found, InstallJournal, RECOVER_INSTALL, RecoveryError, RecoveryOutcome,
+    judge_stamps, recover_install_held,
 };
 #[cfg(windows)]
 use crate::platform;
@@ -287,32 +287,22 @@ pub(crate) fn recover_held(
     };
     let state = folder.state_dir();
     let platform = Platform::of_this_build();
-    let Some(found) = Found::at(&state).map_err(judged)? else {
+    let Some(JobsLeft {
+        found,
+        install,
+        update,
+    }) = jobs_left(folder, running)?
+    else {
         return Ok((Recovered::nothing(), Some(lock)));
     };
-    let stamps = judge_stamps(folder, &found, running).map_err(judged)?;
-    refuse_older(&state, running)?;
-    let mut update = None;
-    for (name, read) in stamps.others {
-        if name != UPDATE_JOURNAL {
-            return Err(RecoverError::OtherJob {
-                journal: name.into(),
-            });
-        }
-        let path = state.join(JOURNAL_DIR).join(UPDATE_JOURNAL);
-        update = Some(read.and_then(|object| {
-            UpdateJournal::from_object(&object)
-                .map_err(|detail| format!("{}: {detail}", path.display()).into())
-        }));
-    }
     // Nothing is finished or taken back under a game that runs from what a journal names; what is
     // left without a journal is no tree anyone runs.
     let update_stands = matches!(update, Some(Ok(_)));
-    if matches!(stamps.install, Some(Ok(_))) || update_stands {
+    if matches!(install, Some(Ok(_))) || update_stands {
         hold_for_game(folder, platform, update_stands, job, settings)?;
     }
     let mut refusal = None;
-    let (install, lock) = match stamps.install {
+    let (install, lock) = match install {
         Some(Err(unreadable)) => {
             refusal = Some(RecoverError::Install(unreadable));
             (RecoveryOutcome::Nothing, Some(lock))
@@ -378,6 +368,55 @@ pub(crate) fn recover_held(
         left: left.into_iter().collect(),
     };
     Ok((recovered, Some(lock)))
+}
+
+/// The jobs left in an installation's state folder, as its recovery reads them before it changes
+/// anything.
+pub(crate) struct JobsLeft {
+    /// What the state folder holds.
+    pub(crate) found: Found,
+    /// The fresh install's journal: `None` when there is none; otherwise the journal, or why it
+    /// cannot be read.
+    pub(crate) install: Option<Result<InstallJournal, RecoveryError>>,
+    /// The update's journal, held to what an update writes: `None` when there is none; otherwise
+    /// the journal, or why it cannot be read, with its path.
+    pub(crate) update: Option<Result<UpdateJournal, Box<str>>>,
+}
+
+/// Reads the jobs left in the installation's folder `folder` for the launcher of version
+/// `running`, as [`recover`]'s first step reads them, without the lock and changing nothing;
+/// `None` without a state folder. What that step refuses is refused here: a link at a journal or
+/// at the receipt, a journal the system will not let be read, a later launcher's state, a launcher
+/// older than the installed release, and an expansion's journal. A journal that cannot be read
+/// otherwise is given as such, for its own part to refuse.
+pub(crate) fn jobs_left(
+    folder: &InstallFolder,
+    running: &Version,
+) -> Result<Option<JobsLeft>, RecoverError> {
+    let state = folder.state_dir();
+    let Some(found) = Found::at(&state).map_err(judged)? else {
+        return Ok(None);
+    };
+    let stamps = judge_stamps(folder, &found, running).map_err(judged)?;
+    refuse_older(&state, running)?;
+    let mut update = None;
+    for (name, read) in stamps.others {
+        if name != UPDATE_JOURNAL {
+            return Err(RecoverError::OtherJob {
+                journal: name.into(),
+            });
+        }
+        let path = state.join(JOURNAL_DIR).join(UPDATE_JOURNAL);
+        update = Some(read.and_then(|object| {
+            UpdateJournal::from_object(&object)
+                .map_err(|detail| format!("{}: {detail}", path.display()).into())
+        }));
+    }
+    Ok(Some(JobsLeft {
+        found,
+        install: stamps.install,
+        update,
+    }))
 }
 
 /// The recovery's refusal for what judging an installation's state for the fresh install's part

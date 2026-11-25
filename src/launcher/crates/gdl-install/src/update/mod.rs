@@ -20,7 +20,7 @@ use std::fs::File;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use gdl_files::{Cancelled, FilesError, Job, PhaseId, RelPath};
+use gdl_files::{Cancelled, FilesError, Job, PhaseId, RelPath, read_json_bounded};
 use gdl_release::{Platform, Release, Version};
 
 pub use journal::{
@@ -37,7 +37,7 @@ pub(crate) use self::settings::UpdateSettings;
 pub(crate) use self::swap::{remove_folder, remove_named};
 use crate::awake::keep_awake;
 use crate::compat::Access;
-use crate::folder::{FolderError, InstallFolder, LockError};
+use crate::folder::{FolderError, InstallFolder, LockError, RECEIPT_FILE};
 use crate::hold::{HeldLock, lock_holding};
 use crate::icon::IconError;
 use crate::inspect::FolderState;
@@ -48,8 +48,8 @@ use crate::payload::{
 #[cfg(windows)]
 use crate::platform;
 use crate::probe::GameUseError;
-use crate::receipt::{Receipt, ReceiptError};
-use crate::recover::{RecoverError, Recovered, UpdateRecovery, recover_held};
+use crate::receipt::{MAX_RECEIPT_LEN, Receipt, ReceiptError};
+use crate::recover::{RecoverError, Recovered, UpdateRecovery, jobs_left, recover_held};
 use crate::sections::{Sections, SectionsError};
 
 /// The phase in which an update takes the installation's lock and reads the installation through
@@ -84,7 +84,8 @@ pub const FINISH_CLEANUP: PhaseId = PhaseId("finishCleanup");
 pub struct UpdatePlan {
     /// The installation's folder, absolute and folded by name.
     pub root: PathBuf,
-    /// The installed release's version.
+    /// The installed release's version: while a job left unfinished keeps the installed files
+    /// from agreeing with the receipt, the version the receipt records.
     pub from: Version,
     /// The version the source would bring. One that is not newer is planned too, since another
     /// launcher may have updated the folder after the source was chosen.
@@ -92,11 +93,13 @@ pub struct UpdatePlan {
     /// Where the new release would come from.
     pub source: SourceSummary,
     /// Which runtime names the update would move; `None` for a release, whose runtime is inside
-    /// the launcher file it downloads.
+    /// the launcher file it downloads, and while a job left unfinished keeps the installed files
+    /// from agreeing with the receipt, as they agree once the update has recovered it.
     pub changes: Option<FileChanges>,
     /// The room the update would need on the volume of the launcher's state: the files it stages,
     /// the libraries and executable it stages beside them for the game's probe, the launcher copy
-    /// and [`SPACE_MARGIN`]; `None` for a release, which is measured once downloaded.
+    /// and [`SPACE_MARGIN`]; `None` for a release, which is measured once downloaded, and whenever
+    /// `changes` is.
     pub needed_bytes: Option<u64>,
     /// Whether a job of this launcher's was left unfinished in the folder, which the update would
     /// finish or take back first.
@@ -136,12 +139,17 @@ pub enum PlanSource<'a> {
 /// Plans the update of the installation at `root` by the launcher of version `running` from
 /// `source`, reading the folder without its lock and changing nothing.
 ///
-/// The installation is read through its receipt as [`InstallFolder::installed`] reads it, and a
-/// refusal is [`UpdateError::Receipt`]. A receipt or a journal that a later launcher stamped is
-/// [`UpdateError::NewerLauncher`], and a launcher older than the installed release
-/// [`UpdateError::OlderLauncher`]: neither may change the installation. A job left unfinished, as
-/// [`InstallFolder::inspect`] finds one, is planned as pending, and an earlier update whose
-/// cleanup is still to be finished, as it finds one too, as cleanup pending.
+/// What the recovery an update makes first would refuse refuses the plan, as it would the update:
+/// a link at a journal or at the receipt, a receipt or a journal that a later launcher stamped,
+/// [`UpdateError::NewerLauncher`], a launcher older than the installed release,
+/// [`UpdateError::OlderLauncher`], an expansion's journal, and a journal that cannot be read,
+/// [`UpdateError::Recover`]. A job left unfinished, as [`InstallFolder::inspect`] finds one, is
+/// planned as pending, and an earlier update whose cleanup is still to be finished, as it finds
+/// one too, as cleanup pending. The installation is read through its receipt as
+/// [`InstallFolder::installed`] reads it, and a refusal is [`UpdateError::Receipt`]; but while a
+/// job is left unfinished, which may have moved installed files aside, the receipt's version
+/// alone is read when the files do not agree with it, and what the update would move is told once
+/// the update has recovered the job.
 ///
 /// From the launcher file that runs, its runtime is read no further than its release record and
 /// held to the one this launcher installs, of its platform and version, and its names are judged
@@ -155,23 +163,40 @@ pub fn plan_update(
     source: PlanSource<'_>,
 ) -> Result<UpdatePlan, UpdateError> {
     let folder = InstallFolder::at(root).map_err(folder_error)?;
-    let installed = folder.installed(running).map_err(UpdateError::Receipt)?;
-    let (Access::Writable, Some(receipt)) = (installed.access, installed.receipt.as_ref()) else {
-        return Err(UpdateError::NewerLauncher);
+    if let Some(left) = jobs_left(&folder, running).map_err(recovery_refusal)? {
+        if let Some(Err(error)) = left.install {
+            return Err(UpdateError::Recover(RecoverError::Install(error)));
+        }
+        if let Some(Err(detail)) = left.update {
+            return Err(UpdateError::Recover(
+                RecoverError::UpdateJournalUnreadable { detail },
+            ));
+        }
+    }
+    let inspection = InstallFolder::inspect(folder.root(), running);
+    let recovery_pending = inspection.state == FolderState::Pending;
+    let (from, installed) = match folder.installed(running) {
+        Ok(installed) => {
+            let (Access::Writable, Some(receipt)) = (installed.access, installed.receipt) else {
+                return Err(UpdateError::NewerLauncher);
+            };
+            let from = installed.build_info.version();
+            (from, Some((installed.build_info, receipt)))
+        }
+        Err(error) => match recovery_pending
+            .then(|| recorded_version(&folder))
+            .flatten()
+        {
+            Some(from) => (from, None),
+            None => return Err(UpdateError::Receipt(error)),
+        },
     };
-    let from = installed.build_info.version();
     if *running < from {
         return Err(UpdateError::OlderLauncher {
             running: running.to_string().into(),
             installed: from.to_string().into(),
         });
     }
-    let inspection = InstallFolder::inspect(folder.root(), running);
-    let recovery_pending = match inspection.state {
-        FolderState::Pending => true,
-        FolderState::NewerLauncher => return Err(UpdateError::NewerLauncher),
-        _ => false,
-    };
     let (to, source, changes, needed_bytes) = match source {
         PlanSource::Bundled(launcher) => {
             let file_len = launcher.file_len();
@@ -179,34 +204,36 @@ pub fn plan_update(
             payload
                 .for_launcher(&running.to_string())
                 .map_err(UpdateError::Runtime)?;
-            let changes = judge_names(
-                folder.root(),
-                &installed.build_info,
-                payload.build_info(),
-                stages_executable(&installed.build_info, receipt),
-            )?;
-            let copies = probe_copies(&changes, payload.build_info());
-            let staged: BTreeSet<&RelPath> = changes
-                .replaced
-                .iter()
-                .chain(&changes.added)
-                .chain(&copies)
-                .collect();
-            let staged_bytes: u64 = payload
-                .entries()
-                .iter()
-                .filter(|entry| staged.contains(&entry.name))
-                .map(|entry| entry.size)
-                .sum();
-            let needed = staged_bytes
-                .saturating_add(file_len)
-                .saturating_add(SPACE_MARGIN);
-            (
-                payload.build_info().version(),
-                SourceSummary::Bundled { file_len },
-                Some(changes),
-                Some(needed),
-            )
+            let to = payload.build_info().version();
+            let summary = SourceSummary::Bundled { file_len };
+            match &installed {
+                None => (to, summary, None, None),
+                Some((record, receipt)) => {
+                    let changes = judge_names(
+                        folder.root(),
+                        record,
+                        payload.build_info(),
+                        stages_executable(record, receipt),
+                    )?;
+                    let copies = probe_copies(&changes, payload.build_info());
+                    let staged: BTreeSet<&RelPath> = changes
+                        .replaced
+                        .iter()
+                        .chain(&changes.added)
+                        .chain(&copies)
+                        .collect();
+                    let staged_bytes: u64 = payload
+                        .entries()
+                        .iter()
+                        .filter(|entry| staged.contains(&entry.name))
+                        .map(|entry| entry.size)
+                        .sum();
+                    let needed = staged_bytes
+                        .saturating_add(file_len)
+                        .saturating_add(SPACE_MARGIN);
+                    (to, summary, Some(changes), Some(needed))
+                }
+            }
         }
         PlanSource::Release(release) => (
             release.version.clone(),
@@ -228,6 +255,14 @@ pub fn plan_update(
         recovery_pending,
         cleanup_pending: inspection.cleanup_pending,
     })
+}
+
+/// The installed release's version as the receipt of the installation `folder` records it, read
+/// alone, without the files it pins; `None` when it cannot be read.
+fn recorded_version(folder: &InstallFolder) -> Option<Version> {
+    let path = folder.state_dir().join(RECEIPT_FILE);
+    let receipt: Receipt = read_json_bounded(&path, MAX_RECEIPT_LEN).ok()?;
+    Version::parse(&receipt.version).ok()
 }
 
 /// Whether an update of the installation whose release record is `installed` and whose receipt
@@ -1053,26 +1088,6 @@ mod tests {
         let before = snapshot(dir.path()).unwrap();
         let plan = plan_update(&fixture.root, &running, PlanSource::Bundled(&mut launcher));
         assert!(matches!(plan, Err(UpdateError::NewerLauncher)), "{plan:?}");
-        assert_eq!(snapshot(dir.path()).unwrap(), before);
-    }
-
-    #[test]
-    fn a_job_left_unfinished_is_planned_as_pending() {
-        let (dir, fixture) = installation_of(INSTALLED);
-        let mut launcher = bundled(dir.path(), &fixture.runtime.next(NEXT));
-        let journals = fixture.root.join(STATE_DIR).join(JOURNAL_DIR);
-        fs::create_dir(&journals).unwrap();
-        let journal = json!({"schema": 1, "minLauncher": INSTALLED});
-        fs::write(journals.join(INSTALL_JOURNAL), journal.to_string()).unwrap();
-        let before = snapshot(dir.path()).unwrap();
-        let plan = plan_update(
-            &fixture.root,
-            &version(NEXT),
-            PlanSource::Bundled(&mut launcher),
-        )
-        .unwrap();
-        assert!(plan.recovery_pending);
-        assert!(!plan.cleanup_pending);
         assert_eq!(snapshot(dir.path()).unwrap(), before);
     }
 
@@ -2426,8 +2441,9 @@ mod tests {
         let journals = fixture.root.join(STATE_DIR).join(JOURNAL_DIR);
         fs::create_dir(&journals).unwrap();
         // Each journal is recovered first, and refuses the update when its recovery is refused:
-        // an install's or an update's that holds no journal of its kind, a later launcher's, one of
-        // a kind this launcher does not know, and an expansion's, which it does not recover.
+        // an install's or an update's that holds no journal of its kind, committed or not, a later
+        // launcher's, one of a kind this launcher does not know, and an expansion's, which it does
+        // not recover. The plan refuses each as the update does, changing nothing either.
         let journals_of = [
             (
                 INSTALL_JOURNAL,
@@ -2437,6 +2453,11 @@ mod tests {
             (
                 UPDATE_JOURNAL,
                 json!({"schema": 1, "minLauncher": INSTALLED, "phase": "staged"}),
+                "journalUnreadable",
+            ),
+            (
+                UPDATE_JOURNAL,
+                json!({"schema": 1, "minLauncher": INSTALLED, "phase": "committed"}),
                 "journalUnreadable",
             ),
             (
@@ -2459,6 +2480,15 @@ mod tests {
             let path = journals.join(name);
             fs::write(&path, journal.to_string()).unwrap();
             let before = as_it_is(&fixture.root);
+            match plan_update(
+                &fixture.root,
+                &version(NEXT),
+                PlanSource::Bundled(&mut source),
+            ) {
+                Err(error) => assert_eq!(error.rule(), rule, "{name}: {error:?}"),
+                Ok(plan) => panic!("{name}: {plan:?}"),
+            }
+            assert_eq!(as_it_is(&fixture.root), before);
             let failure = failed(update_simply(
                 &fixture,
                 &mut source,
