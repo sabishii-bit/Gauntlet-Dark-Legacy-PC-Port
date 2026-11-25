@@ -20,7 +20,7 @@ pub const VERSION: &str = env!("GDL_VERSION");
 /// The creation flag that runs a console program without a console window of its own, so that a
 /// test never opens one.
 #[cfg(windows)]
-const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+pub const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 /// Runs `command`, which starts `program`, with nothing to read and without a console window, to
 /// its end, and gives back what it wrote and how it ended. A program another test starts holds
