@@ -652,6 +652,29 @@ TEST_CASE("Back from the HUD page lands on its row in Game Options", "[settings]
     }
 }
 
+TEST_CASE("each of Game Options' own pages lies a step deeper than Game Options",
+          "[settings][hud-settings]") {
+    Fixture f;
+    offerHudLooks(f);
+    CHECK(f.menu.depth() == 0);
+    f.choose(kGameOptionsCode);
+    REQUIRE(f.menu.page() == SettingsMenu::Page::Game);
+    CHECK(f.menu.depth() == 1);
+    // Difficulty, Multiplayer, Combat and HUD: Back from each is a step back, as the depth falls.
+    for (const s32 code : {0, 1, 2, kHudCode}) {
+        CAPTURE(code);
+        f.choose(code);
+        CHECK(f.menu.page() != SettingsMenu::Page::Game);
+        CHECK(f.menu.depth() == 2);
+        f.back();
+        REQUIRE(f.menu.page() == SettingsMenu::Page::Game);
+        CHECK(f.menu.depth() == 1);
+    }
+    f.back();
+    REQUIRE(f.menu.page() == SettingsMenu::Page::Root);
+    CHECK(f.menu.depth() == 0);
+}
+
 TEST_CASE("the HUD page keeps each look's name and its mark on the parchment",
           "[settings][hud-settings]") {
     Fixture f;

@@ -58,8 +58,8 @@ public:
     /** Whether the page shown carries the menu's seal, as the root's and Compass's retail
      * records do (8011E390/8011E638, 8011EF60); the other pages have none. */
     [[nodiscard]] bool showsSeal() const { return m_page == Page::Root || m_page == Page::Compass; }
-    /** How far in the menu is: the root, a page, or a player's controls within Controls.
-     * A scene hears a step back as the depth falls. */
+    /** How far in the menu is: the root, a page, or one of Game Options' own pages or a
+     * player's controls within Controls. A scene hears a step back as the depth falls. */
     s32 depth() const;
     const GameConfig& config() const { return m_config; }
     /** The renderer chosen is not the one drawing: it takes effect at the next start. */

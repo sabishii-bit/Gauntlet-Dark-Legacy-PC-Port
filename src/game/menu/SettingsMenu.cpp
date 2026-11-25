@@ -1065,7 +1065,9 @@ s32 SettingsMenu::depth() const {
     if (m_page == Page::Root) {
         return 0;
     }
-    return m_page == Page::Controls && m_controls.editing() ? 2 : 1;
+    const bool nested =
+        linkTo(kGameLinks, m_page) != nullptr || (m_page == Page::Controls && m_controls.editing());
+    return nested ? 2 : 1;
 }
 void SettingsMenu::draw(Canvas& canvas, const TextPainter& painter,
                         const MenuTextures& textures) const {
