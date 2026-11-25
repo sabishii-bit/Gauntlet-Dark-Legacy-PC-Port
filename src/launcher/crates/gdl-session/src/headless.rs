@@ -5,8 +5,10 @@
 //! expansion's tree from a dump into a new folder outside every installation, `--check-feed`,
 //! which reads the release feed once and reports its newest release for this system without
 //! downloading anything, `--update`, which plans an installation's update, or makes it, from the
-//! feed's newest release or the runtime the program's own file carries, and `--recover`, which
-//! recovers whatever jobs a crash or a kill left unfinished in an installation's folder.
+//! feed's newest release or the runtime the program's own file carries, `--recover`, which
+//! recovers whatever jobs a crash or a kill left unfinished in an installation's folder, and
+//! `--after-update`, which a launcher copy that an update put in place runs first, to wait for
+//! the launcher that ran the update to exit and to remove the copy it ran from.
 //! They run before anything builds a window, and what they print is technical text for whoever
 //! runs them, never words for players. A run is handed its arguments, its build, its own file's
 //! sections and the streams to write to, so that every mode runs inside a test as it runs in the
@@ -16,10 +18,9 @@ use std::ffi::{OsStr, OsString};
 use std::fmt;
 use std::fs::File;
 use std::io::{self, Read, Seek, Write};
-use std::panic;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, PoisonError, mpsc};
-use std::thread;
+use std::{env, panic, process, thread};
 
 use gdl_extract::{Expansion, Trust};
 use gdl_files::{
@@ -27,13 +28,15 @@ use gdl_files::{
     strip_verbatim,
 };
 use gdl_install::{
-    Access, Changes, ComponentAttributes, DestinationReport, FolderError, FolderState,
-    INSPECTION_SCHEMA, Inspection, InstallFolder, InstallationSummary, MAX_RECEIPT_LEN, Payload,
-    PayloadError, PlanSource, Probed, RECEIPT_FILE, RUNTIME_SECTION, Receipt, RecoverError,
-    Recovered, RecoveryOutcome, Relation, RetiredCopy, SPACE_MARGIN, Sections, SectionsError,
-    SourceSummary, Unrecorded, UpdateError, UpdateNotice, UpdateOutcome, UpdatePlan,
-    UpdateRecovery, UpdateRequest, UpdateSource, Updated, hand_over, hand_over_needed,
-    installed_launcher_name, is_installed_copy, judge_destination, plan_update, recover, update,
+    AFTER_UPDATE_OPTION, Access, Changes, ComponentAttributes, DestinationReport, FolderError,
+    FolderState, INSPECTION_SCHEMA, Inspection, InstallFolder, InstallationSummary, Linger,
+    LockError, MAX_RECEIPT_LEN, PREVIOUS_WAIT_LIMIT, Payload, PayloadError, PlanSource, Previous,
+    Probed, RECEIPT_FILE, RETIRED_DELETE_INTERVAL, RETIRED_DELETE_WINDOW, RUNTIME_SECTION, Receipt,
+    RecoverError, Recovered, RecoveryOutcome, Relation, RetiredCopy, RetiredSweep, SPACE_MARGIN,
+    Sections, SectionsError, SourceSummary, Unrecorded, UpdateError, UpdateNotice, UpdateOutcome,
+    UpdatePlan, UpdateRecovery, UpdateRequest, UpdateSource, Updated, hand_over, hand_over_needed,
+    installed_launcher_name, is_installed_copy, judge_destination, plan_update, recover,
+    sweep_retired, update, wait_for_previous,
 };
 use gdl_release::{Asset, Feed, FeedConfig, Platform, Release, ReleaseError, Scan, Version};
 use serde::Serialize;
@@ -59,7 +62,7 @@ const USAGE: &str = "usage: gdl-launcher-headless --check-payload [--payload <zi
                      --inspect <dir> [--json] | --check-folder <dir> [--json] | \
                      --extract <n64|dreamcast> <dump> --output <dir> [--strict script] | \
                      --check-feed | --update <dir> [--yes] [--offline] | --recover <dir> | \
-                     --version";
+                     --after-update <pid> | --version";
 
 /// The mode that prints the program's version.
 const VERSION_OPTION: &str = "--version";
@@ -110,8 +113,10 @@ const OFFLINE_OPTION: &str = "--offline";
 /// The mode that recovers whatever jobs were left unfinished in the folder after it.
 const RECOVER_OPTION: &str = "--recover";
 
-/// The options that choose a mode: arguments with none of them are no headless run.
-const MODE_OPTIONS: [&str; 8] = [
+/// The options that choose a mode: arguments with none of them are no headless run. The last is
+/// the mode a hand-over starts the launcher copy an update put in place with, the id of the
+/// process that ran the update after it.
+const MODE_OPTIONS: [&str; 9] = [
     VERSION_OPTION,
     CHECK_PAYLOAD_OPTION,
     INSPECT_OPTION,
@@ -120,7 +125,12 @@ const MODE_OPTIONS: [&str; 8] = [
     CHECK_FEED_OPTION,
     UPDATE_OPTION,
     RECOVER_OPTION,
+    AFTER_UPDATE_OPTION,
 ];
+
+/// How a refusal names a process the system was asked about, before its id: a process has no path
+/// of its own.
+const PROCESS: &str = "process";
 
 /// A phase's share done, in percent, once all of it is done.
 const WHOLE_PERCENT: u64 = 100;
@@ -182,11 +192,11 @@ pub fn open_own_file() -> OwnFile {
 
 /// Runs the headless mode that `args`, the program's arguments after its own name, ask for, and
 /// gives back its exit code; or `None` when no argument is `--check-payload`, `--inspect`,
-/// `--check-folder`, `--extract`, `--check-feed`, `--update`, `--recover` or `--version`, which is
-/// no headless run. A mode writes its report to `out` and a refusal to `err`. Arguments that ask
-/// for a mode in a form it does not take get the usage line on `err` and [`EXIT_USAGE`]. An
-/// option's value is the argument after it, which must not be empty or begin with `--`; options
-/// may come in any order, each at most once.
+/// `--check-folder`, `--extract`, `--check-feed`, `--update`, `--recover`, `--after-update` or
+/// `--version`, which is no headless run. A mode writes its report to `out` and a refusal to
+/// `err`. Arguments that ask for a mode in a form it does not take get the usage line on `err` and
+/// [`EXIT_USAGE`]. An option's value is the argument after it, which must not be empty or begin
+/// with `--`; options may come in any order, each at most once.
 ///
 /// - `--version` writes the build's version.
 /// - `--check-payload` checks the runtime the launcher file carries, its sections as `own` holds
@@ -274,14 +284,29 @@ pub fn open_own_file() -> OwnFile {
 ///   copy to wait for this program to exit and finish the hand-over, and writes
 ///   `handedOver: <pid>`. A refusal is the line `error: <code> (<rule>): <detail>`, and
 ///   [`EXIT_REFUSED`].
+/// - `--after-update <pid>` finishes a hand-over as the launcher copy an update put in place,
+///   which a launcher that ran the update starts with its own process's id, as [`hand_over`]
+///   starts it: the installation is the folder of the program's own file. It waits for that
+///   process to exit, as [`wait_for_previous`] waits for it, and writes what became of it:
+///   `previous: gone`, `previous: newer` for a process that started no earlier than this one,
+///   `previous: exited after <ms> ms`, `previous: ended` for a launcher ended at the limit,
+///   `previous: lingering notALauncher` or `previous: lingering noRight` for a process left
+///   running, or `previous: unknown` on a system that cannot be asked. Then it removes the
+///   installation's retired launcher copies that no journal names, as [`sweep_retired`] removes
+///   them for a launcher of the build's version, and writes `retired: removed <n>, kept <k>`, how
+///   many it removed and how many it left; or `retired: lockBusy` when another job holds the
+///   installation's lock, since nothing here waits for it or cancels. A process id must be a
+///   decimal of 1 or more, and not this process's own; any other is a usage error. A wait or a
+///   sweep the system or the installation refused is the line
+///   `error: <code> (<rule>): <detail>`, and [`EXIT_REFUSED`].
 ///
 /// A refusal's detail is written as a text report writes a value, each control character as its
 /// escape, so that the refusal stays one line whatever the names in its paths, or the text it
 /// quotes from a dump, hold. A report that cannot be written to its stream gives
 /// [`EXIT_REFUSED`], since nobody saw it.
 ///
-/// Panics when `--inspect`, `--check-feed`, `--update` or `--recover` runs as a build whose version
-/// is not a semantic version, which no build script lets a build be.
+/// Panics when `--inspect`, `--check-feed`, `--update`, `--recover` or `--after-update` runs as a
+/// build whose version is not a semantic version, which no build script lets a build be.
 pub fn run(
     args: &[OsString],
     build: &Build<'_>,
@@ -329,6 +354,9 @@ pub fn run(
             None => usage(err),
         },
         Mode::Recover { folder } => recover_mode(Path::new(folder), build, own, out, err),
+        // A process never waits for itself: its own id names no launcher an update replaced.
+        Mode::AfterUpdate { pid } if pid == process::id() => usage(err),
+        Mode::AfterUpdate { pid } => after_update_mode(pid, build, out, err),
     })
 }
 
@@ -371,6 +399,8 @@ enum Mode<'a> {
     },
     /// `--recover`, of `folder`.
     Recover { folder: &'a OsStr },
+    /// `--after-update`, for the launcher process whose id is `pid`.
+    AfterUpdate { pid: u32 },
 }
 
 /// The mode option the arguments give, before the other options are held to it.
@@ -391,6 +421,8 @@ enum Chosen<'a> {
     Update(&'a OsStr),
     /// `--recover`, with the folder after it.
     Recover(&'a OsStr),
+    /// `--after-update`, with the process id after it, as it was given.
+    AfterUpdate(&'a OsStr),
 }
 
 /// Arguments that ask for a mode in a form it does not take.
@@ -426,6 +458,7 @@ fn parse(args: &[OsString]) -> Result<Mode<'_>, Misused> {
             Some(CHECK_FEED_OPTION) => Chosen::CheckFeed,
             Some(UPDATE_OPTION) => Chosen::Update(value(&mut rest)?),
             Some(RECOVER_OPTION) => Chosen::Recover(value(&mut rest)?),
+            Some(AFTER_UPDATE_OPTION) => Chosen::AfterUpdate(value(&mut rest)?),
             Some(YES_OPTION) if !yes => {
                 yes = true;
                 continue;
@@ -497,8 +530,23 @@ fn parse(args: &[OsString]) -> Result<Mode<'_>, Misused> {
         (Some(Chosen::Recover(folder)), None, false, (None, false), (false, false)) => {
             Ok(Mode::Recover { folder })
         }
+        (Some(Chosen::AfterUpdate(pid)), None, false, (None, false), (false, false)) => {
+            process_id(pid).map(|pid| Mode::AfterUpdate { pid })
+        }
         _ => Err(Misused),
     }
+}
+
+/// The id of a process as an argument gives it: a decimal of ASCII digits alone, 1 or more and
+/// within what an id holds. A sign, a space, any other character, nought and a number past that
+/// name no process.
+fn process_id(value: &OsStr) -> Result<u32, Misused> {
+    value
+        .to_str()
+        .filter(|digits| digits.bytes().all(|byte| byte.is_ascii_digit()))
+        .and_then(|digits| digits.parse().ok())
+        .filter(|&pid| pid != 0)
+        .ok_or(Misused)
 }
 
 /// The value of the option just read: the next argument, which must be there, must not be empty,
@@ -1492,6 +1540,131 @@ fn notice_line(notice: &UpdateNotice) -> String {
     format!("{} ({rule}): {detail}", codes::update_notice(notice))
 }
 
+/// `--after-update`: finishes the hand-over of the installation the program runs in, the folder of
+/// its own file, as the launcher copy of the build's version an update put there, for the launcher
+/// process `pid` that ran the update, as [`after_update`] finishes it.
+fn after_update_mode(pid: u32, build: &Build<'_>, out: &mut dyn Write, err: &mut dyn Write) -> u8 {
+    let running = running_version(build);
+    match own_folder() {
+        Ok(root) => after_update(pid, &root, &running, out, err),
+        Err(error) => refuse_recovery(err, &error),
+    }
+}
+
+/// The folder of the program's own file, by the path the system gives for this process's program:
+/// a hand-over starts the installation's launcher copy at the installation's top, so this is the
+/// installation the copy belongs to. A path the system will not give is refused as what it
+/// answered when asked about this process.
+fn own_folder() -> Result<PathBuf, RecoverError> {
+    let program = env::current_exe().map_err(|source| process_refusal(process::id(), source))?;
+    program.parent().map(Path::to_path_buf).ok_or_else(|| {
+        let source = io::Error::new(
+            io::ErrorKind::InvalidData,
+            "the program's own file has no folder",
+        );
+        process_refusal(process::id(), source)
+    })
+}
+
+/// Finishes the hand-over of the installation at `root`, an absolute path, as its launcher copy of
+/// version `running`: waits for the launcher process `pid`, which the update replaced, to exit, as
+/// [`wait_for_previous`] waits for it up to [`PREVIOUS_WAIT_LIMIT`], and writes what became of it
+/// to `out` as [`print_previous`] writes it; then removes the installation's retired launcher
+/// copies that no journal names, as [`sweep_retired`] removes them, trying each for
+/// [`RETIRED_DELETE_WINDOW`], and writes what it did as [`print_retired`] writes it. Nothing here
+/// waits for the lock: another job that holds it leaves the copies to the next start's sweep.
+///
+/// A wait the system refused is refused on `err` as a look at the process by its id, and nothing
+/// is swept, since the process may still run; a sweep refused, as one is of an installation a
+/// later launcher's state stands in or of a release later than `running`, is refused on `err` as
+/// [`codes::recover`] reports it, with nothing removed. A refusal gives [`EXIT_REFUSED`].
+fn after_update(
+    pid: u32,
+    root: &Path,
+    running: &Version,
+    out: &mut dyn Write,
+    err: &mut dyn Write,
+) -> u8 {
+    let previous = match wait_for_previous(pid, PREVIOUS_WAIT_LIMIT, root) {
+        Ok(previous) => previous,
+        Err(source) => return refuse_recovery(err, &process_refusal(pid, source)),
+    };
+    // Told before the sweep, which may try a copy still held for a while.
+    let shown = print_previous(previous, out);
+    let swept = match retired_swept(root, running) {
+        Ok(swept) => swept,
+        Err(error) => return refuse_recovery(err, &error),
+    };
+    match shown.and_then(|()| print_retired(&swept, out)) {
+        Ok(()) => EXIT_OK,
+        Err(_) => EXIT_REFUSED,
+    }
+}
+
+/// A refusal of what the system answered when asked about the process whose id is `pid`, which has
+/// no path of its own: it is named by that id, as `process <pid>`.
+fn process_refusal(pid: u32, source: io::Error) -> RecoverError {
+    RecoverError::Io {
+        path: PathBuf::from(format!("{PROCESS} {pid}")),
+        source,
+    }
+}
+
+/// Removes the retired launcher copies of the installation at `root` that no journal names, for
+/// the launcher of version `running`, as [`sweep_retired`] removes them. A folder that is not
+/// there, or is no folder, holds no state folder and so nothing to sweep, as a recovery finds
+/// it; one with a link on its path is refused as a recovery refuses it.
+fn retired_swept(root: &Path, running: &Version) -> Result<RetiredSweep, RecoverError> {
+    let folder = match InstallFolder::at(root) {
+        Ok(folder) => folder,
+        Err(FolderError::Absent { .. } | FolderError::NotDirectory { .. }) => {
+            return Ok(RetiredSweep {
+                removed: Vec::new(),
+                kept: Vec::new(),
+                lock_busy: false,
+            });
+        }
+        Err(FolderError::Links { path }) => {
+            return Err(RecoverError::Lock(LockError::Links { path }));
+        }
+        Err(FolderError::Io { path, source }) => return Err(RecoverError::Io { path, source }),
+    };
+    sweep_retired(
+        &folder,
+        running,
+        RETIRED_DELETE_WINDOW,
+        RETIRED_DELETE_INTERVAL,
+    )
+}
+
+/// Writes to `out` what became of the launcher process an update replaced, `previous`, as the line
+/// `previous: <what>`: `gone`, `newer`, `exited after <ms> ms`, how long it was waited for in whole
+/// milliseconds, `ended`, `lingering notALauncher`, `lingering noRight` or `unknown`.
+fn print_previous(previous: Previous, out: &mut dyn Write) -> io::Result<()> {
+    let what = match previous {
+        Previous::Gone => "gone".to_owned(),
+        Previous::Newer => "newer".to_owned(),
+        Previous::Exited { waited } => format!("exited after {} ms", waited.as_millis()),
+        Previous::Ended => "ended".to_owned(),
+        Previous::Lingering(Linger::NotALauncher) => "lingering notALauncher".to_owned(),
+        Previous::Lingering(Linger::NoRight) => "lingering noRight".to_owned(),
+        Previous::Unknown => "unknown".to_owned(),
+    };
+    written(out, &text_report(vec![("previous", what)]))
+}
+
+/// Writes to `out` what a sweep of the retired launcher copies did, `swept`, as the line
+/// `retired: removed <n>, kept <k>`, how many copies it removed and how many it left; or
+/// `retired: lockBusy` when another job held the installation's lock, so that it looked at none.
+fn print_retired(swept: &RetiredSweep, out: &mut dyn Write) -> io::Result<()> {
+    let what = if swept.lock_busy {
+        "lockBusy".to_owned()
+    } else {
+        format!("removed {}, kept {}", swept.removed.len(), swept.kept.len())
+    };
+    written(out, &text_report(vec![("retired", what)]))
+}
+
 /// Runs `job` on a thread of its own, handing it a progress that prints, and writes each line that
 /// progress gives to `out` as it comes, so that whoever runs the program sees a hold while the job
 /// waits in it. Gives back what the job gave, and whether every line was written: a line that
@@ -2008,11 +2181,11 @@ mod tests {
     };
     use gdl_install::{
         Blocker, ComponentAttributes, DEFAULT_CONFIG, DOWNLOAD_PREFIX, DestinationReport,
-        FileChanges, GUNE5D, InstallFolder, JOURNAL_DIR, KnownFolder, LOCK_FILE, Probed,
-        RECEIPT_FILE, RETIRED_LAUNCHER_PREFIX, RUNTIME_SECTION, Receipt, Recovered,
-        RecoveryOutcome, RetiredCopy, STATE_DIR, Sections, SectionsError, SourceSummary,
-        UPDATE_BACKUP, UPDATE_JOURNAL, UPDATE_STAGING_PREFIX, UpdateNotice, UpdatePlan,
-        UpdateRecovery, Updated, Warning, installed_launcher_name,
+        FileChanges, GUNE5D, InstallFolder, JOURNAL_DIR, KnownFolder, LOCK_FILE, Linger, Previous,
+        Probed, RECEIPT_FILE, RETIRED_LAUNCHER_PREFIX, RUNTIME_SECTION, Receipt, Recovered,
+        RecoveryOutcome, RetiredCopy, RetiredSweep, STATE_DIR, Sections, SectionsError,
+        SourceSummary, UPDATE_BACKUP, UPDATE_JOURNAL, UPDATE_STAGING_PREFIX, UpdateNotice,
+        UpdatePlan, UpdateRecovery, Updated, Warning, installed_launcher_name,
     };
     use gdl_media::Sha256Digest;
     use gdl_release::{
@@ -2023,9 +2196,9 @@ mod tests {
 
     use super::{
         Build, EXIT_OK, EXIT_REFUSED, EXIT_USAGE, FolderView, Mode, OwnFile, SPACE_MARGIN,
-        SourceKind, USAGE, feed_checked, hands_over, install_names, json_report, mode_of,
-        print_plan, print_recovered, print_scan, print_updated, printing, recovery_io, refuse, run,
-        text_value, usage, was_installed_copy,
+        SourceKind, USAGE, after_update, feed_checked, hands_over, install_names, json_report,
+        mode_of, print_plan, print_previous, print_recovered, print_retired, print_scan,
+        print_updated, printing, recovery_io, refuse, run, text_value, usage, was_installed_copy,
     };
     use crate::codes::Report;
     use crate::extraction::vectors::{
@@ -2494,6 +2667,63 @@ mod tests {
                 "--offline beside --check-feed",
             ),
             (&["--check-feed", "--yes"], "--yes beside --check-feed"),
+            // Each refused before any process is looked at.
+            (&["--after-update"], "--after-update without a process id"),
+            (&["--after-update", ""], "--after-update with an empty id"),
+            (
+                &["--after-update", "--yes"],
+                "--after-update followed by an option",
+            ),
+            (&["--yes", "--after-update"], "--after-update at the end"),
+            (&["--after-update", "0"], "a process id of nought"),
+            (&["--after-update", "00"], "a process id of nought"),
+            (&["--after-update", "-1"], "a negative process id"),
+            (&["--after-update", "+1"], "a process id with a sign"),
+            (&["--after-update", " 1"], "a process id after a space"),
+            (&["--after-update", "1 "], "a process id before a space"),
+            (
+                &["--after-update", "1.5"],
+                "a process id that is no whole number",
+            ),
+            (&["--after-update", "0x10"], "a process id in hexadecimal"),
+            (&["--after-update", "１"], "a process id in other digits"),
+            (&["--after-update", "pid"], "a process id that is no number"),
+            (
+                &["--after-update", "4294967296"],
+                "a process id past what an id holds",
+            ),
+            (&["--after-update", "1", "2"], "a second process id"),
+            (
+                &["--after-update", "1", "--after-update", "2"],
+                "--after-update twice",
+            ),
+            (
+                &["--after-update", "1", "--json"],
+                "--json beside --after-update",
+            ),
+            (
+                &["--after-update", "1", "--yes"],
+                "--yes beside --after-update",
+            ),
+            (
+                &["--after-update", "1", "--offline"],
+                "--offline beside --after-update",
+            ),
+            (
+                &["--after-update", "1", "--payload", "a.zip"],
+                "--payload beside --after-update",
+            ),
+            (
+                &["--after-update", "1", "--output", "out"],
+                "--output beside --after-update",
+            ),
+            (
+                &["--after-update", "1", "--strict", "script"],
+                "--strict beside --after-update",
+            ),
+            (&["--after-update", "1", "--version"], "two modes"),
+            (&["--after-update", "1", "--recover", "folder"], "two modes"),
+            (&["--update", "folder", "--after-update", "1"], "two modes"),
         ];
         for &(args, what) in cases {
             let ran = run_release(args);
@@ -2510,7 +2740,7 @@ mod tests {
             "usage: gdl-launcher-headless --check-payload [--payload <zip>] | --inspect <dir> \
              [--json] | --check-folder <dir> [--json] | --extract <n64|dreamcast> <dump> \
              --output <dir> [--strict script] | --check-feed | --update <dir> [--yes] \
-             [--offline] | --recover <dir> | --version"
+             [--offline] | --recover <dir> | --after-update <pid> | --version"
         );
     }
 
@@ -2541,6 +2771,9 @@ mod tests {
             &["--yes"],
             &["--offline"],
             &["--yes", "--offline", "folder"],
+            &["--after-update=1"],
+            &["--After-Update", "1"],
+            &["1234"],
         ];
         for &args in cases {
             let ran = run_release(args);
@@ -5305,5 +5538,299 @@ mod tests {
             let ran = run_as(&update_args(&fixture.root, yes), &RELEASE, &mut own);
             assert_refused(&ran, &line);
         }
+    }
+
+    /// A launcher later than any the tests build the program as, whose stamp closes an
+    /// installation to them.
+    const LATER_LAUNCHER: &str = "999.0.0";
+
+    /// Finishes a hand-over of the installation at `root` as the release build would, for this
+    /// test program's own process: it started no earlier than itself, so it is never waited for,
+    /// and the sweep is tested without starting a process.
+    fn after_own_update(root: &Path) -> Ran {
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+        let running = Version::parse(VERSION).unwrap();
+        let code = after_update(std::process::id(), root, &running, &mut out, &mut err);
+        Ran {
+            code: Some(code),
+            out: String::from_utf8(out).unwrap(),
+            err: String::from_utf8(err).unwrap(),
+        }
+    }
+
+    #[test]
+    fn an_after_update_takes_one_process_id_of_another_process() {
+        let cases: &[(&str, u32)] = &[
+            ("1", 1),
+            ("1234", 1234),
+            ("007", 7),
+            ("4294967295", u32::MAX),
+        ];
+        for &(given, id) in cases {
+            // Read and never run, since running it waits for whatever process has the id.
+            let args = [OsString::from("--after-update"), OsString::from(given)];
+            let mode = mode_of(&args);
+            assert!(
+                matches!(mode, Some(Ok(Mode::AfterUpdate { pid })) if pid == id),
+                "{given}: {mode:?}"
+            );
+        }
+        // This process's own id names no launcher it could wait for, and is refused before
+        // anything is looked at.
+        let own = std::process::id().to_string();
+        let ran = run_release(&["--after-update", own.as_str()]);
+        assert_eq!(ran.code, Some(EXIT_USAGE), "{ran:?}");
+        assert_eq!(ran.err, format!("{USAGE}\n"));
+        assert_eq!(ran.out, "");
+    }
+
+    #[test]
+    fn what_became_of_the_previous_launcher_is_printed_answer_by_answer() {
+        let answers = [
+            (Previous::Gone, "gone"),
+            (Previous::Newer, "newer"),
+            (
+                Previous::Exited {
+                    waited: Duration::from_micros(1_500_900),
+                },
+                "exited after 1500 ms",
+            ),
+            (
+                Previous::Exited {
+                    waited: Duration::ZERO,
+                },
+                "exited after 0 ms",
+            ),
+            (Previous::Ended, "ended"),
+            (
+                Previous::Lingering(Linger::NotALauncher),
+                "lingering notALauncher",
+            ),
+            (Previous::Lingering(Linger::NoRight), "lingering noRight"),
+            (Previous::Unknown, "unknown"),
+        ];
+        for (previous, what) in answers {
+            let mut out = Vec::new();
+            print_previous(previous, &mut out).unwrap();
+            assert_eq!(
+                String::from_utf8(out).unwrap(),
+                format!("previous: {what}\n")
+            );
+        }
+        assert!(print_previous(Previous::Gone, &mut Closed).is_err());
+    }
+
+    #[test]
+    fn a_sweep_of_the_retired_copies_is_printed_as_its_counts() {
+        let names =
+            |names: &[&str]| -> Vec<String> { names.iter().map(|&name| name.to_owned()).collect() };
+        let cases = [
+            (
+                RetiredSweep {
+                    removed: Vec::new(),
+                    kept: Vec::new(),
+                    lock_busy: false,
+                },
+                "removed 0, kept 0",
+            ),
+            (
+                RetiredSweep {
+                    removed: names(&["retired-launcher-0.9.0-AbC123xy.exe"]),
+                    kept: names(&[
+                        "retired-launcher-0.8.0-AbC123xy.exe",
+                        "retired-launcher-1.0.0-beta-AbC123xy.exe",
+                    ]),
+                    lock_busy: false,
+                },
+                "removed 1, kept 2",
+            ),
+            (
+                RetiredSweep {
+                    removed: Vec::new(),
+                    kept: Vec::new(),
+                    lock_busy: true,
+                },
+                "lockBusy",
+            ),
+        ];
+        for (swept, what) in cases {
+            let mut out = Vec::new();
+            print_retired(&swept, &mut out).unwrap();
+            assert_eq!(
+                String::from_utf8(out).unwrap(),
+                format!("retired: {what}\n"),
+                "{swept:?}"
+            );
+        }
+        let none = RetiredSweep {
+            removed: Vec::new(),
+            kept: Vec::new(),
+            lock_busy: false,
+        };
+        assert!(print_retired(&none, &mut Closed).is_err());
+    }
+
+    #[test]
+    fn after_an_update_the_retired_copies_no_journal_names_are_removed() {
+        let Some(platform) = this_platform() else {
+            return;
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let (fixture, state) = installation(dir.path(), platform, VERSION);
+        // A retired copy no journal names, and another job's name that only looks like one.
+        let unnamed = retired_copy(platform, "0.8.0");
+        let put_aside = || fs::write(state.join(&unnamed), b"an older launcher").unwrap();
+        put_aside();
+        let not_its_own = format!("retired-n64-{STAGING_RANDOM}");
+        fs::write(state.join(&not_its_own), b"").unwrap();
+        let ran = after_own_update(&fixture.root);
+        assert_eq!(ran.code, Some(EXIT_OK), "{ran:?}");
+        assert_eq!(
+            (ran.out.as_str(), ran.err.as_str()),
+            ("previous: newer\nretired: removed 1, kept 0\n", "")
+        );
+        assert!(!state.join(&unnamed).exists());
+        assert!(state.join(&not_its_own).is_file());
+
+        // The copy an update's journal names stays for that update's recovery, and so does the
+        // journal.
+        put_aside();
+        let (journal, _, named) = update_left(&fixture, platform, "committed");
+        let ran = after_own_update(&fixture.root);
+        assert_eq!(ran.code, Some(EXIT_OK), "{ran:?}");
+        assert_eq!(
+            (ran.out.as_str(), ran.err.as_str()),
+            ("previous: newer\nretired: removed 1, kept 1\n", "")
+        );
+        assert!(!state.join(&unnamed).exists());
+        assert!(state.join(&named).is_file());
+        assert!(journal.is_file());
+
+        // A report nobody saw fails the run, and the sweep runs all the same.
+        put_aside();
+        let running = Version::parse(VERSION).unwrap();
+        let mut err = Vec::new();
+        let code = after_update(
+            std::process::id(),
+            &fixture.root,
+            &running,
+            &mut Closed,
+            &mut err,
+        );
+        assert_eq!(code, EXIT_REFUSED);
+        assert!(err.is_empty(), "{}", String::from_utf8_lossy(&err));
+        assert!(!state.join(&unnamed).exists());
+    }
+
+    #[test]
+    fn a_busy_lock_leaves_the_retired_copies_to_the_next_start() {
+        let Some(platform) = this_platform() else {
+            return;
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let (fixture, state) = installation(dir.path(), platform, VERSION);
+        let retired = retired_copy(platform, PREVIOUS);
+        fs::write(state.join(&retired), b"an older launcher").unwrap();
+        // Another job's hold is not waited for.
+        let lock = InstallFolder::at(&fixture.root).unwrap().lock().unwrap();
+        let ran = after_own_update(&fixture.root);
+        assert_eq!(ran.code, Some(EXIT_OK), "{ran:?}");
+        assert_eq!(
+            (ran.out.as_str(), ran.err.as_str()),
+            ("previous: newer\nretired: lockBusy\n", "")
+        );
+        assert!(state.join(&retired).is_file());
+        drop(lock);
+        let ran = after_own_update(&fixture.root);
+        assert_eq!(
+            (ran.out.as_str(), ran.err.as_str()),
+            ("previous: newer\nretired: removed 1, kept 0\n", "")
+        );
+        assert!(!state.join(&retired).exists());
+    }
+
+    #[test]
+    fn a_later_launchers_installation_refuses_the_sweep() {
+        let Some(platform) = this_platform() else {
+            return;
+        };
+        let dir = tempfile::tempdir().unwrap();
+        // An installation of a later release than this launcher.
+        let (later, state) = installation(&dir.path().join("later"), platform, "1.0.1");
+        let retired = retired_copy(platform, PREVIOUS);
+        fs::write(state.join(&retired), b"an older launcher").unwrap();
+        let ran = after_own_update(&later.root);
+        assert_eq!(ran.code, Some(EXIT_REFUSED), "{ran:?}");
+        assert_eq!(ran.out, "previous: newer\n");
+        assert_eq!(
+            ran.err,
+            "error: launcher.older (olderLauncher): This launcher file (1.0.0-beta) is older than \
+             the installation (1.0.1)\n"
+        );
+        assert!(state.join(&retired).is_file());
+
+        // An update's journal that a later launcher stamped.
+        let (fixture, state) = installation(&dir.path().join("stamped"), platform, VERSION);
+        let (journal, _, named) = update_left(&fixture, platform, "staged");
+        let mut stamped: Value = serde_json::from_slice(&fs::read(&journal).unwrap()).unwrap();
+        stamped["minLauncher"] = json!(LATER_LAUNCHER);
+        fs::write(&journal, pretty_json(&stamped)).unwrap();
+        let unnamed = retired_copy(platform, "0.8.0");
+        fs::write(state.join(&unnamed), b"an older launcher").unwrap();
+        let ran = after_own_update(&fixture.root);
+        assert_eq!(ran.code, Some(EXIT_REFUSED), "{ran:?}");
+        assert_eq!(ran.out, "previous: newer\n");
+        assert_eq!(
+            ran.err,
+            "error: state.newerLauncher (newerLauncher): A later launcher's state stands in this \
+             installation; this launcher changes nothing\n"
+        );
+        for name in [&named, &unnamed] {
+            assert!(state.join(name).is_file(), "{name}");
+        }
+    }
+
+    #[test]
+    fn a_folder_without_a_state_folder_has_nothing_to_sweep() {
+        let dir = tempfile::tempdir().unwrap();
+        let absent = dir.path().join("absent");
+        let file = dir.path().join("file");
+        fs::write(&file, b"").unwrap();
+        for root in [dir.path(), absent.as_path(), file.as_path()] {
+            let ran = after_own_update(root);
+            assert_eq!(ran.code, Some(EXIT_OK), "{root:?}: {ran:?}");
+            assert_eq!(
+                (ran.out.as_str(), ran.err.as_str()),
+                ("previous: newer\nretired: removed 0, kept 0\n", ""),
+                "{root:?}"
+            );
+        }
+        assert!(!dir.path().join(STATE_DIR).exists());
+        assert!(!absent.exists());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_wait_the_system_refuses_is_a_refusal_line_and_sweeps_nothing() {
+        let Some(platform) = this_platform() else {
+            return;
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let (fixture, state) = installation(dir.path(), platform, VERSION);
+        let retired = retired_copy(platform, PREVIOUS);
+        fs::write(state.join(&retired), b"an older launcher").unwrap();
+        // An id past what Linux numbers its processes with, which no process can have.
+        let running = Version::parse(VERSION).unwrap();
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+        let code = after_update(u32::MAX, &fixture.root, &running, &mut out, &mut err);
+        assert_eq!(code, EXIT_REFUSED);
+        assert!(out.is_empty(), "{}", String::from_utf8_lossy(&out));
+        let err = String::from_utf8(err).unwrap();
+        assert!(
+            err.starts_with("error: io.failed (io): process 4294967295: "),
+            "{err}"
+        );
+        assert_eq!(err.lines().count(), 1, "{err}");
+        assert!(state.join(&retired).is_file());
     }
 }

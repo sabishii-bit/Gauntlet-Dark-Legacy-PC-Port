@@ -42,7 +42,7 @@ const USAGE: &str = "usage: gdl-launcher-headless --check-payload [--payload <zi
                      --inspect <dir> [--json] | --check-folder <dir> [--json] | \
                      --extract <n64|dreamcast> <dump> --output <dir> [--strict script] | \
                      --check-feed | --update <dir> [--yes] [--offline] | --recover <dir> | \
-                     --version\n";
+                     --after-update <pid> | --version\n";
 
 /// The N64 cases, which hold the image the tests extract and the tree the N64 extractor writes
 /// for it.
@@ -292,6 +292,11 @@ fn usage_errors_exit_2() {
         &["--update", "folder", "--json"],
         &["--update", "folder", "--recover", "folder"],
         &["--recover", "folder", "--offline"],
+        // Refused before any process is looked at.
+        &["--after-update"],
+        &["--after-update", ""],
+        &["--after-update", "1", "--json"],
+        &["--after-update", "1", "--recover", "folder"],
     ];
     for &args in cases {
         let output = run_program(args);
