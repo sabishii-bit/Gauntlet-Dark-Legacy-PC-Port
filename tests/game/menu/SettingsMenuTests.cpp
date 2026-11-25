@@ -471,13 +471,13 @@ TEST_CASE("Game Options lists the HUD page after Combat in title tower and level
     };
     for (const auto scope : kScopes) {
         CAPTURE(static_cast<s32>(scope));
-        // With no look but Dark Legacy's to offer, the page is as it always was.
+        // With no look but Dark Legacy's to offer, the page has no HUD row.
         f.settings.hudOffers.clear();
         CHECK(gameCodes(scope) == kGameCodes);
         // A look this installation cannot draw is hidden, not greyed, and with it the row.
         f.settings.hudOffers = {{.id = "gone", .label = "hud.style.gone", .usable = false}};
         CHECK(gameCodes(scope) == kGameCodes);
-        // One it can draw lists the row in every scope, a level's too, where the compass is not.
+        // One it can draw lists the row after Combat, in a level's settings as in the others.
         f.settings.hudOffers.push_back({.id = "fake", .label = "hud.style.fake", .usable = true});
         CHECK(gameCodes(scope) == kGameCodesWithHud);
         const MenuItem& row = f.menu.menu().definition().items[3];
@@ -659,6 +659,21 @@ TEST_CASE("Back from the HUD page lands on its row in Game Options", "[settings]
         REQUIRE(f.menu.page() == SettingsMenu::Page::Root);
         CHECK(selectedCode(f.menu) == kGameOptionsCode);
     }
+}
+
+TEST_CASE("Back from the HUD page lands on Game Options' first row once its HUD row has gone",
+          "[settings][hud-settings]") {
+    Fixture f;
+    offerHudLooks(f);
+    enterHudPage(f);
+    // While the page was up every look but Dark Legacy's went, and with them the HUD row.
+    for (auto& offer : f.settings.hudOffers) {
+        offer.usable = false;
+    }
+    f.back();
+    REQUIRE(f.menu.page() == SettingsMenu::Page::Game);
+    CHECK(rowCodes(f.menu) == kGameCodes);
+    CHECK(selectedCode(f.menu) == 0); // Difficulty's row
 }
 
 TEST_CASE("each of Game Options' own pages lies a step deeper than Game Options",
