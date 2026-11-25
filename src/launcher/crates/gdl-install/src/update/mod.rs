@@ -400,6 +400,16 @@ pub enum UpdateNotice {
     },
 }
 
+impl UpdateNotice {
+    /// The notice's stable machine name, in camelCase, for reports and logs.
+    pub fn rule(&self) -> &'static str {
+        match self {
+            UpdateNotice::ProbeFailed { .. } => "probeFailed",
+            UpdateNotice::CleanupLeft { .. } => "cleanupLeft",
+        }
+    }
+}
+
 /// Whether an update ran the game's probe.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Probed {
@@ -1287,6 +1297,29 @@ mod tests {
             ])
         );
         assert_eq!(changes.unchanged, 2);
+    }
+
+    #[test]
+    fn update_notices_name_their_rules() {
+        let cases = [
+            (
+                UpdateNotice::ProbeFailed {
+                    status: Some(2),
+                    first_line: None,
+                    stderr_tail: String::new(),
+                },
+                "probeFailed",
+            ),
+            (
+                UpdateNotice::CleanupLeft {
+                    detail: "update-backup: in use".into(),
+                },
+                "cleanupLeft",
+            ),
+        ];
+        for (notice, rule) in cases {
+            assert_eq!(notice.rule(), rule, "{notice:?}");
+        }
     }
 
     #[test]

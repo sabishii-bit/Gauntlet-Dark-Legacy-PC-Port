@@ -1513,11 +1513,11 @@ fn print_updated(updated: &Updated, kind: SourceKind, out: &mut dyn Write) -> io
 }
 
 /// A notice of an update that stands as its report's line gives it: `<code> (<rule>): <detail>`,
-/// the code as [`codes::update_notice`] gives it. A failed probe is `probeFailed`, its detail the
-/// staged game's exit status, the first line it wrote and the end of its error stream, each
-/// `none` when there is none; a cleanup that stopped is `cleanupLeft`, its detail what stopped it.
+/// the code as [`codes::update_notice`] gives it and the rule as the notice names it. A failed
+/// probe's detail is the staged game's exit status, the first line it wrote and the end of its
+/// error stream, each `none` when there is none; a cleanup that stopped has what stopped it.
 fn notice_line(notice: &UpdateNotice) -> String {
-    let (rule, detail) = match notice {
+    let detail = match notice {
         UpdateNotice::ProbeFailed {
             status,
             first_line,
@@ -1530,14 +1530,15 @@ fn notice_line(notice: &UpdateNotice) -> String {
             } else {
                 stderr_tail.as_str()
             };
-            (
-                "probeFailed",
-                format!("status {status}; first line {first_line}; stderr {stderr}"),
-            )
+            format!("status {status}; first line {first_line}; stderr {stderr}")
         }
-        UpdateNotice::CleanupLeft { detail } => ("cleanupLeft", detail.to_string()),
+        UpdateNotice::CleanupLeft { detail } => detail.to_string(),
     };
-    format!("{} ({rule}): {detail}", codes::update_notice(notice))
+    format!(
+        "{} ({}): {detail}",
+        codes::update_notice(notice),
+        notice.rule()
+    )
 }
 
 /// `--after-update`: finishes the hand-over of the installation the program runs in, the folder of
