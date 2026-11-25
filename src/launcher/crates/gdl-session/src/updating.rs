@@ -28,27 +28,30 @@ pub enum SourceChoice {
 }
 
 /// Chooses where the update of an installation of `installed` comes from, for a launcher of
-/// `running` whose file carries the runtime `own` (`None` when it carries none), given the feed's
-/// answer: its newest release above the installation, none, or why it could not be read; `feed`
-/// is `None` for a run that asks no feed.
+/// `running` whose file carries the runtime `own` (`None` when it carries none), given what reads
+/// the feed's answer: its newest release above the installation, none, or why it could not be
+/// read; `feed` is `None` for a run that asks no feed.
 ///
 /// A launcher older than the installation is [`SourceChoice::OlderLauncher`], whatever either
-/// source holds. Otherwise the feed's release when it is newer than both the installation and
-/// this file's runtime; else this file's runtime when it is newer than the installation, whether
-/// the feed was read or not; else [`SourceChoice::UpToDate`]. A feed that could not be read, with
-/// nothing newer in this file, is its error. A read the job's cancel stopped is that cancel, never
-/// an update from this file: the player asked the run to stop, not to update without the feed.
+/// source holds, and the feed is not read for it: an unauthenticated read spends one of the few
+/// requests GitHub answers an hour. Otherwise the feed's release when it is newer than both the
+/// installation and this file's runtime; else this file's runtime when it is newer than the
+/// installation, whether the feed was read or not; else [`SourceChoice::UpToDate`]. A feed that
+/// could not be read, with nothing newer in this file, is its error. A read the job's cancel
+/// stopped is that cancel, never an update from this file: the player asked the run to stop, not
+/// to update without the feed.
 pub fn choose_source(
     running: &Version,
     own: Option<&Version>,
     installed: &Version,
-    feed: Option<Result<Option<Release>, ReleaseError>>,
+    feed: Option<impl FnOnce() -> Result<Option<Release>, ReleaseError>>,
 ) -> Result<SourceChoice, ReleaseError> {
     if running < installed {
         return Ok(SourceChoice::OlderLauncher {
             installed: installed.clone(),
         });
     }
+    let feed = feed.map(|read| read());
     let bundled = own.filter(|own| *own > installed);
     match feed {
         Some(Ok(Some(release)))
@@ -182,7 +185,8 @@ mod tests {
         feed: Option<Result<Option<Release>, ReleaseError>>,
     ) -> Result<SourceChoice, ReleaseError> {
         let own = own.map(version);
-        choose_source(&version(running), own.as_ref(), &version(INSTALLED), feed)
+        let read = feed.map(|answer| move || answer);
+        choose_source(&version(running), own.as_ref(), &version(INSTALLED), read)
     }
 
     /// The choice of this file's runtime of `text`.
@@ -287,6 +291,18 @@ mod tests {
             ] {
                 assert_eq!(choice(OLDER, own, answer).unwrap(), older, "{what}, {feed}");
             }
+            // The feed is never read for a launcher that may change nothing.
+            let read = || -> Result<Option<Release>, ReleaseError> {
+                panic!("the feed was read for a launcher older than the installation")
+            };
+            let own = own.map(version);
+            let chosen = choose_source(
+                &version(OLDER),
+                own.as_ref(),
+                &version(INSTALLED),
+                Some(read),
+            );
+            assert_eq!(chosen.unwrap(), older, "{what}");
         }
     }
 

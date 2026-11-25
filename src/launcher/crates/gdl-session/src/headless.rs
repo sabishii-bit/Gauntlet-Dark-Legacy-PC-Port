@@ -249,8 +249,11 @@ pub fn open_own_file() -> OwnFile {
 ///   and plans the update from there as [`plan_update`] does: `plan: <from> -> <to>
 ///   (bundled|feed)`, then `plan: download <bytes>` for a release, or for the program's own file a
 ///   `plan: replace <name>`, `plan: add <name>` or `plan: remove <name>` line for each name the
-///   update would move; or `plan: upToDate <version>` when nothing newer is at hand. With
-///   `--offline` it asks no feed, and only the program's own file can bring a newer release.
+///   update would move; or `plan: upToDate <version>` when nothing newer is at hand. The feed is
+///   read only for a launcher that may update the installation at all, and when it could not be
+///   read but the program's own file brings a newer release, the update comes from that file,
+///   after the line `feed: <code> (<rule>): <detail>` that tells why. With `--offline` it asks no
+///   feed, and only the program's own file can bring a newer release.
 ///   With `--yes` it makes that update, as [`update`] makes one, waiting while another job holds
 ///   the folder's lock or the game runs from it, and writing the update's progress as `--recover`
 ///   writes a recovery's; then `updated: <from> -> <to> (bundled|feed)`, `probed: staged` or
@@ -640,15 +643,18 @@ fn features(build: &Build<'_>) -> String {
 /// or a file whose name holds a line end or a terminal's escape; or, for a job asked to stop, only
 /// that it was cancelled. Gives back [`EXIT_REFUSED`], written or not.
 fn refuse(err: &mut dyn Write, report: Report, rule: &str, detail: &dyn fmt::Display) -> u8 {
-    let line = match report {
-        Report::Error(code) => {
-            let detail = text_value(&detail.to_string());
-            format!("error: {code} ({rule}): {detail}\n")
-        }
-        Report::Cancelled => "error: cancelled\n".to_owned(),
-    };
-    let _ = written(err, &line);
+    let line = text_value(&refusal_text(report, rule, detail));
+    let _ = written(err, &format!("error: {line}\n"));
     EXIT_REFUSED
+}
+
+/// A refusal as its line tells it after `error: `: the code `report` gives it, the rule it names
+/// and its `detail`, `<code> (<rule>): <detail>`; or, for a job asked to stop, `cancelled`.
+fn refusal_text(report: Report, rule: &str, detail: &dyn fmt::Display) -> String {
+    match report {
+        Report::Error(code) => format!("{code} ({rule}): {detail}"),
+        Report::Cancelled => "cancelled".to_owned(),
+    }
 }
 
 /// `--inspect`: reports to `out` what the folder at `folder` is to a launcher of the build's
@@ -1049,7 +1055,13 @@ enum Picked<'s> {
 /// The source `--update` takes a newer release from.
 enum Source<'s> {
     /// The program's own file, through the sections it found as it started.
-    Bundled(&'s mut Sections<File>),
+    Bundled {
+        /// The file's sections.
+        sections: &'s mut Sections<File>,
+        /// Why the feed could not be read, as [`feed_unread`] tells it, when it was asked: the
+        /// update then comes from this file in its place.
+        feed_unread: Option<String>,
+    },
     /// A release of the feed's, whose files are fetched from that feed.
     Release {
         /// The feed the release came from.
@@ -1063,8 +1075,20 @@ impl Source<'_> {
     /// How a report names the source.
     fn kind(&self) -> SourceKind {
         match self {
-            Source::Bundled(_) => SourceKind::Bundled,
+            Source::Bundled { .. } => SourceKind::Bundled,
             Source::Release { .. } => SourceKind::Feed,
+        }
+    }
+
+    /// Writes to `out` the line `feed: <code> (<rule>): <detail>` when the source is the program's
+    /// own file, chosen because the feed could not be read, which the line tells; nothing else.
+    fn tell_feed_unread(&self, out: &mut dyn Write) -> io::Result<()> {
+        match self {
+            Source::Bundled {
+                feed_unread: Some(unread),
+                ..
+            } => written(out, &text_report(vec![("feed", unread.clone())])),
+            Source::Bundled { .. } | Source::Release { .. } => Ok(()),
         }
     }
 }
@@ -1159,7 +1183,9 @@ impl Updating<'_> {
     /// [`installed_release`] reads it, which refuses what the update's first recovery would
     /// refuse, so that a plan with nothing newer at hand refuses what the update would. A launcher
     /// older than the installation, and a feed that could not be read with nothing newer in the
-    /// program's own file, are refused too.
+    /// program's own file, are refused too; the feed is read only when [`choose_source`] asks for
+    /// it. A feed that could not be read, with the program's own file bringing a newer release,
+    /// leaves that file the source, with why the feed could not be read.
     fn pick<'s>(
         &self,
         bundled: Option<&'s mut Sections<File>>,
@@ -1169,19 +1195,27 @@ impl Updating<'_> {
         // The runtime a launcher file carries is of the launcher's own version, which the update
         // holds it to before anything of it is used.
         let own = bundled.as_ref().map(|_| self.running);
-        // Nothing here asks the read to stop.
-        let cancel = Cancel::default();
-        let answer = feed.map(|feed| feed.newest(&installed, self.platform, &cancel));
-        match choose_source(self.running, own, &installed, answer).map_err(UpdateError::Release)? {
+        let platform = self.platform;
+        let read = feed.map(|feed| {
+            let installed = &installed;
+            move || {
+                // Nothing here asks the read to stop.
+                let cancel = Cancel::default();
+                feed.newest(installed, platform, &cancel)
+            }
+        });
+        let (chosen, feed_unread) = chosen(self.running, own, &installed, read);
+        match chosen.map_err(UpdateError::Release)? {
             SourceChoice::OlderLauncher { installed } => Err(UpdateError::OlderLauncher {
                 running: self.running.to_string().into(),
                 installed: installed.to_string().into(),
             }),
             SourceChoice::UpToDate { version } => Ok(Picked::UpToDate(version)),
-            SourceChoice::Bundled { .. } => Ok(Picked::Source(Source::Bundled(
-                bundled
+            SourceChoice::Bundled { .. } => Ok(Picked::Source(Source::Bundled {
+                sections: bundled
                     .expect("the program's own runtime is chosen only when its file carries one"),
-            ))),
+                feed_unread,
+            })),
             SourceChoice::Release(release) => Ok(Picked::Source(Source::Release {
                 feed: feed.expect("a release is chosen only from a feed that was read"),
                 release,
@@ -1197,18 +1231,24 @@ impl Updating<'_> {
         out: &mut dyn Write,
         err: &mut dyn Write,
     ) -> u8 {
-        let planned = match picked {
+        let source = match picked {
             Ok(Picked::UpToDate(version)) => {
                 let lines = vec![("plan", format!("{UP_TO_DATE} {version}"))];
                 return reported(out, &text_report(lines));
             }
-            Ok(Picked::Source(Source::Bundled(sections))) => {
+            Ok(Picked::Source(source)) => source,
+            Err(error) => return refuse_update(err, &error, None),
+        };
+        if source.tell_feed_unread(out).is_err() {
+            return EXIT_REFUSED;
+        }
+        let planned = match source {
+            Source::Bundled { sections, .. } => {
                 plan_update(self.root, self.running, PlanSource::Bundled(sections))
             }
-            Ok(Picked::Source(Source::Release { release, .. })) => {
+            Source::Release { release, .. } => {
                 plan_update(self.root, self.running, PlanSource::Release(&release))
             }
-            Err(error) => Err(error),
         };
         match planned.map(|plan| print_plan(&plan, out)) {
             Ok(Ok(())) => EXIT_OK,
@@ -1237,6 +1277,7 @@ impl Updating<'_> {
             Err(error) => return refuse_update(err, &error, Some(Changes::None)),
         };
         let kind = source.kind();
+        let told = source.tell_feed_unread(out);
         let (answered, shown) = printing(out, move |progress| {
             // Nothing here asks the update to stop, so a hold lasts until what holds it ends.
             let cancel = Cancel::default();
@@ -1245,7 +1286,7 @@ impl Updating<'_> {
                 progress,
             };
             match source {
-                Source::Bundled(sections) => {
+                Source::Bundled { sections, .. } => {
                     let request = UpdateRequest {
                         root: self.root,
                         running: self.running,
@@ -1266,6 +1307,7 @@ impl Updating<'_> {
                 }
             }
         });
+        let shown = told.and(shown);
         let (report, hands) = match answered {
             Ok(UpdateOutcome::Updated(updated)) => (
                 shown.and_then(|()| print_updated(&updated, kind, out)),
@@ -1373,6 +1415,38 @@ impl Updating<'_> {
             Err(_) => EXIT_REFUSED,
         }
     }
+}
+
+/// Chooses where an update comes from as [`choose_source`] chooses, for a launcher of `running`
+/// whose file carries the runtime `own`, of an installation of `installed`, the feed read by
+/// `read` when it is asked; and gives back beside the choice why the feed could not be read, as
+/// [`feed_unread`] tells it, when it was read and could not be, which a choice of the program's own
+/// file then tells.
+fn chosen(
+    running: &Version,
+    own: Option<&Version>,
+    installed: &Version,
+    read: Option<impl FnOnce() -> Result<Option<Release>, ReleaseError>>,
+) -> (Result<SourceChoice, ReleaseError>, Option<String>) {
+    let mut unread = None;
+    let read = read.map(|read| {
+        let unread = &mut unread;
+        move || {
+            let answer = read();
+            if let Err(error) = &answer {
+                *unread = Some(feed_unread(error));
+            }
+            answer
+        }
+    });
+    let chosen = choose_source(running, own, installed, read);
+    (chosen, unread)
+}
+
+/// Why the release feed could not be read, `error`, as a refusal's line tells it after `error: `:
+/// `<code> (<rule>): <detail>`.
+fn feed_unread(error: &ReleaseError) -> String {
+    refusal_text(codes::release(error), error.rule(), error)
 }
 
 /// The line that reports a made update's installation of `version` with nothing newer at hand.
@@ -2187,16 +2261,17 @@ mod tests {
     use serde_json::{Value, json};
 
     use super::{
-        Build, EXIT_OK, EXIT_REFUSED, EXIT_USAGE, FolderView, Mode, OwnFile, SPACE_MARGIN,
-        SourceKind, USAGE, after_update, feed_checked, hands_over, install_names, json_report,
-        mode_of, print_plan, print_previous, print_recovered, print_retired, print_scan,
-        print_updated, printing, recovery_io, refuse, refuse_update, run, text_value, usage,
-        was_installed_copy,
+        Build, EXIT_OK, EXIT_REFUSED, EXIT_USAGE, FolderView, Mode, OwnFile, Picked, SPACE_MARGIN,
+        Source, SourceKind, USAGE, Updating, after_update, chosen, feed_checked, hands_over,
+        install_names, json_report, mode_of, print_plan, print_previous, print_recovered,
+        print_retired, print_scan, print_updated, printing, recovery_io, refuse, refuse_update,
+        run, text_value, usage, was_installed_copy,
     };
     use crate::codes::Report;
     use crate::extraction::vectors::{
         Folders, default_rom, default_tree, full_tree, not_unicode, tree_listing, with_bad_stream,
     };
+    use crate::updating::SourceChoice;
 
     /// The version the tests build the program as: the first launcher's.
     const VERSION: &str = "1.0.0-beta";
@@ -5599,6 +5674,120 @@ mod tests {
         assert!(
             report.lines().any(|line| line == "version: 1.0.0-beta"),
             "{report}"
+        );
+    }
+
+    /// How the tests' feed that cannot be reached is told.
+    const FEED_UNREAD: &str =
+        "net.offline (offline): The release feed could not be reached: connection refused";
+
+    /// A read of the release feed, as an update asks for one.
+    type FeedRead = fn() -> Result<Option<Release>, ReleaseError>;
+
+    /// A read of the feed that cannot reach it.
+    fn unreachable_feed() -> Result<Option<Release>, ReleaseError> {
+        Err(ReleaseError::Offline {
+            detail: "connection refused".into(),
+        })
+    }
+
+    #[test]
+    fn a_feed_that_cannot_be_read_is_told_beside_the_choice_it_leaves() {
+        let running = Version::parse(VERSION).unwrap();
+        let installed = Version::parse(PREVIOUS).unwrap();
+        // The program's own file brings a newer release, which is chosen in the feed's place,
+        // with why the feed could not be read.
+        let (choice, unread) = chosen(&running, Some(&running), &installed, Some(unreachable_feed));
+        assert_eq!(
+            choice.unwrap(),
+            SourceChoice::Bundled {
+                version: running.clone()
+            }
+        );
+        assert_eq!(unread.as_deref(), Some(FEED_UNREAD));
+        // With nothing newer in the file, the feed's failure is the refusal.
+        let (choice, _) = chosen(&running, None, &installed, Some(unreachable_feed));
+        assert!(
+            matches!(choice, Err(ReleaseError::Offline { .. })),
+            "{choice:?}"
+        );
+        // A feed that was read, and one never asked, leave nothing to tell.
+        let read = || Ok(None);
+        let (choice, unread) = chosen(&running, Some(&running), &installed, Some(read));
+        assert!(
+            matches!(choice, Ok(SourceChoice::Bundled { .. })),
+            "{choice:?}"
+        );
+        assert_eq!(unread, None);
+        let asked_none: Option<FeedRead> = None;
+        let (_, unread) = chosen(&running, Some(&running), &installed, asked_none);
+        assert_eq!(unread, None);
+        // A launcher older than the installation reads no feed, so it has nothing to tell.
+        let older = Version::parse(PREVIOUS).unwrap();
+        let (choice, unread) = chosen(&older, None, &running, Some(unreachable_feed));
+        assert!(
+            matches!(choice, Ok(SourceChoice::OlderLauncher { .. })),
+            "{choice:?}"
+        );
+        assert_eq!(unread, None);
+    }
+
+    #[test]
+    fn an_update_in_the_feeds_place_tells_why_the_feed_could_not_be_read() {
+        let Some(platform) = this_platform() else {
+            return;
+        };
+        let running = Version::parse(VERSION).unwrap();
+        let note = Some(FEED_UNREAD.to_owned());
+        let told = format!("feed: {FEED_UNREAD}");
+        let dir = tempfile::tempdir().unwrap();
+        let (fixture, _) = installation(dir.path(), platform, PREVIOUS);
+        let launcher = launcher_carrying(
+            dir.path(),
+            &RuntimeFiles::standard(platform.as_str(), VERSION),
+        );
+        let updating = Updating {
+            root: &fixture.root,
+            running: &running,
+            platform,
+        };
+
+        // Planned, the line comes before the plan's.
+        let mut own = Sections::of_path(&launcher).unwrap().unwrap();
+        let picked = Ok(Picked::Source(Source::Bundled {
+            sections: &mut own,
+            feed_unread: note.clone(),
+        }));
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+        assert_eq!(updating.plan(picked, &mut out, &mut err), EXIT_OK);
+        assert_eq!(String::from_utf8(err).unwrap(), "");
+        assert_eq!(
+            String::from_utf8(out).unwrap(),
+            format!(
+                "{told}\nplan: 0.9.0 -> 1.0.0-beta (bundled)\nplan: replace VERSION\n\
+                 plan: replace build-info.json\n"
+            )
+        );
+
+        // Made, it comes before the update's progress and what it did.
+        let mut own = Sections::of_path(&launcher).unwrap().unwrap();
+        let picked = Ok(Picked::Source(Source::Bundled {
+            sections: &mut own,
+            feed_unread: note,
+        }));
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+        assert_eq!(updating.make(picked, false, &mut out, &mut err), EXIT_OK);
+        assert_eq!(String::from_utf8(err).unwrap(), "");
+        let out = String::from_utf8(out).unwrap();
+        assert_eq!(out.lines().next(), Some(told.as_str()), "{out}");
+        assert_eq!(
+            past_progress(&out),
+            [
+                told.as_str(),
+                "updated: 0.9.0 -> 1.0.0-beta (bundled)",
+                "probed: notStaged",
+                "retired: removed"
+            ]
         );
     }
 
