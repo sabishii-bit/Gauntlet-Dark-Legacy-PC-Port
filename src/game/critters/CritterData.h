@@ -68,8 +68,10 @@ struct CritterRules {
      * first slot, and tests every other blow once a move, on its first frame at or past the
      * blow's start. */
     static constexpr u32 kBlowsEveryFrame = 0x4;
-    /** portRules: its blows pass through the swarm. GDL's CritterDoDamage strikes the swarm in a
-     * blow's reach after the players (CritterNodeEnemyCollide, 0x800359F0). */
+    /** portRules: its blows and its effects pass through the swarm. GDL's CritterDoDamage strikes
+     * the swarm in a blow's reach after the players (CritterNodeEnemyCollide, 0x800359F0), and
+     * the effects of any but a boss strike it too (CritterDoTexmodNode's flag 8, critter.c
+     * 2534-2540). */
     static constexpr u32 kSparesSwarm = 0x8;
     /** portRules: a body's move naming no node strikes from the model, the node its tree hangs
      * from; a head's still strikes from its own root node. GDL's CritterNewInst makes the
@@ -104,6 +106,13 @@ public:
     std::string_view prefix() const { return m_prefix; }     ///< "GOLEM"
     std::string tree() const { return m_prefix + m_suffix; } ///< "GOLEM1"
     CombatantKind kind() const { return m_kind; } ///< descriptor family, not a boss encounter id
+    /** Whether the effects it starts strike the swarm: CritterDoTexmodNode gives them the flag
+     * ProcessEffects' enemy pass wants (8) unless its descriptor is a boss's (critter.c
+     * 2534-2540). */
+    bool effectsStrikeSwarm() const {
+        return m_kind != CombatantKind::Boss &&
+               (m_rules.portRules & CritterRules::kSparesSwarm) == 0;
+    }
     /** The type flags: what the body is like. */
     static constexpr u32 kShadowed = 0x1; ///< a shadow under it
     static constexpr u32 kByParts = 0x2;  ///< aimed at and walked into part by part

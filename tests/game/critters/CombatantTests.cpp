@@ -3252,6 +3252,197 @@ TEST_CASE("a head's move without a node strikes from the head's own root node, e
     CHECK(struck > 0);
 }
 
+/** A golem of its own making, by `rules`, whose STOMP of sixty frames spreads from its root at
+ * its first frame a ring of 40 reaching ten that knocks down (DAMG type 3) for half a second (a
+ * NULLFX): it reaches a body 1.5 wide five out on its second update, one twelve out never. */
+void loadStomper(test::FakeRenderDevice& device, CombatantAssets& assets,
+                 const CritterRules& rules = {}) {
+    const auto root = familyAssets();
+    writeTextFile(root / "MONSTERS/GOLEM/LEVELG/animations.json", R"({"trees":[{"name":"BODY",
+      "nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
+      "sequences":[{"name":"READY","frames":30},{"name":"STOMP","frames":60}]}]})");
+    REQUIRE(assets.load(device, root, Golem::definition(), 'G'));
+    formats::CritterFile source;
+    source.descriptors.push_back({"golem", "BODY", static_cast<s16>(CombatantKind::Golem)});
+    auto& type = source.types.emplace_back();
+    type.radius = 2;
+    type.wallRadius = 1;
+    type.maxHealth = 100;
+    type.moveCount = 2;
+    auto& ready = source.moves.emplace_back();
+    ready.name = "READY";
+    ready.anim = "READY";
+    ready.type = MoveDefinition::kReady;
+    ready.interrupt = 60;
+    auto& stomp = source.moves.emplace_back();
+    stomp.name = "STOMP";
+    stomp.anim = "STOMP";
+    stomp.type = kStompMove;
+    stomp.priority = 544;
+    stomp.frameStart = 0;
+    stomp.damage0 = 0;
+    auto& ring = source.damages.emplace_back();
+    ring.type = AttackDefinition::kRing;
+    ring.damage = 40;
+    ring.flags = damage::kKnockDown;
+    ring.maxDistance = 10;
+    ring.minDot = -1;
+    ring.sfxIndex = 0;
+    auto& carrier = source.sounds.emplace_back();
+    carrier.name = "NULLFX";
+    carrier.life = 0.5f;
+    assets.data = CritterData::fromDecoded("GOLEM", source, 0, rules);
+}
+
+/** What of `swarm` the stomper by `rules` strikes over the half second of its ring, updated
+ * `rate` times a second: each trample with the update it came in. */
+std::vector<std::pair<s32, CombatTrample>> stompStrikes(std::span<const EnemyBody> swarm, s32 rate,
+                                                        const CritterRules& rules = {}) {
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    loadStomper(device, assets, rules);
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+    const auto stomp = assets.data.moveNamed("STOMP");
+    REQUIRE(stomp);
+    REQUIRE(actor.setMove(*stomp, {.frame = 0, .target = 0, .yaw = std::nullopt}));
+    EnemyView player;
+    player.player = 0;
+    player.position = {0, 0, 40};
+    const std::array players{player};
+    std::vector<std::pair<s32, CombatTrample>> struck;
+    for (s32 update = 0; update < rate; ++update) {
+        actor.setSwarm(swarm);
+        actor.update(60 / rate, 1.0f / static_cast<f32>(rate), players);
+        actor.setSwarm({});
+        for (const CombatTrample& trample : actor.takeTramples()) {
+            struck.emplace_back(update, trample);
+        }
+        actor.takeBlows();
+        actor.takeCues();
+    }
+    return struck;
+}
+
+TEST_CASE("a great one's spreading ring strikes the swarm it reaches, uncredited, for its spread's "
+          "harm and fade, at either rate",
+          "[game][combatant][swarm-effect]") {
+    // CritterDoTexmodNode flags a great one's effect 8 (critter.c 2534-2540), so ProcessEffects'
+    // enemy pass meets the swarm it spreads over, at any height, passing one whose fxhittime[0]
+    // runs (sfx.c 3023-3089): damage_enemy with no player, the ring's harm and damage type, the
+    // way flat away from it, and the fade, the rest of the ring and a fifteenth, a second at least.
+    // The fighter keeps no wait itself: one in reach is struck each update here, the ring's harm
+    // falling as it spreads, until the swarm's own wait holds it (Enemies::hurtByWorld).
+    const s32 rate = GENERATE(30, 60);
+    CAPTURE(rate);
+    const std::array swarm{
+        EnemyBody{1, {5, 2, 0}, 1.5f, 1.5f}, EnemyBody{2, {5, 2, 1}, 1.5f, 1.5f, true},
+        EnemyBody{3, {12, 2, 0}, 1.5f, 1.5f}, EnemyBody{4, {0, 30, 4}, 1.5f, 1.5f}};
+    const auto struck = stompStrikes(swarm, rate);
+    std::array<std::optional<std::pair<s32, CombatTrample>>, 5> first;
+    for (const auto& [update, trample] : struck) {
+        REQUIRE(trample.enemy >= 1);
+        REQUIRE(trample.enemy <= 4);
+        auto& at = first[static_cast<usize>(trample.enemy)];
+        if (!at) {
+            at = std::pair{update, trample};
+        }
+        CHECK(trample.flags == damage::kKnockDown);
+        CHECK(trample.hold == 1.0f);
+        CHECK(glm::length(trample.position) < 1e-4f);
+        CHECK(trample.damage > 0.0f);
+        CHECK(trample.damage <= Approx(40.2f));
+    }
+    REQUIRE(first[1]);
+    CHECK(first[1]->first == 1);
+    CHECK(first[1]->second.damage ==
+          Approx(40.0f * 1.5f * (1.0f - 1.0f / static_cast<f32>(rate) / 0.5f - 0.33f)));
+    CHECK(first[1]->second.direction == approximateFlatUnit(Vec3{5, 0, 0}));
+    CHECK_FALSE(first[2]); // its world wait holds it
+    CHECK_FALSE(first[3]); // out of the ring's reach
+    REQUIRE(first[4]);     // thirty over the ring, but the pass has no height bound
+    CHECK(first[4]->second.direction == approximateFlatUnit(Vec3{0, 0, 4}));
+}
+
+TEST_CASE("a great one whose rules spare the swarm spreads its ring over none of it",
+          "[game][combatant][swarm-effect]") {
+    CritterRules rules;
+    rules.portRules = CritterRules::kSparesSwarm;
+    const std::array swarm{EnemyBody{1, {5, 2, 0}, 1.5f, 1.5f}};
+    CHECK(stompStrikes(swarm, 30, rules).empty());
+    CHECK_FALSE(stompStrikes(swarm, 30).empty());
+}
+
+TEST_CASE("a golem's stomp strikes one of the swarm eight from where it lands, and one twelve off "
+          "never, at either rate",
+          "[game][combatant][swarm-effect][assets]") {
+    // GOLEM's ATTACK4 lays EXPRING on the floor under its foot (DAMG 3, a ring of 40 reaching
+    // ten that knocks down), which CritterDoTexmodNode flags 8 for a golem, and ProcessEffects'
+    // enemy pass grows it over the swarm (sfx.c 3025-3089).
+    const auto root = test::assetOrSkip("CRITTER/GOLEM.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/GOLEM/LEVELG/ANIM.PS2");
+    const s32 rate = GENERATE(30, 60);
+    CAPTURE(rate);
+    const WorldCollision floor = flatFloor();
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, Golem::definition(), 'G'));
+    const auto attack = assets.data.moveNamed("ATTACK4");
+    REQUIRE(attack.has_value());
+    const MoveDefinition& move = assets.data.moves()[*attack];
+    REQUIRE(move.type == kStompMove);
+    const AttackDefinition* ring = assets.data.damage(move.damage0);
+    REQUIRE(ring != nullptr);
+    REQUIRE(ring->type == AttackDefinition::kRing);
+    REQUIRE(ring->damage == 40);
+    REQUIRE(ring->maxDistance == 10);
+    REQUIRE(ring->minDot == -1);
+    REQUIRE(ring->flags == damage::kKnockDown);
+    // The stomp at a player out of the ring's reach: where the ring lands, and what of `swarm`
+    // it strikes.
+    const auto stomp = [&](std::span<const EnemyBody> swarm) {
+        Combatant actor;
+        REQUIRE(actor.spawn(assets, 0, Vec3{0}, 0, &floor, {}, 'G'));
+        REQUIRE(actor.setMove(*attack, {.frame = 0, .target = 0, .yaw = std::nullopt}));
+        EnemyView player;
+        player.player = 0;
+        player.position = {0, 0, 40};
+        const std::array players{player};
+        std::optional<Vec3> landed;
+        std::vector<CombatTrample> struck;
+        for (s32 update = 0; update < 3 * rate; ++update) {
+            actor.setSwarm(swarm);
+            actor.update(60 / rate, 1.0f / static_cast<f32>(rate), players);
+            actor.setSwarm({});
+            for (const CombatCue& cue : actor.takeCues()) {
+                if (cue.tree == "EXPRING") {
+                    landed = cue.position;
+                }
+            }
+            const auto trampled = actor.takeTramples();
+            struck.insert(struck.end(), trampled.begin(), trampled.end());
+            actor.takeBlows();
+            actor.takeShots();
+        }
+        return std::pair{landed, struck};
+    };
+    const auto landed = stomp({}).first;
+    REQUIRE(landed.has_value());
+    const std::array swarm{EnemyBody{1, *landed + Vec3{8, 2, 0}, 1.5f, 2.5f},
+                           EnemyBody{2, *landed + Vec3{-12, 2, 0}, 1.5f, 2.5f}};
+    const auto [again, struck] = stomp(swarm);
+    REQUIRE(again == landed);
+    REQUIRE_FALSE(struck.empty());
+    // The first strike is the one that counts: over two, the swarm's wait then holds the body.
+    CHECK(struck.front().damage > 2.0f);
+    for (const CombatTrample& trample : struck) {
+        CHECK(trample.enemy == 1);
+        CHECK(trample.flags == damage::kKnockDown);
+        CHECK(trample.hold >= 1.0f);
+        CHECK(trample.direction.x == Approx(1.0f).margin(1e-3f));
+    }
+}
+
 TEST_CASE("the Ice Domain golem's stomp spreads from under its body, as its tree has no foot of "
           "the name the move gives",
           "[game][combatant][move-node][assets]") {

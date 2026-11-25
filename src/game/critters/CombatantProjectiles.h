@@ -26,7 +26,9 @@ struct CombatantProjectileHit {
     f32 damage = 0.0f;
     u32 flags = 0;
     Vec3 direction{0.0f}; ///< direction of travel at contact
-    f32 repeatGap = 0.0f; ///< shared player effect immunity after damage above two
+    /** How long damage above two leaves the struck alone: the player's shared effect gap, or the
+     * world wait of one of the swarm (the effect's fade, which it also waits on). */
+    f32 repeatGap = 0.0f;
     s32 critter = -1;
     CombatantKind ownerKind = CombatantKind::Unknown;
     s32 target = -1; ///< a reflected missile's opponent, in the caller's target namespace
@@ -75,10 +77,14 @@ public:
     void launch(const CombatShot& shot, ItemArchive& archive, RenderDevice& device,
                 EffectTrees& effects, const PlaySound& sound,
                 const WorldCollision* collision = nullptr);
+    /** Moves the shots and runs their landings over `seconds`. A great one's strike the `swarm`
+     * they meet after the players, in flight and as they burst; one sent back by armour strikes
+     * the `opponents` it meets, by the ids it is offered under. */
     void update(f32 seconds, const WorldCollision* collision, std::span<const EnemyView> players,
                 RenderDevice& device, EffectTrees& effects, const PlaySound& sound,
                 std::span<const MissileStop> items = {},
-                std::span<const MissileTarget> opponents = {});
+                std::span<const MissileTarget> opponents = {},
+                std::span<const EnemyBody> swarm = {});
     void clear(EffectTrees& effects);
     std::vector<CombatantProjectileHit> takeHits();
     std::vector<RockHit> takeRockHits() { return std::exchange(m_sim.rockHits, {}); }
@@ -137,7 +143,8 @@ private:
     /** Places the impact (even a purely visual one); true if it owns ongoing area damage. */
     static bool settleImpact(Flying& flying, u32 effect, EffectTrees& effects,
                              const WorldCollision* collision);
-    void impactContacts(Flying& flying, f32 seconds, std::span<const EnemyView> players);
+    void impactContacts(Flying& flying, f32 seconds, std::span<const EnemyView> players,
+                        std::span<const EnemyBody> swarm);
     void summon(Flying& flying);
     struct Simulation {
         std::vector<Flying> flying;

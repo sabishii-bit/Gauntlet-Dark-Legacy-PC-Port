@@ -18,13 +18,18 @@ struct CombatPush {
     Vec3 velocity{0};
     bool operator==(const CombatPush&) const = default;
 };
-/** A great one's or boss's uncredited harm to one of the swarm, of no damage type: a golem
- * treading on a small one, or a blow reaching one (damage_enemy with no player). */
+/** A great one's or boss's uncredited harm to one of the swarm: a golem treading on a small one
+ * or a blow reaching one (damage_enemy with no player and no damage type), or one of its effects
+ * reaching one (ProcessEffects' enemy pass, which keeps to the body's world wait). */
 struct CombatTrample {
     s32 enemy = -1;
     f32 damage = 0;
     Vec3 position{0};
     Vec3 direction{0}; ///< the way it is driven; none for a tread
+    u32 flags = 0;     ///< an effect's damage type; none for a tread or a blow
+    /** An effect's fade: it passes a body the world's wait holds, and holds one it harms over two
+     * that long (fxhittime[0]). None for a tread or a blow, which set no wait. */
+    f32 hold = 0;
     bool operator==(const CombatTrample&) const = default;
 };
 /** Hold updates carry an animated attachment; release carries the authored throw force.
@@ -123,7 +128,7 @@ inline void visitNativeState(NativeStateDigest& digest, const CombatPush& state)
     digest.fields<2>(state);
 }
 inline void visitNativeState(NativeStateDigest& digest, const CombatTrample& state) {
-    digest.fields<4>(state);
+    digest.fields<6>(state);
 }
 inline void visitNativeState(NativeStateDigest& digest, const CombatGrab& state) {
     digest.fields<7>(state);

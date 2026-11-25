@@ -99,6 +99,12 @@ struct Fixture {
         effects.update(seconds);
         projectiles.update(seconds, collision, players, device, effects, sound, items);
     }
+    /** A step among `swarm` as well as `players`. */
+    void stepAmong(f32 seconds, std::span<const EnemyBody> swarm,
+                   std::span<const EnemyView> players = {}) {
+        effects.update(seconds);
+        projectiles.update(seconds, nullptr, players, device, effects, sound, {}, {}, swarm);
+    }
 };
 
 TEST_CASE("combatant shots impact items without reflecting or hitting sheltered players",
@@ -168,6 +174,221 @@ TEST_CASE("reflective armour returns combatant missiles with capped damage and l
     CHECK(returned[0].damage == 15);
     CHECK(returned[0].direction.z < 0);
     CHECK(f.projectiles.count() == 0);
+}
+
+TEST_CASE("a great one's shot strikes the first of the swarm in its way its wait leaves free, for "
+          "no player, and holds it for the shot's fade",
+          "[game][boss-projectiles][swarm-effect]") {
+    // CritterDoTexmodNode flags a great one's shot 8 (critter.c 2534-2540), so when no player
+    // stops it ProcessEffects' flying pass strikes the first enemy MissileCollideEnemy meets
+    // whose fxhittime[0] is out (sfx.c 3091-3157, combat.c 594-631) and ends there: no player's,
+    // of the shot's damage type, along its flight, holding it for the shot's fade, here its
+    // impact's frames over thirty and a quarter second without.
+    Fixture f;
+    f.launch();
+    const std::array swarm{EnemyBody{4, {0, 3, 3}, 1, 1.5f, true}, EnemyBody{9, {0, 3, 6}, 1, 1.5f},
+                           EnemyBody{2, {0, 3, 9}, 1, 1.5f}};
+    f.stepAmong(0.25f, swarm);
+    const auto hits = f.projectiles.takeHits();
+    REQUIRE(hits.size() == 1);
+    CHECK(hits[0].target == 9);
+    CHECK(hits[0].player == -1);
+    CHECK(hits[0].damage == 24);
+    CHECK(hits[0].flags == 0x20);
+    CHECK(hits[0].direction == Vec3{0, 0, 1});
+    CHECK(hits[0].repeatGap == 0.25f);
+    CHECK(hits[0].position.z == Approx(4.5f).margin(0.01f));
+    CHECK(f.projectiles.count() == 0);
+    CHECK(f.effects.effect(0).name == "HIT");
+}
+
+TEST_CASE("a great one's shot meets the players before the swarm on a step",
+          "[game][boss-projectiles][swarm-effect]") {
+    // The enemy pass runs only when the player pass has struck nobody (sfx.c 3023).
+    const bool bodyFirst = GENERATE(false, true);
+    CAPTURE(bodyFirst);
+    Fixture f;
+    f.launch();
+    // A player and one of the swarm the step meets together, or the body before the player.
+    const std::array players{EnemyView{7, {0, 0, bodyFirst ? 8.0f : 4.0f}, 1, 6}};
+    const std::array swarm{EnemyBody{3, {0, 3, 4}, 1, 1.5f}};
+    f.stepAmong(0.25f, swarm, players);
+    const auto hits = f.projectiles.takeHits();
+    REQUIRE(hits.size() == 1);
+    CHECK(hits[0].player == (bodyFirst ? -1 : 7));
+    CHECK(hits[0].target == (bodyFirst ? 3 : -1));
+}
+
+TEST_CASE("a great one's piercing shot strikes each of the swarm in its way once and flies on",
+          "[game][boss-projectiles][swarm-effect]") {
+    // With DMG_SUPER the flying pass strikes every enemy it meets and keeps the effect going,
+    // holding each three seconds past the shot's quarter (sfx.c 2709-2710, 3099-3154).
+    Fixture f;
+    CombatShot shot;
+    shot.data = &f.data;
+    shot.damageIndex = 2;
+    shot.origin = {0, 3, 0};
+    shot.target = Vec3{0, 3, 30};
+    f.projectiles.launch(shot, f.archive, f.device, f.effects, f.sound);
+    const std::array swarm{EnemyBody{1, {0, 3, 3}, 1, 1.5f}, EnemyBody{8, {0, 3, 6}, 1, 1.5f}};
+    f.stepAmong(0.3f, swarm);
+    const auto hits = f.projectiles.takeHits();
+    REQUIRE(hits.size() == 2);
+    CHECK(hits[0].target == 1);
+    CHECK(hits[1].target == 8);
+    for (const auto& hit : hits) {
+        CHECK(hit.damage == 60);
+        CHECK(hit.repeatGap == Approx(3.25f));
+    }
+    CHECK(f.projectiles.count() == 1);
+}
+
+TEST_CASE("a great one's shot bursting strikes the swarm its spread reaches, after the players, "
+          "and a boss's strikes only the players",
+          "[game][boss-projectiles][projectile-impact][swarm-effect]") {
+    // A shot that lands with a reach becomes a spreading effect (0x80096C60-0x80096CB0), which
+    // for a great one keeps flag 8, so its enemy pass strikes the swarm about it whose
+    // fxhittime[0] is out (sfx.c 3025-3089), holding each a second at least. A boss's never had
+    // it.
+    const bool boss = GENERATE(false, true);
+    CAPTURE(boss);
+    Fixture f;
+    const auto root = test::scratchDirectory("projectile-impact-swarm");
+    writeTextFile(root / "critter.json", std::string{R"({"types":[{"moveCount":1}],"moves":[{}],
+      "descriptors":[{"type":)"} + (boss ? "4" : "3") +
+                                             R"(}],"damages":[{"type":1,"minSpeed":30,
+      "maxSpeed":30,"radius":0.5,"maxDistance":10,"minDot":-1,"damage":50,"flags":32,
+      "behaviorFlags":9,"sfxIndex":0,"sfx":1}],
+      "sounds":[{"name":"LOOP","life":3},{"name":"HIT","life":1}]})");
+    REQUIRE(f.data.load(root / "critter.json"));
+    f.launch();
+    EnemyView contact;
+    contact.player = 0;
+    contact.position = {0, 0, 2};
+    contact.radius = 1;
+    contact.height = 6;
+    f.step(0.05f, std::span{&contact, 1});
+    REQUIRE(f.projectiles.takeHits().size() == 1);
+    REQUIRE(f.projectiles.count() == 1);
+    // Beside where it landed, as the player of the spread's own case stands, and one held.
+    EnemyView bystander = contact;
+    bystander.player = 1;
+    bystander.position = {7, 0, 0.5f};
+    const std::array swarm{EnemyBody{5, {7, 2, 0.5f}, 1, 1.5f},
+                           EnemyBody{6, {-7, 2, 0.5f}, 1, 1.5f, true}};
+    f.stepAmong(0.05f, swarm, std::span{&bystander, 1});
+    CHECK(f.projectiles.takeHits().empty());
+    f.stepAmong(0.4f, swarm, std::span{&bystander, 1});
+    const auto splash = f.projectiles.takeHits();
+    REQUIRE(splash.size() == (boss ? 1U : 2U));
+    CHECK(splash[0].player == 1);
+    CHECK(splash[0].target == -1);
+    if (!boss) {
+        CHECK(splash[1].target == 5);
+        CHECK(splash[1].player == -1);
+        CHECK(splash[1].damage == Approx(33));
+        CHECK(splash[1].flags == 32);
+        CHECK(splash[1].direction == Vec3{1, 0, 0});
+        CHECK(splash[1].repeatGap == 1.0f);
+    }
+}
+
+TEST_CASE("a boss's shot flies through the swarm", "[game][boss-projectiles][swarm-effect]") {
+    // CritterDoTexmodNode gives a boss's effects no flag 8 (critter.c 2534-2540).
+    Fixture f;
+    const auto root = test::scratchDirectory("boss-shot-swarm");
+    writeTextFile(root / "critter.json", R"({
+      "descriptors":[{"type":4}],"types":[{"moveCount":1}],"moves":[{}],
+      "damages":[{"type":1,"behaviorFlags":9,"radius":0.5,"damage":12,
+                   "minSpeed":30,"maxSpeed":30,"sfxIndex":0}],
+      "sounds":[{"name":"LOOP","life":1}]})");
+    REQUIRE(f.data.load(root / "critter.json"));
+    f.launch();
+    const std::array swarm{EnemyBody{1, {0, 3, 4}, 1, 1.5f}};
+    f.stepAmong(0.25f, swarm);
+    CHECK(f.projectiles.takeHits().empty());
+    CHECK(f.projectiles.count() == 1);
+}
+
+TEST_CASE("a great one's shot sent back passes one of the swarm its wait holds and holds the one "
+          "it strikes",
+          "[game][boss-projectiles][reflective-shield][swarm-effect]") {
+    // Turned back, a critter's effect keeps its owner, past the four players, and so the swarm's
+    // world wait (sfx.c 2824-2831, 3091-3157).
+    Fixture f;
+    CombatShot shot;
+    shot.data = &f.data;
+    shot.damageIndex = 1;
+    shot.origin = {0, 3, 0};
+    shot.target = Vec3{0, 3, 30};
+    f.projectiles.launch(shot, f.archive, f.device, f.effects, f.sound);
+    const std::array players{EnemyView{.player = 2, .position = {0, 0, 4}, .reflects = true}};
+    f.step(0.2f, players);
+    REQUIRE(f.projectiles.takeHits().size() == 1);
+    const std::array targets{
+        MissileTarget{
+            .id = 3, .base = {0, 0, -2}, .height = 6, .sharesWorldWait = true, .worldHeld = true},
+        MissileTarget{.id = 5, .base = {0, 0, -4}, .height = 6, .sharesWorldWait = true}};
+    f.effects.update(0.3f);
+    f.projectiles.update(0.3f, nullptr, players, f.device, f.effects, f.sound, {}, targets);
+    const auto returned = f.projectiles.takeHits();
+    REQUIRE(returned.size() == 1);
+    CHECK(returned[0].target == 5);
+    CHECK(returned[0].player == -1);
+    CHECK(returned[0].repeatGap == 0.25f);
+}
+
+TEST_CASE("a gargoyle's fireball strikes one of the swarm in its way, and its burst one beside it",
+          "[game][boss-projectiles][gargoyle][swarm-effect][assets]") {
+    // FBALL throws DAMG 5 (twenty, reaching three as it bursts) as FBALL_LOOP, bursting as
+    // FBALL_EXP: the flight strikes the first of the swarm it meets (sfx.c 3091-3157), and the
+    // burst, flagged 0x28 as it lands (0x80096C9C), those it spreads over (sfx.c 3025-3089).
+    const auto root = test::assetOrSkip("CRITTER/GAR_EAGL.WAD").parent_path().parent_path();
+    Fixture f;
+    REQUIRE(f.data.load(root / "CRITTER/GAR_EAGL.WAD"));
+    REQUIRE(f.archive.load(root / "MONSTERS/GAR_EAGL"));
+    REQUIRE(f.data.kind() == CombatantKind::Gargoyle);
+    const auto move = f.data.moveNamed("FBALL");
+    REQUIRE(move);
+    const s32 index = f.data.moves()[*move].damage0;
+    const AttackDefinition* fireball = f.data.damage(index);
+    REQUIRE(fireball != nullptr);
+    REQUIRE(fireball->type == AttackDefinition::kProjectile);
+    REQUIRE(fireball->damage == 20);
+    REQUIRE(fireball->maxDistance == 3);
+    CombatShot shot;
+    shot.data = &f.data;
+    shot.damageIndex = index;
+    shot.origin = {0, 3, 0};
+    shot.target = Vec3{0, 3, 30};
+    f.projectiles.launch(shot, f.archive, f.device, f.effects, f.sound);
+    REQUIRE(f.projectiles.count() == 1);
+    // One in its way eight out; one three aside, beyond the flight's reach but in the burst's.
+    std::array swarm{EnemyBody{1, {0, 3, 8}, 1.5f, 2.5f}, EnemyBody{2, {3, 3, 7}, 1, 2.5f}};
+    std::vector<CombatantProjectileHit> hits;
+    for (s32 frame = 0; frame < 60; ++frame) {
+        f.stepAmong(1.0f / 30, swarm);
+        for (const auto& hit : f.projectiles.takeHits()) {
+            hits.push_back(hit);
+            // The swarm's wait, as Enemies::hurtByWorld sets it, outlasts what follows here.
+            for (EnemyBody& body : swarm) {
+                body.worldHeld |= body.id == hit.target && hit.damage > 2.0f;
+            }
+        }
+    }
+    REQUIRE(hits.size() == 2);
+    CHECK(hits[0].target == 1);
+    CHECK(hits[0].damage == 20);
+    CHECK(hits[0].flags == fireball->flags);
+    CHECK(hits[0].repeatGap >= 0.2f);
+    CHECK(hits[1].target == 2);
+    CHECK(hits[1].flags == fireball->flags);
+    CHECK(hits[1].damage > 0.0f);
+    CHECK(hits[1].repeatGap >= 1.0f);
+    for (const auto& hit : hits) {
+        CHECK(hit.player == -1);
+        CHECK(hit.ownerKind == CombatantKind::Gargoyle);
+    }
 }
 
 TEST_CASE("reflective armour does not block combatant area traps",

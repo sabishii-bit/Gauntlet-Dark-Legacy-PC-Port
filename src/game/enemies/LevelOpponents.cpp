@@ -1566,7 +1566,7 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
     }
     m_combatantProjectiles.update(seconds, &m_resources->world.collision(), views,
                                   m_resources->device, m_resources->effects, shotSound, inTheWay,
-                                  swarmTargets());
+                                  swarmTargets(), m_enemies.movementBodies());
     const auto combatantHits = m_combatantProjectiles.takeRockHits();
     m_sim.rockHits.insert(m_sim.rockHits.end(), combatantHits.begin(), combatantHits.end());
     for (const CombatantWorldHit& hit : m_combatantProjectiles.takeWorldHits()) {
@@ -1625,6 +1625,17 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
                                           : CombatantProjectiles::SoundPhase::Impact));
         if (hit.ricochet) {
             playAt(kRicochetSound, kQuietSound, hit.position);
+            continue;
+        }
+        if (hit.target >= 0 && hit.target < OpponentSimulation::kCritterIds) {
+            // One of the swarm, struck by a critter's effect credited to nobody (owner 0): it
+            // passes a body the world's wait holds, and holds what it harms over two for the
+            // effect's fade (ProcessEffects' enemy pass).
+            EnemyHit struck;
+            struck.damage = hit.damage;
+            struck.flags = hit.flags;
+            struck.direction = hit.direction;
+            m_enemies.hurtByWorld(hit.target, struck, hit.repeatGap, true);
             continue;
         }
         if (hit.target >= 0) {

@@ -369,15 +369,23 @@ void Critters::update(s32 ticks, f32 seconds, std::span<const EnemyView> players
         actor.setObstacles({});
         actor.setSwarm({});
         for (const CombatTrample& trample : actor.takeTramples()) {
-            if (swarm != nullptr) {
-                // damage_enemy with no player and no damage type, driven the trample's way.
-                EnemyHit hit;
-                hit.damage = trample.damage;
-                hit.direction = trample.direction;
-                hit.where = trample.position;
-                hit.close = true;
-                swarm->hurt(trample.enemy, hit);
+            if (swarm == nullptr) {
+                continue;
             }
+            EnemyHit hit;
+            hit.damage = trample.damage;
+            hit.flags = trample.flags;
+            hit.direction = trample.direction;
+            if (trample.hold > 0.0f) {
+                // One of its effects, credited to nobody: ProcessEffects' enemy pass passes a
+                // body the world's wait holds and holds what it harms over two for the fade.
+                swarm->hurtByWorld(trample.enemy, hit, trample.hold, true);
+                continue;
+            }
+            // damage_enemy with no player and no damage type, driven the trample's way.
+            hit.where = trample.position;
+            hit.close = true;
+            swarm->hurt(trample.enemy, hit);
         }
         collect(actor);
     }

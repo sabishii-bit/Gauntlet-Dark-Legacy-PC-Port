@@ -7,6 +7,7 @@
 
 #include "engine/core/Log.h"
 #include "engine/core/Types.h"
+#include "engine/math/ApproximateLength.h"
 #include "engine/math/PortableMath.h"
 #include "engine/world/ParticleSystem.h"
 
@@ -41,6 +42,23 @@ f32 projectileHitGap(const ItemArchive& archive, const CombatEffectDefinition* i
         }
     }
     return kProjectileHitGap;
+}
+
+/** How long a shot's hit over two holds one of the swarm from the world's effects, a critter's
+ * shot keeping to its world wait (ProcessEffects' fade for a flying effect, sfx.c 2694-2716): its
+ * impact's frames over thirty, a quarter second without, a fifth at least, three seconds more
+ * through what it pierces. */
+f32 swarmFade(const ItemArchive& archive, const CombatEffectDefinition* impact, bool pierces) {
+    return pierces ? EnemyMissiles::kPierceFade + kProjectileHitGap
+                   : std::max(EnemyMissiles::kLeastFade, projectileHitGap(archive, impact, false));
+}
+
+/** Where along a step a shot of `radius` meets one of the swarm: the cylinder about its coll_pos,
+ * its radius across and its half height up and down, each grown by the shot's radius
+ * (MissileCollideEnemy, combat.c 594-631). */
+std::optional<f32> meetsBody(const Vec3& from, const Vec3& to, f32 radius, const EnemyBody& body) {
+    return CombatantProjectile::contact(from, to, radius, body.centre - Vec3{0, body.halfHeight, 0},
+                                        body.radius, 2.0f * body.halfHeight);
 }
 
 ParticleDescriptor fireTrail(const CombatEffectDefinition& cue) {
@@ -233,7 +251,8 @@ void CombatantProjectiles::update(f32 seconds, const WorldCollision* collision,
                                   std::span<const EnemyView> players, RenderDevice& device,
                                   EffectTrees& effects, const PlaySound& sound,
                                   std::span<const MissileStop> items,
-                                  std::span<const MissileTarget> opponents) {
+                                  std::span<const MissileTarget> opponents,
+                                  std::span<const EnemyBody> swarm) {
     if (seconds <= 0.0f) {
         return;
     }
@@ -308,7 +327,7 @@ void CombatantProjectiles::update(f32 seconds, const WorldCollision* collision,
             continue;
         }
         if (flying.settled) {
-            impactContacts(flying, seconds, players);
+            impactContacts(flying, seconds, players, swarm);
             continue;
         }
         if (!flying.morphed && damage.morph >= 0 &&
@@ -322,6 +341,7 @@ void CombatantProjectiles::update(f32 seconds, const WorldCollision* collision,
             continue;
         }
         std::vector<s32> contacted;
+        std::vector<s32> piercedSwarm;
         // Small steps also cover thin walls with the world's overlap-based collider.
         const f32 spatialStep =
             std::max(radius * 0.5f, kFloorClearance) / std::max(glm::length(flying.velocity), 1.0f);
@@ -393,12 +413,35 @@ void CombatantProjectiles::update(f32 seconds, const WorldCollision* collision,
             const MissileTarget* returnedTarget = nullptr;
             if (!wall && flying.reflected) {
                 for (const MissileTarget& target : opponents) {
+                    // A critter's effect keeps to the swarm's world wait (its owner is past the
+                    // four players), sent back too: it passes one that wait holds.
+                    if (target.sharesWorldWait && target.worldHeld) {
+                        continue;
+                    }
                     const auto at = CombatantProjectile::contact(from, to, radius, target.base,
                                                                  target.radius, target.height);
                     if (at && *at < nearest) {
                         nearest = *at;
                         returnedTarget = &target;
                         victim = nullptr;
+                    }
+                }
+            }
+            // A great one's shot that no player stops strikes the first of the swarm by slot whose
+            // world wait is out and whose cylinder its step meets (ProcessEffects' enemy pass,
+            // sfx.c 3091-3157); one of DMG_SUPER strikes each it meets and flies on.
+            const EnemyBody* struckBody = nullptr;
+            if (!wall && victim == nullptr && !flying.reflected &&
+                flying.shot.data->effectsStrikeSwarm()) {
+                for (const EnemyBody& body : swarm) {
+                    if (body.worldHeld ||
+                        std::ranges::find(piercedSwarm, body.id) != piercedSwarm.end()) {
+                        continue;
+                    }
+                    if (const auto at = meetsBody(from, to, radius, body)) {
+                        nearest = *at;
+                        struckBody = &body;
+                        break;
                     }
                 }
             }
@@ -430,7 +473,8 @@ void CombatantProjectiles::update(f32 seconds, const WorldCollision* collision,
             }
             // Item impacts are not reflective world contacts (ProcessEffects mode 0).
             // Query only the travelled segment so cover cannot be damaged through a wall.
-            if (wall || item || victim != nullptr || returnedTarget != nullptr) {
+            if (wall || item || victim != nullptr || returnedTarget != nullptr ||
+                struckBody != nullptr) {
                 if (item) {
                     flying.position = glm::mix(from, wall ? destination : to, item->fraction);
                 } else {
@@ -452,7 +496,36 @@ void CombatantProjectiles::update(f32 seconds, const WorldCollision* collision,
                                         : Vec3{0};
                     hit.position = flying.position;
                     hit.instance = flying.instance;
+                    if (returnedTarget->sharesWorldWait) {
+                        hit.repeatGap = swarmFade(
+                            *flying.archive, flying.shot.data->sound(damage.hitSound),
+                            (damage.flags & damage::kSuperShot) != 0 && flying.piercedPlayer < 0);
+                    }
                     m_sim.hits.push_back(hit);
+                }
+                if (!wall && !item && struckBody != nullptr) {
+                    // damage_enemy with no player, of the shot's damage type, along its flight.
+                    const bool through =
+                        (damage.flags & damage::kSuperShot) != 0 && flying.piercedPlayer < 0;
+                    CombatantProjectileHit hit;
+                    hit.target = struckBody->id;
+                    hit.damage = damage.damage * flying.shot.damageScale;
+                    hit.flags = damage.flags;
+                    hit.direction = glm::length(flying.velocity) > 0
+                                        ? glm::normalize(flying.velocity)
+                                        : Vec3{0};
+                    hit.repeatGap = swarmFade(*flying.archive,
+                                              flying.shot.data->sound(damage.hitSound), through);
+                    hit.critter = flying.shot.critter;
+                    hit.ownerKind = flying.shot.data->kind();
+                    hit.position = flying.position;
+                    hit.instance = flying.instance;
+                    m_sim.hits.push_back(hit);
+                    if (through) {
+                        piercedSwarm.push_back(struckBody->id);
+                        flying.position = to;
+                        continue;
+                    }
                 }
                 if (item && item->suppressEffect) {
                     // Surviving cover ends the piercing flight. An optional end
@@ -630,21 +703,20 @@ bool CombatantProjectiles::settleImpact(Flying& flying, u32 effect, EffectTrees&
 }
 
 void CombatantProjectiles::impactContacts(Flying& flying, f32 seconds,
-                                          std::span<const EnemyView> players) {
+                                          std::span<const EnemyView> players,
+                                          std::span<const EnemyBody> swarm) {
     if (!flying.impactArea.has_value()) {
         return;
     }
     CritterArea& area = *flying.impactArea;
     area.secondsLeft -= seconds;
     const auto& damage = *flying.shot.data->damage(flying.shot.damageIndex);
-    if ((damage.behaviorFlags & CombatantProjectile::kNoPlayerDamage) != 0) {
-        return;
-    }
+    const bool hurtsPlayers = (damage.behaviorFlags & CombatantProjectile::kNoPlayerDamage) == 0;
     Mat4 parent = glm::translate(Mat4{1}, flying.position);
     parent = portable::rotate(parent, flying.rotation.x, Vec3{1, 0, 0});
     parent = portable::rotate(parent, flying.rotation.z, Vec3{0, 0, 1});
     for (const EnemyView& player : players) {
-        if (!area.touches(parent, player)) {
+        if (!hurtsPlayers || !area.touches(parent, player)) {
             continue;
         }
         const Vec3 away = player.position - flying.position;
@@ -665,6 +737,28 @@ void CombatantProjectiles::impactContacts(Flying& flying, f32 seconds,
                               false,
                               {},
                               flying.instance});
+    }
+    if (!flying.shot.data->effectsStrikeSwarm()) {
+        return;
+    }
+    // The burst keeps the flight's flag 8 (its landing ORs in 0x28, 0x80096C9C), so after the
+    // players it strikes each of the swarm it reaches whose world wait is out, as a spreading
+    // area does (sfx.c 3023-3089): by no player, of the shot's damage type, driven flat away.
+    for (const EnemyBody& body : swarm) {
+        if (body.worldHeld || !area.meetsEnemy(parent, body.centre, body.radius)) {
+            continue;
+        }
+        CombatantProjectileHit hit;
+        hit.target = body.id;
+        hit.damage = area.currentDamage();
+        hit.flags = area.flags;
+        hit.direction = approximateFlatUnit(body.centre - flying.position);
+        hit.repeatGap = area.fade();
+        hit.critter = flying.shot.critter;
+        hit.ownerKind = flying.shot.data->kind();
+        hit.position = flying.position;
+        hit.instance = flying.instance;
+        m_sim.hits.push_back(hit);
     }
 }
 

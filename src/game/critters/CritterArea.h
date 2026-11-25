@@ -38,9 +38,17 @@ struct CritterArea {
     static Mat4 placement(const Mat4& parent, const Vec3& offset, const Vec2& pitchYaw);
     Mat4 transform(const Mat4& parent) const;
     bool touches(const Mat4& parent, const EnemyView& player) const;
+    /** Whether one of the swarm `bodyRadius` wide, standing upright through `feet`, is within its
+     * reach as ProcessEffects' enemy pass measures it (sfx.c 3025-3063): the fast flat length
+     * from its centre against its spread and the body's radius, at any height, and within its
+     * cone, relaxed to 85% inside a fifth of that sum. */
+    bool meetsEnemy(const Mat4& parent, const Vec3& feet, f32 bodyRadius) const;
     f32 currentRadius() const;
     f32 currentDamage() const;
     f32 hitGap() const;
+    /** How long a hit over two holds one of the swarm from the world's effects (ProcessEffects'
+     * fade, sfx.c 2677-2716). */
+    f32 fade() const;
 
 private:
     f32 phase() const;

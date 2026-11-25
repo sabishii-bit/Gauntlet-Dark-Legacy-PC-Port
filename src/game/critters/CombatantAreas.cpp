@@ -253,6 +253,21 @@ void Combatant::updateAreas(Actor& critter, s32 id, std::span<const EnemyView> p
             blow.repeatGap = area.hitGap();
             m_sim.blows.push_back(blow);
         }
+        if (!critter.definition->effectsStrikeSwarm()) {
+            continue;
+        }
+        // Then ProcessEffects' enemy pass (sfx.c 3023-3089): each of the swarm the spread reaches
+        // whose world wait is out (fxhittime[0], the critter's owner past the four players),
+        // struck by no player for the spread's harm with its damage type, driven flat away.
+        const Vec3 centre{area.transform(parent)[3]};
+        for (const EnemyBody& body : m_swarm) {
+            if (body.worldHeld || !area.meetsEnemy(parent, body.centre, body.radius)) {
+                continue;
+            }
+            m_sim.tramples.push_back({body.id, area.currentDamage(), centre,
+                                      approximateFlatUnit(body.centre - centre), area.flags,
+                                      area.fade()});
+        }
     }
 }
 } // namespace gdl::game

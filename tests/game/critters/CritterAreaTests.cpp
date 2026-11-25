@@ -10,10 +10,12 @@
 
 #include "engine/core/Types.h"
 #include "engine/io/File.h"
+#include "engine/math/ApproximateLength.h"
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "fixtures/NativeModelFixture.h"
+#include "game/combat/DamageTypes.h"
 #include "game/critters/Combatant.h"
 #include "game/critters/CombatantFixture.h"
 #include "game/critters/CritterArea.h"
@@ -135,6 +137,83 @@ TEST_CASE("area immunity is capped by remaining life with an explicit half-secon
     area.flags = 0;
     area.damage = 2;
     REQUIRE(area.hitGap() == 0);
+}
+
+TEST_CASE("an area meets the swarm by the original's enemy test",
+          "[game][boss-areas][swarm-effect]") {
+    // ProcessEffects' enemy pass (sfx.c 3025-3063): the fast flat length from the effect's centre
+    // to an enemy's pos against the spread and the enemy's radius, at any height, within the
+    // cone, which inside a fifth of that sum relaxes to 85% (the player pass's is three tenths).
+    CritterArea area;
+    area.radius = 10;
+    area.minDot = 0.8f;
+    area.secondsLeft = 1;
+    constexpr f32 kRadius = 1.5f;
+    constexpr f32 kReach = 11.5f; // the spread and the body's radius
+    // A bearing whose flat dot with the area's way, both laid flat by their fast lengths, lies
+    // between the cone's 0.8 and the 0.68 it relaxes to.
+    const Vec3 bearing{std::sqrt(1 - 0.74f * 0.74f), 0, 0.74f};
+    const f32 dot = approximateFlatUnit(bearing).z;
+    REQUIRE(dot > 0.8f * 0.85f);
+    REQUIRE(dot < 0.8f);
+    // A quarter of the sum out: outside the plain cone, and too far for the relaxed one.
+    CHECK_FALSE(area.meetsEnemy(Mat4{1}, bearing * (0.25f * kReach), kRadius));
+    // A player there is inside the player pass's relaxed band.
+    auto player = playerAt(bearing * (0.25f * kReach));
+    player.radius = kRadius;
+    CHECK(area.touches(Mat4{1}, player));
+    // Three twentieths out the cone is relaxed, and it is met.
+    CHECK(area.meetsEnemy(Mat4{1}, bearing * (0.15f * kReach), kRadius));
+    // Straight ahead and thirty over the centre, still met: there is no height bound.
+    CHECK(area.meetsEnemy(Mat4{1}, {0, 30, 5}, kRadius));
+    CHECK_FALSE(area.touches(Mat4{1}, playerAt({0, 30, 5})));
+    // Behind, never.
+    CHECK_FALSE(area.meetsEnemy(Mat4{1}, {0, 0, -5}, kRadius));
+    // The reach is the fast length's: three tenths aside, it runs a percent over the true one.
+    area.minDot = -1;
+    const auto aside = [](f32 along) { return Vec3{0.3f * along, 0, along}; };
+    for (const f32 along : {10.85f, 10.95f}) {
+        CAPTURE(along);
+        const Vec3 feet = aside(along);
+        REQUIRE(glm::length(Vec2{feet.x, feet.z}) < kReach);
+        CHECK(area.meetsEnemy(Mat4{1}, feet, kRadius) == (approximateFlatLength(feet) <= kReach));
+    }
+    CHECK(area.meetsEnemy(Mat4{1}, aside(10.85f), kRadius));
+    CHECK_FALSE(area.meetsEnemy(Mat4{1}, aside(10.95f), kRadius));
+    // It follows the area's placement, and is gone with its spread.
+    const Mat4 parent = glm::translate(Mat4{1}, Vec3{20, 0, 0});
+    CHECK(area.meetsEnemy(parent, {30, 4, 0}, kRadius));
+    CHECK_FALSE(area.meetsEnemy(Mat4{1}, {30, 4, 0}, kRadius));
+    area.secondsLeft = 0;
+    CHECK_FALSE(area.meetsEnemy(Mat4{1}, {0, 0, 1}, kRadius));
+}
+
+TEST_CASE("an area holds one of the swarm it harms for the original's fade",
+          "[game][boss-areas][swarm-effect]") {
+    // ProcessEffects' fade for an effect flagged 0x20 (sfx.c 2677-2716): a spreading one what is
+    // left of it and a fifteenth, a lasting one what is left up to a second, a second at least
+    // either way; DMG_SUPER three seconds past its age.
+    CritterArea area;
+    area.damage = 50;
+    area.expanding = true;
+    area.lifetime = 3;
+    area.secondsLeft = 1.5f;
+    CHECK(area.fade() == Approx(1.566667f));
+    area.secondsLeft = 0.5f;
+    CHECK(area.fade() == 1.0f);
+    area.expanding = false;
+    area.secondsLeft = 3;
+    CHECK(area.fade() == 1.0f);
+    area.secondsLeft = 0.25f;
+    CHECK(area.fade() == 1.0f);
+    area.flags = damage::kSuperShot;
+    CHECK(area.fade() == Approx(3.25f));
+    area.expanding = true;
+    CHECK(area.fade() == Approx(3.316667f));
+    // Gas holds a player half a second, but not the swarm.
+    area.flags = damage::kGas;
+    CHECK(area.hitGap() == 0.5f);
+    CHECK(area.fade() == 1.0f);
 }
 
 TEST_CASE("expanding damage starts near the source then fades before the effect ends",
@@ -402,6 +481,31 @@ TEST_CASE("type three damage waits for expansion and survives the move while fro
     REQUIRE(hits[0].origin == Vec3{0, 5, 0});
     fixture.update(12, 0.2f, players);
     REQUIRE(actor.takeBlows().empty()); // final visual tail is harmless
+}
+
+TEST_CASE("a boss's spreading area strikes the players it reaches and passes the swarm",
+          "[game][boss-areas][swarm-effect]") {
+    // CritterDoTexmodNode gives a boss's effects no flag 8 (critter.c 2534-2540), which
+    // ProcessEffects' enemy pass wants (sfx.c 3023).
+    const auto root = areaArchive(true);
+    test::FakeRenderDevice device;
+    test::CombatantFixture fixture;
+    fixture.open(device, root, nullptr, {}, 'A');
+    REQUIRE(fixture.spawn("DJINN", Vec3{0}, 0));
+    REQUIRE(fixture.actor.kind() == CombatantKind::Boss);
+    auto& actor = fixture.actor;
+    const std::array<EnemyView, 1> players{playerAt({0, 0, 8})};
+    // One of the swarm standing where the player does, in reach of the same spread.
+    const std::array swarm{EnemyBody{3, {0, 2, 8}, 1.0f, 1.5f}};
+    usize blows = 0;
+    for (s32 update = 0; update < 8; ++update) {
+        actor.setSwarm(swarm);
+        fixture.update(6, 0.1f, players);
+        actor.setSwarm({});
+        CHECK(actor.takeTramples().empty());
+        blows += actor.takeBlows().size();
+    }
+    CHECK(blows > 0);
 }
 
 TEST_CASE("detached slam damage keeps its captured world placement as the boss grows",
