@@ -1,15 +1,17 @@
 //! The Linux calls: starting a program with execv from a hook that runs in the child before it
 //! starts, once close_range, or fcntl one descriptor at a time, has marked every descriptor past
-//! the standard streams close-on-exec, so that the program inherits none of them.
+//! the standard streams close-on-exec, so that the program inherits none of them; and another
+//! process, opened by its id as a descriptor with pidfd_open, to be waited for with poll and ended
+//! with pidfd_send_signal, so that a process that took the id of one that ended is never waited
+//! for or signalled in its place.
 
 use std::ffi::{CString, c_char, c_int, c_uint};
 use std::io;
+use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::process::CommandExt;
 use std::process::Command;
-
-#[cfg(test)]
-use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+use std::time::{Duration, Instant};
 
 use crate::probe::MAX_MARKED_DESCRIPTORS;
 
@@ -184,6 +186,104 @@ fn mark_inherited(limit: c_int, marking: Marking) -> io::Result<()> {
         }
     }
     Ok(())
+}
+
+/// What opening a process by its id as a descriptor found.
+pub(crate) enum OpenedPid {
+    /// The process's descriptor, which stays the process's whatever later takes its id.
+    Open(OwnedFd),
+    /// No process has the id: it ended, and was reaped.
+    Gone,
+    /// The kernel has no pidfd_open, as kernels before 5.3 do not.
+    Unsupported,
+}
+
+/// Opens the process whose id is `pid` as a descriptor, as pidfd_open opens one: ESRCH, no such
+/// process, is [`OpenedPid::Gone`], and ENOSYS [`OpenedPid::Unsupported`]; any other refusal is the
+/// kernel's own error.
+pub(crate) fn pidfd_open(pid: u32) -> io::Result<OpenedPid> {
+    let pid = libc::pid_t::try_from(pid).map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "a process id is past what Linux numbers processes with",
+        )
+    })?;
+    // SAFETY: the call takes only numbers, and a descriptor it gives is this process's own, which
+    // no other value owns.
+    let opened = unsafe { libc::syscall(libc::SYS_pidfd_open, pid, 0) };
+    if opened == -1 {
+        let error = io::Error::last_os_error();
+        return match error.raw_os_error() {
+            Some(libc::ESRCH) => Ok(OpenedPid::Gone),
+            Some(libc::ENOSYS) => Ok(OpenedPid::Unsupported),
+            _ => Err(error),
+        };
+    }
+    let descriptor = c_int::try_from(opened).map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            "pidfd_open gave a descriptor past any descriptor's number",
+        )
+    })?;
+    // SAFETY: the descriptor was just opened, and is owned by nothing else, so the value made from
+    // it alone closes it.
+    Ok(OpenedPid::Open(unsafe { OwnedFd::from_raw_fd(descriptor) }))
+}
+
+/// Waits up to `limit` for the process `pidfd` opened to end, as poll tells of one: `true` when it
+/// has ended, `false` when it still runs at the limit. A wait a signal cuts short goes on for what
+/// is left of the limit.
+pub(crate) fn pidfd_wait(pidfd: &OwnedFd, limit: Duration) -> io::Result<bool> {
+    let deadline = Instant::now() + limit;
+    loop {
+        let left = deadline.saturating_duration_since(Instant::now());
+        // Rounded up, so that a wait never ends before its limit.
+        let millis = c_int::try_from(left.as_micros().div_ceil(1000)).unwrap_or(c_int::MAX);
+        let mut watched = libc::pollfd {
+            fd: pidfd.as_raw_fd(),
+            events: libc::POLLIN,
+            revents: 0,
+        };
+        // SAFETY: the call reads and writes one pollfd, a local that outlives it, which names a
+        // descriptor open through the call.
+        let ready = unsafe { libc::poll(&mut watched, 1, millis) };
+        if ready > 0 {
+            return Ok(true);
+        }
+        if ready == 0 {
+            if Instant::now() >= deadline {
+                return Ok(false);
+            }
+            continue;
+        }
+        let error = io::Error::last_os_error();
+        if error.raw_os_error() != Some(libc::EINTR) {
+            return Err(error);
+        }
+    }
+}
+
+/// Ends the process `pidfd` opened with SIGKILL, as pidfd_send_signal sends a signal to the very
+/// process the descriptor names. The kernel ends it after the call returns: [`pidfd_wait`] tells
+/// when it has.
+pub(crate) fn pidfd_kill(pidfd: &OwnedFd) -> io::Result<()> {
+    // SAFETY: the call takes a descriptor open through it, a signal's number, no information about
+    // the signal, which a null asks for, and no flags; it reaches only the process the descriptor
+    // names.
+    let sent = unsafe {
+        libc::syscall(
+            libc::SYS_pidfd_send_signal,
+            pidfd.as_raw_fd(),
+            libc::SIGKILL,
+            std::ptr::null::<libc::siginfo_t>(),
+            0_u32,
+        )
+    };
+    if sent == -1 {
+        Err(io::Error::last_os_error())
+    } else {
+        Ok(())
+    }
 }
 
 /// A copy of `file`'s descriptor without close-on-exec, numbered [`LEAKED_FROM`] or above, as a

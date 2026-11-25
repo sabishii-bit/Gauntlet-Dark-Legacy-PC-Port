@@ -8,8 +8,11 @@
 //! reparse tag from GetFileInformationByHandleEx, and the folders of the OneDrive accounts signed
 //! in from the registry, and a path's names in full, short aliases replaced, from
 //! GetLongPathNameW; whether an open file is the one at a name, by the identities
-//! GetFileInformationByHandleEx and GetFileInformationByHandle give files; and the proxy the
-//! user's Internet Settings name, from the registry.
+//! GetFileInformationByHandleEx and GetFileInformationByHandle give files; the proxy the user's
+//! Internet Settings name, from the registry; and another process, opened by its id with
+//! OpenProcess, to be waited for with WaitForSingleObject, asked when it started with
+//! GetProcessTimes and which file it runs with QueryFullProcessImageNameW, and ended with
+//! TerminateProcess.
 
 use std::ffi::OsString;
 use std::fs::{File, OpenOptions};
@@ -18,14 +21,16 @@ use std::marker::PhantomData;
 use std::mem::ManuallyDrop;
 use std::os::windows::ffi::{OsStrExt, OsStringExt};
 use std::os::windows::fs::OpenOptionsExt;
-use std::os::windows::io::AsRawHandle;
+use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
 use std::path::{Path, PathBuf};
 use std::ptr;
+use std::time::Duration;
 
 use gdl_files::{VerbatimPath, strip_verbatim};
 use windows_sys::Wdk::System::SystemServices::RtlGetVersion;
 use windows_sys::Win32::Foundation::{
-    ERROR_NO_MORE_ITEMS, ERROR_SUCCESS, FALSE, HANDLE, STATUS_SUCCESS, TRUE,
+    ERROR_ACCESS_DENIED, ERROR_INVALID_PARAMETER, ERROR_NO_MORE_ITEMS, ERROR_SUCCESS, FALSE,
+    FILETIME, HANDLE, STATUS_SUCCESS, TRUE, WAIT_OBJECT_0, WAIT_TIMEOUT,
 };
 use windows_sys::Win32::Storage::FileSystem::{
     BY_HANDLE_FILE_INFORMATION, FILE_ATTRIBUTE_REPARSE_POINT, FILE_ATTRIBUTE_TAG_INFO,
@@ -47,7 +52,11 @@ use windows_sys::Win32::System::Registry::{
 use windows_sys::Win32::System::SystemInformation::{
     IMAGE_FILE_MACHINE, IMAGE_FILE_MACHINE_UNKNOWN, OSVERSIONINFOW,
 };
-use windows_sys::Win32::System::Threading::GetCurrentProcess;
+use windows_sys::Win32::System::Threading::{
+    GetCurrentProcess, GetProcessTimes, INFINITE, OpenProcess, PROCESS_ACCESS_RIGHTS,
+    PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SYNCHRONIZE, PROCESS_TERMINATE,
+    QueryFullProcessImageNameW, TerminateProcess, WaitForSingleObject,
+};
 use windows_sys::Win32::UI::Shell::{
     FOLDERID_Desktop, FOLDERID_Documents, FOLDERID_Music, FOLDERID_Pictures, FOLDERID_Videos,
     KF_FLAG_DONT_VERIFY, SHCNE_UPDATEITEM, SHCNF_PATHW, SHChangeNotify, SHGetKnownFolderPath,
@@ -120,6 +129,14 @@ const PROXY_OVERRIDE_VALUE: PCWSTR = w!("ProxyOverride");
 /// The most bytes a proxy setting is read in: a value far longer than any proxy's address or
 /// bypass list is not read at all.
 const MAX_PROXY_VALUE_BYTES: u32 = 64 * 1024;
+
+/// The rights a process is opened with to be waited for and asked when it started and which file
+/// it runs.
+const WAIT_RIGHTS: PROCESS_ACCESS_RIGHTS = PROCESS_SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION;
+
+/// The longest wait WaitForSingleObject takes in milliseconds: one less than INFINITE, which
+/// waits for ever.
+const LONGEST_WAIT_MILLIS: u32 = INFINITE - 1;
 
 /// The errors FindResourceExW gives for a resource that a program does not hold: none of its
 /// type, none of its id among those of its type, or none in its language.
@@ -590,6 +607,167 @@ fn file_index(file: &File) -> io::Result<(u32, u32, u32)> {
         info.nFileIndexHigh,
         info.nFileIndexLow,
     ))
+}
+
+/// Another process, opened by its id to be waited for and asked about, and, when the system
+/// granted the right, to be ended. The handle keeps the process's id from going to another process
+/// while it is open, and is closed when dropped.
+pub(crate) struct ProcessHandle {
+    /// The process's handle.
+    handle: OwnedHandle,
+    /// Whether the handle carries the right to end the process.
+    can_end: bool,
+}
+
+impl ProcessHandle {
+    /// Whether the process may be ended through this handle.
+    pub(crate) fn can_end(&self) -> bool {
+        self.can_end
+    }
+}
+
+/// What opening a process by its id found.
+pub(crate) enum OpenedProcess {
+    /// The process, open.
+    Open(ProcessHandle),
+    /// No process has the id: it ended, and nothing holds it any longer.
+    Gone,
+}
+
+/// Opens the process whose id is `pid` to be waited for, asked when it started and which file it
+/// runs, and ended, as OpenProcess opens one. A process the system will not let be ended, as it
+/// refuses one of another account, is opened again without that right. The system refuses an id
+/// no process has with ERROR_INVALID_PARAMETER, which is [`OpenedProcess::Gone`]; any other
+/// refusal is its own error.
+pub(crate) fn open_process(pid: u32) -> io::Result<OpenedProcess> {
+    let refused = match open_with(pid, WAIT_RIGHTS | PROCESS_TERMINATE) {
+        Ok(handle) => {
+            return Ok(OpenedProcess::Open(ProcessHandle {
+                handle,
+                can_end: true,
+            }));
+        }
+        Err(refused) => refused,
+    };
+    let refused = if os_error(&refused) == Some(ERROR_ACCESS_DENIED) {
+        match open_with(pid, WAIT_RIGHTS) {
+            Ok(handle) => {
+                return Ok(OpenedProcess::Open(ProcessHandle {
+                    handle,
+                    can_end: false,
+                }));
+            }
+            Err(refused) => refused,
+        }
+    } else {
+        refused
+    };
+    if os_error(&refused) == Some(ERROR_INVALID_PARAMETER) {
+        Ok(OpenedProcess::Gone)
+    } else {
+        Err(refused)
+    }
+}
+
+/// The Windows error code `error` carries, when it carries one.
+fn os_error(error: &io::Error) -> Option<u32> {
+    error.raw_os_error().map(i32::cast_unsigned)
+}
+
+/// Opens the process whose id is `pid` with `rights`.
+fn open_with(pid: u32, rights: PROCESS_ACCESS_RIGHTS) -> io::Result<OwnedHandle> {
+    // SAFETY: the call takes only numbers, and a handle it gives is this process's own, which no
+    // other value owns.
+    let handle = unsafe { OpenProcess(rights, FALSE, pid) };
+    if handle.is_null() {
+        return Err(io::Error::last_os_error());
+    }
+    // SAFETY: the handle was just opened, is valid, and is owned by nothing else, so the value made
+    // from it alone closes it.
+    Ok(unsafe { OwnedHandle::from_raw_handle(handle) })
+}
+
+/// When `process` was started, in hundreds of nanoseconds since 1601, as GetProcessTimes gives it:
+/// as coarse as the system's clock tick.
+pub(crate) fn process_created(process: &ProcessHandle) -> io::Result<u64> {
+    created(process.handle.as_raw_handle())
+}
+
+/// When this process was started, as [`process_created`] gives it.
+pub(crate) fn own_process_created() -> io::Result<u64> {
+    // SAFETY: the call takes nothing and gives a pseudo handle for this process, which needs no
+    // closing.
+    created(unsafe { GetCurrentProcess() })
+}
+
+/// When the process `handle` names was started.
+fn created(handle: HANDLE) -> io::Result<u64> {
+    let mut creation = FILETIME::default();
+    let mut exit = FILETIME::default();
+    let mut kernel = FILETIME::default();
+    let mut user = FILETIME::default();
+    // SAFETY: the handle is open with a right to query the process, as GetProcessTimes requires,
+    // and lives through the call; the call writes four FILETIMEs through references to locals that
+    // outlive it.
+    let read = unsafe { GetProcessTimes(handle, &mut creation, &mut exit, &mut kernel, &mut user) };
+    if read == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok((u64::from(creation.dwHighDateTime) << 32) | u64::from(creation.dwLowDateTime))
+}
+
+/// Waits up to `limit` for `process` to end: `true` when it has ended, `false` when it still runs
+/// at the limit. A limit longer than the call takes is cut to the longest it takes.
+pub(crate) fn wait_process(process: &ProcessHandle, limit: Duration) -> io::Result<bool> {
+    let millis = u32::try_from(limit.as_millis())
+        .unwrap_or(LONGEST_WAIT_MILLIS)
+        .min(LONGEST_WAIT_MILLIS);
+    // SAFETY: the handle is open with the right to wait for the process, and lives through the
+    // call, which takes it and a number.
+    let waited = unsafe { WaitForSingleObject(process.handle.as_raw_handle(), millis) };
+    if waited == WAIT_OBJECT_0 {
+        Ok(true)
+    } else if waited == WAIT_TIMEOUT {
+        Ok(false)
+    } else {
+        Err(io::Error::last_os_error())
+    }
+}
+
+/// The file `process` runs, by its path as the system names it, as QueryFullProcessImageNameW
+/// gives it.
+pub(crate) fn process_image(process: &ProcessHandle) -> io::Result<PathBuf> {
+    let mut units = vec![0_u16; MAX_PATH_UNITS];
+    let mut len = units.len() as u32;
+    // SAFETY: the handle is open with the right to query the process, and lives through the call;
+    // the buffer holds `len` units, which the call is told and writes no more than, and it writes
+    // how many it wrote, without the NUL after them, through a reference to a local.
+    let read = unsafe {
+        QueryFullProcessImageNameW(
+            process.handle.as_raw_handle(),
+            PROCESS_NAME_WIN32,
+            units.as_mut_ptr(),
+            &mut len,
+        )
+    };
+    if read == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    units.truncate(len as usize);
+    Ok(PathBuf::from(OsString::from_wide(&units)))
+}
+
+/// Ends `process`, as TerminateProcess ends one, with `code` as its exit code. The system ends it
+/// after the call returns: [`wait_process`] tells when it has.
+pub(crate) fn end_process(process: &ProcessHandle, code: u32) -> io::Result<()> {
+    // SAFETY: the handle is open, and lives through the call, which takes it and a number; a
+    // handle without the right to end the process is refused, and nothing else is ended.
+    let ended = unsafe { TerminateProcess(process.handle.as_raw_handle(), code) };
+    if ended == 0 {
+        Err(io::Error::last_os_error())
+    } else {
+        Ok(())
+    }
 }
 
 /// The path of the entry at `path`, which must be there, each name on it as the folder above it

@@ -1,7 +1,7 @@
 //! The install folder: its receipt, payload policy, embedded sections, lock and probes; installing
-//! the game, updating it and the launcher, recovering interrupted work, the expansions, the disc
-//! icon and launching; and the proxy the system's settings name. Only its `platform` module may
-//! call the OS directly.
+//! the game, updating it and the launcher, the hand-over to the launcher copy an update put in
+//! place, recovering interrupted work, the expansions, the disc icon and launching; and the proxy
+//! the system's settings name. Only its `platform` module may call the OS directly.
 #![deny(unsafe_code)]
 
 mod awake;
@@ -13,6 +13,7 @@ mod faults;
 mod folder;
 #[cfg(test)]
 mod full_disk;
+mod handover;
 mod hold;
 mod host;
 mod icon;
@@ -42,6 +43,10 @@ pub use destination::{
 pub use folder::{
     FolderError, InstallFolder, InstallLock, JOURNAL_DIR, LOCK_FILE, LockError, RECEIPT_FILE,
     STATE_DIR, alpha_markers, check_links,
+};
+pub use handover::{
+    ENDED_WAIT_LIMIT, Linger, PREVIOUS_WAIT_LIMIT, Previous, RETIRED_DELETE_INTERVAL,
+    RETIRED_DELETE_WINDOW, RetiredSweep, sweep_retired, wait_for_previous,
 };
 pub use hold::HOLD_POLL;
 pub use host::{Unsupported, host_supported};

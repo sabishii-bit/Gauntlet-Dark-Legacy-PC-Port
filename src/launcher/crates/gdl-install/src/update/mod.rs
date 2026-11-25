@@ -32,7 +32,7 @@ pub use journal::{
 pub use names::FileChanges;
 pub use source::UpdateSource;
 
-pub(crate) use self::journal::{UpdateJournal, is_retired_launcher_name};
+pub(crate) use self::journal::{UpdateJournal, is_retired_launcher_name, retired_name};
 use self::names::judge_names;
 pub(crate) use self::recover::recover_update;
 pub(crate) use self::settings::UpdateSettings;
