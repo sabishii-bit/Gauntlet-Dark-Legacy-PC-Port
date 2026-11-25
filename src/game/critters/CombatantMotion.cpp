@@ -39,6 +39,7 @@ Vec3 travelWorld(const WorldCollision& collision, const Vec3& from, const Vec3& 
     const auto steps = std::max(1, static_cast<s32>(std::ceil(glm::length(offset) / stepLength)));
     const Vec3 stride = offset / static_cast<f32>(steps);
     Vec3 position = from;
+    bool moved = false;
     for (s32 i = 0; i < steps; ++i) {
         const Vec3 next =
             collision.sweepWalls(position, position + stride, radius, position.y + kFootClearance,
@@ -62,6 +63,15 @@ Vec3 travelWorld(const WorldCollision& collision, const Vec3& from, const Vec3& 
             break;
         }
         position = {next.x, floor->y, next.z};
+        moved = true;
+    }
+    // A step that gets nowhere along the ground still takes the height of the floor under it
+    // (CritterCollideWorld probes there, critter.c 7106-7140): one a stop left over or under the
+    // ground it stands on stands on it again.
+    if (!moved) {
+        if (const auto floor = collision.floorAt(from, kStepUp, kDrop)) {
+            position.y = floor->y;
+        }
     }
     return position;
 }

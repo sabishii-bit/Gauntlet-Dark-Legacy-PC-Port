@@ -3968,12 +3968,12 @@ void spawnTramplingGolem(test::FakeRenderDevice& device, CombatantAssets& assets
     REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, scales, 'G'));
 }
 
-/** Level ground from `nearX` to `farX` along x, forty across. */
-void addGround(std::vector<CollisionTriangle>& triangles, f32 nearX, f32 farX) {
+/** Level ground `y` high from `nearX` to `farX` along x, forty across. */
+void addGround(std::vector<CollisionTriangle>& triangles, f32 nearX, f32 farX, f32 y = 0) {
     CollisionTriangle first;
-    first.vertices = {Vec3{nearX, 0, -20}, Vec3{farX, 0, 20}, Vec3{farX, 0, -20}};
+    first.vertices = {Vec3{nearX, y, -20}, Vec3{farX, y, 20}, Vec3{farX, y, -20}};
     CollisionTriangle second;
-    second.vertices = {Vec3{nearX, 0, -20}, Vec3{nearX, 0, 20}, Vec3{farX, 0, 20}};
+    second.vertices = {Vec3{nearX, y, -20}, Vec3{nearX, y, 20}, Vec3{farX, y, 20}};
     triangles.push_back(first);
     triangles.push_back(second);
 }
@@ -4370,6 +4370,63 @@ TEST_CASE("a great one a solid item stops is still hurt by the harmful ground un
     CHECK(actor.position().x ==
           Approx(stopped ? 0 : (10 - Golem::definition().knockbackReduction) / 30));
     CHECK(before - actor.health() == Approx(15));
+}
+
+TEST_CASE("a great one held back keeps its walk's rise and stands on the ground under it again",
+          "[combatant][critter-contact]") {
+    // CritterCollidePlayers and CritterCollideItems take only x and z from the step (critter.c
+    // 7249-7252, 7336-7339), keeping the rise CritterCollideWorld found for it. A step that then
+    // goes nowhere has CritterCollideWorld probe the floor under it and take that floor's height
+    // (7106-7140).
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    loadStanceGeneral(device, assets);
+    f32 beyond = 1.5f;
+    bool byItem = false;
+    SECTION("a ledge up, a player in the way") {}
+    SECTION("a ledge down, a player in the way") {
+        beyond = -1.5f;
+    }
+    SECTION("a ledge up, a solid item in the way") {
+        byItem = true;
+    }
+    SECTION("a ledge down, a solid item in the way") {
+        beyond = -1.5f;
+        byItem = true;
+    }
+    // The third of a unit it is knocked along x ends past an edge a fifth of a unit ahead.
+    std::vector<CollisionTriangle> triangles;
+    addGround(triangles, -20, 0.2f);
+    addGround(triangles, 0.2f, 20, beyond);
+    WorldCollision collision;
+    collision.build(triangles);
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, {}, 0, &collision, {}, 'G'));
+    // Either reached by the knocked step: a player standing beyond the edge, or a gate from 1.2
+    // to 2.2 along x.
+    std::vector<EnemyView> players;
+    std::array items{CombatantObstacle{
+        .box =
+            Obstacle{.centre = {1.7f, 0, 0}, .halfAcross = 0.5f, .halfAlong = 0.5f, .height = 8}}};
+    if (byItem) {
+        actor.setObstacles(items);
+    } else {
+        players.push_back(seatAt(0, 1.5f));
+        players[0].position.y = beyond;
+    }
+    EnemyHit hit;
+    hit.damage = 1;
+    hit.flags = kKnockOver;
+    hit.direction = {1, 0, 0};
+    actor.hurt(hit);
+    actor.update(2, 1.0f / 30, players);
+    CHECK(actor.position().x == 0);
+    CHECK(actor.position().z == 0);
+    CHECK(actor.position().y == Approx(beyond));
+    CHECK(actor.takePushes().size() == (byItem ? 0 : 1));
+    // A frame that carries it nowhere: it stands on the ground under it again.
+    actor.update(1, 0.0f, players);
+    CHECK(actor.position() == Vec3{0});
 }
 
 TEST_CASE("a still great one shoves a player inside it and holds its turn",
