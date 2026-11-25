@@ -75,19 +75,24 @@ fn take_back(
 
 /// Finishes the update `file` records, every move of which is made: its receipt written when it
 /// is not in place, judged by what it left when its write fails as the job's is, then the journal
-/// moved to committed, each passed as [`FaultPoint::UpdateCommit`], then the cleanup. The shell is
-/// told of the executable when the update put a new one in place.
+/// moved to committed, then the cleanup. The shell is told of the executable when the update put a
+/// new one in place.
+///
+/// [`FaultPoint::UpdateCommit`] is passed as the job passes it, so that each pass stands for the
+/// same step in either: the first for the journal that records the swap, there already; the second
+/// for the receipt, written now or found in place; the third for the journal moved to committed.
 fn roll_forward(
     folder: &InstallFolder,
     file: &mut JournalFile,
     platform: Platform,
     settings: &UpdateSettings<'_>,
 ) -> Result<Done, RecoverError> {
+    pass_commit(settings.faults, file.path())?;
     let receipt = file.journal().receipt.clone();
     if !receipt_committed(&receipt, folder) {
         commit_receipt(&receipt, folder, settings.write_receipt).map_err(recovery_error)?;
-        pass_commit(settings.faults, &folder.state_dir().join(RECEIPT_FILE))?;
     }
+    pass_commit(settings.faults, &folder.state_dir().join(RECEIPT_FILE))?;
     file.committed().map_err(recovery_error)?;
     pass_commit(settings.faults, file.path())?;
     let cleanup = clean_up(folder, file, settings.faults);
@@ -371,12 +376,7 @@ mod tests {
         let expected = as_after();
         let (_dir, fixture, _) = left_swapped();
         // Killed once the receipt was written, before the journal recorded it committed.
-        let journal: Value =
-            serde_json::from_slice(&fs::read(journal_path(&fixture.root)).unwrap()).unwrap();
-        let receipt: Receipt = serde_json::from_value(journal["receipt"].clone()).unwrap();
-        receipt
-            .write(&InstallFolder::at(&fixture.root).unwrap())
-            .unwrap();
+        write_journals_receipt(&fixture.root);
         let unwritten = |_: &Receipt, _: &InstallFolder| -> Result<(), FilesError> {
             panic!("the receipt in place is written again")
         };
@@ -387,6 +387,53 @@ mod tests {
         let recovered = recover_simply(&fixture.root, NEXT, &settings);
         assert_eq!(recovered.unwrap().update, UpdateRecovery::Finished);
         assert_eq!(contents_of(&fixture.root), expected);
+    }
+
+    /// Writes the receipt the update's journal in the installation at `root` carries, as an
+    /// update killed once it wrote its receipt leaves it.
+    fn write_journals_receipt(root: &Path) {
+        let journal: Value =
+            serde_json::from_slice(&fs::read(journal_path(root)).unwrap()).unwrap();
+        let receipt: Receipt = serde_json::from_value(journal["receipt"].clone()).unwrap();
+        receipt.write(&InstallFolder::at(root).unwrap()).unwrap();
+    }
+
+    #[test]
+    fn a_roll_forward_passes_the_commit_as_the_job_does() {
+        // Each pass stands for the job's own step, whether the job wrote the receipt before it
+        // was stopped or the recovery writes it: the swap recorded, the receipt in place, the
+        // journal committed.
+        for receipt_stands in [false, true] {
+            for (at, phase) in [(1, "swapping"), (2, "swapping"), (3, "committed")] {
+                let context = format!("pass {at}, the receipt standing: {receipt_stands}");
+                let (_dir, fixture, _) = left_swapped();
+                if receipt_stands {
+                    write_journals_receipt(&fixture.root);
+                }
+                let fail = FailAt::new(FaultPoint::UpdateCommit, at);
+                let recovered =
+                    recover_simply(&fixture.root, NEXT, &standing_in(&fail, &answering));
+                match recovered {
+                    Err(error @ RecoverError::Io { .. }) => assert_eq!(error.rule(), "io"),
+                    other => panic!("{context}: {other:?}"),
+                }
+                assert_eq!(
+                    journal_phase(&fixture.root).as_deref(),
+                    Some(phase),
+                    "{context}"
+                );
+                let receipt = if at == 1 && !receipt_stands {
+                    INSTALLED
+                } else {
+                    NEXT
+                };
+                assert_eq!(
+                    receipt_at(&fixture.root)["version"],
+                    json!(receipt),
+                    "{context}"
+                );
+            }
+        }
     }
 
     #[test]
