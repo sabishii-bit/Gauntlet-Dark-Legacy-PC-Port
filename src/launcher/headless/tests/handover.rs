@@ -7,12 +7,15 @@ mod launchers;
 
 use std::env::consts::EXE_SUFFIX;
 use std::ffi::OsStr;
+use std::fs;
 use std::path::Path;
 use std::process::{Command, Output};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use gdl_install::{InstallFolder, installed_launcher_name};
+use gdl_fixtures::{RuntimeFiles, append_sections};
+use gdl_install::{InstallFolder, RUNTIME_SECTION, installed_launcher_name};
+use gdl_release::Platform;
 
 use common::{PROGRAM, VERSION, inspect_json, run_to_end};
 use launchers::{
@@ -30,6 +33,10 @@ const QUIET: Duration = Duration::from_secs(1);
 /// The line the old launcher writes once another job's lock keeps it waiting.
 const LOCK_HOLD: &str = "hold: lock.busy";
 
+/// What the installation the old launcher updates holds as its launcher copy, which no test runs
+/// there: a few bytes, so that the update hashes and retires no program.
+const INSTALLED_COPY: &[u8] = b"the launcher copy installed before";
+
 /// The test a child of this test program runs alone to become the headless program, asked to
 /// wait for its own process.
 #[cfg(unix)]
@@ -39,6 +46,17 @@ const OWN_WAITER: &str = "a_child_becomes_the_program_asked_to_wait_for_itself";
 /// headless program. Unset, as in a run of the tests, that test does nothing.
 #[cfg(unix)]
 const OWN_ID: &str = "GDL_HEADLESS_OWN_ID";
+
+/// A launcher file for `platform` of the program's own carrying the standard runtime of `version`
+/// as it is, its executable the runtime's own few bytes: an update from it to an installation of
+/// another standard runtime moves the files that name the release and the launcher copy alone,
+/// and leaves the game, which it neither stages nor probes.
+fn launcher_keeping_the_game(platform: Platform, version: &str) -> Vec<u8> {
+    let mut launcher = fs::read(PROGRAM).unwrap();
+    let runtime = RuntimeFiles::standard(platform.as_str(), version);
+    append_sections(&mut launcher, &[(RUNTIME_SECTION, &runtime.zip())], 0);
+    launcher
+}
 
 /// What a program wrote to one of its streams, as text.
 fn text(bytes: &[u8]) -> &str {
@@ -83,18 +101,20 @@ fn a_new_copy_started_while_the_old_one_lives_waits_for_it() {
     let _one = one_run_at_a_time();
     let dir = tempfile::tempdir().unwrap();
     let (_, launcher) = launcher_file(platform, VERSION);
-    let fixture = installation(dir.path(), platform, &launcher);
+    let fixture = installation(dir.path(), platform, INSTALLED_COPY);
     let root = fixture.root.as_path();
     // The old launcher, a launcher file outside the installation, which updates it and hands
     // nothing over, since it is not the copy the update replaces and is as new as what it
     // installs; and the new copy, a launcher copy in a folder of its own that holds no
     // installation, whose sweep so finds nothing, run once first so that a scanner's first look
-    // at it is over before it is watched.
+    // at it is over before it is watched. The old launcher's update leaves the game as it is, so
+    // that once the lock is let go it is done in moments: the new copy waits for it no longer
+    // than its wait's limit on a slow machine too.
     let old_file = dir
         .path()
         .join("downloads")
         .join(format!("gdl-launcher-headless{EXE_SUFFIX}"));
-    write_launcher(&old_file, &launcher);
+    write_launcher(&old_file, &launcher_keeping_the_game(platform, VERSION));
     let new_file = dir
         .path()
         .join("elsewhere")
@@ -138,7 +158,7 @@ fn a_new_copy_started_while_the_old_one_lives_waits_for_it() {
             LOCK_HOLD,
             "resumed",
             updated.as_str(),
-            "probed: staged",
+            "probed: notStaged",
             "retired: removed"
         ],
         "{old_finished:#?}"
