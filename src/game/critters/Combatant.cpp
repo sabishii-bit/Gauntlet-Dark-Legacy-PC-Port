@@ -5,6 +5,7 @@
 #include <cmath>
 #include <initializer_list>
 #include <limits>
+#include <optional>
 #include <tuple>
 #include <utility>
 
@@ -672,8 +673,19 @@ void Combatant::updateActor(s32 ticks, f32 seconds, std::span<const EnemyView> p
                 return;
             }
         }
+        // The strikes measure from the move's node as CritterMoveSetup leaves worldMoveMatrix,
+        // before CritterLookAtPlayer turns the look nodes (CritterGolemAI 0x80039A08-0x80039A44,
+        // CritterBossAI 0x8003A1FC-0x8003A2A8), a part that broke hanging as it broke; cues,
+        // effects and areas follow the turned pose.
+        std::optional<Mat4> unturned;
+        if ((data.rules().portRules & CritterRules::kStrikesAfterGaze) == 0) {
+            holdBrokenPoses(critter);
+            unturned = moveNodeTransform(critter, move->colnode);
+        }
         aimGaze(critter, seconds, players);
         holdBrokenPoses(critter);
+        const Mat4 moveFrame =
+            unturned.has_value() ? *unturned : moveNodeTransform(critter, move->colnode);
         const auto frame = static_cast<s32>(std::floor(critter.player.frame()));
         const auto active = [&](s32 start, s32 end) {
             const s32 last = end < start ? start : end;
@@ -713,7 +725,7 @@ void Combatant::updateActor(s32 ticks, f32 seconds, std::span<const EnemyView> p
                 }
                 const s32 count = move->projectileTriggers(critter.shotFrame, frame, second);
                 for (s32 shot = 0; shot < count; ++shot) {
-                    shoot(critter, i, *move, index, players);
+                    shoot(critter, i, moveFrame, index, players);
                 }
                 return true;
             };
@@ -747,7 +759,7 @@ void Combatant::updateActor(s32 ticks, f32 seconds, std::span<const EnemyView> p
                 if (harm->type == AttackDefinition::kGrab) {
                     // First window catches continuously; second is a single release edge.
                     if (bit != 8U || (critter.soundsGiven & bit) == 0) {
-                        grab(critter, *move, *harm, bit == 8U, players);
+                        grab(critter, *move, moveFrame, *harm, bit == 8U, players);
                         if (bit == 8U) {
                             critter.soundsGiven |= bit;
                         }
@@ -783,14 +795,14 @@ void Combatant::updateActor(s32 ticks, f32 seconds, std::span<const EnemyView> p
                         cue(critter, i, harm->sound, cuePosition(critter, move->colnode),
                             move->colnode, harm);
                     }
-                    strikeWith(critter, i, *move, index, players);
+                    strikeWith(critter, i, moveFrame, index, players);
                     return;
                 }
                 const Vec3 where = targeted
                                        ? *critter.attackTarget + damageOffset(critter, harm->offset)
                                        : cuePosition(critter, move->colnode) + harm->offset;
                 giveOnce(bit, harm->sound, where);
-                strikeWith(critter, i, *move, index, players);
+                strikeWith(critter, i, moveFrame, index, players);
             };
             if (!shot0) {
                 contact(move->damage0, move->frameStart, move->frameEnd, 4U);
@@ -807,9 +819,8 @@ void Combatant::updateActor(s32 ticks, f32 seconds, std::span<const EnemyView> p
                 critter.soundsGiven |= 32U;
                 // CritterDoDamage passes the move node's world origin, c->moveOrigin, not the
                 // floor or the body's offset origin.
-                m_sim.spews.push_back(
-                    CombatSpew{i, Vec3{moveNodeTransform(critter, move->colnode)[3]},
-                               harm->spewVelocity(critter.yaw), harm->spewHalfAngle()});
+                m_sim.spews.push_back(CombatSpew{
+                    i, Vec3{moveFrame[3]}, harm->spewVelocity(critter.yaw), harm->spewHalfAngle()});
             }
         }
         critter.shotFrame = frame;

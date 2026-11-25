@@ -524,13 +524,19 @@ private:
              std::optional<std::string_view> node = std::nullopt,
              const AttackDefinition* damage = nullptr, std::optional<s32> player = std::nullopt);
 
-    void grab(Actor& actor, const MoveDefinition& move, const AttackDefinition& damage,
-              bool release, std::span<const EnemyView> players);
+    /** Catches or lets go of a player with `move`'s grab, catching where `moveFrame`, the
+     * move's node as the strikes measure it, turns the grab's offset. */
+    void grab(Actor& actor, const MoveDefinition& move, const Mat4& moveFrame,
+              const AttackDefinition& damage, bool release, std::span<const EnemyView> players);
     void carryGrab(Actor& actor, std::span<const EnemyView> players);
-    void shoot(const Actor& critter, s32 id, const MoveDefinition& move, s32 damageIndex,
+    /** Lets fly DAMG record `damageIndex` from the origin of `moveFrame`, the move's node as the
+     * strikes measure it. */
+    void shoot(const Actor& critter, s32 id, const Mat4& moveFrame, s32 damageIndex,
                std::span<const EnemyView> players);
     void plant(const Actor& critter, s32 id, s32 damageIndex);
-    void strikeWith(Actor& critter, s32 id, const MoveDefinition& move, s32 damageIndex,
+    /** Strikes with DAMG record `damageIndex`, a blow or a breath from `moveFrame`, the move's
+     * node as the strikes measure it. */
+    void strikeWith(Actor& critter, s32 id, const Mat4& moveFrame, s32 damageIndex,
                     std::span<const EnemyView> players);
     static Vec3 partPosition(const Actor& critter, std::string_view node);
     /** Where a cue set off at node `node` starts: the drawn node's origin, else the drawn
@@ -579,7 +585,8 @@ private:
     static std::optional<usize> moveNode(const Actor& critter, std::string_view colnode);
     /** moveNode's world matrix in its simulation, or the simulation's model without one, as
      * GetWorldMat gives worldMoveMatrix (0x8003B1CC): where a move's blow, breath, shot, grab,
-     * spew and the area laid on its node measure from. */
+     * spew and the area laid on its node measure from, the strikes taking it before the look
+     * turns the look nodes. */
     static Mat4 moveNodeTransform(const Actor& critter, std::string_view colnode);
     /** Notes where `move`'s moveNode stands `seconds` on, as CritterMoveSetup does each native
      * frame through GetWorldMat (0x8003B1CC). */

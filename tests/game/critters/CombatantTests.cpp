@@ -32,6 +32,7 @@
 #include "game/combat/EffectFlags.h"
 #include "game/combat/HurtKind.h"
 #include "game/critters/Combatant.h"
+#include "game/critters/CombatantBreath.h"
 #include "game/critters/CombatantFixture.h"
 #include "game/critters/CritterData.h"
 #include "game/critters/Critters.h"
@@ -2722,6 +2723,277 @@ TEST_CASE("the Chimera's and the Plague Fiend's rings ride their root nodes, as 
         CHECK(hit->origin.y <= (*node)[3].y + 1e-3f);
         CHECK(hit->origin.y > (*node)[3].y - 0.5f);
     }
+}
+
+/** How far a look node may be turned from its animation in these cases: an eighth of a turn. */
+constexpr f32 kLookTurn = 0.785f;
+
+/** A general whose LOOK, at its feet, turns kLookTurn about the upright after its move's target,
+ * carrying BITE eight ahead of it; nothing is animated. BITE strikes with BITE by DAMG record 0,
+ * of `kind`, over frames 16 to 20, by when the look has turned as far as it may, and DEATH,
+ * naming BITE, throws coins at once. */
+void loadLookingGeneral(test::FakeRenderDevice& device, CombatantAssets& assets, s16 kind,
+                        const CritterRules& rules) {
+    const auto root = familyAssets();
+    auto archive = root / "MONSTERS" / General::definition().name;
+    if (General::definition().realmCostume) {
+        archive /= "LEVELG";
+    }
+    writeTextFile(archive / "animations.json", R"({"trees":[{"name":"BODY","nodes":[
+      {"name":"ROOT","object":"BODY","parent":-1,"position":[0,0,0]},
+      {"name":"LOOK","object":"BODY","parent":0,"position":[0,0,0]},
+      {"name":"BITE","object":"BODY","parent":1,"position":[0,0,8]}],
+      "sequences":[{"name":"READY","frames":30},{"name":"BITE","frames":40}]}]})");
+    REQUIRE(assets.load(device, root, General::definition(), 'G'));
+    formats::CritterFile source;
+    source.descriptors.push_back({"general", "BODY", static_cast<s16>(CombatantKind::General)});
+    auto& type = source.types.emplace_back();
+    type.radius = 1;
+    type.wallRadius = 1;
+    type.maxHealth = 100;
+    type.moveCount = 3;
+    type.lookNode0 = "LOOK";
+    type.lookYawRate0 = kLookTurn;
+    auto& ready = source.moves.emplace_back();
+    ready.name = "READY";
+    ready.anim = "READY";
+    ready.type = MoveDefinition::kReady;
+    ready.interrupt = 60;
+    auto& bite = source.moves.emplace_back();
+    bite.name = "BITE";
+    bite.anim = "BITE";
+    bite.type = MoveDefinition::kAttackFrom;
+    bite.priority = 544;
+    bite.colnode = "BITE";
+    bite.frameStart = 16;
+    bite.frameEnd = 20;
+    bite.damage0 = 0;
+    auto& death = source.moves.emplace_back();
+    death.name = "DEATH";
+    death.anim = "READY";
+    death.type = MoveDefinition::kDeath;
+    death.priority = 4095;
+    death.colnode = "BITE";
+    death.frameStart = 0;
+    death.frameEnd = 0;
+    death.damage0 = 1;
+    auto& harm = source.damages.emplace_back();
+    harm.type = kind;
+    harm.damage = 10;
+    harm.maxDistance = kind == AttackDefinition::kBreath ? 20.0f : 1.0f;
+    harm.radius = 1;
+    auto& spew = source.damages.emplace_back();
+    spew.type = AttackDefinition::kSpew;
+    spew.minSpeed = 10;
+    assets.data = CritterData::fromDecoded("GENERAL", source, 0, rules);
+}
+
+/** Where BITE stands once LOOK has turned as far as it may toward a target a quarter turn to the
+ * right. */
+Vec3 turnedBite() {
+    return 8.0f * Vec3{std::sin(kLookTurn), 0, std::cos(kLookTurn)};
+}
+
+TEST_CASE("a blow, a breath, a shot and a grab are measured from the animated node, before the "
+          "look turns it",
+          "[game][combatant][gaze]") {
+    // CritterMoveSetup leaves worldMoveMatrix (0x8003B1CC, critter.c 3766) for CritterActivate's
+    // strikes, and only then does CritterLookAtPlayer turn the look nodes (CritterGolemAI
+    // 0x80039A08-0x80039A44, CritterBossAI 0x8003A1FC-0x8003A2A8). The blow (6444-6451), the
+    // breath (6523-6534), the shot's c->moveOrigin (2796-2800) and the grab (2853-2872) all read
+    // it. What the look turns is drawn, and holds a player already caught. Data whose rules
+    // strike after the look (kStrikesAfterGaze) measures them from the turned pose.
+    const s16 kind = GENERATE(AttackDefinition::kBlow, AttackDefinition::kBreath,
+                              AttackDefinition::kProjectile, AttackDefinition::kGrab);
+    const bool afterGaze = GENERATE(false, true);
+    CAPTURE(kind, afterGaze);
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    CritterRules rules;
+    rules.portRules = afterGaze ? CritterRules::kStrikesAfterGaze : 0;
+    loadLookingGeneral(device, assets, kind, rules);
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+    const auto bite = assets.data.moveNamed("BITE");
+    REQUIRE(bite);
+    // Player 1, the move's target, stands a quarter turn to the right, and draws the look round.
+    // Player 0 stands where the animation puts BITE, or ten along its forward for the breath.
+    Combatant::MovePoint start;
+    start.target = 1;
+    REQUIRE(actor.setMove(*bite, start));
+    const Vec3 unturned{0, 0, 8};
+    std::array<EnemyView, 2> players{};
+    players[0].player = 0;
+    players[0].position = unturned + Vec3{0, -3, kind == AttackDefinition::kBreath ? 10.0f : 0.0f};
+    players[1].player = 1;
+    players[1].position = {8, -3, 0};
+    std::vector<CombatBlow> blows;
+    std::vector<CombatShot> shots;
+    std::vector<CombatGrab> grabs;
+    for (s32 update = 0; update < 30 && actor.animation().frame() < 16.0f; ++update) {
+        actor.update(2, 1.0f / 30, players);
+        blows = actor.takeBlows();
+        shots = actor.takeShots();
+        grabs = actor.takeGrabs();
+    }
+    REQUIRE(actor.moveName() == "BITE");
+    REQUIRE(actor.animation().frame() == 16.0f);
+    REQUIRE(actor.yaw() == 0.0f);
+    // The look has turned BITE an eighth of a turn round.
+    const auto drawn = actor.nodeTransform("BITE");
+    REQUIRE(drawn.has_value());
+    REQUIRE(glm::distance(Vec3{(*drawn)[3]}, turnedBite()) < 1e-3f);
+    const Vec3 struck = afterGaze ? turnedBite() : unturned;
+    if (kind == AttackDefinition::kProjectile) {
+        REQUIRE(shots.size() == 1);
+        CHECK(glm::distance(shots[0].origin, struck) < 1e-3f);
+    } else if (kind == AttackDefinition::kGrab) {
+        // Turned away with BITE, the grab reaches nobody.
+        REQUIRE(grabs.size() == (afterGaze ? 0U : 1U));
+        if (!afterGaze) {
+            CHECK(grabs[0].player == 0);
+            // Caught, the player hangs from BITE as the look leaves it (PlayerSetParent to
+            // obj_d0).
+            REQUIRE(grabs[0].attachment.has_value());
+            CHECK(glm::distance(Vec3{(*grabs[0].attachment)[3]}, turnedBite()) < 1e-3f);
+        }
+    } else {
+        // Turned away with BITE, the blow and the breath reach nobody.
+        REQUIRE(blows.size() == (afterGaze ? 0U : 1U));
+        if (!afterGaze) {
+            CHECK(blows[0].player == 0);
+            CHECK(blows[0].breath == (kind == AttackDefinition::kBreath));
+            CHECK(glm::distance(blows[0].origin, struck) < 1e-3f);
+            if (kind == AttackDefinition::kBreath) {
+                // Pushed along the animated forward, not the turned one.
+                CHECK(glm::distance(blows[0].direction, Vec3{0, 0, 1}) < 1e-4f);
+            }
+        }
+    }
+}
+
+TEST_CASE("a death's coins leave its move node as the animation puts it, before the look turns "
+          "it",
+          "[game][combatant][gaze]") {
+    // CritterDoDamage's type 9 throws from c->moveOrigin (critter.c 2826-2840), which
+    // CritterMoveSetup leaves before CritterLookAtPlayer eases a dying fighter's look back
+    // (0x80039A08-0x80039A44). Data whose rules strike after the look throws them from there.
+    const bool afterGaze = GENERATE(false, true);
+    CAPTURE(afterGaze);
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    CritterRules rules;
+    rules.portRules = afterGaze ? CritterRules::kStrikesAfterGaze : 0;
+    loadLookingGeneral(device, assets, AttackDefinition::kBlow, rules);
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+    const auto bite = assets.data.moveNamed("BITE");
+    REQUIRE(bite);
+    Combatant::MovePoint start;
+    start.target = 1;
+    REQUIRE(actor.setMove(*bite, start));
+    // Its target a quarter turn to its right, out of the bite's reach, draws the look round.
+    std::array<EnemyView, 1> players{};
+    players[0].player = 1;
+    players[0].position = {8, -3, 0};
+    // Sixteen frames on, its tracked bearing lies past the turn the look may make, so the first
+    // frame of the death, easing it back by a step, still turns the look as far as it may.
+    for (s32 update = 0; update < 16; ++update) {
+        actor.update(2, 1.0f / 30, players);
+    }
+    REQUIRE(actor.moveName() == "BITE");
+    REQUIRE(actor.takeBlows().empty());
+    EnemyHit kill;
+    kill.player = 1;
+    kill.damage = 100000;
+    actor.hurt(kill);
+    std::vector<CombatSpew> spews;
+    for (s32 update = 0; update < 10 && spews.empty(); ++update) {
+        actor.update(2, 1.0f / 30, players);
+        spews = actor.takeSpews();
+    }
+    REQUIRE(spews.size() == 1);
+    REQUIRE(actor.moveName() == "DEATH");
+    // Thrown before the killing blow's shove carries the body on, as the look has only begun to
+    // ease back from its whole turn.
+    const auto drawn = actor.nodeTransform("BITE");
+    REQUIRE(drawn.has_value());
+    REQUIRE(glm::distance(Vec3{(*drawn)[3]} - actor.position(), turnedBite()) < 1e-3f);
+    CHECK(glm::distance(spews[0].origin, afterGaze ? turnedBite() : Vec3{0, 0, 8}) < 1e-3f);
+}
+
+TEST_CASE("the Plague Fiend's gas breath leaves along his animated jaw, not where his neck turns "
+          "to follow a player",
+          "[game][combatant][plague][gaze][assets]") {
+    // GASBRTH breathes from OUTER_JAW, under BODY1_NECK04_STEVE, the look node that turns up to
+    // 25 degrees after his target, and keeps no head to its animation (move flags 0).
+    // CritterFirePlayerCollide measures it from worldMoveMatrix, which CritterMoveSetup leaves
+    // before CritterLookAtPlayer turns the neck (critter.c 3766, 4356-4360, 6523-6534).
+    const auto root = test::assetOrSkip("CRITTER/PBOSS.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/PBOSS/ANIM.PS2");
+    test::FakeRenderDevice device;
+    // His target stands square to his right, out of the gas's reach, so his neck turns all it may.
+    const EnemyView target{.player = 0, .position = {40, 0, 0}};
+    const auto breathe = [&](test::CombatantFixture& f, std::span<const EnemyView> players) {
+        f.open(device, root, nullptr, {}, 'K');
+        REQUIRE(f.spawn("PBOSS", Vec3{0}, 0));
+        const auto gas = f.actor.data()->moveNamed("GASBRTH");
+        REQUIRE(gas.has_value());
+        const MoveDefinition& move = f.actor.data()->moves()[*gas];
+        REQUIRE(move.colnode == "OUTER_JAW");
+        REQUIRE(move.flags == 0);
+        Combatant::MovePoint point;
+        point.target = 0;
+        REQUIRE(f.actor.setMove(*gas, point));
+        std::optional<CombatBlow> breath;
+        for (s32 update = 0;
+             update < 300 && f.actor.animation().frame() < static_cast<f32>(move.frameStart);
+             ++update) {
+            f.update(2, 1.0f / 30, players);
+            for (const CombatBlow& blow : f.actor.takeBlows()) {
+                if (blow.player == 1) {
+                    breath = blow;
+                }
+            }
+            f.actor.takeShots();
+            f.actor.takeCues();
+        }
+        REQUIRE(f.actor.moveName() == "GASBRTH");
+        return breath;
+    };
+    // Where the animation alone puts the jaw as the gas starts, and where the neck has turned it.
+    test::CombatantFixture first;
+    REQUIRE_FALSE(breathe(first, std::array{target}).has_value());
+    const TreeInfo& tree = *first.assets.tree;
+    const auto jaw = tree.findNode("OUTER_JAW", kCombatantNodeNameLength);
+    REQUIRE(jaw.has_value());
+    TreePose animated;
+    animated.evaluate(tree, first.actor.animation().sequence(), first.actor.animation().frame());
+    const auto gas = first.actor.data()->moveNamed("GASBRTH");
+    const AttackDefinition& damage =
+        *first.actor.data()->damage(first.actor.data()->moves()[*gas].damage0);
+    const auto model = first.actor.nodeTransform({});
+    const auto turned = first.actor.nodeTransform("OUTER_JAW");
+    REQUIRE(model.has_value());
+    REQUIRE(turned.has_value());
+    const Mat4 animatedJaw = *model * animated.rigidMatrix(*jaw);
+    const auto beam = CombatantBreath::fromNode(animatedJaw, damage);
+    const Vec3 along = approximateFlatUnit(beam.end - beam.origin);
+    // The neck has turned the jaw's flat forward by more than three tenths of a radian.
+    const Vec3 turnedForward = glm::normalize(Vec3{(*turned)[2].x, 0, (*turned)[2].z});
+    const Vec3 animatedForward = glm::normalize(Vec3{animatedJaw[2].x, 0, animatedJaw[2].z});
+    REQUIRE(std::acos(std::clamp(glm::dot(turnedForward, animatedForward), -1.0f, 1.0f)) > 0.3f);
+    // A second player twenty along the animated beam is breathed on from the animated jaw.
+    test::CombatantFixture second;
+    EnemyView struck;
+    struck.player = 1;
+    struck.position = beam.origin + 0.8f * (beam.end - beam.origin) - Vec3{0, 3, 0};
+    const auto breath = breathe(second, std::array{target, struck});
+    REQUIRE(second.actor.animation().frame() == first.actor.animation().frame());
+    REQUIRE(breath.has_value());
+    CHECK(breath->breath);
+    CHECK(glm::distance(breath->origin, beam.origin) < 1e-3f);
+    CHECK(glm::distance(breath->direction, along) < 1e-4f);
 }
 
 TEST_CASE("a sleeping boss takes nothing, and awake takes less the more are in the game",

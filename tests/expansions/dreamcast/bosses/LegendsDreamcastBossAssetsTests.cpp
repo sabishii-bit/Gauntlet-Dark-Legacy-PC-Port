@@ -93,6 +93,9 @@ TEST_CASE("Dreamcast six native bosses bind all authored attacks and collision n
             // Its c->anim is its tree's root node, as Dark Legacy's is (8c087740), so a move
             // naming no node strikes from that node.
             CHECK((stock->data.rules().portRules & CritterRules::kModelFallback) == 0);
+            // Whether its animation sets a turned look node back before the next MoveSetup is
+            // unread, so its strikes follow the turned pose.
+            CHECK((stock->data.rules().portRules & CritterRules::kStrikesAfterGaze) != 0);
             const auto validate = [&](const CritterData& part) {
                 for (const auto& move : part.moves()) {
                     CAPTURE(move.name, move.anim, move.colnode);
@@ -126,6 +129,7 @@ TEST_CASE("Dreamcast six native bosses bind all authored attacks and collision n
                 CHECK(child.rules().playerBreathGap == Approx(0.1f));
                 CHECK((child.rules().portRules & CritterRules::kScaledNodes) != 0);
                 CHECK((child.rules().portRules & CritterRules::kModelFallback) == 0);
+                CHECK((child.rules().portRules & CritterRules::kStrikesAfterGaze) != 0);
                 validate(child);
             }
             CHECK(stock->children.size() == (kind == 35 ? 3 : 0));

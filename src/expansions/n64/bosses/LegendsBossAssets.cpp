@@ -371,8 +371,14 @@ std::unique_ptr<CombatantAssets> loadLegendsBossAssets(RenderDevice& device,
                        // they move its draw. Its c->anim (+0x7c) is a node of its own between
                        // the body and its tree (e0881474), which MoveSetup (e08839bc) falls back
                        // to for a move naming no node (e0880474), so such a move strikes from
-                       // the model; a head's is its own root node (e0881708).
-                       .portRules = CritterRules::kScaledNodes | CritterRules::kModelFallback};
+                       // the model; a head's is its own root node (e0881708). Its strikes read
+                       // the matrix MoveSetup leaves at +0x178 before its look (e0887e88) turns
+                       // the look nodes, as GDL's do (e08842e8), but that look itself sets a node
+                       // without flag 0x200 to no turn (e0887a30, the identity at e00a929c)
+                       // before turning it, so whether the next MoveSetup meets the node still
+                       // turned is unread; its strikes follow the turned pose.
+                       .portRules = CritterRules::kScaledNodes | CritterRules::kModelFallback |
+                                    CritterRules::kStrikesAfterGaze};
     auto data = CritterData::fromDecoded(family.name, decoded, 0, rules);
     std::vector<CritterData> children;
     std::set<s32> visited{0};

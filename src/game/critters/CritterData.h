@@ -58,6 +58,11 @@ struct CritterRules {
      * a player, as they do its draw. GDL's GetWorldMat (0x800BB614) composes the nodes without
      * them, which only the draw applies. */
     static constexpr u32 kScaledNodes = 0x1;
+    /** portRules: its blows, breaths, shots, grabs and spews measure from the move's node after
+     * its look has turned the look nodes. GDL's CritterMoveSetup leaves worldMoveMatrix
+     * (0x8003B1CC) for CritterActivate's strikes before CritterLookAtPlayer turns them
+     * (CritterGolemAI 0x80039A08-0x80039A44, CritterBossAI 0x8003A1FC-0x8003A2A8). */
+    static constexpr u32 kStrikesAfterGaze = 0x2;
     /** portRules: a body's move naming no node strikes from the model, the node its tree hangs
      * from; a head's still strikes from its own root node. GDL's CritterNewInst makes the
      * tree's root node the body's c->anim (critter.c 2010-2012), which CritterMoveSetup falls

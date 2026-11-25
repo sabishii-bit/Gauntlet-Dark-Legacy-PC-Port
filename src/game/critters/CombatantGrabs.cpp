@@ -7,8 +7,9 @@
 #include "game/critters/Combatant.h"
 
 namespace gdl::game {
-void Combatant::grab(Actor& actor, const MoveDefinition& move, const AttackDefinition& damage,
-                     bool release, std::span<const EnemyView> players) {
+void Combatant::grab(Actor& actor, const MoveDefinition& move, const Mat4& moveFrame,
+                     const AttackDefinition& damage, bool release,
+                     std::span<const EnemyView> players) {
     if (release) {
         if (actor.grabbed >= 0) {
             carryGrab(actor, players);
@@ -38,8 +39,9 @@ void Combatant::grab(Actor& actor, const MoveDefinition& move, const AttackDefin
     }
     // Collision is a blow's: the offset turned with the move's node, whole however the body is
     // drawn (CritterGrabPlayer through CritterNodePlayerCollide's worldMoveMatrix). Once
-    // attached, the player is held at the offset on that node (PlayerSetParent to obj_d0).
-    const Vec3 centre{moveNodeTransform(actor, move.colnode) * Vec4{damage.offset, 1}};
+    // attached, the player is held at the offset on that node (PlayerSetParent to obj_d0), as
+    // the look leaves it.
+    const Vec3 centre{moveFrame * Vec4{damage.offset, 1}};
     f32 nearest = std::numeric_limits<f32>::max();
     for (const EnemyView& player : players) {
         if (player.player < 0 || static_cast<usize>(player.player) >= kPlayerSlots) {
