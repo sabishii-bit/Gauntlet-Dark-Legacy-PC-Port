@@ -6,8 +6,9 @@
 //! is to the system: its build from RtlGetVersion, the user's known folders from
 //! SHGetKnownFolderPath, an entry's reparse tag from GetFileInformationByHandleEx, and the folders
 //! of the OneDrive accounts signed in from the registry, and a path's names in full, short aliases
-//! replaced, from GetLongPathNameW; and whether an open file is the one at a name, by the
-//! identities GetFileInformationByHandleEx and GetFileInformationByHandle give files.
+//! replaced, from GetLongPathNameW; whether an open file is the one at a name, by the identities
+//! GetFileInformationByHandleEx and GetFileInformationByHandle give files; and the proxy the
+//! user's Internet Settings name, from the registry.
 
 use std::ffi::OsString;
 use std::fs::{File, OpenOptions};
@@ -39,8 +40,8 @@ use windows_sys::Win32::System::LibraryLoader::{
 };
 use windows_sys::Win32::System::Power::SetThreadExecutionState;
 use windows_sys::Win32::System::Registry::{
-    HKEY, HKEY_CURRENT_USER, KEY_READ, RRF_RT_REG_SZ, RegCloseKey, RegEnumKeyExW, RegGetValueW,
-    RegOpenKeyExW,
+    HKEY, HKEY_CURRENT_USER, KEY_READ, RRF_RT_REG_DWORD, RRF_RT_REG_SZ, RegCloseKey, RegEnumKeyExW,
+    RegGetValueW, RegOpenKeyExW,
 };
 use windows_sys::Win32::System::SystemInformation::{
     IMAGE_FILE_MACHINE, IMAGE_FILE_MACHINE_UNKNOWN, OSVERSIONINFOW,
@@ -53,6 +54,7 @@ use windows_sys::Win32::UI::Shell::{
 use windows_sys::core::{BOOL, GUID, PCWSTR, PWSTR, w};
 
 use crate::destination::KnownFolder;
+use crate::system_proxy::{ProxyEnable, RawInternetSettings};
 
 #[cfg(test)]
 use windows_sys::Win32::Foundation::GENERIC_WRITE;
@@ -72,6 +74,8 @@ use windows_sys::Win32::System::LibraryLoader::{
 };
 #[cfg(test)]
 use windows_sys::Win32::System::Power::ES_CONTINUOUS;
+#[cfg(test)]
+use windows_sys::Win32::System::Registry::HKEY_LOCAL_MACHINE;
 
 /// IsWow64Process2's signature. The call is looked up while running, since Windows 10 has it only
 /// from version 1511 on, and a program that imported it would not start on a system without it.
@@ -97,6 +101,24 @@ const MAX_PATH_UNITS: usize = 32_768;
 
 /// The most bytes an account's folder is read in: a verbatim path of Windows' greatest length.
 const MAX_USER_FOLDER_BYTES: u32 = 2 * MAX_PATH_UNITS as u32;
+
+/// The registry key under the user's own that holds the user's Internet Settings, the proxy among
+/// them.
+const INTERNET_SETTINGS_KEY: PCWSTR =
+    w!(r"Software\Microsoft\Windows\CurrentVersion\Internet Settings");
+
+/// The value of the Internet Settings that switches the proxy on.
+const PROXY_ENABLE_VALUE: PCWSTR = w!("ProxyEnable");
+
+/// The value of the Internet Settings that names the proxy.
+const PROXY_SERVER_VALUE: PCWSTR = w!("ProxyServer");
+
+/// The value of the Internet Settings that lists the hosts reached without the proxy.
+const PROXY_OVERRIDE_VALUE: PCWSTR = w!("ProxyOverride");
+
+/// The most bytes a proxy setting is read in: a value far longer than any proxy's address or
+/// bypass list is not read at all.
+const MAX_PROXY_VALUE_BYTES: u32 = 64 * 1024;
 
 /// The errors FindResourceExW gives for a resource that a program does not hold: none of its
 /// type, none of its id among those of its type, or none in its language.
@@ -610,7 +632,7 @@ pub(crate) fn set_short_name(path: &Path, alias: &str) -> io::Result<()> {
 /// the user's own key: none when OneDrive has no account there. An account whose folder cannot be
 /// read, or names none, gives none.
 pub(crate) fn onedrive_account_folders() -> Vec<PathBuf> {
-    let Some(accounts) = RegistryKey::open_for_user(ONEDRIVE_ACCOUNTS_KEY) else {
+    let Ok(accounts) = RegistryKey::open_for_user(ONEDRIVE_ACCOUNTS_KEY) else {
         return Vec::new();
     };
     let mut folders = Vec::new();
@@ -622,6 +644,26 @@ pub(crate) fn onedrive_account_folders() -> Vec<PathBuf> {
         }
     }
     folders
+}
+
+/// The proxy values of the user's Internet Settings, as the registry holds them: the switch read
+/// as a number, or as text where it is a string, and the server and bypass list as text. A value
+/// the key lacks, or holds as another type or longer than [`MAX_PROXY_VALUE_BYTES`], is `None`;
+/// text that is not Unicode is kept with its unpaired surrogates replaced, so that a proxy named
+/// so is still gone through, and fails, rather than passed over for a direct request. A key that
+/// cannot be opened is the system's own error.
+pub(crate) fn internet_settings_values() -> io::Result<RawInternetSettings> {
+    let settings = RegistryKey::open_for_user(INTERNET_SETTINGS_KEY)?;
+    let text = |value| {
+        settings
+            .text(ptr::null(), value, MAX_PROXY_VALUE_BYTES)
+            .map(|units| String::from_utf16_lossy(&units))
+    };
+    Ok(RawInternetSettings {
+        enable: settings.switch(PROXY_ENABLE_VALUE),
+        server: text(PROXY_SERVER_VALUE),
+        bypass: text(PROXY_OVERRIDE_VALUE),
+    })
 }
 
 /// A registry key opened to read, and closed when dropped.
@@ -638,14 +680,23 @@ enum Subkey {
 }
 
 impl RegistryKey {
-    /// Opens the key at `path` under the user's own key, to read: `None` when it cannot be.
-    fn open_for_user(path: PCWSTR) -> Option<RegistryKey> {
+    /// Opens the key at `path` under the user's own key, to read.
+    fn open_for_user(path: PCWSTR) -> io::Result<RegistryKey> {
+        RegistryKey::open(HKEY_CURRENT_USER, path)
+    }
+
+    /// Opens the key at `path` under `root`, one of the predefined keys, to read.
+    fn open(root: HKEY, path: PCWSTR) -> io::Result<RegistryKey> {
         let mut key: HKEY = ptr::null_mut();
-        // SAFETY: the user's key is a predefined handle, always open; the path is a
-        // NUL-terminated UTF-16 string that lives for the whole run, which the call only reads;
-        // and the call writes the key it opens through a pointer to a local that outlives it.
-        let status = unsafe { RegOpenKeyExW(HKEY_CURRENT_USER, path, 0, KEY_READ, &mut key) };
-        (status == ERROR_SUCCESS).then_some(RegistryKey(key))
+        // SAFETY: the root is a predefined handle, always open; the path is a NUL-terminated
+        // UTF-16 string that lives for the whole run, which the call only reads; and the call
+        // writes the key it opens through a pointer to a local that outlives it.
+        let status = unsafe { RegOpenKeyExW(root, path, 0, KEY_READ, &mut key) };
+        if status == ERROR_SUCCESS {
+            Ok(RegistryKey(key))
+        } else {
+            Err(io::Error::from_raw_os_error(status.cast_signed()))
+        }
     }
 
     /// The subkey at `index`, as RegEnumKeyExW lists them.
@@ -680,26 +731,38 @@ impl RegistryKey {
     }
 
     /// The folder that the account whose subkey is named `account`, NUL-terminated, keeps in
-    /// sync: its string value [`USER_FOLDER_VALUE`], sized by a first read. `None` when it cannot
-    /// be read, is empty, or is longer than any path.
+    /// sync: its string value [`USER_FOLDER_VALUE`]. `None` when it cannot be read, is empty, or
+    /// is longer than any path.
     fn user_folder(&self, account: &[u16]) -> Option<PathBuf> {
+        let folder = self.text(account.as_ptr(), USER_FOLDER_VALUE, MAX_USER_FOLDER_BYTES)?;
+        (!folder.is_empty()).then(|| PathBuf::from(OsString::from_wide(&folder)))
+    }
+
+    /// The units of the string value `value` of the subkey named `subkey`, or of this key itself
+    /// when `subkey` is null, up to its first NUL: sized by a first read, and `None` when the
+    /// value is missing, is no string, needs more than `max_bytes` or cannot be read.
+    fn text(&self, subkey: PCWSTR, value: PCWSTR, max_bytes: u32) -> Option<Vec<u16>> {
         let mut bytes = 0_u32;
-        // SAFETY: the key is open; the subkey's and the value's names are NUL-terminated UTF-16
-        // strings that outlive the call, which only reads them; no data is asked for, which the
-        // call allows, and it writes the bytes the value needs through a pointer to a local.
+        // SAFETY: the key is open; the subkey's name, when there is one, and the value's are
+        // NUL-terminated UTF-16 strings that outlive the call, which only reads them, and a null
+        // subkey names the key itself; no data is asked for, which the call allows, and it writes
+        // the bytes the value needs through a pointer to a local.
         let status = unsafe {
             RegGetValueW(
                 self.0,
-                account.as_ptr(),
-                USER_FOLDER_VALUE,
+                subkey,
+                value,
                 RRF_RT_REG_SZ,
                 ptr::null_mut(),
                 ptr::null_mut(),
                 &mut bytes,
             )
         };
-        if status != ERROR_SUCCESS || bytes == 0 || bytes > MAX_USER_FOLDER_BYTES {
+        if status != ERROR_SUCCESS || bytes > max_bytes {
             return None;
+        }
+        if bytes == 0 {
+            return Some(Vec::new());
         }
         let mut units = vec![0_u16; (bytes as usize).div_ceil(2)];
         let mut read = (units.len() * 2) as u32;
@@ -708,8 +771,8 @@ impl RegistryKey {
         let status = unsafe {
             RegGetValueW(
                 self.0,
-                account.as_ptr(),
-                USER_FOLDER_VALUE,
+                subkey,
+                value,
                 RRF_RT_REG_SZ,
                 ptr::null_mut(),
                 units.as_mut_ptr().cast(),
@@ -720,8 +783,44 @@ impl RegistryKey {
             return None;
         }
         units.truncate(read as usize / 2);
-        let folder = units.split(|&unit| unit == 0).next().unwrap_or_default();
-        (!folder.is_empty()).then(|| PathBuf::from(OsString::from_wide(folder)))
+        let end = units
+            .iter()
+            .position(|&unit| unit == 0)
+            .unwrap_or(units.len());
+        units.truncate(end);
+        Some(units)
+    }
+
+    /// The number value `value` of this key itself: `None` when it is missing, is no number or
+    /// cannot be read.
+    fn number(&self, value: PCWSTR) -> Option<u32> {
+        let mut number = 0_u32;
+        let mut bytes = size_of::<u32>() as u32;
+        // SAFETY: the key is open; the value's name is a NUL-terminated UTF-16 string that
+        // outlives the call, which only reads it, and a null subkey names the key itself; and the
+        // call writes a number of the `bytes` it is told, and their count, through pointers to
+        // locals that outlive it.
+        let status = unsafe {
+            RegGetValueW(
+                self.0,
+                ptr::null(),
+                value,
+                RRF_RT_REG_DWORD,
+                ptr::null_mut(),
+                (&raw mut number).cast(),
+                &mut bytes,
+            )
+        };
+        (status == ERROR_SUCCESS && bytes as usize == size_of::<u32>()).then_some(number)
+    }
+
+    /// The switch value `value` of this key itself: the number Windows writes, or text where it is
+    /// a string. `None` when it is missing, is neither, or cannot be read.
+    fn switch(&self, value: PCWSTR) -> Option<ProxyEnable> {
+        self.number(value).map(ProxyEnable::Number).or_else(|| {
+            self.text(ptr::null(), value, MAX_PROXY_VALUE_BYTES)
+                .map(|units| ProxyEnable::Text(String::from_utf16_lossy(&units)))
+        })
     }
 }
 
@@ -738,15 +837,34 @@ mod tests {
     use std::fs;
     use std::io;
     use std::os::windows::fs::OpenOptionsExt;
+    use std::ptr;
+
+    use windows_sys::core::{PCWSTR, w};
 
     use super::{
-        file_id, file_index, is_same_file, long_path, numbered, onedrive_account_folders,
-        reparse_tag, resource_bytes, set_short_name, short_path, update_resources, wide_string,
-        windows_build,
+        HKEY_LOCAL_MACHINE, MAX_PROXY_VALUE_BYTES, ProxyEnable, RegistryKey, file_id, file_index,
+        is_same_file, long_path, numbered, onedrive_account_folders, reparse_tag, resource_bytes,
+        set_short_name, short_path, update_resources, wide_string, windows_build,
     };
 
     /// The first build of Windows 10, the oldest system the launcher runs on.
     const FIRST_WINDOWS_10_BUILD: u32 = 10_240;
+
+    /// The machine's key that names the system's version, with a number and a string among its
+    /// values on every Windows 10 and later, which the tests only read.
+    const VERSION_KEY: PCWSTR = w!(r"Software\Microsoft\Windows NT\CurrentVersion");
+
+    /// The version key's number value naming the system's major version, 10 or more.
+    const MAJOR_VERSION_VALUE: PCWSTR = w!("CurrentMajorVersionNumber");
+
+    /// The version key's string value naming the system's build, in decimal.
+    const BUILD_VALUE: PCWSTR = w!("CurrentBuild");
+
+    /// A value no key of the system holds.
+    const MISSING_VALUE: PCWSTR = w!("GauntletDarkLegacyLauncherNoSuchValue");
+
+    /// A key the system does not have.
+    const MISSING_KEY: PCWSTR = w!(r"Software\GauntletDarkLegacyLauncherNoSuchKey");
 
     /// IO_REPARSE_TAG_MOUNT_POINT: the reparse tag of a junction.
     const JUNCTION_TAG: u32 = 0xA000_0003;
@@ -886,6 +1004,56 @@ mod tests {
         for folder in onedrive_account_folders() {
             assert!(!folder.as_os_str().is_empty());
         }
+    }
+
+    #[test]
+    fn a_switch_is_read_as_a_number_or_as_text() {
+        let version = RegistryKey::open(HKEY_LOCAL_MACHINE, VERSION_KEY).unwrap();
+        // A number value is read as the number.
+        match version.switch(MAJOR_VERSION_VALUE) {
+            Some(ProxyEnable::Number(major)) => assert!(major >= 10, "{major}"),
+            Some(ProxyEnable::Text(_)) => panic!("the major version was read as text"),
+            None => panic!("the major version was not read"),
+        }
+        // A string value, which no number read takes, is read as its text, without its NUL.
+        assert_eq!(version.number(BUILD_VALUE), None);
+        match version.switch(BUILD_VALUE) {
+            Some(ProxyEnable::Text(build)) => {
+                let build: u32 = build.parse().unwrap();
+                assert!(build >= FIRST_WINDOWS_10_BUILD, "{build}");
+            }
+            Some(ProxyEnable::Number(_)) => panic!("the build was read as a number"),
+            None => panic!("the build was not read"),
+        }
+        // A value the key lacks is neither.
+        assert!(version.switch(MISSING_VALUE).is_none());
+        assert_eq!(version.number(MISSING_VALUE), None);
+    }
+
+    #[test]
+    fn a_string_is_read_within_its_bound() {
+        let version = RegistryKey::open(HKEY_LOCAL_MACHINE, VERSION_KEY).unwrap();
+        let build = version
+            .text(ptr::null(), BUILD_VALUE, MAX_PROXY_VALUE_BYTES)
+            .unwrap();
+        assert!(!build.is_empty());
+        // A bound that holds less than the string and its NUL reads nothing.
+        let short = u32::try_from(build.len() * 2).unwrap();
+        assert_eq!(version.text(ptr::null(), BUILD_VALUE, short), None);
+        // A number is no string, and a value the key lacks is none.
+        assert_eq!(
+            version.text(ptr::null(), MAJOR_VERSION_VALUE, MAX_PROXY_VALUE_BYTES),
+            None
+        );
+        assert_eq!(
+            version.text(ptr::null(), MISSING_VALUE, MAX_PROXY_VALUE_BYTES),
+            None
+        );
+        // A key the system lacks is its own error.
+        let Err(error) = RegistryKey::open(HKEY_LOCAL_MACHINE, MISSING_KEY) else {
+            panic!("a key the system lacks was opened");
+        };
+        assert_eq!(error.kind(), io::ErrorKind::NotFound, "{error}");
     }
 
     #[test]

@@ -1,6 +1,7 @@
 //! The install folder: its receipt, payload policy, embedded sections, lock and probes; installing
 //! the game, updating it and the launcher, recovering interrupted work, the expansions, the disc
-//! icon and launching. Only its `platform` module may call the OS directly.
+//! icon and launching; and the proxy the system's settings name. Only its `platform` module may
+//! call the OS directly.
 #![deny(unsafe_code)]
 
 mod awake;
@@ -22,6 +23,7 @@ mod platform;
 mod probe;
 mod receipt;
 mod sections;
+mod system_proxy;
 #[cfg(test)]
 mod test_platform;
 
@@ -70,3 +72,4 @@ pub use sections::{
     MAX_SECTION_LEN, MAX_SECTION_NAME, MAX_TABLE_LEN, RUNTIME_SECTION, Section, SectionView,
     Sections, SectionsError, WINDOW_SECTION,
 };
+pub use system_proxy::internet_settings;
