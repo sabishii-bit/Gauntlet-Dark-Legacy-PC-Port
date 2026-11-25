@@ -794,7 +794,7 @@ mod tests {
     use std::process::ExitStatus;
     use std::sync::Mutex;
     use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-    use std::time::{Duration, Instant};
+    use std::time::Duration;
 
     use gdl_files::{
         Cancel, FilesError, Hold, Job, NoProgress, PAYLOAD_NAMES, PhaseId, Progress, RelPath,
@@ -3023,6 +3023,47 @@ mod tests {
         assert_eq!(as_it_is(&fixture.root), before);
     }
 
+    #[test]
+    fn the_receipt_keeps_no_digest_of_a_file_the_update_replaces_or_removes() {
+        // A receipt with digests of its own for the text table, which the update replaces, and
+        // for the shader it removes, as a receipt may give one for any file its record lists.
+        let (dir, fixture) = players_installation();
+        let mut receipt = fixture.receipt();
+        receipt["installedDigests"]["data/text/en.json"] = json!(sha256_hex(b"{}"));
+        receipt["installedDigests"]["shaders/test.spv"] = json!(sha256_hex(b"shader"));
+        fixture.write_receipt(&receipt).unwrap();
+        let next = fixture.runtime.next(NEXT);
+        let (_, mut source) = bundled_as(dir.path(), "next-launcher", &next);
+        updated(update_simply(
+            &fixture,
+            &mut source,
+            NEXT,
+            &standing_in(&NoFaults, &answering),
+        ));
+        let written = receipt_at(&fixture.root);
+        for name in ["data/text/en.json", "shaders/test.spv"] {
+            assert!(
+                written["installedDigests"].get(name).is_none(),
+                "{name}: {written}"
+            );
+        }
+        // The receipt reads with the files it pins, and the next update hashes them again as
+        // they are.
+        let installed = InstallFolder::at(&fixture.root)
+            .unwrap()
+            .installed(&version(NEXT))
+            .unwrap();
+        assert_eq!(installed.build_info.version(), version(NEXT));
+        let (_, mut later) = bundled_as(dir.path(), "later-launcher", &next.next(LATER));
+        let done = updated(update_simply(
+            &fixture,
+            &mut later,
+            LATER,
+            &standing_in(&NoFaults, &answering),
+        ));
+        assert_eq!(done.to, version(LATER));
+    }
+
     /// Runs `act` once, at the first pass of `point` that finds the update's journal at
     /// `journal`.
     pub(super) struct OnceJournalled<'a> {
@@ -3283,6 +3324,7 @@ mod tests {
     #[test]
     fn a_new_copy_held_as_an_image_is_left_for_the_sweep() {
         use std::cell::RefCell;
+        use std::time::Instant;
 
         use crate::platform::map_image;
 

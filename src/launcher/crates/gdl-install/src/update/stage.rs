@@ -610,7 +610,9 @@ impl Update<'_> {
 
     /// The receipt the update writes: the installed one with the new release's version, commit
     /// and record digest and the new launcher copy's digest, every key it holds beyond its own
-    /// kept.
+    /// kept. A digest it records of a file the update replaces or removes goes, since that file
+    /// holds the release's bytes or is gone; on Windows a staged executable's is recorded again
+    /// once the disc's icon is set into it.
     fn new_receipt(&self, judged: &Judged, launcher_sha256: Sha256Digest) -> Receipt {
         let record = &judged.record;
         let mut receipt = self.receipt.clone();
@@ -618,6 +620,9 @@ impl Update<'_> {
         receipt.commit = record.commit.clone();
         receipt.build_info_sha256 = judged.record_sha256.hex();
         receipt.launcher.sha256 = launcher_sha256.hex();
+        for name in judged.changes.backup() {
+            receipt.installed_digests.remove(name.as_str());
+        }
         receipt
     }
 
