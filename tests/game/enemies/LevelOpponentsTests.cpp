@@ -4422,11 +4422,12 @@ TEST_CASE("a suicide struck down goes up in a burning blast that reaches the par
 }
 
 /** Suicide bombers going up beside a grunt that outlasts many of their blasts, which reach it
- * as they begin. */
+ * as they begin; its fixture is written to the scratch folder `name`, one a field alive. */
 class WorldWaitField {
 public:
-    explicit WorldWaitField(f32 damageScale, s32 rate) : m_rate(rate) {
-        const auto root = test::scratchDirectory("swarm-world-wait");
+    WorldWaitField(f32 damageScale, s32 rate, std::string_view name = "swarm-world-wait")
+        : m_rate(rate) {
+        const auto root = test::scratchDirectory(name);
         writeMeleeEnemy(root, kGruntKind);
         m_players[0].actor.spawn(0, {}, nullptr, Vec3{0, 0, 60}, 0); // far out of every reach
         m_opponents.open({m_device, m_world, m_weapons, m_effects, m_audio, root, 1}, m_players);
@@ -4514,7 +4515,7 @@ TEST_CASE("one of the swarm struck over two by a blast is held from the world's 
         const auto [hurtsAlone, lostAlone] = alone.run(2.0f);
         REQUIRE(hurtsAlone == 1);
         REQUIRE(lostAlone > 2.0f);
-        WorldWaitField together{kSlight, rate};
+        WorldWaitField together{kSlight, rate, "swarm-world-wait-together"};
         together.detonate({-2, 0, 0});
         together.detonate({-2, 0, -1});
         const auto [hurts, lost] = together.run(2.0f);
@@ -4547,15 +4548,18 @@ TEST_CASE("one of the swarm struck over two by a blast is held from the world's 
     }
 }
 
-TEST_CASE("a lob sent back onto its thrower holds it from the world's effects through its burst",
+TEST_CASE("a lob sent back onto its thrower strikes it through the world's wait, and holds it "
+          "from the world's effects through its burst",
           "[level-opponents][enemies][hit-wait][enemy-reflect][assets]") {
     // A missile's fade is its hit effect's length when it has one (0x800950F0-0x8009515C): a
     // zombie's lob turned back by armour retraces its arc onto the zombie, whose fxhittime[0]
-    // then keeps the burst it leaves off it.
+    // then keeps the burst it leaves off it. The missile itself keeps StartMissile's 0x01000000
+    // (0x80030988), so it strikes the zombie even while an earlier effect holds it.
     const auto root =
         test::assetOrSkip("MONSTERS/ZOM/ANIM.PS2").parent_path().parent_path().parent_path();
     const s32 rate = GENERATE(30, 60);
-    CAPTURE(rate);
+    const bool held = GENERATE(false, true);
+    CAPTURE(rate, held);
     test::FakeRenderDevice device;
     LevelWorld world;
     ItemArchive weapons;
@@ -4573,6 +4577,9 @@ TEST_CASE("a lob sent back onto its thrower holds it from the world's effects th
     const auto bomber = opponents.enemies().spawn(
         EnemySpawn{.kind = kZombie, .tier = kBomberStrength, .algorithm = 0, .placed = true}, {});
     REQUIRE(bomber.has_value());
+    if (held) {
+        opponents.enemies().holdHits(*bomber, Enemies::kWorldWait, 100.0f);
+    }
     test::OpponentScript events;
     test::ScriptedOpponents host{events};
     events.settleBlasts = [] {};
@@ -4722,12 +4729,17 @@ public:
             const f32 was = enemies().healthOf(m_grunt);
             m_opponents.update(60 / m_rate, 1.0f / static_cast<f32>(m_rate), m_players, {}, m_host,
                                m_host, m_host);
-            m_struck += enemies().healthOf(m_grunt) < was ? 1 : 0;
+            if (enemies().healthOf(m_grunt) < was) {
+                ++m_struck;
+                m_heldWhenStruck.push_back(enemies().hitWaiting(m_grunt, Enemies::kWorldWait));
+            }
         }
         return before - enemies().healthOf(m_grunt);
     }
     /** The updates in which the grunt lost health. */
     s32 struck() const { return m_struck; }
+    /** Whether the world's wait held the grunt after each update it lost health in. */
+    const std::vector<bool>& heldWhenStruck() const { return m_heldWhenStruck; }
     /** What the player was dealt, a hurt at a time. */
     const std::vector<f32>& playerHurts() const { return m_playerHurts; }
 
@@ -4745,6 +4757,7 @@ private:
     s32 m_grunt = -1;
     s32 m_awards = 0;
     s32 m_struck = 0;
+    std::vector<bool> m_heldWhenStruck;
     std::vector<f32> m_playerHurts;
 };
 
@@ -4790,6 +4803,7 @@ TEST_CASE("a golem's stomp harms one of the swarm it spreads over once, earning 
     REQUIRE(field.enemies().observe(field.grunt())->asleep);
     CHECK(field.run(2.0f) > 2.0f);
     CHECK(field.struck() == 1);
+    CHECK(field.heldWhenStruck() == std::vector<bool>{true});
     CHECK(field.awards() == 0);
     CHECK_FALSE(field.playerHurts().empty()); // the player beside it too
 }
@@ -4805,12 +4819,14 @@ TEST_CASE("a golem's stomp passes one of the swarm while the world's wait holds 
 TEST_CASE("a golem's shot strikes one of the swarm in its way and goes no further",
           "[level-opponents][enemies][swarm-effect][hit-wait]") {
     // The flying pass strikes the first enemy MissileCollideEnemy meets once no player has
-    // stopped the shot, for no player, and the shot ends there (sfx.c 3091-3157).
+    // stopped the shot, for no player, and the shot ends there (sfx.c 3091-3157), holding it for
+    // the shot's fade (sfx.c 3119-3123).
     const s32 rate = GENERATE(30, 60);
     CAPTURE(rate);
     SwarmBlowField field{false, rate, FieldAttack::Shot};
     CHECK(field.run(2.0f) > 2.0f);
     CHECK(field.struck() == 1);
+    CHECK(field.heldWhenStruck() == std::vector<bool>{true});
     CHECK(field.awards() == 0);
     // The grunt it wakes may come at the player, but the shot of ten never gets there.
     CHECK(std::ranges::find(field.playerHurts(), 10.0f) == field.playerHurts().end());
