@@ -186,13 +186,9 @@ bool dreamcastPromptReturns(std::span<const HudSeat> seats, usize seat) {
 }
 
 LegendsDreamcastBoxKind dreamcastBoxKind(const HudSeat& seat) {
-    if (seat.departed && seat.runtime != nullptr) {
-        return LegendsDreamcastBoxKind::Plain;
-    }
-    if (seat.box.mode == StatusBoxView::Mode::Plain) {
-        return LegendsDreamcastBoxKind::None;
-    }
-    return seat.box.inTower ? LegendsDreamcastBoxKind::Plain : LegendsDreamcastBoxKind::Panel;
+    const bool inGame = !seat.departed && seat.box.mode != StatusBoxView::Mode::Plain;
+    return inGame && !seat.box.inTower ? LegendsDreamcastBoxKind::Panel
+                                       : LegendsDreamcastBoxKind::Plain;
 }
 
 RuneMeter::Column dreamcastThermometerColumn(f32 fill, f32 width) {

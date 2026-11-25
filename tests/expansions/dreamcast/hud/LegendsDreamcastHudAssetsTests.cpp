@@ -433,6 +433,33 @@ TEST_CASE("the Dreamcast look opens on the player's own art and draws each box f
     CHECK(dreamcast.art.record.count(kDarkLegacyHudStyle, test::FakeHudPart::Hourglass) == 0);
 }
 
+TEST_CASE("on the player's own art a lone player's Dreamcast look fills the other seats with their "
+          "kind-0 boxes",
+          "[legends][dreamcast-hud][assets]") {
+    const std::filesystem::path root = dreamcastRoot();
+    // A green knight alone in the first seat.
+    constexpr std::array<HudMember, 1> kParty{
+        {{.seat = 0, .classIndex = kKnightClass, .color = 3}}};
+    OpenedLook dreamcast(root, kParty);
+    REQUIRE(dreamcast.loaded);
+    HudView view;
+    view.seats[0] = standing(kKnightClass, 3);
+    view.joined = 1;
+    const std::vector<test::Quad> boxes = dreamcast.drawn(view, &Painter::drawStatus);
+    const Pictures statics = bankOf(root, "static");
+    // Each other seat shows its own colour's S3_W strip at 304 and S4_W panel at 320. Pictures
+    // are told apart by their pixels, which some colours' strips share.
+    for (usize seat = 1; seat < HudView::kSeats; ++seat) {
+        CAPTURE(seat);
+        const s32 left = dreamcastSeatX(seat) + Layout::kArtLeft;
+        const std::string_view colour = Layout::kPanelColours.at(seat);
+        CHECK(standsAt(showing(boxes, wholeIn(statics, std::format("S3_W{}", colour))), left,
+                       Layout::kPlainStripTop));
+        CHECK(standsAt(showing(boxes, wholeIn(statics, std::format("S4_W{}", colour))), left,
+                       Layout::kPanelTop));
+    }
+}
+
 TEST_CASE("the Dreamcast look opens on the player's own art, and the GameCube data holds every "
           "picture it borrows",
           "[legends][dreamcast-hud][assets]") {

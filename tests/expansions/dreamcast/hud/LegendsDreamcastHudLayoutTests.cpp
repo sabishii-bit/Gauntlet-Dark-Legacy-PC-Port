@@ -321,8 +321,10 @@ TEST_CASE("each Dreamcast seat state picks its box", "[legends][dreamcast-hud]")
     CHECK(dreamcastBoxKind(inTower) == LegendsDreamcastBoxKind::Plain);
     CHECK(dreamcastBoxKind(asked) == LegendsDreamcastBoxKind::Plain);
     CHECK(dreamcastBoxKind(departed) == LegendsDreamcastBoxKind::Plain);
-    // A seat nobody joined shows nothing.
-    CHECK(dreamcastBoxKind(HudSeat{}) == LegendsDreamcastBoxKind::None);
+    // A seat nobody joined shows the kind-0 box too: every scene's load rebuilds each seat outside
+    // the game as FUN_8c0c08a0(seat, FUN_8c0c0100(seat)), which is kind 0 for its state 0
+    // (FUN_8c09f6a0, 8c09fa80..8c09fb14).
+    CHECK(dreamcastBoxKind(HudSeat{}) == LegendsDreamcastBoxKind::Plain);
 }
 
 TEST_CASE("the Dreamcast's colours and classes run in Dark Legacy's orders",

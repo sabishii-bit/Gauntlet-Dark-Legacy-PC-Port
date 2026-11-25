@@ -366,16 +366,17 @@ bool dreamcastWaitHereShown(bool waiting, s32 joined, s64 step);
  * (state 7). */
 bool dreamcastPromptReturns(std::span<const HudSeat> seats, usize seat);
 
-/** Which box a seat's column shows: FUN_8c0c08a0's kinds. */
+/** Which box a seat's column shows: FUN_8c0c08a0's kinds. Every column shows one. */
 enum class LegendsDreamcastBoxKind : u8 {
-    None,  ///< nothing: a seat nobody joined, all of whose art starts hidden (FUN_8c0ba060)
     Panel, ///< kind 1: the strip, the costume's panel and banner, and what the player has
     Plain, ///< kind 0: the coloured strip and panel alone
 };
 
 /** The box `seat` shows: a player standing or dying, the panel; one fallen to the tower, asked
  * to wait there, or gone from the game, kind 0 (FUN_8c0bbf80, FUN_8c0bc040 and FUN_8c0bbee0 each
- * rebuild the box so, and nothing hides a gone player's); nobody, none. */
+ * rebuild the box so, and nothing hides a gone player's); and nobody, kind 0 as well: every
+ * scene's load rebuilds each seat outside the game as FUN_8c0c08a0(seat, FUN_8c0c0100(seat)),
+ * which is kind 0 for its state 0 (FUN_8c09f6a0, 8c09fa80..8c09fb14). */
 LegendsDreamcastBoxKind dreamcastBoxKind(const HudSeat& seat);
 
 /** The runestone finder's column for Dark Legacy's fill `fill`, `width` across: Dark Legacy's

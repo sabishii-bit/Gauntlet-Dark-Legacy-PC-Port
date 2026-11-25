@@ -614,12 +614,19 @@ TEST_CASE("a Dreamcast box draws strip, panel, banner, labels and numbers where 
     }
     CHECK(lastNumber < firstKey);
 
-    // A lone player in the third seat stands in that seat's column.
+    // A lone player in the third seat stands in that seat's column, and the seats nobody joined
+    // hold their kind-0 boxes alone.
     const std::vector<Quad> lone =
         dreamcast.boxes(dreamcast.viewOf({HudSeat{}, {}, standing(kWarriorClass, 0), {}}));
     REQUIRE_FALSE(lone.empty());
+    CHECK(pictureOrder(lone, 0) == Names{"S3_WYELO", "S4_WYELO"});
+    CHECK(pictureOrder(lone, 1) == Names{"S3_WBLUE", "S4_WBLUE"});
+    CHECK(pictureOrder(lone, 3) == Names{"S3_WGREEN", "S4_WGREEN"});
     for (const Quad& quad : lone) {
-        CHECK(seatOf(quad) == 2);
+        const std::string_view name = Fixture::pictureOf(quad.texture).name;
+        if (isText(quad) || !(name.starts_with("S3_W") || name.starts_with("S4_W"))) {
+            CHECK(seatOf(quad) == 2);
+        }
     }
     const std::vector<Quad> strip = picturesIn(lone, "BK_RUNE_STONE_02");
     REQUIRE(strip.size() == 1);
@@ -708,24 +715,84 @@ TEST_CASE("a class with no Dreamcast banner shows Dark Legacy's name in its plac
     }
 }
 
-TEST_CASE("an empty seat draws nothing; a departed seat keeps the kind-0 panel",
+TEST_CASE("a seat nobody joined shows the kind-0 box in its own seat's colour; a departed seat "
+          "keeps its costume's",
           "[legends][dreamcast-hud]") {
     LoadedLook dreamcast("dreamcast-hud-departed", kWarriorAndWizard);
     const Departed gone(1, kWizardClass, 2, "MERLIN");
     const std::vector<Quad> quads =
         dreamcast.boxes(dreamcast.viewOf({HudSeat{}, gone.seat(), {}, {}}));
-    // FUN_8c0bbee0 rebuilds a quitting player's box as kind 0, in its costume's colour, and the
-    // box is never hidden after: the strip at 304 and the panel's top half at 320, and no text.
+    // Every scene's load rebuilds each seat nobody joined as kind 0 (FUN_8c09f6a0, 8c09fa80..
+    // 8c09fb14), in its own place's colour: FUN_8c0ba060's tail gives a seat in state 0 its own
+    // index as its colour (+0xc), whose name 8c14bb04 gives, yellow, blue, red and green by seat.
+    // FUN_8c0bbee0 rebuilds a quitting player's box as kind 0 too, in its costume's colour, and
+    // the box is never hidden after.
+    CHECK(pictureOrder(quads, 0) == Names{"S3_WYELO", "S4_WYELO"});
     CHECK(pictureOrder(quads, 1) == Names{"S3_WRED", "S4_WRED"});
-    REQUIRE(quads.size() == 2);
-    checkRect(quads[0].area, {112, 304, 128, 16});
-    checkRect(quads[1].area, {112, 320, 128, 64});
-    checkRect(quads[1].uv, {0, 0, 1, 0.5f});
-    // The seats nobody joined draw nothing: FUN_8c0ba060 makes all their blits hidden.
-    for (const Quad& quad : quads) {
-        CHECK(seatOf(quad) == 1);
+    CHECK(pictureOrder(quads, 2) == Names{"S3_WRED", "S4_WRED"});
+    CHECK(pictureOrder(quads, 3) == Names{"S3_WGREEN", "S4_WGREEN"});
+    // Each is the strip whole at 304 and the panel's top half at 320, from 8 left of its column,
+    // white, and none of them says anything.
+    for (usize seat = 0; seat < HudView::kSeats; ++seat) {
+        CAPTURE(seat);
+        const std::vector<Quad> box = quadsIn(quads, seat);
+        REQUIRE(box.size() == 2);
+        const auto left = static_cast<f32>(dreamcastSeatX(seat) + Layout::kArtLeft);
+        checkRect(box[0].area, {left, 304, 128, 16});
+        checkRect(box[0].uv, {0, 0, 1, 1});
+        checkRect(box[1].area, {left, 320, 128, 64});
+        checkRect(box[1].uv, {0, 0, 1, 0.5f});
+        for (const Quad& quad : box) {
+            CHECK(quad.color == Color::white());
+        }
     }
-    CHECK(dreamcast.boxes(dreamcast.viewOf({HudSeat{}, {}, {}, {}})).empty());
+    CHECK(std::ranges::none_of(quads, isText));
+    // With nobody in the game every seat shows its own colour, in seat order.
+    Names empty;
+    for (const Quad& quad : dreamcast.boxes(dreamcast.viewOf({}))) {
+        empty.push_back(Fixture::pictureOf(quad.texture).name);
+    }
+    CHECK(empty == Names{"S3_WYELO", "S4_WYELO", "S3_WBLUE", "S4_WBLUE", "S3_WRED", "S4_WRED",
+                         "S3_WGREEN", "S4_WGREEN"});
+}
+
+TEST_CASE("a lone player in the tower stands beside three kind-0 boxes, each in its own seat's "
+          "colour",
+          "[legends][dreamcast-hud]") {
+    // A green knight alone in the first seat, holding twelve runestones and every boss's key, as
+    // the tower opens with the relics showing.
+    const std::array<HudMember, 1> party{{{.seat = 0, .classIndex = kKnightClass, .color = 3}}};
+    LoadedLook dreamcast("dreamcast-hud-lone", party);
+    HudSeat knight = standing(kKnightClass, 3);
+    knight.box.level = 99;
+    knight.box.keys = 9;
+    knight.box.potions = 9;
+    knight.box.runes = 0x0FFF;
+    knight.box.bossKeys = 0xFF;
+    knight.legends = legendsOf({1, 2});
+    HudView view = dreamcast.viewOf({knight, {}, {}, {}});
+    view.relicsShown = true;
+    view.joined = 1;
+    const std::vector<Quad> quads = dreamcast.boxes(view);
+
+    // The knight keeps its panel.
+    const Names panel = pictureOrder(quads, 0);
+    REQUIRE(panel.size() > 2);
+    CHECK(panel[0] == "BK_RUNE_STONE_02");
+    CHECK(panel[1] == "BTMBK_GREEN");
+    // FUN_8c09f6a0 gives each other seat the kind-0 box of its place's colour, blue, red and
+    // green, whatever the player wears: the fourth is green beside a green knight. FUN_8c0c08a0's
+    // kind 0 hides the banner, the labels, the runes and the keys, and FUN_8c0c2300 writes and
+    // shows nothing more for a seat outside the game: no numbers, icons or arch.
+    CHECK(pictureOrder(quads, 1) == Names{"S3_WBLUE", "S4_WBLUE"});
+    CHECK(pictureOrder(quads, 2) == Names{"S3_WRED", "S4_WRED"});
+    CHECK(pictureOrder(quads, 3) == Names{"S3_WGREEN", "S4_WGREEN"});
+    for (const Quad& quad : quads) {
+        if (isText(quad)) {
+            CHECK(seatOf(quad) == 0);
+        }
+    }
+    CHECK(boxOrder(quads, 1, dreamcast.lent) == Names{"S3_WBLUE", "S4_WBLUE"});
 }
 
 TEST_CASE("a fallen player's Dreamcast box says IN TOWER on the kind-0 panel",
@@ -1361,10 +1428,16 @@ TEST_CASE("Dreamcast cards stand on the seat's strip, with Dark Legacy's art whe
     for (const Quad& card : cards) {
         CHECK(card.color == Color::white());
     }
-    // Before the cards, the boxes alone: a standing player's box has no coloured strip.
-    for (const Quad& quad : std::span{quads}.first(quads.size() - cards.size())) {
-        CHECK_FALSE(Fixture::pictureOf(quad.texture).name.starts_with("S3_W"));
+    // Before the cards, the boxes alone: a standing player's box has no coloured strip, and the
+    // seats nobody joined show their own colours' kind-0 boxes.
+    const std::span<const Quad> boxes = std::span{quads}.first(quads.size() - cards.size());
+    for (const Quad& quad : boxes) {
+        if (seatOf(quad) == 0 || seatOf(quad) == 2) {
+            CHECK_FALSE(Fixture::pictureOf(quad.texture).name.starts_with("S3_W"));
+        }
     }
+    CHECK(pictureOrder(boxes, 1) == Names{"S3_WBLUE", "S4_WBLUE"});
+    CHECK(pictureOrder(boxes, 3) == Names{"S3_WGREEN", "S4_WGREEN"});
     // Dark Legacy's gold card never stands for the Dreamcast's.
     for (const Quad& quad : quads) {
         CHECK(quad.texture != darkLegacyGold);

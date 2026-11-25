@@ -207,11 +207,14 @@ StatusBoxView panelOf(const HudSeat& shown) {
     return box;
 }
 
-/** Seat `shown`'s costume colour: a gone player's, which only its runtime still holds, else its
- * box's. */
-s32 seatColour(const HudSeat& shown) {
-    return shown.departed && shown.runtime != nullptr ? shown.runtime->actor.save().color
-                                                      : shown.box.color;
+/** The costume colour seat `seat`, `shown`, wears: a gone player's, which only its runtime still
+ * holds; for a seat nobody joined, the seat's own, as FUN_8c0ba060 makes a seat in state 0 take
+ * its index for its colour (+0xc) at every scene's load; else its box's. */
+s32 seatColour(const HudSeat& shown, usize seat) {
+    if (shown.departed) {
+        return shown.runtime != nullptr ? shown.runtime->actor.save().color : shown.box.color;
+    }
+    return shown.box.active ? shown.box.color : static_cast<s32>(seat);
 }
 
 /** The static set's picture of runestone `rune`, three of each colour (FUN_8c0ba060's
@@ -549,15 +552,11 @@ void LegendsDreamcastHudPainter::drawStatus(HudFrame& frame, const HudView& view
     Canvas& canvas = frame.canvas;
     for (usize seat = 0; seat < view.seats.size(); ++seat) {
         const HudSeat& shown = view.seats.at(seat);
-        const LegendsDreamcastBoxKind kind = dreamcastBoxKind(shown);
-        if (kind == LegendsDreamcastBoxKind::None) {
-            continue;
-        }
-        const bool panel = kind == LegendsDreamcastBoxKind::Panel;
+        const bool panel = dreamcastBoxKind(shown) == LegendsDreamcastBoxKind::Panel;
         if (panel) {
             drawPanel(canvas, seat, shown, view);
         } else {
-            drawPlain(canvas, seat, seatColour(shown));
+            drawPlain(canvas, seat, seatColour(shown, seat));
         }
         if (shown.it) {
             drawIt(canvas, seat);
@@ -653,7 +652,7 @@ void LegendsDreamcastHudPainter::drawSelectors(HudFrame& frame, const HudView& v
         write(frame.canvas, m_small.text, -dreamcastSeatCentre(seat),
               bottom - m_small.text.lineHeight(scale), label,
               TextStyle{.scale = scale,
-                        .color = slot.on ? inkOf(seatColour(shown)) : Color::white()});
+                        .color = slot.on ? inkOf(seatColour(shown, seat)) : Color::white()});
     }
 }
 
@@ -850,7 +849,8 @@ void LegendsDreamcastHudPainter::drawWaitHere(Canvas& canvas, usize seat, const 
 
 void LegendsDreamcastHudPainter::drawFallen(Canvas& canvas, usize seat, const HudSeat& shown,
                                             const HudView& view) const {
-    // A gone player's box says nothing more (FUN_8c0bbee0).
+    // A gone player's box says nothing more (FUN_8c0bbee0), and FUN_8c0c2300 writes nothing in
+    // a seat nobody joined, whose box is never asked or in the tower.
     if (shown.departed) {
         return;
     }
@@ -877,7 +877,7 @@ void LegendsDreamcastHudPainter::drawFallen(Canvas& canvas, usize seat, const Hu
     // FUN_8c0c16e0 tells a player waiting in the tower so, in its costume colour's ink.
     if (shown.box.inTower) {
         write(canvas, m_small.text, centre, Layout::kInTowerTop, words(view, Layout::kInTowerText),
-              TextStyle{.color = inkOf(seatColour(shown))});
+              TextStyle{.color = inkOf(seatColour(shown, seat))});
     }
 }
 
@@ -892,7 +892,7 @@ void LegendsDreamcastHudPainter::drawCards(Canvas& canvas, const HudView& view) 
         }
         const auto seat = static_cast<usize>(card.player);
         const auto left = static_cast<f32>(dreamcastSeatX(seat) + Layout::kArtLeft);
-        drawWhole(canvas, colourPicture(m_plainStrips, seatColour(view.seats.at(seat))), left,
+        drawWhole(canvas, colourPicture(m_plainStrips, seatColour(view.seats.at(seat), seat)), left,
                   static_cast<f32>(card.y));
         const auto top = static_cast<f32>(card.y + Layout::kCardStripRows);
         if (!shown->darkLegacy) {

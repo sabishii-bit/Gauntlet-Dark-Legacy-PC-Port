@@ -34,7 +34,8 @@ namespace gdl::game {
 
 /**
  * The Dreamcast's look of the play HUD, drawn from the player's own Dreamcast extraction on its
- * 512x384 frame, the canvas's own: each joined seat's status box, the pickup cards and counts
+ * 512x384 frame, the canvas's own: each seat's status box, a seat nobody joined showing the
+ * coloured kind-0 box, the pickup cards and counts
  * over the boxes, the runestone finder, the hourglass, the boss meters, the selectors' labels and
  * the help. It shows Dark Legacy's state, never the typed name, and where the extraction has no
  * art for a part it shows Dark Legacy's. LegendsDreamcastHudLayout says where each part stands.
