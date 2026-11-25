@@ -41,7 +41,8 @@ const STAGING_RANDOM: &str = "AbC123xy";
 const USAGE: &str = "usage: gdl-launcher-headless --check-payload [--payload <zip>] | \
                      --inspect <dir> [--json] | --check-folder <dir> [--json] | \
                      --extract <n64|dreamcast> <dump> --output <dir> [--strict script] | \
-                     --check-feed | --recover <dir> | --version\n";
+                     --check-feed | --update <dir> [--yes] [--offline] | --recover <dir> | \
+                     --version\n";
 
 /// The N64 cases, which hold the image the tests extract and the tree the N64 extractor writes
 /// for it.
@@ -285,6 +286,12 @@ fn usage_errors_exit_2() {
         &["--check-feed", "extra"],
         &["--check-feed", "--json"],
         &["--check-feed", "--recover", "folder"],
+        &["--update"],
+        &["--update", ""],
+        &["--update", "folder", "--yes", "--yes"],
+        &["--update", "folder", "--json"],
+        &["--update", "folder", "--recover", "folder"],
+        &["--recover", "folder", "--offline"],
     ];
     for &args in cases {
         let output = run_program(args);

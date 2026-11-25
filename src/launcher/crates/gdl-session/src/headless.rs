@@ -4,8 +4,9 @@
 //! which reports what a folder is to an install, `--extract`, which extracts a Legends
 //! expansion's tree from a dump into a new folder outside every installation, `--check-feed`,
 //! which reads the release feed once and reports its newest release for this system without
-//! downloading anything, and `--recover`, which recovers whatever jobs a crash or a kill left
-//! unfinished in an installation's folder.
+//! downloading anything, `--update`, which plans an installation's update, or makes it, from the
+//! feed's newest release or the runtime the program's own file carries, and `--recover`, which
+//! recovers whatever jobs a crash or a kill left unfinished in an installation's folder.
 //! They run before anything builds a window, and what they print is technical text for whoever
 //! runs them, never words for players. A run is handed its arguments, its build, its own file's
 //! sections and the streams to write to, so that every mode runs inside a test as it runs in the
@@ -16,28 +17,32 @@ use std::fmt;
 use std::fs::File;
 use std::io::{self, Read, Seek, Write};
 use std::panic;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Mutex, PoisonError, mpsc};
 use std::thread;
 
 use gdl_extract::{Expansion, Trust};
 use gdl_files::{
-    Cancel, Hold, Job, NoProgress, PhaseId, Progress, RelPath, absolute_lexical, strip_verbatim,
+    Cancel, Hold, Job, NoProgress, PhaseId, Progress, RelPath, absolute_lexical, read_json_bounded,
+    strip_verbatim,
 };
 use gdl_install::{
-    Access, ComponentAttributes, DestinationReport, INSPECTION_SCHEMA, Inspection, InstallFolder,
-    InstallationSummary, Payload, PayloadError, RecoverError, Recovered, RecoveryOutcome, Relation,
-    SPACE_MARGIN, Sections, SectionsError, Unrecorded, UpdateRecovery, hand_over,
-    installed_launcher_name, is_installed_copy, judge_destination, recover,
+    Access, Changes, ComponentAttributes, DestinationReport, FolderError, FolderState,
+    INSPECTION_SCHEMA, Inspection, InstallFolder, InstallationSummary, MAX_RECEIPT_LEN, Payload,
+    PayloadError, PlanSource, Probed, RECEIPT_FILE, RUNTIME_SECTION, Receipt, RecoverError,
+    Recovered, RecoveryOutcome, Relation, RetiredCopy, SPACE_MARGIN, Sections, SectionsError,
+    SourceSummary, Unrecorded, UpdateError, UpdateNotice, UpdateOutcome, UpdatePlan,
+    UpdateRecovery, UpdateRequest, UpdateSource, Updated, hand_over, hand_over_needed,
+    installed_launcher_name, is_installed_copy, judge_destination, plan_update, recover, update,
 };
-use gdl_release::{Asset, Feed, FeedConfig, Platform, ReleaseError, Scan, Version};
+use gdl_release::{Asset, Feed, FeedConfig, Platform, Release, ReleaseError, Scan, Version};
 use serde::Serialize;
 
 use crate::codes::{self, Report};
 use crate::extraction::{
     Counts, ExtractRequest, ExtractSummary, StrictnessChoice, extract_to_new_folder, output_name,
 };
-use crate::updating::system_proxies;
+use crate::updating::{SourceChoice, choose_source, system_proxies};
 
 /// The exit code of a mode that did what it was asked.
 pub const EXIT_OK: u8 = 0;
@@ -53,7 +58,8 @@ pub const EXIT_USAGE: u8 = 2;
 const USAGE: &str = "usage: gdl-launcher-headless --check-payload [--payload <zip>] | \
                      --inspect <dir> [--json] | --check-folder <dir> [--json] | \
                      --extract <n64|dreamcast> <dump> --output <dir> [--strict script] | \
-                     --check-feed | --recover <dir> | --version";
+                     --check-feed | --update <dir> [--yes] [--offline] | --recover <dir> | \
+                     --version";
 
 /// The mode that prints the program's version.
 const VERSION_OPTION: &str = "--version";
@@ -90,17 +96,29 @@ const SCRIPT_STRICTNESS: &str = "script";
 /// The mode that reads the release feed once and reports its newest release for this system.
 const CHECK_FEED_OPTION: &str = "--check-feed";
 
+/// The mode that plans the update of the installation in the folder after it, or with `--yes`
+/// makes it.
+const UPDATE_OPTION: &str = "--update";
+
+/// The option of `--update` that makes the update it plans.
+const YES_OPTION: &str = "--yes";
+
+/// The option of `--update` that asks no release feed, so that only the runtime the program's own
+/// file carries can bring a newer release.
+const OFFLINE_OPTION: &str = "--offline";
+
 /// The mode that recovers whatever jobs were left unfinished in the folder after it.
 const RECOVER_OPTION: &str = "--recover";
 
 /// The options that choose a mode: arguments with none of them are no headless run.
-const MODE_OPTIONS: [&str; 7] = [
+const MODE_OPTIONS: [&str; 8] = [
     VERSION_OPTION,
     CHECK_PAYLOAD_OPTION,
     INSPECT_OPTION,
     CHECK_FOLDER_OPTION,
     EXTRACT_OPTION,
     CHECK_FEED_OPTION,
+    UPDATE_OPTION,
     RECOVER_OPTION,
 ];
 
@@ -136,6 +154,9 @@ const UNKNOWN: &str = "unknown";
 /// hold.
 const NOWHERE: &str = "none";
 
+/// How a plan, and an update, write that nothing newer than the installed release is at hand.
+const UP_TO_DATE: &str = "upToDate";
+
 /// The build of the program that runs a mode.
 #[derive(Clone, Copy, Debug)]
 pub struct Build<'a> {
@@ -161,11 +182,11 @@ pub fn open_own_file() -> OwnFile {
 
 /// Runs the headless mode that `args`, the program's arguments after its own name, ask for, and
 /// gives back its exit code; or `None` when no argument is `--check-payload`, `--inspect`,
-/// `--check-folder`, `--extract`, `--check-feed`, `--recover` or `--version`, which is no headless
-/// run. A mode writes its report to `out` and a refusal to `err`. Arguments that ask for a mode in
-/// a form it does not take get the usage line on `err` and [`EXIT_USAGE`]. An option's value is
-/// the argument after it, which must not be empty or begin with `--`; options may come in any
-/// order, each at most once.
+/// `--check-folder`, `--extract`, `--check-feed`, `--update`, `--recover` or `--version`, which is
+/// no headless run. A mode writes its report to `out` and a refusal to `err`. Arguments that ask
+/// for a mode in a form it does not take get the usage line on `err` and [`EXIT_USAGE`]. An
+/// option's value is the argument after it, which must not be empty or begin with `--`; options
+/// may come in any order, each at most once.
 ///
 /// - `--version` writes the build's version.
 /// - `--check-payload` checks the runtime the launcher file carries, its sections as `own` holds
@@ -209,6 +230,36 @@ pub fn open_own_file() -> OwnFile {
 ///   its size in bytes and GitHub's SHA-256 of it. A feed that cannot be read is refused with the
 ///   line `error: <code> (<rule>): <detail>`, and [`EXIT_REFUSED`]. A build for a system no
 ///   release is built for has no platform to read the feed for, and gets the usage line.
+/// - `--update <dir>` plans the update of the installation in the folder, `<dir>` made absolute,
+///   by a launcher of the build's version, changing nothing, not even what a recovery would: it
+///   writes `plan: recover` when a job was left unfinished there, which the update would finish or
+///   take back first, and `plan: finishCleanup` when an earlier update's cleanup is still to be
+///   finished, which the update would try first. It then chooses where the update comes from, as
+///   [`choose_source`] chooses, between the runtime the program's own file carries and the
+///   release feed's newest release above the installed one, read as `--check-feed` reads the feed,
+///   and plans the update from there as [`plan_update`] does: `plan: <from> -> <to>
+///   (bundled|feed)`, then `plan: download <bytes>` for a release, or for the program's own file a
+///   `plan: replace <name>`, `plan: add <name>` or `plan: remove <name>` line for each name the
+///   update would move; or `plan: upToDate <version>` when nothing newer is at hand. With
+///   `--offline` it asks no feed, and only the program's own file can bring a newer release.
+///   With `--yes` it makes that update, as [`update`] makes one, waiting while another job holds
+///   the folder's lock or the game runs from it, and writing the update's progress as `--recover`
+///   writes a recovery's; then `updated: <from> -> <to> (bundled|feed)`, `probed: staged` or
+///   `probed: notStaged`, whether the game was probed, a `notice: <code> (<rule>): <detail>` line
+///   for each notice, and `retired: removed`, `retired: left <name>` or `retired: none`, what
+///   became of the launcher copy installed before. When the program's own file was the
+///   installation's launcher copy as the program started, or is older than the release now
+///   installed, it starts the new copy to wait for this program to exit and finish the hand-over,
+///   and writes `handedOver: <pid>`. With nothing newer at hand, or a release no newer than the
+///   installation by the time the update looks, it recovers what jobs left in the folder, as
+///   `--recover` does, and writes `upToDate: <version>`, the release installed once it is done,
+///   handing over as `--recover` hands over. A refusal is the line
+///   `error: <code> (<rule>): <detail>`, and [`EXIT_REFUSED`]. With `--yes`, the line
+///   `changes: none`, `changes: rolledBack` or `changes: kept` follows the refusal of an update,
+///   telling what it left, `none` for one refused before it began; the refusal of a recovery made
+///   because nothing newer is at hand, and of a hand-over once the update stands, is the error
+///   line alone, as `--recover` writes one. A build for a system no release is built for has no
+///   platform to update, and gets the usage line.
 /// - `--recover <dir>` recovers whatever jobs were left unfinished in the folder, `<dir>` made
 ///   absolute, as [`recover`] recovers them for a launcher of the build's version, waiting while
 ///   another job holds the folder's lock or the game runs from it, since nothing here cancels a
@@ -229,8 +280,8 @@ pub fn open_own_file() -> OwnFile {
 /// quotes from a dump, hold. A report that cannot be written to its stream gives
 /// [`EXIT_REFUSED`], since nobody saw it.
 ///
-/// Panics when `--inspect`, `--check-feed` or `--recover` runs as a build whose version is not a
-/// semantic version, which no build script lets a build be.
+/// Panics when `--inspect`, `--check-feed`, `--update` or `--recover` runs as a build whose version
+/// is not a semantic version, which no build script lets a build be.
 pub fn run(
     args: &[OsString],
     build: &Build<'_>,
@@ -257,6 +308,23 @@ pub fn run(
             Some(platform) => {
                 let config = FeedConfig::github(build.version, system_proxies());
                 check_feed(config, platform, build, out, err)
+            }
+            None => usage(err),
+        },
+        Mode::Update {
+            folder,
+            yes,
+            offline,
+        } => match Platform::of_this_build() {
+            Some(platform) => {
+                let feed = (!offline).then(|| FeedConfig::github(build.version, system_proxies()));
+                let asked = UpdateAsked {
+                    folder: Path::new(folder),
+                    yes,
+                    feed,
+                    platform,
+                };
+                update_mode(asked, build, own, out, err)
             }
             None => usage(err),
         },
@@ -294,6 +362,13 @@ enum Mode<'a> {
     },
     /// `--check-feed`.
     CheckFeed,
+    /// `--update`, of the installation in `folder`: made when `yes` says so, else planned, and
+    /// from the program's own file alone when `offline` says so.
+    Update {
+        folder: &'a OsStr,
+        yes: bool,
+        offline: bool,
+    },
     /// `--recover`, of `folder`.
     Recover { folder: &'a OsStr },
 }
@@ -312,6 +387,8 @@ enum Chosen<'a> {
     Extract(&'a OsStr, &'a OsStr),
     /// `--check-feed`.
     CheckFeed,
+    /// `--update`, with the folder after it.
+    Update(&'a OsStr),
     /// `--recover`, with the folder after it.
     Recover(&'a OsStr),
 }
@@ -336,6 +413,8 @@ fn parse(args: &[OsString]) -> Result<Mode<'_>, Misused> {
     let mut json = false;
     let mut output = None;
     let mut script = false;
+    let mut yes = false;
+    let mut offline = false;
     let mut rest = args.iter().map(OsString::as_os_str);
     while let Some(arg) = rest.next() {
         let mode = match arg.to_str() {
@@ -345,7 +424,16 @@ fn parse(args: &[OsString]) -> Result<Mode<'_>, Misused> {
             Some(CHECK_FOLDER_OPTION) => Chosen::CheckFolder(value(&mut rest)?),
             Some(EXTRACT_OPTION) => Chosen::Extract(value(&mut rest)?, value(&mut rest)?),
             Some(CHECK_FEED_OPTION) => Chosen::CheckFeed,
+            Some(UPDATE_OPTION) => Chosen::Update(value(&mut rest)?),
             Some(RECOVER_OPTION) => Chosen::Recover(value(&mut rest)?),
+            Some(YES_OPTION) if !yes => {
+                yes = true;
+                continue;
+            }
+            Some(OFFLINE_OPTION) if !offline => {
+                offline = true;
+                continue;
+            }
             Some(PAYLOAD_OPTION) if zip.is_none() => {
                 zip = Some(value(&mut rest)?);
                 continue;
@@ -372,25 +460,43 @@ fn parse(args: &[OsString]) -> Result<Mode<'_>, Misused> {
         }
     }
     let extracting = (output, script);
-    match (chosen, zip, json, extracting) {
-        (Some(Chosen::Version), None, false, (None, false)) => Ok(Mode::Version),
-        (Some(Chosen::CheckPayload), zip, false, (None, false)) => Ok(Mode::CheckPayload { zip }),
-        (Some(Chosen::Inspect(folder)), None, json, (None, false)) => {
+    let updating = (yes, offline);
+    match (chosen, zip, json, extracting, updating) {
+        (Some(Chosen::Version), None, false, (None, false), (false, false)) => Ok(Mode::Version),
+        (Some(Chosen::CheckPayload), zip, false, (None, false), (false, false)) => {
+            Ok(Mode::CheckPayload { zip })
+        }
+        (Some(Chosen::Inspect(folder)), None, json, (None, false), (false, false)) => {
             Ok(Mode::Inspect { folder, json })
         }
-        (Some(Chosen::CheckFolder(folder)), None, json, (None, false)) => {
+        (Some(Chosen::CheckFolder(folder)), None, json, (None, false), (false, false)) => {
             Ok(Mode::CheckFolder { folder, json })
         }
-        (Some(Chosen::Extract(expansion, dump)), None, false, (Some(output), script)) => {
-            Ok(Mode::Extract {
-                expansion,
-                dump,
-                output,
-                script,
+        (
+            Some(Chosen::Extract(expansion, dump)),
+            None,
+            false,
+            (Some(output), script),
+            (false, false),
+        ) => Ok(Mode::Extract {
+            expansion,
+            dump,
+            output,
+            script,
+        }),
+        (Some(Chosen::CheckFeed), None, false, (None, false), (false, false)) => {
+            Ok(Mode::CheckFeed)
+        }
+        (Some(Chosen::Update(folder)), None, false, (None, false), (yes, offline)) => {
+            Ok(Mode::Update {
+                folder,
+                yes,
+                offline,
             })
         }
-        (Some(Chosen::CheckFeed), None, false, (None, false)) => Ok(Mode::CheckFeed),
-        (Some(Chosen::Recover(folder)), None, false, (None, false)) => Ok(Mode::Recover { folder }),
+        (Some(Chosen::Recover(folder)), None, false, (None, false), (false, false)) => {
+            Ok(Mode::Recover { folder })
+        }
         _ => Err(Misused),
     }
 }
@@ -715,7 +821,7 @@ fn recover_mode(
         }
     };
     // Told before the recovery, which may move the copy aside and put another file at its name.
-    let was_installed_copy = match was_installed_copy(own, &root, platform) {
+    let was_installed_copy = match was_installed_copy(own, &root, platform, recovery_io) {
         Ok(answer) => answer,
         Err(error) => return refuse_recovery(err, &error),
     };
@@ -736,14 +842,9 @@ fn recover_mode(
     // The program runs from a retired name once the copy is back, whether or not its report was
     // seen, so it hands over all the same.
     if let Some(platform) = platform.filter(|_| hands_over(was_installed_copy, &recovered)) {
-        match hand_over(&root, platform) {
-            Ok(pid) => {
-                report = report.and_then(|()| written(out, &format!("handedOver: {pid}\n")));
-            }
-            Err(source) => {
-                let path = root.join(installed_launcher_name(platform));
-                return refuse_recovery(err, &RecoverError::Io { path, source });
-            }
+        match handed_over(&root, platform, recovery_io) {
+            Ok(line) => report = report.and_then(|()| written(out, &line)),
+            Err(error) => return refuse_recovery(err, &error),
         }
     }
     match report {
@@ -758,24 +859,47 @@ fn refuse_recovery(err: &mut dyn Write, error: &RecoverError) -> u8 {
     refuse(err, codes::recover(error), error.rule(), error)
 }
 
+/// A recovery's refusal of what the system answered for `path`.
+fn recovery_io(path: PathBuf, source: io::Error) -> RecoverError {
+    RecoverError::Io { path, source }
+}
+
 /// Whether the program's own file, `own` as it was opened when the program started, is the
 /// launcher copy of the installation at `root`, for a launcher built for `platform`: told by the
 /// file and not its name, so that it can be told before a job moves the copy aside. A file whose
 /// sections could not be found is none, since an install copies the launcher file whole with its
 /// sections and nothing else is ever put at the copy's name; and so is every file on a system no
-/// release is built for.
-fn was_installed_copy(
+/// release is built for. What the system answers a look at the copy is refused as `refused` makes
+/// a refusal of the copy's path and that answer.
+fn was_installed_copy<E>(
     own: &OwnFile,
     root: &Path,
     platform: Option<Platform>,
-) -> Result<bool, RecoverError> {
+    refused: impl FnOnce(PathBuf, io::Error) -> E,
+) -> Result<bool, E> {
     let (Ok(Some(sections)), Some(platform)) = (own, platform) else {
         return Ok(false);
     };
-    is_installed_copy(sections.file(), root, platform).map_err(|source| RecoverError::Io {
-        path: root.join(installed_launcher_name(platform)),
-        source,
-    })
+    is_installed_copy(sections.file(), root, platform)
+        .map_err(|source| refused(root.join(installed_launcher_name(platform)), source))
+}
+
+/// Starts the launcher copy of the installation at `root`, for a launcher built for `platform`, to
+/// wait for this program to exit and finish the hand-over, as [`hand_over`] does, and gives back
+/// the line that tells it: `handedOver: <pid>`. A copy that cannot be started is refused as
+/// `refused` makes a refusal of the copy's path and what the system answered.
+fn handed_over<E>(
+    root: &Path,
+    platform: Platform,
+    refused: impl FnOnce(PathBuf, io::Error) -> E,
+) -> Result<String, E> {
+    match hand_over(root, platform) {
+        Ok(pid) => Ok(format!("handedOver: {pid}\n")),
+        Err(source) => Err(refused(
+            root.join(installed_launcher_name(platform)),
+            source,
+        )),
+    }
 }
 
 /// Whether a program whose own file `was_installed_copy` of an installation hands over to that
@@ -829,6 +953,543 @@ fn update_outcome(outcome: &UpdateRecovery) -> &'static str {
         UpdateRecovery::CleanedUp => "cleanedUp",
         UpdateRecovery::CleanupLeft { .. } => "cleanupLeft",
     }
+}
+
+/// What `--update` is asked to do: plan the update of the installation in `folder`, or make it
+/// when `yes` says so, reading the release feed `feed` names, or none when it is `None`, for the
+/// platform this program was built for.
+struct UpdateAsked<'a> {
+    /// The installation's folder, as it was given.
+    folder: &'a Path,
+    /// Whether to make the update rather than only plan it.
+    yes: bool,
+    /// The release feed to read, or `None` to read none.
+    feed: Option<FeedConfig>,
+    /// The platform this program was built for.
+    platform: Platform,
+}
+
+/// Where an update's new release comes from, as its reports name it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SourceKind {
+    /// The runtime the program's own file carries.
+    Bundled,
+    /// A release the feed found.
+    Feed,
+}
+
+impl SourceKind {
+    /// The source's name in a report.
+    fn as_str(self) -> &'static str {
+        match self {
+            SourceKind::Bundled => "bundled",
+            SourceKind::Feed => "feed",
+        }
+    }
+}
+
+/// What `--update` found to update from: nothing newer than the installation, or a source.
+enum Picked<'s> {
+    /// Nothing newer than the installed release, of this version, is at hand.
+    UpToDate(Version),
+    /// The source of a newer release.
+    Source(Source<'s>),
+}
+
+/// The source `--update` takes a newer release from.
+enum Source<'s> {
+    /// The program's own file, through the sections it found as it started.
+    Bundled(&'s mut Sections<File>),
+    /// A release of the feed's, whose files are fetched from that feed.
+    Release {
+        /// The feed the release came from.
+        feed: &'s Feed,
+        /// The release.
+        release: Box<Release>,
+    },
+}
+
+impl Source<'_> {
+    /// How a report names the source.
+    fn kind(&self) -> SourceKind {
+        match self {
+            Source::Bundled(_) => SourceKind::Bundled,
+            Source::Release { .. } => SourceKind::Feed,
+        }
+    }
+}
+
+/// An update `--update` plans or makes: of the installation at `root`, an absolute path, by the
+/// launcher of version `running` built for `platform`.
+struct Updating<'a> {
+    /// The installation's folder, absolute.
+    root: &'a Path,
+    /// The version of the launcher that runs.
+    running: &'a Version,
+    /// The platform this program was built for.
+    platform: Platform,
+}
+
+/// `--update`: plans the update `asked` names, or makes it, for the launcher the build is, the
+/// program's own file, `own`, among its sources; writes the plan, or the update's progress and
+/// what it did, to `out`, and a refusal to `err`; and hands over to the installation's launcher
+/// copy when the update or its recovery leaves this program running from a file the installation
+/// no longer runs.
+fn update_mode(
+    asked: UpdateAsked<'_>,
+    build: &Build<'_>,
+    own: &mut OwnFile,
+    out: &mut dyn Write,
+    err: &mut dyn Write,
+) -> u8 {
+    let UpdateAsked {
+        folder,
+        yes,
+        feed,
+        platform,
+    } = asked;
+    // A refusal before the update began left everything as it was, which a made update tells.
+    let untouched = yes.then_some(Changes::None);
+    let running = running_version(build);
+    let root = match absolute_lexical(folder) {
+        Ok(root) => root,
+        Err(source) => {
+            let path = folder.to_path_buf();
+            return refuse_update(err, &UpdateError::Io { path, source }, untouched);
+        }
+    };
+    // Told before the update, which moves the copy aside and puts another file at its name; a
+    // plan moves nothing, and hands nothing over.
+    let was_installed_copy = if yes {
+        match was_installed_copy(own, &root, Some(platform), update_io) {
+            Ok(answer) => answer,
+            Err(error) => return refuse_update(err, &error, untouched),
+        }
+    } else {
+        false
+    };
+    let bundled = match own {
+        Ok(Some(sections)) => carries_runtime(sections).then_some(sections),
+        Ok(None) => None,
+        Err(error) => {
+            let error: &SectionsError = error;
+            return refused(err, codes::sections(error), error.rule(), error, untouched);
+        }
+    };
+    let inspection = InstallFolder::inspect(&root, &running);
+    let feed = feed.map(Feed::new);
+    let updating = Updating {
+        root: &root,
+        running: &running,
+        platform,
+    };
+    if yes {
+        let picked = updating.pick(&inspection, bundled, feed.as_ref());
+        return updating.make(picked, was_installed_copy, out, err);
+    }
+    // What the update would do first is told before its source is sought, which may take a while.
+    let mut first = Vec::new();
+    if inspection.state == FolderState::Pending {
+        first.push(("plan", "recover".to_owned()));
+    }
+    if inspection.cleanup_pending {
+        first.push(("plan", "finishCleanup".to_owned()));
+    }
+    if written(out, &text_report(first)).is_err() {
+        return EXIT_REFUSED;
+    }
+    let picked = updating.pick(&inspection, bundled, feed.as_ref());
+    updating.plan(picked, out, err)
+}
+
+impl Updating<'_> {
+    /// Chooses what the update of the installation, as `inspection` found it, comes from, as
+    /// [`choose_source`] chooses: the program's own file, `bundled` when it carries a runtime, and
+    /// the newest release above the installed one of `feed`, when one is read. The installed
+    /// release is read as [`installed_version`] reads it. A launcher older than the installation,
+    /// and a feed that could not be read with nothing newer in the program's own file, are
+    /// refused.
+    fn pick<'s>(
+        &self,
+        inspection: &Inspection,
+        bundled: Option<&'s mut Sections<File>>,
+        feed: Option<&'s Feed>,
+    ) -> Result<Picked<'s>, UpdateError> {
+        let installed = installed_version(self.root, self.running, inspection)?;
+        // The runtime a launcher file carries is of the launcher's own version, which the update
+        // holds it to before anything of it is used.
+        let own = bundled.as_ref().map(|_| self.running);
+        // Nothing here asks the read to stop.
+        let cancel = Cancel::default();
+        let answer = feed.map(|feed| feed.newest(&installed, self.platform, &cancel));
+        match choose_source(self.running, own, &installed, answer).map_err(UpdateError::Release)? {
+            SourceChoice::OlderLauncher { installed } => Err(UpdateError::OlderLauncher {
+                running: self.running.to_string().into(),
+                installed: installed.to_string().into(),
+            }),
+            SourceChoice::UpToDate { version } => Ok(Picked::UpToDate(version)),
+            SourceChoice::Bundled { .. } => Ok(Picked::Source(Source::Bundled(
+                bundled
+                    .expect("the program's own runtime is chosen only when its file carries one"),
+            ))),
+            SourceChoice::Release(release) => Ok(Picked::Source(Source::Release {
+                feed: feed.expect("a release is chosen only from a feed that was read"),
+                release,
+            })),
+        }
+    }
+
+    /// Plans the update from what `picked` found, as [`plan_update`] plans one, and writes the
+    /// plan to `out` as [`print_plan`] writes it, or why it was refused to `err`.
+    fn plan(
+        &self,
+        picked: Result<Picked<'_>, UpdateError>,
+        out: &mut dyn Write,
+        err: &mut dyn Write,
+    ) -> u8 {
+        let planned = match picked {
+            Ok(Picked::UpToDate(version)) => {
+                let lines = vec![("plan", format!("{UP_TO_DATE} {version}"))];
+                return reported(out, &text_report(lines));
+            }
+            Ok(Picked::Source(Source::Bundled(sections))) => {
+                plan_update(self.root, self.running, PlanSource::Bundled(sections))
+            }
+            Ok(Picked::Source(Source::Release { release, .. })) => {
+                plan_update(self.root, self.running, PlanSource::Release(&release))
+            }
+            Err(error) => Err(error),
+        };
+        match planned.map(|plan| print_plan(&plan, out)) {
+            Ok(Ok(())) => EXIT_OK,
+            Ok(Err(_)) => EXIT_REFUSED,
+            Err(error) => refuse_update(err, &error, None),
+        }
+    }
+
+    /// Makes the update from what `picked` found, as [`update`] makes one, writing its progress to
+    /// `out` as it goes and what it did once it stands, as [`print_updated`] writes it, or why it
+    /// was refused, with what it left, to `err`. With nothing newer at hand, it recovers what jobs
+    /// left in the folder instead. Then it hands over to the installation's launcher copy when the
+    /// program's own file, which `was_installed_copy` tells, is no longer what the installation
+    /// runs: as [`hand_over_needed`] says once the update stands, and as a recovery's hand-over
+    /// does when it changed nothing more.
+    fn make(
+        &self,
+        picked: Result<Picked<'_>, UpdateError>,
+        was_installed_copy: bool,
+        out: &mut dyn Write,
+        err: &mut dyn Write,
+    ) -> u8 {
+        let source = match picked {
+            Ok(Picked::Source(source)) => source,
+            Ok(Picked::UpToDate(_)) => return self.recover_only(was_installed_copy, out, err),
+            Err(error) => return refuse_update(err, &error, Some(Changes::None)),
+        };
+        let kind = source.kind();
+        let (answered, shown) = printing(out, move |progress| {
+            // Nothing here asks the update to stop, so a hold lasts until what holds it ends.
+            let cancel = Cancel::default();
+            let job = Job {
+                cancel: &cancel,
+                progress,
+            };
+            match source {
+                Source::Bundled(sections) => {
+                    let request = UpdateRequest {
+                        root: self.root,
+                        running: self.running,
+                        source: UpdateSource::Bundled(sections),
+                    };
+                    update(request, &job)
+                }
+                Source::Release { feed, release } => {
+                    let request = UpdateRequest {
+                        root: self.root,
+                        running: self.running,
+                        source: UpdateSource::Release {
+                            files: feed,
+                            release: &release,
+                        },
+                    };
+                    update(request, &job)
+                }
+            }
+        });
+        let (report, hands) = match answered {
+            Ok(UpdateOutcome::Updated(updated)) => (
+                shown.and_then(|()| print_updated(&updated, kind, out)),
+                hand_over_needed(was_installed_copy, self.running, &updated.to),
+            ),
+            Ok(UpdateOutcome::AlreadyCurrent { version, recovered }) => (
+                shown.and_then(|()| written(out, &up_to_date(&version))),
+                hands_over(was_installed_copy, &recovered),
+            ),
+            Err(failure) => return refuse_update(err, &failure.error, Some(failure.changes)),
+        };
+        self.finish(report, hands, out, err)
+    }
+
+    /// Recovers what jobs left in the folder, as [`recover`] does, when nothing newer than the
+    /// installation is at hand, writing its progress to `out` as it goes and then `upToDate:` and
+    /// the version installed once it is done, or why it was refused to `err`; then hands over as
+    /// `--recover` hands over, when the recovery put the installation's launcher copy back in
+    /// place of the program's own file, which `was_installed_copy` tells.
+    fn recover_only(
+        &self,
+        was_installed_copy: bool,
+        out: &mut dyn Write,
+        err: &mut dyn Write,
+    ) -> u8 {
+        let (recovered, shown) = printing(out, |progress| {
+            // Nothing here asks the recovery to stop, so a hold lasts until what holds it ends.
+            let cancel = Cancel::default();
+            let job = Job {
+                cancel: &cancel,
+                progress,
+            };
+            recover(self.root, self.running, &mut Unrecorded, &job)
+        });
+        let recovered = match recovered {
+            Ok(recovered) => recovered,
+            Err(error) => return refuse_recovery(err, &error),
+        };
+        // A recovery may finish an update that left the installation's files moved, so the
+        // installed release is read again once it is done.
+        let inspection = InstallFolder::inspect(self.root, self.running);
+        let version = match installed_version(self.root, self.running, &inspection) {
+            Ok(version) => version,
+            Err(error) => return refuse_update(err, &error, None),
+        };
+        let report = shown.and_then(|()| written(out, &up_to_date(&version)));
+        self.finish(report, hands_over(was_installed_copy, &recovered), out, err)
+    }
+
+    /// Hands over to the installation's launcher copy when `hands` says so, writing
+    /// `handedOver: <pid>` to `out` after the report, whose writing `report` tells; and gives back
+    /// the exit code of a run whose update or recovery stands: [`EXIT_OK`] once every line is out,
+    /// [`EXIT_REFUSED`] when one could not be written or the copy could not be started, which is
+    /// refused on `err` with the error line alone.
+    fn finish(
+        &self,
+        report: io::Result<()>,
+        hands: bool,
+        out: &mut dyn Write,
+        err: &mut dyn Write,
+    ) -> u8 {
+        let mut report = report;
+        if hands {
+            match handed_over(self.root, self.platform, update_io) {
+                Ok(line) => report = report.and_then(|()| written(out, &line)),
+                Err(error) => return refuse_update(err, &error, None),
+            }
+        }
+        match report {
+            Ok(()) => EXIT_OK,
+            Err(_) => EXIT_REFUSED,
+        }
+    }
+}
+
+/// The line that reports a made update's installation of `version` with nothing newer at hand.
+fn up_to_date(version: &Version) -> String {
+    text_report(vec![(UP_TO_DATE, version.to_string())])
+}
+
+/// An update's refusal of what the system answered for `path`.
+fn update_io(path: PathBuf, source: io::Error) -> UpdateError {
+    UpdateError::Io { path, source }
+}
+
+/// Whether the launcher file whose sections are `sections` carries a runtime.
+fn carries_runtime(sections: &Sections<File>) -> bool {
+    sections
+        .sections()
+        .iter()
+        .any(|section| section.name == RUNTIME_SECTION)
+}
+
+/// The version of the release installed in the folder at `root`, an absolute path, that an update
+/// by the launcher of version `running` chooses its source against, as `inspection` found the
+/// folder: read through the receipt as an update reads the installation; but where a job was left
+/// unfinished, or a journal stands, which may have moved installed files aside, the version the
+/// receipt records when the files do not agree with it, as an update's plan reads it, so that what
+/// the update finds of the job is what refuses it. A folder that holds no installation is refused
+/// as an update refuses it.
+fn installed_version(
+    root: &Path,
+    running: &Version,
+    inspection: &Inspection,
+) -> Result<Version, UpdateError> {
+    let folder = InstallFolder::at(root).map_err(folder_refusal)?;
+    let unfinished = inspection.state == FolderState::Pending || !inspection.journals.is_empty();
+    match folder.installed(running) {
+        Ok(installed) => Ok(installed.build_info.version()),
+        Err(error) => unfinished
+            .then(|| recorded_version(&folder))
+            .flatten()
+            .ok_or(UpdateError::Receipt(error)),
+    }
+}
+
+/// The version the receipt of the installation `folder` records, read alone, without the files it
+/// pins; `None` when it cannot be read.
+fn recorded_version(folder: &InstallFolder) -> Option<Version> {
+    let path = folder.state_dir().join(RECEIPT_FILE);
+    let receipt: Receipt = read_json_bounded(&path, MAX_RECEIPT_LEN).ok()?;
+    Version::parse(&receipt.version).ok()
+}
+
+/// An update's refusal of a folder that cannot hold an installation, as the update refuses one: a
+/// link on its path as one, and nothing there, or something other than a folder, as the system's
+/// answer.
+fn folder_refusal(error: FolderError) -> UpdateError {
+    match error {
+        FolderError::Links { path } => UpdateError::Links { path },
+        FolderError::Absent { path } => update_io(path, io::Error::from(io::ErrorKind::NotFound)),
+        FolderError::NotDirectory { path } => {
+            update_io(path, io::Error::from(io::ErrorKind::NotADirectory))
+        }
+        FolderError::Io { path, source } => update_io(path, source),
+    }
+}
+
+/// Writes the line that reports an update's refusal, `error`, to `err`, as [`refuse`] writes one,
+/// then, when `changes` tells what the refused update left, a line that tells it; and gives back
+/// [`EXIT_REFUSED`].
+fn refuse_update(err: &mut dyn Write, error: &UpdateError, changes: Option<Changes>) -> u8 {
+    refused(err, codes::update(error), error.rule(), error, changes)
+}
+
+/// Writes the line that reports a refusal to `err`, as [`refuse`] writes one, then, when `changes`
+/// tells what the refused update left, `changes: none`, `changes: rolledBack` or `changes: kept`;
+/// and gives back [`EXIT_REFUSED`], written or not.
+fn refused(
+    err: &mut dyn Write,
+    report: Report,
+    rule: &str,
+    detail: &dyn fmt::Display,
+    changes: Option<Changes>,
+) -> u8 {
+    let code = refuse(err, report, rule, detail);
+    if let Some(changes) = changes {
+        let _ = written(
+            err,
+            &text_report(vec![("changes", changes_name(changes).to_owned())]),
+        );
+    }
+    code
+}
+
+/// How a report names what a refused update left, in camelCase.
+fn changes_name(changes: Changes) -> &'static str {
+    match changes {
+        Changes::None => "none",
+        Changes::RolledBack => "rolledBack",
+        Changes::Kept => "kept",
+    }
+}
+
+/// Writes to `out` what `plan` would do, each line `plan: <what>`: `upToDate <version>` when the
+/// release it would bring is no newer than the installed one, which the update would then leave
+/// as it is; else `<from> -> <to> (bundled|feed)`, then for a release `download <bytes>`, the size
+/// of its launcher file, and for the program's own file `replace <name>`, `add <name>` and
+/// `remove <name>` for each name the update would move, in that order and each in byte order,
+/// none while a job left unfinished keeps them from being known. Each value is written as a text
+/// report writes a value.
+fn print_plan(plan: &UpdatePlan, out: &mut dyn Write) -> io::Result<()> {
+    let mut lines = Vec::new();
+    if plan.to <= plan.from {
+        lines.push(format!("{UP_TO_DATE} {}", plan.from));
+    } else {
+        let kind = match plan.source {
+            SourceSummary::Bundled { .. } => SourceKind::Bundled,
+            SourceSummary::Release { .. } => SourceKind::Feed,
+        };
+        lines.push(format!("{} -> {} ({})", plan.from, plan.to, kind.as_str()));
+        match &plan.source {
+            SourceSummary::Release { download_bytes, .. } => {
+                lines.push(format!("download {download_bytes}"));
+            }
+            SourceSummary::Bundled { .. } => {
+                if let Some(changes) = &plan.changes {
+                    let moved = [
+                        ("replace", &changes.replaced),
+                        ("add", &changes.added),
+                        ("remove", &changes.removed),
+                    ];
+                    for (how, names) in moved {
+                        lines.extend(names.iter().map(|name| format!("{how} {}", name.as_str())));
+                    }
+                }
+            }
+        }
+    }
+    written(
+        out,
+        &text_report(lines.into_iter().map(|line| ("plan", line)).collect()),
+    )
+}
+
+/// Writes to `out` what an update that stands did, `updated`, its new release taken from the
+/// source `kind` names, each a `name: value` line: `updated: <from> -> <to> (bundled|feed)`;
+/// `probed: staged` or `probed: notStaged`, whether the game was probed; a
+/// `notice: <code> (<rule>): <detail>` line for each notice, in the order the update met them; and
+/// `retired: removed`, `retired: left <name>` or `retired: none`, what became of the launcher copy
+/// installed before. Each value is written as a text report writes a value.
+fn print_updated(updated: &Updated, kind: SourceKind, out: &mut dyn Write) -> io::Result<()> {
+    let probed = match updated.probed {
+        Probed::Staged => "staged",
+        Probed::NotStaged => "notStaged",
+    };
+    let mut lines = vec![
+        (
+            "updated",
+            format!("{} -> {} ({})", updated.from, updated.to, kind.as_str()),
+        ),
+        ("probed", probed.to_owned()),
+    ];
+    lines.extend(
+        updated
+            .notices
+            .iter()
+            .map(|notice| ("notice", notice_line(notice))),
+    );
+    let retired = match &updated.retired {
+        RetiredCopy::Removed => "removed".to_owned(),
+        RetiredCopy::Left { name } => format!("left {name}"),
+        RetiredCopy::NotMoved => NOWHERE.to_owned(),
+    };
+    lines.push(("retired", retired));
+    written(out, &text_report(lines))
+}
+
+/// A notice of an update that stands as its report's line gives it: `<code> (<rule>): <detail>`,
+/// the code as [`codes::update_notice`] gives it. A failed probe is `probeFailed`, its detail the
+/// staged game's exit status, the first line it wrote and the end of its error stream, each
+/// `none` when there is none; a cleanup that stopped is `cleanupLeft`, its detail what stopped it.
+fn notice_line(notice: &UpdateNotice) -> String {
+    let (rule, detail) = match notice {
+        UpdateNotice::ProbeFailed {
+            status,
+            first_line,
+            stderr_tail,
+        } => {
+            let status = status.map_or_else(|| NOWHERE.to_owned(), |status| status.to_string());
+            let first_line = first_line.as_deref().unwrap_or(NOWHERE);
+            let stderr = if stderr_tail.is_empty() {
+                NOWHERE
+            } else {
+                stderr_tail.as_str()
+            };
+            (
+                "probeFailed",
+                format!("status {status}; first line {first_line}; stderr {stderr}"),
+            )
+        }
+        UpdateNotice::CleanupLeft { detail } => ("cleanupLeft", detail.to_string()),
+    };
+    format!("{} ({rule}): {detail}", codes::update_notice(notice))
 }
 
 /// Runs `job` on a thread of its own, handing it a progress that prints, and writes each line that
@@ -1340,17 +2001,18 @@ mod tests {
     use std::time::Duration;
 
     use gdl_extract::Expansion;
-    use gdl_files::{FolderProbe, Hold, PhaseId, root_utf16_len};
+    use gdl_files::{FolderProbe, Hold, PAYLOAD_NAMES, PhaseId, RelPath, root_utf16_len};
     use gdl_fixtures::{
         DiscSet, Edc, InstallFixture, RawEntry, RuntimeFiles, append_sections, backdate,
         folder_names, make_alpha_markers, pretty_json, snapshot, tiny_elf,
     };
     use gdl_install::{
-        Blocker, ComponentAttributes, DEFAULT_CONFIG, DOWNLOAD_PREFIX, DestinationReport, GUNE5D,
-        InstallFolder, JOURNAL_DIR, KnownFolder, LOCK_FILE, RETIRED_LAUNCHER_PREFIX,
-        RUNTIME_SECTION, Receipt, Recovered, RecoveryOutcome, STATE_DIR, Sections, SectionsError,
-        UPDATE_BACKUP, UPDATE_JOURNAL, UPDATE_STAGING_PREFIX, UpdateRecovery, Warning,
-        installed_launcher_name,
+        Blocker, ComponentAttributes, DEFAULT_CONFIG, DOWNLOAD_PREFIX, DestinationReport,
+        FileChanges, GUNE5D, InstallFolder, JOURNAL_DIR, KnownFolder, LOCK_FILE, Probed,
+        RECEIPT_FILE, RETIRED_LAUNCHER_PREFIX, RUNTIME_SECTION, Receipt, Recovered,
+        RecoveryOutcome, RetiredCopy, STATE_DIR, Sections, SectionsError, SourceSummary,
+        UPDATE_BACKUP, UPDATE_JOURNAL, UPDATE_STAGING_PREFIX, UpdateNotice, UpdatePlan,
+        UpdateRecovery, Updated, Warning, installed_launcher_name,
     };
     use gdl_media::Sha256Digest;
     use gdl_release::{
@@ -1360,9 +2022,10 @@ mod tests {
     use serde_json::{Value, json};
 
     use super::{
-        Build, EXIT_OK, EXIT_REFUSED, EXIT_USAGE, FolderView, Mode, OwnFile, SPACE_MARGIN, USAGE,
-        feed_checked, hands_over, install_names, json_report, mode_of, print_recovered, print_scan,
-        printing, refuse, run, text_value, usage, was_installed_copy,
+        Build, EXIT_OK, EXIT_REFUSED, EXIT_USAGE, FolderView, Mode, OwnFile, SPACE_MARGIN,
+        SourceKind, USAGE, feed_checked, hands_over, install_names, json_report, mode_of,
+        print_plan, print_recovered, print_scan, print_updated, printing, recovery_io, refuse, run,
+        text_value, usage, was_installed_copy,
     };
     use crate::codes::Report;
     use crate::extraction::vectors::{
@@ -1793,6 +2456,44 @@ mod tests {
             (&["--check-feed", "--version"], "two modes"),
             (&["--check-feed", "--inspect", "folder"], "two modes"),
             (&["--recover", "folder", "--check-feed"], "two modes"),
+            (&["--update"], "--update without a folder"),
+            (&["--update", ""], "--update with an empty folder"),
+            (&["--update", "--yes"], "--update followed by an option"),
+            (&["--yes", "--update"], "--update at the end"),
+            (&["--update", "folder", "other"], "a second folder"),
+            (&["--update", "a", "--update", "b"], "--update twice"),
+            (&["--update", "folder", "--yes", "--yes"], "--yes twice"),
+            (
+                &["--update", "folder", "--offline", "--offline"],
+                "--offline twice",
+            ),
+            (&["--update", "folder", "--yes=no"], "--yes with a value"),
+            (&["--update", "folder", "--json"], "--json beside --update"),
+            (
+                &["--update", "folder", "--payload", "a.zip"],
+                "--payload beside --update",
+            ),
+            (
+                &["--update", "folder", "--output", "out"],
+                "--output beside --update",
+            ),
+            (
+                &["--update", "folder", "--strict", "script"],
+                "--strict beside --update",
+            ),
+            (&["--update", "folder", "--recover", "folder"], "two modes"),
+            (&["--update", "folder", "--check-feed"], "two modes"),
+            (&["--version", "--yes"], "--yes outside --update"),
+            (&["--recover", "folder", "--yes"], "--yes beside --recover"),
+            (
+                &["--inspect", "folder", "--offline"],
+                "--offline outside --update",
+            ),
+            (
+                &["--check-feed", "--offline"],
+                "--offline beside --check-feed",
+            ),
+            (&["--check-feed", "--yes"], "--yes beside --check-feed"),
         ];
         for &(args, what) in cases {
             let ran = run_release(args);
@@ -1808,7 +2509,8 @@ mod tests {
             USAGE,
             "usage: gdl-launcher-headless --check-payload [--payload <zip>] | --inspect <dir> \
              [--json] | --check-folder <dir> [--json] | --extract <n64|dreamcast> <dump> \
-             --output <dir> [--strict script] | --check-feed | --recover <dir> | --version"
+             --output <dir> [--strict script] | --check-feed | --update <dir> [--yes] \
+             [--offline] | --recover <dir> | --version"
         );
     }
 
@@ -1834,6 +2536,11 @@ mod tests {
             &["--Recover", "folder"],
             &["--check-feed=github"],
             &["--Check-Feed"],
+            &["--update=folder"],
+            &["--Update", "folder"],
+            &["--yes"],
+            &["--offline"],
+            &["--yes", "--offline", "folder"],
         ];
         for &args in cases {
             let ran = run_release(args);
@@ -3673,22 +4380,27 @@ mod tests {
         let downloaded = dir.path().join("downloaded");
         fs::write(&downloaded, &file).unwrap();
 
+        let told = |own: &OwnFile, root: &Path, platform| {
+            was_installed_copy(own, root, platform, recovery_io).unwrap()
+        };
         let installed: OwnFile = Sections::of_path(&copy);
-        assert!(was_installed_copy(&installed, &root, Some(platform)).unwrap());
+        assert!(told(&installed, &root, Some(platform)));
         let other: OwnFile = Sections::of_path(&downloaded);
-        assert!(!was_installed_copy(&other, &root, Some(platform)).unwrap());
+        assert!(!told(&other, &root, Some(platform)));
         // An installation without a copy has none for the file to be.
         let empty = dir.path().join("empty");
         fs::create_dir(&empty).unwrap();
-        assert!(!was_installed_copy(&installed, &empty, Some(platform)).unwrap());
-        assert!(
-            !was_installed_copy(&installed, &dir.path().join("absent"), Some(platform)).unwrap()
-        );
+        assert!(!told(&installed, &empty, Some(platform)));
+        assert!(!told(
+            &installed,
+            &dir.path().join("absent"),
+            Some(platform)
+        ));
         // A file whose sections were not found, and a system no release is built for.
-        assert!(!was_installed_copy(&Ok(None), &root, Some(platform)).unwrap());
+        assert!(!told(&Ok(None), &root, Some(platform)));
         let unread: OwnFile = Err(SectionsError::NoSections);
-        assert!(!was_installed_copy(&unread, &root, Some(platform)).unwrap());
-        assert!(!was_installed_copy(&installed, &root, None).unwrap());
+        assert!(!told(&unread, &root, Some(platform)));
+        assert!(!told(&installed, &root, None));
     }
 
     #[test]
@@ -3763,13 +4475,15 @@ mod tests {
         assert_eq!(folder_names(&state).unwrap(), kept);
     }
 
-    #[test]
-    fn a_committed_update_is_cleaned_up() {
-        let Some(platform) = this_platform() else {
-            return;
-        };
-        let dir = tempfile::tempdir().unwrap();
-        let (fixture, state) = installation(dir.path(), platform, VERSION);
+    /// Lays out in the installation `fixture`, for `platform`, what an update from [`PREVIOUS`] in
+    /// `phase` leaves: its staging, its backup and the retired launcher copy, and its journal,
+    /// whose path it gives back with the staging's name and the retired copy's.
+    fn update_left(
+        fixture: &InstallFixture,
+        platform: Platform,
+        phase: &str,
+    ) -> (PathBuf, String, String) {
+        let state = fixture.root.join(STATE_DIR);
         let staging = format!("{UPDATE_STAGING_PREFIX}{STAGING_RANDOM}");
         let retired = retired_copy(platform, PREVIOUS);
         fs::create_dir(state.join(&staging)).unwrap();
@@ -3779,7 +4493,7 @@ mod tests {
         let journal = json!({
             "schema": 1,
             "minLauncher": VERSION,
-            "phase": "committed",
+            "phase": phase,
             "from": PREVIOUS,
             "to": VERSION,
             "staging": staging,
@@ -3793,6 +4507,17 @@ mod tests {
         fs::create_dir(state.join(JOURNAL_DIR)).unwrap();
         let journal_path = state.join(JOURNAL_DIR).join(UPDATE_JOURNAL);
         fs::write(&journal_path, pretty_json(&journal)).unwrap();
+        (journal_path, staging, retired)
+    }
+
+    #[test]
+    fn a_committed_update_is_cleaned_up() {
+        let Some(platform) = this_platform() else {
+            return;
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let (fixture, state) = installation(dir.path(), platform, VERSION);
+        let (journal_path, staging, retired) = update_left(&fixture, platform, "committed");
 
         let ran = recovered(&fixture.root);
         assert_eq!(ran.code, Some(EXIT_OK), "{ran:?}");
@@ -4104,5 +4829,481 @@ mod tests {
             &mut Vec::new(),
         );
         assert_eq!(code, EXIT_REFUSED);
+    }
+
+    /// A launcher file in `dir` carrying `runtime`, as a release appends one to the launcher's
+    /// program, and its path.
+    fn launcher_carrying(dir: &Path, runtime: &RuntimeFiles) -> PathBuf {
+        let mut file = tiny_elf();
+        append_sections(&mut file, &[(RUNTIME_SECTION, runtime.zip().as_slice())], 0);
+        let path = dir.join("launcher");
+        fs::write(&path, &file).unwrap();
+        path
+    }
+
+    /// Updates the installation at `root` without asking a feed, as the release build whose own
+    /// file is the launcher file at `launcher`; only plans the update unless `yes` says so.
+    fn updated_offline(root: &Path, launcher: &Path, yes: bool) -> Ran {
+        let mut own: OwnFile = Sections::of_path(launcher);
+        run_as(&update_args(root, yes), &RELEASE, &mut own)
+    }
+
+    /// The arguments that update the installation at `root` without asking a feed, or only plan
+    /// the update unless `yes` says so.
+    fn update_args(root: &Path, yes: bool) -> Vec<&OsStr> {
+        let mut args = vec![
+            OsStr::new("--update"),
+            root.as_os_str(),
+            OsStr::new("--offline"),
+        ];
+        if yes {
+            args.push(OsStr::new("--yes"));
+        }
+        args
+    }
+
+    /// The phases a run's output tells, in turn.
+    fn phases_of(out: &str) -> Vec<&str> {
+        out.lines()
+            .filter_map(|line| line.strip_prefix("phase: "))
+            .collect()
+    }
+
+    /// The lines of a run's output but those that tell its job's progress: its phases and their
+    /// shares done.
+    fn past_progress(out: &str) -> Vec<&str> {
+        out.lines()
+            .filter(|line| !line.starts_with("phase: ") && !line.starts_with("progress: "))
+            .collect()
+    }
+
+    /// A runtime name.
+    fn name(text: &str) -> RelPath {
+        RelPath::parse(text, &PAYLOAD_NAMES).unwrap()
+    }
+
+    /// An update from [`PREVIOUS`] to [`VERSION`] of the installation in `dir` that stands, the
+    /// launcher copy installed before ending as `retired`, the game probed as `probed` says, with
+    /// `notices`.
+    fn an_update(
+        dir: &Path,
+        retired: RetiredCopy,
+        probed: Probed,
+        notices: Vec<UpdateNotice>,
+    ) -> Updated {
+        let fixture = InstallFixture::new(
+            dir,
+            RuntimeFiles::standard(Platform::LinuxX64.as_str(), VERSION),
+        );
+        Updated {
+            folder: InstallFolder::at(dir).unwrap(),
+            from: Version::parse(PREVIOUS).unwrap(),
+            to: Version::parse(VERSION).unwrap(),
+            receipt: serde_json::from_value(fixture.receipt()).unwrap(),
+            changes: FileChanges {
+                replaced: vec![name("VERSION"), name("build-info.json")],
+                added: Vec::new(),
+                removed: Vec::new(),
+                unchanged: 4,
+            },
+            recovered: nothing_recovered(),
+            retired,
+            probed,
+            notices,
+        }
+    }
+
+    /// What `print_updated` writes of `updated`, from the source `kind` names.
+    fn printed_update(updated: &Updated, kind: SourceKind) -> String {
+        let mut out = Vec::new();
+        print_updated(updated, kind, &mut out).unwrap();
+        String::from_utf8(out).unwrap()
+    }
+
+    /// A plan of the update from `from` to `to` from `source`, which would move `changes`.
+    fn a_plan(
+        from: &str,
+        to: &str,
+        source: SourceSummary,
+        changes: Option<FileChanges>,
+    ) -> UpdatePlan {
+        UpdatePlan {
+            root: PathBuf::from("install"),
+            from: Version::parse(from).unwrap(),
+            to: Version::parse(to).unwrap(),
+            source,
+            changes,
+            needed_bytes: None,
+            recovery_pending: false,
+            cleanup_pending: false,
+        }
+    }
+
+    /// What `print_plan` writes of `plan`.
+    fn printed_plan(plan: &UpdatePlan) -> String {
+        let mut out = Vec::new();
+        print_plan(plan, &mut out).unwrap();
+        String::from_utf8(out).unwrap()
+    }
+
+    #[test]
+    fn an_update_takes_its_folder_and_each_of_its_options_once() {
+        let cases: &[(&[&str], bool, bool)] = &[
+            (&["--update", "dir"], false, false),
+            (&["--update", "dir", "--yes"], true, false),
+            (&["--offline", "--update", "dir"], false, true),
+            (&["--yes", "--offline", "--update", "dir"], true, true),
+            (&["--update", "dir", "--offline", "--yes"], true, true),
+        ];
+        for &(args, made, asks_no_feed) in cases {
+            let args: Vec<OsString> = args.iter().map(OsString::from).collect();
+            let mode = mode_of(&args);
+            assert!(
+                matches!(
+                    mode,
+                    Some(Ok(Mode::Update { folder, yes, offline }))
+                        if folder == "dir" && yes == made && offline == asks_no_feed
+                ),
+                "{args:?}: {mode:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_update_is_printed_line_by_line() {
+        let dir = tempfile::tempdir().unwrap();
+        // From the program's own file, the game left as it was and the copy installed before gone.
+        let plain = an_update(
+            dir.path(),
+            RetiredCopy::Removed,
+            Probed::NotStaged,
+            Vec::new(),
+        );
+        assert_eq!(
+            printed_update(&plain, SourceKind::Bundled),
+            "updated: 0.9.0 -> 1.0.0-beta (bundled)\nprobed: notStaged\nretired: removed\n"
+        );
+
+        // From the feed, the game probed, with each notice in turn and the copy left for later; a
+        // value that would begin a line of its own is escaped.
+        let retired = retired_copy(Platform::WindowsX64, PREVIOUS);
+        let notices = vec![
+            UpdateNotice::ProbeFailed {
+                status: Some(3),
+                first_line: Some("Gauntlet 0.9.0".to_owned()),
+                stderr_tail: "failed\nprobed: notStaged".to_owned(),
+            },
+            UpdateNotice::CleanupLeft {
+                detail: "update-backup: in use".into(),
+            },
+        ];
+        let told = an_update(
+            dir.path(),
+            RetiredCopy::Left {
+                name: retired.clone(),
+            },
+            Probed::Staged,
+            notices,
+        );
+        assert_eq!(
+            printed_update(&told, SourceKind::Feed),
+            format!(
+                "updated: 0.9.0 -> 1.0.0-beta (feed)\nprobed: staged\n\
+                 notice: game.probeFailed (probeFailed): status 3; first line Gauntlet 0.9.0; \
+                 stderr failed\\nprobed: notStaged\n\
+                 notice: io.failed (cleanupLeft): update-backup: in use\n\
+                 retired: left {retired}\n"
+            )
+        );
+
+        // A game that never answered, and an installation that held no launcher copy to retire.
+        let silent = vec![UpdateNotice::ProbeFailed {
+            status: None,
+            first_line: None,
+            stderr_tail: String::new(),
+        }];
+        let unanswered = an_update(dir.path(), RetiredCopy::NotMoved, Probed::Staged, silent);
+        assert_eq!(
+            printed_update(&unanswered, SourceKind::Bundled),
+            "updated: 0.9.0 -> 1.0.0-beta (bundled)\nprobed: staged\n\
+             notice: game.probeFailed (probeFailed): status none; first line none; stderr none\n\
+             retired: none\n"
+        );
+        assert!(print_updated(&plain, SourceKind::Bundled, &mut Closed).is_err());
+    }
+
+    #[test]
+    fn a_plan_is_printed_line_by_line() {
+        let bundled = SourceSummary::Bundled { file_len: 4096 };
+        // The names the program's own file would move, each kind in byte order.
+        let changes = FileChanges {
+            replaced: vec![
+                name("VERSION"),
+                name("build-info.json"),
+                name("data/text/en.json"),
+            ],
+            added: vec![name("shaders/next.spv")],
+            removed: vec![name("shaders/test.spv")],
+            unchanged: 3,
+        };
+        assert_eq!(
+            printed_plan(&a_plan(PREVIOUS, VERSION, bundled.clone(), Some(changes))),
+            "plan: 0.9.0 -> 1.0.0-beta (bundled)\nplan: replace VERSION\n\
+             plan: replace build-info.json\nplan: replace data/text/en.json\n\
+             plan: add shaders/next.spv\nplan: remove shaders/test.spv\n"
+        );
+        // While a job left unfinished keeps them from being known, no name is told.
+        assert_eq!(
+            printed_plan(&a_plan(PREVIOUS, VERSION, bundled.clone(), None)),
+            "plan: 0.9.0 -> 1.0.0-beta (bundled)\n"
+        );
+        // A release is downloaded whole.
+        let release = SourceSummary::Release {
+            tag: format!("v{NEXT}"),
+            download_bytes: 7_340_032,
+        };
+        assert_eq!(
+            printed_plan(&a_plan(VERSION, NEXT, release.clone(), None)),
+            "plan: 1.0.0-beta -> 1.0.0-beta.1 (feed)\nplan: download 7340032\n"
+        );
+        // A release no newer than the installed one, which another launcher may have installed
+        // since the source was chosen, would leave the installation as it is.
+        for (from, to, source) in [
+            (VERSION, VERSION, bundled.clone()),
+            (NEXT, VERSION, bundled),
+            (NEXT, VERSION, release.clone()),
+        ] {
+            assert_eq!(
+                printed_plan(&a_plan(from, to, source, None)),
+                format!("plan: upToDate {from}\n"),
+                "{from} -> {to}"
+            );
+        }
+        let plan = a_plan(VERSION, NEXT, release, None);
+        assert!(print_plan(&plan, &mut Closed).is_err());
+    }
+
+    #[test]
+    fn a_plan_names_what_the_update_would_move_and_changes_nothing() {
+        let Some(platform) = this_platform() else {
+            return;
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let (fixture, _) = installation(dir.path(), platform, PREVIOUS);
+        let launcher = launcher_carrying(
+            dir.path(),
+            &RuntimeFiles::standard(platform.as_str(), VERSION),
+        );
+        backdate(&fixture.root).unwrap();
+        let before = snapshot(&fixture.root).unwrap();
+        // The program's own file carries the release after the installed one: the two runtimes
+        // differ in their version alone.
+        let ran = updated_offline(&fixture.root, &launcher, false);
+        assert_eq!(ran.code, Some(EXIT_OK), "{ran:?}");
+        assert_eq!(
+            (ran.out.as_str(), ran.err.as_str()),
+            (
+                "plan: 0.9.0 -> 1.0.0-beta (bundled)\nplan: replace VERSION\n\
+                 plan: replace build-info.json\n",
+                ""
+            )
+        );
+        // A file that carries no runtime has nothing newer to bring.
+        let ran = run_release(&update_args(&fixture.root, false));
+        assert_eq!(ran.code, Some(EXIT_OK), "{ran:?}");
+        assert_eq!(
+            (ran.out.as_str(), ran.err.as_str()),
+            ("plan: upToDate 0.9.0\n", "")
+        );
+        assert!(
+            snapshot(&fixture.root).unwrap() == before,
+            "the folder changed"
+        );
+    }
+
+    #[test]
+    fn a_plan_tells_what_the_update_would_finish_first() {
+        let Some(platform) = this_platform() else {
+            return;
+        };
+        for (phase, first) in [("committed", "finishCleanup"), ("staged", "recover")] {
+            let dir = tempfile::tempdir().unwrap();
+            let (fixture, _) = installation(dir.path(), platform, VERSION);
+            update_left(&fixture, platform, phase);
+            backdate(&fixture.root).unwrap();
+            let before = snapshot(&fixture.root).unwrap();
+            let ran = run_release(&update_args(&fixture.root, false));
+            assert_eq!(ran.code, Some(EXIT_OK), "{phase}: {ran:?}");
+            assert_eq!(
+                (ran.out.as_str(), ran.err.as_str()),
+                (
+                    format!("plan: {first}\nplan: upToDate 1.0.0-beta\n").as_str(),
+                    ""
+                ),
+                "{phase}"
+            );
+            assert!(
+                snapshot(&fixture.root).unwrap() == before,
+                "{phase}: the folder changed"
+            );
+        }
+    }
+
+    #[test]
+    fn an_update_brings_the_programs_own_release_without_a_feed() {
+        let Some(platform) = this_platform() else {
+            return;
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let (fixture, state) = installation(dir.path(), platform, PREVIOUS);
+        let launcher = launcher_carrying(
+            dir.path(),
+            &RuntimeFiles::standard(platform.as_str(), VERSION),
+        );
+        let ran = updated_offline(&fixture.root, &launcher, true);
+        assert_eq!(ran.code, Some(EXIT_OK), "{ran:?}");
+        assert_eq!(ran.err, "");
+        // The job's progress as it went, then what it did: the game, unchanged, was not probed,
+        // and the launcher copy installed before was removed, since no program ran from it.
+        assert_eq!(
+            phases_of(&ran.out),
+            [
+                "checkInstalled",
+                "verifyDownload",
+                "stage",
+                "checkGame",
+                "swap",
+                "cleanup"
+            ]
+        );
+        assert_eq!(
+            past_progress(&ran.out),
+            [
+                "updated: 0.9.0 -> 1.0.0-beta (bundled)",
+                "probed: notStaged",
+                "retired: removed"
+            ]
+        );
+        // The installation is the release the file carries, its launcher copy that file, and
+        // nothing the update made or moved aside is left.
+        let report = inspected(&fixture.root, false);
+        assert_eq!(report.lines().next(), Some("state: installed"), "{report}");
+        assert!(
+            report.lines().any(|line| line == "version: 1.0.0-beta"),
+            "{report}"
+        );
+        assert_eq!(
+            fs::read(fixture.root.join(installed_launcher_name(platform))).unwrap(),
+            fs::read(&launcher).unwrap()
+        );
+        for name in folder_names(&state).unwrap() {
+            assert!(
+                [
+                    UPDATE_STAGING_PREFIX,
+                    RETIRED_LAUNCHER_PREFIX,
+                    UPDATE_BACKUP
+                ]
+                .iter()
+                .all(|made| !name.starts_with(made)),
+                "{name} is left"
+            );
+        }
+        assert!(!state.join(JOURNAL_DIR).join(UPDATE_JOURNAL).exists());
+    }
+
+    #[test]
+    fn nothing_newer_recovers_the_folder_and_tells_the_installed_release() {
+        let Some(platform) = this_platform() else {
+            return;
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let carrying_this = launcher_carrying(
+            dir.path(),
+            &RuntimeFiles::standard(platform.as_str(), VERSION),
+        );
+        // A file that carries no runtime, and one that carries the installed release.
+        for launcher in [None, Some(carrying_this.as_path())] {
+            let dir = tempfile::tempdir().unwrap();
+            let (fixture, state) = installation(dir.path(), platform, VERSION);
+            let staging = state.join(format!("{UPDATE_STAGING_PREFIX}{STAGING_RANDOM}"));
+            fs::create_dir(&staging).unwrap();
+            let ran = match launcher {
+                Some(launcher) => updated_offline(&fixture.root, launcher, true),
+                None => run_release(&update_args(&fixture.root, true)),
+            };
+            assert_eq!(ran.code, Some(EXIT_OK), "{launcher:?}: {ran:?}");
+            assert_eq!(
+                (ran.out.as_str(), ran.err.as_str()),
+                ("phase: finishCleanup\nupToDate: 1.0.0-beta\n", ""),
+                "{launcher:?}"
+            );
+            assert!(!staging.exists(), "{launcher:?}: the staging was left");
+        }
+    }
+
+    #[test]
+    fn a_refused_update_tells_what_it_left() {
+        let Some(platform) = this_platform() else {
+            return;
+        };
+        let dir = tempfile::tempdir().unwrap();
+
+        // An installation of a later release than this launcher.
+        let (later, state) = installation(&dir.path().join("later"), platform, "1.0.1");
+        let staging = state.join(format!("{UPDATE_STAGING_PREFIX}{STAGING_RANDOM}"));
+        fs::create_dir(&staging).unwrap();
+        let older = "error: launcher.older (olderLauncher): This launcher file (1.0.0-beta) is \
+                     older than the installation (1.0.1)\n";
+        assert_refused(
+            &run_release(&update_args(&later.root, true)),
+            &format!("{older}changes: none\n"),
+        );
+        assert_refused(&run_release(&update_args(&later.root, false)), older);
+        assert!(staging.is_dir(), "the staging was removed");
+
+        // The program's own file carries a runtime of another release than its own.
+        let (fixture, state) = installation(&dir.path().join("previous"), platform, PREVIOUS);
+        let other = launcher_carrying(
+            dir.path(),
+            &RuntimeFiles::standard(platform.as_str(), "1.0.1"),
+        );
+        let receipt = fs::read(state.join(RECEIPT_FILE)).unwrap();
+        let damaged = "error: payload.damaged (otherVersion): The runtime's version \"1.0.1\" is \
+                       not the launcher's version \"1.0.0-beta\"\n";
+        let ran = updated_offline(&fixture.root, &other, true);
+        assert_eq!(ran.code, Some(EXIT_REFUSED), "{ran:?}");
+        assert_eq!(ran.err, format!("{damaged}changes: none\n"));
+        assert!(past_progress(&ran.out).is_empty(), "{ran:?}");
+        assert_refused(&updated_offline(&fixture.root, &other, false), damaged);
+        assert_eq!(fs::read(state.join(RECEIPT_FILE)).unwrap(), receipt);
+        for name in folder_names(&state).unwrap() {
+            assert!(!name.starts_with(UPDATE_STAGING_PREFIX), "{name} is left");
+        }
+
+        // A folder that is not there.
+        let absent = dir.path().join("absent");
+        for yes in [true, false] {
+            let ran = run_release(&update_args(&absent, yes));
+            assert_eq!(ran.code, Some(EXIT_REFUSED), "{ran:?}");
+            assert_eq!(ran.out, "");
+            let mut lines = ran.err.lines();
+            let line = lines.next().unwrap();
+            assert!(line.starts_with("error: io.failed (io): "), "{}", ran.err);
+            assert_eq!(lines.next(), yes.then_some("changes: none"), "{}", ran.err);
+            assert_eq!(lines.next(), None, "{}", ran.err);
+        }
+        assert!(!absent.exists());
+
+        // The program's own file, whose sections could not be read.
+        let table = "error: payload.damaged (tableHash): the table's SHA-256 does not match the \
+                     trailer\n";
+        for (yes, line) in [
+            (true, format!("{table}changes: none\n")),
+            (false, table.to_owned()),
+        ] {
+            let mut own: OwnFile = Err(SectionsError::TableHash);
+            let ran = run_as(&update_args(&fixture.root, yes), &RELEASE, &mut own);
+            assert_refused(&ran, &line);
+        }
     }
 }
