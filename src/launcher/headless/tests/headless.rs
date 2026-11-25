@@ -41,7 +41,7 @@ const STAGING_RANDOM: &str = "AbC123xy";
 const USAGE: &str = "usage: gdl-launcher-headless --check-payload [--payload <zip>] | \
                      --inspect <dir> [--json] | --check-folder <dir> [--json] | \
                      --extract <n64|dreamcast> <dump> --output <dir> [--strict script] | \
-                     --recover <dir> | --version\n";
+                     --check-feed | --recover <dir> | --version\n";
 
 /// The N64 cases, which hold the image the tests extract and the tree the N64 extractor writes
 /// for it.
@@ -281,6 +281,10 @@ fn usage_errors_exit_2() {
         &["--recover", ""],
         &["--recover", "folder", "--json"],
         &["--recover", "folder", "--inspect", "folder"],
+        // Refused before anything is read, since no test reads the real feed.
+        &["--check-feed", "extra"],
+        &["--check-feed", "--json"],
+        &["--check-feed", "--recover", "folder"],
     ];
     for &args in cases {
         let output = run_program(args);

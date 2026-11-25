@@ -2,8 +2,10 @@
 //! `--version`, `--check-payload`, which checks the runtime the launcher file carries or a runtime
 //! zip it is given, `--inspect`, which reports what a folder is to the launcher, `--check-folder`,
 //! which reports what a folder is to an install, `--extract`, which extracts a Legends
-//! expansion's tree from a dump into a new folder outside every installation, and `--recover`,
-//! which recovers whatever jobs a crash or a kill left unfinished in an installation's folder.
+//! expansion's tree from a dump into a new folder outside every installation, `--check-feed`,
+//! which reads the release feed once and reports its newest release for this system without
+//! downloading anything, and `--recover`, which recovers whatever jobs a crash or a kill left
+//! unfinished in an installation's folder.
 //! They run before anything builds a window, and what they print is technical text for whoever
 //! runs them, never words for players. A run is handed its arguments, its build, its own file's
 //! sections and the streams to write to, so that every mode runs inside a test as it runs in the
@@ -28,13 +30,14 @@ use gdl_install::{
     SPACE_MARGIN, Sections, SectionsError, Unrecorded, UpdateRecovery, hand_over,
     installed_launcher_name, is_installed_copy, judge_destination, recover,
 };
-use gdl_release::{Platform, Version};
+use gdl_release::{Asset, Feed, FeedConfig, Platform, ReleaseError, Scan, Version};
 use serde::Serialize;
 
 use crate::codes::{self, Report};
 use crate::extraction::{
     Counts, ExtractRequest, ExtractSummary, StrictnessChoice, extract_to_new_folder, output_name,
 };
+use crate::updating::system_proxies;
 
 /// The exit code of a mode that did what it was asked.
 pub const EXIT_OK: u8 = 0;
@@ -50,7 +53,7 @@ pub const EXIT_USAGE: u8 = 2;
 const USAGE: &str = "usage: gdl-launcher-headless --check-payload [--payload <zip>] | \
                      --inspect <dir> [--json] | --check-folder <dir> [--json] | \
                      --extract <n64|dreamcast> <dump> --output <dir> [--strict script] | \
-                     --recover <dir> | --version";
+                     --check-feed | --recover <dir> | --version";
 
 /// The mode that prints the program's version.
 const VERSION_OPTION: &str = "--version";
@@ -84,16 +87,20 @@ const STRICT_OPTION: &str = "--strict";
 /// as an installation does.
 const SCRIPT_STRICTNESS: &str = "script";
 
+/// The mode that reads the release feed once and reports its newest release for this system.
+const CHECK_FEED_OPTION: &str = "--check-feed";
+
 /// The mode that recovers whatever jobs were left unfinished in the folder after it.
 const RECOVER_OPTION: &str = "--recover";
 
 /// The options that choose a mode: arguments with none of them are no headless run.
-const MODE_OPTIONS: [&str; 6] = [
+const MODE_OPTIONS: [&str; 7] = [
     VERSION_OPTION,
     CHECK_PAYLOAD_OPTION,
     INSPECT_OPTION,
     CHECK_FOLDER_OPTION,
     EXTRACT_OPTION,
+    CHECK_FEED_OPTION,
     RECOVER_OPTION,
 ];
 
@@ -124,8 +131,9 @@ const NO: &str = "no";
 /// How a text report writes what a judging that ended early did not ask.
 const UNKNOWN: &str = "unknown";
 
-/// How a text report writes an entry that the judging looked for and found nowhere, and a reparse
-/// tag that an entry does not have.
+/// How a text report writes an entry that the judging looked for and found nowhere, a reparse tag
+/// that an entry does not have, and a release or a release's signature that the feed does not
+/// hold.
 const NOWHERE: &str = "none";
 
 /// The build of the program that runs a mode.
@@ -153,11 +161,11 @@ pub fn open_own_file() -> OwnFile {
 
 /// Runs the headless mode that `args`, the program's arguments after its own name, ask for, and
 /// gives back its exit code; or `None` when no argument is `--check-payload`, `--inspect`,
-/// `--check-folder`, `--extract`, `--recover` or `--version`, which is no headless run. A mode
-/// writes its report to `out` and a refusal to `err`. Arguments that ask for a mode in a form it
-/// does not take get the usage line on `err` and [`EXIT_USAGE`]. An option's value is the
-/// argument after it, which must not be empty or begin with `--`; options may come in any order,
-/// each at most once.
+/// `--check-folder`, `--extract`, `--check-feed`, `--recover` or `--version`, which is no headless
+/// run. A mode writes its report to `out` and a refusal to `err`. Arguments that ask for a mode in
+/// a form it does not take get the usage line on `err` and [`EXIT_USAGE`]. An option's value is
+/// the argument after it, which must not be empty or begin with `--`; options may come in any
+/// order, each at most once.
 ///
 /// - `--version` writes the build's version.
 /// - `--check-payload` checks the runtime the launcher file carries, its sections as `own` holds
@@ -190,6 +198,17 @@ pub fn open_own_file() -> OwnFile {
 ///   and what the tree's manifests count, `<dir>` made absolute; a refusal is the line
 ///   `error: <code> (<rule>): <detail>`, and [`EXIT_REFUSED`]. A word that names no expansion,
 ///   and an output whose last name is none the launcher makes a folder with, are usage errors.
+/// - `--check-feed` reads the release feed, GitHub's releases list, once, through the system's
+///   proxy settings and trust store, as [`Feed::scan`] reads it for the platform this program was
+///   built for, with no version below which a release is passed over, and downloads nothing. It
+///   writes the platform, the build's version, how many releases the list holds and how many of
+///   them were passed over for carrying no launcher file of this platform's on the new line, then
+///   the newest release's version, or `none`, each a `name: value` line. For a release, it then
+///   writes whether that release is newer than the build, `yes` or `no`, and its launcher file,
+///   checksum list and signature, or `none` for a signature it does not carry, each as its name,
+///   its size in bytes and GitHub's SHA-256 of it. A feed that cannot be read is refused with the
+///   line `error: <code> (<rule>): <detail>`, and [`EXIT_REFUSED`]. A build for a system no
+///   release is built for has no platform to read the feed for, and gets the usage line.
 /// - `--recover <dir>` recovers whatever jobs were left unfinished in the folder, `<dir>` made
 ///   absolute, as [`recover`] recovers them for a launcher of the build's version, waiting while
 ///   another job holds the folder's lock or the game runs from it, since nothing here cancels a
@@ -210,8 +229,8 @@ pub fn open_own_file() -> OwnFile {
 /// quotes from a dump, hold. A report that cannot be written to its stream gives
 /// [`EXIT_REFUSED`], since nobody saw it.
 ///
-/// Panics when `--inspect` or `--recover` runs as a build whose version is not a semantic version,
-/// which no build script lets a build be.
+/// Panics when `--inspect`, `--check-feed` or `--recover` runs as a build whose version is not a
+/// semantic version, which no build script lets a build be.
 pub fn run(
     args: &[OsString],
     build: &Build<'_>,
@@ -234,6 +253,13 @@ pub fn run(
             output,
             script,
         } => extract_mode(expansion, dump, output, script, out, err),
+        Mode::CheckFeed => match Platform::of_this_build() {
+            Some(platform) => {
+                let config = FeedConfig::github(build.version, system_proxies());
+                check_feed(config, platform, build, out, err)
+            }
+            None => usage(err),
+        },
         Mode::Recover { folder } => recover_mode(Path::new(folder), build, own, out, err),
     })
 }
@@ -266,6 +292,8 @@ enum Mode<'a> {
         output: &'a OsStr,
         script: bool,
     },
+    /// `--check-feed`.
+    CheckFeed,
     /// `--recover`, of `folder`.
     Recover { folder: &'a OsStr },
 }
@@ -282,6 +310,8 @@ enum Chosen<'a> {
     CheckFolder(&'a OsStr),
     /// `--extract`, with the word that names the expansion and the dump after it.
     Extract(&'a OsStr, &'a OsStr),
+    /// `--check-feed`.
+    CheckFeed,
     /// `--recover`, with the folder after it.
     Recover(&'a OsStr),
 }
@@ -314,6 +344,7 @@ fn parse(args: &[OsString]) -> Result<Mode<'_>, Misused> {
             Some(INSPECT_OPTION) => Chosen::Inspect(value(&mut rest)?),
             Some(CHECK_FOLDER_OPTION) => Chosen::CheckFolder(value(&mut rest)?),
             Some(EXTRACT_OPTION) => Chosen::Extract(value(&mut rest)?, value(&mut rest)?),
+            Some(CHECK_FEED_OPTION) => Chosen::CheckFeed,
             Some(RECOVER_OPTION) => Chosen::Recover(value(&mut rest)?),
             Some(PAYLOAD_OPTION) if zip.is_none() => {
                 zip = Some(value(&mut rest)?);
@@ -358,6 +389,7 @@ fn parse(args: &[OsString]) -> Result<Mode<'_>, Misused> {
                 script,
             })
         }
+        (Some(Chosen::CheckFeed), None, false, (None, false)) => Ok(Mode::CheckFeed),
         (Some(Chosen::Recover(folder)), None, false, (None, false)) => Ok(Mode::Recover { folder }),
         _ => Err(Misused),
     }
@@ -581,6 +613,85 @@ fn extracted(summary: &ExtractSummary) -> String {
 /// acts as.
 fn running_version(build: &Build<'_>) -> Version {
     Version::parse(build.version).expect("the build's version is a semantic version")
+}
+
+/// `--check-feed`: reads the release feed `config` names once, as the launcher `build` is, for
+/// `platform` and with no floor, so that the newest release is found whatever its version, and
+/// reports what it found to `out`, or why it could not be read to `err`. Nothing is downloaded.
+fn check_feed(
+    config: FeedConfig,
+    platform: Platform,
+    build: &Build<'_>,
+    out: &mut dyn Write,
+    err: &mut dyn Write,
+) -> u8 {
+    let running = running_version(build);
+    // Nothing here asks the read to stop.
+    let cancel = Cancel::default();
+    let scanned = Feed::new(config).scan(None, platform, &cancel);
+    feed_checked(scanned, &running, platform, out, err)
+}
+
+/// Reports what a read of the release feed gave, `scanned`, to a launcher of `running` built for
+/// `platform`: what the feed holds, to `out` as [`print_scan`] writes it, and [`EXIT_OK`]; or why
+/// it could not be read, to `err` as [`refuse`] writes a refusal, and [`EXIT_REFUSED`].
+fn feed_checked(
+    scanned: Result<Scan, ReleaseError>,
+    running: &Version,
+    platform: Platform,
+    out: &mut dyn Write,
+    err: &mut dyn Write,
+) -> u8 {
+    match scanned {
+        Ok(scan) => match print_scan(&scan, running, platform, out) {
+            Ok(()) => EXIT_OK,
+            Err(_) => EXIT_REFUSED,
+        },
+        Err(error) => refuse(err, codes::release(&error), error.rule(), &error),
+    }
+}
+
+/// Writes to `out` what a read of the release feed found, `scan`, for a launcher of `running`
+/// built for `platform`: the platform, the launcher's version, how many releases the list holds
+/// and how many were passed over, then the newest release's version, or `none`, each a
+/// `name: value` line; and for a release, whether it is newer than the launcher, `yes` or `no`,
+/// then its launcher file, its checksum list and its signature, or `none` when it carries none,
+/// each as [`asset_line`] gives it. Each value is written as a text report writes a value.
+fn print_scan(
+    scan: &Scan,
+    running: &Version,
+    platform: Platform,
+    out: &mut dyn Write,
+) -> io::Result<()> {
+    let mut lines = vec![
+        ("platform", platform.as_str().to_owned()),
+        ("running", running.to_string()),
+        ("releases", scan.rows.to_string()),
+        ("passedOver", scan.passed_over.to_string()),
+    ];
+    match &scan.candidate {
+        None => lines.push(("newest", NOWHERE.to_owned())),
+        Some(release) => {
+            let signature = release
+                .signature
+                .as_ref()
+                .map_or_else(|| NOWHERE.to_owned(), asset_line);
+            lines.extend([
+                ("newest", release.version.to_string()),
+                ("newer", answer(Some(release.version > *running))),
+                ("launcher", asset_line(&release.launcher)),
+                ("checksums", asset_line(&release.checksums)),
+                ("signature", signature),
+            ]);
+        }
+    }
+    written(out, &text_report(lines))
+}
+
+/// A release's file as the feed check reports it: its name, its size in bytes and GitHub's
+/// SHA-256 of it, in lowercase hexadecimal.
+fn asset_line(asset: &Asset) -> String {
+    format!("{} {} {}", asset.name, asset.size, asset.sha256)
 }
 
 /// `--recover`: recovers whatever jobs were left unfinished in the folder at `folder` for the
@@ -1241,13 +1352,17 @@ mod tests {
         UPDATE_BACKUP, UPDATE_JOURNAL, UPDATE_STAGING_PREFIX, UpdateRecovery, Warning,
         installed_launcher_name,
     };
-    use gdl_release::{Platform, Version};
+    use gdl_media::Sha256Digest;
+    use gdl_release::{
+        Asset, Platform, REPOSITORY, Release, ReleaseError, Scan, Version, checksums_asset,
+        launcher_asset, signature_asset,
+    };
     use serde_json::{Value, json};
 
     use super::{
-        Build, EXIT_OK, EXIT_REFUSED, EXIT_USAGE, FolderView, OwnFile, SPACE_MARGIN, USAGE,
-        hands_over, install_names, json_report, print_recovered, printing, refuse, run, text_value,
-        usage, was_installed_copy,
+        Build, EXIT_OK, EXIT_REFUSED, EXIT_USAGE, FolderView, Mode, OwnFile, SPACE_MARGIN, USAGE,
+        feed_checked, hands_over, install_names, json_report, mode_of, print_recovered, print_scan,
+        printing, refuse, run, text_value, usage, was_installed_copy,
     };
     use crate::codes::Report;
     use crate::extraction::vectors::{
@@ -1659,6 +1774,25 @@ mod tests {
             (&["--recover", "a", "--recover", "b"], "--recover twice"),
             (&["--recover", "folder", "--version"], "two modes"),
             (&["--inspect", "folder", "--recover", "folder"], "two modes"),
+            // Each refused before anything is read, since no test reads the real feed.
+            (&["--check-feed", "extra"], "an argument no option takes"),
+            (&["--check-feed", "--json"], "--json beside --check-feed"),
+            (
+                &["--check-feed", "--payload", "a.zip"],
+                "--payload beside --check-feed",
+            ),
+            (
+                &["--check-feed", "--output", "out"],
+                "--output beside --check-feed",
+            ),
+            (
+                &["--check-feed", "--strict", "script"],
+                "--strict beside --check-feed",
+            ),
+            (&["--check-feed", "--check-feed"], "--check-feed twice"),
+            (&["--check-feed", "--version"], "two modes"),
+            (&["--check-feed", "--inspect", "folder"], "two modes"),
+            (&["--recover", "folder", "--check-feed"], "two modes"),
         ];
         for &(args, what) in cases {
             let ran = run_release(args);
@@ -1674,7 +1808,7 @@ mod tests {
             USAGE,
             "usage: gdl-launcher-headless --check-payload [--payload <zip>] | --inspect <dir> \
              [--json] | --check-folder <dir> [--json] | --extract <n64|dreamcast> <dump> \
-             --output <dir> [--strict script] | --recover <dir> | --version"
+             --output <dir> [--strict script] | --check-feed | --recover <dir> | --version"
         );
     }
 
@@ -1698,6 +1832,8 @@ mod tests {
             &["--extract=n64"],
             &["--recover=folder"],
             &["--Recover", "folder"],
+            &["--check-feed=github"],
+            &["--Check-Feed"],
         ];
         for &args in cases {
             let ran = run_release(args);
@@ -3734,5 +3870,239 @@ mod tests {
                  update: nothing\nswept: {staging}\n"
             )
         );
+    }
+
+    /// How many bytes a SHA-256 digest holds.
+    const DIGEST_BYTES: usize = 32;
+
+    /// The size of the launcher file of the releases the feed check's tests report.
+    const LAUNCHER_SIZE: u64 = 7_340_032;
+
+    /// The size of their checksum lists.
+    const LIST_SIZE: u64 = 300;
+
+    /// The size of their signatures.
+    const SIGNATURE_SIZE: u64 = 380;
+
+    /// The file `name` of the release of `version`, as the feed lists it: `size` bytes, whose
+    /// SHA-256 is the byte `byte` throughout.
+    fn feed_file(version: &Version, name: String, size: u64, byte: u8) -> Asset {
+        Asset {
+            url: format!("https://github.com/{REPOSITORY}/releases/download/v{version}/{name}"),
+            name,
+            size,
+            sha256: Sha256Digest([byte; DIGEST_BYTES]),
+        }
+    }
+
+    /// The feed's release of `text` for `platform`, whose checksum list's signature it carries
+    /// when `signed` says so.
+    fn feed_release(text: &str, platform: Platform, signed: bool) -> Release {
+        let version = Version::parse(text).unwrap();
+        let signature = signed.then(|| {
+            let name = signature_asset(&version, platform);
+            feed_file(&version, name, SIGNATURE_SIZE, 0xC3)
+        });
+        Release {
+            tag: format!("v{text}"),
+            platform,
+            launcher: feed_file(
+                &version,
+                launcher_asset(&version, platform),
+                LAUNCHER_SIZE,
+                0xA1,
+            ),
+            checksums: feed_file(
+                &version,
+                checksums_asset(&version, platform),
+                LIST_SIZE,
+                0xB2,
+            ),
+            signature,
+            notes: Some("Added\n\n- A line of notes".to_owned()),
+            version,
+        }
+    }
+
+    /// A read of the feed that found `candidate` among twelve releases, ten of them passed over.
+    fn scan_of(candidate: Option<Release>) -> Scan {
+        Scan {
+            candidate,
+            rows: 12,
+            passed_over: 10,
+        }
+    }
+
+    /// What `print_scan` writes of `scan` for the release build on `platform`.
+    fn scanned(scan: &Scan, platform: Platform) -> String {
+        let mut out = Vec::new();
+        let running = Version::parse(VERSION).unwrap();
+        print_scan(scan, &running, platform, &mut out).unwrap();
+        String::from_utf8(out).unwrap()
+    }
+
+    /// What the release build's feed check reports of the feed's answer `scanned` on Windows.
+    fn feed_check(scanned: Result<Scan, ReleaseError>) -> Ran {
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+        let running = Version::parse(VERSION).unwrap();
+        let code = feed_checked(scanned, &running, Platform::WindowsX64, &mut out, &mut err);
+        Ran {
+            code: Some(code),
+            out: String::from_utf8(out).unwrap(),
+            err: String::from_utf8(err).unwrap(),
+        }
+    }
+
+    #[test]
+    fn the_feed_check_takes_no_option() {
+        // Read as the mode alone and never run, since running it reads the real feed.
+        let args = [OsString::from("--check-feed")];
+        assert!(
+            matches!(mode_of(&args), Some(Ok(Mode::CheckFeed))),
+            "{:?}",
+            mode_of(&args)
+        );
+    }
+
+    #[test]
+    fn a_feed_check_is_printed_line_by_line() {
+        // The alpha releases alone, as the feed holds them before the launcher's first release.
+        let alpha = Scan {
+            candidate: None,
+            rows: 10,
+            passed_over: 10,
+        };
+        assert_eq!(
+            scanned(&alpha, Platform::WindowsX64),
+            "platform: windows-x64\nrunning: 1.0.0-beta\nreleases: 10\npassedOver: 10\n\
+             newest: none\n"
+        );
+
+        // A newer release, signed, on each platform.
+        let [launcher, list, signature] = ["a1", "b2", "c3"].map(|byte| byte.repeat(DIGEST_BYTES));
+        assert_eq!(
+            scanned(
+                &scan_of(Some(feed_release(NEXT, Platform::WindowsX64, true))),
+                Platform::WindowsX64
+            ),
+            format!(
+                "platform: windows-x64\nrunning: 1.0.0-beta\nreleases: 12\npassedOver: 10\n\
+                 newest: 1.0.0-beta.1\nnewer: yes\n\
+                 launcher: GauntletDarkLegacy-1.0.0-beta.1-windows-x64-launcher.exe 7340032 \
+                 {launcher}\n\
+                 checksums: GauntletDarkLegacy-1.0.0-beta.1-windows-x64.sha256 300 {list}\n\
+                 signature: GauntletDarkLegacy-1.0.0-beta.1-windows-x64.sha256.sig 380 \
+                 {signature}\n"
+            )
+        );
+        assert_eq!(
+            scanned(
+                &scan_of(Some(feed_release(NEXT, Platform::LinuxX64, true))),
+                Platform::LinuxX64
+            ),
+            format!(
+                "platform: linux-x64\nrunning: 1.0.0-beta\nreleases: 12\npassedOver: 10\n\
+                 newest: 1.0.0-beta.1\nnewer: yes\n\
+                 launcher: GauntletDarkLegacy-1.0.0-beta.1-linux-x64-launcher.tar.gz 7340032 \
+                 {launcher}\n\
+                 checksums: GauntletDarkLegacy-1.0.0-beta.1-linux-x64.sha256 300 {list}\n\
+                 signature: GauntletDarkLegacy-1.0.0-beta.1-linux-x64.sha256.sig 380 \
+                 {signature}\n"
+            )
+        );
+
+        // Read with no floor, the newest release may be no newer than the build: its own release,
+        // another build of it, or an older one. One that carries no signature names none.
+        for newest in [VERSION, "1.0.0-beta+rebuilt.2", "1.0.0-alpha.9"] {
+            let release = feed_release(newest, Platform::WindowsX64, false);
+            let (launcher_name, list_name) = (
+                release.launcher.name.clone(),
+                release.checksums.name.clone(),
+            );
+            assert_eq!(
+                scanned(&scan_of(Some(release)), Platform::WindowsX64),
+                format!(
+                    "platform: windows-x64\nrunning: 1.0.0-beta\nreleases: 12\npassedOver: 10\n\
+                     newest: {newest}\nnewer: no\nlauncher: {launcher_name} 7340032 {launcher}\n\
+                     checksums: {list_name} 300 {list}\nsignature: none\n"
+                ),
+                "{newest}"
+            );
+        }
+
+        // A report that cannot be written is an error.
+        let running = Version::parse(VERSION).unwrap();
+        assert!(print_scan(&alpha, &running, Platform::WindowsX64, &mut Closed).is_err());
+    }
+
+    #[test]
+    fn a_feed_that_cannot_be_read_is_a_refusal_line() {
+        let incomplete = launcher_asset(&Version::parse(NEXT).unwrap(), Platform::WindowsX64);
+        let page =
+            format!("https://api.github.com/repos/{REPOSITORY}/releases?per_page=100&page=1");
+        let cases = [
+            (
+                ReleaseError::Offline {
+                    detail: "connection refused".into(),
+                },
+                "error: net.offline (offline): The release feed could not be reached: connection \
+                 refused\n"
+                    .to_owned(),
+            ),
+            (
+                ReleaseError::Status {
+                    status: 502,
+                    url: page.as_str().into(),
+                },
+                format!("error: net.failed (status): GitHub answered HTTP 502 for {page}\n"),
+            ),
+            (
+                ReleaseError::RateLimited {
+                    reset_at: Some(1_800_000_000),
+                },
+                "error: net.rateLimited (rateLimited): GitHub's limit of unauthenticated requests \
+                 is spent\n"
+                    .to_owned(),
+            ),
+            (
+                ReleaseError::Incomplete {
+                    asset: incomplete.as_str().into(),
+                },
+                format!(
+                    "error: release.incomplete (incomplete): Release asset is incomplete or lacks \
+                     its GitHub SHA-256 digest: {incomplete}\n"
+                ),
+            ),
+            // A detail that holds a line end stays one line.
+            (
+                ReleaseError::InvalidResponse {
+                    detail: "expected value\nat line 2".into(),
+                },
+                "error: net.failed (invalidResponse): Invalid GitHub release response: expected \
+                 value\\nat line 2\n"
+                    .to_owned(),
+            ),
+            (ReleaseError::Cancelled, "error: cancelled\n".to_owned()),
+        ];
+        for (error, line) in cases {
+            assert_refused(&feed_check(Err(error)), &line);
+        }
+
+        // What the feed holds is reported whole, with nothing on the error stream.
+        let found = scan_of(Some(feed_release(NEXT, Platform::WindowsX64, false)));
+        let ran = feed_check(Ok(found.clone()));
+        assert_eq!(ran.code, Some(EXIT_OK), "{ran:?}");
+        assert_eq!(ran.out, scanned(&found, Platform::WindowsX64));
+        assert_eq!(ran.err, "");
+        // A report nobody saw fails the run.
+        let running = Version::parse(VERSION).unwrap();
+        let code = feed_checked(
+            Ok(found),
+            &running,
+            Platform::WindowsX64,
+            &mut Closed,
+            &mut Vec::new(),
+        );
+        assert_eq!(code, EXIT_REFUSED);
     }
 }
