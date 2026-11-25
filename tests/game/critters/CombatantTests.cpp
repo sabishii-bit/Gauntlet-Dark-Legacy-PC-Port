@@ -2852,6 +2852,7 @@ TEST_CASE("a golem's fist strikes one of the swarm two from it on each native fr
     const auto probed = swing(std::array{EnemyBody{1, {0, 0, 0}, 1000.0f, 1000.0f}});
     const auto framesOf = [](const std::vector<std::pair<s32, CombatTrample>>& struck) {
         std::vector<s32> frames;
+        frames.reserve(struck.size());
         for (const auto& [frame, trample] : struck) {
             frames.push_back(frame);
         }

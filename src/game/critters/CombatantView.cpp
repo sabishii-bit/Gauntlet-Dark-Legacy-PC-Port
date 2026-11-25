@@ -158,8 +158,7 @@ TreePose::RigidNodes Combatant::simulationNodes(const Actor& critter) {
     if (scaledNodes(critter)) {
         // The pose's own matrices know no parent that hands its place alone.
         const std::span<const Mat4> matrices = critter.pose.matrices();
-        std::vector<Mat4> nodes{matrices.begin(), matrices.end()};
-        return {nodes, nodes};
+        return {{matrices.begin(), matrices.end()}, {matrices.begin(), matrices.end()}};
     }
     return critter.pose.rigidNodes();
 }
