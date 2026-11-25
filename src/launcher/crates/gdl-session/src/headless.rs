@@ -2131,15 +2131,15 @@ mod tests {
     use gdl_files::{FolderProbe, Hold, PAYLOAD_NAMES, PhaseId, RelPath, root_utf16_len};
     use gdl_fixtures::{
         DiscSet, Edc, InstallFixture, RawEntry, RuntimeFiles, append_sections, backdate,
-        folder_names, make_alpha_markers, pretty_json, snapshot, tiny_elf,
+        folder_names, make_alpha_markers, pretty_json, sha256_hex, snapshot, tiny_elf,
     };
     use gdl_install::{
-        Blocker, ComponentAttributes, DEFAULT_CONFIG, DOWNLOAD_PREFIX, DestinationReport,
+        Blocker, Changes, ComponentAttributes, DEFAULT_CONFIG, DOWNLOAD_PREFIX, DestinationReport,
         FileChanges, GUNE5D, InstallFolder, JOURNAL_DIR, KnownFolder, LOCK_FILE, Linger, Previous,
         Probed, RECEIPT_FILE, RETIRED_LAUNCHER_PREFIX, RUNTIME_SECTION, Receipt, Recovered,
         RecoveryOutcome, RetiredCopy, RetiredSweep, STATE_DIR, Sections, SectionsError,
-        SourceSummary, UPDATE_BACKUP, UPDATE_JOURNAL, UPDATE_STAGING_PREFIX, UpdateNotice,
-        UpdatePlan, UpdateRecovery, Updated, Warning, installed_launcher_name,
+        SourceSummary, UPDATE_BACKUP, UPDATE_JOURNAL, UPDATE_STAGING_PREFIX, UpdateError,
+        UpdateNotice, UpdatePlan, UpdateRecovery, Updated, Warning, installed_launcher_name,
     };
     use gdl_media::Sha256Digest;
     use gdl_release::{
@@ -2152,7 +2152,8 @@ mod tests {
         Build, EXIT_OK, EXIT_REFUSED, EXIT_USAGE, FolderView, Mode, OwnFile, SPACE_MARGIN,
         SourceKind, USAGE, after_update, feed_checked, hands_over, install_names, json_report,
         mode_of, print_plan, print_previous, print_recovered, print_retired, print_scan,
-        print_updated, printing, recovery_io, refuse, run, text_value, usage, was_installed_copy,
+        print_updated, printing, recovery_io, refuse, refuse_update, run, text_value, usage,
+        was_installed_copy,
     };
     use crate::codes::Report;
     use crate::extraction::vectors::{
@@ -5431,6 +5432,157 @@ mod tests {
                 "{launcher:?}"
             );
             assert!(!staging.exists(), "{launcher:?}: the staging was left");
+        }
+    }
+
+    /// Lays out in the installation of [`PREVIOUS`] `fixture`, for `platform`, what an update to
+    /// [`VERSION`] from the launcher file at `launcher`, carrying `runtime`, leaves when it is
+    /// killed once the new launcher copy is in place and before the receipt is written: the files
+    /// it changed moved aside and the new ones in place, the installed copy retired and the new
+    /// one in its place, the staging empty, the journal swapping and the receipt still the
+    /// installed release's. A recovery finishes such an update.
+    fn update_swapped(
+        fixture: &InstallFixture,
+        platform: Platform,
+        launcher: &Path,
+        runtime: &RuntimeFiles,
+    ) {
+        let root = &fixture.root;
+        let state = root.join(STATE_DIR);
+        let staging = format!("{UPDATE_STAGING_PREFIX}{STAGING_RANDOM}");
+        fs::create_dir(state.join(&staging)).unwrap();
+        let backup = state.join(UPDATE_BACKUP);
+        fs::create_dir(&backup).unwrap();
+        let moved = ["VERSION", "build-info.json"];
+        for name in moved {
+            fs::rename(root.join(name), backup.join(name)).unwrap();
+        }
+        let (_, version_file) = runtime
+            .files
+            .iter()
+            .find(|(name, _)| name == "VERSION")
+            .expect("the runtime names its version");
+        let build_info = runtime.build_info_bytes();
+        fs::write(root.join("VERSION"), version_file).unwrap();
+        fs::write(root.join("build-info.json"), &build_info).unwrap();
+        let copy_name = installed_launcher_name(platform);
+        let retired = retired_copy(platform, PREVIOUS);
+        fs::rename(root.join(copy_name), state.join(&retired)).unwrap();
+        let new_copy = fs::read(launcher).unwrap();
+        fs::write(root.join(copy_name), &new_copy).unwrap();
+        let mut receipt = fixture.receipt();
+        receipt["version"] = json!(VERSION);
+        receipt["buildInfoSha256"] = json!(sha256_hex(&build_info));
+        receipt["launcher"]["sha256"] = json!(sha256_hex(&new_copy));
+        let journal = json!({
+            "schema": 1,
+            "minLauncher": VERSION,
+            "phase": "swapping",
+            "from": PREVIOUS,
+            "to": VERSION,
+            "staging": staging,
+            "backup": moved,
+            "publish": moved,
+            "madeFolders": [],
+            "launcher": copy_name,
+            "retired": retired,
+            "receipt": receipt,
+        });
+        fs::create_dir(state.join(JOURNAL_DIR)).unwrap();
+        fs::write(
+            state.join(JOURNAL_DIR).join(UPDATE_JOURNAL),
+            pretty_json(&journal),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn an_update_whose_every_move_was_made_is_finished_before_anything_is_chosen() {
+        let Some(platform) = this_platform() else {
+            return;
+        };
+        let runtime = RuntimeFiles::standard(platform.as_str(), VERSION);
+        // An installation of the release before, which an update to the program's own release
+        // left with every move made and its receipt still to write.
+        let swapped = |dir: &Path| {
+            let (fixture, _) = installation(dir, platform, PREVIOUS);
+            let launcher = launcher_carrying(dir, &runtime);
+            update_swapped(&fixture, platform, &launcher, &runtime);
+            (fixture, launcher)
+        };
+
+        // The plan is chosen against the release the receipt records, the installed files not
+        // agreeing with it, and the program's own file brings the newer one; what it would move
+        // is known once the update has finished the job left.
+        let dir = tempfile::tempdir().unwrap();
+        let (fixture, launcher) = swapped(dir.path());
+        backdate(&fixture.root).unwrap();
+        let before = snapshot(&fixture.root).unwrap();
+        let ran = updated_offline(&fixture.root, &launcher, false);
+        assert_eq!(ran.code, Some(EXIT_OK), "{ran:?}");
+        assert_eq!(
+            (ran.out.as_str(), ran.err.as_str()),
+            ("plan: recover\nplan: 0.9.0 -> 1.0.0-beta (bundled)\n", "")
+        );
+        assert!(
+            snapshot(&fixture.root).unwrap() == before,
+            "the folder changed"
+        );
+
+        // Made, the update's own recovery finishes the job, which installs the release the file
+        // brings: there is nothing more to update, and the release now installed is told.
+        let ran = updated_offline(&fixture.root, &launcher, true);
+        assert_eq!(ran.code, Some(EXIT_OK), "{ran:?}");
+        assert_eq!(ran.err, "");
+        assert_eq!(phases_of(&ran.out), ["checkInstalled"], "{ran:?}");
+        assert_eq!(past_progress(&ran.out), ["upToDate: 1.0.0-beta"]);
+        let report = inspected(&fixture.root, false);
+        assert_eq!(report.lines().next(), Some("state: installed"), "{report}");
+        assert!(
+            report.lines().any(|line| line == "version: 1.0.0-beta"),
+            "{report}"
+        );
+
+        // A file that carries no runtime finds nothing newer than the release the receipt
+        // records, and only recovers: the release it tells is the one installed once the
+        // recovery finished the job, not the one it chose against.
+        let dir = tempfile::tempdir().unwrap();
+        let (fixture, _) = swapped(dir.path());
+        let ran = run_release(&update_args(&fixture.root, true));
+        assert_eq!(ran.code, Some(EXIT_OK), "{ran:?}");
+        assert_eq!(ran.err, "");
+        assert_eq!(
+            phases_of(&ran.out),
+            ["recoverUpdate", "finishCleanup"],
+            "{ran:?}"
+        );
+        assert_eq!(past_progress(&ran.out), ["upToDate: 1.0.0-beta"]);
+        let report = inspected(&fixture.root, false);
+        assert!(
+            report.lines().any(|line| line == "version: 1.0.0-beta"),
+            "{report}"
+        );
+    }
+
+    #[test]
+    fn a_refused_update_names_what_it_left() {
+        let refusal = "error: state.newerLauncher (newerLauncher): A later launcher's state stands \
+                       in this installation; this launcher changes nothing\n";
+        for (changes, name) in [
+            (Some(Changes::None), "changes: none\n"),
+            (Some(Changes::RolledBack), "changes: rolledBack\n"),
+            (Some(Changes::Kept), "changes: kept\n"),
+            // A plan's refusal, which left nothing to tell.
+            (None, ""),
+        ] {
+            let mut err = Vec::new();
+            let code = refuse_update(&mut err, &UpdateError::NewerLauncher, changes);
+            assert_eq!(code, EXIT_REFUSED);
+            assert_eq!(
+                String::from_utf8(err).unwrap(),
+                format!("{refusal}{name}"),
+                "{changes:?}"
+            );
         }
     }
 
