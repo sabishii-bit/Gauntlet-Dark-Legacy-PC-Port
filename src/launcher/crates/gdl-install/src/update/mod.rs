@@ -793,6 +793,7 @@ mod tests {
     use std::path::{Path, PathBuf};
     use std::process::ExitStatus;
     use std::sync::Mutex;
+    use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
     use std::time::{Duration, Instant};
 
     use gdl_files::{
@@ -821,7 +822,6 @@ mod tests {
     use crate::folder::{
         InstallFolder, JOURNAL_DIR, LOCK_FILE, LockError, RECEIPT_FILE, STATE_DIR,
     };
-    use crate::hold::SCANNER_GRACE;
     use crate::inspect::FolderState;
     use crate::install::{Changes, INSTALL_JOURNAL, RecoveryOutcome, SPACE_MARGIN, Unrecorded};
     use crate::payload::{BUILD_INFO, PayloadError};
@@ -1787,52 +1787,37 @@ mod tests {
             .collect()
     }
 
-    /// How long a stand-in game runs once started, past the time a hold for it begins: on Windows
-    /// past the scanner's grace.
-    pub(super) fn running_for() -> Duration {
-        let past_hold = Duration::from_millis(300);
-        if cfg!(windows) {
-            SCANNER_GRACE + past_hold
-        } else {
-            past_hold
-        }
-    }
-
     /// A closed-game probe that finds the game closed for its first `closed_for` calls, then
-    /// running for `running` from the first call that finds it so, then closed again.
+    /// running until it is [closed](Self::close), as a player closes the game once the launcher
+    /// says it waits, then closed again. What it answers follows the hold rather than the clock, so
+    /// that a slow look never finds the game closed before the hold begins.
     pub(super) struct StartedLater {
         closed_for: u32,
-        running: Duration,
-        calls: Cell<u32>,
-        until: Cell<Option<Instant>>,
+        calls: AtomicU32,
+        closed: AtomicBool,
     }
 
     impl StartedLater {
-        pub(super) fn new(closed_for: u32, running: Duration) -> StartedLater {
+        pub(super) fn new(closed_for: u32) -> StartedLater {
             StartedLater {
                 closed_for,
-                running,
-                calls: Cell::new(0),
-                until: Cell::new(None),
+                calls: AtomicU32::new(0),
+                closed: AtomicBool::new(false),
             }
         }
 
         pub(super) fn closed(&self, _: &Path) -> Result<(), GameUseError> {
-            let call = self.calls.get() + 1;
-            self.calls.set(call);
-            if call <= self.closed_for {
-                return Ok(());
-            }
-            let until = self
-                .until
-                .get()
-                .unwrap_or_else(|| Instant::now() + self.running);
-            self.until.set(Some(until));
-            if Instant::now() < until {
-                Err(GameUseError::Running)
-            } else {
+            let call = self.calls.fetch_add(1, Ordering::SeqCst) + 1;
+            if call <= self.closed_for || self.closed.load(Ordering::SeqCst) {
                 Ok(())
+            } else {
+                Err(GameUseError::Running)
             }
+        }
+
+        /// The player closes the game.
+        pub(super) fn close(&self) {
+            self.closed.store(true, Ordering::SeqCst);
         }
     }
 
@@ -2553,7 +2538,7 @@ mod tests {
             cancel: &cancel,
             progress: &heard,
         };
-        let game = StartedLater::new(0, Duration::from_secs(3600));
+        let game = StartedLater::new(0);
         let game_closed = |path: &Path| game.closed(path);
         let settings = UpdateSettings {
             game_closed: &game_closed,
@@ -2600,10 +2585,14 @@ mod tests {
         let mut source = bundled(dir.path(), &fixture.runtime.next(NEXT));
         let root = fixture.root.clone();
         let seen = Mutex::new(None);
+        // Closed at the first look, before the staging; running at the next, which the player
+        // closes once told the update waits.
+        let game = StartedLater::new(1);
         let look = |_: Hold| {
             let staged =
                 stagings(&root).len() == 1 && journal_phase(&root).as_deref() == Some("staged");
             *seen.lock().unwrap() = Some(staged);
+            game.close();
         };
         let heard = Heard::new(&look);
         let cancel = Cancel::default();
@@ -2611,7 +2600,6 @@ mod tests {
             cancel: &cancel,
             progress: &heard,
         };
-        let game = StartedLater::new(1, running_for());
         let game_closed = |path: &Path| game.closed(path);
         let settings = UpdateSettings {
             game_closed: &game_closed,
@@ -2649,7 +2637,7 @@ mod tests {
             cancel: &cancel,
             progress: &heard,
         };
-        let game = StartedLater::new(1, Duration::from_secs(3600));
+        let game = StartedLater::new(1);
         let game_closed = |path: &Path| game.closed(path);
         let settings = UpdateSettings {
             game_closed: &game_closed,

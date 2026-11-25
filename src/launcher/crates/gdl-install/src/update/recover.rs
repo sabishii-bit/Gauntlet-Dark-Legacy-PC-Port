@@ -228,7 +228,6 @@ mod tests {
     use std::panic::{AssertUnwindSafe, catch_unwind};
     use std::path::{Path, PathBuf};
     use std::sync::Mutex;
-    use std::time::Duration;
 
     use gdl_files::{Cancel, FilesError, Hold, Job, retry_locked};
     use gdl_fixtures::{InstallFixture, pretty_json};
@@ -239,8 +238,8 @@ mod tests {
         Contents, Heard, INSTALLED, NEXT, OnceJournalled, StartedLater, Told, answering, as_it_is,
         bundled, bundled_as, contents_of, executable, failed, journal_phase, launcher_copy,
         nothing_recovered, players_installation, receipt_at, recover_by, recover_simply,
-        retired_copies, rolled_back, running_for, stagings, standing_in, state_names, update_by,
-        update_simply, updated, version,
+        retired_copies, rolled_back, stagings, standing_in, state_names, update_by, update_simply,
+        updated, version,
     };
     use super::super::{
         CHECK_INSTALLED, FINISH_CLEANUP, RECOVER_UPDATE, UPDATE_BACKUP, UPDATE_JOURNAL,
@@ -606,10 +605,10 @@ mod tests {
     #[test]
     fn a_running_game_holds_the_recovery_until_it_closes() {
         let (_dir, fixture, before) = left_staged();
-        let ignore = |_: Hold| {};
-        let heard = Heard::new(&ignore);
+        let game = StartedLater::new(0);
+        let close = |_: Hold| game.close();
+        let heard = Heard::new(&close);
         let cancel = Cancel::default();
-        let game = StartedLater::new(0, running_for());
         let game_closed = |path: &Path| game.closed(path);
         let settings = UpdateSettings {
             game_closed: &game_closed,
@@ -658,7 +657,7 @@ mod tests {
 
         // The game started from the top before the move runs on from the backup.
         let asked = Mutex::new(Vec::new());
-        let game = StartedLater::new(0, running_for());
+        let game = StartedLater::new(0);
         let game_closed = |path: &Path| {
             asked.lock().unwrap().push(path.to_path_buf());
             if path == installed {
@@ -667,8 +666,8 @@ mod tests {
                 game.closed(path)
             }
         };
-        let ignore = |_: Hold| {};
-        let heard = Heard::new(&ignore);
+        let close = |_: Hold| game.close();
+        let heard = Heard::new(&close);
         let cancel = Cancel::default();
         let settings = UpdateSettings {
             game_closed: &game_closed,
@@ -694,7 +693,7 @@ mod tests {
         let cancel = Cancel::default();
         let stop = |_: Hold| cancel.cancel();
         let heard = Heard::new(&stop);
-        let game = StartedLater::new(0, Duration::from_secs(3600));
+        let game = StartedLater::new(0);
         let game_closed = |path: &Path| game.closed(path);
         let settings = UpdateSettings {
             game_closed: &game_closed,
@@ -714,10 +713,10 @@ mod tests {
     fn an_update_holds_for_a_game_while_it_recovers_first() {
         let (dir, fixture, _) = left_staged();
         let mut source = bundled(dir.path(), &fixture.runtime.newer(NEXT));
-        let ignore = |_: Hold| {};
-        let heard = Heard::new(&ignore);
+        let game = StartedLater::new(0);
+        let close = |_: Hold| game.close();
+        let heard = Heard::new(&close);
         let cancel = Cancel::default();
-        let game = StartedLater::new(0, running_for());
         let game_closed = |path: &Path| game.closed(path);
         let settings = UpdateSettings {
             game_closed: &game_closed,

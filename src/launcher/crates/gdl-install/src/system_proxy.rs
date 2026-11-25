@@ -137,8 +137,15 @@ mod tests {
 
         // The key is only read: it holds the same before and after, whatever that is, and what
         // is read is what it holds. Its values are never shown, since a proxy's address may hold
-        // a password.
-        let before = internet_settings_values().unwrap();
+        // a password. A profile without the key has no settings to read.
+        let before = match internet_settings_values() {
+            Ok(values) => values,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                assert_eq!(internet_settings(), None);
+                return;
+            }
+            Err(error) => panic!("{error}"),
+        };
         let settings = internet_settings();
         let after = internet_settings_values().unwrap();
         assert!(

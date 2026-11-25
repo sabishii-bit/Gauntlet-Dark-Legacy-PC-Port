@@ -306,14 +306,14 @@ fn start(command: &mut Command, cancel: &Cancel) -> Result<Child, GameStartError
 /// wait cures: a file just written may still be held by a scanner, or by a program another thread
 /// of this process is starting, which holds every descriptor the process has open for a moment.
 #[cfg(target_os = "linux")]
-fn is_text_busy(error: &io::Error) -> bool {
+pub(crate) fn is_text_busy(error: &io::Error) -> bool {
     error.raw_os_error() == Some(libc::ETXTBSY)
 }
 
 /// Whether the system refused to start a program because its file is open to write, which only
 /// Linux refuses a start for.
 #[cfg(not(target_os = "linux"))]
-fn is_text_busy(_: &io::Error) -> bool {
+pub(crate) fn is_text_busy(_: &io::Error) -> bool {
     false
 }
 

@@ -227,6 +227,11 @@ mod tests {
         fn told(&self) -> Vec<Told> {
             self.told.lock().unwrap().clone()
         }
+
+        /// Whether the job was told it holds for a running game.
+        fn held_for_game(&self) -> bool {
+            self.told().contains(&Told::Held(Hold::GameRunning))
+        }
     }
 
     impl Progress for Holds<'_> {
@@ -255,20 +260,27 @@ mod tests {
         (dir, folder)
     }
 
-    /// A stand-in for the closed-game probe that finds the game running at `running` until
-    /// `until`, and closed, or not there, elsewhere, counting its calls.
-    struct StandIn {
+    /// A stand-in for the closed-game probe that finds the game running at `running`, and not
+    /// there elsewhere, counting its calls: running until `holds` was told the job holds for it,
+    /// and for `then` looks more, as a player closes the game a while after the launcher says it
+    /// waits; closed from then on. What it answers follows the hold rather than the clock, so that
+    /// a slow look never finds the game closed before the hold begins.
+    struct StandIn<'a> {
         running: PathBuf,
-        until: Instant,
+        holds: &'a Holds<'a>,
+        then: u32,
         calls: Cell<u32>,
+        since_held: Cell<u32>,
     }
 
-    impl StandIn {
-        fn new(running: &Path, for_how_long: Duration) -> StandIn {
+    impl<'a> StandIn<'a> {
+        fn new(running: &Path, holds: &'a Holds<'a>, then: u32) -> StandIn<'a> {
             StandIn {
                 running: running.to_path_buf(),
-                until: Instant::now() + for_how_long,
+                holds,
+                then,
                 calls: Cell::new(0),
+                since_held: Cell::new(0),
             }
         }
 
@@ -277,7 +289,11 @@ mod tests {
             if executable != self.running {
                 return Err(GameUseError::Missing);
             }
-            if Instant::now() < self.until {
+            if !self.holds.held_for_game() {
+                return Err(GameUseError::Running);
+            }
+            self.since_held.set(self.since_held.get() + 1);
+            if self.since_held.get() <= self.then {
                 Err(GameUseError::Running)
             } else {
                 Ok(())
@@ -351,11 +367,10 @@ mod tests {
             cancel: &cancel,
             progress: &holds,
         };
-        let stand_in = StandIn::new(&executable, Duration::from_secs(3600));
         let begun = Instant::now();
         let refused = game_closed_holding(
             &[&executable],
-            &|path| stand_in.closed(path),
+            &|_| Err(GameUseError::Running),
             &job,
             Duration::from_secs(30),
         );
@@ -368,8 +383,8 @@ mod tests {
     fn a_game_that_closes_is_waited_for() {
         let (_dir, folder) = installation();
         let executable = folder.root().join("gauntlet");
-        let stand_in = StandIn::new(&executable, running_for());
         let holds = Holds::default();
+        let stand_in = StandIn::new(&executable, &holds, 2);
         let cancel = Cancel::default();
         let job = Job {
             cancel: &cancel,
@@ -378,8 +393,8 @@ mod tests {
         game_closed_holding(&[&executable], &|path| stand_in.closed(path), &job, POLL).unwrap();
         assert_eq!(holds.told(), [Told::Held(Hold::GameRunning), Told::Resumed]);
         // It was asked again until it closed, and no more.
-        assert!(stand_in.calls.get() >= 3, "{}", stand_in.calls.get());
-        assert!(Instant::now() >= stand_in.until);
+        assert_eq!(stand_in.since_held.get(), 3);
+        assert!(stand_in.calls.get() >= 4, "{}", stand_in.calls.get());
     }
 
     #[cfg(windows)]
@@ -437,16 +452,31 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
         use std::process::{Command, Stdio};
 
+        use gdl_files::{RETRY_INTERVAL, RETRY_WINDOW};
+
+        use crate::probe::is_text_busy;
+
         fs::copy("/bin/sleep", executable).unwrap();
         fs::set_permissions(executable, fs::Permissions::from_mode(0o755)).unwrap();
         let seconds = format!("{:.3}", how_long.as_secs_f64());
-        let mut child = Command::new(executable)
+        let mut command = Command::new(executable);
+        command
             .arg(seconds)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .unwrap();
+            .stderr(Stdio::null());
+        // A child another test starts meanwhile holds the copy's descriptor, open to write, until
+        // it runs its own program, and the system refuses the copy for that moment.
+        let begun = Instant::now();
+        let mut child = loop {
+            match command.spawn() {
+                Ok(child) => break child,
+                Err(error) if is_text_busy(&error) && begun.elapsed() < RETRY_WINDOW => {
+                    thread::sleep(RETRY_INTERVAL);
+                }
+                Err(error) => panic!("{}: {error}", executable.display()),
+            }
+        };
         thread::spawn(move || {
             child.wait().unwrap();
         })
@@ -477,8 +507,8 @@ mod tests {
         let (_dir, folder) = installation();
         let root = folder.root().join("gauntlet");
         let backup = folder.state_dir().join("update-backup").join("gauntlet");
-        let stand_in = StandIn::new(Path::new("elsewhere"), Duration::from_secs(3600));
         let holds = Holds::default();
+        let stand_in = StandIn::new(Path::new("elsewhere"), &holds, 0);
         let cancel = Cancel::default();
         let job = Job {
             cancel: &cancel,
@@ -502,8 +532,8 @@ mod tests {
         let (_dir, folder) = installation();
         let root = folder.root().join("gauntlet");
         let backup = folder.state_dir().join("update-backup").join("gauntlet");
-        let stand_in = StandIn::new(&backup, running_for());
         let holds = Holds::default();
+        let stand_in = StandIn::new(&backup, &holds, 1);
         let cancel = Cancel::default();
         let job = Job {
             cancel: &cancel,
@@ -511,7 +541,7 @@ mod tests {
         };
         game_closed_holding(&[&root, &backup], &|path| stand_in.closed(path), &job, POLL).unwrap();
         assert_eq!(holds.told(), [Told::Held(Hold::GameRunning), Told::Resumed]);
-        assert!(Instant::now() >= stand_in.until);
+        assert_eq!(stand_in.since_held.get(), 2);
     }
 
     #[test]
@@ -533,7 +563,7 @@ mod tests {
             asked.push(path.to_path_buf());
             let at_top = asked.iter().filter(|asked| **asked == root).count();
             let running = if path == backup {
-                holds.told().is_empty()
+                !holds.held_for_game()
             } else {
                 (2..=3).contains(&at_top)
             };

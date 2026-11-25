@@ -572,7 +572,8 @@ mod tests {
     use std::io;
     use std::path::{Path, PathBuf};
     use std::sync::Mutex;
-    use std::time::{Duration, Instant};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::time::Duration;
 
     use gdl_files::{Cancel, FilesError, Hold, Job, PhaseId, Progress, RelPath};
     use gdl_fixtures::{InstallFixture, RuntimeFiles, link_folder, pretty_json, snapshot};
@@ -586,7 +587,6 @@ mod tests {
     use crate::folder::{
         InstallFolder, JOURNAL_DIR, LOCK_FILE, LockError, RECEIPT_FILE, STATE_DIR,
     };
-    use crate::hold::SCANNER_GRACE;
     #[cfg(windows)]
     use crate::icon::{IconError, Personalised};
     use crate::install::{INSTALL_JOURNAL, RecoveryError, RecoveryOutcome, Unrecorded};
@@ -787,46 +787,27 @@ mod tests {
         format!("retired-launcher-{version}-AbC123xy{suffix}")
     }
 
-    /// A closed-game probe that finds the game running for `running` from its first call, then
-    /// closed, counting its calls.
-    struct RunsFor {
-        running: Duration,
-        until: Cell<Option<Instant>>,
-        calls: Cell<u32>,
+    /// A closed-game probe that finds the game running until it is [closed](Self::close), as a
+    /// player closes it once the launcher says it waits, then closed. What it answers follows the
+    /// hold rather than the clock, so that a slow look never finds the game closed before the hold
+    /// begins.
+    #[derive(Default)]
+    struct RunningGame {
+        closed: AtomicBool,
     }
 
-    impl RunsFor {
-        fn new(running: Duration) -> RunsFor {
-            RunsFor {
-                running,
-                until: Cell::new(None),
-                calls: Cell::new(0),
-            }
-        }
-
+    impl RunningGame {
         fn closed(&self, _: &Path) -> Result<(), GameUseError> {
-            self.calls.set(self.calls.get() + 1);
-            let until = self
-                .until
-                .get()
-                .unwrap_or_else(|| Instant::now() + self.running);
-            self.until.set(Some(until));
-            if Instant::now() < until {
-                Err(GameUseError::Running)
-            } else {
+            if self.closed.load(Ordering::SeqCst) {
                 Ok(())
+            } else {
+                Err(GameUseError::Running)
             }
         }
-    }
 
-    /// How long a stand-in game runs, past the time a hold for it begins: on Windows past the
-    /// scanner's grace.
-    fn running_for() -> Duration {
-        let past_hold = Duration::from_millis(300);
-        if cfg!(windows) {
-            SCANNER_GRACE + past_hold
-        } else {
-            past_hold
+        /// The player closes the game.
+        fn close(&self) {
+            self.closed.store(true, Ordering::SeqCst);
         }
     }
 
@@ -1281,7 +1262,7 @@ mod tests {
         let top = tempfile::tempdir().unwrap();
         let root = top.path().join("game");
         install_left(&root);
-        let game = RunsFor::new(running_for());
+        let game = RunningGame::default();
         let game_closed = |path: &Path| game.closed(path);
         let asked = Mutex::new(Vec::new());
         let probing = |path: &Path| {
@@ -1289,7 +1270,8 @@ mod tests {
             game_closed(path)
         };
         let cancel = Cancel::default();
-        let (recovered, told) = recover_told(&root, VERSION, &probing, &cancel, &|_| {});
+        let close = |_: Hold| game.close();
+        let (recovered, told) = recover_told(&root, VERSION, &probing, &cancel, &close);
         assert_eq!(
             recovered.unwrap().install,
             RecoveryOutcome::RolledBack { kept: Vec::new() }
