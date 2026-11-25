@@ -680,9 +680,10 @@ mod tests {
             heard.holds(),
             [Told::Held(Hold::GameRunning), Told::Resumed]
         );
+        // The top was looked at first, and again with the backup once the game there closed.
         let asked = asked.into_inner().unwrap();
         assert_eq!(asked.first(), Some(&installed));
-        assert!(asked[1..].iter().all(|path| *path == aside), "{asked:?}");
+        assert_eq!(asked[asked.len() - 2..], [installed, aside], "{asked:?}");
         assert_eq!(contents_of(&fixture.root), before);
     }
 

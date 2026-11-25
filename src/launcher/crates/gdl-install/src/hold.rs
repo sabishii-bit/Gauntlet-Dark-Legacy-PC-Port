@@ -118,13 +118,15 @@ pub(crate) fn lock_holding(
     }
 }
 
-/// Waits until the game is closed at every place of `executables`, in turn: the installation's
+/// Waits until the game is closed at every place of `executables` at once: the installation's
 /// executable, and for a recovery the copy an update moved aside. `closed` is the closed-game
 /// probe, [`require_game_closed`](crate::require_game_closed) or a test's stand-in. A place with
-/// nothing there is passed over. While the game runs at one, the job holds
-/// ([`Hold::GameRunning`]), looking again every `poll`; on Windows a game found running is first
-/// asked again every [`SCANNER_RETRY`] for up to [`SCANNER_GRACE`], and held for only past that.
-/// Any other failure of the probe ends the wait at once.
+/// nothing there counts as closed. While the game runs at one, the job holds
+/// ([`Hold::GameRunning`]), looking again every `poll`, at every place from the first, since a
+/// player who closes the game at one place may start it at another; the wait ends with a look
+/// that finds every place closed. On Windows a game found running is first asked again every
+/// [`SCANNER_RETRY`] for up to [`SCANNER_GRACE`], and held for only past that. Any other failure
+/// of the probe ends the wait at once.
 pub(crate) fn game_closed_holding(
     executables: &[&Path],
     closed: &dyn Fn(&Path) -> Result<(), GameUseError>,
@@ -132,20 +134,21 @@ pub(crate) fn game_closed_holding(
     poll: Duration,
 ) -> Result<(), HeldGame> {
     let mut holding = Holding::new(job, Hold::GameRunning);
-    for executable in executables {
-        loop {
+    'look: loop {
+        for executable in executables {
             match answer(executable, closed, job, !holding.held)? {
-                Ok(()) | Err(GameUseError::Missing) => break,
+                Ok(()) | Err(GameUseError::Missing) => {}
                 Err(GameUseError::Running) => {
                     holding.begin();
                     wait(job, poll).map_err(|Cancelled| HeldGame::Cancelled)?;
+                    continue 'look;
                 }
                 Err(error) => return Err(HeldGame::Game(error)),
             }
         }
+        holding.end();
+        return Ok(());
     }
-    holding.end();
-    Ok(())
 }
 
 /// What the probe `closed` answers of the game at `executable`. A game found running is asked
@@ -174,7 +177,7 @@ fn answer(
 
 #[cfg(test)]
 mod tests {
-    use std::cell::Cell;
+    use std::cell::{Cell, RefCell};
     use std::fs;
     use std::path::{Path, PathBuf};
     use std::sync::Mutex;
@@ -509,6 +512,44 @@ mod tests {
         game_closed_holding(&[&root, &backup], &|path| stand_in.closed(path), &job, POLL).unwrap();
         assert_eq!(holds.told(), [Told::Held(Hold::GameRunning), Told::Resumed]);
         assert!(Instant::now() >= stand_in.until);
+    }
+
+    #[test]
+    fn a_game_started_at_a_place_looked_at_before_is_waited_for() {
+        // The game runs from the backup until the job is told it holds for it; meanwhile it is
+        // started from the top, found closed at the first look, and runs there for two looks.
+        let (_dir, folder) = installation();
+        let root = folder.root().join("gauntlet");
+        let backup = folder.state_dir().join("update-backup").join("gauntlet");
+        let holds = Holds::default();
+        let cancel = Cancel::default();
+        let job = Job {
+            cancel: &cancel,
+            progress: &holds,
+        };
+        let asked = RefCell::new(Vec::new());
+        let closed = |path: &Path| {
+            let mut asked = asked.borrow_mut();
+            asked.push(path.to_path_buf());
+            let at_top = asked.iter().filter(|asked| **asked == root).count();
+            let running = if path == backup {
+                holds.told().is_empty()
+            } else {
+                (2..=3).contains(&at_top)
+            };
+            if running {
+                Err(GameUseError::Running)
+            } else {
+                Ok(())
+            }
+        };
+        game_closed_holding(&[&root, &backup], &closed, &job, POLL).unwrap();
+        assert_eq!(holds.told(), [Told::Held(Hold::GameRunning), Told::Resumed]);
+        // Every look in the hold began at the top, until the game closed there too, and the
+        // last found both places closed.
+        let asked = asked.into_inner();
+        assert_eq!(asked.iter().filter(|asked| **asked == root).count(), 4);
+        assert_eq!(asked[asked.len() - 2..], [root, backup]);
     }
 
     #[test]
