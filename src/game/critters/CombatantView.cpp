@@ -121,17 +121,20 @@ Mat4 Combatant::presentationModel(const Actor& actor, f32 alpha) {
     const Vec3 position = glm::mix(actor.presentation.position, actor.position, blend);
     const f32 yaw =
         actor.presentation.yaw + TreePose::wrapAngle(actor.yaw - actor.presentation.yaw) * blend;
-    return bodyPlacement(position, actor.definition->floorOffset(), yaw,
-                         actor.scale * drawnShrink(actor));
+    return bodyPlacement(position, actor.definition->floorOffset(), yaw, drawnScale(actor));
 }
 
 f32 Combatant::drawnShrink(const Actor& critter) {
     return critter.stock != nullptr && !critter.stock->definition.shrinks ? 1.0f : critter.shrink;
 }
 
+f32 Combatant::drawnScale(const Actor& critter) {
+    return critter.scale * drawnShrink(critter);
+}
+
 Mat4 Combatant::modelTransform(const Actor& critter) {
     return bodyPlacement(critter.position, critter.definition->floorOffset(), critter.yaw,
-                         critter.scale * drawnShrink(critter));
+                         drawnScale(critter));
 }
 
 Mat4 Combatant::simulationModel(const Actor& critter) {
@@ -172,8 +175,8 @@ Mat4 Combatant::simulationTransform(const Actor& critter, std::string_view node)
     return model;
 }
 
-Vec3 Combatant::partPosition(const Actor& critter, std::string_view node) {
-    return Vec3{partTransform(critter, node)[3]};
+Vec3 Combatant::bodyOrigin(const Actor& critter) {
+    return Vec3{glm::translate(simulationModel(critter), critter.definition->originOffset())[3]};
 }
 
 Vec3 Combatant::cuePosition(const Actor& critter, std::string_view node) {
@@ -202,14 +205,6 @@ Vec3 Combatant::partCentre(const Actor& critter, const CritterPart& part,
                             ? Mat3{nodes.frames[static_cast<usize>(parent)]} * part.position
                             : part.position;
     return Vec3{model * Vec4{Vec3{nodes.matrices[*node][3]} + offset, 1}};
-}
-
-Mat4 Combatant::partTransform(const Actor& critter, std::string_view node) {
-    if (node.empty() ||
-        !critter.stock->tree->findNode(node, kCombatantNodeNameLength).has_value()) {
-        return glm::translate(simulationModel(critter), critter.definition->originOffset());
-    }
-    return simulationTransform(critter, node);
 }
 
 Mat4 Combatant::attachmentTransform(const Actor& critter, std::string_view node) {
@@ -301,7 +296,7 @@ std::vector<MissileTarget> Combatant::ownTargets(bool solidOnly) const {
     if (data()->parts().empty()) {
         out.push_back({id(), position(), radius() * actor.scale, 8 * actor.scale});
     } else if (!actor.branch.has_value()) {
-        const Vec3 centre = partPosition(actor, {});
+        const Vec3 centre = bodyOrigin(actor);
         // The body fallback is wallRadius wide and radius tall on either side
         // of its centre (CritterMoveNodeCol), not a sphere of radius.
         const f32 radius = data()->wallRadius() * actor.scale;
@@ -328,7 +323,7 @@ void Combatant::drawShadow(RenderDevice& device, const Mat4& clip, const Vec3& e
         }
     }
     critter.stock->shadow.draw(device, clip, eye, ground, normal, lighting, critter.alpha,
-                               critter.scale * drawnShrink(critter));
+                               drawnScale(critter));
 }
 
 /** The bar hangs from the body's node at the type's offset, turned to the camera about the

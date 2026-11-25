@@ -43,7 +43,7 @@ void Combatant::strikeWith(Actor& critter, s32 id, const Mat4& moveFrame, s32 da
     std::optional<CombatantBreath> breath;
     // A ring or targeted area reaches as the effect CritterDoTexmodNode would start for it,
     // sized by the drawn shrink (0x8003D410-0x8003D424); a blow and a breath are measured whole.
-    const f32 effectScale = drawnShrink(critter);
+    const f32 shrink = drawnShrink(critter);
     switch (damage->type) {
     case AttackDefinition::kBlow:
         // The offset turns with the move's node, unstretched by its scale key or the drawn
@@ -53,14 +53,14 @@ void Combatant::strikeWith(Actor& critter, s32 id, const Mat4& moveFrame, s32 da
         break;
     case AttackDefinition::kRing:
         centre = critter.position;
-        reach = damage->maxDistance * effectScale;
+        reach = damage->maxDistance * shrink;
         break;
     case AttackDefinition::kTargetArea:
         if (!critter.attackTarget.has_value()) {
             return;
         }
         centre = *critter.attackTarget + damageOffset(critter, damage->offset);
-        reach = damage->maxDistance * effectScale;
+        reach = damage->maxDistance * shrink;
         break;
     case AttackDefinition::kBreath:
         // CritterFirePlayerCollide uses the move's node, not the actor's collision/attention
@@ -106,7 +106,7 @@ void Combatant::strikeWith(Actor& critter, s32 id, const Mat4& moveFrame, s32 da
             // A ring or targeted area reaches the player's whole width too (ProcessEffects).
             within =
                 flatDistance(centre, feet) <= reach + view.collisionRadius.value_or(view.radius) &&
-                std::abs(centre.y - body.y) <= 0.5f * view.height + damage->radius * effectScale;
+                std::abs(centre.y - body.y) <= 0.5f * view.height + damage->radius * shrink;
         }
         if (!within) {
             continue;
@@ -172,7 +172,7 @@ void Combatant::shoot(const Actor& critter, s32 id, const Mat4& moveFrame, s32 d
     shot.rate = attackRate(critter);
     // Sized with the drawn body: its reach and radii as CritterDoTexmodNode sizes them
     // (0x8003D410-0x8003D424), its art as CritterDoSfxSub does (0x8003DE1C-0x8003DE4C).
-    shot.scale = critter.scale * drawnShrink(critter);
+    shot.scale = drawnScale(critter);
     shot.damageScale = m_sim.scales.damage;
     shot.endVisual = critter.stock->definition.projectileEndVisual;
     if (damage->speed > 0) {
@@ -202,7 +202,7 @@ void Combatant::plant(const Actor& critter, s32 id, s32 damageIndex) {
     shot.origin = *critter.attackTarget + damageOffset(critter, damage->offset);
     shot.forward = Vec3{portable::sin(critter.yaw), 0.0f, portable::cos(critter.yaw)};
     shot.rate = attackRate(critter);
-    shot.scale = critter.scale * drawnShrink(critter);
+    shot.scale = drawnScale(critter);
     shot.damageScale = m_sim.scales.damage;
     shot.realm = m_sim.realm;
     m_sim.shots.push_back(shot);

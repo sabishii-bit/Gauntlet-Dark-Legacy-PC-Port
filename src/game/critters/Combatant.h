@@ -538,7 +538,9 @@ private:
      * node as the strikes measure it. */
     void strikeWith(Actor& critter, s32 id, const Mat4& moveFrame, s32 damageIndex,
                     std::span<const EnemyView> players);
-    static Vec3 partPosition(const Actor& critter, std::string_view node);
+    /** Where its simulation places the body's offset origin, TYPE originOffset over the model:
+     * what its targeting, its step's contacts and a partless body's volume measure from. */
+    static Vec3 bodyOrigin(const Actor& critter);
     /** Where a cue set off at node `node` starts: the drawn node's origin, else the drawn
      * body's offset origin. */
     static Vec3 cuePosition(const Actor& critter, std::string_view node);
@@ -549,14 +551,14 @@ private:
      * keep the node's frame turns it with the node. */
     static Vec3 partCentre(const Actor& critter, const CritterPart& part,
                            const TreePose::RigidNodes& nodes);
-    /** Where its simulation places node `node`; without the node, the body's offset origin. */
-    static Mat4 partTransform(const Actor& critter, std::string_view node);
     /** Node `node`'s world matrix as drawn, its scale keys included, or the drawn model's
      * without such a node: for what only places a drawn thing or a sound. */
     static Mat4 attachmentTransform(const Actor& critter, std::string_view node);
     /** The shrinkers' scale its body is drawn at: CritterGolemAI's MBTreeSetScale (0x80039A4C)
      * sizes the families that shrink; a boss is drawn whole. */
     static f32 drawnShrink(const Actor& critter);
+    /** The scale its body is drawn at, its own and the drawn shrink together. */
+    static f32 drawnScale(const Actor& critter);
     /** Where the body is drawn: its root at the floor offset over its anchor, turned by its yaw
      * and sized, its drawn shrink included. */
     static Mat4 modelTransform(const Actor& critter);

@@ -262,7 +262,7 @@ bool Combatant::translate(Actor& critter, f32 seconds, const MoveDefinition* mov
             }
             return separation;
         }
-        const Vec3 from = partPosition(critter, {});
+        const Vec3 from = bodyOrigin(critter);
         if (movementTouchesBody(from, from + offset, centre,
                                 width + critter.definition->wallRadius(),
                                 0.5f * player.height + critter.definition->radius())) {
@@ -303,7 +303,7 @@ bool Combatant::translate(Actor& critter, f32 seconds, const MoveDefinition* mov
         if (&other == &critter || other.state == State::Inactive) {
             continue;
         }
-        const Vec3 from = partPosition(critter, {});
+        const Vec3 from = bodyOrigin(critter);
         const Vec3 peerDestination = from + to - critter.position;
         const f32 radius = critter.definition->wallRadius();
         // CritterMoveNodeCol mode 1 checks active nodes, then the body's fallback.
@@ -323,7 +323,7 @@ bool Combatant::translate(Actor& critter, f32 seconds, const MoveDefinition* mov
                 }
             }
         }
-        if (movementTouchesBody(from, peerDestination, partPosition(other, {}),
+        if (movementTouchesBody(from, peerDestination, bodyOrigin(other),
                                 radius + other.definition->wallRadius(),
                                 radius + other.definition->radius())) {
             return false;
@@ -359,7 +359,7 @@ bool Combatant::translate(Actor& critter, f32 seconds, const MoveDefinition* mov
 bool Combatant::blockedBySwarm(Actor& critter, const Vec3& to, const TreePose::RigidNodes& nodes) {
     // CritterCollideEnemies chooses one nearest contact. Only a golem may
     // trample enemies whose half-height is at most two; other contacts stop it.
-    const Vec3 from = partPosition(critter, {});
+    const Vec3 from = bodyOrigin(critter);
     const Vec3 delta = to - critter.position;
     const EnemyBody* nearest = nullptr;
     Vec3 contact{0};
@@ -467,7 +467,7 @@ bool Combatant::blockedByItems(Actor& critter, const Vec3& to, const TreePose::R
                 }
             }
         } else {
-            contact = touches(partPosition(critter, {}), critter.definition->wallRadius(),
+            contact = touches(bodyOrigin(critter), critter.definition->wallRadius(),
                               critter.definition->radius());
         }
         if (!contact) {

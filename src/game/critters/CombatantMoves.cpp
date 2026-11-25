@@ -277,7 +277,7 @@ Vec3 Combatant::targetingOrigin(const Actor& critter) {
     }
     // Child parts inherit the root's targeting centre. A head's own mesh
     // attachment and TYPE origin do not relocate its sight window.
-    return partPosition(*root, {});
+    return bodyOrigin(*root);
 }
 
 f32 Combatant::targetScore(const Actor& critter, const Vec3& position) {

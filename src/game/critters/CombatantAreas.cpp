@@ -61,7 +61,7 @@ std::optional<f32> Combatant::startArea(Actor& critter, s32 id, const AttackDefi
     const bool rootParent = sound->follows();
     Vec3 offset = rootParent ? sound->offset : damage.offset + sound->offset;
     if (worldParent.has_value()) {
-        offset = damageOffset(critter, damage.offset) + sound->offset * (critter.scale * shrink);
+        offset = damageOffset(critter, damage.offset) + sound->offset * drawnScale(critter);
     }
     if ((sound->flags & effect_flags::kDetached) != 0 && !worldParent.has_value()) {
         // Detached damage effects snapshot the hit node's world position. The
@@ -168,7 +168,7 @@ std::optional<f32> Combatant::startArea(Actor& critter, s32 id, const AttackDefi
     cue.position = Vec3{(parent * drawnLocal)[3]};
     // Laid out in the world it is drawn at the body's drawn size (CritterDoSfxSub,
     // 0x8003DE1C-0x8003DE4C); on a node, the drawn node carries that size.
-    cue.scale = sound->scale * (worldParent.has_value() ? critter.scale * shrink : 1.0f);
+    cue.scale = sound->scale * (worldParent.has_value() ? drawnScale(critter) : 1.0f);
     cue.life = life;
     cue.follows = !worldParent.has_value();
     cue.shakes = (sound->flags & effect_flags::kShakes) != 0;
