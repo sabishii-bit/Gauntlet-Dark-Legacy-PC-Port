@@ -32,7 +32,7 @@ use gdl_install::{
     LockError, PREVIOUS_WAIT_LIMIT, Payload, PayloadError, PlanSource, Previous, Probed,
     RETIRED_DELETE_INTERVAL, RETIRED_DELETE_WINDOW, RUNTIME_SECTION, RecoverError, Recovered,
     RecoveryOutcome, Relation, RetiredCopy, RetiredSweep, SPACE_MARGIN, Sections, SectionsError,
-    SourceSummary, Unrecorded, UpdateError, UpdateNotice, UpdateOutcome, UpdatePlan,
+    SourceSummary, Unrecorded, UpdateError, UpdateFailure, UpdateNotice, UpdateOutcome, UpdatePlan,
     UpdateRecovery, UpdateRequest, UpdateSource, Updated, hand_over, hand_over_needed,
     installed_launcher_name, installed_release, is_installed_copy, judge_destination, plan_update,
     recover, sweep_retired, update, wait_for_previous,
@@ -267,8 +267,11 @@ pub fn open_own_file() -> OwnFile {
 ///   `changes: none`, `changes: rolledBack` or `changes: kept` follows the refusal of an update,
 ///   telling what it left, `none` for one refused before it began; the refusal of a recovery made
 ///   because nothing newer is at hand, and of a hand-over once the update stands, is the error
-///   line alone, as `--recover` writes one. A build for a system no release is built for has no
-///   platform to update, and gets the usage line.
+///   line alone, as `--recover` writes one. An update refused once the recovery it made first put
+///   the installed copy back in place of the program's own file still hands over to that copy,
+///   writing `handedOver: <pid>` after its refusal, unless its own rollback stopped part-way. A
+///   build for a system no release is built for has no platform to update, and gets the usage
+///   line.
 /// - `--recover <dir>` recovers whatever jobs were left unfinished in the folder, `<dir>` made
 ///   absolute, as [`recover`] recovers them for a launcher of the build's version, waiting while
 ///   another job holds the folder's lock or the game runs from it, since nothing here cancels a
@@ -1272,9 +1275,44 @@ impl Updating<'_> {
                 shown.and_then(|()| written(out, &up_to_date(&version))),
                 hands_over(was_installed_copy, &recovered),
             ),
-            Err(failure) => return refuse_update(err, &failure.error, Some(failure.changes)),
+            Err(failure) => {
+                let code = refuse_update(err, &failure.error, Some(failure.changes));
+                self.hand_over_after_refusal(&failure, was_installed_copy, out, err);
+                return code;
+            }
         };
         self.finish(report, hands, out, err)
+    }
+
+    /// Hands over to the installation's launcher copy once an update was refused, `failure`, when
+    /// the recovery it made first put that copy back in place of the program's own file, which
+    /// `was_installed_copy` tells: the program then runs from a retired name whatever became of the
+    /// update, as after a recovery that `--recover` makes. An update whose own rollback stopped
+    /// leaves the folder to the next start's recovery, and hands nothing over. The line
+    /// `handedOver: <pid>` goes to `out`, and a copy that could not be started is refused on `err`
+    /// with the error line alone.
+    fn hand_over_after_refusal(
+        &self,
+        failure: &UpdateFailure,
+        was_installed_copy: bool,
+        out: &mut dyn Write,
+        err: &mut dyn Write,
+    ) {
+        let restored = failure
+            .recovered
+            .as_deref()
+            .is_some_and(|recovered| hands_over(was_installed_copy, recovered));
+        if !restored || failure.changes == Changes::Kept {
+            return;
+        }
+        match handed_over(self.root, self.platform, update_io) {
+            Ok(line) => {
+                let _ = written(out, &line);
+            }
+            Err(error) => {
+                refuse_update(err, &error, None);
+            }
+        }
     }
 
     /// Recovers what jobs left in the folder, as [`recover`] does, when nothing newer than the

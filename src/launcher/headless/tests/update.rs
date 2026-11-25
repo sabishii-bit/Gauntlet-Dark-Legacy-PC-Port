@@ -1,8 +1,9 @@
 //! An update and a recovery through the built headless program, end to end: the installation's
 //! launcher copy updates the installation from the runtime its own file carries, with no feed, and
 //! hands over to the copy it put in place; and a recovery run by a new copy that an update left in
-//! place takes the update back, puts the installed copy back, and hands over to it. Each copy that
-//! is handed over to waits for the one before to exit and sweeps the retired copies.
+//! place takes the update back, puts the installed copy back, and hands over to it, as an update
+//! does whose own first recovery did so before it was refused. Each copy that is handed over to
+//! waits for the one before to exit and sweeps the retired copies.
 
 mod common;
 mod launchers;
@@ -14,7 +15,7 @@ use std::fs;
 use std::path::Path;
 
 use gdl_files::STAGING_RANDOM_CHARS;
-use gdl_fixtures::{folder_names, pretty_json, sha256_hex, tree_entries};
+use gdl_fixtures::{InstallFixture, folder_names, pretty_json, sha256_hex, tree_entries};
 use gdl_install::{
     BUILD_INFO, JOURNAL_DIR, JOURNAL_SCHEMA, LOCK_FILE, MIN_LAUNCHER, RECEIPT_FILE,
     RETIRED_LAUNCHER_PREFIX, STATE_DIR, UPDATE_BACKUP, UPDATE_JOURNAL, UPDATE_STAGING_PREFIX,
@@ -48,6 +49,14 @@ const RECOVERY_PHASES: [&str; 2] = ["recoverUpdate", "finishCleanup"];
 /// The names the hand-written journal's update moved aside and put in place: the two files every
 /// release changes.
 const MOVED: [&str; 2] = [VERSION_FILE, BUILD_INFO];
+
+/// The phases an update from the program's own file goes through before it is refused for an
+/// installed file changed since it was installed, in turn.
+const REFUSED_PHASES: [&str; 3] = ["checkInstalled", "verifyDownload", "stage"];
+
+/// An installed file no release in these tests changes, which the refused update's test changes
+/// by hand.
+const CHANGED_FILE: &str = "data/config.json";
 
 /// The phases a run's output tells, in turn.
 fn phases_of(out: &str) -> Vec<&str> {
@@ -192,28 +201,35 @@ fn the_installed_copy_updates_itself_offline_and_hands_over() {
     assert_eq!(report["installation"]["version"], VERSION, "{report}");
 }
 
-#[test]
-fn a_recovery_that_takes_its_own_copy_back_hands_over() {
-    let Some(platform) = this_platform() else {
-        return;
-    };
+/// An installation of [`OLDER`] as an update to the program's own release leaves it once it
+/// decided to take itself back, killed after every move was made and before the rollback's first:
+/// the files it changed in the backup and the new ones in place, the installed copy retired and
+/// the new copy, a launcher file of the program's own release, in its place, the staging empty,
+/// and its journal rolling back.
+struct RollingBack {
+    /// The installation.
+    fixture: InstallFixture,
+    /// The installed copy's bytes: a launcher file of the older release's.
+    old_copy: Vec<u8>,
+    /// The installation's entries outside its state folder before the update.
+    before: BTreeMap<String, Option<String>>,
+    /// Its receipt before the update.
+    receipt: Vec<u8>,
+}
+
+/// Lays out in `dir`, for `platform`, the installation [`RollingBack`] describes.
+fn rolling_back(dir: &Path, platform: Platform) -> RollingBack {
     assert_eq!(STAGING_RANDOM.len(), STAGING_RANDOM_CHARS);
-    let _one = one_run_at_a_time();
-    let dir = tempfile::tempdir().unwrap();
     // The installed copy is a launcher file of the older release's; the update's new copy is one
     // of the program's own release.
     let (_, old_copy) = launcher_file(platform, OLDER);
     let (runtime, new_copy) = launcher_file(platform, VERSION);
-    let fixture = installation(dir.path(), platform, &old_copy);
+    let fixture = installation(dir, platform, &old_copy);
     let root = fixture.root.as_path();
     let before = outside_state(root);
     let state = root.join(STATE_DIR);
     let receipt = fs::read(state.join(RECEIPT_FILE)).unwrap();
 
-    // What an update that decided to take itself back leaves once every move was made, when it
-    // is killed before the rollback's first move: the files it changed in the backup and the new
-    // ones in place, the installed copy retired and the new copy in its place, the staging empty,
-    // and its journal rolling back.
     let staging = format!("{UPDATE_STAGING_PREFIX}{STAGING_RANDOM}");
     fs::create_dir(state.join(&staging)).unwrap();
     let backup = state.join(UPDATE_BACKUP);
@@ -258,6 +274,49 @@ fn a_recovery_that_takes_its_own_copy_back_hands_over() {
         pretty_json(&journal),
     )
     .unwrap();
+    RollingBack {
+        fixture,
+        old_copy,
+        before,
+        receipt,
+    }
+}
+
+/// Checks that `lines`, the last three a run wrote on its output but its job's progress, are
+/// `handedOver: <handed_over>` and the lines of the copy it handed over to on `platform`: it waited
+/// for the run to exit, then swept the copy the run ran from, which on Windows the run could not
+/// remove while it ran from it and on Linux the run removed itself.
+#[track_caller]
+fn assert_handed_over_to_the_copy_put_back(lines: &[&str], handed_over: u32, platform: Platform) {
+    let [handed, previous, swept] = lines[..] else {
+        panic!("{lines:#?}");
+    };
+    assert_eq!(handed, format!("handedOver: {handed_over}"));
+    assert!(waited(previous).is_some(), "{previous:?}");
+    let removed = if platform == Platform::WindowsX64 {
+        "retired: removed 1, kept 0"
+    } else {
+        "retired: removed 0, kept 0"
+    };
+    assert_eq!(swept, removed);
+}
+
+#[test]
+fn a_recovery_that_takes_its_own_copy_back_hands_over() {
+    let Some(platform) = this_platform() else {
+        return;
+    };
+    let _one = one_run_at_a_time();
+    let dir = tempfile::tempdir().unwrap();
+    let RollingBack {
+        fixture,
+        old_copy,
+        before,
+        receipt,
+    } = rolling_back(dir.path(), platform);
+    let root = fixture.root.as_path();
+    let state = root.join(STATE_DIR);
+    let launcher_name = installed_launcher_name(platform);
 
     // The new copy recovers the installation, which takes the update back and moves the new copy
     // the recovery runs from aside, then hands over to the installed copy it put back.
@@ -275,25 +334,14 @@ fn a_recovery_that_takes_its_own_copy_back_hands_over() {
     // a running program's file, so the recovery removed it and the copy put back found none.
     let new_retired = format!("{RETIRED_LAUNCHER_PREFIX}{VERSION}-{STAGING_RANDOM}{EXE_SUFFIX}");
     let left = format!("left: {new_retired}");
-    let handed = format!("handedOver: {handed_over}");
     let mut expected = vec!["install: nothing", "update: rolledBack"];
     if platform == Platform::WindowsX64 {
         expected.push(&left);
     }
-    expected.push(&handed);
     let lines = past_progress(&finished.out);
     let (recovered, after) = lines.split_at_checked(expected.len()).expect("the lines");
     assert_eq!(recovered, expected, "{finished:#?}");
-    let [previous, swept] = after[..] else {
-        panic!("{finished:#?}");
-    };
-    assert!(waited(previous).is_some(), "{previous:?}");
-    let removed = if platform == Platform::WindowsX64 {
-        "retired: removed 1, kept 0"
-    } else {
-        "retired: removed 0, kept 0"
-    };
-    assert_eq!(swept, removed);
+    assert_handed_over_to_the_copy_put_back(after, handed_over, platform);
 
     // The installation as it was before the update: the installed copy back at its name, the
     // files back in place, the receipt as it was, and nothing the update made or moved aside left.
@@ -307,4 +355,65 @@ fn a_recovery_that_takes_its_own_copy_back_hands_over() {
     let report = inspect_json(root);
     assert_eq!(report["state"], "installed", "{report}");
     assert_eq!(report["installation"]["version"], OLDER, "{report}");
+}
+
+#[test]
+fn a_refused_update_whose_recovery_took_its_own_copy_back_hands_over() {
+    let Some(platform) = this_platform() else {
+        return;
+    };
+    let _one = one_run_at_a_time();
+    let dir = tempfile::tempdir().unwrap();
+    let RollingBack {
+        fixture,
+        old_copy,
+        mut before,
+        receipt,
+    } = rolling_back(dir.path(), platform);
+    let root = fixture.root.as_path();
+    let state = root.join(STATE_DIR);
+    let launcher_name = installed_launcher_name(platform);
+    // An installed file the interrupted update never moved, changed since, which the update
+    // refuses to replace once its recovery has taken the interrupted one back.
+    let changed = br#"{"changed": true}"#;
+    fs::write(root.join(CHANGED_FILE), changed).unwrap();
+    before.insert(CHANGED_FILE.to_owned(), Some(sha256_hex(changed)));
+
+    // The new copy updates the installation from the runtime its own file carries: the update's
+    // first recovery takes the interrupted update back, which moves the file the copy runs from
+    // aside and puts the installed copy back, and then the update is refused. The copy put back
+    // takes over all the same.
+    let args = [
+        OsStr::new("--update"),
+        root.as_os_str(),
+        OsStr::new("--yes"),
+        OsStr::new("--offline"),
+    ];
+    let mut run = Launched::start(&root.join(launcher_name), &args);
+    let finished = run.finish();
+    assert_eq!(finished.status.code(), Some(1), "{finished:#?}");
+    assert_eq!(
+        finished.err,
+        format!(
+            "error: update.ownedFileChanged (ownedFileChanged): Installed runtime file was \
+             modified or removed: {CHANGED_FILE}. Keep personal settings in \
+             config/settings.json.\nchanges: none\n"
+        ),
+        "{finished:#?}"
+    );
+    assert_eq!(phases_of(&finished.out), REFUSED_PHASES, "{finished:#?}");
+    let handed_over = finished
+        .handed_over
+        .expect("the refused update handed over");
+    assert_ne!(handed_over, run.pid());
+    assert_handed_over_to_the_copy_put_back(&past_progress(&finished.out), handed_over, platform);
+
+    // The installation as it was before the interrupted update, but for the changed file.
+    assert!(outside_state(root) == before, "the tree is not as it was");
+    assert!(
+        fs::read(root.join(launcher_name)).unwrap() == old_copy,
+        "the installed copy is not back"
+    );
+    assert_eq!(fs::read(state.join(RECEIPT_FILE)).unwrap(), receipt);
+    assert_only_kept_state(root);
 }

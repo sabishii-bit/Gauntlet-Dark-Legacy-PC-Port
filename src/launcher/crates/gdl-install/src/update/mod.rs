@@ -462,7 +462,7 @@ pub enum Probed {
     NotStaged,
 }
 
-/// Why an update failed, and what it left.
+/// Why an update failed, what it left, and what its recovery of the jobs left before it did.
 #[derive(Debug, thiserror::Error)]
 #[error("{error}")]
 pub struct UpdateFailure {
@@ -470,12 +470,25 @@ pub struct UpdateFailure {
     pub error: UpdateError,
     /// What it left in the folder.
     pub changes: Changes,
+    /// What recovering the jobs the folder was left with did first, when the update failed after
+    /// that recovery; `None` when it failed before or in it. A recovery may have put the
+    /// installed launcher copy back in place of the file the launcher that runs started from,
+    /// which then runs from a retired name whatever became of the update.
+    pub recovered: Option<Box<Recovered>>,
 }
 
 impl UpdateFailure {
     /// The failure's stable machine name, its error's.
     pub fn rule(&self) -> &'static str {
         self.error.rule()
+    }
+
+    /// The failure, which came once the recovery an update makes first did `recovered`.
+    fn after(self, recovered: Recovered) -> UpdateFailure {
+        UpdateFailure {
+            recovered: Some(Box::new(recovered)),
+            ..self
+        }
     }
 }
 
@@ -564,28 +577,30 @@ pub(crate) fn update_with(
         false,
     )
     .map_err(|error| unchanged(recovery_refusal(error)))?;
+    // From here on a failure tells what the recovery did, which its caller may have to answer.
     let lock = match lock {
         Some(lock) => lock,
         // An install its recovery took back gave its state folder up with the lock: taken again,
         // what is left is read as any other folder is.
         None => lock_holding(&folder, job, settings.hold_poll)
-            .map_err(|held| unchanged(held_lock(held)))?,
+            .map_err(|held| unchanged(held_lock(held)).after(recovered.clone()))?,
     };
     if matches!(recovered.update, UpdateRecovery::CleanupLeft { .. }) {
-        return Err(unchanged(UpdateError::CleanupPending));
+        return Err(unchanged(UpdateError::CleanupPending).after(recovered));
     }
     let installed = folder
         .installed(running)
-        .map_err(|error| unchanged(UpdateError::Receipt(error)))?;
+        .map_err(|error| unchanged(UpdateError::Receipt(error)).after(recovered.clone()))?;
     let (Access::Writable, Some(receipt)) = (installed.access, installed.receipt) else {
-        return Err(unchanged(UpdateError::NewerLauncher));
+        return Err(unchanged(UpdateError::NewerLauncher).after(recovered));
     };
     let from = installed.build_info.version();
     if *running < from {
-        return Err(unchanged(UpdateError::OlderLauncher {
+        let older = UpdateError::OlderLauncher {
             running: running.to_string().into(),
             installed: from.to_string().into(),
-        }));
+        };
+        return Err(unchanged(older).after(recovered));
     }
     // Another launcher may have updated the folder since the source was chosen. A release's
     // version is known before anything of it is downloaded.
@@ -605,15 +620,16 @@ pub(crate) fn update_with(
         installed: installed.build_info,
         receipt,
     };
-    match source {
-        UpdateSource::Bundled(sections) => {
-            let staged = update.stage(LauncherFile::Own(sections))?;
-            update.swap(staged, lock, recovered)
-        }
+    let first = recovered.clone();
+    let made = match source {
+        UpdateSource::Bundled(sections) => update
+            .stage(LauncherFile::Own(sections))
+            .and_then(|staged| update.swap(staged, lock, recovered)),
         UpdateSource::Release { files, release } => {
             update.apply_release(files, release, lock, recovered)
         }
-    }
+    };
+    made.map_err(|failure| failure.after(first))
 }
 
 /// The update's failure for a lock it held for and did not take.
@@ -663,6 +679,7 @@ fn unchanged(error: UpdateError) -> UpdateFailure {
     UpdateFailure {
         error,
         changes: Changes::None,
+        recovered: None,
     }
 }
 
@@ -1590,6 +1607,7 @@ mod tests {
         let failure = UpdateFailure {
             error: UpdateError::Cancelled,
             changes: Changes::RolledBack,
+            recovered: Some(Box::new(nothing_recovered())),
         };
         assert_eq!(failure.rule(), "cancelled");
         assert_eq!(failure.to_string(), UpdateError::Cancelled.to_string());

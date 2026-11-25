@@ -302,7 +302,11 @@ impl Update<'_> {
             Ok(()) => Changes::RolledBack,
             Err(_) => Changes::Kept,
         };
-        UpdateFailure { error, changes }
+        UpdateFailure {
+            error,
+            changes,
+            recovered: None,
+        }
     }
 
     /// Every file the installation records and the launcher copy, each with the digest the

@@ -223,7 +223,11 @@ impl Update<'_> {
             Ok(taken) if taken.kept.is_empty() => Changes::RolledBack,
             Ok(_) | Err(_) => Changes::Kept,
         };
-        UpdateFailure { error, changes }
+        UpdateFailure {
+            error,
+            changes,
+            recovered: None,
+        }
     }
 }
 
