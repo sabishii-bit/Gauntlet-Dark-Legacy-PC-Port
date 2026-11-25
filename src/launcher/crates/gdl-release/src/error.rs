@@ -36,7 +36,7 @@ pub enum ReleaseError {
     },
     /// GitHub refused the request because the hourly or a secondary limit on requests made
     /// without an account is spent.
-    #[error("GitHub's limit of unauthenticated requests is spent")]
+    #[error("GitHub's limit of unauthenticated requests is spent{}", limit_reset(*.reset_at))]
     RateLimited {
         /// When the feed may be asked again, in seconds since the Unix epoch; `None` when the
         /// answer gave no time that could be read.
@@ -181,6 +181,15 @@ impl From<Cancelled> for ReleaseError {
     }
 }
 
+/// How a rate limit's refusal tells when the feed may be asked again: the time GitHub gave, in
+/// seconds since the Unix epoch, or that it gave none.
+fn limit_reset(reset_at: Option<u64>) -> String {
+    match reset_at {
+        Some(at) => format!(" until {at} (seconds since the Unix epoch)"),
+        None => ", with no time given for its reset".to_owned(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
@@ -236,13 +245,17 @@ mod tests {
                     reset_at: Some(1_764_003_600),
                 },
                 "rateLimited",
-                "GitHub's limit of unauthenticated requests is spent".to_owned(),
+                "GitHub's limit of unauthenticated requests is spent until 1764003600 (seconds \
+                 since the Unix epoch)"
+                    .to_owned(),
             ),
-            // A limit whose end the answer did not give is the same failure.
+            // A limit whose end the answer did not give is the same failure, which says so.
             (
                 ReleaseError::RateLimited { reset_at: None },
                 "rateLimited",
-                "GitHub's limit of unauthenticated requests is spent".to_owned(),
+                "GitHub's limit of unauthenticated requests is spent, with no time given for its \
+                 reset"
+                    .to_owned(),
             ),
             (
                 ReleaseError::UntrustedHost {

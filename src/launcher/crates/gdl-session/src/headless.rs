@@ -5019,7 +5019,13 @@ mod tests {
                     reset_at: Some(1_800_000_000),
                 },
                 "error: net.rateLimited (rateLimited): GitHub's limit of unauthenticated requests \
-                 is spent\n"
+                 is spent until 1800000000 (seconds since the Unix epoch)\n"
+                    .to_owned(),
+            ),
+            (
+                ReleaseError::RateLimited { reset_at: None },
+                "error: net.rateLimited (rateLimited): GitHub's limit of unauthenticated requests \
+                 is spent, with no time given for its reset\n"
                     .to_owned(),
             ),
             (
