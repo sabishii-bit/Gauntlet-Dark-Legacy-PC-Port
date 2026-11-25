@@ -27,7 +27,7 @@ use crate::install::INSTALL_JOURNAL;
 #[cfg(any(windows, target_os = "linux"))]
 use crate::platform;
 use crate::receipt::installed_launcher_name;
-use crate::recover::RecoverError;
+use crate::recover::{RecoverError, jobs_left};
 use crate::update::{UPDATE_JOURNAL, UpdateJournal, is_retired_launcher_name, retired_name};
 
 /// How long the new copy waits for the launcher an update replaced to exit before it ends it.
@@ -411,16 +411,20 @@ pub struct RetiredSweep {
     pub lock_busy: bool,
 }
 
-/// Removes the installation's retired launcher copies that no journal names, trying each for
-/// `window` every `interval`, under the lock when it is free (`lock_busy` and nothing removed when
-/// it is not). A copy is removed only when it is a file directly in the state folder whose name is
-/// one an update gives a launcher copy it moves aside, for the platform this launcher is built for:
-/// anything else there, another job's retired file among it, stays and is not told. An update's
-/// journal names its two retired copies, the installed copy's and, were it taken back, the new
-/// one's; a journal that cannot be read, or of any kind but a fresh install's and an update's, may
-/// name any, so then every copy stays. An installation without a state folder has nothing to sweep.
+/// Removes the installation's retired launcher copies that no journal names, for the launcher of
+/// version `running`, trying each for `window` every `interval`, under the lock when it is free
+/// (`lock_busy` and nothing removed when it is not). A copy is removed only when it is a file
+/// directly in the state folder whose name is one an update gives a launcher copy it moves aside,
+/// for the platform this launcher is built for: anything else there, another job's retired file
+/// among it, stays and is not told. An update's journal names its two retired copies, the installed
+/// copy's and, were it taken back, the new one's; a journal that cannot be read, or of any kind but
+/// a fresh install's and an update's, may name any, so then every copy stays. An installation
+/// whose state a later launcher stamped, or whose receipt records a later release than `running`,
+/// is refused as its recovery refuses it, with nothing removed. An installation without a state
+/// folder has nothing to sweep.
 pub fn sweep_retired(
     folder: &InstallFolder,
+    running: &Version,
     window: Duration,
     interval: Duration,
 ) -> Result<RetiredSweep, RecoverError> {
@@ -441,6 +445,14 @@ pub fn sweep_retired(
         Err(LockError::NoStateFolder { .. }) => return Ok(sweep),
         Err(error) => return Err(RecoverError::Lock(error)),
     };
+    // A later launcher's state, and a receipt of a later release, close the installation to every
+    // change, as the recovery's first look refuses them; the journals that look reads are judged
+    // again below, by the copies they name.
+    if let Err(refused @ (RecoverError::NewerLauncher | RecoverError::OlderLauncher { .. })) =
+        jobs_left(folder, running)
+    {
+        return Err(refused);
+    }
     let state = folder.state_dir();
     let claimed = Claimed::by_journals(&state, platform);
     let names = names_in(&state).map_err(|source| RecoverError::Io {
@@ -673,10 +685,11 @@ mod tests {
         handover_command, is_installed_copy, is_launcher_image, started_before, sweep_retired,
         wait_for_previous,
     };
-    use crate::compat::MIN_LAUNCHER;
-    use crate::folder::{InstallFolder, JOURNAL_DIR, STATE_DIR};
+    use crate::compat::{JOURNAL_SCHEMA, MIN_LAUNCHER};
+    use crate::folder::{InstallFolder, JOURNAL_DIR, RECEIPT_FILE, STATE_DIR};
     use crate::probe::is_text_busy;
     use crate::receipt::installed_launcher_name;
+    use crate::recover::RecoverError;
     use crate::sections::{RUNTIME_SECTION, Sections};
     use crate::test_platform::{other_platform, this_platform};
     use crate::update::{UPDATE_JOURNAL, UPDATE_STAGING_PREFIX};
@@ -837,6 +850,9 @@ mod tests {
 
     /// The version the hand-written update journals update to.
     const NEXT: &str = "1.0.0-beta.1";
+
+    /// A launcher version later than any the tests run as.
+    const LATER_LAUNCHER: &str = "9.0.0";
 
     /// The staging the hand-written update journals name.
     const STAGING: &str = "stage-AbC123xy";
@@ -1002,12 +1018,7 @@ mod tests {
         let answer = wait_for_previous(previous, super::PREVIOUS_WAIT_LIMIT, root);
         write_line(&format!("{NEW_COPY}{ANSWER}{}", answer_text(&answer)));
         let folder = InstallFolder::at(root).unwrap();
-        let sweep = sweep_retired(
-            &folder,
-            super::RETIRED_DELETE_WINDOW,
-            super::RETIRED_DELETE_INTERVAL,
-        )
-        .unwrap();
+        let sweep = sweep_within(&folder, super::RETIRED_DELETE_WINDOW).unwrap();
         write_line(&format!(
             "{NEW_COPY}{SWEPT}removed {:?}, kept {:?}, lockBusy {}",
             sweep.removed, sweep.kept, sweep.lock_busy
@@ -1520,6 +1531,25 @@ mod tests {
         (dir, fixture, folder)
     }
 
+    /// The launcher the tests sweep installations as: of the installations' own release.
+    fn this_launcher() -> Version {
+        Version::parse(INSTALLED).unwrap()
+    }
+
+    /// Sweeps the retired copies of the installation `folder` as [`this_launcher`] does, trying
+    /// each for `window` at the hand-over's interval.
+    fn sweep_within(
+        folder: &InstallFolder,
+        window: Duration,
+    ) -> Result<RetiredSweep, RecoverError> {
+        sweep_retired(
+            folder,
+            &this_launcher(),
+            window,
+            super::RETIRED_DELETE_INTERVAL,
+        )
+    }
+
     /// Writes a retired file `name` directly in the state folder of the installation at `root`, and
     /// gives its path.
     fn put_aside(root: &Path, name: &str) -> PathBuf {
@@ -1578,13 +1608,13 @@ mod tests {
         put_aside(&fixture.root, &second);
         let mut both = [first.as_str(), second.as_str()];
         both.sort_unstable();
-        let sweep = sweep_retired(&folder, Duration::ZERO, super::RETIRED_DELETE_INTERVAL).unwrap();
+        let sweep = sweep_within(&folder, Duration::ZERO).unwrap();
         assert_eq!(sweep, swept(&both, &[]));
         for name in both {
             assert!(!fixture.root.join(STATE_DIR).join(name).exists(), "{name}");
         }
         // Nothing is left to sweep.
-        let sweep = sweep_retired(&folder, Duration::ZERO, super::RETIRED_DELETE_INTERVAL).unwrap();
+        let sweep = sweep_within(&folder, Duration::ZERO).unwrap();
         assert_eq!(sweep, swept(&[], &[]));
     }
 
@@ -1595,7 +1625,7 @@ mod tests {
         let path = put_aside(&fixture.root, &name);
         let held = hold_from_removal(&path);
         let begun = Instant::now();
-        let sweep = sweep_retired(&folder, HELD_WINDOW, super::RETIRED_DELETE_INTERVAL).unwrap();
+        let sweep = sweep_within(&folder, HELD_WINDOW).unwrap();
         if cfg!(windows) {
             // A handle that shares no deletion keeps the file, as a running launcher's image does,
             // through the whole window.
@@ -1603,8 +1633,7 @@ mod tests {
             assert!(begun.elapsed() >= HELD_WINDOW, "{:?}", begun.elapsed());
             assert!(path.exists());
             drop(held);
-            let sweep =
-                sweep_retired(&folder, HELD_WINDOW, super::RETIRED_DELETE_INTERVAL).unwrap();
+            let sweep = sweep_within(&folder, HELD_WINDOW).unwrap();
             assert_eq!(sweep, swept(&[&name], &[]));
         } else {
             // Linux removes a file that is open, as it removes a running program's file.
@@ -1632,12 +1661,7 @@ mod tests {
             drop(held);
         });
         let begun = Instant::now();
-        let sweep = sweep_retired(
-            &folder,
-            super::RETIRED_DELETE_WINDOW,
-            super::RETIRED_DELETE_INTERVAL,
-        )
-        .unwrap();
+        let sweep = sweep_within(&folder, super::RETIRED_DELETE_WINDOW).unwrap();
         let took = begun.elapsed();
         letting_go.join().unwrap();
         assert_eq!(sweep, swept(&[&name], &[]));
@@ -1693,7 +1717,7 @@ mod tests {
             UPDATE_JOURNAL,
             &pretty_json(&update_journal(&fixture, "committed")),
         );
-        let sweep = sweep_retired(&folder, Duration::ZERO, super::RETIRED_DELETE_INTERVAL).unwrap();
+        let sweep = sweep_within(&folder, Duration::ZERO).unwrap();
         let mut kept = [named.as_str(), new_copy.as_str()];
         kept.sort_unstable();
         assert_eq!(sweep, swept(&[&unnamed], &kept));
@@ -1711,19 +1735,14 @@ mod tests {
         // A journal that cannot be read as an update's, or a journal of a kind this launcher cannot
         // tell the names of, may name any copy, and every one stays.
         put_aside(&fixture.root, &unnamed);
-        let unreadable: [(&str, &[u8]); 3] = [
+        let unreadable: [(&str, &[u8]); 2] = [
             (UPDATE_JOURNAL, b"{ not json"),
-            (
-                UPDATE_JOURNAL,
-                br#"{"schema": 2, "minLauncher": "1.0.0-beta"}"#,
-            ),
             ("expansion-n64.json", b"{}"),
         ];
         for (name, journal) in unreadable {
             fs::remove_dir_all(state.join(JOURNAL_DIR)).unwrap();
             write_journal(&fixture.root, name, journal);
-            let sweep =
-                sweep_retired(&folder, Duration::ZERO, super::RETIRED_DELETE_INTERVAL).unwrap();
+            let sweep = sweep_within(&folder, Duration::ZERO).unwrap();
             let mut all = [named.as_str(), new_copy.as_str(), unnamed.as_str()];
             all.sort_unstable();
             assert_eq!(sweep, swept(&[], &all), "{name}");
@@ -1733,7 +1752,7 @@ mod tests {
         fs::remove_dir_all(state.join(JOURNAL_DIR)).unwrap();
         write_journal(&fixture.root, "install.json", b"{}");
         write_journal(&fixture.root, "update.json.pending", b"{ cut sho");
-        let sweep = sweep_retired(&folder, Duration::ZERO, super::RETIRED_DELETE_INTERVAL).unwrap();
+        let sweep = sweep_within(&folder, Duration::ZERO).unwrap();
         let mut all = [named.as_str(), new_copy.as_str(), unnamed.as_str()];
         all.sort_unstable();
         assert_eq!(sweep, swept(&all, &[]));
@@ -1743,12 +1762,61 @@ mod tests {
     }
 
     #[test]
+    fn a_later_launchers_installation_keeps_its_retired_copies() {
+        // State a later launcher stamped, and an installation of a later release than the
+        // launcher that sweeps, are changed by nothing it does, as its recovery refuses them.
+        let (_dir, fixture, folder) = installed();
+        let name = retired(this_platform(), "0.9.0", "Zz9Yy8Xx");
+        let path = put_aside(&fixture.root, &name);
+        let state = fixture.root.join(STATE_DIR);
+        let receipt = state.join(RECEIPT_FILE);
+        let installed_receipt = fs::read(&receipt).unwrap();
+        let sweep = || sweep_within(&folder, Duration::ZERO);
+
+        let mut stamped = serde_json::from_slice::<Value>(&installed_receipt).unwrap();
+        stamped["minLauncher"] = json!(LATER_LAUNCHER);
+        let mut later_release = serde_json::from_slice::<Value>(&installed_receipt).unwrap();
+        later_release["version"] = json!(NEXT);
+        for (what, written) in [("stamped", stamped), ("of a later release", later_release)] {
+            fs::write(&receipt, pretty_json(&written)).unwrap();
+            let refused = sweep();
+            match (what, &refused) {
+                ("stamped", Err(RecoverError::NewerLauncher))
+                | ("of a later release", Err(RecoverError::OlderLauncher { .. })) => {}
+                _ => panic!("a receipt {what}: {refused:?}"),
+            }
+            assert!(path.is_file(), "a receipt {what}");
+        }
+        fs::write(&receipt, &installed_receipt).unwrap();
+
+        // An update's journal a later launcher stamped, or of a later schema, as well.
+        let mut stamped = update_journal(&fixture, "staged");
+        stamped["minLauncher"] = json!(LATER_LAUNCHER);
+        let mut later_schema = update_journal(&fixture, "staged");
+        later_schema["schema"] = json!(JOURNAL_SCHEMA + 1);
+        for (what, journal) in [("stamped", stamped), ("of a later schema", later_schema)] {
+            write_journal(&fixture.root, UPDATE_JOURNAL, &pretty_json(&journal));
+            let refused = sweep();
+            assert!(
+                matches!(refused, Err(RecoverError::NewerLauncher)),
+                "a journal {what}: {refused:?}"
+            );
+            assert!(path.is_file(), "a journal {what}");
+        }
+
+        // Its own state again, the copy goes.
+        fs::remove_dir_all(state.join(JOURNAL_DIR)).unwrap();
+        assert_eq!(sweep().unwrap(), swept(&[&name], &[]));
+        assert!(!path.exists());
+    }
+
+    #[test]
     fn a_busy_lock_defers_the_sweep() {
         let (_dir, fixture, folder) = installed();
         let name = retired(this_platform(), INSTALLED, "AbC123xy");
         let path = put_aside(&fixture.root, &name);
         let lock = folder.lock().unwrap();
-        let sweep = sweep_retired(&folder, HELD_WINDOW, super::RETIRED_DELETE_INTERVAL).unwrap();
+        let sweep = sweep_within(&folder, HELD_WINDOW).unwrap();
         assert_eq!(
             sweep,
             RetiredSweep {
@@ -1759,7 +1827,7 @@ mod tests {
         );
         assert!(path.is_file());
         drop(lock);
-        let sweep = sweep_retired(&folder, HELD_WINDOW, super::RETIRED_DELETE_INTERVAL).unwrap();
+        let sweep = sweep_within(&folder, HELD_WINDOW).unwrap();
         assert_eq!(sweep, swept(&[&name], &[]));
     }
 
@@ -1767,7 +1835,7 @@ mod tests {
     fn an_installation_without_a_state_folder_has_nothing_to_sweep() {
         let dir = tempfile::tempdir().unwrap();
         let folder = InstallFolder::at(dir.path()).unwrap();
-        let sweep = sweep_retired(&folder, HELD_WINDOW, super::RETIRED_DELETE_INTERVAL).unwrap();
+        let sweep = sweep_within(&folder, HELD_WINDOW).unwrap();
         assert_eq!(sweep, swept(&[], &[]));
         assert!(!dir.path().join(STATE_DIR).exists());
     }
