@@ -92,10 +92,11 @@ use windows_sys::Win32::Security::{
     InitializeSecurityDescriptor, PSID, SECURITY_ATTRIBUTES, SECURITY_DESCRIPTOR,
     SECURITY_MAX_SID_SIZE, SID_AND_ATTRIBUTES, SetSecurityDescriptorDacl, SetTokenInformation,
     TOKEN_ACCESS_MASK, TOKEN_ADJUST_DEFAULT, TOKEN_ASSIGN_PRIMARY, TOKEN_DEFAULT_DACL,
-    TOKEN_DUPLICATE, TOKEN_INFORMATION_CLASS, TOKEN_MANDATORY_LABEL, TOKEN_QUERY, TOKEN_USER,
-    TokenDefaultDacl, TokenElevationType, TokenElevationTypeDefault, TokenElevationTypeFull,
-    TokenElevationTypeLimited, TokenIntegrityLevel, TokenSessionId, TokenUser, WELL_KNOWN_SID_TYPE,
-    WinBuiltinAdministratorsSid, WinLocalSystemSid, WinMediumLabelSid,
+    TOKEN_DUPLICATE, TOKEN_INFORMATION_CLASS, TOKEN_MANDATORY_LABEL, TOKEN_OWNER, TOKEN_QUERY,
+    TOKEN_USER, TokenDefaultDacl, TokenElevationType, TokenElevationTypeDefault,
+    TokenElevationTypeFull, TokenElevationTypeLimited, TokenIntegrityLevel, TokenOwner,
+    TokenSessionId, TokenUser, WELL_KNOWN_SID_TYPE, WinBuiltinAdministratorsSid, WinLocalSystemSid,
+    WinMediumLabelSid,
 };
 #[cfg(test)]
 use windows_sys::Win32::Storage::FileSystem::{DELETE, GetShortPathNameW, SetFileShortNameW};
@@ -190,6 +191,11 @@ const INTEGRITY_ATTRIBUTE: u32 = 0x20;
 /// The 32-bit words of the largest SID, SECURITY_MAX_SID_SIZE bytes.
 #[cfg(test)]
 const SID_WORDS: usize = SECURITY_MAX_SID_SIZE as usize / size_of::<u32>();
+
+/// The bytes of a SID before its relative ids: its revision, its count of relative ids and its
+/// six-byte identifier authority.
+#[cfg(test)]
+const SID_HEADER_BYTES: usize = 8;
 
 /// The exit code a program started under a filtered token is given when it is ended.
 #[cfg(test)]
@@ -881,9 +887,10 @@ pub(crate) struct FilteredChild {
 
 #[cfg(test)]
 impl FilteredChild {
-    /// The session the program was started in, the elevation type of this process's token, and by
-    /// name the window station and desktop this process runs on and those the program was given,
-    /// for a test to tell when the program fails.
+    /// The session the program was started in, the elevation type of this process's token, the
+    /// default owner and DACL that this process's token gives what it makes and the default owner
+    /// the program's gives, and by name the window station and desktop this process runs on and
+    /// those the program was given, for a test to tell when the program fails.
     pub(crate) fn place(&self) -> &str {
         &self.place
     }
@@ -924,13 +931,14 @@ impl Drop for FilteredChild {
 /// Medium, and the default DACL, which whatever the program makes without a descriptor of its own
 /// takes, granting the token's user and SYSTEM, as a standard user's does. Kept from an
 /// administrator's token, whose default DACL may grant Administrators and SYSTEM alone, it would
-/// leave the program unable to open what it makes for itself as it starts: kernel32 fails to
-/// initialise, and the program dies with STATUS_DLL_INIT_FAILED before its main. The programs it
-/// starts inherit the token, and with it the DACL. The program runs with this process's
-/// environment, `env` set over it, without a console window, and with both its output streams on
-/// `output`, which is the one handle it inherits. The system refuses a caller that may not start a
-/// program under another token with ERROR_PRIVILEGE_NOT_HELD. The arguments are taken only when
-/// none is empty or holds a space, a tab or a quote, which need no quoting.
+/// leave the program unable to open what it makes for itself as it starts: the system's own
+/// libraries fail to initialise, and the program dies with STATUS_DLL_INIT_FAILED right after
+/// KernelBase loads, before its main. The programs it starts inherit the token, and with it the
+/// DACL. The program runs with this process's environment, `env` set over it, without a console
+/// window, and with both its output streams on `output`, which is the one handle it inherits. The
+/// system refuses a caller that may not start a program under another token with
+/// ERROR_PRIVILEGE_NOT_HELD. The arguments are taken only when none is empty or holds a space, a
+/// tab or a quote, which need no quoting.
 ///
 /// When this process is an administrator, the program starts on a window station and desktop
 /// made for it, which grant the filtered token's user, and the programs it starts inherit them.
@@ -971,9 +979,13 @@ pub(crate) fn spawn_filtered(
         .as_ref()
         .map_or_else(|| own.clone(), FilteredDesktop::name);
     let place = format!(
-        "session {}, elevation {}, this process on {own}, the program on {given}",
+        "session {}, elevation {}, this process's default owner {} and DACL {}, the program's \
+         default owner {}, this process on {own}, the program on {given}",
         described(own_session()),
-        described(own_elevation())
+        described(own_elevation()),
+        described(own_token(TOKEN_QUERY).and_then(|this| default_owner_text(&this))),
+        described(own_token(TOKEN_QUERY).and_then(|this| default_dacl_text(&this))),
+        described(default_owner_text(&token)),
     );
     let desktop_name = desktop
         .as_ref()
@@ -1458,6 +1470,69 @@ fn default_dacl_grants(token: &OwnedHandle) -> io::Result<Vec<(Vec<u8>, u32)>> {
         grants.push((unsafe { sid_bytes(sid) }, mask));
     }
     Ok(grants)
+}
+
+/// The SID of `token`'s default owner, which whatever is made under it without a descriptor of
+/// its own is owned by, by its bytes.
+#[cfg(test)]
+fn token_owner_bytes(token: &OwnedHandle) -> io::Result<Vec<u8>> {
+    let owner_info = token_information::<TOKEN_OWNER>(token, TokenOwner)?;
+    // SAFETY: the call wrote a TOKEN_OWNER at the buffer's start, whose SID lies in the buffer,
+    // which lives while the SID is copied.
+    let owner = unsafe { owner_info.as_ptr().cast::<TOKEN_OWNER>().read() }.Owner;
+    // SAFETY: the SID is a valid one, lying in the buffer, which lives through the call.
+    Ok(unsafe { sid_bytes(owner) })
+}
+
+/// `token`'s default owner as a test reports it: "user" when it is the token's own user, so that
+/// what a failure must show, whether the owner is that user, reads at a glance and the user's SID
+/// is not printed, and otherwise the SID in its string form.
+#[cfg(test)]
+fn default_owner_text(token: &OwnedHandle) -> io::Result<String> {
+    let user = token_user_bytes(token)?;
+    Ok(named_sid(&token_owner_bytes(token)?, &user))
+}
+
+/// `token`'s default DACL as a test reports it: each SID it grants, named as
+/// [`default_owner_text`] names one, with the rights it grants in hex.
+#[cfg(test)]
+fn default_dacl_text(token: &OwnedHandle) -> io::Result<String> {
+    let user = token_user_bytes(token)?;
+    let grants: Vec<String> = default_dacl_grants(token)?
+        .iter()
+        .map(|(sid, mask)| format!("{} {mask:#x}", named_sid(sid, &user)))
+        .collect();
+    Ok(format!("[{}]", grants.join(", ")))
+}
+
+/// `sid` as a test reports it: "user" when it is `user`, otherwise its string form.
+#[cfg(test)]
+fn named_sid(sid: &[u8], user: &[u8]) -> String {
+    if sid == user {
+        "user".to_owned()
+    } else {
+        sid_text(sid)
+    }
+}
+
+/// A SID's bytes in the SID string form, such as S-1-5-32-544: its revision, its identifier
+/// authority and each relative id; bytes that are no SID's are given as they are.
+#[cfg(test)]
+fn sid_text(sid: &[u8]) -> String {
+    sid.split_first_chunk::<SID_HEADER_BYTES>()
+        .and_then(|(header, rest)| {
+            let [revision, count, a, b, c, d, e, f] = *header;
+            let (ids, left) = rest.as_chunks::<{ size_of::<u32>() }>();
+            (ids.len() == usize::from(count) && left.is_empty()).then(|| {
+                let authority = u64::from_be_bytes([0, 0, a, b, c, d, e, f]);
+                let ids: String = ids
+                    .iter()
+                    .map(|id| format!("-{}", u32::from_le_bytes(*id)))
+                    .collect();
+                format!("S-{revision}-{authority}{ids}")
+            })
+        })
+        .unwrap_or_else(|| format!("{sid:02x?}"))
 }
 
 /// A filtered copy of this process's token, as [`spawn_filtered`] describes it: a primary token
@@ -2030,9 +2105,11 @@ mod tests {
 
     use super::{
         GENERIC_ALL, HKEY_LOCAL_MACHINE, MAX_PROXY_VALUE_BYTES, ProxyEnable, RegistryKey,
-        WellKnownSid, WinLocalSystemSid, default_dacl_grants, file_id, file_index, filtered_token,
-        is_same_file, long_path, numbered, onedrive_account_folders, reparse_tag, resource_bytes,
-        set_short_name, short_path, token_user_bytes, update_resources, wide_string, windows_build,
+        TOKEN_QUERY, WellKnownSid, WinBuiltinAdministratorsSid, WinLocalSystemSid,
+        default_dacl_grants, default_dacl_text, default_owner_text, file_id, file_index,
+        filtered_token, is_same_file, long_path, named_sid, numbered, onedrive_account_folders,
+        own_token, reparse_tag, resource_bytes, set_short_name, short_path, sid_text,
+        token_user_bytes, update_resources, wide_string, windows_build,
     };
 
     /// The first build of Windows 10, the oldest system the launcher runs on.
@@ -2269,5 +2346,38 @@ mod tests {
                 (system.bytes(), GENERIC_ALL),
             ]
         );
+    }
+
+    #[test]
+    fn a_sid_is_told_in_its_string_form() {
+        let administrators = WellKnownSid::of(WinBuiltinAdministratorsSid).unwrap();
+        assert_eq!(sid_text(&administrators.bytes()), "S-1-5-32-544");
+        let system = WellKnownSid::of(WinLocalSystemSid).unwrap();
+        assert_eq!(sid_text(&system.bytes()), "S-1-5-18");
+        // Bytes that are no SID's are given as they are: here the last relative id is cut short,
+        // and with no bytes there is not even a header.
+        let mut cut = administrators.bytes();
+        cut.pop();
+        assert_eq!(sid_text(&cut), format!("{cut:02x?}"));
+        assert_eq!(sid_text(&[]), "[]");
+    }
+
+    #[test]
+    fn a_tokens_defaults_are_told_naming_its_user_and_any_other_sid_in_its_string_form() {
+        let token = filtered_token().unwrap();
+        assert_eq!(
+            default_dacl_text(&token).unwrap(),
+            format!("[user {GENERIC_ALL:#x}, S-1-5-18 {GENERIC_ALL:#x}]")
+        );
+        // The owner is the token's user or a group it holds with the right to own, as the system
+        // sets it, so it is only told; this process's own token's defaults are told as well.
+        default_owner_text(&token).unwrap();
+        let own = own_token(TOKEN_QUERY).unwrap();
+        default_owner_text(&own).unwrap();
+        default_dacl_text(&own).unwrap();
+        let user = token_user_bytes(&own).unwrap();
+        assert_eq!(named_sid(&user, &user), "user");
+        let administrators = WellKnownSid::of(WinBuiltinAdministratorsSid).unwrap();
+        assert_eq!(named_sid(&administrators.bytes(), &user), "S-1-5-32-544");
     }
 }
