@@ -816,6 +816,102 @@ mod tests {
         kill_at_every_staging_pass(&Source::stand_in(), ChildJob::Release);
     }
 
+    #[test]
+    fn a_kill_while_a_release_is_swapped_taken_back_or_cleaned_up_is_recovered() {
+        let source = Source::stand_in();
+        let after = Killed::new(&source).updated();
+        let job = ChildJob::Release;
+
+        // A move made, the journal naming the download folder: the next start takes the update
+        // back from it, the download folder with it.
+        let context = "a release's update.move:1";
+        let killed = Killed::new(&source);
+        killed.kill(
+            &this_program(),
+            context,
+            job,
+            (FaultPoint::UpdateMove, 1),
+            None,
+        );
+        assert_eq!(
+            journal_phase(killed.root()).as_deref(),
+            Some("swapping"),
+            "{context}"
+        );
+        assert_eq!(downloads(killed.root()).len(), 1, "{context}");
+        assert_eq!(
+            killed.recover(context),
+            rolled_back(false, &[]),
+            "{context}"
+        );
+        killed.holds_what_it_held(context);
+
+        // Whether the download folder the journal names is still there, once a kill left the
+        // journal standing.
+        let download_left = |killed: &Killed| {
+            let journal = killed.journal()?;
+            let download = journal["download"]
+                .as_str()
+                .expect("a release's journal names its download folder");
+            Some(killed.state().join(download).exists())
+        };
+
+        // The update's own rollback once a move failed, killed at each of its passes in turn,
+        // the download folder's removal among them: the next start finishes taking it back.
+        let fail = (FaultPoint::UpdateMove, 1);
+        let mut taken_past_download = false;
+        let mut at = 0;
+        loop {
+            at += 1;
+            let context = format!(
+                "a release's {} failed, then {}",
+                pass_name(fail.0, fail.1),
+                pass_name(FaultPoint::UpdateRollback, at)
+            );
+            let killed = Killed::new(&source);
+            let kill = (FaultPoint::UpdateRollback, at);
+            let outcome = killed.run(&this_program(), &context, job, Some(kill), Some(fail));
+            if let Some(outcome) = outcome {
+                assert_eq!(
+                    outcome,
+                    format!("io: {:?}", Changes::RolledBack),
+                    "{context}"
+                );
+                killed.holds_what_it_held(&context);
+                break;
+            }
+            taken_past_download |= download_left(&killed) == Some(false);
+            let expected = killed.left_rolling_back(&context);
+            assert_eq!(killed.recover(&context), expected, "{context}");
+            killed.holds_what_it_held(&context);
+        }
+        assert!(at > 1);
+        assert!(taken_past_download);
+
+        // Its cleanup killed at each of its passes in turn: the next start finishes it, also
+        // once the download folder the journal names is gone.
+        let download_gone = Cell::new(false);
+        let judge = |killed: &Killed, context: &str| {
+            assert_eq!(
+                journal_phase(killed.root()).as_deref(),
+                Some("committed"),
+                "{context}"
+            );
+            if download_left(killed) == Some(false) {
+                download_gone.set(true);
+            }
+            assert_eq!(
+                killed.recover(context),
+                recovered(UpdateRecovery::CleanedUp),
+                "{context}"
+            );
+            killed.holds(&after, context);
+        };
+        let cleaning = kill_at_every_pass(&source, job, FaultPoint::UpdateCleanup, &judge);
+        assert!(cleaning > 0);
+        assert!(download_gone.get());
+    }
+
     #[cfg(windows)]
     #[test]
     fn a_long_root_update_survives_a_kill() {
