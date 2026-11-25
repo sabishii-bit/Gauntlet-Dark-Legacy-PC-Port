@@ -2,11 +2,13 @@
 //! GitHub's hourly budget of unauthenticated requests: what the feed answered, when, and to which
 //! launcher on which platform. Its JSON form carries a stamp, as every state file of the
 //! launcher's does, and keeps the keys a later launcher adds. Only answers are kept: a check that
-//! failed is simply asked again.
+//! failed is simply asked again. A release a kept answer names is offered again only as GitHub's
+//! feed could have given it to the launcher that asked.
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
+use crate::http::Origins;
 use crate::{Platform, Release, Version};
 
 /// The schema of an update check's JSON form that this launcher reads and writes.
@@ -82,8 +84,10 @@ impl UpdateCheck {
     /// The kept answer, when it was asked by exactly this launcher version, build metadata
     /// included, for `platform`, and is still fresh at `now`: made no more than [`MAX_CLOCK_SKEW`]
     /// ahead of it and less than [`UPDATE_CHECK_LIFETIME`] before it, and, for a rate limit, not
-    /// past its renewal. A check of a later schema, or one that asks for a later launcher, is not
-    /// this launcher's to read.
+    /// past its renewal. A release it names must answer that launcher as GitHub's feed would:
+    /// one for `platform`, above the launcher's version, its files named as the new line names
+    /// them and at this repository's own download URLs. A check of a later schema, or one that
+    /// asks for a later launcher, is not this launcher's to read.
     pub fn fresh(&self, now: u64, launcher: &Version, platform: Platform) -> Option<&Answer> {
         let readable = self
             .lowest_launcher()
@@ -91,11 +95,19 @@ impl UpdateCheck {
         let asker = self.launcher == launcher.to_string() && self.platform == platform.as_str();
         let recent = self.checked_at <= now.saturating_add(MAX_CLOCK_SKEW)
             && now < self.checked_at.saturating_add(UPDATE_CHECK_LIFETIME);
+        let answers = match &self.answer {
+            Answer::Available { release } => {
+                release.platform == platform
+                    && release.version > *launcher
+                    && release.check_origin(&Origins::GitHub).is_ok()
+            }
+            Answer::UpToDate | Answer::RateLimited { .. } => true,
+        };
         let renewed = match self.answer {
             Answer::RateLimited { until } => now >= until,
             Answer::UpToDate | Answer::Available { .. } => false,
         };
-        (readable && asker && recent && !renewed).then_some(&self.answer)
+        (readable && asker && recent && answers && !renewed).then_some(&self.answer)
     }
 
     /// The check `value` holds, as its JSON form writes one; `None` for anything else, and for a
@@ -155,8 +167,8 @@ mod tests {
         UpdateCheck,
     };
     use crate::{
-        Asset, Platform, REPOSITORY, Release, Version, checksums_asset, launcher_asset,
-        signature_asset,
+        Asset, MAX_ASSET_LEN, MAX_LIST_LEN, Platform, REPOSITORY, Release, Version,
+        checksums_asset, launcher_asset, signature_asset,
     };
 
     /// When the tests' checks are made, in seconds since the Unix epoch.
@@ -238,28 +250,41 @@ mod tests {
         Version::parse(text).unwrap_or_else(|error| panic!("{error}"))
     }
 
-    /// The asset `name` of [`NEWER`], published as holding `(size, digest)`.
-    fn asset(name: String, (size, digest): (u64, [u8; 32])) -> Asset {
+    /// The asset `name` of the release `release`, published as holding `(size, digest)`.
+    fn asset(release: &Version, name: String, (size, digest): (u64, [u8; 32])) -> Asset {
         Asset {
-            url: format!("https://github.com/{REPOSITORY}/releases/download/v{NEWER}/{name}"),
+            url: format!("https://github.com/{REPOSITORY}/releases/download/v{release}/{name}"),
             name,
             size,
             sha256: Sha256Digest(digest),
         }
     }
 
+    /// The release `text` for `platform`, as GitHub's feed gives it: signed and with notes when
+    /// `whole`, else with neither.
+    fn release_of(text: &str, platform: Platform, whole: bool) -> Release {
+        let release = version(text);
+        Release {
+            tag: format!("v{text}"),
+            platform,
+            launcher: asset(&release, launcher_asset(&release, platform), LAUNCHER_FILE),
+            checksums: asset(
+                &release,
+                checksums_asset(&release, platform),
+                CHECKSUMS_FILE,
+            ),
+            signature: whole.then(|| {
+                let name = signature_asset(&release, platform);
+                asset(&release, name, SIGNATURE_FILE)
+            }),
+            notes: whole.then(|| "## Added\n- A new realm\n\n## Fixed\n- A crash\n".to_owned()),
+            version: release,
+        }
+    }
+
     /// [`NEWER`]'s Windows release: signed and with notes when `whole`, else with neither.
     fn release(whole: bool) -> Release {
-        let (newer, platform) = (version(NEWER), Platform::WindowsX64);
-        Release {
-            tag: format!("v{NEWER}"),
-            platform,
-            launcher: asset(launcher_asset(&newer, platform), LAUNCHER_FILE),
-            checksums: asset(checksums_asset(&newer, platform), CHECKSUMS_FILE),
-            signature: whole.then(|| asset(signature_asset(&newer, platform), SIGNATURE_FILE)),
-            notes: whole.then(|| "## Added\n- A new realm\n\n## Fixed\n- A crash\n".to_owned()),
-            version: newer,
-        }
+        release_of(NEWER, Platform::WindowsX64, whole)
     }
 
     /// The answer that found the release [`release`] gives for `whole`.
@@ -483,6 +508,89 @@ mod tests {
         for until in [CHECKED_AT, CHECKED_AT - 1, 0] {
             assert_eq!(kept(&limited(until), CHECKED_AT), None, "until {until}");
         }
+    }
+
+    #[test]
+    fn a_kept_release_must_answer_the_launcher_that_asked() {
+        let offered = |release: Release| {
+            let made = check(Answer::Available {
+                release: Box::new(release),
+            });
+            kept(&made, CHECKED_AT).is_some()
+        };
+        assert!(offered(release(true)));
+        assert!(offered(release(false)));
+        // A release for another platform, or none above the launcher that asked, is an answer to
+        // another question.
+        assert!(!offered(release_of(NEWER, Platform::LinuxX64, true)));
+        for text in [RUNNING, "1.0.0-beta+build.1", "1.0.0-alpha.3", "0.9.0"] {
+            let below = release_of(text, Platform::WindowsX64, true);
+            assert!(!offered(below), "{text}");
+        }
+
+        // Nor is a release whose files are not this repository's own, as GitHub's list names
+        // them.
+        type Edit = fn(&mut Release);
+        let edits: [(&str, Edit); 11] = [
+            ("a launcher file of another repository", |release| {
+                release.launcher.url = release.launcher.url.replace(REPOSITORY, "a/b");
+            }),
+            ("a list at another tag", |release| {
+                let url = release
+                    .checksums
+                    .url
+                    .replace("/v1.0.0-beta.1/", "/v1.0.0-beta.2/");
+                release.checksums.url = url;
+            }),
+            ("a signature on a storage host", |release| {
+                let signature = release.signature.as_mut().unwrap();
+                signature.url = signature.url.replace(
+                    "https://github.com/",
+                    "https://objects.githubusercontent.com/",
+                );
+            }),
+            ("a launcher file with a query", |release| {
+                release.launcher.url.push_str("?x=1");
+            }),
+            ("a launcher file over plain HTTP", |release| {
+                release.launcher.url = release.launcher.url.replacen("https", "http", 1);
+            }),
+            ("the other platform's launcher file", |release| {
+                release.launcher.name = launcher_asset(&release.version, Platform::LinuxX64);
+            }),
+            ("a launcher file that leaves its folder", |release| {
+                release.launcher.name = format!("../{}", release.launcher.name);
+            }),
+            ("a launcher file past its bound", |release| {
+                release.launcher.size = MAX_ASSET_LEN + 1;
+            }),
+            ("an empty list", |release| release.checksums.size = 0),
+            ("a signature past the list's bound", |release| {
+                release.signature.as_mut().unwrap().size = MAX_LIST_LEN + 1;
+            }),
+            ("another tag", |release| {
+                release.tag = "v1.0.0-beta.2".to_owned();
+            }),
+        ];
+        for (what, edit) in edits {
+            let mut edited = release(true);
+            edit(&mut edited);
+            assert!(!offered(edited), "{what}");
+        }
+
+        // Read back from its JSON form, a release changed there is read, and not offered.
+        let value = json_of(&check(available(true)));
+        let elsewhere = format!(
+            "https://github.com/a/b/releases/download/v{NEWER}/{}",
+            release(true).launcher.name
+        );
+        let moved = edited(
+            &value,
+            "/answer/release/launcher/url",
+            Some(json!(elsewhere)),
+        );
+        let read = UpdateCheck::from_value(&moved).expect("its form is sound");
+        assert_eq!(kept(&read, CHECKED_AT), None);
     }
 
     #[test]

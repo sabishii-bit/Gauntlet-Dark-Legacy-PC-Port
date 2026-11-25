@@ -127,28 +127,28 @@ impl FeedConfig {
             launcher_version: launcher_version.to_owned(),
         })
     }
+}
 
-    /// Whether `url` is where the asset `name` of the release tagged `tag` is downloaded from:
-    /// the feed's own download host and scheme, exactly, then no query or fragment, and a path
-    /// that, percent-decoded, is exactly `/<repository>/releases/download/<tag>/<name>`.
-    fn downloads_from(&self, url: &str, tag: &str, name: &str) -> bool {
-        let (scheme, authority) = match &self.origins {
-            Origins::GitHub => (HTTPS, GITHUB_HOST),
-            #[cfg(test)]
-            Origins::Loopback { authority } => (HTTP, authority.as_str()),
-        };
-        let Some(path) = url
-            .strip_prefix(scheme)
-            .and_then(|rest| rest.strip_prefix(SCHEME_SEPARATOR))
-            .and_then(|rest| rest.strip_prefix(authority))
-        else {
-            return false;
-        };
-        path.starts_with('/')
-            && !path.contains(['?', '#'])
-            && percent_decoded(path)
-                .is_some_and(|path| path == format!("/{REPOSITORY}/releases/download/{tag}/{name}"))
-    }
+/// Whether `url` is where the feed of `origins` downloads the asset `name` of the release tagged
+/// `tag` from: that feed's own download host and scheme, exactly, then no query or fragment, and
+/// a path that, percent-decoded, is exactly `/<repository>/releases/download/<tag>/<name>`.
+fn downloads_from(origins: &Origins, url: &str, tag: &str, name: &str) -> bool {
+    let (scheme, authority) = match origins {
+        Origins::GitHub => (HTTPS, GITHUB_HOST),
+        #[cfg(test)]
+        Origins::Loopback { authority } => (HTTP, authority.as_str()),
+    };
+    let Some(path) = url
+        .strip_prefix(scheme)
+        .and_then(|rest| rest.strip_prefix(SCHEME_SEPARATOR))
+        .and_then(|rest| rest.strip_prefix(authority))
+    else {
+        return false;
+    };
+    path.starts_with('/')
+        && !path.contains(['?', '#'])
+        && percent_decoded(path)
+            .is_some_and(|path| path == format!("/{REPOSITORY}/releases/download/{tag}/{name}"))
 }
 
 /// The host and port of a loopback feed's `base`, `http://<host>:<port>/` for one of
@@ -213,6 +213,47 @@ pub struct Release {
     /// The release's notes, when they are text within [`MAX_NOTES_LEN`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub notes: Option<String>,
+}
+
+impl Release {
+    /// Refuses the release as [`ReleaseError::Incomplete`], naming the first of its files that
+    /// breaks a rule, unless the feed of `origins` could have given it: tagged `v` and its
+    /// version, its launcher file, checksum list and signature named as the new line names them
+    /// for its version and platform, each of a size within its bound and at its own download URL.
+    /// The scan holds every release to these rules as it reads the list; a release that came from
+    /// elsewhere, as an answer kept from an earlier check does, is held to them again before any
+    /// of its files is asked for, so that nothing but this feed's own release files is fetched
+    /// for it.
+    pub(crate) fn check_origin(&self, origins: &Origins) -> Result<(), ReleaseError> {
+        let (version, platform) = (&self.version, self.platform);
+        let tag = format!("{TAG_PREFIX}{version}");
+        let files = [
+            (
+                &self.launcher,
+                launcher_asset(version, platform),
+                MAX_ASSET_LEN,
+            ),
+            (
+                &self.checksums,
+                checksums_asset(version, platform),
+                MAX_LIST_LEN,
+            ),
+        ];
+        let signature = self
+            .signature
+            .as_ref()
+            .map(|asset| (asset, signature_asset(version, platform), MAX_LIST_LEN));
+        for (asset, name, most) in files.into_iter().chain(signature) {
+            let sound = self.tag == tag
+                && asset.name == name
+                && (1..=most).contains(&asset.size)
+                && downloads_from(origins, &asset.url, &tag, &name);
+            if !sound {
+                return Err(ReleaseError::Incomplete { asset: name.into() });
+            }
+        }
+        Ok(())
+    }
 }
 
 /// What one read of the feed found.
@@ -362,14 +403,18 @@ impl Feed {
     /// each held to the size and digest the feed published for it; checks the signature against
     /// the keyring, for the list's own name and the release's version; then reads the list, which
     /// must give the launcher file GitHub's digest, so that the launcher file downloaded after it
-    /// is held to both. Nothing of the launcher file is fetched here. With a key, a release that
-    /// carries no signature is [`ReleaseError::Incomplete`] before anything is asked; without
-    /// one, a signature the release carries is not fetched.
+    /// is held to both. Nothing of the launcher file is fetched here. Before anything is asked,
+    /// the release is held to the rules this feed's scan holds a release to, its names, sizes and
+    /// download URLs, whether the scan gave it or it was kept from an earlier check: one that
+    /// breaks them is [`ReleaseError::Incomplete`]. With a key, a release that carries no
+    /// signature is [`ReleaseError::Incomplete`] before anything is asked too; without one, a
+    /// signature the release carries is not fetched.
     pub fn check_list(
         &self,
         release: &Release,
         cancel: &Cancel,
     ) -> Result<CheckedList, ReleaseError> {
+        release.check_origin(&self.config.origins)?;
         let signature = if self.keyring.is_empty() {
             None
         } else {
@@ -506,7 +551,7 @@ impl Feed {
         let url = asset
             .get(DOWNLOAD_URL)
             .and_then(Value::as_str)
-            .filter(|url| self.config.downloads_from(url, tag, name))
+            .filter(|url| downloads_from(&self.config.origins, url, tag, name))
             .ok_or_else(incomplete)?;
         Ok(Some(Asset {
             name: name.to_owned(),
@@ -576,8 +621,8 @@ mod tests {
         PAGE_LEN, Release, ReleaseFiles, Scan,
     };
     use crate::{
-        DOWNLOAD_ATTEMPTS, Keyring, MAX_LIST_LEN, Platform, ProxySettings, ReleaseError, Version,
-        checksums_asset, launcher_asset, licences_asset, signature_asset,
+        DOWNLOAD_ATTEMPTS, Keyring, MAX_LIST_LEN, Platform, ProxySettings, REPOSITORY,
+        ReleaseError, Version, checksums_asset, launcher_asset, licences_asset, signature_asset,
     };
 
     /// The launcher version the tests' feeds are read as.
@@ -1396,10 +1441,13 @@ mod tests {
         );
         signed.body = Some("## Fixed\n".to_owned());
         serve(&server, 1, vec![signed.to_json()]);
-        let release = feed(&server)
+        let feed = feed(&server);
+        let release = feed
             .newest(&version(RUNNING), Platform::LinuxX64, &Cancel::default())
             .unwrap()
             .expect("the release");
+        // What the scan gives meets the rules a release from elsewhere is held to.
+        release.check_origin(&feed.config.origins).unwrap();
         let text = version("1.0.0-beta.1");
         assert_eq!(release.tag, "v1.0.0-beta.1");
         assert_eq!(release.platform, Platform::LinuxX64);
@@ -1499,6 +1547,24 @@ mod tests {
         assert!(release.launcher.url.starts_with(
             "https://github.com/sabishii-bit/Gauntlet-Dark-Legacy-PC-Port/releases/download/"
         ));
+        // A release kept from elsewhere is held to the same form: GitHub's own release URLs of
+        // this repository alone.
+        release.check_origin(&Origins::GitHub).unwrap();
+        let elsewhere = [
+            "https://github.com/someone/else/releases/download/v1.0.0-beta.1/",
+            "https://objects.githubusercontent.com/sabishii-bit/Gauntlet-Dark-Legacy-PC-Port/releases/download/v1.0.0-beta.1/",
+            "http://github.com/sabishii-bit/Gauntlet-Dark-Legacy-PC-Port/releases/download/v1.0.0-beta.1/",
+        ];
+        for folder in elsewhere {
+            let mut moved = release.clone();
+            moved.launcher.url = format!("{folder}{}", moved.launcher.name);
+            match moved.check_origin(&Origins::GitHub) {
+                Err(ReleaseError::Incomplete { asset }) => {
+                    assert_eq!(*asset, release.launcher.name)
+                }
+                other => panic!("{folder}: {other:?}"),
+            }
+        }
         for base in [
             "http://github.com/",
             "https://github.com:443/",
@@ -1890,5 +1956,111 @@ mod tests {
             Err(ReleaseError::Cancelled)
         ));
         assert_eq!(server.requests().len(), asked);
+    }
+
+    #[test]
+    fn a_release_the_scan_would_not_give_is_refused_unasked() {
+        let server = LoopbackServer::start().unwrap();
+        let list = sound_list();
+        let name = checksums_asset(&version(RELEASE), Platform::WindowsX64);
+        let release = served(&server, &list, Some(&signed(&list, &name, RELEASE)));
+        let (plain, keyed) = (feed(&server), keyed_feed(&server));
+        for reader in [&plain, &keyed] {
+            reader
+                .check_list(&release, &Cancel::default())
+                .unwrap_or_else(|error| panic!("{error}"));
+        }
+        // A loopback feed's release is none of GitHub's.
+        assert!(release.check_origin(&Origins::GitHub).is_err());
+
+        // A change to the release, and which of its files, as the new line names them for the
+        // changed release, the refusal names: 0 the launcher file, 1 the list, 2 the signature.
+        type Edit = fn(&mut Release);
+        let edits: [(&str, Edit, usize); 12] = [
+            (
+                "a launcher file of another repository",
+                |release| release.launcher.url = release.launcher.url.replace(REPOSITORY, "a/b"),
+                0,
+            ),
+            (
+                "a list at another tag",
+                |release| {
+                    let url = release
+                        .checksums
+                        .url
+                        .replace("/v1.0.0-beta.1/", "/v1.0.0-beta.2/");
+                    release.checksums.url = url;
+                },
+                1,
+            ),
+            (
+                "a signature with a query",
+                |release| release.signature.as_mut().unwrap().url.push_str("?x=1"),
+                2,
+            ),
+            (
+                "the other platform's list",
+                |release| {
+                    let other = checksums_asset(&release.version, Platform::LinuxX64);
+                    release.checksums.url = release
+                        .checksums
+                        .url
+                        .replace(&release.checksums.name, &other);
+                    release.checksums.name = other;
+                },
+                1,
+            ),
+            (
+                "a launcher file that leaves its folder",
+                |release| release.launcher.name = format!("../{}", release.launcher.name),
+                0,
+            ),
+            (
+                "a launcher file past its bound",
+                |release| release.launcher.size = MAX_ASSET_LEN + 1,
+                0,
+            ),
+            ("an empty list", |release| release.checksums.size = 0, 1),
+            (
+                "a signature past the list's bound",
+                |release| release.signature.as_mut().unwrap().size = MAX_LIST_LEN + 1,
+                2,
+            ),
+            (
+                "another tag",
+                |release| release.tag = "v1.0.0-beta.2".to_owned(),
+                0,
+            ),
+            (
+                "a tag without its v",
+                |release| release.tag = RELEASE.to_owned(),
+                0,
+            ),
+            (
+                "another version",
+                |release| release.version = Version::parse("1.0.0-beta.2").unwrap(),
+                0,
+            ),
+            (
+                "another platform",
+                |release| release.platform = Platform::LinuxX64,
+                0,
+            ),
+        ];
+        let names: [fn(&Version, Platform) -> String; 3] =
+            [launcher_asset, checksums_asset, signature_asset];
+        for (what, edit, refused) in edits {
+            let mut edited = release.clone();
+            edit(&mut edited);
+            let expected = names[refused](&edited.version, edited.platform);
+            let asked = server.requests().len();
+            for reader in [&plain, &keyed] {
+                match refused_list(reader, &edited, what) {
+                    ReleaseError::Incomplete { asset } => assert_eq!(*asset, expected, "{what}"),
+                    other => panic!("{what}: {other}"),
+                }
+            }
+            assert_eq!(server.requests().len(), asked, "{what} was asked for");
+        }
     }
 }
