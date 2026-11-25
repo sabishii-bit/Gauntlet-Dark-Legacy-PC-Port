@@ -124,7 +124,7 @@ impl Receipt {
     /// platform a release is built for, SHA-256 digests in lower-case hexadecimal, the disc
     /// [`GUNE5D`] and the launcher copy an installation for that platform keeps. Otherwise what is
     /// wrong.
-    fn checked_platform(&self) -> Result<Platform, String> {
+    pub(crate) fn checked_platform(&self) -> Result<Platform, String> {
         let platform = Platform::parse(&self.platform).ok_or_else(|| {
             format!(
                 "its platform {:?} is not one a release is built for",

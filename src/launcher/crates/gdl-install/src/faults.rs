@@ -22,17 +22,38 @@ pub(crate) enum FaultPoint {
     /// A root went back into the staging, or a step of taking the install back was done: the
     /// staging, the state files, the journal or the state folder went.
     Rollback,
+    /// A step of an update's staging was done: its source verified, the installed files hashed
+    /// again, the new files, the launcher copy or the icon staged, or its journal written.
+    UpdateStage,
+    /// An installed file moved aside into the update's backup, or a new one into place.
+    UpdateMove,
+    /// The installed launcher copy moved aside, or the new one into its place.
+    LauncherReplace,
+    /// The update's journal moved to swapping, its receipt was written, or its journal moved to
+    /// committed.
+    UpdateCommit,
+    /// A step of an update's cleanup was done: its staging, its backup or its download went, or
+    /// the retired launcher copy's removal was tried.
+    UpdateCleanup,
+    /// A step of taking an update back was done.
+    UpdateRollback,
 }
 
 #[cfg(test)]
 impl FaultPoint {
     /// Every point a job passes.
-    pub(crate) const ALL: [FaultPoint; 5] = [
+    pub(crate) const ALL: [FaultPoint; 11] = [
         FaultPoint::Prepare,
         FaultPoint::Stage,
         FaultPoint::Publish,
         FaultPoint::Cleanup,
         FaultPoint::Rollback,
+        FaultPoint::UpdateStage,
+        FaultPoint::UpdateMove,
+        FaultPoint::LauncherReplace,
+        FaultPoint::UpdateCommit,
+        FaultPoint::UpdateCleanup,
+        FaultPoint::UpdateRollback,
     ];
 
     /// The point's name, as a test names the point it stops a job at.
@@ -43,6 +64,12 @@ impl FaultPoint {
             FaultPoint::Publish => "install.publish",
             FaultPoint::Cleanup => "install.cleanup",
             FaultPoint::Rollback => "install.rollback",
+            FaultPoint::UpdateStage => "update.stage",
+            FaultPoint::UpdateMove => "update.move",
+            FaultPoint::LauncherReplace => "launcher.replace",
+            FaultPoint::UpdateCommit => "update.commit",
+            FaultPoint::UpdateCleanup => "update.cleanup",
+            FaultPoint::UpdateRollback => "update.rollback",
         }
     }
 }
@@ -240,6 +267,12 @@ mod tests {
                 "install.publish",
                 "install.cleanup",
                 "install.rollback",
+                "update.stage",
+                "update.move",
+                "launcher.replace",
+                "update.commit",
+                "update.cleanup",
+                "update.rollback",
             ]
         );
     }

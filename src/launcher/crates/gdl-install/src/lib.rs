@@ -13,6 +13,7 @@ mod faults;
 mod folder;
 #[cfg(test)]
 mod full_disk;
+mod hold;
 mod host;
 mod icon;
 mod inspect;
@@ -41,6 +42,7 @@ pub use folder::{
     FolderError, InstallFolder, InstallLock, JOURNAL_DIR, LOCK_FILE, LockError, RECEIPT_FILE,
     STATE_DIR, alpha_markers, check_links,
 };
+pub use hold::HOLD_POLL;
 pub use host::{Unsupported, host_supported};
 pub use icon::{
     DISC_ICON, ICON_SIZES, IconError, IconResources, icon_resources, refresh_shell_icon,
@@ -74,4 +76,10 @@ pub use sections::{
     Sections, SectionsError, WINDOW_SECTION,
 };
 pub use system_proxy::internet_settings;
-pub use update::{FileChanges, PlanSource, SourceSummary, UpdateError, UpdatePlan, plan_update};
+pub use update::{
+    CHECK_INSTALLED, CLEANUP, DOWNLOAD_PREFIX, FileChanges, PlanSource, Probed,
+    RETIRED_LAUNCHER_PREFIX, RetiredCopy, STAGE, SWAP, SourceSummary, UPDATE_BACKUP,
+    UPDATE_JOURNAL, UPDATE_STAGING_PREFIX, UpdateError, UpdateFailure, UpdateNotice, UpdateOutcome,
+    UpdatePhase, UpdatePlan, UpdateRequest, UpdateSource, Updated, VERIFY_DOWNLOAD, plan_update,
+    update,
+};

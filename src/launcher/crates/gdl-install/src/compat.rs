@@ -13,6 +13,7 @@ use serde_json::{Map, Value};
 
 use crate::folder::{JOURNAL_DIR, LOCK_FILE, RECEIPT_FILE};
 use crate::install::{DISC_FILES, INSTALL_JOURNAL, INSTALL_STAGING_PREFIX};
+use crate::update::{DOWNLOAD_PREFIX, UPDATE_BACKUP, UPDATE_JOURNAL, UPDATE_STAGING_PREFIX};
 
 /// The lowest launcher version allowed to change a state file of schema 1. Every state file
 /// records the same one, the update check's too, so it is spelt once, beside that check.
@@ -25,7 +26,7 @@ pub const JOURNAL_SCHEMA: u64 = 1;
 /// runs: an install, an update and a change to either expansion.
 pub const JOURNAL_NAMES: [&str; 4] = [
     INSTALL_JOURNAL,
-    "update.json",
+    UPDATE_JOURNAL,
     "expansion-n64.json",
     "expansion-dreamcast.json",
 ];
@@ -46,28 +47,29 @@ const MAX_SHOWN_CHARS: usize = 64;
 
 /// The names this launcher gives its state directly under `.gdl-launcher/`, beside those it makes
 /// with a random part, and what each holds. The receipt's, the lock's and the journals' are the
-/// folder module's constants, and the disc's list the install's, so that each name has one
-/// spelling.
+/// folder module's constants, the disc's list the install's and the backup the update's, so that
+/// each name has one spelling.
 pub(crate) const FIXED_NAMES: [(&str, StateName); 8] = [
     (RECEIPT_FILE, StateName::Receipt),
     (LOCK_FILE, StateName::Lock),
     (JOURNAL_DIR, StateName::Journal),
     ("state.json", StateName::State),
     (DISC_FILES, StateName::DiscFiles),
-    ("update-backup", StateName::UpdateBackup),
+    (UPDATE_BACKUP, StateName::UpdateBackup),
     ("bin", StateName::Bin),
     ("logs", StateName::Logs),
 ];
 
 /// The prefixes of the folders a job makes directly under `.gdl-launcher/`, each followed by a
 /// random part of [`STAGING_RANDOM_CHARS`](gdl_files::STAGING_RANDOM_CHARS) ASCII letters and
-/// digits, as [`is_staging_name`] tells, and what each holds.
+/// digits, as [`is_staging_name`] tells, and what each holds. The install's and the update's are
+/// their jobs' constants.
 pub(crate) const RANDOM_PREFIXES: [(&str, StateName); 5] = [
     (INSTALL_STAGING_PREFIX, StateName::Staging),
-    ("stage-", StateName::Staging),
+    (UPDATE_STAGING_PREFIX, StateName::Staging),
     ("stage-n64-", StateName::Staging),
     ("stage-dreamcast-", StateName::Staging),
-    ("download-", StateName::Download),
+    (DOWNLOAD_PREFIX, StateName::Download),
 ];
 
 /// The prefix of what an update or an expansion change puts aside under `.gdl-launcher/`, which
