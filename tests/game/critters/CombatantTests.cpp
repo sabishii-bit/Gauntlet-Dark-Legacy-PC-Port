@@ -5315,6 +5315,108 @@ TEST_CASE("a shrunk great one lays the offset of an effect it places in the worl
     CHECK(glm::distance(cues[0].position, origin) < 1e-5f);
 }
 
+TEST_CASE("a shrunk great one draws an effect it lays in the world shrunk once and one it hangs "
+          "on its drawn body shrunk again, as CritterDoSfx and CritterDoSfxSub size every effect",
+          "[game][combatant][shrink]") {
+    // CritterDoSfx lays every SFXX offset at the drawn body's scale (0x8003D8A8-0x8003D8D4) and
+    // CritterDoSfxSub sizes every effect by it (0x8003DE1C-0x8003DE4C). The draw composes the
+    // body's scale into what hangs from it (pbTraverseDrawObjects, 0x800C7A70), so an effect
+    // hung on a node or on the body is drawn at that scale twice over; one laid in the world,
+    // or hung on the player it caught, once.
+    enum class Kind : u8 { Move, Body, Blow, Grab, Area };
+    const Kind kind = GENERATE(Kind::Move, Kind::Body, Kind::Blow, Kind::Grab, Kind::Area);
+    const f32 shrink = GENERATE(1.0f, 0.667f);
+    CAPTURE(static_cast<s32>(kind), shrink);
+    auto source = swingCritter(0);
+    auto& sound = source.sounds.emplace_back();
+    sound.name = "FX";
+    sound.life = 1;
+    sound.scale = 2;
+    sound.offset = {0, 2, 0};
+    auto& swing = source.moves[1];
+    auto& harm = source.damages[0];
+    if (kind == Kind::Move || kind == Kind::Body) {
+        // SWING's own effect, on HAND or hung from the body's node (SFXX 0x800).
+        swing.sfx = 0;
+        sound.flags = kind == Kind::Body ? effect_flags::kRootParent : 0U;
+    } else if (kind == Kind::Blow) {
+        // The blow's effect, laid where the drawn HAND stands.
+        harm.sfxIndex = 0;
+    } else if (kind == Kind::Grab) {
+        // The grab's hit effect, hung on the player it catches.
+        harm.type = AttackDefinition::kGrab;
+        harm.maxDistance = 1;
+        harm.sfx = 0;
+    } else {
+        // An area of its own, riding HAND.
+        harm.type = AttackDefinition::kAttachedArea;
+        harm.maxDistance = 10;
+        harm.minDot = -1;
+        harm.sfxIndex = 0;
+    }
+    const auto root = familyAssets();
+    writeSwingTree(root, 0, {}, {});
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, General::definition(), 'G'));
+    assets.data = CritterData::fromDecoded("GENERAL", source, 0, {});
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+    actor.setShrink(shrink);
+    actor.update(2, 1.0f / 30, {});
+    REQUIRE(actor.moveName() == "READY");
+    const auto swingMove = assets.data.moveNamed("SWING");
+    REQUIRE(swingMove);
+    Combatant::MovePoint start;
+    start.target = 0;
+    REQUIRE(actor.setMove(*swingMove, start));
+    // The player stands where the whole HAND does, seven along x, for the grab to catch.
+    EnemyView player;
+    player.player = 0;
+    player.position = {7, -3, 0};
+    actor.update(2, 1.0f / 30, std::array{player});
+    REQUIRE(actor.moveName() == "SWING");
+    std::vector<CombatCue> cues;
+    for (CombatCue& cue : actor.takeCues()) {
+        if (cue.tree == "FX") {
+            cues.push_back(std::move(cue));
+        }
+    }
+    REQUIRE(cues.size() == 1);
+    const CombatCue& cue = cues[0];
+    CHECK(cue.scale == Approx(2 * shrink));
+    // Drawn, HAND stands seven along x drawn in toward the body.
+    const auto hand = actor.nodeTransform("HAND");
+    REQUIRE(hand.has_value());
+    REQUIRE(glm::distance(Vec3{(*hand)[3]}, Vec3{7 * shrink, 0, 0}) < 1e-5f);
+    const Vec3 laid{0, 2 * shrink, 0};
+    switch (kind) {
+    case Kind::Move:
+    case Kind::Area:
+        // On the drawn HAND, its offset shrunk as it starts and again by the drawn node.
+        REQUIRE(cue.node.has_value());
+        CHECK(*cue.node == "HAND");
+        CHECK(glm::distance(cue.nodeOffset, laid) < 1e-5f);
+        CHECK(glm::distance(cue.position, Vec3{7 * shrink, 2 * shrink * shrink, 0}) < 1e-5f);
+        break;
+    case Kind::Body:
+        CHECK(cue.rootAttachment);
+        CHECK(glm::distance(cue.nodeOffset, laid) < 1e-5f);
+        CHECK(glm::distance(cue.position, Vec3{0, 2 * shrink * shrink, 0}) < 1e-5f);
+        break;
+    case Kind::Blow:
+        CHECK_FALSE(cue.node.has_value());
+        CHECK_FALSE(cue.follows);
+        CHECK(glm::distance(cue.position, Vec3{7 * shrink, 0, 0} + laid) < 1e-5f);
+        break;
+    case Kind::Grab:
+        // The player it hangs on is drawn whole.
+        CHECK(cue.playerAttachment == std::optional<s32>{0});
+        CHECK(glm::distance(cue.nodeOffset, laid) < 1e-5f);
+        break;
+    }
+}
+
 TEST_CASE("a great one's look measures from its whole head as GetWorldMat places it, shrunk or "
           "keyed to grow",
           "[game][combatant][gaze][shrink][node-scale]") {

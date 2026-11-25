@@ -212,6 +212,11 @@ void Combatant::cue(Actor& critter, s32 id, s32 index, const Vec3& position,
                     std::optional<std::string_view> node, const AttackDefinition* damage,
                     std::optional<s32> player) {
     const CritterData& data = *critter.definition;
+    // CritterDoSfx lays every SFXX offset, and CritterDoSfxSub sizes every effect, by the drawn
+    // shrink (0x8003D8A8-0x8003D8D4, 0x8003DE1C-0x8003DE4C). Laid in the world, an effect takes
+    // the body's drawn scale; hung on the drawn body, it takes the shrink again over the scale
+    // the draw composes into it (pbTraverseDrawObjects, 0x800C7A70).
+    const f32 shrink = drawnShrink(critter);
     for (s32 at = index, guard = 0; at >= 0 && guard < 8; ++guard) {
         const CombatEffectDefinition* record = data.sound(at);
         if (record == nullptr) {
@@ -235,14 +240,15 @@ void Combatant::cue(Actor& critter, s32 id, s32 index, const Vec3& position,
                                                  MoveDefinition::kDeath;
         // Explicit positions are already world-space. Only a parent transform
         // rotates an offset; impact marks must not inherit the attacker's yaw.
-        out.position = position + record->offset * critter.scale;
+        out.position = position + record->offset * drawnScale(critter);
         out.yaw = record->follows() ? critter.yaw : 0.0f;
-        out.scale = record->scale * critter.scale;
+        out.scale = record->scale * drawnScale(critter);
         out.life = record->life;
         // CritterDoSfxSub maps SFXX 0x800000 to StartFXTree's 0x20000000:
         // play once even with a positive lifetime (Garm's death body lasts 300s).
         out.loop = (record->flags & effect_flags::kNoLoop) == 0;
-        const Vec3 offset = record->offset + (damage != nullptr ? damage->offset : Vec3{0});
+        const Vec3 offset =
+            (record->offset + (damage != nullptr ? damage->offset : Vec3{0})) * shrink;
         if (damage != nullptr) {
             out.pitchYaw = {damage->pitch, damage->yaw};
         }
@@ -275,10 +281,10 @@ void Combatant::cue(Actor& critter, s32 id, s32 index, const Vec3& position,
             }
             out.nodeOffset = offset;
             out.position = Vec3{parent * Vec4{offset, 1.0f}};
-            out.scale = record->scale;
+            out.scale = record->scale * shrink;
             out.follows = true;
         } else if ((record->flags & effect_flags::kAtInitialRoot) != 0 && !record->follows()) {
-            out.position = critter.initialRoot + record->offset * critter.scale;
+            out.position = critter.initialRoot + record->offset * drawnScale(critter);
             out.follows = false;
             out.yaw = 0;
         } else if (node.has_value() && !out.tree.empty() &&
@@ -286,7 +292,7 @@ void Combatant::cue(Actor& critter, s32 id, s32 index, const Vec3& position,
             out.node = *node;
             out.nodeOffset = offset;
             out.position = Vec3{attachmentTransform(critter, *node) * Vec4{offset, 1.0f}};
-            out.scale = record->scale; // creature scale is already in the parent matrix
+            out.scale = record->scale * shrink;
             out.follows = true;
         } else if ((record->flags & effect_flags::kDetached) != 0) {
             // A move's unattached effect is placed at the active node once. Damage
@@ -294,7 +300,7 @@ void Combatant::cue(Actor& critter, s32 id, s32 index, const Vec3& position,
             out.position =
                 node.has_value()
                     ? Vec3{attachmentTransform(critter, *node) * Vec4{record->offset, 1.0f}}
-                    : position + record->offset * critter.scale;
+                    : position + record->offset * drawnScale(critter);
             out.follows = false;
             // CritterDoSfxSub's detached branch calls SfxSetMat with the body's
             // orientation. In particular A13 must open ahead of the Lich, not
@@ -311,8 +317,8 @@ void Combatant::cue(Actor& critter, s32 id, s32 index, const Vec3& position,
             out.node.reset();
             out.rootAttachment = false;
             out.placement.reset();
-            out.nodeOffset = record->offset;
-            out.scale = record->scale;
+            out.nodeOffset = record->offset * shrink;
+            out.scale = record->scale * shrink;
             out.follows = true;
         }
         if (!out.tree.empty() || !out.sound.empty() || out.shakes || out.arena) {

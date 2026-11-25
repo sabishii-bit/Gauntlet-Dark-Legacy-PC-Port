@@ -136,10 +136,10 @@ std::optional<f32> Combatant::startArea(Actor& critter, s32 id, const AttackDefi
                                       Vec3{0, 1, 0})
                    : local;
     };
-    // Measured at the whole node with its offset shrunk as it starts; its cue rides the drawn
-    // node, which the draw shrinks, with the offset as authored.
-    area.local = laidAt(worldParent.has_value() ? offset : offset * shrink);
-    const Mat4 drawnLocal = laidAt(offset);
+    // Measured at the whole node with its offset shrunk as it starts; its cue lies at that offset
+    // on the drawn node, which the draw shrinks again (CritterDoSfxSub, pbTraverseDrawObjects).
+    const Vec3 laid = worldParent.has_value() ? offset : offset * shrink;
+    area.local = laidAt(laid);
     // It reaches as far as CritterDoTexmodNode sizes the effect, the drawn shrink included
     // (0x8003D410-0x8003D424).
     area.radius = damage.maxDistance * critter.scale * shrink;
@@ -165,10 +165,10 @@ std::optional<f32> Combatant::startArea(Actor& critter, s32 id, const AttackDefi
     cue.sound = sound->soundFor(m_sim.realm);
     cue.soundPosition = Vec3{modelTransform(critter)[3]};
     const Mat4 parent = worldParent.value_or(attachmentTransform(critter, drawnNode));
-    cue.position = Vec3{(parent * drawnLocal)[3]};
-    // Laid out in the world it is drawn at the body's drawn size (CritterDoSfxSub,
-    // 0x8003DE1C-0x8003DE4C); on a node, the drawn node carries that size.
-    cue.scale = sound->scale * (worldParent.has_value() ? drawnScale(critter) : 1.0f);
+    cue.position = Vec3{(parent * area.local)[3]};
+    // Drawn at the body's drawn size (CritterDoSfxSub, 0x8003DE1C-0x8003DE4C), laid out in the
+    // world or shrunk once more by the drawn node it rides.
+    cue.scale = sound->scale * (worldParent.has_value() ? drawnScale(critter) : shrink);
     cue.life = life;
     cue.follows = !worldParent.has_value();
     cue.shakes = (sound->flags & effect_flags::kShakes) != 0;
@@ -176,11 +176,11 @@ std::optional<f32> Combatant::startArea(Actor& critter, s32 id, const AttackDefi
     if (!drawnNode.empty()) {
         cue.node = drawnNode;
     }
-    cue.nodeOffset = offset;
+    cue.nodeOffset = laid;
     cue.pitchYaw = angles;
     cue.loop = false;
     if (worldParent.has_value()) {
-        cue.placement = parent * drawnLocal;
+        cue.placement = parent * area.local;
         cue.rootAttachment = false;
         cue.node.reset();
     }
