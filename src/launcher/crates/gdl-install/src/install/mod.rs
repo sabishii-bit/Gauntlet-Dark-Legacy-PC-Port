@@ -612,7 +612,7 @@ fn install_name(name: &str) -> RelPath {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use std::cell::{Cell, RefCell};
     use std::collections::{BTreeMap, BTreeSet};
     use std::env;
@@ -1638,7 +1638,7 @@ mod tests {
     /// Asserts that no entry under `top`, at any depth, has one of the alpha installer's names, as
     /// [`alpha_names_below`] finds them, and gives every entry's path below `top`.
     #[track_caller]
-    pub(super) fn assert_no_alpha_name(top: &Path, context: &str) -> Vec<PathBuf> {
+    pub(crate) fn assert_no_alpha_name(top: &Path, context: &str) -> Vec<PathBuf> {
         let entries = alpha_names_below(top);
         let named: Vec<&(PathBuf, Option<&str>)> =
             entries.iter().filter(|(_, name)| name.is_some()).collect();
@@ -4338,14 +4338,14 @@ mod tests {
 
     /// Fault points that hold every entry under a folder to having none of the alpha installer's
     /// names as each is passed, and keep the points passed and every name met.
-    struct AlphaWatch {
+    pub(crate) struct AlphaWatch {
         top: PathBuf,
-        passed: RefCell<Vec<FaultPoint>>,
-        met: RefCell<BTreeSet<String>>,
+        pub(crate) passed: RefCell<Vec<FaultPoint>>,
+        pub(crate) met: RefCell<BTreeSet<String>>,
     }
 
     impl AlphaWatch {
-        fn of(top: &Path) -> AlphaWatch {
+        pub(crate) fn of(top: &Path) -> AlphaWatch {
             AlphaWatch {
                 top: top.to_path_buf(),
                 passed: RefCell::new(Vec::new()),

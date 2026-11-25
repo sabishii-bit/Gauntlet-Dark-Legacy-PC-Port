@@ -5,8 +5,9 @@
 //! that ended held. The test then recovers the folder as the next start does, and holds it to
 //! what that recovery must leave: the installation as it was, or as the update leaves it. Where
 //! the kill leaves the new launcher copy in place with every move made, that copy, a copy of this
-//! program, recovers the folder itself, as the player's next start runs it. The children run one at
-//! a time.
+//! program, recovers the folder itself, as the player's next start runs it. After every child and
+//! every recovery, no entry in the test's folder has one of the alpha installer's names. The
+//! children run one at a time.
 
 use std::env;
 use std::fs;
@@ -193,6 +194,7 @@ mod tests {
     use crate::faults::{FaultPoint, KILLED_EXIT_CODE, NoFaults, ONE_KILLED_CHILD};
     use crate::folder::{InstallFolder, JOURNAL_DIR, LockError, STATE_DIR};
     use crate::install::Changes;
+    use crate::install::tests::assert_no_alpha_name;
     use crate::recover::{RecoverError, Recovered, UpdateRecovery};
     use crate::sections::{RUNTIME_SECTION, Sections};
     use crate::test_platform::this_platform;
@@ -334,8 +336,9 @@ mod tests {
         }
 
         /// Runs `program`, this test program or a copy of it, as a child that does `job` to the
-        /// installation, killed at `kill` and failing first at `fail` when they are given. Gives
-        /// `None` when the kill ended it, and otherwise what its job ended in.
+        /// installation, killed at `kill` and failing first at `fail` when they are given, and
+        /// asserts that the child left no alpha installer's name. Gives `None` when the kill ended
+        /// it, and otherwise what its job ended in.
         fn run(
             &self,
             program: &Path,
@@ -382,6 +385,7 @@ mod tests {
             };
             let stdout = String::from_utf8_lossy(&output.stdout);
             let written = || format!("{stdout}{}", String::from_utf8_lossy(&output.stderr));
+            self.holds_no_alpha_name(&format!("{context}, the child ended"));
             match output.status.code() {
                 Some(KILLED_EXIT_CODE) => None,
                 Some(FINISHED_EXIT_CODE) => {
@@ -412,7 +416,8 @@ mod tests {
         }
 
         /// Recovers the installation in this process as the next start does, with the stand-ins,
-        /// once a killed child's lock is let go, and gives what the recovery did.
+        /// once a killed child's lock is let go, and gives what the recovery did; and asserts that
+        /// the recovery left no alpha installer's name.
         fn recover(&self, context: &str) -> Recovered {
             let folder = InstallFolder::at(self.root()).unwrap();
             let begun = Instant::now();
@@ -428,8 +433,23 @@ mod tests {
                     Err(error) => panic!("{context}: {error}"),
                 }
             }
-            recover_simply(self.root(), NEXT, &standing_in(&NoFaults, &answering))
-                .unwrap_or_else(|error| panic!("{context}: {error}"))
+            let recovered = recover_simply(self.root(), NEXT, &standing_in(&NoFaults, &answering))
+                .unwrap_or_else(|error| panic!("{context}: {error}"));
+            self.holds_no_alpha_name(&format!("{context}, recovered"));
+            recovered
+        }
+
+        /// Asserts that no entry under the folder of the test's own, the installation and the
+        /// launcher file it is updated from included, has one of the alpha installer's names, at
+        /// any depth.
+        #[track_caller]
+        fn holds_no_alpha_name(&self, context: &str) {
+            let walked = assert_no_alpha_name(self.dir.path(), context);
+            // The launcher file is always there, so that a walk that met nothing cannot pass.
+            assert!(
+                walked.contains(&PathBuf::from(SOURCE)),
+                "{context}: {walked:?}"
+            );
         }
 
         /// What the next start's recovery gives once a kill stopped an update's rollback: the

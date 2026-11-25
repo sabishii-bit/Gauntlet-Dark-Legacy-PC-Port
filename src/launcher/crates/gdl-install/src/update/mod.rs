@@ -876,7 +876,7 @@ mod tests {
     use std::time::Duration;
 
     use gdl_files::{
-        Cancel, FilesError, Hold, Job, MAX_COMPONENT_CHARS, MAX_JSON_LEN, NoProgress,
+        ALPHA_NAMES, Cancel, FilesError, Hold, Job, MAX_COMPONENT_CHARS, MAX_JSON_LEN, NoProgress,
         PAYLOAD_NAMES, PhaseId, Progress, RelPath, Volume, retry_locked,
     };
     #[cfg(windows)]
@@ -894,18 +894,21 @@ mod tests {
     use serde_json::{Value, json};
     use tempfile::TempDir;
 
+    use super::journal::retired_name;
     use super::settings::{ProbeFn, UpdateSettings};
     use super::{
-        CLEANUP, FileChanges, PlanSource, Probed, RETIRED_LAUNCHER_PREFIX, RetiredCopy, SWAP,
-        SourceSummary, UPDATE_BACKUP, UPDATE_JOURNAL, UpdateError, UpdateFailure, UpdateNotice,
-        UpdateOutcome, UpdatePlan, UpdateRequest, UpdateSource, Updated, plan_update, update_with,
+        CLEANUP, DOWNLOAD_PREFIX, FileChanges, PlanSource, Probed, RETIRED_LAUNCHER_PREFIX,
+        RetiredCopy, SWAP, SourceSummary, UPDATE_BACKUP, UPDATE_JOURNAL, UPDATE_STAGING_PREFIX,
+        UpdateError, UpdateFailure, UpdateNotice, UpdateOutcome, UpdatePlan, UpdateRequest,
+        UpdateSource, Updated, plan_update, update_with,
     };
-    use crate::destination::FolderChecks;
+    use crate::destination::{FolderChecks, alpha_name_in};
     use crate::faults::{FailAt, FaultPoint, FaultPoints, Faults, NoFaults, OnPass, PanicAt};
     use crate::folder::{
         InstallFolder, JOURNAL_DIR, LOCK_FILE, LockError, RECEIPT_FILE, STATE_DIR,
     };
     use crate::inspect::FolderState;
+    use crate::install::tests::{AlphaWatch, assert_no_alpha_name};
     use crate::install::{Changes, INSTALL_JOURNAL, RecoveryOutcome, SPACE_MARGIN, Unrecorded};
     use crate::payload::{BUILD_INFO, PayloadError};
     use crate::probe::{GameStartError, GameUseError, VersionProbe};
@@ -4668,6 +4671,257 @@ mod tests {
         assert!(
             retired.starts_with("retired-launcher-1.0.0-beta-"),
             "{retired}"
+        );
+    }
+
+    #[test]
+    fn no_path_an_update_or_its_recovery_makes_holds_an_alpha_name() {
+        /// The passes an update stopped part-way is failed at, and the phase its journal is left
+        /// in.
+        type Stopped = (&'static [(FaultPoint, u32)], &'static str);
+
+        // A name an update makes of a prefix and a random part keeps the whole prefix in the form
+        // Windows would make of it, since no prefix holds a colon or ends in a dot or a space; so
+        // it is one of the alpha installer's only where that one begins with the prefix in some
+        // letter case, and none does.
+        for prefix in [
+            UPDATE_STAGING_PREFIX,
+            DOWNLOAD_PREFIX,
+            RETIRED_LAUNCHER_PREFIX,
+        ] {
+            assert!(
+                !prefix.contains(':') && !prefix.ends_with(['.', ' ']),
+                "{prefix:?}"
+            );
+            for alpha in ALPHA_NAMES {
+                let begins = alpha
+                    .get(..prefix.len())
+                    .is_some_and(|head| head.eq_ignore_ascii_case(prefix));
+                assert!(!begins, "{prefix:?} begins {alpha:?}");
+            }
+        }
+        // Nor is any name a release's files are downloaded under, or a launcher copy is retired
+        // to, for either platform and whatever the version, compared as the judging compares a
+        // destination's names.
+        let state = Path::new(STATE_DIR);
+        let staging = format!("{UPDATE_STAGING_PREFIX}AbC123xy");
+        let download = state.join(format!("{DOWNLOAD_PREFIX}AbC123xy"));
+        for text in [INSTALLED, NEXT, "1.0.0", "1.1.0-preview.1+build.5"] {
+            let release = version(text);
+            let mut paths = vec![download.join(linux_member(&release))];
+            for platform in Platform::ALL {
+                paths.extend([
+                    download.join(launcher_asset(&release, platform)),
+                    download.join(checksums_asset(&release, platform)),
+                    download.join(signature_asset(&release, platform)),
+                    state.join(retired_name(text, &staging, platform).unwrap()),
+                ]);
+            }
+            for path in paths {
+                assert_eq!(alpha_name_in(&path), None, "{}", path.display());
+            }
+        }
+
+        // Every entry under the test's own folder, the installation and the launcher file it is
+        // updated from among them, as each job below passes each point and once it is done; with
+        // the points the jobs passed, and every name the walks met.
+        let mut passed = BTreeSet::new();
+        let mut met = BTreeSet::new();
+        let mut walked = |top: &Path, watch: AlphaWatch, context: &str| {
+            assert_no_alpha_name(top, context);
+            passed.extend(
+                watch
+                    .passed
+                    .into_inner()
+                    .into_iter()
+                    .map(FaultPoint::as_str),
+            );
+            met.extend(watch.met.into_inner());
+        };
+
+        // An update from the launcher file that runs, which replaces, adds and removes names.
+        let (dir, fixture) = players_installation();
+        let mut source = bundled(dir.path(), &fixture.runtime.newer(NEXT));
+        let watch = AlphaWatch::of(dir.path());
+        updated(update_simply(
+            &fixture,
+            &mut source,
+            NEXT,
+            &standing_in(&watch, &answering),
+        ));
+        walked(
+            dir.path(),
+            watch,
+            "an update from the launcher file that runs",
+        );
+
+        // An update from a release whose checksum list is signed, taken back before its moves as
+        // its staged game fails where the installed one answers, then the same update through.
+        let (dir, fixture) = players_installation();
+        let file = launcher_file(dir.path(), "next-launcher", &fixture.runtime.newer(NEXT));
+        let (mut release, mut held) = release_of(NEXT, &file);
+        let signature = b"the list's signature".to_vec();
+        release.signature = Some(asset_of(
+            &release.version,
+            signature_asset(&release.version, release.platform),
+            &signature,
+        ));
+        held.signature = Some(signature);
+        let staged = fixture.root.join(STATE_DIR);
+        let refusing =
+            |path: &Path, _: &Cancel| answered(if path.starts_with(&staged) { 3 } else { 0 });
+        let watch = AlphaWatch::of(dir.path());
+        let failure = failed(update_from_release(
+            &fixture,
+            &held,
+            &release,
+            INSTALLED,
+            &standing_in(&watch, &refusing),
+        ));
+        assert_eq!(failure.rule(), "probeRefused", "{failure:?}");
+        assert_eq!(failure.changes, Changes::RolledBack);
+        assert!(watch.passed.borrow().contains(&FaultPoint::UpdateRollback));
+        let mut fetched = vec![
+            release.checksums.name.clone(),
+            release.signature.as_ref().unwrap().name.clone(),
+            release.launcher.name.clone(),
+        ];
+        if this_platform() == Platform::LinuxX64 {
+            fetched.push(linux_member(&release.version));
+        }
+        for name in &fetched {
+            assert!(watch.met.borrow().contains(name), "{name}");
+        }
+        walked(
+            dir.path(),
+            watch,
+            "an update from a release taken back before its moves",
+        );
+        let watch = AlphaWatch::of(dir.path());
+        updated(update_from_release(
+            &fixture,
+            &held,
+            &release,
+            INSTALLED,
+            &standing_in(&watch, &answering),
+        ));
+        walked(dir.path(), watch, "an update from a release");
+
+        // An update taken back once every move is made, the new launcher copy in place, which goes
+        // aside under a retired name of its own version.
+        let (dir, fixture) = players_installation();
+        let mut source = bundled(dir.path(), &fixture.runtime.newer(NEXT));
+        let watch = AlphaWatch::of(dir.path());
+        let fail = FailAt::new(FaultPoint::LauncherReplace, 2);
+        let failure = failed(update_simply(
+            &fixture,
+            &mut source,
+            NEXT,
+            &standing_in(&Faults(&[&watch, &fail]), &answering),
+        ));
+        assert_eq!(failure.changes, Changes::RolledBack);
+        let retired_new = format!("{RETIRED_LAUNCHER_PREFIX}{NEXT}-");
+        assert!(
+            watch
+                .met
+                .borrow()
+                .iter()
+                .any(|name| name.starts_with(&retired_new))
+        );
+        walked(dir.path(), watch, "an update taken back after its moves");
+
+        // Updates stopped part-way, each leaving its journal for the next start: a rollback that
+        // stopped, a cleanup that the receipt's write was the last step before, and a cleanup that
+        // stopped; and the recoveries that take the first back, finish the second and clean up
+        // after the third, each walked at every pass too.
+        let stopped: [(Stopped, UpdateRecovery, FaultPoint); 3] = [
+            (
+                (
+                    &[
+                        (FaultPoint::LauncherReplace, 2),
+                        (FaultPoint::UpdateRollback, 3),
+                    ],
+                    "rollingBack",
+                ),
+                UpdateRecovery::RolledBack {
+                    kept: Vec::new(),
+                    launcher_restored: false,
+                },
+                FaultPoint::UpdateRollback,
+            ),
+            (
+                (&[(FaultPoint::UpdateCommit, 2)], "swapping"),
+                UpdateRecovery::Finished,
+                FaultPoint::UpdateCommit,
+            ),
+            (
+                (&[(FaultPoint::UpdateCleanup, 1)], "committed"),
+                UpdateRecovery::CleanedUp,
+                FaultPoint::UpdateCleanup,
+            ),
+        ];
+        for ((stops, phase), recovery, recovering) in stopped {
+            let context = format!("an update left {phase}");
+            let (dir, fixture) = players_installation();
+            let mut source = bundled(dir.path(), &fixture.runtime.newer(NEXT));
+            let fails: Vec<FailAt> = stops
+                .iter()
+                .map(|&(point, at)| FailAt::new(point, at))
+                .collect();
+            let watch = AlphaWatch::of(dir.path());
+            let mut stand_ins: Vec<&dyn FaultPoints> = vec![&watch];
+            stand_ins.extend(fails.iter().map(|fail| fail as &dyn FaultPoints));
+            let outcome = update_simply(
+                &fixture,
+                &mut source,
+                NEXT,
+                &standing_in(&Faults(&stand_ins), &answering),
+            );
+            assert_eq!(
+                journal_phase(&fixture.root).as_deref(),
+                Some(phase),
+                "{context}: {outcome:?}"
+            );
+            walked(dir.path(), watch, &context);
+            let watch = AlphaWatch::of(dir.path());
+            let recovered = recover_simply(&fixture.root, NEXT, &standing_in(&watch, &answering));
+            assert_eq!(recovered.unwrap().update, recovery, "{context}");
+            assert!(watch.passed.borrow().contains(&recovering), "{context}");
+            walked(dir.path(), watch, &format!("{context}, recovered"));
+        }
+
+        // The walks met the update's own names, so that walks that met nothing cannot pass; and
+        // every point an update, its rollback and the recoveries after one pass was walked.
+        let retired_old = format!("{RETIRED_LAUNCHER_PREFIX}{INSTALLED}-");
+        for name in [
+            STATE_DIR,
+            LOCK_FILE,
+            JOURNAL_DIR,
+            UPDATE_JOURNAL,
+            UPDATE_BACKUP,
+            RECEIPT_FILE,
+            launcher_copy(),
+            executable(),
+        ] {
+            assert!(met.contains(name), "{name}: {met:?}");
+        }
+        for prefix in [UPDATE_STAGING_PREFIX, DOWNLOAD_PREFIX, retired_old.as_str()] {
+            assert!(
+                met.iter().any(|name| name.starts_with(prefix)),
+                "{prefix}: {met:?}"
+            );
+        }
+        let update_points = [
+            FaultPoint::UpdateStage,
+            FaultPoint::UpdateMove,
+            FaultPoint::LauncherReplace,
+            FaultPoint::UpdateCommit,
+            FaultPoint::UpdateCleanup,
+            FaultPoint::UpdateRollback,
+        ];
+        assert_eq!(
+            passed,
+            BTreeSet::from(update_points.map(FaultPoint::as_str))
         );
     }
 
