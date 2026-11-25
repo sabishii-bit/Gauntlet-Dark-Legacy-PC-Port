@@ -11,11 +11,12 @@ use crate::{MAX_LIST_LEN, ReleaseError, Version};
 
 /// The public keys of the release signing keys, each a minisign public key's base64 line. Empty
 /// until the keys are made and put here.
+#[cfg(any(test, not(feature = "test-hooks")))]
 const RELEASE_KEYS: &[&str] = &[];
 
 /// The public half of the tests' own key, whose secret half is a fixed seed that no release
-/// trusts.
-#[cfg(test)]
+/// trusts: only a build with the test hooks trusts it.
+#[cfg(any(test, feature = "test-hooks"))]
 pub const TEST_PUBLIC_KEY: &str = "RWRHREwtVEVTVAIHRlatKKopKz17ZiTblA/hZSC2IbuaChLYupiY8oUG";
 
 /// What a signature's first line begins with: minisign writes the untrusted comment there and
@@ -46,9 +47,15 @@ pub struct Keyring {
 }
 
 impl Keyring {
-    /// The keys built into this launcher: the release signing keys.
+    /// The keys built into this launcher: the release signing keys; in a build with the test
+    /// hooks, the tests' own key alone, so that a rehearsal of an update checks the signature of a
+    /// release that key signed, and nothing the release keys signed.
     pub fn release() -> Keyring {
-        Keyring::of(RELEASE_KEYS).expect("every release key built in is a minisign public key")
+        #[cfg(not(feature = "test-hooks"))]
+        let keys = RELEASE_KEYS;
+        #[cfg(feature = "test-hooks")]
+        let keys = &[TEST_PUBLIC_KEY];
+        Keyring::of(keys).expect("every key built in is a minisign public key")
     }
 
     /// A keyring of no key, by which no signature verifies.
@@ -447,10 +454,32 @@ mod tests {
         }
     }
 
+    #[cfg(not(feature = "test-hooks"))]
     #[test]
     fn a_release_build_trusts_the_release_keys() {
         assert_eq!(Keyring::release(), keyring(RELEASE_KEYS));
         assert_eq!(Keyring::release().is_empty(), RELEASE_KEYS.is_empty());
+    }
+
+    #[cfg(feature = "test-hooks")]
+    #[test]
+    fn the_test_build_trusts_the_test_key_alone() {
+        let built_in = Keyring::release();
+        assert_eq!(built_in, keyring(&[TEST_PUBLIC_KEY]));
+        // It verifies a list the test key signed, and refuses one another key signed.
+        let release = ReleaseList::of(RELEASE, Platform::WindowsX64);
+        release
+            .verify(&built_in, &release.signature())
+            .unwrap_or_else(|error| panic!("{error}"));
+        assert_eq!(
+            refusal(built_in.verify_list(
+                b"test",
+                "test",
+                &release.version,
+                PUBLISHED_PREHASHED_SIGNATURE.as_bytes()
+            )),
+            NO_TRUSTED_KEY
+        );
     }
 
     #[test]

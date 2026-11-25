@@ -1,10 +1,18 @@
 //! The named points a job passes each time it has made a step that must survive its end, gathered
 //! in one place so that every job passes the same ones, and the stand-ins its tests put there to
-//! fail, stop, panic or kill the job at a pass and see what it leaves.
+//! fail, stop, panic or kill the job at a pass and see what it leaves. A build with the test hooks
+//! also kills itself at the pass a variable of its environment names, so that a rehearsal of the
+//! built program sees what each kill leaves.
 
 #[cfg(test)]
 use std::cell::Cell;
+#[cfg(feature = "test-hooks")]
+use std::ffi::OsStr;
 use std::io;
+#[cfg(feature = "test-hooks")]
+use std::sync::OnceLock;
+#[cfg(feature = "test-hooks")]
+use std::sync::atomic::{AtomicU32, Ordering};
 
 /// A point a job passes each time it has made a step that must survive its end: where a test
 /// fails, stops or kills the job to see what it leaves.
@@ -40,7 +48,7 @@ pub(crate) enum FaultPoint {
     UpdateRollback,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-hooks"))]
 impl FaultPoint {
     /// Every point a job passes.
     pub(crate) const ALL: [FaultPoint; 11] = [
@@ -83,10 +91,28 @@ impl FaultPoint {
     }
 }
 
-/// The exit code of a test program that [`KillAt`] ended: none that a run that passed, a test that
-/// failed or a name that matched no test gives.
-#[cfg(test)]
+/// The exit code of a test program that [`KillAt`] ended, and of a build with the test hooks that
+/// [`FAULT_VARIABLE`] ended: none that a run that passed, a test that failed or a name that
+/// matched no test gives.
+#[cfg(any(test, feature = "test-hooks"))]
 pub(crate) const KILLED_EXIT_CODE: i32 = 71;
+
+/// What parts a pass's point from its count where [`FAULT_VARIABLE`] names one.
+#[cfg(any(test, feature = "test-hooks"))]
+const PASS_SEPARATOR: char = ':';
+
+/// The pass `name` names, `<point>:<pass>`: a point by its name, as [`FaultPoint::as_str`] gives
+/// it, and a pass counted from 1, in ASCII digits alone; `None` for anything else.
+#[cfg(any(test, feature = "test-hooks"))]
+fn named_pass(name: &str) -> Option<(FaultPoint, u32)> {
+    let (point, at) = name.split_once(PASS_SEPARATOR)?;
+    let point = FaultPoint::named(point)?;
+    if at.is_empty() || !at.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    let at: u32 = at.parse().ok()?;
+    (at != 0).then_some((point, at))
+}
 
 /// Where a job passes its [`FaultPoint`]s: an error from a pass fails the job there, as the
 /// step after it would have failed.
@@ -96,11 +122,93 @@ pub(crate) trait FaultPoints {
 }
 
 /// The points of a job nothing stops: every pass goes on.
+#[cfg(any(test, not(feature = "test-hooks")))]
 pub(crate) struct NoFaults;
 
+#[cfg(any(test, not(feature = "test-hooks")))]
 impl FaultPoints for NoFaults {
     fn pass(&self, _: FaultPoint) -> io::Result<()> {
         Ok(())
+    }
+}
+
+/// The variable a build with the test hooks reads the pass it kills itself at from, as
+/// `<point>:<pass>`: the point by its name, such as `update.move`, and the pass counted from 1.
+#[cfg(feature = "test-hooks")]
+pub const FAULT_VARIABLE: &str = "GDL_LAUNCHER_FAULT";
+
+/// The pass a build with the test hooks kills itself at, as [`FAULT_VARIABLE`] names it when it
+/// is first looked at, and how many times that pass's point has been passed since.
+#[cfg(feature = "test-hooks")]
+pub(crate) struct EnvFaults {
+    /// The pass named, read once; `None` when the variable names none.
+    named: OnceLock<Option<(FaultPoint, u32)>>,
+    /// How many times the named point has been passed.
+    passed: AtomicU32,
+}
+
+#[cfg(feature = "test-hooks")]
+impl FaultPoints for EnvFaults {
+    /// Ends the process with [`KILLED_EXIT_CODE`] at the named pass, as a crash or a kill stops a
+    /// job: nothing is unwound, and what the job holds, its lock among it, is let go only as the
+    /// system lets go of what a program that ended held. Every other pass goes on, and so does
+    /// every pass while the variable is unset, empty or names no pass.
+    fn pass(&self, point: FaultPoint) -> io::Result<()> {
+        let named = self.named.get_or_init(|| {
+            judged(std::env::var_os(FAULT_VARIABLE).as_deref())
+                .ok()
+                .flatten()
+        });
+        if let Some((named, at)) = *named
+            && named == point
+            && self.passed.fetch_add(1, Ordering::SeqCst).saturating_add(1) == at
+        {
+            std::process::exit(KILLED_EXIT_CODE);
+        }
+        Ok(())
+    }
+}
+
+/// The fault points a build with the test hooks passes: the one [`FAULT_VARIABLE`] names.
+#[cfg(feature = "test-hooks")]
+pub(crate) static ENV_FAULTS: EnvFaults = EnvFaults {
+    named: OnceLock::new(),
+    passed: AtomicU32::new(0),
+};
+
+/// What `value`, the value of [`FAULT_VARIABLE`], names: no pass when it is unset or empty, a pass
+/// when it names one, or the value as text when it names none.
+#[cfg(feature = "test-hooks")]
+fn judged(value: Option<&OsStr>) -> Result<Option<(FaultPoint, u32)>, String> {
+    match value {
+        None => Ok(None),
+        Some(value) if value.is_empty() => Ok(None),
+        Some(value) => value
+            .to_str()
+            .and_then(named_pass)
+            .map(Some)
+            .ok_or_else(|| value.to_string_lossy().into_owned()),
+    }
+}
+
+/// Whether [`FAULT_VARIABLE`] is unset, empty or names a pass a build with the test hooks can kill
+/// itself at; `Err` with what it holds otherwise, which such a build refuses before it runs
+/// anything, since a pass it treats as unset would kill nothing.
+#[cfg(feature = "test-hooks")]
+pub fn check_fault_variable() -> Result<(), String> {
+    judged(std::env::var_os(FAULT_VARIABLE).as_deref()).map(|_| ())
+}
+
+/// The fault points the launcher's own settings pass: in a build with the test hooks those
+/// [`FAULT_VARIABLE`] names, and none otherwise.
+pub(crate) fn shipped_faults() -> &'static dyn FaultPoints {
+    #[cfg(feature = "test-hooks")]
+    {
+        &ENV_FAULTS
+    }
+    #[cfg(not(feature = "test-hooks"))]
+    {
+        &NoFaults
     }
 }
 
@@ -260,10 +368,146 @@ mod tests {
     use std::cell::Cell;
     use std::io;
     use std::panic::{AssertUnwindSafe, catch_unwind};
+    #[cfg(feature = "test-hooks")]
+    use std::process::{Command, Stdio};
 
+    #[cfg(feature = "test-hooks")]
+    use super::{FAULT_VARIABLE, KILLED_EXIT_CODE, check_fault_variable, shipped_faults};
     use super::{
         FailAt, FaultPoint, FaultPoints, Faults, INJECTED, KillAt, NoFaults, OnPass, PanicAt,
+        named_pass,
     };
+
+    /// The variable that makes a child of this test program running [`CHILD_TEST`] pass every
+    /// point the launcher's own settings pass. Unset, as in a run of the tests, that test does
+    /// nothing.
+    #[cfg(feature = "test-hooks")]
+    const FAULT_CHILD: &str = "GDL_FAULT_VARIABLE_CHILD";
+
+    /// The test such a child runs alone.
+    #[cfg(feature = "test-hooks")]
+    const CHILD_TEST: &str = "faults::tests::a_child_passes_every_point_twice";
+
+    /// How many times the child passes each point, in the order a job's points are listed.
+    #[cfg(feature = "test-hooks")]
+    const CHILD_PASSES: u32 = 2;
+
+    /// The exit code of a child that passed every point as often as it does, its variable taken.
+    #[cfg(feature = "test-hooks")]
+    const PASSED_EVERY_POINT: i32 = 76;
+
+    /// The exit code of a child that passed every point as often as it does, its variable refused.
+    #[cfg(feature = "test-hooks")]
+    const VARIABLE_REFUSED: i32 = 77;
+
+    #[test]
+    fn a_named_pass_reads_back() {
+        assert_eq!(
+            named_pass("update.move:3"),
+            Some((FaultPoint::UpdateMove, 3))
+        );
+        for point in FaultPoint::ALL {
+            let name = format!("{}:1", point.as_str());
+            assert_eq!(named_pass(&name), Some((point, 1)), "{name:?}");
+        }
+        assert_eq!(
+            named_pass("install.publish:4294967295"),
+            Some((FaultPoint::Publish, u32::MAX))
+        );
+        // No pass, nought, a point no job passes, another letter case, a count that is no
+        // decimal of ASCII digits alone or past what a count holds, and a second count.
+        for name in [
+            "update.move:0",
+            "update.move:00",
+            "update.move",
+            "update.move:",
+            ":3",
+            "nowhere:1",
+            "Update.Move:3",
+            "update.move:x",
+            "update.move:-1",
+            "update.move:+1",
+            "update.move: 3",
+            "update.move:3 ",
+            "update.move:\u{0663}",
+            "update.move:4294967296",
+            "update.move:3:4",
+        ] {
+            assert_eq!(named_pass(name), None, "{name:?}");
+        }
+    }
+
+    /// The child's part of [`the_fault_variable_is_checked`], which does nothing unless
+    /// [`FAULT_CHILD`] is set: it checks the variable as a build with the test hooks checks it
+    /// first, then passes every point [`CHILD_PASSES`] times through the launcher's own fault
+    /// points, and exits with [`PASSED_EVERY_POINT`] or [`VARIABLE_REFUSED`] unless one killed it.
+    #[cfg(feature = "test-hooks")]
+    #[test]
+    fn a_child_passes_every_point_twice() {
+        if std::env::var_os(FAULT_CHILD).is_none() {
+            return;
+        }
+        let checked = check_fault_variable();
+        let faults = shipped_faults();
+        for point in FaultPoint::ALL {
+            for _ in 0..CHILD_PASSES {
+                faults.pass(point).unwrap();
+            }
+        }
+        std::process::exit(if checked.is_ok() {
+            PASSED_EVERY_POINT
+        } else {
+            VARIABLE_REFUSED
+        });
+    }
+
+    #[cfg(feature = "test-hooks")]
+    #[test]
+    fn the_fault_variable_is_checked() {
+        let _one = crate::one_test_child();
+        // The pass named kills the child as it is reached, whatever came before it; a pass past
+        // the child's last kills nothing; and a value that names no pass is refused and kills
+        // nothing, as an unset variable and an empty one kill nothing.
+        let cases: &[(Option<&str>, i32)] = &[
+            (None, PASSED_EVERY_POINT),
+            (Some(""), PASSED_EVERY_POINT),
+            (Some("update.move:1"), KILLED_EXIT_CODE),
+            (Some("update.move:2"), KILLED_EXIT_CODE),
+            (Some("update.move:3"), PASSED_EVERY_POINT),
+            (Some("install.prepare:2"), KILLED_EXIT_CODE),
+            (Some("update.rollback:2"), KILLED_EXIT_CODE),
+            (Some("update.move:0"), VARIABLE_REFUSED),
+            (Some("update.move"), VARIABLE_REFUSED),
+            (Some("nowhere:1"), VARIABLE_REFUSED),
+            (Some("update.move:x"), VARIABLE_REFUSED),
+        ];
+        for &(value, expected) in cases {
+            let mut command = Command::new(std::env::current_exe().unwrap());
+            command
+                .args(["--exact", CHILD_TEST, "--test-threads", "1"])
+                .env(FAULT_CHILD, "1")
+                .stdin(Stdio::null());
+            match value {
+                Some(value) => command.env(FAULT_VARIABLE, value),
+                None => command.env_remove(FAULT_VARIABLE),
+            };
+            #[cfg(windows)]
+            {
+                use std::os::windows::process::CommandExt;
+                use windows_sys::Win32::System::Threading::CREATE_NO_WINDOW;
+
+                command.creation_flags(CREATE_NO_WINDOW);
+            }
+            let output = command.output().unwrap();
+            assert_eq!(
+                output.status.code(),
+                Some(expected),
+                "{value:?}: {}{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+    }
 
     #[test]
     fn every_point_is_named_once() {

@@ -78,3 +78,8 @@ opt-level = 3
 
 [profile.release.package.gdl-extract]
 opt-level = 3
+
+# The headless program with its test hooks, for the update rehearsal: built as a release is, into a
+# folder of its own, so it never takes the place of the program a release ships.
+[profile.test-hooks]
+inherits = "release"

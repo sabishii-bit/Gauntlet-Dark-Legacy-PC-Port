@@ -38,11 +38,31 @@ const LATER_VERSION: &str = "999.0.0";
 const STAGING_RANDOM: &str = "AbC123xy";
 
 /// The line that answers arguments the program does not take.
+#[cfg(not(feature = "test-hooks"))]
 const USAGE: &str = "usage: gdl-launcher-headless --check-payload [--payload <zip>] | \
                      --inspect <dir> [--json] | --check-folder <dir> [--json] | \
                      --extract <n64|dreamcast> <dump> --output <dir> [--strict script] | \
                      --check-feed | --update <dir> [--yes] [--offline] | --recover <dir> | \
                      --after-update <pid> | --version\n";
+
+/// The line that answers arguments the program does not take, in a build with the test hooks,
+/// whose feed modes also read a loopback feed.
+#[cfg(feature = "test-hooks")]
+const USAGE: &str = "usage: gdl-launcher-headless --check-payload [--payload <zip>] | \
+                     --inspect <dir> [--json] | --check-folder <dir> [--json] | \
+                     --extract <n64|dreamcast> <dump> --output <dir> [--strict script] | \
+                     --check-feed [--feed <url>] | \
+                     --update <dir> [--yes] [--offline | --feed <url>] | --recover <dir> | \
+                     --after-update <pid> | --version\n";
+
+/// The features `--check-payload` lists for this build: none, as a release is built.
+#[cfg(not(feature = "test-hooks"))]
+const FEATURES: &str = "none";
+
+/// The features `--check-payload` lists for a build with the test hooks, so that it is never taken
+/// for a release.
+#[cfg(feature = "test-hooks")]
+const FEATURES: &str = "test-hooks";
 
 /// The N64 cases, which hold the image the tests extract and the tree the N64 extractor writes
 /// for it.
@@ -178,7 +198,7 @@ fn a_sectioned_copy_verifies() {
     assert_eq!(output.status.code(), Some(0), "{output:?}");
     assert_eq!(
         text(&output.stdout),
-        format!("Verified {VERSION} ({platform})\nFeatures: none\n")
+        format!("Verified {VERSION} ({platform})\nFeatures: {FEATURES}\n")
     );
     assert_eq!(text(&output.stderr), "");
 }

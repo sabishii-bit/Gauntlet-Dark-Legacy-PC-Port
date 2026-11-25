@@ -184,7 +184,7 @@ pub fn recover_install(
     record: &mut dyn FolderRecord,
     job: &Job<'_>,
 ) -> Result<RecoveryOutcome, RecoveryError> {
-    recover_install_with(root, running, record, job, &InstallSettings::SHIPPED)
+    recover_install_with(root, running, record, job, &InstallSettings::shipped())
 }
 
 /// Recovers a fresh install as [`recover_install`] does, asking the world beyond the folder

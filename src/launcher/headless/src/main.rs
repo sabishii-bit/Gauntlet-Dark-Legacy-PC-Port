@@ -7,7 +7,13 @@ use std::io;
 use std::process::ExitCode;
 
 /// The optional features this build carries, which `--check-payload` reports.
+#[cfg(not(feature = "test-hooks"))]
 const FEATURES: &[&str] = &[];
+
+/// The optional features this build carries, which `--check-payload` reports: the test hooks,
+/// so that the program a rehearsal of an update builds is never taken for a release.
+#[cfg(feature = "test-hooks")]
+const FEATURES: &[&str] = &["test-hooks"];
 
 fn main() -> ExitCode {
     // Opened before anything else, so a later rename of this file cannot change what is read.

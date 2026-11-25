@@ -9,7 +9,7 @@ use std::time::Duration;
 use gdl_files::{Cancel, FilesError};
 
 use crate::destination::FolderChecks;
-use crate::faults::{FaultPoints, NoFaults};
+use crate::faults::{FaultPoints, shipped_faults};
 use crate::folder::InstallFolder;
 use crate::hold::HOLD_POLL;
 use crate::icon::refresh_shell_icon;
@@ -55,12 +55,13 @@ pub(crate) struct UpdateSettings<'a> {
 }
 
 impl UpdateSettings<'static> {
-    /// What the launcher asks: no faults, the system's own volume measure, the game's own probes,
-    /// the icon set into the executable itself, the shell told, the receipt written as it writes
-    /// one, and holds that look again every [`HOLD_POLL`].
+    /// What the launcher asks: no faults but, in a build with the test hooks, the pass the
+    /// environment names, the system's own volume measure, the game's own probes, the icon set
+    /// into the executable itself, the shell told, the receipt written as it writes one, and holds
+    /// that look again every [`HOLD_POLL`].
     pub(crate) fn shipped() -> UpdateSettings<'static> {
         UpdateSettings {
-            faults: &NoFaults,
+            faults: shipped_faults(),
             folders: &FolderChecks::SHIPPED,
             probe: &probe_game_version_with,
             game_closed: &require_game_closed,

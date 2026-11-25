@@ -10,6 +10,7 @@ publish.workspace = true
 [dependencies]
 gdl-extract.workspace = true
 gdl-files.workspace = true
+gdl-fixtures = { workspace = true, optional = true }
 gdl-install.workspace = true
 gdl-media.workspace = true
 gdl-release.workspace = true
@@ -20,3 +21,8 @@ thiserror.workspace = true
 [dev-dependencies]
 gdl-fixtures.workspace = true
 tempfile.workspace = true
+
+[features]
+# The headless modes' loopback feed and the hooks of the crates below, with the fixtures' test
+# signer, for the headless program a rehearsal of an update builds; never in a release.
+test-hooks = ["gdl-install/test-hooks", "gdl-release/test-hooks", "dep:gdl-fixtures"]

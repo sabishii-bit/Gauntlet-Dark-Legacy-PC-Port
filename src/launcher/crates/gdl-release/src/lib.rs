@@ -21,7 +21,7 @@ pub use cache::{
 pub use checksums::{ChecksumList, MAX_LIST_LEN};
 pub use download::{DOWNLOAD_ATTEMPTS, Downloaded};
 pub use error::ReleaseError;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-hooks"))]
 pub use feed::LoopbackError;
 pub use feed::{
     Asset, CheckedList, Feed, FeedConfig, MAX_ASSET_LEN, MAX_NOTES_LEN, MAX_PAGE_BYTES, MAX_PAGES,

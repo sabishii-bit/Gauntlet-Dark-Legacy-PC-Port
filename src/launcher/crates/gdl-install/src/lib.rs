@@ -40,6 +40,8 @@ pub use destination::{
     Blocker, ComponentAttributes, DestinationError, DestinationReport, KnownFolder, Warning,
     judge_destination,
 };
+#[cfg(feature = "test-hooks")]
+pub use faults::{FAULT_VARIABLE, check_fault_variable};
 pub use folder::{
     FolderError, InstallFolder, InstallLock, JOURNAL_DIR, LOCK_FILE, LockError, RECEIPT_FILE,
     STATE_DIR, alpha_markers, check_links,

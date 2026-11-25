@@ -8,7 +8,7 @@ use std::path::Path;
 use gdl_files::Cancel;
 
 use crate::destination::FolderChecks;
-use crate::faults::{FaultPoints, NoFaults};
+use crate::faults::{FaultPoints, shipped_faults};
 use crate::icon::refresh_shell_icon;
 #[cfg(windows)]
 use crate::icon::{IconError, Personalised, personalise};
@@ -40,14 +40,17 @@ pub(crate) struct InstallSettings<'a> {
 }
 
 impl InstallSettings<'static> {
-    /// What the launcher asks: no faults, the folder judged as a plan judges it, the game's own
-    /// probe, the icon set into the executable itself and the shell told.
-    pub(crate) const SHIPPED: InstallSettings<'static> = InstallSettings {
-        faults: &NoFaults,
-        folders: &FolderChecks::SHIPPED,
-        probe: &probe_game_version_with,
-        #[cfg(windows)]
-        personalise: &personalise,
-        notify_shell: &refresh_shell_icon,
-    };
+    /// What the launcher asks: no faults but, in a build with the test hooks, the pass the
+    /// environment names, the folder judged as a plan judges it, the game's own probe, the icon
+    /// set into the executable itself and the shell told.
+    pub(crate) fn shipped() -> InstallSettings<'static> {
+        InstallSettings {
+            faults: shipped_faults(),
+            folders: &FolderChecks::SHIPPED,
+            probe: &probe_game_version_with,
+            #[cfg(windows)]
+            personalise: &personalise,
+            notify_shell: &refresh_shell_icon,
+        }
+    }
 }

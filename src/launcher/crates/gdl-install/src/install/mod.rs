@@ -457,7 +457,7 @@ pub fn install_game<R: Read + Seek>(
         launcher,
         record,
         job,
-        &InstallSettings::SHIPPED,
+        &InstallSettings::shipped(),
     )
 }
 

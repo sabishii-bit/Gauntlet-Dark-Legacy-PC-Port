@@ -109,8 +109,8 @@ pub(crate) enum Origins {
     /// GitHub's release hosts, over HTTPS.
     GitHub,
     /// A feed on this machine, over plain HTTP, at exactly this authority (`127.0.0.1:<port>`
-    /// or `[::1]:<port>`).
-    #[cfg(test)]
+    /// or `[::1]:<port>`): the tests' feed, and that of a build with the test hooks.
+    #[cfg(any(test, feature = "test-hooks"))]
     Loopback {
         /// The feed's host and port.
         authority: String,
@@ -127,7 +127,7 @@ pub(crate) fn trusted(url: &str, origins: &Origins) -> Result<Uri, ReleaseError>
     let authority = uri.authority().map(Authority::as_str).ok_or_else(refused)?;
     let reachable = match origins {
         Origins::GitHub => uri.scheme() == Some(&Scheme::HTTPS) && is_release_host(authority),
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-hooks"))]
         Origins::Loopback { authority: own } => {
             uri.scheme() == Some(&Scheme::HTTP) && authority == own
         }
@@ -334,7 +334,7 @@ impl Transport {
                 .host()
                 .is_some_and(|host| host.eq_ignore_ascii_case(GITHUB_API_HOST)),
             // A loopback feed serves its API and its downloads from one host.
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-hooks"))]
             Origins::Loopback { .. } => wanted == Wanted::Api,
         };
         (accept, to_the_api.then_some(API_VERSION))

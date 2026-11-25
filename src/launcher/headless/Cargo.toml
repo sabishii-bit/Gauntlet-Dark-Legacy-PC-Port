@@ -26,3 +26,8 @@ gdl-media.workspace = true
 gdl-release.workspace = true
 serde_json.workspace = true
 tempfile.workspace = true
+
+[features]
+# The program a rehearsal of an update builds: faults by name, a loopback feed and the tests' own
+# key, which `--check-payload` reports; never in a release.
+test-hooks = ["gdl-session/test-hooks"]

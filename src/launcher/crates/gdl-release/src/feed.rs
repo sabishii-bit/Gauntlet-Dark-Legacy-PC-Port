@@ -49,14 +49,14 @@ const TAG_PREFIX: char = 'v';
 const HTTPS: &str = "https";
 
 /// The scheme of a loopback feed's download URLs.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-hooks"))]
 const HTTP: &str = "http";
 
 /// What parts a URL's scheme from its authority.
 const SCHEME_SEPARATOR: &str = "://";
 
 /// The hosts a loopback feed may name, each before a colon and its port.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-hooks"))]
 const LOOPBACK_HOSTS: [&str; 2] = ["127.0.0.1", "[::1]"];
 
 /// A release row's tag.
@@ -86,7 +86,7 @@ const DIGEST: &str = "digest";
 /// Where an asset is downloaded from.
 const DOWNLOAD_URL: &str = "browser_download_url";
 
-/// Where the feed reads: GitHub, or a loopback feed of a test build.
+/// Where the feed reads: GitHub, or a loopback feed of the tests or of a build with the test hooks.
 #[derive(Clone, Debug)]
 pub struct FeedConfig {
     /// The releases list's URL, without the page asked for.
@@ -113,8 +113,9 @@ impl FeedConfig {
 
     /// A loopback feed at `base`, which must be `http://127.0.0.1:<port>/` or
     /// `http://[::1]:<port>/`: its list at `<base>repos/<repository>/releases`, its downloads
-    /// under `<base>`, and no proxy.
-    #[cfg(test)]
+    /// under `<base>`, and no proxy. The tests read such a feed, and so does a build with the test
+    /// hooks, which a release never is.
+    #[cfg(any(test, feature = "test-hooks"))]
     pub fn loopback(base: &str, launcher_version: &str) -> Result<FeedConfig, LoopbackError> {
         let authority =
             loopback_authority(base).ok_or_else(|| LoopbackError { given: base.into() })?;
@@ -135,7 +136,7 @@ impl FeedConfig {
 fn downloads_from(origins: &Origins, url: &str, tag: &str, name: &str) -> bool {
     let (scheme, authority) = match origins {
         Origins::GitHub => (HTTPS, GITHUB_HOST),
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-hooks"))]
         Origins::Loopback { authority } => (HTTP, authority.as_str()),
     };
     let Some(path) = url
@@ -153,7 +154,7 @@ fn downloads_from(origins: &Origins, url: &str, tag: &str, name: &str) -> bool {
 
 /// The host and port of a loopback feed's `base`, `http://<host>:<port>/` for one of
 /// [`LOOPBACK_HOSTS`] and a port from 1 written without a sign or leading zeros.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-hooks"))]
 fn loopback_authority(base: &str) -> Option<&str> {
     let authority = base
         .strip_prefix(HTTP)?
@@ -167,7 +168,7 @@ fn loopback_authority(base: &str) -> Option<&str> {
 }
 
 /// A base URL that names no loopback feed.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-hooks"))]
 #[derive(Debug, thiserror::Error)]
 #[error("A loopback feed is http://127.0.0.1:<port>/ or http://[::1]:<port>/, not {given:?}")]
 pub struct LoopbackError {

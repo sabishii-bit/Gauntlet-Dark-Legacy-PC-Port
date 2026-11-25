@@ -8,7 +8,9 @@
 //! feed's newest release or the runtime the program's own file carries, `--recover`, which
 //! recovers whatever jobs a crash or a kill left unfinished in an installation's folder, and
 //! `--after-update`, which a launcher copy that an update put in place runs first, to wait for
-//! the launcher that ran the update to exit and to remove the copy it ran from.
+//! the launcher that ran the update to exit and to remove the copy it ran from. A build with the
+//! test hooks also reads a loopback feed in place of GitHub's, and holds the variable that names
+//! the fault point it kills itself at to naming one.
 //! They run before anything builds a window, and what they print is technical text for whoever
 //! runs them, never words for players. A run is handed its arguments, its build, its own file's
 //! sections and the streams to write to, so that every mode runs inside a test as it runs in the
@@ -37,6 +39,8 @@ use gdl_install::{
     installed_launcher_name, installed_release, is_installed_copy, judge_destination, plan_update,
     recover, sweep_retired, update, wait_for_previous,
 };
+#[cfg(feature = "test-hooks")]
+use gdl_install::{FAULT_VARIABLE, check_fault_variable};
 use gdl_release::{Asset, Feed, FeedConfig, Platform, Release, ReleaseError, Scan, Version};
 use serde::Serialize;
 
@@ -57,11 +61,25 @@ pub const EXIT_REFUSED: u8 = 1;
 pub const EXIT_USAGE: u8 = 2;
 
 /// The line that answers arguments the program does not take.
+#[cfg(not(feature = "test-hooks"))]
 const USAGE: &str = "usage: gdl-launcher-headless --check-payload [--payload <zip>] | \
                      --inspect <dir> [--json] | --check-folder <dir> [--json] | \
                      --extract <n64|dreamcast> <dump> --output <dir> [--strict script] | \
                      --check-feed | --update <dir> [--yes] [--offline] | --recover <dir> | \
                      --after-update <pid> | --version";
+
+/// The line that answers arguments the program does not take, in a build with the test hooks,
+/// whose feed modes also read a loopback feed.
+#[cfg(feature = "test-hooks")]
+const USAGE: &str = "usage: gdl-launcher-headless --check-payload [--payload <zip>] | \
+                     --inspect <dir> [--json] | --check-folder <dir> [--json] | \
+                     --extract <n64|dreamcast> <dump> --output <dir> [--strict script] | \
+                     --check-feed [--feed <url>] | \
+                     --update <dir> [--yes] [--offline | --feed <url>] | --recover <dir> | \
+                     --after-update <pid> | --version";
+
+/// Whether this build carries the test hooks, whose feed modes take [`FEED_OPTION`].
+const TEST_HOOKS: bool = cfg!(feature = "test-hooks");
 
 /// The mode that prints the program's version.
 const VERSION_OPTION: &str = "--version";
@@ -111,6 +129,10 @@ const OFFLINE_OPTION: &str = "--offline";
 
 /// The mode that recovers whatever jobs were left unfinished in the folder after it.
 const RECOVER_OPTION: &str = "--recover";
+
+/// The option of `--check-feed` and `--update` that, in a build with the test hooks, reads the
+/// loopback feed at the URL after it in place of GitHub's.
+const FEED_OPTION: &str = "--feed";
 
 /// The options that choose a mode: arguments with none of them are no headless run. The last is
 /// the mode a hand-over starts the launcher copy an update put in place with, the id of the
@@ -305,6 +327,15 @@ pub fn open_own_file() -> OwnFile {
 ///   sweep the system or the installation refused is the line
 ///   `error: <code> (<rule>): <detail>`, and [`EXIT_REFUSED`].
 ///
+/// A build with the test hooks, which a release never is, takes `--feed <url>` beside
+/// `--check-feed`, and beside `--update` without `--offline`: the mode then reads the loopback feed
+/// at `<url>`, `http://127.0.0.1:<port>/` or `http://[::1]:<port>/`, in place of GitHub's, through
+/// no proxy and trusting the tests' own key alone; any other URL is a usage error, and so is
+/// `--feed` in a build without the hooks. Before any mode runs, such a build holds the variable
+/// `GDL_LAUNCHER_FAULT` to naming the fault point and pass every job it runs kills itself at,
+/// `<point>:<pass>`, or to nothing; a value that names neither is refused with the line
+/// `error: GDL_LAUNCHER_FAULT names no fault point and pass: <value>`, and [`EXIT_USAGE`].
+///
 /// A refusal's detail is written as a text report writes a value, each control character as its
 /// escape, so that the refusal stays one line whatever the names in its paths, or the text it
 /// quotes from a dump, hold. A report that cannot be written to its stream gives
@@ -319,7 +350,12 @@ pub fn run(
     out: &mut dyn Write,
     err: &mut dyn Write,
 ) -> Option<u8> {
-    let mode = match mode_of(args)? {
+    let mode = mode_of(args)?;
+    #[cfg(feature = "test-hooks")]
+    if let Err(value) = check_fault_variable() {
+        return Some(fault_refused(&value, err));
+    }
+    let mode = match mode {
         Ok(mode) => mode,
         Err(Misused) => return Some(usage(err)),
     };
@@ -334,20 +370,17 @@ pub fn run(
             output,
             script,
         } => extract_mode(expansion, dump, output, script, out, err),
-        Mode::CheckFeed => match Platform::of_this_build() {
-            Some(platform) => {
-                let config = FeedConfig::github(build.version, system_proxies());
-                check_feed(config, platform, build, out, err)
-            }
-            None => usage(err),
+        Mode::CheckFeed { feed } => match (Platform::of_this_build(), feed_config(build, feed)) {
+            (Some(platform), Ok(config)) => check_feed(config, platform, build, out, err),
+            (None, _) | (_, Err(Misused)) => usage(err),
         },
         Mode::Update {
             folder,
             yes,
             offline,
-        } => match Platform::of_this_build() {
-            Some(platform) => {
-                let feed = (!offline).then(|| FeedConfig::github(build.version, system_proxies()));
+            feed,
+        } => match (Platform::of_this_build(), update_feed(build, offline, feed)) {
+            (Some(platform), Ok(feed)) => {
                 let asked = UpdateAsked {
                     folder: Path::new(folder),
                     yes,
@@ -356,7 +389,7 @@ pub fn run(
                 };
                 update_mode(asked, build, own, out, err)
             }
-            None => usage(err),
+            (None, _) | (_, Err(Misused)) => usage(err),
         },
         Mode::Recover { folder } => recover_mode(Path::new(folder), build, own, out, err),
         // A process never waits for itself: its own id names no launcher an update replaced.
@@ -370,6 +403,58 @@ pub fn run(
 pub fn usage(err: &mut dyn Write) -> u8 {
     let _ = written(err, &format!("{USAGE}\n"));
     EXIT_USAGE
+}
+
+/// Writes to `err` the line that refuses [`FAULT_VARIABLE`]'s `value`, which names no fault point
+/// and pass, written as a text report writes a value, and gives back [`EXIT_USAGE`], which the
+/// program exits with whether or not the line could be written.
+#[cfg(feature = "test-hooks")]
+fn fault_refused(value: &str, err: &mut dyn Write) -> u8 {
+    let line = format!(
+        "error: {FAULT_VARIABLE} names no fault point and pass: {}\n",
+        text_value(value)
+    );
+    let _ = written(err, &line);
+    EXIT_USAGE
+}
+
+/// The release feed `--check-feed` reads, and `--update` beside the program's own file: GitHub's,
+/// through the system's proxy settings, as the build's version; or the loopback feed `loopback`
+/// names, which only a build with the test hooks reads, at `http://127.0.0.1:<port>/` or
+/// `http://[::1]:<port>/`. Any other value is a usage error.
+fn feed_config(build: &Build<'_>, loopback: Option<&OsStr>) -> Result<FeedConfig, Misused> {
+    match loopback {
+        None => Ok(FeedConfig::github(build.version, system_proxies())),
+        Some(base) => loopback_feed(base, build.version),
+    }
+}
+
+/// The release feed an update reads beside the program's own file: none when `offline` says so,
+/// else the one [`feed_config`] gives for `loopback`.
+fn update_feed(
+    build: &Build<'_>,
+    offline: bool,
+    loopback: Option<&OsStr>,
+) -> Result<Option<FeedConfig>, Misused> {
+    if offline {
+        Ok(None)
+    } else {
+        feed_config(build, loopback).map(Some)
+    }
+}
+
+/// The loopback feed at `base`, read as launcher `version` with no proxy: a build with the test
+/// hooks reads one at `http://127.0.0.1:<port>/` or `http://[::1]:<port>/`, and nowhere else.
+#[cfg(feature = "test-hooks")]
+fn loopback_feed(base: &OsStr, version: &str) -> Result<FeedConfig, Misused> {
+    let base = base.to_str().ok_or(Misused)?;
+    FeedConfig::loopback(base, version).map_err(|_| Misused)
+}
+
+/// The loopback feed at `base`: a build without the test hooks reads none.
+#[cfg(not(feature = "test-hooks"))]
+fn loopback_feed(_: &OsStr, _: &str) -> Result<FeedConfig, Misused> {
+    Err(Misused)
 }
 
 /// A headless mode, as the arguments ask for it.
@@ -393,14 +478,16 @@ enum Mode<'a> {
         output: &'a OsStr,
         script: bool,
     },
-    /// `--check-feed`.
-    CheckFeed,
-    /// `--update`, of the installation in `folder`: made when `yes` says so, else planned, and
-    /// from the program's own file alone when `offline` says so.
+    /// `--check-feed`, of the loopback feed at `feed` when `--feed` names one, else of GitHub's.
+    CheckFeed { feed: Option<&'a OsStr> },
+    /// `--update`, of the installation in `folder`: made when `yes` says so, else planned; from
+    /// the program's own file alone when `offline` says so, else beside the loopback feed at
+    /// `feed` when `--feed` names one, or GitHub's.
     Update {
         folder: &'a OsStr,
         yes: bool,
         offline: bool,
+        feed: Option<&'a OsStr>,
     },
     /// `--recover`, of `folder`.
     Recover { folder: &'a OsStr },
@@ -452,6 +539,7 @@ fn parse(args: &[OsString]) -> Result<Mode<'_>, Misused> {
     let mut script = false;
     let mut yes = false;
     let mut offline = false;
+    let mut feed = None;
     let mut rest = args.iter().map(OsString::as_os_str);
     while let Some(arg) = rest.next() {
         let mode = match arg.to_str() {
@@ -470,6 +558,11 @@ fn parse(args: &[OsString]) -> Result<Mode<'_>, Misused> {
             }
             Some(OFFLINE_OPTION) if !offline => {
                 offline = true;
+                continue;
+            }
+            // A build without the test hooks reads GitHub's feed alone, and takes no other.
+            Some(FEED_OPTION) if TEST_HOOKS && feed.is_none() => {
+                feed = Some(value(&mut rest)?);
                 continue;
             }
             Some(PAYLOAD_OPTION) if zip.is_none() => {
@@ -498,16 +591,18 @@ fn parse(args: &[OsString]) -> Result<Mode<'_>, Misused> {
         }
     }
     let extracting = (output, script);
-    let updating = (yes, offline);
+    let updating = (yes, offline, feed);
     match (chosen, zip, json, extracting, updating) {
-        (Some(Chosen::Version), None, false, (None, false), (false, false)) => Ok(Mode::Version),
-        (Some(Chosen::CheckPayload), zip, false, (None, false), (false, false)) => {
+        (Some(Chosen::Version), None, false, (None, false), (false, false, None)) => {
+            Ok(Mode::Version)
+        }
+        (Some(Chosen::CheckPayload), zip, false, (None, false), (false, false, None)) => {
             Ok(Mode::CheckPayload { zip })
         }
-        (Some(Chosen::Inspect(folder)), None, json, (None, false), (false, false)) => {
+        (Some(Chosen::Inspect(folder)), None, json, (None, false), (false, false, None)) => {
             Ok(Mode::Inspect { folder, json })
         }
-        (Some(Chosen::CheckFolder(folder)), None, json, (None, false), (false, false)) => {
+        (Some(Chosen::CheckFolder(folder)), None, json, (None, false), (false, false, None)) => {
             Ok(Mode::CheckFolder { folder, json })
         }
         (
@@ -515,27 +610,31 @@ fn parse(args: &[OsString]) -> Result<Mode<'_>, Misused> {
             None,
             false,
             (Some(output), script),
-            (false, false),
+            (false, false, None),
         ) => Ok(Mode::Extract {
             expansion,
             dump,
             output,
             script,
         }),
-        (Some(Chosen::CheckFeed), None, false, (None, false), (false, false)) => {
-            Ok(Mode::CheckFeed)
+        (Some(Chosen::CheckFeed), None, false, (None, false), (false, false, feed)) => {
+            Ok(Mode::CheckFeed { feed })
         }
-        (Some(Chosen::Update(folder)), None, false, (None, false), (yes, offline)) => {
+        // An update that asks no feed reads none, a loopback feed among them.
+        (Some(Chosen::Update(folder)), None, false, (None, false), (yes, offline, feed))
+            if !(offline && feed.is_some()) =>
+        {
             Ok(Mode::Update {
                 folder,
                 yes,
                 offline,
+                feed,
             })
         }
-        (Some(Chosen::Recover(folder)), None, false, (None, false), (false, false)) => {
+        (Some(Chosen::Recover(folder)), None, false, (None, false), (false, false, None)) => {
             Ok(Mode::Recover { folder })
         }
-        (Some(Chosen::AfterUpdate(pid)), None, false, (None, false), (false, false)) => {
+        (Some(Chosen::AfterUpdate(pid)), None, false, (None, false), (false, false, None)) => {
             process_id(pid).map(|pid| Mode::AfterUpdate { pid })
         }
         _ => Err(Misused),
@@ -2803,6 +2902,7 @@ mod tests {
         let mut err = Vec::new();
         assert_eq!(usage(&mut err), EXIT_USAGE);
         assert_eq!(String::from_utf8(err).unwrap(), format!("{USAGE}\n"));
+        #[cfg(not(feature = "test-hooks"))]
         assert_eq!(
             USAGE,
             "usage: gdl-launcher-headless --check-payload [--payload <zip>] | --inspect <dir> \
@@ -2810,6 +2910,116 @@ mod tests {
              --output <dir> [--strict script] | --check-feed | --update <dir> [--yes] \
              [--offline] | --recover <dir> | --after-update <pid> | --version"
         );
+        // A build with the test hooks reads a loopback feed too.
+        #[cfg(feature = "test-hooks")]
+        assert_eq!(
+            USAGE,
+            "usage: gdl-launcher-headless --check-payload [--payload <zip>] | --inspect <dir> \
+             [--json] | --check-folder <dir> [--json] | --extract <n64|dreamcast> <dump> \
+             --output <dir> [--strict script] | --check-feed [--feed <url>] | --update <dir> \
+             [--yes] [--offline | --feed <url>] | --recover <dir> | --after-update <pid> | \
+             --version"
+        );
+    }
+
+    /// A loopback feed's base, as a test-hooks build takes one, which no test reads.
+    const LOOPBACK_BASE: &str = "http://127.0.0.1:8080/";
+
+    #[cfg(not(feature = "test-hooks"))]
+    #[test]
+    fn the_feed_option_is_refused_without_the_test_hooks() {
+        // A release reads GitHub's feed alone: it takes no `--feed`, whatever that names, and
+        // refuses it before any feed is read.
+        let cases: &[&[&str]] = &[
+            &["--check-feed", "--feed", LOOPBACK_BASE],
+            &["--feed", LOOPBACK_BASE, "--check-feed"],
+            &["--update", "dir", "--feed", LOOPBACK_BASE],
+            &["--update", "dir", "--yes", "--feed", LOOPBACK_BASE],
+            &["--check-feed", "--feed", "https://api.github.com/"],
+        ];
+        for &args in cases {
+            let ran = run_release(args);
+            assert_eq!(ran.code, Some(EXIT_USAGE), "{args:?}: {ran:?}");
+            assert_eq!(ran.err, format!("{USAGE}\n"), "{args:?}");
+            assert_eq!(ran.out, "", "{args:?}");
+        }
+    }
+
+    #[cfg(feature = "test-hooks")]
+    #[test]
+    fn a_feed_option_names_a_loopback_feed_beside_the_feed_modes() {
+        // Read as modes and never run, since running them reads the feed.
+        let parsed = |args: &[&str]| {
+            let args: Vec<OsString> = args.iter().map(OsString::from).collect();
+            format!("{:?}", mode_of(&args))
+        };
+        let check = parsed(&["--check-feed", "--feed", LOOPBACK_BASE]);
+        assert_eq!(
+            check,
+            format!("Some(Ok(CheckFeed {{ feed: Some({LOOPBACK_BASE:?}) }}))")
+        );
+        for (args, yes) in [
+            (&["--update", "dir", "--feed", LOOPBACK_BASE][..], false),
+            (
+                &["--feed", LOOPBACK_BASE, "--update", "dir", "--yes"][..],
+                true,
+            ),
+        ] {
+            assert_eq!(
+                parsed(args),
+                format!(
+                    "Some(Ok(Update {{ folder: \"dir\", yes: {yes}, offline: false, feed: \
+                     Some({LOOPBACK_BASE:?}) }}))"
+                ),
+                "{args:?}"
+            );
+        }
+
+        // Refused before anything is read: twice, without a value or with one that is empty or an
+        // option, beside an update that asks no feed, and beside every other mode; and a URL that
+        // names no loopback feed, which nothing reads either.
+        let cases: &[&[&str]] = &[
+            &[
+                "--check-feed",
+                "--feed",
+                LOOPBACK_BASE,
+                "--feed",
+                LOOPBACK_BASE,
+            ],
+            &["--check-feed", "--feed"],
+            &["--check-feed", "--feed", ""],
+            &["--check-feed", "--feed", "--json"],
+            &["--update", "dir", "--offline", "--feed", LOOPBACK_BASE],
+            &[
+                "--update",
+                "dir",
+                "--yes",
+                "--offline",
+                "--feed",
+                LOOPBACK_BASE,
+            ],
+            &["--version", "--feed", LOOPBACK_BASE],
+            &["--check-payload", "--feed", LOOPBACK_BASE],
+            &["--inspect", "dir", "--feed", LOOPBACK_BASE],
+            &["--recover", "dir", "--feed", LOOPBACK_BASE],
+            &["--after-update", "1", "--feed", LOOPBACK_BASE],
+            &["--check-feed", "--feed", "https://api.github.com/"],
+            &["--check-feed", "--feed", "http://localhost:8080/"],
+            &["--update", "dir", "--feed", "http://127.0.0.1:8080/x/"],
+            &[
+                "--update",
+                "dir",
+                "--yes",
+                "--feed",
+                "http://10.0.0.1:8080/",
+            ],
+        ];
+        for &args in cases {
+            let ran = run_release(args);
+            assert_eq!(ran.code, Some(EXIT_USAGE), "{args:?}: {ran:?}");
+            assert_eq!(ran.err, format!("{USAGE}\n"), "{args:?}");
+            assert_eq!(ran.out, "", "{args:?}");
+        }
     }
 
     #[test]
@@ -4984,7 +5194,7 @@ mod tests {
         // Read as the mode alone and never run, since running it reads the real feed.
         let args = [OsString::from("--check-feed")];
         assert!(
-            matches!(mode_of(&args), Some(Ok(Mode::CheckFeed))),
+            matches!(mode_of(&args), Some(Ok(Mode::CheckFeed { feed: None }))),
             "{:?}",
             mode_of(&args)
         );
@@ -5268,7 +5478,7 @@ mod tests {
             assert!(
                 matches!(
                     mode,
-                    Some(Ok(Mode::Update { folder, yes, offline }))
+                    Some(Ok(Mode::Update { folder, yes, offline, feed: None }))
                         if folder == "dir" && yes == made && offline == asks_no_feed
                 ),
                 "{args:?}: {mode:?}"
