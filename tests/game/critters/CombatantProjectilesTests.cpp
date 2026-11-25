@@ -219,6 +219,32 @@ TEST_CASE("a great one's shot meets the players before the swarm on a step",
     CHECK(hits[0].target == (bodyFirst ? 3 : -1));
 }
 
+TEST_CASE("a great one's shot passes one of the swarm an earlier shot of the same update holds",
+          "[game][boss-projectiles][swarm-effect][hit-wait]") {
+    // ProcessEffects runs the effects one after another, each hit applied before the next looks:
+    // the first shot holds the body it strikes over two (0x80095CA4-0x80095CCC), so the second,
+    // keeping to fxhittime[0], passes it for the next in its way (combat.c 609-611). A faint
+    // shot, two or less, holds nothing, and the second strikes the same body.
+    const bool faint = GENERATE(false, true);
+    CAPTURE(faint);
+    Fixture f;
+    for (s32 shot = 0; shot < 2; ++shot) {
+        CombatShot launched;
+        launched.data = &f.data;
+        launched.damageIndex = 0;
+        launched.origin = {0, 3, 0};
+        launched.target = Vec3{0, 3, 30};
+        launched.damageScale = faint ? 0.1f : 2.0f;
+        f.projectiles.launch(launched, f.archive, f.device, f.effects, f.sound);
+    }
+    const std::array swarm{EnemyBody{1, {0, 3, 3}, 1, 1.5f}, EnemyBody{2, {0, 3, 6}, 1, 1.5f}};
+    f.stepAmong(0.25f, swarm);
+    const auto hits = f.projectiles.takeHits();
+    REQUIRE(hits.size() == 2);
+    CHECK(hits[0].target == 1);
+    CHECK(hits[1].target == (faint ? 1 : 2));
+}
+
 TEST_CASE("a great one's piercing shot strikes each of the swarm in its way once and flies on",
           "[game][boss-projectiles][swarm-effect]") {
     // With DMG_SUPER the flying pass strikes every enemy it meets and keeps the effect going,

@@ -143,8 +143,10 @@ private:
     /** Places the impact (even a purely visual one); true if it owns ongoing area damage. */
     static bool settleImpact(Flying& flying, u32 effect, EffectTrees& effects,
                              const WorldCollision* collision);
+    /** The landed shot's spread over `seconds`: the players it reaches, then the `swarm`, passing
+     * one `held` names and naming each its hit holds. */
     void impactContacts(Flying& flying, f32 seconds, std::span<const EnemyView> players,
-                        std::span<const EnemyBody> swarm);
+                        std::span<const EnemyBody> swarm, std::vector<s32>& held);
     void summon(Flying& flying);
     struct Simulation {
         std::vector<Flying> flying;

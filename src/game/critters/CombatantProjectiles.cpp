@@ -61,6 +61,19 @@ std::optional<f32> meetsBody(const Vec3& from, const Vec3& to, f32 radius, const
                                         body.radius, 2.0f * body.halfHeight);
 }
 
+/** Whether `held`, the swarm this update's earlier hits hold, names `id`. */
+bool heldNow(const std::vector<s32>& held, s32 id) {
+    return std::ranges::find(held, id) != held.end();
+}
+
+/** Names `hit`'s body in `held` when it holds it: a hit over two with a fade, which the swarm
+ * takes as it comes (ProcessEffects 0x80095CA4-0x80095CCC). */
+void noteHold(std::vector<s32>& held, const CombatantProjectileHit& hit) {
+    if (hit.damage > Enemies::kWorldHoldFrom && hit.repeatGap > 0.0f) {
+        held.push_back(hit.target);
+    }
+}
+
 ParticleDescriptor fireTrail(const CombatEffectDefinition& cue) {
     // CritterDoParticle's kind 2 modifies allocPsys defaults, not a preset.
     ParticleDescriptor trail;
@@ -257,6 +270,9 @@ void CombatantProjectiles::update(f32 seconds, const WorldCollision* collision,
         return;
     }
     m_sim.ricochetIn = std::max(0.0f, m_sim.ricochetIn - seconds);
+    // The original applies each effect's hit before the next effect looks (ProcessEffects), so
+    // one of the swarm an earlier shot or burst of this update holds is passed as a held one is.
+    std::vector<s32> held;
     for (Flying& flying : m_sim.flying) {
         const AttackDefinition& damage = *flying.shot.data->damage(flying.shot.damageIndex);
         if (flying.planted) {
@@ -327,7 +343,7 @@ void CombatantProjectiles::update(f32 seconds, const WorldCollision* collision,
             continue;
         }
         if (flying.settled) {
-            impactContacts(flying, seconds, players, swarm);
+            impactContacts(flying, seconds, players, swarm, held);
             continue;
         }
         if (!flying.morphed && damage.morph >= 0 &&
@@ -415,7 +431,7 @@ void CombatantProjectiles::update(f32 seconds, const WorldCollision* collision,
                 for (const MissileTarget& target : opponents) {
                     // A critter's effect keeps to the swarm's world wait (its owner is past the
                     // four players), sent back too: it passes one that wait holds.
-                    if (target.sharesWorldWait && target.worldHeld) {
+                    if (target.sharesWorldWait && (target.worldHeld || heldNow(held, target.id))) {
                         continue;
                     }
                     const auto at = CombatantProjectile::contact(from, to, radius, target.base,
@@ -434,7 +450,7 @@ void CombatantProjectiles::update(f32 seconds, const WorldCollision* collision,
             if (!wall && victim == nullptr && !flying.reflected &&
                 flying.shot.data->effectsStrikeSwarm()) {
                 for (const EnemyBody& body : swarm) {
-                    if (body.worldHeld ||
+                    if (body.worldHeld || heldNow(held, body.id) ||
                         std::ranges::find(piercedSwarm, body.id) != piercedSwarm.end()) {
                         continue;
                     }
@@ -500,6 +516,7 @@ void CombatantProjectiles::update(f32 seconds, const WorldCollision* collision,
                         hit.repeatGap = swarmFade(
                             *flying.archive, flying.shot.data->sound(damage.hitSound),
                             (damage.flags & damage::kSuperShot) != 0 && flying.piercedPlayer < 0);
+                        noteHold(held, hit);
                     }
                     m_sim.hits.push_back(hit);
                 }
@@ -520,6 +537,7 @@ void CombatantProjectiles::update(f32 seconds, const WorldCollision* collision,
                     hit.ownerKind = flying.shot.data->kind();
                     hit.position = flying.position;
                     hit.instance = flying.instance;
+                    noteHold(held, hit);
                     m_sim.hits.push_back(hit);
                     if (through) {
                         piercedSwarm.push_back(struckBody->id);
@@ -704,7 +722,8 @@ bool CombatantProjectiles::settleImpact(Flying& flying, u32 effect, EffectTrees&
 
 void CombatantProjectiles::impactContacts(Flying& flying, f32 seconds,
                                           std::span<const EnemyView> players,
-                                          std::span<const EnemyBody> swarm) {
+                                          std::span<const EnemyBody> swarm,
+                                          std::vector<s32>& held) {
     if (!flying.impactArea.has_value()) {
         return;
     }
@@ -745,7 +764,8 @@ void CombatantProjectiles::impactContacts(Flying& flying, f32 seconds,
     // players it strikes each of the swarm it reaches whose world wait is out, as a spreading
     // area does (sfx.c 3023-3089): by no player, of the shot's damage type, driven flat away.
     for (const EnemyBody& body : swarm) {
-        if (body.worldHeld || !area.meetsEnemy(parent, body.centre, body.radius)) {
+        if (body.worldHeld || heldNow(held, body.id) ||
+            !area.meetsEnemy(parent, body.centre, body.radius)) {
             continue;
         }
         CombatantProjectileHit hit;
@@ -758,6 +778,7 @@ void CombatantProjectiles::impactContacts(Flying& flying, f32 seconds,
         hit.ownerKind = flying.shot.data->kind();
         hit.position = flying.position;
         hit.instance = flying.instance;
+        noteHold(held, hit);
         m_sim.hits.push_back(hit);
     }
 }
