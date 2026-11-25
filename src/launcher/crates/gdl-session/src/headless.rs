@@ -1,24 +1,32 @@
 //! The launcher's modes without a window, for the release scripts, CI and developers at a console:
 //! `--version`, `--check-payload`, which checks the runtime the launcher file carries or a runtime
 //! zip it is given, `--inspect`, which reports what a folder is to the launcher, `--check-folder`,
-//! which reports what a folder is to an install, and `--extract`, which extracts a Legends
-//! expansion's tree from a dump into a new folder outside every installation. They run before
-//! anything builds a window, and what they print is technical text for whoever runs them, never
-//! words for players. A run is handed its arguments, its build, its own file's sections and the
-//! streams to write to, so that every mode runs inside a test as it runs in the program.
+//! which reports what a folder is to an install, `--extract`, which extracts a Legends
+//! expansion's tree from a dump into a new folder outside every installation, and `--recover`,
+//! which recovers whatever jobs a crash or a kill left unfinished in an installation's folder.
+//! They run before anything builds a window, and what they print is technical text for whoever
+//! runs them, never words for players. A run is handed its arguments, its build, its own file's
+//! sections and the streams to write to, so that every mode runs inside a test as it runs in the
+//! program.
 
 use std::ffi::{OsStr, OsString};
 use std::fmt;
 use std::fs::File;
 use std::io::{self, Read, Seek, Write};
+use std::panic;
 use std::path::Path;
+use std::sync::{Mutex, PoisonError, mpsc};
+use std::thread;
 
 use gdl_extract::{Expansion, Trust};
-use gdl_files::{Cancel, Job, NoProgress, RelPath, strip_verbatim};
+use gdl_files::{
+    Cancel, Hold, Job, NoProgress, PhaseId, Progress, RelPath, absolute_lexical, strip_verbatim,
+};
 use gdl_install::{
     Access, ComponentAttributes, DestinationReport, INSPECTION_SCHEMA, Inspection, InstallFolder,
-    InstallationSummary, Payload, PayloadError, Relation, SPACE_MARGIN, Sections, SectionsError,
-    judge_destination,
+    InstallationSummary, Payload, PayloadError, RecoverError, Recovered, RecoveryOutcome, Relation,
+    SPACE_MARGIN, Sections, SectionsError, Unrecorded, UpdateRecovery, hand_over,
+    installed_launcher_name, is_installed_copy, judge_destination, recover,
 };
 use gdl_release::{Platform, Version};
 use serde::Serialize;
@@ -42,7 +50,7 @@ pub const EXIT_USAGE: u8 = 2;
 const USAGE: &str = "usage: gdl-launcher-headless --check-payload [--payload <zip>] | \
                      --inspect <dir> [--json] | --check-folder <dir> [--json] | \
                      --extract <n64|dreamcast> <dump> --output <dir> [--strict script] | \
-                     --version";
+                     --recover <dir> | --version";
 
 /// The mode that prints the program's version.
 const VERSION_OPTION: &str = "--version";
@@ -76,14 +84,24 @@ const STRICT_OPTION: &str = "--strict";
 /// as an installation does.
 const SCRIPT_STRICTNESS: &str = "script";
 
+/// The mode that recovers whatever jobs were left unfinished in the folder after it.
+const RECOVER_OPTION: &str = "--recover";
+
 /// The options that choose a mode: arguments with none of them are no headless run.
-const MODE_OPTIONS: [&str; 5] = [
+const MODE_OPTIONS: [&str; 6] = [
     VERSION_OPTION,
     CHECK_PAYLOAD_OPTION,
     INSPECT_OPTION,
     CHECK_FOLDER_OPTION,
     EXTRACT_OPTION,
+    RECOVER_OPTION,
 ];
+
+/// A phase's share done, in percent, once all of it is done.
+const WHOLE_PERCENT: u64 = 100;
+
+/// How far a phase's share done, in percent, goes on between the progress lines a mode prints.
+const PROGRESS_STEP_PERCENT: u64 = 10;
 
 /// How every option begins, and so how no option's value may.
 const OPTION_PREFIX: &str = "--";
@@ -135,11 +153,11 @@ pub fn open_own_file() -> OwnFile {
 
 /// Runs the headless mode that `args`, the program's arguments after its own name, ask for, and
 /// gives back its exit code; or `None` when no argument is `--check-payload`, `--inspect`,
-/// `--check-folder`, `--extract` or `--version`, which is no headless run. A mode writes its
-/// report to `out` and a refusal to `err`. Arguments that ask for a mode in a form it does not
-/// take get the usage line on `err` and [`EXIT_USAGE`]. An option's value is the argument after
-/// it, which must not be empty or begin with `--`; options may come in any order, each at most
-/// once.
+/// `--check-folder`, `--extract`, `--recover` or `--version`, which is no headless run. A mode
+/// writes its report to `out` and a refusal to `err`. Arguments that ask for a mode in a form it
+/// does not take get the usage line on `err` and [`EXIT_USAGE`]. An option's value is the
+/// argument after it, which must not be empty or begin with `--`; options may come in any order,
+/// each at most once.
 ///
 /// - `--version` writes the build's version.
 /// - `--check-payload` checks the runtime the launcher file carries, its sections as `own` holds
@@ -172,14 +190,28 @@ pub fn open_own_file() -> OwnFile {
 ///   and what the tree's manifests count, `<dir>` made absolute; a refusal is the line
 ///   `error: <code> (<rule>): <detail>`, and [`EXIT_REFUSED`]. A word that names no expansion,
 ///   and an output whose last name is none the launcher makes a folder with, are usage errors.
+/// - `--recover <dir>` recovers whatever jobs were left unfinished in the folder, `<dir>` made
+///   absolute, as [`recover`] recovers them for a launcher of the build's version, waiting while
+///   another job holds the folder's lock or the game runs from it, since nothing here cancels a
+///   hold. As the recovery goes it writes its progress as every job's is written here: a
+///   `phase: <id>` line as each part begins, `progress: <id> <n>%` each time a part's share done
+///   passes a tenth, and `hold: <code>` and `resumed` as a wait begins and ends. Then it writes
+///   `install: <outcome>` and `update: <outcome>`, what became of a fresh install's journal and of
+///   an update's, and a `swept: <name>` line for each leftover removed and a `left: <name>` line
+///   for each one kept, in byte order. When the program's own file was the installation's
+///   launcher copy as the program started, and the recovery took an update back and put the
+///   installed copy back in its place, the program now runs from a retired name: it starts that
+///   copy to wait for this program to exit and finish the hand-over, and writes
+///   `handedOver: <pid>`. A refusal is the line `error: <code> (<rule>): <detail>`, and
+///   [`EXIT_REFUSED`].
 ///
 /// A refusal's detail is written as a text report writes a value, each control character as its
 /// escape, so that the refusal stays one line whatever the names in its paths, or the text it
 /// quotes from a dump, hold. A report that cannot be written to its stream gives
 /// [`EXIT_REFUSED`], since nobody saw it.
 ///
-/// Panics when `--inspect` runs as a build whose version is not a semantic version, which no
-/// build script lets a build be.
+/// Panics when `--inspect` or `--recover` runs as a build whose version is not a semantic version,
+/// which no build script lets a build be.
 pub fn run(
     args: &[OsString],
     build: &Build<'_>,
@@ -202,6 +234,7 @@ pub fn run(
             output,
             script,
         } => extract_mode(expansion, dump, output, script, out, err),
+        Mode::Recover { folder } => recover_mode(Path::new(folder), build, own, out, err),
     })
 }
 
@@ -233,6 +266,8 @@ enum Mode<'a> {
         output: &'a OsStr,
         script: bool,
     },
+    /// `--recover`, of `folder`.
+    Recover { folder: &'a OsStr },
 }
 
 /// The mode option the arguments give, before the other options are held to it.
@@ -247,6 +282,8 @@ enum Chosen<'a> {
     CheckFolder(&'a OsStr),
     /// `--extract`, with the word that names the expansion and the dump after it.
     Extract(&'a OsStr, &'a OsStr),
+    /// `--recover`, with the folder after it.
+    Recover(&'a OsStr),
 }
 
 /// Arguments that ask for a mode in a form it does not take.
@@ -277,6 +314,7 @@ fn parse(args: &[OsString]) -> Result<Mode<'_>, Misused> {
             Some(INSPECT_OPTION) => Chosen::Inspect(value(&mut rest)?),
             Some(CHECK_FOLDER_OPTION) => Chosen::CheckFolder(value(&mut rest)?),
             Some(EXTRACT_OPTION) => Chosen::Extract(value(&mut rest)?, value(&mut rest)?),
+            Some(RECOVER_OPTION) => Chosen::Recover(value(&mut rest)?),
             Some(PAYLOAD_OPTION) if zip.is_none() => {
                 zip = Some(value(&mut rest)?);
                 continue;
@@ -320,6 +358,7 @@ fn parse(args: &[OsString]) -> Result<Mode<'_>, Misused> {
                 script,
             })
         }
+        (Some(Chosen::Recover(folder)), None, false, (None, false)) => Ok(Mode::Recover { folder }),
         _ => Err(Misused),
     }
 }
@@ -427,8 +466,7 @@ fn refuse(err: &mut dyn Write, report: Report, rule: &str, detail: &dyn fmt::Dis
 /// `--inspect`: reports to `out` what the folder at `folder` is to a launcher of the build's
 /// version, as JSON when `json` says so.
 fn inspect(folder: &Path, json: bool, build: &Build<'_>, out: &mut dyn Write) -> u8 {
-    let running = Version::parse(build.version).expect("the build's version is a semantic version");
-    let inspection = InstallFolder::inspect(folder, &running);
+    let inspection = InstallFolder::inspect(folder, &running_version(build));
     let view = InspectionView::of(&inspection);
     let report = if json {
         json_report(&view)
@@ -537,6 +575,243 @@ fn extracted(summary: &ExtractSummary) -> String {
         summary.strictness,
         summary.output.display()
     )
+}
+
+/// The version of the launcher `build` is, which a mode that judges or changes an installation
+/// acts as.
+fn running_version(build: &Build<'_>) -> Version {
+    Version::parse(build.version).expect("the build's version is a semantic version")
+}
+
+/// `--recover`: recovers whatever jobs were left unfinished in the folder at `folder` for the
+/// launcher the build is, writing the recovery's progress to `out` as it goes and what it did once
+/// it is done, or why it refused to `err`; then hands over to the installation's launcher copy
+/// when the recovery put that copy back in place of the program's own file, `own`.
+fn recover_mode(
+    folder: &Path,
+    build: &Build<'_>,
+    own: &OwnFile,
+    out: &mut dyn Write,
+    err: &mut dyn Write,
+) -> u8 {
+    let running = running_version(build);
+    let platform = Platform::of_this_build();
+    let root = match absolute_lexical(folder) {
+        Ok(root) => root,
+        Err(source) => {
+            let path = folder.to_path_buf();
+            return refuse_recovery(err, &RecoverError::Io { path, source });
+        }
+    };
+    // Told before the recovery, which may move the copy aside and put another file at its name.
+    let was_installed_copy = match was_installed_copy(own, &root, platform) {
+        Ok(answer) => answer,
+        Err(error) => return refuse_recovery(err, &error),
+    };
+    let (recovered, shown) = printing(out, |progress| {
+        // Nothing here asks the recovery to stop, so a hold lasts until what holds it ends.
+        let cancel = Cancel::default();
+        let job = Job {
+            cancel: &cancel,
+            progress,
+        };
+        recover(&root, &running, &mut Unrecorded, &job)
+    });
+    let recovered = match recovered {
+        Ok(recovered) => recovered,
+        Err(error) => return refuse_recovery(err, &error),
+    };
+    let mut report = shown.and_then(|()| print_recovered(&recovered, out));
+    // The program runs from a retired name once the copy is back, whether or not its report was
+    // seen, so it hands over all the same.
+    if let Some(platform) = platform.filter(|_| hands_over(was_installed_copy, &recovered)) {
+        match hand_over(&root, platform) {
+            Ok(pid) => {
+                report = report.and_then(|()| written(out, &format!("handedOver: {pid}\n")));
+            }
+            Err(source) => {
+                let path = root.join(installed_launcher_name(platform));
+                return refuse_recovery(err, &RecoverError::Io { path, source });
+            }
+        }
+    }
+    match report {
+        Ok(()) => EXIT_OK,
+        Err(_) => EXIT_REFUSED,
+    }
+}
+
+/// Writes the line that reports a recovery's refusal, `error`, to `err`, as [`refuse`] writes one,
+/// and gives back [`EXIT_REFUSED`].
+fn refuse_recovery(err: &mut dyn Write, error: &RecoverError) -> u8 {
+    refuse(err, codes::recover(error), error.rule(), error)
+}
+
+/// Whether the program's own file, `own` as it was opened when the program started, is the
+/// launcher copy of the installation at `root`, for a launcher built for `platform`: told by the
+/// file and not its name, so that it can be told before a job moves the copy aside. A file whose
+/// sections could not be found is none, since an install copies the launcher file whole with its
+/// sections and nothing else is ever put at the copy's name; and so is every file on a system no
+/// release is built for.
+fn was_installed_copy(
+    own: &OwnFile,
+    root: &Path,
+    platform: Option<Platform>,
+) -> Result<bool, RecoverError> {
+    let (Ok(Some(sections)), Some(platform)) = (own, platform) else {
+        return Ok(false);
+    };
+    is_installed_copy(sections.file(), root, platform).map_err(|source| RecoverError::Io {
+        path: root.join(installed_launcher_name(platform)),
+        source,
+    })
+}
+
+/// Whether a program whose own file `was_installed_copy` of an installation hands over to that
+/// installation's launcher copy once a recovery of it did `recovered`: when the recovery took an
+/// update back and put the installed copy back in its place from its retired name, which leaves
+/// this program running from a retired name of its own. A copy put back stands at the
+/// installation's top to hand over to; an update that found no copy there to move aside put none
+/// back, and then nothing is handed over to.
+fn hands_over(was_installed_copy: bool, recovered: &Recovered) -> bool {
+    was_installed_copy
+        && matches!(
+            recovered.update,
+            UpdateRecovery::RolledBack {
+                launcher_restored: true,
+                ..
+            }
+        )
+}
+
+/// Writes to `out` what a recovery did, `recovered`: what became of a fresh install's journal and
+/// of an update's, as `install: <outcome>` and `update: <outcome>`, then a `swept: <name>` line
+/// for each leftover removed and a `left: <name>` line for each one kept, in byte order, each name
+/// written as a text report writes a value.
+fn print_recovered(recovered: &Recovered, out: &mut dyn Write) -> io::Result<()> {
+    let mut lines = vec![
+        ("install", install_outcome(&recovered.install).to_owned()),
+        ("update", update_outcome(&recovered.update).to_owned()),
+    ];
+    lines.extend(recovered.swept.iter().map(|name| ("swept", name.clone())));
+    lines.extend(recovered.left.iter().map(|name| ("left", name.clone())));
+    written(out, &text_report(lines))
+}
+
+/// How a report names what became of a fresh install's journal, in camelCase.
+fn install_outcome(outcome: &RecoveryOutcome) -> &'static str {
+    match outcome {
+        RecoveryOutcome::Nothing => "nothing",
+        RecoveryOutcome::RolledBack { .. } => "rolledBack",
+        RecoveryOutcome::Finished { .. } => "finished",
+        RecoveryOutcome::CleanedUp => "cleanedUp",
+        RecoveryOutcome::AbandonedRemoved => "abandonedRemoved",
+    }
+}
+
+/// How a report names what became of an update's journal, in camelCase.
+fn update_outcome(outcome: &UpdateRecovery) -> &'static str {
+    match outcome {
+        UpdateRecovery::Nothing => "nothing",
+        UpdateRecovery::RolledBack { .. } => "rolledBack",
+        UpdateRecovery::Finished => "finished",
+        UpdateRecovery::CleanedUp => "cleanedUp",
+        UpdateRecovery::CleanupLeft { .. } => "cleanupLeft",
+    }
+}
+
+/// Runs `job` on a thread of its own, handing it a progress that prints, and writes each line that
+/// progress gives to `out` as it comes, so that whoever runs the program sees a hold while the job
+/// waits in it. Gives back what the job gave, and whether every line was written: a line that
+/// cannot be written stops the writing, never the job, which runs to its end. A panic in the job
+/// goes on in the caller.
+fn printing<T: Send>(
+    out: &mut dyn Write,
+    job: impl FnOnce(&dyn Progress) -> T + Send,
+) -> (T, io::Result<()>) {
+    let (lines, heard) = mpsc::channel();
+    thread::scope(|scope| {
+        let running = scope.spawn(move || {
+            let progress = Printed {
+                lines,
+                shown: Mutex::new(None),
+            };
+            job(&progress)
+        });
+        // The lines end once the job has ended and dropped its progress, a panic included.
+        let mut shown = Ok(());
+        for line in heard {
+            if shown.is_ok() {
+                shown = written(out, &line);
+            }
+        }
+        match running.join() {
+            Ok(answer) => (answer, shown),
+            Err(panicked) => panic::resume_unwind(panicked),
+        }
+    })
+}
+
+/// A job's progress as the headless modes write it: a line as each phase begins, one each time the
+/// phase's share done passes a tenth, and one as a hold begins and as it ends, each sent, whole and
+/// in the order the job told them, to the thread that writes the mode's report.
+struct Printed {
+    /// Where the lines go.
+    lines: mpsc::Sender<String>,
+    /// The phase begun last, and the share of it done, in percent, that its last progress line
+    /// told, a whole tenth; `None` before the first phase.
+    shown: Mutex<Option<(PhaseId, u64)>>,
+}
+
+impl Printed {
+    /// Sends `line` to be written. The thread that writes it outlives the job, so it is always
+    /// there to take it.
+    fn send(&self, line: String) {
+        let _ = self.lines.send(line);
+    }
+}
+
+impl Progress for Printed {
+    fn phase(&self, phase: PhaseId) {
+        let mut shown = self.shown.lock().unwrap_or_else(PoisonError::into_inner);
+        *shown = Some((phase, 0));
+        self.send(format!("phase: {}\n", phase.0));
+    }
+
+    /// Writes a line each time the phase's share done passes a tenth, the share it reached in
+    /// whole percent, at most all of it. A count that starts over, as a download tried again does,
+    /// is told again as it passes each tenth; work of nothing, and work told before any phase,
+    /// writes nothing.
+    fn advance(&self, done: u64, total: u64, _: Option<&RelPath>) {
+        let Some(percent) = share_done(done, total) else {
+            return;
+        };
+        let mut shown = self.shown.lock().unwrap_or_else(PoisonError::into_inner);
+        let Some((phase, told)) = shown.as_mut() else {
+            return;
+        };
+        let tenth = percent - percent % PROGRESS_STEP_PERCENT;
+        if tenth > *told {
+            self.send(format!("progress: {} {percent}%\n", phase.0));
+        }
+        *told = tenth;
+    }
+
+    fn hold(&self, hold: Hold) {
+        self.send(format!("hold: {}\n", codes::hold(hold)));
+    }
+
+    fn resumed(&self) {
+        self.send("resumed\n".to_owned());
+    }
+}
+
+/// The share `done` is of `total`, in whole percent, at most all of it; `None` for a total of
+/// nothing, which has no share.
+fn share_done(done: u64, total: u64) -> Option<u64> {
+    let whole = u128::from(WHOLE_PERCENT);
+    let share = (u128::from(done) * whole).checked_div(u128::from(total))?;
+    u64::try_from(share.min(whole)).ok()
 }
 
 /// Writes `report`, all that a mode tells whoever runs it, to `out`, and gives back the exit code
@@ -949,17 +1224,21 @@ mod tests {
     use std::fs;
     use std::io::{self, Write};
     use std::path::{Path, PathBuf};
+    use std::sync::mpsc;
+    use std::thread;
+    use std::time::Duration;
 
     use gdl_extract::Expansion;
-    use gdl_files::{FolderProbe, root_utf16_len};
+    use gdl_files::{FolderProbe, Hold, PhaseId, root_utf16_len};
     use gdl_fixtures::{
         DiscSet, Edc, InstallFixture, RawEntry, RuntimeFiles, append_sections, backdate,
-        make_alpha_markers, pretty_json, snapshot, tiny_elf,
+        folder_names, make_alpha_markers, pretty_json, snapshot, tiny_elf,
     };
     use gdl_install::{
-        Blocker, ComponentAttributes, DEFAULT_CONFIG, DestinationReport, GUNE5D, InstallFolder,
-        JOURNAL_DIR, KnownFolder, LOCK_FILE, RETIRED_LAUNCHER_PREFIX, RUNTIME_SECTION, STATE_DIR,
-        Sections, SectionsError, UPDATE_JOURNAL, UPDATE_STAGING_PREFIX, Warning,
+        Blocker, ComponentAttributes, DEFAULT_CONFIG, DOWNLOAD_PREFIX, DestinationReport, GUNE5D,
+        InstallFolder, JOURNAL_DIR, KnownFolder, LOCK_FILE, RETIRED_LAUNCHER_PREFIX,
+        RUNTIME_SECTION, Receipt, Recovered, RecoveryOutcome, STATE_DIR, Sections, SectionsError,
+        UPDATE_BACKUP, UPDATE_JOURNAL, UPDATE_STAGING_PREFIX, UpdateRecovery, Warning,
         installed_launcher_name,
     };
     use gdl_release::{Platform, Version};
@@ -967,7 +1246,8 @@ mod tests {
 
     use super::{
         Build, EXIT_OK, EXIT_REFUSED, EXIT_USAGE, FolderView, OwnFile, SPACE_MARGIN, USAGE,
-        install_names, json_report, refuse, run, text_value, usage,
+        hands_over, install_names, json_report, print_recovered, printing, refuse, run, text_value,
+        usage, was_installed_copy,
     };
     use crate::codes::Report;
     use crate::extraction::vectors::{
@@ -1355,6 +1635,30 @@ mod tests {
                 &["--extract", "n64", "rom.z64", "--output", "out/.."],
                 "an output that ends in no name",
             ),
+            (&["--recover"], "--recover without a folder"),
+            (&["--recover", ""], "--recover with an empty folder"),
+            (&["--recover", "--json"], "--recover followed by an option"),
+            (&["--json", "--recover"], "--recover at the end"),
+            (&["--recover", "folder", "other"], "a second folder"),
+            (
+                &["--recover", "folder", "--json"],
+                "--json beside --recover",
+            ),
+            (
+                &["--recover", "folder", "--payload", "a.zip"],
+                "--payload beside --recover",
+            ),
+            (
+                &["--recover", "folder", "--output", "out"],
+                "--output beside --recover",
+            ),
+            (
+                &["--recover", "folder", "--strict", "script"],
+                "--strict beside --recover",
+            ),
+            (&["--recover", "a", "--recover", "b"], "--recover twice"),
+            (&["--recover", "folder", "--version"], "two modes"),
+            (&["--inspect", "folder", "--recover", "folder"], "two modes"),
         ];
         for &(args, what) in cases {
             let ran = run_release(args);
@@ -1370,7 +1674,7 @@ mod tests {
             USAGE,
             "usage: gdl-launcher-headless --check-payload [--payload <zip>] | --inspect <dir> \
              [--json] | --check-folder <dir> [--json] | --extract <n64|dreamcast> <dump> \
-             --output <dir> [--strict script] | --version"
+             --output <dir> [--strict script] | --recover <dir> | --version"
         );
     }
 
@@ -1392,6 +1696,8 @@ mod tests {
             &["--output", "out"],
             &["--strict", "script"],
             &["--extract=n64"],
+            &["--recover=folder"],
+            &["--Recover", "folder"],
         ];
         for &args in cases {
             let ran = run_release(args);
@@ -1970,6 +2276,12 @@ mod tests {
         ];
         assert_eq!(
             run(&checking_json, &RELEASE, &mut own, &mut Closed, &mut err),
+            Some(EXIT_REFUSED)
+        );
+        // A folder with nothing to recover, whose report is lost.
+        let recovering = [OsString::from("--recover"), dir.path().into()];
+        assert_eq!(
+            run(&recovering, &RELEASE, &mut own, &mut Closed, &mut err),
             Some(EXIT_REFUSED)
         );
         // A runtime that verifies and loses its report, as the release scripts' check could. No
@@ -2944,5 +3256,483 @@ mod tests {
             assert_eq!(ran.err.lines().count(), 1, "{}", ran.err);
         }
         assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 0);
+    }
+
+    /// How long the hold test's other job keeps the lock at most, waiting for the recovery to write
+    /// that it holds: far longer than the recovery takes to look at the lock.
+    const HOLD_SEEN_LIMIT: Duration = Duration::from_secs(60);
+
+    /// The release an update the tests left unfinished updated from.
+    const PREVIOUS: &str = "0.9.0";
+
+    /// A recovery that found nothing to do.
+    fn nothing_recovered() -> Recovered {
+        Recovered {
+            install: RecoveryOutcome::Nothing,
+            update: UpdateRecovery::Nothing,
+            swept: Vec::new(),
+            left: Vec::new(),
+        }
+    }
+
+    /// What `print_recovered` writes of `recovered`.
+    fn printed(recovered: &Recovered) -> String {
+        let mut out = Vec::new();
+        print_recovered(recovered, &mut out).unwrap();
+        String::from_utf8(out).unwrap()
+    }
+
+    /// Recovers the folder at `root` as the release build, whose own file carries no sections.
+    fn recovered(root: &Path) -> Ran {
+        run_release(&[OsStr::new("--recover"), root.as_os_str()])
+    }
+
+    /// The name an update from `from`, staged in the tests' staging, gives the launcher copy it
+    /// moves aside on `platform`.
+    fn retired_copy(platform: Platform, from: &str) -> String {
+        let suffix = match platform {
+            Platform::WindowsX64 => ".exe",
+            Platform::LinuxX64 => "",
+        };
+        format!("{RETIRED_LAUNCHER_PREFIX}{from}-{STAGING_RANDOM}{suffix}")
+    }
+
+    /// An installation of the standard runtime of `version` for `platform` in a folder of its own
+    /// in `dir`, and its state folder.
+    fn installation(dir: &Path, platform: Platform, version: &str) -> (InstallFixture, PathBuf) {
+        let runtime = RuntimeFiles::standard(platform.as_str(), version);
+        let fixture = InstallFixture::write(&dir.join("install"), runtime).unwrap();
+        let state = fixture.root.join(STATE_DIR);
+        (fixture, state)
+    }
+
+    /// A stream that keeps what is written to it, and tells `seen` once what it holds first holds
+    /// `watched`.
+    struct Watched {
+        written: Vec<u8>,
+        watched: &'static [u8],
+        seen: Option<mpsc::Sender<()>>,
+    }
+
+    impl Write for Watched {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            self.written.extend_from_slice(bytes);
+            let watched = self.watched;
+            if self
+                .written
+                .windows(watched.len())
+                .any(|part| part == watched)
+                && let Some(seen) = self.seen.take()
+            {
+                let _ = seen.send(());
+            }
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn a_recovery_is_printed_outcome_by_outcome() {
+        let fixture = InstallFixture::new(
+            Path::new("install"),
+            RuntimeFiles::standard(Platform::LinuxX64.as_str(), VERSION),
+        );
+        let receipt: Receipt = serde_json::from_value(fixture.receipt()).unwrap();
+        let installs = [
+            (RecoveryOutcome::Nothing, "nothing"),
+            (
+                RecoveryOutcome::RolledBack {
+                    kept: vec!["saves".to_owned()],
+                },
+                "rolledBack",
+            ),
+            (
+                RecoveryOutcome::Finished {
+                    receipt: Box::new(receipt),
+                },
+                "finished",
+            ),
+            (RecoveryOutcome::CleanedUp, "cleanedUp"),
+            (RecoveryOutcome::AbandonedRemoved, "abandonedRemoved"),
+        ];
+        let updates = [
+            (UpdateRecovery::Nothing, "nothing"),
+            (
+                UpdateRecovery::RolledBack {
+                    kept: vec!["lib".to_owned()],
+                    launcher_restored: true,
+                },
+                "rolledBack",
+            ),
+            (
+                UpdateRecovery::RolledBack {
+                    kept: Vec::new(),
+                    launcher_restored: false,
+                },
+                "rolledBack",
+            ),
+            (UpdateRecovery::Finished, "finished"),
+            (UpdateRecovery::CleanedUp, "cleanedUp"),
+            (
+                UpdateRecovery::CleanupLeft {
+                    detail: "held".into(),
+                },
+                "cleanupLeft",
+            ),
+        ];
+        for (install, install_word) in &installs {
+            for (update, update_word) in &updates {
+                let recovered = Recovered {
+                    install: install.clone(),
+                    update: update.clone(),
+                    ..nothing_recovered()
+                };
+                assert_eq!(
+                    printed(&recovered),
+                    format!("install: {install_word}\nupdate: {update_word}\n")
+                );
+            }
+        }
+
+        // The leftovers removed, then those kept, each in the byte order the recovery gives them;
+        // a name that would begin a line of its own is escaped.
+        let leftovers = Recovered {
+            swept: vec![
+                "download-AbC123xy".to_owned(),
+                "journal/update.json.pending".to_owned(),
+                "stage-AbC123xy".to_owned(),
+            ],
+            left: vec![
+                "retired-launcher-0.9.0-AbC123xy.exe".to_owned(),
+                "update-backup".to_owned(),
+                "x\nupdate: finished".to_owned(),
+            ],
+            ..nothing_recovered()
+        };
+        assert_eq!(
+            printed(&leftovers),
+            "install: nothing\nupdate: nothing\nswept: download-AbC123xy\n\
+             swept: journal/update.json.pending\nswept: stage-AbC123xy\n\
+             left: retired-launcher-0.9.0-AbC123xy.exe\nleft: update-backup\n\
+             left: x\\nupdate: finished\n"
+        );
+        assert!(print_recovered(&nothing_recovered(), &mut Closed).is_err());
+    }
+
+    #[test]
+    fn a_jobs_progress_is_printed_as_it_is_told() {
+        let mut out = Vec::new();
+        let (answer, shown) = printing(&mut out, |progress| {
+            // Work told before any phase has no phase to name.
+            progress.advance(50, 100, None);
+            progress.phase(PhaseId("first"));
+            for done in [0, 9, 10, 15, 19, 20, 55, 100, 120] {
+                progress.advance(done, 100, None);
+            }
+            // Work of nothing has no share.
+            progress.advance(0, 0, None);
+            progress.hold(Hold::LockBusy);
+            progress.resumed();
+            // A new phase starts from nothing, and a count that starts over is told again as it
+            // passes each tenth.
+            progress.phase(PhaseId("second"));
+            for done in [500, 3, 300, 1000] {
+                progress.advance(done, 1000, None);
+            }
+            progress.hold(Hold::GameRunning);
+            progress.resumed();
+            // Counts as large as a count can be.
+            progress.phase(PhaseId("large"));
+            progress.advance(u64::MAX / 2, u64::MAX, None);
+            progress.advance(u64::MAX, u64::MAX, None);
+            progress.advance(u64::MAX, 1, None);
+            "the job's answer"
+        });
+        assert_eq!(answer, "the job's answer");
+        shown.unwrap();
+        assert_eq!(
+            String::from_utf8(out).unwrap(),
+            "phase: first\nprogress: first 10%\nprogress: first 20%\nprogress: first 55%\n\
+             progress: first 100%\nhold: lock.busy\nresumed\nphase: second\n\
+             progress: second 50%\nprogress: second 30%\nprogress: second 100%\n\
+             hold: game.running\nresumed\nphase: large\nprogress: large 49%\n\
+             progress: large 100%\n"
+        );
+
+        // A stream that takes no line stops the writing, not the job.
+        let (answer, shown) = printing(&mut Closed, |progress| {
+            progress.phase(PhaseId("first"));
+            progress.hold(Hold::LockBusy);
+            7
+        });
+        assert_eq!(answer, 7);
+        assert!(shown.is_err());
+    }
+
+    #[test]
+    #[should_panic(expected = "the job's own panic")]
+    fn a_panic_in_a_printed_job_goes_on_in_its_caller() {
+        let _ = printing(&mut Vec::new(), |progress| -> u8 {
+            progress.phase(PhaseId("first"));
+            panic!("the job's own panic")
+        });
+    }
+
+    #[test]
+    fn a_recovery_hands_over_only_when_it_put_the_copy_back() {
+        let rolled_back = |launcher_restored| Recovered {
+            update: UpdateRecovery::RolledBack {
+                kept: Vec::new(),
+                launcher_restored,
+            },
+            ..nothing_recovered()
+        };
+        // The copy put back where the program's own file was: the program runs from a retired
+        // name, and the copy takes over.
+        assert!(hands_over(true, &rolled_back(true)));
+        // An update that found no copy to move aside put none back, and there is nothing to hand
+        // over to.
+        assert!(!hands_over(true, &rolled_back(false)));
+        // A program that was no installed copy runs from where it ran before.
+        assert!(!hands_over(false, &rolled_back(true)));
+        // An update finished or cleaned up leaves the copy that ran it where it was.
+        for update in [
+            UpdateRecovery::Nothing,
+            UpdateRecovery::Finished,
+            UpdateRecovery::CleanedUp,
+            UpdateRecovery::CleanupLeft {
+                detail: "held".into(),
+            },
+        ] {
+            let recovered = Recovered {
+                update,
+                ..nothing_recovered()
+            };
+            assert!(!hands_over(true, &recovered), "{recovered:?}");
+        }
+        // A fresh install's recovery never hands over.
+        let install = Recovered {
+            install: RecoveryOutcome::RolledBack { kept: Vec::new() },
+            ..nothing_recovered()
+        };
+        assert!(!hands_over(true, &install));
+    }
+
+    #[test]
+    fn the_installed_copy_is_told_by_the_programs_own_file() {
+        let Some(platform) = this_platform() else {
+            return;
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("install");
+        fs::create_dir(&root).unwrap();
+        // A launcher file carrying a runtime at the copy's name, and its bytes in another file.
+        let mut file = tiny_elf();
+        append_sections(&mut file, &[(RUNTIME_SECTION, b"runtime")], 0);
+        let copy = root.join(installed_launcher_name(platform));
+        fs::write(&copy, &file).unwrap();
+        let downloaded = dir.path().join("downloaded");
+        fs::write(&downloaded, &file).unwrap();
+
+        let installed: OwnFile = Sections::of_path(&copy);
+        assert!(was_installed_copy(&installed, &root, Some(platform)).unwrap());
+        let other: OwnFile = Sections::of_path(&downloaded);
+        assert!(!was_installed_copy(&other, &root, Some(platform)).unwrap());
+        // An installation without a copy has none for the file to be.
+        let empty = dir.path().join("empty");
+        fs::create_dir(&empty).unwrap();
+        assert!(!was_installed_copy(&installed, &empty, Some(platform)).unwrap());
+        assert!(
+            !was_installed_copy(&installed, &dir.path().join("absent"), Some(platform)).unwrap()
+        );
+        // A file whose sections were not found, and a system no release is built for.
+        assert!(!was_installed_copy(&Ok(None), &root, Some(platform)).unwrap());
+        let unread: OwnFile = Err(SectionsError::NoSections);
+        assert!(!was_installed_copy(&unread, &root, Some(platform)).unwrap());
+        assert!(!was_installed_copy(&installed, &root, None).unwrap());
+    }
+
+    #[test]
+    fn a_folder_with_nothing_to_recover_is_left_as_it_was() {
+        let dir = tempfile::tempdir().unwrap();
+        let absent = dir.path().join("absent");
+        let ran = recovered(&absent);
+        assert_eq!(ran.code, Some(EXIT_OK), "{ran:?}");
+        assert_eq!(
+            (ran.out.as_str(), ran.err.as_str()),
+            ("install: nothing\nupdate: nothing\n", "")
+        );
+        assert!(!absent.exists());
+
+        // An installation that holds nothing to recover is looked at without the lock, so not
+        // even the lock's file is made.
+        let Some(platform) = this_platform() else {
+            return;
+        };
+        let (fixture, _) = installation(dir.path(), platform, VERSION);
+        backdate(&fixture.root).unwrap();
+        let before = snapshot(&fixture.root).unwrap();
+        let ran = recovered(&fixture.root);
+        assert_eq!(ran.code, Some(EXIT_OK), "{ran:?}");
+        assert_eq!(
+            (ran.out.as_str(), ran.err.as_str()),
+            ("install: nothing\nupdate: nothing\n", "")
+        );
+        assert!(
+            snapshot(&fixture.root).unwrap() == before,
+            "the folder changed"
+        );
+    }
+
+    #[test]
+    fn a_recovery_sweeps_what_jobs_left_and_names_each() {
+        let Some(platform) = this_platform() else {
+            return;
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let (fixture, state) = installation(dir.path(), platform, VERSION);
+        let mut kept = folder_names(&state).unwrap();
+        let staging = format!("{UPDATE_STAGING_PREFIX}{STAGING_RANDOM}");
+        let download = format!("{DOWNLOAD_PREFIX}{STAGING_RANDOM}");
+        let retired = retired_copy(platform, PREVIOUS);
+        fs::create_dir_all(state.join(&staging).join("data")).unwrap();
+        fs::write(state.join(&staging).join(DEFAULT_CONFIG), b"{}").unwrap();
+        fs::create_dir(state.join(&download)).unwrap();
+        fs::create_dir(state.join(UPDATE_BACKUP)).unwrap();
+        fs::write(state.join(UPDATE_BACKUP).join("VERSION"), PREVIOUS).unwrap();
+        fs::write(state.join(&retired), b"an older launcher").unwrap();
+        // Names the launcher's rules do not make there, which stay.
+        let others = ["notes.txt", "stage-n64-AbC123xy"];
+        fs::write(state.join(others[0]), b"").unwrap();
+        fs::create_dir(state.join(others[1])).unwrap();
+
+        let ran = recovered(&fixture.root);
+        assert_eq!(ran.code, Some(EXIT_OK), "{ran:?}");
+        assert_eq!(ran.err, "");
+        assert_eq!(
+            ran.out,
+            format!(
+                "phase: finishCleanup\ninstall: nothing\nupdate: nothing\nswept: {download}\n\
+                 swept: {retired}\nswept: {staging}\nswept: {UPDATE_BACKUP}\n"
+            )
+        );
+        // What the fixture laid out, the names that are not the launcher's, and the lock the
+        // recovery took.
+        kept.extend(others.map(str::to_owned));
+        kept.push(LOCK_FILE.to_owned());
+        kept.sort();
+        assert_eq!(folder_names(&state).unwrap(), kept);
+    }
+
+    #[test]
+    fn a_committed_update_is_cleaned_up() {
+        let Some(platform) = this_platform() else {
+            return;
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let (fixture, state) = installation(dir.path(), platform, VERSION);
+        let staging = format!("{UPDATE_STAGING_PREFIX}{STAGING_RANDOM}");
+        let retired = retired_copy(platform, PREVIOUS);
+        fs::create_dir(state.join(&staging)).unwrap();
+        fs::create_dir(state.join(UPDATE_BACKUP)).unwrap();
+        fs::write(state.join(UPDATE_BACKUP).join("VERSION"), PREVIOUS).unwrap();
+        fs::write(state.join(&retired), b"an older launcher").unwrap();
+        let journal = json!({
+            "schema": 1,
+            "minLauncher": VERSION,
+            "phase": "committed",
+            "from": PREVIOUS,
+            "to": VERSION,
+            "staging": staging,
+            "backup": ["VERSION", "build-info.json"],
+            "publish": ["VERSION", "build-info.json"],
+            "madeFolders": [],
+            "launcher": installed_launcher_name(platform),
+            "retired": retired,
+            "receipt": fixture.receipt(),
+        });
+        fs::create_dir(state.join(JOURNAL_DIR)).unwrap();
+        let journal_path = state.join(JOURNAL_DIR).join(UPDATE_JOURNAL);
+        fs::write(&journal_path, pretty_json(&journal)).unwrap();
+
+        let ran = recovered(&fixture.root);
+        assert_eq!(ran.code, Some(EXIT_OK), "{ran:?}");
+        assert_eq!(ran.err, "");
+        assert_eq!(
+            ran.out,
+            "phase: recoverUpdate\nphase: finishCleanup\ninstall: nothing\nupdate: cleanedUp\n"
+        );
+        for gone in [staging.as_str(), UPDATE_BACKUP, retired.as_str()] {
+            assert!(!state.join(gone).exists(), "{gone}");
+        }
+        assert!(!journal_path.exists());
+        assert_eq!(
+            inspected(&fixture.root, false).lines().next(),
+            Some("state: installed")
+        );
+    }
+
+    #[test]
+    fn an_installation_of_a_later_release_is_refused() {
+        let Some(platform) = this_platform() else {
+            return;
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let (fixture, state) = installation(dir.path(), platform, "1.0.1");
+        let staging = state.join(format!("{UPDATE_STAGING_PREFIX}{STAGING_RANDOM}"));
+        fs::create_dir(&staging).unwrap();
+        assert_refused(
+            &recovered(&fixture.root),
+            "error: launcher.older (olderLauncher): This launcher file (1.0.0-beta) is older than \
+             the installation (1.0.1)\n",
+        );
+        assert!(staging.is_dir(), "the staging was removed");
+    }
+
+    #[test]
+    fn a_recovery_writes_its_hold_while_it_waits() {
+        let Some(platform) = this_platform() else {
+            return;
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let (fixture, state) = installation(dir.path(), platform, VERSION);
+        let staging = format!("{UPDATE_STAGING_PREFIX}{STAGING_RANDOM}");
+        fs::create_dir(state.join(&staging)).unwrap();
+        // Another job holds the lock until the recovery has written that it waits for it, so a
+        // hold written only once the recovery ended would keep it waiting to the limit.
+        let (taken, lock_taken) = mpsc::channel();
+        let (seen, hold_seen) = mpsc::channel();
+        let root = fixture.root.clone();
+        let holder = thread::spawn(move || {
+            let lock = InstallFolder::at(&root).unwrap().lock().unwrap();
+            taken.send(()).unwrap();
+            let in_time = hold_seen.recv_timeout(HOLD_SEEN_LIMIT).is_ok();
+            drop(lock);
+            in_time
+        });
+        lock_taken.recv().unwrap();
+        let mut out = Watched {
+            written: Vec::new(),
+            watched: b"hold: lock.busy\n",
+            seen: Some(seen),
+        };
+        let mut err = Vec::new();
+        let args = [OsString::from("--recover"), fixture.root.clone().into()];
+        let code = run(&args, &RELEASE, &mut Ok(None), &mut out, &mut err);
+        assert!(
+            holder.join().unwrap(),
+            "the hold was not written while it lasted"
+        );
+        assert_eq!(code, Some(EXIT_OK), "{}", String::from_utf8_lossy(&err));
+        assert_eq!(
+            String::from_utf8(out.written).unwrap(),
+            format!(
+                "hold: lock.busy\nresumed\nphase: finishCleanup\ninstall: nothing\n\
+                 update: nothing\nswept: {staging}\n"
+            )
+        );
     }
 }

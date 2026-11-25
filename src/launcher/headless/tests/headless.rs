@@ -1,6 +1,7 @@
 //! The headless program as the release scripts and developers run it: the version it reports, its
 //! check of the runtime its file carries, its reports of what a folder is to the launcher and to
-//! an install, and its extraction of a Legends expansion's tree into a new folder.
+//! an install, its extraction of a Legends expansion's tree into a new folder, and its recovery of
+//! what jobs left unfinished in an installation's folder.
 
 mod common;
 
@@ -19,7 +20,9 @@ use gdl_fixtures::{
     DiscSet, Edc, EntryState, InstallFixture, Listed, RuntimeFiles, append_sections_at, backdate,
     listed, make_alpha_markers, snapshot, snapshot_outside, tree_listing, unhex,
 };
-use gdl_install::{RUNTIME_SECTION, probe_game_version};
+use gdl_install::{
+    DOWNLOAD_PREFIX, RUNTIME_SECTION, STATE_DIR, UPDATE_STAGING_PREFIX, probe_game_version,
+};
 use serde_json::{Value, json};
 use tempfile::TempDir;
 
@@ -28,11 +31,17 @@ use common::{PROGRAM, VERSION, inspect_json, run_to_end};
 /// A version that no launcher is: older than the first.
 const OTHER_VERSION: &str = "0.0.1";
 
+/// A release later than any launcher this program is built as.
+const LATER_VERSION: &str = "999.0.0";
+
+/// The random part of the leftover stagings the recovery tests lay out.
+const STAGING_RANDOM: &str = "AbC123xy";
+
 /// The line that answers arguments the program does not take.
 const USAGE: &str = "usage: gdl-launcher-headless --check-payload [--payload <zip>] | \
                      --inspect <dir> [--json] | --check-folder <dir> [--json] | \
                      --extract <n64|dreamcast> <dump> --output <dir> [--strict script] | \
-                     --version\n";
+                     --recover <dir> | --version\n";
 
 /// The N64 cases, which hold the image the tests extract and the tree the N64 extractor writes
 /// for it.
@@ -268,6 +277,10 @@ fn usage_errors_exit_2() {
             "--output",
             ".gdl-launcher",
         ],
+        &["--recover"],
+        &["--recover", ""],
+        &["--recover", "folder", "--json"],
+        &["--recover", "folder", "--inspect", "folder"],
     ];
     for &args in cases {
         let output = run_program(args);
@@ -850,4 +863,68 @@ fn an_output_inside_an_installation_is_refused() {
         snapshot(&fixture.root).unwrap() == installed,
         "the installation changed"
     );
+}
+
+#[test]
+fn recover_sweeps_what_jobs_left_without_a_window() {
+    let Some(platform) = this_platform() else {
+        return;
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let runtime = RuntimeFiles::standard(platform, VERSION);
+    let fixture = InstallFixture::write(&dir.path().join("install"), runtime).unwrap();
+    let state = fixture.root.join(STATE_DIR);
+    let staging = format!("{UPDATE_STAGING_PREFIX}{STAGING_RANDOM}");
+    let download = format!("{DOWNLOAD_PREFIX}{STAGING_RANDOM}");
+    fs::create_dir_all(state.join(&staging).join("data")).unwrap();
+    fs::write(state.join(&staging).join("data").join("config.json"), b"{}").unwrap();
+    fs::create_dir(state.join(&download)).unwrap();
+
+    // The folder given as a relative path, taken from the folder the program runs in.
+    let output = run_program_in(dir.path(), &["--recover", "install"]);
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert_eq!(text(&output.stderr), "");
+    assert_eq!(
+        text(&output.stdout),
+        format!(
+            "phase: finishCleanup\ninstall: nothing\nupdate: nothing\nswept: {download}\n\
+             swept: {staging}\n"
+        )
+    );
+    assert!(!state.join(&staging).exists());
+    assert!(!state.join(&download).exists());
+    assert_eq!(inspect_json(&fixture.root)["state"], "installed");
+
+    // Recovered once more, the folder holds nothing to recover.
+    let output = run_program(&[OsStr::new("--recover"), fixture.root.as_os_str()]);
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert_eq!(text(&output.stdout), "install: nothing\nupdate: nothing\n");
+    assert_eq!(text(&output.stderr), "");
+}
+
+#[test]
+fn recover_refuses_an_installation_of_a_later_release() {
+    let Some(platform) = this_platform() else {
+        return;
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let runtime = RuntimeFiles::standard(platform, LATER_VERSION);
+    let fixture = InstallFixture::write(&dir.path().join("install"), runtime).unwrap();
+    let staging = fixture
+        .root
+        .join(STATE_DIR)
+        .join(format!("{UPDATE_STAGING_PREFIX}{STAGING_RANDOM}"));
+    fs::create_dir(&staging).unwrap();
+    let output = run_program(&[OsStr::new("--recover"), fixture.root.as_os_str()]);
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    assert_eq!(
+        text(&output.stderr),
+        format!(
+            "error: launcher.older (olderLauncher): This launcher file ({VERSION}) is older than \
+             the installation ({LATER_VERSION})\n"
+        )
+    );
+    assert_eq!(text(&output.stdout), "");
+    // A job left by a later release's rules is that release's to recover.
+    assert!(staging.is_dir(), "the staging was removed");
 }
