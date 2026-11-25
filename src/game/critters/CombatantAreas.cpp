@@ -109,14 +109,12 @@ std::optional<f32> Combatant::startArea(Actor& critter, s32 id, const AttackDefi
             area.node = nodes[static_cast<usize>(attachment)].name;
         }
     }
-    // Its cue rides the node the move names, else the fighter's drawn root transform.
-    const std::string drawnNode = area.node;
     const auto named = critter.stock->tree->findNode(node, kCombatantNodeNameLength);
     if (const auto ridden = moveNode(critter, node); !rootParent && !worldParent.has_value() &&
                                                      ridden.has_value() &&
                                                      (!named.has_value() || *named != *ridden)) {
-        // CritterDoSfxSub hangs it from obj_d0 (critter.c 2287-2297), which for a move naming no
-        // node is the root node it strikes from.
+        // CritterDoSfxSub hangs it, and its effect, from obj_d0 (critter.c 2287-2297), which for
+        // a move naming no node is the root node it strikes from.
         area.node = nodes[*ridden].name;
     }
     if (damage.speed > 0) {
@@ -164,7 +162,7 @@ std::optional<f32> Combatant::startArea(Actor& critter, s32 id, const AttackDefi
     cue.tree = sound->shows() ? sound->tree : std::string{};
     cue.sound = sound->soundFor(m_sim.realm);
     cue.soundPosition = Vec3{modelTransform(critter)[3]};
-    const Mat4 parent = worldParent.value_or(attachmentTransform(critter, drawnNode));
+    const Mat4 parent = worldParent.value_or(attachmentTransform(critter, area.node));
     cue.position = Vec3{(parent * area.local)[3]};
     // Drawn at the body's drawn size (CritterDoSfxSub, 0x8003DE1C-0x8003DE4C), laid out in the
     // world or shrunk once more by the drawn node it rides.
@@ -172,9 +170,9 @@ std::optional<f32> Combatant::startArea(Actor& critter, s32 id, const AttackDefi
     cue.life = life;
     cue.follows = !worldParent.has_value();
     cue.shakes = (sound->flags & effect_flags::kShakes) != 0;
-    cue.rootAttachment = drawnNode.empty();
-    if (!drawnNode.empty()) {
-        cue.node = drawnNode;
+    cue.rootAttachment = area.node.empty();
+    if (!area.node.empty()) {
+        cue.node = area.node;
     }
     cue.nodeOffset = laid;
     cue.pitchYaw = angles;

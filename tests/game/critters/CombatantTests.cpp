@@ -2480,9 +2480,11 @@ TEST_CASE("a move without a node keeps the fighter's root node, which the next m
 
 /** The swinging general of `source`, its SWING and DEATH named no node and its body's origin
  * three up and five ahead, over a ROOT two over its placement and turned a quarter about y
- * through every sequence, under `rules`: spawned and stood ready a frame. */
+ * through every sequence, under `rules`, on `floor` when one is given: spawned and stood ready a
+ * frame. */
 void loadNodelessSwing(test::FakeRenderDevice& device, CombatantAssets& assets, Combatant& actor,
-                       formats::CritterFile source, const CritterRules& rules) {
+                       formats::CritterFile source, const CritterRules& rules,
+                       const WorldCollision* floor = nullptr) {
     const auto root = familyAssets();
     const std::string turned =
         R"(,"tracks":[{"node":0,"flags":2,"frames":[0],"values":[1.5707964]}])";
@@ -2493,7 +2495,7 @@ void loadNodelessSwing(test::FakeRenderDevice& device, CombatantAssets& assets, 
         move.colnode.clear();
     }
     assets.data = CritterData::fromDecoded("GENERAL", source, 0, rules);
-    REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+    REQUIRE(actor.spawn(assets, 0, {}, 0, floor, {}, 'G'));
     actor.update(2, 1.0f / 30, {});
     REQUIRE(actor.moveName() == "READY");
 }
@@ -2621,6 +2623,291 @@ TEST_CASE("a death without a node spews from the fighter's root node, as BossSpe
     // Thrown before the killing blow's shove carries the body on: ROOT two over its placement,
     // or the placement itself.
     CHECK(glm::distance(spews[0].origin, Vec3{0, modelFallback ? 0.0f : 2.0f, 0}) < 1e-4f);
+}
+
+/** A floor level with the placement, wide enough for anything these fighters lay on it. */
+WorldCollision flatFloor() {
+    WorldCollision floor;
+    CollisionTriangle triangle;
+    triangle.normal = {0, 1, 0};
+    triangle.vertices = {Vec3{-100, 0, -100}, Vec3{0, 0, 100}, Vec3{100, 0, -100}};
+    floor.build({triangle});
+    return floor;
+}
+
+TEST_CASE("a move without a node lays its area where the root node puts the area's offset, placed "
+          "once or dropped to the floor below",
+          "[game][combatant][move-node]") {
+    // CritterDoSfx places an SFXX 0x40 effect once where GetWorldMat puts obj_d0 with the SFXX
+    // offset (critter.c 2380-2395), and PlaceEffectOnFloor drops an SFXX 0x10 one to the floor
+    // under where it starts (2576-2578). For a move naming no node obj_d0 is c->anim, the root
+    // node (3772-3784); under kModelFallback it is the model.
+    const u32 placement = GENERATE(effect_flags::kDetached, effect_flags::kOnFloor);
+    const bool modelFallback = GENERATE(false, true);
+    CAPTURE(placement, modelFallback);
+    auto source = swingCritter(0);
+    auto& harm = source.damages[0];
+    harm.type = AttackDefinition::kAttachedArea;
+    harm.damage = 10;
+    harm.flags = 0;
+    harm.maxDistance = 10;
+    harm.minDot = -1;
+    harm.sfxIndex = 0;
+    harm.offset = {1, 0, 0};
+    auto& sound = source.sounds.emplace_back();
+    sound.name = "NULLFX";
+    sound.life = 0.5f;
+    sound.flags = placement;
+    sound.offset = {0, 1, 4};
+    const WorldCollision floor = flatFloor();
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    Combatant actor;
+    CritterRules rules;
+    rules.portRules = modelFallback ? CritterRules::kModelFallback : 0;
+    loadNodelessSwing(device, assets, actor, source, rules, &floor);
+    const auto turnedRoot = actor.nodeTransform("ROOT");
+    REQUIRE(turnedRoot);
+    // Placed once, the SFXX offset turns with the node and the DAMG offset with the body; dropped
+    // to the floor, both turn with the node and it lies a tenth over the floor.
+    const auto laidFrom = [&](const Mat4& frame) {
+        if (placement == effect_flags::kDetached) {
+            return Vec3{frame * Vec4{0, 1, 4, 1}} + Vec3{1, 0, 0};
+        }
+        const Vec3 start{frame * Vec4{1, 1, 4, 1}};
+        return Vec3{start.x, 0.1f, start.z};
+    };
+    REQUIRE(glm::distance(laidFrom(*turnedRoot), laidFrom(Mat4{1})) > 1.0f);
+    const Vec3 laid = laidFrom(modelFallback ? Mat4{1} : *turnedRoot);
+    EnemyView player;
+    player.player = 0;
+    player.position = laid - Vec3{0, 3, 0}; // centred on where it is laid
+    const auto swing = assets.data.moveNamed("SWING");
+    REQUIRE(swing);
+    Combatant::MovePoint start;
+    start.target = 0;
+    REQUIRE(actor.setMove(*swing, start));
+    actor.update(2, 1.0f / 30, std::array{player});
+    REQUIRE(actor.moveName() == "SWING");
+    const auto blows = actor.takeBlows();
+    REQUIRE(blows.size() == 1);
+    CHECK(blows[0].area);
+    CHECK(glm::distance(blows[0].origin, laid) < 1e-4f);
+}
+
+TEST_CASE("a move without a node hangs its area's effect from the root node it rides, as "
+          "CritterDoSfxSub hangs it from obj_d0",
+          "[game][combatant][move-node]") {
+    // An effect without a parenting flag is hung from obj_d0 (CritterDoSfxSub, critter.c
+    // 2287-2297), c->anim for a move naming no node, so it turns and rises with the root node;
+    // under kModelFallback it rides the model.
+    const bool modelFallback = GENERATE(false, true);
+    CAPTURE(modelFallback);
+    auto source = swingCritter(0);
+    auto& harm = source.damages[0];
+    harm.type = AttackDefinition::kAttachedArea;
+    harm.damage = 10;
+    harm.flags = 0;
+    harm.maxDistance = 10;
+    harm.minDot = -1;
+    harm.sfxIndex = 0;
+    harm.offset = {0, 1, 4};
+    auto& sound = source.sounds.emplace_back();
+    sound.name = "FX";
+    sound.life = 0.5f;
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    Combatant actor;
+    CritterRules rules;
+    rules.portRules = modelFallback ? CritterRules::kModelFallback : 0;
+    loadNodelessSwing(device, assets, actor, source, rules);
+    const auto turnedRoot = actor.nodeTransform("ROOT");
+    REQUIRE(turnedRoot);
+    const auto swing = assets.data.moveNamed("SWING");
+    REQUIRE(swing);
+    Combatant::MovePoint start;
+    start.target = 0;
+    REQUIRE(actor.setMove(*swing, start));
+    actor.update(2, 1.0f / 30, {});
+    REQUIRE(actor.moveName() == "SWING");
+    std::vector<CombatCue> cues;
+    for (CombatCue& cue : actor.takeCues()) {
+        if (cue.tree == "FX") {
+            cues.push_back(std::move(cue));
+        }
+    }
+    REQUIRE(cues.size() == 1);
+    CHECK(cues[0].follows);
+    CHECK(cues[0].rootAttachment == modelFallback);
+    CHECK(cues[0].node == (modelFallback ? std::nullopt : std::optional<std::string>{"ROOT"}));
+    const Mat4& parent = modelFallback ? Mat4{1} : *turnedRoot;
+    CHECK(glm::distance(cues[0].position, Vec3{parent * Vec4{0, 1, 4, 1}}) < 1e-4f);
+}
+
+TEST_CASE("a colnode of one character names no node, so its move strikes from the root node",
+          "[game][combatant][move-node]") {
+    // CritterInitMoves looks up only a colnode of two characters or more (critter.c 1211-1222),
+    // so a shorter one leaves CritterMoveSetup its fallback, c->anim, though a node bears it.
+    const auto root = familyAssets();
+    auto archive = root / "MONSTERS" / General::definition().name;
+    if (General::definition().realmCostume) {
+        archive /= "LEVELG";
+    }
+    writeTextFile(archive / "animations.json", R"({"trees":[{"name":"BODY","nodes":[
+      {"name":"ROOT","object":"BODY","parent":-1,"position":[0,2,0]},
+      {"name":"B","object":"BODY","parent":0,"position":[7,0,0]}],
+      "sequences":[{"name":"READY","frames":30},{"name":"SWING","frames":12}]}]})");
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, General::definition(), 'G'));
+    REQUIRE(assets.tree->findNode("B", kCombatantNodeNameLength).has_value());
+    auto source = swingCritter(0);
+    source.moves[1].colnode = "B";
+    source.damages[0].offset = {0, 1, 0};
+    assets.data = CritterData::fromDecoded("GENERAL", source, 0, {});
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+    actor.update(2, 1.0f / 30, {});
+    const auto swing = assets.data.moveNamed("SWING");
+    REQUIRE(swing);
+    Combatant::MovePoint start;
+    start.target = 0;
+    REQUIRE(actor.setMove(*swing, start));
+    // Within reach of ROOT's blow, three up over the feet, and seven from B's.
+    EnemyView player;
+    player.player = 0;
+    player.position = {0, 0, 1};
+    actor.update(2, 1.0f / 30, std::array{player});
+    REQUIRE(actor.moveName() == "SWING");
+    const auto blows = actor.takeBlows();
+    REQUIRE(blows.size() == 1);
+    CHECK(glm::distance(blows[0].origin, Vec3{0, 3, 0}) < 1e-4f);
+}
+
+TEST_CASE("a head's move without a node strikes from the head's own root node, even where its "
+          "body's strikes from the model",
+          "[game][combatant][move-node]") {
+    // CritterNewInst makes a head's c->anim its own root node (critter.c 2157-2164), which
+    // CritterMoveSetup falls back to (3772-3784). N64 Boss.bin does the same for a head
+    // (e0881708) while its body's tree hangs from the model (kModelFallback).
+    const bool modelFallback = GENERATE(false, true);
+    CAPTURE(modelFallback);
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, test::headedBodyAssets(), bossDefinition("CHIMERA"), 'G'));
+    formats::CritterFile source;
+    source.descriptors.push_back({"CHIMERA", "BODY", 4});
+    source.types.resize(3);
+    for (usize index = 0; index < source.types.size(); ++index) {
+        auto& type = source.types[index];
+        type.maxHealth = index == 0 ? 1000.0f : 100.0f;
+        type.radius = 2;
+        type.moveCount = static_cast<s16>(index == 0 ? 1 : 2);
+        type.childIndex = index < 2 ? static_cast<s16>(index + 1) : s16{-1};
+        type.parentIndex = static_cast<s16>(index == 0 ? -1 : 0);
+        if (index > 0) {
+            type.rootNode = index == 1 ? "HEAD_L" : "HEAD_R";
+        }
+    }
+    formats::CritterMoveRecord ready;
+    ready.name = "READY";
+    ready.anim = "READY";
+    ready.type = MoveDefinition::kReady;
+    ready.priority = 512;
+    ready.interrupt = 20;
+    auto strike = ready;
+    strike.name = "STRIKE";
+    strike.anim = "SPIT";
+    strike.type = MoveDefinition::kAttackFrom;
+    strike.priority = 544;
+    strike.damage0 = 0;
+    strike.frameEnd = 5;
+    strike.target.maxDistance = 100;
+    source.moves = {ready, strike};
+    formats::CritterDamageRecord blow;
+    blow.type = AttackDefinition::kBlow;
+    blow.damage = 10;
+    blow.maxDistance = 10;
+    source.damages.push_back(blow);
+    CritterRules rules;
+    rules.portRules = modelFallback ? CritterRules::kModelFallback : 0;
+    assets.data = CritterData::fromDecoded("CHIMERA", source, 0, rules);
+    REQUIRE(assets.children.size() == 2);
+    for (usize index = 0; index < assets.children.size(); ++index) {
+        assets.children[index] = CritterData::fromDecoded("CHIMERA", source, index + 1, rules);
+    }
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 100, Vec3{0}, 0, nullptr, {}, 'G'));
+    REQUIRE(actor.childCount() == 2);
+    EnemyView player;
+    player.player = 0;
+    player.position = {0, 2, 3};
+    const std::array players{player};
+    actor.captureEncounterPlayers(players);
+    // HEAD_L and HEAD_R stand two to either side, five up, over the body's own root; the heads
+    // take the one player by turns.
+    const std::array roots{Vec3{2, 5, 0}, Vec3{-2, 5, 0}};
+    usize struck = 0;
+    for (s32 tick = 0; tick < 90; ++tick) {
+        actor.update(2, 1.0f / 30, players);
+        for (const CombatBlow& hit : actor.takeBlows()) {
+            REQUIRE((hit.critter == 101 || hit.critter == 102));
+            CHECK(glm::distance(hit.origin, roots[static_cast<usize>(hit.critter - 101)]) < 1e-4f);
+            ++struck;
+        }
+    }
+    CHECK(struck > 0);
+}
+
+TEST_CASE("the Ice Domain golem's stomp spreads from under its body, as its tree has no foot of "
+          "the name the move gives",
+          "[game][combatant][move-node][assets]") {
+    // GOLEMI's ATTACK4 names FOOTR#0, which LEVELI's GOLEM1 lacks, so CritterMoveSetup's obj_d0 is
+    // c->anim, BODY1, which the stomp carries ahead (critter.c 1211-1222, 3772-3784). CritterDoSfx
+    // places the stomp's EXPRING once where BODY1 stands (SFXX 0x40, 2380-2395), and
+    // PlaceEffectOnFloor drops it to the floor below (2576-2578).
+    const auto root = test::assetOrSkip("CRITTER/GOLEMI.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/GOLEM/LEVELI/ANIM.PS2");
+    const WorldCollision floor = flatFloor();
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, Golem::definition('I'), 'I'));
+    const auto stomp = assets.data.moveNamed("ATTACK4");
+    REQUIRE(stomp.has_value());
+    const MoveDefinition& move = assets.data.moves()[*stomp];
+    REQUIRE(move.colnode == "FOOTR#0");
+    REQUIRE_FALSE(assets.tree->findNode(move.colnode, kCombatantNodeNameLength).has_value());
+    REQUIRE(assets.tree->nodes[0].name == "BODY1");
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, Vec3{0}, 0, &floor, {}, 'I'));
+    EnemyView player;
+    player.player = 0;
+    player.position = {0, 0, 4};
+    Combatant::MovePoint point;
+    point.target = 0;
+    REQUIRE(actor.setMove(*stomp, point));
+    std::optional<CombatBlow> ring;
+    Vec3 feet{0};  ///< where the golem stood as the stomp started
+    Vec3 ahead{0}; ///< and how far from there BODY1 stood
+    for (s32 update = 0; update < 60 && !ring; ++update) {
+        feet = actor.position();
+        actor.update(2, 1.0f / 30, std::array{player});
+        for (const CombatBlow& blow : actor.takeBlows()) {
+            if (blow.area && !ring) {
+                ring = blow;
+                // Its pose is the stomp's; only its step has carried the golem on since.
+                ahead = Vec3{(*actor.nodeTransform("BODY1"))[3]} - actor.position();
+            }
+        }
+    }
+    REQUIRE(ring.has_value());
+    REQUIRE(actor.yaw() == 0.0f);
+    CAPTURE(ahead.x, ahead.z, ring->origin.x, ring->origin.y, ring->origin.z);
+    CHECK(ring->origin.y == Approx(0.1f));
+    const Vec3 body = feet + ahead;
+    CHECK(glm::length(Vec2{ring->origin.x - body.x, ring->origin.z - body.z}) < 1e-3f);
+    // Over two units ahead of the feet, where the model's fallback would have laid it.
+    CHECK(ahead.z > 2.0f);
 }
 
 TEST_CASE("the Plague Fiend's acid balls leave from his root node, as CritterMoveSetup falls "
