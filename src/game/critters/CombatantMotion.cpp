@@ -1,8 +1,6 @@
 #include <algorithm>
 #include <cmath>
-#include <numeric>
 #include <optional>
-#include <vector>
 
 #include "engine/core/Types.h"
 #include "engine/math/ApproximateLength.h"
@@ -284,22 +282,23 @@ bool Combatant::translate(Actor& critter, f32 seconds, const MoveDefinition* mov
     };
     // CritterCollidePlayers walks gPlayers in seat order and pushes every standing player it
     // meets, but each standing player overwrites whether the step stops (0x80035290,
-    // 0x800352F4), tested once after the walk (0x800353D4): only the last seat stops it. Any
-    // player met holds the turn (CritterTranslate, 0x8003AF24).
-    std::vector<usize> seats(players.size());
-    std::iota(seats.begin(), seats.end(), usize{0});
-    std::ranges::stable_sort(seats, {}, [&](usize view) { return players[view].player; });
+    // 0x800352F4), tested once after the walk (0x800353D4): only the last seat stops it,
+    // whatever order the views come in. Any player met holds the turn (CritterTranslate,
+    // 0x8003AF24).
     bool touched = false;
     bool stops = false;
-    for (const usize seat : seats) {
-        const EnemyView& other = players[seat];
+    std::optional<s32> lastSeat;
+    for (const EnemyView& other : players) {
         // One hung on another's node (hud_flags 0x20), carried off by a creature or hung on its
         // partner in a combo, is passed over before it can touch the stop (0x8003524C-0x80035254).
         if (other.hidden || other.captured || other.comboRiding) {
             continue;
         }
         const auto separation = playerSeparation(other);
-        stops = separation.has_value();
+        if (!lastSeat || other.player >= *lastSeat) {
+            lastSeat = other.player;
+            stops = separation.has_value();
+        }
         if (separation) {
             touched = true;
             const f32 length = glm::length(*separation);
