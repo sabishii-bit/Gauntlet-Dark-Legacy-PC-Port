@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <format>
 #include <initializer_list>
+#include <iterator>
 #include <limits>
 #include <optional>
 #include <span>
@@ -922,9 +923,11 @@ TEST_CASE("the middle pieces stand between the second and third seats' boxes wha
         {standing(kWarriorClass, 0), standing(kWizardClass, 1), standing(kWarriorClass, 2),
          standing(kWarriorClass, 3)},
     }};
-    for (usize players = 0; players < parties.size(); ++players) {
-        CAPTURE(players);
-        const std::vector<Quad> quads = dreamcast.boxes(dreamcast.viewOf(parties.at(players)));
+    for (const std::array<HudSeat, HudView::kSeats>& seats : parties) {
+        const auto joined =
+            std::ranges::count_if(seats, [](const HudSeat& seat) { return seat.box.active; });
+        CAPTURE(joined);
+        const std::vector<Quad> quads = dreamcast.boxes(dreamcast.viewOf(seats));
         REQUIRE(quads.size() > kMiddlePieces.size());
         const std::span<const Quad> last = std::span{quads}.last(kMiddlePieces.size());
         CHECK(Fixture::pictureOf(last[0].texture).name == "S3_MID");
@@ -939,6 +942,22 @@ TEST_CASE("the middle pieces stand between the second and third seats' boxes wha
         }
         CHECK(std::ranges::count_if(quads, isMiddle) == 2);
     }
+    // The Dreamcast's four boss keys stand 25 apart from X+8 (FUN_8c0ba060) and end at X+99,
+    // short of the middle pieces; Dark Legacy's eighth, twelve apart, runs from 212 to 228 in
+    // the second seat's box, and stands whole over them.
+    HudSeat keyed = standing(kWizardClass, 1);
+    keyed.box.bossKeys = 0x80;
+    HudView relics = dreamcast.viewOf({standing(kWarriorClass, 0), keyed, {}, {}});
+    relics.relicsShown = true;
+    const std::vector<Quad> withKey = dreamcast.boxes(relics);
+    const auto key = std::ranges::find_if(withKey, [](const Quad& quad) {
+        return Fixture::pictureOf(quad.texture).name == "SM_KEY_BLU";
+    });
+    REQUIRE(key != withKey.end());
+    checkRect(key->area, {120 + 8 + (7 * 12), 300, 16, 16});
+    const auto middle = std::ranges::find_if(withKey, isMiddle);
+    REQUIRE(middle != withKey.end());
+    CHECK(std::distance(withKey.begin(), middle) < std::distance(withKey.begin(), key));
     // A card rises over them, as over every box.
     PickupHud pickups;
     pickups.addCard(1, "GOLD");
@@ -1292,13 +1311,13 @@ TEST_CASE("the thirteenth rune sits at Dark Legacy's place in the Dreamcast box"
         REQUIRE(rune.size() == 1);
         checkRect(rune.front().area, {296, 340, 16, 16});
         CHECK(Fixture::pictureOf(rune.front().texture).folder == Fixture::kStaticFolder);
-        // It is none of the strip's runes, and it shows whether the relics do or not, after them.
-        Names expected{"BK_RUNE_STONE_02", "BTMBK_RED",   "WAR_NAME",      "BTMBK_LEVL",
-                       "BTMBK_GOLD",       "BTMBK_HELTH", "SM_RUNE_BLU_01"};
+        // It is none of the strip's runes, and it shows whether the relics do or not, after the
+        // runes; the bosses' keys, while shown, come last, over the middle pieces.
+        Names expected{"BK_RUNE_STONE_02", "BTMBK_RED",   "WAR_NAME",       "BTMBK_LEVL",
+                       "BTMBK_GOLD",       "BTMBK_HELTH", "SM_RUNE_BLU_01", "RUNE13"};
         if (relicsShown) {
             expected.emplace_back("SM_KEY_RED");
         }
-        expected.emplace_back("RUNE13");
         CHECK(pictureOrder(quads, 2) == expected);
     }
     // Twelve runes without it show no RUNE13.
@@ -1505,8 +1524,8 @@ TEST_CASE("a dying player's box keeps what it carries and its runestones, and lo
     CHECK(boxOrder(dreamcast.boxes(view), 0, dreamcast.lent) ==
           Names{"BK_RUNE_STONE_02", "BTMBK_YELO", "WAR_NAME", "BTMBK_LEVL", "BTMBK_GOLD",
                 "BTMBK_HELTH", "KEY_ICON", "POTION_ICON_YEL", "TRBO_FULL", "TURBO_GLOW",
-                "SM_RUNE_BLU_01", "SM_RUNE_BLU_02", "SM_RUNE_BLU_03", "SM_KEY_BLU", "BOOK",
-                "QUEST_ICON2"});
+                "SM_RUNE_BLU_01", "SM_RUNE_BLU_02", "SM_RUNE_BLU_03", "BOOK", "QUEST_ICON2",
+                "SM_KEY_BLU"});
 
     // Dying, PartyHud::status empties the box, and PlayerHealth::fall the meter. FUN_8c0bbe40
     // keeps the Dreamcast's panel through the death (state 11): FUN_8c0c16e0 goes on drawing the

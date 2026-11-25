@@ -127,14 +127,17 @@ private:
     void drawBack(Canvas& canvas, usize seat, const HudSeat& shown) const;
     /** The rest of seat `seat`'s box, over every seat's strip and panel. */
     void drawFront(Canvas& canvas, usize seat, const HudSeat& shown, const HudView& view) const;
-    /** What a player's box shows over its strip and panel: the banner, the numbers, what is
-     * carried, the arch, the relics and the legend items. */
+    /** What a player's box shows over its strip and panel but for the bosses' keys: the banner,
+     * the numbers, what is carried, the arch, the runestones and the legend items. */
     void drawPanel(Canvas& canvas, usize seat, const HudSeat& shown, const HudView& view) const;
     void drawPlain(Canvas& canvas, usize seat, s32 color) const;
     void drawNumbers(Canvas& canvas, usize seat, const StatusBoxView& box) const;
     void drawCarried(Canvas& canvas, usize seat, const StatusBoxView& box) const;
     void drawTurbo(Canvas& canvas, usize seat, const HudSeat& shown) const;
-    void drawRelics(Canvas& canvas, usize seat, const StatusBoxView& box, bool keysShown) const;
+    /** The runestones held along the strip, and the thirteenth at Dark Legacy's place. */
+    void drawRunes(Canvas& canvas, usize seat, const StatusBoxView& box) const;
+    /** The bosses' keys held, along the top of the strip. */
+    void drawBossKeys(Canvas& canvas, usize seat, const StatusBoxView& box) const;
     void drawLegends(Canvas& canvas, usize seat, u16 legends) const;
     void drawIt(Canvas& canvas, usize seat) const;
     void drawWaitHere(Canvas& canvas, usize seat, const HudSeat& shown, const HudView& view) const;

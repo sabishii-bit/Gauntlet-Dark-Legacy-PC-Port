@@ -572,6 +572,17 @@ void LegendsDreamcastHudPainter::drawStatus(HudFrame& frame, const HudView& view
               static_cast<f32>(Layout::kMiddleStripTop));
     drawWhole(canvas, m_middlePanel, static_cast<f32>(Layout::kMiddleLeft),
               static_cast<f32>(Layout::kMiddlePanelTop));
+    // Dark Legacy's showing of its relics stands for the Dreamcast's relic timer. The Dreamcast's
+    // four boss keys end at X+99 (FUN_8c0ba060, 25 apart from X+8), short of the middle pieces;
+    // Dark Legacy's eight run further, and stand whole over them.
+    if (view.relicsShown) {
+        for (usize seat = 0; seat < view.seats.size(); ++seat) {
+            const HudSeat& shown = view.seats.at(seat);
+            if (dreamcastBoxKind(shown) == LegendsDreamcastBoxKind::Panel) {
+                drawBossKeys(canvas, seat, shown.box);
+            }
+        }
+    }
     // FUN_8c0b76a0's cards rise over every box, and Dark Legacy's counts stand over them.
     drawCards(canvas, view);
     drawCounts(canvas, view);
@@ -727,7 +738,7 @@ void LegendsDreamcastHudPainter::drawPanel(Canvas& canvas, usize seat, const Hud
     drawNumbers(canvas, seat, box);
     drawCarried(canvas, seat, box);
     drawTurbo(canvas, seat, shown);
-    drawRelics(canvas, seat, box, view.relicsShown);
+    drawRunes(canvas, seat, box);
     // FUN_8c0c16e0 shows the legend items only to a player playing or waiting at an exit.
     if (standing(shown)) {
         drawLegends(canvas, seat, shown.legends);
@@ -801,8 +812,8 @@ void LegendsDreamcastHudPainter::drawTurbo(Canvas& canvas, usize seat, const Hud
     }
 }
 
-void LegendsDreamcastHudPainter::drawRelics(Canvas& canvas, usize seat, const StatusBoxView& box,
-                                            bool keysShown) const {
+void LegendsDreamcastHudPainter::drawRunes(Canvas& canvas, usize seat,
+                                           const StatusBoxView& box) const {
     const s32 x = dreamcastSeatX(seat);
     for (usize rune = 0; rune < m_runes.size(); ++rune) {
         if (held(box.runes, rune)) {
@@ -813,20 +824,22 @@ void LegendsDreamcastHudPainter::drawRelics(Canvas& canvas, usize seat, const St
                       static_cast<f32>(Layout::kRuneTop));
         }
     }
-    // Dark Legacy's showing of its relics stands for the Dreamcast's relic timer.
-    if (keysShown) {
-        for (usize key = 0; key < m_keys.size(); ++key) {
-            if (held(box.bossKeys, key)) {
-                drawWhole(canvas, m_keys.at(key),
-                          static_cast<f32>(x + Layout::kKeyLeft +
-                                           (static_cast<s32>(key) * Layout::kKeyStep)),
-                          static_cast<f32>(Layout::kKeyTop));
-            }
-        }
-    }
     if ((box.runes & StatusBoxPainter::kThirteenthRune) != 0) {
         drawWhole(canvas, m_thirteenthRune, static_cast<f32>(x + Layout::kThirteenthRune.x),
                   static_cast<f32>(Layout::kThirteenthRune.y));
+    }
+}
+
+void LegendsDreamcastHudPainter::drawBossKeys(Canvas& canvas, usize seat,
+                                              const StatusBoxView& box) const {
+    const s32 x = dreamcastSeatX(seat);
+    for (usize key = 0; key < m_keys.size(); ++key) {
+        if (held(box.bossKeys, key)) {
+            drawWhole(
+                canvas, m_keys.at(key),
+                static_cast<f32>(x + Layout::kKeyLeft + (static_cast<s32>(key) * Layout::kKeyStep)),
+                static_cast<f32>(Layout::kKeyTop));
+        }
     }
 }
 
