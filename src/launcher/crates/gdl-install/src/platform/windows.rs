@@ -12,7 +12,10 @@
 //! Internet Settings name, from the registry; and another process, opened by its id with
 //! OpenProcess, to be waited for with WaitForSingleObject, asked when it started with
 //! GetProcessTimes and which file it runs with QueryFullProcessImageNameW, and ended with
-//! TerminateProcess; and whether this process has a console, from GetConsoleWindow.
+//! TerminateProcess; and whether this process has a console, from GetConsoleWindow. For the tests,
+//! a program started under a filtered copy of this process's token, as a standard user's is, with
+//! CreateRestrictedToken, SetTokenInformation and CreateProcessAsUserW, and what this process's
+//! own token holds, from CheckTokenMembership and GetTokenInformation.
 
 use std::ffi::OsString;
 use std::fs::{File, OpenOptions};
@@ -68,11 +71,22 @@ use crate::destination::KnownFolder;
 use crate::system_proxy::{ProxyEnable, RawInternetSettings};
 
 #[cfg(test)]
+use std::collections::BTreeMap;
+#[cfg(test)]
 use windows_sys::Win32::Foundation::GENERIC_WRITE;
 #[cfg(test)]
 use windows_sys::Win32::Foundation::{
     ERROR_RESOURCE_LANG_NOT_FOUND, ERROR_RESOURCE_NAME_NOT_FOUND, ERROR_RESOURCE_TYPE_NOT_FOUND,
-    FreeLibrary, HMODULE, WIN32_ERROR,
+    FreeLibrary, HANDLE_FLAG_INHERIT, HMODULE, SetHandleInformation, WIN32_ERROR,
+};
+#[cfg(test)]
+use windows_sys::Win32::Security::{
+    CheckTokenMembership, CreateRestrictedToken, CreateWellKnownSid, DISABLE_MAX_PRIVILEGE,
+    GetLengthSid, GetSidSubAuthority, GetSidSubAuthorityCount, GetTokenInformation, PSID,
+    SECURITY_MAX_SID_SIZE, SID_AND_ATTRIBUTES, SetTokenInformation, TOKEN_ACCESS_MASK,
+    TOKEN_ADJUST_DEFAULT, TOKEN_ASSIGN_PRIMARY, TOKEN_DUPLICATE, TOKEN_MANDATORY_LABEL,
+    TOKEN_QUERY, TokenIntegrityLevel, WELL_KNOWN_SID_TYPE, WinBuiltinAdministratorsSid,
+    WinMediumLabelSid,
 };
 #[cfg(test)]
 use windows_sys::Win32::Storage::FileSystem::{DELETE, GetShortPathNameW, SetFileShortNameW};
@@ -87,6 +101,14 @@ use windows_sys::Win32::System::LibraryLoader::{
 use windows_sys::Win32::System::Power::ES_CONTINUOUS;
 #[cfg(test)]
 use windows_sys::Win32::System::Registry::HKEY_LOCAL_MACHINE;
+#[cfg(test)]
+use windows_sys::Win32::System::Threading::{
+    CREATE_NO_WINDOW, CREATE_UNICODE_ENVIRONMENT, CreateProcessAsUserW,
+    DeleteProcThreadAttributeList, EXTENDED_STARTUPINFO_PRESENT, GetExitCodeProcess,
+    InitializeProcThreadAttributeList, LPPROC_THREAD_ATTRIBUTE_LIST, OpenProcessToken,
+    PROC_THREAD_ATTRIBUTE_HANDLE_LIST, PROCESS_INFORMATION, STARTF_USESTDHANDLES, STARTUPINFOEXW,
+    STARTUPINFOW, UpdateProcThreadAttribute,
+};
 
 /// IsWow64Process2's signature. The call is looked up while running, since Windows 10 has it only
 /// from version 1511 on, and a program that imported it would not start on a system without it.
@@ -138,6 +160,27 @@ const WAIT_RIGHTS: PROCESS_ACCESS_RIGHTS = PROCESS_SYNCHRONIZE | PROCESS_QUERY_L
 /// The longest wait WaitForSingleObject takes in milliseconds: one less than INFINITE, which
 /// waits for ever.
 const LONGEST_WAIT_MILLIS: u32 = INFINITE - 1;
+
+/// The relative id that ends the integrity level's SID of a token at Medium integrity, a standard
+/// user's: SECURITY_MANDATORY_MEDIUM_RID.
+#[cfg(test)]
+pub(crate) const MEDIUM_INTEGRITY: u32 = 0x2000;
+
+/// SE_GROUP_INTEGRITY: the attribute a token's integrity level is set with.
+#[cfg(test)]
+const INTEGRITY_ATTRIBUTE: u32 = 0x20;
+
+/// The 32-bit words of the largest SID, SECURITY_MAX_SID_SIZE bytes.
+#[cfg(test)]
+const SID_WORDS: usize = SECURITY_MAX_SID_SIZE as usize / size_of::<u32>();
+
+/// The exit code a program started under a filtered token is given when it is ended.
+#[cfg(test)]
+const FILTERED_ENDED_EXIT_CODE: u32 = 1;
+
+/// How long a program started under a filtered token is given to be gone once it is ended.
+#[cfg(test)]
+const FILTERED_ENDED_WAIT: Duration = Duration::from_secs(5);
 
 /// The errors FindResourceExW gives for a resource that a program does not hold: none of its
 /// type, none of its id among those of its type, or none in its language.
@@ -778,6 +821,413 @@ pub(crate) fn has_console() -> bool {
     // SAFETY: the call takes nothing and only reads which console, if any, this process is
     // attached to; the window it names is not used.
     !unsafe { GetConsoleWindow() }.is_null()
+}
+
+/// A program started under a filtered token, as [`spawn_filtered`] starts one; ended when dropped,
+/// unless it has ended by itself, so that none outlives its test.
+#[cfg(test)]
+pub(crate) struct FilteredChild {
+    /// The program's process.
+    process: ProcessHandle,
+}
+
+#[cfg(test)]
+impl FilteredChild {
+    /// Waits up to `limit` for the program to end, and gives its exit code: an error of kind
+    /// TimedOut when it still runs at the limit.
+    pub(crate) fn wait(&self, limit: Duration) -> io::Result<u32> {
+        if !wait_process(&self.process, limit)? {
+            return Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "a program started under a filtered token still runs",
+            ));
+        }
+        let mut code = 0;
+        // SAFETY: the handle is open with the right to query the process, and lives through the
+        // call, which writes the exit code through a reference to a local.
+        let read = unsafe { GetExitCodeProcess(self.process.handle.as_raw_handle(), &mut code) };
+        if read == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        Ok(code)
+    }
+}
+
+#[cfg(test)]
+impl Drop for FilteredChild {
+    fn drop(&mut self) {
+        if matches!(wait_process(&self.process, Duration::ZERO), Ok(false)) {
+            let _ = end_process(&self.process, FILTERED_ENDED_EXIT_CODE);
+            let _ = wait_process(&self.process, FILTERED_ENDED_WAIT);
+        }
+    }
+}
+
+/// Starts `program` with `args` under a filtered copy of this process's token, as a standard
+/// user's token is filtered from an administrator's: every privilege but the one to pass through
+/// folders taken away, the Administrators group kept only to deny, and the integrity level lowered
+/// to Medium. The program runs with this process's environment, `env` set over it, without a
+/// console window, and with both its output streams on `output`, which is the one handle it
+/// inherits. The system refuses a caller that may not start a program under another token with
+/// ERROR_PRIVILEGE_NOT_HELD. The arguments are taken only when none is empty or holds a space, a
+/// tab or a quote, which need no quoting.
+#[cfg(test)]
+pub(crate) fn spawn_filtered(
+    program: &Path,
+    args: &[OsString],
+    env: &[(OsString, OsString)],
+    output: &File,
+) -> io::Result<FilteredChild> {
+    let token = filtered_token()?;
+    let application: Vec<u16> = program.as_os_str().encode_wide().chain([0]).collect();
+    let mut line = command_line(program, args)?;
+    let environment = environment_block(env);
+    let output = output.try_clone()?;
+    let inherited = output.as_raw_handle();
+    // SAFETY: the handle is the clone's, which lives through the call; the call only marks it to
+    // be inherited, and the clone, this process's own, is closed when dropped.
+    let marked =
+        unsafe { SetHandleInformation(inherited, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT) };
+    if marked == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    let mut list = InheritedHandles::naming(&inherited)?;
+    let startup = STARTUPINFOEXW {
+        StartupInfo: STARTUPINFOW {
+            cb: size_of::<STARTUPINFOEXW>() as u32,
+            dwFlags: STARTF_USESTDHANDLES,
+            hStdOutput: inherited,
+            hStdError: inherited,
+            ..STARTUPINFOW::default()
+        },
+        lpAttributeList: list.as_ptr(),
+    };
+    let mut started = PROCESS_INFORMATION::default();
+    // SAFETY: the token is a primary token, open with the rights to be assigned to a process; the
+    // program's path, the command line and the environment are NUL-terminated UTF-16 that their
+    // vectors own and keep alive through the call, the command line writable as the call may
+    // write it; the attribute list, initialized, names one inheritable handle that lives through
+    // the call; and the call writes the process's and its thread's handles and ids through a
+    // reference to a local.
+    let created = unsafe {
+        CreateProcessAsUserW(
+            token.as_raw_handle(),
+            application.as_ptr(),
+            line.as_mut_ptr(),
+            ptr::null(),
+            ptr::null(),
+            TRUE,
+            CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT | EXTENDED_STARTUPINFO_PRESENT,
+            environment.as_ptr().cast(),
+            ptr::null(),
+            &startup.StartupInfo,
+            &mut started,
+        )
+    };
+    if created == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    // SAFETY: the call gave this process both handles, open, and nothing else owns them, so the
+    // values made from them alone close them.
+    let (process, thread) = unsafe {
+        (
+            OwnedHandle::from_raw_handle(started.hProcess),
+            OwnedHandle::from_raw_handle(started.hThread),
+        )
+    };
+    drop(thread);
+    Ok(FilteredChild {
+        process: ProcessHandle {
+            handle: process,
+            can_end: true,
+        },
+    })
+}
+
+/// A filtered copy of this process's token, as [`spawn_filtered`] describes it: a primary token
+/// that may be assigned to a program.
+#[cfg(test)]
+fn filtered_token() -> io::Result<OwnedHandle> {
+    let own =
+        own_token(TOKEN_DUPLICATE | TOKEN_QUERY | TOKEN_ASSIGN_PRIMARY | TOKEN_ADJUST_DEFAULT)?;
+    let administrators = WellKnownSid::of(WinBuiltinAdministratorsSid)?;
+    let deny_only = SID_AND_ATTRIBUTES {
+        Sid: administrators.sid(),
+        Attributes: 0,
+    };
+    let mut restricted: HANDLE = ptr::null_mut();
+    // SAFETY: the token is open with the right to be duplicated; the one SID to keep only to deny
+    // lives through the call, which only reads it; no privilege or restricting SID is listed; and
+    // the call writes the new token's handle through a reference to a local.
+    let made = unsafe {
+        CreateRestrictedToken(
+            own.as_raw_handle(),
+            DISABLE_MAX_PRIVILEGE,
+            1,
+            &deny_only,
+            0,
+            ptr::null(),
+            0,
+            ptr::null(),
+            &mut restricted,
+        )
+    };
+    if made == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    // SAFETY: the handle was just made, is valid, and is owned by nothing else.
+    let restricted = unsafe { OwnedHandle::from_raw_handle(restricted) };
+    let medium = WellKnownSid::of(WinMediumLabelSid)?;
+    let label = TOKEN_MANDATORY_LABEL {
+        Label: SID_AND_ATTRIBUTES {
+            Sid: medium.sid(),
+            Attributes: INTEGRITY_ATTRIBUTE,
+        },
+    };
+    // SAFETY: the SID is a valid one, which the call only reads.
+    let len = size_of::<TOKEN_MANDATORY_LABEL>() as u32 + unsafe { GetLengthSid(medium.sid()) };
+    // SAFETY: the new token's handle carries the rights of the one it was made from, the right to
+    // change its defaults among them; the label and the SID it points at live through the call,
+    // which only reads them.
+    let set = unsafe {
+        SetTokenInformation(
+            restricted.as_raw_handle(),
+            TokenIntegrityLevel,
+            ptr::from_ref(&label).cast(),
+            len,
+        )
+    };
+    if set == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(restricted)
+}
+
+/// This process's own token, opened with `rights`.
+#[cfg(test)]
+fn own_token(rights: TOKEN_ACCESS_MASK) -> io::Result<OwnedHandle> {
+    let mut token: HANDLE = ptr::null_mut();
+    // SAFETY: the pseudo handle of this process needs no closing; the call writes the token's
+    // handle through a reference to a local.
+    let opened = unsafe { OpenProcessToken(GetCurrentProcess(), rights, &mut token) };
+    if opened == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    // SAFETY: the handle was just opened, is valid, and is owned by nothing else.
+    Ok(unsafe { OwnedHandle::from_raw_handle(token) })
+}
+
+/// Whether this process's token holds the Administrators group to grant, as CheckTokenMembership
+/// tells: a group kept only to deny is not held so.
+#[cfg(test)]
+pub(crate) fn token_is_administrator() -> io::Result<bool> {
+    let administrators = WellKnownSid::of(WinBuiltinAdministratorsSid)?;
+    let mut member: BOOL = FALSE;
+    // SAFETY: no token names the calling thread's own; the SID lives through the call, which only
+    // reads it; the answer is written through a reference to a local.
+    let checked =
+        unsafe { CheckTokenMembership(ptr::null_mut(), administrators.sid(), &mut member) };
+    if checked == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(member != FALSE)
+}
+
+/// The integrity level of this process's token: the relative id that ends its integrity SID, such
+/// as [`MEDIUM_INTEGRITY`].
+#[cfg(test)]
+pub(crate) fn token_integrity() -> io::Result<u32> {
+    let token = own_token(TOKEN_QUERY)?;
+    let mut len = 0;
+    // SAFETY: the token is open to be queried; no buffer is given, which the call allows, and it
+    // writes the bytes it needs through a reference to a local.
+    unsafe {
+        GetTokenInformation(
+            token.as_raw_handle(),
+            TokenIntegrityLevel,
+            ptr::null_mut(),
+            0,
+            &mut len,
+        )
+    };
+    if (len as usize) < size_of::<TOKEN_MANDATORY_LABEL>() {
+        return Err(io::Error::last_os_error());
+    }
+    let mut buffer = vec![0_usize; (len as usize).div_ceil(size_of::<usize>())];
+    // SAFETY: as above, and the buffer, aligned for the label, holds `len` bytes, which the call
+    // is told and writes no more than.
+    let read = unsafe {
+        GetTokenInformation(
+            token.as_raw_handle(),
+            TokenIntegrityLevel,
+            buffer.as_mut_ptr().cast(),
+            len,
+            &mut len,
+        )
+    };
+    if read == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    // SAFETY: the call wrote a TOKEN_MANDATORY_LABEL at the buffer's start, whose SID lies in the
+    // buffer, which lives while it is read.
+    let sid = unsafe { buffer.as_ptr().cast::<TOKEN_MANDATORY_LABEL>().read() }
+        .Label
+        .Sid;
+    // SAFETY: the SID is a valid one, whose count of relative ids the call points at.
+    let count = unsafe { *GetSidSubAuthorityCount(sid) };
+    let last = u32::from(count).checked_sub(1).ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            "an integrity level's SID holds no relative id",
+        )
+    })?;
+    // SAFETY: the SID holds `count` relative ids, of which the call points at the last.
+    Ok(unsafe { *GetSidSubAuthority(sid, last) })
+}
+
+/// A well-known SID, in storage of the largest SID's size aligned as a SID is.
+#[cfg(test)]
+struct WellKnownSid([u32; SID_WORDS]);
+
+#[cfg(test)]
+impl WellKnownSid {
+    /// The well-known SID `kind`, of no domain.
+    fn of(kind: WELL_KNOWN_SID_TYPE) -> io::Result<WellKnownSid> {
+        let mut sid = WellKnownSid([0; SID_WORDS]);
+        let mut len = SECURITY_MAX_SID_SIZE;
+        // SAFETY: the storage holds `len` bytes, which the call is told and writes no more than;
+        // no domain is given, which the well-known SIDs used here need none of.
+        let made = unsafe {
+            CreateWellKnownSid(kind, ptr::null_mut(), sid.0.as_mut_ptr().cast(), &mut len)
+        };
+        if made == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        Ok(sid)
+    }
+
+    /// The SID, as the calls that only read one take it.
+    fn sid(&self) -> PSID {
+        self.0.as_ptr().cast_mut().cast()
+    }
+}
+
+/// The attribute list of a program to start that names the one handle it inherits, which lives at
+/// least as long; deleted when dropped.
+#[cfg(test)]
+struct InheritedHandles<'a> {
+    /// The list's storage, in words so that it is aligned as the list wants.
+    storage: Vec<usize>,
+    /// The handle the list names.
+    named: PhantomData<&'a HANDLE>,
+}
+
+#[cfg(test)]
+impl<'a> InheritedHandles<'a> {
+    /// A list naming `handle`, which must be inheritable.
+    fn naming(handle: &'a HANDLE) -> io::Result<InheritedHandles<'a>> {
+        let mut size = 0;
+        // SAFETY: no list is given, which asks only the size a list of one attribute takes; the
+        // call writes it through a reference to a local.
+        unsafe { InitializeProcThreadAttributeList(ptr::null_mut(), 1, 0, &mut size) };
+        if size == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        let mut storage = vec![0_usize; size.div_ceil(size_of::<usize>())];
+        // SAFETY: the storage holds at least `size` bytes, which the call is told and writes no
+        // more than.
+        let initialized = unsafe {
+            InitializeProcThreadAttributeList(storage.as_mut_ptr().cast(), 1, 0, &mut size)
+        };
+        if initialized == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        let mut list = InheritedHandles {
+            storage,
+            named: PhantomData,
+        };
+        // SAFETY: the list was initialized for one attribute; its value is the one handle, which
+        // the list reads from where it lies, and which outlives the list.
+        let updated = unsafe {
+            UpdateProcThreadAttribute(
+                list.as_ptr(),
+                0,
+                PROC_THREAD_ATTRIBUTE_HANDLE_LIST as usize,
+                ptr::from_ref(handle).cast(),
+                size_of::<HANDLE>(),
+                ptr::null_mut(),
+                ptr::null(),
+            )
+        };
+        if updated == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        Ok(list)
+    }
+
+    /// The list, as the calls take it.
+    fn as_ptr(&mut self) -> LPPROC_THREAD_ATTRIBUTE_LIST {
+        self.storage.as_mut_ptr().cast()
+    }
+}
+
+#[cfg(test)]
+impl Drop for InheritedHandles<'_> {
+    fn drop(&mut self) {
+        // SAFETY: the list was initialized, and is deleted only here.
+        unsafe { DeleteProcThreadAttributeList(self.as_ptr()) };
+    }
+}
+
+/// The command line that starts `program` with `args`, NUL-terminated: the program in quotes,
+/// then each argument after a space. An argument that would need quoting is refused.
+#[cfg(test)]
+fn command_line(program: &Path, args: &[OsString]) -> io::Result<Vec<u16>> {
+    const QUOTE: u16 = b'"' as u16;
+    const SPACE: u16 = b' ' as u16;
+    let needs_quoting =
+        |unit: &u16| char::from_u32(u32::from(*unit)).is_none_or(|c| c.is_whitespace() || c == '"');
+    let mut line = vec![QUOTE];
+    line.extend(program.as_os_str().encode_wide());
+    line.push(QUOTE);
+    for arg in args {
+        let units: Vec<u16> = arg.encode_wide().collect();
+        if units.is_empty() || units.iter().any(needs_quoting) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("the argument {arg:?} would need quoting"),
+            ));
+        }
+        line.push(SPACE);
+        line.extend(units);
+    }
+    line.push(0);
+    Ok(line)
+}
+
+/// The environment block of this process's environment with `env` set over it, as
+/// CREATE_UNICODE_ENVIRONMENT reads one: each `name=value` NUL-terminated, sorted by name without
+/// regard to ASCII letter case, which also tells two spellings of one name for the same, and a NUL
+/// after the last.
+#[cfg(test)]
+fn environment_block(env: &[(OsString, OsString)]) -> Vec<u16> {
+    let mut variables = BTreeMap::new();
+    for (name, value) in std::env::vars_os().chain(env.iter().cloned()) {
+        let key: Vec<u16> = name.to_ascii_uppercase().encode_wide().collect();
+        variables.insert(key, (name, value));
+    }
+    let mut block = Vec::new();
+    for (name, value) in variables.values() {
+        block.extend(name.encode_wide());
+        block.push(u16::from(b'='));
+        block.extend(value.encode_wide());
+        block.push(0);
+    }
+    if block.is_empty() {
+        block.push(0);
+    }
+    block.push(0);
+    block
 }
 
 /// The path of the entry at `path`, which must be there, each name on it as the folder above it
