@@ -89,7 +89,7 @@ pub use update::{
     Probed, RECOVER_UPDATE, RETIRED_LAUNCHER_PREFIX, RetiredCopy, STAGE, SWAP, SourceSummary,
     UPDATE_BACKUP, UPDATE_JOURNAL, UPDATE_STAGING_PREFIX, UpdateError, UpdateFailure, UpdateNotice,
     UpdateOutcome, UpdatePhase, UpdatePlan, UpdateRequest, UpdateSource, Updated, VERIFY_DOWNLOAD,
-    plan_update, update,
+    installed_release, plan_update, update,
 };
 
 /// Held while children of this test program run that must not run beside one another: a job a kill

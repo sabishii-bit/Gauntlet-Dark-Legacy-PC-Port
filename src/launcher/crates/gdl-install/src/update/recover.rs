@@ -243,7 +243,8 @@ mod tests {
     };
     use super::super::{
         CHECK_INSTALLED, FINISH_CLEANUP, PlanSource, RECOVER_UPDATE, SourceSummary, UPDATE_BACKUP,
-        UPDATE_JOURNAL, UpdateError, UpdatePlan, UpdateSettings, VERIFY_DOWNLOAD, plan_update,
+        UPDATE_JOURNAL, UpdateError, UpdatePlan, UpdateSettings, VERIFY_DOWNLOAD,
+        installed_release, plan_update,
     };
     use super::recovery_error;
     use crate::faults::{FailAt, FaultPoint, FaultPoints, Faults, NoFaults, PanicAt};
@@ -351,6 +352,12 @@ mod tests {
     fn a_swap_with_every_move_done_rolls_forward() {
         let expected = as_after();
         let (_dir, fixture, _) = left_swapped();
+        // Before the recovery the installed files are the new release's, which its receipt does
+        // not record yet: an update would be chosen against the release the receipt records.
+        assert_eq!(
+            installed_release(&fixture.root, &version(NEXT)).unwrap(),
+            version(INSTALLED)
+        );
         let new_copy = fs::read(fixture.root.join(launcher_copy())).unwrap();
         let recovered = recover_simply(&fixture.root, NEXT, &standing_in(&NoFaults, &answering));
         assert_eq!(
@@ -368,6 +375,10 @@ mod tests {
             new_copy
         );
         assert_eq!(contents_of(&fixture.root), expected);
+        assert_eq!(
+            installed_release(&fixture.root, &version(NEXT)).unwrap(),
+            version(NEXT)
+        );
     }
 
     #[test]
@@ -591,6 +602,10 @@ mod tests {
             plan.changes.is_some() && plan.needed_bytes.is_some(),
             "{plan:?}"
         );
+        assert_eq!(
+            installed_release(&fixture.root, &version(NEXT)).unwrap(),
+            plan.from
+        );
         assert_eq!(snapshot(dir.path()).unwrap(), before);
 
         // Stopped with installed files moved aside, which agree with the receipt again only once
@@ -623,6 +638,10 @@ mod tests {
                 recovery_pending: true,
                 cleanup_pending: false,
             }
+        );
+        assert_eq!(
+            installed_release(&fixture.root, &version(NEXT)).unwrap(),
+            version(INSTALLED)
         );
         assert_eq!(snapshot(dir.path()).unwrap(), before);
         // The update takes the job back first, and goes on as planned.
@@ -892,6 +911,9 @@ mod tests {
             other => panic!("{other:?}"),
         }
         assert_eq!(as_it_is(&fixture.root), before);
+        // The release an update would be chosen against is refused for the journal too.
+        let refused = installed_release(&fixture.root, &version(NEXT)).unwrap_err();
+        assert_eq!(refused.rule(), "otherJob", "{refused:?}");
         let failure = failed(update_simply(
             &fixture,
             &mut source,
@@ -926,6 +948,9 @@ mod tests {
             }
             other => panic!("{other:?}"),
         }
+        // Nothing is chosen against an installation whose journal the recovery would not read.
+        let refused = installed_release(&fixture.root, &version(NEXT)).unwrap_err();
+        assert_eq!(refused.rule(), "journalUnreadable", "{refused:?}");
         assert_eq!(as_it_is(&fixture.root), before);
         assert_eq!(fs::read(&save).unwrap(), saved);
     }

@@ -169,35 +169,13 @@ pub fn plan_update(
     running: &Version,
     source: PlanSource<'_>,
 ) -> Result<UpdatePlan, UpdateError> {
-    let folder = InstallFolder::at(root).map_err(folder_error)?;
-    if let Some(left) = jobs_left(&folder, running).map_err(recovery_refusal)? {
-        if let Some(Err(error)) = left.install {
-            return Err(UpdateError::Recover(RecoverError::Install(error)));
-        }
-        if let Some(Err(detail)) = left.update {
-            return Err(UpdateError::Recover(
-                RecoverError::UpdateJournalUnreadable { detail },
-            ));
-        }
-    }
-    let inspection = InstallFolder::inspect(folder.root(), running);
-    let recovery_pending = inspection.state == FolderState::Pending;
-    let (from, installed) = match folder.installed(running) {
-        Ok(installed) => {
-            let (Access::Writable, Some(receipt)) = (installed.access, installed.receipt) else {
-                return Err(UpdateError::NewerLauncher);
-            };
-            let from = installed.build_info.version();
-            (from, Some((installed.build_info, receipt)))
-        }
-        Err(error) => match recovery_pending
-            .then(|| recorded_version(&folder))
-            .flatten()
-        {
-            Some(from) => (from, None),
-            None => return Err(UpdateError::Receipt(error)),
-        },
-    };
+    let (folder, base) = plan_base(root, running)?;
+    let PlanBase {
+        from,
+        installed,
+        recovery_pending,
+        cleanup_pending,
+    } = base;
     if *running < from {
         return Err(UpdateError::OlderLauncher {
             running: running.to_string().into(),
@@ -260,8 +238,72 @@ pub fn plan_update(
         changes,
         needed_bytes,
         recovery_pending,
-        cleanup_pending: inspection.cleanup_pending,
+        cleanup_pending,
     })
+}
+
+/// The version of the release installed at `root` that an update by the launcher of version
+/// `running` is planned against, read as [`plan_update`] reads it before it looks at a source:
+/// without the lock and changing nothing, what the recovery an update makes first would refuse
+/// refused as the plan refuses it, and the receipt's version alone while a job left unfinished
+/// keeps the installed files from agreeing with it. A session chooses where an update comes from
+/// against it, so that a plan with nothing newer to bring refuses what the update would refuse.
+pub fn installed_release(root: &Path, running: &Version) -> Result<Version, UpdateError> {
+    plan_base(root, running).map(|(_, base)| base.from)
+}
+
+/// What an update's plan reads of an installation before it looks at the source.
+struct PlanBase {
+    /// The installed release's version.
+    from: Version,
+    /// The installed release's record and the receipt, when the installed files agree with the
+    /// receipt; `None` while a job left unfinished keeps them from agreeing.
+    installed: Option<(BuildInfo, Receipt)>,
+    /// Whether a job was left unfinished there, which the update recovers first.
+    recovery_pending: bool,
+    /// Whether an earlier update's cleanup is still to be finished there.
+    cleanup_pending: bool,
+}
+
+/// Reads the installation at `root` for the plan of an update by the launcher of version
+/// `running`, as [`plan_update`] says, and gives back its folder and what the plan reads of it.
+fn plan_base(root: &Path, running: &Version) -> Result<(InstallFolder, PlanBase), UpdateError> {
+    let folder = InstallFolder::at(root).map_err(folder_error)?;
+    if let Some(left) = jobs_left(&folder, running).map_err(recovery_refusal)? {
+        if let Some(Err(error)) = left.install {
+            return Err(UpdateError::Recover(RecoverError::Install(error)));
+        }
+        if let Some(Err(detail)) = left.update {
+            return Err(UpdateError::Recover(
+                RecoverError::UpdateJournalUnreadable { detail },
+            ));
+        }
+    }
+    let inspection = InstallFolder::inspect(folder.root(), running);
+    let recovery_pending = inspection.state == FolderState::Pending;
+    let (from, installed) = match folder.installed(running) {
+        Ok(installed) => {
+            let (Access::Writable, Some(receipt)) = (installed.access, installed.receipt) else {
+                return Err(UpdateError::NewerLauncher);
+            };
+            let from = installed.build_info.version();
+            (from, Some((installed.build_info, receipt)))
+        }
+        Err(error) => match recovery_pending
+            .then(|| recorded_version(&folder))
+            .flatten()
+        {
+            Some(from) => (from, None),
+            None => return Err(UpdateError::Receipt(error)),
+        },
+    };
+    let base = PlanBase {
+        from,
+        installed,
+        recovery_pending,
+        cleanup_pending: inspection.cleanup_pending,
+    };
+    Ok((folder, base))
 }
 
 /// The installed release's version as the receipt of the installation `folder` records it, read

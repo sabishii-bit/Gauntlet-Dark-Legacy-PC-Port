@@ -24,19 +24,18 @@ use std::{env, panic, process, thread};
 
 use gdl_extract::{Expansion, Trust};
 use gdl_files::{
-    Cancel, Hold, Job, NoProgress, PhaseId, Progress, RelPath, absolute_lexical, read_json_bounded,
-    strip_verbatim,
+    Cancel, Hold, Job, NoProgress, PhaseId, Progress, RelPath, absolute_lexical, strip_verbatim,
 };
 use gdl_install::{
     AFTER_UPDATE_OPTION, Access, Changes, ComponentAttributes, DestinationReport, FolderError,
     FolderState, INSPECTION_SCHEMA, Inspection, InstallFolder, InstallationSummary, Linger,
-    LockError, MAX_RECEIPT_LEN, PREVIOUS_WAIT_LIMIT, Payload, PayloadError, PlanSource, Previous,
-    Probed, RECEIPT_FILE, RETIRED_DELETE_INTERVAL, RETIRED_DELETE_WINDOW, RUNTIME_SECTION, Receipt,
-    RecoverError, Recovered, RecoveryOutcome, Relation, RetiredCopy, RetiredSweep, SPACE_MARGIN,
-    Sections, SectionsError, SourceSummary, Unrecorded, UpdateError, UpdateNotice, UpdateOutcome,
-    UpdatePlan, UpdateRecovery, UpdateRequest, UpdateSource, Updated, hand_over, hand_over_needed,
-    installed_launcher_name, is_installed_copy, judge_destination, plan_update, recover,
-    sweep_retired, update, wait_for_previous,
+    LockError, PREVIOUS_WAIT_LIMIT, Payload, PayloadError, PlanSource, Previous, Probed,
+    RETIRED_DELETE_INTERVAL, RETIRED_DELETE_WINDOW, RUNTIME_SECTION, RecoverError, Recovered,
+    RecoveryOutcome, Relation, RetiredCopy, RetiredSweep, SPACE_MARGIN, Sections, SectionsError,
+    SourceSummary, Unrecorded, UpdateError, UpdateNotice, UpdateOutcome, UpdatePlan,
+    UpdateRecovery, UpdateRequest, UpdateSource, Updated, hand_over, hand_over_needed,
+    installed_launcher_name, installed_release, is_installed_copy, judge_destination, plan_update,
+    recover, sweep_retired, update, wait_for_previous,
 };
 use gdl_release::{Asset, Feed, FeedConfig, Platform, Release, ReleaseError, Scan, Version};
 use serde::Serialize;
@@ -1124,7 +1123,6 @@ fn update_mode(
             return refused(err, codes::sections(error), error.rule(), error, untouched);
         }
     };
-    let inspection = InstallFolder::inspect(&root, &running);
     let feed = feed.map(Feed::new);
     let updating = Updating {
         root: &root,
@@ -1132,10 +1130,11 @@ fn update_mode(
         platform,
     };
     if yes {
-        let picked = updating.pick(&inspection, bundled, feed.as_ref());
+        let picked = updating.pick(bundled, feed.as_ref());
         return updating.make(picked, was_installed_copy, out, err);
     }
     // What the update would do first is told before its source is sought, which may take a while.
+    let inspection = InstallFolder::inspect(&root, &running);
     let mut first = Vec::new();
     if inspection.state == FolderState::Pending {
         first.push(("plan", "recover".to_owned()));
@@ -1146,24 +1145,24 @@ fn update_mode(
     if written(out, &text_report(first)).is_err() {
         return EXIT_REFUSED;
     }
-    let picked = updating.pick(&inspection, bundled, feed.as_ref());
+    let picked = updating.pick(bundled, feed.as_ref());
     updating.plan(picked, out, err)
 }
 
 impl Updating<'_> {
-    /// Chooses what the update of the installation, as `inspection` found it, comes from, as
-    /// [`choose_source`] chooses: the program's own file, `bundled` when it carries a runtime, and
-    /// the newest release above the installed one of `feed`, when one is read. The installed
-    /// release is read as [`installed_version`] reads it. A launcher older than the installation,
-    /// and a feed that could not be read with nothing newer in the program's own file, are
-    /// refused.
+    /// Chooses what the update of the installation comes from, as [`choose_source`] chooses: the
+    /// program's own file, `bundled` when it carries a runtime, and the newest release above the
+    /// installed one of `feed`, when one is read. The installed release is read as
+    /// [`installed_release`] reads it, which refuses what the update's first recovery would
+    /// refuse, so that a plan with nothing newer at hand refuses what the update would. A launcher
+    /// older than the installation, and a feed that could not be read with nothing newer in the
+    /// program's own file, are refused too.
     fn pick<'s>(
         &self,
-        inspection: &Inspection,
         bundled: Option<&'s mut Sections<File>>,
         feed: Option<&'s Feed>,
     ) -> Result<Picked<'s>, UpdateError> {
-        let installed = installed_version(self.root, self.running, inspection)?;
+        let installed = installed_release(self.root, self.running)?;
         // The runtime a launcher file carries is of the launcher's own version, which the update
         // holds it to before anything of it is used.
         let own = bundled.as_ref().map(|_| self.running);
@@ -1304,8 +1303,7 @@ impl Updating<'_> {
         };
         // A recovery may finish an update that left the installation's files moved, so the
         // installed release is read again once it is done.
-        let inspection = InstallFolder::inspect(self.root, self.running);
-        let version = match installed_version(self.root, self.running, &inspection) {
+        let version = match installed_release(self.root, self.running) {
             Ok(version) => version,
             Err(error) => return refuse_update(err, &error, None),
         };
@@ -1355,51 +1353,6 @@ fn carries_runtime(sections: &Sections<File>) -> bool {
         .sections()
         .iter()
         .any(|section| section.name == RUNTIME_SECTION)
-}
-
-/// The version of the release installed in the folder at `root`, an absolute path, that an update
-/// by the launcher of version `running` chooses its source against, as `inspection` found the
-/// folder: read through the receipt as an update reads the installation; but where a job was left
-/// unfinished, or a journal stands, which may have moved installed files aside, the version the
-/// receipt records when the files do not agree with it, as an update's plan reads it, so that what
-/// the update finds of the job is what refuses it. A folder that holds no installation is refused
-/// as an update refuses it.
-fn installed_version(
-    root: &Path,
-    running: &Version,
-    inspection: &Inspection,
-) -> Result<Version, UpdateError> {
-    let folder = InstallFolder::at(root).map_err(folder_refusal)?;
-    let unfinished = inspection.state == FolderState::Pending || !inspection.journals.is_empty();
-    match folder.installed(running) {
-        Ok(installed) => Ok(installed.build_info.version()),
-        Err(error) => unfinished
-            .then(|| recorded_version(&folder))
-            .flatten()
-            .ok_or(UpdateError::Receipt(error)),
-    }
-}
-
-/// The version the receipt of the installation `folder` records, read alone, without the files it
-/// pins; `None` when it cannot be read.
-fn recorded_version(folder: &InstallFolder) -> Option<Version> {
-    let path = folder.state_dir().join(RECEIPT_FILE);
-    let receipt: Receipt = read_json_bounded(&path, MAX_RECEIPT_LEN).ok()?;
-    Version::parse(&receipt.version).ok()
-}
-
-/// An update's refusal of a folder that cannot hold an installation, as the update refuses one: a
-/// link on its path as one, and nothing there, or something other than a folder, as the system's
-/// answer.
-fn folder_refusal(error: FolderError) -> UpdateError {
-    match error {
-        FolderError::Links { path } => UpdateError::Links { path },
-        FolderError::Absent { path } => update_io(path, io::Error::from(io::ErrorKind::NotFound)),
-        FolderError::NotDirectory { path } => {
-            update_io(path, io::Error::from(io::ErrorKind::NotADirectory))
-        }
-        FolderError::Io { path, source } => update_io(path, source),
-    }
 }
 
 /// Writes the line that reports an update's refusal, `error`, to `err`, as [`refuse`] writes one,
@@ -5544,6 +5497,78 @@ mod tests {
             let mut own: OwnFile = Err(SectionsError::TableHash);
             let ran = run_as(&update_args(&fixture.root, yes), &RELEASE, &mut own);
             assert_refused(&ran, &line);
+        }
+    }
+
+    #[test]
+    fn a_plan_with_nothing_newer_refuses_what_the_update_would() {
+        let Some(platform) = this_platform() else {
+            return;
+        };
+        // Installations of the release the program is, whose recovery the update makes first
+        // refuses: so does the plan, although nothing newer is at hand to update from, and in the
+        // same words as the update, which changes nothing. What the plan tells the update would
+        // do first comes before, as for any plan: another job's journal is a job left unfinished.
+        let journals = [
+            (
+                "an update journal that cannot be read",
+                "journalUnreadable",
+                "",
+            ),
+            (
+                "another job's journal",
+                "otherJob",
+                "plan: recover
+",
+            ),
+            (
+                "an update journal a later launcher stamped",
+                "newerLauncher",
+                "",
+            ),
+        ];
+        for (what, rule, first) in journals {
+            let dir = tempfile::tempdir().unwrap();
+            let (fixture, state) = installation(dir.path(), platform, VERSION);
+            let journals = state.join(JOURNAL_DIR);
+            match rule {
+                "journalUnreadable" => {
+                    fs::create_dir(&journals).unwrap();
+                    fs::write(journals.join(UPDATE_JOURNAL), b"not JSON").unwrap();
+                }
+                "otherJob" => {
+                    fs::create_dir(&journals).unwrap();
+                    let journal =
+                        json!({"schema": 1, "minLauncher": VERSION, "phase": "extracting"});
+                    fs::write(journals.join("expansion-n64.json"), pretty_json(&journal)).unwrap();
+                }
+                _ => {
+                    let (journal, _, _) = update_left(&fixture, platform, "staged");
+                    let mut stamped: Value =
+                        serde_json::from_slice(&fs::read(&journal).unwrap()).unwrap();
+                    stamped["minLauncher"] = json!(LATER_LAUNCHER);
+                    fs::write(&journal, pretty_json(&stamped)).unwrap();
+                }
+            }
+            backdate(&fixture.root).unwrap();
+            let before = snapshot(&fixture.root).unwrap();
+
+            let planned = run_release(&update_args(&fixture.root, false));
+            assert_eq!(planned.code, Some(EXIT_REFUSED), "{what}: {planned:?}");
+            assert_eq!(planned.out, first, "{what}");
+            let refusal = planned.err.as_str();
+            assert!(
+                refusal.contains(&format!(" ({rule}): ")) && refusal.lines().count() == 1,
+                "{what}: {refusal:?}"
+            );
+            let made = run_release(&update_args(&fixture.root, true));
+            assert_eq!(made.code, Some(EXIT_REFUSED), "{what}: {made:?}");
+            assert_eq!(made.out, "", "{what}");
+            assert_eq!(made.err, format!("{refusal}changes: none\n"), "{what}");
+            assert!(
+                snapshot(&fixture.root).unwrap() == before,
+                "{what}: the folder changed"
+            );
         }
     }
 
