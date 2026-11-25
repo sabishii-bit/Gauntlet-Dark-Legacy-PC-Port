@@ -745,6 +745,11 @@ mod tests {
     #[cfg(windows)]
     const FILTERED: &str = "GDL_HANDOVER_FILTERED";
 
+    /// The variable that names the log both copies of the filtered-token hand-over write to, which
+    /// the old copy reads to learn that the new one waits for it.
+    #[cfg(windows)]
+    const FILTERED_LOG: &str = "GDL_HANDOVER_FILTERED_LOG";
+
     /// The test the old copy under a filtered token runs alone.
     #[cfg(windows)]
     const FILTERED_OLD_COPY: &str = "handover::tests::filtered_old_copy";
@@ -773,6 +778,16 @@ mod tests {
     /// What follows the old copy's start on the line that gives the id of the new copy it started.
     #[cfg(windows)]
     const HANDED_OVER: &str = "handedOver: ";
+
+    /// What follows the new copy's start on the line it prints just before it waits for the old
+    /// copy, which the line ends with the id of.
+    #[cfg(windows)]
+    const WAITING: &str = "waiting for ";
+
+    /// How often the old copy of the filtered-token hand-over reads the log again for the new
+    /// copy's line that it waits.
+    #[cfg(windows)]
+    const LOG_POLL: Duration = Duration::from_millis(50);
 
     /// What follows the new copy's start on the line that tells what its sweep of the retired
     /// copies did.
@@ -918,13 +933,15 @@ mod tests {
     /// is set: run at an installation's launcher name under a filtered token, it says what its
     /// token holds, renames its own running file aside to the retired name [`FILTERED`] holds,
     /// places a new copy at its name, starts that copy by the hand-over's command, to wait for this
-    /// process, and ends a moment later.
+    /// process, and ends a while after the log [`FILTERED_LOG`] names says the new copy waits, so
+    /// that the new copy waits for a process that still runs.
     #[cfg(windows)]
     #[test]
     fn filtered_old_copy() {
         let Ok(retired_name) = env::var(FILTERED) else {
             return;
         };
+        let log = PathBuf::from(env::var_os(FILTERED_LOG).expect("the log is named"));
         let own = env::current_exe().unwrap();
         // Only a copy at an installation's launcher name renames itself.
         assert_eq!(
@@ -948,15 +965,26 @@ mod tests {
         .map(OsString::from);
         let new_copy = start_unwaited(handover_command(&own, root, &args).unwrap()).unwrap();
         write_line(&format!("{OLD_COPY}{HANDED_OVER}{new_copy}"));
-        // A launcher takes a moment to end after it hands over, as a window takes to close, and
-        // the new copy waits for a process still running.
+        // A launcher takes a moment to end after it hands over, as a window takes to close: here
+        // from when the new copy waits, so that it waits for a process still running.
+        let waiting = format!("{NEW_COPY}{WAITING}{}", std::process::id());
+        let begun = Instant::now();
+        while !log_lines(&log).contains(&waiting) {
+            assert!(
+                begun.elapsed() < CHILD_DEADLINE,
+                "no line {waiting:?}: {:#?}",
+                log_lines(&log)
+            );
+            thread::sleep(LOG_POLL);
+        }
         thread::sleep(BRIEF_SLEEP);
     }
 
     /// The new copy's part of the filtered-token hand-over, which does nothing unless [`FILTERED`]
     /// is set: started by the old copy, with the old copy's id as its last argument, it says what
-    /// its token holds, waits for the old copy as a new launcher copy waits for the one an update
-    /// replaced, sweeps the installation's retired copies, and says what each did.
+    /// its token holds and that it waits, waits for the old copy as a new launcher copy waits for
+    /// the one an update replaced, sweeps the installation's retired copies, and says what each
+    /// did.
     #[cfg(windows)]
     #[test]
     fn filtered_new_copy() {
@@ -970,6 +998,7 @@ mod tests {
         let own = env::current_exe().unwrap();
         let root = own.parent().unwrap();
         report_token(NEW_COPY);
+        write_line(&format!("{NEW_COPY}{WAITING}{previous}"));
         let answer = wait_for_previous(previous, super::PREVIOUS_WAIT_LIMIT, root);
         write_line(&format!("{NEW_COPY}{ANSWER}{}", answer_text(&answer)));
         let folder = InstallFolder::at(root).unwrap();
@@ -1585,6 +1614,38 @@ mod tests {
         assert!(!path.exists());
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn a_retired_copy_let_go_within_the_window_is_removed_by_the_same_sweep() {
+        /// How long into the sweep's window the copy is held, as an old launcher still ending
+        /// holds its image: a few of the sweep's tries.
+        const HELD_FOR: Duration = Duration::from_millis(300);
+
+        // The new copy sweeps as soon as the old one exited, and Windows may still hold the old
+        // one's image a moment: the sweep tries again through its window rather than once.
+        let (_dir, fixture, folder) = installed();
+        let name = retired(this_platform(), INSTALLED, "AbC123xy");
+        let path = put_aside(&fixture.root, &name);
+        let held = hold_from_removal(&path);
+        let letting_go = thread::spawn(move || {
+            thread::sleep(HELD_FOR);
+            drop(held);
+        });
+        let begun = Instant::now();
+        let sweep = sweep_retired(
+            &folder,
+            super::RETIRED_DELETE_WINDOW,
+            super::RETIRED_DELETE_INTERVAL,
+        )
+        .unwrap();
+        let took = begun.elapsed();
+        letting_go.join().unwrap();
+        assert_eq!(sweep, swept(&[&name], &[]));
+        assert!(!path.exists());
+        // It ended once the copy went, not with its window.
+        assert!(took < super::RETIRED_DELETE_WINDOW, "{took:?}");
+    }
+
     /// Opens the file at `path` as a running launcher's image holds its file on Windows, sharing no
     /// deletion; on Linux as any program holds a file.
     fn hold_from_removal(path: &Path) -> fs::File {
@@ -1848,7 +1909,10 @@ mod tests {
             .open(&log)
             .unwrap();
         let args = ["--exact", FILTERED_OLD_COPY, "--test-threads", "1"].map(OsString::from);
-        let env = [(OsString::from(FILTERED), OsString::from(&retired_name))];
+        let env = [
+            (OsString::from(FILTERED), OsString::from(&retired_name)),
+            (OsString::from(FILTERED_LOG), log.clone().into_os_string()),
+        ];
         let old_copy = match crate::platform::spawn_filtered(&copy, &args, &env, &output) {
             Ok(old_copy) => old_copy,
             Err(error) if error.raw_os_error() == Some(ERROR_PRIVILEGE_NOT_HELD.cast_signed()) => {
@@ -1882,8 +1946,15 @@ mod tests {
                 crate::platform::MEDIUM_INTEGRITY.to_string()
             );
         }
-        let previous = line_after(&lines, &format!("{NEW_COPY}{ANSWER}"));
-        assert!(previous.starts_with(EXITED), "{lines:#?}");
+        // The new copy waited for the old one while it still ran, not for one already gone.
+        let waited: u64 = line_after(&lines, &format!("{NEW_COPY}{ANSWER}"))
+            .strip_prefix(EXITED)
+            .and_then(|millis| millis.parse().ok())
+            .unwrap_or_else(|| panic!("{lines:#?}"));
+        assert!(
+            Duration::from_millis(waited) >= LEAST_WAITED,
+            "waited {waited} ms: {lines:#?}"
+        );
         assert_eq!(
             line_after(&lines, &format!("{NEW_COPY}{SWEPT}")),
             format!("removed [{retired_name:?}], kept [], lockBusy false")
