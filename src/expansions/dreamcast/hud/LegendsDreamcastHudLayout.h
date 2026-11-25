@@ -363,9 +363,9 @@ std::optional<LegendsDreamcastCard> dreamcastCard(std::string_view card);
 
 /** Whether a seat's box says WAIT HERE... at the look's step `step` (FUN_8c0c16e0): while it
  * waits at an exit with `joined` seats in the game, more than one, four steps in eight. The
- * original has two more gates, untraced and taken as open: the box's timer at +0x1c2 at
- * nought (FUN_8c0bda40 counts it down in states 0 and 0xE) and *8c0bccd0 at nought
- * (FUN_8c0bcc60). */
+ * original has two more gates, taken as open: the seat's timer at +0x1c2 at nought, which
+ * FUN_8c0bcf60 sets to 50 and counts down, moving the seat to state 8 as it runs out
+ * (8c0bd0fa, 8c0bd108), and *8c0bccd0 at nought (FUN_8c0bcc60), untraced. */
 bool dreamcastWaitHereShown(bool waiting, s32 joined, s64 step);
 
 /** Whether the prompt in seat `seat` of `seats` asks RETURN / TO TOWER?, as FUN_8c0bda40 asks it
