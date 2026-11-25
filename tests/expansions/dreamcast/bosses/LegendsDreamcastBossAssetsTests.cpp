@@ -99,6 +99,8 @@ TEST_CASE("Dreamcast six native bosses bind all authored attacks and collision n
             // Which moves raise a blow once rather than through its window is unread, so every
             // blow strikes through its window.
             CHECK((stock->data.rules().portRules & CritterRules::kBlowsEveryFrame) != 0);
+            // Its CritterDoDamage meets only the players with a blow (8c08d4c0), never the swarm.
+            CHECK((stock->data.rules().portRules & CritterRules::kSparesSwarm) != 0);
             const auto validate = [&](const CritterData& part) {
                 for (const auto& move : part.moves()) {
                     CAPTURE(move.name, move.anim, move.colnode);
@@ -138,6 +140,7 @@ TEST_CASE("Dreamcast six native bosses bind all authored attacks and collision n
                 CHECK((child.rules().portRules & CritterRules::kModelFallback) == 0);
                 CHECK((child.rules().portRules & CritterRules::kStrikesAfterGaze) != 0);
                 CHECK((child.rules().portRules & CritterRules::kBlowsEveryFrame) != 0);
+                CHECK((child.rules().portRules & CritterRules::kSparesSwarm) != 0);
                 validate(child);
             }
             CHECK(stock->children.size() == (kind == 35 ? 3 : 0));

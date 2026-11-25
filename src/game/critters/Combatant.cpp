@@ -692,6 +692,11 @@ void Combatant::updateActor(s32 ticks, f32 seconds, std::span<const EnemyView> p
             const s32 last = end < start ? start : end;
             return start >= 0 && frame >= start && (frame <= last || critter.shotFrame < start);
         };
+        // The native frames of a window the animation came to on this update.
+        const auto framesReached = [&](s32 start, s32 end) {
+            const s32 last = end < start ? start : end;
+            return std::max(0, std::min(frame, last) - std::max(critter.shotFrame + 1, start) + 1);
+        };
         // SFXX frames start sound and visuals together. The effect's own sequence
         // contains its wind-up; delaying it until the damage frame delays that twice.
         const auto giveOnce = [&](u32 bit, s32 sound, const Vec3& where) {
@@ -808,14 +813,19 @@ void Combatant::updateActor(s32 ticks, f32 seconds, std::span<const EnemyView> p
                         cue(critter, i, harm->sound, cuePosition(critter, move->colnode),
                             move->colnode, harm);
                     }
-                    strikeWith(critter, i, moveFrame, index, players);
+                    strikeWith(critter, i, moveFrame, index, players, 0);
                     return;
                 }
                 const Vec3 where = targeted
                                        ? *critter.attackTarget + damageOffset(critter, harm->offset)
                                        : cuePosition(critter, move->colnode) + harm->offset;
                 giveOnce(bit, harm->sound, where);
-                strikeWith(critter, i, moveFrame, index, players);
+                // The swarm takes a blow each time its slot is raised, on each native frame of
+                // its window or the once a move tests it: CritterNodeEnemyCollide sets no wait.
+                const s32 swarmFrames = harm->type != AttackDefinition::kBlow ? 0
+                                        : windowed ? framesReached(start, end)
+                                                   : 1;
+                strikeWith(critter, i, moveFrame, index, players, swarmFrames);
             };
             // CritterActivate tests neither slot of a move whose first window never starts,
             // whatever the second's start (0x8003B300, critter.c 3690).

@@ -22,6 +22,7 @@
 
 namespace gdl::game {
 
+class Enemies;
 class LevelTriggers;
 class NativeStateResources;
 
@@ -101,9 +102,10 @@ public:
      * imported level's signal, sampled before the update) and never without it. Given the
      * base game's `triggers`, a boss whose type waits for its floor to move
      * (CritterData::kSupportActivated) arms only on such an update on which one of them moves
-     * the floor its probe stands it on. */
+     * the floor its probe stands it on. Awake, its blows and its heads' strike `swarm` too. */
     void update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
-                bool activationReady = true, const LevelTriggers* triggers = nullptr);
+                bool activationReady = true, const LevelTriggers* triggers = nullptr,
+                Enemies* swarm = nullptr);
     /** Runs through the held entrance too. It never arms a boss that waits for the base
      * game's triggers, which do not move during the entrance. Arming is sticky. */
     void arm(f32 seconds, bool activationReady = true, const LevelTriggers* triggers = nullptr);

@@ -370,8 +370,10 @@ void Critters::update(s32 ticks, f32 seconds, std::span<const EnemyView> players
         actor.setSwarm({});
         for (const CombatTrample& trample : actor.takeTramples()) {
             if (swarm != nullptr) {
+                // damage_enemy with no player and no damage type, driven the trample's way.
                 EnemyHit hit;
                 hit.damage = trample.damage;
+                hit.direction = trample.direction;
                 hit.where = trample.position;
                 hit.close = true;
                 swarm->hurt(trample.enemy, hit);

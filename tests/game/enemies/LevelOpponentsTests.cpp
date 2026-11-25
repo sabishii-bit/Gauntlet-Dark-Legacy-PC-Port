@@ -4604,6 +4604,136 @@ TEST_CASE("a lob sent back onto its thrower holds it from the world's effects th
     opponents.close();
 }
 
+/** Writes a fighter of its own making under `root`: `name`'s CRITTER record, of descriptor
+ * `kind`, with its tree in `archive`, a unit wide. Once a player comes within five, its ATTACK
+ * claws what stands within ten of its root on each of the three frames it plays, for ten, and
+ * then waits a hundred seconds before clawing again. */
+void writeClawing(const std::filesystem::path& root, const std::filesystem::path& archive,
+                  std::string_view name, CombatantKind kind) {
+    std::filesystem::create_directories(root / "critter");
+    std::filesystem::create_directories(archive / "models");
+    std::filesystem::create_directories(archive / "textures");
+    writeTextFile(archive / "models/body.obj",
+                  "v 0 0 0\nv 1 0 0\nv 0 1 0\nvn 0 0 1\nusemtl tex0\nf 1//1 2//1 3//1\n");
+    writeTextFile(archive / "objects.json", R"({"objects":[
+      {"index":0,"name":"BODY","file":"models/body.obj","meshTriangles":1}]})");
+    writeFile(archive / "textures/skin.png", test::kTinyPng);
+    writeTextFile(archive / "textures.json", R"({"bitmaps":[
+      {"index":0,"name":"SKIN","file":"textures/skin.png","width":2,"height":2,"flags":0}]})");
+    test::convertModelFixture(archive);
+    writeTextFile(archive / "animations.json", R"({"trees":[{"name":"BODY",
+      "nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
+      "sequences":[{"name":"STEP","frames":3}]}]})");
+    writeTextFile(root / "critter" / std::format("{}.json", name),
+                  std::format(R"({{
+      "descriptors":[{{"prefix":"BODY","name":"{}","type":{}}}],
+      "types":[{{"moveCount":3,"maxHealth":100,"radius":1,"wallRadius":1}}],
+      "moves":[{{"name":"READY","anim":"STEP","type":32,"interrupt":60}},
+        {{"name":"ATTACK","anim":"STEP","type":128,"priority":20,"target":{{"maxDistance":5}},
+          "frameStart":0,"frameEnd":2,"damage0":0,"cooldown":100}},
+        {{"name":"DEATH","anim":"STEP","type":17,"priority":999}}],
+      "damages":[{{"type":0,"maxDistance":10,"damage":10}}]}})",
+                              name, static_cast<s32>(kind)));
+}
+
+/** A clawing golem or boss of its own making at the origin, the one player three ahead of it
+ * and a grunt three to that player's side, both within its claw's reach. */
+class SwarmBlowField {
+public:
+    SwarmBlowField(bool boss, s32 rate) : m_rate(rate) {
+        const auto root = test::scratchDirectory(boss ? "swarm-blow-boss" : "swarm-blow-golem");
+        writeMeleeEnemy(root, kGruntKind);
+        const char realm = m_world.ref().name.empty() ? 'G' : m_world.ref().name.front();
+        if (boss) {
+            writeClawing(root, root / "MONSTERS/YETI", "YETI", CombatantKind::Boss);
+        } else {
+            writeClawing(root, root / "MONSTERS/GOLEM" / std::format("LEVEL{}", realm), "GOLEM",
+                         CombatantKind::Golem);
+        }
+        m_players[0].actor.spawn(0, {}, nullptr, Vec3{0, 0, 3}, 0);
+        m_opponents.open({m_device, m_world, m_weapons, m_effects, m_audio, root, 1}, m_players);
+        m_opponents.enemies().open(m_device, root, nullptr, 8, EnemyScales{.health = 10.0f}, 1);
+        REQUIRE(m_opponents.enemies().loadKind(kGruntKind));
+        const auto grunt = m_opponents.enemies().spawn(
+            EnemySpawn{.kind = kGruntKind, .tier = 1, .position = Vec3{3, 0, 3}, .placed = true},
+            {});
+        REQUIRE(grunt.has_value());
+        m_grunt = *grunt;
+        if (boss) {
+            REQUIRE(m_opponents.bosses().spawn(boss_type::kYeti, Vec3{0}, 0));
+            m_opponents.bosses().wake();
+        } else {
+            REQUIRE(m_opponents.critters().spawnGolem(Vec3{0}, 0).has_value());
+        }
+        m_events.award = [this](s32, s32, bool) { ++m_awards; };
+    }
+    SwarmBlowField(const SwarmBlowField&) = delete;
+    SwarmBlowField& operator=(const SwarmBlowField&) = delete;
+    SwarmBlowField(SwarmBlowField&&) = delete;
+    SwarmBlowField& operator=(SwarmBlowField&&) = delete;
+    ~SwarmBlowField() { m_opponents.close(); }
+
+    Enemies& enemies() { return m_opponents.enemies(); }
+    s32 grunt() const { return m_grunt; }
+    /** What the level awarded for the swarm's losses. */
+    s32 awards() const { return m_awards; }
+    /** What the grunt loses over `seconds` of updates. */
+    f32 run(f32 seconds) {
+        const f32 before = enemies().healthOf(m_grunt);
+        for (s32 frame = 0;
+             frame < static_cast<s32>(std::lround(seconds * static_cast<f32>(m_rate))); ++frame) {
+            m_opponents.update(60 / m_rate, 1.0f / static_cast<f32>(m_rate), m_players, {}, m_host,
+                               m_host, m_host);
+        }
+        return before - enemies().healthOf(m_grunt);
+    }
+
+private:
+    s32 m_rate;
+    test::FakeRenderDevice m_device;
+    LevelWorld m_world;
+    ItemArchive m_weapons;
+    EffectTrees m_effects;
+    LevelSoundscape m_audio;
+    std::array<PlayerRuntime, 1> m_players;
+    LevelOpponents m_opponents;
+    test::OpponentScript m_events;
+    test::ScriptedOpponents m_host{m_events};
+    s32 m_grunt = -1;
+    s32 m_awards = 0;
+};
+
+TEST_CASE("one of the swarm beside a player a golem claws is struck too, earning nobody anything",
+          "[level-opponents][enemies][swarm-blow]") {
+    // CritterDoDamage meets the swarm in a blow's reach after the players
+    // (CritterNodeEnemyCollide, 0x800359F0), and damage_enemy credits no player (enemy.c
+    // 5954-6150): the claw's three frames strike the grunt ten each, whatever the rate.
+    const s32 rate = GENERATE(30, 60);
+    CAPTURE(rate);
+    SwarmBlowField field{false, rate};
+    CHECK(field.run(2.0f) == Catch::Approx(30.0f));
+    CHECK(field.awards() == 0);
+}
+
+TEST_CASE("a golem's claw passes one of the swarm while the world's wait holds it",
+          "[level-opponents][enemies][swarm-blow][hit-wait]") {
+    // CritterNodeEnemyCollide skips an enemy while its fxhittime[0] runs (0x80035ADC-0x80035AF0).
+    SwarmBlowField field{false, 30};
+    field.enemies().holdHits(field.grunt(), Enemies::kWorldWait, 100.0f);
+    CHECK(field.run(2.0f) == 0.0f);
+}
+
+TEST_CASE("a boss's claw strikes one of the swarm beside the player it aims at",
+          "[level-opponents][enemies][swarm-blow]") {
+    // A boss is a critter of the pool too (boss.c 675, ProcessCritterList), whose CritterDoDamage
+    // meets the swarm as a great one's does.
+    const s32 rate = GENERATE(30, 60);
+    CAPTURE(rate);
+    SwarmBlowField field{true, rate};
+    CHECK(field.run(2.0f) == Catch::Approx(30.0f));
+    CHECK(field.awards() == 0);
+}
+
 TEST_CASE("a detonated suicide stops drawing its body but ordinary enemies retain their fall",
           "[level-opponents][suicide]") {
     const auto root = test::scratchDirectory("suicide-body-removal");

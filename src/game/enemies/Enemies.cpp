@@ -31,7 +31,14 @@ void visitNativeState(NativeStateDigest& digest, const EnemyLoss& value) {
     digest.fields<8>(value);
 }
 void visitNativeState(NativeStateDigest& digest, const EnemyBody& value) {
-    digest.fields<4>(value);
+    const auto& [id, centre, radius, halfHeight, worldHeld] = value;
+    // The world wait is the swarm's, lent the great ones with each update's bodies: the great
+    // ones' bodies the swarm keeps carry none.
+    if (worldHeld) {
+        digest.invalidate();
+        return;
+    }
+    digest.values(id, centre, radius, halfHeight);
 }
 void visitNativeState(NativeStateDigest& digest, const EnemyGeneratorEvent& value) {
     digest.fields<2>(value);
@@ -2428,7 +2435,9 @@ std::vector<EnemyBody> Enemies::movementBodies() const {
     for (s32 i = 0; i < m_simulation.most; ++i) {
         const Enemy& enemy = m_simulation.enemies[static_cast<usize>(i)];
         if (alive(i) && !intangible(enemy.kind)) {
-            bodies.push_back({i, bodyCentre(enemy), enemy.radius, 0.5f * enemy.height});
+            bodies.push_back({i, enemy.position + Vec3{0, enemyKind(enemy.kind).collisionHeight, 0},
+                              enemy.radius, 0.5f * enemy.height,
+                              enemy.hitWaits[kWorldWait] > 0.0f});
         }
     }
     return bodies;

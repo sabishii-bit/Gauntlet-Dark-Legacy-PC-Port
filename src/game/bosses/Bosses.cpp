@@ -10,6 +10,7 @@
 #include "engine/core/Log.h"
 #include "engine/core/Types.h"
 
+#include "game/enemies/Enemies.h"
 #include "game/level/BossKinds.h"
 #include "game/level/LevelTriggers.h"
 #include "game/level/NativeStateResources.h"
@@ -452,7 +453,7 @@ bool Bosses::spawn(s32 kind, const Vec3& position, f32 yaw, f32 wakeDistance) {
 }
 
 void Bosses::update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
-                    bool activationReady, const LevelTriggers* triggers) {
+                    bool activationReady, const LevelTriggers* triggers, Enemies* swarm) {
     for (const auto& assets : m_sim.assets) {
         assets->textures.advance(0);
     }
@@ -509,7 +510,23 @@ void Bosses::update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
     // (CritterDelInst at 0x8003a0c4), so its defeat is taken before the fighter's update.
     const Vec3 before = m_fighter.position();
     const s32 movedFrom = m_fighter.moveType();
+    // Its blows and its heads' meet the swarm as a great one's do (CritterNodeEnemyCollide). Its
+    // step keeps to its territory and returns before the swarm could stop it (CritterTranslate).
+    const auto bodies = swarm != nullptr ? swarm->movementBodies() : std::vector<EnemyBody>{};
+    m_fighter.setSwarm(bodies);
     m_fighter.update(ticks, seconds, players);
+    m_fighter.setSwarm({});
+    for (const CombatTrample& trample : m_fighter.takeTramples()) {
+        if (swarm != nullptr) {
+            // damage_enemy with no player and no damage type, driven the blow's way.
+            EnemyHit hit;
+            hit.damage = trample.damage;
+            hit.direction = trample.direction;
+            hit.where = trample.position;
+            hit.close = true;
+            swarm->hurt(trample.enemy, hit);
+        }
+    }
     stageLegend(ticks, movedFrom);
     // The rite runs on through the death throes until gBossDead, when world_update ends it
     // (state 99, 0x80056d04-0x80056d14) after its turn of the frame the hold begins in.

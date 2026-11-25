@@ -117,6 +117,7 @@ struct EnemyBody {
     Vec3 centre{0};
     f32 radius = 0;
     f32 halfHeight = 0;
+    bool worldHeld = false; ///< its world hit wait runs (fxhittime[0])
     bool operator==(const EnemyBody&) const = default;
 };
 
@@ -479,6 +480,8 @@ public:
     f32 yawOf(s32 id) const;
     f32 radiusOf(s32 id) const;
     f32 heightOf(s32 id) const;
+    /** The living swarm as the great ones meet it, IT aside: each about its coll_pos, its kind's
+     * collision height over its feet, with its world wait. */
     std::vector<EnemyBody> movementBodies() const;
     s32 targetOf(s32 id) const;
     /** Carry grounded bodies with moving scenery, without advancing AI or animation. */

@@ -378,10 +378,11 @@ std::unique_ptr<CombatantAssets> loadLegendsBossAssets(RenderDevice& device,
                        // before turning it, so whether the next MoveSetup meets the node still
                        // turned is unread; its strikes follow the turned pose. Which of its
                        // moves raise a blow through its window rather than once is unread, so
-                       // every blow strikes through its window.
+                       // every blow strikes through its window. Whether its blow meets the
+                       // swarm after the players is unread too, so its blows pass through it.
                        .portRules = CritterRules::kScaledNodes | CritterRules::kModelFallback |
                                     CritterRules::kStrikesAfterGaze |
-                                    CritterRules::kBlowsEveryFrame};
+                                    CritterRules::kBlowsEveryFrame | CritterRules::kSparesSwarm};
     auto data = CritterData::fromDecoded(family.name, decoded, 0, rules);
     std::vector<CritterData> children;
     std::set<s32> visited{0};

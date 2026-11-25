@@ -97,12 +97,14 @@ loadLegendsDreamcastBossAssets(RenderDevice& device, const std::filesystem::path
     // node back before the next MoveSetup is unread, so its strikes follow the turned pose.
     // Which of its moves raise a blow through its window rather than once is unread, so every
     // blow strikes through its window.
+    // Its CritterDoDamage (8c088ac0) strikes with a blow through 8c08d4c0 alone, which meets the
+    // four players and nothing else, so its blows pass through the swarm.
     CritterRules rules{.pressureReferenceDamage = decoded.types.front().pressureReferenceDamage,
                        .restoreCaptureSupport = true,
                        .nodeFramePartOffsets = true,
                        .playerBreathGap = 0.1f,
                        .portRules = CritterRules::kScaledNodes | CritterRules::kStrikesAfterGaze |
-                                    CritterRules::kBlowsEveryFrame};
+                                    CritterRules::kBlowsEveryFrame | CritterRules::kSparesSwarm};
     auto data = CritterData::fromDecoded(family.name, decoded, 0, rules);
     std::vector<CritterData> children;
     for (s32 child = data.childIndex(); child >= 0;) {

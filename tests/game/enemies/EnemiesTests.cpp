@@ -4439,6 +4439,37 @@ TEST_CASE("IT is out of every body test the swarm offers, and a grunt beside it 
     CHECK(enemies.alive(*it));
 }
 
+TEST_CASE("the great ones meet each of the swarm about its coll_pos, with its world wait",
+          "[game][enemies][hit-wait]") {
+    // CritterCollideEnemies and CritterNodeEnemyCollide meet an enemy about objgrp.coll_pos, its
+    // kind's collision height over its feet (enemy.c 6792; critter.c 6939, 7390-7400), and a blow
+    // passes one whose fxhittime[0] runs (0x80035ADC-0x80035AF0). Garm's brood, ten high, is met
+    // four over its feet rather than five.
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, kindArchives(), nullptr, Enemies::kMost, {}, 1);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    REQUIRE(enemies.loadKind(kGarmBroodKind));
+    const auto grunt = enemies.spawn({.kind = kGruntKind, .tier = 1, .placed = true}, {});
+    const auto brood = enemies.spawn(
+        {.kind = kGarmBroodKind, .tier = 1, .position = {20, 0, 0}, .placed = true}, {});
+    REQUIRE(grunt.has_value());
+    REQUIRE(brood.has_value());
+    enemies.holdHits(*brood, Enemies::kWorldWait, 1.0f);
+    const auto bodies = enemies.movementBodies();
+    REQUIRE(bodies.size() == 2);
+    for (const EnemyBody& body : bodies) {
+        CAPTURE(body.id);
+        const s32 kind = body.id == *grunt ? kGruntKind : kGarmBroodKind;
+        CHECK(body.centre ==
+              enemies.positionOf(body.id) + Vec3{0, enemyKind(kind).collisionHeight, 0});
+        CHECK(body.halfHeight == 0.5f * enemyKind(kind).height);
+        CHECK(body.worldHeld == (body.id == *brood));
+    }
+    CHECK(enemyKind(kGarmBroodKind).collisionHeight == 4.0f);
+    CHECK(enemyKind(kGarmBroodKind).height == 10.0f);
+}
+
 TEST_CASE("one of the swarm keeps a wait for the world's effects that a hit over two sets",
           "[game][enemies][hit-wait]") {
     // ProcessEffects' enemy pass (0x80095BB4-0x80095CCC) and damage_enemy (enemy.c 5963-5970):

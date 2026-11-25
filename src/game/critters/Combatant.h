@@ -106,6 +106,7 @@ public:
     void setHazards(const HazardSurfaces* hazards) { m_sim.hazards = hazards; }
     /** What of the level's stands where it walks this update. */
     void setObstacles(std::span<const CombatantObstacle> items) { m_obstacles = items; }
+    /** The swarm it meets this update, its heads' blows too; borrowed, none for nothing. */
     void setSwarm(std::span<const EnemyBody> bodies) { m_swarm = bodies; }
     std::vector<CombatTrample> takeTramples() { return std::exchange(m_sim.tramples, {}); }
     std::vector<CombatantRam> takeRams() { return std::exchange(m_sim.rams, {}); }
@@ -539,9 +540,10 @@ private:
                std::span<const EnemyView> players);
     void plant(const Actor& critter, s32 id, s32 damageIndex);
     /** Strikes with DAMG record `damageIndex`, a blow or a breath from `moveFrame`, the move's
-     * node as the strikes measure it. */
+     * node as the strikes measure it. A blow strikes the swarm in its reach `swarmFrames` times:
+     * once for each native frame its slot is raised on this update. */
     void strikeWith(Actor& critter, s32 id, const Mat4& moveFrame, s32 damageIndex,
-                    std::span<const EnemyView> players);
+                    std::span<const EnemyView> players, s32 swarmFrames);
     /** Where its simulation places the body's offset origin, TYPE originOffset over the model:
      * what its targeting, its step's contacts and a partless body's volume measure from. */
     static Vec3 bodyOrigin(const Actor& critter);

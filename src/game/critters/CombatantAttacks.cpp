@@ -33,7 +33,7 @@ Vec3 flatWay(const Vec3& way, f32 yaw) {
 } // namespace
 
 void Combatant::strikeWith(Actor& critter, s32 id, const Mat4& moveFrame, s32 damageIndex,
-                           std::span<const EnemyView> players) {
+                           std::span<const EnemyView> players, s32 swarmFrames) {
     const AttackDefinition* damage = critter.definition->damage(damageIndex);
     if (damage == nullptr || damage->damage <= 0.0f) {
         return;
@@ -145,6 +145,27 @@ void Combatant::strikeWith(Actor& critter, s32 id, const Mat4& moveFrame, s32 da
             critter.struckThisMove.push_back(view.player);
         }
         m_sim.blows.push_back(blow);
+    }
+    // After the players, CritterNodeEnemyCollide (0x800359F0, critter.c 6900-6950) strikes each
+    // of the swarm with the blow's point within its radius across and its half height up or down
+    // of its coll_pos, each grown by the reach, passing one whose fxhittime[0] runs while the blow
+    // harms: the record's harm at the level's enemy damage, by no player and of no damage type,
+    // driven by twice the node's travel over the native frame (0x80346478).
+    if (damage->type != AttackDefinition::kBlow || swarmFrames <= 0 ||
+        (critter.definition->rules().portRules & CritterRules::kSparesSwarm) != 0) {
+        return;
+    }
+    const f32 swarmHarm = damage->damage * m_sim.scales.damage;
+    const Vec3 drive = MoveNodeTrail::kPushScale * critter.moveNode.travel();
+    for (s32 frame = 0; frame < swarmFrames; ++frame) {
+        for (const EnemyBody& body : m_swarm) {
+            if ((swarmHarm > 0.0f && body.worldHeld) ||
+                flatDistance(centre, body.centre) > body.radius + reach ||
+                std::abs(centre.y - body.centre.y) > body.halfHeight + reach) {
+                continue;
+            }
+            m_sim.tramples.push_back({body.id, swarmHarm, centre, drive});
+        }
     }
 }
 

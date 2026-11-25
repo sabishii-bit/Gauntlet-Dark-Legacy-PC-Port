@@ -68,6 +68,9 @@ struct CritterRules {
      * first slot, and tests every other blow once a move, on its first frame at or past the
      * blow's start. */
     static constexpr u32 kBlowsEveryFrame = 0x4;
+    /** portRules: its blows pass through the swarm. GDL's CritterDoDamage strikes the swarm in a
+     * blow's reach after the players (CritterNodeEnemyCollide, 0x800359F0). */
+    static constexpr u32 kSparesSwarm = 0x8;
     /** portRules: a body's move naming no node strikes from the model, the node its tree hangs
      * from; a head's still strikes from its own root node. GDL's CritterNewInst makes the
      * tree's root node the body's c->anim (critter.c 2010-2012), which CritterMoveSetup falls

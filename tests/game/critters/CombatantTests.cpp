@@ -2556,6 +2556,279 @@ TEST_CASE("a fighter whose rules keep every blow to its window strikes through i
     CHECK(strikingUpdates(cadenceCritter(type, 0, 0, 60), 30, 1, rules) == everyUpdate(30));
 }
 
+/** The swarm's bodies the swinging general playing `source`'s SWING of seventy frames by `rules`
+ * strikes over a second of updates `rate` a second, at a target standing out of the blow's
+ * reach: each trample with the update it came in. Its HAND stands seven along x, still, or
+ * `swung` a unit further along x each of the swing's first ten frames. */
+std::vector<std::pair<s32, CombatTrample>> swarmStrikes(const formats::CritterFile& source,
+                                                        std::span<const EnemyBody> swarm, s32 rate,
+                                                        const CritterRules& rules = {},
+                                                        bool swung = false) {
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    const auto root = familyAssets();
+    writeSwingTree(root, 0, {},
+                   swung ? R"(,"tracks":[{"node":2,"flags":16,"frames":[0,10],"values":[0,10]}])"
+                         : std::string{},
+                   70);
+    REQUIRE(assets.load(device, root, General::definition(), 'G'));
+    assets.data = CritterData::fromDecoded("GENERAL", source, 0, rules);
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+    const auto swing = assets.data.moveNamed("SWING");
+    REQUIRE(swing);
+    REQUIRE(actor.setMove(*swing, {.frame = 0, .target = 0, .yaw = std::nullopt}));
+    EnemyView player;
+    player.player = 0;
+    player.position = {0, 0, 40};
+    const std::array players{player};
+    std::vector<std::pair<s32, CombatTrample>> struck;
+    for (s32 update = 0; update < rate; ++update) {
+        actor.setSwarm(swarm);
+        actor.update(60 / rate, 1.0f / static_cast<f32>(rate), players);
+        actor.setSwarm({});
+        REQUIRE(actor.moveName() == "SWING");
+        for (const CombatTrample& trample : actor.takeTramples()) {
+            struck.emplace_back(update, trample);
+        }
+        REQUIRE(actor.takeBlows().empty());
+        actor.takeCues();
+    }
+    return struck;
+}
+
+TEST_CASE("a great one's blow strikes the swarm in its reach once each native frame its slot is "
+          "raised, at either rate",
+          "[game][combatant][swarm-blow]") {
+    // CritterDoDamage meets the swarm after the players whenever CritterCopyAnim raises the slot
+    // (CritterNodeEnemyCollide, 0x800359F0, critter.c 2765-2767): a body's radius across and its
+    // half height up or down about its coll_pos, grown by the reach, for the record's harm at
+    // the level's enemy damage; damage_enemy sets no wait, so a claw strikes on each frame of
+    // its window and a step's blow once.
+    const s32 rate = GENERATE(30, 60);
+    const s32 type = GENERATE(MoveDefinition::kClaw, MoveDefinition::kStepLeft);
+    CAPTURE(rate, type);
+    // Two along from the still hand, five along, and over it just within and just past reach.
+    const std::array swarm{
+        EnemyBody{1, {9, 0, 0}, 1.5f, 1.5f}, EnemyBody{2, {12, 0, 0}, 1.5f, 1.5f},
+        EnemyBody{3, {7, 4.4f, 0}, 1.5f, 1.5f}, EnemyBody{4, {7, 4.6f, 0}, 1.5f, 1.5f}};
+    const auto struck = swarmStrikes(cadenceCritter(type, 0, 4, 8), swarm, rate);
+    const auto updatesOf = [&](s32 enemy) {
+        std::vector<s32> updates;
+        for (const auto& [update, trample] : struck) {
+            if (trample.enemy == enemy) {
+                updates.push_back(update);
+            }
+        }
+        return updates;
+    };
+    for (const auto& [update, trample] : struck) {
+        CHECK(trample.damage == 30);
+        CHECK(glm::distance(trample.position, Vec3{7, 0, 0}) < 1e-4f);
+        CHECK(trample.direction == Vec3{0}); // a still hand drives it nowhere
+    }
+    CHECK(updatesOf(2).empty());
+    CHECK(updatesOf(4).empty());
+    // A claw's window raises the slot on each of its five frames, a step once.
+    const usize frames = type == MoveDefinition::kClaw ? 5 : 1;
+    for (const s32 enemy : {1, 3}) {
+        CAPTURE(enemy);
+        const auto updates = updatesOf(enemy);
+        CHECK(updates.size() == frames);
+        CHECK(std::ranges::adjacent_find(updates) == updates.end());
+    }
+}
+
+TEST_CASE("a blow passes one of the swarm its world wait holds, and all of them for a fighter "
+          "whose rules spare the swarm",
+          "[game][combatant][swarm-blow]") {
+    // CritterNodeEnemyCollide skips an enemy while its fxhittime[0] runs and the blow harms
+    // (0x80035ADC-0x80035AF0).
+    const std::array swarm{EnemyBody{1, {9, 0, 0}, 1.5f, 1.5f, true},
+                           EnemyBody{2, {9, 0, 1}, 1.5f, 1.5f}};
+    const auto source = cadenceCritter(MoveDefinition::kClaw, 0, 4, 8);
+    const auto struck = swarmStrikes(source, swarm, 30);
+    CHECK(struck.size() == 5);
+    for (const auto& [update, trample] : struck) {
+        CHECK(trample.enemy == 2);
+    }
+    CritterRules rules;
+    rules.portRules = CritterRules::kSparesSwarm;
+    CHECK(swarmStrikes(source, swarm, 30, rules).empty());
+}
+
+TEST_CASE("a blow drives the swarm along twice its node's swing over the native frame",
+          "[game][combatant][swarm-blow]") {
+    // damage_enemy takes twice the node's travel since CritterMoveSetup noted it a native frame
+    // before (critter.c 6942-6950, 0x80346478).
+    const s32 rate = GENERATE(30, 60);
+    CAPTURE(rate);
+    // Wide enough that the swinging hand never leaves its reach.
+    const std::array swarm{EnemyBody{1, {7, 0, 0}, 40.0f, 1.5f}};
+    const auto struck =
+        swarmStrikes(cadenceCritter(MoveDefinition::kClaw, 0, 4, 8), swarm, rate, {}, true);
+    CHECK(struck.size() == 5);
+    for (const auto& [update, trample] : struck) {
+        CAPTURE(update);
+        CHECK(trample.direction.x == Approx(2.0f).margin(1e-4f));
+        CHECK(trample.direction.y == Approx(0.0f).margin(1e-4f));
+        CHECK(trample.direction.z == Approx(0.0f).margin(1e-4f));
+    }
+}
+
+TEST_CASE("a head's blow strikes the swarm, and its body hands on what it struck",
+          "[game][combatant][swarm-blow]") {
+    // Every head is a pool critter of its own, whose CritterDoDamage meets the swarm as the
+    // body's does (ProcessCritterList, critter.c 2765-2767).
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, test::headedBodyAssets(), bossDefinition("CHIMERA"), 'G'));
+    formats::CritterFile source;
+    source.descriptors.push_back({"CHIMERA", "BODY", 4});
+    source.types.resize(3);
+    for (usize index = 0; index < source.types.size(); ++index) {
+        auto& type = source.types[index];
+        type.maxHealth = index == 0 ? 1000.0f : 100.0f;
+        type.radius = 2;
+        type.moveCount = static_cast<s16>(index == 0 ? 1 : 2);
+        type.childIndex = index < 2 ? static_cast<s16>(index + 1) : s16{-1};
+        type.parentIndex = static_cast<s16>(index == 0 ? -1 : 0);
+        if (index > 0) {
+            type.rootNode = index == 1 ? "HEAD_L" : "HEAD_R";
+        }
+    }
+    formats::CritterMoveRecord ready;
+    ready.name = "READY";
+    ready.anim = "READY";
+    ready.type = MoveDefinition::kReady;
+    ready.priority = 512;
+    ready.interrupt = 20;
+    auto strike = ready;
+    strike.name = "STRIKE";
+    strike.anim = "SPIT";
+    strike.type = MoveDefinition::kClaw;
+    strike.priority = 544;
+    strike.damage0 = 0;
+    strike.frameEnd = 5;
+    strike.target.maxDistance = 100;
+    source.moves = {ready, strike};
+    formats::CritterDamageRecord blow;
+    blow.type = AttackDefinition::kBlow;
+    blow.damage = 10;
+    blow.maxDistance = 10;
+    source.damages.push_back(blow);
+    // The body only stands; its heads strike.
+    assets.data = CritterData::fromDecoded("CHIMERA", source, 0);
+    REQUIRE(assets.children.size() == 2);
+    for (usize index = 0; index < assets.children.size(); ++index) {
+        assets.children[index] = CritterData::fromDecoded("CHIMERA", source, index + 1);
+    }
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 100, Vec3{0}, 0, nullptr, {}, 'G'));
+    REQUIRE(actor.childCount() == 2);
+    EnemyView player;
+    player.player = 0;
+    player.position = {0, 2, 3};
+    const std::array players{player};
+    actor.captureEncounterPlayers(players);
+    // Between the heads, which stand two to either side and five up.
+    const std::array swarm{EnemyBody{7, {0, 5, 3}, 1.5f, 1.5f}};
+    usize struck = 0;
+    for (s32 tick = 0; tick < 90; ++tick) {
+        actor.setSwarm(swarm);
+        actor.update(2, 1.0f / 30, players);
+        actor.setSwarm({});
+        for (const CombatTrample& trample : actor.takeTramples()) {
+            CHECK(trample.enemy == 7);
+            CHECK(trample.damage == 10);
+            ++struck;
+        }
+        actor.takeBlows();
+        actor.takeCues();
+    }
+    CHECK(struck > 0);
+    // The heads hand the swarm back with their update, so the body can be saved.
+    Combatant::LocalSnapshot saved;
+    CHECK(actor.saveLocal(saved));
+}
+
+TEST_CASE("a golem's fist strikes one of the swarm two from it on each frame of its swing's "
+          "window, and one five off never, at either rate",
+          "[game][combatant][swarm-blow][assets]") {
+    // GOLEM's ATTACK2 is a claw of 30 reaching three from BALL over frames 10 and 11, on each of
+    // which CritterCopyAnim raises its slot (critter.c 3152-3170) and CritterNodeEnemyCollide
+    // strikes the swarm (0x800359F0).
+    const auto root = test::assetOrSkip("CRITTER/GOLEM.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/GOLEM/LEVELG/ANIM.PS2");
+    const s32 rate = GENERATE(30, 60);
+    CAPTURE(rate);
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, Golem::definition(), 'G'));
+    const auto attack = assets.data.moveNamed("ATTACK2");
+    REQUIRE(attack.has_value());
+    const MoveDefinition& move = assets.data.moves()[*attack];
+    REQUIRE(move.type == MoveDefinition::kClaw);
+    REQUIRE(move.colnode == "BALL");
+    REQUIRE(move.frameStart == 10);
+    REQUIRE(move.frameEnd == 11);
+    const AttackDefinition* blow = assets.data.damage(move.damage0);
+    REQUIRE(blow != nullptr);
+    REQUIRE(blow->type == AttackDefinition::kBlow);
+    REQUIRE(blow->damage == 30);
+    REQUIRE(blow->maxDistance == 3);
+    // The swing, standing still, at a target straight ahead and out of its reach: each trample
+    // `swarm` takes with the frame it came on.
+    const auto swing = [&](std::span<const EnemyBody> swarm) {
+        Combatant actor;
+        REQUIRE(actor.spawn(assets, 0, Vec3{0}, 0, nullptr, {}, 'G'));
+        REQUIRE(actor.setMove(*attack, {.frame = 0, .target = 0, .yaw = std::nullopt}));
+        EnemyView player;
+        player.player = 0;
+        player.position = {0, 0, 40};
+        const std::array players{player};
+        std::vector<std::pair<s32, CombatTrample>> struck;
+        for (s32 update = 0; update < 2 * rate && actor.moveName() == "ATTACK2"; ++update) {
+            actor.setSwarm(swarm);
+            actor.update(60 / rate, 1.0f / static_cast<f32>(rate), players);
+            actor.setSwarm({});
+            const auto frame = static_cast<s32>(std::floor(actor.animation().frame()));
+            for (const CombatTrample& trample : actor.takeTramples()) {
+                struck.emplace_back(frame, trample);
+            }
+            actor.takeBlows();
+            actor.takeCues();
+            actor.takeShots();
+        }
+        return struck;
+    };
+    // One wide and tall enough to stay in reach shows where the fist strikes; too tall to tread
+    // on, as the rest are.
+    const auto probed = swing(std::array{EnemyBody{1, {0, 0, 0}, 1000.0f, 1000.0f}});
+    REQUIRE(probed.size() == 2);
+    CHECK(probed[0].first == 10);
+    CHECK(probed[1].first == 11);
+    for (const auto& [frame, trample] : probed) {
+        CHECK(trample.damage == 30);
+    }
+    const Vec3 first = probed[0].second.position;
+    const Vec3 second = probed[1].second.position;
+    // Off along the ground away from where the fist goes next.
+    const Vec2 apart{first.x - second.x, first.z - second.z};
+    const Vec2 away = glm::length(apart) > 1e-3f ? glm::normalize(apart) : Vec2{1, 0};
+    const auto beside = [&](f32 distance) {
+        return std::array{EnemyBody{2, first + Vec3{away.x, 0, away.y} * distance, 1.5f, 3.0f}};
+    };
+    // The fist moves a fifth of a unit between the two, so two from it is in reach on both.
+    CAPTURE(glm::length(apart));
+    REQUIRE(glm::length(apart) < 0.5f);
+    const auto near = swing(beside(2));
+    REQUIRE(near.size() == 2);
+    CHECK(near[0].first == 10);
+    CHECK(near[1].first == 11);
+    CHECK(swing(beside(5)).empty());
+}
+
 TEST_CASE("a move without a node keeps the fighter's root node, which the next move's first "
           "blow measures its jump from",
           "[game][combatant][blow-push]") {

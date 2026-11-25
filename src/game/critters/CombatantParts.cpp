@@ -79,6 +79,7 @@ void Combatant::collectChildEvents(Combatant& part) {
     append(m_sim.spews, part.m_sim.spews);
     append(m_sim.shots, part.m_sim.shots);
     append(m_sim.arenaActivations, part.m_sim.arenaActivations);
+    append(m_sim.tramples, part.m_sim.tramples);
 }
 
 void Combatant::updateHitFlashes(Actor& actor, s32 ticks) {
@@ -103,6 +104,9 @@ void Combatant::updateChildren(s32 ticks, f32 seconds, std::span<const EnemyView
         // updates through this transaction, so no mutable pointer is hidden in
         // the child's read-only parent binding or borrowed across rewind.
         part->m_sim.pressure = m_sim.pressure;
+        // A head is a critter of the pool of its own, whose blows meet the swarm as the body's do
+        // (CritterNodeEnemyCollide); it borrows the body's for its update alone.
+        part->m_swarm = m_swarm;
         Actor& actor = part->m_sim.actor;
         actor.position = position();
         actor.yaw = yaw();
@@ -151,6 +155,7 @@ void Combatant::updateChildren(s32 ticks, f32 seconds, std::span<const EnemyView
             part->aimGaze(actor, seconds, players); // its head still turns (CritterLookAtPlayer)
         }
         m_sim.pressure = part->m_sim.pressure;
+        part->m_swarm = {};
         intact &= part->alive();
         anyAlive |= part->alive();
         // A head at an attack of its own, or in a pattern, keeps the body in SYNC

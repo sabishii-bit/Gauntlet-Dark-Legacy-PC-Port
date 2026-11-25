@@ -65,6 +65,8 @@ TEST_CASE("Native boss assets bind six original skeletons and every authored mov
             // Which moves raise a blow once rather than through its window is unread, so every
             // blow strikes through its window.
             CHECK((stock->data.rules().portRules & CritterRules::kBlowsEveryFrame) != 0);
+            // Whether its blows strike the swarm is unread, so they pass through it.
+            CHECK((stock->data.rules().portRules & CritterRules::kSparesSwarm) != 0);
             CHECK(stock->tree->name == stock->data.tree());
             CHECK(stock->archive.models.loaded());
             CHECK(stock->archive.textures.loaded());
@@ -111,6 +113,7 @@ TEST_CASE("Native boss assets bind six original skeletons and every authored mov
                 CHECK((child.rules().portRules & CritterRules::kModelFallback) != 0);
                 CHECK((child.rules().portRules & CritterRules::kStrikesAfterGaze) != 0);
                 CHECK((child.rules().portRules & CritterRules::kBlowsEveryFrame) != 0);
+                CHECK((child.rules().portRules & CritterRules::kSparesSwarm) != 0);
                 validate(child);
             }
             for (const auto& cue : stock->data.sounds()) {
