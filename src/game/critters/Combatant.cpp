@@ -675,8 +675,9 @@ void Combatant::updateActor(s32 ticks, f32 seconds, std::span<const EnemyView> p
         }
         // The strikes measure from the move's node as CritterMoveSetup leaves worldMoveMatrix,
         // before CritterLookAtPlayer turns the look nodes (CritterGolemAI 0x80039A08-0x80039A44,
-        // CritterBossAI 0x8003A1FC-0x8003A2A8), a part that broke hanging as it broke; cues,
-        // effects and areas follow the turned pose.
+        // CritterBossAI 0x8003A1FC-0x8003A2A8), a part that broke hanging as it broke, and an
+        // area laid out once is laid from there; cues, effects and the areas riding a node follow
+        // the turned pose.
         std::optional<Mat4> unturned;
         if ((data.rules().portRules & CritterRules::kStrikesAfterGaze) == 0) {
             holdBrokenPoses(critter);
@@ -784,7 +785,7 @@ void Combatant::updateActor(s32 ticks, f32 seconds, std::span<const EnemyView> p
                             startArea(critter, i, *harm, {},
                                       glm::translate(Mat4{1}, *critter.attackTarget));
                         } else {
-                            startArea(critter, i, *harm, move->colnode);
+                            startArea(critter, i, *harm, move->colnode, std::nullopt, moveFrame);
                         }
                     }
                     return;

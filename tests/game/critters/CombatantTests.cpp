@@ -3020,7 +3020,8 @@ constexpr f32 kLookTurn = 0.785f;
  * of `kind`, over frames 16 to 20, by when the look has turned as far as it may, and DEATH,
  * naming BITE, throws coins at once. */
 void loadLookingGeneral(test::FakeRenderDevice& device, CombatantAssets& assets, s16 kind,
-                        const CritterRules& rules) {
+                        const CritterRules& rules,
+                        const formats::CritterSoundRecord* sound = nullptr) {
     const auto root = familyAssets();
     auto archive = root / "MONSTERS" / General::definition().name;
     if (General::definition().realmCostume) {
@@ -3072,6 +3073,13 @@ void loadLookingGeneral(test::FakeRenderDevice& device, CombatantAssets& assets,
     auto& spew = source.damages.emplace_back();
     spew.type = AttackDefinition::kSpew;
     spew.minSpeed = 10;
+    if (sound != nullptr) {
+        // The strike's own effect, an area reaching twenty all round.
+        source.sounds.push_back(*sound);
+        source.damages[0].sfxIndex = 0;
+        source.damages[0].maxDistance = 20;
+        source.damages[0].minDot = -1;
+    }
     assets.data = CritterData::fromDecoded("GENERAL", source, 0, rules);
 }
 
@@ -3207,6 +3215,117 @@ TEST_CASE("a death's coins leave its move node as the animation puts it, before 
     REQUIRE(drawn.has_value());
     REQUIRE(glm::distance(Vec3{(*drawn)[3]} - actor.position(), turnedBite()) < 1e-3f);
     CHECK(glm::distance(spews[0].origin, afterGaze ? turnedBite() : Vec3{0, 0, 8}) < 1e-3f);
+}
+
+TEST_CASE("an area laid out once or dropped to the floor is laid where the animation puts its "
+          "node, before the look turns it",
+          "[game][combatant][gaze]") {
+    // CritterActivate starts the effect through CritterDoTexmodNode, where CritterDoSfx lays an
+    // SFXX 0x40 one out where GetWorldMat puts obj_d0 (critter.c 2380-2395) and
+    // PlaceEffectOnFloor drops an SFXX 0x10 one to the floor (2576-2578), before
+    // CritterLookAtPlayer turns the look nodes (CritterGolemAI 0x80039A18-0x80039A44). Data whose
+    // rules strike after the look (kStrikesAfterGaze) lays it from the turned pose.
+    const u32 placement = GENERATE(effect_flags::kDetached, effect_flags::kOnFloor);
+    const bool afterGaze = GENERATE(false, true);
+    CAPTURE(placement, afterGaze);
+    formats::CritterSoundRecord sound;
+    sound.name = "NULLFX";
+    sound.life = 0.5f;
+    sound.flags = placement;
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    CritterRules rules;
+    rules.portRules = afterGaze ? CritterRules::kStrikesAfterGaze : 0;
+    loadLookingGeneral(device, assets, AttackDefinition::kAttachedArea, rules, &sound);
+    const WorldCollision floor = flatFloor();
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, {}, 0, &floor, {}, 'G'));
+    const auto bite = assets.data.moveNamed("BITE");
+    REQUIRE(bite);
+    // Player 1, the move's target, stands a quarter turn to the right, and draws the look round.
+    Combatant::MovePoint start;
+    start.target = 1;
+    REQUIRE(actor.setMove(*bite, start));
+    std::array<EnemyView, 2> players{};
+    players[0].player = 0;
+    players[0].position = {0, -3, 8};
+    players[1].player = 1;
+    players[1].position = {8, -3, 0};
+    std::vector<CombatBlow> blows;
+    for (s32 update = 0; update < 30 && actor.animation().frame() < 16.0f; ++update) {
+        actor.update(2, 1.0f / 30, players);
+        blows = actor.takeBlows();
+    }
+    REQUIRE(actor.moveName() == "BITE");
+    REQUIRE(actor.animation().frame() == 16.0f);
+    // The look has turned BITE an eighth of a turn round.
+    const auto drawn = actor.nodeTransform("BITE");
+    REQUIRE(drawn.has_value());
+    REQUIRE(glm::distance(Vec3{(*drawn)[3]}, turnedBite()) < 1e-3f);
+    const Vec3 node = afterGaze ? turnedBite() : Vec3{0, 0, 8};
+    const Vec3 laid = placement == effect_flags::kDetached ? node : Vec3{node.x, 0.1f, node.z};
+    REQUIRE_FALSE(blows.empty());
+    for (const CombatBlow& blow : blows) {
+        CHECK(blow.area);
+        CHECK(glm::distance(blow.origin, laid) < 1e-3f);
+    }
+}
+
+TEST_CASE("a part that broke strikes from where it hung as it broke, not where its animation "
+          "carries on",
+          "[game][combatant][gaze]") {
+    // A broken part keeps the pose it broke in while the rest animates on, and a move striking
+    // from it measures from that held part, whichever side of the look its strikes are taken.
+    const bool afterGaze = GENERATE(false, true);
+    CAPTURE(afterGaze);
+    const auto root = familyAssets();
+    // SWING carries HAND a unit further along x each of its first ten frames.
+    writeSwingTree(root, 0, {},
+                   R"(,"tracks":[{"node":2,"flags":16,"frames":[0,10],"values":[0,10]}])");
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, General::definition(), 'G'));
+    auto source = swingCritter(4);
+    source.types[0].colCount = 1;
+    auto& part = source.nodes.emplace_back();
+    part.nodeName = "HAND";
+    part.flags = static_cast<s16>(CritterPart::kBreakable);
+    part.healthScale = 0.1f;
+    part.radius = 1;
+    CritterRules rules;
+    rules.portRules = afterGaze ? CritterRules::kStrikesAfterGaze : 0;
+    assets.data = CritterData::fromDecoded("GENERAL", source, 0, rules);
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+    actor.update(2, 1.0f / 30, {});
+    REQUIRE(actor.moveName() == "READY");
+    // Broken as it stands ready, seven along x, by more than its ten points.
+    EnemyHit hit;
+    hit.player = 0;
+    hit.damage = 15;
+    hit.node = 0;
+    actor.hurt(hit);
+    const auto swing = assets.data.moveNamed("SWING");
+    REQUIRE(swing);
+    Combatant::MovePoint start;
+    start.target = 0;
+    REQUIRE(actor.setMove(*swing, start));
+    // A unit short of where it broke, and out of reach of where SWING would carry it by frame four.
+    EnemyView player;
+    player.player = 0;
+    player.position = {6, -3, 0};
+    std::vector<CombatBlow> blows;
+    for (s32 update = 0; update < 12 && blows.empty(); ++update) {
+        actor.update(2, 1.0f / 30, std::array{player});
+        blows = actor.takeBlows();
+    }
+    REQUIRE(actor.moveName() == "SWING");
+    REQUIRE(blows.size() == 1);
+    CHECK(glm::distance(blows[0].origin, Vec3{7, 0, 0}) < 1e-4f);
+    // Drawn, too, it hangs where it broke.
+    const auto hand = actor.nodeTransform("HAND");
+    REQUIRE(hand.has_value());
+    CHECK(glm::distance(Vec3{(*hand)[3]}, Vec3{7, 0, 0}) < 1e-4f);
 }
 
 TEST_CASE("the Plague Fiend's gas breath leaves along his animated jaw, not where his neck turns "

@@ -511,9 +511,13 @@ private:
                      std::span<const EnemyView> players, bool fallback = false) const;
     f32 attackRate(const Actor& critter) const;
     static bool supportsArea(const AttackDefinition& damage, const CombatEffectDefinition* sound);
+    /** Starts `damage`'s area on the move's node `node`, or laid at `worldParent`, returning its
+     * life. One placed once or dropped to the floor is laid from `moveFrame`, the move's node as
+     * the strikes measure it, where given. */
     std::optional<f32> startArea(Actor& critter, s32 id, const AttackDefinition& damage,
                                  std::string_view node,
-                                 std::optional<Mat4> worldParent = std::nullopt);
+                                 std::optional<Mat4> worldParent = std::nullopt,
+                                 const std::optional<Mat4>& moveFrame = std::nullopt);
     void eruptArena(Actor& critter, s32 id, const AttackDefinition& damage,
                     std::span<const EnemyView> players);
     void updateAreas(Actor& critter, s32 id, std::span<const EnemyView> players);

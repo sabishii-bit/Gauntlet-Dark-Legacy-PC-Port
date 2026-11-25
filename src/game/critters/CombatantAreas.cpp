@@ -27,7 +27,8 @@ bool Combatant::supportsArea(const AttackDefinition& damage, const CombatEffectD
 }
 
 std::optional<f32> Combatant::startArea(Actor& critter, s32 id, const AttackDefinition& damage,
-                                        std::string_view node, std::optional<Mat4> worldParent) {
+                                        std::string_view node, std::optional<Mat4> worldParent,
+                                        const std::optional<Mat4>& moveFrame) {
     const CombatEffectDefinition* sound = critter.definition->sound(damage.sound);
     if (sound == nullptr) {
         return std::nullopt;
@@ -63,12 +64,14 @@ std::optional<f32> Combatant::startArea(Actor& critter, s32 id, const AttackDefi
     if (worldParent.has_value()) {
         offset = damageOffset(critter, damage.offset) + sound->offset * drawnScale(critter);
     }
+    // CritterDoSfx lays an effect out where obj_d0 stands as CritterActivate starts it, before
+    // CritterLookAtPlayer turns the look nodes (critter.c 2380-2395, 2576-2578).
+    const Mat4 laidFrom = moveFrame.has_value() ? *moveFrame : moveNodeTransform(critter, node);
     if ((sound->flags & effect_flags::kDetached) != 0 && !worldParent.has_value()) {
         // Detached damage effects snapshot the hit node's world position. The
         // slam's hand can lift again without dragging the ground wave with it.
         const Vec3 position =
-            Vec3{moveNodeTransform(critter, node) * Vec4{sound->offset * shrink, 1}} +
-            damageOffset(critter, damage.offset);
+            Vec3{laidFrom * Vec4{sound->offset * shrink, 1}} + damageOffset(critter, damage.offset);
         // SfxSetMat copies the body's orientation, not the animated hand's.
         worldParent =
             portable::rotate(glm::translate(Mat4{1}, position), critter.yaw, Vec3{0, 1, 0});
@@ -76,8 +79,8 @@ std::optional<f32> Combatant::startArea(Actor& critter, s32 id, const AttackDefi
     }
     if ((sound->flags & effect_flags::kOnFloor) != 0 && damage.hitSound < 0 &&
         m_sim.collision != nullptr) {
-        const Mat4 parent = worldParent.value_or(rootParent ? simulationTransform(critter, node)
-                                                            : moveNodeTransform(critter, node));
+        const Mat4 parent =
+            worldParent.value_or(rootParent ? simulationTransform(critter, node) : laidFrom);
         const Vec3 position{parent * Vec4{worldParent.has_value() ? offset : offset * shrink, 1}};
         const f32 radius = damage.radius * critter.scale;
         if (const auto floor =
