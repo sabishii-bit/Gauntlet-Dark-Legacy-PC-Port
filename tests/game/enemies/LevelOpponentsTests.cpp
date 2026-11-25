@@ -3742,8 +3742,7 @@ TEST_CASE("the Lich's spear poke, axe sweep and chain spin test their blow once 
     const MoveDefinition& move = data.moves()[*index];
     // A sidestep's blow, or a stomp's in its second slot, which CritterCopyAnim's default case
     // raises once a move.
-    constexpr s32 kStomp = 130;
-    REQUIRE((move.type == MoveDefinition::kStepLeft || move.type == kStomp));
+    REQUIRE((move.type == MoveDefinition::kStepLeft || move.type == MoveDefinition::kStompMove));
     const AttackDefinition* first = data.damage(move.damage0);
     const AttackDefinition* harm = first != nullptr && first->type == AttackDefinition::kBlow
                                        ? first

@@ -137,7 +137,9 @@ struct MoveDefinition {
     static constexpr s32 kAttackFrom = 128; ///< attacks are this and over
     static constexpr s32 kClaw = 128;
     static constexpr s32 kGrab = 129;
+    static constexpr s32 kStompMove = 130;
     static constexpr s32 kBreathMove = 131;
+    static constexpr s32 kShootMove = 132;
     static constexpr s32 kSpray = 133; ///< its shots repeat every framePeriod frames of a window
     static constexpr s32 kChargeMove = 134;
     static constexpr s32 kTargetArea = 136; ///< snapshots the target before emitting its effects
