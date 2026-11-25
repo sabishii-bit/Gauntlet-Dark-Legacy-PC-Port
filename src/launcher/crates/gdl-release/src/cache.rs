@@ -24,9 +24,11 @@ pub const MAX_CLOCK_SKEW: u64 = 300;
 /// The first schema of every kind of state file.
 const FIRST_SCHEMA: u64 = 1;
 
-/// The lowest launcher version allowed to change an update check of schema 1: the first
-/// launcher's, whichever launcher wrote it.
-const MIN_LAUNCHER: &str = "1.0.0-beta";
+/// The lowest launcher version allowed to change a state file of schema 1, which every such file
+/// records, this update check and every state file of an installation alike. It is the first
+/// launcher's version, not the writer's own: a file that a later launcher writes in a schema
+/// every launcher reads stays one that every launcher may change.
+pub const MIN_LAUNCHER: &str = "1.0.0-beta";
 
 /// An update check's answer, with when and for whom it was asked.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

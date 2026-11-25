@@ -14,10 +14,9 @@ use serde_json::{Map, Value};
 use crate::folder::{JOURNAL_DIR, LOCK_FILE, RECEIPT_FILE};
 use crate::install::{DISC_FILES, INSTALL_JOURNAL, INSTALL_STAGING_PREFIX};
 
-/// The lowest launcher version allowed to change a state file of schema 1, which every such file
-/// records. It is the first launcher's version, not the writer's own: a file that a later
-/// launcher writes in a schema every launcher reads stays one that every launcher may change.
-pub const MIN_LAUNCHER: &str = "1.0.0-beta";
+/// The lowest launcher version allowed to change a state file of schema 1. Every state file
+/// records the same one, the update check's too, so it is spelt once, beside that check.
+pub use gdl_release::MIN_LAUNCHER;
 
 /// The schema of the journals this launcher reads and writes.
 pub const JOURNAL_SCHEMA: u64 = 1;

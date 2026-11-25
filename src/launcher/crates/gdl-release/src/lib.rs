@@ -15,7 +15,9 @@ mod platform;
 mod proxy;
 mod version;
 
-pub use cache::{Answer, MAX_CLOCK_SKEW, UPDATE_CHECK_LIFETIME, UPDATE_CHECK_SCHEMA, UpdateCheck};
+pub use cache::{
+    Answer, MAX_CLOCK_SKEW, MIN_LAUNCHER, UPDATE_CHECK_LIFETIME, UPDATE_CHECK_SCHEMA, UpdateCheck,
+};
 pub use checksums::{ChecksumList, MAX_LIST_LEN};
 pub use download::{DOWNLOAD_ATTEMPTS, Downloaded};
 pub use error::ReleaseError;
