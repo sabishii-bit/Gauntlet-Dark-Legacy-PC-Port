@@ -232,10 +232,10 @@ mod tests {
 
     use super::super::tests::{
         Contents, Heard, INSTALLED, NEXT, OnceJournalled, StartedLater, Told, answering, as_it_is,
-        bundled, contents_of, executable, failed, journal_phase, launcher_copy, nothing_recovered,
-        players_installation, receipt_at, recover_by, recover_simply, retired_copies, rolled_back,
-        running_for, stagings, standing_in, state_names, update_by, update_simply, updated,
-        version,
+        bundled, bundled_as, contents_of, executable, failed, journal_phase, launcher_copy,
+        nothing_recovered, players_installation, receipt_at, recover_by, recover_simply,
+        retired_copies, rolled_back, running_for, stagings, standing_in, state_names, update_by,
+        update_simply, updated, version,
     };
     use super::super::{
         CHECK_INSTALLED, FINISH_CLEANUP, RECOVER_UPDATE, UPDATE_BACKUP, UPDATE_JOURNAL,
@@ -470,6 +470,90 @@ mod tests {
         assert!(stagings(&fixture.root).is_empty());
         assert!(retired_copies(&fixture.root, NEXT).is_empty());
         assert!(retired_copies(&fixture.root, INSTALLED).is_empty());
+    }
+
+    #[test]
+    fn a_launcher_copy_gone_before_its_move_is_taken_back() {
+        // Stopped once every runtime file moved, its launcher copy gone since, as a scanner may
+        // quarantine a program: nothing is left to put back of it, and the rest is taken back.
+        let (dir, fixture) = players_installation();
+        let copy = fixture.root.join(launcher_copy());
+        let old = fs::read(&copy).unwrap();
+        let mut source = bundled(dir.path(), &fixture.runtime.newer(NEXT));
+        let before = contents_of(&fixture.root);
+        panicked(
+            &fixture,
+            &mut source,
+            &PanicAt::new(FaultPoint::UpdateMove, 14),
+        );
+        assert_eq!(journal_phase(&fixture.root).as_deref(), Some("swapping"));
+        retry_locked(|| fs::remove_file(&copy)).unwrap();
+        let recovered = recover_simply(&fixture.root, NEXT, &standing_in(&NoFaults, &answering));
+        assert_eq!(recovered.unwrap(), rolled_back(false, &[]));
+        assert!(!copy.exists());
+        fs::write(&copy, &old).unwrap();
+        assert_eq!(contents_of(&fixture.root), before);
+    }
+
+    #[test]
+    fn a_missing_launcher_copy_put_in_place_is_finished() {
+        // An installation without its launcher copy, whose update stopped as the new one was put
+        // in place: every move is made, and the update is finished with that copy where it is.
+        let (dir, fixture) = players_installation();
+        let copy = fixture.root.join(launcher_copy());
+        retry_locked(|| fs::remove_file(&copy)).unwrap();
+        let (source_path, mut source) =
+            bundled_as(dir.path(), "next-launcher", &fixture.runtime.newer(NEXT));
+        panicked(
+            &fixture,
+            &mut source,
+            &PanicAt::new(FaultPoint::LauncherReplace, 2),
+        );
+        assert_eq!(journal_phase(&fixture.root).as_deref(), Some("swapping"));
+        let recovered = recover_simply(&fixture.root, NEXT, &standing_in(&NoFaults, &answering));
+        assert_eq!(
+            recovered.unwrap(),
+            Recovered {
+                update: UpdateRecovery::Finished,
+                ..nothing_recovered()
+            }
+        );
+        assert_eq!(fs::read(&copy).unwrap(), fs::read(&source_path).unwrap());
+        assert_eq!(receipt_at(&fixture.root)["version"], json!(NEXT));
+        assert_eq!(state_names(&fixture.root), [RECEIPT_FILE]);
+    }
+
+    #[test]
+    fn a_launcher_copy_put_back_by_hand_is_kept() {
+        // An update of an installation without its launcher copy, stopped once staged, and taken
+        // back until its staging went; then a copy put in place by hand. That copy is not the
+        // update's, and stays as it is.
+        let (dir, fixture) = players_installation();
+        let copy = fixture.root.join(launcher_copy());
+        retry_locked(|| fs::remove_file(&copy)).unwrap();
+        let mut source = bundled(dir.path(), &fixture.runtime.newer(NEXT));
+        let before = contents_of(&fixture.root);
+        let journalled = OnceJournalled {
+            point: FaultPoint::UpdateStage,
+            journal: journal_path(&fixture.root),
+            act: &|| panic!("the test panics once the journal is written"),
+            done: Cell::new(false),
+        };
+        panicked(&fixture, &mut source, &journalled);
+        assert_eq!(journal_phase(&fixture.root).as_deref(), Some("staged"));
+        let staging = fixture
+            .root
+            .join(STATE_DIR)
+            .join(&stagings(&fixture.root)[0]);
+        retry_locked(|| fs::remove_dir_all(&staging)).unwrap();
+        fs::write(&copy, b"a launcher of the player's").unwrap();
+        let recovered = recover_simply(&fixture.root, NEXT, &standing_in(&NoFaults, &answering));
+        assert_eq!(recovered.unwrap(), rolled_back(false, &[]));
+        assert_eq!(fs::read(&copy).unwrap(), b"a launcher of the player's");
+        assert!(retired_copies(&fixture.root, NEXT).is_empty());
+        // Nothing else is left of the update.
+        retry_locked(|| fs::remove_file(&copy)).unwrap();
+        assert_eq!(contents_of(&fixture.root), before);
     }
 
     #[test]

@@ -173,7 +173,7 @@ impl Update<'_> {
                     source,
                 })?;
             }
-            checked_move(&name.path_under(root), &to)?;
+            moved_aside(&name.path_under(root), &to, name.as_str())?;
             self.pass(FaultPoint::UpdateMove, &to)?;
         }
         for folder in made {
@@ -201,7 +201,7 @@ impl Update<'_> {
         let installed = root.join(launcher);
         let retired = state.join(&journal.journal().retired);
         if !journal.journal().launcher_missing {
-            checked_move(&installed, &retired)?;
+            moved_aside(&installed, &retired, launcher)?;
         }
         self.pass(FaultPoint::LauncherReplace, &retired)?;
         checked_move(&staging.path().join(launcher), &installed)?;
@@ -352,7 +352,8 @@ pub(super) struct TakenBack {
 /// 1. the launcher copy: a new one in place, the staging's copy gone, goes aside under a retired
 ///    name of its own, its version's, so that the staging never holds a program that may run;
 ///    then the installed one comes back from its retired name. Without an installed one, the new
-///    one goes aside alone;
+///    one goes aside alone, while the staging stands; an installed one gone before it was moved
+///    aside leaves nothing to put back;
 /// 2. each new name the swap put in place, last first, back into the staging: one in place and
 ///    gone from the staging, and, for one that replaced an installed name, only while the backup
 ///    holds that one, since otherwise what is in place is the installed file;
@@ -442,22 +443,19 @@ impl<'a> TakingBack<'a> {
         let in_place = is_there(&installed)?;
         let staged = is_there(&self.staging.join(&written.launcher))?;
         if written.launcher_missing {
-            if in_place && !staged {
+            // The copy in place is the update's own only while the staging it came from stands:
+            // once the staging is gone, one there was put back by hand, and stays.
+            if in_place && !staged && is_there(&self.staging)? {
                 self.move_back(&installed, &self.new_copy)?;
             }
             return Ok(false);
         }
         let retired = self.state.join(&written.retired);
         if !is_there(&retired)? {
-            // Never moved aside, or back already.
-            return if in_place {
-                Ok(false)
-            } else {
-                Err(inconsistent(format!(
-                    "the launcher copy {} is neither in place nor retired",
-                    written.launcher
-                )))
-            };
+            // Never moved aside, or back already; or gone from its place before the swap could
+            // move it aside, which leaves nothing to put back, and the next update puts a copy
+            // in place as it does for any installation without one.
+            return Ok(false);
         }
         if in_place {
             if staged {
@@ -768,6 +766,18 @@ fn checked_move(from: &Path, to: &Path) -> Result<(), UpdateError> {
     rename_noreplace(from, to).map_err(|source| UpdateError::Io {
         path: to.to_path_buf(),
         source,
+    })
+}
+
+/// Moves the installed file `name`, at `from`, aside to `to`, as [`checked_move`] moves it. One
+/// gone from its place since it was hashed again, as a scanner may quarantine a file, is
+/// [`UpdateError::OwnedFileChanged`].
+fn moved_aside(from: &Path, to: &Path, name: &str) -> Result<(), UpdateError> {
+    checked_move(from, to).map_err(|error| match error {
+        UpdateError::Io { source, .. } if source.kind() == io::ErrorKind::NotFound => {
+            UpdateError::OwnedFileChanged { name: name.into() }
+        }
+        other => other,
     })
 }
 

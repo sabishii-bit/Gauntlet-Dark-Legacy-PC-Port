@@ -2263,6 +2263,69 @@ mod tests {
         assert_eq!(done.retired, RetiredCopy::NotMoved);
         assert_eq!(fs::read(&copy).unwrap(), fs::read(&source_path).unwrap());
         assert_eq!(state_names(&fixture.root), [RECEIPT_FILE]);
+
+        // Taken back once the new copy stood in its place: the new copy goes, and none stands,
+        // as before the update.
+        let (dir, fixture) = players_installation();
+        let copy = fixture.root.join(launcher_copy());
+        retry_locked(|| fs::remove_file(&copy)).unwrap();
+        let mut source = bundled(dir.path(), &fixture.runtime.newer(NEXT));
+        let before = contents_of(&fixture.root);
+        let fail = FailAt::new(FaultPoint::LauncherReplace, 2);
+        let failure = failed(update_simply(
+            &fixture,
+            &mut source,
+            NEXT,
+            &standing_in(&fail, &answering),
+        ));
+        assert_eq!(failure.changes, Changes::RolledBack);
+        assert_eq!(contents_of(&fixture.root), before);
+        assert!(!copy.exists());
+        assert!(retired_copies(&fixture.root, NEXT).is_empty());
+    }
+
+    #[test]
+    fn a_launcher_copy_gone_during_the_swap_is_taken_back_and_put_in_place_again() {
+        let (dir, fixture) = players_installation();
+        let copy = fixture.root.join(launcher_copy());
+        let old = fs::read(&copy).unwrap();
+        let (source_path, mut source) =
+            bundled_as(dir.path(), "next-launcher", &fixture.runtime.newer(NEXT));
+        let before = contents_of(&fixture.root);
+        // Gone once every runtime file moved, as a scanner may quarantine a program, before the
+        // swap moves it aside.
+        let quarantine = || retry_locked(|| fs::remove_file(&copy));
+        let gone = OnPass::new(FaultPoint::UpdateMove, 14, &quarantine);
+        let failure = failed(update_simply(
+            &fixture,
+            &mut source,
+            NEXT,
+            &standing_in(&gone, &answering),
+        ));
+        match &failure.error {
+            UpdateError::OwnedFileChanged { name } => assert_eq!(&**name, launcher_copy()),
+            other => panic!("{other:?}"),
+        }
+        // Every move was taken back but the copy's, which is gone: the runtime and the receipt
+        // are as they were.
+        assert_eq!(failure.changes, Changes::RolledBack);
+        assert!(!copy.exists());
+        assert!(retired_copies(&fixture.root, INSTALLED).is_empty());
+        assert!(retired_copies(&fixture.root, NEXT).is_empty());
+        fs::write(&copy, &old).unwrap();
+        assert_eq!(contents_of(&fixture.root), before);
+        retry_locked(|| fs::remove_file(&copy)).unwrap();
+
+        // The same update again puts a copy in its place.
+        let done = updated(update_simply(
+            &fixture,
+            &mut source,
+            NEXT,
+            &standing_in(&NoFaults, &answering),
+        ));
+        assert_eq!(done.retired, RetiredCopy::NotMoved);
+        assert_eq!(fs::read(&copy).unwrap(), fs::read(&source_path).unwrap());
+        assert_eq!(state_names(&fixture.root), [RECEIPT_FILE]);
     }
 
     #[test]
