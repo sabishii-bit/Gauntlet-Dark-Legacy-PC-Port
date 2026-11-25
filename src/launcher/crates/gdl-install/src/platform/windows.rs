@@ -14,8 +14,9 @@
 //! GetProcessTimes and which file it runs with QueryFullProcessImageNameW, and ended with
 //! TerminateProcess; and whether this process has a console, from GetConsoleWindow. For the tests,
 //! a program started under a filtered copy of this process's token, as a standard user's is, with
-//! CreateRestrictedToken, SetTokenInformation and CreateProcessAsUserW, and what this process's
-//! own token holds, from CheckTokenMembership and GetTokenInformation.
+//! CreateRestrictedToken, SetTokenInformation and CreateProcessAsUserW, on a window station and
+//! desktop made for it with CreateWindowStationW and CreateDesktopW, and what this process's own
+//! token holds, from CheckTokenMembership and GetTokenInformation.
 
 use std::ffi::OsString;
 use std::fs::{File, OpenOptions};
@@ -73,20 +74,26 @@ use crate::system_proxy::{ProxyEnable, RawInternetSettings};
 #[cfg(test)]
 use std::collections::BTreeMap;
 #[cfg(test)]
-use windows_sys::Win32::Foundation::GENERIC_WRITE;
+use std::fmt::Display;
+#[cfg(test)]
+use std::sync::atomic::{AtomicU32, Ordering};
 #[cfg(test)]
 use windows_sys::Win32::Foundation::{
     ERROR_RESOURCE_LANG_NOT_FOUND, ERROR_RESOURCE_NAME_NOT_FOUND, ERROR_RESOURCE_TYPE_NOT_FOUND,
     FreeLibrary, HANDLE_FLAG_INHERIT, HMODULE, SetHandleInformation, WIN32_ERROR,
 };
 #[cfg(test)]
+use windows_sys::Win32::Foundation::{GENERIC_ALL, GENERIC_WRITE};
+#[cfg(test)]
 use windows_sys::Win32::Security::{
-    CheckTokenMembership, CreateRestrictedToken, CreateWellKnownSid, DISABLE_MAX_PRIVILEGE,
-    GetLengthSid, GetSidSubAuthority, GetSidSubAuthorityCount, GetTokenInformation, PSID,
-    SECURITY_MAX_SID_SIZE, SID_AND_ATTRIBUTES, SetTokenInformation, TOKEN_ACCESS_MASK,
-    TOKEN_ADJUST_DEFAULT, TOKEN_ASSIGN_PRIMARY, TOKEN_DUPLICATE, TOKEN_MANDATORY_LABEL,
-    TOKEN_QUERY, TokenIntegrityLevel, WELL_KNOWN_SID_TYPE, WinBuiltinAdministratorsSid,
-    WinMediumLabelSid,
+    ACCESS_ALLOWED_ACE, ACL, ACL_REVISION, AddAccessAllowedAce, CheckTokenMembership,
+    CreateRestrictedToken, CreateWellKnownSid, DISABLE_MAX_PRIVILEGE, GetLengthSid,
+    GetSidSubAuthority, GetSidSubAuthorityCount, GetTokenInformation, InitializeAcl,
+    InitializeSecurityDescriptor, PSID, SECURITY_ATTRIBUTES, SECURITY_DESCRIPTOR,
+    SECURITY_MAX_SID_SIZE, SID_AND_ATTRIBUTES, SetSecurityDescriptorDacl, SetTokenInformation,
+    TOKEN_ACCESS_MASK, TOKEN_ADJUST_DEFAULT, TOKEN_ASSIGN_PRIMARY, TOKEN_DUPLICATE,
+    TOKEN_INFORMATION_CLASS, TOKEN_MANDATORY_LABEL, TOKEN_QUERY, TOKEN_USER, TokenIntegrityLevel,
+    TokenSessionId, TokenUser, WELL_KNOWN_SID_TYPE, WinBuiltinAdministratorsSid, WinMediumLabelSid,
 };
 #[cfg(test)]
 use windows_sys::Win32::Storage::FileSystem::{DELETE, GetShortPathNameW, SetFileShortNameW};
@@ -102,13 +109,21 @@ use windows_sys::Win32::System::Power::ES_CONTINUOUS;
 #[cfg(test)]
 use windows_sys::Win32::System::Registry::HKEY_LOCAL_MACHINE;
 #[cfg(test)]
+use windows_sys::Win32::System::StationsAndDesktops::{
+    CloseDesktop, CloseWindowStation, CreateDesktopW, CreateWindowStationW,
+    GetProcessWindowStation, GetThreadDesktop, GetUserObjectInformationW, HDESK, HWINSTA,
+    SetProcessWindowStation, UOI_NAME,
+};
+#[cfg(test)]
 use windows_sys::Win32::System::Threading::{
     CREATE_NO_WINDOW, CREATE_UNICODE_ENVIRONMENT, CreateProcessAsUserW,
-    DeleteProcThreadAttributeList, EXTENDED_STARTUPINFO_PRESENT, GetExitCodeProcess,
-    InitializeProcThreadAttributeList, LPPROC_THREAD_ATTRIBUTE_LIST, OpenProcessToken,
-    PROC_THREAD_ATTRIBUTE_HANDLE_LIST, PROCESS_INFORMATION, STARTF_USESTDHANDLES, STARTUPINFOEXW,
-    STARTUPINFOW, UpdateProcThreadAttribute,
+    DeleteProcThreadAttributeList, EXTENDED_STARTUPINFO_PRESENT, GetCurrentThreadId,
+    GetExitCodeProcess, InitializeProcThreadAttributeList, LPPROC_THREAD_ATTRIBUTE_LIST,
+    OpenProcessToken, PROC_THREAD_ATTRIBUTE_HANDLE_LIST, PROCESS_INFORMATION, STARTF_USESTDHANDLES,
+    STARTUPINFOEXW, STARTUPINFOW, UpdateProcThreadAttribute,
 };
+#[cfg(test)]
+use windows_sys::Win32::UI::WindowsAndMessaging::{CWF_CREATE_ONLY, WINSTA_ALL_ACCESS};
 
 /// IsWow64Process2's signature. The call is looked up while running, since Windows 10 has it only
 /// from version 1511 on, and a program that imported it would not start on a system without it.
@@ -181,6 +196,29 @@ const FILTERED_ENDED_EXIT_CODE: u32 = 1;
 /// How long a program started under a filtered token is given to be gone once it is ended.
 #[cfg(test)]
 const FILTERED_ENDED_WAIT: Duration = Duration::from_secs(5);
+
+/// What starts the name of a window station made for a program under a filtered token; this
+/// process's id and a count follow, so that no two are named alike.
+#[cfg(test)]
+const FILTERED_STATION_PREFIX: &str = "GdlFilteredToken";
+
+/// The name of the desktop made in a window station for a program under a filtered token.
+#[cfg(test)]
+const FILTERED_DESKTOP: &str = "Default";
+
+/// How many window stations this process has made for programs under a filtered token: the count
+/// in the next one's name.
+#[cfg(test)]
+static FILTERED_STATIONS: AtomicU32 = AtomicU32::new(0);
+
+/// The most UTF-16 units a window station's or desktop's name is read in, the NUL after it
+/// included: MAX_PATH, more than any such name holds.
+#[cfg(test)]
+const MAX_USER_OBJECT_NAME_UNITS: usize = 260;
+
+/// SECURITY_DESCRIPTOR_REVISION: the revision a security descriptor is made in.
+#[cfg(test)]
+const SECURITY_DESCRIPTOR_REVISION: u32 = 1;
 
 /// The errors FindResourceExW gives for a resource that a program does not hold: none of its
 /// type, none of its id among those of its type, or none in its language.
@@ -829,10 +867,21 @@ pub(crate) fn has_console() -> bool {
 pub(crate) struct FilteredChild {
     /// The program's process.
     process: ProcessHandle,
+    /// Where the program was started: see [`FilteredChild::place`].
+    place: String,
+    /// The window station and desktop made for the program, closed once it is ended.
+    _desktop: Option<FilteredDesktop>,
 }
 
 #[cfg(test)]
 impl FilteredChild {
+    /// The session the program was started in, and by name the window station and desktop this
+    /// process runs on and those the program was given, for a test to tell when the program
+    /// fails.
+    pub(crate) fn place(&self) -> &str {
+        &self.place
+    }
+
     /// Waits up to `limit` for the program to end, and gives its exit code: an error of kind
     /// TimedOut when it still runs at the limit.
     pub(crate) fn wait(&self, limit: Duration) -> io::Result<u32> {
@@ -871,6 +920,14 @@ impl Drop for FilteredChild {
 /// inherits. The system refuses a caller that may not start a program under another token with
 /// ERROR_PRIVILEGE_NOT_HELD. The arguments are taken only when none is empty or holds a space, a
 /// tab or a quote, which need no quoting.
+///
+/// When this process is an administrator, the program starts on a window station and desktop
+/// made for it, which grant the filtered token's user, and the programs it starts inherit them.
+/// The station and desktop this process runs on may grant Administrators and not that user, or be
+/// labelled above Medium, and refuse the filtered token: user32, which a program linking shell32
+/// loads as it starts, then cannot connect to them, and the program dies with
+/// STATUS_DLL_INIT_FAILED before its main. Only an administrator may name a window station, so a
+/// program another caller starts runs on the caller's own.
 #[cfg(test)]
 pub(crate) fn spawn_filtered(
     program: &Path,
@@ -879,6 +936,35 @@ pub(crate) fn spawn_filtered(
     output: &File,
 ) -> io::Result<FilteredChild> {
     let token = filtered_token()?;
+    let desktop = if token_is_administrator()? {
+        let user = token_information::<TOKEN_USER>(&token, TokenUser)?;
+        // SAFETY: the call wrote a TOKEN_USER at the buffer's start, whose SID lies in the buffer,
+        // which lives while the desktop is made.
+        let sid = unsafe { user.as_ptr().cast::<TOKEN_USER>().read() }
+            .User
+            .Sid;
+        // Said apart, so that a refusal here is never taken for the start's own.
+        let made = FilteredDesktop::granting(sid).map_err(|error| {
+            io::Error::new(
+                error.kind(),
+                format!("making the program's window station and desktop: {error}"),
+            )
+        })?;
+        Some(made)
+    } else {
+        None
+    };
+    let own = own_desktop();
+    let given = desktop
+        .as_ref()
+        .map_or_else(|| own.clone(), FilteredDesktop::name);
+    let place = format!(
+        "session {}, this process on {own}, the program on {given}",
+        described(own_session())
+    );
+    let desktop_name = desktop
+        .as_ref()
+        .map_or(ptr::null_mut(), |desktop| desktop.name.as_ptr().cast_mut());
     let application: Vec<u16> = program.as_os_str().encode_wide().chain([0]).collect();
     let mut line = command_line(program, args)?;
     let environment = environment_block(env);
@@ -895,6 +981,7 @@ pub(crate) fn spawn_filtered(
     let startup = STARTUPINFOEXW {
         StartupInfo: STARTUPINFOW {
             cb: size_of::<STARTUPINFOEXW>() as u32,
+            lpDesktop: desktop_name,
             dwFlags: STARTF_USESTDHANDLES,
             hStdOutput: inherited,
             hStdError: inherited,
@@ -907,8 +994,9 @@ pub(crate) fn spawn_filtered(
     // program's path, the command line and the environment are NUL-terminated UTF-16 that their
     // vectors own and keep alive through the call, the command line writable as the call may
     // write it; the attribute list, initialized, names one inheritable handle that lives through
-    // the call; and the call writes the process's and its thread's handles and ids through a
-    // reference to a local.
+    // the call; the desktop's name, when one is given, is NUL-terminated UTF-16 that the desktop
+    // owns and keeps alive through the call, which only reads it; and the call writes the
+    // process's and its thread's handles and ids through a reference to a local.
     let created = unsafe {
         CreateProcessAsUserW(
             token.as_raw_handle(),
@@ -941,7 +1029,290 @@ pub(crate) fn spawn_filtered(
             handle: process,
             can_end: true,
         },
+        place,
+        _desktop: desktop,
     })
+}
+
+/// A window station and a desktop in it, made by this process for a program it starts under a
+/// filtered token, whose DACLs grant that token's user every right, as CreateProcessAsUserW wants
+/// of the station and desktop a program starts on; closed when dropped.
+#[cfg(test)]
+struct FilteredDesktop {
+    /// The window station.
+    station: HWINSTA,
+    /// The desktop in it.
+    desktop: HDESK,
+    /// Both by name, the station's, a backslash, then the desktop's, NUL-terminated, as a
+    /// program's start names its desktop.
+    name: Vec<u16>,
+}
+
+#[cfg(test)]
+impl FilteredDesktop {
+    /// A new window station and desktop whose DACLs grant `user`, which must be a valid SID,
+    /// every right and nobody else any.
+    fn granting(user: PSID) -> io::Result<FilteredDesktop> {
+        let mut granted = GrantedToOne::new(user)?;
+        let attributes = SECURITY_ATTRIBUTES {
+            nLength: size_of::<SECURITY_ATTRIBUTES>() as u32,
+            lpSecurityDescriptor: granted.descriptor(),
+            bInheritHandle: FALSE,
+        };
+        let count = FILTERED_STATIONS.fetch_add(1, Ordering::Relaxed);
+        let station_name = format!("{FILTERED_STATION_PREFIX}-{}-{count}", std::process::id());
+        let station_units: Vec<u16> = station_name.encode_utf16().chain([0]).collect();
+        // SAFETY: the name is NUL-terminated UTF-16 that its vector owns and keeps alive through
+        // the call; the attributes, and the descriptor and DACL they point at, live through the
+        // call, which only reads them. A station of the name already there is refused, not shared.
+        let station = unsafe {
+            CreateWindowStationW(
+                station_units.as_ptr(),
+                CWF_CREATE_ONLY,
+                WINSTA_ALL_ACCESS.cast_unsigned(),
+                &attributes,
+            )
+        };
+        if station.is_null() {
+            return Err(io::Error::last_os_error());
+        }
+        let mut made = FilteredDesktop {
+            station,
+            desktop: ptr::null_mut(),
+            name: format!("{station_name}\\{FILTERED_DESKTOP}")
+                .encode_utf16()
+                .chain([0])
+                .collect(),
+        };
+        // A desktop is made in the window station of the process that makes it, so this process
+        // stands on the new station while it makes the desktop, and goes back to its own at once.
+        // SAFETY: the call takes nothing and gives this process's own window station, which the
+        // system keeps open and nothing here closes.
+        let own = unsafe { GetProcessWindowStation() };
+        if own.is_null() {
+            return Err(io::Error::last_os_error());
+        }
+        // SAFETY: the station's handle is open, with every right a window station has.
+        if unsafe { SetProcessWindowStation(station) } == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        let desktop_units: Vec<u16> = FILTERED_DESKTOP.encode_utf16().chain([0]).collect();
+        // SAFETY: as for the station, the name and the attributes live through the call, which
+        // only reads them; the device and its mode are null, as the call wants them.
+        let desktop = unsafe {
+            CreateDesktopW(
+                desktop_units.as_ptr(),
+                ptr::null(),
+                ptr::null(),
+                0,
+                GENERIC_ALL,
+                &attributes,
+            )
+        };
+        let created = if desktop.is_null() {
+            Err(io::Error::last_os_error())
+        } else {
+            made.desktop = desktop;
+            Ok(())
+        };
+        // SAFETY: the handle is this process's own window station's, which is still open.
+        if unsafe { SetProcessWindowStation(own) } == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        created.map(|()| made)
+    }
+
+    /// The station's name, a backslash, then the desktop's.
+    fn name(&self) -> String {
+        String::from_utf16_lossy(self.name.strip_suffix(&[0]).unwrap_or(&self.name))
+    }
+}
+
+#[cfg(test)]
+impl Drop for FilteredDesktop {
+    fn drop(&mut self) {
+        // SAFETY: each handle was made for this value alone and is closed only here, the desktop
+        // only when it was made; a program still on them keeps them until it ends.
+        unsafe {
+            if !self.desktop.is_null() {
+                CloseDesktop(self.desktop);
+            }
+            CloseWindowStation(self.station);
+        }
+    }
+}
+
+/// A security descriptor whose DACL grants one SID GENERIC_ALL, which a window station or desktop
+/// made with it maps to every right it has, and nobody else anything.
+#[cfg(test)]
+struct GrantedToOne {
+    /// The DACL, in words so that it is aligned as an ACL wants; the descriptor points at it.
+    dacl: Vec<u32>,
+    /// The descriptor, in absolute form.
+    descriptor: SECURITY_DESCRIPTOR,
+}
+
+#[cfg(test)]
+impl GrantedToOne {
+    /// The descriptor granting `sid`, which must be a valid SID; the DACL holds a copy of it.
+    fn new(sid: PSID) -> io::Result<GrantedToOne> {
+        // SAFETY: the SID is a valid one, which the call only reads.
+        let sid_len = unsafe { GetLengthSid(sid) } as usize;
+        // An access-allowed entry ends with the SID, whose first word is its own last field.
+        let len = size_of::<ACL>() + size_of::<ACCESS_ALLOWED_ACE>() - size_of::<u32>() + sid_len;
+        let mut dacl = vec![0_u32; len.div_ceil(size_of::<u32>())];
+        let dacl_len = (dacl.len() * size_of::<u32>()) as u32;
+        // SAFETY: the storage, aligned for an ACL, holds `dacl_len` bytes, which the call is told
+        // and writes no more than.
+        if unsafe { InitializeAcl(dacl.as_mut_ptr().cast(), dacl_len, ACL_REVISION) } == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        // SAFETY: the ACL was initialized with room for this one entry; the SID is valid and
+        // lives through the call, which copies it into the entry.
+        if unsafe { AddAccessAllowedAce(dacl.as_mut_ptr().cast(), ACL_REVISION, GENERIC_ALL, sid) }
+            == 0
+        {
+            return Err(io::Error::last_os_error());
+        }
+        let mut granted = GrantedToOne {
+            dacl,
+            descriptor: SECURITY_DESCRIPTOR::default(),
+        };
+        // SAFETY: the descriptor is storage of the structure's size, which the call initializes.
+        if unsafe {
+            InitializeSecurityDescriptor(granted.descriptor(), SECURITY_DESCRIPTOR_REVISION)
+        } == 0
+        {
+            return Err(io::Error::last_os_error());
+        }
+        let dacl = granted.dacl.as_mut_ptr().cast::<ACL>();
+        // SAFETY: the descriptor was initialized; the DACL it is given lies in the vector's heap
+        // storage, which does not move while the descriptor that points at it is kept beside it.
+        if unsafe { SetSecurityDescriptorDacl(granted.descriptor(), TRUE, dacl, FALSE) } == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        Ok(granted)
+    }
+
+    /// The descriptor, as the calls take one.
+    fn descriptor(&mut self) -> *mut core::ffi::c_void {
+        ptr::from_mut(&mut self.descriptor).cast()
+    }
+}
+
+/// By name, this process's window station, a backslash, then the calling thread's desktop, each
+/// told as unknown with the reason when the system does not give it.
+#[cfg(test)]
+fn own_desktop() -> String {
+    // SAFETY: neither call takes anything but the calling thread's id; each gives a handle the
+    // system keeps open and nothing here closes, or null.
+    let (station, desktop) = unsafe {
+        (
+            GetProcessWindowStation(),
+            GetThreadDesktop(GetCurrentThreadId()),
+        )
+    };
+    format!(
+        "{}\\{}",
+        described(user_object_name(station)),
+        described(user_object_name(desktop))
+    )
+}
+
+/// The name of the window station or desktop that `object` is a handle to, as
+/// GetUserObjectInformationW gives it.
+#[cfg(test)]
+fn user_object_name(object: HANDLE) -> io::Result<String> {
+    if object.is_null() {
+        return Err(io::Error::last_os_error());
+    }
+    let mut units = vec![0_u16; MAX_USER_OBJECT_NAME_UNITS];
+    let mut needed = 0;
+    // SAFETY: the handle is open, and the call only reads it; the buffer holds `units.len()`
+    // units, whose bytes the call is told and writes no more than, and it writes the bytes the
+    // name needs through a reference to a local.
+    let read = unsafe {
+        GetUserObjectInformationW(
+            object,
+            UOI_NAME,
+            units.as_mut_ptr().cast(),
+            (units.len() * size_of::<u16>()) as u32,
+            &mut needed,
+        )
+    };
+    if read == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    let len = units
+        .iter()
+        .position(|&unit| unit == 0)
+        .unwrap_or(units.len());
+    Ok(String::from_utf16_lossy(&units[..len]))
+}
+
+/// The id of the session this process runs in, from its token.
+#[cfg(test)]
+fn own_session() -> io::Result<u32> {
+    let token = own_token(TOKEN_QUERY)?;
+    let mut session = 0_u32;
+    let mut len = 0;
+    // SAFETY: the token is open to be queried; the call writes the session's id, a 32-bit number,
+    // into a local of that size, which it is told, and the bytes it wrote through a reference to
+    // a local.
+    let read = unsafe {
+        GetTokenInformation(
+            token.as_raw_handle(),
+            TokenSessionId,
+            ptr::from_mut(&mut session).cast(),
+            size_of::<u32>() as u32,
+            &mut len,
+        )
+    };
+    if read == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(session)
+}
+
+/// `answer` as a test reports it: the value, or "unknown" and the reason.
+#[cfg(test)]
+fn described<T: Display>(answer: io::Result<T>) -> String {
+    match answer {
+        Ok(value) => value.to_string(),
+        Err(error) => format!("unknown ({error})"),
+    }
+}
+
+/// What `token` holds of `class`, as GetTokenInformation gives it: a `T` at the start of storage
+/// aligned for any of the structures the call writes, followed by what the `T` points at.
+#[cfg(test)]
+fn token_information<T>(
+    token: &OwnedHandle,
+    class: TOKEN_INFORMATION_CLASS,
+) -> io::Result<Vec<usize>> {
+    let mut len = 0;
+    // SAFETY: the token is open to be queried; no buffer is given, which the call allows, and it
+    // writes the bytes it needs through a reference to a local.
+    unsafe { GetTokenInformation(token.as_raw_handle(), class, ptr::null_mut(), 0, &mut len) };
+    if (len as usize) < size_of::<T>() {
+        return Err(io::Error::last_os_error());
+    }
+    let mut buffer = vec![0_usize; (len as usize).div_ceil(size_of::<usize>())];
+    // SAFETY: as above, and the buffer holds at least `len` bytes, which the call is told and
+    // writes no more than.
+    let read = unsafe {
+        GetTokenInformation(
+            token.as_raw_handle(),
+            class,
+            buffer.as_mut_ptr().cast(),
+            len,
+            &mut len,
+        )
+    };
+    if read == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(buffer)
 }
 
 /// A filtered copy of this process's token, as [`spawn_filtered`] describes it: a primary token
@@ -1038,36 +1409,7 @@ pub(crate) fn token_is_administrator() -> io::Result<bool> {
 #[cfg(test)]
 pub(crate) fn token_integrity() -> io::Result<u32> {
     let token = own_token(TOKEN_QUERY)?;
-    let mut len = 0;
-    // SAFETY: the token is open to be queried; no buffer is given, which the call allows, and it
-    // writes the bytes it needs through a reference to a local.
-    unsafe {
-        GetTokenInformation(
-            token.as_raw_handle(),
-            TokenIntegrityLevel,
-            ptr::null_mut(),
-            0,
-            &mut len,
-        )
-    };
-    if (len as usize) < size_of::<TOKEN_MANDATORY_LABEL>() {
-        return Err(io::Error::last_os_error());
-    }
-    let mut buffer = vec![0_usize; (len as usize).div_ceil(size_of::<usize>())];
-    // SAFETY: as above, and the buffer, aligned for the label, holds `len` bytes, which the call
-    // is told and writes no more than.
-    let read = unsafe {
-        GetTokenInformation(
-            token.as_raw_handle(),
-            TokenIntegrityLevel,
-            buffer.as_mut_ptr().cast(),
-            len,
-            &mut len,
-        )
-    };
-    if read == 0 {
-        return Err(io::Error::last_os_error());
-    }
+    let buffer = token_information::<TOKEN_MANDATORY_LABEL>(&token, TokenIntegrityLevel)?;
     // SAFETY: the call wrote a TOKEN_MANDATORY_LABEL at the buffer's start, whose SID lies in the
     // buffer, which lives while it is read.
     let sid = unsafe { buffer.as_ptr().cast::<TOKEN_MANDATORY_LABEL>().read() }

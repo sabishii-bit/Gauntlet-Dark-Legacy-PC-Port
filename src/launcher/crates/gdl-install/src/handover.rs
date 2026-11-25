@@ -1963,7 +1963,9 @@ mod tests {
         // As a standard user's session runs it: the old copy, and the new one it starts, which
         // inherits its token, hold the Administrators group only to deny and run at Medium
         // integrity, as UAC filters an administrator's token; the running copy's rename, the wait
-        // for it and the removal of its retired file go through all the same.
+        // for it and the removal of its retired file go through all the same. They run on a
+        // window station and desktop made for them that grant their token's user, as a standard
+        // user's desktop grants that user's logon, since the ones this test runs on need not.
         let _one = crate::one_test_child();
         let dir = installation();
         let root = dir.path();
@@ -1991,14 +1993,21 @@ mod tests {
             Err(error) => panic!("{}: {error}", copy.display()),
         };
         drop(output);
+        let place = old_copy.place().to_owned();
+        eprintln!("started {place}");
         let ended = old_copy.wait(CHILD_DEADLINE);
         // Held from here on, so that a failure below still ends the new copy.
         let new_copy = NewCopy::named_in(&log_lines(&log), &copy);
-        let code = ended.unwrap_or_else(|error| panic!("{error}: {:#?}", log_lines(&log)));
-        assert_eq!(code, 0, "{:#?}", log_lines(&log));
+        let code = ended.unwrap_or_else(|error| panic!("{error}; {place}: {:#?}", log_lines(&log)));
+        assert_eq!(
+            code,
+            0,
+            "exit code {code:#010x}; {place}: {:#?}",
+            log_lines(&log)
+        );
         assert!(
             new_copy.ended_within(CHILD_DEADLINE),
-            "{:#?}",
+            "{place}: {:#?}",
             log_lines(&log)
         );
         drop(new_copy);
