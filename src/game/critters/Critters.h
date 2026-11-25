@@ -16,6 +16,11 @@
 #include "game/level/CombatantObstacle.h"
 
 namespace gdl::game {
+/** Deals a great one's or boss's `trample` to the `swarm`: a tread or a blow as damage_enemy
+ * with no player takes it, driven its way, and one of its effects' hits through the swarm's
+ * world wait (Enemies::hurtByWorld), which it passes or sets. */
+void hurtSwarm(Enemies& swarm, const CombatTrample& trample);
+
 class NativeStateResources;
 /** Stable-id population of great creatures. Owns shared family assets and preserves
  * cross-family collision/update order; individual combat belongs to Combatant. */

@@ -10,6 +10,7 @@
 #include "engine/core/Log.h"
 #include "engine/core/Types.h"
 
+#include "game/critters/Critters.h"
 #include "game/enemies/Enemies.h"
 #include "game/level/BossKinds.h"
 #include "game/level/LevelTriggers.h"
@@ -518,13 +519,7 @@ void Bosses::update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
     m_fighter.setSwarm({});
     for (const CombatTrample& trample : m_fighter.takeTramples()) {
         if (swarm != nullptr) {
-            // damage_enemy with no player and no damage type, driven the blow's way.
-            EnemyHit hit;
-            hit.damage = trample.damage;
-            hit.direction = trample.direction;
-            hit.where = trample.position;
-            hit.close = true;
-            swarm->hurt(trample.enemy, hit);
+            hurtSwarm(*swarm, trample);
         }
     }
     stageLegend(ticks, movedFrom);

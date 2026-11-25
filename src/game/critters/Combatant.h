@@ -106,8 +106,9 @@ public:
     void setHazards(const HazardSurfaces* hazards) { m_sim.hazards = hazards; }
     /** What of the level's stands where it walks this update. */
     void setObstacles(std::span<const CombatantObstacle> items) { m_obstacles = items; }
-    /** The swarm it meets this update, its heads' blows too; borrowed, none for nothing. */
+    /** The swarm its blows and effects, and its heads', meet this update; borrowed for it. */
     void setSwarm(std::span<const EnemyBody> bodies) { m_swarm = bodies; }
+    /** Its harm to the swarm since it was last taken: its treads, blows and effects' hits. */
     std::vector<CombatTrample> takeTramples() { return std::exchange(m_sim.tramples, {}); }
     std::vector<CombatantRam> takeRams() { return std::exchange(m_sim.rams, {}); }
     std::vector<CombatPush> takePushes() { return std::exchange(m_sim.pushes, {}); }
@@ -181,7 +182,7 @@ public:
     struct MovePoint {
         f32 frame = 0.0f;       ///< the animation frame; its strikes and shots from it on are due
         s32 target = -1;        ///< the player the move is set on, then its target; -1 for none
-        u32 soundsGiven = 0;    ///< as soundsGiven(): the sounds counted as played
+        u32 soundsGiven = 0;    ///< as soundsGiven(): the sounds given and the blows spent
         std::optional<f32> yaw; ///< its facing, when the point turns it
     };
     /** Sets it playing move `index` from `point`, held there as a parent's pattern step holds a

@@ -34,6 +34,8 @@
 #include "game/critters/Critters.h"
 #include "game/critters/General.h"
 #include "game/critters/Golem.h"
+#include "game/enemies/Enemies.h"
+#include "game/enemies/EnemyKinds.h"
 #include "game/enemies/LevelOpponents.h"
 #include "game/enemies/StandOffTestSupport.h"
 #include "game/level/BossKinds.h"
@@ -1915,6 +1917,53 @@ TEST_CASE("generals carry a suppressible health meter without changing their nat
     REQUIRE(assets.meterFill >= 0);
     CHECK(glm::length(Vec3{hurt->second[static_cast<usize>(assets.meterFill)][0]}) ==
           Approx(actor.health() / actor.maxHealth()));
+}
+
+TEST_CASE("a great one's harm reaches the swarm as damage_enemy takes it, an effect's keeping to "
+          "the swarm's world wait",
+          "[game][critters][swarm-blow][swarm-effect][hit-wait]") {
+    // A tread or a blow is damage_enemy with no player, which sets no wait (critter.c 6900-6950,
+    // 7402-7428); one of the great one's effects passes a body whose fxhittime[0] runs and holds
+    // what it harms over two for its fade (ProcessEffects 0x80095BB4-0x80095CCC). Bosses and the
+    // great ones route their harm alike.
+    const auto root = test::scratchDirectory("critter-swarm-harm");
+    const auto archive = root / "MONSTERS/GRU";
+    std::filesystem::create_directories(archive);
+    writeTextFile(archive / "body.obj",
+                  "v 0 0 0\nv 1 0 0\nv 0 1 0\nvn 0 0 1\nusemtl tex0\nf 1//1 2//1 3//1\n");
+    writeTextFile(archive / "objects.json", R"({"objects":[
+        {"index":0,"name":"BODY","file":"body.obj","meshTriangles":1}]})");
+    writeFile(archive / "skin.png", test::kTinyPng);
+    writeTextFile(archive / "textures.json", R"({"bitmaps":[
+        {"index":0,"name":"SKIN","file":"skin.png","width":2,"height":2}]})");
+    test::convertModelFixture(archive);
+    writeTextFile(archive / "animations.json", R"({"trees":[{"name":"GRU1",
+        "nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
+        "sequences":[{"name":"READY","frames":10,"rate":30}]}]})");
+    test::FakeRenderDevice device;
+    Enemies swarm;
+    swarm.open(device, root, nullptr, 2, EnemyScales{.health = 10.0f}, 1);
+    REQUIRE(swarm.loadKind(kGruntKind));
+    const auto grunt = swarm.spawn({.kind = kGruntKind, .placed = true}, {});
+    REQUIRE(grunt);
+    const f32 full = swarm.healthOf(*grunt);
+    const CombatTrample blow{*grunt, 5.0f, {1, 0, 0}, {0, 0, 1}};
+    CHECK_FALSE(blow.fromEffect());
+    hurtSwarm(swarm, blow);
+    CHECK(swarm.healthOf(*grunt) == Approx(full - 5.0f));
+    CHECK_FALSE(swarm.hitWaiting(*grunt, Enemies::kWorldWait));
+    CombatTrample effect = blow;
+    effect.hold = 1.0f;
+    REQUIRE(effect.fromEffect());
+    hurtSwarm(swarm, effect);
+    CHECK(swarm.healthOf(*grunt) == Approx(full - 10.0f));
+    CHECK(swarm.hitWaiting(*grunt, Enemies::kWorldWait));
+    // Held, another effect passes it; a blow, which CritterNodeEnemyCollide tests against the
+    // wait before it strikes, lands as it comes.
+    hurtSwarm(swarm, effect);
+    CHECK(swarm.healthOf(*grunt) == Approx(full - 10.0f));
+    hurtSwarm(swarm, blow);
+    CHECK(swarm.healthOf(*grunt) == Approx(full - 15.0f));
 }
 
 } // namespace

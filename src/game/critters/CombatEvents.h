@@ -30,6 +30,8 @@ struct CombatTrample {
     /** An effect's fade: it passes a body the world's wait holds, and holds one it harms over two
      * that long (fxhittime[0]). None for a tread or a blow, which set no wait. */
     f32 hold = 0;
+    /** One of its effects' hits rather than a tread or a blow: only an effect's has a fade. */
+    bool fromEffect() const { return hold > 0; }
     bool operator==(const CombatTrample&) const = default;
 };
 /** Hold updates carry an animated attachment; release carries the authored throw force.
