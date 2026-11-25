@@ -455,10 +455,12 @@ mod tests {
     use gdl_files::Cancel;
     use gdl_fixtures::{LoopbackServer, Reply, Request};
     use ureq::http::Uri;
+    use ureq::tls::RootCerts;
 
     use super::{
-        API_ACCEPT, API_VERSION, DOWNLOAD_ACCEPT, MAX_REDIRECTS, Origins, SECONDARY_LIMIT_WAIT,
-        Transport, Wanted, failure_of, percent_decoded, read_bounded, redirected, trusted,
+        API_ACCEPT, API_VERSION, DOWNLOAD_ACCEPT, MAX_ERROR_BODY, MAX_REDIRECTS, Origins,
+        READ_TIMEOUT, SECONDARY_LIMIT_WAIT, Transport, Wanted, failure_of, percent_decoded,
+        read_bounded, redirected, trusted,
     };
     use crate::{MAX_PAGE_BYTES, ProxySettings, ReleaseError};
 
@@ -532,6 +534,15 @@ mod tests {
             Err(ReleaseError::RateLimited { reset_at }) => reset_at,
             other => panic!("not a rate limit: {other:?}"),
         }
+    }
+
+    /// GitHub's refusal of a secondary rate limit, its message padded to `len` bytes in all.
+    fn secondary_limit_of(len: usize) -> Vec<u8> {
+        let head =
+            r#"{"message": "You have exceeded a secondary rate limit.", "documentation_url": ""#;
+        let tail = r#""}"#;
+        let padding = "x".repeat(len - head.len() - tail.len());
+        format!("{head}{padding}{tail}").into_bytes()
     }
 
     /// Asserts that `reset` is `wait` seconds after a moment between `before` and now.
@@ -929,7 +940,10 @@ mod tests {
             answer(403, br#"{"message": "SECONDARY RATE LIMIT"}"#),
         );
         server.route("/bare", Reply::status(429));
-        for target in ["secondary", "shouted", "bare"] {
+        // A refusal's body is read up to its bound, and so read whole at the bound.
+        let longest = usize::try_from(MAX_ERROR_BODY).unwrap();
+        server.route("/longest", answer(403, &secondary_limit_of(longest)));
+        for target in ["secondary", "shouted", "bare", "longest"] {
             let before = now();
             let limited = fetched(&transport, &format!("{base}{target}"), Wanted::Api);
             assert_waited(reset_of(limited), before, SECONDARY_LIMIT_WAIT);
@@ -954,6 +968,19 @@ mod tests {
         server.route("/broken", Reply::status(500));
         server.route("/unchanged", Reply::status(304));
         server.route("/empty", Reply::status(204));
+        // A body past its bound is not read for a secondary limit's message.
+        let longest = usize::try_from(MAX_ERROR_BODY).unwrap();
+        server.route("/padded", answer(403, &secondary_limit_of(longest + 1)));
+        // Only a 403 or a 429 is read as a rate limit: GitHub sends its limit's headers with every
+        // answer of its API, the one that spends the limit among them.
+        let spent = |status| {
+            answer(status, &secondary_limit_of(100))
+                .with_header("Retry-After", "60")
+                .with_header("X-RateLimit-Remaining", "0")
+                .with_header("X-RateLimit-Reset", &RESET_AT.to_string())
+        };
+        server.route("/missing-spent", spent(404));
+        server.route("/broken-spent", spent(500));
         for (target, status) in [
             ("forbidden", 403),
             ("bare", 403),
@@ -962,6 +989,9 @@ mod tests {
             ("broken", 500),
             ("unchanged", 304),
             ("empty", 204),
+            ("padded", 403),
+            ("missing-spent", 404),
+            ("broken-spent", 500),
         ] {
             let url = format!("{base}{target}");
             match fetched(&transport, &url, Wanted::Api) {
@@ -1129,6 +1159,49 @@ mod tests {
         ) {
             Err(error @ ReleaseError::Offline { .. }) => assert_eq!(error.rule(), "offline"),
             other => panic!("a closed port answered: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn the_agent_trusts_the_system_store_and_bounds_each_step() {
+        let github = Transport::new(Origins::GitHub, ProxySettings::none(), RUNNING);
+        let loopback = Transport::new(
+            Origins::Loopback {
+                authority: "127.0.0.1:8080".to_owned(),
+            },
+            ProxySettings::none(),
+            RUNNING,
+        );
+        for (transport, https_only) in [(&github, true), (&loopback, false)] {
+            let config = transport.agent.config();
+            assert_eq!(config.https_only(), https_only);
+            assert!(matches!(
+                config.tls_config().root_certs(),
+                RootCerts::PlatformVerifier
+            ));
+            // Every redirect comes back to be held to the host rule, every answer is read, and
+            // each request names its own proxy.
+            assert_eq!(config.max_redirects(), 0);
+            assert!(!config.http_status_as_error());
+            assert!(config.proxy().is_none());
+            let timeouts = config.timeouts();
+            for (step, timeout) in [
+                ("resolving", timeouts.resolve),
+                ("connecting", timeouts.connect),
+                ("sending", timeouts.send_request),
+                ("the answer's headers", timeouts.recv_response),
+                ("each read", config.timeout_per_read()),
+            ] {
+                assert_eq!(timeout, Some(READ_TIMEOUT), "{step}");
+            }
+            // No deadline holds the whole, so a slow transfer that keeps moving is never cut off.
+            for (whole, timeout) in [
+                ("the whole", timeouts.global),
+                ("a call", timeouts.per_call),
+                ("the body", timeouts.recv_body),
+            ] {
+                assert_eq!(timeout, None, "{whole}");
+            }
         }
     }
 
