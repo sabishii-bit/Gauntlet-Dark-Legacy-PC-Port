@@ -184,6 +184,12 @@ impl Update<'_> {
         self.check_space(staged_bytes.saturating_add(file_len))
             .map_err(unchanged)?;
         self.game_closed().map_err(unchanged)?;
+        // Looked at as the staging begins too, so that a cancel made as the last file was hashed
+        // stops the update before it makes anything.
+        self.job
+            .cancel
+            .check()
+            .map_err(|cancelled| unchanged(cancelled.into()))?;
         let state = self.folder.state_dir();
         let mut staging = Staging::create_in(&state, UPDATE_STAGING_PREFIX)
             .map_err(|error| unchanged(files_error(error)))?;

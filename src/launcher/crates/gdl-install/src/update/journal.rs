@@ -276,6 +276,13 @@ impl JournalFile {
         self.write()
     }
 
+    /// Moves the journal to rolling back: what the swap moved goes back to where it was, and the
+    /// next start goes on taking it back whatever stops this one.
+    pub(super) fn rolling_back(&mut self) -> Result<(), UpdateError> {
+        self.journal.phase = UpdatePhase::RollingBack;
+        self.write()
+    }
+
     /// Moves the journal to committed: the receipt is written, and only cleaning up is left.
     pub(super) fn committed(&mut self) -> Result<(), UpdateError> {
         self.journal.phase = UpdatePhase::Committed;
@@ -639,6 +646,15 @@ mod tests {
         assert_eq!(written["phase"], json!("swapping"));
         assert_eq!(written["madeFolders"], json!(["shaders"]));
         assert_eq!(written["later"], json!({"kept": [1, 2]}));
+        file.rolling_back().unwrap();
+        let written = read(file.path());
+        assert_eq!(written["phase"], json!("rollingBack"));
+        assert_eq!(written["madeFolders"], json!(["shaders"]));
+        assert_eq!(written["later"], json!({"kept": [1, 2]}));
+        assert_eq!(
+            UpdateJournal::from_object(&written).unwrap().phase,
+            UpdatePhase::RollingBack
+        );
         file.committed().unwrap();
         let written = read(file.path());
         assert_eq!(written["phase"], json!("committed"));

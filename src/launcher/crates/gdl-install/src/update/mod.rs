@@ -389,18 +389,22 @@ impl UpdateFailure {
 /// 4. [`CHECK_GAME`](crate::CHECK_GAME): the game found closed again, held for; a staged
 ///    executable probed in the staging, and the installed one when it fails, an update whose
 ///    staged game fails where the installed one answers being refused.
-/// 5. [`SWAP`], never cancelled: the links checked again, the journal moved to swapping, the
-///    installed files moved aside, the new ones into place, the launcher copy retired and the new
-///    one put in place, then the receipt written: the commit point.
+/// 5. [`SWAP`], never cancelled once told: the links checked again, the journal moved to
+///    swapping, the installed files moved aside, the new ones into place, the launcher copy
+///    retired and the new one put in place, then the receipt written: the commit point.
 /// 6. [`CLEANUP`]: the staging and what was moved aside removed, the retired launcher copy tried
 ///    once, then the journal.
 ///
 /// The cancel is looked at as each phase but the last two begins, and before every block and
-/// every file within one. A failure or a cancel before the journal moves to swapping takes back
-/// what the update made, and the installation is as it was; one from there on keeps everything,
-/// with the journal, for the next start. Past the receipt nothing is taken back: what fails in
-/// cleaning up is a notice, [`UpdateNotice::CleanupLeft`], with the journal kept for the next
-/// start to finish.
+/// every file within one, for the last time just before the swap. A failure or a cancel before the
+/// receipt is written takes back what the update made, [`Changes::RolledBack`], and the
+/// installation is as it was: before the swap the staging goes; from the swap on the journal moves
+/// to rolling back and every move is undone, the new launcher copy, once in place, going aside
+/// under a retired name of its own rather than into the staging, since on Windows a launcher that
+/// runs from it would keep the staging from going. A rollback that stops leaves what it has not
+/// taken back, with the journal, for the next start, [`Changes::Kept`]. Past the receipt nothing
+/// is taken back: what fails in cleaning up is a notice, [`UpdateNotice::CleanupLeft`], with the
+/// journal kept for the next start to finish.
 pub fn update(request: UpdateRequest<'_>, job: &Job<'_>) -> Result<UpdateOutcome, UpdateFailure> {
     update_with(request, job, &UpdateSettings::shipped())
 }
@@ -713,6 +717,14 @@ pub enum UpdateError {
         /// The name.
         name: Box<str>,
     },
+    /// What an update moved is not where its journal says it can be, so it can be neither
+    /// finished nor taken back: a name in neither of its places, or in both where only one may
+    /// be, a file left in the backup, or a link on the way of a move back. The journal is kept.
+    #[error("The interrupted update cannot be finished or taken back: {detail}")]
+    Inconsistent {
+        /// What was found.
+        detail: Box<str>,
+    },
     /// A file operation in the folder failed.
     #[error(transparent)]
     Files(FilesError),
@@ -735,7 +747,7 @@ impl UpdateError {
     /// receipt's, the sections', the runtime's, the game's, the icon's or the file operation's
     /// rule, or `newerLauncher`, `olderLauncher`, `cleanupPending`, `unfinishedJob`,
     /// `installedNames`, `caseChange`, `unowned`, `links`, `ownedFileChanged`, `space`,
-    /// `probeRefused`, `journalTooLarge`, `changed`, `io` or `cancelled`.
+    /// `probeRefused`, `journalTooLarge`, `changed`, `inconsistent`, `io` or `cancelled`.
     pub fn rule(&self) -> &'static str {
         match self {
             UpdateError::Lock(error) => error.rule(),
@@ -757,6 +769,7 @@ impl UpdateError {
             UpdateError::Icon(error) => error.rule(),
             UpdateError::JournalTooLarge { .. } => "journalTooLarge",
             UpdateError::Changed { .. } => "changed",
+            UpdateError::Inconsistent { .. } => "inconsistent",
             UpdateError::Files(error) => error.rule(),
             UpdateError::Io { .. } => "io",
             UpdateError::Cancelled => "cancelled",
@@ -802,12 +815,12 @@ mod tests {
 
     use super::settings::{ProbeFn, UpdateSettings};
     use super::{
-        FileChanges, PlanSource, Probed, RetiredCopy, SourceSummary, UPDATE_BACKUP, UPDATE_JOURNAL,
-        UpdateError, UpdateFailure, UpdateNotice, UpdateOutcome, UpdatePlan, UpdateRequest,
-        UpdateSource, Updated, plan_update, update_with,
+        CLEANUP, FileChanges, PlanSource, Probed, RETIRED_LAUNCHER_PREFIX, RetiredCopy, SWAP,
+        SourceSummary, UPDATE_BACKUP, UPDATE_JOURNAL, UpdateError, UpdateFailure, UpdateNotice,
+        UpdateOutcome, UpdatePlan, UpdateRequest, UpdateSource, Updated, plan_update, update_with,
     };
     use crate::destination::FolderChecks;
-    use crate::faults::{FailAt, FaultPoint, FaultPoints, NoFaults, OnPass};
+    use crate::faults::{FailAt, FaultPoint, FaultPoints, Faults, NoFaults, OnPass, PanicAt};
     use crate::folder::{
         InstallFolder, JOURNAL_DIR, LOCK_FILE, LockError, RECEIPT_FILE, STATE_DIR,
     };
@@ -1320,6 +1333,15 @@ mod tests {
                 "Destination changed during update: shaders/new.spv".to_owned(),
             ),
             (
+                UpdateError::Inconsistent {
+                    detail: "VERSION is neither in place nor in the backup".into(),
+                },
+                "inconsistent",
+                "The interrupted update cannot be finished or taken back: VERSION is neither in \
+                 place nor in the backup"
+                    .to_owned(),
+            ),
+            (
                 UpdateError::Files(FilesError::TooLarge {
                     path: path.clone(),
                     limit: 1,
@@ -1573,6 +1595,34 @@ mod tests {
             outside: snapshot_outside(root, STATE_DIR).unwrap(),
             receipt: fs::read(root.join(STATE_DIR).join(RECEIPT_FILE)).unwrap(),
             state: state_names(root),
+        }
+    }
+
+    /// What an update taken back after its moves leaves as it was: what [`AsItWas`] keeps, but for
+    /// the times entries were changed, since moving a file out of its folder and back changes the
+    /// folder's: every path outside the state folder with its kind and a file's bytes, the
+    /// receipt's bytes, and the names in the state folder but the lock and an empty journal folder.
+    #[derive(Debug, PartialEq, Eq)]
+    struct Contents {
+        outside: BTreeMap<PathBuf, (fs::FileType, Option<[u8; 32]>)>,
+        receipt: Vec<u8>,
+        state: Vec<String>,
+    }
+
+    /// What the installation at `root` holds, as [`Contents`] keeps it.
+    fn contents_of(root: &Path) -> Contents {
+        let AsItWas {
+            outside,
+            receipt,
+            state,
+        } = as_it_is(root);
+        Contents {
+            outside: outside
+                .into_iter()
+                .map(|(path, entry)| (path, (entry.file_type, entry.digest)))
+                .collect(),
+            receipt,
+            state,
         }
     }
 
@@ -2840,11 +2890,469 @@ mod tests {
             UpdateError::Links { path } => assert_eq!(path, &text),
             other => panic!("{other:?}"),
         }
-        // The moves stopped there, with the journal of the swap kept for the next start.
-        assert_eq!(failure.changes, Changes::Kept);
-        assert_eq!(journal_phase(&fixture.root).as_deref(), Some("swapping"));
+        // The moves stopped there and were taken back, and nothing reached the folder the link
+        // leads to.
+        assert_eq!(failure.changes, Changes::RolledBack);
+        assert_eq!(journal_phase(&fixture.root), None);
         assert_eq!(tree_entries(&outside), text_before);
         assert_eq!(receipt_at(&fixture.root)["version"], json!(INSTALLED));
+        assert_eq!(
+            fs::read(fixture.root.join("VERSION")).unwrap(),
+            b"1.0.0-beta\n"
+        );
+        assert_eq!(
+            fs::read(fixture.root.join(BUILD_INFO)).unwrap(),
+            fixture.runtime.build_info_bytes()
+        );
+        assert_eq!(state_names(&fixture.root), [RECEIPT_FILE]);
+    }
+
+    #[test]
+    fn every_move_that_fails_is_taken_back() {
+        // Each move aside and into place of a release that replaces, adds and removes names, the
+        // pass as the journal records the swap, and both of the launcher copy's moves.
+        let moves = 14;
+        let mut failing: Vec<(FaultPoint, u32)> =
+            (1..=moves).map(|at| (FaultPoint::UpdateMove, at)).collect();
+        failing.extend([
+            (FaultPoint::UpdateCommit, 1),
+            (FaultPoint::LauncherReplace, 1),
+            (FaultPoint::LauncherReplace, 2),
+        ]);
+        for (point, at) in failing {
+            let context = format!("{} {at}", point.as_str());
+            let (dir, fixture) = players_installation();
+            let mut source = bundled(dir.path(), &fixture.runtime.newer(NEXT));
+            let before = contents_of(&fixture.root);
+            let fail = FailAt::new(point, at);
+            let failure = failed(update_simply(
+                &fixture,
+                &mut source,
+                NEXT,
+                &standing_in(&fail, &answering),
+            ));
+            assert_eq!(failure.rule(), "io", "{context}: {failure:?}");
+            assert_eq!(failure.changes, Changes::RolledBack, "{context}");
+            assert_eq!(contents_of(&fixture.root), before, "{context}");
+        }
+        // Those were every move the update makes of the runtime's files.
+        let (dir, fixture) = players_installation();
+        let mut source = bundled(dir.path(), &fixture.runtime.newer(NEXT));
+        let past = FailAt::new(FaultPoint::UpdateMove, moves + 1);
+        updated(update_simply(
+            &fixture,
+            &mut source,
+            NEXT,
+            &standing_in(&past, &answering),
+        ));
+    }
+
+    #[test]
+    fn a_receipt_write_refused_is_taken_back() {
+        let (dir, fixture) = players_installation();
+        let mut source = bundled(dir.path(), &fixture.runtime.newer(NEXT));
+        let path = fixture.root.join(STATE_DIR).join(RECEIPT_FILE);
+        let old = fs::read(&path).unwrap();
+        let before = contents_of(&fixture.root);
+        let refused = |_: &Receipt, folder: &InstallFolder| -> Result<(), FilesError> {
+            Err(FilesError::Io {
+                path: folder.state_dir().join(RECEIPT_FILE),
+                source: io::Error::other("the disk refused the write"),
+            })
+        };
+        let settings = UpdateSettings {
+            write_receipt: &refused,
+            ..standing_in(&NoFaults, &answering)
+        };
+        let failure = failed(update_simply(&fixture, &mut source, NEXT, &settings));
+        assert!(
+            matches!(failure.error, UpdateError::Files(FilesError::Io { .. })),
+            "{failure:?}"
+        );
+        assert_eq!(failure.changes, Changes::RolledBack);
+        assert_eq!(contents_of(&fixture.root), before);
+        assert_eq!(fs::read(&path).unwrap(), old);
+    }
+
+    #[test]
+    fn a_launcher_move_refused_is_taken_back_and_a_rerun_finishes() {
+        let (dir, fixture) = players_installation();
+        let (source_path, mut source) =
+            bundled_as(dir.path(), "next-launcher", &fixture.runtime.next(NEXT));
+        let before = contents_of(&fixture.root);
+        let fail = FailAt::new(FaultPoint::LauncherReplace, 1);
+        let failure = failed(update_simply(
+            &fixture,
+            &mut source,
+            NEXT,
+            &standing_in(&fail, &answering),
+        ));
+        assert_eq!(failure.changes, Changes::RolledBack);
+        assert_eq!(contents_of(&fixture.root), before);
+
+        // Nothing is left in the way of the same update again.
+        let done = updated(update_simply(
+            &fixture,
+            &mut source,
+            NEXT,
+            &standing_in(&NoFaults, &answering),
+        ));
+        assert_eq!(done.to, version(NEXT));
+        assert_eq!(done.retired, RetiredCopy::Removed);
+        assert_eq!(
+            fs::read(fixture.root.join(launcher_copy())).unwrap(),
+            fs::read(&source_path).unwrap()
+        );
+        assert_eq!(state_names(&fixture.root), [RECEIPT_FILE]);
+    }
+
+    /// The names in the state folder of the installation at `root` that a launcher copy of
+    /// `version` was retired to.
+    fn retired_copies(root: &Path, version: &str) -> Vec<String> {
+        let prefix = format!("{RETIRED_LAUNCHER_PREFIX}{version}-");
+        state_names(root)
+            .into_iter()
+            .filter(|name| name.starts_with(&prefix))
+            .collect()
+    }
+
+    #[test]
+    fn a_rollback_retires_the_new_launcher_copy() {
+        let (dir, fixture) = players_installation();
+        let (source_path, mut source) =
+            bundled_as(dir.path(), "next-launcher", &fixture.runtime.next(NEXT));
+        let new = fs::read(&source_path).unwrap();
+        let installed = fixture.root.join(launcher_copy());
+        let old = fs::read(&installed).unwrap();
+        let state = fixture.root.join(STATE_DIR);
+        let before = contents_of(&fixture.root);
+        // The new copy stands in place when the update fails.
+        let in_place = Cell::new(false);
+        let refuse = || {
+            in_place.set(fs::read(&installed)? == new);
+            Err(io::Error::other("the receipt's volume went away"))
+        };
+        let replaced = OnPass::new(FaultPoint::LauncherReplace, 2, &refuse);
+        // As the rollback's first move is made, the new copy has gone aside under a retired name
+        // of its own version, not into the staging, and nothing stands in its place.
+        let aside = Cell::new(false);
+        let look = || {
+            let retired = retired_copies(&fixture.root, NEXT);
+            let staged = stagings(&fixture.root)
+                .iter()
+                .any(|staging| state.join(staging).join(launcher_copy()).exists());
+            let retired_new = match retired.as_slice() {
+                [name] => fs::read(state.join(name))? == new,
+                _ => false,
+            };
+            aside.set(retired_new && !staged && !installed.exists());
+            Ok(())
+        };
+        let retiring = OnPass::new(FaultPoint::UpdateRollback, 1, &look);
+        let faults = Faults(&[&replaced, &retiring]);
+        let failure = failed(update_simply(
+            &fixture,
+            &mut source,
+            NEXT,
+            &standing_in(&faults, &answering),
+        ));
+        assert!(in_place.get());
+        assert!(aside.get());
+        assert_eq!(failure.changes, Changes::RolledBack);
+        assert_eq!(fs::read(&installed).unwrap(), old);
+        // No retired copy of either version is left, nor the staging.
+        assert_eq!(contents_of(&fixture.root), before);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_new_copy_held_as_an_image_is_left_for_the_sweep() {
+        use std::cell::RefCell;
+
+        use crate::platform::map_image;
+
+        let (dir, fixture) = players_installation();
+        // The new launcher copy is this program with the release's runtime, which the system maps
+        // as it maps a launcher that runs from it.
+        let mut new = fs::read(std::env::current_exe().unwrap()).unwrap();
+        append_sections(
+            &mut new,
+            &[(RUNTIME_SECTION, &fixture.runtime.next(NEXT).zip())],
+            0,
+        );
+        let source_path = dir.path().join("next-launcher.exe");
+        fs::write(&source_path, &new).unwrap();
+        let mut source = Sections::of_path(&source_path).unwrap().unwrap();
+        let installed = fixture.root.join(launcher_copy());
+        let old = fs::read(&installed).unwrap();
+        let mapped = RefCell::new(None);
+        let run = || {
+            *mapped.borrow_mut() = Some(map_image(&installed)?);
+            Err(io::Error::other("the receipt's volume went away"))
+        };
+        let faults = OnPass::new(FaultPoint::LauncherReplace, 2, &run);
+        let failure = failed(update_simply(
+            &fixture,
+            &mut source,
+            NEXT,
+            &standing_in(&faults, &answering),
+        ));
+        assert!(mapped.borrow().is_some());
+        assert_eq!(failure.changes, Changes::RolledBack);
+        assert_eq!(fs::read(&installed).unwrap(), old);
+        assert!(stagings(&fixture.root).is_empty());
+        assert_eq!(journal_phase(&fixture.root), None);
+        // The held copy stays under its retired name, which no journal names.
+        let retired = retired_copies(&fixture.root, NEXT);
+        let [name] = retired.as_slice() else {
+            panic!("{retired:?}");
+        };
+        assert!(name.ends_with(".exe"), "{name}");
+        assert_eq!(state_names(&fixture.root), [RECEIPT_FILE, name.as_str()]);
+        let path = fixture.root.join(STATE_DIR).join(name);
+        assert_eq!(fs::read(&path).unwrap(), new);
+        // The mapping alone holds it: refused while mapped, removed once let go.
+        assert!(fs::remove_file(&path).is_err());
+        drop(mapped.take());
+        retry_locked(|| fs::remove_file(&path)).unwrap();
+    }
+
+    #[test]
+    fn a_rollback_that_fails_keeps_the_backups_for_the_next() {
+        let (dir, fixture) = players_installation();
+        let root = fixture.root.clone();
+        let mut source = bundled(dir.path(), &fixture.runtime.newer(NEXT));
+        let old_launcher = fs::read(root.join(launcher_copy())).unwrap();
+        let replace = FailAt::new(FaultPoint::LauncherReplace, 2);
+        // The rollback's third pass: the new launcher copy gone aside, the installed one back,
+        // and the last new name back in the staging.
+        let rollback = FailAt::new(FaultPoint::UpdateRollback, 3);
+        let faults = Faults(&[&replace, &rollback]);
+        let failure = failed(update_simply(
+            &fixture,
+            &mut source,
+            NEXT,
+            &standing_in(&faults, &answering),
+        ));
+        // The failure reported is the update's own.
+        assert_eq!(failure.rule(), "io");
+        assert_eq!(failure.changes, Changes::Kept);
+        assert_eq!(journal_phase(&root).as_deref(), Some("rollingBack"));
+        // The installed files wait in the backup for the next start to put back.
+        let journal: Value = serde_json::from_slice(
+            &fs::read(root.join(STATE_DIR).join(JOURNAL_DIR).join(UPDATE_JOURNAL)).unwrap(),
+        )
+        .unwrap();
+        let backup: Vec<&str> = journal["backup"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|name| name.as_str().unwrap())
+            .collect();
+        assert_eq!(backup.len(), 7);
+        let aside = root.join(STATE_DIR).join(UPDATE_BACKUP);
+        for name in &backup {
+            assert!(under(&aside, name).is_file(), "{name}");
+        }
+        assert_eq!(fs::read(under(&aside, "VERSION")).unwrap(), b"1.0.0-beta\n");
+        assert_eq!(stagings(&root).len(), 1);
+        assert_eq!(fs::read(root.join(launcher_copy())).unwrap(), old_launcher);
+        assert_eq!(receipt_at(&root)["version"], json!(INSTALLED));
+    }
+
+    #[test]
+    fn a_file_left_in_the_backup_keeps_the_journal() {
+        let (dir, fixture) = players_installation();
+        let root = fixture.root.clone();
+        let mut source = bundled(dir.path(), &fixture.runtime.next(NEXT));
+        let stray = root
+            .join(STATE_DIR)
+            .join(UPDATE_BACKUP)
+            .join("do-not-delete");
+        let leave = || fs::write(&stray, b"kept for whoever looks");
+        let left = OnPass::new(FaultPoint::UpdateMove, 1, &leave);
+        let fail = FailAt::new(FaultPoint::UpdateMove, 2);
+        let faults = Faults(&[&left, &fail]);
+        let failure = failed(update_simply(
+            &fixture,
+            &mut source,
+            NEXT,
+            &standing_in(&faults, &answering),
+        ));
+        assert_eq!(failure.changes, Changes::Kept);
+        assert_eq!(journal_phase(&root).as_deref(), Some("rollingBack"));
+        assert_eq!(fs::read(&stray).unwrap(), b"kept for whoever looks");
+        // What moved was put back, and the staging went, before the backup was found holding
+        // what nobody named.
+        assert_eq!(fs::read(root.join("VERSION")).unwrap(), b"1.0.0-beta\n");
+        assert!(stagings(&root).is_empty());
+        assert_eq!(receipt_at(&root)["version"], json!(INSTALLED));
+    }
+
+    #[test]
+    fn a_panic_while_staging_or_swapping_keeps_what_recovery_needs() {
+        use std::panic::{AssertUnwindSafe, catch_unwind};
+
+        // At the staging's pass once the journal is written, after the third move, and as the
+        // installed launcher copy went aside: the journal's phase then, and how many installed
+        // files were moved aside.
+        for (at, phase, backed_up) in [
+            ("journal", "staged", 0),
+            ("move", "swapping", 3),
+            ("launcher", "swapping", 7),
+        ] {
+            let (dir, fixture) = players_installation();
+            let root = fixture.root.clone();
+            let mut source = bundled(dir.path(), &fixture.runtime.newer(NEXT));
+            let journalled = OnceJournalled {
+                point: FaultPoint::UpdateStage,
+                journal: root.join(STATE_DIR).join(JOURNAL_DIR).join(UPDATE_JOURNAL),
+                act: &|| panic!("the test panics once the journal is written"),
+                done: Cell::new(false),
+            };
+            let moved = PanicAt::new(FaultPoint::UpdateMove, 3);
+            let retired = PanicAt::new(FaultPoint::LauncherReplace, 1);
+            let faults: &dyn FaultPoints = match at {
+                "journal" => &journalled,
+                "move" => &moved,
+                _ => &retired,
+            };
+            let unwound = catch_unwind(AssertUnwindSafe(|| {
+                update_simply(
+                    &fixture,
+                    &mut source,
+                    NEXT,
+                    &standing_in(faults, &answering),
+                )
+            }));
+            assert!(unwound.is_err(), "{at}");
+            // What the pass left stays for the next start: the journal, the staging and the
+            // installed files moved aside; and the lock was let go as the job unwound.
+            assert_eq!(journal_phase(&root).as_deref(), Some(phase), "{at}");
+            assert_eq!(stagings(&root).len(), 1, "{at}");
+            let aside = root.join(STATE_DIR).join(UPDATE_BACKUP);
+            let files = if aside.exists() {
+                tree_entries(&aside)
+                    .values()
+                    .filter(|entry| entry.is_some())
+                    .count()
+            } else {
+                0
+            };
+            assert_eq!(files, backed_up, "{at}");
+            assert_eq!(
+                retired_copies(&root, INSTALLED).len(),
+                usize::from(at == "launcher")
+            );
+            drop(InstallFolder::at(&root).unwrap().lock().unwrap());
+        }
+    }
+
+    /// What [`CancelAt`] has been told: how many calls, the phase last begun, and, at the call it
+    /// cancels at, that phase and whether the update's staging stood then.
+    #[derive(Default)]
+    struct Calls {
+        count: usize,
+        phase: Option<&'static str>,
+        cancelled: Option<(&'static str, bool)>,
+    }
+
+    /// A progress that asks the update of the installation at `root` to stop at its `at`-th call,
+    /// phases and advances counted together.
+    struct CancelAt<'a> {
+        cancel: Cancel,
+        at: usize,
+        root: &'a Path,
+        calls: Mutex<Calls>,
+    }
+
+    impl CancelAt<'_> {
+        fn call(&self, phase: Option<&'static str>) {
+            let mut calls = self.calls.lock().unwrap();
+            if phase.is_some() {
+                calls.phase = phase;
+            }
+            calls.count += 1;
+            if calls.count == self.at {
+                let begun = calls.phase.expect("a phase is told before anything else");
+                calls.cancelled = Some((begun, !stagings(self.root).is_empty()));
+                self.cancel.cancel();
+            }
+        }
+    }
+
+    impl Progress for CancelAt<'_> {
+        fn phase(&self, phase: PhaseId) {
+            self.call(Some(phase.0));
+        }
+
+        fn advance(&self, _: u64, _: u64, _: Option<&RelPath>) {
+            self.call(None);
+        }
+    }
+
+    #[test]
+    fn a_cancel_at_any_step_before_the_swap_leaves_nothing() {
+        let mut reached = BTreeSet::new();
+        for at in 1.. {
+            let (dir, fixture) = players_installation();
+            let mut source = bundled(dir.path(), &fixture.runtime.next(NEXT));
+            let before = as_it_is(&fixture.root);
+            let cancel = Cancel::default();
+            let progress = CancelAt {
+                cancel: cancel.clone(),
+                at,
+                root: &fixture.root,
+                calls: Mutex::default(),
+            };
+            let job = Job {
+                cancel: &cancel,
+                progress: &progress,
+            };
+            let result = update_by(
+                &fixture,
+                &mut source,
+                NEXT,
+                &job,
+                &standing_in(&NoFaults, &answering),
+            );
+            let calls = progress.calls.into_inner().unwrap();
+            let Some((phase, staged)) = calls.cancelled else {
+                // The update told fewer calls than that, so nothing asked it to stop.
+                assert_eq!(calls.count, at - 1);
+                updated(result);
+                break;
+            };
+            let context = format!("call {at}, in {phase}, a staging standing: {staged}");
+            if phase == SWAP.0 || phase == CLEANUP.0 {
+                // From the swap on, the update goes through.
+                match result {
+                    Ok(UpdateOutcome::Updated(done)) => assert_eq!(done.to, version(NEXT)),
+                    other => panic!("{context}: {other:?}"),
+                }
+                assert_eq!(state_names(&fixture.root), [RECEIPT_FILE], "{context}");
+                reached.insert("updated");
+                continue;
+            }
+            let failure = match result {
+                Err(failure) => failure,
+                Ok(outcome) => panic!("{context}: {outcome:?}"),
+            };
+            assert!(
+                matches!(failure.error, UpdateError::Cancelled),
+                "{context}: {failure:?}"
+            );
+            // Before the staging is made nothing is; from then on what was staged is taken back.
+            let changes = if staged {
+                Changes::RolledBack
+            } else {
+                Changes::None
+            };
+            assert_eq!(failure.changes, changes, "{context}");
+            assert_eq!(as_it_is(&fixture.root), before, "{context}");
+            reached.insert(if staged { "rolledBack" } else { "none" });
+        }
+        assert_eq!(reached, BTreeSet::from(["none", "rolledBack", "updated"]));
     }
 
     #[test]

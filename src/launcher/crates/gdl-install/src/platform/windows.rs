@@ -1,12 +1,13 @@
 //! The Windows calls: setting resources into a program with BeginUpdateResourceW, UpdateResourceW
-//! and EndUpdateResourceW, reading one back as data for the tests, telling the shell with
-//! SHChangeNotify that a file it shows has changed, asking with SetThreadExecutionState that the
-//! system stay awake, asking IsWow64Process2 what machine the system is, asking with SetErrorMode
-//! that the system fail a call rather than show a dialog, and what a folder chosen to install into
-//! is to the system: its build from RtlGetVersion, the user's known folders from
-//! SHGetKnownFolderPath, an entry's reparse tag from GetFileInformationByHandleEx, and the folders
-//! of the OneDrive accounts signed in from the registry, and a path's names in full, short aliases
-//! replaced, from GetLongPathNameW; whether an open file is the one at a name, by the identities
+//! and EndUpdateResourceW, reading one back as data and mapping one as an image with
+//! LoadLibraryExW for the tests, telling the shell with SHChangeNotify that a file it shows has
+//! changed, asking with SetThreadExecutionState that the system stay awake, asking
+//! IsWow64Process2 what machine the system is, asking with SetErrorMode that the system fail a
+//! call rather than show a dialog, and what a folder chosen to install into is to the system: its
+//! build from RtlGetVersion, the user's known folders from SHGetKnownFolderPath, an entry's
+//! reparse tag from GetFileInformationByHandleEx, and the folders of the OneDrive accounts signed
+//! in from the registry, and a path's names in full, short aliases replaced, from
+//! GetLongPathNameW; whether an open file is the one at a name, by the identities
 //! GetFileInformationByHandleEx and GetFileInformationByHandle give files; and the proxy the
 //! user's Internet Settings name, from the registry.
 
@@ -69,8 +70,8 @@ use windows_sys::Win32::Storage::FileSystem::{DELETE, GetShortPathNameW, SetFile
 use windows_sys::Win32::System::Diagnostics::Debug::SEM_NOGPFAULTERRORBOX;
 #[cfg(test)]
 use windows_sys::Win32::System::LibraryLoader::{
-    FindResourceExW, LOAD_LIBRARY_AS_DATAFILE, LOAD_LIBRARY_AS_IMAGE_RESOURCE, LoadLibraryExW,
-    LoadResource, LockResource, SizeofResource,
+    FindResourceExW, LOAD_LIBRARY_AS_DATAFILE, LOAD_LIBRARY_AS_IMAGE_RESOURCE, LOAD_LIBRARY_FLAGS,
+    LoadLibraryExW, LoadResource, LockResource, SizeofResource,
 };
 #[cfg(test)]
 use windows_sys::Win32::System::Power::ES_CONTINUOUS;
@@ -285,25 +286,13 @@ struct DataModule(HMODULE);
 
 #[cfg(test)]
 impl DataModule {
-    /// Loads the program at `executable` as an image of data, whose code never runs. It goes to
-    /// the call in its verbatim form, so that it is not held to MAX_PATH.
+    /// Loads the program at `executable` as an image of data, whose code never runs.
     fn load(executable: &Path) -> io::Result<DataModule> {
-        let path = VerbatimPath::new(executable)?;
-        // SAFETY: the path is a NUL-terminated UTF-16 string that `path` owns and keeps alive
-        // until the call returns, which only reads it; the call takes no file handle, which is
-        // null as it asks; and the flags map the file as data, so nothing of it runs.
-        let module = unsafe {
-            LoadLibraryExW(
-                path.as_ptr(),
-                ptr::null_mut(),
-                LOAD_LIBRARY_AS_DATAFILE | LOAD_LIBRARY_AS_IMAGE_RESOURCE,
-            )
-        };
-        if module.is_null() {
-            Err(io::Error::last_os_error())
-        } else {
-            Ok(DataModule(module))
-        }
+        load_unrun(
+            executable,
+            LOAD_LIBRARY_AS_DATAFILE | LOAD_LIBRARY_AS_IMAGE_RESOURCE,
+        )
+        .map(DataModule)
     }
 }
 
@@ -313,6 +302,44 @@ impl Drop for DataModule {
         // SAFETY: the module came from a successful LoadLibraryExW, belongs to this value alone
         // and is freed only here.
         unsafe { FreeLibrary(self.0) };
+    }
+}
+
+/// A program file mapped into this process as an image whose code never runs, as the system maps
+/// the file of a program that runs: while it is mapped, the system renames the file but does not
+/// delete it. Unmapped when dropped.
+#[cfg(test)]
+pub(crate) struct MappedImage(HMODULE);
+
+/// Maps the program file at `path` as [`MappedImage`] says.
+#[cfg(test)]
+pub(crate) fn map_image(path: &Path) -> io::Result<MappedImage> {
+    load_unrun(path, LOAD_LIBRARY_AS_IMAGE_RESOURCE).map(MappedImage)
+}
+
+#[cfg(test)]
+impl Drop for MappedImage {
+    fn drop(&mut self) {
+        // SAFETY: the module came from a successful LoadLibraryExW, belongs to this value alone
+        // and is freed only here.
+        unsafe { FreeLibrary(self.0) };
+    }
+}
+
+/// Loads the program at `path` with `flags`, which load it as data or as an image resource, so
+/// that none of its code runs and nothing it imports is loaded; the caller frees the module. It
+/// goes to the call in its verbatim form, so that it is not held to MAX_PATH.
+#[cfg(test)]
+fn load_unrun(path: &Path, flags: LOAD_LIBRARY_FLAGS) -> io::Result<HMODULE> {
+    let verbatim = VerbatimPath::new(path)?;
+    // SAFETY: the path is a NUL-terminated UTF-16 string that `verbatim` owns and keeps alive
+    // until the call returns, which only reads it; the call takes no file handle, which is null
+    // as it asks; and the flags, data or an image resource, run nothing of the file.
+    let module = unsafe { LoadLibraryExW(verbatim.as_ptr(), ptr::null_mut(), flags) };
+    if module.is_null() {
+        Err(io::Error::last_os_error())
+    } else {
+        Ok(module)
     }
 }
 

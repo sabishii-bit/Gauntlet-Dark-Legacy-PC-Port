@@ -18,5 +18,6 @@ pub(crate) use windows::{
 };
 #[cfg(all(windows, test))]
 pub(crate) use windows::{
-    error_mode, execution_state, refuse_fault_dialogs, resource_bytes, set_short_name, short_path,
+    error_mode, execution_state, map_image, refuse_fault_dialogs, resource_bytes, set_short_name,
+    short_path,
 };
