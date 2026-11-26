@@ -4,24 +4,23 @@
 
 mod common;
 mod launchers;
+mod outside_updates;
 
 use std::env::consts::EXE_SUFFIX;
 use std::ffi::OsStr;
-use std::fs;
 use std::path::Path;
 use std::process::{Command, Output};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use gdl_fixtures::{RuntimeFiles, append_sections};
-use gdl_install::{InstallFolder, RUNTIME_SECTION, installed_launcher_name};
-use gdl_release::Platform;
+use gdl_install::{InstallFolder, installed_launcher_name};
 
 use common::{PROGRAM, VERSION, inspect_json, run_to_end};
 use launchers::{
     Launched, Next, OLDER, Stream, installation, launcher_file, one_run_at_a_time, past_progress,
     this_platform, waited, write_launcher,
 };
+use outside_updates::{INSTALLED_COPY, launcher_keeping_the_game};
 
 /// How long a waiter is started after the launcher it waits for wrote that it runs: more than two
 /// clock ticks of either system, so that the two never share a creation time.
@@ -33,10 +32,6 @@ const QUIET: Duration = Duration::from_secs(1);
 /// The line the old launcher writes once another job's lock keeps it waiting.
 const LOCK_HOLD: &str = "hold: lock.busy";
 
-/// What the installation the old launcher updates holds as its launcher copy, which no test runs
-/// there: a few bytes, so that the update hashes and retires no program.
-const INSTALLED_COPY: &[u8] = b"the launcher copy installed before";
-
 /// The test a child of this test program runs alone to become the headless program, asked to
 /// wait for its own process.
 #[cfg(unix)]
@@ -46,17 +41,6 @@ const OWN_WAITER: &str = "a_child_becomes_the_program_asked_to_wait_for_itself";
 /// headless program. Unset, as in a run of the tests, that test does nothing.
 #[cfg(unix)]
 const OWN_ID: &str = "GDL_HEADLESS_OWN_ID";
-
-/// A launcher file for `platform` of the program's own carrying the standard runtime of `version`
-/// as it is, its executable the runtime's own few bytes: an update from it to an installation of
-/// another standard runtime moves the files that name the release and the launcher copy alone,
-/// and leaves the game, which it neither stages nor probes.
-fn launcher_keeping_the_game(platform: Platform, version: &str) -> Vec<u8> {
-    let mut launcher = fs::read(PROGRAM).unwrap();
-    let runtime = RuntimeFiles::standard(platform.as_str(), version);
-    append_sections(&mut launcher, &[(RUNTIME_SECTION, &runtime.zip())], 0);
-    launcher
-}
 
 /// What a program wrote to one of its streams, as text.
 fn text(bytes: &[u8]) -> &str {

@@ -7,6 +7,7 @@
 
 mod common;
 mod launchers;
+mod updates;
 
 use std::collections::BTreeMap;
 use std::env::consts::EXE_SUFFIX;
@@ -15,36 +16,26 @@ use std::fs;
 use std::path::Path;
 
 use gdl_files::STAGING_RANDOM_CHARS;
-use gdl_fixtures::{InstallFixture, folder_names, pretty_json, sha256_hex, tree_entries};
+use gdl_fixtures::{InstallFixture, pretty_json, sha256_hex};
 use gdl_install::{
-    BUILD_INFO, JOURNAL_DIR, JOURNAL_SCHEMA, LOCK_FILE, MIN_LAUNCHER, RECEIPT_FILE,
-    RETIRED_LAUNCHER_PREFIX, STATE_DIR, UPDATE_BACKUP, UPDATE_JOURNAL, UPDATE_STAGING_PREFIX,
-    VERSION_FILE, installed_launcher_name, probe_game_version,
+    BUILD_INFO, JOURNAL_DIR, JOURNAL_SCHEMA, MIN_LAUNCHER, RECEIPT_FILE, RETIRED_LAUNCHER_PREFIX,
+    STATE_DIR, UPDATE_BACKUP, UPDATE_JOURNAL, UPDATE_STAGING_PREFIX, VERSION_FILE,
+    installed_launcher_name, probe_game_version,
 };
 use gdl_release::Platform;
-use serde_json::{Value, json};
+use serde_json::json;
 
 use common::{VERSION, inspect_json};
 use launchers::{
     Launched, OLDER, installation, launcher_file, one_run_at_a_time, past_progress, this_platform,
     waited, write_launcher,
 };
+use updates::{
+    BUNDLED_PHASES, RECOVERY_PHASES, assert_only_kept_state, outside_state, phases_of, receipt_of,
+};
 
 /// The random part of the staging the hand-written journal names.
 const STAGING_RANDOM: &str = "AbC123xy";
-
-/// The phases an update from the program's own file goes through, in turn.
-const BUNDLED_PHASES: [&str; 6] = [
-    "checkInstalled",
-    "verifyDownload",
-    "stage",
-    "checkGame",
-    "swap",
-    "cleanup",
-];
-
-/// The phases a recovery that takes an update back goes through, in turn.
-const RECOVERY_PHASES: [&str; 2] = ["recoverUpdate", "finishCleanup"];
 
 /// The names the hand-written journal's update moved aside and put in place: the two files every
 /// release changes.
@@ -57,39 +48,6 @@ const REFUSED_PHASES: [&str; 3] = ["checkInstalled", "verifyDownload", "stage"];
 /// An installed file no release in these tests changes, which the refused update's test changes
 /// by hand.
 const CHANGED_FILE: &str = "data/config.json";
-
-/// The phases a run's output tells, in turn.
-fn phases_of(out: &str) -> Vec<&str> {
-    out.lines()
-        .filter_map(|line| line.strip_prefix("phase: "))
-        .collect()
-}
-
-/// Every entry of the installation at `root` outside its state folder, as
-/// [`tree_entries`] gives them.
-fn outside_state(root: &Path) -> BTreeMap<String, Option<String>> {
-    let mut entries = tree_entries(root);
-    entries.retain(|path, _| path != STATE_DIR && !path.starts_with(&format!("{STATE_DIR}/")));
-    entries
-}
-
-/// Checks that the state folder of the installation at `root` holds only what an installation
-/// keeps once its jobs are done: its receipt, its lock and an empty journal folder; no staging,
-/// download, backup or retired launcher copy is left.
-#[track_caller]
-fn assert_only_kept_state(root: &Path) {
-    let state = root.join(STATE_DIR);
-    assert_eq!(
-        folder_names(&state).unwrap(),
-        [JOURNAL_DIR, LOCK_FILE, RECEIPT_FILE]
-    );
-    assert!(folder_names(&state.join(JOURNAL_DIR)).unwrap().is_empty());
-}
-
-/// The receipt of the installation at `root`.
-fn receipt_of(root: &Path) -> Value {
-    serde_json::from_slice(&fs::read(root.join(STATE_DIR).join(RECEIPT_FILE)).unwrap()).unwrap()
-}
 
 /// Checks that `line` is the one an update writes when the launcher copy it moved aside, from
 /// `from`, could not be removed, as a launcher running from it holds it on Windows: its retired

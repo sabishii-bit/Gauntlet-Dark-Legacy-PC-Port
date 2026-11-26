@@ -12,6 +12,8 @@
 
 mod common;
 mod launchers;
+mod outside_updates;
+mod updates;
 
 use std::collections::BTreeMap;
 use std::ffi::OsStr;
@@ -42,6 +44,10 @@ use launchers::{
     Launched, OLDER, installation, launcher_file, one_run_at_a_time, past_progress, this_platform,
     waited, write_launcher,
 };
+use outside_updates::{INSTALLED_COPY, launcher_keeping_the_game};
+use updates::{
+    BUNDLED_PHASES, RECOVERY_PHASES, assert_only_kept_state, outside_state, phases_of, receipt_of,
+};
 
 /// A release later than the program, which a downloaded launcher of the program's own release
 /// updates an installation to.
@@ -49,10 +55,6 @@ const LATER: &str = "999.0.0";
 
 /// An alpha release, as the feed holds ten, which the launcher passes over.
 const ALPHA: &str = "4.0.0-alpha.3";
-
-/// What the installation's launcher copy holds where no test runs it: a few bytes, so that an
-/// update hashes and retires no program.
-const INSTALLED_COPY: &[u8] = b"the launcher copy installed before";
 
 /// What a launcher copy that carries no runtime holds in its one section, where the window's
 /// program goes.
@@ -96,9 +98,6 @@ const RELEASE_PHASES: [&str; 7] = [
     "swap",
     "cleanup",
 ];
-
-/// The phases a recovery that takes an update back goes through, in turn.
-const RECOVERY_PHASES: [&str; 2] = ["recoverUpdate", "finishCleanup"];
 
 /// The pass of a fault point the kill test ends an update at: its journal moved to swapping, before
 /// the first move.
@@ -146,49 +145,6 @@ fn run_program<A: AsRef<OsStr>>(program: &Path, fault: Option<&str>, args: &[A])
         None => command.env_remove(FAULT_VARIABLE),
     };
     run_to_end(command, program)
-}
-
-/// A launcher file for `platform` of the program's own carrying the standard runtime of `version`
-/// as it is, its executable the runtime's own few bytes: an update from it to an installation of
-/// another standard runtime moves the files that name the release and the launcher copy alone, and
-/// leaves the game, which it neither stages nor probes.
-fn launcher_keeping_the_game(platform: Platform, version: &str) -> Vec<u8> {
-    let mut launcher = fs::read(PROGRAM).unwrap();
-    let runtime = RuntimeFiles::standard(platform.as_str(), version);
-    append_sections(&mut launcher, &[(RUNTIME_SECTION, &runtime.zip())], 0);
-    launcher
-}
-
-/// The phases a run's output tells, in turn.
-fn phases_of(out: &str) -> Vec<&str> {
-    out.lines()
-        .filter_map(|line| line.strip_prefix("phase: "))
-        .collect()
-}
-
-/// Every entry of the installation at `root` outside its state folder, as [`tree_entries`] gives
-/// them.
-fn outside_state(root: &Path) -> BTreeMap<String, Option<String>> {
-    let mut entries = tree_entries(root);
-    entries.retain(|path, _| path != STATE_DIR && !path.starts_with(&format!("{STATE_DIR}/")));
-    entries
-}
-
-/// Checks that the state folder of the installation at `root` holds only what an installation
-/// keeps once its jobs are done: its receipt, its lock and an empty journal folder.
-#[track_caller]
-fn assert_only_kept_state(root: &Path) {
-    let state = root.join(STATE_DIR);
-    assert_eq!(
-        folder_names(&state).unwrap(),
-        [JOURNAL_DIR, LOCK_FILE, RECEIPT_FILE]
-    );
-    assert!(folder_names(&state.join(JOURNAL_DIR)).unwrap().is_empty());
-}
-
-/// The receipt of the installation at `root`.
-fn receipt_of(root: &Path) -> Value {
-    serde_json::from_slice(&fs::read(root.join(STATE_DIR).join(RECEIPT_FILE)).unwrap()).unwrap()
 }
 
 /// The tree of the installation at `root` outside its state folder once an update from
@@ -395,6 +351,21 @@ fn a_fault_variable_that_names_no_pass_is_refused() {
         );
         assert_eq!(text(&output.stdout), "", "{value:?}");
     }
+    // Arguments that ask for a mode in a form it does not take are refused for the variable
+    // first, and as misuse only once the variable names a pass.
+    let misused = ["--check-feed", "extra"];
+    let output = run_program(program, Some("nowhere:1"), &misused);
+    assert_eq!(output.status.code(), Some(2), "{output:?}");
+    assert_eq!(
+        text(&output.stderr),
+        "error: GDL_LAUNCHER_FAULT names no fault point and pass: nowhere:1\n",
+        "{output:?}"
+    );
+    assert_eq!(text(&output.stdout), "", "{output:?}");
+    let output = run_program(program, Some("update.move:3"), &misused);
+    assert_eq!(output.status.code(), Some(2), "{output:?}");
+    assert!(text(&output.stderr).starts_with("usage: "), "{output:?}");
+    assert_eq!(text(&output.stdout), "", "{output:?}");
     // Unset, empty, or naming a pass a mode never reaches, the variable lets the mode run.
     for value in [
         None,
@@ -437,9 +408,15 @@ fn a_named_fault_kills_an_update_there_and_a_recovery_takes_it_back() {
     ];
     let killed = run_program(&launcher, Some(SWAP_BEGUN), &args);
     assert_eq!(killed.status.code(), Some(KILLED), "{killed:?}");
-    assert_eq!(
-        phases_of(text(&killed.stdout)).last(),
-        Some(&"swap"),
+    // The kill ends the job's thread while lines it sent may still wait to be written, so the
+    // phases written are those an update goes through, in turn, up to the swap at most, but may
+    // stop short of it: the journal tells where the kill came.
+    let through_swap = BUNDLED_PHASES
+        .iter()
+        .position(|phase| *phase == "swap")
+        .unwrap();
+    assert!(
+        BUNDLED_PHASES[..=through_swap].starts_with(&phases_of(text(&killed.stdout))),
         "{killed:?}"
     );
     let journal = root.join(STATE_DIR).join(JOURNAL_DIR).join(UPDATE_JOURNAL);
