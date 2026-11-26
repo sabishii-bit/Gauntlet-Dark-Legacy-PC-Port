@@ -2023,24 +2023,22 @@ fn print_installed(
 }
 
 /// A notice of an install that stands as its report's line gives it: `<code> (<rule>): <detail>`,
-/// the code as [`codes::notice`] gives it and the rule, in camelCase, the notice's kind:
-/// `probeFailed`, with what [`probe_failed`] tells of the staged game; `notRecorded`, with what
-/// the record of installations answered; or `cleanupLeft`, with what stopped the cleanup.
+/// the code as [`codes::notice`] gives it, the rule the notice's own, and the detail what
+/// [`probe_failed`] tells of a staged game that did not answer, what the record of installations
+/// answered, or what stopped the cleanup.
 #[cfg(feature = "test-hooks")]
 fn install_notice_line(notice: &InstallNotice) -> String {
-    let (rule, detail) = match notice {
+    let detail = match notice {
         InstallNotice::ProbeFailed {
             status,
             first_line,
             stderr_tail,
-        } => (
-            "probeFailed",
-            probe_failed(*status, first_line.as_deref(), stderr_tail),
-        ),
-        InstallNotice::NotRecorded { detail } => ("notRecorded", detail.to_string()),
-        InstallNotice::CleanupLeft { detail } => ("cleanupLeft", detail.to_string()),
+        } => probe_failed(*status, first_line.as_deref(), stderr_tail),
+        InstallNotice::NotRecorded { detail } | InstallNotice::CleanupLeft { detail } => {
+            detail.to_string()
+        }
     };
-    format!("{} ({rule}): {detail}", codes::notice(notice))
+    format!("{} ({}): {detail}", codes::notice(notice), notice.rule())
 }
 
 /// `--sign-test`, in a build with the test hooks: signs the checksum list at `file` for the

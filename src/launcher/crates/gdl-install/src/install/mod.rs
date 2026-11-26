@@ -306,6 +306,17 @@ pub enum InstallNotice {
     },
 }
 
+impl InstallNotice {
+    /// The notice's stable machine name, in camelCase, for reports and logs.
+    pub fn rule(&self) -> &'static str {
+        match self {
+            InstallNotice::ProbeFailed { .. } => "probeFailed",
+            InstallNotice::NotRecorded { .. } => "notRecorded",
+            InstallNotice::CleanupLeft { .. } => "cleanupLeft",
+        }
+    }
+}
+
 /// What an install that failed left in the folder.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Changes {
@@ -1258,6 +1269,35 @@ pub(crate) mod tests {
         assert!(ROOT_FOLDERS.contains(&LIB_FOLDER));
         // The room an install keeps free, as the release scripts' installer keeps it.
         assert_eq!(SPACE_MARGIN, 64 << 20);
+    }
+
+    #[test]
+    fn install_notices_name_their_rules() {
+        let cases = [
+            (
+                InstallNotice::ProbeFailed {
+                    status: Some(2),
+                    first_line: None,
+                    stderr_tail: String::new(),
+                },
+                "probeFailed",
+            ),
+            (
+                InstallNotice::NotRecorded {
+                    detail: "the record is full".into(),
+                },
+                "notRecorded",
+            ),
+            (
+                InstallNotice::CleanupLeft {
+                    detail: "install-AbC123xy: in use".into(),
+                },
+                "cleanupLeft",
+            ),
+        ];
+        for (notice, rule) in cases {
+            assert_eq!(notice.rule(), rule, "{notice:?}");
+        }
     }
 
     #[test]
