@@ -31,11 +31,11 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use std::{env, panic, process, thread};
 
 use gdl_extract::{Expansion, Trust};
-#[cfg(feature = "test-hooks")]
-use gdl_files::FilesError;
 use gdl_files::{
     Cancel, Hold, Job, NoProgress, PhaseId, Progress, RelPath, absolute_lexical, strip_verbatim,
 };
+#[cfg(feature = "test-hooks")]
+use gdl_files::{FilesError, read_bounded};
 use gdl_install::{
     AFTER_UPDATE_OPTION, Access, Changes, ComponentAttributes, DestinationReport, FolderError,
     FolderState, INSPECTION_SCHEMA, Inspection, InstallFolder, InstallationSummary, Linger,
@@ -376,11 +376,12 @@ pub fn open_own_file() -> OwnFile {
 /// `installed: <version> into <dir>`, `<dir>` made absolute, and a
 /// `notice: <code> (<rule>): <detail>` line for each notice, in the order the install met them. A
 /// refusal is the line `error: <code> (<rule>): <detail>`, and [`EXIT_REFUSED`]. Such a build also
-/// has the mode `--sign-test <file> <version>`: it signs the checksum list at `<file>`, of at most
-/// [`MAX_LIST_LEN`](gdl_release::MAX_LIST_LEN) bytes, for the release `<version>` with the tests'
-/// own key, the one key such a build trusts, as the release signing signs a release's list; writes
-/// the signature beside the list into a new file, the list's name with `.sig` after it; and writes
-/// `signed: <path>`, that file's path made absolute. The signature's trusted comment is
+/// has the mode `--sign-test <file> <version>`: it signs the checksum list at `<file>`, a regular
+/// file reached through no link, of at most [`MAX_LIST_LEN`](gdl_release::MAX_LIST_LEN) bytes,
+/// for the release `<version>` with the tests' own key, the one key such a build trusts, as the
+/// release signing signs a release's list; writes the signature beside the list into a new file,
+/// the list's name with `.sig` after it; and writes `signed: <path>`, that file's path made
+/// absolute. The signature's trusted comment is
 /// `timestamp:<seconds since the Unix epoch>\tfile:<the list's name>\tversion:<version>`. A
 /// version that is no semantic version, and a path whose last name holds what that comment cannot
 /// carry, a control character or no Unicode text, are usage errors. A refusal is the line
@@ -2051,9 +2052,11 @@ fn install_notice_line(notice: &InstallNotice) -> String {
 /// the list's name and the release, as [`trusted_comment`] writes it. A version that is no
 /// semantic version, and a path whose last name is no Unicode text or holds a control character,
 /// which the comment cannot carry as the name it gives, are usage errors, refused before anything
-/// is read. The path is made absolute first, as every mode makes the paths it is given; the list
-/// is read whole, as [`read_list`] reads it, and the signature is written as [`write_new`] writes
-/// a file, never in place of one that is there.
+/// is read. The path is made absolute first, as every mode makes the paths it is given. The list
+/// is read whole, at most [`MAX_LIST_LEN`] bytes, since the feed reads no longer list: a longer
+/// file is refused once one byte past that is read, a path with a link on it as `folder.links`,
+/// and what is no regular file, a FIFO among them, at once, never waiting for a writer. The
+/// signature is written as [`write_new`] writes a file, never in place of one that is there.
 #[cfg(feature = "test-hooks")]
 fn sign_test_mode(file: &Path, version: &OsStr, out: &mut dyn Write, err: &mut dyn Write) -> u8 {
     let Some(version) = version.to_str().and_then(|text| Version::parse(text).ok()) else {
@@ -2073,9 +2076,12 @@ fn sign_test_mode(file: &Path, version: &OsStr, out: &mut dyn Write, err: &mut d
     let Some(name) = name else {
         return usage(err);
     };
-    let bytes = match read_list(&list) {
+    let bytes = match read_bounded(&list, MAX_LIST_LEN) {
         Ok(bytes) => bytes,
-        Err(error) => return refuse_files(err, &error),
+        Err(error) => {
+            let code = codes::chosen_file(&error);
+            return refuse(err, Report::Error(code), error.rule(), &error);
+        }
     };
     let comment = trusted_comment(signed_at(), name, &version);
     let signature = gdl_fixtures::sign_with_test_key(&bytes, &comment);
@@ -2110,31 +2116,6 @@ fn signed_at() -> u64 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs()
-}
-
-/// The checksum list at `path`, read whole: a file of more than [`MAX_LIST_LEN`] bytes is no
-/// release's list, since the feed reads none longer, and is refused as [`FilesError::TooLarge`]
-/// once one byte past that is read; what the system refused is [`FilesError::Io`].
-#[cfg(feature = "test-hooks")]
-fn read_list(path: &Path) -> Result<Vec<u8>, FilesError> {
-    let mut bytes = Vec::new();
-    File::open(path)
-        .and_then(|file| {
-            file.take(MAX_LIST_LEN.saturating_add(1))
-                .read_to_end(&mut bytes)
-        })
-        .map_err(|source| FilesError::Io {
-            path: path.to_path_buf(),
-            source,
-        })?;
-    if u64::try_from(bytes.len()).is_ok_and(|read| read <= MAX_LIST_LEN) {
-        Ok(bytes)
-    } else {
-        Err(FilesError::TooLarge {
-            path: path.to_path_buf(),
-            limit: MAX_LIST_LEN,
-        })
-    }
 }
 
 /// Writes `text` into a new file at `path`, made new so that nothing already there is replaced,
@@ -3796,6 +3777,56 @@ mod tests {
             fs::read(&signature).unwrap(),
             b"a signature of the player's"
         );
+
+        // A list reached through a link is refused as a link on a path someone chose is,
+        // whatever it leads to.
+        let linked = dir.path().join("linked.txt");
+        if gdl_fixtures::symlink_file_where_allowed(&linked, &list) {
+            assert_refused(
+                &sign(&linked),
+                &format!(
+                    "error: folder.links (link): Choose a directory without links or junctions: \
+                     {}\n",
+                    linked.display()
+                ),
+            );
+            assert!(!dir.path().join("linked.txt.sig").exists());
+        }
+
+        // A FIFO, which a plain open waits on until a writer comes, is refused at once.
+        #[cfg(unix)]
+        {
+            /// Far longer than any refusal takes, and short enough for a test to fail in.
+            const MOST_WAIT: Duration = Duration::from_secs(10);
+
+            let fifo = dir.path().join("fifo.txt");
+            let made = std::process::Command::new("mkfifo")
+                .arg(&fifo)
+                .status()
+                .unwrap();
+            assert!(made.success(), "mkfifo: {made}");
+            let (told, answer) = mpsc::channel();
+            let signing = fifo.clone();
+            let signer = thread::spawn(move || {
+                let _ = told.send(sign(&signing));
+            });
+            match answer.recv_timeout(MOST_WAIT) {
+                Ok(ran) => assert_refused(
+                    &ran,
+                    &format!(
+                        "error: io.failed (io): {}: not a regular file\n",
+                        fifo.display()
+                    ),
+                ),
+                Err(_) => {
+                    // A writer lets the waiting signer go, so that the test ends.
+                    let _ = fs::OpenOptions::new().write(true).open(&fifo);
+                    panic!("signing a FIFO waited for a writer");
+                }
+            }
+            signer.join().unwrap();
+            assert!(!dir.path().join("fifo.txt.sig").exists());
+        }
     }
 
     #[test]

@@ -655,6 +655,20 @@ pub fn files(error: &FilesError) -> &'static str {
     }
 }
 
+/// The code a refusal to read a file the player or a developer chose reports: a link on its path,
+/// which the read's own look finds, is `folder.links`, and every other refusal what [`files`]
+/// gives.
+pub fn chosen_file(error: &FilesError) -> &'static str {
+    match error {
+        FilesError::Link { .. } => FOLDER_LINKS,
+        FilesError::Io { .. }
+        | FilesError::TooLarge { .. }
+        | FilesError::Json { .. }
+        | FilesError::Exists { .. }
+        | FilesError::NotRoot { .. } => files(error),
+    }
+}
+
 /// The code an extraction's failure reports. A cancel has none. A reader's failure reports what
 /// [`media`] gives it, the staging's what [`files`] gives it, and a dump an installation's trust
 /// does not name what [`dump_refusal`] gives its refusal. Writing or reading back a staged file is
@@ -1024,9 +1038,9 @@ mod tests {
     use serde_json::json;
 
     use super::{
-        CODES, Report, blocker, destination, dump_refusal, extract, extraction, files, folder,
-        game_start, game_use, hold, install, lock, media, notice, payload, receipt, recover,
-        recovery, refusal, release, sections, state, update, update_notice, warning,
+        CODES, Report, blocker, chosen_file, destination, dump_refusal, extract, extraction, files,
+        folder, game_start, game_use, hold, install, lock, media, notice, payload, receipt,
+        recover, recovery, refusal, release, sections, state, update, update_notice, warning,
     };
     use crate::extraction::{ExtractionError, output_name};
     use crate::privilege::Refusal;
@@ -2467,6 +2481,15 @@ mod tests {
         for (error, expected) in files_refusals() {
             assert_eq!(files(&error), expected, "{}: {error}", error.rule());
         }
+        // A file someone chose to be read reports a link on its path as such; the rest as every
+        // file operation does.
+        for (error, expected) in files_refusals() {
+            let expected = match error {
+                FilesError::Link { .. } => "folder.links",
+                _ => expected,
+            };
+            assert_eq!(chosen_file(&error), expected, "{}: {error}", error.rule());
+        }
         for (error, expected) in extract_refusals() {
             assert_eq!(extract(&error), expected, "{}: {error}", error.rule());
         }
@@ -3173,6 +3196,7 @@ mod tests {
                 .map(|(refused, _)| dump_refusal(refused)),
         );
         returned.extend(files_refusals().iter().map(|(error, _)| files(error)));
+        returned.extend(files_refusals().iter().map(|(error, _)| chosen_file(error)));
         returned.extend(
             extract_refusals()
                 .iter()
